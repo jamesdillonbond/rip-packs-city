@@ -99,7 +99,7 @@ export default function PackDistError({
           style={{
             padding: "10px 18px",
             border: "1px solid var(--rpc-red)",
-            color: "var(--rpc-red)",
+            color: "var(--rpc-red-text)",
             background: "transparent",
             fontFamily: "var(--font-mono)",
             letterSpacing: "0.2em",

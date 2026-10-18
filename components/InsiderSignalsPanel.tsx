@@ -171,7 +171,7 @@ export default function InsiderSignalsPanel({
         <div
           className="rpc-mono"
           style={{
-            color: "var(--rpc-text-ghost)",
+            color: "var(--rpc-text-muted)",
             padding: "20px 0",
             textAlign: "center",
             fontSize: "var(--text-sm)",

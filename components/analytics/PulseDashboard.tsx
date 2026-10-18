@@ -225,7 +225,7 @@ function ActivityRow({
           <span>{relativeFromNow(row.occurred_at)}</span>
           {!anon && row.primary_addr ? (
             <span className="flex items-center gap-1">
-              <span className="text-[color:var(--rpc-text-ghost)]">addr</span>
+              <span className="text-[color:var(--rpc-text-muted)]">addr</span>
               {isLinkableAddr(row.primary_addr) ? (
                 <Link
                   href={`/analytics/wallets/${row.primary_addr}`}
@@ -240,7 +240,7 @@ function ActivityRow({
           ) : null}
           {!anon && row.counterparty ? (
             <span className="flex items-center gap-1">
-              <span className="text-[color:var(--rpc-text-ghost)]">cp</span>
+              <span className="text-[color:var(--rpc-text-muted)]">cp</span>
               {isLinkableAddr(row.counterparty) ? (
                 <Link
                   href={`/analytics/wallets/${row.counterparty}`}
@@ -543,7 +543,7 @@ export default function PulseDashboard() {
           </span>
           Updated {relativeFromNow(prior?.as_of ?? new Date(tickRefreshedAt).toISOString())}
         </span>
-        <span className="text-[color:var(--rpc-text-ghost)]">·</span>
+        <span className="text-[color:var(--rpc-text-muted)]">·</span>
         <span>{loading ? "Refreshing…" : "Auto-refresh on"}</span>
       </div>
 
@@ -591,7 +591,7 @@ export default function PulseDashboard() {
               value={minSize}
               onChange={(e) => setMinSize(e.target.value)}
               placeholder="$"
-              className="w-20 rounded-md border border-[color:var(--rpc-border)] bg-[color:var(--rpc-surface-raised)] px-2 py-1 text-xs text-[color:var(--rpc-text-secondary)] placeholder:text-[color:var(--rpc-text-ghost)] focus:border-emerald-500/50 focus:outline-none"
+              className="w-20 rounded-md border border-[color:var(--rpc-border)] bg-[color:var(--rpc-surface-raised)] px-2 py-1 text-xs text-[color:var(--rpc-text-secondary)] placeholder:text-[color:var(--rpc-text-muted)] focus:border-emerald-500/50 focus:outline-none"
             />
           </label>
         </div>
@@ -635,7 +635,7 @@ export default function PulseDashboard() {
           <ArrowUp size={12} className="text-emerald-500" />
           Most recent first
         </span>
-        <span className="text-[color:var(--rpc-text-ghost)]">·</span>
+        <span className="text-[color:var(--rpc-text-muted)]">·</span>
         <Link
           href="/analytics/methodology/pulse"
           className="hover:text-emerald-400 transition-colors inline-flex items-center gap-1"
@@ -643,7 +643,7 @@ export default function PulseDashboard() {
           <BarChart3 size={12} />
           Methodology
         </Link>
-        <span className="text-[color:var(--rpc-text-ghost)]">·</span>
+        <span className="text-[color:var(--rpc-text-muted)]">·</span>
         <span className="inline-flex items-center gap-1.5">
           <ArrowDown size={12} />
           Older events scroll off after 100

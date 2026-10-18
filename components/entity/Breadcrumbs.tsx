@@ -59,7 +59,7 @@ export default function Breadcrumbs({ items }: { items: Crumb[] }) {
                 {c.name}
               </span>
             )}
-            {!isLast && <span aria-hidden="true" style={{ color: "var(--rpc-text-ghost)" }}>›</span>}
+            {!isLast && <span aria-hidden="true" style={{ color: "var(--rpc-text-muted)" }}>›</span>}
           </span>
         )
       })}

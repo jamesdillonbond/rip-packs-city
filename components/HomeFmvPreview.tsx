@@ -142,20 +142,20 @@ export default function HomeFmvPreview() {
         </div>
         {/* Serial-premium examples — the demo computes these from the real FMV. */}
         <div>
-          <div style={{ color: "var(--rpc-text-ghost)", fontSize: 9, letterSpacing: "0.14em", marginBottom: 6 }}>
+          <div style={{ color: "var(--rpc-text-muted)", fontSize: 9, letterSpacing: "0.14em", marginBottom: 6 }}>
             SERIAL-ADJUSTED FMV
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>
             <div>
-              <div style={{ color: "var(--rpc-text-ghost)" }}>BASE</div>
+              <div style={{ color: "var(--rpc-text-muted)" }}>BASE</div>
               <div style={{ color: "var(--rpc-text-secondary)" }}>{show(fmv)}</div>
             </div>
             <div>
-              <div style={{ color: "var(--rpc-text-ghost)" }}>#1{multLabel(adj1?.serialMult, 12)}</div>
+              <div style={{ color: "var(--rpc-text-muted)" }}>#1{multLabel(adj1?.serialMult, 12)}</div>
               <div style={{ color: "var(--rpc-text-secondary)" }}>{show(s1)}</div>
             </div>
             <div>
-              <div style={{ color: "var(--rpc-text-ghost)" }}>#23{multLabel(adj23?.serialMult, 2.8)}</div>
+              <div style={{ color: "var(--rpc-text-muted)" }}>#23{multLabel(adj23?.serialMult, 2.8)}</div>
               <div style={{ color: "var(--rpc-text-secondary)" }}>{show(s23)}</div>
             </div>
           </div>

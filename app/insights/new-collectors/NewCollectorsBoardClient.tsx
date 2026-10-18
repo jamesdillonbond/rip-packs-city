@@ -454,19 +454,19 @@ const styles: Record<string, React.CSSProperties> = {
 
 const CSS = `
 .rpc-nc-head { max-width: 1180px; margin: 0 auto 24px; padding-bottom: 22px; border-bottom: 1px solid var(--rpc-border-subtle); }
-.rpc-nc-eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: 4px; text-transform: uppercase; color: var(--rpc-red); margin-bottom: 12px; }
+.rpc-nc-eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: 4px; text-transform: uppercase; color: var(--rpc-red-text); margin-bottom: 12px; }
 .rpc-nc-h1 { font-family: var(--font-display); font-weight: 800; font-size: clamp(38px, 6vw, 64px); letter-spacing: 0.5px; line-height: 1.02; margin: 0 0 14px; text-transform: uppercase; }
 .rpc-nc-lede { font-family: var(--font-body); font-size: 18px; line-height: 1.55; color: var(--rpc-text-secondary); max-width: 860px; margin: 0 0 16px; }
 .rpc-nc-lede strong { color: var(--rpc-text-primary); }
 .rpc-nc-meta-row { font-family: var(--font-mono); font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-muted); }
-.rpc-nc-meta-sep { margin: 0 8px; color: var(--rpc-text-ghost); }
+.rpc-nc-meta-sep { margin: 0 8px; color: var(--rpc-text-muted); }
 
 .rpc-nc-controls { max-width: 1180px; margin: 0 auto 22px; display: flex; flex-wrap: wrap; gap: 16px 24px; align-items: center; }
 .rpc-nc-pill-group { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .rpc-nc-pill-label { font-family: var(--font-mono); font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-muted); margin-right: 4px; }
 .rpc-nc-pill { font-family: var(--font-mono); font-size: 12px; letter-spacing: 1.5px; text-transform: uppercase; padding: 7px 14px; border: 1px solid var(--rpc-border); background: transparent; color: var(--rpc-text-secondary); cursor: pointer; border-radius: 2px; transition: border-color 120ms, color 120ms, background 120ms; }
 .rpc-nc-pill:hover { border-color: var(--rpc-border-hover); color: var(--rpc-text-primary); }
-.rpc-nc-pill-active { background: var(--rpc-red-bg); border-color: var(--rpc-red); color: var(--rpc-red); }
+.rpc-nc-pill-active { background: var(--rpc-red-bg); border-color: var(--rpc-red); color: var(--rpc-red-text); }
 
 .rpc-nc-wrap { max-width: 1180px; margin: 0 auto 30px; }
 .rpc-nc-section-label { font-family: var(--font-mono); font-size: 10px; letter-spacing: 2.5px; text-transform: uppercase; color: var(--rpc-text-muted); margin-bottom: 12px; }
@@ -477,7 +477,7 @@ const CSS = `
 .rpc-nc-kpi-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 .rpc-nc-kpi { border: 1px solid var(--rpc-border-subtle); background: var(--rpc-surface-raised); padding: 14px 16px; border-radius: 2px; }
 .rpc-nc-kpi-label { font-family: var(--font-mono); font-size: 10px; letter-spacing: 2.5px; text-transform: uppercase; color: var(--rpc-text-muted); margin-bottom: 6px; }
-.rpc-nc-kpi-value { font-family: var(--font-display); font-weight: 800; font-size: 30px; color: var(--rpc-red); letter-spacing: 0.5px; line-height: 1.1; }
+.rpc-nc-kpi-value { font-family: var(--font-display); font-weight: 800; font-size: 30px; color: var(--rpc-red-text); letter-spacing: 0.5px; line-height: 1.1; }
 .rpc-nc-kpi-sub { font-family: var(--font-mono); font-size: 10px; letter-spacing: 1px; color: var(--rpc-text-muted); margin-top: 6px; }
 
 .rpc-nc-spend-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 16px; align-items: stretch; }
@@ -500,7 +500,7 @@ const CSS = `
 .rpc-nc-gateway-row:first-child { border-top: none; }
 .rpc-nc-gateway-rank { font-family: var(--font-mono); font-size: 12px; color: var(--rpc-text-muted); text-align: center; }
 .rpc-nc-gateway-name { font-family: var(--font-body); font-size: 14px; font-weight: 600; color: var(--rpc-text-primary); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: flex; align-items: baseline; gap: 8px; }
-.rpc-nc-gateway-name:hover { color: var(--rpc-red); }
+.rpc-nc-gateway-name:hover { color: var(--rpc-red-text); }
 .rpc-nc-gateway-series { font-family: var(--font-mono); font-size: 10px; letter-spacing: 1px; color: var(--rpc-text-muted); }
 .rpc-nc-gateway-buyers { font-family: var(--font-mono); font-size: 13px; font-weight: 700; color: var(--rpc-text-primary); white-space: nowrap; }
 
@@ -512,7 +512,7 @@ const CSS = `
 .rpc-nc-table tbody td.rpc-nc-td-left { text-align: left; font-family: var(--font-body); font-weight: 600; }
 .rpc-nc-table tbody tr:hover { background: var(--rpc-surface); }
 .rpc-nc-showall { margin-top: 14px; font-family: var(--font-mono); font-size: 11px; letter-spacing: 2px; text-transform: uppercase; padding: 10px 16px; border: 1px solid var(--rpc-border); background: transparent; color: var(--rpc-text-secondary); cursor: pointer; border-radius: 2px; transition: border-color 120ms, color 120ms; }
-.rpc-nc-showall:hover { border-color: var(--rpc-red); color: var(--rpc-red); }
+.rpc-nc-showall:hover { border-color: var(--rpc-red); color: var(--rpc-red-text); }
 
 .rpc-nc-footer { max-width: 1180px; margin: 40px auto 0; padding-top: 24px; border-top: 1px solid var(--rpc-border-subtle); display: grid; grid-template-columns: 2fr 1fr; gap: 32px; }
 .rpc-nc-method h3 { font-family: var(--font-display); font-weight: 800; font-size: 22px; letter-spacing: 1px; text-transform: uppercase; margin: 0 0 10px; }
@@ -523,9 +523,9 @@ const CSS = `
 .rpc-nc-share-btn { display: inline-flex; align-items: center; justify-content: center; background: var(--rpc-red); color: #fff; font-family: var(--font-mono); font-size: 12px; letter-spacing: 2.5px; text-transform: uppercase; padding: 13px 18px; border-radius: 2px; text-decoration: none; transition: background 120ms; }
 .rpc-nc-share-btn:hover { background: var(--rpc-red-hover); }
 .rpc-nc-copy-btn { display: inline-flex; align-items: center; justify-content: center; background: transparent; color: var(--rpc-text-primary); border: 1px solid var(--rpc-border); font-family: var(--font-mono); font-size: 12px; letter-spacing: 2.5px; text-transform: uppercase; padding: 13px 18px; border-radius: 2px; cursor: pointer; transition: border-color 120ms, color 120ms; }
-.rpc-nc-copy-btn:hover { border-color: var(--rpc-red); color: var(--rpc-red); }
+.rpc-nc-copy-btn:hover { border-color: var(--rpc-red); color: var(--rpc-red-text); }
 .rpc-nc-back { font-family: var(--font-mono); font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-secondary); text-decoration: none; padding: 10px; text-align: center; }
-.rpc-nc-back:hover { color: var(--rpc-red); }
+.rpc-nc-back:hover { color: var(--rpc-red-text); }
 
 @media (max-width: 860px) {
   .rpc-nc-kpi-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }

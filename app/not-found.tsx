@@ -73,7 +73,7 @@ export default function NotFound() {
         }}
       >
         Back to{" "}
-        <span style={{ color: "var(--rpc-red)" }}>Rip City</span>
+        <span style={{ color: "var(--rpc-red-text)" }}>Rip City</span>
       </Link>
     </main>
   );

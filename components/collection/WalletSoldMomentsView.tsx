@@ -145,7 +145,7 @@ export default function WalletSoldMomentsView({ collection }: { collection: stri
   if (!wallet) {
     return (
       <div className="rpc-card" style={{ padding: 32, textAlign: "center", display: "flex", flexDirection: "column", gap: 12, alignItems: "center" }}>
-        <div style={{ fontSize: 30, color: "var(--rpc-text-ghost)" }}>💸</div>
+        <div style={{ fontSize: 30, color: "var(--rpc-text-muted)" }}>💸</div>
         <div className="rpc-heading" style={{ fontSize: 16 }}>Moments you&apos;ve sold</div>
         <div className="rpc-mono" style={{ fontSize: 12, color: "var(--rpc-text-muted)", maxWidth: 460, lineHeight: 1.7 }}>
           Search a wallet to see the moments it has sold in {label}.
@@ -157,7 +157,7 @@ export default function WalletSoldMomentsView({ collection }: { collection: stri
   if (authRequired) {
     return (
       <div className="rpc-card" style={{ padding: 32, textAlign: "center", display: "flex", flexDirection: "column", gap: 12, alignItems: "center" }}>
-        <div style={{ fontSize: 30, color: "var(--rpc-text-ghost)" }}>🔒</div>
+        <div style={{ fontSize: 30, color: "var(--rpc-text-muted)" }}>🔒</div>
         <div className="rpc-heading" style={{ fontSize: 16 }}>Sign in to see sold moments</div>
         <div className="rpc-mono" style={{ fontSize: 12, color: "var(--rpc-text-muted)", maxWidth: 460, lineHeight: 1.7 }}>
           Sale history is part of your personal dashboard — it&apos;s available for wallets verified on your
@@ -211,7 +211,7 @@ export default function WalletSoldMomentsView({ collection }: { collection: stri
                   <tr key={`${r.nft_id ?? "row"}-${i}`} style={{ borderBottom: "1px solid var(--rpc-border)" }}>
                     <td style={{ padding: "9px 12px" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                        <span style={{ width: 52, height: 52, borderRadius: 6, background: "var(--rpc-surface-hover)", overflow: "hidden", flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 18, color: "var(--rpc-text-ghost)" }}>
+                        <span style={{ width: 52, height: 52, borderRadius: 6, background: "var(--rpc-surface-hover)", overflow: "hidden", flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 18, color: "var(--rpc-text-muted)" }}>
                           {r.thumbnail_url ? (
                             // eslint-disable-next-line @next/next/no-img-element
                             <img src={proxyIpfsImageUrl(r.thumbnail_url, 160) ?? undefined} alt="" width={52} height={52} style={{ objectFit: "cover", width: 52, height: 52 }} />

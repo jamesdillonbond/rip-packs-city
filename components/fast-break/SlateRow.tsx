@@ -93,7 +93,7 @@ function StatusBadge({ status }: { status: string }) {
   const s = status.toLowerCase()
   if (s === "live") {
     return (
-      <span style={{ ...BADGE_BASE, background: "rgba(224,58,47,0.16)", color: "var(--rpc-red)", border: "1px solid var(--rpc-red-border)" }}>
+      <span style={{ ...BADGE_BASE, background: "rgba(224,58,47,0.16)", color: "var(--rpc-red-text)", border: "1px solid var(--rpc-red-border)" }}>
         <span
           style={{
             width: 6,

@@ -100,7 +100,7 @@ export default function AccountValuePage() {
 const CSS = `
 .rpc-av-page { min-height: 100vh; background: var(--rpc-black); color: var(--rpc-text-primary); font-family: var(--font-body); padding: 48px 20px 80px; }
 .rpc-av-hero { max-width: 880px; margin: 0 auto 36px; padding-bottom: 28px; border-bottom: 1px solid var(--rpc-border-subtle); }
-.rpc-av-eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: 4px; text-transform: uppercase; color: var(--rpc-red); margin-bottom: 14px; }
+.rpc-av-eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: 4px; text-transform: uppercase; color: var(--rpc-red-text); margin-bottom: 14px; }
 .rpc-av-h1 { font-family: var(--font-display); font-weight: 800; font-size: clamp(38px, 6vw, 64px); line-height: 1; text-transform: uppercase; margin: 0 0 16px; letter-spacing: 0.5px; }
 .rpc-av-lede { font-size: 19px; line-height: 1.55; color: var(--rpc-text-secondary); max-width: 720px; margin: 0; }
 .rpc-av-trust { font-family: var(--font-mono); font-size: 11px; letter-spacing: 1px; text-transform: uppercase; color: var(--rpc-text-muted); margin-top: 14px; }
@@ -109,10 +109,10 @@ const CSS = `
 .rpc-av-h2 { font-family: var(--font-display); font-weight: 800; font-size: 24px; line-height: 1.1; text-transform: uppercase; letter-spacing: 0.5px; margin: 0 0 14px; }
 .rpc-av-list { margin: 0 0 12px; padding-left: 20px; }
 .rpc-av-list li { font-size: 15px; line-height: 1.7; color: var(--rpc-text-secondary); margin-bottom: 6px; }
-.rpc-av-link { color: var(--rpc-red); text-decoration: none; font-family: var(--font-mono); font-size: 13px; letter-spacing: 0.5px; }
+.rpc-av-link { color: var(--rpc-red-text); text-decoration: none; font-family: var(--font-mono); font-size: 13px; letter-spacing: 0.5px; }
 .rpc-av-colls { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
 .rpc-av-coll { font-family: var(--font-mono); font-size: 13px; color: var(--rpc-text-primary); text-decoration: none; border: 1px solid var(--rpc-border); border-radius: 4px; padding: 8px 14px; transition: border-color 120ms; }
-.rpc-av-coll:hover { border-color: var(--rpc-red); color: var(--rpc-red); }
+.rpc-av-coll:hover { border-color: var(--rpc-red); color: var(--rpc-red-text); }
 .rpc-av-footer { max-width: 880px; margin: 48px auto 0; padding-top: 24px; border-top: 1px solid var(--rpc-border-subtle); }
-.rpc-av-footer-link { font-family: var(--font-mono); font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-red); text-decoration: none; }
+.rpc-av-footer-link { font-family: var(--font-mono); font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-red-text); text-decoration: none; }
 `

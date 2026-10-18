@@ -359,25 +359,25 @@ export default function SpecialSerialOwnersClient() {
 const CSS = `
 .rpc-sso-main { max-width: 1180px; margin: 0 auto; padding: 24px 16px 96px; font-family: var(--font-body); }
 .rpc-sso-head { padding-bottom: 20px; border-bottom: 1px solid var(--rpc-border-subtle); margin-bottom: 22px; }
-.rpc-sso-eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: 4px; text-transform: uppercase; color: var(--rpc-red); margin-bottom: 10px; }
+.rpc-sso-eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: 4px; text-transform: uppercase; color: var(--rpc-red-text); margin-bottom: 10px; }
 .rpc-sso-title-row { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
 .rpc-sso-h1 { font-family: var(--font-display); font-weight: 800; font-size: clamp(32px, 5vw, 52px); letter-spacing: 0.5px; line-height: 1.04; margin: 0 0 12px; text-transform: uppercase; }
 .rpc-sso-back { font-family: var(--font-mono); font-size: 13px; color: var(--rpc-text-muted); text-decoration: none; }
-.rpc-sso-back:hover { color: var(--rpc-red); }
+.rpc-sso-back:hover { color: var(--rpc-red-text); }
 .rpc-sso-lede { font-size: 16px; line-height: 1.55; color: var(--rpc-text-secondary); max-width: 820px; margin: 0; }
 .rpc-sso-lede strong { color: var(--rpc-text-primary); }
 
 .rpc-sso-kpi-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 24px; }
 .rpc-sso-kpi { border: 1px solid var(--rpc-border-subtle); background: var(--rpc-surface-raised); padding: 14px 16px; border-radius: 2px; }
 .rpc-sso-kpi-label { font-family: var(--font-mono); font-size: 10px; letter-spacing: 2.5px; text-transform: uppercase; color: var(--rpc-text-muted); margin-bottom: 6px; }
-.rpc-sso-kpi-value { font-family: var(--font-display); font-weight: 800; font-size: 30px; color: var(--rpc-red); letter-spacing: 0.5px; }
+.rpc-sso-kpi-value { font-family: var(--font-display); font-weight: 800; font-size: 30px; color: var(--rpc-red-text); letter-spacing: 0.5px; }
 
 .rpc-sso-controls { display: flex; flex-wrap: wrap; gap: 14px 22px; align-items: center; margin-bottom: 20px; }
 .rpc-sso-pill-group { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .rpc-sso-pill-label { font-family: var(--font-mono); font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-muted); margin-right: 4px; }
 .rpc-sso-pill { font-family: var(--font-mono); font-size: 12px; letter-spacing: 1.5px; text-transform: uppercase; padding: 7px 14px; border: 1px solid var(--rpc-border); background: transparent; color: var(--rpc-text-secondary); cursor: pointer; border-radius: 2px; transition: border-color 120ms, color 120ms, background 120ms; }
 .rpc-sso-pill:hover { border-color: var(--rpc-border-hover); color: var(--rpc-text-primary); }
-.rpc-sso-pill-active { background: var(--rpc-red-bg); border-color: var(--rpc-red); color: var(--rpc-red); }
+.rpc-sso-pill-active { background: var(--rpc-red-bg); border-color: var(--rpc-red); color: var(--rpc-red-text); }
 .rpc-sso-search, .rpc-sso-sort { display: inline-flex; align-items: center; gap: 8px; }
 .rpc-sso-input { font-family: var(--font-mono); font-size: 12px; background: transparent; border: 1px solid var(--rpc-border); color: var(--rpc-text-primary); padding: 7px 10px; border-radius: 2px; min-width: 160px; }
 .rpc-sso-select { font-family: var(--font-mono); font-size: 12px; letter-spacing: 1px; background: transparent; border: 1px solid var(--rpc-border); color: var(--rpc-text-primary); padding: 7px 10px; border-radius: 2px; cursor: pointer; }
@@ -393,15 +393,15 @@ const CSS = `
 .rpc-sso-img-fallback { width: 100%; height: 100%; background: linear-gradient(135deg, var(--rpc-surface-raised), var(--rpc-surface)); }
 .rpc-sso-row-main { min-width: 0; }
 .rpc-sso-row-name { display: block; font-family: var(--font-body); font-weight: 700; font-size: 15px; line-height: 1.2; color: var(--rpc-text-primary); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-a.rpc-sso-row-name:hover { color: var(--rpc-red); }
+a.rpc-sso-row-name:hover { color: var(--rpc-red-text); }
 .rpc-sso-row-sub { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.5px; color: var(--rpc-text-muted); display: flex; flex-wrap: wrap; gap: 6px; margin-top: 3px; }
-.rpc-sso-dot { color: var(--rpc-text-ghost); }
-.rpc-sso-tag { color: var(--rpc-red); }
+.rpc-sso-dot { color: var(--rpc-text-muted); }
+.rpc-sso-tag { color: var(--rpc-red-text); }
 .rpc-sso-row-holder, .rpc-sso-row-fmv { min-width: 0; }
 .rpc-sso-holder-label, .rpc-sso-fmv-label { font-family: var(--font-mono); font-size: 9px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-muted); margin-bottom: 4px; }
 .rpc-sso-holder-link { font-family: var(--font-mono); font-size: 13px; color: var(--rpc-text-secondary); text-decoration: none; }
-.rpc-sso-holder-link:hover { color: var(--rpc-red); }
-.rpc-sso-holder-none { font-family: var(--font-mono); font-size: 13px; color: var(--rpc-text-ghost); }
+.rpc-sso-holder-link:hover { color: var(--rpc-red-text); }
+.rpc-sso-holder-none { font-family: var(--font-mono); font-size: 13px; color: var(--rpc-text-muted); }
 .rpc-sso-fmv-value { font-family: var(--font-display); font-weight: 800; font-size: 20px; color: var(--rpc-text-primary); letter-spacing: 0.5px; }
 
 .rpc-sso-footer { margin-top: 40px; padding-top: 24px; border-top: 1px solid var(--rpc-border-subtle); }

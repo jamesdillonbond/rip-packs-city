@@ -228,7 +228,7 @@ export default function ProfileHeaderPreview({
             fontFamily: MONO,
             fontSize: 8,
             letterSpacing: "0.15em",
-            color: "var(--rpc-text-ghost)",
+            color: "var(--rpc-text-muted)",
             marginTop: 8,
           }}
         >

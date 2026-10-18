@@ -570,7 +570,7 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
               <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 24, color: "var(--rpc-text-primary)", lineHeight: 1.1 }}>
                 {hasWallet ? `${fmtCount(header.owned)} / ${fmtCount(header.total)}` : `${fmtCount(header.total)} ${unit}`}
                 {hasWallet && (
-                  <span className="rpc-mono" style={{ fontSize: 13, color: "var(--rpc-red)", marginLeft: 8 }}>{pct}%</span>
+                  <span className="rpc-mono" style={{ fontSize: 13, color: "var(--rpc-red-text)", marginLeft: 8 }}>{pct}%</span>
                 )}
               </div>
               {hasWallet && hasLocking && header.locked_owned != null && (
@@ -653,7 +653,7 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
                   <>
                     <span>Excluding {hiddenLabel.join(", ")} from the totals above.</span>
                     <button type="button" className="rpc-mono" onClick={showAllTiers}
-                      style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontSize: 10, color: "var(--rpc-red)" }}>
+                      style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontSize: 10, color: "var(--rpc-red-text)" }}>
                       Show all tiers
                     </button>
                   </>
@@ -704,7 +704,7 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
             <button type="button" className="rpc-btn-ghost" onClick={clearWallet}>{ownWallet ? "Back to my wallet" : "Clear"}</button>
           </div>
         )}
-        {walletError && <div className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-red)", marginTop: 6 }}>{walletError}</div>}
+        {walletError && <div className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-red-text)", marginTop: 6 }}>{walletError}</div>}
         {indexing && (
           <div className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-muted)", marginTop: 8 }}>
             Indexing your collection — check back shortly. This can take a minute on first paste.
@@ -750,7 +750,7 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
           {!shownExhausted && (
             <div style={{ marginTop: 14, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
               {pageFailed && (
-                <div className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-red)" }}>
+                <div className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-red-text)" }}>
                   Couldn&apos;t load more — this list is incomplete. Try again.
                 </div>
               )}
@@ -862,7 +862,7 @@ function ChecklistCard({ collectionUrlSlug, e, hasWallet, eager }: { collectionU
             style={{ width: "100%", height: "100%", objectFit: "cover", display: "block", filter: dim ? "grayscale(0.35)" : undefined }}
           />
         ) : (
-          <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--rpc-text-ghost)", fontFamily: "var(--font-mono)", fontSize: 10 }}>No image</div>
+          <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 10 }}>No image</div>
         )}
         {/* ownership badge — tri-state (green=owned+locked, white=owned, gray=missing) */}
         {hasWallet && (

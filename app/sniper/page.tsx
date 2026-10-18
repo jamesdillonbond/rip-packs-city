@@ -153,7 +153,7 @@ export default async function SniperHubPage() {
                       </span>
                     </span>
                     <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2, flexShrink: 0 }}>
-                      <span style={{ fontWeight: 800, color: "var(--rpc-red)", fontSize: 14 }}>
+                      <span style={{ fontWeight: 800, color: "var(--rpc-red-text)", fontSize: 14 }}>
                         −{Math.round(r.discount_pct ?? 0)}%
                       </span>
                       <span className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-secondary)" }}>

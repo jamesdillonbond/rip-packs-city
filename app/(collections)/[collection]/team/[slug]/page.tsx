@@ -281,7 +281,7 @@ export default async function TeamPage(props: { params: Promise<{ collection: st
           <Link
             href={franchiseHubPath(detail.league, detail.team_short_slug)}
             className="rpc-mono"
-            style={{ fontSize: 12, color: "var(--rpc-red)", letterSpacing: "0.04em", textDecoration: "none" }}
+            style={{ fontSize: 12, color: "var(--rpc-red-text)", letterSpacing: "0.04em", textDecoration: "none" }}
           >
             {detail.team_name} across every collection →
           </Link>
@@ -408,7 +408,7 @@ function TeamUnavailable({ collection, slug }: { collection: string; slug: strin
       </p>
       <a
         href={`/${collection}/overview`}
-        style={{ marginTop: 8, padding: "10px 18px", border: "1px solid var(--rpc-red-border)", color: "var(--rpc-red)", background: "transparent", fontFamily: "var(--font-mono)", letterSpacing: "0.2em", textTransform: "uppercase", fontSize: 12, textDecoration: "none" }}
+        style={{ marginTop: 8, padding: "10px 18px", border: "1px solid var(--rpc-red-border)", color: "var(--rpc-red-text)", background: "transparent", fontFamily: "var(--font-mono)", letterSpacing: "0.2em", textTransform: "uppercase", fontSize: 12, textDecoration: "none" }}
       >
         Back to overview
       </a>

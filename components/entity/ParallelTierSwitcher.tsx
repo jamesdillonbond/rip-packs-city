@@ -55,7 +55,7 @@ const PILL_BASE: React.CSSProperties = {
 
 const PILL_ACTIVE: React.CSSProperties = {
   ...PILL_BASE,
-  color: "var(--rpc-red)",
+  color: "var(--rpc-red-text)",
   borderColor: "var(--rpc-red-border, var(--rpc-red))",
   background: "var(--rpc-red-bg, rgba(224,58,47,0.08))",
 }
@@ -72,7 +72,7 @@ function circ(n: number | null): React.ReactNode {
 function premiumChip(mult: number | null): React.ReactNode {
   if (!isPremiumShown(mult)) return null
   return (
-    <span className="rpc-mono" style={{ fontSize: 10, fontWeight: 700, color: "var(--rpc-red)", opacity: 0.9 }}>
+    <span className="rpc-mono" style={{ fontSize: 10, fontWeight: 700, color: "var(--rpc-red-text)", opacity: 0.9 }}>
       {fmtMult(mult)}
     </span>
   )

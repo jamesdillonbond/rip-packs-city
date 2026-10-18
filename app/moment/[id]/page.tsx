@@ -1023,9 +1023,9 @@ export default async function MomentPage(
                   <span title={bestOfferUpdatedAt ? fmtAbsDate(bestOfferUpdatedAt) : undefined}>
                     {fmtUsd(bestOfferAmount)}
                     {bestOfferGrain === "serial" ? (
-                      <span style={{ color: "var(--rpc-red)" }}> · serial</span>
+                      <span style={{ color: "var(--rpc-red-text)" }}> · serial</span>
                     ) : bestOfferGrain === "parallel" ? (
-                      <span style={{ color: "var(--rpc-red)" }}> · this printing</span>
+                      <span style={{ color: "var(--rpc-red-text)" }}> · this printing</span>
                     ) : null}
                     {bestOfferUpdatedAt ? (
                       <span style={{ color: "var(--rpc-text-muted)" }}> · {fmtRelDate(bestOfferUpdatedAt)}</span>
@@ -1188,7 +1188,7 @@ export default async function MomentPage(
                 gap: 8,
                 padding: "12px 20px",
                 background: "transparent",
-                color: "var(--rpc-red)",
+                color: "var(--rpc-red-text)",
                 border: "1px solid var(--rpc-red)",
                 borderRadius: 8,
                 textDecoration: "none",
@@ -1225,7 +1225,7 @@ export default async function MomentPage(
                 gap: 8,
                 padding: "12px 20px",
                 background: "transparent",
-                color: "var(--rpc-red)",
+                color: "var(--rpc-red-text)",
                 border: "1px solid var(--rpc-red)",
                 borderRadius: 8,
                 textDecoration: "none",
@@ -1415,7 +1415,7 @@ export default async function MomentPage(
                     >
                       <Td>
                         #{n.serial}
-                        {isThisSerial ? <span style={{ color: "var(--rpc-red)", marginLeft: 6 }}>●</span> : null}
+                        {isThisSerial ? <span style={{ color: "var(--rpc-red-text)", marginLeft: 6 }}>●</span> : null}
                       </Td>
                       <Td>
                         <span style={{ color: accent ? "var(--rpc-red)" : "var(--rpc-text-primary)", display: "inline-flex", alignItems: "center", gap: 4 }}>
@@ -1494,7 +1494,7 @@ export default async function MomentPage(
                   >
                     <Td>
                       {s.serial_number != null && s.serial_number > 0 ? `#${s.serial_number}` : "—"}
-                      {isThisSerial ? <span style={{ color: "var(--rpc-red)", marginLeft: 6 }}>●</span> : null}
+                      {isThisSerial ? <span style={{ color: "var(--rpc-red-text)", marginLeft: 6 }}>●</span> : null}
                     </Td>
                     {hasParallelCol ? (
                       <Td>

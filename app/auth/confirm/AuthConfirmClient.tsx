@@ -185,7 +185,7 @@ export default function AuthConfirmClient() {
             animation: "rpc-spin 0.9s linear infinite",
           }}
         />
-        <p style={{ margin: 0, color: "var(--rpc-red)", fontWeight: 600, letterSpacing: "0.02em" }}>
+        <p style={{ margin: 0, color: "var(--rpc-red-text)", fontWeight: 600, letterSpacing: "0.02em" }}>
           {message}
         </p>
         <style>{`@keyframes rpc-spin { to { transform: rotate(360deg); } }`}</style>

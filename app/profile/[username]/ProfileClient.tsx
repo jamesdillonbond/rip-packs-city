@@ -518,7 +518,7 @@ export default function ProfileClient(props: {
               <span style={{ fontSize: 10, fontFamily: monoFont, color: "var(--rpc-text-secondary)", letterSpacing: "0.06em" }}>
                 {bio.favorite_team}
               </span>
-              <span style={{ fontSize: 8, fontFamily: monoFont, color: "var(--rpc-text-ghost)", letterSpacing: "0.1em", padding: "1px 6px", border: "1px solid var(--rpc-border)", borderRadius: 999 }}>
+              <span style={{ fontSize: 8, fontFamily: monoFont, color: "var(--rpc-text-muted)", letterSpacing: "0.1em", padding: "1px 6px", border: "1px solid var(--rpc-border)", borderRadius: 999 }}>
                 LEGACY
               </span>
             </div>
@@ -613,7 +613,7 @@ export default function ProfileClient(props: {
               <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: accentColor, opacity: 0.7 }} />
               <div style={labelStyle}>RPC SCORE</div>
               <div style={{ fontFamily: condensedFont, fontWeight: 900, fontSize: 28, color: scoreColor(rpcScore), lineHeight: 1, margin: "8px 0 4px" }}>{rpcScore}</div>
-              <div style={{ fontSize: 8, fontFamily: monoFont, color: "var(--rpc-text-ghost)", letterSpacing: "0.1em" }}>POWERED BY TOP SHOT SCORE</div>
+              <div style={{ fontSize: 8, fontFamily: monoFont, color: "var(--rpc-text-muted)", letterSpacing: "0.1em" }}>POWERED BY TOP SHOT SCORE</div>
             </div>
           )}
           {/* Portfolio FMV */}
@@ -623,7 +623,7 @@ export default function ProfileClient(props: {
               {totalFmv > 0 ? fmtDollars(totalFmv) : "—"}
             </div>
             {staleFmv > 0 && (
-              <div style={{ fontSize: 8, fontFamily: monoFont, color: "var(--rpc-text-ghost)", letterSpacing: "0.08em", marginBottom: 4 }}>
+              <div style={{ fontSize: 8, fontFamily: monoFont, color: "var(--rpc-text-muted)", letterSpacing: "0.08em", marginBottom: 4 }}>
                 + {fmtDollars(staleFmv)} across {staleCount.toLocaleString()} stale-priced
               </div>
             )}
@@ -654,7 +654,7 @@ export default function ProfileClient(props: {
                 cannot stand behind. (The FMV and moment totals above are sums
                 across those same rows, so they were correct all along.) */}
             {walletCount != null && (
-              <div style={{ fontSize: 8, fontFamily: monoFont, color: "var(--rpc-text-ghost)", letterSpacing: "0.1em" }}>
+              <div style={{ fontSize: 8, fontFamily: monoFont, color: "var(--rpc-text-muted)", letterSpacing: "0.1em" }}>
                 {walletCount} WALLET{walletCount !== 1 ? "S" : ""}
               </div>
             )}
@@ -824,7 +824,7 @@ export default function ProfileClient(props: {
                         <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 14, color: rowClosed ? "var(--rpc-text-secondary)" : "var(--rpc-text-primary)" }}>
                           {rowClosed ? "market closed" : fmtDollars(rowFmv)}
                         </div>
-                        <div style={{ fontSize: 8, fontFamily: monoFont, color: "var(--rpc-text-ghost)" }}>
+                        <div style={{ fontSize: 8, fontFamily: monoFont, color: "var(--rpc-text-muted)" }}>
                           {w.cached_moment_count != null ? `${w.cached_moment_count.toLocaleString("en-US")} MOMENTS` : "— MOMENTS"}
                           <CacheAgeCaption iso={w.cache_updated_at} />
                         </div>
@@ -851,7 +851,7 @@ export default function ProfileClient(props: {
           <div style={Object.assign({}, labelStyle, { marginBottom: 12 })}>TOOLS</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 10 }}>
             {[
-              { label: "Binder", icon: "◈", href: "/nba-top-shot/collection", color: "var(--rpc-red)" },
+              { label: "Binder", icon: "◈", href: "/nba-top-shot/collection", color: "var(--rpc-red-text)" },
               { label: "Pack EV", icon: "▣", href: "/nba-top-shot/packs", color: "#F59E0B" },
               { label: "Sniper", icon: "⚡", href: "/nba-top-shot/sniper", color: "#34D399" },
               { label: "Sets", icon: "◉", href: "/nba-top-shot/sets", color: "#F472B6" },
@@ -871,7 +871,7 @@ export default function ProfileClient(props: {
 
         {/* ── CTA Footer ── */}
         <div style={{ textAlign: "center", paddingTop: 32, borderTop: "1px solid var(--rpc-border)" }}>
-          <div style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-ghost)", letterSpacing: "0.15em", marginBottom: 12 }}>POWERED BY RIP PACKS CITY</div>
+          <div style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-muted)", letterSpacing: "0.15em", marginBottom: 12 }}>POWERED BY RIP PACKS CITY</div>
           <Link href="/dashboard" className="rpc-btn-primary" style={{ textDecoration: "none", display: "inline-block", fontSize: 13, padding: "10px 24px", background: accentColor, borderColor: accentColor }}>
             BUILD YOUR OWN PROFILE →
           </Link>

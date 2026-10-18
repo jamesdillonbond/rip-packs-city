@@ -65,7 +65,7 @@ function CapCell({ r }: { r: MarketCapRow }) {
       <span>
         <span className="rpc-mono" style={{ fontSize: 12, color: "var(--rpc-text-muted)" }}>Unknown</span>
         {r.mcap_minted_usd != null && (
-          <span className="rpc-mono" style={{ display: "block", fontSize: 10, color: "var(--rpc-text-ghost)" }}>
+          <span className="rpc-mono" style={{ display: "block", fontSize: 10, color: "var(--rpc-text-muted)" }}>
             ≤ {fmtUsdCompact(r.mcap_minted_usd)} on minted supply
           </span>
         )}
@@ -84,7 +84,7 @@ function Coverage({ r }: { r: MarketCapRow }) {
   return (
     <span title="Editions with a known burned / issuer-held split, of all editions in the group">
       {fmtCount(r.editions_supply_known)}
-      <span style={{ color: "var(--rpc-text-ghost)" }}> / {fmtCount(r.editions)}</span>
+      <span style={{ color: "var(--rpc-text-muted)" }}> / {fmtCount(r.editions)}</span>
     </span>
   )
 }
@@ -223,7 +223,7 @@ export default function MarketCapBoardClient({
 
   return (
     <div style={{ maxWidth: 1100, margin: "0 auto", padding: "24px 16px 60px" }}>
-      <div className="rpc-mono" style={{ fontSize: 11, letterSpacing: "0.22em", color: "var(--rpc-red)", textTransform: "uppercase" }}>
+      <div className="rpc-mono" style={{ fontSize: 11, letterSpacing: "0.22em", color: "var(--rpc-red-text)", textTransform: "uppercase" }}>
         Rip Packs City · Insights
       </div>
       <h1 style={{ margin: "10px 0 0", fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 40, letterSpacing: "0.03em", color: "var(--rpc-text-primary)", textTransform: "uppercase", lineHeight: 1.03 }}>

@@ -37,7 +37,7 @@ export default function DegradedDataNotice({ summary }: { summary: DegradedSumma
           font-size: 11px;
           letter-spacing: 2px;
           text-transform: uppercase;
-          color: var(--rpc-red);
+          color: var(--rpc-red-text);
           white-space: nowrap;
         }
         .rpc-ins-degraded-copy {

@@ -71,7 +71,7 @@ export default function IpfsThumb({
       ) : (
         <span
           style={{
-            color: "var(--rpc-text-ghost)",
+            color: "var(--rpc-text-muted)",
             fontFamily: "var(--font-mono)",
             fontSize: 10,
             letterSpacing: "0.06em",

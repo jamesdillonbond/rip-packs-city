@@ -39,7 +39,7 @@ export default function OwnWalletLink({
         marginTop: 12,
         fontFamily: "var(--font-mono)",
         fontSize: 12,
-        color: "var(--rpc-red)",
+        color: "var(--rpc-red-text)",
         textDecoration: "none",
       }}
     >

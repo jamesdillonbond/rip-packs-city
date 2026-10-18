@@ -43,7 +43,7 @@ export default function AnalyticsBreadcrumb() {
         const last = i === crumbs.length - 1
         return (
           <span key={c.href} className="flex items-center gap-1">
-            {i > 0 ? <ChevronRight size={12} className="text-[color:var(--rpc-text-ghost)]" /> : null}
+            {i > 0 ? <ChevronRight size={12} className="text-[color:var(--rpc-text-muted)]" /> : null}
             {last ? (
               <span className="text-[color:var(--rpc-text-primary)]">{c.label}</span>
             ) : (

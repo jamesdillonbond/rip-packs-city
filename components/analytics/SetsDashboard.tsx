@@ -748,7 +748,7 @@ export default function SetsDashboard() {
           <TimerReset size={12} />
           FMV refresh every ~10 min · catalog daily
         </span>
-        <span className="text-[color:var(--rpc-text-ghost)]">·</span>
+        <span className="text-[color:var(--rpc-text-muted)]">·</span>
         <Link
           href="/analytics/methodology/sets"
           className="hover:text-violet-400 transition-colors inline-flex items-center gap-1"
@@ -758,7 +758,7 @@ export default function SetsDashboard() {
         </Link>
         {summary?.as_of ? (
           <>
-            <span className="text-[color:var(--rpc-text-ghost)]">·</span>
+            <span className="text-[color:var(--rpc-text-muted)]">·</span>
             <span>As of {new Date(summary.as_of).toLocaleString()}</span>
           </>
         ) : null}

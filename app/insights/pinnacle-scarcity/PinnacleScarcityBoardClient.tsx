@@ -299,13 +299,13 @@ const styles: Record<string, React.CSSProperties> = {
 
 const CSS = `
 .rpc-ps-hero { max-width: 1180px; margin: 0 auto 28px; padding-bottom: 24px; border-bottom: 1px solid var(--rpc-border-subtle); }
-.rpc-ps-eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: 4px; text-transform: uppercase; color: var(--rpc-red); margin-bottom: 12px; }
+.rpc-ps-eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: 4px; text-transform: uppercase; color: var(--rpc-red-text); margin-bottom: 12px; }
 .rpc-ps-h1 { font-family: var(--font-display); font-weight: 800; font-size: clamp(38px, 6vw, 64px); letter-spacing: 0.5px; line-height: 1.02; margin: 0 0 14px; text-transform: uppercase; }
 .rpc-ps-h3 { font-family: var(--font-display); font-weight: 800; font-size: 22px; letter-spacing: 1px; text-transform: uppercase; margin: 0 0 10px; }
 .rpc-ps-lede { font-size: 18px; line-height: 1.55; color: var(--rpc-text-secondary); max-width: 820px; margin: 0 0 16px; }
 .rpc-ps-lede strong { color: var(--rpc-text-primary); }
 .rpc-ps-meta-row { font-family: var(--font-mono); font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-muted); }
-.rpc-ps-meta-sep { margin: 0 8px; color: var(--rpc-text-ghost); }
+.rpc-ps-meta-sep { margin: 0 8px; color: var(--rpc-text-muted); }
 
 .rpc-ps-callout { max-width: 1180px; margin: 0 auto 18px; }
 .rpc-ps-callout-line {
@@ -332,7 +332,7 @@ const CSS = `
 .rpc-ps-pill-label { font-family: var(--font-mono); font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-muted); margin-right: 4px; }
 .rpc-ps-pill { font-family: var(--font-mono); font-size: 12px; letter-spacing: 1.5px; text-transform: uppercase; padding: 7px 14px; border: 1px solid var(--rpc-border); background: transparent; color: var(--rpc-text-secondary); cursor: pointer; border-radius: 2px; }
 .rpc-ps-pill:hover { border-color: var(--rpc-border-hover); color: var(--rpc-text-primary); }
-.rpc-ps-pill-active { background: var(--rpc-red-bg); border-color: var(--rpc-red); color: var(--rpc-red); }
+.rpc-ps-pill-active { background: var(--rpc-red-bg); border-color: var(--rpc-red); color: var(--rpc-red-text); }
 .rpc-ps-check { display: inline-flex; align-items: center; gap: 8px; font-family: var(--font-mono); font-size: 12px; letter-spacing: 1px; color: var(--rpc-text-secondary); cursor: pointer; }
 .rpc-ps-check input { accent-color: var(--rpc-red); }
 .rpc-ps-sort { display: inline-flex; align-items: center; gap: 8px; }
@@ -343,16 +343,16 @@ const CSS = `
 .rpc-ps-table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .rpc-ps-table th { font-family: var(--font-mono); font-size: 10px; letter-spacing: 2.5px; text-transform: uppercase; color: var(--rpc-text-muted); text-align: left; padding: 12px; border-bottom: 1px solid var(--rpc-border-subtle); background: var(--rpc-surface-raised); white-space: nowrap; }
 .rpc-ps-th-num { text-align: right; }
-.rpc-ps-th-emph { color: var(--rpc-red); }
+.rpc-ps-th-emph { color: var(--rpc-red-text); }
 .rpc-ps-table td { padding: 12px; border-bottom: 1px solid var(--rpc-border-subtle); vertical-align: middle; }
 .rpc-ps-td-edition { min-width: 280px; }
 .rpc-ps-edition-link { text-decoration: none; color: inherit; display: block; }
-.rpc-ps-edition-link:hover .rpc-ps-edition-name { color: var(--rpc-red); }
+.rpc-ps-edition-link:hover .rpc-ps-edition-name { color: var(--rpc-red-text); }
 .rpc-ps-edition-name { font-weight: 700; font-size: 15px; color: var(--rpc-text-primary); display: flex; align-items: center; gap: 8px; transition: color 100ms; }
 .rpc-ps-edition-set { font-family: var(--font-mono); font-size: 11px; color: var(--rpc-text-muted); letter-spacing: 1px; margin-top: 2px; }
 .rpc-ps-td-num { text-align: right; font-family: var(--font-mono); color: var(--rpc-text-primary); white-space: nowrap; }
-.rpc-ps-td-emph { color: var(--rpc-red); font-weight: 700; }
-.rpc-ps-chaser-chip { font-family: var(--font-mono); font-size: 9px; letter-spacing: 1.5px; padding: 2px 6px; background: var(--rpc-red-bg); color: var(--rpc-red); border: 1px solid var(--rpc-red-border); border-radius: 2px; }
+.rpc-ps-td-emph { color: var(--rpc-red-text); font-weight: 700; }
+.rpc-ps-chaser-chip { font-family: var(--font-mono); font-size: 9px; letter-spacing: 1.5px; padding: 2px 6px; background: var(--rpc-red-bg); color: var(--rpc-red-text); border: 1px solid var(--rpc-red-border); border-radius: 2px; }
 
 .rpc-ps-footer { max-width: 1180px; margin: 36px auto 0; display: grid; grid-template-columns: 2fr 1fr; gap: 32px; }
 .rpc-ps-method p { font-size: 14px; line-height: 1.65; color: var(--rpc-text-secondary); margin: 0 0 12px; }
@@ -362,7 +362,7 @@ const CSS = `
 .rpc-ps-share-btn { display: inline-flex; align-items: center; justify-content: center; background: var(--rpc-red); color: #fff; font-family: var(--font-mono); font-size: 12px; letter-spacing: 2.5px; text-transform: uppercase; padding: 13px 18px; border-radius: 2px; text-decoration: none; }
 .rpc-ps-share-btn:hover { background: var(--rpc-red-hover); }
 .rpc-ps-back { font-family: var(--font-mono); font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-secondary); text-decoration: none; padding: 10px; text-align: center; }
-.rpc-ps-back:hover { color: var(--rpc-red); }
+.rpc-ps-back:hover { color: var(--rpc-red-text); }
 
 @media (max-width: 760px) { .rpc-ps-footer { grid-template-columns: 1fr; } }
 `

@@ -549,7 +549,7 @@ export default function LoansDashboard({
           <Activity size={12} className="text-emerald-500" />
           {loading ? "Refreshing…" : refreshedAt ? `Refreshed ${new Date(refreshedAt).toLocaleTimeString()}` : "Idle"}
         </span>
-        <span className="text-[color:var(--rpc-text-ghost)]">·</span>
+        <span className="text-[color:var(--rpc-text-muted)]">·</span>
         <a
           href="/analytics/methodology/loans"
           className="hover:text-emerald-400 transition-colors inline-flex items-center gap-1"
@@ -557,12 +557,12 @@ export default function LoansDashboard({
           <Percent size={12} />
           Methodology
         </a>
-        <span className="text-[color:var(--rpc-text-ghost)]">·</span>
+        <span className="text-[color:var(--rpc-text-muted)]">·</span>
         <span className="inline-flex items-center gap-1.5">
           <CircleDollarSign size={12} />
           USD-pegged token volumes (USDCf, USDC, FUSD, TUSDT, Dapper dollars)
         </span>
-        <span className="text-[color:var(--rpc-text-ghost)]">·</span>
+        <span className="text-[color:var(--rpc-text-muted)]">·</span>
         <span className="inline-flex items-center gap-1.5">
           <TimerReset size={12} />
           10-min refresh

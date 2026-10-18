@@ -20,7 +20,7 @@ export default async function CollectionLayout(props: any) {
         @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.35}}
         @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
         @keyframes rpc-spin{to{transform:rotate(360deg)}}
-        input::placeholder{color:var(--rpc-text-ghost)!important;}
+        input::placeholder{color:var(--rpc-text-muted)!important;}
         ::-webkit-scrollbar{width:4px}
         ::-webkit-scrollbar-track{background:var(--rpc-surface)}
         ::-webkit-scrollbar-thumb{background:rgba(224,58,47,0.3);border-radius:2px}

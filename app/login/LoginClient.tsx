@@ -93,7 +93,7 @@ export default function LoginClient() {
            rendered as 0 on every page under it. Tailwind preflight already carries the same reset
            in @layer base; this keeps the declaration where it was, in the layer it must be in. */
         @layer base{*{box-sizing:border-box;margin:0;padding:0;}}
-        input::placeholder{color:var(--rpc-text-ghost);}
+        input::placeholder{color:var(--rpc-text-muted);}
       `}</style>
 
       <div className="rpc-live-pill" style={{ marginBottom: 24 }}>RIP PACKS CITY · SIGN IN</div>
@@ -114,7 +114,7 @@ export default function LoginClient() {
           </div>
           <div style={{
             fontSize: 10, fontFamily: "var(--font-mono)",
-            color: "var(--rpc-text-ghost)", letterSpacing: "0.2em",
+            color: "var(--rpc-text-muted)", letterSpacing: "0.2em",
             marginTop: 6, textTransform: "uppercase",
           }}>
             Collector Intelligence {"·"} Flow + Solana
@@ -209,7 +209,7 @@ export default function LoginClient() {
                   fontSize: 13,
                   letterSpacing: "0.08em",
                   textTransform: "uppercase",
-                  color: "var(--rpc-red)",
+                  color: "var(--rpc-red-text)",
                   marginBottom: 6,
                 }}>
                   Access unavailable
@@ -307,7 +307,7 @@ export default function LoginClient() {
               marginTop: 18,
               fontFamily: "var(--font-mono)",
               fontSize: 10,
-              color: "var(--rpc-text-ghost)",
+              color: "var(--rpc-text-muted)",
               letterSpacing: "0.08em",
               textTransform: "uppercase",
             }}>
@@ -323,7 +323,7 @@ export default function LoginClient() {
           marginTop: 28, paddingTop: 18,
           borderTop: "1px solid var(--rpc-border)",
           fontFamily: "var(--font-mono)", fontSize: 9,
-          color: "var(--rpc-text-ghost)",
+          color: "var(--rpc-text-muted)",
           letterSpacing: "0.15em", textTransform: "uppercase",
           lineHeight: 1.8,
         }}>
@@ -363,7 +363,7 @@ export default function LoginClient() {
 
       <div style={{
         marginTop: 24, fontFamily: "var(--font-mono)",
-        fontSize: 10, color: "var(--rpc-text-ghost)",
+        fontSize: 10, color: "var(--rpc-text-muted)",
         letterSpacing: "0.15em",
       }}>
         {/* 2026-09-24: read from the registry — the typed list had dropped Candy MLB. */}

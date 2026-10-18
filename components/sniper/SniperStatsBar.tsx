@@ -45,7 +45,7 @@ export default function SniperStatsBar(props: {
         )}
         <span>avg <span style={{ color: "var(--rpc-text-primary)", fontWeight: 600 }}>{fmt(stats.avgDiscount, 1)}%</span> off</span>
         {!isAllDay && ownedCount > 0 && (
-          <span style={{ color: "var(--rpc-text-ghost)" }}>{ownedCount} owned editions tracked</span>
+          <span style={{ color: "var(--rpc-text-muted)" }}>{ownedCount} owned editions tracked</span>
         )}
         {lastRefreshed && (
           <span className="ml-auto">

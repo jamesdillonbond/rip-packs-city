@@ -37,7 +37,7 @@ export default function MethodologyIndexPage() {
               <h2 className="font-semibold text-[color:var(--rpc-text-primary)]">{m.title}</h2>
               <ArrowUpRight
                 size={14}
-                className="text-[color:var(--rpc-text-ghost)] group-hover:text-emerald-400 transition-colors mt-1"
+                className="text-[color:var(--rpc-text-muted)] group-hover:text-emerald-400 transition-colors mt-1"
               />
             </div>
             <p className="text-sm text-[color:var(--rpc-text-secondary)] leading-relaxed mb-3">{m.blurb}</p>

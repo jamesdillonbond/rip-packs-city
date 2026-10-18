@@ -333,7 +333,7 @@ export default function SalesDashboard({
           <Activity size={12} className="text-emerald-500" />
           {loading ? "Refreshing…" : refreshedAt ? `Refreshed ${new Date(refreshedAt).toLocaleTimeString()}` : "Idle"}
         </span>
-        <span className="text-[color:var(--rpc-text-ghost)]">·</span>
+        <span className="text-[color:var(--rpc-text-muted)]">·</span>
         <a
           href="/analytics/methodology/sales"
           className="hover:text-emerald-400 transition-colors inline-flex items-center gap-1"
@@ -341,12 +341,12 @@ export default function SalesDashboard({
           <BarChart3 size={12} />
           Methodology
         </a>
-        <span className="text-[color:var(--rpc-text-ghost)]">·</span>
+        <span className="text-[color:var(--rpc-text-muted)]">·</span>
         <span className="inline-flex items-center gap-1.5">
           <CircleDollarSign size={12} />
           USD-pegged token volumes
         </span>
-        <span className="text-[color:var(--rpc-text-ghost)]">·</span>
+        <span className="text-[color:var(--rpc-text-muted)]">·</span>
         <span className="inline-flex items-center gap-1.5">
           <TimerReset size={12} />
           10-min refresh

@@ -246,7 +246,7 @@ function Who({ email, internal }: { email: string | null; internal: string | nul
   return (
     <span>
       {email ?? "(no email)"}
-      {internal && <span style={{ marginLeft: 6, color: "var(--rpc-red)", fontSize: 10, textTransform: "uppercase" }}>internal · {internal}</span>}
+      {internal && <span style={{ marginLeft: 6, color: "var(--rpc-red-text)", fontSize: 10, textTransform: "uppercase" }}>internal · {internal}</span>}
     </span>
   );
 }

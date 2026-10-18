@@ -380,7 +380,7 @@ function SlabNote({ note }: { note: string }) {
       <span
         aria-hidden
         className="rpc-slab-note"
-        style={{ fontSize: 9, lineHeight: 1.35, color: "var(--rpc-text-ghost)", flexShrink: 0 }}
+        style={{ fontSize: 9, lineHeight: 1.35, color: "var(--rpc-text-muted)", flexShrink: 0 }}
       >
         &ldquo;
       </span>
@@ -898,7 +898,7 @@ function SlabFooter({ slab }: { slab: TrophySlabData }) {
           style={{
             fontFamily: "var(--font-mono)",
             fontSize: 6,
-            color: "var(--rpc-text-ghost)",
+            color: "var(--rpc-text-muted)",
             letterSpacing: "0.15em",
           }}
         >
@@ -963,7 +963,7 @@ function SlabFooter({ slab }: { slab: TrophySlabData }) {
                 style={{
                   fontFamily: "var(--font-mono)",
                   fontSize: 6,
-                  color: "var(--rpc-text-ghost)",
+                  color: "var(--rpc-text-muted)",
                   letterSpacing: "0.15em",
                 }}
               >
@@ -1060,7 +1060,7 @@ function EmptySlab({
             borderRadius: "50%",
             background: "rgba(224,58,47,0.10)",
             border: "1px solid rgba(224,58,47,0.35)",
-            color: "var(--rpc-red)",
+            color: "var(--rpc-red-text)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",

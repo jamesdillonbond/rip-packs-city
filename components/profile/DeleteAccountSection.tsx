@@ -108,7 +108,7 @@ export default function DeleteAccountSection() {
               textTransform: "uppercase",
               padding: "8px 16px",
               background: "transparent",
-              color: "var(--rpc-red)",
+              color: "var(--rpc-red-text)",
               border: "1px solid var(--rpc-red)",
               borderRadius: 6,
               cursor: "pointer",
@@ -200,7 +200,7 @@ export default function DeleteAccountSection() {
       )}
 
       {error && (
-        <div role="alert" style={{ fontFamily: monoFont, fontSize: 12, lineHeight: 1.5, color: "var(--rpc-red)" }}>
+        <div role="alert" style={{ fontFamily: monoFont, fontSize: 12, lineHeight: 1.5, color: "var(--rpc-red-text)" }}>
           {error}
         </div>
       )}

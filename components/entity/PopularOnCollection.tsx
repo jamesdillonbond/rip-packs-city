@@ -168,7 +168,7 @@ function HubRow({ label, links }: { label: string; links: HubLink[] }) {
   if (links.length === 0) return null
   return (
     <div style={{ marginTop: 12 }}>
-      <div className="rpc-mono" style={{ fontSize: 10, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--rpc-text-ghost)", marginBottom: 6 }}>
+      <div className="rpc-mono" style={{ fontSize: 10, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--rpc-text-muted)", marginBottom: 6 }}>
         {label}
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>

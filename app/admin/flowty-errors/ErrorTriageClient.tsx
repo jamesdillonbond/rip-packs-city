@@ -117,7 +117,7 @@ function statusBadgeStyle(status: string): React.CSSProperties {
     case "auto_fixable":
       return { color: "#22D3EE", borderColor: "rgba(34,211,238,0.45)", background: "rgba(34,211,238,0.08)" };
     case "needs_trevor":
-      return { color: "var(--rpc-red)", borderColor: "var(--rpc-red-border)", background: "var(--rpc-red-bg)" };
+      return { color: "var(--rpc-red-text)", borderColor: "var(--rpc-red-border)", background: "var(--rpc-red-bg)" };
     case "fixed":
       return { color: "var(--rpc-success)", borderColor: "rgba(52,211,153,0.45)", background: "rgba(52,211,153,0.08)" };
     case "wontfix":
@@ -476,7 +476,7 @@ function Console({
                           <Td>{subcategory || "—"}</Td>
                           <Td align="right">{fmtInt(occCount)}</Td>
                           <Td align="right">
-                            {source === "onchain" ? fmtInt(uniqAddrs) : <span style={{ color: "var(--rpc-text-ghost)" }}>—</span>}
+                            {source === "onchain" ? fmtInt(uniqAddrs) : <span style={{ color: "var(--rpc-text-muted)" }}>—</span>}
                           </Td>
                           <Td>
                             <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-secondary)" }} title={fmtIso(lastSeen)}>
@@ -774,7 +774,7 @@ function OnchainInstances({ rows }: { rows: OnchainInstance[] }) {
                     {truncSig(r.tx_hash, 14)}
                   </a>
                 ) : (
-                  <span style={{ color: "var(--rpc-text-ghost)" }}>—</span>
+                  <span style={{ color: "var(--rpc-text-muted)" }}>—</span>
                 )}
               </Td>
               <Td>

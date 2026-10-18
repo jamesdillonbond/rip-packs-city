@@ -492,7 +492,7 @@ const CSS = `
   font-size: 12px;
   letter-spacing: 4px;
   text-transform: uppercase;
-  color: var(--rpc-red);
+  color: var(--rpc-red-text);
   margin-bottom: 14px;
 }
 .rpc-ins-h1 {
@@ -591,7 +591,7 @@ const CSS = `
   font-size: 12px;
   line-height: 1.35;
   letter-spacing: 0.3px;
-  color: var(--rpc-red);
+  color: var(--rpc-red-text);
   margin-bottom: 12px;
 }
 .rpc-ins-card-title {
@@ -615,7 +615,7 @@ const CSS = `
   font-size: 12px;
   letter-spacing: 2.5px;
   text-transform: uppercase;
-  color: var(--rpc-red);
+  color: var(--rpc-red-text);
 }
 .rpc-ins-card-soon .rpc-ins-card-cta { color: var(--rpc-text-muted); }
 
@@ -632,7 +632,7 @@ const CSS = `
   text-transform: uppercase;
   color: var(--rpc-text-muted);
 }
-.rpc-ins-footer-link { color: var(--rpc-red); text-decoration: underline; text-underline-offset: 3px; }
+.rpc-ins-footer-link { color: var(--rpc-red-text); text-decoration: underline; text-underline-offset: 3px; }
 .rpc-ins-footer-link:hover { color: var(--rpc-red-hover); }
 
 @media (max-width: 880px) {

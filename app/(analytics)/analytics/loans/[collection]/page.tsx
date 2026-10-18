@@ -144,7 +144,7 @@ export default async function CollectionLoansPage({ params }: PageParams) {
             <ChevronLeft size={12} />
             All loans
           </Link>
-          <span className="text-[color:var(--rpc-text-ghost)]">·</span>
+          <span className="text-[color:var(--rpc-text-muted)]">·</span>
           <span className="text-[color:var(--rpc-text-secondary)]">{cfg.label}</span>
         </nav>
 

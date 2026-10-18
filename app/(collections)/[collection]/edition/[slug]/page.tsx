@@ -412,7 +412,7 @@ const INSIGHT_CHIP_STYLE: React.CSSProperties = {
   borderRadius: 4,
   fontSize: 12,
   letterSpacing: "0.04em",
-  color: "var(--rpc-red)",
+  color: "var(--rpc-red-text)",
   textDecoration: "none",
 }
 
@@ -794,7 +794,7 @@ export default async function EditionPage(
                 // Branded placeholder for artless editions (~54% TS thumbnail
                 // coverage) so the empty media box reads as intentional, not broken.
                 <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, background: "linear-gradient(135deg, rgba(224,58,47,0.08), rgba(0,0,0,0.45))" }}>
-                  <div style={{ fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 28, letterSpacing: "0.08em", color: "var(--rpc-red)", opacity: 0.55 }}>RPC</div>
+                  <div style={{ fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 28, letterSpacing: "0.08em", color: "var(--rpc-red-text)", opacity: 0.55 }}>RPC</div>
                   <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--rpc-text-muted)", textTransform: "uppercase", letterSpacing: "0.1em" }}>No preview</div>
                 </div>
               }
@@ -821,7 +821,7 @@ export default async function EditionPage(
               {/* Parallel printing chip (Stage B) — names the subedition this
                   page is, e.g. "Hexwave · /24". Standard shows no chip. */}
               {currentSibling?.subedition_name && (
-                <span className="rpc-mono" style={{ padding: "2px 8px", borderRadius: 4, fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", fontWeight: 700, color: "var(--rpc-red)", background: "var(--rpc-red-bg, rgba(224,58,47,0.08))", border: "1px solid var(--rpc-red-border, var(--rpc-border))" }}>
+                <span className="rpc-mono" style={{ padding: "2px 8px", borderRadius: 4, fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", fontWeight: 700, color: "var(--rpc-red-text)", background: "var(--rpc-red-bg, rgba(224,58,47,0.08))", border: "1px solid var(--rpc-red-border, var(--rpc-border))" }}>
                   {currentSibling.subedition_name}{currentSibling.circulation_count != null ? ` · /${currentSibling.circulation_count}` : ""}
                 </span>
               )}
@@ -1110,7 +1110,7 @@ export default async function EditionPage(
               gap: 8,
               padding: "12px 20px",
               background: "transparent",
-              color: "var(--rpc-red)",
+              color: "var(--rpc-red-text)",
               border: "1px solid var(--rpc-red)",
               borderRadius: 8,
               textDecoration: "none",
@@ -1149,7 +1149,7 @@ export default async function EditionPage(
               gap: 8,
               padding: "12px 20px",
               background: "transparent",
-              color: "var(--rpc-red)",
+              color: "var(--rpc-red-text)",
               border: "1px solid var(--rpc-red)",
               borderRadius: 8,
               textDecoration: "none",
@@ -1211,7 +1211,7 @@ export default async function EditionPage(
                   <IpfsThumb src={proxyIpfsImageUrl(s.thumbnail_url, 320)} alt={name} label={name} />
                   <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 6, marginBottom: 4 }}>
                     <span style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 14, color: s.is_self ? "var(--rpc-red)" : "var(--rpc-text-primary)", letterSpacing: "0.04em", lineHeight: 1.2 }}>{name}</span>
-                    {s.is_self && <span className="rpc-mono" style={{ fontSize: 9, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--rpc-red)" }}>viewing</span>}
+                    {s.is_self && <span className="rpc-mono" style={{ fontSize: 9, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--rpc-red-text)" }}>viewing</span>}
                   </div>
                   <div className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-primary)" }}>
                     {s.fmv_usd != null ? fmtUsd(s.fmv_usd) : <span style={{ color: "var(--rpc-text-muted)" }}>no FMV</span>}
@@ -1475,7 +1475,7 @@ async function EditionBottomSections({
                     {(() => {
                       const p = parallelLabelFromBadges(r.badges)
                       return p ? (
-                        <div className="rpc-mono" style={{ display: "inline-block", marginBottom: 4, padding: "1px 6px", borderRadius: 3, fontSize: 10, letterSpacing: "0.06em", textTransform: "uppercase", fontWeight: 700, color: "var(--rpc-red)", background: "var(--rpc-red-bg, rgba(224,58,47,0.08))", border: "1px solid var(--rpc-red-border, var(--rpc-border))" }}>
+                        <div className="rpc-mono" style={{ display: "inline-block", marginBottom: 4, padding: "1px 6px", borderRadius: 3, fontSize: 10, letterSpacing: "0.06em", textTransform: "uppercase", fontWeight: 700, color: "var(--rpc-red-text)", background: "var(--rpc-red-bg, rgba(224,58,47,0.08))", border: "1px solid var(--rpc-red-border, var(--rpc-border))" }}>
                           {p}
                         </div>
                       ) : null
@@ -1606,7 +1606,7 @@ async function EditionBottomSections({
               <Link
                 href={`/special-serial-owners?player=${encodeURIComponent(detail.player_name)}`}
                 className="rpc-mono"
-                style={{ fontSize: 11, letterSpacing: "0.04em", color: "var(--rpc-red)", textDecoration: "none" }}
+                style={{ fontSize: 11, letterSpacing: "0.04em", color: "var(--rpc-red-text)", textDecoration: "none" }}
               >
                 See who holds {detail.player_name}&rsquo;s special serials →
               </Link>
@@ -1773,7 +1773,7 @@ function EditionUnavailable({ collection, slug }: { collection: string; slug: st
       </p>
       <a
         href={`/${collection}/collection`}
-        style={{ marginTop: 8, padding: "10px 18px", border: "1px solid var(--rpc-red-border)", color: "var(--rpc-red)", background: "transparent", fontFamily: "var(--font-mono)", letterSpacing: "0.2em", textTransform: "uppercase", fontSize: 12, textDecoration: "none" }}
+        style={{ marginTop: 8, padding: "10px 18px", border: "1px solid var(--rpc-red-border)", color: "var(--rpc-red-text)", background: "transparent", fontFamily: "var(--font-mono)", letterSpacing: "0.2em", textTransform: "uppercase", fontSize: 12, textDecoration: "none" }}
       >
         Browse collection
       </a>

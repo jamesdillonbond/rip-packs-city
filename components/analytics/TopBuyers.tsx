@@ -179,12 +179,12 @@ export default function TopBuyers({ collection = "nba_top_shot" }: { collection?
                     <td className="py-1.5 pr-2 text-right text-[color:var(--rpc-text-secondary)]">{fmt(r.avg_price_usd)}</td>
                     <td className="py-1.5 pl-3 text-[11px]">
                       {sweeping ? (
-                        <span style={{ color: "var(--rpc-red)" }}>
+                        <span style={{ color: "var(--rpc-red-text)" }}>
                           {r.top_edition_player}{" "}
                           <span className="text-[color:var(--rpc-text-muted)]">×{r.top_edition_buys}</span>
                         </span>
                       ) : (
-                        <span className="text-[color:var(--rpc-text-ghost)]">—</span>
+                        <span className="text-[color:var(--rpc-text-muted)]">—</span>
                       )}
                     </td>
                   </tr>

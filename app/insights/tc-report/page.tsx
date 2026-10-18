@@ -559,7 +559,7 @@ const styles: Record<string, React.CSSProperties> = {
 
 const CSS = `
 .rpc-tc-hero { max-width: 1180px; margin: 0 auto 28px; padding-bottom: 24px; border-bottom: 1px solid var(--rpc-border-subtle); }
-.rpc-tc-eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: 4px; text-transform: uppercase; color: var(--rpc-red); margin-bottom: 12px; }
+.rpc-tc-eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: 4px; text-transform: uppercase; color: var(--rpc-red-text); margin-bottom: 12px; }
 .rpc-tc-h1 { font-family: var(--font-display); font-weight: 800; font-size: clamp(38px, 6vw, 64px); letter-spacing: 0.5px; line-height: 1.02; margin: 0 0 14px; text-transform: uppercase; }
 .rpc-tc-h2 { font-family: var(--font-display); font-weight: 800; font-size: 26px; letter-spacing: 0.5px; text-transform: uppercase; margin: 0 0 18px; }
 .rpc-tc-h3 { font-family: var(--font-display); font-weight: 800; font-size: 22px; letter-spacing: 1px; text-transform: uppercase; margin: 0 0 10px; }
@@ -584,7 +584,7 @@ const CSS = `
 .rpc-tc-bucket-danger { border-left: 4px solid var(--rpc-red); }
 .rpc-tc-bucket-label { font-family: var(--font-mono); font-size: 10px; letter-spacing: 2.5px; text-transform: uppercase; color: var(--rpc-text-muted); }
 .rpc-tc-bucket-sub { font-family: var(--font-mono); font-size: 11px; letter-spacing: 1px; color: var(--rpc-text-muted); }
-.rpc-tc-bucket-val { font-family: var(--font-display); font-weight: 800; font-size: 28px; color: var(--rpc-red); margin-top: 4px; }
+.rpc-tc-bucket-val { font-family: var(--font-display); font-weight: 800; font-size: 28px; color: var(--rpc-red-text); margin-top: 4px; }
 .rpc-tc-bucket-pct { font-family: var(--font-mono); font-size: 12px; letter-spacing: 1px; color: var(--rpc-text-secondary); }
 .rpc-tc-bucket-track { background: var(--rpc-surface); height: 4px; border-radius: 2px; overflow: hidden; margin-top: 4px; }
 .rpc-tc-bucket-fill { height: 100%; background: var(--rpc-red); }
@@ -595,21 +595,21 @@ const CSS = `
 .rpc-tc-table { width: 100%; border-collapse: collapse; font-size: 14px; border: 1px solid var(--rpc-border-subtle); background: var(--rpc-surface); border-radius: 2px; }
 .rpc-tc-table th { font-family: var(--font-mono); font-size: 10px; letter-spacing: 2.5px; text-transform: uppercase; color: var(--rpc-text-muted); text-align: left; padding: 12px; border-bottom: 1px solid var(--rpc-border-subtle); background: var(--rpc-surface-raised); white-space: nowrap; }
 .rpc-tc-th-num { text-align: right; }
-.rpc-tc-th-emph { color: var(--rpc-red); }
+.rpc-tc-th-emph { color: var(--rpc-red-text); }
 .rpc-tc-table td { padding: 12px; border-bottom: 1px solid var(--rpc-border-subtle); vertical-align: middle; }
 .rpc-tc-td-ed { min-width: 240px; }
 .rpc-tc-ed-name { font-weight: 700; font-size: 15px; color: var(--rpc-text-primary); }
 .rpc-tc-ed-set { font-family: var(--font-mono); font-size: 11px; color: var(--rpc-text-muted); letter-spacing: 1px; margin-top: 2px; }
 .rpc-tc-td-num { text-align: right; font-family: var(--font-mono); color: var(--rpc-text-primary); white-space: nowrap; }
-.rpc-tc-td-emph { color: var(--rpc-red); font-weight: 700; }
+.rpc-tc-td-emph { color: var(--rpc-red-text); font-weight: 700; }
 .rpc-tc-tier { font-family: var(--font-mono); font-size: 10px; letter-spacing: 2px; text-transform: uppercase; }
 .rpc-tc-set-link { color: var(--rpc-text-primary); text-decoration: none; }
-.rpc-tc-set-link:hover { color: var(--rpc-red); }
+.rpc-tc-set-link:hover { color: var(--rpc-red-text); }
 
 .rpc-tc-cc-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
 .rpc-tc-cc-card { border: 1px solid var(--rpc-border-subtle); background: var(--rpc-surface-raised); padding: 18px; border-radius: 2px; }
 .rpc-tc-cc-label { font-family: var(--font-mono); font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-muted); margin-bottom: 6px; }
-.rpc-tc-cc-val { font-family: var(--font-display); font-weight: 800; font-size: 32px; color: var(--rpc-red); letter-spacing: 0.5px; }
+.rpc-tc-cc-val { font-family: var(--font-display); font-weight: 800; font-size: 32px; color: var(--rpc-red-text); letter-spacing: 0.5px; }
 .rpc-tc-cc-sub { font-family: var(--font-mono); font-size: 11px; color: var(--rpc-text-muted); letter-spacing: 1px; margin-top: 4px; }
 .rpc-tc-cc-fmv { font-family: var(--font-mono); font-size: 12px; color: var(--rpc-text-secondary); letter-spacing: 1px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--rpc-border-subtle); }
 .rpc-tc-cc-asof { color: var(--rpc-text-muted); letter-spacing: 0; text-transform: none; }
@@ -617,13 +617,13 @@ const CSS = `
 .rpc-tc-cohort-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
 .rpc-tc-cohort-card { border: 1px solid var(--rpc-border-subtle); background: var(--rpc-surface-raised); padding: 18px; border-radius: 2px; }
 .rpc-tc-cohort-label { font-family: var(--font-mono); font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-muted); margin-bottom: 6px; }
-.rpc-tc-cohort-val { font-family: var(--font-display); font-weight: 800; font-size: 32px; color: var(--rpc-red); letter-spacing: 0.5px; }
+.rpc-tc-cohort-val { font-family: var(--font-display); font-weight: 800; font-size: 32px; color: var(--rpc-red-text); letter-spacing: 0.5px; }
 .rpc-tc-cohort-of { font-size: 18px; color: var(--rpc-text-secondary); font-weight: 400; }
 .rpc-tc-cohort-sub { font-family: var(--font-mono); font-size: 11px; color: var(--rpc-text-muted); letter-spacing: 1px; margin-top: 6px; }
 
 .rpc-tc-empty { max-width: 1180px; margin: 0 auto; padding: 36px 0; text-align: center; }
 .rpc-tc-empty-text { font-family: var(--font-mono); font-size: 12px; letter-spacing: 1.5px; color: var(--rpc-text-muted); }
-.rpc-tc-sample-btn { font-family: var(--font-mono); font-size: 12px; letter-spacing: 1.5px; background: transparent; border: 1px solid var(--rpc-border); color: var(--rpc-red); padding: 6px 12px; border-radius: 2px; cursor: pointer; margin-left: 6px; }
+.rpc-tc-sample-btn { font-family: var(--font-mono); font-size: 12px; letter-spacing: 1.5px; background: transparent; border: 1px solid var(--rpc-border); color: var(--rpc-red-text); padding: 6px 12px; border-radius: 2px; cursor: pointer; margin-left: 6px; }
 .rpc-tc-sample-btn:hover { border-color: var(--rpc-red); }
 
 .rpc-tc-footer { max-width: 1180px; margin: 36px auto 0; display: grid; grid-template-columns: 2fr 1fr; gap: 32px; }
@@ -631,7 +631,7 @@ const CSS = `
 .rpc-tc-method strong { color: var(--rpc-text-primary); }
 .rpc-tc-side { display: flex; flex-direction: column; gap: 12px; align-items: stretch; }
 .rpc-tc-back { font-family: var(--font-mono); font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-secondary); text-decoration: none; padding: 10px; text-align: center; border: 1px solid var(--rpc-border-subtle); border-radius: 2px; }
-.rpc-tc-back:hover { color: var(--rpc-red); border-color: var(--rpc-red); }
+.rpc-tc-back:hover { color: var(--rpc-red-text); border-color: var(--rpc-red); }
 
 @media (max-width: 760px) {
   .rpc-tc-bar-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }

@@ -133,7 +133,7 @@ export default function AdminIndexPage() {
               <>
               <div
                 className="rpc-heading"
-                style={{ fontSize: 18, color: "var(--rpc-red)", marginBottom: 4 }}
+                style={{ fontSize: 18, color: "var(--rpc-red-text)", marginBottom: 4 }}
               >
                 {tool.title}
               </div>

@@ -162,7 +162,7 @@ const CSS = `
   font-size: 10px;
   letter-spacing: 0.2em;
   text-transform: uppercase;
-  color: var(--rpc-red);
+  color: var(--rpc-red-text);
   margin-bottom: 6px;
 }
 .rpc-dw-title {

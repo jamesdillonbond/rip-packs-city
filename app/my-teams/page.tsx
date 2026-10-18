@@ -186,7 +186,7 @@ const pillLink: React.CSSProperties = {
   padding: "8px 16px",
   border: "1px solid var(--rpc-red)",
   borderRadius: 999,
-  color: "var(--rpc-red)",
+  color: "var(--rpc-red-text)",
   fontSize: 12,
   textDecoration: "none",
   letterSpacing: "0.04em",
@@ -304,7 +304,7 @@ function TeamCard({
               <span className="rpc-mono" style={{ fontSize: 11, letterSpacing: "0.08em", color: "var(--rpc-text-muted)", textTransform: "uppercase" }}>
                 Checklist
               </span>
-              <span className="rpc-mono" style={{ fontSize: 13, fontWeight: 800, color: "var(--rpc-red)" }}>
+              <span className="rpc-mono" style={{ fontSize: 13, fontWeight: 800, color: "var(--rpc-red-text)" }}>
                 {Math.round(Number(pct))}%
               </span>
             </div>
@@ -328,7 +328,7 @@ function TeamCard({
           <Stat label="30d volume" value={fmtUsd(detail?.volume_30d_usd == null ? null : Number(detail.volume_30d_usd))} />
         </div>
 
-        <div className="rpc-mono" style={{ marginTop: 12, fontSize: 11, color: "var(--rpc-red)", letterSpacing: "0.04em" }}>
+        <div className="rpc-mono" style={{ marginTop: 12, fontSize: 11, color: "var(--rpc-red-text)", letterSpacing: "0.04em" }}>
           Open team hub →
         </div>
       </div>

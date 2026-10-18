@@ -346,7 +346,7 @@ export default function GiveawayClient({ slug }: { slug: string }) {
             </div>
           ) : (
             <p style={{ margin: 0 }}>
-              <Link href={`/login?next=${encodeURIComponent(`/giveaways/${drop.slug}`)}`} style={{ color: "var(--rpc-red)" }}>
+              <Link href={`/login?next=${encodeURIComponent(`/giveaways/${drop.slug}`)}`} style={{ color: "var(--rpc-red-text)" }}>
                 Sign in to claim a pack
               </Link>
               <span style={muted}> · free, no purchase necessary.</span>
@@ -467,7 +467,7 @@ const linkButton: React.CSSProperties = {
   background: "none",
   border: "none",
   padding: 0,
-  color: "var(--rpc-red)",
+  color: "var(--rpc-red-text)",
   cursor: "pointer",
   fontSize: 13,
   textAlign: "left",

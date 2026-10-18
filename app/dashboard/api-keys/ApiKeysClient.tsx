@@ -311,7 +311,7 @@ export default function ApiKeysClient() {
                 lineHeight: 1.55,
               }}
             >
-              No keys yet. Click <strong style={{ color: "var(--rpc-red)" }}>Create new key</strong>{" "}
+              No keys yet. Click <strong style={{ color: "var(--rpc-red-text)" }}>Create new key</strong>{" "}
               to issue one.
             </div>
             <div
@@ -423,7 +423,7 @@ export default function ApiKeysClient() {
                   marginBottom: "var(--space-md)",
                   fontFamily: "var(--font-mono)",
                   fontSize: "var(--text-sm)",
-                  color: "var(--rpc-red)",
+                  color: "var(--rpc-red-text)",
                   lineHeight: 1.5,
                 }}
               >

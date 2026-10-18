@@ -319,7 +319,7 @@ const styles: Record<string, React.CSSProperties> = {
 
 const CSS = `
 .rpc-sc-hero { max-width: 1180px; margin: 0 auto 28px; padding-bottom: 24px; border-bottom: 1px solid var(--rpc-border-subtle); }
-.rpc-sc-eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: 4px; text-transform: uppercase; color: var(--rpc-red); margin-bottom: 12px; }
+.rpc-sc-eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: 4px; text-transform: uppercase; color: var(--rpc-red-text); margin-bottom: 12px; }
 .rpc-sc-h1 { font-family: var(--font-display); font-weight: 800; font-size: clamp(38px, 6vw, 64px); letter-spacing: 0.5px; line-height: 1.02; margin: 0 0 14px; text-transform: uppercase; }
 .rpc-sc-h2 { font-family: var(--font-display); font-weight: 800; font-size: 26px; letter-spacing: 0.5px; text-transform: uppercase; margin: 36px 0 16px; }
 .rpc-sc-h3 { font-family: var(--font-display); font-weight: 800; font-size: 22px; letter-spacing: 1px; text-transform: uppercase; margin: 0 0 10px; }
@@ -343,7 +343,7 @@ const CSS = `
 .rpc-sc-bucket-danger { border-left: 4px solid var(--rpc-red); }
 .rpc-sc-bucket-label { font-family: var(--font-mono); font-size: 10px; letter-spacing: 2.5px; text-transform: uppercase; color: var(--rpc-text-muted); }
 .rpc-sc-bucket-sub { font-family: var(--font-mono); font-size: 11px; letter-spacing: 1px; color: var(--rpc-text-muted); }
-.rpc-sc-bucket-val { font-family: var(--font-display); font-weight: 800; font-size: 28px; color: var(--rpc-red); margin-top: 4px; }
+.rpc-sc-bucket-val { font-family: var(--font-display); font-weight: 800; font-size: 28px; color: var(--rpc-red-text); margin-top: 4px; }
 .rpc-sc-bucket-pct { font-family: var(--font-mono); font-size: 12px; letter-spacing: 1px; color: var(--rpc-text-secondary); }
 .rpc-sc-bucket-track { background: var(--rpc-surface); height: 4px; border-radius: 2px; overflow: hidden; margin-top: 4px; }
 .rpc-sc-bucket-fill { height: 100%; background: var(--rpc-red); }
@@ -357,18 +357,18 @@ const CSS = `
 .rpc-sc-table { width: 100%; border-collapse: collapse; font-size: 14px; border: 1px solid var(--rpc-border-subtle); background: var(--rpc-surface); border-radius: 2px; }
 .rpc-sc-table th { font-family: var(--font-mono); font-size: 10px; letter-spacing: 2.5px; text-transform: uppercase; color: var(--rpc-text-muted); text-align: left; padding: 12px; border-bottom: 1px solid var(--rpc-border-subtle); background: var(--rpc-surface-raised); white-space: nowrap; }
 .rpc-sc-th-num { text-align: right; }
-.rpc-sc-th-emph { color: var(--rpc-red); }
+.rpc-sc-th-emph { color: var(--rpc-red-text); }
 .rpc-sc-table td { padding: 12px; border-bottom: 1px solid var(--rpc-border-subtle); vertical-align: middle; }
 .rpc-sc-td-ed { min-width: 240px; }
 .rpc-sc-ed-name { font-weight: 700; font-size: 15px; color: var(--rpc-text-primary); }
 .rpc-sc-ed-set { font-family: var(--font-mono); font-size: 11px; color: var(--rpc-text-muted); letter-spacing: 1px; margin-top: 2px; }
 .rpc-sc-td-num { text-align: right; font-family: var(--font-mono); color: var(--rpc-text-primary); white-space: nowrap; }
-.rpc-sc-td-emph { color: var(--rpc-red); font-weight: 700; }
+.rpc-sc-td-emph { color: var(--rpc-red-text); font-weight: 700; }
 .rpc-sc-tier { font-family: var(--font-mono); font-size: 10px; letter-spacing: 2px; text-transform: uppercase; }
 
 .rpc-sc-empty { max-width: 1180px; margin: 0 auto; padding: 36px 0; text-align: center; }
 .rpc-sc-empty-text { font-family: var(--font-mono); font-size: 12px; letter-spacing: 1.5px; color: var(--rpc-text-muted); }
-.rpc-sc-sample-btn { font-family: var(--font-mono); font-size: 12px; letter-spacing: 1.5px; background: transparent; border: 1px solid var(--rpc-border); color: var(--rpc-red); padding: 6px 12px; border-radius: 2px; cursor: pointer; margin-left: 6px; }
+.rpc-sc-sample-btn { font-family: var(--font-mono); font-size: 12px; letter-spacing: 1.5px; background: transparent; border: 1px solid var(--rpc-border); color: var(--rpc-red-text); padding: 6px 12px; border-radius: 2px; cursor: pointer; margin-left: 6px; }
 .rpc-sc-sample-btn:hover { border-color: var(--rpc-red); }
 
 .rpc-sc-footer { max-width: 1180px; margin: 36px auto 0; display: grid; grid-template-columns: 2fr 1fr; gap: 32px; }
@@ -376,7 +376,7 @@ const CSS = `
 .rpc-sc-method strong { color: var(--rpc-text-primary); }
 .rpc-sc-side { display: flex; flex-direction: column; gap: 12px; align-items: stretch; }
 .rpc-sc-back { font-family: var(--font-mono); font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-secondary); text-decoration: none; padding: 10px; text-align: center; }
-.rpc-sc-back:hover { color: var(--rpc-red); }
+.rpc-sc-back:hover { color: var(--rpc-red-text); }
 
 @media (max-width: 760px) {
   .rpc-sc-bar-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }

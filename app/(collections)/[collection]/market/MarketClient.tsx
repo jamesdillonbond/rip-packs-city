@@ -602,7 +602,7 @@ function MarketInner() {
         <Link
           href="/alerts"
           className="rpc-chip"
-          style={{ textDecoration: "none", color: "var(--rpc-red)", borderColor: "var(--rpc-red)" }}
+          style={{ textDecoration: "none", color: "var(--rpc-red-text)", borderColor: "var(--rpc-red)" }}
           title="Get notified when listings drop below FMV"
         >
           🔔 ALERT ME ON DEALS →
@@ -621,7 +621,7 @@ function MarketInner() {
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           <span className="rpc-label">{getEntityLabels(collectionId).tier}</span>
           {availableTiers.length === 0 ? (
-            <span className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-ghost)" }}>—</span>
+            <span className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-muted)" }}>—</span>
           ) : availableTiers.map(t => {
             const on = tiersSel.includes(t)
             const color = TIER_COLORS[t] ?? "var(--rpc-text-muted)"
@@ -705,7 +705,7 @@ function MarketInner() {
             onChange={(e) => setMinPrice(e.target.value)}
             style={inputStyle}
           />
-          <span style={{ color: "var(--rpc-text-ghost)" }}>–</span>
+          <span style={{ color: "var(--rpc-text-muted)" }}>–</span>
           <input
             type="number"
             inputMode="decimal"
@@ -952,7 +952,7 @@ function MultiSelectChip({
                 background: "transparent",
                 border: "none",
                 textAlign: "left",
-                color: "var(--rpc-text-ghost)",
+                color: "var(--rpc-text-muted)",
                 cursor: "pointer",
                 fontFamily: "inherit",
                 fontSize: 10,
@@ -1051,7 +1051,7 @@ function ListingCard({ listing, accent, momentUrl, editionStats, showOwned, coll
             style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
           />
         ) : (
-          <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--rpc-text-ghost)", fontFamily: "var(--font-mono)" }}>—</div>
+          <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)" }}>—</div>
         )}
         {listing.serialNumber != null && (
           <div className="rpc-serial-pill">
@@ -1097,7 +1097,7 @@ function ListingCard({ listing, accent, momentUrl, editionStats, showOwned, coll
             </span>
           )}
         </div>
-        <div className="rpc-mono" style={{ fontSize: 9, color: "var(--rpc-text-ghost)", letterSpacing: "0.08em", textTransform: "uppercase", display: "flex", gap: 6, flexWrap: "wrap" }}>
+        <div className="rpc-mono" style={{ fontSize: 9, color: "var(--rpc-text-muted)", letterSpacing: "0.08em", textTransform: "uppercase", display: "flex", gap: 6, flexWrap: "wrap" }}>
           <span>FMV {fmtUsd(listing.fmv)}</span>
           {(() => { const b = fmvBasis(listing.confidence); return b ? <span title={b.title}>· {b.label}</span> : null })()}
           {listing.listedCount != null && (
@@ -1267,14 +1267,14 @@ function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColu
                 {showBadges && (
                   <td style={td}>
                     {uniqueBadges.length === 0 ? (
-                      <span style={{ color: "var(--rpc-text-ghost)" }}>—</span>
+                      <span style={{ color: "var(--rpc-text-muted)" }}>—</span>
                     ) : (
                       <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
                         {uniqueBadges.slice(0, 3).map(slug => (
                           <BadgeIcon key={slug} title={slug} size={20} collectionId={badgeCollectionId} />
                         ))}
                         {uniqueBadges.length > 3 && (
-                          <span style={{ fontSize: 10, color: "var(--rpc-text-ghost)" }}>+{uniqueBadges.length - 3}</span>
+                          <span style={{ fontSize: 10, color: "var(--rpc-text-muted)" }}>+{uniqueBadges.length - 3}</span>
                         )}
                       </div>
                     )}
@@ -1298,7 +1298,7 @@ function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColu
                 </td>
                 <td style={{ ...td, textAlign: "right", color: "var(--rpc-text-muted)" }}>
                   {fmtUsd(l.fmv)}
-                  {(() => { const b = fmvBasis(l.confidence); return b ? <div title={b.title} style={{ fontSize: 9, color: "var(--rpc-text-ghost)" }}>{b.label}</div> : null })()}
+                  {(() => { const b = fmvBasis(l.confidence); return b ? <div title={b.title} style={{ fontSize: 9, color: "var(--rpc-text-muted)" }}>{b.label}</div> : null })()}
                 </td>
                 {l.lowConfidenceFmv ? (
                   <td
@@ -1382,7 +1382,7 @@ function EmptyState({ collectionId, thinVolume, filtersActive = false }: { colle
   if (collectionId === "disney-pinnacle") {
     return (
       <div className="rpc-card" style={{ padding: 40, textAlign: "center", display: "flex", flexDirection: "column", gap: 10, alignItems: "center" }}>
-        <div style={{ fontSize: 32, color: "var(--rpc-text-ghost)" }}>✨</div>
+        <div style={{ fontSize: 32, color: "var(--rpc-text-muted)" }}>✨</div>
         <div className="rpc-heading" style={{ fontSize: 16 }}>No pin listings right now</div>
         <div className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-muted)", maxWidth: 500, lineHeight: 1.7 }}>
           No Disney Pinnacle pins are listed at the moment. Check the <strong>Sniper</strong> tab for render-keyed
@@ -1406,7 +1406,7 @@ function EmptyState({ collectionId, thinVolume, filtersActive = false }: { colle
     : "No listings match these filters."
   return (
     <div className="rpc-card" style={{ padding: 40, textAlign: "center", display: "flex", flexDirection: "column", gap: 10, alignItems: "center" }}>
-      <div style={{ fontSize: 32, color: "var(--rpc-text-ghost)" }}>◌</div>
+      <div style={{ fontSize: 32, color: "var(--rpc-text-muted)" }}>◌</div>
       <div className="rpc-heading" style={{ fontSize: 16 }}>No listings</div>
       <div className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-muted)", maxWidth: 480, lineHeight: 1.7 }}>
         {copy}

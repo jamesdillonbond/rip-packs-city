@@ -54,7 +54,7 @@ const baseBtnStyle: CSSProperties = {
 const activeBtnStyle: CSSProperties = {
   background: "var(--rpc-red-bg)",
   borderColor: "var(--rpc-red-border)",
-  color: "var(--rpc-red)",
+  color: "var(--rpc-red-text)",
 };
 
 export default function LeagueFilter({ value, onChange, visible = true }: Props) {

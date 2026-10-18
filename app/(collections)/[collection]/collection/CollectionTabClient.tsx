@@ -1232,7 +1232,7 @@ function WalletMomentsBody() {
                 "Signed in as 0xbd94…" here. */}
             This device&rsquo;s wallet <span style={{ fontWeight: 600, color: "var(--rpc-text-primary)" }}>{/* A base58 Solana address is 32–44 chars; the old Flow-only regex rendered it in full and blew out this chip. */}
             {ownerKey.length > 12 ? ownerKey.slice(0, 6) + "\u2026" + ownerKey.slice(-4) : ownerKey}</span>
-            <span style={{ marginLeft: 4, color: "var(--rpc-text-ghost)" }}>· the wallet you load here becomes this device&rsquo;s profile</span>
+            <span style={{ marginLeft: 4, color: "var(--rpc-text-muted)" }}>· the wallet you load here becomes this device&rsquo;s profile</span>
           </div>
         )}
 

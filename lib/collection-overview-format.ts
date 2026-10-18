@@ -65,7 +65,7 @@ export function freshnessFromAge(
   // buckets that reads as a broken pipeline for most of every day; it is not.
   // Report the cadence, keep the age visible, never colour it as a fault.
   if (cadence === "sale-driven" && !frozenMarket) {
-    if (minutes == null) return { color: "var(--rpc-text-ghost)", label: "UNKNOWN" }
+    if (minutes == null) return { color: "var(--rpc-text-muted)", label: "UNKNOWN" }
     return { color: "var(--rpc-text-muted)", label: "ON SALE" }
   }
   // Twice-daily FMV (Disney Pinnacle): the render recalc runs at 3:07 AM and
@@ -74,17 +74,17 @@ export function freshnessFromAge(
   // buckets read OUTDATED most of every day on a healthy lane. Within 12 h plus
   // a 2 h margin it is on schedule; past that a run was MISSED, and that is red.
   if (cadence === "twice-daily" && !frozenMarket) {
-    if (minutes == null) return { color: "var(--rpc-text-ghost)", label: "UNKNOWN" }
+    if (minutes == null) return { color: "var(--rpc-text-muted)", label: "UNKNOWN" }
     if (minutes < 14 * 60) return { color: "var(--rpc-text-muted)", label: "12-HOURLY" }
-    return { color: "var(--rpc-red)", label: "OUTDATED" }
+    return { color: "var(--rpc-red-text)", label: "OUTDATED" }
   }
   // Frozen-by-design markets (UFC Strike migrated to Aptos; the Flow market has
   // been frozen since 2026-05-13) have legitimately stale FMV — a red "OUTDATED"
   // pill reads as a broken pipeline to a public visitor. Show a neutral archival
   // pill instead; the MarketplaceStatusBanner already explains the migration.
   if (frozenMarket) return { color: "var(--rpc-text-muted)", label: "ARCHIVED" }
-  if (minutes == null) return { color: "var(--rpc-text-ghost)", label: "UNKNOWN" }
+  if (minutes == null) return { color: "var(--rpc-text-muted)", label: "UNKNOWN" }
   if (minutes < 30) return { color: "#34D399", label: "LIVE" }
   if (minutes < 60) return { color: "#F59E0B", label: "DELAYED" }
-  return { color: "var(--rpc-red)", label: "OUTDATED" }
+  return { color: "var(--rpc-red-text)", label: "OUTDATED" }
 }

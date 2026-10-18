@@ -63,12 +63,12 @@ export default function TeamSqueeze({ collectionUrlSlug, rows }: { collectionUrl
           </div>
           <TierBadge tier={r.tier} />
           <div style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-            <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 15, color: "var(--rpc-red)" }}>{pct(r.squeeze_pct)}</div>
+            <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 15, color: "var(--rpc-red-text)" }}>{pct(r.squeeze_pct)}</div>
             <div className="rpc-mono" style={{ fontSize: 9, color: "var(--rpc-text-muted)", letterSpacing: "0.10em" }}>SQUEEZE</div>
           </div>
           <div style={{ textAlign: "right", whiteSpace: "nowrap" }}>
             <div className="rpc-mono" style={{ fontSize: 12, color: "var(--rpc-text-secondary)" }}>
-              {r.effectively_buyable != null ? fmtCount(r.effectively_buyable) : EM_DASH}<span style={{ color: "var(--rpc-text-ghost)" }}> / {r.circulation != null ? fmtCount(r.circulation) : EM_DASH}</span>
+              {r.effectively_buyable != null ? fmtCount(r.effectively_buyable) : EM_DASH}<span style={{ color: "var(--rpc-text-muted)" }}> / {r.circulation != null ? fmtCount(r.circulation) : EM_DASH}</span>
             </div>
             <div className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)" }}>
               ask {r.low_ask != null && r.low_ask > 0 ? fmtUsd(r.low_ask) : EM_DASH}

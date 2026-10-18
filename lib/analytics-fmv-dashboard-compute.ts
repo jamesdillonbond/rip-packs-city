@@ -113,7 +113,7 @@ export const CONFIDENCE_STYLE: Record<
   },
   NO_DATA: {
     label: "No data",
-    cls: "border-[color:var(--rpc-border)] bg-[color:var(--rpc-surface-raised)] text-[color:var(--rpc-text-ghost)]",
+    cls: "border-[color:var(--rpc-border)] bg-[color:var(--rpc-surface-raised)] text-[color:var(--rpc-text-muted)]",
   },
 }
 

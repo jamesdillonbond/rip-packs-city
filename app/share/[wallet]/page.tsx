@@ -220,7 +220,7 @@ function ShareUnavailable({ wallet }: { wallet: string }) {
       <p className="rpc-mono" style={{ color: "var(--rpc-text-muted)", fontSize: "var(--text-sm)", marginTop: 12 }}>
         {"Something went wrong on our side — this wallet may well be indexed. Reload in a moment."}
       </p>
-      <p className="rpc-mono" style={{ color: "var(--rpc-text-ghost)", fontSize: "var(--text-xs)", marginTop: 16 }}>{wallet}</p>
+      <p className="rpc-mono" style={{ color: "var(--rpc-text-muted)", fontSize: "var(--text-xs)", marginTop: 16 }}>{wallet}</p>
     </main>
   )
 }
@@ -259,7 +259,7 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
       <div style={{ maxWidth: 900, margin: "0 auto" }}>
         {/* Header */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 32 }}>
-          <div style={{ fontWeight: 900, fontSize: 28, letterSpacing: "0.08em", color: "var(--rpc-red)" }}>RIP PACKS CITY</div>
+          <div style={{ fontWeight: 900, fontSize: 28, letterSpacing: "0.08em", color: "var(--rpc-red-text)" }}>RIP PACKS CITY</div>
           <div style={{ fontSize: 12, fontFamily: "monospace", color: "var(--rpc-text-secondary)", letterSpacing: "0.05em" }}>{wallet}</div>
         </div>
 
@@ -271,7 +271,7 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
             const h = shareHeadline({ totalFmv: data.totalFmv, staleFmv: data.staleFmv, staleCount: data.staleCount })
             return (
               <>
-                <div style={{ fontSize: 56, fontWeight: 900, color: "var(--rpc-red)", letterSpacing: "0.02em" }}>
+                <div style={{ fontSize: 56, fontWeight: 900, color: "var(--rpc-red-text)", letterSpacing: "0.02em" }}>
                   ${h.live.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </div>
                 {h.caption && (
@@ -387,7 +387,7 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
                         // eslint-disable-next-line @next/next/no-img-element
                         <img src={proxyIpfsImageUrl(h.thumbnail_url, 320) ?? undefined} alt={h.player_name ?? "moment"} style={{ width: "100%", height: 126, objectFit: "cover" }} />
                       ) : (
-                        <div style={{ width: "100%", height: 126, background: "var(--rpc-surface)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--rpc-text-ghost)", fontSize: 32 }}>?</div>
+                        <div style={{ width: "100%", height: 126, background: "var(--rpc-surface)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--rpc-text-muted)", fontSize: 32 }}>?</div>
                       )}
                       <div style={{ padding: "10px 12px" }}>
                         <div style={{ display: "flex", gap: 4, marginBottom: 6, flexWrap: "wrap" }}>
@@ -483,7 +483,7 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
                       const h = shareHeadline({ totalFmv: c.fmv, staleFmv: c.stale_fmv, staleCount: c.stale_count })
                       return (
                         <>
-                          <div style={{ fontSize: 13, fontWeight: 700, color: "var(--rpc-red)", fontFamily: "monospace" }}>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: "var(--rpc-red-text)", fontFamily: "monospace" }}>
                             ${h.live.toLocaleString("en-US", { maximumFractionDigits: 0 })}
                           </div>
                           {h.stale > 0 ? (
@@ -511,13 +511,13 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={proxyIpfsImageUrl(m.thumbnailUrl, 320) ?? undefined} alt={m.playerName} style={{ width: "100%", height: 120, objectFit: "cover" }} />
                 ) : (
-                  <div style={{ width: "100%", height: 120, background: "var(--rpc-surface)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--rpc-text-ghost)", fontSize: 32 }}>?</div>
+                  <div style={{ width: "100%", height: 120, background: "var(--rpc-surface)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--rpc-text-muted)", fontSize: 32 }}>?</div>
                 )}
                 <div style={{ padding: "10px 12px" }}>
                   <div style={{ fontWeight: 700, fontSize: 14, color: "var(--rpc-text-primary)", marginBottom: 2 }}>{m.playerName}</div>
                   <div style={{ fontSize: 11, color: TIER_COLORS[m.tier?.toLowerCase()] ?? "var(--tier-common)", fontFamily: "monospace" }}>{m.tier}</div>
                   <div style={{ fontSize: 11, color: "var(--rpc-text-secondary)", fontFamily: "monospace", marginTop: 2 }}>{m.setName}</div>
-                  <div style={{ fontSize: 16, fontWeight: 800, color: "var(--rpc-red)", marginTop: 6 }}>${m.fmv.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: "var(--rpc-red-text)", marginTop: 6 }}>${m.fmv.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                 </div>
               </div>
             ))}
@@ -535,7 +535,7 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={proxyIpfsImageUrl(data.rarest.thumbnailUrl, 320) ?? undefined} alt={data.rarest.playerName} style={{ width: 96, height: 96, objectFit: "cover", borderRadius: 8, flex: "0 0 96px" }} />
               ) : (
-                <div style={{ width: 96, height: 96, background: "var(--rpc-surface)", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--rpc-text-ghost)", fontSize: 28, flex: "0 0 96px" }}>?</div>
+                <div style={{ width: 96, height: 96, background: "var(--rpc-surface)", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--rpc-text-muted)", fontSize: 28, flex: "0 0 96px" }}>?</div>
               )}
               <div style={{ flex: "1 1 140px", minWidth: 0 }}>
                 <div style={{ fontWeight: 800, fontSize: 20, color: "var(--rpc-text-primary)" }}>{data.rarest.playerName}</div>
@@ -550,7 +550,7 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
                 </div>
               </div>
               <div style={{ textAlign: "right" }}>
-                <div style={{ fontSize: 20, fontWeight: 800, color: "var(--rpc-red)", fontFamily: "monospace" }}>${data.rarest.fmv.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                <div style={{ fontSize: 20, fontWeight: 800, color: "var(--rpc-red-text)", fontFamily: "monospace" }}>${data.rarest.fmv.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                 <div style={{ fontSize: 11, color: "var(--rpc-text-secondary)" }}>FMV</div>
               </div>
             </div>
@@ -585,7 +585,7 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
             textAlign: "center",
           }}
         >
-          <div style={{ fontSize: 13, letterSpacing: "0.12em", color: "var(--rpc-red)", textTransform: "uppercase", fontWeight: 700, marginBottom: 8 }}>
+          <div style={{ fontSize: 13, letterSpacing: "0.12em", color: "var(--rpc-red-text)", textTransform: "uppercase", fontWeight: 700, marginBottom: 8 }}>
             Free preview
           </div>
           <div style={{ fontSize: 16, color: "var(--rpc-text-secondary)", lineHeight: 1.5, maxWidth: 540, margin: "0 auto 16px" }}>
@@ -600,7 +600,7 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
           <SaveToCollectionCTA wallet={wallet} />
           <a
             href={`/insights/tc-report?wallet=${encodeURIComponent(wallet)}`}
-            style={{ padding: "12px 24px", border: "1px solid var(--rpc-red)", borderRadius: 8, color: "var(--rpc-red)", fontWeight: 700, fontSize: 14, textDecoration: "none", letterSpacing: "0.04em" }}
+            style={{ padding: "12px 24px", border: "1px solid var(--rpc-red)", borderRadius: 8, color: "var(--rpc-red-text)", fontWeight: 700, fontSize: 14, textDecoration: "none", letterSpacing: "0.04em" }}
           >
             Run the full report →
           </a>

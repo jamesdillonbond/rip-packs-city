@@ -586,17 +586,17 @@ const styles: Record<string, React.CSSProperties> = {
 
 const CSS = `
 .rpc-sp-hero-head { max-width: 1180px; margin: 0 auto 24px; padding-bottom: 22px; border-bottom: 1px solid var(--rpc-border-subtle); }
-.rpc-sp-eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: 4px; text-transform: uppercase; color: var(--rpc-red); margin-bottom: 12px; }
+.rpc-sp-eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: 4px; text-transform: uppercase; color: var(--rpc-red-text); margin-bottom: 12px; }
 .rpc-sp-h1 { font-family: var(--font-display); font-weight: 800; font-size: clamp(38px, 6vw, 64px); letter-spacing: 0.5px; line-height: 1.02; margin: 0 0 14px; text-transform: uppercase; }
 .rpc-sp-lede { font-family: var(--font-body); font-size: 18px; line-height: 1.55; color: var(--rpc-text-secondary); max-width: 820px; margin: 0 0 16px; }
 .rpc-sp-lede strong { color: var(--rpc-text-primary); }
 .rpc-sp-meta-row { font-family: var(--font-mono); font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-muted); }
-.rpc-sp-meta-sep { margin: 0 8px; color: var(--rpc-text-ghost); }
+.rpc-sp-meta-sep { margin: 0 8px; color: var(--rpc-text-muted); }
 
 .rpc-sp-kpi-row { max-width: 1180px; margin: 0 auto 26px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .rpc-sp-kpi { border: 1px solid var(--rpc-border-subtle); background: var(--rpc-surface-raised); padding: 14px 16px; border-radius: 2px; }
 .rpc-sp-kpi-label { font-family: var(--font-mono); font-size: 10px; letter-spacing: 2.5px; text-transform: uppercase; color: var(--rpc-text-muted); margin-bottom: 6px; }
-.rpc-sp-kpi-value { font-family: var(--font-display); font-weight: 800; font-size: 30px; color: var(--rpc-red); letter-spacing: 0.5px; }
+.rpc-sp-kpi-value { font-family: var(--font-display); font-weight: 800; font-size: 30px; color: var(--rpc-red-text); letter-spacing: 0.5px; }
 
 .rpc-sp-section-label { font-family: var(--font-mono); font-size: 10px; letter-spacing: 2.5px; text-transform: uppercase; color: var(--rpc-text-muted); margin-bottom: 12px; }
 .rpc-sp-hero-strip { max-width: 1180px; margin: 0 auto 30px; }
@@ -606,22 +606,22 @@ const CSS = `
 .rpc-sp-hero-art { position: relative; aspect-ratio: 1 / 1; background: var(--rpc-surface-raised); }
 .rpc-sp-hero-serial { position: absolute; top: 8px; left: 8px; font-family: var(--font-mono); font-size: 10px; letter-spacing: 1px; text-transform: uppercase; padding: 4px 8px; background: var(--rpc-black); border: 1px solid var(--rpc-border); border-radius: 2px; color: var(--rpc-text-secondary); }
 .rpc-sp-hero-body { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 4px; flex: 1; }
-.rpc-sp-hero-mult { font-family: var(--font-display); font-weight: 800; font-size: 26px; color: var(--rpc-red); letter-spacing: 0.5px; }
+.rpc-sp-hero-mult { font-family: var(--font-display); font-weight: 800; font-size: 26px; color: var(--rpc-red-text); letter-spacing: 0.5px; }
 .rpc-sp-hero-name { font-family: var(--font-body); font-weight: 700; font-size: 15px; line-height: 1.2; color: var(--rpc-text-primary); }
 .rpc-sp-hero-set { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.5px; color: var(--rpc-text-muted); line-height: 1.3; }
 .rpc-sp-hero-prices { font-family: var(--font-mono); font-size: 12px; display: flex; align-items: center; gap: 7px; margin-top: 2px; }
 .rpc-sp-prices-typical { color: var(--rpc-text-muted); }
-.rpc-sp-arrow { color: var(--rpc-text-ghost); }
+.rpc-sp-arrow { color: var(--rpc-text-muted); }
 .rpc-sp-prices-no1 { color: var(--rpc-text-primary); font-weight: 700; }
 .rpc-sp-hero-meta { font-family: var(--font-mono); font-size: 10px; letter-spacing: 1px; text-transform: uppercase; color: var(--rpc-text-muted); display: flex; gap: 6px; margin-top: 2px; }
-.rpc-sp-dot { color: var(--rpc-text-ghost); }
+.rpc-sp-dot { color: var(--rpc-text-muted); }
 
 .rpc-sp-controls { max-width: 1180px; margin: 0 auto 20px; display: flex; flex-wrap: wrap; gap: 16px 24px; align-items: center; }
 .rpc-sp-pill-group { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .rpc-sp-pill-label { font-family: var(--font-mono); font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-muted); margin-right: 4px; }
 .rpc-sp-pill { font-family: var(--font-mono); font-size: 12px; letter-spacing: 1.5px; text-transform: uppercase; padding: 7px 14px; border: 1px solid var(--rpc-border); background: transparent; color: var(--rpc-text-secondary); cursor: pointer; border-radius: 2px; transition: border-color 120ms, color 120ms, background 120ms; }
 .rpc-sp-pill:hover { border-color: var(--rpc-border-hover); color: var(--rpc-text-primary); }
-.rpc-sp-pill-active { background: var(--rpc-red-bg); border-color: var(--rpc-red); color: var(--rpc-red); }
+.rpc-sp-pill-active { background: var(--rpc-red-bg); border-color: var(--rpc-red); color: var(--rpc-red-text); }
 .rpc-sp-sort { display: inline-flex; align-items: center; gap: 8px; }
 .rpc-sp-select { font-family: var(--font-mono); font-size: 12px; letter-spacing: 1px; background: transparent; border: 1px solid var(--rpc-border); color: var(--rpc-text-primary); padding: 7px 10px; border-radius: 2px; cursor: pointer; }
 
@@ -642,7 +642,7 @@ const CSS = `
 .rpc-sp-row-sub { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.5px; color: var(--rpc-text-muted); display: flex; flex-wrap: wrap; gap: 6px; margin-top: 3px; }
 .rpc-sp-row-prices { font-family: var(--font-mono); font-size: 13px; display: flex; align-items: center; gap: 7px; min-width: 0; }
 .rpc-sp-row-right { text-align: right; white-space: nowrap; }
-.rpc-sp-row-mult { font-family: var(--font-display); font-weight: 800; font-size: 22px; color: var(--rpc-red); letter-spacing: 0.5px; }
+.rpc-sp-row-mult { font-family: var(--font-display); font-weight: 800; font-size: 22px; color: var(--rpc-red-text); letter-spacing: 0.5px; }
 .rpc-sp-row-when { font-family: var(--font-mono); font-size: 10px; letter-spacing: 1px; text-transform: uppercase; color: var(--rpc-text-muted); margin-top: 2px; }
 
 .rpc-sp-footer { max-width: 1180px; margin: 40px auto 0; padding-top: 24px; border-top: 1px solid var(--rpc-border-subtle); display: grid; grid-template-columns: 2fr 1fr; gap: 32px; }
@@ -653,9 +653,9 @@ const CSS = `
 .rpc-sp-share-btn { display: inline-flex; align-items: center; justify-content: center; background: var(--rpc-red); color: #fff; font-family: var(--font-mono); font-size: 12px; letter-spacing: 2.5px; text-transform: uppercase; padding: 13px 18px; border-radius: 2px; text-decoration: none; transition: background 120ms; }
 .rpc-sp-share-btn:hover { background: var(--rpc-red-hover); }
 .rpc-sp-copy-btn { display: inline-flex; align-items: center; justify-content: center; background: transparent; color: var(--rpc-text-primary); border: 1px solid var(--rpc-border); font-family: var(--font-mono); font-size: 12px; letter-spacing: 2.5px; text-transform: uppercase; padding: 13px 18px; border-radius: 2px; cursor: pointer; transition: border-color 120ms, color 120ms; }
-.rpc-sp-copy-btn:hover { border-color: var(--rpc-red); color: var(--rpc-red); }
+.rpc-sp-copy-btn:hover { border-color: var(--rpc-red); color: var(--rpc-red-text); }
 .rpc-sp-back { font-family: var(--font-mono); font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-secondary); text-decoration: none; padding: 10px; text-align: center; }
-.rpc-sp-back:hover { color: var(--rpc-red); }
+.rpc-sp-back:hover { color: var(--rpc-red-text); }
 
 @media (max-width: 1100px) { .rpc-sp-hero-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 760px) {

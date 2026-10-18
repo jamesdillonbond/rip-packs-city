@@ -387,7 +387,7 @@ export default function ListingsDashboard() {
                         {relativeTime(row.listed_at)}
                       </td>
                       <td className="py-2 pr-0 text-right">
-                        <span className="text-[10px] uppercase tracking-wider text-[color:var(--rpc-text-ghost)]">
+                        <span className="text-[10px] uppercase tracking-wider text-[color:var(--rpc-text-muted)]">
                             —
                           </span>
                       </td>
@@ -551,7 +551,7 @@ export default function ListingsDashboard() {
           <TimerReset size={12} />
           Refreshes every 5 min
         </span>
-        <span className="text-[color:var(--rpc-text-ghost)]">·</span>
+        <span className="text-[color:var(--rpc-text-muted)]">·</span>
         <Link
           href="/analytics/methodology/listings"
           className="hover:text-emerald-400 transition-colors inline-flex items-center gap-1"
@@ -561,7 +561,7 @@ export default function ListingsDashboard() {
         </Link>
         {summary?.as_of ? (
           <>
-            <span className="text-[color:var(--rpc-text-ghost)]">·</span>
+            <span className="text-[color:var(--rpc-text-muted)]">·</span>
             <span>As of {relativeTime(summary.as_of)}</span>
           </>
         ) : null}

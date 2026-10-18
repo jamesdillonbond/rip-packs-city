@@ -612,7 +612,7 @@ export default function PackPageClient({ collection, tiers, title, accent = 'var
             <Link
               href={`/${collection}/pack-sniper`}
               className="text-[10px] uppercase tracking-wide text-[color:var(--rpc-text-secondary)] hover:text-[color:var(--rpc-text-primary)] ml-auto"
-              style={{ color: 'var(--rpc-red)' }}
+              style={{ color: 'var(--rpc-red-text)' }}
             >
               Pack Sniper: currently-listed packs ranked by ask vs EV →
             </Link>
@@ -654,7 +654,7 @@ export default function PackPageClient({ collection, tiers, title, accent = 'var
               inputMode="decimal"
               className="rounded-lg border border-[color:var(--rpc-border)] bg-[color:var(--rpc-surface-raised)] px-2 py-1.5 text-xs text-[color:var(--rpc-text-primary)] outline-none placeholder:text-[color:var(--rpc-text-muted)] w-20"
             />
-            <span className="text-[10px] text-[color:var(--rpc-text-ghost)]">–</span>
+            <span className="text-[10px] text-[color:var(--rpc-text-muted)]">–</span>
             <input
               value={priceMaxInput}
               onChange={(e) => setPriceMaxInput(e.target.value)}

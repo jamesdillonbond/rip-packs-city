@@ -32,7 +32,7 @@ export default function MarketplaceUnavailablePill({
       style={{
         background: "rgba(255,255,255,0.04)",
         borderColor: "rgba(255,255,255,0.15)",
-        color: "var(--rpc-text-ghost)",
+        color: "var(--rpc-text-muted)",
         textDecoration: "none",
         padding: "4px 12px",
         opacity: 0.65,

@@ -276,7 +276,7 @@ export function RipPerforation({ rip }: { rip: RipEvent }) {
           position: "relative",
           height: 24,
           width: "100%",
-          color: "var(--rpc-red)",
+          color: "var(--rpc-red-text)",
           marginBottom: "var(--space-lg)",
         }}
       >
@@ -330,7 +330,7 @@ export function RipPerforation({ rip }: { rip: RipEvent }) {
             textTransform: "uppercase",
             letterSpacing: "0.12em",
             fontSize: 14,
-            color: "var(--rpc-red)",
+            color: "var(--rpc-red-text)",
             marginBottom: 4,
           }}
         >
@@ -379,7 +379,7 @@ function PullCard({ pull, collection }: { pull: PackPull; collection: string }) 
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            color: "var(--rpc-text-ghost)",
+            color: "var(--rpc-text-muted)",
             fontFamily: "var(--font-display)",
             textTransform: "uppercase",
             letterSpacing: "0.08em",
@@ -462,7 +462,7 @@ function PullCard({ pull, collection }: { pull: PackPull; collection: string }) 
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              color: "var(--rpc-text-ghost)",
+              color: "var(--rpc-text-muted)",
               fontFamily: "var(--font-mono)",
               fontSize: 11,
             }}
@@ -859,7 +859,7 @@ function PackImagePlaceholder({ label }: { label: string }) {
         alignItems: "center",
         justifyContent: "center",
         gap: 4,
-        color: "var(--rpc-text-ghost)",
+        color: "var(--rpc-text-muted)",
         background:
           "repeating-linear-gradient(135deg, var(--rpc-surface) 0 10px, var(--rpc-surface-raised) 10px 20px)",
       }}
@@ -1061,7 +1061,7 @@ function PackOnChainIdRow({
       <CopyButton value={packNftId} label="pack id" />
       {firstSeenAt && (
         <>
-          <span aria-hidden style={{ color: "var(--rpc-text-ghost)", margin: "0 8px" }}>·</span>
+          <span aria-hidden style={{ color: "var(--rpc-text-muted)", margin: "0 8px" }}>·</span>
           <span title={firstSeenAt}>first seen {relativeTime(firstSeenAt)}</span>
         </>
       )}

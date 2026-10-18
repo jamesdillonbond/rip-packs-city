@@ -205,7 +205,7 @@ function SchonelyQuote() {
       }}
     >
       <div style={{ color: "var(--rpc-text-secondary)" }}>
-        &ldquo;<span style={{ color: "var(--rpc-red)" }}>Rip City</span>! All right!&rdquo;
+        &ldquo;<span style={{ color: "var(--rpc-red-text)" }}>Rip City</span>! All right!&rdquo;
       </div>
       <div
         style={{

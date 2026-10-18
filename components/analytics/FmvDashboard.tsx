@@ -47,7 +47,7 @@ import {
 
 function ConfidenceBadge({ value }: { value: FmvConfidence | null }) {
   const s = resolveConfidenceStyle(value)
-  if (!s) return <span className="text-[color:var(--rpc-text-ghost)]">—</span>
+  if (!s) return <span className="text-[color:var(--rpc-text-muted)]">—</span>
   return (
     <span
       className={
@@ -740,7 +740,7 @@ export default function FmvDashboard() {
           <TimerReset size={12} />
           Refreshes every 10 min
         </span>
-        <span className="text-[color:var(--rpc-text-ghost)]">·</span>
+        <span className="text-[color:var(--rpc-text-muted)]">·</span>
         <Link
           href="/analytics/methodology/fmv"
           className="hover:text-teal-400 transition-colors inline-flex items-center gap-1"
@@ -750,7 +750,7 @@ export default function FmvDashboard() {
         </Link>
         {health?.as_of ? (
           <>
-            <span className="text-[color:var(--rpc-text-ghost)]">·</span>
+            <span className="text-[color:var(--rpc-text-muted)]">·</span>
             <span>
               Pipeline as of {new Date(health.as_of).toLocaleString()}
             </span>

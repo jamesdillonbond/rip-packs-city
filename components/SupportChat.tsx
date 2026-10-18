@@ -162,7 +162,7 @@ function MessageText({ text }: { text: string }) {
               href={t.href}
               {...(external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
               {...(offSite ? { title: offSiteHost ? `Opens ${offSiteHost} (leaves Rip Packs City)` : "Leaves Rip Packs City", "data-offsite": "1" } : {})}
-              style={{ color: "var(--rpc-red)", textDecoration: "underline", textUnderlineOffset: 2, wordBreak: "break-word" }}
+              style={{ color: "var(--rpc-red-text)", textDecoration: "underline", textUnderlineOffset: 2, wordBreak: "break-word" }}
             >
               {t.text}
               {offSite ? <span aria-hidden="true" style={{ fontSize: "0.85em", marginLeft: 2 }}>↗</span> : null}
@@ -789,7 +789,7 @@ export default function SupportChat({ pageContext, pageEntity, collectionId, use
                     <MessageText text={msg.text} />
                   )}
                   {msg.escalated && (
-                    <div style={{ marginTop: 8, padding: "6px 10px", background: "rgba(224,58,47,0.1)", border: "1px solid rgba(224,58,47,0.25)", borderRadius: 8, fontSize: 12, color: "var(--rpc-red)" }}>📋 Flagged for the team — we'll follow up</div>
+                    <div style={{ marginTop: 8, padding: "6px 10px", background: "rgba(224,58,47,0.1)", border: "1px solid rgba(224,58,47,0.25)", borderRadius: 8, fontSize: 12, color: "var(--rpc-red-text)" }}>📋 Flagged for the team — we'll follow up</div>
                   )}
                 </div>
                 {msg.momentCards && msg.momentCards.length > 0 && (

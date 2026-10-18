@@ -465,21 +465,21 @@ const styles: Record<string, React.CSSProperties> = {
 
 const CSS = `
 .rpc-pd-hero-head { max-width: 1180px; margin: 0 auto 24px; padding-bottom: 22px; border-bottom: 1px solid var(--rpc-border-subtle); }
-.rpc-pd-eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: 4px; text-transform: uppercase; color: var(--rpc-red); margin-bottom: 12px; }
+.rpc-pd-eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: 4px; text-transform: uppercase; color: var(--rpc-red-text); margin-bottom: 12px; }
 .rpc-pd-h1 { font-family: var(--font-display); font-weight: 800; font-size: clamp(38px, 6vw, 64px); letter-spacing: 0.5px; line-height: 1.02; margin: 0 0 14px; text-transform: uppercase; }
 .rpc-pd-lede { font-family: var(--font-body); font-size: 18px; line-height: 1.55; color: var(--rpc-text-secondary); max-width: 860px; margin: 0 0 16px; }
 .rpc-pd-lede strong { color: var(--rpc-text-primary); }
 .rpc-pd-meta-row { font-family: var(--font-mono); font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-muted); }
-.rpc-pd-meta-sep { margin: 0 8px; color: var(--rpc-text-ghost); }
+.rpc-pd-meta-sep { margin: 0 8px; color: var(--rpc-text-muted); }
 
 .rpc-pd-kpi-row { max-width: 1180px; margin: 0 auto 22px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .rpc-pd-kpi { border: 1px solid var(--rpc-border-subtle); background: var(--rpc-surface-raised); padding: 14px 16px; border-radius: 2px; }
 .rpc-pd-kpi-label { font-family: var(--font-mono); font-size: 10px; letter-spacing: 2.5px; text-transform: uppercase; color: var(--rpc-text-muted); margin-bottom: 6px; }
-.rpc-pd-kpi-value { font-family: var(--font-display); font-weight: 800; font-size: 30px; color: var(--rpc-red); letter-spacing: 0.5px; }
+.rpc-pd-kpi-value { font-family: var(--font-display); font-weight: 800; font-size: 30px; color: var(--rpc-red-text); letter-spacing: 0.5px; }
 
 .rpc-pd-controls { max-width: 1180px; margin: 0 auto 20px; display: flex; gap: 12px; }
 .rpc-pd-refresh { font-family: var(--font-mono); font-size: 12px; letter-spacing: 1.5px; text-transform: uppercase; padding: 8px 16px; border: 1px solid var(--rpc-border); background: transparent; color: var(--rpc-text-secondary); cursor: pointer; border-radius: 2px; transition: border-color 120ms, color 120ms; }
-.rpc-pd-refresh:hover:not(:disabled) { border-color: var(--rpc-red); color: var(--rpc-red); }
+.rpc-pd-refresh:hover:not(:disabled) { border-color: var(--rpc-red); color: var(--rpc-red-text); }
 .rpc-pd-refresh:disabled { opacity: 0.5; cursor: default; }
 
 .rpc-pd-list { max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; gap: 22px; }
@@ -496,7 +496,7 @@ const CSS = `
 .rpc-pd-stat { display: flex; flex-direction: column; gap: 3px; border: 1px solid var(--rpc-border-subtle); background: var(--rpc-surface-raised); padding: 10px 12px; border-radius: 3px; }
 .rpc-pd-stat-label { font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-muted); }
 .rpc-pd-stat-value { font-family: var(--font-mono); font-size: 18px; font-weight: 700; color: var(--rpc-text-primary); }
-.rpc-pd-stat-value.rpc-pd-accent { color: var(--rpc-red); }
+.rpc-pd-stat-value.rpc-pd-accent { color: var(--rpc-red-text); }
 .rpc-pd-stat-sub { font-family: var(--font-mono); font-size: 10px; color: var(--rpc-text-muted); }
 
 .rpc-pd-verdict { font-family: var(--font-body); font-size: 14.5px; line-height: 1.5; color: var(--rpc-text-primary); padding: 11px 14px; margin: 0 0 16px; border: 1px solid var(--rpc-border-subtle); border-left: 3px solid var(--rpc-text-muted); background: var(--rpc-surface-raised); border-radius: 2px; display: flex; align-items: center; gap: 10px; }
@@ -511,7 +511,7 @@ const CSS = `
 .rpc-pd-td { padding: 8px 10px; font-family: var(--font-body); color: var(--rpc-text-secondary); vertical-align: top; }
 .rpc-pd-td-name { color: var(--rpc-text-primary); font-weight: 600; }
 .rpc-pd-namelink { color: var(--rpc-text-primary); text-decoration: none; }
-.rpc-pd-namelink:hover { color: var(--rpc-red); }
+.rpc-pd-namelink:hover { color: var(--rpc-red-text); }
 .rpc-pd-x { font-family: var(--font-mono); font-size: 11px; color: var(--rpc-text-muted); margin-left: 6px; }
 .rpc-pd-parallel { font-family: var(--font-mono); font-size: 8.5px; letter-spacing: 1px; text-transform: uppercase; padding: 1px 5px; margin-left: 7px; border: 1px solid var(--rpc-warning); color: var(--rpc-warning); border-radius: 2px; white-space: nowrap; cursor: help; }
 .rpc-pd-td-set, .rpc-pd-td-tier { font-family: var(--font-mono); font-size: 11.5px; color: var(--rpc-text-muted); text-transform: capitalize; }
@@ -527,7 +527,7 @@ const CSS = `
 .rpc-pd-odds { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--rpc-border-subtle); }
 .rpc-pd-sub { font-family: var(--font-mono); font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-muted); margin-bottom: 8px; }
 .rpc-pd-odds-table { max-width: 520px; }
-.rpc-pd-disclaimer { font-family: var(--font-body); font-size: 11.5px; line-height: 1.5; color: var(--rpc-text-ghost); margin: 8px 0 0; }
+.rpc-pd-disclaimer { font-family: var(--font-body); font-size: 11.5px; line-height: 1.5; color: var(--rpc-text-muted); margin: 8px 0 0; }
 
 .rpc-pd-footer { max-width: 1180px; margin: 40px auto 0; padding-top: 24px; border-top: 1px solid var(--rpc-border-subtle); display: grid; grid-template-columns: 2fr 1fr; gap: 32px; }
 .rpc-pd-method h3 { font-family: var(--font-display); font-weight: 800; font-size: 22px; letter-spacing: 1px; text-transform: uppercase; margin: 0 0 10px; }
@@ -537,9 +537,9 @@ const CSS = `
 .rpc-pd-share-btn { display: inline-flex; align-items: center; justify-content: center; background: var(--rpc-red); color: #fff; font-family: var(--font-mono); font-size: 12px; letter-spacing: 2.5px; text-transform: uppercase; padding: 13px 18px; border-radius: 2px; text-decoration: none; transition: background 120ms; }
 .rpc-pd-share-btn:hover { background: var(--rpc-red-hover); }
 .rpc-pd-copy-btn { display: inline-flex; align-items: center; justify-content: center; background: transparent; color: var(--rpc-text-primary); border: 1px solid var(--rpc-border); font-family: var(--font-mono); font-size: 12px; letter-spacing: 2.5px; text-transform: uppercase; padding: 13px 18px; border-radius: 2px; cursor: pointer; transition: border-color 120ms, color 120ms; }
-.rpc-pd-copy-btn:hover { border-color: var(--rpc-red); color: var(--rpc-red); }
+.rpc-pd-copy-btn:hover { border-color: var(--rpc-red); color: var(--rpc-red-text); }
 .rpc-pd-back { font-family: var(--font-mono); font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-secondary); text-decoration: none; padding: 10px; text-align: center; }
-.rpc-pd-back:hover { color: var(--rpc-red); }
+.rpc-pd-back:hover { color: var(--rpc-red-text); }
 
 @media (max-width: 760px) {
   .rpc-pd-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }

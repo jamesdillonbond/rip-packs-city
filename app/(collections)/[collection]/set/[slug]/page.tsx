@@ -284,7 +284,7 @@ export default async function SetPage(props: { params: Promise<{ collection: str
       {isPanini && (
         <div className="rpc-mono" style={{ marginTop: 8, padding: "0 4px", fontSize: 11, color: "var(--rpc-text-muted)", lineHeight: 1.6 }}>
           Panini publishes no checklist, so this is every edition of the set RPC has seen listed — a floor, not a census.{" "}
-          <Link href={`/${collection}/sets`} style={{ color: "var(--rpc-red)", textDecoration: "none" }}>Cost to finish each set →</Link>
+          <Link href={`/${collection}/sets`} style={{ color: "var(--rpc-red-text)", textDecoration: "none" }}>Cost to finish each set →</Link>
         </div>
       )}
 
@@ -413,7 +413,7 @@ function SetUnavailable({ collection, slug }: { collection: string; slug: string
       </p>
       <a
         href={`/${collection}/sets`}
-        style={{ marginTop: 8, padding: "10px 18px", border: "1px solid var(--rpc-red-border)", color: "var(--rpc-red)", background: "transparent", fontFamily: "var(--font-mono)", letterSpacing: "0.2em", textTransform: "uppercase", fontSize: 12, textDecoration: "none" }}
+        style={{ marginTop: 8, padding: "10px 18px", border: "1px solid var(--rpc-red-border)", color: "var(--rpc-red-text)", background: "transparent", fontFamily: "var(--font-mono)", letterSpacing: "0.2em", textTransform: "uppercase", fontSize: 12, textDecoration: "none" }}
       >
         All sets
       </a>

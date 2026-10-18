@@ -151,7 +151,7 @@ export default function EarlyAccessClient() {
       }}
     >
       <style>{`
-        input::placeholder { color: var(--rpc-text-ghost); }
+        input::placeholder { color: var(--rpc-text-muted); }
       `}</style>
 
       <div style={{ width: "100%", maxWidth: 560 }}>
@@ -380,7 +380,7 @@ export default function EarlyAccessClient() {
               style={{
                 fontSize: 10,
                 letterSpacing: "0.12em",
-                color: "var(--rpc-text-ghost)",
+                color: "var(--rpc-text-muted)",
                 textAlign: "center",
                 textTransform: "uppercase",
               }}
@@ -457,7 +457,7 @@ function SuccessCard({ duplicate }: { duplicate: boolean }) {
           fontSize: 10,
           letterSpacing: "0.12em",
           textTransform: "uppercase",
-          color: "var(--rpc-text-ghost)",
+          color: "var(--rpc-text-muted)",
         }}
       >
         <Link href="/" style={{ color: "var(--rpc-text-muted)" }}>← Back to home</Link>
@@ -481,7 +481,7 @@ function Field({
     <label style={{ display: "block" }}>
       <Label>
         {label}
-        {required ? <span style={{ color: "var(--rpc-red)", marginLeft: 4 }}>*</span> : null}
+        {required ? <span style={{ color: "var(--rpc-red-text)", marginLeft: 4 }}>*</span> : null}
       </Label>
       {children}
       {hint ? (

@@ -420,7 +420,7 @@ function SeriesUnavailable({ collection, slug }: { collection: string; slug: str
         The data didn&rsquo;t come back in time, so nothing is shown rather than a partial view.
         This is a problem on our side &mdash; it does not mean the series is empty. Reloading often works.
       </p>
-      <a href={`/${collection}/sets`} style={{ marginTop: 8, padding: "10px 18px", border: "1px solid var(--rpc-red-border)", color: "var(--rpc-red)", background: "transparent", fontFamily: "var(--font-mono)", letterSpacing: "0.2em", textTransform: "uppercase", fontSize: 12, textDecoration: "none" }}>
+      <a href={`/${collection}/sets`} style={{ marginTop: 8, padding: "10px 18px", border: "1px solid var(--rpc-red-border)", color: "var(--rpc-red-text)", background: "transparent", fontFamily: "var(--font-mono)", letterSpacing: "0.2em", textTransform: "uppercase", fontSize: 12, textDecoration: "none" }}>
         All sets
       </a>
     </main>

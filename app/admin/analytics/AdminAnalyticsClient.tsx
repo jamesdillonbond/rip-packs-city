@@ -380,7 +380,7 @@ export function TractionPanel({ traction, error }: { traction: TractionBlock | n
       {failed && (
         <div
           role="status"
-          style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-red)", marginBottom: 10 }}
+          style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-red-text)", marginBottom: 10 }}
         >
           Traction snapshot could not be read — tiles show a dash, not zero.{error ? ` ${error}` : ""}
         </div>

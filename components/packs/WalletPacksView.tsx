@@ -226,7 +226,7 @@ export default function WalletPacksView({ collection }: { collection: string }) 
   if (!wallet) {
     return (
       <div className="rpc-card" style={{ padding: 32, textAlign: "center", display: "flex", flexDirection: "column", gap: 12, alignItems: "center" }}>
-        <div style={{ fontSize: 30, color: "var(--rpc-text-ghost)" }}>📦</div>
+        <div style={{ fontSize: 30, color: "var(--rpc-text-muted)" }}>📦</div>
         <div className="rpc-heading" style={{ fontSize: 16 }}>Your sealed packs</div>
         <div className="rpc-mono" style={{ fontSize: 12, color: "var(--rpc-text-muted)", maxWidth: 460, lineHeight: 1.7 }}>
           Search a wallet on the <strong>Moments</strong>{" "}tab to see its pack buys, rips,
@@ -243,7 +243,7 @@ export default function WalletPacksView({ collection }: { collection: string }) 
   if (authRequired) {
     return (
       <div className="rpc-card" style={{ padding: 32, textAlign: "center", display: "flex", flexDirection: "column", gap: 12, alignItems: "center" }}>
-        <div style={{ fontSize: 30, color: "var(--rpc-text-ghost)" }}>🔒</div>
+        <div style={{ fontSize: 30, color: "var(--rpc-text-muted)" }}>🔒</div>
         <div className="rpc-heading" style={{ fontSize: 16 }}>Sign in to see pack P&amp;L</div>
         <div className="rpc-mono" style={{ fontSize: 12, color: "var(--rpc-text-muted)", maxWidth: 460, lineHeight: 1.7 }}>
           Pack buy prices, rips, and realized P&amp;L are part of your personal dashboard. Sign in to view the
@@ -347,7 +347,7 @@ export default function WalletPacksView({ collection }: { collection: string }) 
                               them. Render a pack glyph rather than an empty
                               grey square so an unopened row reads as "sealed",
                               not "broken image". */}
-                          <span style={{ width: 34, height: 34, borderRadius: 4, background: "var(--rpc-surface-hover)", overflow: "hidden", flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 15, color: "var(--rpc-text-ghost)" }}>
+                          <span style={{ width: 34, height: 34, borderRadius: 4, background: "var(--rpc-surface-hover)", overflow: "hidden", flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 15, color: "var(--rpc-text-muted)" }}>
                             {row.pack_image ? (
                               // eslint-disable-next-line @next/next/no-img-element
                               <img src={row.pack_image} alt="" width={34} height={34} style={{ objectFit: "cover", width: 34, height: 34 }} />

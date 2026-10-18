@@ -511,7 +511,7 @@ const CSS = `
   font-size: 12px;
   letter-spacing: 4px;
   text-transform: uppercase;
-  color: var(--rpc-red);
+  color: var(--rpc-red-text);
   margin-bottom: 12px;
 }
 .rpc-mk-h1 {
@@ -540,7 +540,7 @@ const CSS = `
   text-transform: uppercase;
   color: var(--rpc-text-muted);
 }
-.rpc-mk-meta-sep { margin: 0 8px; color: var(--rpc-text-ghost); }
+.rpc-mk-meta-sep { margin: 0 8px; color: var(--rpc-text-muted); }
 
 .rpc-mk-cards {
   max-width: 1180px;
@@ -585,8 +585,8 @@ const CSS = `
   font-weight: 700;
 }
 .rpc-mk-up { color: #34D399; }
-.rpc-mk-down { color: var(--rpc-red); }
-.rpc-mk-chg-cap { color: var(--rpc-text-ghost); font-weight: 400; letter-spacing: 2px; }
+.rpc-mk-down { color: var(--rpc-red-text); }
+.rpc-mk-chg-cap { color: var(--rpc-text-muted); font-weight: 400; letter-spacing: 2px; }
 
 .rpc-mk-chart-wrap {
   max-width: 1180px;
@@ -704,7 +704,7 @@ const CSS = `
   padding: 10px;
   text-align: center;
 }
-.rpc-mk-back:hover { color: var(--rpc-red); }
+.rpc-mk-back:hover { color: var(--rpc-red-text); }
 
 @media (max-width: 880px) {
   .rpc-mk-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }

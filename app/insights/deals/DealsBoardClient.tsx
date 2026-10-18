@@ -414,7 +414,7 @@ export default function DealsBoardClient({
               fontSize: 12,
               letterSpacing: "0.06em",
               textTransform: "uppercase",
-              color: "var(--rpc-red)",
+              color: "var(--rpc-red-text)",
               textDecoration: "none",
               padding: "8px 14px",
               border: "1px solid var(--rpc-red)",
@@ -761,7 +761,7 @@ const CSS = `
   font-size: 12px;
   letter-spacing: 4px;
   text-transform: uppercase;
-  color: var(--rpc-red);
+  color: var(--rpc-red-text);
   margin-bottom: 12px;
 }
 .rpc-dl-h1 {
@@ -790,7 +790,7 @@ const CSS = `
   text-transform: uppercase;
   color: var(--rpc-text-muted);
 }
-.rpc-dl-meta-sep { margin: 0 8px; color: var(--rpc-text-ghost); }
+.rpc-dl-meta-sep { margin: 0 8px; color: var(--rpc-text-muted); }
 .rpc-dl-meta-warn { color: var(--rpc-warning); font-weight: 600; }
 
 .rpc-dl-active-filter {
@@ -809,7 +809,7 @@ const CSS = `
   font-size: 10px;
   letter-spacing: 2px;
   text-transform: uppercase;
-  color: var(--rpc-red);
+  color: var(--rpc-red-text);
 }
 .rpc-dl-active-value {
   font-family: var(--font-body);
@@ -824,7 +824,7 @@ const CSS = `
   text-transform: uppercase;
   background: transparent;
   border: 1px solid var(--rpc-red-border);
-  color: var(--rpc-red);
+  color: var(--rpc-red-text);
   padding: 4px 8px;
   border-radius: 2px;
   cursor: pointer;
@@ -874,7 +874,7 @@ const CSS = `
 .rpc-dl-pill-active {
   background: var(--rpc-red-bg);
   border-color: var(--rpc-red);
-  color: var(--rpc-red);
+  color: var(--rpc-red-text);
 }
 .rpc-dl-sort { display: inline-flex; align-items: center; gap: 8px; }
 .rpc-dl-select {
@@ -914,7 +914,7 @@ const CSS = `
   font-family: var(--font-display);
   font-weight: 800;
   font-size: 30px;
-  color: var(--rpc-red);
+  color: var(--rpc-red-text);
   letter-spacing: 0.5px;
 }
 
@@ -949,7 +949,7 @@ const CSS = `
   white-space: nowrap;
 }
 .rpc-dl-th-num { text-align: right; }
-.rpc-dl-th-emph { color: var(--rpc-red); }
+.rpc-dl-th-emph { color: var(--rpc-red-text); }
 .rpc-dl-row {
   border-bottom: 1px solid var(--rpc-border-subtle);
   transition: background 100ms;
@@ -1001,7 +1001,7 @@ const CSS = `
   color: var(--rpc-text-primary);
   white-space: nowrap;
 }
-.rpc-dl-td-emph { color: var(--rpc-red); font-weight: 700; }
+.rpc-dl-td-emph { color: var(--rpc-red-text); font-weight: 700; }
 .rpc-dl-discount-usd {
   display: block;
   font-size: 10px;
@@ -1108,7 +1108,7 @@ const CSS = `
   padding: 10px;
   text-align: center;
 }
-.rpc-dl-back:hover { color: var(--rpc-red); }
+.rpc-dl-back:hover { color: var(--rpc-red-text); }
 
 @media (max-width: 760px) {
   .rpc-dl-kpi-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }

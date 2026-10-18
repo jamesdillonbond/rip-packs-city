@@ -563,7 +563,7 @@ const CSS = `
   font-size: 12px;
   letter-spacing: 4px;
   text-transform: uppercase;
-  color: var(--rpc-red);
+  color: var(--rpc-red-text);
   margin-bottom: 12px;
 }
 .rpc-os-h1 {
@@ -592,7 +592,7 @@ const CSS = `
   text-transform: uppercase;
   color: var(--rpc-text-muted);
 }
-.rpc-os-meta-sep { margin: 0 8px; color: var(--rpc-text-ghost); }
+.rpc-os-meta-sep { margin: 0 8px; color: var(--rpc-text-muted); }
 
 .rpc-os-active-filter {
   max-width: 1180px;
@@ -610,7 +610,7 @@ const CSS = `
   font-size: 10px;
   letter-spacing: 2px;
   text-transform: uppercase;
-  color: var(--rpc-red);
+  color: var(--rpc-red-text);
 }
 .rpc-os-active-value {
   font-family: var(--font-body);
@@ -625,7 +625,7 @@ const CSS = `
   text-transform: uppercase;
   background: transparent;
   border: 1px solid var(--rpc-red-border);
-  color: var(--rpc-red);
+  color: var(--rpc-red-text);
   padding: 4px 8px;
   border-radius: 2px;
   cursor: pointer;
@@ -675,7 +675,7 @@ const CSS = `
 .rpc-os-pill-active {
   background: var(--rpc-red-bg);
   border-color: var(--rpc-red);
-  color: var(--rpc-red);
+  color: var(--rpc-red-text);
 }
 .rpc-os-sort { display: inline-flex; align-items: center; gap: 8px; }
 .rpc-os-select {
@@ -715,7 +715,7 @@ const CSS = `
   font-family: var(--font-display);
   font-weight: 800;
   font-size: 30px;
-  color: var(--rpc-red);
+  color: var(--rpc-red-text);
   letter-spacing: 0.5px;
 }
 
@@ -750,7 +750,7 @@ const CSS = `
   white-space: nowrap;
 }
 .rpc-os-th-num { text-align: right; }
-.rpc-os-th-emph { color: var(--rpc-red); }
+.rpc-os-th-emph { color: var(--rpc-red-text); }
 .rpc-os-row {
   border-bottom: 1px solid var(--rpc-border-subtle);
   transition: background 100ms;
@@ -779,7 +779,7 @@ const CSS = `
   color: var(--rpc-text-primary);
   white-space: nowrap;
 }
-.rpc-os-td-emph { color: var(--rpc-red); font-weight: 700; }
+.rpc-os-td-emph { color: var(--rpc-red-text); font-weight: 700; }
 .rpc-os-tier-chip {
   font-family: var(--font-mono);
   font-size: 10px;
@@ -809,7 +809,7 @@ const CSS = `
   font-size: 9px;
   letter-spacing: 1.5px;
   text-transform: uppercase;
-  color: var(--rpc-red);
+  color: var(--rpc-red-text);
   border: 1px solid var(--rpc-red-border);
   background: var(--rpc-red-bg);
   padding: 2px 6px;
@@ -873,7 +873,7 @@ const CSS = `
   padding: 10px;
   text-align: center;
 }
-.rpc-os-back:hover { color: var(--rpc-red); }
+.rpc-os-back:hover { color: var(--rpc-red-text); }
 
 @media (max-width: 760px) {
   .rpc-os-kpi-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }

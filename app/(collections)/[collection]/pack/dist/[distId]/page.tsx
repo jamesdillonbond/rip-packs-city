@@ -1642,7 +1642,7 @@ function PackHeroStrip({ collection, editions }: { collection: string; editions:
                   {e.set_name}
                 </div>
               )}
-              <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 16, color: "var(--rpc-red)", marginTop: 4 }}>
+              <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 16, color: "var(--rpc-red-text)", marginTop: 4 }}>
                 {fmtUsd(e.fmv_usd)}
               </div>
             </>
@@ -2516,7 +2516,7 @@ function PackUnavailable({ collection }: { collection: string }) {
         The pack data didn&rsquo;t come back in time, so nothing is shown rather than a partial view.
         This is a problem on our side &mdash; it does not mean the pack is gone or sold out. Reloading often works.
       </p>
-      <a href={`/${collection}/packs`} style={{ marginTop: 8, padding: "10px 18px", border: "1px solid var(--rpc-red-border)", color: "var(--rpc-red)", background: "transparent", fontFamily: "var(--font-mono)", letterSpacing: "0.2em", textTransform: "uppercase", fontSize: 12, textDecoration: "none" }}>
+      <a href={`/${collection}/packs`} style={{ marginTop: 8, padding: "10px 18px", border: "1px solid var(--rpc-red-border)", color: "var(--rpc-red-text)", background: "transparent", fontFamily: "var(--font-mono)", letterSpacing: "0.2em", textTransform: "uppercase", fontSize: 12, textDecoration: "none" }}>
         All packs
       </a>
     </main>

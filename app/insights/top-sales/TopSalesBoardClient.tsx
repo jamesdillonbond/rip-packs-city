@@ -711,7 +711,7 @@ const CSS = `
   font-size: 12px;
   letter-spacing: 4px;
   text-transform: uppercase;
-  color: var(--rpc-red);
+  color: var(--rpc-red-text);
   margin-bottom: 12px;
 }
 .rpc-ts-h1 {
@@ -739,7 +739,7 @@ const CSS = `
   text-transform: uppercase;
   color: var(--rpc-text-muted);
 }
-.rpc-ts-meta-sep { margin: 0 8px; color: var(--rpc-text-ghost); }
+.rpc-ts-meta-sep { margin: 0 8px; color: var(--rpc-text-muted); }
 
 .rpc-ts-kpi-row {
   max-width: 1180px;
@@ -766,7 +766,7 @@ const CSS = `
   font-family: var(--font-display);
   font-weight: 800;
   font-size: 30px;
-  color: var(--rpc-red);
+  color: var(--rpc-red-text);
   letter-spacing: 0.5px;
 }
 
@@ -824,7 +824,7 @@ const CSS = `
   font-family: var(--font-display);
   font-weight: 800;
   font-size: 24px;
-  color: var(--rpc-red);
+  color: var(--rpc-red-text);
   letter-spacing: 0.5px;
 }
 .rpc-ts-hero-name {
@@ -917,7 +917,7 @@ const CSS = `
   font-family: var(--font-display);
   font-weight: 800;
   font-size: 18px;
-  color: var(--rpc-red);
+  color: var(--rpc-red-text);
   letter-spacing: 0.5px;
   padding: 8px 10px 0;
 }
@@ -975,7 +975,7 @@ const CSS = `
 .rpc-ts-pill-active {
   background: var(--rpc-red-bg);
   border-color: var(--rpc-red);
-  color: var(--rpc-red);
+  color: var(--rpc-red-text);
 }
 .rpc-ts-sort { display: inline-flex; align-items: center; gap: 8px; }
 .rpc-ts-select {
@@ -1062,12 +1062,12 @@ const CSS = `
   gap: 6px;
   margin-top: 3px;
 }
-.rpc-ts-dot { color: var(--rpc-text-ghost); }
+.rpc-ts-dot { color: var(--rpc-text-muted); }
 .rpc-ts-row-parties { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .rpc-ts-party-line { display: flex; align-items: baseline; gap: 7px; min-width: 0; }
 .rpc-ts-party-line .rpc-ts-party-k {
   min-width: 12px;
-  color: var(--rpc-red);
+  color: var(--rpc-red-text);
 }
 .rpc-ts-party-line .rpc-ts-party-v {
   font-size: 12px;
@@ -1078,7 +1078,7 @@ const CSS = `
   font-family: var(--font-display);
   font-weight: 800;
   font-size: 20px;
-  color: var(--rpc-red);
+  color: var(--rpc-red-text);
   letter-spacing: 0.5px;
 }
 .rpc-ts-row-when {
@@ -1147,7 +1147,7 @@ const CSS = `
   cursor: pointer;
   transition: border-color 120ms, color 120ms;
 }
-.rpc-ts-copy-btn:hover { border-color: var(--rpc-red); color: var(--rpc-red); }
+.rpc-ts-copy-btn:hover { border-color: var(--rpc-red); color: var(--rpc-red-text); }
 .rpc-ts-back {
   font-family: var(--font-mono);
   font-size: 12px;
@@ -1158,7 +1158,7 @@ const CSS = `
   padding: 10px;
   text-align: center;
 }
-.rpc-ts-back:hover { color: var(--rpc-red); }
+.rpc-ts-back:hover { color: var(--rpc-red-text); }
 
 @media (max-width: 1100px) {
   .rpc-ts-hero-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }

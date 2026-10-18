@@ -2956,15 +2956,15 @@ function StatTile({ label, value, color, caption, unavailable, loading, pending,
       <div style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-muted)", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 4 }}>{label}</div>
       <div style={{ fontSize: 22, fontFamily: condensedFont, fontWeight: 800, color: muted ? "var(--rpc-text-muted)" : color, lineHeight: 1 }} aria-busy={pending || loading || undefined}>{muted ? "—" : value}</div>
       {unavailable ? (
-        <div style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-ghost)", letterSpacing: "0.04em", marginTop: 5, lineHeight: 1.3 }}>Couldn&apos;t load</div>
+        <div style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-muted)", letterSpacing: "0.04em", marginTop: 5, lineHeight: 1.3 }}>Couldn&apos;t load</div>
       ) : loading ? (
-        <div style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-ghost)", letterSpacing: "0.04em", marginTop: 5, lineHeight: 1.3 }}>Loading…</div>
+        <div style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-muted)", letterSpacing: "0.04em", marginTop: 5, lineHeight: 1.3 }}>Loading…</div>
       ) : pending ? (
-        <div style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-ghost)", letterSpacing: "0.04em", marginTop: 5, lineHeight: 1.3 }}>Indexing your wallet…</div>
+        <div style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-muted)", letterSpacing: "0.04em", marginTop: 5, lineHeight: 1.3 }}>Indexing your wallet…</div>
       ) : empty ? (
-        <div style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-ghost)", letterSpacing: "0.04em", marginTop: 5, lineHeight: 1.3 }}>Add a wallet above</div>
+        <div style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-muted)", letterSpacing: "0.04em", marginTop: 5, lineHeight: 1.3 }}>Add a wallet above</div>
       ) : caption ? (
-        <div style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-ghost)", letterSpacing: "0.04em", marginTop: 5, lineHeight: 1.3 }}>{caption}</div>
+        <div style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-muted)", letterSpacing: "0.04em", marginTop: 5, lineHeight: 1.3 }}>{caption}</div>
       ) : null}
     </div>
   );

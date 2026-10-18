@@ -154,7 +154,7 @@ function TonightsPickSection() {
             style={{
               flexShrink: 0, width: 36, height: 36, borderRadius: 999,
               background: "var(--rpc-red-bg)", border: "1px solid var(--rpc-red-border)",
-              color: "var(--rpc-red)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18,
+              color: "var(--rpc-red-text)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18,
             }}
           >
             ⚡
@@ -213,7 +213,7 @@ function LivePickCard({
           </div>
         </div>
         <div style={{ textAlign: "right" }}>
-          <div style={{ fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 28, color: "var(--rpc-red)", lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
+          <div style={{ fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 28, color: "var(--rpc-red-text)", lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
             {pct}%
           </div>
           <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "var(--rpc-text-muted)", letterSpacing: "0.12em", textTransform: "uppercase", marginTop: 4 }}>
@@ -619,7 +619,7 @@ function LockRoiSection({ walletAddr }: { walletAddr: string }) {
                         </span>
                       </td>
                       <td style={{ padding: "8px 10px", textAlign: "right" }}>{m.estimatedPlayoffPoints.toLocaleString()}</td>
-                      <td style={{ padding: "8px 10px", textAlign: "right", color: "var(--rpc-red)", fontWeight: 700 }}>
+                      <td style={{ padding: "8px 10px", textAlign: "right", color: "var(--rpc-red-text)", fontWeight: 700 }}>
                         {m.pointsPerDollar.toFixed(3)}
                       </td>
                     </tr>
@@ -653,7 +653,7 @@ function LockRoiSection({ walletAddr }: { walletAddr: string }) {
                       {m.playerName ?? "—"}
                       {m.serialNumber != null && <span style={{ color: "var(--rpc-text-muted)", marginLeft: 6, fontFamily: "var(--font-mono)", fontSize: 10 }}>#{m.serialNumber}</span>}
                     </div>
-                    <div style={{ fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 700, color: "var(--rpc-red)" }}>{m.pointsPerDollar.toFixed(3)}</div>
+                    <div style={{ fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 700, color: "var(--rpc-red-text)" }}>{m.pointsPerDollar.toFixed(3)}</div>
                   </div>
                   <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--rpc-text-muted)", marginTop: 2 }}>{m.setName ?? "—"}</div>
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 8, fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-secondary)" }}>

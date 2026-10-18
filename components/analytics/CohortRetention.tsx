@@ -128,7 +128,7 @@ export default function CohortRetention({ rows }: CohortRetentionProps) {
                   const cell = c.cells.get(o)
                   if (!cell) {
                     return (
-                      <td key={o} className="py-2 px-1 text-center text-[color:var(--rpc-text-ghost)]">
+                      <td key={o} className="py-2 px-1 text-center text-[color:var(--rpc-text-muted)]">
                         ·
                       </td>
                     )

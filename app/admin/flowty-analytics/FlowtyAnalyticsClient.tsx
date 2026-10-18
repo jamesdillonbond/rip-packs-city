@@ -891,7 +891,7 @@ function BigCard({ label, value, accent, footnote }: { label: string; value: str
       <div className="rpc-stat-eyebrow">{label}</div>
       <div className="rpc-stat-value" style={{ color: accent, fontSize: 28 }}>{value}</div>
       {footnote && (
-        <div className="rpc-stat-caption" style={{ color: "var(--rpc-text-ghost)" }}>{footnote}</div>
+        <div className="rpc-stat-caption" style={{ color: "var(--rpc-text-muted)" }}>{footnote}</div>
       )}
     </div>
   );

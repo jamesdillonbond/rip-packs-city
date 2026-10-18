@@ -106,7 +106,7 @@ const VARIANTS: Record<WalletSearchVariant, VariantSpec> = {
 }
 
 const SCOPED_CSS = `
-.rpc-wallet-search input::placeholder{color:var(--rpc-text-ghost);}
+.rpc-wallet-search input::placeholder{color:var(--rpc-text-muted);}
 .rpc-wallet-search-go{transition:background 120ms ease;}
 .rpc-wallet-search-go:hover:not(:disabled){background:var(--rpc-red-hover);}
 `
@@ -317,7 +317,7 @@ export default function WalletSearch({
             marginTop: 10,
             fontFamily: "var(--font-mono)",
             fontSize: v.errorFontSize,
-            color: "var(--rpc-red)",
+            color: "var(--rpc-red-text)",
             letterSpacing: "0.04em",
             textAlign: v.textAlign,
           }}

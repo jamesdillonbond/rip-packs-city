@@ -126,7 +126,7 @@ const CSS = `
   font-size: 11px;
   letter-spacing: 3px;
   text-transform: uppercase;
-  color: var(--rpc-red);
+  color: var(--rpc-red-text);
   margin-bottom: 10px;
 }
 .rpc-ins-capture-title {
@@ -164,7 +164,7 @@ const CSS = `
   border-radius: var(--radius-sm);
   outline: none;
 }
-.rpc-ins-capture-input::placeholder { color: var(--rpc-text-ghost); }
+.rpc-ins-capture-input::placeholder { color: var(--rpc-text-muted); }
 .rpc-ins-capture-btn {
   background: var(--rpc-red);
   border: none;

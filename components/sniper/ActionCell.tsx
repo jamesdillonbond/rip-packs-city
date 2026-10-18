@@ -16,7 +16,7 @@ export function ActionCell({
   const dapperUrl = resolveDapperUrl(deal, collectionSlug);
   if (!viewUrl && !dapperUrl) {
     return (
-      <span className="rpc-mono" style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-ghost)" }}>
+      <span className="rpc-mono" style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-muted)" }}>
         —
       </span>
     );

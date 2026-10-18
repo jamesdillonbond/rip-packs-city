@@ -134,7 +134,7 @@ function RevealedCard({ m, isChase }: { m: RevealCard; isChase: boolean }) {
       }}
     >
       {isChase ? (
-        <div style={{ fontFamily: MONO, fontSize: 11, color: "var(--rpc-red)", textTransform: "uppercase", marginBottom: 6 }}>Chase card</div>
+        <div style={{ fontFamily: MONO, fontSize: 11, color: "var(--rpc-red-text)", textTransform: "uppercase", marginBottom: 6 }}>Chase card</div>
       ) : null}
       {art ? (
         // eslint-disable-next-line @next/next/no-img-element

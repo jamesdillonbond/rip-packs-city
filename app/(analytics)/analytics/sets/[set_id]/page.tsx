@@ -239,7 +239,7 @@ export default async function SetDetailPage({ params }: PageParams) {
           </Link>
           {data.as_of ? (
             <>
-              <span className="text-[color:var(--rpc-text-ghost)]">·</span>
+              <span className="text-[color:var(--rpc-text-muted)]">·</span>
               <span>As of <FreshnessStamp iso={data.as_of} /></span>
             </>
           ) : null}

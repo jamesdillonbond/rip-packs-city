@@ -750,7 +750,7 @@ export default function CollectionMomentTable(props: {
                           const TS_SOURCES = new Set(["browser_backfill", "smm_final", "wallet_search", "progressive_classify", "sales_backfill"])
                           let sourcePill: React.ReactNode = null
                           if (src && TS_SOURCES.has(src)) {
-                            sourcePill = <span className="ml-1 inline-flex items-center rounded px-1 py-0 font-mono text-[9px] font-semibold text-[color:var(--rpc-red)]" style={{ border: "1px solid rgba(239,68,68,0.35)", background: "rgba(239,68,68,0.10)" }}>TS</span>
+                            sourcePill = <span className="ml-1 inline-flex items-center rounded px-1 py-0 font-mono text-[9px] font-semibold text-[color:var(--rpc-red-text)]" style={{ border: "1px solid rgba(239,68,68,0.35)", background: "rgba(239,68,68,0.10)" }}>TS</span>
                           }
                           if (cb) {
                             const label = cb.costBasisLabel

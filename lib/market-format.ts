@@ -19,7 +19,7 @@ export function parseList(value: string | null | undefined): string[] {
  * (e.g. a premium rendered as a discount).
  */
 export function fmtDiscount(d: number | null): { text: string; color: string } {
-  if (d == null) return { text: "—", color: "var(--rpc-text-ghost)" }
+  if (d == null) return { text: "—", color: "var(--rpc-text-muted)" }
   // Band on the ROUNDED value: 0.3 used to render "-0%" and -0.3 a red "+0%".
   if (Math.round(d) === 0) return { text: "0%", color: "var(--rpc-text-muted)" }
   if (d >= 25) return { text: `-${d.toFixed(0)}%`, color: "#22C55E" }

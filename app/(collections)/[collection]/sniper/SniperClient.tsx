@@ -906,7 +906,7 @@ function SniperMomentsBody() {
               <Link
                 href="/alerts"
                 className="rpc-chip"
-                style={{ textDecoration: "none", color: "var(--rpc-red)", borderColor: "var(--rpc-red)" }}
+                style={{ textDecoration: "none", color: "var(--rpc-red-text)", borderColor: "var(--rpc-red)" }}
                 title="Get notified when deals like these appear"
               >
                 🔔 ALERT ME
@@ -1403,7 +1403,7 @@ function SniperMomentsBody() {
                       <NetOfFeesNote net={deal.netOfFees} />
                       {deal.serialFmvEstimate ? <SerialFmvBadge data={deal.serialFmvEstimate} /> : null}
                     </span>
-                    <span style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-mono)", color: "var(--rpc-text-ghost)" }}>{isPinnacle ? "Seen" : "Listed"} {timeAgo(deal.updatedAt)}</span>
+                    <span style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-mono)", color: "var(--rpc-text-muted)" }}>{isPinnacle ? "Seen" : "Listed"} {timeAgo(deal.updatedAt)}</span>
                     {(() => {
                       // AllDay + Pinnacle keys don't match wallet_moments_cache.edition_key
                       // shape today (AllDay sniper feed emits "set:play"; wmc stores plain
@@ -1434,13 +1434,13 @@ function SniperMomentsBody() {
                       }
                       if (editionStatsStatus !== "ok") {
                         return (
-                          <span data-testid="ownership-unknown" style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-mono)", color: "var(--rpc-text-ghost)" }} title={editionStatsStatus === "loading" ? "Checking your ownership…" : "Ownership unavailable right now"}>
+                          <span data-testid="ownership-unknown" style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-mono)", color: "var(--rpc-text-muted)" }} title={editionStatsStatus === "loading" ? "Checking your ownership…" : "Ownership unavailable right now"}>
                             Own —
                           </span>
                         );
                       }
                       return (
-                        <span style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-mono)", color: "var(--rpc-text-ghost)" }} title="You don't own any copies of this edition">
+                        <span style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-mono)", color: "var(--rpc-text-muted)" }} title="You don't own any copies of this edition">
                           Not owned
                         </span>
                       );
@@ -1639,7 +1639,7 @@ function SniperMomentsBody() {
                             {deal.tier.charAt(0) + deal.tier.slice(1).toLowerCase()}
                           </span>
                         )}
-                        <span style={{ color: "var(--rpc-text-ghost)" }}>·</span>
+                        <span style={{ color: "var(--rpc-text-muted)" }}>·</span>
                         <span style={{ color: "var(--rpc-text-muted)" }}>{deal.setName}</span>
                         {!isPinnacle && deal.parallel && deal.parallel !== "Base" && (
                           <span
@@ -1657,14 +1657,14 @@ function SniperMomentsBody() {
                         )}
                         {deal.seriesName && (
                           <>
-                            <span style={{ color: "var(--rpc-text-ghost)" }}>·</span>
-                            <span style={{ color: "var(--rpc-text-ghost)" }}>{deal.seriesName}</span>
+                            <span style={{ color: "var(--rpc-text-muted)" }}>·</span>
+                            <span style={{ color: "var(--rpc-text-muted)" }}>{deal.seriesName}</span>
                           </>
                         )}
                         {deal.teamName && (
                           <>
-                            <span style={{ color: "var(--rpc-text-ghost)" }}>·</span>
-                            <span style={{ color: "var(--rpc-text-ghost)" }}>{deal.teamName}</span>
+                            <span style={{ color: "var(--rpc-text-muted)" }}>·</span>
+                            <span style={{ color: "var(--rpc-text-muted)" }}>{deal.teamName}</span>
                           </>
                         )}
                       </div>
@@ -1707,7 +1707,7 @@ function SniperMomentsBody() {
                     <td style={{ padding: "8px 12px 8px 4px", textAlign: "right" }}>
                       <div style={{ fontFamily: "var(--font-mono)", color: "var(--rpc-text-secondary)" }}>{serialCellText(deal.serial, collectionSlug)}</div>
                       {deal.circulationCount > 0 && (
-                        <div style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-ghost)" }}>/ {deal.circulationCount.toLocaleString()}</div>
+                        <div style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-muted)" }}>/ {deal.circulationCount.toLocaleString()}</div>
                       )}
                       <div className="flex gap-1 mt-0.5 flex-wrap justify-end">
                         {/* isLowestAsk is computed over the feed's listing window (the newest ~200),
@@ -1773,13 +1773,13 @@ function SniperMomentsBody() {
                         }
                         if (editionStatsStatus !== "ok") {
                           return (
-                            <span data-testid="ownership-unknown" style={{ color: "var(--rpc-text-ghost)" }} title={editionStatsStatus === "loading" ? "Checking your ownership…" : "Ownership unavailable right now"}>
+                            <span data-testid="ownership-unknown" style={{ color: "var(--rpc-text-muted)" }} title={editionStatsStatus === "loading" ? "Checking your ownership…" : "Ownership unavailable right now"}>
                               —
                             </span>
                           );
                         }
                         return (
-                          <span style={{ color: "var(--rpc-text-ghost)" }} title="You don't own any copies of this edition">
+                          <span style={{ color: "var(--rpc-text-muted)" }} title="You don't own any copies of this edition">
                             Not owned
                           </span>
                         );
@@ -1809,7 +1809,7 @@ function SniperMomentsBody() {
                         })()}
                       </div>
                       {deal.serialMult > 1 && (
-                        <div style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-ghost)" }}>
+                        <div style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-muted)" }}>
                           base {fmvDisplay(deal.baseFmv)} × {deal.serialMult.toFixed(2)}
                         </div>
                       )}
@@ -1856,15 +1856,15 @@ function SniperMomentsBody() {
                           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                             {/* Cross-market floor data */}
                             {depthFloorError ? (
-                              <div className="rpc-mono" style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-ghost)", padding: "4px 0" }}>{depthFloorError}</div>
+                              <div className="rpc-mono" style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-muted)", padding: "4px 0" }}>{depthFloorError}</div>
                             ) : depthFloor ? (
                               <div className="flex flex-wrap items-center gap-3" style={{ padding: "6px 0" }}>
                                 <div className="rpc-chip" style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                                  <span style={{ fontSize: 9, color: "var(--rpc-text-ghost)", letterSpacing: "0.08em" }}>TOP SHOT</span>
+                                  <span style={{ fontSize: 9, color: "var(--rpc-text-muted)", letterSpacing: "0.08em" }}>TOP SHOT</span>
                                   <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)", color: "var(--rpc-text-primary)", fontWeight: 600 }}>
                                     {depthFloor.topShotFloor != null ? `$${fmt(depthFloor.topShotFloor)}` : "—"}
                                   </span>
-                                  <span style={{ fontSize: 9, color: "var(--rpc-text-ghost)" }}>({depthFloor.topShotListingCount} listed)</span>
+                                  <span style={{ fontSize: 9, color: "var(--rpc-text-muted)" }}>({depthFloor.topShotListingCount} listed)</span>
                                 </div>
                                 {/* ⚠ Conditional, like BEST FLOOR and LT FMV below — NOT unconditional.
                                     /api/edition-floor no longer reports a Flowty floor: that leg took a
@@ -1880,7 +1880,7 @@ function SniperMomentsBody() {
                                     <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)", color: "var(--rpc-text-primary)", fontWeight: 600 }}>
                                       {depthFloor.flowtyFloor != null ? `$${fmt(depthFloor.flowtyFloor)}` : "—"}
                                     </span>
-                                    <span style={{ fontSize: 9, color: "var(--rpc-text-ghost)" }}>({depthFloor.flowtyListingCount} listed)</span>
+                                    <span style={{ fontSize: 9, color: "var(--rpc-text-muted)" }}>({depthFloor.flowtyListingCount} listed)</span>
                                   </div>
                                 )}
                                 {depthFloor.crossMarketFloor != null && (
@@ -1889,11 +1889,11 @@ function SniperMomentsBody() {
                                     <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)", color: "var(--rpc-success)", fontWeight: 700 }}>
                                       ${fmt(depthFloor.crossMarketFloor)}
                                     </span>
-                                    <span style={{ fontSize: 9, color: "var(--rpc-text-ghost)" }}>on {depthFloor.crossMarketSource === "flowty" ? "Flowty" : "TopShot"}</span>
+                                    <span style={{ fontSize: 9, color: "var(--rpc-text-muted)" }}>on {depthFloor.crossMarketSource === "flowty" ? "Flowty" : "TopShot"}</span>
                                   </div>
                                 )}
                                 {depthFloor.livetokenFmv != null && (
-                                  <span className="rpc-mono" style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-ghost)" }}>
+                                  <span className="rpc-mono" style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-muted)" }}>
                                     LT FMV: ${fmt(depthFloor.livetokenFmv)}
                                   </span>
                                 )}
@@ -1905,12 +1905,12 @@ function SniperMomentsBody() {
                               // Must precede the length check: a failed read
                               // leaves the list empty, so testing emptiness
                               // first swallows the failure silently.
-                              <div className="rpc-mono" style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-ghost)", padding: "4px 0" }}>{depthListingsError}</div>
+                              <div className="rpc-mono" style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-muted)", padding: "4px 0" }}>{depthListingsError}</div>
                             ) : depthDeals.length === 0 ? (
-                              <div className="rpc-mono" style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-ghost)", padding: "4px 0" }}>No other listings for this edition in the live feed.</div>
+                              <div className="rpc-mono" style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-muted)", padding: "4px 0" }}>No other listings for this edition in the live feed.</div>
                             ) : (
                               <>
-                                <div className="rpc-mono" style={{ fontSize: 9, color: "var(--rpc-text-ghost)", letterSpacing: "0.1em" }}>
+                                <div className="rpc-mono" style={{ fontSize: 9, color: "var(--rpc-text-muted)", letterSpacing: "0.1em" }}>
                                   {/* The panel searches the Sniper's live feed pool, not every listing of the
                                     edition (known-issues #146), so the count names its scope. */}
                                   {depthDeals.length} OTHER LISTING{depthDeals.length !== 1 ? "S" : ""} IN THE LIVE FEED FOR {deal.playerName} — {deal.setName}
@@ -1922,8 +1922,8 @@ function SniperMomentsBody() {
                                     <span style={{ color: dd.discount >= 15 ? "var(--rpc-success)" : "var(--rpc-text-muted)", minWidth: 60 }}>
                                       {dd.discount > 0 ? `-${fmt(dd.discount, 1)}%` : "~0%"}
                                     </span>
-                                    <span style={{ color: "var(--rpc-text-ghost)", minWidth: 50 }}>{dd.source === "flowty" ? "Flowty" : "TS"}</span>
-                                    <span style={{ color: "var(--rpc-text-ghost)", minWidth: 60 }}>{timeAgo(dd.updatedAt)}</span>
+                                    <span style={{ color: "var(--rpc-text-muted)", minWidth: 50 }}>{dd.source === "flowty" ? "Flowty" : "TS"}</span>
+                                    <span style={{ color: "var(--rpc-text-muted)", minWidth: 60 }}>{timeAgo(dd.updatedAt)}</span>
                                     {(() => {
                                       const ddUrl = resolveViewUrl(dd, feedCollection);
                                       const ddDapper = resolveDapperUrl(dd, feedCollection);
@@ -1963,7 +1963,7 @@ function SniperMomentsBody() {
         )}
 
         {/* Legend */}
-        <div className="rpc-mono flex items-center gap-4 flex-wrap" style={{ marginTop: 16, color: "var(--rpc-text-ghost)" }}>
+        <div className="rpc-mono flex items-center gap-4 flex-wrap" style={{ marginTop: 16, color: "var(--rpc-text-muted)" }}>
           <span className="flex items-center gap-1">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" />
             Verified — backed by real sales

@@ -176,7 +176,7 @@ export default function PlayersGridPaginated({ collectionUrlSlug, fetchUrl, init
                   style={{ width: "100%", height: "100%", objectFit: "cover" }}
                 />
               ) : (
-                <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--rpc-text-ghost)", fontFamily: "var(--font-mono)", fontSize: 10 }}>No image</div>
+                <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 10 }}>No image</div>
               )}
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
@@ -184,7 +184,7 @@ export default function PlayersGridPaginated({ collectionUrlSlug, fetchUrl, init
                 {p.name}
               </span>
               {p.is_rookie === true && (
-                <span className="rpc-mono" style={{ fontSize: 8, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--rpc-red)", background: "var(--rpc-red-bg)", border: "1px solid var(--rpc-red-border)", borderRadius: 4, padding: "1px 5px" }}>Rookie</span>
+                <span className="rpc-mono" style={{ fontSize: 8, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--rpc-red-text)", background: "var(--rpc-red-bg)", border: "1px solid var(--rpc-red-border)", borderRadius: 4, padding: "1px 5px" }}>Rookie</span>
               )}
             </div>
             {(p.jersey_number !== null || p.position) && (

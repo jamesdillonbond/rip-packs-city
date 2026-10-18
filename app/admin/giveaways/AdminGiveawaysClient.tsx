@@ -420,7 +420,7 @@ function DropPanel({ drop, call, onChanged }: { drop: DropRow; call: Call; onCha
           {drop.status} · {drop.pack_count}×{drop.moments_per_pack} · created {ptTime(drop.created_at)}
         </span>
         {drop.status !== "draft" ? (
-          <Link href={`/giveaways/${drop.slug}`} style={{ fontSize: 12, color: "var(--rpc-red)" }}>
+          <Link href={`/giveaways/${drop.slug}`} style={{ fontSize: 12, color: "var(--rpc-red-text)" }}>
             /giveaways/{drop.slug}
           </Link>
         ) : null}

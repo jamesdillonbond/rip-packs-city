@@ -114,7 +114,7 @@ export default function RootRouteError({
           style={{
             padding: "10px 18px",
             border: "1px solid var(--rpc-red-border)",
-            color: "var(--rpc-red)",
+            color: "var(--rpc-red-text)",
             background: "transparent",
             fontFamily: "var(--font-mono)",
             letterSpacing: "0.2em",
@@ -132,7 +132,7 @@ export default function RootRouteError({
           style={{
             fontFamily: "var(--font-mono)",
             fontSize: 10,
-            color: "var(--rpc-text-ghost)",
+            color: "var(--rpc-text-muted)",
             marginTop: 4,
           }}
         >

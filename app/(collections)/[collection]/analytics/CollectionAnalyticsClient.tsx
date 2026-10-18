@@ -726,7 +726,7 @@ function PackEvCard({ short, urlSlug }: { short: string; urlSlug: string }) {
           <Link
             href={`/${urlSlug}/packs`}
             className="mt-2 inline-flex items-center gap-1 text-[11px] uppercase tracking-widest"
-            style={{ color: "var(--rpc-red)", fontFamily: "var(--font-display)" }}
+            style={{ color: "var(--rpc-red-text)", fontFamily: "var(--font-display)" }}
           >
             View pack analytics <ArrowUpRight size={11} />
           </Link>
@@ -934,7 +934,7 @@ function WhaleLeaderboard({ short, urlSlug }: { short: string; urlSlug: string }
           }}
         >
           On-chain data only — Top Shot&apos;s centralized marketplace carries most of its volume and doesn&apos;t expose wallet identities.{" "}
-          <Link href="/analytics/sales" className="underline" style={{ color: "var(--rpc-red)" }}>
+          <Link href="/analytics/sales" className="underline" style={{ color: "var(--rpc-red-text)" }}>
             View full sales breakdown at /analytics/sales
           </Link>.
         </div>
@@ -1264,7 +1264,7 @@ function AnalyticsInner() {
               }}
             >
               Thin-volume ecosystem — most metrics are directional only.{" "}
-              <Link href="/analytics/sales" className="underline" style={{ color: "var(--rpc-red)" }}>
+              <Link href="/analytics/sales" className="underline" style={{ color: "var(--rpc-red-text)" }}>
                 View richer cross-collection data at /analytics/sales
               </Link>.
             </div>
@@ -1917,7 +1917,7 @@ function AnalyticsInner() {
                       <div className="rounded-lg border border-[color:var(--rpc-border)] bg-[var(--rpc-black)] p-3">
                         <div className="flex items-center justify-between">
                           <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Top Shot</div>
-                          <span className="rounded px-1.5 py-0.5 text-[9px] font-semibold" style={{ color: "var(--rpc-red)", border: "1px solid rgba(239,68,68,0.35)", background: "rgba(239,68,68,0.10)", fontFamily: "var(--font-mono)" }}>TS</span>
+                          <span className="rounded px-1.5 py-0.5 text-[9px] font-semibold" style={{ color: "var(--rpc-red-text)", border: "1px solid rgba(239,68,68,0.35)", background: "rgba(239,68,68,0.10)", fontFamily: "var(--font-mono)" }}>TS</span>
                         </div>
                         <div className="mt-1 text-xl font-black text-[color:var(--rpc-text-primary)]" style={{ fontFamily: "var(--font-mono)" }}>{(ts.count ?? 0).toLocaleString("en-US")}</div>
                         <div className="mt-1 text-[11px] text-[color:var(--rpc-text-muted)]">purchases · {fmt(Number(ts.total_spent ?? 0))}</div>

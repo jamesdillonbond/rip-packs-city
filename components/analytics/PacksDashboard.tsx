@@ -157,7 +157,7 @@ function CollectionPanel({
         <span>
           Median price <span className="text-[color:var(--rpc-text-primary)]">{formatUsd(stats.median_pack_price)}</span>
         </span>
-        <span className="text-[color:var(--rpc-text-ghost)]">·</span>
+        <span className="text-[color:var(--rpc-text-muted)]">·</span>
         <span>
           Unopened <span className="text-[color:var(--rpc-text-primary)]">{formatNumber(stats.total_unopened)}</span>
         </span>
@@ -523,7 +523,7 @@ export default function PacksDashboard() {
           <TimerReset size={12} />
           {summary?.as_of ? `As of ${new Date(summary.as_of).toLocaleString()}` : "Refreshing…"}
         </span>
-        <span className="text-[color:var(--rpc-text-ghost)]">·</span>
+        <span className="text-[color:var(--rpc-text-muted)]">·</span>
         <Link
           href="/analytics/methodology/packs"
           className="hover:text-teal-400 transition-colors inline-flex items-center gap-1"

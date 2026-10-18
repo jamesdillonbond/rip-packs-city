@@ -70,7 +70,7 @@ export default function PackThumb({ src, alt }: { src: string | null; alt: strin
           style={{ width: "100%", height: "100%", objectFit: "cover" }}
         />
       ) : (
-        <span style={{ color: "var(--rpc-text-ghost)", fontFamily: "var(--font-mono)", fontSize: 10 }}>Pack</span>
+        <span style={{ color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 10 }}>Pack</span>
       )}
     </div>
   )

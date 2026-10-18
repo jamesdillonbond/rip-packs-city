@@ -449,7 +449,7 @@ export default async function AnalyticsOverviewPage() {
                     </div>
                     <ArrowUpRight
                       size={14}
-                      className="text-[color:var(--rpc-text-ghost)] group-hover:text-red-400 transition-colors"
+                      className="text-[color:var(--rpc-text-muted)] group-hover:text-red-400 transition-colors"
                     />
                   </div>
                   <p className="text-sm leading-relaxed mb-3 text-[color:var(--rpc-text-secondary)]">

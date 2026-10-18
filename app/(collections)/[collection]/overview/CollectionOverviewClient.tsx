@@ -500,7 +500,7 @@ export default function CollectionOverviewClient({
           ) : statsUnavailable || sniperDealsUnmeasured ? (
             <PanelUnavailable />
           ) : sniperDeals.length === 0 ? (
-            <div className="rpc-mono" style={{ color: "var(--rpc-text-ghost)", padding: "16px 0", textAlign: "center" }}>
+            <div className="rpc-mono" style={{ color: "var(--rpc-text-muted)", padding: "16px 0", textAlign: "center" }}>
               {collection === "disney-pinnacle"
                 ? "No active listings right now"
                 : <>No deals {"\u2265"}15% off right now</>}
@@ -526,7 +526,7 @@ export default function CollectionOverviewClient({
                     </div>
                     <div className="rpc-mono" style={{ color: "var(--rpc-text-secondary)" }}>{askIsSubDollar ? "<$1" : fmtPrice(deal.ask_price)}</div>
                     {hasDiscount && (
-                      <div className="rpc-mono" style={{ color: "var(--rpc-red)", fontWeight: 700 }}>-{Math.round(deal.discount as number)}%</div>
+                      <div className="rpc-mono" style={{ color: "var(--rpc-red-text)", fontWeight: 700 }}>-{Math.round(deal.discount as number)}%</div>
                     )}
                   </>
                 )
@@ -617,7 +617,7 @@ export default function CollectionOverviewClient({
             {[
               { color: "#34D399", label: "< 30 min" },
               { color: "#F59E0B", label: "30\u201360 min" },
-              { color: "var(--rpc-red)", label: "> 60 min" },
+              { color: "var(--rpc-red-text)", label: "> 60 min" },
             ].map((item) => (
               <div key={item.label} style={{ display: "flex", alignItems: "center", gap: 4 }}>
                 <div style={{ width: 6, height: 6, borderRadius: "50%", background: item.color }} />
@@ -650,20 +650,20 @@ export default function CollectionOverviewClient({
           ) : salesUntracked ? (
             // Not "No sales": RPC has no complete sale feed for this collection,
             // so an empty list here is a fact about us, not about the market.
-            <div className="rpc-mono" style={{ color: "var(--rpc-text-ghost)", padding: "16px 0", textAlign: "center" }}>
+            <div className="rpc-mono" style={{ color: "var(--rpc-text-muted)", padding: "16px 0", textAlign: "center" }}>
               Sales aren&rsquo;t a tracked feed for this collection yet
             </div>
           ) : topSalesUnmeasured ? (
             <PanelUnavailable />
           ) : rawTopSales.length === 0 ? (
-            <div className="rpc-mono" style={{ color: "var(--rpc-text-ghost)", padding: "16px 0", textAlign: "center" }}>
+            <div className="rpc-mono" style={{ color: "var(--rpc-text-muted)", padding: "16px 0", textAlign: "center" }}>
               {topSalesScopeText ? `No ${topSalesScopeText}` : "No sales indexed in the last 24h"}
             </div>
           ) : topSales.length === 0 ? (
             // Read succeeded and the market traded — we just can't name any of
             // it. Saying "no sales" here would be a false claim about the
             // market; this says the true thing, which is about our catalog.
-            <div className="rpc-mono" style={{ color: "var(--rpc-text-ghost)", padding: "16px 0", textAlign: "center" }}>
+            <div className="rpc-mono" style={{ color: "var(--rpc-text-muted)", padding: "16px 0", textAlign: "center" }}>
               {rawTopSales.length} recent {rawTopSales.length === 1 ? "sale" : "sales"} not yet matched to a moment
             </div>
           ) : (
@@ -694,12 +694,12 @@ export default function CollectionOverviewClient({
                 )
               })}
               {topSalesScopeText && (
-                <div className="rpc-mono" data-testid="top-sales-scope" style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-ghost)", paddingTop: 2 }}>
+                <div className="rpc-mono" data-testid="top-sales-scope" style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-muted)", paddingTop: 2 }}>
                   {topSalesScopeText}
                 </div>
               )}
               {unnamedTopSales > 0 && (
-                <div className="rpc-mono" style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-ghost)", paddingTop: 2 }}>
+                <div className="rpc-mono" style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-muted)", paddingTop: 2 }}>
                   {unnamedTopSales} more {unnamedTopSales === 1 ? "sale" : "sales"} in this window not yet matched to a moment
                 </div>
               )}
@@ -785,7 +785,7 @@ export default function CollectionOverviewClient({
               className="rpc-mono"
               style={{
                 fontSize: "var(--text-xs)",
-                color: "var(--rpc-red)",
+                color: "var(--rpc-red-text)",
                 textDecoration: "none",
                 padding: "8px 14px",
                 border: "1px solid var(--rpc-red-border)",
@@ -915,7 +915,7 @@ function KpiCard({
 // guidance, so this stays a short, non-duplicating line.
 function PanelUnavailable() {
   return (
-    <div className="rpc-mono" style={{ color: "var(--rpc-text-ghost)", padding: "16px 0", textAlign: "center" }}>
+    <div className="rpc-mono" style={{ color: "var(--rpc-text-muted)", padding: "16px 0", textAlign: "center" }}>
       {"Couldn’t load this right now"}
     </div>
   )

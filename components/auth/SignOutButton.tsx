@@ -63,7 +63,7 @@ export default function SignOutButton() {
         style={{
           background: "rgba(224,58,47,0.15)",
           border: "1px solid rgba(224,58,47,0.4)",
-          color: "var(--rpc-red)",
+          color: "var(--rpc-red-text)",
           padding: "4px 10px",
           borderRadius: 4,
           fontSize: 10,
@@ -93,7 +93,7 @@ export default function SignOutButton() {
           gap: 6,
           background: "rgba(224,58,47,0.15)",
           border: "1px solid rgba(224,58,47,0.4)",
-          color: "var(--rpc-red)",
+          color: "var(--rpc-red-text)",
           padding: "4px 8px 4px 6px",
           borderRadius: 4,
           fontSize: 10,

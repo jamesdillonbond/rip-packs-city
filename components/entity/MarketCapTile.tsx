@@ -123,7 +123,7 @@ export function MarketCapTileBody({
         {split && <IssuerSplitCell split={split} />}
       </div>
       {stale && (
-        <div className="rpc-mono" role="status" style={{ marginTop: 10, fontSize: 11, lineHeight: 1.5, color: "var(--rpc-red)" }}>
+        <div className="rpc-mono" role="status" style={{ marginTop: 10, fontSize: 11, lineHeight: 1.5, color: "var(--rpc-red-text)" }}>
           {stale === "unknown"
             ? "When these figures were computed is not recorded — treat them as possibly out of date."
             : `These figures are from ${stale} — the market-cap refresh is behind, so they may be out of date.`}

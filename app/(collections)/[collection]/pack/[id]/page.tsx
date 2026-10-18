@@ -483,14 +483,14 @@ function PackLifecycleView({
         <Link href="/" style={{ color: "inherit", textDecoration: "none" }}>
           Rip Packs City
         </Link>
-        <span aria-hidden style={{ margin: "0 8px", color: "var(--rpc-text-ghost)" }}>›</span>
+        <span aria-hidden style={{ margin: "0 8px", color: "var(--rpc-text-muted)" }}>›</span>
         <Link
           href={`/${routeSlug}/packs`}
           style={{ color: "inherit", textDecoration: "none" }}
         >
           {collectionName}
         </Link>
-        <span aria-hidden style={{ margin: "0 8px", color: "var(--rpc-text-ghost)" }}>›</span>
+        <span aria-hidden style={{ margin: "0 8px", color: "var(--rpc-text-muted)" }}>›</span>
         <span style={{ color: "var(--rpc-text-secondary)" }}>
           Pack #{lifecycle.pack_nft_id}
         </span>
@@ -633,7 +633,7 @@ function UnavailableCard({
       <p style={{ margin: "var(--space-lg) 0 0" }}>
         <Link
           href={`/${collectionSlug}/packs`}
-          style={{ color: "var(--rpc-red)", fontFamily: "var(--font-mono)", fontSize: 13 }}
+          style={{ color: "var(--rpc-red-text)", fontFamily: "var(--font-mono)", fontSize: 13 }}
         >
           ← Back to packs
         </Link>
@@ -713,7 +713,7 @@ function NotFoundCard({
             padding: "10px 18px",
             border: "1px solid var(--rpc-red-border)",
             background: "var(--rpc-red-bg)",
-            color: "var(--rpc-red)",
+            color: "var(--rpc-red-text)",
             fontFamily: "var(--font-display)",
             textTransform: "uppercase",
             letterSpacing: "0.1em",

@@ -150,7 +150,7 @@ export default function AvatarMomentPicker({
           </div>
         ) : (
           <>
-            <div style={{ fontFamily: MONO, fontSize: 10, color: "var(--rpc-text-ghost)", marginBottom: 10, letterSpacing: "0.08em" }}>
+            <div style={{ fontFamily: MONO, fontSize: 10, color: "var(--rpc-text-muted)", marginBottom: 10, letterSpacing: "0.08em" }}>
               Your {withArt.length} highest-value Moments. Pick one to use as your avatar.
             </div>
             <div

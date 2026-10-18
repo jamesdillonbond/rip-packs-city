@@ -101,7 +101,7 @@ function Kpi({
         {value}
       </div>
       {hint ? (
-        <div className="mt-1 text-[11px]" style={{ color: "var(--rpc-text-ghost)" }}>
+        <div className="mt-1 text-[11px]" style={{ color: "var(--rpc-text-muted)" }}>
           {hint}
         </div>
       ) : null}
@@ -153,7 +153,7 @@ export default function BuybackDashboard() {
           className="text-2xl uppercase tracking-wide flex items-center gap-2"
           style={{ fontFamily: "var(--font-display)", color: "var(--rpc-text-primary)" }}
         >
-          <ShieldAlert size={20} style={{ color: "var(--rpc-red)" }} aria-hidden />
+          <ShieldAlert size={20} style={{ color: "var(--rpc-red-text)" }} aria-hidden />
           {BUYBACK_COLLECTION_COPY[collection].title}
         </h1>
         <p className="mt-1 text-sm" style={{ color: "var(--rpc-text-secondary)" }}>
@@ -220,7 +220,7 @@ export default function BuybackDashboard() {
             color: "var(--rpc-text-primary)",
           }}
         >
-          <AlertTriangle size={16} style={{ color: "var(--rpc-red)" }} aria-hidden />
+          <AlertTriangle size={16} style={{ color: "var(--rpc-red-text)" }} aria-hidden />
           <div className="text-sm">
             <strong>Buyback analytics could not be loaded.</strong>
             <div className="mt-1" style={{ color: "var(--rpc-text-secondary)" }}>
@@ -295,7 +295,7 @@ export default function BuybackDashboard() {
           ) : null}
 
           {obsNotice ? (
-            <p className="text-xs" style={{ color: "var(--rpc-text-ghost)" }}>
+            <p className="text-xs" style={{ color: "var(--rpc-text-muted)" }}>
               {obsNotice}
             </p>
           ) : null}
@@ -337,7 +337,7 @@ export default function BuybackDashboard() {
                           <td className="py-2 text-right">
                             <span style={{ color: "var(--rpc-text-primary)" }}>{spend.text}</span>
                             {spend.note ? (
-                              <div className="text-[11px]" style={{ color: "var(--rpc-text-ghost)" }}>
+                              <div className="text-[11px]" style={{ color: "var(--rpc-text-muted)" }}>
                                 {spend.note}
                               </div>
                             ) : null}
@@ -403,7 +403,7 @@ export default function BuybackDashboard() {
                       </span>
                       <span style={{ color: "var(--rpc-text-primary)", fontFamily: "var(--font-mono)" }}>
                         {formatUsd(s.spend_usd)}{" "}
-                        <span style={{ color: "var(--rpc-text-ghost)" }}>
+                        <span style={{ color: "var(--rpc-text-muted)" }}>
                           ({formatCount(s.purchases)})
                         </span>
                       </span>
@@ -430,7 +430,7 @@ export default function BuybackDashboard() {
                       </span>
                       <span style={{ color: "var(--rpc-text-primary)", fontFamily: "var(--font-mono)" }}>
                         {formatCount(s.purchases)}{" "}
-                        <span style={{ color: "var(--rpc-text-ghost)" }}>
+                        <span style={{ color: "var(--rpc-text-muted)" }}>
                           ({formatUsd(s.spend_usd)})
                         </span>
                       </span>
@@ -466,7 +466,7 @@ export default function BuybackDashboard() {
                     </span>
                     <span style={{ color: "var(--rpc-text-primary)", fontFamily: "var(--font-mono)" }}>
                       {formatUsd(e.spend_usd)}{" "}
-                      <span style={{ color: "var(--rpc-text-ghost)" }}>
+                      <span style={{ color: "var(--rpc-text-muted)" }}>
                         ({formatCount(e.priced_acquisitions)})
                       </span>
                     </span>

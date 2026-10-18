@@ -584,7 +584,7 @@ export default function MomentDetailModal({ moment, marketplaceSource, dapperUrl
                 display: "inline-block",
                 textAlign: "center",
                 background: "transparent",
-                color: "var(--rpc-red)",
+                color: "var(--rpc-red-text)",
                 border: "1px solid var(--rpc-red)",
                 padding: "10px 16px",
                 borderRadius: 4,

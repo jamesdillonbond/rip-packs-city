@@ -436,49 +436,49 @@ const styles: Record<string, React.CSSProperties> = {
 const CSS = `
 .rpc-fm-hero { max-width: 1180px; margin: 0 auto 28px; padding-bottom: 24px; border-bottom: 1px solid var(--rpc-border-subtle); }
 .rpc-fm-active-filter { max-width: 1180px; margin: 0 auto 14px; display: inline-flex; align-items: center; gap: 10px; padding: 8px 12px; background: var(--rpc-red-bg); border: 1px solid var(--rpc-red-border); border-radius: 2px; flex-wrap: wrap; }
-.rpc-fm-active-label { font-family: var(--font-mono); font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-red); }
+.rpc-fm-active-label { font-family: var(--font-mono); font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-red-text); }
 .rpc-fm-active-value { font-family: var(--font-body); font-size: 14px; color: var(--rpc-text-primary); font-weight: 700; }
-.rpc-fm-active-clear { font-family: var(--font-mono); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; background: transparent; border: 1px solid var(--rpc-red-border); color: var(--rpc-red); padding: 4px 8px; border-radius: 2px; cursor: pointer; }
+.rpc-fm-active-clear { font-family: var(--font-mono); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; background: transparent; border: 1px solid var(--rpc-red-border); color: var(--rpc-red-text); padding: 4px 8px; border-radius: 2px; cursor: pointer; }
 .rpc-fm-active-clear:hover { background: var(--rpc-red); color: #fff; }
-.rpc-fm-eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: 4px; text-transform: uppercase; color: var(--rpc-red); margin-bottom: 12px; }
+.rpc-fm-eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: 4px; text-transform: uppercase; color: var(--rpc-red-text); margin-bottom: 12px; }
 .rpc-fm-h1 { font-family: var(--font-display); font-weight: 800; font-size: clamp(38px, 6vw, 64px); letter-spacing: 0.5px; line-height: 1.02; margin: 0 0 14px; text-transform: uppercase; }
 .rpc-fm-h3 { font-family: var(--font-display); font-weight: 800; font-size: 22px; letter-spacing: 1px; text-transform: uppercase; margin: 0 0 10px; }
 .rpc-fm-lede { font-size: 18px; line-height: 1.55; color: var(--rpc-text-secondary); max-width: 820px; margin: 0; }
 .rpc-fm-lede strong { color: var(--rpc-text-primary); }
 .rpc-fm-meta-row { font-family: var(--font-mono); font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-muted); margin-top: 14px; }
-.rpc-fm-meta-sep { margin: 0 8px; color: var(--rpc-text-ghost); }
+.rpc-fm-meta-sep { margin: 0 8px; color: var(--rpc-text-muted); }
 
 .rpc-fm-kpi-row { max-width: 1180px; margin: 0 auto 18px; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
 .rpc-fm-kpi { border: 1px solid var(--rpc-border-subtle); background: var(--rpc-surface-raised); padding: 14px 16px; border-radius: 2px; }
 .rpc-fm-kpi-label { font-family: var(--font-mono); font-size: 10px; letter-spacing: 2.5px; text-transform: uppercase; color: var(--rpc-text-muted); margin-bottom: 6px; }
-.rpc-fm-kpi-value { font-family: var(--font-display); font-weight: 800; font-size: 26px; color: var(--rpc-red); }
+.rpc-fm-kpi-value { font-family: var(--font-display); font-weight: 800; font-size: 26px; color: var(--rpc-red-text); }
 
 .rpc-fm-controls { max-width: 1180px; margin: 0 auto 18px; display: flex; flex-wrap: wrap; gap: 16px 24px; align-items: center; }
 .rpc-fm-pill-group { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .rpc-fm-pill-label { font-family: var(--font-mono); font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-muted); margin-right: 4px; }
 .rpc-fm-pill { font-family: var(--font-mono); font-size: 12px; letter-spacing: 1.5px; text-transform: uppercase; padding: 7px 14px; border: 1px solid var(--rpc-border); background: transparent; color: var(--rpc-text-secondary); cursor: pointer; border-radius: 2px; }
 .rpc-fm-pill:hover { border-color: var(--rpc-border-hover); color: var(--rpc-text-primary); }
-.rpc-fm-pill-active { background: var(--rpc-red-bg); border-color: var(--rpc-red); color: var(--rpc-red); }
+.rpc-fm-pill-active { background: var(--rpc-red-bg); border-color: var(--rpc-red); color: var(--rpc-red-text); }
 
 .rpc-fm-table-wrap { max-width: 1180px; margin: 0 auto; border: 1px solid var(--rpc-border-subtle); background: var(--rpc-surface); overflow-x: auto; border-radius: 2px; }
 .rpc-fm-state { padding: 32px; text-align: center; font-family: var(--font-mono); font-size: 13px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-muted); line-height: 1.8; }
-.rpc-fm-empty-link { font-family: var(--font-mono); color: var(--rpc-red); text-decoration: none; letter-spacing: 1.5px; display: inline-block; margin-top: 14px; }
+.rpc-fm-empty-link { font-family: var(--font-mono); color: var(--rpc-red-text); text-decoration: none; letter-spacing: 1.5px; display: inline-block; margin-top: 14px; }
 .rpc-fm-empty-link:hover { text-decoration: underline; }
 .rpc-fm-table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .rpc-fm-table th { font-family: var(--font-mono); font-size: 10px; letter-spacing: 2.5px; text-transform: uppercase; color: var(--rpc-text-muted); text-align: left; padding: 12px; border-bottom: 1px solid var(--rpc-border-subtle); background: var(--rpc-surface-raised); white-space: nowrap; }
 .rpc-fm-th-num { text-align: right; }
-.rpc-fm-th-emph { color: var(--rpc-red); }
+.rpc-fm-th-emph { color: var(--rpc-red-text); }
 .rpc-fm-table td { padding: 12px; border-bottom: 1px solid var(--rpc-border-subtle); vertical-align: middle; }
 .rpc-fm-td-edition { min-width: 240px; }
 .rpc-fm-edition-cell { display: flex; align-items: center; gap: 14px; }
 .rpc-fm-edition-link { text-decoration: none; color: inherit; display: block; flex: 1; min-width: 0; }
-.rpc-fm-edition-link:hover .rpc-fm-edition-name { color: var(--rpc-red); }
+.rpc-fm-edition-link:hover .rpc-fm-edition-name { color: var(--rpc-red-text); }
 .rpc-fm-edition-name { font-weight: 700; font-size: 15px; color: var(--rpc-text-primary); transition: color 100ms; }
 .rpc-fm-squeeze-link { font-family: var(--font-mono); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--rpc-text-muted); text-decoration: none; padding: 4px 8px; border: 1px solid var(--rpc-border); border-radius: 2px; white-space: nowrap; opacity: 0.65; transition: color 100ms, border-color 100ms, opacity 100ms; }
-.rpc-fm-squeeze-link:hover { color: var(--rpc-red); border-color: var(--rpc-red); opacity: 1; }
+.rpc-fm-squeeze-link:hover { color: var(--rpc-red-text); border-color: var(--rpc-red); opacity: 1; }
 .rpc-fm-edition-set { font-family: var(--font-mono); font-size: 11px; color: var(--rpc-text-muted); letter-spacing: 1px; margin-top: 2px; }
 .rpc-fm-td-num { text-align: right; font-family: var(--font-mono); color: var(--rpc-text-primary); white-space: nowrap; }
-.rpc-fm-td-emph { color: var(--rpc-red); font-weight: 700; font-size: 15px; }
+.rpc-fm-td-emph { color: var(--rpc-red-text); font-weight: 700; font-size: 15px; }
 .rpc-fm-tier { font-family: var(--font-mono); font-size: 10px; letter-spacing: 2px; text-transform: uppercase; }
 
 .rpc-fm-footer { max-width: 1180px; margin: 36px auto 0; display: grid; grid-template-columns: 2fr 1fr; gap: 32px; }
@@ -488,7 +488,7 @@ const CSS = `
 .rpc-fm-share-btn { display: inline-flex; align-items: center; justify-content: center; background: var(--rpc-red); color: #fff; font-family: var(--font-mono); font-size: 12px; letter-spacing: 2.5px; text-transform: uppercase; padding: 13px 18px; border-radius: 2px; text-decoration: none; }
 .rpc-fm-share-btn:hover { background: var(--rpc-red-hover); }
 .rpc-fm-back { font-family: var(--font-mono); font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-secondary); text-decoration: none; padding: 10px; text-align: center; }
-.rpc-fm-back:hover { color: var(--rpc-red); }
+.rpc-fm-back:hover { color: var(--rpc-red-text); }
 
 @media (max-width: 880px) {
   .rpc-fm-kpi-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }

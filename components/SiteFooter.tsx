@@ -76,7 +76,7 @@ export default function SiteFooter() {
               style={{
                 fontSize: "var(--text-xs)",
                 letterSpacing: "0.15em",
-                color: "var(--rpc-text-ghost)",
+                color: "var(--rpc-text-muted)",
                 marginTop: 2,
               }}
             >
@@ -111,7 +111,7 @@ export default function SiteFooter() {
               padding: "2px 8px",
               fontSize: "var(--text-xs)",
               letterSpacing: "0.1em",
-              color: "var(--rpc-text-ghost)",
+              color: "var(--rpc-text-muted)",
             }}
           >
             {chainBadge}
@@ -140,7 +140,7 @@ export default function SiteFooter() {
               fontSize: "var(--text-xs)",
               letterSpacing: "0.15em",
               textTransform: "uppercase",
-              color: "var(--rpc-text-ghost)",
+              color: "var(--rpc-text-muted)",
               marginBottom: 8,
             }}
           >
@@ -161,7 +161,7 @@ export default function SiteFooter() {
               fontSize: "var(--text-xs)",
               letterSpacing: "0.15em",
               textTransform: "uppercase",
-              color: "var(--rpc-text-ghost)",
+              color: "var(--rpc-text-muted)",
               marginBottom: 8,
             }}
           >
@@ -238,7 +238,7 @@ export default function SiteFooter() {
           textAlign: "center",
         }}
       >
-        Built in <span style={{ color: "var(--rpc-red)" }}>Rip City</span> for the Flow collectibles community.
+        Built in <span style={{ color: "var(--rpc-red-text)" }}>Rip City</span> for the Flow collectibles community.
       </div>
     </footer>
   );

@@ -367,7 +367,7 @@ function RecentTransfersTable({
                       >
                         {resolveDisplayName(r.origin_addr, names)}
                       </Link>
-                      <span className="text-[color:var(--rpc-text-ghost)] mx-1.5">→</span>
+                      <span className="text-[color:var(--rpc-text-muted)] mx-1.5">→</span>
                       <Link
                         href={`/analytics/wallets/${r.recipient_addr}`}
                         className="text-[color:var(--rpc-text-secondary)] hover:text-emerald-400 transition-colors"

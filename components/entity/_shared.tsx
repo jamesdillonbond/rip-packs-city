@@ -342,7 +342,7 @@ export function SectionUnavailable({ noun }: { noun: string }) {
     >
       <div
         className="rpc-mono"
-        style={{ fontSize: 11, letterSpacing: "0.24em", textTransform: "uppercase", color: "var(--rpc-red)" }}
+        style={{ fontSize: 11, letterSpacing: "0.24em", textTransform: "uppercase", color: "var(--rpc-red-text)" }}
       >
         Couldn&rsquo;t load {noun}
       </div>

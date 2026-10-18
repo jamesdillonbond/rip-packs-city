@@ -413,7 +413,7 @@ export default function WalletProfile({
           <Wallet size={12} />
           Wallet directory
         </Link>
-        <span className="text-[color:var(--rpc-text-ghost)]">·</span>
+        <span className="text-[color:var(--rpc-text-muted)]">·</span>
         <Link
           href="/analytics/loans"
           className="inline-flex items-center gap-1 hover:text-emerald-400 transition-colors"
@@ -421,7 +421,7 @@ export default function WalletProfile({
           <Activity size={12} />
           Loan analytics
         </Link>
-        <span className="text-[color:var(--rpc-text-ghost)]">·</span>
+        <span className="text-[color:var(--rpc-text-muted)]">·</span>
         <a
           href="/analytics/methodology/wallet-profiles"
           className="inline-flex items-center gap-1 hover:text-emerald-400 transition-colors"

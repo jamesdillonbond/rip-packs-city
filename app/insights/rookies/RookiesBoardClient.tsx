@@ -332,24 +332,24 @@ const styles: Record<string, React.CSSProperties> = {
 
 const CSS = `
 .rpc-rk-hero { max-width: 1180px; margin: 0 auto 28px; padding-bottom: 24px; border-bottom: 1px solid var(--rpc-border-subtle); }
-.rpc-rk-eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: 4px; text-transform: uppercase; color: var(--rpc-red); margin-bottom: 12px; }
+.rpc-rk-eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: 4px; text-transform: uppercase; color: var(--rpc-red-text); margin-bottom: 12px; }
 .rpc-rk-h1 { font-family: var(--font-display); font-weight: 800; font-size: clamp(38px, 6vw, 64px); letter-spacing: 0.5px; line-height: 1.02; margin: 0 0 14px; text-transform: uppercase; }
 .rpc-rk-h3 { font-family: var(--font-display); font-weight: 800; font-size: 22px; letter-spacing: 1px; text-transform: uppercase; margin: 0 0 10px; }
 .rpc-rk-lede { font-size: 18px; line-height: 1.55; color: var(--rpc-text-secondary); max-width: 820px; margin: 0; }
 .rpc-rk-lede strong { color: var(--rpc-text-primary); }
 .rpc-rk-meta-row { font-family: var(--font-mono); font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-muted); margin-top: 14px; }
-.rpc-rk-meta-sep { margin: 0 8px; color: var(--rpc-text-ghost); }
+.rpc-rk-meta-sep { margin: 0 8px; color: var(--rpc-text-muted); }
 
 .rpc-rk-kpi-row { max-width: 1180px; margin: 0 auto 24px; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
 .rpc-rk-kpi { border: 1px solid var(--rpc-border-subtle); background: var(--rpc-surface-raised); padding: 14px 16px; border-radius: 2px; }
 .rpc-rk-kpi-label { font-family: var(--font-mono); font-size: 10px; letter-spacing: 2.5px; text-transform: uppercase; color: var(--rpc-text-muted); margin-bottom: 6px; }
-.rpc-rk-kpi-value { font-family: var(--font-display); font-weight: 800; font-size: 26px; color: var(--rpc-red); }
+.rpc-rk-kpi-value { font-family: var(--font-display); font-weight: 800; font-size: 26px; color: var(--rpc-red-text); }
 
 .rpc-rk-controls { max-width: 1180px; margin: 0 auto 18px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .rpc-rk-pill-label { font-family: var(--font-mono); font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-muted); margin-right: 4px; }
 .rpc-rk-pill { font-family: var(--font-mono); font-size: 12px; letter-spacing: 1.5px; text-transform: uppercase; padding: 7px 14px; border: 1px solid var(--rpc-border); background: transparent; color: var(--rpc-text-secondary); cursor: pointer; border-radius: 2px; }
 .rpc-rk-pill:hover { border-color: var(--rpc-border-hover); color: var(--rpc-text-primary); }
-.rpc-rk-pill-active { background: var(--rpc-red-bg); border-color: var(--rpc-red); color: var(--rpc-red); }
+.rpc-rk-pill-active { background: var(--rpc-red-bg); border-color: var(--rpc-red); color: var(--rpc-red-text); }
 
 .rpc-rk-table-wrap { max-width: 1180px; margin: 0 auto; border: 1px solid var(--rpc-border-subtle); background: var(--rpc-surface); overflow-x: auto; border-radius: 2px; }
 .rpc-rk-state { padding: 32px; text-align: center; font-family: var(--font-mono); font-size: 13px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-muted); }
@@ -360,13 +360,13 @@ const CSS = `
 .rpc-rk-player { font-weight: 700; font-size: 15px; color: var(--rpc-text-primary); transition: color 100ms; }
 .rpc-rk-player-cell { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .rpc-rk-player-link { color: inherit; text-decoration: none; display: inline-flex; align-items: center; gap: 10px; }
-.rpc-rk-player-link:hover .rpc-rk-player { color: var(--rpc-red); }
-.rpc-rk-player-link:hover .rpc-rk-drill-hint { color: var(--rpc-red); opacity: 1; }
+.rpc-rk-player-link:hover .rpc-rk-player { color: var(--rpc-red-text); }
+.rpc-rk-player-link:hover .rpc-rk-drill-hint { color: var(--rpc-red-text); opacity: 1; }
 .rpc-rk-drill-hint { font-family: var(--font-mono); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--rpc-text-muted); opacity: 0.5; transition: color 100ms, opacity 100ms; }
 .rpc-rk-trophy-link { font-family: var(--font-mono); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--rpc-text-muted); text-decoration: none; padding: 4px 8px; border: 1px solid var(--rpc-border); border-radius: 2px; white-space: nowrap; opacity: 0.65; transition: color 100ms, border-color 100ms, opacity 100ms; }
-.rpc-rk-trophy-link:hover { color: var(--rpc-red); border-color: var(--rpc-red); opacity: 1; }
+.rpc-rk-trophy-link:hover { color: var(--rpc-red-text); border-color: var(--rpc-red); opacity: 1; }
 .rpc-rk-td-num { text-align: right; font-family: var(--font-mono); color: var(--rpc-text-primary); white-space: nowrap; }
-.rpc-rk-td-emph { color: var(--rpc-red); font-weight: 700; }
+.rpc-rk-td-emph { color: var(--rpc-red-text); font-weight: 700; }
 
 .rpc-rk-footer { max-width: 1180px; margin: 36px auto 0; display: grid; grid-template-columns: 2fr 1fr; gap: 32px; }
 .rpc-rk-method p { font-size: 14px; line-height: 1.65; color: var(--rpc-text-secondary); margin: 0 0 12px; }
@@ -375,7 +375,7 @@ const CSS = `
 .rpc-rk-share-btn { display: inline-flex; align-items: center; justify-content: center; background: var(--rpc-red); color: #fff; font-family: var(--font-mono); font-size: 12px; letter-spacing: 2.5px; text-transform: uppercase; padding: 13px 18px; border-radius: 2px; text-decoration: none; }
 .rpc-rk-share-btn:hover { background: var(--rpc-red-hover); }
 .rpc-rk-back { font-family: var(--font-mono); font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-secondary); text-decoration: none; padding: 10px; text-align: center; }
-.rpc-rk-back:hover { color: var(--rpc-red); }
+.rpc-rk-back:hover { color: var(--rpc-red-text); }
 
 @media (max-width: 880px) {
   .rpc-rk-kpi-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }

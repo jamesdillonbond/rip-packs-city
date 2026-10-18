@@ -441,7 +441,7 @@ const CSS = `
   font-size: 12px;
   letter-spacing: 4px;
   text-transform: uppercase;
-  color: var(--rpc-red);
+  color: var(--rpc-red-text);
   margin-bottom: 12px;
 }
 .rpc-tr-h1 {
@@ -469,7 +469,7 @@ const CSS = `
   text-transform: uppercase;
   color: var(--rpc-text-muted);
 }
-.rpc-tr-meta-sep { margin: 0 8px; color: var(--rpc-text-ghost); }
+.rpc-tr-meta-sep { margin: 0 8px; color: var(--rpc-text-muted); }
 
 .rpc-tr-kpi-row {
   max-width: 1180px;
@@ -496,7 +496,7 @@ const CSS = `
   font-family: var(--font-display);
   font-weight: 800;
   font-size: 30px;
-  color: var(--rpc-red);
+  color: var(--rpc-red-text);
   letter-spacing: 0.5px;
 }
 
@@ -549,7 +549,7 @@ const CSS = `
 .rpc-tr-pill-active {
   background: var(--rpc-red-bg);
   border-color: var(--rpc-red);
-  color: var(--rpc-red);
+  color: var(--rpc-red-text);
 }
 .rpc-tr-sort { display: inline-flex; align-items: center; gap: 8px; }
 .rpc-tr-select {
@@ -660,7 +660,7 @@ const CSS = `
   font-family: var(--font-display);
   font-weight: 800;
   font-size: 18px;
-  color: var(--rpc-red);
+  color: var(--rpc-red-text);
 }
 .rpc-tr-conf {
   font-family: var(--font-mono);
@@ -729,7 +729,7 @@ const CSS = `
   padding: 10px;
   text-align: center;
 }
-.rpc-tr-back:hover { color: var(--rpc-red); }
+.rpc-tr-back:hover { color: var(--rpc-red-text); }
 
 @media (max-width: 1100px) {
   .rpc-tr-hero-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }

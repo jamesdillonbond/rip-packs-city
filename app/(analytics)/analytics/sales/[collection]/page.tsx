@@ -143,7 +143,7 @@ export default async function CollectionSalesPage({ params }: PageParams) {
             <ChevronLeft size={12} />
             All sales
           </Link>
-          <span className="text-[color:var(--rpc-text-ghost)]">·</span>
+          <span className="text-[color:var(--rpc-text-muted)]">·</span>
           <span className="text-[color:var(--rpc-text-secondary)]">{cfg.label}</span>
         </nav>
 

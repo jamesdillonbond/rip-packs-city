@@ -707,7 +707,7 @@ const styles: Record<string, React.CSSProperties> = {
 
 const CSS = `
 .rpc-pr-hero { max-width: 1180px; margin: 0 auto 28px; padding-bottom: 24px; border-bottom: 1px solid var(--rpc-border-subtle); }
-.rpc-pr-eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: 4px; text-transform: uppercase; color: var(--rpc-red); margin-bottom: 12px; }
+.rpc-pr-eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: 4px; text-transform: uppercase; color: var(--rpc-red-text); margin-bottom: 12px; }
 .rpc-pr-h1 { font-family: var(--font-display); font-weight: 800; font-size: clamp(38px, 6vw, 64px); letter-spacing: 0.5px; line-height: 1.02; margin: 0 0 14px; text-transform: uppercase; }
 .rpc-pr-h2 { font-family: var(--font-display); font-weight: 800; font-size: 26px; letter-spacing: 0.5px; text-transform: uppercase; margin: 0 0 16px; }
 .rpc-pr-h3 { font-family: var(--font-display); font-weight: 800; font-size: 22px; letter-spacing: 1px; text-transform: uppercase; margin: 0 0 10px; }
@@ -717,7 +717,7 @@ const CSS = `
 .rpc-pr-kpi-row { max-width: 1180px; margin: 0 auto 28px; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
 .rpc-pr-kpi { border: 1px solid var(--rpc-border-subtle); background: var(--rpc-surface-raised); padding: 14px 16px; border-radius: 2px; }
 .rpc-pr-kpi-label { font-family: var(--font-mono); font-size: 10px; letter-spacing: 2.5px; text-transform: uppercase; color: var(--rpc-text-muted); margin-bottom: 6px; }
-.rpc-pr-kpi-value { font-family: var(--font-display); font-weight: 800; font-size: 28px; color: var(--rpc-red); }
+.rpc-pr-kpi-value { font-family: var(--font-display); font-weight: 800; font-size: 28px; color: var(--rpc-red-text); }
 
 .rpc-pr-dist { max-width: 1180px; margin: 0 auto 36px; }
 .rpc-pr-bars { display: flex; flex-direction: column; gap: 10px; }
@@ -726,7 +726,7 @@ const CSS = `
 .rpc-pr-bar-track { background: var(--rpc-surface-raised); border: 1px solid var(--rpc-border-subtle); height: 28px; border-radius: 2px; overflow: hidden; }
 .rpc-pr-bar-fill { height: 100%; background: linear-gradient(90deg, var(--rpc-red), var(--rpc-red-hover)); }
 .rpc-pr-bar-meta { font-family: var(--font-mono); font-size: 12px; letter-spacing: 1px; color: var(--rpc-text-secondary); display: flex; justify-content: space-between; }
-.rpc-pr-bar-pct { color: var(--rpc-red); font-weight: 700; }
+.rpc-pr-bar-pct { color: var(--rpc-red-text); font-weight: 700; }
 .rpc-pr-bar-count { color: var(--rpc-text-muted); }
 
 .rpc-pr-ranker { max-width: 1180px; margin: 0 auto 36px; }
@@ -738,13 +738,13 @@ const CSS = `
 .rpc-pr-table td { padding: 12px; border-bottom: 1px solid var(--rpc-border-subtle); vertical-align: middle; }
 .rpc-pr-td-pack { min-width: 260px; }
 .rpc-pr-pack-link { text-decoration: none; color: inherit; display: block; }
-.rpc-pr-pack-link:hover .rpc-pr-pack-name { color: var(--rpc-red); }
-.rpc-pr-pack-link:hover .rpc-pr-pack-drill { color: var(--rpc-red); opacity: 1; }
+.rpc-pr-pack-link:hover .rpc-pr-pack-name { color: var(--rpc-red-text); }
+.rpc-pr-pack-link:hover .rpc-pr-pack-drill { color: var(--rpc-red-text); opacity: 1; }
 .rpc-pr-pack-name { font-weight: 700; font-size: 15px; color: var(--rpc-text-primary); transition: color 100ms; }
 .rpc-pr-pack-drill { margin-left: 10px; font-family: var(--font-mono); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--rpc-text-muted); opacity: 0.6; transition: color 100ms, opacity 100ms; }
 .rpc-pr-pack-sub { font-family: var(--font-mono); font-size: 11px; color: var(--rpc-text-muted); letter-spacing: 1px; margin-top: 2px; }
 .rpc-pr-td-num { text-align: right; font-family: var(--font-mono); color: var(--rpc-text-primary); white-space: nowrap; }
-.rpc-pr-td-emph { color: var(--rpc-red); font-weight: 700; }
+.rpc-pr-td-emph { color: var(--rpc-red-text); font-weight: 700; }
 .rpc-pr-td-soft { color: var(--rpc-text-muted); }
 .rpc-pr-variance-chip { font-family: var(--font-mono); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; padding: 4px 8px; background: rgba(245,158,11,0.10); color: var(--rpc-warning); border: 1px solid rgba(245,158,11,0.30); border-radius: 2px; }
 .rpc-pr-clean-chip { font-family: var(--font-mono); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; padding: 4px 8px; background: rgba(52,211,153,0.10); color: var(--rpc-success); border: 1px solid rgba(52,211,153,0.30); border-radius: 2px; }
@@ -764,20 +764,20 @@ const CSS = `
 .rpc-pr-mvr-cap strong { color: var(--rpc-text-primary); }
 .rpc-pr-mvr-table { font-size: 13px; }
 .rpc-pr-td-2nd { color: var(--rpc-text-muted); font-size: 11px; margin-left: 6px; }
-.rpc-pr-reality-bad { color: var(--rpc-red); font-weight: 700; }
+.rpc-pr-reality-bad { color: var(--rpc-red-text); font-weight: 700; }
 .rpc-pr-reality-good { color: var(--rpc-success); font-weight: 700; }
 .rpc-pr-reality-on { color: var(--rpc-text-secondary); font-weight: 700; }
 
 .rpc-pr-footer { max-width: 1180px; margin: 36px auto 0; display: grid; grid-template-columns: 2fr 1fr; gap: 32px; }
 .rpc-pr-method p { font-size: 14px; line-height: 1.65; color: var(--rpc-text-secondary); margin: 0 0 12px; }
 .rpc-pr-method strong { color: var(--rpc-text-primary); }
-.rpc-pr-xlink { color: var(--rpc-red); text-decoration: none; font-weight: 600; }
+.rpc-pr-xlink { color: var(--rpc-red-text); text-decoration: none; font-weight: 600; }
 .rpc-pr-xlink:hover { text-decoration: underline; }
 .rpc-pr-share { display: flex; flex-direction: column; gap: 12px; align-items: stretch; }
 .rpc-pr-share-btn { display: inline-flex; align-items: center; justify-content: center; background: var(--rpc-red); color: #fff; font-family: var(--font-mono); font-size: 12px; letter-spacing: 2.5px; text-transform: uppercase; padding: 13px 18px; border-radius: 2px; text-decoration: none; transition: background 120ms; }
 .rpc-pr-share-btn:hover { background: var(--rpc-red-hover); }
 .rpc-pr-back { font-family: var(--font-mono); font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-secondary); text-decoration: none; padding: 10px; text-align: center; }
-.rpc-pr-back:hover { color: var(--rpc-red); }
+.rpc-pr-back:hover { color: var(--rpc-red-text); }
 
 @media (max-width: 880px) {
   .rpc-pr-kpi-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }

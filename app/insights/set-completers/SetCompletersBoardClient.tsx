@@ -58,7 +58,7 @@ export default function SetCompletersBoardClient({
 
   return (
     <div style={{ maxWidth: 1000, margin: "0 auto", padding: "24px 16px 60px" }}>
-      <div className="rpc-mono" style={{ fontSize: 11, letterSpacing: "0.22em", color: "var(--rpc-red)", textTransform: "uppercase" }}>
+      <div className="rpc-mono" style={{ fontSize: 11, letterSpacing: "0.22em", color: "var(--rpc-red-text)", textTransform: "uppercase" }}>
         Rip Packs City · Insights
       </div>
       <h1 style={{ margin: "10px 0 0", fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 40, letterSpacing: "0.03em", color: "var(--rpc-text-primary)", textTransform: "uppercase", lineHeight: 1.03 }}>
@@ -116,7 +116,7 @@ export default function SetCompletersBoardClient({
                 <tr key={r.set_id_onchain}>
                   <td style={tdStyle("left")}>
                     <span style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 15, color: "var(--rpc-text-primary)" }}>{r.set_name || `Set ${r.set_id_onchain}`}</span>
-                    <span className="rpc-mono" style={{ marginLeft: 8, fontSize: 10, color: "var(--rpc-text-ghost)" }}>#{r.set_id_onchain}</span>
+                    <span className="rpc-mono" style={{ marginLeft: 8, fontSize: 10, color: "var(--rpc-text-muted)" }}>#{r.set_id_onchain}</span>
                   </td>
                   <td style={tdStyle("right")}><span className="rpc-mono" style={{ color: "var(--rpc-text-secondary)" }}>{fmtInt(r.total_plays)}</span></td>
                   <td style={tdStyle("right")}><span style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 17, color: r.completers > 0 ? "var(--rpc-red)" : "var(--rpc-text-muted)" }}>{fmtInt(r.completers)}</span></td>
@@ -133,7 +133,7 @@ export default function SetCompletersBoardClient({
         {METHOD_NOTE}
       </p>
       <div style={{ marginTop: 16 }}>
-        <Link href="/insights" className="rpc-mono" style={{ fontSize: 12, color: "var(--rpc-red)", textDecoration: "none" }}>← All insights</Link>
+        <Link href="/insights" className="rpc-mono" style={{ fontSize: 12, color: "var(--rpc-red-text)", textDecoration: "none" }}>← All insights</Link>
       </div>
     </div>
   )

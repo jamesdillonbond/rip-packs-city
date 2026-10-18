@@ -336,21 +336,21 @@ const styles: Record<string, React.CSSProperties> = {
 
 const CSS = `
 .rpc-ss-hero { max-width: 1180px; margin: 0 auto 28px; padding-bottom: 24px; border-bottom: 1px solid var(--rpc-border-subtle); }
-.rpc-ss-eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: 4px; text-transform: uppercase; color: var(--rpc-red); margin-bottom: 12px; }
+.rpc-ss-eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: 4px; text-transform: uppercase; color: var(--rpc-red-text); margin-bottom: 12px; }
 .rpc-ss-h1 { font-family: var(--font-display); font-weight: 800; font-size: clamp(38px, 6vw, 64px); letter-spacing: 0.5px; line-height: 1.02; margin: 0 0 14px; text-transform: uppercase; }
 .rpc-ss-h3 { font-family: var(--font-display); font-weight: 800; font-size: 22px; letter-spacing: 1px; text-transform: uppercase; margin: 0 0 10px; }
 .rpc-ss-lede { font-size: 18px; line-height: 1.55; color: var(--rpc-text-secondary); max-width: 820px; margin: 0 0 16px; }
-.rpc-ss-inline-link { color: var(--rpc-red); text-decoration: none; }
+.rpc-ss-inline-link { color: var(--rpc-red-text); text-decoration: none; }
 .rpc-ss-inline-link:hover { color: var(--rpc-red-hover); }
 .rpc-ss-meta-row { font-family: var(--font-mono); font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-muted); }
-.rpc-ss-meta-sep { margin: 0 8px; color: var(--rpc-text-ghost); }
+.rpc-ss-meta-sep { margin: 0 8px; color: var(--rpc-text-muted); }
 
 .rpc-ss-controls { max-width: 1180px; margin: 0 auto 18px; display: flex; flex-wrap: wrap; gap: 16px 24px; align-items: center; }
 .rpc-ss-pill-group { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .rpc-ss-pill-label { font-family: var(--font-mono); font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-muted); margin-right: 4px; }
 .rpc-ss-pill { font-family: var(--font-mono); font-size: 12px; letter-spacing: 1.5px; text-transform: uppercase; padding: 7px 14px; border: 1px solid var(--rpc-border); background: transparent; color: var(--rpc-text-secondary); cursor: pointer; border-radius: 2px; }
 .rpc-ss-pill:hover { border-color: var(--rpc-border-hover); color: var(--rpc-text-primary); }
-.rpc-ss-pill-active { background: var(--rpc-red-bg); border-color: var(--rpc-red); color: var(--rpc-red); }
+.rpc-ss-pill-active { background: var(--rpc-red-bg); border-color: var(--rpc-red); color: var(--rpc-red-text); }
 .rpc-ss-sort { display: inline-flex; align-items: center; gap: 8px; }
 .rpc-ss-select { font-family: var(--font-mono); font-size: 12px; letter-spacing: 1px; background: transparent; border: 1px solid var(--rpc-border); color: var(--rpc-text-primary); padding: 7px 10px; border-radius: 2px; cursor: pointer; }
 
@@ -359,20 +359,20 @@ const CSS = `
 .rpc-ss-table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .rpc-ss-table th { font-family: var(--font-mono); font-size: 10px; letter-spacing: 2.5px; text-transform: uppercase; color: var(--rpc-text-muted); text-align: left; padding: 12px; border-bottom: 1px solid var(--rpc-border-subtle); background: var(--rpc-surface-raised); white-space: nowrap; }
 .rpc-ss-th-num { text-align: right; }
-.rpc-ss-th-emph { color: var(--rpc-red); }
+.rpc-ss-th-emph { color: var(--rpc-red-text); }
 .rpc-ss-table td { padding: 12px; border-bottom: 1px solid var(--rpc-border-subtle); vertical-align: middle; }
 .rpc-ss-td-set { min-width: 280px; }
 .rpc-ss-set-cell { display: flex; align-items: center; gap: 12px; }
 .rpc-ss-set-link { text-decoration: none; color: inherit; display: block; flex: 1; min-width: 0; }
-.rpc-ss-set-link:hover .rpc-ss-set-name { color: var(--rpc-red); }
-.rpc-ss-set-link:hover .rpc-ss-drill-hint { color: var(--rpc-red); opacity: 1; }
+.rpc-ss-set-link:hover .rpc-ss-set-name { color: var(--rpc-red-text); }
+.rpc-ss-set-link:hover .rpc-ss-drill-hint { color: var(--rpc-red-text); opacity: 1; }
 .rpc-ss-set-name { font-weight: 700; font-size: 15px; color: var(--rpc-text-primary); transition: color 100ms; }
 .rpc-ss-drill-hint { margin-left: 10px; font-size: 10px; letter-spacing: 1.5px; color: var(--rpc-text-muted); opacity: 0.6; transition: color 100ms, opacity 100ms; }
 .rpc-ss-trophy-link { font-family: var(--font-mono); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--rpc-text-muted); text-decoration: none; padding: 4px 8px; border: 1px solid var(--rpc-border); border-radius: 2px; white-space: nowrap; opacity: 0.65; transition: color 100ms, border-color 100ms, opacity 100ms; }
-.rpc-ss-trophy-link:hover { color: var(--rpc-red); border-color: var(--rpc-red); opacity: 1; }
+.rpc-ss-trophy-link:hover { color: var(--rpc-red-text); border-color: var(--rpc-red); opacity: 1; }
 .rpc-ss-set-sub { font-family: var(--font-mono); font-size: 11px; color: var(--rpc-text-muted); letter-spacing: 1px; margin-top: 2px; }
 .rpc-ss-td-num { text-align: right; font-family: var(--font-mono); color: var(--rpc-text-primary); white-space: nowrap; }
-.rpc-ss-td-emph { color: var(--rpc-red); font-weight: 700; }
+.rpc-ss-td-emph { color: var(--rpc-red-text); font-weight: 700; }
 .rpc-ss-tier { font-family: var(--font-mono); font-size: 10px; letter-spacing: 2px; text-transform: uppercase; }
 
 .rpc-ss-footer { max-width: 1180px; margin: 36px auto 0; display: grid; grid-template-columns: 2fr 1fr; gap: 32px; }
@@ -384,7 +384,7 @@ const CSS = `
 .rpc-ss-share-btn { display: inline-flex; align-items: center; justify-content: center; background: var(--rpc-red); color: #fff; font-family: var(--font-mono); font-size: 12px; letter-spacing: 2.5px; text-transform: uppercase; padding: 13px 18px; border-radius: 2px; text-decoration: none; }
 .rpc-ss-share-btn:hover { background: var(--rpc-red-hover); }
 .rpc-ss-back { font-family: var(--font-mono); font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-secondary); text-decoration: none; padding: 10px; text-align: center; }
-.rpc-ss-back:hover { color: var(--rpc-red); }
+.rpc-ss-back:hover { color: var(--rpc-red-text); }
 
 @media (max-width: 760px) { .rpc-ss-footer { grid-template-columns: 1fr; } }
 `

@@ -88,7 +88,7 @@ function HomeHeader() {
             style={{
               background: "rgba(224,58,47,0.15)",
               border: "1px solid rgba(224,58,47,0.4)",
-              color: "var(--rpc-red)",
+              color: "var(--rpc-red-text)",
               padding: "6px 14px",
               borderRadius: 4,
               fontSize: 11,
@@ -235,9 +235,9 @@ export default function HomePageMarketing() {
            in @layer base; this keeps the declaration where it was, in the layer it must be in. */
         @layer base{*{box-sizing:border-box;margin:0;padding:0;}}
         .rpc-home-h1{font-family:var(--font-display);font-weight:900;font-size:56px;letter-spacing:0.04em;text-transform:uppercase;line-height:1.02;color:var(--rpc-text-primary);}
-        .rpc-home-h1-accent{color:var(--rpc-red);}
+        .rpc-home-h1-accent{color:var(--rpc-red-text);}
         .rpc-home-h2{font-family:var(--font-display);font-weight:900;font-size:40px;letter-spacing:0.04em;text-transform:uppercase;line-height:1.05;color:var(--rpc-text-primary);}
-        .rpc-home-eyebrow{font-family:var(--font-mono);font-size:11px;letter-spacing:0.3em;text-transform:uppercase;color:var(--rpc-red);}
+        .rpc-home-eyebrow{font-family:var(--font-mono);font-size:11px;letter-spacing:0.3em;text-transform:uppercase;color:var(--rpc-red-text);}
         /* 2026-10-11: body copy was hardcoded white — invisible on the light theme's white canvas.
            Dark keeps its brighter-than-secondary alpha; light falls back to the theme token. */
         /* brand-exception: the DARK-theme value; light overrides it below */ .rpc-home-root{--rpc-home-body:rgba(255,255,255,0.75);}
@@ -571,7 +571,7 @@ export default function HomePageMarketing() {
                     fontFamily: "var(--font-mono)",
                     fontSize: 11,
                     letterSpacing: "0.2em",
-                    color: "var(--rpc-red)",
+                    color: "var(--rpc-red-text)",
                   }}
                 >
                   {step.n} / {step.title}
@@ -623,7 +623,7 @@ export default function HomePageMarketing() {
                     style={{
                       fontFamily: "var(--font-mono)",
                       fontSize: 16,
-                      color: "var(--rpc-red)",
+                      color: "var(--rpc-red-text)",
                       lineHeight: 1,
                       marginTop: 2,
                       flexShrink: 0,

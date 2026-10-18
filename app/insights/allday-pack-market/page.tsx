@@ -154,7 +154,7 @@ export default async function AllDayPackMarketPage() {
     <div style={{ maxWidth: 980, margin: "0 auto", padding: "28px 18px 64px", display: "flex", flexDirection: "column", gap: 16 }}>
       {/* ── Hero ──────────────────────────────────────────────────────────── */}
       <header style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, letterSpacing: "0.22em", textTransform: "uppercase", color: "var(--rpc-red)" }}>
+        <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, letterSpacing: "0.22em", textTransform: "uppercase", color: "var(--rpc-red-text)" }}>
           RPC Insights · Public
         </span>
         <h1 style={{ margin: 0, fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 38, letterSpacing: "0.02em", color: "var(--rpc-text-primary)", textTransform: "uppercase", lineHeight: 1.05 }}>
@@ -209,7 +209,7 @@ export default async function AllDayPackMarketPage() {
           </p>
           <p style={{ margin: "12px 0 0", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-muted)", lineHeight: 1.6 }}>
             In the meantime, see the{" "}
-            <Link href="/insights/allday-pack-reality" style={{ color: "var(--rpc-red)", textDecoration: "none" }}>
+            <Link href="/insights/allday-pack-reality" style={{ color: "var(--rpc-red-text)", textDecoration: "none" }}>
               All Day Pack Reality board
             </Link>{" "}
             for what opened packs actually pull.

@@ -58,7 +58,7 @@ const KICKER: React.CSSProperties = {
   fontSize: 11,
   letterSpacing: "0.22em",
   textTransform: "uppercase",
-  color: "var(--rpc-red)",
+  color: "var(--rpc-red-text)",
   fontWeight: 700,
   margin: "0 0 12px",
 }

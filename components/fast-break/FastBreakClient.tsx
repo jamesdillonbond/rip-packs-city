@@ -426,7 +426,7 @@ export default function FastBreakClient({
                         fontFamily: "var(--font-display)",
                         fontSize: 22,
                         fontWeight: 800,
-                        color: "var(--rpc-red)",
+                        color: "var(--rpc-red-text)",
                         letterSpacing: "0.04em",
                       }}
                     >

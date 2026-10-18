@@ -93,7 +93,7 @@ export default function SaveToCollectionCTA({ wallet }: { wallet: string }) {
     }
   }
 
-  const linkStyle = { color: "var(--rpc-red)", fontWeight: 700, textDecoration: "none" } as const
+  const linkStyle = { color: "var(--rpc-red-text)", fontWeight: 700, textDecoration: "none" } as const
   const noteStyle = { fontSize: 13, color: "var(--rpc-text-secondary)", alignSelf: "center" } as const
 
   if (state.kind === "already") {

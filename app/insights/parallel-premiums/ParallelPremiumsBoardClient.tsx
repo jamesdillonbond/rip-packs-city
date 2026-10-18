@@ -140,7 +140,7 @@ export default function ParallelPremiumsBoardClient({
   return (
     <main style={{ maxWidth: 1040, margin: "0 auto", padding: "32px 16px 80px" }}>
       <header style={{ marginBottom: 20 }}>
-        <div className="rpc-label" style={{ color: "var(--rpc-red)", letterSpacing: "0.12em", fontSize: 11 }}>
+        <div className="rpc-label" style={{ color: "var(--rpc-red-text)", letterSpacing: "0.12em", fontSize: 11 }}>
           SURFACE · LIVE
         </div>
         <h1 style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: "clamp(28px, 5vw, 44px)", letterSpacing: "0.5px", textTransform: "uppercase", margin: "6px 0 10px", lineHeight: 1.02 }}>
@@ -187,7 +187,7 @@ export default function ParallelPremiumsBoardClient({
                 </div>
                 <div style={{ fontSize: 12, color: "var(--rpc-text-muted)", marginBottom: 12 }}>{r.set_name ?? "—"}</div>
                 <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-                  <span style={{ fontFamily: "var(--font-mono)", fontSize: 26, fontWeight: 800, color: "var(--rpc-red)" }}>
+                  <span style={{ fontFamily: "var(--font-mono)", fontSize: 26, fontWeight: 800, color: "var(--rpc-red-text)" }}>
                     {fmtMult(r.premium_mult)}
                   </span>
                   <span style={{ fontSize: 11, color: "var(--rpc-text-muted)" }}>vs Standard</span>
@@ -227,7 +227,7 @@ export default function ParallelPremiumsBoardClient({
                 <td style={{ ...td, textAlign: "right", color: "var(--rpc-text-muted)" }}>{fmtCirc(r.parallel_circ)}</td>
                 <td style={{ ...td, textAlign: "right", color: "var(--rpc-text-muted)" }}>{fmtUsd(r.base_fmv)}</td>
                 <td style={{ ...td, textAlign: "right", color: "var(--rpc-text-primary)", fontWeight: 700 }}>{fmtUsd(r.parallel_fmv)}</td>
-                <td style={{ ...td, textAlign: "right", color: "var(--rpc-red)", fontWeight: 800 }}>{fmtMult(r.premium_mult)}</td>
+                <td style={{ ...td, textAlign: "right", color: "var(--rpc-red-text)", fontWeight: 800 }}>{fmtMult(r.premium_mult)}</td>
               </tr>
             ))}
           </tbody>

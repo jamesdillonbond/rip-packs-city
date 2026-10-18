@@ -130,7 +130,7 @@ export default function BiggestSales({ rows }: BiggestSalesProps) {
             </div>
             <div className="flex flex-col gap-0.5 text-[11px] text-[color:var(--rpc-text-muted)]">
               <div className="flex items-center gap-1.5">
-                <span className="text-[color:var(--rpc-text-ghost)]">Buyer</span>
+                <span className="text-[color:var(--rpc-text-muted)]">Buyer</span>
                 {isLinkableAddr(r.buyer_address) ? (
                   <Link
                     href={`/analytics/wallets/${r.buyer_address}`}
@@ -144,7 +144,7 @@ export default function BiggestSales({ rows }: BiggestSalesProps) {
                 )}
               </div>
               <div className="flex items-center gap-1.5">
-                <span className="text-[color:var(--rpc-text-ghost)]">Seller</span>
+                <span className="text-[color:var(--rpc-text-muted)]">Seller</span>
                 {isLinkableAddr(r.seller_address) ? (
                   <Link
                     href={`/analytics/wallets/${r.seller_address}`}
@@ -157,7 +157,7 @@ export default function BiggestSales({ rows }: BiggestSalesProps) {
                   <span className="font-mono text-[color:var(--rpc-text-secondary)]">{label(r.seller_address)}</span>
                 )}
               </div>
-              <div className="text-[color:var(--rpc-text-ghost)] mt-0.5">{relativeTime(r.sold_at)}</div>
+              <div className="text-[color:var(--rpc-text-muted)] mt-0.5">{relativeTime(r.sold_at)}</div>
             </div>
           </article>
         )

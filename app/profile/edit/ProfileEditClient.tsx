@@ -481,7 +481,7 @@ export default function ProfileEditClient() {
                 <div
                   role="status"
                   className="hint"
-                  style={{ color: "var(--rpc-red)", lineHeight: 1.6, marginBottom: 4 }}
+                  style={{ color: "var(--rpc-red-text)", lineHeight: 1.6, marginBottom: 4 }}
                 >
                   Your saved teams couldn&rsquo;t be loaded, so these show as empty. Saving will leave them
                   exactly as they are — reload to edit them.
@@ -564,7 +564,7 @@ export default function ProfileEditClient() {
                   alignSelf: "flex-start",
                   background: "transparent",
                   border: "1px solid var(--rpc-red)",
-                  color: "var(--rpc-red)",
+                  color: "var(--rpc-red-text)",
                   borderRadius: 4,
                   padding: "6px 12px",
                   fontFamily: monoFont,

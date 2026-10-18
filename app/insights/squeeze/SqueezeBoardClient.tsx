@@ -801,7 +801,7 @@ const CSS = `
   font-size: 12px;
   letter-spacing: 4px;
   text-transform: uppercase;
-  color: var(--rpc-red);
+  color: var(--rpc-red-text);
   margin-bottom: 12px;
 }
 .rpc-sq-h1 {
@@ -830,7 +830,7 @@ const CSS = `
   text-transform: uppercase;
   color: var(--rpc-text-muted);
 }
-.rpc-sq-meta-sep { margin: 0 8px; color: var(--rpc-text-ghost); }
+.rpc-sq-meta-sep { margin: 0 8px; color: var(--rpc-text-muted); }
 
 .rpc-sq-active-filter {
   max-width: 1180px;
@@ -848,7 +848,7 @@ const CSS = `
   font-size: 10px;
   letter-spacing: 2px;
   text-transform: uppercase;
-  color: var(--rpc-red);
+  color: var(--rpc-red-text);
 }
 .rpc-sq-active-value {
   font-family: var(--font-body);
@@ -863,7 +863,7 @@ const CSS = `
   text-transform: uppercase;
   background: transparent;
   border: 1px solid var(--rpc-red-border);
-  color: var(--rpc-red);
+  color: var(--rpc-red-text);
   padding: 4px 8px;
   border-radius: 2px;
   cursor: pointer;
@@ -913,11 +913,11 @@ const CSS = `
 .rpc-sq-pill-active {
   background: var(--rpc-red-bg);
   border-color: var(--rpc-red);
-  color: var(--rpc-red);
+  color: var(--rpc-red-text);
 }
 .rpc-sq-sort { display: inline-flex; align-items: center; gap: 8px; }
 .rpc-sq-team { display: inline-flex; align-items: center; gap: 8px; }
-.rpc-sq-census-missing { color: var(--rpc-text-ghost); cursor: help; }
+.rpc-sq-census-missing { color: var(--rpc-text-muted); cursor: help; }
 .rpc-sq-team-input {
   font-family: var(--font-mono);
   font-size: 12px;
@@ -972,7 +972,7 @@ const CSS = `
   font-family: var(--font-display);
   font-weight: 800;
   font-size: 30px;
-  color: var(--rpc-red);
+  color: var(--rpc-red-text);
   letter-spacing: 0.5px;
 }
 
@@ -1007,7 +1007,7 @@ const CSS = `
   white-space: nowrap;
 }
 .rpc-sq-th-num { text-align: right; }
-.rpc-sq-th-emph { color: var(--rpc-red); }
+.rpc-sq-th-emph { color: var(--rpc-red-text); }
 .rpc-sq-row {
   cursor: pointer;
   border-bottom: 1px solid var(--rpc-border-subtle);
@@ -1037,7 +1037,7 @@ const CSS = `
   color: var(--rpc-text-primary);
   white-space: nowrap;
 }
-.rpc-sq-td-emph { color: var(--rpc-red); font-weight: 700; }
+.rpc-sq-td-emph { color: var(--rpc-red-text); font-weight: 700; }
 .rpc-sq-tier-chip {
   font-family: var(--font-mono);
   font-size: 10px;
@@ -1117,7 +1117,7 @@ const CSS = `
   padding: 10px;
   text-align: center;
 }
-.rpc-sq-back:hover { color: var(--rpc-red); }
+.rpc-sq-back:hover { color: var(--rpc-red-text); }
 
 @media (max-width: 760px) {
   .rpc-sq-kpi-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }

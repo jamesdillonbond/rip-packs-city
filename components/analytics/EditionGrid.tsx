@@ -42,7 +42,7 @@ const CONFIDENCE_PILL: Record<FmvConfidence, string> = {
   // zinc — the brand-token guard forbids raw neutral Tailwind classes in this
   // protected surface (they must be var(--rpc-*) tokens); semantic colours are fine.
   STALE: "border-orange-500/40 bg-orange-500/10 text-orange-400",
-  NO_DATA: "border-[color:var(--rpc-border)] bg-[color:var(--rpc-surface-raised)] text-[color:var(--rpc-text-ghost)]",
+  NO_DATA: "border-[color:var(--rpc-border)] bg-[color:var(--rpc-surface-raised)] text-[color:var(--rpc-text-muted)]",
 }
 
 const CONFIDENCE_LABEL: Record<FmvConfidence, string> = {

@@ -210,7 +210,7 @@ function CollectionPanel({ panel, hub, extras }: { panel: HubPanel; hub: Franchi
             <Link
               href={teamHref}
               className="rpc-mono"
-              style={{ display: "inline-block", marginTop: 14, fontSize: 12, color: "var(--rpc-red)", letterSpacing: "0.04em", textDecoration: "none" }}
+              style={{ display: "inline-block", marginTop: 14, fontSize: 12, color: "var(--rpc-red-text)", letterSpacing: "0.04em", textDecoration: "none" }}
             >
               Open {hub.team_name} on {name} →
             </Link>

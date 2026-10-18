@@ -388,7 +388,7 @@ tr[class*="rpc-holo-"]::after { content: none !important; }
 .rpc-btn-ghost {
   background: transparent;
   border: 1px solid var(--rpc-red-border);
-  color: var(--rpc-red);
+  color: var(--rpc-red-text);
   padding: 7px 18px;
   border-radius: var(--radius-sm);
   font-size: 12px;
@@ -416,12 +416,12 @@ tr[class*="rpc-holo-"]::after { content: none !important; }
 }
 .rpc-chip:hover {
   border-color: var(--rpc-red-muted);
-  color: var(--rpc-red);
+  color: var(--rpc-red-text);
 }
 .rpc-chip.active {
   background: var(--rpc-red-bg);
   border-color: var(--rpc-red-muted);
-  color: var(--rpc-red);
+  color: var(--rpc-red-text);
 }
 
 /* ── HUD Box (game UI panel) ──────────────────────────────── */
@@ -755,7 +755,7 @@ tr[class*="rpc-holo-"]::after { content: none !important; }
 }
 .rpc-filter-select::placeholder,
 .rpc-filter-input::placeholder {
-  color: var(--rpc-text-ghost);
+  color: var(--rpc-text-muted);
 }
 .rpc-filter-select:focus,
 .rpc-filter-input:focus {
@@ -796,7 +796,7 @@ tr[class*="rpc-holo-"]::after { content: none !important; }
 .rpc-filter-button--active:hover {
   background: var(--rpc-red-bg);
   border-color: var(--rpc-red-border);
-  color: var(--rpc-red);
+  color: var(--rpc-red-text);
 }
 
 .rpc-filter-toggle {
@@ -822,7 +822,7 @@ tr[class*="rpc-holo-"]::after { content: none !important; }
 .rpc-filter-toggle--active:hover {
   background: var(--rpc-red-bg);
   border-color: var(--rpc-red-border);
-  color: var(--rpc-red);
+  color: var(--rpc-red-text);
 }
 
 /* ── Stat tile (wallet analytics row) ─────────────────────── */

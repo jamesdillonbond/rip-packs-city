@@ -76,7 +76,7 @@ export default function MarketPulseClient({ initialRows, fetchedAt }: { initialR
   return (
     <main style={{ maxWidth: 1040, margin: "0 auto", padding: "32px 16px 80px" }}>
       <header style={{ marginBottom: 20 }}>
-        <div className="rpc-label" style={{ color: "var(--rpc-red)", letterSpacing: "0.12em", fontSize: 11 }}>SURFACE · LIVE</div>
+        <div className="rpc-label" style={{ color: "var(--rpc-red-text)", letterSpacing: "0.12em", fontSize: 11 }}>SURFACE · LIVE</div>
         <h1 style={{ fontFamily: "var(--font-display)", fontSize: "clamp(28px, 5vw, 44px)", margin: "6px 0 10px", lineHeight: 1.02 }}>Market Pulse</h1>
         <p style={{ color: "var(--rpc-text-secondary)", maxWidth: 720, fontSize: 15, lineHeight: 1.5 }}>
           Secondary-market health for every collection we track in one view — volume, sales, buyers and sellers.
@@ -139,7 +139,7 @@ export default function MarketPulseClient({ initialRows, fetchedAt }: { initialR
         {fetchedAt
           ? `Updated ${new Date(fetchedAt).toLocaleString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} ET.`
           : "Updated — (the read did not complete, so there is no data time to show)."}{" "}
-        See the biggest individual sales on <Link href="/insights/top-sales" style={{ color: "var(--rpc-red)" }}>Top Sales</Link>.
+        See the biggest individual sales on <Link href="/insights/top-sales" style={{ color: "var(--rpc-red-text)" }}>Top Sales</Link>.
       </p>
     </main>
   )

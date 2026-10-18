@@ -559,17 +559,17 @@ const styles: Record<string, React.CSSProperties> = {
 
 const CSS = `
 .rpc-rb-head { max-width: 1180px; margin: 0 auto 24px; padding-bottom: 22px; border-bottom: 1px solid var(--rpc-border-subtle); }
-.rpc-rb-eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: 4px; text-transform: uppercase; color: var(--rpc-red); margin-bottom: 12px; }
+.rpc-rb-eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: 4px; text-transform: uppercase; color: var(--rpc-red-text); margin-bottom: 12px; }
 .rpc-rb-h1 { font-family: var(--font-display); font-weight: 800; font-size: clamp(38px, 6vw, 64px); letter-spacing: 0.5px; line-height: 1.02; margin: 0 0 14px; text-transform: uppercase; }
 .rpc-rb-lede { font-family: var(--font-body); font-size: 18px; line-height: 1.55; color: var(--rpc-text-secondary); max-width: 880px; margin: 0 0 16px; }
 .rpc-rb-lede strong { color: var(--rpc-text-primary); }
 .rpc-rb-meta-row { font-family: var(--font-mono); font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-muted); }
-.rpc-rb-meta-sep { margin: 0 8px; color: var(--rpc-text-ghost); }
+.rpc-rb-meta-sep { margin: 0 8px; color: var(--rpc-text-muted); }
 
 .rpc-rb-kpi-row { max-width: 1180px; margin: 0 auto 26px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .rpc-rb-kpi { border: 1px solid var(--rpc-border-subtle); background: var(--rpc-surface-raised); padding: 14px 16px; border-radius: 2px; }
 .rpc-rb-kpi-label { font-family: var(--font-mono); font-size: 10px; letter-spacing: 2.5px; text-transform: uppercase; color: var(--rpc-text-muted); margin-bottom: 6px; }
-.rpc-rb-kpi-value { font-family: var(--font-display); font-weight: 800; font-size: 30px; color: var(--rpc-red); letter-spacing: 0.5px; }
+.rpc-rb-kpi-value { font-family: var(--font-display); font-weight: 800; font-size: 30px; color: var(--rpc-red-text); letter-spacing: 0.5px; }
 
 .rpc-rb-section-label { font-family: var(--font-mono); font-size: 10px; letter-spacing: 2.5px; text-transform: uppercase; color: var(--rpc-text-muted); margin-bottom: 12px; }
 .rpc-rb-hero-strip { max-width: 1180px; margin: 0 auto 30px; }
@@ -579,17 +579,17 @@ const CSS = `
 .rpc-rb-hero-art { position: relative; aspect-ratio: 1 / 1; background: var(--rpc-surface-raised); }
 .rpc-rb-hero-serial { position: absolute; top: 8px; left: 8px; font-family: var(--font-mono); font-size: 10px; letter-spacing: 1px; text-transform: uppercase; padding: 4px 8px; background: var(--rpc-black); border: 1px solid var(--rpc-border); border-radius: 2px; color: var(--rpc-text-secondary); }
 .rpc-rb-hero-body { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 4px; flex: 1; }
-.rpc-rb-hero-fmv { font-family: var(--font-display); font-weight: 800; font-size: 24px; color: var(--rpc-red); letter-spacing: 0.5px; display: flex; align-items: center; gap: 8px; }
+.rpc-rb-hero-fmv { font-family: var(--font-display); font-weight: 800; font-size: 24px; color: var(--rpc-red-text); letter-spacing: 0.5px; display: flex; align-items: center; gap: 8px; }
 .rpc-rb-hero-name { font-family: var(--font-body); font-weight: 700; font-size: 15px; line-height: 1.2; color: var(--rpc-text-primary); }
 .rpc-rb-hero-set { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.5px; color: var(--rpc-text-muted); line-height: 1.3; }
-.rpc-rb-dot { color: var(--rpc-text-ghost); }
+.rpc-rb-dot { color: var(--rpc-text-muted); }
 
 .rpc-rb-controls { max-width: 1180px; margin: 0 auto 20px; display: flex; flex-wrap: wrap; gap: 16px 24px; align-items: center; }
 .rpc-rb-pill-group { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .rpc-rb-pill-label { font-family: var(--font-mono); font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-muted); margin-right: 4px; }
 .rpc-rb-pill { font-family: var(--font-mono); font-size: 12px; letter-spacing: 1.5px; text-transform: uppercase; padding: 7px 14px; border: 1px solid var(--rpc-border); background: transparent; color: var(--rpc-text-secondary); cursor: pointer; border-radius: 2px; transition: border-color 120ms, color 120ms, background 120ms; }
 .rpc-rb-pill:hover { border-color: var(--rpc-border-hover); color: var(--rpc-text-primary); }
-.rpc-rb-pill-active { background: var(--rpc-red-bg); border-color: var(--rpc-red); color: var(--rpc-red); }
+.rpc-rb-pill-active { background: var(--rpc-red-bg); border-color: var(--rpc-red); color: var(--rpc-red-text); }
 
 .rpc-rb-board, .rpc-rb-burn { max-width: 1180px; margin: 0 auto; }
 .rpc-rb-honesty { font-family: var(--font-body); font-size: 12.5px; line-height: 1.55; color: var(--rpc-text-muted); margin: 0 0 18px; padding: 10px 14px; border: 1px solid var(--rpc-border-subtle); border-left: 2px solid var(--rpc-warning); background: var(--rpc-surface); border-radius: 2px; }
@@ -632,7 +632,7 @@ const CSS = `
 .rpc-rb-brow-name { font-family: var(--font-body); font-weight: 700; font-size: 15px; color: var(--rpc-text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rpc-rb-brow-sub { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.5px; color: var(--rpc-text-muted); display: flex; flex-wrap: wrap; gap: 6px; margin-top: 3px; }
 .rpc-rb-brow-stat { text-align: right; white-space: nowrap; }
-.rpc-rb-brow-big { font-family: var(--font-display); font-weight: 800; font-size: 22px; color: var(--rpc-red); letter-spacing: 0.5px; }
+.rpc-rb-brow-big { font-family: var(--font-display); font-weight: 800; font-size: 22px; color: var(--rpc-red-text); letter-spacing: 0.5px; }
 .rpc-rb-brow-big2 { font-family: var(--font-mono); font-size: 14px; color: var(--rpc-text-primary); font-weight: 700; }
 .rpc-rb-brow-cap { font-family: var(--font-mono); font-size: 9px; letter-spacing: 1px; text-transform: uppercase; color: var(--rpc-text-muted); margin-top: 2px; }
 
@@ -644,9 +644,9 @@ const CSS = `
 .rpc-rb-share-btn { display: inline-flex; align-items: center; justify-content: center; background: var(--rpc-red); color: #fff; font-family: var(--font-mono); font-size: 12px; letter-spacing: 2.5px; text-transform: uppercase; padding: 13px 18px; border-radius: 2px; text-decoration: none; transition: background 120ms; }
 .rpc-rb-share-btn:hover { background: var(--rpc-red-hover); }
 .rpc-rb-copy-btn { display: inline-flex; align-items: center; justify-content: center; background: transparent; color: var(--rpc-text-primary); border: 1px solid var(--rpc-border); font-family: var(--font-mono); font-size: 12px; letter-spacing: 2.5px; text-transform: uppercase; padding: 13px 18px; border-radius: 2px; cursor: pointer; transition: border-color 120ms, color 120ms; }
-.rpc-rb-copy-btn:hover { border-color: var(--rpc-red); color: var(--rpc-red); }
+.rpc-rb-copy-btn:hover { border-color: var(--rpc-red); color: var(--rpc-red-text); }
 .rpc-rb-back { font-family: var(--font-mono); font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-secondary); text-decoration: none; padding: 10px; text-align: center; }
-.rpc-rb-back:hover { color: var(--rpc-red); }
+.rpc-rb-back:hover { color: var(--rpc-red-text); }
 
 @media (max-width: 1100px) { .rpc-rb-hero-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 860px) {

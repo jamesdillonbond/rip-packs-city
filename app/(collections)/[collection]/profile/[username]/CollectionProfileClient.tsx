@@ -185,7 +185,7 @@ function PublicTrophySlot(props: { slot: number; trophy: TrophyMoment | null }) 
     return (
       <div style={{ background: "var(--rpc-bg-elev)", border: "1px dashed var(--rpc-border)", borderRadius: 10, aspectRatio: "3/4", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8 }}>
         <div style={{ fontSize: 24, opacity: 0.15 }}>{"\u{1F3C6}"}</div>
-        <div style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-ghost)", letterSpacing: "0.1em" }}>EMPTY SLOT</div>
+        <div style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-muted)", letterSpacing: "0.1em" }}>EMPTY SLOT</div>
       </div>
     );
   }
@@ -286,7 +286,7 @@ function Avatar(props: {
           }}
         />
       ) : (
-        <div style={{ width: "100%", height: "100%", background: "rgba(224,58,47,0.15)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: condensedFont, fontWeight: 800, fontSize: size * 0.35, color: "var(--rpc-red)" }}>
+        <div style={{ width: "100%", height: "100%", background: "rgba(224,58,47,0.15)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: condensedFont, fontWeight: 800, fontSize: size * 0.35, color: "var(--rpc-red-text)" }}>
           {initials}
         </div>
       )}
@@ -393,7 +393,7 @@ function BioEditor(props: {
           style={{ background: "var(--rpc-surface-raised)", border: "1px solid var(--rpc-border)", borderRadius: 4, padding: "6px 10px", fontSize: 11, fontFamily: monoFont, color: "var(--rpc-text-primary)", outline: "none", resize: "vertical" }}
         />
         {saveError && (
-          <div role="alert" style={{ fontSize: 10, fontFamily: monoFont, color: "var(--rpc-red)" }}>{saveError}</div>
+          <div role="alert" style={{ fontSize: 10, fontFamily: monoFont, color: "var(--rpc-red-text)" }}>{saveError}</div>
         )}
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
           <button onClick={function() { setEditing(false); }} style={{ background: "none", border: "1px solid var(--rpc-border)", borderRadius: 4, padding: "4px 12px", fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-muted)", cursor: "pointer" }}>CANCEL</button>
@@ -477,13 +477,13 @@ function PortfolioValueCard(props: { wallet: string; label?: string }) {
             <div className="rpc-skeleton" style={{ width: "90%", height: 14 }} />
           </div>
         ) : loadFailed ? (
-          <div style={{ height: 180, display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center", color: "var(--rpc-text-ghost)", fontFamily: monoFont, fontSize: 11, lineHeight: 1.6 }}>
+          <div style={{ height: 180, display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center", color: "var(--rpc-text-muted)", fontFamily: monoFont, fontSize: 11, lineHeight: 1.6 }}>
             Couldn&apos;t load FMV history just now.
             <br />
             This says nothing about the wallet&apos;s history.
           </div>
         ) : points.length === 0 ? (
-          <div style={{ height: 180, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--rpc-text-ghost)", fontFamily: monoFont, fontSize: 11 }}>
+          <div style={{ height: 180, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--rpc-text-muted)", fontFamily: monoFont, fontSize: 11 }}>
             No FMV history yet for this wallet.
           </div>
         ) : (
@@ -528,7 +528,7 @@ function PortfolioValueCard(props: { wallet: string; label?: string }) {
               </ResponsiveContainer>
             </div>
             {!hasEnoughHistory && (
-              <div style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-ghost)", letterSpacing: "0.08em", marginTop: 6, textAlign: "center" }}>
+              <div style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-muted)", letterSpacing: "0.08em", marginTop: 6, textAlign: "center" }}>
                 BUILDING HISTORY&hellip; ({daysWithValue}/7 DAYS)
               </div>
             )}
@@ -748,7 +748,7 @@ export default function CollectionProfileClient({
           />
         </div>
         {avatarError && (
-          <div role="alert" style={{ fontSize: 10, fontFamily: monoFont, color: "var(--rpc-red)", marginBottom: 8 }}>{avatarError}</div>
+          <div role="alert" style={{ fontSize: 10, fontFamily: monoFont, color: "var(--rpc-red-text)", marginBottom: 8 }}>{avatarError}</div>
         )}
         <h1 style={{ fontFamily: condensedFont, fontWeight: 900, fontSize: 32, letterSpacing: "0.06em", color: "var(--rpc-text-primary)", textTransform: "uppercase", lineHeight: 1, marginBottom: 6 }}>
           {bio?.display_name ?? username}
@@ -800,7 +800,7 @@ export default function CollectionProfileClient({
             <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: scoreColor(rpcScore), opacity: 0.7 }} />
             <div style={labelStyle}>RPC SCORE</div>
             <div style={{ fontFamily: condensedFont, fontWeight: 900, fontSize: 28, color: scoreColor(rpcScore), lineHeight: 1, margin: "8px 0 4px" }}>{rpcScore}</div>
-            <div style={{ fontSize: 8, fontFamily: monoFont, color: "var(--rpc-text-ghost)", letterSpacing: "0.1em" }}>POWERED BY TOP SHOT SCORE</div>
+            <div style={{ fontSize: 8, fontFamily: monoFont, color: "var(--rpc-text-muted)", letterSpacing: "0.1em" }}>POWERED BY TOP SHOT SCORE</div>
           </div>
         )}
         <div style={{ ...cardStyle, textAlign: "center" }}>
@@ -824,7 +824,7 @@ export default function CollectionProfileClient({
           <div style={{ fontFamily: condensedFont, fontWeight: 900, fontSize: 24, color: "var(--rpc-text-primary)", lineHeight: 1, margin: "8px 0 4px" }}>
             {totalMoments > 0 ? totalMoments.toLocaleString() : "\u2014"}
           </div>
-          <div style={{ fontSize: 8, fontFamily: monoFont, color: "var(--rpc-text-ghost)", letterSpacing: "0.1em" }}>
+          <div style={{ fontSize: 8, fontFamily: monoFont, color: "var(--rpc-text-muted)", letterSpacing: "0.1em" }}>
             {walletsLoaded && walletCount != null ? `${walletCount} WALLET${walletCount !== 1 ? "S" : ""}` : "\u2014 WALLETS"}
           </div>
         </div>
@@ -833,7 +833,7 @@ export default function CollectionProfileClient({
           <div style={{ fontFamily: condensedFont, fontWeight: 900, fontSize: 24, color: "var(--rpc-text-primary)", lineHeight: 1, margin: "8px 0 4px" }}>
             {totalBadges > 0 ? totalBadges : "\u2014"}
           </div>
-          <div style={{ fontSize: 8, fontFamily: monoFont, color: "var(--rpc-text-ghost)", letterSpacing: "0.1em" }}>BADGE MOMENTS</div>
+          <div style={{ fontSize: 8, fontFamily: monoFont, color: "var(--rpc-text-muted)", letterSpacing: "0.1em" }}>BADGE MOMENTS</div>
         </div>
       </div>
 
@@ -853,7 +853,7 @@ export default function CollectionProfileClient({
           // Three empty slabs read as "this collector pinned nothing", which is a
           // statement about them rather than about us. The failure branch has to
           // precede the render, not sit beside it.
-          <div style={{ ...cardStyle, textAlign: "center", padding: "32px 20px", color: "var(--rpc-text-ghost)", fontFamily: monoFont, fontSize: 11, lineHeight: 1.6 }}>
+          <div style={{ ...cardStyle, textAlign: "center", padding: "32px 20px", color: "var(--rpc-text-muted)", fontFamily: monoFont, fontSize: 11, lineHeight: 1.6 }}>
             Couldn&apos;t load this trophy case just now.
             <br />
             This says nothing about what they&apos;ve pinned &mdash; try again shortly.
@@ -886,7 +886,7 @@ export default function CollectionProfileClient({
                   {w.cached_fmv != null && (
                     <div style={{ textAlign: "right" }}>
                       <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 14, color: "var(--rpc-text-primary)" }}>{fmtDollars(w.cached_fmv)}</div>
-                      <div style={{ fontSize: 8, fontFamily: monoFont, color: "var(--rpc-text-ghost)" }}>{w.cached_moment_count ?? 0} MOMENTS</div>
+                      <div style={{ fontSize: 8, fontFamily: monoFont, color: "var(--rpc-text-muted)" }}>{w.cached_moment_count ?? 0} MOMENTS</div>
                     </div>
                   )}
                   {(w.username || w.wallet_addr) && (
@@ -929,9 +929,9 @@ export default function CollectionProfileClient({
         ) : failed.sniper ? (
           // Ordering is what makes this non-inert: an empty-length check first
           // would swallow the failure, since a failed read leaves the list empty.
-          <div style={{ ...cardStyle, textAlign: "center", padding: "24px", color: "var(--rpc-text-ghost)", fontFamily: monoFont, fontSize: 11 }}>Couldn&apos;t load live deals just now.</div>
+          <div style={{ ...cardStyle, textAlign: "center", padding: "24px", color: "var(--rpc-text-muted)", fontFamily: monoFont, fontSize: 11 }}>Couldn&apos;t load live deals just now.</div>
         ) : sniperDeals.length === 0 ? (
-          <div style={{ ...cardStyle, textAlign: "center", padding: "24px", color: "var(--rpc-text-ghost)", fontFamily: monoFont, fontSize: 11 }}>No live deals available right now.</div>
+          <div style={{ ...cardStyle, textAlign: "center", padding: "24px", color: "var(--rpc-text-muted)", fontFamily: monoFont, fontSize: 11 }}>No live deals available right now.</div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {sniperDeals.map(function(deal, i) {
@@ -968,7 +968,7 @@ export default function CollectionProfileClient({
                     </div>
                     <div style={{ textAlign: "right" }}>
                       <div style={{ fontFamily: monoFont, fontSize: 11, color: "var(--rpc-text-primary)" }}>{fmtDollars(deal.askPrice)}</div>
-                      <div style={{ fontSize: 8, fontFamily: monoFont, color: "var(--rpc-text-ghost)" }}>FMV {fmtDollars(deal.adjustedFmv)}</div>
+                      <div style={{ fontSize: 8, fontFamily: monoFont, color: "var(--rpc-text-muted)" }}>FMV {fmtDollars(deal.adjustedFmv)}</div>
                     </div>
                     <div style={{ fontFamily: monoFont, fontSize: 12, fontWeight: 700, color: "var(--rpc-danger)" }}>-{deal.discount.toFixed(0)}%</div>
                   </div>
@@ -992,7 +992,7 @@ export default function CollectionProfileClient({
               reason the sweep is the caller list and not the one file you had
               in mind (CLAUDE.md). */}
           {[
-            { label: "Binder", icon: "\u25C8", page: "collection", href: basePath + "/collection", color: "var(--rpc-red)" },
+            { label: "Binder", icon: "\u25C8", page: "collection", href: basePath + "/collection", color: "var(--rpc-red-text)" },
             { label: "Pack EV", icon: "\u25A3", page: "packs", href: basePath + "/packs", color: "#F59E0B" },
             { label: "Sniper", icon: "\u26A1", page: "sniper", href: basePath + "/sniper", color: "#34D399" },
             { label: "Sets", icon: "\u25C9", page: "sets", href: basePath + "/sets", color: "#F472B6" },
@@ -1014,7 +1014,7 @@ export default function CollectionProfileClient({
 
       {/* ── CTA Footer ── */}
       <div style={{ textAlign: "center", paddingTop: 32, borderTop: "1px solid var(--rpc-border)" }}>
-        <div style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-ghost)", letterSpacing: "0.15em", marginBottom: 12 }}>POWERED BY RIP PACKS CITY</div>
+        <div style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-muted)", letterSpacing: "0.15em", marginBottom: 12 }}>POWERED BY RIP PACKS CITY</div>
         <Link href="/dashboard" className="rpc-btn-primary" style={{ textDecoration: "none", display: "inline-block", fontSize: 13, padding: "10px 24px" }}>
           BUILD YOUR OWN PROFILE {"\u2192"}
         </Link>

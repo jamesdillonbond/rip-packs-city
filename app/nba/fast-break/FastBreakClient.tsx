@@ -210,7 +210,7 @@ export default function FastBreakClient() {
               fontSize: 11,
               letterSpacing: "0.3em",
               textTransform: "uppercase",
-              color: "var(--rpc-red)",
+              color: "var(--rpc-red-text)",
               marginBottom: 12,
             }}
           >
@@ -372,7 +372,7 @@ export default function FastBreakClient() {
                   fontFamily: "var(--font-display)",
                   fontWeight: 900,
                   fontSize: "clamp(28px, 6vw, 44px)",
-                  color: "var(--rpc-red)",
+                  color: "var(--rpc-red-text)",
                   lineHeight: 1,
                   letterSpacing: "0.02em",
                 }}
@@ -476,7 +476,7 @@ export default function FastBreakClient() {
                               borderRadius: 999,
                               background: "var(--rpc-red-bg)",
                               border: "1px solid var(--rpc-red-border)",
-                              color: "var(--rpc-red)",
+                              color: "var(--rpc-red-text)",
                               fontWeight: 700,
                             }}
                           >
@@ -583,7 +583,7 @@ export default function FastBreakClient() {
               href="https://nbatopshot.com/fastbreak"
               target="_blank"
               rel="noopener noreferrer"
-              style={{ color: "var(--rpc-red)", textDecoration: "underline" }}
+              style={{ color: "var(--rpc-red-text)", textDecoration: "underline" }}
             >
               Official Fast Break page →
             </a>
@@ -655,7 +655,7 @@ function FastBreakHeader() {
             textDecoration: "none",
           }}
         >
-          RIP PACKS <span style={{ color: "var(--rpc-red)" }}>CITY</span>
+          RIP PACKS <span style={{ color: "var(--rpc-red-text)" }}>CITY</span>
         </Link>
         <span
           style={{

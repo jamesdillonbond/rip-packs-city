@@ -392,7 +392,7 @@ export default function EditionsGridPaginated({ collectionUrlSlug, fetchUrl, ini
       {badgesEnabled && badges.failed && (
         <div className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-muted)", marginBottom: 10 }}>
           Couldn&rsquo;t load badges for {badgesUnknown} edition{badgesUnknown === 1 ? "" : "s"} &mdash; the Badge filter can&rsquo;t match them until they load.{" "}
-          <button type="button" onClick={badges.retry} className="rpc-mono" style={{ fontSize: 11, background: "none", border: "none", padding: 0, color: "var(--rpc-red)", cursor: "pointer", textDecoration: "underline" }}>
+          <button type="button" onClick={badges.retry} className="rpc-mono" style={{ fontSize: 11, background: "none", border: "none", padding: 0, color: "var(--rpc-red-text)", cursor: "pointer", textDecoration: "underline" }}>
             Retry
           </button>
         </div>
@@ -418,7 +418,7 @@ export default function EditionsGridPaginated({ collectionUrlSlug, fetchUrl, ini
             {visible.length} of {rows.length} loaded edition{rows.length === 1 ? "" : "s"}
             {!exhausted ? " \u00b7 more not loaded yet" : ""}
           </span>
-          <button type="button" onClick={() => setFilters(EMPTY_EDITION_FILTERS)} className="rpc-mono" style={{ background: "transparent", border: "none", padding: 0, cursor: "pointer", color: "var(--rpc-red)", fontSize: 11, letterSpacing: "0.06em" }}>
+          <button type="button" onClick={() => setFilters(EMPTY_EDITION_FILTERS)} className="rpc-mono" style={{ background: "transparent", border: "none", padding: 0, cursor: "pointer", color: "var(--rpc-red-text)", fontSize: 11, letterSpacing: "0.06em" }}>
             Clear filters
           </button>
         </div>
@@ -765,7 +765,7 @@ function TileMedia({
           style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
         />
       ) : (
-        <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--rpc-text-ghost)", fontFamily: "var(--font-mono)", fontSize: 10 }}>No image</div>
+        <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 10 }}>No image</div>
       )}
       {canVideo && hover && (
         <video

@@ -224,7 +224,7 @@ const POOL_DEPLETION_TITLE =
   'Pool depletion: most editions in this pack are sold out. The remaining ones skew toward high-FMV survivors, so EV is high but variance is huge — a typical pull is far from average.'
 
 function SortArrow({ active, dir }: { active: boolean; dir: 'asc' | 'desc' }) {
-  if (!active) return <span className="text-[color:var(--rpc-text-ghost)] ml-1">↕</span>
+  if (!active) return <span className="text-[color:var(--rpc-text-muted)] ml-1">↕</span>
   return <span className="ml-1">{dir === 'desc' ? '↓' : '↑'}</span>
 }
 
@@ -525,7 +525,7 @@ export default function PackTable({
                     {r.calibrationApplied && (
                       <span
                         title={CALIBRATED_TITLE}
-                        className="inline-block rounded border border-[color:var(--rpc-red-border)] bg-[color:var(--rpc-red-bg)] px-1.5 py-0.5 text-[10px] font-semibold text-[color:var(--rpc-red)]"
+                        className="inline-block rounded border border-[color:var(--rpc-red-border)] bg-[color:var(--rpc-red-bg)] px-1.5 py-0.5 text-[10px] font-semibold text-[color:var(--rpc-red-text)]"
                       >
                         reality-adjusted
                       </span>
@@ -573,7 +573,7 @@ export default function PackTable({
                 </td>
                 <td className="p-3 text-[color:var(--rpc-text-secondary)] tabular-nums">
                   {r.typicalEv == null ? (
-                    <span className="text-[color:var(--rpc-text-ghost)]">—</span>
+                    <span className="text-[color:var(--rpc-text-muted)]">—</span>
                   ) : (
                     <div className="flex items-center gap-2 flex-wrap">
                       <span>{fmtPrice(r.typicalEv)}</span>
@@ -634,7 +634,7 @@ export default function PackTable({
                       Simulate
                     </Link>
                   ) : (
-                    <span className="text-xs text-[color:var(--rpc-text-ghost)]">—</span>
+                    <span className="text-xs text-[color:var(--rpc-text-muted)]">—</span>
                   )}
                 </td>
               </tr>
@@ -681,7 +681,7 @@ export default function PackTable({
                 {r.calibrationApplied && (
                   <div
                     title={CALIBRATED_TITLE}
-                    className="mt-1 inline-block rounded border border-[color:var(--rpc-red-border)] bg-[color:var(--rpc-red-bg)] px-1.5 py-0.5 text-[9px] font-semibold text-[color:var(--rpc-red)]"
+                    className="mt-1 inline-block rounded border border-[color:var(--rpc-red-border)] bg-[color:var(--rpc-red-bg)] px-1.5 py-0.5 text-[9px] font-semibold text-[color:var(--rpc-red-text)]"
                   >
                     reality-adjusted
                   </div>
@@ -735,7 +735,7 @@ export default function PackTable({
                 <span>Actual EV <span className="font-semibold text-[color:var(--rpc-text-primary)]">{fmtPrice(r.grossEV)}</span></span>
                 {r.typicalEv != null && (
                   <>
-                    <span className="text-[color:var(--rpc-text-ghost)]">·</span>
+                    <span className="text-[color:var(--rpc-text-muted)]">·</span>
                     <span>Typical <span className="font-semibold text-[color:var(--rpc-text-primary)]">{fmtPrice(r.typicalEv)}</span></span>
                   </>
                 )}
