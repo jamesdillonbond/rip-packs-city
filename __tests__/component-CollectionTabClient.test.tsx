@@ -1682,15 +1682,30 @@ describe("CollectionTabClient — row shapes", () => {
     expect(screen.getByTestId("moment-table").getAttribute("data-rows")).toBe("1")
   })
 
-  it("does not ask for badges when no row carries a player name", async () => {
-    // ⚠ Scoped to the SEARCH's own badge call. A later background leg
-    // (auto-paginate, cache-refresh reload) can legitimately issue one for a
-    // page that DOES carry names, so an unscoped check is order-dependent.
+  it("does not ask for badges when no row carries an edition key", async () => {
+    // ⚠ RE-PINNED 2026-10-17: badges are looked up by EDITION now, so the
+    // premise moved from "no player name" to "no edition key". The old
+    // assertion (`!u.includes("players=Damian")`) would pass vacuously under
+    // the new lookup, which never sends `players=` at all.
+    await withMoments([MOMENT({ edition_key: null })])
+    const badgeCalls = fetchMock.mock.calls
+      .map((c) => String(c[0]))
+      .filter((u) => u.startsWith("/api/badges"))
+    expect(badgeCalls).toEqual([])
+  })
+
+  it("asks for badges by the rows' own edition keys, not by player name", async () => {
+    // A row with NO player name still has an edition, and still gets asked for
+    // — the name was never the identity (1.1 % of one wallet's rows lost their
+    // badges to a spelling difference under the player-name lookup).
     await withMoments([MOMENT({ player_name: null })])
     const badgeCalls = fetchMock.mock.calls
       .map((c) => String(c[0]))
       .filter((u) => u.startsWith("/api/badges"))
-    expect(badgeCalls.every((u) => !u.includes("players=Damian"))).toBe(true)
+    expect(badgeCalls.length).toBeGreaterThan(0)
+    const qs = new URLSearchParams(badgeCalls[0].split("?")[1])
+    expect(qs.get("editions")).toBe("48:1652")
+    expect(qs.has("players")).toBe(false)
   })
 
   it("does not ask for FMV when no row carries an edition key", async () => {

@@ -22,6 +22,7 @@ export async function GET(req: NextRequest) {
   const team     = searchParams.get("team")     ?? ""
   const player   = searchParams.get("player")   ?? ""   // single player (exact, case-insensitive)
   const players  = searchParams.get("players")  ?? ""   // comma-separated list (case-insensitive)
+  const editionsParam = searchParams.get("editions") ?? ""   // comma-separated external_ids (exact) — wallet badge enrichment
   const league   = searchParams.get("league")   ?? ""
   const sort     = searchParams.get("sort")     ?? "badge_score"
   const dir      = searchParams.get("dir")      ?? "desc"
@@ -123,7 +124,25 @@ export async function GET(req: NextRequest) {
       dataQ  = dataQ.ilike("player_name", player)
     }
 
-    // Multiple players (comma-separated — used by wallet badge enrichment)
+    // Exact editions (comma-separated external_ids — the wallet binder's badge
+    // enrichment, 2026-10-17). Hits the unique (external_id, collection_id)
+    // index; the binder keys badges by edition, so this returns exactly the
+    // rows it reads. PUBLIC route: keep only well-formed keys (Top Shot
+    // "233:8332::19", bare ids, hyphenated ids) and cap the list, so a crafted
+    // value cannot reach the filter grammar or fan out.
+    if (editionsParam) {
+      const keys = Array.from(new Set(
+        editionsParam.split(",").map(k => k.trim()).filter(k => /^[A-Za-z0-9:._-]{1,64}$/.test(k)),
+      )).slice(0, 500)
+      // A list that validates to nothing must match nothing — never fall
+      // through to an unfiltered page of every edition.
+      const inList = keys.length ? keys : ["__none__"]
+      countQ = countQ.in("external_id", inList)
+      dataQ  = dataQ.in("external_id", inList)
+    }
+
+    // Multiple players (comma-separated). The wallet binder used this until
+    // 2026-10-17 and now sends `editions`; kept for external callers.
     // Supabase .in() does exact match so we use .or() with ilike patterns
     if (players && !player) {
       // This route is PUBLIC (no auth). Each name is spliced into an `.or()`

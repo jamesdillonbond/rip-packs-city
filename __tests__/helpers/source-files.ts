@@ -154,7 +154,20 @@ export function walkRepoSourceTree(dir: string, depth = 0, out: string[] = []): 
     if (SKIP_ANYWHERE.has(entry)) continue
     if (depth === 0 && SKIP_AT_ROOT.has(entry)) continue
     const full = join(dir, entry)
-    if (statSync(full).isDirectory()) walkRepoSourceTree(full, depth + 1, out)
+    // ⚠ An entry can VANISH between readdir and stat: gitignore-cannot-silently-
+    // swallow-a-docs-file.test.ts creates and removes `tmp-gitignore-probe/` at
+    // the repo root while the parallel suite walks it. That race failed
+    // strip-comments-matches-typescript with ENOENT twice on 2026-10-17 (it read
+    // as "load flake"). A path that no longer exists is not part of the tree, so
+    // skip ENOENT only — any other stat error still throws.
+    let isDir: boolean
+    try {
+      isDir = statSync(full).isDirectory()
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException)?.code === "ENOENT") continue
+      throw e
+    }
+    if (isDir) walkRepoSourceTree(full, depth + 1, out)
     else if (/\.(ts|tsx|js|jsx|mjs|cjs)$/.test(entry)) out.push(full)
   }
   return out

@@ -413,32 +413,38 @@ function WalletMomentsBody() {
   async function enrichWithBadges(rowsIn: MomentRow[]): Promise<MomentRow[]> {
     if (!rowsIn.length) return rowsIn
     try {
-      const playerNames = Array.from(new Set(
-        rowsIn.map((r: MomentRow) => r.playerName?.trim()).filter(Boolean)
+      // ⛔ ASK FOR THE ROWS' OWN EDITIONS (2026-10-17), not every edition of
+      // their players. The map below is keyed by edition and read only by
+      // `row.editionKey`, so any other edition fetched was never used — and the
+      // player-name lookup was both the cost and a defect:
+      //   · cost: up to 10 SERIAL pages of 500 per 50 players, each an OR of 50
+      //     `ilike`s. Measured on prod, a 15K-Moment wallet's first page waited
+      //     3 pages × ~1.4 s — rows arrived at 1.2 s and rendered at ~5.3 s.
+      //   · defect: a row was badged only if badge_editions.player_name ALSO
+      //     ilike-matched its own name. 175 of one wallet's 15,392 rows (1.1 %)
+      //     lost their badges to diacritics and renames (Alperen Şengün vs
+      //     Sengun, Skylar Diggins-Smith, Jimmy Butler III). A NAME is not a
+      //     PERSON; the edition key is the identity.
+      // One edition key = at most one badge_editions row (unique on
+      // external_id + collection_id), so a chunk of EDITION_CHUNK keys is one
+      // request with no paging.
+      const editionKeys = Array.from(new Set(
+        rowsIn.map((r: MomentRow) => r.editionKey?.trim()).filter(Boolean)
       )) as string[]
-      if (!playerNames.length) return rowsIn
-      const CHUNK = 50
-      // Paged: 50 players can own more than one page of editions, and a
-      // truncated page silently drops badges from whatever fell off the end.
-      const PAGE = 500
-      const MAX_PAGES = 10
+      if (!editionKeys.length) return rowsIn
+      const EDITION_CHUNK = 100
       const allEditions: any[] = []
       const collectionIdParam = ownLookup(COLLECTION_UUID_BY_SLUG, collectionSlug) ?? COLLECTION_UUID_BY_SLUG["nba-top-shot"]
-      for (let i = 0; i < playerNames.length; i += CHUNK) {
-        const chunk = playerNames.slice(i, i + CHUNK)
-        for (let page = 0; page < MAX_PAGES; page++) {
-          const params = new URLSearchParams({
-            mode: "all", sort: "badge_score", dir: "desc",
-            limit: String(PAGE), offset: String(page * PAGE), players: chunk.join(","),
-            collection_id: collectionIdParam,
-          })
-          const res = await fetch("/api/badges?" + params.toString())
-          if (!res.ok) break
-          const json = await res.json()
-          const editions = json.editions ?? []
-          allEditions.push(...editions)
-          if (editions.length < PAGE) break
-        }
+      for (let i = 0; i < editionKeys.length; i += EDITION_CHUNK) {
+        const chunk = editionKeys.slice(i, i + EDITION_CHUNK)
+        const params = new URLSearchParams({
+          mode: "all", limit: String(EDITION_CHUNK), editions: chunk.join(","),
+          collection_id: collectionIdParam,
+        })
+        const res = await fetch("/api/badges?" + params.toString())
+        if (!res.ok) continue
+        const json = await res.json()
+        allEditions.push(...(json.editions ?? []))
       }
       // ⛔ Keyed by EDITION (badge_editions.external_id = row.editionKey), never
       // player + series — see lib/collection/badge-match.ts for the defect that
