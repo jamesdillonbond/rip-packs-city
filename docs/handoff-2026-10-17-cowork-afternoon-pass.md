@@ -49,6 +49,8 @@
     - **Dune seller lane** (`e7e64868`, prod READY): unscheduled, because every run had stopped on the paused Dune budget since 09-10. The route was kept, the watch row deactivated, and the retirement is pinned by a test.
     - **Zero-yield suppressions:** `pinnacle-pack-openers`, `pinnacle-metadata-backfill` and `chain-arrival-flips` are suppressed, each with a re-check condition. The Pinnacle pair is backed by an on-chain count: 0 `PackNFT.Opened` events since 10-10, positive control 414 = the lane's 414.
     - **Still flagged on purpose:** `topshot-set-series-onchain`, for the 10-20 tip-off.
+    - **Self-inflicted CI red, fixed:** `51b24282` committed autostash conflict markers into the ledger, because preflight ran before the pull. Another session cleaned them at `c0e9fcb2`, with no entry lost. This clone now has `rebase.autoStash=false`.
+    - **Empty UFC sets:** there are 7, not 3. All are backed up and inert, and the guarded DELETE is ready for Trevor in the audit script.
 ## Queued for Trevor / Claude Code
 - None. All four 10-17 `docs/pending-sql/` statements are applied and committed.
 
