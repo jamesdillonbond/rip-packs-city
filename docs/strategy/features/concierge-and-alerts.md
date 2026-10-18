@@ -1,0 +1,99 @@
+# Concierge & alerts — feature roadmap (refreshed 2026-10-17, PT)
+> Dated snapshot; re-derive any number before quoting. Canonical plan: [roadmap-2026-10-17.md](../roadmap-2026-10-17.md). Per-collection detail: [collections/](../collections/). Defects: [known-issues.md](../../reference/known-issues.md).
+
+## What it is today
+
+**The concierge** is `app/api/support-chat/route.ts` plus `SupportChat`, with ~42 tools as of the 10-03 pass. It is on the site, and on Telegram via `BOT_BRIDGE_SECRET`. The Discord asymmetry is permanent (concierge.md).
+
+It explains data and never makes a call:
+- `get_fmv` / `explain_fmv`, `explain_ui_field`, `check_wallet`, `get_market_cap`;
+- `manage_watchlist` / `manage_alerts`;
+- player and team resolvers (`resolve_player_name` / `resolve_team_name`, with `player_relations` for father/son pairs and renames);
+- ESPN season stats on Top Shot and All Day player pages.
+
+Since 10-14 a "?" control on the edition page's FMV tile and on the team checklist's cost-to-complete header opens it with that number as context.
+
+**Alerts** are what real users use: all 4 signed-in outbound clicks in the 10-08 → 10-14 week, and the one real concierge conversation, came from them.
+- **Deal alerts:** `dispatch_due_deal_alerts`, deduplicated per LISTING.
+- **Per-edition FMV alerts:** `fmv_alerts`, armed and fired on the transition. The outbox is the only sender.
+- `/alerts` and `/dashboard/alerts`. The concierge can create and remove alerts.
+
+Live 10-17: `alerts-dispatch` 104/104 runs ok in 24 h; 14 `alert_deliveries` in 7 d; **`fmv_alerts` holds 0 rows** (the designed state for `fmv_scanned 0`).
+
+**Email:**
+- The welcome email is live and idempotent (`claim_welcome_email`, 10-11).
+- **Digests are flag-off:** `WEEKLY_DIGEST_ENABLED` is unset and the route sends nothing.
+- The contact mailbox `rippackscity@gmail.com` is live everywhere (10-12).
+
+## Shipped recently (since mid-September)
+
+- **09-25 batch 62 (player identity):** names are not people. `resolve_player_name` and `resolve_team_name`, aliases, `player_relations`, `league_team_abbr` franchise folding. #139: every pair resolved against NBA.com and NFL.com.
+- **10-03 (42 tools):**
+  - The request boundary is bounded.
+  - The bot checks before it logs.
+  - The returning-tester greeting names what shipped.
+  - `get_market_cap`.
+  - #164: the first real `fmv_alerts` row was written through the concierge.
+  - The Telegram bridge was verified.
+- **10-04:** R73's "opened" metric de-duplicated. The points programme switched OFF, with its "credits accrue" copy.
+- **10-04 D26:** twin player rows merged, with aliases (OG/O.G. Anunoby, Claxton and others).
+- **10-09/10:**
+  - `explain_fmv` is scoped by collection (575 keys exist in two collections).
+  - Concierge "remove my alert" is scoped by collection.
+  - `/dashboard/alerts` stopped saving an All Day / Golazos / UFC / Candy alert as Top Shot.
+  - #183: alerts read the edition's own live ask.
+  - The "Perfect mints only" filter excludes 1-of-1s.
+  - `/api/alerts` preview fixed.
+  - `/api/send-digest` no longer mails a digest built from failed reads.
+  - #176: rows are keyed by the session user.
+- **10-11 (three passes):**
+  - `check_wallet` no longer publishes zeros it never measured.
+  - Escalation is limited to what RPC can act on.
+  - Refused sends render as error bubbles.
+  - Pills ask for data, never a buy/sell call (guarded).
+  - "Trophy case" disambiguated.
+- **10-14:**
+  - The concierge stopped reciting the retired FMV 1.7.0 model (it had done so for 11 days).
+  - Deal alerts fire once per listing, not at every UTC midnight (verified held 10-16).
+  - FMV alerts fire on the transition; channel `both` delivers to both.
+  - webz_80's four reports closed the loop by email.
+- **10-17:** `pipeline-failure-alerts` (ops paging) reads the whole hour instead of its newest ~27 min. Its source is now in git.
+
+## Open issues
+
+- **C2 CAN-SPAM postal address: blocked on Trevor.** Every commercial email needs a valid physical postal address. Until a shared footer carries one, digests and any marketing send stay flag-off (platform review 10-11, M10).
+- **R73: discoverability, not answers.** 3 non-automated `concierge_opened` events in the last 7 d (10-17 read). The ~10-28 watch: under ~1 real open a week on the fixed instrument means placement is still the problem.
+- **`support_conversations` alone cannot tell "nobody asked" from "it broke."** It held 231 rows in 7 d, mostly smoke probes. Read `usage_events` (`concierge_opened`, `chat-message-sent`) and the daily smoke results together.
+- **Player identity is maintained by hand** (player-identity.md §Maintenance): new father/son pairs, renames, and historic team labels. ESPN gaps leave 29 Top Shot identities unkeyed. Dee Brown and Courtney Williams (×2) are ambiguous.
+- **#8:** `sync-nba-projections` is still a permanently-red arm. ESPN is dead behind the proxy.
+
+## Next — prioritized
+
+**Now**
+1. **Close R73's 2-week watch on ~10-28.** Read real opens from the edition-FMV "?" and the checklist "?". Why: it decides whether to move the entry point or leave it. Falsifier: ≥ 1 real open a week, in which case leave placement alone and review the answers instead.
+2. **Series 2026-27 player identity (from 10-20).** New Series 9 players and rookies resolve through `resolve_player_name`. Partnered-athlete and autograph status has no field, so the concierge must not claim it. Falsifier: a Series 9 player whose name does not resolve, or who has two rows.
+
+**Next**
+3. **Digest readiness behind the flag:** shared footer, unsubscribe, and the postal address slot. Ship it dark, so turning digests on later is a one-flag change. Gate: Trevor supplies the address (C2), and the accuracy gate is passed before any send.
+4. **Alert coverage for frozen markets.** An alert on a Candy or Golazos edition must say its market has no indexed sales, never fire on a stale ask. Falsifier: a delivery with an ask older than its source's last good read.
+
+**Later**
+5. **Concierge answers for the official Yearbook / Squad Goals scoring**, only once Trevor supplies it. RPC will not publish its own rank as Top Shot's.
+
+## Decisions on record (do not re-litigate)
+
+- **RPC is READ-ONLY** (concierge rule 1). The bot never offers a buy, sell, trade, cart or gift, and never makes buy/sell calls. There are two exceptions only, both admin-only: giveaway delivery, and the swap TEST.
+- **A name is not a person; a team label is not a franchise** (09-25). The league's spelling is an ALIAS, never a rename. Accent-collapsed canonical slugs stay.
+- **Telegram was retired as a requirement** (R77, 10-13).
+- **Points programme OFF** (10-04, Trevor).
+- **No paid tier, billing, or "paying user" copy anywhere** (escalation scope, 10-11). No paid tier until 100 WAU.
+- **No outreach** (Trevor). Digests stay off until C2 is resolved.
+- **Deal-alert zero_yield lanes and the Lillard Archive filter stay** (declined 09-25).
+
+## Where the detail lives
+
+- [concierge.md](../../reference/concierge.md): rules, read-only exceptions, every dated pass, tool contracts.
+- [player-identity.md](../../reference/player-identity.md): resolvers, the ESPN feed, maintenance.
+- [platform-review-security-marketing-seo-compliance-2026-10-11.md](../../audits/platform-review-security-marketing-seo-compliance-2026-10-11.md): C2 and M10.
+- Code: `app/api/cron/weekly-digest/route.ts` (the flag), `lib/emails/sender-identity.ts`, `lib/alerts.ts`.
+- Register: #8, #139, #164, #176, #183 in [known-issues.md](../../reference/known-issues.md); R73, R77 in [deep-audit-register.md](../../audits/deep-audit-register.md).

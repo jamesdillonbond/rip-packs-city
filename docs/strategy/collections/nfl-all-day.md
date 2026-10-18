@@ -1,0 +1,121 @@
+# NFL All Day — collection roadmap (refreshed 2026-10-17, PT)
+
+> Dated snapshot; every number is a dated sample — re-derive before quoting. Canonical plan: [roadmap-2026-10-17.md](../roadmap-2026-10-17.md). Defects: [known-issues.md](../../reference/known-issues.md) (item text wins over this file).
+
+## Where it stands
+
+**All Day is the only collection failing its accuracy gate.** M2 = All Day HIGH/MEDIUM share ≥ 30 %. Live read ~6:00 PM PT 10-17 from `rpc_trust_health_history` (`allday_fmv_high_med_share_pct`, one row per leg, 999 sentinel excluded):
+
+| PT week | mean | min–max | legs at bar |
+|---|---|---|---|
+| 09-14 | 28.6 | 21.2–31.7 | 9 / 28 |
+| 09-21 | **27.9** | 24.4–31.0 | 7 / 28 |
+| 09-28 | 26.3 | 25.1–27.9 | 0 / 28 |
+| 10-05 | 27.2 | 26.6–28.2 | 0 / 28 |
+| 10-12 (partial) | 26.3 | 26.0–26.9 | 0 / 23 |
+
+- **The last leg at the bar was 2026-09-22 12:48 PM PT.** That is 0 of 107 legs since then. The latest precompute (12:48 PM PT 10-17) reads share 26.4 · fresh-24h 44.8 · sweep-24h 58.8 · stale-30d 0.0.
+- ⚠ **The canonical roadmap's wk 09-21 figure (24.8) does not match this series.** Re-derived the same way as the 10-10 block in [roadmap-status.md](../../reference/roadmap-status.md), the week reads 27.9. The other three weeks agree.
+- **Confidence mix** (`edition_fmv_current`, 6,190 editions, ~6:00 PM PT 10-17): LOW 1,750 (median FMV $1.00) · MEDIUM 1,444 ($0.21) · ASK_ONLY 1,205 ($10.80) · STALE 882 ($69.25) · NO_DATA 700 · HIGH 206 ($0.16) · SALES_ONLY 3. This is a different population from the 10-10 sizing (latest-3-days, 4,605 editions), so do not difference the two.
+- **The price is better than the label suggests.** `fmv_sales_backtest('nfl_all_day', 7)` from the [10-17 overnight pass](../../handoff-2026-10-17-overnight-pass.md): ALL 20.0 % median error, 56.4 % within ±25 %, ratio 1.059, $0.04 median dollar error. HIGH is 13.3 % / 71.6 % and MEDIUM 17.6 %. R125 was closed 10-17 on a PAIRED read: All Day MEDIUM 18.2 vs 22.7 and LOW 25.5 vs 27.3 against a naive last-3 median. The HIGH residual is under one 5¢ tick ([deep-audit-register.md](../../audits/deep-audit-register.md)).
+- **Volume** (`sales`, PT weeks): 08-24 255 · 08-31 911 · 09-07 5,757 · 09-14 3,067 · 09-21 2,659 · 09-28 5,191 · 10-05 4,388 · 10-12 2,579 (partial, to Sat 6 PM). Median price is well under $1. The NFL season roughly quadrupled volume against August, but M2 did not move. **Volume alone is not the binding constraint.**
+- **Pipelines:** all 35 All Day lanes in `pipeline_runs` read `ok` on every run in the 24 h to ~6:00 PM PT 10-17. That includes the storefront reconciler (16,872 listings walked, 15,258 written at 4:13 PM), `compute-allday-pack-ev` (circulation-weighted, 0 RPC errors) and the Flowty `allday-listing-cache` (72/72). ⚠ **"ok" is not "working" for one of them** (see Open issues).
+- **Primary packs:** the latest All Day drop start in `allday_drop_windows` is 2026-03-29 and none fell in the last 30 days. Pack EV is a secondary-market and historical product here ([packs.md](../../reference/packs.md)).
+
+## Shipped recently (since mid-September)
+
+- **09-25 · Flowty fork closed `unpurchasable`.** 27,406 listings sat on a storefront fork whose `purchase()` asserts false. They were setting the ask floor, and so the FMV ceiling, for 2,724 editions (`20260925230134`).
+- **09-25 · Dapper storefront reconciler covers All Day** (`?collection=nfl_all_day`, Vercel `13 1-23/2`). Job 19's ask lane now tracks its own floor in both directions.
+  - **10-09 fix:** a 4,080-listing seller blew the Cadence computation limit. The reconciler now reads 300-id slices pinned to one block height (`86ed83c3e`).
+- **09-26 · Packs are judged against their drop's real sale window.** `allday_drop_windows` (pg_cron 623): 3,214 of 3,228 distributions now have a start time, and REWARD drops are $0.
+- **09-28 → 09-30 · Unmapped sales recovered.** Duplicate rows were blocking price recovery and were removed. Multi-NFT V1 carts are now priced per NFT.
+  - **#161 decided:** pack buybacks count as market sales and are tracked separately. Since 10-03 (#169), FMV writers read `sales_market`, which excludes buybacks.
+- **09-29 · Holdings and the sniper.** 2,535 sold moments were removed from holdings where they sat as "locked" (`prune_allday_wmc_sold_away`, job 641). The sniper's player and franchise team searches now cover the whole pool.
+- **10-03 · FMV 1.8.0 and the out-of-sample instrument.** Sales-only FMV is now the median of the 7 most recent typical sales, and `fmv_sales_backtest` was added.
+- **10-04 · `allday-lock-refresh` re-walks a wallet only when its oldest check is ≥ 24 h.** Rows re-stamped per day fell from 2.6 M to ~428 k.
+- **10-10 · Ghost listings removed from three surfaces:**
+  - sniper top 50: 50 ghosts → 0 (`20261010085726`)
+  - Market editions board: 282 of 500 floors fixed (`085932`)
+  - edition-page "N listed": 1,464 editions corrected (`090525`)
+- **10-10 · Two more 10-10 ships:**
+  - **#70:** accepted offers become `offer_fill` sales. 236 All Day `offer_fill` rows exist since 10-10 (live).
+  - **#182:** the Binder shows the edition's live ask.
+- **10-11 · #160 closed** (324 open, 0 inflow). **Live 10-17: 0 open All Day `unmapped_sales`.**
+- **10-13 → 10-15 · Market and sniper:**
+  - badges are back on the Market (10-13)
+  - filter lists cover the full catalogue and team picks cover the whole franchise (10-14)
+  - Owned / Not owned filters the whole market (10-15)
+  - **R127 (10-15):** the sniper opens on Recently Listed and shows MIN DISC. again
+- **10-14 · #191: the delete cap now accepts an on-chain confirmation.** It confirms only when an independent on-chain count equals the walk's own count and the studio walk was complete. **Exit met live 10-17: wmc for `0x6d1f8c18412c6abc` = 2.** The watch can close.
+- **10-15 · Flowty lanes fail on an empty book** (`f0b7f7ba5`), so the shutdown alarms on its first tick.
+
+## Open issues
+
+1. **M2 not met.** 26–28 % for four weeks, with 0 of 107 legs at the bar since 09-22. No open register number. It is tracked in roadmap-status.md, 10-10 block.
+2. 🆕 **`allday-buyer-backfill` reports `ok` while writing nothing.** Live read, `pipeline_runs`:
+   - 10-14: 2 runs, 960 written · 10-15: 3,243 written, 597 decode-failed
+   - **10-16: 0 written, 3,840 decode-failed · 10-17: 0 written, 2,880 decode-failed**
+   - every run is `ok=true`, and each `extra` reads `decode_failed: 480` of 480
+   - the cursor keeps walking back past the failed rows (now 2025-10-06, floor `FORWARD_WINDOW_START` 2025-01-01)
+
+   This is the R123 write-side class: a run counted a success that resolved nothing. It matches the route's own warning that pre-current-spork transactions cannot be decoded via current REST. If so, the 10-10 sizing (82,984 rows, ~22 days) counted rows that can never resolve. Total null-buyer All Day `sales`: 590,508 (live). ✅ **Filed and fixed the same evening as [#192](../../reference/known-issues.md):** the floor is now mainnet27's root (2025-10-22); a decode wall or a failed UPDATE fails the run. Pre-spork null-buyer rows are retired from this lane, not resolved.
+3. **Flowty shutdown pending** (Trevor 09-25, "soon"). `allday-listing-cache` still ingests 72/72 a day into legacy `cached_listings`. No priced column depends on it (re-verified 10-03), and the remaining work is only teardown.
+4. **ASK_ONLY 1,205 and STALE 882 together are a third of the catalogue.** ASK_ONLY is the worst backtest bucket (ratio ~1.8, n 68). STALE (median $69) moves only with sales.
+
+## Next — prioritized
+
+**Now**
+- **Verify #192 on production runs** (fix shipped 10-17).
+  - What: the next runs should wrap, then show `buyers_resolved > 0`, or an honest `ok=false` decode wall. Re-size the backlog from rows ≥ 2025-10-22.
+  - Why: the lane logged success while resolving nothing for two days.
+  - Falsifier: rows ≥ 2025-10-22 also fail to decode, which would mean a decode bug rather than the spork boundary.
+- **Re-cost M2 against today's mix** (the 10-10 instruction).
+  - What: split LOW (1,750) by sales count, and sample ASK_ONLY (1,205) and NO_DATA (700) for editions that have recent sales but no price.
+  - Why: ASK_ONLY and NO_DATA appear to have grown since 10-10, on a different basis. Check whether that is composition or a pricing-path miss before any lever.
+  - Gate: same instrument, repeat-vs-new cohort split (roadmap-status 09-20 trap).
+- **Close the #191 watch.**
+  - Why: the exit is met (wmc 2).
+  - Falsifier: the confirmed-deleted rows reappear on a later walk.
+
+**Next**
+- **Shrink ASK_ONLY honestly.**
+  - What: a sales-backed price wherever `sales_market` has ≥ 1 recent sale. No relabelling.
+  - Why: ASK_ONLY is the least accurate tier.
+  - Gate: within ±25 % on the moved editions ≥ MEDIUM's in `fmv_sales_backtest`. Reverse it otherwise.
+- **Flowty teardown, on the day it goes dark.**
+  - What: retire `allday-listing-cache` and its scheduler (cron-job.org presumably), then drop the `flowty` rows deliberately.
+  - Gate: the lane's own `pageErrors` and empty-book failures, not one probe.
+- **Weekly paired backtest read.**
+  - Why: R125 reopens if a tier's paired within-25 share sits > 3 pts below last-3 on two consecutive weeks.
+
+**Later**
+- **Book M2 per full NFL week** from the series, never a leg. The season runs to February, so volume will fall after it.
+  - Falsifier for "volume will fix it": four weeks at ~4× August volume left M2 flat.
+- **STALE high end (882 editions, median $69):** the only lever is more sales, so it stays labelled. Revisit only if a backtest shows the label is wrong.
+- **Pack EV:** keep it historical and secondary. No primary-drop work unless `allday_drop_windows` shows a new start.
+
+## Decisions on record (do not re-litigate)
+
+- **10-10 ~3:15 PM PT: the 0.35 dispersion gate stays.** The 7+-sale LOW set misses by a median 25.0 % against MEDIUM's 20.0 % (n 463 / 2,405). Re-open only if a later backtest puts that set level with MEDIUM.
+- **09-30 #161 + 10-03 #169:** buybacks count as market sales and are tracked. FMV writers exclude them via `sales_market`, in one view only.
+- **09-25:** the Flowty fork is `unpurchasable`. All Day asks come from Dapper's storefront.
+- **Standing:**
+  - read-only product (no cart, trade or gifting)
+  - accuracy is the gate, so no growth tactics until M2 passes
+  - no paid tier until 100 WAU
+  - no infra spend pre-revenue
+
+## Needs Trevor
+
+- **Nothing All Day-specific is blocked on him.** The M2 re-costing is code work.
+- **External:** the Flowty shutdown date. When he hears it, the teardown above runs.
+- **Only if M2 stays flat through the season:** whether the gate bar or tiering should change. Today's answer is no (10-10), and it needs a backtest before it is re-asked.
+
+## Where the detail lives
+
+- Gate series and the 10-10 decision: [roadmap-status.md](../../reference/roadmap-status.md) (10-10 HEADLINE block, plus the 10-03 backtest block)
+- #70, #160, #161, #191 and every closed item: [known-issues.md](../../reference/known-issues.md)
+- R123, R125 and R127: [deep-audit-register.md](../../audits/deep-audit-register.md)
+- Pack ingest and drop windows: [packs.md](../../reference/packs.md)
+- Dated ships and revert paths: [ledger.md](../../overnight/ledger.md) (09-25, 09-26, 09-29, 10-04, 10-09, 10-10, 10-14, 10-15)
+- Session summaries: [sessions/2026-10.md](../../sessions/2026-10.md)

@@ -267,11 +267,9 @@ Flow CLI hot wallet `0x3aa11c84d776838f`. ⛔ **Signing MUST be ECDSA_secp256k1 
 
 ## Prioritized next actions
 
-**The canonical forward plan is [docs/strategy/roadmap-2026-08-03.md](docs/strategy/roadmap-2026-08-03.md).** Thesis: **accuracy is the GATE, not a phase** — growth tactics stay removed until the data beats the sites collectors already use; headline metric is the share of prices at HIGH/MEDIUM confidence. Still binding: **intelligence-first**; Cart / Trade Hub / gifting removed (**read-only product**); **no paid tier shown or considered anywhere until 100 WAU** (09-25); no infra spend pre-revenue.
+**The canonical forward plan is [docs/strategy/roadmap-2026-10-17.md](docs/strategy/roadmap-2026-10-17.md)**; one roadmap per collection in `docs/strategy/collections/`, per feature in `features/`. Thesis (08-03, unchanged): **accuracy is the GATE, not a phase** — growth tactics stay removed until the data beats the sites collectors already use; headline metric is the share of prices at HIGH/MEDIUM confidence. Still binding: **intelligence-first**; Cart / Trade Hub / gifting removed (**read-only product**); **no paid tier shown or considered anywhere until 100 WAU** (09-25); no infra spend pre-revenue.
 
-**Open items** — dated snapshot in roadmap-status.md (linked below; goes stale by nature). ⚠ **Needs TREVOR, not code:** the credential-purge residue (#22).
-
-Full status + accuracy measurements: [docs/reference/roadmap-status.md](docs/reference/roadmap-status.md). Issue register: [docs/reference/known-issues.md](docs/reference/known-issues.md).
+**Live numbers, open items, decisions:** [roadmap-status.md](docs/reference/roadmap-status.md) (dated samples). Register: [known-issues.md](docs/reference/known-issues.md). ⚠ **Needs TREVOR, not code:** the credential-purge residue (#22).
 
 ---
 
