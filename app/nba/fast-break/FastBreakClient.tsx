@@ -383,7 +383,7 @@ export default function FastBreakClient() {
           </div>
 
           {error ? (
-            <div className="rpc-mono" style={{ color: "var(--rpc-danger)", padding: "12px 0" }}>
+            <div className="rpc-mono" style={{ color: "var(--rpc-danger-text)", padding: "12px 0" }}>
               Couldn&rsquo;t load the optimizer right now. Please refresh in a minute.
             </div>
           ) : loading ? (
@@ -493,7 +493,7 @@ export default function FastBreakClient() {
                               padding: "2px 8px",
                               borderRadius: 999,
                               border: "1px solid var(--rpc-warning)",
-                              color: "var(--rpc-warning)",
+                              color: "var(--rpc-warning-text)",
                               fontWeight: 700,
                             }}
                           >

@@ -219,7 +219,7 @@ const CSS = `
   flex-basis: 100%;
   font-family: var(--font-mono);
   font-size: 11px;
-  color: var(--rpc-danger);
+  color: var(--rpc-danger-text);
 }
 .rpc-dw-done-title {
   font-family: var(--font-display);

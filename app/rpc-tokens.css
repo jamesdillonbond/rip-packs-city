@@ -20,6 +20,23 @@
      (#F59E0B was 2.15:1 on white; worst case now 5.19:1). Measured 2026-10-18. */
   --rpc-accent-text-mix: #FFFFFF;
   --rpc-accent-text-amt: 12%;
+  /* TEXT twins of the tier + semantic colours (#194, decided 2026-10-18 under
+     delegation). Fills, borders, stripes and dots keep --tier-* / --rpc-success…
+     so a tier reads identically in both themes; only TEXT gets a light-mode shade,
+     the way red text took --rpc-red-text on 10-12. Dark = the fill colour. */
+  --tier-legendary-text: var(--tier-legendary);
+  --tier-ultimate-text: var(--tier-ultimate);
+  --tier-rare-text: var(--tier-rare);
+  --tier-fandom-text: var(--tier-fandom);
+  --tier-uncommon-text: var(--tier-uncommon);
+  --tier-common-text: var(--tier-common);
+  --tier-champion-text: var(--tier-champion);
+  --tier-challenger-text: var(--tier-challenger);
+  --tier-contender-text: var(--tier-contender);
+  --rpc-success-text: var(--rpc-success);
+  --rpc-warning-text: var(--rpc-warning);
+  --rpc-danger-text: var(--rpc-danger);
+  --rpc-info-text: var(--rpc-info);
   --rpc-red-bg: rgba(224, 58, 47, 0.08);
   --rpc-red-border: rgba(224, 58, 47, 0.3);
   --rpc-red-glow: rgba(224, 58, 47, 0.25);
@@ -194,6 +211,21 @@
   --rpc-red-text: #B52A21;
   --rpc-accent-text-mix: #000000;
   --rpc-accent-text-amt: 45%;
+  /* Light TEXT twins: the smallest black mix per colour that clears 4.6:1 on
+     white, #F7F7F5, #EBEBEB and its own 12 % tint (computed 2026-10-18). */
+  --tier-legendary-text: #7A6700;
+  --tier-ultimate-text: #AD4924;
+  --tier-rare-text: #5A62AE;
+  --tier-fandom-text: #1D7656;
+  --tier-uncommon-text: #0D766A;
+  --tier-common-text: #5F6876;
+  --tier-champion-text: #915D06;
+  --tier-challenger-text: #5A62AE;
+  --tier-contender-text: #5F6876;
+  --rpc-success-text: #1D7656;
+  --rpc-warning-text: #915D06;
+  --rpc-danger-text: #A64C4C;
+  --rpc-info-text: #2E65C0;
 
   /* The dark shadow presets assume a near-black canvas — soften for light. */
   --shadow-card: 0 1px 6px rgba(0, 0, 0, 0.08);

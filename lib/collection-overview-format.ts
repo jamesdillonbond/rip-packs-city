@@ -84,7 +84,7 @@ export function freshnessFromAge(
   // pill instead; the MarketplaceStatusBanner already explains the migration.
   if (frozenMarket) return { color: "var(--rpc-text-muted)", label: "ARCHIVED" }
   if (minutes == null) return { color: "var(--rpc-text-muted)", label: "UNKNOWN" }
-  if (minutes < 30) return { color: "#34D399", label: "LIVE" }
-  if (minutes < 60) return { color: "#F59E0B", label: "DELAYED" }
+  if (minutes < 30) return { color: "var(--rpc-success-text)", label: "LIVE" }
+  if (minutes < 60) return { color: "var(--rpc-warning-text)", label: "DELAYED" }
   return { color: "var(--rpc-red-text)", label: "OUTDATED" }
 }

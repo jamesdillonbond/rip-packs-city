@@ -151,7 +151,7 @@ function LockPill({ row }: { row: MomentRow }) {
   const label = !known ? "Lock ?" : locked ? "Locked" : "Unlocked"
   const title = !known ? "Lock state not checked yet" : locked ? "This moment is locked — it can't be listed or sold until it unlocks" : "This moment is unlocked"
   const style = locked
-    ? { color: "var(--rpc-warning)", borderColor: "var(--rpc-warning)", background: "color-mix(in srgb, var(--rpc-warning) 12%, transparent)" }
+    ? { color: "var(--rpc-warning-text)", borderColor: "var(--rpc-warning)", background: "color-mix(in srgb, var(--rpc-warning) 12%, transparent)" }
     : { color: "var(--rpc-text-muted)", borderColor: "var(--rpc-border-hover)", background: "transparent" }
   return (
     <span
@@ -327,7 +327,7 @@ export default function CollectionMomentTable(props: {
                   {(row.tier || hasLocking) && (
                     <div className="flex items-center gap-1.5 flex-wrap">
                       {row.tier && (
-                        <span className={"rounded px-1.5 py-0.5 text-[10px] font-bold shrink-0 " + momentTierBgClass(row.tier)} style={{ color: momentTierColor(row.tier) }}>
+                        <span className={"rounded px-1.5 py-0.5 text-[10px] font-bold shrink-0 " + momentTierBgClass(row.tier)} style={{ color: accentText(momentTierColor(row.tier)) }}>
                           {row.tier}
                         </span>
                       )}
@@ -869,7 +869,7 @@ export default function CollectionMomentTable(props: {
                               </div>
                               {alertStatus === "success" && <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "#4ade80", marginBottom: 6 }}>Alert set!</div>}
                               {alertStatus === "error" && (
-                                <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "#f87171", marginBottom: 6 }}>
+                                <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-danger-text)", marginBottom: 6 }}>
                                   {alertError === "signed_out" ? (
                                     <>
                                       <a href={"/login?redirect=" + encodeURIComponent(typeof window !== "undefined" ? window.location.pathname + window.location.search : "/nba-top-shot/collection")} style={{ color: accentText(accent), textDecoration: "underline" }}>Sign in</a> to save price alerts

@@ -464,7 +464,7 @@ export default function TrophyPickerModal({
                 style={{
                   fontFamily: monoFont,
                   fontSize: 11,
-                  color: "#F59E0B",
+                  color: "var(--rpc-warning-text)",
                   letterSpacing: "0.03em",
                 }}
               >
@@ -484,7 +484,7 @@ export default function TrophyPickerModal({
             )}
 
             {pickError && (
-              <div style={{ color: "#F87171", fontFamily: monoFont, fontSize: 11 }}>{pickError}</div>
+              <div style={{ color: "var(--rpc-danger-text)", fontFamily: monoFont, fontSize: 11 }}>{pickError}</div>
             )}
           </div>
         )}
@@ -632,7 +632,7 @@ export default function TrophyPickerModal({
             {pickError && (
               <div
                 style={{
-                  color: "#F87171",
+                  color: "var(--rpc-danger-text)",
                   fontFamily: monoFont,
                   fontSize: 11,
                   marginTop: 8,
@@ -678,12 +678,12 @@ export default function TrophyPickerModal({
               </PickPreview>
             )}
             {manualError && (
-              <div style={{ color: "#F87171", fontFamily: monoFont, fontSize: 11 }}>
+              <div style={{ color: "var(--rpc-danger-text)", fontFamily: monoFont, fontSize: 11 }}>
                 {manualError}
               </div>
             )}
             {pickError && (
-              <div style={{ color: "#F87171", fontFamily: monoFont, fontSize: 11 }}>
+              <div style={{ color: "var(--rpc-danger-text)", fontFamily: monoFont, fontSize: 11 }}>
                 {pickError}
               </div>
             )}
@@ -767,7 +767,7 @@ function PickPreview({ m, children }: { m: PickerMoment; children: React.ReactNo
             marginTop: 6,
             fontFamily: condensedFont,
             fontWeight: 800,
-            color: "#34D399",
+            color: "var(--rpc-success-text)",
           }}
         >
           {m.fmv_usd != null ? fmtUsd(Number(m.fmv_usd)) : "FMV unknown"}
@@ -906,7 +906,7 @@ function MomentRow({
               top: 2,
               right: 2,
               fontSize: 11,
-              color: "#F59E0B",
+              color: "var(--rpc-warning-text)",
               textShadow: "0 0 4px rgba(0,0,0,0.85)",
             }}
           >
@@ -1022,7 +1022,7 @@ function MomentRow({
           minWidth: 76,
         }}
       >
-        <span style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 14, color: "#34D399" }}>
+        <span style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 14, color: "var(--rpc-success-text)" }}>
           {fmtUsd(m.fmv_usd)}
         </span>
         {m.serial_number != null && (

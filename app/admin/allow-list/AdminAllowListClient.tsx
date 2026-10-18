@@ -303,7 +303,7 @@ function SignInGate({ onSignedIn }: { onSignedIn: (t: string) => void }) {
         {error && (
           <div
             style={{
-              color: "#F87171",
+              color: "var(--rpc-danger-text)",
               fontFamily: monoFont,
               fontSize: 11,
               marginBottom: 10,
@@ -677,7 +677,7 @@ function Dashboard({
               padding: "10px 14px",
               background: "#1a0d0d",
               border: "1px solid #F8717166",
-              color: "#F87171",
+              color: "var(--rpc-danger-text)",
               fontFamily: monoFont,
               fontSize: 12,
               borderRadius: 6,
@@ -912,7 +912,7 @@ function RowCard({
                 style={{
                   fontFamily: monoFont,
                   fontSize: 10,
-                  color: "#34D399",
+                  color: "var(--rpc-success-text)",
                 }}
               >
                 welcome sent {timeAgo(row.welcome_email_sent_at)}
@@ -923,7 +923,7 @@ function RowCard({
                 style={{
                   fontFamily: monoFont,
                   fontSize: 10,
-                  color: "#F87171",
+                  color: "var(--rpc-danger-text)",
                 }}
                 title={row.welcome_email_error}
               >
@@ -943,7 +943,7 @@ function RowCard({
             </div>
           )}
           {row.prewarm_error && (
-            <div style={{ fontFamily: monoFont, fontSize: 10, color: "#F87171" }}>
+            <div style={{ fontFamily: monoFont, fontSize: 10, color: "var(--rpc-danger-text)" }}>
               {row.prewarm_error}
             </div>
           )}

@@ -632,7 +632,7 @@ export default function ProfileClient(props: {
               <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, marginTop: 4 }}>
                 <Sparkline data={sparkData} width={120} height={24} color={sparkUp ? "#34D399" : "#F87171"} />
                 {sparkChange != null && (
-                  <span style={{ fontSize: 9, fontFamily: monoFont, color: sparkChange >= 0 ? "var(--rpc-success)" : "var(--rpc-danger)", letterSpacing: "0.1em" }}>
+                  <span style={{ fontSize: 9, fontFamily: monoFont, color: sparkChange >= 0 ? "var(--rpc-success-text)" : "var(--rpc-danger-text)", letterSpacing: "0.1em" }}>
                     {sparkChange >= 0 ? "↑" : "↓"} {Math.abs(sparkChange).toFixed(1)}% / 30D
                   </span>
                 )}
@@ -852,16 +852,16 @@ export default function ProfileClient(props: {
           <div style={Object.assign({}, labelStyle, { marginBottom: 12 })}>TOOLS</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 10 }}>
             {[
-              { label: "Binder", icon: "◈", href: "/nba-top-shot/collection", color: "var(--rpc-red-text)" },
-              { label: "Pack EV", icon: "▣", href: "/nba-top-shot/packs", color: "#F59E0B" },
-              { label: "Sniper", icon: "⚡", href: "/nba-top-shot/sniper", color: "#34D399" },
-              { label: "Sets", icon: "◉", href: "/nba-top-shot/sets", color: "#F472B6" },
+              { label: "Binder", icon: "◈", href: "/nba-top-shot/collection", tone: "var(--rpc-red)" },
+              { label: "Pack EV", icon: "▣", href: "/nba-top-shot/packs", tone: "#F59E0B" },
+              { label: "Sniper", icon: "⚡", href: "/nba-top-shot/sniper", tone: "#34D399" },
+              { label: "Sets", icon: "◉", href: "/nba-top-shot/sets", tone: "#F472B6" },
             ].map(function(link) {
               return (
                 <Link key={link.label} href={link.href} style={{ textDecoration: "none" }}>
                   <div className="rpc-card" style={{ padding: "14px 16px", cursor: "pointer", position: "relative", overflow: "hidden", textAlign: "left" }}>
-                    <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 2, background: link.color, opacity: 0.5 }} />
-                    <div style={{ fontSize: 18, marginBottom: 7, color: link.color }}>{link.icon}</div>
+                    <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 2, background: link.tone, opacity: 0.5 }} />
+                    <div style={{ fontSize: 18, marginBottom: 7, color: link.tone }}>{link.icon}</div>
                     <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 12, color: "var(--rpc-text-primary)", letterSpacing: "0.05em", textTransform: "uppercase" }}>{link.label}</div>
                   </div>
                 </Link>

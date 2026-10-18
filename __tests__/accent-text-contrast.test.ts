@@ -90,3 +90,40 @@ describe("every registry accent, as text, clears AA in both themes", () => {
     expect(ACCENTS.some((a) => contrast(hex(a), white) < 4.5)).toBe(true)
   })
 })
+
+// ─── Tier + semantic TEXT twins (#194, decided 2026-10-18 under delegation) ───
+// Fills keep --tier-* / --rpc-success…; TEXT uses the -text twin. Dark: the twin
+// is the fill (var()), light: a text-safe shade. Both must clear AA on every
+// canvas of their theme and on the colour's own 12 % tint (the chip).
+const TWINS = [
+  "tier-legendary", "tier-ultimate", "tier-rare", "tier-fandom", "tier-uncommon", "tier-common",
+  "tier-champion", "tier-challenger", "tier-contender",
+  "rpc-success", "rpc-warning", "rpc-danger", "rpc-info",
+]
+describe("tier + semantic text twins clear AA in both themes", () => {
+  const darkB = THEMES[0].b
+  const resolve = (b: string, name: string): RGB => {
+    const v = token(b, name)
+    const ref = v.match(/^var\(--([a-z-]+)\)$/)
+    return hex(ref ? token(darkB, ref[1]) : v)
+  }
+  for (const t of THEMES) {
+    const canvases = ["rpc-black", "rpc-surface", "rpc-bg"].map((c) => hex(token(t.b, c)))
+    for (const name of TWINS) {
+      it(`${t.name}: --${name}-text`, () => {
+        const fg = resolve(t.b, `${name}-text`)
+        const fill = hex(token(darkB, name))
+        for (const base of canvases) {
+          for (const bg of [base, mix(base, fill, 0.12)]) {
+            const r = contrast(fg, bg)
+            expect(r, `--${name}-text rgb(${fg}) on rgb(${bg}) = ${r.toFixed(2)}:1`).toBeGreaterThanOrEqual(4.5)
+          }
+        }
+      })
+    }
+  }
+  it("accentText maps every fill token to its twin, and leaves an unknown token alone", () => {
+    for (const name of TWINS) expect(accentText(`var(--${name})`)).toBe(`var(--${name}-text)`)
+    expect(accentText("var(--rpc-text-primary)")).toBe("var(--rpc-text-primary)")
+  })
+})

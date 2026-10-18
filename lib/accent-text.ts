@@ -10,7 +10,10 @@
 //   · the brand red (#E03A2F or var(--rpc-red) — lib/marketplace-status-banner
 //     passes the token) → var(--rpc-red-text), the existing text-safe red
 //     (#FF4D40 dark / #B52A21 light) — red TEXT already had a token;
-//   · a CSS variable → unchanged (it is already a themed token);
+//   · a tier or semantic fill token (var(--tier-rare), var(--rpc-success) …) →
+//     its TEXT twin (var(--tier-rare-text) …): same colour in dark, a text-safe
+//     shade in light, fills unchanged (#194, decided 2026-10-18);
+//   · any other CSS variable → unchanged (it is already a themed token);
 //   · any other colour → color-mix toward the theme's --rpc-accent-text-mix by
 //     --rpc-accent-text-amt (app/rpc-tokens.css: 12 % white dark, 45 % black
 //     light — the smallest amounts that clear 4.5:1 for every registry accent
@@ -20,6 +23,9 @@
 // neither var() nor color-mix(). Those paint fixed dark cards and keep the raw
 // accent.
 const BRAND_RED = /^#?e03a2f$/i
+// Fill tokens that have a TEXT twin in app/rpc-tokens.css (#194, 2026-10-18):
+// the twin equals the fill in dark and is a text-safe shade in light.
+const HAS_TEXT_TWIN = /^var\(--((?:tier-(?:legendary|ultimate|rare|fandom|uncommon|common|champion|challenger|contender))|(?:rpc-(?:success|warning|danger|info)))\)$/
 
 export function accentText(accent: string): string
 export function accentText(accent: string | null | undefined): string | undefined
@@ -27,6 +33,8 @@ export function accentText(accent: string | null | undefined): string | undefine
   if (!accent) return accent ?? undefined
   const a = accent.trim()
   if (BRAND_RED.test(a) || a === "var(--rpc-red)") return "var(--rpc-red-text)"
+  const twin = a.match(HAS_TEXT_TWIN)
+  if (twin) return `var(--${twin[1]}-text)`
   if (a.startsWith("var(")) return a
   return `color-mix(in srgb, ${a}, var(--rpc-accent-text-mix) var(--rpc-accent-text-amt))`
 }

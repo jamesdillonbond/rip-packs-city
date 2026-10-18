@@ -136,7 +136,7 @@ export default function AvatarMomentPicker({
         </div>
 
         {loadFailed ? (
-          <div data-testid="avatar-picker-failed" style={{ fontFamily: MONO, fontSize: 12, color: "var(--rpc-warning)", lineHeight: 1.6 }}>
+          <div data-testid="avatar-picker-failed" style={{ fontFamily: MONO, fontSize: 12, color: "var(--rpc-warning-text)", lineHeight: 1.6 }}>
             Couldn&rsquo;t load your Moments just now — this is a problem on our
             side, not a sign you don&rsquo;t own any. Close this and try again,
             or paste an image URL instead.

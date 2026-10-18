@@ -261,7 +261,7 @@ export default function BuybackDashboard() {
                 border: "1px solid var(--rpc-warning)",
               }}
             >
-              <Info size={16} style={{ color: "var(--rpc-warning)" }} aria-hidden />
+              <Info size={16} style={{ color: "var(--rpc-warning-text)" }} aria-hidden />
               <div className="text-xs">
                 <strong style={{ color: "var(--rpc-text-primary)" }}>
                   {coverageNotice.headline}

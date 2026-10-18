@@ -102,7 +102,7 @@ function AskAge({ cachedAt, askPrice, collectionSlug }: {
       style={{
         fontSize: 9,
         letterSpacing: "0.04em",
-        color: stamp.stale ? "var(--rpc-warning)" : "var(--rpc-text-muted)",
+        color: stamp.stale ? "var(--rpc-warning-text)" : "var(--rpc-text-muted)",
         fontWeight: stamp.stale ? 700 : 400,
         whiteSpace: "nowrap",
       }}
@@ -581,7 +581,7 @@ function MarketInner() {
             border: "1px solid rgba(245,158,11,0.3)",
             borderRadius: "var(--radius-sm)",
             fontSize: 11,
-            color: "#F59E0B",
+            color: "var(--rpc-warning-text)",
             letterSpacing: "0.06em",
           }}
         >
@@ -1088,7 +1088,7 @@ function ListingCard({ listing, accent, momentUrl, editionStats, showOwned, coll
             <span
               className="rpc-mono"
               title="FMV here is averaged over very few, wide-ranging sales, so it overshoots the typical price — this discount is uncertain. Check recent sales before acting."
-              style={{ fontSize: 10, color: "var(--rpc-warning)", fontWeight: 700, letterSpacing: "0.04em" }}
+              style={{ fontSize: 10, color: "var(--rpc-warning-text)", fontWeight: 700, letterSpacing: "0.04em" }}
             >
               ⚠ thin data
             </span>
@@ -1288,7 +1288,7 @@ function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColu
                   {l.circulationCount != null ? l.circulationCount.toLocaleString() : "—"}
                 </td>
                 {showOwnedColumn && (
-                  <td style={{ ...td, textAlign: "right", color: stats && stats.owned > 0 ? "var(--rpc-success)" : "var(--rpc-text-muted)" }}
+                  <td style={{ ...td, textAlign: "right", color: stats && stats.owned > 0 ? "var(--rpc-success-text)" : "var(--rpc-text-muted)" }}
                       title={stats && stats.owned > 0 ? (collectionHasLocking(collectionUrlSlug) ? `${stats.owned} owned · ${stats.locked} locked` : `${stats.owned} owned`) : undefined}>
                     {ownLockLabel(stats, collectionHasLocking(collectionUrlSlug))}
                   </td>
@@ -1303,7 +1303,7 @@ function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColu
                 </td>
                 {l.lowConfidenceFmv ? (
                   <td
-                    style={{ ...td, textAlign: "right", color: "var(--rpc-warning)", fontWeight: 700, fontSize: 10, whiteSpace: "nowrap" }}
+                    style={{ ...td, textAlign: "right", color: "var(--rpc-warning-text)", fontWeight: 700, fontSize: 10, whiteSpace: "nowrap" }}
                     title="FMV here is averaged over very few, wide-ranging sales, so it overshoots the typical price — this discount is uncertain. Check recent sales before acting."
                   >
                     ⚠ thin data

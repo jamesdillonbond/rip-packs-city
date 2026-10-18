@@ -94,7 +94,7 @@ export default function SwapTestClient() {
         <button type="button" onClick={res.submitToken} style={{ ...btn, marginTop: 8 }}>
           Continue
         </button>
-        {res.error ? <p style={{ color: "var(--rpc-danger)" }}>{res.error}</p> : null}
+        {res.error ? <p style={{ color: "var(--rpc-danger-text)" }}>{res.error}</p> : null}
       </main>
     )
   }
@@ -271,7 +271,7 @@ function Initiator({ call }: { call: Call }) {
           </button>
         </div>
         {plan && wallet && wallet !== plan.a.signer ? (
-          <p style={{ color: "var(--rpc-danger)", fontSize: 13 }}>This wallet is not side A&apos;s signer ({plan.a.signer}).</p>
+          <p style={{ color: "var(--rpc-danger-text)", fontSize: 13 }}>This wallet is not side A&apos;s signer ({plan.a.signer}).</p>
         ) : null}
         {link ? (
           <p style={{ fontSize: 13, wordBreak: "break-all" }}>
@@ -289,13 +289,13 @@ function Initiator({ call }: { call: Call }) {
         {landed ? (
           <ul style={{ fontSize: 13, fontFamily: MONO, paddingLeft: 18 }}>
             {landed.map((m) => (
-              <li key={m.id} style={{ color: m.held ? undefined : "var(--rpc-danger)" }}>
+              <li key={m.id} style={{ color: m.held ? undefined : "var(--rpc-danger-text)" }}>
                 {m.id} {m.held ? "is now in" : "is NOT in"} {m.to}
               </li>
             ))}
           </ul>
         ) : null}
-        {verifyErr ? <p style={{ color: "var(--rpc-danger)", fontSize: 13 }}>Couldn&apos;t confirm on chain: {verifyErr}</p> : null}
+        {verifyErr ? <p style={{ color: "var(--rpc-danger-text)", fontSize: 13 }}>Couldn&apos;t confirm on chain: {verifyErr}</p> : null}
         {donePlan ? (
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button type="button" style={btn} onClick={() => verify(donePlan)}>
@@ -308,8 +308,8 @@ function Initiator({ call }: { call: Call }) {
         ) : null}
       </section>
       {msg ? <p style={{ fontSize: 13 }}>{msg}</p> : null}
-      {hint ? <p style={{ fontSize: 13, color: "var(--rpc-warning)" }}>Side A&apos;s wallet hasn&apos;t answered: {hint}</p> : null}
-      {err ? <p style={{ color: "var(--rpc-danger)", fontSize: 13 }}>{err}</p> : null}
+      {hint ? <p style={{ fontSize: 13, color: "var(--rpc-warning-text)" }}>Side A&apos;s wallet hasn&apos;t answered: {hint}</p> : null}
+      {err ? <p style={{ color: "var(--rpc-danger-text)", fontSize: 13 }}>{err}</p> : null}
     </>
   )
 }
@@ -321,7 +321,7 @@ function CoSigner({ relayId, relay, loadError, loading, call }: { relayId: strin
   const [err, setErr] = useState<string | null>(null)
 
   if (!relay) {
-    return <section style={box}>{loading ? "Loading the swap request…" : <span style={{ color: "var(--rpc-danger)" }}>{loadError ?? "Couldn't load the swap request."}</span>}</section>
+    return <section style={box}>{loading ? "Loading the swap request…" : <span style={{ color: "var(--rpc-danger-text)" }}>{loadError ?? "Couldn't load the swap request."}</span>}</section>
   }
   const d = describeSignable(relay.signable)
 
@@ -364,7 +364,7 @@ function CoSigner({ relayId, relay, loadError, loading, call }: { relayId: strin
           <li>Signing wallet expected: {relay.cosigner}</li>
         </ul>
       ) : (
-        <p style={{ color: "var(--rpc-danger)" }}>{d.reason}</p>
+        <p style={{ color: "var(--rpc-danger-text)" }}>{d.reason}</p>
       )}
       {relay.signature || done ? (
         <p>Signed. Go back to the initiator&apos;s page; it submits the transaction.</p>
@@ -379,7 +379,7 @@ function CoSigner({ relayId, relay, loadError, loading, call }: { relayId: strin
           </button>
         </div>
       )}
-      {err ? <p style={{ color: "var(--rpc-danger)", fontSize: 13 }}>{err}</p> : null}
+      {err ? <p style={{ color: "var(--rpc-danger-text)", fontSize: 13 }}>{err}</p> : null}
     </section>
   )
 }

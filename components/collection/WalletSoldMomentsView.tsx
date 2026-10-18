@@ -180,7 +180,7 @@ export default function WalletSoldMomentsView({ collection }: { collection: stri
         </div>
         <div className="rpc-card" style={{ padding: "12px 14px" }}>
           <div style={{ fontFamily: mono, fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.12em", textTransform: "uppercase" }}>Total proceeds</div>
-          <div style={{ fontFamily: display, fontWeight: 800, fontSize: 26, lineHeight: 1.1, color: "#34D399", marginTop: 4 }}>
+          <div style={{ fontFamily: display, fontWeight: 800, fontSize: 26, lineHeight: 1.1, color: "var(--rpc-success-text)", marginTop: 4 }}>
             {loading || error ? "—" : fmtSoldUsd(totalProceeds)}
           </div>
         </div>
@@ -190,7 +190,7 @@ export default function WalletSoldMomentsView({ collection }: { collection: stri
         {loading ? (
           <div style={{ padding: 24, textAlign: "center", fontFamily: mono, fontSize: 12, color: "var(--rpc-text-muted)" }}>Loading sold moments…</div>
         ) : error ? (
-          <div style={{ padding: 16, fontFamily: mono, fontSize: 12, color: "#F87171" }}>{error}</div>
+          <div style={{ padding: 16, fontFamily: mono, fontSize: 12, color: "var(--rpc-danger-text)" }}>{error}</div>
         ) : rows.length === 0 ? (
           <div style={{ padding: 26, textAlign: "center", fontFamily: mono, fontSize: 12, color: "var(--rpc-text-muted)" }}>
             No moments sold from this wallet in {label}.
@@ -235,7 +235,7 @@ export default function WalletSoldMomentsView({ collection }: { collection: stri
                     </td>
                     <td style={{ padding: "9px 12px", color: "var(--rpc-text-secondary)" }}>{relativeSaleTime(r.occurred_at)}</td>
                     <td style={{ padding: "9px 12px", color: "var(--rpc-text-secondary)" }}>{shortSellerAddr(r.counterparty)}</td>
-                    <td style={{ padding: "9px 12px", textAlign: "right", fontFamily: display, fontWeight: 700, color: "#34D399" }}>
+                    <td style={{ padding: "9px 12px", textAlign: "right", fontFamily: display, fontWeight: 700, color: "var(--rpc-success-text)" }}>
                       {fmtSoldUsd(r.amount_usd)}
                     </td>
                   </tr>

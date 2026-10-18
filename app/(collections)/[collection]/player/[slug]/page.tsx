@@ -472,7 +472,7 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
                 {detail.is_active === true && !isPanini && (
                   <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
                     <span style={{ width: 6, height: 6, borderRadius: 999, background: "var(--rpc-success)", boxShadow: "0 0 6px var(--rpc-success)" }} />
-                    <span style={{ color: "var(--rpc-success)" }}>active</span>
+                    <span style={{ color: "var(--rpc-success-text)" }}>active</span>
                   </span>
                 )}
               </div>

@@ -252,7 +252,7 @@ function Msg({ children, tone }: { children: React.ReactNode; tone?: "error" }) 
         padding: "12px 14px",
         fontFamily: monoFont,
         fontSize: 12,
-        color: tone === "error" ? "var(--rpc-danger)" : "var(--rpc-text-muted)",
+        color: tone === "error" ? "var(--rpc-danger-text)" : "var(--rpc-text-muted)",
       }}
     >
       {children}

@@ -17,6 +17,7 @@ import Link from "next/link"
 import type { ParallelRow, ParallelSortKey } from "@/lib/parallel-premiums-board"
 import { fetchJson } from "@/lib/analytics/fetch-json"
 import { usdSignFirst } from "@/lib/usd-format"
+import { accentText } from "@/lib/accent-text"
 
 function fmtUsd(n: number | null): string {
   const neg = usdSignFirst(n, fmtUsd); if (neg !== null) return neg
@@ -179,7 +180,7 @@ export default function ParallelPremiumsBoardClient({
           {top.map((r) => (
             <Link key={r.edition_id} href={editionHref(r)} style={{ textDecoration: "none" }}>
               <div style={{ border: "1px solid var(--rpc-border)", borderRadius: 12, padding: 16, background: "var(--rpc-surface)", height: "100%" }}>
-                <div style={{ fontSize: 11, color: tierColor(r.tier), fontWeight: 700, letterSpacing: "0.05em" }}>
+                <div style={{ fontSize: 11, color: accentText(tierColor(r.tier)), fontWeight: 700, letterSpacing: "0.05em" }}>
                   {(r.subedition_name ?? "Parallel").toUpperCase()} · {fmtCirc(r.parallel_circ)}
                 </div>
                 <div style={{ fontFamily: "var(--font-display)", fontSize: 22, color: "var(--rpc-text-primary)", margin: "6px 0 2px" }}>
@@ -223,7 +224,7 @@ export default function ParallelPremiumsBoardClient({
                   </Link>
                   <div style={{ fontSize: 10, color: "var(--rpc-text-muted)" }}>{r.set_name ?? "—"}</div>
                 </td>
-                <td style={{ ...td, color: tierColor(r.tier), fontWeight: 700 }}>{r.subedition_name ?? "—"}</td>
+                <td style={{ ...td, color: accentText(tierColor(r.tier)), fontWeight: 700 }}>{r.subedition_name ?? "—"}</td>
                 <td style={{ ...td, textAlign: "right", color: "var(--rpc-text-muted)" }}>{fmtCirc(r.parallel_circ)}</td>
                 <td style={{ ...td, textAlign: "right", color: "var(--rpc-text-muted)" }}>{fmtUsd(r.base_fmv)}</td>
                 <td style={{ ...td, textAlign: "right", color: "var(--rpc-text-primary)", fontWeight: 700 }}>{fmtUsd(r.parallel_fmv)}</td>

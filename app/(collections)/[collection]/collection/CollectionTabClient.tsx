@@ -1415,7 +1415,7 @@ function WalletMomentsBody() {
                           row.bestOfferAgeHours >= ASK_STALE_HOURS && (
                             <span
                               className="rpc-mono"
-                              style={{ display: "block", fontSize: 10, color: "var(--rpc-warning)", fontWeight: 600 }}
+                              style={{ display: "block", fontSize: 10, color: "var(--rpc-warning-text)", fontWeight: 600 }}
                               title={`We last confirmed this bid ${fmtAskAge(row.bestOfferAgeHours)} ago. It may already be withdrawn or beaten — open the marketplace before acting.`}
                             >
                               ⚠ bid unconfirmed {fmtAskAge(row.bestOfferAgeHours)}

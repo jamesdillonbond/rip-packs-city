@@ -178,7 +178,7 @@ export default function GrailsView({ collection, accent }: Props) {
       </div>
 
       {error && (
-        <div style={{ padding: 12, background: 'rgba(127,29,29,0.2)', border: '1px solid #7f1d1d', borderRadius: 6, fontFamily: "var(--font-mono)", fontSize: 12, color: '#F87171', marginBottom: 12 }}>
+        <div style={{ padding: 12, background: 'rgba(127,29,29,0.2)', border: '1px solid #7f1d1d', borderRadius: 6, fontFamily: "var(--font-mono)", fontSize: 12, color: 'var(--rpc-danger-text)', marginBottom: 12 }}>
           {error}
         </div>
       )}
@@ -316,7 +316,7 @@ function ProbCell({ label, value, approx, fmvQ }: { label: string; value: number
   return (
     <div style={{ background: 'var(--rpc-surface-raised)', border: '1px solid var(--rpc-border-subtle)', borderRadius: 4, padding: '5px 6px', textAlign: 'center' }}>
       <div style={{ fontFamily: "var(--font-mono)", fontSize: 8, color: 'var(--rpc-text-muted)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-        {label}{approx && <span style={{ marginLeft: 3, color: 'var(--rpc-warning)' }}>~</span>}
+        {label}{approx && <span style={{ marginLeft: 3, color: 'var(--rpc-warning-text)' }}>~</span>}
       </div>
       <div style={{ fontFamily: "var(--font-display)", fontSize: 14, fontWeight: 800, color: 'var(--rpc-text-primary)', marginTop: 1 }}>{fmvQ ? fmtFmvProb(value, fmvQ) : fmtPct(value)}</div>
     </div>

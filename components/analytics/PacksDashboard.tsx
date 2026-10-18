@@ -143,7 +143,7 @@ function CollectionPanel({
         </div>
         <div>
           <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] font-semibold">Positive EV</div>
-          <div className="text-2xl font-bold tabular-nums" style={{ color: positive > 0 ? "var(--rpc-success)" : "var(--rpc-text-muted)" }}>
+          <div className="text-2xl font-bold tabular-nums" style={{ color: positive > 0 ? "var(--rpc-success-text)" : "var(--rpc-text-muted)" }}>
             {formatNumber(positive)}
           </div>
         </div>
@@ -358,7 +358,7 @@ export default function PacksDashboard() {
         </div>
         <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
           <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] font-semibold">Positive-EV Packs</div>
-          <div className="mt-1 text-2xl font-bold tabular-nums" style={{ color: "var(--rpc-success)" }}>
+          <div className="mt-1 text-2xl font-bold tabular-nums" style={{ color: "var(--rpc-success-text)" }}>
             {formatNumber(kpis.positive)}
           </div>
           <div className="text-[11px] text-[color:var(--rpc-text-muted)] mt-1">{formatPct(kpis.pctPositive, 1)} of tracked</div>
@@ -446,7 +446,7 @@ export default function PacksDashboard() {
                       <td className="py-3 px-3 text-right text-[color:var(--rpc-text-primary)] font-semibold tabular-nums">{formatUsd(r.pack_ev)}</td>
                       <td
                         className="py-3 px-3 text-right tabular-nums font-semibold"
-                        style={{ color: (r.value_ratio ?? 0) >= 1 ? "var(--rpc-success)" : "var(--rpc-text-muted)" }}
+                        style={{ color: (r.value_ratio ?? 0) >= 1 ? "var(--rpc-success-text)" : "var(--rpc-text-muted)" }}
                       >
                         {formatRatio(r.value_ratio)}
                       </td>
@@ -503,7 +503,7 @@ export default function PacksDashboard() {
                       <td className="py-3 px-3 text-right text-[color:var(--rpc-text-primary)] font-semibold tabular-nums">{formatUsd(r.pack_ev)}</td>
                       <td
                         className="py-3 px-3 text-right tabular-nums font-semibold"
-                        style={{ color: (r.value_ratio ?? 0) >= 1 ? "var(--rpc-success)" : "var(--rpc-text-muted)" }}
+                        style={{ color: (r.value_ratio ?? 0) >= 1 ? "var(--rpc-success-text)" : "var(--rpc-text-muted)" }}
                       >
                         {formatRatio(r.value_ratio)}
                       </td>

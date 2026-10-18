@@ -414,7 +414,7 @@ function TierProgressSection({ walletAddr: _walletAddr }: { walletAddr: string }
               </button>
             </div>
             {errorMsg && (
-              <div style={{ marginTop: 8, fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-danger)" }}>
+              <div style={{ marginTop: 8, fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-danger-text)" }}>
                 {errorMsg}
               </div>
             )}
@@ -611,7 +611,7 @@ function LockRoiSection({ walletAddr }: { walletAddr: string }) {
                             letterSpacing: "0.12em",
                             textTransform: "uppercase",
                             background: m.isLocked ? "rgba(52,211,153,0.1)" : "rgba(255,255,255,0.05)",
-                            color: m.isLocked ? "var(--rpc-success)" : "var(--rpc-text-muted)",
+                            color: m.isLocked ? "var(--rpc-success-text)" : "var(--rpc-text-muted)",
                             border: `1px solid ${m.isLocked ? "rgba(52,211,153,0.3)" : "var(--rpc-border)"}`,
                           }}
                         >

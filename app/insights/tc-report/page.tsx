@@ -17,6 +17,7 @@ import { slugifyName } from "@/lib/entity-labels"
 import { fromDbSlug, getCollection } from "@/lib/collections"
 import { closedMarket, formatClosedOn } from "@/lib/market-closed"
 import { usdSignFirst } from "@/lib/usd-format"
+import { accentText } from "@/lib/accent-text"
 
 type Bucket = { editions: number; moments: number }
 type Buckets = { liquid: Bucket; moderate: Bucket; squeezed: Bucket; extreme: Bucket }
@@ -309,7 +310,7 @@ export default function TcReportPage() {
                         <div className="rpc-tc-ed-set">{r.set_name ?? "—"}</div>
                       </td>
                       <td className="rpc-tc-td-num">
-                        <span className="rpc-tc-tier" style={{ color: tierColor(r.tier) }}>
+                        <span className="rpc-tc-tier" style={{ color: accentText(tierColor(r.tier)) }}>
                           {r.tier ?? "—"}
                         </span>
                       </td>
@@ -461,7 +462,7 @@ export default function TcReportPage() {
                         )}
                       </td>
                       <td className="rpc-tc-td-num">
-                        <span className="rpc-tc-tier" style={{ color: tierColor(a.tier) }}>
+                        <span className="rpc-tc-tier" style={{ color: accentText(tierColor(a.tier)) }}>
                           {a.tier ?? "—"}
                         </span>
                       </td>
@@ -572,7 +573,7 @@ const CSS = `
 .rpc-tc-btn { font-family: var(--font-mono); font-size: 12px; letter-spacing: 2.5px; text-transform: uppercase; background: var(--rpc-red); color: #fff; padding: 14px 26px; border: 0; border-radius: 2px; cursor: pointer; }
 .rpc-tc-btn:hover { background: var(--rpc-red-hover); }
 .rpc-tc-btn:disabled { opacity: 0.6; cursor: progress; }
-.rpc-tc-error { margin-top: 10px; font-family: var(--font-mono); font-size: 12px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--rpc-danger); }
+.rpc-tc-error { margin-top: 10px; font-family: var(--font-mono); font-size: 12px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--rpc-danger-text); }
 
 .rpc-tc-section { max-width: 1180px; margin: 0 auto 36px; }
 

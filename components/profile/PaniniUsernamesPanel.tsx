@@ -158,7 +158,7 @@ export default function PaniniUsernamesPanel() {
         </button>
       </div>
       {error && (
-        <div role="alert" style={{ color: "var(--rpc-danger)", fontFamily: monoFont, fontSize: 11, marginBottom: 10 }}>
+        <div role="alert" style={{ color: "var(--rpc-danger-text)", fontFamily: monoFont, fontSize: 11, marginBottom: 10 }}>
           {error}
         </div>
       )}

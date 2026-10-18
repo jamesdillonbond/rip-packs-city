@@ -183,7 +183,7 @@ export default function SalesTablePaginated({ collectionUrlSlug, routeSlug, init
                   borderRadius: 3,
                   background: "rgba(245,158,11,0.10)",
                   border: "1px solid rgba(245,158,11,0.30)",
-                  color: "#F59E0B",
+                  color: "var(--rpc-warning-text)",
                   fontSize: 9,
                   letterSpacing: "0.10em",
                   textTransform: "uppercase",

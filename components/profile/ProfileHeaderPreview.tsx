@@ -186,7 +186,7 @@ export default function ProfileHeaderPreview({
               fontFamily: MONO,
               fontSize: 10,
               lineHeight: 1.5,
-              color: "var(--rpc-warning)",
+              color: "var(--rpc-warning-text)",
               maxWidth: 320,
               margin: "0 auto 10px",
             }}

@@ -95,8 +95,8 @@ export const dynamicParams = true
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
 const CARD_STYLE: React.CSSProperties = {
-  background: "rgba(13,13,13,0.92)",
-  border: "1px solid rgba(255,255,255,0.06)",
+  background: "var(--rpc-surface)",
+  border: "1px solid var(--rpc-border-subtle)",
   borderRadius: 8,
   padding: 18,
 }
@@ -758,8 +758,8 @@ export default async function PackDetailPage(
     : null
 
   const cardStyle: React.CSSProperties = {
-    background: "rgba(13,13,13,0.92)",
-    border: "1px solid rgba(255,255,255,0.06)",
+    background: "var(--rpc-surface)",
+    border: "1px solid var(--rpc-border-subtle)",
     borderRadius: 8,
     padding: 18,
   }
@@ -803,7 +803,7 @@ export default async function PackDetailPage(
                   fontFamily: "var(--font-mono)",
                   fontSize: 9,
                   letterSpacing: "0.2em",
-                  color: "rgba(255,255,255,0.5)",
+                  color: "var(--rpc-text-muted)",
                   textTransform: "uppercase",
                 }}
               >
@@ -817,7 +817,7 @@ export default async function PackDetailPage(
                 fontWeight: 900,
                 fontSize: 32,
                 letterSpacing: "0.04em",
-                color: "#fff",
+                color: "var(--rpc-text-primary)",
                 lineHeight: 1.05,
                 textTransform: "uppercase",
               }}
@@ -857,9 +857,9 @@ export default async function PackDetailPage(
                     padding: "3px 10px",
                     borderRadius: 4,
                     fontSize: 11,
-                    color: "rgba(255,255,255,0.7)",
-                    background: "rgba(255,255,255,0.04)",
-                    border: "1px solid rgba(255,255,255,0.1)",
+                    color: "var(--rpc-text-secondary)",
+                    background: "var(--rpc-surface-raised)",
+                    border: "1px solid var(--rpc-border)",
                     textTransform: "capitalize",
                   }}
                 >
@@ -871,7 +871,7 @@ export default async function PackDetailPage(
                   style={{
                     fontFamily: "var(--font-mono)",
                     fontSize: 11,
-                    color: "rgba(255,255,255,0.55)",
+                    color: "var(--rpc-text-secondary)",
                   }}
                 >
                   {slotsLabel}
@@ -950,7 +950,7 @@ export default async function PackDetailPage(
                     display: "inline-block",
                     padding: "8px 16px",
                     background: "var(--rpc-red)",
-                    color: "#fff",
+                    color: "var(--rpc-text-primary)",
                     fontFamily: "var(--font-display)",
                     fontWeight: 700,
                     letterSpacing: "0.06em",
@@ -981,14 +981,14 @@ export default async function PackDetailPage(
                     display: "inline-block",
                     padding: "8px 16px",
                     background: "transparent",
-                    color: "rgba(255,255,255,0.85)",
+                    color: "var(--rpc-text-primary)",
                     fontFamily: "var(--font-display)",
                     fontWeight: 700,
                     letterSpacing: "0.06em",
                     textTransform: "uppercase",
                     fontSize: 12,
                     borderRadius: 4,
-                    border: "1px solid rgba(255,255,255,0.25)",
+                    border: "1px solid var(--rpc-border-hover)",
                     textDecoration: "none",
                   }}
                 >
@@ -1002,14 +1002,14 @@ export default async function PackDetailPage(
                   display: "inline-block",
                   padding: "8px 16px",
                   background: "transparent",
-                  color: "rgba(255,255,255,0.7)",
+                  color: "var(--rpc-text-secondary)",
                   fontFamily: "var(--font-display)",
                   fontWeight: 700,
                   letterSpacing: "0.06em",
                   textTransform: "uppercase",
                   fontSize: 12,
                   borderRadius: 4,
-                  border: "1px solid rgba(255,255,255,0.2)",
+                  border: "1px solid var(--rpc-border-hover)",
                   textDecoration: "none",
                 }}
               >
@@ -1031,13 +1031,13 @@ export default async function PackDetailPage(
         const above = pctVsPrice >= 0
         const accent = showColoredVerdict
           ? (above ? "rgb(110,231,183)" : "rgb(248,113,113)")
-          : "rgba(255,255,255,0.85)"
+          : "var(--rpc-text-primary)"
         const pctLabel = Math.abs(pctVsPrice) >= 1 ? `${Math.round(Math.abs(pctVsPrice))}` : Math.abs(pctVsPrice).toFixed(1)
         return (
           <section
             style={{
-              background: "rgba(13,13,13,0.92)",
-              border: "1px solid rgba(255,255,255,0.06)",
+              background: "var(--rpc-surface)",
+              border: "1px solid var(--rpc-border-subtle)",
               borderLeft: `3px solid ${accent}`,
               borderRadius: 6,
               padding: "12px 16px",
@@ -1053,27 +1053,27 @@ export default async function PackDetailPage(
                 fontSize: 10,
                 letterSpacing: "0.18em",
                 textTransform: "uppercase",
-                color: "rgba(255,255,255,0.5)",
+                color: "var(--rpc-text-muted)",
               }}
             >
               Value still sealed
             </span>
             <span style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 22, color: accentText(accent) }}>
               ≈ {fmtUsd(grossEv)}
-              <span style={{ fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.5)" }}>/pack</span>
+              <span style={{ fontSize: 12, fontWeight: 600, color: "var(--rpc-text-muted)" }}>/pack</span>
             </span>
             <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: accentText(accent) }}>
               {above ? "▲" : "▼"} {pctLabel}% {above ? "above" : "below"} the {fmtUsd(secondaryAskAnchor)} secondary ask
             </span>
             {coverageCaveat ? (
-              <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.5)" }}>
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--rpc-text-muted)" }}>
                 · {coverageCaveat}
               </span>
             ) : null}
             {/* Typical Pull framing — a typical pull is worth ~the median moment,
                 well below the grail-inflated mean on lottery-shaped packs. */}
             {showTypicalPull && (
-              <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "rgba(255,255,255,0.55)", width: "100%" }}>
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-secondary)", width: "100%" }}>
                 Typical pull ≈ {fmtUsd(typicalEv)}
                 {isLotteryShaped
                   ? ` · grail premium ${fmtUsd(grailPremium)} (lottery-shaped)`
@@ -1090,13 +1090,13 @@ export default async function PackDetailPage(
       {evAnchorSummary && (
         <section
           style={{
-            background: "rgba(13,13,13,0.92)",
-            border: "1px solid rgba(255,255,255,0.06)",
+            background: "var(--rpc-surface)",
+            border: "1px solid var(--rpc-border-subtle)",
             borderRadius: 6,
             padding: "10px 14px",
             fontFamily: "var(--font-mono)",
             fontSize: 11,
-            color: isRewardPack || secondaryAskAnchor == null ? "rgba(255,255,255,0.55)" : "rgba(255,255,255,0.75)",
+            color: isRewardPack || secondaryAskAnchor == null ? "var(--rpc-text-secondary)" : "var(--rpc-text-secondary)",
             display: "flex",
             alignItems: "center",
             gap: 8,
@@ -1218,7 +1218,7 @@ export default async function PackDetailPage(
             borderRadius: 8,
             border: `1px solid ${correctedEv!.low_confidence_ev ? "rgba(251,191,36,0.35)" : "var(--rpc-border)"}`,
             background: correctedEv!.low_confidence_ev ? "rgba(251,191,36,0.07)" : "var(--rpc-surface)",
-            color: correctedEv!.low_confidence_ev ? "var(--rpc-warning)" : "var(--rpc-text-secondary)",
+            color: correctedEv!.low_confidence_ev ? "var(--rpc-warning-text)" : "var(--rpc-text-secondary)",
           }}
         >
           {correctedEv!.low_confidence_ev && <strong>⚠ Rough estimate. </strong>}
@@ -1246,7 +1246,7 @@ export default async function PackDetailPage(
             borderRadius: 8,
             border: "1px solid var(--rpc-border)",
             background: "var(--rpc-surface)",
-            color: pinDrop!.low_confidence_ev ? "var(--rpc-warning)" : "var(--rpc-text-muted)",
+            color: pinDrop!.low_confidence_ev ? "var(--rpc-warning-text)" : "var(--rpc-text-muted)",
           }}
         >
           {pinDrop!.low_confidence_ev && <strong>⚠ Rough estimate. </strong>}
@@ -1339,8 +1339,8 @@ function KpiCell({ label, value, sub, color }: { label: string; value: string; s
   return (
     <div
       style={{
-        background: "rgba(13,13,13,0.92)",
-        border: "1px solid rgba(255,255,255,0.06)",
+        background: "var(--rpc-surface)",
+        border: "1px solid var(--rpc-border-subtle)",
         borderRadius: 6,
         padding: 12,
       }}
@@ -1351,7 +1351,7 @@ function KpiCell({ label, value, sub, color }: { label: string; value: string; s
           fontSize: 9,
           letterSpacing: "0.18em",
           textTransform: "uppercase",
-          color: "rgba(255,255,255,0.5)",
+          color: "var(--rpc-text-muted)",
         }}
       >
         {label}
@@ -1362,7 +1362,7 @@ function KpiCell({ label, value, sub, color }: { label: string; value: string; s
           fontWeight: 800,
           fontSize: 22,
           letterSpacing: "0.02em",
-          color: color ?? "#fff",
+          color: color ?? "var(--rpc-text-primary)",
           marginTop: 4,
         }}
       >
@@ -1373,7 +1373,7 @@ function KpiCell({ label, value, sub, color }: { label: string; value: string; s
           style={{
             fontFamily: "var(--font-mono)",
             fontSize: 10,
-            color: "rgba(255,255,255,0.5)",
+            color: "var(--rpc-text-muted)",
             marginTop: 2,
           }}
         >
@@ -1440,7 +1440,7 @@ function DualPriceKpi({
           fontSize: 9,
           letterSpacing: "0.16em",
           textTransform: "uppercase",
-          color: "rgba(255,255,255,0.5)",
+          color: "var(--rpc-text-muted)",
           minWidth: 64,
           display: "inline-block",
         }}
@@ -1454,7 +1454,7 @@ function DualPriceKpi({
           fontSize: 18,
           letterSpacing: "0.02em",
           fontVariantNumeric: "tabular-nums",
-          color: anchor ? "var(--rpc-red-text)" : muted ? "rgba(255,255,255,0.5)" : "#fff",
+          color: anchor ? "var(--rpc-red-text)" : muted ? "var(--rpc-text-muted)" : "var(--rpc-text-primary)",
         }}
       >
         {value}
@@ -1478,8 +1478,8 @@ function DualPriceKpi({
   return (
     <div
       style={{
-        background: "rgba(13,13,13,0.92)",
-        border: "1px solid rgba(255,255,255,0.06)",
+        background: "var(--rpc-surface)",
+        border: "1px solid var(--rpc-border-subtle)",
         borderRadius: 6,
         padding: 12,
       }}
@@ -1490,7 +1490,7 @@ function DualPriceKpi({
           fontSize: 9,
           letterSpacing: "0.18em",
           textTransform: "uppercase",
-          color: "rgba(255,255,255,0.5)",
+          color: "var(--rpc-text-muted)",
           marginBottom: 6,
         }}
       >
@@ -1523,7 +1523,7 @@ function Th({ children, align = "left" }: { children: React.ReactNode; align?: "
         fontSize: 9,
         letterSpacing: "0.15em",
         textTransform: "uppercase",
-        color: "rgba(255,255,255,0.5)",
+        color: "var(--rpc-text-muted)",
         fontWeight: 700,
       }}
     >
@@ -1538,7 +1538,7 @@ function Td({ children, align = "left", color }: { children: React.ReactNode; al
       style={{
         textAlign: align,
         padding: "8px 10px",
-        color: color ?? "rgba(255,255,255,0.85)",
+        color: color ?? "var(--rpc-text-primary)",
       }}
     >
       {children}
@@ -1554,8 +1554,8 @@ function PackHeroStrip({ collection, editions }: { collection: string; editions:
   return (
     <section
       style={{
-        background: "rgba(13,13,13,0.92)",
-        border: "1px solid rgba(255,255,255,0.06)",
+        background: "var(--rpc-surface)",
+        border: "1px solid var(--rpc-border-subtle)",
         borderRadius: 8,
         padding: 18,
       }}
@@ -1568,13 +1568,13 @@ function PackHeroStrip({ collection, editions }: { collection: string; editions:
             fontWeight: 800,
             fontSize: 18,
             letterSpacing: "0.06em",
-            color: "#fff",
+            color: "var(--rpc-text-primary)",
             textTransform: "uppercase",
           }}
         >
           Top chases
         </h2>
-        <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.5)" }}>
+        <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--rpc-text-muted)" }}>
           highest-FMV pulls in this pack
         </span>
       </div>
@@ -1630,16 +1630,16 @@ function PackHeroStrip({ collection, editions }: { collection: string; editions:
                   {String(e.tier ?? "—").charAt(0).toUpperCase() + String(e.tier ?? "").slice(1).toLowerCase()}
                 </span>
                 {hitPct && (
-                  <span style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "rgba(255,255,255,0.5)" }}>
+                  <span style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "var(--rpc-text-muted)" }}>
                     Hit {hitPct}
                   </span>
                 )}
               </div>
-              <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 13, color: "#fff", lineHeight: 1.15 }}>
+              <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 13, color: "var(--rpc-text-primary)", lineHeight: 1.15 }}>
                 {momentSubjectName(e.player_name, e.team_name, e.set_name)}
               </div>
               {e.set_name && (
-                <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "rgba(255,255,255,0.5)", marginTop: 1 }}>
+                <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "var(--rpc-text-muted)", marginTop: 1 }}>
                   {e.set_name}
                 </div>
               )}
@@ -1653,8 +1653,8 @@ function PackHeroStrip({ collection, editions }: { collection: string; editions:
             width: 150,
             textDecoration: "none",
             color: "inherit",
-            background: "rgba(255,255,255,0.02)",
-            border: "1px solid rgba(255,255,255,0.06)",
+            background: "var(--rpc-surface-raised)",
+            border: "1px solid var(--rpc-border-subtle)",
             borderRadius: 6,
             padding: 10,
           }
@@ -1713,8 +1713,8 @@ function TierOddsPanel({
   return (
     <section
       style={{
-        background: "rgba(13,13,13,0.92)",
-        border: "1px solid rgba(255,255,255,0.06)",
+        background: "var(--rpc-surface)",
+        border: "1px solid var(--rpc-border-subtle)",
         borderRadius: 8,
         padding: 18,
       }}
@@ -1727,20 +1727,20 @@ function TierOddsPanel({
             fontWeight: 800,
             fontSize: 18,
             letterSpacing: "0.06em",
-            color: "#fff",
+            color: "var(--rpc-text-primary)",
             textTransform: "uppercase",
           }}
         >
           Pull odds by tier
         </h2>
-        <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.5)" }}>
+        <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--rpc-text-muted)" }}>
           {withAsOf(slots && slots > 0 ? `${slots} slots/pack` : "per pack", updatedAt)}
         </span>
       </div>
       <div style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "var(--font-mono)", fontSize: 12 }}>
           <thead>
-            <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+            <tr style={{ borderBottom: "1px solid var(--rpc-border-subtle)" }}>
               <Th>Tier</Th>
               <Th align="right">Remaining</Th>
               <Th align="right">% of pool</Th>
@@ -1753,7 +1753,7 @@ function TierOddsPanel({
               const original = Number(originalByTier[t] ?? 0)
               const chip = tierChip(t)
               return (
-                <tr key={t} style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+                <tr key={t} style={{ borderBottom: "1px solid var(--rpc-border-subtle)" }}>
                   <Td>
                     <span
                       style={{
@@ -1772,13 +1772,13 @@ function TierOddsPanel({
                       {t.charAt(0).toUpperCase() + t.slice(1)}
                     </span>
                   </Td>
-                  <Td align="right" color="rgba(255,255,255,0.85)">
-                    {remaining.toLocaleString()} <span style={{ color: "rgba(255,255,255,0.5)" }}>/ {original.toLocaleString()}</span>
+                  <Td align="right" color="var(--rpc-text-primary)">
+                    {remaining.toLocaleString()} <span style={{ color: "var(--rpc-text-muted)" }}>/ {original.toLocaleString()}</span>
                   </Td>
-                  <Td align="right" color="rgba(255,255,255,0.6)">
+                  <Td align="right" color="var(--rpc-text-secondary)">
                     {pctOfPoolLabel(remaining, poolRemaining)}
                   </Td>
-                  <Td align="right" color={remaining > 0 ? "#fff" : "rgba(255,255,255,0.5)"}>
+                  <Td align="right" color={remaining > 0 ? "var(--rpc-text-primary)" : "var(--rpc-text-muted)"}>
                     {packOddsLabel(remaining, poolRemaining, slots)}
                   </Td>
                 </tr>
@@ -1787,7 +1787,7 @@ function TierOddsPanel({
           </tbody>
         </table>
       </div>
-      <div style={{ marginTop: 10, fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.5)" }}>
+      <div style={{ marginTop: 10, fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--rpc-text-muted)" }}>
         Odds/pack ≈ chance of at least one card of that tier across {slots && slots > 0 ? slots : "the"} slots, from the remaining pool. Approximate (assumes independent slots).
       </div>
     </section>
@@ -1829,7 +1829,7 @@ function PacksContentRemaining({
   // hollow center label, no chart lib (the artifact-brand-CSS pattern).
   const unopenedPct = hasRing ? Math.max(0, Math.min(100, (unopened! / totalMinted!) * 100)) : null
   const ring = unopenedPct != null
-    ? `conic-gradient(${tierAccent} 0 ${unopenedPct}%, rgba(255,255,255,0.08) ${unopenedPct}% 100%)`
+    ? `conic-gradient(${tierAccent} 0 ${unopenedPct}%, var(--rpc-surface-hover) ${unopenedPct}% 100%)`
     : undefined
 
   const tiers = hasBars ? orderedTiersWithSupply(originalByTier!) : []
@@ -1837,8 +1837,8 @@ function PacksContentRemaining({
   return (
     <section
       style={{
-        background: "rgba(13,13,13,0.92)",
-        border: "1px solid rgba(255,255,255,0.06)",
+        background: "var(--rpc-surface)",
+        border: "1px solid var(--rpc-border-subtle)",
         borderRadius: 8,
         padding: 18,
       }}
@@ -1851,13 +1851,13 @@ function PacksContentRemaining({
             fontWeight: 800,
             fontSize: 18,
             letterSpacing: "0.06em",
-            color: "#fff",
+            color: "var(--rpc-text-primary)",
             textTransform: "uppercase",
           }}
         >
           Packs Content Remaining
         </h2>
-        <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.5)" }}>
+        <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--rpc-text-muted)" }}>
           {/* ⚠ "live pool" was an unverified freshness claim and this very span
               rendered it beside a 15-day age ("live pool · as of 15d ago") — the
               tier counts behind it are newest 2026-08-28, with zero of 823 Top
@@ -1886,7 +1886,7 @@ function PacksContentRemaining({
                   width: 92,
                   height: 92,
                   borderRadius: "50%",
-                  background: "rgba(13,13,13,0.98)",
+                  background: "var(--rpc-surface)",
                   display: "flex",
                   flexDirection: "column",
                   alignItems: "center",
@@ -1894,15 +1894,15 @@ function PacksContentRemaining({
                   gap: 2,
                 }}
               >
-                <span style={{ fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 24, color: "#fff", lineHeight: 1 }}>
+                <span style={{ fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 24, color: "var(--rpc-text-primary)", lineHeight: 1 }}>
                   {unopenedPct!.toFixed(unopenedPct! >= 10 ? 0 : 1)}%
                 </span>
-                <span style={{ fontFamily: "var(--font-mono)", fontSize: 8, letterSpacing: "0.12em", textTransform: "uppercase", color: "rgba(255,255,255,0.5)" }}>
+                <span style={{ fontFamily: "var(--font-mono)", fontSize: 8, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--rpc-text-muted)" }}>
                   unopened
                 </span>
               </div>
             </div>
-            <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "rgba(255,255,255,0.7)" }}>
+            <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-secondary)" }}>
               {fmtCount(unopened)} / {fmtCount(totalMinted)} packs
             </span>
           </div>
@@ -1921,11 +1921,11 @@ function PacksContentRemaining({
                     <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: chip.color, letterSpacing: "0.04em", textTransform: "uppercase", fontWeight: 700 }}>
                       {t.charAt(0).toUpperCase() + t.slice(1)}
                     </span>
-                    <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "rgba(255,255,255,0.7)" }}>
-                      {remaining.toLocaleString()} <span style={{ color: "rgba(255,255,255,0.5)" }}>/ {original.toLocaleString()} ({pct.toFixed(pct >= 10 ? 0 : 1)}%)</span>
+                    <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-secondary)" }}>
+                      {remaining.toLocaleString()} <span style={{ color: "var(--rpc-text-muted)" }}>/ {original.toLocaleString()} ({pct.toFixed(pct >= 10 ? 0 : 1)}%)</span>
                     </span>
                   </div>
-                  <div style={{ height: 8, borderRadius: 4, background: "rgba(255,255,255,0.06)", overflow: "hidden" }}>
+                  <div style={{ height: 8, borderRadius: 4, background: "var(--rpc-surface-hover)", overflow: "hidden" }}>
                     <div style={{ width: `${pct}%`, height: "100%", background: chip.color, borderRadius: 4 }} />
                   </div>
                 </div>
@@ -1948,13 +1948,13 @@ function PacksContentRemaining({
 // fmtSalePrice extracted to @/lib/pack-dist-format (imported below).
 
 function ShortWallet({ address, name }: { address: string | null; name?: string | null }) {
-  if (!address) return <span style={{ color: "rgba(255,255,255,0.5)" }}>—</span>
+  if (!address) return <span style={{ color: "var(--rpc-text-muted)" }}>—</span>
   const trunc = address.length > 12 ? `${address.slice(0, 6)}…${address.slice(-4)}` : address
   return (
     <Link
       href={`/analytics/wallets/${address.toLowerCase()}`}
       title={name ? `${name} · ${address}` : address}
-      style={{ color: "#fff", textDecoration: "none", borderBottom: "1px dotted rgba(255,255,255,0.25)" }}
+      style={{ color: "var(--rpc-text-primary)", textDecoration: "none", borderBottom: "1px dotted var(--rpc-border-hover)" }}
     >
       {name ? `@${name}` : trunc}
     </Link>
@@ -1964,13 +1964,13 @@ function ShortWallet({ address, name }: { address: string | null; name?: string 
 function PackSalesTable({ title, rows, names }: { title: string; rows: PackSaleRow[]; names: Map<string, string> }) {
   return (
     <div style={{ flex: "1 1 320px", minWidth: 280 }}>
-      <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, letterSpacing: "0.18em", textTransform: "uppercase", color: "rgba(255,255,255,0.5)", marginBottom: 8 }}>
+      <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--rpc-text-muted)", marginBottom: 8 }}>
         {title}
       </div>
       <div style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "var(--font-mono)", fontSize: 12 }}>
           <thead>
-            <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+            <tr style={{ borderBottom: "1px solid var(--rpc-border-subtle)" }}>
               <Th>Buyer</Th>
               <Th align="right">Sale price</Th>
               <Th align="right">When</Th>
@@ -1978,10 +1978,10 @@ function PackSalesTable({ title, rows, names }: { title: string; rows: PackSaleR
           </thead>
           <tbody>
             {rows.map((s, i) => (
-              <tr key={`${s.tx_hash ?? i}-${title}`} style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+              <tr key={`${s.tx_hash ?? i}-${title}`} style={{ borderBottom: "1px solid var(--rpc-border-subtle)" }}>
                 <Td><ShortWallet address={s.buyer_address} name={s.buyer_address ? names.get(s.buyer_address.toLowerCase()) ?? null : null} /></Td>
                 <Td align="right">{fmtSalePrice(s.sale_price)}</Td>
-                <Td align="right" color="rgba(255,255,255,0.55)">
+                <Td align="right" color="var(--rpc-text-secondary)">
                   <span title={s.sealed_at ? new Date(s.sealed_at).toLocaleString() : undefined}>{relTimeShort(s.sealed_at)}</span>
                 </Td>
               </tr>
@@ -2000,8 +2000,8 @@ function PackSalesHistory({ rows, names }: { rows: PackSaleRow[]; names: Map<str
   return (
     <section
       style={{
-        background: "rgba(13,13,13,0.92)",
-        border: "1px solid rgba(255,255,255,0.06)",
+        background: "var(--rpc-surface)",
+        border: "1px solid var(--rpc-border-subtle)",
         borderRadius: 8,
         padding: 18,
       }}
@@ -2014,17 +2014,17 @@ function PackSalesHistory({ rows, names }: { rows: PackSaleRow[]; names: Map<str
             fontWeight: 800,
             fontSize: 18,
             letterSpacing: "0.06em",
-            color: "#fff",
+            color: "var(--rpc-text-primary)",
             textTransform: "uppercase",
           }}
         >
           Sales History
         </h2>
-        <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.5)" }}>
+        <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--rpc-text-muted)" }}>
           secondary pack sales
         </span>
       </div>
-      <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.5)", marginBottom: 14 }}>
+      <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--rpc-text-muted)", marginBottom: 14 }}>
         Traced via opened packs — partial coverage that grows over time. Buyer links open the wallet&apos;s full intelligence.
       </div>
 
@@ -2032,9 +2032,9 @@ function PackSalesHistory({ rows, names }: { rows: PackSaleRow[]; names: Map<str
         <div
           style={{
             padding: "12px 14px",
-            border: "1px dashed rgba(255,255,255,0.1)",
+            border: "1px dashed var(--rpc-border)",
             borderRadius: 6,
-            color: "rgba(255,255,255,0.5)",
+            color: "var(--rpc-text-muted)",
             fontFamily: "var(--font-mono)",
             fontSize: 11,
           }}
@@ -2081,7 +2081,7 @@ function PackContentsSection({
 }) {
   if (contents === null) {
     return (
-      <section style={{ ...CARD_STYLE, fontFamily: "var(--font-mono)", fontSize: 11, color: "rgba(255,255,255,0.55)" }}>
+      <section style={{ ...CARD_STYLE, fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-secondary)" }}>
         Couldn&apos;t load this pack&apos;s contents. The rest of the page is accurate — only this
         panel is missing. Reload to try again.
       </section>
@@ -2250,38 +2250,38 @@ async function PackStreamedTop({
       )}
 
       {showRealizedEv && (
-        <section style={{ background: "rgba(13,13,13,0.92)", border: "1px solid rgba(255,255,255,0.06)", borderLeft: `3px solid ${reVerdict?.accent ?? "rgba(255,255,255,0.2)"}`, borderRadius: 6, padding: "12px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
-          <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", color: "rgba(255,255,255,0.5)" }}>
+        <section style={{ background: "var(--rpc-surface)", border: "1px solid var(--rpc-border-subtle)", borderLeft: `3px solid ${reVerdict?.accent ?? "var(--rpc-border-hover)"}`, borderRadius: 6, padding: "12px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
+          <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--rpc-text-muted)" }}>
             {hasModeled ? "EV reality check" : "Realized pull value"}
           </span>
           <div style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: "4px 14px" }}>
             {hasModeled && (
-              <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "rgba(255,255,255,0.7)" }}>
-                Modeled <strong style={{ color: "rgba(255,255,255,0.9)" }}>{fmtUsd(reModeled)}</strong>/pack
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--rpc-text-secondary)" }}>
+                Modeled <strong style={{ color: "var(--rpc-text-primary)" }}>{fmtUsd(reModeled)}</strong>/pack
               </span>
             )}
-            <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: accentText(reVerdict?.accent) ?? "rgba(255,255,255,0.85)" }}>
+            <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: accentText(reVerdict?.accent) ?? "var(--rpc-text-primary)" }}>
               {hasModeled ? "vs realized " : "Realized "}<strong>{fmtUsd(reMean)}</strong> avg
               {reMedian != null ? ` · ${fmtUsd(reMedian)} median` : ""}
               {reP90 != null ? ` · ${fmtUsd(reP90)} p90` : ""}
             </span>
             {reRatio != null && (
-              <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: accentText(reVerdict?.accent) ?? "rgba(255,255,255,0.85)" }}>
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: accentText(reVerdict?.accent) ?? "var(--rpc-text-primary)" }}>
                 ({reRatio.toFixed(2)}×)
               </span>
             )}
           </div>
           {showCalibrated && (
             <div style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: "4px 10px" }}>
-              <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "rgba(255,255,255,0.9)" }}>
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--rpc-text-primary)" }}>
                 Calibrated estimate <strong style={{ color: "rgb(250,204,21)" }}>{fmtUsd(reCalibrated)}</strong>/pack
               </span>
-              <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.5)" }}>
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--rpc-text-muted)" }}>
                 model blended toward observed pulls
               </span>
             </div>
           )}
-          <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.5)" }}>
+          <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--rpc-text-muted)" }}>
             {reVerdict?.label ?? "Realized pull value"} · {fmtCount(reOpens)} attributed opens
           </span>
         </section>
@@ -2290,11 +2290,11 @@ async function PackStreamedTop({
       {showEvContributors && (
         <section style={CARD_STYLE}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 6 }}>
-            <h2 style={{ margin: 0, fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 18, letterSpacing: "0.06em", color: "#fff", textTransform: "uppercase" }}>
+            <h2 style={{ margin: 0, fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 18, letterSpacing: "0.06em", color: "var(--rpc-text-primary)", textTransform: "uppercase" }}>
               What drives the remaining EV
             </h2>
           </div>
-          <p style={{ margin: "0 0 10px", color: "rgba(255,255,255,0.5)", fontFamily: "var(--font-mono)", fontSize: 11.5, lineHeight: 1.5 }}>
+          <p style={{ margin: "0 0 10px", color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 11.5, lineHeight: 1.5 }}>
             Each row is an edition still in the pool. EV share = pull odds × FMV as a fraction of the pack per-slot
             expected value — what the remaining contents are actually worth.
           </p>
@@ -2306,7 +2306,7 @@ async function PackStreamedTop({
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "var(--font-mono)", fontSize: 12 }}>
               <thead>
-                <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+                <tr style={{ borderBottom: "1px solid var(--rpc-border-subtle)" }}>
                   <Th>Edition</Th>
                   <Th>{getEntityLabels(collection).tier}</Th>
                   <Th align="right">Pull %</Th>
@@ -2319,16 +2319,16 @@ async function PackStreamedTop({
                   const pull = num(c.pull_prob)
                   const evShare = num(c.pct_of_ev)
                   return (
-                    <tr key={c.edition_id} style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+                    <tr key={c.edition_id} style={{ borderBottom: "1px solid var(--rpc-border-subtle)" }}>
                       <Td>
                         {c.external_id ? (
-                          <Link href={`/${collection}/edition/${encodeURIComponent(c.external_id)}`} style={{ color: "#fff", textDecoration: "none" }}>
+                          <Link href={`/${collection}/edition/${encodeURIComponent(c.external_id)}`} style={{ color: "var(--rpc-text-primary)", textDecoration: "none" }}>
                             {c.player_name || "—"}
                           </Link>
                         ) : (
-                          <span style={{ color: "#fff" }}>{c.player_name || "—"}</span>
+                          <span style={{ color: "var(--rpc-text-primary)" }}>{c.player_name || "—"}</span>
                         )}
-                        <span style={{ color: "rgba(255,255,255,0.5)" }}> · {c.set_name || "—"}</span>
+                        <span style={{ color: "var(--rpc-text-muted)" }}> · {c.set_name || "—"}</span>
                       </Td>
                       <Td color={c.tier ? tierChip(String(c.tier)).color : undefined}>
                         {c.tier ? String(c.tier).charAt(0).toUpperCase() + String(c.tier).slice(1) : "—"}
@@ -2342,36 +2342,36 @@ async function PackStreamedTop({
               </tbody>
             </table>
           </div>
-          <div style={{ marginTop: 10, fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.5)" }}>
+          <div style={{ marginTop: 10, fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--rpc-text-muted)" }}>
             EV share = pull odds × FMV ÷ per-slot EV, over the editions remaining in the pool.
           </div>
         </section>
       )}
 
       {showPackMarket && (
-        <section style={{ background: "rgba(13,13,13,0.92)", border: "1px solid rgba(255,255,255,0.06)", borderLeft: `3px solid ${pmVerdict?.accent ?? "rgba(255,255,255,0.2)"}`, borderRadius: 6, padding: "12px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
-          <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", color: "rgba(255,255,255,0.5)" }}>
+        <section style={{ background: "var(--rpc-surface)", border: "1px solid var(--rpc-border-subtle)", borderLeft: `3px solid ${pmVerdict?.accent ?? "var(--rpc-border-hover)"}`, borderRadius: 6, padding: "12px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
+          <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--rpc-text-muted)" }}>
             Sealed pack resale
           </span>
           <div style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: "4px 14px" }}>
             {pmMedian90 !== null && (
-              <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "rgba(255,255,255,0.7)" }}>
-                Median <strong style={{ color: "rgba(255,255,255,0.9)" }}>{fmtUsd(pmMedian90)}</strong>
-                <span style={{ color: "rgba(255,255,255,0.5)" }}> (90d)</span>
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--rpc-text-secondary)" }}>
+                Median <strong style={{ color: "var(--rpc-text-primary)" }}>{fmtUsd(pmMedian90)}</strong>
+                <span style={{ color: "var(--rpc-text-muted)" }}> (90d)</span>
               </span>
             )}
             {pmLast !== null && (
-              <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "rgba(255,255,255,0.7)" }}>
-                Last <strong style={{ color: "rgba(255,255,255,0.9)" }}>{fmtUsd(pmLast)}</strong>
-                {fmtAgo(pmLastAt) ? <span style={{ color: "rgba(255,255,255,0.5)" }}> · {fmtAgo(pmLastAt)}</span> : null}
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--rpc-text-secondary)" }}>
+                Last <strong style={{ color: "var(--rpc-text-primary)" }}>{fmtUsd(pmLast)}</strong>
+                {fmtAgo(pmLastAt) ? <span style={{ color: "var(--rpc-text-muted)" }}> · {fmtAgo(pmLastAt)}</span> : null}
               </span>
             )}
             {pmRetail !== null && pmRetail > 0 && (
-              <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "rgba(255,255,255,0.5)" }}>
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--rpc-text-muted)" }}>
                 Retail {fmtUsd(pmRetail)}
               </span>
             )}
-            <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "rgba(255,255,255,0.5)" }}>
+            <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--rpc-text-muted)" }}>
               {fmtCount(pmSales)} sale{pmSales === 1 ? "" : "s"}
               {pmSales90 !== null && pmSales90 > 0 ? ` · ${fmtCount(pmSales90)} in 90d` : ""}
             </span>
@@ -2427,7 +2427,7 @@ async function PackStreamedBottom({
 
       <section style={CARD_STYLE}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 10 }}>
-          <h2 style={{ margin: 0, fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 18, letterSpacing: "0.06em", color: "#fff", textTransform: "uppercase" }}>
+          <h2 style={{ margin: 0, fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 18, letterSpacing: "0.06em", color: "var(--rpc-text-primary)", textTransform: "uppercase" }}>
             Top pulls by EV
           </h2>
           {/* ⚠ Both of these used to key on `topPulls.length === 0` alone, and
@@ -2436,7 +2436,7 @@ async function PackStreamedBottom({
               OUR INDEX manufactured from OUR outage, on a pack whose pool is in
               fact fully indexed. Branch on `ok` first; an empty result is only
               "unindexed" when we actually managed to ask. */}
-          <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.5)" }}>
+          <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--rpc-text-muted)" }}>
             {!topPullsRes.ok
               ? "unavailable"
               : topPulls.length === 0
@@ -2445,19 +2445,19 @@ async function PackStreamedBottom({
           </span>
         </div>
         {!topPullsRes.ok ? (
-          <div style={{ padding: "12px 14px", border: "1px dashed rgba(255,255,255,0.1)", borderRadius: 6, color: "rgba(255,255,255,0.5)", fontFamily: "var(--font-mono)", fontSize: 11 }}>
+          <div style={{ padding: "12px 14px", border: "1px dashed var(--rpc-border)", borderRadius: 6, color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 11 }}>
             Couldn&apos;t load this pack&apos;s drop pool. This says nothing about whether the pool is
             indexed — only that the read failed. Reload to try again.
           </div>
         ) : topPulls.length === 0 ? (
-          <div style={{ padding: "12px 14px", border: "1px dashed rgba(255,255,255,0.1)", borderRadius: 6, color: "rgba(255,255,255,0.5)", fontFamily: "var(--font-mono)", fontSize: 11 }}>
+          <div style={{ padding: "12px 14px", border: "1px dashed var(--rpc-border)", borderRadius: 6, color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 11 }}>
             Drop-pool contents aren&apos;t indexed for this distribution yet. Older/depleted packs are re-pooled from Dapper Atlas remaining-count data as that harvest runs.
           </div>
         ) : (
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "var(--font-mono)", fontSize: 12 }}>
               <thead>
-                <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+                <tr style={{ borderBottom: "1px solid var(--rpc-border-subtle)" }}>
                   <Th>{getEntityLabels(collection).player}</Th>
                   <Th>Set</Th>
                   <Th>{getEntityLabels(collection).tier}</Th>
@@ -2468,17 +2468,17 @@ async function PackStreamedBottom({
               </thead>
               <tbody>
                 {topPulls.map((p) => (
-                  <tr key={p.editionId} style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+                  <tr key={p.editionId} style={{ borderBottom: "1px solid var(--rpc-border-subtle)" }}>
                     <Td>
                       {p.externalId ? (
-                        <Link href={`/${collection}/edition/${encodeURIComponent(p.externalId)}`} style={{ color: "#fff", textDecoration: "none" }}>
+                        <Link href={`/${collection}/edition/${encodeURIComponent(p.externalId)}`} style={{ color: "var(--rpc-text-primary)", textDecoration: "none" }}>
                           {p.player}
                         </Link>
                       ) : (
-                        <span style={{ color: "#fff" }}>{p.player}</span>
+                        <span style={{ color: "var(--rpc-text-primary)" }}>{p.player}</span>
                       )}
                     </Td>
-                    <Td color="rgba(255,255,255,0.6)">{p.setName || "—"}</Td>
+                    <Td color="var(--rpc-text-secondary)">{p.setName || "—"}</Td>
                     <Td color={p.tier ? tierChip(String(p.tier)).color : undefined}>{p.tier ? String(p.tier).charAt(0).toUpperCase() + String(p.tier).slice(1) : "—"}</Td>
                     <Td align="right">{p.probabilityPct === null ? "—" : `${p.probabilityPct.toFixed(2)}%`}</Td>
                     <Td align="right">{fmtUsd(p.fmvUsd)}</Td>
@@ -2491,7 +2491,7 @@ async function PackStreamedBottom({
             </table>
           </div>
         )}
-        <div style={{ marginTop: 10, fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.5)" }}>
+        <div style={{ marginTop: 10, fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--rpc-text-muted)" }}>
           Edition EV = FMV × (drop_weight / pool_weight) × slots. Sums to Gross EV over the full pool. Snapshotted{" "}
           {snapshottedAt ? new Date(snapshottedAt).toLocaleString() : "—"}. Methodology: cached pack_ev_history via the
           compute-pack-ev edge function.

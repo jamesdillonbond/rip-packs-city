@@ -341,7 +341,7 @@ export default function FastBreakClient({
         {optimize.loading && !optimize.data ? (
           <LineupSkeleton lineupSize={lineupSize} />
         ) : optimize.error ? (
-          <div style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--rpc-danger)" }}>
+          <div style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--rpc-danger-text)" }}>
             Failed to load optimizer. <button onClick={optimize.refresh} className="rpc-btn-ghost" style={{ marginLeft: 8 }}>Retry</button>
           </div>
         ) : !lineup ? (
@@ -564,7 +564,7 @@ export default function FastBreakClient({
 function ToastBanner({ toast }: { toast: Toast }) {
   if (toast.kind === "success") {
     return (
-      <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-success)", letterSpacing: "0.06em" }}>
+      <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-success-text)", letterSpacing: "0.06em" }}>
         ✓ {toast.text}
       </span>
     )
@@ -577,7 +577,7 @@ function ToastBanner({ toast }: { toast: Toast }) {
     )
   }
   return (
-    <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-danger)", letterSpacing: "0.06em" }}>
+    <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-danger-text)", letterSpacing: "0.06em" }}>
       ✕ {toast.text}
     </span>
   )

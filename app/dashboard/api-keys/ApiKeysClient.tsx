@@ -372,7 +372,7 @@ export default function ApiKeysClient() {
               {issueError && (
                 <div
                   style={{
-                    color: "var(--rpc-danger)",
+                    color: "var(--rpc-danger-text)",
                     fontFamily: "var(--font-mono)",
                     fontSize: "var(--text-sm)",
                     marginBottom: "var(--space-sm)",
@@ -404,7 +404,7 @@ export default function ApiKeysClient() {
             </>
           ) : (
             <>
-              <div className="rpc-label" style={{ color: "var(--rpc-success)" }}>
+              <div className="rpc-label" style={{ color: "var(--rpc-success-text)" }}>
                 Key issued
               </div>
               <h2

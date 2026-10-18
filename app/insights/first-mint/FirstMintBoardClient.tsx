@@ -16,6 +16,7 @@ import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
 import type { DegradedSummary } from "@/lib/insights/board-status"
 import { usdSignFirst } from "@/lib/usd-format"
+import { accentText } from "@/lib/accent-text"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -374,7 +375,7 @@ export default function FirstMintBoardClient({ initial, initialDegraded = null }
                     </div>
                   </td>
                   <td className="rpc-fm-td-num">
-                    <span className="rpc-fm-tier" style={{ color: tierColor(r.tier) }}>
+                    <span className="rpc-fm-tier" style={{ color: accentText(tierColor(r.tier)) }}>
                       {r.tier ?? "—"}
                     </span>
                   </td>

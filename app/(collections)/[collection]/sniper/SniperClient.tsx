@@ -914,7 +914,7 @@ function SniperMomentsBody() {
               </Link>
               {/* Task 10: Resumed indicator */}
               {resumedIndicator && (
-                <span className="rpc-chip" style={{ background: "rgba(52,211,153,0.10)", borderColor: "rgba(52,211,153,0.3)", color: "var(--rpc-success)", animation: "fadeOut 2s forwards" }}>
+                <span className="rpc-chip" style={{ background: "rgba(52,211,153,0.10)", borderColor: "rgba(52,211,153,0.3)", color: "var(--rpc-success-text)", animation: "fadeOut 2s forwards" }}>
                   Resumed
                 </span>
               )}
@@ -1048,7 +1048,7 @@ function SniperMomentsBody() {
       {/* Table */}
       <div style={{ maxWidth: "100vw", margin: "0 auto", padding: "16px" }}>
         {error && (
-          <div className="rpc-hud" style={{ marginBottom: 16, borderColor: "var(--rpc-danger)", color: "var(--rpc-danger)", fontSize: "var(--text-sm)", fontFamily: "var(--font-mono)" }}>
+          <div className="rpc-hud" style={{ marginBottom: 16, borderColor: "var(--rpc-danger)", color: "var(--rpc-danger-text)", fontSize: "var(--text-sm)", fontFamily: "var(--font-mono)" }}>
             FEED ERROR: {error}
           </div>
         )}
@@ -1063,7 +1063,7 @@ function SniperMomentsBody() {
               gap: 12,
               marginBottom: 16,
               borderColor: deepLinkResolved === "found" ? `${accent}66` : "var(--rpc-warning)",
-              color: deepLinkResolved === "found" ? accentText(accent) : "var(--rpc-warning)",
+              color: deepLinkResolved === "found" ? accentText(accent) : "var(--rpc-warning-text)",
               fontFamily: "var(--font-mono)",
               fontSize: "var(--text-sm)",
             }}
@@ -1366,7 +1366,7 @@ function SniperMomentsBody() {
                           {deal.tier}
                         </span>
                       ) : (
-                        <span style={{ color: resolveTierColor(deal.tier, isAllDay), fontWeight: 600, fontSize: "var(--text-xs)" }}>
+                        <span style={{ color: accentText(resolveTierColor(deal.tier, isAllDay)), fontWeight: 600, fontSize: "var(--text-xs)" }}>
                           {deal.tier.charAt(0) + deal.tier.slice(1).toLowerCase()}
                         </span>
                       )}
@@ -1387,7 +1387,7 @@ function SniperMomentsBody() {
                     {deal.lowConfidenceFmv ? (
                       <span
                         title="FMV here is averaged over very few, wide-ranging sales, so it overshoots the typical price — this discount is uncertain. Check recent sales before acting."
-                        style={{ fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 700, color: "var(--rpc-warning)", letterSpacing: "0.02em" }}
+                        style={{ fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 700, color: "var(--rpc-warning-text)", letterSpacing: "0.02em" }}
                       >
                         ⚠ thin data
                       </span>
@@ -1428,7 +1428,7 @@ function SniperMomentsBody() {
                         null;
                       if (eStats && eStats.owned > 0) {
                         return (
-                          <span style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-mono)", color: "var(--rpc-success)" }} title={`${eStats.owned} owned · ${eStats.locked} locked`}>
+                          <span style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-mono)", color: "var(--rpc-success-text)" }} title={`${eStats.owned} owned · ${eStats.locked} locked`}>
                             Own {eStats.owned} / Lock {eStats.locked}
                           </span>
                         );
@@ -1636,7 +1636,7 @@ function SniperMomentsBody() {
                             {deal.tier}
                           </span>
                         ) : (
-                          <span className={deal.tier.toUpperCase() === "LEGENDARY" ? "rpc-tier-glow-legendary" : deal.tier.toUpperCase() === "ULTIMATE" ? "rpc-tier-glow-ultimate" : deal.tier.toUpperCase() === "RARE" ? "rpc-tier-glow-rare" : ""} style={{ color: resolveTierColor(deal.tier, isAllDay), fontWeight: 600 }}>
+                          <span className={deal.tier.toUpperCase() === "LEGENDARY" ? "rpc-tier-glow-legendary" : deal.tier.toUpperCase() === "ULTIMATE" ? "rpc-tier-glow-ultimate" : deal.tier.toUpperCase() === "RARE" ? "rpc-tier-glow-rare" : ""} style={{ color: accentText(resolveTierColor(deal.tier, isAllDay)), fontWeight: 600 }}>
                             {deal.tier.charAt(0) + deal.tier.slice(1).toLowerCase()}
                           </span>
                         )}
@@ -1716,7 +1716,7 @@ function SniperMomentsBody() {
                             floor, and must not say "Floor" (2026-09-26; the real floor is in the
                             row's depth panel, read from /api/edition-floor). */}
                         {deal.isLowestAsk && (
-                          <span className="rpc-chip" data-testid="feed-low-chip" title="Lowest ask for this edition among the listings in this feed — the edition's floor may be lower (expand the row)" style={{ background: "rgba(16,185,129,0.15)", borderColor: "rgba(16,185,129,0.3)", color: "#34d399", fontSize: 9, padding: "1px 5px" }}>
+                          <span className="rpc-chip" data-testid="feed-low-chip" title="Lowest ask for this edition among the listings in this feed — the edition's floor may be lower (expand the row)" style={{ background: "rgba(16,185,129,0.15)", borderColor: "rgba(16,185,129,0.3)", color: "var(--rpc-success-text)", fontSize: 9, padding: "1px 5px" }}>
                             Feed low
                           </span>
                         )}
@@ -1767,7 +1767,7 @@ function SniperMomentsBody() {
                           null;
                         if (eStats && eStats.owned > 0) {
                           return (
-                            <span style={{ color: "var(--rpc-success)" }} title={`${eStats.owned} owned · ${eStats.locked} locked`}>
+                            <span style={{ color: "var(--rpc-success-text)" }} title={`${eStats.owned} owned · ${eStats.locked} locked`}>
                               {eStats.owned} / {eStats.locked}
                             </span>
                           );
@@ -1805,8 +1805,8 @@ function SniperMomentsBody() {
                           if (diff === null) return null;
                           if (Math.abs(diff) < 0.1) return null;
                           return diff > 0
-                            ? <span style={{ fontSize: "var(--text-xs)", color: "var(--rpc-success)" }} title={`Avg sales price $${fmt(deal.aspUsd)} — trending up`}>↑</span>
-                            : <span style={{ fontSize: "var(--text-xs)", color: "var(--rpc-danger)" }} title={`Avg sales price $${fmt(deal.aspUsd)} — trending down`}>↓</span>;
+                            ? <span style={{ fontSize: "var(--text-xs)", color: "var(--rpc-success-text)" }} title={`Avg sales price $${fmt(deal.aspUsd)} — trending up`}>↑</span>
+                            : <span style={{ fontSize: "var(--text-xs)", color: "var(--rpc-danger-text)" }} title={`Avg sales price $${fmt(deal.aspUsd)} — trending down`}>↓</span>;
                         })()}
                       </div>
                       {deal.serialMult > 1 && (
@@ -1826,7 +1826,7 @@ function SniperMomentsBody() {
                       {deal.lowConfidenceFmv ? (
                         <span
                           title="FMV here is averaged over very few, wide-ranging sales, so it overshoots the typical price — this discount is uncertain. Check recent sales before acting."
-                          style={{ fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 700, color: "var(--rpc-warning)", letterSpacing: "0.02em", whiteSpace: "nowrap" }}
+                          style={{ fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 700, color: "var(--rpc-warning-text)", letterSpacing: "0.02em", whiteSpace: "nowrap" }}
                         >
                           ⚠ thin data
                         </span>
@@ -1877,7 +1877,7 @@ function SniperMomentsBody() {
                                     Absent is honest; "0 listed" is a measurement we never took. */}
                                 {(depthFloor.flowtyFloor != null || depthFloor.flowtyListingCount > 0) && (
                                   <div className="rpc-chip" style={{ display: "flex", alignItems: "center", gap: 6, borderColor: "rgba(59,130,246,0.3)" }}>
-                                    <span style={{ fontSize: 9, color: "var(--rpc-info)", letterSpacing: "0.08em" }}>FLOWTY</span>
+                                    <span style={{ fontSize: 9, color: "var(--rpc-info-text)", letterSpacing: "0.08em" }}>FLOWTY</span>
                                     <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)", color: "var(--rpc-text-primary)", fontWeight: 600 }}>
                                       {depthFloor.flowtyFloor != null ? `$${fmt(depthFloor.flowtyFloor)}` : "—"}
                                     </span>
@@ -1886,8 +1886,8 @@ function SniperMomentsBody() {
                                 )}
                                 {depthFloor.crossMarketFloor != null && (
                                   <div className="rpc-chip" style={{ display: "flex", alignItems: "center", gap: 6, background: "rgba(74,222,128,0.08)", borderColor: "rgba(74,222,128,0.3)" }}>
-                                    <span style={{ fontSize: 9, color: "var(--rpc-success)", letterSpacing: "0.08em" }}>BEST FLOOR</span>
-                                    <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)", color: "var(--rpc-success)", fontWeight: 700 }}>
+                                    <span style={{ fontSize: 9, color: "var(--rpc-success-text)", letterSpacing: "0.08em" }}>BEST FLOOR</span>
+                                    <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)", color: "var(--rpc-success-text)", fontWeight: 700 }}>
                                       ${fmt(depthFloor.crossMarketFloor)}
                                     </span>
                                     <span style={{ fontSize: 9, color: "var(--rpc-text-muted)" }}>on {depthFloor.crossMarketSource === "flowty" ? "Flowty" : "TopShot"}</span>
@@ -1920,7 +1920,7 @@ function SniperMomentsBody() {
                                   <div key={dd.flowId} className="flex items-center gap-4" style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-mono)", padding: "4px 0" }}>
                                     <span style={{ color: "var(--rpc-text-secondary)", minWidth: 60 }}>#{dd.serial}</span>
                                     <span style={{ color: "var(--rpc-text-primary)", fontWeight: 600, minWidth: 70 }}>${fmt(dd.askPrice)}</span>
-                                    <span style={{ color: dd.discount >= 15 ? "var(--rpc-success)" : "var(--rpc-text-muted)", minWidth: 60 }}>
+                                    <span style={{ color: dd.discount >= 15 ? "var(--rpc-success-text)" : "var(--rpc-text-muted)", minWidth: 60 }}>
                                       {dd.discount > 0 ? `-${fmt(dd.discount, 1)}%` : "~0%"}
                                     </span>
                                     <span style={{ color: "var(--rpc-text-muted)", minWidth: 50 }}>{dd.source === "flowty" ? "Flowty" : "TS"}</span>
@@ -1977,9 +1977,9 @@ function SniperMomentsBody() {
             <span className="w-1.5 h-1.5 rounded-full bg-red-400/70 inline-block" />
             Speculative — FMV = ask price fallback
           </span>
-          <span style={{ color: "var(--rpc-success)" }}>↑</span>
+          <span style={{ color: "var(--rpc-success-text)" }}>↑</span>
           <span>Avg sales price trending up &nbsp;</span>
-          <span style={{ color: "var(--rpc-danger)" }}>↓</span>
+          <span style={{ color: "var(--rpc-danger-text)" }}>↓</span>
           <span>Avg sales price trending down</span>
           <span className="ml-auto">Adj. FMV = base FMV × serial multiplier</span>
         </div>
@@ -2033,7 +2033,7 @@ function SniperMomentsBody() {
                   <div className="rpc-mono" style={{ fontSize: "var(--text-sm)", color: "var(--rpc-text-primary)" }}>
                     Consider listing: <strong>{s.player}</strong> serial #{s.serial}
                   </div>
-                  <div className="rpc-mono" style={{ fontSize: "var(--text-xs)", color: "var(--rpc-success)", marginTop: 4 }}>
+                  <div className="rpc-mono" style={{ fontSize: "var(--text-xs)", color: "var(--rpc-success-text)", marginTop: 4 }}>
                     Current asks are {s.pctAbove}% above your FMV
                   </div>
                 </div>

@@ -513,7 +513,7 @@ const CSS = `
 .rpc-pd-namelink { color: var(--rpc-text-primary); text-decoration: none; }
 .rpc-pd-namelink:hover { color: var(--rpc-red-text); }
 .rpc-pd-x { font-family: var(--font-mono); font-size: 11px; color: var(--rpc-text-muted); margin-left: 6px; }
-.rpc-pd-parallel { font-family: var(--font-mono); font-size: 8.5px; letter-spacing: 1px; text-transform: uppercase; padding: 1px 5px; margin-left: 7px; border: 1px solid var(--rpc-warning); color: var(--rpc-warning); border-radius: 2px; white-space: nowrap; cursor: help; }
+.rpc-pd-parallel { font-family: var(--font-mono); font-size: 8.5px; letter-spacing: 1px; text-transform: uppercase; padding: 1px 5px; margin-left: 7px; border: 1px solid var(--rpc-warning); color: var(--rpc-warning-text); border-radius: 2px; white-space: nowrap; cursor: help; }
 .rpc-pd-td-set, .rpc-pd-td-tier { font-family: var(--font-mono); font-size: 11.5px; color: var(--rpc-text-muted); text-transform: capitalize; }
 .rpc-pd-td.rpc-pd-num { font-family: var(--font-mono); }
 .rpc-pd-rpc { color: var(--rpc-text-primary); font-weight: 700; }
@@ -521,8 +521,8 @@ const CSS = `
 
 .rpc-pd-caveats { font-family: var(--font-body); font-size: 12.5px; line-height: 1.55; color: var(--rpc-text-muted); margin: 14px 0 0; }
 .rpc-pd-caveats strong { color: var(--rpc-text-secondary); }
-.rpc-pd-star { color: var(--rpc-warning); font-weight: 700; }
-.rpc-pd-parallel-inline { font-family: var(--font-mono); font-size: 10px; letter-spacing: 1px; text-transform: uppercase; color: var(--rpc-warning); }
+.rpc-pd-star { color: var(--rpc-warning-text); font-weight: 700; }
+.rpc-pd-parallel-inline { font-family: var(--font-mono); font-size: 10px; letter-spacing: 1px; text-transform: uppercase; color: var(--rpc-warning-text); }
 
 .rpc-pd-odds { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--rpc-border-subtle); }
 .rpc-pd-sub { font-family: var(--font-mono); font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-muted); margin-bottom: 8px; }

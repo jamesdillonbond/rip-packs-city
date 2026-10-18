@@ -426,7 +426,7 @@ export default function AlertsClient() {
                         {failed.channels ? "status unavailable" : "checking…"}
                       </span>
                     ) : st?.verified ? (
-                      <span style={{ color: "#34d399", fontSize: 12, fontFamily: MONO }}>
+                      <span style={{ color: "var(--rpc-success-text)", fontSize: 12, fontFamily: MONO }}>
                         ✓ linked {st.target ? `(${st.target})` : ""}
                       </span>
                     ) : (
@@ -650,7 +650,7 @@ export default function AlertsClient() {
                         {a.fmv != null && <> · FMV ${a.fmv}</>}
                         {a.low_ask != null && <> · ask ${a.low_ask}</>}
                         {a.currently_triggered && (
-                          <span style={{ color: "#34d399", fontWeight: 700 }}> · triggered now</span>
+                          <span style={{ color: "var(--rpc-success-text)", fontWeight: 700 }}> · triggered now</span>
                         )}
                       </div>
                     </div>

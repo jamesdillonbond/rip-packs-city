@@ -244,7 +244,7 @@ export default function FmvHealthClient() {
                         {REASON_ICON[r.reason ?? ""] ?? "•"} {r.reason ?? "—"}
                       </Td>
                       <Td>{fmtUsd(r.fmv_before)}</Td>
-                      <Td style={{ color: "#34D399" }}>{fmtUsd(r.fmv_after)}</Td>
+                      <Td style={{ color: "var(--rpc-success-text)" }}>{fmtUsd(r.fmv_after)}</Td>
                       <Td style={{ color: "#EF4444" }}>
                         {r.pct_dropped != null ? `${Number(r.pct_dropped).toFixed(1)}%` : "—"}
                       </Td>

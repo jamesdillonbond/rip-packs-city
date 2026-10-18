@@ -589,7 +589,7 @@ export default function ProfileEditClient() {
                   RPC logo", so the field has to say so — the live preview above
                   shows it, but only once you look away from the input. */}
               {avatarWarning ? (
-                <div className="hint" data-testid="avatar-url-warning" style={{ color: "var(--rpc-warning)" }}>
+                <div className="hint" data-testid="avatar-url-warning" style={{ color: "var(--rpc-warning-text)" }}>
                   {avatarWarning}
                 </div>
               ) : (
@@ -624,15 +624,15 @@ export default function ProfileEditClient() {
             </div>
 
             {error && (
-              <div style={{ color: "var(--rpc-danger)", fontFamily: monoFont, fontSize: 12 }}>{error}</div>
+              <div style={{ color: "var(--rpc-danger-text)", fontFamily: monoFont, fontSize: 12 }}>{error}</div>
             )}
             {savedAt && !error && (
-              <div style={{ color: "var(--rpc-success)", fontFamily: monoFont, fontSize: 12 }}>
+              <div style={{ color: "var(--rpc-success-text)", fontFamily: monoFont, fontSize: 12 }}>
                 Saved at {new Date(savedAt).toLocaleTimeString()}
                 {publicUrl && (
                   <>
                     {" — "}
-                    <Link href={publicUrl} style={{ color: "var(--rpc-success)" }}>
+                    <Link href={publicUrl} style={{ color: "var(--rpc-success-text)" }}>
                       View public profile →
                     </Link>
                   </>

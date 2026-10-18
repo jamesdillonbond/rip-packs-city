@@ -18,6 +18,7 @@ import Link from "next/link";
 import SupportChatConnected from "@/components/SupportChatConnected";
 import SpecialSerialGlyph from "@/components/SpecialSerialGlyph";
 import type { OwnerRow, SpecialSerialTag, OwnersSortKey } from "@/lib/special-serial-owners-board";
+import { accentText } from "@/lib/accent-text"
 
 type BoardCollection = "nba-top-shot" | "nfl-all-day";
 type TagFilter = "all" | SpecialSerialTag;
@@ -300,7 +301,7 @@ export default function SpecialSerialOwnersClient() {
                         {r.tier ? (
                           <>
                             <span className="rpc-sso-dot">·</span>
-                            <span style={{ color: tierColor(r.tier) }}>{r.tier}</span>
+                            <span style={{ color: accentText(tierColor(r.tier)) }}>{r.tier}</span>
                           </>
                         ) : null}
                       </div>

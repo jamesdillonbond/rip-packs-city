@@ -14,11 +14,11 @@ export interface TierToken {
 }
 
 export const TIER_TOKEN: Record<Tier, TierToken> = {
-  COMMON:    { color: "var(--tier-common)",    bg: "var(--tier-common-bg)",    border: "var(--tier-common-border)",    label: "Common" },
-  FANDOM:    { color: "var(--tier-fandom)",    bg: "var(--tier-fandom-bg)",    border: "var(--tier-fandom-border)",    label: "Fandom" },
-  RARE:      { color: "var(--tier-rare)",      bg: "var(--tier-rare-bg)",      border: "var(--tier-rare-border)",      label: "Rare" },
-  LEGENDARY: { color: "var(--tier-legendary)", bg: "var(--tier-legendary-bg)", border: "var(--tier-legendary-border)", label: "Legendary" },
-  ULTIMATE:  { color: "var(--tier-ultimate)",  bg: "var(--tier-ultimate-bg)",  border: "var(--tier-ultimate-border)",  label: "Ultimate" },
+  COMMON:    { color: "var(--tier-common-text)",    bg: "var(--tier-common-bg)",    border: "var(--tier-common-border)",    label: "Common" },
+  FANDOM:    { color: "var(--tier-fandom-text)",    bg: "var(--tier-fandom-bg)",    border: "var(--tier-fandom-border)",    label: "Fandom" },
+  RARE:      { color: "var(--tier-rare-text)",      bg: "var(--tier-rare-bg)",      border: "var(--tier-rare-border)",      label: "Rare" },
+  LEGENDARY: { color: "var(--tier-legendary-text)", bg: "var(--tier-legendary-bg)", border: "var(--tier-legendary-border)", label: "Legendary" },
+  ULTIMATE:  { color: "var(--tier-ultimate-text)",  bg: "var(--tier-ultimate-bg)",  border: "var(--tier-ultimate-border)",  label: "Ultimate" },
 }
 
 // Rarest → most common; drives the Run Progress grouping order.

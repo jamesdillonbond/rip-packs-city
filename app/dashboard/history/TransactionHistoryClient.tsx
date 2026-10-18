@@ -299,7 +299,7 @@ export default function TransactionHistoryClient() {
             {historyLoading ? (
               <div style={{ padding: 18, fontFamily: monoFont, fontSize: 12, color: "rgba(255,255,255,0.5)", textAlign: "center" }}>Loading history…</div>
             ) : historyError ? (
-              <div style={{ padding: 14, fontFamily: monoFont, fontSize: 12, color: "#F87171" }}>{historyError}</div>
+              <div style={{ padding: 14, fontFamily: monoFont, fontSize: 12, color: "var(--rpc-danger-text)" }}>{historyError}</div>
             ) : !history || history.events.length === 0 ? (
               <div style={{ padding: 28, textAlign: "center", color: "rgba(255,255,255,0.55)", fontFamily: monoFont, fontSize: 12 }}>
                 No activity for this filter.

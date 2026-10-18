@@ -192,14 +192,14 @@ export default function TrophyNoteEditor({
             marginLeft: "auto",
             fontFamily: MONO,
             fontSize: 9,
-            color: remaining <= 10 ? "var(--rpc-warning)" : "var(--rpc-text-muted)",
+            color: remaining <= 10 ? "var(--rpc-warning-text)" : "var(--rpc-text-muted)",
           }}
         >
           {remaining}
         </span>
       </div>
       {error && (
-        <div style={{ fontFamily: MONO, fontSize: 9, color: "var(--rpc-danger)" }}>
+        <div style={{ fontFamily: MONO, fontSize: 9, color: "var(--rpc-danger-text)" }}>
           {error}
         </div>
       )}

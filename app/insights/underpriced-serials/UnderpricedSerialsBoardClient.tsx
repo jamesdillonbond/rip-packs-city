@@ -35,6 +35,7 @@ import type {
 import { sectionEmptyCopy } from "@/lib/entity/section-empty-copy"
 import { usdSignFirst } from "@/lib/usd-format"
 import { trackOutboundClick } from "@/lib/track-click"
+import { accentText } from "@/lib/accent-text"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -173,7 +174,7 @@ function HeroTile({ r }: { r: Row }) {
           <span className="rpc-us-prices-est">{fmtMoney(r.serial_fmv_usd)} est</span>
         </div>
         <div className="rpc-us-hero-meta">
-          <span style={{ color: tierColor(r.tier) }}>{normalizeTier(r.tier) ?? "—"}</span>
+          <span style={{ color: accentText(tierColor(r.tier)) }}>{normalizeTier(r.tier) ?? "—"}</span>
           {r.estimate_quality === "coarse" ? (
             <>
               <span className="rpc-us-dot">·</span>
@@ -206,7 +207,7 @@ function BoardRow({ r, rank }: { r: Row; rank: number }) {
           {normalizeTier(r.tier) ? (
             <>
               <span className="rpc-us-dot">·</span>
-              <span style={{ color: tierColor(r.tier) }}>{normalizeTier(r.tier)}</span>
+              <span style={{ color: accentText(tierColor(r.tier)) }}>{normalizeTier(r.tier)}</span>
             </>
           ) : null}
           {r.estimate_quality === "coarse" ? (
@@ -628,7 +629,7 @@ const CSS = `
 .rpc-us-lede strong { color: var(--rpc-text-primary); }
 .rpc-us-meta-row { font-family: var(--font-mono); font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-muted); }
 .rpc-us-meta-sep { margin: 0 8px; color: var(--rpc-text-muted); }
-.rpc-us-stale { color: var(--rpc-warning); }
+.rpc-us-stale { color: var(--rpc-warning-text); }
 
 .rpc-us-kpi-row { max-width: 1180px; margin: 0 auto 26px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .rpc-us-kpi { border: 1px solid var(--rpc-border-subtle); background: var(--rpc-surface-raised); padding: 14px 16px; border-radius: 2px; }

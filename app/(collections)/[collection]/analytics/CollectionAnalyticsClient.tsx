@@ -656,9 +656,9 @@ function FmvHealthCard({ short, countNoun }: { short: string; countNoun: string 
             )}
           </div>
           <div className="mt-2 flex flex-wrap gap-3 text-[11px]" style={{ fontFamily: "var(--font-mono)" }}>
-            <span style={{ color: "var(--rpc-success)" }}>{totals.high.toLocaleString("en-US")} high</span>
+            <span style={{ color: "var(--rpc-success-text)" }}>{totals.high.toLocaleString("en-US")} high</span>
             <span className="text-[color:var(--rpc-text-muted)]">·</span>
-            <span style={{ color: "var(--rpc-warning)" }}>{totals.low.toLocaleString("en-US")} low</span>
+            <span style={{ color: "var(--rpc-warning-text)" }}>{totals.low.toLocaleString("en-US")} low</span>
             <span className="text-[color:var(--rpc-text-muted)]">·</span>
             <span className="text-[color:var(--rpc-text-muted)]">{totals.edition.toLocaleString("en-US")} {countNoun}</span>
           </div>
@@ -716,7 +716,7 @@ function PackEvCard({ short, urlSlug }: { short: string; urlSlug: string }) {
           <div className="mt-2 grid grid-cols-2 gap-2 text-[11px]" style={{ fontFamily: "var(--font-mono)" }}>
             <div>
               <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Positive EV</div>
-              <div style={{ color: positive > 0 ? "var(--rpc-success)" : "var(--rpc-text-muted)" }}>{positive.toLocaleString("en-US")}</div>
+              <div style={{ color: positive > 0 ? "var(--rpc-success-text)" : "var(--rpc-text-muted)" }}>{positive.toLocaleString("en-US")}</div>
             </div>
             <div>
               <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Avg ratio</div>
@@ -1243,7 +1243,7 @@ function AnalyticsInner() {
           style={{
             border: "1px solid var(--rpc-warning)",
             background: "rgba(245,158,11,0.08)",
-            color: "var(--rpc-warning)",
+            color: "var(--rpc-warning-text)",
             fontFamily: "var(--font-mono)",
           }}
         >
@@ -1800,7 +1800,7 @@ function AnalyticsInner() {
                     <div className={(acq!.trade_count ?? 0) > 0 ? "grid grid-cols-2 gap-3 sm:grid-cols-4" : "grid grid-cols-3 gap-3"}>
                       <div>
                         <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Packs Pulled</div>
-                        <div className="text-3xl font-black" style={{ color: "var(--tier-uncommon)", fontFamily: "var(--font-mono)" }}>{acq!.pack_pull_count.toLocaleString("en-US")}</div>
+                        <div className="text-3xl font-black" style={{ color: "var(--tier-uncommon-text)", fontFamily: "var(--font-mono)" }}>{acq!.pack_pull_count.toLocaleString("en-US")}</div>
                       </div>
                       <div>
                         <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Marketplace Buys</div>
@@ -1808,7 +1808,7 @@ function AnalyticsInner() {
                       </div>
                       <div>
                         <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Challenge Rewards</div>
-                        <div className="text-3xl font-black" style={{ color: "var(--rpc-warning)", fontFamily: "var(--font-mono)" }}>{acq!.challenge_reward_count.toLocaleString("en-US")}</div>
+                        <div className="text-3xl font-black" style={{ color: "var(--rpc-warning-text)", fontFamily: "var(--font-mono)" }}>{acq!.challenge_reward_count.toLocaleString("en-US")}</div>
                       </div>
                       {/* Pinnacle peer-to-peer trades. Shown only when the wallet
                           has any, because every other collection's trade_count is
@@ -1817,7 +1817,7 @@ function AnalyticsInner() {
                       {(acq!.trade_count ?? 0) > 0 && (
                         <div>
                           <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Traded</div>
-                          <div className="text-3xl font-black" style={{ color: "var(--rpc-info)", fontFamily: "var(--font-mono)" }}>{(acq!.trade_count ?? 0).toLocaleString("en-US")}</div>
+                          <div className="text-3xl font-black" style={{ color: "var(--rpc-info-text)", fontFamily: "var(--font-mono)" }}>{(acq!.trade_count ?? 0).toLocaleString("en-US")}</div>
                         </div>
                       )}
                     </div>
@@ -1926,7 +1926,7 @@ function AnalyticsInner() {
                       <div className="rounded-lg border border-[color:var(--rpc-border)] bg-[var(--rpc-black)] p-3">
                         <div className="flex items-center justify-between">
                           <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Flowty</div>
-                          <span className="rounded px-1.5 py-0.5 text-[9px] font-semibold" style={{ color: "var(--tier-uncommon)", border: "1px solid rgba(20,184,166,0.35)", background: "rgba(20,184,166,0.10)", fontFamily: "var(--font-mono)" }}>Flowty</span>
+                          <span className="rounded px-1.5 py-0.5 text-[9px] font-semibold" style={{ color: "var(--tier-uncommon-text)", border: "1px solid rgba(20,184,166,0.35)", background: "rgba(20,184,166,0.10)", fontFamily: "var(--font-mono)" }}>Flowty</span>
                         </div>
                         <div className="mt-1 text-xl font-black text-[color:var(--rpc-text-primary)]" style={{ fontFamily: "var(--font-mono)" }}>{(fl.count ?? 0).toLocaleString("en-US")}</div>
                         <div className="mt-1 text-[11px] text-[color:var(--rpc-text-muted)]">purchases · {fmt(Number(fl.total_spent ?? 0))}</div>

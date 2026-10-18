@@ -153,7 +153,7 @@ export default function InsiderSignalsPanel({
       {error ? (
         <div
           className="rpc-mono"
-          style={{ color: "var(--rpc-danger)", fontSize: "var(--text-xs)", padding: "8px 0" }}
+          style={{ color: "var(--rpc-danger-text)", fontSize: "var(--text-xs)", padding: "8px 0" }}
         >
           Couldn&rsquo;t load insider signals.
         </div>

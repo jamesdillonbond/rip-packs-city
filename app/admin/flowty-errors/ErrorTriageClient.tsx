@@ -120,7 +120,7 @@ function statusBadgeStyle(status: string): React.CSSProperties {
     case "needs_trevor":
       return { color: "var(--rpc-red-text)", borderColor: "var(--rpc-red-border)", background: "var(--rpc-red-bg)" };
     case "fixed":
-      return { color: "var(--rpc-success)", borderColor: "rgba(52,211,153,0.45)", background: "rgba(52,211,153,0.08)" };
+      return { color: "var(--rpc-success-text)", borderColor: "rgba(52,211,153,0.45)", background: "rgba(52,211,153,0.08)" };
     case "wontfix":
     case "duplicate":
       return { color: "var(--rpc-text-muted)", borderColor: "var(--rpc-border)", background: "rgba(255,255,255,0.03)" };
@@ -135,7 +135,7 @@ function sourceBadgeStyle(source: string): React.CSSProperties {
     return { color: "#A855F7", borderColor: "rgba(168,85,247,0.45)", background: "rgba(168,85,247,0.08)" };
   }
   if (source === "onchain") {
-    return { color: "#F59E0B", borderColor: "rgba(245,158,11,0.45)", background: "rgba(245,158,11,0.08)" };
+    return { color: "var(--rpc-warning-text)", borderColor: "rgba(245,158,11,0.45)", background: "rgba(245,158,11,0.08)" };
   }
   return { color: "var(--rpc-text-muted)", borderColor: "var(--rpc-border)", background: "rgba(255,255,255,0.03)" };
 }
@@ -270,7 +270,7 @@ function SignInGate() {
           style={{ width: "100%", marginBottom: 12 }}
         />
         {err && (
-          <div style={{ color: "var(--rpc-danger)", fontFamily: "var(--font-mono)", fontSize: 11, marginBottom: 10 }}>
+          <div style={{ color: "var(--rpc-danger-text)", fontFamily: "var(--font-mono)", fontSize: 11, marginBottom: 10 }}>
             {err}
           </div>
         )}
@@ -946,13 +946,13 @@ function TriageForm({
           placeholder="Context for future-you"
         />
       </FormField>
-      {err && <div style={{ color: "var(--rpc-danger)", fontFamily: "var(--font-mono)", fontSize: 11 }}>{err}</div>}
+      {err && <div style={{ color: "var(--rpc-danger-text)", fontFamily: "var(--font-mono)", fontSize: 11 }}>{err}</div>}
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
         <button onClick={onSave} disabled={saving} className="rpc-btn-ghost">
           {saving ? "Saving…" : "Save"}
         </button>
         {savedAt && (
-          <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-success)" }}>
+          <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-success-text)" }}>
             saved {timeAgo(new Date(savedAt).toISOString())}
           </span>
         )}
@@ -1002,7 +1002,7 @@ const errorBannerStyle: React.CSSProperties = {
   padding: "10px 14px",
   background: "rgba(248, 113, 113, 0.08)",
   border: "1px solid rgba(248, 113, 113, 0.4)",
-  color: "var(--rpc-danger)",
+  color: "var(--rpc-danger-text)",
   fontFamily: "var(--font-mono)",
   fontSize: 12,
   borderRadius: "var(--radius-md)",

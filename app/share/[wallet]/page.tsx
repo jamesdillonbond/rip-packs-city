@@ -13,6 +13,7 @@ import { buildSeriesBarsFrom, compactSeriesLabel, closedMarketNote, shareHeadlin
 import { OG_INHERITED } from "@/lib/seo"
 import { normalizeAddress } from "@/lib/address"
 import { momentSubjectName } from "@/lib/entity-href"
+import { accentText } from "@/lib/accent-text"
 
 interface SnapshotData {
   wallet: string
@@ -515,7 +516,7 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
                 )}
                 <div style={{ padding: "10px 12px" }}>
                   <div style={{ fontWeight: 700, fontSize: 14, color: "var(--rpc-text-primary)", marginBottom: 2 }}>{m.playerName}</div>
-                  <div style={{ fontSize: 11, color: TIER_COLORS[m.tier?.toLowerCase()] ?? "var(--tier-common)", fontFamily: "monospace" }}>{m.tier}</div>
+                  <div style={{ fontSize: 11, color: accentText(TIER_COLORS[m.tier?.toLowerCase()]) ?? "var(--tier-common-text)", fontFamily: "monospace" }}>{m.tier}</div>
                   <div style={{ fontSize: 11, color: "var(--rpc-text-secondary)", fontFamily: "monospace", marginTop: 2 }}>{m.setName}</div>
                   <div style={{ fontSize: 16, fontWeight: 800, color: "var(--rpc-red-text)", marginTop: 6 }}>${m.fmv.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                 </div>
@@ -540,7 +541,7 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
               <div style={{ flex: "1 1 140px", minWidth: 0 }}>
                 <div style={{ fontWeight: 800, fontSize: 20, color: "var(--rpc-text-primary)" }}>{data.rarest.playerName}</div>
                 <div style={{ fontSize: 13, color: "var(--rpc-text-secondary)", fontFamily: "monospace", marginTop: 2 }}>{data.rarest.setName}</div>
-                <div style={{ fontSize: 13, color: TIER_COLORS[data.rarest.tier?.toLowerCase() ?? ""] ?? "var(--tier-common)", fontFamily: "monospace", marginTop: 4 }}>
+                <div style={{ fontSize: 13, color: accentText(TIER_COLORS[data.rarest.tier?.toLowerCase() ?? ""]) ?? "var(--tier-common-text)", fontFamily: "monospace", marginTop: 4 }}>
                   {data.rarest.tier ?? ""}
                   {data.rarest.serial != null && data.rarest.mintCount != null
                     ? `  ·  #${data.rarest.serial} / ${data.rarest.mintCount}`

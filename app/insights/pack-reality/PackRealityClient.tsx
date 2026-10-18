@@ -746,8 +746,8 @@ const CSS = `
 .rpc-pr-td-num { text-align: right; font-family: var(--font-mono); color: var(--rpc-text-primary); white-space: nowrap; }
 .rpc-pr-td-emph { color: var(--rpc-red-text); font-weight: 700; }
 .rpc-pr-td-soft { color: var(--rpc-text-muted); }
-.rpc-pr-variance-chip { font-family: var(--font-mono); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; padding: 4px 8px; background: rgba(245,158,11,0.10); color: var(--rpc-warning); border: 1px solid rgba(245,158,11,0.30); border-radius: 2px; }
-.rpc-pr-clean-chip { font-family: var(--font-mono); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; padding: 4px 8px; background: rgba(52,211,153,0.10); color: var(--rpc-success); border: 1px solid rgba(52,211,153,0.30); border-radius: 2px; }
+.rpc-pr-variance-chip { font-family: var(--font-mono); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; padding: 4px 8px; background: rgba(245,158,11,0.10); color: var(--rpc-warning-text); border: 1px solid rgba(245,158,11,0.30); border-radius: 2px; }
+.rpc-pr-clean-chip { font-family: var(--font-mono); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; padding: 4px 8px; background: rgba(52,211,153,0.10); color: var(--rpc-success-text); border: 1px solid rgba(52,211,153,0.30); border-radius: 2px; }
 
 .rpc-pr-degraded { margin: 0 0 16px; padding: 12px 16px; border: 1px solid var(--rpc-red); border-left-width: 4px; background: color-mix(in srgb, var(--rpc-red) 10%, transparent); font-family: var(--font-mono); font-size: 12px; letter-spacing: 1px; text-transform: uppercase; color: var(--rpc-text-primary); }
 .rpc-pr-state { padding: 28px; text-align: center; font-family: var(--font-mono); font-size: 13px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-muted); }
@@ -765,7 +765,7 @@ const CSS = `
 .rpc-pr-mvr-table { font-size: 13px; }
 .rpc-pr-td-2nd { color: var(--rpc-text-muted); font-size: 11px; margin-left: 6px; }
 .rpc-pr-reality-bad { color: var(--rpc-red-text); font-weight: 700; }
-.rpc-pr-reality-good { color: var(--rpc-success); font-weight: 700; }
+.rpc-pr-reality-good { color: var(--rpc-success-text); font-weight: 700; }
 .rpc-pr-reality-on { color: var(--rpc-text-secondary); font-weight: 700; }
 
 .rpc-pr-footer { max-width: 1180px; margin: 36px auto 0; display: grid; grid-template-columns: 2fr 1fr; gap: 32px; }

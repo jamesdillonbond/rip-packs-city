@@ -105,7 +105,7 @@ export default function CostBasisCard({ wallet, urlSlug }: { wallet: string; url
       {(gainers.length > 0 || losers.length > 0) && (
         <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div className="rounded-lg border border-[color:var(--rpc-border)] bg-[var(--rpc-black)] p-3">
-            <div className="mb-2 text-[10px] uppercase tracking-widest" style={{ color: "var(--rpc-success)" }}>Top Gainers</div>
+            <div className="mb-2 text-[10px] uppercase tracking-widest" style={{ color: "var(--rpc-success-text)" }}>Top Gainers</div>
             {gainers.length === 0 ? (
               <div className="text-[11px] text-[color:var(--rpc-text-muted)]">No tracked gainers.</div>
             ) : (
@@ -115,7 +115,7 @@ export default function CostBasisCard({ wallet, urlSlug }: { wallet: string; url
             )}
           </div>
           <div className="rounded-lg border border-[color:var(--rpc-border)] bg-[var(--rpc-black)] p-3">
-            <div className="mb-2 text-[10px] uppercase tracking-widest" style={{ color: "var(--rpc-danger)" }}>Top Losers</div>
+            <div className="mb-2 text-[10px] uppercase tracking-widest" style={{ color: "var(--rpc-danger-text)" }}>Top Losers</div>
             {losers.length === 0 ? (
               <div className="text-[11px] text-[color:var(--rpc-text-muted)]">No tracked losers.</div>
             ) : (

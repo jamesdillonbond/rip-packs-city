@@ -951,7 +951,7 @@ export default async function EditionPage(
         <StatCell
           label="24h Change"
           value={dayDelta === null ? EM_DASH : (
-            <span style={{ color: dayDelta >= 0 ? "var(--rpc-success)" : "var(--rpc-danger)" }}>
+            <span style={{ color: dayDelta >= 0 ? "var(--rpc-success-text)" : "var(--rpc-danger-text)" }}>
               {fmtPercent(dayDelta)}
             </span>
           )}
@@ -976,7 +976,7 @@ export default async function EditionPage(
                   ? (
                     // REPORTS, never concludes: it does not say the listing is gone,
                     // only that we have not re-checked it.
-                    <span style={{ color: "var(--rpc-warning)", fontWeight: 600 }} title={askAgeTitle(askAge, askStampKind(collection))}>
+                    <span style={{ color: "var(--rpc-warning-text)", fontWeight: 600 }} title={askAgeTitle(askAge, askStampKind(collection))}>
                       ⚠ ask unconfirmed {fmtAskAge(askAge)}
                     </span>
                   )
@@ -1264,7 +1264,7 @@ export default async function EditionPage(
               >
                 {Math.round(insightLinks.deal_pct)}% below FMV
                 {askAge !== null && askAge >= ASK_STALE_HOURS && (
-                  <span style={{ color: "var(--rpc-warning)", fontWeight: 600 }}>
+                  <span style={{ color: "var(--rpc-warning-text)", fontWeight: 600 }}>
                     {" "}· ask {fmtAskAge(askAge)} old
                   </span>
                 )}{" "}

@@ -255,7 +255,7 @@ function SignInGate({ onSignedIn }: { onSignedIn: (t: string) => void }) {
           style={{ width: "100%", marginBottom: 12 }}
         />
         {err && (
-          <div style={{ color: "var(--rpc-danger)", fontFamily: "var(--font-mono)", fontSize: 11, marginBottom: 10 }}>
+          <div style={{ color: "var(--rpc-danger-text)", fontFamily: "var(--font-mono)", fontSize: 11, marginBottom: 10 }}>
             {err}
           </div>
         )}
@@ -415,7 +415,7 @@ function Dashboard({ token, onSignOut }: { token: string; onSignOut: () => void 
               padding: "10px 14px",
               background: "rgba(248, 113, 113, 0.08)",
               border: "1px solid rgba(248, 113, 113, 0.4)",
-              color: "var(--rpc-danger)",
+              color: "var(--rpc-danger-text)",
               fontFamily: "var(--font-mono)",
               fontSize: 12,
               borderRadius: "var(--radius-md)",

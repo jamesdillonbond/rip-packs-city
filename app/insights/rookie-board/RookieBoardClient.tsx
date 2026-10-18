@@ -24,6 +24,7 @@ import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
 import type { RookieEditionRow as Row } from "@/lib/rookie-edition-board"
 import { PARALLEL_ORDER } from "@/lib/rookie-edition-board"
 import { usdSignFirst } from "@/lib/usd-format"
+import { accentText } from "@/lib/accent-text"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -161,7 +162,7 @@ function PlayerCard({ g }: { g: PlayerGroup }) {
               <div className="rpc-rb-set-title">
                 <div className="rpc-rb-set-name">{s.setName}</div>
                 <div className="rpc-rb-set-sub">
-                  <span style={{ color: tierColor(s.tier) }}>{normalizeTier(s.tier) ?? "—"}</span>
+                  <span style={{ color: accentText(tierColor(s.tier)) }}>{normalizeTier(s.tier) ?? "—"}</span>
                   {s.series != null ? (
                     <>
                       <span className="rpc-rb-dot">·</span>
@@ -207,7 +208,7 @@ function BurnRow({ r, rank }: { r: Row; rank: number }) {
         <div className="rpc-rb-brow-sub">
           <span>{r.set_name}</span>
           <span className="rpc-rb-dot">·</span>
-          <span style={{ color: tierColor(r.tier) }}>{normalizeTier(r.tier)}</span>
+          <span style={{ color: accentText(tierColor(r.tier)) }}>{normalizeTier(r.tier)}</span>
           <span className="rpc-rb-dot">·</span>
           <span>/ {fmtInt(r.circulation_count)}</span>
         </div>

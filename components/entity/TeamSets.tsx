@@ -104,7 +104,7 @@ export default function TeamSets({
               {s.set_name ?? s.set_slug}
             </div>
             <div style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-              <div className="rpc-mono" style={{ fontSize: 12, color: tracking && s.owned != null ? (ownAll ? "#34D399" : "var(--rpc-text-primary)") : "var(--rpc-text-secondary)" }}>
+              <div className="rpc-mono" style={{ fontSize: 12, color: tracking && s.owned != null ? (ownAll ? "var(--rpc-success-text)" : "var(--rpc-text-primary)") : "var(--rpc-text-secondary)" }}>
                 {tracking && s.owned != null ? `${fmtCount(s.owned)} / ${fmtCount(s.editions)}` : fmtCount(s.editions)}
               </div>
               <div className="rpc-mono" style={{ fontSize: 9, color: "var(--rpc-text-muted)", letterSpacing: "0.10em" }}>

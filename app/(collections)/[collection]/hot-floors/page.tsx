@@ -123,7 +123,7 @@ export default async function HotFloorsPage(props: { params: Promise<{ collectio
                           <span style={{ fontSize: 11, color: "var(--rpc-text-muted)" }}>
                             {e.set_name ?? "—"}
                             {tier && (
-                              <span style={{ marginLeft: 6, color: TIER_COLOR[tier] ?? "var(--rpc-text-muted)", fontWeight: 700 }}>{tier}</span>
+                              <span style={{ marginLeft: 6, color: accentText(TIER_COLOR[tier]) ?? "var(--rpc-text-muted)", fontWeight: 700 }}>{tier}</span>
                             )}
                           </span>
                         </span>

@@ -22,6 +22,7 @@ import { feeNetDeal } from "@/lib/marketplace-fees"
 import { proxyIpfsImageUrl } from "@/lib/ipfs-media"
 import { askAgeTitle, askStampKind } from "@/lib/market/ask-freshness"
 import { usdSignFirst } from "@/lib/usd-format"
+import { accentText } from "@/lib/accent-text"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -601,7 +602,7 @@ export default function DealsBoardClient({
                       )}
                     </td>
                     <td className="rpc-dl-td-num">
-                      <span className="rpc-dl-tier-chip" style={{ color: tierColor(r.tier) }}>
+                      <span className="rpc-dl-tier-chip" style={{ color: accentText(tierColor(r.tier)) }}>
                         {normalizeTier(r.tier) ?? "—"}
                       </span>
                     </td>
@@ -718,7 +719,7 @@ export default function DealsBoardClient({
             gross discount do not survive that; those are flagged.
           </p>
           <p>
-            Rows marked <span style={{ color: "var(--rpc-warning)", fontWeight: 600 }}>⚠ thin data</span>{" "}
+            Rows marked <span style={{ color: "var(--rpc-warning-text)", fontWeight: 600 }}>⚠ thin data</span>{" "}
             have an FMV averaged over very few, wide-ranging sales, so it
             overshoots the typical price and the discount is uncertain — we show
             the edition but flag it rather than headline a number we don&apos;t
@@ -791,7 +792,7 @@ const CSS = `
   color: var(--rpc-text-muted);
 }
 .rpc-dl-meta-sep { margin: 0 8px; color: var(--rpc-text-muted); }
-.rpc-dl-meta-warn { color: var(--rpc-warning); font-weight: 600; }
+.rpc-dl-meta-warn { color: var(--rpc-warning-text); font-weight: 600; }
 
 .rpc-dl-active-filter {
   max-width: 1180px;
@@ -1025,7 +1026,7 @@ const CSS = `
   display: block;
   font-size: 10px;
   letter-spacing: 0.5px;
-  color: var(--rpc-warning);
+  color: var(--rpc-warning-text);
   font-weight: 600;
   margin-top: 2px;
   white-space: normal;
@@ -1035,7 +1036,7 @@ const CSS = `
   display: block;
   font-size: 10px;
   letter-spacing: 0.5px;
-  color: var(--rpc-warning);
+  color: var(--rpc-warning-text);
   font-weight: 600;
   margin-top: 2px;
   white-space: normal;

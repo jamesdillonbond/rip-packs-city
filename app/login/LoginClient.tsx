@@ -297,7 +297,7 @@ export default function LoginClient() {
                 border: "1px solid rgba(248,113,113,0.3)",
                 borderRadius: "var(--radius-sm)",
                 fontFamily: "var(--font-mono)",
-                fontSize: 11, color: "var(--rpc-danger)",
+                fontSize: 11, color: "var(--rpc-danger-text)",
               }}>
                 {String(error).trim() || "Something went wrong — please try again."}
               </div>

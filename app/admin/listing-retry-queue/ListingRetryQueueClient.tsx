@@ -514,7 +514,7 @@ function RowsTable({ token, collectionsWithRows }: { token: string; collectionsW
                   <Td>{r.flow_id}</Td>
                   <Td>{r.listing_resource_id}</Td>
                   <Td><span style={{ color: "var(--rpc-text-muted)" }}>{r.failure_reason}</span></Td>
-                  <Td><span style={{ color: r.retry_count >= 10 ? "#EF4444" : r.retry_count >= 5 ? "#F59E0B" : "var(--rpc-text-secondary)" }}>{r.retry_count}</span></Td>
+                  <Td><span style={{ color: r.retry_count >= 10 ? "#EF4444" : r.retry_count >= 5 ? "var(--rpc-warning-text)" : "var(--rpc-text-secondary)" }}>{r.retry_count}</span></Td>
                   <Td>{r.age_hours.toFixed(1)}</Td>
                   <Td>{r.last_retry_at ? ageLabel(r.last_retry_at) : "never"}</Td>
                   <Td>
@@ -532,7 +532,7 @@ function RowsTable({ token, collectionsWithRows }: { token: string; collectionsW
                       {forcing === r.id ? "…" : "Force retry"}
                     </button>
                     {result && (
-                      <div style={{ marginTop: 4, fontSize: 10, color: result.resolved ? "#34D399" : "#F87171" }}>
+                      <div style={{ marginTop: 4, fontSize: 10, color: result.resolved ? "var(--rpc-success-text)" : "var(--rpc-danger-text)" }}>
                         {result.resolved ? "resolved ✓" : (result.reason ?? "unresolved")}
                       </div>
                     )}

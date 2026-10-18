@@ -36,7 +36,7 @@ export default function FlowtyDormancyChip({ collectionSlug }: Props) {
         background: "rgba(59,130,246,0.08)",
         border: "1px solid rgba(59,130,246,0.25)",
         borderRadius: "var(--radius-sm)",
-        color: "var(--rpc-info)",
+        color: "var(--rpc-info-text)",
         fontSize: "var(--text-xs)",
         letterSpacing: "0.04em",
       }}

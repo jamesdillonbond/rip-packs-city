@@ -233,7 +233,7 @@ export default function BetaActivityClient() {
                     <div style={{ color: "rgba(255,255,255,0.5)", fontSize: 10 }}>{r.email}</div>
                   </Td>
                   <Td>{truncAddr(r.wallet_addr)}</Td>
-                  <Td style={{ fontWeight: 700, color: r.page_views_7d > 0 ? "#34D399" : "rgba(255,255,255,0.5)" }}>
+                  <Td style={{ fontWeight: 700, color: r.page_views_7d > 0 ? "var(--rpc-success-text)" : "rgba(255,255,255,0.5)" }}>
                     {r.page_views_7d}
                   </Td>
                   <Td>{relTime(r.last_seen_at)}</Td>

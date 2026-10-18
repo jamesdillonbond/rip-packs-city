@@ -307,7 +307,7 @@ export default function WalletPacksView({ collection }: { collection: string }) 
         {loading ? (
           <div style={{ padding: 24, textAlign: "center", fontFamily: mono, fontSize: 12, color: "var(--rpc-text-muted)" }}>Loading packs…</div>
         ) : error ? (
-          <div style={{ padding: 16, fontFamily: mono, fontSize: 12, color: "#F87171" }}>{error}</div>
+          <div style={{ padding: 16, fontFamily: mono, fontSize: 12, color: "var(--rpc-danger-text)" }}>{error}</div>
         ) : !history || history.packs.length === 0 ? (
           <div style={{ padding: 26, textAlign: "center", fontFamily: mono, fontSize: 12, color: "var(--rpc-text-muted)" }}>
             {packFilter === "unopened"

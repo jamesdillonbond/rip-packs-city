@@ -243,7 +243,7 @@ export default function EarlyAccessClient() {
                 aria-invalid={wallet.length > 0 && !walletValid}
               />
               {wallet.length > 0 && !walletValid && (
-                <div style={{ marginTop: 6, fontSize: 11, color: "#F87171" }}>
+                <div style={{ marginTop: 6, fontSize: 11, color: "var(--rpc-danger-text)" }}>
                   Wallet must be 0x + 16 hex characters.
                 </div>
               )}
@@ -342,7 +342,7 @@ export default function EarlyAccessClient() {
               <div
                 style={{
                   fontSize: 12,
-                  color: "#F87171",
+                  color: "var(--rpc-danger-text)",
                   background: "rgba(248,113,113,0.08)",
                   border: "1px solid rgba(248,113,113,0.3)",
                   borderRadius: 6,

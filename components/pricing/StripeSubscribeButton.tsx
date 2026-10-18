@@ -75,7 +75,7 @@ export default function StripeSubscribeButton({ style }: { style?: React.CSSProp
         {loading ? "Loading…" : "Subscribe — $9.99 / mo"}
       </button>
       {err && (
-        <div style={{ color: "#F87171", fontFamily: "var(--font-mono)", fontSize: 11 }}>
+        <div style={{ color: "var(--rpc-danger-text)", fontFamily: "var(--font-mono)", fontSize: 11 }}>
           {err}
         </div>
       )}

@@ -66,7 +66,7 @@ export function CopyButton({ value, label }: { value: string; label?: string }) 
         background: "transparent",
         border: "1px solid var(--rpc-border)",
         borderRadius: "var(--radius-sm)",
-        color: copied ? "var(--rpc-success)" : "var(--rpc-text-muted)",
+        color: copied ? "var(--rpc-success-text)" : "var(--rpc-text-muted)",
         fontFamily: "var(--font-mono)",
         fontSize: 9,
         lineHeight: 1,

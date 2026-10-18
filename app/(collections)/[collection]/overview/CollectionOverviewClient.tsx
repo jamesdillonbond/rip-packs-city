@@ -10,6 +10,7 @@ import { toolCardDesc } from "@/lib/collection/closed-market-chrome"
 import PaniniCoverageNote from "@/components/collection/PaniniCoverageNote"
 import { trackOutboundClick } from "@/lib/track-click"
 import type { PaniniCoverage } from "@/lib/panini/coverage"
+import { accentText } from "@/lib/accent-text"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -519,7 +520,7 @@ export default function CollectionOverviewClient({
                   <>
                     <div>
                       <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: "var(--text-base)", color: "var(--rpc-text-primary)" }}>{name}</div>
-                      <div className="rpc-mono" style={{ color: tierColor(deal.tier, collection), fontSize: "var(--text-xs)" }}>
+                      <div className="rpc-mono" style={{ color: accentText(tierColor(deal.tier, collection)), fontSize: "var(--text-xs)" }}>
                         {deal.tier ?? ""}
                         {deal.set_name ? <> &middot; <span style={{ color: "var(--rpc-text-muted)" }}>{deal.set_name}</span></> : null}
                       </div>
@@ -615,12 +616,12 @@ export default function CollectionOverviewClient({
 
           <div style={{ display: "flex", gap: 16, justifyContent: "center", marginTop: 14 }}>
             {[
-              { color: "#34D399", label: "< 30 min" },
-              { color: "#F59E0B", label: "30\u201360 min" },
-              { color: "var(--rpc-red-text)", label: "> 60 min" },
+              { tone: "#34D399", label: "< 30 min" },
+              { tone: "#F59E0B", label: "30\u201360 min" },
+              { tone: "var(--rpc-red)", label: "> 60 min" },
             ].map((item) => (
               <div key={item.label} style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                <div style={{ width: 6, height: 6, borderRadius: "50%", background: item.color }} />
+                <div style={{ width: 6, height: 6, borderRadius: "50%", background: item.tone }} />
                 <span className="rpc-mono" style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-muted)" }}>{item.label}</span>
               </div>
             ))}
@@ -681,13 +682,13 @@ export default function CollectionOverviewClient({
                     <div>
                       <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: "var(--text-base)", color: "var(--rpc-text-primary)" }}>{name}</div>
                       <div className="rpc-mono" style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-muted)", marginTop: 2 }}>
-                        {sale.tier && <span style={{ color: tierColor(sale.tier, collection) }}>{sale.tier}</span>}
+                        {sale.tier && <span style={{ color: accentText(tierColor(sale.tier, collection)) }}>{sale.tier}</span>}
                         {sale.set_name && <>{sale.tier ? " \u00B7 " : ""}{sale.set_name}</>}
                         {serialDisplay && <> &middot; {serialDisplay}</>}
                         {ageMin != null && <> &middot; {fmtAge(ageMin)}</>}
                       </div>
                     </div>
-                    <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: "var(--text-lg)", color: "#34D399", textAlign: "right" }}>
+                    <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: "var(--text-lg)", color: "var(--rpc-success-text)", textAlign: "right" }}>
                       {fmtPrice(sale.price)}
                     </div>
                   </div>
@@ -851,17 +852,17 @@ export default function CollectionOverviewClient({
             // lib/collection/closed-market-chrome.ts, which carries the case
             // history; they are deliberately NOT repeated in this file, because
             // the guard bans them from this source.
-            { label: "Binder", desc: toolCardDesc("collection", collection), icon: "\u25C8", color: accent,                  page: "collection" },
-            { label: "Pack EV",   desc: toolCardDesc("packs", collection),      icon: "\u25A3", color: "var(--tier-legendary)", page: "packs" },
-            { label: "Sniper",    desc: toolCardDesc("sniper", collection),     icon: "\u26A1", color: "#34D399",                page: "sniper" },
-            { label: "Sets",      desc: toolCardDesc("sets", collection),       icon: "\u25C9", color: "#F472B6",                page: "sets" },
-            { label: "Analytics", desc: toolCardDesc("analytics", collection),  icon: "\u25CE", color: "#A78BFA",                page: "analytics" },
-            { label: "Market",    desc: toolCardDesc("market", collection),     icon: "\u25C8", color: "var(--tier-rare)",      page: "market" },
-          ].filter((t) => enabledPages.has(t.page as never)).map(({ label, desc, icon, color, page }) => (
+            { label: "Binder", desc: toolCardDesc("collection", collection), icon: "\u25C8", tone: accent,                  page: "collection" },
+            { label: "Pack EV",   desc: toolCardDesc("packs", collection),      icon: "\u25A3", tone: "var(--tier-legendary)", page: "packs" },
+            { label: "Sniper",    desc: toolCardDesc("sniper", collection),     icon: "\u26A1", tone: "#34D399",                page: "sniper" },
+            { label: "Sets",      desc: toolCardDesc("sets", collection),       icon: "\u25C9", tone: "#F472B6",                page: "sets" },
+            { label: "Analytics", desc: toolCardDesc("analytics", collection),  icon: "\u25CE", tone: "#A78BFA",                page: "analytics" },
+            { label: "Market",    desc: toolCardDesc("market", collection),     icon: "\u25C8", tone: "var(--tier-rare)",      page: "market" },
+          ].filter((t) => enabledPages.has(t.page as never)).map(({ label, desc, icon, tone, page }) => (
             <Link key={page} href={basePath + "/" + page} style={{ textDecoration: "none" }}>
               <div className="rpc-card" style={{ padding: "14px 16px", cursor: "pointer", position: "relative", overflow: "hidden" }}>
-                <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 2, background: color, opacity: 0.5 }} />
-                <div style={{ fontSize: 18, marginBottom: 7, color }}>{icon}</div>
+                <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 2, background: tone, opacity: 0.5 }} />
+                <div style={{ fontSize: 18, marginBottom: 7, color: tone }}>{icon}</div>
                 <div className="rpc-heading" style={{ fontSize: "var(--text-base)", marginBottom: 3 }}>{label}</div>
                 <div className="rpc-mono" style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-muted)" }}>{desc}</div>
               </div>

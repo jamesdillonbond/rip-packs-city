@@ -148,15 +148,17 @@ function setTitleStyle(c: ReturnType<typeof makeColors>): CSSProperties {
 
 function makeColors(accent: string) {
   return {
-    bg: "#080808",
-    card: "rgba(255,255,255,0.04)",
-    cardBorder: "rgba(255,255,255,0.08)",
+    // Theme tokens (2026-10-18, #194): this palette was hardcoded dark, so in
+    // light theme the page stayed a dark slab and red text on it read 3.16:1.
+    bg: "var(--rpc-black)",
+    card: "var(--rpc-surface-raised)",
+    cardBorder: "var(--rpc-border)",
     cardHover: `${accent}4D`,
     accent,
-    text: "#F1F1F1",
-    muted: "rgba(255,255,255,0.5)", // 0.45 read 4.47:1 on #080808 (AA is 4.5)
+    text: "var(--rpc-text-primary)",
+    muted: "var(--rpc-text-muted)",
     green: "#22c55e",
-    barBg: "rgba(255,255,255,0.08)",
+    barBg: "var(--rpc-surface-hover)",
   };
 }
 
@@ -799,9 +801,9 @@ function Pill({ label, active, onClick, accent }: { label: string; active: boole
         letterSpacing: "0.08em",
         padding: "5px 14px",
         borderRadius: 4,
-        border: "1px solid " + (active ? `${accent}80` : "rgba(255,255,255,0.09)"),
-        background: active ? `${accent}14` : "rgba(255,255,255,0.03)",
-        color: active ? accentText(accent) : "rgba(255,255,255,0.5)",
+        border: "1px solid " + (active ? `${accent}80` : "var(--rpc-border-subtle)"),
+        background: active ? `${accent}14` : "var(--rpc-surface-raised)",
+        color: active ? accentText(accent) : "var(--rpc-text-muted)",
         cursor: "pointer",
         transition: "all 0.15s ease",
         whiteSpace: "nowrap",
@@ -915,7 +917,7 @@ function SetCard({
             <span style={{
               fontFamily: monoFont, fontSize: 9, color: c.muted, letterSpacing: "0.08em",
               padding: "2px 8px", borderRadius: 999,
-              border: "1px solid " + c.cardBorder, background: "rgba(255,255,255,0.03)",
+              border: "1px solid " + c.cardBorder, background: "var(--rpc-surface-raised)",
               flexShrink: 0,
             }}>
               S{set.series}

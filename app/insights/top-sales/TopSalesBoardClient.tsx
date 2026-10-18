@@ -31,6 +31,7 @@ import { proxyIpfsImageUrl } from "@/lib/ipfs-media"
 import { avatarDisplayUrl } from "@/lib/media/avatar-proxy"
 import { fromDbSlug } from "@/lib/collections"
 import { usdSignFirst } from "@/lib/usd-format"
+import { accentText } from "@/lib/accent-text"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -240,7 +241,7 @@ function HeroTile({ r, nowMs }: { r: Row; nowMs: number | null }) {
         <div className="rpc-ts-hero-name">{title}</div>
         {r.set_name ? <div className="rpc-ts-hero-set">{r.set_name}</div> : null}
         <div className="rpc-ts-hero-meta">
-          <span style={{ color: tierColor(r.tier) }}>{normalizeTier(r.tier) ?? "—"}</span>
+          <span style={{ color: accentText(tierColor(r.tier)) }}>{normalizeTier(r.tier) ?? "—"}</span>
           <span className="rpc-ts-dot">·</span>
           <span>{relTime(r.sold_at, nowMs)}</span>
         </div>
@@ -298,7 +299,7 @@ function SaleRow({ r, rank, nowMs }: { r: Row; rank: number; nowMs: number | nul
           {normalizeTier(r.tier) ? (
             <>
               <span className="rpc-ts-dot">·</span>
-              <span style={{ color: tierColor(r.tier) }}>{normalizeTier(r.tier)}</span>
+              <span style={{ color: accentText(tierColor(r.tier)) }}>{normalizeTier(r.tier)}</span>
             </>
           ) : null}
         </div>

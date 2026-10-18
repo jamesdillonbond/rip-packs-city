@@ -129,7 +129,7 @@ export default function SaveWalletToProfileButton({
         {state === "saving" ? "Saving…" : "Save to my profile"}
       </button>
       {message && (
-        <span role="alert" style={{ fontSize: "var(--text-xs)", color: "var(--rpc-danger)", maxWidth: 280 }}>
+        <span role="alert" style={{ fontSize: "var(--text-xs)", color: "var(--rpc-danger-text)", maxWidth: 280 }}>
           {message}
         </span>
       )}

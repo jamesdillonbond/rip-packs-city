@@ -49,7 +49,7 @@ export default function NetOfFeesNote({ net }: { net: SniperDeal["netOfFees"] })
         style={{
           fontSize: "var(--text-xs)",
           fontFamily: "var(--font-mono)",
-          color: "var(--rpc-warning)",
+          color: "var(--rpc-warning-text)",
           fontWeight: 600,
           whiteSpace: "nowrap",
         }}

@@ -542,7 +542,7 @@ function PullsGrid({ result, accent, flipIndex, slots, collectionSlug }: { resul
               <div style={{ fontFamily: "var(--font-mono)", fontSize: 13, color: "var(--rpc-text-primary)" }}>
                 {fmtUsd(packValue)}
                 {result.aggregate.retail != null && (
-                  <span style={{ marginLeft: 8, color: packValue >= result.aggregate.retail ? "#34D399" : "#F87171", fontSize: 11 }}>
+                  <span style={{ marginLeft: 8, color: packValue >= result.aggregate.retail ? "var(--rpc-success-text)" : "var(--rpc-danger-text)", fontSize: 11 }}>
                     {packValue >= result.aggregate.retail ? "+" : "-"}{fmtUsd(Math.abs(packValue - result.aggregate.retail))}
                   </span>
                 )}
@@ -571,7 +571,7 @@ function PullsGrid({ result, accent, flipIndex, slots, collectionSlug }: { resul
                       <div style={{ fontFamily: "var(--font-display)", fontSize: 11, fontWeight: 700, color: "var(--rpc-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                         {pull.edition.player_name ?? "—"}
                       </div>
-                      <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: tierColor(tier), textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                      <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: accentText(tierColor(tier)), textTransform: "uppercase", letterSpacing: "0.06em" }}>
                         {(tier || "").replace(/_/g, " ")}
                       </div>
                       <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--rpc-text-primary)", marginTop: 1 }}>

@@ -22,6 +22,7 @@ import Link from "next/link"
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
 import TrackedOutboundLink from "@/components/TrackedOutboundLink"
 import { usdSignFirst } from "@/lib/usd-format"
+import { accentText } from "@/lib/accent-text"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 const REFRESH_INTERVAL = 30
@@ -655,7 +656,7 @@ export default function PackSniperClient({ initialDeals, initialFetchedAt, locke
                       <span>
                         {d.slots} {d.slots === 1 ? "slot" : "slots"}
                       </span>
-                      <span className="rpc-ps-tier-chip" style={{ color: tierColor(d.tier) }}>
+                      <span className="rpc-ps-tier-chip" style={{ color: accentText(tierColor(d.tier)) }}>
                         {(d.tier ?? "—").toUpperCase()}
                       </span>
                       <RecencyChips d={d} mounted={mounted} />
@@ -770,7 +771,7 @@ export default function PackSniperClient({ initialDeals, initialFetchedAt, locke
                     </Link>
                   </td>
                   <td className="rpc-ps-td-num">
-                    <span className="rpc-ps-tier-chip" style={{ color: tierColor(d.tier) }}>
+                    <span className="rpc-ps-tier-chip" style={{ color: accentText(tierColor(d.tier)) }}>
                       {(d.tier ?? "—").toUpperCase()}
                     </span>
                   </td>
@@ -954,9 +955,9 @@ const CSS = `
 .rpc-ps-pack-meta { display: flex; flex-direction: column; gap: 3px; }
 .rpc-ps-pack-title { font-family: var(--font-body); font-weight: 700; font-size: 14px; color: var(--rpc-text-primary); line-height: 1.25; }
 .rpc-ps-pack-sub { font-family: var(--font-mono); font-size: 10px; letter-spacing: 1px; color: var(--rpc-text-muted); display: inline-flex; align-items: center; flex-wrap: wrap; gap: 8px; }
-.rpc-ps-new-chip { font-family: var(--font-mono); font-size: 9px; letter-spacing: 1.5px; color: var(--rpc-success); border: 1px solid var(--rpc-success); padding: 1px 5px; border-radius: 2px; }
-.rpc-ps-drop-chip { font-family: var(--font-mono); font-size: 9px; letter-spacing: 1px; color: var(--rpc-warning); border: 1px solid var(--rpc-warning); padding: 1px 5px; border-radius: 2px; }
-.rpc-ps-low-chip { font-family: var(--font-mono); font-size: 9px; letter-spacing: 1.5px; color: var(--rpc-info); border: 1px solid var(--rpc-info); padding: 1px 5px; border-radius: 2px; }
+.rpc-ps-new-chip { font-family: var(--font-mono); font-size: 9px; letter-spacing: 1.5px; color: var(--rpc-success-text); border: 1px solid var(--rpc-success); padding: 1px 5px; border-radius: 2px; }
+.rpc-ps-drop-chip { font-family: var(--font-mono); font-size: 9px; letter-spacing: 1px; color: var(--rpc-warning-text); border: 1px solid var(--rpc-warning); padding: 1px 5px; border-radius: 2px; }
+.rpc-ps-low-chip { font-family: var(--font-mono); font-size: 9px; letter-spacing: 1.5px; color: var(--rpc-info-text); border: 1px solid var(--rpc-info); padding: 1px 5px; border-radius: 2px; }
 .rpc-ps-listed-rel { color: var(--rpc-text-muted); }
 .rpc-ps-hivar-chip { font-family: var(--font-mono); font-size: 9px; letter-spacing: 1.5px; color: var(--rpc-red-text); border: 1px solid var(--rpc-red-border); padding: 1px 5px; border-radius: 2px; }
 .rpc-ps-td-num { text-align: right; font-family: var(--font-mono); color: var(--rpc-text-primary); white-space: nowrap; }

@@ -87,7 +87,7 @@ export default function AdminGiveawaysClient() {
         <button type="button" onClick={res.submitToken} style={{ ...btn, marginTop: 8 }}>
           Continue
         </button>
-        {res.error ? <p style={{ color: "var(--rpc-danger)" }}>{res.error}</p> : null}
+        {res.error ? <p style={{ color: "var(--rpc-danger-text)" }}>{res.error}</p> : null}
       </main>
     )
   }
@@ -105,7 +105,7 @@ export default function AdminGiveawaysClient() {
         </p>
       </div>
       {res.error ? (
-        <p style={{ color: "var(--rpc-danger)" }}>
+        <p style={{ color: "var(--rpc-danger-text)" }}>
           {res.error}
           {res.stale ? " (showing the last list that loaded)" : ""}
         </p>
@@ -350,7 +350,7 @@ function CreateDraft({ call, onCreated }: { call: Call; onCreated: () => void })
           </button>
         </>
       ) : null}
-      {msg ? <p style={{ fontSize: 13, color: msg === "Draft created." ? "var(--rpc-success)" : "var(--rpc-danger)" }}>{msg}</p> : null}
+      {msg ? <p style={{ fontSize: 13, color: msg === "Draft created." ? "var(--rpc-success-text)" : "var(--rpc-danger-text)" }}>{msg}</p> : null}
     </section>
   )
 }
@@ -456,7 +456,7 @@ function DropPanel({ drop, call, onChanged }: { drop: DropRow; call: Call; onCha
       </div>
       {msg ? <p style={{ fontSize: 13, fontFamily: MONO, color: "var(--rpc-text-secondary)", margin: "8px 0 0" }}>{msg}</p> : null}
       {open && detailError ? (
-        <p style={{ fontSize: 13, fontFamily: MONO, color: "var(--rpc-danger)", margin: "8px 0 0" }}>Couldn&apos;t load the checklist: {detailError}</p>
+        <p style={{ fontSize: 13, fontFamily: MONO, color: "var(--rpc-danger-text)", margin: "8px 0 0" }}>Couldn&apos;t load the checklist: {detailError}</p>
       ) : null}
       {drop.status === "open" || drop.status === "closed" ? <DeliverAll drop={drop} call={call} onDone={() => { onChanged(); if (open) void load() }} /> : null}
       {open && detail ? (
@@ -481,7 +481,7 @@ function DropPanel({ drop, call, onChanged }: { drop: DropRow; call: Call; onCha
                 <td style={td}>{r.player_name ?? "—"}</td>
                 <td style={td}>{r.serial_number ?? "—"}</td>
                 <td style={td}>{usd(r.fmv_usd)}</td>
-                <td style={{ ...td, color: r.state === "delivered" ? "var(--rpc-success)" : r.state === "missing" ? "var(--rpc-danger)" : undefined }}>
+                <td style={{ ...td, color: r.state === "delivered" ? "var(--rpc-success-text)" : r.state === "missing" ? "var(--rpc-danger-text)" : undefined }}>
                   {r.stateLabel}
                 </td>
               </tr>

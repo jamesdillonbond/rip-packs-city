@@ -18,6 +18,7 @@ import { avatarDisplayUrl } from "@/lib/media/avatar-proxy";
 import { momentSubjectName } from "@/lib/entity-href"
 import { trackOutboundClick } from "@/lib/track-click";
 import { onChainMomentId } from "@/lib/sniper/helpers";
+import { accentText } from "@/lib/accent-text"
 
 // ── Types ─────────────────────────────────────────────────────────
 interface TrophyMoment {
@@ -218,7 +219,7 @@ function PublicTrophySlot(props: { slot: number; trophy: TrophyMoment | null }) 
           <span style={{ fontSize: 11, fontFamily: condensedFont, fontWeight: 700, color: tc }}>
             {t.serial_number != null ? ("#" + t.serial_number + " / " + (t.circulation_count ?? "?")) : ""}
           </span>
-          {t.fmv != null && <span style={{ fontSize: 10, fontFamily: monoFont, color: "var(--rpc-success)" }}>{fmtDollars(t.fmv)}</span>}
+          {t.fmv != null && <span style={{ fontSize: 10, fontFamily: monoFont, color: "var(--rpc-success-text)" }}>{fmtDollars(t.fmv)}</span>}
         </div>
         {(t.badges ?? []).length > 0 && (
           <div style={{ display: "flex", gap: 3, marginTop: 5 }}>
@@ -466,7 +467,7 @@ function PortfolioValueCard(props: { wallet: string; label?: string }) {
           </span>
         )}
         {changePct != null && hasEnoughHistory && (
-          <span style={{ marginLeft: "auto", fontSize: 10, fontFamily: monoFont, color: changePct >= 0 ? "var(--rpc-success)" : "var(--rpc-danger)", letterSpacing: "0.08em" }}>
+          <span style={{ marginLeft: "auto", fontSize: 10, fontFamily: monoFont, color: changePct >= 0 ? "var(--rpc-success-text)" : "var(--rpc-danger-text)", letterSpacing: "0.08em" }}>
             {changePct >= 0 ? "\u2191" : "\u2193"} {Math.abs(changePct).toFixed(1)}%
           </span>
         )}
@@ -812,7 +813,7 @@ export default function CollectionProfileClient({
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, marginTop: 4 }}>
               <Sparkline data={sparkData} width={120} height={24} color={sparkUp ? "#34D399" : "#F87171"} />
               {sparkChange != null && (
-                <span style={{ fontSize: 9, fontFamily: monoFont, color: sparkChange >= 0 ? "var(--rpc-success)" : "var(--rpc-danger)", letterSpacing: "0.1em" }}>
+                <span style={{ fontSize: 9, fontFamily: monoFont, color: sparkChange >= 0 ? "var(--rpc-success-text)" : "var(--rpc-danger-text)", letterSpacing: "0.1em" }}>
                   {sparkChange >= 0 ? "\u2191" : "\u2193"} {Math.abs(sparkChange).toFixed(1)}% / 30D
                 </span>
               )}
@@ -880,7 +881,7 @@ export default function CollectionProfileClient({
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 13, color: "var(--rpc-text-primary)", letterSpacing: "0.04em" }}>{label}</div>
                     {w.cached_top_tier && (
-                      <span style={{ fontSize: 8, fontFamily: monoFont, color: tierColor(w.cached_top_tier), letterSpacing: "0.1em" }}>{w.cached_top_tier.toUpperCase()}</span>
+                      <span style={{ fontSize: 8, fontFamily: monoFont, color: accentText(tierColor(w.cached_top_tier)), letterSpacing: "0.1em" }}>{w.cached_top_tier.toUpperCase()}</span>
                     )}
                   </div>
                   {w.cached_fmv != null && (
@@ -964,13 +965,13 @@ export default function CollectionProfileClient({
                   <div style={{ ...cardStyle, display: "grid", gridTemplateColumns: "1fr auto auto", gap: 12, padding: "10px 14px", alignItems: "center" }}>
                     <div>
                       <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 13, color: "var(--rpc-text-primary)", letterSpacing: "0.02em" }}>{deal.playerName}</div>
-                      <span style={{ fontSize: 9, fontFamily: monoFont, color: tierColor(deal.tier) }}>{deal.tier}</span>
+                      <span style={{ fontSize: 9, fontFamily: monoFont, color: accentText(tierColor(deal.tier)) }}>{deal.tier}</span>
                     </div>
                     <div style={{ textAlign: "right" }}>
                       <div style={{ fontFamily: monoFont, fontSize: 11, color: "var(--rpc-text-primary)" }}>{fmtDollars(deal.askPrice)}</div>
                       <div style={{ fontSize: 8, fontFamily: monoFont, color: "var(--rpc-text-muted)" }}>FMV {fmtDollars(deal.adjustedFmv)}</div>
                     </div>
-                    <div style={{ fontFamily: monoFont, fontSize: 12, fontWeight: 700, color: "var(--rpc-danger)" }}>-{deal.discount.toFixed(0)}%</div>
+                    <div style={{ fontFamily: monoFont, fontSize: 12, fontWeight: 700, color: "var(--rpc-danger-text)" }}>-{deal.discount.toFixed(0)}%</div>
                   </div>
                 </a>
               );
@@ -992,18 +993,18 @@ export default function CollectionProfileClient({
               reason the sweep is the caller list and not the one file you had
               in mind (CLAUDE.md). */}
           {[
-            { label: "Binder", icon: "\u25C8", page: "collection", href: basePath + "/collection", color: "var(--rpc-red-text)" },
-            { label: "Pack EV", icon: "\u25A3", page: "packs", href: basePath + "/packs", color: "#F59E0B" },
-            { label: "Sniper", icon: "\u26A1", page: "sniper", href: basePath + "/sniper", color: "#34D399" },
-            { label: "Sets", icon: "\u25C9", page: "sets", href: basePath + "/sets", color: "#F472B6" },
+            { label: "Binder", icon: "\u25C8", page: "collection", href: basePath + "/collection", tone: "var(--rpc-red)" },
+            { label: "Pack EV", icon: "\u25A3", page: "packs", href: basePath + "/packs", tone: "#F59E0B" },
+            { label: "Sniper", icon: "\u26A1", page: "sniper", href: basePath + "/sniper", tone: "#34D399" },
+            { label: "Sets", icon: "\u25C9", page: "sets", href: basePath + "/sets", tone: "#F472B6" },
           ].filter(function(link) {
             return collectionHasPage(collection, link.page as CollectionPage);
           }).map(function(link) {
             return (
               <Link key={link.label} href={link.href} style={{ textDecoration: "none" }}>
                 <div className="rpc-card" style={{ padding: "14px 16px", cursor: "pointer", position: "relative", overflow: "hidden", textAlign: "left" }}>
-                  <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 2, background: link.color, opacity: 0.5 }} />
-                  <div style={{ fontSize: 18, marginBottom: 7, color: link.color }}>{link.icon}</div>
+                  <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 2, background: link.tone, opacity: 0.5 }} />
+                  <div style={{ fontSize: 18, marginBottom: 7, color: link.tone }}>{link.icon}</div>
                   <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 12, color: "var(--rpc-text-primary)", letterSpacing: "0.05em", textTransform: "uppercase" }}>{link.label}</div>
                 </div>
               </Link>

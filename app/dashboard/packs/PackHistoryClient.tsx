@@ -587,7 +587,7 @@ export default function PackHistoryClient() {
         {activeWallet && (summaryLoading ? (
           <div style={{ fontFamily: monoFont, fontSize: 12, color: "rgba(255,255,255,0.5)" }}>Loading summary…</div>
         ) : summaryError ? (
-          <div style={{ padding: 12, border: "1px solid #7f1d1d", background: "rgba(127,29,29,0.2)", borderRadius: 6, fontFamily: monoFont, fontSize: 12, color: "#F87171" }}>{summaryError}</div>
+          <div style={{ padding: 12, border: "1px solid #7f1d1d", background: "rgba(127,29,29,0.2)", borderRadius: 6, fontFamily: monoFont, fontSize: 12, color: "var(--rpc-danger-text)" }}>{summaryError}</div>
         ) : summary ? ((() => {
           const t = summary.totals
           const { spendKnown, ripKnown, plWithheld } = packCoverage(t)
@@ -724,7 +724,7 @@ export default function PackHistoryClient() {
             {historyLoading ? (
               <div style={{ padding: 18, fontFamily: monoFont, fontSize: 12, color: "rgba(255,255,255,0.5)", textAlign: "center" }}>Loading packs…</div>
             ) : historyError ? (
-              <div style={{ padding: 14, fontFamily: monoFont, fontSize: 12, color: "#F87171" }}>{historyError}</div>
+              <div style={{ padding: 14, fontFamily: monoFont, fontSize: 12, color: "var(--rpc-danger-text)" }}>{historyError}</div>
             ) : !history || history.packs.length === 0 ? (
               <div style={{ padding: 28, textAlign: "center", color: "rgba(255,255,255,0.55)", fontFamily: monoFont, fontSize: 12 }}>No pack activity for this filter.</div>
             ) : (
@@ -853,7 +853,7 @@ function CollectionTab({ active, label, sub, pl, onClick }: { active: boolean; l
     >
       <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 12, letterSpacing: "0.08em", textTransform: "uppercase" }}>{label}</div>
       {sub && (
-        <div style={{ fontFamily: monoFont, fontSize: 10, color: pl != null ? (positive ? "#34D399" : "var(--rpc-red, #E03A2F)") : "rgba(255,255,255,0.55)", marginTop: 2 }}>
+        <div style={{ fontFamily: monoFont, fontSize: 10, color: pl != null ? (positive ? "var(--rpc-success-text)" : "var(--rpc-red, #E03A2F)") : "rgba(255,255,255,0.55)", marginTop: 2 }}>
           {sub}
         </div>
       )}
@@ -952,7 +952,7 @@ function LifecycleDetail({ lifecycle, row }: { lifecycle: any; row: HistoryRow }
     return <div style={{ fontFamily: monoFont, fontSize: 11, color: "rgba(255,255,255,0.5)" }}>Loading lifecycle…</div>
   }
   if (lifecycle.error) {
-    return <div style={{ fontFamily: monoFont, fontSize: 11, color: "#F87171" }}>{lifecycle.error}</div>
+    return <div style={{ fontFamily: monoFont, fontSize: 11, color: "var(--rpc-danger-text)" }}>{lifecycle.error}</div>
   }
   const pulls: Array<any> = Array.isArray(lifecycle.pulls) ? lifecycle.pulls : []
   const chain: Array<any> = Array.isArray(lifecycle.ownership_chain) ? lifecycle.ownership_chain : []
@@ -982,7 +982,7 @@ function LifecycleDetail({ lifecycle, row }: { lifecycle: any; row: HistoryRow }
               isStudioDrop || (!row.has_buy && (row.primary_minted_at || row.minted_to_wallet_at))
                 ? { background: "rgba(168,85,247,0.15)", color: "#C084FC", border: "1px solid rgba(168,85,247,0.4)" }
                 : row.has_buy
-                  ? { background: "rgba(52,211,153,0.12)", color: "#34D399", border: "1px solid rgba(52,211,153,0.4)" }
+                  ? { background: "rgba(52,211,153,0.12)", color: "var(--rpc-success-text)", border: "1px solid rgba(52,211,153,0.4)" }
                   : { background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.7)", border: "1px solid rgba(255,255,255,0.2)" }
             }
           >
@@ -998,7 +998,7 @@ function LifecycleDetail({ lifecycle, row }: { lifecycle: any; row: HistoryRow }
               <span key={i} style={{ padding: "4px 8px", background: "#0d0d0d", border: "1px solid #27272a", borderRadius: 4 }}>
                 {c.from ? `${(c.from ?? "").slice(0, 6)}… → ` : ""}
                 {(c.to ?? c.owner ?? "").slice(0, 6)}…
-                {c.sale_price != null && <span style={{ color: "#34D399", marginLeft: 6 }}>{fmtUsd(Number(c.sale_price))}</span>}
+                {c.sale_price != null && <span style={{ color: "var(--rpc-success-text)", marginLeft: 6 }}>{fmtUsd(Number(c.sale_price))}</span>}
               </span>
             ))}
           </div>

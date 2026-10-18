@@ -7,6 +7,7 @@ import { tierColorAlpha } from "@/lib/tier-color";
 import { parseRichText, isExternalHref, isOffSiteHref } from "@/lib/concierge/rich-text";
 import { proxyIpfsImageUrl } from "@/lib/ipfs-media";
 import { trackOutboundClick } from "@/lib/track-click";
+import { accentText } from "@/lib/accent-text"
 
 interface MomentCard {
   playerName: string; setName?: string; tier?: string; series?: string;
@@ -96,13 +97,13 @@ function MomentCardUI({ card }: { card: MomentCard }) {
         <div style={{ textAlign: "right", flexShrink: 0 }}>
           <div style={{ fontSize: 15, fontWeight: 700, color: "var(--rpc-text-primary)" }}>${card.price?.toFixed(2)}</div>
           {card.fmv && card.discountPct && card.discountPct > 0 ? (
-            <div style={{ fontSize: 11, color: "var(--rpc-success)", fontWeight: 600, marginTop: 2 }}>{card.discountPct}% below FMV</div>
+            <div style={{ fontSize: 11, color: "var(--rpc-success-text)", fontWeight: 600, marginTop: 2 }}>{card.discountPct}% below FMV</div>
           ) : card.fmv ? (<div style={{ fontSize: 11, color: "var(--rpc-text-secondary)", marginTop: 2 }}>FMV ${card.fmv.toFixed(2)}</div>) : null}
         </div>
       </div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 12px 10px", gap: 6 }}>
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          {card.tier && <span style={{ fontSize: 10, fontWeight: 600, color: tierColor(card.tier), background: tierColorAlpha(tierColor(card.tier), 9), padding: "2px 7px", borderRadius: 4, textTransform: "uppercase" }}>{card.tier}</span>}
+          {card.tier && <span style={{ fontSize: 10, fontWeight: 600, color: accentText(tierColor(card.tier)), background: tierColorAlpha(tierColor(card.tier), 9), padding: "2px 7px", borderRadius: 4, textTransform: "uppercase" }}>{card.tier}</span>}
           {card.source && <span style={{ fontSize: 10, fontWeight: 600, color: sourceColor(card.source), background: `${sourceColor(card.source)}18`, padding: "2px 7px", borderRadius: 4 }}>{card.source === "flowty" ? "Flowty" : "TopShot"}</span>}
           {card.serialNumber && <span style={{ fontSize: 10, color: "var(--rpc-text-muted)" }}>#{card.serialNumber}{card.mintCount ? `/${card.mintCount}` : ""}</span>}
         </div>
@@ -191,7 +192,7 @@ function FeedbackButtons({ messageId, sessionId, dbId, feedback: initialFeedback
   };
   return (
     <div style={{ display: "flex", gap: 4, marginTop: 6, opacity: sent ? 0.5 : 1 }}>
-      <button onClick={() => sendFeedback("up")} disabled={sent} style={{ background: feedback === "up" ? "rgba(52,211,153,0.15)" : "transparent", border: feedback === "up" ? "1px solid rgba(52,211,153,0.3)" : "1px solid var(--rpc-border)", borderRadius: 6, padding: "3px 8px", cursor: sent ? "default" : "pointer", fontSize: 13, color: feedback === "up" ? "var(--rpc-success)" : "var(--rpc-text-muted)" }} aria-label="Helpful">👍</button>
+      <button onClick={() => sendFeedback("up")} disabled={sent} style={{ background: feedback === "up" ? "rgba(52,211,153,0.15)" : "transparent", border: feedback === "up" ? "1px solid rgba(52,211,153,0.3)" : "1px solid var(--rpc-border)", borderRadius: 6, padding: "3px 8px", cursor: sent ? "default" : "pointer", fontSize: 13, color: feedback === "up" ? "var(--rpc-success-text)" : "var(--rpc-text-muted)" }} aria-label="Helpful">👍</button>
       <button onClick={() => sendFeedback("down")} disabled={sent} style={{ background: feedback === "down" ? "rgba(224,58,47,0.15)" : "transparent", border: feedback === "down" ? "1px solid rgba(224,58,47,0.3)" : "1px solid var(--rpc-border)", borderRadius: 6, padding: "3px 8px", cursor: sent ? "default" : "pointer", fontSize: 13, color: feedback === "down" ? "var(--rpc-red-text)" : "var(--rpc-text-muted)" }} aria-label="Not helpful">👎</button>
     </div>
   );

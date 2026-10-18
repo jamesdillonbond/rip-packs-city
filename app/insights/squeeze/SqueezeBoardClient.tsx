@@ -20,6 +20,7 @@ import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
 import type { DegradedSummary } from "@/lib/insights/board-status"
 import { sectionUnavailableCopy } from "@/lib/entity/section-empty-copy"
 import { usdSignFirst } from "@/lib/usd-format"
+import { accentText } from "@/lib/accent-text"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -661,7 +662,7 @@ export default function SqueezeBoardClient({
                     </Link>
                   </td>
                   <td className="rpc-sq-td-num">
-                    <span className="rpc-sq-tier-chip" style={{ color: tierColor(r.tier) }}>
+                    <span className="rpc-sq-tier-chip" style={{ color: accentText(tierColor(r.tier)) }}>
                       {normalizeTier(r.tier) ?? "—"}
                     </span>
                   </td>

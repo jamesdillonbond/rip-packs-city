@@ -74,13 +74,13 @@ export default function TopMoversCard(props: { ownerKey: string }) {
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }}>
           <div>
-            <div style={{ fontSize: 9, fontFamily: monoFont, color: "#34D399", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 6, fontWeight: 700 }}>↑ Biggest Gainers</div>
+            <div style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-success-text)", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 6, fontWeight: 700 }}>↑ Biggest Gainers</div>
             {data && data.gainers.length > 0 ? data.gainers.map(function(g) { return <MoverRowDisplay key={g.edition_id} row={g} positive={true} />; }) : (
               <div style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.5)", padding: "8px 0" }}>No gainers in window.</div>
             )}
           </div>
           <div>
-            <div style={{ fontSize: 9, fontFamily: monoFont, color: "#F87171", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 6, fontWeight: 700 }}>↓ Biggest Losers</div>
+            <div style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-danger-text)", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 6, fontWeight: 700 }}>↓ Biggest Losers</div>
             {data && data.losers.length > 0 ? data.losers.map(function(l) { return <MoverRowDisplay key={l.edition_id} row={l} positive={false} />; }) : (
               <div style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.5)", padding: "8px 0" }}>No losers in window.</div>
             )}

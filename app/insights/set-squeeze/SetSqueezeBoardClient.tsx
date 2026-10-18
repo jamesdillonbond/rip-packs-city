@@ -18,6 +18,7 @@ import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
 import type { DegradedSummary } from "@/lib/insights/board-status"
 import { sectionEmptyCopy } from "@/lib/entity/section-empty-copy"
 import { slugifyName } from "@/lib/entity-labels"
+import { accentText } from "@/lib/accent-text"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -268,7 +269,7 @@ export default function SetSqueezeBoardClient({
                     )}
                   </td>
                   <td className="rpc-ss-td-num">
-                    <span className="rpc-ss-tier" style={{ color: tierColor(r.set_tier) }}>
+                    <span className="rpc-ss-tier" style={{ color: accentText(tierColor(r.set_tier)) }}>
                       {r.set_tier ?? "—"}
                     </span>
                   </td>

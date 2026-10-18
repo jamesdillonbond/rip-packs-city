@@ -11,6 +11,7 @@
 import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { useOwnFlowWallet } from "@/lib/hooks/useOwnFlowWallet"
+import { accentText } from "@/lib/accent-text"
 
 type Bucket = { editions: number; moments: number }
 type Buckets = { liquid: Bucket; moderate: Bucket; squeezed: Bucket; extreme: Bucket }
@@ -223,7 +224,7 @@ export default function SqueezeCheckPage() {
                         <div className="rpc-sc-ed-set">{r.set_name ?? "—"}</div>
                       </td>
                       <td className="rpc-sc-td-num">
-                        <span className="rpc-sc-tier" style={{ color: tierColor(r.tier) }}>
+                        <span className="rpc-sc-tier" style={{ color: accentText(tierColor(r.tier)) }}>
                           {r.tier ?? "—"}
                         </span>
                       </td>
@@ -333,7 +334,7 @@ const CSS = `
 .rpc-sc-btn { font-family: var(--font-mono); font-size: 12px; letter-spacing: 2.5px; text-transform: uppercase; background: var(--rpc-red); color: #fff; padding: 14px 26px; border: 0; border-radius: 2px; cursor: pointer; }
 .rpc-sc-btn:hover { background: var(--rpc-red-hover); }
 .rpc-sc-btn:disabled { opacity: 0.6; cursor: progress; }
-.rpc-sc-error { margin-top: 10px; font-family: var(--font-mono); font-size: 12px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--rpc-danger); }
+.rpc-sc-error { margin-top: 10px; font-family: var(--font-mono); font-size: 12px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--rpc-danger-text); }
 
 .rpc-sc-bar-row { max-width: 1180px; margin: 0 auto 24px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 .rpc-sc-bucket { border: 1px solid var(--rpc-border-subtle); background: var(--rpc-surface-raised); padding: 16px; border-radius: 2px; display: flex; flex-direction: column; gap: 4px; }

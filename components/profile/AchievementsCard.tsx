@@ -163,7 +163,7 @@ export default function AchievementsCard(props: { ownerKey: string }) {
                 fontSize: 8,
                 fontFamily: monoFont,
                 background: "rgba(245,158,11,0.15)",
-                color: "#F59E0B",
+                color: "var(--rpc-warning-text)",
                 border: "1px solid rgba(245,158,11,0.35)",
                 padding: "2px 7px",
                 borderRadius: 999,

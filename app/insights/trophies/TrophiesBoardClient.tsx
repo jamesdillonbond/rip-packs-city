@@ -27,6 +27,7 @@ import { useIpfsRetry } from "@/lib/media/use-ipfs-retry"
 import { fromDbSlug } from "@/lib/collections"
 import { usdSignFirst } from "@/lib/usd-format"
 import { boardCountFloor } from "@/lib/insights/board-meta"
+import { accentText } from "@/lib/accent-text"
 
 // Both the page (SSR seed) and the refetch read at most this many rows.
 const BOARD_LIMIT = 200
@@ -162,7 +163,7 @@ function TrophyTile({ r, hero = false }: { r: Row; hero?: boolean }) {
         )}
         <span
           className="rpc-tr-badge"
-          style={{ color: r.is_one_of_one ? "var(--rpc-red-text)" : tierColor(r.tier) }}
+          style={{ color: r.is_one_of_one ? "var(--rpc-red-text)" : accentText(tierColor(r.tier)) }}
         >
           {trophyBadge(r)}
         </span>

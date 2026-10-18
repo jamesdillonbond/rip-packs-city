@@ -255,7 +255,7 @@ export default function GiveawayClient({ slug }: { slug: string }) {
               {me.moments.map((m) => (
                 <div key={m.moment_id} style={{ ...card, background: "var(--rpc-surface-raised)" }}>
                   <MomentLine m={m} />
-                  <div style={{ ...muted, marginTop: 6, color: m.delivered ? "var(--rpc-success)" : "var(--rpc-text-muted)" }}>
+                  <div style={{ ...muted, marginTop: 6, color: m.delivered ? "var(--rpc-success-text)" : "var(--rpc-text-muted)" }}>
                     {deliveryLabel(m.delivered, m.last_checked_at)}
                   </div>
                 </div>
@@ -341,7 +341,7 @@ export default function GiveawayClient({ slug }: { slug: string }) {
                   </button>
                 )
               })()}
-              {claimError ? <p style={{ color: "var(--rpc-danger)", margin: 0 }}>{claimError}</p> : null}
+              {claimError ? <p style={{ color: "var(--rpc-danger-text)", margin: 0 }}>{claimError}</p> : null}
               <p style={muted}>Your pack is drawn at random from the packs still unclaimed. One pack per person and per Top Shot account.</p>
             </div>
           ) : (

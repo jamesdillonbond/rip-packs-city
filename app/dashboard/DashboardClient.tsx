@@ -1287,7 +1287,7 @@ function ProfilePageInner() {
             </button>
           </div>
           {usernameError && (
-            <div style={{ color: "var(--rpc-danger)", fontFamily: monoFont, fontSize: 11, marginBottom: 10 }}>
+            <div style={{ color: "var(--rpc-danger-text)", fontFamily: monoFont, fontSize: 11, marginBottom: 10 }}>
               {usernameError}{" "}
               <button onClick={() => setShowAdvanced(true)} style={linkBtnStyle}>
                 Advanced: enter wallet address directly
@@ -1346,7 +1346,7 @@ function ProfilePageInner() {
                   {walletSaving ? "Saving…" : "+ Add"}
                 </button>
               </div>
-              {walletError && <div style={{ color: "var(--rpc-danger)", fontFamily: monoFont, fontSize: 11, marginTop: 8 }}>{walletError}</div>}
+              {walletError && <div style={{ color: "var(--rpc-danger-text)", fontFamily: monoFont, fontSize: 11, marginTop: 8 }}>{walletError}</div>}
             </div>
           )}
 
@@ -1471,7 +1471,7 @@ function ProfilePageInner() {
                         <span>{timeAgo(a.sold_at)}</span>
                       </div>
                     </div>
-                    <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 14, color: "var(--rpc-success)" }}>
+                    <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 14, color: "var(--rpc-success-text)" }}>
                       {a.price_usd != null ? fmtUsd(Number(a.price_usd)) : "—"}
                     </div>
                   </div>
@@ -1525,7 +1525,7 @@ function ProfilePageInner() {
                 padding: "10px 16px",
                 background: t.tone === "success" ? "rgba(52,211,153,0.10)" : "var(--rpc-surface)",
                 border: `1px solid ${t.tone === "success" ? "#34D39966" : "#4F94D466"}`,
-                color: t.tone === "success" ? "var(--rpc-success)" : "#4F94D4",
+                color: t.tone === "success" ? "var(--rpc-success-text)" : "#4F94D4",
                 borderRadius: 8,
                 fontFamily: monoFont,
                 fontSize: 12,
@@ -1664,7 +1664,7 @@ function SignInBanner({
       </div>
 
       {error && (
-        <div style={{ color: "var(--rpc-danger)", fontFamily: monoFont, fontSize: 12, marginBottom: 10 }}>
+        <div style={{ color: "var(--rpc-danger-text)", fontFamily: monoFont, fontSize: 12, marginBottom: 10 }}>
           {error}
         </div>
       )}
@@ -1713,7 +1713,7 @@ function HeroMomentCard({ hero, onEdit }: { hero: HeroMoment; onEdit: () => void
           {hero.serialNumber ? ` · #${hero.serialNumber}` : ""}
           {hero.mintCount ? `/${hero.mintCount}` : ""}
         </div>
-        <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 22, color: "var(--rpc-success)", marginTop: 8 }}>
+        <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 22, color: "var(--rpc-success-text)", marginTop: 8 }}>
           {fmtUsd(hero.fmvUsd)}
         </div>
       </div>
@@ -1993,7 +1993,7 @@ function TrophyCaseSection({
             disabled={busy}
             style={{
               ...btnBase,
-              ...(editMode ? { borderColor: "var(--rpc-success)", color: "var(--rpc-success)" } : null),
+              ...(editMode ? { borderColor: "var(--rpc-success)", color: "var(--rpc-success-text)" } : null),
             }}
           >
             {editMode ? "Done" : "Edit Layout"}
@@ -2364,7 +2364,7 @@ function WalletGroupCard({
                 padding: "2px 8px",
                 background: "rgba(52,211,153,0.12)",
                 border: "1px solid #34D39966",
-                color: "var(--rpc-success)",
+                color: "var(--rpc-success-text)",
                 fontFamily: monoFont,
                 fontSize: 9,
                 letterSpacing: "0.1em",
@@ -2470,7 +2470,7 @@ function WalletGroupCard({
                 <div>
                   <div style={{ fontFamily: monoFont, fontSize: 9, color: "var(--rpc-text-muted)", letterSpacing: "0.1em", textTransform: "uppercase" }}>FMV</div>
                   {/* No priced editions (e.g. thin-market UFC) -> em dash, not a misleading "$0". */}
-                  <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 14, color: !unknown && fmv > 0 ? "var(--rpc-success)" : "var(--rpc-text-muted)" }}>{!unknown && fmv > 0 ? fmtUsd(fmv) : "—"}</div>
+                  <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 14, color: !unknown && fmv > 0 ? "var(--rpc-success-text)" : "var(--rpc-text-muted)" }}>{!unknown && fmv > 0 ? fmtUsd(fmv) : "—"}</div>
                 </div>
               </div>
               {!unknown && (fmvMax > 0 || locked > 0) && (
@@ -2587,9 +2587,9 @@ function HeroEditModal({
           ))}
         </div>
       )}
-      {pickError && <div style={{ color: "var(--rpc-danger)", fontFamily: monoFont, fontSize: 11, marginTop: 8 }}>{pickError}</div>}
+      {pickError && <div style={{ color: "var(--rpc-danger-text)", fontFamily: monoFont, fontSize: 11, marginTop: 8 }}>{pickError}</div>}
       <div style={{ marginTop: 14, display: "flex", justifyContent: "flex-end" }}>
-        <button onClick={clear} disabled={saving} style={{ ...linkBtnStyle, color: "var(--rpc-warning)" }}>
+        <button onClick={clear} disabled={saving} style={{ ...linkBtnStyle, color: "var(--rpc-warning-text)" }}>
           Clear manual override
         </button>
       </div>
@@ -2624,7 +2624,7 @@ function PickerCard({ m, disabled, onClick }: { m: TopMoment; disabled: boolean;
           <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: tc, fontSize: 32, fontFamily: condensedFont, fontWeight: 900 }}>●</div>
         )}
         {m.is_locked && (
-          <div style={{ position: "absolute", top: 6, right: 6, fontSize: 12, color: "var(--rpc-warning)", textShadow: "0 0 4px rgba(0,0,0,0.8)" }} aria-label="Locked">🔒</div>
+          <div style={{ position: "absolute", top: 6, right: 6, fontSize: 12, color: "var(--rpc-warning-text)", textShadow: "0 0 4px rgba(0,0,0,0.8)" }} aria-label="Locked">🔒</div>
         )}
       </div>
       <div style={{ padding: "6px 8px" }}>
@@ -2636,7 +2636,7 @@ function PickerCard({ m, disabled, onClick }: { m: TopMoment; disabled: boolean;
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 4, fontFamily: condensedFont, fontWeight: 800 }}>
           <span style={{ fontSize: 9, color: tc, letterSpacing: "0.1em", textTransform: "uppercase" }}>{m.tier ?? ""}</span>
-          <span style={{ fontSize: 12, color: "var(--rpc-success)" }}>{m.fmv_usd != null ? fmtUsd(Number(m.fmv_usd)) : "—"}</span>
+          <span style={{ fontSize: 12, color: "var(--rpc-success-text)" }}>{m.fmv_usd != null ? fmtUsd(Number(m.fmv_usd)) : "—"}</span>
         </div>
       </div>
     </button>
@@ -2846,7 +2846,7 @@ function VerifyByListingModal({
           <div style={{ fontFamily: monoFont, fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 6 }}>
             List this Moment for exactly
           </div>
-          <div style={{ fontFamily: condensedFont, fontWeight: 900, fontSize: 38, color: "var(--rpc-success)", lineHeight: 1 }}>
+          <div style={{ fontFamily: condensedFont, fontWeight: 900, fontSize: 38, color: "var(--rpc-success-text)", lineHeight: 1 }}>
             {priceLabel}
           </div>
 
@@ -2860,14 +2860,14 @@ function VerifyByListingModal({
               <button onClick={checkNow} disabled={loading} style={secondaryBtnStyle}>
                 {loading ? "Checking…" : "I've listed it — Done"}
               </button>
-              <span style={{ fontFamily: monoFont, fontSize: 11, color: expiresMs <= 0 ? "var(--rpc-danger)" : "var(--rpc-text-secondary)" }}>
+              <span style={{ fontFamily: monoFont, fontSize: 11, color: expiresMs <= 0 ? "var(--rpc-danger-text)" : "var(--rpc-text-secondary)" }}>
                 {`Expires in ${formatCountdown(expiresMs)}`}
               </span>
             </div>
           )}
 
           {done && (
-            <div style={{ marginTop: 12, color: "var(--rpc-success)", fontFamily: monoFont, fontSize: 12 }}>
+            <div style={{ marginTop: 12, color: "var(--rpc-success-text)", fontFamily: monoFont, fontSize: 12 }}>
               ✓ Wallet verified. You can delist the Moment now.
             </div>
           )}
@@ -2879,7 +2879,7 @@ function VerifyByListingModal({
         </div>
       )}
 
-      {error && <div style={{ color: "var(--rpc-danger)", fontFamily: monoFont, fontSize: 11, marginTop: 10 }}>{error}</div>}
+      {error && <div style={{ color: "var(--rpc-danger-text)", fontFamily: monoFont, fontSize: 11, marginTop: 10 }}>{error}</div>}
     </ModalShell>
   );
 }

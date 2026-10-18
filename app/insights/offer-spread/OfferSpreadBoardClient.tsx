@@ -23,6 +23,7 @@ import {
   BID_AGE_UNKNOWN_LABEL, BID_AGE_UNKNOWN_TITLE,
 } from "@/lib/market/bid-age"
 import { usdSignFirst } from "@/lib/usd-format"
+import { accentText } from "@/lib/accent-text"
 
 // The page seed and every refetch read at most this many rows.
 const OFFER_SPREAD_LIMIT = 200
@@ -436,7 +437,7 @@ export default function OfferSpreadBoardClient({
                       )}
                     </td>
                     <td className="rpc-os-td-num">
-                      <span className="rpc-os-tier-chip" style={{ color: tierColor(r.tier) }}>
+                      <span className="rpc-os-tier-chip" style={{ color: accentText(tierColor(r.tier)) }}>
                         {normalizeTier(r.tier) ?? "—"}
                       </span>
                     </td>
@@ -787,14 +788,14 @@ const CSS = `
   text-transform: uppercase;
 }
 .rpc-os-meta-warn {
-  color: var(--rpc-warning);
+  color: var(--rpc-warning-text);
   font-weight: 600;
 }
 .rpc-os-thin-caveat {
   display: block;
   font-size: 10px;
   letter-spacing: 0.5px;
-  color: var(--rpc-warning);
+  color: var(--rpc-warning-text);
   font-weight: 600;
   margin-top: 2px;
   white-space: normal;

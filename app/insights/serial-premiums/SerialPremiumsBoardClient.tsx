@@ -25,6 +25,7 @@ import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
 import type { SerialBoardRow as Row, HeadlineMode } from "@/lib/serial-premiums-board"
 import { sectionEmptyCopy } from "@/lib/entity/section-empty-copy"
 import { usdSignFirst } from "@/lib/usd-format"
+import { accentText } from "@/lib/accent-text"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -194,7 +195,7 @@ function HeroTile({ r }: { r: Row }) {
           <span className="rpc-sp-prices-no1">{fmtMoney(r.headline_last_sale_usd)}</span>
         </div>
         <div className="rpc-sp-hero-meta">
-          <span style={{ color: tierColor(r.tier) }}>{normalizeTier(r.tier) ?? "—"}</span>
+          <span style={{ color: accentText(tierColor(r.tier)) }}>{normalizeTier(r.tier) ?? "—"}</span>
           <span className="rpc-sp-dot">·</span>
           <span>{fmtDate(r.headline_sold_at)}</span>
         </div>
@@ -220,7 +221,7 @@ function PremiumRow({ r, rank }: { r: Row; rank: number }) {
           {normalizeTier(r.tier) ? (
             <>
               <span className="rpc-sp-dot">·</span>
-              <span style={{ color: tierColor(r.tier) }}>{normalizeTier(r.tier)}</span>
+              <span style={{ color: accentText(tierColor(r.tier)) }}>{normalizeTier(r.tier)}</span>
             </>
           ) : null}
           {r.is_conflated ? (
@@ -627,7 +628,7 @@ const CSS = `
 
 .rpc-sp-list-wrap { max-width: 1180px; margin: 0 auto; }
 .rpc-sp-conflation-note { font-family: var(--font-body); font-size: 12.5px; line-height: 1.55; color: var(--rpc-text-muted); margin: 0 0 16px; padding: 10px 14px; border: 1px solid var(--rpc-border-subtle); border-left: 2px solid var(--rpc-warning); background: var(--rpc-surface); border-radius: 2px; }
-.rpc-sp-parallel { font-family: var(--font-mono); font-size: 9px; letter-spacing: 1px; text-transform: uppercase; padding: 2px 6px; border: 1px solid var(--rpc-warning); color: var(--rpc-warning); background: transparent; border-radius: 2px; white-space: nowrap; cursor: help; }
+.rpc-sp-parallel { font-family: var(--font-mono); font-size: 9px; letter-spacing: 1px; text-transform: uppercase; padding: 2px 6px; border: 1px solid var(--rpc-warning); color: var(--rpc-warning-text); background: transparent; border-radius: 2px; white-space: nowrap; cursor: help; }
 .rpc-sp-hero-parallel { position: absolute; top: 8px; right: 8px; background: var(--rpc-black); }
 .rpc-sp-state { padding: 48px 32px; text-align: center; font-family: var(--font-mono); font-size: 13px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-muted); border: 1px solid var(--rpc-border-subtle); background: var(--rpc-surface); border-radius: 2px; }
 .rpc-sp-list { display: flex; flex-direction: column; gap: 8px; }
