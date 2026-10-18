@@ -18,12 +18,36 @@
 # Runs synchronously (git sync is fast) so `main` is ready before the agent loop.
 set -uo pipefail
 
-# Web (remote) sessions only — local dev clones manage their own git.
+cd "${CLAUDE_PROJECT_DIR:-.}" || exit 0
+
+# Local (laptop) sessions: a SAFE subset only. Until 2026-10-17 this hook exited
+# here for every local session, so the Windows box never pulled what the cloud
+# sessions and Cowork pushed — a session opened 34 commits behind and started
+# re-deriving work already shipped. Locally another session may be mid-edit in
+# the same tree, so: fetch, fast-forward ONLY when on main with nothing staged
+# (`--ff-only` refuses to touch a dirty file), never reset / realign / switch
+# branches, and name what arrived so the session reads it before acting.
 if [ "${CLAUDE_CODE_REMOTE:-}" != "true" ]; then
+  timeout 20 git fetch --quiet origin main 2>/dev/null || {
+    echo "[session-start] git fetch failed — local main may be BEHIND origin; run 'git fetch' before trusting it"
+    exit 0
+  }
+  before="$(git rev-parse HEAD 2>/dev/null)"
+  behind="$(git rev-list --count HEAD..origin/main 2>/dev/null || echo 0)"
+  cur="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
+  if [ "${behind:-0}" -eq 0 ]; then
+    echo "[session-start] main up to date with origin/main ($(git rev-parse --short origin/main))"
+  elif [ "$cur" = "main" ] && git diff --cached --quiet 2>/dev/null \
+    && git merge --ff-only --quiet origin/main >/dev/null 2>&1; then
+    echo "[session-start] fast-forwarded main by $behind commit(s) pushed by other sessions — read them before acting:"
+    git log --format='  %h %ad %s' --date=format-local:'%m-%d %H:%M PT' "$before..HEAD" | head -25
+  else
+    echo "[session-start] ⚠ local is $behind commit(s) BEHIND origin/main and was NOT fast-forwarded (branch '$cur', staged changes, or a dirty file the merge would touch). Run 'git status' and pull before relying on the tree:"
+    git log --format='  %h %ad %s' --date=format-local:'%m-%d %H:%M PT' HEAD..origin/main | head -25
+  fi
+  node scripts/report-ready-queue.mjs 2>/dev/null || true
   exit 0
 fi
-
-cd "${CLAUDE_PROJECT_DIR:-.}" || exit 0
 
 # Is local `main` a provisioning MIRROR of origin/main that is safe to force-
 # realign (carries no work worth keeping), rather than a genuine branch-off?

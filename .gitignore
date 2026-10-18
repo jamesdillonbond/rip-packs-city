@@ -55,6 +55,7 @@ tsconfig.*.json
 .claude/hooks/*
 !.claude/hooks/session-start.sh
 !.claude/hooks/ledger-reminder.sh
+!.claude/hooks/origin-drift.sh
 .mcp.json
 
 # Flow CLI
