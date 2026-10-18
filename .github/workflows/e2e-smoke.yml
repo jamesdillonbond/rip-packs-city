@@ -107,19 +107,18 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # ── Accessibility audit (platform review 2026-10-11, C10) ──────────────────
-  # Runs axe-core (e2e/a11y.spec.ts) over five anon-public routes and FAILS the
-  # spec only on `serious` / `critical` violations; everything milder is printed
-  # and attached. This job is NON-BLOCKING by construction: `continue-on-error`
-  # on the Playwright step keeps the job (and the workflow's conclusion, badge
-  # and scheduler-liveness count) green whatever axe finds, and the result is
-  # REPORTED three ways — the step's own log, the run's job summary
-  # (a11y-summary.md → $GITHUB_STEP_SUMMARY) and an always-uploaded artifact.
-  # ⚠ A brand-new red gate helps nobody: the first run is expected to find
-  # violations. Promote this to a blocking step only once a scheduled run has
-  # read ZERO serious/critical on all five routes — then drop
-  # `continue-on-error` and the summary becomes a gate. Until then a green
-  # badge here means "the audit ran", not "the site is clean": read the summary.
+  # ── Accessibility audit (platform review 2026-10-11, C10; GATED 2026-10-18) ──
+  # Runs axe-core (e2e/a11y.spec.ts) over 11 anon-public routes in BOTH themes.
+  # ⭐ BLOCKING since 2026-10-18: the 10-17/18 contrast work (known-issues #194,
+  # docs/reference/text-colour-system.md) took `color-contrast` and `select-name`
+  # to ZERO on every route in both themes (verified: 22/22 against production
+  # before this flip), so the spec FAILS on those two rules — the accepted
+  # white-on-#E03A2F exception is excluded by signature inside the spec, never by
+  # route. Every other serious rule (#196's row-interactivity pattern) and every
+  # milder one is PRINTED, not failed. Findings are reported three ways — the
+  # step's log, the job summary (a11y-summary.md → $GITHUB_STEP_SUMMARY) and an
+  # always-uploaded artifact. ⛔ Never make a red run green by moving a rule out
+  # of GATED or widening the exception: fix the colour (text-colour-system.md).
   # Schedule + dispatch only (not per deploy): 4 runs/day is enough for a
   # report nobody blocks on, and ~47 deploys/day would multiply runner minutes
   # for a monitor whose output changes with the code, not the deploy count.
@@ -141,9 +140,8 @@ jobs:
           key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
-      - name: Run axe audit (non-blocking)
+      - name: Run axe audit (gated — color-contrast, select-name)
         id: axe
-        continue-on-error: true
         env:
           SMOKE_BASE_URL: ${{ github.event.inputs.base_url || 'https://www.rippackscity.com' }}
         run: npx playwright test a11y.spec.ts
