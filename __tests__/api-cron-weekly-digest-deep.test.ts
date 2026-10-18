@@ -95,6 +95,7 @@ beforeEach(() => {
   h.rpcCalls = []
   h.afterFns = []
   process.env.INGEST_SECRET_TOKEN = TOKEN
+  process.env.RPC_SENDER_POSTAL_ADDRESS = "PO Box 123, Portland, OR 97201"
   process.env.WEEKLY_DIGEST_ENABLED = "1"
   process.env.RESEND_API_KEY = "re_test"
   fetchMock = vi.fn(async () => ({ ok: true, status: 200, text: async () => "" }) as any)

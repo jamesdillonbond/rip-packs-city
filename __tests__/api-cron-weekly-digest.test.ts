@@ -66,6 +66,7 @@ beforeEach(() => {
   h.state.rpcCalls = []
   h.state.afterFns = []
   process.env.INGEST_SECRET_TOKEN = TOKEN
+  process.env.RPC_SENDER_POSTAL_ADDRESS = "PO Box 123, Portland, OR 97201"
   delete process.env.WEEKLY_DIGEST_ENABLED
 })
 afterEach(() => vi.unstubAllGlobals())
@@ -113,6 +114,22 @@ describe("weekly-digest — disabled real run", () => {
     const log = h.state.rpcCalls.find((c) => c.name === "log_pipeline_run")
     expect(log?.args?.p_extra?.skipped).toBe("disabled")
     expect(h.state.afterFns).toHaveLength(0) // never enters the send loop
+  })
+})
+
+describe("weekly-digest — enabled but no CAN-SPAM postal address (C2)", () => {
+  it("202 skipped:postal_address_missing, logs it, never enters the send loop", async () => {
+    process.env.WEEKLY_DIGEST_ENABLED = "1"
+    process.env.RESEND_API_KEY = "re_test"
+    delete process.env.RPC_SENDER_POSTAL_ADDRESS
+    h.state.movers = [MOVER]
+    const GET = await load()
+    const res = await GET(adminReq("https://t/api/cron/weekly-digest", { authorization: `Bearer ${TOKEN}` }))
+    expect(res.status).toBe(202)
+    expect((await res.json()).skipped).toBe("postal_address_missing")
+    const log = h.state.rpcCalls.find((c) => c.name === "log_pipeline_run")
+    expect(log?.args?.p_extra?.skipped).toBe("postal_address_missing")
+    expect(h.state.afterFns).toHaveLength(0)
   })
 })
 

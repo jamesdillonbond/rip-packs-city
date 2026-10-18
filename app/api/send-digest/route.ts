@@ -1,5 +1,7 @@
 // app/api/send-digest/route.ts
 // Weekly digest sender. Bearer-protected with INGEST_SECRET_TOKEN.
+// DISABLED BY DEFAULT: sends nothing unless SEND_DIGEST_ENABLED === "1" and the
+// CAN-SPAM postal address (RPC_SENDER_POSTAL_ADDRESS) is set.
 // Pulls verified subscribers with digest_weekly=true, composes a personalized
 // HTML email (portfolio summary + market pulse + top deals), and sends via Resend.
 
@@ -7,7 +9,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { normalizeAddress } from "@/lib/address"
 import { supabaseAdmin } from "@/lib/supabase"
 import { usdSignFirst } from "@/lib/usd-format"
-import { SENDER_LINE } from "@/lib/emails/sender-identity"
+import { commercialSendBlockedReason, commercialSenderLine } from "@/lib/emails/sender-identity"
 
 const TOKEN = process.env.INGEST_SECRET_TOKEN ?? ""
 const FROM = "rpc-digest@rippackscity.com"
@@ -95,7 +97,7 @@ async function buildEmail(origin: string, sub: Subscriber, market: MarketBlocks)
       <hr style="margin:32px 0;border:none;border-top:1px solid #eee">
       <p style="font-size:11px;color:#888">
         <a href="${origin}/profile">Manage preferences</a> · <a href="${unsubUrl}">Unsubscribe</a><br/>
-        ${SENDER_LINE}
+        ${commercialSenderLine()}
       </p>
     </div>
   `
@@ -107,6 +109,15 @@ export async function GET(req: NextRequest) {
   const auth = req.headers.get("authorization") ?? ""
   if (!TOKEN || auth !== `Bearer ${TOKEN}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+
+  // 2026-10-18: this route had NO enable flag — anything holding the bearer
+  // token mailed every verified subscriber a commercial digest with no postal
+  // address in it (CAN-SPAM, C2). It is off unless SEND_DIGEST_ENABLED === "1"
+  // AND RPC_SENDER_POSTAL_ADDRESS is set; both are checked before any read.
+  const blocked = commercialSendBlockedReason(process.env.SEND_DIGEST_ENABLED === "1")
+  if (blocked) {
+    return NextResponse.json({ sent: 0, skipped: blocked }, { status: 202 })
   }
 
   const origin = new URL(req.url).origin

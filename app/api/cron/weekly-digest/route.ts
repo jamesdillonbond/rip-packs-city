@@ -5,7 +5,8 @@
 // emails each mover a one-line "your portfolio moved N% this week" nudge via
 // Resend.
 //
-// DISABLED BY DEFAULT. It sends nothing unless WEEKLY_DIGEST_ENABLED === "1".
+// DISABLED BY DEFAULT. It sends nothing unless WEEKLY_DIGEST_ENABLED === "1" AND the
+// CAN-SPAM postal address (RPC_SENDER_POSTAL_ADDRESS, C2) is set.
 // This is a proactive outbound email to the dormant early cohort, gated on
 // Trevor's explicit go (see CLAUDE.md / memory no-promo-until-launch-ready).
 // Deploying the route changes nothing until the flag is set. Scheduling is
@@ -30,7 +31,7 @@ import { bearerMatches } from "@/lib/auth/bearer-secret"
 import { NextRequest, NextResponse, after } from "next/server";
 import { alreadySentEmail, ensureUnsubToken } from "@/lib/email/recipient-guards";
 import { supabaseAdmin } from "@/lib/supabase";
-import { SENDER_LINE } from "@/lib/emails/sender-identity";
+import { commercialSendBlockedReason, commercialSenderLine } from "@/lib/emails/sender-identity";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -116,7 +117,7 @@ function buildEmail(m: Mover, unsubscribeUrl: string): { subject: string; html: 
     <p style="color:rgba(255,255,255,0.5);font-size:11px;line-height:1.6;margin:28px 0 0">
       Estimated from indexed sales — not financial advice.<br/>
       <a href="${unsubscribeUrl}" style="color:rgba(255,255,255,0.5)">Unsubscribe from weekly emails</a><br/>
-      ${SENDER_LINE}
+      ${commercialSenderLine()}
     </p>
   </div></body></html>`;
   return { subject, html };
@@ -225,7 +226,11 @@ async function run(req: NextRequest) {
   }
 
   // ── Real run: gated behind the flag.
-  if (!enabled) {
+  // The flag alone is not enough: a commercial send also needs the CAN-SPAM
+  // postal address (C2). Either missing skips the run, logged as such.
+  const blocked = commercialSendBlockedReason(enabled);
+  if (blocked) {
+    const skippedAs = blocked === "flag_off" ? "disabled" : blocked;
     try {
       await supabaseAdmin.rpc("log_pipeline_run", {
         p_pipeline: PIPELINE_NAME,
@@ -235,13 +240,13 @@ async function run(req: NextRequest) {
         p_rows_skipped: 0,
         p_ok: true,
         p_error: null,
-        p_extra: { skipped: "disabled" },
+        p_extra: { skipped: skippedAs },
       });
     } catch {
       /* non-fatal */
     }
     return NextResponse.json(
-      { ok: true, accepted: true, pipeline: PIPELINE_NAME, skipped: "disabled" },
+      { ok: true, accepted: true, pipeline: PIPELINE_NAME, skipped: skippedAs },
       { status: 202 }
     );
   }

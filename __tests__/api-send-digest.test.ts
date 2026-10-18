@@ -35,12 +35,17 @@ function req(auth?: string) {
 
 beforeEach(() => {
   process.env.INGEST_SECRET_TOKEN = TOKEN
+  // 2026-10-18: the route sends only with its flag AND the CAN-SPAM postal address.
+  process.env.SEND_DIGEST_ENABLED = "1"
+  process.env.RPC_SENDER_POSTAL_ADDRESS = "PO Box 123, Portland, OR 97201"
   state.result = { data: [], error: null }
   state.rpc = {}
 })
 afterEach(() => {
   process.env.INGEST_SECRET_TOKEN = TOKEN
   delete process.env.RESEND_API_KEY
+  delete process.env.SEND_DIGEST_ENABLED
+  delete process.env.RPC_SENDER_POSTAL_ADDRESS
   vi.unstubAllGlobals()
 })
 
@@ -60,6 +65,41 @@ describe("GET /api/send-digest", () => {
 
   it("401s with a wrong bearer token", async () => {
     expect((await GET(req("Bearer wrong"))).status).toBe(401)
+  })
+
+  // 2026-10-18: this route had no enable flag; anything holding the bearer token
+  // mailed every verified subscriber a commercial digest with no postal address.
+  it("sends NOTHING and reads no subscriber when its flag is off", async () => {
+    delete process.env.SEND_DIGEST_ENABLED
+    seedOneSubscriber()
+    process.env.RESEND_API_KEY = "re_test"
+    const fetchMock = vi.fn()
+    vi.stubGlobal("fetch", fetchMock)
+    const res = await GET(req(`Bearer ${TOKEN}`))
+    expect(res.status).toBe(202)
+    expect(await res.json()).toEqual({ sent: 0, skipped: "flag_off" })
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it("sends NOTHING when enabled but the CAN-SPAM postal address is missing", async () => {
+    delete process.env.RPC_SENDER_POSTAL_ADDRESS
+    seedOneSubscriber()
+    process.env.RESEND_API_KEY = "re_test"
+    const fetchMock = vi.fn()
+    vi.stubGlobal("fetch", fetchMock)
+    const res = await GET(req(`Bearer ${TOKEN}`))
+    expect(await res.json()).toEqual({ sent: 0, skipped: "postal_address_missing" })
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it("a sent digest carries the postal address in its footer", async () => {
+    seedOneSubscriber()
+    process.env.RESEND_API_KEY = "re_test"
+    const fetchMock = vi.fn(async () => ({ ok: true }) as any)
+    vi.stubGlobal("fetch", fetchMock)
+    await GET(req(`Bearer ${TOKEN}`))
+    const body = JSON.parse(String((fetchMock.mock.calls[0] as any[])[1].body))
+    expect(body.html).toContain("PO Box 123, Portland, OR 97201")
   })
 
   it("returns a zeroed summary when there are no subscribers", async () => {
