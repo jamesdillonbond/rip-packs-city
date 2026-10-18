@@ -20,6 +20,8 @@ import { redeemSuccessMessage, redeemErrorReason } from "@/lib/rewards-redeem-me
 const DISPLAY = "var(--font-display)";
 const MONO = "var(--font-mono)";
 const RED = "var(--rpc-red)";
+// TEXT painted red uses the text-safe red (#FF4D40 dark / #B52A21 light); RED stays the fill.
+const RED_TEXT = "var(--rpc-red-text)";
 
 // Mirror of public.rewards_tier(status). Display-only; the server is the source
 // of truth for the actual tier string in the summary payload.
@@ -365,7 +367,7 @@ export default function RewardsPage() {
             margin: "8px 0 4px",
           }}
         >
-          RPC <span style={{ color: RED }}>Rewards</span>
+          RPC <span style={{ color: RED_TEXT }}>Rewards</span>
         </h1>
         <p style={{ color: "#9a9a9a", margin: "0 0 20px", maxWidth: 640 }}>
           Earn <strong>Status</strong> for using the platform — it only goes up and sets your tier.
@@ -389,7 +391,7 @@ export default function RewardsPage() {
             {flash.cta && (
               <>
                 {" "}
-                <Link href={flash.cta.href} style={{ color: RED, fontWeight: 600 }}>
+                <Link href={flash.cta.href} style={{ color: RED_TEXT, fontWeight: 600 }}>
                   {flash.cta.label}
                 </Link>
               </>
@@ -475,7 +477,7 @@ export default function RewardsPage() {
                   <span style={{ fontFamily: DISPLAY, fontSize: 30, textTransform: "uppercase" }}>
                     {summary?.tier ?? prog.current.name}
                   </span>
-                  <span style={{ fontFamily: MONO, color: RED, fontSize: 18 }}>
+                  <span style={{ fontFamily: MONO, color: RED_TEXT, fontSize: 18 }}>
                     {num(status)} pts
                   </span>
                 </div>
@@ -507,7 +509,7 @@ export default function RewardsPage() {
               <div style={cardStyle}>
                 <div style={kickerStyle}>Credits · Spendable</div>
                 <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
-                  <span style={{ fontFamily: MONO, color: RED, fontSize: 34 }}>{num(spendable)}</span>
+                  <span style={{ fontFamily: MONO, color: RED_TEXT, fontSize: 34 }}>{num(spendable)}</span>
                   <span style={{ color: "#9a9a9a" }}>Credits</span>
                 </div>
                 <div style={{ marginTop: 12, fontFamily: MONO, fontSize: 12, color: "#9a9a9a" }}>
@@ -542,7 +544,7 @@ export default function RewardsPage() {
                   <div style={{ marginTop: 10 }}>
                     <Link
                       href={`/profile/${encodeURIComponent(profileUsername)}`}
-                      style={{ fontFamily: MONO, fontSize: 12, color: RED, textDecoration: "none" }}
+                      style={{ fontFamily: MONO, fontSize: 12, color: RED_TEXT, textDecoration: "none" }}
                     >
                       View your public profile →
                     </Link>
@@ -688,7 +690,7 @@ export default function RewardsPage() {
                 <div key={r.action_key} style={{ ...cardStyle, padding: 14 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
                     <span style={{ fontSize: 14 }}>{r.label}</span>
-                    <span style={{ fontFamily: MONO, color: RED, whiteSpace: "nowrap" }}>
+                    <span style={{ fontFamily: MONO, color: RED_TEXT, whiteSpace: "nowrap" }}>
                       +{num(r.points)}
                     </span>
                   </div>
@@ -721,14 +723,14 @@ export default function RewardsPage() {
                   color: "#e7e7e7",
                 }}
               >
-                <span style={{ color: RED, fontFamily: DISPLAY, letterSpacing: "0.06em", fontSize: 18 }}>
+                <span style={{ color: RED_TEXT, fontFamily: DISPLAY, letterSpacing: "0.06em", fontSize: 18 }}>
                   🔒
                 </span>
                 <span style={{ fontFamily: MONO, fontSize: 13 }}>
                   Verify by listing a Moment — about 2 minutes. Unlocks Moment rewards and earns{" "}
-                  <strong style={{ color: RED }}>500 credits</strong>.
+                  <strong style={{ color: RED_TEXT }}>500 credits</strong>.
                 </span>
-                <span style={{ marginLeft: "auto", color: RED, fontFamily: DISPLAY, whiteSpace: "nowrap" }}>
+                <span style={{ marginLeft: "auto", color: RED_TEXT, fontFamily: DISPLAY, whiteSpace: "nowrap" }}>
                   Verify →
                 </span>
               </Link>
@@ -799,7 +801,7 @@ export default function RewardsPage() {
                         gap: 8,
                       }}
                     >
-                      <span style={{ fontFamily: MONO, color: RED, fontSize: 18 }}>
+                      <span style={{ fontFamily: MONO, color: RED_TEXT, fontSize: 18 }}>
                         {num(item.cost_credits)}
                       </span>
                       <button
@@ -977,7 +979,7 @@ const linkBtn: React.CSSProperties = {
   border: "none",
   padding: 0,
   cursor: "pointer",
-  color: RED,
+  color: RED_TEXT,
   fontFamily: MONO,
   fontSize: 11,
   textDecoration: "underline",
@@ -1193,7 +1195,7 @@ function ShippingModal({
         style={{ width: 420, maxWidth: "94vw", ...cardStyle, maxHeight: "90vh", overflowY: "auto" }}
       >
         <h3 style={{ fontFamily: DISPLAY, textTransform: "uppercase", margin: "0 0 4px", fontSize: 22 }}>
-          Shipping <span style={{ color: RED }}>address</span>
+          Shipping <span style={{ color: RED_TEXT }}>address</span>
         </h3>
         <p style={{ color: "#9a9a9a", fontSize: 13, marginTop: 0 }}>
           Where should we send your <strong style={{ color: "#e7e7e7" }}>{itemName}</strong>? Only RPC
@@ -1232,7 +1234,7 @@ function ShippingModal({
         </div>
 
         {err && (
-          <div style={{ marginTop: 10, color: RED, fontFamily: MONO, fontSize: 12 }}>{err}</div>
+          <div style={{ marginTop: 10, color: RED_TEXT, fontFamily: MONO, fontSize: 12 }}>{err}</div>
         )}
 
         <div style={{ display: "flex", gap: 10, marginTop: 16, justifyContent: "flex-end" }}>

@@ -25,8 +25,20 @@ import { stripComments } from "../scripts/lib/strip-comments.mjs"
 
 const BANNED = /(?:^|[^-\w])color:\s*['"`]?var\(--(rpc-red|rpc-text-ghost)\)/g
 
+// ⚠ The same tokens as a TERNARY BRANCH (`color: active ? "var(--rpc-red)" : …`)
+// — 28 sites the first swap's regex could not see (2026-10-18). Same-line form.
+// ⛔ SUPPRESSIONS — each a claim the CODE is right, with an exact count.
+const DISABLED_STATE: Record<string, number> = {
+  // The send button's arrow while DISABLED (empty input / request in flight):
+  // WCAG 1.4.3 exempts inactive controls.
+  "components/SupportChat.tsx": 1,
+}
+
+const BANNED_BRANCH = /(?:^|[^-\w])color:[^,;}\n]*\?[^,;}\n]*(["'])var\(--(rpc-red|rpc-text-ghost)\)\1/g
+
 function offenders(src: string): string[] {
-  return [...stripComments(src).matchAll(BANNED)].map((m) => m[1])
+  const code = stripComments(src)
+  return [...[...code.matchAll(BANNED)].map((m) => m[1]), ...[...code.matchAll(BANNED_BRANCH)].map((m) => m[2])]
 }
 
 // In-process walk, not `git ls-files` through a shell (guards-do-not-shell-out-to-grep).
@@ -43,7 +55,7 @@ describe("text colours use the text-safe tokens", () => {
     const hits: string[] = []
     for (const f of FILES) {
       const n = offenders(readFileSync(f, "utf8"))
-      if (n.length) hits.push(`${f}: ${n.join(", ")}`)
+      if (n.length > (DISABLED_STATE[f] ?? 0)) hits.push(`${f}: ${n.join(", ")}`)
     }
     expect(hits, "paint text with var(--rpc-red-text) / var(--rpc-text-muted)").toEqual([])
   })
@@ -54,6 +66,11 @@ describe("the detector is not vacuous", () => {
     expect(offenders(".a { color: var(--rpc-red); }")).toEqual(["rpc-red"])
     expect(offenders(`<b style={{ color: "var(--rpc-red)" }} />`)).toEqual(["rpc-red"])
     expect(offenders("const css = `.x{color:var(--rpc-text-ghost)}`")).toEqual(["rpc-text-ghost"])
+  })
+  it("catches either token as a ternary branch, and spares a branch that is a fill", () => {
+    expect(offenders(`<b style={{ color: on ? "var(--rpc-red)" : undefined }} />`)).toEqual(["rpc-red"])
+    expect(offenders(`<b style={{ color: x ? "#fff" : "var(--rpc-text-ghost)" }} />`)).toEqual(["rpc-text-ghost"])
+    expect(offenders(`<b style={{ color: on ? "var(--rpc-red-text)" : undefined, background: on ? "var(--rpc-red)" : "none" }} />`)).toEqual([])
   })
   it("leaves fills, borders, the text-safe tokens and comments alone", () => {
     expect(offenders(".a { background-color: var(--rpc-red); border-color: var(--rpc-red); }")).toEqual([])

@@ -309,7 +309,7 @@ async function TopCollectorsSection({ playerName }: { playerName: string }) {
           const label = c.username ? `@${c.username}` : truncateAddressForDisplay(c.wallet_address)
           const inner = (
             <div style={{ display: "grid", gridTemplateColumns: "minmax(38px, auto) 1fr minmax(90px, auto) minmax(110px, auto)", gap: 12, padding: "10px 12px", alignItems: "center", minWidth: 420 }}>
-              <span style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 15, color: c.rnk <= 3 ? "var(--rpc-red)" : "var(--rpc-text-muted)" }}>#{c.rnk}</span>
+              <span style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 15, color: c.rnk <= 3 ? "var(--rpc-red-text)" : "var(--rpc-text-muted)" }}>#{c.rnk}</span>
               <span style={{ fontFamily: c.username ? "var(--font-display)" : "var(--font-mono)", fontWeight: c.username ? 700 : 400, fontSize: c.username ? 14 : 12, color: "var(--rpc-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
               <span className="rpc-mono" style={{ fontSize: 12, color: "var(--rpc-text-secondary)", textAlign: "right" }}>{fmtCount(c.moments_held)} <span style={{ color: "var(--rpc-text-muted)" }}>held</span></span>
               <span style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 16, color: "var(--rpc-text-primary)", textAlign: "right" }}>{fmtUsd(c.est_value_usd)}</span>

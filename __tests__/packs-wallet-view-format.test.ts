@@ -77,19 +77,21 @@ describe("realizedPlTint", () => {
     expect(realizedPlTint(12.5)).toBe("#34D399")
   })
   it("red for < 0", () => {
-    expect(realizedPlTint(-1)).toBe("var(--rpc-red)")
+    expect(realizedPlTint(-1)).toBe("var(--rpc-red-text)")
   })
 })
 
+// ⚠ RE-PINNED 2026-10-18: a P/L figure is TEXT, so the loss red is the text-safe
+// token (--rpc-red-text, AA in both themes), not the fill red (#E03A2F, 4.15–4.45:1).
 describe("netPlTint", () => {
   it("green when a value exists and is >= 0", () => {
     expect(netPlTint(0)).toBe("#34D399")
     expect(netPlTint(500)).toBe("#34D399")
   })
   it("red when negative or absent", () => {
-    expect(netPlTint(-5)).toBe("var(--rpc-red)")
-    expect(netPlTint(null)).toBe("var(--rpc-red)")
-    expect(netPlTint(undefined)).toBe("var(--rpc-red)")
+    expect(netPlTint(-5)).toBe("var(--rpc-red-text)")
+    expect(netPlTint(null)).toBe("var(--rpc-red-text)")
+    expect(netPlTint(undefined)).toBe("var(--rpc-red-text)")
   })
 })
 

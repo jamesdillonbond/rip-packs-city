@@ -1418,7 +1418,7 @@ export default async function MomentPage(
                         {isThisSerial ? <span style={{ color: "var(--rpc-red-text)", marginLeft: 6 }}>●</span> : null}
                       </Td>
                       <Td>
-                        <span style={{ color: accent ? "var(--rpc-red)" : "var(--rpc-text-primary)", display: "inline-flex", alignItems: "center", gap: 4 }}>
+                        <span style={{ color: accent ? "var(--rpc-red-text)" : "var(--rpc-text-primary)", display: "inline-flex", alignItems: "center", gap: 4 }}>
                           <SpecialSerialGlyph tag={n.tag} size={11} collection={e.collection_slug} />
                           {notableTagLabel(n.tag)}
                         </span>
@@ -1498,7 +1498,7 @@ export default async function MomentPage(
                     </Td>
                     {hasParallelCol ? (
                       <Td>
-                        <span style={{ color: s.parallel && s.parallel !== "Standard" ? "var(--rpc-red)" : "var(--rpc-text-muted)" }}>
+                        <span style={{ color: s.parallel && s.parallel !== "Standard" ? "var(--rpc-red-text)" : "var(--rpc-text-muted)" }}>
                           {s.parallel ?? "—"}
                         </span>
                       </Td>

@@ -191,7 +191,7 @@ export default function EditionActivity({
             style={{
               background: tab === v ? "var(--rpc-red-bg)" : undefined,
               borderColor: tab === v ? "var(--rpc-red-border)" : undefined,
-              color: tab === v ? "var(--rpc-red)" : undefined,
+              color: tab === v ? "var(--rpc-red-text)" : undefined,
               cursor: "pointer",
             }}
           >{l}</button>

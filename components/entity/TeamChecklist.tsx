@@ -812,7 +812,7 @@ function ScopeChip({ active, onClick, children }: { active: boolean; onClick: ()
       style={{
         background: active ? "var(--rpc-red-bg)" : undefined,
         borderColor: active ? "var(--rpc-red-border)" : undefined,
-        color: active ? "var(--rpc-red)" : undefined,
+        color: active ? "var(--rpc-red-text)" : undefined,
         cursor: "pointer",
       }}
     >{children}</button>

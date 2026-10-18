@@ -119,7 +119,7 @@ export default function TeamFollowButton({ league, teamShortSlug, teamPath, dark
       onClick={() => setFollow(!following)}
       style={{
         ...baseStyle,
-        color: following ? (dark ? "#fff" : "var(--rpc-red)") : (dark ? "#fff" : "var(--rpc-text-primary)"),
+        color: following ? (dark ? "#fff" : "var(--rpc-red-text)") : (dark ? "#fff" : "var(--rpc-text-primary)"),
         background: following ? (dark ? "rgba(255,255,255,0.18)" : "var(--rpc-red-bg)") : (dark ? "rgba(0,0,0,0.30)" : "transparent"),
         border: `1px solid ${following ? (dark ? "rgba(255,255,255,0.55)" : "var(--rpc-red-border)") : (dark ? "rgba(255,255,255,0.35)" : "rgba(255,255,255,0.16)")}`,
         opacity: busy ? 0.6 : 1,

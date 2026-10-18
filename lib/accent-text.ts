@@ -7,7 +7,8 @@
 // has one value per collection and no light-mode shade.
 //
 // Borders, fills and tints keep the raw accent. Text goes through here:
-//   · the brand red → var(--rpc-red-text), the existing text-safe red
+//   · the brand red (#E03A2F or var(--rpc-red) — lib/marketplace-status-banner
+//     passes the token) → var(--rpc-red-text), the existing text-safe red
 //     (#FF4D40 dark / #B52A21 light) — red TEXT already had a token;
 //   · a CSS variable → unchanged (it is already a themed token);
 //   · any other colour → color-mix toward the theme's --rpc-accent-text-mix by
@@ -25,7 +26,7 @@ export function accentText(accent: string | null | undefined): string | undefine
 export function accentText(accent: string | null | undefined): string | undefined {
   if (!accent) return accent ?? undefined
   const a = accent.trim()
-  if (BRAND_RED.test(a)) return "var(--rpc-red-text)"
+  if (BRAND_RED.test(a) || a === "var(--rpc-red)") return "var(--rpc-red-text)"
   if (a.startsWith("var(")) return a
   return `color-mix(in srgb, ${a}, var(--rpc-accent-text-mix) var(--rpc-accent-text-amt))`
 }

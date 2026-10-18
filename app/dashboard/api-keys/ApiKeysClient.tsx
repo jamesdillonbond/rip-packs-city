@@ -493,7 +493,7 @@ export default function ApiKeysClient() {
             border: `1px solid ${
               toast.tone === "ok" ? "var(--rpc-border-hover)" : "var(--rpc-red-border)"
             }`,
-            color: toast.tone === "ok" ? "var(--rpc-text-primary)" : "var(--rpc-red)",
+            color: toast.tone === "ok" ? "var(--rpc-text-primary)" : "var(--rpc-red-text)",
             borderRadius: "var(--radius-md)",
             fontFamily: "var(--font-mono)",
             fontSize: "var(--text-sm)",

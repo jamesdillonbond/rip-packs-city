@@ -23,6 +23,8 @@ const TYPE_OPTIONS: { value: AlertType; label: string; unit: "$" | "%" }[] = [
 ];
 
 const RED = "var(--rpc-red)";
+// TEXT painted red uses the text-safe red (#FF4D40 dark / #B52A21 light); RED stays the fill.
+const RED_TEXT = "var(--rpc-red-text)";
 const MONO = "var(--font-mono)";
 
 export default function WatchEditionButton({
@@ -100,7 +102,7 @@ export default function WatchEditionButton({
           padding: "8px 14px",
           border: `1px solid ${RED}`,
           background: "var(--rpc-red-bg, rgba(224,58,47,0.10))",
-          color: RED,
+          color: RED_TEXT,
           borderRadius: 6,
           fontSize: 12,
           letterSpacing: "0.04em",
@@ -192,7 +194,7 @@ export default function WatchEditionButton({
       </div>
       {channel === "telegram" && (
         <p className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)", marginTop: 6, lineHeight: 1.5 }}>
-          Link Telegram on the <a href="/alerts" style={{ color: RED, textDecoration: "none" }}>Alerts page</a> to receive these.
+          Link Telegram on the <a href="/alerts" style={{ color: RED_TEXT, textDecoration: "none" }}>Alerts page</a> to receive these.
         </p>
       )}
 
@@ -237,7 +239,7 @@ export default function WatchEditionButton({
               {msg.text}{" "}
               <a
                 href={`/login?next=${encodeURIComponent(typeof window !== "undefined" ? window.location.pathname : "/")}`}
-                style={{ color: RED, textDecoration: "none" }}
+                style={{ color: RED_TEXT, textDecoration: "none" }}
               >
                 Sign in →
               </a>

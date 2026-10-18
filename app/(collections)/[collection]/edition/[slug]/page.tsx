@@ -1210,7 +1210,7 @@ export default async function EditionPage(
                 >
                   <IpfsThumb src={proxyIpfsImageUrl(s.thumbnail_url, 320)} alt={name} label={name} />
                   <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 6, marginBottom: 4 }}>
-                    <span style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 14, color: s.is_self ? "var(--rpc-red)" : "var(--rpc-text-primary)", letterSpacing: "0.04em", lineHeight: 1.2 }}>{name}</span>
+                    <span style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 14, color: s.is_self ? "var(--rpc-red-text)" : "var(--rpc-text-primary)", letterSpacing: "0.04em", lineHeight: 1.2 }}>{name}</span>
                     {s.is_self && <span className="rpc-mono" style={{ fontSize: 9, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--rpc-red-text)" }}>viewing</span>}
                   </div>
                   <div className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-primary)" }}>
@@ -1583,7 +1583,7 @@ async function EditionBottomSections({
                         letterSpacing: "0.06em",
                         textTransform: "uppercase",
                         fontWeight: 700,
-                        color: accent ? "var(--rpc-red)" : "var(--rpc-text-secondary)",
+                        color: accent ? "var(--rpc-red-text)" : "var(--rpc-text-secondary)",
                         background: accent ? "var(--rpc-red-bg, rgba(224,58,47,0.08))" : "rgba(255,255,255,0.04)",
                         border: `1px solid ${accent ? "var(--rpc-red-border, var(--rpc-border))" : "var(--rpc-border)"}`,
                       }}
@@ -1633,7 +1633,7 @@ async function EditionBottomSections({
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {topOwners.map((t, i) => (
               <div key={t.owner_address} style={{ display: "grid", gridTemplateColumns: "26px 1fr 96px", gap: 12, alignItems: "center", padding: "8px 10px", border: "1px solid var(--rpc-border)", borderRadius: 4 }}>
-                <span className="rpc-mono" style={{ fontSize: 12, fontWeight: 700, color: i === 0 ? "var(--rpc-red)" : "var(--rpc-text-muted)" }}>{i + 1}</span>
+                <span className="rpc-mono" style={{ fontSize: 12, fontWeight: 700, color: i === 0 ? "var(--rpc-red-text)" : "var(--rpc-text-muted)" }}>{i + 1}</span>
                 <WalletLink address={t.owner_address} name={ownerNames.get(normalizeAddress(t.owner_address)) ?? null} collectionUrlSlug={collection} />
                 <span className="rpc-mono" style={{ fontSize: 12, textAlign: "right", color: "var(--rpc-text-primary)", fontWeight: 700 }}>
                   {fmtCount(t.moment_count)}<span style={{ color: "var(--rpc-text-muted)", fontWeight: 400 }}> owned</span>

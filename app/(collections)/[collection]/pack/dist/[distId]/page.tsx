@@ -1454,7 +1454,7 @@ function DualPriceKpi({
           fontSize: 18,
           letterSpacing: "0.02em",
           fontVariantNumeric: "tabular-nums",
-          color: anchor ? "var(--rpc-red)" : muted ? "rgba(255,255,255,0.5)" : "#fff",
+          color: anchor ? "var(--rpc-red-text)" : muted ? "rgba(255,255,255,0.5)" : "#fff",
         }}
       >
         {value}

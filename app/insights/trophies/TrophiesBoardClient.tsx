@@ -162,7 +162,7 @@ function TrophyTile({ r, hero = false }: { r: Row; hero?: boolean }) {
         )}
         <span
           className="rpc-tr-badge"
-          style={{ color: r.is_one_of_one ? "var(--rpc-red)" : tierColor(r.tier) }}
+          style={{ color: r.is_one_of_one ? "var(--rpc-red-text)" : tierColor(r.tier) }}
         >
           {trophyBadge(r)}
         </span>

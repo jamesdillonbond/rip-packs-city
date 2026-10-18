@@ -54,7 +54,7 @@ export function packStatusColor(status: string): string {
 }
 
 const POSITIVE_TINT = "#34D399"
-const NEGATIVE_TINT = "var(--rpc-red)"
+const NEGATIVE_TINT = "var(--rpc-red-text)" // a P/L figure is TEXT: the text-safe red
 const MUTED_TINT = "var(--rpc-text-muted)"
 
 /** Tint for a realized-P&L figure: green >= 0, red < 0, muted when unknown.

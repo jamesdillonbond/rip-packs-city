@@ -193,7 +193,7 @@ export default function SalesTablePaginated({ collectionUrlSlug, routeSlug, init
                 <tr key={`${s.transaction_hash ?? "s"}-${s.serial_number ?? "n"}-${i}`}>
                   <td style={TD}>{serialCell}</td>
                   {hasParallelCol && (
-                    <td style={{ ...TD, color: s.parallel && s.parallel !== "Standard" ? "var(--rpc-red)" : "var(--rpc-text-secondary)" }}>
+                    <td style={{ ...TD, color: s.parallel && s.parallel !== "Standard" ? "var(--rpc-red-text)" : "var(--rpc-text-secondary)" }}>
                       {s.parallel ?? EM_DASH}
                     </td>
                   )}

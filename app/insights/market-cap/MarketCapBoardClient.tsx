@@ -43,7 +43,7 @@ function pillStyle(active: boolean): CSSProperties {
     padding: "6px 12px", fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", cursor: "pointer",
     borderRadius: 4, border: `1px solid ${active ? "var(--rpc-red)" : "var(--rpc-border)"}`,
     background: active ? "var(--rpc-red-bg)" : "transparent",
-    color: active ? "var(--rpc-red)" : "var(--rpc-text-secondary)",
+    color: active ? "var(--rpc-red-text)" : "var(--rpc-text-secondary)",
   }
 }
 

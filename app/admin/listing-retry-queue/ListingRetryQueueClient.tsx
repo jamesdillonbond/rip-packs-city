@@ -457,7 +457,7 @@ function RowsTable({ token, collectionsWithRows }: { token: string; collectionsW
                 padding: "4px 10px", borderRadius: 999,
                 border: "1px solid " + (collection === slug ? "var(--rpc-red)" : "var(--rpc-border)"),
                 background: collection === slug ? "rgba(224, 58, 47, 0.12)" : "transparent",
-                color: collection === slug ? "var(--rpc-red)" : "var(--rpc-text-secondary)",
+                color: collection === slug ? "var(--rpc-red-text)" : "var(--rpc-text-secondary)",
                 fontFamily: "var(--font-mono)", fontSize: 11, cursor: "pointer",
               }}
             >
@@ -574,7 +574,7 @@ function Th({
       style={{
         textAlign: "left", padding: "8px 10px",
         fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase",
-        color: active ? "var(--rpc-red)" : "var(--rpc-text-muted)",
+        color: active ? "var(--rpc-red-text)" : "var(--rpc-text-muted)",
         cursor: sortable ? "pointer" : "default",
         userSelect: "none",
         fontWeight: 600,

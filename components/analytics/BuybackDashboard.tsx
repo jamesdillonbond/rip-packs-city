@@ -175,7 +175,7 @@ export default function BuybackDashboard() {
               style={{
                 background: active ? "var(--rpc-red-bg)" : "var(--rpc-surface)",
                 border: `1px solid ${active ? "var(--rpc-red-border)" : "var(--rpc-border)"}`,
-                color: active ? "var(--rpc-red)" : "var(--rpc-text-secondary)",
+                color: active ? "var(--rpc-red-text)" : "var(--rpc-text-secondary)",
                 fontFamily: "var(--font-display)",
               }}
             >
@@ -199,7 +199,7 @@ export default function BuybackDashboard() {
               style={{
                 background: active ? "var(--rpc-red-bg)" : "var(--rpc-surface)",
                 border: `1px solid ${active ? "var(--rpc-red-border)" : "var(--rpc-border)"}`,
-                color: active ? "var(--rpc-red)" : "var(--rpc-text-secondary)",
+                color: active ? "var(--rpc-red-text)" : "var(--rpc-text-secondary)",
                 fontFamily: "var(--font-display)",
               }}
             >

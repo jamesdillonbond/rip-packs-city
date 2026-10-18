@@ -258,7 +258,7 @@ export default function FastBreakClient() {
                 fontSize: 11,
                 letterSpacing: "0.12em",
                 textTransform: "uppercase",
-                color: runBadge.live ? "var(--rpc-red)" : "var(--rpc-text-muted)",
+                color: runBadge.live ? "var(--rpc-red-text)" : "var(--rpc-text-muted)",
               }}
             >
               {runBadge.live && (
@@ -514,7 +514,7 @@ export default function FastBreakClient() {
                       style={{
                         textAlign: "right",
                         fontFamily: "var(--font-mono)",
-                        color: p.is_captain ? "var(--rpc-red)" : "var(--rpc-text-primary)",
+                        color: p.is_captain ? "var(--rpc-red-text)" : "var(--rpc-text-primary)",
                       }}
                     >
                       <div style={{ fontWeight: 700, fontSize: 18, letterSpacing: "0.02em" }}>

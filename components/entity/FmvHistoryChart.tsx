@@ -348,7 +348,7 @@ export default function FmvHistoryChart({ collectionUrlSlug, routeSlug, initial,
             style={{
               background: days === r.days ? "var(--rpc-red-bg)" : undefined,
               borderColor: days === r.days ? "var(--rpc-red-border)" : undefined,
-              color: days === r.days ? "var(--rpc-red)" : undefined,
+              color: days === r.days ? "var(--rpc-red-text)" : undefined,
               cursor: "pointer",
             }}
           >{r.label}</button>
@@ -535,7 +535,7 @@ function OverlayChip({ on, onClick, title, children }: { on: boolean; onClick: (
       style={{
         background: on ? "var(--rpc-red-bg)" : undefined,
         borderColor: on ? "var(--rpc-red-border)" : undefined,
-        color: on ? "var(--rpc-red)" : undefined,
+        color: on ? "var(--rpc-red-text)" : undefined,
         cursor: "pointer",
       }}
     >{children}</button>

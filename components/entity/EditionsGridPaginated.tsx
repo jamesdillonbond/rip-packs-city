@@ -439,7 +439,7 @@ export default function EditionsGridPaginated({ collectionUrlSlug, fetchUrl, ini
               style={{
                 background: sortKey === k ? "var(--rpc-red-bg)" : undefined,
                 borderColor: sortKey === k ? "var(--rpc-red-border)" : undefined,
-                color: sortKey === k ? "var(--rpc-red)" : undefined,
+                color: sortKey === k ? "var(--rpc-red-text)" : undefined,
                 cursor: "pointer",
               }}
             >{l}</button>

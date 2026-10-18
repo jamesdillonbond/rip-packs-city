@@ -26,6 +26,8 @@ import SupportChatConnected from "@/components/SupportChatConnected";
 const DISPLAY = "var(--font-display)";
 const MONO = "var(--font-mono)";
 const RED = "var(--rpc-red)";
+// TEXT painted red uses the text-safe red (#FF4D40 dark / #B52A21 light); RED stays the fill.
+const RED_TEXT = "var(--rpc-red-text)";
 
 // Deal board collections (slug -> UUID). TS + Pinnacle + NFL All Day all carry
 // a floor-ask-vs-FMV deal leg in cross_collection_deals_board today; the rest
@@ -608,7 +610,7 @@ export default function AlertsClient() {
                     <div style={{ display: "flex", gap: 8 }}>
                       <button onClick={() => editSub(s)} style={btnGhost}>Edit</button>
                       <button onClick={() => toggleActive(s)} style={btnGhost}>{s.active ? "Pause" : "Resume"}</button>
-                      <button onClick={() => removeSub(s)} style={{ ...btnGhost, color: RED }}>Delete</button>
+                      <button onClick={() => removeSub(s)} style={{ ...btnGhost, color: RED_TEXT }}>Delete</button>
                     </div>
                   </div>
                 </div>
@@ -657,7 +659,7 @@ export default function AlertsClient() {
                         const href = editionHref(a);
                         return href ? <Link href={href} style={{ ...btnGhost, textDecoration: "none" }}>View</Link> : null;
                       })()}
-                      <button onClick={() => removeFmvAlert(a)} style={{ ...btnGhost, color: RED }}>Delete</button>
+                      <button onClick={() => removeFmvAlert(a)} style={{ ...btnGhost, color: RED_TEXT }}>Delete</button>
                     </div>
                   </div>
                 </div>

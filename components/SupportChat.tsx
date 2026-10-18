@@ -192,7 +192,7 @@ function FeedbackButtons({ messageId, sessionId, dbId, feedback: initialFeedback
   return (
     <div style={{ display: "flex", gap: 4, marginTop: 6, opacity: sent ? 0.5 : 1 }}>
       <button onClick={() => sendFeedback("up")} disabled={sent} style={{ background: feedback === "up" ? "rgba(52,211,153,0.15)" : "transparent", border: feedback === "up" ? "1px solid rgba(52,211,153,0.3)" : "1px solid var(--rpc-border)", borderRadius: 6, padding: "3px 8px", cursor: sent ? "default" : "pointer", fontSize: 13, color: feedback === "up" ? "var(--rpc-success)" : "var(--rpc-text-muted)" }} aria-label="Helpful">👍</button>
-      <button onClick={() => sendFeedback("down")} disabled={sent} style={{ background: feedback === "down" ? "rgba(224,58,47,0.15)" : "transparent", border: feedback === "down" ? "1px solid rgba(224,58,47,0.3)" : "1px solid var(--rpc-border)", borderRadius: 6, padding: "3px 8px", cursor: sent ? "default" : "pointer", fontSize: 13, color: feedback === "down" ? "var(--rpc-red)" : "var(--rpc-text-muted)" }} aria-label="Not helpful">👎</button>
+      <button onClick={() => sendFeedback("down")} disabled={sent} style={{ background: feedback === "down" ? "rgba(224,58,47,0.15)" : "transparent", border: feedback === "down" ? "1px solid rgba(224,58,47,0.3)" : "1px solid var(--rpc-border)", borderRadius: 6, padding: "3px 8px", cursor: sent ? "default" : "pointer", fontSize: 13, color: feedback === "down" ? "var(--rpc-red-text)" : "var(--rpc-text-muted)" }} aria-label="Not helpful">👎</button>
     </div>
   );
 }

@@ -474,7 +474,7 @@ const CSS = `
 .rpc-fm-edition-link { text-decoration: none; color: inherit; display: block; flex: 1; min-width: 0; }
 .rpc-fm-edition-link:hover .rpc-fm-edition-name { color: var(--rpc-red-text); }
 .rpc-fm-edition-name { font-weight: 700; font-size: 15px; color: var(--rpc-text-primary); transition: color 100ms; }
-.rpc-fm-squeeze-link { font-family: var(--font-mono); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--rpc-text-muted); text-decoration: none; padding: 4px 8px; border: 1px solid var(--rpc-border); border-radius: 2px; white-space: nowrap; opacity: 0.65; transition: color 100ms, border-color 100ms, opacity 100ms; }
+.rpc-fm-squeeze-link { font-family: var(--font-mono); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--rpc-text-muted); text-decoration: none; padding: 4px 8px; border: 1px solid var(--rpc-border); border-radius: 2px; white-space: nowrap; opacity: 1; transition: color 100ms, border-color 100ms, opacity 100ms; }
 .rpc-fm-squeeze-link:hover { color: var(--rpc-red-text); border-color: var(--rpc-red); opacity: 1; }
 .rpc-fm-edition-set { font-family: var(--font-mono); font-size: 11px; color: var(--rpc-text-muted); letter-spacing: 1px; margin-top: 2px; }
 .rpc-fm-td-num { text-align: right; font-family: var(--font-mono); color: var(--rpc-text-primary); white-space: nowrap; }

@@ -86,7 +86,7 @@ export default function SetCompletersBoardClient({
               padding: "6px 12px", fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", cursor: "pointer",
               borderRadius: 4, border: `1px solid ${sort === k ? "var(--rpc-red)" : "var(--rpc-border)"}`,
               background: sort === k ? "var(--rpc-red-bg)" : "transparent",
-              color: sort === k ? "var(--rpc-red)" : "var(--rpc-text-secondary)",
+              color: sort === k ? "var(--rpc-red-text)" : "var(--rpc-text-secondary)",
             }}
           >
             {label}
@@ -119,7 +119,7 @@ export default function SetCompletersBoardClient({
                     <span className="rpc-mono" style={{ marginLeft: 8, fontSize: 10, color: "var(--rpc-text-muted)" }}>#{r.set_id_onchain}</span>
                   </td>
                   <td style={tdStyle("right")}><span className="rpc-mono" style={{ color: "var(--rpc-text-secondary)" }}>{fmtInt(r.total_plays)}</span></td>
-                  <td style={tdStyle("right")}><span style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 17, color: r.completers > 0 ? "var(--rpc-red)" : "var(--rpc-text-muted)" }}>{fmtInt(r.completers)}</span></td>
+                  <td style={tdStyle("right")}><span style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 17, color: r.completers > 0 ? "var(--rpc-red-text)" : "var(--rpc-text-muted)" }}>{fmtInt(r.completers)}</span></td>
                   <td style={tdStyle("right")}><span className="rpc-mono" style={{ color: "var(--rpc-text-secondary)" }}>{fmtInt(r.holders_with_any)}</span></td>
                   <td style={tdStyle("right")}><span className="rpc-mono" style={{ color: "var(--rpc-text-primary)" }}>{fmtPct(r.completion_rate)}</span></td>
                 </tr>
