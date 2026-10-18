@@ -258,7 +258,7 @@ function SignInGate({ onSignedIn }: { onSignedIn: (t: string) => void }) {
           style={{
             fontFamily: monoFont,
             fontSize: 10,
-            color: ACCENT_RED,
+            color: accentText(ACCENT_RED),
             letterSpacing: "0.2em",
             textTransform: "uppercase",
             marginBottom: 8,
@@ -320,7 +320,7 @@ function SignInGate({ onSignedIn }: { onSignedIn: (t: string) => void }) {
             width: "100%",
             background: "transparent",
             border: `1.5px solid ${ACCENT_RED}`,
-            color: ACCENT_RED,
+            color: accentText(ACCENT_RED),
             padding: "11px 16px",
             borderRadius: 8,
             fontFamily: condensedFont,
@@ -610,7 +610,7 @@ function Dashboard({
               style={{
                 fontFamily: monoFont,
                 fontSize: 10,
-                color: ACCENT_RED,
+                color: accentText(ACCENT_RED),
                 letterSpacing: "0.2em",
                 textTransform: "uppercase",
               }}

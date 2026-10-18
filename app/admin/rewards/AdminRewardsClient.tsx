@@ -125,7 +125,7 @@ function SignInGate({ onSignedIn }: { onSignedIn: (t: string) => void }) {
     <div style={screen}>
       <div style={{ width: 360, maxWidth: "90vw", ...card }}>
         <h1 style={{ fontFamily: DISPLAY, textTransform: "uppercase", marginTop: 0 }}>
-          Rewards <span style={{ color: RED }}>Console</span>
+          Rewards <span style={{ color: "var(--rpc-red-text)" }}>Console</span>
         </h1>
         <p style={{ color: accentText("#9a9a9a"), fontSize: 13 }}>Paste the RPC admin token.</p>
         <input
@@ -289,7 +289,7 @@ function Console({ token, onSignOut }: { token: string; onSignOut: () => void })
       <main style={{ maxWidth: 1100, margin: "0 auto", padding: "24px 16px 80px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <h1 style={{ fontFamily: DISPLAY, textTransform: "uppercase", letterSpacing: "0.04em", fontSize: 34, margin: 0 }}>
-            Rewards <span style={{ color: RED }}>Console</span>
+            Rewards <span style={{ color: "var(--rpc-red-text)" }}>Console</span>
           </h1>
           <div style={{ display: "flex", gap: 10 }}>
             <Link href="/admin/flowty-analytics" style={{ ...btnGhost }}>
@@ -563,7 +563,7 @@ function Console({ token, onSignOut }: { token: string; onSignOut: () => void })
                       </td>
                       <td style={td}>{b.tier}</td>
                       <td style={{ ...td, textAlign: "right" }}>{num(b.status)}</td>
-                      <td style={{ ...td, textAlign: "right", color: RED }}>{num(b.spendable)}</td>
+                      <td style={{ ...td, textAlign: "right", color: "var(--rpc-red-text)" }}>{num(b.spendable)}</td>
                       <td style={{ ...td, textAlign: "right" }}>{num(b.lifetime_earned)}</td>
                       <td style={{ ...td, textAlign: "right" }}>{num(b.lifetime_spent)}</td>
                     </tr>

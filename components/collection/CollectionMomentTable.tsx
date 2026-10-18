@@ -644,7 +644,7 @@ export default function CollectionMomentTable(props: {
                                 if (!cfg) return null
                                 return (
                                   <div className="mt-1">
-                                    <span title={cfg.title} className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium" style={{ background: "rgba(" + cfg.color + ",0.12)", color: "rgba(" + cfg.color + ",0.9)", border: "1px solid rgba(" + cfg.color + ",0.3)" }}>
+                                    <span title={cfg.title} className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium" style={{ background: "rgba(" + cfg.color + ",0.12)", color: accentText("rgb(" + cfg.color + ")"), border: "1px solid rgba(" + cfg.color + ",0.3)" }}>
                                       {cfg.icon && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={cfg.icon}/></svg>}
                                       {cfg.prefix ?? ""}{cfg.label}
                                     </span>
