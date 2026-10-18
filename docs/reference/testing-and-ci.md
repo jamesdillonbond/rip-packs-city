@@ -3682,3 +3682,6 @@ A new test that walked files with `execSync("git ls-files")` passed preflight lo
 
 ### ⚠ A VERIFY-LOOP THAT NEVER MATCHED THE OLD STATE MEASURED NOTHING
 A poll for a shipped CSS rule (`rpc-sq-td-emph{color:var(--rpc-red-text)`) ran 20 min and printed `new=[] old=[]` on every tick: the served inline style has SPACES (`.rpc-sq-td-emph { color: …`). Before trusting a "not live yet", make the probe find the OLD value first — a probe blind to both states is not evidence of either. The reliable live check for a client change was the BEHAVIOUR (the production page's own `/api/badges?…&editions=` request in a Playwright trace).
+
+### ⚠ A PRIVATE `walk()` THAT RETURNS `join()` PATHS REDS ONLY ON WINDOWS (2026-10-18)
+Two tree-walking tests built their own `walk()` with `path.join` and compared the result to POSIX-keyed lists (`SUPPRESSED_TS["app/api/…"]`, an expected-file list): on Windows `join` returns `app\api\…`, so every key read as "stale" / missing — red on the laptop on clean `main`, green on Linux CI, and easy to dismiss as "not mine". Fixed in both by normalising (`p.split("\\").join("/")`); the second was written an hour after the first was fixed. **Use `walkSourceFiles` + `repoRelative` from `__tests__/helpers/source-files.ts`, which already return POSIX paths**, rather than a fresh walker.
