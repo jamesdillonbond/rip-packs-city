@@ -184,6 +184,62 @@ export function likelyClosedBy(item, headings) {
   }) ?? null
 }
 
+/**
+ * focus.md verdicts on queue items: lines shaped
+ *   - **"<item title as the pass wrote it>" is CLOSED|DONE|WRONG** — reason…
+ *
+ * ⚠ WHY (2026-10-18): the 10-17 ~9:50 AM PT steer ruled three carried items
+ * stale in exactly this form — "#23/#25 edge-fn drift (since 08-22)" is
+ * CLOSED, "Windows mount is behind origin …" is DONE, "#58: the three
+ * candy-opensea indexers fail every tick" is WRONG — and the 10-18 night pass
+ * re-carried two of them anyway, #23/#25 as its "FIRST LINE oldest open item".
+ * The ledger cross-check above cannot see a steer, and none of the three had a
+ * closing ledger HEADING naming its key.
+ *
+ * CLOSED / DONE / DECLINED → the item is ruled "do not re-carry" (DECLINED: the
+ * item itself was refused — e.g. a suggestion that contradicts a standing
+ * rule). An item can BUNDLE a still-open part (10-18 item 3 carried the
+ * drop_scratch residue inside #23/#25), so the print says to re-carry only
+ * that part, and shows the full 200 chars. WRONG → a CLAIM inside
+ * the item was refuted, not the item: #58's refuted claim is "fails every tick",
+ * while #58 itself (Trevor sets OPENSEA_API_KEY) stays open. So WRONG is a
+ * read-this hint and never drops anything.
+ */
+export function focusVerdicts(focusMd) {
+  const out = []
+  const lines = focusMd.split(/\r?\n/)
+  lines.forEach((l, i) => {
+    const m = l.match(/^\s*-\s+\*\*"([^"]{6,})" is (CLOSED|DONE|DECLINED|WRONG)\b/)
+    if (m) out.push({ title: m[1], status: m[2], line: i + 1 })
+  })
+  return out
+}
+
+const STOP = new Set(["the", "and", "with", "from", "that", "this", "since", "holds", "every", "three", "fail", "fails", "into", "only"])
+function words(text) {
+  return new Set((text.toLowerCase().match(/[a-z0-9][a-z0-9-]{3,}/g) ?? []).filter((w) => !STOP.has(w)))
+}
+
+/**
+ * The first verdict that names this item. Match on a shared #NNN id (from the
+ * verdict's title and the item's bold title — itemKeys' rule), else on wording:
+ * ≥ 4 significant words of the verdict title present in the item AND ≥ 60 % of
+ * them. The wording arm exists because "Windows mount is behind origin" carries
+ * no id and no lane token.
+ */
+export function focusVerdictFor(item, verdicts) {
+  const itemIds = itemKeys(item.text).filter((k) => k.startsWith("#"))
+  const itemWords = words(item.text)
+  return verdicts.find((v) => {
+    const ids = v.title.match(/#\d{2,4}\b/g) ?? []
+    if (ids.length && ids.some((id) => itemIds.includes(id))) return true
+    if (ids.length) return false
+    const vw = [...words(v.title)]
+    const hit = vw.filter((w) => itemWords.has(w)).length
+    return hit >= 4 && hit / vw.length >= 0.6
+  }) ?? null
+}
+
 export function newestOvernightHandoff(docsDir) {
   const names = readdirSync(docsDir)
     .filter((f) => /^handoff-\d{4}-\d{2}-\d{2}-overnight-pass\.md$/.test(f))
@@ -220,20 +276,39 @@ function main() {
     }
     return
   }
+  let verdicts = []
+  try {
+    verdicts = focusVerdicts(readFileSync(path.join(process.cwd(), "docs/overnight/focus.md"), "utf8"))
+  } catch {
+    console.log("[ready-queue] focus.md unreadable — items shown without the steer check")
+  }
   const rows = items.map((it) => ({
     it,
     closed: likelyClosedBy(it, headings),
     before: likelyClosedBy(it, earlier),
+    verdict: focusVerdictFor(it, verdicts),
   }))
-  const open = rows.filter((r) => !r.closed && !r.before).length
-  console.log(`[ready-queue] ${items.length} item(s) from ${rel}, ${open} still open by the ledger (hints — read the entry before acting):`)
-  for (const { it, closed, before } of rows) {
+  const ruled = (r) => r.verdict && r.verdict.status !== "WRONG"
+  // ⚠ A WRONG verdict OUTRANKS a ledger ✓: the ✓ is usually the heading that
+  // closed the refuted claim (10-18: #58 read "likely closed" off the heading
+  // that unscheduled its indexers, so the queue printed "0 still open" while
+  // #58 itself — Trevor's API key — was open). The item stays OPEN.
+  const refuted = (r) => r.verdict?.status === "WRONG"
+  const open = rows.filter((r) => refuted(r) || (!r.closed && !r.before && !ruled(r))).length
+  console.log(`[ready-queue] ${items.length} item(s) from ${rel}, ${open} still open by the ledger + focus.md steers (hints — read the entry before acting):`)
+  for (const r of rows) {
+    const { it, closed, before, verdict } = r
     const flag = closed
       ? ` ✓ likely closed (ledger.md:${closed.line})`
       : before
         ? ` ✓ likely closed BEFORE this pass — re-carried (ledger.md:${before.line})`
-        : it.nights != null && it.nights >= STALE_NIGHTS ? " ⚠ STALE" : ""
-    console.log(`  ${it.n}.${flag} ${it.text.slice(0, closed || before ? 110 : 200)}`)
+        : ruled(r)
+          ? ` ⛔ focus.md:${verdict.line} rules it ${verdict.status} — do NOT re-carry (if it bundles another still-open part, re-carry ONLY that part)`
+          : it.nights != null && it.nights >= STALE_NIGHTS ? " ⚠ STALE" : ""
+    const hint = refuted(r)
+      ? ` (⚠ focus.md:${verdict.line} says a claim in it is WRONG — read it; the item itself STAYS OPEN${closed || before ? ", the ledger ✓ is about the refuted claim" : ""})`
+      : ""
+    console.log(`  ${it.n}.${flag}${hint} ${it.text.slice(0, closed || before ? 110 : 200)}`)
   }
 }
 

@@ -226,3 +226,40 @@ describe("report-ready-queue — 'carried' headings", () => {
     expect(unmatched).toEqual([])
   })
 })
+
+// ─── focus.md verdicts (2026-10-18) ──────────────────────────────────────────
+// The 10-18 night pass re-carried two items a 10-17 focus.md steer had ruled
+// stale (#23/#25 as its "FIRST LINE oldest open item"): the ledger cross-check
+// cannot see a steer. These pin the machine-read verdict lines.
+import { focusVerdicts, focusVerdictFor } from "../scripts/report-ready-queue.mjs"
+
+const FOCUS = [
+  '- **"#23/#25 edge-fn drift (since 08-22)" is CLOSED** — #23 closed 09-08, #25 resolved 09-25.',
+  '- **"#58: the three candy-opensea indexers fail every tick" is WRONG** — they were UNSCHEDULED.',
+  '- **"Windows mount is behind origin / holds uncommitted edits" is DONE** — synced 2026-10-15.',
+  '- **"Inbox archival backlog — unarchived files in the inbox, bulk archive" is DECLINED** — append-only.',
+  "- a prose line that says #23 is CLOSED without the quoted-title shape",
+].join("\n")
+
+describe("report-ready-queue — focus.md verdicts", () => {
+  const v = focusVerdicts(FOCUS)
+
+  it("reads only the quoted-title verdict lines, with status and line number", () => {
+    expect(v.map((x) => [x.status, x.line])).toEqual([["CLOSED", 1], ["WRONG", 2], ["DONE", 3], ["DECLINED", 4]])
+  })
+
+  it("matches the real 10-18 re-carried items: by #id, and by wording when there is no id", () => {
+    const item = (text: string) => ({ n: 1, nights: 3, text })
+    expect(focusVerdictFor(item("**[Operator, since 08-22 — OLDEST] #23/#25 edge-fn drift** (25 edge fns not on `main`)"), v)?.status).toBe("CLOSED")
+    expect(focusVerdictFor(item("**[Housekeeping, Trevor] Windows mount behind origin** (mount HEAD `7ba2d1e0f`) and holds the deep-audit's uncommitted edits"), v)?.status).toBe("DONE")
+    expect(focusVerdictFor(item("**[New observation, Trevor] Inbox archival backlog** — ~587 unarchived files in `docs/overnight/inbox/`. Worth a one-time bulk archive"), v)?.status).toBe("DECLINED")
+    expect(focusVerdictFor(item("**[P3, Trevor, ~23 nights, shelved] #58 OPENSEA_API_KEY** — set key + restore the 3 cron lines"), v)?.status).toBe("WRONG")
+  })
+
+  it("does not match an unrelated item, nor a different #id that shares words", () => {
+    const item = (text: string) => ({ n: 1, nights: 1, text })
+    expect(focusVerdictFor(item("**[P1] chain-arrival-pack-pulls durable BOUND** — the walk has no ceiling"), v)).toBeNull()
+    // Same words as the #23/#25 verdict, different id: an id on the verdict is decisive.
+    expect(focusVerdictFor(item("**#99 edge-fn drift since 08-22** — a new drift"), v)).toBeNull()
+  })
+})
