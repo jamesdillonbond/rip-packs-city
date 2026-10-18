@@ -28,6 +28,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { apiErrorResponse } from "@/lib/api-error"
 import { boundedRead } from "@/lib/api/bounded-read"
+import { nbaFeedAnsweredRecently } from "@/lib/fast-break/nba-feed"
 
 export const dynamic = "force-dynamic"
 
@@ -93,9 +94,19 @@ export async function GET(req: NextRequest) {
     return apiErrorResponse(error, "api/nba/fast-break/optimize")
   }
 
+  // ⚠ An EMPTY lineup is the NBA's night off only when the feed that writes nba_games and the
+  // projections answered recently (known-issues #8: dead since 2026-08-04). The client rendered
+  // every empty lineup as "No NBA games on <date>", so from tip-off every game night would have
+  // said so. `data_status` lets it tell the two apart; asked only when the lineup is empty.
+  const lineupLen = Array.isArray((data as any)?.lineup) ? (data as any).lineup.length : 0
+  const dataStatus = lineupLen > 0
+    ? "ok"
+    : (await nbaFeedAnsweredRecently(supabaseAdmin, "[api/nba/fast-break/optimize]")) ? "ok" : "feed_unavailable"
+
   return NextResponse.json(
     {
       ...(data ?? {}),
+      data_status: dataStatus,
       as_of: asOf,
     },
     { headers: CACHE_HEADERS }

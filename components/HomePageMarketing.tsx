@@ -499,7 +499,9 @@ export default function HomePageMarketing() {
         </div>
       </section>
 
-      {/* FAST BREAK OPTIMIZER PROMO - HIDDEN for launch; set NEXT_PUBLIC_SHOW_FAST_BREAK=1 to restore */}
+      {/* FAST BREAK OPTIMIZER PROMO - HIDDEN for launch; set NEXT_PUBLIC_SHOW_FAST_BREAK=1 to restore.
+          ⚠ 2026-10-18: keep it off until the projections feed has a source (known-issues #8) — the
+          optimizer cannot build a lineup without it. */}
       {process.env.NEXT_PUBLIC_SHOW_FAST_BREAK === "1" && (
       <section
         className="rpc-home-section"
@@ -513,7 +515,7 @@ export default function HomePageMarketing() {
           <div className="rpc-home-eyebrow">◈ FREE TOOL · NO SIGNUP ◈</div>
           <h2 className="rpc-home-h2">FAST BREAK LINEUP OPTIMIZER</h2>
           <p className="rpc-home-sub">
-            Daily optimal NBA Top Shot Fast Break lineups for the Playoffs. Top projected fantasy scorers, captain picks, and matchup analysis — refreshed every 15 minutes.
+            Optimal NBA Top Shot Fast Break lineups built from player projections: top projected fantasy scorers, captain picks and matchups.
           </p>
           <Link
             href="/nba/fast-break"

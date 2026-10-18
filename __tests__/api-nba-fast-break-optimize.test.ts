@@ -6,11 +6,13 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // no-active-run empty-lineup 200, the run-lookup 500, and the rpc happy path
 // (run_id supplied → skips the lookup).
 
-const state: { run: any; runErr: any; rpc: any; rpcErr: any } = {
+const state: { run: any; runErr: any; rpc: any; rpcErr: any; feedCount: number | null; feedErr: any } = {
   run: null,
   runErr: null,
   rpc: null,
   rpcErr: null,
+  feedCount: 0,
+  feedErr: null,
 }
 
 vi.mock("@/lib/supabase", () => {
@@ -19,7 +21,10 @@ vi.mock("@/lib/supabase", () => {
     eq: () => b,
     order: () => b,
     limit: () => b,
+    gte: () => b,
     maybeSingle: async () => ({ data: state.run, error: state.runErr }),
+    // pipeline_runs head-count (lib/fast-break/nba-feed.ts)
+    then: (f: any, g: any) => Promise.resolve({ data: null, count: state.feedCount, error: state.feedErr }).then(f, g),
   }
   return {
     supabaseAdmin: {
@@ -38,6 +43,8 @@ beforeEach(() => {
   state.runErr = null
   state.rpc = null
   state.rpcErr = null
+  state.feedCount = 0
+  state.feedErr = null
 })
 
 describe("GET /api/nba/fast-break/optimize", () => {
@@ -66,5 +73,37 @@ describe("GET /api/nba/fast-break/optimize", () => {
     expect(body.recommended_score).toBe(42)
     expect(body.lineup).toHaveLength(1)
     expect(typeof body.as_of).toBe("string")
+  })
+
+  // ⚠ 2026-10-18: nba_games and the projections have had no working writer since 08-04 (#8), and
+  // the client rendered every empty lineup as "No NBA games on <date>".
+  it("an empty lineup with a DEAD feed is data_status feed_unavailable", async () => {
+    state.rpc = { recommended_score: 0, lineup: [] }
+    state.feedCount = 0
+    const body = await (await GET(req("https://t/api/nba/fast-break/optimize?run_id=r1&game_date=2026-10-22"))).json()
+    expect(body.data_status).toBe("feed_unavailable")
+  })
+
+  it("an empty lineup with an unreadable feed check is feed_unavailable too", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {})
+    state.rpc = { recommended_score: 0, lineup: [] }
+    state.feedCount = null
+    state.feedErr = { message: "timeout" }
+    const body = await (await GET(req("https://t/api/nba/fast-break/optimize?run_id=r1&game_date=2026-10-22"))).json()
+    expect(body.data_status).toBe("feed_unavailable")
+  })
+
+  it("an empty lineup with a LIVE feed is ok (a real night off)", async () => {
+    state.rpc = { recommended_score: 0, lineup: [] }
+    state.feedCount = 3
+    const body = await (await GET(req("https://t/api/nba/fast-break/optimize?run_id=r1&game_date=2026-10-22"))).json()
+    expect(body.data_status).toBe("ok")
+  })
+
+  it("CONTROL — a lineup is ok even with the feed dead", async () => {
+    state.rpc = { recommended_score: 42, lineup: [{ player: "x" }] }
+    state.feedCount = 0
+    const body = await (await GET(req("https://t/api/nba/fast-break/optimize?run_id=r1&game_date=2026-10-22"))).json()
+    expect(body.data_status).toBe("ok")
   })
 })

@@ -54,6 +54,9 @@ type OptimizeResponse = {
     eligible_players_pool_size?: number
     no_active_run?: boolean
   }
+  // "ok" = the NBA feed answered recently (or a lineup came back); "feed_unavailable" = an empty
+  // lineup with the feed down (known-issues #8). Absent on old cached responses.
+  data_status?: "ok" | "feed_unavailable"
   as_of?: string
   error?: string
 }
@@ -240,7 +243,7 @@ export default function FastBreakClient() {
               color: "var(--rpc-text-muted)",
             }}
           >
-            Optimal NBA Top Shot Fast Break lineups · updated every 15 min
+            Optimal NBA Top Shot Fast Break lineups from player projections
           </div>
 
           {meta?.run_name && (
@@ -412,7 +415,13 @@ export default function FastBreakClient() {
             >
               {emptyHook}
               <br />
-              No NBA games on {selected}. Try another date.
+              {/* "No NBA games" is a claim about the NBA's schedule, so it needs the API to say the
+                  feed answered. Since 2026-08-04 it has not (known-issues #8). */}
+              {data?.data_status === "ok"
+                ? <>No NBA games on {selected}. Try another date.</>
+                : data?.data_status === "feed_unavailable"
+                  ? <>Our NBA games and projections feed isn&rsquo;t answering, so there&rsquo;s no lineup for {selected}. This says nothing about whether games are on.</>
+                  : <>No lineup for {selected}.</>}
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>

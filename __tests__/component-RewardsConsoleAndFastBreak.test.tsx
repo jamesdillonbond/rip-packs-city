@@ -394,10 +394,24 @@ describe("FastBreakClient", () => {
     await waitFor(() => expect(document.body.textContent).toMatch(/No Fast Break run is currently active/))
   })
 
-  it("says there are no games when the slate is genuinely empty", async () => {
-    mount(() => json(200, RESP({ lineup: [], meta: { no_active_run: false, run_name: "Fast Break 12", run_is_active: false, game_date: "2026-08-16" } })))
+  it("says there are no games when the slate is genuinely empty AND the feed answered", async () => {
+    mount(() => json(200, RESP({ lineup: [], data_status: "ok", meta: { no_active_run: false, run_name: "Fast Break 12", run_is_active: false, game_date: "2026-08-16" } })))
     await waitFor(() => expect(document.body.textContent).toMatch(/No NBA games on/))
     expect(document.body.textContent).not.toMatch(/No Fast Break run is currently active/)
+  })
+
+  // ⚠ 2026-10-18 RE-PIN: the case above used to assert "No NBA games" for ANY empty lineup. The
+  // feed that writes nba_games has been dead since 08-04 (#8), so that claim needs the API's word.
+  it("an empty lineup with the feed DOWN says so, and never 'No NBA games'", async () => {
+    mount(() => json(200, RESP({ lineup: [], data_status: "feed_unavailable", meta: { no_active_run: false, run_name: "Fast Break 12", game_date: "2026-10-22" } })))
+    await waitFor(() => expect(document.body.textContent).toMatch(/feed isn’t answering/))
+    expect(document.body.textContent).not.toMatch(/No NBA games on/)
+  })
+
+  it("an empty lineup with NO status (an old cached response) makes no schedule claim", async () => {
+    mount(() => json(200, RESP({ lineup: [], meta: { no_active_run: false, run_name: "Fast Break 12", game_date: "2026-10-22" } })))
+    await waitFor(() => expect(document.body.textContent).toMatch(/No lineup for 2026-/))
+    expect(document.body.textContent).not.toMatch(/No NBA games on/)
   })
 
   it("re-requests for the date the visitor picks", async () => {

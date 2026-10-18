@@ -15,7 +15,7 @@ export const metadata: Metadata = {
   // so baking the brand in here rendered it twice. (deep-audit D24)
   title: "NBA Top Shot Fast Break Lineup Optimizer",
   description:
-    "Daily optimal Fast Break lineups for NBA Top Shot Playoffs. Top projected fantasy scorers, captain picks, and matchup analysis — updated every 15 minutes. Free.",
+    "Optimal Fast Break lineups for NBA Top Shot, built from player projections: top projected fantasy scorers, captain picks and matchups. Free.",
   keywords: [
     "NBA Top Shot Fast Break",
     "Fast Break optimizer",
@@ -30,7 +30,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "NBA Top Shot Fast Break Lineup Optimizer",
     description:
-      "Daily optimal Fast Break lineups for NBA Top Shot Playoffs — updated every 15 minutes.",
+      "Optimal Fast Break lineups for NBA Top Shot, built from player projections.",
     url: `${SITE_URL}/nba/fast-break`,
     siteName: "Rip Packs City",
     images: [
@@ -49,7 +49,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "NBA Top Shot Fast Break Lineup Optimizer",
     description:
-      "Daily optimal Fast Break lineups for NBA Top Shot Playoffs — updated every 15 minutes.",
+      "Optimal Fast Break lineups for NBA Top Shot, built from player projections.",
     images: [`${SITE_URL}/api/og/fast-break`],
     creator: "@RipPacksCity",
   },

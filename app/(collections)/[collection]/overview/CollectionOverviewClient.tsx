@@ -778,7 +778,7 @@ export default function CollectionOverviewClient({
                 className="rpc-mono"
                 style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-muted)" }}
               >
-                Daily optimal Top Shot Fast Break lineup · public, no signup · updated every 15 min
+                Optimal Top Shot Fast Break lineup from player projections · public, no signup
               </span>
             </div>
             <Link
