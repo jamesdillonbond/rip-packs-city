@@ -43,7 +43,7 @@ async function fetchSerialMultipliers(
 
 const SERIES_NAMES: Record<number, string> = {
   0: "S1", 2: "S2", 3: "Sum 21",
-  4: "S3", 5: "S4", 6: "23-24", 7: "24-25", 8: "25-26",
+  4: "S3", 5: "S4", 6: "23-24", 7: "24-25", 8: "25-26", 9: "26-27",
 };
 
 // Badge premiums are market-priced and excluded from FMV by design.

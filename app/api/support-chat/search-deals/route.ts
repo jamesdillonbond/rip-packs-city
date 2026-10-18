@@ -74,6 +74,7 @@ function seriesLabel(n: number): string {
     6: "23-24",
     7: "24-25",
     8: "25-26",
+    9: "26-27",
   };
   return map[n] ?? `S${n}`;
 }
