@@ -22,7 +22,7 @@ Live 10-17: `alerts-dispatch` 104/104 runs ok in 24 h; 14 `alert_deliveries` in 
 
 **Email:**
 - The welcome email is live and idempotent (`claim_welcome_email`, 10-11).
-- **Digests are flag-off:** `WEEKLY_DIGEST_ENABLED` is unset and the route sends nothing.
+- **Digests are flag-off:** `WEEKLY_DIGEST_ENABLED` and `SEND_DIGEST_ENABLED` are unset, and neither route sends without `RPC_SENDER_POSTAL_ADDRESS` either (10-18; until then `send-digest` had no flag at all).
 - The contact mailbox `rippackscity@gmail.com` is live everywhere (10-12).
 
 ## Shipped recently (since mid-September)
@@ -75,7 +75,8 @@ Live 10-17: `alerts-dispatch` 104/104 runs ok in 24 h; 14 `alert_deliveries` in 
    - (original item) **Series 2026-27 player identity (from 10-20).** New Series 9 players and rookies resolve through `resolve_player_name`. Partnered-athlete and autograph status has no field, so the concierge must not claim it. Falsifier: a Series 9 player whose name does not resolve, or who has two rows.
 
 **Next**
-3. **Digest readiness behind the flag:** shared footer, unsubscribe, and the postal address slot. Ship it dark, so turning digests on later is a one-flag change. Gate: Trevor supplies the address (C2), and the accuracy gate is passed before any send.
+3. ✅ **Gate SHIPPED 10-18 ~2:29 PM PT (Claude Code cloud) — and it closed a real hole: `/api/send-digest` had NO enable flag.** Anything holding the bearer token mailed every verified subscriber a commercial digest with no postal address. Both digest routes now send only when their own flag (`WEEKLY_DIGEST_ENABLED` / `SEND_DIGEST_ENABLED`) is `"1"` **and** `RPC_SENDER_POSTAL_ADDRESS` is set; the footer then carries the address (`commercialSenderLine()` in `lib/emails/sender-identity.ts`). The address is never defaulted. **Turning digests on = Trevor's address in that env var + one flag** (and the accuracy gate). Unsubscribe links were already in both.
+   - (original item) **Digest readiness behind the flag:** shared footer, unsubscribe, and the postal address slot. Ship it dark, so turning digests on later is a one-flag change. Gate: Trevor supplies the address (C2), and the accuracy gate is passed before any send.
 4. ✅ **MEASURED 2026-10-18 ~8:50 AM PT (Claude Code cloud): no frozen-market alert path exists today, so nothing to build.** `cross_collection_deals_board` holds **0** Golazos and **0** Candy rows (it requires HIGH/MEDIUM confidence, which neither frozen market has). `edition_current_ask` holds **0** Candy asks and **496** Golazos asks: the price-only path can see Golazos, but those are the state-verified open storefront book (the 10-17 on-chain probe settled that the venue is idle, not invisible), and `ask_is_alertable` exempts that book because rows leave it when a listing closes. `alert_deliveries` for either collection in 30 days: **0** (5 subscriptions estate-wide). **Re-open if** a Golazos/Candy edition enters the deals board, or Candy gains asks (OpenSea key, #58): then the delivery must carry "no indexed sales since <date>".
    - (original item) **Alert coverage for frozen markets.** An alert on a Candy or Golazos edition must say its market has no indexed sales, never fire on a stale ask. Falsifier: a delivery with an ask older than its source's last good read.
 
