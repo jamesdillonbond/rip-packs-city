@@ -69,7 +69,7 @@
   - What: All Day LOW→MEDIUM corroboration had been OFF since ~09-25 — the fmv-recalc liveness probe read a NULL `listed_at` (4,913 `storefront_v2` rows; DESC sorts NULLs first) and logged `UNDATABLE (no lift)` on every run. 158 LOW editions met the rule at the fix; their published FMV priced like MEDIUM (14 d: 20.7 % vs 20.0 % median error, n 855).
   - Read: M2 on the 10-18 legs (expected ~29 %, an estimate — measure it); `fmv_sales_backtest` weekly on the moved set.
   - Falsifier: the moved set's within-±25 % share > 3 pts below MEDIUM's on two consecutive weekly reads → revert.
-- **Verify #192 on production runs** (fix shipped 10-17).
+- ✅ ~~**Verify #192 on production runs**~~ (fix shipped 10-17) — **VERIFIED 2026-10-17 ~11:20 PM PT (Claude Code, Windows box): the 8:15 PM PT run wrapped (`wrapped: true`, cursor below the new floor) and the 11:15 PM PT run resolved **480 of 480** buyers (453 via deposit, 27 via tx authorizers, `decode_failed 0`, 81 s), cursor now 2026-10-11 02:51 UTC. Outcome table, not the self-report: all **3,211** All Day sales above that cursor carry a `buyer_address`. Backlog at or above the 2025-10-22 floor: **14,831** null-buyer sales of 328,221 (4.5 %); at 480/run × 8 runs/day ≈ 4 days.**
   - What: the next runs should wrap, then show `buyers_resolved > 0`, or an honest `ok=false` decode wall. Re-size the backlog from rows ≥ 2025-10-22.
   - Why: the lane logged success while resolving nothing for two days.
   - Falsifier: rows ≥ 2025-10-22 also fail to decode, which would mean a decode bug rather than the spork boundary.
