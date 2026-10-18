@@ -212,6 +212,8 @@ async function fetchWalkOrder() {
 // registry fills), but only WALKS the products the ingest route names in walk_set_ids. The defaults
 // below are the pre-registry behaviour, used whenever the route cannot be read.
 let WALK_SETS = new Set([2332]);
+// The product RPC prices (panini FMV engine). Walk-order weighting reads it; it is NOT a walk gate.
+const PRICED_SET_ID = 2332;
 let DISCOVERY_SPORTS = ["Soccer"];
 let FULL_ENUM_SPORTS = new Set(["Soccer"]);
 let SERVED_PACK_URLS = null; // null = the route did not answer -> PACK_URLS fallback
@@ -834,7 +836,16 @@ async function main() {
     // absent, and promoting those to the front is precisely the re-walking this change exists
     // to stop — so the promotion is gated on the route saying the list is complete.
     // Held-but-uncatalogued editions (priority) go before both — see scripts/panini-walk-order.mjs.
-    ({ pskus, orderMode } = buildWalkOrder({ priority: priorityPskus, known, knownComplete, discovered }));
+    // 2026-10-18: World Cup Prizm (2332) is the only product with an FMV model, so it gets 1 of
+    // every 2 known slots (scripts/panini-walk-order.mjs, "PRICED PRODUCTS"). Sized from the 10-18
+    // read (WC 5,256 cards p50 75 h; others 30,549 p50 53 h; ~300 cards/h): 1:1 → WC p50 ~18 h,
+    // others ~4 d; 3:1 would push the others to ~8 d. PANINI_PRICED_PER_OTHER=N sets N:1; 0 restores
+    // the plain stalest-first order.
+    const pricedPerOther = Number.parseInt(process.env.PANINI_PRICED_PER_OTHER ?? "1", 10);
+    ({ pskus, orderMode } = buildWalkOrder({
+      priority: priorityPskus, known, knownComplete, discovered,
+      isPriced: (p) => setIdOf(p) === PRICED_SET_ID, pricedPerOther: Number.isFinite(pricedPerOther) ? pricedPerOther : 0,
+    }));
   } else {
     // FALLBACK ONLY — the order endpoint was unreachable. Shuffle (Fisher-Yates) so successive
     // runs at least cover different subsets, which is the behaviour this file had before.

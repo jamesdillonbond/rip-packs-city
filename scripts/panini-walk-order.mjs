@@ -21,12 +21,37 @@
 // keeps both moving: new cards still enter at half the walk rate, and the stalest known card is never
 // more than one slot behind a discovery.
 //
+// ⚠ 2026-10-18: PRICED PRODUCTS GET MORE OF THE KNOWN SLOTS. With 35,646 walked pskus across every
+// admitted product, stalest-first spread the walk so thin that World Cup Prizm — the ONLY product
+// with an FMV model — went from ~30 h to 77 h median age (p90 106 h), and 2,630 WC editions sat on
+// the old engine for 4 days. `isPriced` + `pricedPerOther` reorder the KNOWN list as a weighted
+// merge: N priced (stalest first) per 1 other (stalest first), so priced cards refresh ~N× faster and
+// every other product still advances every run (no starvation: a strict "priced first" would park
+// the other 30k forever, since the order is rebuilt from scratch each run). Off unless both are given.
+//
 // Each psku appears once, at its earliest position.
+
+/** Weighted merge preserving each list's own order: `n` from `a`, then 1 from `b`, repeat. */
+export function weightedMerge(a, b, n) {
+  const out = [];
+  let i = 0, j = 0;
+  while (i < a.length || j < b.length) {
+    for (let k = 0; k < n && i < a.length; k++) out.push(a[i++]);
+    if (j < b.length) out.push(b[j++]);
+  }
+  return out;
+}
+
 /**
- * @param {{ priority?: string[], known?: string[], knownComplete?: boolean, discovered?: string[] }} args
+ * @param {{ priority?: string[], known?: string[], knownComplete?: boolean, discovered?: string[],
+ *           isPriced?: (psku: string) => boolean, pricedPerOther?: number }} args
  * @returns {{ pskus: string[], orderMode: string, priorityCount: number, freshCount: number }}
  */
-export function buildWalkOrder({ priority = [], known = [], knownComplete = false, discovered = [] }) {
+export function buildWalkOrder({ priority = [], known: knownIn = [], knownComplete = false, discovered = [], isPriced, pricedPerOther = 0 }) {
+  const weighted = typeof isPriced === "function" && Number.isInteger(pricedPerOther) && pricedPerOther > 0;
+  const known = weighted
+    ? weightedMerge(knownIn.filter((p) => isPriced(p)), knownIn.filter((p) => !isPriced(p)), pricedPerOther)
+    : knownIn;
   const knownSet = new Set(known);
   const fresh = knownComplete ? discovered.filter((p) => !knownSet.has(p)) : [];
   const seen = new Set();
@@ -44,8 +69,9 @@ export function buildWalkOrder({ priority = [], known = [], knownComplete = fals
   }
   for (const p of [...known, ...discovered]) if (!seen.has(p)) { seen.add(p); pskus.push(p); }
   const pri = priorityCount ? `${priorityCount} held-priority + ` : "";
+  const w = weighted ? `, priced ${pricedPerOther}:1 (${knownIn.filter((p) => isPriced(p)).length} priced)` : "";
   const orderMode = knownComplete
-    ? `stalest-first, interleaved (${pri}${freshCount} new + ${known.length} known)`
-    : `stalest-first, PARTIAL list (${pri}${known.length} known; new-first promotion disabled)`;
+    ? `stalest-first, interleaved (${pri}${freshCount} new + ${known.length} known${w})`
+    : `stalest-first, PARTIAL list (${pri}${known.length} known${w}; new-first promotion disabled)`;
   return { pskus, orderMode, priorityCount, freshCount };
 }

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
-import { buildWalkOrder } from "../scripts/panini-walk-order.mjs"
+import { buildWalkOrder, weightedMerge } from "../scripts/panini-walk-order.mjs"
 
 // The residential Panini runner's walk order (scripts/panini-walk-order.mjs), 2026-09-29.
 // WHY: held-but-uncatalogued editions were prepended to the route's `pskus` (the KNOWN list), but
@@ -54,7 +54,49 @@ describe("buildWalkOrder", () => {
   it("the runner actually uses buildWalkOrder and reads priority_pskus (source-drift guard)", () => {
     const src = readFileSync(join(process.cwd(), "scripts", "ingest-panini-runner.mjs"), "utf8")
     expect(src).toMatch(/import \{ buildWalkOrder \} from "\.\/panini-walk-order\.mjs"/)
-    expect(src).toMatch(/buildWalkOrder\(\{ priority: priorityPskus, known, knownComplete, discovered \}\)/)
+    // Re-pinned 2026-10-18: the call now also passes the priced-product weighting (still every
+    // original argument, so held-priority / interleave behaviour is unchanged).
+    expect(src).toMatch(/buildWalkOrder\(\{\s*priority: priorityPskus, known, knownComplete, discovered,/)
+    expect(src).toMatch(/isPriced: \(p\) => setIdOf\(p\) === PRICED_SET_ID/)
+    expect(src).toMatch(/const PRICED_SET_ID = 2332;/)
+    // 1:1 by default (sized 10-18: WC p50 ~18 h, others ~4 d); 3:1 would push the others to ~8 d.
+    expect(src).toMatch(/PANINI_PRICED_PER_OTHER \?\? "1"/)
     expect(src).toMatch(/j\?\.priority_pskus/)
+  })
+})
+
+// 2026-10-18 — priced products (World Cup Prizm, set 2332) get N of every N+1 KNOWN slots, so the
+// only modeled product refreshes faster without starving the other ~30k pskus.
+describe("buildWalkOrder — priced-product weighting", () => {
+  const wc = (i: number) => `packcard-2332_1_${i}_1`
+  const other = (i: number) => `packcard-9999_1_${i}_1`
+  const isPriced = (p: string) => p.startsWith("packcard-2332_")
+  // stalest-first catalogue where the priced cards are all at the BACK (the 10-18 shape)
+  const known = [other(1), other(2), other(3), other(4), other(5), other(6), wc(1), wc(2), wc(3), wc(4), wc(5), wc(6)]
+
+  it("is off by default: the known order is unchanged", () => {
+    const r = buildWalkOrder({ known, knownComplete: true })
+    expect(r.pskus).toEqual(known)
+  })
+  it("gives priced cards 3 of every 4 known slots, each group still stalest-first", () => {
+    const r = buildWalkOrder({ known, knownComplete: true, isPriced, pricedPerOther: 3 })
+    expect(r.pskus.slice(0, 8)).toEqual([wc(1), wc(2), wc(3), other(1), wc(4), wc(5), wc(6), other(2)])
+    expect(r.orderMode).toMatch(/priced 3:1 \(6 priced\)/)
+  })
+  it("never starves the other products: every one of them is still queued, in its own order", () => {
+    const r = buildWalkOrder({ known, knownComplete: true, isPriced, pricedPerOther: 3 })
+    const others = r.pskus.filter((p) => !isPriced(p))
+    expect(others).toEqual([other(1), other(2), other(3), other(4), other(5), other(6)])
+    expect(new Set(r.pskus).size).toBe(known.length)
+  })
+  it("keeps held-priority first and the 1:1 fresh/known interleave", () => {
+    const r = buildWalkOrder({ priority: [other(9)], known, knownComplete: true, discovered: [other(7)], isPriced, pricedPerOther: 3 })
+    expect(r.pskus.slice(0, 3)).toEqual([other(9), other(7), wc(1)])
+  })
+  it("ignores a non-positive or non-integer weight", () => {
+    for (const w of [0, -1, 1.5]) expect(buildWalkOrder({ known, knownComplete: true, isPriced, pricedPerOther: w }).pskus).toEqual(known)
+  })
+  it("weightedMerge drains the longer list once the shorter runs out", () => {
+    expect(weightedMerge(["a1", "a2"], ["b1", "b2", "b3"], 3)).toEqual(["a1", "a2", "b1", "b2", "b3"])
   })
 })
