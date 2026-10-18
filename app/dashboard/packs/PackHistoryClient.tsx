@@ -22,7 +22,7 @@ import {
 } from "@/lib/wallet/verified-wallets"
 import { proxyIpfsImageUrl } from "@/lib/ipfs-media"
 import { ownLookup } from "@/lib/safe-lookup"
-import { accentText } from "@/lib/accent-text"
+import { accentText, labelOn } from "@/lib/accent-text"
 
 const condensedFont = "var(--font-display)"
 const monoFont = "var(--font-mono)"
@@ -336,7 +336,7 @@ export function currencyBucketText(ccy: string, vals: SummaryCurrency): string {
 type StatusFilter = "all" | "sold_any" | HistoryRow["status"]
 
 const STATUS_OPTIONS: Array<{ key: StatusFilter; label: string; color: string }> = [
-  { key: "all", label: "All", color: "var(--rpc-red-text)" },
+  { key: "all", label: "All", color: "var(--rpc-red, #E03A2F)" },
   { key: "ripped", label: "Ripped", color: "#3B82F6" },
   { key: "sold_any", label: "Sold", color: "#34D399" },
   { key: "flipped", label: "Flipped", color: "#A855F7" },
@@ -506,11 +506,11 @@ export default function PackHistoryClient() {
   }, [history])
 
   return (
-    <div style={{ minHeight: "100vh", background: "#080808", color: "var(--rpc-text-primary)", paddingBottom: 80 }}>
+    <div style={{ minHeight: "100vh", background: "var(--rpc-black)", color: "var(--rpc-text-primary)", paddingBottom: 80 }}>
       <style>{`
         .rpc-pack-stat-num { font-family: ${condensedFont}; font-weight: 800; font-size: 32px; line-height: 1; }
         .rpc-pack-row { transition: background 120ms ease; cursor: pointer; }
-        .rpc-pack-row:hover { background: #16161a; }
+        .rpc-pack-row:hover { background: var(--rpc-surface-hover); }
         .rpc-pack-chip { display: inline-flex; padding: 2px 8px; font-family: ${monoFont}; font-size: 10px; letter-spacing: 0.06em; border-radius: 3px; text-transform: uppercase; }
       `}</style>
 
@@ -702,7 +702,7 @@ export default function PackHistoryClient() {
                 style={{
                   padding: "6px 12px",
                   background: o.key === status ? o.color : "var(--rpc-surface)",
-                  color: o.key === status ? "var(--rpc-text-primary)" : "var(--rpc-text-secondary)",
+                  color: o.key === status ? labelOn(o.color) : "var(--rpc-text-secondary)",
                   border: `1px solid ${o.key === status ? o.color : "var(--rpc-border)"}`,
                   borderRadius: 5,
                   cursor: "pointer",
@@ -732,7 +732,7 @@ export default function PackHistoryClient() {
               <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
               <table style={{ width: "100%", minWidth: 720, borderCollapse: "collapse", fontFamily: monoFont, fontSize: 11 }}>
                 <thead>
-                  <tr style={{ background: "#080808", borderBottom: "1px solid var(--rpc-border)" }}>
+                  <tr style={{ background: "var(--rpc-black)", borderBottom: "1px solid var(--rpc-border)" }}>
                     <Th>Pack</Th>
                     <Th>Status</Th>
                     <Th>When</Th>
@@ -923,7 +923,7 @@ function ExpandableRow({ row, isOpen, lifecycle, onClick }: { row: HistoryRow; i
           </div>
         </td>
         <td style={{ padding: "10px 12px" }}>
-          <span className="rpc-pack-chip" style={{ background: sc + "22", color: sc, border: `1px solid ${sc}66` }}>{row.status}</span>
+          <span className="rpc-pack-chip" style={{ background: sc + "22", color: accentText(sc), border: `1px solid ${sc}66` }}>{row.status}</span>
         </td>
         <td style={{ padding: "10px 12px", color: "var(--rpc-text-secondary)" }}>{relativeTime(row.latest_event_at)}</td>
         <td style={{ padding: "10px 12px", textAlign: "right" }}>{buyText}</td>
@@ -932,7 +932,7 @@ function ExpandableRow({ row, isOpen, lifecycle, onClick }: { row: HistoryRow; i
         <td style={{ padding: "10px 12px", textAlign: "right", color: plTint, fontFamily: condensedFont, fontWeight: 700 }}>{fmtUsd(row.realized_pl_usd)}</td>
       </tr>
       {isOpen && (
-        <tr style={{ background: "#080808" }}>
+        <tr style={{ background: "var(--rpc-black)" }}>
           <td colSpan={7} style={{ padding: 14, borderBottom: "1px solid #1a1a1d" }}>
             <LifecycleDetail lifecycle={lifecycle} row={row} />
           </td>
@@ -1049,7 +1049,7 @@ function LifecycleDetail({ lifecycle, row }: { lifecycle: any; row: HistoryRow }
 function pagerBtn(disabled: boolean): React.CSSProperties {
   return {
     padding: "6px 12px",
-    background: disabled ? "var(--rpc-surface)" : "#16161a",
+    background: disabled ? "var(--rpc-surface)" : "var(--rpc-surface-hover)",
     color: disabled ? "rgba(255,255,255,0.3)" : "var(--rpc-text-primary)",
     border: "1px solid var(--rpc-border)",
     borderRadius: 4,

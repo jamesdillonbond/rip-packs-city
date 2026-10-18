@@ -146,3 +146,18 @@ describe("textSafeChip — text on its OWN translucent tint takes the theme shad
     expect(textSafeChip(none)).toBe(none)
   })
 })
+
+describe("labelOn — the label colour ON an accent fill", () => {
+  it("is white on the brand red in every spelling, near-black on any other accent", async () => {
+    const { labelOn } = await import("@/lib/accent-text")
+    for (const red of ["#E03A2F", "e03a2f", "var(--rpc-red)", "var(--rpc-red, #E03A2F)"]) expect(labelOn(red)).toBe("#fff")
+    for (const a of ACCENTS.filter((x) => !/^#?e03a2f$/i.test(x))) expect(labelOn(a)).toBe("#0B0B0D")
+  })
+  it("whichever it picks clears AA on that fill, for every non-red registry accent", async () => {
+    const { labelOn } = await import("@/lib/accent-text")
+    for (const a of ACCENTS.filter((x) => !/^#?e03a2f$/i.test(x))) {
+      const r = contrast(hex(labelOn(a)), hex(a))
+      expect(r, `${labelOn(a)} on ${a} = ${r.toFixed(2)}:1`).toBeGreaterThanOrEqual(4.5)
+    }
+  })
+})

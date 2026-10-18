@@ -20,7 +20,6 @@ import { specialCats, SPECIAL_CAT_LABEL, type SpecialCat } from "@/lib/badges/gl
 import { specialSerialStyle } from "@/lib/badges/official-art"
 import SpecialSerialGlyph from "@/components/SpecialSerialGlyph"
 import { trackOutboundClick } from "@/lib/track-click"
-import { accentText } from "@/lib/accent-text"
 
 // ────────────────────────────────────────────────────────────────────────────
 // Types
@@ -532,7 +531,7 @@ function SlabLabel({
             style={{
               fontFamily: "var(--font-mono)",
               fontSize: 8,
-              color: accentText("#3a3a3a"),
+              color: "#3a3a3a", // on the fixed silver plate — theme-independent
               letterSpacing: "0.03em",
               lineHeight: 1.2,
               marginTop: 2,
@@ -591,7 +590,10 @@ function SlabLabel({
             style={{
               fontFamily: "var(--font-mono)",
               fontSize: 7,
-              color: accentText(accent),
+              // On the fixed silver plate (#C8C8C5): a THEME-INDEPENDENT darkened accent. The raw
+              // pastel accents read ~1.6–2.1:1 on silver; 65 % black clears AA (worst 5.15:1) for every
+              // registry and tier accent (55 % only reached 3.64).
+              color: `color-mix(in srgb, ${accent}, #000 65%)`,
               letterSpacing: "0.12em",
               marginTop: 2,
             }}

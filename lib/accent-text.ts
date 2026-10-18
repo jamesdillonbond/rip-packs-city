@@ -65,5 +65,5 @@ export function textSafeChip<T extends { color?: unknown; background?: unknown }
 export function labelOn(fill: string | null | undefined): string {
   if (!fill) return "#fff"
   const f = fill.trim()
-  return BRAND_RED.test(f) || f === "var(--rpc-red)" ? "#fff" : "#0B0B0D"
+  return BRAND_RED.test(f) || /^var\(--rpc-red(\s*,[^)]*)?\)$/.test(f) ? "#fff" : "#0B0B0D"
 }
