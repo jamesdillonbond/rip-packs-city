@@ -214,6 +214,8 @@ describe("TcReportPage (app/insights/tc-report/page.tsx)", () => {
       ],
       wnba_coverage: {
         per_set: [{ set_name: "WNBA Origins", owned: 3, total: 10 }],
+        series: 8,
+        series_label: "Series 2025-26",
         sets_total: 4,
         sets_touched: 2,
         editions_owned: 8,
@@ -258,6 +260,8 @@ describe("TcReportPage (app/insights/tc-report/page.tsx)", () => {
     // otherwise indistinguishable) and the link opens the set page, not the
     // generic squeeze board.
     expect(screen.getByText("Series 4")).toBeTruthy()
+    // 2026-10-18: the WNBA cohort names its season (it was a hidden, hard-coded 2024-25).
+    expect(screen.getByText("WNBA Sets · Series 2025-26")).toBeTruthy()
     expect(screen.getByText("Base Set S4").closest("a")?.getAttribute("href")).toBe("/nba-top-shot/set/base-set-s4")
     // The best rookie holding prints the moment the RPC returns — never a
     // fabricated "(— editions)" from a field the RPC does not carry.

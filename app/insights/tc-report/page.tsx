@@ -55,6 +55,9 @@ type TopSet = {
 }
 type WnbaCoverage = {
   per_set: { set_name: string; owned: number; total: number }[] | null
+  // 2026-10-18: the latest Top Shot series with WNBA sets (was a hidden, hard-coded 7 = 2024-25).
+  series?: number | null
+  series_label?: string | null
   sets_total: number
   sets_touched: number
   editions_owned: number
@@ -418,7 +421,7 @@ export default function TcReportPage() {
                 ) : null}
                 {wnba ? (
                   <div className="rpc-tc-cohort-card">
-                    <div className="rpc-tc-cohort-label">WNBA Sets</div>
+                    <div className="rpc-tc-cohort-label">WNBA Sets{wnba.series_label ? ` · ${wnba.series_label}` : ""}</div>
                     <div className="rpc-tc-cohort-val">
                       {fmtInt(wnba.sets_touched)}<span className="rpc-tc-cohort-of"> of {fmtInt(wnba.sets_total)}</span>
                     </div>
@@ -504,7 +507,7 @@ export default function TcReportPage() {
           </p>
           <p>
             <strong>Cohort coverage</strong> reflects 90d rookie GMV leaders
-            and known WNBA sets. <strong>Cross-collection FMV</strong> uses
+            and the WNBA sets of the latest series that has them. <strong>Cross-collection FMV</strong> uses
             each chain&apos;s native FMV snapshot table.
           </p>
         </div>
