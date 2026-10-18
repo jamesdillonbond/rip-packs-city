@@ -8,6 +8,7 @@
 // their layout.tsx.
 
 import Link from "next/link"
+import { accentText } from "@/lib/accent-text"
 
 interface PlayFeature {
   key: string
@@ -120,7 +121,7 @@ export default function PlayHub({ collection, accent }: { collection: string; ac
                     textTransform: "uppercase",
                     padding: "2px 8px",
                     borderRadius: 3,
-                    color: f.live ? accent : "var(--rpc-text-muted)",
+                    color: f.live ? accentText(accent) : "var(--rpc-text-muted)",
                     border: `1px solid ${f.live ? accent : "var(--rpc-border)"}`,
                   }}
                 >
@@ -146,7 +147,7 @@ export default function PlayHub({ collection, accent }: { collection: string; ac
                     fontSize: 11,
                     letterSpacing: "0.08em",
                     textTransform: "uppercase",
-                    color: accent,
+                    color: accentText(accent),
                     fontWeight: 700,
                   }}
                 >

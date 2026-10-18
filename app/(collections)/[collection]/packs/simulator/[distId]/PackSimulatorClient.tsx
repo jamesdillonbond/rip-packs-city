@@ -15,6 +15,7 @@ import Link from "next/link"
 import { COLLECTION_UUID_BY_SLUG, getCollection } from "@/lib/collections"
 import { proxyIpfsImageUrl } from "@/lib/ipfs-media"
 import { ownLookup } from "@/lib/safe-lookup"
+import { accentText } from "@/lib/accent-text"
 
 interface PackInfo {
   dist_id: string
@@ -342,11 +343,11 @@ export default function PackSimulatorClient({ collectionSlug, distId }: Props) {
           {pack.image_url ? (
             <img src={proxyIpfsImageUrl(pack.image_url, 640) ?? undefined} alt={pack.title ?? "Pack"} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
           ) : (
-            <div style={{ /* brand-exception: glyph on the dark pack-art frame */ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "rgba(255,255,255,0.3)", fontSize: 48 }}>?</div>
+            <div style={{ /* brand-exception: glyph on the dark pack-art frame */ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "rgba(255,255,255,0.5)", fontSize: 48 }}>?</div>
           )}
         </div>
         <div style={{ flex: 1, minWidth: 260 }}>
-          <div className="rpc-sim-stat" style={{ fontSize: 10, color: accent, letterSpacing: "0.14em", marginBottom: 4 }}>
+          <div className="rpc-sim-stat" style={{ fontSize: 10, color: accentText(accent), letterSpacing: "0.14em", marginBottom: 4 }}>
             PACK RIP SIMULATOR · {collectionObj?.label ?? collectionSlug}
           </div>
           <h1 className="rpc-sim-header" style={{ fontSize: 30, fontWeight: 900, color: "var(--rpc-text-primary)", margin: 0, lineHeight: 1.05 }}>
@@ -375,7 +376,7 @@ export default function PackSimulatorClient({ collectionSlug, distId }: Props) {
             <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: `${accent}11`, border: `1px solid ${accent}55`, borderRadius: 6 }}>
               {metrics.max_pull_thumbnail && <img src={proxyIpfsImageUrl(metrics.max_pull_thumbnail, 160) ?? undefined} alt="" style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 4, border: `1px solid ${tierColor(metrics.max_pull_tier)}` }} />}
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div className="rpc-sim-stat" style={{ fontSize: 10, color: accent, letterSpacing: "0.12em" }}>CHASE</div>
+                <div className="rpc-sim-stat" style={{ fontSize: 10, color: accentText(accent), letterSpacing: "0.12em" }}>CHASE</div>
                 <div className="rpc-sim-header" style={{ fontSize: 14, fontWeight: 800, color: "var(--rpc-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {metrics.max_pull_player ?? "—"} · {(metrics.max_pull_tier ?? "").replace(/_/g, " ")}
                 </div>
@@ -433,7 +434,7 @@ export default function PackSimulatorClient({ collectionSlug, distId }: Props) {
 function Stat({ label, value, accent, title }: { label: string; value: string; accent: string; title?: string }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 2 }} title={title}>
-      <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: accent, letterSpacing: "0.12em", textTransform: "uppercase" }}>{label}</div>
+      <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: accentText(accent), letterSpacing: "0.12em", textTransform: "uppercase" }}>{label}</div>
       <div style={{ fontFamily: "var(--font-display)", fontSize: 18, fontWeight: 700, color: "var(--rpc-text-primary)" }}>{value}</div>
     </div>
   )
@@ -444,7 +445,7 @@ function ProbCard({ label, prob, accent, count }: { label: string; prob: number 
     <div style={{ padding: "10px 12px", background: "var(--rpc-surface)", border: "1px solid var(--rpc-border)", borderRadius: 6 }}>
       <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "var(--rpc-text-secondary)", letterSpacing: "0.1em", textTransform: "uppercase" }}>{label}</div>
       <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 800, color: "var(--rpc-text-primary)", marginTop: 2 }}>{fmtPct(prob)}</div>
-      {count != null && <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: accent, marginTop: 1 }}>{count} editions</div>}
+      {count != null && <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: accentText(accent), marginTop: 1 }}>{count} editions</div>}
     </div>
   )
 }
@@ -473,7 +474,7 @@ function AggregateCard({ result, accent }: { result: RipResult; accent: string }
   const fmvCovPartial = fmvCovPct != null && fmvCovPct < 99.5
   return (
     <div style={{ marginTop: 18, padding: 14, background: "var(--rpc-surface)", border: "1px solid var(--rpc-border)", borderRadius: 8 }}>
-      <div style={{ fontFamily: "var(--font-display)", fontSize: 12, fontWeight: 800, color: accent, letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: 10 }}>
+      <div style={{ fontFamily: "var(--font-display)", fontSize: 12, fontWeight: 800, color: accentText(accent), letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: 10 }}>
         Aggregate · {a.totalRips} rip{a.totalRips === 1 ? "" : "s"} · {a.totalSlots} slots
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10 }}>
@@ -508,7 +509,7 @@ function Metric({ label, value, accent }: { label: string; value: string; accent
   return (
     <div>
       <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "var(--rpc-text-muted)", letterSpacing: "0.1em", textTransform: "uppercase" }}>{label}</div>
-      <div style={{ fontFamily: "var(--font-display)", fontSize: 20, fontWeight: 800, color: accent }}>{value}</div>
+      <div style={{ fontFamily: "var(--font-display)", fontSize: 20, fontWeight: 800, color: accentText(accent) }}>{value}</div>
     </div>
   )
 }
@@ -531,7 +532,7 @@ function PullsGrid({ result, accent, flipIndex, slots, collectionSlug }: { resul
         return (
           <div key={ri} style={{ background: "var(--rpc-surface)", border: "1px solid var(--rpc-border)", borderRadius: 8, padding: 10 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-              <div style={{ fontFamily: "var(--font-display)", fontSize: 12, fontWeight: 700, letterSpacing: "0.1em", color: accent, textTransform: "uppercase" }}>
+              <div style={{ fontFamily: "var(--font-display)", fontSize: 12, fontWeight: 700, letterSpacing: "0.1em", color: accentText(accent), textTransform: "uppercase" }}>
                 Rip #{ri + 1}
               </div>
               <div style={{ fontFamily: "var(--font-mono)", fontSize: 13, color: "var(--rpc-text-primary)" }}>

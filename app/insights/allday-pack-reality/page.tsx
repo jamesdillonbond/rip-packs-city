@@ -22,6 +22,7 @@ import {
   type PackRealityRow,
 } from "@/lib/insights/pack-reality-board"
 import { usdSignFirst } from "@/lib/usd-format"
+import { accentText } from "@/lib/accent-text"
 
 export const revalidate = 600
 
@@ -93,9 +94,9 @@ function RealizedTable({ rows, accent }: { rows: PackRealityRow[]; accent: strin
                   </Link>
                 </td>
                 <td style={{ padding: "8px 10px", textAlign: "right", color: "var(--rpc-text-secondary)" }}>{fmtUsd(num(r.modeled_gross_ev))}</td>
-                <td style={{ padding: "8px 10px", textAlign: "right", color: accent, fontWeight: 700 }}>{fmtUsd(num(r.realized_mean))}</td>
+                <td style={{ padding: "8px 10px", textAlign: "right", color: accentText(accent), fontWeight: 700 }}>{fmtUsd(num(r.realized_mean))}</td>
                 <td style={{ padding: "8px 10px", textAlign: "right", color: "var(--rpc-text-secondary)" }}>{fmtUsd(num(r.realized_median))}</td>
-                <td style={{ padding: "8px 10px", textAlign: "right", color: accent }}>{ratio != null ? `${ratio.toFixed(2)}×` : "—"}</td>
+                <td style={{ padding: "8px 10px", textAlign: "right", color: accentText(accent) }}>{ratio != null ? `${ratio.toFixed(2)}×` : "—"}</td>
                 <td style={{ padding: "8px 10px", textAlign: "right", color: "var(--rpc-text-secondary)" }}>{fmtCount(num(r.n_opens))}</td>
               </tr>
             )

@@ -1,5 +1,6 @@
 import type { SniperDeal } from "@/lib/sniper/types";
 import { resolveViewUrl, resolveDapperUrl, trackClick } from "@/lib/sniper/helpers";
+import { accentText } from "@/lib/accent-text"
 
 // Outbound "View Listing" / "Dapper" action buttons for a sniper deal.
 // Extracted verbatim in the Phase 1 refactor of the sniper page.
@@ -30,7 +31,7 @@ export function ActionCell({
           rel="noopener noreferrer"
           onClick={() => trackClick(deal, null, { collection: collectionSlug, href: viewUrl, linkKind: "listing" })}
           className="rpc-btn-ghost"
-          style={{ padding: "4px 12px", textDecoration: "none", borderColor: `${accent}40`, color: accent }}
+          style={{ padding: "4px 12px", textDecoration: "none", borderColor: `${accent}40`, color: accentText(accent) }}
         >
           View Listing →
         </a>
@@ -42,7 +43,7 @@ export function ActionCell({
           rel="noopener noreferrer"
           onClick={() => trackClick(deal, null, { collection: collectionSlug, href: dapperUrl, linkKind: "dapper" })}
           className="rpc-btn-ghost"
-          style={{ padding: "4px 12px", textDecoration: "none", borderColor: `${accent}40`, color: accent }}
+          style={{ padding: "4px 12px", textDecoration: "none", borderColor: `${accent}40`, color: accentText(accent) }}
         >
           Dapper ↗
         </a>

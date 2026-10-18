@@ -62,3 +62,35 @@ describe("the detector is not vacuous", () => {
     expect(offenders("/* color: var(--rpc-red) */ .a {}")).toEqual([])
   })
 })
+
+// ─── Hardcoded low-alpha white TEXT (2026-10-18, #194 b) ─────────────────────
+// `color: rgba(255,255,255,0.25–0.45)` fails AA on every dark canvas (0.45 on
+// #0d0d0d is ~4.4:1; 0.4 is 3.81:1 — axe read 25 of them on one pack page).
+// 85 sites were raised to 0.5 (5.34:1). They stay HARDCODED on purpose: the
+// pack page paints hardcoded dark backgrounds in light theme too, so a
+// theme-aware token there would turn dark-on-dark. OG image routes are exempt —
+// Satori cannot resolve var() and paints a fixed dark card.
+const LOW_ALPHA = /(?:^|[^-a-zA-Z])color:\s*['"`]?rgba\(255, ?255, ?255, ?0?\.[0-4][0-9]*\)/g
+const lowAlpha = (src: string) => [...stripComments(src).matchAll(LOW_ALPHA)].length
+
+// ⛔ SUPPRESSIONS are claims that the CODE is right, each with its reason and an
+// exact count — a second hit in the same file still fails.
+const DECORATIVE: Record<string, number> = {
+  // "[ MOMENT VIDEO ]" — an 8 px watermark painted BEHIND the slab when a moment has
+  // no video (zIndex 0). Incidental text; WCAG 1.4.3 exempts it.
+  "components/TrophySlab.tsx": 1,
+}
+
+describe("no low-alpha white text", () => {
+  it("app/components/lib hold no `color: rgba(255,255,255,<0.5)` (OG routes exempt)", () => {
+    const hits = FILES.filter((f) => !f.startsWith("app/api/og/"))
+      .filter((f) => lowAlpha(readFileSync(f, "utf8")) > (DECORATIVE[f] ?? 0))
+    expect(hits, "use rgba(255,255,255,0.5) or var(--rpc-text-muted)").toEqual([])
+  })
+  it("the detector fires on the banned shape and spares 0.5+, borders and backgrounds", () => {
+    expect(lowAlpha(`<b style={{ color: "rgba(255,255,255,0.4)" }} />`)).toBe(1)
+    expect(lowAlpha(".a{color:rgba(255, 255, 255, .35)}")).toBe(1)
+    expect(lowAlpha(`<b style={{ color: "rgba(255,255,255,0.5)", border: "1px solid rgba(255,255,255,0.2)", background: "rgba(255,255,255,0.06)" }} />`)).toBe(0)
+    expect(lowAlpha(".a{border-color:rgba(255,255,255,0.3)}")).toBe(0)
+  })
+})

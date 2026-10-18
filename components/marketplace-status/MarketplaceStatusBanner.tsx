@@ -12,6 +12,7 @@
 
 import { useMarketplaceStatus } from "./useMarketplaceStatus"
 import { resolveBannerCopy } from "@/lib/marketplace-status-banner"
+import { accentText } from "@/lib/accent-text"
 
 interface Props {
   /** Hyphen slug (e.g. "ufc", "laliga-golazos"). */
@@ -41,7 +42,7 @@ export default function MarketplaceStatusBanner({ collectionSlug }: Props) {
           fontFamily: "var(--font-display)",
           fontWeight: 800,
           fontSize: "var(--text-base)",
-          color: copy.accent,
+          color: accentText(copy.accent),
           letterSpacing: "0.04em",
           marginBottom: 4,
           textTransform: "uppercase",

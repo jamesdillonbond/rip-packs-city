@@ -199,7 +199,7 @@ const CSS = `
   border-radius: var(--radius-sm);
   outline: none;
 }
-.rpc-dw-input::placeholder { color: rgba(255,255,255,0.28); }
+.rpc-dw-input::placeholder { color: rgba(255,255,255,0.5); }
 .rpc-dw-btn {
   background: var(--rpc-red);
   border: none;

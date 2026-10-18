@@ -30,6 +30,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { accentText } from "@/lib/accent-text"
 
 // ─── Tokens / palette ────────────────────────────────────────────────────────
 
@@ -889,7 +890,7 @@ function BigCard({ label, value, accent, footnote }: { label: string; value: str
   return (
     <div className="rpc-stat-tile" style={{ padding: "14px 16px" }}>
       <div className="rpc-stat-eyebrow">{label}</div>
-      <div className="rpc-stat-value" style={{ color: accent, fontSize: 28 }}>{value}</div>
+      <div className="rpc-stat-value" style={{ color: accentText(accent), fontSize: 28 }}>{value}</div>
       {footnote && (
         <div className="rpc-stat-caption" style={{ color: "var(--rpc-text-muted)" }}>{footnote}</div>
       )}

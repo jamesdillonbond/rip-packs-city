@@ -9,6 +9,7 @@ import LeagueFilter, { type LeagueValue } from "@/components/filters/LeagueFilte
 import { variantColor } from "@/lib/sniper/helpers";
 import { getEntityLabels } from "@/lib/entity-labels";
 import type { SortOption } from "@/lib/sniper/types";
+import { accentText } from "@/lib/accent-text"
 
 export default function SniperFilterBar(props: {
   isMobile: boolean;
@@ -169,7 +170,7 @@ export default function SniperFilterBar(props: {
             onClick={() => onTierChange(t)}
             className={`rpc-chip min-h-[44px] ${tierTab === t ? "active" : ""}`}
             style={tierTab === t
-              ? { textTransform: "uppercase", background: `${accent}1A`, borderColor: `${accent}66`, color: isPinnacle && t !== "all" ? variantColor(t) : accent }
+              ? { textTransform: "uppercase", background: `${accent}1A`, borderColor: `${accent}66`, color: isPinnacle && t !== "all" ? variantColor(t) : accentText(accent) }
               : { textTransform: "uppercase" }}
           >
             {t}
@@ -179,7 +180,7 @@ export default function SniperFilterBar(props: {
           <button
             onClick={onToggleFilters}
             className="rpc-chip min-h-[44px]"
-            style={showFilters ? { background: `${accent}1A`, borderColor: `${accent}66`, color: accent } : undefined}
+            style={showFilters ? { background: `${accent}1A`, borderColor: `${accent}66`, color: accentText(accent) } : undefined}
           >
             {"⚙ FILTERS" + (function() {
               let count = 0;

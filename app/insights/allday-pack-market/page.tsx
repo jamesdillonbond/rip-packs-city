@@ -21,6 +21,7 @@ import {
   type PackMarketRow,
 } from "@/lib/insights/pack-market-board"
 import { usdSignFirst } from "@/lib/usd-format"
+import { accentText } from "@/lib/accent-text"
 
 export const revalidate = 600
 
@@ -105,7 +106,7 @@ function MarketTable({ rows, accent, showRatio }: { rows: PackMarketRow[]; accen
                 <td style={{ padding: "8px 10px", textAlign: "right", color: "var(--rpc-text-primary)", fontWeight: 700 }}>{fmtUsd(num(r.median_price_90d))}</td>
                 <td style={{ padding: "8px 10px", textAlign: "right", color: "var(--rpc-text-secondary)" }}>{fmtUsd(num(r.last_sale_price))}</td>
                 {showRatio ? (
-                  <td style={{ padding: "8px 10px", textAlign: "right", color: accent, fontWeight: 700 }}>{fmtRatio(num(r.secondary_vs_retail_ratio))}</td>
+                  <td style={{ padding: "8px 10px", textAlign: "right", color: accentText(accent), fontWeight: 700 }}>{fmtRatio(num(r.secondary_vs_retail_ratio))}</td>
                 ) : null}
                 <td style={{ padding: "8px 10px", textAlign: "right", color: "var(--rpc-text-secondary)" }}>{fmtCount(num(r.n_sales))}</td>
                 <td style={{ padding: "8px 10px", textAlign: "right", color: "var(--rpc-text-muted)" }}>{opened != null ? `${opened.toFixed(opened >= 10 ? 0 : 1)}%` : "—"}</td>

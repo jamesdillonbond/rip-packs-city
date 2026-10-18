@@ -23,6 +23,7 @@
 import { useEffect, useState } from "react";
 import { borderCosmetic, bannerCosmetic } from "@/lib/cosmetics";
 import { resolveAvatarUrl } from "@/lib/profile/default-avatar";
+import { accentText } from "@/lib/accent-text"
 
 const DISPLAY = "var(--font-display)";
 const MONO = "var(--font-mono)";
@@ -170,7 +171,7 @@ export default function ProfileHeaderPreview({
                 fontFamily: DISPLAY,
                 fontWeight: 800,
                 fontSize: 20,
-                color: accent,
+                color: accentText(accent),
               }}
             >
               {initialsFor(displayName, username)}

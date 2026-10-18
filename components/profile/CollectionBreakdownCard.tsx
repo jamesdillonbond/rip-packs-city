@@ -57,16 +57,16 @@ export default function CollectionBreakdownCard(props: { ownerKey: string }) {
     <section style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 8, padding: "14px 16px" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
         <span style={labelStyle}>🎯 Collection Breakdown</span>
-        <span style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.35)" }}>
+        <span style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.5)" }}>
           {failed || loading ? "—" : totalMoments.toLocaleString("en-US") + " moments"}
         </span>
       </div>
       {loading ? (
-        <div style={{ fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.3)", padding: "18px 0", textAlign: "center" }}>Loading…</div>
+        <div style={{ fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.5)", padding: "18px 0", textAlign: "center" }}>Loading…</div>
       ) : failed ? (
-        <div style={{ fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.25)", textAlign: "center", padding: "20px 0" }}>Couldn&apos;t load your collection breakdown right now.</div>
+        <div style={{ fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.5)", textAlign: "center", padding: "20px 0" }}>Couldn&apos;t load your collection breakdown right now.</div>
       ) : rows.length === 0 ? (
-        <div style={{ fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.25)", textAlign: "center", padding: "20px 0" }}>No collection data yet.</div>
+        <div style={{ fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.5)", textAlign: "center", padding: "20px 0" }}>No collection data yet.</div>
       ) : (
         <div>
           {showFmv && (
@@ -91,7 +91,7 @@ export default function CollectionBreakdownCard(props: { ownerKey: string }) {
                   </span>
                   {showFmv && r.market_closed_at ? (
                     <span style={{ minWidth: 64, textAlign: "right" }}>
-                      <span data-market-closed style={{ display: "block", fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.4)", letterSpacing: "0.06em", whiteSpace: "nowrap" }}>
+                      <span data-market-closed style={{ display: "block", fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.5)", letterSpacing: "0.06em", whiteSpace: "nowrap" }}>
                         market closed
                       </span>
                     </span>
@@ -103,7 +103,7 @@ export default function CollectionBreakdownCard(props: { ownerKey: string }) {
                       {(Number(r.stale_fmv) || 0) > 0 && (
                         <span
                           data-stale-caption
-                          style={{ display: "block", fontSize: 8, fontFamily: monoFont, color: "rgba(255,255,255,0.3)", letterSpacing: "0.06em", whiteSpace: "nowrap" }}
+                          style={{ display: "block", fontSize: 8, fontFamily: monoFont, color: "rgba(255,255,255,0.5)", letterSpacing: "0.06em", whiteSpace: "nowrap" }}
                         >
                           + {fmtDollars(Number(r.stale_fmv) || 0)} stale{(Number(r.stale_count) || 0) > 0 ? " · " + Number(r.stale_count).toLocaleString() : ""}
                         </span>

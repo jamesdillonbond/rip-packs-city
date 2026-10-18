@@ -113,9 +113,9 @@ function buildEmail(m: Mover, unsubscribeUrl: string): { subject: string; html: 
       Open your dashboard →
     </a>
 
-    <p style="color:rgba(255,255,255,0.35);font-size:11px;line-height:1.6;margin:28px 0 0">
+    <p style="color:rgba(255,255,255,0.5);font-size:11px;line-height:1.6;margin:28px 0 0">
       Estimated from indexed sales — not financial advice.<br/>
-      <a href="${unsubscribeUrl}" style="color:rgba(255,255,255,0.45)">Unsubscribe from weekly emails</a><br/>
+      <a href="${unsubscribeUrl}" style="color:rgba(255,255,255,0.5)">Unsubscribe from weekly emails</a><br/>
       ${SENDER_LINE}
     </p>
   </div></body></html>`;

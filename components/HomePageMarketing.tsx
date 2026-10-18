@@ -11,6 +11,7 @@ import PinwheelDivider from "@/components/visual/PinwheelDivider";
 import HomeFmvPreview from "@/components/HomeFmvPreview";
 import { publishedCollections } from "@/lib/collections";
 import { organizationJsonLd } from "@/lib/seo";
+import { accentText } from "@/lib/accent-text"
 
 function HomeHeader() {
   return (
@@ -417,7 +418,7 @@ export default function HomePageMarketing() {
                     style={{
                       fontFamily: "var(--font-mono)",
                       fontSize: 14,
-                      color: c.accent,
+                      color: accentText(c.accent),
                       letterSpacing: "0.1em",
                     }}
                   >
@@ -432,7 +433,7 @@ export default function HomePageMarketing() {
                     fontSize: 18,
                     letterSpacing: "0.04em",
                     textTransform: "uppercase",
-                    color: c.accent,
+                    color: accentText(c.accent),
                     lineHeight: 1.05,
                   }}
                 >

@@ -791,9 +791,9 @@ function HeroStat({ label, value, tint, caption, withheld }: { label: string; va
   return (
     <div style={{ background: "#0d0d0d", border: "1px solid #27272a", borderRadius: 8, padding: "14px 16px" }}>
       <div style={{ fontFamily: monoFont, fontSize: 10, color: "rgba(255,255,255,0.5)", letterSpacing: "0.12em", textTransform: "uppercase" }}>{label}</div>
-      <div className="rpc-pack-stat-num" style={{ color: withheld ? "rgba(255,255,255,0.45)" : tint, marginTop: 4 }}>{withheld ? "\u2014" : fmtUsd(value)}</div>
+      <div className="rpc-pack-stat-num" style={{ color: withheld ? "rgba(255,255,255,0.5)" : tint, marginTop: 4 }}>{withheld ? "\u2014" : fmtUsd(value)}</div>
       {caption && (
-        <div style={{ fontFamily: monoFont, fontSize: 10, color: "rgba(255,255,255,0.4)", marginTop: 6, letterSpacing: "0.04em", lineHeight: 1.4 }}>{caption}</div>
+        <div style={{ fontFamily: monoFont, fontSize: 10, color: "rgba(255,255,255,0.5)", marginTop: 6, letterSpacing: "0.04em", lineHeight: 1.4 }}>{caption}</div>
       )}
     </div>
   )
@@ -810,7 +810,7 @@ function CountStat({ label, value, caption }: { label: string; value: number; ca
       <div style={{ fontFamily: monoFont, fontSize: 10, color: "rgba(255,255,255,0.5)", letterSpacing: "0.12em", textTransform: "uppercase" }}>{label}</div>
       <div className="rpc-pack-stat-num" style={{ color: "#fff", marginTop: 4 }}>{value.toLocaleString("en-US")}</div>
       {caption && (
-        <div style={{ fontFamily: monoFont, fontSize: 10, color: "rgba(255,255,255,0.4)", marginTop: 6, letterSpacing: "0.04em", lineHeight: 1.4 }}>{caption}</div>
+        <div style={{ fontFamily: monoFont, fontSize: 10, color: "rgba(255,255,255,0.5)", marginTop: 6, letterSpacing: "0.04em", lineHeight: 1.4 }}>{caption}</div>
       )}
     </div>
   )
@@ -828,7 +828,7 @@ function PacksPurchasedStat({ purchased, primary, secondary, unpriced }: { purch
       <div style={{ fontFamily: monoFont, fontSize: 10, color: "rgba(255,255,255,0.6)", marginTop: 6, letterSpacing: "0.04em" }}>
         {primary.toLocaleString("en-US")} Studio · {secondary.toLocaleString("en-US")} marketplace
         {unpriced > 0 && (
-          <span style={{ color: "rgba(255,255,255,0.4)" }}> · +{unpriced} unpriced</span>
+          <span style={{ color: "rgba(255,255,255,0.5)" }}> · +{unpriced} unpriced</span>
         )}
       </div>
     </div>
@@ -899,7 +899,7 @@ function ExpandableRow({ row, isOpen, lifecycle, onClick }: { row: HistoryRow; i
       >
         <td style={{ padding: "10px 12px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div style={{ width: 40, height: 40, borderRadius: 4, background: "#1a1a1d", overflow: "hidden", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "rgba(255,255,255,0.3)", fontFamily: monoFont, fontSize: 18 }}>
+            <div style={{ width: 40, height: 40, borderRadius: 4, background: "#1a1a1d", overflow: "hidden", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "rgba(255,255,255,0.5)", fontFamily: monoFont, fontSize: 18 }}>
               {row.pack_image ? <img src={row.pack_image} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : "?"}
             </div>
             <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
@@ -910,11 +910,11 @@ function ExpandableRow({ row, isOpen, lifecycle, onClick }: { row: HistoryRow; i
                   style={{ color: "#fff", textDecoration: "none", fontFamily: condensedFont, fontWeight: 700, fontSize: 13, letterSpacing: "0.02em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
                 >
                   {packNameContent}
-                  {identityNote && <span style={{ fontSize: 10, color: "rgba(255,255,255,0.35)" }}> · {identityNote}</span>}
+                  {identityNote && <span style={{ fontSize: 10, color: "rgba(255,255,255,0.5)" }}> · {identityNote}</span>}
                 </Link>
               ) : (
                 <span style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 13, color: "rgba(255,255,255,0.5)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {packNameContent} <span style={{ fontSize: 10, color: "rgba(255,255,255,0.35)" }}>· {identityNote ?? "Unknown distribution"}</span>
+                  {packNameContent} <span style={{ fontSize: 10, color: "rgba(255,255,255,0.5)" }}>· {identityNote ?? "Unknown distribution"}</span>
                 </span>
               )}
               <span style={{ fontFamily: monoFont, fontSize: 10, color: "rgba(255,255,255,0.5)" }}>{row.collection_name}{marketText ? ` · ${marketText}` : ""}</span>
@@ -1007,7 +1007,7 @@ function LifecycleDetail({ lifecycle, row }: { lifecycle: any; row: HistoryRow }
       {pulls.length > 0 && (
         <div>
           <div style={{ fontFamily: condensedFont, fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: "rgba(255,255,255,0.55)", marginBottom: 6 }}>
-            Pulls ({pulls.length}){pullsSourceNote(lifecycle.pulls_source) ? <span style={{ textTransform: "none", letterSpacing: 0, fontFamily: monoFont, color: "rgba(255,255,255,0.4)" }}> · {pullsSourceNote(lifecycle.pulls_source)}</span> : null}
+            Pulls ({pulls.length}){pullsSourceNote(lifecycle.pulls_source) ? <span style={{ textTransform: "none", letterSpacing: 0, fontFamily: monoFont, color: "rgba(255,255,255,0.5)" }}> · {pullsSourceNote(lifecycle.pulls_source)}</span> : null}
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(90px, 1fr))", gap: 6 }}>
             {pulls.map((p: any, i: number) => (
@@ -1015,7 +1015,7 @@ function LifecycleDetail({ lifecycle, row }: { lifecycle: any; row: HistoryRow }
                 {p.thumbnail_url ? <img src={proxyIpfsImageUrl(p.thumbnail_url, 320) ?? undefined} alt="" style={{ width: "100%", aspectRatio: "1 / 1", objectFit: "cover", borderRadius: 2 }} /> : <div style={{ width: "100%", aspectRatio: "1 / 1", background: "#1a1a1d", borderRadius: 2 }} />}
                 <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 11, color: "#fff", marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.player_name ?? p.character_name ?? "—"}</div>
                 {p.named_by === "id_neighbours" && (
-                  <div title="No record names this moment; its edition is inferred from the moments minted beside it" style={{ fontFamily: monoFont, fontSize: 9, color: "rgba(255,255,255,0.45)" }}>est. name</div>
+                  <div title="No record names this moment; its edition is inferred from the moments minted beside it" style={{ fontFamily: monoFont, fontSize: 9, color: "rgba(255,255,255,0.5)" }}>est. name</div>
                 )}
                 {packPullSerialLabel(p.serial_number, p.circulation_count) && (
                   <div style={{ fontFamily: monoFont, fontSize: 9, color: "rgba(255,255,255,0.5)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{packPullSerialLabel(p.serial_number, p.circulation_count)}</div>

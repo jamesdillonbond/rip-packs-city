@@ -10,6 +10,7 @@
 import Link from "next/link"
 import { getCollection } from "@/lib/collections"
 import { fetchActiveChallenges, fetchChallengeFeed } from "@/lib/challenges/hub-fetchers"
+import { accentText } from "@/lib/accent-text"
 
 export const revalidate = 300
 
@@ -46,7 +47,7 @@ export default async function ChallengesPage(props: { params: Promise<{ collecti
   if (collectionId !== "nba-top-shot") {
     return (
       <div style={{ padding: "48px 8px", color: "var(--rpc-text-secondary)", fontFamily: "var(--font-mono)", fontSize: 14 }}>
-        Challenges is a Top Shot feature. <Link href="/nba-top-shot/challenges" style={{ color: accent }}>View Top Shot Challenges →</Link>
+        Challenges is a Top Shot feature. <Link href="/nba-top-shot/challenges" style={{ color: accentText(accent) }}>View Top Shot Challenges →</Link>
       </div>
     )
   }

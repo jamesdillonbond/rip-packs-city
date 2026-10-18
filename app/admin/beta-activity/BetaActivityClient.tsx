@@ -141,7 +141,7 @@ export default function BetaActivityClient() {
           Beta activity
         </h1>
         <div style={{ display: "flex", gap: 8, alignItems: "center", fontFamily: "var(--font-mono)", fontSize: 11 }}>
-          <span style={{ color: "rgba(255,255,255,0.4)" }}>Sort:</span>
+          <span style={{ color: "rgba(255,255,255,0.5)" }}>Sort:</span>
           {([
             { k: "page_views", l: "7d page views" },
             { k: "last_seen", l: "Last seen" },
@@ -230,17 +230,17 @@ export default function BetaActivityClient() {
                 <tr key={r.email} style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
                   <Td>
                     <div style={{ fontWeight: 700, color: "#fff" }}>{r.username ?? r.email.split("@")[0]}</div>
-                    <div style={{ color: "rgba(255,255,255,0.4)", fontSize: 10 }}>{r.email}</div>
+                    <div style={{ color: "rgba(255,255,255,0.5)", fontSize: 10 }}>{r.email}</div>
                   </Td>
                   <Td>{truncAddr(r.wallet_addr)}</Td>
-                  <Td style={{ fontWeight: 700, color: r.page_views_7d > 0 ? "#34D399" : "rgba(255,255,255,0.3)" }}>
+                  <Td style={{ fontWeight: 700, color: r.page_views_7d > 0 ? "#34D399" : "rgba(255,255,255,0.5)" }}>
                     {r.page_views_7d}
                   </Td>
                   <Td>{relTime(r.last_seen_at)}</Td>
                   <Td>{relTime(r.last_active_at)}</Td>
                   <Td>
                     {r.top_features.length === 0 ? (
-                      <span style={{ color: "rgba(255,255,255,0.3)" }}>—</span>
+                      <span style={{ color: "rgba(255,255,255,0.5)" }}>—</span>
                     ) : (
                       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                         {r.top_features.map((f) => (

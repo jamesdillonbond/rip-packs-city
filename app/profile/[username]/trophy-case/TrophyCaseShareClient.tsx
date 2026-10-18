@@ -18,6 +18,7 @@ import Link from "next/link";
 import RpcLogo from "@/components/RpcLogo";
 import TrophySlab, { type TrophySlabData } from "@/components/TrophySlab";
 import ShareProfileButtons from "@/components/profile/ShareProfileButtons";
+import { accentText } from "@/lib/accent-text"
 
 const MONO = "var(--font-mono)";
 const DISPLAY = "var(--font-display)";
@@ -191,7 +192,7 @@ export default function TrophyCaseShareClient({
                 <Link
                   href="/dashboard"
                   data-owner-empty-cta
-                  style={{ color: accent, textDecoration: "underline", textUnderlineOffset: 4, fontSize: 12 }}
+                  style={{ color: accentText(accent), textDecoration: "underline", textUnderlineOffset: 4, fontSize: 12 }}
                 >
                   Pin your first trophy from your dashboard →
                 </Link>

@@ -34,6 +34,7 @@ import {
   PACK_FILTER_STATUS,
   type PackFilter,
 } from "@/lib/packs-wallet-view-format"
+import { accentText } from "@/lib/accent-text"
 
 interface SummaryCollection {
   collection_id: string
@@ -232,7 +233,7 @@ export default function WalletPacksView({ collection }: { collection: string }) 
           Search a wallet on the <strong>Moments</strong>{" "}tab to see its pack buys, rips,
           flips, and realized P&amp;L for {getCollection(collection)?.label ?? "this collection"}.
         </div>
-        <Link href="/dashboard/packs" className="rpc-chip" style={{ marginTop: 4, color: accent, borderColor: accent }}>
+        <Link href="/dashboard/packs" className="rpc-chip" style={{ marginTop: 4, color: accentText(accent), borderColor: accent }}>
           Full pack history →
         </Link>
       </div>
@@ -249,7 +250,7 @@ export default function WalletPacksView({ collection }: { collection: string }) 
           Pack buy prices, rips, and realized P&amp;L are part of your personal dashboard. Sign in to view the
           full pack history for this wallet.
         </div>
-        <Link href="/login" className="rpc-chip" style={{ marginTop: 4, color: accent, borderColor: accent }}>
+        <Link href="/login" className="rpc-chip" style={{ marginTop: 4, color: accentText(accent), borderColor: accent }}>
           Sign in →
         </Link>
       </div>
@@ -432,7 +433,7 @@ export default function WalletPacksView({ collection }: { collection: string }) 
         {history && !loading && !error && (
           <span style={{ fontFamily: mono, fontSize: 10, color: "var(--rpc-text-muted)" }}>{identitySyncNote(history.identity_sync)}</span>
         )}
-        <Link href="/dashboard/packs" className="rpc-chip" style={{ color: accent, borderColor: accent }}>
+        <Link href="/dashboard/packs" className="rpc-chip" style={{ color: accentText(accent), borderColor: accent }}>
           Full pack history + lifecycle →
         </Link>
       </div>

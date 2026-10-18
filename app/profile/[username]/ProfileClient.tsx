@@ -16,6 +16,7 @@ import { resolveAvatarUrl } from "@/lib/profile/default-avatar";
 import { avatarDisplayUrl } from "@/lib/media/avatar-proxy";
 import { getCollectionByUuid } from "@/lib/collections";
 import { isMarketClosed } from "@/lib/market-closed";
+import { accentText } from "@/lib/accent-text"
 
 // ── Types ─────────────────────────────────────────────────────────
 interface ProfileBio {
@@ -192,7 +193,7 @@ function Avatar(props: { username: string; bio: ProfileBio | null; size?: number
               fontFamily: condensedFont,
               fontWeight: "800",
               fontSize: (size * 0.35) + "px",
-              color: accent,
+              color: accentText(accent),
             });
             parent.innerHTML = initials;
           }

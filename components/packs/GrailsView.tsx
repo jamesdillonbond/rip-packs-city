@@ -12,6 +12,7 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { tierColor, fmtUsd, fmtPct, atLeastOnce, selectPackPrice } from '@/lib/grail-format'
 import { tierColorAlpha } from '@/lib/tier-color'
 import { proxyIpfsImageUrl } from '@/lib/ipfs-media'
+import { accentText } from "@/lib/accent-text"
 
 interface GrailRow {
   collection_id: string
@@ -213,7 +214,7 @@ function GrailCard({ row, accent, collection }: { row: GrailRow; accent: string;
         {row.meta?.image_url ? (
           <img src={proxyIpfsImageUrl(row.meta.image_url, 640) ?? undefined} alt={row.meta?.title ?? row.dist_id} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
         ) : (
-          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', /* brand-exception: glyph on the dark art frame */ color: 'rgba(255,255,255,0.25)', fontFamily: "var(--font-mono)", fontSize: 28 }}>?</div>
+          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', /* brand-exception: glyph on the dark art frame */ color: 'rgba(255,255,255,0.5)', fontFamily: "var(--font-mono)", fontSize: 28 }}>?</div>
         )}
         {/* Chase ribbon */}
         {row.max_pull_fmv != null && (
@@ -303,7 +304,7 @@ function GrailCard({ row, accent, collection }: { row: GrailRow; accent: string;
 // the old hex alphas: 0x22 = 34/255 ~= 13%, 0x55 = 85/255 ~= 33%.
 function Pill({ label, accent }: { label: string; accent: string }) {
   return (
-    <span style={{ padding: '3px 8px', background: tierColorAlpha(accent, 13), border: `1px solid ${tierColorAlpha(accent, 33)}`, color: accent, borderRadius: 999, fontFamily: "var(--font-mono)", fontSize: 9, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+    <span style={{ padding: '3px 8px', background: tierColorAlpha(accent, 13), border: `1px solid ${tierColorAlpha(accent, 33)}`, color: accentText(accent), borderRadius: 999, fontFamily: "var(--font-mono)", fontSize: 9, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
       {label}
     </span>
   )

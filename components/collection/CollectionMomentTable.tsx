@@ -63,6 +63,7 @@ import {
 } from "@/lib/collection-moment-cells"
 import { fmvBasis } from "@/lib/fmv-basis"
 import { trackOutboundClick } from "@/lib/track-click"
+import { accentText } from "@/lib/accent-text"
 
 // The one sanctioned per-value FMV honesty marker: plain-words "from asks" for
 // an ASK_ONLY FMV (0.9x a single seller's ask, never traded). Never the
@@ -672,7 +673,7 @@ export default function CollectionMomentTable(props: {
                       <td className="rpc-table-cell--mono hidden sm:table-cell">
                         <div className={"inline-flex min-w-[80px] flex-col rounded-lg border px-2 py-1 " + (primaryBadge ? "" : "border-[color:var(--rpc-border)] bg-[var(--rpc-black)]")} style={primaryBadge ? { borderColor: accent, backgroundColor: accent + "1A" } : undefined}>
                           <SerialBadge serial={row.serial} mintSize={row.mintSize} jerseyNumber={row.jerseyNumber} collection={collectionSlug} />
-                          <div className={"text-sm font-black flex items-center gap-1 " + (primaryBadge ? "" : "text-[color:var(--rpc-text-primary)]")} style={primaryBadge ? { color: accent } : undefined}>
+                          <div className={"text-sm font-black flex items-center gap-1 " + (primaryBadge ? "" : "text-[color:var(--rpc-text-primary)]")} style={primaryBadge ? { color: accentText(accent) } : undefined}>
                             {row.isSerialised === false && getSerial(row) == null ? <NotSerialised /> : <span>{"#" + (getSerial(row) ?? "-")}</span>}
                           </div>
                           <div className="text-xs text-[color:var(--rpc-text-secondary)]">{"/ " + (getMint(row) ?? "-")}</div>
@@ -707,7 +708,7 @@ export default function CollectionMomentTable(props: {
                           }
                           if (!count) return <span className="text-[color:var(--rpc-text-muted)]">—</span>
                           return (
-                            <a href={"/" + collectionSlug + "/packs?wallet=" + encodeURIComponent(input.trim())} className="hover:opacity-80" style={{ color: accent }}>
+                            <a href={"/" + collectionSlug + "/packs?wallet=" + encodeURIComponent(input.trim())} className="hover:opacity-80" style={{ color: accentText(accent) }}>
                               {count + (count === 1 ? " pack" : " packs")}
                             </a>
                           )
@@ -847,7 +848,7 @@ export default function CollectionMomentTable(props: {
                             title="Set FMV alert"
                             aria-label="Set FMV alert"
                             aria-expanded={alertOpenMomentId === row.momentId}
-                            style={{ color: alertOpenMomentId === row.momentId ? accent : "#a1a1aa" }}
+                            style={{ color: alertOpenMomentId === row.momentId ? accentText(accent) : "#a1a1aa" }}
                           >
                             <span aria-hidden="true">{"\uD83D\uDD14"}</span>
                           </button>
@@ -871,7 +872,7 @@ export default function CollectionMomentTable(props: {
                                 <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "#f87171", marginBottom: 6 }}>
                                   {alertError === "signed_out" ? (
                                     <>
-                                      <a href={"/login?redirect=" + encodeURIComponent(typeof window !== "undefined" ? window.location.pathname + window.location.search : "/nba-top-shot/collection")} style={{ color: accent, textDecoration: "underline" }}>Sign in</a> to save price alerts
+                                      <a href={"/login?redirect=" + encodeURIComponent(typeof window !== "undefined" ? window.location.pathname + window.location.search : "/nba-top-shot/collection")} style={{ color: accentText(accent), textDecoration: "underline" }}>Sign in</a> to save price alerts
                                     </>
                                   ) : (
                                     "Failed to set alert"
@@ -1017,7 +1018,7 @@ export default function CollectionMomentTable(props: {
                               </div>
                               {getTraits(row).length > 0 && (
                                 <div className="mt-3 flex flex-wrap gap-1">
-                                  {getTraits(row).map(function(trait) { return <span key={trait} className="rounded px-2 py-0.5 text-[10px]" style={{ backgroundColor: accent + "1A", color: accent }}>{trait}</span> })}
+                                  {getTraits(row).map(function(trait) { return <span key={trait} className="rounded px-2 py-0.5 text-[10px]" style={{ backgroundColor: accent + "1A", color: accentText(accent) }}>{trait}</span> })}
                                 </div>
                               )}
                             </div>

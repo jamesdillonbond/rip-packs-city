@@ -327,7 +327,7 @@ export function buildEmailMessage(deliveries: Delivery[], now: Date = new Date()
           <td style="padding:12px 0;border-bottom:1px solid #27272a;">
             <a href="${dealDetailUrl(deal)}" style="color:#fafafa;font-weight:700;text-decoration:none;font-size:15px;">${esc(dealTitle(deal))}</a>
             <div style="color:rgba(255,255,255,0.5);font-size:12px;margin-top:2px;">${esc(dealSubline(deal))}</div>
-            ${buyLinks.length ? `<div style="margin-top:4px;">${buyLinks.join(' <span style="color:rgba(255,255,255,0.3);">·</span> ')}</div>` : ""}
+            ${buyLinks.length ? `<div style="margin-top:4px;">${buyLinks.join(' <span style="color:rgba(255,255,255,0.5);">·</span> ')}</div>` : ""}
           </td>
           <td style="padding:12px 0;border-bottom:1px solid #27272a;text-align:right;white-space:nowrap;">
             <div style="color:#34d399;font-weight:800;font-size:15px;">${money(dealAsk(deal))}</div>
@@ -363,7 +363,7 @@ export function buildEmailMessage(deliveries: Delivery[], now: Date = new Date()
         </td></tr>
         <tr><td style="padding:8px 28px 24px 28px;">
           ${deals.length ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0">${dealRows}</table>` : ""}
-          ${fmvs.length ? `<div style="margin-top:16px;font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:rgba(255,255,255,0.45);font-weight:700;">FMV alerts</div><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${fmvRows}</table>` : ""}
+          ${fmvs.length ? `<div style="margin-top:16px;font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:rgba(255,255,255,0.5);font-weight:700;">FMV alerts</div><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${fmvRows}</table>` : ""}
           <p style="margin:22px 0 0 0;text-align:center;">
             <a href="${SITE}/alerts" style="color:rgba(255,255,255,0.55);font-size:12px;text-decoration:underline;">Manage your alerts</a>
           </p>

@@ -47,7 +47,7 @@ function buildConfirmationEmail(email: string, token: string): { html: string; t
         <p style="margin:0 0 16px;">
           <a href="${link}" style="display:inline-block;background:#e55a4c;color:#0a0a0a;font-weight:700;padding:12px 24px;border-radius:8px;text-decoration:none;">Confirm subscription</a>
         </p>
-        <p style="color:rgba(255,255,255,0.45);font-size:13px;line-height:1.5;margin:24px 0 0;">
+        <p style="color:rgba(255,255,255,0.5);font-size:13px;line-height:1.5;margin:24px 0 0;">
           If you didn't request this, you can ignore this email.
         </p>
       </div>

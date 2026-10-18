@@ -174,7 +174,7 @@ async function sendVerifyEmail(to: string, verifyUrl: string) {
           <h2 style="margin:0 0 12px 0;">Confirm your alert emails</h2>
           <p style="color:rgba(255,255,255,0.65);line-height:1.55;">Click below to start receiving deal &amp; FMV alerts at this address.</p>
           <p style="margin:24px 0;"><a href="${verifyUrl}" style="display:inline-block;padding:13px 28px;background:#e55a4c;color:#0a0a0a;font-weight:800;text-decoration:none;border-radius:8px;">Confirm email alerts</a></p>
-          <p style="color:rgba(255,255,255,0.45);font-size:12px;">If you didn't request this, you can ignore this email. This link expires in 15 minutes.</p>
+          <p style="color:rgba(255,255,255,0.5);font-size:12px;">If you didn't request this, you can ignore this email. This link expires in 15 minutes.</p>
         </div>`,
       text: `Confirm your Rip Packs City alert emails: ${verifyUrl}\n\nThis link expires in 15 minutes. If you didn't request it, ignore this email.`,
     }),

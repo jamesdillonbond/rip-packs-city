@@ -9,6 +9,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { usdSignFirst } from "@/lib/usd-format"
+import { accentText } from "@/lib/accent-text"
 
 const TOKEN_KEY = "rpc_admin_token";
 const REFRESH_MS = 60_000;
@@ -351,7 +352,7 @@ function Tile({ label, value, accent }: { label: string; value: string; accent?:
   return (
     <div className="rpc-stat-tile" style={{ padding: "12px 14px" }}>
       <div className="rpc-stat-eyebrow">{label}</div>
-      <div className="rpc-stat-value" style={{ color: accent ?? "var(--rpc-text-primary)", fontSize: 24 }}>
+      <div className="rpc-stat-value" style={{ color: accentText(accent) ?? "var(--rpc-text-primary)", fontSize: 24 }}>
         {value}
       </div>
     </div>

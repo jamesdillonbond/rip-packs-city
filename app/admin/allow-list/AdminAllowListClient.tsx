@@ -124,7 +124,7 @@ function MinimalChecking() {
       style={{
         minHeight: "100vh",
         background: "#080808",
-        color: "rgba(255,255,255,0.4)",
+        color: "rgba(255,255,255,0.5)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -694,7 +694,7 @@ function Dashboard({
               style={{
                 fontFamily: monoFont,
                 fontSize: 12,
-                color: "rgba(255,255,255,0.4)",
+                color: "rgba(255,255,255,0.5)",
                 textAlign: "center",
                 padding: 24,
               }}
@@ -728,7 +728,7 @@ function Dashboard({
               style={{
                 fontFamily: monoFont,
                 fontSize: 12,
-                color: "rgba(255,255,255,0.4)",
+                color: "rgba(255,255,255,0.5)",
                 textAlign: "center",
                 padding: 24,
               }}
@@ -830,7 +830,7 @@ function RowCard({
           style={{
             fontFamily: monoFont,
             fontSize: 10,
-            color: "rgba(255,255,255,0.45)",
+            color: "rgba(255,255,255,0.5)",
             flexShrink: 0,
           }}
         >
@@ -1011,7 +1011,7 @@ function RowCard({
             marginLeft: "auto",
             fontFamily: monoFont,
             fontSize: 10,
-            color: "rgba(255,255,255,0.35)",
+            color: "rgba(255,255,255,0.5)",
             alignSelf: "center",
           }}
         >

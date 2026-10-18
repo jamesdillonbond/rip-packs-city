@@ -45,6 +45,7 @@ import PackMarketView from "@/components/packs/PackMarketView"
 import PaniniCoverageNote from "@/components/collection/PaniniCoverageNote"
 import type { PaniniCoverage } from "@/lib/panini/coverage"
 import { getCollectionByUrlSlug, isPinnacleUrlSlug } from "@/lib/collection-slug"
+import { accentText } from "@/lib/accent-text"
 
 // ── Ask age ─────────────────────────────────────────────────────────────────
 //
@@ -747,7 +748,7 @@ function MarketInner() {
               type="button"
               onClick={clearFilters}
               className="rpc-chip rpc-accent-border"
-              style={{ marginLeft: "auto", color: accent, borderColor: accent }}
+              style={{ marginLeft: "auto", color: accentText(accent), borderColor: accent }}
             >
               Clear {activeFilterCount} filter{activeFilterCount === 1 ? "" : "s"}
             </button>
@@ -1144,7 +1145,7 @@ function ListingCard({ listing, accent, momentUrl, editionStats, showOwned, coll
             onClick={(e) => { e.preventDefault(); e.stopPropagation(); trackListingClick(listing, dapper, collectionUrlSlug, "dapper"); window.open(dapper, "_blank", "noopener,noreferrer") }}
             onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); trackListingClick(listing, dapper, collectionUrlSlug, "dapper"); window.open(dapper, "_blank", "noopener,noreferrer") } }}
             className="rpc-mono"
-            style={{ marginTop: 6, alignSelf: "flex-start", fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", color: accent, border: `1px solid ${accent}40`, borderRadius: 4, padding: "3px 8px", cursor: "pointer" }}
+            style={{ marginTop: 6, alignSelf: "flex-start", fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", color: accentText(accent), border: `1px solid ${accent}40`, borderRadius: 4, padding: "3px 8px", cursor: "pointer" }}
           >
             Dapper ↗
           </span>
@@ -1319,7 +1320,7 @@ function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColu
                         rel="noopener noreferrer"
                         onClick={() => trackListingClick(l, buy, collectionUrlSlug, "listing")}
                         className="rpc-chip"
-                        style={{ color: accent, borderColor: accent, background: `${accent}14` }}
+                        style={{ color: accentText(accent), borderColor: accent, background: `${accent}14` }}
                       >
                         View Listing →
                       </a>
@@ -1331,7 +1332,7 @@ function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColu
                         rel="noopener noreferrer"
                         onClick={() => trackListingClick(l, dapper, collectionUrlSlug, "dapper")}
                         className="rpc-chip"
-                        style={{ color: accent, borderColor: `${accent}40`, background: "transparent" }}
+                        style={{ color: accentText(accent), borderColor: `${accent}40`, background: "transparent" }}
                       >
                         Dapper ↗
                       </a>

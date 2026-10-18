@@ -87,6 +87,7 @@ import { withAsOf, depletionTileAsOf, packsRemainingTileAsOf } from "@/lib/pack-
 import { pickTierCounts, observedOpensFloorLabel } from "@/lib/pack-dist/tier-counts"
 import { summarizeDegraded, boardStatus } from "@/lib/insights/board-status"
 import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
+import { accentText } from "@/lib/accent-text"
 
 export const revalidate = 600
 export const dynamicParams = true
@@ -802,7 +803,7 @@ export default async function PackDetailPage(
                   fontFamily: "var(--font-mono)",
                   fontSize: 9,
                   letterSpacing: "0.2em",
-                  color: "rgba(255,255,255,0.4)",
+                  color: "rgba(255,255,255,0.5)",
                   textTransform: "uppercase",
                 }}
               >
@@ -1052,20 +1053,20 @@ export default async function PackDetailPage(
                 fontSize: 10,
                 letterSpacing: "0.18em",
                 textTransform: "uppercase",
-                color: "rgba(255,255,255,0.45)",
+                color: "rgba(255,255,255,0.5)",
               }}
             >
               Value still sealed
             </span>
-            <span style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 22, color: accent }}>
+            <span style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 22, color: accentText(accent) }}>
               ≈ {fmtUsd(grossEv)}
               <span style={{ fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.5)" }}>/pack</span>
             </span>
-            <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: accent }}>
+            <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: accentText(accent) }}>
               {above ? "▲" : "▼"} {pctLabel}% {above ? "above" : "below"} the {fmtUsd(secondaryAskAnchor)} secondary ask
             </span>
             {coverageCaveat ? (
-              <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.4)" }}>
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.5)" }}>
                 · {coverageCaveat}
               </span>
             ) : null}
@@ -1350,7 +1351,7 @@ function KpiCell({ label, value, sub, color }: { label: string; value: string; s
           fontSize: 9,
           letterSpacing: "0.18em",
           textTransform: "uppercase",
-          color: "rgba(255,255,255,0.45)",
+          color: "rgba(255,255,255,0.5)",
         }}
       >
         {label}
@@ -1372,7 +1373,7 @@ function KpiCell({ label, value, sub, color }: { label: string; value: string; s
           style={{
             fontFamily: "var(--font-mono)",
             fontSize: 10,
-            color: "rgba(255,255,255,0.45)",
+            color: "rgba(255,255,255,0.5)",
             marginTop: 2,
           }}
         >
@@ -1439,7 +1440,7 @@ function DualPriceKpi({
           fontSize: 9,
           letterSpacing: "0.16em",
           textTransform: "uppercase",
-          color: "rgba(255,255,255,0.45)",
+          color: "rgba(255,255,255,0.5)",
           minWidth: 64,
           display: "inline-block",
         }}
@@ -1453,7 +1454,7 @@ function DualPriceKpi({
           fontSize: 18,
           letterSpacing: "0.02em",
           fontVariantNumeric: "tabular-nums",
-          color: anchor ? "var(--rpc-red)" : muted ? "rgba(255,255,255,0.45)" : "#fff",
+          color: anchor ? "var(--rpc-red)" : muted ? "rgba(255,255,255,0.5)" : "#fff",
         }}
       >
         {value}
@@ -1489,7 +1490,7 @@ function DualPriceKpi({
           fontSize: 9,
           letterSpacing: "0.18em",
           textTransform: "uppercase",
-          color: "rgba(255,255,255,0.45)",
+          color: "rgba(255,255,255,0.5)",
           marginBottom: 6,
         }}
       >
@@ -1522,7 +1523,7 @@ function Th({ children, align = "left" }: { children: React.ReactNode; align?: "
         fontSize: 9,
         letterSpacing: "0.15em",
         textTransform: "uppercase",
-        color: "rgba(255,255,255,0.45)",
+        color: "rgba(255,255,255,0.5)",
         fontWeight: 700,
       }}
     >
@@ -1573,7 +1574,7 @@ function PackHeroStrip({ collection, editions }: { collection: string; editions:
         >
           Top chases
         </h2>
-        <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.4)" }}>
+        <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.5)" }}>
           highest-FMV pulls in this pack
         </span>
       </div>
@@ -1608,7 +1609,7 @@ function PackHeroStrip({ collection, editions }: { collection: string; editions:
                     style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
                   />
                 ) : (
-                  <span style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "rgba(255,255,255,0.35)" }}>No image</span>
+                  <span style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "rgba(255,255,255,0.5)" }}>No image</span>
                 )}
               </div>
               <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 4, flexWrap: "wrap" }}>
@@ -1732,7 +1733,7 @@ function TierOddsPanel({
         >
           Pull odds by tier
         </h2>
-        <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.4)" }}>
+        <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.5)" }}>
           {withAsOf(slots && slots > 0 ? `${slots} slots/pack` : "per pack", updatedAt)}
         </span>
       </div>
@@ -1772,12 +1773,12 @@ function TierOddsPanel({
                     </span>
                   </Td>
                   <Td align="right" color="rgba(255,255,255,0.85)">
-                    {remaining.toLocaleString()} <span style={{ color: "rgba(255,255,255,0.4)" }}>/ {original.toLocaleString()}</span>
+                    {remaining.toLocaleString()} <span style={{ color: "rgba(255,255,255,0.5)" }}>/ {original.toLocaleString()}</span>
                   </Td>
                   <Td align="right" color="rgba(255,255,255,0.6)">
                     {pctOfPoolLabel(remaining, poolRemaining)}
                   </Td>
-                  <Td align="right" color={remaining > 0 ? "#fff" : "rgba(255,255,255,0.4)"}>
+                  <Td align="right" color={remaining > 0 ? "#fff" : "rgba(255,255,255,0.5)"}>
                     {packOddsLabel(remaining, poolRemaining, slots)}
                   </Td>
                 </tr>
@@ -1786,7 +1787,7 @@ function TierOddsPanel({
           </tbody>
         </table>
       </div>
-      <div style={{ marginTop: 10, fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.35)" }}>
+      <div style={{ marginTop: 10, fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.5)" }}>
         Odds/pack ≈ chance of at least one card of that tier across {slots && slots > 0 ? slots : "the"} slots, from the remaining pool. Approximate (assumes independent slots).
       </div>
     </section>
@@ -1856,7 +1857,7 @@ function PacksContentRemaining({
         >
           Packs Content Remaining
         </h2>
-        <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.4)" }}>
+        <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.5)" }}>
           {/* ⚠ "live pool" was an unverified freshness claim and this very span
               rendered it beside a 15-day age ("live pool · as of 15d ago") — the
               tier counts behind it are newest 2026-08-28, with zero of 823 Top
@@ -1896,7 +1897,7 @@ function PacksContentRemaining({
                 <span style={{ fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 24, color: "#fff", lineHeight: 1 }}>
                   {unopenedPct!.toFixed(unopenedPct! >= 10 ? 0 : 1)}%
                 </span>
-                <span style={{ fontFamily: "var(--font-mono)", fontSize: 8, letterSpacing: "0.12em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)" }}>
+                <span style={{ fontFamily: "var(--font-mono)", fontSize: 8, letterSpacing: "0.12em", textTransform: "uppercase", color: "rgba(255,255,255,0.5)" }}>
                   unopened
                 </span>
               </div>
@@ -1921,7 +1922,7 @@ function PacksContentRemaining({
                       {t.charAt(0).toUpperCase() + t.slice(1)}
                     </span>
                     <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "rgba(255,255,255,0.7)" }}>
-                      {remaining.toLocaleString()} <span style={{ color: "rgba(255,255,255,0.4)" }}>/ {original.toLocaleString()} ({pct.toFixed(pct >= 10 ? 0 : 1)}%)</span>
+                      {remaining.toLocaleString()} <span style={{ color: "rgba(255,255,255,0.5)" }}>/ {original.toLocaleString()} ({pct.toFixed(pct >= 10 ? 0 : 1)}%)</span>
                     </span>
                   </div>
                   <div style={{ height: 8, borderRadius: 4, background: "rgba(255,255,255,0.06)", overflow: "hidden" }}>
@@ -1947,7 +1948,7 @@ function PacksContentRemaining({
 // fmtSalePrice extracted to @/lib/pack-dist-format (imported below).
 
 function ShortWallet({ address, name }: { address: string | null; name?: string | null }) {
-  if (!address) return <span style={{ color: "rgba(255,255,255,0.4)" }}>—</span>
+  if (!address) return <span style={{ color: "rgba(255,255,255,0.5)" }}>—</span>
   const trunc = address.length > 12 ? `${address.slice(0, 6)}…${address.slice(-4)}` : address
   return (
     <Link
@@ -1963,7 +1964,7 @@ function ShortWallet({ address, name }: { address: string | null; name?: string 
 function PackSalesTable({ title, rows, names }: { title: string; rows: PackSaleRow[]; names: Map<string, string> }) {
   return (
     <div style={{ flex: "1 1 320px", minWidth: 280 }}>
-      <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, letterSpacing: "0.18em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)", marginBottom: 8 }}>
+      <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, letterSpacing: "0.18em", textTransform: "uppercase", color: "rgba(255,255,255,0.5)", marginBottom: 8 }}>
         {title}
       </div>
       <div style={{ overflowX: "auto" }}>
@@ -2019,11 +2020,11 @@ function PackSalesHistory({ rows, names }: { rows: PackSaleRow[]; names: Map<str
         >
           Sales History
         </h2>
-        <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.4)" }}>
+        <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.5)" }}>
           secondary pack sales
         </span>
       </div>
-      <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.35)", marginBottom: 14 }}>
+      <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.5)", marginBottom: 14 }}>
         Traced via opened packs — partial coverage that grows over time. Buyer links open the wallet&apos;s full intelligence.
       </div>
 
@@ -2033,7 +2034,7 @@ function PackSalesHistory({ rows, names }: { rows: PackSaleRow[]; names: Map<str
             padding: "12px 14px",
             border: "1px dashed rgba(255,255,255,0.1)",
             borderRadius: 6,
-            color: "rgba(255,255,255,0.4)",
+            color: "rgba(255,255,255,0.5)",
             fontFamily: "var(--font-mono)",
             fontSize: 11,
           }}
@@ -2250,7 +2251,7 @@ async function PackStreamedTop({
 
       {showRealizedEv && (
         <section style={{ background: "rgba(13,13,13,0.92)", border: "1px solid rgba(255,255,255,0.06)", borderLeft: `3px solid ${reVerdict?.accent ?? "rgba(255,255,255,0.2)"}`, borderRadius: 6, padding: "12px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
-          <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)" }}>
+          <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", color: "rgba(255,255,255,0.5)" }}>
             {hasModeled ? "EV reality check" : "Realized pull value"}
           </span>
           <div style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: "4px 14px" }}>
@@ -2259,13 +2260,13 @@ async function PackStreamedTop({
                 Modeled <strong style={{ color: "rgba(255,255,255,0.9)" }}>{fmtUsd(reModeled)}</strong>/pack
               </span>
             )}
-            <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: reVerdict?.accent ?? "rgba(255,255,255,0.85)" }}>
+            <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: accentText(reVerdict?.accent) ?? "rgba(255,255,255,0.85)" }}>
               {hasModeled ? "vs realized " : "Realized "}<strong>{fmtUsd(reMean)}</strong> avg
               {reMedian != null ? ` · ${fmtUsd(reMedian)} median` : ""}
               {reP90 != null ? ` · ${fmtUsd(reP90)} p90` : ""}
             </span>
             {reRatio != null && (
-              <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: reVerdict?.accent ?? "rgba(255,255,255,0.85)" }}>
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: accentText(reVerdict?.accent) ?? "rgba(255,255,255,0.85)" }}>
                 ({reRatio.toFixed(2)}×)
               </span>
             )}
@@ -2275,12 +2276,12 @@ async function PackStreamedTop({
               <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "rgba(255,255,255,0.9)" }}>
                 Calibrated estimate <strong style={{ color: "rgb(250,204,21)" }}>{fmtUsd(reCalibrated)}</strong>/pack
               </span>
-              <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.4)" }}>
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.5)" }}>
                 model blended toward observed pulls
               </span>
             </div>
           )}
-          <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.4)" }}>
+          <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.5)" }}>
             {reVerdict?.label ?? "Realized pull value"} · {fmtCount(reOpens)} attributed opens
           </span>
         </section>
@@ -2327,7 +2328,7 @@ async function PackStreamedTop({
                         ) : (
                           <span style={{ color: "#fff" }}>{c.player_name || "—"}</span>
                         )}
-                        <span style={{ color: "rgba(255,255,255,0.4)" }}> · {c.set_name || "—"}</span>
+                        <span style={{ color: "rgba(255,255,255,0.5)" }}> · {c.set_name || "—"}</span>
                       </Td>
                       <Td color={c.tier ? tierChip(String(c.tier)).color : undefined}>
                         {c.tier ? String(c.tier).charAt(0).toUpperCase() + String(c.tier).slice(1) : "—"}
@@ -2341,7 +2342,7 @@ async function PackStreamedTop({
               </tbody>
             </table>
           </div>
-          <div style={{ marginTop: 10, fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.35)" }}>
+          <div style={{ marginTop: 10, fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.5)" }}>
             EV share = pull odds × FMV ÷ per-slot EV, over the editions remaining in the pool.
           </div>
         </section>
@@ -2349,20 +2350,20 @@ async function PackStreamedTop({
 
       {showPackMarket && (
         <section style={{ background: "rgba(13,13,13,0.92)", border: "1px solid rgba(255,255,255,0.06)", borderLeft: `3px solid ${pmVerdict?.accent ?? "rgba(255,255,255,0.2)"}`, borderRadius: 6, padding: "12px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
-          <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)" }}>
+          <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", color: "rgba(255,255,255,0.5)" }}>
             Sealed pack resale
           </span>
           <div style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: "4px 14px" }}>
             {pmMedian90 !== null && (
               <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "rgba(255,255,255,0.7)" }}>
                 Median <strong style={{ color: "rgba(255,255,255,0.9)" }}>{fmtUsd(pmMedian90)}</strong>
-                <span style={{ color: "rgba(255,255,255,0.4)" }}> (90d)</span>
+                <span style={{ color: "rgba(255,255,255,0.5)" }}> (90d)</span>
               </span>
             )}
             {pmLast !== null && (
               <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "rgba(255,255,255,0.7)" }}>
                 Last <strong style={{ color: "rgba(255,255,255,0.9)" }}>{fmtUsd(pmLast)}</strong>
-                {fmtAgo(pmLastAt) ? <span style={{ color: "rgba(255,255,255,0.4)" }}> · {fmtAgo(pmLastAt)}</span> : null}
+                {fmtAgo(pmLastAt) ? <span style={{ color: "rgba(255,255,255,0.5)" }}> · {fmtAgo(pmLastAt)}</span> : null}
               </span>
             )}
             {pmRetail !== null && pmRetail > 0 && (
@@ -2376,7 +2377,7 @@ async function PackStreamedTop({
             </span>
           </div>
           {pmVerdict && (
-            <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: pmVerdict.accent }}>
+            <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: accentText(pmVerdict.accent) }}>
               {pmVerdict.label}
             </span>
           )}
@@ -2435,7 +2436,7 @@ async function PackStreamedBottom({
               OUR INDEX manufactured from OUR outage, on a pack whose pool is in
               fact fully indexed. Branch on `ok` first; an empty result is only
               "unindexed" when we actually managed to ask. */}
-          <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.4)" }}>
+          <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.5)" }}>
             {!topPullsRes.ok
               ? "unavailable"
               : topPulls.length === 0
@@ -2444,12 +2445,12 @@ async function PackStreamedBottom({
           </span>
         </div>
         {!topPullsRes.ok ? (
-          <div style={{ padding: "12px 14px", border: "1px dashed rgba(255,255,255,0.1)", borderRadius: 6, color: "rgba(255,255,255,0.4)", fontFamily: "var(--font-mono)", fontSize: 11 }}>
+          <div style={{ padding: "12px 14px", border: "1px dashed rgba(255,255,255,0.1)", borderRadius: 6, color: "rgba(255,255,255,0.5)", fontFamily: "var(--font-mono)", fontSize: 11 }}>
             Couldn&apos;t load this pack&apos;s drop pool. This says nothing about whether the pool is
             indexed — only that the read failed. Reload to try again.
           </div>
         ) : topPulls.length === 0 ? (
-          <div style={{ padding: "12px 14px", border: "1px dashed rgba(255,255,255,0.1)", borderRadius: 6, color: "rgba(255,255,255,0.4)", fontFamily: "var(--font-mono)", fontSize: 11 }}>
+          <div style={{ padding: "12px 14px", border: "1px dashed rgba(255,255,255,0.1)", borderRadius: 6, color: "rgba(255,255,255,0.5)", fontFamily: "var(--font-mono)", fontSize: 11 }}>
             Drop-pool contents aren&apos;t indexed for this distribution yet. Older/depleted packs are re-pooled from Dapper Atlas remaining-count data as that harvest runs.
           </div>
         ) : (
@@ -2490,7 +2491,7 @@ async function PackStreamedBottom({
             </table>
           </div>
         )}
-        <div style={{ marginTop: 10, fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.35)" }}>
+        <div style={{ marginTop: 10, fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.5)" }}>
           Edition EV = FMV × (drop_weight / pool_weight) × slots. Sums to Gross EV over the full pool. Snapshotted{" "}
           {snapshottedAt ? new Date(snapshottedAt).toLocaleString() : "—"}. Methodology: cached pack_ev_history via the
           compute-pack-ev edge function.

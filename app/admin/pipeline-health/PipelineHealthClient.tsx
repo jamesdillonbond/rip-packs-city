@@ -9,6 +9,7 @@
 
 import { useState } from "react";
 import { useAdminResource } from "@/lib/admin/use-admin-resource";
+import { accentText } from "@/lib/accent-text"
 
 
 interface Row {
@@ -268,7 +269,7 @@ function Stat({ label, value, accent }: { label: string; value: string; accent?:
       <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--rpc-text-muted)" }}>
         {label}
       </div>
-      <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 22, color: accent ?? "var(--rpc-text-primary)", marginTop: 4 }}>
+      <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 22, color: accentText(accent) ?? "var(--rpc-text-primary)", marginTop: 4 }}>
         {value}
       </div>
     </div>

@@ -36,6 +36,7 @@ import TrophySlab, { type TrophySlabData } from "@/components/TrophySlab";
 import { proxyIpfsImageUrl } from "@/lib/ipfs-media";
 import { momentSubjectName } from "@/lib/entity-href"
 import FirstAlertPrompt from "@/components/alerts/FirstAlertPrompt";
+import { accentText } from "@/lib/accent-text"
 
 const condensedFont = "var(--font-display)";
 const monoFont = "var(--font-mono)";
@@ -1417,7 +1418,7 @@ function ProfilePageInner() {
                   style={{
                     background: isFav ? `${c.accent}22` : "var(--rpc-surface)",
                     border: `1px solid ${isFav ? c.accent : "var(--rpc-border)"}`,
-                    color: isFav ? c.accent : "var(--rpc-text-secondary)",
+                    color: isFav ? accentText(c.accent) : "var(--rpc-text-secondary)",
                     padding: "8px 14px",
                     borderRadius: 20,
                     fontFamily: condensedFont,
@@ -1466,7 +1467,7 @@ function ProfilePageInner() {
                         {a.followee_username ?? "someone"} {a.role === "seller" ? "sold" : "bought"} {a.player_name ?? "a moment"}{a.serial_number ? ` #${a.serial_number}` : ""}
                       </div>
                       <div style={{ fontFamily: monoFont, fontSize: 10, color: "var(--rpc-text-muted)", display: "flex", gap: 8, marginTop: 2 }}>
-                        {cMeta && <span style={{ color: cMeta.accent }}>{cMeta.shortLabel}</span>}
+                        {cMeta && <span style={{ color: accentText(cMeta.accent) }}>{cMeta.shortLabel}</span>}
                         <span>{timeAgo(a.sold_at)}</span>
                       </div>
                     </div>
@@ -2456,7 +2457,7 @@ function WalletGroupCard({
               }}
             >
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
-                <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", color: col.accent }}>
+                <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", color: accentText(col.accent) }}>
                   {col.icon} {col.shortLabel}
                 </div>
                 {showSpinner && <span className="rpc-spinner-sm" aria-hidden />}

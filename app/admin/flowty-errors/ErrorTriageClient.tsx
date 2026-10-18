@@ -9,6 +9,7 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { fmtInt, timeAgo, fmtIso, truncSig, truncAddr, truncMid } from "@/lib/admin/flowty-errors-format";
+import { accentText } from "@/lib/accent-text"
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -525,7 +526,7 @@ function KpiTile({ label, value, accent }: { label: string; value: string; accen
   return (
     <div className="rpc-stat-tile" style={{ padding: "14px 16px" }}>
       <div className="rpc-stat-eyebrow">{label}</div>
-      <div className="rpc-stat-value" style={{ fontSize: 28, color: accent ?? "var(--rpc-text-primary)" }}>{value}</div>
+      <div className="rpc-stat-value" style={{ fontSize: 28, color: accentText(accent) ?? "var(--rpc-text-primary)" }}>{value}</div>
     </div>
   );
 }

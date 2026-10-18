@@ -254,7 +254,7 @@ export default function AchievementsCard(props: { ownerKey: string }) {
                         style={{
                           fontFamily: monoFont,
                           fontSize: 9,
-                          color: "rgba(255,255,255,0.4)",
+                          color: "rgba(255,255,255,0.5)",
                           marginTop: 2,
                         }}
                       >

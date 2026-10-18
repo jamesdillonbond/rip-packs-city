@@ -70,6 +70,7 @@ import {
 } from "@/lib/sniper/helpers";
 import { sniperTierTabs } from "@/lib/collection-tiers";
 import { ownLookup } from "@/lib/safe-lookup";
+import { accentText } from "@/lib/accent-text"
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 
@@ -969,7 +970,7 @@ function SniperMomentsBody() {
                 onClick={() => { refresh(); setCountdown(REFRESH_INTERVAL); }}
                 disabled={loading}
                 className="rpc-btn-ghost"
-                style={{ opacity: loading ? 0.5 : 1, borderColor: `${accent}40`, color: accent }}
+                style={{ opacity: loading ? 0.5 : 1, borderColor: `${accent}40`, color: accentText(accent) }}
               >
                 {loading ? "↻" : "↻ REFRESH"}
               </button>
@@ -1062,7 +1063,7 @@ function SniperMomentsBody() {
               gap: 12,
               marginBottom: 16,
               borderColor: deepLinkResolved === "found" ? `${accent}66` : "var(--rpc-warning)",
-              color: deepLinkResolved === "found" ? accent : "var(--rpc-warning)",
+              color: deepLinkResolved === "found" ? accentText(accent) : "var(--rpc-warning)",
               fontFamily: "var(--font-mono)",
               fontSize: "var(--text-sm)",
             }}
@@ -1104,7 +1105,7 @@ function SniperMomentsBody() {
         {/* ── Relative-deals fallback for ASK_ONLY collections ─────────────── */}
         {(isGolazos || isUfc) && !loading && relativeDeals !== null && (
           <div style={{ marginBottom: 24 }}>
-            <div className="rpc-hud" style={{ marginBottom: 12, borderColor: `${accent}66`, color: accent, fontSize: "var(--text-sm)", fontFamily: "var(--font-mono)" }}>
+            <div className="rpc-hud" style={{ marginBottom: 12, borderColor: `${accent}66`, color: accentText(accent), fontSize: "var(--text-sm)", fontFamily: "var(--font-mono)" }}>
               DEALS BASED ON TIER MEDIAN PRICING (LIMITED SALES DATA)
             </div>
             <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 260px", gap: 16 }}>
@@ -1146,7 +1147,7 @@ function SniperMomentsBody() {
                               {d.serial_number ? <span style={{ color: "var(--rpc-text-muted)" }}> #{d.serial_number}</span> : null}
                             </td>
                             <td style={{ padding: "6px 8px", color: "var(--rpc-text-muted)" }}>{d.set_name ?? "—"}</td>
-                            <td style={{ padding: "6px 8px", color: accent, textTransform: "uppercase" }}>{d.tier ?? "—"}</td>
+                            <td style={{ padding: "6px 8px", color: accentText(accent), textTransform: "uppercase" }}>{d.tier ?? "—"}</td>
                             <td style={{ padding: "6px 8px", textAlign: "right" }}>${ask.toFixed(2)}</td>
                             <td style={{ padding: "6px 8px", textAlign: "right", color: "var(--rpc-text-muted)" }}>${med.toFixed(2)}</td>
                             <td style={{ padding: "6px 8px", textAlign: "right", color: "#00e882" }}>{disc}%</td>
@@ -1179,7 +1180,7 @@ function SniperMomentsBody() {
                                     askPrice: Number.isFinite(ask) && ask > 0 ? ask : null,
                                     buyUrl: href,
                                   })}
-                                  className="rpc-chip" style={{ borderColor: `${accent}66`, color: accent, padding: "2px 8px", fontSize: "var(--text-xs)" }}>
+                                  className="rpc-chip" style={{ borderColor: `${accent}66`, color: accentText(accent), padding: "2px 8px", fontSize: "var(--text-xs)" }}>
                                   View →
                                 </a>
                                 ) : null;
@@ -1208,7 +1209,7 @@ function SniperMomentsBody() {
                     <tbody>
                       {Object.entries(benchmarks).map(([tier, s]) => (
                         <tr key={tier} style={{ borderTop: "1px solid var(--rpc-border)" }}>
-                          <td style={{ padding: "4px 6px", color: accent, textTransform: "uppercase" }}>{tier}</td>
+                          <td style={{ padding: "4px 6px", color: accentText(accent), textTransform: "uppercase" }}>{tier}</td>
                           <td style={{ padding: "4px 6px", textAlign: "right" }}>{s.count}</td>
                           <td style={{ padding: "4px 6px", textAlign: "right" }}>${Number(s.floor ?? 0).toFixed(2)}</td>
                           <td style={{ padding: "4px 6px", textAlign: "right" }}>${Number(s.median ?? 0).toFixed(2)}</td>
@@ -1269,7 +1270,7 @@ function SniperMomentsBody() {
             {hiddenByVerifiedGate > 0 && (
               <button
                 onClick={() => setShowVerifiedOnly(false)}
-                className="rpc-btn-ghost" style={{ marginTop: 8, borderColor: `${accent}66`, color: accent }}
+                className="rpc-btn-ghost" style={{ marginTop: 8, borderColor: `${accent}66`, color: accentText(accent) }}
               >
                 SHOW ASK-PRICED LISTINGS
               </button>
@@ -1277,7 +1278,7 @@ function SniperMomentsBody() {
             {hiddenByVerifiedGate === 0 && hiddenByFeeGate > 0 && (
               <button
                 onClick={() => setAfterFeesOnly(false)}
-                className="rpc-btn-ghost" style={{ marginTop: 8, borderColor: `${accent}66`, color: accent }}
+                className="rpc-btn-ghost" style={{ marginTop: 8, borderColor: `${accent}66`, color: accentText(accent) }}
               >
                 SHOW LISTINGS THE FEE ERASES
               </button>
@@ -1287,7 +1288,7 @@ function SniperMomentsBody() {
               // is the same false diagnosis in button form.
               <button
                 onClick={() => refresh()}
-                className="rpc-btn-ghost" style={{ marginTop: 8, borderColor: `${accent}66`, color: accent }}
+                className="rpc-btn-ghost" style={{ marginTop: 8, borderColor: `${accent}66`, color: accentText(accent) }}
               >
                 RETRY
               </button>
@@ -1299,7 +1300,7 @@ function SniperMomentsBody() {
                   setFlowWalletOnly(false); setShowVerifiedOnly(false); setSearch("");
                   setBoardFilter({ team: "all", studio: "all", chaserOnly: false });
                 }}
-                className="rpc-btn-ghost" style={{ marginTop: 8, borderColor: `${accent}66`, color: accent }}
+                className="rpc-btn-ghost" style={{ marginTop: 8, borderColor: `${accent}66`, color: accentText(accent) }}
               >
                 CLEAR FILTERS
               </button>
@@ -1465,7 +1466,7 @@ function SniperMomentsBody() {
                               rel="noopener noreferrer"
                               onClick={(e) => { e.stopPropagation(); trackClick(deal, null, { collection: feedCollection, href: viewUrl, linkKind: "listing" }); }}
                               className="rpc-btn-ghost"
-                              style={{ padding: "4px 10px", textDecoration: "none", borderColor: `${accent}40`, color: accent, fontSize: "var(--text-xs)" }}
+                              style={{ padding: "4px 10px", textDecoration: "none", borderColor: `${accent}40`, color: accentText(accent), fontSize: "var(--text-xs)" }}
                             >
                               View Listing →
                             </a>
@@ -1477,7 +1478,7 @@ function SniperMomentsBody() {
                               rel="noopener noreferrer"
                               onClick={(e) => { e.stopPropagation(); trackClick(deal, null, { collection: feedCollection, href: dapperUrl, linkKind: "dapper" }); }}
                               className="rpc-btn-ghost"
-                              style={{ padding: "4px 10px", textDecoration: "none", borderColor: `${accent}40`, color: accent, fontSize: "var(--text-xs)" }}
+                              style={{ padding: "4px 10px", textDecoration: "none", borderColor: `${accent}40`, color: accentText(accent), fontSize: "var(--text-xs)" }}
                             >
                               Dapper ↗
                             </a>
@@ -1929,8 +1930,8 @@ function SniperMomentsBody() {
                                       const ddDapper = resolveDapperUrl(dd, feedCollection);
                                       return (
                                         <span className="flex items-center gap-3">
-                                          {ddUrl && <a href={ddUrl} target="_blank" rel="noopener noreferrer" onClick={() => trackClick(dd, null, { collection: feedCollection, href: ddUrl, linkKind: "listing", surface: "sniper_depth" })} style={{ color: accent, textDecoration: "none" }}>View →</a>}
-                                          {ddDapper && <a href={ddDapper} target="_blank" rel="noopener noreferrer" onClick={() => trackClick(dd, null, { collection: feedCollection, href: ddDapper, linkKind: "dapper", surface: "sniper_depth" })} style={{ color: accent, textDecoration: "none" }}>Dapper ↗</a>}
+                                          {ddUrl && <a href={ddUrl} target="_blank" rel="noopener noreferrer" onClick={() => trackClick(dd, null, { collection: feedCollection, href: ddUrl, linkKind: "listing", surface: "sniper_depth" })} style={{ color: accentText(accent), textDecoration: "none" }}>View →</a>}
+                                          {ddDapper && <a href={ddDapper} target="_blank" rel="noopener noreferrer" onClick={() => trackClick(dd, null, { collection: feedCollection, href: ddDapper, linkKind: "dapper", surface: "sniper_depth" })} style={{ color: accentText(accent), textDecoration: "none" }}>Dapper ↗</a>}
                                         </span>
                                       );
                                     })()}

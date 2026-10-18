@@ -378,7 +378,7 @@ function TimelineRow({ e }: { e: TxEvent }) {
   return (
     <div className="rpc-tx-row" style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 14px", borderBottom: "1px solid #1a1a1d" }}>
       {/* Thumbnail */}
-      <div style={{ width: 44, height: 44, borderRadius: 5, background: "#1a1a1d", overflow: "hidden", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "rgba(255,255,255,0.3)", fontFamily: monoFont, fontSize: 16 }}>
+      <div style={{ width: 44, height: 44, borderRadius: 5, background: "#1a1a1d", overflow: "hidden", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "rgba(255,255,255,0.5)", fontFamily: monoFont, fontSize: 16 }}>
         {e.thumbnail_url ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={proxyIpfsImageUrl(e.thumbnail_url, 320) ?? undefined} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
@@ -406,7 +406,7 @@ function TimelineRow({ e }: { e: TxEvent }) {
       {/* Amount + time */}
       <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", flexShrink: 0, gap: 3 }}>
         <span style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 14, color: amountTint }}>{amountText}</span>
-        <span style={{ fontFamily: monoFont, fontSize: 10, color: "rgba(255,255,255,0.45)" }}>{relativeTime(e.occurred_at)}</span>
+        <span style={{ fontFamily: monoFont, fontSize: 10, color: "rgba(255,255,255,0.5)" }}>{relativeTime(e.occurred_at)}</span>
       </div>
     </div>
   )

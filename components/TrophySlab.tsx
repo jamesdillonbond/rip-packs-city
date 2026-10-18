@@ -20,6 +20,7 @@ import { specialCats, SPECIAL_CAT_LABEL, type SpecialCat } from "@/lib/badges/gl
 import { specialSerialStyle } from "@/lib/badges/official-art"
 import SpecialSerialGlyph from "@/components/SpecialSerialGlyph"
 import { trackOutboundClick } from "@/lib/track-click"
+import { accentText } from "@/lib/accent-text"
 
 // ────────────────────────────────────────────────────────────────────────────
 // Types
@@ -590,7 +591,7 @@ function SlabLabel({
             style={{
               fontFamily: "var(--font-mono)",
               fontSize: 7,
-              color: accent,
+              color: accentText(accent),
               letterSpacing: "0.12em",
               marginTop: 2,
             }}

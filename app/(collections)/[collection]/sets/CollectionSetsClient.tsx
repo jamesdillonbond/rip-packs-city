@@ -11,6 +11,7 @@ import { setEntityHref } from "@/lib/entity-href";
 import MomentMedia from "@/components/MomentMedia";
 import { trackOutboundClick } from "@/lib/track-click";
 import { MarketplaceStatusBanner } from "@/components/marketplace-status";
+import { accentText } from "@/lib/accent-text"
 
 // ── Types (mirrors API response) ─────────────────────────────────────────────
 
@@ -383,7 +384,7 @@ export default function CollectionSetsClient({ collection }: { collection: strin
             </div>
             <Link
               href={`/${collectionSlug}/collection`}
-              style={{ fontFamily: monoFont, fontSize: 12, color: colors.accent, textDecoration: "none", border: `1px solid ${accent}4D`, padding: "8px 20px", borderRadius: 4, marginTop: 8, transition: "background 0.15s ease" }}
+              style={{ fontFamily: monoFont, fontSize: 12, color: accentText(colors.accent), textDecoration: "none", border: `1px solid ${accent}4D`, padding: "8px 20px", borderRadius: 4, marginTop: 8, transition: "background 0.15s ease" }}
               onMouseEnter={(e) => (e.currentTarget.style.background = `${accent}14`)}
               onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
             >
@@ -438,7 +439,7 @@ export default function CollectionSetsClient({ collection }: { collection: strin
                 and it is worth retrying — the old wall said ERROR and offered
                 nothing. The message itself is now classified server-side, so a
                 raw Postgres string can no longer land here (deep-audit D3). */}
-            <div style={{ fontFamily: displayFont, fontWeight: 700, fontSize: 14, color: colors.accent, textTransform: "uppercase", marginBottom: 4 }}>
+            <div style={{ fontFamily: displayFont, fontWeight: 700, fontSize: 14, color: accentText(colors.accent), textTransform: "uppercase", marginBottom: 4 }}>
               {errorRetryable ? "TAKING TOO LONG" : "ERROR"}
             </div>
             <div style={{ fontFamily: monoFont, fontSize: 12, color: colors.muted, lineHeight: 1.5 }}>{error}</div>
@@ -454,7 +455,7 @@ export default function CollectionSetsClient({ collection }: { collection: strin
                   cursor: "pointer",
                   background: "transparent",
                   border: `1px solid ${accent}66`,
-                  color: colors.accent,
+                  color: accentText(colors.accent),
                   textTransform: "uppercase",
                 }}
               >
@@ -605,14 +606,14 @@ export default function CollectionSetsClient({ collection }: { collection: strin
             {openSetHref ? (
               <Link
                 href={openSetHref}
-                style={{ display: "inline-block", fontFamily: monoFont, fontSize: 11, color: accent, textDecoration: "none", border: `1px solid ${accent}4D`, padding: "6px 14px", borderRadius: 4, marginBottom: 14, letterSpacing: "0.08em" }}
+                style={{ display: "inline-block", fontFamily: monoFont, fontSize: 11, color: accentText(accent), textDecoration: "none", border: `1px solid ${accent}4D`, padding: "6px 14px", borderRadius: 4, marginBottom: 14, letterSpacing: "0.08em" }}
               >
                 VIEW FULL SET PAGE →
               </Link>
             ) : marketSetHref(openSet.setName) ? (
               <Link
                 href={marketSetHref(openSet.setName)!}
-                style={{ display: "inline-block", fontFamily: monoFont, fontSize: 11, color: accent, textDecoration: "none", border: `1px solid ${accent}4D`, padding: "6px 14px", borderRadius: 4, marginBottom: 14, letterSpacing: "0.08em" }}
+                style={{ display: "inline-block", fontFamily: monoFont, fontSize: 11, color: accentText(accent), textDecoration: "none", border: `1px solid ${accent}4D`, padding: "6px 14px", borderRadius: 4, marginBottom: 14, letterSpacing: "0.08em" }}
               >
                 SHOP THIS SET →
               </Link>
@@ -783,7 +784,7 @@ function ModalRow({
           {meta}
         </div>
       </div>
-      <span style={{ fontFamily: monoFont, fontSize: 10, color: colors.accent, letterSpacing: "0.08em", flexShrink: 0 }}>VIEW →</span>
+      <span style={{ fontFamily: monoFont, fontSize: 10, color: accentText(colors.accent), letterSpacing: "0.08em", flexShrink: 0 }}>VIEW →</span>
     </a>
   );
 }
@@ -800,7 +801,7 @@ function Pill({ label, active, onClick, accent }: { label: string; active: boole
         borderRadius: 4,
         border: "1px solid " + (active ? `${accent}80` : "rgba(255,255,255,0.09)"),
         background: active ? `${accent}14` : "rgba(255,255,255,0.03)",
-        color: active ? accent : "rgba(255,255,255,0.45)",
+        color: active ? accentText(accent) : "rgba(255,255,255,0.5)",
         cursor: "pointer",
         transition: "all 0.15s ease",
         whiteSpace: "nowrap",
@@ -953,7 +954,7 @@ function SetCard({
         <div style={{ display: "flex", gap: 8 }}>
           <button
             onClick={onView}
-            style={{ flex: 1, fontFamily: monoFont, fontSize: 10, padding: "6px 10px", borderRadius: 4, border: "1px solid " + c.cardBorder, background: "transparent", color: c.accent, cursor: "pointer", letterSpacing: "0.08em" }}
+            style={{ flex: 1, fontFamily: monoFont, fontSize: 10, padding: "6px 10px", borderRadius: 4, border: "1px solid " + c.cardBorder, background: "transparent", color: accentText(c.accent), cursor: "pointer", letterSpacing: "0.08em" }}
           >
             VIEW
           </button>

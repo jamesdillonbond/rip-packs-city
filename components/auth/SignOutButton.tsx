@@ -144,7 +144,7 @@ export default function SignOutButton() {
           <div style={{
             fontFamily: "var(--font-mono)",
             fontSize: 10,
-            color: "rgba(255,255,255,0.45)",
+            color: "rgba(255,255,255,0.5)",
             letterSpacing: "0.12em",
             textTransform: "uppercase",
             marginBottom: 4,

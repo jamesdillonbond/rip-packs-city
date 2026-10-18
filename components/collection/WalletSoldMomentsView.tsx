@@ -33,6 +33,7 @@ import {
   sumSoldProceeds,
   isSoldListTruncated,
 } from "@/lib/collection-sold-moments-format"
+import { accentText } from "@/lib/accent-text"
 
 const mono = "var(--font-mono)"
 const display = "var(--font-display)"
@@ -163,7 +164,7 @@ export default function WalletSoldMomentsView({ collection }: { collection: stri
           Sale history is part of your personal dashboard — it&apos;s available for wallets verified on your
           own account.
         </div>
-        <a href="/login" className="rpc-chip" style={{ marginTop: 4, color: accent, borderColor: accent }}>Sign in →</a>
+        <a href="/login" className="rpc-chip" style={{ marginTop: 4, color: accentText(accent), borderColor: accent }}>Sign in →</a>
       </div>
     )
   }

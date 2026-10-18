@@ -12,6 +12,7 @@ import { getCollection } from "@/lib/collections"
 import { fetchHotFloors } from "@/lib/hot-floors/fetchers"
 import { proxyIpfsImageUrl } from "@/lib/ipfs-media"
 import { usdSignFirst } from "@/lib/usd-format"
+import { accentText } from "@/lib/accent-text"
 
 export const revalidate = 300
 
@@ -52,7 +53,7 @@ export default async function HotFloorsPage(props: { params: Promise<{ collectio
   if (collectionId !== "nba-top-shot") {
     return (
       <div style={{ padding: "48px 8px", color: "var(--rpc-text-secondary)", fontFamily: "var(--font-mono)", fontSize: 14 }}>
-        Hot Floors is a Top Shot feature. <Link href="/nba-top-shot/hot-floors" style={{ color: accent }}>View Top Shot Hot Floors →</Link>
+        Hot Floors is a Top Shot feature. <Link href="/nba-top-shot/hot-floors" style={{ color: accentText(accent) }}>View Top Shot Hot Floors →</Link>
       </div>
     )
   }
@@ -128,7 +129,7 @@ export default async function HotFloorsPage(props: { params: Promise<{ collectio
                         </span>
                       </Link>
                     </td>
-                    <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 700, color: accent }}>{e.sweep_buyers}</td>
+                    <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 700, color: accentText(accent) }}>{e.sweep_buyers}</td>
                     <td style={{ padding: "10px 12px", textAlign: "right", color: "var(--rpc-text-secondary)" }}>{e.swept_sales}</td>
                     <td style={{ padding: "10px 12px", textAlign: "right", color: "var(--rpc-text-secondary)" }}>{usd(e.swept_spend)}</td>
                     <td style={{ padding: "10px 12px", textAlign: "right", color: "var(--rpc-text-primary)" }}>

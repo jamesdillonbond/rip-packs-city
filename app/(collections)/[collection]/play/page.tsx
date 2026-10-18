@@ -8,6 +8,7 @@
 import Link from "next/link"
 import { collectionHasPage, getCollection } from "@/lib/collections"
 import PlayHub from "@/components/play/PlayHub"
+import { accentText } from "@/lib/accent-text"
 
 export const revalidate = 300
 
@@ -20,7 +21,7 @@ export default async function PlayPage(props: { params: Promise<{ collection: st
     return (
       <div style={{ padding: "48px 8px", color: "var(--rpc-text-secondary)", fontFamily: "var(--font-mono)", fontSize: 14 }}>
         Play is a Top Shot feature.{" "}
-        <Link href="/nba-top-shot/play" style={{ color: accent }}>
+        <Link href="/nba-top-shot/play" style={{ color: accentText(accent) }}>
           View Top Shot Play →
         </Link>
       </div>
