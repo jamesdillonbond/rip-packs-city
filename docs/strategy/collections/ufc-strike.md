@@ -23,7 +23,7 @@ No numbered register item is open for UFC. Recorded but not changed:
 - **Two malformed rows:** `KHABIB-TIME-901` and `YOU-SUCK-2-0-750` (the mint number was parsed into the name). The literal UPDATE is held ([afternoon handoff 10-17](../../handoff-2026-10-17-cowork-afternoon-pass.md)).
 - **Sales the catalogue cannot name:** 47 on-chain sets map to editions RPC's catalogue lacks. That leaves 361 + 615 + 50 sales unpromoted, and they are never guessed (ledger 10-04).
 - **Zero-yield lanes are still scheduled** (see Now).
-- **Stale text.** These statements contradict live state:
+- ✅ **Stale text — FIXED 2026-10-18 ~8:10 AM PT** (the registry header and `pitch` had already been corrected by another session; this pass fixed the rest: the `/analytics` methodology line, the UFC banner and moment-page copy ("is migrating" → "moved to Aptos; Flow trading closed in May 2026"), and the `collection_config` marketplace notes). Original list kept below:
   - The [lib/collections.ts](../../../lib/collections.ts) header says "UFC Strike — unpublished". It is `published: true`.
   - The UFC `pitch` says "147 editions tracked, 29 with FMV… backfill in progress". Live: 518 editions, all STALE, no backfill running.
   - The `v_collection_marketplace_status.notes` row still says "sales-indexer kept loose… studio history backfill + wallet walks continue" and "813k". Those lanes were retired 08-27 (#44), and the total is now 846k.
