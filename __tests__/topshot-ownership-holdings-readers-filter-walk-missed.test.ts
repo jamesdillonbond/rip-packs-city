@@ -98,7 +98,9 @@ function walk(dir: string, out: string[] = []): string[] {
     const p = join(dir, e)
     const st = statSync(p)
     if (st.isDirectory()) walk(p, out)
-    else if (/\.(ts|tsx|mjs|js)$/.test(e)) out.push(p)
+    // POSIX separators: SUPPRESSED_TS is keyed "app/api/…", and on Windows
+    // join() returns "app\api\…" — every suppression read as stale there (10-18).
+    else if (/\.(ts|tsx|mjs|js)$/.test(e)) out.push(p.split("\\").join("/"))
   }
   return out
 }

@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useState, useEffect, useMemo } from "react";
 import { getLastCollection } from "@/lib/active-collection";
 import { getCollection } from "@/lib/collections";
+import { accentText } from "@/lib/accent-text";
 
 const NAV_HEIGHT = 60;
 const ICON_SIZE = 22;
@@ -190,7 +191,7 @@ export default function MobileNav() {
           minWidth: 44,
           gap: 3,
           textDecoration: "none",
-          color,
+          color: accentText(color),
           transition: "color var(--transition-fast)",
           padding: "0 6px",
         };

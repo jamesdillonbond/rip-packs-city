@@ -5,6 +5,7 @@ import { useModalA11y } from "@/lib/hooks/useModalA11y";
 import { fmvBasis } from "@/lib/fmv-basis";
 import { classifySerial } from "@/lib/serials/fun-patterns";
 import { trackOutboundClick } from "@/lib/track-click";
+import { accentText } from "@/lib/accent-text";
 
 // Was HALF migrated: the three UFC tiers read tokens while the six Flow tiers
 // were still literals -- and literals that disagreed with every other surface
@@ -336,7 +337,7 @@ export default function MomentDetailModal({ moment, marketplaceSource, dapperUrl
                   display: "inline-block",
                   padding: "2px 8px",
                   border: `1px solid ${tierColor}`,
-                  color: tierColor,
+                  color: accentText(tierColor),
                   fontSize: 10,
                   fontWeight: 700,
                   letterSpacing: "0.1em",

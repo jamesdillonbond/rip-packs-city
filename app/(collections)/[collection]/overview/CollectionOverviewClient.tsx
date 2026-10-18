@@ -900,7 +900,7 @@ function KpiCard({
       {loading ? (
         <div className="rpc-skeleton" style={{ width: "50%", height: 20 }} />
       ) : (
-        <div className="rpc-heading" style={{ fontSize: "var(--text-xl)", color: value == null ? "var(--rpc-text-muted)" : valueColor }}>
+        <div className="rpc-heading" style={{ fontSize: "var(--text-xl)", color: value == null ? "var(--rpc-text-muted)" : accentText(valueColor) }}>
           {value ?? "\u2014"}
         </div>
       )}

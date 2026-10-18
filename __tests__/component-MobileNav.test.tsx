@@ -214,11 +214,13 @@ describe("MobileNav — which tab owns the route", () => {
 
   it("renders the active tab in the brand red and the rest at the readable token", () => {
     // ⚠ `--rpc-text-ghost` measures 1.80 : 1 on the nav's own #0d0d0d.
+    // ⚠ RE-PINNED 2026-10-18: the active tab is TEXT, and the fill red (#E03A2F)
+    // reads 4.45:1 on #0d0d0d — the brand red for text is --rpc-red-text.
     nav.pathname = "/nba-top-shot/market"
     const { container } = render(<MobileNav />)
     const html = bar(container).innerHTML
     expect(html).not.toContain("--rpc-text-ghost")
-    expect(tab(container, "MARKET").style.color).toBe("var(--rpc-red)")
+    expect(tab(container, "MARKET").style.color).toBe("var(--rpc-red-text)")
     expect(tab(container, "HOME").style.color).toBe("var(--rpc-text-secondary)")
   })
 

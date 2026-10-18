@@ -34,6 +34,7 @@ import CrossCollectionHoldingsCard from "@/components/analytics/CrossCollectionH
 import { useOwnFlowWallet } from "@/lib/hooks/useOwnFlowWallet"
 import { fmt, fmtUsd, shortAddr, relativeDate, shortSlug } from "@/lib/analytics/format"
 import { classifyTsOrderbook, TS_ORDERBOOK_STALE_LABEL, tsOrderbookStaleBody, TS_ORDERBOOK_UNKNOWN_LABEL, TS_ORDERBOOK_UNKNOWN_BODY } from "@/lib/analytics/ts-orderbook-freshness"
+import { accentText } from "@/lib/accent-text"
 
 // ── Slug mapping ────────────────────────────────────────────────────────────
 // URL slug ("nba-top-shot") → RPC short slug ("topshot") used by the
@@ -317,7 +318,7 @@ function ChangeBadge({ pct }: { pct: number | null | undefined }) {
   const color = up ? "var(--rpc-success)" : "var(--rpc-red)"
   const arrow = up ? "▲" : "▼"
   return (
-    <span className="text-[11px]" style={{ color, fontFamily: "var(--font-mono)" }}>
+    <span className="text-[11px]" style={{ color: accentText(color), fontFamily: "var(--font-mono)" }}>
       {arrow} {Math.abs(pct).toFixed(1)}%
     </span>
   )
@@ -1552,7 +1553,7 @@ function AnalyticsInner() {
                           </div>
                           <div className="mt-2 text-[11px] text-[color:var(--rpc-text-secondary)]">Badged Avg: <span className="text-[color:var(--rpc-text-primary)]">{fmtUsd(Number(b.badged_avg) || 0)}</span></div>
                           <div className="text-[11px] text-[color:var(--rpc-text-secondary)]">Non-Badged Avg: <span className="text-[color:var(--rpc-text-primary)]">{fmtUsd(Number(b.unbadged_avg) || 0)}</span></div>
-                          <div className="mt-2 text-2xl font-black" style={{ color: pctColor }}>
+                          <div className="mt-2 text-2xl font-black" style={{ color: accentText(pctColor) }}>
                             {pct >= 0 ? "+" : ""}{pct.toFixed(0)}%
                           </div>
                           <div className="mt-1 text-[10px] text-[color:var(--rpc-text-muted)]">
@@ -1953,7 +1954,7 @@ function AnalyticsInner() {
                     const color = TIER_COLOR[t.tier] ?? "var(--tier-common)"
                     return (
                       <div key={t.tier} className="flex items-center gap-3">
-                        <div className="w-28 shrink-0 text-xs font-bold" style={{ color, fontFamily: "var(--font-mono)" }}>{t.tier}</div>
+                        <div className="w-28 shrink-0 text-xs font-bold" style={{ color: accentText(color), fontFamily: "var(--font-mono)" }}>{t.tier}</div>
                         <div className="relative flex-1 h-5 rounded bg-[var(--rpc-surface)] overflow-hidden">
                           <div className="absolute inset-y-0 left-0" style={{ width: `${w}%`, background: color, opacity: 0.35 }} />
                           <div className="absolute inset-0 flex items-center px-2 text-[11px] text-[color:var(--rpc-text-secondary)]" style={{ fontFamily: "var(--font-mono)" }}>

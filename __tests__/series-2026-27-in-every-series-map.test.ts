@@ -26,7 +26,9 @@ function walk(dir: string, out: string[] = []): string[] {
     if (e === "node_modules" || e.startsWith(".")) continue
     const p = join(dir, e)
     if (statSync(p).isDirectory()) walk(p, out)
-    else if (/\.(ts|tsx)$/.test(e)) out.push(p)
+    // POSIX separators: the expected paths are "app/api/…", and join() returns
+    // backslashes on Windows — the test red there while CI stayed green (10-18).
+    else if (/\.(ts|tsx)$/.test(e)) out.push(p.split("\\").join("/"))
   }
   return out
 }

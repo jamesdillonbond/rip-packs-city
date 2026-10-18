@@ -6,6 +6,7 @@
 import { useEffect, useState } from "react"
 import { fmt, relativeDate } from "@/lib/analytics/format"
 import { getEntityLabels } from "@/lib/entity-labels"
+import { accentText } from "@/lib/accent-text"
 
 export default function SalesHistoryCard({ wallet, urlSlug }: { wallet: string; urlSlug: string }) {
   const [rows, setRows] = useState<any[] | null>(null)
@@ -57,7 +58,7 @@ export default function SalesHistoryCard({ wallet, urlSlug }: { wallet: string; 
             const sideColor = isBuy ? "var(--rpc-success)" : "var(--rpc-red)"
             return (
               <tr key={i} className="border-b border-[color:var(--rpc-border)]">
-                <td className="py-1.5 pr-2 text-[10px] uppercase" style={{ color: sideColor }}>{s.side ?? "—"}</td>
+                <td className="py-1.5 pr-2 text-[10px] uppercase" style={{ color: accentText(sideColor) }}>{s.side ?? "—"}</td>
                 <td className="py-1.5 pr-2 text-[color:var(--rpc-text-primary)]">{s.player_name ?? "—"}</td>
                 <td className="py-1.5 pr-2 text-[color:var(--rpc-text-secondary)]">{s.set_name ?? "—"}</td>
                 <td className="py-1.5 pr-2 text-[color:var(--rpc-text-secondary)]">{s.serial_number ? `#${s.serial_number}` : "—"}</td>

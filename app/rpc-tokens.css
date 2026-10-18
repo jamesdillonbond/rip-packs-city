@@ -1195,3 +1195,88 @@ tr[class*="rpc-holo-"]::after { content: none !important; }
   /* Purely a hit area — never paints, and must not become a focus ring. */
   pointer-events: auto;
 }
+
+/* ═══ LIGHT THEME — Tailwind palette TEXT utilities (#194 follow-up, 2026-10-18) ═══
+   text-emerald-400, text-red-400, text-amber-300 … are dark-theme colours; on the
+   light canvases they read 1.2–3.5:1 (axe: Collection tab 651 nodes, Pack EV 2,736).
+   TEXT utilities only — bg-* / border-* fills stay identical in both themes. Each
+   mix is the smallest black share that clears 4.6:1 on #FFF/#F7F7F5/#F5F5F5/#EBEBEB
+   and on the colour's own 15 % tint over each (computed from the live sRGB values).
+   Shades 100/200 and the neutral families (zinc/gray…) are EXCLUDED: they are
+   chip text on dark fills that stay dark in light theme, where darkening them
+   would hide them. Regenerate, never hand-edit: a class added to the app needs a
+   line here. */
+[data-theme="light"] .group:hover .group-hover\:text-emerald-400 { color: color-mix(in srgb, var(--color-emerald-400), #000 48%); }
+[data-theme="light"] .group:hover .group-hover\:text-red-400 { color: color-mix(in srgb, var(--color-red-400), #000 38%); }
+[data-theme="light"] .hover\:text-amber-300:hover { color: color-mix(in srgb, var(--color-amber-300), #000 54%); }
+[data-theme="light"] .hover\:text-amber-400:hover { color: color-mix(in srgb, var(--color-amber-400), #000 50%); }
+[data-theme="light"] .hover\:text-emerald-300:hover { color: color-mix(in srgb, var(--color-emerald-300), #000 53%); }
+[data-theme="light"] .hover\:text-emerald-400:hover { color: color-mix(in srgb, var(--color-emerald-400), #000 48%); }
+[data-theme="light"] .hover\:text-red-300:hover { color: color-mix(in srgb, var(--color-red-300), #000 48%); }
+[data-theme="light"] .hover\:text-red-400:hover { color: color-mix(in srgb, var(--color-red-400), #000 38%); }
+[data-theme="light"] .hover\:text-teal-300:hover { color: color-mix(in srgb, var(--color-teal-300), #000 54%); }
+[data-theme="light"] .hover\:text-teal-400:hover { color: color-mix(in srgb, var(--color-teal-400), #000 49%); }
+[data-theme="light"] .hover\:text-violet-300:hover { color: color-mix(in srgb, var(--color-violet-300), #000 48%); }
+[data-theme="light"] .hover\:text-violet-400:hover { color: color-mix(in srgb, var(--color-violet-400), #000 38%); }
+[data-theme="light"] .text-amber-300 { color: color-mix(in srgb, var(--color-amber-300), #000 54%); }
+[data-theme="light"] .text-amber-400 { color: color-mix(in srgb, var(--color-amber-400), #000 50%); }
+[data-theme="light"] .text-amber-500 { color: color-mix(in srgb, var(--color-amber-500), #000 45%); }
+[data-theme="light"] .text-blue-300 { color: color-mix(in srgb, var(--color-blue-300), #000 49%); }
+[data-theme="light"] .text-blue-400 { color: color-mix(in srgb, var(--color-blue-400), #000 40%); }
+[data-theme="light"] .text-cyan-300 { color: color-mix(in srgb, var(--color-cyan-300), #000 54%); }
+[data-theme="light"] .text-emerald-300 { color: color-mix(in srgb, var(--color-emerald-300), #000 53%); }
+[data-theme="light"] .text-emerald-400 { color: color-mix(in srgb, var(--color-emerald-400), #000 48%); }
+[data-theme="light"] .text-emerald-500 { color: color-mix(in srgb, var(--color-emerald-500), #000 42%); }
+[data-theme="light"] .text-fuchsia-300 { color: color-mix(in srgb, var(--color-fuchsia-300), #000 50%); }
+[data-theme="light"] .text-green-300 { color: color-mix(in srgb, var(--color-green-300), #000 54%); }
+[data-theme="light"] .text-green-400 { color: color-mix(in srgb, var(--color-green-400), #000 50%); }
+[data-theme="light"] .text-indigo-300 { color: color-mix(in srgb, var(--color-indigo-300), #000 46%); }
+[data-theme="light"] .text-orange-300 { color: color-mix(in srgb, var(--color-orange-300), #000 50%); }
+[data-theme="light"] .text-orange-400 { color: color-mix(in srgb, var(--color-orange-400), #000 43%); }
+[data-theme="light"] .text-purple-300 { color: color-mix(in srgb, var(--color-purple-300), #000 50%); }
+[data-theme="light"] .text-purple-400 { color: color-mix(in srgb, var(--color-purple-400), #000 39%); }
+[data-theme="light"] .text-red-300 { color: color-mix(in srgb, var(--color-red-300), #000 48%); }
+[data-theme="light"] .text-red-400 { color: color-mix(in srgb, var(--color-red-400), #000 38%); }
+[data-theme="light"] .text-red-500 { color: color-mix(in srgb, var(--color-red-500), #000 30%); }
+[data-theme="light"] .text-rose-300 { color: color-mix(in srgb, var(--color-rose-300), #000 48%); }
+[data-theme="light"] .text-rose-400 { color: color-mix(in srgb, var(--color-rose-400), #000 38%); }
+[data-theme="light"] .text-sky-300 { color: color-mix(in srgb, var(--color-sky-300), #000 51%); }
+[data-theme="light"] .text-sky-400 { color: color-mix(in srgb, var(--color-sky-400), #000 45%); }
+[data-theme="light"] .text-teal-300 { color: color-mix(in srgb, var(--color-teal-300), #000 54%); }
+[data-theme="light"] .text-teal-400 { color: color-mix(in srgb, var(--color-teal-400), #000 49%); }
+[data-theme="light"] .text-violet-300 { color: color-mix(in srgb, var(--color-violet-300), #000 48%); }
+[data-theme="light"] .text-violet-400 { color: color-mix(in srgb, var(--color-violet-400), #000 38%); }
+[data-theme="light"] .text-yellow-300 { color: color-mix(in srgb, var(--color-yellow-300), #000 55%); }
+[data-theme="light"] .text-yellow-400 { color: color-mix(in srgb, var(--color-yellow-400), #000 52%); }
+
+[data-theme="light"] .hover\:text-amber-200:hover { color: color-mix(in srgb, var(--color-amber-200), #000 56%); }
+[data-theme="light"] .text-emerald-200 { color: color-mix(in srgb, var(--color-emerald-200), #000 56%); }
+/* Status-badge FILLS (bg-<hue>-800/900/950, often translucent): over a light canvas they
+   turn a muddy mid-tone where neither light nor dark text passes (Pack EV badge read
+   1.78:1). In light theme they become a 12 % tint of the hue — the same chip shape the
+   text shades above were sized for. Brand/tier fills are NOT here; they stay identical. */
+[data-theme="light"] .bg-amber-950\/40 { background-color: color-mix(in srgb, var(--color-amber-500) 12%, transparent); }
+[data-theme="light"] .bg-red-950 { background-color: color-mix(in srgb, var(--color-red-500) 12%, transparent); }
+[data-theme="light"] .bg-yellow-950 { background-color: color-mix(in srgb, var(--color-yellow-500) 12%, transparent); }
+[data-theme="light"] .bg-teal-950 { background-color: color-mix(in srgb, var(--color-teal-500) 12%, transparent); }
+[data-theme="light"] .bg-purple-950 { background-color: color-mix(in srgb, var(--color-purple-500) 12%, transparent); }
+[data-theme="light"] .bg-green-950 { background-color: color-mix(in srgb, var(--color-green-500) 12%, transparent); }
+[data-theme="light"] .bg-emerald-950 { background-color: color-mix(in srgb, var(--color-emerald-500) 12%, transparent); }
+[data-theme="light"] .bg-amber-950 { background-color: color-mix(in srgb, var(--color-amber-500) 12%, transparent); }
+[data-theme="light"] .bg-purple-900 { background-color: color-mix(in srgb, var(--color-purple-500) 12%, transparent); }
+[data-theme="light"] .bg-orange-950\/40 { background-color: color-mix(in srgb, var(--color-orange-500) 12%, transparent); }
+[data-theme="light"] .bg-orange-950 { background-color: color-mix(in srgb, var(--color-orange-500) 12%, transparent); }
+[data-theme="light"] .bg-green-900 { background-color: color-mix(in srgb, var(--color-green-500) 12%, transparent); }
+[data-theme="light"] .bg-fuchsia-950\/40 { background-color: color-mix(in srgb, var(--color-fuchsia-500) 12%, transparent); }
+[data-theme="light"] .bg-emerald-900\/40 { background-color: color-mix(in srgb, var(--color-emerald-500) 12%, transparent); }
+[data-theme="light"] .bg-blue-950 { background-color: color-mix(in srgb, var(--color-blue-500) 12%, transparent); }
+[data-theme="light"] .bg-blue-900 { background-color: color-mix(in srgb, var(--color-blue-500) 12%, transparent); }
+[data-theme="light"] .bg-amber-950\/20 { background-color: color-mix(in srgb, var(--color-amber-500) 12%, transparent); }
+[data-theme="light"] .bg-violet-950 { background-color: color-mix(in srgb, var(--color-violet-500) 12%, transparent); }
+[data-theme="light"] .bg-rose-950 { background-color: color-mix(in srgb, var(--color-rose-500) 12%, transparent); }
+[data-theme="light"] .bg-red-950\/30 { background-color: color-mix(in srgb, var(--color-red-500) 12%, transparent); }
+[data-theme="light"] .bg-red-950\/20 { background-color: color-mix(in srgb, var(--color-red-500) 12%, transparent); }
+[data-theme="light"] .bg-indigo-950 { background-color: color-mix(in srgb, var(--color-indigo-500) 12%, transparent); }
+[data-theme="light"] .bg-cyan-950 { background-color: color-mix(in srgb, var(--color-cyan-500) 12%, transparent); }
+[data-theme="light"] .bg-amber-950\/10 { background-color: color-mix(in srgb, var(--color-amber-500) 12%, transparent); }
+[data-theme="light"] .hover\:bg-emerald-900\/70:hover { background-color: color-mix(in srgb, var(--color-emerald-500) 20%, transparent); }

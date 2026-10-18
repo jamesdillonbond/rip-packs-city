@@ -404,7 +404,7 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
                         <div style={{ fontWeight: 700, fontSize: 14, color: "var(--rpc-text-primary)", marginBottom: 2, fontFamily: "var(--font-display)" }}>
                           {momentSubjectName(h.player_name, null, h.set_name)}
                         </div>
-                        <div style={{ fontSize: 11, color: tierColor, fontFamily: "var(--font-mono, monospace)" }}>
+                        <div style={{ fontSize: 11, color: accentText(tierColor), fontFamily: "var(--font-mono, monospace)" }}>
                           {h.tier ?? ""}
                           {h.serial_number != null && h.circulation != null ? `  ·  #${h.serial_number} / ${h.circulation.toLocaleString("en-US")}` : ""}
                         </div>

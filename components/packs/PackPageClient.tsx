@@ -577,7 +577,7 @@ export default function PackPageClient({ collection, tiers, title, accent = 'var
             style={hasChasers ? { backgroundColor: accent } : undefined}
             title="Gross EV ≥ secondary ask — proxy for chaser-heavy pools"
           >
-            Has chasers <span className="ml-1 text-[9px] opacity-60">(beta)</span>
+            Has chasers <span className="ml-1 text-[9px]">(beta)</span>
           </button>
           {/* brand-exception: active chip text-white sits on a colored backgroundColor fill */}
           <button
