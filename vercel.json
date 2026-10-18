@@ -108,11 +108,11 @@
     },
     {
       "path": "/api/cron/topshot-circulation-onchain",
-      "schedule": "5 4 * * *"
+      "schedule": "5 4,10,16,22 * * *"
     },
     {
       "path": "/api/cron/topshot-pack-dist-names-onchain",
-      "schedule": "25 4 * * *"
+      "schedule": "25 */3 * * *"
     },
     {
       "path": "/api/cron/topshot-set-series-onchain",
