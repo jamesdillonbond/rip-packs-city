@@ -38,7 +38,7 @@ No numbered register item is open for UFC. Recorded but not changed:
    - *Why:* over 30 days, each ran 48 times a day. The drain wrote **0** rows, and since 10-16 it has found nothing ("no null-edition_key UFC rows"). The resolver found and wrote **0**, every day since 09-18. #44's rule: retire by measured yield.
    - *Gate:* neither job is in pg_cron, `vercel.json` or GHA, so the trigger is probably cron-job.org, which a sandbox cannot see. Enumerate every caller first, and add a ledger revert path.
    - *Falsifier:* a new null-key row appears. The wallet walk can create one, so leave a cheap weekly check or the watchlist row.
-2. **Correct the stale text listed above.**
+2. ~~**Correct the stale text listed above.**~~ ✅ Done 2026-10-18 ~8:10 AM PT (see "Stale text — FIXED" above).
    - The registry header, `pitch` and status-view notes are pure honesty fixes.
    - *Gate:* `grep -rl` `__tests__` for the pitch string before editing (registry-value rule). The view notes change through a migration.
 
