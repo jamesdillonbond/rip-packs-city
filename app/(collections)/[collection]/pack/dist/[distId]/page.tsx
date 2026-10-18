@@ -885,7 +885,7 @@ export default async function PackDetailPage(
                     borderRadius: 4,
                     fontSize: 11,
                     fontWeight: 700,
-                    color: "rgb(110,231,183)",
+                    color: accentText("rgb(110,231,183)"),
                     background: "rgba(16,185,129,0.12)",
                     border: "1px solid rgba(16,185,129,0.4)",
                   }}
@@ -901,7 +901,7 @@ export default async function PackDetailPage(
                     borderRadius: 4,
                     fontSize: 11,
                     fontWeight: 700,
-                    color: "rgb(125,211,252)",
+                    color: accentText("rgb(125,211,252)"),
                     background: "rgba(14,165,233,0.10)",
                     border: "1px solid rgba(14,165,233,0.40)",
                   }}
@@ -917,7 +917,7 @@ export default async function PackDetailPage(
                     padding: "3px 10px",
                     borderRadius: 4,
                     fontSize: 11,
-                    color: "rgb(252,211,77)",
+                    color: accentText("rgb(252,211,77)"),
                     background: "rgba(234,179,8,0.10)",
                     border: "1px solid rgba(234,179,8,0.40)",
                   }}
@@ -950,7 +950,7 @@ export default async function PackDetailPage(
                     display: "inline-block",
                     padding: "8px 16px",
                     background: "var(--rpc-red)",
-                    color: "var(--rpc-text-primary)",
+                    color: "#fff", // brand-exception: white text on the red fill (stays white in both themes)
                     fontFamily: "var(--font-display)",
                     fontWeight: 700,
                     letterSpacing: "0.06em",
@@ -1146,7 +1146,7 @@ export default async function PackDetailPage(
           label="Actual EV"
           value={isSentinelEv || isHoldingPack || evSurvivorBiased ? "—" : fmtUsd(grossEv)}
           sub={isHoldingPack ? "Holding pack — not a consumer pack" : isSentinelEv ? "awaiting pool data" : isRewardPack ? "Reward pack — free, no secondary-ask verdict" : evSurvivorBiased ? `≈ ${fmtUsd(grossEv)} ceiling · ${coverageCaveat ?? `pool ${poolDepletionPct != null ? Math.round(poolDepletionPct) + "% depleted" : "heavily depleted"} — survivor-biased`}` : secondaryAskAnchor == null ? "Mean pull value · no live secondary ask" : coverageCaveat ? (packEv !== null ? `Net ${packEv >= 0 ? "+" : "−"}${fmtUsd(Math.abs(packEv))} vs ask · ${coverageCaveat}` : coverageCaveat) : packEv !== null ? `Mean pull · Net ${packEv >= 0 ? "+" : "−"}${fmtUsd(Math.abs(packEv))} vs ask` : undefined}
-          color={isSentinelEv || isHoldingPack || evSurvivorBiased || !showColoredVerdict || packEv === null ? undefined : packEv >= 0 ? "rgb(110,231,183)" : "rgb(248,113,113)"}
+          color={isSentinelEv || isHoldingPack || evSurvivorBiased || !showColoredVerdict || packEv === null ? undefined : packEv >= 0 ? accentText("rgb(110,231,183)") : accentText("rgb(248,113,113)")}
         />
         {/* Typical Pull EV (2026-07-16) — the value of a typical pull (weighted
             MEDIAN moment × slots), sitting near the common floor. Actual EV (mean)
@@ -1173,7 +1173,7 @@ export default async function PackDetailPage(
           label="Value ratio"
           value={!showPriceVerdict || valueRatio === null || evSurvivorBiased ? "—" : `${valueRatio.toFixed(2)}x`}
           sub={isHoldingPack ? "Holding pack — n/a" : isRewardPack ? "Free pack — n/a" : evSurvivorBiased ? (coverageCaveat ?? "survivor-biased — not meaningful") : priceSource === "none" ? undefined : coverageCaveat ? (evMargin === null ? coverageCaveat : `${fmtPct(evMargin)} margin · ${coverageCaveat}`) : evMargin === null ? undefined : `${fmtPct(evMargin)} margin`}
-          color={evSurvivorBiased || !showColoredVerdict || valueRatio === null ? undefined : valueRatio >= 1 ? "rgb(110,231,183)" : "rgb(248,113,113)"}
+          color={evSurvivorBiased || !showColoredVerdict || valueRatio === null ? undefined : valueRatio >= 1 ? accentText("rgb(110,231,183)") : accentText("rgb(248,113,113)")}
         />
         <KpiCell
           label="FMV coverage"
@@ -2274,7 +2274,7 @@ async function PackStreamedTop({
           {showCalibrated && (
             <div style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: "4px 10px" }}>
               <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--rpc-text-primary)" }}>
-                Calibrated estimate <strong style={{ color: "rgb(250,204,21)" }}>{fmtUsd(reCalibrated)}</strong>/pack
+                Calibrated estimate <strong style={{ color: accentText("rgb(250,204,21)") }}>{fmtUsd(reCalibrated)}</strong>/pack
               </span>
               <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--rpc-text-muted)" }}>
                 model blended toward observed pulls
@@ -2299,7 +2299,7 @@ async function PackStreamedTop({
             expected value — what the remaining contents are actually worth.
           </p>
           {evContributorsLowConfShare >= 25 && (
-            <p style={{ margin: "0 0 10px", color: "rgb(252,211,77)", fontFamily: "var(--font-mono)", fontSize: 11.5, lineHeight: 1.5 }}>
+            <p style={{ margin: "0 0 10px", color: accentText("rgb(252,211,77)"), fontFamily: "var(--font-mono)", fontSize: 11.5, lineHeight: 1.5 }}>
               ⚠ {Math.round(evContributorsLowConfShare)}% of the remaining EV leans on thinly-traded chase prices — treat it as soft.
             </p>
           )}
@@ -2482,7 +2482,7 @@ async function PackStreamedBottom({
                     <Td color={p.tier ? tierChip(String(p.tier)).color : undefined}>{p.tier ? String(p.tier).charAt(0).toUpperCase() + String(p.tier).slice(1) : "—"}</Td>
                     <Td align="right">{p.probabilityPct === null ? "—" : `${p.probabilityPct.toFixed(2)}%`}</Td>
                     <Td align="right">{fmtUsd(p.fmvUsd)}</Td>
-                    <Td align="right" color={p.editionEv !== null && p.editionEv > 0 ? "rgb(110,231,183)" : undefined}>
+                    <Td align="right" color={p.editionEv !== null && p.editionEv > 0 ? accentText("rgb(110,231,183)") : undefined}>
                       {fmtUsdEv(p.editionEv)}
                     </Td>
                   </tr>

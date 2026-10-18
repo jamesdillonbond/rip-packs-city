@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { accentText } from "@/lib/accent-text"
 
 // Copy-link button for the pack detail hero. Server page imports it as a
 // client island so the rest of the page can stay server-rendered.
@@ -42,7 +43,7 @@ export default function PackShareButton({ url }: { url: string }) {
         padding: "8px 16px",
         background: "transparent",
         // brand-exception: on the always-dark pack-dist hero card (see comment above)
-        color: copied ? "rgb(110,231,183)" : "rgba(255,255,255,0.7)",
+        color: copied ? accentText("rgb(110,231,183)") : "rgba(255,255,255,0.7)",
         fontFamily: "var(--font-display)",
         fontWeight: 700,
         letterSpacing: "0.06em",

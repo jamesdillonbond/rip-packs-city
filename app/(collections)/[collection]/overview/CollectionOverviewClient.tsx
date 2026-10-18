@@ -434,7 +434,7 @@ export default function CollectionOverviewClient({
             label="Typical Price Checked"
             accent={accent}
             loading={loading}
-            valueColor="#34D399"
+            valueColor="var(--rpc-success-text)"
             value={
               stats?.coverage?.edition_age_p50_h != null
                 ? fmtAge(Math.round(stats.coverage.edition_age_p50_h * 60))
@@ -448,7 +448,7 @@ export default function CollectionOverviewClient({
             label="24h Sales Volume"
             accent={accent}
             loading={loading}
-            valueColor="#34D399"
+            valueColor="var(--rpc-success-text)"
             value={
               stats
                 ? stats.volume_24h != null
