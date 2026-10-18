@@ -25,7 +25,9 @@ select (select count(*) from sets s
 select count(*) as series9_base_editions,
        count(*) filter (where e.circulation_count is null) as circulation_null,
        count(*) filter (where b.circulation_count is null) as no_atlas_row,
-       count(*) filter (where e.circulation_count > b.circulation_count) as above_atlas
+       count(*) filter (where e.circulation_count > b.circulation_count) as above_atlas,
+       count(*) filter (where e.tier is null) as tier_null,  -- Market/sniper tier filters (sniper Next 3); 0 of 1,854 on series 8
+       count(*) filter (where e.set_name is null or e.player_name is null) as name_null  -- 0 of 1,854 on series 8
   from editions e
   left join badge_editions b on b.external_id = e.external_id
    and b.collection_id = e.collection_id
