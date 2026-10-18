@@ -22,6 +22,8 @@ There is no wallet verification. It was removed by decision (#0, 08-08).
 
 ## Shipped recently (since mid-September)
 
+- **10-18 (Claude Code cloud, ~4:28 PM PT): listing-challenge wallet verification also matches the on-chain book**, so a wallet holding only All Day or Golazos can verify, and verification survives Flowty's shutdown. The v2 leg requires the listing to postdate the challenge; verified on real rows with a rolled-back probe (`20261018232027`, `…232134`).
+
 - **09-27 #142:** every `wallet_moments_cache` read keyed on `moment_id` is scoped by collection (guarded by a tree walk).
 - **10-02:** share-card RPCs read 10.9× and 10.4× fewer buffers on a whale (Rigged: 744 k → 68 k).
 - **10-10:**
