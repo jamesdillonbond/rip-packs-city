@@ -401,16 +401,17 @@ const PINS = [
     // fmv_snapshots' historical floor — beta feedback 10231/10233. Rows also
     // carry high_offer_usd (10235) since 20261003182955.
     // Re-pointed 2026-10-10 (#184): the low_ask arm reads low_ask_confirmed_at.
+    // Re-pointed 2026-10-18: series_season gains WHEN 9 THEN 2026 (Series 2026-27, tip-off 10-20).
     fn: "get_team_checklist",
     test: "supabase/tests/get_team_checklist.sql",
     migration:
-      "supabase/migrations/20261010130955_audit_20261010_team_checklist_live_ask_reads_when_the_ask_was_seen.sql",
+      "supabase/migrations/20261018162955_audit_20261018_series_2026_27_season_and_label_in_db_functions.sql",
   },
   {
     fn: "get_team_checklist_progress",
     test: "supabase/tests/get_team_checklist.sql",
     migration:
-      "supabase/migrations/20261010130955_audit_20261010_team_checklist_live_ask_reads_when_the_ask_was_seen.sql",
+      "supabase/migrations/20261018162955_audit_20261018_series_2026_27_season_and_label_in_db_functions.sql",
   },
   {
     // Added 2026-09-26. The Pinnacle franchise grid and roster read
