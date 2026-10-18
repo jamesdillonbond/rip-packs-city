@@ -14,7 +14,7 @@
 | [pack-ev.md](pack-ev.md) | 🟢 **Live Atlas pools** and EV on 777 Top Shot dists (#65). Boxes priced (#187/#188). Pack Reality's fabricated 11 % fixed. 🔜 Series 9 pack check owed 10-20. Pre-2023 opens declined (#190). |
 | [sniper-and-deals.md](sniper-and-deals.md) | 🟡 Outbound "View Listing" only. The Flowty API is still alive (72/72 runs per lane, 10-17). No priced column depends on it: All Day and Golazos asks come from Dapper storefronts, Top Shot's from Atlas, so only the teardown remains. Candy sales silent since 10-11. |
 | [wallet-and-portfolio.md](wallet-and-portfolio.md) | 🟢 Ownership index at 528,568 rows, walk-confirmed and Series-9 ready. The share card is the one proven acquisition path, but sign-in clicks are 10 → 0. Achievements NOT widened (10-17). |
-| [insights-and-seo.md](insights-and-seo.md) | 🟡 ~32 public boards with honest empty states. Sitemap at 9 children. #66 open: external links held by the gate. 🔜 Demand re-read 10-22 (armed 10-17, ~9:47 AM PT). Search Console re-read 10-28. |
+| [insights-and-seo.md](insights-and-seo.md) | 🟡 ~32 public boards with honest empty states. Sitemap at 9 children. #66 open: external links held by the gate. 🔜 Demand re-read 10-22 (night pass owns it: focus.md steer). Search Console re-read 10-28. |
 | [concierge-and-alerts.md](concierge-and-alerts.md) | 🟡 Concierge correct but barely opened (R73, watch to ~10-28). Alerts are what users use: once per listing, on the transition. Digests flag-off, blocked on the C2 postal address (Trevor). |
 
 **Owed by a clock:**

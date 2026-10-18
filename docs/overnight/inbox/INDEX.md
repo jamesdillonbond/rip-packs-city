@@ -1,4 +1,4 @@
-# Inbox index — 585 live filings
+# Inbox index — 586 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -32,8 +32,9 @@ failure it documents.
 
 ---
 
-## 2026-10-18 — 1 filing
+## 2026-10-18 — 2 filings
 
+- [🟡 Claude Code (10-17 ~7:45 PM PT) — three DATE-GATED checks for the night pass: verify #192 (10-18), demand re-read (on/after 10-22), #193 Pinnacle HIGH re-measure (on/after 10-31)](2026-10-18T0233Z-claude-code-dated-checks-192-verify-demand-reread-193-pinnacle.md)
 - [🔴 Daytime monitor (10-17 ~5:12 PM PT) — HIGH: fmv-recalc catalogue sweep WEDGED in step1b_refetch_empty, holds its cursor on a genuinely-empty page since ~12:48 PM PT; catalogue silently not repriced](2026-10-18T0012Z-daytime-monitor-fmv-recalc-sweep-wedged-step1b-holds-cursor-on-empty-page.md)
 
 ## 2026-10-15 — 4 filings

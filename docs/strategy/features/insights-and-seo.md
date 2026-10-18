@@ -54,7 +54,7 @@ Boards read precomputed MVs or cached reads. Their honesty layer is `boardUnavai
   - external links, held by the accuracy gate;
   - the GitHub repo "Website" field;
   - the Search Console re-read owed **2026-10-28**. The ~10-06 title click-rate re-read was never recorded and folds into it.
-- **The 10-22 demand re-read is ARMED (10-17):** a one-shot check-in into the 10-17 docs-refresh Claude Code session (`trig_01FapHa7hTBkLyS4uDpxY1Ky`, ~9:47 AM PT 10-22). That session holds the Supabase connector a fresh-session task lacks. If it does not report by 10-23, run the re-read by hand.
+- **The 10-22 demand re-read is owned by the night pass** (handed to the night pass via `docs/overnight/focus.md` (steer 10-17 ~7:40 PM PT)). A fresh-session scheduled task cannot carry the Supabase connector in this org, so none was armed. If no new demand block appears by 10-23, run it by hand.
 - **Instrument caveats:**
   - Vercel Web Analytics counted 5,710 "visitors", almost all headless.
   - 29,580 of 29,914 beacons were automated.
