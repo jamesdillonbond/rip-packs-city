@@ -56,6 +56,7 @@ import {
   keepCanonicalEditions,
 } from "@/lib/concierge/edition-listings";
 import { closedMarket } from "@/lib/market-closed";
+import { searchEditionFloorsByName } from "@/lib/concierge/search-edition-floors";
 import { safeApiError } from "@/lib/api-error";
 import { runMarketCapTool } from "@/lib/concierge/market-cap-tool";
 import { EV_SNAPSHOT_MAX_AGE_HOURS } from "@/lib/pack-dist-verdict";
@@ -465,7 +466,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "search_across_collections",
-    description: "Search for a player or subject across ALL published collections simultaneously. Use when the user asks 'does RPC have [player]' without specifying a collection, or when comparing a name across collections.",
+    description: "Search for a player or subject across ALL published collections simultaneously. Use when the user asks 'does RPC have [player]' without specifying a collection, or when comparing a name across collections. Top Shot rows are serial-level asks; NFL All Day and LaLiga Golazos rows are EDITION floors from RPC's on-chain listing index (serial is null — link edition_url), and editions_matched tells you how many of that player's editions exist even when none is listed: then say they are not listed, never that RPC doesn't have them. A group with market_closed (UFC Strike) means the market is closed, not that the player is absent.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -2662,8 +2663,29 @@ async function executeToolInner(
         if (isPinnacle(col.id)) {
           return searchPinnacleByName(supabase, name, perCollection);
         }
+        // A closed market has no book to search. An empty group would read as
+        // "no listings for that player"; say why there are none instead.
+        const closed = closedMarket(col.id);
+        if (closed) {
+          return {
+            collection: col.label,
+            collectionId: col.id,
+            results: [],
+            market_closed: { closed_on: closed.closedOn, venue: closed.venue },
+            note: `${closed.note} Do not imply anything here can be bought.`,
+          };
+        }
         const uuid = col.supabaseCollectionId;
         if (!uuid) return { collection: col.label, collectionId: col.id, results: [] };
+        // 2026-10-18: All Day and Golazos asks live in the on-chain listing index
+        // (cached_listings_v2), NOT in v1 cached_listings — v1 holds only Flowty's
+        // book there (108 / 100 rows vs ~35k / ~4.3k open in v2). Searching v1
+        // answered "no All Day Mahomes listings" while 26 Mahomes editions had a
+        // live floor. Same edition-keyed floor view get_edition_listings reads.
+        const floorView = editionFloorViewFor(col.id);
+        if (floorView) {
+          return searchEditionFloorsByName(supabase, col, uuid, floorView, name, perCollection, base);
+        }
         const { data, error } = await supabase
           .from("cached_listings")
           .select("player_name, set_name, tier, serial_number, ask_price, fmv, discount, buy_url")
@@ -2689,11 +2711,14 @@ async function executeToolInner(
           })),
         };
       });
-      const grouped: Array<{ collection: string; collectionId: string; results: unknown[]; failed?: boolean }> =
+      const grouped: Array<{ collection: string; collectionId: string; results: unknown[]; failed?: boolean; market_closed?: unknown }> =
         await Promise.all(queries);
       const total = grouped.reduce((sum, g) => sum + g.results.length, 0);
       const failedCollections = grouped.filter((g) => g.failed).map((g) => g.collection);
-      if (failedCollections.length === grouped.length) {
+      // A closed market answered nothing about listings, so it cannot rescue an
+      // otherwise all-failed search into "ok".
+      const searchable = grouped.filter((g) => !g.market_closed).length;
+      if (failedCollections.length === searchable) {
         return JSON.stringify({ status: "error", message: "Couldn't search listings right now — please try again." });
       }
       if (failedCollections.length > 0) {

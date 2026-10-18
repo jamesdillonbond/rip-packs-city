@@ -265,10 +265,13 @@ describe("concierge tools — search_across_collections", () => {
     install({
       cached_listings: { data: null, error: { message: "statement timeout" } },
       pinnacle_catalog: { data: null, error: { message: "statement timeout" } },
+      editions: { data: null, error: { message: "statement timeout" } },
     })
     script("search_across_collections", { name: "Dame", limit: 3 })
     await POST(post("find Dame everywhere"))
     const r = toolResult()
+    // UFC's closed market is not a successful search and must not turn an
+    // all-failed read into "partial".
     expect(r.status).toBe("error")
     expect(r.total).toBeUndefined()
   })
@@ -287,6 +290,72 @@ describe("concierge tools — search_across_collections", () => {
     expect(r.status).toBe("partial")
     expect(r.failedCollections).toEqual(["Disney Pinnacle"])
     expect((r.groups as Array<{ collection: string }>).some((g) => g.collection === "Disney Pinnacle")).toBe(false)
+  })
+
+  // 2026-10-18: All Day / Golazos asks live in the on-chain index
+  // (cached_listings_v2 → *_edition_floor_ask), not v1 cached_listings, which
+  // holds only Flowty's book there. Searching v1 answered "no All Day Mahomes"
+  // while 26 Mahomes editions had a live floor.
+  const MAHOMES_ED = { id: "ed-1", external_id: "ad-77", player_name: "Patrick Mahomes II", set_name: "Base", tier: "COMMON" }
+  const group = (r: Record<string, unknown>, label: string) =>
+    (r.groups as Array<Record<string, any>>).find((g) => g.collection === label)
+
+  it("All Day results come from the on-chain floor view, with FMV and links", async () => {
+    install({
+      cached_listings: { data: [], error: null },
+      editions: { data: [MAHOMES_ED], error: null },
+      allday_edition_floor_ask: { data: [{ edition_id: "ed-1", floor_ask: 5, floor_ask_listed_at: "2026-10-18T20:00:00Z", floor_flow_id: 4242 }], error: null },
+      fmv_current: { data: [{ edition_id: "ed-1", fmv_usd: 10, confidence: "HIGH" }], error: null },
+    })
+    script("search_across_collections", { name: "Mahomes", limit: 3 })
+    await POST(post("does RPC have Mahomes"))
+    const r = toolResult()
+    expect(r.status).toBe("ok")
+    const ad = group(r, "NFL All Day")!
+    expect(ad.results).toHaveLength(1)
+    expect(ad.results[0]).toMatchObject({ player: "Patrick Mahomes II", price: 5, fmv: 10, discount_pct: 50, serial: null })
+    expect(String(ad.results[0].edition_url)).toContain("/nfl-all-day/edition/ad-77")
+    expect(ad.results[0].buy_url).toBeTruthy()
+    expect(ad.editions_matched).toBe(1)
+  })
+
+  it("a failed floor read is UNKNOWN for that collection, never 'not listed'", async () => {
+    install({
+      cached_listings: { data: [], error: null },
+      editions: { data: [MAHOMES_ED], error: null },
+      allday_edition_floor_ask: { data: null, error: { message: "statement timeout" } },
+      golazos_edition_floor_ask: { data: [], error: null },
+    })
+    script("search_across_collections", { name: "Mahomes", limit: 3 })
+    await POST(post("does RPC have Mahomes"))
+    const r = toolResult()
+    expect(r.status).toBe("partial")
+    expect(r.failedCollections).toContain("NFL All Day")
+    // The unknown group is withheld, so nothing can be read off it as "none listed".
+    expect(group(r, "NFL All Day")).toBeUndefined()
+  })
+
+  it("matched editions with no ask say 'not listed', not 'RPC doesn't have them'", async () => {
+    install({
+      cached_listings: { data: [], error: null },
+      editions: { data: [MAHOMES_ED], error: null },
+      allday_edition_floor_ask: { data: [], error: null },
+    })
+    script("search_across_collections", { name: "Mahomes", limit: 3 })
+    await POST(post("does RPC have Mahomes"))
+    const ad = group(toolResult(), "NFL All Day")!
+    expect(ad.results).toHaveLength(0)
+    expect(ad.editions_matched).toBe(1)
+    expect(String(ad.note)).toMatch(/not listed/)
+  })
+
+  it("UFC's closed market is reported as closed, not as an empty search", async () => {
+    install({ cached_listings: { data: [], error: null } })
+    script("search_across_collections", { name: "Jones", limit: 3 })
+    await POST(post("does RPC have Jones"))
+    const ufc = (toolResult().groups as Array<Record<string, any>>).find((g) => g.collectionId === "ufc")!
+    expect(ufc.market_closed).toBeTruthy()
+    expect(String(ufc.note)).toMatch(/closed/i)
   })
 
   it("errors when no name is supplied", async () => {
