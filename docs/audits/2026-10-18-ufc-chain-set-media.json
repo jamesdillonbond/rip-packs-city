@@ -1,0 +1,606 @@
+{
+ "read_at": "2026-10-18 (Flow mainnet, UFC_NFT.getSetMetadata + getSetMaxEditions)",
+ "md5_id_name_max_preview_image": "7e0944219a89e7f224221f1431818e54",
+ "sets": {
+  "2": {
+   "name": "CHRIS BARNETT | UFC 268 | KO/TKO | ORIGIN",
+   "max": "1",
+   "preview": "https://media.gigantik.io/ufc/qmte4fxbrnmq1tqh5yphyg8u3fr5cskjdvaxbyxcu9aqfr",
+   "image": "https://media.gigantik.io/ufc/qmcmo4ltbrw83rksjhmtjybimteqh7lnamkanvqqcgbcga"
+  },
+  "3": {
+   "name": "JULIO ARCE | UFC FIGHT NIGHT MAY 18, 2019 | KO/TKO | ORIGIN",
+   "max": "1",
+   "preview": "https://media.gigantik.io/ufc/qmzxsk21heww4fg2kgv9urnigmwcrvj82ahasjadaau7xf",
+   "image": "https://media.gigantik.io/ufc/qmzvxlanmsn7drm18mias4havuxtzwkb2ea78zs1esgw3b"
+  },
+  "4": {
+   "name": "EDSON BARBOZA | UFC 262 | KO/TKO | ORIGIN",
+   "max": "1",
+   "preview": "https://media.gigantik.io/ufc/qmec5y3vgr33mwedqhkegaxzebfkwb1nl1vmfqq1pus4qb",
+   "image": "https://media.gigantik.io/ufc/qmpt7q2vwvzkytbzervb1nccts4mcwzpnhpnbd6vv4edvh"
+  },
+  "5": {
+   "name": "CHEYANNE BUYS | UFC FIGHT NIGHT JULY 31, 2021 | KO/TKO | ORIGIN",
+   "max": "1",
+   "preview": "https://media.gigantik.io/ufc/qmfbgbscgmcbrrcpnwtxuq2hun4gmwlwpkyjx8knekwmm7",
+   "image": "https://media.gigantik.io/ufc/qmqkxdlzlzxazeaadddmz7azjhizwwqm4oroy6gtya4esr"
+  },
+  "6": {
+   "name": "MICHAEL CHANDLER | UFC 257 | KO/TKO | ORIGIN",
+   "max": "1",
+   "preview": "https://media.gigantik.io/ufc/qmwdzwsmdh8r4cxwtp4f9qpy93d79g6venxapylc8hp9pq",
+   "image": "https://media.gigantik.io/ufc/qmzx6zbrmkeyyc2wcpvkxw3anjtsmz3pw2byoazs6i1fai"
+  },
+  "7": {
+   "name": "KHAMZAT CHIMAEV | UFC 267 | SUBMISSION | ORIGIN",
+   "max": "1",
+   "preview": "https://media.gigantik.io/ufc/qmtwqtlfyakkryqbw14gtm8fmt2fdxvz4ejhzvhq8cy8qe",
+   "image": "https://media.gigantik.io/ufc/qmepwdpf99zrpx1thkba7uhn5ayvhtfe7z92txk3wifksx"
+  },
+  "8": {
+   "name": "ALESSIO DI CHIRICO | UFC FIGHT NIGHT JAN 16, 2021 | KO/TKO | ORIGIN",
+   "max": "1",
+   "preview": "https://media.gigantik.io/ufc/qmdeaea1ucakturujncgfaeyztpyhazgyvi4ggdk9ew1ip",
+   "image": "https://media.gigantik.io/ufc/qmd2exwugz6mnbx2xxq2jyouv1uqejcbramwbxprnaewoz"
+  },
+  "9": {
+   "name": "JUSTIN GAETHJE | UFC 268 | STRIKING | ORIGIN",
+   "max": "1",
+   "preview": "https://media.gigantik.io/ufc/qmv1b7pmrk4sknh2zyuw1tr89wfepdjjr42ylcs3mjhhqt",
+   "image": "https://media.gigantik.io/ufc/qmzvjubnavm1qey1lp24hvgpt9ohfbepjxshcp1ad7b69x"
+  },
+  "10": {
+   "name": "CIRYL GANE | UFC 256 | KO/TKO | ORIGIN",
+   "max": "1",
+   "preview": "https://media.gigantik.io/ufc/qmyjhf5jnpyw4hpofj2umt6tke2pek4axzpbhnukk84ltm",
+   "image": "https://media.gigantik.io/ufc/qmqu1rjsgeahc8rwjbiwertjqspad8pwuxuhqxdqrd4mnd"
+  },
+  "11": {
+   "name": "IAN GARRY | UFC 268 | KO/TKO | ORIGIN",
+   "max": "1",
+   "preview": "https://media.gigantik.io/ufc/qmprdpz1fgkdvb7f5qenigba1ttkwdbtmprempbsjuaqrl",
+   "image": "https://media.gigantik.io/ufc/qmnpgqtmczmrdwkx5qtgpfftc6vj2jgy6ebsyuj7tpvfgx"
+  },
+  "12": {
+   "name": "DAN IGE | UFC FIGHT NIGHT MAR 13, 2021 | KO/TKO | ORIGIN",
+   "max": "1",
+   "preview": "https://media.gigantik.io/ufc/qmt6t65fbdfkcswmjznl3x7ot1fwjgyiftvrz2azwrgnsz",
+   "image": "https://media.gigantik.io/ufc/qmzsuj2zicfavrqwf8n1zqaskuyiypdofehtnaomcldksg"
+  },
+  "13": {
+   "name": "KAI KARA-FRANCE | UFC 259 | KO/TKO | ORIGIN",
+   "max": "1",
+   "preview": "https://media.gigantik.io/ufc/qmun5fuuchlg8xgyasusmr51yjncxynfvcwkeggrs3vegp",
+   "image": "https://media.gigantik.io/ufc/qmu4gupmexp8hbqx7efubnscoazbogst9rsnwm3thkxufu"
+  },
+  "14": {
+   "name": "ROBBIE LAWLER | UFC 266 | KO/TKO | ORIGIN",
+   "max": "1",
+   "preview": "https://media.gigantik.io/ufc/qmvhtggybvkl16dsdgwlmsxrjtxnecstbpaa61r5ys9z9w",
+   "image": "https://media.gigantik.io/ufc/qmxpjvum27htwqzen6wkyzascqcpsgazhpzffl2kncpyzc"
+  },
+  "15": {
+   "name": "DERRICK LEWIS | UFC FIGHT NIGHT FEB 20, 2021 | KO/TKO | ORIGIN",
+   "max": "1",
+   "preview": "https://media.gigantik.io/ufc/qmaxgrlxusxdu8gw1zwvw5abqxzfpzmaeakbdjf4jinls7",
+   "image": "https://media.gigantik.io/ufc/qmcpjfuqfez1even22nvhdetsmzrzbkg5vmobnycpm98kz"
+  },
+  "16": {
+   "name": "LI JINGLIANG | UFC FIGHT NIGHT JAN 16, 2021 | KO/TKO | ORIGIN",
+   "max": "1",
+   "preview": "https://media.gigantik.io/ufc/qmcpxdssk5j61mwervelbousxmgm2pmqqn3qti8fbo1qrz",
+   "image": "https://media.gigantik.io/ufc/qmwxr6tcf466mig5ibczxv4dv2xqpmpn9dkpsdrer9xgwc"
+  },
+  "17": {
+   "name": "TERRANCE McKINNEY | UFC 263 | KO/TKO | ORIGIN",
+   "max": "1",
+   "preview": "https://media.gigantik.io/ufc/qmc8m6rg3mvtzq6jngwdwkyafabty2uupqqhvucchnud8d",
+   "image": "https://media.gigantik.io/ufc/qmcvmusvlym9kkgcws2pmztbcnzw7wsskbypq1tm3xzefm"
+  },
+  "18": {
+   "name": "ALEX MORONO | UFC FIGHT NIGHT MAY 8, 2021 | KO/TKO | ORIGIN",
+   "max": "1",
+   "preview": "https://media.gigantik.io/ufc/qmadsfzflzgezr4bgefeqzxubegpnj2c7gjmsxxmvntxc6",
+   "image": "https://media.gigantik.io/ufc/qmu8ev8628jcztfevnab8ht8zmz8vxrvno5dn3i4awe6rq"
+  },
+  "19": {
+   "name": "FRANCIS NGANNOU | UFC 249 | KO/TKO | ORIGIN",
+   "max": "1",
+   "preview": "https://media.gigantik.io/ufc/qmvxbpyw95yozw3pghcetdarhc7g6ae3gvtsf41qcqdfux",
+   "image": "https://media.gigantik.io/ufc/qmzitgktzjxgk1bdadff6xbesaw2vi3hluzjjdum96uun8"
+  },
+  "20": {
+   "name": "KENNEDY NZECHUKWU | UFC 259 | KO/TKO | ORIGIN",
+   "max": "1",
+   "preview": "https://media.gigantik.io/ufc/qmx7jqvzp6edqypzx9xuynraj5qmqja8sezdupzbfv4x7f",
+   "image": "https://media.gigantik.io/ufc/qmddjuobzsaffg8pwzzccb3cpwbz8pthrf1x6xir9xws3u"
+  },
+  "21": {
+   "name": "PADDY PIMBLETT | UFC FIGHT NIGHT SEP 4, 2021 | KO/TKO | ORIGIN",
+   "max": "1",
+   "preview": "https://media.gigantik.io/ufc/qmyjvwp9ffg4cveysb6a1msqjqla533jkqtmwhzyny3pq7",
+   "image": "https://media.gigantik.io/ufc/qmtsrzrnglakqytceyxr9brhfxbfsahyf2bjbru8vvxhdt"
+  },
+  "22": {
+   "name": "JIRI PROCHAZKA | UFC FIGHT NIGHT MAY 1, 2021 | KO/TKO | ORIGIN",
+   "max": "1",
+   "preview": "https://media.gigantik.io/ufc/qmafi3hdbs5g1hz3qphy72dwioqcjxzsjes3cpfr486hq2",
+   "image": "https://media.gigantik.io/ufc/qmwugw1dpg43ov7mmwpjpkpf1ekjmr3cpsiupjizunyveu"
+  },
+  "23": {
+   "name": "ALEKSANDAR RAKIC | UFC FIGHT NIGHT JUNE 1, 2019 | KO/TKO | ORIGIN",
+   "max": "1",
+   "preview": "https://media.gigantik.io/ufc/qmdggkf6mkdabg1xhwycvq4v2bdre3zghek4kbwwztwbxm",
+   "image": "https://media.gigantik.io/ufc/qmpqgztjwzrdpge7gshosb1rue4kijqxktzaey7yegs9s2"
+  },
+  "24": {
+   "name": "LUKE SANDERS | UFC FIGHT NIGHT FEB 17, 2019 | KO/TKO | ORIGIN",
+   "max": "1",
+   "preview": "https://media.gigantik.io/ufc/qmbtteso1m7jt3nvt3omh7qvoadqf8jgimxctnkt9zxbcd",
+   "image": "https://media.gigantik.io/ufc/qmt1siymhfqkna4n9ty1xduuwjqysugdq2u9n7yekq7l3l"
+  },
+  "25": {
+   "name": "ILIA TOPURIA | UFC 264 | KO/TKO | ORIGIN",
+   "max": "1",
+   "preview": "https://media.gigantik.io/ufc/qmdtvnrglfhaepkvica22k4ms5v7mrxvqhukr3gaqbz6hd",
+   "image": "https://media.gigantik.io/ufc/qmwjbm8fs7nbrspt13yupcgwzfrzch8wjbk2jlzvqanb7z"
+  },
+  "26": {
+   "name": "TAI TUIVASA | UFC 264 | KO/TKO | ORIGIN",
+   "max": "1",
+   "preview": "https://media.gigantik.io/ufc/qmab88wxvqza23vptg9zag9wmkauncpk1cpjz9gbxmspcn",
+   "image": "https://media.gigantik.io/ufc/qmebzhkyaovmu6syoqdt9vwvvt33eaebwfcxbsg5ktr2xt"
+  },
+  "27": {
+   "name": "DEIVESON FIGUEIREDO | UFC FIGHT NIGHT JULY 18, 2020 | SUBMISSION | ORIGIN",
+   "max": "1",
+   "preview": "https://media.gigantik.io/ufc/qmufmgo6gdgl86hf4cyevny5ckgwpyzdkfbwqzr7zngyme",
+   "image": "https://media.gigantik.io/ufc/qmuudoagxg3nmnve7ahtcpqvnwt2p3nhzkvqbrtkzcburt"
+  },
+  "28": {
+   "name": "CIRYL GANE | UFC 265 | KO/TKO | ORIGIN",
+   "max": "1",
+   "preview": "https://media.gigantik.io/ufc/qmazcynt1ghqzkrygnwervayzimwdr5jjbx4jbixfbxpfu",
+   "image": "https://media.gigantik.io/ufc/qmcwni9fjwxfcwvvib2whszeg7b41aj15y5u8gmgjkd8gn"
+  },
+  "29": {
+   "name": "BRANDON MORENO | UFC 263 | SUBMISSION | ORIGIN",
+   "max": "1",
+   "preview": "https://media.gigantik.io/ufc/qmvtfbz99gi3tnart4ke8phdethevvsbu4e2htajrnv8rc",
+   "image": "https://media.gigantik.io/ufc/qma3diuspp5ptkvejyxzui1kpzmhvjtwhjof7ecfpub44y"
+  },
+  "30": {
+   "name": "ROSE NAMAJUNAS | UFC 261 | KO/TKO | ORIGIN",
+   "max": "1",
+   "preview": "https://media.gigantik.io/ufc/qmnnuc5nh5hnmptwpnbdgkqoxzfhfluwyedbkqho1hwz6m",
+   "image": "https://media.gigantik.io/ufc/qmwh1g9ncfcswfwsw1xfuwsmzbqsnyseosrsfnbtrkwzk5"
+  },
+  "31": {
+   "name": "FRANCIS NGANNOU | UFC 218 | KO/TKO | ORIGIN",
+   "max": "1",
+   "preview": "https://media.gigantik.io/ufc/qmrfgwybzse6ytw3vovp4rgrrg8rdpqy6hy3hgmcabft9a",
+   "image": "https://media.gigantik.io/ufc/qmvhehqbsxsae9zneb2mjijektbtk4i4kb8scm2azwkbbq"
+  },
+  "32": {
+   "name": "AMANDA NUNES | UFC 259 | SUBMISSION | ORIGIN",
+   "max": "1",
+   "preview": "https://media.gigantik.io/ufc/qmetilimmvsyrqd6yizbtauvsgwhhgswkha6qatrkkd9k9",
+   "image": "https://media.gigantik.io/ufc/qmfunka4kg2hfm4jecun7f2c9z6glknppscqszunzjdwfj"
+  },
+  "33": {
+   "name": "VALENTINA SHEVCHENKO | UFC 261 | KO/TKO | ORIGIN",
+   "max": "1",
+   "preview": "https://media.gigantik.io/ufc/qmpuehettqknmptev2syp6nggv62xzxseke8nj1n1hlnfn",
+   "image": "https://media.gigantik.io/ufc/qmqeftkqqzc7t3gjlgtphcqqwjvztwbet6vhzpv9wdxqcn"
+  },
+  "34": {
+   "name": "KAMARU USMAN | UFC 258 | KO/TKO | ORIGIN",
+   "max": "1",
+   "preview": "https://media.gigantik.io/ufc/qmvvhu2wza62matvcs3flcyqnrstjnrjezbbubake5np9n",
+   "image": "https://media.gigantik.io/ufc/qmxtcolsc7auvgjrwrnm5fmaedzrprm9lkqmk1dmul17ev"
+  },
+  "35": {
+   "name": "ALEXANDER VOLKANOVSKI | UFC 266 | GRAPPLING | ORIGIN",
+   "max": "1",
+   "preview": "https://media.gigantik.io/ufc/qmc4ddyrq1txuzxu6nmjgppthdsfmuncmazmlbyrpzuy1m",
+   "image": "https://media.gigantik.io/ufc/qmru5pjcgwvuazzngftifapqlx35brphetrxnvhedbczm2"
+  },
+  "36": {
+   "name": "PETR YAN | UFC 267 | STRIKING | ORIGIN",
+   "max": "1",
+   "preview": "https://media.gigantik.io/ufc/qmzkkyldst8wd3qdehk439nulkfvvc1ww9zgp8kfnszgdu",
+   "image": "https://media.gigantik.io/ufc/qmvdfbtkhusqtzkvjwk2cdrgujjedwywlcve7lhspwmtpm"
+  },
+  "62": {
+   "name": "DEIVESON FIGUEIREDO | UFC FIGHT NIGHT JULY 18, 2020 | SUBMISSION",
+   "max": "75",
+   "preview": "https://ipfs.io/ipfs/QmUFmGo6GdgL86hf4CyEvNY5CKGwPYZdKfbWqzr7zNgYmE",
+   "image": "https://ipfs.io/ipfs/QmUUdoaGxG3NmnVE7AHTCPqvNWT2p3NhzKVQBRtKZcBuRT"
+  },
+  "63": {
+   "name": "CIRYL GANE | UFC 265 | KO/TKO",
+   "max": "75",
+   "preview": "https://ipfs.io/ipfs/QmazCYNt1GHQzkRygnwErVayzimWDr5jjBX4jBixfBXPFu",
+   "image": "https://ipfs.io/ipfs/QmcWNi9FJWxfCwVviB2WHszeg7B41AJ15Y5U8gmGJkD8gN"
+  },
+  "64": {
+   "name": "BRANDON MORENO | UFC 263 | SUBMISSION",
+   "max": "75",
+   "preview": "https://ipfs.io/ipfs/QmVTfBZ99Gi3tnaRT4Ke8phdEtHEvVsBu4e2HTAjRNV8Rc",
+   "image": "https://ipfs.io/ipfs/Qma3DiUspP5PTKVEJYXZUi1kpZMhVJtwhjof7EcfPUb44Y"
+  },
+  "65": {
+   "name": "ROSE NAMAJUNAS | UFC 261 | KO/TKO",
+   "max": "75",
+   "preview": "https://ipfs.io/ipfs/QmNNuc5nH5hnmptWpNBDGKqoXZfhFLuWYedbkQHo1hwz6m",
+   "image": "https://ipfs.io/ipfs/QmWh1g9ncFcsWfwsW1XfuWSmZbqsnYsEoSrsFNBTRkwzK5"
+  },
+  "66": {
+   "name": "FRANCIS NGANNOU | UFC 218 | KO/TKO",
+   "max": "75",
+   "preview": "https://ipfs.io/ipfs/QmRfGWYbZSe6YTW3VoVp4RgrRg8RDpQy6Hy3HGMCabFt9a",
+   "image": "https://ipfs.io/ipfs/QmVHEhQbSXsaE9zNEB2mJijEKtBTK4i4KB8scM2azwKBbq"
+  },
+  "67": {
+   "name": "AMANDA NUNES | UFC 259 | SUBMISSION",
+   "max": "75",
+   "preview": "https://ipfs.io/ipfs/QmetiLimMvsyRqd6YiZbTauvSgwHHGsWKHA6qatrkKd9k9",
+   "image": "https://ipfs.io/ipfs/QmfUNkA4Kg2hfm4JecuN7F2c9Z6gLknPpSCqszuNZjDwfJ"
+  },
+  "68": {
+   "name": "VALENTINA SHEVCHENKO | UFC 261 | KO/TKO",
+   "max": "75",
+   "preview": "https://ipfs.io/ipfs/QmPuehEttqknmPtev2SYP6NGgv62xzxSeKe8NJ1N1hLnfn",
+   "image": "https://ipfs.io/ipfs/QmQeFTkqqzc7t3gjLGTphCqqwJvzTwBet6VHzpV9WDXqCn"
+  },
+  "69": {
+   "name": "KAMARU USMAN | UFC 258 | KO/TKO",
+   "max": "75",
+   "preview": "https://ipfs.io/ipfs/QmVvHU2WZa62MatVcS3fLCYQnRStJnRjezBbubake5np9N",
+   "image": "https://ipfs.io/ipfs/QmXTCoLSC7AuVgjRwrNm5fmaEDZrprm9LKqmk1dMUL17EV"
+  },
+  "70": {
+   "name": "ALEXANDER VOLKANOVSKI | UFC 266 | GRAPPLING",
+   "max": "75",
+   "preview": "https://ipfs.io/ipfs/Qmc4ddyrq1TXUZxu6nMjGppTHDSfMUnCMAZmLByRPzUY1m",
+   "image": "https://ipfs.io/ipfs/QmRu5pJcgwvUazZNgftifaPQLX35BRPHeTrxnvhedBczm2"
+  },
+  "71": {
+   "name": "PETR YAN | UFC 267 | STRIKING",
+   "max": "75",
+   "preview": "https://ipfs.io/ipfs/QmZKKYLdsT8wd3QDEHk439nuLkFvvC1WW9zgp8kFnszGdU",
+   "image": "https://ipfs.io/ipfs/QmVDFBtKHUsQtZKVjwK2CDRGUJJeDwYwLCVE7LHsPwMTpM"
+  },
+  "113": {
+   "name": "JOSE ALDO | UFC 142 | KO/TKO",
+   "max": "99",
+   "preview": "https://ipfs.io/ipfs/QmQiaq2MxKNbMk4gcLaZgcr5RA5tcjVagbfF1J5gxgjNmu",
+   "image": "https://ipfs.io/ipfs/QmcQXM7kNcektASqvAfm8wUwRbaEc6j2863ur6qKzyHUSV"
+  },
+  "114": {
+   "name": "JAN BLACHOWICZ | UFC 239 | KO/TKO",
+   "max": "99",
+   "preview": "https://ipfs.io/ipfs/QmVw7g9e7vyXvBWyc3cV37Rb3mwvhidro2tvewK3RGh5eH",
+   "image": "https://ipfs.io/ipfs/QmdiuBqhEm9GiK8Y6twwEPbiXsKsa6P1brhr2cphkNkyGT"
+  },
+  "116": {
+   "name": "JOANNA JEDRZEJCZYK | UFC 185 | KO/TKO",
+   "max": "99",
+   "preview": "https://ipfs.io/ipfs/QmPoxzbDdNzBNhpSs4LvaLfskKEZrMUAHz3YKbPiaLvbG6",
+   "image": "https://ipfs.io/ipfs/QmRRo9rqvBRZQeWsrNLBLCMF8sS4hiZPgza6CYFh1EPUTm"
+  },
+  "118": {
+   "name": "CHARLES OLIVEIRA | UFC 269 | SUBMISSION",
+   "max": "99",
+   "preview": "https://ipfs.io/ipfs/QmUHzZbdggF8BWbVLcAZ2SJ94kN2etV1gprraESJsqb6AG",
+   "image": "https://ipfs.io/ipfs/QmPyL3GgVcWJepbmBPMjqf22F7fdVMpKweojmBF4fsE8ar"
+  },
+  "119": {
+   "name": "JULIANNA PENA | UFC 269 | SUBMISSION",
+   "max": "99",
+   "preview": "https://ipfs.io/ipfs/QmQGic3pPnGLLpyGg6MRHXwL93E5bfw9r3rHdeJTxxU8r1",
+   "image": "https://ipfs.io/ipfs/QmUM6scUkK9sE3egcR8CrBy4n2DMuyhAaZKwJ9xhxs8CLw"
+  },
+  "121": {
+   "name": "GLOVER TEIXEIRA | UFC 267 | SUBMISSION",
+   "max": "99",
+   "preview": "https://ipfs.io/ipfs/QmSvYN4FdeuB8F5AtD21L5vfh1ttGC1TEJwxAqSCmRtwFn",
+   "image": "https://ipfs.io/ipfs/Qmaf6PNy1dWK1NCLvUKR2g6aN7LtMbGakuXDLiiZ1jYAfJ"
+  },
+  "130": {
+   "name": "CARLA ESPARZA | TUF: A CHAMPION WILL BE CROWNED | SUBMISSION",
+   "max": "99",
+   "preview": "https://ipfs.io/ipfs/QmUDUyuhn8uGmboCmAWjMqJTAxFBCh9LZQjpqLF7ZpikoK",
+   "image": "https://ipfs.io/ipfs/QmTrgazDbYW8BUrsT2MVJethxVFy3Fxs9THPAueUTSDmNp"
+  },
+  "146": {
+   "name": "TONY FERGUSON | UFC 216 | SUBMISSION",
+   "max": "99",
+   "preview": "https://ipfs.io/ipfs/QmU4DHEhQvgtFoN6y3kEPsntkdHpaoJPVMgt1d9ST2s56L",
+   "image": "https://ipfs.io/ipfs/QmX5gCnM7wVtvz8pL1e3MDV1QbYfHsQt3mNiworzV5BPtm"
+  },
+  "159": {
+   "name": "GEORGES ST-PIERRE | UFC 65 | KO/TKO",
+   "max": "68",
+   "preview": "https://ipfs.io/ipfs/QmTTpRGyXdtWQoT4zMQJS6cAwwbK57HaPGyk3bdNCN9EoX",
+   "image": "https://ipfs.io/ipfs/QmZD34vUAYCYRZAjXTeP1Zqu4wZjxhoQcWYSY3scrpNVkH"
+  },
+  "163": {
+   "name": "ISRAEL ADESANYA | UFC 253 | KO/TKO",
+   "max": "90",
+   "preview": "https://ipfs.io/ipfs/QmUbtkZQqeRBqX2g3rczg8MxexXpY2DszG6yZKLkGHvqTT",
+   "image": "https://ipfs.io/ipfs/Qma94HjQ1rp3CXqDESLCCMEAmoCY2pPpKeRxEYx1NzsQ8N"
+  },
+  "170": {
+   "name": "ROBBIE LAWLER | UFC 195 | STRIKING",
+   "max": "90",
+   "preview": "https://ipfs.io/ipfs/QmYs2L8PS5fRDkXuGYAfXCJLeQ8H2XsnU8HENsFypwfDL8",
+   "image": "https://ipfs.io/ipfs/QmdCewnMx5KhQJuMuMxKiyFfkqobf4i7iVDETpzjHmeqTs"
+  },
+  "173": {
+   "name": "KHABIB NURMAGOMEDOV | UFC 242 | SUBMISSION",
+   "max": "50",
+   "preview": "https://ipfs.io/ipfs/QmYLLkFEWmZcYAKrP1pyNHoQcvUWXh4JTpYszuKhUENHXu",
+   "image": "https://ipfs.io/ipfs/QmfTUip374xyiewbv6cufaLFmF3wH4LEn3BBTHeWq9s4Ep"
+  },
+  "190": {
+   "name": "QUINTON JACKSON | UFC 92 | KO/TKO",
+   "max": "75",
+   "preview": "https://ipfs.io/ipfs/QmcGGS8vW4YTiDYFbn5i7q6fVd3jXSbV9HZkqeoA63zV6e",
+   "image": "https://ipfs.io/ipfs/QmRxLZzenTosEPiguRqFfvvYFqt19tcPBv7oPLczsGFJ5K"
+  },
+  "216": {
+   "name": "ROYCE GRACIE | UFC 4 | SUBMISSION",
+   "max": "75",
+   "preview": "https://ipfs.io/ipfs/QmRTd8NrYAyMPWNATvUZjXoK2VteQC6EjfFS6X2vgrTJRn",
+   "image": "https://ipfs.io/ipfs/Qmc9Qc1HgjdJfAjAP6BFWq8CsxxXqh8Yi6pGhTm4GYZb94"
+  },
+  "237": {
+   "name": "ALJAMAIN STERLING | UFC 250 | SUBMISSION",
+   "max": "53",
+   "preview": "https://ipfs.io/ipfs/Qma9pNfPf1Nzcb7g97zmQzoiEpzki8k7Q488eQhY7WPHty",
+   "image": "https://ipfs.io/ipfs/QmZCegKS5g9MeXPcXnDrkC6CgrfWN36Q8kD3dsrVD8y1tW"
+  },
+  "253": {
+   "name": "JON JONES | UFC 128 | KO/TKO",
+   "max": "90",
+   "preview": "https://ipfs.io/ipfs/QmVYespqMVqzYNi9oJbjKQBdZCXwRn5ztouUrL2bcWsCS4",
+   "image": "https://ipfs.io/ipfs/QmTMyoC6Egd2FTkCXxg16eEgn5Vyb9oyz4YWyWktoGnUVd"
+  },
+  "391": {
+   "name": "ALEXA GRASSO | UFC 285 | SUBMISSION",
+   "max": "75",
+   "preview": "https://ipfs.io/ipfs/QmaYH5zyW8jgcWVAoeGMdBWfPqGXuDAvLqeqUHhzU38akT",
+   "image": "https://ipfs.io/ipfs/QmYkxdYidmhyHNXsbKGpqHbBhFBmyB579JAJhUdxn3Aden"
+  },
+  "392": {
+   "name": "SEAN O'MALLEY | UFC 292 | KO/TKO",
+   "max": "75",
+   "preview": "https://ipfs.io/ipfs/QmXh21KhM6EP1Wcdnzzmfge31qjx2um1hmorGre2pZHtno",
+   "image": "https://ipfs.io/ipfs/QmamsZ1svYY2oNYyxmYN8EBC2QWpKxiWaH6DLdZZoBp2Ne"
+  },
+  "393": {
+   "name": "SEAN STRICKLAND | UFC 293 | STRIKING",
+   "max": "75",
+   "preview": "https://ipfs.io/ipfs/QmPXfg26awa2VE6WEVJEQv7MFyvMFQxX5UtwRBsUPtzdBz",
+   "image": "https://ipfs.io/ipfs/Qmf29FxKarTSaDzQ1z4nZv6JA98EjBBegWJJTvfXvfMiWd"
+  },
+  "394": {
+   "name": "JAMAHAL HILL | UFC 283 | STRIKING",
+   "max": "75",
+   "preview": "https://ipfs.io/ipfs/QmTW9hoPDYZQDDgeVjVGpFmcBE7JVPWPUMj7nSBnisMhA7",
+   "image": "https://ipfs.io/ipfs/QmY9FGgb9qGZ7wpUMkABdt5KvXCiwtk3Kb5wWfVeSgT89x"
+  },
+  "425": {
+   "name": "ALEXANDRE PANTOJA | UFC 290 | GRAPPLING",
+   "max": "75",
+   "preview": "https://ipfs.io/ipfs/QmcoJMzYTCwCwzmgRptBwLZx2n8qaL7Qm5b93knhJimNHY",
+   "image": "https://ipfs.io/ipfs/QmUGDcrE4edGAYuGETQgdoJCKKuUHqzxyd1vCjcvjukQAg"
+  },
+  "426": {
+   "name": "MAX HOLLOWAY | UFC 231 | KO/TKO",
+   "max": "77",
+   "preview": "https://ipfs.io/ipfs/QmWH93m5KhtphBZNMHPi64q6dh6CWwvimpQ7uAzynQKMgz",
+   "image": "https://ipfs.io/ipfs/QmZpyL9REkr77Mt5TaESCGfN8YM5GYVJKJwcSZZnKCZd6U"
+  },
+  "427": {
+   "name": "ALEX PEREIRA | UFC 281 | KO/TKO",
+   "max": "99",
+   "preview": "https://ipfs.io/ipfs/QmdyrWXnStXG7xVLt7pGJ7QSmraZWUpVW5yGfEL4ymLUhi",
+   "image": "https://ipfs.io/ipfs/QmRUrEC1fp4b1Pbup1kYh3RUcU38TSiWtfd4WQzHMBd3nm"
+  },
+  "462": {
+   "name": "GEORGES ST-PIERRE | UFC 217 | SUBMISSION",
+   "max": "10",
+   "preview": "https://ipfs.io/ipfs/QmbtBgzqnFjqUNDhfwMmoebuhy9yWHBY8T12yjn9De68V6",
+   "image": "https://ipfs.io/ipfs/QmRTyQP8GqxygGpMV56UhxJib3X4BN6DbfqgbccBStTCHS"
+  },
+  "476": {
+   "name": "ZHANG WEILI | UFC FIGHT NIGHT AUG 31, 2019 | KO/TKO",
+   "max": "75",
+   "preview": "https://ipfs.io/ipfs/QmVo1ws247a4gKASfSibX3DQRgNoYU8t1jGw4WiNynAiyb",
+   "image": "https://ipfs.io/ipfs/QmXxPXQRfnQQbUmHfHctHtvUb34DrtezgmdxB2YF12HNM8"
+  },
+  "482": {
+   "name": "ISLAM MAKHACHEV | UFC 280 | SUBMISSION",
+   "max": "75",
+   "preview": "https://ipfs.io/ipfs/Qmf9aQHeJu9r7Z36MCyZHPA1WyHxoXGtkV5zH5Urzxh2ti",
+   "image": "https://ipfs.io/ipfs/Qmcmdz2T1BSzUnqnwaApdVNHe3v1ynu4SY8rJjAsGruAr4"
+  },
+  "491": {
+   "name": "JESSICA ANDRADE | UFC 237 | KO/TKO",
+   "max": "75",
+   "preview": "https://ipfs.io/ipfs/QmeXX9F6kLDi9mvCf7Eg6SHQF3XzDeyoBvcdHx1HskN9Aq",
+   "image": "https://ipfs.io/ipfs/QmezTgRZk2jzH5KT4mJmfzUZarVnbcMdPk6XDe69JrA5n2"
+  },
+  "501": {
+   "name": "DRICUS DU PLESSIS | UFC 305 | SUBMISSION",
+   "max": "81",
+   "preview": "https://ipfs.io/ipfs/QmZh3veF98WifgtznhCJB6h81qED69vo9pdanCFqe29hcP",
+   "image": "https://ipfs.io/ipfs/QmaaqLhjPbibvo7ea53xXL926QFJBUndUTnqZe96MJY4a6"
+  },
+  "511": {
+   "name": "ROBERT WHITTAKER | UFC FIGHT NIGHT APR 15, 2017 | KO/TKO",
+   "max": "100",
+   "preview": "https://ipfs.io/ipfs/QmUgCDr3euUkBgFqfwSqHHx6guEKDDav6B1Kqe5KvSzDpd",
+   "image": "https://ipfs.io/ipfs/QmZUvmcYcc2bt3f4HRpfeUBXkikAooTTLzqZD8wXyfrgSa"
+  },
+  "513": {
+   "name": "MERAB DVALISHVILI | NOCHE UFC | GRAPPLING",
+   "max": "63",
+   "preview": "https://ipfs.io/ipfs/QmaRqgGwx89YTtax1WrYfBmTJqqtTYE7uYsrMwf5Ceh8zL",
+   "image": "https://ipfs.io/ipfs/QmaKdrDMFo3VrJ23AwWNfJCf7xKQmFXKkdZv3GC76vdWSV"
+  },
+  "518": {
+   "name": "DANIEL CORMIER | UFC 230 | SUBMISSION",
+   "max": "50",
+   "preview": "https://ipfs.io/ipfs/QmWt8gAwpiSMai5YDnBReH8Yd3tWtCHUzJbpiHDJr2k4Gd",
+   "image": "https://ipfs.io/ipfs/QmNMp8oEbF3y2CDFtvWfqH17siLzA1nFJRTRa3ZPnPDibU"
+  },
+  "519": {
+   "name": "EDSON BARBOZA | UFC 142 | KO/TKO",
+   "max": "1",
+   "preview": "https://ipfs.io/ipfs/QmbKiUXAjh1BDa3vv4N3deZGQDvK2qcvD2dCVVvbPq6YUe",
+   "image": "https://ipfs.io/ipfs/QmYaU5uaRoME5Z2dYhwSRQPjQZcgWc2HG2FwExQmT1NfP8"
+  },
+  "520": {
+   "name": "CHRIS WEIDMAN | UFC 162 | KO/TKO",
+   "max": "1",
+   "preview": "https://ipfs.io/ipfs/Qmc1VEDjrxczySDgufZejn5nCkQ9ArvKjByYCvYj7SyPhx",
+   "image": "https://ipfs.io/ipfs/QmaVsvywgdReFptBAudzVYneXcBwH6kuqK4WWpoD8VJQvS"
+  },
+  "521": {
+   "name": "JORGE MASVIDAL | UFC 239 | KO/TKO",
+   "max": "1",
+   "preview": "https://ipfs.io/ipfs/QmQDn4hK3mxQmudNwptaHYF1jnwxzX6U32jUe6KKrTCeNQ",
+   "image": "https://ipfs.io/ipfs/QmTA4yNp1fAcx5iu3CrUT2gfCpqshBcuzgHN5tzRcyDkvt"
+  },
+  "522": {
+   "name": "STIPE MIOCIC | UFC 241 | KO/TKO",
+   "max": "1",
+   "preview": "https://ipfs.io/ipfs/QmZ4TDLsxQ1VNi8Si5wp2LEeCNJHg5kBPW8yPwWo2cWw8V",
+   "image": "https://ipfs.io/ipfs/QmQimFQ6AQ9eDvUkBBV2nxC9r3SY8VskfvMpb2T3Du3Y8y"
+  },
+  "523": {
+   "name": "BJ PENN | UFC 46 | SUBMISSION",
+   "max": "1",
+   "preview": "https://ipfs.io/ipfs/QmNLnA2bseNcdqG9mLX1rVZXHP6UKaUwhv8wfXQetztS8k",
+   "image": "https://ipfs.io/ipfs/QmSPaCkdcCkNf1yhWUHr8CzMqSaDLi4njJZqms7Cr94yb7"
+  },
+  "524": {
+   "name": "HOLLY HOLM | UFC 193 | KO/TKO",
+   "max": "1",
+   "preview": "https://ipfs.io/ipfs/QmfVrTyRNQecwqDYmakmo2xeyouJSL73nUdkhLFoXpNrUr",
+   "image": "https://ipfs.io/ipfs/QmSngNCvTSYhDXzhmfMB5KPvxRmvp1o8H8oduqnyU6UzEv"
+  },
+  "525": {
+   "name": "YOEL ROMERO | UFC 205 | KO/TKO",
+   "max": "1",
+   "preview": "https://ipfs.io/ipfs/QmRk5X2LgL8h2N5MQSwoivL6YX3Dbn1YTGKY4qkRd9aaU9",
+   "image": "https://ipfs.io/ipfs/QmPquXFJcn2qbQURGsAUTPfbuKPHJ3vGJGd3sABvtLzg9c"
+  },
+  "526": {
+   "name": "VITOR BELFORT | UFC FIGHT NIGHT MAY 18, 2013 | KO/TKO",
+   "max": "1",
+   "preview": "https://ipfs.io/ipfs/QmXCdnuvZWatcnGyqtYGheVMEUAnETQDh33jduCEruuZoY",
+   "image": "https://ipfs.io/ipfs/QmSNrihpiFFHXPtxMtEXJKDWoSk5UTZjAc29hk9pdDALHn"
+  },
+  "527": {
+   "name": "DEMETRIOUS JOHNSON | UFC 216 | SUBMISSION",
+   "max": "1",
+   "preview": "https://ipfs.io/ipfs/QmSjJKfBJ4KfC1iZZ2cDdyAhsJZqjbibAJQFXaAEbb9AZb",
+   "image": "https://ipfs.io/ipfs/QmcnxV9xFYSHX1SgrTtFoaasuD3MR8LYJpX3wi8Wfh25xR"
+  },
+  "529": {
+   "name": "JON JONES | UFC 309 | KO/TKO",
+   "max": "1",
+   "preview": "https://ipfs.io/ipfs/QmcbhYzf1yPhS5wJ9B1n25fGRYGkeujeMdpazs1nvne5eK",
+   "image": "https://ipfs.io/ipfs/QmWiv4aVRsh8dYZFepRAYgE8tnxQoed8DhR1dRmvE8Dd9h"
+  },
+  "553": {
+   "name": "MAX HOLLOWAY | UFC 300 | KO/TKO",
+   "max": "10",
+   "preview": "https://ipfs.io/ipfs/QmTWabEmSUZ58pbt9VEyyZRhbYcEsLNrjNCH63A42C5NmT",
+   "image": "https://ipfs.io/ipfs/QmUHu2LJBq7kuFU2LxuD8aazbL5pxmbihpsY2dknhozM2J"
+  },
+  "554": {
+   "name": "ILIA TOPURIA | UFC 298 | KO/TKO",
+   "max": "80",
+   "preview": "https://ipfs.io/ipfs/QmaH25G6fYv3PeS93Wu5Bthyy9DeWBL8ib6t1AzEo2vXez",
+   "image": "https://ipfs.io/ipfs/QmeDFGuzvjbN82zP8EcPxmHf3E2PisGTNwCxjPMSc3LSUo"
+  },
+  "555": {
+   "name": "TOM ASPINALL | UFC 304 | KO/TKO",
+   "max": "80",
+   "preview": "https://ipfs.io/ipfs/QmdBJJF6HY8PC3w7Q41b2XE5XYvdZjHaKq139HrNgmgWTA",
+   "image": "https://ipfs.io/ipfs/QmSbQbSr3zKLtJjtp4QUd7xTmJdGxQeNJk5H5xTsgnuwru"
+  },
+  "556": {
+   "name": "LYOTO MACHIDA | UFC 224 | KO/TKO",
+   "max": "350",
+   "preview": "https://ipfs.io/ipfs/QmbTdLYNZnx6pCK7xyQX2UQNgayChNHQnQzYkDjAbhGcCj",
+   "image": "https://ipfs.io/ipfs/QmQc1jC2aTBakBC5SZLccvQEB83Yys23Gy28e9bLmeKes2"
+  },
+  "558": {
+   "name": "MAGOMED ANKALAEV | UFC FIGHT NIGHT JAN 13, 2024 | KO/TKO",
+   "max": "350",
+   "preview": "https://ipfs.io/ipfs/QmXGSRWMRVt7RmkpdW73HwiA8qGCWWkw82VTVRTgaFze74",
+   "image": "https://ipfs.io/ipfs/QmZTvoueZxr2ooZ3Np2SiRzHGWxYvp7UczQAuTQyeYR1E3"
+  },
+  "559": {
+   "name": "ROBBIE LAWLER | UFC 290 | KO/TKO",
+   "max": "350",
+   "preview": "https://ipfs.io/ipfs/QmVSiCbTPikH393vBgToXzmZXZAWf1aRg9ZdePpzr7AHo2",
+   "image": "https://ipfs.io/ipfs/QmNYMbgweE1R9mFyD5ipeXbJa9uq8r55JFzW3YKjbNbFTg"
+  },
+  "570": {
+   "name": "AMANDA NUNES | UFC 232 | KO/TKO",
+   "max": "10",
+   "preview": "https://ipfs.io/ipfs/QmZwNxrFo4NdLEorxsNiddwG1s6mVmcaqxwu2tYQ1KSAec",
+   "image": "https://ipfs.io/ipfs/Qme919Q99hfhviMdv8bMBfirVoyb7UzT9wE8itbrjYtS1z"
+  },
+  "571": {
+   "name": "RASHAD EVANS | UFC 92 | KO/TKO",
+   "max": "80",
+   "preview": "https://ipfs.io/ipfs/QmatEbw48bYXeL74jQqxWXuVLcz8Sgj4yLFG7MrM1gHth1",
+   "image": "https://ipfs.io/ipfs/QmV3gtCJv1viaSfcQEcXsAdDvnA2SwPFUzxmSt4JnFW6BF"
+  },
+  "602": {
+   "name": "KING GREEN | UFC FIGHT NIGHT OCT 07, 2023 | KO/TKO",
+   "max": "115",
+   "preview": "https://ipfs.io/ipfs/QmYT98T7xguC7LcfcNsCmLMCkzYt5rUU8awSrCqekpwYNW",
+   "image": "https://ipfs.io/ipfs/QmcGTRSU5ecikPhCn2fvPKri6DUQPxxmDYg4oPdoKMagK3"
+  },
+  "609": {
+   "name": "PADDY PIMBLETT | UFC 314 | KO/TKO",
+   "max": "155",
+   "preview": "https://ipfs.io/ipfs/QmX4GoE7CxKipTDdq6i18AzRP7VALwTHVg5VczSzUzxc7d",
+   "image": "https://ipfs.io/ipfs/QmUzKop7kxmpL4dKdiuTTp9n7UFupb96DAxkUThoDg5qZ7"
+  },
+  "611": {
+   "name": "BELAL MUHAMMAD | UFC 304 | STRIKING",
+   "max": "50",
+   "preview": "https://ipfs.io/ipfs/QmRdRpEdjtmuR78Ffbjb3P2X391od2GzTwB4DMkSztNMea",
+   "image": "https://ipfs.io/ipfs/QmPfTDDCqvTf8dWDXecB9oQHeMvQNfAb8CCRPJ3v45uixH"
+  },
+  "622": {
+   "name": "HENRY CEJUDO | UFC FIGHT NIGHT JAN 19, 2019 | KO/TKO",
+   "max": "50",
+   "preview": "https://ipfs.io/ipfs/QmXxRG72ioBMWCN3A9eAj1RuKtfbSkYyLrdv5MoPPFsR44",
+   "image": "https://ipfs.io/ipfs/QmcktsWsurDn16wBDT4nLz1LtYnnNt7nQZTh8D4ZkYptM2"
+  },
+  "624": {
+   "name": "CURTIS BLAYDES | UFC 225 | KO/TKO",
+   "max": "500",
+   "preview": "https://ipfs.io/ipfs/QmQ1qJjrS16daoKfJd9TxaAKnJatXoaMC69kCkQemMDSPQ",
+   "image": "https://ipfs.io/ipfs/QmQZbENhe3r9jSBBXi6XAFY7kChpcbJuCJxWLw4TyDwCdi"
+  },
+  "625": {
+   "name": "KAYLA HARRISON | UFC 307 | GRAPPLING",
+   "max": "148",
+   "preview": "https://ipfs.io/ipfs/QmeVpqZuW5r1rwUw15Paaf9gsaB4Kng5acTr1L4MxJwzyc",
+   "image": "https://ipfs.io/ipfs/Qmbg2rU8PsYGai4UZHCfWUYDBv4Ff5QjU3sQCTdosf2Tbj"
+  }
+ }
+}
