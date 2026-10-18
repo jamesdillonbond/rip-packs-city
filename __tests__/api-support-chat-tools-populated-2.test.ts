@@ -405,6 +405,8 @@ describe("concierge tools — search_across_collections", () => {
       editions: { data: [MAHOMES_ED], error: null },
       allday_edition_floor_ask: { data: [{ edition_id: "ed-1", floor_ask: 5, floor_ask_listed_at: "2026-10-18T20:00:00Z", floor_flow_id: 4242 }], error: null },
       fmv_current: { data: [{ edition_id: "ed-1", fmv_usd: 10, confidence: "HIGH" }], error: null },
+      // A fresh Candy book with no Mahomes ask, so Candy answers "none" rather than unknown.
+      candy_listings: { data: [{ edition_id: "candy-other", price_usd: 2, token_mint: "M", last_seen_at: new Date().toISOString(), venue: "magic_eden" }], error: null },
     })
     script("search_across_collections", { name: "Mahomes", limit: 3 })
     await POST(post("does RPC have Mahomes"))
@@ -446,6 +448,50 @@ describe("concierge tools — search_across_collections", () => {
     expect(ad.results).toHaveLength(0)
     expect(ad.editions_matched).toBe(1)
     expect(String(ad.note)).toMatch(/not listed/)
+  })
+
+  // 2026-10-18: Candy MLB (Solana) was left out entirely ("Flow only until a
+  // Candy arm reads its own table"), so "does RPC have Judge" never looked.
+  const JUDGE = { id: "ed-j", external_id: "aaron-judge", player_name: "Aaron Judge", set_name: "2026 MLB Base Series ICONs", tier: "COMMON" }
+  it("Candy MLB answers from its own fresh book, with a Magic Eden buy link", async () => {
+    install({
+      cached_listings: { data: [], error: null },
+      editions: { data: [JUDGE], error: null },
+      candy_listings: { data: [{ edition_id: "ed-j", price_usd: 4.5, token_mint: "MintJ", last_seen_at: new Date().toISOString(), venue: "magic_eden" }], error: null },
+    })
+    script("search_across_collections", { name: "Judge", limit: 3 })
+    await POST(post("does RPC have Judge"))
+    const candy = group(toolResult(), "Candy MLB")!
+    expect(candy.results).toHaveLength(1)
+    expect(candy.results[0]).toMatchObject({ player: "Aaron Judge", price: 4.5, listed_at: null })
+    expect(String(candy.results[0].edition_url)).toContain("/candy-mlb/edition/aaron-judge")
+    expect(candy.results[0].buy_url).toBeTruthy()
+  })
+
+  it("a STALE Candy book is unknown, never 'not listed'", async () => {
+    install({
+      cached_listings: { data: [], error: null },
+      editions: { data: [JUDGE], error: null },
+      candy_listings: { data: [{ edition_id: "ed-j", price_usd: 4.5, token_mint: "MintJ", last_seen_at: "2026-01-01T00:00:00Z", venue: "magic_eden" }], error: null },
+    })
+    script("search_across_collections", { name: "Judge", limit: 3 })
+    await POST(post("does RPC have Judge"))
+    const r = toolResult()
+    expect(r.status).toBe("partial")
+    expect(r.failedCollections).toContain("Candy MLB")
+    expect(group(r, "Candy MLB")).toBeUndefined()
+  })
+
+  it("a Candy ask read that hits the row cap is unknown — a truncated book is not 'not listed'", async () => {
+    const now = new Date().toISOString()
+    install({
+      cached_listings: { data: [], error: null },
+      editions: { data: [JUDGE], error: null },
+      candy_listings: { data: Array.from({ length: 1000 }, (_, i) => ({ edition_id: "other", price_usd: 1 + i, token_mint: `M${i}`, last_seen_at: now, venue: "magic_eden" })), error: null },
+    })
+    script("search_across_collections", { name: "Judge", limit: 3 })
+    await POST(post("does RPC have Judge"))
+    expect(toolResult().failedCollections).toContain("Candy MLB")
   })
 
   it("UFC's closed market is reported as closed, not as an empty search", async () => {

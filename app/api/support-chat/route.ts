@@ -56,7 +56,7 @@ import {
   keepCanonicalEditions,
 } from "@/lib/concierge/edition-listings";
 import { closedMarket } from "@/lib/market-closed";
-import { searchEditionFloorsByName } from "@/lib/concierge/search-edition-floors";
+import { searchEditionFloorsByName, candyFloorReader } from "@/lib/concierge/search-edition-floors";
 import { readsCatalogDealsFromIndex, fetchIndexCatalogDeals } from "@/lib/concierge/catalog-deals-index";
 import { safeApiError } from "@/lib/api-error";
 import { runMarketCapTool } from "@/lib/concierge/market-cap-tool";
@@ -467,7 +467,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "search_across_collections",
-    description: "Search for a player or subject across ALL published collections simultaneously. Use when the user asks 'does RPC have [player]' without specifying a collection, or when comparing a name across collections. Top Shot rows are serial-level asks; NFL All Day and LaLiga Golazos rows are EDITION floors from RPC's on-chain listing index (serial is null — link edition_url), and editions_matched tells you how many of that player's editions exist even when none is listed: then say they are not listed, never that RPC doesn't have them. A group with market_closed (UFC Strike) means the market is closed, not that the player is absent.",
+    description: "Search for a player or subject across ALL published collections simultaneously. Use when the user asks 'does RPC have [player]' without specifying a collection, or when comparing a name across collections. Top Shot rows are serial-level asks; NFL All Day and LaLiga Golazos rows are EDITION floors from RPC's on-chain listing index, and Candy MLB rows are edition floors from RPC's swept Magic Eden / OpenSea book (serial is null — link edition_url), and editions_matched tells you how many of that player's editions exist even when none is listed: then say they are not listed, never that RPC doesn't have them. A group with market_closed (UFC Strike) means the market is closed, not that the player is absent.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -2714,11 +2714,15 @@ async function executeToolInner(
       const perCollection = Math.min(Math.max(toolInput.limit || 3, 1), 10);
 
       // cached_listings holds FLOW listings only; Candy MLB's (Solana, published
-      // 2026-09-06) live in candy_listings, so fanning it out here would answer
-      // "no Candy listings" for a name that exists. Flow only until a Candy arm
-      // reads its own table.
-      const published = publishedCollections().filter((c) => c.dbChain === "flow");
+      // 2026-09-06) live in candy_listings, which its own arm reads below
+      // (2026-10-18) with get_edition_listings' freshness rules.
+      const published = publishedCollections().filter((c) => c.dbChain === "flow" || c.id === "candy-mlb");
       const queries = published.map(async (col) => {
+        if (col.id === "candy-mlb") {
+          const candyUuid = col.supabaseCollectionId;
+          if (!candyUuid) return { collection: col.label, collectionId: col.id, results: [], failed: true };
+          return searchEditionFloorsByName(supabase, col, candyUuid, candyFloorReader, name, perCollection, base);
+        }
         if (isPinnacle(col.id)) {
           return searchPinnacleByName(supabase, name, perCollection);
         }

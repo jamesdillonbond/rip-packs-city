@@ -1,7 +1,8 @@
 // lib/concierge/search-edition-floors.ts
 //
-// search_across_collections arm for the collections whose asks live in the
-// on-chain listing index (EDITION_FLOOR_VIEW: NFL All Day, LaLiga Golazos).
+// search_across_collections arm for the collections whose asks are edition-keyed
+// in our own books: the on-chain listing index (EDITION_FLOOR_VIEW: NFL All Day,
+// LaLiga Golazos) and Candy MLB's swept Magic Eden / OpenSea book (candy_listings).
 //
 // 2026-10-18: the tool searched v1 `cached_listings` for every Flow collection.
 // For All Day and Golazos v1 holds only Flowty's book (108 / 100 rows against
@@ -56,11 +57,107 @@ const num = (v: unknown): number | null => {
   return Number.isFinite(n) ? n : null
 }
 
+export interface EditionFloor {
+  ask: number
+  listedAt: string | null
+  buyUrl: string | null
+}
+
+/** Reads the lowest live ask per edition. `ok: false` is a FAILED read (or a
+ *  book too stale to vouch for absence) — never "nothing listed". */
+export type FloorReader = (
+  supabase: Supabase,
+  editionIds: string[],
+) => Promise<{ ok: boolean; floors: Map<string, EditionFloor> }>
+
+/** The edition-keyed floor views (EDITION_FLOOR_VIEW): All Day, Golazos. */
+export function viewFloorReader(floorView: string, collectionId: string): FloorReader {
+  return async (supabase, ids) => {
+    const { data, error } = await supabase
+      .from(floorView)
+      .select("edition_id, floor_ask, floor_ask_listed_at, floor_flow_id")
+      .in("edition_id", ids)
+    const floors = new Map<string, EditionFloor>()
+    // ok means the QUERY succeeded, not that rows came back — a timeout must not
+    // become "none of this player's editions are listed".
+    if (error) return { ok: false, floors }
+    for (const f of (data ?? []) as Array<Record<string, any>>) {
+      const ask = num(f.floor_ask)
+      if (ask == null || !(ask > 0)) continue
+      floors.set(String(f.edition_id), {
+        ask,
+        listedAt: f.floor_ask_listed_at ?? null,
+        buyUrl: f.floor_flow_id != null ? marketplaceMomentUrl(collectionId, String(f.floor_flow_id)) : null,
+      })
+    }
+    return { ok: true, floors }
+  }
+}
+
+/** Same freshness rules as get_edition_listings' Candy arm: an ask counts only
+ *  if RE-SEEN within the window (Magic Eden asks carry no expiry), and the
+ *  Magic Eden book itself must have been swept inside it — otherwise "no fresh
+ *  ask" would be a stalled indexer reported as an empty market. */
+export const CANDY_ASK_FRESH_MS = 7 * 3600_000
+
+export const candyFloorReader: FloorReader = async (supabase, ids) => {
+  const floors = new Map<string, EditionFloor>()
+  const since = new Date(Date.now() - CANDY_ASK_FRESH_MS).toISOString()
+  // Chunked: PostgREST returns at most 1,000 rows, and the asks are ordered by
+  // price, so one read over many editions could cut off every ask of the dearer
+  // ones and report them "not listed". A chunk that hits the cap is a failed read.
+  const CHUNK = 25
+  const ASK_CAP = 1000
+  const chunks: string[][] = []
+  for (let i = 0; i < ids.length; i += CHUNK) chunks.push(ids.slice(i, i + CHUNK))
+  const [asksReads, head] = await Promise.all([
+    Promise.all(chunks.map((c) =>
+      supabase
+        .from("candy_listings")
+        .select("edition_id, price_usd, token_mint, last_seen_at, venue, venue_url")
+        .in("edition_id", c)
+        .eq("is_active", true)
+        .gt("price_usd", 0)
+        .gte("last_seen_at", since)
+        .order("price_usd", { ascending: true })
+        .limit(ASK_CAP),
+    )),
+    supabase
+      .from("candy_listings")
+      .select("last_seen_at")
+      .eq("venue", "magic_eden")
+      .eq("is_active", true)
+      .order("last_seen_at", { ascending: false })
+      .limit(1),
+  ])
+  const newest = (head.data ?? [])[0]?.last_seen_at as string | undefined
+  const bookFresh = !!newest && Date.parse(newest) >= Date.parse(since)
+  if (head.error || !bookFresh) return { ok: false, floors }
+  if (asksReads.some((r: any) => r.error || (r.data ?? []).length >= ASK_CAP)) return { ok: false, floors }
+  const asks = { data: asksReads.flatMap((r: any) => r.data ?? []) }
+  // Keep the cheapest ask per edition (chunks are each price-ordered).
+  for (const r of asks.data as Array<Record<string, any>>) {
+    const id = String(r.edition_id)
+    const ask = num(r.price_usd)
+    if (ask == null || !(ask > 0)) continue
+    const prev = floors.get(id)
+    if (prev && prev.ask <= ask) continue
+    floors.set(id, {
+      ask,
+      // last_seen_at is when the sweep last SAW the ask, not when it was listed.
+      listedAt: null,
+      // An OpenSea ask links only to the URL OpenSea returned, never to Magic Eden.
+      buyUrl: r.venue === "opensea" ? (r.venue_url || null) : marketplaceMomentUrl("candy-mlb", String(r.token_mint)),
+    })
+  }
+  return { ok: true, floors }
+}
+
 export async function searchEditionFloorsByName(
   supabase: Supabase,
   col: Pick<Collection, "id" | "label">,
   collectionUuid: string,
-  floorView: string,
+  floorSource: string | FloorReader,
   name: string,
   perCollection: number,
   base: string,
@@ -82,18 +179,10 @@ export async function searchEditionFloorsByName(
   if (editions.length === 0) return { ...head, results: [], editions_matched: 0 }
 
   const ids = editions.map((e) => e.id)
-  const { data: floors, error: flErr } = await supabase
-    .from(floorView)
-    .select("edition_id, floor_ask, floor_ask_listed_at, floor_flow_id")
-    .in("edition_id", ids)
-  // ok means the QUERY succeeded, not that rows came back — a timeout must not
-  // become "none of this player's editions are listed".
-  if (flErr) return { ...head, results: [], failed: true, editions_matched: editions.length }
-
-  const floorBy = new Map<string, Record<string, any>>()
-  for (const f of (floors ?? []) as Array<Record<string, any>>) {
-    if (num(f.floor_ask) != null && Number(f.floor_ask) > 0) floorBy.set(String(f.edition_id), f)
-  }
+  const reader = typeof floorSource === "string" ? viewFloorReader(floorSource, col.id) : floorSource
+  const read = await reader(supabase, ids)
+  if (!read.ok) return { ...head, results: [], failed: true, editions_matched: editions.length }
+  const floorBy = read.floors
   const listed = editions.filter((e) => floorBy.has(String(e.id)))
 
   // FMV is supplementary: a failed read leaves fmv null, never 0.
@@ -114,7 +203,7 @@ export async function searchEditionFloorsByName(
 
   const results: EditionFloorResult[] = listed.map((e) => {
     const f = floorBy.get(String(e.id))!
-    const price = Number(f.floor_ask)
+    const price = f.ask
     const fv = fmvBy.get(String(e.id))
     const fmv = fv?.fmv ?? null
     return {
@@ -126,9 +215,9 @@ export async function searchEditionFloorsByName(
       fmv,
       confidence: fv?.confidence ?? null,
       discount_pct: discountPct(price, fmv),
-      buy_url: f.floor_flow_id != null ? marketplaceMomentUrl(col.id, String(f.floor_flow_id)) : null,
+      buy_url: f.buyUrl,
       edition_url: absoluteEditionPageUrl(base, col.id, String(e.external_id)),
-      listed_at: f.floor_ask_listed_at ?? null,
+      listed_at: f.listedAt,
     }
   })
 
