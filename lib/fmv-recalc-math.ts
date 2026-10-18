@@ -111,8 +111,10 @@ export const FMV_RECENT_SPAN_DAYS = 30
 export const FMV_RECENT_MIN_N = 3
 // ── 1.8.2 (2026-10-17): labels only, no price change — MEDIUM needs at least one
 // sale in the true 30-day window (gateMediumToRecentSale, lib/fmv-confidence.ts).
+// ── 1.8.3 (2026-10-18): labels only — that recent sale must be one the PRICE can
+// use (survives the grail-spike dampener); a stripped spike no longer earns MEDIUM.
 // The algo_version every fmv-recalc snapshot is stamped with; the OG cards print it.
-export const FMV_ALGO_VERSION = "1.8.2"
+export const FMV_ALGO_VERSION = "1.8.3"
 
 export function medianOfMostRecent(sales: DatedSale[], n: number): number {
   if (sales.length === 0 || n <= 0) return 0

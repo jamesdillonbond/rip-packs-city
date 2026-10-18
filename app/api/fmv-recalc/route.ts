@@ -1341,7 +1341,15 @@ export async function POST(req: NextRequest) {
         ?? sales.filter((s) => s.soldAt.getTime() >= Date.parse(windowStart)).length
       confidence = gateHighToRecentVolume(confidence, count30)
       // 1.8.2: MEDIUM needs at least one sale in the true 30-day window (lib/fmv-confidence.ts).
-      confidence = gateMediumToRecentSale(confidence, count30)
+      // ⛔ 1.8.3 (2026-10-18): counted over the sales the PRICE can use — the
+      // grail-spike-cleaned set — not the raw 30d count. When the only recent sale
+      // is a stripped spike (#1 at $111 over a $25–34 cluster), the price rests
+      // entirely on 30–90-day-old sales, days_since_sale reads > 30, and the
+      // zero_stale_sales_count trigger zeroes the published count; the 1.8.2 gate
+      // still saw 1 and kept MEDIUM (6 rows on 10-17/18). The backtest that set the
+      // rule measured exactly this class as "no recent sale".
+      const usableRecent30 = sales.filter((s) => s.soldAt.getTime() >= Date.parse(windowStart)).length
+      confidence = gateMediumToRecentSale(confidence, Math.min(count30, usableRecent30))
       const daysSinceSale = Math.round(
         (now.getTime() - latestSoldAt.getTime()) / (1000 * 60 * 60 * 24)
       )

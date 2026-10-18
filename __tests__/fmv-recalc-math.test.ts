@@ -155,7 +155,7 @@ describe("medianOfMostRecent", () => {
   })
   it("N is the HIGH-confidence sales floor and the version was bumped with the model", () => {
     expect(FMV_RECENT_SALES_N).toBe(MIN_SALES_30D_HIGH)
-    expect(FMV_ALGO_VERSION).toBe("1.8.2")
+    expect(FMV_ALGO_VERSION).toBe("1.8.3")
   })
 })
 

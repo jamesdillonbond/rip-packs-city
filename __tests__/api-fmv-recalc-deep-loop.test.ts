@@ -690,6 +690,55 @@ describe("fmv-recalc 90d catch-up seed (offset 0)", () => {
     expect(terminalLog(rpcCalls)).toMatchObject({ p_pipeline: "fmv-recalc", p_ok: true })
   })
 
+  it("⛔ 1.8.3: a recent sale the price CANNOT use (a stripped grail spike) does not earn MEDIUM", async () => {
+    // 2026-10-18: 6 live rows were MEDIUM with sales_count_30d = 0 because the only
+    // 30d sale was a #1 spike the dampener strips, so the price rested on 30–90 d sales.
+    const { inserted } = instrument({
+      pipeline_runs: { data: null, error: null },
+      "rpc:fmv_recalc_edition_page": { data: [{ edition_id: "ed-main" }, { edition_id: "ed-spike" }], error: null },
+      "rpc:fmv_recalc_90d_catchup_editions": { data: [], error: null },
+      sales_market: [
+        // call 0 — Step 1b (30d): ed-main's normal set + ed-spike's ONE recent sale, a #1 at 4x the cluster.
+        { data: [
+          ...[sale(10, 300, 1), sale(10, 400, 3), sale(10, 500, 6), sale(10, 600, 10), sale(10, 700, 15), sale(10, 800, 20)].map((s) => ({ ...s, edition_id: "ed-main" })),
+          ninetyDayOnlySale("ed-spike", 111, 1, 2),
+        ], error: null },
+        // call 1 — the 90d widening for the thin ed-spike: the spike + five typical sales 35–75 d old.
+        { data: [
+          ninetyDayOnlySale("ed-spike", 111, 1, 2),
+          ninetyDayOnlySale("ed-spike", 30, 300, 35),
+          ninetyDayOnlySale("ed-spike", 28, 400, 44),
+          ninetyDayOnlySale("ed-spike", 32, 500, 52),
+          ninetyDayOnlySale("ed-spike", 30, 600, 61),
+          ninetyDayOnlySale("ed-spike", 29, 700, 75),
+        ], error: null },
+      ],
+      editions: {
+        data: [
+          { id: "ed-main", tier: "COMMON", circulation_count: 1000, external_id: "1:100", jersey_number: null },
+          { id: "ed-spike", tier: "COMMON", circulation_count: 1000, external_id: "1:400", jersey_number: null },
+        ],
+        error: null,
+      },
+      edition_offers: { data: [], error: null },
+      allday_edition_floor_ask: { data: [], error: null },
+      fmv_snapshots: { data: [], error: null },
+      ...QUIET_TAIL,
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    const spike = (inserted.fmv_snapshots ?? []).filter((r) => r.edition_id === "ed-spike")
+    expect(spike, "ed-spike was not priced — the fixture no longer reaches the gate").toHaveLength(1)
+    // Not vacuous: the price really is the old cluster, i.e. the spike was stripped.
+    expect(Number(spike[0].fmv_usd)).toBeLessThan(40)
+    expect(spike[0].confidence).toBe("LOW")
+    // CONTROL: an edition with usable recent sales keeps MEDIUM in the same run.
+    const main = (inserted.fmv_snapshots ?? []).filter((r) => r.edition_id === "ed-main")
+    expect(main[0]?.confidence).toBe("MEDIUM")
+  })
+
   it("enumerates BOTH Top Shot and All Day, seeding an All Day zero-30d edition off its 90d floor", async () => {
     const ALLDAY = "dee28451-5d62-409e-a1ad-a83f763ac070"
     const { inserted, rpcCalls } = instrument({
