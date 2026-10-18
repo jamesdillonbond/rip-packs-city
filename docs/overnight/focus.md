@@ -13,6 +13,8 @@
 - **Parallel seeder idle on `queue_full` is BY DESIGN** (resolver once a day at ~1:30 PM PT; the 10k cap protects the newest series, `20260904133105`). Do not raise the cap around the Series 2026-27 launch.
 - **New 10-18 1:03 PM PT: pg_cron 750 `maint-vacuum-pack-rips` (daily 4:37 AM PT).** On 10-19, read `pack_rips` relallvisible/relpages (was 72.1 %) and `EXPLAIN (ANALYZE, BUFFERS) select * from v_allday_pack_lifecycle where dist_id = '6924'` (was 691 ms, 715 heap fetches). Record both in `pack-ev.md`.
 - **Pinnacle #193:** read it with `pinnacle_fmv_sales_backtest('2026-10-09 14:00-07')` (HIGH n 247 of 500 on 10-18). A dispersion gate was measured and is NOT the fix.
+- **Added ~3:13 PM PT (same thread): All Day / Golazos surfaces moved off Flowty's v1 rows today; expect bigger numbers.** `/laliga-golazos/market` lists **496 editions** (was Flowty's 100 rows); All Day and Golazos no longer fall back to v1 on an empty answer, so an empty filter now reads empty. The Analytics Order Book Depth card shows **All Day ~28.9k / Golazos ~4.2k asks** (was 108 / 100). The Golazos Sniper relative-deals board and tier benchmarks read `cached_listings_v2`. The concierge's search and deal tools changed the same way. None of this is a regression; a JUMP in those counts is the fix. ⛔ Do not "restore" a v1 read for these two collections: their v1 rows are Flowty-only (runbook step 0).
+- **Digests and the sign-up reminder now ALSO need `RPC_SENDER_POSTAL_ADDRESS`** (C2). A `skipped: postal_address_missing` log is the designed state until Trevor sets it; `send-digest` also has a new `SEND_DIGEST_ENABLED` flag (it had none).
 
 ## STEER — added 2026-10-17 ~7:40 PM PT (Claude Code cloud; docs-refresh thread archived) — three DATED checks handed to the night pass
 
