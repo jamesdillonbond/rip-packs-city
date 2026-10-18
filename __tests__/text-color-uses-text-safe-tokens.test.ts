@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { readFileSync } from "node:fs"
-import { execSync } from "node:child_process"
+import { walkSourceFiles, repoRelative } from "./helpers/source-files"
 import { stripComments } from "../scripts/lib/strip-comments.mjs"
 
 // TEXT is painted with the text-safe tokens, never the fill red or the ghost.
@@ -29,9 +29,10 @@ function offenders(src: string): string[] {
   return [...stripComments(src).matchAll(BANNED)].map((m) => m[1])
 }
 
-const FILES = execSync("git ls-files app components lib", { encoding: "utf8" })
-  .split("\n")
-  .filter((f) => /\.(tsx|ts|css)$/.test(f))
+// In-process walk, not `git ls-files` through a shell (guards-do-not-shell-out-to-grep).
+const FILES = ["app", "components", "lib"]
+  .flatMap((root) => walkSourceFiles(root, (n) => /\.(tsx|ts|css)$/.test(n)))
+  .map(repoRelative)
 
 describe("text colours use the text-safe tokens", () => {
   it("walks a real population (not vacuous)", () => {
