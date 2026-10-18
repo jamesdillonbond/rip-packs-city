@@ -89,7 +89,7 @@ Other DB readers of v1 to check once: `analytics_listings_summary`, `get_relativ
 
 ## 3. Teardown, in order (revert in brackets)
 
-0. **Can ship before the day.** Point the §2 readers at `cached_listings_v2` for All Day and Golazos, so the day changes nothing a user sees. [revert: `CREATE OR REPLACE` from each function's prior migration body; revert the code commit by its message]
+0. **Can ship before the day.** Point the §2 readers at `cached_listings_v2` for All Day and Golazos, so the day changes nothing a user sees. ✅ **Scope DECIDED 10-18 ~12:35 PM PT (Claude Code cloud, under Trevor's "make decisions"):** step 0 is the readers a user sees: the concierge's v1 reads (`app/api/support-chat/route.ts` ×3, `support-chat/context/route.ts` ×2), `app/api/profile/market-pulse/route.ts` and `app/api/allday-pack-listings/route.ts`. `get_platform_stats` and `get_collection_stats` drop out of step 0, because no rendered surface reads their `listing_count` (triage above); they move with step 3. Left for a dedicated pass rather than an end-of-block rush: v1 and v2 differ in shape, and the shutdown date is still open. [revert: `CREATE OR REPLACE` from each function's prior migration body; revert the code commit by its message]
 1. **Schedulers.**
    - Remove the `topshot-listing-cache` entry from `vercel.json`.
    - Delete `.github/workflows/topshot-listing-cache.yml` (dispatch-only).
