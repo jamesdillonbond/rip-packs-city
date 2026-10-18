@@ -7,7 +7,8 @@
 // auth.users, welcome sent, approved within [p_min_hours, p_max_days]) and emails
 // each a one-click "your dashboard is ready" nudge via Resend.
 //
-// DISABLED BY DEFAULT. It sends nothing unless SIGNUP_REMINDER_ENABLED === "1".
+// DISABLED BY DEFAULT. It sends nothing unless SIGNUP_REMINDER_ENABLED === "1" AND the
+// CAN-SPAM postal address (RPC_SENDER_POSTAL_ADDRESS, C2) is set.
 // This is proactive outbound email; it is gated on Trevor's explicit go (see
 // CLAUDE.md / memory no-promo-until-launch-ready). Deploying the route changes
 // nothing until the flag is set. No cron entry of its own — scheduling is wired
@@ -29,6 +30,7 @@
 // Auth: Bearer ${INGEST_SECRET_TOKEN} or ${CRON_SECRET}. Method: POST or GET.
 
 import { bearerMatches } from "@/lib/auth/bearer-secret"
+import { commercialSendBlockedReason } from "@/lib/emails/sender-identity";
 import { NextRequest, NextResponse, after } from "next/server";
 import { alreadySentEmail, ensureUnsubToken } from "@/lib/email/recipient-guards";
 import { supabaseAdmin } from "@/lib/supabase";
@@ -188,8 +190,12 @@ async function run(req: NextRequest) {
     }
   }
 
-  // ── Real run: gated behind the flag.
-  if (!enabled) {
+  // ── Real run: gated behind the flag AND the CAN-SPAM postal address (C2,
+  // 2026-10-18). A nudge to finish sign-up is arguably commercial; gating it
+  // the same way as the digests settles the question at no cost while it is dark.
+  const blocked = commercialSendBlockedReason(enabled);
+  if (blocked) {
+    const skippedAs = blocked === "flag_off" ? "disabled" : blocked;
     try {
       await supabaseAdmin.rpc("log_pipeline_run", {
         p_pipeline: PIPELINE_NAME,
@@ -199,13 +205,13 @@ async function run(req: NextRequest) {
         p_rows_skipped: 0,
         p_ok: true,
         p_error: null,
-        p_extra: { skipped: "disabled" },
+        p_extra: { skipped: skippedAs },
       });
     } catch {
       /* non-fatal */
     }
     return NextResponse.json(
-      { ok: true, accepted: true, pipeline: PIPELINE_NAME, skipped: "disabled" },
+      { ok: true, accepted: true, pipeline: PIPELINE_NAME, skipped: skippedAs },
       { status: 202 }
     );
   }

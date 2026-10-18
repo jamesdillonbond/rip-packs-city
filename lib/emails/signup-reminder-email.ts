@@ -1,4 +1,4 @@
-import { SENDER_LINE } from "@/lib/emails/sender-identity"
+import { SENDER_LINE, senderPostalAddress, commercialSenderLine } from "@/lib/emails/sender-identity"
 // lib/emails/signup-reminder-email.ts
 //
 // Re-engagement email for approved allow_list users who never completed first
@@ -65,7 +65,7 @@ export function buildSignupReminderHtml(opts: SignupReminderOpts): string {
     : `Your dashboard is set up and waiting on your first sign-in.`
 
   const unsub = opts.unsubscribeUrl
-    ? `<a href="${opts.unsubscribeUrl}" style="color:${TEXT_SUBTLE};text-decoration:underline;">Stop these reminders</a><br/>${SENDER_LINE}`
+    ? `<a href="${opts.unsubscribeUrl}" style="color:${TEXT_SUBTLE};text-decoration:underline;">Stop these reminders</a><br/>${senderPostalAddress() ? commercialSenderLine() : SENDER_LINE}`
     : ""
 
   return `<!doctype html>

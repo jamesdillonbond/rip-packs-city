@@ -66,6 +66,8 @@ const chaseRow = {
 
 beforeEach(() => {
   process.env.INGEST_SECRET_TOKEN = TOKEN
+  // 2026-10-18: a real run also needs the CAN-SPAM postal address (C2).
+  process.env.RPC_SENDER_POSTAL_ADDRESS = "PO Box 123, Portland, OR 97201"
   process.env.RESEND_API_KEY = "test-resend-key"
   delete process.env.SIGNUP_REMINDER_ENABLED
   delete process.env.CRON_SECRET
@@ -97,6 +99,19 @@ describe("/api/cron/signup-reminder", () => {
     expect(body.pipeline).toBe("signup-reminder")
     // disabled path must not schedule any send work
     expect(h.afterFns.length).toBe(0)
+  })
+
+  it("enabled but no CAN-SPAM postal address: 202 skipped=postal_address_missing, no send work", async () => {
+    process.env.SIGNUP_REMINDER_ENABLED = "1"
+    delete process.env.RPC_SENDER_POSTAL_ADDRESS
+    try {
+      const res = await POST(makeReq({ auth: `Bearer ${TOKEN}` }))
+      expect(res.status).toBe(202)
+      expect((await res.json()).skipped).toBe("postal_address_missing")
+      expect(h.afterFns.length).toBe(0)
+    } finally {
+      delete process.env.SIGNUP_REMINDER_ENABLED
+    }
   })
 
   it("dry-run previews eligible recipients and sends nothing", async () => {
