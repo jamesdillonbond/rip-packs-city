@@ -70,7 +70,8 @@ There is no wallet verification. It was removed by decision (#0, 08-08).
 
 **Next**
 4. **Drain the unplaced-id queue to steady state.** Report `predicted_set IS NULL` and the age distribution, not the total, because the total grows with discovery. Gate: hydration keeps up with seeding over 48 h.
-5. **Every holdings reader filters `walk_missed_at IS NULL`.** Add a tree-walk guard so a new reader cannot forget it. Falsifier: the grep finds an unfiltered reader.
+5. ✅ **GUARDED 2026-10-18 (Claude Code cloud):** `__tests__/topshot-ownership-holdings-readers-filter-walk-missed.test.ts` walks the newest definition of every function/view/MV in `supabase/migrations` (dropped ones skipped, SQL comments stripped) plus every `.from("topshot_ownership")` TS file; 10 DB + 2 TS maintenance paths are suppressed with reasons, and a planted reader without the predicate reds it. Audit the same morning: **0 unfiltered holdings readers** (18,306 of 532,092 rows flagged, 3.4 %). `get_topshot_rookie_index_coverage` is suppressed as a coverage note ("the index walked this edition"), not a holdings count.
+   - (original item) **Every holdings reader filters `walk_missed_at IS NULL`.** Add a tree-walk guard so a new reader cannot forget it. Falsifier: the grep finds an unfiltered reader.
 
 **Later**
 6. **Widen achievements** to every `profile_bio` user with saved wallets: a one-line change, ~16 cheap probes per user. Only when the achievements UI is mounted or the accuracy gate is declared passed.
