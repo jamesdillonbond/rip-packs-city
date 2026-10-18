@@ -33,6 +33,7 @@
   --tier-champion-text: var(--tier-champion);
   --tier-challenger-text: var(--tier-challenger);
   --tier-contender-text: var(--tier-contender);
+  --tier-epic-text: var(--tier-epic);
   --rpc-success-text: var(--rpc-success);
   --rpc-warning-text: var(--rpc-warning);
   --rpc-danger-text: var(--rpc-danger);
@@ -227,6 +228,7 @@
   --tier-champion-text: #915D06;
   --tier-challenger-text: #5A62AE;
   --tier-contender-text: #5F6876;
+  --tier-epic-text: #7F57A6;
   --rpc-success-text: #1D7656;
   --rpc-warning-text: #915D06;
   --rpc-danger-text: #A64C4C;

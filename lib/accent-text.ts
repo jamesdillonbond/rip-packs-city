@@ -25,7 +25,7 @@
 const BRAND_RED = /^#?e03a2f$/i
 // Fill tokens that have a TEXT twin in app/rpc-tokens.css (#194, 2026-10-18):
 // the twin equals the fill in dark and is a text-safe shade in light.
-const HAS_TEXT_TWIN = /^var\(--((?:tier-(?:legendary|ultimate|rare|fandom|uncommon|common|champion|challenger|contender))|(?:rpc-(?:success|warning|danger|info)))\)$/
+const HAS_TEXT_TWIN = /^var\(--((?:tier-(?:legendary|ultimate|rare|fandom|uncommon|common|champion|challenger|contender|epic))|(?:rpc-(?:success|warning|danger|info)))\)$/
 
 export function accentText(accent: string): string
 export function accentText(accent: string | null | undefined): string | undefined

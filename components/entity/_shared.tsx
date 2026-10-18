@@ -137,15 +137,15 @@ export function relTime(iso: string | null | undefined, now = Date.now()): strin
 // ── Tier badge ──────────────────────────────────────────────────────────────
 
 const TIER_VAR_MAP: Record<string, { fg: string; bg: string; bd: string }> = {
-  ULTIMATE:    { fg: "var(--tier-ultimate)",   bg: "var(--tier-ultimate-bg)",   bd: "var(--tier-ultimate-border)" },
-  LEGENDARY:   { fg: "var(--tier-legendary)",  bg: "var(--tier-legendary-bg)",  bd: "var(--tier-legendary-border)" },
-  CHAMPION:    { fg: "var(--tier-champion)",   bg: "var(--tier-champion-bg)",   bd: "var(--tier-champion-border)" },
-  CHALLENGER:  { fg: "var(--tier-challenger)", bg: "var(--tier-challenger-bg)", bd: "var(--tier-challenger-border)" },
-  CONTENDER:   { fg: "var(--tier-contender)",  bg: "var(--tier-contender-bg)",  bd: "var(--tier-contender-border)" },
-  RARE:        { fg: "var(--tier-rare)",       bg: "var(--tier-rare-bg)",       bd: "var(--tier-rare-border)" },
-  UNCOMMON:    { fg: "var(--tier-uncommon)",   bg: "var(--tier-uncommon-bg)",   bd: "var(--tier-uncommon-border)" },
-  FANDOM:      { fg: "var(--tier-fandom)",     bg: "var(--tier-fandom-bg)",     bd: "var(--tier-fandom-border)" },
-  COMMON:      { fg: "var(--tier-common)",     bg: "var(--tier-common-bg)",     bd: "var(--tier-common-border)" },
+  ULTIMATE:    { fg: "var(--tier-ultimate-text)",   bg: "var(--tier-ultimate-bg)",   bd: "var(--tier-ultimate-border)" },
+  LEGENDARY:   { fg: "var(--tier-legendary-text)",  bg: "var(--tier-legendary-bg)",  bd: "var(--tier-legendary-border)" },
+  CHAMPION:    { fg: "var(--tier-champion-text)",   bg: "var(--tier-champion-bg)",   bd: "var(--tier-champion-border)" },
+  CHALLENGER:  { fg: "var(--tier-challenger-text)", bg: "var(--tier-challenger-bg)", bd: "var(--tier-challenger-border)" },
+  CONTENDER:   { fg: "var(--tier-contender-text)",  bg: "var(--tier-contender-bg)",  bd: "var(--tier-contender-border)" },
+  RARE:        { fg: "var(--tier-rare-text)",       bg: "var(--tier-rare-bg)",       bd: "var(--tier-rare-border)" },
+  UNCOMMON:    { fg: "var(--tier-uncommon-text)",   bg: "var(--tier-uncommon-bg)",   bd: "var(--tier-uncommon-border)" },
+  FANDOM:      { fg: "var(--tier-fandom-text)",     bg: "var(--tier-fandom-bg)",     bd: "var(--tier-fandom-border)" },
+  COMMON:      { fg: "var(--tier-common-text)",     bg: "var(--tier-common-bg)",     bd: "var(--tier-common-border)" },
 }
 
 const GRAY_FALLBACK = { fg: "var(--rpc-text-secondary)", bg: "var(--rpc-surface-raised)", bd: "var(--rpc-border)" }

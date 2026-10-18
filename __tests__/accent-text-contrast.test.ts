@@ -97,7 +97,7 @@ describe("every registry accent, as text, clears AA in both themes", () => {
 // canvas of their theme and on the colour's own 12 % tint (the chip).
 const TWINS = [
   "tier-legendary", "tier-ultimate", "tier-rare", "tier-fandom", "tier-uncommon", "tier-common",
-  "tier-champion", "tier-challenger", "tier-contender",
+  "tier-champion", "tier-challenger", "tier-contender", "tier-epic",
   "rpc-success", "rpc-warning", "rpc-danger", "rpc-info",
 ]
 describe("tier + semantic text twins clear AA in both themes", () => {
