@@ -113,8 +113,13 @@ export function gateHighToRecentVolume<T extends string>(confidence: T, salesCou
 // so MEDIUM now needs at least one sale in the true 30-day window. Apply AFTER
 // gateHighToRecentVolume so a HIGH with no recent sale lands on LOW, not MEDIUM.
 // Pass the TRUE 30-day count, never the widened sample size. Only MEDIUM moves.
+// ⛔ Pass `null` when the 30-day count is UNKNOWN — e.g. Panini, whose sales live
+// in `panini_sales` and never reach `sales`, so "no row in `sales`" is not "no
+// sale". Unknown leaves the label alone: a fabricated 0 demoted 44 Panini
+// editions in the first 1.8.2 run (2026-10-17 9:48 PM PT) and would have taken ~10k.
 export const MIN_SALES_30D_MEDIUM_RECENT = 1
-export function gateMediumToRecentSale<T extends string>(confidence: T, salesCount30d: number): T {
+export function gateMediumToRecentSale<T extends string>(confidence: T, salesCount30d: number | null): T {
+  if (salesCount30d === null) return confidence
   return confidence === "MEDIUM" && salesCount30d < MIN_SALES_30D_MEDIUM_RECENT ? ("LOW" as T) : confidence
 }
 

@@ -240,6 +240,25 @@ describe("fmv-recalc — Step 7 stale touch (?force_stale=true)", () => {
     })
   })
 
+  it("⛔ keeps a re-stamped Panini MEDIUM — its sales are not in `sales`, so zero there is UNKNOWN, not measured", async () => {
+    // 2026-10-17 9:48 PM PT: the first 1.8.2 run demoted 44 Panini editions to LOW
+    // because `recent_traded` reads `sales`, which holds no Panini sale at all.
+    const PANINI = "d1a0a7f5-609a-49f4-a1a7-4eaac55b020b"
+    const paniniMed = { ...staleRow("panini-med", 30), collection_id: PANINI, confidence: "MEDIUM", days_since_sale: 45 }
+    const flowMed = { ...staleRow("flow-med", 12), confidence: "MEDIUM", days_since_sale: 45 }
+    state.querySqlByMarker = { recent_traded: { data: [paniniMed, flowMed], error: null } }
+    const { inserted } = instrument(baseFixtures())
+
+    await POST(req("?force_stale=true"))
+    await runDeferred()
+
+    const touched = inserted.fmv_snapshots ?? []
+    expect(touched.find((r) => r.edition_id === "panini-med"), "the Panini row was not re-stamped — fixture no longer exercises the path").toBeDefined()
+    expect(touched.find((r) => r.edition_id === "panini-med")?.confidence).toBe("MEDIUM")
+    // CONTROL: a Flow collection's cold MEDIUM in the same run still lands on LOW.
+    expect(touched.find((r) => r.edition_id === "flow-med")?.confidence).toBe("LOW")
+  })
+
   // ⛔ 2026-09-26 — the Candy ask-ceiling shipped 09-25 for editions PRICED in a
   // run; a cold Candy edition is only ever re-stamped here, so its pre-ceiling
   // FMV rode forward dated now (Paul Skenes Green $82.22 vs a $30.38 confirmed

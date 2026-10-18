@@ -6,6 +6,11 @@ import { fetchCandyConfirmedFloors, mergeCeilingAsks } from "@/lib/fmv-candy-cei
 import { computeConfidence, escalateConfidence, gateHighToRecentVolume, gateMediumToRecentSale, MIN_SALES_30D_MEDIUM } from "@/lib/fmv-confidence"
 import { staleTouchDaysSinceSale } from "@/lib/fmv-stale-touch"
 import { COLLECTION_UUID_BY_SLUG } from "@/lib/collections"
+
+// Collections whose sales are NOT in `sales` (Panini: `panini_sales`). For them the
+// stale re-stamp's `rt.edition_id IS NULL` is true by construction, so its "zero
+// recent sales" is unknown, not measured — the 1.8.2 MEDIUM gate must not act on it.
+const SALES_OUTSIDE_SALES_TABLE = new Set<string>([COLLECTION_UUID_BY_SLUG["panini-blockchain"]])
 import { rpcWithRetry, queryWithRetry } from "@/lib/analytics/rpc-with-retry"
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 import { topShotAskObservedAt } from "@/lib/market/ask-freshness"
@@ -2402,7 +2407,11 @@ export async function POST(req: NextRequest) {
               // from counting as HIGH in the confidence-share metric.
               // 1.8.2: the same re-stamp also carried a cold MEDIUM forward; with 0 recent
               // sales it now lands on LOW (gateMediumToRecentSale, lib/fmv-confidence.ts).
-              confidence: gateMediumToRecentSale(gateHighToRecentVolume(String(r.confidence), 0), 0),
+              // Unknown (null) for a collection whose sales `recent_traded` cannot see.
+              confidence: gateMediumToRecentSale(
+                gateHighToRecentVolume(String(r.confidence), 0),
+                SALES_OUTSIDE_SALES_TABLE.has(String(r.collection_id)) ? null : 0,
+              ),
               ask_proxy_fmv: r.ask_proxy_fmv,
               // ⚠ 2026-09-25 — a re-stamp is a NEW ROW dated NOW, so its facts
               // must be true NOW. Every row here has ZERO sales in the last 30

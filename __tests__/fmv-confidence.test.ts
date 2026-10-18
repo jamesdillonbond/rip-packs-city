@@ -91,6 +91,10 @@ describe("gateMediumToRecentSale (1.8.2: MEDIUM needs a sale in the last 30 days
     // The 90d-widened MEDIUM: backtested 10-17 at 20.0 % vs 14.0 % median error (Top Shot).
     expect(gateMediumToRecentSale("MEDIUM", 0)).toBe("LOW")
   })
+  it("⛔ an UNKNOWN 30-day count (null) leaves the label alone — never read as zero", () => {
+    expect(gateMediumToRecentSale("MEDIUM", null)).toBe("MEDIUM")
+    expect(gateMediumToRecentSale("HIGH", null)).toBe("HIGH")
+  })
   it("keeps MEDIUM with at least one recent sale", () => {
     expect(gateMediumToRecentSale("MEDIUM", 1)).toBe("MEDIUM")
     expect(gateMediumToRecentSale("MEDIUM", 12)).toBe("MEDIUM")
