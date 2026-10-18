@@ -13,6 +13,7 @@ import {
   setAdminToken,
   clearAdminToken,
 } from "@/lib/admin-token";
+import { accentText } from "@/lib/accent-text";
 
 const condensedFont = "var(--font-display)";
 const monoFont = "var(--font-mono)";
@@ -716,7 +717,7 @@ function Dashboard({
               style={{
                 fontFamily: monoFont,
                 fontSize: 12,
-                color: "#d6a13a",
+                color: accentText("#d6a13a"),
                 textAlign: "center",
                 padding: 24,
               }}
@@ -893,7 +894,7 @@ function RowCard({
                 fontFamily: monoFont,
                 fontSize: 9,
                 letterSpacing: "0.14em",
-                color: PREWARM_COLOR[row.prewarm_status] ?? "#9CA3AF",
+                color: PREWARM_COLOR[row.prewarm_status] ?? accentText("#9CA3AF"),
                 border: `1px solid ${(PREWARM_COLOR[row.prewarm_status] ?? "#9CA3AF")}55`,
                 padding: "3px 7px",
                 borderRadius: 4,
@@ -955,7 +956,7 @@ function RowCard({
           style={{
             fontFamily: monoFont,
             fontSize: 11,
-            color: row.hold_reason ? "#FBBF24" : "#9CA3AF",
+            color: row.hold_reason ? accentText("#FBBF24") : accentText("#9CA3AF"),
             marginBottom: 10,
           }}
         >

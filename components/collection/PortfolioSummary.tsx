@@ -15,6 +15,7 @@ import {
 } from "@/lib/portfolio-summary-compute"
 import { usdSignFirst } from "@/lib/usd-format"
 import { fmtSignedFixed } from "@/lib/collection-moment-cells"
+import { accentText } from "@/lib/accent-text"
 
 // 2026-09-24: the P&L strip printed "$113124.59" (no separators) and called a
 // cost-basis subset "wallet-wide totals" while its Current FMV ($34k) sat
@@ -173,7 +174,7 @@ export default function PortfolioSummary(props: PortfolioSummaryProps) {
               <div className="grid grid-cols-3 gap-3 rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-3 font-mono">
                 <div className="flex flex-col">
                   <span className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">From Packs</span>
-                  <span className="text-lg font-black" style={{ color: "rgb(20,184,166)" }}>{acquisitionStats.pack_pull_count.toLocaleString()}</span>
+                  <span className="text-lg font-black" style={{ color: accentText("rgb(20,184,166)") }}>{acquisitionStats.pack_pull_count.toLocaleString()}</span>
                 </div>
                 <div className="flex flex-col border-l border-[color:var(--rpc-border)] pl-3">
                   <span className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">From Market</span>
@@ -181,7 +182,7 @@ export default function PortfolioSummary(props: PortfolioSummaryProps) {
                 </div>
                 <div className="flex flex-col border-l border-[color:var(--rpc-border)] pl-3">
                   <span className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Rewards</span>
-                  <span className="text-lg font-black" style={{ color: "rgb(245,158,11)" }}>{acquisitionStats.challenge_reward_count.toLocaleString()}</span>
+                  <span className="text-lg font-black" style={{ color: accentText("rgb(245,158,11)") }}>{acquisitionStats.challenge_reward_count.toLocaleString()}</span>
                 </div>
               </div>
             )}
@@ -232,13 +233,13 @@ export default function PortfolioSummary(props: PortfolioSummaryProps) {
         {/* Close to Completing callout */}
         {nearCompleteSets.length > 0 && hasSearched && (
           <div style={{ borderLeft: "3px solid #22c55e", background: "var(--rpc-surface)", borderRadius: 6, padding: "10px 14px", marginBottom: 12 }}>
-            <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "#22c55e", letterSpacing: "0.1em", marginBottom: 4 }}>◉ CLOSE TO COMPLETING</div>
-            <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "#a1a1aa" }}>
+            <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: accentText("#22c55e"), letterSpacing: "0.1em", marginBottom: 4 }}>◉ CLOSE TO COMPLETING</div>
+            <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: accentText("#a1a1aa") }}>
               {nearCompleteSets.map(function(s: any, i: number) {
                 return (
                   <span key={s.setId ?? s.setName}>
                     {i > 0 && " · "}
-                    <a href={"/nba-top-shot/sets"} style={{ color: "#a1a1aa", textDecoration: "none" }}>
+                    <a href={"/nba-top-shot/sets"} style={{ color: accentText("#a1a1aa"), textDecoration: "none" }}>
                       {s.setName} — {s.missingCount} away{nearCompleteCostLabel(s)}
                     </a>
                   </span>

@@ -18,6 +18,7 @@
 
 import { useState } from "react";
 import { useAdminResource } from "@/lib/admin/use-admin-resource";
+import { accentText } from "@/lib/accent-text";
 
 export interface JourneyEvent {
   at: string;
@@ -148,7 +149,7 @@ export default function VisitorJourneysClient() {
           />
           <button type="submit" style={btn(true)}>Authenticate</button>
         </form>
-        {error && <div style={{ marginTop: 16, color: "#ef4444", ...mono }}>{error}</div>}
+        {error && <div style={{ marginTop: 16, color: accentText("#ef4444"), ...mono }}>{error}</div>}
       </main>
     );
   }
@@ -175,7 +176,7 @@ export default function VisitorJourneysClient() {
 
       {loading && <div style={{ ...mono, color: dim }}>Loading…</div>}
       {error && (
-        <div role="alert" style={{ color: "#ef4444", ...mono, marginBottom: 12 }}>
+        <div role="alert" style={{ color: accentText("#ef4444"), ...mono, marginBottom: 12 }}>
           {error}
           {stale && data && (
             <span style={{ display: "block", marginTop: 4 }}>Showing the last successful read — the figures below are not current.</span>
@@ -238,7 +239,7 @@ export default function VisitorJourneysClient() {
                       style={{ all: "unset", cursor: "pointer", display: "flex", flexWrap: "wrap", gap: "4px 12px", width: "100%", ...mono }}
                     >
                       <span>{fmtPt(s.first_at)}</span>
-                      <span style={{ color: s.ai_source ? "#22c55e" : dim }}>{sourceLabel(s)}</span>
+                      <span style={{ color: s.ai_source ? accentText("#22c55e") : dim }}>{sourceLabel(s)}</span>
                       <span style={{ color: dim, overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%" }}>{s.landing_path ?? "—"}</span>
                       <span>{s.n_events} events</span>
                       {s.returning && <Tag>returning</Tag>}

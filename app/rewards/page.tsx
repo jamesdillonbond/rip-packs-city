@@ -16,6 +16,7 @@ import { useModalA11y } from "@/lib/hooks/useModalA11y";
 import { borderCosmetic, bannerCosmetic, hasCosmeticStyle } from "@/lib/cosmetics";
 import { tierProgress, tierNameForStatus } from "@/lib/rewards-tier";
 import { redeemSuccessMessage, redeemErrorReason } from "@/lib/rewards-redeem-message";
+import { accentText } from "@/lib/accent-text";
 
 const DISPLAY = "var(--font-display)";
 const MONO = "var(--font-mono)";
@@ -369,7 +370,7 @@ export default function RewardsPage() {
         >
           RPC <span style={{ color: RED_TEXT }}>Rewards</span>
         </h1>
-        <p style={{ color: "#9a9a9a", margin: "0 0 20px", maxWidth: 640 }}>
+        <p style={{ color: accentText("#9a9a9a"), margin: "0 0 20px", maxWidth: 640 }}>
           Earn <strong>Status</strong> for using the platform — it only goes up and sets your tier.
           Spend <strong>Credits</strong> in the shop. Most earns happen automatically as you go.
         </p>
@@ -400,7 +401,7 @@ export default function RewardsPage() {
         )}
 
         {loading ? (
-          <p style={{ fontFamily: MONO, color: "#9a9a9a" }}>Loading…</p>
+          <p style={{ fontFamily: MONO, color: accentText("#9a9a9a") }}>Loading…</p>
         ) : !authed ? (
           <div
             style={{
@@ -499,7 +500,7 @@ export default function RewardsPage() {
                     }}
                   />
                 </div>
-                <div style={{ marginTop: 6, fontFamily: MONO, fontSize: 12, color: "#9a9a9a" }}>
+                <div style={{ marginTop: 6, fontFamily: MONO, fontSize: 12, color: accentText("#9a9a9a") }}>
                   {prog.next
                     ? `${num(prog.toNext)} status to ${prog.next.name}`
                     : "Top tier reached"}
@@ -510,9 +511,9 @@ export default function RewardsPage() {
                 <div style={kickerStyle}>Credits · Spendable</div>
                 <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
                   <span style={{ fontFamily: MONO, color: RED_TEXT, fontSize: 34 }}>{num(spendable)}</span>
-                  <span style={{ color: "#9a9a9a" }}>Credits</span>
+                  <span style={{ color: accentText("#9a9a9a") }}>Credits</span>
                 </div>
-                <div style={{ marginTop: 12, fontFamily: MONO, fontSize: 12, color: "#9a9a9a" }}>
+                <div style={{ marginTop: 12, fontFamily: MONO, fontSize: 12, color: accentText("#9a9a9a") }}>
                   Lifetime earned {num(summary?.lifetime_earned)} · spent{" "}
                   {num(summary?.lifetime_spent)}
                 </div>
@@ -535,10 +536,10 @@ export default function RewardsPage() {
               <>
                 <SectionTitle>Share your collection</SectionTitle>
                 <div style={{ ...cardStyle, marginBottom: 28 }}>
-                  <p style={{ marginTop: 0, color: "#9a9a9a", fontSize: 14 }}>
+                  <p style={{ marginTop: 0, color: accentText("#9a9a9a"), fontSize: 14 }}>
                     Post your public profile on X or Discord — your portfolio, trophy case, and
                     badges unfurl as a card. Earn{" "}
-                    <strong style={{ color: "#e7e7e7" }}>+50 Status</strong> once a day for sharing.
+                    <strong style={{ color: accentText("#e7e7e7") }}>+50 Status</strong> once a day for sharing.
                   </p>
                   <ShareProfileButtons username={profileUsername} referrerId={userId} />
                   <div style={{ marginTop: 10 }}>
@@ -617,7 +618,7 @@ export default function RewardsPage() {
                                 fontSize: 10,
                                 textTransform: "uppercase",
                                 letterSpacing: "0.08em",
-                                color: "#7a7a7a",
+                                color: accentText("#7a7a7a"),
                               }}
                             >
                               {c.slot}
@@ -629,7 +630,7 @@ export default function RewardsPage() {
                             whole dead end: it confirmed the state and offered no
                             way out of it. */}
                         {unrenderable && !equippedNow && (
-                          <div style={{ fontFamily: MONO, fontSize: 11, color: "#d6a13a" }}>
+                          <div style={{ fontFamily: MONO, fontSize: 11, color: accentText("#d6a13a") }}>
                             This one can&rsquo;t be shown yet — it needs an app update.
                           </div>
                         )}
@@ -694,7 +695,7 @@ export default function RewardsPage() {
                       +{num(r.points)}
                     </span>
                   </div>
-                  <div style={{ marginTop: 6, fontFamily: MONO, fontSize: 11, color: "#7a7a7a" }}>
+                  <div style={{ marginTop: 6, fontFamily: MONO, fontSize: 11, color: accentText("#7a7a7a") }}>
                     {r.per_user_limit === 1
                       ? "One-time"
                       : r.daily_cap
@@ -769,7 +770,7 @@ export default function RewardsPage() {
                           fontSize: 10,
                           textTransform: "uppercase",
                           letterSpacing: "0.08em",
-                          color: "#9a9a9a",
+                          color: accentText("#9a9a9a"),
                           border: "1px solid #333",
                           borderRadius: 99,
                           padding: "2px 8px",
@@ -778,7 +779,7 @@ export default function RewardsPage() {
                         {TYPE_LABEL[item.type] ?? item.type}
                       </span>
                       {item.requires_verified_wallet && (
-                        <span title="Requires a verified wallet" style={{ color: "#9a9a9a" }}>
+                        <span title="Requires a verified wallet" style={{ color: accentText("#9a9a9a") }}>
                           🔒
                         </span>
                       )}
@@ -787,7 +788,7 @@ export default function RewardsPage() {
                       {item.name}
                     </div>
                     {item.description && (
-                      <div style={{ fontSize: 13, color: "#9a9a9a", marginTop: 4, flex: 1 }}>
+                      <div style={{ fontSize: 13, color: accentText("#9a9a9a"), marginTop: 4, flex: 1 }}>
                         {item.description}
                       </div>
                     )}
@@ -826,7 +827,7 @@ export default function RewardsPage() {
                       </button>
                     </div>
                     {unrenderable && (
-                      <div style={{ marginTop: 6, fontFamily: MONO, fontSize: 11, color: "#d6a13a" }}>
+                      <div style={{ marginTop: 6, fontFamily: MONO, fontSize: 11, color: accentText("#d6a13a") }}>
                         Not ready to wear yet — check back after the next update.
                       </div>
                     )}
@@ -836,7 +837,7 @@ export default function RewardsPage() {
                           marginTop: 6,
                           fontFamily: MONO,
                           fontSize: 11,
-                          color: resolvedTsUsername ? "#5cc46a" : "#d6a13a",
+                          color: resolvedTsUsername ? accentText("#5cc46a") : accentText("#d6a13a"),
                         }}
                       >
                         {resolvedTsUsername
@@ -844,7 +845,7 @@ export default function RewardsPage() {
                           : "Link a Top Shot wallet first to receive the gift"}
                       </div>
                     )}
-                    <div style={{ marginTop: 6, fontFamily: MONO, fontSize: 11, color: "#7a7a7a" }}>
+                    <div style={{ marginTop: 6, fontFamily: MONO, fontSize: 11, color: accentText("#7a7a7a") }}>
                       {soldOut
                         ? "Out of stock"
                         : tierLocked
@@ -863,12 +864,12 @@ export default function RewardsPage() {
             {/* HISTORY */}
             <SectionTitle>Your redemptions</SectionTitle>
             {redemptionsFailed ? (
-              <p role="status" style={{ fontFamily: MONO, color: "#7a7a7a" }}>
+              <p role="status" style={{ fontFamily: MONO, color: accentText("#7a7a7a") }}>
                 Couldn&apos;t load your redemptions. This is a loading problem, not an
                 empty history — nothing has been lost.
               </p>
             ) : redemptions.length === 0 ? (
-              <p style={{ fontFamily: MONO, color: "#7a7a7a" }}>Nothing redeemed yet.</p>
+              <p style={{ fontFamily: MONO, color: accentText("#7a7a7a") }}>Nothing redeemed yet.</p>
             ) : (
               <div style={{ ...cardStyle, padding: 0, overflow: "hidden" }}>
                 {redemptions.map((r, i) => {
@@ -887,7 +888,7 @@ export default function RewardsPage() {
                     >
                       <div>
                         <div style={{ fontSize: 14 }}>{item?.name ?? `Item #${r.shop_item_id}`}</div>
-                        <div style={{ fontFamily: MONO, fontSize: 11, color: "#7a7a7a" }}>
+                        <div style={{ fontFamily: MONO, fontSize: 11, color: accentText("#7a7a7a") }}>
                           {new Date(r.requested_at).toLocaleDateString()}
                         </div>
                         {item?.type === "moment" && r.status === "pending" && (
@@ -896,7 +897,7 @@ export default function RewardsPage() {
                               const gift = r.fulfillment?.gift_to ?? resolvedTsUsername ?? null;
                               return (
                                 <>
-                                  <span style={{ color: gift ? "#9a9a9a" : "#d6a13a" }}>
+                                  <span style={{ color: gift ? accentText("#9a9a9a") : accentText("#d6a13a") }}>
                                     {gift ? `Gifting to @${gift}` : "No gift target set"}
                                   </span>{" "}
                                   <button
@@ -915,7 +916,7 @@ export default function RewardsPage() {
                           <div style={{ marginTop: 4, fontFamily: MONO, fontSize: 11 }}>
                             {r.fulfillment?.ship_to?.name ? (
                               <>
-                                <span style={{ color: "#9a9a9a" }}>
+                                <span style={{ color: accentText("#9a9a9a") }}>
                                   Shipping to {r.fulfillment.ship_to.name}
                                 </span>{" "}
                                 <button
@@ -930,7 +931,7 @@ export default function RewardsPage() {
                               <button
                                 type="button"
                                 onClick={() => setShipModal({ redemptionId: r.id, itemName: item?.name ?? "merch" })}
-                                style={{ ...linkBtn, color: "#d6a13a" }}
+                                style={{ ...linkBtn, color: accentText("#d6a13a") }}
                               >
                                 Add shipping address
                               </button>
@@ -939,7 +940,7 @@ export default function RewardsPage() {
                         )}
                       </div>
                       <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-                        <span style={{ fontFamily: MONO, color: "#9a9a9a" }}>
+                        <span style={{ fontFamily: MONO, color: accentText("#9a9a9a") }}>
                           −{num(r.cost_credits)}
                         </span>
                         <span
@@ -948,7 +949,7 @@ export default function RewardsPage() {
                             fontSize: 11,
                             textTransform: "uppercase",
                             letterSpacing: "0.06em",
-                            color: r.status === "fulfilled" ? "#5cc46a" : "#d6a13a",
+                            color: r.status === "fulfilled" ? accentText("#5cc46a") : accentText("#d6a13a"),
                           }}
                         >
                           {r.status}
@@ -997,7 +998,7 @@ const kickerStyle: React.CSSProperties = {
   fontSize: 11,
   textTransform: "uppercase",
   letterSpacing: "0.08em",
-  color: "#9a9a9a",
+  color: accentText("#9a9a9a"),
   marginBottom: 8,
 };
 
@@ -1033,9 +1034,9 @@ function InviteBlock({
 
   return (
     <div style={{ ...cardStyle, marginBottom: 28 }}>
-      <p style={{ marginTop: 0, color: "#9a9a9a", fontSize: 14 }}>
+      <p style={{ marginTop: 0, color: accentText("#9a9a9a"), fontSize: 14 }}>
         Share your link. When a collector links a verified wallet through it, you earn{" "}
-        <strong style={{ color: "#e7e7e7" }}>{num(REFERRAL_CREDITS)} credits</strong>.
+        <strong style={{ color: accentText("#e7e7e7") }}>{num(REFERRAL_CREDITS)} credits</strong>.
       </p>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
         <input
@@ -1074,7 +1075,7 @@ function InviteBlock({
           {copied ? "Copied!" : "Copy link"}
         </button>
       </div>
-      <div style={{ marginTop: 10, fontFamily: MONO, fontSize: 12, color: "#9a9a9a" }}>
+      <div style={{ marginTop: 10, fontFamily: MONO, fontSize: 12, color: accentText("#9a9a9a") }}>
         {referralCount == null
           ? "Referral count unavailable — reload to try again."
           : referralCount > 0
@@ -1089,7 +1090,7 @@ function InviteBlock({
           credit the referrer only when v_first is true (the referred account's
           FIRST verified wallet), never on sign-up, never for a later wallet, never
           for a self-referral. Display-only; it widens nothing. */}
-      <div style={{ marginTop: 6, fontFamily: MONO, fontSize: 11, color: "#9a9a9a", lineHeight: 1.5 }}>
+      <div style={{ marginTop: 6, fontFamily: MONO, fontSize: 11, color: accentText("#9a9a9a"), lineHeight: 1.5 }}>
         How it counts: credit lands once per referred collector, at the moment they verify their
         first wallet — not when they sign up, and not for any wallet they verify after that.
       </div>
@@ -1197,37 +1198,37 @@ function ShippingModal({
         <h3 style={{ fontFamily: DISPLAY, textTransform: "uppercase", margin: "0 0 4px", fontSize: 22 }}>
           Shipping <span style={{ color: RED_TEXT }}>address</span>
         </h3>
-        <p style={{ color: "#9a9a9a", fontSize: 13, marginTop: 0 }}>
-          Where should we send your <strong style={{ color: "#e7e7e7" }}>{itemName}</strong>? Only RPC
+        <p style={{ color: accentText("#9a9a9a"), fontSize: 13, marginTop: 0 }}>
+          Where should we send your <strong style={{ color: accentText("#e7e7e7") }}>{itemName}</strong>? Only RPC
           sees this — it's never shown publicly.
         </p>
 
-        <label style={{ display: "block", fontFamily: MONO, fontSize: 11, color: "#9a9a9a", marginTop: 10 }}>
+        <label style={{ display: "block", fontFamily: MONO, fontSize: 11, color: accentText("#9a9a9a"), marginTop: 10 }}>
           Full name
           <input style={field} value={name} onChange={(e) => setName(e.target.value)} />
         </label>
-        <label style={{ display: "block", fontFamily: MONO, fontSize: 11, color: "#9a9a9a", marginTop: 10 }}>
+        <label style={{ display: "block", fontFamily: MONO, fontSize: 11, color: accentText("#9a9a9a"), marginTop: 10 }}>
           Street address
           <input style={field} value={line1} onChange={(e) => setLine1(e.target.value)} />
         </label>
-        <label style={{ display: "block", fontFamily: MONO, fontSize: 11, color: "#9a9a9a", marginTop: 10 }}>
+        <label style={{ display: "block", fontFamily: MONO, fontSize: 11, color: accentText("#9a9a9a"), marginTop: 10 }}>
           Apt / unit (optional)
           <input style={field} value={line2} onChange={(e) => setLine2(e.target.value)} />
         </label>
         <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 10, marginTop: 10 }}>
-          <label style={{ display: "block", fontFamily: MONO, fontSize: 11, color: "#9a9a9a" }}>
+          <label style={{ display: "block", fontFamily: MONO, fontSize: 11, color: accentText("#9a9a9a") }}>
             City
             <input style={field} value={city} onChange={(e) => setCity(e.target.value)} />
           </label>
-          <label style={{ display: "block", fontFamily: MONO, fontSize: 11, color: "#9a9a9a" }}>
+          <label style={{ display: "block", fontFamily: MONO, fontSize: 11, color: accentText("#9a9a9a") }}>
             State / region
             <input style={field} value={region} onChange={(e) => setRegion(e.target.value)} />
           </label>
-          <label style={{ display: "block", fontFamily: MONO, fontSize: 11, color: "#9a9a9a" }}>
+          <label style={{ display: "block", fontFamily: MONO, fontSize: 11, color: accentText("#9a9a9a") }}>
             Postal code
             <input style={field} value={postal} onChange={(e) => setPostal(e.target.value)} />
           </label>
-          <label style={{ display: "block", fontFamily: MONO, fontSize: 11, color: "#9a9a9a" }}>
+          <label style={{ display: "block", fontFamily: MONO, fontSize: 11, color: accentText("#9a9a9a") }}>
             Country
             <input style={field} value={country} onChange={(e) => setCountry(e.target.value)} />
           </label>

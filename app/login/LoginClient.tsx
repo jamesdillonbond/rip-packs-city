@@ -110,7 +110,7 @@ export default function LoginClient() {
             textTransform: "uppercase", lineHeight: 1,
             textShadow: "var(--neon-text-glow)",
           }}>
-            Rip Packs <span style={{ color: "var(--por-red)" }}>City</span>
+            Rip Packs <span style={{ color: "var(--rpc-red-text)" }}>City</span>
           </div>
           <div style={{
             fontSize: 10, fontFamily: "var(--font-mono)",
@@ -358,7 +358,7 @@ export default function LoginClient() {
         }}
       >
         Explore the public Squeeze Board &amp; insights —{" "}
-        <span style={{ color: "var(--por-red)", whiteSpace: "nowrap" }}>no account needed →</span>
+        <span style={{ color: "var(--rpc-red-text)", whiteSpace: "nowrap" }}>no account needed →</span>
       </Link>
 
       <div style={{

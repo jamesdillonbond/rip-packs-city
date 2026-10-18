@@ -9,6 +9,7 @@
 // as /admin/pipeline-health.
 
 import { useCallback, useEffect, useState } from "react";
+import { accentText } from "@/lib/accent-text";
 
 const TOKEN_KEY = "rpc_admin_token";
 
@@ -140,7 +141,7 @@ export default function ListingRetryQueueClient() {
             Authenticate
           </button>
         </form>
-        {error && <div style={{ marginTop: 16, color: "#ef4444", fontFamily: "var(--font-mono)", fontSize: 12 }}>{error}</div>}
+        {error && <div style={{ marginTop: 16, color: accentText("#ef4444"), fontFamily: "var(--font-mono)", fontSize: 12 }}>{error}</div>}
       </main>
     );
   }
@@ -174,7 +175,7 @@ export default function ListingRetryQueueClient() {
         </div>
       </div>
 
-      {error && <div style={{ marginBottom: 16, color: "#ef4444", fontFamily: "var(--font-mono)", fontSize: 12 }}>{error}</div>}
+      {error && <div style={{ marginBottom: 16, color: accentText("#ef4444"), fontFamily: "var(--font-mono)", fontSize: 12 }}>{error}</div>}
 
       {!data && !error && (
         <div style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--rpc-text-muted)" }}>Loading…</div>
@@ -222,7 +223,7 @@ export default function ListingRetryQueueClient() {
                   .map(([bucket, n]) => (
                     <li key={bucket} style={listRow}>
                       <span>retry_count = {bucket}</span>
-                      <span style={{ ...mono, color: bucket === "10+" ? "#EF4444" : "var(--rpc-text-secondary)" }}>{n.toLocaleString()}</span>
+                      <span style={{ ...mono, color: bucket === "10+" ? accentText("#EF4444") : "var(--rpc-text-secondary)" }}>{n.toLocaleString()}</span>
                     </li>
                   ))}
               </ul>
@@ -315,7 +316,7 @@ function Stat({
           {label}
         </div>
         {hint && (
-          <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "#EF4444", marginTop: 2 }}>{hint}</div>
+          <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: accentText("#EF4444"), marginTop: 2 }}>{hint}</div>
         )}
       </div>
       <div
@@ -467,7 +468,7 @@ function RowsTable({ token, collectionsWithRows }: { token: string; collectionsW
         </div>
       </div>
 
-      {error && <div style={{ color: "#ef4444", fontFamily: "var(--font-mono)", fontSize: 12, marginBottom: 8 }}>{error}</div>}
+      {error && <div style={{ color: accentText("#ef4444"), fontFamily: "var(--font-mono)", fontSize: 12, marginBottom: 8 }}>{error}</div>}
 
       <div style={{ overflowX: "auto", background: "var(--rpc-surface)", border: "1px solid var(--rpc-border)", borderRadius: 8 }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "var(--font-mono)", fontSize: 11 }}>
@@ -514,7 +515,7 @@ function RowsTable({ token, collectionsWithRows }: { token: string; collectionsW
                   <Td>{r.flow_id}</Td>
                   <Td>{r.listing_resource_id}</Td>
                   <Td><span style={{ color: "var(--rpc-text-muted)" }}>{r.failure_reason}</span></Td>
-                  <Td><span style={{ color: r.retry_count >= 10 ? "#EF4444" : r.retry_count >= 5 ? "var(--rpc-warning-text)" : "var(--rpc-text-secondary)" }}>{r.retry_count}</span></Td>
+                  <Td><span style={{ color: r.retry_count >= 10 ? accentText("#EF4444") : r.retry_count >= 5 ? "var(--rpc-warning-text)" : "var(--rpc-text-secondary)" }}>{r.retry_count}</span></Td>
                   <Td>{r.age_hours.toFixed(1)}</Td>
                   <Td>{r.last_retry_at ? ageLabel(r.last_retry_at) : "never"}</Td>
                   <Td>

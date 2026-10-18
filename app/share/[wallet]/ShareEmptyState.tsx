@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { accentText } from "@/lib/accent-text";
 
 // Friendly state for /share/<wallet> when the snapshot is empty (wallet not
 // indexed yet / holds nothing / bad input).
@@ -216,7 +217,7 @@ export default function ShareEmptyState({ wallet }: { wallet: string }) {
         <div
           style={{
             fontSize: 13,
-            color: "#777",
+            color: accentText("#777"),
             fontFamily: "monospace",
             marginBottom: 24,
             wordBreak: "break-all",

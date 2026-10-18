@@ -77,7 +77,7 @@ export default async function HotFloorsPage(props: { params: Promise<{ collectio
       </header>
 
       {errored && (
-        <div style={{ color: "#fecaca", fontFamily: "var(--font-mono)", fontSize: 13, padding: 16 }}>
+        <div style={{ color: accentText("#fecaca"), fontFamily: "var(--font-mono)", fontSize: 13, padding: 16 }}>
           Couldn&rsquo;t load hot floors right now. Try again shortly.
         </div>
       )}

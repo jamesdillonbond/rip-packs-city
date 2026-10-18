@@ -21,6 +21,7 @@
 import { fetchJson } from "@/lib/analytics/fetch-json"
 import { useEffect, useState } from "react"
 import { useSearchParams } from "next/navigation"
+import { accentText } from "@/lib/accent-text"
 
 interface Subscriber {
   id: string
@@ -244,7 +245,7 @@ export default function NotificationsClient() {
         {error && <div style={{ background: "#7f1d1d", color: "#fecaca", padding: "12px 16px", borderRadius: 8, marginBottom: 16 }}>{error}</div>}
 
         {loadFailed && (
-          <div style={{ color: "#fecaca", fontSize: 14, marginBottom: 12 }}>
+          <div style={{ color: accentText("#fecaca"), fontSize: 14, marginBottom: 12 }}>
             Your saved settings couldn&apos;t be loaded, so saving is turned off — saving now would overwrite them with the defaults shown above. Reload the page to try again.
           </div>
         )}

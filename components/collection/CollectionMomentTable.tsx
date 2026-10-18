@@ -787,11 +787,11 @@ export default function CollectionMomentTable(props: {
                       </td>
                       <td className="rpc-table-cell--mono text-sm hidden lg:table-cell">
                         {row.lowAsk != null ? (
-                          <span style={{ color: row.fmv && row.lowAsk < row.fmv ? "#22c55e" : "#9ca3af" }}>
+                          <span style={{ color: row.fmv && row.lowAsk < row.fmv ? accentText("#22c55e") : accentText("#9ca3af") }}>
                             ${row.lowAsk.toFixed(2)}
                           </span>
                         ) : row.editionLowAsk != null ? (
-                          <span style={{ color: row.fmv && row.editionLowAsk < row.fmv ? "#22c55e" : "#9ca3af" }}>
+                          <span style={{ color: row.fmv && row.editionLowAsk < row.fmv ? accentText("#22c55e") : accentText("#9ca3af") }}>
                             ${row.editionLowAsk.toFixed(2)}
                             <span className="ml-1 text-[10px] text-[color:var(--rpc-text-muted)]">floor</span>
                           </span>
@@ -848,7 +848,7 @@ export default function CollectionMomentTable(props: {
                             title="Set FMV alert"
                             aria-label="Set FMV alert"
                             aria-expanded={alertOpenMomentId === row.momentId}
-                            style={{ color: alertOpenMomentId === row.momentId ? accentText(accent) : "#a1a1aa" }}
+                            style={{ color: alertOpenMomentId === row.momentId ? accentText(accent) : accentText("#a1a1aa") }}
                           >
                             <span aria-hidden="true">{"\uD83D\uDD14"}</span>
                           </button>
@@ -856,18 +856,18 @@ export default function CollectionMomentTable(props: {
                             <div role="presentation" onClick={function(e) { e.stopPropagation() }} style={{ position: "absolute", top: "100%", right: 0, zIndex: 50, background: "var(--rpc-surface)", border: "1px solid #3f3f46", borderRadius: 8, padding: 12, width: 240, marginTop: 4 }}>
                               <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "var(--rpc-text-muted)", letterSpacing: "0.1em", marginBottom: 8 }}>SET FMV ALERT</div>
                               <div style={{ marginBottom: 8 }}>
-                                <label htmlFor="rpc-alert-target-price" style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "#a1a1aa", display: "block", marginBottom: 4 }}>Target Price ($)</label>
+                                <label htmlFor="rpc-alert-target-price" style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: accentText("#a1a1aa"), display: "block", marginBottom: 4 }}>Target Price ($)</label>
                                 <input id="rpc-alert-target-price" type="number" min="0" step="0.01" value={alertTargetPrice} onChange={function(e) { setAlertTargetPrice(e.target.value) }} style={{ width: "100%", background: "var(--rpc-surface)", border: "1px solid #3f3f46", borderRadius: 6, padding: "6px 8px", color: "var(--rpc-text-primary)", fontFamily: "var(--font-mono)", fontSize: 12, outline: "none" }} />
                               </div>
                               <div style={{ marginBottom: 10 }}>
-                                <span id="rpc-alert-notify-label" style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "#a1a1aa", display: "block", marginBottom: 4 }}>Notify via</span>
+                                <span id="rpc-alert-notify-label" style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: accentText("#a1a1aa"), display: "block", marginBottom: 4 }}>Notify via</span>
                                 <div role="radiogroup" aria-labelledby="rpc-alert-notify-label" style={{ display: "flex", gap: 8 }}>
                                   {(["email", "telegram"] as const).map(function(t) {
                                     return <label key={t} style={{ display: "flex", alignItems: "center", gap: 4, fontFamily: "var(--font-mono)", fontSize: 11, color: alertNotifType === t ? "var(--rpc-text-primary)" : "var(--rpc-text-muted)", cursor: "pointer" }}><input type="radio" name="alert-notif" checked={alertNotifType === t} onChange={function() { setAlertNotifType(t) }} style={{ accentColor: accent }} />{t === "email" ? "Email" : "Telegram"}</label>
                                   })}
                                 </div>
                               </div>
-                              {alertStatus === "success" && <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "#4ade80", marginBottom: 6 }}>Alert set!</div>}
+                              {alertStatus === "success" && <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: accentText("#4ade80"), marginBottom: 6 }}>Alert set!</div>}
                               {alertStatus === "error" && (
                                 <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-danger-text)", marginBottom: 6 }}>
                                   {alertError === "signed_out" ? (

@@ -12,6 +12,7 @@ import {
   setAdminToken,
   clearAdminToken,
 } from "@/lib/admin-token";
+import { accentText } from "@/lib/accent-text";
 
 const condensedFont = "var(--font-display)";
 const monoFont = "var(--font-mono)";
@@ -700,7 +701,7 @@ function Dashboard({
           </section>
         )}
         {backlogMsg && (
-          <div role="status" data-testid="shipped-backlog-result" style={{ fontSize: 13, color: backlogState === "failed" ? "#fca5a5" : "rgba(255,255,255,0.75)" }}>
+          <div role="status" data-testid="shipped-backlog-result" style={{ fontSize: 13, color: backlogState === "failed" ? accentText("#fca5a5") : "rgba(255,255,255,0.75)" }}>
             {backlogMsg}
           </div>
         )}
@@ -776,7 +777,7 @@ function Dashboard({
               style={{
                 fontFamily: monoFont,
                 fontSize: 12,
-                color: "#d6a13a",
+                color: accentText("#d6a13a"),
                 textAlign: "center",
                 padding: 24,
               }}

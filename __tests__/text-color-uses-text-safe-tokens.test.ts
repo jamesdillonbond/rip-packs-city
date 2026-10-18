@@ -23,7 +23,8 @@ import { stripComments } from "../scripts/lib/strip-comments.mjs"
 // "var(--rpc-red)" and is later used as a colour is invisible here; the axe
 // audit is the instrument for that, this guard only keeps the swapped shape at 0.
 
-const BANNED = /(?:^|[^-\w])color:\s*['"`]?var\(--(rpc-red|rpc-text-ghost)\)/g
+// `--por-red` is the same #E03A2F under a second name (found on the login page, 10-18).
+const BANNED = /(?:^|[^-\w])color:\s*['"`]?var\(--(rpc-red|rpc-text-ghost|por-red)\)/g
 
 // ⚠ The same tokens as a TERNARY BRANCH (`color: active ? "var(--rpc-red)" : …`)
 // — 28 sites the first swap's regex could not see (2026-10-18). Same-line form.
@@ -34,7 +35,7 @@ const DISABLED_STATE: Record<string, number> = {
   "components/SupportChat.tsx": 1,
 }
 
-const BANNED_BRANCH = /(?:^|[^-\w])color:[^,;}\n]*\?[^,;}\n]*(["'])var\(--(rpc-red|rpc-text-ghost)\)\1/g
+const BANNED_BRANCH = /(?:^|[^-\w])color:[^,;}\n]*\?[^,;}\n]*(["'])var\(--(rpc-red|rpc-text-ghost|por-red)\)\1/g
 
 function offenders(src: string): string[] {
   const code = stripComments(src)

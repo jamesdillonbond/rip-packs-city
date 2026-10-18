@@ -12,6 +12,7 @@
 
 import { useState } from "react";
 import { useAdminResource } from "@/lib/admin/use-admin-resource";
+import { accentText } from "@/lib/accent-text";
 
 
 interface FeatureCount {
@@ -115,7 +116,7 @@ export default function BetaActivityClient() {
             Authenticate
           </button>
         </form>
-        {error && <div style={{ marginTop: 16, color: "#ef4444", fontFamily: "var(--font-mono)", fontSize: 12 }}>{error}</div>}
+        {error && <div style={{ marginTop: 16, color: accentText("#ef4444"), fontFamily: "var(--font-mono)", fontSize: 12 }}>{error}</div>}
       </main>
     );
   }
@@ -196,7 +197,7 @@ export default function BetaActivityClient() {
           not say so. On a health dashboard that is the instrument-that-lies shape: the
           numbers look like a reading. */}
       {error && (
-        <div style={{ color: "#ef4444", fontFamily: "var(--font-mono)", fontSize: 12 }}>
+        <div style={{ color: accentText("#ef4444"), fontFamily: "var(--font-mono)", fontSize: 12 }}>
           {error}
           {stale && data && (
             <span style={{ display: "block", marginTop: 4, opacity: 0.85 }}>

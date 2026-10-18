@@ -634,7 +634,7 @@ function MarketInner() {
                 className="rpc-chip"
                 style={{
                   // brand-exception: white text on the selected tier-colour fill
-                  color: on ? "#fff" : color,
+                  color: on ? "#fff" : accentText(color),
                   borderColor: on ? color : "var(--rpc-border-hover)",
                   background: on ? color + "22" : "transparent",
                   fontWeight: on ? 700 : 500,
@@ -807,7 +807,7 @@ function MarketInner() {
         </div>
       ) : error ? (
         <div className="rpc-card" style={{ padding: 20, borderLeft: "3px solid #EF4444" }}>
-          <span className="rpc-mono" style={{ color: "#FCA5A5" }}>Couldn&apos;t load market — {error}</span>
+          <span className="rpc-mono" style={{ color: accentText("#FCA5A5") }}>Couldn&apos;t load market — {error}</span>
         </div>
       ) : filteredListings.length === 0 && baseListings.length > 0 && ownedFilter !== "all" ? (
         // ⚠ The Owned filter runs over THIS PAGE's listings only (known-issues
@@ -1065,11 +1065,11 @@ function ListingCard({ listing, accent, momentUrl, editionStats, showOwned, coll
           {momentSubjectName(listing.playerName, listing.teamName, listing.setName)}
         </div>
         <div className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", letterSpacing: "0.04em" }}>
-          <span style={{ color: dot }}>{tier || "—"}</span>
+          <span style={{ color: accentText(dot) }}>{tier || "—"}</span>
           {listing.seriesName ? <> · {marketSeriesLabel(listing.seriesName, collectionUrlSlug)}</> : null}
           {listing.setName ? <> · {listing.setName}</> : null}
           {listing.parallel && listing.parallel !== "Base" ? (
-            <> · <span style={{ color: "#c084fc", fontWeight: 600 }}>{listing.parallel}</span></>
+            <> · <span style={{ color: accentText("#c084fc"), fontWeight: 600 }}>{listing.parallel}</span></>
           ) : null}
         </div>
         {listing.badgeSlugs.length > 0 && (
@@ -1241,7 +1241,7 @@ function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColu
                   </span>
                   </div>
                 </td>
-                <td style={{ ...td, color: dot }}>{tier || "—"}</td>
+                <td style={{ ...td, color: accentText(dot) }}>{tier || "—"}</td>
                 <td style={{ ...td, color: "var(--rpc-text-muted)" }}>{l.seriesName ? marketSeriesLabel(l.seriesName, collectionUrlSlug) : "—"}</td>
                 <td style={{ ...td, color: "var(--rpc-text-muted)" }}>
                   {l.setName && !entityLinks ? (

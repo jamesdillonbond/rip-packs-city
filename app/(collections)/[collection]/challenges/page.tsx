@@ -75,7 +75,7 @@ export default async function ChallengesPage(props: { params: Promise<{ collecti
       </header>
 
       {errored && (
-        <div style={{ color: "#fecaca", fontFamily: "var(--font-mono)", fontSize: 13, padding: 16 }}>
+        <div style={{ color: accentText("#fecaca"), fontFamily: "var(--font-mono)", fontSize: 13, padding: 16 }}>
           Couldn&rsquo;t load challenges right now. Try again shortly.
         </div>
       )}

@@ -309,7 +309,7 @@ export function DualPriceCell({
             fontFamily: 'var(--font-mono)',
             letterSpacing: '0.12em',
             fontWeight: 700,
-            color: '#10B981',
+            color: accentText('#10B981'),
             border: '1px solid rgba(16,185,129,0.5)',
             padding: '1px 4px',
             borderRadius: 3,

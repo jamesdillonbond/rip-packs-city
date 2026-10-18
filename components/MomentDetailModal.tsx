@@ -416,7 +416,7 @@ export default function MomentDetailModal({ moment, marketplaceSource, dapperUrl
             return (
               <div>
                 <div style={{ fontSize: 10, color: "var(--rpc-text-secondary)", letterSpacing: "0.1em" }}>FMV</div>
-                <div style={{ fontSize: 22, fontWeight: 700, color: "#22c55e", fontFamily: "var(--font-mono)" }}>
+                <div style={{ fontSize: 22, fontWeight: 700, color: accentText("#22c55e"), fontFamily: "var(--font-mono)" }}>
                   ${moment.fmv.toFixed(2)}
                 </div>
                 {askBasis && (
@@ -518,7 +518,7 @@ export default function MomentDetailModal({ moment, marketplaceSource, dapperUrl
                   fontFamily: "var(--font-mono)",
                   fontSize: 9,
                   letterSpacing: "0.12em",
-                  color: "#ef4444",
+                  color: accentText("#ef4444"),
                   marginBottom: 4,
                   textTransform: "uppercase",
                 }}

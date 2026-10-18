@@ -8,6 +8,7 @@ import { useWarmCache } from '@/lib/warmup/WarmupContext'
 import { topshotPackUrl, dapperMarketPackUrl } from '@/lib/pack-urls'
 import { packEvBasis, derivePackAvailability } from '@/lib/pack-availability'
 import { collectionHasPage } from '@/lib/collections'
+import { accentText } from "@/lib/accent-text"
 
 // Shared client component for the static pack pages (nba-top-shot,
 // nfl-all-day). Renders /api/packs (pack_table_rows view) into the
@@ -468,7 +469,7 @@ export default function PackPageClient({ collection, tiers, title, accent = 'var
                 sort: rows with the green LIVE pip are anchored against the
                 current Dapper Studio low ask, not the cron snapshot. */}
             {liveOverlayHits > 0 && (
-              <span style={{ marginLeft: 8, color: '#10B981', fontFamily: 'var(--font-mono)', letterSpacing: '0.1em', fontSize: 10 }}>
+              <span style={{ marginLeft: 8, color: accentText('#10B981'), fontFamily: 'var(--font-mono)', letterSpacing: '0.1em', fontSize: 10 }}>
                 · {liveOverlayHits} LIVE
               </span>
             )}

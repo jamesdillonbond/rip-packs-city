@@ -4,6 +4,7 @@
 // verbatim extraction — renders the deal/hot/badge/special/avg-discount summary
 // row. Pure display; all values are computed in the page and passed in.
 import { fmt } from "@/lib/sniper/helpers";
+import { accentText } from "@/lib/accent-text";
 
 export default function SniperStatsBar(props: {
   stats: { total: number; hot: number; badge: number; special: number; avgDiscount: number };
@@ -41,7 +42,7 @@ export default function SniperStatsBar(props: {
           <span><span style={{ color: "var(--tier-legendary-text)", fontWeight: 600 }}>{stats.badge}</span> badged</span>
         )}
         {!isAllDay && stats.special > 0 && (
-          <span><span style={{ color: "#c084fc", fontWeight: 600 }}>{stats.special}</span> special serials</span>
+          <span><span style={{ color: accentText("#c084fc"), fontWeight: 600 }}>{stats.special}</span> special serials</span>
         )}
         <span>avg <span style={{ color: "var(--rpc-text-primary)", fontWeight: 600 }}>{fmt(stats.avgDiscount, 1)}%</span> off</span>
         {!isAllDay && ownedCount > 0 && (

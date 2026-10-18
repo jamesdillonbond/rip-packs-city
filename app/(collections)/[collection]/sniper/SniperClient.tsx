@@ -1150,7 +1150,7 @@ function SniperMomentsBody() {
                             <td style={{ padding: "6px 8px", color: accentText(accent), textTransform: "uppercase" }}>{d.tier ?? "—"}</td>
                             <td style={{ padding: "6px 8px", textAlign: "right" }}>${ask.toFixed(2)}</td>
                             <td style={{ padding: "6px 8px", textAlign: "right", color: "var(--rpc-text-muted)" }}>${med.toFixed(2)}</td>
-                            <td style={{ padding: "6px 8px", textAlign: "right", color: "#00e882" }}>{disc}%</td>
+                            <td style={{ padding: "6px 8px", textAlign: "right", color: accentText("#00e882") }}>{disc}%</td>
                             <td style={{ padding: "6px 8px" }}>
                               {(() => {
                                 // The SAME dead-link filter every other listing link uses

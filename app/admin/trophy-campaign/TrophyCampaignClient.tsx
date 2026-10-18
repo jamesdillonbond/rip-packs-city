@@ -16,6 +16,7 @@
 
 import { useState } from "react";
 import { useAdminResource } from "@/lib/admin/use-admin-resource";
+import { accentText } from "@/lib/accent-text";
 
 type Source = "observed" | "backfill_upper_bound";
 
@@ -126,7 +127,7 @@ export default function TrophyCampaignClient() {
           />
           <button type="submit" style={btn(true)}>Authenticate</button>
         </form>
-        {error && <div style={{ marginTop: 16, color: "#ef4444", ...mono }}>{error}</div>}
+        {error && <div style={{ marginTop: 16, color: accentText("#ef4444"), ...mono }}>{error}</div>}
       </main>
     );
   }
@@ -163,7 +164,7 @@ export default function TrophyCampaignClient() {
 
       {loading && <div style={{ ...mono, color: dim }}>Loading…</div>}
       {error && (
-        <div role="alert" style={{ color: "#ef4444", ...mono, marginBottom: 12 }}>
+        <div role="alert" style={{ color: accentText("#ef4444"), ...mono, marginBottom: 12 }}>
           {error}
           {stale && data && (
             <span style={{ display: "block", marginTop: 4 }}>Showing the last successful read — the figures below are not current.</span>

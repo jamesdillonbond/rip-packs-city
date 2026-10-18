@@ -55,6 +55,7 @@ import {
   seriesCollectionsPresent,
   buildSeriesTableRows,
 } from "@/lib/analytics-sets-dashboard-compute"
+import { accentText } from "@/lib/accent-text"
 
 interface DirectoryResponse {
   rows: SetsDirectoryRow[]
@@ -126,7 +127,7 @@ function CollectionSummaryCard({
         </div>
         <Layers
           size={16}
-          style={{ color: COLLECTION_COLOR[collectionKey] ?? "#a1a1aa" }}
+          style={{ color: COLLECTION_COLOR[collectionKey] ?? accentText("#a1a1aa") }}
         />
       </div>
 

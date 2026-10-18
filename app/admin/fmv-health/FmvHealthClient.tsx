@@ -141,7 +141,7 @@ export default function FmvHealthClient() {
             Authenticate
           </button>
         </form>
-        {error && <div style={{ marginTop: 16, color: "#ef4444", fontFamily: "var(--font-mono)", fontSize: 12 }}>{error}</div>}
+        {error && <div style={{ marginTop: 16, color: accentText("#ef4444"), fontFamily: "var(--font-mono)", fontSize: 12 }}>{error}</div>}
       </main>
     );
   }
@@ -180,7 +180,7 @@ export default function FmvHealthClient() {
 
       {loading && <div style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--rpc-text-muted)" }}>Loading…</div>}
       {error && (
-        <div style={{ color: "#ef4444", fontFamily: "var(--font-mono)", fontSize: 12 }}>
+        <div style={{ color: accentText("#ef4444"), fontFamily: "var(--font-mono)", fontSize: 12 }}>
           {error}
           {stale && data && (
             <span style={{ display: "block", marginTop: 4, opacity: 0.85 }}>
@@ -245,7 +245,7 @@ export default function FmvHealthClient() {
                       </Td>
                       <Td>{fmtUsd(r.fmv_before)}</Td>
                       <Td style={{ color: "var(--rpc-success-text)" }}>{fmtUsd(r.fmv_after)}</Td>
-                      <Td style={{ color: "#EF4444" }}>
+                      <Td style={{ color: accentText("#EF4444") }}>
                         {r.pct_dropped != null ? `${Number(r.pct_dropped).toFixed(1)}%` : "—"}
                       </Td>
                       <Td>

@@ -11,6 +11,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { accentText } from "@/lib/accent-text";
 
 const TOKEN_KEY = "rpc_admin_token";
 const DISPLAY = "var(--font-display)";
@@ -126,7 +127,7 @@ function SignInGate({ onSignedIn }: { onSignedIn: (t: string) => void }) {
         <h1 style={{ fontFamily: DISPLAY, textTransform: "uppercase", marginTop: 0 }}>
           Rewards <span style={{ color: RED }}>Console</span>
         </h1>
-        <p style={{ color: "#9a9a9a", fontSize: 13 }}>Paste the RPC admin token.</p>
+        <p style={{ color: accentText("#9a9a9a"), fontSize: 13 }}>Paste the RPC admin token.</p>
         <input
           type="password"
           value={input}
@@ -320,7 +321,7 @@ function Console({ token, onSignOut }: { token: string; onSignOut: () => void })
         )}
 
         {loading ? (
-          <p style={{ fontFamily: MONO, color: "#9a9a9a" }}>Loading…</p>
+          <p style={{ fontFamily: MONO, color: accentText("#9a9a9a") }}>Loading…</p>
         ) : (
           <>
             {/* ECONOMY */}
@@ -344,7 +345,7 @@ function Console({ token, onSignOut }: { token: string; onSignOut: () => void })
                 * not ask" — and a genuine zero still renders as 0. */}
               {economy == null ? (
                 <div
-                  style={{ gridColumn: "1 / -1", fontFamily: MONO, color: "#d6a13a", fontSize: 12 }}
+                  style={{ gridColumn: "1 / -1", fontFamily: MONO, color: accentText("#d6a13a"), fontSize: 12 }}
                 >
                   Couldn&apos;t load the economy figures — no liability or redemption counts
                   below are available. Retry before drawing any conclusion from this screen.
@@ -366,12 +367,12 @@ function Console({ token, onSignOut }: { token: string; onSignOut: () => void })
             {/* PENDING REDEMPTIONS */}
             <H2>Pending redemptions</H2>
             {loadFailed ? (
-              <p style={{ fontFamily: MONO, color: "#d6a13a" }}>
+              <p style={{ fontFamily: MONO, color: accentText("#d6a13a") }}>
                 Couldn&apos;t load redemptions — this says nothing about whether any are
                 waiting. Retry before assuming the queue is clear.
               </p>
             ) : pending.length === 0 ? (
-              <p style={{ fontFamily: MONO, color: "#7a7a7a" }}>Nothing waiting to ship.</p>
+              <p style={{ fontFamily: MONO, color: accentText("#7a7a7a") }}>Nothing waiting to ship.</p>
             ) : (
               <div style={{ ...card, padding: 0, overflow: "hidden", marginBottom: 28 }}>
                 {pending.map((r, i) => (
@@ -389,30 +390,30 @@ function Console({ token, onSignOut }: { token: string; onSignOut: () => void })
                   >
                     <div style={{ minWidth: 220 }}>
                       <div style={{ fontSize: 14 }}>{r.item_name}</div>
-                      <div style={{ fontFamily: MONO, fontSize: 11, color: "#7a7a7a" }}>
+                      <div style={{ fontFamily: MONO, fontSize: 11, color: accentText("#7a7a7a") }}>
                         {r.username ?? r.user_id.slice(0, 8)} · {num(r.cost_credits)} cr ·{" "}
                         {new Date(r.requested_at).toLocaleDateString()}
                       </div>
                       {r.item_type === "moment" && (
                         <div style={{ fontFamily: MONO, fontSize: 11, marginTop: 4 }}>
                           {r.ts_username ? (
-                            <span style={{ color: "#5cc46a" }}>Gift to @{r.ts_username}</span>
+                            <span style={{ color: accentText("#5cc46a") }}>Gift to @{r.ts_username}</span>
                           ) : (
-                            <span style={{ color: "#d6a13a" }}>Gift target unresolved — ask the user</span>
+                            <span style={{ color: accentText("#d6a13a") }}>Gift target unresolved — ask the user</span>
                           )}
                         </div>
                       )}
                       {r.item_type === "merch" && (
                         <div style={{ fontFamily: MONO, fontSize: 11, marginTop: 4 }}>
                           {r.ship_to?.name && r.ship_to?.line1 ? (
-                            <span style={{ color: "#cfcfcf" }}>
+                            <span style={{ color: accentText("#cfcfcf") }}>
                               Ship to {r.ship_to.name}, {r.ship_to.line1}
                               {r.ship_to.line2 ? `, ${r.ship_to.line2}` : ""}, {r.ship_to.city}
                               {r.ship_to.region ? `, ${r.ship_to.region}` : ""}{" "}
                               {r.ship_to.postal ?? ""} {r.ship_to.country ?? ""}
                             </span>
                           ) : (
-                            <span style={{ color: "#d6a13a" }}>No shipping address yet — waiting on the user</span>
+                            <span style={{ color: accentText("#d6a13a") }}>No shipping address yet — waiting on the user</span>
                           )}
                         </div>
                       )}
@@ -471,10 +472,10 @@ function Console({ token, onSignOut }: { token: string; onSignOut: () => void })
                           <div style={{ fontSize: 14 }}>
                             {r.name}
                             {!r.active && (
-                              <span style={{ fontFamily: MONO, fontSize: 10, color: "#d6a13a" }}> · inactive</span>
+                              <span style={{ fontFamily: MONO, fontSize: 10, color: accentText("#d6a13a") }}> · inactive</span>
                             )}
                           </div>
-                          <div style={{ fontFamily: MONO, fontSize: 11, color: "#7a7a7a" }}>
+                          <div style={{ fontFamily: MONO, fontSize: 11, color: accentText("#7a7a7a") }}>
                             {num(entries)} {entries === 1 ? "entry" : "entries"}
                           </div>
                         </div>
@@ -498,14 +499,14 @@ function Console({ token, onSignOut }: { token: string; onSignOut: () => void })
                         fontSize: 11,
                         textTransform: "uppercase",
                         letterSpacing: "0.08em",
-                        color: "#9a9a9a",
+                        color: accentText("#9a9a9a"),
                         marginBottom: 8,
                       }}
                     >
                       Recent draws
                     </div>
                     {draws.map((d) => (
-                      <div key={d.id} style={{ fontFamily: MONO, fontSize: 12, color: "#cfcfcf", padding: "4px 0" }}>
+                      <div key={d.id} style={{ fontFamily: MONO, fontSize: 12, color: accentText("#cfcfcf"), padding: "4px 0" }}>
                         {new Date(d.drawn_at).toLocaleDateString()} · winner {d.winner_user_id.slice(0, 8)} ·{" "}
                         {num(d.total_entrants)} entrants · {num(d.total_credits)} cr
                       </div>
@@ -535,7 +536,7 @@ function Console({ token, onSignOut }: { token: string; onSignOut: () => void })
               <button type="button" disabled={busy === "adjust"} onClick={submitAdjust} style={{ ...btn, marginTop: 12 }}>
                 {busy === "adjust" ? "…" : "Apply adjustment"}
               </button>
-              <p style={{ fontFamily: MONO, fontSize: 11, color: "#7a7a7a", marginTop: 8 }}>
+              <p style={{ fontFamily: MONO, fontSize: 11, color: accentText("#7a7a7a"), marginTop: 8 }}>
                 Credits Δ moves spendable; Status Δ moves tier-status. Either can be 0.
               </p>
             </div>
@@ -545,7 +546,7 @@ function Console({ token, onSignOut }: { token: string; onSignOut: () => void })
             <div style={{ ...card, padding: 0, overflow: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: MONO, fontSize: 13 }}>
                 <thead>
-                  <tr style={{ textAlign: "left", color: "#9a9a9a" }}>
+                  <tr style={{ textAlign: "left", color: accentText("#9a9a9a") }}>
                     <th style={th}>User</th>
                     <th style={th}>Tier</th>
                     <th style={{ ...th, textAlign: "right" }}>Status</th>
@@ -569,7 +570,7 @@ function Console({ token, onSignOut }: { token: string; onSignOut: () => void })
                   ))}
                   {balances.length === 0 && (
                     <tr>
-                      <td style={{ ...td, color: loadFailed ? "#d6a13a" : "#7a7a7a" }} colSpan={6}>
+                      <td style={{ ...td, color: loadFailed ? accentText("#d6a13a") : accentText("#7a7a7a") }} colSpan={6}>
                         {loadFailed ? "Couldn't load balances." : "No participants yet."}
                       </td>
                     </tr>
@@ -587,10 +588,10 @@ function Console({ token, onSignOut }: { token: string; onSignOut: () => void })
 function Kpi({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
   return (
     <div style={card}>
-      <div style={{ fontFamily: MONO, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em", color: "#9a9a9a" }}>
+      <div style={{ fontFamily: MONO, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em", color: accentText("#9a9a9a") }}>
         {label}
       </div>
-      <div style={{ fontFamily: MONO, fontSize: 22, marginTop: 6, color: accent ? RED : "#e7e7e7" }}>{value}</div>
+      <div style={{ fontFamily: MONO, fontSize: 22, marginTop: 6, color: accent ? RED : accentText("#e7e7e7") }}>{value}</div>
     </div>
   );
 }
@@ -617,7 +618,7 @@ function H2({ children }: { children: React.ReactNode }) {
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label style={{ display: "block" }}>
-      <span style={{ fontFamily: MONO, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.06em", color: "#9a9a9a" }}>
+      <span style={{ fontFamily: MONO, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.06em", color: accentText("#9a9a9a") }}>
         {label}
       </span>
       <div style={{ marginTop: 4 }}>{children}</div>

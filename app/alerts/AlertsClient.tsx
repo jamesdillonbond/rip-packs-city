@@ -22,6 +22,7 @@ import {
   type NotifyMode,
 } from "@/lib/alerts/notify-mode";
 import SupportChatConnected from "@/components/SupportChatConnected";
+import { accentText } from "@/lib/accent-text";
 
 const DISPLAY = "var(--font-display)";
 const MONO = "var(--font-mono)";
@@ -409,7 +410,7 @@ export default function AlertsClient() {
             // Without this the list below renders every channel as "not linked"
             // with a Link button — telling a collector whose Telegram IS linked
             // that it is not, and inviting them to re-link it.
-            <p style={{ color: "#d6a13a", fontSize: 12, marginBottom: 10 }}>
+            <p style={{ color: accentText("#d6a13a"), fontSize: 12, marginBottom: 10 }}>
               Couldn&apos;t load your channel status just now — this says nothing about what you have
               linked. Reload to try again.
             </p>
@@ -589,7 +590,7 @@ export default function AlertsClient() {
             // Ordering is what makes this non-inert: the failure branch must
             // precede the empty branch, or a failed read still renders "No
             // alerts yet" and invites a duplicate of an alert that already exists.
-            <p style={{ color: "#d6a13a" }}>
+            <p style={{ color: accentText("#d6a13a") }}>
               Couldn&apos;t load your alerts just now — this says nothing about what you have set up.
               Reload before creating a new one.
             </p>
@@ -629,7 +630,7 @@ export default function AlertsClient() {
           {loading ? (
             <p style={{ color: "var(--rpc-text-muted)" }}>Loading…</p>
           ) : failed.fmv ? (
-            <p style={{ color: "#d6a13a" }}>
+            <p style={{ color: accentText("#d6a13a") }}>
               Couldn&apos;t load your watched editions just now — this says nothing about what you are
               watching. Reload to try again.
             </p>

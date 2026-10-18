@@ -48,6 +48,7 @@ import type {
   PulseActivityRow,
   PulseHourlyRow,
 } from "@/lib/analytics-types"
+import { accentText } from "@/lib/accent-text"
 
 const ALL_COLLECTIONS = [
   { key: "topshot", label: "Top Shot" },
@@ -168,7 +169,7 @@ function HourlySparkline({ rows }: { rows: PulseHourlyRow[] }) {
           />
           <Tooltip content={<HourlyTooltip />} />
           <Legend
-            wrapperStyle={{ fontSize: 10, color: "#a1a1aa" }}
+            wrapperStyle={{ fontSize: 10, color: accentText("#a1a1aa") }}
             iconSize={8}
             verticalAlign="top"
             align="right"

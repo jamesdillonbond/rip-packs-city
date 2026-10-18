@@ -532,7 +532,7 @@ function SlabLabel({
             style={{
               fontFamily: "var(--font-mono)",
               fontSize: 8,
-              color: "#3a3a3a",
+              color: accentText("#3a3a3a"),
               letterSpacing: "0.03em",
               lineHeight: 1.2,
               marginTop: 2,

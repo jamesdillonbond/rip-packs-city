@@ -2872,7 +2872,7 @@ function VerifyByListingModal({
             </div>
           )}
           {checkHint && !done && (
-            <div style={{ marginTop: 10, color: "#FBBF24", fontFamily: monoFont, fontSize: 11, lineHeight: 1.5 }}>
+            <div style={{ marginTop: 10, color: accentText("#FBBF24"), fontFamily: monoFont, fontSize: 11, lineHeight: 1.5 }}>
               {checkHint}
             </div>
           )}

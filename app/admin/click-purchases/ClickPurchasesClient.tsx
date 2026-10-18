@@ -16,6 +16,7 @@
 import { useState } from "react";
 import { useAdminResource } from "@/lib/admin/use-admin-resource";
 import type { FunnelRow, PurchaseRow } from "@/app/api/admin/click-purchases/route";
+import { accentText } from "@/lib/accent-text";
 
 export interface ClickPurchasesPayload {
   generated_at: string;
@@ -105,7 +106,7 @@ export default function ClickPurchasesClient() {
           />
           <button type="submit" style={btn(true)}>Authenticate</button>
         </form>
-        {error && <div style={{ marginTop: 16, color: "#ef4444", ...mono }}>{error}</div>}
+        {error && <div style={{ marginTop: 16, color: accentText("#ef4444"), ...mono }}>{error}</div>}
       </main>
     );
   }
@@ -128,7 +129,7 @@ export default function ClickPurchasesClient() {
 
       {loading && <div style={{ ...mono, color: dim }}>Loading…</div>}
       {error && (
-        <div role="alert" style={{ color: "#ef4444", ...mono, marginBottom: 12 }}>
+        <div role="alert" style={{ color: accentText("#ef4444"), ...mono, marginBottom: 12 }}>
           {error}
           {stale && data && (
             <span style={{ display: "block", marginTop: 4 }}>Showing the last successful read — the figures below are not current.</span>
@@ -154,7 +155,7 @@ export default function ClickPurchasesClient() {
             accounts&apos; own buys: {data.totals.purchases_internal} ({fmtUsd(data.totals.usd_internal)}). The
             by-surface table counts clicks. Matching runs hourly. Generated {fmtPt(data.generated_at)}.
             {data.purchases_truncated && (
-              <span style={{ display: "block", color: "#eab308" }}>
+              <span style={{ display: "block", color: accentText("#eab308") }}>
                 The purchase list hit its row cap — the dollar total and the list below are a lower bound.
               </span>
             )}
