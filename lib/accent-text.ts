@@ -38,3 +38,19 @@ export function accentText(accent: string | null | undefined): string | undefine
   if (a.startsWith("var(")) return a
   return `color-mix(in srgb, ${a}, var(--rpc-accent-text-mix) var(--rpc-accent-text-amt))`
 }
+
+/**
+ * A chip STYLE whose text sits on its own TRANSLUCENT tint (e.g. `{ background:
+ * "rgba(16,185,129,0.2)", color: "rgb(110,231,183)" }`). In light theme that tint
+ * is light, so the pastel text must take the theme shade — but the background and
+ * border stay exactly as built (fills identical in both themes). An OPAQUE or
+ * dark fill is left alone: its text was designed against that fill.
+ * Apply at the CONSUMER (`style={textSafeChip(coverageChipClass(x))}`), never inside
+ * the builder — a builder's `color` may also feed a border or gradient (10-18).
+ */
+export function textSafeChip<T extends { color?: unknown; background?: unknown }>(style: T): T {
+  if (!style || typeof style.color !== "string" || !style.color) return style
+  const bg = style.background == null ? "" : String(style.background)
+  const translucent = bg === "" || bg === "transparent" || /rgba\([^)]*,\s*0?\.[0-3]\d*\s*\)/.test(bg)
+  return translucent ? { ...style, color: accentText(style.color as string) } : style
+}

@@ -128,3 +128,21 @@ describe("tier + semantic text twins clear AA in both themes", () => {
     expect(accentText("var(--rpc-text-primary)")).toBe("var(--rpc-text-primary)")
   })
 })
+
+describe("textSafeChip — text on its OWN translucent tint takes the theme shade; fills never change", () => {
+  it("wraps the colour of a chip on a translucent tint and keeps background/border exactly", async () => {
+    const { textSafeChip } = await import("@/lib/accent-text")
+    const chip = { background: "rgba(16,185,129,0.2)", border: "1px solid rgba(16,185,129,0.4)", color: "rgb(110,231,183)" }
+    const out = textSafeChip(chip)
+    expect(out.color).toBe(accentText("rgb(110,231,183)"))
+    expect(out.background).toBe(chip.background)
+    expect(out.border).toBe(chip.border)
+  })
+  it("leaves an OPAQUE fill alone (its text was designed against that fill), and tolerates no colour", async () => {
+    const { textSafeChip } = await import("@/lib/accent-text")
+    const opaque = { background: "#E03A2F", color: "#fff" }
+    expect(textSafeChip(opaque)).toBe(opaque)
+    const none = { background: "rgba(0,0,0,0.1)" }
+    expect(textSafeChip(none)).toBe(none)
+  })
+})

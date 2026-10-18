@@ -70,7 +70,7 @@ import {
 } from "@/lib/sniper/helpers";
 import { sniperTierTabs } from "@/lib/collection-tiers";
 import { ownLookup } from "@/lib/safe-lookup";
-import { accentText } from "@/lib/accent-text"
+import { accentText, textSafeChip } from "@/lib/accent-text"
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 
@@ -1392,7 +1392,7 @@ function SniperMomentsBody() {
                         ⚠ thin data
                       </span>
                     ) : (
-                      <span className="inline-block px-2 py-0.5 rounded-full text-xs font-bold" style={{ fontFamily: "var(--font-mono)", ...discountColor(deal.discount) }}>
+                      <span className="inline-block px-2 py-0.5 rounded-full text-xs font-bold" style={{ fontFamily: "var(--font-mono)", ...textSafeChip(discountColor(deal.discount)) }}>
                         {deal.discount > 0 ? `-${fmt(deal.discount, 1)}%` : "~0%"}
                       </span>
                     )}
@@ -1831,7 +1831,7 @@ function SniperMomentsBody() {
                           ⚠ thin data
                         </span>
                       ) : (
-                        <span className="inline-block px-2 py-0.5 rounded-full text-xs font-bold" style={{ fontFamily: "var(--font-mono)", ...discountColor(deal.discount) }}>
+                        <span className="inline-block px-2 py-0.5 rounded-full text-xs font-bold" style={{ fontFamily: "var(--font-mono)", ...textSafeChip(discountColor(deal.discount)) }}>
                           {deal.discount > 0 ? `-${fmt(deal.discount, 1)}%` : "~0%"}
                         </span>
                       )}

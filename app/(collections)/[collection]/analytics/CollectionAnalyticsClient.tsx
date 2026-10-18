@@ -1729,7 +1729,8 @@ function AnalyticsInner() {
                 type="button"
                 onClick={exportCsv}
                 disabled={!marketData?.daily?.length}
-                className="rounded-lg border px-5 py-2 font-semibold uppercase tracking-widest text-[color:var(--rpc-text-primary)] disabled:opacity-50"
+                // brand-exception: white label on the red fill (stays white in both themes)
+                className="rounded-lg border px-5 py-2 font-semibold uppercase tracking-widest text-white disabled:opacity-50"
                 style={{
                   fontFamily: "var(--font-display)",
                   background: accent,

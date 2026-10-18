@@ -202,6 +202,7 @@ import {
   defaultSortDir,
 } from '@/lib/pack-table-format'
 import { accentText } from "@/lib/accent-text"
+import { textSafeChip } from '@/lib/accent-text'
 
 // pack-ev.md Next 4 (2026-10-18): a depletion figure is a supply-counter read,
 // and those counters differ in age by months (All Day's median stamp was 06-29
@@ -612,7 +613,7 @@ export default function PackTable({
                 <td className="p-3">
                   <span
                     className="inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold"
-                    style={coverageChipClass(r.fmvCoverage)}
+                    style={textSafeChip(coverageChipClass(r.fmvCoverage))}
                   >
                     {r.fmvCoverage == null ? '—' : fmtPct(r.fmvCoverage)}
                   </span>
@@ -781,7 +782,7 @@ export default function PackTable({
               <span>·</span>
               <span
                 className="rounded-full px-2 py-0.5 text-[10px] font-semibold"
-                style={coverageChipClass(r.fmvCoverage)}
+                style={textSafeChip(coverageChipClass(r.fmvCoverage))}
               >
                 Cov {r.fmvCoverage == null ? '—' : fmtPct(r.fmvCoverage)}
               </span>

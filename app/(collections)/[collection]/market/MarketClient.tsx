@@ -1093,7 +1093,7 @@ function ListingCard({ listing, accent, momentUrl, editionStats, showOwned, coll
               ⚠ thin data
             </span>
           ) : (
-            <span className="rpc-mono" style={{ fontSize: 10, color: discount.color, fontWeight: 700, letterSpacing: "0.04em" }}>
+            <span className="rpc-mono" style={{ fontSize: 10, color: accentText(discount.color), fontWeight: 700, letterSpacing: "0.04em" }}>
               {discount.text}
             </span>
           )}
@@ -1309,7 +1309,7 @@ function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColu
                     ⚠ thin data
                   </td>
                 ) : (
-                  <td style={{ ...td, textAlign: "right", color: discount.color, fontWeight: 700 }}>{discount.text}</td>
+                  <td style={{ ...td, textAlign: "right", color: accentText(discount.color), fontWeight: 700 }}>{discount.text}</td>
                 )}
                 <td style={td}>
                   <div style={{ display: "flex", gap: 6, alignItems: "center", justifyContent: "flex-end", flexWrap: "wrap" }}>
