@@ -71,7 +71,7 @@ FMV is the product's core claim and the accuracy gate's subject. One engine per 
 **Now**
 1. **Verify the 10-17 sweep-wedge fix on production rows.** Why: a wedged sweep silently stops repricing while every run reads ok. Falsifier: `fmv_sweep_wedge_hours` stays above 3 after one full cycle, or a step1b row logs `cursor_held=true` with 0 fetch errors.
 2. **Re-measure Panini 1.3.0 label monotonicity** in `panini_published_fmv_backtest` (algo `panini-1.3.0`, gated on `first_seen_at`) once ~4 days of re-walks have landed. Why: the shipped claim was a projection (~72/63/~35 % within ±25 %). Falsifier: HIGH is not the best tier, or MEDIUM falls below LOW.
-3. **Confirm the frozen-market share decays.** Check that Candy's 56.8 % falls toward LOW/STALE as its sales age out (expected from ~11-10), and that Golazos's 6 MEDIUM editions with 0 sales in 30 d are re-derived. Why: a label that outlives its sales becomes a claim nothing backs. Gate: sale ingest resumes, or the decay is seen.
+3. **Confirm the frozen-market share decays.** Check that Candy's 56.8 % falls toward LOW/STALE as its sales age out (expected from ~11-10), and backtest the 90-day-only MEDIUM path (Golazos's 6 MEDIUM editions have 0 sales in 30 d; re-derived 10-17 as the 08-07 design, Step 2a-quater/quinquies, not a defect). Why: a label that outlives its sales becomes a claim nothing backs. Gate: sale ingest resumes, or the decay is seen.
 
 **Next**
 4. **Run the R125 paired backtest weekly** for TS and AD, and add Candy (14 d). Why: the share (M1) cannot see price error, and this backtest can. Falsifier: the reopen rule above.

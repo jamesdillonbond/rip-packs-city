@@ -24,14 +24,14 @@
 
 - **No Pinnacle-specific register item is open** (STATUS INDEX: 1 open · 5 partial, none Pinnacle). Estate-wide items that touch it: #66 (SEO; Search Console re-read 10-28), #114 (Cowork dashboards), #22 (credential residue).
 - **Realised-sales accuracy is unmeasured.** `fmv_sales_backtest` reads `fmv_snapshots`, which holds 0 Pinnacle rows. So "accuracy against realised sales" (roadmap-status 10-10 block) covers Top Shot, All Day and Candy only. The 10-09 young-render backtest was a one-off.
-- **The share leg's self-report is a null instrument.** `thp-leg-pinnacle-fmv-share` logs `rows_written 0` on every run while it does write the precompute (4/4 runs, 24 h). This is the R120 class: the count does not mean rows written. Judge it by the precompute's `computed_at`.
+- **The share leg's `rows_written 0` is the shared wrapper's convention, not a Pinnacle defect** (re-read ~7 PM PT 10-17). Every `thp-leg-*` pipeline logs 0 (18 of 18 in 24 h), because `run_thp_leg_logged` writes `0, 0, 0` for every leg (legs return void) and derives `ok` from an exception. A null instrument by construction (CLAUDE.md: `rows_written = 0` is a null instrument): judge a leg by its precompute row's `computed_at`.
 - **Pull-chain cadence exemption** lapses by itself on 10-28 (`20261011151215`). Re-check on 10-26 (sessions 10-11).
 
 ## Next — prioritized
 
 **Now**
 - **Build a Pinnacle realised-sales backtest** over `pinnacle_fmv_history` against the next sales per render: median absolute error vs a naive last-3 median, by confidence. *Why:* the gate has two halves and Pinnacle has only one. *Falsifier:* if MEDIUM error is no better than naive, the confidence labels are the problem, not the share.
-- **Make the share leg report what it writes** (`rows_written` = 1 when the precompute row lands; pair it with `_error`). *Why:* the trust arm and pipeline watchers otherwise read a zero-writer as healthy. *Gate:* a planted failed upsert must make the run read `ok=false`.
+- ~~Confirm the share leg raises on a failed write~~ — **answered ~7:05 PM PT 10-17, no change needed.** Its `EXCEPTION WHEN query_canceled OR OTHERS` writes the documented failure sentinel `999` to `pinnacle_fmv_high_med_share_pct` and returns, so the wrapper logs `ok=true` on a failed leg by design (the same as `fmv_coverage` and the Panini leg). ⚠ **Key any watcher on `value = 999` (or a stale `computed_at`), never on the run's `ok`.**
 
 **Next**
 - **Attribute the 09-11→09-18 slide** (44.7 → 27.5) by splitting `pinnacle_fmv_history` confidence transitions per render across that week: sales aging out of the 30 d window, or a pricing change. *Why:* the stated baseline (31.5) may sit on an unexplained step. *Falsifier:* if renders that lost HIGH/MED have unchanged sales counts, it was a code change. Find it before quoting any Pinnacle trend.
