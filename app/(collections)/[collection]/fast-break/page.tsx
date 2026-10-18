@@ -233,7 +233,11 @@ export default async function FastBreakPage(props: {
           No active Fast Break run
         </div>
         <div style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--rpc-text-secondary)", lineHeight: 1.6 }}>
-          We&apos;ll surface the next run here as soon as Top Shot opens it.
+          {/* 2026-10-18: this line promised "We'll surface the next run here as soon as
+              Top Shot opens it". Nothing does: fast_break_runs has no writer (2 rows,
+              inserted by hand 2026-05-05), so a run Top Shot opens never appears on
+              its own. Say what is true instead of promising an automation. */}
+          Runs are added to RPC by hand, so one Top Shot has just opened may not be listed here yet.
         </div>
       </div>
     )
