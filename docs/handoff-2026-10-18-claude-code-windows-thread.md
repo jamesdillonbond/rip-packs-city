@@ -1,4 +1,4 @@
-# Handoff — Claude Code, Windows box thread (2026-10-17 ~8:10 PM → 2026-10-18 ~2:15 PM PT)
+# Handoff — Claude Code, Windows box thread (2026-10-17 ~8:10 PM → 2026-10-18 ~5:00 PM PT)
 
 Everything this thread could ship is shipped, deployed and verified. What is left needs Trevor (a decision or an account action). Session entry: `docs/sessions/2026-10.md` (top). Ledger: the 10-17 / 10-18 entries that cite these commits.
 
@@ -32,13 +32,18 @@ Everything this thread could ship is shipped, deployed and verified. What is lef
 | `5e6ce0446` | generated light-theme overrides for Tailwind palette text + dark badge fills; guard `tailwind-palette-text-has-a-light-theme-rule` | Collection tab 651 → 261, Pack EV 2,736 → 997 |
 | `3f6ba158f` · `dc09e5694` · `fc7af830b` | inline hex/rgb text via `accentText` (own-fill / data-row / SVG-stroke / dark-tooltip cases kept raw); `textSafeChip()` for chips on translucent tints; acquisition chip; admin red text | **25 routes × 2 themes: only the accepted white-on-red buttons** (Collection tab clean on 2 wallets) |
 | `8b17bca4d` · `f581240ab` | signed-in pages (pack history monolith, dashboard, share button), chips on translucent tints, `labelOn(accent)` for accent-fill buttons, trophy-slab silver plate | **signed in: 20 of 20 clean; anonymous: 48 of 50** (the 2 = the login pill, accepted) |
+| `6df6abdb9` · `4425e6c45` | 7 selects get accessible names; `e2e/a11y.spec.ts` rewritten (both themes, 11 routes); the `a11y-audit` CI job is now BLOCKING for color-contrast + select-name | local run vs production 22/22 before the flip; dispatched CI run 39177985765: a11y-audit green, 22 passed (~4:50 PM PT) |
 
 Docs-only commits (ledger, #192 write-backs, #194, roadmap M4/M8, reference lessons) revert by message.
+
+## Open (filed, not Trevor-gated)
+
+- **#196 — interactive table rows** (`nested-interactive` on Collection-tab rows with role="button", `aria-conditional-attr` on Sniper rows). A deliberate keyboard-operability pattern pinned by tests; the options (drop the row role and rely on the in-row link; a dedicated disclosure button; or a real treegrid) are in the item. The a11y spec prints both rules every run; move them into `GATED` once they read zero.
 
 ## Watch
 
 - **#192 backlog:** 14,831 All Day sales ≥ 2025-10-22 without a buyer at 10-17 11:20 PM PT, ~3,840/day → expect ~0 around 10-22. Read: `select count(*) from sales s join collections c on c.id=s.collection_id where c.slug='nfl_all_day' and sold_at >= '2025-10-22' and buyer_address is null`.
 - **Parallel seeder:** `never_queued` falls in steps after each 1:33 PM PT `backfill-topshot-subeditions` run, not per tick (focus.md watch annotated). Judge on the 10-18 / 10-19 post-1:33 PM reads.
-- **The nightly `a11y-audit` job** should now read ONLY the accepted white-on-red button nodes, in dark AND light (7 routes verified 10-18). Any other node is a regression; the usual causes are a new text use of a fill token or a hardcoded white on a light surface — see memory `text-color-fix-at-the-consumer-not-the-definition`.
+- **The `a11y-audit` job is now a GATE** (color-contrast + select-name, 11 routes × 2 themes; the white-on-red exception excluded by signature). A red run is a real regression; the usual causes are a new text use of a fill token or a hardcoded white on a light surface — see memory `text-color-fix-at-the-consumer-not-the-definition`.
 - **Windows-only test reds: FIXED 10-18** — private test walkers returned `join()` paths (backslashes); normalised in both (`topshot-ownership-holdings-readers…`, `series-2026-27…`). Use `walkSourceFiles` + `repoRelative` for new walkers (testing-and-ci.md).
 - **Known, accepted:** the login `.rpc-live-pill` reads ~3.6:1 only mid-flicker (brand white-on-red). Fixed since: the conditional analytics "100%" label, and accent-fill button labels (`labelOn`). Not audited: `/rewards` and `/admin/*` paint their own dark page in both themes (readable).
