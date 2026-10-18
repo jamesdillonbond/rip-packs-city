@@ -9,9 +9,12 @@
 --      pin's catalog FMV, or >= $100K with no FMV, is dropped).
 --   2. The entry is absent when p_collections excludes 'pinnacle', and absent
 --      (not a zero row) when there are no asks.
+--   3. (2026-10-18) All Day + Golazos are counted from cached_listings_v2 (open,
+--      unexpired, not Flowty, not a sold-after-listing ghost), NEVER from their
+--      v1 rows (Flowty's book alone).
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20260929022013_audit_20260928_pinnacle_analytics_fmv_health_and_order_book.sql).
+-- (supabase/migrations/20261018220225_audit_20261018_analytics_listings_summary_onchain_order_book.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -26,6 +29,9 @@ CREATE TABLE public.candy_listings (edition_id text, price_usd numeric, is_activ
 CREATE TABLE public.candy_fmv_current (edition_id text, fmv_usd numeric);
 CREATE TABLE public.pinnacle_catalog (render_id text PRIMARY KEY, fmv_usd numeric);
 CREATE TABLE public.pinnacle_live_listings (nft_id text, render_id text, serial_number int, price_usd numeric, seen_at timestamptz);
+CREATE TABLE public.cached_listings_v2 (listing_resource_id bigint, source text, collection_id uuid, edition_id uuid, price_usd numeric, completed_at timestamptz, expiry_at timestamptz);
+CREATE TABLE public.allday_listings_sold_after_listing (listing_resource_id bigint, source text);
+CREATE TABLE public.fmv_snapshots (edition_id uuid, fmv_usd numeric, computed_at timestamptz);
 
 CREATE OR REPLACE FUNCTION public.analytics_listings_summary(p_collections text[] DEFAULT NULL::text[])
  RETURNS jsonb
@@ -111,6 +117,10 @@ BEGIN
     FROM cached_listings cl
     JOIN collections c ON c.id = cl.collection_id
     WHERE cl.ask_price > 0
+      -- 2026-10-18: All Day and Golazos are counted from the on-chain book
+      -- (the `onchain` arm below). Their v1 rows are Flowty's alone (108 / 100
+      -- rows vs ~34k / ~4.3k open on-chain asks).
+      AND c.slug NOT IN ('nfl_all_day', 'laliga_golazos')
       AND (
         (cl.fmv IS NOT NULL AND cl.ask_price <= cl.fmv * 50)
         OR (cl.fmv IS NULL AND cl.ask_price < 100000)
@@ -145,6 +155,53 @@ BEGIN
       AND (p_collections IS NULL OR 'candy_mlb' = ANY(p_collections))
     HAVING COUNT(*) > 0
   ),
+  -- 2026-10-18: All Day + Golazos from the on-chain listing index
+  -- (cached_listings_v2): open, priced, unexpired, not Flowty, and not a ghost
+  -- (allday_listings_sold_after_listing, the same rule as the All Day market).
+  -- FMV is resolved once per EDITION, not joined per listing through the
+  -- fmv_current view, which would build the whole view; the dead-listing filter
+  -- is the shared one.
+  onchain_l AS MATERIALIZED (
+    SELECT CASE c.slug WHEN 'nfl_all_day' THEN 'allday' ELSE 'golazos' END AS coll,
+           l.edition_id, l.price_usd
+      FROM cached_listings_v2 l
+      JOIN collections c ON c.id = l.collection_id
+     WHERE c.slug IN ('nfl_all_day', 'laliga_golazos')
+       AND (p_collections IS NULL OR
+            CASE c.slug WHEN 'nfl_all_day' THEN 'allday' ELSE 'golazos' END = ANY(p_collections))
+       AND l.completed_at IS NULL
+       AND l.price_usd > 0
+       AND l.source <> 'flowty'
+       AND (l.expiry_at IS NULL OR l.expiry_at > now())
+       AND NOT EXISTS (
+         SELECT 1 FROM allday_listings_sold_after_listing g
+          WHERE g.listing_resource_id = l.listing_resource_id AND g.source = l.source
+       )
+  ),
+  onchain_fmv AS MATERIALIZED (
+    SELECT d.edition_id, f.fmv_usd
+      FROM (SELECT DISTINCT edition_id FROM onchain_l WHERE edition_id IS NOT NULL) d
+      LEFT JOIN LATERAL (
+        SELECT s.fmv_usd FROM fmv_snapshots s
+         WHERE s.edition_id = d.edition_id AND s.fmv_usd IS NOT NULL
+         ORDER BY s.computed_at DESC
+         LIMIT 1
+      ) f ON true
+  ),
+  onchain AS (
+    SELECT
+      ol.coll                                                   AS coll,
+      COUNT(*)                                                  AS n,
+      ROUND(MIN(ol.price_usd)::numeric, 2)                      AS mn,
+      ROUND(MAX(ol.price_usd)::numeric, 2)                      AS mx,
+      ROUND(AVG(ol.price_usd)::numeric, 2)                      AS avg_v,
+      ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ol.price_usd)::numeric, 2) AS med
+    FROM onchain_l ol
+    LEFT JOIN onchain_fmv ef ON ef.edition_id = ol.edition_id
+    WHERE (ef.fmv_usd IS NOT NULL AND ol.price_usd <= ef.fmv_usd * 50)
+       OR (ef.fmv_usd IS NULL AND ol.price_usd < 100000)
+    GROUP BY ol.coll
+  ),
   -- 2026-09-28: Pinnacle's asks are never written to cached_listings either
   -- (measured: 0 rows); the marketplace sweep replaces pinnacle_live_listings
   -- wholesale (17,021 asks). Without this arm the Pinnacle Order Book Depth card
@@ -172,7 +229,7 @@ BEGIN
     'collection', coll, 'count', n, 'min_ask_usd', mn, 'max_ask_usd', mx, 'avg_ask_usd', avg_v, 'median_ask_usd', med
   ) ORDER BY coll)
   INTO marketplace_listings
-  FROM (SELECT * FROM shared UNION ALL SELECT * FROM candy UNION ALL SELECT * FROM pinnacle) m;
+  FROM (SELECT * FROM shared UNION ALL SELECT * FROM onchain UNION ALL SELECT * FROM candy UNION ALL SELECT * FROM pinnacle) m;
 
   result := jsonb_build_object(
     'loan_offers',          loan_offers,
@@ -183,7 +240,8 @@ BEGIN
       'cached_sniper_bias', 'cached_listings is sourced from Sniper deal scans - biased toward low-priced inventory',
       'dead_listing_filter','Dropped asks > 50x FMV (or > $100K when FMV unknown) to exclude listing-reward farming',
       'candy_source',       'Candy MLB asks come from candy_listings (Solana / Magic Eden), not cached_listings, and are a full active-ask snapshot rather than a Sniper-scan sample',
-      'pinnacle_source',    'Disney Pinnacle asks come from pinnacle_live_listings (the marketplace sweep), not cached_listings, and are a full active-ask snapshot rather than a Sniper-scan sample'
+      'pinnacle_source',    'Disney Pinnacle asks come from pinnacle_live_listings (the marketplace sweep), not cached_listings, and are a full active-ask snapshot rather than a Sniper-scan sample',
+      'onchain_source',     'NFL All Day and LaLiga Golazos asks come from the on-chain listing index (cached_listings_v2), not cached_listings: every open, unexpired listing, with sold-after-listing ghosts and Flowty rows excluded'
     ),
     'as_of', now()
   );
@@ -204,6 +262,33 @@ SELECT _assert_eq((SELECT (m->>'min_ask_usd') || '-' || (m->>'max_ask_usd') FROM
 SELECT _assert_eq((SELECT count(*)::text FROM jsonb_array_elements(public.analytics_listings_summary(ARRAY['topshot'])->'marketplace_listings') m WHERE m->>'collection' = 'pinnacle'), '0', 'the filter excludes Pinnacle');
 DELETE FROM public.pinnacle_live_listings;
 SELECT _assert_eq((SELECT count(*)::text FROM jsonb_array_elements(public.analytics_listings_summary(ARRAY['pinnacle'])->'marketplace_listings') m WHERE m->>'collection' = 'pinnacle'), '0', 'no asks -> no entry, never a zero row');
+
+-- 3. All Day + Golazos from the on-chain book, never from v1.
+INSERT INTO public.collections VALUES
+  ('aaaaaaaa-0000-0000-0000-000000000001', 'nfl_all_day'),
+  ('aaaaaaaa-0000-0000-0000-000000000002', 'laliga_golazos');
+INSERT INTO public.cached_listings VALUES   -- Flowty's v1 rows: must be ignored
+  ('aaaaaaaa-0000-0000-0000-000000000001', 1, NULL),
+  ('aaaaaaaa-0000-0000-0000-000000000002', 1, NULL);
+INSERT INTO public.fmv_snapshots VALUES
+  ('eeeeeeee-0000-0000-0000-000000000001', 2,  now() - interval '2 days'),
+  ('eeeeeeee-0000-0000-0000-000000000001', 10, now());                     -- latest wins
+INSERT INTO public.cached_listings_v2 VALUES
+  (1, 'direct_v2',     'aaaaaaaa-0000-0000-0000-000000000001', 'eeeeeeee-0000-0000-0000-000000000001', 8,   NULL, NULL),
+  (2, 'storefront_v2', 'aaaaaaaa-0000-0000-0000-000000000001', 'eeeeeeee-0000-0000-0000-000000000001', 20,  NULL, NULL),
+  (3, 'direct_v2',     'aaaaaaaa-0000-0000-0000-000000000001', 'eeeeeeee-0000-0000-0000-000000000001', 600, NULL, NULL),          -- > 50x the LATEST FMV: dropped
+  (4, 'direct_v2',     'aaaaaaaa-0000-0000-0000-000000000001', 'eeeeeeee-0000-0000-0000-000000000001', 9,   now(), NULL),         -- completed: dropped
+  (5, 'flowty',        'aaaaaaaa-0000-0000-0000-000000000001', 'eeeeeeee-0000-0000-0000-000000000001', 9,   NULL, NULL),          -- Flowty: dropped
+  (6, 'direct_v2',     'aaaaaaaa-0000-0000-0000-000000000001', 'eeeeeeee-0000-0000-0000-000000000001', 9,   NULL, now() - interval '1 day'), -- expired: dropped
+  (7, 'direct_v2',     'aaaaaaaa-0000-0000-0000-000000000001', 'eeeeeeee-0000-0000-0000-000000000001', 9,   NULL, NULL),          -- ghost: dropped
+  (8, 'storefront_v2', 'aaaaaaaa-0000-0000-0000-000000000002', 'eeeeeeee-0000-0000-0000-000000000002', 3,   NULL, NULL);
+INSERT INTO public.allday_listings_sold_after_listing VALUES (7, 'direct_v2');
+
+SELECT _assert_eq((SELECT m->>'count' FROM jsonb_array_elements(public.analytics_listings_summary(ARRAY['allday'])->'marketplace_listings') m WHERE m->>'collection' = 'allday'), '2', 'All Day: only open, unexpired, non-Flowty, non-ghost asks within 50x the latest FMV');
+SELECT _assert_eq((SELECT (m->>'min_ask_usd') || '-' || (m->>'max_ask_usd') FROM jsonb_array_elements(public.analytics_listings_summary(ARRAY['allday'])->'marketplace_listings') m WHERE m->>'collection' = 'allday'), '8.00-20.00', 'All Day min/max from the on-chain book, not the $1 v1 row');
+SELECT _assert_eq((SELECT m->>'count' FROM jsonb_array_elements(public.analytics_listings_summary(ARRAY['golazos'])->'marketplace_listings') m WHERE m->>'collection' = 'golazos'), '1', 'Golazos counted from cached_listings_v2');
+SELECT _assert_eq((SELECT count(*)::text FROM jsonb_array_elements(public.analytics_listings_summary(ARRAY['golazos'])->'marketplace_listings') m WHERE m->>'collection' = 'allday'), '0', 'the filter excludes All Day');
+SELECT _assert_eq((SELECT count(*)::text FROM jsonb_array_elements(public.analytics_listings_summary(NULL)->'marketplace_listings') m WHERE m->>'collection' IN ('allday','golazos')), '2', 'one entry each — the v1 rows add no second row');
 
 SELECT '✓ analytics_listings_summary: all assertions passed' AS result;
 

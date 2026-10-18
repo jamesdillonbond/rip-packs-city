@@ -528,8 +528,9 @@ const PINS = [
     fn: "analytics_listings_summary",
     test: "supabase/tests/analytics_listings_summary.sql",
     // 2026-09-28: Pinnacle Order Book Depth reads pinnacle_live_listings.
+    // 2026-10-18: All Day + Golazos read cached_listings_v2 (their v1 rows are Flowty's alone).
     migration:
-      "supabase/migrations/20260929022013_audit_20260928_pinnacle_analytics_fmv_health_and_order_book.sql",
+      "supabase/migrations/20261018220225_audit_20261018_analytics_listings_summary_onchain_order_book.sql",
   },
   {
     fn: "pinnacle_period_comparison",
