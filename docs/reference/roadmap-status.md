@@ -30,7 +30,7 @@ Also displaced the same day, from the "Prioritized next actions" list: the sport
 
 CLAUDE.md carried this for weeks as the single remaining measured DB fix, *"blocked on a DECISION not a
 diagnosis"*: replacing `compute_pack_ev_per_edition_weighted`'s `fmv_current` leg, filed at
-**18,766 vs 1,046,192 buffers**, held up because the change re-seeds a pinned fixture (Trevor's call).
+**18,766 vs 1,046,192 buffers**, held up because the change re-seeds a pinned fixture (Trevor's call). ✅ **10-18 ~12:14 PM PT: already shipped 2026-08-30 (`20260830152806`, LATERAL per edition); 9,528 buffers per call measured 10-18.**
 
 **Re-read the blocker, as this file's own rule says to, and the cost half of it has gone.**
 

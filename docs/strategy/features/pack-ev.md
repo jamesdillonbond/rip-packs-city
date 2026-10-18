@@ -40,7 +40,7 @@ Three values must never be labelled as one another (packs.md 09-26): the EV of w
   - `pack_grail_metrics` counts an unpriced edition as $0. The UI says "≥", but every reader must too.
   - All Day and Golazos pools inherit those collections' thin confidence (M2 26.4 %).
 - **Supply feed health:** `topshot-pack-supply-atlas` fails ~26 % of its runs (chronic, Cloudflare 403s), and `pack-mint-probes` `failure_rate` is expected to stay lit (#166). A stale "as of" is the honest output.
-- **Measured but unshipped:** `compute_pack_ev_per_edition_weighted`'s `fmv_current` leg. The stakes are LOW at the real per-dist call sites (~2.6 k buffers/call). It re-seeds a pinned fixture, so it is Trevor's call.
+- ~~**Measured but unshipped:** `compute_pack_ev_per_edition_weighted`'s `fmv_current` leg.~~ ✅ **STALE LINE, corrected 10-18 ~12:14 PM PT: it shipped 2026-08-30** (`20260830152806`: the pool reads the latest snapshot per edition through a LATERAL, not the `fmv_current` view). Measured 10-18 on All Day dist 6924: 9,528 buffers, 127 ms per call. The ~176 k blocks/call average in `pg_stat_statements` pools two months that include the pre-fix era (stats reset 08-11), so it is not today's cost.
 - **`RPCGiveawayPacks` contract:** not deployed. It needs an audit and a dedicated deploy account. #172 (desktop extension stall) is shelved: deliver from the phone.
 
 ## Next — prioritized
