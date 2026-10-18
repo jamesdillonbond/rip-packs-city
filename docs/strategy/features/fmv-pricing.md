@@ -82,7 +82,8 @@ FMV is the product's core claim and the accuracy gate's subject. One engine per 
 
 **Next**
 4. **Run the R125 paired backtest weekly** for TS and AD, and add Candy (14 d). Why: the share (M1) cannot see price error, and this backtest can. Falsifier: the reopen rule above.
-5. **TS LOW residual.** Test whether a shorter N, or an ask-informed cap, closes the 2.3-point gap without hurting HIGH/MED. Gate: out-of-sample, paired, before shipping. 1.8.0's choice of N was settled by measurement.
+5. ✅ **MEASURED 2026-10-18 ~9:22 AM PT (Claude Code cloud; paired, out of sample; 14 d n 2,472 + prior 14 d n 3,347; harness reproduces `fmv_sales_backtest` LOW within 0.1 pt): no variant clears the 3-pt bar.** A shorter N gains +1.8–2.3 pts within ±25 % on LOW over an N=7 replica (consistent sign in every liquidity bucket, SE ~0.8 pt); against the real published value (with its typical-serial filter, dampener and ceiling) N=3 gains only +0.5. A global N=3 would cost HIGH ~1 pt. About half the 10-17 "2.3-pt gap" is the last-3 baseline seeing sales NEWER than the snapshot (anchored at the snapshot: 1.8). The ask-cap variant is untestable: no Top Shot ask history (`edition_offers.low_ask` is overwritten in place). ⭐ LOW is not mostly thin: 65 % of LOW sales are ~140 liquid sub-$1 editions demoted by the dispersion rule. **Next lever to test is the dispersion-LOW class, not N**; re-run after 7 d of 1.8.3 LOW snapshots.
+   - (original item) **TS LOW residual.** Test whether a shorter N, or an ask-informed cap, closes the 2.3-point gap without hurting HIGH/MED. Gate: out-of-sample, paired, before shipping. 1.8.0's choice of N was settled by measurement.
 
 **Later**
 6. **Dual-scale valuation** (roadmap §6.1) stays behind the gate.
