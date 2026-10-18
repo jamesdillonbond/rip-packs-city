@@ -4,7 +4,7 @@
 
 **Run:** ~2:45 → ~5:45 PM PT 10-17, Trevor: "look through the project, recent audits, handoffs, known issues … tasks that you can take care of from here … work autonomously for the next 3 hours". A Claude Code session was committing concurrently all afternoon (last seen `b013712e2`, 2:59 PM).
 
-**Verdict: GREEN · 7 shipped (2 scheduled-task prompts, 2 code commits with 3 fixes, 1 DB fix, 2 docs) · 3 DB fixes waiting on a click in the SQL editor · oldest routed: none older than today.**
+**Verdict: GREEN · 9 shipped (2 scheduled-task prompts, 2 code commits with 3 fixes, 3 DB fixes, 2 docs) · 1 index drop waiting on Trevor's click · oldest routed: none older than today.**
 
 ## Health (2:48–3:05 PM PT)
 - Security drift 0, `check_when_others_timeout_blind` 0, stalled `[]`, pg_cron recent failures none, trust breaches none.
@@ -20,13 +20,12 @@
 5. **Timestamp correction** (`24e4b2b16`): three PT stamps I had estimated, corrected from commit times.
 6. **Sitemap leaves out series measured at 0 editions** (`f5a4aa06e`): `getCollectionSeries()` drops `collection_series` rows whose `series_detail_rollup` row says `edition_count = 0` (prod: only UFC Series 0). No rollup row = unknown, kept; a failed rollup read prunes nothing. 3 new tests (the drop case fails with the filter off). Preflight 6 steps, 0 failed; CI/Smoke/E2E green; deploy READY; live `/sitemap/0.xml` lists series-1 and series-2 only (4:10 PM PT).
 7. **Thin-FMV guard computes before TRUNCATE** (`20261017235000`, commit `9c43daab6`): applied 4:50 PM PT through the SQL editor after Trevor's go-ahead (4:46 PM PT). Live md5 `9dbaa011`, compute-first true, anon/authenticated EXECUTE false; one production call wrote the identical 16-edition set. Pin + drift-guard pointer committed together; all 266 DB pins pass locally; CI green. Watch: job 63 at 1:30 AM PT 10-18, no `insight_links` timeouts.
+8. **FMV display guard computes before TRUNCATE** (`20261018000700`, applied 5:07 PM PT): live md5 `b41a6dfa`, compute-first true, grants unchanged; one production call wrote 691 rows (688 from the 1:45 AM run). Pin + drift-guard pointer committed (`a6ccabc1f`).
+9. **Atlas drain samples its open-listing count** (`20261018001100`, applied 5:11 PM PT): ticks from 5:13 PM PT log `open_listings_nba` null; the :01/:31 ticks carry it. Migration header carries the R118 marker for the unchanged loop handler.
+10. **Daytime monitor verified**: the 5:04 PM PT run pushed `09b09efb` at 5:13 PM PT with `INDEX.md`; CI green. Its HIGH filing (fmv-recalc sweep stuck in step 1b) was fixed by the concurrent Claude Code session in `9c1a184a`.
 
 ## Queued for Trevor / Claude Code
-1. **[P2, Trevor — one click each] Three statements still in `docs/pending-sql/`**, each re-verified against live at 4:46 PM PT (all three md5 bases match; the covering index is valid and the old one last scanned 10-16 9:31 AM PT). Trevor approved all four in chat (4:46 PM PT); the thin-FMV one ran, but the **Claude Code auto-mode classifier blocked the Run click** for the next one, so the rest need Trevor's own click (or a manual-approval session):
-   - `2026-10-17-fmv-display-guard-compute-before-truncate.sql` + pin — same lock class as the thin-FMV guard, job 68 (1:45 AM PT, 17–25 s). **Its text is already loaded in the SQL editor tab in Trevor's Chrome (byte-verified by SHA-256 against the committed file).**
-   - `2026-10-17-atlas-market-drain-samples-open-listing-count.sql` (base md5 `0fd92cb7` re-verified 4:46 PM PT).
-   - `2026-10-17-drop-superseded-tame-open-listing-index.sql` (184 MB; `DROP INDEX CONCURRENTLY` must run alone).
-   After each run: insert the `schema_migrations` row by hand (parity matches on NAME), commit the migration (+ pin and drift-guard `migration:` for the display guard), as done for `20261017235000`.
+1. **[P3, Trevor — one click] `docs/pending-sql/2026-10-17-drop-superseded-tame-open-listing-index.sql`** (184 MB; old index last scanned 10-16 9:31 AM PT, covering index valid, re-verified 4:46 PM PT). The statement is loaded in the SQL editor tab in Trevor's Chrome with Supabase's "Potential issue detected" dialog open; the classifier blocked my confirm click. Click **Run query** there (or paste the one line into a new editor tab). `DROP INDEX CONCURRENTLY` must run alone. Then move the file to `supabase/migrations/<version>_audit_20261017_drop_superseded_tame_open_listing_index.sql` and insert its `schema_migrations` row (parity matches on name).
 
 ## Recorded, not changed
 - **UFC Series 0**: page now noindex with honest copy (`3bcf40138`), and since `f5a4aa06e` it is out of the sitemap (see Shipped 6). 371 of 518 UFC editions have `series` NULL (ingested 05-10 → 06-22, after close), so they appear on no series page. Closed archive; recorded only.
