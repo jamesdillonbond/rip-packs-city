@@ -23,21 +23,23 @@
   /* TEXT twins of the tier + semantic colours (#194, decided 2026-10-18 under
      delegation). Fills, borders, stripes and dots keep --tier-* / --rpc-success…
      so a tier reads identically in both themes; only TEXT gets a light-mode shade,
-     the way red text took --rpc-red-text on 10-12. Dark = the fill colour. */
+     the way red text took --rpc-red-text on 10-12. Dark = the fill colour, except
+     rare/challenger/info, a shade lighter so they clear AA on their own tint
+     over a raised card (__tests__/accent-text-contrast.test.ts). */
   --tier-legendary-text: var(--tier-legendary);
   --tier-ultimate-text: var(--tier-ultimate);
-  --tier-rare-text: var(--tier-rare);
+  --tier-rare-text: #8792F8; /* the fill read 4.4:1 on its tint over a raised dark card */
   --tier-fandom-text: var(--tier-fandom);
   --tier-uncommon-text: var(--tier-uncommon);
   --tier-common-text: var(--tier-common);
   --tier-champion-text: var(--tier-champion);
-  --tier-challenger-text: var(--tier-challenger);
+  --tier-challenger-text: #8792F8;
   --tier-contender-text: var(--tier-contender);
   --tier-epic-text: var(--tier-epic);
   --rpc-success-text: var(--rpc-success);
   --rpc-warning-text: var(--rpc-warning);
   --rpc-danger-text: var(--rpc-danger);
-  --rpc-info-text: var(--rpc-info);
+  --rpc-info-text: #5C97F8; /* the fill read ~4.2:1 on its tint over a raised dark card */
   --rpc-red-bg: rgba(224, 58, 47, 0.08);
   --rpc-red-border: rgba(224, 58, 47, 0.3);
   --rpc-red-glow: rgba(224, 58, 47, 0.25);
@@ -218,21 +220,23 @@
   --rpc-accent-text-mix: #000000;
   --rpc-accent-text-amt: 55%; /* was 45 % (10-18 AM): the dark-chip PASTELS that also route here (tier-style, verdict greens) need 55 % — worst 4.90:1 */
   /* Light TEXT twins: the smallest black mix per colour that clears 4.6:1 on
-     white, #F7F7F5, #EBEBEB and its own 12 % tint (computed 2026-10-18). */
-  --tier-legendary-text: #7A6700;
-  --tier-ultimate-text: #AD4924;
-  --tier-rare-text: #5A62AE;
-  --tier-fandom-text: #1D7656;
-  --tier-uncommon-text: #0D766A;
-  --tier-common-text: #5F6876;
-  --tier-champion-text: #915D06;
-  --tier-challenger-text: #5A62AE;
-  --tier-contender-text: #5F6876;
-  --tier-epic-text: #7F57A6;
-  --rpc-success-text: #1D7656;
-  --rpc-warning-text: #915D06;
-  --rpc-danger-text: #A64C4C;
-  --rpc-info-text: #2E65C0;
+     white, #F7F7F5, #EBEBEB and its own 15 % tint over EACH of them — the
+     tinted chip on a raised card is the worst real background (axe read the
+     first values at 4.34:1 there, 10-18). */
+  --tier-legendary-text: #786500;
+  --tier-ultimate-text: #A14321;
+  --tier-rare-text: #535A9F;
+  --tier-fandom-text: #1C7051;
+  --tier-uncommon-text: #0C6D62;
+  --tier-common-text: #59626E;
+  --tier-champion-text: #895806;
+  --tier-challenger-text: #535A9F;
+  --tier-contender-text: #59626E;
+  --tier-epic-text: #75519A;
+  --rpc-success-text: #1C7051;
+  --rpc-warning-text: #895806;
+  --rpc-danger-text: #9A4646;
+  --rpc-info-text: #2A5CAF;
 
   /* The dark shadow presets assume a near-black canvas — soften for light. */
   --shadow-card: 0 1px 6px rgba(0, 0, 0, 0.08);

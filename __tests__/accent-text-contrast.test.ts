@@ -113,8 +113,9 @@ describe("tier + semantic text twins clear AA in both themes", () => {
       it(`${t.name}: --${name}-text`, () => {
         const fg = resolve(t.b, `${name}-text`)
         const fill = hex(token(darkB, name))
-        for (const base of canvases) {
-          for (const bg of [base, mix(base, fill, 0.12)]) {
+        // the worst real background is the tinted chip on a RAISED card (10-18: 4.34:1)
+        for (const base of [...canvases, t.raised]) {
+          for (const bg of [base, mix(base, fill, 0.15)]) {
             const r = contrast(fg, bg)
             expect(r, `--${name}-text rgb(${fg}) on rgb(${bg}) = ${r.toFixed(2)}:1`).toBeGreaterThanOrEqual(4.5)
           }
