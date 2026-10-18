@@ -64,9 +64,9 @@ Top Shot is the one collection through its accuracy gate. It also has the deepes
 
 ## Needs Trevor
 
-- **2026-27 leaderboard scoring** (Yearbook /26, Blue Chip /3, Squad Goals /10). This blocks the "cost to climb" board.
+- ✅ **2026-27 leaderboard boards: DECIDED 10-17 (delegated) — not built until Top Shot publishes the official scoring** ([roadmap-status.md](../../reference/roadmap-status.md), "Decisions taken — the docs-refresh open list").
 - **Flowty shutdown date**, if he hears it, so the teardown happens on the day.
-- Standing: credential-purge residue (#22, the only open item).
+- Standing, estate-wide: the credential-purge residue (#22).
 
 ## Where the detail lives
 

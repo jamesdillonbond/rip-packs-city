@@ -58,7 +58,8 @@ Candy MLB is RPC's only Solana collection: 125 editions, `is_active=true` since 
 ## Needs Trevor
 
 - **#58: three steps.** (1) Create a permanent OpenSea API key at opensea.io/settings/developer (not the instant key). (2) Set `OPENSEA_API_KEY` in Vercel for all environments and redeploy. (3) Restore the three cron lines and delete the parked guard (way back is in #58).
-- **The tagline change** (#63) is his call ([chain-strategy.md](../../reference/chain-strategy.md), end).
+- ✅ **The tagline change (#63): DONE 10-17 under delegation.** The root title is chain-neutral ([chain-strategy.md](../../reference/chain-strategy.md)).
+- **#58 revisit trigger:** if Candy still has 0 indexed sales on 11-10, the OpenSea key becomes the cheapest way to tell a freeze from a venue move.
 
 ## Where the detail lives
 

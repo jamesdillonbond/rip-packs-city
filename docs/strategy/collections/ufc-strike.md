@@ -43,7 +43,7 @@ No numbered register item is open for UFC. Recorded but not changed:
 3. **Right-size `wallet-backfill-ufc`. Do not retire it.**
    - *Why:* about 340 runs a day re-read about 5,674 rows and usually write 0. It still catches real changes, though: 198 on 09-23, 74 on 09-27 and 14 on 10-15. Holdings change even without a market (transfers, migration burns).
    - *Falsifier:* if a 30-day total writes 0, drop it to daily.
-4. **Repair the two malformed edition rows.** This is maintenance and needs Trevor's SQL-editor click.
+4. ~~Repair the two malformed edition rows~~ — **decided 10-17: only from source metadata, never a guessed UPDATE** (see Needs Trevor).
 
 **Later**
 5. **Delete the dead UFC route code:** `ufc-listing-cache`, `ufc-listings-indexer`, `ufc-pipeline`, `ufc-sales-indexer` and the two history backfills. *Gate:* their callers are confirmed gone (#44 removed the last trigger), and the guards that read them are re-pinned.
@@ -59,8 +59,9 @@ No numbered register item is open for UFC. Recorded but not changed:
 - **Never read UFC holdings from `searchUFCNft`** (#186; [packs.md](../../reference/packs.md)).
 
 ## Needs Trevor
-- **Confirm or disable the cron-job.org entries** for the two zero-yield lanes (Now 1), if a session can't reach the console.
-- **One SQL-editor click** for the two malformed-row UPDATEs (Next 4).
+
+- ✅ **Zero-yield lanes: DECIDED 10-17 — retire them** at the next cron-job.org console session; slow `wallet-backfill-ufc` there too ([roadmap-status.md](../../reference/roadmap-status.md), "Decisions taken — the docs-refresh open list"). Not a Trevor decision any more, just console access.
+- ✅ **Two malformed rows: DECIDED 10-17 — leave them as they are.** Re-read live ~8 PM PT: `KHABIB-TIME-901` ("Khabib Time 901", set "901") and `YOU-SUCK-2-0-750` ("You Suck 2 0 750", set "2 0"). Their true names cannot be verified on a closed market with no source metadata, and a guessed UPDATE would fabricate a label. Repair them only from source metadata.
 
 ## Where the detail lives
 - [lib/market-closed.ts](../../../lib/market-closed.ts) · [lib/collections.ts](../../../lib/collections.ts)

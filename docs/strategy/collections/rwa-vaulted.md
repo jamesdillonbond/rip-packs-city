@@ -30,22 +30,19 @@ Nothing for RWA. The only change that touched it: on 10-10 the collection ticker
 - **`chain: "rwa"` is a registry-only chain value.** It has no `chain_type` enum member and no [lib/address.ts](../../../lib/address.ts) arm. Any code that dispatches on `chain` needs a defined answer for it. `dbChain: null` is the established "not established" value.
 
 ## Next — prioritized
+
+✅ **DECIDED 2026-10-17 (Trevor): "RWA can be a future add, but not right now."** The slot stays unpublished. No work is scheduled.
+
 **Now**
-1. **Decide whether the slot stays.**
-   - *Why:* a placeholder carrying a partner name and tabs with no route is low-grade honesty debt. Every guard that walks the registry has to account for it.
-   - *Gate:* Trevor's call (see Needs Trevor).
-   - *Falsifier:* a dated plan to ingest a named RWA source.
+- Nothing. The partner label no longer names Courtyard / Beezie: it reads "Real-world assets" (`lib/collections.ts`), because the signed-in "Coming Soon" banner rendered it.
 
 **Next**
-2. **If it stays: shrink it to the truth.**
-   - `pages: ["overview"]`, drop `vault` and `sniper`, and make `partner` / `pitch` say "not yet evaluated".
-   - *Gate:* `grep -rl rwa __tests__` before editing, since a registry value reddens guards in files you never opened.
+- Nothing until Trevor scopes it.
 
 **Later**
-3. **Only with a product consumer:** evaluate one RWA source (Courtyard or another) against the multi-chain thesis.
-   - *Precondition:* the accuracy gate is met on the existing collections first.
-   - No paid tier or infra spend is implied (no paid tier until 100 WAU, no spend pre-revenue).
-   - *Falsifier:* no free, verifiable sales or ownership source exists, which kills it.
+- **When it is scoped:** evaluate one RWA source against the multi-chain thesis, and name the partner then.
+  - *Precondition:* the accuracy gate is met on the existing collections.
+  - *Falsifier:* no free, verifiable sales or ownership source exists.
 
 ## Decisions on record (do not re-litigate)
 - **Beezie/Base is parked, then retired**, for want of a product consumer ([roadmap-2026-07-18](../roadmap-2026-07-18.md); [chain-strategy.md](../../reference/chain-strategy.md)). Its `evm-transfers-ingest` trigger was disabled 08-02. The live `evm-transfers-ingest` lane now serves **Flow EVM Top Shot**, not RWA.
@@ -53,7 +50,8 @@ Nothing for RWA. The only change that touched it: on 10-10 the collection ticker
 - **Read-only product:** there is no vault, custody or redemption action to offer.
 
 ## Needs Trevor
-- **Keep, trim or delete the `rwa` registry entry** (Now 1). No code can settle what the slot is for.
+
+- Nothing now. He decided 10-17: a future add, not now.
 
 ## Where the detail lives
 - [lib/collections.ts](../../../lib/collections.ts) (the entry and `publishedCollections()`)

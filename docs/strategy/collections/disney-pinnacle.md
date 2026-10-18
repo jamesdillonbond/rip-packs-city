@@ -55,8 +55,8 @@
 
 ## Needs Trevor
 
-- **Does Pinnacle get a gate bar?** M1 (Top Shot ≥ 50 %) and M2 (All Day ≥ 30 %) exist; Pinnacle has none. At ~32–34 % and volume-bound, a bar decides whether Pinnacle counts toward "the data beats the sites collectors use" or is reported beside the gate.
-- Nothing else here is Pinnacle-specific. #22 (credential residue) and #66's external links (held by the gate) are estate-wide.
+- ✅ **Gate bar: DECIDED 10-17 (delegated) — no confidence-share bar.** Pinnacle's labels misrank (#193), so it is gated on realised-sales accuracy instead ([roadmap-status.md](../../reference/roadmap-status.md), "Decisions taken — the docs-refresh open list").
+- Nothing Pinnacle-specific is left for him. #22 and #66 are estate-wide.
 
 ## Where the detail lives
 
