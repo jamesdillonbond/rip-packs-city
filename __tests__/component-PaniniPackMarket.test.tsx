@@ -63,10 +63,33 @@ describe("PaniniPackMarket", () => {
     expect(text.indexOf("Typical pull")).toBeLessThan(text.indexOf("EV (mean)"))
     expect(text).toContain("$30.00")
     expect(text).toContain("+$6.00 vs cost")
+    // The fixture's typical pull ($30) is under cost ($144): a positive mean edge never renders alone.
+    expect(text).toContain("+$6.00 vs cost on the mean only · typical pull −$114")
     expect(c.querySelector('[data-testid="panini-coverage-note"]')).not.toBeNull()
     expect(text).toContain("5,100")
     // Fresh stats carry no stale warning.
     expect(text).not.toContain("may not be current")
+  })
+
+  it("a positive mean edge is never published without the typical pull beside it, and the note makes no 'not asks' claim", async () => {
+    mockFetch(200, payload({ products: [product({ netRipEdgeUsd: 25, typicalEvUsd: 38, costUsd: 209 })] }))
+    const c = await mount()
+    const text = c.textContent ?? ""
+    expect(text).not.toMatch(/\+\$25\.00 vs cost(?! on the mean only)/)
+    expect(text).toContain("typical pull −$171")
+    expect(text).not.toContain("not asks")
+  })
+
+  it("a negative mean edge, or a typical pull at or above cost, keeps the plain edge line", async () => {
+    mockFetch(200, payload({ products: [product({ netRipEdgeUsd: -10, typicalEvUsd: 7, costUsd: 27 })] }))
+    let c = await mount()
+    expect(c.textContent ?? "").toContain("−$10.00 vs cost")
+    expect(c.textContent ?? "").not.toContain("on the mean only")
+    cleanup()
+    mockFetch(200, payload({ products: [product({ netRipEdgeUsd: 6, typicalEvUsd: 150, costUsd: 144 })] }))
+    c = await mount()
+    expect(c.textContent ?? "").toContain("+$6.00 vs cost")
+    expect(c.textContent ?? "").not.toContain("on the mean only")
   })
 
   it("an un-typed secondary-market pack heads with its own name, never 'Pack pack', and says EV is not modeled", async () => {

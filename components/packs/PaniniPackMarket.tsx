@@ -83,6 +83,18 @@ function signedUsd(n: number | null | undefined): string {
   return (n > 0 ? "+" : n < 0 ? "−" : "") + usd(Math.abs(n))
 }
 
+// A positive MEAN edge is carried by chase cards most packs never contain (measured 2026-10-18:
+// WC Hobby/FOTL means sat +$3/+$25 over cost while P(pull >= price) was 13%/18%), so it never
+// renders alone: when the typical pull is under cost, the same line says so.
+function meanEdgeSub(edge: number | null, typical: number | null, cost: number | null): string | undefined {
+  if (edge === null || !Number.isFinite(edge)) return undefined
+  const base = `${signedUsd(edge)} vs cost`
+  if (edge > 0 && typical !== null && cost !== null && Number.isFinite(typical) && Number.isFinite(cost) && typical < cost) {
+    return `${base} on the mean only · typical pull ${signedUsd(typical - cost)}`
+  }
+  return base
+}
+
 function count(n: number | null | undefined): string {
   if (n === null || n === undefined || !Number.isFinite(n)) return "—"
   return n.toLocaleString("en-US")
@@ -165,7 +177,7 @@ function ProductCard({ p, staleAfterHours }: { p: PaniniPackProduct; staleAfterH
         {modeled ? (
           <>
             <Tile label="Typical pull" value={usd(p.typicalEvUsd)} sub="each card slot at its median card" />
-            <Tile label="EV (mean)" value={usd(p.actualEvUsd)} sub={p.netRipEdgeUsd !== null ? `${signedUsd(p.netRipEdgeUsd)} vs cost` : undefined} />
+            <Tile label="EV (mean)" value={usd(p.actualEvUsd)} sub={meanEdgeSub(p.netRipEdgeUsd, p.typicalEvUsd, p.costUsd)} />
           </>
         ) : (
           <Tile label="Pack EV" value="Not modeled" sub={notModeledReason(p.modelNote)} />
@@ -311,9 +323,10 @@ export default function PaniniPackMarket() {
       </h1>
       <Note>
         Sealed Panini NFT packs, bought and sold on Panini&apos;s own marketplace. Prices and supply are Panini&apos;s market
-        stats as of RPC&apos;s last walk. Pack EV is modeled only once every card slot in the pack is priced from real sales, not asks — the
-        standard Hobby and FOTL packs from their odds, and other packs from the contents Panini guarantees on the pack page; packs with a
-        choice or range of contents, or too few card sales, show market stats and say so. Read the typical pull first: it adds up the median card for each slot in the pack — a stand-in for an ordinary pack, not a simulated median pack. The mean is dragged up by chase cards most
+        stats as of RPC&apos;s last walk. Pack EV is modeled for the standard Hobby and FOTL packs from their odds, with each card at its
+        latest FMV — some of those FMVs rest on old sales or on asks alone — and for other packs from the contents Panini guarantees on
+        the pack page, priced from those cards&apos; recent sales; packs with a choice or range of contents, or too few card sales, show
+        market stats and say so. Read the typical pull first: it adds up the median card for each slot in the pack — a stand-in for an ordinary pack, not a simulated median pack. The mean is dragged up by chase cards most
         packs never contain, and it is priced off FMV on a listing-fed index, so it is indicative pull value, not what the cards would sell for.
       </Note>
 
