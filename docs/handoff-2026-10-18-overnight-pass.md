@@ -2,7 +2,7 @@
 
 > ⚠ **SCOPE:** the git-push notes here are specific to this Cowork **cloud** session (pushed from the device-VM clone `$HOME/rpcwork` + the mount's `.rpc-git-cred`; auth proven by `git push --dry-run` exit 0). Trevor's machine and Claude Code push normally.
 
-**[3+ nights routed — FIRST LINE] Oldest open item: #23/#25 edge-fn drift (operator, since 08-22). See "Queued" §3.**
+**Oldest open item: #58 OPENSEA_API_KEY (Trevor-only).** ~~#23/#25 edge-fn drift (since 08-22)~~ is CLOSED — corrected 10-18 ~7:00 AM PT; see "Queued".
 
 **Run:** cloud nightly, ~01:05–01:20 AM PT (08:03–08:20Z) 2026-10-18. Lock `run=f9df8754`. Real time anchored to DB `now()` 08:03Z and app rows (max_ingested 08:03Z, max_fmv_computed 07:56Z) — sandbox clock matched DB within seconds (no skew), **inside the 00:00–06:00 PT window, a genuine overnight run.** No FREEZE. Last night's lock was RELEASED (10-17 08:22Z).
 
@@ -49,10 +49,11 @@ Health green; the one 10-17 health flag (fmv-recalc wedge) was already fixed by 
 - ⚠ Did NOT move either to `inbox/archive/` this pass: the sibling session is churning the tree, and the inbox already carries a large unarchived backlog (~587 files back to 2026-08-09) — a file-move into an actively-moving tree isn't worth the race. Flagged as a housekeeping item for Trevor.
 
 ## Queued for Trevor / Claude Code (carried, not re-shipped)
-1. **[P3, Trevor, ~23 nights, shelved] #58 OPENSEA_API_KEY** — set key + restore the 3 `vercel.json` cron lines + delete the parked-schedule test (all three steps; a key alone changes nothing). Candy sales 0 since 10-11 reads the same as volume moving to OpenSea, which nothing indexes.
-2. **[Housekeeping, Trevor] Windows mount behind origin** — now further behind (origin at `70a83662e`+). Copy local deep-audit edits aside, then `git pull`.
-3. **[Operator, since 08-22 — OLDEST] #23/#25 edge-fn drift** (25 edge fns not on `main`; sentinel arm blocked on a GitHub `actions:read` token) and **drop_scratch residue** (~185 MB `flowty_archive.scratch_*`, SQL-editor only).
-4. **[New observation, Trevor] Inbox archival backlog** — ~587 unarchived files in `docs/overnight/inbox/`. Worth a one-time bulk archive of everything older than the last ~2 passes.
+> ⓘ **Corrected 2026-10-18 ~7:00 AM PT (Cowork cloud, Trevor's "Keep going").** Three of the four lines below were stale, and `focus.md`'s 10-17 STEER block already said so. They are struck through so the next pass does not carry them again. Only #58 is live.
+1. **#58 OPENSEA_API_KEY** — Trevor-only: create a permanent key at opensea.io/settings/developer, set `OPENSEA_API_KEY` in Vercel and redeploy, then restore the three cron lines. The three lanes are UNSCHEDULED (since 10-13), not failing. Candy sales are 0 since 10-11 because Magic Eden shows no Candy activity of any type.
+2. ~~Windows mount behind origin~~ — **DONE 10-15** (focus.md STEER 10-17); the mount has tracked origin since.
+3. ~~#23/#25 edge-fn drift (OLDEST, since 08-22)~~ — **CLOSED**: #23 closed 09-08, #25 resolved 09-25, and `edge-fn-drift` is green every day (latest run 4:37 AM PT 10-18). The ~185 MB `drop_scratch` residue is Trevor's data, dropped only on his word; it is not an open defect.
+4. ~~Inbox archival backlog — worth a one-time bulk archive~~ — **FORBIDDEN, not a backlog.** The inbox is append-only since 08-17, and `__tests__/inbox-is-append-only-since-the-rule.test.ts` enforces it (a 10-04 archive turned `main` red). See `docs/reference/autonomous-tasks.md` "The inbox-archival instruction conflicts with INDEX.md".
 
 ## Failed / blocked / reverted
 None. No ship attempted; no revert needed.
