@@ -78,7 +78,7 @@
   - What: split LOW (1,750) by sales count, and sample ASK_ONLY (1,205) and NO_DATA (700) for editions that have recent sales but no price.
   - Why: ASK_ONLY and NO_DATA appear to have grown since 10-10, on a different basis. Check whether that is composition or a pricing-path miss before any lever.
   - Gate: same instrument, repeat-vs-new cohort split (roadmap-status 09-20 trap).
-- **Close the #191 watch.**
+- ✅ ~~**Close the #191 watch.**~~ **CLOSED 2026-10-17 ~6:49 PM PT** in the register (wmc All Day for `0x6d1f8c18412c6abc` = 2; the 6:27 PM PT walk did not bring rows back). This line was stale until 10-18.
   - Why: the exit is met (wmc 2).
   - Falsifier: the confirmed-deleted rows reappear on a later walk.
 

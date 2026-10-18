@@ -48,6 +48,7 @@ Live reads ~6:00 PM PT 10-17 unless marked otherwise.
 **Next**
 4. **Re-measure the pack EV with the LOW tier repriced.** *Why:* the 09-30 decision asked for a pack-EV re-measure at the "10-07 review". No dated 10-07 re-measure appears in the ledger; the 10-14 review re-measured FMV labels, not pack EV. The 2 positive WC edges are mean-driven. *Gate:* a typical-pull check before any "+EV" copy.
 5. **Add a Panini arm to one #64 rollup (wallet stats or readiness).** *Why:* this is the path to `is_active`. *Gate:* the arm must produce real rows, never zeros. Keep the flag off until all four pass.
+   - ⚠ **Design constraint, measured 2026-10-18 ~8:10 AM PT (Claude Code cloud): do NOT copy readiness's Pinnacle arm.** That arm counts `sold_at > now() - 24 h`. Panini sales land in `panini_sales` a median **12–160 h after `sold_at`**, depending on the day (10-06 → 10-17; it is the laptop runner's walk age). So a 24 h `sold_at` probe reads 7 rows on a day the market settles at ~400–2,700. `/api/ready`'s `thin_volume` drives the Market tab's thin-volume notice, so that arm would publish a **false "thin volume"** on Panini every day. A readiness arm must count by `first_seen_at` (indexed: today `panini_sales` has indexes on `sold_at` and `(edition_external_id, sold_at)` only, so add one) or disclose the lag. `last_sale_at` = `max(sold_at)` stays honest either way. Same caution for `analytics_smoke_run` freshness.
 
 **Later**
 6. **Ingest latency.** Options are a runner change on Trevor's box or infra (held: no spend before revenue).
