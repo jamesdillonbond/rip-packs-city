@@ -4,7 +4,7 @@
 
 **Run:** ~2:45 → ~5:45 PM PT 10-17, Trevor: "look through the project, recent audits, handoffs, known issues … tasks that you can take care of from here … work autonomously for the next 3 hours". A Claude Code session was committing concurrently all afternoon (last seen `b013712e2`, 2:59 PM).
 
-**Verdict: GREEN · 11 shipped (2 scheduled-task prompts, 2 code commits with 3 fixes, 5 DB/pg_cron changes, 2 docs) · nothing waiting on Trevor · oldest routed: none older than today.**
+**Verdict: GREEN · 13 shipped (2 scheduled-task prompts, 3 code commits with 4 fixes, 5 DB/pg_cron changes, 3 docs) · nothing waiting on Trevor · oldest routed: none older than today.**
 
 ## Health (2:48–3:05 PM PT)
 - Security drift 0, `check_when_others_timeout_blind` 0, stalled `[]`, pg_cron recent failures none, trust breaches none.
@@ -25,6 +25,8 @@
 10. **Daytime monitor verified**: the 5:04 PM PT run pushed `09b09efb` at 5:13 PM PT with `INDEX.md`; CI green. Its HIGH filing (fmv-recalc sweep stuck in step 1b) was fixed by the concurrent Claude Code session in `9c1a184a`.
 11. **Superseded 184 MB index dropped** (`20261018005800`, 5:58 PM PT): one-off pg_cron job 741 (the editor confirm click was blocked, then Chrome lost the tab). `to_regclass` NULL; covering index still valid; job unscheduled.
 12. **`chain-arrival-flips` sleeps only when there is work** (`20261018011453`, 6:14 PM PT): the new zero-yield offender is a drained backlog (0 eligible candidates; 15,123 reads done, 12,981 found). Job 681 had held a pg_cron slot 27 s on every idle tick (720/day); the guard cuts that to 144/day, still logging every 10 min inside the 20-min silence watch. Idle ticks now 0.1–0.5 s, verified live. Not suppressed in the zero-yield detector — re-open if `enqueued` > 0 with `found` 0.
+13. **M11 zero explained** (roadmap Now #3): positive control (one-off `SELECT 1/0` job recorded `failed`, the check saw it); the cliff is the 10-09 pack-pulls fix, not the 10-10 #181 parking a parallel session credited — corrected in roadmap, roadmap-status, go-live.
+14. **All Day ask-corroboration re-enabled** (`1bfc17c86`, ~7:25 PM PT): the fmv-recalc liveness probe read a NULL `listed_at` (4,913 `storefront_v2` rows, NULLs sort first under DESC) and withheld every All Day LOW→MEDIUM lift since ~09-25. The would-lift set prices like MEDIUM (14 d: 20.7 % vs 20.0 % median error, n 855). Verified live: lag 0.2 h, 14 of the first 216 recomputed editions LOW→MEDIUM, 0 down. **Read M2 on the 10-18 legs.**
 
 ## Queued for Trevor / Claude Code
 - None. All four 10-17 `docs/pending-sql/` statements are applied and committed.
