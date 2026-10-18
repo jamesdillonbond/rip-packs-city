@@ -49,7 +49,7 @@ No numbered register item is open for UFC. Recorded but not changed:
 4. ~~Repair the two malformed edition rows~~ — **decided 10-17: only from source metadata, never a guessed UPDATE** (see Needs Trevor).
 
 **Later**
-5. **Delete the dead UFC route code:** `ufc-listing-cache`, `ufc-listings-indexer`, `ufc-pipeline`, `ufc-sales-indexer` and the two history backfills. *Gate:* their callers are confirmed gone (#44 removed the last trigger), and the guards that read them are re-pinned.
+5. ✅ **DONE 2026-10-18 ~2:00 PM PT (`c417e7e5`): six routes + 13 route-only tests deleted, seven guards re-pinned, lint baseline 684 → 663; `wallet-backfill-ufc` and `ufc-enrichment-drain` kept (still running).** ~~Delete the dead UFC route code:~~ `ufc-listing-cache`, `ufc-listings-indexer`, `ufc-pipeline`, `ufc-sales-indexer` and the two history backfills. *Gate:* their callers are confirmed gone (#44 removed the last trigger), and the guards that read them are re-pinned.
 6. ✅ ~~Back-fill `series` for the 371 NULL editions~~ — done from chain metadata 10-18 with the tier correction (it was an accuracy defect after all: 42 stored series were wrong, not just missing).
 7. **Aptos:** watch, don't build. Revisit only if UFC on Aptos develops a real, indexable market.
 
