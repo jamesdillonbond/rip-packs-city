@@ -351,7 +351,7 @@ export default function PermanentMomentsIpfs() {
       </div>
 
       <p style={FOOTNOTE}>
-        Rip Packs City is a Flow blockchain digital collectibles intelligence platform. We
+        Rip Packs City is a digital collectibles intelligence platform, built first for Flow. We
         index the data so you don&apos;t have to trust anyone — including us. Catalog facts
         in this post were verified against Dapper&apos;s 2026-06-08 announcement and our own
         IPFS catalog load on 2026-06-09. Nothing here is investment advice.

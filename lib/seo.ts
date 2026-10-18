@@ -16,8 +16,11 @@ const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.rippackscity.c
 // Home (/) inherits these directly \u2014 the marketing page does not export its
 // own metadata, so default title, description, openGraph, and twitter all
 // describe the home surface. The %s template below still applies per-subpage.
+// Chain-neutral since 2026-10-17: the "Flow-only until chain two ships" tagline
+// rule (chain-strategy.md) had met its condition — Candy MLB (Solana) has been
+// live since 09-06 — so a site-wide "for Flow Collectibles" was a small false claim.
 const ROOT_TITLE =
-  'Rip Packs City \u2014 The Intelligence Layer for Flow Collectibles'
+  'Rip Packs City \u2014 The Intelligence Layer for Digital Collectibles'
 const CHAIN_NAMES: Record<string, string> = { flow: 'Flow', solana: 'Solana' }
 
 /**
@@ -78,7 +81,7 @@ export const ROOT_OG_CONTENT = {
       url: '/api/og/default',
       width: 1200,
       height: 630,
-      alt: 'Rip Packs City — Flow collectibles intelligence',
+      alt: 'Rip Packs City — digital collectibles intelligence',
     },
   ],
 }
@@ -129,7 +132,7 @@ export const rootMetadata: Metadata = {
     creator: '@RipPacksCity',
     title: ROOT_TITLE,
     description: ROOT_DESCRIPTION,
-    images: [{ url: '/api/og/default', alt: 'Rip Packs City — Flow collectibles intelligence' }],
+    images: [{ url: '/api/og/default', alt: 'Rip Packs City — digital collectibles intelligence' }],
   },
   robots: {
     index: true,

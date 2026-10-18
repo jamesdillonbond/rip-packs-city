@@ -24,13 +24,13 @@ export const metadata: Metadata = {
   openGraph: {
     ...OG_INHERITED,
     title: "Early Access — Rip Packs City",
-    description: "Join the early-access list for free Flow collectibles intelligence.",
+    description: "Join the early-access list for free digital collectibles intelligence.",
     url: "https://www.rippackscity.com/early-access",
   },
   twitter: {
     ...TWITTER_INHERITED,
     title: "Early Access — Rip Packs City",
-    description: "Join the early-access list for free Flow collectibles intelligence.",
+    description: "Join the early-access list for free digital collectibles intelligence.",
   },
 }
 

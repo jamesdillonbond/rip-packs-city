@@ -35,7 +35,7 @@ describe("franchise hub share metadata", () => {
     expect(meta.twitter?.site).toBe("@RipPacksCity")
 
     // The absence of the false claim: nothing here is the homepage's copy.
-    expect(JSON.stringify(meta.openGraph)).not.toMatch(/Intelligence Layer for Flow Collectibles/)
+    expect(JSON.stringify(meta.openGraph)).not.toMatch(/Intelligence Layer for/)
   })
 
   it("keeps the hub's own robots decision alongside the share block", async () => {

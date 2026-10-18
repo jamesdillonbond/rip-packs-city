@@ -434,7 +434,12 @@ export const COLLECTIONS: Collection[] = [
     sport: "Multi-Sport",
     chain: "rwa",
     dbChain: null,
-    partner: "Courtyard / Beezie",
+    // A FUTURE ADD, not a current one (Trevor, 2026-10-17: "RWA can be a future
+    // add, but not right now"). No partner is chosen: Beezie is retired and
+    // Courtyard was never evaluated, so naming either on the signed-in "Coming
+    // Soon" banner claimed something nothing backs. Pick the partner when the
+    // collection is actually scoped (docs/strategy/collections/rwa-vaulted.md).
+    partner: "Real-world assets",
     accent: "#F59E0B",
     icon: "\u{1F3C5}",
     pages: ["overview", "collection", "sniper", "vault"],
