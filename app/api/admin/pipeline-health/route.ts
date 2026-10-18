@@ -27,7 +27,8 @@ const EXPECTED_INTERVAL_MIN: Record<string, number> = {
   "allday-listing-cache": 20,
   "allday-listings-indexer": 20,
   "golazos-listing-cache": 20,
-  "ufc-listing-cache": 20,
+  // ufc-listing-cache and ufc-sales-indexer removed 2026-10-18: routes deleted with the
+  // dead UFC route code (market closed May 2026; 0 runs), same rule as Pinnacle below.
   // pinnacle-listing-cache retired 2026-06-09 (Flowty teardown; cron-job.org
   // entry deleted, route removed). Its on-chain successor
   // pinnacle-listings-reconcile was itself retired 2026-07-17 and its route
@@ -41,7 +42,6 @@ const EXPECTED_INTERVAL_MIN: Record<string, number> = {
   "topshot-sales-indexer": 20,
   "allday-sales-indexer": 20,
   "golazos-sales-indexer": 20,
-  "ufc-sales-indexer": 20,
   "pinnacle-resolve-buyers": 20,
   "pinnacle-nft-resolver": 5,
   "promote_unmapped_sales": 5,

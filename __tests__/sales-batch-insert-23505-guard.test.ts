@@ -100,7 +100,6 @@ describe("sales indexers — a 23505 must never swallow the batch", () => {
       "app/api/sales-indexer/route.ts",
       "app/api/allday-sales-indexer/route.ts",
       "app/api/golazos-sales-indexer/route.ts",
-      "app/api/ufc-sales-indexer/route.ts",
       "app/api/candy-sales-indexer/route.ts",
     ]) {
       expect(rels).toContain(expected)

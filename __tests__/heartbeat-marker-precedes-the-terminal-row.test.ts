@@ -526,12 +526,13 @@ describe("cron/alerts-dispatch writes its marker first — through its OWN clien
 // terminal row through the SHARED `@/lib/supabase` client. Every upstream fetch is
 // made to fail here, so each run takes its failure path — the marker must still be
 // first, and the terminal row must still be written after it.
-for (const slug of ["topshot", "allday", "golazos", "ufc"] as const) {
+// (ufc-listing-cache dropped 2026-10-18: route deleted with the dead UFC route code.)
+for (const slug of ["topshot", "allday", "golazos"] as const) {
   describe(`${slug}-listing-cache writes its marker first`, () => {
     it("marker precedes the terminal row, carrying the collection slug", async () => {
       const rec = recorder()
       mockAfter()
-      // Three of the four read this at MODULE LOAD and throw without it (test value).
+      // These read this at MODULE LOAD and throw without it (test value).
       process.env.FLOWTY_PROXY_TOKEN = "test-proxy-token"
       vi.doMock("@/lib/supabase", () => ({ supabaseAdmin: rec.db, getSupabaseAdmin: () => rec.db }))
       vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("upstream down (test)") }))

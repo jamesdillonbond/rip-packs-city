@@ -9,10 +9,10 @@ import {
 } from "./helpers/route-harness"
 import { cdc, cdcEvent, eventBlock } from "./helpers/flow-cdc-fixture"
 
-// The Golazos + UFC listings indexers' CURSOR and WRITE arms — the legs the
-// happy-path sibling test doesn't reach. Both routes are structural twins, so
-// everything here runs as a describe.each over the pair; a copy-paste drift in
-// either one's constants shows up as a single failing arm rather than silently.
+// The Golazos listings indexer's CURSOR and WRITE arms — the legs the happy-path
+// sibling test doesn't reach. It ran as a describe.each over Golazos + UFC until the
+// UFC route was deleted 2026-10-18 (dead UFC route code); the describe.each shape is
+// kept so a future structural twin slots in as one more ROUTES row.
 //
 // What actually matters here:
 //   - the FIRST-RUN anchor. On a zero cursor the route must anchor to the sealed
@@ -50,7 +50,6 @@ vi.mock("@/lib/supabase", () => ({
 process.env.INGEST_SECRET_TOKEN = "listings-edge-token"
 
 const golazos = await import("@/app/api/golazos-listings-indexer/route")
-const ufc = await import("@/app/api/ufc-listings-indexer/route")
 
 const V1_AVAIL = "A.4eb8a10cb9f87357.NFTStorefront.ListingAvailable"
 const V1_COMPL = "A.4eb8a10cb9f87357.NFTStorefront.ListingCompleted"
@@ -79,16 +78,6 @@ const ROUTES: RouteCase[] = [
     collectionId: "06248cc4-b85f-47cd-af67-1855d14acd75",
     nftType: "A.87ca73a41bb50ad5.Golazos.NFT",
     cursorId: "golazos_listings",
-  },
-  {
-    label: "ufc",
-    mod: ufc,
-    path: "/api/ufc-listings-indexer",
-    pipeline: "ufc-listings-indexer",
-    slug: "ufc_strike",
-    collectionId: "9b4824a8-736d-4a96-b450-8dcc0c46b023",
-    nftType: "A.329feb3ab062d289.UFC_NFT.NFT",
-    cursorId: "ufc_listings",
   },
 ]
 

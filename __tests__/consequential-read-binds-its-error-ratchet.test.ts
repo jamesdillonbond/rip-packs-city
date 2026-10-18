@@ -152,7 +152,8 @@ describe("a read in a consequential route binds its error", () => {
     // Its AllDay sibling: the serial lookup there is the last source before the
     // row is written, and a NULL serial does not self-heal.
     "app/api/allday-sales-indexer/route.ts",
-    // The five backward history backfills. Their cursor read is the worst case
+    // The four backward history backfills (the UFC one was deleted 2026-10-18 with the
+    // dead UFC route code). Their cursor read is the worst case
     // in the family: a failure left `ceiling` at CEILING_INIT and the tick then
     // wrote that TOP block back over the real cursor, discarding the whole
     // backward walk in one run at ok:true, with nothing that re-walks above a
@@ -160,7 +161,6 @@ describe("a read in a consequential route binds its error", () => {
     "app/api/cron/allday-sales-history-backfill/route.ts",
     "app/api/cron/golazos-sales-history-backfill/route.ts",
     "app/api/cron/topshot-flowty-sales-history-backfill/route.ts",
-    "app/api/cron/ufc-sales-history-backfill/route.ts",
     "app/api/cron/pinnacle-sales-history-backfill/route.ts",
   ])("%s binds the error on every supabaseAdmin read", (route) => {
     expect(family, `${route} must still be discovered`).toContain(route)

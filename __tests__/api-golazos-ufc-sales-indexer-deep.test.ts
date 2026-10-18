@@ -18,13 +18,13 @@ import {
   V2_FLOWTY_LISTING_COMPLETED,
 } from "./helpers/flow-cdc-fixture"
 
-// Deep-drive of the Golazos + UFC sales indexers — structural siblings of the
-// AllDay indexer (same three-storefront scan, same enrichment ladder) with
-// per-collection venue tags and NFT-type filters. One happy path + the
-// wrong-collection filter each, pinning the venue/collection constants that a
-// copy-paste drift would silently corrupt:
+// Deep-drive of the Golazos sales indexer — a structural sibling of the AllDay
+// indexer (same three-storefront scan, same enrichment ladder) with its own venue
+// tag and NFT-type filter. One happy path + the wrong-collection filter, pinning the
+// venue/collection constants that a copy-paste drift would silently corrupt. (Its
+// UFC sibling and that half of this file were deleted 2026-10-18 with the dead UFC
+// route code; the shared-body describe.each keeps its shape for a future twin.)
 //   golazos: .Golazos.NFT -> marketplace 'laligagolazos', collection laliga_golazos
-//   ufc:     .UFC_NFT.NFT -> marketplace 'ufcstrike',     collection ufc_strike
 
 const state = vi.hoisted(() => ({
   afterCbs: [] as Array<() => unknown>,
@@ -71,10 +71,8 @@ vi.mock("@/lib/chains/flow/dapper-v1-tx-decode", () => ({
 process.env.INGEST_SECRET_TOKEN = "sibling-token"
 
 const golazos = await import("@/app/api/golazos-sales-indexer/route")
-const ufc = await import("@/app/api/ufc-sales-indexer/route")
 
 const GOLAZOS_ID = "06248cc4-b85f-47cd-af67-1855d14acd75"
-const UFC_ID = "9b4824a8-736d-4a96-b450-8dcc0c46b023"
 
 // Sealed height 1250 + cursor 1000 -> one 250-block chunk; each fixture lands once.
 function flowRestStubs(v2Dapper: unknown[]): FetchStub[] {
@@ -126,8 +124,8 @@ function v2FlowtySalePayload(nftId: string, price: string, typeID: string, commi
 // Encode the [String] array a UFC/Golazos edition-borrow script returns, the way
 // Flow REST serves it: the response body is the base64 of the JSON-CDC value as a
 // bare JSON string. Returning the raw base64 string (NOT a {value} object)
-// satisfies BOTH siblings' runScript decoders — ufc reads `res.json()` (string
-// passthrough) and golazos reads `JSON.parse(res.text())` (string). The default
+// satisfies golazos's runScript decoder, which reads `JSON.parse(res.text())`
+// (string). The default
 // {value:""} stub the other fixtures use decodes to an empty string that
 // JSON.parse throws on (caught inside the fallback loop → no resolution); this
 // drives the SUCCESS branch that resolves an edition + writes nft_edition_map.
@@ -257,119 +255,11 @@ describe("golazos-sales-indexer", () => {
   })
 })
 
-describe("ufc-sales-indexer", () => {
-  it("ingests a UFC V2 Dapper sale with the ufcstrike venue tag", async () => {
-    const tx1 = "7".repeat(64)
-    state.decodeByTx[tx1] = { buyer: "0x3030303030303030", seller: null }
-    fetchMock = installFetchMock(
-      flowRestStubs([
-        eventBlock({
-          height: 1102,
-          txId: tx1,
-          eventType: V2_DAPPER_LISTING_COMPLETED,
-          payload: v2DapperSalePayload("333", "4.20000000", "A.329feb3ab062d289.UFC_NFT.NFT"),
-        }),
-      ]),
-    )
-    const spy = install({
-      event_cursor: { data: { last_processed_block: 1000 }, error: null },
-      wallet_moments_cache: {
-        data: [{ moment_id: "333", edition_key: "88" }],
-        error: null,
-      },
-      editions: { data: [{ id: "uuid-u88", external_id: "88" }], error: null },
-      sales: { data: null, error: null },
-    })
-
-    const res = await ufc.POST(req("/api/ufc-sales-indexer"))
-    expect(res.status).toBe(200)
-    await runDeferred()
-
-    const saleRows = (spy.writes.sales ?? []).flatMap((w) => w.rows)
-    expect(saleRows).toHaveLength(1)
-    expect(saleRows[0]).toMatchObject({
-      edition_id: "uuid-u88",
-      collection_id: UFC_ID,
-      collection: "ufc_strike",
-      nft_id: "333",
-      price_usd: 4.2,
-      serial_number: 0,
-      marketplace: "ufcstrike",
-      source: "onchain_dapper_v2",
-      buyer_address: "0x3030303030303030",
-    })
-    const log = terminalLog(spy.rpcCalls, "ufc-sales-indexer")
-    expect(log).toMatchObject({ p_ok: true, p_rows_written: 1, p_cursor_after: "1250" })
-  })
-
-  it("ignores non-UFC NFT types and 401s without the token", async () => {
-    const tx = "8".repeat(64)
-    fetchMock = installFetchMock(
-      flowRestStubs([
-        eventBlock({
-          height: 1103,
-          txId: tx,
-          eventType: V2_DAPPER_LISTING_COMPLETED,
-          payload: v2DapperSalePayload("334", "1.00000000", "A.edf9df96c92f4595.Pinnacle.NFT"),
-        }),
-      ]),
-    )
-    const spy = install({
-      event_cursor: { data: { last_processed_block: 1000 }, error: null },
-    })
-
-    await ufc.POST(req("/api/ufc-sales-indexer"))
-    await runDeferred()
-    expect(spy.writes.sales ?? []).toHaveLength(0)
-    expect(terminalLog(spy.rpcCalls, "ufc-sales-indexer")).toMatchObject({ p_rows_found: 0 })
-
-    const unauthorized = await ufc.POST(
-      new NextRequest("https://t/api/ufc-sales-indexer", { method: "POST" }),
-    )
-    expect(unauthorized.status).toBe(401)
-  })
-
-  it("caps the cursor when a chunk fetch throws — no leapfrog past the failed chunk", async () => {
-    // ufc-sales advances the cursor per-chunk inside the loop; a chunk fetch that
-    // THROWS must break so a later chunk can't move the cursor past it. Here the
-    // single chunk (1001-1250) throws before its per-chunk cursor update, so the
-    // cursor is never written and the range is retried next tick.
-    fetchMock = installFetchMock([
-      jsonRoute("blocks?height=sealed", [{ header: { height: "1250" } }]),
-      jsonRoute("/v1/scripts", { value: "" }),
-      {
-        match: (u) => u.includes(encodeURIComponent(V2_DAPPER_LISTING_COMPLETED)),
-        respond: () => {
-          throw new Error("ECONNRESET")
-        },
-      },
-      jsonRoute(encodeURIComponent(V1_LISTING_COMPLETED), []),
-      jsonRoute("/v1/events", []),
-      jsonRoute("/v1/transactions/", { proposal_key: null, authorizers: [], payer: null }),
-    ])
-    const spy = install({
-      event_cursor: { data: { last_processed_block: 1000 }, error: null },
-      sales: { data: null, error: null },
-    })
-
-    const res = await ufc.POST(req("/api/ufc-sales-indexer"))
-    expect(res.status).toBe(200)
-    await runDeferred()
-
-    // Cursor never advanced (no event_cursor write) → the failed chunk is retried
-    // next tick instead of being silently leapfrogged.
-    expect(spy.writes.event_cursor ?? []).toHaveLength(0)
-    const log = terminalLog(spy.rpcCalls, "ufc-sales-indexer")
-    expect(log?.p_cursor_after).toBe("1000")
-    expect((log?.p_extra as Record<string, unknown>)?.partial_scan).toBe(true)
-  })
-})
-
 // ---------------------------------------------------------------------------
 // Shared-body legs: the unmapped fallback, the 23505 all-or-nothing insert
 // contract, the no-new-blocks short-circuit, and the cursor-read failure.
-// These live in the ~550-line runIndexer shared by both siblings, so driving
-// them once through UFC exercises the same code Golazos runs.
+// These live in the ~550-line runIndexer body; they now run through Golazos alone
+// (the UFC sibling was deleted 2026-10-18).
 // ---------------------------------------------------------------------------
 
 // The shared helper's failWrites THROWS; the route awaits `.insert()` and reads
@@ -443,20 +333,6 @@ function withDupeAwareInsert(
 }
 
 const SIBLINGS = [
-  {
-    name: "ufc-sales-indexer",
-    mod: () => ufc,
-    path: "/api/ufc-sales-indexer",
-    nftType: "A.329feb3ab062d289.UFC_NFT.NFT",
-    collectionId: UFC_ID,
-    venue: "ufcstrike",
-    heightBase: 1200,
-    // UFC borrow returns [name, max, serial]; the route slugifies name+max into
-    // the edition external_id ("Fighter X" + 100 -> "FIGHTER-X-100").
-    borrowParts: ["Fighter X", "100", "7"],
-    borrowEditionExternalId: "FIGHTER-X-100",
-    borrowSerial: 7,
-  },
   {
     name: "golazos-sales-indexer",
     mod: () => golazos,
@@ -637,10 +513,10 @@ describe.each(SIBLINGS)("sales-indexer shared body — $name", (S) => {
       { failWrites: ["sales"] },
     )
 
-    // The two siblings surface a fatal differently — golazos defers the scan via
-    // after() (200 + the fatal logged in the deferred body); ufc scans inline (a
-    // 500 response). The pipeline_runs logging is the invariant either way, so we
-    // don't over-fit the HTTP status.
+    // golazos defers the scan via after() (200 + the fatal logged in the deferred
+    // body); a sibling scanning inline answers 500 (the deleted UFC indexer did).
+    // The pipeline_runs logging is the invariant either way, so we don't over-fit
+    // the HTTP status.
     const res = await S.mod().POST(req(S.path))
     expect([200, 500]).toContain(res.status)
     await runDeferred()

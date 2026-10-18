@@ -61,7 +61,9 @@ const authed = () => makeReq({ method: "GET", auth: "Bearer test-ingest-token" }
 
 async function load() {
   vi.resetModules()
-  return (await import("@/app/api/cron/ufc-studio-sales-history-backfill/route")).GET
+  // Representative route: was ufc-studio-sales-history-backfill until that route was
+  // deleted 2026-10-18 (dead UFC route code); its studio sibling carries the same guard.
+  return (await import("@/app/api/cron/pinnacle-studio-sales-history-backfill/route")).GET
 }
 
 beforeEach(() => {

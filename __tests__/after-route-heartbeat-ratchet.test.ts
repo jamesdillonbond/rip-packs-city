@@ -476,7 +476,9 @@ const MISSING = QUALIFYING.filter((r) => !r.hasHeartbeat)
 //   converted together (31 -> 27) — one shape, one edit; margins were 3-14 % of a
 //   300 s wall, so this is coverage, not a measured emergency. Same commit read the
 //   error each one's terminal log_pipeline_run returns (R123).
-const BUDGET = 27
+//   2026-10-18: 27 -> 26 by DELETION, not conversion — an unconverted UFC route left
+//   the tree with the dead UFC route code (market closed May 2026, 0 runs).
+const BUDGET = 26
 
 describe("after() routes that log a pipeline run must write an invocation heartbeat", () => {
   it(`is at or below the frozen budget of ${BUDGET}`, () => {

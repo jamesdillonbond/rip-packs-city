@@ -68,8 +68,6 @@ const routes = {
   "golazos-listings-indexer": await import("@/app/api/golazos-listings-indexer/route"),
   "golazos-sales-indexer": await import("@/app/api/golazos-sales-indexer/route"),
   "topshot-listings-indexer": await import("@/app/api/topshot-listings-indexer/route"),
-  "ufc-listings-indexer": await import("@/app/api/ufc-listings-indexer/route"),
-  "ufc-sales-indexer": await import("@/app/api/ufc-sales-indexer/route"),
 } as const
 
 type RouteName = keyof typeof routes
@@ -159,8 +157,8 @@ function terminalLog(rpcCalls: RecordedRpcCall[], pipeline: string) {
 }
 
 // Every cursor value the run wrote, in order. ⚠ Read ALL of them, not just the
-// last: `ufc-sales-indexer` advances the cursor PER CHUNK inside the loop while
-// its siblings write once at the end, so "the final value is 1000" and "the
+// last: a route may advance the cursor PER CHUNK inside the loop (the deleted
+// `ufc-sales-indexer` did) while its siblings write once at the end, so "the final value is 1000" and "the
 // cursor never passed 1000" are different claims and only the second is the
 // property that protects the data.
 function cursorWrites(writes: Record<string, { rows: Record<string, unknown>[] }[]>): number[] {
@@ -185,15 +183,15 @@ describe("an upstream HTTP error holds the block cursor in every block-scan inde
   // POPULATION if the population is what the fix touched. A new indexer added to
   // the family without a case here would otherwise leave this file reading as
   // complete while the new route carried the swallow.
-  it("covers all 7 routes the 2026-08-21 fix touched", () => {
+  // The two UFC indexers were in the 2026-08-21 population; their routes were deleted
+  // 2026-10-18 with the dead UFC route code (market closed, 0 runs), leaving 5.
+  it("covers all 5 surviving routes the 2026-08-21 fix touched", () => {
     expect(Object.keys(routes).sort()).toEqual([
       "allday-listings-indexer",
       "allday-sales-indexer",
       "golazos-listings-indexer",
       "golazos-sales-indexer",
       "topshot-listings-indexer",
-      "ufc-listings-indexer",
-      "ufc-sales-indexer",
     ])
   })
 

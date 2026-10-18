@@ -9,7 +9,8 @@ import {
 } from "./helpers/route-harness"
 import { cdc, cdcEvent, eventBlock } from "./helpers/flow-cdc-fixture"
 
-// Deep-drive of the Golazos + UFC listings indexers — lean structural siblings
+// Deep-drive of the Golazos listings indexer (the UFC sibling and its half of this
+// file were deleted 2026-10-18 with the dead UFC route code) — a lean structural sibling
 // of allday-listings-indexer (same triple-storefront scan and cached_listings_v2
 // keying, but NO nft_edition_map fallback, NO Cadence seller-borrow, and NO
 // listing_resolution_failures queue: unresolved listings still land with
@@ -17,8 +18,6 @@ import { cdc, cdcEvent, eventBlock } from "./helpers/flow-cdc-fixture"
 // the per-collection constants a copy-paste drift would silently corrupt:
 //   golazos: .Golazos.NFT -> collection_id 06248cc4-…, slug laliga_golazos,
 //            pipeline golazos-listings-indexer, cursor id golazos_listings
-//   ufc:     .UFC_NFT.NFT -> collection_id 9b4824a8-…, slug ufc_strike,
-//            pipeline ufc-listings-indexer, cursor id ufc_listings
 
 const state = vi.hoisted(() => ({
   afterCbs: [] as Array<() => unknown>,
@@ -39,12 +38,9 @@ vi.mock("@/lib/supabase", () => ({
 process.env.INGEST_SECRET_TOKEN = "sibling-listings-token"
 
 const golazos = await import("@/app/api/golazos-listings-indexer/route")
-const ufc = await import("@/app/api/ufc-listings-indexer/route")
 
 const GOLAZOS_ID = "06248cc4-b85f-47cd-af67-1855d14acd75"
-const UFC_ID = "9b4824a8-736d-4a96-b450-8dcc0c46b023"
 const GOLAZOS_NFT = "A.87ca73a41bb50ad5.Golazos.NFT"
-const UFC_NFT = "A.329feb3ab062d289.UFC_NFT.NFT"
 const DUC_VAULT = "A.ead892083b3e2c6c.DapperUtilityCoin.Vault"
 const FUT_VAULT = "A.ead892083b3e2c6c.FlowUtilityToken.Vault"
 const SELLER = "0xbbbbbbbbbbbbbbbb"
@@ -251,97 +247,5 @@ describe("golazos-listings-indexer", () => {
     const extra = log?.p_extra as Record<string, unknown>
     expect(extra.events_pre_filter).toBe(1)
     expect(extra.events_post_filter).toBe(0)
-  })
-})
-
-describe("ufc-listings-indexer", () => {
-  it("V2 Dapper UFC listing with an unresolved edition still lands with edition_id null (no failure queue, no Cadence)", async () => {
-    const tx1 = "7".repeat(64)
-    fetchMock = installFetchMock(
-      flowRestStubs({
-        v2DapperAvail: [
-          eventBlock({
-            height: 1102,
-            txId: tx1,
-            eventType: V2_DAPPER_AVAIL,
-            payload: v2AvailPayload({ nftId: "333", lrid: "5101", price: "4.20000000", typeID: UFC_NFT }),
-          }),
-        ],
-      }),
-    )
-    const spy = install({
-      event_cursor: { data: { last_processed_block: 1000 }, error: null },
-      // wmc miss: the lean siblings have no fallback ladder, but the row still writes.
-      wallet_moments_cache: { data: [], error: null },
-      cached_listings_v2: { data: null, error: null },
-    })
-
-    const res = await ufc.POST(req("/api/ufc-listings-indexer"))
-    expect(res.status).toBe(200)
-    await runDeferred()
-
-    const upserts = (spy.writes.cached_listings_v2 ?? [])
-      .filter((w) => w.method === "upsert")
-      .flatMap((w) => w.rows)
-    expect(upserts).toHaveLength(1)
-    expect(upserts[0]).toMatchObject({
-      listing_resource_id: "5101",
-      source: "direct_v2",
-      flow_id: "333",
-      edition_id: null,
-      collection_id: UFC_ID,
-      seller_address: SELLER,
-      price_usd: 4.2,
-      currency: "FUT",
-    })
-    // Lean shape: no failure queue and no Cadence borrow exist in this route.
-    expect(spy.writes.listing_resolution_failures ?? []).toHaveLength(0)
-    expect(fetchMock.calls.filter((c) => c.url.includes("/v1/scripts"))).toHaveLength(0)
-
-    const log = terminalLog(spy.rpcCalls, "ufc-listings-indexer")
-    expect(log).toMatchObject({
-      p_ok: true,
-      p_rows_found: 1,
-      p_rows_written: 1,
-      p_collection_slug: "ufc_strike",
-      p_cursor_after: "1250",
-    })
-    const extra = log?.p_extra as Record<string, unknown>
-    expect(extra.unresolved_sample).toEqual(["333"])
-    expect(extra.v2_dapper_available_count).toBe(1)
-  })
-
-  it("ignores non-UFC NFT types and 401s without the token", async () => {
-    const tx = "8".repeat(64)
-    fetchMock = installFetchMock(
-      flowRestStubs({
-        v2DapperAvail: [
-          eventBlock({
-            height: 1103,
-            txId: tx,
-            eventType: V2_DAPPER_AVAIL,
-            payload: v2AvailPayload({ nftId: "334", lrid: "5102", price: "1.00000000", typeID: "A.edf9df96c92f4595.Pinnacle.NFT" }),
-          }),
-        ],
-      }),
-    )
-    const spy = install({
-      event_cursor: { data: { last_processed_block: 1000 }, error: null },
-    })
-
-    await ufc.POST(req("/api/ufc-listings-indexer"))
-    await runDeferred()
-    expect(spy.writes.cached_listings_v2 ?? []).toHaveLength(0)
-    const log = terminalLog(spy.rpcCalls, "ufc-listings-indexer")
-    expect(log).toMatchObject({ p_rows_found: 0 })
-    // The typeid roster still surfaces what the shared V2 venue carried.
-    expect((log?.p_extra as Record<string, unknown>).v2_dapper_typeids_seen).toContain(
-      "A.edf9df96c92f4595.Pinnacle.NFT",
-    )
-
-    const unauthorized = await ufc.POST(
-      new NextRequest("https://t/api/ufc-listings-indexer", { method: "POST" }),
-    )
-    expect(unauthorized.status).toBe(401)
   })
 })

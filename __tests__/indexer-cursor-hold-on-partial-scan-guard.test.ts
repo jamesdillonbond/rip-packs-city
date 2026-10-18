@@ -65,7 +65,6 @@ describe("block-scan indexers hold the cursor at a failed chunk", () => {
     for (const r of [
       "app/api/allday-sales-indexer/route.ts",
       "app/api/sales-indexer/route.ts",
-      "app/api/ufc-sales-indexer/route.ts",
       "app/api/golazos-sales-indexer/route.ts",
     ]) {
       expect(routes, `${r} must still be discovered`).toContain(r)
@@ -192,7 +191,6 @@ describe("block-scan indexers hold the cursor at a failed chunk", () => {
       "app/api/cron/golazos-sales-history-backfill/route.ts",
       "app/api/cron/pinnacle-sales-history-backfill/route.ts",
       "app/api/cron/topshot-flowty-sales-history-backfill/route.ts",
-      "app/api/cron/ufc-sales-history-backfill/route.ts",
       "app/api/pinnacle-listings-indexer/route.ts",
       "app/api/pinnacle-sales-indexer/route.ts",
       "app/api/allday-listings-indexer/route.ts",
@@ -263,7 +261,9 @@ describe("block-scan indexers hold the cursor at a failed chunk", () => {
     it("discovered every route that fetches an event range itself", () => {
       // A no-slack count. `toBeGreaterThanOrEqual` would let a route that lost
       // its fetcher to a rename drop out of the population unnoticed.
-      expect(fetchers.length, "the event-range fetcher family is exactly 20").toBe(20)
+      // 20 -> 17 on 2026-10-18: ufc-listings-indexer, ufc-sales-indexer and
+      // ufc-sales-history-backfill were deleted with the dead UFC route code.
+      expect(fetchers.length, "the event-range fetcher family is exactly 17").toBe(17)
       // sales-indexer is absent by construction rather than by exemption: it
       // reaches Flow through fcl, which THROWS, so it never had the swallow.
       expect(fetchers).not.toContain("app/api/sales-indexer/route.ts")
