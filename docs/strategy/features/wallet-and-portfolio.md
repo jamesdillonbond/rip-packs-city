@@ -50,7 +50,7 @@ There is no wallet verification. It was removed by decision (#0, 08-08).
 
 ## Open issues
 
-- **The funnel stops at the share card.** Week of 10-08 → 10-14: 10 wallet pastes → 10 share views → **0 sign-in clicks**, and email capture was shown 16× with 0 submits. The 10-14 CTA has not yet been measured.
+- **The funnel stops at the share card.** Week of 10-08 → 10-14: 10 wallet pastes → 10 share views → **0 sign-in clicks**, and email capture was shown 16× with 0 submits. The 10-14 CTA has not yet been measured. ↳ **First read 10-18 ~12:15 PM PT (Claude Code cloud; `usage_events`, 10-14 12 AM PT → now, rows without `metadata.automated`, joined by `vid`): 4 human share-card viewers → 1 reached `/login` after the share view → 1 magic link requested.** The first non-zero step past the share card, but n = 4: a signal, not a rate. Leave the formal read to the 10-22 demand re-read. ⚠ Read humans ONLY via `metadata.automated IS NULL`: since 10-14 the same table holds ~15,900 page views flagged automated (playwright 14,151 from 12,930 vids · lightpanda 939 · headlesschrome 534 · crawler 293) against **145 human page views from 47 visitors**, so any `page-view` count without that filter is ~99 % bots.
 - **Ownership-index coverage limits** (topshot-ownership-index.md):
   - Set 218 (Series 8 Base) is excluded on purpose.
   - Dune-era sets lag, because Constellations trade-ins burn Rares the walk does not index.
