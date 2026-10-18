@@ -122,6 +122,9 @@ const PANINI_AGED_CRITICAL_DAYS = 6;
 // priority while held + aged editions of 70 other products did. 2,630 WC editions were still on the
 // old FMV engine for the same reason. Modeled editions older than this go right after the critical
 // list, stalest first, capped so the aged/held interleave keeps most of a run (~450 editions).
+// ⚠ Composes with the runner's 1:1 priced weighting of the KNOWN list (scripts/panini-walk-order.mjs,
+// same day, WC only, effective once the runner box pulls): that one is the steady state, this one
+// the server-side AGE FLOOR for every modeled product — mostly idle for WC once 1:1 holds it ~18 h.
 const PANINI_MODELED_FRESH_HOURS = 36;
 const PANINI_MODELED_PRIORITY_CAP = 150;
 
