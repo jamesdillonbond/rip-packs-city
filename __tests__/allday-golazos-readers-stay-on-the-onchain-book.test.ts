@@ -28,6 +28,8 @@ const SUPPRESSED: Record<string, string> = {
   analytics_pipeline_health: "admin pipeline-health page, counts per source",
   mcp_find_set_completion: "no caller in app, lib, scripts or edge functions (runbook census 10-18)",
   compute_ultimate_non_special_fmv: "Top Shot Ultimate-tier FMV only; no caller in app, lib, scripts or edge functions",
+  resolve_wallet_verification_challenges:
+    "listing-challenge verification: its v1 leg is Top Shot's own feed; All Day / Golazos match through its v2 leg (pinned below)",
 }
 
 // The readers moved on 10-18: each must read v2 and must not read v1.
@@ -74,6 +76,13 @@ describe("All Day / Golazos listing readers stay on the on-chain book", () => {
       expect(V1_READ.test(d!.body), `${fn} reads v1 cached_listings`).toBe(false)
       expect(ON_CHAIN_READ.test(d!.body), `${fn} no longer reads the on-chain book`).toBe(true)
     }
+  })
+
+  it("wallet verification keeps its on-chain leg (an All Day / Golazos-only wallet can verify)", () => {
+    const body = defs.get("resolve_wallet_verification_challenges")!.body
+    expect(body).toMatch(/\bcached_listings_v2\b/i)
+    // the leg must accept storefront_v2 rows, whose listed_at is NULL
+    expect(body).toMatch(/COALESCE\(\s*c2\.listed_at\s*,\s*c2\.ingested_at\s*\)\s*>=\s*wvc\.created_at/i)
   })
 
   it("analytics_listings_summary's v1 arm excludes All Day and Golazos, and its on-chain arm exists", () => {
