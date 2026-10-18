@@ -2060,7 +2060,41 @@ async function executeToolInner(
       liveFeedFailed = true;
     }
 
-    try {
+    // All Day / Golazos: v1 cached_listings holds only Flowty's book there, so
+    // the fallback reads the on-chain index instead (catalog-deals-index.ts).
+    if (readsCatalogDealsFromIndex(effectiveCollectionId)) {
+      try {
+        const idx = await fetchIndexCatalogDeals(
+          supabase,
+          effectiveCollectionId as "nfl-all-day" | "laliga-golazos",
+          {
+            ...toolInput,
+            labels: toolInput.player ? playerScope.labels ?? null : null,
+            // A deal board: below FMV only, as the v1 leg's discount > 0.
+            minDiscount: Math.max(Number(toolInput.minDiscount) || 0, 0.1),
+            limit: toolInput.limit || 10,
+          },
+          base,
+        );
+        if (!idx.ok) catalogFailed = true;
+        else {
+          const results = idx.results
+            .filter((d) => d.discount_pct != null && d.discount_pct > 0)
+            .map((d) => ({ ...d, source: "catalog" }));
+          if (results.length > 0) {
+            return JSON.stringify({
+              status: "ok",
+              results,
+              total: results.length,
+              source: "catalog_fallback",
+              note: "Edition floors from RPC's on-chain listing index (serial is null — link edition_url).",
+            });
+          }
+        }
+      } catch {
+        catalogFailed = true;
+      }
+    } else try {
       let query = supabase
         .from("cached_listings")
         .select("player_name, set_name, tier, serial_number, circulation_count, ask_price, fmv, discount, badge_slugs, buy_url, collection_id")

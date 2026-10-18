@@ -289,6 +289,39 @@ describe("concierge tools — search_catalog_deals (on-chain index collections)"
     expect(JSON.stringify(r)).not.toContain("Flowty Only")
   })
 
+  it("search_live_deals' fallback (feed down) reads the index for All Day, below-FMV rows only", async () => {
+    stubFetch([jsonRoute("/api/sniper-feed", {}, { status: 503 })])
+    const spy = install({
+      cached_listings: { data: [V1_ROW], error: null },
+      "rpc:get_allday_market_editions_v3": { data: [
+        { edition_id: "e1", external_id: "ad-1", player_name: "Deal", set_name: "Rookie Revelation", floor_ask: 7, fmv_usd: 10, discount_pct: 30 },
+        { edition_id: "e2", external_id: "ad-2", player_name: "Above", set_name: "Rookie Revelation", floor_ask: 11, fmv_usd: 10, discount_pct: -10 },
+        { edition_id: "e3", external_id: "ad-3", player_name: "OtherSet", set_name: "Base", floor_ask: 1, fmv_usd: 10, discount_pct: 90 },
+      ], error: null },
+    })
+    script("search_live_deals", { collectionId: "nfl-all-day", setName: "rookie" })
+    await POST(post("All Day rookie deals"))
+    const r = toolResult()
+    expect(r.status).toBe("ok")
+    expect(r.source).toBe("catalog_fallback")
+    expect((r.results as Array<{ player: string }>).map((x) => x.player)).toEqual(["Deal"])
+    expect(JSON.stringify(r)).not.toContain("Flowty Only")
+    expect(spy.rpcCalls.find((c) => c.name === "get_allday_market_editions_v3")!.args).toMatchObject({ p_min_discount: 0.1 })
+  })
+
+  it("feed down AND index read failed is an error, never 'no deals found'", async () => {
+    stubFetch([jsonRoute("/api/sniper-feed", {}, { status: 503 })])
+    install({
+      cached_listings: { data: [V1_ROW], error: null },
+      "rpc:get_golazos_catalog_deals": { data: null, error: { message: "statement timeout" } },
+    })
+    script("search_live_deals", { collectionId: "laliga-golazos" })
+    await POST(post("Golazos deals"))
+    const r = toolResult()
+    expect(r.status).toBe("error")
+    expect(JSON.stringify(r)).not.toContain("Flowty Only")
+  })
+
   it("Golazos reports a badge filter it cannot apply instead of dropping it", async () => {
     install({
       "rpc:get_golazos_catalog_deals": {

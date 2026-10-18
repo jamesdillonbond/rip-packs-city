@@ -29,6 +29,8 @@ export interface IndexDealsInput {
    *  pull a namesake ("Marvin Harrison" ⊂ "Marvin Harrison Jr."). */
   labels?: string[] | null
   tier?: string | null
+  /** Partial, case-insensitive set name; applied after the read (over-fetched). */
+  setName?: string | null
   team?: string | null
   maxPrice?: number | null
   minDiscount?: number | null
@@ -64,6 +66,9 @@ export async function fetchIndexCatalogDeals(
   base: string,
 ): Promise<{ ok: true; results: IndexDeal[]; filtersNotApplied: string[] } | { ok: false }> {
   const limit = Math.min(Math.max(Number(input.limit) || 8, 1), 50)
+  const setNeedle = input.setName?.trim().toLowerCase() || null
+  // Neither source filters on a partial set name, so over-fetch and filter here.
+  const fetchN = setNeedle ? Math.min(limit * 3, 50) : limit
   const player = input.player?.trim() || null
   const tier = input.tier?.trim() || null
   const team = input.team?.trim() || null
@@ -108,7 +113,7 @@ export async function fetchIndexCatalogDeals(
   if (labels.length > 0) {
     // One read per label, over-fetched so a namesake's rows cannot crowd the
     // person's out of the limit, then kept only on an exact label match.
-    const reads = await Promise.all(labels.map((l) => readOne(l, Math.min(limit * 3, 50))))
+    const reads = await Promise.all(labels.map((l) => readOne(l, Math.min(Math.max(fetchN, limit * 3), 50))))
     if (reads.some((r) => r == null)) return { ok: false }
     const keep = new Set(labels)
     const seen = new Set<string>()
@@ -130,12 +135,13 @@ export async function fetchIndexCatalogDeals(
       if (da == null && db != null) return 1
       return (num(a.floor_ask) ?? Infinity) - (num(b.floor_ask) ?? Infinity)
     })
-    data = data.slice(0, limit)
   } else {
-    const r = await readOne(player, limit)
+    const r = await readOne(player, fetchN)
     if (r == null) return { ok: false }
     data = r
   }
+  if (setNeedle) data = data.filter((r) => String(r.set_name ?? "").toLowerCase().includes(setNeedle))
+  data = data.slice(0, limit)
 
   const results: IndexDeal[] = []
   for (const r of data as Array<Record<string, any>>) {
