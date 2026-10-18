@@ -4,7 +4,7 @@
 
 **Run:** ~2:45 → ~10 PM PT 10-17, Trevor: "look through the project, recent audits, handoffs, known issues … tasks that you can take care of from here … work autonomously for the next 3 hours". A Claude Code session was committing concurrently all afternoon (last seen `b013712e2`, 2:59 PM).
 
-**Verdict: GREEN · 21 items (incl. FMV 1.8.2 + three Panini follow-ups and a data repair — read M1/M2 on the 10-18 legs expecting a by-decision drop) · nothing waiting on Trevor · oldest routed: none older than today.**
+**Verdict: GREEN · 22 items (incl. FMV 1.8.2/1.8.3 + three Panini follow-ups and a data repair — read M1/M2 on the 10-18 legs expecting a by-decision drop) · nothing waiting on Trevor · oldest routed: none older than today.**
 
 ## Health (2:48–3:05 PM PT)
 - Security drift 0, `check_when_others_timeout_blind` 0, stalled `[]`, pg_cron recent failures none, trust breaches none.
@@ -35,6 +35,7 @@
 19. **Panini's unknown sale count kept out of the concierge and the HIGH gate** (`79f379b34`, ~11 PM PT). Every Panini snapshot has `sales_count_30d = 0`. The concierge's `explain_fmv` returned that 0 with "30-day average … limited sales data" copy, and the edition page's "?" context sent ", 0 sales in 30 days". Both now treat the count as unknown. The re-stamp's HIGH gate no longer re-grades Panini's own HIGH. Verified live: two Panini edition pages carry no sales-count phrase, a Top Shot control still shows "9 sales in 30 days". (The open re-stamp question is settled in item 20.)
 20. **Re-stamp no longer touches Panini, and Panini's own prices are the latest rows again** (`60f30ae7a`, live 11:13 PM PT; data 11:18 PM PT). Studied rather than guessed. `sync_panini_bridge` copies engine rows with the engine's earlier `computed_at`, so a re-stamp landing in that gap buried newer prices: 42 editions showed an older engine price, e.g. $2.00 over the engine's $1.00 since 10-16. The engine rewrites every edition within ~4.6 days, and no 24 h-cutoff reader serves Panini, so the exclusion is safe; done exactly like Pinnacle's. Repair: 8,470 copies of each edition's latest engine row, all stamped `2026-10-18 06:18:55.201018+00` (one-statement revert in the ledger). 0 Panini editions now have a re-stamp as their latest row.
 21. **Set-page timeout (9:53 PM PT, `/nfl-all-day/set/genesis`): no change.** Both reads run in ~620 ms against an 8 s limit. The failure sat 24 s into a burst of six pg_cron lanes starting at :53:00, plus this session's own heavy backtest queries. 2 occurrences in 7 days; the page degrades the section, not the page.
+22. **FMV 1.8.3 from the 1:00 AM PT check-in** (`f7682fdc7`, live ~1:10 AM PT). 6 rows were MEDIUM under 1.8.2 even though their price rested only on 30–90-day-old sales, because the single recent sale was a grail spike the dampener strips. The MEDIUM gate now counts only recent sales the price can use. The check-in was otherwise clean: Top Shot 54.6 % and All Day 30.8 % HIGH+MEDIUM, projected 44.5 % and 27.1 % once the cold 1.8.1 MEDIUMs are re-stamped; Panini 0 re-stamps, repair carried in `edition_fmv_current`. A 1:40 AM PT follow-up checks the first 1.8.3 rows.
 ## Queued for Trevor / Claude Code
 - None. All four 10-17 `docs/pending-sql/` statements are applied and committed.
 
