@@ -30,7 +30,7 @@
 ## Next — prioritized
 
 **Now**
-- **#193: price HIGH-eligible renders at the median of their last 5 sales** (the young-render rule, extended). *Why:* it beat the published HIGH in every price band over 45 d and since the 10-09 engine change. *Gate:* re-measure at ≥ 500 post-10-09 HIGH sales (~2 weeks); ship only if it still wins within-±25 % and WAPE without costing MEDIUM. Then make the measurement a standing `pinnacle_fmv_sales_backtest` view so the gate is re-readable.
+- **#193: price HIGH-eligible renders at the median of their last 5 sales** (the young-render rule, extended). *Why:* it beat the published HIGH in every price band over 45 d and since the 10-09 engine change. *Gate:* re-measure at ≥ 500 post-10-09 HIGH sales (~2 weeks); ship only if it still wins within-±25 % and WAPE without costing MEDIUM. ✅ **Instrument shipped 10-18 ~10:20 AM PT: `pinnacle_fmv_sales_backtest(p_since, p_until)`** (`20261018171928`; reproduces #193's HIGH row exactly). Gate read: `SELECT * FROM pinnacle_fmv_sales_backtest('2026-10-09 14:00-07')`. **First read 10-18 ~10:20 AM PT: HIGH n 247 of 500; naive-5 still wins (within ±25 % 75.3 vs 64.8; WAPE 20.8 vs 31.0); MEDIUM 73.4 vs 74.7.**
 - ~~Confirm the share leg raises on a failed write~~ — **answered ~7:05 PM PT 10-17, no change needed.** Its `EXCEPTION WHEN query_canceled OR OTHERS` writes the documented failure sentinel `999` to `pinnacle_fmv_high_med_share_pct` and returns, so the wrapper logs `ok=true` on a failed leg by design (the same as `fmv_coverage` and the Panini leg). ⚠ **Key any watcher on `value = 999` (or a stale `computed_at`), never on the run's `ok`.**
 
 **Next**

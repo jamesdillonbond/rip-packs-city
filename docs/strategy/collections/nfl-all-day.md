@@ -78,7 +78,7 @@
   - What: split LOW (1,750) by sales count, and sample ASK_ONLY (1,205) and NO_DATA (700) for editions that have recent sales but no price.
   - Why: ASK_ONLY and NO_DATA appear to have grown since 10-10, on a different basis. Check whether that is composition or a pricing-path miss before any lever.
   - Gate: same instrument, repeat-vs-new cohort split (roadmap-status 09-20 trap).
-  - ↳ **Read 2026-10-18 ~10:35 AM PT (Claude Code cloud) — ASK_ONLY and NO_DATA are COMPOSITION, not a pricing-path miss.** Joined `edition_fmv_current` (6,190 All Day editions) to `sales_market` (price > 0):
+  - ↳ **Read 2026-10-18 ~10:18 AM PT (Claude Code cloud) — ASK_ONLY and NO_DATA are COMPOSITION, not a pricing-path miss.** Joined `edition_fmv_current` (6,190 All Day editions) to `sales_market` (price > 0):
     - **NO_DATA 698: 0 have EVER sold.** Nothing to price from.
     - **ASK_ONLY 1,203: 1 sold in the last 30 days** (and that sale landed after its compute, a timing case). 1,135 have sold at some point (median 14 lifetime sales), 164 in the last 60 days, 305 in 90. They are outside the 30-day sales window by design, not missed by it.
     - **STALE 881: 0 sold in 30 days**, 880 ever sold, 23 in 60 days.

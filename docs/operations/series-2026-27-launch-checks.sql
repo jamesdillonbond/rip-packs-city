@@ -1,6 +1,6 @@
 -- Series 2026-27 (on-chain series 9) tip-off verification — read-only, run with execute_sql.
 -- Pre-staged 2026-10-18 for the scheduled check on 10-20 (task trig_01WkbSku…, 7:00 PM PT).
--- Every query below was run against prod 10-18 ~10:20 AM PT: series-9 counts all 0; with series=8
+-- Every query below was run against prod 10-18 ~10:15 AM PT: series-9 counts all 0; with series=8
 -- substituted, Q2 read 1,854 base editions / 0 null / 1 without an Atlas row / 0 above Atlas, Q3 read
 -- 'Series 2025-26', Q4 513,786 index rows / 1,063 backfill unwalked / 7,470 candidates added in 24 h /
 -- walk 9 of 9 ok-unbudgeted, Q5 2,272 complete. Substitute 8 for 9 to get a control row.
