@@ -25,21 +25,21 @@ export default function CollectionFilterBar(props: {
   const { view, dispatchView, availablePlayers, availableSets, availableSeries, availableRarities, collectionSlug } = props
   return (
     <div className="mb-5 grid gap-2 grid-cols-2 sm:grid-cols-3 xl:grid-cols-7">
-      <select value={view.playerFilter} onChange={function(e) { dispatchView({ type: "SET", field: "playerFilter", value: e.target.value }) }} className="rpc-filter-select">
+      <select aria-label={"Filter by " + getEntityLabels(collectionSlug).players.toLowerCase()} value={view.playerFilter} onChange={function(e) { dispatchView({ type: "SET", field: "playerFilter", value: e.target.value }) }} className="rpc-filter-select">
         {availablePlayers.map(function(p) { return <option key={p} value={p}>{p === "all" ? "All " + getEntityLabels(collectionSlug).players : p}</option> })}
       </select>
-      <select value={view.setFilter} onChange={function(e) { dispatchView({ type: "SET", field: "setFilter", value: e.target.value }) }} className="rpc-filter-select">
+      <select aria-label="Filter by set" value={view.setFilter} onChange={function(e) { dispatchView({ type: "SET", field: "setFilter", value: e.target.value }) }} className="rpc-filter-select">
         {availableSets.map(function(s) { return <option key={s} value={s}>{s === "all" ? "All Sets" : s}</option> })}
       </select>
-      <select value={view.seriesFilter} onChange={function(e) { dispatchView({ type: "SET", field: "seriesFilter", value: e.target.value }) }} className="rpc-filter-select">
+      <select aria-label="Filter by series" value={view.seriesFilter} onChange={function(e) { dispatchView({ type: "SET", field: "seriesFilter", value: e.target.value }) }} className="rpc-filter-select">
         {availableSeries.map(function(s) { return <option key={s} value={s}>{s === "all" ? "All Series" : s}</option> })}
       </select>
-      <select value={view.rarityFilter} onChange={function(e) { dispatchView({ type: "SET", field: "rarityFilter", value: e.target.value }) }} className="rpc-filter-select">
+      <select aria-label={isPinnacleUrlSlug(collectionSlug) ? "Filter by variant" : "Filter by rarity"} value={view.rarityFilter} onChange={function(e) { dispatchView({ type: "SET", field: "rarityFilter", value: e.target.value }) }} className="rpc-filter-select">
         {availableRarities.map(function(tier) { return <option key={tier} value={tier}>{tier === "all" ? (isPinnacleUrlSlug(collectionSlug) ? "All Variants" : "All Rarities") : tier}</option> })}
       </select>
       {/* No lock filter where the collection has no locking (Disney Pinnacle). */}
       {collectionHasLocking(collectionSlug) && (
-      <select value={view.lockedFilter} onChange={function(e) { dispatchView({ type: "SET", field: "lockedFilter", value: e.target.value }) }} className="rpc-filter-select">
+      <select aria-label="Filter by lock state" value={view.lockedFilter} onChange={function(e) { dispatchView({ type: "SET", field: "lockedFilter", value: e.target.value }) }} className="rpc-filter-select">
         <option value="all">All Lock States</option>
         <option value="locked">Locked</option>
         <option value="unlocked">Unlocked</option>

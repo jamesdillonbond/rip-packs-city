@@ -231,6 +231,7 @@ export default function SniperFilterBar(props: {
             serialFilter/onSerialChange props are intentionally retained so
             re-enabling is a UI-only change. */}
         <select
+          aria-label="Sort deals"
           value={sortBy}
           onChange={(e) => onSortChange(e.target.value as SortOption)}
           style={{ background: "var(--rpc-surface-raised)", border: "1px solid var(--rpc-border)", borderRadius: "var(--radius-sm)", padding: "6px 8px", color: "var(--rpc-text-secondary)", fontFamily: "var(--font-mono)", fontSize: "var(--text-sm)", outline: "none" }}
@@ -276,6 +277,7 @@ export default function SniperFilterBar(props: {
         </label>
         {!isAllDay && ownedCount > 0 && (
           <select
+            aria-label="Filter by ownership"
             value={ownedFilter}
             onChange={(e) => onOwnedFilterChange(e.target.value as "all" | "owned" | "not-owned")}
             className="rpc-chip"

@@ -55,7 +55,10 @@ function bar(slug: string, teamOptions: string[]) {
       leagueFilter={"all" as never} onLeagueChange={() => {}} copyLinkMsg={null} onCopyLink={() => {}}
     />,
   )
-  return { text: r.container.textContent ?? "", select: r.container.querySelector("select[aria-label]") as HTMLSelectElement | null, picked }
+  return { text: r.container.textContent ?? "", // The team/franchise select is the labelled one that is NOT sort or ownership: every
+    // <select> gained an accessible name on 2026-10-18 (axe select-name), so "the only
+    // labelled select" stopped being a way to find it.
+    select: r.container.querySelector('select[aria-label]:not([aria-label="Sort deals"]):not([aria-label="Filter by ownership"])') as HTMLSelectElement | null, picked }
 }
 
 describe("SniperFilterBar — Character / Franchise on Pinnacle, Player / Team elsewhere", () => {
