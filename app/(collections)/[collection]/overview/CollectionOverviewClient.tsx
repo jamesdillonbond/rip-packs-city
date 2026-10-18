@@ -719,7 +719,7 @@ export default function CollectionOverviewClient({
                 <div style={{ fontSize: "var(--text-base)", fontFamily: "var(--font-display)", fontWeight: 700, color: "var(--rpc-text-primary)", letterSpacing: "0.03em", marginBottom: 6 }}>
                   {block.title}
                 </div>
-                <div style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)", color: "var(--rpc-text-muted)", lineHeight: 1.7, opacity: 0.85 }}>
+                <div style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)", color: "var(--rpc-text-muted)", lineHeight: 1.7 }}>
                   {block.body}
                 </div>
               </div>

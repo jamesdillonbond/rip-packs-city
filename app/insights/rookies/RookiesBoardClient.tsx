@@ -362,7 +362,7 @@ const CSS = `
 .rpc-rk-player-link { color: inherit; text-decoration: none; display: inline-flex; align-items: center; gap: 10px; }
 .rpc-rk-player-link:hover .rpc-rk-player { color: var(--rpc-red-text); }
 .rpc-rk-player-link:hover .rpc-rk-drill-hint { color: var(--rpc-red-text); opacity: 1; }
-.rpc-rk-drill-hint { font-family: var(--font-mono); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--rpc-text-muted); opacity: 0.5; transition: color 100ms, opacity 100ms; }
+.rpc-rk-drill-hint { font-family: var(--font-mono); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--rpc-text-muted); opacity: 1; transition: color 100ms, opacity 100ms; }
 .rpc-rk-trophy-link { font-family: var(--font-mono); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--rpc-text-muted); text-decoration: none; padding: 4px 8px; border: 1px solid var(--rpc-border); border-radius: 2px; white-space: nowrap; opacity: 0.65; transition: color 100ms, border-color 100ms, opacity 100ms; }
 .rpc-rk-trophy-link:hover { color: var(--rpc-red-text); border-color: var(--rpc-red); opacity: 1; }
 .rpc-rk-td-num { text-align: right; font-family: var(--font-mono); color: var(--rpc-text-primary); white-space: nowrap; }

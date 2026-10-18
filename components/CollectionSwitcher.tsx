@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { publishedCollections, type CollectionPage } from "@/lib/collections";
+import { accentText } from "@/lib/accent-text";
 
 interface CollectionSwitcherProps {
   activeCollectionId: string;
@@ -67,7 +68,7 @@ export default function CollectionSwitcher({ activeCollectionId }: CollectionSwi
             border: isActive ? `1px solid ${col.accent}` : "1px solid var(--rpc-border-subtle)",
             background: isActive ? `${col.accent}18` : "transparent",
             color: isActive
-              ? col.accent
+              ? accentText(col.accent)
               : supportsPage
                 ? "var(--rpc-text-muted)"
                 : "var(--rpc-text-muted)",

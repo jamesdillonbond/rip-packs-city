@@ -490,7 +490,7 @@ const CSS = `
 .rpc-cc-set-cell { display: inline-flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .rpc-cc-set-link { color: inherit; text-decoration: none; display: inline-flex; align-items: center; gap: 8px; }
 .rpc-cc-set-link:hover { color: var(--rpc-red-text); }
-.rpc-cc-drill-hint { font-family: var(--font-mono); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--rpc-text-muted); opacity: 0.5; transition: color 100ms, opacity 100ms; }
+.rpc-cc-drill-hint { font-family: var(--font-mono); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--rpc-text-muted); opacity: 1; transition: color 100ms, opacity 100ms; }
 .rpc-cc-set-link:hover .rpc-cc-drill-hint { color: var(--rpc-red-text); opacity: 1; }
 .rpc-cc-trophy-link { font-family: var(--font-mono); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--rpc-text-muted); text-decoration: none; padding: 4px 8px; border: 1px solid var(--rpc-border); border-radius: 2px; white-space: nowrap; opacity: 0.65; transition: color 100ms, border-color 100ms, opacity 100ms; }
 .rpc-cc-trophy-link:hover { color: var(--rpc-red-text); border-color: var(--rpc-red); opacity: 1; }

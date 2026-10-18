@@ -92,7 +92,7 @@ export default function TeamFollowButton({ league, teamShortSlug, teamPath, dark
 
   if (state === "unknown") {
     return (
-      <span data-testid="follow-status-unknown" title="Follow status couldn't be loaded — refresh to try again" style={{ ...baseStyle, cursor: "default", opacity: 0.6, color: dark ? "#fff" : "var(--rpc-text-muted)", border: `1px solid ${dark ? "rgba(255,255,255,0.3)" : "rgba(255,255,255,0.14)"}` }}>
+      <span data-testid="follow-status-unknown" title="Follow status couldn't be loaded — refresh to try again" style={{ ...baseStyle, cursor: "default", color: dark ? "#fff" : "var(--rpc-text-muted)", border: `1px solid ${dark ? "rgba(255,255,255,0.3)" : "rgba(255,255,255,0.14)"}` }}>
         ★ Follow unavailable
       </span>
     )

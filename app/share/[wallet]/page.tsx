@@ -289,7 +289,7 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
             const note = closedMarketNote(data.perCollection)
             if (!note) return null
             return (
-              <div style={{ fontSize: 12, color: "var(--rpc-text-secondary)", marginTop: 10, maxWidth: 520, marginLeft: "auto", marginRight: "auto", lineHeight: 1.5, opacity: 0.85 }}>
+              <div style={{ fontSize: 12, color: "var(--rpc-text-secondary)", marginTop: 10, maxWidth: 520, marginLeft: "auto", marginRight: "auto", lineHeight: 1.5 }}>
                 {note}
               </div>
             )

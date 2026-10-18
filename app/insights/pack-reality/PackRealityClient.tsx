@@ -741,7 +741,7 @@ const CSS = `
 .rpc-pr-pack-link:hover .rpc-pr-pack-name { color: var(--rpc-red-text); }
 .rpc-pr-pack-link:hover .rpc-pr-pack-drill { color: var(--rpc-red-text); opacity: 1; }
 .rpc-pr-pack-name { font-weight: 700; font-size: 15px; color: var(--rpc-text-primary); transition: color 100ms; }
-.rpc-pr-pack-drill { margin-left: 10px; font-family: var(--font-mono); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--rpc-text-muted); opacity: 0.6; transition: color 100ms, opacity 100ms; }
+.rpc-pr-pack-drill { margin-left: 10px; font-family: var(--font-mono); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--rpc-text-muted); opacity: 1; transition: color 100ms, opacity 100ms; }
 .rpc-pr-pack-sub { font-family: var(--font-mono); font-size: 11px; color: var(--rpc-text-muted); letter-spacing: 1px; margin-top: 2px; }
 .rpc-pr-td-num { text-align: right; font-family: var(--font-mono); color: var(--rpc-text-primary); white-space: nowrap; }
 .rpc-pr-td-emph { color: var(--rpc-red-text); font-weight: 700; }
