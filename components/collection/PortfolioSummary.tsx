@@ -194,7 +194,7 @@ export default function PortfolioSummary(props: PortfolioSummaryProps) {
               return (
                 <div
                   className="rounded-lg border px-3 py-2 text-xs font-mono flex items-center gap-2"
-                  style={{ borderColor: "rgba(239,68,68,0.35)", background: "rgba(239,68,68,0.06)", color: "#fca5a5" }}
+                  style={{ borderColor: "rgba(239,68,68,0.35)", background: "rgba(239,68,68,0.06)", color: accentText("#fca5a5") }}
                   title="Acquired via loan default. Principal is the USDCF value lent against these moments (1:1 USD)."
                 >
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

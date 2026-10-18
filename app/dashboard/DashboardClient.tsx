@@ -1212,7 +1212,7 @@ function ProfilePageInner() {
               fontSize: 11,
               letterSpacing: "0.08em",
               textTransform: "uppercase",
-              color: ACCENT_RED,
+              color: accentText(ACCENT_RED),
               whiteSpace: "nowrap",
             }}
           >
@@ -1590,7 +1590,7 @@ function SignInBanner({
       className="rpc-card-neon rpc-scanlines"
       style={{ position: "relative", padding: "28px 24px", overflow: "hidden" }}
     >
-      <div style={{ fontFamily: monoFont, fontSize: 10, color: ACCENT_RED, letterSpacing: "0.2em", textTransform: "uppercase", marginBottom: 8 }}>
+      <div style={{ fontFamily: monoFont, fontSize: 10, color: accentText(ACCENT_RED), letterSpacing: "0.2em", textTransform: "uppercase", marginBottom: 8 }}>
         Welcome to Rip Packs City
       </div>
       <div
@@ -1647,7 +1647,7 @@ function SignInBanner({
           style={{
             background: "transparent",
             border: `1.5px solid ${ACCENT_RED}`,
-            color: ACCENT_RED,
+            color: accentText(ACCENT_RED),
             padding: "12px 24px",
             borderRadius: 8,
             fontFamily: condensedFont,
@@ -1980,7 +1980,7 @@ function TrophyCaseSection({
                 type="button"
                 onClick={runArrange}
                 disabled={busy}
-                style={{ ...btnBase, borderColor: `${ACCENT_RED}66`, color: ACCENT_RED }}
+                style={{ ...btnBase, borderColor: `${ACCENT_RED}66`, color: accentText(ACCENT_RED) }}
               >
                 {busy ? "Arranging…" : "Auto-Arrange"}
               </button>
@@ -2029,7 +2029,7 @@ function TrophyCaseSection({
               type="button"
               onClick={doUndo}
               disabled={busy}
-              style={{ ...btnBase, padding: "4px 12px", borderColor: `${ACCENT_RED}66`, color: ACCENT_RED }}
+              style={{ ...btnBase, padding: "4px 12px", borderColor: `${ACCENT_RED}66`, color: accentText(ACCENT_RED) }}
             >
               Undo
             </button>
@@ -2955,7 +2955,7 @@ function StatTile({ label, value, color, caption, unavailable, loading, pending,
   return (
     <div style={{ background: "var(--rpc-surface)", border: "1px solid var(--rpc-border)", borderRadius: 10, padding: "12px 16px" }}>
       <div style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-muted)", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 4 }}>{label}</div>
-      <div style={{ fontSize: 22, fontFamily: condensedFont, fontWeight: 800, color: muted ? "var(--rpc-text-muted)" : color, lineHeight: 1 }} aria-busy={pending || loading || undefined}>{muted ? "—" : value}</div>
+      <div style={{ fontSize: 22, fontFamily: condensedFont, fontWeight: 800, color: muted ? "var(--rpc-text-muted)" : accentText(color), lineHeight: 1 }} aria-busy={pending || loading || undefined}>{muted ? "—" : value}</div>
       {unavailable ? (
         <div style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-muted)", letterSpacing: "0.04em", marginTop: 5, lineHeight: 1.3 }}>Couldn&apos;t load</div>
       ) : loading ? (

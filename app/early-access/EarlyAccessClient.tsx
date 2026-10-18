@@ -8,6 +8,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
+import { accentText } from "@/lib/accent-text"
 
 const condensedFont = "var(--font-display)"
 const monoFont = "var(--font-mono)"
@@ -253,7 +254,7 @@ export default function EarlyAccessClient() {
                     marginTop: 8,
                     fontSize: 11,
                     lineHeight: 1.5,
-                    color: "#FBBF24",
+                    color: accentText("#FBBF24"),
                     background: "rgba(251,191,36,0.08)",
                     border: "1px solid rgba(251,191,36,0.3)",
                     borderRadius: 6,

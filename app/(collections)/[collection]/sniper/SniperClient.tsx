@@ -919,7 +919,7 @@ function SniperMomentsBody() {
                 </span>
               )}
               {tabHidden && (
-                <span className="rpc-chip" style={{ background: "rgba(234,179,8,0.10)", borderColor: "rgba(234,179,8,0.3)", color: "#fbbf24" }}>
+                <span className="rpc-chip" style={{ background: "rgba(234,179,8,0.10)", borderColor: "rgba(234,179,8,0.3)", color: accentText("#fbbf24") }}>
                   Paused — tab hidden
                 </span>
               )}
@@ -1380,7 +1380,7 @@ function SniperMomentsBody() {
                       <span style={{ fontFamily: "var(--font-mono)", color: "var(--rpc-text-secondary)", fontSize: "var(--text-sm)" }}>{serialCellText(deal.serial, collectionSlug)}</span>
                       <SerialBadge deal={deal} collection={collectionSlug} />
                       {deal.isJersey && (
-                        <span className="rpc-chip" style={{ background: "rgba(20,184,166,0.15)", borderColor: "rgba(20,184,166,0.3)", color: "#5eead4", fontSize: 9, padding: "1px 5px", display: "inline-flex", alignItems: "center", gap: 3 }}><SpecialSerialGlyph tag="jersey" size={11} collection={collectionSlug} />Jersey</span>
+                        <span className="rpc-chip" style={{ background: "rgba(20,184,166,0.15)", borderColor: "rgba(20,184,166,0.3)", color: accentText("#5eead4"), fontSize: 9, padding: "1px 5px", display: "inline-flex", alignItems: "center", gap: 3 }}><SpecialSerialGlyph tag="jersey" size={11} collection={collectionSlug} />Jersey</span>
                       )}
                     </div>
                     <span style={{ fontFamily: "var(--font-mono)", color: "var(--rpc-text-primary)", fontSize: "var(--text-sm)", fontWeight: 600 }}>${fmt(deal.askPrice)}</span>
@@ -1645,7 +1645,7 @@ function SniperMomentsBody() {
                         {!isPinnacle && deal.parallel && deal.parallel !== "Base" && (
                           <span
                             style={{
-                              color: "#c084fc",
+                              color: accentText("#c084fc"),
                               fontWeight: 600,
                               border: "1px solid rgba(192,132,252,0.4)",
                               background: "rgba(192,132,252,0.10)",
@@ -1721,17 +1721,17 @@ function SniperMomentsBody() {
                           </span>
                         )}
                         {deal.isJersey && (
-                          <span className="rpc-chip" title="Jersey match" style={{ background: "rgba(20,184,166,0.15)", borderColor: "rgba(20,184,166,0.3)", color: "#5eead4", fontSize: 9, padding: "1px 5px", display: "inline-flex", alignItems: "center", gap: 3 }}>
+                          <span className="rpc-chip" title="Jersey match" style={{ background: "rgba(20,184,166,0.15)", borderColor: "rgba(20,184,166,0.3)", color: accentText("#5eead4"), fontSize: 9, padding: "1px 5px", display: "inline-flex", alignItems: "center", gap: 3 }}>
                             <SpecialSerialGlyph tag="jersey" size={11} collection={collectionSlug} /> Jersey
                           </span>
                         )}
                         {deal.serial > 10 && String(deal.serial).endsWith("00") && (
-                          <span className="rpc-chip" style={{ background: "rgba(168,85,247,0.12)", borderColor: "rgba(168,85,247,0.25)", color: "#c084fc", fontSize: 9, padding: "1px 5px" }}>
+                          <span className="rpc-chip" style={{ background: "rgba(168,85,247,0.12)", borderColor: "rgba(168,85,247,0.25)", color: accentText("#c084fc"), fontSize: 9, padding: "1px 5px" }}>
                             ROUND
                           </span>
                         )}
                         {deal.serialSignal && !deal.isJersey && deal.serial > 10 && (
-                          <span className="rpc-chip" style={{ background: "rgba(168,85,247,0.12)", borderColor: "rgba(168,85,247,0.25)", color: "#c084fc", fontSize: 9, padding: "1px 5px", display: "inline-flex", alignItems: "center", gap: 3 }}>
+                          <span className="rpc-chip" style={{ background: "rgba(168,85,247,0.12)", borderColor: "rgba(168,85,247,0.25)", color: accentText("#c084fc"), fontSize: 9, padding: "1px 5px", display: "inline-flex", alignItems: "center", gap: 3 }}>
                             <SpecialSerialGlyph tag={deal.serial === 1 ? "#1" : "last_mint"} size={11} collection={collectionSlug} />{deal.serialSignal}
                           </span>
                         )}

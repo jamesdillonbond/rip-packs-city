@@ -85,6 +85,7 @@ import {
   type PaniniSerialRow,
   type PaniniEditionSales,
 } from "@/lib/panini/edition-market"
+import { accentText } from "@/lib/accent-text"
 
 export const revalidate = 600
 export const dynamicParams = true
@@ -849,7 +850,7 @@ export default async function EditionPage(
                 )
               )}
               {isPinnacle && detail.is_chaser && (
-                <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 4, fontSize: 10, letterSpacing: "0.10em", textTransform: "uppercase", color: "#A855F7", background: "rgba(168,85,247,0.10)", border: "1px solid rgba(168,85,247,0.30)" }}>Chaser</span>
+                <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 4, fontSize: 10, letterSpacing: "0.10em", textTransform: "uppercase", color: accentText("#A855F7"), background: "rgba(168,85,247,0.10)", border: "1px solid rgba(168,85,247,0.30)" }}>Chaser</span>
               )}
             </div>
 

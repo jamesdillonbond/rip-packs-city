@@ -182,8 +182,8 @@ export default function ShareProfileButtons({
   const ghostBtn: React.CSSProperties = {
     ...btn,
     background: "transparent",
-    color: "#e7e7e7",
-    border: "1px solid #333",
+    color: "var(--rpc-text-primary)",
+    border: "1px solid var(--rpc-border-hover)",
   };
 
   return (

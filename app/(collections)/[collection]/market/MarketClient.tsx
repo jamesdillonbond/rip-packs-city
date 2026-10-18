@@ -1259,7 +1259,7 @@ function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColu
                   )}
                   {l.parallel && l.parallel !== "Base" && (
                     <span
-                      style={{ marginLeft: 6, color: "#c084fc", fontWeight: 600, border: "1px solid rgba(192,132,252,0.4)", background: "rgba(192,132,252,0.10)", borderRadius: 3, padding: "0 4px" }}
+                      style={{ marginLeft: 6, color: accentText("#c084fc"), fontWeight: 600, border: "1px solid rgba(192,132,252,0.4)", background: "rgba(192,132,252,0.10)", borderRadius: 3, padding: "0 4px" }}
                     >
                       {l.parallel}
                     </span>

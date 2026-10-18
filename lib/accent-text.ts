@@ -54,3 +54,16 @@ export function textSafeChip<T extends { color?: unknown; background?: unknown }
   const translucent = bg === "" || bg === "transparent" || /rgba\([^)]*,\s*0?\.[0-3]\d*\s*\)/.test(bg)
   return translucent ? { ...style, color: accentText(style.color as string) } : style
 }
+
+/**
+ * The label colour for text ON a collection-accent FILL (a button). White reads
+ * 2.2–4.0:1 on every non-red registry accent; near-black #0B0B0D reads 5.0–9.2:1
+ * (measured 2026-10-18). The brand red keeps white — the accepted white-on-#E03A2F
+ * exception. The overview's accent buttons already used #0B0B0D; this makes it
+ * the rule. Theme-independent on purpose: the fill is identical in both themes.
+ */
+export function labelOn(fill: string | null | undefined): string {
+  if (!fill) return "#fff"
+  const f = fill.trim()
+  return BRAND_RED.test(f) || f === "var(--rpc-red)" ? "#fff" : "#0B0B0D"
+}

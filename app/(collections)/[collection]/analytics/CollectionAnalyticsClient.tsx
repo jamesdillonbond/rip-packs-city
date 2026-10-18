@@ -34,7 +34,7 @@ import CrossCollectionHoldingsCard from "@/components/analytics/CrossCollectionH
 import { useOwnFlowWallet } from "@/lib/hooks/useOwnFlowWallet"
 import { fmt, fmtUsd, shortAddr, relativeDate, shortSlug } from "@/lib/analytics/format"
 import { classifyTsOrderbook, TS_ORDERBOOK_STALE_LABEL, tsOrderbookStaleBody, TS_ORDERBOOK_UNKNOWN_LABEL, TS_ORDERBOOK_UNKNOWN_BODY } from "@/lib/analytics/ts-orderbook-freshness"
-import { accentText } from "@/lib/accent-text"
+import { accentText, labelOn } from "@/lib/accent-text"
 
 // ── Slug mapping ────────────────────────────────────────────────────────────
 // URL slug ("nba-top-shot") → RPC short slug ("topshot") used by the
@@ -432,7 +432,7 @@ function MarketplaceBreakdownCard({
             <span className="text-[color:var(--rpc-text-muted)]">·</span>
             <span>{enriched[0].transactions.toLocaleString("en-US")} sales</span>
             <span className="text-[color:var(--rpc-text-muted)]">·</span>
-            <span style={{ color: enriched[0].color }} className="font-bold">100%</span>
+            <span style={{ color: accentText(enriched[0].color) }} className="font-bold">100%</span>
           </div>
         </div>
       ) : (
@@ -1729,11 +1729,12 @@ function AnalyticsInner() {
                 type="button"
                 onClick={exportCsv}
                 disabled={!marketData?.daily?.length}
-                // brand-exception: white label on the red fill (stays white in both themes)
-                className="rounded-lg border px-5 py-2 font-semibold uppercase tracking-widest text-white disabled:opacity-50"
+                // label colour comes from labelOn(accent): white on the brand red, near-black on any other accent
+                className="rounded-lg border px-5 py-2 font-semibold uppercase tracking-widest disabled:opacity-50"
                 style={{
                   fontFamily: "var(--font-display)",
                   background: accent,
+                  color: labelOn(accent),
                   borderColor: accent,
                 }}
               >

@@ -5,6 +5,7 @@ import {
   shouldRenderSerialBadge,
   serialBadgeLabel,
 } from "@/lib/sniper-serial-badge";
+import { accentText } from "@/lib/accent-text";
 
 // Serial-multiplier / special-serial pill for a sniper deal. Extracted verbatim
 // in the Phase 1 refactor of the sniper page.
@@ -17,7 +18,7 @@ export function SerialBadge({ deal, collection = null }: { deal: SniperDeal; col
   if (!shouldRenderSerialBadge(deal)) return null;
   const tag = deal.isSpecialSerial ? serialSignalTag(deal.serialSignal) : null;
   return (
-    <span className="rpc-chip" style={{ background: "rgba(168,85,247,0.15)", borderColor: "rgba(168,85,247,0.3)", color: "#c084fc", display: "inline-flex", alignItems: "center", gap: 4 }}>
+    <span className="rpc-chip" style={{ background: "rgba(168,85,247,0.15)", borderColor: "rgba(168,85,247,0.3)", color: accentText("#c084fc"), display: "inline-flex", alignItems: "center", gap: 4 }}>
       {tag ? <SpecialSerialGlyph tag={tag} size={12} collection={collection} /> : null}
       {serialBadgeLabel(deal)}
     </span>
