@@ -70,7 +70,8 @@ FMV is the product's core claim and the accuracy gate's subject. One engine per 
 ## Next — prioritized
 
 **Now**
-- 🆕 **DECISION FOR TREVOR — should MEDIUM require a sale in the last 30 days?** Measured 10-17 ~9:30 PM PT (published FMV vs the next realised sale, ≥ 1 day after the snapshot, serial > 25; split on the snapshot's `sales_count_30d = 0`, i.e. the 08-07 90-day-widening path):
+- ✅ **DECIDED 10-17 ~9:35 PM PT (Trevor delegated: "decide the rest of this yourself"): yes — option (b), shipped as 1.8.2 (`gateMediumToRecentSale`).** Reason: the same ±25 %-within-3-points tolerance used tonight to PROMOTE ask-corroborated All Day editions rejects this set (Top Shot 5.7 pts short, All Day 15.3); applying the backtest only when it flatters the metric would be dishonest. Cost accepted: M1 reads ~44 % until more editions trade. Watch: M1/M2 on the 10-18 legs; revert = `git revert` the 1.8.2 commit.
+- (original question) **Should MEDIUM require a sale in the last 30 days?** Measured 10-17 ~9:30 PM PT (published FMV vs the next realised sale, ≥ 1 day after the snapshot, serial > 25; split on the snapshot's `sales_count_30d = 0`, i.e. the 08-07 90-day-widening path):
   - **Top Shot, 14 d:** 90-day-only MEDIUM 20.0 % median error / 59.0 % within ±25 % / ratio 1.000 (n 483) · 30-day MEDIUM 14.0 / 64.7 / 1.000 (n 18,854) · 30-day LOW 25.0 / 53.3 (n 2,553). Halfway between MEDIUM and LOW; 5.7 pts below MEDIUM on within ±25 % (the R125 tolerance is 3).
   - **All Day, 21 d:** 90-day-only MEDIUM 33.5 / 41.4 / 1.045 (n 145) · 30-day MEDIUM 20.0 / 56.7 (n 6,956) · HIGH 13.8 / 72.7. No better than All Day LOW (38.0 / 37.6, 14 d).
   - **Cost of demoting them to LOW** (latest snapshot, the M1/M2 instrument's population): Top Shot 55.0 % → **44.4 %** (1,539 editions; fails M1 ≥ 50), All Day 28.3 % → 24.6 % (227), Golazos 1.0 % → 0.0 (6). Panini excluded (its engine fills `sales_count_30d` differently; 8,254 of 8,473 MEDIUM read 0).

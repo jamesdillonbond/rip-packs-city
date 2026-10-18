@@ -44,8 +44,8 @@
 - (original item) **Backtest the 90-day-only MEDIUM path** (explained 10-17: designed, not a stale label). Why: on a frozen book the label rests on sales up to 90 d old. Falsifier: 90-day-only MEDIUM rows score as well as 30-day MEDIUM against their next sale, which would leave the 08-07 rule standing. Any change is estate-wide and Trevor's call.
 
 **Next**
-- **Show a dormancy label instead of a price.** If the market is confirmed dormant, show "No sales since 2026-10-01", or extend `MarketplaceStatusBanner` beyond UFC's `shutdown` copy, on overview, sniper and edition. ASK_ONLY stays labelled as an ask, never as a value. Why: the roadmap says that for an illiquid market the label is the product. Gate: the probe settles "dormant".
-- **Fit relative-deals copy to the market.** Overview copy says "deals you can act on". On a book with 0 closes in 7 days that over-promises; revise it alongside the label. Gate: the dormancy decision.
+- ⛔ DECLINED by Trevor 10-17 9:27 PM PT (see Decisions). **Show a dormancy label instead of a price.** If the market is confirmed dormant, show "No sales since 2026-10-01", or extend `MarketplaceStatusBanner` beyond UFC's `shutdown` copy, on overview, sniper and edition. ASK_ONLY stays labelled as an ask, never as a value. Why: the roadmap says that for an illiquid market the label is the product. Gate: the probe settles "dormant".
+- ⛔ DECLINED by Trevor 10-17 9:27 PM PT (see Decisions). **Fit relative-deals copy to the market.** Overview copy says "deals you can act on". On a book with 0 closes in 7 days that over-promises; revise it alongside the label. Gate: the dormancy decision.
 
 **Later**
 - **Retire the Flowty Golazos sweep and `flowty-proxy` when Flowty turns off.** Confirm by the routes' `pageErrors` first, then drop the `flowty` rows deliberately.
@@ -54,6 +54,7 @@
 
 ## Decisions on record (do not re-litigate)
 
+- **No dormancy label (Trevor, 2026-10-17 9:27 PM PT):** "We don't need to show that Golazos is quiet. Users can make their own judgement." The market is idle (on-chain count 10-17: 0 trades 10-02 → 10-17), and the record says so (`v_collection_marketplace_status`, `20261018041800`), but no banner, chip or copy change on-screen.
 - **Golazos' ~0–1 % share reflects the market, not the model.** Do not move thresholds for it (roadmap-status 09-10 and 09-18 blocks).
 - **Golazos asks come from Dapper's NFTStorefrontV2 (pg_cron 614)**; Flowty is not a data source (09-25, re-verified 10-03).
 - **No lock UI for Golazos** (10-10, verified on-chain).
