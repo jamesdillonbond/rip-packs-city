@@ -71,7 +71,8 @@ Live 10-17: `alerts-dispatch` 104/104 runs ok in 24 h; 14 `alert_deliveries` in 
 
 **Now**
 1. **Close R73's 2-week watch on ~10-28.** Read real opens from the edition-FMV "?" and the checklist "?". Why: it decides whether to move the entry point or leave it. Falsifier: ≥ 1 real open a week, in which case leave placement alone and review the answers instead.
-2. **Series 2026-27 player identity (from 10-20).** New Series 9 players and rookies resolve through `resolve_player_name`. Partnered-athlete and autograph status has no field, so the concierge must not claim it. Falsifier: a Series 9 player whose name does not resolve, or who has two rows.
+2. 📏 **Pre-checked 2026-10-18 ~9:50 AM PT:** the 2025 draft class already resolves to ONE player each via `resolve_player_name` (Cooper Flagg 21 editions, Dylan Harper 22, VJ Edgecombe 24, Ace Bailey 16, Kon Knueppel 21; Paige Bueckers 26), because they have Series 8 editions — Series 9 starts from clean identities. The falsifier below still applies to genuinely new names on 10-20.
+   - (original item) **Series 2026-27 player identity (from 10-20).** New Series 9 players and rookies resolve through `resolve_player_name`. Partnered-athlete and autograph status has no field, so the concierge must not claim it. Falsifier: a Series 9 player whose name does not resolve, or who has two rows.
 
 **Next**
 3. **Digest readiness behind the flag:** shared footer, unsubscribe, and the postal address slot. Ship it dark, so turning digests on later is a one-flag change. Gate: Trevor supplies the address (C2), and the accuracy gate is passed before any send.
