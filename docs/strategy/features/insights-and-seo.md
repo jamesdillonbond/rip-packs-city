@@ -67,7 +67,7 @@ Boards read precomputed MVs or cached reads. Their honesty layer is `boardUnavai
 
 **Now**
 1. **10-22 demand re-read** (window 10-15 → 10-21), using the same queries as the baseline. Report against it: Google one-page share (19/26) and paste → sign-in click (10 → 0), plus the share CTA and `magic-link-requested` counts. Why: four surfaces shipped against the baseline and none has been read. Falsifier: no movement means acquisition, not activation, is the binding problem.
-2. **Series 2026-27 (10-20).** New sets appear on the squeeze, market-cap and pack boards with correct series labels, and the sitemap picks up new series pages. Falsifier: a new-series page missing from `/sitemap/0.xml` 24 h after its first edition.
+2. **Series 2026-27 (10-20).** New sets appear on the squeeze, market-cap and pack boards with correct series labels, and the sitemap picks up new series pages. 📏 **Pre-checked 10-18 ~2:40 PM PT (Claude Code cloud):** the sitemap's series segment is DB-driven (`lib/sitemap-data.ts` `getCollectionSeries()` over `collection_series`, which `registerNewSeries` inserts by itself). A series the rollup measures at 0 editions is left out (it is noindex), and one with no rollup row yet is kept as unknown. So Series 9 enters `/sitemap/0.xml` with no code change once its editions exist. The 10-20 read only has to confirm it. Falsifier: a new-series page missing from `/sitemap/0.xml` 24 h after its first edition.
 
 **Next**
 3. **10-28 Search Console re-read** (checklist in the SEO doc §"2026-10-14 pass"). Gate for any further sitemap pruning: "Crawled – not indexed" and "Duplicate" counts.
