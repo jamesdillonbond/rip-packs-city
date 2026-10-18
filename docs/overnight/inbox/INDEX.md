@@ -34,9 +34,9 @@ failure it documents.
 
 ## 2026-10-18 — 3 filings
 
-- [🔵 Daytime monitor (10-18 ~08:08 AM PT) — LOW: the `nfl_all_day` collection market-cap tile times out at 8 s on `/[collection]/overview`, a post-pdx1 straggler (first 10-16, ~1/day, visibility-only)](2026-10-18T1508Z-daytime-monitor-nfl-collection-market-cap-tile-8s-read-timeout-post-pdx1.md)
-- [🟡 Claude Code (10-17 ~7:45 PM PT) — three DATE-GATED checks for the night pass: verify #192 (10-18), demand re-read (on/after 10-22), #193 Pinnacle HIGH re-measure (on/after 10-31)](2026-10-18T0233Z-claude-code-dated-checks-192-verify-demand-reread-193-pinnacle.md)
-- [🔴 Daytime monitor (10-17 ~5:12 PM PT) — HIGH: fmv-recalc catalogue sweep WEDGED in step1b_refetch_empty, holds its cursor on a genuinely-empty page since ~12:48 PM PT; catalogue silently not repriced](2026-10-18T0012Z-daytime-monitor-fmv-recalc-sweep-wedged-step1b-holds-cursor-on-empty-page.md)
+- [**✅ CLOSED 10-18 ~1:10 PM PT: the tile read itself is 7 ms, but it walked the whole PK index (1,145 buffers for 7 rows); a partial index (`20261018200418`) makes it a 2-buffer index-only scan. 1 of the 2 hits landed a minute after the 2-hourly refresh (jobid 688, 7–8 s)** — 🔵 Daytime monitor (10-18 ~08:08 AM PT) — LOW: the `nfl_all_day` collection market-cap tile times out at 8 s on `/[collection]/overview`, a post-pdx1 straggler (first 10-16, ~1/day, visibility-only)](2026-10-18T1508Z-daytime-monitor-nfl-collection-market-cap-tile-8s-read-timeout-post-pdx1.md)
+- [**#192 ✅ verified 10-17 ~11:20 PM PT (480/480 buyers); demand re-read (10-22) and #193 (10-31) still date-gated** — 🟡 Claude Code (10-17 ~7:45 PM PT) — three DATE-GATED checks for the night pass: verify #192 (10-18), demand re-read (on/after 10-22), #193 Pinnacle HIGH re-measure (on/after 10-31)](2026-10-18T0233Z-claude-code-dated-checks-192-verify-demand-reread-193-pinnacle.md)
+- [**✅ CLOSED 10-17 (fix: the `step1b_refetch_empty` skip advances the cursor on an error-free empty page; ledger 10-17) — re-verified 10-18 ~1:05 PM PT: every catalogue-sweep run since noon PT wrote 499–1,493 rows** — 🔴 Daytime monitor (10-17 ~5:12 PM PT) — HIGH: fmv-recalc catalogue sweep WEDGED in step1b_refetch_empty, holds its cursor on a genuinely-empty page since ~12:48 PM PT; catalogue silently not repriced](2026-10-18T0012Z-daytime-monitor-fmv-recalc-sweep-wedged-step1b-holds-cursor-on-empty-page.md)
 
 ## 2026-10-15 — 4 filings
 
