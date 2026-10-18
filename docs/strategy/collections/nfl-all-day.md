@@ -78,6 +78,12 @@
   - What: split LOW (1,750) by sales count, and sample ASK_ONLY (1,205) and NO_DATA (700) for editions that have recent sales but no price.
   - Why: ASK_ONLY and NO_DATA appear to have grown since 10-10, on a different basis. Check whether that is composition or a pricing-path miss before any lever.
   - Gate: same instrument, repeat-vs-new cohort split (roadmap-status 09-20 trap).
+  - ↳ **Read 2026-10-18 ~10:35 AM PT (Claude Code cloud) — ASK_ONLY and NO_DATA are COMPOSITION, not a pricing-path miss.** Joined `edition_fmv_current` (6,190 All Day editions) to `sales_market` (price > 0):
+    - **NO_DATA 698: 0 have EVER sold.** Nothing to price from.
+    - **ASK_ONLY 1,203: 1 sold in the last 30 days** (and that sale landed after its compute, a timing case). 1,135 have sold at some point (median 14 lifetime sales), 164 in the last 60 days, 305 in 90. They are outside the 30-day sales window by design, not missed by it.
+    - **STALE 881: 0 sold in 30 days**, 880 ever sold, 23 in 60 days.
+    - So none of the ~2,780 non-sale-priced editions is a recent-sales edition the pricer dropped. **M2 can only move through LOW → MEDIUM (and MEDIUM retention), not by recovering these three buckets.** LOW 1,602: 1,044 with a 30-day sale, 362 with ≥ 3 (the morning's lever split stands). MEDIUM 1,596: 119 with 0 sales in 30 d, still to be demoted under 1.8.2/1.8.3.
+    - Widening the sales window to 60–90 days would label at most 164–305 ASK_ONLY editions, at prices ≥ 30 days old — which is what STALE already means. **Not a lever; do not re-propose it** without a backtest showing 31–90-day sales predict today's price.
 - ✅ ~~**Close the #191 watch.**~~ **CLOSED 2026-10-17 ~6:49 PM PT** in the register (wmc All Day for `0x6d1f8c18412c6abc` = 2; the 6:27 PM PT walk did not bring rows back). This line was stale until 10-18.
   - Why: the exit is met (wmc 2).
   - Falsifier: the confirmed-deleted rows reappear on a later walk.
