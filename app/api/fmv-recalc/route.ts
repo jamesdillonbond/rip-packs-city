@@ -950,6 +950,13 @@ export async function POST(req: NextRequest) {
           .select("listed_at")
           .eq("collection_id", ALLDAY_COLLECTION_ID)
           .is("completed_at", null)
+          // 2026-10-17: Postgres sorts NULLs FIRST under DESC. 4,913 open All Day rows
+          // carry listed_at NULL, so without this filter the probe read NULL on every
+          // run, logged "UNDATABLE (no lift)", and silently switched All Day
+          // corroboration OFF (logs: every run 10-11 -> 10-17). A row with no
+          // listed_at is no evidence about feed liveness; the newest DATED open
+          // listing is. Same index (idx_cl_v2_collection_listed_active), 5 buffers.
+          .not("listed_at", "is", null)
           .order("listed_at", { ascending: false })
           .limit(1)
         if (liveErr) {

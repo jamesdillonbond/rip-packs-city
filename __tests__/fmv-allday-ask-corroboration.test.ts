@@ -110,6 +110,23 @@ describe("the LANE is what bounds the All Day ask, and a failed probe withholds"
     expect(probe, "the All Day liveness probe lost its bound or its table").not.toBeNull()
   })
 
+  it("🚨 the liveness probe skips NULL listed_at — DESC sorts NULLs FIRST in Postgres", () => {
+    // 2026-10-17: 4,913 open All Day listings carry listed_at NULL. With no filter the
+    // probe's `order(listed_at desc).limit(1)` returned that NULL on EVERY run, the lag
+    // became null, and every recalc logged "listings-feed lag UNDATABLE (no lift)":
+    // All Day corroboration was off while the feed was 12 minutes fresh. The lifted
+    // set prices like MEDIUM (14 d: 20.7 % median error vs MEDIUM 20.0 %, n 855), so
+    // the withheld labels were the error, not caution.
+    const probe = SRC.match(/\.from\("cached_listings_v2"\)[\s\S]*?\.limit\(1\)/)
+    expect(probe, "the All Day liveness probe was renamed or removed — re-anchor").not.toBeNull()
+    expect(
+      probe![0],
+      "the probe can read a NULL listed_at as the newest row and switch corroboration off",
+    ).toMatch(/\.not\(\s*"listed_at"\s*,\s*"is"\s*,\s*null\s*\)/)
+    // The filter must sit BEFORE the sort/limit it protects (same query chain).
+    expect(probe![0].indexOf('.not("listed_at"')).toBeLessThan(probe![0].indexOf('.order("listed_at"'))
+  })
+
   it("reuses the ONE corroboration age constant — All Day must not grow its own threshold", () => {
     // Two thresholds answering the same question is how they drift apart.
     expect(SRC).not.toMatch(/ALLDAY_MAX_ASK_AGE|ALLDAY_ASK_STALE/)
