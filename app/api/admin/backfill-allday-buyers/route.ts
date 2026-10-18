@@ -3,6 +3,7 @@ import { tokenMatches } from "@/lib/auth/bearer-secret"
 import { supabaseAdmin } from "@/lib/supabase"
 import { decodeV1SaleTx } from "@/lib/chains/flow/dapper-v1-tx-decode"
 import { normalizeFlowEventAddress } from "@/lib/address"
+import { CURRENT_SPORK_START_ISO, buyerBackfillVerdict } from "@/lib/pipeline/buyer-backfill-window"
 
 // POST /api/admin/backfill-allday-buyers — Authorization: Bearer $INGEST_SECRET_TOKEN
 //   (or Bearer $CRON_SECRET for the Vercel cron, or ?token=$INGEST_SECRET_TOKEN)
@@ -45,10 +46,11 @@ export const maxDuration = 800
 // Deposit.to). 480 ≈ 2 min a run, ~3,840 rows/day, ~22 days; MAX_RUN_MS still bounds a run
 // if per-row latency drifts, and the cursor only advances past rows actually processed.
 const BATCH = 480
-// Forward lane owns 2025+ only; pre-current-spork rows can't be decoded via
-// current-spork REST and just churn the cursor at rows_written≈0. Bounding the
-// select here also lets the planner partition-prune to sales_2025/sales_2026.
-const FORWARD_WINDOW_START = "2025-01-01T00:00:00Z"
+// Forward lane owns current-spork rows only (mainnet27, from 2025-10-22):
+// pre-spork rows can't be decoded via current-spork REST and just churn the
+// cursor at rows_written=0 (#192 — the old "2025-01-01" floor did exactly that).
+// Bounding the select also lets the planner partition-prune.
+const FORWARD_WINDOW_START = CURRENT_SPORK_START_ISO
 const TX_DECODE_DELAY_MS = 40
 // Wall-clock self-bound: stop enqueuing new decodes past this so a batch/latency
 // drift can never approach the Lambda cap (a run past the cap dies BEFORE the
@@ -171,6 +173,7 @@ async function handle(req: NextRequest) {
     let viaDeposit = 0
     let viaAuthorizers = 0
     let decodeFailed = 0
+    let updateFailed = 0
     let bailedEarly = false
     let ok = true
     let errMsg: string | null = null
@@ -253,6 +256,7 @@ async function handle(req: NextRequest) {
               .eq("id", row.id)
               .or(orFilter)
             if (upErr) {
+              updateFailed++
               console.log(`[backfill-allday-buyers:${cfgKey}] update err id=${row.id}: ${upErr.message}`)
             } else {
               if (buyer) {
@@ -291,6 +295,11 @@ async function handle(req: NextRequest) {
       // Short batch ⇒ bottom of the unresolved set for this pass; wrap the cursor
       // so the next run starts a fresh top-down sweep (retries old-spork misses).
       cursorAfter = rows.length < BATCH ? null : minSoldAt
+      const verdict = buyerBackfillVerdict({ found, decodeFailed, updateFailed })
+      if (!verdict.ok) {
+        ok = false
+        errMsg = verdict.error
+      }
     } catch (err) {
       ok = false
       errMsg = err instanceof Error ? err.message : String(err)
@@ -316,6 +325,7 @@ async function handle(req: NextRequest) {
             via_deposit_to: viaDeposit,
             via_tx_authorizers: viaAuthorizers,
             decode_failed: decodeFailed,
+            update_failed: updateFailed,
             wrapped: cursorAfter === null,
             bailed_early: bailedEarly,
             duration_ms: Date.now() - startedAt,

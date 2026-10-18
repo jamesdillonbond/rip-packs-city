@@ -1,9 +1,9 @@
 // lib/collections.ts
 // Single source of truth for every collection RPC supports.
 //
-// Publish state as of 2026-04-20:
-//   NBA Top Shot, NFL All Day, LaLiga Golazos, Disney Pinnacle — published
-//   UFC Strike — unpublished (Aptos migration; near-zero on-chain volume)
+// Publish state: read each entry's `published` flag below; it is the truth.
+// (A dated list here went stale: UFC Strike was listed unpublished long after
+// it was published with its marketplace closed — see lib/market-closed.ts.)
 //
 // "market" and "analytics" pages are in the enum so every collection
 // can expose a sortable marketplace browser and an ecosystem analytics
@@ -231,7 +231,7 @@ export const COLLECTIONS: Collection[] = [
     flowtyCollectionFilter: "0x329feb3ab062d289/UFC_NFT",
     cadenceCollectionPath: "/public/UFC_NFTCollection",
     supabaseCollectionId: "9b4824a8-736d-4a96-b450-8dcc0c46b023",
-    pitch: "Catalog browser for UFC Strike on Flow — 147 editions tracked, 29 with FMV. Beta coverage; post-Aptos migration backfill in progress.",
+    pitch: "Catalog browser for UFC Strike on Flow. The Flow marketplace closed in May 2026, so sales and prices here are historical.",
   },
   {
     id: "panini-blockchain",
