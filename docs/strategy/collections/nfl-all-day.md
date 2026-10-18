@@ -65,6 +65,10 @@
 ## Next — prioritized
 
 **Now**
+- 🆕 **Watch the ask-corroboration fix (10-17 ~7:25 PM PT, `1bfc17c86`).**
+  - What: All Day LOW→MEDIUM corroboration had been OFF since ~09-25 — the fmv-recalc liveness probe read a NULL `listed_at` (4,913 `storefront_v2` rows; DESC sorts NULLs first) and logged `UNDATABLE (no lift)` on every run. 158 LOW editions met the rule at the fix; their published FMV priced like MEDIUM (14 d: 20.7 % vs 20.0 % median error, n 855).
+  - Read: M2 on the 10-18 legs (expected ~29 %, an estimate — measure it); `fmv_sales_backtest` weekly on the moved set.
+  - Falsifier: the moved set's within-±25 % share > 3 pts below MEDIUM's on two consecutive weekly reads → revert.
 - **Verify #192 on production runs** (fix shipped 10-17).
   - What: the next runs should wrap, then show `buyers_resolved > 0`, or an honest `ok=false` decode wall. Re-size the backlog from rows ≥ 2025-10-22.
   - Why: the lane logged success while resolving nothing for two days.
