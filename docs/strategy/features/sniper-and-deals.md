@@ -68,7 +68,8 @@ Surfaces:
 ## Next — prioritized
 
 **Now**
-1. **Pre-stage the Flowty retirement as a ready diff:** the three `*-listing-cache` routes and their schedulers, `flowty-proxy`, the v1 display readers, and a deliberate drop of the `flowty` rows. Do not ship it until the outage is confirmed. Why: retiring on the day beats letting three lanes alarm for 48 h. Falsifier: the empty-book failure fires, or `pageErrors` is non-zero across 3 ticks.
+1. ✅ **PRE-STAGED 2026-10-18 ~9:25 AM PT as a runbook:** [docs/operations/flowty-retirement-runbook.md](../../operations/flowty-retirement-runbook.md) — the dark-vs-flaky query (ALIVE ×3 at 9:15 AM PT: 72/72 ok per lane in 24 h), every scheduler, reader, test and row with counts, and the ordered teardown with reverts. Step 0 (repoint `get_platform_stats`, `get_cross_collection_deals` and the All Day/Golazos v1 route readers at `cached_listings_v2`) can ship before the day; the rest waits for three DARK ticks on all three lanes.
+   - (original item) **Pre-stage the Flowty retirement as a ready diff:** the three `*-listing-cache` routes and their schedulers, `flowty-proxy`, the v1 display readers, and a deliberate drop of the `flowty` rows. Do not ship it until the outage is confirmed. Why: retiring on the day beats letting three lanes alarm for 48 h. Falsifier: the empty-book failure fires, or `pageErrors` is non-zero across 3 ticks.
 2. ~~Find a second All Day listing source~~ — **already exists:** `allday-storefront-reconcile` (shipped 09-25, the same NFTStorefrontV2 walk as Golazos) ran 12/12 ok in 24 h to 10-17 ~6:15 PM PT. Nothing to build.
 
 **Next**
