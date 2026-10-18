@@ -105,7 +105,24 @@ const upLines = upstream.split(/\r?\n/)
 const anchor = upLines.findIndex((l) => HEADING.test(l))
 if (anchor < 0) fail("no line-start ^### anchor in upstream copy")
 
-const merged = upLines.slice(0, anchor).join("\n") + "\n" + block + "\n" + upLines.slice(anchor).join("\n")
+// ── Follow UPSTREAM'S OWN SEPARATOR CONVENTION at the seam (2026-10-18) ────
+// The ledger has used two layouts: a blank line between entries, and (since
+// ~10-17) newest entries STACKED, heading directly under the previous entry. A
+// splice that ignores which one is in force either butts a heading against text
+// where blanks are the rule, or — in the stacked layout — necessarily moves the
+// displaced anchor heading off its blank line, which the delta check below read
+// as a NEW defect and refused EVERY correct top splice (10-18, ~1:15 PM PT; the
+// entry had to be spliced by hand). So: read the convention from the first two
+// upstream headings, emit the matching separator, and allow exactly the seam.
+const secondAnchor = upLines.findIndex((l, i) => i > anchor && HEADING.test(l))
+const stacked = secondAnchor > 0 && upLines[secondAnchor - 1].trim() !== ""
+const trimmedBlock = block.replace(/\s+$/, "")
+const merged =
+  upLines.slice(0, anchor).join("\n") +
+  "\n" +
+  trimmedBlock +
+  (stacked ? "\n" : "\n\n") +
+  upLines.slice(anchor).join("\n")
 
 if (REAL_MARKER.test(merged)) fail("real conflict markers survive the splice — refusing to write")
 
@@ -136,7 +153,11 @@ const headingsWithoutBlankBefore = (s) => {
 }
 const nbBefore = headingsWithoutBlankBefore(upstream)
 const nbAfter = headingsWithoutBlankBefore(merged)
-if (nbAfter > nbBefore) {
+// In the stacked layout each spliced entry legitimately adds ONE heading with no
+// blank before it: the displaced anchor, plus every block heading after the
+// first (they sit stacked, like their neighbours). Nothing beyond that may.
+const allowed = stacked ? novel.length : 0
+if (nbAfter - nbBefore > allowed) {
   fail(
     `this splice introduced ${nbAfter - nbBefore} heading(s) with no blank line before them ` +
       `(${nbBefore} -> ${nbAfter}). Add the blank line and re-run.`,
