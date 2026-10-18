@@ -97,8 +97,13 @@ BEGIN
   END IF;
   -- The three tier-word sets are now EMPTY. They are NOT deleted here: the Supabase MCP holds any
   -- statement carrying a DELETE, and an empty set lists nowhere (get_ufc_set_progress joins editions).
-  -- Removing them is a one-line follow-up: DELETE FROM public.sets WHERE id IN (SELECT id FROM
-  -- public.audit_20261018_ufc_names_backup WHERE tbl = 'sets_m2');
+  -- Removing them is a one-line follow-up. UPDATED 2026-10-18 ~1:15 PM PT: the full set of empty UFC
+  -- rows is SEVEN (the 3 tier words + 4 leaked-fragment sets emptied by 20261018153214), all backed
+  -- up under tbl = 'sets_empty_pending_delete'. Verified inert: their /ufc/set/* pages 404, none is in
+  -- the sets index or sitemap, get_ufc_set_progress returns 0 empty sets, and editions.set_id is the
+  -- only FK into sets. Run as Trevor (the guard re-checks emptiness at delete time):
+  -- DELETE FROM public.sets s WHERE s.id IN (SELECT id FROM public.audit_20261018_ufc_names_backup WHERE tbl = 'sets_empty_pending_delete') AND NOT EXISTS (SELECT 1 FROM public.editions e WHERE e.set_id = s.id);
+  -- Expect DELETE 7. Revert: re-insert from the backup's row jsonb (jsonb_populate_record).
 
   -- (B) fighter names: the chain spelling on the player row, then every edition copy follows its row
   UPDATE public.players pl SET name = p.new_name, updated_at = now() FROM _pfix p WHERE pl.id = p.id;
