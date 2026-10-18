@@ -1,6 +1,6 @@
 -- Panini WC FOTL pack EV is WITHHELD while its exclusive-card supply is under-indexed.
 --
--- WHY (2026-10-18 ~9:30 AM PT, Claude Code cloud; panini.md Next 4): every FOTL pack (1039) guarantees ONE
+-- WHY (2026-10-18 ~8:50 AM PT, Claude Code cloud; panini.md Next 4): every FOTL pack (1039) guarantees ONE
 -- FOTL-exclusive card (pack_label: "1 FOTL-exclusive Base Parallel card (#/11, #/9, #/7 or 1/1)"), so the
 -- exclusive cards still in packs must equal the FOTL packs remaining. Read live: packs_remaining 1,416, but
 -- the indexed editions sum to still_in_packs 740 (52 %). 1,004 of the 1,996 expected exclusive editions

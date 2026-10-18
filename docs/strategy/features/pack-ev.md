@@ -47,7 +47,7 @@ Three values must never be labelled as one another (packs.md 09-26): the EV of w
 
 **Now**
 1. **Owed 2026-10-20 ~7 PM PT: verify Series 2026-27 pack ingest end to end.** Check pack labels, Atlas dist counts and EV rows for the first Series 9 drops. Why: launch is when traffic and new dists both arrive. Falsifier: a new dist with no `topshot_atlas_dists` row or no EV within a few hours of going on sale.
-2. ✅ **AUDITED + FIXED 2026-10-18 ~10:30 AM PT (Claude Code cloud).** The grep did NOT return 0: three live surfaces, all fixed this pass.
+2. ✅ **AUDITED + FIXED 2026-10-18 ~9:10 AM PT (Claude Code cloud).** The grep did NOT return 0: three live surfaces, all fixed this pass.
    - `get_pack_for_simulator` sent an unpriced pull as `fmv_usd: 0` (1,210 of 220,316 pullable pool rows, 436 dists), so the simulator's own coverage disclosure could never fire → now NULL (`20261018155545`; verified: a sample dist returns 4 null, 0 zero).
    - `pack_grail_metrics` `prob_grail_{25,100,500,1000}_per_slot` count an unpriced edition as "not a grail" (435 of 5,478 dists partial, 267 at zero coverage) → the simulator's ProbCards and `GrailsView` now show "≥ x%" below full coverage and "—" with nothing priced (`fmvProbQualifier`, lib/grail-format.ts). The view itself is unchanged (no repo migration defines it).
    - The Discord/Telegram `soldpacks` digest printed pulled value and Net P/L as complete while unvalued rips count $0 and unpriced drops add $0 spend → `packReportFigures` marks each "≥"/"≤" with the valued count, and publishes no P/L when partial both ways; a failed summary read now answers "Couldn't load" instead of "No pack history found" (Telegram had answered with silence).

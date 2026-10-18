@@ -1,6 +1,6 @@
 -- get_pack_for_simulator: an unpriced pool edition is NULL, not a measured $0.
 --
--- WHY (2026-10-18 ~10:00 AM PT, Claude Code cloud; pack-ev.md Now 2, the Pack Reality COALESCE(…,0)
+-- WHY (2026-10-18 ~8:55 AM PT, Claude Code cloud; pack-ev.md Now 2, the Pack Reality COALESCE(…,0)
 -- audit): the RPC emitted 'fmv_usd' and 'floor_price_usd' as ROUND(COALESCE(x, 0), 2). The pack
 -- simulator (PackSimulatorClient.tsx) already treats an absent FMV as absent — `hasFmv` counts
 -- covered slots and an "N / M pulls had FMV … a lower bound" disclosure renders when coverage is
