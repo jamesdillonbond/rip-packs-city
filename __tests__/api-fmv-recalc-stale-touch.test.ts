@@ -245,8 +245,9 @@ describe("fmv-recalc — Step 7 stale touch (?force_stale=true)", () => {
     // because `recent_traded` reads `sales`, which holds no Panini sale at all.
     const PANINI = "d1a0a7f5-609a-49f4-a1a7-4eaac55b020b"
     const paniniMed = { ...staleRow("panini-med", 30), collection_id: PANINI, confidence: "MEDIUM", days_since_sale: 45 }
+    const paniniHigh = { ...staleRow("panini-high", 31), collection_id: PANINI, confidence: "HIGH", days_since_sale: 45 }
     const flowMed = { ...staleRow("flow-med", 12), confidence: "MEDIUM", days_since_sale: 45 }
-    state.querySqlByMarker = { recent_traded: { data: [paniniMed, flowMed], error: null } }
+    state.querySqlByMarker = { recent_traded: { data: [paniniMed, paniniHigh, flowMed], error: null } }
     const { inserted } = instrument(baseFixtures())
 
     await POST(req("?force_stale=true"))
@@ -255,6 +256,8 @@ describe("fmv-recalc — Step 7 stale touch (?force_stale=true)", () => {
     const touched = inserted.fmv_snapshots ?? []
     expect(touched.find((r) => r.edition_id === "panini-med"), "the Panini row was not re-stamped — fixture no longer exercises the path").toBeDefined()
     expect(touched.find((r) => r.edition_id === "panini-med")?.confidence).toBe("MEDIUM")
+    // ...and Panini's own HIGH (panini-1.3.0 grading) is not re-graded on that unknown 0.
+    expect(touched.find((r) => r.edition_id === "panini-high")?.confidence).toBe("HIGH")
     // CONTROL: a Flow collection's cold MEDIUM in the same run still lands on LOW.
     expect(touched.find((r) => r.edition_id === "flow-med")?.confidence).toBe("LOW")
   })

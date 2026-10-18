@@ -2407,9 +2407,10 @@ export async function POST(req: NextRequest) {
               // from counting as HIGH in the confidence-share metric.
               // 1.8.2: the same re-stamp also carried a cold MEDIUM forward; with 0 recent
               // sales it now lands on LOW (gateMediumToRecentSale, lib/fmv-confidence.ts).
-              // Unknown (null) for a collection whose sales `recent_traded` cannot see.
+              // Unknown (null) for a collection whose sales `recent_traded` cannot see —
+              // both gates then carry that engine's own grade forward unchanged.
               confidence: gateMediumToRecentSale(
-                gateHighToRecentVolume(String(r.confidence), 0),
+                gateHighToRecentVolume(String(r.confidence), SALES_OUTSIDE_SALES_TABLE.has(String(r.collection_id)) ? null : 0),
                 SALES_OUTSIDE_SALES_TABLE.has(String(r.collection_id)) ? null : 0,
               ),
               ask_proxy_fmv: r.ask_proxy_fmv,

@@ -2869,7 +2869,7 @@ async function executeToolInner(
       // active collection, and keep failed / ambiguous / absent apart.
       let editionQuery = supabase
         .from("editions")
-        .select("id, player_name, set_name, tier")
+        .select("id, player_name, set_name, tier, collection_id")
         .eq("external_id", editionKey);
       if (effectiveCollectionUuid) editionQuery = editionQuery.eq("collection_id", effectiveCollectionUuid);
       const { data: editionRows, error: editionErr } = await editionQuery.limit(2);
@@ -2901,12 +2901,21 @@ async function executeToolInner(
       const computedAgo = snapshot.computed_at
         ? `${Math.round((Date.now() - new Date(snapshot.computed_at).getTime()) / 60000)} minutes ago`
         : "unknown";
+      // ⛔ Panini has NO 30-day sale count: RPC records the last sale of each card it
+      // checks, and every Panini fmv_snapshots row carries sales_count_30d = 0 (all
+      // 26,374 latest rows, HIGH included, 2026-10-17). Passing that 0 to the model
+      // published "no sales in 30 days" as a fact; the edition page already hides the
+      // stat for the same reason. Unknown is null, and the prose says how it is priced.
+      const salesCountUnknown = edition.collection_id === COLLECTION_UUID_BY_SLUG["panini-blockchain"];
       const salesNote = snapshot.sales_count_30d ? `across ${snapshot.sales_count_30d} recent sales` : "with limited sales data";
       // Never surface the internal confidence enum (HIGH/MEDIUM/LOW/…) in a
       // user-facing answer — policy per lib/fmv-basis.ts; the sales note already
       // discloses the basis in plain words. The structured `confidence` field is
       // still returned separately for the model to reason about, just not echoed.
-      const explanation = `FMV is $${Number(snapshot.fmv_usd).toFixed(2)} based on a 30-day average sales price of $${Number(snapshot.wap_usd || 0).toFixed(2)} ${salesNote}. Floor price is $${Number(snapshot.floor_price_usd || 0).toFixed(2)}. Last computed ${computedAgo}.${snapshot.ask_proxy_fmv ? ` Ask proxy FMV: $${Number(snapshot.ask_proxy_fmv).toFixed(2)}.` : ""}`;
+      const basis = salesCountUnknown
+        ? "from the recorded sales of this edition's cards (Panini has no 30-day sale count)"
+        : `based on a 30-day average sales price of $${Number(snapshot.wap_usd || 0).toFixed(2)} ${salesNote}`;
+      const explanation = `FMV is $${Number(snapshot.fmv_usd).toFixed(2)} ${basis}. Floor price is $${Number(snapshot.floor_price_usd || 0).toFixed(2)}. Last computed ${computedAgo}.${snapshot.ask_proxy_fmv ? ` Ask proxy FMV: $${Number(snapshot.ask_proxy_fmv).toFixed(2)}.` : ""}`;
 
       // Badges + supply belong in an FMV EXPLANATION: "why is this priced where
       // it is" is answered partly by what the moment is (a rookie, a debut) and
@@ -2919,7 +2928,7 @@ async function executeToolInner(
         tier: edition.tier ?? null,
         fmv_usd: snapshot.fmv_usd,
         confidence: snapshot.confidence,
-        sales_count_30d: snapshot.sales_count_30d ?? null,
+        sales_count_30d: salesCountUnknown ? null : (snapshot.sales_count_30d ?? null),
         days_since_sale: snapshot.days_since_sale ?? null,
         algo_version: snapshot.algo_version ?? null,
         wap_usd: snapshot.wap_usd,

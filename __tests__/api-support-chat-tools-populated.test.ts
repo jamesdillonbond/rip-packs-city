@@ -257,6 +257,33 @@ describe("concierge tools — explain_fmv", () => {
     expect(String(r.explanation)).not.toContain("HIGH")
   })
 
+  it("⛔ a Panini edition's 0 sales count is UNKNOWN — never handed to the model as 'no sales in 30 days'", async () => {
+    install({
+      editions: { data: [{ id: "ed-p", player_name: "Caitlin Clark", set_name: "Prizm", tier: null, collection_id: "d1a0a7f5-609a-49f4-a1a7-4eaac55b020b" }], error: null },
+      fmv_snapshots: {
+        data: [{ fmv_usd: 42, confidence: "HIGH", wap_usd: 40, floor_price_usd: 38, computed_at: new Date().toISOString(), sales_count_30d: 0, days_since_sale: 3, ask_proxy_fmv: null, algo_version: "panini-1.3.0" }],
+        error: null,
+      },
+    })
+    script("explain_fmv", { editionKey: "panini:123" })
+    await POST(post("why is this priced like that"))
+    const r = toolResult()
+    expect(r.status).toBe("ok")
+    expect(r.sales_count_30d).toBeNull()
+    expect(String(r.explanation)).not.toContain("30-day average")
+    expect(String(r.explanation)).toContain("no 30-day sale count")
+  })
+
+  it("CONTROL — a Top Shot edition's real 0 is still passed through as 0", async () => {
+    install({
+      editions: { data: [{ id: "ed-t", player_name: "Dame", set_name: "Base", tier: "RARE", collection_id: "95f28a17-224a-4025-96ad-adf8a4c63bfd" }], error: null },
+      fmv_snapshots: { data: [{ fmv_usd: 5, confidence: "LOW", wap_usd: 5, floor_price_usd: 4, computed_at: new Date().toISOString(), sales_count_30d: 0, days_since_sale: 40 }], error: null },
+    })
+    script("explain_fmv", { editionKey: "3:47" })
+    await POST(post("explain 3:47"))
+    expect(toolResult().sales_count_30d).toBe(0)
+  })
+
   it("returns not_found when the edition key resolves to nothing", async () => {
     install({ editions: { data: null, error: null } })
     script("explain_fmv", { editionKey: "9:99" })

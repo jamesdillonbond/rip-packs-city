@@ -931,7 +931,7 @@ export default async function EditionPage(
               {fmvAvailable && (
                 <ExplainButton
                   question="What does this FMV mean, and how much should I trust it?"
-                  context={`${editionTitle}${detail.set_name ? ` — ${detail.set_name}` : ""}${parallelLabel ? ` · ${parallelLabel}` : ""} (${collection}, edition ${slug}): FMV ${fmtUsd(fmv?.fmv_usd ?? null)}, confidence ${fmv?.confidence ?? "unknown"}${fmv?.sales_count_30d != null ? `, ${fmv.sales_count_30d} sales in 30 days` : ""}${askValue ? `, lowest ask ${fmtUsd(askValue)}` : ""}.`}
+                  context={`${editionTitle}${detail.set_name ? ` — ${detail.set_name}` : ""}${parallelLabel ? ` · ${parallelLabel}` : ""} (${collection}, edition ${slug}): FMV ${fmtUsd(fmv?.fmv_usd ?? null)}, confidence ${fmv?.confidence ?? "unknown"}${!isPanini && fmv?.sales_count_30d != null ? `, ${fmv.sales_count_30d} sales in 30 days` : ""}${askValue ? `, lowest ask ${fmtUsd(askValue)}` : ""}.`}
                 />
               )}
               {/* PIN-FMV-REKEY Wave 2: this is the most-liquid render; show the

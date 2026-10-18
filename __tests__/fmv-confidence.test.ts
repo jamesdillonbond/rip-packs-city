@@ -94,6 +94,7 @@ describe("gateMediumToRecentSale (1.8.2: MEDIUM needs a sale in the last 30 days
   it("⛔ an UNKNOWN 30-day count (null) leaves the label alone — never read as zero", () => {
     expect(gateMediumToRecentSale("MEDIUM", null)).toBe("MEDIUM")
     expect(gateMediumToRecentSale("HIGH", null)).toBe("HIGH")
+    expect(gateHighToRecentVolume("HIGH", null)).toBe("HIGH")
   })
   it("keeps MEDIUM with at least one recent sale", () => {
     expect(gateMediumToRecentSale("MEDIUM", 1)).toBe("MEDIUM")

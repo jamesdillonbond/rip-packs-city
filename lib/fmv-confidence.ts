@@ -97,7 +97,11 @@ export function computeConfidence(salesCount: number): FmvConfidence {
 // the RECENT 30d window. Pass the TRUE 30-day count (not the widened count):
 // a HIGH that wasn't earned on >=MIN_SALES_30D_HIGH recent sales is demoted to
 // MEDIUM. Anything not HIGH passes through untouched (MEDIUM/LOW/ASK_ONLY/…).
-export function gateHighToRecentVolume<T extends string>(confidence: T, salesCount30d: number): T {
+// `null` = the 30-day count is UNKNOWN (see gateMediumToRecentSale): leave the tier
+// alone. Panini's engine grades HIGH on its own rule (panini-1.3.0, 10-15); the
+// stale re-stamp used to re-grade it on a 0 it never measured (2026-10-17).
+export function gateHighToRecentVolume<T extends string>(confidence: T, salesCount30d: number | null): T {
+  if (salesCount30d === null) return confidence
   return confidence === "HIGH" && salesCount30d < MIN_SALES_30D_HIGH ? ("MEDIUM" as T) : confidence
 }
 
