@@ -51,6 +51,7 @@
     - **Still flagged on purpose:** `topshot-set-series-onchain`, for the 10-20 tip-off.
     - **Self-inflicted CI red, fixed:** `51b24282` committed autostash conflict markers into the ledger, because preflight ran before the pull. Another session cleaned them at `c0e9fcb2`, with no entry lost. This clone now has `rebase.autoStash=false`.
     - **Empty UFC sets:** there are 7, not 3. All are backed up and inert, and the guarded DELETE is ready for Trevor in the audit script.
+31. **Inbox drained (10-18, 1:05–1:25 PM PT, "Keep going").** The LOW All Day market-cap tile timeout: the tile read walked the whole PK index (1,145 buffers for 7 rows); a partial index (`20261018200418`) makes it a 2-buffer index-only scan. The 10-17 HIGH fmv-recalc wedge was already fixed: every sweep run since noon PT wrote 499–1,493 rows. #192 was already verified. All three are marked in the inbox index. Looked at and left alone: #181 (the mainnet24 DNS record is still gone; its retire decision stays dated 10-24, and the parked probes cost nothing user-facing), and the once-a-day ipfs-media race log (benign).
 ## Queued for Trevor / Claude Code
 - None. All four 10-17 `docs/pending-sql/` statements are applied and committed.
 
