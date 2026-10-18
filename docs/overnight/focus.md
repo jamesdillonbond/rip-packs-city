@@ -11,6 +11,7 @@
 - **Fast Break is PARKED IN PLACE (decided 10-18).** Do not hand-insert `fast_break_runs` rows or turn on `NEXT_PUBLIC_SHOW_FAST_BREAK` while projections are dead. Re-look with #8 on 10-28.
 - **Cron cadence changed 10-18:** `topshot-set-series-onchain` every 10 min, `topshot-circulation-onchain` every 6 h, `topshot-pack-dist-names-onchain` every 3 h. More runs of these lanes are expected, not a regression.
 - **Parallel seeder idle on `queue_full` is BY DESIGN** (resolver once a day at ~1:30 PM PT; the 10k cap protects the newest series, `20260904133105`). Do not raise the cap around the Series 2026-27 launch.
+- **New 10-18 1:03 PM PT: pg_cron 750 `maint-vacuum-pack-rips` (daily 4:37 AM PT).** On 10-19, read `pack_rips` relallvisible/relpages (was 72.1 %) and `EXPLAIN (ANALYZE, BUFFERS) select * from v_allday_pack_lifecycle where dist_id = '6924'` (was 691 ms, 715 heap fetches). Record both in `pack-ev.md`.
 - **Pinnacle #193:** read it with `pinnacle_fmv_sales_backtest('2026-10-09 14:00-07')` (HIGH n 247 of 500 on 10-18). A dispersion gate was measured and is NOT the fix.
 
 ## STEER — added 2026-10-17 ~7:40 PM PT (Claude Code cloud; docs-refresh thread archived) — three DATED checks handed to the night pass
