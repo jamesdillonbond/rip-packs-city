@@ -955,7 +955,8 @@ const PINS = [
     fn: "compute_pack_ev_per_edition_weighted",
     test: "supabase/tests/compute_pack_ev_per_edition_weighted.sql",
     // Re-pointed 2026-08-30: pool FMV via per-edition LATERAL, not the fmv_current view.
-    migration: "supabase/migrations/20260830152806_audit_20260830_pack_ev_pool_reads_latest_snapshot_per_edition_not_the_fmv_current_view.sql",
+    // Re-pointed 2026-10-18: no price (0/NULL) is never is_positive_ev.
+    migration: "supabase/migrations/20261018163817_audit_20261018_pack_ev_no_price_is_never_positive_ev.sql",
   },
   {
     fn: "refresh_golazos_ask_fmv_from_listings",

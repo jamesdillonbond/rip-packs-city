@@ -200,7 +200,7 @@ BEGIN
     'typical_per_slot', round(COALESCE(v_typical_per_slot,0),2),
     'pack_ev', v_pack_ev,
     'value_ratio', v_value_ratio,
-    'is_positive_ev', v_pack_ev > 0,
+    'is_positive_ev', COALESCE(p_pack_price, 0) > 0 AND v_pack_ev > 0,
     'edition_count', v_edition_count,
     'pool_rows_total', v_pool_rows_total,
     'editions_with_fmv', v_editions_with_fmv,
@@ -305,6 +305,12 @@ SELECT _assert_eq((compute_pack_ev_per_edition_weighted('95f28a17-224a-4025-96ad
   '1.900', 'D1 value_ratio = 19/10');
 SELECT _assert_eq((compute_pack_ev_per_edition_weighted('95f28a17-224a-4025-96ad-adf8a4c63bfd','D1',10,1)->>'is_positive_ev'),
   'true', 'D1 is +EV');
+-- 2026-10-18: no price, no +EV claim. The All Day / Golazos lanes pass 0 when Dapper's node.price is
+-- absent; pack_ev then equals gross_ev and was written is_positive_ev=true (2,360 + 176 latest rows).
+SELECT _assert_eq((compute_pack_ev_per_edition_weighted('95f28a17-224a-4025-96ad-adf8a4c63bfd','D1',0,1)->>'is_positive_ev'),
+  'false', 'D1 at pack price 0 (unknown) is NOT +EV, though gross_ev > 0');
+SELECT _assert_eq((compute_pack_ev_per_edition_weighted('95f28a17-224a-4025-96ad-adf8a4c63bfd','D1',NULL,1)->>'is_positive_ev'),
+  'false', 'D1 at a NULL pack price is NOT +EV (false, never null: the writers coerce it into a NOT NULL column)');
 SELECT _assert_eq((compute_pack_ev_per_edition_weighted('95f28a17-224a-4025-96ad-adf8a4c63bfd','D1',10,1)->>'edition_count'),
   '3', 'D1 counts all 3 editions -- every D1 row is pullable');
 SELECT _assert_eq((compute_pack_ev_per_edition_weighted('95f28a17-224a-4025-96ad-adf8a4c63bfd','D1',10,1)->>'editions_with_fmv'),
