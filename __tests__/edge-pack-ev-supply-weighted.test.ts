@@ -84,6 +84,14 @@ describe("weightedMeanEv — Pinnacle inline supply-weighted mean", () => {
     expect(r.editionsWithFmv).toBe(1)
     expect(r.fmvCoveragePct).toBe(50)
     expect(r.valueRatio).toBeNull() // packPrice 0 → no ratio
+    // ...and no "+EV" claim: packEv equals grossEv when there is no price to beat
+    expect(r.packEv).toBe(10)
+    expect(r.isPositiveEv).toBe(false)
+  })
+  it("an unknown (0) or negative pack price never marks the pack +EV, however large the pool value", () => {
+    expect(weightedMeanEv([{ circ: 1, fmv: 5000 }], 4, 0).isPositiveEv).toBe(false)
+    expect(weightedMeanEv([{ circ: 1, fmv: 5000 }], 4, -1).isPositiveEv).toBe(false)
+    expect(weightedMeanEv([{ circ: 1, fmv: 5000 }], 4, 9.99).isPositiveEv).toBe(true)
   })
   it("ok=false with no editions", () => {
     const r = weightedMeanEv([], 3, 5)

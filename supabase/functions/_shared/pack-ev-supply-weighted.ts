@@ -180,7 +180,11 @@ export function weightedMeanEv(
     grossEv,
     packEv,
     valueRatio,
-    isPositiveEv: packEv > 0,
+    // A pack with NO price (callers pass 0 when Dapper's node.price is absent) has
+    // packEv = grossEv, which is not an edge over anything. "+EV" is a claim about a
+    // PRICE, so it needs one (2026-10-18 audit: 2,542 latest All Day/Golazos/Pinnacle
+    // rows carried is_positive_ev=true at pack_price 0; readers neutralised it).
+    isPositiveEv: packPrice > 0 && packEv > 0,
     fmvCoveragePct,
     editionCount,
     editionsWithFmv,
