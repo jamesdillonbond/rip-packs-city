@@ -2,9 +2,9 @@
 
 > ⚠ **SCOPE:** the push notes here are specific to this Cowork **cloud** session (repo attached mid-session with `add_repo`, direct `git push`). Trevor's machine and Claude Code push normally via Git Credential Manager — **commit these files as usual.**
 
-**Run:** ~2:45 → ~5:45 PM PT 10-17, Trevor: "look through the project, recent audits, handoffs, known issues … tasks that you can take care of from here … work autonomously for the next 3 hours". A Claude Code session was committing concurrently all afternoon (last seen `b013712e2`, 2:59 PM).
+**Run:** ~2:45 → ~10 PM PT 10-17, Trevor: "look through the project, recent audits, handoffs, known issues … tasks that you can take care of from here … work autonomously for the next 3 hours". A Claude Code session was committing concurrently all afternoon (last seen `b013712e2`, 2:59 PM).
 
-**Verdict: GREEN · 13 shipped (2 scheduled-task prompts, 3 code commits with 4 fixes, 5 DB/pg_cron changes, 3 docs) · nothing waiting on Trevor · oldest routed: none older than today.**
+**Verdict: GREEN · 16 shipped (incl. FMV 1.8.2 — read M1/M2 on the 10-18 legs expecting a by-decision drop) · nothing waiting on Trevor · oldest routed: none older than today.**
 
 ## Health (2:48–3:05 PM PT)
 - Security drift 0, `check_when_others_timeout_blind` 0, stalled `[]`, pg_cron recent failures none, trust breaches none.
@@ -27,6 +27,8 @@
 12. **`chain-arrival-flips` sleeps only when there is work** (`20261018011453`, 6:14 PM PT): the new zero-yield offender is a drained backlog (0 eligible candidates; 15,123 reads done, 12,981 found). Job 681 had held a pg_cron slot 27 s on every idle tick (720/day); the guard cuts that to 144/day, still logging every 10 min inside the 20-min silence watch. Idle ticks now 0.1–0.5 s, verified live. Not suppressed in the zero-yield detector — re-open if `enqueued` > 0 with `found` 0.
 13. **M11 zero explained** (roadmap Now #3): positive control (one-off `SELECT 1/0` job recorded `failed`, the check saw it); the cliff is the 10-09 pack-pulls fix, not the 10-10 #181 parking a parallel session credited — corrected in roadmap, roadmap-status, go-live.
 14. **All Day ask-corroboration re-enabled** (`1bfc17c86`, ~7:25 PM PT): the fmv-recalc liveness probe read a NULL `listed_at` (4,913 `storefront_v2` rows, NULLs sort first under DESC) and withheld every All Day LOW→MEDIUM lift since ~09-25. The would-lift set prices like MEDIUM (14 d: 20.7 % vs 20.0 % median error, n 855). Verified live: lag 0.2 h, 14 of the first 216 recomputed editions LOW→MEDIUM, 0 down. **Read M2 on the 10-18 legs.**
+15. **Golazos is an idle market, not a blind venue** (`20261018041800`, applied ~9:15 PM PT after Trevor's "apply the Golazos status fix"): marketplace status row re-verified idle. **Trevor 9:27 PM PT: no dormancy label** ("Users can make their own judgement"); the label and relative-deals copy items are marked declined in `laliga-golazos.md`.
+16. **FMV 1.8.2 — MEDIUM needs a sale in the last 30 days** (`3b5d3cfa6`, ~9:50 PM PT; decided under Trevor's "Decide the rest of this yourself"). 90-day-only MEDIUM backtested at Top Shot 20.0 % median error / 59.0 % within ±25 % (n 483) vs 30-day MEDIUM 14.0 / 64.7; All Day 33.5 / 41.4 (n 145) vs 20.0 / 56.7. That fails the same tolerance used to admit ask-corroborated MEDIUM (item 14). `gateMediumToRecentSale` runs after the HIGH recency gate at all three confidence writes; labels only, prices unchanged. **Expected M1 ~55 % → ~44 %, All Day ~28 % → ~25 %, Golazos → 0 (an estimate; measure on the 10-18 legs).** Revert: `git revert` the commit titled "feat(fmv): 1.8.2 — MEDIUM needs a sale in the last 30 days".
 
 ## Queued for Trevor / Claude Code
 - None. All four 10-17 `docs/pending-sql/` statements are applied and committed.
