@@ -1,45 +1,44 @@
 {
-  "generated_at_pt": "2026-10-17 ~01:18 AM PT (overnight nightly, cloud, push via device-VM clone)",
-  "generated_at_utc": "2026-10-17T08:18Z",
-  "pass": "Overnight nightly. GREEN, 0 shipped (nothing clearly-safe + non-hot open; app/edition/ownership/rip-metadata tree HOT from the 10-15/10-16 drain). Handoff: docs/handoff-2026-10-17-overnight-pass.md",
+  "generated_at_pt": "2026-10-18 ~01:15 AM PT (overnight nightly, cloud, push via device-VM clone)",
+  "generated_at_utc": "2026-10-18T08:15Z",
+  "pass": "Overnight nightly. GREEN, 0 shipped. A sibling Cowork (Trevor-driven) session shipped FMV 1.8.3 tonight (f7682fdc7, 01:09 PT); FMV tree hot/off-limits. #192 already verified on main (7d5fe4912). Handoff: docs/handoff-2026-10-18-overnight-pass.md",
   "shipped": 0,
   "reverted": 0,
-  "verdict": "GREEN · 0 shipped · idle: no-clearly-safe-non-hot-work (inbox drained, health green) · carried routed to Trevor/Claude Code · oldest routed: #23/#25 edge-fn drift (operator, since 08-22). One health flag (zero-yield Pinnacle) dispositioned benign. Post-ship watch on 10-16's ships: all holding, 0 regressions.",
+  "verdict": "GREEN · 0 shipped · nothing safe+non-hot open; FMV tree actively worked by a sibling session tonight. Health green; all post-ship watches holding (fmv-recalc wedge fix VERIFIED, hydrate draining, 10-16 ships holding). #192 independently re-verified PASS (already documented on main).",
   "health": {
     "security_invariants": "clean (invariants [], anon_write_holes [], rls_off_base_tables [], secdef_anon_violations [])",
-    "structural": "timeout_blind 0, pgcron_recent_failures [], stalled [], backward_cursor_rewinds [], wmc_null_edition_key [], function_search_path_drift [], procedure pins [], suppression_count/parked_claim_drift []",
-    "zero_yield_lanes": "2 offenders: pinnacle-pack-openers + pinnacle-metadata-backfill (last_find 10-09). DISPOSITIONED BENIGN: bursty Pinnacle pack-open market, every tick ok=true 0 errors; not a stall. No suppression added (would blind 09-12 ok-while-silent class). Re-open on ok=false/write_errors/gql_errors or upstream pack-opens resuming with attributed=0.",
+    "structural": "stalled [], backward_cursor_rewinds [], wmc_null_edition_key [], function_search_path_drift [], procedure_txn_control_pins [], procedure_search_path_unpinned [], cross_collection_mat_staleness [], suppression_count/parked_claim_drift []",
     "trust_health_breaches": 0,
-    "trust_health_note": "all 38 arms ok. candy_sales_stale_hours 124.8 ok (breach 168; Candy silence upstream). edition_integrity_flags 8 (breach 250). unmapped_resolution_backlog_max 8 (breach 100).",
-    "trust_precompute_max_age_hours": 5.37,
+    "trust_health_note": "all 38 arms ok. fmv_sweep_wedge_hours 0 (was 4.53 BREACH 10-17 pre-fix). candy_sales_stale_hours 148.8 ok (breach 168; Candy upstream silence since 10-11). edition_integrity_flags 8 (breach 250). unmapped_resolution_backlog_max 8 (breach 100).",
+    "trust_precompute_max_age_hours": 5.34,
     "stalled_pipelines": "none ([])",
-    "timeout_blind_count": 0,
-    "pipeline_alerts": "topshot-pack-supply-atlas 25.8% = chronic 403-retry noise (upstream 0, last hour 0/13); 6x Atlas *-upstream-403 + flow-rest-moment-moved-400 all info/attributed, nothing lost.",
+    "sentinel_ts_uuid_editions_48h": 0,
+    "ts_uuid_dupes_created_24h": 0,
+    "pipeline_alerts": "topshot-pack-supply-atlas failure_rate 27.2% (860/3158) = chronic 403-retry noise (upstream 0); 4x Atlas *-upstream-403 + flow-rest-moment-moved-400 all info/attributed, nothing lost, freshness current.",
+    "pipeline_fails_24h": "topshot-pack-supply-atlas 371 (chronic), atlas-market-feed 12, atlas-editions-refresh 8, sync-nba-projections 8, member-wallet-usernames-atlas 2, topshot-active-listings-ingest 1, panini-collector-walk 1; all upstream 0.",
     "sentry": "dark (quota off 08-18, SDK removed #34).",
-    "vercel_24h": "18 error groups, all chronic/transient/known. special-serials statement-timeout + rookie-collectors lock-timeout from 10-16 both GONE (fixes holding). pack-detail bounded-read 5s (chronic since 08-23), market-cap 8s tiles (dispositioned), 2x cloudflare 502 transient, 1 telegram-send timeout @/api/sentinel. No new class tracing to a ship.",
+    "vercel_24h": "7 error groups, all chronic/known (edition insight_links timeout count 9 since 08-06; pack-detail pack_realized_ev/pack_lifecycle 5s since 08-23; 3x set-page timeouts degrade-to-section/empty; ipfs-media gateway-race 1). No new class tracing to tonight's FMV 1.8.3 ship. Latest prod deploy f7682fdc7 (FMV 1.8.3) READY.",
     "client_error_beacon_24h": 0,
-    "db_size_mb": 39297,
-    "db_size_note": "rpc_ops_snapshot db_size 10-17 08:10Z (+410 MB vs 10-16 = 38,887).",
-    "accuracy_backtest_7d": {
-      "nba_top_shot": {"published_all_median_abs_err_pct": 13.3, "published_all_within_25_pct": 66.0, "published_all_median_ratio": 1.000, "high_median_abs_err_pct": 9.5, "high_within_25_pct": 84.3, "last3_median_30d_all_err_pct": 13.6, "last3_median_30d_all_ratio": 1.000, "n": 15444},
-      "nfl_all_day": {"published_all_median_abs_err_pct": 20.0, "published_all_within_25_pct": 56.4, "published_all_median_ratio": 1.059, "high_median_abs_err_pct": 13.3, "high_within_25_pct": 71.6, "n": 2985, "note": "ASK_ONLY n=68 ratio 1.800, STALE n=10 ratio 2.167 = known tiny worst buckets; median_abs_err_usd ALL $0.04 (sub-dollar sales)."}
-    },
-    "post_ship_watch_10_16": "GREEN. ownership-onchain-walk 8/8 + 1/1 ok (143,496 then 11,255 rows); topshot-index-unmapped-hydrate 118+93 ok, backlog 27k->133k from the Dune-gap walk, now draining ~40/tick (~9d, WATCH trends down); backfill-pack-rip-metadata 24/24+6/6 ok, 0 timeouts; ownership-walk-candidates 1/1 ok. 0 regressions."
+    "db_size_mb": 39171,
+    "db_size_note": "rpc_ops_snapshot db_size 10-18 08:08Z (-126 MB vs 10-17 = 39,297; autovacuum/scratch, not concerning).",
+    "post_ship_watch": "GREEN. fmv-recalc wedge fix (10-17 ~5:25 PM, app/api/fmv-recalc/route.ts) VERIFIED HOLDING: fmv_sweep_wedge_hours 0, 56/89 stage-NULL advancing runs/14h, latest step1b held=false wrapped=true (correct end-of-catalogue wrap), 0 fails. topshot-index-unmapped-hydrate draining 60/tick, 0 fails. 10-16 ships holding."
   },
-  "fmv_high_med": {"nba_top_shot": 8033, "panini_blockchain": 10048, "nfl_all_day": 1634, "candy_mlb": 71, "laliga_golazos": 6, "ufc_strike": 0, "disney_pinnacle": 930},
-  "fmv_high_med_note": "HIGH+MEDIUM from rpc_ops_snapshot fmv_by_collection (compute 10-17 05:35Z). Pinnacle 280 HIGH + 650 MEDIUM = 930.",
-  "editions_by_collection": {"nba_top_shot": 14528, "panini_blockchain": 33025, "nfl_all_day": 6190, "laliga_golazos": 575, "ufc_strike": 518, "candy_mlb": 125},
-  "deltas_vs_prev": "db +410 MB (38,887 -> 39,297); nba HIGH+MED 8,044 -> 8,033 (-11); panini 7,929 -> 10,048 (+2,119 coverage expansion, no coverage drop); panini editions 32,086 -> 33,025 (+939); Vercel groups 11 -> 18 (pack-detail family split, all chronic; no new class). trust breaches 0 -> 0.",
+  "fmv_high_med": {"nba_top_shot": 8000, "panini_blockchain": 11121, "nfl_all_day": 1815, "candy_mlb": 71, "laliga_golazos": 6, "ufc_strike": 0, "disney_pinnacle": 941},
+  "fmv_high_med_note": "HIGH+MEDIUM from rpc_ops_snapshot fmv_by_collection (compute 10-18 05:35Z). Pinnacle 256 HIGH + 685 MEDIUM = 941.",
+  "editions_by_collection": {"nba_top_shot": 14528, "panini_blockchain": 34997, "nfl_all_day": 6190, "laliga_golazos": 575, "ufc_strike": 518, "candy_mlb": 125},
+  "deltas_vs_prev": "db -126 MB (39,297 -> 39,171). FMV HIGH+MED: nba 8,033 -> 8,000 (-33; FMV 1.8.3 tightened MEDIUM gating, sibling-session ship); panini 10,048 -> 11,121 (+1,073 coverage expansion); nfl 1,634 -> 1,815 (+181); pinnacle 930 -> 941 (+11); candy 71, golazos 6, ufc 0 flat. editions: panini 33,025 -> 34,997 (+1,972 coverage), others flat. trust breaches 0 -> 0.",
   "open_watches": [
-    "zero-yield Pinnacle lanes (pack-openers, metadata-backfill): benign-intermittent; re-open on ok=false/write_errors/gql_errors or upstream pack-opens resuming with attributed=0.",
-    "topshot-index-unmapped-hydrate backlog: ~133k after the 10-16 Dune-gap walk, draining ~40/tick; confirm it trends down next pass.",
-    "Series 2026-27 mints ~Oct 20: topshot-set-series-onchain registers [9], atlas frontier dispatches the new set within ~10 min."
+    "fmv-recalc wedge fix (10-17): holding; keep fmv_sweep_wedge_hours < 3 and stage-NULL advancing runs present.",
+    "topshot-index-unmapped-hydrate backlog: draining 60/tick, 0 fails; confirm continues down.",
+    "zero-yield Pinnacle lanes: still benign-intermittent; re-open on ok=false/write_errors/gql_errors or upstream pack-opens resuming with attributed=0.",
+    "Sibling Cowork session on FMV 1.8.x tonight: next pass re-measure accuracy gate for drift."
   ],
   "needs_trevor": [
-    "#58 OPENSEA_API_KEY (~22 nights, shelved 09-23).",
-    "Windows mount behind origin (mount HEAD 7ba2d1e0f, origin 27f0e6199) + deep-audit uncommitted edits: git pull --ff-only.",
+    "#58 OPENSEA_API_KEY (~23 nights, shelved 09-23; Candy sales 0 since 10-11).",
+    "Windows mount behind origin + deep-audit uncommitted edits: git pull --ff-only (now further behind; origin at f7682fdc7).",
     "#23/#25 edge-fn drift (operator since 08-22, OLDEST).",
-    "drop_scratch residue (~185 MB flowty_archive.scratch_*): SQL-editor-only, Trevor's data."
+    "drop_scratch residue (~185 MB flowty_archive.scratch_*): SQL-editor-only, Trevor's data.",
+    "Inbox archival backlog: ~587 unarchived files in docs/overnight/inbox/ back to 2026-08-09 (observation; not acted on this pass)."
   ],
-  "housekeeping": "0 shipped, 0 reverted. 1 ledger entry spliced at first line-start ###. 1 focus do-not-re-flag line added. Inbox drained (newest filing 10-15, all closed). metrics overwritten. Lock released."
+  "housekeeping": "0 shipped, 0 reverted. No ledger entry (no-op night per CLAUDE.md: ledger is for main/prod-state changes only). No session-log edit (no new durable lesson; avoided racing the active sibling session). Handoff written + pushed + mirrored to claude.ai Project. metrics overwritten. Lock released."
 }
