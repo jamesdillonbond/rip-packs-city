@@ -428,6 +428,59 @@ describe("fmv-recalc deferred sweep — every exit path logs (the 2026-05-25 inc
     expect(inserted.fmv_snapshots ?? []).toHaveLength(0)
   })
 
+  // 2026-10-18 wedge fix: a GENUINELY empty page (sales_market returns [] with NO
+  // error) used to HOLD the cursor like the fetch-error case, so the sweep re-read
+  // the same empty page forever (fmv_sweep_wedge_hours breached 2026-10-17). A
+  // short genuine-empty page now WRAPS (cursor_after null); a full one ADVANCES.
+  it("Step 1b genuine-empty SHORT page (no sales, no error) wraps the cursor, does not hold", async () => {
+    const { rpcCalls, inserted } = instrument({
+      pipeline_runs: { data: null, error: null },
+      "rpc:fmv_recalc_edition_page": { data: [{ edition_id: "ed-1" }], error: null },
+      sales_market: { data: [], error: null },
+      ...QUIET_TAIL,
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    const log = terminalLog(rpcCalls)
+    expect(log).toMatchObject({
+      p_pipeline: "fmv-recalc",
+      p_ok: true,
+      p_cursor_before: "0",
+      p_cursor_after: null,
+    })
+    expect((log?.p_extra as Record<string, unknown>)?.stage).toBe("step1b_refetch_empty")
+    expect((log?.p_extra as Record<string, unknown>)?.cursor_held).toBe(false)
+    expect((log?.p_extra as Record<string, unknown>)?.cursor_wrapped).toBe(true)
+    expect(inserted.fmv_snapshots ?? []).toHaveLength(0)
+  })
+
+  it("Step 1b genuine-empty FULL page (no sales, no error) ADVANCES the cursor by one page", async () => {
+    const fullPageIds = Array.from({ length: 500 }, (_, k) => ({ edition_id: "ed-" + k }))
+    const { rpcCalls, inserted } = instrument({
+      pipeline_runs: { data: null, error: null },
+      "rpc:fmv_recalc_edition_page": { data: fullPageIds, error: null },
+      sales_market: { data: [], error: null },
+      ...QUIET_TAIL,
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    const log = terminalLog(rpcCalls)
+    expect(log).toMatchObject({
+      p_pipeline: "fmv-recalc",
+      p_ok: true,
+      p_cursor_before: "0",
+      p_cursor_after: "500",
+    })
+    expect((log?.p_extra as Record<string, unknown>)?.stage).toBe("step1b_refetch_empty")
+    expect((log?.p_extra as Record<string, unknown>)?.cursor_held).toBe(false)
+    expect((log?.p_extra as Record<string, unknown>)?.cursor_wrapped).toBe(false)
+    expect(inserted.fmv_snapshots ?? []).toHaveLength(0)
+  })
+
   it("Step 3 today-purge hard failure logs step3_delete_chunk_failed and aborts before inserting", async () => {
     const { rpcCalls, inserted } = instrument({
       pipeline_runs: { data: null, error: null },

@@ -454,6 +454,20 @@ export async function POST(req: NextRequest) {
       // Step-1b chunk fetch errors -> empty salesPage -> this path, which is how
       // fmv-recalc "went dark" 18:28-20:28Z while the cron showed green. Log it,
       // failing the run when the emptiness was caused by fetch errors.
+      //
+      // ⛔ 2026-10-18 (wedge fix): HOLD the cursor (re-read the whole page next
+      // tick) ONLY when a fetch error made the set partial — the 2026-10-10 case.
+      // A GENUINELY empty page (salesFetchErrors === 0: the page's editions had no
+      // in-window sales_market rows at all — issuer buy-backs / Pinnacle / out of
+      // window) must ADVANCE exactly like the terminal write path below
+      // (cursor_after = offset+limit, or null to wrap), or the sweep wedges forever
+      // re-reading the same empty page. On 2026-10-17 ~19:48Z it did: fmv-recalc sat
+      // in step1b_refetch_empty for 4.5h and fmv_sweep_wedge_hours breached while
+      // every per-collection freshness arm stayed green, because the old hold could
+      // not tell a fetch-error empty from a genuine one.
+      const step1bHasMore = pageEditionIds.length >= limit
+      const step1bCursorAfter =
+        salesFetchErrors > 0 ? String(offset) : step1bHasMore ? String(offset + limit) : null
       try {
         await supabaseAdmin.rpc("log_pipeline_run", {
           p_pipeline: "fmv-recalc",
@@ -465,12 +479,14 @@ export async function POST(req: NextRequest) {
           p_error: salesFetchErrors > 0 ? `sales_refetch_failed: ${salesFetchErrors} chunk fetch errors (saturation-class)` : null,
           p_collection_slug: null,
           p_cursor_before: String(offset),
-          p_cursor_after: String(offset),
+          p_cursor_after: step1bCursorAfter,
           p_extra: {
             algo_version: ALGO_VERSION,
             stage: salesPage.length === 0 ? "step1b_refetch_empty" : "step1b_refetch_partial",
             sales_fetch_errors: salesFetchErrors,
             sales_rows_read_before_failure: salesPage.length,
+            cursor_held: salesFetchErrors > 0,
+            cursor_wrapped: salesFetchErrors === 0 && !step1bHasMore,
           },
         })
       } catch (logErr) {
