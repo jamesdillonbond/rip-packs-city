@@ -3,7 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase"
 import { fireNextPipelineStep } from "@/lib/pipeline-chain"
 import { applyAllFmvGuards, capFmvAtCheapestAsk } from "@/lib/fmv-phantom-guard"
 import { fetchCandyConfirmedFloors, mergeCeilingAsks } from "@/lib/fmv-candy-ceiling"
-import { computeConfidence, escalateConfidence, gateHighToRecentVolume, MIN_SALES_30D_MEDIUM } from "@/lib/fmv-confidence"
+import { computeConfidence, escalateConfidence, gateHighToRecentVolume, gateMediumToRecentSale, MIN_SALES_30D_MEDIUM } from "@/lib/fmv-confidence"
 import { staleTouchDaysSinceSale } from "@/lib/fmv-stale-touch"
 import { COLLECTION_UUID_BY_SLUG } from "@/lib/collections"
 import { rpcWithRetry, queryWithRetry } from "@/lib/analytics/rpc-with-retry"
@@ -1334,6 +1334,8 @@ export async function POST(req: NextRequest) {
       const count30 = count30ByEdition.get(editionId)
         ?? sales.filter((s) => s.soldAt.getTime() >= Date.parse(windowStart)).length
       confidence = gateHighToRecentVolume(confidence, count30)
+      // 1.8.2: MEDIUM needs at least one sale in the true 30-day window (lib/fmv-confidence.ts).
+      confidence = gateMediumToRecentSale(confidence, count30)
       const daysSinceSale = Math.round(
         (now.getTime() - latestSoldAt.getTime()) / (1000 * 60 * 60 * 24)
       )
@@ -2398,7 +2400,9 @@ export async function POST(req: NextRequest) {
               // through untouched. Display-neutral (the confidence enum never
               // renders; see lib/fmv-basis.ts) — this only stops a cold edition
               // from counting as HIGH in the confidence-share metric.
-              confidence: gateHighToRecentVolume(String(r.confidence), 0),
+              // 1.8.2: the same re-stamp also carried a cold MEDIUM forward; with 0 recent
+              // sales it now lands on LOW (gateMediumToRecentSale, lib/fmv-confidence.ts).
+              confidence: gateMediumToRecentSale(gateHighToRecentVolume(String(r.confidence), 0), 0),
               ask_proxy_fmv: r.ask_proxy_fmv,
               // ⚠ 2026-09-25 — a re-stamp is a NEW ROW dated NOW, so its facts
               // must be true NOW. Every row here has ZERO sales in the last 30
@@ -2526,7 +2530,7 @@ export async function POST(req: NextRequest) {
             asp_usd: r.asp_usd,
             asp_without_outliers: r.asp_without_outliers,
             liquidity_rating: r.liquidity_rating,
-            confidence: gateHighToRecentVolume(String(r.confidence), sales30),
+            confidence: gateMediumToRecentSale(gateHighToRecentVolume(String(r.confidence), sales30), sales30),
             ask_proxy_fmv: r.ask_proxy_fmv,
             sales_count_7d: sales30,
             sales_count_30d: sales30,

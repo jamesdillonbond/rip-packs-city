@@ -206,7 +206,8 @@ describe("fmv-recalc — Step 7 stale touch (?force_stale=true)", () => {
     expect(probe ?? "").toMatch(/max\(s\.sold_at\)[\s\S]*AS last_sold_at/)
 
     const row = (inserted.fmv_snapshots ?? []).find((r) => r.edition_id === "cold-fossil")
-    expect(row).toMatchObject({ fmv_usd: 136.76, confidence: "MEDIUM" })
+    // 1.8.2: a re-stamp has zero 30d sales by construction, so a carried MEDIUM lands on LOW.
+    expect(row).toMatchObject({ fmv_usd: 136.76, confidence: "LOW" })
     // Every touched row matched `rt.edition_id IS NULL`: no sale in 30 days.
     expect(row?.sales_count_30d).toBe(0)
     expect(row?.sales_count_7d).toBe(0)
@@ -214,7 +215,7 @@ describe("fmv-recalc — Step 7 stale touch (?force_stale=true)", () => {
     expect(row?.days_since_sale).toBe(47)
   })
 
-  it("demotes a cold HIGH edition to MEDIUM on re-stamp (no HIGH without recent sales)", async () => {
+  it("demotes a cold HIGH and a cold MEDIUM to LOW on re-stamp (1.8.2: no HIGH or MEDIUM without a 30d sale)", async () => {
     // Every stale-touch row matched `rt.edition_id IS NULL` — zero sales in the
     // recent 30d window — so a preserved HIGH is a fossil that bypasses the
     // volume gate the main-loop write applies. The re-stamp must demote it.
@@ -227,15 +228,15 @@ describe("fmv-recalc — Step 7 stale touch (?force_stale=true)", () => {
     await runDeferred()
 
     const touched = inserted.fmv_snapshots ?? []
-    // The fossil HIGH is demoted; the value is still carried forward verbatim.
+    // The fossil HIGH is demoted through MEDIUM to LOW; the value is still carried forward verbatim.
     expect(touched.find((r) => r.edition_id === "cold-high")).toMatchObject({
       fmv_usd: 40,
-      confidence: "MEDIUM",
+      confidence: "LOW",
     })
-    // A cold MEDIUM passes through untouched (the gate only demotes HIGH).
+    // 1.8.2: a cold MEDIUM no longer passes through — zero recent sales means LOW.
     expect(touched.find((r) => r.edition_id === "cold-med")).toMatchObject({
       fmv_usd: 12,
-      confidence: "MEDIUM",
+      confidence: "LOW",
     })
   })
 
@@ -344,10 +345,10 @@ describe("fmv-recalc — Step 6b Candy ceiling sweep", () => {
     const row = (inserted.fmv_snapshots ?? []).find((r) => r.edition_id === BLUE)
     expect(row?.fmv_usd).toBe(66.83)
     // No sale in 30 days: the count is 0, the age is from the true last sale,
-    // and a HIGH cannot survive zero recent sales.
+    // and a HIGH cannot survive zero recent sales (1.8.2: nor can MEDIUM -> LOW).
     expect(row?.sales_count_30d).toBe(0)
     expect(row?.days_since_sale).toBe(31)
-    expect(row?.confidence).toBe("MEDIUM")
+    expect(row?.confidence).toBe("LOW")
     // The delete is bounded ABOVE by the new row's stamp (`lt computed_at`), so
     // it can never remove the row just written, and it is scoped to this one
     // Candy edition — never a collection- or day-wide delete.

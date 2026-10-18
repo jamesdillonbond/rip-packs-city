@@ -618,7 +618,9 @@ describe("fmv-recalc page edition with no in-window MARKET sale (#169, 2026-10-1
     const bb = (inserted.fmv_snapshots ?? []).filter((r) => r.edition_id === "ed-bb")
     expect(bb).toHaveLength(1)
     expect(Number(bb[0].fmv_usd)).toBeCloseTo(18, 1)
-    expect(bb[0].confidence).toBe("MEDIUM")
+    // 1.8.2 (2026-10-17): priced off its 90d sales, but no sale in 30 days -> LOW
+    // (gateMediumToRecentSale; 90-day-only MEDIUM backtested 20.0 % vs 14.0 % error).
+    expect(bb[0].confidence).toBe("LOW")
     expect(bb[0].collection_id).toBe(TOPSHOT)
     expect(terminalLog(rpcCalls)).toMatchObject({ p_pipeline: "fmv-recalc", p_ok: true })
   })
@@ -636,7 +638,7 @@ describe("fmv-recalc 90d catch-up seed (offset 0)", () => {
     return { edition_id: edition, price_usd: price, sold_at: daysAgo(ageDays), serial_number: serial }
   }
 
-  it("prices a seeded zero-30d edition off its 90d sales, gated to MEDIUM", async () => {
+  it("prices a seeded zero-30d edition off its 90d sales, gated to LOW (1.8.2: no recent sale, no MEDIUM)", async () => {
     const { inserted, rpcCalls } = instrument({
       pipeline_runs: { data: null, error: null }, // cursor -> offset 0
       "rpc:fmv_recalc_edition_page": { data: [{ edition_id: "ed-main" }], error: null },
@@ -676,12 +678,12 @@ describe("fmv-recalc 90d catch-up seed (offset 0)", () => {
     const catchup = rpcCalls.find((c) => c.name === "fmv_recalc_90d_catchup_editions")
     expect(catchup?.args?.p_collection_id).toBe(TOPSHOT)
 
-    // The seeded edition is priced off its 90d sales ($24), labelled MEDIUM (its
-    // true 30d count is 0, so the recency gate holds it below HIGH).
+    // The seeded edition is priced off its 90d sales ($24). Its true 30d count is 0,
+    // so the recency gates hold it below HIGH and (1.8.2) below MEDIUM: LOW.
     const seeded = (inserted.fmv_snapshots ?? []).filter((r) => r.edition_id === "ed-catchup-1")
     expect(seeded).toHaveLength(1)
     expect(Number(seeded[0].fmv_usd)).toBeCloseTo(24, 1)
-    expect(seeded[0].confidence).toBe("MEDIUM")
+    expect(seeded[0].confidence).toBe("LOW")
     expect(seeded[0].collection_id).toBe(TOPSHOT)
 
     // The run still logs ok.
@@ -736,7 +738,7 @@ describe("fmv-recalc 90d catch-up seed (offset 0)", () => {
     const seeded = (inserted.fmv_snapshots ?? []).filter((r) => r.edition_id === "ed-ad-catchup")
     expect(seeded).toHaveLength(1)
     expect(Number(seeded[0].fmv_usd)).toBeCloseTo(12, 1)
-    expect(seeded[0].confidence).toBe("MEDIUM")
+    expect(seeded[0].confidence).toBe("LOW") // 1.8.2: zero 30d sales
     expect(seeded[0].collection_id).toBe(ALLDAY)
   })
 

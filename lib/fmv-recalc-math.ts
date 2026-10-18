@@ -109,8 +109,10 @@ export const FMV_RECENT_SALES_N = 7
 // where this keeps up to seven, so the time bound was chosen.
 export const FMV_RECENT_SPAN_DAYS = 30
 export const FMV_RECENT_MIN_N = 3
+// ── 1.8.2 (2026-10-17): labels only, no price change — MEDIUM needs at least one
+// sale in the true 30-day window (gateMediumToRecentSale, lib/fmv-confidence.ts).
 // The algo_version every fmv-recalc snapshot is stamped with; the OG cards print it.
-export const FMV_ALGO_VERSION = "1.8.1"
+export const FMV_ALGO_VERSION = "1.8.2"
 
 export function medianOfMostRecent(sales: DatedSale[], n: number): number {
   if (sales.length === 0 || n <= 0) return 0

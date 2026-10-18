@@ -3,6 +3,7 @@ import {
   computeConfidence,
   escalateConfidence,
   gateHighToRecentVolume,
+  gateMediumToRecentSale,
   serialResidualDispersion,
   MIN_SALES_30D_HIGH,
 } from "@/lib/fmv-confidence"
@@ -82,5 +83,40 @@ describe("gateHighToRecentVolume (HIGH stays >=7 sales/30d)", () => {
       expect(gateHighToRecentVolume(c, 0)).toBe(c)
       expect(gateHighToRecentVolume(c, 99)).toBe(c)
     }
+  })
+})
+
+describe("gateMediumToRecentSale (1.8.2: MEDIUM needs a sale in the last 30 days)", () => {
+  it("demotes MEDIUM to LOW when there is no sale in the true 30-day window", () => {
+    // The 90d-widened MEDIUM: backtested 10-17 at 20.0 % vs 14.0 % median error (Top Shot).
+    expect(gateMediumToRecentSale("MEDIUM", 0)).toBe("LOW")
+  })
+  it("keeps MEDIUM with at least one recent sale", () => {
+    expect(gateMediumToRecentSale("MEDIUM", 1)).toBe("MEDIUM")
+    expect(gateMediumToRecentSale("MEDIUM", 12)).toBe("MEDIUM")
+  })
+  it("chained after the HIGH gate, a HIGH with no recent sale lands on LOW, not MEDIUM", () => {
+    expect(gateMediumToRecentSale(gateHighToRecentVolume("HIGH", 0), 0)).toBe("LOW")
+    expect(gateMediumToRecentSale(gateHighToRecentVolume("HIGH", 3), 3)).toBe("MEDIUM")
+    expect(gateMediumToRecentSale(gateHighToRecentVolume("HIGH", 9), 9)).toBe("HIGH")
+  })
+  it("passes every non-MEDIUM confidence through untouched", () => {
+    for (const c of ["HIGH", "LOW", "ASK_ONLY", "STALE", "NO_DATA", "SALES_ONLY"]) {
+      expect(gateMediumToRecentSale(c, 0)).toBe(c)
+      expect(gateMediumToRecentSale(c, 99)).toBe(c)
+    }
+  })
+})
+
+describe("fmv-recalc applies the MEDIUM recency gate at every confidence write", () => {
+  it("each gateHighToRecentVolume call in the route is paired with gateMediumToRecentSale", async () => {
+    const { readFileSync } = await import("node:fs")
+    const path = await import("node:path")
+    const src = readFileSync(path.join(path.resolve(__dirname, ".."), "app/api/fmv-recalc/route.ts"), "utf8")
+    const code = src.split("\n").filter((l) => !l.trim().startsWith("//")).join("\n")
+    const high = (code.match(/gateHighToRecentVolume\(/g) ?? []).length
+    const medium = (code.match(/gateMediumToRecentSale\(/g) ?? []).length
+    expect(high, "the route no longer calls the HIGH gate - re-anchor this test").toBeGreaterThan(0)
+    expect(medium, "a confidence write applies the HIGH recency gate but not the MEDIUM one").toBe(high)
   })
 })

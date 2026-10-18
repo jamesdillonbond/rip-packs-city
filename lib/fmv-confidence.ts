@@ -101,6 +101,23 @@ export function gateHighToRecentVolume<T extends string>(confidence: T, salesCou
   return confidence === "HIGH" && salesCount30d < MIN_SALES_30D_HIGH ? ("MEDIUM" as T) : confidence
 }
 
+// Recency gate for MEDIUM (1.8.2, 2026-10-17; decided under Trevor's delegation
+// "decide the rest of this yourself"). The 90d widening above lets an edition
+// with NO sale in the last 30 days earn MEDIUM on older sales. Backtested against
+// the next realised sale (snapshot >= 1 d before it, serial > 25):
+//   Top Shot 14 d  90d-only MEDIUM 20.0 % median error / 59.0 % within ±25 % (n 483)
+//                  vs 30-day MEDIUM 14.0 / 64.7 (n 18,854) vs 30-day LOW 25.0 / 53.3
+//   All Day 21 d   90d-only MEDIUM 33.5 / 41.4 (n 145) vs 30-day MEDIUM 20.0 / 56.7
+// The same tolerance that admits an ask-corroborated edition to MEDIUM (within
+// ±25 % no more than 3 pts below MEDIUM's) rejects this set on both collections,
+// so MEDIUM now needs at least one sale in the true 30-day window. Apply AFTER
+// gateHighToRecentVolume so a HIGH with no recent sale lands on LOW, not MEDIUM.
+// Pass the TRUE 30-day count, never the widened sample size. Only MEDIUM moves.
+export const MIN_SALES_30D_MEDIUM_RECENT = 1
+export function gateMediumToRecentSale<T extends string>(confidence: T, salesCount30d: number): T {
+  return confidence === "MEDIUM" && salesCount30d < MIN_SALES_30D_MEDIUM_RECENT ? ("LOW" as T) : confidence
+}
+
 // Raw coefficient of variation (stddev / mean) of a price set. Returns
 // Infinity when the set is empty or the mean is non-positive, so the caller
 // never promotes such an edition to HIGH.
