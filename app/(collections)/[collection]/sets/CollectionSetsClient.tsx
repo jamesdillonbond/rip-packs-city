@@ -154,7 +154,7 @@ function makeColors(accent: string) {
     cardHover: `${accent}4D`,
     accent,
     text: "#F1F1F1",
-    muted: "rgba(255,255,255,0.45)",
+    muted: "rgba(255,255,255,0.5)", // 0.45 read 4.47:1 on #080808 (AA is 4.5)
     green: "#22c55e",
     barBg: "rgba(255,255,255,0.08)",
   };

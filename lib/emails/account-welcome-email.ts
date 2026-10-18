@@ -24,7 +24,7 @@ const PANEL = "#18181b"
 const PANEL_BORDER = "#27272a"
 const TEXT = "#fafafa"
 const TEXT_MUTED = "rgba(255,255,255,0.65)"
-const TEXT_SUBTLE = "rgba(255,255,255,0.45)"
+const TEXT_SUBTLE = "rgba(255,255,255,0.5)" // 0.45 is below AA on the dark email body
 
 const SITE = "https://www.rippackscity.com"
 const LOGO_URL = `${SITE}/rip-packs-city-logo.png`
