@@ -15,6 +15,7 @@
 
 import { supabaseAdmin } from "@/lib/supabase"
 import { withBoardBudget } from "@/lib/insights/board-page-fetch"
+import { nbaFeedAnsweredRecently } from "@/lib/fast-break/nba-feed"
 
 // ── BUDGETS ─────────────────────────────────────────────────────────────────
 // ⚠ Both reads are awaited INLINE by the server page with no Suspense boundary,
@@ -29,6 +30,9 @@ import { withBoardBudget } from "@/lib/insights/board-page-fetch"
 // borrows a board's 8s.
 const ACTIVE_RUN_TIMEOUT_MS = 3_000
 const SLATE_TIMEOUT_MS = 3_000
+// Asked only when the slate comes back EMPTY (see fetchSlate), so a night with
+// games pays nothing for it. One indexed head-count on pipeline_runs.
+const FEED_CHECK_TIMEOUT_MS = 3_000
 
 export interface ActiveRun {
   id: string
@@ -97,6 +101,13 @@ export async function fetchActiveRun(
  * slate is a real and common answer (the NBA does not play every night), so the
  * page must be able to say "we couldn't load tonight's games" rather than
  * implying there are none.
+ *
+ * ⚠ A SUCCESSFUL read of an EMPTY table is the same false claim when the table's
+ * only writer is dead. `nba_games` has had no writer since 2026-08-04
+ * (known-issues #8), so from tip-off every game night would have rendered
+ * "No games tonight". An empty slate is therefore `ok: true` only when the feed
+ * answered recently (lib/fast-break/nba-feed.ts — the same test the optimize
+ * route's `dataStatus` uses); a dead, unreadable or slow feed check is `ok: false`.
  */
 export async function fetchSlate(
   gameDate: string,
@@ -130,6 +141,20 @@ export async function fetchSlate(
     return { games: [], ok: false }
   }
   const rows = (data ?? []) as Array<Record<string, unknown>>
+  if (rows.length === 0) {
+    let fresh = false
+    try {
+      fresh = await withBoardBudget<boolean>(
+        nbaFeedAnsweredRecently(db, "[fast-break]"),
+        "slate-feed",
+        FEED_CHECK_TIMEOUT_MS,
+        "fast-break/",
+      )
+    } catch (e) {
+      console.log("[fast-break] slate feed check bound:", e instanceof Error ? e.message : e)
+    }
+    if (!fresh) return { games: [], ok: false }
+  }
   return {
     games: rows.map((g) => ({
       gameId: g.id as string,

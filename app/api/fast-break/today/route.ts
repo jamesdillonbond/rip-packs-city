@@ -6,6 +6,7 @@
 
 import { NextResponse } from "next/server"
 import { supabaseAdmin as supabase } from "@/lib/supabase"
+import { nbaFeedAnsweredRecently } from "@/lib/fast-break/nba-feed"
 
 export const dynamic = "force-dynamic"
 
@@ -63,8 +64,12 @@ export async function GET() {
     }
 
     if (!games || games.length === 0) {
+      // ⚠ An empty slate is the NBA's schedule only when nba_games' sole writer
+      // answered recently (known-issues #8: dead since 2026-08-04). Otherwise it
+      // is our outage, in the optimize route's own vocabulary.
+      const fresh = await nbaFeedAnsweredRecently(supabase, "[fast-break-today]")
       return NextResponse.json(
-        { ...baseRunPayload, games: [], projections: [], message: "no_games_today" },
+        { ...baseRunPayload, games: [], projections: [], message: fresh ? "no_games_today" : "slate_unavailable" },
         { headers: ROUTE_HEADERS },
       )
     }

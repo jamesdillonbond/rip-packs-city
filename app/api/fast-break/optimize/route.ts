@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import { supabaseAdmin as supabase } from "@/lib/supabase"
+import { nbaFeedAnsweredRecently } from "@/lib/fast-break/nba-feed"
 import {
   buildOptimalLineup,
   findAcquisitionGap,
@@ -22,10 +23,8 @@ const ROUTE_HEADERS: Record<string, string> = { "X-RPC-Route": "fast-break-optim
 const NBA_TOP_SHOT_UUID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
 
 // The lane that writes nba_games, and how recently it must have succeeded for an
-// empty slate to be read as an NBA off-day rather than our feed being down.
-// 36 h spans one missed daily tick; pipeline_runs retains ~73 h.
-const NBA_FEED_PIPELINE = "sync-nba-projections"
-const NBA_FEED_FRESH_MS = 36 * 60 * 60 * 1000
+// empty slate to be read as an NBA off-day: lib/fast-break/nba-feed.ts (shared
+// with the fast-break page's slate).
 
 // Top Shot weights the Captain's points higher than the rest of the lineup.
 // The exact factor is set once observed Run scoring is regressed; until then the
@@ -187,15 +186,7 @@ export async function POST(req: NextRequest) {
     // could not confirm.
     let feedAnsweredRecently = false
     if (gameIds.length === 0 && runLiveToday) {
-      const since = new Date(Date.now() - NBA_FEED_FRESH_MS).toISOString()
-      const { count, error: feedErr } = await supabase
-        .from("pipeline_runs")
-        .select("id", { count: "exact", head: true })
-        .eq("pipeline", NBA_FEED_PIPELINE)
-        .eq("ok", true)
-        .gte("started_at", since)
-      if (feedErr) console.error("[fast-break-optimize] feed freshness:", feedErr.message)
-      feedAnsweredRecently = !feedErr && typeof count === "number" && count > 0
+      feedAnsweredRecently = await nbaFeedAnsweredRecently(supabase, "[fast-break-optimize]")
     }
 
     const dataStatus: "ok" | "no_games" | "slate_unavailable" | "projections_unavailable" =

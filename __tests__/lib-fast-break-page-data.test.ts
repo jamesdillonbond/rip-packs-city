@@ -22,6 +22,25 @@ function tableDb(result: { data?: unknown; error?: { message: string } }) {
   return { from: () => b }
 }
 
+/** Per-table results; records which tables were queried. */
+function routedDb(
+  tables: Record<string, { data?: unknown; count?: number | null; error?: { message: string } }>,
+  asked: string[] = [],
+) {
+  return {
+    from: (t: string) => {
+      asked.push(t)
+      const r = tables[t] ?? {}
+      const b: Record<string, unknown> = {}
+      for (const m of ["select", "eq", "gte", "order", "limit"]) b[m] = () => b
+      const settle = () => ({ data: r.data ?? null, count: r.count ?? null, error: r.error ?? null })
+      b.then = (onF?: (v: unknown) => unknown, onR?: (e: unknown) => unknown) =>
+        Promise.resolve(settle()).then(onF, onR)
+      return b
+    },
+  }
+}
+
 const RUN = {
   id: "r1",
   name: "Fast Break 12",
@@ -71,8 +90,41 @@ describe("fetchSlate", () => {
     expect(await fetchSlate("2026-08-16", db)).toEqual({ games: [], ok: false })
   })
 
-  it("a genuinely empty night is ok:true", async () => {
-    expect(await fetchSlate("2026-08-16", tableDb({ data: [] }))).toEqual({ games: [], ok: true })
+  it("a genuinely empty night is ok:true — when the feed answered recently", async () => {
+    const db = routedDb({ nba_games: { data: [] }, pipeline_runs: { count: 2 } })
+    expect(await fetchSlate("2026-08-16", db)).toEqual({ games: [], ok: true })
+  })
+
+  // ⚠ 2026-10-18: a SUCCESSFUL read of an EMPTY table is the same false claim when
+  // the table's only writer is dead. `sync-nba-projections` (sole writer of
+  // nba_games) has failed every run since 2026-08-04 (known-issues #8), so from
+  // tip-off every game night would have read "No games tonight".
+  it("an empty slate with a DEAD feed is ok:false — our outage, not an off-day", async () => {
+    const db = routedDb({ nba_games: { data: [] }, pipeline_runs: { count: 0 } })
+    const res = await fetchSlate("2026-10-22", db)
+    expect(res.games.length === 0 && res.ok === true, "must not render 'No games tonight'").toBe(false)
+    expect(res).toEqual({ games: [], ok: false })
+  })
+
+  it("an UNREADABLE feed check does not assert an off-day it could not confirm", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {})
+    const db = routedDb({ nba_games: { data: [] }, pipeline_runs: { count: null, error: { message: "timeout" } } })
+    expect(await fetchSlate("2026-10-22", db)).toEqual({ games: [], ok: false })
+  })
+
+  it("CONTROL — a night WITH games never asks about the feed (and is ok even if it is dead)", async () => {
+    const asked: string[] = []
+    const db = routedDb(
+      {
+        nba_games: { data: [{ id: "g1", home_team_abbr: "POR", away_team_abbr: "LAL", tipoff_at: null, status: "scheduled" }] },
+        pipeline_runs: { count: 0 },
+      },
+      asked,
+    )
+    const res = await fetchSlate("2026-10-22", db)
+    expect(res.ok).toBe(true)
+    expect(res.games).toHaveLength(1)
+    expect(asked).toEqual(["nba_games"])
   })
 
   it("maps the row shape the client expects", async () => {

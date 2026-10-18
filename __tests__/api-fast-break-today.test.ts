@@ -52,15 +52,36 @@ describe("GET /api/fast-break/today", () => {
     expect((await res.json()).error).toBe("internal_error")
   })
 
-  it("returns no_games_today for an active run with an empty slate", async () => {
+  it("returns no_games_today for an active run with an empty slate — when the feed answered recently", async () => {
     state.tables.fast_break_runs = { single: { data: RUN, error: null } }
     state.tables.nba_games = { list: { data: [], error: null } }
+    state.tables.pipeline_runs = { list: { data: null, count: 2, error: null } }
     const res = await GET()
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.runId).toBe("run-1")
     expect(body.message).toBe("no_games_today")
     expect(body.games).toEqual([])
+  })
+
+  // ⚠ 2026-10-18: nba_games' only writer has been dead since 08-04 (known-issues #8),
+  // so an empty slate during the season is our outage, not the NBA's night off.
+  it("an empty slate with a DEAD feed is slate_unavailable, never no_games_today", async () => {
+    state.tables.fast_break_runs = { single: { data: RUN, error: null } }
+    state.tables.nba_games = { list: { data: [], error: null } }
+    state.tables.pipeline_runs = { list: { data: null, count: 0, error: null } }
+    const body = await (await GET()).json()
+    expect(body.message).not.toBe("no_games_today")
+    expect(body.message).toBe("slate_unavailable")
+  })
+
+  it("an UNREADABLE feed check is slate_unavailable too", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {})
+    state.tables.fast_break_runs = { single: { data: RUN, error: null } }
+    state.tables.nba_games = { list: { data: [], error: null } }
+    state.tables.pipeline_runs = { list: { data: null, count: null, error: { message: "timeout" } } }
+    const body = await (await GET()).json()
+    expect(body.message).toBe("slate_unavailable")
   })
 
   it("500s on a games-lookup error", async () => {
