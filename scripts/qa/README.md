@@ -188,6 +188,16 @@ RPC_QA_STATE=_to_delete/qa-state.json \
   node scripts/qa/mobile-sweep.mjs paths.txt out.jsonl shots mobile
 ```
 
+⭐ **The account exists (2026-10-18):** the Claude QA account already in
+`internal_accounts` (reason "Claude QA test account (created 2026-09-10)",
+`claude-qa-20260911@mailinator.com` — a PUBLIC inbox, so never use it for
+anything but QA). Its password was reset through the admin API on 10-18 and
+lives ONLY in the Windows laptop's gitignored `.env.local` as
+`RPC_QA_EMAIL` / `RPC_QA_PASSWORD`. On another box, reset it again the same way
+(`PUT /auth/v1/admin/users/<id>` with the service key) rather than creating a
+second account. That run measured go-live M5: signed-in warm first row 0.6–0.9 s.
+Delete `_to_delete/qa-state.json` when the pass closes (it is an 8 h session).
+
 ### Two routes that are closed, so nobody re-tries them
 
 - **Reading the session out of a signed-in Chrome.** The browser extension
