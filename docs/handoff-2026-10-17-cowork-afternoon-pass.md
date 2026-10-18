@@ -4,7 +4,7 @@
 
 **Run:** ~2:45 → ~10 PM PT 10-17, Trevor: "look through the project, recent audits, handoffs, known issues … tasks that you can take care of from here … work autonomously for the next 3 hours". A Claude Code session was committing concurrently all afternoon (last seen `b013712e2`, 2:59 PM).
 
-**Verdict: GREEN · 18 shipped (incl. FMV 1.8.2 + its Panini fix — read M1/M2 on the 10-18 legs expecting a by-decision drop) · nothing waiting on Trevor · oldest routed: none older than today.**
+**Verdict: GREEN · 19 shipped (incl. FMV 1.8.2 + two Panini follow-ups — read M1/M2 on the 10-18 legs expecting a by-decision drop) · nothing waiting on Trevor · oldest routed: none older than today.**
 
 ## Health (2:48–3:05 PM PT)
 - Security drift 0, `check_when_others_timeout_blind` 0, stalled `[]`, pg_cron recent failures none, trust breaches none.
@@ -32,6 +32,7 @@
 17. **1.8.2 regression on Panini, found in the production read-back and fixed** (`61797165d`, live ~10:25 PM PT). The stale re-stamp's "no sale in 30 days" reads `sales`, which holds no Panini sale (they live in `panini_sales`), so the first 1.8.2 run demoted 44 Panini editions MEDIUM → LOW and ~10k would have followed overnight. The gate is now three-state (`null` = unknown, no change); a route test fails with the null branch removed. The 44 rows wait for Panini's own ~3 h walk. Recorded, not changed: the older HIGH re-stamp gate has the same blind spot (Panini HIGH → MEDIUM since 08-07).
 18. **`main` CI unbroken** (`e7f8ae9bb`): the concurrent session's text-colour guard (`a816619a`) shelled out to `git ls-files`, which `guards-do-not-shell-out-to-grep` bans; it now walks the tree in-process. CI green on `61797165d`.
 
+19. **Panini's unknown sale count kept out of the concierge and the HIGH gate** (`79f379b34`, ~11 PM PT). Every Panini snapshot has `sales_count_30d = 0`. The concierge's `explain_fmv` returned that 0 with "30-day average … limited sales data" copy, and the edition page's "?" context sent ", 0 sales in 30 days". Both now treat the count as unknown. The re-stamp's HIGH gate no longer re-grades Panini's own HIGH. Verified live: two Panini edition pages carry no sales-count phrase, a Top Shot control still shows "9 sales in 30 days". **Open, needs study:** the re-stamp writes 1.8.x rows over Panini engine rows to keep ~10k unchanged Panini prices dated fresh; whether Panini should age visibly instead is a design call.
 ## Queued for Trevor / Claude Code
 - None. All four 10-17 `docs/pending-sql/` statements are applied and committed.
 
