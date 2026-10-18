@@ -3668,3 +3668,17 @@ Restoring a mutation by replacing the mutated text back fails whenever that text
 ### A pin whose fixture shares the dedup KEY with the defect cannot see the defect (2026-10-14)
 
 `dispatch_triggered_fmv_alerts`'s pin aged `last_triggered_at` past the 6 h gate to prove "no re-fire", and the OLD body passed: its hourly `dedup_bucket` collided with the first delivery (same test hour), so `ON CONFLICT DO NOTHING` hid the re-fire the gate would have produced an hour later in production. Moving the earlier deliveries into an old bucket made the old body red (`got [2], want [0]`). **When a fixture cannot move the clock, move every key derived FROM the clock.**
+
+## 2026-10-17/18 — four lessons from the text-contrast and collection-tab work (Claude Code, Windows box, PT)
+
+### ⚠ A GREEN WORKFLOW CAN CARRY A JOB THAT FAILED EVERY NIGHT
+`E2E DOM Smoke` was green on every scheduled run 09-29 → 10-17 (go-live M8), while its NON-blocking `a11y-audit` job (`continue-on-error`) read `serious · color-contrast` on 4 of 5 routes every night. The badge is the workflow conclusion; a non-blocking job's failure never reaches it. **Read the job list of a "green" workflow, and grep its log for `N failed`.** Fixed 10-17/18: 299 → 18 axe nodes (then #194 a+b); the remaining 18 are the accepted white-on-red buttons.
+
+### ⚠ A "LOAD FLAKE" THAT FAILS ON A FILE THAT EXISTS ONLY BRIEFLY IS A RACE
+`strip-comments-matches-typescript` failed in preflight twice on 10-17 and passed alone, and I called it load (its import takes ~55 s). The error was `ENOENT … stat 'tmp-gitignore-probe'`: `gitignore-cannot-silently-swallow-a-docs-file.test.ts` creates and removes that directory at the repo ROOT while `walkRepoSourceTree` walks it in parallel. **Read the error string before you name a cause** (CLAUDE.md, measurement). Fix: the walker skips an entry that vanishes between `readdir` and `stat` (ENOENT only; anything else still throws) — preflight's tree-walking step went 7/7 green on the next run.
+
+### ⚠ A NEW GUARD CAN BREAK CI THAT PREFLIGHT DID NOT
+A new test that walked files with `execSync("git ls-files")` passed preflight locally and reddened CI through `guards-do-not-shell-out-to-grep` (fixed by Cowork in `e7f8ae9bb`, ~10 min later). **After every push, watch CI on the exact SHA to `completed`** — with the FULL SHA (`gh run list --json headSha` filtered on `git rev-parse HEAD`): a `--commit <short-sha>` filter returned nothing and a "wait for CI" loop exited having seen no run.
+
+### ⚠ A VERIFY-LOOP THAT NEVER MATCHED THE OLD STATE MEASURED NOTHING
+A poll for a shipped CSS rule (`rpc-sq-td-emph{color:var(--rpc-red-text)`) ran 20 min and printed `new=[] old=[]` on every tick: the served inline style has SPACES (`.rpc-sq-td-emph { color: …`). Before trusting a "not live yet", make the probe find the OLD value first — a probe blind to both states is not evidence of either. The reliable live check for a client change was the BEHAVIOUR (the production page's own `/api/badges?…&editions=` request in a Playwright trace).

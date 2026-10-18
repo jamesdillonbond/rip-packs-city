@@ -136,3 +136,11 @@ node scripts/report-ready-queue.mjs 2>/dev/null || true
 ```
 
 Approval wording that works: Trevor says, in his own words, to edit the session-start hook.
+
+**⭐ 2026-10-18 — the ready queue now reads focus.md VERDICTS, and LOCAL sessions run it too.** The 10-18 night pass re-carried two items the 10-17 steer had ruled stale (#23/#25 as its FIRST-LINE oldest item; "Windows mount behind origin") and proposed a bulk inbox archive the skill forbids: the cross-check above only reads ledger HEADINGS. A focus.md line shaped exactly
+
+```
+- **"<item title as the pass wrote it>" is CLOSED|DONE|DECLINED|WRONG** — reason …
+```
+
+is now matched against each carried item (a shared #id is decisive when the verdict has one; otherwise ≥ 4 significant words and ≥ 60 % of the verdict title). CLOSED / DONE / DECLINED print `⛔ … do NOT re-carry` (re-carry only a still-open part an item bundles, e.g. the drop_scratch residue inside #23/#25). **WRONG** means a claim inside the item was refuted, not the item: it keeps the item OPEN even under a ledger ✓ — #58 had read "likely closed" off the heading that unscheduled its indexers, so the print said "0 still open" while Trevor's API key was the open part. **To retire a carried item for good, write the verdict in that shape** (`9d31f6622`, `__tests__/script-report-ready-queue.test.ts`). The session-start hook's local branch (10-17) runs the same print on the Windows box.
