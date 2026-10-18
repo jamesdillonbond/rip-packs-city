@@ -533,15 +533,15 @@ tr[class*="rpc-holo-"]::after { content: none !important; }
 /* ── Tier Glow Badges ────────────────────────────────────── */
 .rpc-tier-glow-legendary {
   text-shadow: 0 0 8px rgba(251, 191, 36, 0.6);
-  color: var(--tier-legendary);
+  color: var(--tier-legendary-text);
 }
 .rpc-tier-glow-ultimate {
   text-shadow: 0 0 8px rgba(168, 85, 247, 0.6);
-  color: var(--tier-ultimate);
+  color: var(--tier-ultimate-text);
 }
 .rpc-tier-glow-rare {
   text-shadow: 0 0 8px rgba(129, 140, 248, 0.6);
-  color: var(--tier-rare);
+  color: var(--tier-rare-text);
 }
 .rpc-tier-glow-epic {
   text-shadow: 0 0 8px rgba(192, 132, 252, 0.6);
@@ -574,12 +574,12 @@ tr[class*="rpc-holo-"]::after { content: none !important; }
 
 /* ── FMV Delta Chevrons ──────────────────────────────────── */
 .rpc-fmv-delta-up {
-  color: var(--rpc-success);
+  color: var(--rpc-success-text);
   font-size: var(--text-xs);
   margin-left: 2px;
 }
 .rpc-fmv-delta-down {
-  color: var(--rpc-danger);
+  color: var(--rpc-danger-text);
   font-size: var(--text-xs);
   margin-left: 2px;
 }

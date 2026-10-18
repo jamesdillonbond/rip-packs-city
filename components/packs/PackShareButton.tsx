@@ -43,7 +43,7 @@ export default function PackShareButton({ url }: { url: string }) {
         padding: "8px 16px",
         background: "transparent",
         // brand-exception: on the always-dark pack-dist hero card (see comment above)
-        color: copied ? accentText("rgb(110,231,183)") : "rgba(255,255,255,0.7)",
+        color: copied ? accentText("rgb(110,231,183)") : "var(--rpc-text-secondary)",
         fontFamily: "var(--font-display)",
         fontWeight: 700,
         letterSpacing: "0.06em",
@@ -51,7 +51,7 @@ export default function PackShareButton({ url }: { url: string }) {
         fontSize: 12,
         borderRadius: 4,
         // brand-exception: on the always-dark pack-dist hero card
-        border: copied ? "1px solid rgba(16,185,129,0.4)" : "1px solid rgba(255,255,255,0.2)",
+        border: copied ? "1px solid rgba(16,185,129,0.4)" : "1px solid var(--rpc-border-hover)",
         cursor: "pointer",
       }}
     >

@@ -787,7 +787,9 @@ export default async function PackDetailPage(
               borderRadius: 6,
               overflow: "hidden",
               background: "rgba(0,0,0,0.4)",
-              border: `1px solid ${tierAccent}33`,
+              // tierAccent is an rgb() value, so a hex-alpha suffix (`${tierAccent}33`) was
+              // invalid CSS and the border never rendered — color-mix keeps the 20 % alpha.
+              border: `1px solid color-mix(in srgb, ${tierAccent} 20%, transparent)`,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",

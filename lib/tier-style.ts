@@ -38,7 +38,7 @@ export function tierChip(tier: string): ChipStyle {
 /**
  * The chip as a STYLE for an element whose text is the tier label (light-theme
  * safe, #194, 2026-10-18). `tierChip().color` stays the raw pastel because
- * callers also use it as a border/gradient colour (`${chip.color}33`, a
+ * callers also use it as a border/gradient colour (a color-mix() border, a
  * conic-gradient) where a color-mix() string would be invalid CSS; only TEXT
  * goes through accentText().
  */
