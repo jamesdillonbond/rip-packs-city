@@ -6,8 +6,9 @@
 -- walk 9 of 9 ok-unbudgeted, Q5 2,272 complete. Substitute 8 for 9 to get a control row.
 -- Numbers in comments are DATED SAMPLES; re-derive, do not quote.
 --
--- TIMING (all PT, 10-20): sets appear first; collection_series 9 lands at the next :35 run of
--- topshot-set-series-onchain (new sets read "No series" for up to ~70 min); on-chain circulation
+-- TIMING (all PT, 10-20): sets appear first; collection_series 9 lands at the next run of
+-- topshot-set-series-onchain (every 10 min at :x5 since 10-18; it was hourly at :35, so new sets read
+-- "No series" for up to ~70 min — now up to ~20); on-chain circulation
 -- lands ~9:05 PM and pack-dist names ~9:25 PM — AFTER the 7 PM check. Re-run Q2 and Q5 after 9:30 PM.
 
 -- Q1 sets + series row + unlabelled-series failures in the last 24 h
