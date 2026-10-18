@@ -75,6 +75,7 @@
   - Why: the lane logged success while resolving nothing for two days.
   - Falsifier: rows ≥ 2025-10-22 also fail to decode, which would mean a decode bug rather than the spork boundary.
 - **Re-cost M2 against today's mix** (the 10-10 instruction).
+  - ↳ **Checked 10-18 ~2:19 PM PT (Claude Code cloud): the corroboration ask is a sound source.** The LOW editions held back with 3–4 sales because the "live ask disagrees or is absent" read `allday_edition_floor_ask` (cached_listings_v2, ghost listings excluded), not v1 `cached_listings` (Flowty-only for All Day, 108 rows). So "absent" is a market fact, not a source gap. Do not re-open this as a lever.
   - What: split LOW (1,750) by sales count, and sample ASK_ONLY (1,205) and NO_DATA (700) for editions that have recent sales but no price.
   - Why: ASK_ONLY and NO_DATA appear to have grown since 10-10, on a different basis. Check whether that is composition or a pricing-path miss before any lever.
   - Gate: same instrument, repeat-vs-new cohort split (roadmap-status 09-20 trap).
