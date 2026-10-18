@@ -18,7 +18,8 @@ Everything this thread could ship is shipped, deployed and verified. What is lef
 | `9d31f6622` | ready-queue reads focus.md verdicts | 10-18 handoff: 4 items → 1 open (#58, correctly) |
 | `b6fcdd99f` | `lib/accent-text.ts`; 85 low-alpha white texts → 0.5 | prod axe dark ≤ 5 nodes/route; CI green |
 | `af14927c3` | switcher accent + 7 opacity-dimmed texts | prod: pill rgb(255,77,64); overview dark 1 node |
-| (this commit, message "red ternaries, red constants and trophy links") | 28 red ternary branches, RED_TEXT constants, P/L tint, trophy links, guard extension | prod axe re-read after deploy — ledger 10-18 ~8:05 AM PT |
+| (this commit, message "red ternaries, red constants and trophy links") | 28 red ternary branches, RED_TEXT constants, P/L tint, trophy links, guard extension | `7e184277d` — prod: sort chip rgb(255,77,64); CI green |
+| (message "sets muted and email subtle text") | sets palette muted 0.45 → 0.5; 4 email TEXT_SUBTLE → 0.5 | final axe: dark = accepted buttons only on 7 routes |
 
 Docs-only commits (ledger, #192 write-backs, #194, roadmap M4/M8, reference lessons) revert by message.
 
@@ -26,4 +27,5 @@ Docs-only commits (ledger, #192 write-backs, #194, roadmap M4/M8, reference less
 
 - **#192 backlog:** 14,831 All Day sales ≥ 2025-10-22 without a buyer at 10-17 11:20 PM PT, ~3,840/day → expect ~0 around 10-22. Read: `select count(*) from sales s join collections c on c.id=s.collection_id where c.slug='nfl_all_day' and sold_at >= '2025-10-22' and buyer_address is null`.
 - **Parallel seeder:** `never_queued` falls in steps after each 1:33 PM PT `backfill-topshot-subeditions` run, not per tick (focus.md watch annotated). Judge on the 10-18 / 10-19 post-1:33 PM reads.
+- **Light mode, untokenised dark surfaces** (pack page, sets page palette) make red text 2.45–3.16:1 there — #194; fix = tokenise the surfaces.
 - **The nightly `a11y-audit` job** should now read ≤ the accepted white-on-red button nodes in dark. A new class appearing there is a regression; the light-mode tier/semantic class is #194 and expected until item 1 is decided.
