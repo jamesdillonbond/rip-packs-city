@@ -27,6 +27,8 @@ Live 10-17: `alerts-dispatch` 104/104 runs ok in 24 h; 14 `alert_deliveries` in 
 
 ## Shipped recently (since mid-September)
 
+- **10-18 (Claude Code cloud):** `search_across_collections` reads All Day / Golazos edition floors from the on-chain index (`editions_matched` so "not listed" never reads as "not on RPC"), adds a **Candy MLB** arm (fresh-book rules from `get_edition_listings`, row-cap fails closed), and answers UFC as market-closed. `search_catalog_deals` and the `search_live_deals` fallback read `get_allday_market_editions_v3` / `get_golazos_catalog_deals` (`20261018205915`), one read per resolved label with an exact-label post-filter. Not verified end to end (the cloud sandbox cannot reach the site); verified at the DB / API layer and by 15 new tests with planted defects.
+
 - **09-25 batch 62 (player identity):** names are not people. `resolve_player_name` and `resolve_team_name`, aliases, `player_relations`, `league_team_abbr` franchise folding. #139: every pair resolved against NBA.com and NFL.com.
 - **10-03 (42 tools):**
   - The request boundary is bounded.

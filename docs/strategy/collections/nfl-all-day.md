@@ -24,6 +24,8 @@
 
 ## Shipped recently (since mid-September)
 
+- **10-18 (Claude Code cloud, ~4:18 PM PT): All Day surfaces stop reading Flowty's v1 slice.** The Analytics Order Book Depth card counts **28,857** on-chain asks (was Flowty's 108); `/nfl-all-day/market` no longer falls back to v1 on an empty answer (verified on production); the concierge's search, catalog-deal and live-deal fallback tools read `get_allday_market_editions_v3` / the edition floor view ("Mahomes": 0 → 26 listed editions), scoped to the resolved person.
+
 - **09-25 · Flowty fork closed `unpurchasable`.** 27,406 listings sat on a storefront fork whose `purchase()` asserts false. They were setting the ask floor, and so the FMV ceiling, for 2,724 editions (`20260925230134`).
 - **09-25 · Dapper storefront reconciler covers All Day** (`?collection=nfl_all_day`, Vercel `13 1-23/2`). Job 19's ask lane now tracks its own floor in both directions.
   - **10-09 fix:** a 4,080-listing seller blew the Cadence computation limit. The reconciler now reads 300-id slices pinned to one block height (`86ed83c3e`).
