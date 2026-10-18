@@ -1,0 +1,34 @@
+# Text colour — how RPC keeps text readable in both themes
+
+Built 2026-10-17/18 (known-issues #194, closed). Read this before painting TEXT with any colour that is not already a `--rpc-text-*` token. The one rule underneath everything: **fills keep their colour in both themes; only TEXT gets a theme-aware shade.** That is how a tier, a brand red or a collection accent still "reads identically" (the light block's Phase-0 rule in `app/rpc-tokens.css`) while its text clears WCAG AA (4.5:1).
+
+## Which tool for which value
+
+| You are painting text with… | Use | Where |
+|---|---|---|
+| the brand red | `var(--rpc-red-text)` (`#FF4D40` dark / `#B52A21` light) | token |
+| a tier or semantic colour (`--tier-rare`, `--rpc-success` …) | its twin `var(--tier-rare-text)` / `var(--rpc-success-text)` | tokens (dark = the fill, except rare/challenger/info a shade lighter; light = a text-safe shade) |
+| a collection accent, a hex, an `rgb()` literal, or a variable holding one | `accentText(value)` | `lib/accent-text.ts` — brand red → `--rpc-red-text`, a fill token → its twin, anything else → `color-mix` toward `--rpc-accent-text-mix` by `--rpc-accent-text-amt` (12 % white dark / 55 % black light) |
+| a chip STYLE object whose text sits on its OWN translucent tint | `textSafeChip(style)` | `lib/accent-text.ts` — wraps only `color`, only when the background is a translucent tint; an opaque fill is left alone |
+| a label ON an accent FILL (a button) | `labelOn(fill)` | `lib/accent-text.ts` — white on the brand red, `#0B0B0D` on every other accent |
+| a Tailwind palette text utility (`text-emerald-400` …) | nothing — it is overridden in light theme | generated block at the end of `app/rpc-tokens.css` ("LIGHT THEME — Tailwind palette TEXT utilities") |
+| muted / secondary copy | `var(--rpc-text-muted)` / `var(--rpc-text-secondary)` | tokens. ⛔ never `--rpc-text-ghost` (1.78:1 — decorative only) and never white-alpha below 0.5 |
+
+## Where NOT to apply them (each one broke something on 10-18)
+
+- **Never at a value's DEFINITION** (`tierChip().color`, a lib map, a data row `{ label, color }`): the same value usually also feeds a border, a gradient, a bar or a dot. A `color-mix()` string with a hex-alpha suffix (`${c}33`) is invalid CSS — the pack hero's border vanished on prod for ~20 min. Wrap at the TEXT consumer.
+- **Never on an SVG presentation attribute** (`<polyline stroke>`, a `<Sparkline color>` prop): attributes cannot resolve `var()` / `color-mix()`.
+- **Never in OG image routes, `lib/og/**`, email HTML (`lib/emails/**`) or `app/global-error.tsx`**: Satori and mail clients resolve neither, and global-error may render without the token stylesheet.
+- **Never on text that sits on a fixed fill that does not change with the theme** — the trophy slab's silver plate (`#C8C8C5`) uses a theme-independent `color-mix(…, #000 65%)`; Recharts tooltips (dark `contentStyle`) keep their light text.
+- **Text on a red fill stays `#fff`** (the accepted pre-launch white-on-`#E03A2F` exception, roadmap-status "Brand red on small text").
+
+## Guards (all tree walks; a planted defect proves each)
+
+- `__tests__/text-color-uses-text-safe-tokens.test.ts` — bans `color: var(--rpc-red | --por-red | --rpc-text-ghost)` (direct and as a same-line ternary branch) and `color: rgba(255,255,255,<0.5)`; counted suppressions only (a decorative watermark, a disabled send arrow).
+- `__tests__/accent-text-contrast.test.ts` — every registry accent, every twin and `labelOn` clear 4.5:1 in both themes on every canvas, a raised card and the colour's own 15 % tint — read from the CSS and `COLLECTIONS`, so a new accent or a weaker token fails.
+- `__tests__/tailwind-palette-text-has-a-light-theme-rule.test.ts` — every `text-<hue>-300/400/500` (and variants) and dark badge fill `bg-<hue>-800/900/950` the app uses has a light-theme rule.
+- `e2e/a11y.spec.ts` (E2E DOM Smoke → `a11y-audit`) — axe on production routes in both themes; the accepted white-on-red signature is the only exclusion.
+
+## Measuring
+
+Static guards cannot see a parent's fill or a computed colour. The instrument is axe on production in BOTH themes (`?theme=light`), plus a computed-style probe on any FILL you touched (a contrast count cannot see a border that stopped rendering). The 10-18 end state: 68 of 70 route × theme checks clean (25 anonymous + 10 signed-in routes); the 2 are the login `.rpc-live-pill` read mid-flicker.
