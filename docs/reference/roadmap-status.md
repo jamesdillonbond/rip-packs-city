@@ -288,6 +288,7 @@ now a row in the public `/legal/fmv-methodology` accuracy table.
   that median LOWERS accuracy (within ±25 %: 32 % today vs 23–24 % at 0.25–0.35), because the spread is wide.
   Only 4 targets had a $1,000+ ask, too few to fit an outlier cap on (the $1M-ask Dembele /12 → $500K case).
   The boards already label these "from asks" and call the total an upper bound. Revisit with ≥ 50 big-ask sales.
+  ⤷ **Revisited 2026-10-19 ~1:15 PM PT: 72 big-ask targets; no multiplier beats 0.5 within ±25 % (23.6 % vs 16.7–22.2 %). No change** (panini.md Open issues).
 - **Ingest latency (sales land ~53 h late) — left as is.** The fix is a faster/cloud walk: infra spend
   (pre-revenue rule) or an untestable-from-here change to the laptop runner.
 
@@ -923,6 +924,7 @@ A dated snapshot. The item text in [known-issues.md](known-issues.md) wins over 
 ## Panini FMV decisions — made 2026-09-30 ~8 PM PT (Trevor, asked by Cowork)
 
 - **FMV input switch (below): NO — keep serials.** Re-read 8 PM PT: covered n=744, 16.7 % vs 16.1 % MdAPE, still a tie; the only gain is 194 more targets at 28.6 %. Re-open when covered n is materially larger or the tie breaks.
+  ⤷ **Re-read 2026-10-19 ~1:20 PM PT: n 27,746; `panini_sales` 11.8 % / 60.9 % vs serials 13.4 % / 59.4 % — the tie broke narrowly toward `panini_sales`. Held for Trevor** (panini.md Next 7).
 - **LOW tier: SHIPPED as engine `panini-1.2.0`.** LOW (sales exist, none in 30 d) now prices at the median of the edition's last <=3 non-special sales at ANY age (`panini_last_sales_fmv`, migration `20261001030131`), not Panini's lifetime `avg_sale`. Backtest, 45 d, targets whose edition had no sale in the prior 30 d — fully-read editions n=597: lifetime avg MdAPE 82.5 % / ratio 1.83 / 22 % within ±25 → last-3 median 15.0 % / 1.00 / 55 %; partially-read n=1,871: 70.4 % / 1.68 → 66.7 % / 1.65. On sales of $10+ the two are about equal (both ~1.14×), so the gain is mostly on cheap cards. Kill switch `PANINI_FMV_ENGINE=1.1`. Re-measure at the 10-07 review, including the Hobby/FOTL pack EV the LOW tier dominated.
 
 ## Decisions taken — the docs-refresh open list (2026-10-17 ~8 PM PT; Trevor: "RWA can be a future add, but not right now. Do what makes sense to you and make your own decisions for the rest")
