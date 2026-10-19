@@ -35,7 +35,7 @@ on:
         type: string
         default: ""
       start_block:
-        description: "one-time cursor start override (first call only)"
+        description: "one-time cursor start override (first call only); missing_fills reads mainnet27 via spork-proxy from 130290659"
         type: string
         default: ""
       max_iters:

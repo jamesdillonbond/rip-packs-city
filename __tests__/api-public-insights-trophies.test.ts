@@ -62,6 +62,14 @@ describe("GET /api/public/insights/trophies", () => {
     expect(body.rows).toHaveLength(1)
   })
 
+  it("meta.source names the table each collection is read from, not always the view", async () => {
+    state.data = []
+    const pin = await (await GET(req(`${BASE}?collection=disney_pinnacle`))).json()
+    expect(pin.meta.source).toBe("pinnacle_catalog")
+    const all = await (await GET(req(`${BASE}`))).json()
+    expect(all.meta.source).toBe("v_insights_trophies+pinnacle_catalog")
+  })
+
   it("500s on a query error", async () => {
     state.error = { message: "db" }
     const res = await GET(req(BASE))

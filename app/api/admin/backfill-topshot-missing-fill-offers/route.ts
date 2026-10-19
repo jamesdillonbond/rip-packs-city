@@ -31,7 +31,7 @@ import {
 // re-walk is a no-op and an existing row is never touched.
 //
 // POST /api/admin/backfill-topshot-missing-fill-offers   Bearer $INGEST_SECRET_TOKEN
-//   ?start_block=N  (one-time override)   ?range=N (default 200000, cap 300000)
+//   ?start_block=N  (one-time override; ≥ 130290659, the mainnet27 root)   ?range=N (default 200000, cap 300000)
 // Driven by .github/workflows/topshot-offers-history-backfill.yml (mode input).
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -62,6 +62,17 @@ const DEFAULT_START = 137_390_146
 // row), and once the snapshot is refreshed with them their OfferAvailable can sit
 // above that block, so the walk reads to the sealed tip. Re-walking from
 // DEFAULT_START is the one-time `start_block` input of the workflow.
+//
+// mainnet27 leg (2026-10-19). The 10-18 re-walk to the tip inserted ~0: the fills
+// still without an offers row (~3.8 % of Top Shot offer fills since 10-11) name
+// offers created before DEFAULT_START, which rest-mainnet cannot serve. Heights
+// MAINNET27_ROOT..DEFAULT_START-1 (2025-10-22 → 2025-12-31) are read through the
+// spork-proxy worker (workers/spork-proxy, Bearer $SPORK_PROXY_SECRET), one spork
+// per request, so a chunk never crosses DEFAULT_START. Reached with the one-time
+// `start_block=130290659`. Lower than that is refused: mainnet24–26 are dark or
+// unreliable (known-issues #181), and a walk that silently read nothing there
+// would advance its cursor past blocks nobody fetched.
+const MAINNET27_ROOT = 130_290_659
 
 function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
@@ -73,13 +84,29 @@ interface FlowEventBlock {
   events?: Array<{ type: string; transaction_id: string; payload: string; event_index: number }>
 }
 
+function eventsRequest(type: string, start: number, end: number): { url: string; init: RequestInit } {
+  if (end < DEFAULT_START) {
+    if (start < MAINNET27_ROOT) throw new Error(`events ${start}-${end}: below the mainnet27 root ${MAINNET27_ROOT}`)
+    const proxy = process.env.SPORK_PROXY_URL ?? ""
+    const secret = process.env.SPORK_PROXY_SECRET ?? ""
+    // Unconfigured is an ERROR, never an empty range (the cursor would skip it).
+    if (!proxy || !secret) throw new Error(`events ${start}-${end}: spork-proxy unconfigured (SPORK_PROXY_URL/SECRET)`)
+    return {
+      url: `${proxy.replace(/\/$/, "")}/?start_height=${start}&end_height=${end}&event_type=${encodeURIComponent(type)}`,
+      init: { headers: { Authorization: `Bearer ${secret}` } },
+    }
+  }
+  if (start < DEFAULT_START) throw new Error(`events ${start}-${end}: range crosses the mainnet28 root ${DEFAULT_START}`)
+  return { url: `${FLOW_REST}/v1/events?type=${encodeURIComponent(type)}&start_height=${start}&end_height=${end}`, init: {} }
+}
+
 async function fetchEventRange(type: string, start: number, end: number): Promise<FlowEventBlock[]> {
-  const url = `${FLOW_REST}/v1/events?type=${encodeURIComponent(type)}&start_height=${start}&end_height=${end}`
+  const { url, init } = eventsRequest(type, start, end)
   // Retry a 429 only (Flow rate-limits parallel reads); anything else THROWS below.
-  let res = await fetch(url, { signal: AbortSignal.timeout(15000) })
+  let res = await fetch(url, { ...init, signal: AbortSignal.timeout(30000) })
   for (let attempt = 1; res.status === 429 && attempt <= 4; attempt++) {
     await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt))
-    res = await fetch(url, { signal: AbortSignal.timeout(15000) })
+    res = await fetch(url, { ...init, signal: AbortSignal.timeout(30000) })
   }
   // ⚠ THROW, DO NOT `return []` — an HTTP error read as an empty range would let
   // the cursor advance past blocks nothing fetched, and this walk never revisits.
@@ -156,7 +183,12 @@ export async function POST(req: NextRequest) {
       // 1. scan OfferAvailable, time-bounded; processedTo names only a fully read group.
       const availById = new Map<string, AvailOffer>()
       const chunks: Array<[number, number]> = []
-      for (let s = lastBlock + 1; s <= targetHeight; s += CHUNK_SIZE) chunks.push([s, Math.min(s + CHUNK_SIZE - 1, targetHeight)])
+      // A chunk never straddles DEFAULT_START: below it is the spork-proxy, above it rest-mainnet.
+      for (let s = lastBlock + 1; s <= targetHeight; ) {
+        const e = Math.min(s + CHUNK_SIZE - 1, targetHeight, s < DEFAULT_START ? DEFAULT_START - 1 : Infinity)
+        chunks.push([s, e])
+        s = e + 1
+      }
       let processedTo = lastBlock
       for (let i = 0; i < chunks.length; i += PARALLEL_CHUNKS) {
         const group = chunks.slice(i, i + PARALLEL_CHUNKS)

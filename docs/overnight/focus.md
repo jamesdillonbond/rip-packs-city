@@ -4,6 +4,11 @@
 
 **Rewrite rule for whoever edits this next: a focus file STEERS the next night, it is not an archive.** If a section is describing something that shipped more than ~a week ago and is not still a live trap, move it to the ledger and delete it here. A stale steer is worse than no steer.
 
+## STEER — added 2026-10-19 ~7:00 AM PT (Claude Code cloud, session_01LS7PmY7M2BJn8KwzCDgH55, closing pass)
+
+- **#189 mainnet27 leg shipped, run NOT dispatched (a data write; operator step).** `backfill-topshot-missing-fill-offers` reads heights 130,290,659 → 137,390,145 through the spork-proxy. Dispatch `topshot-offers-history-backfill.yml` with `target=missing_fills`, `start_block=130290659`, `range=200000`, `max_iters=200`. An `ok:false` naming `spork-proxy unconfigured` or `below the mainnet27 root` is the guard working; a 5xx from the proxy is the node, not the route. Do not lower the start below 130,290,659 (mainnet24–26, #181).
+- **Still deliberately open from this thread:** the Trophy Room `<title>` keeps "on Flow" until the 10-28 Search Console read; the Collection-tab Packs sub-tab stays off for Pinnacle (no pack buy source). (`/api/public/insights/trophies` `meta.source` now names what was read: `pinnacle_catalog`, the view, or `v_insights_trophies+pinnacle_catalog` unfiltered — fixed 10-19.)
+
 ## STEER — added 2026-10-18 ~6:40 PM PT (Claude Code cloud, evening block) — what the night pass must know
 
 - ✅ **The two parked data writes were APPLIED 2026-10-18 10:06 PM PT** (Cowork cloud, one-off pg_cron jobs 752–754, one statement per `cron.schedule` call — the MCP cancelled multi-statement / DO-block forms). All Day's venue row now names `dapper_storefront_v2`; the #189 snapshot took 247 new missing-fill offer ids (21,619). The re-walk from `start_block=137390146` was dispatched 10:16 PM PT (run 39203673094) — the night pass should read its conclusion and `extra.inserted` on `backfill-topshot-missing-fill-offers` before calling #189 better or worse. Records + reverts: `docs/audits/2026-10-18-marketplace-status-allday-primary-venue.sql`, `docs/audits/2026-10-18-topshot-missing-fill-offers-snapshot-refresh.sql`.

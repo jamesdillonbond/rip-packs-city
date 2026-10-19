@@ -12,7 +12,11 @@ import { cdc, cdcEvent, eventBlock } from "./helpers/flow-cdc-fixture"
 //   - insert-only (ON CONFLICT DO NOTHING);
 //   - an offer the catalog cannot place takes the fill sale's edition (+ serial for
 //     a serial offer);
-//   - an HTTP error holds the cursor and logs ok:false.
+//   - an HTTP error holds the cursor and logs ok:false;
+//   - below the mainnet28 root (137,390,146) events come from the spork-proxy with
+//     its Bearer secret, a chunk never straddles that root, and an unconfigured
+//     proxy or a start below the mainnet27 root is an ERROR (cursor held), never
+//     an empty range.
 
 type Op = { table: string; method: string; rows?: unknown; options?: unknown; filters: Array<[string, unknown[]]> }
 
@@ -20,13 +24,14 @@ const state = vi.hoisted(() => ({
   ops: [] as Op[],
   missing: [] as Array<Record<string, unknown>>,
   rpc: [] as Array<{ name: string; args: Record<string, unknown> }>,
+  cursor: 150_000_000,
 }))
 
 function builder(table: string) {
   const op: Op = { table, method: "select", filters: [] }
   state.ops.push(op)
   const resolve = () => {
-    if (table === "event_cursor" && op.method === "select") return { data: { last_processed_block: 1000 }, error: null }
+    if (table === "event_cursor" && op.method === "select") return { data: { last_processed_block: state.cursor }, error: null }
     if (table === "topshot_offer_fill_missing_offers") return { data: state.missing, error: null }
     if (table === "topshot_edition_aliases") return { data: [], error: null }
     if (table === "editions") return { data: [{ external_id: "8:133", id: "uuid-8133" }], error: null }
@@ -99,6 +104,9 @@ beforeEach(() => {
   state.ops = []
   state.missing = []
   state.rpc = []
+  state.cursor = 150_000_000
+  process.env.SPORK_PROXY_URL = "https://spork.test"
+  process.env.SPORK_PROXY_SECRET = "spork-secret"
 })
 afterEach(() => {
   fetchMock?.restore()
@@ -108,7 +116,7 @@ afterEach(() => {
 describe("backfill-topshot-missing-fill-offers", () => {
   it("writes only offers in the missing set, as filled, with creation + fill times; the sale's edition places a serial offer the catalog can't", async () => {
     fetchMock = installFetchMock([
-      jsonRoute("blocks?height=sealed", [{ header: { height: "1250" } }]),
+      jsonRoute("blocks?height=sealed", [{ header: { height: "150000250" } }]),
       jsonRoute("OfferAvailable", [
         avail("801", { _type: "TopShotEdition", setId: "8", playId: "133" }), // missing → via catalog
         avail("802", { _type: "NFT", nftId: "999" }), // missing → via fill sale
@@ -121,7 +129,7 @@ describe("backfill-topshot-missing-fill-offers", () => {
     ]
 
     const body = await (await POST(req())).json()
-    expect(body).toMatchObject({ ok: true, matched_missing: 2, inserted: 2, resolved_via_fill_sale: 1, unresolved: 0, cursor_after: "1250" })
+    expect(body).toMatchObject({ ok: true, matched_missing: 2, inserted: 2, resolved_via_fill_sale: 1, unresolved: 0, cursor_after: "150000250" })
 
     const up = offerUpserts()
     expect(up).toHaveLength(1)
@@ -140,12 +148,12 @@ describe("backfill-topshot-missing-fill-offers", () => {
       source: "onchain_backfill",
     })
     expect(rows.find((r) => r.offer_id === "802")).toMatchObject({ edition_id: "uuid-sale-802", serial_number: 22, offer_type: "serial" })
-    expect(cursorWrites()[0]?.rows).toMatchObject({ last_processed_block: 1250 })
+    expect(cursorWrites()[0]?.rows).toMatchObject({ last_processed_block: 150000250 })
   })
 
   it("an HTTP error holds the cursor, writes nothing, and logs ok:false", async () => {
     fetchMock = installFetchMock([
-      jsonRoute("blocks?height=sealed", [{ header: { height: "1250" } }]),
+      jsonRoute("blocks?height=sealed", [{ header: { height: "150000250" } }]),
       jsonRoute("OfferAvailable", [], { status: 500 }),
     ])
     const body = await (await POST(req())).json()
@@ -154,6 +162,51 @@ describe("backfill-topshot-missing-fill-offers", () => {
     expect(offerUpserts()).toHaveLength(0)
     expect(cursorWrites()).toHaveLength(0)
     expect(state.rpc.find((r) => r.name === "log_pipeline_run")?.args).toMatchObject({ p_ok: false })
+  })
+
+  it("below the mainnet28 root reads the spork-proxy with its secret, and no chunk straddles the root", async () => {
+    fetchMock = installFetchMock([
+      jsonRoute("blocks?height=sealed", [{ header: { height: "137390400" } }]),
+      jsonRoute("OfferAvailable", []),
+    ])
+    state.cursor = 137_390_000 - 1
+    const body = await (await POST(req())).json()
+    expect(body).toMatchObject({ ok: true, cursor_after: "137390400" })
+    const ev = fetchMock.calls.filter((c) => c.url.includes("OfferAvailable"))
+    const range = (u: string) => [Number(/start_height=(\d+)/.exec(u)![1]), Number(/end_height=(\d+)/.exec(u)![1])]
+    const proxied = ev.filter((c) => c.url.startsWith("https://spork.test/"))
+    const direct = ev.filter((c) => c.url.startsWith("https://rest-mainnet.onflow.org/"))
+    expect(proxied.map((c) => range(c.url))).toEqual([[137_390_000, 137_390_145]])
+    expect(direct.map((c) => range(c.url))).toEqual([[137_390_146, 137_390_395], [137_390_396, 137_390_400]])
+    expect(proxied[0].url).toContain(`event_type=${encodeURIComponent(OFFER_AVAILABLE)}`)
+    expect((proxied[0].init?.headers as Record<string, string>).Authorization).toBe("Bearer spork-secret")
+    for (const c of direct) expect(JSON.stringify(c.init?.headers ?? {})).not.toContain("spork-secret")
+  })
+
+  it("an unconfigured spork-proxy below the root is an error that holds the cursor, not an empty range", async () => {
+    delete process.env.SPORK_PROXY_URL
+    fetchMock = installFetchMock([
+      jsonRoute("blocks?height=sealed", [{ header: { height: "137390400" } }]),
+      jsonRoute("OfferAvailable", []),
+    ])
+    state.cursor = 137_390_000 - 1
+    const body = await (await POST(req())).json()
+    expect(body.ok).toBe(false)
+    expect(body.error).toMatch(/spork-proxy unconfigured/)
+    expect(cursorWrites()).toHaveLength(0)
+  })
+
+  it("a start below the mainnet27 root is refused, cursor held", async () => {
+    fetchMock = installFetchMock([
+      jsonRoute("blocks?height=sealed", [{ header: { height: "137390400" } }]),
+      jsonRoute("OfferAvailable", []),
+    ])
+    state.cursor = 130_000_000
+    const body = await (await POST(req())).json()
+    expect(body.ok).toBe(false)
+    expect(body.error).toMatch(/below the mainnet27 root/)
+    expect(fetchMock.calls.filter((c) => c.url.includes("OfferAvailable"))).toHaveLength(0)
+    expect(cursorWrites()).toHaveLength(0)
   })
 
   it("rejects a missing token", async () => {

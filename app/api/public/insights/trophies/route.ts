@@ -18,7 +18,7 @@
 // ASK_ONLY / STALE / NULL by design (see the page's honesty framing).
 //
 // Query params:
-//   collection=nba_top_shot|nfl_all_day        single-collection filter
+//   collection=<any published collection, DB slug>  single-collection filter
 //   type=one_of_one|ultimate|all               trophy class (default all)
 //   sort=fmv|circulation                       default fmv (desc, nulls last)
 //   limit=<1..500>                             default 200
@@ -40,6 +40,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { boardUnavailable } from "@/lib/insights/board-error";
 import { fetchTrophiesBoard, TROPHY_COLLECTIONS } from "@/lib/insights/trophies-board";
+import { PINNACLE_TROPHY_COLLECTION } from "@/lib/insights/trophy-collections";
 
 import { boardRowMeta } from "@/lib/insights/board-meta"
 const VALID_COLLECTIONS: ReadonlySet<string> = new Set(TROPHY_COLLECTIONS);
@@ -96,7 +97,13 @@ export async function GET(req: NextRequest) {
   const res = NextResponse.json({
     meta: {
       fetched_at: new Date().toISOString(),
-      source: "v_insights_trophies",
+      // Names what was actually read: Pinnacle comes from pinnacle_catalog, every
+      // other collection from the view, and the unfiltered board merges both.
+      source: !collection
+        ? "v_insights_trophies+pinnacle_catalog"
+        : collection === PINNACLE_TROPHY_COLLECTION
+          ? "pinnacle_catalog"
+          : "v_insights_trophies",
       ...boardRowMeta(data?.length ?? 0, limit),
       elapsed_ms: elapsedMs,
       filters: { collection, type, sort, limit },
