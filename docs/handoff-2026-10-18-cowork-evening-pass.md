@@ -1,4 +1,4 @@
-# Handoff — 2026-10-18 Cowork evening pass (~4:53 → ~10:30 PM PT)
+# Handoff — 2026-10-18 Cowork evening pass (10-18 ~4:53 PM → 10-19 ~7:30 AM PT)
 
 Trevor: "clean things up, work through the roadmaps and the known issues list … work autonomously for the next 4 hours". The same prompt went to a Claude Code cloud session at ~5:00 PM PT (session_01LS7PmY7M2BJn8KwzCDgH55); read its session entry beside this one. Every item below is in `docs/overnight/ledger.md` with its revert.
 
@@ -18,6 +18,9 @@ Trevor: "clean things up, work through the roadmaps and the known issues list �
 | Orphaned confidence helpers removed; ESLint ratchet 632 → 629 | see ledger ("remove orphaned confidence-display helpers") | 158 tests, tsc, CI green |
 | **Parked SQL applied** (Trevor 9:53 PM: "look for the sql updates"): All Day venue row → V2; #189 snapshot +247; re-walk dispatched | pg_cron one-offs 752–754 at 10:06 PM; GitHub run 39203673094 at 10:16 PM | `INSERT 0 247`, `UPDATE 1` ×2, view reads V2; re-walk `inserted` 1–2 per call by 10:24 PM |
 | Scheduled tasks (Cowork-only, laptop linked): nightly pass git route + session-entry target fixed; strategy review 100-WAU gate + roadmap; Panini routine verified current | `docs/scheduled-tasks/*.prompt.md` | nightly read back byte-identical (24,018 chars); both re-signed by Claude Desktop |
+| **#189 weekly** (10-19 morning): snapshot pg_cron 755 Mon 7:07 AM PDT + workflow `23 14 * * 1`; liveness detector reads day-of-week crons | `20261019135133`, `20261019135442`, `47e48f1` | first snapshot `INSERT 0 12`; CI green; detector tests + planted defect |
+| Nightly prompt drops inbox archiving; weekly health report prompt points at known-issues/roadmap-status | `docs/scheduled-tasks/` + ledger | nightly read back byte-identical; both re-signed |
+| `pack_rips` vacuum measured | `pack-ev.md` | 72.1 % → 100 % all-visible; 285 → 14.7 ms |
 | Roadmap §2 (M3 anonymous half), §5 Golazos/UFC rows; pack-ev feature line | docs | — |
 
 ## ⚠ `main` was red 6:19 → 7:47 PM PT, my fault
@@ -38,7 +41,7 @@ Trevor: "clean things up, work through the roadmaps and the known issues list �
 
 ## For the next pass
 
-- Read the conclusion of GitHub run 39203673094 (#189 missing-fill re-walk, ~2.5 h from 10:16 PM PT) and `extra.inserted` on `backfill-topshot-missing-fill-offers` before calling #189 better or worse.
+- #189: run 39203673094 finished (154 recovered). The weekly cycle runs Mondays; read the first scheduled walk (Mon 10-19 ~7:23 AM PDT, may queue behind the other session's mainnet27 dispatch) for `inserted` > 0. Once a proxied mainnet27 run is clean, the other session moves the weekly start below 137390146 (its focus.md note).
 - "Rpc autonomous pass" (`trig_01NXLc5syVPm5iN1Sgo4ijVs`) has no schedule and no device binding although its prompt says it is device-bound; it only runs when fired by hand. Left as is — Trevor's call whether to delete it.
 
 - Read the CI conclusion of `ccf187f` (and the commits after it) first.
