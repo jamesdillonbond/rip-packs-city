@@ -266,6 +266,21 @@ describe("PackHistoryClient", () => {
     expect(document.body.textContent).not.toMatch(/\$-25/)
   })
 
+  it("⚠ WITHHOLDS Net P&L when most packs behind the rips/sales have NO buy row (inferred drop cost kept out of spend)", async () => {
+    // 2026-10-18: 252 of 261 purchases priced passed the floor while 486 more packs
+    // (inferred_primary_count) carried no cost at all, and +$45,491 was published.
+    mount({ summary: () => json(200, { ...SUMMARY, totals: { ...SUMMARY.totals, inferred_primary_count: 40, inferred_primary_spent_usd: 900 } }) })
+    await waitFor(() => expect(tileValue("Net P&L")).toBeTruthy())
+    expect(tileValue("Net P&L")).toBe("\u2014")
+    expect(document.body.textContent).not.toMatch(/\$-25/)
+  })
+
+  it("CONTROL: a few inferred packs beside a fully priced spend side still publish Net P&L", async () => {
+    mount({ summary: () => json(200, { ...SUMMARY, totals: { ...SUMMARY.totals, inferred_primary_count: 1, inferred_primary_spent_usd: 10 } }) })
+    await waitFor(() => expect(tileValue("Net P&L")).toBeTruthy())
+    expect(tileValue("Net P&L")).toBe("-$25.00")
+  })
+
   it("⚠ an OLDER payload with no ripped_value_known_count withholds rather than guesses", async () => {
     const totals: Record<string, unknown> = { ...SUMMARY.totals }
     delete totals.ripped_value_known_count

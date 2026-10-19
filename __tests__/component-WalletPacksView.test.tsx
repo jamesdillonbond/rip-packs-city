@@ -46,6 +46,8 @@ const summaryBody = {
       packs_sold: 0,
     },
   ],
+  // Fully covered whole-wallet totals: Net P&L publishes (2026-10-18 gate).
+  totals: { packs_purchased: 5, packs_ripped: 3, ripped_value_known_count: 3, primary_spend_unknown_count: 0, inferred_primary_count: 0 },
 }
 const heldRow = {
   pack_nft_id: "999888777",
@@ -90,6 +92,32 @@ describe("WalletPacksView", () => {
     vi.stubGlobal("fetch", fetchMock)
     const { getByText } = render(<WalletPacksView collection="nba-top-shot" />)
     await waitFor(() => expect(getByText("Sign in to see pack P&L")).toBeTruthy())
+  })
+
+  // 2026-10-18: this tab published the per-collection Net P&L with no coverage gate,
+  // one tab away from the dashboard that withheld the same figure.
+  function netPlTile(container: HTMLElement): string | null {
+    const label = [...container.querySelectorAll("div")].find((d) => d.textContent?.trim() === "Net P&L")
+    return label?.nextElementSibling?.textContent ?? null
+  }
+  it("⚠ WITHHOLDS Net P&L when the wallet's spend side is thin (most packs have no buy row)", async () => {
+    ownerKey = "0xowner"
+    const thin = { ...summaryBody, totals: { ...summaryBody.totals, inferred_primary_count: 40 } }
+    vi.stubGlobal("fetch", routeFetch({ summary: () => res(200, thin), history: () => res(200, { packs: [heldRow], total_count: 1 }) }))
+    const { container, getByText, queryByText } = render(<WalletPacksView collection="nba-top-shot" />)
+    await waitFor(() => expect(getByText("Base Pack")).toBeTruthy())
+    expect(netPlTile(container)).toBe("\u2014")
+    expect(queryByText("$50.00")).toBeNull()
+  })
+  it("⚠ a payload with NO totals withholds Net P&L rather than publishing an unchecked figure", async () => {
+    ownerKey = "0xowner"
+    const { totals: _drop, ...noTotals } = summaryBody
+    void _drop
+    vi.stubGlobal("fetch", routeFetch({ summary: () => res(200, noTotals), history: () => res(200, { packs: [heldRow], total_count: 1 }) }))
+    const { container, getByText, queryByText } = render(<WalletPacksView collection="nba-top-shot" />)
+    await waitFor(() => expect(getByText("Base Pack")).toBeTruthy())
+    expect(netPlTile(container)).toBe("\u2014")
+    expect(queryByText("$50.00")).toBeNull()
   })
 
   it("renders the hero stats + a history row with has_* gated '—' cells", async () => {

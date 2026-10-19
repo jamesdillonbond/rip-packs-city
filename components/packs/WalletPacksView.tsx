@@ -33,6 +33,8 @@ import {
   PACK_FILTER_LABEL,
   PACK_FILTER_STATUS,
   type PackFilter,
+  packCoverage,
+  type PackCoverageTotals,
 } from "@/lib/packs-wallet-view-format"
 import { accentText } from "@/lib/accent-text"
 
@@ -53,6 +55,8 @@ interface SummaryCollection {
 interface Summary {
   wallet: string
   by_collection: SummaryCollection[]
+  /** Whole-wallet totals; carry the coverage counts Net P&L is gated on. */
+  totals?: PackCoverageTotals
 }
 
 interface HistoryRow {
@@ -134,6 +138,11 @@ export default function WalletPacksView({ collection }: { collection: string }) 
   }, [searchParams])
 
   const [summaryRow, setSummaryRow] = useState<SummaryCollection | null>(null)
+  // 2026-10-18: Net P&L is withheld on the SAME coverage rule as the dashboard's
+  // Pack History (lib/packs-wallet-view-format.ts packCoverage). This tab published
+  // the per-collection subtraction with no check — "Fix per PANEL, not per page".
+  // No totals in the payload = coverage unknown = withheld.
+  const [plWithheld, setPlWithheld] = useState(true)
   const [history, setHistory] = useState<History | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -209,6 +218,8 @@ export default function WalletPacksView({ collection }: { collection: string }) 
             ) ?? null)
           : null
       setSummaryRow(row)
+      const totals = sumRes.ok ? (sumJson as Summary | null)?.totals : undefined
+      setPlWithheld(totals ? packCoverage(totals).plWithheld : true)
     } catch (err) {
       if (myReq === reqIdRef.current) setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -266,8 +277,9 @@ export default function WalletPacksView({ collection }: { collection: string }) 
         <Stat label="Ripped value" value={fmtPackUsd(summaryRow?.ripped_value_usd)} tint="#34D399" />
         <Stat
           label="Net P&L"
-          value={fmtPackUsd(summaryRow?.net_pl_usd)}
-          tint={summaryRow ? netPlTint(summaryRow.net_pl_usd) : "var(--rpc-red)"}
+          value={plWithheld ? "\u2014" : fmtPackUsd(summaryRow?.net_pl_usd)}
+          tint={plWithheld ? "var(--rpc-text-muted)" : summaryRow ? netPlTint(summaryRow.net_pl_usd) : "var(--rpc-red)"}
+          title={plWithheld ? "Withheld: too few of this wallet's packs have a known buy price and pull value for a P&L to mean anything" : undefined}
         />
       </section>
 
@@ -441,9 +453,9 @@ export default function WalletPacksView({ collection }: { collection: string }) 
   )
 }
 
-function Stat({ label, value, tint }: { label: string; value: string; tint: string }) {
+function Stat({ label, value, tint, title }: { label: string; value: string; tint: string; title?: string }) {
   return (
-    <div className="rpc-card" style={{ padding: "12px 14px" }}>
+    <div className="rpc-card" style={{ padding: "12px 14px" }} title={title}>
       <div style={{ fontFamily: mono, fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.12em", textTransform: "uppercase" }}>{label}</div>
       <div style={{ fontFamily: display, fontWeight: 800, fontSize: 26, lineHeight: 1.1, color: tint, marginTop: 4 }}>{value}</div>
     </div>

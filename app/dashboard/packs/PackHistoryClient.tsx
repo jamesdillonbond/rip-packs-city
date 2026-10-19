@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { fmtUsd, relativeTime } from "@/lib/dashboard/format"
 import { currencySuffix, displayCurrency, isUsdPegged } from "@/lib/usd-format"
+import { packCoverage } from "@/lib/packs-wallet-view-format"
 import { heldPacksCaption, packBuyLabel, packIdentityNote, packInferredAcquisitionLine, packMarketLabel, packPullLabel, packPullSerialLabel, packsRippedCaption, packsSoldCaption, spentCaption, type HeldPackValue } from "@/lib/packs-wallet-view-format"
 import Link from "next/link"
 import { DB_SLUG_TO_SLUG } from "@/lib/collections"
@@ -58,129 +59,6 @@ interface SummaryTotals {
   last_event_at: string | null
 }
 
-/** How much of the wallet's pack activity each money figure actually covers.
- *
- * ⚠ Both money tiles are sums over a SUBSET of the wallet's packs, and until
- * 2026-09-12 neither said so. Measured that day on 0xbd94cade097e50ac: the
- * history list holds 598 packs, the hero said "PACKS PURCHASED 133", TOTAL SPENT
- * $398 covered 47 of them (33 secondary + 14 primary with a recoverable retail
- * price; 86 primary drops have none), and RIPPED VALUE $241.40 was the sum over
- * 50 of 503 rips. `pack_rips.pull_value_usd` is populated on 312,202 of
- * 3,685,525 rows product-wide — 8.5% — so the rip side understates by roughly an
- * order of magnitude for EVERY user, not just this one. NET P&L then subtracted
- * the first from the second and published the difference as a measured result.
- *
- * ⛔ ROOT-CAUSED 2026-09-12, AND IT IS NOT A COVERAGE RAMP — DO NOT TUNE THE
- * BACKFILL. The 8.5% does not fill in over time, because `pull_value_usd` was
- * computed ONLY by joining `moment_acquisitions` on `source_pack_rip_id`, and
- * that column is populated on **94.8% of NBA Top Shot rows and 0.0% of every
- * other collection** — no collection outside Top Shot has ever written an
- * `acquisition_method = 'pack_pull'` row. `moments` also holds ZERO All Day
- * rows, so the join's second hop is empty too.
- *
- * ⚠ AND THE COLLECTION THAT BLOCKED IS THREE QUARTERS OF THE CORPUS.
- * `pack_rips` is **Top Shot + All Day and nothing else** — Pinnacle, Golazos,
- * UFC and Candy have **ZERO rows** in it, so they were never a pricing gap, they
- * have no pack-open activity to price. Measured 2026-09-12 (PT):
- *     All Day .... 2,816,589 rips (76.4%) ....  25,195 valued (0.89%)
- *     Top Shot ...   868,944 rips (23.6%) ... 287,368 valued (33.1%)
- *     others .....         0 rips
- * So the product-wide 8.5% was almost entirely All Day being the large half of
- * the corpus at under 1%, NOT a broad multi-collection famine.
- *
- * ⭐ PARTLY FIXED THE SAME DAY, for All Day only:
- * `audit_20260912_pack_rip_pull_value_allday_arm` gave the backfill a second
- * pricing source, `allday_pack_pull` — per-pull moment ids written at open,
- * 1,485,444 rows over 419,012 packs, joined to `pack_rips` on `pack_nft_id`
- * (an exact key, not the Top Shot linkage's ±5/30min time window). 77,800 All
- * Day packs are fully priced and drain at ~1,200/day; every FUTURE All Day open
- * is priced on arrival, which is the durable half — and it lands on the
- * collection that is 76% of all pack rips.
- *
- * ⚠ THAT ARM IS A COLD-START SWEEP, NOT A SECOND PRICER, and knowing which
- * matters. `rollup_allday_rip_pull_value()` already prices All Day packs the
- * same way and is healthy — but it is INCREMENTAL on
- * `allday_pack_pull.updated_at >= last_run_at`, so packs already fully priced
- * before its watermark were never swept. That is the whole gap: 77,800 priceable
- * packs against 25,195 valued rips.
- *
- * ✅ `pull_value_usd` IS NOW **CURRENT FMV FOR EVERY COLLECTION** (2026-09-12,
- * Trevor's delegated call; register #92 closed). It used to mean two different
- * things and this file summed them: Top Shot the LATEST `fmv_snapshots` row per
- * edition (CURRENT), All Day `allday_pack_pull.fmv_usd` (AT OPEN) — measured on
- * 500 resolved 2026-06+ pulls at a mean of **$3.14 vs $8.97**, agreeing on 22 of
- * 500, with RIPPED VALUE and NET P&L adding both together.
- *
- * ⭐ CURRENT WON BECAUSE IT WAS ALREADY THE HOUSE BASIS, not as a coin-flip: the
- * whole Top Shot pack-reality / realized-EV estate already read this column as
- * current, Top Shot is ~92% of valued rips, and the 7-day `stale_valued`
- * re-price loop exists ONLY to keep it current — that machinery is meaningless
- * under an at-open basis. It also covers MORE (3,967 vs 3,780 whole packs per
- * 4,000). **Both writers were changed together** — `backfill_pack_rip_metadata`
- * AND `rollup_allday_rip_pull_value()` (pg_cron jobid 72) — because changing one
- * alone makes them fight, which is how the first attempt at this failed.
- * ⚠ Nothing was lost: the at-open number is still per-pull in
- * `allday_pack_pull.fmv_usd`, so at-open realized value stays computable.
- *
- * ⚠ ALL DAY HAS ITS OWN CEILING, and it is well under 100%: only **419,012 of
- * its 2,816,589 rips (14.9%)** appear in `allday_pack_pull` at all — the table
- * starts 2024-07-27 and everything before that is simply absent. Of those,
- * 77,800 (2.8% of All Day) are fully priced today. A perfect forward resolver
- * still caps here until the deep history is hydrated.
- *
- * ⚠ THE 2024–2025 ALL DAY TAIL STAYS DARK. `allday_pack_pull.edition_id` is
- * resolved on 100% of 2026-Q1-onward pulls but ~0–24% before that, and neither
- * `moments` (no All Day rows) nor `wallet_moments_cache` (7.1% hit rate — it
- * holds only currently-HELD moments) can close it. That needs a Flow re-fetch.
- * Measured on this very wallet: of its 503 rips, 385 are All Day — only 123 of
- * those even appear in `allday_pack_pull` (the rest predate it) and 19 are fully
- * priced. So this wallet goes 50 → ~69 of 503, still far under the floor, and
- * NET P&L rightly keeps withholding.
- *
- * ⚠ AND THE BACKFILL MARKS THOSE FAILURES AS DONE. `backfill_pack_rip_metadata`
- * stamps `metadata_updated_at` on every candidate it touches, including the ones
- * whose pull value came back NULL — and its two legs re-select on
- * `metadata_updated_at IS NULL` (the drain) and `pull_value_usd IS NOT NULL`
- * (the stale re-price), so a NULL-valued row is invisible to BOTH forever.
- * 363,336 rows are already in that state — MORE than the 312,202 it has
- * successfully valued. ⛔ Do not "fix" that by retrying them: sampled 2,000 of
- * them and **0** had acquisition rows, so a retry leg would spin on 363k
- * permanently unpriceable rows and starve the real drain.
- *
- * ⛔ LOCAL MINING FOR THE ALL DAY TAIL IS EXHAUSTED — MEASURED AT THE PACK
- * GRAIN, WHICH IS THE GRAIN THAT MATTERS. A 2026-07-31 pass concluded the same
- * thing by counting resolvable MOMENTS; this was re-derived 2026-09-12 by
- * counting resolvable PACKS, because pricing is all-or-nothing per pack and a
- * scattered 10% of moments buys almost no whole packs. Mining `sales` (which
- * that pass never checked — it carries both `nft_id` and `edition_id`) plus
- * `wallet_moments_cache` over 3,000 unresolved 2025-Q3 packs moved 1,658 →
- * 1,730 resolvable pulls of 9,010, and made **11 of 3,000 packs (0.37%)** whole.
- * The remaining unlock really is a Flow re-fetch: resolution borrows each moment
- * at its open block via `/v1/scripts`, which `spork-proxy` does not front (it
- * carries only `/v1/events` and `/v1/transactions`), so historical opens fall
- * outside Flow's execution-state window. Until that exists, these captions are
- * the honest output and should keep withholding — they are not a stopgap.
- *
- * `ripped_value_known_count` absent (an older cached payload) is treated as
- * coverage UNKNOWN, which withholds — never as full coverage.
- */
-export function packCoverage(t: SummaryTotals): {
-  spendKnown: number
-  ripKnown: number | null
-  plWithheld: boolean
-} {
-  const spendKnown = Math.max(0, t.packs_purchased - (t.primary_spend_unknown_count ?? 0))
-  const ripKnown = t.ripped_value_known_count ?? null
-  const spendCov = t.packs_purchased > 0 ? spendKnown / t.packs_purchased : 1
-  const ripCov = t.packs_ripped > 0 ? (ripKnown == null ? 0 : ripKnown / t.packs_ripped) : 1
-  // A FLOOR, not a measurement. Below it the two sides of the subtraction
-  // describe samples too small and too different for the difference to mean
-  // anything. Same family as the pack-EV publish guard (FMV coverage >= 25%):
-  // pick a floor, state it, withhold below it. Set higher here because P&L is a
-  // claim about the reader's own money rather than about a market.
-  const PL_COVERAGE_FLOOR = 0.8
-  return { spendKnown, ripKnown, plWithheld: spendCov < PL_COVERAGE_FLOOR || ripCov < PL_COVERAGE_FLOOR }
-}
 
 export interface SummaryCurrency {
   spent: number
