@@ -11,6 +11,7 @@ vi.mock("@/lib/supabase", () => {
   const b: any = {
     select: () => b,
     eq: () => b,
+    in: () => b,
     order: () => b,
     limit: () => b,
     then: (resolve: any) => resolve({ data: state.data, error: state.error }),

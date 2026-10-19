@@ -194,6 +194,19 @@ describe("fetchTrophiesBoard", () => {
     expect(has(calls, "select", TROPHIES_COLS)).toBe(true)
   })
 
+  // 2026-10-18: the view has no collection filter, so Panini and UFC grails
+  // leaked into "All" (Panini 120 of the top 200) on a board whose copy, tabs and
+  // OG card cover Top Shot + All Day only. The unfiltered read is scoped.
+  it("scopes the unfiltered board to its stated collections, and a pick to that one", async () => {
+    const all = recordingDb()
+    await fetchTrophiesBoard({ limit: 200 }, all.db)
+    expect(all.calls.find((c) => c.fn === "in")?.args).toEqual(["collection", ["nba_top_shot", "nfl_all_day"]])
+    const one = recordingDb()
+    await fetchTrophiesBoard({ limit: 200, collection: "nfl_all_day" }, one.db)
+    expect(one.calls.find((c) => c.fn === "eq")?.args).toEqual(["collection", "nfl_all_day"])
+    expect(one.calls.some((c) => c.fn === "in")).toBe(false)
+  })
+
   it("ranks priced grails first, never-traded ones after", async () => {
     const { db, calls } = recordingDb()
     await fetchTrophiesBoard({ limit: 200 }, db)

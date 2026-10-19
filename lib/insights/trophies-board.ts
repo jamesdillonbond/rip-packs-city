@@ -20,6 +20,17 @@ import { supabaseAdmin } from "@/lib/supabase"
 export const TROPHIES_COLS =
   "edition_id, external_id, collection, collection_id, name, player_name, set_name, team_name, tier, series, circulation_count, thumbnail_url, video_url, is_one_of_one, is_ultimate, fmv_usd, confidence, fmv_computed_at"
 
+/**
+ * The collections this board covers — the scope its tabs, page copy, methodology
+ * and OG card all state ("every 1-of-1 and Ultimate-tier moment across NBA Top
+ * Shot and NFL All Day"). ⚠ 2026-10-18: `v_insights_trophies` has no collection
+ * filter, so Panini (1,378 circulation-1 rows) and UFC (48) entered the "All"
+ * view as those collections were added. Panini took 120 of the top 200 slots
+ * and UFC grails carried a closed market's price. Widening the scope is a product
+ * decision: change THIS list together with the copy, tabs and closed-market labelling.
+ */
+export const TROPHY_COLLECTIONS = ["nba_top_shot", "nfl_all_day"] as const
+
 export interface TrophiesBoardOptions {
   collection?: string | null
   /** "one_of_one" | "ultimate" | null — the two grail classes the view exposes. */
@@ -41,7 +52,7 @@ export async function fetchTrophiesBoard(
 
   let q = db.from("v_insights_trophies").select(TROPHIES_COLS)
 
-  if (collection) q = q.eq("collection", collection)
+  q = collection ? q.eq("collection", collection) : q.in("collection", [...TROPHY_COLLECTIONS])
   if (type === "one_of_one") q = q.eq("is_one_of_one", true)
   else if (type === "ultimate") q = q.eq("is_ultimate", true)
 

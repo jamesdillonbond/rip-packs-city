@@ -39,10 +39,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { boardUnavailable } from "@/lib/insights/board-error";
-import { fetchTrophiesBoard } from "@/lib/insights/trophies-board";
+import { fetchTrophiesBoard, TROPHY_COLLECTIONS } from "@/lib/insights/trophies-board";
 
 import { boardRowMeta } from "@/lib/insights/board-meta"
-const VALID_COLLECTIONS = new Set(["nba_top_shot", "nfl_all_day"]);
+const VALID_COLLECTIONS: ReadonlySet<string> = new Set(TROPHY_COLLECTIONS);
 const VALID_TYPES = new Set(["one_of_one", "ultimate", "all"]);
 const VALID_SORTS = new Set(["fmv", "circulation"]);
 
