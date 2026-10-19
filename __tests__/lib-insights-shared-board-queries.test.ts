@@ -200,7 +200,7 @@ describe("fetchTrophiesBoard", () => {
   it("scopes the unfiltered board to its stated collections, and a pick to that one", async () => {
     const all = recordingDb()
     await fetchTrophiesBoard({ limit: 200 }, all.db)
-    expect(all.calls.find((c) => c.fn === "in")?.args).toEqual(["collection", ["nba_top_shot", "nfl_all_day"]])
+    expect(all.calls.find((c) => c.fn === "in")?.args).toEqual(["collection", ["nba_top_shot", "nfl_all_day", "panini_blockchain", "ufc_strike"]])
     const one = recordingDb()
     await fetchTrophiesBoard({ limit: 200, collection: "nfl_all_day" }, one.db)
     expect(one.calls.find((c) => c.fn === "eq")?.args).toEqual(["collection", "nfl_all_day"])

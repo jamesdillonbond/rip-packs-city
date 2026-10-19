@@ -16,7 +16,7 @@ export const metadata: Metadata = {
   // so baking the brand in here rendered it twice. (deep-audit D24)
   title: "The Trophy Room — Rarest Moments on Flow",
   description:
-    "Every 1-of-1 and Ultimate-tier moment across NBA Top Shot and NFL All Day, ranked by value. The rarest editions on the Flow blockchain, in one place. Free. No signup.",
+    "Every 1-of-1 and Ultimate-tier moment across NBA Top Shot, NFL All Day, Panini and UFC Strike, ranked by value. The rarest editions we track, in one place. Free. No signup.",
   keywords: [
     "NBA Top Shot 1 of 1",
     "Top Shot Ultimate moments",
@@ -32,7 +32,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "The Trophy Room — Rarest Moments on Flow",
     description:
-      "Every 1-of-1 + Ultimate-tier moment across NBA Top Shot and NFL All Day, ranked by value. The rarest editions on the chain.",
+      "Every 1-of-1 + Ultimate-tier moment across NBA Top Shot, NFL All Day, Panini and UFC Strike, ranked by value.",
     url: `${SITE_URL}/insights/trophies`,
     siteName: "Rip Packs City",
     images: [
@@ -51,7 +51,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "The Trophy Room — Rarest Moments on Flow",
     description:
-      "Every 1-of-1 + Ultimate-tier moment across NBA Top Shot and NFL All Day, ranked by value.",
+      "Every 1-of-1 + Ultimate-tier moment across NBA Top Shot, NFL All Day, Panini and UFC Strike, ranked by value.",
     images: [`${SITE_URL}/api/og/insights/trophies`],
     creator: "@RipPacksCity",
   },

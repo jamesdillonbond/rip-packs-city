@@ -28,6 +28,7 @@ import { fromDbSlug } from "@/lib/collections"
 import { usdSignFirst } from "@/lib/usd-format"
 import { boardCountFloor } from "@/lib/insights/board-meta"
 import { accentText } from "@/lib/accent-text"
+import { isMarketClosed } from "@/lib/market-closed"
 
 // Both the page (SSR seed) and the refetch read at most this many rows.
 const BOARD_LIMIT = 200
@@ -60,7 +61,7 @@ type ApiResponse = {
   rows: Row[]
 }
 
-type CollectionFilter = "all" | "nba_top_shot" | "nfl_all_day"
+type CollectionFilter = "all" | "nba_top_shot" | "nfl_all_day" | "panini_blockchain" | "ufc_strike"
 type TypeFilter = "all" | "one_of_one" | "ultimate"
 type SortKey = "fmv" | "circulation"
 
@@ -68,6 +69,8 @@ const COLLECTIONS: { val: CollectionFilter; label: string }[] = [
   { val: "all", label: "All" },
   { val: "nba_top_shot", label: "Top Shot" },
   { val: "nfl_all_day", label: "NFL All Day" },
+  { val: "panini_blockchain", label: "Panini" },
+  { val: "ufc_strike", label: "UFC Strike" },
 ]
 const TYPES: { val: TypeFilter; label: string }[] = [
   { val: "all", label: "All grails" },
@@ -144,6 +147,9 @@ function TrophyTile({ r, hero = false }: { r: Row; hero?: boolean }) {
     : `/moment/${r.edition_id}`
   const title = r.player_name || r.name || r.set_name || "—"
   const priced = r.fmv_usd != null
+  // A closed market's value is the last one observed before it closed (UFC
+  // Strike), so it reads as historical, never as a live quote.
+  const closed = isMarketClosed(collectionSlug(r.collection))
 
   return (
     <Link href={href} className={`rpc-tr-tile ${hero ? "rpc-tr-tile-hero" : ""}`}>
@@ -175,7 +181,14 @@ function TrophyTile({ r, hero = false }: { r: Row; hero?: boolean }) {
           <span className="rpc-tr-circ">{r.is_one_of_one ? "1 minted" : `${fmtInt(r.circulation_count)} minted`}</span>
           <span className="rpc-tr-fmv-wrap">
             {priced ? (
-              <span className="rpc-tr-fmv">{fmtUsd(r.fmv_usd)}</span>
+              closed ? (
+                <>
+                  <span className="rpc-tr-fmv rpc-tr-fmv-closed">{fmtUsd(r.fmv_usd)}</span>
+                  <span className="rpc-tr-nocomp">last seen · market closed</span>
+                </>
+              ) : (
+                <span className="rpc-tr-fmv">{fmtUsd(r.fmv_usd)}</span>
+              )
             ) : (
               <span className="rpc-tr-nocomp">Awaiting a comp</span>
             )}
@@ -252,7 +265,9 @@ export default function TrophiesBoardClient({
 
   // Hero = the top priced trophies (FMV-desc already). Lead with real numbers;
   // the never-traded grails fill the grid below.
-  const heroRows = useMemo(() => rows.filter((r) => r.fmv_usd != null).slice(0, 4), [rows])
+  // A closed market's last value is not a headline number: it stays in the grid,
+  // labelled, but never leads the hero or sets "Top value".
+  const heroRows = useMemo(() => rows.filter((r) => r.fmv_usd != null && !isMarketClosed(collectionSlug(r.collection))).slice(0, 4), [rows])
 
   // ⚠ THE KPIs ARE COUNTED OVER A CAPPED WINDOW (known-issues #146). At the
   // cap, every count is a FLOOR ("200+"), never the census — the view held 1,456
@@ -262,12 +277,13 @@ export default function TrophiesBoardClient({
     const truncated = rows.length >= BOARD_LIMIT
     const priced = rows.filter((r) => r.fmv_usd != null)
     const oneOfOne = rows.filter((r) => r.is_one_of_one).length
-    const topFmv = priced.length && (!truncated || sort === "fmv") ? Math.max(...priced.map((r) => Number(r.fmv_usd))) : null
+    const livePriced = priced.filter((r) => !isMarketClosed(collectionSlug(r.collection)))
+    const topFmv = livePriced.length && (!truncated || sort === "fmv") ? Math.max(...livePriced.map((r) => Number(r.fmv_usd))) : null
     return { count: rows.length, oneOfOne, priced: priced.length, topFmv, truncated }
   }, [rows, sort])
 
   const tweetIntent = useMemo(() => {
-    const text = `The rarest things on Flow, in one place.\n\nEvery 1-of-1 + Ultimate-tier moment across NBA Top Shot and NFL All Day — the Trophy Room:`
+    const text = `The rarest things on Flow, in one place.\n\nEvery 1-of-1 + Ultimate-tier moment across NBA Top Shot, NFL All Day, Panini and UFC Strike — the Trophy Room:`
     const url = `${SITE_URL}/insights/trophies`
     return `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`
   }, [])
@@ -282,7 +298,7 @@ export default function TrophiesBoardClient({
         <p className="rpc-tr-lede">
           The rarest editions on Flow, in one place — every{" "}
           <strong>1-of-1</strong> and every <strong>Ultimate-tier</strong>{" "}
-          moment across NBA Top Shot and NFL All Day, ranked by value. Most have
+          moment across NBA Top Shot, NFL All Day, Panini and UFC Strike, ranked by value. Most have
           never traded. That&apos;s what makes them trophies.
         </p>
         <div className="rpc-tr-meta-row">
@@ -396,14 +412,16 @@ export default function TrophiesBoardClient({
           <h3 className="rpc-tr-h3">What counts as a trophy</h3>
           <p>
             Every <strong>1-of-1</strong> edition (circulation of one) and every{" "}
-            <strong>Ultimate-tier</strong> moment in NBA Top Shot and NFL All
-            Day. These are the scarcest editions the two collections produce.
+            <strong>Ultimate-tier</strong> moment in NBA Top Shot, NFL All Day,
+            Panini and UFC Strike. These are the scarcest editions those
+            collections produce. UFC Strike&apos;s Flow market has closed, so its
+            values are the last ones seen before it closed.
           </p>
           <p>
             Most trophies have <em>never traded</em>, so the value shown is
             often a standing ask or a last-known sale rather than a live quote.
             An unpriced trophy isn&apos;t worthless; it&apos;s a grail nobody has
-            put a number on yet. FMV from the RPC 1.7.0 model.
+            put a number on yet. FMV from the RPC model.
           </p>
         </div>
 
@@ -669,6 +687,7 @@ const CSS = `
   letter-spacing: 1.5px;
   text-transform: uppercase;
 }
+.rpc-tr-fmv-closed { color: var(--rpc-text-muted); }
 .rpc-tr-nocomp {
   font-family: var(--font-mono);
   font-size: 11px;

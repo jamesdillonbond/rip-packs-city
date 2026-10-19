@@ -127,7 +127,7 @@ export async function GET(req: NextRequest) {
             maxWidth: 1000,
           }}
         >
-          Every 1-of-1 + Ultimate-tier moment across Top Shot and All Day — the rarest editions on Flow, in one place.
+          Every 1-of-1 + Ultimate-tier moment across Top Shot, All Day, Panini and UFC — the rarest editions we track.
         </div>
 
         <div style={{ marginTop: 30, display: "flex", flexDirection: "column", gap: 12 }}>
