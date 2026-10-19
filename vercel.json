@@ -111,6 +111,10 @@
       "schedule": "25 */3 * * *"
     },
     {
+      "path": "/api/cron/pinnacle-pack-dist-names-onchain",
+      "schedule": "40 */3 * * *"
+    },
+    {
       "path": "/api/cron/topshot-set-series-onchain",
       "schedule": "5,15,25,35,45,55 * * * *"
     },
