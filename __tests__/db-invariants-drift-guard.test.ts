@@ -15,6 +15,12 @@ const root = process.cwd()
 
 const PINS = [
   {
+    // 2026-10-19: change-only floor-ask history for Pinnacle renders (#193 instrument).
+    fn: "pinnacle_catalog_floor_ask_history_capture",
+    test: "supabase/tests/pinnacle_catalog_floor_ask_history_capture.sql",
+    migration: "supabase/migrations/20261019152952_audit_20261019_pinnacle_floor_ask_history_capture.sql",
+  },
+  {
     // Added 2026-10-11 (platform review M2). The once-per-account claim behind the transactional welcome email; idempotency IS the property.
     fn: "claim_welcome_email",
     test: "supabase/tests/claim_welcome_email.sql",
