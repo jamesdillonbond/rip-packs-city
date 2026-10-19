@@ -1204,7 +1204,13 @@ Relay each finding's \`why\` — "you have a palindrome" is unverifiable on its 
 - "Does RPC support X collection?" → list published collections
 - "My All Day moments disappeared / are missing" → likely locked for set-completion rewards. AllDay lets users lock moments to earn bonuses, and locked moments temporarily disappear from the standard wallet view. Ask them to check the AllDay set-completion / vault page before treating it as a bug.`;
 
-  const dynamic = `${collectionBlurb}${marketSection}${userSection}${pageSection}${fmvCoverage ?? ""}
+  // 2026-10-18 (Cowork QA): the model had no clock, so it quoted tool timestamps as
+  // raw UTC ("Oct 19, 12:35 AM UTC") to a US collector and could not say how long ago
+  // a sale was. The request time lives HERE, in the per-request block below the
+  // cache breakpoint — never in `cacheable`, where it would defeat the prompt cache.
+  const nowLine = `\n\n## Time\nThe current time is ${new Date().toISOString()} (UTC). Tool results stamp times in UTC. When you tell a collector when something happened, say how long ago it was ("about 3 hours ago", "17 days ago") or give the calendar date ("Oct 1") — never quote a clock time in UTC and never write "UTC".`;
+
+  const dynamic = `${collectionBlurb}${marketSection}${userSection}${pageSection}${fmvCoverage ?? ""}${nowLine}
 
 ## Product surfaces you must know (current)
 - **Public /insights boards** (shareable, anon-public URLs — hand these out freely; they're the most shareable thing RPC has). /insights is the index. Highlights: /insights/top-sales (biggest recent sales + who bought/sold), /insights/deals (below-FMV asks), /insights/market-pulse (collection-level volume, sales and buyers by window), /insights/rookies and /insights/rookie-board, /insights/squeeze and /insights/set-squeeze (supply locked/burned), /insights/first-mint, /insights/serial-premiums and /insights/parallel-premiums, /insights/underpriced-serials, /insights/offer-spread, /insights/new-collectors, /insights/cross-collection, /insights/pack-reality + /insights/topshot-pack-market + /insights/allday-pack-market, /insights/pinnacle-scarcity, /insights/set-completers, /insights/trophies, /insights/candy-mlb (Candy / Solana MLB), /insights/panini-squeeze (Panini). If a question maps to one, link it.
@@ -1495,6 +1501,43 @@ function annotateMarketPulse(raw: string): string {
       "A window listed in a row's no_sales_indexed had NO SALES INDEXED by RPC — say exactly that, never 'nobody traded', '$0 volume' or 'the market is dead'. Quote last_sale_at as the last indexed sale (null = none in 30 days). A zero also says nothing about marketplaces RPC does not index."
   }
   return JSON.stringify(out)
+}
+
+/** True for an `ok` board result that carries zero rows (not an error, not a non-row payload). */
+function isEmptyOkBoard(raw: string): boolean {
+  try {
+    const out = JSON.parse(raw);
+    return !!out && out.status === "ok" && Array.isArray(out.rows) && out.rows.length === 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 2026-10-18 (Cowork QA): an EMPTY collection-scoped top-sales window was answered
+ * "either it's been a quiet week or the indexer hasn't picked up a recent sale" —
+ * a guess, for a market (Golazos) whose last indexed sale RPC knows exactly. Attach
+ * the collection's newest indexed sale from the market-pulse board. A failed pulse
+ * read attaches nothing but says so (a failed read is not an answer).
+ */
+function annotateEmptyTopSales(raw: string, coll: string, pulseRaw: string): string {
+  let out: any;
+  try { out = JSON.parse(raw) } catch { return raw }
+  let pulse: any = null;
+  try { pulse = JSON.parse(pulseRaw) } catch { pulse = null }
+  const row = pulse && pulse.status === "ok" && Array.isArray(pulse.rows)
+    ? pulse.rows.find((r: any) => r && r.slug === coll)
+    : null;
+  if (row && typeof row.last_sale_at === "string") {
+    out.last_indexed_sale_at = row.last_sale_at;
+    out.note = "No sales are INDEXED by RPC in this window. last_indexed_sale_at is the collection's newest indexed sale — say how long ago it was. Never guess why (do not suggest the indexer missed sales), and never say 'nobody traded': RPC indexes the venues it reads.";
+  } else if (row && row.last_sale_at == null) {
+    out.last_indexed_sale_at = null;
+    out.note = "No sales are INDEXED by RPC in this window, and none in the last 30 days. Say exactly that; never guess why.";
+  } else {
+    out.note = "No sales are INDEXED by RPC in this window. The collection's last-sale date could not be read right now — say that, and do not guess when the last sale was or why the window is empty.";
+  }
+  return JSON.stringify(out);
 }
 
 async function fetchPublicInsight(
@@ -4319,7 +4362,9 @@ async function executeToolInner(
     params.set("window", toolInput.window === "30d" ? "30d" : "7d");
     const limit = Math.min(Math.max(Math.trunc(Number(toolInput.limit ?? 10)) || 10, 1), 50);
     params.set("limit", String(limit));
-    return fetchPublicInsight(base, `/api/public/insights/top-sales?${params.toString()}`, limit);
+    const raw = await fetchPublicInsight(base, `/api/public/insights/top-sales?${params.toString()}`, limit);
+    if (!coll || !isEmptyOkBoard(raw)) return raw;
+    return annotateEmptyTopSales(raw, coll, await fetchPublicInsight(base, `/api/public/insights/market-pulse`, 20));
   }
 
   if (toolName === "get_market_movers") {

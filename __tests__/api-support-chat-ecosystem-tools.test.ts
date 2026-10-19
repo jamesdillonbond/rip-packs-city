@@ -132,6 +132,66 @@ describe("concierge — get_top_sales", () => {
   })
 })
 
+describe("concierge — get_top_sales on an EMPTY collection window (2026-10-18)", () => {
+  // Cowork QA 10-18: an empty Golazos window was answered "either a quiet week or the
+  // indexer missed a sale" — a guess, when RPC knows the newest indexed sale exactly.
+  const golazosPulse = { slug: "laliga_golazos", sales_24h: 0, sales_7d: 0, sales_30d: 3, last_sale_at: "2026-10-01T18:00:00+00:00" }
+  it("attaches the collection's newest indexed sale from market-pulse and forbids guessing why", async () => {
+    const f = stubFetch([
+      jsonRoute("/api/public/insights/top-sales", { rows: [] }),
+      jsonRoute("/api/public/insights/market-pulse", { rows: [{ slug: "nba_top_shot", last_sale_at: "2026-10-19T00:00:00+00:00" }, golazosPulse] }),
+    ])
+    script("get_top_sales", { collectionId: "laliga-golazos" })
+    await POST(post("last golazos sale"))
+    const r = toolResult()
+    expect(r).toMatchObject({ status: "ok", count: 0, last_indexed_sale_at: "2026-10-01T18:00:00+00:00" })
+    expect(String(r.note)).toMatch(/INDEXED/)
+    expect(String(r.note)).toMatch(/Never guess why/)
+    expect(f.calls.some((c) => c.url.includes("/market-pulse"))).toBe(true)
+  })
+  it("a FAILED market-pulse read attaches no date and says it could not be read", async () => {
+    stubFetch([
+      jsonRoute("/api/public/insights/top-sales", { rows: [] }),
+      jsonRoute("/api/public/insights/market-pulse", {}, { status: 503, ok: false }),
+    ])
+    script("get_top_sales", { collectionId: "laliga-golazos" })
+    await POST(post("last golazos sale"))
+    const r = toolResult()
+    expect(r.last_indexed_sale_at).toBeUndefined()
+    expect(String(r.note)).toMatch(/could not be read/)
+  })
+  it("does NOT touch a window that has rows, and never reads market-pulse for it", async () => {
+    const f = stubFetch([jsonRoute("/api/public/insights/top-sales", { rows: [{ id: 1 }] })])
+    script("get_top_sales", { collectionId: "laliga-golazos" })
+    await POST(post("top golazos sales"))
+    const r = toolResult()
+    expect(r.note).toBeUndefined()
+    expect(r.last_indexed_sale_at).toBeUndefined()
+    expect(f.calls.some((c) => c.url.includes("/market-pulse"))).toBe(false)
+  })
+  it("the cross-collection board (no collection) is left as it was", async () => {
+    const f = stubFetch([jsonRoute("/api/public/insights/top-sales", { rows: [] })])
+    script("get_top_sales", {})
+    await POST(post("top sales"))
+    expect(toolResult().note).toBeUndefined()
+    expect(f.calls.some((c) => c.url.includes("/market-pulse"))).toBe(false)
+  })
+})
+
+describe("concierge — the model is told the time, below the cache breakpoint (2026-10-18)", () => {
+  it("the per-request system block carries the current time and the no-UTC rule; the cached block does not", async () => {
+    stubFetch([jsonRoute("/api/public/insights/top-sales", { rows: [{ id: 1 }] })])
+    script("get_top_sales", {})
+    await POST(post("top sales"))
+    const sys = (A.createCalls[0] as unknown as { system: Array<{ text: string; cache_control?: unknown }> }).system
+    const cached = sys.find((b) => b.cache_control)!.text
+    const dynamic = sys.find((b) => !b.cache_control)!.text
+    expect(dynamic).toMatch(/## Time\nThe current time is \d{4}-\d{2}-\d{2}T/)
+    expect(dynamic).toMatch(/never quote a clock time in UTC/)
+    expect(cached).not.toMatch(/The current time is/)
+  })
+})
+
 describe("concierge — market-pulse / rookies", () => {
   it("get_market_movers reads the market-pulse board", async () => {
     const r = await drive("get_market_movers", { limit: 5 }, [jsonRoute("/api/public/insights/market-pulse", { rows: [{ m: 1 }] })])

@@ -27,6 +27,8 @@
 // Cached in module scope for COVERAGE_TTL_MS — the numbers move on a pipeline
 // cadence of hours, and a per-request read would be the concierge's own load.
 
+import { publishedCollections } from "@/lib/collections";
+
 export type CoverageRow = {
   collection: string;
   editions: number | null;
@@ -46,13 +48,21 @@ export type CoverageResult = {
 
 export const COVERAGE_TTL_MS = 30 * 60 * 1000;
 
-// Flow collections priced through fmv_snapshots → edition_fmv_current.
-const SNAPSHOT_COLLECTIONS: Array<{ label: string; uuid: string }> = [
-  { label: "NBA Top Shot", uuid: "95f28a17-224a-4025-96ad-adf8a4c63bfd" },
-  { label: "NFL All Day", uuid: "dee28451-5d62-409e-a1ad-a83f763ac070" },
-  { label: "LaLiga Golazos", uuid: "06248cc4-b85f-47cd-af67-1855d14acd75" },
-  { label: "UFC Strike", uuid: "9b4824a8-736d-4a96-b450-8dcc0c46b023" },
-];
+// Collections priced through edition_fmv_current: every PUBLISHED registry entry
+// with a DB uuid, except Disney Pinnacle, which prices per render on
+// pinnacle_catalog (readPinnacle below).
+// ⚠ 2026-10-18 (Cowork QA): this was a hand list of four Flow collections beside
+// the registry, so Candy MLB (published 09-08) and Panini (published 09-25) were
+// never measured — and the model, given no figure, told a collector "Candy MLB FMV
+// coverage is at LOW confidence across the board" while 61 of its 125 editions
+// were HIGH/MEDIUM. A hardcoded allowlist beside a registry goes stale silently
+// (CLAUDE.md); resolve through the registry instead.
+const PINNACLE_UUID = "7dd9dd11-e8b6-45c4-ac99-71331f959714";
+export function snapshotCollections(): Array<{ label: string; uuid: string }> {
+  return publishedCollections()
+    .filter((c) => !!c.supabaseCollectionId && c.supabaseCollectionId !== PINNACLE_UUID)
+    .map((c) => ({ label: c.label, uuid: c.supabaseCollectionId as string }));
+}
 
 type CountResult = PromiseLike<{ count: number | null; error: { message: string } | null }>;
 type CountQuery = CountResult & {
@@ -119,7 +129,7 @@ async function readPinnacle(supabase: Sb): Promise<CoverageRow> {
 /** Uncached read. Prefer readFmvCoverageCached in request paths. */
 export async function readFmvCoverage(supabase: Sb): Promise<CoverageResult> {
   const rows = await Promise.all([
-    ...SNAPSHOT_COLLECTIONS.map((c) => readSnapshotCollection(supabase, c.label, c.uuid)),
+    ...snapshotCollections().map((c) => readSnapshotCollection(supabase, c.label, c.uuid)),
     readPinnacle(supabase),
   ]);
   const allFailed = rows.every((r) => r.read_failed);

@@ -30,6 +30,7 @@ import {
   formatCoverageForPrompt,
   readFmvCoverage,
   readFmvCoverageCached,
+  snapshotCollections,
   _resetCoverageCacheForTests,
 } from "@/lib/concierge/fmv-coverage"
 import { makeInstrumentedSupabaseFixture } from "./helpers/route-harness"
@@ -132,6 +133,21 @@ describe("formatCoverageForPrompt", () => {
     expect(text).toContain("NBA Top Shot: 14,015 editions, 14,015 carry an FMV, 52.8% (7,397) at HIGH/MEDIUM")
     expect(text).toContain("UFC Strike: coverage read failed")
     expect(text).toMatch(/measured from the database, 5 min ago/)
+  })
+})
+
+describe("coverage population follows the registry (2026-10-18)", () => {
+  // A hand list of four Flow collections left Candy MLB and Panini unmeasured, and the
+  // model filled the gap with "LOW confidence across the board" (61 of 125 were HIGH/MEDIUM).
+  it("measures every PUBLISHED collection with a DB uuid except Pinnacle (per-render), and nothing unpublished", async () => {
+    const { publishedCollections, COLLECTIONS } = await import("@/lib/collections")
+    const labels = snapshotCollections().map((c) => c.label)
+    expect(labels).toContain("Candy MLB")
+    expect(labels).toContain("NBA Top Shot")
+    expect(labels.some((l) => l.startsWith("Disney Pinnacle"))).toBe(false)
+    const expected = publishedCollections().filter((c) => c.supabaseCollectionId && !c.label.startsWith("Disney Pinnacle")).map((c) => c.label)
+    expect(labels).toEqual(expected)
+    for (const c of COLLECTIONS.filter((x) => !x.published)) expect(labels).not.toContain(c.label)
   })
 })
 
