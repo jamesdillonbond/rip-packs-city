@@ -510,7 +510,7 @@ export interface PackCoverageTotals {
  * 1,730 resolvable pulls of 9,010, and made **11 of 3,000 packs (0.37%)** whole.
  * The remaining unlock really is a Flow re-fetch: resolution borrows each moment
  * at its open block via `/v1/scripts`, which `spork-proxy` does not front (it
- * carries only `/v1/events` and `/v1/transactions`), so historical opens fall
+ * serves only its events and transactions endpoints), so historical opens fall
  * outside Flow's execution-state window. Until that exists, these captions are
  * the honest output and should keep withholding — they are not a stopgap.
  *
