@@ -11,6 +11,9 @@
 - **a11y-audit now gates 4 rules over 13 routes** (adds the Sniper and a populated Collection tab). A red there is a real node on a real page, not flake.
 - **New invariant:** `supabase/tests/derive_pinnacle_wmc_from_catalog.sql`. The hourly render-id pass now fills Pinnacle `player_name`; a NULL-name Pinnacle wmc row with a catalog-named render_id, older than ~1 h, is a regression.
 - **Set pages:** "Combined view: N sets" now counts only sets with editions (`wnba-skyline` reads 1). The 15 editionless Top Shot `sets` rows are harmless; deleting them is Trevor's call.
+- **Market Owned (since ~7:00 PM PT):** it is applied only to a wallet with at least one `wallet_moments_cache` row for the collection. `ownedApplied:false` plus the full market for an unknown wallet is CORRECT, not a regression. Eligibility derives from `EDITION_MARKET_ARMS`; a new arm gets it automatically.
+- **`mcp_compute_pack_ev`** now reports a `'0'` retail price as `pack_price_missing_from_metadata` (`20261019022702`, unpinned). 983 dists with slots read that way. A re-appearing `is_positive_ev:false` with `pack_price:0` is the regression.
+- **Read the CI run after every code push.** `main` sat red ~6:20 → ~7:41 PM PT under seven local-green pushes. Preflight now sees `join()`-spelled test subjects, but not variable or computed ones.
 
 ## STEER — added 2026-10-18 ~12:47 PM PT (Claude Code cloud, 5-hour daytime block) — what the night pass must know before it acts
 
