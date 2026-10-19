@@ -542,10 +542,13 @@ export function collectionHasLocking(id: string): boolean {
 // honestly. 2026-10-18: this was a literal "Top Shot || All Day" in
 // CollectionTabClient, which hid it for LaLiga Golazos, whose opens are
 // attributed to collectors (78,830 opens across 23,325 wallets; marketplace
-// pack sales in golazos_pack_sales_history). ⛔ Disney Pinnacle stays OUT:
-// 11,851 of its 91,471 opens (13 %) are attributed to the custodian
-// 0xedf9df96c92f4595, not the collector, so its tab would read a partial
-// history as complete. Re-check that split before adding it.
+// pack sales in golazos_pack_sales_history). ⛔ Disney Pinnacle stays OUT, but
+// NOT for attribution: the 11,851 opens credited to the custodian
+// 0xedf9df96c92f4595 are 99.3 % platform batches (≥20 in one drop-hour, e.g.
+// 131 packs in 30 s), so collector rips are complete. The gap is the money side:
+// RPC holds NO Pinnacle pack buys or sales (the top opener reads 2,651 rips,
+// 0 purchases, $0 spent), so the tab would be rips-only with every P&L figure
+// withheld or equal to the gross rip value. Add it once a buy source exists.
 const WALLET_PACK_HISTORY_COLLECTIONS: ReadonlySet<string> = new Set(["nba-top-shot", "nfl-all-day", "laliga-golazos"])
 
 /** True when the Collection tab may show a per-wallet Packs history for this collection. */

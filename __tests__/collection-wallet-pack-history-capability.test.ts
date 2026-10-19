@@ -12,7 +12,7 @@ describe("Collection tab Packs sub-tab — collectionHasWalletPackHistory", () =
     }
   })
 
-  it("leaves Pinnacle out (13 % of its opens sit on the custodian, so a tab would read partial as complete)", () => {
+  it("leaves Pinnacle out (no pack buy or sale source, so its P&L would be the gross rip value)", () => {
     expect(collectionHasWalletPackHistory("disney-pinnacle")).toBe(false)
     // Panini and Candy list a "packs" page but have no wallet pack data.
     expect(collectionHasWalletPackHistory("panini-blockchain")).toBe(false)
