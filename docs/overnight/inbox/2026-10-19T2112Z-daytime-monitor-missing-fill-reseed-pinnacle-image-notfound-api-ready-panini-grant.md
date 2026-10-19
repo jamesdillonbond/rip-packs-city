@@ -1,0 +1,25 @@
+# Daytime monitor — 2026-10-19 ~21:12Z (GREEN infra; 3 low-risk candidates for the night pass)
+
+Read-only daytime sweep. Infra healthy: `rpc_ops_snapshot()` clean (security 4/4 `[]`, stalled `[]`, pgcron `[]`, sentinel ts_uuid 0, cross-collection mat fresh); NOT in a saturation spell (`pg_stat_activity` IO-wait 0 / active 2 — causal reads are valid this pass). Production deploys READY (newest serving `dpl_Ave5AcR9`, commit `451613162` "Pinnacle pack pages"); the CANCELED prod deploys are doc-only, expected. Trust: one BREACH — `candy_sales_stale_hours` 185.7h — KNOWN / Trevor-owned (genuine Candy MLB market freeze since 10-12; Candy OpenSea indexers unscheduled pending `OPENSEA_API_KEY`; filed `2026-10-13T1509Z`) — deliberately NOT re-raised.
+
+Three NEW items (none in ledger / Declined / existing inbox):
+
+## 1 — [MED] `topshot_missing_fill_offers_walk` re-seeded forward + walk ACTIVE again despite 10-10 `done=true`
+- **Source:** `rpc_ops_snapshot().backward_cursor_rewinds`; `pipeline_runs` (`backfill-topshot-missing-fill-offers`).
+- **Observed:** the snapshot's cursor-rewind detector flags `topshot_missing_fill_offers_walk` jumped FORWARD 9,414,648 blocks (158,890,658 -> 168,305,306) at 2026-10-19T18:12Z, `rewind_count` 2, low-water 130,890,658. Meanwhile `backfill-topshot-missing-fill-offers` ran 350x in 24h (349 ok / 1 fail, last 20:02Z) — the walk is ACTIVE, contradicting ledger `20261011144350` which recorded it `done=true` on 10-10 with a permanent "Completed backfill" `pipeline_alert_suppression` (expires 2027-04-30) and "nothing advances either cursor again".
+- **Risk:** LOW to the product — one-time backfill lane, no live user-facing data depends on it; worst case a wrong re-seed skips an unwalked backfill range. But the state is self-contradictory, and the snapshot note says a forward jump here is indistinguishable from state alone between (a) a deliberate restart/re-seed and (b) a cursor-write regression (class `ee90eb54c`, fixed 2026-09-02).
+- **Suggested action (night pass):** establish WHICH — check whether a session deliberately restarted/re-seeded this walk around 18:12Z today vs. a cursor-write regression recurrence. If deliberate, reconcile the `done=true` suppression / `check_suppression_parked_claim_drift()` claim so the active state is no longer self-contradictory; if a regression, apply the `ee90eb54c`-class guard. Do NOT re-seed from the monitor.
+
+## 2 — [MED] `/api/public/pinnacle-image/[renderId]` MODULE_NOT_FOUND on the currently-serving deploy — verify it serves 200
+- **Source:** Vercel runtime errors (`prj_YBJ6Utl32GfyBOIzbsp3kbshJh96`), 2 occurrences both at 2026-10-19T20:12:48Z, `lastDeployment=dpl_Ave5AcR9RMtGAG4R73dLqqKddqP6` (newest READY prod, commit `451613162` "Pinnacle pack pages: observed lifecycle and realized pulls").
+- **Observed:** `Error: Cannot find module './.next/server/pages/_next/image.js'` (MODULE_NOT_FOUND) on the pinnacle-image render route, e.g. `/_next/image?nxtPrenderId=LEV1-PDRA-DISC-S6`. Fired at a single instant around deploy promotion; ZERO recurrence in the ~1h since on the same deploy.
+- **Risk:** correlated with a recent ship on a user-facing image route. Single-instant-at-promotion + no recurrence reads as a Next.js lambda cold-start-during-swap artifact rather than an ongoing packaging break — but it has NOT been positively confirmed serving 200.
+- **Suggested action (night pass):** curl the production pinnacle-image route for a known renderId (e.g. `LEV1-PDRA-DISC-S6`) on the current deploy and confirm 200 + image bytes. If it 500s, it is a real packaging regression in the `451613162` ship — inspect the image route's build output; rollback candidate `dpl_MiqbZWcG`.
+
+## 3 — [LOW] `/api/ready` 42501 permission denied for `panini_sales`, correlated with the #64 Panini activation
+- **Source:** Vercel runtime errors — `[api/ready] readiness_collection_stats failed: 42501 permission denied for table panini_sales`, count 23 / 9 users, window 2026-10-19T15:03:47Z–15:10:24Z, `lastDeployment=dpl_4oo44GG7Fd9oW5MJ7BCRaLrDmUum`.
+- **Observed:** a ~7-minute burst of permission-denied on `panini_sales` from the readiness endpoint's `readiness_collection_stats`, coincident with today's #64 flip (`collections.panini_blockchain.is_active = true`, deploy `21fdfa05`) that newly brings Panini into collection-stats loops. SELF-STOPPED at 15:10Z; zero recurrence in the ~6h since on a frequently-hit endpoint — suggesting a later step/deploy added the grant or adjusted handling.
+- **Risk:** LOW — bounded, no longer firing. But a missing GRANT / non-SECURITY-DEFINER read on `panini_sales` from `readiness_collection_stats` is a structural gap that would recur if only masked.
+- **Suggested action (night pass):** confirm `readiness_collection_stats` can read `panini_sales` now (grant present or SECDEF owner) so `/api/ready` covers the newly-active Panini collection cleanly and the 42501 can't recur. (Distinct from the long-resolved 2026-08-23 `/api/ready` 500 item.)
+
+— rpc-daytime-monitor (read-only), Cowork cloud + device-VM clone

@@ -1,4 +1,4 @@
-# Inbox index — 588 live filings
+# Inbox index — 589 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -32,7 +32,9 @@ failure it documents.
 
 ---
 
-## 2026-10-19 — 1 filing
+## 2026-10-19 — 2 filings
+
+- [🟢 Daytime monitor (10-19 ~21:12Z, GREEN infra) — 3 low-risk candidates: `missing_fill_offers` cursor re-seeded forward 9.4M blocks + walk active despite 10-10 done=true; pinnacle-image MODULE_NOT_FOUND on the serving deploy (verify 200); /api/ready 42501 on panini_sales post-#64 (verify grant)](2026-10-19T2112Z-daytime-monitor-missing-fill-reseed-pinnacle-image-notfound-api-ready-panini-grant.md)
 
 - [**✅ RECORDED 10-19 (already in pack-ev.md from ~7:05 AM PT; timeout watch read added ~12:15 PM PT, re-read after ≥ 3 days) — 🟢 Daytime monitor (10-19 ~11:11 AM PT, GREEN) — pack_rips post-vacuum READ handed off by the 10-19 night pass: allvisible 72.1%→100.0%, `v_allday_pack_lifecycle` dist 6924 285ms/901→36ms/147 heap fetches; record in pack-ev.md**](2026-10-19T1811Z-daytime-monitor-pack-rips-post-vacuum-measurement-for-pack-ev.md)
 
