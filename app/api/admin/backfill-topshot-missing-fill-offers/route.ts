@@ -56,8 +56,12 @@ const BUDGET_MS = 170_000
 // 137,390,145 — docs/reference/apis-and-cadence.md). Offers created before it are
 // out of this walk's reach and stay unrecovered (reported, never guessed).
 const DEFAULT_START = 137_390_146
-// The newest missing fill is before this block; nothing above it needs reading.
-const STOP_AT = 167_400_000
+// No upper bound (2026-10-18). Until then the walk stopped at 167,400,000 (~10-10),
+// the newest block the 10-11 snapshot needed. But fills of pre-fix offers keep
+// arriving (~9 % of Top Shot offer fills since 10-11, 232 by 10-18, have no offers
+// row), and once the snapshot is refreshed with them their OfferAvailable can sit
+// above that block, so the walk reads to the sealed tip. Re-walking from
+// DEFAULT_START is the one-time `start_block` input of the workflow.
 
 function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
@@ -142,7 +146,7 @@ export async function POST(req: NextRequest) {
     }
     cursorBefore = String(lastBlock)
 
-    const currentHeight = Math.min(await getLatestSealedHeight(), STOP_AT)
+    const currentHeight = await getLatestSealedHeight()
     if (lastBlock >= currentHeight) {
       cursorAfter = cursorBefore
       done = true
@@ -283,5 +287,5 @@ export async function GET() {
     "api/admin/backfill-topshot-missing-fill-offers/cursor",
   )
   if (error) return apiErrorResponse(error, "api/admin/backfill-topshot-missing-fill-offers")
-  return NextResponse.json({ ok: true, cursor: data ?? null, defaultStart: DEFAULT_START, stopAt: STOP_AT })
+  return NextResponse.json({ ok: true, cursor: data ?? null, defaultStart: DEFAULT_START, stopAt: null })
 }
