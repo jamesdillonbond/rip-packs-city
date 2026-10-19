@@ -1204,13 +1204,7 @@ Relay each finding's \`why\` — "you have a palindrome" is unverifiable on its 
 - "Does RPC support X collection?" → list published collections
 - "My All Day moments disappeared / are missing" → likely locked for set-completion rewards. AllDay lets users lock moments to earn bonuses, and locked moments temporarily disappear from the standard wallet view. Ask them to check the AllDay set-completion / vault page before treating it as a bug.`;
 
-  // 2026-10-18 (Cowork QA): the model had no clock, so it quoted tool timestamps as
-  // raw UTC ("Oct 19, 12:35 AM UTC") to a US collector and could not say how long ago
-  // a sale was. The request time lives HERE, in the per-request block below the
-  // cache breakpoint — never in `cacheable`, where it would defeat the prompt cache.
-  const nowLine = `\n\n## Time\nThe current time is ${new Date().toISOString()} (UTC). Tool results stamp times in UTC. When you tell a collector when something happened, say how long ago it was ("about 3 hours ago", "17 days ago") or give the calendar date ("Oct 1") — never quote a clock time in UTC and never write "UTC".`;
-
-  const dynamic = `${collectionBlurb}${marketSection}${userSection}${pageSection}${fmvCoverage ?? ""}${nowLine}
+  const dynamic = `${collectionBlurb}${marketSection}${userSection}${pageSection}${fmvCoverage ?? ""}${requestTimeBlock()}
 
 ## Product surfaces you must know (current)
 - **Public /insights boards** (shareable, anon-public URLs — hand these out freely; they're the most shareable thing RPC has). /insights is the index. Highlights: /insights/top-sales (biggest recent sales + who bought/sold), /insights/deals (below-FMV asks), /insights/market-pulse (collection-level volume, sales and buyers by window), /insights/rookies and /insights/rookie-board, /insights/squeeze and /insights/set-squeeze (supply locked/burned), /insights/first-mint, /insights/serial-premiums and /insights/parallel-premiums, /insights/underpriced-serials, /insights/offer-spread, /insights/new-collectors, /insights/cross-collection, /insights/pack-reality + /insights/topshot-pack-market + /insights/allday-pack-market, /insights/pinnacle-scarcity, /insights/set-completers, /insights/trophies, /insights/candy-mlb (Candy / Solana MLB), /insights/panini-squeeze (Panini). If a question maps to one, link it.
@@ -1484,6 +1478,15 @@ async function logBetaFeedback(args: {
  * `last_sale_at`, plus one note telling the model how to say it. Anything that
  * is not an ok rows payload passes through untouched.
  */
+// 2026-10-18 (Cowork QA): the model had no clock, so it quoted tool timestamps as
+// raw UTC ("Oct 19, 12:35 AM UTC") to a US collector and could not say how long ago
+// a sale was. The request time goes in the PER-REQUEST system block (`dynamic`,
+// below the cache breakpoint) — never in `cacheable`, where it would defeat the
+// prompt cache (pinned by concierge-2026-09-02-ship-guards).
+function requestTimeBlock(now: Date = new Date()): string {
+  return `\n\n## Time\nThe current time is ${now.toISOString()} (UTC). Tool results stamp times in UTC. When you tell a collector when something happened, say how long ago it was ("about 3 hours ago", "17 days ago") or give the calendar date ("Oct 1") — never quote a clock time in UTC and never write "UTC".`;
+}
+
 function annotateMarketPulse(raw: string): string {
   let out: any
   try { out = JSON.parse(raw) } catch { return raw }
