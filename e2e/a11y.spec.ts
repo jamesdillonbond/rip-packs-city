@@ -11,9 +11,10 @@ import AxeBuilder from "@axe-core/playwright"
 // docs/reference/text-colour-system.md) took `color-contrast` to ZERO on every route
 // in both themes apart from ONE accepted exception, and `select-name` to zero — so
 // those two rules are now BLOCKING. Every other serious/critical rule is still
-// PRINTED but does not fail the run: `nested-interactive` (moment rows with
+// PRINTED but does not fail the run. `nested-interactive` (moment rows with
 // role="button") and `aria-conditional-attr` (sniper rows' aria-expanded on a <tr>)
-// are a filed row-interactivity redesign (known-issues #196), not a regression.
+// were the #196 row-interactivity pattern, redesigned 10-18 (disclosure buttons);
+// they move into GATED once a production run of the two routes below reads zero.
 // Move a rule into GATED once it reads zero; never move one out to make a run green.
 //
 // ⛔ THE ONE EXCLUSION is the accepted pre-launch exception (roadmap-status "Brand
@@ -34,6 +35,12 @@ const ROUTES = [
   "/nba-top-shot/sets",
   "/nfl-all-day/overview",
   "/legal/fmv-methodology",
+  // #196's two surfaces (added 10-18): the Sniper's rows and a populated Collection
+  // tab (the wallet the unit tests use) — the only routes where `nested-interactive`
+  // and `aria-conditional-attr` ever fired. Without them those rules read zero by
+  // not looking.
+  "/nba-top-shot/sniper",
+  "/nba-top-shot/collection?wallet=0xbd94cade097e50ac",
 ]
 const THEMES = ["dark", "light"] as const
 const SERIOUS = new Set(["serious", "critical"])
