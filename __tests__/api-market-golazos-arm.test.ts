@@ -78,6 +78,19 @@ describe("GET /api/market — LaLiga Golazos on-chain edition arm", () => {
     expect(call.args).toMatchObject({ p_player: "Aspas", p_min_price: 0.5 })
   })
 
+  // 2026-10-18: Owned reaches the Golazos RPC only for a wallet the cache knows
+  // (an unknown one read as "owns none"); the page still re-filters (ownedApplied false).
+  it("Owned reaches the RPC for a KNOWN wallet, and not for an unknown one", async () => {
+    const url = `https://t/api/market?collectionId=${GOLAZOS}&owned=owned&wallet=0xabcdef0123456789`
+    install({ "rpc:get_golazos_market_editions": { data: [ROW], error: null }, wallet_moments_cache: { data: [{ wallet_address: "0xabcdef0123456789" }], error: null } })
+    const known = await (await GET(req(url))).json()
+    expect(spy.rpcCalls.find((c) => c.name === "get_golazos_market_editions")?.args).toMatchObject({ p_owned: "owned", p_wallet: "0xabcdef0123456789" })
+    expect(known.ownedApplied).toBe(false)
+    install({ "rpc:get_golazos_market_editions": { data: [ROW], error: null }, wallet_moments_cache: { data: [], error: null } })
+    await GET(req(url))
+    expect(spy.rpcCalls.find((c) => c.name === "get_golazos_market_editions")?.args).not.toHaveProperty("p_owned")
+  })
+
   it("All Day: an EMPTY on-chain answer no longer falls through to Flowty's v1 rows either", async () => {
     install({ "rpc:get_allday_market_editions_v3": { data: [], error: null }, cached_listings: { ...FLOWTY_V1, data: [{ ...FLOWTY_V1.data[0], collection_id: ALLDAY }] } })
     const body = await (await GET(req(`https://t/api/market?collectionId=${ALLDAY}&player=nobody`))).json()

@@ -1051,8 +1051,11 @@ export async function GET(req: NextRequest) {
     // none of the listed editions" (and "Not owned" labelled the whole market).
     // Apply it only once the wallet is known to the cache for this collection; a
     // failed or empty probe leaves the filter to the page, which fails open.
+    // Golazos' RPC takes the filter too (its arm, 10-18), but the page still
+    // re-filters it (ownedApplied stays Top Shot / All Day only, as before).
     const ownedEligible = !!(owned && ownedWallet) &&
-      (collectionId === TS_COLLECTION_ID_FOR_DISPATCH || collectionId === ALLDAY_COLLECTION_ID_FOR_DISPATCH)
+      (collectionId === TS_COLLECTION_ID_FOR_DISPATCH || collectionId === ALLDAY_COLLECTION_ID_FOR_DISPATCH ||
+        collectionId === GOLAZOS_COLLECTION_ID_FOR_DISPATCH)
     let ownedKnown = false
     if (ownedEligible) {
       const { data: probe, error: probeErr } = await (supabaseAdmin as any)
@@ -1379,7 +1382,7 @@ export async function GET(req: NextRequest) {
         facets,
         // true = the Owned / Not owned filter was applied by the RPC over the whole
         // market, so the page must not re-filter its 50 rows.
-        ownedApplied: ownedKnown,
+        ownedApplied: ownedKnown && (isTopShot || collectionId === ALLDAY_COLLECTION_ID_FOR_DISPATCH),
       }, {
         headers: { "Cache-Control": "public, s-maxage=90, stale-while-revalidate=60" },
       })
