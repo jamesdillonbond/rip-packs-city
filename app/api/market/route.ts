@@ -1051,11 +1051,13 @@ export async function GET(req: NextRequest) {
     // none of the listed editions" (and "Not owned" labelled the whole market).
     // Apply it only once the wallet is known to the cache for this collection; a
     // failed or empty probe leaves the filter to the page, which fails open.
-    // Golazos' RPC takes the filter too (its arm, 10-18), but the page still
-    // re-filters it (ownedApplied stays Top Shot / All Day only, as before).
+    // Every RPC arm that takes p_owned: Top Shot's sniper RPC plus each
+    // EDITION_MARKET_ARMS entry — derived from the registry, so a new arm cannot
+    // be left out (Golazos was, for one deploy). The page still re-filters the
+    // non-Top Shot / All Day arms (ownedApplied below, unchanged).
     const ownedEligible = !!(owned && ownedWallet) &&
-      (collectionId === TS_COLLECTION_ID_FOR_DISPATCH || collectionId === ALLDAY_COLLECTION_ID_FOR_DISPATCH ||
-        collectionId === GOLAZOS_COLLECTION_ID_FOR_DISPATCH)
+      (collectionId === TS_COLLECTION_ID_FOR_DISPATCH ||
+        Object.values(EDITION_MARKET_ARMS).some((a) => a.collectionId === collectionId))
     let ownedKnown = false
     if (ownedEligible) {
       const { data: probe, error: probeErr } = await (supabaseAdmin as any)
