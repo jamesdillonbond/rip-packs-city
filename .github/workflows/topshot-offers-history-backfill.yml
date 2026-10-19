@@ -8,8 +8,21 @@ name: Top Shot Offers History Backfill — recover same-tick offers
 # which every call answers done=true. Insert-only — never writes an open row and
 # never overwrites one, so a re-run is safe.
 #
-# Dispatch-only: there is nothing to do once the walk is done.
+# Dispatch-only for target=offers: there is nothing to do once that walk is done.
+#
+# WEEKLY for target=missing_fills (#189, 2026-10-19). Old open bids keep being
+# accepted, and ~9 % of new Top Shot offer fills (232 of 2,462 over 10-11 → 10-18)
+# arrive with no `offers` row because the bid was created before the live indexer
+# saw it. The 10-18 refresh + re-walk recovered 154 of 247 (created anywhere from
+# 2025-12-30 to 2026-10-11, so the walk cannot be narrowed); the rest predate the
+# 2025-12-29 spork and are out of this walk's reach. pg_cron
+# `topshot-missing-fill-snapshot-weekly` (Mondays 14:07 UTC = 7:07 AM PDT) adds the week's new
+# unsourced fills to `topshot_offer_fill_missing_offers`; this schedule re-walks
+# from the mainnet28 root 16 minutes later. A scheduled run has no inputs, so the
+# env below supplies them: missing_fills, start 137390146, 200k blocks, 200 calls.
 on:
+  schedule:
+    - cron: "23 14 * * 1"
   workflow_dispatch:
     inputs:
       target:
@@ -44,10 +57,10 @@ jobs:
     steps:
       - name: Drain loop
         env:
-          RANGE: ${{ github.event.inputs.range }}
-          START_BLOCK: ${{ github.event.inputs.start_block }}
-          MAX_ITERS: ${{ github.event.inputs.max_iters }}
-          TARGET: ${{ github.event.inputs.target }}
+          RANGE: ${{ github.event_name == 'schedule' && '200000' || github.event.inputs.range }}
+          START_BLOCK: ${{ github.event_name == 'schedule' && '137390146' || github.event.inputs.start_block }}
+          MAX_ITERS: ${{ github.event_name == 'schedule' && '200' || github.event.inputs.max_iters }}
+          TARGET: ${{ github.event_name == 'schedule' && 'missing_fills' || github.event.inputs.target }}
           TOKEN: ${{ secrets.INGEST_SECRET_TOKEN }}
         run: |
           BASE="https://www.rippackscity.com/api/admin/backfill-topshot-offers"

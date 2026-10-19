@@ -9,6 +9,7 @@ import {
   fetchObserved,
   ApiError,
   MAX_SILENT_HOURS,
+  silenceThresholdHours,
 } from "@/scripts/check-scheduler-liveness.mjs"
 
 // Guards the scheduler-liveness detector: the only check here that can see a
@@ -32,11 +33,23 @@ describe("cron expansion", () => {
     expect(firingsPerDay("40 6 * * *")).toBe(1)
   })
 
+  it("counts a day-of-week cron as a FRACTIONAL daily rate (2026-10-19, weekly #189 walk)", () => {
+    expect(firingsPerDay("23 14 * * 1")).toBeCloseTo(1 / 7)
+    expect(firingsPerDay("15 9 * * 1-5")).toBeCloseTo(5 / 7)
+    expect(firingsPerDay("0 0 * * 0,7")).toBeCloseTo(1 / 7) // 0 and 7 are both Sunday
+    expect(firingsPerDay("0 0 * * 8")).toBeNull() // out of range stays unreadable
+  })
+
+  it("gives a slower-than-daily schedule one full period plus the usual allowance", () => {
+    expect(silenceThresholdHours(48)).toBe(MAX_SILENT_HOURS)
+    expect(silenceThresholdHours(1)).toBe(MAX_SILENT_HOURS)
+    expect(silenceThresholdHours(1 / 7)).toBeCloseTo(168 + MAX_SILENT_HOURS)
+  })
+
   it("returns null rather than a number it cannot justify", () => {
     // ⚠ null must NOT collapse to 0 anywhere downstream. A schedule the expander
     // cannot read is a CONFIG ERROR, and the caller escalates it — a `?? 0` here
     // would publish "expected 0 runs", which every workflow satisfies.
-    expect(firingsPerDay("0 0 * * 1")).toBeNull() // day-of-week set
     expect(firingsPerDay("0 0 1 * *")).toBeNull() // day-of-month set
     expect(firingsPerDay("0 0 * 3 *")).toBeNull() // month set
     expect(firingsPerDay("not a cron")).toBeNull()
@@ -199,9 +212,28 @@ describe("the liveness decision", () => {
     expect(livenessExitCode(r)).toBe(2)
   })
 
+  it("a WEEKLY schedule is alive after 170 h of silence and dead after 200 h; a daily one is dead after 25 h", () => {
+    const weekly = { path: "p", file: "w.yml", crons: ["23 14 * * 1"] }
+    const daily = { path: "p", file: "d.yml", crons: ["40 6 * * *"] }
+    const at = (h: number) =>
+      classifyLiveness({
+        workflows: [weekly, daily],
+        observed: {
+          "w.yml": { lastScheduledRunAt: hoursAgo(h), scheduledRuns: 1 },
+          "d.yml": { lastScheduledRunAt: hoursAgo(h), scheduledRuns: 1 },
+        },
+        now: NOW,
+      })
+    expect(at(170).dead.map((r) => r.file)).toEqual(["d.yml"])
+    expect(at(200).dead.map((r) => r.file).sort()).toEqual(["d.yml", "w.yml"])
+    expect(at(25).dead.map((r) => r.file)).toEqual(["d.yml"])
+    expect(at(20).dead).toEqual([])
+  })
+
   it("escalates an unparseable cron instead of scoring it zero", () => {
     const r = classifyLiveness({
-      workflows: [{ path: "p", file: "y.yml", crons: ["0 0 * * 1"] }],
+      // A day-of-MONTH cron is still unreadable (a day-of-week one is supported since 2026-10-19).
+      workflows: [{ path: "p", file: "y.yml", crons: ["0 0 1 * *"] }],
       observed: { "y.yml": { lastScheduledRunAt: hoursAgo(1), scheduledRuns: 1 } },
       now: NOW,
     })

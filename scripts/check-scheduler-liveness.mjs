@@ -74,15 +74,17 @@ export const NEW_WORKFLOW_GRACE_HOURS = 48
 /**
  * Expand the minute and hour fields of a 5-field cron into firings per day.
  * Supports `*`, lists, ranges and steps — every shape this repo actually uses.
- * Returns null when the day-of-month/month/day-of-week fields are not all `*`,
- * i.e. when the schedule is not simply daily-periodic; the caller must treat
- * null as "cannot compute", never as zero.
+ * A day-of-week field (e.g. `1` = Mondays) is supported since 2026-10-19 and
+ * yields a FRACTIONAL rate: `23 14 * * 1` fires 1/7 times a day.
+ * Returns null when the day-of-month or month field is not `*`, i.e. when the
+ * schedule is not periodic by day or week; the caller must treat null as
+ * "cannot compute", never as zero.
  */
 export function firingsPerDay(cron) {
   const parts = String(cron).trim().split(/\s+/)
   if (parts.length !== 5) return null
   const [min, hour, dom, mon, dow] = parts
-  if (dom !== "*" || mon !== "*" || dow !== "*") return null
+  if (dom !== "*" || mon !== "*") return null
 
   const expand = (field, max) => {
     const out = new Set()
@@ -115,7 +117,22 @@ export function firingsPerDay(cron) {
   const minutes = expand(min, 59)
   const hours = expand(hour, 23)
   if (!minutes || !hours) return null
-  return minutes.size * hours.size
+  if (dow === "*") return minutes.size * hours.size
+  // 0 and 7 are both Sunday; a set keeps a `0,7` list from counting it twice.
+  const days = expand(dow, 7)
+  if (!days) return null
+  const weekdays = new Set([...days].map((d) => d % 7))
+  return (minutes.size * hours.size * weekdays.size) / 7
+}
+
+/**
+ * How long a workflow may be silent before it is dead: `maxSilentHours` for a
+ * schedule that fires at least daily, and one full PERIOD plus `maxSilentHours`
+ * for a slower one (a weekly schedule is silent for 168 h by design).
+ */
+export function silenceThresholdHours(perDay, maxSilentHours = MAX_SILENT_HOURS) {
+  if (!(perDay > 0)) return maxSilentHours
+  return perDay >= 1 ? maxSilentHours : 24 / perDay + maxSilentHours
 }
 
 /**
@@ -223,7 +240,7 @@ export function classifyLiveness({
       silentHours: silentHours === Infinity ? null : Number(silentHours.toFixed(1)),
       pending,
       // A rate is REPORTED, never failed on — see the header. Only silence is red.
-      dead: silentHours > maxSilentHours && !pending,
+      dead: silentHours > silenceThresholdHours(perDay, maxSilentHours) && !pending,
     })
   }
 
