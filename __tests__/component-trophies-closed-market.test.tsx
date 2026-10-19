@@ -39,9 +39,22 @@ describe("Trophy Room — a closed market's value is historical", () => {
     expect(kpis.textContent).not.toMatch(/6,?300/)
   })
 
-  it("offers Panini and UFC tabs", () => {
+  // 2026-10-18 (Trevor: "All supported collections should be usable there"):
+  // one tab per PUBLISHED collection, from the registry.
+  it("offers a tab for every published collection", () => {
     render(<TrophiesBoardClient initialRows={rows as never} initialFetchedAt={null} />)
-    expect(screen.getByText("Panini")).toBeTruthy()
-    expect(screen.getByText("UFC Strike")).toBeTruthy()
+    for (const label of ["NBA Top Shot", "NFL All Day", "LaLiga Golazos", "Disney Pinnacle", "UFC Strike", "Candy MLB", "Panini Blockchain"]) {
+      expect(screen.getByRole("tab", { name: label }), label).toBeTruthy()
+    }
+  })
+
+  it("links a Pinnacle grail to its pin page and badges a non-Ultimate top tier by its own name", () => {
+    const pinRow = row({ collection: "disney_pinnacle", external_id: "render-abc", player_name: "Pin Grail", tier: "Legendary Edition", is_one_of_one: false, is_top_tier: true, circulation_count: 5, fmv_usd: 50 })
+    const gzRow = row({ collection: "laliga_golazos", external_id: "gz-1", player_name: "GZ Grail", tier: "LEGENDARY", is_one_of_one: false, is_top_tier: true, circulation_count: 9, fmv_usd: 40 })
+    const { container } = render(<TrophiesBoardClient initialRows={[pinRow, gzRow] as never} initialFetchedAt={null} />)
+    expect(container.querySelector('a[href="/pinnacle/moment/render-abc"]')).not.toBeNull()
+    expect(container.querySelector('a[href="/laliga-golazos/edition/gz-1"]')).not.toBeNull()
+    expect(container.textContent).toContain("/9 LEGENDARY")
+    expect(container.textContent).not.toContain("/9 ULTIMATE")
   })
 })

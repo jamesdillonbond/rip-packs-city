@@ -35,7 +35,7 @@ type Call = { fn: string; args: unknown[] }
 function recordingDb() {
   const calls: Call[] = []
   const q: Record<string, unknown> = {}
-  for (const fn of ["select", "gte", "gt", "eq", "ilike", "lte", "in", "order"]) {
+  for (const fn of ["select", "gte", "gt", "eq", "ilike", "lte", "in", "order", "not", "or"]) {
     q[fn] = (...args: unknown[]) => {
       calls.push({ fn, args })
       return q
@@ -187,6 +187,15 @@ describe("fetchSqueezeBoard", () => {
 })
 
 describe("fetchTrophiesBoard", () => {
+  // The unfiltered board reads TWO legs (the editions view + Pinnacle's catalog,
+  // whose pins are not `editions` rows); assert each leg's own calls.
+  const leg = (calls: Call[], table: string) => {
+    const start = calls.findIndex((c) => c.fn === "from" && c.args[0] === table)
+    if (start < 0) return [] as Call[]
+    const next = calls.findIndex((c, k) => k > start && c.fn === "from")
+    return calls.slice(start, next < 0 ? undefined : next)
+  }
+
   it("reads the grails view with the shared column list", async () => {
     const { db, calls } = recordingDb()
     await fetchTrophiesBoard({ limit: 200 }, db)
@@ -194,47 +203,60 @@ describe("fetchTrophiesBoard", () => {
     expect(has(calls, "select", TROPHIES_COLS)).toBe(true)
   })
 
-  // 2026-10-18: the view has no collection filter, so Panini and UFC grails
-  // leaked into "All" (Panini 120 of the top 200) on a board whose copy, tabs and
-  // OG card cover Top Shot + All Day only. The unfiltered read is scoped.
-  it("scopes the unfiltered board to its stated collections, and a pick to that one", async () => {
+  // 2026-10-18 (Trevor: "All supported collections should be usable there"): the
+  // board covers every PUBLISHED collection, from the registry. The view leg reads
+  // all but Pinnacle; Pinnacle comes from pinnacle_catalog.
+  it("covers every published collection: the view leg for all but Pinnacle, plus the Pinnacle catalog", async () => {
     const all = recordingDb()
     await fetchTrophiesBoard({ limit: 200 }, all.db)
-    expect(all.calls.find((c) => c.fn === "in")?.args).toEqual(["collection", ["nba_top_shot", "nfl_all_day", "panini_blockchain", "ufc_strike"]])
+    const viewIn = leg(all.calls, "v_insights_trophies").find((c) => c.fn === "in")?.args
+    expect(viewIn?.[0]).toBe("collection")
+    expect([...(viewIn?.[1] as string[])].sort()).toEqual(
+      ["candy_mlb", "laliga_golazos", "nba_top_shot", "nfl_all_day", "panini_blockchain", "ufc_strike"],
+    )
+    expect(leg(all.calls, "pinnacle_catalog").length).toBeGreaterThan(0)
     const one = recordingDb()
     await fetchTrophiesBoard({ limit: 200, collection: "nfl_all_day" }, one.db)
     expect(one.calls.find((c) => c.fn === "eq")?.args).toEqual(["collection", "nfl_all_day"])
     expect(one.calls.some((c) => c.fn === "in")).toBe(false)
+    expect(leg(one.calls, "pinnacle_catalog")).toEqual([])
+    const pin = recordingDb()
+    await fetchTrophiesBoard({ limit: 200, collection: "disney_pinnacle" }, pin.db)
+    expect(leg(pin.calls, "v_insights_trophies")).toEqual([])
+    expect(leg(pin.calls, "pinnacle_catalog").length).toBeGreaterThan(0)
   })
 
   it("ranks priced grails first, never-traded ones after", async () => {
     const { db, calls } = recordingDb()
     await fetchTrophiesBoard({ limit: 200 }, db)
-    expect(orderCols(calls)).toEqual(["fmv_usd", "circulation_count"])
+    const view = leg(calls, "v_insights_trophies")
+    expect(orderCols(view)).toEqual(["fmv_usd", "circulation_count"])
     // nullsFirst:false is what puts the never-traded grails AFTER the priced
     // ones. Flipping it leads the board with rows that have no number at all.
-    expect(calls.find((c) => c.fn === "order")?.args[1]).toMatchObject({ nullsFirst: false })
+    expect(view.find((c) => c.fn === "order")?.args[1]).toMatchObject({ nullsFirst: false })
   })
 
   it("switches the primary key on sort=circulation but keeps a tiebreak", async () => {
     const { db, calls } = recordingDb()
     await fetchTrophiesBoard({ limit: 200, sort: "circulation" }, db)
-    expect(orderCols(calls)).toEqual(["circulation_count", "fmv_usd"])
+    expect(orderCols(leg(calls, "v_insights_trophies"))).toEqual(["circulation_count", "fmv_usd"])
   })
 
   it("maps the two grail classes to their own flags, not to one another", async () => {
     const one = recordingDb()
     await fetchTrophiesBoard({ limit: 10, type: "one_of_one" }, one.db)
-    expect(one.calls.find((c) => c.fn === "eq")?.args).toEqual(["is_one_of_one", true])
+    expect(leg(one.calls, "v_insights_trophies").find((c) => c.fn === "eq")?.args).toEqual(["is_one_of_one", true])
+    expect(leg(one.calls, "pinnacle_catalog").find((c) => c.fn === "eq")?.args).toEqual(["total_minted", 1])
 
+    // "ultimate" is the collection's TOP tier (Ultimate, or Legendary where it has none).
     const ult = recordingDb()
     await fetchTrophiesBoard({ limit: 10, type: "ultimate" }, ult.db)
-    expect(ult.calls.find((c) => c.fn === "eq")?.args).toEqual(["is_ultimate", true])
+    expect(leg(ult.calls, "v_insights_trophies").find((c) => c.fn === "eq")?.args).toEqual(["is_top_tier", true])
 
     // An unrecognised type must not silently filter to one of the two classes.
     const junk = recordingDb()
     await fetchTrophiesBoard({ limit: 10, type: "nonsense" }, junk.db)
-    expect(has(junk.calls, "eq")).toBe(false)
+    expect(leg(junk.calls, "v_insights_trophies").some((c) => c.fn === "eq")).toBe(false)
   })
 })
 

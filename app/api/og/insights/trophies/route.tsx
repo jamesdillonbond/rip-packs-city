@@ -127,7 +127,7 @@ export async function GET(req: NextRequest) {
             maxWidth: 1000,
           }}
         >
-          Every 1-of-1 + Ultimate-tier moment across Top Shot, All Day, Panini and UFC — the rarest editions we track.
+          Every 1-of-1 + top-tier edition across every collection we track, ranked by value.
         </div>
 
         <div style={{ marginTop: 30, display: "flex", flexDirection: "column", gap: 12 }}>

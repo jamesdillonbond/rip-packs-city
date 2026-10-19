@@ -58,7 +58,7 @@ describe("TrophiesBoardClient — filter refetch + error", () => {
   it("refetches with collection= when the Top Shot pill is clicked", async () => {
     const { getByText } = render(<TrophiesBoardClient initialRows={trophyRows} initialFetchedAt={FETCHED} />)
     boardResponse = { ok: true, rows: trophyRows }
-    fireEvent.click(getByText("Top Shot"))
+    fireEvent.click(getByText("NBA Top Shot"))
     await waitFor(() => {
       const calls = (globalThis.fetch as any).mock.calls.map((c: any[]) => String(c[0]))
       expect(calls.some((u: string) => u.includes("collection=nba_top_shot"))).toBe(true)
@@ -85,7 +85,7 @@ describe("TrophiesBoardClient — filter refetch + error", () => {
   it("shows the error state on a non-ok refetch", async () => {
     const { getByText, container } = render(<TrophiesBoardClient initialRows={trophyRows} initialFetchedAt={FETCHED} />)
     boardResponse = { ok: false, status: 500 }
-    fireEvent.click(getByText("Ultimate"))
+    fireEvent.click(getByText("Top tier")) // the "Ultimate" class pill reads "Top tier" since 10-18
     await waitFor(() => expect((container.textContent ?? "")).toContain("Failed to load"))
   })
 })

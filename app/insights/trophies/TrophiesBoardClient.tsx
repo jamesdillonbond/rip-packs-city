@@ -29,6 +29,8 @@ import { usdSignFirst } from "@/lib/usd-format"
 import { boardCountFloor } from "@/lib/insights/board-meta"
 import { accentText } from "@/lib/accent-text"
 import { isMarketClosed } from "@/lib/market-closed"
+import { pinnacleRenderHref } from "@/lib/entity-href"
+import { TROPHY_COLLECTION_TABS, PINNACLE_TROPHY_COLLECTION } from "@/lib/insights/trophy-collections"
 
 // Both the page (SSR seed) and the refetch read at most this many rows.
 const BOARD_LIMIT = 200
@@ -51,6 +53,8 @@ export type Row = {
   video_url: string | null
   is_one_of_one: boolean | null
   is_ultimate: boolean | null
+  /** The collection's TOP tier: Ultimate, or Legendary where it has none; Pinnacle's Legendary/Genesis editions. */
+  is_top_tier?: boolean | null
   fmv_usd: number | null
   confidence: string | null
   fmv_computed_at: string | null
@@ -61,21 +65,20 @@ type ApiResponse = {
   rows: Row[]
 }
 
-type CollectionFilter = "all" | "nba_top_shot" | "nfl_all_day" | "panini_blockchain" | "ufc_strike"
+type CollectionFilter = string
 type TypeFilter = "all" | "one_of_one" | "ultimate"
 type SortKey = "fmv" | "circulation"
 
+// Every published collection, from the registry (Trevor 10-18: "All supported
+// collections should be usable there") — never a hand list.
 const COLLECTIONS: { val: CollectionFilter; label: string }[] = [
   { val: "all", label: "All" },
-  { val: "nba_top_shot", label: "Top Shot" },
-  { val: "nfl_all_day", label: "NFL All Day" },
-  { val: "panini_blockchain", label: "Panini" },
-  { val: "ufc_strike", label: "UFC Strike" },
+  ...TROPHY_COLLECTION_TABS,
 ]
 const TYPES: { val: TypeFilter; label: string }[] = [
   { val: "all", label: "All grails" },
   { val: "one_of_one", label: "1 of 1" },
-  { val: "ultimate", label: "Ultimate" },
+  { val: "ultimate", label: "Top tier" },
 ]
 
 // Long-form collection string → in-app route slug. The edition pages live at
@@ -110,8 +113,11 @@ function fmtInt(n: number | null): string {
 // its (tiny) circulation. Distinguishes "/10 Ultimate" from "1 of 1".
 function trophyBadge(r: Row): string {
   if (r.is_one_of_one) return "1 OF 1"
-  if (r.is_ultimate) {
-    return r.circulation_count != null ? `/${r.circulation_count} ULTIMATE` : "ULTIMATE"
+  if (r.is_ultimate || r.is_top_tier) {
+    // The collection's own top-tier word: ULTIMATE, or LEGENDARY (Golazos, Candy),
+    // or Pinnacle's edition type.
+    const label = r.is_ultimate ? "ULTIMATE" : (normalizeTier(r.tier) ?? "TOP TIER").toUpperCase()
+    return r.circulation_count != null ? `/${r.circulation_count} ${label}` : label
   }
   const t = normalizeTier(r.tier)
   return t ?? "GRAIL"
@@ -142,7 +148,10 @@ function TrophyTile({ r, hero = false }: { r: Row; hero?: boolean }) {
   // This tile already had an onError, but it gave up on the FIRST one — so the first visitor to
   // each trophy's CID got the grey fallback where one retry shows the actual art.
   const { key: imgKey, onError: onImgError, failed: imgFailed } = useIpfsRetry()
-  const href = r.external_id
+  // A Pinnacle pin is a catalog render: its page is the pin page, by render_id.
+  const href = r.collection === PINNACLE_TROPHY_COLLECTION && r.external_id
+    ? pinnacleRenderHref(r.external_id)
+    : r.external_id
     ? `/${collectionSlug(r.collection)}/edition/${encodeURIComponent(r.external_id)}`
     : `/moment/${r.edition_id}`
   const title = r.player_name || r.name || r.set_name || "—"
@@ -283,7 +292,7 @@ export default function TrophiesBoardClient({
   }, [rows, sort])
 
   const tweetIntent = useMemo(() => {
-    const text = `The rarest things on Flow, in one place.\n\nEvery 1-of-1 + Ultimate-tier moment across NBA Top Shot, NFL All Day, Panini and UFC Strike — the Trophy Room:`
+    const text = `The rarest collectibles we track, in one place.\n\nEvery 1-of-1 + top-tier edition across every collection we track — the Trophy Room:`
     const url = `${SITE_URL}/insights/trophies`
     return `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`
   }, [])
@@ -296,9 +305,9 @@ export default function TrophiesBoardClient({
         <div className="rpc-tr-eyebrow">RPC Insights · Public</div>
         <h1 className="rpc-tr-h1">The Trophy Room</h1>
         <p className="rpc-tr-lede">
-          The rarest editions on Flow, in one place — every{" "}
-          <strong>1-of-1</strong> and every <strong>Ultimate-tier</strong>{" "}
-          moment across NBA Top Shot, NFL All Day, Panini and UFC Strike, ranked by value. Most have
+          The rarest editions we track, in one place — every{" "}
+          <strong>1-of-1</strong> and every <strong>top-tier</strong>{" "}
+          edition across every collection, ranked by value. Most have
           never traded. That&apos;s what makes them trophies.
         </p>
         <div className="rpc-tr-meta-row">
@@ -412,9 +421,10 @@ export default function TrophiesBoardClient({
           <h3 className="rpc-tr-h3">What counts as a trophy</h3>
           <p>
             Every <strong>1-of-1</strong> edition (circulation of one) and every{" "}
-            <strong>Ultimate-tier</strong> moment in NBA Top Shot, NFL All Day,
-            Panini and UFC Strike. These are the scarcest editions those
-            collections produce. UFC Strike&apos;s Flow market has closed, so its
+            <strong>top-tier</strong> edition in every collection we track: its
+            Ultimate tier, or Legendary where a collection has no Ultimate
+            (LaLiga Golazos, Candy MLB), and Disney Pinnacle&apos;s Legendary and
+            Genesis editions. UFC Strike&apos;s Flow market has closed, so its
             values are the last ones seen before it closed.
           </p>
           <p>

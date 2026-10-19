@@ -12,6 +12,8 @@ vi.mock("@/lib/supabase", () => {
     select: () => b,
     eq: () => b,
     in: () => b,
+    not: () => b,
+    or: () => b,
     order: () => b,
     limit: () => b,
     then: (resolve: any) => resolve({ data: state.data, error: state.error }),
@@ -30,8 +32,10 @@ beforeEach(() => {
 })
 
 describe("GET /api/public/insights/trophies", () => {
+  // 2026-10-18 RE-PINNED: laliga_golazos was the "invalid" subject, but every
+  // published collection is now on the board; a slug the registry lacks is not.
   it("400s on an invalid collection", async () => {
-    const res = await GET(req(`${BASE}?collection=laliga_golazos`))
+    const res = await GET(req(`${BASE}?collection=not_a_collection`))
     expect(res.status).toBe(400)
     expect((await res.json()).error).toContain("collection must be one of")
   })
