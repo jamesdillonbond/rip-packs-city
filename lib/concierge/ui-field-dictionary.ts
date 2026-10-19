@@ -51,16 +51,16 @@ export const UI_FIELD_DICTIONARY: readonly UiFieldEntry[] = [
     field: "FMV",
     aliases: ["fmv", "fair market value", "value", "what is fmv"],
     meaning:
-      `Rip Packs City's modelled Fair Market Value for the edition: the median of its ${FMV_RECENT_SALES_N} most recent typical sales (sales within ${FMV_RECENT_SPAN_DAYS} days of the newest, special serials and grail spikes set aside), widened to 90 days when the edition is too thin to price otherwise. It is a value estimate, not a listing price; it is NOT the low ask and NOT the high offer. Each FMV carries a confidence word.`,
+      `Rip Packs City's modelled Fair Market Value for the edition: the median of its ${FMV_RECENT_SALES_N} most recent typical sales (sales within ${FMV_RECENT_SPAN_DAYS} days of the newest, special serials and grail spikes set aside), widened to 90 days when the edition is too thin to price otherwise. It is a value estimate, not a listing price; it is NOT the low ask and NOT the high offer.`,
     source: `lib/fmv-recalc-math.ts medianOfMostRecent (algo ${FMV_ALGO_VERSION})`,
   },
   {
     id: "fmv.confidence",
-    surface: "beside any FMV",
+    surface: "NOT SHOWN on the site (internal only since 2026-10-18)",
     field: "confidence (HIGH / MEDIUM / LOW / STALE / ASK_ONLY / SALES_ONLY / NO_DATA)",
     aliases: ["confidence", "high medium low", "stale", "ask only", "sales only", "no data", "colour of the number", "color of the fmv"],
     meaning:
-      "HIGH: enough recent sales that agree. MEDIUM: enough sales but noisier, or a thin edition corroborated by a fresh ask. LOW: too few sales or too much disagreement — directional only. STALE: the number was carried forward, not recently recomputed. ASK_ONLY: a live ask with no sales behind it (a floor, not a value). SALES_ONLY: old sales with no ask to corroborate. NO_DATA: nothing to price from. Only HIGH and MEDIUM should be read as a market value.",
+      "RPC does not publish a confidence rating — it is internal (Trevor, 2026-10-18). If a user asks about it, say the site shows no confidence rating and describe the facts behind the price instead (how many recent sales, when the last one was, whether it comes from a listing). Never name a tier to the user. Internal meaning: HIGH: enough recent sales that agree. MEDIUM: enough sales but noisier, or a thin edition corroborated by a fresh ask. LOW: too few sales or too much disagreement — directional only. STALE: the number was carried forward, not recently recomputed. ASK_ONLY: a live ask with no sales behind it (a floor, not a value). SALES_ONLY: old sales with no ask to corroborate. NO_DATA: nothing to price from. Only HIGH and MEDIUM should be read as a market value.",
     source: "app/api/support-chat/route.ts FMV_METHODOLOGY_BLOCK",
   },
   {

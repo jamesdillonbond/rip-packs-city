@@ -67,8 +67,6 @@ Stack: Next.js 16 · React 19 · TS 5 · Tailwind 4 · Supabase (Pro, Large) · 
 
 **Repo map** (re-derive; never quote a count): [routes-and-surfaces.md](docs/reference/routes-and-surfaces.md).
 
-**Tagline** rule: [chain-strategy.md](docs/reference/chain-strategy.md) (end).
-
 ---
 
 ## Infrastructure IDs (required on every tool call)
@@ -203,8 +201,6 @@ Full canon + every instance: [docs/reference/key-files-and-honesty.md](docs/refe
 
 ### Two collection-string conventions (CRITICAL footgun)
 
-Two vocabularies, not interchangeable — mixing them corrupts `flowty_*` writes.
-
 **Long-form** (`sales`, `editions`, `collections.slug`) vs **short-form** (`flowty_*`, CHECK-whitelisted to six values, NOT `other`) — both lists: [schema-truth.md](docs/reference/schema-truth.md).
 
 ⚠ **That CHECK is on `flowty_transactions` ONLY** — a wrong value persists SILENTLY in the other two: schema-truth.md.
@@ -244,6 +240,7 @@ All 7 live in the DB-derived table in [schema-truth.md](docs/reference/schema-tr
 
 1. **RPC is READ-ONLY** — no cart, no gifting, no trading (except admin-signed giveaway delivery: concierge.md). **Never offer an action the product lacks.** This binds every surface, not just the concierge.
 2. **A NAME is not a PERSON; a team label is not a FRANCHISE** (09-25): resolve via `resolve_player_name` / `resolve_team_name` (aliases, league spelling, renames, father/son, historic labels); a new father/son or rename goes in `player_relations`; the league's spelling is an ALIAS, never a rename.
+3. ⛔ **FMV CONFIDENCE IS INTERNAL — no tier on any page, OG card or concierge answer** (10-18; API field kept): key-files-and-honesty.md.
 
 The rest (Pinnacle's FMV triple-join, DERIVE-don't-recite): [concierge.md](docs/reference/concierge.md); rule 2: [player-identity.md](docs/reference/player-identity.md).
 

@@ -2720,3 +2720,15 @@ Dapper's pack search sent no `distribution` node for 30 of 50 Top Shot sniper ro
 `nba_games` has one writer, `sync-nba-projections`, and every upstream it calls (DraftKings, cdn.nba.com, ESPN) has 403'd Supabase's egress since 2026-08-04 (#8). Three surfaces read the empty table and published the NBA's schedule from it: the Fast Break page ("No games tonight"), `/api/fast-break/today` (`no_games_today`) and the public `/nba/fast-break` ("No NBA games on <date>"). From tip-off that would have been false every game night. The optimize route had the fix since 10-03; the other three never got it, because the read itself SUCCEEDED, and every helper in the honesty table keys on a failed read. **Fix: an empty result asserts absence only when the table's writer demonstrably ran recently** (`lib/fast-break/nba-feed.ts`: `sync-nba-projections` ok within 36 h; a failed or unreadable check counts as NOT fresh). ⭐ **Test for this class with the WRITER, not the read: for any "none / no X" copy, name the table's writers and check their last success.** The same pass found `fast_break_runs` has no writer at all (2 hand-inserted rows), so "We'll surface the next run as soon as Top Shot opens it" promised an automation that does not exist.
 
 - ⚠ **A census of a table's READERS by grepping the table name cannot see a FALL-THROUGH** (10-18 ~2:49 PM PT). `/api/market` named `cached_listings` only in its legacy branch; which collections reached it was decided by a dispatcher returning `null` (no arm), so a census of "who reads v1 for Golazos" listed only the concierge, and the Golazos Market page — the biggest reader — was missed. Enumerate the DISPATCH (which keys get an arm, what an absent arm or an empty answer does), not just the textual readers.
+
+
+## FMV confidence is INTERNAL — never shown to a visitor (Trevor, 2026-10-18 8:35 PM PT)
+
+"We shouldn't have anything user-facing that shows our confidence in the pricing. That should just be for internal use."
+
+- **No page, component, OG image, meta description / JSON-LD, tooltip, aria-label, legend, filter or sort control shows an FMV confidence tier** (HIGH / MEDIUM / LOW / ASK_ONLY / STALE / SALES_ONLY / NO_DATA), the word "confidence" about an RPC price, or a confidence-coloured / dimmed price. Admin pages (`/admin`) are internal and keep it.
+- **Thin prices show PLAIN** (Trevor's call): the label goes, the price stays. Prices the code already WITHHOLDS stay withheld — the gates are internal logic and did not change.
+- **Facts are not a tier and stay**: "N sales in 30d", "last sale X days ago", "from a listing, not sales", pack-EV coverage %. Frame them as facts, never as "Confidence".
+- **The concierge** uses confidence to decide what to say and states only the facts behind a price; it never names a tier or quotes a coverage/confidence share (`FMV_METHODOLOGY_BLOCK`, `lib/concierge/ui-field-dictionary.ts` `fmv.confidence`).
+- **The public JSON API keeps its `confidence` field** (Trevor: nothing that reads it breaks); the `/analytics/api` docs no longer document it.
+- Page sweep + a ban-at-zero guard over rendered files: in progress 10-18 evening (see ledger).

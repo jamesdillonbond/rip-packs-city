@@ -700,3 +700,9 @@ CLAUDE.md's Measurement discipline gained *"A DEFAULT UI LIST IS A SAMPLE; a UI 
 - Original (Development workflow, rendered-DOM bullet): `- Verify pages by **rendered DOM, not HTTP 200** — streaming shells always return 200. ⚠ **And platform STATE by a REQUEST, never a status field** — `get_project.live:false` reads IDENTICALLY on a healthy estate; a false P0 and a false "still down" in one night (#76, verbatim: claude-md-condensed-originals.md).`
   Now: `- Verify pages by **rendered DOM, not HTTP 200** — streaming shells always return 200, and a HIDDEN tab never reveals one (tooling-gotchas.md). ⚠ **And platform STATE by a REQUEST, never a status field** — `get_project.live:false` reads IDENTICALLY on a healthy estate (#76; verbatim: claude-md-condensed-originals.md).`
   The displaced clause ("a false P0 and a false "still down" in one night") is the #76 story at the top of this file. The added pointer: React 19 reveals a streamed Suspense boundary and hydrates it through `requestAnimationFrame`, which Chrome never fires in a background tab — tooling-gotchas.md "RUN TO GROUND 2026-10-10".
+
+
+## Displaced from CLAUDE.md 2026-10-18 (verbatim; room for concierge rule 3, FMV confidence is internal)
+
+- Project overview: **Tagline** rule: [chain-strategy.md](chain-strategy.md) (end). (link re-pointed for this directory)
+- Two collection-string conventions: Two vocabularies, not interchangeable — mixing them corrupts `flowty_*` writes.
