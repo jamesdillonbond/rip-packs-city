@@ -264,7 +264,11 @@ export default function CollectionMomentTable(props: {
               const cbMap = costBasis.get(row.flowId ?? "")
               const cb = cbMap ?? (row.costBasis != null || row.costBasisLabel ? { buyPrice: row.costBasis ?? 0, acquiredDate: row.acquiredAt ?? "", fmvAtAcquisition: null, acquisitionMethod: row.acquisitionMethod ?? null, costBasisLabel: row.costBasisLabel ?? null } : undefined)
               return (
-                <div key={row.momentId} className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] overflow-hidden flex flex-col cursor-pointer" onClick={function() { toggleExpanded(row.momentId) }} role="button" tabIndex={0} aria-expanded={expanded} onKeyDown={function(e) { if (e.target !== e.currentTarget) return; if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleExpanded(row.momentId) } }}>
+                // Whole-card tap is a touch convenience; the keyboard/SR path is the
+                // disclosure <button> beside the player name (#196), so this div
+                // deliberately carries no role or key handler.
+                // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
+                <div key={row.momentId} className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] overflow-hidden flex flex-col cursor-pointer" onClick={function() { toggleExpanded(row.momentId) }} data-rpc-mobile-card="">
                   <div className="flex items-stretch" data-rpc-mobile-card-body="">
                   {/* Left column: the art alone, full card height. The fallback
                       (initials on the collection accent) holds the column when a
@@ -321,7 +325,18 @@ export default function CollectionMomentTable(props: {
                     ) : (
                       <span className="font-semibold text-[color:var(--rpc-text-primary)] text-sm leading-snug min-w-0 line-clamp-2">{row.playerName}</span>
                     )}
-                    <span className="text-[color:var(--rpc-text-muted)] text-xs shrink-0 pt-0.5">{expanded ? "▾" : "›"}</span>
+                    {/* The disclosure control (#196): the card click stays as a mouse
+                        convenience, but a role="button" card containing links is axe
+                        nested-interactive, so keyboard/SR users get this button. */}
+                    <button
+                      type="button"
+                      aria-expanded={expanded}
+                      aria-label={(expanded ? "Hide details for " : "Show details for ") + (row.playerName ?? (isPinnacle ? "this pin" : "this moment"))}
+                      onClick={function(e) { e.stopPropagation(); toggleExpanded(row.momentId) }}
+                      className="text-[color:var(--rpc-text-muted)] text-xs shrink-0 pt-0.5 px-1 bg-transparent border-0 cursor-pointer"
+                    >
+                      <span aria-hidden="true">{expanded ? "▾" : "›"}</span>
+                    </button>
                   </div>
                   {/* Row 2: Tier + Lock state */}
                   {(row.tier || hasLocking) && (
@@ -540,11 +555,10 @@ export default function CollectionMomentTable(props: {
                 return (
                   <Fragment key={row.momentId}>
                     <tr
+                      // Row click is a mouse convenience only. The keyboard path is the
+                      // thumbnail <Link> to the same href (#196): a role="button" row
+                      // that contains links is axe nested-interactive.
                       onClick={function(e) { const t = e.target as HTMLElement; if (t.closest("a,button,input,svg,video")) return; router.push(momentRowHref(collectionSlug, row)) }}
-                      role="button"
-                      tabIndex={0}
-                      aria-label={"Open " + (row.playerName ?? (isPinnacle ? "pin" : "moment")) + (isPinnacle ? " pin" : " moment")}
-                      onKeyDown={function(e) { if (e.target !== e.currentTarget) return; if (e.key === "Enter" || e.key === " ") { e.preventDefault(); router.push(momentRowHref(collectionSlug, row)) } }}
                       className={"group align-top cursor-pointer " + (expanded ? "rpc-table-row--expanded " : "")}
                     >
                       <td className="rpc-table-cell--player min-w-[160px]">
@@ -566,7 +580,7 @@ export default function CollectionMomentTable(props: {
                                     <Link
                                       href={momentRowHref(collectionSlug, row)}
                                       prefetch={false}
-                                      aria-label={row.playerName}
+                                      aria-label={"Open " + (row.playerName ?? (isPinnacle ? "pin" : "moment")) + (isPinnacle ? " pin" : " moment")}
                                       className="rounded flex items-center justify-center cursor-pointer"
                                       style={{ /* brand-exception: white on tier-accent fill */ width: 48, height: 64, background: accent, color: "#fff", fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 16, letterSpacing: "0.04em" }}
                                       onClick={function(e) { e.stopPropagation() }}
@@ -578,7 +592,7 @@ export default function CollectionMomentTable(props: {
                                   if (!thumbUrl) return fallback
                                   return (
                                     <ThumbnailPreview thumbUrl={thumbUrl} playerName={row.playerName} tierColor={tierColorForPrev}>
-                                      <Link href={momentRowHref(collectionSlug, row)} prefetch={false} aria-label={row.playerName} onClick={function(e) { e.stopPropagation() }} style={{ display: "inline-block", lineHeight: 0 }}>
+                                      <Link href={momentRowHref(collectionSlug, row)} prefetch={false} aria-label={"Open " + (row.playerName ?? (isPinnacle ? "pin" : "moment")) + (isPinnacle ? " pin" : " moment")} onClick={function(e) { e.stopPropagation() }} style={{ display: "inline-block", lineHeight: 0 }}>
                                       <img
                                         src={thumbUrl}
                                         alt={row.playerName}

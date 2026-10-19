@@ -1533,6 +1533,26 @@ describe("SniperClient — the depth panel orders other listings by price", () =
   })
 })
 
+describe("SniperClient — the depth panel's keyboard path is a real disclosure button (#196)", () => {
+  it("the row carries no tabindex/aria-expanded; a Depth <button> carries the state and toggles the panel", async () => {
+    // aria-expanded on a plain table row is axe `aria-conditional-attr` (serious),
+    // and a focusable row nests the row's links. The row click stays for the mouse.
+    warm = { data: feed(), loading: false, error: null, refresh: vi.fn() }
+    render(<SniperClient />)
+    const row = (await waitFor(() => document.querySelector("#sniper-row-111"))) as HTMLElement
+    expect(row.getAttribute("tabindex")).toBeNull()
+    expect(row.getAttribute("aria-expanded")).toBeNull()
+    const btn = row.querySelector('[data-testid="sniper-depth-toggle"]') as HTMLButtonElement
+    expect(btn.tagName).toBe("BUTTON")
+    expect(btn.getAttribute("aria-label")).toMatch(/show edition depth/)
+    expect(btn.getAttribute("aria-expanded")).toBe("false")
+    fireEvent.click(btn)
+    await waitFor(() => expect((row.querySelector('[data-testid="sniper-depth-toggle"]') as HTMLElement).getAttribute("aria-expanded")).toBe("true"))
+    fireEvent.click(row.querySelector('[data-testid="sniper-depth-toggle"]') as HTMLElement)
+    await waitFor(() => expect((row.querySelector('[data-testid="sniper-depth-toggle"]') as HTMLElement).getAttribute("aria-expanded")).toBe("false"))
+  })
+})
+
 describe("SniperClient — the same feed under each collection's own vocabulary", () => {
   // ⚠ One component serves five collections and branches on them throughout:
   // Pinnacle swaps tier tabs for VARIANT tabs and relabels the board, All Day

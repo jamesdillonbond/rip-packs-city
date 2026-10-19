@@ -174,7 +174,10 @@ describe("mobile card layout", () => {
     const { container } = render(
       <CollectionMomentTable {...props({ isMobile: true, toggleExpanded })} />
     )
-    const card = container.querySelector('[role="button"][aria-expanded]')
+    // #196: the expansion state lives on a real disclosure <button>, not on a
+    // role="button" card that nests links.
+    expect(container.querySelector('[role="button"]')).toBeNull()
+    const card = container.querySelector('button[aria-expanded]')
     expect(card).toBeTruthy()
     expect(card!.getAttribute("aria-expanded")).toBe("false")
   })
@@ -185,7 +188,7 @@ describe("mobile card layout", () => {
         {...props({ isMobile: true, view: { expandedRows: { "m-1": true }, sortKey: "player", sortDir: "asc" } as any })}
       />
     )
-    expect(container.querySelector('[role="button"][aria-expanded="true"]')).toBeTruthy()
+    expect(container.querySelector('button[aria-expanded="true"]')).toBeTruthy()
   })
 
   it("renders BOTH empty states on mobile, matching desktop", () => {

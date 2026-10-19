@@ -1547,15 +1547,10 @@ function SniperMomentsBody() {
                     id={`sniper-row-${deal.flowId}`}
                     className={`${holoClass(deal.tier)}${deal.flowId === highlightedId ? " ring-2" : ""}${deal.discount >= 40 ? " rpc-hot-deal" : ""}`}
                     style={{ borderBottom: expandedFlowId === deal.flowId ? "none" : "1px solid var(--rpc-border)", transition: "background var(--transition-fast)", cursor: "pointer", ...(deal.flowId === highlightedId ? { boxShadow: `0 0 0 2px ${accent}80`, background: `${accent}12` } : {}) }}
+                    // Row click is the mouse convenience. The keyboard path is the
+                    // "Depth" disclosure button in the Action cell (#196): aria-expanded
+                    // is not valid on a table row, and a focusable row nests links.
                     onClick={() => toggleEditionDepth(deal)}
-                    // 2026-10-11: the depth panel (where the real floor lives) was mouse-only.
-                    tabIndex={0}
-                    aria-expanded={expandedFlowId === deal.flowId}
-                    aria-label={`${deal.playerName} — show edition depth`}
-                    onKeyDown={(e) => {
-                      if (e.target !== e.currentTarget) return;
-                      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleEditionDepth(deal); }
-                    }}
                     onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--rpc-surface-hover)"; }}
                     // Restore the row's own tint — resetting to transparent wiped the highlighted row's.
                     onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = deal.flowId === highlightedId ? `${accent}12` : deal.discount >= 40 ? "rgba(224,58,47,0.08)" : "transparent"; }}
@@ -1845,6 +1840,18 @@ function SniperMomentsBody() {
                     {/* Action */}
                     <td style={{ padding: "8px 12px" }} onClick={(e) => e.stopPropagation()}>
                       <ActionCell deal={deal} accent={accent} collectionSlug={feedCollection} />
+                      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 4 }}>
+                        <button
+                          type="button"
+                          data-testid="sniper-depth-toggle"
+                          onClick={() => toggleEditionDepth(deal)}
+                          aria-expanded={expandedFlowId === deal.flowId}
+                          aria-label={`${deal.playerName} — show edition depth`}
+                          style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)", color: "var(--rpc-text-muted)", textDecoration: "underline" }}
+                        >
+                          Depth {expandedFlowId === deal.flowId ? "▾" : "›"}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                   {/* Task 2: Edition depth panel */}

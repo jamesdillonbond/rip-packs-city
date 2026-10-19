@@ -75,19 +75,23 @@ describe("CollectionMomentTable", () => {
     expect(container.querySelector('a[href="/nba-top-shot/player/damian-lillard"]')).toBeTruthy()
   })
 
-  it("desktop row is keyboard-operable (role=button, Enter/Space navigate to the moment)", () => {
-    // The row navigates to /moment/<id> on click; its only focusable child is the
-    // player <Link> (a DIFFERENT destination). Keyboard/SR users need role/tabIndex/
-    // onKeyDown on the <tr> to reach the moment page at all.
+  it("desktop row reaches the moment by a real focusable link, and the row itself is not a nested-interactive button (#196)", () => {
+    // The row navigates to /moment/<id> on click (a mouse convenience). The
+    // keyboard/SR path is the thumbnail <Link> to the SAME href. A role="button"
+    // <tr> containing links is axe `nested-interactive` (serious), so the row
+    // must carry no role and no tabindex.
     const { container } = render(<CollectionMomentTable {...baseProps()} />)
-    const tr = container.querySelector('tr[role="button"]')
+    const tr = container.querySelector("tbody tr")
     expect(tr).toBeTruthy()
-    expect(tr?.getAttribute("tabindex")).toBe("0")
-    expect(tr?.getAttribute("aria-label")).toContain("Damian Lillard")
-    fireEvent.keyDown(tr!, { key: "Enter" })
+    expect(tr?.getAttribute("role")).toBeNull()
+    expect(tr?.getAttribute("tabindex")).toBeNull()
+    const link = tr!.querySelector('a[href="/moment/m-1"]')
+    expect(link).toBeTruthy()
+    expect(link?.getAttribute("aria-label")).toContain("Damian Lillard")
+    expect(container.querySelector('[role="button"]')).toBeNull()
+    // The mouse convenience survives: clicking a non-link cell still navigates.
+    fireEvent.click(tr!.querySelector("td:last-child")!)
     expect(pushMock).toHaveBeenCalledWith("/moment/m-1")
-    fireEvent.keyDown(tr!, { key: " " })
-    expect(pushMock).toHaveBeenCalledTimes(2)
   })
 
   it("renders mobile cards when isMobile is true", () => {
@@ -95,21 +99,21 @@ describe("CollectionMomentTable", () => {
     expect(getAllByText("Damian Lillard").length).toBeGreaterThan(0)
   })
 
-  it("mobile card is keyboard-operable (role=button, aria-expanded, Enter toggles)", () => {
-    // The chevron is a plain <span>, so the card click is the ONLY expand
-    // affordance — keyboard users need role/tabIndex/onKeyDown to reach it.
+  it("mobile card expands from a real disclosure <button>, and the card is not a nested-interactive button (#196)", () => {
     const toggleExpanded = vi.fn()
     const { container } = render(
       <CollectionMomentTable {...baseProps({ isMobile: true, toggleExpanded })} />
     )
-    const card = container.querySelector('[role="button"]')
-    expect(card).toBeTruthy()
-    expect(card?.getAttribute("tabindex")).toBe("0")
-    expect(card?.getAttribute("aria-expanded")).toBe("false")
-    fireEvent.keyDown(card!, { key: "Enter" })
+    expect(container.querySelector('[role="button"]')).toBeNull()
+    const btn = container.querySelector("button[aria-expanded]") as HTMLButtonElement
+    expect(btn).toBeTruthy()
+    expect(btn.getAttribute("aria-expanded")).toBe("false")
+    expect(btn.getAttribute("aria-label")).toContain("Damian Lillard")
+    fireEvent.click(btn)
+    // Exactly once: the button stops propagation, so the card's own mouse
+    // handler does not toggle it a second time (which would be a no-op toggle).
+    expect(toggleExpanded).toHaveBeenCalledTimes(1)
     expect(toggleExpanded).toHaveBeenCalledWith("m-1")
-    fireEvent.keyDown(card!, { key: " " })
-    expect(toggleExpanded).toHaveBeenCalledTimes(2)
   })
 
   it("mobile card reflects the expanded state in aria-expanded", () => {
@@ -118,7 +122,7 @@ describe("CollectionMomentTable", () => {
         {...baseProps({ isMobile: true, view: { expandedRows: { "m-1": true }, sortKey: "player", sortDir: "asc" } })}
       />
     )
-    expect(container.querySelector('[role="button"]')?.getAttribute("aria-expanded")).toBe("true")
+    expect(container.querySelector("button[aria-expanded]")?.getAttribute("aria-expanded")).toBe("true")
   })
 
   it("suppresses rookie badges on a three-star rookie but keeps non-rookie pills", () => {
