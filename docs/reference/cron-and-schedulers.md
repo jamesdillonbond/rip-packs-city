@@ -3043,3 +3043,9 @@ whole ~187 k queue on every call. Doubling the calls took it to ~1.15 billion bl
 `shared_blks_hit+read / calls`) as well as the upstream's headroom. List migrations in your window before
 applying: the backlog that justified the change can move under you in seconds.** The lever was the per-call count, not the
 rate; its owner sampled it the same day (unsampled runs 0.6–1.1 s).
+
+## Added 2026-10-19 — a weekly GHA schedule and the liveness detector
+
+- `scripts/check-scheduler-liveness.mjs` (daily 08:17 UTC) read every day-of-week cron as unparseable (exit 2) until 10-19; it now counts it as a fractional daily rate and lets a slower-than-daily schedule stay silent one period + 24 h (`silenceThresholdHours`).
+- ⚠ **A schedule ADDED to an existing dispatch-only workflow reads as "declares a schedule, never fired, old createdAt" = dead** — the 48 h new-workflow grace keys on the workflow's age, not the schedule's. Time the first fire to land before the detector's next run (the #189 weekly walk was set to Mondays 14:23 UTC for that reason).
+
