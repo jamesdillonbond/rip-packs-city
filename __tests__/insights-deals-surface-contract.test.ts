@@ -142,15 +142,22 @@ describe("/insights/deals publishes no internal FMV confidence vocabulary", () =
     ).toBeNull()
   })
 
-  it("the old chip labels are gone and the control still exists", () => {
+  // INVERTED 2026-10-18 (Trevor: "We shouldn't have anything user-facing that
+  // shows our confidence in the pricing"). This test used to pin that the
+  // Standard / Strict FMV-basis control survived its 07-28 relabel. Strict WAS
+  // the confidence=HIGH filter — a control that filters BY confidence — so it
+  // came off, along with the per-row "thin data — FMV uncertain" caveat. The
+  // public API keeps its confidence param; the board just never sends it.
+  it("no confidence filter control and no confidence caveat render on the board", () => {
     const code = stripComments(read(CLIENT))
     expect(code).not.toMatch(/High \+ Med/)
     expect(code).not.toMatch(/High only/)
-    // Relabelled, not deleted — the filter is the reader's defence against a
-    // discount computed off an FMV we don't fully trust.
-    expect(code).toContain(">\n            Standard\n          </button>")
-    expect(code).toContain(">\n            Strict\n          </button>")
-    expect(code).toContain('params.set("confidence", "HIGH")')
+    expect(code).not.toMatch(/FMV BASIS/)
+    expect(code).not.toContain(">\n            Standard\n          </button>")
+    expect(code).not.toContain(">\n            Strict\n          </button>")
+    expect(code).not.toMatch(/params\.set\("confidence"/)
+    expect(code).not.toMatch(/thin data/i)
+    expect(code).not.toMatch(/FMV uncertain/i)
   })
 
   it("no surface still says 'confidence-rated'", () => {

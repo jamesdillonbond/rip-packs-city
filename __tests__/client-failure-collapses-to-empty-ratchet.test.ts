@@ -181,8 +181,13 @@ const ROOTS = ["app", "components"]
  * (`r.ok ? r.json() : null` + an empty catch) now throws on !ok and shows
  * "Couldn't update your avatar" — a conversion, re-derived from the failing
  * no-slack assertion (63), not by subtracting.
+ *
+ * 63 -> 62 on 2026-10-18: the collection Analytics FmvHealthCard (a HIGH/LOW
+ * confidence split) was REMOVED — no user-facing pricing confidence (Trevor) —
+ * taking its fetch site with it. Not a conversion; re-derived from the failing
+ * no-slack assertion (62).
  */
-const BUDGET = 63
+const BUDGET = 62
 
 /**
  * A failure funnelled into the success-with-nothing value.

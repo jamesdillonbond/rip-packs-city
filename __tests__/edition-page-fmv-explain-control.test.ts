@@ -13,7 +13,11 @@ import { join } from "node:path"
 // nowhere in the unit suite): the control sits inside the Current FMV tile, it
 // is gated on a real FMV (a "?" beside an em-dash would ask the concierge to
 // explain a number that does not exist), and its context carries the edition's
-// own FMV, confidence and sales count rather than a generic question.
+// own FMV and sales count rather than a generic question.
+//
+// 2026-10-18 (Trevor): "We shouldn't have anything user-facing that shows our
+// confidence in the pricing." The concierge's answer IS user-facing, so the
+// confidence tier must no longer be handed to it — pinned as an ABSENCE below.
 
 const PAGE = readFileSync(
   join(__dirname, "..", "app", "(collections)", "[collection]", "edition", "[slug]", "page.tsx"),
@@ -38,8 +42,16 @@ describe("edition page: the Current FMV tile can be asked about", () => {
 
   it("passes this edition's own figures as context", () => {
     const ctx = tile.slice(tile.indexOf("<ExplainButton"))
-    for (const field of ["fmv?.fmv_usd", "fmv?.confidence", "fmv?.sales_count_30d", "editionTitle"]) {
+    for (const field of ["fmv?.fmv_usd", "fmv?.sales_count_30d", "editionTitle"]) {
       expect(ctx, `context should carry ${field}`).toContain(field)
     }
+  })
+
+  it("does NOT hand the concierge the FMV confidence tier, nor ask how much to trust it", () => {
+    const from = tile.indexOf("<ExplainButton")
+    const button = tile.slice(from, tile.indexOf("/>", from))
+    expect(from).toBeGreaterThan(-1)
+    expect(button).not.toContain("confidence")
+    expect(button).not.toMatch(/trust/i)
   })
 })

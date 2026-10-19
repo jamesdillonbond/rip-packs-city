@@ -278,6 +278,27 @@ describe("SniperClient — the Verified-FMV gate names the real cause", () => {
     await waitFor(() => expect(screen.queryByText(/NO VERIFIED-FMV DEALS/i)).toBeNull())
   })
 
+  it("shows a thin-data deal's discount plain, with no 'thin data' label (2026-10-18)", async () => {
+    // Trevor 2026-10-18: "We shouldn't have anything user-facing that shows our
+    // confidence in the pricing." A low-confidence FMV's discount used to be
+    // REPLACED by "⚠ thin data"; it now renders like any other row.
+    warm = {
+      data: feed({
+        deals: [deal({ lowConfidenceFmv: true, discount: 20, adjustedFmv: 50, askPrice: 40 })],
+      }),
+      loading: false,
+      error: null,
+      refresh: vi.fn(),
+    }
+    render(<SniperClient />)
+
+    const btn = await screen.findByRole("button", { name: /SHOW ASK-PRICED LISTINGS/i })
+    fireEvent.click(btn)
+    await waitFor(() => expect(document.body.textContent).toContain("-20.0%"))
+    expect(document.body.textContent).not.toMatch(/thin data/i)
+    expect(document.querySelector('[title*="discount is uncertain"]')).toBeNull()
+  })
+
   it("falls back to the plain filter copy when nothing was gate-hidden", async () => {
     // Not vacuous: proves the two empty states are genuinely distinct rather
     // than one string that happens to render either way.

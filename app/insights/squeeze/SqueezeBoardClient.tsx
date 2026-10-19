@@ -724,8 +724,8 @@ export default function SqueezeBoardClient({
             burned. Lock + burn data refreshes hourly from on-chain badge
             event ingestion. FMV from the RPC 1.7.0 sales-based
             average-sales-price model (recency-weighted) with
-            outlier filtering; <em>—</em> indicates fewer than the minimum
-            sale-count threshold for a confidence score.
+            outlier filtering; <em>—</em> indicates too few recent sales
+            to price the edition.
           </p>
           <p>
             <strong>Top 5 hold</strong> = the combined share of circulation held

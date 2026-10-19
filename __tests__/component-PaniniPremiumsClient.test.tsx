@@ -60,6 +60,17 @@ describe("PaniniPremiumsClient", () => {
     expect(c.querySelector('[data-testid="panini-premiums-none"]')).toBeNull()
   })
 
+  // 2026-10-18 (Trevor: nothing user-facing shows our confidence in the pricing).
+  // The note and the empty copy used to say "HIGH or MEDIUM confidence"; neither may.
+  it("renders no confidence tier on the board, its note or its empty state", () => {
+    const full = render(<PaniniPremiumsClient data={payload()} fetchedAt={null} failed={false} />).container
+    expect(full.textContent ?? "").not.toMatch(/confidence|\b(?:HIGH|MEDIUM|LOW|ASK_ONLY)\b/i)
+    cleanup()
+    const empty = render(<PaniniPremiumsClient data={payload({ parallels: [] })} fetchedAt={null} failed={false} />).container
+    expect(empty.querySelector('[data-testid="panini-premiums-none"]')?.textContent ?? "").toContain("No parallel clears 1.5× its base right now.")
+    expect(empty.textContent ?? "").not.toMatch(/confidence|\b(?:HIGH|MEDIUM)\b/i)
+  })
+
   it("a genuinely empty board says so, distinct from a failure", () => {
     const c = render(<PaniniPremiumsClient data={payload({ parallels: [] })} fetchedAt={null} failed={false} />).container
     expect(c.querySelector('[data-testid="panini-premiums-none"]')).not.toBeNull()

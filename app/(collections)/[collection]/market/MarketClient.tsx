@@ -585,7 +585,7 @@ function MarketInner() {
             letterSpacing: "0.06em",
           }}
         >
-          THIN-VOLUME ECOSYSTEM — analytics directional only. Treat discounts loosely when confidence is mostly LOW.
+          THIN-VOLUME ECOSYSTEM — analytics directional only. Treat discounts loosely.
         </div>
       )}
 
@@ -1084,19 +1084,11 @@ function ListingCard({ listing, accent, momentUrl, editionStats, showOwned, coll
             {fmtUsd(listing.askPrice)}
           </span>
           <AskAge cachedAt={listing.cachedAt} askPrice={listing.askPrice} collectionSlug={collectionUrlSlug} />
-          {listing.lowConfidenceFmv ? (
-            <span
-              className="rpc-mono"
-              title="FMV here is averaged over very few, wide-ranging sales, so it overshoots the typical price — this discount is uncertain. Check recent sales before acting."
-              style={{ fontSize: 10, color: "var(--rpc-warning-text)", fontWeight: 700, letterSpacing: "0.04em" }}
-            >
-              ⚠ thin data
-            </span>
-          ) : (
-            <span className="rpc-mono" style={{ fontSize: 10, color: accentText(discount.color), fontWeight: 700, letterSpacing: "0.04em" }}>
-              {discount.text}
-            </span>
-          )}
+          {/* 2026-10-18 (Trevor): no user-facing pricing confidence — a
+              thin-data FMV's discount is shown plain, no "thin data" label. */}
+          <span className="rpc-mono" style={{ fontSize: 10, color: accentText(discount.color), fontWeight: 700, letterSpacing: "0.04em" }}>
+            {discount.text}
+          </span>
         </div>
         <div className="rpc-mono" style={{ fontSize: 9, color: "var(--rpc-text-muted)", letterSpacing: "0.08em", textTransform: "uppercase", display: "flex", gap: 6, flexWrap: "wrap" }}>
           <span>FMV {fmtUsd(listing.fmv)}</span>
@@ -1301,16 +1293,7 @@ function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColu
                   {fmtUsd(l.fmv)}
                   {(() => { const b = fmvBasis(l.confidence); return b ? <div title={b.title} style={{ fontSize: 9, color: "var(--rpc-text-muted)" }}>{b.label}</div> : null })()}
                 </td>
-                {l.lowConfidenceFmv ? (
-                  <td
-                    style={{ ...td, textAlign: "right", color: "var(--rpc-warning-text)", fontWeight: 700, fontSize: 10, whiteSpace: "nowrap" }}
-                    title="FMV here is averaged over very few, wide-ranging sales, so it overshoots the typical price — this discount is uncertain. Check recent sales before acting."
-                  >
-                    ⚠ thin data
-                  </td>
-                ) : (
-                  <td style={{ ...td, textAlign: "right", color: accentText(discount.color), fontWeight: 700 }}>{discount.text}</td>
-                )}
+                <td style={{ ...td, textAlign: "right", color: accentText(discount.color), fontWeight: 700 }}>{discount.text}</td>
                 <td style={td}>
                   <div style={{ display: "flex", gap: 6, alignItems: "center", justifyContent: "flex-end", flexWrap: "wrap" }}>
                     {buy ? (
@@ -1403,7 +1386,7 @@ function EmptyState({ collectionId, thinVolume, filtersActive = false }: { colle
   }
 
   const copy = thinVolume
-    ? "Thin-volume ecosystem — treat discounts directionally when the confidence column is mostly LOW."
+    ? "Thin-volume ecosystem — treat discounts directionally."
     : "No listings match these filters."
   return (
     <div className="rpc-card" style={{ padding: 40, textAlign: "center", display: "flex", flexDirection: "column", gap: 10, alignItems: "center" }}>

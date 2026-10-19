@@ -57,7 +57,6 @@ import {
   deriveRealizedVsModeledVerdict,
   deriveSealedResaleVerdict,
   showCalibrated as computeShowCalibrated,
-  evContributorsLowConfShare as computeEvContributorsLowConfShare,
   deriveGrailPremium,
 } from "@/lib/pack-dist-verdict"
 // The data-access layer moved to lib/ (2026-08-13) so it lands inside the primary
@@ -1209,7 +1208,11 @@ export default async function PackDetailPage(
         )}
       </section>
 
-      {/* ── AllDay corrected-EV provenance + low-confidence caveat ─────────── */}
+      {/* ── AllDay corrected-EV provenance ─────────────────────────────────── */}
+      {/* 2026-10-18 (Trevor): no user-facing pricing confidence. The
+          low_confidence_ev "⚠ Rough estimate" badge and warning tint are gone;
+          the FACT behind it (share of value resting on sparse/missing sales)
+          stays as a plain basis disclosure. */}
       {useCorrectedEv && (
         <div
           style={{
@@ -1218,20 +1221,19 @@ export default async function PackDetailPage(
             lineHeight: 1.5,
             padding: "10px 12px",
             borderRadius: 8,
-            border: `1px solid ${correctedEv!.low_confidence_ev ? "rgba(251,191,36,0.35)" : "var(--rpc-border)"}`,
-            background: correctedEv!.low_confidence_ev ? "rgba(251,191,36,0.07)" : "var(--rpc-surface)",
-            color: correctedEv!.low_confidence_ev ? "var(--rpc-warning-text)" : "var(--rpc-text-secondary)",
+            border: "1px solid var(--rpc-border)",
+            background: "var(--rpc-surface)",
+            color: "var(--rpc-text-secondary)",
           }}
         >
-          {correctedEv!.low_confidence_ev && <strong>⚠ Rough estimate. </strong>}
           EV is odds-corrected — tiers valued by median FMV and weighted by{" "}
           {correctedEv!.ev_method === "published_odds" ? "published pack odds" : "circulation share"}
           {" "}(a robust cross-check of the headline supply-weighted EV, resistant to per-edition FMV outliers).
           {correctedEv!.low_confidence_ev && (() => {
             const stale = num(correctedEv!.stale_value_share_pct)
             return stale !== null && stale > 0
-              ? ` ~${Math.round(stale)}% of pack value rests on sparse or missing sales data — treat as a rough estimate.`
-              : " It rests on thin AllDay FMV — treat as a rough estimate."
+              ? ` ~${Math.round(stale)}% of pack value rests on sparse or missing sales data.`
+              : null
           })()}
         </div>
       )}
@@ -1248,10 +1250,9 @@ export default async function PackDetailPage(
             borderRadius: 8,
             border: "1px solid var(--rpc-border)",
             background: "var(--rpc-surface)",
-            color: pinDrop!.low_confidence_ev ? "var(--rpc-warning-text)" : "var(--rpc-text-muted)",
+            color: "var(--rpc-text-muted)",
           }}
         >
-          {pinDrop!.low_confidence_ev && <strong>⚠ Rough estimate. </strong>}
           {pinDrop!.drop_title && (pinDrop!.drop_pools ?? 0) >= 2
             ? <>This is one of {pinDrop!.drop_pools} pools that make up {pinDrop!.drop_title}, sold as one pack — a buyer draws from all of them, so the EV shown is the pack&apos;s, weighted by each pool&apos;s number of packs{pinDrop!.pool_share_pct != null ? <> (this pool is {num(pinDrop!.pool_share_pct)}% of them{num(pinDrop!.pool_gross_ev) != null ? <>; on its own it would be {fmtUsd(num(pinDrop!.pool_gross_ev))}</> : null})</> : null}.</>
             : <>EV weights each pin by its supply, valued at its median FMV.</>}
@@ -2194,7 +2195,6 @@ async function PackStreamedTop({
 
   // EV contributors (Top Shot)
   const showEvContributors = collection === "nba-top-shot" && evContributors.length > 0
-  const evContributorsLowConfShare = computeEvContributorsLowConfShare(evContributors)
 
   // Sealed-pack resale market
   const pmSales = num(packMarket?.n_sales)
@@ -2300,11 +2300,9 @@ async function PackStreamedTop({
             Each row is an edition still in the pool. EV share = pull odds × FMV as a fraction of the pack per-slot
             expected value — what the remaining contents are actually worth.
           </p>
-          {evContributorsLowConfShare >= 25 && (
-            <p style={{ margin: "0 0 10px", color: accentText("rgb(252,211,77)"), fontFamily: "var(--font-mono)", fontSize: 11.5, lineHeight: 1.5 }}>
-              ⚠ {Math.round(evContributorsLowConfShare)}% of the remaining EV leans on thinly-traded chase prices — treat it as soft.
-            </p>
-          )}
+          {/* "⚠ N% of the remaining EV leans on thinly-traded chase prices — treat
+              it as soft" removed 2026-10-18: it was the LOW/ASK_ONLY/STALE/NO_DATA
+              confidence share of EV, and pricing confidence is internal (Trevor). */}
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "var(--font-mono)", fontSize: 12 }}>
               <thead>

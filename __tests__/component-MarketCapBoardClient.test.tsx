@@ -43,13 +43,17 @@ describe("MarketCapBoardClient", () => {
     expect(golazos!.textContent).not.toMatch(/\$0\b/)
   })
 
-  it("renders a known cap and its high-confidence share", () => {
+  // INVERTED 2026-10-18 (Trevor: nothing user-facing shows our confidence in the
+  // pricing). This pinned the "High-confidence" share column (51% for this row);
+  // it now pins that the cap renders and the confidence share does NOT.
+  it("renders a known cap with NO high-confidence share column or footnote", () => {
     const { container } = render(
       <MarketCapBoardClient initialCollections={collections} initialDrill={emptyDrill} initialFetchedAt="2026-10-03T20:00:00Z" />,
     )
     const ts = Array.from(container.querySelectorAll("tr")).find((tr) => tr.textContent?.includes("NBA Top Shot"))!
     expect(ts.textContent).toContain("$51.76M")
-    expect(ts.textContent).toContain("51%")
+    expect(ts.textContent).not.toContain("51%")
+    expect(container.textContent ?? "").not.toMatch(/confidence/i)
   })
 
   it("the headline total sums KNOWN caps only and names the unknown count", () => {

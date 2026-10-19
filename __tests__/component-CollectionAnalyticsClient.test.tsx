@@ -376,15 +376,15 @@ describe("CollectionAnalyticsClient — each card's failed branch precedes its e
     }
   })
 
-  it("FMV health: says it could not load, not 'No FMV coverage yet.'", async () => {
-    await withFailure("/api/analytics/fmv/tier-pulse")
-    await waitFor(() => expect(screen.queryByText("No FMV coverage yet.")).toBeNull())
-  })
-
-  it("FMV health: still says there is no coverage on a genuine empty", async () => {
+  // 2026-10-18 (Trevor): "We shouldn't have anything user-facing that shows our
+  // confidence in the pricing." The FMV Health card WAS a high/low confidence
+  // split, so it is gone — these assert it stays gone.
+  it("renders no FMV Health (confidence split) card", async () => {
     routes["/api/analytics/fmv/tier-pulse"] = () => json(200, { rows: [] })
     render(<CollectionAnalyticsClient />)
-    await screen.findByText("No FMV coverage yet.")
+    await screen.findByText("Liquidity Heatmap")
+    expect(screen.queryByText("FMV Health")).toBeNull()
+    expect(screen.queryByText("No FMV coverage yet.")).toBeNull()
   })
 
   it("liquidity: says it could not load, not 'No liquidity data'", async () => {
@@ -446,6 +446,19 @@ describe("CollectionAnalyticsClient — tabs and wallet search", () => {
       const urls = fetchMock.mock.calls.map((c) => String(c[0]))
       expect(urls.some((u) => u.startsWith("/api/analytics?") && u.includes("wallet=0xmine"))).toBe(true)
     })
+  })
+
+  // 2026-10-18 (Trevor): no user-facing confidence. The Portfolio Clarity Score
+  // was the wallet's HIGH+MEDIUM confidence share — it must not render even
+  // when the API still sends `portfolio_clarity_score`.
+  it("renders no Portfolio Clarity Score from a loaded wallet", async () => {
+    searchParams = new URLSearchParams("wallet=0xmine&tab=portfolio")
+    render(<CollectionAnalyticsClient />)
+    await waitFor(() => expect(document.body.textContent).toMatch(/Series 1/))
+    const text = document.body.textContent ?? ""
+    expect(text).not.toMatch(/Clarity/i)
+    expect(text).not.toMatch(/82\.0%/)
+    expect(text).not.toMatch(/How reliably/i)
   })
 
   // ⛔ 2026-09-25 — the "Marketplace Breakdown — TS vs Flowty" fetch carried no
@@ -999,10 +1012,16 @@ const PACK_EV = {
 }
 
 describe("CollectionAnalyticsClient — populated cards", () => {
-  it("reports FMV health from the tier rows, scoped to this collection", async () => {
+  it("publishes no high/low confidence counts even when tier rows load", async () => {
     routes["/api/analytics/fmv/tier-pulse"] = () => json(200, FMV_TIERS)
+    routes["/api/analytics/fmv/liquidity-distribution"] = () => json(200, LIQUIDITY)
     render(<CollectionAnalyticsClient />)
-    await waitFor(() => expect(screen.queryByText("No FMV coverage yet.")).toBeNull())
+    await screen.findByText("L5")
+    const text = document.body.textContent ?? ""
+    expect(text).not.toMatch(/FMV Health/)
+    expect(text).not.toMatch(/reliable/i)
+    expect(text).not.toMatch(/\bhigh conf|\blow conf/i)
+    expect(document.querySelector('[title^="High conf"], [title^="Low conf"]')).toBeNull()
   })
 
   it("renders the liquidity bands with their labels", async () => {

@@ -198,7 +198,7 @@ export default async function AllDayPackRealityPage() {
           Method: modeled EV is the odds/median-corrected value from <code>v_allday_pack_info</code> (tiers valued by
           median FMV, weighted by published pack odds or circulation share). Realized value is the on-chain pull value of
           opened packs attributed to each distribution. Ratio = realized mean ÷ modeled EV. Realized value rides on
-          AllDay FMV, which is thin — low-confidence (stale-FMV) dists are excluded from this board.
+          AllDay FMV, which is thin — stale-FMV dists are excluded from this board.
         </p>
         <div style={{ marginTop: 12, display: "flex", gap: 16, flexWrap: "wrap" }}>
           <Link href="/insights" style={{ color: "var(--rpc-text-secondary)", textDecoration: "none" }}>

@@ -5,12 +5,14 @@
 // Client interactivity for /insights/parallel-premiums. Renders the server's
 // initialRows immediately (SEO), then refetches from
 // /api/public/insights/parallel-premiums when the user changes the parallel /
-// confidence / sort filters. Every row drill-downs to the parallel's own
-// edition page (external_id is the canonical setID:playID::subID slug).
+// sort filters. Every row drill-downs to the parallel's own edition page
+// (external_id is the canonical setID:playID::subID slug).
 //
-// premium_mult = parallel FMV / Standard base FMV. Both-sides HIGH/MED is the
-// default (the trustworthy set); "All confidence" widens to thin parallels with
-// a caveat.
+// premium_mult = parallel FMV / Standard base FMV. The board is always the
+// both-sides HIGH/MED set (conf=high). The "High-confidence only / All
+// confidence" toggle and its tier footnote were removed 2026-10-18 — Trevor:
+// nothing user-facing shows our confidence in the pricing. The API still
+// accepts conf=all; the board never sends it.
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import Link from "next/link"
@@ -77,7 +79,6 @@ export default function ParallelPremiumsBoardClient({
   const [rows, setRows] = useState<ParallelRow[]>(initialRows)
   const [fetchedAt, setFetchedAt] = useState<string | null>(initialFetchedAt)
   const [parallel, setParallel] = useState<string | null>(null)
-  const [highOnly, setHighOnly] = useState<boolean>(true)
   const [sort, setSort] = useState<ParallelSortKey>("premium")
   const [loading, setLoading] = useState(false)
   // ⚠ A failed refetch used to leave `rows` at the PREVIOUS filter's result,
@@ -107,7 +108,7 @@ export default function ParallelPremiumsBoardClient({
     setLoading(true)
     const qs = new URLSearchParams()
     if (parallel) qs.set("parallel", parallel)
-    qs.set("conf", highOnly ? "high" : "all")
+    qs.set("conf", "high")
     qs.set("sort", sort)
     qs.set("limit", "100")
     setLoadFailed(false)
@@ -134,7 +135,7 @@ export default function ParallelPremiumsBoardClient({
         if (!ctrl.signal.aborted) setLoading(false)
       })
     return () => ctrl.abort()
-  }, [parallel, highOnly, sort])
+  }, [parallel, sort])
 
   const top = rows.slice(0, 3)
 
@@ -161,7 +162,6 @@ export default function ParallelPremiumsBoardClient({
           <FilterChip key={n} active={parallel === n} onClick={() => setParallel(n)} label={n} />
         ))}
         <span style={{ flex: 1 }} />
-        <FilterChip active={highOnly} onClick={() => setHighOnly((v) => !v)} label={highOnly ? "High-confidence only" : "All confidence"} />
         <select
           value={sort}
           onChange={(e) => setSort(e.target.value as ParallelSortKey)}
@@ -246,7 +246,7 @@ export default function ParallelPremiumsBoardClient({
       </div>
 
       <p style={{ marginTop: 18, fontSize: 11, color: "var(--rpc-text-muted)", lineHeight: 1.5 }}>
-        Premium = parallel FMV ÷ Standard-base FMV for the same play. {highOnly ? "Showing only rows where both the parallel and the base carry HIGH/MEDIUM FMV confidence." : "Showing all confidence tiers — thin parallels can overshoot; treat low-confidence rows directionally."}{" "}
+        Premium = parallel FMV ÷ Standard-base FMV for the same play.{" "}
         {fetchedAt
           ? `Updated ${new Date(fetchedAt).toLocaleString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} ET.`
           : "Updated — (the read did not complete, so there is no data time to show)."}

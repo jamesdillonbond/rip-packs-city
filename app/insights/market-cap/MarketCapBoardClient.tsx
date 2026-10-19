@@ -20,7 +20,6 @@ import {
   collectionDisplayName,
   fmtCount,
   fmtUsdCompact,
-  highConfidenceShare,
   sevenDayChange,
   rowDetail,
   rowHref,
@@ -45,11 +44,6 @@ function pillStyle(active: boolean): CSSProperties {
     background: active ? "var(--rpc-red-bg)" : "transparent",
     color: active ? "var(--rpc-red-text)" : "var(--rpc-text-secondary)",
   }
-}
-
-function fmtPct(share: number | null): string {
-  if (share == null || !Number.isFinite(share)) return "—"
-  return `${Math.round(share * 100)}%`
 }
 
 function fmtChange(x: number | null): string {
@@ -115,7 +109,6 @@ function CollectionsTable({ rows }: { rows: MarketCapRow[] }) {
             <th style={thStyle("left")}>Collection</th>
             <th style={thStyle("right")}>Market cap</th>
             <th style={thStyle("right")}>7d</th>
-            <th style={thStyle("right")}>High-confidence</th>
             <th style={thStyle("right")}>Collector-held</th>
             <th style={thStyle("right")}>Burned</th>
             <th style={thStyle("right")}>Issuer-held</th>
@@ -130,7 +123,6 @@ function CollectionsTable({ rows }: { rows: MarketCapRow[] }) {
               <td style={tdStyle("right")} className="rpc-mono" title={r.mcap_usd_7d_ago == null ? "Daily history began Oct 3, 2026" : undefined}>
                 {fmtChange(sevenDayChange(r.mcap_usd, r.mcap_usd_7d_ago))}
               </td>
-              <td style={tdStyle("right")} className="rpc-mono">{fmtPct(highConfidenceShare(r))}</td>
               <td style={tdStyle("right")} className="rpc-mono">{fmtCount(r.collector_held)}</td>
               <td style={tdStyle("right")} className="rpc-mono">{fmtCount(r.burned)}</td>
               <td style={tdStyle("right")} className="rpc-mono">{fmtCount(r.issuer_held)}</td>
@@ -152,7 +144,6 @@ function DrillTable({ rows, group }: { rows: MarketCapRow[]; group: MarketCapGro
             <th style={thStyle("right")}>#</th>
             <th style={thStyle("left")}>{GROUP_LABELS[group].replace(/s$/, "")}</th>
             <th style={thStyle("right")}>Market cap</th>
-            <th style={thStyle("right")}>High-confidence</th>
             <th style={thStyle("right")}>Collector-held</th>
             <th style={thStyle("right")}>Editions</th>
           </tr>
@@ -163,7 +154,6 @@ function DrillTable({ rows, group }: { rows: MarketCapRow[]; group: MarketCapGro
               <td style={tdStyle("right")} className="rpc-mono">{i + 1}</td>
               <td style={tdStyle("left")}><Label r={r} group={group} /></td>
               <td style={tdStyle("right")}><CapCell r={r} /></td>
-              <td style={tdStyle("right")} className="rpc-mono">{fmtPct(highConfidenceShare(r))}</td>
               <td style={tdStyle("right")} className="rpc-mono">{fmtCount(r.collector_held)}</td>
               <td style={tdStyle("right")} className="rpc-mono"><Coverage r={r} /></td>
             </tr>
@@ -300,8 +290,10 @@ export default function MarketCapBoardClient({
       )}
 
       <p className="rpc-mono" style={{ marginTop: 24, maxWidth: 820, fontSize: 11, lineHeight: 1.6, color: "var(--rpc-text-muted)" }}>
-        {METHOD_NOTE} &quot;High-confidence&quot; is the share of the market cap priced from recent sales at high or medium
-        confidence; the rest leans on asks or thin history.
+        {/* The "High-confidence" share column and its footnote were removed 2026-10-18 —
+            Trevor: nothing user-facing shows our confidence in the pricing. The
+            mcap_high_conf_usd field stays in the payload (internal / API). */}
+        {METHOD_NOTE}
       </p>
     </div>
   )

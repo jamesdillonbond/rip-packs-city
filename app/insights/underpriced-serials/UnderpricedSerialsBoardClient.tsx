@@ -586,8 +586,8 @@ export default function UnderpricedSerialsBoardClient({ initialRows, initialFetc
             appears only when the ask is below that estimate, ranked by the discount.
           </p>
           <p>
-            <strong>Tight</strong> deals (perfect mints, non-Common tiers, or High-confidence base
-            editions) have a trustworthy discount. <strong>Coarse</strong> deals — a Common #1 on a
+            <strong>Tight</strong> deals (perfect mints, non-Common tiers, or base editions with
+            deep recent sales) have a trustworthy discount. <strong>Coarse</strong> deals — a Common #1 on a
             big common — use a player-blind population multiplier, so the % (shown with a{" "}
             <span className="rpc-us-est-tag">~</span>) is directional: right for stars, generous for
             role players. Use <em>Tight only</em> to hide the coarse rows. Buy links go to the live

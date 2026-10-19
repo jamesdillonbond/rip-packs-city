@@ -1378,7 +1378,10 @@ describe("CollectionTabClient — debug table, CSV and seeds", () => {
     fireEvent.click(screen.getByTestId("toggle-debug"))
     await screen.findByText("Scope Key")
     expect(screen.getByText("FMV Method")).toBeTruthy()
-    expect(screen.getByText("Confidence")).toBeTruthy()
+    // 2026-10-18 (Trevor): FMV confidence is internal — not even the ?debug=1
+    // table (reachable by any visitor) shows the tier column.
+    expect(screen.queryByText("Confidence")).toBeNull()
+    expect(screen.queryByText("HIGH")).toBeNull()
   })
 
   it("collapses the debug table again", async () => {

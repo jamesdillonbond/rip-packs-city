@@ -20,7 +20,6 @@ import {
   aggregateMarketplaceDaily,
   buildSeriesVolumeBars,
   enrichMarketplaceRows,
-  computeFmvHealth,
   computeAcquisitionBreakdown,
 } from "@/lib/analytics/shape"
 import { pickEmpty } from "@/lib/schonely"
@@ -209,15 +208,6 @@ type ListingsSummaryResponse = {
     avg_ask_usd?: number
   }> | null
   as_of?: string
-}
-
-type FmvTierRow = {
-  collection: string
-  tier: string | null
-  edition_count: number
-  total_fmv_usd: number
-  high_conf_count: number
-  low_conf_count: number
 }
 
 type PacksSummaryResponse = {
@@ -602,73 +592,6 @@ function OrderBookCard({ short }: { short: string }) {
   )
 }
 
-// `countNoun`: what one priced row is — an edition, or (Pinnacle) a pin.
-function FmvHealthCard({ short, countNoun }: { short: string; countNoun: string }) {
-  const [rows, setRows] = useState<FmvTierRow[] | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [failed, setFailed] = useState(false)
-  useEffect(() => {
-    let cancelled = false
-    setLoading(true)
-    setFailed(false)
-    fetch(`/api/analytics/fmv/tier-pulse?collections=${encodeURIComponent(short)}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((j) => {
-        if (cancelled) return
-        // ⚠ A non-2xx (503 statement timeout under saturation) and a thrown
-        // fetch both land with no data. Rendering that as the empty state makes
-        // a positive claim about the MARKET out of OUR outage. Mirrors the
-        // marketFailed pattern already used further down this file.
-        if (j?.rows) setRows(j.rows as FmvTierRow[])
-        else setFailed(true)
-      })
-      .catch(() => { if (!cancelled) setFailed(true) })
-      .finally(() => { if (!cancelled) setLoading(false) })
-    return () => { cancelled = true }
-  }, [short])
-
-  const totals = useMemo(() => computeFmvHealth(rows), [rows])
-  const total = totals.total
-  const highPct = totals.highPct
-  const lowPct = totals.lowPct
-
-  return (
-    <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
-      <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]" style={{ fontFamily: "var(--font-display)" }}>
-        FMV Health
-      </div>
-      {loading ? (
-        <div className="mt-2 h-16 animate-pulse rounded bg-[var(--rpc-surface)]" />
-      ) : failed ? (
-        <div className="mt-2 text-sm text-[color:var(--rpc-text-muted)]">Couldn&apos;t load FMV health.</div>
-      ) : total === 0 ? (
-        <div className="mt-2 text-sm text-[color:var(--rpc-text-muted)]">No FMV coverage yet.</div>
-      ) : (
-        <>
-          <div className="mt-1 text-2xl font-black text-[color:var(--rpc-text-primary)]" style={{ fontFamily: "var(--font-mono)" }}>
-            {fmt(totals.fmv)} <span className="text-[11px] text-[color:var(--rpc-text-muted)]">reliable</span>
-          </div>
-          <div className="mt-2 flex h-2.5 w-full overflow-hidden rounded-full border border-[color:var(--rpc-border)]">
-            {highPct > 0 && (
-              <div style={{ width: `${highPct}%`, background: "var(--rpc-success)" }} title={`High conf ${highPct.toFixed(0)}%`} />
-            )}
-            {lowPct > 0 && (
-              <div style={{ width: `${lowPct}%`, background: "var(--rpc-warning)" }} title={`Low conf ${lowPct.toFixed(0)}%`} />
-            )}
-          </div>
-          <div className="mt-2 flex flex-wrap gap-3 text-[11px]" style={{ fontFamily: "var(--font-mono)" }}>
-            <span style={{ color: "var(--rpc-success-text)" }}>{totals.high.toLocaleString("en-US")} high</span>
-            <span className="text-[color:var(--rpc-text-muted)]">·</span>
-            <span style={{ color: "var(--rpc-warning-text)" }}>{totals.low.toLocaleString("en-US")} low</span>
-            <span className="text-[color:var(--rpc-text-muted)]">·</span>
-            <span className="text-[color:var(--rpc-text-muted)]">{totals.edition.toLocaleString("en-US")} {countNoun}</span>
-          </div>
-        </>
-      )}
-    </div>
-  )
-}
-
 function PackEvCard({ short, urlSlug }: { short: string; urlSlug: string }) {
   const [data, setData] = useState<PacksSummaryResponse | null>(null)
   const [loading, setLoading] = useState(true)
@@ -778,7 +701,6 @@ function LiquidityHeatmapCard({ short, countNoun }: { short: string; countNoun: 
   ] as const
 
   const total = row ? Number(row.total) || 0 : 0
-  const fmv = row ? Number(row.high_conf_total_fmv) || 0 : 0
   const tooThin = total > 0 && total < 10
 
   return (
@@ -789,7 +711,7 @@ function LiquidityHeatmapCard({ short, countNoun }: { short: string; countNoun: 
         </div>
         {row && (
           <div className="text-[11px] text-[color:var(--rpc-text-secondary)]" style={{ fontFamily: "var(--font-mono)" }}>
-            {total.toLocaleString("en-US")} {countNoun} · {fmt(fmv)} reliable FMV
+            {total.toLocaleString("en-US")} {countNoun}
           </div>
         )}
       </div>
@@ -1274,7 +1196,6 @@ function AnalyticsInner() {
           {/* 2x2 grid of new cards */}
           <section className="mb-6 grid grid-cols-1 gap-3 md:grid-cols-2">
             <OrderBookCard short={short} />
-            <FmvHealthCard short={short} countNoun={pricedNoun} />
             <PackEvCard short={short} urlSlug={collection} />
           </section>
 
@@ -2000,18 +1921,9 @@ function AnalyticsInner() {
                 </section>
               )}
 
-              {/* Portfolio Clarity Score — confidence-tier breakdown removed
-                  2026-07-11 (build-time signal); the score stays as a single
-                  data-coverage metric. */}
-              <section className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
-                <div className="mb-3 flex items-center gap-2 text-[11px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">
-                  <span>Portfolio Clarity Score</span>
-                  <span className="text-[color:var(--rpc-text-muted)]" title={`Share of ${labels.units.toLowerCase()} priced from solid recent sales data. Higher = more reliable total portfolio FMV.`}>ⓘ</span>
-                </div>
-                <div className="text-5xl font-black text-[color:var(--rpc-text-primary)]" style={{ fontFamily: "var(--font-mono)" }}>{data.portfolio_clarity_score.toFixed(1)}%</div>
-                <div className="mt-3 text-[11px] text-[color:var(--rpc-text-muted)]">How reliably we know this portfolio&apos;s FMV. Higher means most {labels.units.toLowerCase()} are priced from solid recent sales data.</div>
-              </section>
-
+              {/* Portfolio Clarity Score removed 2026-10-18 — it was the HIGH+MEDIUM
+                  confidence share of the wallet; no confidence on public surfaces
+                  (Trevor, 2026-10-18). */}
               {/* Sales History (hidden silently if route doesn't exist) */}
               <SalesHistoryCard wallet={activeWallet} urlSlug={collection} />
 

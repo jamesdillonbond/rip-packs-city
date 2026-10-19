@@ -405,9 +405,6 @@ export default function PaniniSqueezeClient({
         const salePct = hc && totals?.pct_sealed_usd_from_asks_only_hc != null
           ? totals?.pct_sealed_usd_sale_backed_hc
           : totals?.pct_sealed_usd_sale_backed
-        const recentPct = hc && totals?.pct_sealed_usd_from_asks_only_hc != null
-          ? totals?.pct_sealed_usd_recent_sale_backed_hc
-          : totals?.pct_sealed_usd_recent_sale_backed
         return askPct != null && Number(askPct) >= 1 ? (
         <div className="psq-note">
           <b>What this total is made of:</b>{" "}
@@ -417,13 +414,9 @@ export default function PaniniSqueezeClient({
           {salePct != null ? (
             <>
               , and <b>{num(salePct, 1)}%</b> from editions a real sale stands behind
-              {recentPct != null ? (
-                // 2026-10-15 (panini-1.3.0): the column is the HIGH+MEDIUM share, and those labels now mean
-                // the edition's last sales AGREE (spread <= 1.5x, or <= 3x with 3+ sales in 30 days) — not
-                // "a sale in the last 30 days". The old clause's "average of older sales" was already
-                // wrong under 1.2.0 (LOW is the median of the last sales).
-                <> (<b>{num(recentPct, 1)}%</b> at HIGH or MEDIUM confidence, where the latest sales agree closely; the rest at LOW, where they are few or disagree)</>
-              ) : null}
+              {/* The "(N% at HIGH or MEDIUM confidence … the rest at LOW)" clause, fed by
+                  pct_sealed_usd_recent_sale_backed(_hc), was removed 2026-10-18 — Trevor: nothing
+                  user-facing shows our confidence in the pricing. The columns stay in the payload. */}
             </>
           ) : null}
           . An asking price is what someone hopes to get, not what anyone paid — treat the headline as an

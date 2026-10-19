@@ -1384,18 +1384,11 @@ function SniperMomentsBody() {
                       )}
                     </div>
                     <span style={{ fontFamily: "var(--font-mono)", color: "var(--rpc-text-primary)", fontSize: "var(--text-sm)", fontWeight: 600 }}>${fmt(deal.askPrice)}</span>
-                    {deal.lowConfidenceFmv ? (
-                      <span
-                        title="FMV here is averaged over very few, wide-ranging sales, so it overshoots the typical price — this discount is uncertain. Check recent sales before acting."
-                        style={{ fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 700, color: "var(--rpc-warning-text)", letterSpacing: "0.02em" }}
-                      >
-                        ⚠ thin data
-                      </span>
-                    ) : (
-                      <span className="inline-block px-2 py-0.5 rounded-full text-xs font-bold" style={{ fontFamily: "var(--font-mono)", ...textSafeChip(discountColor(deal.discount)) }}>
-                        {deal.discount > 0 ? `-${fmt(deal.discount, 1)}%` : "~0%"}
-                      </span>
-                    )}
+                    {/* 2026-10-18 (Trevor): no user-facing pricing confidence — a
+                        thin-data deal's discount is shown plain, no "thin data" label. */}
+                    <span className="inline-block px-2 py-0.5 rounded-full text-xs font-bold" style={{ fontFamily: "var(--font-mono)", ...textSafeChip(discountColor(deal.discount)) }}>
+                      {deal.discount > 0 ? `-${fmt(deal.discount, 1)}%` : "~0%"}
+                    </span>
                   </div>
                   {/* Row 4: Adj. FMV + Listed + Own/Lock + Action */}
                   <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -1818,18 +1811,9 @@ function SniperMomentsBody() {
 
                     {/* Discount */}
                     <td style={{ padding: "8px 12px", textAlign: "right" }}>
-                      {deal.lowConfidenceFmv ? (
-                        <span
-                          title="FMV here is averaged over very few, wide-ranging sales, so it overshoots the typical price — this discount is uncertain. Check recent sales before acting."
-                          style={{ fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 700, color: "var(--rpc-warning-text)", letterSpacing: "0.02em", whiteSpace: "nowrap" }}
-                        >
-                          ⚠ thin data
-                        </span>
-                      ) : (
-                        <span className="inline-block px-2 py-0.5 rounded-full text-xs font-bold" style={{ fontFamily: "var(--font-mono)", ...textSafeChip(discountColor(deal.discount)) }}>
-                          {deal.discount > 0 ? `-${fmt(deal.discount, 1)}%` : "~0%"}
-                        </span>
-                      )}
+                      <span className="inline-block px-2 py-0.5 rounded-full text-xs font-bold" style={{ fontFamily: "var(--font-mono)", ...textSafeChip(discountColor(deal.discount)) }}>
+                        {deal.discount > 0 ? `-${fmt(deal.discount, 1)}%` : "~0%"}
+                      </span>
                       {deal.netOfFees ? (
                         <div style={{ marginTop: 2 }}>
                           <NetOfFeesNote net={deal.netOfFees} />

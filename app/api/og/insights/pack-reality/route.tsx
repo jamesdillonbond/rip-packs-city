@@ -183,7 +183,7 @@ export async function GET(req: NextRequest) {
             color: "rgba(255,255,255,0.55)",
           }}
         >
-          <div style={{ display: "flex" }}>Honest pack ranker · Confidence flags</div>
+          <div style={{ display: "flex" }}>Honest pack ranker · High-variance flags</div>
           <div style={{ display: "flex" }}>rippackscity.com/insights/pack-reality</div>
         </div>
       </div>

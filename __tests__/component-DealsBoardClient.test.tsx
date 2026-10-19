@@ -78,6 +78,29 @@ describe("DealsBoardClient", () => {
     expect(getAllByText(/Victor Wembanyama/).length).toBeGreaterThan(0)
   })
 
+  // 2026-10-18 (Trevor: no user-facing confidence signal). A row whose FMV the
+  // route flags low_confidence_fmv renders PLAIN: same price, same dollar gap,
+  // no "thin data" caveat and no confidence filter on the page.
+  it("renders a low-confidence-FMV row plain, with no confidence caveat or filter", () => {
+    const { container } = render(
+      <DealsBoardClient
+        initialRows={[{ ...fullRow, confidence: "MEDIUM", low_confidence_fmv: true }]}
+        initialFetchedAt="2026-07-31T00:00:00Z"
+      />,
+    )
+    // <style> text is CSS (its comments name the removed chip) — not visible copy.
+    container.querySelectorAll("style").forEach((el) => el.remove())
+    const text = container.textContent ?? ""
+    expect(text).toContain("$200")
+    expect(text).toContain("−$50")
+    expect(text).not.toMatch(/thin data/i)
+    expect(text).not.toMatch(/FMV uncertain/i)
+    expect(text).not.toMatch(/FMV BASIS/)
+    expect(text).not.toMatch(/\bStrict\b/)
+    expect(text).not.toMatch(/\b(?:HIGH|MEDIUM|LOW|ASK_ONLY)\b/)
+    expect(text).not.toMatch(/confidence/i)
+  })
+
   it("shows the empty state when nothing is listed below FMV", () => {
     const { getByText } = render(<DealsBoardClient initialRows={[]} initialFetchedAt={null} />)
     expect(getByText(/No editions listed below a trustworthy FMV match\./)).toBeTruthy()

@@ -934,11 +934,14 @@ export default async function EditionPage(
                   take special serials into account", "how do you handle stale
                   moments" were the most-asked FMV questions (support_conversations
                   10134, 10141, 10422). The "?" asks the concierge about THIS
-                  edition's number, with the page's own figures as context. */}
+                  edition's number, with the page's own figures as context.
+                  2026-10-18 (Trevor): FMV confidence is internal — the tier is
+                  no longer handed to the concierge, so its answer cannot
+                  publish it; the question asks for the basis, not "trust". */}
               {fmvAvailable && (
                 <ExplainButton
-                  question="What does this FMV mean, and how much should I trust it?"
-                  context={`${editionTitle}${detail.set_name ? ` — ${detail.set_name}` : ""}${parallelLabel ? ` · ${parallelLabel}` : ""} (${collection}, edition ${slug}): FMV ${fmtUsd(fmv?.fmv_usd ?? null)}, confidence ${fmv?.confidence ?? "unknown"}${!isPanini && fmv?.sales_count_30d != null ? `, ${fmv.sales_count_30d} sales in 30 days` : ""}${askValue ? `, lowest ask ${fmtUsd(askValue)}` : ""}.`}
+                  question="What does this FMV mean, and what is it based on?"
+                  context={`${editionTitle}${detail.set_name ? ` — ${detail.set_name}` : ""}${parallelLabel ? ` · ${parallelLabel}` : ""} (${collection}, edition ${slug}): FMV ${fmtUsd(fmv?.fmv_usd ?? null)}${!isPanini && fmv?.sales_count_30d != null ? `, ${fmv.sales_count_30d} sales in 30 days` : ""}${askValue ? `, lowest ask ${fmtUsd(askValue)}` : ""}.`}
                 />
               )}
               {/* PIN-FMV-REKEY Wave 2: this is the most-liquid render; show the

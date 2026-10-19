@@ -129,7 +129,7 @@ export default function PaniniPremiumsClient({
       {tab === "parallels" ? (
         <Note>
           Each row is a numbered base parallel priced against the same player&apos;s most common base parallel in the same product — e.g. a Gold /10
-          against the Silver. Both prices are RPC&apos;s FMV at HIGH or MEDIUM confidence (a model of recent sales and asks, not a sale), and only
+          against the Silver. Both prices are RPC&apos;s FMV (a model of recent sales and asks, not a sale), and only
           premiums of 1.5× or more are listed.
         </Note>
       ) : (
@@ -146,7 +146,7 @@ export default function PaniniPremiumsClient({
         </div>
       ) : total === 0 ? (
         <div data-testid="panini-premiums-none" style={{ marginTop: 12, padding: "14px 16px", border: "1px dashed var(--rpc-border)", borderRadius: 8 }}>
-          <Note>{tab === "parallels" ? "No parallel clears 1.5× its base at HIGH/MEDIUM confidence right now." : "No #1 or perfect-mint sale in the last 90 days cleared 2× its edition's typical sale."}</Note>
+          <Note>{tab === "parallels" ? "No parallel clears 1.5× its base right now." : "No #1 or perfect-mint sale in the last 90 days cleared 2× its edition's typical sale."}</Note>
         </div>
       ) : (
         <>

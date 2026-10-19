@@ -315,7 +315,10 @@ describe("PaniniSqueezeClient — what the headline total is made of", () => {
   // (HIGH+MEDIUM). Both are stated, and the recent figure follows the same _hc/all-sets choice.
   // Re-pinned 2026-10-15 (panini-1.3.0): the column is the HIGH+MEDIUM share, and those labels now mean
   // the latest sales agree closely — so it is worded as confidence, never as "a sale in the last 30 days".
-  it("states how much of the sale-backed share is HIGH or MEDIUM confidence", () => {
+  // INVERTED 2026-10-18 (Trevor: "We shouldn't have anything user-facing that shows our confidence in
+  // the pricing"). The HIGH+MEDIUM share clause came off; the sale-backed fact stays, and the
+  // recent column — present in the payload — must not surface as a confidence tier.
+  it("states the sale-backed share but NOT how much of it is HIGH or MEDIUM confidence", () => {
     const { container } = render(
       <PaniniSqueezeClient
         initialRows={[row()]}
@@ -324,7 +327,9 @@ describe("PaniniSqueezeClient — what the headline total is made of", () => {
       />,
     )
     const t = container.textContent ?? ""
-    expect(t).toMatch(/89\.4%[\s\S]*a real sale stands behind[\s\S]*16\.7%[\s\S]*HIGH or MEDIUM confidence/i)
+    expect(t).toMatch(/89\.4%[\s\S]*a real sale stands behind/i)
+    expect(t).not.toContain("16.7%")
+    expect(t).not.toMatch(/confidence|\b(?:HIGH|MEDIUM|LOW)\b/)
     expect(t).not.toMatch(/last 30 days|average of older sales/i)
   })
 

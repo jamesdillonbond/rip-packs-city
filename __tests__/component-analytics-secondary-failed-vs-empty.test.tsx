@@ -95,11 +95,12 @@ describe("ParallelPremiumsBoardClient — a failed filter must not relabel the p
     expect(screen.getAllByText("Damian Lillard").length).toBeGreaterThan(0)
 
     // Change a filter to trigger the refetch (firstRender is skipped by design).
-    // ⚠ Click the CHIP, not any element whose text mentions confidence — the
-    // first version of this matched the explanatory footnote at the bottom of
-    // the board, so nothing was clicked, no refetch fired, and the test failed
-    // against correct code. Query by role to be sure it is the control.
-    fireEvent.click(screen.getByRole("button", { name: "High-confidence only" }))
+    // ⚠ Click the CHIP by ROLE, not any element whose text matches — the first
+    // version of this matched an explanatory footnote, so nothing was clicked, no
+    // refetch fired, and the test failed against correct code. (Was the
+    // "High-confidence only" chip until 2026-10-18, when that confidence control
+    // came off the board; the parallel chip triggers the same refetch.)
+    fireEvent.click(screen.getByRole("button", { name: "Hexwave" }))
 
     await waitFor(() =>
       expect(screen.getByText(/Couldn't load these filters just now/)).toBeTruthy(),
@@ -115,11 +116,12 @@ describe("ParallelPremiumsBoardClient — a failed filter must not relabel the p
     vi.stubGlobal("fetch", vi.fn(async () => success({ rows: [], meta: {} }) as any))
     renderBoard()
 
-    // ⚠ Click the CHIP, not any element whose text mentions confidence — the
-    // first version of this matched the explanatory footnote at the bottom of
-    // the board, so nothing was clicked, no refetch fired, and the test failed
-    // against correct code. Query by role to be sure it is the control.
-    fireEvent.click(screen.getByRole("button", { name: "High-confidence only" }))
+    // ⚠ Click the CHIP by ROLE, not any element whose text matches — the first
+    // version of this matched an explanatory footnote, so nothing was clicked, no
+    // refetch fired, and the test failed against correct code. (Was the
+    // "High-confidence only" chip until 2026-10-18, when that confidence control
+    // came off the board; the parallel chip triggers the same refetch.)
+    fireEvent.click(screen.getByRole("button", { name: "Hexwave" }))
 
     await waitFor(() => expect(screen.getByText("No parallels match these filters.")).toBeTruthy())
     expect(screen.queryByText(/Couldn't load these filters/)).toBeNull()

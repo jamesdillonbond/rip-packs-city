@@ -879,18 +879,19 @@ describe("MarketClient — listing renderers", () => {
     await screen.findByText("Damian Lillard")
   })
 
-  it("flags a thin-data FMV instead of printing a discount it cannot stand behind", async () => {
-    // ⚠ The internal confidence vocabulary (HIGH/MEDIUM/LOW/STALE) is
-    // deliberately NEVER rendered on a public surface — a visitor cannot
-    // calibrate an enum they have never seen, so `lib/fmv-basis.ts` marks only
-    // the one case that is material (ASK_ONLY). Asserting /LOW/ here fails
-    // against correct code. What the reader gets is the plain-words warning,
-    // and crucially the discount is REPLACED rather than shown beside it.
-    marketResponse = () => json(200, market({ listings: [LISTING({ lowConfidenceFmv: true, confidence: "LOW" })] }))
+  it("shows a thin-data FMV's discount plain, with no confidence label (2026-10-18)", async () => {
+    // ⚠ Inverted 2026-10-18 (Trevor: "We shouldn't have anything user-facing
+    // that shows our confidence in the pricing"). The internal confidence
+    // vocabulary (HIGH/MEDIUM/LOW/STALE) was already never rendered; now the
+    // plain-words "thin data" stand-in for it is gone too, and the discount is
+    // shown as for any other listing.
+    marketResponse = () => json(200, market({ listings: [LISTING({ lowConfidenceFmv: true, confidence: "LOW", discount: 30 })] }))
     render(<MarketClient />)
     await screen.findByText("Damian Lillard")
-    expect(screen.getByText(/thin data/)).toBeTruthy()
+    expect(screen.queryByText(/thin data/)).toBeNull()
+    expect(document.body.textContent).toContain("-30%")
     expect(document.body.textContent).not.toContain("LOW")
+    expect(document.body.textContent).not.toMatch(/confidence/i)
   })
 
   it("discloses an ask-derived FMV as not a market price", async () => {

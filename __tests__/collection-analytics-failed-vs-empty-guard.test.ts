@@ -40,9 +40,11 @@ import { pageSource } from "./helpers/page-source"
 const SRC = pageSource("app", "(collections)", "[collection]", "analytics")
 
 /** The components that fetch their own section data and must track failure. */
+// FmvHealthCard left this list 2026-10-18: the card was a HIGH/LOW confidence
+// split and was removed (Trevor: no user-facing pricing confidence). Its
+// absence is pinned below so it cannot quietly return.
 const SECTIONS = [
   "OrderBookCard",
-  "FmvHealthCard",
   "PackEvCard",
   "WhaleLeaderboard",
 ] as const
@@ -98,7 +100,6 @@ describe("collection analytics — a failed section read is not an empty market"
 
   it.each([
     ["OrderBookCard", "No live listings.", "Couldn&apos;t load the order book."],
-    ["FmvHealthCard", "No FMV coverage yet.", "Couldn&apos;t load FMV health."],
     ["PackEvCard", "Pack analytics not yet available", "Couldn&apos;t load pack analytics."],
     ["WhaleLeaderboard", "No data.", "Couldn&apos;t load this leaderboard."],
   ])("%s renders DIFFERENT copy for failed vs empty, failure first", (name, emptyCopy, failCopy) => {
@@ -112,6 +113,12 @@ describe("collection analytics — a failed section read is not an empty market"
       body.indexOf(failCopy),
       "the failed branch must precede the empty branch",
     ).toBeLessThan(body.indexOf(emptyCopy))
+  })
+
+  it("the FMV Health confidence-split card stays removed (2026-10-18)", () => {
+    expect(SRC).not.toContain("function FmvHealthCard(")
+    expect(SRC).not.toContain("<FmvHealthCard")
+    expect(SRC).not.toMatch(/High conf|Low conf/)
   })
 
   it("the liquidity heatmap section is covered too", () => {

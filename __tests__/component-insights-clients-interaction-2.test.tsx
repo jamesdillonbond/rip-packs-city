@@ -236,13 +236,21 @@ describe("ParallelPremiumsBoardClient — refetch on chip/confidence/sort", () =
       expect(calls.some((u: string) => u.includes("parallel=Hexwave"))).toBe(true)
     })
   })
-  it("refetches with conf=all when the confidence chip is toggled off", async () => {
-    const { getByText } = render(<ParallelPremiumsBoardClient initialRows={parRows} initialFetchedAt={FETCHED} />)
+  // INVERTED 2026-10-18 (Trevor: nothing user-facing shows our confidence in the
+  // pricing). This used to click the "High-confidence only" chip and expect a
+  // conf=all refetch. The chip is gone; the board renders no confidence control
+  // or tier copy, and every refetch stays on the default conf=high set.
+  it("renders no confidence filter or tier copy, and refetches stay on conf=high", async () => {
+    const { container, queryByText, getAllByText } = render(<ParallelPremiumsBoardClient initialRows={parRows} initialFetchedAt={FETCHED} />)
+    expect(queryByText("High-confidence only")).toBeNull()
+    expect(queryByText("All confidence")).toBeNull()
+    expect(container.textContent ?? "").not.toMatch(/confidence|\b(?:HIGH|MEDIUM|LOW)\b/)
     boardResponse = { ok: true, rows: parRows }
-    fireEvent.click(getByText("High-confidence only"))
+    fireEvent.click(getAllByText("Hexwave")[0])
     await waitFor(() => {
       const calls = (globalThis.fetch as any).mock.calls.map((c: any[]) => String(c[0]))
-      expect(calls.some((u: string) => u.includes("conf=all"))).toBe(true)
+      expect(calls.some((u: string) => u.includes("conf=high"))).toBe(true)
+      expect(calls.some((u: string) => u.includes("conf=all"))).toBe(false)
     })
   })
   it("refetches with sort= when the sort select changes", async () => {

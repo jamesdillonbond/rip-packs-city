@@ -116,7 +116,7 @@ export async function GET(req: NextRequest) {
             maxWidth: 1040,
           }}
         >
-          The 2025 class, every edition by parallel — per-parallel FMV with a confidence tag, plus burn &amp; lock.
+          The 2025 class, every edition by parallel — per-parallel FMV, plus burn &amp; lock.
         </div>
 
         <div style={{ marginTop: 26, display: "flex", flexDirection: "column", gap: 12 }}>

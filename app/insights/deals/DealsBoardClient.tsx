@@ -246,10 +246,11 @@ export default function DealsBoardClient({
 
   const [tier, setTier] = useState<TierFilter>("ALL")
   const [collection, setCollection] = useState<CollectionFilter>("ALL")
-  // The FMV-basis control. `true` narrows the board to the deepest-evidence
-  // FMVs (the route's confidence=HIGH filter). The internal tier vocabulary
-  // stays server-side — see the FMV BASIS pills below for why.
-  const [strictBasis, setStrictBasis] = useState(false)
+  // The FMV-basis (Standard / Strict) control was REMOVED 2026-10-18 under
+  // Trevor's rule "nothing user-facing that shows our confidence in the
+  // pricing" — Strict was the route's confidence=HIGH filter, i.e. a filter BY
+  // confidence wearing plain words. The route still accepts the param (the
+  // public JSON API is unchanged); the board just never sends it.
   const [sort, setSort] = useState<SortKey>("discount")
   const [setFilter, setSetFilter] = useState<string | null>(null)
   const [playerFilter, setPlayerFilter] = useState<string | null>(null)
@@ -271,7 +272,7 @@ export default function DealsBoardClient({
   useEffect(() => {
     if (isFirstRun.current) {
       isFirstRun.current = false
-      if (sort === "discount" && tier === "ALL" && collection === "ALL" && !strictBasis && !setFilter && !playerFilter) {
+      if (sort === "discount" && tier === "ALL" && collection === "ALL" && !setFilter && !playerFilter) {
         return
       }
     }
@@ -288,7 +289,6 @@ export default function DealsBoardClient({
         params.set("min_discount", setFilter || playerFilter ? "0" : "10")
         if (tier !== "ALL") params.set("tier", tier)
         if (collection !== "ALL") params.set("collection", collection)
-        if (strictBasis) params.set("confidence", "HIGH")
         if (setFilter) params.set("set", setFilter)
         if (playerFilter) params.set("player", playerFilter)
         const r = await fetch(`/api/public/insights/deals?${params.toString()}`, {
@@ -310,7 +310,7 @@ export default function DealsBoardClient({
     }
     run()
     return () => ctrl.abort()
-  }, [sort, tier, collection, strictBasis, setFilter, playerFilter])
+  }, [sort, tier, collection, setFilter, playerFilter])
 
   // ⚠ "Asks refresh continuously" USED TO BE FIXED COPY, and it is a claim about
   // system behaviour, not a slogan. It is TRUE in steady state (offers-sweep
@@ -483,32 +483,6 @@ export default function DealsBoardClient({
           ))}
         </div>
 
-        {/* FMV BASIS — the reader's defence against a gap computed off an FMV
-            we don't fully trust, so the control stays. What comes OFF is the
-            vocabulary: HIGH / MEDIUM are our internal scoring enum, and a
-            visitor has no way to calibrate them, so publishing them on an
-            unauthenticated page leaks implementation detail rather than
-            informing anyone. Behaviour and the confidence=HIGH query param are
-            unchanged — this is labelling only. Do NOT relabel these back to
-            the tier names. (2026-07-28) */}
-        <div className="rpc-dl-pill-group" aria-label="FMV basis">
-          <span className="rpc-dl-pill-label">FMV BASIS</span>
-          <button
-            className={`rpc-dl-pill ${!strictBasis ? "rpc-dl-pill-active" : ""}`}
-            onClick={() => setStrictBasis(false)}
-            title="Every edition on the board. Each one is already priced from corroborated recent sales — a stale or thin-sales FMV never reaches this board at all."
-          >
-            Standard
-          </button>
-          <button
-            className={`rpc-dl-pill ${strictBasis ? "rpc-dl-pill-active" : ""}`}
-            onClick={() => setStrictBasis(true)}
-            title="Narrows to editions whose fair value rests on the deepest sales evidence we have. Fewer rows, less room for the gap to be an artifact of the price rather than the listing."
-          >
-            Strict
-          </button>
-        </div>
-
         <label className="rpc-dl-sort">
           <span className="rpc-dl-pill-label">SORT</span>
           <select value={sort} onChange={(e) => setSort(e.target.value as SortKey)} className="rpc-dl-select">
@@ -612,8 +586,10 @@ export default function DealsBoardClient({
                         so the chip added no signal a reader could act on — it
                         just leaked an internal scoring label onto a public,
                         unauthenticated page. The honest per-row caveat lives in
-                        the Discount column ("thin data — FMV uncertain").
-                        Do NOT reintroduce. (2026-07-25) */}
+                        the Discount column ("thin data — FMV uncertain") until
+                        2026-10-18, when that caveat came off too (no confidence
+                        signal of any kind on a public surface — thin-data rows
+                        now render plain). Do NOT reintroduce. (2026-07-25) */}
                     <td className="rpc-dl-td-num">{fmtUsd(r.fmv_usd)}</td>
                     <td className="rpc-dl-td-num">
                       {fmtUsd(r.low_ask)}
@@ -635,18 +611,13 @@ export default function DealsBoardClient({
                         )
                       })()}
                     </td>
-                    <td className={`rpc-dl-td-num ${r.low_confidence_fmv ? "" : "rpc-dl-td-emph"}`}>
+                    {/* The per-row "⚠ thin data — FMV uncertain" caveat (keyed on
+                        low_confidence_fmv) and its de-emphasis were removed
+                        2026-10-18: a confidence signal, so thin-data rows render
+                        plain like every other row. */}
+                    <td className="rpc-dl-td-num rpc-dl-td-emph">
                       {fmtPct(r.discount_pct)}
-                      {r.low_confidence_fmv ? (
-                        <span
-                          className="rpc-dl-thin-caveat"
-                          title="FMV here is averaged over very few, wide-ranging sales, so it overshoots the typical price — this discount is uncertain. Open the listing and check recent sales before acting."
-                        >
-                          ⚠ thin data — FMV uncertain
-                        </span>
-                      ) : (
-                        <span className="rpc-dl-discount-usd">−{fmtUsd(r.discount_usd)}</span>
-                      )}
+                      <span className="rpc-dl-discount-usd">−{fmtUsd(r.discount_usd)}</span>
                     </td>
                     {/* Fee-net math. Every other price on this board is GROSS;
                         the operator takes its cut out of the SELLER's proceeds,
@@ -675,8 +646,7 @@ export default function DealsBoardClient({
             Candy MLB) or floor (Disney Pinnacle) sits below{" "}
             <strong>a fair value we can stand behind</strong> — one priced from
             recent corroborated sales, not from a lone or stale listing — so a
-            gap means something. The <strong>FMV basis</strong> filter narrows
-            that further, to the editions with the deepest sales evidence.
+            gap means something.
             Pinnacle prices on a per-render basis, so a pin&apos;s FMV reflects
             that specific render, not a blended set average.
           </p>
@@ -717,13 +687,6 @@ export default function DealsBoardClient({
             acts as a floor on a completed sale. Margin is quoted on the ask —
             the money you actually put in — not on FMV. Some rows with a healthy
             gross discount do not survive that; those are flagged.
-          </p>
-          <p>
-            Rows marked <span style={{ color: "var(--rpc-warning-text)", fontWeight: 600 }}>⚠ thin data</span>{" "}
-            have an FMV averaged over very few, wide-ranging sales, so it
-            overshoots the typical price and the discount is uncertain — we show
-            the edition but flag it rather than headline a number we don&apos;t
-            trust.
           </p>
         </div>
 

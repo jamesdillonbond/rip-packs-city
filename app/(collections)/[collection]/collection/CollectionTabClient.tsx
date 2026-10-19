@@ -1400,7 +1400,7 @@ function WalletMomentsBody() {
             <table className="w-full min-w-[2000px] border-collapse text-xs">
               <thead className="bg-[var(--rpc-surface)]">
                 <tr className="border-b border-[color:var(--rpc-border)] text-left">
-                  {["Player","Series (raw)","Season","Acquired","Edition Key","Parallel","Scope Key","Held","Locked","Badge Score","Badges","TS Ask","Best Market","Row Low Ask","Row Offer","Edition Low Ask","Edition Offer","Last Sale","FMV","FMV Method","Confidence","Reason"].map(function(h) { return <th key={h} className="p-2 whitespace-nowrap">{h}</th> })}
+                  {["Player","Series (raw)","Season","Acquired","Edition Key","Parallel","Scope Key","Held","Locked","Badge Score","Badges","TS Ask","Best Market","Row Low Ask","Row Offer","Edition Low Ask","Edition Offer","Last Sale","FMV","FMV Method","Reason"].map(function(h) { return <th key={h} className="p-2 whitespace-nowrap">{h}</th> })}
                 </tr>
               </thead>
               <tbody>
@@ -1452,7 +1452,6 @@ function WalletMomentsBody() {
                       <td className="p-2">{formatCurrency(row.editionLastSale)}</td>
                       <td className="p-2">{formatCurrency(row.fmv)}</td>
                       <td className="p-2">{row.fmvMethod ?? "-"}</td>
-                      <td className="p-2">{row.marketConfidence ?? "-"}</td>
                       <td className="p-2">{debugReasonLabel(row.marketDebugReason)}</td>
                     </tr>
                   )

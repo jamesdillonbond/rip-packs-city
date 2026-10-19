@@ -70,11 +70,13 @@ describe("collectionEntityJsonLd — ItemList URLs are the pages the tiles link"
 // 2026-09-28 — the Analytics FMV Health and Liquidity cards counted "editions"
 // on every collection; Pinnacle prices each PIN. The noun is passed in.
 describe("Analytics cards — the priced-row noun comes from the collection", () => {
-  it("FmvHealthCard and LiquidityHeatmapCard render {countNoun}, never a hardcoded 'editions'", async () => {
+  // FmvHealthCard was removed 2026-10-18 (a confidence split — no user-facing
+  // pricing confidence); the noun rule still binds the liquidity card.
+  it("LiquidityHeatmapCard renders {countNoun}, never a hardcoded 'editions'", async () => {
     const { readFileSync } = await import("node:fs")
     const src = readFileSync("app/(collections)/[collection]/analytics/CollectionAnalyticsClient.tsx", "utf8")
     expect(src).not.toMatch(/toLocaleString\("en-US"\)\} editions/)
-    expect(src).toMatch(/<FmvHealthCard short=\{short\} countNoun=\{pricedNoun\} \/>/)
+    expect(src).not.toMatch(/<FmvHealthCard/)
     expect(src).toMatch(/<LiquidityHeatmapCard short=\{short\} countNoun=\{pricedNoun\} \/>/)
     expect(src).toMatch(/const pricedNoun = labels\.units === "Pins" \? "pins" : "editions"/)
   })
