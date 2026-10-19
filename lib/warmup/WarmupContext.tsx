@@ -11,6 +11,7 @@ import {
 import { getOwnerKey, onOwnerKeyChange } from "@/lib/owner-key"
 import { getCollection } from "@/lib/collections"
 import { getLastCollection } from "@/lib/active-collection"
+import { signedInOnce } from "@/lib/auth/signed-in-client"
 
 // Background warming layer. Holds an in-memory cache keyed by URL (or
 // arbitrary string) so navigating between pages reads instantly when the
@@ -182,6 +183,10 @@ export default function WarmupProvider({ children }: { children: React.ReactNode
         tasks.push(
           (async () => {
             try {
+              // saved-wallets is session-gated: for a signed-OUT visitor carrying a
+              // pasted wallet's owner key it can only 401, on every page view. Skip
+              // on a definite "signed out"; an unknown still tries (2026-10-18).
+              if ((await signedInOnce()) === false) return
               const cached = cacheRef.current.get(savedCacheKey)
               let payload: SavedWalletsPayload | undefined
               if (cached && isFresh(cached)) {

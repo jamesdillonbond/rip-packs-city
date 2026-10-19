@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { signedInOnce } from "@/lib/auth/signed-in-client";
 
 const HYDRATION_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
@@ -39,6 +40,10 @@ export default function WalletHydrator() {
 
     (async () => {
       try {
+        // /api/wallet/profile is session-gated (owner-key-guard): for a signed-OUT
+        // visitor it can only 401. Skip on a definite "signed out"; an unknown
+        // identity read still tries (2026-10-18, lib/auth/signed-in-client.ts).
+        if ((await signedInOnce()) === false) return;
         const res = await fetch(
           `/api/wallet/profile?ownerKey=${encodeURIComponent(ownerKey!)}`
         );
