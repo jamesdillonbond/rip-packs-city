@@ -34,11 +34,13 @@ const req = (u: string) => ({ nextUrl: new URL(u) }) as never
 
 let rpcCalls: Array<{ name: string; args?: Record<string, unknown> }> = []
 
-beforeEach(() => {
-  const inst = makeInstrumentedSupabaseFixture({})
+function useFixture(fx: Parameters<typeof makeInstrumentedSupabaseFixture>[0]) {
+  const inst = makeInstrumentedSupabaseFixture(fx)
   state.sb = inst.fixture
   rpcCalls = inst.rpcCalls
-})
+}
+
+beforeEach(() => useFixture({}))
 
 const argsOf = (name: string) => rpcCalls.find((c) => c.name === name)?.args
 
@@ -104,11 +106,30 @@ describe.each([
 
   // 2026-10-15: Owned / Not owned ran in the browser over the 50 rows on the page.
   it("sends Owned / Not owned with the wallet (normalized) so the RPC filters the whole market", async () => {
+    useFixture({ wallet_moments_cache: { data: [{ wallet_address: "0xabcdef0123456789" }], error: null } })
     await GET(req(`https://t/api/market?collectionId=${collectionId}&owned=owned&wallet=0xABCDEF0123456789`))
     expect(argsOf(rpc)).toMatchObject({ p_owned: "owned", p_wallet: "0xabcdef0123456789" })
     rpcCalls.length = 0
     await GET(req(`https://t/api/market?collectionId=${collectionId}&owned=not_owned&wallet=0xabcdef0123456789`))
     expect(argsOf(rpc)).toMatchObject({ p_owned: "not_owned" })
+  })
+
+  // 2026-10-18: the RPC's EXISTS cannot tell "owns none of these" from "this
+  // wallet has no indexed moments", so an unknown wallet rendered as "you own none
+  // of the listed editions". Unknown → not applied; the page fails open.
+  it.each([
+    ["no cache rows for the wallet", { data: [], error: null }],
+    ["a FAILED cache probe", { data: null, error: { message: "timeout" } }],
+  ])("does NOT apply Owned when the wallet is unknown to the cache (%s)", async (_l, probe) => {
+    useFixture({ wallet_moments_cache: probe })
+    for (const owned of ["owned", "not_owned"]) {
+      rpcCalls.length = 0
+      const res = await GET(req(`https://t/api/market?collectionId=${collectionId}&owned=${owned}&wallet=0xabcdef0123456789`))
+      expect(argsOf(rpc)).not.toHaveProperty("p_owned")
+      expect(argsOf(rpc)).not.toHaveProperty("p_wallet")
+      const body = await (res as Response).json()
+      expect(body.ownedApplied).not.toBe(true)
+    }
   })
 
   it("sends no owned filter without a wallet, or with an unknown value", async () => {

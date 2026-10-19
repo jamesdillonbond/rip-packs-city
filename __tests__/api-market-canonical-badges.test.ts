@@ -175,7 +175,8 @@ describe("GET /api/market — facets", () => {
 // the page does not re-filter its 50 rows with its set:play-keyed counts.
 describe("GET /api/market — ownedApplied", () => {
   it("is true when the Top Shot / All Day RPC got the owned filter, false otherwise", async () => {
-    install({ ...alldayRows, ...canonical })
+    // The wallet must be KNOWN to the cache (2026-10-18) — an unknown one is not applied.
+    install({ ...alldayRows, ...canonical, wallet_moments_cache: { data: [{ wallet_address: "0x1234567890abcdef" }], error: null } })
     const on = await (await GET(req(`https://t/api/market?collectionId=${ALLDAY}&owned=owned&wallet=0x1234567890abcdef`))).json()
     expect(on.ownedApplied).toBe(true)
     const noWallet = await (await GET(req(`https://t/api/market?collectionId=${ALLDAY}&owned=owned`))).json()

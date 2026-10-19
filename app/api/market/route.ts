@@ -1045,6 +1045,25 @@ export async function GET(req: NextRequest) {
       ? await loadTopshotFmvGuard(supabaseAdmin as any)
       : new Map()
 
+    // Owned / Not owned is an EXISTS against wallet_moments_cache, which cannot
+    // tell "owns none of these" from "this wallet has no indexed moments here"
+    // (never loaded, or not yet backfilled). The second used to render as "you own
+    // none of the listed editions" (and "Not owned" labelled the whole market).
+    // Apply it only once the wallet is known to the cache for this collection; a
+    // failed or empty probe leaves the filter to the page, which fails open.
+    const ownedEligible = !!(owned && ownedWallet) &&
+      (collectionId === TS_COLLECTION_ID_FOR_DISPATCH || collectionId === ALLDAY_COLLECTION_ID_FOR_DISPATCH)
+    let ownedKnown = false
+    if (ownedEligible) {
+      const { data: probe, error: probeErr } = await (supabaseAdmin as any)
+        .from("wallet_moments_cache")
+        .select("wallet_address")
+        .eq("wallet_address", ownedWallet)
+        .eq("collection_id", collectionId)
+        .limit(1)
+      ownedKnown = !probeErr && Array.isArray(probe) && probe.length > 0
+    }
+
     // Modern-source dispatch (Phase 3.5). TS + AllDay come from sniper RPCs
     // that read badge_editions / cached_listings_v2 respectively. Other
     // collections fall through to the legacy cached_listings query below.
@@ -1066,8 +1085,8 @@ export async function GET(req: NextRequest) {
         teams: franchise.labels,
         badges,
         hasBadges,
-        owned,
-        ownedWallet,
+        owned: ownedKnown ? owned : null,
+        ownedWallet: ownedKnown ? ownedWallet : null,
         maxPrice: Number.isFinite(maxPrice) ? maxPrice : 0,
         minDiscount: Number.isFinite(minDiscount) ? minDiscount : 0,
         sortBy: sort,
@@ -1360,7 +1379,7 @@ export async function GET(req: NextRequest) {
         facets,
         // true = the Owned / Not owned filter was applied by the RPC over the whole
         // market, so the page must not re-filter its 50 rows.
-        ownedApplied: !!(owned && ownedWallet) && (isTopShot || collectionId === ALLDAY_COLLECTION_ID_FOR_DISPATCH),
+        ownedApplied: ownedKnown,
       }, {
         headers: { "Cache-Control": "public, s-maxage=90, stale-while-revalidate=60" },
       })
