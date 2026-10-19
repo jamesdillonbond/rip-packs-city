@@ -666,7 +666,7 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
 
           {staleNote && (
             <div className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)" }}>
-              {header.stale_missing_pct}% of missing {unit} have stale or low-confidence pricing — cost-to-complete sums live low asks (within 3× FMV) and FMV where nothing is listed; an estimate, not a quote.
+              {header.stale_missing_pct}% of missing {unit} have sparse or old sales history, or no price — cost-to-complete sums live low asks (within 3× FMV) and FMV where nothing is listed; an estimate, not a quote.
             </div>
           )}
         </div>

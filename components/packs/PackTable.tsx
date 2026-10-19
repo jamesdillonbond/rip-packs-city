@@ -90,8 +90,8 @@ export interface PackRow {
    *  a single pack. grossEV/packEvDollar/evMarginPct are the DROP's (what a
    *  buyer's pack is worth); the pool's own EV is only in the chip's title. */
   dropPool?: { dropTitle: string; pools: number; poolName: string | null; sharePct: number | null; poolEv: number | null } | null
-  /** Per-row explanation for the "⚠ thin FMV" chip when the reason differs
-   *  from the All Day default (Pinnacle: value resting on asking prices). */
+  /** Pinnacle: the plain-words basis fact (share of EV resting on asking
+   *  prices) shown as the "from asks" marker's title. Null = no marker. */
   lowConfidenceTitle?: string | null
   /** Cached `total_unopened` from pack_ev_latest — packs remaining in the
    *  distribution. Drives the "remaining" sort. Null when EV not yet computed. */
@@ -130,7 +130,9 @@ export interface PackRow {
   calibrationApplied?: boolean
   /** NFL All Day only: the row's grossEV/packEvDollar/evMarginPct are the
    *  odds/median-corrected EV (from v_allday_pack_info), but ≥50% of pack value
-   *  rests on stale/thin FMV. Renders a "⚠ thin FMV" caveat next to the EV. */
+   *  rests on stale/thin FMV. Internal only since 2026-10-18 — no visible
+   *  caveat; it gates the Pinnacle "from asks" basis marker alongside
+   *  `lowConfidenceTitle`. */
   lowConfidenceEv?: boolean
   /** Callback to pass through to the action column. */
   onAction?: () => void
@@ -217,8 +219,10 @@ const RARE_SINGLE_TITLE =
 const CALIBRATED_TITLE =
   'Reality-adjusted: the modeled EV has been blended toward what this pack actually pulled across observed opens (≥10 opens), so the headline reflects realized value, not just the forecast.'
 
-const LOW_CONFIDENCE_TITLE =
-  'This EV is odds-corrected (tiers valued by median FMV, weighted by pull odds), but ≥50% of the pack value rests on stale or no-data FMV. Treat it as a rough estimate.'
+// LOW_CONFIDENCE_TITLE + the generic "⚠ thin FMV" chip removed 2026-10-18
+// (Trevor: no user-facing confidence on pricing — thin-data EV shows plain).
+// What stays is a BASIS fact: a row whose EV rests mostly on asking prices
+// (Pinnacle, `lowConfidenceTitle` set) carries a plain "from asks" marker.
 
 /** Chip text + title for a Pinnacle sub-pool row (#157). */
 export function dropPoolChip(d: NonNullable<PackRow['dropPool']>): { label: string; title: string } {
@@ -544,12 +548,12 @@ export default function PackTable({
                         reality-adjusted
                       </span>
                     )}
-                    {r.lowConfidenceEv && (
+                    {r.lowConfidenceEv && r.lowConfidenceTitle && (
                       <span
-                        title={r.lowConfidenceTitle ?? LOW_CONFIDENCE_TITLE}
-                        className="inline-block rounded border border-amber-900 bg-amber-950/40 px-1.5 py-0.5 text-[10px] font-semibold text-amber-300"
+                        title={r.lowConfidenceTitle}
+                        className="inline-block rounded border border-[color:var(--rpc-border)] bg-[var(--rpc-surface-raised)] px-1.5 py-0.5 text-[10px] font-semibold text-[color:var(--rpc-text-secondary)]"
                       >
-                        ⚠ thin FMV
+                        from asks
                       </span>
                     )}
                     {r.dropPool && (() => {
@@ -707,12 +711,12 @@ export default function PackTable({
                     reality-adjusted
                   </div>
                 )}
-                {r.lowConfidenceEv && (
+                {r.lowConfidenceEv && r.lowConfidenceTitle && (
                   <div
-                    title={r.lowConfidenceTitle ?? LOW_CONFIDENCE_TITLE}
-                    className="mt-1 inline-block rounded border border-amber-900 bg-amber-950/40 px-1.5 py-0.5 text-[9px] font-semibold text-amber-300"
+                    title={r.lowConfidenceTitle}
+                    className="mt-1 inline-block rounded border border-[color:var(--rpc-border)] bg-[var(--rpc-surface-raised)] px-1.5 py-0.5 text-[9px] font-semibold text-[color:var(--rpc-text-secondary)]"
                   >
-                    ⚠ thin FMV
+                    from asks
                   </div>
                 )}
                 {r.dropPool && (() => {

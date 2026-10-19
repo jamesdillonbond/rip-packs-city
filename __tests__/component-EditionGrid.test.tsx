@@ -189,4 +189,19 @@ describe("EditionGrid — card branch rendering", () => {
     // None/High/Med etc. confidence labels are absent when confidence is null.
     expect(container.textContent).not.toMatch(/\b(High|Med|Low|Ask|Sales|Stale|None)\b/)
   })
+
+  // 2026-10-18 (Trevor): confidence is internal only — a card whose edition
+  // carries ANY confidence tier still renders no confidence label, and the
+  // price itself is shown plain.
+  it.each(["HIGH", "MEDIUM", "LOW", "ASK_ONLY", "SALES_ONLY", "STALE", "NO_DATA"] as const)(
+    "renders no confidence label for a %s edition, and still shows its FMV",
+    (tier) => {
+      const { container } = render(
+        <EditionGrid editions={[ed({ fmv_confidence: tier, fmv_usd: 42 })]} collection="topshot" />,
+      )
+      expect(container.textContent).not.toMatch(/\b(High|Med|Low|Ask|Sales|Stale|None)\b/)
+      expect(container.textContent).not.toMatch(/confidence/i)
+      expect(container.textContent).toContain("$42.00")
+    },
+  )
 })

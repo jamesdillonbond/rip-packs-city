@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react"
 import { fetchJson } from "@/lib/analytics/fetch-json"
 import Link from "next/link"
 import {
-  AlertTriangle,
   ArrowDown,
   ArrowUp,
   BarChart3,
@@ -13,7 +12,6 @@ import {
   TimerReset,
 } from "lucide-react"
 import type {
-  FmvConfidence,
   FmvPipelineCollectionStats,
   FmvPipelineHealthResponse,
   FmvTierPulseRow,
@@ -28,37 +26,21 @@ import {
   TIER_COLOR,
   formatUsd,
   formatNumber,
-  formatPct,
   formatChangePct,
   formatChangeUsd,
   formatMinutesAgo,
   isLinkableEditionId,
-  resolveConfidenceStyle,
   buildCollectionsQs,
   toggleCollection as toggleCollectionList,
   shouldHideTopMovers,
-  isThinMover,
   filterHealthEntries,
   groupTierPulseByCollection,
   bucketCollectionTiers,
   tierSharePct,
-  pctHighConf,
 } from "@/lib/analytics-fmv-dashboard-compute"
 
-function ConfidenceBadge({ value }: { value: FmvConfidence | null }) {
-  const s = resolveConfidenceStyle(value)
-  if (!s) return <span className="text-[color:var(--rpc-text-muted)]">—</span>
-  return (
-    <span
-      className={
-        "inline-block rounded border px-1.5 py-0.5 text-[9px] uppercase tracking-wider font-semibold " +
-        s.cls
-      }
-    >
-      {s.label}
-    </span>
-  )
-}
+// ConfidenceBadge removed 2026-10-18 (Trevor: no user-facing confidence on
+// pricing — internal only).
 
 function PipelineHealthPanel({
   collectionKey,
@@ -82,7 +64,7 @@ function PipelineHealthPanel({
 
       <div className="mb-1">
         <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] font-semibold mb-1">
-          Reliable total FMV
+          Total FMV
         </div>
         <div className="text-4xl font-bold text-[color:var(--rpc-text-primary)] tabular-nums leading-none">
           {formatUsd(stats.reliable_total_fmv_usd)}
@@ -92,24 +74,8 @@ function PipelineHealthPanel({
         </div>
       </div>
 
-      <div className="mt-5 flex flex-wrap items-center gap-2">
-        <span className="rounded border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-[10px] uppercase tracking-wider font-semibold text-emerald-400">
-          {formatNumber(stats.high_confidence)} High
-        </span>
-        <span className="rounded border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-[10px] uppercase tracking-wider font-semibold text-amber-400">
-          {formatNumber(stats.medium_confidence)} Med
-        </span>
-        <span className="rounded border border-[color:var(--rpc-border)] bg-[color:var(--rpc-surface-raised)] px-2 py-1 text-[10px] uppercase tracking-wider font-semibold text-[color:var(--rpc-text-secondary)]">
-          {formatNumber(stats.low_confidence)} Low
-        </span>
-        <span
-          className="rounded border border-rose-500/40 bg-rose-500/10 px-2 py-1 text-[10px] uppercase tracking-wider font-semibold text-rose-400 inline-flex items-center gap-1"
-          title="Ask-only editions are excluded from aggregates — listing-reward farming asks pollute the data"
-        >
-          <AlertTriangle size={10} />
-          {formatNumber(stats.ask_only)} Ask only
-        </span>
-      </div>
+      {/* High/Med/Low/Ask-only confidence counts removed 2026-10-18 —
+          confidence is internal only. */}
     </div>
   )
 }
@@ -168,7 +134,6 @@ function TopMoversTable({
               <th className="py-2.5 px-3 text-right">Prior FMV</th>
               <th className="py-2.5 px-3 text-right">Change</th>
               <th className="py-2.5 px-3 text-right">% Change</th>
-              <th className="py-2.5 px-3">Confidence</th>
               {/* 2026-10-10: was "Sales 7d". The column is fmv_snapshots.sales_count_7d,
                   which fmv-recalc has filled with the TRUE 30-day count since 1.7.0
                   (27,055 of 27,468 Top Shot/All Day rows in a day had 7d == 30d), so
@@ -180,7 +145,6 @@ function TopMoversTable({
             {rows.map((row) => {
               const collectionLabel =
                 COLLECTION_LABEL[row.collection?.toLowerCase()] ?? row.collection
-              const isThinData = isThinMover(row)
               const positive = (row.change_pct ?? 0) >= 0
               const linkable = isLinkableEditionId(row.edition_id)
               const editionLabel = (
@@ -244,21 +208,8 @@ function TopMoversTable({
                       {formatChangePct(row.change_pct)}
                     </span>
                   </td>
-                  <td className="py-3 px-3">
-                    <ConfidenceBadge value={row.current_confidence} />
-                  </td>
                   <td className="py-3 px-3 text-right text-[color:var(--rpc-text-secondary)] tabular-nums">
-                    <span className="inline-flex items-center gap-1.5">
-                      {isThinData ? (
-                        <span
-                          title="Thin data — single-sale or interpolated FMV; this mover may be noise"
-                          className="inline-flex items-center"
-                        >
-                          <AlertTriangle size={11} className="text-amber-400" />
-                        </span>
-                      ) : null}
-                      {formatNumber(row.sales_count_7d)}
-                    </span>
+                    {formatNumber(row.sales_count_7d)}
                   </td>
                 </tr>
               )
@@ -299,7 +250,7 @@ function TierPulseSection({ rows, failed = false }: { rows: FmvTierPulseRow[]; f
             <div className="flex items-baseline justify-between mb-4">
               <h3 className="text-base font-semibold text-[color:var(--rpc-text-primary)]">{label}</h3>
               <span className="text-xs text-[color:var(--rpc-text-muted)]">
-                {formatUsd(total)} total reliable FMV
+                {formatUsd(total)} total FMV
               </span>
             </div>
 
@@ -355,12 +306,10 @@ function TierPulseSection({ rows, failed = false }: { rows: FmvTierPulseRow[]; f
                     <th className="py-2 pr-3 text-right">Total FMV</th>
                     <th className="py-2 pr-3 text-right">Avg FMV</th>
                     <th className="py-2 pr-3 text-right">Median FMV</th>
-                    <th className="py-2 pr-0 text-right">% High conf</th>
                   </tr>
                 </thead>
                 <tbody>
                   {visible.map((r) => {
-                    const pctHigh = pctHighConf(r.high_conf_count, r.edition_count)
                     return (
                       <tr
                         key={r.tier ?? "Other"}
@@ -392,9 +341,6 @@ function TierPulseSection({ rows, failed = false }: { rows: FmvTierPulseRow[]; f
                         </td>
                         <td className="py-2 pr-3 text-right text-[color:var(--rpc-text-secondary)] tabular-nums">
                           {formatUsd(r.median_fmv_usd)}
-                        </td>
-                        <td className="py-2 pr-0 text-right text-[color:var(--rpc-text-secondary)] tabular-nums">
-                          {formatPct(pctHigh, 0)}
                         </td>
                       </tr>
                     )
@@ -524,9 +470,8 @@ export default function FmvDashboard() {
         <div className="mt-4 rounded-lg border border-[color:var(--rpc-border)] bg-[var(--rpc-bg)] p-3 flex items-start gap-2">
           <Info size={14} className="text-teal-400 flex-shrink-0 mt-0.5" />
           <p className="text-xs text-[color:var(--rpc-text-secondary)] leading-relaxed">
-            Aggregates exclude{" "}
-            <code className="font-mono text-rose-300">ASK_ONLY</code> confidence
-            editions (unsold inventory with farming-tier asks).{" "}
+            Aggregates exclude editions priced only from asking prices
+            (unsold inventory with farming-tier asks).{" "}
             <Link
               href="/analytics/methodology/fmv"
               className="text-teal-400 hover:text-teal-300 underline"
@@ -576,7 +521,7 @@ export default function FmvDashboard() {
         <div className="mb-4">
           <h2 className="text-lg font-semibold text-[color:var(--rpc-text-primary)]">Pipeline health</h2>
           <p className="text-xs text-[color:var(--rpc-text-muted)]">
-            Per-collection confidence breakdown and refresh state
+            Per-collection FMV totals and refresh state
           </p>
         </div>
         {healthLoading && !health ? (

@@ -160,8 +160,10 @@ describe("CollectionMomentTable mobile — cost chips / serial-fmv / overflow ba
     })
     const { container } = render(<CollectionMomentTable {...props} />)
     expect(container.textContent).toContain("#1 est")
-    // stale FMV carries the "no sales in 30+ days" title
-    expect(container.querySelector('[title="No sales in 30+ days — FMV may be inaccurate"]')).toBeTruthy()
+    // stale FMV carries only the factual "no sales in 30+ days" title — no
+    // "may be inaccurate" confidence framing (2026-10-18, confidence is internal)
+    expect(Array.from(container.querySelectorAll("[title]")).some((el) => el.getAttribute("title") === "No sales in 30+ days")).toBe(true)
+    expect(container.querySelector('[title*="may be inaccurate"]')).toBeNull()
   })
 
   it("shows the desktop-overflow banner when more moments remain", () => {

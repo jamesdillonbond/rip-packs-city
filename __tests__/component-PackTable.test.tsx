@@ -231,11 +231,16 @@ describe("PackTable — EV-cell badges", () => {
     expect(container.textContent).toContain("reality-adjusted")
   })
 
-  it("renders the thin-FMV caveat when lowConfidenceEv is set", () => {
+  // 2026-10-18 (Trevor): confidence is internal only — a thin-data EV is
+  // shown PLAIN, with no "⚠ thin FMV" caveat and no rough-estimate tooltip.
+  it("renders NO thin-FMV caveat when lowConfidenceEv is set", () => {
     const { container } = render(
       <PackTable collection="nba-top-shot" rows={[row({ title: "Thin Pack", lowConfidenceEv: true })]} />,
     )
-    expect(container.textContent).toContain("thin FMV")
+    expect(container.textContent).not.toContain("thin FMV")
+    expect(container.textContent).not.toContain("from asks")
+    const titles = Array.from(container.querySelectorAll("[title]")).map((el) => el.getAttribute("title") ?? "")
+    expect(titles.some((t) => /rough estimate|stale or no-data FMV/i.test(t))).toBe(false)
   })
 
   // 2026-09-28 (#157): a Pinnacle sub-pool row names its pool and share.
@@ -259,11 +264,14 @@ describe("PackTable — EV-cell badges", () => {
     expect(unknown.title).not.toContain("alone would be worth")
   })
 
-  it("uses the row's own low-confidence reason when one is given", () => {
+  // The ask-basis FACT (Pinnacle) survives as a plain "from asks" marker —
+  // a basis disclosure, not a confidence label.
+  it("shows the row's ask-basis fact as a plain 'from asks' marker, never 'thin FMV'", () => {
     const { container } = render(
       <PackTable collection="nba-top-shot" rows={[row({ title: "Ask Pack", lowConfidenceEv: true, lowConfidenceTitle: "83% of this pack's EV rests on asking prices" })]} />,
     )
-    const chip = Array.from(container.querySelectorAll("[title]")).find((el) => el.textContent?.includes("thin FMV"))
+    expect(container.textContent).not.toContain("thin FMV")
+    const chip = Array.from(container.querySelectorAll("[title]")).find((el) => el.textContent?.includes("from asks"))
     expect(chip?.getAttribute("title")).toBe("83% of this pack's EV rests on asking prices")
   })
 

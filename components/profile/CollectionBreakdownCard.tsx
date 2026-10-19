@@ -105,7 +105,7 @@ export default function CollectionBreakdownCard(props: { ownerKey: string }) {
                           data-stale-caption
                           style={{ display: "block", fontSize: 8, fontFamily: monoFont, color: "rgba(255,255,255,0.5)", letterSpacing: "0.06em", whiteSpace: "nowrap" }}
                         >
-                          + {fmtDollars(Number(r.stale_fmv) || 0)} stale{(Number(r.stale_count) || 0) > 0 ? " · " + Number(r.stale_count).toLocaleString() : ""}
+                          + {fmtDollars(Number(r.stale_fmv) || 0)} no recent sales{(Number(r.stale_count) || 0) > 0 ? " · " + Number(r.stale_count).toLocaleString() : ""}
                         </span>
                       )}
                     </span>

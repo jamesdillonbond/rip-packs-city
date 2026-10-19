@@ -389,11 +389,19 @@ describe("CollectionMomentTable — desktop chips / badges / offer cells", () =>
     expect(container.textContent).toContain("—")
   })
 
-  it("marks a stale FMV (marketConfidence=stale) with the underline treatment", () => {
+  // 2026-10-18 (Trevor): confidence is internal only. A stale FMV renders
+  // PLAIN — no dotted underline, not greyed, no "may be inaccurate" — and keeps
+  // only the factual "No sales in 30+ days" tooltip.
+  it("renders a stale FMV (marketConfidence=stale) plain: no underline, no muting, no inaccuracy claim", () => {
     const { container } = desk({ marketConfidence: "stale", fmv: 42 })
-    // stale renders the FMV text with a dotted-underline inline style
-    const stale = Array.from(container.querySelectorAll('[title="No sales in 30+ days — FMV may be inaccurate"]'))
+    const stale = (Array.from(container.querySelectorAll("[title]")) as HTMLElement[]).filter((el) => el.getAttribute("title") === "No sales in 30+ days")
     expect(stale.length).toBeGreaterThan(0)
+    for (const el of stale) {
+      expect(el.style.textDecoration).toBe("")
+      expect(el.className).not.toContain("--rpc-text-muted")
+      expect(el.textContent).toContain("$42.00")
+    }
+    expect(container.querySelector('[title*="may be inaccurate"]')).toBeNull()
   })
 
   it("renders the three-star rookie mint badge when has_rookie_mint is set", () => {

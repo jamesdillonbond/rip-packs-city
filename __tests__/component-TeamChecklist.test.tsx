@@ -276,7 +276,11 @@ describe("TeamChecklist", () => {
     vi.stubGlobal("fetch", fetchMock)
     const { getByText, container } = render(<TeamChecklist collectionUrlSlug="nba-top-shot" teamSlug="blazers" />)
     await waitFor(() => expect(getByText("4 locked")).toBeTruthy())
-    expect(container.textContent).toContain("stale or low-confidence pricing")
+    // 2026-10-18 (Trevor): confidence is internal — the note states the fact
+    // (sparse or old sales history, or no price), never "low-confidence".
+    expect(container.textContent).toContain("22% of missing")
+    expect(container.textContent).toContain("sparse or old sales history, or no price")
+    expect(container.textContent).not.toMatch(/confidence/i)
     expect(container.textContent).toContain("12/60") // per-tier owned/total (hasWallet)
     // three-state legend renders with a wallet
     expect(getByText("Owned + locked")).toBeTruthy()

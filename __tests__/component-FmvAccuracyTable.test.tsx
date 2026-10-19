@@ -120,3 +120,20 @@ describe("the pointer from the homepage TRUST band lands on the table", () => {
     expect(trustBlock).not.toMatch(/more accurate|most accurate|better than|beats?\b|than any|only platform|#1\b/i)
   })
 })
+
+// 2026-10-18 (Trevor): confidence is internal only. The column states the
+// FACT (share backed by recent sales), never the HIGH/MEDIUM tier names.
+describe("FmvAccuracyTable — no confidence-tier vocabulary", () => {
+  it.each([true, false])("ok=%s renders no HIGH/MEDIUM/confidence wording", (ok) => {
+    const rows = ok
+      ? buildAccuracyRows([{ metric: "topshot_fmv_high_med_share_pct", value: 56.5, computed_at: AT }], NOW)
+      : null
+    const { container } = render(
+      <FmvAccuracyTable result={ok ? { ok: true, rows: rows!, error: null } : { ok: false, rows: null, error: "x" }} />
+    )
+    const text = container.textContent ?? ""
+    expect(text).not.toMatch(/\b(HIGH|MEDIUM|LOW|ASK_ONLY)\b/)
+    expect(text).not.toMatch(/confidence/i)
+    expect(text).toContain("Share backed by recent sales")
+  })
+})

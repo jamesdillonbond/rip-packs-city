@@ -183,6 +183,8 @@ describe("PackPageClient toPackRow — Pinnacle drop pools", () => {
     expect(row.dropPool).toEqual({ dropTitle: "Summer Splash - Standard", pools: 6, poolName: "Quinova", sharePct: 0.2, poolEv: 4050 })
     expect(row.lowConfidenceTitle).toContain("83% of this pack's EV rests on asking prices")
     expect(row.lowConfidenceTitle).toContain("$6.22 of it is backed by sales")
+    // 2026-10-18: a basis FACT only — no confidence framing.
+    expect(row.lowConfidenceTitle).not.toMatch(/rough estimate|confidence/i)
   })
 
   it("CONTROL: a pack that is not a sub-pool has no dropPool and keeps the default caveat text", () => {

@@ -135,11 +135,18 @@ describe("FmvDashboard — with data", () => {
     expect(screen.queryByText("Sales 7d")).toBeNull()
   })
 
-  it("flags the thin-data mover with its warning title", async () => {
-    render(<FmvDashboard />)
+  // 2026-10-18 (Trevor): confidence is internal only. The thin-data mover
+  // (LOW confidence + 0 sales) is shown PLAIN — no warning icon, no
+  // Confidence column, no HIGH/LOW badge — and its price still renders.
+  it("shows the thin-data mover plain: no thin-data warning, no confidence column or badge", async () => {
+    const { container } = render(<FmvDashboard />)
     await screen.findByText("Dame Lillard")
-    // isThinMover: LOW confidence + 0 sales -> the amber warning is rendered.
-    expect(screen.getByTitle(/Thin data/i)).toBeTruthy()
+    expect(screen.queryByTitle(/Thin data/i)).toBeNull()
+    expect(screen.queryByText("Confidence")).toBeNull()
+    expect(screen.queryByText("% High conf")).toBeNull()
+    expect(container.textContent).not.toMatch(/\b(HIGH|LOW|MEDIUM|ASK_ONLY)\b/)
+    expect(container.textContent).not.toMatch(/confidence/i)
+    expect(container.textContent).toContain("$120.00")
   })
 
   it("renders the tier-pulse section instead of its empty state", async () => {
@@ -187,14 +194,17 @@ describe("FmvDashboard — pipeline health panels", () => {
     vi.stubGlobal("fetch", fetchMock)
   })
 
-  it("renders per-collection health cards with confidence chips + totals", async () => {
-    render(<FmvDashboard />)
+  it("renders per-collection health cards with totals and NO confidence chips", async () => {
+    const { container } = render(<FmvDashboard />)
     // total FMV renders via formatUsd ($2.50M / $400.0k)
     await waitFor(() => expect(screen.getByText("$2.50M")).toBeTruthy())
     expect(screen.getByText("$400.0k")).toBeTruthy()
-    // confidence chips: "4.0k High" / "500 Ask only" etc. (formatNumber)
-    expect(screen.getByText(/4\.0k High/)).toBeTruthy()
-    expect(screen.getAllByText(/Ask only/).length).toBeGreaterThan(0)
+    // 2026-10-18 (Trevor): confidence is internal only — the "4.0k High" /
+    // "500 Ask only" chips must not render.
+    expect(screen.queryByText(/4\.0k High/)).toBeNull()
+    expect(screen.queryAllByText(/Ask only/).length).toBe(0)
+    expect(container.textContent).not.toMatch(/\b(High|Med|Low)\b/)
+    expect(container.textContent).not.toMatch(/confidence/i)
     // the "No pipeline data available" empty state must NOT render
     expect(screen.queryByText(/No pipeline data available/i)).toBeNull()
   })
@@ -251,7 +261,7 @@ describe("FmvDashboard — top-movers filter interactions", () => {
   })
 })
 
-// A mover with a null confidence exercises the ConfidenceBadge "—" arm; a tier
+// A mover with a null confidence (no badge since 2026-10-18); a tier
 // with a sub-8% share exercises the stacked-bar "no inline label" branch.
 describe("FmvDashboard — null confidence + small tier share", () => {
   beforeEach(() => {

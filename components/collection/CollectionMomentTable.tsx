@@ -68,6 +68,10 @@ import { accentText } from "@/lib/accent-text"
 // The one sanctioned per-value FMV honesty marker: plain-words "from asks" for
 // an ASK_ONLY FMV (0.9x a single seller's ask, never traded). Never the
 // confidence enum. `fmvDisplay(row).askDerived` gates it.
+// 2026-10-18 (Trevor): confidence is internal only. A STALE price renders
+// PLAIN — not greyed (`fmv.muted` is honoured only for the unpriced "—"), not
+// dotted-underlined, no "may be inaccurate" — and keeps only the factual
+// "No sales in 30+ days" tooltip.
 const ASK_BASIS = fmvBasis("ASK_ONLY")!
 function AskDerivedMark({ show }: { show: boolean }) {
   if (!show) return null
@@ -387,9 +391,8 @@ export default function CollectionMomentTable(props: {
                   <div className="flex items-center justify-between gap-2">
                     <span className="flex flex-col items-start gap-0.5">
                       <span
-                        className={"text-sm font-mono " + (fmv.muted ? "text-[color:var(--rpc-text-muted)]" : "text-green-400")}
-                        title={fmv.stale ? "No sales in 30+ days — FMV may be inaccurate" : undefined}
-                        style={fmv.stale ? { textDecoration: "underline dotted", textDecorationColor: "rgba(156,163,175,0.5)", textUnderlineOffset: "3px" } : undefined}
+                        className={"text-sm font-mono " + (fmv.muted && !fmv.stale ? "text-[color:var(--rpc-text-muted)]" : "text-green-400")}
+                        title={fmv.stale ? "No sales in 30+ days" : undefined}
                       >
                         {fmv.text}
                       </span>
@@ -730,9 +733,8 @@ export default function CollectionMomentTable(props: {
                       </td>
                       <td className="rpc-table-cell--mono min-w-[90px] whitespace-nowrap">
                         <div
-                          className={"font-semibold text-sm " + (fmv.muted ? "text-[color:var(--rpc-text-muted)]" : "text-[color:var(--rpc-text-primary)]")}
-                          title={fmv.stale ? "No sales in 30+ days — FMV may be inaccurate" : undefined}
-                          style={fmv.stale ? { textDecoration: "underline dotted", textDecorationColor: "rgba(156,163,175,0.5)", textUnderlineOffset: "3px" } : undefined}
+                          className={"font-semibold text-sm " + (fmv.muted && !fmv.stale ? "text-[color:var(--rpc-text-muted)]" : "text-[color:var(--rpc-text-primary)]")}
+                          title={fmv.stale ? "No sales in 30+ days" : undefined}
                         >
                           {fmv.text}
                         </div>

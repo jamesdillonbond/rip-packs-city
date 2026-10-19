@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react"
 import Link from "next/link"
 import Image from "next/image"
-import type { FmvConfidence, SetsDetailEdition } from "@/lib/analytics-types"
+import type { SetsDetailEdition } from "@/lib/analytics-types"
 import { proxyIpfsImageUrl } from "@/lib/ipfs-media"
 import { usdSignFirst } from "@/lib/usd-format"
 
@@ -30,30 +30,8 @@ const TIER_PILL: Record<string, string> = {
   Ultimate: "bg-rose-500/15 text-rose-300 border-rose-500/40",
 }
 
-// Confidence-status colors carry meaning (emerald/amber/rose). LOW is the
-// neutral case — tokenized so it stays legible in both themes.
-const CONFIDENCE_PILL: Record<FmvConfidence, string> = {
-  HIGH: "border-emerald-500/40 bg-emerald-500/10 text-emerald-400",
-  MEDIUM: "border-amber-500/40 bg-amber-500/10 text-amber-400",
-  LOW: "border-[color:var(--rpc-border)] bg-[color:var(--rpc-surface-raised)] text-[color:var(--rpc-text-secondary)]",
-  ASK_ONLY: "border-rose-500/40 bg-rose-500/10 text-rose-400",
-  SALES_ONLY: "border-sky-500/40 bg-sky-500/10 text-sky-400",
-  // STALE uses a semantic colour (orange = aged/caution), NOT a raw neutral like
-  // zinc — the brand-token guard forbids raw neutral Tailwind classes in this
-  // protected surface (they must be var(--rpc-*) tokens); semantic colours are fine.
-  STALE: "border-orange-500/40 bg-orange-500/10 text-orange-400",
-  NO_DATA: "border-[color:var(--rpc-border)] bg-[color:var(--rpc-surface-raised)] text-[color:var(--rpc-text-muted)]",
-}
-
-const CONFIDENCE_LABEL: Record<FmvConfidence, string> = {
-  HIGH: "High",
-  MEDIUM: "Med",
-  LOW: "Low",
-  ASK_ONLY: "Ask",
-  SALES_ONLY: "Sales",
-  STALE: "Stale",
-  NO_DATA: "None",
-}
+// Confidence pill removed 2026-10-18 (Trevor: no user-facing confidence on
+// pricing — internal only).
 
 // Editions that link to /edition/[id] currently exist for these collections.
 // Pinnacle is excluded from Sets, so we don't have to handle it here.
@@ -232,18 +210,6 @@ export default function EditionGrid({ editions, collection }: Props) {
                     </div>
                   </div>
                 </div>
-                {e.fmv_confidence ? (
-                  <div className="mt-2">
-                    <span
-                      className={
-                        "inline-block rounded border px-1.5 py-0.5 text-[9px] uppercase tracking-wider font-semibold " +
-                        CONFIDENCE_PILL[e.fmv_confidence]
-                      }
-                    >
-                      {CONFIDENCE_LABEL[e.fmv_confidence]}
-                    </span>
-                  </div>
-                ) : null}
               </div>
             </div>
           )

@@ -650,7 +650,7 @@ export default function HomePageMarketing() {
             </div>
 
             {/* Live FMV preview — fetches the public /api/fmv/demo endpoint and
-                renders a real recent sample (FMV + confidence + serial-premium
+                renders a real recent sample (FMV + serial-premium
                 math), with a clearly-labelled SAMPLE fallback. */}
             <HomeFmvPreview />
           </div>

@@ -101,6 +101,10 @@ describe("CollectionBreakdownCard", () => {
     expect(captions.length).toBe(1) // only the row that HAS a stale slice
     expect(captions[0].textContent).toContain("$43.3K")
     expect(captions[0].textContent).toContain("144")
+    // 2026-10-18 (Trevor): confidence is internal — the caption states the
+    // FACT ("no recent sales"), never the STALE tier name.
+    expect(captions[0].textContent).toContain("no recent sales")
+    expect(txt).not.toMatch(/\bstale\b/i)
     // The split bar is proportioned on LIVE value: 44,500 of 45,000 = 98.9%.
     expect(container.querySelector('[title="NBA Top Shot 98.9%"]')).not.toBeNull()
   })

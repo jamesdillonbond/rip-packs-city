@@ -109,7 +109,7 @@ export default function FmvAccuracyTable({ result }: { result: AccuracyGateResul
           <thead>
             <tr>
               <th style={TH}>Collection</th>
-              <th style={TH}>HIGH + MEDIUM share</th>
+              <th style={TH}>Share backed by recent sales</th>
               <th style={TH}>As of</th>
             </tr>
           </thead>
@@ -139,7 +139,7 @@ export default function FmvAccuracyTable({ result }: { result: AccuracyGateResul
         <thead>
           <tr>
             <th style={TH}>Collection</th>
-            <th style={TH}>HIGH + MEDIUM share</th>
+            <th style={TH}>Share backed by recent sales</th>
             <th style={TH}>As of</th>
           </tr>
         </thead>
