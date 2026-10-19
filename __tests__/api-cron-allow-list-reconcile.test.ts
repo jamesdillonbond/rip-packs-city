@@ -15,6 +15,7 @@ import { makeReq } from "./cron-req-helper"
 const rpcState = vi.hoisted(() => ({
   result: { data: null as any, error: null as any },
   throwErr: false,
+  logCalls: [] as any[],
 }))
 
 vi.mock("@supabase/supabase-js", () => {
@@ -22,7 +23,8 @@ vi.mock("@supabase/supabase-js", () => {
   for (const m of ["from","select","eq","in","order","limit","gte","lte","lt","gt","is","not","or","range","match","insert","update","upsert","delete","returns"]) sb[m] = () => sb
   sb.single = async () => ({ data: {}, error: null })
   sb.maybeSingle = async () => ({ data: {}, error: null })
-  sb.rpc = async () => {
+  sb.rpc = async (name: string, args: any) => {
+    if (name === "log_pipeline_run") { rpcState.logCalls.push(args); return { data: null, error: null } }
     if (rpcState.throwErr) throw new Error("rpc exploded")
     return rpcState.result
   }
@@ -49,6 +51,7 @@ beforeEach(() => {
   delete process.env.CRON_SECRET
   rpcState.result = { data: { ...OK_RESULT }, error: null }
   rpcState.throwErr = false
+  rpcState.logCalls = []
 })
 
 afterEach(() => {
@@ -135,5 +138,32 @@ describe("POST /api/cron/allow-list-reconcile — failure paths", () => {
     expect(body.ok).toBe(false)
     expect(body.error).toBe("rpc exploded")
     expect(typeof body.ran_at).toBe("string")
+  })
+})
+
+describe("allow-list-reconcile — the terminal pipeline_runs row (2026-10-18)", () => {
+  const authed = () => makeReq({ url, auth: "Bearer test-ingest-secret" })
+
+  it("never copies a user's email address into run telemetry, but keeps the counts", async () => {
+    const res = await POST(authed())
+    expect(res.status).toBe(200)
+    expect(rpcState.logCalls).toHaveLength(1)
+    const args = rpcState.logCalls[0]
+    expect(JSON.stringify(args)).not.toContain("@example.com")
+    expect(args.p_ok).toBe(true)
+    expect(args.p_rows_written).toBe(2)
+    expect(args.p_extra).toEqual({ promoted_count: 2, skipped_count: 0 })
+  })
+
+  it("a failed reconcile publishes NULL counts (not measured), never a measured 0", async () => {
+    rpcState.result = { data: null, error: { message: "boom" } }
+    const res = await POST(authed())
+    expect(res.status).toBe(500)
+    const args = rpcState.logCalls[0]
+    expect(args.p_ok).toBe(false)
+    expect(args.p_error).toBe("boom")
+    expect(args.p_rows_found).toBeNull()
+    expect(args.p_rows_written).toBeNull()
+    expect(args.p_rows_skipped).toBeNull()
   })
 })

@@ -13,6 +13,7 @@
 
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
+import { logTerminalRun } from "@/lib/pipeline/terminal-run"
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -32,34 +33,32 @@ interface ReconcileResult {
   skipped_detail?: unknown
 }
 
+// The terminal row goes through the shared helper (lib/pipeline/terminal-run.ts):
+// counts are NULL, not 0, when the RPC failed and nothing was counted, and the
+// write's own error is read. ⚠ `promoted_emails` is deliberately NOT copied into
+// `extra` (it was until 2026-10-18): run telemetry carries counts, never a
+// user's email address. The emails stay in the bearer-gated HTTP response.
 async function logRun(opts: {
   startedAt: string
   ok: boolean
   result?: ReconcileResult
   error?: string
 }) {
-  try {
-    // write-discarded: run telemetry; a failed log row cannot change what the run did, and shows up as a missing run.
-    await supabaseAdmin.from("pipeline_runs").insert({
+  const promoted = opts.result?.promoted_count ?? null
+  const skipped = opts.result?.skipped_count ?? null
+  await logTerminalRun(
+    {
       pipeline: PIPELINE_NAME,
-      started_at: opts.startedAt,
-      finished_at: new Date().toISOString(),
+      startedAt: opts.startedAt,
       ok: opts.ok,
       error: opts.error ?? null,
-      rows_found: opts.result?.promoted_count ?? 0,
-      rows_written: opts.result?.promoted_count ?? 0,
-      rows_skipped: opts.result?.skipped_count ?? 0,
-      extra: {
-        promoted_count: opts.result?.promoted_count ?? 0,
-        skipped_count: opts.result?.skipped_count ?? 0,
-        promoted_emails: opts.result?.promoted_emails ?? [],
-      },
-    })
-  } catch (err) {
-    console.warn(
-      `[${PIPELINE_NAME}] pipeline_runs insert failed: ${err instanceof Error ? err.message : String(err)}`,
-    )
-  }
+      rowsFound: promoted,
+      rowsWritten: promoted,
+      rowsSkipped: skipped,
+      extra: { promoted_count: promoted, skipped_count: skipped },
+    },
+    supabaseAdmin,
+  )
 }
 
 async function handle(request: NextRequest) {
