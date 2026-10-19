@@ -34,7 +34,7 @@ failure it documents.
 
 ## 2026-10-19 — 2 filings
 
-- [🟢 Daytime monitor (10-19 ~21:12Z, GREEN infra) — 3 low-risk candidates: `missing_fill_offers` cursor re-seeded forward 9.4M blocks + walk active despite 10-10 done=true; pinnacle-image MODULE_NOT_FOUND on the serving deploy (verify 200); /api/ready 42501 on panini_sales post-#64 (verify grant)](2026-10-19T2112Z-daytime-monitor-missing-fill-reseed-pinnacle-image-notfound-api-ready-panini-grant.md)
+- [**✅ CLOSED 10-19 ~2:50 PM PT (Claude Code cloud; ledger "missing-fill walk suppression names the weekly schedule"): (1) the weekly walk's deliberate re-seed, suppression text rewritten; (2) pinnacle-image serves 302 / 200 PNG; (3) the 42501 was already fixed by the morning `readiness_panini_*` migrations** — 🟢 Daytime monitor (10-19 ~21:12Z, GREEN infra) — 3 low-risk candidates: `missing_fill_offers` cursor re-seeded forward 9.4M blocks + walk active despite 10-10 done=true; pinnacle-image MODULE_NOT_FOUND on the serving deploy (verify 200); /api/ready 42501 on panini_sales post-#64 (verify grant)](2026-10-19T2112Z-daytime-monitor-missing-fill-reseed-pinnacle-image-notfound-api-ready-panini-grant.md)
 
 - [**✅ RECORDED 10-19 (already in pack-ev.md from ~7:05 AM PT; timeout watch read added ~12:15 PM PT, re-read after ≥ 3 days) — 🟢 Daytime monitor (10-19 ~11:11 AM PT, GREEN) — pack_rips post-vacuum READ handed off by the 10-19 night pass: allvisible 72.1%→100.0%, `v_allday_pack_lifecycle` dist 6924 285ms/901→36ms/147 heap fetches; record in pack-ev.md**](2026-10-19T1811Z-daytime-monitor-pack-rips-post-vacuum-measurement-for-pack-ev.md)
 
