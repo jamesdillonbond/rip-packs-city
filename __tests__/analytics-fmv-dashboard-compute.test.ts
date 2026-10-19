@@ -12,7 +12,6 @@ import {
   LIMIT_OPTIONS,
   TIER_ORDER,
   TIER_COLOR,
-  CONFIDENCE_STYLE,
   UUID_RE,
   formatUsd,
   formatNumber,
@@ -21,16 +20,13 @@ import {
   formatChangeUsd,
   formatMinutesAgo,
   isLinkableEditionId,
-  resolveConfidenceStyle,
   buildCollectionsQs,
   toggleCollection,
   shouldHideTopMovers,
-  isThinMover,
   filterHealthEntries,
   groupTierPulseByCollection,
   bucketCollectionTiers,
   tierSharePct,
-  pctHighConf,
 } from "@/lib/analytics-fmv-dashboard-compute"
 
 // Pins the pure logic lifted out of components/analytics/FmvDashboard.tsx
@@ -85,7 +81,6 @@ describe("constants", () => {
     expect(COLLECTION_LABEL.ufc).toBe("UFC Strike")
     expect(TOP_MOVERS_UNSUPPORTED.has("pinnacle")).toBe(true)
     expect(TOP_MOVERS_UNSUPPORTED.has("topshot")).toBe(false)
-    expect(CONFIDENCE_STYLE.HIGH.label).toBe("High")
   })
 })
 
@@ -181,21 +176,6 @@ describe("isLinkableEditionId / UUID_RE", () => {
   })
 })
 
-describe("resolveConfidenceStyle", () => {
-  it("returns null for falsy value", () => {
-    expect(resolveConfidenceStyle(null)).toBeNull()
-    expect(resolveConfidenceStyle(undefined)).toBeNull()
-  })
-  it("resolves known styles", () => {
-    expect(resolveConfidenceStyle("HIGH")).toBe(CONFIDENCE_STYLE.HIGH)
-    expect(resolveConfidenceStyle("ASK_ONLY")).toBe(CONFIDENCE_STYLE.ASK_ONLY)
-  })
-  it("falls back to LOW for an unexpected value", () => {
-    // @ts-expect-error probing the runtime fallback with an off-enum value
-    expect(resolveConfidenceStyle("BOGUS")).toBe(CONFIDENCE_STYLE.LOW)
-  })
-})
-
 describe("buildCollectionsQs", () => {
   it("empty list -> empty string", () => {
     expect(buildCollectionsQs([])).toBe("")
@@ -222,14 +202,6 @@ describe("shouldHideTopMovers", () => {
     expect(shouldHideTopMovers(["pinnacle", "golazos"])).toBe(true)
     expect(shouldHideTopMovers(["pinnacle", "topshot"])).toBe(false)
     expect(shouldHideTopMovers(["topshot"])).toBe(false)
-  })
-})
-
-describe("isThinMover", () => {
-  it("true only for LOW confidence + zero 7d sales", () => {
-    expect(isThinMover({ current_confidence: "LOW", sales_count_7d: 0 })).toBe(true)
-    expect(isThinMover({ current_confidence: "LOW", sales_count_7d: 3 })).toBe(false)
-    expect(isThinMover({ current_confidence: "HIGH", sales_count_7d: 0 })).toBe(false)
   })
 })
 
@@ -386,12 +358,5 @@ describe("tierSharePct", () => {
   it("computes share, guarding against zero total", () => {
     expect(tierSharePct(25, 100)).toBe(25)
     expect(tierSharePct(50, 0)).toBe(0)
-  })
-})
-
-describe("pctHighConf", () => {
-  it("computes percent, guarding against zero editions", () => {
-    expect(pctHighConf(3, 12)).toBe(25)
-    expect(pctHighConf(5, 0)).toBe(0)
   })
 })

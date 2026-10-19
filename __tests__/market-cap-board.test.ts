@@ -1,7 +1,6 @@
 import { describe, it, expect } from "vitest"
 import {
   fmtUsdCompact,
-  highConfidenceShare,
   resolveCollectionParam,
   rowDetail,
   rowHref,
@@ -32,16 +31,11 @@ describe("market-cap-board helpers", () => {
     expect(r.mcap_usd).toBeNull()
     expect(r.collector_held).toBeNull()
     expect(r.burned).toBeNull()
-    expect(highConfidenceShare(r)).toBeNull()
     expect(fmtUsdCompact(r.mcap_usd)).toBe("—")
   })
 
   it("shapeRow throws on a non-numeric count rather than inventing one", () => {
     expect(() => shapeRow({ ...base, editions: "abc" })).toThrow()
-  })
-
-  it("high-confidence share is a ratio of the known cap", () => {
-    expect(highConfidenceShare(base)).toBe(0.5)
   })
 
   it("decodes series per collection — Top Shot's 0 is Series 1, All Day's 1 is Series 1", () => {

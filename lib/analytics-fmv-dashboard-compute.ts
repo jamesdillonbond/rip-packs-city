@@ -5,10 +5,8 @@
 // the inline code it replaced.
 
 import type {
-  FmvConfidence,
   FmvPipelineCollectionStats,
   FmvTierPulseRow,
-  FmvTopMoverRow,
 } from "@/lib/analytics-types"
 import { normalizeTier, titleCaseTier, tierLadder } from "@/lib/tier-order"
 import { usdSignFirst } from "@/lib/usd-format"
@@ -84,42 +82,6 @@ export const TIER_COLOR: Record<string, string> = {
   Other: "#52525b",
 }
 
-export const CONFIDENCE_STYLE: Record<
-  FmvConfidence,
-  { label: string; cls: string }
-> = {
-  HIGH: {
-    label: "High",
-    cls: "border-emerald-500/40 bg-emerald-500/10 text-emerald-400",
-  },
-  MEDIUM: {
-    label: "Med",
-    cls: "border-amber-500/40 bg-amber-500/10 text-amber-400",
-  },
-  LOW: {
-    label: "Low",
-    cls: "border-[color:var(--rpc-border)] bg-[color:var(--rpc-surface-raised)] text-[color:var(--rpc-text-secondary)]",
-  },
-  ASK_ONLY: {
-    label: "Ask only",
-    cls: "border-rose-500/40 bg-rose-500/10 text-rose-400",
-  },
-  SALES_ONLY: {
-    label: "Sales only",
-    cls: "border-sky-500/40 bg-sky-500/10 text-sky-400",
-  },
-  STALE: {
-    // Semantic colour (orange = aged/caution), not a raw neutral — keeps the
-    // badge brand-token-clean and distinct from amber (MEDIUM) / the grey LOW.
-    label: "Stale",
-    cls: "border-orange-500/40 bg-orange-500/10 text-orange-400",
-  },
-  NO_DATA: {
-    label: "No data",
-    cls: "border-[color:var(--rpc-border)] bg-[color:var(--rpc-surface-raised)] text-[color:var(--rpc-text-muted)]",
-  },
-}
-
 export const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -175,15 +137,6 @@ export function isLinkableEditionId(editionId: string | null | undefined): boole
   return UUID_RE.test(editionId || "")
 }
 
-// Resolve a confidence value to its badge style, falling back to LOW for any
-// unexpected value (mirrors `CONFIDENCE_STYLE[value] ?? CONFIDENCE_STYLE.LOW`).
-export function resolveConfidenceStyle(
-  value: FmvConfidence | null | undefined
-): { label: string; cls: string } | null {
-  if (!value) return null
-  return CONFIDENCE_STYLE[value] ?? CONFIDENCE_STYLE.LOW
-}
-
 // Query-string collections param: the joined list, or "" when nothing active.
 export function buildCollectionsQs(active: string[]): string {
   return active.length > 0 ? active.join(",") : ""
@@ -201,14 +154,6 @@ export function shouldHideTopMovers(activeCollections: string[]): boolean {
     activeCollections.length > 0 &&
     activeCollections.every((c) => TOP_MOVERS_UNSUPPORTED.has(c))
   )
-}
-
-// A mover is "thin data" (single-sale / interpolated, possibly noise) when its
-// current confidence is LOW and it had no 7d sales.
-export function isThinMover(
-  row: Pick<FmvTopMoverRow, "current_confidence" | "sales_count_7d">
-): boolean {
-  return row.current_confidence === "LOW" && row.sales_count_7d === 0
 }
 
 // Pipeline-health entries to render: filtered by the active-collection selection
@@ -278,9 +223,4 @@ export function bucketCollectionTiers(collectionRows: FmvTierPulseRow[]): {
 // Share of a tier's FMV against the collection grand total, as a percent.
 export function tierSharePct(totalFmv: number, grandTotal: number): number {
   return grandTotal > 0 ? (totalFmv / grandTotal) * 100 : 0
-}
-
-// Percent of a tier's editions that are high-confidence.
-export function pctHighConf(highConfCount: number, editionCount: number): number {
-  return editionCount > 0 ? (highConfCount / editionCount) * 100 : 0
 }

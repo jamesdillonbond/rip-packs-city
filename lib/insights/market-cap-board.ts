@@ -197,10 +197,6 @@ export function rowHref(r: MarketCapRow, group: MarketCapGroup): string | null {
 }
 
 /** Share of the cap priced at HIGH/MEDIUM confidence, or null when the cap is unknown or zero. */
-export function highConfidenceShare(r: MarketCapRow): number | null {
-  if (r.mcap_usd == null || r.mcap_high_conf_usd == null || r.mcap_usd <= 0) return null
-  return r.mcap_high_conf_usd / r.mcap_usd
-}
 
 /** Fractional change vs 7 days ago, or null when either side is unknown or the base is 0. */
 

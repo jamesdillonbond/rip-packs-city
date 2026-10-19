@@ -11,8 +11,6 @@
 // (reward packs, escrow/holding sentinels, depleted-pool survivor bias, the
 // live-secondary-ask verdict anchor).
 
-import { num } from "@/lib/pack-dist-format"
-
 // Escrow / holding / placeholder packs carry sentinel prices that produce
 // nonsense verdicts ($900K "Gross EV", 3% coverage). Suppress the price + EV
 // verdict when one is detected.
@@ -217,17 +215,6 @@ export function showCalibrated(
     modeledEv !== null &&
     Math.abs(calibratedEv - modeledEv) / modeledEv >= 0.1
   )
-}
-
-// Share of a pack's EV that comes from LOW-confidence contributors — drives the
-// ">= 25% soft EV" warning on the Top Shot pack-EV panel. Sums pct_of_ev across
-// contributors whose confidence is soft (LOW / ASK_ONLY / STALE / NO_DATA).
-export function evContributorsLowConfShare(
-  contributors: { confidence?: unknown; pct_of_ev?: string | number | null | undefined }[],
-): number {
-  return contributors
-    .filter((c) => ["LOW", "ASK_ONLY", "STALE", "NO_DATA"].includes(String(c.confidence)))
-    .reduce((s, c) => s + (num(c.pct_of_ev) ?? 0), 0)
 }
 
 // Grail premium = Actual (gross) EV − Typical Pull (median) EV, surfaced only

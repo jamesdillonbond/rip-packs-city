@@ -12,7 +12,6 @@ import {
   deriveRealizedVsModeledVerdict,
   deriveSealedResaleVerdict,
   showCalibrated,
-  evContributorsLowConfShare,
   deriveGrailPremium,
   isEvSnapshotStale,
   EV_SNAPSHOT_MAX_AGE_HOURS,
@@ -259,31 +258,6 @@ describe("showCalibrated", () => {
   })
   it("is null-safe when modeled is null even if hasModeled is (inconsistently) true", () => {
     expect(showCalibrated(true, 44, null)).toBe(false)
-  })
-})
-
-describe("evContributorsLowConfShare", () => {
-  it("sums pct_of_ev only across soft-confidence contributors", () => {
-    const contributors = [
-      { confidence: "HIGH", pct_of_ev: 40 },
-      { confidence: "LOW", pct_of_ev: 15 },
-      { confidence: "ASK_ONLY", pct_of_ev: 10 },
-      { confidence: "STALE", pct_of_ev: 5 },
-      { confidence: "NO_DATA", pct_of_ev: 3 },
-      { confidence: "MEDIUM", pct_of_ev: 27 },
-    ]
-    expect(evContributorsLowConfShare(contributors)).toBe(33)
-  })
-  it("coerces string pct_of_ev and skips non-numeric ones", () => {
-    const contributors = [
-      { confidence: "LOW", pct_of_ev: "12.5" },
-      { confidence: "LOW", pct_of_ev: null },
-      { confidence: "LOW", pct_of_ev: "n/a" },
-    ]
-    expect(evContributorsLowConfShare(contributors)).toBe(12.5)
-  })
-  it("returns 0 for an empty list", () => {
-    expect(evContributorsLowConfShare([])).toBe(0)
   })
 })
 
