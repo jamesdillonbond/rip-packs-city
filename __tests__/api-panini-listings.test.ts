@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
+import { describe, it, expect, afterEach, vi } from "vitest"
 
 // Route integration test for GET /api/panini/listings.
 // No auth and no pre-DB guards — it's an OpenSea REST proxy with an in-process

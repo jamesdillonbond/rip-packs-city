@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest"
-import { render, cleanup, fireEvent, waitFor, act } from "@testing-library/react"
+import { render, cleanup, fireEvent, waitFor } from "@testing-library/react"
 
 // GlobalSearch — the site's first catalog search bar.
 //

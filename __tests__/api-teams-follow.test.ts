@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest"
+import { describe, it, expect } from "vitest"
 
 // Route integration test for /api/teams/follow (Team Hub write). Pins the pre-DB
 // validation guards that fire before the auth/session read:

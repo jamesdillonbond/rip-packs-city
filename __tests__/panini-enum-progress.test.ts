@@ -86,8 +86,8 @@ describe("panini enumeration progress signal", () => {
   it("still stops on a genuinely exhausted grid — the fix must not make walks unbounded", () => {
     // A grid that runs out: no further pages are served at all, so neither term advances.
     // Simulated as trailing pages contributing no WC cards AND no grid items.
-    let wc = 120;
-    let gridItems = 300;
+    const wc = 120;
+    const gridItems = 300;
     let state = { last: enumProgress(wc, gridItems), stable: 0 };
     let iters = 0;
     for (let i = 0; i < 200 && state.stable < STABLE_THRESHOLD; i++) {

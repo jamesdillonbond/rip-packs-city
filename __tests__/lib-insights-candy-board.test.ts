@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest"
+import { describe, it, expect } from "vitest"
 
 // board-status is pure; import the real thing so degraded summarization is exercised.
 import { fetchCandyMlbDefault } from "@/lib/insights/candy-board"

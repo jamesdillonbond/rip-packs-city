@@ -5,7 +5,7 @@
     "@typescript-eslint/no-explicit-any"
   ],
   "counts": {
-    "@typescript-eslint/no-unused-vars": 334,
+    "@typescript-eslint/no-unused-vars": 305,
     "@next/next/no-html-link-for-pages": 92,
     "react/no-unescaped-entities": 54,
     "react-hooks/set-state-in-effect": 53,
@@ -13,9 +13,9 @@
     "import/no-anonymous-default-export": 17,
     "react-hooks/exhaustive-deps": 16,
     "react-hooks/static-components": 15,
-    "prefer-const": 11,
     "@typescript-eslint/no-require-imports": 10,
     "no-var": 9,
+    "prefer-const": 9,
     "react-hooks/purity": 6,
     "jsx-a11y/no-autofocus": 6,
     "@typescript-eslint/no-unused-expressions": 3,

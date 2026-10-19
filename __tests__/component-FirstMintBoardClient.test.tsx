@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest"
-import { render, cleanup, fireEvent, waitFor, within } from "@testing-library/react"
+import { render, cleanup, fireEvent, waitFor } from "@testing-library/react"
 import React from "react"
 
 // First-Mint Trophy Tracker client interactivity — the board had NO dedicated

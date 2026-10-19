@@ -1,6 +1,4 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import fs from "node:fs"
-import path from "node:path"
 
 // ⚠ The render sweep proves only that SOME PNG came out — and this card has a
 // branded fallback that also produces one. So the sweep cannot tell "rendered

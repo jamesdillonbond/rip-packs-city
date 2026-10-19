@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest"
-import { render, cleanup, screen, fireEvent, waitFor, within } from "@testing-library/react"
+import { render, cleanup, screen, fireEvent, waitFor } from "@testing-library/react"
 
 // Pins the Net Marketplace leaderboard's money + net-position display — the
 // fmtUsd banding ($M/$k/$/cents, sign-preserving) and the net-seller(green)/

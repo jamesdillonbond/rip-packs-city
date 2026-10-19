@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, afterEach, vi } from "vitest"
+import { describe, it, expect, afterEach } from "vitest"
 import { render, cleanup, fireEvent } from "@testing-library/react"
 
 // MarketIndexClient is the public /insights/market surface (~700 lines) — "The

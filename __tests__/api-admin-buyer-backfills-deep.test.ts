@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 import {
   makeInstrumentedSupabaseFixture,
   installFetchMock,
-  jsonRoute,
   type FetchStub,
 } from "./helpers/route-harness"
 import { adminReq } from "./helpers/admin-req"

@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest"
 import {
-  CANONICAL_TIER_RANKS,
   CANONICAL_TIERS,
   normalizeTier,
   tierRank,

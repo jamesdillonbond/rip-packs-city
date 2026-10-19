@@ -4,7 +4,6 @@ import {
   makeInstrumentedSupabaseFixture,
   installFetchMock,
   jsonRoute,
-  type FetchStub,
 } from "./helpers/route-harness"
 
 // Deep-drive of POST /api/sales-indexer (TopShot on-chain sales). Captures

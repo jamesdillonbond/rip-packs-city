@@ -3,7 +3,6 @@ import {
   makeInstrumentedSupabaseFixture,
   installFetchMock,
   jsonRoute,
-  type FetchStub,
 } from "./helpers/route-harness"
 import { cdc, cdcEvent, eventBlock } from "./helpers/flow-cdc-fixture"
 

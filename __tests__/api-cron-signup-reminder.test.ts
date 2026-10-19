@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import { makeSupabaseFixture } from "./helpers/route-harness"
 import {
   buildSignupReminderSubject,
   buildSignupReminderHtml,

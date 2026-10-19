@@ -3,7 +3,6 @@ import { NextRequest } from "next/server"
 import {
   makeInstrumentedSupabaseFixture,
   installFetchMock,
-  jsonRoute,
   type FetchStub,
 } from "./helpers/route-harness"
 

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import { render, cleanup, fireEvent, screen, waitFor } from "@testing-library/react"
+import { render, cleanup, fireEvent, screen } from "@testing-library/react"
 import ShareProfileButtons from "@/components/profile/ShareProfileButtons"
 
 // ─────────────────────────────────────────────────────────────────────────────

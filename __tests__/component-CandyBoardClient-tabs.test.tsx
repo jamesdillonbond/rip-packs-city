@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { describe, it, expect, afterEach, vi } from "vitest"
-import { render, cleanup, fireEvent, within } from "@testing-library/react"
+import { describe, it, expect, afterEach } from "vitest"
+import { render, cleanup, fireEvent } from "@testing-library/react"
 import React from "react"
 
 // Supplementary CandyBoardClient coverage. The existing
