@@ -170,4 +170,17 @@ describe("preflight: the derived selections see what `vitest related` cannot", (
     const withCode = [...tests, { file: "__tests__/c.test.ts", src: 'readFileSync("app/(collections)/layout.tsx")' }]
     expect(testsNamingPaths(withCode, ["app/(collections)/layout.tsx"])).toEqual(["__tests__/c.test.ts"])
   })
+
+  // 2026-10-18: the concierge cache-breakpoint guard reads its subject as
+  // join("app", "api", "support-chat", "route.ts"), so a literal match skipped it.
+  it("finds a test that spells the path as join() segments", () => {
+    const tests = [
+      { file: "__tests__/j.test.ts", src: 'src(join("app", "api", "support-chat", "route.ts"))' },
+      { file: "__tests__/k.test.ts", src: "join('app', 'api', 'other', 'route.ts')" },
+    ]
+    expect(testsNamingPaths(tests, ["app/api/support-chat/route.ts"])).toEqual(["__tests__/j.test.ts"])
+    expect(testsNamingPaths(tests, ["app/api/other/route.ts"])).toEqual(["__tests__/k.test.ts"])
+    // A single segment alone is not a path claim.
+    expect(testsNamingPaths([{ file: "__tests__/l.test.ts", src: '"route.ts"' }], ["app/api/x/route.ts"])).toEqual([])
+  })
 })

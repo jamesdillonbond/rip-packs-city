@@ -86,7 +86,17 @@ export function isTreeWalkingTest(src) {
 export function testsNamingPaths(tests, paths) {
   const subjects = paths.filter((p) => !p.startsWith("__tests__/") && !isDocsPath(p))
   if (!subjects.length) return []
-  return tests.filter(({ src }) => subjects.some((p) => src.includes(p))).map(({ file }) => file)
+  // A test may spell the path as segments — `join("app", "api", "support-chat", "route.ts")` —
+  // which a literal `includes` never matches: on 2026-10-18 that skipped the concierge
+  // cache-breakpoint guard and `main` went red for ~80 min across seven pushes.
+  const segmented = (p) => new RegExp(p.split("/").map(escapeRe).map((seg) => `["'\`]${seg}["'\`]`).join("\\s*,\\s*"))
+  return tests
+    .filter(({ src }) => subjects.some((p) => src.includes(p) || (p.includes("/") && segmented(p).test(src))))
+    .map(({ file }) => file)
+}
+
+function escapeRe(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 }
 
 function readTests() {
