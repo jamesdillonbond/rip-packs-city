@@ -409,6 +409,8 @@ export interface PackCoverageTotals {
   ripped_value_known_count?: number
   primary_spend_unknown_count?: number
   inferred_primary_count?: number
+  /** Packs that left the wallet by sale. With packs_ripped, a floor on packs acquired. */
+  packs_sold?: number
 }
 
 /** How much of the wallet's pack activity each money figure actually covers.
@@ -531,7 +533,14 @@ export function packCoverage(t: PackCoverageTotals): {
   // more packs carried no cost at all, so NET P&L published +$45,491 with up to
   // $18,061 of drop spend missing from its subtraction. Those packs belong in the
   // spend denominator: their cost is not known, only inferred.
-  const costedPacks = t.packs_purchased + Math.max(0, t.inferred_primary_count ?? 0)
+  // ⚠ 2026-10-18: and every pack that LEFT the wallet (ripped or sold) was
+  // acquired somehow, so exits are a floor on the packs whose cost the
+  // subtraction needs. Without it a wallet with NO buy rows at all had nothing
+  // to cost, spend coverage read a perfect 1.0, and Net P&L published the gross
+  // rip value as profit — measured on 0xd708cc29ee72b8ee (Disney Pinnacle,
+  // which has no pack buy source): 2,651 rips, $0 spent, "NET P&L +$111,399.85".
+  const exits = Math.max(0, t.packs_ripped) + Math.max(0, t.packs_sold ?? 0)
+  const costedPacks = Math.max(t.packs_purchased + Math.max(0, t.inferred_primary_count ?? 0), exits)
   const spendCov = costedPacks > 0 ? spendKnown / costedPacks : 1
   const ripCov = t.packs_ripped > 0 ? (ripKnown == null ? 0 : ripKnown / t.packs_ripped) : 1
   // A FLOOR, not a measurement. Below it the two sides of the subtraction
