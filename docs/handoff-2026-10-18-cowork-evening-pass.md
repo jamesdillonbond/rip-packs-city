@@ -42,7 +42,7 @@ Trevor: "clean things up, work through the roadmaps and the known issues list �
 ## For the next pass
 
 - #189: run 39203673094 finished (154 recovered). The weekly cycle runs Mondays; read the first scheduled walk (Mon 10-19 ~7:23 AM PDT, may queue behind the other session's mainnet27 dispatch) for `inserted` > 0. Once a proxied mainnet27 run is clean, the other session moves the weekly start below 137390146 (its focus.md note).
-- "Rpc autonomous pass" (`trig_01NXLc5syVPm5iN1Sgo4ijVs`) has no schedule and no device binding although its prompt says it is device-bound; it only runs when fired by hand. Left as is — Trevor's call whether to delete it.
+- ✅ "Rpc autonomous pass" (`trig_01NXLc5syVPm5iN1Sgo4ijVs`) — no schedule, no device binding, never ran — DELETED 10-19 at Trevor's "You take care of it" (ledger).
 
 - Read the CI conclusion of `ccf187f` (and the commits after it) first.
 - With two sessions on one prompt, re-fetch `origin/main` and grep its subjects immediately before each item.
