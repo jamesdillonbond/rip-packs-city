@@ -256,7 +256,7 @@ describe("SniperClient — the Verified-FMV gate names the real cause", () => {
     }
     render(<SniperClient />)
 
-    expect(await screen.findByText(/NO VERIFIED-FMV DEALS RIGHT NOW/i)).toBeTruthy()
+    expect(await screen.findByText(/NO SALE-PRICED DEALS RIGHT NOW/i)).toBeTruthy()
     expect(screen.getByText(/hidden by/i)).toBeTruthy()
     expect(screen.queryByText(/No deals match your filters/i)).toBeNull()
   })
@@ -275,7 +275,7 @@ describe("SniperClient — the Verified-FMV gate names the real cause", () => {
     const btn = await screen.findByRole("button", { name: /SHOW ASK-PRICED LISTINGS/i })
     fireEvent.click(btn)
     // Turning the gate off must actually surface the row it was hiding.
-    await waitFor(() => expect(screen.queryByText(/NO VERIFIED-FMV DEALS/i)).toBeNull())
+    await waitFor(() => expect(screen.queryByText(/NO SALE-PRICED DEALS/i)).toBeNull())
   })
 
   it("shows a thin-data deal's discount plain, with no 'thin data' label (2026-10-18)", async () => {
@@ -306,7 +306,7 @@ describe("SniperClient — the Verified-FMV gate names the real cause", () => {
     render(<SniperClient />)
 
     expect(await screen.findByText(/No deals match your filters/i)).toBeTruthy()
-    expect(screen.queryByText(/NO VERIFIED-FMV DEALS/i)).toBeNull()
+    expect(screen.queryByText(/NO SALE-PRICED DEALS/i)).toBeNull()
   })
 })
 

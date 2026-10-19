@@ -1240,7 +1240,7 @@ function SniperMomentsBody() {
             <p className="rpc-heading" style={{ fontSize: "var(--text-lg)" }}>
               {feedDegraded
                 ? SNIPER_DEGRADED_EMPTY_HEADING
-                : hiddenByVerifiedGate > 0 ? "NO VERIFIED-FMV DEALS RIGHT NOW"
+                : hiddenByVerifiedGate > 0 ? "NO SALE-PRICED DEALS RIGHT NOW"
                 : hiddenByFeeGate > 0 ? "NOTHING BEATS THE FEE RIGHT NOW" : "THE FLOOR IS QUIET"}
             </p>
             {feedDegraded && hiddenByVerifiedGate > 0 && (
@@ -1251,7 +1251,7 @@ function SniperMomentsBody() {
             {hiddenByVerifiedGate > 0 ? (
               <p className="rpc-mono" style={{ color: "var(--rpc-text-muted)", maxWidth: 460, lineHeight: 1.5 }}>
                 {hiddenByVerifiedGate} listing{hiddenByVerifiedGate === 1 ? " is" : "s are"} hidden by
-                the <strong>Verified FMV only</strong> filter, which is on by default. Those editions
+                the <strong>Sale-priced FMV only</strong> filter, which is on by default. Those editions
                 have no recent sales to price against, so their FMV is derived from the ask itself —
                 the &ldquo;discount&rdquo; is 0% by construction, not a deal. You can still browse them.
               </p>

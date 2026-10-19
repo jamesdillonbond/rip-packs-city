@@ -14,11 +14,11 @@
 // live, buyable deal. Each row links to the moment detail AND to the live Dapper
 // listing.
 //
-// Honesty: estimate_quality splits the rows. `tight` deals (perfect mints,
-// non-COMMON tiers, HIGH-confidence base editions) have a trustworthy discount —
-// they lead the featured strip and read as a precise %. `coarse` deals (a COMMON
-// #1 on a big common) use a player-blind population multiplier, so the % is
-// directional — shown with a ~ and an "estimate" tag, never oversold.
+// estimate_quality splits the rows INTERNALLY: `tight` deals (perfect mints,
+// non-COMMON tiers, base editions with deep recent sales) lead the featured
+// strip. Since 2026-10-18 the split is not SHOWN — no ~ prefix, no "est" tag,
+// no Tight-only filter, no "trustworthy"/"directional" copy — because Trevor's
+// rule is that nothing user-facing shows RPC's confidence in its pricing.
 //
 // Image keying: TS per-moment media CDN (assets.nbatopshot.com/media/<nft_id>/
 // image) dodges Series-1 edition-thumbnail 404s; falls back to thumbnail_url.
@@ -60,10 +60,6 @@ const TIERS: { val: TierFilter; label: string }[] = [
   { val: "RARE", label: "Rare" },
   { val: "LEGENDARY", label: "Legendary" },
 ]
-const QUALITIES: { val: QualityFilter; label: string }[] = [
-  { val: "all", label: "All" },
-  { val: "tight", label: "Tight only" },
-]
 
 function normalizeTier(t: string | null): string | null {
   if (!t) return null
@@ -86,7 +82,7 @@ function fmtInt(n: number | null): string {
 function fmtDiscount(r: Row): string {
   if (r.discount_pct == null) return "—"
   const v = Math.round(Number(r.discount_pct))
-  return r.estimate_quality === "coarse" ? `~${v}%` : `${v}%`
+  return `${v}%`
 }
 
 function tierColor(tier: string | null): string {
@@ -175,12 +171,6 @@ function HeroTile({ r }: { r: Row }) {
         </div>
         <div className="rpc-us-hero-meta">
           <span style={{ color: accentText(tierColor(r.tier)) }}>{normalizeTier(r.tier) ?? "—"}</span>
-          {r.estimate_quality === "coarse" ? (
-            <>
-              <span className="rpc-us-dot">·</span>
-              <span className="rpc-us-est-tag">est</span>
-            </>
-          ) : null}
         </div>
       </div>
     </Link>
@@ -208,14 +198,6 @@ function BoardRow({ r, rank }: { r: Row; rank: number }) {
             <>
               <span className="rpc-us-dot">·</span>
               <span style={{ color: accentText(tierColor(r.tier)) }}>{normalizeTier(r.tier)}</span>
-            </>
-          ) : null}
-          {r.estimate_quality === "coarse" ? (
-            <>
-              <span className="rpc-us-dot">·</span>
-              <span className="rpc-us-est-tag" title="Population estimate — varies by player">
-                est
-              </span>
             </>
           ) : null}
         </div>
@@ -326,7 +308,8 @@ export default function UnderpricedSerialsBoardClient({ initialRows, initialFetc
 
   const [headline, setHeadline] = useState<HeadlineMode>("all")
   const [tier, setTier] = useState<TierFilter>("all")
-  const [quality, setQuality] = useState<QualityFilter>("all")
+  // No estimate-quality control is shown (2026-10-18); the request keeps sending "all".
+  const quality: QualityFilter = "all"
   const [sort, setSort] = useState<UnderpricedSortKey>("discount")
 
   // Referral attribution on copy-link for signed-in sharers (same loop as the
@@ -378,7 +361,7 @@ export default function UnderpricedSerialsBoardClient({ initialRows, initialFetc
     return () => ctrl.abort()
   }, [headline, tier, quality, sort])
 
-  // Featured strip leads with the most trustworthy deals: tight rows by discount,
+  // Featured strip leads with the tight-estimate deals (an internal ordering, not shown), by discount,
   // regardless of the chosen sort. Falls back to all rows if none are tight.
   const heroRows = useMemo(() => {
     const tight = rows.filter((r) => r.estimate_quality === "tight" && r.discount_pct != null)
@@ -483,7 +466,7 @@ export default function UnderpricedSerialsBoardClient({ initialRows, initialFetc
 
       {heroRows.length > 0 ? (
         <section className="rpc-us-hero-strip" aria-label="Featured deals">
-          <div className="rpc-us-section-label">Featured · biggest trustworthy discounts</div>
+          <div className="rpc-us-section-label">Featured · biggest discounts</div>
           <div className="rpc-us-hero-grid">
             {heroRows.map((r) => (
               <HeroTile key={`${r.edition_id ?? r.external_id}-${r.serial_number}`} r={r} />
@@ -519,21 +502,6 @@ export default function UnderpricedSerialsBoardClient({ initialRows, initialFetc
               onClick={() => setTier(t.val)}
             >
               {t.label}
-            </button>
-          ))}
-        </div>
-
-        <div className="rpc-us-pill-group" role="tablist" aria-label="Estimate quality">
-          <span className="rpc-us-pill-label">ESTIMATE</span>
-          {QUALITIES.map((qf) => (
-            <button
-              key={qf.val}
-              role="tab"
-              aria-selected={quality === qf.val}
-              className={`rpc-us-pill ${quality === qf.val ? "rpc-us-pill-active" : ""}`}
-              onClick={() => setQuality(qf.val)}
-            >
-              {qf.label}
             </button>
           ))}
         </div>
@@ -586,11 +554,8 @@ export default function UnderpricedSerialsBoardClient({ initialRows, initialFetc
             appears only when the ask is below that estimate, ranked by the discount.
           </p>
           <p>
-            <strong>Tight</strong> deals (perfect mints, non-Common tiers, or base editions with
-            deep recent sales) have a trustworthy discount. <strong>Coarse</strong> deals — a Common #1 on a
-            big common — use a player-blind population multiplier, so the % (shown with a{" "}
-            <span className="rpc-us-est-tag">~</span>) is directional: right for stars, generous for
-            role players. Use <em>Tight only</em> to hide the coarse rows. Buy links go to the live
+            For a Common #1 on a large edition, the serial estimate applies a population-wide
+            #1 multiplier rather than one measured for that player. Buy links go to the live
             Dapper listing.
           </p>
         </div>

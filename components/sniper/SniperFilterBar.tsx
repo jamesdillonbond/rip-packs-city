@@ -260,7 +260,7 @@ export default function SniperFilterBar(props: {
           />
           <span className="inline-flex items-center gap-1">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" />
-            VERIFIED FMV ONLY
+            SALE-PRICED FMV ONLY
           </span>
         </label>
         <label

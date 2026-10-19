@@ -105,11 +105,12 @@ const upRows: UnderpricedRow[] = [
 ]
 
 describe("UnderpricedSerialsBoardClient — filter refetch + formatter branches", () => {
-  it("renders rows incl. the coarse '~%' discount branch", () => {
+  it("renders a coarse row's discount plain — no '~' confidence marker (2026-10-18)", () => {
     const { container } = render(<UnderpricedSerialsBoardClient initialRows={upRows} initialFetchedAt={FETCHED} />)
     const text = container.textContent ?? ""
     expect(text).toContain("Tight Deal")
-    expect(text).toContain("~45%") // coarse estimate → ~ prefix
+    expect(text).toContain("45%")
+    expect(text).not.toMatch(/~\s*45%/) // Trevor 2026-10-18: confidence is internal
     expect(text).toContain("60%") // tight
   })
   it("refetches with headline= when the #1 Mint pill is clicked", async () => {
@@ -121,14 +122,9 @@ describe("UnderpricedSerialsBoardClient — filter refetch + formatter branches"
       expect(calls.some((u: string) => u.includes("headline=no1"))).toBe(true)
     })
   })
-  it("refetches with quality=tight on the Tight only pill", async () => {
-    const { getByRole } = render(<UnderpricedSerialsBoardClient initialRows={upRows} initialFetchedAt={FETCHED} />)
-    boardResponse = { ok: true, rows: upRows }
-    fireEvent.click(getByRole("tab", { name: "Tight only" }))
-    await waitFor(() => {
-      const calls = (globalThis.fetch as any).mock.calls.map((c: any[]) => String(c[0]))
-      expect(calls.some((u: string) => u.includes("quality=tight"))).toBe(true)
-    })
+  it("has no Tight only pill to click (2026-10-18)", () => {
+    const { queryByRole } = render(<UnderpricedSerialsBoardClient initialRows={upRows} initialFetchedAt={FETCHED} />)
+    expect(queryByRole("tab", { name: "Tight only" })).toBeNull()
   })
   it("refetches when the sort select changes", async () => {
     const { container } = render(<UnderpricedSerialsBoardClient initialRows={upRows} initialFetchedAt={FETCHED} />)

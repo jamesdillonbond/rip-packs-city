@@ -173,7 +173,7 @@ function tierColor(tier: string | null): string {
 const VARIANCE_REASON_LABEL: Record<string, string> = {
   ev_gt_3x_ask: "EV > 3× ask (tail-driven)",
   depleted_60pct: "60%+ depleted",
-  thin_fmv_coverage: "thin FMV coverage",
+  thin_fmv_coverage: "few pool editions priced",
   single_slot_chase: "single-slot chase",
 }
 

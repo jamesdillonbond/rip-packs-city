@@ -41,12 +41,14 @@ afterEach(() => {
 })
 
 describe("UnderpricedSerialsBoardClient", () => {
-  it("renders the initial ranked rows including tight vs coarse estimates", () => {
+  it("renders the initial ranked rows, a coarse estimate's discount plain (no confidence marker, 2026-10-18)", () => {
     const { container } = render(<UnderpricedSerialsBoardClient initialRows={initialRows} initialFetchedAt="2026-08-01T00:00:00Z" />)
     expect(container.textContent).toContain("Damian Lillard")
     expect(container.textContent).toContain("Scoot")
-    // coarse estimate row prefixes the discount with ~
-    expect(container.textContent).toMatch(/~33%/)
+    // Trevor 2026-10-18: no confidence signal — the coarse row reads 33% with no ~ and no est tag
+    expect(container.textContent).toContain("33%")
+    expect(container.textContent).not.toMatch(/~\s*33%/)
+    expect(container.querySelector(".rpc-us-est-tag")).toBeNull()
     // no refetch at the default filter set
     expect(fetchFn.mock.calls.every((c) => !String(c[0]).includes("underpriced-serials?"))).toBe(true)
   })
@@ -92,13 +94,13 @@ describe("UnderpricedSerialsBoardClient", () => {
     )
   })
 
-  it("refetches with quality=tight when the Tight-only pill is clicked", async () => {
+  it("shows no estimate-quality control and no trust wording (2026-10-18)", () => {
     const { container } = render(<UnderpricedSerialsBoardClient initialRows={initialRows} initialFetchedAt={null} />)
-    const pill = [...container.querySelectorAll("button")].find((b) => /tight only/i.test(b.textContent ?? ""))!
-    fireEvent.click(pill)
-    await waitFor(() =>
-      expect(fetchFn.mock.calls.some((c) => String(c[0]).includes("quality=tight"))).toBe(true),
-    )
+    const text = container.textContent ?? ""
+    expect([...container.querySelectorAll("button")].some((b) => /tight only/i.test(b.textContent ?? ""))).toBe(false)
+    expect(container.querySelector('[aria-label="Estimate quality"]')).toBeNull()
+    expect(text).not.toMatch(/trustworthy|directional|confidence/i)
+    expect(fetchFn.mock.calls.some((c) => String(c[0]).includes("quality=tight"))).toBe(false)
   })
 
   it("renders the empty state when there are no underpriced serials", () => {

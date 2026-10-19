@@ -60,7 +60,7 @@ function fmtMoney(n: number | null): string {
 function fmtDiscount(r: Row): string {
   if (r.discount_pct == null) return "—"
   const v = Math.round(Number(r.discount_pct))
-  return r.estimate_quality === "coarse" ? `~${v}%` : `${v}%`
+  return `${v}%`
 }
 
 function serialLabel(r: Row): string {
@@ -85,7 +85,7 @@ export async function GET(req: NextRequest) {
   try {
     const origin = new URL(req.url).origin
     count = await fetchBoardCount(origin, "/api/public/insights/underpriced-serials?sort=discount", 100)
-    // Lead the card with the most trustworthy deals.
+    // Lead the card with the tight-estimate deals (internal ordering; the split is not shown, 2026-10-18).
     const r = await ogFetch(
       `${origin}/api/public/insights/underpriced-serials?quality=tight&sort=discount&limit=3`,
       { cache: "no-store" }
