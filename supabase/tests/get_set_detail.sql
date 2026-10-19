@@ -17,12 +17,12 @@
 --     999), which is why it survived the wording being wrong; a probe for
 --     `DISTINCT ON` against live does NOT indicate drift here;
 --   * D20 underlying_set_count: how many rows of `sets` merge into this slug,
---     scoped by BOTH collection_id and name — the set page keys a "merged set"
+--     scoped by BOTH collection_id and name, counting only sets that have editions (10-18) — the set page keys a "merged set"
 --     banner on it being > 1;
 --   * the jsonb envelope carries the summary passthrough fields + collection slug.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260929063531_audit_20260928_pinnacle_entity_totals_say_what_they_sum.sql; was 20260928064405;
+-- (supabase/migrations/20261019005911_audit_20261018_set_detail_underlying_count_needs_editions.sql; was 20260929063531, 20260928064405;
 -- before that, 20260822193500_audit_20260822_snapshot_get_set_detail_underlying_set_count.sql);
 -- re-pinned 2026-08-22: `db-pin-staleness` had reported this pin STALE on every
 -- run since 2026-08-10 (13 consecutive, known-issues #24). Diffed rather than
@@ -47,13 +47,13 @@ CREATE TABLE public.sets_summary (
   first_minted_at timestamptz, last_updated_at timestamptz, computed_at timestamptz);
 CREATE TABLE public.collections (id uuid PRIMARY KEY, slug text);
 CREATE TABLE public.editions (
-  id uuid PRIMARY KEY, collection_id uuid, set_name text, thumbnail_url text);
+  id uuid PRIMARY KEY, collection_id uuid, set_name text, thumbnail_url text, set_id uuid);
 CREATE TABLE public.fmv_snapshots (
   edition_id uuid, fmv_usd numeric, floor_price_usd numeric, computed_at timestamptz);
 CREATE TABLE public.pinnacle_catalog (
   set_name text, fmv_usd numeric, floor_ask numeric, total_minted int, fmv_confidence text);
 CREATE TABLE public.sets (
-  collection_id uuid, name text);
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(), collection_id uuid, name text);
 
 -- >>> BEGIN verbatim get_set_detail (keep byte-identical to the migration) >>>
 CREATE OR REPLACE FUNCTION public.get_set_detail(p_collection_id uuid, p_set_slug text)
@@ -149,7 +149,12 @@ BEGIN
   SELECT count(*) INTO v_underlying_set_count
   FROM sets s
   WHERE s.collection_id = p_collection_id
-    AND s.name::text = ANY(v_set.set_name_variants);
+    AND s.name::text = ANY(v_set.set_name_variants)
+    -- 2026-10-18 (R58 residual): only sets that HAVE editions count. An editionless
+    -- stub (`WNBA Skyline` auto_onchain_254) made /wnba-skyline say "Combined view:
+    -- 2 sets share this name" over one real set (1 false + 3 overcounted banners,
+    -- Top Shot). idx_editions_set makes this one index probe per candidate row.
+    AND EXISTS (SELECT 1 FROM editions e WHERE e.set_id = s.id);
 
   RETURN jsonb_build_object(
     'collection_id',       v_set.collection_id,
@@ -203,11 +208,20 @@ INSERT INTO public.fmv_snapshots (edition_id, fmv_usd, floor_price_usd, computed
 -- name-identical seasonal repeat), plus one row from a DIFFERENT collection and
 -- one with an unrelated name that must BOTH be excluded. Without the
 -- collection_id predicate the count reads 3; without the name predicate, 3.
+-- 2026-10-18: a third, EDITIONLESS 'Base Set' row (a stub, like prod's
+-- `WNBA Skyline` auto_onchain_254) must not count either; without the
+-- EXISTS-editions predicate the count reads 3. e1/e2 link to the two real rows.
+\set s1 '''aaaaaaaa-0000-0000-0000-000000000001'''
+\set s2 '''aaaaaaaa-0000-0000-0000-000000000002'''
+INSERT INTO public.sets (id, collection_id, name) VALUES
+  (:s1::uuid, :cid::uuid, 'Base Set'),
+  (:s2::uuid, :cid::uuid, 'Base');
 INSERT INTO public.sets (collection_id, name) VALUES
-  (:cid::uuid, 'Base Set'),
-  (:cid::uuid, 'Base'),
   ('99999999-9999-9999-9999-999999999999'::uuid, 'Base Set'),
-  (:cid::uuid, 'Unrelated Set');
+  (:cid::uuid, 'Unrelated Set'),
+  (:cid::uuid, 'Base Set');
+UPDATE public.editions SET set_id = :s1::uuid WHERE id = :e1::uuid;
+UPDATE public.editions SET set_id = :s2::uuid WHERE id = :e2::uuid;
 
 -- ── 1. not found -> NULL ─────────────────────────────────────────────────────
 SELECT _assert(public.get_set_detail(:cid::uuid, 'no-such-set') IS NULL, 'unmatched set slug -> NULL');
@@ -226,7 +240,7 @@ SELECT _assert_eq((public.get_set_detail(:cid::uuid,'base-set') ->> 'floor_total
 -- Pinned because the page keys a "merged set" banner on this being > 1, so a
 -- silent 0 or an unscoped 3 both mis-state the page. This is the ONLY behaviour
 -- that had drifted from the pin (see the file header).
-SELECT _assert_eq((public.get_set_detail(:cid::uuid,'base-set') ->> 'underlying_set_count'), '2', 'underlying_set_count = 2 (other-collection row and unrelated name excluded)');
+SELECT _assert_eq((public.get_set_detail(:cid::uuid,'base-set') ->> 'underlying_set_count'), '2', 'underlying_set_count = 2 (other-collection row, unrelated name and the editionless stub excluded)');
 
 -- ── 5. envelope passthrough ──────────────────────────────────────────────────
 SELECT _assert_eq((public.get_set_detail(:cid::uuid,'base-set') ->> 'set_name'), 'Base Set', 'set_name passthrough');

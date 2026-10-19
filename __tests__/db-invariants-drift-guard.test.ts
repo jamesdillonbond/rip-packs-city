@@ -1283,7 +1283,8 @@ const PINS = [
     fn: "get_set_detail",
     test: "supabase/tests/get_set_detail.sql",
     // 2026-09-27: Pinnacle Total Mint summed over the set's pins.
-    migration: "supabase/migrations/20260929063531_audit_20260928_pinnacle_entity_totals_say_what_they_sum.sql",
+    // 2026-10-18: D20 underlying_set_count counts only sets that have editions (R58 residual).
+    migration: "supabase/migrations/20261019005911_audit_20261018_set_detail_underlying_count_needs_editions.sql",
   },
   {
     fn: "get_user_top_owned_moments",
