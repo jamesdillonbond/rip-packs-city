@@ -1,4 +1,4 @@
-# Handoff — 2026-10-18 Cowork evening pass (~4:53 → ~8:00 PM PT)
+# Handoff — 2026-10-18 Cowork evening pass (~4:53 → ~8:45 PM PT)
 
 Trevor: "clean things up, work through the roadmaps and the known issues list … work autonomously for the next 4 hours". The same prompt went to a Claude Code cloud session at ~5:00 PM PT (session_01LS7PmY7M2BJn8KwzCDgH55); read its session entry beside this one. Every item below is in `docs/overnight/ledger.md` with its revert.
 
@@ -12,6 +12,8 @@ Trevor: "clean things up, work through the roadmaps and the known issues list �
 | Concierge: FMV coverage from the registry (Candy + Panini were unmeasured); empty top-sales window names the last indexed sale; request time in the per-request prompt block | `512eb30`, fixed in `834867b` | live signed-in QA in Trevor's Chrome found all three |
 | Signed-out visitor with a pasted wallet: no more guaranteed-401 warm-ups (WarmupContext, WalletHydrator) | `ffeb260` | tests; the Collection-tab half shipped from the other session (`fdbe455`) |
 | Pack Net P&L: packs with no buy row count against spend coverage; Collection-tab Packs view gated | `57e945a` | Trevor's wallet published +$45,491 with up to $18,061 of drop spend missing |
+| The 7 empty UFC `sets` rows deleted (Trevor approved at 8:16 PM) | one-off pg_cron job, 8:19 PM PT | `DELETE 7`; 0 of the 7 ids remain; job unscheduled; backup rows kept |
+| Concierge deal tools carry `market_activity` (0 indexed sales in 7 days) so a frozen market is never called fast-moving | see ledger | tests + planted defect |
 | Roadmap §2 (M3 anonymous half), §5 Golazos/UFC rows; pack-ev feature line | docs | — |
 
 ## ⚠ `main` was red 6:19 → 7:47 PM PT, my fault
@@ -26,10 +28,8 @@ Trevor: "clean things up, work through the roadmaps and the known issues list �
 
 ## Left for Trevor / later
 
-- The held 7-row UFC `sets` DELETE (`docs/audits/2026-10-18-ufc-tier-word-sets-and-fighter-punctuation.sql`) — not routed around the MCP's destructive-statement gate while Trevor is away.
 - #114 (Cowork-desktop artifact store) — not reachable from a cloud session.
 - Trophy-case FMV can be LOW confidence with no label (a Panini 1/1 at $25 LOW on Trevor's case) — product call.
-- Concierge says "floors move fast" about Golazos deals (a frozen market). Not changed: the other session was editing the same route this evening.
 
 ## For the next pass
 
