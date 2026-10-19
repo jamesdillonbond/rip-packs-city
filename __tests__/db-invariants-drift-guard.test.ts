@@ -350,8 +350,9 @@ const PINS = [
     test: "supabase/tests/pinnacle_readers_use_the_pin_catalog.sql",
     // Re-pointed 2026-10-12 (review E4): the editions arm carries
     // editions.description (Pinnacle arms NULL) for the edition page + its meta.
+    // Re-pointed 2026-10-19: a legacy key's live_ask reads the render floor.
     migration:
-      "supabase/migrations/20261012232629_audit_20261012_get_edition_detail_carries_description.sql",
+      "supabase/migrations/20261019145210_audit_20261019_pinnacle_legacy_key_live_ask_reads_the_render_floor.sql",
   },
   {
     fn: "get_platform_stats",
@@ -1328,7 +1329,7 @@ const PINS = [
   {
     fn: "get_moment_detail",
     test: "supabase/tests/get_moment_detail.sql",
-    migration: "supabase/migrations/20260726016000_audit_20260726_serial_fmv_consumers_pooled_edition_id.sql",
+    migration: "supabase/migrations/20261019145416_audit_20261019_pinnacle_moment_detail_legacy_ask_reads_the_render_floor.sql",
   },
   // ── 2026-07-29 batch 2: more high-traffic read RPCs ─────────────────────────
   {

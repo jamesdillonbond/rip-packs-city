@@ -19,7 +19,8 @@
 --   * similar_editions surfaces same-player editions.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260726016000_audit_20260726_serial_fmv_consumers_pooled_edition_id.sql);
+-- (supabase/migrations/20261019145416_audit_20261019_pinnacle_moment_detail_legacy_ask_reads_the_render_floor.sql;
+-- repointed 2026-10-19 from 20260726016000 when the legacy-key ask moved to the render floor);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -104,11 +105,20 @@ BEGIN
       'is_serialized', pe.is_serialized, 'is_chaser', pe.is_chaser,
       'thumbnail_url', pe.thumbnail_url, 'studio', pe.studio,
       'materials', pe.materials, 'effects', pe.effects,
-      'edition_key', pe.edition_key, 'ask_price', pe.ask_price,
-      'ask_source', pe.ask_source, 'collection_slug', 'disney_pinnacle'
+      'edition_key', pe.edition_key, 'ask_price', cf.floor_ask,
+      'ask_source', CASE WHEN cf.floor_ask IS NULL THEN NULL ELSE 'pinnacle_catalog' END,
+      'collection_slug', 'disney_pinnacle'
     )
     INTO v_edition
     FROM pinnacle_editions pe
+    -- 2026-10-19 ASK-unify: the lowest live render floor under this set-level key,
+    -- never the legacy pe.ask_price (frozen since 2026-07-17, no writer).
+    LEFT JOIN LATERAL (
+      SELECT min(pc.floor_ask) AS floor_ask
+      FROM pinnacle_catalog pc
+      WHERE pc.legacy_edition_key = pe.edition_key
+        AND pc.floor_ask IS NOT NULL
+    ) cf ON true
     WHERE pe.id = v_resolved.pinnacle_edition_id;
 
     SELECT jsonb_build_object(

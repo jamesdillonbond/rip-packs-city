@@ -1,6 +1,8 @@
 # Pinnacle grain migration — design doc (2026-07-17)
 
-**Status:** proposal for Trevor's review. **No code or data changed by this doc.**
+> ✅ **STATUS 2026-10-19: ASK-unify (Item #1 / Phase 2) is COMPLETE.** Reader, writer and pager were retired 07-17 (route deleted 08-21); the last two DB readers of the frozen `pinnacle_editions.ask_price` (`get_edition_detail` legacy-key `live_ask`, `get_moment_detail` legacy-key `edition.ask_price`) now read the lowest render floor under the key (`20261019145210`, `20261019145416`). Phase 3 (drop the frozen columns, the caller-less `pinnacle_listings_reconcile` / `pinnacle_refresh_editions_ask`, or the table) is optional cleanup that nothing depends on. Current state: [collections/disney-pinnacle.md](collections/disney-pinnacle.md). The body below is the 07-17 design, kept as history.
+
+**Status (07-17):** proposal for Trevor's review. **No code or data changed by this doc.**
 Author: Claude Code (interactive). All numbers read live from the production DB
 (`bxcqstmqfzmuolpuynti`) on 2026-07-17.
 

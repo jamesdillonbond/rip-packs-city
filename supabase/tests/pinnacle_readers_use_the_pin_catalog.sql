@@ -22,7 +22,8 @@
 -- The function DDL below is VERBATIM from the committed migrations
 -- (supabase/migrations/20260926215225_audit_20260926_pinnacle_remaining_readers_use_the_pin_catalog.sql
 -- for seven of the eight; get_edition_detail from
--- supabase/migrations/20261012232629_audit_20261012_get_edition_detail_carries_description.sql).
+-- supabase/migrations/20261019145210_audit_20261019_pinnacle_legacy_key_live_ask_reads_the_render_floor.sql;
+-- re-pinned 2026-10-19 from 20261012232629 when the legacy-key live_ask moved to the render floor).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -321,16 +322,24 @@ BEGIN
         )
       END,
       'live_ask', CASE
-        WHEN pe.ask_price IS NULL THEN NULL
+        WHEN cf.floor_ask IS NULL THEN NULL
         ELSE jsonb_build_object(
-          'price',          pe.ask_price,
-          'source',         pe.ask_source,
-          'updated_at',     pe.ask_updated_at
+          'price',          cf.floor_ask,
+          'source',         'pinnacle_catalog',
+          'updated_at',     cf.floor_ask_updated_at
         )
       END
     ) INTO result
     FROM pinnacle_editions pe
     LEFT JOIN LATERAL public.get_pinnacle_edition_fmv_collapsed(pe.id) fmv ON true
+    -- 2026-10-19 ASK-unify: the lowest live render floor under this set-level
+    -- key, never the legacy pe.ask_price (frozen since 2026-07-17, no writer).
+    LEFT JOIN LATERAL (
+      SELECT min(pc.floor_ask) AS floor_ask, max(pc.floor_ask_updated_at) AS floor_ask_updated_at
+      FROM pinnacle_catalog pc
+      WHERE pc.legacy_edition_key = pe.edition_key
+        AND pc.floor_ask IS NOT NULL
+    ) cf ON true
     WHERE pe.id = p_route_slug;
 
     -- 2026-09-26: a legacy key names ONE character for a key that can span
@@ -713,6 +722,11 @@ SELECT _assert_eq((public.get_edition_detail(:pin::uuid, 'K') -> 'characters')::
 SELECT _assert_eq((public.get_edition_detail(:pin::uuid, 'M') ->> 'player_name'), 'Moana', 'single-character key: unchanged');
 SELECT _assert_eq((public.get_edition_detail(:pin::uuid, 'M') ->> 'source'), 'pinnacle_editions', 'single-character key: still the legacy row');
 SELECT _assert(public.get_edition_detail(:pin::uuid, 'nope') IS NULL, 'unknown slug -> NULL');
+-- 6. (2026-10-19, ASK-unify) a legacy key's live_ask is the lowest live render floor
+--    under it, never the frozen pinnacle_editions.ask_price (K's 4, stamped 70 days ago).
+SELECT _assert_eq((public.get_edition_detail(:pin::uuid, 'K') -> 'live_ask' ->> 'price'), '9', 'legacy key: live_ask = lowest render floor under the key (r1 9; r2 has none), not the frozen 4');
+SELECT _assert_eq((public.get_edition_detail(:pin::uuid, 'K') -> 'live_ask' ->> 'source'), 'pinnacle_catalog', 'legacy key: live_ask names the catalog, never pinnacle_direct');
+SELECT _assert_eq((public.get_edition_detail(:pin::uuid, 'M') -> 'live_ask' ->> 'price'), '6', 'single-character key: its one render floor');
 
 -- ── 4. platform stats + sets summary count pins ───────────────────────────────
 SELECT _assert_eq((SELECT x->>'edition_count' FROM jsonb_array_elements(public.get_platform_stats()->'per_collection') x WHERE x->>'slug' = 'disney_pinnacle'), '4', 'platform: 4 pins, not 2 keys');
