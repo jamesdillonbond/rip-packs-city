@@ -28,7 +28,7 @@
 
 ## STEER — added 2026-10-18 ~12:47 PM PT (Claude Code cloud, 5-hour daytime block) — what the night pass must know before it acts
 
-- ~~`rows_written` / `rows_found` fabricated for 91 of 93 DB lanes~~ ⛔ **CORRECTED 12:59 PM PT: a regex artefact.** Only 3 functions use the 3-arg wrapper (`refresh_fmv_confidence_precompute` and `run_refresh_pack_grail_metrics_mv_job` still log a fabricated `rows_written`; the pack-sim lane is fixed). The other 95 pass real counts. No estate-wide caution needed (#195).
+- ~~`rows_written` / `rows_found` fabricated for 91 of 93 DB lanes~~ ⛔ **CORRECTED 12:59 PM PT: a regex artefact.** Only 3 functions use the 3-arg wrapper, and all 3 are fixed (pack-sim 10-18 ~12:38 PM; `refresh_fmv_confidence_precompute` and `run_refresh_pack_grail_metrics_mv_job` 10-18 ~3:24 PM PT, `20261018222342`, #195 resolved — re-read 10-19). The other 95 pass real counts. No estate-wide caution needed (#195).
 - ✅ **NBA probe DONE + REMOVED 10-18 ~12:51 PM PT:** Vercel egress gets ESPN 403 and cdn.nba.com timeouts, so there is no free cloud path (#8). Nothing to do; do not re-probe.
 - **Fast Break is PARKED IN PLACE (decided 10-18).** Do not hand-insert `fast_break_runs` rows or turn on `NEXT_PUBLIC_SHOW_FAST_BREAK` while projections are dead. Re-look with #8 on 10-28.
 - **Cron cadence changed 10-18:** `topshot-set-series-onchain` every 10 min, `topshot-circulation-onchain` every 6 h, `topshot-pack-dist-names-onchain` every 3 h. More runs of these lanes are expected, not a regression.
