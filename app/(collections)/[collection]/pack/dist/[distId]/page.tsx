@@ -2168,13 +2168,14 @@ async function PackStreamedTop({
   const showLifecycle = lcOpened !== null && lcOpened > 0
   const lcInferredOnly = (lcConfirmed ?? 0) === 0 && (lcInferred ?? 0) > 0
   // TS + AllDay pack-open history is reconstructed to genesis via the Dapper
-  // searchPackNft registry (complete). Golazos/Pinnacle remain on-chain-window only.
-  // AllDay's v_allday_pack_lifecycle count is complete (on-chain open ingest).
+  // searchPackNft registry (complete). Golazos remains on-chain-window only.
+  // AllDay's v_allday_pack_lifecycle count is complete (on-chain open ingest), and
+  // so is Pinnacle's v_pinnacle_pack_lifecycle (91,471 opens = Dapper's index, 10-10).
   // Top Shot's get_pack_lifecycle_row counts only opens ATTRIBUTED to this dist via
   // the pack_rips bridge (partial: ~20% and growing) — NOT the complete open history,
   // which lives in the supply counters shown in the KPI row above (total_opened /
   // Depletion). Label the TS number as the sample it is so it never contradicts them.
-  const lcSince = collection === "nfl-all-day" ? "complete open history" : "attributed rips · sample"
+  const lcSince = collection === "nfl-all-day" || collection === "disney-pinnacle" ? "complete open history" : "attributed rips · sample"
 
   // Modeled-vs-realized reality check
   const reModeled = num(realizedEv?.modeled_gross_ev)

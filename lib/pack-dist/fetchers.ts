@@ -445,9 +445,43 @@ export async function fetchDistFallback(
 
 /**
  * Observed pack lifecycle. All Day reads `v_allday_pack_lifecycle` and maps into
- * the shared shape; Top Shot uses the per-dist SECDEF RPC. Any OTHER collection
- * has no lifecycle source at all — that is `ok: true` with no data, not a failure.
+ * the shared shape; Top Shot uses the per-dist SECDEF RPC; Disney Pinnacle reads
+ * `v_pinnacle_pack_lifecycle` (2026-10-19). Any OTHER collection has no
+ * lifecycle source at all — that is `ok: true` with no data, not a failure.
  */
+type PinnacleLifecycleRow = {
+  packs_opened: number | null
+  moments_pulled: number | null
+  n_valued: number | null
+  realized_pull_value_usd: number | null
+  avg_realized_value_per_pack: number | null
+  realized_median: number | null
+}
+
+/**
+ * One read of v_pinnacle_pack_lifecycle (2026-10-19) for a Pinnacle dist; the
+ * lifecycle and realized panels share it. An error is ok:false; a dist with no
+ * opens is ok:true with no data (the panel does not render).
+ */
+async function readPinnacleLifecycle(
+  distId: string,
+  db: Db,
+): Promise<{ data: PinnacleLifecycleRow | null; ok: boolean }> {
+  const { data, error } = await bounded(
+    db
+      .from("v_pinnacle_pack_lifecycle")
+      .select("packs_opened, moments_pulled, n_valued, realized_pull_value_usd, avg_realized_value_per_pack, realized_median")
+      .eq("dist_id", distId)
+      .maybeSingle(),
+    "pinnacle_pack_lifecycle",
+  )
+  if (error) {
+    console.error("[pack-detail] pinnacle_pack_lifecycle error", error.message)
+    return { data: null, ok: false }
+  }
+  return { data: (data as PinnacleLifecycleRow | null) ?? null, ok: true }
+}
+
 export async function fetchPackLifecycle(
   collectionSlug: string,
   distId: string,
@@ -484,6 +518,30 @@ export async function fetchPackLifecycle(
         realized_pull_value_usd: data.realized_pull_value_usd ?? null,
         avg_realized_value_per_pack: data.avg_realized_value_per_pack ?? null,
         observed_depletion_pct: data.opened_pct_of_minted ?? null,
+      },
+    }
+  }
+  if (collectionSlug === "disney-pinnacle") {
+    const r = await readPinnacleLifecycle(distId, db)
+    if (!r.ok) return { data: null, ok: false }
+    if (!r.data) return { data: null, ok: true }
+    const d = r.data
+    return {
+      ok: true,
+      data: {
+        packs_opened: d.packs_opened ?? null,
+        // pinnacle_pack_opens is the complete on-chain open history (equal to
+        // Dapper's index, ledger 2026-10-10): every open is confirmed.
+        packs_opened_confirmed: d.packs_opened ?? null,
+        packs_opened_inferred: 0,
+        // Pinnacle supply counters are not reliable for new drops (Studio stopped
+        // listing them; PDS-seeded rows carry 0/0), so sealed and depletion stay
+        // unknown rather than derived from a counter that may be a placeholder.
+        packs_sealed_observed: null,
+        moments_pulled: d.moments_pulled ?? null,
+        realized_pull_value_usd: d.realized_pull_value_usd ?? null,
+        avg_realized_value_per_pack: d.avg_realized_value_per_pack ?? null,
+        observed_depletion_pct: null,
       },
     }
   }
@@ -527,6 +585,27 @@ export async function fetchPackRealizedEv(
         realized_median: data.realized_median ?? null,
         realized_p90: null,
         realized_to_modeled_ratio: data.realized_to_modeled_ratio ?? null,
+        calibrated_ev: null,
+      },
+    }
+  }
+  if (collectionSlug === "disney-pinnacle") {
+    const r = await readPinnacleLifecycle(distId, db)
+    if (!r.ok) return { data: null, ok: false }
+    if (!r.data) return { data: null, ok: true }
+    const d = r.data
+    return {
+      ok: true,
+      data: {
+        // No modeled side here: the panel shows the realized pull distribution
+        // alone ("Realized pull value"), never a ratio against a model.
+        modeled_gross_ev: null,
+        // Priced opens only: the mean and median are over those.
+        n_opens: d.n_valued ?? null,
+        realized_mean: d.avg_realized_value_per_pack ?? null,
+        realized_median: d.realized_median ?? null,
+        realized_p90: null,
+        realized_to_modeled_ratio: null,
         calibrated_ev: null,
       },
     }

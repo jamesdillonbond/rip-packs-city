@@ -396,6 +396,60 @@ describe("fetchPackRealizedEv", () => {
   })
 })
 
+describe("Disney Pinnacle reads v_pinnacle_pack_lifecycle (2026-10-19)", () => {
+  const ROW = {
+    packs_opened: 414, moments_pulled: 414, n_valued: 410,
+    realized_pull_value_usd: 24702, avg_realized_value_per_pack: 59.67, realized_median: 30,
+  }
+
+  it("lifecycle: complete-history opens, every one confirmed; sealed and depletion stay UNKNOWN", async () => {
+    const { db, calls } = makeDb({ v_pinnacle_pack_lifecycle: { data: ROW, error: null } })
+    const res = await fetchPackLifecycle("disney-pinnacle", "8891", db)
+    expect(calls).toEqual(["v_pinnacle_pack_lifecycle"])
+    expect(res).toEqual({
+      ok: true,
+      data: {
+        packs_opened: 414, packs_opened_confirmed: 414, packs_opened_inferred: 0,
+        // A placeholder 0/0 supply counter must never become "0 sealed" or "100% opened".
+        packs_sealed_observed: null, observed_depletion_pct: null,
+        moments_pulled: 414, realized_pull_value_usd: 24702, avg_realized_value_per_pack: 59.67,
+      },
+    })
+  })
+
+  it("realized: priced opens and their mean/median, with NO modeled side and no ratio", async () => {
+    const { db } = makeDb({ v_pinnacle_pack_lifecycle: { data: ROW, error: null } })
+    const res = await fetchPackRealizedEv("disney-pinnacle", "8891", db)
+    expect(res).toEqual({
+      ok: true,
+      data: {
+        modeled_gross_ev: null, n_opens: 410, realized_mean: 59.67, realized_median: 30,
+        realized_p90: null, realized_to_modeled_ratio: null, calibrated_ev: null,
+      },
+    })
+  })
+
+  it("an unpriced dist passes its NULL value through — never a fabricated $0", async () => {
+    const { db } = makeDb({
+      v_pinnacle_pack_lifecycle: {
+        data: { ...ROW, n_valued: 0, realized_pull_value_usd: null, avg_realized_value_per_pack: null, realized_median: null },
+        error: null,
+      },
+    })
+    expect((await fetchPackLifecycle("disney-pinnacle", "1", db)).data).toMatchObject({ realized_pull_value_usd: null, avg_realized_value_per_pack: null })
+    expect((await fetchPackRealizedEv("disney-pinnacle", "1", db)).data).toMatchObject({ realized_mean: null, n_opens: 0 })
+  })
+
+  it("error → ok:false and absent → ok:true, for both panels", async () => {
+    for (const fetcher of [fetchPackLifecycle, fetchPackRealizedEv]) {
+      const err = makeDb({ v_pinnacle_pack_lifecycle: { data: null, error: DB_ERR } })
+      expect(await fetcher("disney-pinnacle", "1", err.db)).toEqual({ data: null, ok: false })
+      const absent = makeDb({ v_pinnacle_pack_lifecycle: { data: null, error: null } })
+      expect(await fetcher("disney-pinnacle", "1", absent.db)).toEqual({ data: null, ok: true })
+    }
+  })
+})
+
 describe("fetchAllDayCorrectedEv", () => {
   it("reads the lean detail view and returns the row", async () => {
     const { db, calls } = makeDb({
