@@ -32,6 +32,8 @@ Three values must never be labelled as one another (packs.md 09-26): the EV of w
 - **10-15/16:** `refresh_pack_market_sales_cache` recomputes dists that SOLD first. `backfill_pack_rip_metadata` buffers fell 4.28 M → 453 k a run (but the run is disk-bound, so wall time fell only ~10 %).
 - **Giveaways (10-03/04).** Claim pages open packs card by card. Winners can claim with Flow Wallet using an account proof. Delivery stays the sponsor's admin-signed Deliver all, the one read-only exception.
 
+- **10-18 ~8:10 PM PT (Cowork cloud):** Pack Net P&L counts packs with no buy row (inferred drop cost) in its spend-coverage floor, and the Collection tab's Packs view now withholds on the same rule — it had published per-collection Net P&L with no check (ledger 10-18; `57e945a`).
+
 ## Open issues
 
 - **Pre-2023-11-08 Top Shot custodial pack opens are missing** for 33 of 34 saved wallets (#190). Declined: every free source is ruled out, and the keyed ones are infra spend.
