@@ -1,5 +1,6 @@
 "use client"
 
+import { PACK_LISTING_COLLECTIONS } from "@/lib/packs/pack-listing-collections"
 import {
   createContext,
   useCallback,
@@ -271,9 +272,9 @@ export default function WarmupProvider({ children }: { children: React.ReactNode
 
         // 3. Pack listings (120 s) — keyed to match PackPageClient's
         // useWarmCache key ("pack-listings:" + collection, no filter suffix at
-        // the default sort/tier). Only Top Shot + NFL All Day expose a packs
-        // surface (the route 400s for others), so skip the prewarm elsewhere.
-        if (activeCollection === "nba-top-shot" || activeCollection === "nfl-all-day") {
+        // the default sort/tier). Only for the collections /api/packs serves
+        // (PACK_LISTING_COLLECTIONS, shared with the route — it 400s elsewhere).
+        if (PACK_LISTING_COLLECTIONS.has(activeCollection)) {
           const packKey = "pack-listings:" + activeCollection
           tasks.push(
             (async () => {

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { PACK_LISTING_COLLECTIONS } from "@/lib/packs/pack-listing-collections"
 import { createClient } from "@supabase/supabase-js"
 import { derivePackAvailability, packEvBasis } from "@/lib/pack-availability"
 import { apiErrorResponse } from "@/lib/api-error"
@@ -15,13 +16,9 @@ const supabase: any = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!,
 )
 
-// disney-pinnacle added 2026-07-06 — render-keyed supply-weighted pack EV via
-// the compute-pinnacle-pack-ev pipeline; since 2026-09-28 its EV is merged at
-// DROP grain from v_pinnacle_pack_drop_ev (below).
-// laliga-golazos re-added 2026-07-07 — the compute-golazos-pack-ev pipeline is
-// the AllDay v8 clone (supply/circulation-weighted EV baked into the writer), so
-// the base EV in pack_table_rows is already odds-aware; no corrected-EV merge.
-const ALLOWED_COLLECTIONS = new Set(["nba-top-shot", "nfl-all-day", "disney-pinnacle", "laliga-golazos"])
+// Which collections this route serves, and why: lib/packs/pack-listing-collections.ts
+// (shared with the site-wide warm-up so the two cannot drift).
+const ALLOWED_COLLECTIONS = PACK_LISTING_COLLECTIONS
 
 type SortKey = "value_ratio_desc" | "ev_margin_pct_desc" | "retail_price_asc" | "title_asc"
 const ALLOWED_SORTS = new Set<SortKey>([

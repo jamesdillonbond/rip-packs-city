@@ -166,7 +166,10 @@ describe("warming sequence — which collection it warms", () => {
 })
 
 describe("warming sequence — which surfaces exist for that collection", () => {
-  it.each([["nba-top-shot"], ["nfl-all-day"]])(
+  // 2026-10-18 RE-PINNED: Golazos and Pinnacle moved here from the "does NOT
+  // warm" list — that list claimed /api/packs 400s for them, but the route has
+  // served both since 07-06/07 (lib/packs/pack-listing-collections.ts).
+  it.each([["nba-top-shot"], ["nfl-all-day"], ["laliga-golazos"], ["disney-pinnacle"]])(
     "warms the packs surface for %s, which has one",
     async (slug) => {
       await mountAt(`/${slug}/collection`)
@@ -178,7 +181,7 @@ describe("warming sequence — which surfaces exist for that collection", () => 
   // unrecognised segment falls back to the last-visited collection, so the wrong
   // slug here silently tests Top Shot instead — which is exactly what the
   // paired positive assertion below catches.
-  it.each([["laliga-golazos"], ["disney-pinnacle"], ["ufc"]])(
+  it.each([["ufc"]])(
     "does NOT warm packs for %s — that route 400s there",
     async (slug) => {
       // Warming a route that cannot serve this collection spends a request to
