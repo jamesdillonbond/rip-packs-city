@@ -4,6 +4,14 @@
 
 **Rewrite rule for whoever edits this next: a focus file STEERS the next night, it is not an archive.** If a section is describing something that shipped more than ~a week ago and is not still a live trap, move it to the ledger and delete it here. A stale steer is worse than no steer.
 
+## STEER — added 2026-10-18 ~6:40 PM PT (Claude Code cloud, evening block) — what the night pass must know
+
+- **Two data writes are PARKED for operator confirmation** (a cloud session's DML is held). Do not retry them via MCP; they need the SQL editor. (1) `docs/pending-sql/20261018-marketplace-status-allday-primary-venue.sql`: All Day's venue row names V1 primary, but V2 carries ~99 % of sales. (2) `docs/pending-sql/20261018-topshot-missing-fill-offers-snapshot-refresh.sql`: #189 leaks ~9 % of new Top Shot offer fills; the walk already reads to the tip, so it needs the snapshot refresh plus a workflow re-walk from `start_block=137390146`.
+- **1.8.1 MEDIUM rows are draining by design**, not stuck: they were computed before the 1.8.2 deploy (9:48 PM PT 10-17) and re-grade as the catalogue sweep reaches them. Read 6:17 PM PT: Golazos 3 · Top Shot 199 · All Day 25 (from 5 · 268 · 36 at 5:50 PM PT). Falsifier: any 1.8.1 MEDIUM with 0 sales in 30 days still present on 10-20. M1/M2 legs dipping as they go LOW is the decided label correction, not a regression.
+- **a11y-audit now gates 4 rules over 13 routes** (adds the Sniper and a populated Collection tab). A red there is a real node on a real page, not flake.
+- **New invariant:** `supabase/tests/derive_pinnacle_wmc_from_catalog.sql`. The hourly render-id pass now fills Pinnacle `player_name`; a NULL-name Pinnacle wmc row with a catalog-named render_id, older than ~1 h, is a regression.
+- **Set pages:** "Combined view: N sets" now counts only sets with editions (`wnba-skyline` reads 1). The 15 editionless Top Shot `sets` rows are harmless; deleting them is Trevor's call.
+
 ## STEER — added 2026-10-18 ~12:47 PM PT (Claude Code cloud, 5-hour daytime block) — what the night pass must know before it acts
 
 - ~~`rows_written` / `rows_found` fabricated for 91 of 93 DB lanes~~ ⛔ **CORRECTED 12:59 PM PT: a regex artefact.** Only 3 functions use the 3-arg wrapper (`refresh_fmv_confidence_precompute` and `run_refresh_pack_grail_metrics_mv_job` still log a fabricated `rows_written`; the pack-sim lane is fixed). The other 95 pass real counts. No estate-wide caution needed (#195).
