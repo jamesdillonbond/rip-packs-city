@@ -11,10 +11,10 @@ import AxeBuilder from "@axe-core/playwright"
 // docs/reference/text-colour-system.md) took `color-contrast` to ZERO on every route
 // in both themes apart from ONE accepted exception, and `select-name` to zero — so
 // those two rules are now BLOCKING. Every other serious/critical rule is still
-// PRINTED but does not fail the run. `nested-interactive` (moment rows with
-// role="button") and `aria-conditional-attr` (sniper rows' aria-expanded on a <tr>)
-// were the #196 row-interactivity pattern, redesigned 10-18 (disclosure buttons);
-// they move into GATED once a production run of the two routes below reads zero.
+// PRINTED but does not fail the run, EXCEPT `nested-interactive` and
+// `aria-conditional-attr`: the #196 row-interactivity pattern, redesigned 10-18
+// (disclosure buttons), read 0 on the Sniper and Collection routes in both themes on
+// production (run 39180539821) and were GATED the same evening.
 // Move a rule into GATED once it reads zero; never move one out to make a run green.
 //
 // ⛔ THE ONE EXCLUSION is the accepted pre-launch exception (roadmap-status "Brand
@@ -44,7 +44,7 @@ const ROUTES = [
 ]
 const THEMES = ["dark", "light"] as const
 const SERIOUS = new Set(["serious", "critical"])
-const GATED = new Set(["color-contrast", "select-name"])
+const GATED = new Set(["color-contrast", "select-name", "nested-interactive", "aria-conditional-attr"])
 const SUMMARY = "a11y-summary.md"
 
 // Same settle as e2e/healthy-page.ts: `load` fires before a streaming App
@@ -109,6 +109,6 @@ for (const path of ROUTES) for (const theme of THEMES) {
       contentType: "application/json",
     })
 
-    expect(gated, `${url} has ${gated.length} gated axe violation(s) (color-contrast / select-name)`).toEqual([])
+    expect(gated, `${url} has ${gated.length} gated axe violation(s) (${[...GATED].join(" / ")})`).toEqual([])
   })
 }

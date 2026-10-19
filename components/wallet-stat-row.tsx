@@ -181,11 +181,11 @@ export default function WalletStatRow(props: WalletStatRowProps) {
           <div className="rpc-stat-caption">
             {formatCount(momentCount)} {noun}
             {typeof staleFmv === "number" && staleFmv > 0 ? (
-              <span style={{ display: "block", opacity: 0.8 }}>
+              <span style={{ display: "block" }}>
                 + {formatCurrency(staleFmv)} across {formatCount(staleCount ?? 0)} stale-priced
               </span>
             ) : staleUnknown && walletFmv !== null ? (
-              <span style={{ display: "block", opacity: 0.8 }}>
+              <span style={{ display: "block" }}>
                 raw total — stale-priced split unavailable
               </span>
             ) : null}

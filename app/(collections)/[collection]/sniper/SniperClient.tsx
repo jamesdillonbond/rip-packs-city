@@ -1711,7 +1711,7 @@ function SniperMomentsBody() {
                             floor, and must not say "Floor" (2026-09-26; the real floor is in the
                             row's depth panel, read from /api/edition-floor). */}
                         {deal.isLowestAsk && (
-                          <span className="rpc-chip" data-testid="feed-low-chip" title="Lowest ask for this edition among the listings in this feed — the edition's floor may be lower (expand the row)" style={{ background: "rgba(16,185,129,0.15)", borderColor: "rgba(16,185,129,0.3)", color: "var(--rpc-success-text)", fontSize: 9, padding: "1px 5px" }}>
+                          <span className="rpc-chip" data-testid="feed-low-chip" title="Lowest ask for this edition among the listings in this feed — the edition's floor may be lower (expand the row)" style={{ background: "rgba(16,185,129,0.15)", borderColor: "rgba(16,185,129,0.3)", /* 9 px text on its own green tint, over a row that may carry the hot-deal / highlight tint too: the plain success twin read below 4.5:1 in light theme (axe, prod 10-18). Pulling it toward the primary text colour darkens it in light and lightens it in dark. */ color: "color-mix(in srgb, var(--rpc-success-text) 75%, var(--rpc-text-primary))", fontSize: 9, padding: "1px 5px" }}>
                             Feed low
                           </span>
                         )}
