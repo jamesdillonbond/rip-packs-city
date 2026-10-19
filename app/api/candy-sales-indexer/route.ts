@@ -486,6 +486,13 @@ async function handleIndex(req: NextRequest) {
       }
 
       let activitiesSeen = 0
+      // What the walk actually SAW, by type and time. "500 activities, 0 sales"
+      // alone cannot tell a market with no buyers from a sale emitted under a
+      // type name SALE_TYPES does not list (2026-10-19: a week of 0 sales with
+      // 360 listings ending on the same feed, and nothing recorded which).
+      const activityTypes: Record<string, number> = {}
+      let newestActivityMs: number | null = null
+      let oldestActivityMs: number | null = null
       let reachedKnown = false
       let budgetExhausted = false
       for (let page = 0; page < MAX_PAGES && !reachedKnown; page++) {
@@ -501,6 +508,12 @@ async function handleIndex(req: NextRequest) {
         const salesRows: Record<string, unknown>[] = []
         for (const a of acts) {
           const tMs = (a.blockTime ?? 0) * 1000
+          const typeKey = typeof a.type === "string" && a.type ? a.type : "(none)"
+          activityTypes[typeKey] = (activityTypes[typeKey] ?? 0) + 1
+          if (a.blockTime) {
+            if (newestActivityMs === null || tMs > newestActivityMs) newestActivityMs = tMs
+            if (oldestActivityMs === null || tMs < oldestActivityMs) oldestActivityMs = tMs
+          }
           // Stop once we cross into already-recorded territory (with the page
           // still processed up to the boundary; DB dedup covers any overlap).
           if (cursorBeforeMs && tMs <= cursorBeforeMs) {
@@ -650,6 +663,11 @@ async function handleIndex(req: NextRequest) {
         unresolved_open: unresolvedOpenErr ? null : (unresolvedOpen ?? 0),
         unresolved_open_error: unresolvedOpenErr ? unresolvedOpenErr.message : null,
         activities_seen: activitiesSeen,
+        // Every activity walked this tick, counted by its `type`; a sale type
+        // missing from SALE_TYPES shows up here instead of vanishing.
+        activity_types: activityTypes,
+        newest_activity_at: newestActivityMs === null ? null : new Date(newestActivityMs).toISOString(),
+        oldest_activity_at: oldestActivityMs === null ? null : new Date(oldestActivityMs).toISOString(),
         asset_fetches: assetFetches,
         me_key_present: Boolean(process.env.MAGIC_EDEN_API_KEY),
         sol_usd: rate,

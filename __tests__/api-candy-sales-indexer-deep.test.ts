@@ -223,6 +223,28 @@ describe("candy-sales-indexer — ingest ladder", () => {
     expect((log?.p_extra as Record<string, unknown>).sol_usd).toBe(150)
   })
 
+  it("records every walked activity by type and time, so an unrecognised sale type is visible rather than reading as a quiet market", async () => {
+    // 2026-10-19: a week of found=0 on 500 activities could not say whether the
+    // market stopped or ME renamed a sale type — nothing recorded what it saw.
+    const acts: Act[] = [
+      { signature: "x1", type: "buyNowV9", tokenMint: "m1", price: 0.3, blockTime: 1_700_000_300 },
+      { signature: "x2", type: "delist", tokenMint: "m2", blockTime: 1_700_000_200 },
+      { signature: "x3", type: "delist", tokenMint: "m3", blockTime: 1_700_000_100 },
+    ]
+    fetchMock = installFetchMock([jsonRoute("magiceden.dev", acts)])
+    const spy = install({ sales: [{ data: [{ sold_at: "2023-06-01T00:00:00Z" }], error: null }] })
+
+    await POST(req())
+    await runDeferred()
+
+    const log = logRun(spy.rpcCalls)
+    expect(log).toMatchObject({ p_rows_found: 0, p_rows_written: 0 })
+    const extra = log?.p_extra as Record<string, unknown>
+    expect(extra.activity_types).toEqual({ buyNowV9: 1, delist: 2 })
+    expect(extra.newest_activity_at).toBe(new Date(1_700_000_300 * 1000).toISOString())
+    expect(extra.oldest_activity_at).toBe(new Date(1_700_000_100 * 1000).toISOString())
+  })
+
   it("stops at the incremental high-water mark (reachedKnown), not counting older sales", async () => {
     const acts: Act[] = [
       { signature: "sigNew", type: "buyNow", tokenMint: "mintNew", price: 0.2, blockTime: 1_700_000_500 },
