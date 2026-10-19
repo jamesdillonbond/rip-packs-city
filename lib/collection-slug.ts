@@ -107,7 +107,7 @@ const RECORDS: CollectionSlugInfo[] = [
   // `wallet_moments_cache`, `edition_offers`, `pack_distributions`) branches on
   // the collection instead of calling its empty read "none" — see the
   // `isPanini` arms on the edition, player and set pages. `collections.is_active`
-  // stays false (known-issues #64); this record is not that flag.
+  // is true since 2026-10-19 (known-issues #64); this record is not that flag.
   {
     id: "d1a0a7f5-609a-49f4-a1a7-4eaac55b020b",
     dbSlug: "panini_blockchain",

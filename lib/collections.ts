@@ -284,9 +284,10 @@ export const COLLECTIONS: Collection[] = [
     // only once it has been listed — a floor, not a census. The static
     // app/(collections)/panini-blockchain/ dirs (OpenSea bridge plane, no data)
     // were deleted in the same change; they shadowed [collection]/overview.
-    // ⛔ `collections.is_active` stays FALSE by decision (known-issues #64): it
-    // enrolls a collection in sales-fed rollups (smoke, readiness, search…) and
-    // `sales` holds zero Panini rows. Published status is THIS registry's.
+    // `collections.is_active` is TRUE since 2026-10-19 (known-issues #64): every
+    // DB rollup that would read Panini from `sales` / `wallet_moments_cache` either
+    // arms it from Panini's own tables or excludes it by slug — `sales` still holds
+    // zero Panini rows. Published status is THIS registry's, not that flag.
     //
     // 2026-09-27 — PACKS added, on Panini's NATIVE pack plane (/api/panini-pack-
     // market → panini_pack_ev_board / panini_pack_state / _history), the Candy
