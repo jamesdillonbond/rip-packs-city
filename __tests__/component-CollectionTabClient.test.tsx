@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { render, screen, fireEvent, waitFor, cleanup, act } from "@testing-library/react"
 import CollectionTabClient from "@/app/(collections)/[collection]/collection/CollectionTabClient"
+import { _resetSignedInForTests } from "@/lib/auth/signed-in-client"
 
 // `[collection]/collection` converted to a `*Client.tsx` so the component gate measures it —
 // ~1,330 lines of wallet-search state machine (saved wallets, badge enrichment, batched FMV,
@@ -205,6 +206,9 @@ let momentsResponse: () => Response
 let fetchMock: ReturnType<typeof vi.fn>
 
 beforeEach(() => {
+  // signedInOnce() memoises for 60 s at module level — never carry one test's
+  // identity answer into the next.
+  _resetSignedInForTests()
   searchParams = new URLSearchParams()
   savedWallet = null
   ownerKey = ""
@@ -1901,5 +1905,42 @@ describe("CollectionTabClient — no second account-level seed", () => {
     await new Promise((r) => setTimeout(r, 150))
     const urls = fetchMock.mock.calls.map((c) => String(c[0]))
     expect(urls.some((u) => u.startsWith("/api/collection-moments?") && u.includes(`wallet=${OWN}`))).toBe(false)
+  })
+})
+
+// 2026-10-18: cost-basis, cache-refresh and wallet-packs are session-gated, so for
+// a signed-out visitor (a pasted wallet) each fired a guaranteed 401 — a red
+// console error per Collection-tab view. Skipped only on a DEFINITE signed-out;
+// an unknown identity read still fetches, so a signed-in reader loses nothing.
+describe("CollectionTabClient — session-gated reads wait for a signed-in answer", () => {
+  const GATED = ["/api/cost-basis", "/api/cache-refresh", "/api/wallet-packs"]
+  const withProfile = (body: unknown) => {
+    const base = fetchMock.getMockImplementation() as (input: unknown) => Promise<Response>
+    fetchMock.mockImplementation(async (input: unknown) =>
+      String(input).startsWith("/api/profile/me") ? json(200, body) : base(input),
+    )
+  }
+  const urls = () => fetchMock.mock.calls.map((c) => String(c[0]))
+
+  it("a signed-out visitor fires none of them, and the wallet still loads", async () => {
+    withProfile({ user: null })
+    searchParams = new URLSearchParams("wallet=0xbd94cade097e50ac")
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(urls().some((u) => u.startsWith("/api/collection-moments"))).toBe(true))
+    await waitFor(() => expect(urls().some((u) => u.startsWith("/api/profile/me"))).toBe(true))
+    await new Promise((r) => setTimeout(r, 50))
+    for (const g of GATED) expect(urls().filter((u) => u.startsWith(g)), g).toEqual([])
+  })
+
+  it.each([
+    ["signed in", { user: { id: "u1" } }],
+    ["UNKNOWN (no user key)", {}],
+  ])("%s → all three still fire", async (_l, body) => {
+    withProfile(body)
+    searchParams = new URLSearchParams("wallet=0xbd94cade097e50ac")
+    render(<CollectionTabClient />)
+    for (const g of GATED) {
+      await waitFor(() => expect(urls().some((u) => u.startsWith(g)), g).toBe(true))
+    }
   })
 })

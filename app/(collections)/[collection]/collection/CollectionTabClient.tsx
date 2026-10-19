@@ -70,6 +70,7 @@ import {
   computeDuplicateEditionKeys,
 } from "@/lib/collection/helpers"
 import { ownLookup } from "@/lib/safe-lookup"
+import { signedInOnce } from "@/lib/auth/signed-in-client"
 
 // ── Main component ────────────────────────────────────────────────────────────
 
@@ -353,8 +354,14 @@ function WalletMomentsBody() {
     setCostBasis(new Map())
     if (!activeWallet) return
     let cancelled = false
-    fetch("/api/cost-basis?wallet=" + encodeURIComponent(activeWallet) + "&collection=" + encodeURIComponent(collectionSlug))
-      .then(function(r) { return r.ok ? r.json() : null })
+    // Session-gated (proxy 401s a signed-out fetch): skip only on a DEFINITE
+    // signed-out, so the empty map is the same "nothing to show" a 401 gave.
+    signedInOnce()
+      .then(function(si) {
+        if (si === false) return null
+        return fetch("/api/cost-basis?wallet=" + encodeURIComponent(activeWallet) + "&collection=" + encodeURIComponent(collectionSlug))
+          .then(function(r) { return r.ok ? r.json() : null })
+      })
       .then(function(data) {
         if (cancelled || !data) return
         const map = new Map<string, { buyPrice: number; acquiredDate: string; fmvAtAcquisition: number | null; acquisitionMethod: string | null; costBasisLabel: string | null }>()
@@ -378,8 +385,12 @@ function WalletMomentsBody() {
   useEffect(function() {
     if (!activeWallet) return
     let cancelled = false
-    fetch("/api/cache-refresh?wallet=" + encodeURIComponent(activeWallet) + "&collection=" + encodeURIComponent(collectionSlug))
-      .then(function(r) { return r.ok ? r.json() : null })
+    signedInOnce()
+      .then(function(si) {
+        if (si === false) return null
+        return fetch("/api/cache-refresh?wallet=" + encodeURIComponent(activeWallet) + "&collection=" + encodeURIComponent(collectionSlug))
+          .then(function(r) { return r.ok ? r.json() : null })
+      })
       .then(function(data) {
         if (cancelled || !data) return
         if (data.new_stubs_inserted > 0) {
@@ -852,7 +863,9 @@ function WalletMomentsBody() {
           // indexed query when the wallet is already fresh, so firing on every TS view is
           // both safe and what makes the viewed wallet's lock count trustworthy.
           if (collectionSlug === "nba-top-shot") {
-            fetch("/api/cache-refresh?wallet=" + encodeURIComponent(trimmed) + "&refreshLocked=1").catch(function() {})
+            signedInOnce()
+              .then(function(si) { if (si !== false) return fetch("/api/cache-refresh?wallet=" + encodeURIComponent(trimmed) + "&refreshLocked=1") })
+              .catch(function() {})
           }
         })
         .catch(function() {})
@@ -903,8 +916,14 @@ function WalletMomentsBody() {
       // totalSealedPacks was previously stored in a `sealedPackCount` state that
       // nothing ever read — dropped 2026-07-28; re-add a reader before the state.)
       setPacksFailed(false)
-      fetch("/api/wallet-packs?wallet=" + encodeURIComponent(trimmed))
-        .then(function(r) { return r.ok ? r.json() : null })
+      // Signed out, the proxy 401s this; skipping lands in the same unknown
+      // (packsFailed) state the 401 did, minus the console error.
+      signedInOnce()
+        .then(function(si) {
+          if (si === false) return null
+          return fetch("/api/wallet-packs?wallet=" + encodeURIComponent(trimmed))
+            .then(function(r) { return r.ok ? r.json() : null })
+        })
         .then(function(d) {
           // Three outcomes, three branches — not two. A non-OK response (d null)
           // and a 200 carrying `error` are BOTH failures; only the third case is
