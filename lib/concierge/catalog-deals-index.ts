@@ -12,7 +12,7 @@
 // row is the edition's floor, so `serial` is null and the link is edition_url.
 
 import { marketplaceMomentUrl } from "@/lib/collections"
-import { absoluteEditionPageUrl } from "@/lib/concierge/edition-listings"
+import { absoluteEditionPageUrl, EDITION_FLOOR_VIEW } from "@/lib/concierge/edition-listings"
 
 type Supabase = any
 
@@ -142,6 +142,32 @@ export async function fetchIndexCatalogDeals(
   }
   if (setNeedle) data = data.filter((r) => String(r.set_name ?? "").toLowerCase().includes(setNeedle))
   data = data.slice(0, limit)
+
+  // get_allday_market_editions_v3 returns no floor_flow_id (Golazos' RPC does), so
+  // until 2026-10-18 every All Day deal reached the model with buy_url null. The
+  // listing behind the floor comes from the same edition-keyed floor view the
+  // floor search reads (EDITION_FLOOR_VIEW), and is linked ONLY when its ask is the
+  // ask this row quotes — a link to a different listing would be a false claim. A
+  // failed lookup costs the link, never the row (edition_url still carries it).
+  if (collectionId === "nfl-all-day" && data.length > 0) {
+    const ids = data.map((r) => r.edition_id).filter((x) => x != null).map(String)
+    if (ids.length > 0) {
+      const { data: floors, error } = await supabase
+        .from(EDITION_FLOOR_VIEW["nfl-all-day"])
+        .select("edition_id, floor_ask, floor_flow_id")
+        .in("edition_id", ids)
+      if (!error) {
+        const byId = new Map<string, Record<string, any>>()
+        for (const f of (floors ?? []) as Array<Record<string, any>>) byId.set(String(f.edition_id), f)
+        data = data.map((r) => {
+          const f = byId.get(String(r.edition_id))
+          if (!f || f.floor_flow_id == null || r.floor_flow_id != null) return r
+          const a = num(f.floor_ask), b = num(r.floor_ask)
+          return a != null && b != null && Math.abs(a - b) < 0.005 ? { ...r, floor_flow_id: f.floor_flow_id } : r
+        })
+      }
+    }
+  }
 
   const results: IndexDeal[] = []
   for (const r of data as Array<Record<string, any>>) {
