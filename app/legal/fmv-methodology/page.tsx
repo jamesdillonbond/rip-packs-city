@@ -3,17 +3,18 @@
 // Long-form FMV methodology disclosure. Linked from every FMV display
 // surface (wallet table, sniper, pack EV, dashboard hero, footer) via
 // the inline FmvDisclaimer "How is FMV calculated?" link.
+//
+// 2026-10-18 (Trevor: "We shouldn't have anything user-facing that shows our
+// confidence in the pricing. That should just be for internal use."): this page
+// no longer publishes the internal confidence tiers (their names, thresholds or
+// per-tier hit rates). It still states the FACTS a reader can use — what a price
+// is based on, that an ask-derived price is marked, and that we withhold a price
+// we have too little data for. The grading itself is unchanged and internal.
 
 import Link from "next/link"
 import { FMV_RECENT_SALES_N, FMV_RECENT_SPAN_DAYS, FMV_RECENT_MIN_N } from "@/lib/fmv-recalc-math"
 import { fetchFmvAccuracyGate } from "@/lib/fmv-accuracy/fetchers"
 import FmvAccuracyTable from "@/components/legal/FmvAccuracyTable"
-import {
-  ASK_CORROBORATION_BAND,
-  MIN_SALES_30D_HIGH,
-  MIN_SALES_30D_MEDIUM,
-  MIN_SALES_ASK_CORROBORATION,
-} from "@/lib/fmv-confidence"
 
 export const dynamic = "force-static"
 // 2026-10-11: was 86400. The page now carries the live accuracy gate (below),
@@ -26,7 +27,7 @@ export const metadata = {
   title: "FMV Methodology",
   alternates: { canonical: "https://www.rippackscity.com/legal/fmv-methodology" },
   description:
-    "How Rip Packs City calculates Fair Market Value: signals, confidence levels, and the explicit limits of what FMV does and doesn't account for.",
+    "How Rip Packs City calculates Fair Market Value: signals, when we show a price, and the explicit limits of what FMV does and doesn't account for.",
 }
 
 const PAGE_STYLE: React.CSSProperties = {
@@ -138,8 +139,8 @@ export default async function FmvMethodologyPage() {
         {FMV_RECENT_SPAN_DAYS} days older than its newest one (always keeping at least
         its {FMV_RECENT_MIN_N} most recent), so a price is not anchored to a market
         that has since moved. With fewer than {FMV_RECENT_SALES_N} typical sales we
-        take the median of what there is, and the confidence grade below says how
-        thin that was.
+        take the median of what there is, and where we can we show how many recent
+        sales a price rests on.
       </p>
 
       <h3 style={H3}>Active asks (secondary signal)</h3>
@@ -156,89 +157,57 @@ export default async function FmvMethodologyPage() {
         so you can see the full distribution rather than just a midpoint.
       </p>
 
-      <h2 style={H2}>Confidence Levels</h2>
-      <p style={P}>
-        Every FMV we compute is graded with one of these confidence levels. We use
-        the grade to decide how a price is shown — boards only surface deals on
-        well-supported prices, and an ask-based estimate is marked as one — rather
-        than printing a badge on every tile. The thresholds below are read from the
-        same code that grades the prices.
-      </p>
+      <h2 style={H2}>When We Show a Price</h2>
       <ul style={UL}>
         <li>
-          <strong style={STRONG}>HIGH</strong> — {MIN_SALES_30D_HIGH}+ sales in the
-          last 30 days, and they agree closely once serial number is accounted
-          for.
+          <strong style={STRONG}>Priced from sales.</strong> Most prices come
+          from recent sales, as described above. Where we can, the price is shown
+          with the number of sales behind it (for example <em>7 sales / 30d</em>)
+          and when the edition last sold, so you can see how much market it
+          rests on.
         </li>
         <li>
-          <strong style={STRONG}>MEDIUM</strong> — {MIN_SALES_30D_MEDIUM}+ recent
-          sales (from {MIN_SALES_30D_HIGH} on, their prices must also be reasonably
-          consistent); or at least{" "}
-          {MIN_SALES_ASK_CORROBORATION} sales whose median sits within ±
-          {Math.round(ASK_CORROBORATION_BAND * 100)}% of a current listing (a live ask
-          only ever raises confidence, never lowers a price).
+          <strong style={STRONG}>Priced from a listing.</strong> When an edition
+          has no sales to price from, its estimate is based on the lowest active
+          ask, and it is marked <em>from asks</em>. That is what one seller is
+          asking, not a completed sale &mdash; check recent sales before acting
+          on it.
         </li>
         <li>
-          <strong style={STRONG}>LOW</strong> — directional, not precise. It
-          means one of two opposite things, and it matters which:
-          <ul style={UL}>
-            <li>
-              <strong style={STRONG}>Too few sales</strong> — fewer than{" "}
-              {MIN_SALES_30D_MEDIUM} recent sales to price from.
-            </li>
-            <li>
-              <strong style={STRONG}>Sales disagree</strong> — the edition trades
-              actively ({MIN_SALES_30D_HIGH}+ recent sales), but the prices are
-              spread too widely to call one number reliable: prices moving within
-              the month, or sales far below the rest. Where we show a 30-day price range beside the price
-              (for example <em>$4.00–$6.00 30d</em>, the typical spread of real
-              sales), that range is the better guide.
-            </li>
-          </ul>
-        </li>
-        <li>
-          <strong style={STRONG}>SALES_ONLY</strong> — Sales-based estimate where
-          no live ask is available.
-        </li>
-        <li>
-          <strong style={STRONG}>ASK_ONLY</strong> — Estimate based on lowest
-          active ask only; no recent sales to validate. Treat with skepticism.
-        </li>
-        <li>
-          <strong style={STRONG}>NO_DATA</strong> — No FMV available. We will not
-          display a number rather than guess.
-        </li>
-        <li>
-          <strong style={STRONG}>STALE</strong> — Underlying data is more than 7
-          days old.
+          <strong style={STRONG}>No price.</strong> When we have too little data
+          to price an edition, we withhold the price rather than guess.
         </li>
         <li>
           <strong style={STRONG}>Editions that have stopped trading.</strong> When
           an edition has had no sale in 30 days and no live ask, its estimate is
           the median of its sales from the 90 days before its most recent sale
-          (always at least its 3 most recent sales, at most 30), labelled STALE or
-          SALES_ONLY. A price from a period when the edition traded higher is
-          never carried forward past its latest market.
+          (always at least its 3 most recent sales, at most 30). A price from a
+          period when the edition traded higher is never carried forward past its
+          latest market. A price that has not refreshed recently is left out of
+          the dashboard&rsquo;s headline portfolio total and noted separately.
+        </li>
+        <li>
+          <strong style={STRONG}>Price ranges.</strong> Where we show a 30-day
+          price range beside a price (for example <em>$4.00&ndash;$6.00 30d</em>,
+          the typical spread of real sales), that range is the better guide on an
+          edition whose sales disagree.
         </li>
       </ul>
       <p style={P}>
+        Deal boards only surface deals on well-supported prices.
+      </p>
+      <p style={P}>
         <strong style={STRONG}>Panini cards</strong> are priced from their own
-        sales on Panini&rsquo;s marketplace, and graded on the same principle —
-        how closely the latest sales agree. HIGH: the last three sales (at least
-        two) sit within 1.5&times; of each other. MEDIUM: three or more sales in
-        the last 30 days within 3&times;. LOW: anything else backed by a sale —
-        a single sale, or sales that disagree. Measured against the next real
-        sale, those three grades land within &plusmn;25% about 72%, 63% and 35%
-        of the time.
+        sales on Panini&rsquo;s marketplace, on the same principle &mdash; the
+        latest sales of that card edition.
       </p>
 
       <h2 id="accuracy" style={H2}>How Much of Our Pricing Rests on Sales</h2>
       <p style={P}>
         Our own gate for the whole platform is the share of priced editions whose
-        current FMV is graded <strong style={STRONG}>HIGH</strong> or{" "}
-        <strong style={STRONG}>MEDIUM</strong> — the two grades above that are
-        backed by recent sales rather than by a listing alone or by too few
-        prints. We publish it here, per collection, exactly as our monitoring
+        current FMV is backed by enough recent sales &mdash; rather than by a
+        listing alone or by too few prints. We publish it here, per collection,
+        exactly as our monitoring
         computes it, because a reader deciding how much weight to give a price
         should see how much of the market it was priced from. A low figure is
         the honest state of a thin or closed market, not a number we tune.

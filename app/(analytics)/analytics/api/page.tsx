@@ -39,13 +39,15 @@ const datasetJsonLd = {
 // (values drift; the SHAPE is the contract). The previous examples documented fields the API has
 // never returned (fmv_usd, serial, a string liquidity_rating, series, computed_at) and an example
 // edition (27:1648) that does not exist -- the curl a developer copied answered "Edition not found".
+// 2026-10-18 (Trevor: "nothing user-facing that shows our confidence in the pricing"): the API
+// STILL returns a `confidence` field (its response shape is unchanged), but this page no longer
+// documents it, so it is omitted from the examples and the per-result field list below.
 const SAMPLE_RESPONSE = `{
   "edition": "219:7421",
   "fmv": 77,
   "serialMult": 7.6,
   "serialBasis": "first",
   "adjustedFmv": 585.3,
-  "confidence": "high",
   "updatedAt": "2026-10-10T19:15:51.049029+00:00",
   "fallbackTier": "rpc_fmv",
   "liquidityRating": 2,
@@ -75,7 +77,6 @@ const BATCH_RESPONSE = `{
       "serialMult": null,
       "serialBasis": null,
       "adjustedFmv": 77,
-      "confidence": "high",
       "updatedAt": "2026-10-10T19:15:51.049029+00:00",
       "fallbackTier": "rpc_fmv",
       "liquidityRating": 2,
@@ -90,7 +91,6 @@ const BATCH_RESPONSE = `{
       "serialMult": 1.83,
       "serialBasis": "jersey",
       "adjustedFmv": 116.82,
-      "confidence": "high",
       "updatedAt": "2026-10-10T17:48:13.645186+00:00",
       "fallbackTier": "rpc_fmv",
       "liquidityRating": 2,
@@ -173,8 +173,7 @@ export default function ApiPage() {
         <p className="mt-2 text-xs text-[color:var(--rpc-text-muted)]">
           Per-result fields: <code>edition</code>, <code>fmv</code>,{" "}
           <code>serialMult</code>, <code>serialBasis</code>, <code>adjustedFmv</code>,{" "}
-          <code>confidence</code> (lower-case: high | medium | low | ask_only | sales_only |
-          stale | no_data), <code>updatedAt</code>, <code>fallbackTier</code>,{" "}
+          <code>updatedAt</code>, <code>fallbackTier</code>,{" "}
           <code>liquidityRating</code>, <code>aspUsd</code>, <code>aspClean</code>,{" "}
           <code>salesCount30d</code>, <code>daysSinceSale</code>; an unknown edition or one
           with no FMV yet carries <code>error</code>. <code>serialMult</code> is null when no
@@ -197,7 +196,7 @@ export default function ApiPage() {
       <Section title="Methodology">
         <p className="text-sm text-[color:var(--rpc-text-secondary)] leading-relaxed">
           See the FMV methodology page for the algorithm — outlier-filtered weighted
-          average price, serial multipliers, badge premiums, and confidence bucketing.
+          average price, serial multipliers, and badge premiums.
         </p>
         <Link
           href="/analytics/methodology/fmv"

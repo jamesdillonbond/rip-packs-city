@@ -101,3 +101,41 @@ describe("/legal/fmv-methodology landmark (axe `region`, 2026-10-12)", () => {
     expect(src.indexOf("</article>")).toBeLessThan(src.indexOf("</main>"))
   })
 })
+
+// 2026-10-18 (Trevor: "We shouldn't have anything user-facing that shows our
+// confidence in the pricing. That should just be for internal use."). Both
+// methodology surfaces are public prose; they may state the FACTS (sale-priced
+// vs ask-priced, withheld when too little data) but never the internal tiers.
+// Tier names are matched case-SENSITIVELY (plain "low-supply" / "high-momentum"
+// prose is fine); the word "confidence" in any case is not.
+const TIER_NAMES = /\b(?:HIGH|MEDIUM|LOW|ASK_ONLY|SALES_ONLY|NO_DATA|STALE)\b/
+const CONFIDENCE_WORD = /confidence/i
+const TIER_VOCAB = { test: (t: string) => TIER_NAMES.test(t) || CONFIDENCE_WORD.test(t) }
+
+describe("methodology copy publishes no FMV confidence tiers", () => {
+  it("no METHODOLOGY entry names a confidence tier or the word 'confidence'", () => {
+    const offenders: string[] = []
+    for (const e of METHODOLOGY_LIST) {
+      for (const text of [e.title, e.blurb, e.refresh, ...e.paragraphs, ...e.sources]) {
+        if (TIER_VOCAB.test(text)) offenders.push(`${e.slug}: ${text.slice(0, 80)}`)
+      }
+    }
+    expect(offenders).toEqual([])
+  })
+
+  it("the population is non-empty (the scan above read something)", () => {
+    expect(METHODOLOGY_LIST.flatMap((e) => e.paragraphs).length).toBeGreaterThan(10)
+  })
+
+  it("/legal/fmv-methodology renders no tier names, thresholds or 'Confidence Levels' section", async () => {
+    const { stripComments } = await import("../scripts/lib/strip-comments.mjs")
+    const src = readFileSync(join(__dirname, "..", "app", "legal", "fmv-methodology", "page.tsx"), "utf8")
+    const code: string = stripComments(src)
+    expect(code).not.toMatch(TIER_NAMES)
+    expect(code).not.toMatch(CONFIDENCE_WORD)
+    expect(code).not.toMatch(/fmv-confidence/)
+    // The factual withholding statement survives.
+    expect(code).toMatch(/withhold the price/)
+    expect(code).toMatch(/from asks/)
+  })
+})

@@ -33,9 +33,9 @@ const EXEMPT_PREFIXES = [
   path.join(APP, "admin"), // operator dashboards (fmv-health, etc.)
   path.join(APP, "(analytics)"), // logged-in analytics + the public API docs page
   path.join(APP, "api"), // server routes: data, not rendered labels
-  // The methodology explainer documents what the tiers MEAN. It is prose about
-  // the model, not a per-row badge stuck next to a price.
-  path.join(APP, "legal", "fmv-methodology"),
+  // /legal/fmv-methodology was exempt here until 2026-10-18; it no longer
+  // documents the tiers at all (Trevor: confidence is internal only), so it is
+  // scanned like any other surface — see __tests__/methodology.test.ts.
 ]
 
 function walkTsx(dir: string): string[] {

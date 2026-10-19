@@ -54,7 +54,7 @@ export const BLOG_POSTS: readonly BlogPost[] = [
     date: "2026-05-07",
     collection: "Disney Pinnacle",
     blurb:
-      "53 editions, 14 sets, 408 historical sales. Where the Mandalorian peak buyers are now underwater, the only edition trading below FMV with HIGH confidence, and what we still don't know.",
+      "53 editions, 14 sets, 408 historical sales. Where the Mandalorian peak buyers are now underwater, the only edition with steady sales trading below FMV, and what we still don't know.",
     readMin: 8,
     image: `${BASE_URL}/api/og/blog/pinnacle-star-wars-day-2026`,
   },

@@ -14,7 +14,7 @@ const datasetJsonLd = {
   "@type": "Dataset",
   name: "Rip Packs City FMV Index",
   description:
-    "Algorithmic fair-market-value pricing across Flow digital collectibles. Per-edition FMV with confidence levels, top movers, and per-tier roll-ups.",
+    "Algorithmic fair-market-value pricing across Flow digital collectibles. Per-edition FMV, top movers, and per-tier roll-ups.",
   creator: { "@type": "Organization", name: "Rip Packs City" },
   url: `${ANALYTICS_BASE_URL}/analytics/fmv`,
   distribution: [

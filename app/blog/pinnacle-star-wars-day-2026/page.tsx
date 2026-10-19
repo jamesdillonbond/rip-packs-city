@@ -22,12 +22,12 @@ export const metadata = {
   title: "Star Wars Day 2026 on Disney Pinnacle: What's Actually Moving",
   alternates: { canonical: "https://www.rippackscity.com/blog/pinnacle-star-wars-day-2026" },
   description:
-    "53 Star Wars editions, 14 sets, 408 historical sales. Where the Mandalorian peak buyers are now underwater, the only edition trading below FMV with HIGH confidence, and what we don't know yet.",
+    "53 Star Wars editions, 14 sets, 408 historical sales. Where the Mandalorian peak buyers are now underwater, the only edition with steady sales trading below FMV, and what we don't know yet.",
   openGraph: {
     ...OG_INHERITED,
     title: "Star Wars Day 2026 on Disney Pinnacle: What's Actually Moving",
     description:
-      "Where Mandalorian peak buyers are underwater, the only edition trading below FMV with HIGH confidence, and what we don't know yet.",
+      "Where Mandalorian peak buyers are underwater, the only edition with steady sales trading below FMV, and what we don't know yet.",
     images: [POST.image],
     type: "article",
     url: POST_URL,
@@ -40,7 +40,7 @@ export const metadata = {
     card: "summary_large_image",
     title: "Star Wars Day 2026 on Disney Pinnacle: What's Actually Moving",
     description:
-      "Where Mandalorian peak buyers are underwater, the only edition trading below FMV with HIGH confidence.",
+      "Where Mandalorian peak buyers are underwater, the only edition with steady sales trading below FMV.",
     images: [POST.image],
   },
 }
@@ -218,8 +218,8 @@ export default function PinnacleStarWarsDay2026() {
       <h1 style={H1}>Star Wars Day 2026 on Disney Pinnacle: What's Actually Moving</h1>
       <p style={SUBTITLE}>
         53 editions, 14 sets, 408 historical sales. Here's where the Mandalorian
-        peak buyers are now underwater, the only edition trading below FMV with
-        HIGH confidence, and what we still don't know yet.
+        peak buyers are now underwater, the only edition with steady sales
+        trading below FMV, and what we still don't know yet.
       </p>
       <p style={BYLINE}>
         By Rip Packs City · 8 min read · Numbers as of 2026-05-07 16:30 UTC
@@ -260,7 +260,7 @@ export default function PinnacleStarWarsDay2026() {
         It's also the worst-performing position in our coverage. The 30-day
         average sale price is <strong style={STRONG}>$2.00</strong> across 4
         sales — a{" "}
-        <strong style={STRONG}>91.9% drawdown vs the platform's MEDIUM-confidence FMV ($24.83)</strong>{" "}
+        <strong style={STRONG}>91.9% drawdown vs the platform's FMV ($24.83)</strong>{" "}
         and a much steeper drop from where the early buyers entered. Someone
         paid $575 for one of these. Today's floor is two dollars.
       </p>
@@ -345,27 +345,27 @@ export default function PinnacleStarWarsDay2026() {
 
       <h2 style={H2}>The one edition with a real signal</h2>
       <p style={P}>
-        Out of 53 Star Wars editions, exactly one currently has a HIGH-confidence
-        FMV computed against an active sales window:{" "}
+        Out of 53 Star Wars editions, exactly one currently has an FMV backed by
+        steady sales in an active window that it is trading below:{" "}
         <strong style={STRONG}>C-3PO from Pixels Vol.1, Golden variant</strong>.
       </p>
       <ul style={UL}>
-        <li>FMV (HIGH confidence): <strong style={STRONG}>$6.26</strong></li>
+        <li>FMV: <strong style={STRONG}>$6.26</strong></li>
         <li>30-day average sale: <strong style={STRONG}>$5.43</strong> across 7 sales</li>
         <li>30-day max sale: <strong style={STRONG}>$15.00</strong></li>
         <li>Implied discount vs FMV: <strong style={STRONG}>~13% below</strong></li>
       </ul>
       <p style={P}>
-        This is the only Star Wars edition where we're confident enough in the
-        signal density to publish a HIGH-confidence FMV. It's also trading
-        below that FMV with consistent volume. If you want one Star Wars Day
+        This is the only Star Wars edition with this much recent sales volume
+        behind its FMV, and it's trading below that FMV with consistent
+        volume. If you want one Star Wars Day
         position you can defend with the data, this is it.
       </p>
 
       <h2 style={H2}>What we don't know yet</h2>
       <p style={P}>
-        Honesty pass on coverage gaps so you don't read confidence into numbers
-        that aren't there:
+        Honesty pass on coverage gaps so you don't read more into numbers
+        than is there:
       </p>
       <ul style={UL}>
         <li>
@@ -396,8 +396,8 @@ export default function PinnacleStarWarsDay2026() {
       <ul style={UL}>
         <li>
           <strong style={STRONG}>If you want signal:</strong> C-3PO Pixels
-          Golden is the only HIGH-confidence opportunity in the catalog
-          right now.
+          Golden is the only edition with steady recent sales trading below
+          FMV in the catalog right now.
         </li>
         <li>
           <strong style={STRONG}>If you want liquidity:</strong> Luke Skywalker
@@ -430,9 +430,8 @@ export default function PinnacleStarWarsDay2026() {
         <code>pinnacle_sales</code>, FMV from{" "}
         <code>pinnacle_fmv_snapshots</code> (latest computed_at per edition),
         edition metadata from <code>pinnacle_editions</code>. "30-day"
-        windows are rolling and computed against NOW() at query time. Confidence
-        labels (HIGH / MEDIUM / LOW) follow the same FMV methodology used
-        across NBA Top Shot — see{" "}
+        windows are rolling and computed against NOW() at query time. FMV
+        follows the same methodology used across NBA Top Shot — see{" "}
         <Link href="/legal/fmv-methodology" style={{ color: "var(--rpc-red, #E03A2F)" }}>
           how we calculate FMV
         </Link>
