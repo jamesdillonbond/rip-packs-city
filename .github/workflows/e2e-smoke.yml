@@ -108,7 +108,7 @@ jobs:
           retention-days: 7
 
   # ── Accessibility audit (platform review 2026-10-11, C10; GATED 2026-10-18) ──
-  # Runs axe-core (e2e/a11y.spec.ts) over 11 anon-public routes in BOTH themes.
+  # Runs axe-core (e2e/a11y.spec.ts) over its ROUTES (13 since 10-18: 11 anon-public + the Sniper and a populated Collection tab) in BOTH themes.
   # ⭐ BLOCKING since 2026-10-18: the 10-17/18 contrast work (known-issues #194,
   # docs/reference/text-colour-system.md) took `color-contrast` and `select-name`
   # to ZERO on every route in both themes (verified: 22/22 against production
@@ -140,7 +140,7 @@ jobs:
           key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
-      - name: Run axe audit (gated — color-contrast, select-name)
+      - name: Run axe audit (gated — see GATED in e2e/a11y.spec.ts)
         id: axe
         env:
           SMOKE_BASE_URL: ${{ github.event.inputs.base_url || 'https://www.rippackscity.com' }}
