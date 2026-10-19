@@ -34,7 +34,7 @@ Enums byte-identical to the table below. FMV homes unchanged: `pinnacle_fmv_snap
 
 🚨 **`public.collections` is no longer 5 active / 2 inactive — it is 6 / 1.** `candy_mlb` (`solana`,
 `209ade70-32c5-4470-bc7c-4793d660f713`) flipped to **`is_active = true`** when Candy MLB went live
-(register **#63**, 2026-09-06), leaving **`panini_blockchain` (`ethereum`) as the ONLY `is_active=false` row**.
+(register **#63**, 2026-09-06), leaving **`panini_blockchain` (`ethereum`) as the ONLY `is_active=false` row** — until **2026-10-19**, when it was flipped `true` (`20261019181627`, #64); all seven rows are active now.
 CLAUDE.md still read *"both are the `is_active=false` rows"* and was corrected in the same commit as this
 stamp. ⭐ **This is exactly the drift this file is for** — the prose had been true for months and quietly
 stopped being true, and only a live read could tell.
@@ -470,7 +470,7 @@ from the #70 lane). Join to `offers.offer_id`. See database.md "The Top Shot `of
 - **Panini `sets` rows are named "product · parallel"; Panini set PAGES key on `editions.set_name` via
   `sets_summary`** (whose `set_name` slugifies to the exact `set_slug`, 1,731/1,731). A `sets`-derived slug
   404s. `rpc_search_catalog` reads Panini set hits from `sets_summary` (`20261015052846`).
-- **`collections.is_active` is `false` for Panini BY DECISION (#64)** — published status is the registry's.
+- **`collections.is_active` is `true` for Panini since 2026-10-19 (`20261019181627`, #64)** — was `false` by decision 09-25 → 10-19. Every reader that would read Panini from `sales` / `wallet_moments_cache` / `cached_listings` either arms it from Panini's own tables or excludes it by slug (list in known-issues #64). Published status is still the registry's.
   Consumers that admit Panini anyway do it by slug: `rpc_search_catalog` (`20261015042434`).
 - **FMV engine `panini-1.3.0` (2026-10-15):** `confidence` means how closely the edition's last ≤3 sales agree
   (`panini_sales_spread`): HIGH ≤ 1.5× · MEDIUM = ≥3 sales in 30 d within 3× · else LOW (ASK_ONLY / NO_DATA

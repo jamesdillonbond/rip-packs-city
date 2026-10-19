@@ -220,7 +220,7 @@ Flow/EVM: hex, `0x`-prefixed, case-INsensitive. Solana: **base58, un-prefixed, C
 
 ### Collection UUIDs
 
-All 7 live in the DB-derived table in [schema-truth.md](docs/reference/schema-truth.md) — ⚠ **09-08: Candy MLB (`solana`) is `is_active=true` (#63); Panini: published 09-25 but `is_active=false` BY DECISION (#64).**
+All 7 live in the DB-derived table in [schema-truth.md](docs/reference/schema-truth.md) — ⚠ **09-08: Candy MLB (`solana`) is `is_active=true` (#63); Panini `is_active=true` since 10-19 — its own tables feed every rollup (#64).**
 
 ### Enums
 
