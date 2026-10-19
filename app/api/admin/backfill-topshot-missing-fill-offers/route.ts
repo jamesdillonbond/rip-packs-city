@@ -66,7 +66,7 @@ const DEFAULT_START = 137_390_146
 // mainnet27 leg (2026-10-19). The 10-18 re-walk to the tip inserted ~0: the fills
 // still without an offers row (~3.8 % of Top Shot offer fills since 10-11) name
 // offers created before DEFAULT_START, which rest-mainnet cannot serve. Heights
-// MAINNET27_ROOT..DEFAULT_START-1 (2025-10-22 → 2025-12-31) are read through the
+// MAINNET27_ROOT..DEFAULT_START-1 (2025-10-22 → 2025-12-27; mainnet28 starts 12-29) are read through the
 // spork-proxy worker (workers/spork-proxy, Bearer $SPORK_PROXY_SECRET), one spork
 // per request, so a chunk never crosses DEFAULT_START. Reached with the one-time
 // `start_block=130290659`. Lower than that is refused: mainnet24–26 are dark or
