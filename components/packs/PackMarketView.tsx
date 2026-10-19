@@ -123,12 +123,19 @@ export default function PackMarketView({ collection }: { collection: string }) {
     )
   }
 
-  return (
-    <PackPageClient
-      collection="nba-top-shot"
-      tiers={TS_TIERS}
-      title="NBA Top Shot — Pack Distributions"
-      accent={accent}
-    />
-  )
+  // Top Shot by name, never as the fallback: an unhandled collection rendered
+  // "NBA Top Shot — Pack Distributions" under its own URL (substitution). Today
+  // the packs layout gates on collectionHasPage(id, "packs"), so this is latent.
+  if (collection === "nba-top-shot") {
+    return (
+      <PackPageClient
+        collection="nba-top-shot"
+        tiers={TS_TIERS}
+        title="NBA Top Shot — Pack Distributions"
+        accent={accent}
+      />
+    )
+  }
+
+  return null
 }

@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from "vitest"
 
 // Unit tests for lib/alerts.ts — the service-role wrapper around the
-// omni-channel alerts DB functions. Pins the pure guards (isChannel / CHANNELS /
-// COLLECTION_UUID_BY_SLUG) exactly, then drives every RPC wrapper by mocking
+// omni-channel alerts DB functions. Pins the pure guards (isChannel / CHANNELS)
+// exactly (an unused COLLECTION_UUID_BY_SLUG was removed 10-18), then drives every RPC wrapper by mocking
 // @/lib/supabase: asserting the RPC name + arg mapping and both the success and
 // error return shapes (null / {error} / [] / sentinel fallbacks). Also covers
 // the resolveChannelOwnerUsername saved_wallets -> profile_bio -> null ladder
@@ -40,7 +40,6 @@ vi.mock("@/lib/supabase", () => {
 import {
   isChannel,
   CHANNELS,
-  COLLECTION_UUID_BY_SLUG,
   createChannelLinkCode,
   claimChannelLink,
   resolveChannelOwner,
@@ -77,15 +76,6 @@ describe("pure guards + constants", () => {
 
   it("CHANNELS is the canonical ordered list", () => {
     expect(CHANNELS).toEqual(["email", "telegram", "discord"])
-  })
-
-  it("COLLECTION_UUID_BY_SLUG carries the five published collection UUIDs", () => {
-    expect(COLLECTION_UUID_BY_SLUG.nba_top_shot).toBe("95f28a17-224a-4025-96ad-adf8a4c63bfd")
-    expect(COLLECTION_UUID_BY_SLUG.nfl_all_day).toBe("dee28451-5d62-409e-a1ad-a83f763ac070")
-    expect(COLLECTION_UUID_BY_SLUG.laliga_golazos).toBe("06248cc4-b85f-47cd-af67-1855d14acd75")
-    expect(COLLECTION_UUID_BY_SLUG.ufc_strike).toBe("9b4824a8-736d-4a96-b450-8dcc0c46b023")
-    expect(COLLECTION_UUID_BY_SLUG.disney_pinnacle).toBe("7dd9dd11-e8b6-45c4-ac99-71331f959714")
-    expect(Object.keys(COLLECTION_UUID_BY_SLUG)).toHaveLength(5)
   })
 })
 

@@ -171,3 +171,16 @@ describe("GET /api/profile/cost-basis-summary — aggregation", () => {
     expect(body.plPercent).toBeNull()
   })
 })
+
+// 2026-10-18: totalFmv sums every (wallet × collection) row, so the spend side
+// must cover every collection too. It was pinned to Top Shot, which subtracted
+// Top Shot spend from all-collection value and overstated profit.
+describe("GET /api/profile/cost-basis-summary — both sides cover the same collections", () => {
+  it("reads cost basis for ALL collections (p_collection_id null), not Top Shot only", async () => {
+    state.user = { id: "u1" }
+    state.savedWallets = { data: [{ wallet_addr: "0xabc", cached_fmv_usd: 10 }], error: null }
+    await GET()
+    expect(cbCalls().length).toBe(1)
+    expect(cbCalls()[0][1]).toEqual({ p_wallet: "0xabc", p_collection_id: null })
+  })
+})

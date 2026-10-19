@@ -36,8 +36,6 @@ import { getCurrentUser } from "@/lib/auth/supabase-server";
 import { apiErrorResponse } from "@/lib/api-error";
 import { boundedRead } from "@/lib/api/bounded-read";
 
-const TOPSHOT_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd";
-
 const EMPTY_PAYLOAD = {
   totalSpent: 0,
   totalPurchases: 0,
@@ -112,7 +110,12 @@ export async function GET() {
 
       const { data: cb, error: cbError } = await boundedRead((supabase as any).rpc(
         "get_wallet_cost_basis",
-        { p_wallet: addr, p_collection_id: TOPSHOT_COLLECTION_ID }
+        // ALL collections (NULL), matching totalFmv, which sums every collection
+        // row. Scoping this to Top Shot (until 10-18) subtracted Top Shot spend
+        // from all-collection value and overstated profit for anyone holding
+        // All Day, Golazos, Pinnacle or UFC (moment_acquisitions has priced rows
+        // for each). No in-repo caller today; kept correct for the next one.
+        { p_wallet: addr, p_collection_id: null }
       ), "api/profile/cost-basis-summary/get_wallet_cost_basis");
 
       if (cbError) {

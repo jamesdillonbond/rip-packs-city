@@ -629,7 +629,10 @@ const SLUG_TO_DB_SLUG: Record<string, string> = {
 
 const COLLECTION_ID_CACHE = new Map<string, string | null>()
 async function getCollectionIdForSlug(slug?: string): Promise<string | null> {
-  const dbSlug = ownLookup(SLUG_TO_DB_SLUG, slug ?? "") ?? "nba_top_shot"
+  // An ABSENT slug defaults to Top Shot; a PRESENT one this map lacks resolves
+  // nothing (never Top Shot's id under another collection's name).
+  const dbSlug = slug ? ownLookup(SLUG_TO_DB_SLUG, slug) ?? null : "nba_top_shot"
+  if (!dbSlug) return null
   if (COLLECTION_ID_CACHE.has(dbSlug)) return COLLECTION_ID_CACHE.get(dbSlug) ?? null
   try {
     const { data } = await supabaseAdmin
@@ -1813,7 +1816,10 @@ export async function POST(req: NextRequest) {
       const walletAddrForStats = wallet.startsWith("0x") ? wallet : "0x" + wallet
       const acqParams: Record<string, any> = { p_wallet: walletAddrForStats }
       const collectionUuid = await getCollectionIdForSlug(collection)
-      if (collectionUuid) acqParams.p_collection_id = collectionUuid
+      // No id (an unmapped slug or a failed lookup) must not fall through to an
+      // UNSCOPED call: that answers every collection's stats under this one's name.
+      if (!collectionUuid) throw new Error("collection id unresolved")
+      acqParams.p_collection_id = collectionUuid
       const { data: acqRaw, error: acqErr } = await (supabaseAdmin as any).rpc("get_acquisition_stats", acqParams)
       if (!acqErr && acqRaw) {
         const result = (Array.isArray(acqRaw) ? acqRaw[0] : acqRaw) as { breakdown?: Array<{ method: string; count: number; total_spent?: number }>; total_moments?: number; total_spent?: number; locked_count?: number }

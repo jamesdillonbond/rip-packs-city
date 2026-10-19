@@ -63,9 +63,11 @@ describe("PackMarketView per-collection dispatch", () => {
     expect(container.querySelector('[role="note"]')?.textContent).toContain("ended primary pack sales")
   })
 
-  it("an unknown collection falls through to the Top Shot default", () => {
-    const p = propsFor("mystery")
-    expect(p.collection).toBe("nba-top-shot")
-    expect(p.tiers).toEqual(["ultimate", "legendary", "rare", "fandom", "common"])
+  // 2026-10-18 INVERTED: this pinned the substitution — an unhandled collection
+  // rendered Top Shot's pack board under its own URL. It now renders nothing.
+  it("an unknown collection renders NO pack board (never Top Shot's)", () => {
+    const { container } = render(<PackMarketView collection="mystery" />)
+    expect(seen).toHaveLength(0)
+    expect(container.textContent ?? "").not.toContain("NBA Top Shot")
   })
 })

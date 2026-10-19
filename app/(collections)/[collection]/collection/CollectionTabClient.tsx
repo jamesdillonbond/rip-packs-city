@@ -448,7 +448,10 @@ function WalletMomentsBody() {
       if (!editionKeys.length) return rowsIn
       const EDITION_CHUNK = 100
       const allEditions: any[] = []
-      const collectionIdParam = ownLookup(COLLECTION_UUID_BY_SLUG, collectionSlug) ?? COLLECTION_UUID_BY_SLUG["nba-top-shot"]
+      // Never Top Shot's badges under another collection's name: an unmapped
+      // slug reads no badges and says so (unreachable today — the map is complete).
+      const collectionIdParam = ownLookup(COLLECTION_UUID_BY_SLUG, collectionSlug)
+      if (!collectionIdParam) { setBadgesPartial(true); return rowsIn }
       for (let i = 0; i < editionKeys.length; i += EDITION_CHUNK) {
         const chunk = editionKeys.slice(i, i + EDITION_CHUNK)
         const params = new URLSearchParams({

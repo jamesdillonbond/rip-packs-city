@@ -293,11 +293,3 @@ export interface Delivery {
   attempts: number;
 }
 
-// ── Collection slug <-> UUID (the deal board is TS + Pinnacle today) ─────────
-export const COLLECTION_UUID_BY_SLUG: Record<string, string> = {
-  nba_top_shot: "95f28a17-224a-4025-96ad-adf8a4c63bfd",
-  nfl_all_day: "dee28451-5d62-409e-a1ad-a83f763ac070",
-  laliga_golazos: "06248cc4-b85f-47cd-af67-1855d14acd75",
-  ufc_strike: "9b4824a8-736d-4a96-b450-8dcc0c46b023",
-  disney_pinnacle: "7dd9dd11-e8b6-45c4-ac99-71331f959714",
-};
