@@ -647,12 +647,26 @@ describe("CollectionTabClient — sub-navigation", () => {
     expect(screen.getByRole("button", { name: "Sold" }).getAttribute("aria-pressed")).toBe("false")
   })
 
+  // 2026-10-18 RE-PINNED: Golazos was the subject here, but its pack history is
+  // attributed to collectors (collectionHasWalletPackHistory), so it now has the
+  // sub-nav. UFC is a collection that genuinely has no wallet pack history.
   it("offers no packs sub-nav for a collection with no pack board", async () => {
-    PARAMS.collection = "laliga-golazos"
+    PARAMS.collection = "ufc"
     try {
       render(<CollectionTabClient />)
       await screen.findByTestId("moment-table")
       expect(screen.queryByText("Packs")).toBeNull()
+    } finally {
+      PARAMS.collection = "nba-top-shot"
+    }
+  })
+
+  it("offers the packs sub-nav for Golazos", async () => {
+    PARAMS.collection = "laliga-golazos"
+    try {
+      render(<CollectionTabClient />)
+      await screen.findByTestId("moment-table")
+      expect(screen.queryByText("Packs")).not.toBeNull()
     } finally {
       PARAMS.collection = "nba-top-shot"
     }

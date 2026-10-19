@@ -537,6 +537,22 @@ export function collectionHasLocking(id: string): boolean {
   return !COLLECTIONS_WITHOUT_LOCKING.has(id)
 }
 
+// Which collections have a per-wallet pack history the Collection tab's Packs
+// sub-tab (WalletPacksView → get_wallet_pack_summary / _history) can show
+// honestly. 2026-10-18: this was a literal "Top Shot || All Day" in
+// CollectionTabClient, which hid it for LaLiga Golazos, whose opens are
+// attributed to collectors (78,830 opens across 23,325 wallets; marketplace
+// pack sales in golazos_pack_sales_history). ⛔ Disney Pinnacle stays OUT:
+// 11,851 of its 91,471 opens (13 %) are attributed to the custodian
+// 0xedf9df96c92f4595, not the collector, so its tab would read a partial
+// history as complete. Re-check that split before adding it.
+const WALLET_PACK_HISTORY_COLLECTIONS: ReadonlySet<string> = new Set(["nba-top-shot", "nfl-all-day", "laliga-golazos"])
+
+/** True when the Collection tab may show a per-wallet Packs history for this collection. */
+export function collectionHasWalletPackHistory(id: string): boolean {
+  return WALLET_PACK_HISTORY_COLLECTIONS.has(id)
+}
+
 // Disney Pinnacle has no badge program (2026-09-27): a "Badges" column or
 // filter on its Market tab is an empty column that implies one exists.
 const COLLECTIONS_WITHOUT_BADGES: ReadonlySet<string> = new Set(["disney-pinnacle", "pinnacle"])

@@ -12,7 +12,7 @@ import { buildEditionSeedCandidate } from "@/lib/edition-market-seed"
 import { getOwnerKeyForChain, setOwnerKeyForChain, onOwnerKeyChangeForChain, ownerKeyMatchesChain } from "@/lib/owner-key"
 import { detectAddressChain, isSupportedAddress, isValidAddressForChain } from "@/lib/address"
 import { parseSnsName } from "@/lib/chains/solana/sns"
-import { getCollection, COLLECTION_UUID_BY_SLUG, collectionHasLocking } from "@/lib/collections"
+import { getCollection, COLLECTION_UUID_BY_SLUG, collectionHasLocking, collectionHasWalletPackHistory } from "@/lib/collections"
 import { useWarmCache, usePrefetch, useWarmup } from "@/lib/warmup/WarmupContext"
 import { BADGE_TYPE_TO_TITLE } from "@/lib/topshot-badges"
 import MomentDetailModal from "@/components/MomentDetailModal"
@@ -1550,7 +1550,7 @@ function CollectionSection() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const section = subSectionFromParams(searchParams)
-  const hasPacks = collectionSlug === "nba-top-shot" || collectionSlug === "nfl-all-day"
+  const hasPacks = collectionHasWalletPackHistory(collectionSlug)
   const packsActive = hasPacks && section === "packs"
 
   // Moments sub-state: Owned | Sold (Trevor 2026-07-18). URL-param driven
