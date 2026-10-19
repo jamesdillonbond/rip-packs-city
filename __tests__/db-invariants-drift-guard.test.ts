@@ -1287,6 +1287,14 @@ const PINS = [
     migration: "supabase/migrations/20261019005911_audit_20261018_set_detail_underlying_count_needs_editions.sql",
   },
   {
+    // Pinned 2026-10-18 (new): the hourly render-id pass now FILLS player_name from the
+    // pin's `characters` trait (NULL / 'Unknown' only), so a pin whose render_id lands
+    // after the wallet post-pass is not nameless until the daily heal.
+    fn: "derive_pinnacle_wmc_from_catalog",
+    test: "supabase/tests/derive_pinnacle_wmc_from_catalog.sql",
+    migration: "supabase/migrations/20261019010856_audit_20261018_derive_pinnacle_wmc_fills_player_name.sql",
+  },
+  {
     fn: "get_user_top_owned_moments",
     test: "supabase/tests/get_user_top_owned_moments.sql",
     // Repointed 2026-09-28: a second branch offers the cards under the Panini
