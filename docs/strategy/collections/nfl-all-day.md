@@ -53,7 +53,7 @@
 
 ## Open issues
 
-0. 🆕 **(10-18 ~5:05 PM PT) The venue row is inverted.** `v_collection_marketplace_status` names V1 NFTStorefront the primary venue (verified 05-18); live, V2 carries 7,219 of 7,575 sales in 14 d and V1's book has added nothing since 09-18. The corrective UPDATE is held for operator confirmation: `docs/pending-sql/20261018-marketplace-status-allday-primary-venue.sql` (run in the SQL editor). Blast radius small: no code reads `primary_venue`; `notes` is a tooltip/banner string.
+0. ✅ **DONE 2026-10-18 10:06 PM PT — the venue row names V2.** It had named V1 NFTStorefront primary (verified 05-18) while V2 carried 7,228 of ~7,580 sales in 14 d (re-read 10:00 PM PT: V2 7,228 · V1 91). Applied by one-off pg_cron job 753 (`UPDATE 1`); `v_collection_marketplace_status` reads `dapper_storefront_v2`. Record + revert: `docs/audits/2026-10-18-marketplace-status-allday-primary-venue.sql`. Blast radius small: no code reads `primary_venue`; `notes` is a tooltip/banner string.
 1. **M2 not met.** 26–28 % for four weeks, with 0 of 107 legs at the bar since 09-22. No open register number. It is tracked in roadmap-status.md, 10-10 block.
 2. 🆕 **`allday-buyer-backfill` reports `ok` while writing nothing.** Live read, `pipeline_runs`:
    - 10-14: 2 runs, 960 written · 10-15: 3,243 written, 597 decode-failed

@@ -1,3 +1,8 @@
+-- ✅ APPLIED 2026-10-18 10:06 PM PT (Cowork cloud, at Trevor's request to run the SQL updates): one-off pg_cron jobs
+-- 753 (All Day UPDATE → `UPDATE 1`) and 754 (Pinnacle note UPDATE → `UPDATE 1`), both unscheduled after; read back via
+-- v_collection_marketplace_status: All Day primary_venue = dapper_storefront_v2. The MCP's execute_sql cancelled the
+-- multi-statement and DO-block forms; one statement per cron.schedule call went through. Kept as the record + revert.
+--
 -- PARKED 2026-10-18 ~5:10 PM PT (Claude Code cloud): apply_migration returned "timed out after 60s"
 -- twice with no schema_migrations row and no backend in pg_stat_activity (the operator-confirmation
 -- hold on data writes, tooling-gotchas.md). Not retried. Run in the SQL editor, or via apply_migration

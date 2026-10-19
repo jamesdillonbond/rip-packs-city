@@ -1,3 +1,7 @@
+-- ✅ APPLIED 2026-10-18 10:06 PM PT (Cowork cloud, at Trevor's request): one-off pg_cron job 752 → `INSERT 0 247`
+-- (21,372 → 21,619 rows), unscheduled after. The THEN step was dispatched at 10:16 PM PT: GitHub run 39203673094
+-- (target=missing_fills, start_block=137390146, range=200000, max_iters=200). Kept as the record + revert.
+--
 -- PARKED 2026-10-18 ~6:25 PM PT (Claude Code cloud). A data INSERT; data writes from a cloud session
 -- are held for operator confirmation, so run it in the SQL editor (or apply_migration and commit it as
 -- supabase/migrations/<version>_audit_20261018_topshot_missing_fill_offers_snapshot_refresh.sql).
