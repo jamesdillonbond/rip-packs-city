@@ -148,6 +148,9 @@ function WalletMomentsBody() {
   // during the 2026-08-28/29 Top Shot outage: `public-api.nbatopshot.com`
   // returned Cloudflare 530/503 for 21 h, which is exactly when that branch runs.
   const [packsFailed, setPacksFailed] = useState(false)
+  // A failed /api/badges chunk leaves up to 100 rows with no pills, and a
+  // badge filter then drops them — read as "no badges" unless it is SAID.
+  const [badgesPartial, setBadgesPartial] = useState(false)
   // Bumped once per runSearch; CollectionRecentSales owns the fetch + its own state.
   const [salesSearchNonce, setSalesSearchNonce] = useState(0)
   const [copied, setCopied] = useState(false);
@@ -453,7 +456,7 @@ function WalletMomentsBody() {
           collection_id: collectionIdParam,
         })
         const res = await fetch("/api/badges?" + params.toString())
-        if (!res.ok) continue
+        if (!res.ok) { setBadgesPartial(true); continue }
         const json = await res.json()
         allEditions.push(...(json.editions ?? []))
       }
@@ -465,6 +468,7 @@ function WalletMomentsBody() {
         return { ...row, badgeInfo: badgeInfoForRow(row, badgeMap) }
       })
     } catch {
+      setBadgesPartial(true)
       return rowsIn
     }
   }
@@ -781,6 +785,7 @@ function WalletMomentsBody() {
     setLoading(true)
     setError("")
     setRows([])
+    setBadgesPartial(false)
     setSummary(undefined)
     dispatchView({ type: "COLLAPSE_ALL" })
     setHasSearched(false)
@@ -1128,6 +1133,7 @@ function WalletMomentsBody() {
       const newServerSort = sortKeyToServerSort(next, newDir)
       setServerSortBy(newServerSort)
       setRows([])
+      setBadgesPartial(false)
       setLoading(true)
       fetchPaginatedMoments(activeWallet, 1, newServerSort, false)
         .catch(function(err) { setError(err instanceof Error ? err.message : "Sort failed") })
@@ -1459,6 +1465,11 @@ function WalletMomentsBody() {
         {/* Main table / mobile cards (Step 3c extraction — mobile cards +
             desktop table + expanded panels live in CollectionMomentTable;
             the FMV-alert form state moved into it too). */}
+        {badgesPartial && rows.length > 0 ? (
+          <div role="status" data-testid="badges-partial-note" className="mb-2 text-xs" style={{ color: "var(--rpc-text-muted)" }}>
+            Badges could not be loaded for some moments — badge pills and badge filters may be incomplete.
+          </div>
+        ) : null}
         <CollectionMomentTable
           isMobile={isMobile}
           filteredRows={filteredRows}

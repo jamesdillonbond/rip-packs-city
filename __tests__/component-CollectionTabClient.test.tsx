@@ -1944,3 +1944,36 @@ describe("CollectionTabClient — session-gated reads wait for a signed-in answe
     }
   })
 })
+
+// 2026-10-18: a failed /api/badges chunk left its rows pill-less with nothing on
+// screen saying so — and a badge filter then dropped them as "no badges".
+describe("CollectionTabClient — a failed badge read is said, not shown as no badges", () => {
+  const withBadges = (res: () => Response) => {
+    const base = fetchMock.getMockImplementation() as (input: unknown) => Promise<Response>
+    fetchMock.mockImplementation(async (input: unknown) =>
+      String(input).startsWith("/api/badges") ? res() : base(input),
+    )
+  }
+
+  it("a 500 from /api/badges shows the partial-badges note", async () => {
+    withBadges(() => json(500, { error: "boom" }))
+    searchParams = new URLSearchParams("wallet=0xbd94cade097e50ac")
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(screen.getByTestId("badges-partial-note")).toBeTruthy())
+  })
+
+  it("a THROWN badge read shows it too", async () => {
+    withBadges(() => { throw new Error("network") })
+    searchParams = new URLSearchParams("wallet=0xbd94cade097e50ac")
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(screen.getByTestId("badges-partial-note")).toBeTruthy())
+  })
+
+  it("NO-CHANGE CONTROL: a healthy badge read shows no note", async () => {
+    searchParams = new URLSearchParams("wallet=0xbd94cade097e50ac")
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(fetchMock.mock.calls.some((c) => String(c[0]).startsWith("/api/badges"))).toBe(true))
+    await new Promise((r) => setTimeout(r, 50))
+    expect(screen.queryByTestId("badges-partial-note")).toBeNull()
+  })
+})
