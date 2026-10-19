@@ -1795,7 +1795,47 @@ async function executeTool(toolName: string, toolInput: any, ctx: ToolCtx): Prom
     }
   }
   const out = await executeToolInner(toolName, toolInput, ctx, scope);
-  return scope.identity ? attachPlayerIdentity(out, scope.identity) : out;
+  const withIdentity = scope.identity ? attachPlayerIdentity(out, scope.identity) : out;
+  return QUIET_MARKET_TOOLS.has(toolName)
+    ? annotateQuietMarket(withIdentity, toolInput?.collectionId ?? ctx.collectionId ?? undefined)
+    : withIdentity;
+}
+
+// 2026-10-18 (Cowork QA, live chat): asked for Golazos deals, the concierge returned the
+// one listing it had and added "floors move fast" — for a market with no indexed sale in
+// 17 days (and no on-chain trade at all, 10-17 probe). A deals answer carried no fact
+// about whether anything is trading, so the model filled the gap with a cliché. The
+// deals and listings tools now carry the collection's own activity when its 7-day window
+// has NO indexed sale. Busy collections are untouched (no extra field, no extra note).
+const QUIET_MARKET_TOOLS = new Set([
+  "search_live_deals",
+  "search_catalog_deals",
+  "search_serial_deals",
+  "get_edition_listings",
+]);
+
+async function annotateQuietMarket(raw: string, collectionId: string | undefined): Promise<string> {
+  if (!collectionId) return raw;
+  const dbSlug = toDbSlug(collectionId) ?? (fromDbSlug(collectionId) ? collectionId : null);
+  if (!dbSlug) return raw;
+  let out: any;
+  try { out = JSON.parse(raw) } catch { return raw }
+  if (!out || typeof out !== "object" || Array.isArray(out) || out.status === "error") return raw;
+  let pulse: any = null;
+  try { pulse = JSON.parse(await fetchPublicInsight(siteUrl(), "/api/public/insights/market-pulse", 20)) } catch { pulse = null }
+  const row = pulse && pulse.status === "ok" && Array.isArray(pulse.rows)
+    ? pulse.rows.find((r: any) => r && r.slug === dbSlug)
+    : null;
+  // A failed pulse read adds nothing: it is not evidence of a quiet market.
+  if (!row || row.sales_7d !== 0) return raw;
+  out.market_activity = {
+    sales_indexed_7d: 0,
+    last_indexed_sale_at: typeof row.last_sale_at === "string" ? row.last_sale_at : null,
+    note: "This collection has NO sales indexed by RPC in the last 7 days" +
+      (typeof row.last_sale_at === "string" ? " (last_indexed_sale_at is the newest)" : " or 30 days") +
+      ". Say so when you present these listings — never call the market active, floors fast-moving, or a deal likely to go quickly. Asks on a quiet market can sit unsold for weeks.",
+  };
+  return JSON.stringify(out);
 }
 
 // Tools in which a null collection UUID means "every collection" — so a present

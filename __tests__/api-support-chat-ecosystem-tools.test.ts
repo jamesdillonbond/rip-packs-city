@@ -282,3 +282,36 @@ describe("concierge — fetchPublicInsight response shapes", () => {
     expect(r).toMatchObject({ status: "error", message: "board disabled" })
   })
 })
+
+describe("concierge — deal tools on a QUIET market (2026-10-18)", () => {
+  // Cowork QA 10-18: the concierge called Golazos deals "fast-moving floors" on a
+  // collection with ZERO indexed sales in 7 days. A deal tool's result now carries
+  // the collection's indexed 7-day sale count when it is zero, so the model cannot
+  // describe a frozen market as an active one.
+  const deals = { data: { deals: [{ player: "Pedri", ask: 4, fmv: 7, discount_pct: 42 }], count: 1 }, error: null }
+  const quiet = { slug: "laliga_golazos", sales_24h: 0, sales_7d: 0, sales_30d: 3, last_sale_at: "2026-10-01T18:00:00+00:00" }
+  it("a zero-sale week attaches market_activity and forbids calling the market active", async () => {
+    install({ "rpc:concierge_market_deals": deals })
+    const r = await drive("search_live_deals", { team: "Barcelona", collectionId: "laliga-golazos" }, [
+      jsonRoute("/api/public/insights/market-pulse", { rows: [{ slug: "nba_top_shot", sales_7d: 900 }, quiet] }),
+    ])
+    expect(r.market_activity).toMatchObject({ sales_indexed_7d: 0, last_indexed_sale_at: "2026-10-01T18:00:00+00:00" })
+    expect(String((r.market_activity as { note: string }).note)).toMatch(/never call the market active/i)
+    expect((r.deals as unknown[]).length).toBe(1)
+  })
+  it("an active collection gets NO market_activity block", async () => {
+    install({ "rpc:concierge_market_deals": deals })
+    const r = await drive("search_live_deals", { team: "Barcelona", collectionId: "laliga-golazos" }, [
+      jsonRoute("/api/public/insights/market-pulse", { rows: [{ ...quiet, sales_7d: 12 }] }),
+    ])
+    expect(r.market_activity).toBeUndefined()
+  })
+  it("a FAILED market-pulse read adds nothing — no claim either way", async () => {
+    install({ "rpc:concierge_market_deals": deals })
+    const r = await drive("search_live_deals", { team: "Barcelona", collectionId: "laliga-golazos" }, [
+      jsonRoute("/api/public/insights/market-pulse", {}, { status: 503, ok: false }),
+    ])
+    expect(r.market_activity).toBeUndefined()
+    expect((r.deals as unknown[]).length).toBe(1)
+  })
+})
