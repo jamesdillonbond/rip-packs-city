@@ -1,6 +1,6 @@
 -- audit_20261018_derive_pinnacle_wmc_fills_player_name
 --
--- WHY (found 10-18 ~6:10 PM PT re-reading deep-audit D8's exit): 41 Pinnacle wmc rows of one wallet
+-- WHY (found 10-18 ~6:03 PM PT re-reading deep-audit D8's exit): 41 Pinnacle wmc rows of one wallet
 -- (0xa9435b88c3798c19, written 6:28 AM PT) had character_name ("Django") but player_name NULL, though
 -- their catalog rows exist since 09-27. Mechanism: wallet-backfill-pinnacle's post-pass
 -- (backfill_pinnacle_wmc_metadata_from_editions) ran while render_id was still NULL, so it could not
