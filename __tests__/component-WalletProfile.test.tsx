@@ -117,18 +117,19 @@ describe("WalletProfile", () => {
     expect(container.textContent).toContain("0xbbbbbbbbbbbbbbbb")
   })
 
-  it("loan rows are keyboard-operable (role=button, aria-expanded, Enter toggles)", () => {
+  it("loan rows expand through a real disclosure button, not a role=button row around a link (#196)", () => {
+    // #196 (10-18): the row used to be <tr role="button" aria-expanded> wrapping the
+    // counterparty <Link> (axe nested-interactive). A native <button> is
+    // keyboard-operable by construction (Enter/Space dispatch click).
     const { container } = render(<WalletProfile data={baseData()} />)
-    const row = container.querySelector('tr[role="button"]')
-    expect(row).toBeTruthy()
-    expect(row?.getAttribute("tabindex")).toBe("0")
-    expect(row?.getAttribute("aria-expanded")).toBe("false")
-    // Enter expands the loan detail (mouse-only before this fix).
-    fireEvent.keyDown(row!, { key: "Enter" })
-    expect(container.querySelector('tr[role="button"]')?.getAttribute("aria-expanded")).toBe("true")
-    // Space collapses it again.
-    fireEvent.keyDown(container.querySelector('tr[role="button"]')!, { key: " " })
-    expect(container.querySelector('tr[role="button"]')?.getAttribute("aria-expanded")).toBe("false")
+    expect(container.querySelector('[role="button"]')).toBeNull()
+    const btn = () => container.querySelector("tbody button[aria-expanded]") as HTMLButtonElement
+    expect(btn()).toBeTruthy()
+    expect(btn().getAttribute("aria-expanded")).toBe("false")
+    fireEvent.click(btn())
+    expect(btn().getAttribute("aria-expanded")).toBe("true")
+    fireEvent.click(btn())
+    expect(btn().getAttribute("aria-expanded")).toBe("false")
   })
 
   it("copies the wallet address to the clipboard and flips the button to Copied", async () => {
@@ -161,9 +162,9 @@ describe("WalletProfile", () => {
 
   it("expands a loan row on click and reveals the counterparty analytics drill-down link", () => {
     const { container } = render(<WalletProfile data={baseData()} />)
-    const row = container.querySelector('tr[role="button"]') as HTMLElement
+    const row = container.querySelector("tbody tr") as HTMLElement
     fireEvent.click(row)
-    expect(container.querySelector('tr[role="button"]')?.getAttribute("aria-expanded")).toBe("true")
+    expect(container.querySelector("tbody button[aria-expanded]")?.getAttribute("aria-expanded")).toBe("true")
     const drill = Array.from(container.querySelectorAll("a")).map((a) => a.getAttribute("href"))
     expect(drill.some((h) => h?.startsWith("/analytics/wallets/"))).toBe(true)
   })
@@ -285,7 +286,7 @@ describe("WalletProfile — position transfers + role-panel depth", () => {
       recent_as_lender: [],
     })
     const { container } = render(<WalletProfile data={data} />)
-    const row = container.querySelector('tr[role="button"]') as HTMLElement
+    const row = container.querySelector("tbody tr") as HTMLElement
     fireEvent.click(row)
     const text = container.textContent ?? ""
     expect(text).toContain("7d") // 604800s → 7 days

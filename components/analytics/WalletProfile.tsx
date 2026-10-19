@@ -691,20 +691,25 @@ function RowGroup({
       <tr
         className="border-b border-[color:var(--rpc-border-subtle)] last:border-b-0 cursor-pointer hover:bg-[color:var(--rpc-surface-hover)] transition-colors"
         onClick={onToggle}
-        role="button"
-        tabIndex={0}
-        aria-expanded={open}
-        onKeyDown={(e) => {
-          // Keyboard operability: the row expands/collapses the loan detail on
-          // click, but was a plain <tr> — unreachable without a mouse.
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault()
-            onToggle()
-          }
-        }}
       >
         <td className="py-2.5 px-3">
           <div className="flex items-center gap-2">
+            {/* #196 (10-18): the disclosure is a real <button>. The row used to be
+                role="button" + aria-expanded around the counterparty <Link> (axe
+                nested-interactive); the row click stays a mouse convenience. */}
+            <button
+              type="button"
+              aria-expanded={open}
+              aria-label={`${sideLabel} loan details — ${collectionLabel}`}
+              onClick={(e) => {
+                e.stopPropagation()
+                onToggle()
+              }}
+              className="text-[color:var(--rpc-text-muted)] text-xs rounded"
+              style={{ background: "transparent", border: "none", cursor: "pointer", minWidth: 24, minHeight: 24, padding: 0 }}
+            >
+              <span aria-hidden="true">{open ? "▾" : "›"}</span>
+            </button>
             <span
               className="h-2.5 w-2.5 rounded"
               style={{ background: collectionColor }}
