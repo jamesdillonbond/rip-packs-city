@@ -3,7 +3,17 @@
 Transparent record of how the Panini WC Prizm numbers are computed. All are **models over live
 marketplace data**, not oracle prices; each is reversible and refreshes as FMV updates.
 
-## Edition FMV — current engine `panini-1.1.0` (shipped 2026-09-24 ~9 PM PT, Trevor-approved)
+## Edition FMV — current engine `panini-1.3.1` (2026-10-19); each version below builds on the previous one
+
+Each engine is the previous one plus a single change. The code comments above each `toFmvRowV*` in `lib/chains/panini/ingest-normalize.ts` carry the measured case:
+- **1.1.0** (09-24) prices from the median of the last ≤3 sales in the past 30 days (the section below).
+- **1.2.0** (09-30) prices LOW at the median of the last ≤3 sales at any age (`panini_last_sales_fmv`).
+- **1.3.0** (10-15) grades the label by spread (`panini_sales_spread`): max/min ≤ 1.5 → HIGH; 1.5–3 → MEDIUM, only for an edition with ≥3 sales in 30 days; everything else LOW. Prices are unchanged.
+- **1.3.1** (10-19) adds a spike guard. If the past 30 days hold only 1–2 sales and the price is ≥ 5× the median of the edition's ≥3 earlier sales (`panini_prior_sales_median`), the edition prices at that median and grades LOW.
+
+Kill switches (`PANINI_FMV_ENGINE`): `1.3` → 1.3.0, `1.2`, `1.1`, `1.0`. If any input read fails, that batch falls back one engine, writes the older label, and the run is `ok=false` (`extra.fmv_*_error`).
+
+## Edition FMV — engine `panini-1.1.0` (shipped 2026-09-24 ~9 PM PT, Trevor-approved; superseded above)
 
 ⚠ **The v0 description below is HISTORY (`panini-1.0.0`).** Current rule (`toFmvRowV11`, `lib/chains/panini/ingest-normalize.ts`; route `app/api/cron/panini-ingest/route.ts` via rpc `panini_recent_sales_fmv`):
 
