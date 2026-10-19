@@ -152,4 +152,32 @@ describe("GET /api/ready", () => {
     expect(res.status).toBe(200)
     expect((await res.json()).per_collection).toEqual([])
   })
+
+  it("every DB slug resolves through the registry — the client matches on the HYPHEN slug", async () => {
+    // 2026-10-19: a hardcoded five-entry map had no `candy_mlb`, so Candy's row
+    // went out as "candy_mlb", the Market/Analytics clients (which look up
+    // `r.slug === "candy-mlb"`) never found it, and a market with 0 sales since
+    // 10-11 showed no thin-volume notice. Panini's arm (#64) must resolve too.
+    state.data = [
+      { slug: "candy_mlb", name: "Candy MLB", sales_24h: 0, thin_volume: true, last_sale_at: null },
+      { slug: "panini_blockchain", name: "Panini Blockchain", sales_24h: null, thin_volume: null, last_sale_at: "2026-10-19T13:45:01+00:00" },
+      { slug: "ufc_strike", name: "UFC Strike", sales_24h: 0, thin_volume: true, last_sale_at: null },
+    ]
+    const body = await (await GET()).json()
+    expect(body.per_collection.map((r: any) => r.slug)).toEqual(["candy-mlb", "panini-blockchain", "ufc"])
+    expect(body.per_collection.map((r: any) => r.db_slug)).toEqual(["candy_mlb", "panini_blockchain", "ufc_strike"])
+  })
+
+  it("Panini's lag-aware row stays UNKNOWN — never a measured zero, never 'thin'", async () => {
+    // Panini sales land in panini_sales 12–160 h after sold_at, so no 24 h count
+    // is honest; the RPC sends NULLs and the route must not coerce them.
+    state.data = [
+      { slug: "panini_blockchain", name: "Panini Blockchain", sales_24h: null, thin_volume: null, last_sale_at: "2026-10-19T13:45:01+00:00" },
+    ]
+    const row = (await (await GET()).json()).per_collection[0]
+    expect(row.sales_24h).toBeNull()
+    expect(row.thin_volume).toBeNull()
+    expect(row.thin_volume).not.toBe(true)
+    expect(row.last_sale_at).toBe("2026-10-19T13:45:01+00:00")
+  })
 })

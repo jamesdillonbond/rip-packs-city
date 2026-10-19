@@ -42,6 +42,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { safeApiError, errorLogDetail } from "@/lib/api-error";
+import { fromDbSlug } from "@/lib/collections";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -51,15 +52,19 @@ const supabase = createClient(
 export const dynamic = "force-dynamic";
 export const maxDuration = 10;
 
-// DB slug -> frontend slug used everywhere else in the app.
-const DB_TO_FRONTEND: Record<string, string> = {
-  "nba_top_shot": "nba-top-shot",
-  "nfl_all_day": "nfl-all-day",
-  "laliga_golazos": "laliga-golazos",
-  "disney_pinnacle": "disney-pinnacle",
-  "ufc_strike": "ufc",
-  "ufc": "ufc",
-};
+// DB slug -> frontend slug, RESOLVED THROUGH THE REGISTRY (lib/collections.ts).
+// ⚠ This was a hardcoded five-entry map beside the registry until 2026-10-19, and
+// it had no `candy_mlb`: the Candy row went out as `slug: "candy_mlb"`, and the
+// Market/Analytics clients match on the hyphen slug (`candy-mlb`), so Candy's
+// row was never found and its thin-volume notice never rendered — on a market
+// with 0 sales since 10-11. A hardcoded allowlist beside a registry goes stale
+// silently (CLAUDE.md). A slug the registry does not know (the legacy `ufc` DB
+// alias among them) passes through unchanged.
+
+function frontendSlug(dbSlug: unknown): string | null {
+  if (typeof dbSlug !== "string" || !dbSlug) return null
+  return fromDbSlug(dbSlug) ?? dbSlug
+}
 
 function failed(err: unknown, where: string) {
   console.error(`[api/ready] ${where}: ${errorLogDetail(err)}`);
@@ -98,7 +103,7 @@ export async function GET() {
     }
 
     const perCollection = data.map((c: any) => ({
-      slug: DB_TO_FRONTEND[c?.slug] ?? c?.slug ?? null,
+      slug: frontendSlug(c?.slug),
       db_slug: c?.slug ?? null,
       name: c?.name ?? null,
       // ⚠ `sales_24h` is a BOUNDED PROBE: exact when <= 10, NULL above. It is
