@@ -33,9 +33,12 @@ const TIER_PILL: Record<string, string> = {
 // Confidence pill removed 2026-10-18 (Trevor: no user-facing confidence on
 // pricing — internal only).
 
-// Editions that link to /edition/[id] currently exist for these collections.
-// Pinnacle is excluded from Sets, so we don't have to handle it here.
-const LINKABLE_COLLECTIONS = new Set(["topshot", "allday", "golazos"])
+// Every tile links to /edition/[uuid], which resolves any `editions` row through
+// lib/collection-slug (2026-10-18: a hand list here — topshot/allday/golazos —
+// left every UFC, Candy and Panini tile as dead text, though 5/5, 125/125 and
+// 499/499 of their tile ids resolve). Pinnacle is the one exception: its
+// set-level edition grain matches no held pin, so a link would land wrong.
+const UNLINKABLE_COLLECTIONS = new Set(["pinnacle", "disney_pinnacle"])
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -80,7 +83,7 @@ function PlaceholderArt({
 export default function EditionGrid({ editions, collection }: Props) {
   const [sort, setSort] = useState<"fmv_desc" | "name_asc">("fmv_desc")
 
-  const linkable = LINKABLE_COLLECTIONS.has((collection || "").toLowerCase())
+  const linkable = !!collection && !UNLINKABLE_COLLECTIONS.has(collection.toLowerCase())
 
   const sorted = useMemo(() => {
     const copy = [...editions]

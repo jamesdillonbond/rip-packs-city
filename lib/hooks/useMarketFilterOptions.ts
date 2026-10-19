@@ -7,7 +7,7 @@
 // screen, so a value with no listing among them (Portland Fire: 70 Top Shot
 // editions with a live ask) could not be picked at all.
 //
-// Each list = the catalog (/api/market/filter-options — Top Shot / All Day only:
+// Each list = the catalog (/api/market/filter-options — the DB-filtered arms (lib/market/edition-market-arms.ts):
 // every value the collection's editions carry, the columns their market RPCs
 // filter on, and every badge in market_edition_badges, which their badge filter
 // reads) ∪ the facets of every window /api/market has fetched this session ∪ the

@@ -6,8 +6,8 @@
 // (Portland Fire, 2026-10-14) could not be picked.
 //
 // Served ONLY for collections whose market filters run against `editions` in
-// the database (Top Shot, All Day: get_topshot_sniper_deals_v3 /
-// get_allday_market_editions_v3 match btrim(set_name) IN, series::text = ANY,
+// the database (Top Shot, All Day, Golazos: get_topshot_sniper_deals_v3 /
+// get_allday_market_editions_v3 / get_golazos_market_editions match btrim(set_name) IN, series::text = ANY,
 // team_name ILIKE, player_name ILIKE). Every value get_market_filter_options
 // returns is therefore matchable there. Badges come from
 // get_market_badge_options: every title in market_edition_badges' latest run,
@@ -23,11 +23,14 @@ import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { apiErrorResponse } from "@/lib/api-error"
 import { boundedRead } from "@/lib/api/bounded-read"
-import { getCollectionByUuid, getCollectionUuid } from "@/lib/collections"
+import { getCollectionByUuid } from "@/lib/collections"
+import { DB_FILTERED_MARKET_COLLECTION_IDS } from "@/lib/market/edition-market-arms"
 
-const CATALOG_FILTERED = new Set(
-  ["nba-top-shot", "nfl-all-day"].map((slug) => getCollectionUuid(slug)).filter((u): u is string => !!u),
-)
+// 2026-10-18: derived from the shared arm registry. A hand list here
+// (Top Shot, All Day) left Golazos — whose get_golazos_market_editions filters
+// set / series / team / player against `editions` the same way — on the 50-row
+// facets, so a set or team with no listing in view could not be picked.
+const CATALOG_FILTERED = DB_FILTERED_MARKET_COLLECTION_IDS
 
 const KEYS = ["sets", "series", "teams", "players"] as const
 

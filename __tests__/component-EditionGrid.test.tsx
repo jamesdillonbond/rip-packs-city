@@ -120,10 +120,22 @@ describe("EditionGrid — card branch rendering", () => {
     expect(link).toBeTruthy()
   })
 
-  it("does NOT link when the collection is not linkable (e.g. ufc)", () => {
+  // 2026-10-18 INVERTED: this pinned UFC as unlinkable, but /edition/[uuid]
+  // resolves every editions row (UFC 5/5, Candy 125/125, Panini 499/499 sampled),
+  // so the hand list left those tiles as dead text. Pinnacle — whose set-level
+  // grain matches no held pin — is the subject that genuinely lacks a link.
+  it.each(["ufc", "candy_mlb", "panini_blockchain"])("links a UUID edition on %s too", (collection) => {
     const uuid = "11111111-2222-3333-4444-555555555555"
     const { container } = render(
-      <EditionGrid editions={[ed({ edition_id: uuid })]} collection="ufc" />,
+      <EditionGrid editions={[ed({ edition_id: uuid })]} collection={collection} />,
+    )
+    expect(container.querySelector(`a[href="/edition/${uuid}"]`)).toBeTruthy()
+  })
+
+  it("does NOT link a Pinnacle edition (its set-level grain matches no held pin)", () => {
+    const uuid = "11111111-2222-3333-4444-555555555555"
+    const { container } = render(
+      <EditionGrid editions={[ed({ edition_id: uuid })]} collection="pinnacle" />,
     )
     expect(container.querySelector(`a[href="/edition/${uuid}"]`)).toBeNull()
   })

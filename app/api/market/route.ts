@@ -36,6 +36,7 @@ import { paniniAssetUrl } from "@/lib/panini/assets"
 import { fmvCannotAnchorDiscount } from "@/lib/sniper/fmv-staleness";
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { EDITION_MARKET_ARMS, DB_FILTERED_MARKET_COLLECTION_IDS } from "@/lib/market/edition-market-arms"
 import { loadTopshotFmvGuard, guardTopshotFmv, type FmvGuardMap } from "@/lib/fmv-display-guard"
 import { apiErrorResponse } from "@/lib/api-error"
 import { readPaniniCoverage } from "@/lib/panini/coverage"
@@ -413,16 +414,8 @@ type EditionMarketFilters = {
   teams: string[]; badges: string[]; hasBadges: boolean; ownedWallet: string | null; owned: OwnedParam
 }
 
-// The edition-grain arms served by an RPC with get_allday_market_editions_v3's
-// signature and columns. 2026-10-18: LaLiga Golazos joined (migration
-// 20261018214307). It had NO arm, so /laliga-golazos/market fell through to v1
-// cached_listings — Flowty's 100 rows against ~4.3k open on-chain asks, and an
-// empty page on the day Flowty's API goes dark. One mapper for both, so the
-// two cannot drift.
-const EDITION_MARKET_ARMS = {
-  allday: { rpc: "get_allday_market_editions_v3", collectionId: ALLDAY_COLLECTION_ID_FOR_DISPATCH, source: "allday" },
-  golazos: { rpc: "get_golazos_market_editions", collectionId: GOLAZOS_COLLECTION_ID_FOR_DISPATCH, source: "golazos" },
-} as const
+// EDITION_MARKET_ARMS lives in lib/market/edition-market-arms.ts, shared with
+// /api/market/filter-options.
 
 async function fetchAllDayMarketEditions(filters: EditionMarketFilters): Promise<any[]> {
   return fetchEditionMarketEditions(EDITION_MARKET_ARMS.allday, filters)
@@ -1055,9 +1048,7 @@ export async function GET(req: NextRequest) {
     // EDITION_MARKET_ARMS entry — derived from the registry, so a new arm cannot
     // be left out (Golazos was, for one deploy). The page still re-filters the
     // non-Top Shot / All Day arms (ownedApplied below, unchanged).
-    const ownedEligible = !!(owned && ownedWallet) &&
-      (collectionId === TS_COLLECTION_ID_FOR_DISPATCH ||
-        Object.values(EDITION_MARKET_ARMS).some((a) => a.collectionId === collectionId))
+    const ownedEligible = !!(owned && ownedWallet) && DB_FILTERED_MARKET_COLLECTION_IDS.has(collectionId)
     let ownedKnown = false
     if (ownedEligible) {
       const { data: probe, error: probeErr } = await (supabaseAdmin as any)

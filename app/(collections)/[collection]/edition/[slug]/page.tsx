@@ -5,6 +5,7 @@
 // + get_edition_in_packs server-side. Special serials read directly from
 // special_serial_holders for non-Pinnacle collections.
 
+import { isTileVideoEnabled } from "@/lib/entity-editions-grid-format"
 import type { Metadata } from "next"
 import { normalizeAddress } from "@/lib/address"
 import { Suspense } from "react"
@@ -691,7 +692,12 @@ export default async function EditionPage(
   // a video error, so a clip that fails to load still shows the card.
   // Panini joined 2026-09-27: its clips are mp4 on assets.paniniamerica.net
   // (15/15 sampled 200 video/mp4; the host is in media-src).
-  const hasVideo = (collection === "nba-top-shot" || collection === "nfl-all-day" || collection === "candy-mlb" || isPanini) && !!detail.video_url
+  // 2026-10-18: resolved through the tile registry (isTileVideoEnabled), not a
+  // hand list. The list had dropped Golazos and UFC, whose grid tiles play the
+  // same clips (575/575 and 617/617 editions carry a media-src-allowed
+  // video_url), so their edition hero was a still image. Panini's tiles stay
+  // poster-only, but its hero plays.
+  const hasVideo = (isTileVideoEnabled(collection) || isPanini) && !!detail.video_url
 
   // Resilient hero media (Item E, 2026-06-13 audit — parity with the /moment
   // hero). detail.thumbnail_url / video_url are the constructed

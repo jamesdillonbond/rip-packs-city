@@ -17,6 +17,7 @@ vi.mock("@/lib/supabase", () => ({
 }))
 
 import { GET } from "@/app/api/market/filter-options/route"
+import { DB_FILTERED_MARKET_COLLECTION_IDS } from "@/lib/market/edition-market-arms"
 
 const TS = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
 const PINNACLE = "7dd9dd11-e8b6-45c4-ac99-71331f959714"
@@ -37,6 +38,18 @@ describe("GET /api/market/filter-options", () => {
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({ catalog: false })
     expect(rpc.args).toBeNull()
+  })
+
+  // 2026-10-18: Golazos' get_golazos_market_editions filters against editions
+  // like the v3 RPCs; a hand list left it on the 50-row facets.
+  it("serves the catalog for EVERY DB-filtered arm, Golazos included", async () => {
+    for (const id of DB_FILTERED_MARKET_COLLECTION_IDS) {
+      rpc.args = null
+      const res = await GET(req(url(id)))
+      expect((await res.json()).catalog, id).toBe(true)
+      expect(rpc.args).toEqual({ p_collection_id: id })
+    }
+    expect(DB_FILTERED_MARKET_COLLECTION_IDS.has("06248cc4-b85f-47cd-af67-1855d14acd75")).toBe(true)
   })
 
   it("returns every set, series, team, player and badge for Top Shot", async () => {
