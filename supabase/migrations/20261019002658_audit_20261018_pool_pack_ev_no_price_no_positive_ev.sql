@@ -7,7 +7,7 @@
 -- COALESCE(p_pack_price, 0) > 0 AND v_pack_ev > 0, and the edge writers stopped writing
 -- zero-price +EV rows at ~9:37 AM PT 10-18 (c6572c45c). The live path still exposed:
 -- mcp_compute_pack_ev (concierge) passes pack_distributions.metadata->>'retail_price_usd',
--- which is '0' on 1,337 dists (1,278 Top Shot, 59 Pinnacle; read 10-18 ~5:50 PM PT), straight
+-- which is '0' on 1,337 dists (1,278 Top Shot, 59 Pinnacle; read 10-18 ~5:25 PM PT), straight
 -- into compute_pack_ev_from_pool, so the concierge could call an unpriced pack +EV.
 --
 -- HOW: a one-token splice of the live body, guarded on md5(prosrc) and on the anchor occurring
@@ -16,7 +16,7 @@
 -- anon-exec: intentional — unchanged by this migration; CREATE OR REPLACE with the same signature keeps the existing grants (compute_pack_ev_from_pool)
 -- anon-exec: intentional — unchanged by this migration; CREATE OR REPLACE with the same signature keeps the existing grants (compute_pack_ev_from_pool_tier_weighted)
 --
--- POST-APPLY (10-18 ~5:55 PM PT): md5(prosrc) compute_pack_ev_from_pool f4e5dc7186c5dde172b5487521540554,
+-- POST-APPLY (10-18 ~5:28 PM PT): md5(prosrc) compute_pack_ev_from_pool f4e5dc7186c5dde172b5487521540554,
 -- compute_pack_ev_from_pool_tier_weighted 658ebe3cbf1245bb969e55158b670d48; ACLs unchanged;
 -- check_secdef_anon_exec_drift() = 0. Probe: dists 5787/2298/6921 at price 0 -> is_positive_ev false
 -- (gross 0.24/0.28/5.08); positive control at $0.01 -> true.

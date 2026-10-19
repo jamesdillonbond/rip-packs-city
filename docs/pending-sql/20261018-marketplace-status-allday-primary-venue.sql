@@ -1,4 +1,4 @@
--- PARKED 2026-10-18 ~5:30 PM PT (Claude Code cloud): apply_migration returned "timed out after 60s"
+-- PARKED 2026-10-18 ~5:10 PM PT (Claude Code cloud): apply_migration returned "timed out after 60s"
 -- twice with no schema_migrations row and no backend in pg_stat_activity (the operator-confirmation
 -- hold on data writes, tooling-gotchas.md). Not retried. Run in the SQL editor, or via apply_migration
 -- with name audit_20261018_marketplace_status_allday_primary_venue_is_storefront_v2 and then commit
@@ -7,7 +7,7 @@
 -- WHY: v_collection_marketplace_status (lib/marketplace-status.ts; its `notes` is the tooltip of the
 -- marketplace pill and the banner copy) says All Day's primary venue is V1 NFTStorefront and that
 -- "V2 only carries Pinnacle/MFLPack/TopShot PackNFT" — verified 2026-05-18. Re-derived 2026-10-18
--- ~5:25 PM PT, the claim has inverted:
+-- ~5:05 PM PT, the claim has inverted:
 --   * sales, 14 d: onchain_dapper_v2 7,219 · offer_fill 264 · onchain_dapper_v1 92
 --   * cached_listings_v2 open asks: direct_v2 11,018 · direct 8,467 · storefront_v2 4,899 (all adding
 --     rows in the last 24 h) vs direct_v1 10,518 with 0 new in 24 h (newest 2026-09-18)

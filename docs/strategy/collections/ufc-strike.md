@@ -43,7 +43,7 @@ No numbered register item is open for UFC. Recorded but not changed:
    - *Gate:* `grep -rl` `__tests__` for the pitch string before editing (registry-value rule). The view notes change through a migration.
 
 **Next**
-3. **Right-size `wallet-backfill-ufc`. Do not retire it.**
+3. ✅ **DECIDED 10-18 ~5:44 PM PT (Claude Code cloud): leave `wallet-backfill-ufc` as it is — measured, it is not worth code.** It is a fire-and-forget child of `wallet-backfill-multicollection` (one call per saved wallet per 6-hourly seed refresh), not a schedule of its own. Over 30 d (`pipeline_runs_daily`): ~340 runs/day at ~0.5 s avg (p95 < 1 s since 09-21) = **~170 s of function time a day**, 0 failed runs since 10-03. It still writes: 14 (10-15), 14 (10-05), 11 (10-03), 5 (09-30), 36 (09-29), 74 (09-27). So the falsifier below (a 30-day total of 0) is NOT met. A per-collection cooldown in the orchestrator would save ~2 min a day and delay a real holdings change by up to 24 h. Re-open only if its p95 duration rises above ~10 s or the 30-day write total reaches 0. *Original item:* **Right-size `wallet-backfill-ufc`. Do not retire it.**
    - *Why:* about 340 runs a day re-read about 5,674 rows and usually write 0. It still catches real changes, though: 198 on 09-23, 74 on 09-27 and 14 on 10-15. Holdings change even without a market (transfers, migration burns).
    - *Falsifier:* if a 30-day total writes 0, drop it to daily.
 4. ~~Repair the two malformed edition rows~~ — **decided 10-17: only from source metadata, never a guessed UPDATE** (see Needs Trevor).
