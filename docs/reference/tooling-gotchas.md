@@ -851,6 +851,12 @@ was the only reason it surfaced.
 
 ---
 
+## A `git stash pop` that conflicts leaves every OTHER popped file STAGED — the next `git add <one file> && git commit` ships them (2026-10-19)
+
+Stash, `git merge --ff-only origin/main`, `git stash pop`: the pop conflicted on one file, and git left the other nine popped files **already in the index**. I resolved the conflict, then ran `git add docs/overnight/ledger.md && git commit` meaning a ledger-only commit, and it carried all the code. The code then shipped under a "ledger:" message, and the ledger's revert path named a docs-only commit (corrected with a ↳ line). The tell was in the hook output: `pre-commit: ran conflict markers (10 staged file(s))` on what should have been 1. **After any conflicted pop, run `git diff --cached --quiet || git diff --cached --stat` before a path-scoped commit, and read the hook's staged-file count.**
+
+---
+
 ## ⛔ CORRECTION 2026-08-25 — `console.warn` IS indexed. The rule that said otherwise was a BROKEN FILTER, and it nearly cost 158 edits
 
 CLAUDE.md carried `get_runtime_logs: console.warn is NOT indexed — use console.log` for months. **It is wrong**,
