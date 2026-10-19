@@ -160,6 +160,44 @@ export function toFmvRowV13(
   return { ...row, algo_version: "panini-1.3.0" }
 }
 
+// panini-1.3.1 (2026-10-19, Trevor: "Keep going") — 1.3.0 with ONE guard: a lone SPIKE in a thin
+// 30-day window no longer becomes the price. Case: Max Muncy BC 2021 Prizm Silver /199 sold for $1 at
+// every sale since 2023, then once for $770; 1.3.0 priced it $770 and the sniper published a $5 ask as
+// "-99 %". When the 30-day window holds only 1–2 sales (recent.n_recent) AND the edition has >= 3
+// non-special sales from BEFORE that window (panini_prior_sales_median) AND the price is >= 5x their
+// median, the edition prices at that prior median and grades LOW. Measured out of sample: after a
+// newest sale >= 5x the prior median (n 284) the NEXT sale was within ±25 % of the spike 5.6 % of the
+// time and of the prior median 51.4 %. The guard fires on 32 of 12,232 thin-window backtest targets —
+// ±25 % 15.6 → 31.3 %, median error 312 → 50 %, p90 3,810 → 91 % — and leaves the other 12,200 as they
+// were. A 3+ sale window, an edition with < 3 prior sales, and every non-spike price are untouched.
+// `prior` is panini_prior_sales_median(ids) for this edition.
+export const PANINI_SPIKE_RATIO = 5
+export function toFmvRowV131(
+  c: PaniniCardStats,
+  nowIso: string,
+  recent?: { fmv_usd: number; n_recent: number } | null,
+  last?: { fmv_usd: number; n_sales: number } | null,
+  spread?: { n_sales: number; min_usd: number; max_usd: number } | null,
+  prior?: { prior_median_usd: number; n_prior: number } | null,
+) {
+  const row = toFmvRowV13(c, nowIso, recent, last, spread)
+  if (!row) return null
+  const nRecent = Number(recent?.n_recent)
+  const med = Number(prior?.prior_median_usd)
+  const price = Number(row.fmv_usd)
+  if (
+    (nRecent === 1 || nRecent === 2) &&
+    Number(prior?.n_prior) >= 3 &&
+    Number.isFinite(med) && med > 0 &&
+    row.fmv_usd != null && Number.isFinite(price) &&
+    price >= PANINI_SPIKE_RATIO * med
+  ) {
+    row.fmv_usd = med
+    row.confidence = "LOW"
+  }
+  return { ...row, algo_version: "panini-1.3.1" }
+}
+
 // The card PRODUCT a psku belongs to: field 1 of packcard-<setId>_<parallelSetId>_<cardId>_<playerId>
 // (2332 = 2026 Panini NFT Prizm World Cup Soccer). Every edition id, serial sku and FMV edition_id
 // carries it as a prefix, so this is the one place product identity is parsed. null = not a card psku.

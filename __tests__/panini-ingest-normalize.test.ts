@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { parallelFamily, toEditionRow, toFmvRow, toFmvRowV11, toFmvRowV12, toFmvRowV13, PANINI_ASK_ONLY_MULT, toPackRow, toSerialRow, toSaleTimestamp, toSaleRecord, latestSalesBySku, isStrictIsoUtc, PANINI_UUID, pskuSetId } from "@/lib/chains/panini/ingest-normalize"
+import { parallelFamily, toEditionRow, toFmvRow, toFmvRowV11, toFmvRowV12, toFmvRowV13, toFmvRowV131, PANINI_ASK_ONLY_MULT, toPackRow, toSerialRow, toSaleTimestamp, toSaleRecord, latestSalesBySku, isStrictIsoUtc, PANINI_UUID, pskuSetId } from "@/lib/chains/panini/ingest-normalize"
 
 const NOW = "2026-07-16T00:00:00.000Z"
 
@@ -184,6 +184,51 @@ describe("toFmvRowV13", () => {
   it("leaves ASK_ONLY and NO_DATA untouched, even with a tight spread", () => {
     expect(toFmvRowV13(card({ volume_txns: 0, floor_price: 100 }), NOW, null, null, sp(3, 20, 21))).toMatchObject({ confidence: "ASK_ONLY", fmv_usd: 100 * PANINI_ASK_ONLY_MULT })
     expect(toFmvRowV13(card({ volume_txns: 0, for_sale_count: 0 }), NOW, null, null, sp(3, 20, 21))!.confidence).toBe("NO_DATA")
+  })
+})
+
+// panini-1.3.1 (2026-10-19): a lone spike in a thin 30-day window prices at the PRIOR median, LOW.
+// Case: Max Muncy /199 — $1 at every sale since 2023, then one $770 sale published a $5 ask as "-99 %".
+describe("toFmvRowV131", () => {
+  const card = (ms: any) => ({ sku: "p__1_10", psku: "p", market_stats: ms })
+  const lifetime = { volume_txns: 40, recent_sale: 20, avg_sale: 60 }
+  const sp = (n: number, lo: number, hi: number) => ({ n_sales: n, min_usd: lo, max_usd: hi })
+  const pr = (med: number, n: number) => ({ prior_median_usd: med, n_prior: n })
+
+  it("the Max Muncy case: one $770 sale over a $1 history prices at $1, LOW — not $770", () => {
+    const r = toFmvRowV131(card(lifetime), NOW, { fmv_usd: 770, n_recent: 1 }, null, sp(3, 1, 770), pr(1, 3))!
+    expect(r.fmv_usd).not.toBe(770)
+    expect(r).toMatchObject({ fmv_usd: 1, confidence: "LOW", algo_version: "panini-1.3.1" })
+    // two recent sales (the median of a spike and a normal sale) is the same thin window
+    expect(toFmvRowV131(card(lifetime), NOW, { fmv_usd: 400, n_recent: 2 }, null, sp(3, 1, 770), pr(1, 3))).toMatchObject({ fmv_usd: 1, confidence: "LOW" })
+  })
+
+  it("fires at exactly 5x and not just below it", () => {
+    expect(toFmvRowV131(card(lifetime), NOW, { fmv_usd: 50, n_recent: 1 }, null, null, pr(10, 3))!.fmv_usd).toBe(10)
+    expect(toFmvRowV131(card(lifetime), NOW, { fmv_usd: 49.99, n_recent: 1 }, null, null, pr(10, 3))!.fmv_usd).toBe(49.99)
+  })
+
+  it("leaves a 3+ sale window, < 3 prior sales, a missing/zero prior and a downward move untouched", () => {
+    const cases: Array<[any, any]> = [
+      [{ fmv_usd: 770, n_recent: 3 }, pr(1, 3)],
+      [{ fmv_usd: 770, n_recent: 1 }, pr(1, 2)],
+      [{ fmv_usd: 770, n_recent: 1 }, null],
+      [{ fmv_usd: 770, n_recent: 1 }, pr(0, 3)],
+      [{ fmv_usd: 1, n_recent: 1 }, pr(770, 3)],
+    ]
+    for (const [recent, prior] of cases) {
+      const v13 = toFmvRowV13(card(lifetime), NOW, recent, null, sp(3, 1, 770))!
+      const v131 = toFmvRowV131(card(lifetime), NOW, recent, null, sp(3, 1, 770), prior)!
+      expect(v131.fmv_usd).toBe(v13.fmv_usd)
+      expect(v131.confidence).toBe(v13.confidence)
+      expect(v131.algo_version).toBe("panini-1.3.1")
+    }
+  })
+
+  it("never touches a LOW-tier price from the last-3-at-any-age read (no recent window) or ASK_ONLY / NO_DATA", () => {
+    expect(toFmvRowV131(card(lifetime), NOW, null, { fmv_usd: 770, n_sales: 3 }, null, pr(1, 3))!.fmv_usd).toBe(770)
+    expect(toFmvRowV131(card({ volume_txns: 0, floor_price: 100 }), NOW, null, null, null, pr(1, 3))).toMatchObject({ confidence: "ASK_ONLY", fmv_usd: 100 * PANINI_ASK_ONLY_MULT })
+    expect(toFmvRowV131(card({ volume_txns: 0, for_sale_count: 0 }), NOW, null, null, null, pr(1, 3))!.confidence).toBe("NO_DATA")
   })
 })
 

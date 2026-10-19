@@ -38,7 +38,7 @@
 import { NextRequest, NextResponse, after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat";
-import { toEditionRow, toFmvRow, toFmvRowV11, toFmvRowV12, toFmvRowV13, toPackRow, toSerialRow, latestSalesBySku, isStrictIsoUtc, pskuSetId } from "@/lib/chains/panini/ingest-normalize";
+import { toEditionRow, toFmvRow, toFmvRowV11, toFmvRowV12, toFmvRowV13, toFmvRowV131, toPackRow, toSerialRow, latestSalesBySku, isStrictIsoUtc, pskuSetId } from "@/lib/chains/panini/ingest-normalize";
 import { fetchAllPaged } from "@/lib/supabase-paginate";
 import { parseStall } from "@/lib/chains/panini/stall-report";
 import { paniniRunMode } from "@/lib/chains/panini/run-mode";
@@ -75,6 +75,12 @@ type RecentFmvRpc = {
 type LastFmvRpc = {
   rpc: (fn: "panini_last_sales_fmv", args: { p_edition_ids: string[] }) => Promise<{
     data: Array<{ edition_id: string; fmv_usd: number | string; n_sales: number }> | null;
+    error: { message?: string } | null;
+  }>;
+};
+type PriorRpc = {
+  rpc: (fn: "panini_prior_sales_median", args: { p_edition_ids: string[] }) => Promise<{
+    data: Array<{ edition_id: string; prior_median_usd: number | string; n_prior: number }> | null;
     error: { message?: string } | null;
   }>;
 };
@@ -512,10 +518,17 @@ export async function POST(req: NextRequest) {
       // from the spread of the edition's last <=3 sales (panini_sales_spread; see toFmvRowV13 for the
       // measured case). Read for EVERY edition in the batch. PANINI_FMV_ENGINE=1.2 is its kill switch; a
       // failed spread read falls back to 1.2.0 rows (which say so) AND fails the run.
-      const FMV_ENGINE = process.env.PANINI_FMV_ENGINE === "1.0" ? "1.0" : process.env.PANINI_FMV_ENGINE === "1.1" ? "1.1" : process.env.PANINI_FMV_ENGINE === "1.2" ? "1.2" : "1.3";
+      // FMV ENGINE 1.3.1 (2026-10-19, Trevor: "Keep going"): 1.3's rows with a SPIKE GUARD — a thin
+      // 30-day window (1–2 sales) priced >= 5x the median of the edition's >= 3 sales from before it
+      // (panini_prior_sales_median) prices at that median, LOW (see toFmvRowV131). Read only for the
+      // editions whose recent n is 1–2. PANINI_FMV_ENGINE=1.3 is its kill switch; a failed prior read
+      // falls back to 1.3.0 rows (which say so) AND fails the run.
+      const FMV_ENGINE = process.env.PANINI_FMV_ENGINE === "1.0" ? "1.0" : process.env.PANINI_FMV_ENGINE === "1.1" ? "1.1" : process.env.PANINI_FMV_ENGINE === "1.2" ? "1.2" : process.env.PANINI_FMV_ENGINE === "1.3" ? "1.3" : "1.3.1";
       let fmvRecentError: string | null = null;
       let fmvLastError: string | null = null;
       let fmvSpreadError: string | null = null;
+      let fmvPriorError: string | null = null;
+      const priorByEdition = new Map<string, { prior_median_usd: number; n_prior: number }>();
       const spreadByEdition = new Map<string, { n_sales: number; min_usd: number; max_usd: number }>();
       const recentByEdition = new Map<string, { fmv_usd: number; n_recent: number }>();
       const lastByEdition = new Map<string, { fmv_usd: number; n_sales: number }>();
@@ -525,21 +538,30 @@ export async function POST(req: NextRequest) {
         if (recErr) { fmvRecentError = recErr.message ?? String(recErr); console.log(`[${PIPELINE}] recent-sales fmv: ${fmvRecentError}`); }
         else for (const r of rec ?? []) recentByEdition.set(String(r.edition_id), { fmv_usd: Number(r.fmv_usd), n_recent: Number(r.n_recent) });
         const lowIds = ids.filter((id) => !recentByEdition.has(id));
-        if ((FMV_ENGINE === "1.2" || FMV_ENGINE === "1.3") && !fmvRecentError && lowIds.length) {
+        if ((FMV_ENGINE === "1.2" || FMV_ENGINE === "1.3" || FMV_ENGINE === "1.3.1") && !fmvRecentError && lowIds.length) {
           const { data: last, error: lastErr } = await (supabaseAdmin as unknown as LastFmvRpc).rpc("panini_last_sales_fmv", { p_edition_ids: lowIds });
           if (lastErr) { fmvLastError = lastErr.message ?? String(lastErr); console.log(`[${PIPELINE}] last-sales fmv: ${fmvLastError}`); }
           else for (const r of last ?? []) lastByEdition.set(String(r.edition_id), { fmv_usd: Number(r.fmv_usd), n_sales: Number(r.n_sales) });
         }
       }
-      if (FMV_ENGINE === "1.3" && cardsIn.length && !fmvRecentError && !fmvLastError) {
+      if ((FMV_ENGINE === "1.3" || FMV_ENGINE === "1.3.1") && cardsIn.length && !fmvRecentError && !fmvLastError) {
         const ids = [...new Set(cardsIn.map((c) => String(c?.sku ?? c?.psku ?? "")).filter(Boolean))];
         const { data: sp, error: spErr } = await (supabaseAdmin as unknown as SpreadRpc).rpc("panini_sales_spread", { p_edition_ids: ids });
         if (spErr) { fmvSpreadError = spErr.message ?? String(spErr); console.log(`[${PIPELINE}] sales spread: ${fmvSpreadError}`); }
         else for (const r of sp ?? []) spreadByEdition.set(String(r.edition_id), { n_sales: Number(r.n_sales), min_usd: Number(r.min_usd), max_usd: Number(r.max_usd) });
       }
+      if (FMV_ENGINE === "1.3.1" && !fmvRecentError && !fmvLastError && !fmvSpreadError) {
+        const thinIds = [...recentByEdition].filter(([, r]) => r.n_recent === 1 || r.n_recent === 2).map(([id]) => id);
+        if (thinIds.length) {
+          const { data: pr, error: prErr } = await (supabaseAdmin as unknown as PriorRpc).rpc("panini_prior_sales_median", { p_edition_ids: thinIds });
+          if (prErr) { fmvPriorError = prErr.message ?? String(prErr); console.log(`[${PIPELINE}] prior-sales median: ${fmvPriorError}`); }
+          else for (const r of pr ?? []) priorByEdition.set(String(r.edition_id), { prior_median_usd: Number(r.prior_median_usd), n_prior: Number(r.n_prior) });
+        }
+      }
       const useV11 = FMV_ENGINE !== "1.0" && !fmvRecentError;
-      const useV12 = useV11 && (FMV_ENGINE === "1.2" || FMV_ENGINE === "1.3") && !fmvLastError;
-      const useV13 = useV12 && FMV_ENGINE === "1.3" && !fmvSpreadError;
+      const useV12 = useV11 && (FMV_ENGINE === "1.2" || FMV_ENGINE === "1.3" || FMV_ENGINE === "1.3.1") && !fmvLastError;
+      const useV13 = useV12 && (FMV_ENGINE === "1.3" || FMV_ENGINE === "1.3.1") && !fmvSpreadError;
+      const useV131 = useV13 && FMV_ENGINE === "1.3.1" && !fmvPriorError;
       // ONE row per edition per batch (2026-09-30). A card can arrive twice in one walk batch (the
       // multi-product walk serves the same psku from the held queue AND the grid); each copy became
       // its own row with the same computed_at, which the supersede-delete (computed_at < nowIso)
@@ -548,6 +570,7 @@ export async function POST(req: NextRequest) {
       const fmvRows = [...new Map((cardsIn
         .map((c) => {
           const k = String(c?.sku ?? c?.psku ?? "");
+          if (useV131) return toFmvRowV131(c, nowIso, recentByEdition.get(k), lastByEdition.get(k), spreadByEdition.get(k), priorByEdition.get(k));
           if (useV13) return toFmvRowV13(c, nowIso, recentByEdition.get(k), lastByEdition.get(k), spreadByEdition.get(k));
           if (useV12) return toFmvRowV12(c, nowIso, recentByEdition.get(k), lastByEdition.get(k));
           return useV11 ? toFmvRowV11(c, nowIso, recentByEdition.get(k)) : toFmvRow(c, nowIso);
@@ -581,6 +604,7 @@ export async function POST(req: NextRequest) {
         fmvRecentError ? `fmv_recent: ${fmvRecentError}` : null,
         fmvLastError ? `fmv_last: ${fmvLastError}` : null,
         fmvSpreadError ? `fmv_spread: ${fmvSpreadError}` : null,
+        fmvPriorError ? `fmv_prior: ${fmvPriorError}` : null,
         packsError ? `packs: ${packsError}` : null,
         packIdMapError ? `pack id map (a pack seen under a new page may have written a duplicate row): ${packIdMapError}` : null,
         productsError ? `products (gate fell back to ${PANINI_LEGACY_SET_ID} only): ${productsError}` : null,
@@ -590,9 +614,10 @@ export async function POST(req: NextRequest) {
       await logRun(startedAtIso, found, written, writeErrors.length === 0, writeErrors.length ? writeErrors.join(" | ") : null, {
         editions: written, editions_error: editionsError,
         fmv: fmvWritten, fmv_offered: fmvRows.length, fmv_error: fmvError,
-        fmv_engine: useV13 ? "panini-1.3.0" : useV12 ? "panini-1.2.0" : useV11 ? "panini-1.1.0" : "panini-1.0.0", fmv_recent_error: fmvRecentError, fmv_recent_hits: recentByEdition.size,
+        fmv_engine: useV131 ? "panini-1.3.1" : useV13 ? "panini-1.3.0" : useV12 ? "panini-1.2.0" : useV11 ? "panini-1.1.0" : "panini-1.0.0", fmv_recent_error: fmvRecentError, fmv_recent_hits: recentByEdition.size,
         fmv_last_error: fmvLastError, fmv_last_hits: lastByEdition.size,
         fmv_spread_error: fmvSpreadError, fmv_spread_hits: spreadByEdition.size,
+        fmv_prior_error: fmvPriorError, fmv_prior_hits: priorByEdition.size,
         packs: packsWritten, packs_offered: packs.length, packs_error: packsError,
         serials: serialsWritten, serials_error: serialsError,
         // Rows held back by the product gate, by setId: a non-empty map is a product the grid is
