@@ -53,7 +53,13 @@ const EXPECTED_INTERVAL_MIN: Record<string, number> = {
   "fmv-recalc": 20,
   "ultimate-fmv-recalc-v1": 60,
   // Pack EV
-  "compute-topshot-pack-ev": 30,
+  // compute-topshot-pack-ev removed 2026-10-18: its cron-job.org entry was paused
+  // 2026-08-30 (public-api.nbatopshot.com dead; watchlist arm inactive since) and
+  // Top Shot EV is written by topshot-atlas-pack-ev / topshot-container-pack-ev
+  // (pg_cron). 0 runs in the pipeline_runs window, no pg_cron or DB caller -> same
+  // rule as the Pinnacle note above.
+  "topshot-atlas-pack-ev": 60, // pg_cron rpc-atlas-pack-ev `25 * * * *` (24/24 ok, 10-18)
+  "topshot-container-pack-ev": 60, // pg_cron rpc-container-pack-ev `28 * * * *`
   "compute-allday-pack-ev": 60,
   // Owner-side
   "pinnacle-owner-discovery": 60,
