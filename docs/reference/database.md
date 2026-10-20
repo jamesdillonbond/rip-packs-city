@@ -1431,6 +1431,8 @@ applied→file, so an unapplied file is invisible to it.
 5. Verify: the body must hash **identically across live `prosrc`, the test and the migration**; then run the
    pin's SQL test and all 178 DB-invariant files locally (recipe in [testing-and-ci.md](testing-and-ci.md)).
 
+⚠ **An IN-PLACE SPLICE is a redefinition too (2026-10-20).** A migration that rewrites a pinned function with a DO block (`replace()` over `pg_get_functiondef`, then `EXECUTE`) leaves NO full body in the repo: `20261019181549` did this to `get_platform_stats` and `analytics_fmv_tier_pulse`, and the daily live check went red the next morning. The repair is this recipe: snapshot `20261020150000` rebuilt each body from the pinned file plus the splice's own anchors, with `prosrc` and full `pg_get_functiondef` md5-checked against live. The splice no longer gets through silently: `db-pin-points-at-the-newest-defining-migration` reds the push unless the splice names the file carrying its resulting body. **So write the snapshot in the same push as the splice.**
+
 ⚠ **A snapshot migration must state its anon-execute decision with the MARKER, never a REVOKE** — the guard
 enforces this and it caught the first attempt. `CREATE OR REPLACE FUNCTION` does **not** reset a function's
 ACL, so a REVOKE there would CHANGE production while presenting itself as a no-op. Confirm the real state

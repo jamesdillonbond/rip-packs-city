@@ -571,6 +571,8 @@ su postgres -s /bin/bash -c "$PGBIN/pg_ctl -D $PGDATA -o '-p 5433 -k /tmp/…' -
 DATABASE_URL=postgres://postgres@localhost:5433/postgres bash scripts/run-db-tests.sh
 ```
 
+⭐ **Since 2026-10-20 this recipe is code: `scripts/lib/local-postgres.mjs` (`startScratchPostgres()`), which `npm run preflight` uses.** It handles root by running as `postgres`, uses a fresh `/var/tmp` dir, returns the error text instead of silencing it, and returns `{ error }` on a machine with no Postgres. Use it rather than re-typing the commands below.
+
 Worth the two minutes: it turns a CI log into a local reproduce-and-probe loop, and it is how the
 08-18 panini fixture breaks were diagnosed and both fixes proved load-bearing.
 
