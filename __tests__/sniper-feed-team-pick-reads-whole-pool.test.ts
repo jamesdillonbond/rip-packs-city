@@ -84,6 +84,20 @@ const EDITIONS = [
   { id: "uuid-6-8", external_id: "6:8", set_id_onchain: 6, play_id_onchain: 8, team_name: "Los Angeles Clippers", thumbnail_url: null },
 ]
 
+// Re-pinned 2026-10-20: a default board now also reads the edition floors when
+// its pool PRICES fewer than 25 deals (it used to count editions only). The
+// "does not read the floors" controls therefore price every pool edition, so
+// their board is genuinely full rather than thin.
+function priceAll(eds: Array<{ id: string }>) {
+  fx.rpc.get_editions_latest_fmv_wide = {
+    data: eds.map((e) => ({
+      edition_id: e.id, fmv_usd: 100, wap_usd: 95, floor_price_usd: 80, confidence: "HIGH",
+      days_since_sale: 2, sales_count_30d: 14, computed_at: "2026-09-28T00:00:00Z",
+    })),
+    error: null,
+  }
+}
+
 const opArgs = (ops: Op[], name: string) => ops.filter(([m]) => m === name).map(([, a]) => a)
 const tsCalls = () => (fx.calls as Call[]).filter((c) => c.table === "ts_listings")
 
@@ -244,7 +258,9 @@ describe("sniper-feed a team pick always gets every edition's floor", () => {
       if (table === "ts_listings") return { data: pool, error: null }
       return { data: [], error: null }
     }
-    await GET(get("?collection=nba-top-shot"))
+    priceAll(eds)
+    const body = await (await GET(get("?collection=nba-top-shot"))).json()
+    expect(body.deals.length).toBeGreaterThanOrEqual(25)
     expect(fx.rpcCalls.filter((c) => c.name === "get_topshot_sniper_deals")).toHaveLength(0)
   })
 })
@@ -325,14 +341,20 @@ describe("sniper-feed narrowing filters reach the whole pool (2026-09-29)", () =
     }
     fx.rpcCalls = []
     fx.resolve = resolve
+    priceAll(eds30)
     await GET(get("?collection=nba-top-shot&sortBy=listed_desc"))
     expect(floorCalls()).toHaveLength(0)
   })
 
   it("a max price is pushed into the pool read, and on its own does not force the floor read", async () => {
-    fx.resolve = resolve
-    await GET(get("?collection=nba-top-shot&maxPrice=5&sortBy=listed_desc"))
+    // Asks under the cap, so the pool can price a full board on its own.
+    const cheap = pool.map((l, i) => ({ ...l, price_usd: 1 + i / 10 }))
+    fx.resolve = (table: string) =>
+      table === "editions" ? { data: eds30, error: null } : table === "ts_listings" ? { data: cheap, error: null } : { data: [], error: null }
+    priceAll(eds30)
+    const body = await (await GET(get("?collection=nba-top-shot&maxPrice=5&sortBy=listed_desc"))).json()
     for (const c of tsCalls()) expect(opArgs(c.ops, "lte")).toContainEqual(["price_usd", 5])
+    expect(body.deals.length).toBeGreaterThanOrEqual(25)
     expect(floorCalls()).toHaveLength(0)
   })
 })

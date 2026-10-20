@@ -21,6 +21,7 @@ vi.mock("@/lib/cache", () => ({
 
 const st = vi.hoisted(() => ({
   tsListings: { data: [] as any[], error: null as any },
+  editions: { data: [] as any[], error: null as any },
 }))
 const rpc = vi.hoisted(() =>
   vi.fn<(name: string, params?: unknown) => Promise<any>>(async () => ({ data: [], error: null })),
@@ -33,6 +34,7 @@ vi.mock("@/lib/supabase", () => ({
         range: () => b,
         then: (resolve: any) => {
           if (table === "ts_listings") return resolve(st.tsListings)
+          if (table === "editions") return resolve(st.editions)
           return resolve({ data: [], error: null })
         },
       }
@@ -71,10 +73,32 @@ function pool(rows: number, editions: number) {
   })
 }
 
+/** Give the first `n` pool editions an `editions` row and an FMV of `fmv` (asks are $5). */
+function priceEditions(n: number, fmv: number) {
+  st.editions = {
+    data: Array.from({ length: n }, (_, e) => ({
+      id: `uuid-${e}`, external_id: `39:${1000 + e}`, set_id_onchain: 39, play_id_onchain: 1000 + e, thumbnail_url: null,
+    })),
+    error: null,
+  }
+  rpc.mockImplementation(async (name: string) =>
+    name === "get_editions_latest_fmv_wide"
+      ? {
+          data: Array.from({ length: n }, (_, e) => ({
+            edition_id: `uuid-${e}`, fmv_usd: fmv, wap_usd: fmv, floor_price_usd: fmv, confidence: "HIGH",
+            days_since_sale: 2, sales_count_30d: 14, computed_at: "2026-10-20T00:00:00Z",
+          })),
+          error: null,
+        }
+      : { data: [], error: null },
+  )
+}
+
 const rpcCalls = (name: string) => rpc.mock.calls.filter((c) => c[0] === name).length
 
 beforeEach(() => {
   st.tsListings = { data: [], error: null }
+  st.editions = { data: [], error: null }
   rpc.mockReset()
   rpc.mockImplementation(async () => ({ data: [], error: null }))
   vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, status: 200, text: async () => "", json: async () => ({ data: {} }) })))
@@ -88,8 +112,37 @@ describe("GET /api/sniper-feed — the Top Shot pool is sparse by EDITIONS, not 
     expect(rpcCalls("get_topshot_sniper_deals")).toBe(1)
   })
 
-  it("CONTROL: 200 rows over 40 editions is a real pool and does not augment", async () => {
+  // Re-pinned 2026-10-20. "A real pool" now means one that PRICES enough deals,
+  // not one that merely spans enough editions: the 40 editions here carry an FMV
+  // above their $5 asks, and the board is asserted to hold them, so the control
+  // cannot pass by producing no deals.
+  it("CONTROL: 200 rows over 40 PRICED editions is a real board and does not augment", async () => {
     st.tsListings = { data: pool(200, 40), error: null }
+    priceEditions(40, 10)
+    const body = await (await GET(get())).json()
+    expect(body.deals.length).toBeGreaterThanOrEqual(25)
+    expect(rpcCalls("get_topshot_sniper_deals")).toBe(0)
+  })
+
+  // 2026-10-20: the pool spanned enough editions to skip the augment and priced 4
+  // deals while the market held ~1,000. Many editions, few priced deals = thin.
+  it("REPLAYS 2026-10-20: 200 rows over 40 editions that price no deals augments (thin board)", async () => {
+    st.tsListings = { data: pool(200, 40), error: null }
+    await GET(get())
+    expect(rpcCalls("get_topshot_sniper_deals")).toBe(1)
+  })
+
+  // 40 editions in both halves, so the EDITION test passes either way and only
+  // the deal count decides (a 24-edition pool would augment under the old rule
+  // too, and this case would prove nothing about the new one).
+  it("a 40-edition pool pricing 24 deals augments; pricing 25 it does not", async () => {
+    st.tsListings = { data: pool(40, 40), error: null }
+    priceEditions(24, 10)
+    await GET(get())
+    expect(rpcCalls("get_topshot_sniper_deals")).toBe(1)
+    rpc.mockClear()
+    st.tsListings = { data: pool(40, 40), error: null }
+    priceEditions(25, 10)
     await GET(get())
     expect(rpcCalls("get_topshot_sniper_deals")).toBe(0)
   })

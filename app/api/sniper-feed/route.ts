@@ -1987,8 +1987,11 @@ async function computeSniperFeed(opts: {
   // edition floors the default board never read.
   const teamPicked = team !== "all" || player !== "" || rarity !== "all" || minDiscount > 0 || badgeOnly
     || sortBy !== "listed_desc";
-  if (teamPicked || tsListings.length < TS_GQL_SPARSE_THRESHOLD || tsDistinctEditions < TS_GQL_SPARSE_THRESHOLD) {
-    console.log(`[sniper-feed] TS augment (${teamPicked ? `narrowed board` : `sparse`}: ${tsListings.length} listings over ${tsDistinctEditions} editions) — get_topshot_sniper_deals RPC`);
+  // The read itself, unchanged, as a function: it runs here for a narrowed or
+  // sparse board and again below (step 6a) when the default board comes out thin.
+  const readRpcAugment = async (why: string): Promise<SniperDeal[]> => {
+    let rpcDeals: SniperDeal[] = [];
+    console.log(`[sniper-feed] TS augment (${why}: ${tsListings.length} listings over ${tsDistinctEditions} editions) — get_topshot_sniper_deals RPC`);
     // p_team is one exact label, so a franchise pick asks once per label it has
     // carried (measured 10-30 ms a call) — else the edition-level rows, which
     // dominate a sparse board, would be the picked label's alone.
@@ -2100,6 +2103,12 @@ async function computeSniperFeed(opts: {
       });
       console.log(`[sniper-feed] TS RPC augment: ${rpcDeals.length} edition-level rows`);
     }
+    return rpcDeals;
+  };
+  let rpcAugmented = false;
+  if (teamPicked || tsListings.length < TS_GQL_SPARSE_THRESHOLD || tsDistinctEditions < TS_GQL_SPARSE_THRESHOLD) {
+    rpcDeals = await readRpcAugment(teamPicked ? "narrowed board" : "sparse");
+    rpcAugmented = true;
   }
 
   // 2. Build integer edition keys for Supabase FMV lookup
@@ -2171,7 +2180,9 @@ async function computeSniperFeed(opts: {
   // by the ts_listings leg applies here. Verified live: 200/200 rows join and
   // 77 carry a real badge, so `badgeOnly` now yields a populated, honest board
   // rather than 0 or 200.
-  if (rpcDeals.length > 0) {
+  const enrichRpcDeals = (rows: SniperDeal[]): SniperDeal[] => {
+    let rpcDeals = rows;
+    if (rpcDeals.length === 0) return rpcDeals;
     rpcDeals = rpcDeals.map((d) => {
       const tags = badgeMap.get(d.editionKey) ?? badgeMap.get(d.momentId);
       if (!tags?.length) return d;
@@ -2191,7 +2202,9 @@ async function computeSniperFeed(opts: {
     // through is what made "Special serials" a no-op. The UI no longer offers
     // this control, but the query param is still reachable directly.
     if (serialFilter === "special" || serialFilter === "jersey") rpcDeals = [];
-  }
+    return rpcDeals;
+  };
+  rpcDeals = enrichRpcDeals(rpcDeals);
 
   // 5. Enrich TS listings
   const tsDeals: SniperDeal[] = [];
@@ -2380,6 +2393,18 @@ async function computeSniperFeed(opts: {
 
   // 6. Exclude retired moments.
   let allDeals: SniperDeal[] = tsDeals.filter((d) => !retiredIds.has(d.flowId));
+
+  // 6a. A THIN default board augments too (2026-10-20). The sparse test above
+  // counts EDITIONS in the newest-200 pool, but what the reader sees is DEALS:
+  // on 10-20 the pool spanned enough editions to skip the augment and priced 4
+  // deals, while the market held ~1,000 (sortBy=discount). Until ts_listings
+  // came back to life on 09-07 this augment ran on every request and its rows
+  // WERE the board. Same read, same enrichment, same merge; "Recently listed"
+  // still orders the result by listing time (RPC rows carry listed_at).
+  if (!rpcAugmented && allDeals.length < TS_GQL_SPARSE_THRESHOLD) {
+    rpcDeals = enrichRpcDeals(await readRpcAugment(`thin board, ${allDeals.length} deals`));
+    rpcAugmented = true;
+  }
 
   // 6b. Merge RPC augment rows when GQL was sparse. Dedup by editionKey so
   // a deal present in both sources only shows once. RPC entries come first
