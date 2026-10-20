@@ -45,6 +45,7 @@ CREATE TABLE public.topshot_atlas_market_events (nft_id text, product text, atla
 CREATE TABLE public.topshot_atlas_edition_map (atlas_edition_id text, rpc_edition_id uuid, parallel text);
 CREATE TABLE public.fmv_snapshots (collection_id uuid, edition_id uuid, fmv_usd numeric, computed_at timestamptz);
 CREATE TABLE public.pipeline_runs_stub (pipeline text, ok boolean, extra jsonb);
+CREATE TABLE public.pack_purchases (collection_id uuid, pack_nft_id text, buyer_address text, event_kind text);
 CREATE FUNCTION public.log_pipeline_run(p_pipeline text, p_started_at timestamptz, p_rows_found int, p_rows_written int,
   p_rows_skipped int, p_ok boolean, p_error text, p_collection_slug text, p_cursor_before text, p_cursor_after text, p_extra jsonb)
 RETURNS bigint LANGUAGE sql AS $$ INSERT INTO public.pipeline_runs_stub VALUES (p_pipeline, p_ok, p_extra) RETURNING 1::bigint $$;
@@ -193,6 +194,16 @@ BEGIN
         AND e->'node'->>'id' IS NOT NULL
         AND e->'node'->>'type_name' IN ('A.0b2a3299cc857e29.PackNFT.NFT', 'A.e4cf4bdc1751c65d.PackNFT.NFT', 'A.87ca73a41bb50ad5.PackNFT.NFT')
         AND t.tok ~ '^A\.[0-9a-f]+\.PackNFT\.[0-9]+$'
+        -- 2026-10-19: a Revealed box's nfts can name a pack that was never this wallet's -- the open
+        -- stalled because one assigned pack had already been sold to someone else (37 of 37 Revealed
+        -- boxes: 45 of 259 listed packs first withdrawn by a third party; 0 of 3,404 on Opened boxes).
+        -- Keep it out when a primary withdraw sent it to anyone but this wallet or the PDS contract.
+        AND NOT (e->'node'->>'status' = 'Revealed' AND EXISTS (
+              SELECT 1 FROM public.pack_purchases pp
+               WHERE pp.pack_nft_id = split_part(t.tok, '.', 4)
+                 AND pp.collection_id = v_ts
+                 AND pp.event_kind = 'primary_withdraw'
+                 AND pp.buyer_address NOT IN (r.wallet, '0xb6f2481eba4df97b')))
       ON CONFLICT (collection_id, box_pack_nft_id, pack_nft_id) DO NOTHING
       RETURNING collection_id, pack_nft_id
       )
@@ -744,8 +755,17 @@ END $$;
 -- unmeasured and Pinnacle's points at a placeholder contract: not read (RVAD1 is the control).
 INSERT INTO public.pack_pull_wallet_state (wallet, requested_at) VALUES ('0xrevealer', now());
 INSERT INTO public.pack_pull_requests (request_id, kind, wallet, page) VALUES (79, 'wallet', '0xrevealer', 1);
-INSERT INTO net._http_response VALUES (79, 200, $j${"data":{"searchPackNft":{"totalCount":3,"pageInfo":{"endCursor":"r1","hasNextPage":false},"edges":[
-  {"node":{"id":"RVBOX1","type_name":"A.0b2a3299cc857e29.PackNFT.NFT","status":"Revealed","nfts":"A.0b2a3299cc857e29.PackNFT.17592188683480,A.0b2a3299cc857e29.PackNFT.39582421234969"}},
+-- RVBOX1 lists three packs: one the PDS contract delivered, one with no withdraw row yet, and one a
+-- reseller had already withdrawn at the drop -- never this wallet's (the stalled-open signature).
+-- OBOX2 is an OPENED box listing a pack with the same third-party withdraw: Opened is untouched.
+INSERT INTO public.pack_purchases VALUES
+  ((SELECT id FROM public.collections WHERE slug = 'nba_top_shot'), '17592188683480', '0xb6f2481eba4df97b', 'primary_withdraw'),
+  ((SELECT id FROM public.collections WHERE slug = 'nba_top_shot'), '40681932859804', '0xd4d19490bd4f4c4d', 'primary_withdraw'),
+  ((SELECT id FROM public.collections WHERE slug = 'nba_top_shot'), '40681932859804', '0xec7774dc824d092c', 'secondary_sale'),
+  ((SELECT id FROM public.collections WHERE slug = 'nba_top_shot'), '50000000000001', '0xd4d19490bd4f4c4d', 'primary_withdraw');
+INSERT INTO net._http_response VALUES (79, 200, $j${"data":{"searchPackNft":{"totalCount":4,"pageInfo":{"endCursor":"r1","hasNextPage":false},"edges":[
+  {"node":{"id":"RVBOX1","type_name":"A.0b2a3299cc857e29.PackNFT.NFT","status":"Revealed","nfts":"A.0b2a3299cc857e29.PackNFT.17592188683480,A.0b2a3299cc857e29.PackNFT.39582421234969,A.0b2a3299cc857e29.PackNFT.40681932859804"}},
+  {"node":{"id":"OBOX2","type_name":"A.0b2a3299cc857e29.PackNFT.NFT","status":"Opened","nfts":"A.0b2a3299cc857e29.PackNFT.50000000000001"}},
   {"node":{"id":"RVPK1","type_name":"A.0b2a3299cc857e29.PackNFT.NFT","status":"Revealed","nfts":"A.0b2a3299cc857e29.TopShot.41663287"}},
   {"node":{"id":"RVAD1","type_name":"A.e4cf4bdc1751c65d.PackNFT.NFT","status":"Revealed","nfts":"A.e4cf4bdc1751c65d.AllDay.555"}}
 ]}}}$j$, NULL);
@@ -753,7 +773,9 @@ DO $$
 BEGIN
   PERFORM public.collect_wallet_pack_pulls();
   PERFORM _assert_eq((SELECT string_agg(pack_nft_id, ',' ORDER BY pack_nft_id) FROM public.pack_box_contents WHERE box_pack_nft_id = 'RVBOX1'),
-                     '17592188683480,39582421234969', 'a Top Shot Revealed box records its inner packs');
+                     '17592188683480,39582421234969', 'a Top Shot Revealed box records its inner packs, never one a third party withdrew');
+  PERFORM _assert_eq((SELECT string_agg(pack_nft_id, ',') FROM public.pack_box_contents WHERE box_pack_nft_id = 'OBOX2'),
+                     '50000000000001', 'an Opened box keeps every listed pack (the third-party rule is Revealed-only)');
   PERFORM _assert_eq((SELECT string_agg(nft_id, ',') FROM public.pack_open_pulls WHERE pack_nft_id = 'RVPK1'), '41663287', 'a Top Shot Revealed pack records its moment');
   PERFORM _assert(NOT EXISTS (SELECT 1 FROM public.pack_open_pulls WHERE pack_nft_id = 'RVAD1'), 'an All Day Revealed pack is not read as an open (control)');
 END $$;

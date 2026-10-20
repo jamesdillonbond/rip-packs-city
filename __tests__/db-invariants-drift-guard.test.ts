@@ -649,8 +649,9 @@ const PINS = [
     test: "supabase/tests/collect_wallet_pack_pulls.sql",
     // 2026-09-29: box packs yield packs. 2026-10-10 (#188): new inner packs queued for identity.
     // 2026-10-19: a Top Shot pack the index left at Revealed was opened -- its nfts are read.
+    // 2026-10-19 (follow-up): a Revealed box never records a pack a third party withdrew.
     migration:
-      "supabase/migrations/20261020030627_audit_20261019_a_top_shot_pack_dapper_left_revealed_was_opened.sql",
+      "supabase/migrations/20261020041933_audit_20261019_a_revealed_box_never_records_a_pack_a_third_party_withdrew.sql",
   },
   {
     // Added 2026-09-18. Pins the FIX for "my wallet shows 0 sold packs when I have
