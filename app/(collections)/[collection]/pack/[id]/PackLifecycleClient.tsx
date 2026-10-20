@@ -9,8 +9,9 @@
 // (ownership chain) from the "after rip" half (pulls grid).
 
 import { useEffect, useState } from "react"
-import type { ReactNode } from "react"
+import type { HTMLAttributes, ReactNode } from "react"
 import Link from "next/link"
+import { pullHref } from "@/lib/pack-detail/pull-href"
 import type {
   Distribution,
   OwnershipEvent,
@@ -353,6 +354,13 @@ export function RipPerforation({ rip }: { rip: RipEvent }) {
 // PullCard — a single moment card in the pulls grid
 // ─────────────────────────────────────────────────────────────────────────
 
+// A pull with no page to reach (pullHref → null) renders the same card without a
+// link — never a guessed URL (2026-10-19).
+function PullLink({ href, children, ...rest }: { href: string | null; children: ReactNode } & Omit<HTMLAttributes<HTMLElement>, "children">) {
+  if (href) return <Link href={href} {...rest}>{children}</Link>
+  return <div {...rest}>{children}</div>
+}
+
 function PullCard({ pull, collection }: { pull: PackPull; collection: string }) {
   const [hovering, setHovering] = useState(false)
   const unhydrated = pull.edition_id === null
@@ -398,10 +406,11 @@ function PullCard({ pull, collection }: { pull: PackPull; collection: string }) 
 
   const tierKey = tierTokenKey(pull.tier)
   const hasVideo = Boolean(pull.video_url)
+  const href = pullHref(collection, pull)
 
   return (
-    <Link
-      href={`/${collection}/moment/${encodeURIComponent(pull.nft_id)}`}
+    <PullLink
+      href={href}
       onMouseEnter={() => setHovering(true)}
       onMouseLeave={() => setHovering(false)}
       style={{
@@ -591,7 +600,7 @@ function PullCard({ pull, collection }: { pull: PackPull; collection: string }) 
           </span>
         </div>
       </div>
-    </Link>
+    </PullLink>
   )
 }
 

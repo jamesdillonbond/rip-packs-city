@@ -56,6 +56,9 @@ export interface RipEvent {
 export interface PackPull {
   /** On-chain moment NFT id. Always present. */
   nft_id: string
+  /** The key the pull's page is reached by where there is no per-NFT moment page:
+   *  the Golazos edition external_id, the Pinnacle render_id (2026-10-19). */
+  edition_key?: string | null
   /** Resolved editions.id — null until the hydrator has caught up. */
   edition_id: string | null
   /** Player / character display name. */

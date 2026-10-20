@@ -11,10 +11,13 @@
 
 /**
  * Collections whose single-pack lifecycle lives in their OWN pack tables.
- * 2026-10-19: Golazos (golazos_pack_opens / _open_pulls / _sales_history).
+ * 2026-10-19: Golazos (golazos_pack_opens / _open_pulls / _sales_history) and
+ * Disney Pinnacle (pinnacle_pack_opens).
  */
 const NATIVE_LIFECYCLE_RPC: Record<string, string> = {
   "06248cc4-b85f-47cd-af67-1855d14acd75": "get_golazos_pack_lifecycle",
+  // 2026-10-19: Disney Pinnacle (pinnacle_pack_opens; pulls named by the pricing lane's ladder).
+  "7dd9dd11-e8b6-45c4-ac99-71331f959714": "get_pinnacle_pack_lifecycle",
 }
 
 /** The RPC that answers a single pack's lifecycle for this collection. */
