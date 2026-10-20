@@ -11,11 +11,6 @@
 --
 -- anon-exec: unchanged (get_pinnacle_dist_contents) — CREATE OR REPLACE, same signature; ACL preserved (service_role only).
 
-CREATE OR REPLACE (first the listed-only body,
--- then this union body, ~9:00 PM PT); this file holds the final body.
---
--- anon-exec: no (get_pinnacle_dist_contents) — EXECUTE revoked from PUBLIC, anon and authenticated; service_role only (read by the pack page through the service-role client).
-
 CREATE OR REPLACE FUNCTION public.get_pinnacle_dist_contents(p_dist_id text)
  RETURNS TABLE(render_id text, pin_name text, set_name text, edition_type text, total_minted integer, thumbnail_url text, fmv_usd numeric, pulls_observed bigint, pulls_named_total bigint)
  LANGUAGE sql
