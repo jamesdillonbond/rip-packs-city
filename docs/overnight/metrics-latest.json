@@ -1,43 +1,44 @@
 {
-  "generated_at_pt": "2026-10-19 ~01:13 AM PT (overnight nightly, cloud, push via device-VM clone)",
-  "generated_at_utc": "2026-10-19T08:06Z",
-  "pass": "Overnight nightly. GREEN, 0 shipped. Entire code tree hot from the 10-18 evening sibling sweep (Opus 5.5, last commit 6b6b3ed02 11:46 PM PT: trophy-room, FMV-confidence-internal, substitution refusals, pack-P&L, registry lists). One new inbox candidate (NFL market-cap tile) confirmed benign. Handoff: docs/handoff-2026-10-19-overnight-pass.md",
+  "generated_at_pt": "2026-10-20 ~01:16 AM PT (overnight nightly, cloud, push via device-VM clone)",
+  "generated_at_utc": "2026-10-20T08:16Z",
+  "pass": "Overnight nightly. GREEN, 0 shipped, 0 reverted. Entire code tree collision-hot from the Claude Code live-shipping sweep that wrapped 23:37 PT (~25 commits, tip 22bff82f7: autographs board+OG, pack parity across collections, Pinnacle EV writer missing-supply fix, Top Shot Revealed-box stalled-open semantics). No additive DB warranted; the one actionable candidate is off-limits destructive. Handoff: docs/handoff-2026-10-20-overnight-pass.md",
   "shipped": 0,
   "reverted": 0,
   "idle": "no-work",
-  "verdict": "GREEN · 0 shipped · nothing safe+non-hot open. Health green bar the known candy_sales_stale breach (#58, Trevor-only). FMV sweep 0-fails/24h; nba HIGH+MED 8000->6423 is the by-design 1.8.x MEDIUM re-grade (lands in LOW, not STALE). Post-ship watches holding; no new Vercel class from the big 10-18 sweep. #189 re-walk done, ~0 net inserts.",
+  "verdict": "GREEN · 0 shipped · nothing safe+non-hot open. Health green bar the known candy_sales_stale breach (#58, Trevor-only). Post-ship watch of tonight's sweep green (Pinnacle EV writer depleted 0 / impossible 0; FMV fresh; analytics-smoke recovered after the scratch-table RLS workaround). pack_rips post-vacuum measured per STEER.",
   "health": {
-    "security_invariants": "clean (invariants [], anon_write_holes [], rls_off_base_tables [], secdef_anon_violations [])",
-    "structural": "stalled [], backward_cursor_rewinds [], wmc_null_edition_key [], function_search_path_drift [], procedure_txn_control_pins/search_path_unpinned [], cross_collection_mat_staleness [], suppression_*_drift []",
+    "security_invariants": "clean (invariants [], anon_write_holes [], rls_off_base_tables [], secdef_anon_violations []); independently confirmed by direct catalog SQL (0 RLS-off public base tables, 0 anon/auth write holes)",
+    "pgcron_recent_failures": "[]",
+    "structural": "stalled [], backward_cursor_rewinds [topshot_missing_fill_offers_walk = ledger-declared deliberate weekly re-seed, not a finding], wmc_null_edition_key [], function_search_path_drift [], cross_collection_mat_staleness [], suppression_*_drift []",
     "trust_health_breaches": 1,
-    "trust_health_note": "37 of 38 arms ok. candy_sales_stale_hours 172.8 BREACH (breach 168) = known Candy upstream silence since 10-11 (Magic Eden silent, OpenSea unkeyed #58, Trevor-only); was 148.8 on 10-18. fmv_sweep_wedge_hours 0.19 ok. edition_integrity_flags 22 (breach 250; was 8). unmapped_resolution_backlog_max 13 (breach 100).",
+    "trust_health_note": "37 of 38 arms ok. candy_sales_stale_hours 196.8 BREACH (breach 168) = known #58 (Magic Eden Candy silent since 10-11, OpenSea unkeyed, Trevor-only); was 172.8 on 10-19. fmv_sweep_wedge_hours 0.19 ok (10-17 fix holding). edition_integrity_flags 22 (breach 250). unmapped_resolution_backlog_max 15 (breach 100).",
     "trust_precompute_max_age_hours": 5.32,
     "stalled_pipelines": "none ([])",
     "sentinel_ts_uuid_editions_48h": 0,
     "ts_uuid_dupes_created_24h": 0,
-    "pipeline_alerts": "4x Atlas upstream-403 (editions 37/480, market 21/299, supply 10/48, pack-supply 19/224) all info/attributed/nothing-lost; 0 of 282 sets behind >6h; freshness current every lane.",
-    "pipeline_fails_24h": "topshot-pack-supply-atlas 253 (chronic 403-retry), atlas-market-feed 16, sync-nba-projections 8 (muted to 10-28), atlas-editions-refresh 5, member-wallet-usernames-atlas 5, rest <=2; all upstream 0.",
+    "pipeline_alerts": "4x upstream (atlas-editions 58/480 403, atlas-market 49/307 403, flow-rest moment-moved 6/100 400, atlas-pack-supply 29/228 403) all info/attributed/nothing-lost; freshness current every lane. pg_net_http_404/403 arms from the 06:19Z monitor read are CLEARED in the 08:07Z snapshot.",
+    "pipeline_fails_24h": "topshot-pack-supply-atlas 293 (chronic 403-retry), atlas-market-feed 11, atlas-editions-refresh 9, sync-nba-projections 8 (muted to 10-28), analytics-smoke 3 (pre-RLS scratch breach 04:43-05:43Z; recovered since 06:13Z), rest <=1; all upstream 0.",
     "sentry": "dark (SDK removed #34).",
-    "vercel_24h": "7 error groups, ALL chronic/known (pack_lifecycle 5s since 08-23, api/packs calibrated-merge 8s since 09-05, nfl market-cap tile 8s since 10-16 [benign, 2.5ms read], pack_realized_ev 5s, 2x ipfs-media, allday_pack_lifecycle 5s). ZERO new class from the 10-18 sweep (all first-seen predate it). Latest prod bacd6a063 READY; tip 6b6b3ed02 CANCELED (docs-only). No ERROR deploys.",
+    "vercel_24h": "No new error class attributable to the sweep per the 06:19Z monitor; prod deploys READY, zero ERROR. (Vercel not independently re-polled this quiet pass.)",
     "client_error_beacon_24h": 0,
-    "db_size_mb": 39970,
-    "db_size_note": "+799 vs 10-18 (39,171). Attributable: panini coverage expansion (editions +1,323; panini_card_serials 7.76 GB largest table), sales_2026 growth, WAL/autovacuum. Not runaway; Large tier.",
-    "post_ship_watch": "GREEN. fmv-recalc wedge fix (10-17) HOLDING: wedge_hours 0.19, ~6-7 runs/hr 24h all ok, 0 fails. topshot-index-unmapped-hydrate draining 60/tick, backlog 2809->2329, 0 fails. #189 re-walk done=true 06:58Z, ~0 net inserts (21,619 snapshot stable)."
+    "db_size_mb": 40440,
+    "db_size_note": "+470 vs 10-19 night (39,970). Panini coverage expansion + sales_2026 growth + WAL/autovacuum. Not runaway; Large tier.",
+    "pack_rips_post_vacuum": "maint-vacuum-pack-rips fired 11:37Z (4:37 AM PT 10-19): relallvisible 72.1% -> 100.0% (98747/98747). v_allday_pack_lifecycle dist_id=6924: 691ms -> 108ms, heap fetches 715 -> 323. STEER-assigned measurement complete.",
+    "post_ship_watch": "GREEN. Tonight's Claude Code sweep: Pinnacle EV writer (pack_ev_board_pct_depleted 0, pinnacle_fmv_impossible_flags 0, publish_shortfall 0.49); FMV fresh (*_fmv_stale_hours <=0.5); analytics-smoke recovered post-RLS. Nothing reverted. fmv-recalc wedge fix (10-17) holding (wedge 0.19)."
   },
-  "fmv_high_med": {"nba_top_shot": 6423, "panini_blockchain": 12637, "nfl_all_day": 1702, "candy_mlb": 63, "laliga_golazos": 0, "ufc_strike": 0, "disney_pinnacle": 914},
-  "fmv_high_med_note": "HIGH+MEDIUM from rpc_ops_snapshot fmv_by_collection (compute 10-19 05:35Z). nba HIGH 1351 + MED 5072. pinnacle HIGH 229 + MED 685. nba -1577 is the by-design 1.8.x MEDIUM re-grade (drops to LOW 4198, not STALE/NO_DATA).",
-  "editions_by_collection": {"nba_top_shot": 14528, "panini_blockchain": 36320, "nfl_all_day": 6190, "laliga_golazos": 575, "ufc_strike": 617, "candy_mlb": 125},
-  "deltas_vs_prev": "db +799 MB (39,171 -> 39,970). FMV HIGH+MED: nba 8,000 -> 6,423 (-1,577; by-design 1.8.x MEDIUM re-grade); panini 11,121 -> 12,637 (+1,516 coverage); nfl 1,815 -> 1,702 (-113); pinnacle 941 -> 914 (-27); candy 71 -> 63; golazos 6 -> 0; ufc 0 flat. editions: panini 34,997 -> 36,320 (+1,323), ufc 518 -> 617 (+99), others flat. trust breaches 0 -> 1 (candy_sales_stale, known #58).",
+  "fmv_high_med": {"nba_top_shot": 6443, "panini_blockchain": 14064, "nfl_all_day": 1690, "disney_pinnacle": 922, "candy_mlb": 67, "laliga_golazos": 0, "ufc_strike": 0},
+  "fmv_high_med_note": "HIGH+MEDIUM from rpc_ops_snapshot fmv_by_collection (compute 10-20 05:35Z). nba HIGH 1374 + MED 5069. panini HIGH 12771 + MED 1293. pinnacle HIGH 251 + MED 671.",
+  "editions_by_collection": {"nba_top_shot": 14528, "panini_blockchain": 36530, "nfl_all_day": 6190, "laliga_golazos": 575, "ufc_strike": 617, "candy_mlb": 125},
+  "deltas_vs_prev": "db +470 MB (39,970 -> 40,440). FMV HIGH+MED: nba 6,423 -> 6,443 (+20); panini 12,637 -> 14,064 (+1,427 coverage); nfl 1,702 -> 1,690 (-12); pinnacle 914 -> 922 (+8); candy 63 -> 67 (+4); golazos/ufc 0 flat. editions: panini 36,320 -> 36,530 (+210), others flat. trust breaches 1 -> 1 (candy_sales_stale, #58; 172.8 -> 196.8h).",
   "open_watches": [
-    "Accuracy gate: nba HIGH+MED 6,423 and still re-grading under FMV 1.8.x; next pass re-measure whether it settles. By-design MEDIUM tightening, not a regression.",
-    "fmv-recalc wedge fix (10-17): holding; keep fmv_sweep_wedge_hours < 3 and stage-NULL advancing runs present.",
-    "topshot-index-unmapped-hydrate backlog: draining 60/tick, 0 fails; confirm continues down.",
-    "pack_rips post-vacuum read: maint-vacuum-pack-rips fires 4:37 AM PT 10-19; pre-vacuum 72.1% allvisible, lifecycle 285ms/901 heap. Daytime monitor to record post-vacuum delta.",
-    "candy_sales_stale breach: #58 OPENSEA_API_KEY; clears when Trevor keys OpenSea or Magic Eden Candy resumes."
+    "candy_sales_stale breach: #58 OPENSEA_API_KEY; clears when Trevor keys OpenSea or Magic Eden Candy resumes.",
+    "Scratch-table drop queued (off-limits DROP): 3 tables ~4.8MB, all RLS-on, no exposure; cosmetic cleanup for Trevor / an interactive session.",
+    "Tonight's Claude Code sweep: post-ship watch green so far; re-confirm Pinnacle EV + autographs board stay healthy next pass.",
+    "Dated checks: demand re-read due >=10-22; #193 Pinnacle re-measure due >=10-31."
   ],
   "needs_trevor": [
-    "#58 OPENSEA_API_KEY (~24 nights; candy_sales_stale now breaching at 172.8h).",
-    "pack_rips post-vacuum read after 4:37 AM PT 10-19 (STEER-assigned measurement; night pass can only capture pre-vacuum)."
+    "#58 OPENSEA_API_KEY (~25 nights; candy_sales_stale breaching at 196.8h).",
+    "DROP the 3 leftover scratch tables (scratch_20261019_counter_checks_before + scratch_20261010_rip_dist_sample + scratch_20261010_rip_ident_batches) via the SQL editor; off-limits for a night pass."
   ],
-  "housekeeping": "0 shipped, 0 reverted. No ledger entry (no-op night per CLAUDE.md). Session-log entry prepended to docs/sessions/2026-10.md. Handoff written + pushed + mirrored to claude.ai Project. metrics overwritten. Inbox NOT archived (append-only). Lock released."
+  "housekeeping": "0 shipped, 0 reverted. No ledger entry (no-op night per CLAUDE.md). Session-log entry prepended to docs/sessions/2026-10.md. Handoff written + pushed. metrics overwritten. Inbox NOT archived (append-only). Lock released."
 }
