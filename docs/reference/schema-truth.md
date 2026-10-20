@@ -131,11 +131,12 @@ All present and live (2026-07-16): `editions`, `pinnacle_editions`, `wallet_mome
 | Enum | Live values |
 |---|---|
 | `fmv_confidence` | `HIGH, MEDIUM, LOW, ASK_ONLY, SALES_ONLY, STALE, NO_DATA` |
-| `tier_type` | `ULTIMATE, LEGENDARY, RARE, UNCOMMON, FANDOM, COMMON, CHAMPION, CHALLENGER, CONTENDER` |
+| `tier_type` | `ULTIMATE, LEGENDARY, EPIC, RARE, UNCOMMON, FANDOM, COMMON, CHAMPION, CHALLENGER, CONTENDER` |
 | `chain_type` | `flow, ethereum, polygon, solana, flow_evm` |
 | `edition_kind` | `LE, CC` |
 
 - `tier_type` includes `UNCOMMON` and `CHAMPION` — CLAUDE.md's tier list omits both.
+- ⚠ **`EPIC` added 2026-10-18** (`20261018160852`, `ADD VALUE 'EPIC' AFTER 'LEGENDARY'`; ranked by `20261018182719`) — live on **40 UFC Strike editions** (KO/TKO/Submission/Striking/Grappling sets). Re-read live 2026-10-20 ~10:10 AM PT (Cowork cloud) after the weekly data-quality sweep flagged the drift; usage then: UFC `EPIC` 40 · `UNCOMMON` 72 · `CHAMPION` 64; All Day `UNCOMMON` 630; Golazos `UNCOMMON` 215. Every other fact in this file carries its 10-09 stamp — this line alone was re-derived. Code that enumerates tiers resolves through `lib/tier-order.ts` `CANONICAL_TIERS` (has `EPIC`); the entity `TierBadge` colour map lacked it until 2026-10-20 (now pinned by a test walking `CANONICAL_TIERS`).
 - `nba_player_projections.confidence` is a **different** CHECK (not this enum): it allows
   3-letter `HIGH | MED | LOW`. Don't conflate with `fmv_confidence`'s `MEDIUM`.
 
