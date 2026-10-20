@@ -50,7 +50,7 @@ Still open, with the reason each one waits:
 - **Pack Sniper beyond TS/AD:** Golazos had 1 collector-listed dist (read 10-19). Pinnacle has no Flow listing feed.
 - **Pinnacle single-pack page:** `pinnacle_pack_opens.opener_address` is the platform custodian for ~99 % of opens, and its pulls need the render-grain join (`pinnacle_catalog`), not `editions`.
 - **Pinnacle simulator, grails and top pulls:** blocked on a drop pool. EV is render-pooled per drop (#157), and no table holds the pool.
-- **`/analytics/packs`** lists UFC, which has no packs, and omits Panini and Candy, which have their own pack planes.
+- ~~**`/analytics/packs`** lists UFC, which has no packs, and omits Panini and Candy.~~ ✅ 10-19: UFC removed; Panini and Candy panels link to their own pack boards. Their models are not in `analytics_packs_summary`.
 - **Insights pack-reality and pack-market boards** are TS/AD only. A Golazos realized board would have no modeled side, because pulls are priced years after the open.
 
 ## Open issues
