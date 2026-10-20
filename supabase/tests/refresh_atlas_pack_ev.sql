@@ -101,7 +101,8 @@ CREATE TABLE public.pack_distributions (
   title         text,
   metadata      jsonb,
   total_sealed  int,
-  depletion_pct smallint
+  depletion_pct smallint,
+  total_minted  int
 );
 
 CREATE TABLE public.pack_ask_state (
@@ -208,8 +209,9 @@ BEGIN
            COALESCE(pd.title, pd.metadata->>'name') AS title,
            GREATEST(COALESCE((pd.metadata->>'number_of_pack_slots')::int, 1), 1) AS slots,
            pas.lowest_ask,
-           pd.total_sealed,
-           pd.depletion_pct
+           -- 2026-10-19: a dist with no minted count was never read -- its counters are column defaults (0 of 1,093 carry a non-zero one), so withhold them
+           CASE WHEN COALESCE(pd.total_minted, 0) > 0 THEN pd.total_sealed END AS total_sealed,
+           CASE WHEN COALESCE(pd.total_minted, 0) > 0 THEN pd.depletion_pct END AS depletion_pct
     FROM pack_drop_pool p
     JOIN pack_distributions pd ON pd.collection_id = v_cid AND pd.dist_id = p.dist_id
     LEFT JOIN pack_ask_state pas ON pas.collection_slug = 'nba-top-shot' AND pas.dist_id = p.dist_id
@@ -351,6 +353,13 @@ INSERT INTO public.pack_distributions (collection_id, dist_id, title, metadata, 
   (:TS::uuid, 'D-NOTATLAS', 'Live Pack',     '{"uuid":"u-live","number_of_pack_slots":5}',    500,  55),
   (:AD::uuid, 'D-WRONGC',   'AllDay Pack',   '{"uuid":"u-ad","number_of_pack_slots":5}',      500,  55),
   (:TS::uuid, 'D-CROSSPOOL','Cross Pool',    '{"uuid":"u-cross","number_of_pack_slots":5}',   500,  55);
+-- 2026-10-19: every dist above had its supply READ (a minted count); D-NEVERREAD did not, and its
+-- 0 / 0 are the column defaults a never-read dist carries (1,093 of them in prod, none non-zero).
+UPDATE public.pack_distributions SET total_minted = 1000;
+INSERT INTO public.pack_distributions (collection_id, dist_id, title, metadata, total_sealed, depletion_pct, total_minted) VALUES
+  (:TS::uuid, 'D-NEVERREAD', 'Never Read Pack', '{"uuid":"u-neverread","number_of_pack_slots":5}', 0, 0, 0);
+INSERT INTO public.pack_drop_pool (collection_id, dist_id, pool_source) VALUES (:TS::uuid, 'D-NEVERREAD', 'atlas');
+INSERT INTO public.pack_ask_state (collection_slug, dist_id, is_listed, lowest_ask) VALUES ('nba-top-shot', 'D-NEVERREAD', true, 20.00);
 
 INSERT INTO public.pack_ask_state (collection_slug, dist_id, is_listed, lowest_ask) VALUES
   ('nba-top-shot', 'D-ASK',      true,  20.00),
@@ -388,7 +397,8 @@ INSERT INTO public.__ev_fixture (dist_id, payload) VALUES
   ('D-NOUUID',   '{"ok":true,"gross_ev":50.00,"typical_pull_ev":12.00,"fmv_coverage_pct":88,"edition_count":40}'),
   ('D-NOTATLAS', '{"ok":true,"gross_ev":50.00,"typical_pull_ev":12.00,"fmv_coverage_pct":88,"edition_count":40}'),
   ('D-WRONGC',   '{"ok":true,"gross_ev":50.00,"typical_pull_ev":12.00,"fmv_coverage_pct":88,"edition_count":40}'),
-  ('D-CROSSPOOL','{"ok":true,"gross_ev":50.00,"typical_pull_ev":12.00,"fmv_coverage_pct":88,"edition_count":40}');
+  ('D-CROSSPOOL','{"ok":true,"gross_ev":50.00,"typical_pull_ev":12.00,"fmv_coverage_pct":88,"edition_count":40}'),
+  ('D-NEVERREAD','{"ok":true,"gross_ev":50.00,"typical_pull_ev":12.00,"fmv_coverage_pct":88,"edition_count":40}');
 
 SELECT _assert_eq(
   (public.refresh_atlas_pack_ev() ->> 'ok'), 'true',
@@ -488,6 +498,15 @@ SELECT _assert_eq(
      FROM public.pack_ev_history WHERE dist_id = 'D-NOSUPPLY'),
   'NULL/NULL',
   'UNKNOWN supply is withheld as NULL, never published as a measured 0'
+);
+
+-- 2026-10-19: supply NEVER READ (no minted count) is unknown too -- its 0 / 0 are column defaults,
+-- and publishing them is the "0% sealed packs sold" the counter checks had to refute on 62 dists.
+SELECT _assert_eq(
+  (SELECT coalesce(total_unopened::text,'NULL') || '/' || coalesce(depletion_pct::text,'NULL')
+     FROM public.pack_ev_history WHERE dist_id = 'D-NEVERREAD'),
+  'NULL/NULL',
+  'a never-read dist''s default 0 / 0 is withheld as NULL'
 );
 
 -- ⚠ The defect''s exact signature, asserted at population zero so it cannot
@@ -596,7 +615,8 @@ SELECT _assert_eq(
 SELECT _assert_eq(
   (SELECT ok::text || '/' || rows_written::text || '/' || collection_slug || '/' || (extra->>'rows') || '/' || (extra->>'keyed_by_dist_id')
      FROM public.pipeline_runs WHERE pipeline = 'topshot-atlas-pack-ev'),
-  'true/13/nba-top-shot/13/1',
+  -- 14 since 2026-10-19: D-NEVERREAD is swept too (its supply withheld, its EV written)
+  'true/14/nba-top-shot/14/1',
   'the success path logs its own pipeline_runs row, with the dist_id-keyed dists counted'
 );
 

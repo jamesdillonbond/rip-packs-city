@@ -637,7 +637,8 @@ const PINS = [
     fn: "refresh_container_pack_ev",
     test: "supabase/tests/refresh_container_pack_ev.sql",
     // 2026-10-10: a dist Dapper never indexed is keyed by its dist_id.
-    migration: "supabase/migrations/20261011050000_audit_20261010_pack_ev_keys_a_dist_dapper_never_indexed_by_its_dist_id.sql",
+    // 2026-10-19: a never-read dist's default 0 / 0 supply is withheld as NULL.
+    migration: "supabase/migrations/20261020060107_audit_20261019_ev_writers_withhold_supply_never_read.sql",
   },
   {
     // Added 2026-10-19. Pins the verdicts that withdraw a supply counter contradicting the opens
@@ -2562,8 +2563,9 @@ const PINS = [
     test: "supabase/tests/refresh_atlas_pack_ev.sql",
     // 2026-10-10 (#65 follow-up): clamp, NOT NULL flag, unkeyed dists skipped, failures logged.
     // 2026-10-10 (#188): a dist with no Dapper uuid is keyed by its dist_id.
+    // 2026-10-19: a never-read dist's default 0 / 0 supply is withheld as NULL.
     migration:
-      "supabase/migrations/20261011050000_audit_20261010_pack_ev_keys_a_dist_dapper_never_indexed_by_its_dist_id.sql",
+      "supabase/migrations/20261020060107_audit_20261019_ev_writers_withhold_supply_never_read.sql",
   },
   {
     // pg_cron `13 * * * *` — one of the three heavy jobs CLAUDE.md names as

@@ -31,7 +31,7 @@ CREATE TABLE public.pack_container_recipes (
   source text NOT NULL CHECK (source IN ('observed', 'supply', 'description')),
   observed_containers int, updated_at timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (collection_id, container_dist_id, inner_dist_id));
-CREATE TABLE public.pack_distributions (collection_id uuid, dist_id text, title text, metadata jsonb, total_sealed int, depletion_pct smallint);
+CREATE TABLE public.pack_distributions (collection_id uuid, dist_id text, title text, metadata jsonb, total_sealed int, depletion_pct smallint, total_minted int DEFAULT 1000);
 CREATE TABLE public.pack_ask_state (collection_slug text, dist_id text, lowest_ask numeric, is_listed boolean);
 CREATE TABLE public.pack_drop_pool (collection_id uuid, dist_id text, pool_source text);
 CREATE TABLE public.pack_ev_history (
@@ -148,7 +148,9 @@ BEGIN
            COALESCE(pd.metadata->>'uuid', pr.inner_dist_id) AS listing_uuid,
            pd.title,
            GREATEST(COALESCE(NULLIF(pd.metadata->>'number_of_pack_slots', '')::int, 1), 1) AS slots,
-           pas.lowest_ask, pd.total_sealed, pd.depletion_pct
+           pas.lowest_ask,
+           -- 2026-10-19: a dist with no minted count was never read -- its counters are column defaults (0 of 1,093 carry a non-zero one), so withhold them
+           CASE WHEN COALESCE(pd.total_minted, 0) > 0 THEN pd.total_sealed END AS total_sealed, CASE WHEN COALESCE(pd.total_minted, 0) > 0 THEN pd.depletion_pct END AS depletion_pct
     FROM pack_container_recipes pr
     JOIN pack_distributions pd ON pd.collection_id = pr.collection_id AND pd.dist_id = pr.inner_dist_id
     LEFT JOIN pack_ask_state pas ON pas.collection_slug = 'nba-top-shot' AND pas.dist_id = pr.inner_dist_id
@@ -203,7 +205,9 @@ BEGIN
       WHERE pr.collection_id = v_cid
       GROUP BY 1
     )
-    SELECT a.*, COALESCE(pd.metadata->>'uuid', a.container_dist_id) AS listing_uuid, pd.title, pd.total_sealed, pd.depletion_pct, pas.lowest_ask
+    SELECT a.*, COALESCE(pd.metadata->>'uuid', a.container_dist_id) AS listing_uuid, pd.title,
+           -- 2026-10-19: a dist with no minted count was never read -- its counters are column defaults (0 of 1,093 carry a non-zero one), so withhold them
+           CASE WHEN COALESCE(pd.total_minted, 0) > 0 THEN pd.total_sealed END AS total_sealed, CASE WHEN COALESCE(pd.total_minted, 0) > 0 THEN pd.depletion_pct END AS depletion_pct, pas.lowest_ask
     FROM agg a
     JOIN pack_distributions pd ON pd.collection_id = v_cid AND pd.dist_id = a.container_dist_id
     LEFT JOIN pack_ask_state pas ON pas.collection_slug = 'nba-top-shot' AND pas.dist_id = a.container_dist_id
@@ -344,6 +348,31 @@ BEGIN
   PERFORM public.refresh_container_pack_ev();
   PERFORM _assert(NOT EXISTS (SELECT 1 FROM public.pack_ev_history WHERE dist_id = 'B'),
                   'B: its topper''s row is the could-not-price sentinel -> no box row (never 5 x 10 alone)');
+END $$;
+
+-- 2026-10-19: a dist with no minted count was never read; its total_sealed / depletion_pct are column
+-- defaults, so a snapshot withholds them (NULL) instead of publishing "0 unopened at 0 %".
+-- Back to a priceable state first (the block above left T as a could-not-price sentinel, so B wrote
+-- no row and any assertion on it would pass on an empty record).
+DELETE FROM public.pack_ev_history;
+DELETE FROM public.ev_stub WHERE dist_id = 'T';
+INSERT INTO public.ev_stub VALUES ('T', '{"ok":true,"gross_ev":30,"typical_pull_ev":7,"fmv_coverage_pct":100,"edition_count":89}');
+INSERT INTO public.pack_ev_history (pack_listing_id, collection_id, dist_id, pack_name, pack_price, gross_ev, typical_ev, pack_ev, is_positive_ev, fmv_coverage_pct, edition_count, snapshotted_at)
+VALUES ('u-S', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'S', 'Standard', 18, 10, 2, -8, false, 97, 228, now() - interval '5 minutes');
+UPDATE public.pack_distributions SET total_minted = 0, total_sealed = 0, depletion_pct = 0 WHERE dist_id IN ('B', 'T');
+DO $$
+DECLARE b record; tt record; c record;
+BEGIN
+  PERFORM public.refresh_container_pack_ev();
+  SELECT * INTO b FROM public.pack_ev_history WHERE dist_id = 'B' ORDER BY snapshotted_at DESC LIMIT 1;
+  PERFORM _assert(FOUND, 'B wrote a row (the assertions below are not vacuous)');
+  SELECT * INTO tt FROM public.pack_ev_history WHERE dist_id = 'T' ORDER BY snapshotted_at DESC LIMIT 1;
+  PERFORM _assert(FOUND, 'T wrote a row');
+  SELECT * INTO c FROM public.pack_ev_history WHERE dist_id = 'K' ORDER BY snapshotted_at DESC LIMIT 1;
+  PERFORM _assert(FOUND, 'K wrote a row');
+  PERFORM _assert(b.total_unopened IS NULL AND b.depletion_pct IS NULL, 'a never-read container publishes NULL supply, not 0 / 0');
+  PERFORM _assert(tt.total_unopened IS NULL AND tt.depletion_pct IS NULL, 'a never-read inner pack publishes NULL supply, not 0 / 0');
+  PERFORM _assert(c.total_unopened = 5 AND c.depletion_pct = 50, 'a read container (K) still publishes its measured supply (control)');
 END $$;
 
 ROLLBACK;
