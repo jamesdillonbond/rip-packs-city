@@ -348,3 +348,37 @@ describe("concierge — get_top_sales on Panini (2026-10-19)", () => {
     expect(r.note).toBeUndefined()
   })
 })
+
+describe("concierge — get_premiums is scoped to the collection it names (2026-10-19)", () => {
+  // Both public premium boards are Top Shot's. On a Panini page they answered a Panini
+  // question with Top Shot's rows; on any other collection they still do — a substitution.
+  it("Panini reads Panini's own boards, only the requested kind, and never the Top Shot board", async () => {
+    install({
+      panini_parallel_premiums: { data: [{ external_id: "packcard-1_1_1_1", player_name: "Messi", premium_mult: 3, parallel_confidence: "HIGH" }], error: null },
+      panini_serial_premiums: { data: [{ external_id: "packcard-2_2_2_2", sku: "s", player_name: "Yamal", premium_mult: 4 }], error: null },
+    })
+    const f = stubFetch([jsonRoute("/api/public/insights/parallel-premiums", { rows: [{ x: 1 }] })])
+    script("get_premiums", { kind: "parallel", collectionId: "panini-blockchain" })
+    await POST(post("panini parallel premiums"))
+    const r = toolResult() as Record<string, any>
+    expect(r.status).toBe("ok")
+    expect(r.parallels[0].player).toBe("Messi")
+    expect(r.serials).toBeUndefined()
+    expect(JSON.stringify(r)).not.toMatch(/confidence/i)
+    expect(f.calls.some((c) => c.url.includes("/parallel-premiums"))).toBe(false)
+  })
+  it("a collection with no premiums board is refused, never answered with Top Shot's rows", async () => {
+    const f = stubFetch([jsonRoute("/api/public/insights/serial-premiums", { rows: [{ x: 1 }] })])
+    script("get_premiums", { kind: "serial", collectionId: "nfl-all-day" })
+    await POST(post("all day serial premiums"))
+    expect(toolResult()).toMatchObject({ status: "unsupported_collection" })
+    expect(f.calls.some((c) => c.url.includes("/serial-premiums"))).toBe(false)
+  })
+  it("CONTROL — Top Shot still reads the public board", async () => {
+    const f = stubFetch([jsonRoute("/api/public/insights/serial-premiums", { rows: [{ x: 1 }] })])
+    script("get_premiums", { kind: "serial", collectionId: "nba-top-shot" })
+    await POST(post("top shot serial premiums"))
+    expect(toolResult()).toMatchObject({ status: "ok" })
+    expect(f.calls.some((c) => c.url.includes("/serial-premiums"))).toBe(true)
+  })
+})

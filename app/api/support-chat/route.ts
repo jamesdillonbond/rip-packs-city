@@ -725,11 +725,12 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "get_premiums",
-    description: "How much PREMIUM scarcity carries on Top Shot: parallels (kind='parallel' — how much a parallel / subedition sells for over its base edition) or low serials (kind='serial' — how much #1 / low-serial mints carry over the edition floor). Use for 'do parallels carry a premium', 'how much is a low serial worth over floor', 'what's the serial premium'. Read-only board.",
+    description: "How much PREMIUM scarcity carries on Top Shot (or on Panini, when collectionId is panini-blockchain or the page is Panini — then it reads Panini's own premiums boards): parallels (kind='parallel' — how much a parallel / subedition sells for over its base edition) or low serials (kind='serial' — how much #1 / low-serial mints carry over the edition floor). Use for 'do parallels carry a premium', 'how much is a low serial worth over floor', 'what's the serial premium'. Read-only board.",
     input_schema: {
       type: "object" as const,
       properties: {
         kind: { type: "string", enum: ["parallel", "serial"], description: "'parallel' = parallel / subedition premiums; 'serial' = low-serial premiums. Required." },
+        collectionId: { type: "string", description: "Optional: panini-blockchain reads Panini's premiums; anything else (or omitted, off a Panini page) reads Top Shot's. Defaults to the page's collection." },
         limit: { type: "number", description: "Max rows, 1..50, default 20." },
       },
       required: ["kind"],
@@ -2696,6 +2697,12 @@ async function executeToolInner(
 
   if (toolName === "analyze_wallet_holdings") {
     try {
+      // 2026-10-19: Panini has no wallets (owners are Panini usernames). A name here
+      // would resolve as a TOP SHOT username — another person's Flow wallet, which
+      // can hold no Panini card — and come back as "none found".
+      if (effectiveCollectionId === "panini-blockchain") {
+        return JSON.stringify({ status: "unsupported_collection", message: "Panini has no wallets — its collectors are Panini usernames. For a Panini collector call check_wallet with their Panini username; for a Flow wallet, call this tool again with that wallet's own collectionId (e.g. nba-top-shot). Do not say the collector has nothing." });
+      }
       // Username resolution — same ladder as check_wallet (cache RPC first,
       // live resolver fallback), kept inline like check_wallet_squeeze does.
       const inputAddr = String(toolInput.walletAddress ?? "").trim();
@@ -4538,6 +4545,21 @@ async function executeToolInner(
       : null;
     if (!kind) return JSON.stringify({ status: "error", message: "kind must be 'parallel' or 'serial'." });
     const limit = Math.min(Math.max(Math.trunc(Number(toolInput.limit ?? 20)) || 20, 1), 50);
+    // 2026-10-19: both boards are Top Shot's. On a Panini page they answered a
+    // Panini question with Top Shot's premiums (a substitution); Panini has its own.
+    // Any other named collection has no premiums board: refuse rather than answer
+    // with Top Shot's rows under that collection's name.
+    if (effectiveCollectionId && effectiveCollectionId !== "nba-top-shot" && effectiveCollectionId !== "panini-blockchain") {
+      return JSON.stringify({ status: "unsupported_collection", message: "RPC's premium boards cover NBA Top Shot and Panini only. Say so; do not quote Top Shot's premiums for this collection." });
+    }
+    if (effectiveCollectionId === "panini-blockchain") {
+      const out = JSON.parse(await readPaniniPremiumsForConcierge(supabase, base, limit));
+      if (out.status === "ok") {
+        if (kind === "parallel-premiums") { delete out.serials; delete out.serials_total; delete out.serials_capped; }
+        else { delete out.parallels; delete out.parallels_total; delete out.parallels_capped; }
+      }
+      return JSON.stringify(out);
+    }
     return fetchPublicInsight(base, `/api/public/insights/${kind}`, limit);
   }
 
@@ -4868,6 +4890,12 @@ async function executeToolInner(
   // premium path.
   if (toolName === "find_quirky_serials") {
     try {
+      // 2026-10-19: Panini has no wallets (owners are Panini usernames). A name here
+      // would resolve as a TOP SHOT username — another person's Flow wallet, which
+      // can hold no Panini card — and come back as "none found".
+      if (effectiveCollectionId === "panini-blockchain") {
+        return JSON.stringify({ status: "unsupported_collection", message: "Panini has no wallets — its collectors are Panini usernames. For a Panini collector call check_wallet with their Panini username; for a Flow wallet, call this tool again with that wallet's own collectionId (e.g. nba-top-shot). Do not say the collector has nothing." });
+      }
       const inputAddr = String(toolInput.walletAddress ?? "").trim();
       if (!inputAddr) {
         return JSON.stringify({ status: "error", message: "walletAddress is required" });
@@ -5412,6 +5440,9 @@ async function executeToolInner(
       if (!teamIn) return JSON.stringify({ status: "error", message: "team is required." });
       const slug = effectiveCollectionId ?? "nba-top-shot";
       if (isPinnacle(slug)) return JSON.stringify({ status: "error", message: "Disney Pinnacle has no teams." });
+      // 2026-10-19: Panini cards carry no team, so a team lookup there finds nothing
+      // and would read as "no such team" about a catalogue that holds NBA / NFL / MLB products.
+      if (slug === "panini-blockchain") return JSON.stringify({ status: "unsupported_collection", message: "RPC has no team data for Panini cards (Panini lists players, not teams). Offer a player search instead (get_player_editions or search_live_deals with player); never say Panini has no cards for that team." });
       const uuid = ownLookup(COLLECTION_UUID_BY_SLUG, slug) ?? null;
       if (!uuid) return JSON.stringify({ status: "error", message: `Unknown collection '${slug}'. Valid: nba-top-shot, nfl-all-day, laliga-golazos, ufc.` });
       const resolved = await resolveTeamName(uuid, teamIn);
@@ -5493,6 +5524,9 @@ async function executeToolInner(
       if (!teamIn) return JSON.stringify({ status: "error", message: "team is required." });
       const slug = effectiveCollectionId ?? "nba-top-shot";
       if (isPinnacle(slug)) return JSON.stringify({ status: "error", message: "Disney Pinnacle has no teams." });
+      // 2026-10-19: Panini cards carry no team, so a team lookup there finds nothing
+      // and would read as "no such team" about a catalogue that holds NBA / NFL / MLB products.
+      if (slug === "panini-blockchain") return JSON.stringify({ status: "unsupported_collection", message: "RPC has no team data for Panini cards (Panini lists players, not teams). Offer a player search instead (get_player_editions or search_live_deals with player); never say Panini has no cards for that team." });
       const uuid = ownLookup(COLLECTION_UUID_BY_SLUG, slug) ?? null;
       if (!uuid) return JSON.stringify({ status: "error", message: `Unknown collection '${slug}'. Valid: nba-top-shot, nfl-all-day, laliga-golazos, ufc.` });
       const partIn = String(toolInput.part ?? "roster");

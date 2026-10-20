@@ -159,3 +159,25 @@ describe("check_wallet on a Panini page reads the Panini username — never a To
     expect(toolResult().status).toBe("unsupported_collection")
   })
 })
+
+describe("wallet and team tools on a Panini page say what Panini lacks — never 'none found' (2026-10-19)", () => {
+  // Panini owners are usernames (no wallets) and 0 of 36,511 Panini editions carry a team.
+  // Without these guards a name resolved as a TOP SHOT username (another person's wallet),
+  // and a team lookup found nothing and read as "no such team".
+  it.each([
+    ["find_quirky_serials", { walletAddress: "joe" }],
+    ["analyze_wallet_holdings", { walletAddress: "joe" }],
+    ["get_team_checklist", { team: "Lakers" }],
+    ["get_team_intel", { team: "Lakers" }],
+  ])("%s is refused on Panini without resolving a Top Shot username or querying a team", async (tool, input) => {
+    const inst = makeInstrumentedSupabaseFixture({})
+    A.sb = inst.fixture
+    A.state.script = [{ tools: [{ name: tool, input }] }, { text: "done" }]
+    A.state.cursor = 0
+    await POST(post())
+    const r = toolResult()
+    expect(r.status).toBe("unsupported_collection")
+    expect(String(r.message)).toMatch(/Panini/)
+    expect(inst.rpcCalls.some((c) => c.name === "resolve_topshot_username")).toBe(false)
+  })
+})
