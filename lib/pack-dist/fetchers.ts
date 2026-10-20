@@ -801,6 +801,43 @@ export async function fetchEvContributors(
   return { rows: Array.isArray(data) ? (data as EvContributor[]) : [], ok: true }
 }
 
+export type PinnacleDistPin = {
+  render_id: string
+  pin_name: string | null
+  set_name: string | null
+  edition_type: string | null
+  total_minted: number | null
+  thumbnail_url: string | null
+  fmv_usd: number | string | null
+  pulls_observed: number | string
+  pulls_named_total: number | string
+}
+
+/**
+ * Disney Pinnacle: the pins in a drop with how often each has been pulled
+ * (get_pinnacle_dist_contents, 2026-10-19). Pinnacle has no pack_drop_pool, so
+ * "What's Inside" and "Top pulls" had nothing; the drop's edition list
+ * (metadata.edition_ids, validated against 27,900 named pulls: 100 % on-list)
+ * plus the complete open history answer it — as OBSERVED shares, not odds.
+ * Other collections issue no read (ok:true, no rows).
+ */
+export async function fetchPinnacleDistPins(
+  collectionSlug: string,
+  distId: string,
+  db: Db = supabaseAdmin,
+): Promise<RowsResult<PinnacleDistPin>> {
+  if (collectionSlug !== "disney-pinnacle") return { rows: [], ok: true }
+  const { data, error } = await bounded(
+    db.rpc("get_pinnacle_dist_contents", { p_dist_id: distId }),
+    "pinnacle_dist_pins",
+  )
+  if (error) {
+    console.error("[pack-detail] pinnacle_dist_pins error", error.message)
+    return { rows: [], ok: false }
+  }
+  return { rows: Array.isArray(data) ? (data as PinnacleDistPin[]) : [], ok: true }
+}
+
 /**
  * Top pulls by per-slot EV.
  *

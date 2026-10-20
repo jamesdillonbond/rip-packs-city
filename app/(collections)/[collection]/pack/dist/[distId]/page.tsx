@@ -74,6 +74,8 @@ import {
   fetchEvContributors,
   fetchTopPulls,
   fetchPackContents,
+  fetchPinnacleDistPins,
+  type PinnacleDistPin,
   fetchExhaustedCount,
   fetchPackSalesHistory,
   type PackTableRow,
@@ -85,6 +87,7 @@ import {
 } from "@/lib/pack-dist/fetchers"
 import { withAsOf, depletionTileAsOf, packsRemainingTileAsOf } from "@/lib/pack-dist/as-of"
 import { unsoldAtCloseLabel } from "@/lib/pack-dist/unsold-at-close"
+import { collectionHasDropPool } from "@/lib/packs/drop-pool"
 import { pickTierCounts, observedOpensFloorLabel } from "@/lib/pack-dist/tier-counts"
 import { summarizeDegraded, boardStatus } from "@/lib/insights/board-status"
 import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
@@ -451,9 +454,10 @@ export default async function PackDetailPage(
   // because React does not hydrate a dehydrated boundary's fallback). Both reads
   // are cheap and were MOVED off the streamed group, not added, so total DB work
   // per request is unchanged.
-  const [packContentsRes, exhaustedRes] = await Promise.all([
+  const [packContentsRes, exhaustedRes, pinnaclePinsRes] = await Promise.all([
     fetchPackContents(coll.id, distId, PACK_CONTENTS_PAGE_SIZE, 0),
     fetchExhaustedCount(coll.id, distId),
+    fetchPinnacleDistPins(collection, distId),
   ])
   // `null` still means "the read failed" for PackContentsSection, which renders
   // its own explanatory copy; `[]` still means a genuinely unindexed pool.
@@ -465,7 +469,12 @@ export default async function PackDetailPage(
   const shellDegraded = summarizeDegraded([
     boardStatus("Exhausted pool count", exhaustedRes.ok),
     boardStatus("Pack EV", pinDropRes.ok),
+    boardStatus("Pins in this pack", pinnaclePinsRes.ok),
   ])
+  // A Pinnacle dist whose metadata lists its editions is titled "what's in the
+  // drop"; one with no list only knows what has been pulled so far.
+  const pinnacleDistListed = Array.isArray((distMetadata as Record<string, unknown> | null)?.edition_ids)
+    && ((distMetadata as Record<string, unknown>).edition_ids as unknown[]).length > 0
 
   // Reward / quest packs ship with retail_price_usd = 0 (Pack D1). Value-ratio
   // and EV-margin verdicts divide by retail, so they produce garbage on free
@@ -1319,6 +1328,9 @@ export default async function PackDetailPage(
         fmvCoverage={fmvCoverage}
         editionCount={editionCount}
       />
+      {collection === "disney-pinnacle" && pinnaclePinsRes.ok && pinnaclePinsRes.rows.length > 0 && (
+        <PinnacleDistPinsSection pins={pinnaclePinsRes.rows} listed={pinnacleDistListed} />
+      )}
 
       {/* ── Streamed group (P3): sales history · top pulls. Genuinely
           supplementary, so `fallback={null}` — same choice as PackStreamedTop.
@@ -2124,6 +2136,65 @@ function PackContentsSection({
   )
 }
 
+// Disney Pinnacle: the pins in the drop, each with how often it has been pulled
+// (get_pinnacle_dist_contents, 2026-10-19). An OBSERVED share of the pulls on
+// record — Pinnacle publishes no pack weights, so this is never called odds.
+function PinnacleDistPinsSection({ pins, listed }: { pins: PinnacleDistPin[]; listed: boolean }) {
+  const total = Number(pins[0]?.pulls_named_total ?? 0)
+  return (
+    <section style={{ ...CARD_STYLE, background: "var(--rpc-surface)", border: "1px solid var(--rpc-border)" }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
+        <h2 style={{ margin: 0, fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 18, letterSpacing: "0.06em", color: "var(--rpc-text-primary)", textTransform: "uppercase" }}>
+          {listed ? "Pins in this drop" : "Pins pulled so far"}
+        </h2>
+        <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--rpc-text-muted)" }}>
+          {fmtCount(pins.length)} pins{total > 0 ? ` · ${fmtCount(total)} pulls on record` : ""}
+        </span>
+      </div>
+      <p style={{ margin: "0 0 10px", color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 11.5, lineHeight: 1.5 }}>
+        {listed
+          ? "Every pin this drop can contain. "
+          : "This drop's full pin list isn't published; these are the pins pulled from it so far. "}
+        &quot;Pulled&quot; is how often each pin has come out of the packs opened so far — a measured share, not the drop&apos;s odds.
+      </p>
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "var(--font-mono)", fontSize: 12 }}>
+          <thead>
+            <tr style={{ borderBottom: "1px solid var(--rpc-border-subtle)" }}>
+              <Th>Pin</Th>
+              <Th>Edition</Th>
+              <Th align="right">Minted</Th>
+              <Th align="right">FMV</Th>
+              <Th align="right">Pulled</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {pins.map((p) => {
+              const n = Number(p.pulls_observed)
+              return (
+                <tr key={p.render_id} style={{ borderBottom: "1px solid var(--rpc-border-subtle)" }}>
+                  <Td>
+                    <Link href={`/pinnacle/moment/${encodeURIComponent(p.render_id)}`} style={{ color: "var(--rpc-text-primary)", textDecoration: "none" }}>
+                      {p.pin_name || p.render_id}
+                    </Link>
+                    {p.set_name ? <span style={{ color: "var(--rpc-text-muted)" }}> · {p.set_name}</span> : null}
+                  </Td>
+                  <Td>{p.edition_type || "—"}</Td>
+                  <Td align="right">{p.total_minted == null ? "—" : fmtCount(p.total_minted)}</Td>
+                  <Td align="right">{fmtUsd(num(p.fmv_usd))}</Td>
+                  <Td align="right">
+                    {total > 0 ? `${fmtCount(n)} (${((n / total) * 100).toFixed(n / total >= 0.1 ? 0 : 1)}%)` : fmtCount(n)}
+                  </Td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  )
+}
+
 // Top group: observed lifecycle · EV reality check · what drives the remaining EV
 // · sealed-pack resale. (All conditional/supplementary — fallback={null}.)
 async function PackStreamedTop({
@@ -2410,9 +2481,15 @@ async function PackStreamedBottom({
   slots: number | null
   snapshottedAt: string | null
 }) {
+  // Top pulls are priced from pack_drop_pool; a collection with none (Pinnacle)
+  // issues no read and shows no panel — its empty state said "re-pooled from
+  // Dapper Atlas", Top Shot copy that is false there (2026-10-19).
+  const hasDropPool = collectionHasDropPool(collection)
   const [salesRes, topPullsRes] = await Promise.all([
     fetchPackSalesHistory(collectionId, distId, 10),
-    fetchTopPulls(collectionId, distId, totalUnopened, slots),
+    hasDropPool
+      ? fetchTopPulls(collectionId, distId, totalUnopened, slots)
+      : Promise.resolve({ rows: [], ok: true, partial: false }),
   ])
   const salesHistory = salesRes.rows
   const topPulls = topPullsRes.rows
@@ -2430,7 +2507,7 @@ async function PackStreamedBottom({
       <DegradedDataNotice summary={bottomDegraded} />
       <PackSalesHistory rows={salesHistory} names={packSaleNames} />
 
-      <section style={CARD_STYLE}>
+      {hasDropPool && <section style={CARD_STYLE}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 10 }}>
           <h2 style={{ margin: 0, fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 18, letterSpacing: "0.06em", color: "var(--rpc-text-primary)", textTransform: "uppercase" }}>
             Top pulls by EV
@@ -2501,7 +2578,7 @@ async function PackStreamedBottom({
           {snapshottedAt ? new Date(snapshottedAt).toLocaleString() : "—"}. Methodology: cached pack_ev_history via the
           compute-pack-ev edge function.
         </div>
-      </section>
+      </section>}
     </>
   )
 }

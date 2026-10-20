@@ -30,6 +30,7 @@ import {
   fetchPackLifecycle,
   hasCompleteOpenHistory,
   hasEvContributors,
+  fetchPinnacleDistPins,
   fetchPackRealizedEv,
   fetchAllDayCorrectedEv,
   fetchPinnacleDropEv,
@@ -723,5 +724,23 @@ describe("LaLiga Golazos reads v_golazos_pack_lifecycle (2026-10-19)", () => {
     expect(hasCompleteOpenHistory("nfl-all-day")).toBe(true)
     expect(hasCompleteOpenHistory("nba-top-shot")).toBe(false)
     expect(hasCompleteOpenHistory("ufc")).toBe(false)
+  })
+})
+
+describe("fetchPinnacleDistPins (2026-10-19)", () => {
+  const PIN = { render_id: "R1", pin_name: "Prince Eric", set_name: "S", edition_type: "Open Edition", total_minted: 61, thumbnail_url: null, fmv_usd: 135, pulls_observed: 23, pulls_named_total: 1500 }
+  it("reads get_pinnacle_dist_contents for Pinnacle", async () => {
+    const { db, calls } = makeDb({ "rpc:get_pinnacle_dist_contents": { data: [PIN], error: null } })
+    expect(await fetchPinnacleDistPins("disney-pinnacle", "8874", db)).toEqual({ rows: [PIN], ok: true })
+    expect(calls).toEqual(["rpc:get_pinnacle_dist_contents"])
+  })
+  it("an error is ok:false — never an empty drop", async () => {
+    const { db } = makeDb({ "rpc:get_pinnacle_dist_contents": { data: null, error: DB_ERR } })
+    expect(await fetchPinnacleDistPins("disney-pinnacle", "8874", db)).toEqual({ rows: [], ok: false })
+  })
+  it("other collections issue no read", async () => {
+    const { db, calls } = makeDb({})
+    expect(await fetchPinnacleDistPins("nba-top-shot", "1", db)).toEqual({ rows: [], ok: true })
+    expect(calls).toEqual([])
   })
 })
