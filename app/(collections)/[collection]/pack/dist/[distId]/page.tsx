@@ -84,6 +84,7 @@ import {
   fetchPackDetailBundle,
 } from "@/lib/pack-dist/fetchers"
 import { withAsOf, depletionTileAsOf, packsRemainingTileAsOf } from "@/lib/pack-dist/as-of"
+import { unsoldAtCloseLabel } from "@/lib/pack-dist/unsold-at-close"
 import { pickTierCounts, observedOpensFloorLabel } from "@/lib/pack-dist/tier-counts"
 import { summarizeDegraded, boardStatus } from "@/lib/insights/board-status"
 import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
@@ -1201,6 +1202,7 @@ export default async function PackDetailPage(
             label="Packs remaining"
             value={fmtCount(effectiveUnopened)}
             sub={
+              unsoldAtCloseLabel(collection, distMetadata as Record<string, unknown> | null, effectiveUnopened) ??
               (effectiveUnopened === null ? observedOpensFloorLabel(tierCountsContradicted, merged.observed_packs_opened) : null) ??
               withAsOf(effectiveTotalMinted !== null ? `of ${fmtCount(effectiveTotalMinted)} minted` : null, packsRemainingAsOf) ??
               undefined
