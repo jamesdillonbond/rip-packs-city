@@ -94,6 +94,7 @@
   - Falsifier: the confirmed-deleted rows reappear on a later walk.
 
 **Next**
+- **All Day ask stamps say when we CHECKED, not when the seller POSTED** (scoped out 10-20, Cowork). Every open All Day row now carries `verified_at` (V2 reconciler every 2 h; V1 lane #198 weekly), but every surface still dates the ask by `listed_at` and words it "listed N ago" (edition page `750249b`, Market tab + alerts `49ae606`). The real fix: add `floor_ask_verified_at` to `allday_edition_floor_ask`, return it from `get_edition_high_offer` and the market RPCs, switch `askStampKind("nfl_all_day")` to `checked`, and drop the deals board's All Day exclusion (`DealsBoardClient.tsx`). Four read paths + RPCs; do them in one change or the kind and the stamp disagree on some surface.
 - ~~**Shrink ASK_ONLY honestly.**~~ ⛔ **Measured 10-17 ~7:20 PM PT: nothing to shrink.** Of 1,207 ASK_ONLY editions, 1 has a `sales_market` sale in 30 days and 308 in 90 days, none with ≥ 5; NO_DATA (700) has 0 in 90 days. The label is honest; the lever below would move ~1 edition. Re-open only if that 30-day count grows past ~50.
 - (original item, kept for the record) **Shrink ASK_ONLY honestly.**
   - What: a sales-backed price wherever `sales_market` has ≥ 1 recent sale. No relabelling.
