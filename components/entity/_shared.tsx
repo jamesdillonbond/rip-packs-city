@@ -139,6 +139,9 @@ export function relTime(iso: string | null | undefined, now = Date.now()): strin
 const TIER_VAR_MAP: Record<string, { fg: string; bg: string; bd: string }> = {
   ULTIMATE:    { fg: "var(--tier-ultimate-text)",   bg: "var(--tier-ultimate-bg)",   bd: "var(--tier-ultimate-border)" },
   LEGENDARY:   { fg: "var(--tier-legendary-text)",  bg: "var(--tier-legendary-bg)",  bd: "var(--tier-legendary-border)" },
+  // 2026-10-20: tier_type gained EPIC on 10-18 (20261018160852, 40 UFC Strike editions);
+  // without this row those chips fell to the grey fallback on every entity page.
+  EPIC:        { fg: "var(--tier-epic-text)",       bg: "var(--tier-epic-bg)",       bd: "var(--tier-epic-border)" },
   CHAMPION:    { fg: "var(--tier-champion-text)",   bg: "var(--tier-champion-bg)",   bd: "var(--tier-champion-border)" },
   CHALLENGER:  { fg: "var(--tier-challenger-text)", bg: "var(--tier-challenger-bg)", bd: "var(--tier-challenger-border)" },
   CONTENDER:   { fg: "var(--tier-contender-text)",  bg: "var(--tier-contender-bg)",  bd: "var(--tier-contender-border)" },

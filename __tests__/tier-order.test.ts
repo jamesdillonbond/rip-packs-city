@@ -29,6 +29,8 @@ describe("canonical tier ladder", () => {
     for (const t of [
       "COMMON", "FANDOM", "UNCOMMON", "RARE", "LEGENDARY", "ULTIMATE",
       "CONTENDER", "CHALLENGER", "CHAMPION",
+      // 2026-10-18: EPIC added to the enum (20261018160852), live on 40 UFC Strike editions.
+      "EPIC",
     ]) {
       expect(CANONICAL_TIERS).toContain(t)
     }

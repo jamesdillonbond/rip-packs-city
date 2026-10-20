@@ -12,6 +12,8 @@ import {
   SectionUnavailable,
 } from "@/components/entity/_shared"
 
+import { CANONICAL_TIERS } from "@/lib/tier-order"
+
 afterEach(cleanup)
 
 describe("_shared formatters", () => {
@@ -136,6 +138,17 @@ describe("_shared formatters", () => {
     cleanup()
     const { container } = render(<TierBadge tier="legendary" label="LEG" />)
     expect(container.textContent).toBe("LEG")
+  })
+
+  it("TierBadge gives every canonical tier its own token colour — no tier falls to the grey fallback", () => {
+    // 2026-10-20: EPIC (tier_type since 10-18, 40 UFC editions) rendered grey on entity
+    // pages because this map lacked it. Walk the canonical ladder, not a hand list.
+    for (const t of CANONICAL_TIERS) {
+      const { container } = render(<TierBadge tier={t} />)
+      const style = (container.firstChild as HTMLElement).getAttribute("style") ?? ""
+      expect(style, t).toContain(`--tier-${t.toLowerCase()}-`)
+      cleanup()
+    }
   })
 
   it("WalletLink em-dashes a missing address and links a present one to the WALLET ANALYZER, nofollow — never to /profile/<address>", () => {
