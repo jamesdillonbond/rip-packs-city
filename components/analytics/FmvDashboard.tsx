@@ -94,7 +94,6 @@ interface TierPulseResponse {
 function TopMoversTable({
   rows,
   loading,
-  direction,
   failed = false,
 }: {
   rows: FmvTopMoverRow[]

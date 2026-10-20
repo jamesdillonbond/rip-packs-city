@@ -66,7 +66,7 @@ export default function SniperFilterBar(props: {
   onCopyLink: () => void;
 }) {
   const {
-    isMobile, isPinnacle, isAllDay, isGolazos, accent, collectionSlug,
+    isMobile, isPinnacle, isAllDay, accent, collectionSlug,
     showFilters, onToggleFilters,
     playerInput, onPlayerChange,
     teamOptions = [], teamFilter = "all", onTeamChange,
@@ -76,7 +76,6 @@ export default function SniperFilterBar(props: {
     minDiscount, onMinDiscountChange,
     maxPrice, onMaxPriceChange,
     search, onSearchChange,
-    serialFilter, onSerialChange,
     sortBy, sortOptions, onSortChange,
     badgeOnly, onBadgeOnlyChange,
     autographOnly = false, onAutographOnlyChange,

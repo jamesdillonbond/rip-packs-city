@@ -49,7 +49,6 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
 })
 
 const DRY_RUN = process.argv.includes('--dry-run')
-const ALLDAY_COLLECTION_ID = 'dee28451-5d62-409e-a1ad-a83f763ac070'
 const FLOW_REST = 'https://rest-mainnet.onflow.org'
 const STOREFRONT_EVENT = 'A.3cdbb3d569211ff3.NFTStorefrontV2.ListingCompleted'
 const STOREFRONT_ADDRESS = '0x3cdbb3d569211ff3'

@@ -89,7 +89,7 @@ export default function FmvHealthClient() {
   // why the hook takes a URL rather than a path plus params: a caller with N filters would
   // otherwise need the hook to know about all N.
   const hours = WINDOW_OPTIONS.find((w) => w.key === windowKey)?.hours ?? 24;
-  const { token, tokenInput, setTokenInput, submitToken, data, loading, error, stale, refresh } =
+  const { token, tokenInput, setTokenInput, submitToken, data, loading, error, stale } =
     useAdminResource<Payload>(`/api/admin/fmv-health?windowHours=${hours}&limit=200`);
 
 

@@ -113,7 +113,6 @@ import {
   weightedAveragePrice,
   liquidityRating,
   wapWithoutOutliers,
-  medianOf,
   medianOfMostRecent,
   isPremiumSerial,
   dampenGrailSpike,

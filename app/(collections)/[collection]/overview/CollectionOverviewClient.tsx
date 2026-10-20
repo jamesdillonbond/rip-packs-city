@@ -3,7 +3,7 @@
 import React, { useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { getCollection } from "@/lib/collections"
-import { nameOrDash, fmtPrice, fmtAge, minutesSince, freshnessFromAge, EM_DASH, type Freshness } from "@/lib/collection-overview-format"
+import { nameOrDash, fmtPrice, fmtAge, minutesSince, freshnessFromAge, EM_DASH } from "@/lib/collection-overview-format"
 import InsiderSignalsPanel from "@/components/InsiderSignalsPanel"
 import { MarketplaceStatusBanner } from "@/components/marketplace-status"
 import { toolCardDesc } from "@/lib/collection/closed-market-chrome"

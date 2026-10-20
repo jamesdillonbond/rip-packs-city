@@ -8,7 +8,6 @@
  */
 
 import * as fcl from "@onflow/fcl"
-import * as t from "@onflow/types"
 
 fcl.config()
   .put("accessNode.api", "https://rest-mainnet.onflow.org")

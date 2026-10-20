@@ -215,13 +215,6 @@ export interface SniperDeal {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const TS_GQL = "https://public-api.nbatopshot.com/graphql";
-const GQL_HEADERS: Record<string, string> = {
-  "Content-Type": "application/json",
-  "User-Agent": "sports-collectible-tool/0.1",
-};
-
-const TS_PROXY_URL = process.env.TS_PROXY_URL ?? "";
 const TS_PROXY_SECRET = process.env.TS_PROXY_SECRET ?? "";
 
 const ALLDAY_PROXY_URL = process.env.ALLDAY_PROXY_URL ?? "";

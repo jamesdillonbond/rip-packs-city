@@ -6,7 +6,6 @@ import Link from "next/link";
 import RpcLogo from "@/components/RpcLogo";
 import TopMoversCard from "@/components/profile/TopMoversCard";
 import CollectionBreakdownCard from "@/components/profile/CollectionBreakdownCard";
-import PublicAchievements from "@/components/profile/PublicAchievements";
 import ShareProfileButtons from "@/components/profile/ShareProfileButtons";
 import FollowButton from "@/components/profile/FollowButton";
 import TrophySlab, { type TrophySlabData } from "@/components/TrophySlab";
@@ -244,7 +243,7 @@ export default function ProfileClient(props: {
     typeof props.initialWalletCount === "number" ? props.initialWalletCount : null
   );
   const [snapshots, setSnapshots] = useState<PortfolioSnapshot[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [, setLoading] = useState(true);
   // Current viewer's handle + auth id (null = anon). Drives the own-profile
   // share block; the id seeds the referral &ref= on the share link.
   // /api/profile/me returns { user: null } for anon — never 401s.

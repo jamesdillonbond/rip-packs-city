@@ -11,7 +11,7 @@ import SupportChatConnected from "@/components/SupportChatConnected";
 import FirstRunTourMount from "@/components/onboarding/FirstRunTourMount";
 import RpcLogo from "@/components/RpcLogo";
 import SignOutButton from "@/components/auth/SignOutButton";
-import { trophyComparator, TROPHY_SORTS, tierRank, type TrophySortKey } from "@/lib/trophy-comparator";
+import { trophyComparator, TROPHY_SORTS, type TrophySortKey } from "@/lib/trophy-comparator";
 import PaniniUsernamesPanel from "@/components/profile/PaniniUsernamesPanel";
 import { sumMoments, sumFmv, sumStaleFmv, sumStaleCount, countActiveCollections, groupWalletsByAddress } from "@/lib/dashboard/aggregate";
 import { publishedCollections, getCollection, getPublishedCollection } from "@/lib/collections";
@@ -22,7 +22,6 @@ import {
   tierColor,
   tierHoloClass,
   collectionMetaByUuid,
-  collectionMetaBySlug,
   timeAgo,
   formatCountdown,
 } from "@/lib/dashboard-format";
@@ -71,10 +70,6 @@ interface SavedWallet {
   verified_at: string | null;
   verification_method: string | null;
 }
-
-// Trophy slab shape comes from the get_trophy_slab_data RPC via
-// /api/profile/trophy-slabs?mine=1. See components/TrophySlab.tsx.
-type Trophy = TrophySlabData;
 
 interface HeroMoment {
   momentId: string;
@@ -2910,29 +2905,6 @@ function ModalShell({ onClose, title, children }: { onClose: () => void; title: 
         {children}
       </div>
     </div>
-  );
-}
-
-function TabBtn({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      onClick={onClick}
-      style={{
-        background: "transparent",
-        border: "none",
-        borderBottom: `2px solid ${active ? "var(--rpc-success)" : "transparent"}`,
-        color: active ? "var(--rpc-text-primary)" : "var(--rpc-text-muted)",
-        padding: "10px 14px",
-        fontFamily: condensedFont,
-        fontWeight: 800,
-        fontSize: 12,
-        letterSpacing: "0.08em",
-        textTransform: "uppercase",
-        cursor: "pointer",
-      }}
-    >
-      {children}
-    </button>
   );
 }
 

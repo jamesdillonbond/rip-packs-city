@@ -16,10 +16,6 @@ import { COLLECTION_LABEL } from "@/lib/analytics-sets-dashboard-compute"
 import { joinMetaParts, metaField } from "@/lib/format"
 import EditionGrid from "@/components/analytics/EditionGrid"
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
-import type {
-  SetsDetailResponse,
-  SetsDirectoryRow,
-} from "@/lib/analytics-types"
 
 export const revalidate = 21600
 export const dynamicParams = true

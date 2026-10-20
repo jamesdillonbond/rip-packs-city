@@ -7,7 +7,6 @@
 // banner appears when any pipeline is red. Same RPC_ADMIN_TOKEN localStorage
 // pattern as the other admin tools.
 
-import { useState } from "react";
 import { useAdminResource } from "@/lib/admin/use-admin-resource";
 import { accentText } from "@/lib/accent-text"
 

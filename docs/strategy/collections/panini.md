@@ -76,7 +76,7 @@ Live reads ~6:00 PM PT 10-17 unless marked otherwise.
 
 **Later**
 6. **Ingest latency.** Options are a runner change on Trevor's box or infra (held: no spend before revenue).
-7. **Serials-vs-`panini_sales` FMV input — gate MET 10-19 ~1:20 PM PT, decision is Trevor's.** `panini_sales_fmv_backtest` (45 d, covered editions): n **27,746** (677 on 09-30). `panini_sales` median-3: MdAPE **11.8 %**, ±25 % **60.9 %**; serials median-3: 13.4 % / 59.4 % (p90 100 % for both). `panini_sales` also prices **4,871** recent-sale targets the serials input cannot see (33.3 % / 47.5 %). Those editions already get a union-of-both price via the any-age read, so the gain there is the 30-day COUNT, which 1.3.0's MEDIUM and 1.3.1's spike guard key on. Switching `panini_recent_sales_fmv` re-prices most of the catalogue for ~1.5 points. It was held for Trevor on 09-30 and is still held: **ship as `panini-1.4.0` with `PANINI_FMV_ENGINE=1.3.1` as its kill switch if he says go.**
+7. ✅ **DECIDED 10-19 ~10:20 PM PT (under Trevor's "make decisions"): YES — ship `panini-1.4.0` on or after 10-24, AFTER the 1.3.x live read (Now 1), never into the same window; `PANINI_FMV_ENGINE=1.3.1` is the kill switch (roadmap-status.md "Decisions taken — the 10-19 thread").** ⓘ Item as filed: **Serials-vs-`panini_sales` FMV input — gate MET 10-19 ~1:20 PM PT, decision is Trevor's.** `panini_sales_fmv_backtest` (45 d, covered editions): n **27,746** (677 on 09-30). `panini_sales` median-3: MdAPE **11.8 %**, ±25 % **60.9 %**; serials median-3: 13.4 % / 59.4 % (p90 100 % for both). `panini_sales` also prices **4,871** recent-sale targets the serials input cannot see (33.3 % / 47.5 %). Those editions already get a union-of-both price via the any-age read, so the gain there is the 30-day COUNT, which 1.3.0's MEDIUM and 1.3.1's spike guard key on. Switching `panini_recent_sales_fmv` re-prices most of the catalogue for ~1.5 points. It was held for Trevor on 09-30 and is still held: **ship as `panini-1.4.0` with `PANINI_FMV_ENGINE=1.3.1` as its kill switch if he says go.**
 8. **External links / outreach.** Held by the accuracy gate (#66). No paid tier until 100 WAU.
 
 ## Decisions on record (do not re-litigate)
@@ -94,7 +94,7 @@ Live reads ~6:00 PM PT 10-17 unless marked otherwise.
 - **`OPENSEA_API_KEY` (#58):** only Trevor can create the account and secret.
 - **The runner box:** Panini ingest runs from his logged-in residential PC. Box pulls, wake/schedule health and any latency change all go through him.
 - **Any ingest-latency spend** (a hosted browser or residential proxy) is a pre-revenue spend decision.
-- **The 30-day FMV input (Next 7):** switch `panini_recent_sales_fmv` from serials to `panini_sales`? Measured narrowly better (MdAPE 11.8 vs 13.4 %, n 27,746) and it re-prices most of the catalogue. A yes ships as `panini-1.4.0` behind a kill switch.
+- ~~**The 30-day FMV input (Next 7):**~~ decided 10-19 (Next 7). — switch `panini_recent_sales_fmv` from serials to `panini_sales`? Measured narrowly better (MdAPE 11.8 vs 13.4 %, n 27,746) and it re-prices most of the catalogue. A yes ships as `panini-1.4.0` behind a kill switch.
 
 ## Where the detail lives
 

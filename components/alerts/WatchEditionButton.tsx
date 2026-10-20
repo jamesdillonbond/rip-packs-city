@@ -25,7 +25,6 @@ const TYPE_OPTIONS: { value: AlertType; label: string; unit: "$" | "%" }[] = [
 const RED = "var(--rpc-red)";
 // TEXT painted red uses the text-safe red (#FF4D40 dark / #B52A21 light); RED stays the fill.
 const RED_TEXT = "var(--rpc-red-text)";
-const MONO = "var(--font-mono)";
 
 export default function WatchEditionButton({
   editionKey,

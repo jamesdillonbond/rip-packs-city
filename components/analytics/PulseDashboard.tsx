@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { fetchJson } from "@/lib/analytics/fetch-json"
 import Link from "next/link"
 import {

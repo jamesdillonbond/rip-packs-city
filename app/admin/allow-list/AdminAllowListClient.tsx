@@ -342,7 +342,6 @@ function SignInGate({ onSignedIn }: { onSignedIn: (t: string) => void }) {
 // ── Dashboard ────────────────────────────────────────────────────────────────
 
 function Dashboard({
-  token,
   onSignOut,
 }: {
   token: string;

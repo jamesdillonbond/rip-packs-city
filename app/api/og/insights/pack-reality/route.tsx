@@ -24,10 +24,6 @@ function fmtInt(n: number | null): string {
   if (n == null) return "—"
   return Number(n).toLocaleString("en-US")
 }
-function fmtPct(n: number | null): string {
-  if (n == null) return "—"
-  return `${Number(n).toFixed(0)}%`
-}
 // 2dp percent, "—" when unknown. The OVER $100 tile used `?? 0`, so a failed
 // stats read printed "0.00%" — "no rip was worth over $100" — beside two "—"
 // tiles, on a card cached for an hour (2026-09-26).

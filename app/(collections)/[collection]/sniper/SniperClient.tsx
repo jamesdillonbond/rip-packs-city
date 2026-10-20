@@ -11,7 +11,7 @@ import { PackSubNav, subSectionFromParams } from "@/components/collection/PackSu
 import PackSniperClient from "@/app/insights/pack-sniper/PackSniperClient";
 import { getOwnerKey } from "@/lib/owner-key";
 import { useOwnFlowWallet } from "@/lib/hooks/useOwnFlowWallet";
-import { slugifyName, getEntityLabels } from "@/lib/entity-labels";
+import { getEntityLabels } from "@/lib/entity-labels";
 import { pinnacleRenderHref } from "@/lib/entity-href";
 import MomentDetailModal from "@/components/MomentDetailModal";
 import BadgeIcon from "@/components/BadgeIcon";

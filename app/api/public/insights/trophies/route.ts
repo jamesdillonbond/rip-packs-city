@@ -47,9 +47,6 @@ const VALID_COLLECTIONS: ReadonlySet<string> = new Set(TROPHY_COLLECTIONS);
 const VALID_TYPES = new Set(["one_of_one", "ultimate", "all"]);
 const VALID_SORTS = new Set(["fmv", "circulation"]);
 
-const SELECT_COLS =
-  "edition_id, external_id, collection, collection_id, name, player_name, set_name, team_name, tier, series, circulation_count, thumbnail_url, video_url, is_one_of_one, is_ultimate, fmv_usd, confidence, fmv_computed_at";
-
 export async function GET(req: NextRequest) {
   const startedAt = Date.now();
   const sp = new URL(req.url).searchParams;

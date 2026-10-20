@@ -6,10 +6,10 @@
   ],
   "counts": {
     "@next/next/no-html-link-for-pages": 92,
-    "@typescript-eslint/no-unused-vars": 74,
     "react-hooks/set-state-in-effect": 52,
     "react/no-unescaped-entities": 52,
     "@next/next/no-img-element": 28,
+    "@typescript-eslint/no-unused-vars": 18,
     "import/no-anonymous-default-export": 17,
     "react-hooks/exhaustive-deps": 16,
     "react-hooks/static-components": 15,

@@ -46,7 +46,7 @@ import {
   fmtCount,
   tsTileImg,
 } from "@/lib/pack-dist-format"
-import { sumPoolRemaining, orderedTiersWithSupply, pctOfPoolLabel, deriveDualPrice, computeTopPulls, type TopPull } from "@/lib/pack-dist-odds"
+import { sumPoolRemaining, orderedTiersWithSupply, pctOfPoolLabel, deriveDualPrice } from "@/lib/pack-dist-odds"
 import {
   detectHoldingPack,
   deriveSecondaryAskAnchor,

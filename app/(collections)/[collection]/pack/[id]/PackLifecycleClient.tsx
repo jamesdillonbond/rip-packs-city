@@ -27,7 +27,6 @@ import {
   flowscanAccountUrl,
   relativeTime,
   fmtUsd,
-  fmtPrice,
   fmtPriceWithUsd,
   formatMonthYear,
   resizedThumb,

@@ -116,7 +116,7 @@ async function fetchVideosForChunk(ids) {
       });
       clearTimeout(t);
       text = await res.text();
-    } catch (e) {
+    } catch {
       await sleep(400 * attempt);
       continue;
     }

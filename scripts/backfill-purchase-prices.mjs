@@ -163,7 +163,7 @@ async function fetchPage(cursor) {
     let stdout = "";
     try {
       stdout = readFileSync(outFile, "utf-8");
-    } catch (readErr) {
+    } catch {
       return { error: "curl_error", data: null, nextCursor: null, totalCount: 0 };
     }
 

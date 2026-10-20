@@ -21,8 +21,7 @@
  */
 
 import { readFileSync, writeFileSync, createReadStream } from "fs"
-import { resolve, dirname } from "path"
-import { fileURLToPath } from "url"
+import { resolve } from "path"
 import { createClient } from "@supabase/supabase-js"
 import { parse } from "csv-parse"
 import "dotenv/config"

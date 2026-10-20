@@ -32,7 +32,6 @@
 import { useCallback, useMemo, useState } from "react";
 
 const DISPLAY = "var(--font-display)";
-const MONO = "var(--font-mono)";
 const RED = "var(--rpc-red)";
 
 export type ShareSurface = "profile" | "trophy-case";

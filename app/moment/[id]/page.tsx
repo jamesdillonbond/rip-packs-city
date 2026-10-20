@@ -42,11 +42,7 @@ import {
   fetchActiveListingAsk,
   fetchCandyAsks,
   type CandyAsks,
-  type HighOffer,
-  type ParallelEdition,
-  type EditionBadge,
   type SpecialSerialRow,
-  type NotableSerialRow,
   type MomentBestOffer,
   type SubeditionSibling,
 } from "@/lib/moment-detail/fetchers"

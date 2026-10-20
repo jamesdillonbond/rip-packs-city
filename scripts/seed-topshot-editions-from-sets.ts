@@ -82,17 +82,6 @@ fcl.config()
   .put("flow.network", "mainnet")
   .put("accessNode.api", "https://rest-mainnet.onflow.org")
 
-const SERIES_MAP: Record<number, string> = {
-  0: "Series 1",
-  2: "Series 2",
-  3: "Summer 2021",
-  4: "Series 3",
-  5: "Series 4",
-  6: "Series 2023-24",
-  7: "Series 2024-25",
-  8: "Series 2025-26",
-}
-
 const CADENCE_GET_PLAYS_IN_SET = `
 import TopShot from 0x0b2a3299cc857e29
 access(all) fun main(setID: UInt32): [UInt32] {
