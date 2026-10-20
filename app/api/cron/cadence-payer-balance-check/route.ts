@@ -22,14 +22,6 @@ export const maxDuration = 30
 const PIPELINE_NAME = "cadence-payer-balance-check"
 const PAYER_ADDR = "0x73f55c4450b8d466"
 const ALERT_THRESHOLD_FLOW = 0.05
-// Flow stores balance as UFix64 (8-decimal fixed-point). REST returns it
-// as a stringified UFix64 like "12.34000000".
-function ufix64ToNumber(raw: unknown): number {
-  if (raw == null) return NaN
-  const n = Number(String(raw))
-  return Number.isFinite(n) ? n : NaN
-}
-
 function authorized(req: NextRequest): boolean {
   const expected = process.env.INGEST_SECRET_TOKEN
   const cronSecret = process.env.CRON_SECRET
@@ -75,7 +67,10 @@ export async function POST(req: NextRequest) {
       // Flow REST returns balance as UFix64 string-of-cents (e.g. "1000000"
       // representing 0.01 FLOW). The /v1/accounts endpoint uses the
       // "balance" field in UFix64 *cents* (raw uint64), so we divide by 1e8.
-      const rawBalance = Number(json.balance ?? "0")
+      // A response with no balance is a failed READ, not a zero balance: `?? "0"`
+      // here once turned a malformed answer into "payer balance 0 FLOW — top up".
+      const rawBalance =
+        typeof json.balance === "string" && json.balance.trim() !== "" ? Number(json.balance) : NaN
       if (!Number.isFinite(rawBalance)) {
         ok = false
         errMsg = `unparseable balance: ${JSON.stringify(json.balance)}`

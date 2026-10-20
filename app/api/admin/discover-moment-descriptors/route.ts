@@ -258,7 +258,7 @@ export async function POST(req: NextRequest) {
 
   const sp = req.nextUrl.searchParams
   const setID = sp.get("setID")
-  const playID = sp.get("playID") // accepted for symmetry; bySetIDs is what the schema filters on
+  // `playID` is accepted for symmetry but not read: bySetIDs is what the schema filters on.
 
   const report: Record<string, unknown> = {
     ran_at: new Date().toISOString(),

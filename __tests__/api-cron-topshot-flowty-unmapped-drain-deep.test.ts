@@ -138,7 +138,7 @@ describe("topshot-flowty-unmapped-drain — promotion happy path", () => {
           data: [
             uRow({ id: "u-1", nft_id: "101" }),
             uRow({ id: "u-2", nft_id: "102", price_usd: "9.99", serial_number: 44 }),
-            uRow({ id: "u-3", nft_id: "103", price_usd: null }),
+            uRow({ id: "u-3", nft_id: "103", price_usd: "2.00" }),
           ],
           error: null,
         },
@@ -193,7 +193,7 @@ describe("topshot-flowty-unmapped-drain — promotion happy path", () => {
       sold_at: "2026-04-01T00:00:00Z",
     })
     expect(byNft["102"]).toMatchObject({ edition_id: "ed-b", price_usd: 9.99, serial_number: 22 })
-    expect(byNft["103"]).toMatchObject({ edition_id: "ed-c", price_usd: 0, serial_number: 33 })
+    expect(byNft["103"]).toMatchObject({ edition_id: "ed-c", price_usd: 2, serial_number: 33 })
 
     // The getMinted resolution was persisted for the producer's cheap DB path.
     const mapUpsert = (spy.writes.nft_edition_map ?? []).find((w) => w.method === "upsert")
@@ -223,6 +223,30 @@ describe("topshot-flowty-unmapped-drain — promotion happy path", () => {
       retired: 0,
       bumped: 0,
     })
+  })
+
+  // 2026-10-19: a null price was promoted as a $0 sale (`parseFloat(price ?? "0") || 0`),
+  // and the happy-path test above pinned that ($0 for nft 103). A row with no
+  // positive price now stays in the queue, counted, and writes no sale.
+  it("a resolved row with NO price is held and counted, never promoted as a $0 sale", async () => {
+    fetchMock = installFetchMock([getMintedStub({})])
+    const spy = install({
+      unmapped_sales: [
+        { data: [uRow({ id: "u-9", nft_id: "109", price_usd: null })], error: null },
+        { data: null, error: null },
+      ],
+      wallet_moments_cache: { data: [{ moment_id: "109", edition_key: "5:50", serial_number: 11 }], error: null },
+      nft_edition_map: [{ data: [], error: null }, { data: null, error: null }],
+      editions: { data: [{ id: "ed-a", external_id: "5:50" }], error: null },
+      sales: { data: null, error: null },
+    })
+
+    const res = await POST(req())
+    expect(res.status).toBe(200)
+    expect((spy.writes.sales ?? []).flatMap((w) => w.rows)).toHaveLength(0)
+    const resolved = (spy.writes.unmapped_sales ?? []).flatMap((w) => w.rows).filter((r) => r.resolved_at)
+    expect(resolved).toHaveLength(0)
+    expect(terminalLog(spy.rpcCalls)?.p_extra).toMatchObject({ promoted: 0, no_price_skipped: 1 })
   })
 
   it("filters out non-topshot_flowty_history tags and rows at MAX_DRAIN_ATTEMPTS", async () => {

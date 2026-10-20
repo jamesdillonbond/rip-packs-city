@@ -77,8 +77,6 @@ const CEILING_DATE_ISO = "2026-04-01T00:00:00Z"
 const SPORK_FLOOR_HINT = 137_390_146
 
 const V2_FLOWTY_LISTING_COMPLETED = "A.3cdbb3d569211ff3.NFTStorefrontV2.ListingCompleted"
-const TOPSHOT_DEPOSIT_EVENT = "A.0b2a3299cc857e29.TopShot.Deposit"
-const TOPSHOT_WITHDRAW_EVENT = "A.0b2a3299cc857e29.TopShot.Withdraw"
 
 const FLOW_REST = "https://rest-mainnet.onflow.org"
 const CHUNK_SIZE = 250

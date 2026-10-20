@@ -11,7 +11,6 @@
 // request-memoized so the layout's generateMetadata call and this one share a
 // single read.
 
-import Link from "next/link"
 import { notFound } from "next/navigation"
 import { getPublicProfile } from "@/lib/profile/public-profile"
 import TrophyCaseShareClient from "./TrophyCaseShareClient"

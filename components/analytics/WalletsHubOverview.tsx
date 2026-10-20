@@ -105,12 +105,6 @@ export default function WalletsHubOverview() {
     (segments.casual || 0) +
     (segments.dust || 0)
 
-  const activeCount =
-    (totals.last_active_within_24h || 0) +
-    Math.max(
-      0,
-      (totals.last_active_within_7d || 0) - (totals.last_active_within_24h || 0)
-    )
   const totalActiveLoans =
     Math.round(
       (totals.avg_loans_per_borrower || 0) * (totals.borrowers || 0)

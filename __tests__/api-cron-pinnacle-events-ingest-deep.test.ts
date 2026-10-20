@@ -57,6 +57,7 @@ function listingEvent(opts: {
   seller?: string | null
   typeID?: string
   vaultTypeID?: string
+  noPrice?: boolean
 }) {
   const fields: Record<string, unknown> = {
     listingResourceID: cdc.uint64(opts.lrid),
@@ -65,6 +66,7 @@ function listingEvent(opts: {
     salePrice: cdc.ufix64(opts.price),
     salePaymentVaultType: cdc.nftType(opts.vaultTypeID ?? DUC_VAULT),
   }
+  if (opts.noPrice) delete fields.salePrice
   if (opts.seller !== null) {
     fields.storefrontAddress = { type: "Address", value: opts.seller ?? "0xabcabcabcabcabca" }
   }
@@ -188,6 +190,26 @@ describe("pinnacle-events-ingest — control paths", () => {
 })
 
 describe("pinnacle-events-ingest — scan + write", () => {
+  // 2026-10-19: `parseFloat(salePrice ?? "0") || 0` stored a listing with no
+  // price as a $0 DUC listing (price_usd 0). It is NULL now.
+  it("a listing with NO salePrice is stored with NULL prices, never as a $0 listing", async () => {
+    fetchMock = installFetchMock(
+      stubs({
+        sealedHeight: 2000,
+        proxyBody: {
+          events: [listingEvent({ height: 1100, txId: "tx9", nftId: "999", lrid: "9009", price: "1.00000000", seller: "0x9999999999999999", noPrice: true })],
+          blocks_scanned: 1000,
+        },
+      }),
+    )
+    const spy = install({ pinnacle_event_cursors: { data: { last_processed_height: 1000 }, error: null } })
+    await POST(req())
+    await runDeferred()
+    const rows = (spy.writes.pinnacle_listing_events ?? []).flatMap((w) => w.rows)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ nft_id: "999", price_native: null, price_usd: null })
+  })
+
   it("ingests Pinnacle listings (currency + usd derivation, seller-less filtered), advances the cursor", async () => {
     fetchMock = installFetchMock(
       stubs({

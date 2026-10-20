@@ -4,7 +4,6 @@ import { decodeV1SaleTx } from "@/lib/chains/flow/dapper-v1-tx-decode"
 import { loadRotatingWindow } from "@/lib/unmapped-rotating-window"
 import {
   ALLDAY_COLLECTION_ID,
-  COLLECTION_SLUG,
   ALLDAY_DEPOSIT_EVENT,
   ALLDAY_WITHDRAW_EVENT,
   BORROW_MOMENT_SCRIPT,

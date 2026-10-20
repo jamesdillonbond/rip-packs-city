@@ -8,19 +8,6 @@ const supabase = createClient(
 
 const TOPSHOT_GQL_DIRECT = "https://public-api.nbatopshot.com/graphql"
 
-// Query a single moment listing to get setID + playID integers from a UUID-format external_id.
-// We look up by playUuid using searchMomentListings which is known to work from the sniper feed.
-const GET_EDITION_IDS = `
-  query GetEditionIds($playID: ID!, $setID: ID!) {
-    getEditionByPlayAndSet(input: { playID: $playID, setID: $setID }) {
-      id
-      play { id stats { playerID } }
-      set { id flowName flowID }
-      flowID
-    }
-  }
-`
-
 // Fallback: use searchMomentListings with a filter to get one moment and extract setID/playID
 const SEARCH_BY_EDITION = `
   query SearchByEdition($setID: String!, $playID: String!) {

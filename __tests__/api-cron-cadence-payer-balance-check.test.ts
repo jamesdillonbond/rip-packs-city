@@ -116,4 +116,16 @@ describe("cadence-payer-balance-check — the alert's own write", () => {
     expect(body.ok).toBe(false)
     expect(String(body.error)).toMatch(/below alert threshold/)
   })
+
+  // 2026-10-19: `Number(json.balance ?? "0")` read a response with no balance as
+  // 0 FLOW and told the operator to top up a wallet whose balance it never read.
+  it("a response with NO balance is an unparseable read, never a 0 FLOW reading", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, status: 200, json: async () => ({}), text: async () => "" })))
+    const res = await POST(makeReq({ method: "POST", auth: "Bearer test-ingest-secret" }))
+    const body = await res.json()
+    expect(body.ok).toBe(false)
+    expect(String(body.error)).toMatch(/unparseable balance/)
+    expect(String(body.error)).not.toMatch(/below alert threshold|top up/)
+    expect(body.balance_flow).not.toBe(0)
+  })
 })

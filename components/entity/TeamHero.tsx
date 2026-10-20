@@ -157,7 +157,6 @@ export default function TeamHero({
   secondaryColor,
   leagueLabel,
   externalId,
-  isFranchise,
   nextGame,
   followLeague,
   followShortSlug,

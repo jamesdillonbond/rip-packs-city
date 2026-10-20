@@ -235,7 +235,10 @@ export async function POST(req: NextRequest) {
 
           const listingResourceID = String(payload.listingResourceID)
           const nftID = String(payload.nftID)
-          const salePrice = parseFloat(String(payload.salePrice ?? "0")) || 0
+          // A missing / unparseable salePrice is NULL, not a $0 listing (was
+          // `parseFloat(salePrice ?? "0") || 0` until 2026-10-19; 0 such rows that day).
+          const parsedPrice = payload.salePrice == null ? NaN : parseFloat(String(payload.salePrice))
+          const salePrice = Number.isFinite(parsedPrice) ? parsedPrice : null
           const vaultTypeId = extractTypeId(payload.salePaymentVaultType)
           const currency = deriveCurrency(vaultTypeId)
           const priceUsd = isUsdEquivalent(currency) ? salePrice : null

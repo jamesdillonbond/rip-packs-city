@@ -629,7 +629,7 @@ async function run(req: NextRequest): Promise<NextResponse> {
     if (!key || !/^\d+:\d+$/.test(key)) {
       return NextResponse.json({ ok: false, error: "dryRun needs &edition=setID:playID" }, { status: 400 })
     }
-    const [setIdInt, playIdInt] = key.split(":")
+    const [, playIdInt] = key.split(":")
     try {
       // Resolve set uuid from our DB.
       const { data: ed } = await supabaseAdmin

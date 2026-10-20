@@ -157,7 +157,6 @@ export async function decodeV1SaleTx(
 
     let grossSum = 0
     let splitSum = 0
-    let grossCount = 0
     const allDucAmounts: number[] = []
 
     for (const evt of events) {
@@ -195,7 +194,6 @@ export async function decodeV1SaleTx(
         const from = payload.from
         if (typeof from === "string" && from === DUC_CONTRACT_ADDRESS) {
           grossSum += amount
-          grossCount += 1
         } else {
           splitSum += amount
         }

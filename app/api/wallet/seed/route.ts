@@ -114,16 +114,6 @@ async function fetchIds(cadence: string, wallet: string): Promise<string[]> {
   return arr.map((v) => String(v.value))
 }
 
-type EditionRow = {
-  external_id: string | null
-  player_name?: string | null
-  character_name?: string | null
-  set_name?: string | null
-  tier?: string | null
-  thumbnail_url?: string | null
-  ask_price?: number | null
-}
-
 type FmvRow = {
   edition_id: string
   fmv_usd: number | null

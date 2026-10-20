@@ -34,8 +34,6 @@ import { ImageResponse } from "next/og";
 import { PDFDocument, StandardFonts, rgb, type PDFImage } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import QRCode from "qrcode";
-import jpeg from "jpeg-js";
-import { PNG } from "pngjs";
 import { supabase as supabaseAnon } from "@/lib/supabase";
 import { isSupportedFontBuffer } from "@/lib/og/font-bytes";
 import { readBrandFontsFromDisk } from "@/lib/og/brand-fonts";
@@ -46,7 +44,6 @@ import {
   hexToRgba,
   tierHex,
   normalizeThumbUrl,
-  type Rgba,
   decodeToRgba,
   stripBackgroundAndCrop,
   downscaleRgba,

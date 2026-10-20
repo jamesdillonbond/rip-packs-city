@@ -401,11 +401,19 @@ async function run(req: NextRequest): Promise<NextResponse> {
     const toInsert: Array<{ saleRow: any; unmappedId: string; saleId: string }> = []
     const retireIds: string[] = []
     const bumpAttempt: UnmappedRow[] = []
+    let noPriceSkipped = 0
 
     for (const r of rows) {
       const editionKey = nftToEditionKey.get(r.nft_id) ?? null
       const editionId = editionKey ? editionKeyToId.get(editionKey) : null
-      const price = parseFloat(String(r.price_usd ?? "0")) || 0
+      // A row with no positive price stays in the queue, counted: inserting it
+      // would write a $0 sale into `sales` (FMV's fact table). It was
+      // `parseFloat(price ?? "0") || 0` until 2026-10-19 (population 0 that day).
+      const price = Number(r.price_usd)
+      if (!(Number.isFinite(price) && price > 0)) {
+        noPriceSkipped++
+        continue
+      }
 
       if (editionId) {
         const saleId = crypto.randomUUID()
@@ -523,6 +531,7 @@ async function run(req: NextRequest): Promise<NextResponse> {
     extra.dup_skipped = dupSkipped
     extra.retired = rowsRetired
     extra.bumped = bumpAttempt.length
+    extra.no_price_skipped = noPriceSkipped
   } catch (err) {
     ok = false
     errorMsg = err instanceof Error ? err.message : String(err)

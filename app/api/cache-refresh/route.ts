@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server"
 import fcl from "@/lib/chains/flow/flow"
 import * as t from "@onflow/types"
 import { createClient } from "@supabase/supabase-js"
-import { getCollection } from "@/lib/collections"
 import { makeInstanceRateLimiter, clientKeyFrom } from "@/lib/http/instance-rate-limit"
 
 const supabase: any = createClient(
