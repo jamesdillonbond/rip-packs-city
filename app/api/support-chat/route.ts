@@ -440,7 +440,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "check_wallet",
-    description: "Look up a collector's wallet: FULL portfolio totals (moment count + FMV) across ALL five collections in one call, per-collection breakdown, top moments, and rarest holding — served from the indexed wallet cache. When present, standing_best_offer_total_usd is the total the wallet would receive by accepting the single highest live on-chain bid on each held moment (a DapperOffersV2 marketplace signal, NOT FMV) — cite it as 'standing offers on your holdings', and only when the field is present. For a cross-collection question ('what's my best moment?', 'what am I worth?'), call ONCE with no collectionId — do NOT loop over collections. Pass collectionId only to get that collection's own top-5 detail. Accepts a Flow wallet address (0x + 16 hex) OR a Top Shot / Dapper SSO username (resolved via a layered cache; cached on first hit). On Panini (collectionId panini-blockchain, the default on a Panini page) it takes a PANINI USERNAME instead and returns what RPC has seen under that name (Panini has no wallets, and a Panini username is unrelated to a Top Shot account of the same name). If the username can't be resolved, ask for the 0x address; do NOT pretend the wallet was empty. If the wallet isn't indexed yet, a live Top Shot fallback returns the first page only — the response says so; report it honestly.",
+    description: "Look up a collector's wallet: FULL portfolio totals (moment count + FMV) across every wallet-held collection (Top Shot, All Day, Golazos, Disney Pinnacle, UFC Strike, Candy MLB; Panini collectors are usernames, read on Panini) in one call, per-collection breakdown, top moments, and rarest holding — served from the indexed wallet cache. When present, standing_best_offer_total_usd is the total the wallet would receive by accepting the single highest live on-chain bid on each held moment (a DapperOffersV2 marketplace signal, NOT FMV) — cite it as 'standing offers on your holdings', and only when the field is present. For a cross-collection question ('what's my best moment?', 'what am I worth?'), call ONCE with no collectionId — do NOT loop over collections. Pass collectionId only to get that collection's own top-5 detail. Accepts a Flow wallet address (0x + 16 hex) OR a Top Shot / Dapper SSO username (resolved via a layered cache; cached on first hit). On Panini (collectionId panini-blockchain, the default on a Panini page) it takes a PANINI USERNAME instead and returns what RPC has seen under that name (Panini has no wallets, and a Panini username is unrelated to a Top Shot account of the same name). If the username can't be resolved, ask for the 0x address; do NOT pretend the wallet was empty. If the wallet isn't indexed yet, a live Top Shot fallback returns the first page only — the response says so; report it honestly.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -2560,7 +2560,7 @@ async function executeToolInner(
       }
 
       // ── Indexed-cache path (preferred): full-portfolio truth in one call ──
-      // Same SECDEF RPC the public /share card uses. Covers all 5 collections
+      // Same SECDEF RPC the public /share card uses. Covers every wallet-held collection (6; Panini is by username)
       // with real totals. The old path walked the chain and silently reported
       // a single 24-row page as the whole portfolio (and an unknown
       // collectionId fell through to the Top Shot walk — the "UFC mirrors
