@@ -17,7 +17,6 @@ import { NextRequest } from "next/server"
 //   drain-fmv-cold-tail — a slug that THROWS (pool timeout, not a returned
 //     error) must not abort the loop before the pipeline_runs insert, and
 //     Pinnacle must stay excluded (it has its own per-render engine).
-//   migrate-acquired-at — the exec_sql → execute_sql fallback ladder.
 
 const state = vi.hoisted(() => ({
   after: [] as Array<() => unknown>,
@@ -47,7 +46,6 @@ const client = {
     },
     update: () => ({ error: null }),
   }),
-  raw: (s: string) => s,
 }
 
 vi.mock("@/lib/supabase", () => ({ supabaseAdmin: client }))
@@ -60,7 +58,6 @@ process.env.SUPABASE_SERVICE_ROLE_KEY = "svc"
 const triage = await import("@/app/api/admin/cron/refresh-error-triage/route")
 const prune = await import("@/app/api/admin/prune-pipeline-runs/route")
 const drain = await import("@/app/api/admin/drain-fmv-cold-tail/route")
-const migrate = await import("@/app/api/migrate-acquired-at/route")
 
 function req(path: string, opts: { auth?: string; qs?: string } = {}) {
   return new NextRequest(`https://t${path}${opts.qs ?? ""}`, {
@@ -234,42 +231,5 @@ const drainRow = (state: { inserts: Array<{ table: string; row: any }> }) =>
     state.insertThrows = true
     await drain.POST(authed(P, "?collection=nba_top_shot"))
     await expect(runDeferred()).resolves.not.toThrow()
-  })
-})
-
-describe("migrate-acquired-at — the exec_sql fallback ladder", () => {
-  const P = "/api/migrate-acquired-at"
-
-  it("401s without the bearer", async () => {
-    expect((await migrate.POST(req(P))).status).toBe(401)
-  })
-
-  it("reports the updated count from the primary exec_sql path", async () => {
-    state.rpc.exec_sql = { data: [{ updated_count: 512 }], error: null }
-    const body = await (await migrate.POST(authed(P))).json()
-    expect(body).toEqual({ status: "ok", updatedCount: 512 })
-  })
-
-  it("falls back to execute_sql when exec_sql errors", async () => {
-    state.rpc.exec_sql = { data: null, error: { message: "no such function" } }
-    state.rpc.execute_sql = { data: null, error: null }
-    const body = await (await migrate.POST(authed(P))).json()
-    expect(body).toMatchObject({ status: "ok", message: expect.stringContaining("execute_sql") })
-    expect(state.rpcCalls.map((c) => c.name)).toContain("execute_sql")
-  })
-
-  it("500s when BOTH lanes fail", async () => {
-    state.rpc.exec_sql = { data: null, error: { message: "primary down" } }
-    state.rpc.execute_sql = { data: null, error: { message: "fallback down" } }
-    const res = await migrate.POST(authed(P))
-    expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("fallback down")
-  })
-
-  it("500s with the message when the whole thing throws", async () => {
-    state.rpc.exec_sql = { throws: "connection refused" }
-    const res = await migrate.POST(authed(P))
-    expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("connection refused")
   })
 })

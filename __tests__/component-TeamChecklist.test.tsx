@@ -46,7 +46,7 @@ const anonProgress = {
 // the checklist path, so match "-progress" FIRST.
 // /api/profile/me defaults to SIGNED OUT ({ user: null }) — the anonymous render.
 function routeFetch(opts: { checklist: (url: string) => Promise<Response>; progress: (url: string) => Promise<Response>; walletSearch?: () => Promise<Response>; me?: () => Promise<Response> }) {
-  return vi.fn((url: string, init?: any) => {
+  return vi.fn((url: string, _init?: any) => {
     if (url.includes("/api/profile/me")) return (opts.me ?? (() => res(true, { user: null })))()
     if (url.includes("/api/wallet-search")) return (opts.walletSearch ?? (() => res(true, {})))()
     // The view-toggle probe (2026-09-29; Full editions 09-30) — its own route, answered here so it

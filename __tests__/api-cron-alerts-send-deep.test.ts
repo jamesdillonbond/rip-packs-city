@@ -67,7 +67,6 @@ function delivery(id: string, channel: string, target: string) {
   return { id, channel, channel_user_id: target, owner_key: "o", alert_kind: "deal", status: "sending", attempts: 0, payload: {} }
 }
 
-type Fixtures = Parameters<typeof makeInstrumentedSupabaseFixture>[0]
 function install() {
   const spy = makeInstrumentedSupabaseFixture({ "rpc:log_pipeline_run": { data: null, error: null } })
   state.sb = spy.fixture

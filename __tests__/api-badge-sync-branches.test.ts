@@ -32,7 +32,6 @@ vi.mock("@/lib/chains/flow/topshot", () => ({
 
 const { POST } = await import("@/app/api/badge-sync/route")
 
-const TOPSHOT = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
 const RY = "2dbd4eef-4417-451b-b645-90f02574a401"
 const RP = "0ddb2c58-4385-443b-9c70-239b32cddbd4"
 const TSD = "a75e247a-ecbf-45a6-b1be-58bb07a1b651"

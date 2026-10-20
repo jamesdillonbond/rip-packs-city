@@ -528,7 +528,7 @@ describe("pinnacle-metadata-backfill — load failures + limits", () => {
         { data: [], error: null }, // Q2
       ],
     })
-    const body = await (await GET(req())).json()
+    await GET(req())
     const { args, extra } = logExtra(spy)
     expect(extra.q1_eligible).toBe(0)
     expect(extra.q1_skipped_no_sample).toBe(1)

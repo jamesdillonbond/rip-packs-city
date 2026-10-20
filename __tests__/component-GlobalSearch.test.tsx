@@ -16,12 +16,10 @@ import GlobalSearch from "@/components/search/GlobalSearch"
 
 let response: { ok: boolean; body: any }
 let urls: string[]
-let resolvers: Array<() => void>
 
 beforeEach(() => {
   push.mockReset()
   urls = []
-  resolvers = []
   response = { ok: true, body: { results: [], meta: {} } }
   vi.stubGlobal(
     "fetch",

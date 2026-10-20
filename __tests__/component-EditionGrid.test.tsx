@@ -4,7 +4,7 @@ import { render, cleanup, screen } from "@testing-library/react"
 
 // next/image renders an <img> in jsdom but wants width/height; stub it to a
 // plain img so the grid render doesn't warn/throw on the fixture art.
-vi.mock("next/image", () => ({ default: (props: any) => {
+vi.mock("next/image", () => ({ default: (_props: any) => {
   return null
 } }))
 vi.mock("@/lib/ipfs-media", () => ({ proxyIpfsUrl: (u: string) => u, proxyIpfsImageUrl: (u: string) => u, thumbWidthFor: () => 640 }))

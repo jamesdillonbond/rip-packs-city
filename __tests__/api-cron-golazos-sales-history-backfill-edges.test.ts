@@ -67,7 +67,6 @@ const { POST } = await import("@/app/api/cron/golazos-sales-history-backfill/rou
 
 const GOLAZOS_NFT = "A.87ca73a41bb50ad5.Golazos.NFT"
 const CEILING = 148_000_000
-const START = CEILING - 250
 
 function flowtyPayload(nftId: string, price: string) {
   return cdcEvent(V2_FLOWTY_LISTING_COMPLETED, {

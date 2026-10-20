@@ -84,12 +84,6 @@ function req(id: string, token: string | null = "breaks-token"): [NextRequest, {
   ]
 }
 
-async function runDeferred() {
-  const cbs = [...state.afterCbs]
-  state.afterCbs.length = 0
-  for (const cb of cbs) await cb()
-}
-
 let fetchMock: ReturnType<typeof installFetchMock> | null = null
 function stubFetch(stubs: FetchStub[]) {
   fetchMock = installFetchMock(stubs)

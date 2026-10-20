@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest"
-import { render, cleanup, within, fireEvent, waitFor } from "@testing-library/react"
+import { render, cleanup, fireEvent, waitFor } from "@testing-library/react"
 import CollectionMomentTable from "@/components/collection/CollectionMomentTable"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"

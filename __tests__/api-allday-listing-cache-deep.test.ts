@@ -331,7 +331,7 @@ describe("allday-listing-cache — degradation + fatal honesty", () => {
     fetchMock = installFetchMock([
       {
         match: (url: string) => url.includes("flowty-proxy"),
-        respond: (_url: string, init?: RequestInit) => {
+        respond: (_url: string, _init?: RequestInit) => {
           // Page 0 of the asc sweep lands; the very next page fails. The run
           // therefore holds a real, non-empty, INCOMPLETE book — the shape
           // `upserted > 0` could never distinguish from a complete one.

@@ -614,7 +614,7 @@ describe("pinnacle-listings-indexer — ListingAvailable ingestion + resolution 
         scripts: [scriptResult(null)],
       }),
     )
-    const spy = install({
+    install({
       event_cursor: { data: { last_processed_block: 1000 }, error: null },
       pinnacle_nft_map: { data: [], error: null },
       wallet_moments_cache: { data: [], error: null },

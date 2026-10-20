@@ -18,9 +18,8 @@ const st = vi.hoisted(() => ({
 vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: {
     from(table: string) {
-      let op: "select" | "update" = "select"
       const b: any = {
-        select: () => b, update: (patch: any) => { op = "update"; st.updatePatch = patch; return b },
+        select: () => b, update: (patch: any) => { st.updatePatch = patch; return b },
         eq: () => b, order: () => b,
         maybeSingle: async () => st.brk,
         then: (resolve: any) => resolve(table === "break_spots" ? st.spots : st.upd),

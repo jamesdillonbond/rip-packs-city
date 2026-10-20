@@ -16,7 +16,7 @@ vi.mock("@/lib/cache", () => ({
 
 vi.mock("fs", () => ({
   promises: {
-    readFile: (...args: unknown[]) => readFileMock(),
+    readFile: (..._args: unknown[]) => readFileMock(),
   },
 }))
 

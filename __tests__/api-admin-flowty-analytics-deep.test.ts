@@ -31,7 +31,7 @@ const salesRows = [
 ]
 const loanRows = [{ day: "2026-07-01", collection: "topshot", loan_count: 2, gross_volume_usd: 400 }]
 const activationRows = [{ first_at: "2026-07-01T00:00:00Z", collection: "topshot", role: "buyer" }]
-const board = (name: string) => [{ address: "0xa", volume_usd: 500 }, { address: "0xb", volume_usd: 300 }]
+const board = (_name: string) => [{ address: "0xa", volume_usd: 500 }, { address: "0xb", volume_usd: 300 }]
 
 function fullFixture(): Fixtures {
   return {

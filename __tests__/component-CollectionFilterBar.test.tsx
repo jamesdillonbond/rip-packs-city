@@ -51,7 +51,7 @@ describe("CollectionFilterBar", () => {
   })
 
   it("each select dispatches SET with its own field", () => {
-    const { getByDisplayValue, dispatchView, getByText } = renderBar()
+    const { dispatchView, getByText } = renderBar()
     // player select currently shows "All Players" (value "all")
     fireEvent.change(getByText("All Players").closest("select")!, { target: { value: "Damian Lillard" } })
     expect(dispatchView).toHaveBeenCalledWith({ type: "SET", field: "playerFilter", value: "Damian Lillard" })

@@ -55,7 +55,6 @@ process.env.CRON_SECRET = "cron-token"
 
 const { POST, GET } = await import("@/app/api/admin/recover-v1-budget-exhausted/route")
 
-const ALLDAY = "dee28451-5d62-409e-a1ad-a83f763ac070"
 
 type Fixtures = Parameters<typeof makeInstrumentedSupabaseFixture>[0]
 function install(fixtures: Fixtures) {

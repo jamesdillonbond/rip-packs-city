@@ -74,7 +74,7 @@ beforeEach(() => {
   state.user = null; state.resolved = null; state.resolveThrows = false; state.upsertErr = null; state.rpc = { data: 3, error: null }; state.userRetry = false; state.swUpserts = []; state.swUpdates = []
   userCalls = 0; captured.fn = null
   delete process.env.INGEST_SECRET_TOKEN
-  fetchMock = vi.fn(async (url: string) => ({ ok: true, status: 200 }))
+  fetchMock = vi.fn(async (_url: string) => ({ ok: true, status: 200 }))
   vi.stubGlobal("fetch", fetchMock)
 })
 afterEach(() => vi.unstubAllGlobals())

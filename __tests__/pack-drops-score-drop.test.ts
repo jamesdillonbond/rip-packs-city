@@ -14,10 +14,6 @@ import type {
 // so this is the only place the pricing math is exercised. keyOf lowercases
 // player+set, so the pricing map must be built the same way to match.
 
-function keyOf(player: string | null, set: string | null, series: number | null) {
-  return `${(player ?? "").toLowerCase()}|${(set ?? "").toLowerCase()}|${series ?? ""}`
-}
-
 function asset(o: Partial<VaultopolisAsset>): VaultopolisAsset {
   return {
     nftId: 1,

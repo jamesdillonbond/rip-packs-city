@@ -220,6 +220,56 @@ describe("golazos-listings-indexer", () => {
     })
   })
 
+  // 2026-10-19: V2 Dapper is the PRIMARY venue (route header) and this file built
+  // its payload and its fetch route but never fed one through — found as an
+  // unused-helper lint hit. The row must land as `direct_v2` (never `direct`,
+  // Flowty's label) with the FUT sale price as USD.
+  it("V2 Dapper Golazos listing -> direct_v2 row priced from salePrice (FUT = USD)", async () => {
+    const tx = "7".repeat(64)
+    fetchMock = installFetchMock(
+      flowRestStubs({
+        v2DapperAvail: [
+          eventBlock({
+            height: 1120,
+            txId: tx,
+            eventType: V2_DAPPER_AVAIL,
+            payload: v2AvailPayload({ nftId: "446", lrid: "5003", price: "12.50000000", typeID: GOLAZOS_NFT }),
+          }),
+        ],
+      }),
+    )
+    const spy = install({
+      event_cursor: { data: { last_processed_block: 1000 }, error: null },
+      wallet_moments_cache: { data: [{ moment_id: "446", edition_key: "56" }], error: null },
+      editions: { data: [{ id: "uuid-g56", external_id: "56" }], error: null },
+      cached_listings_v2: [{ data: null, error: null }],
+    })
+
+    const res = await golazos.POST(req("/api/golazos-listings-indexer"))
+    expect(res.status).toBe(200)
+    await runDeferred()
+
+    const upserts = (spy.writes.cached_listings_v2 ?? [])
+      .filter((w) => w.method === "upsert")
+      .flatMap((w) => w.rows)
+    expect(upserts).toHaveLength(1)
+    expect(upserts[0]).toMatchObject({
+      listing_resource_id: "5003",
+      source: "direct_v2",
+      flow_id: "446",
+      edition_id: "uuid-g56",
+      collection_id: GOLAZOS_ID,
+      seller_address: SELLER,
+      price_usd: 12.5,
+      currency: "FUT",
+      block_height: 1120,
+      tx_hash: tx,
+    })
+    const log = terminalLog(spy.rpcCalls, "golazos-listings-indexer")
+    expect(log).toMatchObject({ p_ok: true, p_rows_written: 1 })
+    expect((log?.p_extra as Record<string, unknown>).v2_dapper_available_count).toBe(1)
+  })
+
   it("ignores non-Golazos NFT types on the shared storefronts", async () => {
     const tx = "6".repeat(64)
     fetchMock = installFetchMock(

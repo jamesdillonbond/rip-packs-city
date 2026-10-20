@@ -236,7 +236,7 @@ describe("pinnacle-sales-indexer — scan + write", () => {
     fetchMock = installFetchMock(
       flowStubs({ events: [pinnacleSale("444", "3.00000000", "4".repeat(64), CURSOR_START + 20)] }),
     )
-    const spy = install({
+    install({
       event_cursor: cursorFixture,
       pinnacle_nft_map: { data: [{ nft_id: "444", edition_key: "RC3:Standard:1" }], error: null },
       pinnacle_sales: { error: { code: "23505", message: "duplicate key value" } },

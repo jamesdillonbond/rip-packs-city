@@ -157,7 +157,7 @@ export function makeSupabaseFixture(
   const makeBuilder = (table: string) => {
     const b: Record<string, unknown> = {}
     const chain =
-      (...args: unknown[]) =>
+      (..._args: unknown[]) =>
       () =>
         b
     for (const m of [

@@ -25,6 +25,24 @@ const eslintConfig = defineConfig([
     files: ["app/**/*.{js,jsx,ts,tsx}", "components/**/*.{js,jsx,ts,tsx}"],
     rules: { ...jsxA11y.flatConfigs.recommended.rules },
   },
+  // `no-unused-vars` honours the `_` prefix for ARGUMENTS, caught errors and
+  // destructured array slots (2026-10-19). Measured that day: 187 of the rule's
+  // 305 hits were names their authors had already written as `_params`, `_t`,
+  // `_init` — positional parameters of a mock or handler signature, which cannot
+  // be deleted without shifting the ones after them. The prefix is the author's
+  // claim that the slot is unused ON PURPOSE; counting it anyway taught nothing
+  // and buried the 118 hits that are real dead code. ⚠ Plain VARIABLES are NOT
+  // exempted: an `_`-named `const` that nothing reads is still dead code.
+  // `ignoreRestSiblings` covers `const { x: _drop, ...rest } = obj`, the idiom
+  // for "everything but x" — the dropped key exists only to shape `rest`.
+  {
+    rules: {
+      "@typescript-eslint/no-unused-vars": [
+        "warn",
+        { argsIgnorePattern: "^_", caughtErrorsIgnorePattern: "^_", destructuredArrayIgnorePattern: "^_", ignoreRestSiblings: true },
+      ],
+    },
+  },
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:

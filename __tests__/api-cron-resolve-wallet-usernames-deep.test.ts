@@ -23,7 +23,7 @@ const st = vi.hoisted(() => ({
 vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: {
     rpc: async () => st.unresolved,
-    from(table: string) {
+    from(_table: string) {
       const b: any = {
         upsert: (row: any) => { st.upserts.push(row); return { then: (r: any) => r(st.upsert) } },
         insert: (row: any) => { st.pipelineRuns.push(row); return { then: (r: any) => r({ error: null }) } },

@@ -53,7 +53,6 @@ const golazos = await import("@/app/api/golazos-listings-indexer/route")
 
 const V1_AVAIL = "A.4eb8a10cb9f87357.NFTStorefront.ListingAvailable"
 const V1_COMPL = "A.4eb8a10cb9f87357.NFTStorefront.ListingCompleted"
-const V2_DAPPER_AVAIL = "A.4eb8a10cb9f87357.NFTStorefrontV2.ListingAvailable"
 const SELLER = "0xbbbbbbbbbbbbbbbb"
 const address = (v: string) => ({ type: "Address", value: v })
 
