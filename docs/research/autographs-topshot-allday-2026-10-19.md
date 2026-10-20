@@ -83,6 +83,7 @@ Rookie Debut: Signature Edition /50 (45/45) · Metallic Gold LE Signature Editio
 - **`autograph_sweep_requests` has no retention.** It grows ~200 rows/day (one per dispatched page), about 75k/year. Harmless at that size; the cleanup needs a DELETE, which the Supabase MCP holds, so add one from the dashboard if it ever matters.
 - **Pending (Trevor, dashboard SQL editor — the MCP holds DROPs):** remove the census scratch objects, keeping `audit_20261019_autograph_editions` (the raw census):
   `DROP FUNCTION IF EXISTS public.audit_20261019_autograph_sweep_dispatch(integer), public.audit_20261019_autograph_extract(), public.audit_20261019_autograph_extract_batch(integer); DROP TABLE IF EXISTS public.audit_20261019_autograph_sweep_reqs;`
+- **`ask_seen_at` is not one meaning:** Top Shot's is when the ask was last confirmed; All Day's is when the listing was created (from `allday_edition_floor_ask`, the site-wide ghost-filtered floor). On 10-19, 54 of 75 listed All Day asks were older than 30 days by that measure (e.g. a $875,000 ask on a 1/1 Super Bowl LX Marquee listed in June). The board shows the ask, not its age; this is the same All Day floor the edition pages and Sniper use.
 - **Not built, on purpose:** a `?collection=` deep link to the board's All Day tab (the page is ISR, `revalidate = 3600`; reading `searchParams` would make it dynamic). The edition chip lands on the Top Shot tab; All Day is one click.
 
 ## Decided NOT to build (2026-10-19 ~9:55 PM PT): pricing a signed edition off its unsigned printing
