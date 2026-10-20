@@ -38,11 +38,16 @@ describe("the concierge prompt does not call a published collection board-only",
     expect(names.some((n) => planted.toLowerCase().includes(n.toLowerCase()))).toBe(true)
   })
 
-  it("Panini's tabs are derived from the registry, never hand-kept", () => {
+  it("Panini's tabs are derived from the registry, never hand-kept", async () => {
     expect(ROUTE).toContain('getCollection("panini-blockchain")?.pages')
     expect(ROUTE).toContain("${PANINI_TAB_PATHS}")
+    // Re-pinned 2026-10-19 (premise changed): the hand-kept ["overview", "market"] was the
+    // 09-25 tab set; Panini has had 7 tabs since 09-28. Derive it, as the Candy case does.
+    const { getCollection } = await import("@/lib/collections")
+    const pages = (getCollection("panini-blockchain")?.pages ?? []) as readonly string[]
+    expect(pages.length).toBeGreaterThanOrEqual(2)
     for (const m of stripComments(ROUTE).matchAll(/\/panini-blockchain\/([a-z-]+)/g)) {
-      expect(["overview", "market"], `/panini-blockchain/${m[1]} is not a Panini tab`).toContain(m[1])
+      expect(pages, `/panini-blockchain/${m[1]} is not a Panini tab`).toContain(m[1])
     }
   })
 
