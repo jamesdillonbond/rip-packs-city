@@ -67,6 +67,7 @@ import {
   fetchPackRow,
   fetchDistFallback,
   fetchPackLifecycle,
+  hasCompleteOpenHistory,
   fetchPackRealizedEv,
   fetchAllDayCorrectedEv, fetchPinnacleDropEv, fetchTopshotAtlasDistCounts,
   fetchPackMarket,
@@ -2167,15 +2168,14 @@ async function PackStreamedTop({
   const lcDepletionAuthoritative = authoritativeDepletionPct !== null
   const showLifecycle = lcOpened !== null && lcOpened > 0
   const lcInferredOnly = (lcConfirmed ?? 0) === 0 && (lcInferred ?? 0) > 0
-  // TS + AllDay pack-open history is reconstructed to genesis via the Dapper
-  // searchPackNft registry (complete). Golazos remains on-chain-window only.
   // AllDay's v_allday_pack_lifecycle count is complete (on-chain open ingest), and
-  // so is Pinnacle's v_pinnacle_pack_lifecycle (91,471 opens = Dapper's index, 10-10).
+  // so are Pinnacle's v_pinnacle_pack_lifecycle (91,471 opens = Dapper's index, 10-10)
+  // and Golazos' v_golazos_pack_lifecycle (78,830 = the index's total, 10-19).
   // Top Shot's get_pack_lifecycle_row counts only opens ATTRIBUTED to this dist via
   // the pack_rips bridge (partial: ~20% and growing) — NOT the complete open history,
   // which lives in the supply counters shown in the KPI row above (total_opened /
   // Depletion). Label the TS number as the sample it is so it never contradicts them.
-  const lcSince = collection === "nfl-all-day" || collection === "disney-pinnacle" ? "complete open history" : "attributed rips · sample"
+  const lcSince = hasCompleteOpenHistory(collection) ? "complete open history" : "attributed rips · sample"
 
   // Modeled-vs-realized reality check
   const reModeled = num(realizedEv?.modeled_gross_ev)

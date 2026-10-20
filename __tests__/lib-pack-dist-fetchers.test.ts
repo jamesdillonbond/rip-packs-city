@@ -28,6 +28,7 @@ import {
   fetchPackRow,
   fetchDistFallback,
   fetchPackLifecycle,
+  hasCompleteOpenHistory,
   fetchPackRealizedEv,
   fetchAllDayCorrectedEv,
   fetchPinnacleDropEv,
@@ -277,8 +278,10 @@ describe("fetchTopPulls — a failed pool read must not read as an unindexed poo
 
 describe("a section that does not apply to the collection reports ok:true", () => {
   it.each([
-    ["fetchPackLifecycle", () => fetchPackLifecycle("laliga-golazos", "1", makeDb({}).db)],
-    ["fetchPackRealizedEv", () => fetchPackRealizedEv("laliga-golazos", "1", makeDb({}).db)],
+    // Re-pinned 2026-10-19 from laliga-golazos, which gained v_golazos_pack_lifecycle;
+    // UFC still has no pack data at all.
+    ["fetchPackLifecycle", () => fetchPackLifecycle("ufc", "1", makeDb({}).db)],
+    ["fetchPackRealizedEv", () => fetchPackRealizedEv("ufc", "1", makeDb({}).db)],
     ["fetchAllDayCorrectedEv", () => fetchAllDayCorrectedEv("nba-top-shot", "1", makeDb({}).db)],
     ["fetchPackMarket", () => fetchPackMarket("laliga-golazos", "1", makeDb({}).db)],
   ])("%s", async (_name, run) => {
@@ -293,6 +296,8 @@ describe("a section that does not apply to the collection reports ok:true", () =
   it("issues no query at all for an inapplicable collection", async () => {
     const { db, calls } = makeDb({})
     await fetchPackMarket("laliga-golazos", "1", db)
+    await fetchPackLifecycle("ufc", "1", db)
+    await fetchPackRealizedEv("ufc", "1", db)
     await fetchEvContributors("nfl-all-day", "1", db)
     await fetchAllDayCorrectedEv("nba-top-shot", "1", db)
     expect(calls).toEqual([])
@@ -644,5 +649,51 @@ describe("fetchTopshotAtlasDistCounts", () => {
   it("error → ok:false (the page then keeps the older payload and its own stamp)", async () => {
     const { db } = makeDb({ topshot_atlas_dists: { data: null, error: DB_ERR } })
     expect(await fetchTopshotAtlasDistCounts("nba-top-shot", "5048", db)).toEqual({ data: null, ok: false })
+  })
+})
+
+describe("LaLiga Golazos reads v_golazos_pack_lifecycle (2026-10-19)", () => {
+  const ROW = {
+    packs_opened: 10071, moments_pulled: 30213, n_valued: 10070,
+    realized_pull_value_usd: 51234.5, avg_realized_value_per_pack: 5.09, realized_median: 3.1,
+  }
+
+  it("lifecycle: reads the Golazos view (not Pinnacle's), complete history, sealed/depletion UNKNOWN", async () => {
+    const { db, calls } = makeDb({ v_golazos_pack_lifecycle: { data: ROW, error: null } })
+    const res = await fetchPackLifecycle("laliga-golazos", "100", db)
+    expect(calls).toEqual(["v_golazos_pack_lifecycle"])
+    expect(res).toEqual({
+      ok: true,
+      data: {
+        packs_opened: 10071, packs_opened_confirmed: 10071, packs_opened_inferred: 0,
+        packs_sealed_observed: null, observed_depletion_pct: null,
+        moments_pulled: 30213, realized_pull_value_usd: 51234.5, avg_realized_value_per_pack: 5.09,
+      },
+    })
+  })
+
+  it("realized: the pull distribution alone — no modeled side, no ratio", async () => {
+    const { db } = makeDb({ v_golazos_pack_lifecycle: { data: ROW, error: null } })
+    const res = await fetchPackRealizedEv("laliga-golazos", "100", db)
+    expect(res.data?.modeled_gross_ev).toBeNull()
+    expect(res.data?.realized_to_modeled_ratio).toBeNull()
+    expect(res.data).toMatchObject({ n_opens: 10070, realized_mean: 5.09, realized_median: 3.1 })
+  })
+
+  it("error → ok:false and absent → ok:true, for both panels", async () => {
+    for (const fetcher of [fetchPackLifecycle, fetchPackRealizedEv]) {
+      const err = makeDb({ v_golazos_pack_lifecycle: { data: null, error: DB_ERR } })
+      expect(await fetcher("laliga-golazos", "1", err.db)).toEqual({ data: null, ok: false })
+      const absent = makeDb({ v_golazos_pack_lifecycle: { data: null, error: null } })
+      expect(await fetcher("laliga-golazos", "1", absent.db)).toEqual({ data: null, ok: true })
+    }
+  })
+
+  it("labels the count complete open history for AD, Pinnacle and Golazos only", () => {
+    expect(hasCompleteOpenHistory("laliga-golazos")).toBe(true)
+    expect(hasCompleteOpenHistory("disney-pinnacle")).toBe(true)
+    expect(hasCompleteOpenHistory("nfl-all-day")).toBe(true)
+    expect(hasCompleteOpenHistory("nba-top-shot")).toBe(false)
+    expect(hasCompleteOpenHistory("ufc")).toBe(false)
   })
 })

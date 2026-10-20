@@ -449,7 +449,7 @@ export async function fetchDistFallback(
  * `v_pinnacle_pack_lifecycle` (2026-10-19). Any OTHER collection has no
  * lifecycle source at all — that is `ok: true` with no data, not a failure.
  */
-type PinnacleLifecycleRow = {
+type OpenHistoryLifecycleRow = {
   packs_opened: number | null
   moments_pulled: number | null
   n_valued: number | null
@@ -459,27 +459,46 @@ type PinnacleLifecycleRow = {
 }
 
 /**
- * One read of v_pinnacle_pack_lifecycle (2026-10-19) for a Pinnacle dist; the
+ * Collections whose pack page reads a complete open-history view of this shape
+ * (packs_opened … realized_median): Pinnacle (2026-10-19) and Golazos
+ * (2026-10-19, `v_golazos_pack_lifecycle`). Both views price an open only when
+ * every pull has an FMV, usually long after the open, so the realized panel
+ * shows the pull distribution alone, never a ratio against the modeled EV.
+ */
+const OPEN_HISTORY_LIFECYCLE_VIEW: Record<string, string> = {
+  "disney-pinnacle": "v_pinnacle_pack_lifecycle",
+  "laliga-golazos": "v_golazos_pack_lifecycle",
+}
+
+/** True when the pack page's lifecycle count is the COMPLETE open history. */
+export function hasCompleteOpenHistory(collectionSlug: string): boolean {
+  return collectionSlug === "nfl-all-day" || collectionSlug in OPEN_HISTORY_LIFECYCLE_VIEW
+}
+
+/**
+ * One read of the collection's open-history lifecycle view for a dist; the
  * lifecycle and realized panels share it. An error is ok:false; a dist with no
  * opens is ok:true with no data (the panel does not render).
  */
-async function readPinnacleLifecycle(
+async function readOpenHistoryLifecycle(
+  view: string,
   distId: string,
   db: Db,
-): Promise<{ data: PinnacleLifecycleRow | null; ok: boolean }> {
+): Promise<{ data: OpenHistoryLifecycleRow | null; ok: boolean }> {
+  const label = view.replace(/^v_/, "")
   const { data, error } = await bounded(
     db
-      .from("v_pinnacle_pack_lifecycle")
+      .from(view)
       .select("packs_opened, moments_pulled, n_valued, realized_pull_value_usd, avg_realized_value_per_pack, realized_median")
       .eq("dist_id", distId)
       .maybeSingle(),
-    "pinnacle_pack_lifecycle",
+    label,
   )
   if (error) {
-    console.error("[pack-detail] pinnacle_pack_lifecycle error", error.message)
+    console.error(`[pack-detail] ${label} error`, error.message)
     return { data: null, ok: false }
   }
-  return { data: (data as PinnacleLifecycleRow | null) ?? null, ok: true }
+  return { data: (data as OpenHistoryLifecycleRow | null) ?? null, ok: true }
 }
 
 export async function fetchPackLifecycle(
@@ -521,8 +540,9 @@ export async function fetchPackLifecycle(
       },
     }
   }
-  if (collectionSlug === "disney-pinnacle") {
-    const r = await readPinnacleLifecycle(distId, db)
+  const lifecycleView = OPEN_HISTORY_LIFECYCLE_VIEW[collectionSlug]
+  if (lifecycleView) {
+    const r = await readOpenHistoryLifecycle(lifecycleView, distId, db)
     if (!r.ok) return { data: null, ok: false }
     if (!r.data) return { data: null, ok: true }
     const d = r.data
@@ -530,13 +550,15 @@ export async function fetchPackLifecycle(
       ok: true,
       data: {
         packs_opened: d.packs_opened ?? null,
-        // pinnacle_pack_opens is the complete on-chain open history (equal to
-        // Dapper's index, ledger 2026-10-10): every open is confirmed.
+        // pinnacle_pack_opens / golazos_pack_opens are the complete open history
+        // (each equal to Dapper's index: Pinnacle ledger 2026-10-10, Golazos the
+        // ingest lane's total_api 2026-10-19): every open is confirmed.
         packs_opened_confirmed: d.packs_opened ?? null,
         packs_opened_inferred: 0,
         // Pinnacle supply counters are not reliable for new drops (Studio stopped
-        // listing them; PDS-seeded rows carry 0/0), so sealed and depletion stay
-        // unknown rather than derived from a counter that may be a placeholder.
+        // listing them; PDS-seeded rows carry 0/0) and Golazos carries none (0 of
+        // 224 dists have total_minted), so sealed and depletion stay unknown
+        // rather than derived from a counter that may be a placeholder.
         packs_sealed_observed: null,
         moments_pulled: d.moments_pulled ?? null,
         realized_pull_value_usd: d.realized_pull_value_usd ?? null,
@@ -589,8 +611,9 @@ export async function fetchPackRealizedEv(
       },
     }
   }
-  if (collectionSlug === "disney-pinnacle") {
-    const r = await readPinnacleLifecycle(distId, db)
+  const realizedView = OPEN_HISTORY_LIFECYCLE_VIEW[collectionSlug]
+  if (realizedView) {
+    const r = await readOpenHistoryLifecycle(realizedView, distId, db)
     if (!r.ok) return { data: null, ok: false }
     if (!r.data) return { data: null, ok: true }
     const d = r.data
