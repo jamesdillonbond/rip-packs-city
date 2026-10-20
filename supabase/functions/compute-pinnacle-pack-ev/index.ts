@@ -230,10 +230,12 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
       counters.nodes_processed++
       const distId = String(node.id)
       const total = node.totalSupply ?? 0
+      // A missing count is unknown, not 0: `?? 0` made a dist read as 100 % sold.
+      const supplyRead = node.totalSupply != null && node.availableSupply != null
       const available = node.availableSupply ?? 0
       const slots = Math.max(1, node.numberOfPackSlots ?? 1)
       const packPrice = node.price?.value != null ? Number(node.price.value) : 0
-      const depletionPct = computeDepletionPct(total, available)
+      const depletionPct = supplyRead ? computeDepletionPct(total, available) : null
 
       // pack_distributions row (drives pack_table_rows / the packs page).
       // total_sealed + depletion_pct are GENERATED from total_opened, so we can't
@@ -242,7 +244,8 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
       // no longer on primary sale). That makes the generated total_sealed resolve
       // to availableSupply and depletion_pct to the sold fraction — the metric the
       // UI wants — instead of a false 0% for sold-out packs.
-      const consumed = Math.max(total - available, 0)
+      // total_opened is NOT NULL; 0 gives a generated 0 % that pack_table_rows reads as absent.
+      const consumed = supplyRead ? Math.max(total - available, 0) : 0
       distRows.push({
         collection_id: PINNACLE_COLLECTION_ID,
         dist_id: distId,
@@ -259,7 +262,7 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
           edition_ids: node.editionIds ?? [],
           // Stamped only when Studio returned both counts. Without them the
           // depletion figure is not a read, so it gets no age.
-          ...(node.totalSupply != null && node.availableSupply != null
+          ...(supplyRead
             ? { supply_as_of: supplyReadAt }
             : {}),
         },
@@ -301,7 +304,7 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
         value_ratio: ev.valueRatio,
         fmv_coverage_pct: Math.min(ev.fmvCoveragePct, 32767),
         edition_count: Math.min(ev.editionCount, 32767),
-        total_unopened: available,
+        total_unopened: supplyRead ? available : null,
         depletion_pct: depletionPct,
       })
       counters.ev_rows_built++
