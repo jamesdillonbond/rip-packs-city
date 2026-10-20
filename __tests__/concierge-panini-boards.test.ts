@@ -65,7 +65,7 @@ describe("readPaniniPackMarketForConcierge", () => {
   })
   it("trims to the limit, keeps totals, and withholds EV on unmodelled packs", async () => {
     const products = [
-      { id: "1043", name: "WC pack", evModeled: true, costUsd: 200, netRipEdgeUsd: 19, typicalEvUsd: 8.5, actualEvUsd: 218.85, sim: null, stale: false },
+      { id: "1043", name: "WC pack", evModeled: true, costUsd: 200, netRipEdgeUsd: 19, typicalEvUsd: 8.5, actualEvUsd: 218.85, sim: null, stale: false, marketUrl: "https://nft.paniniamerica.net/pack/1043" },
       { id: "9", name: "NBA pack", evModeled: false, costUsd: 5, netRipEdgeUsd: 3, typicalEvUsd: 4, actualEvUsd: 8, sim: null, stale: true },
       { id: "10", name: "other", evModeled: false, costUsd: 5 },
     ]
@@ -81,6 +81,8 @@ describe("readPaniniPackMarketForConcierge", () => {
     expect(out.rows[1].mean_ev_usd).toBeNull()
     expect(out.rows[1].net_edge_on_mean_usd).toBeNull()
     expect(out.rows[1].stats_stale).toBe(true)
+    expect(out.rows[0].panini_url).toBe("https://nft.paniniamerica.net/pack/1043")
+    expect(out.rows[1].panini_url).toBeNull()
   })
 })
 

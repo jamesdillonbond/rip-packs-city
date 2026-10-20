@@ -486,7 +486,21 @@ describe("concierge tools — market & ecosystem intelligence", () => {
     expect(f.calls.find((c) => c.url.includes("/api/public/insights/top-sales"))?.url).toContain("collection=nfl_all_day")
   })
 
-  for (const collectionId of ["topshot", "constructor", "panini-blockchain"]) {
+  // Re-pinned 2026-10-19 (premise changed, not inverted): "panini-blockchain" left
+  // this list when the top-sales board's own Panini filter (panini_blockchain, live
+  // since 10-10) was mapped. The property — a named collection never widens to the
+  // cross-collection board — is still exercised by the two unknown slugs, and the
+  // Panini arm below asserts it is SCOPED, never widened.
+  it("get_top_sales scopes Panini to the board's panini_blockchain filter, never the all-collection board", async () => {
+    const f = stubFetch([jsonRoute("/api/public/insights/top-sales", { meta: {}, rows: [{ x: 1 }] })])
+    script("get_top_sales", { collectionId: "panini-blockchain" })
+    await POST(post("biggest panini sales"))
+    expect(toolResult().status).toBe("ok")
+    const url = f.calls.find((c) => c.url.includes("/api/public/insights/top-sales"))?.url ?? ""
+    expect(url).toContain("collection=panini_blockchain")
+  })
+
+  for (const collectionId of ["topshot", "constructor"]) {
     it(`get_top_sales REFUSES "${collectionId}" instead of answering with every collection`, async () => {
       const f = stubFetch([jsonRoute("/api/public/insights/top-sales", { meta: {}, rows: [{ player_name: "Dame" }] })])
       script("get_top_sales", { collectionId })

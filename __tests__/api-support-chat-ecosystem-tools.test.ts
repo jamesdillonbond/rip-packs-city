@@ -315,3 +315,36 @@ describe("concierge — deal tools on a QUIET market (2026-10-18)", () => {
     expect((r.deals as unknown[]).length).toBe(1)
   })
 })
+
+describe("concierge — get_top_sales on Panini (2026-10-19)", () => {
+  // The board has served Panini since 10-10 (v_panini_top_sales); the concierge's
+  // slug map never listed it and answered "doesn't cover this collection yet".
+  it("maps panini-blockchain to the board's panini_blockchain filter and attaches the ingest-lag note", async () => {
+    const f = stubFetch([jsonRoute("/api/public/insights/top-sales", { rows: [{ id: 1 }] })])
+    script("get_top_sales", { collectionId: "panini-blockchain" })
+    await POST(post("biggest panini sales"))
+    const r = toolResult()
+    expect(r.status).toBe("ok")
+    expect(r.count).toBe(1)
+    expect(String(r.note)).toMatch(/days after they happen/)
+    expect(f.calls.find((c) => c.url.includes("/top-sales"))!.url).toContain("collection=panini_blockchain")
+    // Market Pulse has no Panini row by decision — it is never read for Panini.
+    expect(f.calls.some((c) => c.url.includes("/market-pulse"))).toBe(false)
+  })
+  it("an empty Panini window says nothing is INDEXED yet — with the lag, never 'no sales'", async () => {
+    stubFetch([jsonRoute("/api/public/insights/top-sales", { rows: [] })])
+    script("get_top_sales", { collectionId: "panini-blockchain" })
+    await POST(post("biggest panini sales"))
+    const r = toolResult()
+    expect(String(r.note)).toMatch(/INDEXED/)
+    expect(String(r.note)).toMatch(/under-counted/)
+  })
+  it("a failed board read stays an error, with no lag note dressing it up", async () => {
+    stubFetch([jsonRoute("/api/public/insights/top-sales", {}, { status: 503, ok: false })])
+    script("get_top_sales", { collectionId: "panini-blockchain" })
+    await POST(post("biggest panini sales"))
+    const r = toolResult()
+    expect(r.status).toBe("error")
+    expect(r.note).toBeUndefined()
+  })
+})

@@ -687,11 +687,11 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "get_top_sales",
-    description: "The biggest recent SALES across Flow — 'whale watch'. Returns the top completed sales (price, player/set/tier, buyer and seller @handles where resolved, sale time) for one collection or all collections. THE tool for 'what were the biggest sales today/this week', 'what grails just sold', 'top sales for <player/collection>'. These are settled sales, not offers — cite them as such. Read-only board; no buy/sell calls.",
+    description: "The biggest recent SALES across Flow (and Panini, on Panini's own platform) — 'whale watch'. Returns the top completed sales (price, player/set/tier, buyer and seller @handles where resolved, sale time) for one collection or all collections. THE tool for 'what were the biggest sales today/this week', 'what grails just sold', 'top sales for <player/collection>'. These are settled sales, not offers — cite them as such. Read-only board; no buy/sell calls.",
     input_schema: {
       type: "object" as const,
       properties: {
-        collectionId: { type: "string", description: "Optional. One of nba-top-shot, nfl-all-day, laliga-golazos, disney-pinnacle, ufc. Omit for all collections." },
+        collectionId: { type: "string", description: "Optional. One of nba-top-shot, nfl-all-day, laliga-golazos, disney-pinnacle, ufc, candy-mlb, panini-blockchain. Omit for all collections." },
         window: { type: "string", enum: ["7d", "30d"], description: "Sale window; default 7d." },
         limit: { type: "number", description: "Max rows, 1..50, default 10." },
       },
@@ -1525,6 +1525,19 @@ function isEmptyOkBoard(raw: string): boolean {
  * the collection's newest indexed sale from the market-pulse board. A failed pulse
  * read attaches nothing but says so (a failed read is not an answer).
  */
+const PANINI_TOP_SALES_LAG_NOTE =
+  "Panini sales reach RPC days after they happen (RPC finds them on its walk of Panini's marketplace — typically ~4 days, sometimes over a week), so the most recent days of this window are under-counted and a sale from yesterday may not be here yet. Say so when you answer; never call the list complete for the last few days. Only sales of $100 or more are on this board. Buyer and seller are Panini usernames.";
+
+function annotatePaniniTopSales(raw: string): string {
+  let out: any;
+  try { out = JSON.parse(raw) } catch { return raw }
+  if (!out || out.status !== "ok") return raw;
+  out.note = isEmptyOkBoard(raw)
+    ? "No Panini sale of $100+ is INDEXED by RPC in this window yet. " + PANINI_TOP_SALES_LAG_NOTE
+    : PANINI_TOP_SALES_LAG_NOTE;
+  return JSON.stringify(out);
+}
+
 function annotateEmptyTopSales(raw: string, coll: string, pulseRaw: string): string {
   let out: any;
   try { out = JSON.parse(raw) } catch { return raw }
@@ -4415,6 +4428,10 @@ async function executeToolInner(
       "disney-pinnacle": "disney_pinnacle",
       "ufc": "ufc_strike",
       "candy-mlb": "candy_mlb",
+      // 2026-10-19: the board has served Panini since 10-10 (v_panini_top_sales,
+      // lib/insights/top-sales.ts); this map never listed it, so the concierge
+      // refused a question the board answers.
+      "panini-blockchain": "panini_blockchain",
     };
     const params = new URLSearchParams();
     const coll = effectiveCollectionId ? collMap[effectiveCollectionId] : null;
@@ -4428,6 +4445,11 @@ async function executeToolInner(
     const limit = Math.min(Math.max(Math.trunc(Number(toolInput.limit ?? 10)) || 10, 1), 50);
     params.set("limit", String(limit));
     const raw = await fetchPublicInsight(base, `/api/public/insights/top-sales?${params.toString()}`, limit);
+    // Panini sales reach RPC days after they happen (the walk finds them; median
+    // lag ~4 d, p90 ~9 d on 10-03..10-10), so the newest days of any window are
+    // under-counted — and Market Pulse carries no Panini row, so the empty-board
+    // annotation below has nothing to read. Say the lag instead.
+    if (coll === "panini_blockchain") return annotatePaniniTopSales(raw);
     if (!coll || !isEmptyOkBoard(raw)) return raw;
     return annotateEmptyTopSales(raw, coll, await fetchPublicInsight(base, `/api/public/insights/market-pulse`, 20));
   }

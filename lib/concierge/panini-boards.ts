@@ -111,6 +111,8 @@ export async function readPaniniPackMarketForConcierge(base: string, limit: numb
         model_note: p.modelNote ?? null,
         stats_updated_at: p.updatedAt ?? null,
         stats_stale: p.stale === true,
+        // The pack's page on Panini's own marketplace (the route passes only that host).
+        panini_url: typeof p.marketUrl === "string" ? p.marketUrl : null,
       }
     })
     return JSON.stringify({
