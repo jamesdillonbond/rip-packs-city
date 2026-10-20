@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 import { adminReq } from "./helpers/admin-req"
+import { readFileSync } from "node:fs"
 
 // Route integration test for /api/admin/backfill-topshot-catalog (GET + POST
 // share handle()). Bearer-gated via verifyAdminRequest (RPC_ADMIN_TOKEN).
@@ -55,7 +56,6 @@ describe("/api/admin/backfill-topshot-catalog", () => {
 // passing — description/headline on `Play`, the bio fields on `PlayStats`.
 describe("backfill-topshot-catalog — GraphQL field placement", () => {
   function querySrc(): string {
-    const { readFileSync } = require("node:fs") as typeof import("node:fs")
     const src = readFileSync("app/api/admin/backfill-topshot-catalog/route.ts", "utf8")
     const start = src.indexOf("const SEARCH_EDITIONS_QUERY")
     const end = src.indexOf("`;", start)
@@ -86,7 +86,6 @@ describe("backfill-topshot-catalog — GraphQL field placement", () => {
   )
 
   it("normalizes bio sentinels to NULL rather than storing 0 / N/A", () => {
-    const { readFileSync } = require("node:fs") as typeof import("node:fs")
     const src = stripComments(
       readFileSync("app/api/admin/backfill-topshot-catalog/route.ts", "utf8")
     )

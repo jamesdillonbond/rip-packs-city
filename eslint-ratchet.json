@@ -13,11 +13,10 @@
     "import/no-anonymous-default-export": 17,
     "react-hooks/exhaustive-deps": 16,
     "react-hooks/static-components": 15,
-    "@typescript-eslint/no-require-imports": 10,
     "react-hooks/purity": 6,
     "jsx-a11y/no-autofocus": 6,
     "react-hooks/preserve-manual-memoization": 3,
-    "react-hooks/globals": 2,
-    "react-hooks/refs": 2
+    "@typescript-eslint/no-require-imports": 3,
+    "react-hooks/refs": 1
   }
 }

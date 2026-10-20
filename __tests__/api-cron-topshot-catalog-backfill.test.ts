@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest"
+import { NextRequest } from "next/server"
 
 // The wrapper exists because /api/admin/backfill-topshot-catalog accepts ONLY
 // RPC_ADMIN_TOKEN, while Vercel cron sends only CRON_SECRET. Pointing a
@@ -23,7 +24,7 @@ vi.mock("@/app/api/admin/backfill-topshot-catalog/route", () => ({
 const route = await import("@/app/api/cron/topshot-catalog-backfill/route")
 
 const req = (headers: Record<string, string> = {}, url = "https://t/api/cron/topshot-catalog-backfill") =>
-  new (require("next/server").NextRequest)(url, { headers })
+  new NextRequest(url, { headers })
 
 beforeEach(() => {
   state.calls.length = 0

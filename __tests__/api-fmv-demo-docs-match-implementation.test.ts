@@ -34,9 +34,11 @@
 
 import { describe, expect, it } from "vitest"
 import { stripComments } from "../scripts/lib/strip-comments.mjs"
+import { readFileSync } from "fs"
+import { join } from "path"
 
 const src = (rel: string) =>
-  require("fs").readFileSync(require("path").join(process.cwd(), rel), "utf8") as string
+  readFileSync(join(process.cwd(), rel), "utf8")
 const routeSrc = () => src("app/api/fmv/demo/route.ts")
 const apiSrc = () => src("app/api/fmv/route.ts")
 

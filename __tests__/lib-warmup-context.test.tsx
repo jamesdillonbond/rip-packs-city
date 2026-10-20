@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 import { render, screen, waitFor, act, cleanup } from "@testing-library/react"
-import React from "react"
+import React, { useEffect } from "react"
 
 // lib/warmup/WarmupContext.tsx — the client-side prefetch/dedupe cache behind
 // every warm page transition (packs, sniper, fast-break, RTR).
@@ -160,15 +160,15 @@ describe("useWarmCache — fetch, cache, and key identity", () => {
   it("refresh() revalidates in the background and updates subscribers", async () => {
     let n = 0
     const fetcher = vi.fn(async () => ({ v: ++n }))
-    let doRefresh: (() => void) | null = null
+    const probe: { refresh: (() => void) | null } = { refresh: null }
     function Probe() {
       const { data, refresh } = useWarmCache<{ v: number }>("ref", fetcher)
-      doRefresh = refresh
+      useEffect(() => { probe.refresh = refresh })
       return <div>{`v=${data?.v ?? "-"}`}</div>
     }
     render(wrap(<Probe />))
     await waitFor(() => expect(screen.getByText("v=1")).toBeTruthy())
-    await act(async () => { doRefresh?.() })
+    await act(async () => { probe.refresh?.() })
     await waitFor(() => expect(screen.getByText("v=2")).toBeTruthy())
   })
 })
@@ -223,19 +223,20 @@ describe("usePrefetch / useWarmup", () => {
   })
 
   it("useWarmup() exposes read/fetchOrJoin for imperative paginated loaders", async () => {
-    let ctx: ReturnType<typeof useWarmup> | null = null
+    const probe: { ctx: ReturnType<typeof useWarmup> | null } = { ctx: null }
     function Probe() {
-      ctx = useWarmup()
+      const ctx = useWarmup()
+      useEffect(() => { probe.ctx = ctx })
       return null
     }
     render(wrap(<Probe />))
-    await waitFor(() => expect(ctx).toBeTruthy())
-    expect(ctx!.read("missing")).toBeUndefined()
-    const v = await act(async () => ctx!.fetchOrJoin("imp", async () => ({ page: 1 }), 60_000))
+    await waitFor(() => expect(probe.ctx).toBeTruthy())
+    expect(probe.ctx!.read("missing")).toBeUndefined()
+    const v = await act(async () => probe.ctx!.fetchOrJoin("imp", async () => ({ page: 1 }), 60_000))
     expect((v as { page: number }).page).toBe(1)
     // Written through to the shared cache, which is how the collection page
     // shares its prewarmed first page by url key.
-    expect(ctx!.read("imp")?.data).toEqual({ page: 1 })
+    expect(probe.ctx!.read("imp")?.data).toEqual({ page: 1 })
   })
 })
 

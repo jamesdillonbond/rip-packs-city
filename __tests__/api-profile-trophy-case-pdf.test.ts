@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest"
 import { NextRequest } from "next/server"
+import { PNG } from "pngjs"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Exportable Trophy Case PDF — /api/profile/trophy-case/pdf
@@ -252,7 +253,6 @@ describe("/api/profile/trophy-case/pdf — renders a real PDF", () => {
 
 /** A real, decodable PNG of the given size (pngjs, same encoder the route uses). */
 function realPng(w = 8, h = 8, alpha = 255): Buffer {
-  const { PNG } = require("pngjs") as typeof import("pngjs")
   const png = new PNG({ width: w, height: h })
   for (let i = 0; i < png.data.length; i += 4) {
     png.data[i] = 200

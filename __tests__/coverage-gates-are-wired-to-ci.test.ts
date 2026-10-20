@@ -25,7 +25,7 @@
 // every raise — which is exactly the friction that leads people to stop raising.
 
 import { describe, it, expect } from "vitest"
-import { readFileSync, existsSync } from "fs"
+import { readFileSync, existsSync, readdirSync } from "fs"
 import path from "path"
 
 const ROOT = path.resolve(__dirname, "..")
@@ -147,7 +147,6 @@ describe("coverage gates are wired to CI", () => {
     // Catches the reverse: a FOURTH config added later without being registered
     // here, which would sit outside this guard by construction — the blind spot
     // this repo keeps re-finding, met one level up.
-    const { readdirSync } = require("fs") as typeof import("fs")
     const configs = readdirSync(ROOT).filter(
       (f: string) => /^vitest\..*config\.ts$/.test(f) || f === "vitest.config.ts"
     )

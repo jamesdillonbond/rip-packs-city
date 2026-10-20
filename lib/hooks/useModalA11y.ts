@@ -23,7 +23,7 @@
 // Attach the returned ref to the modal's CONTENT container (the element that
 // holds the focusable children), not the backdrop.
 
-import { useEffect, useMemo, useRef, type RefObject } from "react"
+import { useEffect, useLayoutEffect, useMemo, useRef, type RefObject } from "react"
 
 // Elements considered tabbable for the focus trap + initial-focus target.
 const FOCUSABLE_SELECTOR =
@@ -39,8 +39,10 @@ export function useModalA11y<T extends HTMLElement = HTMLElement>(
   // Hold the latest onClose without making it an effect dependency, so the
   // trap installs exactly once per open (and never re-runs — and re-steals
   // focus — when a parent passes a freshly-identified onClose each render).
+  // Updated after commit (layout phase, before any effect or key handler reads it),
+  // not during render — a ref write in render is what react-hooks/refs forbids.
   const onCloseRef = useRef(onClose)
-  onCloseRef.current = onClose
+  useLayoutEffect(() => { onCloseRef.current = onClose })
 
   // Read the OPENER during the render that opens the modal, not in the effect.
   // React applies a child's `autoFocus` at commit, which runs BEFORE this hook's
