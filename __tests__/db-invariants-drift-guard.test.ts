@@ -1227,6 +1227,13 @@ const PINS = [
     migration: "supabase/migrations/20261004030511_audit_20261003_run_durations_no_longer_wrap_at_60_seconds.sql",
   },
   {
+    // 2026-10-19: the daily Atlas autograph sweep — writes editions.autographed_at on change
+    // (and retires a withdrawn signature), re-stamps edition_autograph_checks, retries 403 pages.
+    fn: "autograph_sweep_tick",
+    test: "supabase/tests/autograph_sweep_tick.sql",
+    migration: "supabase/migrations/20261020030228_audit_20261019_editions_autographed_at_from_atlas.sql",
+  },
+  {
     fn: "get_edition_badges_unified",
     test: "supabase/tests/get_edition_badges_unified.sql",
     // Re-pinned 2026-10-19: a signed edition (editions.autographed_at) gets an 'autograph'-source

@@ -35,6 +35,9 @@ const BADGE_ICONS: Record<string, string> = {
   "Rookie Mint": "💎",
   "Championship Year": "👑",
   "3 Star Rookie": "⭐⭐⭐",
+  // Signed edition: "Autographed" from the Collection tab, "Auto" from the Sniper.
+  "Autographed": "✍",
+  "Auto": "✍",
 };
 
 export interface MomentDetailModalProps {

@@ -365,6 +365,25 @@ describe("get_badge_info", () => {
     expect(r.matches[0]).toMatchObject({ kind: "unknown", topshot_editions_tagged: null })
     expect(r.count_note).toContain("FAILED")
   })
+  // 2026-10-19: "Autographed" is editions.autographed_at, not a moment tag — so
+  // badge_editions would have answered 0. It is counted from the column, for
+  // Top Shot AND All Day, and a failed count stays null.
+  it("answers 'autographed' from the autograph field for both collections, never from moment tags", async () => {
+    const inst = install({ badge_taxonomy: TAX, editions: [{ count: 236 }, { count: 226 }] })
+    A.state.script = [{ tools: [{ name: "get_badge_info", input: { badge: "Autographed" } }] }, { text: "done" }]
+    await POST(post({}))
+    const r = toolResult()
+    expect(r).toMatchObject({ status: "ok", mode: "autograph", signed_editions: { nba_top_shot: 236, nfl_all_day: 226 } })
+    expect(inst.rpcCalls.map((c) => c.name)).not.toContain("count_topshot_tag")
+  })
+  it("a failed signed count is null, not zero", async () => {
+    install({ badge_taxonomy: TAX, editions: [{ count: 236 }, { count: null, error: { message: "timeout" } }] })
+    A.state.script = [{ tools: [{ name: "get_badge_info", input: { badge: "signed" } }] }, { text: "done" }]
+    await POST(post({}))
+    const r = toolResult() as { signed_editions: Record<string, unknown>; count_note: string }
+    expect(r.signed_editions).toEqual({ nba_top_shot: 236, nfl_all_day: null })
+    expect(r.count_note).toContain("FAILED")
+  })
 })
 
 describe("get_player_editions", () => {

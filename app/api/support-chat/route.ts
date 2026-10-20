@@ -829,7 +829,7 @@ const TOOLS: Anthropic.Tool[] = [
   {
     name: "get_badge_info",
     description:
-      "What a BADGE means and how common it is — RPC's badge taxonomy (title, category, description) plus a live census of the NBA Top Shot editions that carry each moment tag, by tier. Use for 'what is a Top Shot Debut / Rookie Year / Championship Year badge', 'which badges exist', 'how rare is the Rookie Premiere tag', or — with `player` — 'which of Lillard's moments carry a Rookie Year badge'. Omit `badge` to list every badge grouped by category. Moment tags are indexed for Top Shot only; All Day, Golazos, Pinnacle and UFC use parallels / variants and set themes instead, and this tool says so rather than reporting zero. ⚠ It reports HOW MANY editions carry a tag, not what the tag is WORTH — a premium is a price question: answer it by pricing badged vs. unbadged editions of the same set and tier with get_fmv / get_player_editions, never from memory.",
+      "What a BADGE means and how common it is — RPC's badge taxonomy (title, category, description) plus a live census of the NBA Top Shot editions that carry each moment tag, by tier. Use for 'what is a Top Shot Debut / Rookie Year / Championship Year badge', 'which badges exist', 'how rare is the Rookie Premiere tag', or — with `player` — 'which of Lillard's moments carry a Rookie Year badge'. Omit `badge` to list every badge grouped by category. `badge: 'autographed'` (or 'signed') answers from the autograph field instead: live counts of SIGNED editions for Top Shot AND All Day, and with `player` that player's signed editions in both. Moment tags are indexed for Top Shot only; All Day, Golazos, Pinnacle and UFC use parallels / variants and set themes instead, and this tool says so rather than reporting zero. ⚠ It reports HOW MANY editions carry a tag, not what the tag is WORTH — a premium is a price question: answer it by pricing badged vs. unbadged editions of the same set and tier with get_fmv / get_player_editions, never from memory.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -5035,6 +5035,63 @@ async function executeToolInner(
       const want = normBadge(String(toolInput.badge ?? ""));
       const player = String(toolInput.player ?? "").trim() || null;
       const tsUuid = COLLECTION_UUID_BY_SLUG["nba-top-shot"];
+      // "Autographed" is not a moment tag: it is editions.autographed_at (from Atlas),
+      // so badge_editions would count it as 0. Answer it from the column instead.
+      if (["autograph", "autographs", "autographed", "signed", "signature", "auto"].includes(want)) {
+        const adUuid = COLLECTION_UUID_BY_SLUG["nfl-all-day"];
+        const countSigned = async (uuid: string): Promise<number | null> => {
+          const { count, error } = await (supabase as any)
+            .from("editions")
+            .select("id", { count: "exact", head: true })
+            .eq("collection_id", uuid)
+            .not("autographed_at", "is", null);
+          return error ? null : (count ?? null);
+        };
+        const [tsCount, adCount] = await Promise.all([countSigned(tsUuid), countSigned(adUuid)]);
+        let signedPlayerEditions: any = null;
+        if (player) {
+          let q = (supabase as any)
+            .from("editions")
+            .select("external_id, player_name, set_name, subedition_name, tier, circulation_count, collection_id, autographed_at")
+            .in("collection_id", [tsUuid, adUuid])
+            .not("autographed_at", "is", null);
+          q = playerScope.labels ? q.in("player_name", playerScope.labels) : q.ilike("player_name", `%${player}%`);
+          const { data, error } = await q.order("external_id", { ascending: true }).limit(200);
+          if (error) {
+            signedPlayerEditions = { status: "error", message: safeApiError(error, "signed edition lookup failed").error };
+          } else {
+            const rows = ((data ?? []) as Array<Record<string, unknown>>).filter((r) => r.autographed_at != null);
+            signedPlayerEditions = {
+              status: rows.length ? "ok" : "no_results",
+              player_query: player,
+              total: rows.length,
+              editions: rows.slice(0, 40).map((r) => {
+                const slug = r.collection_id === adUuid ? "nfl-all-day" : "nba-top-shot";
+                return {
+                  editionKey: r.external_id,
+                  collection: slug,
+                  player: r.player_name,
+                  set: r.set_name,
+                  parallel: r.subedition_name ?? null,
+                  tier: r.tier,
+                  circulation: r.circulation_count,
+                  edition_url: editionUrlFor(slug, String(r.external_id)),
+                };
+              }),
+            };
+          }
+        }
+        return JSON.stringify({
+          status: tsCount == null && adCount == null ? "error" : "ok",
+          mode: "autograph",
+          query: String(toolInput.badge),
+          meaning: "Autographed = the edition carries the player's digital signature (Atlas autographedAt). Signing is per edition — often only one parallel of a player's Moment (e.g. a Rookie Debut Hardcourt /50) — so never infer it from a set name, parallel or price.",
+          signed_editions: { nba_top_shot: tsCount, nfl_all_day: adCount },
+          ...(signedPlayerEditions ? { player_editions: signedPlayerEditions } : {}),
+          count_note: "Live counts of signed editions. A null count means that read FAILED (not zero). Other collections carry no autograph data.",
+          premium_note: "This tool does NOT price an autograph. Compare a signed edition with its unsigned printing through get_fmv to discuss a premium, quoting both rows.",
+        });
+      }
       const coverageNote =
         "Moment tags (badges) are indexed for NBA Top Shot only. NFL All Day, LaLiga Golazos, Disney Pinnacle and UFC Strike use parallels / variants and set themes rather than moment badges — do not report a zero count for them as 'no badges'.";
       const { data: tax, error: taxErr } = await (supabase as any)
