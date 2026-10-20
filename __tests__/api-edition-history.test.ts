@@ -102,3 +102,23 @@ describe("GET /api/edition-history", () => {
     },
   )
 })
+
+describe("GET /api/edition-history — an unknown FMV is not a $0 point (2026-10-19)", () => {
+  // `fmv_usd ?? 0` plotted a $0 day and returned current.fmv 0 for every snapshot with no
+  // FMV — 1,430 editions' latest snapshot carried a NULL fmv_usd on 2026-10-19.
+  it("leaves a NULL-FMV snapshot out of the series and returns current.fmv null", async () => {
+    const today = new Date().toISOString()
+    const yday = new Date(Date.now() - 86_400_000).toISOString()
+    tables.editions = { data: { id: "uuid-1" } }
+    tables.fmv_snapshots = { data: [
+      { computed_at: today, fmv_usd: null, confidence: "NO_DATA" },
+      { computed_at: yday, fmv_usd: 12.5, confidence: "LOW" },
+    ], error: null }
+    const res = await GET(req("https://t/api/edition-history?edition=218:8217&days=7"))
+    const body = await res.json()
+    expect(body.history.values).toEqual([12.5])
+    expect(body.history.days).toEqual([-1])
+    expect(body.current.fmv).toBeNull()
+    expect(body.history.values).not.toContain(0)
+  })
+})

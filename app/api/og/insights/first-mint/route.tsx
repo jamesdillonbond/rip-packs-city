@@ -73,7 +73,7 @@ export async function GET(req: NextRequest) {
           </div>
           <div style={{ fontSize: 18, color: "rgba(255,255,255,0.55)", display: "flex" }}>
             {stats?.trophies_90d
-              ? `${stats.trophies_90d} #1 sales, 90d · avg ${Number(stats.avg_multiplier ?? 0).toFixed(1)}×`
+              ? `${stats.trophies_90d} #1 sales, 90d · avg ${stats.avg_multiplier == null ? "—" : `${Number(stats.avg_multiplier).toFixed(1)}×`}`
               : "Public · No signup"}
           </div>
         </div>
@@ -136,7 +136,7 @@ export async function GET(req: NextRequest) {
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
                   <div style={{ fontSize: 30, fontWeight: 800, color: "#E03A2F", display: "flex" }}>
-                    {Number(r.multiplier ?? 0).toFixed(1)}×
+                    {r.multiplier == null ? "—" : `${Number(r.multiplier).toFixed(1)}×`}
                   </div>
                   <div
                     style={{

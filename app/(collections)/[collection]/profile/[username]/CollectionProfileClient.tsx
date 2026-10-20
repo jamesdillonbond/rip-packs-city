@@ -515,7 +515,7 @@ function PortfolioValueCard(props: { wallet: string; label?: string }) {
                     contentStyle={{ background: "rgba(0,0,0,0.92)", border: "1px solid rgba(224,58,47,0.4)", borderRadius: 6, fontSize: 11, fontFamily: monoFont }}
                     labelStyle={{ color: "#e4e4e7" }}
                     labelFormatter={function(v: unknown) { return formatDate(String(v ?? "")); }}
-                    formatter={function(v: unknown): [string, string] { return ["$" + Number(v ?? 0).toFixed(2), "FMV"]; }}
+                    formatter={function(v: unknown): [string, string] { return [v == null || !Number.isFinite(Number(v)) ? "—" : "$" + Number(v).toFixed(2), "FMV"]; }}
                   />
                   <Line
                     type="monotone"

@@ -109,9 +109,11 @@ export async function GET(req: NextRequest) {
     checkDate.setUTCDate(checkDate.getUTCDate() - d)
     const dateStr = checkDate.toISOString().slice(0, 10)
     const snap = byDate.get(dateStr)
-    if (snap) {
+    // A snapshot with no FMV is not a $0 day: it is left out of the series
+    // (1,430 editions' latest snapshot carried a NULL fmv_usd on 2026-10-19).
+    if (snap && snap.fmv_usd != null) {
       daysArr.push(-d)
-      valuesArr.push(Number((snap.fmv_usd ?? 0).toFixed(4)))
+      valuesArr.push(Number(Number(snap.fmv_usd).toFixed(4)))
       samplesArr.push(snap.sales_count_30d ?? null)
       aspCleanArr.push(snap.wap_without_outliers ? Number(Number(snap.wap_without_outliers).toFixed(4)) : null)
     }
@@ -131,7 +133,7 @@ export async function GET(req: NextRequest) {
       aspClean: aspCleanArr,
     },
     current: {
-      fmv: Number((latest.fmv_usd ?? 0).toFixed(4)),
+      fmv: latest.fmv_usd != null ? Number(Number(latest.fmv_usd).toFixed(4)) : null,
       asp: latest.wap_usd ? Number(Number(latest.wap_usd).toFixed(4)) : null,
       aspClean: latest.wap_without_outliers ? Number(Number(latest.wap_without_outliers).toFixed(4)) : null,
       floor: latest.floor_price_usd ? Number(Number(latest.floor_price_usd).toFixed(4)) : null,

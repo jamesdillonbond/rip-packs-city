@@ -159,7 +159,7 @@ export async function GET(req: NextRequest) {
                       gap: 14,
                     }}
                   >
-                    <span>Lock {Number(r.avg_lock_rate_pct ?? 0).toFixed(0)}%</span>
+                    <span>Lock {r.avg_lock_rate_pct == null ? "—" : `${Number(r.avg_lock_rate_pct).toFixed(0)}%`}</span>
                     <span>·</span>
                     <span>Avg {fmtUsd(r.avg_price_30d)}</span>
                     <span>·</span>

@@ -160,7 +160,7 @@ export async function GET(req: NextRequest) {
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
                   <div style={{ fontSize: 30, fontWeight: 800, color: "#E03A2F", display: "flex" }}>
-                    {Number(r.scarcity_vs_variant_pct ?? 0).toFixed(1)}%
+                    {r.scarcity_vs_variant_pct == null ? "—" : `${Number(r.scarcity_vs_variant_pct).toFixed(1)}%`}
                   </div>
                   <div
                     style={{
