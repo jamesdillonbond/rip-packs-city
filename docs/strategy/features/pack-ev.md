@@ -34,7 +34,7 @@ Three values must never be labelled as one another (packs.md 09-26): the EV of w
 
 - **10-18 ~8:10 PM PT (Cowork cloud):** Pack Net P&L counts packs with no buy row (inferred drop cost) in its spend-coverage floor, and the Collection tab's Packs view now withholds on the same rule — it had published per-collection Net P&L with no check (ledger 10-18; `57e945a`).
 
-## Cross-collection parity (2026-10-19 ~8 PM PT, Claude Code cloud)
+## Cross-collection parity (2026-10-19 ~7:30 PM PT, Claude Code cloud)
 
 Shipped this pass (ledger 10-19):
 - **Golazos dist page:** observed lifecycle and realized pull value (`v_golazos_pack_lifecycle`, complete open history: 78,830 = the index total).
@@ -43,6 +43,7 @@ Shipped this pass (ledger 10-19):
 - ⛔ **PackNFT ids are per-contract.** 2,294 Golazos pack ids are also the ids of different All Day rips. Every single-pack read is now collection-scoped (`lib/pack-detail/lifecycle-rpc.ts`).
 - **Collection tab "Packs" column** reads the collection's own PackNFT type (TS/AD/Golazos). It used to read Top Shot's packs on every collection. Collections with no source show no column.
 - **Pinnacle pack rows** link to no simulator (0 `pack_drop_pool` rows).
+- **Panini and Candy pack boards** link out: Panini packs to their nft.paniniamerica.net page, Candy asks to Magic Eden.
 
 Still open, with the reason each one waits:
 - **Golazos / Pinnacle sealed resale and pack sales history:** no secondary data. `golazos_pack_sales_history` is drop (primary) sales only, ending 2023-04. Pinnacle has 0 pack buys.
