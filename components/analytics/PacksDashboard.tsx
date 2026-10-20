@@ -54,12 +54,23 @@ interface PacksFreshRow {
   first_seen_at: string | null
 }
 
+// The collections analytics_packs_summary covers (pack_ev_history / the Pinnacle
+// drop-EV arm). UFC Strike was listed here and always rendered "not yet
+// available": it has no packs at all (no "packs" page in the registry, 0
+// pack_distributions rows), so it is no longer offered (2026-10-19).
 const ALL_COLLECTIONS = [
   { key: "topshot", label: "Top Shot" },
   { key: "allday", label: "All Day" },
   { key: "golazos", label: "Golazos" },
   { key: "pinnacle", label: "Pinnacle" },
-  { key: "ufc", label: "UFC Strike" },
+] as const
+
+// Collections whose packs are priced on their OWN pack plane (a different model:
+// Panini's guaranteed-contents EV, Candy's slot model), not in this summary. The
+// page points to their boards rather than drawing them as empty (2026-10-19).
+const NATIVE_PACK_BOARDS = [
+  { key: "panini", label: "Panini", href: "/panini-blockchain/packs" },
+  { key: "candy", label: "Candy MLB", href: "/candy-mlb/packs" },
 ] as const
 
 const COLLECTION_LABEL: Record<string, string> = {
@@ -162,6 +173,20 @@ function CollectionPanel({
           Unopened <span className="text-[color:var(--rpc-text-primary)]">{formatNumber(stats.total_unopened)}</span>
         </span>
       </div>
+    </div>
+  )
+}
+
+function NativeBoardPanel({ label, href }: { label: string; href: string }) {
+  return (
+    <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-5">
+      <h3 className="text-base font-semibold text-[color:var(--rpc-text-primary)]">{label}</h3>
+      <p className="mt-2 text-sm text-[color:var(--rpc-text-muted)]">
+        {label} packs are priced on their own pack board, with a model built for that collection.
+      </p>
+      <Link href={href} className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-[color:var(--rpc-text-secondary)] hover:text-[color:var(--rpc-text-primary)]">
+        Open the {label} pack board <ArrowUpRight size={14} />
+      </Link>
     </div>
   )
 }
@@ -395,6 +420,8 @@ export default function PacksDashboard() {
               }
               return <CollectionPanel key={c.key} collectionKey={c.key} stats={stats} />
             })}
+            {activeCollections.length === 0 &&
+              NATIVE_PACK_BOARDS.map((b) => <NativeBoardPanel key={b.key} label={b.label} href={b.href} />)}
           </div>
         )}
       </section>

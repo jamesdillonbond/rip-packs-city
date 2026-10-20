@@ -90,4 +90,17 @@ describe("PacksDashboard render", () => {
     expect(await findByText(/No positive-EV packs in this filter\./)).toBeTruthy()
     expect(await findByText(/No new pack listings in the last 24 hours\./)).toBeTruthy()
   })
+
+  // 2026-10-19: UFC Strike has no packs, so it is no longer drawn as a permanent
+  // "not yet available" panel; Panini and Candy (own pack planes) are pointed to
+  // their boards instead of being absent.
+  it("offers no UFC panel and links Panini and Candy to their own pack boards", async () => {
+    const { findByText, queryByText, container } = render(<PacksDashboard />)
+    expect(await findByText(/Open the Panini pack board/)).toBeTruthy()
+    expect(await findByText(/Open the Candy MLB pack board/)).toBeTruthy()
+    expect(queryByText("UFC Strike")).toBeNull()
+    const hrefs = Array.from(container.querySelectorAll("a")).map((a) => a.getAttribute("href"))
+    expect(hrefs).toContain("/panini-blockchain/packs")
+    expect(hrefs).toContain("/candy-mlb/packs")
+  })
 })
