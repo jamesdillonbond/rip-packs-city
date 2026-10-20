@@ -222,3 +222,19 @@ describe("deal alerts: the Autographed badge filter stores the value the dispatc
     expect(src).not.toContain(`{ slug: "${id}",`)
   })
 })
+
+describe("edition page: the Autographed chip links to the signed-edition board", () => {
+  // The chip is the one place a collector already looking at a signed edition
+  // learns the board exists. Pinned on the title CONSTANT (not a literal), so a
+  // rename of the badge title cannot silently orphan the link.
+  it("wraps the chip in a /insights/autographs link for Top Shot and All Day only", async () => {
+    const { readFileSync } = await import("node:fs")
+    const { join } = await import("node:path")
+    const { stripComments } = await import("../scripts/lib/strip-comments.mjs")
+    const src = stripComments(
+      readFileSync(join(__dirname, "..", "app", "(collections)", "[collection]", "edition", "[slug]", "page.tsx"), "utf8"),
+    )
+    expect(src).toContain('b === AUTOGRAPH_BADGE_TITLE && (collection === "nba-top-shot" || collection === "nfl-all-day")')
+    expect(src).toMatch(/href="\/insights\/autographs"/)
+  })
+})

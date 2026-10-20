@@ -73,6 +73,17 @@ Rookie Debut: Signature Edition /50 (45/45) · Metallic Gold LE Signature Editio
 - **Concierge**: every edition row carries `autographed` — true / false (Atlas-verified unsigned, needs a check row) / null (not checked).
 - **Public board** `/insights/autographs` (`v_insights_autographs`, `20261020051112`): every signed edition per collection, sortable by cheapest live ask, premium over the unsigned printing, last sale, scarcity. Market facts only — no FMV.
 - **Alerts**: deal-alert subscriptions take an **Autographed** badge filter (`/alerts`). The dispatcher compares the normalized badge TITLE, so the stored value is `autographed` (the id `autograph` would never match); 462 / 462 signed editions match it live. Per-edition Watch alerts already work on any signed edition's page.
+- **OG card** `/api/og/insights/autographs` (10-19 ~11 PM PT): the three cheapest listed signed Top Shot editions + both collections' signed counts (a failed count is dropped, never printed as 0). Replaces the text-only default card.
+- **Edition page**: the "Autographed" chip on a Top Shot / All Day edition links to `/insights/autographs`.
+
+## Operations (state at 2026-10-19 ~11 PM PT — re-derive)
+
+- **Sweep:** pg_cron `rpc-autograph-sweep` every 2 min; 86 / 86 runs ok in the 12 h before. All Day's first scheduled cycle closed in 74 min (5,834 re-checked). Top Shot's census-seeded cycle closed 7:40 PM PT 10-19, so its first SCHEDULED cycle opens ~3:40 PM PT 10-20 (20 h after the last cycle FINISHED) and takes ~145 pages ≈ 2.5 h. A one-shot check-in at 8:00 PM PT 10-20 verifies it.
+- **Health read:** `select * from autograph_sweep_state;` (one row per product: `cycle_started_at`, `cycle_finished_at`, `total_count`) and `pipeline_runs where pipeline='autograph-sweep'` — `extra` carries `pages_ok`, `pages_failed`, `checks_written`, `editions_changed`, `errors`.
+- **`autograph_sweep_requests` has no retention.** It grows ~200 rows/day (one per dispatched page), about 75k/year. Harmless at that size; the cleanup needs a DELETE, which the Supabase MCP holds, so add one from the dashboard if it ever matters.
+- **Pending (Trevor, dashboard SQL editor — the MCP holds DROPs):** remove the census scratch objects, keeping `audit_20261019_autograph_editions` (the raw census):
+  `DROP FUNCTION IF EXISTS public.audit_20261019_autograph_sweep_dispatch(integer), public.audit_20261019_autograph_extract(), public.audit_20261019_autograph_extract_batch(integer); DROP TABLE IF EXISTS public.audit_20261019_autograph_sweep_reqs;`
+- **Not built, on purpose:** a `?collection=` deep link to the board's All Day tab (the page is ISR, `revalidate = 3600`; reading `searchParams` would make it dynamic). The edition chip lands on the Top Shot tab; All Day is one click.
 
 ## Decided NOT to build (2026-10-19 ~9:55 PM PT): pricing a signed edition off its unsigned printing
 

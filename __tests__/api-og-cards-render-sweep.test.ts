@@ -75,6 +75,7 @@ const CARDS: Array<{ path: string; query?: string; params?: Record<string, strin
   { path: "app/api/og/insights/allday-pack-market/route" },
   { path: "app/api/og/insights/allday-pack-reality/route" },
   { path: "app/api/og/insights/allday-scarcity/route" },
+  { path: "app/api/og/insights/autographs/route" },
   { path: "app/api/og/insights/cross-collection/route" },
   { path: "app/api/og/insights/deals/route" },
   { path: "app/api/og/insights/first-mint/route" },

@@ -39,6 +39,7 @@ import IpfsThumb from "@/components/entity/IpfsThumb"
 import MarketCapTile from "@/components/entity/MarketCapTile"
 import { isTopShotFossilSlug, ASK_LABEL, notableTagLabel, fmvDayDelta, sortNotableSerials } from "@/lib/edition-detail-format"
 import { normalizeBadgeKey } from "@/lib/badges/normalize"
+import { AUTOGRAPH_BADGE_TITLE } from "@/lib/autographs"
 import { parallelLabelFromBadges } from "@/lib/edition-parallel"
 import { fetchBadgeArt } from "@/lib/badges/server-art"
 import {
@@ -858,15 +859,22 @@ export default async function EditionPage(
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
                 {detail.badges.map(b => {
                   const art = badgeArt.get(normalizeBadgeKey(b))
-                  if (art) {
-                    return (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img key={b} src={art} alt={b} title={b} width={24} height={24} loading="lazy" style={{ width: 24, height: 24, display: "inline-block", verticalAlign: "middle" }} />
-                    )
-                  }
-                  return (
+                  const chip = art ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img key={b} src={art} alt={b} title={b} width={24} height={24} loading="lazy" style={{ width: 24, height: 24, display: "inline-block", verticalAlign: "middle" }} />
+                  ) : (
                     <span key={b} className="rpc-mono" style={{ padding: "2px 6px", border: "1px solid var(--rpc-border)", borderRadius: 3, fontSize: 10, color: "var(--rpc-text-secondary)" }}>{b}</span>
                   )
+                  // A signed edition's chip opens the board of every signed edition
+                  // (Top Shot + All Day only — the two collections Atlas signs).
+                  if (b === AUTOGRAPH_BADGE_TITLE && (collection === "nba-top-shot" || collection === "nfl-all-day")) {
+                    return (
+                      <Link key={b} href="/insights/autographs" title="Every signed edition: asks, sales, premium over the unsigned printing" style={{ display: "inline-flex", textDecoration: "none" }}>
+                        {chip}
+                      </Link>
+                    )
+                  }
+                  return chip
                 })}
               </div>
             )}
