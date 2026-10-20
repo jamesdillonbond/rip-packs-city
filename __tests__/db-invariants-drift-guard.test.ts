@@ -646,7 +646,7 @@ const PINS = [
     fn: "refresh_pack_supply_counter_checks",
     test: "supabase/tests/refresh_pack_supply_counter_checks.sql",
     migration:
-      "supabase/migrations/20261020044228_audit_20261019_counter_checks_count_container_opens_dapper_confirmed.sql",
+      "supabase/migrations/20261020044518_audit_20261019_counter_checks_zero_unopened_at_zero_pct_is_refutable.sql",
   },
   {
     // Added 2026-09-26. Pins the lane that prices every pack a saved wallet

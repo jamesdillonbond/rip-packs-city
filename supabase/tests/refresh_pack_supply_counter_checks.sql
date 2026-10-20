@@ -9,9 +9,11 @@
 --   3. Only recipe containers take index opens (P1, an ordinary pack, observes 0 from the index).
 --   4. A pack with both a rip and an index row counts once (B3).
 --   5. The existing post-stamp arm still uses exact rip times (P2).
+--   6. (2026-10-19) "0 unopened at 0 %" allows at most 0 opened, so an open by the stamp refutes it
+--      (P3, the PDS-era default); "0 unopened at 100 %" -- sold out -- stays (P4).
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20261020044228_audit_20261019_counter_checks_count_container_opens_dapper_confirmed.sql).
+-- (supabase/migrations/20261020044518_audit_20261019_counter_checks_zero_unopened_at_zero_pct_is_refutable.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -127,8 +129,11 @@ BEGIN
          CASE WHEN d.pev_at IS NOT NULL THEN c.n_pev END,
          -- the snapshot states unopened=tu at depletion dep% (rounded), so the
          -- opened it implies is at most tu*(dep+.5)/(100-dep-.5); refutable only
-         -- when tu > 0 and dep < 99 (else the bound is unbounded).
-         COALESCE(d.pev_at IS NOT NULL AND d.pev_tu > 0 AND d.pev_dep IS NOT NULL AND d.pev_dep < 99
+         -- when dep < 99 (else the bound is unbounded). 2026-10-19: tu = 0 is NOT
+         -- unbounded -- "0 unopened at 0 %" implies at most 0 opened, so any open
+         -- refutes it (59 PDS-era dists carried exactly that default, 8785 with
+         -- 9,431 opens observed by its stamp; the OG card printed "0% sold").
+         COALESCE(d.pev_at IS NOT NULL AND d.pev_tu >= 0 AND d.pev_dep IS NOT NULL AND d.pev_dep < 99
                   AND c.n_pev > floor(d.pev_tu * (d.pev_dep + 0.5) / (100 - d.pev_dep - 0.5)), false)
          OR COALESCE(d.pev_at IS NOT NULL AND d.pev_tu IS NOT NULL AND c.r_after_pev > d.pev_tu, false),
          d.tier_at_text, d.tier_tp, d.tier_tu,
@@ -174,7 +179,15 @@ INSERT INTO public.pack_distributions VALUES
   ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'B2', 0, 500, '{}'),
   ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'B3', 0, 500, '{}'),
   ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P1', 0, 500, '{}'),
-  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P2', 0, 500, '{}');
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P2', 0, 500, '{}'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P3', 0, 0, '{}'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P4', 0, 0, '{}');
+INSERT INTO public.mv_pack_ev_latest VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P3', '2026-10-20 02:28+00', 0, 0),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P4', '2026-10-20 02:28+00', 0, 100);
+INSERT INTO public.pack_rips VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P3', 'p3a', '2026-10-10'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P4', 'p4a', '2026-10-10');
 INSERT INTO public.mv_pack_ev_latest
 SELECT '95f28a17-224a-4025-96ad-adf8a4c63bfd', d, '2026-10-20 02:28+00', 500, 0 FROM unnest(ARRAY['B1','B2','B3','P1']) d;
 -- P2: an older snapshot claiming 2 unopened; 3 packs ripped AFTER it -> refuted by the exact arm
@@ -203,7 +216,7 @@ DO $$
 DECLARE v jsonb; k record;
 BEGIN
   v := public.refresh_pack_supply_counter_checks();
-  PERFORM _assert((v->>'ok')::boolean AND (v->>'rows_written')::int = 5, 'one verdict row per dist');
+  PERFORM _assert((v->>'ok')::boolean AND (v->>'rows_written')::int = 7, 'one verdict row per dist');
 
   SELECT * INTO k FROM public.pack_supply_counter_checks WHERE dist_id = 'B1';
   PERFORM _assert_eq(k.observed_opened::text, '3', 'B1 Opened + Revealed index opens count, Sealed does not');
@@ -224,6 +237,11 @@ BEGIN
 
   SELECT * INTO k FROM public.pack_supply_counter_checks WHERE dist_id = 'P2';
   PERFORM _assert(k.pev_refuted, 'P2 three exact rips after a "2 unopened" stamp still refute it');
+
+  SELECT * INTO k FROM public.pack_supply_counter_checks WHERE dist_id = 'P3';
+  PERFORM _assert(k.pev_refuted, 'P3 "0 unopened at 0 %" with an open by its stamp is refuted');
+  SELECT * INTO k FROM public.pack_supply_counter_checks WHERE dist_id = 'P4';
+  PERFORM _assert(NOT k.pev_refuted, 'P4 "0 unopened at 100 %" (sold out) stands');
 END $$;
 
 ROLLBACK;
