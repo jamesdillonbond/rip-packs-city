@@ -27,7 +27,7 @@ Candy MLB is RPC's only Solana collection: 125 editions, `is_active=true` since 
 ## Open issues
 
 - **#58: no OpenSea data.** RPC records zero Candy volume from OpenSea, where Candy is a launch partner. Shelved 09-23, lanes parked 10-13.
-- **The freeze leaves accuracy unmeasured:** 2 sales since 10-11 means both the relabel and the price model are unscored. The 14 d backtest last read 26.8 % vs a naive 31.1 % ([roadmap-status.md](../../reference/roadmap-status.md)).
+- **The freeze leaves accuracy unmeasured:** 2 sales since 10-11 means both the relabel and the price model are unscored. The 14 d backtest read 10-19 ~8:25 PM PT (n 516, nearly all pre-freeze): published MdAPE **22.2 % vs a naive 26.1 %**, within ±25 % 54.8 vs 48.6 (MEDIUM tied at 63.3; [fmv-pricing.md](../features/fmv-pricing.md) item 4). It was 26.8 % vs 31.1 % earlier ([roadmap-status.md](../../reference/roadmap-status.md)). It scores the labels in force at each sale, so not the relabel.
 - **The share stays high only while pre-freeze sales are in the 30-day window.** If the freeze continues, the volume floor starts failing editions around **11-10 PT** and the share should fall. That fall would be honest, not a defect.
 - **The ask counts as fresh because it is re-seen.** The 7-day ask-age bound checks `last_seen_at`, which a static book keeps renewing.
 - **#66 (estate-wide):** external links stay held by the accuracy gate.
