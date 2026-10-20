@@ -413,8 +413,8 @@ export default function CollectionMomentTable(props: {
                     {cb ? (function() {
                       const label = cb.costBasisLabel
                       if (label === "Pack") return <span className="inline-block rounded border border-[color:var(--rpc-border-hover)] bg-[var(--rpc-surface-raised)] px-1.5 py-0.5 font-mono text-[10px] text-[color:var(--rpc-text-muted)]">PACK</span>
-                      if (label === "Gift") return <span className="inline-block rounded border border-blue-900 bg-blue-900 px-1.5 py-0.5 font-mono text-[10px] text-blue-400">GIFT</span>
-                      if (label === "Reward") return <span className="inline-block rounded border border-purple-900 bg-purple-900 px-1.5 py-0.5 font-mono text-[10px] text-purple-400">REWARD</span>
+                      if (label === "Gift") return <span className="inline-block rounded border border-blue-900 bg-blue-900 px-1.5 py-0.5 font-mono text-[10px] text-blue-300">GIFT</span>
+                      if (label === "Reward") return <span className="inline-block rounded border border-purple-900 bg-purple-900 px-1.5 py-0.5 font-mono text-[10px] text-purple-300">REWARD</span>
                       if (label === "Airdrop") return <span className="inline-block rounded border border-green-900 bg-green-900 px-1.5 py-0.5 font-mono text-[10px] text-green-400">AIRDROP</span>
                       // ⚠ This used to be `label === "Loan" ? cb.buyPrice : cb.buyPrice`
                       // — a ternary whose branches are identical, i.e. `cb.buyPrice`
@@ -777,8 +777,8 @@ export default function CollectionMomentTable(props: {
                             if (label === "Bought" && cb.buyPrice > 0) return <span className="font-mono text-[color:var(--rpc-text-primary)]">${cb.buyPrice.toFixed(2)}{sourcePill}</span>
                             if (label === "Pack") return <span className="inline-block rounded border border-[color:var(--rpc-border-hover)] bg-[var(--rpc-surface-raised)] px-1.5 py-0.5 font-mono text-[10px] text-[color:var(--rpc-text-muted)]">PACK</span>
                             if (label === "Loan" && cb.buyPrice > 0) return <span className="font-mono"><span className="text-red-400">Loan Default</span> <span className="text-[color:var(--rpc-text-primary)]">${cb.buyPrice.toFixed(2)}</span>{sourcePill}</span>
-                            if (label === "Gift") return <span className="inline-block rounded border border-blue-900 bg-blue-900 px-1.5 py-0.5 font-mono text-[10px] text-blue-400">GIFT</span>
-                            if (label === "Reward") return <span className="inline-block rounded border border-purple-900 bg-purple-900 px-1.5 py-0.5 font-mono text-[10px] text-purple-400">REWARD</span>
+                            if (label === "Gift") return <span className="inline-block rounded border border-blue-900 bg-blue-900 px-1.5 py-0.5 font-mono text-[10px] text-blue-300">GIFT</span>
+                            if (label === "Reward") return <span className="inline-block rounded border border-purple-900 bg-purple-900 px-1.5 py-0.5 font-mono text-[10px] text-purple-300">REWARD</span>
                             if (label === "Airdrop") return <span className="inline-block rounded border border-green-900 bg-green-900 px-1.5 py-0.5 font-mono text-[10px] text-green-400">AIRDROP</span>
                             if (cb.buyPrice > 0) return <span className="font-mono text-[color:var(--rpc-text-primary)]">${cb.buyPrice.toFixed(2)}{sourcePill}</span>
                           }
