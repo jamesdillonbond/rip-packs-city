@@ -8,9 +8,11 @@
 --      only pins priced in the last 24 h and not ASK_ONLY.
 --   2. A Pinnacle row in fmv_snapshots_2026 is not counted a second time.
 --   3. The p_collections filter selects 'pinnacle'; other arms are unchanged.
+--   4. (2026-10-20, #64) An active Panini's snapshots never reach the board —
+--      it has no /analytics/fmv key, and its slug would fall through as its own.
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20260929022013_audit_20260928_pinnacle_analytics_fmv_health_and_order_book.sql).
+-- (supabase/migrations/20261020150000_audit_20261020_snapshot_panini_spliced_platform_stats_and_fmv_tier_pulse.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -48,6 +50,7 @@ BEGIN
       AND s.confidence != 'ASK_ONLY'
       AND c.is_active = true
       AND c.slug <> 'disney_pinnacle'
+      AND c.slug <> 'panini_blockchain'  -- #64: the /analytics/fmv board has no Panini key
     ORDER BY s.edition_id, s.computed_at DESC
   ),
   -- 2026-09-28: Pinnacle's FMV lives on pinnacle_catalog (one row per pin) and
@@ -112,6 +115,16 @@ SELECT _assert_eq((SELECT high_conf_count::text || '/' || low_conf_count::text F
 SELECT _assert_eq((SELECT edition_count::text FROM public.analytics_fmv_tier_pulse(ARRAY['pinnacle']) WHERE tier = 'Radiant Chrome'), '1', 'variant stands in for tier');
 SELECT _assert_eq((SELECT count(*)::text FROM public.analytics_fmv_tier_pulse(ARRAY['topshot'])), '1', 'the filter excludes Pinnacle');
 SELECT _assert_eq((SELECT string_agg(collection || ':' || edition_count, ',' ORDER BY collection, edition_count) FROM public.analytics_fmv_tier_pulse(NULL) WHERE collection IN ('pinnacle', 'disney_pinnacle', 'topshot')), 'pinnacle:1,pinnacle:2,topshot:1', 'no snapshot-arm Pinnacle row; Top Shot unchanged');
+
+-- 4. Panini (#64). Without the exclusion its slug falls through the CASE to
+-- 'panini_blockchain' and becomes a row of its own; the total proves the
+-- snapshot itself was eligible (recent, priced, not ASK_ONLY).
+INSERT INTO public.collections VALUES ('c0ffee00-0000-0000-0000-000000000064', 'panini_blockchain', true);
+INSERT INTO public.editions VALUES ('00000000-0000-0000-0000-0000000000e3', 'RARE');
+INSERT INTO public.fmv_snapshots_2026 VALUES
+  ('00000000-0000-0000-0000-0000000000e3', 'c0ffee00-0000-0000-0000-000000000064', 25, 'HIGH', now());
+SELECT _assert_eq((SELECT count(*)::text FROM public.analytics_fmv_tier_pulse(NULL) WHERE collection = 'panini_blockchain'), '0', 'an active Panini has no board row');
+SELECT _assert_eq((SELECT sum(edition_count)::text FROM public.analytics_fmv_tier_pulse(NULL)), '4', 'board total unchanged: 1 Top Shot + 3 Pinnacle');
 
 SELECT '✓ analytics_fmv_tier_pulse: all assertions passed' AS result;
 

@@ -51,6 +51,22 @@ const SUMMARY = "a11y-summary.md"
 // Router page has finished rendering, and axe must read the hydrated DOM.
 const SETTLE_MS = 1_500
 
+// ⚠ AXE GETS A BUDGET OF ITS OWN (2026-10-20). Before this, a page whose axe run
+// never finished hit the 45 s TEST timeout inside `frame.evaluate` and wrote
+// NOTHING to a11y-summary.md — the 10-20 5:15 AM PT run reported 24 routes and
+// /nba-top-shot/packs was simply absent from the summary, through 3 attempts in
+// both themes, with no clue why. Now the overrun is a NAMED failure that lands in
+// the summary with the two facts that split its causes: the DOM size, and whether
+// the main thread still answers at all (a render loop starves axe and the probe
+// alike; a huge DOM answers the probe but takes axe too long). It still FAILS — a
+// route axe cannot audit is not a passing route.
+const AXE_BUDGET_MS = 25_000
+const PROBE_MS = 3_000
+
+function within<T>(ms: number, p: Promise<T>): Promise<T | "timeout"> {
+  return Promise.race([p, new Promise<"timeout">((r) => setTimeout(() => r("timeout"), ms))])
+}
+
 type Violation = Awaited<ReturnType<AxeBuilder["analyze"]>>["violations"][number]
 type AxeNode = Violation["nodes"][number]
 
@@ -81,7 +97,19 @@ for (const path of ROUTES) for (const theme of THEMES) {
     await page.waitForLoadState("load").catch(() => {})
     await page.waitForTimeout(SETTLE_MS)
 
-    const results = await new AxeBuilder({ page }).analyze()
+    const t0 = Date.now()
+    const outcome = await within(AXE_BUDGET_MS, new AxeBuilder({ page }).analyze())
+    if (outcome === "timeout") {
+      const nodes = await within(PROBE_MS, page.evaluate(() => document.getElementsByTagName("*").length)).catch(() => "timeout" as const)
+      const why = nodes === "timeout"
+        ? `the main thread did not answer a ${PROBE_MS / 1000}s probe either (render loop or long task)`
+        : `DOM has ${nodes} elements and the main thread still answers (axe is just slow on it)`
+      const line = `### ${path} [${theme}] — ❌ axe did not finish in ${AXE_BUDGET_MS / 1000}s: ${why}\n`
+      console.log(line)
+      appendFileSync(SUMMARY, line + "\n")
+      throw new Error(`${url}: axe did not finish in ${AXE_BUDGET_MS / 1000}s (started ${Date.now() - t0}ms ago) — ${why}`)
+    }
+    const results = outcome
     const gated: string[] = [], reported: string[] = [], advisory: string[] = []
     let excepted = 0
     for (const v of results.violations) {

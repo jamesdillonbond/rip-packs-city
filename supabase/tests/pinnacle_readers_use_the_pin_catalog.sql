@@ -19,9 +19,15 @@
 --      (NULL when the column is NULL — never a stand-in string); both Pinnacle
 --      arms return the key as NULL so every arm has the same shape.
 --
+--   6. (2026-10-20, #64) get_platform_stats leaves an active Panini out of
+--      per_collection (its sales/listings are not in sales/cached_listings, so
+--      every figure would read 0), while collection_count still counts it.
+--
 -- The function DDL below is VERBATIM from the committed migrations
 -- (supabase/migrations/20260926215225_audit_20260926_pinnacle_remaining_readers_use_the_pin_catalog.sql
--- for seven of the eight; get_edition_detail from
+-- for six of the eight; get_platform_stats from
+-- supabase/migrations/20261020150000_audit_20261020_snapshot_panini_spliced_platform_stats_and_fmv_tier_pulse.sql,
+-- the snapshot of the 2026-10-19 Panini splice; get_edition_detail from
 -- supabase/migrations/20261019145210_audit_20261019_pinnacle_legacy_key_live_ask_reads_the_render_floor.sql;
 -- re-pinned 2026-10-19 from 20261012232629 when the legacy-key live_ask moved to the render floor).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
@@ -554,6 +560,7 @@ BEGIN
     ) AS col_stats
     FROM collections c
     WHERE c.is_active = true
+      AND c.slug <> 'panini_blockchain'  -- #64: Panini sales/listings are not in sales/cached_listings
   ) agg;
 
   RETURN jsonb_build_object(
@@ -756,6 +763,15 @@ SELECT _assert(public.get_edition_detail(:pin::uuid, 'r1') ? 'description', 'pin
 SELECT _assert((public.get_edition_detail(:pin::uuid, 'r1') ->> 'description') IS NULL, 'pinnacle catalog arm: description is NULL');
 SELECT _assert(public.get_edition_detail(:pin::uuid, 'M') ? 'description', 'pinnacle legacy arm: same key set');
 SELECT _assert((public.get_edition_detail(:pin::uuid, 'M') ->> 'description') IS NULL, 'pinnacle legacy arm: description is NULL');
+
+-- ── 6. platform stats keep an active Panini out of per_collection (#64) ──────
+-- Positive control first: before Panini exists, both per_collection rows are there,
+-- so the exclusion below cannot pass by per_collection simply being empty.
+SELECT _assert_eq(jsonb_array_length(public.get_platform_stats()->'per_collection')::text, '2', 'platform: pinnacle + top shot before Panini');
+INSERT INTO public.collections (id, slug, name, is_active) VALUES ('c0ffee00-0000-0000-0000-000000000064', 'panini_blockchain', 'Panini Blockchain', true);
+SELECT _assert_eq((SELECT count(*)::text FROM jsonb_array_elements(public.get_platform_stats()->'per_collection') x WHERE x->>'slug' = 'panini_blockchain'), '0', 'platform: an active Panini has no per_collection row');
+SELECT _assert_eq(jsonb_array_length(public.get_platform_stats()->'per_collection')::text, '2', 'platform: the other two rows are unchanged');
+SELECT _assert_eq((public.get_platform_stats() ->> 'collection_count'), '3', 'platform: collection_count still counts Panini');
 
 SELECT '✓ pinnacle readers on the pin catalog: all assertions passed' AS result;
 

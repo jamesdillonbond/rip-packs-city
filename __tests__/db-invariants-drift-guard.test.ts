@@ -362,9 +362,10 @@ const PINS = [
   },
   {
     fn: "get_platform_stats",
+    // Re-pointed 2026-10-20: 20261019181549 spliced Panini out in place; this snapshot carries the body.
     test: "supabase/tests/pinnacle_readers_use_the_pin_catalog.sql",
     migration:
-      "supabase/migrations/20260926215225_audit_20260926_pinnacle_remaining_readers_use_the_pin_catalog.sql",
+      "supabase/migrations/20261020150000_audit_20261020_snapshot_panini_spliced_platform_stats_and_fmv_tier_pulse.sql",
   },
   {
     fn: "analytics_sets_summary",
@@ -526,10 +527,11 @@ const PINS = [
   },
   {
     fn: "analytics_fmv_tier_pulse",
+    // Re-pointed 2026-10-20: 20261019181549 spliced Panini out in place; this snapshot carries the body.
     test: "supabase/tests/analytics_fmv_tier_pulse.sql",
     // 2026-09-28: Pinnacle FMV Health reads pinnacle_catalog (never snapshots).
     migration:
-      "supabase/migrations/20260929022013_audit_20260928_pinnacle_analytics_fmv_health_and_order_book.sql",
+      "supabase/migrations/20261020150000_audit_20261020_snapshot_panini_spliced_platform_stats_and_fmv_tier_pulse.sql",
   },
   {
     fn: "analytics_listings_summary",

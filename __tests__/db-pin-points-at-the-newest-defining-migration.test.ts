@@ -51,6 +51,20 @@ import { join } from "node:path"
 // Recorded so a future false positive reads as a known shape rather than a
 // mystery.
 
+// ⚠ SECOND SHAPE OF REDEFINITION — THE IN-PLACE SPLICE (added 2026-10-20). A
+// migration can rewrite a function WITHOUT a `CREATE OR REPLACE` in its text: a
+// DO block reads pg_get_functiondef(), replace()s an anchor, and EXECUTEs the
+// result. 20261019181549 (Panini flip-readiness) did that to two PINNED
+// functions — get_platform_stats and analytics_fmv_tier_pulse — and this file
+// stayed green, because the scan above only sees CREATE OR REPLACE. The daily
+// live sweep caught it the next morning (10-20 5:47 AM PT, 2 STALE of 322).
+// The rule below needs no database: a splice that names a pinned function must
+// either be OLDER than that pin's migration (a later file already carries the
+// resulting body) or NAME that migration in its own text (it says where its
+// resulting body lives — 20260929064703 does exactly this). Detection is by
+// quoted literal ('fn_name') in a file that both calls pg_get_functiondef( and
+// EXECUTEs, after stripping `--` comments.
+
 const ROOT = join(__dirname, "..")
 const GUARD = "__tests__/db-invariants-drift-guard.test.ts"
 const MIGRATIONS = "supabase/migrations"
@@ -58,6 +72,11 @@ const MIGRATIONS = "supabase/migrations"
 // Pins that deliberately do NOT name the newest defining migration, with the
 // reason. Two-way: an entry that no longer violates is stale and fails.
 const NOT_NEWEST_ALLOWED: Record<string, string> = {}
+
+// "<migration basename>:<fn>" pairs where a splice file quotes a pinned function
+// WITHOUT redefining it (e.g. it only md5-checks it). Two-way, like the above.
+// Currently EMPTY.
+const SPLICE_NOT_A_REDEFINITION: Record<string, string> = {}
 
 type Pin = { fn: string; test: string; migration: string }
 
@@ -82,6 +101,30 @@ function definitionsByFunction(): Map<string, string[]> {
       const list = out.get(m[1]) ?? []
       if (list[list.length - 1] !== f) list.push(f)
       out.set(m[1], list)
+    }
+  }
+  return out
+}
+
+type Splice = { file: string; fn: string; namesPin: boolean }
+
+/** In-place rewrites (pg_get_functiondef + EXECUTE) that quote a pinned function. */
+function splicesOfPinnedFunctions(pins: Pin[]): Splice[] {
+  const byFn = new Map(pins.map((p) => [p.fn, p]))
+  const out: Splice[] = []
+  const files = readdirSync(join(ROOT, MIGRATIONS))
+    .filter((f) => f.endsWith(".sql"))
+    .sort()
+  for (const f of files) {
+    const raw = readFileSync(join(ROOT, MIGRATIONS, f), "utf-8")
+    const code = raw.replace(/--[^\n]*/g, "")
+    if (!/pg_get_functiondef\s*\(/i.test(code) || !/\bEXECUTE\b/i.test(code)) continue
+    const quoted = new Set([...code.matchAll(/'([a-z_][a-z0-9_]*)'/g)].map((m) => m[1]))
+    for (const fn of quoted) {
+      const pin = byFn.get(fn)
+      if (!pin) continue
+      const pinFile = pin.migration.split("/").pop()!
+      out.push({ file: f, fn, namesPin: raw.includes(pinFile.replace(/\.sql$/, "")) })
     }
   }
   return out
@@ -132,6 +175,41 @@ describe("every DB-invariant pin names the newest migration that defines its fun
   it("every pinned function is defined by at least one committed migration", () => {
     const missing = pins.filter((p) => !(defs.get(p.fn)?.length)).map((p) => p.fn)
     expect(missing).toEqual([])
+  })
+
+  // ── the in-place splice (see the header) ──────────────────────────────────
+  const splices = splicesOfPinnedFunctions(pins)
+
+  it("inspects the splice population (it is not empty by accident)", () => {
+    // 41 (file, pinned fn) pairs measured 2026-10-20. A floor, not an equality:
+    // the population grows with every splice. Zero would mean the detector broke.
+    expect(splices.length).toBeGreaterThan(20)
+  })
+
+  it("has no pin silently superseded by an in-place splice", () => {
+    const stale: string[] = []
+    for (const sp of splices) {
+      const pin = pins.find((p) => p.fn === sp.fn)!
+      const pinFile = pin.migration.split("/").pop()!
+      if (sp.file <= pinFile) continue // the pin's migration is newer than the splice
+      if (sp.namesPin) continue // the splice says the pinned file carries its result
+      if (`${sp.file}:${sp.fn}` in SPLICE_NOT_A_REDEFINITION) continue
+      stale.push(
+        `${sp.fn}: ${sp.file} rewrites it in place (pg_get_functiondef + EXECUTE), after the pin's ` +
+          `${pinFile}. The repo now holds no full body for what production runs. Re-pin, in ONE push: ` +
+          `(1) write a SNAPSHOT migration carrying the resulting definition (md5 its prosrc against ` +
+          `live — recipe: docs/reference/database.md "Re-pinning a stale DB-invariant pin"; leave it ` +
+          `unapplied), (2) copy that body into ${pin.test} and repoint this pin at the snapshot, ` +
+          `(3) RE-CHECK THE TEST'S ASSERTIONS against the new behaviour. If the splice only QUOTES ` +
+          `the name without redefining it, add "${sp.file}:${sp.fn}" to SPLICE_NOT_A_REDEFINITION.`,
+      )
+    }
+    expect(stale).toEqual([])
+  })
+
+  it("every splice exception still actually names a splice of a pinned function", () => {
+    const keys = new Set(splices.map((sp) => `${sp.file}:${sp.fn}`))
+    expect(Object.keys(SPLICE_NOT_A_REDEFINITION).filter((k) => !keys.has(k))).toEqual([])
   })
 
   // Two-way, so the allowlist cannot rot into permission.
