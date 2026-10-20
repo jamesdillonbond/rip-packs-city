@@ -92,9 +92,13 @@ jobs:
       # provided path`. Eight of the previous thirty runs failed — including a
       # REAL React #418 on /insights/underpriced-serials (run 111) that survived
       # two retries — and not one kept a byte of evidence. The html reporter is
-      # now declared; `test-results/` carries the traces the report links to and
-      # e2e-results.json is the machine-readable summary. `if-no-files-found:
-      # error` so this can never silently regress to uploading nothing again.
+      # now declared, and e2e-results.json is the machine-readable summary.
+      # `if-no-files-found: error` so this can never silently regress to
+      # uploading nothing again.
+      # ⚠ `test-results/` is NOT uploaded (2026-10-20): the html report stores its
+      # own content-addressed copy of every trace and error-context.md
+      # (playwright-report/data/<sha1>.zip|.md — measured byte-identical), so
+      # uploading both doubled every failing run's artifact (a11y: ~550 MB).
       - name: Upload report on failure
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -102,7 +106,6 @@ jobs:
           name: playwright-report
           path: |
             playwright-report/
-            test-results/
             e2e-results.json
           if-no-files-found: error
           retention-days: 7
@@ -162,7 +165,6 @@ jobs:
           path: |
             a11y-summary.md
             playwright-report/
-            test-results/
             e2e-results.json
           if-no-files-found: warn
           retention-days: 14
