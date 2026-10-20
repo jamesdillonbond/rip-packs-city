@@ -3,6 +3,7 @@ import { tokenMatches } from "@/lib/auth/bearer-secret"
 import * as Report from "@/lib/observability/report"
 import { supabaseAdmin } from "@/lib/supabase"
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
+import { allDayListingSource, type AllDayListingSource, type StorefrontVersion } from "@/lib/allday/listing-source"
 
 // ── On-chain NFL All Day listings indexer (triple storefront scan) ───────────
 //
@@ -278,7 +279,6 @@ function epochSecondsToIso(raw: unknown): string | null {
   return new Date(n * 1000).toISOString()
 }
 
-type StorefrontVersion = "v1" | "v2_dapper" | "v2_flowty"
 
 interface ListingAvailableEvent {
   storefrontVersion: StorefrontVersion
@@ -305,10 +305,9 @@ interface ListingCompletedEvent {
   purchased: boolean
 }
 
-function sourceFor(v: StorefrontVersion): "direct_v1" | "direct_v2" | "direct" {
-  if (v === "v1") return "direct_v1"
-  if (v === "v2_dapper") return "direct_v2"
-  return "direct"
+// The version is always set by this route, so the mapping is total here.
+function sourceFor(v: StorefrontVersion): AllDayListingSource {
+  return allDayListingSource(v) as AllDayListingSource
 }
 
 export async function POST(req: NextRequest) {

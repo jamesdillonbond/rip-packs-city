@@ -486,6 +486,7 @@ const EVENT_PAYLOAD = {
   salePrice: "42.50000000",
   salePaymentVaultType: "A.ead892083b3e2c6c.DapperUtilityCoin.Vault",
   customID: "allday-custom",
+  storefrontVersion: "v2_dapper",
   expiry: "1790000000",
 }
 
@@ -548,7 +549,7 @@ describe("POST /api/admin/listing-retry-force", () => {
     const upsert = (spy.writes.cached_listings_v2 ?? []).find((w) => w.method === "upsert")!
     expect(upsert.rows[0]).toMatchObject({
       listing_resource_id: "lr-900",
-      source: "direct",
+      source: "direct_v2", // the emitting storefront, never a hardcoded "direct" (2026-10-19)
       flow_id: "424242",
       edition_id: "edition-uuid-1",
       collection_id: ALLDAY_ID,

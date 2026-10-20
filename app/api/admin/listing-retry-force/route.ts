@@ -15,6 +15,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { bearerMatches } from "@/lib/auth/bearer-secret"
 import { supabaseAdmin } from "@/lib/supabase"
+import { allDayListingSource } from "@/lib/allday/listing-source"
 
 export const maxDuration = 60
 export const dynamic = "force-dynamic"
@@ -122,6 +123,7 @@ interface EventPayload {
   salePaymentVaultType?: string
   customID?: string | null
   expiry?: string
+  storefrontVersion?: string
 }
 
 export async function POST(req: NextRequest) {
@@ -244,6 +246,17 @@ export async function POST(req: NextRequest) {
     })
   }
 
+  // ⛔ The source is the storefront that emitted the event, never a constant
+  // (lib/allday/listing-source.ts). Without a version we refuse rather than guess.
+  const source = allDayListingSource(payload.storefrontVersion)
+  if (!source) {
+    return NextResponse.json({
+      ok: false,
+      resolved: false,
+      reason: "event_payload_has_no_storefront_version",
+    }, { status: 422 })
+  }
+
   // Resolved → upsert cached_listings_v2 + mark resolved.
   const currency = deriveCurrency(payload.salePaymentVaultType)
   const salePriceNum = parseFloat(payload.salePrice) || 0
@@ -254,7 +267,7 @@ export async function POST(req: NextRequest) {
     .upsert(
       [{
         listing_resource_id: payload.listingResourceID,
-        source: "direct",
+        source,
         flow_id: payload.nftID,
         edition_id: editionUuid,
         collection_id: ALLDAY_COLLECTION_ID,

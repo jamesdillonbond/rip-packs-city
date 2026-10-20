@@ -14,7 +14,8 @@ import { scriptResult } from "./helpers/flow-cdc-fixture"
 //   - resolution ladder wmc -> nft_edition_map -> seller-borrow Cadence (bumped
 //     cap), each rung ending in a cached_listings_v2 upsert built from the SAVED
 //     event_payload (currency derivation, USD only for DUC/FUT, epoch expiry ->
-//     ISO, source='direct') + resolved_at mark;
+//     ISO, source = the storefront that emitted the event: v1 -> direct_v1,
+//     v2_dapper -> direct_v2, never a hardcoded 'direct') + resolved_at mark;
 //   - the wmc_miss_historical_backfill short-circuit: Cadence-attempted AND
 //     failed -> permanently retired as unresolvable_no_chain_data (the chain has
 //     spoken), while the same reason WITHOUT a Cadence attempt only bumps;
@@ -57,6 +58,7 @@ function qrow(opts: {
   price?: string
   custom?: string | null
   expiry?: string
+  version?: string | null // null = event_payload has NO storefrontVersion
 }) {
   return {
     id: opts.id,
@@ -77,6 +79,7 @@ function qrow(opts: {
       salePaymentVaultType: opts.vault ?? DUC_VAULT,
       customID: opts.custom ?? null,
       ...(opts.expiry !== undefined ? { expiry: opts.expiry } : {}),
+      ...(opts.version === null ? {} : { storefrontVersion: opts.version ?? "v2_dapper" }),
     },
   }
 }
@@ -264,8 +267,8 @@ describe("allday-listings-retry — resolution + v2 insert contract", () => {
     const spy = install({
       listing_resolution_failures: {
         data: [
-          qrow({ id: 1, flowId: "555", custom: "cid-1", expiry: "1789000000" }),
-          qrow({ id: 2, flowId: "666", vault: FLOW_VAULT, price: "100.00000000" }),
+          qrow({ id: 1, flowId: "555", custom: "cid-1", expiry: "1789000000", version: "v1" }),
+          qrow({ id: 2, flowId: "666", vault: FLOW_VAULT, price: "100.00000000", version: "v2_dapper" }),
         ],
         error: null,
       },
@@ -295,7 +298,7 @@ describe("allday-listings-retry — resolution + v2 insert contract", () => {
     expect(upserts).toHaveLength(2)
     expect(upserts.find((r) => r.flow_id === "555")).toMatchObject({
       listing_resource_id: "LR-1",
-      source: "direct",
+      source: "direct_v1",
       flow_id: "555",
       edition_id: "uuid-321",
       collection_id: AD_COLLECTION,
@@ -312,6 +315,7 @@ describe("allday-listings-retry — resolution + v2 insert contract", () => {
       event_index: 2,
     })
     expect(upserts.find((r) => r.flow_id === "666")).toMatchObject({
+      source: "direct_v2",
       edition_id: "uuid-322",
       currency: "FLOW",
       price_usd: null, // FLOW is not USD-equivalent
@@ -380,10 +384,54 @@ describe("allday-listings-retry — resolution + v2 insert contract", () => {
       .filter((w) => w.method === "upsert")
       .flatMap((w) => w.rows)
     expect(upserts).toHaveLength(1)
-    expect(upserts[0]).toMatchObject({ flow_id: "777", edition_id: "uuid-888", source: "direct" })
+    expect(upserts[0]).toMatchObject({ flow_id: "777", edition_id: "uuid-888", source: "direct_v2" })
 
     const extra = terminalLog(spy)?.p_extra as Record<string, unknown>
     expect(extra).toMatchObject({ resolved: 1, cadence_attempted: 1, cadence_resolved: 1 })
+  })
+})
+
+describe("allday-listings-retry — the source is the emitting storefront, never the Flowty fork by default", () => {
+  // 2026-10-19: a hardcoded source "direct" filed Dapper V1/V2 listings as the
+  // Flowty fork, where no ListingCompleted closes them. A Dapper listing must
+  // never land as "direct", and a payload with no version must not be guessed.
+  it("never writes a Dapper V1/V2 listing as 'direct'; a payload with no storefrontVersion is not written at all", async () => {
+    fetchMock = installFetchMock([scriptsStub([])])
+    const spy = install({
+      listing_resolution_failures: {
+        data: [
+          qrow({ id: 11, flowId: "901", version: "v2_dapper", custom: "DAPPER_MARKETPLACE" }),
+          qrow({ id: 12, flowId: "902", version: "v1" }),
+          qrow({ id: 13, flowId: "903", version: null }),
+        ],
+        error: null,
+      },
+      wallet_moments_cache: {
+        data: [
+          { moment_id: "901", edition_key: "41" },
+          { moment_id: "902", edition_key: "41" },
+          { moment_id: "903", edition_key: "41" },
+        ],
+        error: null,
+      },
+      nft_edition_map: { data: [], error: null },
+      editions: { data: [{ id: "uuid-41", external_id: "41" }], error: null },
+      cached_listings_v2: { data: null, error: null },
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    const upserts = (spy.writes.cached_listings_v2 ?? [])
+      .filter((w) => w.method === "upsert")
+      .flatMap((w) => w.rows)
+    expect(upserts.some((r) => r.source === "direct")).toBe(false)
+    expect(Object.fromEntries(upserts.map((r) => [r.flow_id, r.source]))).toEqual({
+      "901": "direct_v2",
+      "902": "direct_v1",
+    })
+    const extra = terminalLog(spy)?.p_extra as Record<string, unknown>
+    expect(extra).toMatchObject({ resolved: 2, still_unresolved: 1, unknown_storefront_version: 1 })
   })
 })
 

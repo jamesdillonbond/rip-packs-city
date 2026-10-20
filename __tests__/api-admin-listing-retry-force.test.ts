@@ -19,6 +19,7 @@ const state = vi.hoisted(() => ({
   updates: [] as any[],
   upsertError: null as any,
   writeError: null as any,
+  upserts: [] as any[],
 }))
 vi.mock("@/lib/supabase", () => {
   // The chain is THENABLE so `await from(x).update(y).eq(...)` resolves the way
@@ -32,7 +33,10 @@ vi.mock("@/lib/supabase", () => {
       state.updates.push(rows)
       return chain
     },
-    upsert: async () => ({ error: state.upsertError }),
+    upsert: async (rows: any) => {
+      state.upserts.push(...(Array.isArray(rows) ? rows : [rows]))
+      return { error: state.upsertError }
+    },
     then: (resolve: (v: unknown) => unknown) => resolve({ error: state.writeError }),
   }
   return { supabaseAdmin: { from: () => chain } }
@@ -53,6 +57,7 @@ function reset() {
   state.row = { data: null, error: null }
   state.seq.length = 0
   state.updates.length = 0
+  state.upserts.length = 0
   state.upsertError = null
   state.writeError = null
 }
@@ -77,6 +82,7 @@ const OPEN_ROW = {
     salePrice: "25.00000000",
     salePaymentVaultType: "A.ead892083b3e2c6c.DapperUtilityCoin.Vault",
     customID: null,
+    storefrontVersion: "v2_dapper",
   },
 }
 
@@ -173,5 +179,36 @@ describe("POST /api/admin/listing-retry-force — a failed lookup 500s and touch
     expect(String(body.error)).toContain("resolved-mark")
     // The v2 row DID land, and saying so is what makes a retry safe to run.
     expect(body.v2_upserted).toBe(true)
+  })
+
+  // 2026-10-19: this route hardcoded source "direct" (the Flowty fork) for every
+  // listing, so a Dapper V2 listing landed where no ListingCompleted closes it.
+  it("writes a Dapper V2 listing under direct_v2, never 'direct'", async () => {
+    process.env.RPC_ADMIN_TOKEN = ADMIN
+    state.seq = [
+      { data: OPEN_ROW, error: null },
+      { data: { edition_key: "EXT-555" }, error: null },
+      { data: { id: "uuid-555" }, error: null },
+    ]
+    const res = await POST(post("?id=7", `Bearer ${ADMIN}`))
+    expect(res.status).toBe(200)
+    expect(state.upserts).toHaveLength(1)
+    expect(state.upserts[0].source).toBe("direct_v2")
+  })
+
+  it("refuses (422) a payload with no storefrontVersion: no listing written, row not marked", async () => {
+    process.env.RPC_ADMIN_TOKEN = ADMIN
+    const noVersion: Record<string, unknown> = { ...OPEN_ROW.event_payload }
+    delete noVersion.storefrontVersion
+    state.seq = [
+      { data: { ...OPEN_ROW, event_payload: noVersion }, error: null },
+      { data: { edition_key: "EXT-555" }, error: null },
+      { data: { id: "uuid-555" }, error: null },
+    ]
+    const res = await POST(post("?id=7", `Bearer ${ADMIN}`))
+    expect(res.status).toBe(422)
+    expect((await res.json()).resolved).toBe(false)
+    expect(state.upserts).toHaveLength(0)
+    expect(state.updates).toHaveLength(0)
   })
 })

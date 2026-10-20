@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
+import { allDayListingSource } from "@/lib/allday/listing-source"
 
 // ── AllDay listing-resolution retry cron ────────────────────────────────────
 //
@@ -182,6 +183,7 @@ interface QueuedFailure {
     salePaymentVaultType: string | undefined
     customID: string | null
     expiry: string | undefined
+    storefrontVersion?: string
   }
   retry_count: number
   failure_reason: string | null
@@ -214,6 +216,7 @@ export async function POST(req: NextRequest) {
     let cadenceAttempted = 0
     let cadenceResolved = 0
     let v2WriteErrors = 0
+    let unknownStorefrontVersion = 0
 
     try {
       // Drain RETRY_BATCH_LIMIT oldest unresolved + sub-cap rows. Exclude
@@ -340,12 +343,21 @@ export async function POST(req: NextRequest) {
           continue
         }
         const a = q.event_payload
+        // ⛔ The source is the storefront that emitted the event, never a constant:
+        // a hardcoded "direct" filed Dapper V1/V2 listings as the Flowty fork, where
+        // no ListingCompleted could ever close them (lib/allday/listing-source.ts).
+        const source = allDayListingSource(a.storefrontVersion)
+        if (!source) {
+          unknownStorefrontVersion++
+          stillUnresolvedIds.push(q.id)
+          continue
+        }
         const currency = deriveCurrency(a.salePaymentVaultType)
         const salePriceNum = parseFloat(a.salePrice) || 0
         const priceUsd = isUsdEquivalent(currency) ? salePriceNum : null
         insertRows.push({
           listing_resource_id: a.listingResourceID,
-          source: "direct",
+          source,
           flow_id: a.nftID,
           edition_id: uuid,
           collection_id: ALLDAY_COLLECTION_ID,
@@ -478,6 +490,7 @@ export async function POST(req: NextRequest) {
       // Always present, so an observer can tell "no write errors" from "this
       // field was never emitted" without reading the route.
       extra.v2_write_errors = v2WriteErrors
+      extra.unknown_storefront_version = unknownStorefrontVersion
       extra.cadence_attempted = cadenceAttempted
       extra.cadence_resolved = cadenceResolved
       extra.elapsed_ms = Date.now() - start
