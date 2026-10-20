@@ -33,6 +33,7 @@ Three values must never be labelled as one another (packs.md 09-26): the EV of w
 - **Giveaways (10-03/04).** Claim pages open packs card by card. Winners can claim with Flow Wallet using an account proof. Delivery stays the sponsor's admin-signed Deliver all, the one read-only exception.
 
 - **10-18 ~8:10 PM PT (Cowork cloud):** Pack Net P&L counts packs with no buy row (inferred drop cost) in its spend-coverage floor, and the Collection tab's Packs view now withholds on the same rule — it had published per-collection Net P&L with no check (ledger 10-18; `57e945a`).
+- **10-19 ~7:30–11:30 PM PT (Claude Code cloud):** Dapper's `Revealed` Top Shot boxes are stalled opens — counted as opened, their third-party-withdrawn packs kept out of contents (`20261020030627`, `20261020041933`). Supply-counter checks now see box/case opens from Dapper's index, refute "0 unopened at 0 %", and run hourly at :34 after the EV view refresh — they had held ~8 min in 3 h (`20261020044228`, `044518`, `044919`). The EV writers stop stamping a never-read dist's default 0 / 0 (`20261020060107`). Net: no Top Shot pack publishes "0% sealed packs sold" while opens are observed (62 had).
 
 ## Cross-collection parity (2026-10-19 ~7:30 PM PT, Claude Code cloud)
 
