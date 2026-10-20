@@ -8,7 +8,7 @@
 
 import type { Delivery, DealPayload, FmvPayload } from "@/lib/alerts";
 import { marketplaceMomentUrl } from "@/lib/collections";
-import { askAgeHours, fmtAskAge, isAskStale } from "@/lib/market/ask-freshness";
+import { askAgeHours, askStampKind, fmtAskAge, isAskStale } from "@/lib/market/ask-freshness";
 import { usdSignFirst } from "@/lib/usd-format"
 
 const SITE = "https://www.rippackscity.com";
@@ -188,6 +188,10 @@ function askAgeClause(d: Deal, now: Date): string | null {
   if (hours === null) return null;
   const h = Math.max(0, hours);
   const age = h < 1 ? `${Math.round(h * 60)}m` : fmtAskAge(h);
+  // 2026-10-20: on the All Day / Golazos branch the stamp is when the seller POSTED
+  // the listing, not when we last saw it — "ask seen 90d ago — may be gone" was false
+  // for asks re-verified on chain every 2 h (V2) or weekly (V1, #198). Say "listed".
+  if (askStampKind(d.collection_slug) === "listed") return `ask listed ${age} ago`;
   const stale = isAskStale(d.ask_updated_at, now.getTime());
   return `ask seen ${age} ago${stale ? " — may be gone" : ""}`;
 }
@@ -263,7 +267,10 @@ export function buildDiscordEmbeds(deliveries: Delivery[], now: Date = new Date(
       // The ask's age, when known — a 23-hour-old ask is a different claim from
       // a 5-minute-old one, and the reader is about to act on it.
       const askAge = askAgeClause(deal, now);
-      if (askAge) fields.push({ name: "Ask seen", value: askAge.replace(/^ask seen /, ""), inline: true });
+      if (askAge) {
+        const listed = askAge.startsWith("ask listed ");
+        fields.push({ name: listed ? "Ask listed" : "Ask seen", value: askAge.replace(/^ask (seen|listed) /, ""), inline: true });
+      }
       embeds.push({
         title: dealTitle(deal),
         url: dealDetailUrl(deal),

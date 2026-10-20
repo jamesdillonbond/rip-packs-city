@@ -230,10 +230,18 @@ export function askAgeStamp(
   if (!cachedAt || askPrice == null) return null
   const hours = askAgeHours(cachedAt, now)
   if (hours == null) return null
+  const kind = askStampKind(collectionSlug)
+  // 2026-10-20: a LISTED stamp (All Day / Golazos `listed_at`) dates when the seller
+  // POSTED the ask. Its age says nothing about how long since we checked it — those
+  // books are re-verified on chain (V2 every 2 h, V1 weekly, #198) — so a 90-day-old
+  // listing is a long-standing ask, not a stale one: never the ⚠ warning.
+  if (kind === "listed") {
+    return { label: `listed ${fmtAskAge(hours)} ago`, title: askAgeTitle(hours, kind), stale: false }
+  }
   const stale = hours >= ASK_STALE_HOURS
   return {
     label: `${stale ? "⚠ " : ""}${fmtAskAge(hours)} old`,
-    title: askAgeTitle(hours, askStampKind(collectionSlug)),
+    title: askAgeTitle(hours, kind),
     stale,
   }
 }

@@ -311,6 +311,20 @@ describe("askAgeStamp", () => {
     expect(ts).not.toEqual(askAgeStamp(hoursAgo(3), 10, "candy_mlb", NOW)!.title)
   })
 
+  it("a LISTED stamp (All Day / Golazos) never carries the stale warning — its age is the listing's, not our check's", () => {
+    // 2026-10-20: All Day edition 956's $8 floor, chain-verified that morning,
+    // read "⚠ ask unconfirmed 90d" because listed_at is when the seller posted it.
+    for (const slug of ["nfl_all_day", "nfl-all-day", "laliga_golazos"]) {
+      const old = askAgeStamp(hoursAgo(90 * 24), 10, slug, NOW)!
+      expect(old.stale, slug).toBe(false)
+      expect(old.label, slug).not.toContain("⚠")
+      expect(old.label, slug).toMatch(/^listed .+ ago$/)
+      expect(old.title, slug).toMatch(/posted/i)
+    }
+    // no-change control: a CHECKED stamp of the same age still warns.
+    expect(askAgeStamp(hoursAgo(90 * 24), 10, "candy_mlb", NOW)!.stale).toBe(true)
+  })
+
   it("the threshold it splits on is the shared one, not a private copy", () => {
     const justUnder = askAgeStamp(hoursAgo(ASK_STALE_HOURS - 0.1), 10, "candy_mlb", NOW)
     const justOver = askAgeStamp(hoursAgo(ASK_STALE_HOURS + 0.1), 10, "candy_mlb", NOW)
