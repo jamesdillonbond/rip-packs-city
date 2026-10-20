@@ -282,3 +282,86 @@ export async function readPaniniDealsForConcierge(
       "Panini's index is listing-fed (a floor, not a census). RPC does not buy or sell.",
   })
 }
+
+// ── COLLECTION BY USERNAME (added the same evening) ──────────────────────────
+// check_wallet resolved any non-address input as a TOP SHOT username, so on a Panini
+// page a Panini handle that also exists on Top Shot came back as some Top Shot
+// collector's Flow portfolio — a substitution (another person's holdings under this
+// name). A Panini owner is a Panini USERNAME; this reads the Collection tab's own
+// backend (/api/panini-collection: cards seen under the name + the profile walk).
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function topCards(cards: any[], n: number) {
+  return [...cards]
+    .filter((c) => c && typeof c === "object")
+    .sort((a, b) => (num(b.fmvUsd) ?? -1) - (num(a.fmvUsd) ?? -1))
+    .slice(0, n)
+    .map((c) => ({
+      player: c.playerName ?? null,
+      set: c.setName ?? null,
+      serial: num(c.serial),
+      mint_cap: num(c.mintCap),
+      fmv_usd: num(c.fmvUsd),
+      listed_now_at_usd: c.isListed === true ? num(c.askUsd) : null,
+      special_serial: Array.isArray(c.flags) && c.flags.length ? c.flags.join(", ") : null,
+      edition_url: typeof c.editionKey === "string" && c.catalogued === true
+        ? `/panini-blockchain/edition/${encodeURIComponent(c.editionKey)}`
+        : null,
+    }))
+}
+
+export async function readPaniniCollectionForConcierge(base: string, username: string): Promise<string> {
+  const failed = (message: string) => JSON.stringify({ status: "error", message })
+  try {
+    const res = await fetch(`${base}/api/panini-collection?username=${encodeURIComponent(username)}`, { signal: AbortSignal.timeout(10000) })
+    if (res.status === 400) {
+      return JSON.stringify({ status: "bad_username", message: "That doesn't look like a Panini username (2–16 letters, numbers, . _ -). Ask the user to check it." })
+    }
+    if (!res.ok) return failed("The Panini collection read failed — say the check failed; never say this collector holds nothing.")
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const j: any = await res.json()
+    if (!j || typeof j.cardsSeen !== "number") return failed("The Panini collection read returned an unreadable payload — say the check failed.")
+    const profile = j.profile ?? null
+    const walked = !!profile?.walk
+    const tabUrl = `${base}/panini-blockchain/collection?username=${encodeURIComponent(j.username ?? username)}`
+    const withBase = (rows: ReturnType<typeof topCards>) => rows.map((r) => ({ ...r, edition_url: r.edition_url ? `${base}${r.edition_url}` : null }))
+    return JSON.stringify({
+      status: walked || j.cardsSeen > 0 ? "ok" : "not_seen",
+      username: j.username ?? username,
+      collection_tab_url: tabUrl,
+      // The PROFILE walk is the whole public collection as of that walk; null = never walked.
+      profile_walk: walked
+        ? {
+            last_walk_at: profile.walk.lastWalkAt ?? null,
+            profile_state: profile.walk.profileState ?? null,
+            cards_held: num(profile.cardsHeld),
+            editions: num(profile.editions),
+            listed_now: num(profile.listedNow),
+            special_serials: num(profile.specialSerials),
+            fmv_held_usd: num(profile.fmvHeldUsd),
+            fmv_priced_cards: num(profile.fmvPricedCards),
+            top_cards: withBase(topCards(Array.isArray(profile.cards) ? profile.cards : [], 5)),
+          }
+        : null,
+      // Cards RPC's marketplace walk has SEEN under this name — not a collection total.
+      seen_on_marketplace: {
+        cards_seen: j.cardsSeen,
+        listed_now: num(j.listedNow),
+        editions: num(j.editions),
+        special_serials: num(j.specialSerials),
+        fmv_seen_usd: num(j.fmvSeenUsd),
+        fmv_priced_cards: num(j.fmvPricedCards),
+        last_seen_at: j.lastSeenAt ?? null,
+        top_cards: walked ? [] : withBase(topCards(Array.isArray(j.cards) ? j.cards : [], 5)),
+      },
+      note:
+        "A Panini owner is a Panini USERNAME, not a wallet, and is unrelated to any Top Shot account of the same name. " +
+        "profile_walk (when present) is the whole public profile as of last_walk_at; otherwise only seen_on_marketplace exists, " +
+        "which is the cards RPC's walk has seen under this name — never call it their full collection. " +
+        "status not_seen means RPC has not seen this username — NOT that they hold nothing. FMV totals cover fmv_priced_cards only. " +
+        "Link collection_tab_url.",
+    })
+  } catch {
+    return failed("The Panini collection read failed — say the check failed; never say this collector holds nothing.")
+  }
+}

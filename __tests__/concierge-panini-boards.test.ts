@@ -215,3 +215,46 @@ describe("the concierge prompt never denies a tab the registry lists", () => {
     expect(head).toContain("readPaniniPackMarketForConcierge(")
   })
 })
+
+describe("readPaniniCollectionForConcierge — a Panini username, never a Top Shot account", () => {
+  const ok = (body: unknown, status = 200) => vi.fn(async () => new Response(JSON.stringify(body), { status }))
+  it("a 503 is an error, never 'holds nothing'", async () => {
+    vi.stubGlobal("fetch", ok({ error: "x" }, 503))
+    const out = JSON.parse(await (await import("@/lib/concierge/panini-boards")).readPaniniCollectionForConcierge("https://x", "joe"))
+    expect(out.status).toBe("error")
+    expect(out.seen_on_marketplace).toBeUndefined()
+  })
+  it("a 400 is a username problem, not an empty collection", async () => {
+    vi.stubGlobal("fetch", ok({ error: "bad" }, 400))
+    const out = JSON.parse(await (await import("@/lib/concierge/panini-boards")).readPaniniCollectionForConcierge("https://x", "!!"))
+    expect(out.status).toBe("bad_username")
+  })
+  it("a username RPC has never seen is not_seen — never a measured zero holding", async () => {
+    vi.stubGlobal("fetch", ok({ username: "ghost", cardsSeen: 0, listedNow: 0, editions: 0, specialSerials: 0, fmvSeenUsd: null, fmvPricedCards: 0, lastSeenAt: null, cards: [], profile: { walk: null, cards: [] } }))
+    const out = JSON.parse(await (await import("@/lib/concierge/panini-boards")).readPaniniCollectionForConcierge("https://x", "ghost"))
+    expect(out.status).toBe("not_seen")
+    expect(out.profile_walk).toBeNull()
+    expect(out.note).toMatch(/NOT that they hold nothing/)
+  })
+  it("a walked profile leads with the profile holdings; top cards by FMV with edition links", async () => {
+    const card = (fmv: number, key: string) => ({ playerName: "Messi", setName: "Prizm", serial: 1, mintCap: 5, fmvUsd: fmv, isListed: false, flags: [], editionKey: key, catalogued: true })
+    vi.stubGlobal("fetch", ok({
+      username: "joe", cardsSeen: 2, listedNow: 0, editions: 2, specialSerials: 0, fmvSeenUsd: 30, fmvPricedCards: 2, lastSeenAt: "2026-10-19T00:00:00Z", cards: [card(10, "a")],
+      profile: { walk: { lastWalkAt: "2026-10-18T00:00:00Z", profileState: "public" }, cardsHeld: 3, editions: 3, listedNow: 0, specialSerials: 0, fmvHeldUsd: 60, fmvPricedCards: 3, cards: [card(5, "b"), card(50, "c")] },
+    }))
+    const out = JSON.parse(await (await import("@/lib/concierge/panini-boards")).readPaniniCollectionForConcierge("https://x", "joe"))
+    expect(out.status).toBe("ok")
+    expect(out.profile_walk.cards_held).toBe(3)
+    expect(out.profile_walk.top_cards.map((c: { fmv_usd: number }) => c.fmv_usd)).toEqual([50, 5])
+    expect(out.profile_walk.top_cards[0].edition_url).toBe("https://x/panini-blockchain/edition/c")
+    expect(out.collection_tab_url).toBe("https://x/panini-blockchain/collection?username=joe")
+  })
+  it("check_wallet on Panini routes a username to the Panini read BEFORE any Top Shot username resolution", () => {
+    const i = ROUTE.indexOf('if (toolName === "check_wallet")')
+    const panini = ROUTE.indexOf("readPaniniCollectionForConcierge(", i)
+    const topshot = ROUTE.indexOf('rpc("resolve_topshot_username"', i)
+    expect(panini).toBeGreaterThan(i)
+    expect(topshot).toBeGreaterThan(i)
+    expect(panini).toBeLessThan(topshot)
+  })
+})

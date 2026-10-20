@@ -109,7 +109,7 @@ import {
 import { ALLOWED_ORIGINS } from "@/lib/allowed-origins";
 import { lookupUiField } from "@/lib/concierge/ui-field-dictionary";
 import { ownLookup } from "@/lib/safe-lookup";
-import { readPaniniDealsForConcierge, readPaniniPackMarketForConcierge, readPaniniPremiumsForConcierge } from "@/lib/concierge/panini-boards";
+import { readPaniniCollectionForConcierge, readPaniniDealsForConcierge, readPaniniPackMarketForConcierge, readPaniniPremiumsForConcierge } from "@/lib/concierge/panini-boards";
 import { fetchPaniniEditionAsk, fetchPaniniEditionSerials } from "@/lib/panini/edition-market";
 import { paniniEditionUrl } from "@/lib/panini/edition-url";
 
@@ -440,11 +440,11 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "check_wallet",
-    description: "Look up a collector's wallet: FULL portfolio totals (moment count + FMV) across ALL five collections in one call, per-collection breakdown, top moments, and rarest holding — served from the indexed wallet cache. When present, standing_best_offer_total_usd is the total the wallet would receive by accepting the single highest live on-chain bid on each held moment (a DapperOffersV2 marketplace signal, NOT FMV) — cite it as 'standing offers on your holdings', and only when the field is present. For a cross-collection question ('what's my best moment?', 'what am I worth?'), call ONCE with no collectionId — do NOT loop over collections. Pass collectionId only to get that collection's own top-5 detail. Accepts a Flow wallet address (0x + 16 hex) OR a Top Shot / Dapper SSO username (resolved via a layered cache; cached on first hit). If the username can't be resolved, ask for the 0x address; do NOT pretend the wallet was empty. If the wallet isn't indexed yet, a live Top Shot fallback returns the first page only — the response says so; report it honestly.",
+    description: "Look up a collector's wallet: FULL portfolio totals (moment count + FMV) across ALL five collections in one call, per-collection breakdown, top moments, and rarest holding — served from the indexed wallet cache. When present, standing_best_offer_total_usd is the total the wallet would receive by accepting the single highest live on-chain bid on each held moment (a DapperOffersV2 marketplace signal, NOT FMV) — cite it as 'standing offers on your holdings', and only when the field is present. For a cross-collection question ('what's my best moment?', 'what am I worth?'), call ONCE with no collectionId — do NOT loop over collections. Pass collectionId only to get that collection's own top-5 detail. Accepts a Flow wallet address (0x + 16 hex) OR a Top Shot / Dapper SSO username (resolved via a layered cache; cached on first hit). On Panini (collectionId panini-blockchain, the default on a Panini page) it takes a PANINI USERNAME instead and returns what RPC has seen under that name (Panini has no wallets, and a Panini username is unrelated to a Top Shot account of the same name). If the username can't be resolved, ask for the 0x address; do NOT pretend the wallet was empty. If the wallet isn't indexed yet, a live Top Shot fallback returns the first page only — the response says so; report it honestly.",
     input_schema: {
       type: "object" as const,
       properties: {
-        collectionId: { type: "string", description: "Optional. EXACTLY one of: nba-top-shot, nfl-all-day, disney-pinnacle, laliga-golazos, ufc, candy-mlb. Never invent other forms (no underscores, no 'ufc-strike'). Omit for the all-collections portfolio view." },
+        collectionId: { type: "string", description: "Optional. EXACTLY one of: nba-top-shot, nfl-all-day, disney-pinnacle, laliga-golazos, ufc, candy-mlb, panini-blockchain (Panini takes a Panini username). Never invent other forms (no underscores, no 'ufc-strike'). Omit for the all-collections portfolio view." },
         walletAddress: { type: "string", description: "Flow wallet address (0x + 16 hex), a Top Shot / Dapper username, or — for Candy MLB — a Solana wallet address (base58, no 0x; pass it EXACTLY as given, case matters)." },
       },
       required: ["walletAddress"],
@@ -2515,6 +2515,18 @@ async function executeToolInner(
       // 0x. It is neither a username to resolve nor a key to prefix (both would
       // destroy it); the indexed snapshot already keys Candy rows on it verbatim.
       const isSolana = isSolanaAddress(inputAddr);
+      // 2026-10-19: a Panini owner is a Panini USERNAME. Resolved as a Top Shot
+      // username, a handle that exists on both platforms returned another person's
+      // Flow portfolio under this name (a substitution). Panini reads its own tab.
+      if (effectiveCollectionId === "panini-blockchain") {
+        if (isHex || isSolana || /^0x/i.test(inputAddr)) {
+          return JSON.stringify({ status: "unsupported_collection", message: "Panini has no wallets — its collectors are Panini usernames. Ask for their Panini username, or call check_wallet with that wallet's own collection (e.g. collectionId nba-top-shot)." });
+        }
+        if (!inputAddr) return JSON.stringify({ status: "error", message: "Ask for the collector's Panini username." });
+        const out = JSON.parse(await readPaniniCollectionForConcierge(base, inputAddr));
+        out.if_top_shot_username = "If the user meant a Top Shot / Dapper username, call check_wallet again with collectionId nba-top-shot — never merge the two.";
+        return JSON.stringify(out);
+      }
       let resolvedAddr = inputAddr;
       if (!isHex && !isSolana) {
         // deno-lint-ignore no-explicit-any

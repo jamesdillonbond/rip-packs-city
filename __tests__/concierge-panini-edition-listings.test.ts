@@ -6,7 +6,7 @@
 
 import { describe, it, expect, beforeEach, vi } from "vitest"
 import { NextRequest } from "next/server"
-import { makeInstrumentedSupabaseFixture } from "./helpers/route-harness"
+import { makeInstrumentedSupabaseFixture, installFetchMock, jsonRoute } from "./helpers/route-harness"
 import type { ScriptTurn } from "./helpers/anthropic-fixture"
 
 const A = vi.hoisted(() => ({
@@ -125,5 +125,37 @@ describe("get_edition_listings — Panini reads RPC's confirmed-ask board (2026-
     await POST(post())
     r = toolResult()
     expect(String(r.special_serials_note)).toMatch(/failed/)
+  })
+})
+
+describe("check_wallet on a Panini page reads the Panini username — never a Top Shot account of the same name", () => {
+  it("routes to /api/panini-collection and never calls resolve_topshot_username", async () => {
+    const inst = makeInstrumentedSupabaseFixture({})
+    A.sb = inst.fixture
+    const f = installFetchMock([jsonRoute("/api/panini-collection", {
+      username: "joe", cardsSeen: 1, listedNow: 0, editions: 1, specialSerials: 0, fmvSeenUsd: 10, fmvPricedCards: 1, lastSeenAt: ago(3), cards: [],
+      profile: { walk: null, cards: [] },
+    })])
+    A.state.script = [{ tools: [{ name: "check_wallet", input: { walletAddress: "joe" } }] }, { text: "done" }]
+    A.state.cursor = 0
+    try {
+      await POST(post())
+      const r = toolResult()
+      expect(r.status).toBe("ok")
+      expect(r.username).toBe("joe")
+      expect(r.seen_on_marketplace.cards_seen).toBe(1)
+      expect(f.calls.some((c) => c.url.includes("/api/panini-collection?username=joe"))).toBe(true)
+      expect(inst.rpcCalls.some((c) => c.name === "resolve_topshot_username")).toBe(false)
+      expect(inst.rpcCalls.some((c) => c.name === "get_wallet_collection_snapshot")).toBe(false)
+    } finally {
+      f.restore()
+    }
+  })
+  it("a Flow address on Panini is refused — Panini has no wallets", async () => {
+    A.sb = makeInstrumentedSupabaseFixture({}).fixture
+    A.state.script = [{ tools: [{ name: "check_wallet", input: { walletAddress: "0x0b2a3299cc857e29" } }] }, { text: "done" }]
+    A.state.cursor = 0
+    await POST(post())
+    expect(toolResult().status).toBe("unsupported_collection")
   })
 })

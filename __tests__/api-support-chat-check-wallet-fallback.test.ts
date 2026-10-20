@@ -287,16 +287,35 @@ describe("concierge check_wallet — failed or unknown reads never render as zer
     expect(cd.total_moments).toBe(5)
   })
 
-  it("indexed path: a collection resolved through the registry (panini) is not a hardcoded-map miss", async () => {
+  // Re-pinned 2026-10-19 (premise changed, not inverted): Panini was the subject
+  // here only as "a collection the old hardcoded map lacked". Panini no longer takes
+  // a wallet at all (its owners are usernames; check_wallet reads its own tab), so
+  // the registry-resolution property is held by UFC, whose app id ("ufc") and DB
+  // slug ("ufc_strike") differ — a local copy that missed it would still red this.
+  it("indexed path: a collection resolved through the registry (ufc → ufc_strike) is not a hardcoded-map miss", async () => {
     install({
       "rpc:get_wallet_collection_snapshot": {
-        data: { totalMoments: 7, totalFmv: 70, perCollection: [{ slug: "panini_blockchain", moments: 7, fmv: 70 }], topMoments: [] },
+        data: { totalMoments: 7, totalFmv: 70, perCollection: [{ slug: "ufc_strike", moments: 7, fmv: 70 }], topMoments: [] },
+        error: null,
+      },
+    })
+    script("check_wallet", { walletAddress: WALLET, collectionId: "ufc" })
+    await POST(post("check my wallet"))
+    const cd = toolResult().collection_detail as Record<string, unknown>
+    expect(cd).toMatchObject({ total_moments: 7, portfolio_fmv: 70, top_moments_status: "ok" })
+  })
+
+  it("a Flow wallet on Panini is refused, never a Flow snapshot under Panini's label", async () => {
+    install({
+      "rpc:get_wallet_collection_snapshot": {
+        data: { totalMoments: 7, totalFmv: 70, perCollection: [{ slug: "nba_top_shot", moments: 7, fmv: 70 }], topMoments: [] },
         error: null,
       },
     })
     script("check_wallet", { walletAddress: WALLET, collectionId: "panini-blockchain" })
     await POST(post("check my wallet"))
-    const cd = toolResult().collection_detail as Record<string, unknown>
-    expect(cd).toMatchObject({ total_moments: 7, portfolio_fmv: 70, top_moments_status: "ok" })
+    const r = toolResult()
+    expect(r.status).toBe("unsupported_collection")
+    expect(r.collection_detail).toBeUndefined()
   })
 })
