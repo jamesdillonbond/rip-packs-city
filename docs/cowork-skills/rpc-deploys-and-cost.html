@@ -1,0 +1,243 @@
+<title>Deploys and Cost</title>
+<style>:root{color-scheme:dark}</style>
+<script>
+/* Port shim (2026-10-20, known-issue #114). These dashboards were written for the
+   desktop Cowork bridge (window.cowork.callMcpTool). On claude.ai they read through
+   the page's `mcp` capability instead. Every failure THROWS here, so a query that
+   did not run can never render as an empty result set. */
+(function(){
+  var mcpP = (window.claude && typeof window.claude.use === "function") ? window.claude.use("mcp") : Promise.resolve(null);
+  var FIX = {
+    needs_reauth: "Reconnect {s} in claude.ai Settings, Connectors, then Reload.",
+    server_not_connected: "Add the {s} connector in claude.ai Settings, Connectors, then Reload.",
+    selection_required: "Choose which {s} connector this page should use, then Reload.",
+    not_in_manifest: "{s} is not allowed for this page. Allow it from the artifact's Permissions menu, then Reload.",
+    approval_required: "This page needs your approval to read from {s}. Reload and choose Allow.",
+    blocked_by_policy: "Your organization's policy blocks this {s} tool.",
+    server_unavailable: "{s} did not answer in time. Try Reload in a minute.",
+    not_granted: "Connectors are not available in this view. Open the page in claude.ai.",
+    capability_disabled: "Connectors are not available in this view. Open the page in claude.ai."
+  };
+  function serverFor(t){ return /list_deployments$/.test(t) ? "Vercel" : "Supabase"; }
+  function sleep(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }
+  async function call(mcp, s, name, args, retried){
+    try { return await mcp.callTool(s, name, args, { cache: false }); }
+    catch (e) {
+      var c = (e && e.code) || "upstream_error";
+      if (e && e.retryable && !retried) { await sleep(Math.min(e.retryAfterMs || 0, 15000) + 600 + Math.random() * 900); return call(mcp, s, name, args, true); }
+      var hint = (FIX[c] || "").replace("{s}", s);
+      var msg = s + " query did not run (" + c + ")" + (hint ? ". " + hint : (e && e.message ? ": " + String(e.message).slice(0, 240) : ""));
+      var err = new Error(msg); err.code = c; throw err;
+    }
+  }
+  window.cowork = { callMcpTool: async function(tool, args){
+    var mcp = await mcpP;
+    if (!mcp) throw new Error("Live data is not available in this view. Open the page in claude.ai with the Supabase connector connected.");
+    var s = serverFor(tool), name = String(tool).split("__").pop();
+    var res = await call(mcp, s, name, args, false);
+    var p = res && res.payload;
+    if (p && typeof p === "object" && !Array.isArray(p) && p.error && typeof p.error === "object")
+      throw new Error(s + " query failed: " + String(p.error.message || p.error.name || "error").slice(0, 300));
+    var out = { content: (res && res.content) || [] };
+    if (res && typeof res.structuredContent !== "undefined") out.structuredContent = res.structuredContent;
+    return out;
+  } };
+})();
+</script>
+<style>
+:root { color-scheme: light; }
+body, html { margin: 0; padding: 0; background: transparent; color: #1a1a1a; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; font-size: 14px; line-height: 1.5; letter-spacing: 0.005em; }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 16px 20px 40px; }
+h1 { font-size: 26px; font-weight: 700; margin: 0 0 4px; text-transform: uppercase; letter-spacing: 0.04em; line-height: 1.1; }
+h1::after { content: ""; display: block; width: 56px; height: 3px; background: #E03A2F; margin-top: 8px; }
+h2 { font-size: 13px; font-weight: 700; margin: 24px 0 10px; text-transform: uppercase; letter-spacing: 0.1em; color: #2a2a2a; }
+.muted { color: #6b6b66; font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.section-head { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 12px; }
+button.refresh { font-size: 10px; padding: 6px 14px; border: 1px solid #E03A2F; background: rgba(224,58,47,0.08); color: #E03A2F; border-radius: 4px; cursor: pointer; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; }
+button.refresh:hover { background: #E03A2F; color: #fff; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin: 12px 0 4px; }
+.kpi { background: #fafaf7; border: 0.5px solid rgba(0,0,0,0.08); border-radius: 8px; padding: 12px 14px; }
+.kpi .lbl { color: #6b6b66; font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 700; }
+.kpi .val { font-size: 28px; font-weight: 600; margin-top: 4px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: #E03A2F; line-height: 1.1; }
+.kpi .sub { color: #6b6b66; font-size: 11px; margin-top: 4px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.card { background: #fff; border: 0.5px solid rgba(0,0,0,0.12); border-radius: 12px; padding: 14px 16px; margin-top: 12px; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { text-align: left; font-weight: 700; color: #6b6b66; padding: 8px; border-bottom: 0.5px solid rgba(0,0,0,0.12); white-space: nowrap; text-transform: uppercase; letter-spacing: 0.06em; font-size: 10px; }
+td { padding: 7px 8px; border-bottom: 0.5px solid rgba(0,0,0,0.06); }
+tr:last-child td { border-bottom: none; }
+td.num { text-align: right; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums; }
+.spinner { color: #6b6b66; font-size: 12px; padding: 6px 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.tinyc { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; color: #6b6b66; }
+.commit { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+.pill { display: inline-flex; padding: 2px 6px; border-radius: 3px; font-size: 10px; font-weight: 700; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; text-transform: uppercase; letter-spacing: 0.04em; }
+.pill.ready { background: rgba(4,120,87,0.15); color: #047857; }
+.pill.error { background: rgba(185,28,28,0.15); color: #b91c1c; }
+.pill.building { background: rgba(146,64,14,0.15); color: #92400e; }
+/* === RPC DARK THEME (2026-06-15) === */
+:root{color-scheme:dark!important;}
+html,body{background:#0c0c0e!important;color:#ECEAE3!important;}
+.wrap,.container,main{background:transparent!important;}
+.card,.panel,.box,.tile,section.card{background:#16161a!important;border-color:rgba(255,255,255,0.10)!important;}
+.kpi,.stat,.metric{background:#1b1b20!important;border-color:rgba(255,255,255,0.08)!important;}
+.muted,.sub,.spinner,.legend,.tinyw,.kpi .lbl,.stat .lbl,small{color:#9A968C!important;}
+h1{color:#F2F0EA!important;}
+h2,h3,h4{color:#D8D5CC!important;}
+table{color:#E4E2DB!important;}
+th{color:#9A968C!important;border-bottom-color:rgba(255,255,255,0.12)!important;}
+td{border-bottom-color:rgba(255,255,255,0.07)!important;}
+tr:hover td{background:rgba(255,255,255,0.03)!important;}
+.tab{border-color:rgba(255,255,255,0.18)!important;color:#CFCAC4!important;background:transparent!important;}
+.tab.active{background:var(--rpc-red,#E03A2F)!important;color:#fff!important;border-color:var(--rpc-red,#E03A2F)!important;}
+button{color:#ECEAE3;}
+button.refresh{background:rgba(224,58,47,0.16)!important;}
+input,select,textarea{background:#16161a!important;color:#ECEAE3!important;border-color:rgba(255,255,255,0.15)!important;}
+a{color:#7FB2F0;}
+.pill.HIGH{background:rgba(46,160,110,0.22)!important;color:#5fd6a0!important;}
+.pill.MEDIUM{background:rgba(55,138,221,0.22)!important;color:#74b6ef!important;}
+.pill.LOW{background:rgba(186,117,23,0.24)!important;color:#e0a64b!important;}
+.pill.STALE{background:rgba(255,255,255,0.10)!important;color:#b9b6ad!important;}
+.pill.NO_DATA{background:rgba(163,45,45,0.24)!important;color:#e88a8a!important;}
+.pill.ASK_ONLY{background:rgba(83,74,183,0.26)!important;color:#a39df0!important;}
+.pill.SALES_ONLY{background:rgba(156,42,111,0.26)!important;color:#e487bb!important;}
+/* keep red accents */
+.kpi .val,.stat .val,.metric .val{color:var(--rpc-red,#E03A2F)!important;}
+/* deploys-and-cost extras */
+.tinyc{color:#9A968C!important;}
+.pill.ready{background:rgba(4,120,87,0.2)!important;color:#5fd6a0!important;}
+.pill.error{background:rgba(185,28,28,0.2)!important;color:#e88a8a!important;}
+.pill.building{background:rgba(146,64,14,0.2)!important;color:#e0a64b!important;}
+button.refresh:hover{background:var(--rpc-red,#E03A2F)!important;color:#fff!important;}
+</style>
+
+<div class="wrap">
+  <div class="section-head">
+    <div>
+      <h1>RPC — Deploys & Cost</h1>
+      <div class="muted" id="ts">Loading…</div>
+    </div>
+    <button class="refresh" onclick="loadAll()">Reload</button>
+  </div>
+
+  <div class="kpis" id="kpis"></div>
+
+  <h2>Recent production deploys (last 20)</h2>
+  <div class="card"><div id="deploys" class="spinner">Loading…</div></div>
+
+  <h2>Database — table size top 15</h2>
+  <div class="card"><div id="tables" class="spinner">Loading…</div></div>
+
+  <h2>Recent migrations (last 10)</h2>
+  <div class="card"><div id="migrations" class="spinner">Loading…</div></div>
+
+  <h2>Pipeline volume (last 7 days)</h2>
+  <div class="card"><div id="pipeline-volume" class="spinner">Loading…</div></div>
+
+  <div class="muted" style="margin-top:18px">Sources: Supabase <code>pg_total_relation_size</code> + <code>supabase_migrations.schema_migrations</code> + <code>pipeline_runs</code> (one consolidated query), Vercel <code>list_deployments</code>. Re-queries live on every open.</div>
+</div>
+
+<script>
+const PROJECT_ID = "bxcqstmqfzmuolpuynti";
+const VERCEL_PROJECT = "prj_YBJ6Utl32GfyBOIzbsp3kbshJh96";
+const VERCEL_TEAM = "team_YWGCVToPBJSS60NgVh8jiCFV";
+
+const PAYLOAD_SQL = `SELECT jsonb_build_object(
+  'db_size', (SELECT COALESCE(jsonb_agg(t),'[]'::jsonb) FROM (SELECT pg_database_size(current_database()) AS bytes, pg_size_pretty(pg_database_size(current_database())) AS pretty) t),
+  'latest_migration', (SELECT COALESCE(jsonb_agg(t),'[]'::jsonb) FROM (SELECT MAX(version) AS latest_version FROM supabase_migrations.schema_migrations) t),
+  'pipeline_24h', (SELECT COALESCE(jsonb_agg(t),'[]'::jsonb) FROM (SELECT COUNT(*) AS runs_24h, SUM(CASE WHEN NOT ok THEN 1 ELSE 0 END)::int AS fails_24h, ROUND(100.0 * SUM(CASE WHEN ok THEN 1 ELSE 0 END) / NULLIF(COUNT(*),0), 1) AS ok_pct FROM pipeline_runs WHERE started_at >= NOW() - INTERVAL '24 hours') t),
+  'tables', (SELECT COALESCE(jsonb_agg(t),'[]'::jsonb) FROM (SELECT tablename, pg_size_pretty(bytes) AS size_pretty, bytes FROM (SELECT c.relname AS tablename, pg_total_relation_size(c.oid) AS bytes FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname='public' AND c.relkind IN ('r','p')) s ORDER BY bytes DESC NULLS LAST LIMIT 15) t),
+  'migrations', (SELECT COALESCE(jsonb_agg(t),'[]'::jsonb) FROM (SELECT version, name FROM supabase_migrations.schema_migrations ORDER BY version DESC LIMIT 10) t),
+  'pipeline_volume', (SELECT COALESCE(jsonb_agg(t),'[]'::jsonb) FROM (SELECT DATE_TRUNC('day', started_at)::date AS day, COUNT(*) AS runs, SUM(CASE WHEN NOT ok THEN 1 ELSE 0 END) AS fails, COUNT(DISTINCT pipeline) AS distinct_pipelines FROM pipeline_runs WHERE started_at >= NOW() - INTERVAL '7 days' GROUP BY 1 ORDER BY 1 DESC) t)
+) AS payload;`;
+
+function extractRows(raw){ if(raw==null)return[]; if(Array.isArray(raw))return raw; if(typeof raw==="object"){ if(raw.isError===true||(raw.error&&typeof raw.error==="object")) throw new Error(String((raw.error&&(raw.error.message||raw.error.name))||(Array.isArray(raw.content)?raw.content.map(c=>(c&&c.text)||"").join(" "):"")||"tool returned an error"));  if(typeof raw.structuredContent!=="undefined"){ const x=extractRows(raw.structuredContent); if(x.length) return x; } if(Array.isArray(raw.content))return extractRows(raw.content.map(c=>typeof c==="string"?c:(c&&c.text)||"").join("\n")); if(typeof raw.result==="string")return extractRows(raw.result); if(typeof raw.text==="string")return extractRows(raw.text); if(typeof raw.data!=="undefined")return extractRows(raw.data); return [raw]; } if(typeof raw==="string"){ let s=raw.trim(); try{return extractRows(JSON.parse(s));}catch(e){} const m=s.match(/\[[\s\S]*\]/); if(m){try{return JSON.parse(m[0]);}catch(e){}} if(!s) return []; throw new Error("unreadable tool response: "+s.slice(0,160)); } return []; }
+function unwrapText(raw){ if(raw==null)return""; if(typeof raw==="string")return raw; if(Array.isArray(raw))return raw.map(c=>typeof c==="string"?c:(c&&c.text)||"").join("\n"); if(typeof raw==="object"){ if(Array.isArray(raw.content))return unwrapText(raw.content); if(typeof raw.result==="string")return raw.result; if(typeof raw.text==="string")return raw.text; } return ""; }
+async function fetchPayload() {
+  const r = await window.cowork.callMcpTool("mcp__24ab6d77-3292-4646-b039-669cc9535ef8__execute_sql", { project_id: PROJECT_ID, query: PAYLOAD_SQL });
+  if (r && r.isError) throw new Error(JSON.stringify(r));
+  const rows = extractRows(r);
+  let payload = rows.length ? rows[0].payload : null;
+  if (typeof payload === "string") { try { payload = JSON.parse(payload); } catch (e) {} }
+  if (!payload || typeof payload !== "object") throw new Error("Unexpected result shape from execute_sql.");
+  return payload;
+}
+async function vercelList() {
+  const r = await window.cowork.callMcpTool("mcp__9147546a-a5d7-42b9-9cd6-d67951a51908__list_deployments", { projectId: VERCEL_PROJECT, teamId: VERCEL_TEAM });
+  if (r && r.isError) throw new Error(JSON.stringify(r));
+  let obj = r;
+  if (typeof obj !== "object" || obj == null || (!obj.deployments && (obj.content || obj.result || obj.text))) {
+    const txt = unwrapText(r).trim();
+    const m = txt.match(/<untrusted-data-[a-f0-9-]+>([\s\S]*?)<\/untrusted-data-[a-f0-9-]+>/);
+    const body = m ? m[1].trim() : txt;
+    try { obj = JSON.parse(body); } catch (e) { throw new Error("unreadable Vercel response: " + body.slice(0, 160)); }
+  }
+  if (obj && obj.result && typeof obj.result === "object") obj = obj.result;
+  const list = obj?.deployments?.deployments ?? obj?.deployments;
+  if (!Array.isArray(list)) throw new Error("Vercel answered without a deployments list");
+  return list;
+}
+function n(v) { return v == null ? "—" : Number(v).toLocaleString(); }
+function bytes(b) { if (b == null) return "—"; const u = ["B","KB","MB","GB","TB"]; let i = 0; let v = Number(b); while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; } return v.toFixed(v < 10 ? 2 : 1) + " " + u[i]; }
+function pillState(state) { const cls = state === "READY" ? "ready" : state === "ERROR" ? "error" : "building"; return `<span class="pill ${cls}">${state}</span>`; }
+function shortSha(sha) { return sha ? sha.slice(0,7) : "—"; }
+function relTime(ms) { const s = (Date.now() - ms) / 1000; if (s < 60) return Math.round(s) + "s ago"; if (s < 3600) return Math.round(s/60) + "m ago"; if (s < 86400) return Math.round(s/3600) + "h ago"; return Math.round(s/86400) + "d ago"; }
+function firstLine(s) { return (s || "").split("\n")[0]; }
+
+function renderKpis(p, dep) {
+  const sizeRows = p.db_size || [];
+  const migRows = p.latest_migration || [];
+  const runs = p.pipeline_24h || [];
+  const ready = dep.filter(d => d.state === "READY" && d.target === "production").length;
+  const errored = dep.filter(d => d.state === "ERROR").length;
+  const size0 = sizeRows[0] || {}; const runs0 = runs[0] || {}; const mig0 = migRows[0] || {};
+  document.getElementById("kpis").innerHTML = `
+    <div class="kpi"><div class="lbl">DB size</div><div class="val">${(size0.pretty || "—").replace(' ','&nbsp;')}</div><div class="sub">${bytes(size0.bytes)}</div></div>
+    <div class="kpi"><div class="lbl">Latest migration</div><div class="val" style="font-size: 14px; padding-top: 8px;">${mig0.latest_version || '—'}</div><div class="sub">schema_migrations max</div></div>
+    <div class="kpi"><div class="lbl">Pipelines (24h)</div><div class="val">${n(runs0.runs_24h)}</div><div class="sub">${runs0.ok_pct ?? "—"}% green · ${runs0.fails_24h ?? "—"} fails</div></div>
+    <div class="kpi"><div class="lbl">Vercel deploys (recent)</div><div class="val">${dep.length}</div><div class="sub">${ready} prod-READY · ${errored} ERROR</div></div>
+  `;
+}
+
+function renderDeploys(dep) {
+  const rows = dep.slice(0, 20);
+  document.getElementById("deploys").innerHTML = `<table><thead><tr><th>State</th><th>Target</th><th>SHA</th><th>Author</th><th>Message</th><th class="num">Age</th></tr></thead><tbody>${
+    rows.map(d => `<tr><td>${pillState(d.state)}</td><td><span class="tinyc">${d.target || "—"}</span></td><td><span class="commit">${shortSha(d.meta?.githubCommitSha)}</span></td><td><span class="tinyc">${d.meta?.githubCommitAuthorName || d.creator?.username || "—"}</span></td><td>${firstLine(d.meta?.githubCommitMessage).slice(0,90)}</td><td class="num">${relTime(d.created)}</td></tr>`).join("")
+  }</tbody></table>`;
+}
+
+function renderTables(p) {
+  const rows = p.tables || [];
+  document.getElementById("tables").innerHTML = `<table><thead><tr><th>Table</th><th class="num">Size</th></tr></thead><tbody>${
+    rows.map(r => `<tr><td><span class="commit">${r.tablename}</span></td><td class="num">${r.size_pretty}</td></tr>`).join("")
+  }</tbody></table>`;
+}
+
+function renderMigrations(p) {
+  const rows = p.migrations || [];
+  document.getElementById("migrations").innerHTML = `<table><thead><tr><th class="commit" style="text-transform: none;">Version</th><th>Name</th></tr></thead><tbody>${
+    rows.map(r => `<tr><td><span class="commit">${r.version}</span></td><td>${r.name}</td></tr>`).join("")
+  }</tbody></table>`;
+}
+
+function renderPipelineVolume(p) {
+  const rows = p.pipeline_volume || [];
+  document.getElementById("pipeline-volume").innerHTML = `<table><thead><tr><th>Day</th><th class="num">Runs</th><th class="num">Fails</th><th class="num">Distinct pipelines</th></tr></thead><tbody>${
+    rows.map(r => `<tr><td>${r.day}</td><td class="num">${n(r.runs)}</td><td class="num">${n(r.fails)}</td><td class="num">${n(r.distinct_pipelines)}</td></tr>`).join("")
+  }</tbody></table>`;
+}
+
+async function loadAll() {
+  document.getElementById("ts").textContent = "Refreshing…";
+  try {
+    const [payload, dep] = await Promise.all([fetchPayload(), vercelList()]);
+    renderKpis(payload, dep);
+    renderDeploys(dep);
+    renderTables(payload);
+    renderMigrations(payload);
+    renderPipelineVolume(payload);
+    document.getElementById("ts").textContent = "Updated " + new Date().toLocaleString();
+  } catch (e) {
+    document.getElementById("ts").innerHTML = `<span style="color:#b91c1c">Error: ${e.message}</span>`;
+  }
+}
+loadAll();
+</script>

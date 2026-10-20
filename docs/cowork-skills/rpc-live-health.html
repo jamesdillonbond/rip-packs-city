@@ -1,0 +1,634 @@
+<title>RPC Live Health</title>
+<style>:root{color-scheme:dark}</style>
+<script>
+/* Port shim (2026-10-20, known-issue #114). These dashboards were written for the
+   desktop Cowork bridge (window.cowork.callMcpTool). On claude.ai they read through
+   the page's `mcp` capability instead. Every failure THROWS here, so a query that
+   did not run can never render as an empty result set. */
+(function(){
+  var mcpP = (window.claude && typeof window.claude.use === "function") ? window.claude.use("mcp") : Promise.resolve(null);
+  var FIX = {
+    needs_reauth: "Reconnect {s} in claude.ai Settings, Connectors, then Reload.",
+    server_not_connected: "Add the {s} connector in claude.ai Settings, Connectors, then Reload.",
+    selection_required: "Choose which {s} connector this page should use, then Reload.",
+    not_in_manifest: "{s} is not allowed for this page. Allow it from the artifact's Permissions menu, then Reload.",
+    approval_required: "This page needs your approval to read from {s}. Reload and choose Allow.",
+    blocked_by_policy: "Your organization's policy blocks this {s} tool.",
+    server_unavailable: "{s} did not answer in time. Try Reload in a minute.",
+    not_granted: "Connectors are not available in this view. Open the page in claude.ai.",
+    capability_disabled: "Connectors are not available in this view. Open the page in claude.ai."
+  };
+  function serverFor(t){ return /list_deployments$/.test(t) ? "Vercel" : "Supabase"; }
+  function sleep(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }
+  async function call(mcp, s, name, args, retried){
+    try { return await mcp.callTool(s, name, args, { cache: false }); }
+    catch (e) {
+      var c = (e && e.code) || "upstream_error";
+      if (e && e.retryable && !retried) { await sleep(Math.min(e.retryAfterMs || 0, 15000) + 600 + Math.random() * 900); return call(mcp, s, name, args, true); }
+      var hint = (FIX[c] || "").replace("{s}", s);
+      var msg = s + " query did not run (" + c + ")" + (hint ? ". " + hint : (e && e.message ? ": " + String(e.message).slice(0, 240) : ""));
+      var err = new Error(msg); err.code = c; throw err;
+    }
+  }
+  window.cowork = { callMcpTool: async function(tool, args){
+    var mcp = await mcpP;
+    if (!mcp) throw new Error("Live data is not available in this view. Open the page in claude.ai with the Supabase connector connected.");
+    var s = serverFor(tool), name = String(tool).split("__").pop();
+    var res = await call(mcp, s, name, args, false);
+    var p = res && res.payload;
+    if (p && typeof p === "object" && !Array.isArray(p) && p.error && typeof p.error === "object")
+      throw new Error(s + " query failed: " + String(p.error.message || p.error.name || "error").slice(0, 300));
+    var out = { content: (res && res.content) || [] };
+    if (res && typeof res.structuredContent !== "undefined") out.structuredContent = res.structuredContent;
+    return out;
+  } };
+})();
+</script>
+<style>
+:root { color-scheme: light; }
+body, html { margin: 0; padding: 0; background: transparent; color: #1a1a1a; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 14px; line-height: 1.5; }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 16px 20px 40px; }
+h1 { font-size: 22px; font-weight: 500; margin: 0 0 4px; letter-spacing: -0.01em; }
+h2 { font-size: 16px; font-weight: 500; margin: 24px 0 10px; color: #1a1a1a; }
+.muted { color: #6b6b66; font-size: 12px; }
+.grid-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin: 12px 0 4px; }
+.kpi { background: #fafaf7; border: 0.5px solid rgba(0,0,0,0.12); border-radius: 8px; padding: 12px 14px; }
+.kpi .label, .kpi .lbl { color: #6b6b66; font-size: 12px; }
+.kpi .val { font-size: 22px; font-weight: 500; margin-top: 2px; letter-spacing: -0.01em; }
+.kpi .sub { color: #6b6b66; font-size: 11px; margin-top: 2px; font-variant-numeric: tabular-nums; }
+.kpi.bad .val { color: #a32d2d; }
+.kpi.warn .val { color: #854f0b; }
+.kpi.good .val { color: #3b6d11; }
+.card { background: #ffffff; border: 0.5px solid rgba(0,0,0,0.12); border-radius: 12px; padding: 14px 16px; margin-top: 12px; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.pill { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 500; }
+.pill.good { background: #eaf3de; color: #3b6d11; }
+.pill.warn { background: #faeeda; color: #854f0b; }
+.pill.bad { background: #fcebeb; color: #a32d2d; }
+.pill.info { background: #e6f1fb; color: #0c447c; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+th { text-align: left; font-weight: 500; color: #6b6b66; padding: 6px 8px; border-bottom: 0.5px solid rgba(0,0,0,0.12); white-space: nowrap; }
+td { padding: 6px 8px; border-bottom: 0.5px solid rgba(0,0,0,0.06); }
+tr:last-child td { border-bottom: none; }
+td.num { text-align: right; }
+.spinner { color: #6b6b66; font-size: 12px; padding: 6px 0; }
+.error { color: #a32d2d; font-size: 12px; padding: 6px 0; }
+button.refresh { font-size: 12px; padding: 4px 10px; border: 0.5px solid rgba(0,0,0,0.25); background: #fafaf7; border-radius: 6px; cursor: pointer; }
+button.refresh:hover { background: #f0efe8; }
+.chart-wrap { position: relative; height: 220px; margin-top: 4px; }
+.legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 12px; color: #6b6b66; margin-bottom: 6px; }
+.legend span { display: flex; align-items: center; gap: 4px; }
+.legend .sw, .legend .swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.section-head { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; }
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 760px) { .row2 { grid-template-columns: 1fr; } }
+.secnav { display: flex; gap: 8px; flex-wrap: wrap; margin: 14px 0 4px; }
+.secnav a { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: #6b6b66; text-decoration: none; border: 0.5px solid rgba(0,0,0,0.2); border-radius: 4px; padding: 4px 10px; background: #fafaf7; }
+.section-title { margin-top: 34px; padding-top: 14px; border-top: 2px solid rgba(0,0,0,0.1); }
+.route { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12.5px; }
+.view { color: #6b6b66; font-size: 11.5px; font-family: ui-monospace, Menlo, Consolas, monospace; }
+.banner { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 10px; border: 0.5px solid rgba(0,0,0,0.12); background: #fff; margin-top: 12px; font-weight: 600; }
+.dot { width: 12px; height: 12px; border-radius: 50%; background: #cbd5e1; flex: 0 0 auto; }
+.fresh { display: flex; gap: 18px; flex-wrap: wrap; padding: 4px 0; }
+.fresh div { font-size: 12.5px; } .fresh b { font-family: ui-monospace, Menlo, Consolas, monospace; }
+.skipnote { background: #faeeda; color: #854f0b; border-radius: 6px; padding: 8px 10px; font-size: 12px; margin-top: 8px; }
+/* === RPC BRAND (2026-05-30) — system fonts only per artifact sandbox rules === */
+:root {
+  --rpc-red: #E03A2F;
+  --rpc-red-bg: rgba(224, 58, 47, 0.08);
+  --rpc-red-border: rgba(224, 58, 47, 0.3);
+  --font-display: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+  --rpc-success: #047857;
+  --rpc-warning: #92400e;
+  --rpc-danger: #b91c1c;
+  --rpc-info: #1d4ed8;
+}
+body, html { font-family: var(--font-display); letter-spacing: 0.005em; }
+h1 { font-size: 26px !important; font-weight: 700 !important; text-transform: uppercase !important; letter-spacing: 0.04em !important; line-height: 1.1 !important; }
+h1::after { content: ""; display: block; width: 56px; height: 3px; background: var(--rpc-red); margin-top: 8px; }
+h2 { font-size: 13px !important; font-weight: 700 !important; text-transform: uppercase !important; letter-spacing: 0.1em !important; color: #2a2a2a !important; }
+h2.section-title { font-size: 15px !important; color: var(--rpc-red) !important; }
+.kpi .val { color: var(--rpc-red); font-family: var(--font-mono); font-weight: 600 !important; }
+.kpi.bad .val { color: var(--rpc-danger); }
+.kpi.warn .val { color: var(--rpc-warning); }
+.kpi.good .val { color: var(--rpc-success); }
+.kpi .label, .kpi .lbl { text-transform: uppercase; letter-spacing: 0.1em; font-weight: 700 !important; font-size: 10px !important; }
+button.refresh { border: 1px solid var(--rpc-red) !important; background: var(--rpc-red-bg) !important; color: var(--rpc-red) !important; font-weight: 700 !important; text-transform: uppercase !important; letter-spacing: 0.1em !important; padding: 6px 14px !important; font-size: 10px !important; border-radius: 4px !important; }
+button.refresh:hover { background: var(--rpc-red) !important; color: #fff !important; }
+th { font-weight: 700 !important; text-transform: uppercase !important; letter-spacing: 0.06em !important; font-size: 10px !important; }
+td.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.muted, .tinyw, .spinner, .legend, .legend span, .view, .fresh { font-family: var(--font-mono); }
+.pill { font-family: var(--font-mono); letter-spacing: 0.04em; text-transform: uppercase; font-weight: 700 !important; font-size: 10px !important; border-radius: 3px !important; padding: 2px 6px !important; }
+/* === RPC DARK THEME (2026-06-15) === */
+:root{color-scheme:dark!important;}
+html,body{background:#0c0c0e!important;color:#ECEAE3!important;}
+.wrap,.container,main{background:transparent!important;}
+.card,.panel,.box,.tile,section.card{background:#16161a!important;border-color:rgba(255,255,255,0.10)!important;}
+.kpi,.stat,.metric{background:#1b1b20!important;border-color:rgba(255,255,255,0.08)!important;}
+.muted,.sub,.spinner,.legend,.tinyw,.kpi .lbl,.stat .lbl,small{color:#9A968C!important;}
+h1{color:#F2F0EA!important;}
+h2,h3,h4{color:#D8D5CC!important;}
+table{color:#E4E2DB!important;}
+th{color:#9A968C!important;border-bottom-color:rgba(255,255,255,0.12)!important;}
+td{border-bottom-color:rgba(255,255,255,0.07)!important;}
+tr:hover td{background:rgba(255,255,255,0.03)!important;}
+.tab{border-color:rgba(255,255,255,0.18)!important;color:#CFCAC4!important;background:transparent!important;}
+.tab.active{background:var(--rpc-red,#E03A2F)!important;color:#fff!important;border-color:var(--rpc-red,#E03A2F)!important;}
+button{color:#ECEAE3;}
+button.refresh{background:rgba(224,58,47,0.16)!important;}
+input,select,textarea{background:#16161a!important;color:#ECEAE3!important;border-color:rgba(255,255,255,0.15)!important;}
+a{color:#7FB2F0;}
+.pill.HIGH{background:rgba(46,160,110,0.22)!important;color:#5fd6a0!important;}
+.pill.MEDIUM{background:rgba(55,138,221,0.22)!important;color:#74b6ef!important;}
+.pill.LOW{background:rgba(186,117,23,0.24)!important;color:#e0a64b!important;}
+.pill.STALE{background:rgba(255,255,255,0.10)!important;color:#b9b6ad!important;}
+.pill.NO_DATA{background:rgba(163,45,45,0.24)!important;color:#e88a8a!important;}
+.pill.ASK_ONLY{background:rgba(83,74,183,0.26)!important;color:#a39df0!important;}
+.pill.SALES_ONLY{background:rgba(156,42,111,0.26)!important;color:#e487bb!important;}
+/* keep red accents */
+.kpi .val,.stat .val,.metric .val{color:var(--rpc-red,#E03A2F)!important;}
+/* live-health extras */
+.secnav a{background:#1b1b20!important;color:#9A968C!important;border-color:rgba(255,255,255,0.15)!important;}
+.banner{background:#16161a!important;}
+.skipnote{background:rgba(186,117,23,0.15)!important;color:#e0a64b!important;}
+.pill.good{background:rgba(46,160,110,0.22)!important;color:#5fd6a0!important;}
+.pill.warn{background:rgba(186,117,23,0.24)!important;color:#e0a64b!important;}
+.pill.bad{background:rgba(163,45,45,0.24)!important;color:#e88a8a!important;}
+.pill.info{background:rgba(55,138,221,0.22)!important;color:#74b6ef!important;}
+.kpi.bad .val{color:#e88a8a!important;}
+.kpi.warn .val{color:#e0a64b!important;}
+.kpi.good .val{color:#5fd6a0!important;}
+</style>
+
+<div class="wrap">
+  <div class="section-head">
+    <div>
+      <h1>Rip Packs City — platform health</h1>
+      <div class="muted" id="ts">Loading…</div>
+    </div>
+    <button class="refresh" onclick="loadAll()">Reload</button>
+  </div>
+  <div class="secnav">
+    <a href="#sec-live">Live Health</a>
+    <a href="#sec-fmv">FMV Watch</a>
+    <a href="#sec-insights">Insights Surfaces</a>
+  </div>
+  <div id="loaderr"></div>
+
+  <!-- ============ SECTION 1: LIVE HEALTH ============ -->
+  <h2 class="section-title" id="sec-live">Section 1 — Live Health</h2>
+
+  <h2>Last 24h pipeline run health</h2>
+  <div class="grid-kpis" id="kpi-pipelines"></div>
+  <div class="card">
+    <div id="failing-pipelines" class="spinner">Loading failing pipelines…</div>
+  </div>
+
+  <h2>FMV confidence by collection (latest snapshot per edition)</h2>
+  <div class="card">
+    <div id="fmv-table" class="spinner">Loading FMV…</div>
+  </div>
+
+  <h2>FMV catch-up progress (AllDay)</h2>
+  <div class="card">
+    <div class="legend">
+      <span><span class="sw" style="background:#1d9e75"></span>1.7.0 winners</span>
+      <span><span class="sw" style="background:#bA7517"></span>allday-gql-v1 winners (target: drive to 0)</span>
+    </div>
+    <div id="catchup-empty"></div>
+    <div class="chart-wrap"><canvas id="catchup" role="img" aria-label="AllDay FMV algo distribution"></canvas></div>
+  </div>
+
+  <h2>Per-collection freshness</h2>
+  <div class="card">
+    <div id="freshness" class="spinner">Loading freshness…</div>
+  </div>
+
+  <h2>Open issues</h2>
+  <div class="card">
+    <div id="issues" class="spinner">Loading issues…</div>
+  </div>
+
+  <!-- ============ SECTION 2: FMV WATCH (14d) ============ -->
+  <h2 class="section-title" id="sec-fmv">Section 2 — FMV confidence trend (14d)</h2>
+  <div id="fmv-skip"></div>
+  <div class="kpis grid-kpis" id="kpi-current"></div>
+
+  <h2>Top Shot</h2>
+  <div class="card">
+    <div class="legend" id="legend-ts"></div>
+    <div class="chart-wrap"><canvas id="c-ts" role="img" aria-label="Top Shot FMV confidence stack over 14 days"></canvas></div>
+  </div>
+
+  <div class="row2">
+    <div>
+      <h2>NFL All Day</h2>
+      <div class="card">
+        <div class="legend" id="legend-ad"></div>
+        <div class="chart-wrap"><canvas id="c-ad" role="img" aria-label="AllDay FMV confidence stack over 14 days"></canvas></div>
+      </div>
+    </div>
+    <div>
+      <h2>Disney Pinnacle</h2>
+      <div class="card">
+        <div class="legend" id="legend-pn"></div>
+        <div class="chart-wrap"><canvas id="c-pn" role="img" aria-label="Pinnacle per-render FMV confidence stack over 14 days"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row2">
+    <div>
+      <h2>LaLiga Golazos</h2>
+      <div class="card">
+        <div class="legend" id="legend-gz"></div>
+        <div class="chart-wrap"><canvas id="c-gz" role="img" aria-label="Golazos FMV confidence stack over 14 days"></canvas></div>
+      </div>
+    </div>
+    <div>
+      <h2>UFC Strike</h2>
+      <div class="card">
+        <div class="legend" id="legend-uf"></div>
+        <div class="chart-wrap"><canvas id="c-uf" role="img" aria-label="UFC Strike FMV confidence stack over 14 days"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="muted" style="margin-top:18px">Pinnacle is PER-RENDER from <code>pinnacle_fmv_history</code> (engine pinnacle-2.0.0-render; change-point history begins 2026-06-08, so the Pinnacle trend fills forward from that date — earlier days are intentionally empty). Other collections use the unified <code>fmv_snapshots</code> table. "On day D" = latest-per-id snapshot at end-of-day D UTC.</div>
+
+  <!-- ============ SECTION 3: INSIGHTS SURFACES ============ -->
+  <h2 class="section-title" id="sec-insights">Section 3 — Insights surfaces health</h2>
+  <div class="banner"><span class="dot" id="dot"></span><span id="bannertext">Checking public /insights data sources…</span></div>
+  <div class="card">
+    <h2 style="margin-top:0">Public /insights surfaces — backing data</h2>
+    <div id="tbl"><span class="view" style="padding:9px;display:block">loading…</span></div>
+  </div>
+  <div class="card">
+    <h2 style="margin-top:0">Upstream freshness</h2>
+    <div class="fresh" id="fresh"><span class="view">loading…</span></div>
+  </div>
+  <div class="muted" style="margin-top:8px">A surface is healthy when its backing view returns rows. Row probes are capped at <b>500+</b> — a bounded liveness check, not a full count. This checks the DATA layer; pair with the on-push smoke tests for HTTP-level coverage. squeeze-check &amp; tc-report are wallet-paste tools (no standing dataset).</div>
+
+  <div class="muted" style="margin-top: 24px;">Source: one consolidated Supabase query over <code>pipeline_runs</code>, <code>fmv_snapshots</code>, <code>pinnacle_fmv_snapshots</code>, <code>pinnacle_fmv_history</code>, <code>cached_listings_v2</code>, <code>sales</code>, <code>unmapped_sales</code>, <code>get_pipeline_alerts()</code>, and the /insights backing views. Reload re-runs it (one approval prompt). When the DB is saturated (cron rush at :00/:20/:40), the heavy FMV legs self-skip and show a busy notice — Reload off the rush.</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js" integrity="sha384-iU8HYtnGQ8Cy4zl7gbNMOhsDTTKX02BTXptVP/vqAWIaTfM7isw76iyZCsjL2eVi" crossorigin="anonymous"></script>
+<script>if(window.Chart){Chart.defaults.color="#9A968C";Chart.defaults.borderColor="rgba(255,255,255,0.12)";try{Chart.defaults.scale.grid.color="rgba(255,255,255,0.06)";}catch(e){}}</script>
+<script>
+const PROJECT_ID = "bxcqstmqfzmuolpuynti";
+const TS = "95f28a17-224a-4025-96ad-adf8a4c63bfd";
+const AD = "dee28451-5d62-409e-a1ad-a83f763ac070";
+const GZ = "06248cc4-b85f-47cd-af67-1855d14acd75";
+const UF = "9b4824a8-736d-4a96-b450-8dcc0c46b023";
+const PN = "7dd9dd11-e8b6-45c4-ac99-71331f959714";
+const COL_ORDER = ["HIGH","MEDIUM","LOW","ASK_ONLY","SALES_ONLY","STALE","NO_DATA"];
+const COLORS = { HIGH:"#1d9e75", MEDIUM:"#378add", LOW:"#bA7517", ASK_ONLY:"#534ab7", SALES_ONLY:"#9C2A6F", STALE:"#888780", NO_DATA:"#d3d1c7" };
+
+// ONE consolidated query — every panel is a key of a single jsonb payload, so each
+// artifact open fires exactly ONE execute_sql approval prompt (was 12 across 3 artifacts).
+// Heavy FMV legs (14d trend / latest-per-edition histogram / AllDay catch-up) share ONE
+// 14-day window scan of fmv_snapshots + a needs-baseline LATERAL (idx_fmv_edition_time),
+// and self-skip to null when the DB is saturated (active backends >= 15) so the light
+// panels still load. SET LOCAL works because the MCP wraps multi-statement in one tx;
+// only the last statement's result is returned.
+const CONSOLIDATED_SQL = `
+SET LOCAL statement_timeout = '110s';
+WITH busy AS MATERIALIZED (
+  SELECT (SELECT count(*) FROM pg_stat_activity WHERE state = 'active' AND pid <> pg_backend_pid()) AS active
+),
+win_raw AS MATERIALIZED (
+  SELECT edition_id, collection_id, computed_at::date AS d, confidence, algo_version, computed_at
+  FROM fmv_snapshots
+  WHERE computed_at >= (CURRENT_DATE - 13)
+),
+win_last AS MATERIALIZED (
+  SELECT DISTINCT ON (edition_id, d) edition_id, collection_id, d, confidence, algo_version
+  FROM win_raw
+  WHERE collection_id IN ('${TS}','${AD}','${GZ}','${UF}')
+  ORDER BY edition_id, d, computed_at DESC
+),
+win_first AS MATERIALIZED (SELECT edition_id, MIN(d) AS first_d FROM win_last GROUP BY edition_id),
+needs_base AS MATERIALIZED (
+  SELECT e.id AS edition_id, e.collection_id
+  FROM editions e LEFT JOIN win_first w ON w.edition_id = e.id
+  WHERE e.collection_id IN ('${TS}','${AD}','${GZ}','${UF}')
+    AND (w.edition_id IS NULL OR w.first_d > (CURRENT_DATE - 13)::date)
+),
+base AS MATERIALIZED (
+  SELECT nb.edition_id, nb.collection_id, x.confidence, x.algo_version
+  FROM needs_base nb
+  JOIN LATERAL (
+    SELECT fs.confidence, fs.algo_version FROM fmv_snapshots fs
+    WHERE fs.edition_id = nb.edition_id AND fs.computed_at < (CURRENT_DATE - 13)
+    ORDER BY fs.computed_at DESC LIMIT 1
+  ) x ON true
+),
+combined AS MATERIALIZED (
+  SELECT edition_id, collection_id, (CURRENT_DATE - 14)::date AS d, confidence, algo_version FROM base
+  UNION ALL
+  SELECT edition_id, collection_id, d, confidence, algo_version FROM win_last
+),
+spans AS MATERIALIZED (
+  SELECT edition_id, collection_id, confidence, d,
+         d AS from_d,
+         COALESCE((LEAD(d) OVER (PARTITION BY edition_id ORDER BY d)) - 1, CURRENT_DATE::date) AS to_d
+  FROM combined
+),
+days AS (SELECT generate_series((CURRENT_DATE - 13)::date, CURRENT_DATE::date, '1 day'::interval)::date AS d),
+trend AS MATERIALIZED (
+  SELECT s.collection_id, dy.d::text AS day, s.confidence::text AS confidence, COUNT(*) AS n
+  FROM spans s
+  JOIN days dy ON dy.d >= GREATEST(s.from_d, (CURRENT_DATE - 13)::date) AND dy.d <= s.to_d
+  GROUP BY s.collection_id, dy.d, s.confidence
+),
+latest_now AS MATERIALIZED (
+  SELECT DISTINCT ON (edition_id) edition_id, collection_id, confidence, algo_version
+  FROM combined ORDER BY edition_id, d DESC
+)
+SELECT jsonb_build_object(
+  'generated_at', now()::text,
+  '_t0', clock_timestamp()::text,
+  'db_active', to_jsonb((SELECT active FROM busy)),
+  'pipelines_24h', (SELECT COALESCE(jsonb_agg(t), '[]'::jsonb) FROM (
+    SELECT pipeline, COUNT(*) AS runs, SUM(CASE WHEN ok THEN 1 ELSE 0 END) AS ok_count, SUM(CASE WHEN NOT ok THEN 1 ELSE 0 END) AS fail_count, MAX(started_at) AS last_run
+    FROM pipeline_runs WHERE started_at >= NOW() - INTERVAL '24 hours'
+    GROUP BY pipeline ORDER BY SUM(CASE WHEN NOT ok THEN 1 ELSE 0 END) DESC, COUNT(*) DESC) t),
+  'fmv_by_collection', CASE WHEN (SELECT active FROM busy) >= 15 THEN NULL ELSE (SELECT COALESCE(jsonb_agg(t), '[]'::jsonb) FROM (
+    SELECT c.slug,
+      COUNT(*) FILTER (WHERE l.confidence='HIGH') AS hi,
+      COUNT(*) FILTER (WHERE l.confidence='MEDIUM') AS med,
+      COUNT(*) FILTER (WHERE l.confidence='LOW') AS lo,
+      COUNT(*) FILTER (WHERE l.confidence='ASK_ONLY') AS ask_only,
+      COUNT(*) FILTER (WHERE l.confidence='STALE') AS stale,
+      COUNT(*) FILTER (WHERE l.confidence='NO_DATA') AS nodata,
+      COUNT(*) AS total
+    FROM latest_now l JOIN collections c ON c.id = l.collection_id
+    GROUP BY c.slug ORDER BY COUNT(*) DESC) t) END,
+  'fmv_pinnacle', (SELECT COALESCE(jsonb_agg(t), '[]'::jsonb) FROM (
+    SELECT COUNT(*) AS total,
+      COUNT(*) FILTER (WHERE confidence='HIGH') AS hi,
+      COUNT(*) FILTER (WHERE confidence='MEDIUM') AS med,
+      COUNT(*) FILTER (WHERE confidence='LOW') AS lo,
+      COUNT(*) FILTER (WHERE confidence='ASK_ONLY') AS ask_only,
+      COUNT(*) FILTER (WHERE confidence='STALE') AS stale,
+      COUNT(*) FILTER (WHERE confidence='NO_DATA') AS nodata
+    FROM (SELECT DISTINCT ON (render_id) fmv_confidence AS confidence FROM pinnacle_fmv_history ORDER BY render_id, computed_at DESC) z) t),
+  'allday_catchup', CASE WHEN (SELECT active FROM busy) >= 15 THEN NULL ELSE (SELECT COALESCE(jsonb_agg(t), '[]'::jsonb) FROM (
+    SELECT algo_version, COUNT(*) AS n FROM latest_now
+    WHERE collection_id = '${AD}'
+    GROUP BY algo_version ORDER BY COUNT(*) DESC LIMIT 8) t) END,
+  'sales_24h', (SELECT COALESCE(jsonb_agg(t), '[]'::jsonb) FROM (
+    SELECT collection, COUNT(*) AS n_24h FROM sales WHERE sold_at >= NOW() - INTERVAL '24 hours' GROUP BY collection ORDER BY collection) t),
+  'listings_active', (SELECT COALESCE(jsonb_agg(t), '[]'::jsonb) FROM (
+    SELECT collection_id, COUNT(*) AS active FROM cached_listings_v2 WHERE completed_at IS NULL GROUP BY collection_id) t),
+  'unmapped_open', (SELECT COALESCE(jsonb_agg(t), '[]'::jsonb) FROM (
+    SELECT collection_id, COUNT(*) AS open FROM unmapped_sales WHERE resolved_at IS NULL GROUP BY collection_id) t),
+  'alerts', COALESCE(to_jsonb((SELECT get_pipeline_alerts())), '[]'::jsonb),
+  'leak_24h', to_jsonb((SELECT COUNT(*) FROM editions WHERE collection_id='${TS}' AND external_id !~ '^[0-9]+:[0-9]+(::[0-9]+)?$' AND created_at >= NOW() - INTERVAL '24 hours')),
+  'leak_48h', to_jsonb((SELECT COUNT(*) FROM editions WHERE collection_id='${TS}' AND external_id !~ '^[0-9]+:[0-9]+(::[0-9]+)?$' AND created_at >= NOW() - INTERVAL '48 hours')),
+  'trend', CASE WHEN (SELECT active FROM busy) >= 15 THEN NULL ELSE (SELECT COALESCE(jsonb_agg(t), '[]'::jsonb) FROM (
+    SELECT collection_id, day, confidence, n::int AS n FROM trend ORDER BY day, confidence) t) END,
+  'trend_pn', (SELECT COALESCE(jsonb_agg(t), '[]'::jsonb) FROM (
+    WITH pdays AS (SELECT generate_series((CURRENT_DATE - 13)::date, CURRENT_DATE::date, '1 day'::interval)::date AS d),
+    platest AS (
+      SELECT d.d::text AS day, x.confidence::text AS confidence, COUNT(*) AS n
+      FROM pdays d
+      LEFT JOIN LATERAL (
+        SELECT DISTINCT ON (render_id) render_id, fmv_confidence AS confidence
+        FROM pinnacle_fmv_history
+        WHERE computed_at < (d.d + INTERVAL '1 day')
+        ORDER BY render_id, computed_at DESC
+      ) x ON true
+      WHERE x.confidence IS NOT NULL
+      GROUP BY d.d, x.confidence
+    )
+    SELECT day, confidence, n::int FROM platest ORDER BY day, confidence) t),
+  'insights_counts', (SELECT COALESCE(jsonb_agg(t), '[]'::jsonb) FROM (
+    SELECT 'squeeze' surface, count(*) n FROM (SELECT 1 FROM topshot_squeeze_board LIMIT 501) a UNION ALL SELECT 'set_squeeze', count(*) FROM (SELECT 1 FROM topshot_set_squeeze_board LIMIT 501) b UNION ALL SELECT 'pack_reality_top_ev', count(*) FROM (SELECT 1 FROM topshot_pack_reality_top_ev LIMIT 501) c UNION ALL SELECT 'rookies', count(*) FROM (SELECT 1 FROM topshot_2025_rookie_index LIMIT 501) d UNION ALL SELECT 'market', count(*) FROM (SELECT 1 FROM topshot_market_index_daily LIMIT 501) f UNION ALL SELECT 'first_mint', count(*) FROM (SELECT 1 FROM topshot_first_mint_trophies LIMIT 501) g UNION ALL SELECT 'cross_collection', count(*) FROM (SELECT 1 FROM cross_collection_cohort_stats LIMIT 501) h UNION ALL SELECT 'pinnacle_scarcity', count(*) FROM (SELECT 1 FROM pinnacle_scarcity_board LIMIT 501) i UNION ALL SELECT 'offer_spread', count(*) FROM (SELECT 1 FROM topshot_offer_ask_spread LIMIT 501) j UNION ALL SELECT 'deals', count(*) FROM (SELECT 1 FROM topshot_deals_vs_fmv LIMIT 501) k UNION ALL SELECT 'trophies', count(*) FROM (SELECT 1 FROM v_insights_trophies LIMIT 501) l UNION ALL SELECT 'new_collectors', count(*) FROM (SELECT 1 FROM mv_insights_new_collectors_cohorts LIMIT 501) m) t),
+  'insights_fresh', (SELECT COALESCE(jsonb_agg(t), '[]'::jsonb) FROM (
+    SELECT 'FMV latest write' k, max(computed_at)::text v FROM fmv_snapshots UNION ALL SELECT 'Pack EV latest', max(snapshotted_at)::text FROM pack_ev_latest UNION ALL SELECT 'Edition offers (sweep)', max(updated_at)::text FROM edition_offers) t),
+  '_t1', clock_timestamp()::text
+) AS payload`;
+
+function extractRows(raw){ if(raw==null)return[]; if(Array.isArray(raw))return raw; if(typeof raw==="object"){ if(raw.isError===true||(raw.error&&typeof raw.error==="object")) throw new Error(String((raw.error&&(raw.error.message||raw.error.name))||(Array.isArray(raw.content)?raw.content.map(c=>(c&&c.text)||"").join(" "):"")||"tool returned an error"));  if(Array.isArray(raw.content))return extractRows(raw.content.map(c=>typeof c==="string"?c:(c&&c.text)||"").join("\n")); if(typeof raw.result==="string")return extractRows(raw.result); if(typeof raw.text==="string")return extractRows(raw.text); if(typeof raw.data!=="undefined")return extractRows(raw.data); return [raw]; } if(typeof raw==="string"){ let s=raw.trim(); try{return extractRows(JSON.parse(s));}catch(e){} const m=s.match(/\[[\s\S]*\]/); if(m){try{return JSON.parse(m[0]);}catch(e){}} if(!s) return []; throw new Error("unreadable tool response: "+s.slice(0,160)); } return []; }
+async function sql(query) {
+  const r = await window.cowork.callMcpTool("mcp__24ab6d77-3292-4646-b039-669cc9535ef8__execute_sql", { project_id: PROJECT_ID, query });
+  if (r && r.isError) throw new Error(JSON.stringify(r));
+  return extractRows(r);
+}
+
+function pill(text, kind) { return `<span class="pill ${kind}">${text}</span>`; }
+function num(n) { return n == null ? "—" : Number(n).toLocaleString(); }
+const esc = s => String(s == null ? "" : s).replace(/</g, "&lt;");
+function ago(ts){ if(!ts) return ""; const d=new Date(ts.replace(" ","T")+(ts.includes("Z")||ts.includes("+")?"":"Z")); const m=Math.round((Date.now()-d.getTime())/60000); if(isNaN(m)) return ""; if(m<90) return m+"m ago"; const h=Math.round(m/60); return h<48?h+"h ago":Math.round(h/24)+"d ago"; }
+
+/* ---------- Section 1: Live Health ---------- */
+function renderPipelines(rows) {
+  rows = rows || [];
+  const total = rows.reduce((s, r) => s + Number(r.runs), 0);
+  const failing = rows.filter(r => Number(r.fail_count) > 0);
+  const ok = total - rows.reduce((s, r) => s + Number(r.fail_count), 0);
+  const successPct = total ? (100 * ok / total).toFixed(1) : "—";
+  document.getElementById("kpi-pipelines").innerHTML = `
+    <div class="kpi"><div class="label">Pipelines (24h)</div><div class="val">${rows.length}</div></div>
+    <div class="kpi"><div class="label">Runs (24h)</div><div class="val">${num(total)}</div></div>
+    <div class="kpi ${successPct === "100.0" ? "good" : (Number(successPct) < 95 ? "warn" : "")}"><div class="label">Success %</div><div class="val">${successPct}%</div></div>
+    <div class="kpi ${failing.length === 0 ? "good" : "warn"}"><div class="label">Failing pipelines</div><div class="val">${failing.length}</div></div>
+  `;
+  const t = document.getElementById("failing-pipelines");
+  if (failing.length === 0) { t.innerHTML = `<div class="muted">All pipelines 100% green in last 24h.</div>`; return; }
+  t.innerHTML = `<table><thead><tr><th>Pipeline</th><th class="num">Runs</th><th class="num">Fails</th><th class="num">Success</th><th>Last run</th></tr></thead><tbody>${
+    failing.map(r => {
+      const pctv = Number(r.runs) ? (100 * Number(r.ok_count) / Number(r.runs)).toFixed(1) : "—";
+      const cls = Number(r.fail_count) >= Number(r.runs) ? "bad" : (Number(pctv) < 95 ? "warn" : "good");
+      return `<tr><td>${esc(r.pipeline)}</td><td class="num">${r.runs}</td><td class="num">${r.fail_count}</td><td class="num">${pill(pctv + "%", cls)}</td><td>${(r.last_run||"").replace("T"," ").slice(0,19)}</td></tr>`;
+    }).join("")
+  }</tbody></table>`;
+}
+
+const BUSY_NOTE = `<div class="skipnote">Skipped — DB was saturated when this loaded (cron rush). Hit Reload off the :00/:20/:40 anchors.</div>`;
+
+function renderFmvTable(rows, pin) {
+  const el = document.getElementById("fmv-table");
+  if (rows == null) { el.innerHTML = BUSY_NOTE; return; }
+  rows = rows.slice();
+  if (pin && pin[0]) rows.push({ slug: "disney_pinnacle*", ...pin[0] });
+  el.innerHTML = `<table><thead><tr><th>Collection</th><th class="num">HIGH</th><th class="num">MED</th><th class="num">LOW</th><th class="num">ASK</th><th class="num">STALE</th><th class="num">NO_DATA</th><th class="num">Total</th><th class="num">HIGH+MED %</th></tr></thead><tbody>${
+    rows.map(r => {
+      const hm = Number(r.hi) + Number(r.med);
+      const t = Number(r.total);
+      const p = t ? (100*hm/t).toFixed(1) : "—";
+      const cls = Number(p) > 30 ? "good" : (Number(p) > 5 ? "warn" : "bad");
+      return `<tr><td>${esc(r.slug)}</td><td class="num">${num(r.hi)}</td><td class="num">${num(r.med)}</td><td class="num">${num(r.lo)}</td><td class="num">${num(r.ask_only)}</td><td class="num">${num(r.stale)}</td><td class="num">${num(r.nodata)}</td><td class="num">${num(t)}</td><td class="num">${pill(p+"%", cls)}</td></tr>`;
+    }).join("")
+  }</tbody></table><div class="muted" style="margin-top:6px;">* Pinnacle is PER-RENDER (latest per render_id from <code>pinnacle_fmv_history</code>; the legacy set-level <code>pinnacle_fmv_snapshots</code> table was dropped).</div>`;
+}
+
+function renderCatchup(rows) {
+  const emptyEl = document.getElementById("catchup-empty");
+  if (rows == null) { emptyEl.innerHTML = BUSY_NOTE; if (window._catchupChart) { window._catchupChart.destroy(); window._catchupChart = null; } return; }
+  emptyEl.innerHTML = "";
+  const labels = rows.map(r => r.algo_version);
+  const data = rows.map(r => Number(r.n));
+  const ctx = document.getElementById("catchup").getContext("2d");
+  if (window._catchupChart) window._catchupChart.destroy();
+  window._catchupChart = new Chart(ctx, { type: "bar", data: { labels, datasets: [{ label: "AllDay editions", data, backgroundColor: labels.map(l => (l||"").startsWith("1.7") ? "#1d9e75" : ((l||"").startsWith("allday-gql") ? "#bA7517" : "#888780")) }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, indexAxis: "y" } });
+}
+
+function renderFreshness(sales, listings, unmapped) {
+  const idMap = { [TS]: "nba_top_shot", [AD]: "nfl_all_day", [GZ]: "laliga_golazos", [UF]: "ufc_strike", [PN]: "disney_pinnacle" };
+  const slots = ["nba_top_shot","nfl_all_day","laliga_golazos","ufc_strike","disney_pinnacle"];
+  const lMap = Object.fromEntries((listings||[]).map(r => [idMap[r.collection_id], Number(r.active)]));
+  const uMap = Object.fromEntries((unmapped||[]).map(r => [idMap[r.collection_id], Number(r.open)]));
+  const sMap = Object.fromEntries((sales||[]).map(r => [r.collection, Number(r.n_24h)]));
+  document.getElementById("freshness").innerHTML = `<table><thead><tr><th>Collection</th><th class="num">Sales 24h</th><th class="num">Active listings</th><th class="num">Open unmapped</th></tr></thead><tbody>${
+    slots.map(s => `<tr><td>${s}</td><td class="num">${num(sMap[s]||0)}</td><td class="num">${num(lMap[s]||0)}</td><td class="num">${num(uMap[s]||0)}</td></tr>`).join("")
+  }</tbody></table>`;
+}
+
+function renderIssues(alerts, n24, n48) {
+  const blocks = [];
+  let arr = alerts || [];
+  if (!Array.isArray(arr)) arr = (arr && arr.get_pipeline_alerts) ? arr.get_pipeline_alerts : [arr];
+  if (arr.length && arr[0] && arr[0].get_pipeline_alerts) arr = arr[0].get_pipeline_alerts;
+  if (arr.length === 0) blocks.push(`<div>${pill("No active cron alerts", "good")}</div>`);
+  else arr.forEach(a => blocks.push(`<div class="row" style="margin:6px 0;">${pill(a.severity || "alert", a.severity === "high" ? "bad" : "warn")}<strong>${esc(a.pipeline)}</strong> — ${esc(a.detail || "")}</div>`));
+  // Edition writer leak — post-Item B (shipped 2026-05-30, commit 9368ade):
+  // threshold rebased to the post-fix expected steady state: <500/48h = good,
+  // <2000/48h = warn (normal residual), else bad (regression).
+  n24 = Number(n24); n48 = Number(n48);
+  const leakCls = n48 < 500 ? "good" : (n48 < 2000 ? "warn" : "bad");
+  blocks.push(`<div style="margin-top:10px;">${pill("Edition writer leak", leakCls)} <strong>${num(n48)}</strong> TS UUID-keyed editions written in last 48h (<strong>${num(n24)}</strong> in last 24h). Item B fix shipped 2026-05-30 — <code>/api/ingest</code> UUID→int redirect is live. Residual is the pack-EV pipeline path; full canonical merger plan in <code>docs/audits/item-b2-uuid-merger-plan-2026-05-30.md</code> (drafted, not yet applied). Rows are inert (trigger nulls onchain IDs) so no canonical corruption.</div>`);
+  document.getElementById("issues").innerHTML = blocks.join("");
+}
+
+/* ---------- Section 2: FMV Watch ---------- */
+function makeLegend(elId, totals) {
+  const total = COL_ORDER.reduce((s, k) => s + (totals[k] || 0), 0);
+  document.getElementById(elId).innerHTML = COL_ORDER
+    .filter(k => (totals[k] || 0) > 0)
+    .map(k => `<span><span class="swatch" style="background:${COLORS[k]}"></span>${k} ${total ? Math.round(100*totals[k]/total) : 0}%</span>`)
+    .join("");
+}
+
+function renderChart(canvasId, days, series) {
+  const ctx = document.getElementById(canvasId).getContext("2d");
+  if (window["_ch_" + canvasId]) window["_ch_" + canvasId].destroy();
+  window["_ch_" + canvasId] = new Chart(ctx, {
+    type: "line",
+    data: { labels: days, datasets: COL_ORDER.map(k => ({ label: k, data: series[k] || days.map(() => 0), backgroundColor: COLORS[k], borderColor: COLORS[k], borderWidth: 1, fill: true, stack: "s", pointRadius: 0, tension: 0.15 })) },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { stacked: true, ticks: { precision: 0 } }, x: { ticks: { autoSkip: true, maxTicksLimit: 7 } } }, interaction: { mode: "index", intersect: false } }
+  });
+}
+
+function pivotByDay(rows) {
+  const dayMap = new Map();
+  const days = new Set();
+  for (const r of rows) {
+    days.add(r.day);
+    if (!dayMap.has(r.day)) dayMap.set(r.day, {});
+    dayMap.get(r.day)[r.confidence] = Number(r.n);
+  }
+  const sortedDays = Array.from(days).sort();
+  const series = {};
+  for (const k of COL_ORDER) series[k] = sortedDays.map(d => (dayMap.get(d) || {})[k] || 0);
+  return { days: sortedDays, series };
+}
+
+function renderTrendCollection(rows, canvasId, legendId) {
+  const { days, series } = pivotByDay(rows || []);
+  const lastIdx = days.length - 1;
+  const totals = {}; for (const k of COL_ORDER) totals[k] = (series[k] || [])[lastIdx] || 0;
+  makeLegend(legendId, totals);
+  renderChart(canvasId, days, series);
+  return totals;
+}
+
+function renderFmvWatch(trendRows, trendPn) {
+  const skipEl = document.getElementById("fmv-skip");
+  skipEl.innerHTML = trendRows == null ? BUSY_NOTE : "";
+  const byCol = { [TS]: [], [AD]: [], [GZ]: [], [UF]: [] };
+  (trendRows || []).forEach(r => { if (byCol[r.collection_id]) byCol[r.collection_id].push(r); });
+  const ts = renderTrendCollection(byCol[TS], "c-ts", "legend-ts");
+  const ad = renderTrendCollection(byCol[AD], "c-ad", "legend-ad");
+  const gz = renderTrendCollection(byCol[GZ], "c-gz", "legend-gz");
+  const uf = renderTrendCollection(byCol[UF], "c-uf", "legend-uf");
+  const pn = renderTrendCollection(trendPn || [], "c-pn", "legend-pn");
+  const card = (label, totals) => {
+    const total = Object.values(totals).reduce((s,v) => s + v, 0);
+    const hm = (totals.HIGH || 0) + (totals.MEDIUM || 0);
+    const pct = total ? Math.round(100 * hm / total) : 0;
+    return `<div class="kpi"><div class="lbl">${label}</div><div class="val">${total ? pct + "%" : "—"}</div><div class="sub">${hm.toLocaleString()} / ${total.toLocaleString()} HIGH+MED</div></div>`;
+  };
+  document.getElementById("kpi-current").innerHTML =
+    card("Top Shot", ts) + card("AllDay", ad) + card("Pinnacle (per-render)", pn) + card("Golazos", gz) + card("UFC", uf);
+}
+
+/* ---------- Section 3: Insights ---------- */
+const SURFACES=[
+  ["/insights/squeeze","topshot_squeeze_board","squeeze",false],
+  ["/insights/set-squeeze","topshot_set_squeeze_board","set_squeeze",false],
+  ["/insights/pack-reality","topshot_pack_reality_top_ev","pack_reality_top_ev",false],
+  ["/insights/rookies","topshot_2025_rookie_index","rookies",false],
+  ["/insights/market","topshot_market_index_daily","market",false],
+  ["/insights/first-mint","topshot_first_mint_trophies","first_mint",false],
+  ["/insights/cross-collection","cross_collection_cohort_stats","cross_collection",false],
+  ["/insights/pinnacle-scarcity","pinnacle_scarcity_board","pinnacle_scarcity",false],
+  ["/insights/offer-spread","topshot_offer_ask_spread","offer_spread",false],
+  ["/insights/deals","topshot_deals_vs_fmv","deals",false],
+  ["/insights/trophies","v_insights_trophies","trophies",false],
+  ["/insights/new-collectors","mv_insights_new_collectors_cohorts","new_collectors",false]
+];
+const WALLET_TOOLS=[["/insights/squeeze-check","get_wallet_squeeze (RPC)"],["/insights/tc-report","get_wallet_tc_report (RPC)"]];
+
+function renderInsights(countRows, freshRows) {
+  let empties = 0;
+  const by = {}; (countRows||[]).forEach(r => by[r.surface] = +r.n);
+  let h = '<table><tr><th>Surface</th><th>Backing view</th><th class="num">Rows</th><th>Status</th></tr>';
+  SURFACES.forEach(([route,view,key,pending])=>{
+    const n = by[key]; const ok = typeof n === "number" && n > 0; if (!ok) empties++;
+    const status = ok ? (pending ? '<span class="pill info">view ok · page pending</span>' : '<span class="pill good">ok</span>') : '<span class="pill bad">empty</span>';
+    h += '<tr><td class="route">'+esc(route)+'</td><td class="view">'+esc(view)+'</td><td class="num">'+(n==null?"–":(n>=501?"500+":n.toLocaleString()))+'</td><td>'+status+'</td></tr>';
+  });
+  WALLET_TOOLS.forEach(([route,src])=>{ h += '<tr><td class="route">'+esc(route)+'</td><td class="view">'+esc(src)+'</td><td class="num">—</td><td><span class="pill info">interactive</span></td></tr>'; });
+  document.getElementById("tbl").innerHTML = h + '</table>';
+  document.getElementById("fresh").innerHTML = (freshRows||[]).map(r => '<div>'+esc(r.k)+': <b>'+esc((r.v||"").replace("T"," ").slice(0,16))+'</b> <span style="color:#6b7280">'+ago(r.v)+'</span></div>').join("") || '<span class="view">no freshness rows</span>';
+  const dot = document.getElementById("dot"), bt = document.getElementById("bannertext");
+  if (empties) { dot.style.background = "#b91c1c"; bt.textContent = empties + " surface(s) have an EMPTY backing view — investigate."; }
+  else { dot.style.background = "#15803d"; bt.textContent = "All public insights surfaces have live backing data + pages."; }
+}
+
+/* ---------- Loader ---------- */
+async function loadAll() {
+  document.getElementById("ts").textContent = "Refreshing… (one consolidated query — can take up to ~2 min when the DB is busy)";
+  document.getElementById("loaderr").innerHTML = "";
+  try {
+    const rows = await sql(CONSOLIDATED_SQL);
+    let payload = rows && rows[0] && (rows[0].payload !== undefined ? rows[0].payload : rows[0]);
+    if (typeof payload === "string") { try { payload = JSON.parse(payload); } catch(e) {} }
+    if (!payload || typeof payload !== "object") throw new Error("Unexpected result shape: " + JSON.stringify(rows).slice(0, 300));
+
+    renderPipelines(payload.pipelines_24h);
+    renderFmvTable(payload.fmv_by_collection, payload.fmv_pinnacle);
+    renderCatchup(payload.allday_catchup);
+    renderFreshness(payload.sales_24h, payload.listings_active, payload.unmapped_open);
+    renderIssues(payload.alerts, payload.leak_24h, payload.leak_48h);
+    renderFmvWatch(payload.trend, payload.trend_pn);
+    renderInsights(payload.insights_counts, payload.insights_fresh);
+
+    let qms = "";
+    try {
+      const t0 = new Date(payload._t0.replace(" ", "T")), t1 = new Date(payload._t1.replace(" ", "T"));
+      if (!isNaN(t0) && !isNaN(t1)) qms = " · query " + ((t1 - t0) / 1000).toFixed(1) + "s";
+    } catch(e) {}
+    const busy = payload.trend == null ? " · FMV legs skipped (DB busy: " + payload.db_active + " active)" : "";
+    document.getElementById("ts").textContent = "Updated " + new Date().toLocaleString() + qms + busy;
+  } catch (e) {
+    document.getElementById("ts").innerHTML = `<span style="color:#a32d2d">Error: ${esc(e.message)}</span>`;
+    document.getElementById("loaderr").innerHTML = `<div class="skipnote">The consolidated query failed — usually the DB connection pool is saturated (cron rush at :00/:20/:40, wallet-backfill waves). Wait a minute and hit Reload.</div>`;
+  }
+}
+
+loadAll();
+</script>

@@ -1,0 +1,371 @@
+<title>RPC Rewards Console</title>
+<style>:root{color-scheme:dark}</style>
+<script>
+/* Port shim (2026-10-20, known-issue #114). These dashboards were written for the
+   desktop Cowork bridge (window.cowork.callMcpTool). On claude.ai they read through
+   the page's `mcp` capability instead. Every failure THROWS here, so a query that
+   did not run can never render as an empty result set. */
+(function(){
+  var mcpP = (window.claude && typeof window.claude.use === "function") ? window.claude.use("mcp") : Promise.resolve(null);
+  var FIX = {
+    needs_reauth: "Reconnect {s} in claude.ai Settings, Connectors, then Reload.",
+    server_not_connected: "Add the {s} connector in claude.ai Settings, Connectors, then Reload.",
+    selection_required: "Choose which {s} connector this page should use, then Reload.",
+    not_in_manifest: "{s} is not allowed for this page. Allow it from the artifact's Permissions menu, then Reload.",
+    approval_required: "This page needs your approval to read from {s}. Reload and choose Allow.",
+    blocked_by_policy: "Your organization's policy blocks this {s} tool.",
+    server_unavailable: "{s} did not answer in time. Try Reload in a minute.",
+    not_granted: "Connectors are not available in this view. Open the page in claude.ai.",
+    capability_disabled: "Connectors are not available in this view. Open the page in claude.ai."
+  };
+  function serverFor(t){ return /list_deployments$/.test(t) ? "Vercel" : "Supabase"; }
+  function sleep(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }
+  async function call(mcp, s, name, args, retried){
+    try { return await mcp.callTool(s, name, args, { cache: false }); }
+    catch (e) {
+      var c = (e && e.code) || "upstream_error";
+      if (e && e.retryable && !retried) { await sleep(Math.min(e.retryAfterMs || 0, 15000) + 600 + Math.random() * 900); return call(mcp, s, name, args, true); }
+      var hint = (FIX[c] || "").replace("{s}", s);
+      var msg = s + " query did not run (" + c + ")" + (hint ? ". " + hint : (e && e.message ? ": " + String(e.message).slice(0, 240) : ""));
+      var err = new Error(msg); err.code = c; throw err;
+    }
+  }
+  window.cowork = { callMcpTool: async function(tool, args){
+    var mcp = await mcpP;
+    if (!mcp) throw new Error("Live data is not available in this view. Open the page in claude.ai with the Supabase connector connected.");
+    var s = serverFor(tool), name = String(tool).split("__").pop();
+    var res = await call(mcp, s, name, args, false);
+    var p = res && res.payload;
+    if (p && typeof p === "object" && !Array.isArray(p) && p.error && typeof p.error === "object")
+      throw new Error(s + " query failed: " + String(p.error.message || p.error.name || "error").slice(0, 300));
+    var out = { content: (res && res.content) || [] };
+    if (res && typeof res.structuredContent !== "undefined") out.structuredContent = res.structuredContent;
+    return out;
+  } };
+})();
+</script>
+<style>
+:root{ color-scheme: light; --red:#E03A2F; --ink:#16181d; --muted:#6b7280; --line:#e6e8ec; --bg:#f7f8fa; --card:#ffffff; --good:#1a7f4b; --warn:#b54708; --chip:#f1f3f5; }
+*{ box-sizing:border-box; }
+body{ margin:0; background:var(--bg); color:var(--ink); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; font-size:14px; line-height:1.45; }
+.wrap{ max-width:1080px; margin:0 auto; padding:20px 18px 60px; }
+h1{ font-size:20px; margin:0 0 2px; letter-spacing:.06em; text-transform:uppercase; }
+h1 .dot{ color:var(--red); }
+.sub{ color:var(--muted); font-size:12.5px; margin:0 0 18px; }
+h2{ font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:var(--muted); margin:26px 0 10px; padding-bottom:6px; border-bottom:2px solid var(--line); position:relative; }
+h2::after{ content:""; position:absolute; left:0; bottom:-2px; width:46px; height:2px; background:var(--red); }
+h2 .lite{ color:var(--muted); font-weight:400; letter-spacing:0; text-transform:none; }
+.mono{ font-family:"SFMono-Regular",ui-monospace,Menlo,Consolas,monospace; }
+.kpis{ display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; }
+.kpi{ background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px 14px; }
+.kpi .label{ font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); }
+.kpi .val{ font-size:24px; font-weight:650; margin-top:4px; font-family:"SFMono-Regular",ui-monospace,Menlo,Consolas,monospace; }
+.kpi .val.accent{ color:var(--red); }
+.kpi .hint{ font-size:11px; color:var(--muted); margin-top:2px; }
+.card{ background:var(--card); border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+table{ width:100%; border-collapse:collapse; }
+th,td{ text-align:left; padding:9px 12px; border-bottom:1px solid var(--line); vertical-align:middle; }
+th{ font-size:10.5px; letter-spacing:.07em; text-transform:uppercase; color:var(--muted); background:#fbfbfc; position:sticky; top:0; }
+tr:last-child td{ border-bottom:none; }
+td.num,th.num{ text-align:right; font-family:"SFMono-Regular",ui-monospace,Menlo,Consolas,monospace; }
+.pos{ color:var(--good); } .neg{ color:var(--red); }
+.chip{ display:inline-block; padding:1.5px 8px; border-radius:999px; background:var(--chip); font-size:11px; letter-spacing:.03em; }
+.chip.tier{ background:#eef2ff; color:#3538cd; }
+.chip.pending{ background:#fff4ed; color:var(--warn); font-weight:600; }
+.chip.fulfilled{ background:#e7f6ee; color:var(--good); }
+.chip.live{ background:#e7f6ee; color:var(--good); }
+.chip.off{ background:#f1f3f5; color:var(--muted); }
+.chip.type{ background:#f0f0f5; color:#4b5563; text-transform:capitalize; }
+.cols{ display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+@media(max-width:760px){ .cols{ grid-template-columns:1fr; } }
+.empty{ padding:18px 14px; color:var(--muted); font-size:12.5px; }
+.err{ background:#fff4ed; border:1px solid #f3c7ad; color:var(--warn); padding:10px 12px; border-radius:8px; font-size:12.5px; margin:8px 0; }
+.foot{ margin-top:24px; color:var(--muted); font-size:11.5px; line-height:1.6; border-top:1px solid var(--line); padding-top:14px; }
+.foot b{ color:var(--ink); }
+.stamp{ font-size:11px; color:var(--muted); }
+.lock{ color:var(--good); font-weight:600; }
+/* === RPC DARK THEME (2026-06-15) === */
+:root{color-scheme:dark!important;}
+html,body{background:#0c0c0e!important;color:#ECEAE3!important;}
+.wrap,.container,main{background:transparent!important;}
+.card,.panel,.box,.tile,section.card{background:#16161a!important;border-color:rgba(255,255,255,0.10)!important;}
+.kpi,.stat,.metric{background:#1b1b20!important;border-color:rgba(255,255,255,0.08)!important;}
+.muted,.sub,.spinner,.legend,.tinyw,.kpi .lbl,.stat .lbl,small{color:#9A968C!important;}
+h1{color:#F2F0EA!important;}
+h2,h3,h4{color:#D8D5CC!important;}
+table{color:#E4E2DB!important;}
+th{color:#9A968C!important;border-bottom-color:rgba(255,255,255,0.12)!important;}
+td{border-bottom-color:rgba(255,255,255,0.07)!important;}
+tr:hover td{background:rgba(255,255,255,0.03)!important;}
+.tab{border-color:rgba(255,255,255,0.18)!important;color:#CFCAC4!important;background:transparent!important;}
+.tab.active{background:var(--rpc-red,#E03A2F)!important;color:#fff!important;border-color:var(--rpc-red,#E03A2F)!important;}
+button{color:#ECEAE3;}
+button.refresh{background:rgba(224,58,47,0.16)!important;}
+input,select,textarea{background:#16161a!important;color:#ECEAE3!important;border-color:rgba(255,255,255,0.15)!important;}
+a{color:#7FB2F0;}
+.pill.HIGH{background:rgba(46,160,110,0.22)!important;color:#5fd6a0!important;}
+.pill.MEDIUM{background:rgba(55,138,221,0.22)!important;color:#74b6ef!important;}
+.pill.LOW{background:rgba(186,117,23,0.24)!important;color:#e0a64b!important;}
+.pill.STALE{background:rgba(255,255,255,0.10)!important;color:#b9b6ad!important;}
+.pill.NO_DATA{background:rgba(163,45,45,0.24)!important;color:#e88a8a!important;}
+.pill.ASK_ONLY{background:rgba(83,74,183,0.26)!important;color:#a39df0!important;}
+.pill.SALES_ONLY{background:rgba(156,42,111,0.26)!important;color:#e487bb!important;}
+/* keep red accents */
+.kpi .val,.stat .val,.metric .val{color:var(--rpc-red,#E03A2F)!important;}
+/* rewards-console extras */
+.chip{background:#1b1b20!important;color:#ECEAE3!important;}
+.chip.tier{background:rgba(83,74,183,0.2)!important;color:#a39df0!important;}
+.chip.pending{background:rgba(180,83,9,0.2)!important;color:#e0a64b!important;}
+.chip.fulfilled,.chip.live{background:rgba(21,128,61,0.2)!important;color:#5fd6a0!important;}
+.chip.off{background:#1b1b20!important;color:#9A968C!important;}
+.chip.type{background:#1b1b20!important;color:#ECEAE3!important;}
+.err{background:rgba(180,83,9,0.12)!important;border-color:rgba(180,83,9,0.3)!important;color:#e0a64b!important;}
+th{background:#0f0f12!important;}
+body{background:#0c0c0e!important;}
+.sub,.stamp,.empty,.foot{color:#9A968C!important;}
+.kpi .label{color:#9A968C!important;}
+.kpi .hint{color:#9A968C!important;}
+.foot b{color:#ECEAE3!important;}
+.lock{color:#5fd6a0!important;}
+h2::after{background:var(--rpc-red,#E03A2F)!important;}
+h2{border-bottom-color:rgba(255,255,255,0.12)!important;}
+</style>
+
+
+<div class="wrap">
+  <h1>RPC Rewards <span class="dot">·</span> Owner Console</h1>
+  <p class="sub">Live audit + ownership view of the off-chain points economy. Read-only. Reload from the view header to refresh. <span class="stamp" id="stamp"></span></p>
+
+  <div id="bridgeWarn"></div>
+
+  <h2>Economy</h2>
+  <div class="kpis" id="econ"><div class="empty">Loading…</div></div>
+
+  <h2>Prize delivery &amp; verification <span class="lite">— redemptions delivered + the verify funnel</span></h2>
+  <div class="kpis" id="delivery"><div class="empty">Loading…</div></div>
+
+  <h2>Redemption queue <span class="lite">— what you fulfill (Moments + swag)</span></h2>
+  <div class="card" id="pending"><div class="empty">Loading…</div></div>
+
+  <h2>User balances</h2>
+  <div class="card" id="balances"><div class="empty">Loading…</div></div>
+
+  <h2>Ledger — recent activity <span class="lite">— append-only audit trail</span></h2>
+  <div class="card" id="ledger"><div class="empty">Loading…</div></div>
+
+  <h2>Raffles <span class="lite">— entries + draws (held until rules ship)</span></h2>
+  <div class="card" id="raffles"><div class="empty">Loading…</div></div>
+
+  <div class="cols">
+    <div>
+      <h2>Shop catalog</h2>
+      <div class="card" id="shop"><div class="empty">Loading…</div></div>
+    </div>
+    <div>
+      <h2>Earn rules</h2>
+      <div class="card" id="rules"><div class="empty">Loading…</div></div>
+    </div>
+  </div>
+
+  <div class="foot">
+    <b>Security.</b> Every points mutation is written only by <span class="mono">service_role</span> or the <span class="mono">SECURITY&nbsp;DEFINER</span> functions (<span class="mono">award_points / redeem_shop_item / fulfill_redemption / admin_adjust_points / draw_raffle</span>). RLS is on for all rewards tables; <span class="lock">anon and authenticated are SELECT-only — no write path exists</span>.<br>
+    <b>Delivery.</b> Pro + cosmetics deliver instantly at redeem (Pro → <span class="mono">pro_users</span>, cosmetic → <span class="mono">user_cosmetics</span> + equipped). Moments + swag stay in the queue for manual fulfillment.<br>
+    <b>To grant/adjust manually:</b> <span class="mono">admin_adjust_points(user_id, delta, status_delta, reason, 'owner')</span>. <b>To draw a raffle:</b> <span class="mono">draw_raffle(shop_item_id, 'owner')</span> (raffle items are held inactive until official rules ship).<br>
+    <b>Source:</b> Supabase <span class="mono">bxcqstmqfzmuolpuynti</span>. Tables empty until the program goes live.
+  </div>
+</div>
+
+<script>
+const TOOL = "mcp__24ab6d77-3292-4646-b039-669cc9535ef8__execute_sql";
+const PROJECT = "bxcqstmqfzmuolpuynti";
+
+function extractRows(raw){
+  if(raw==null) return [];
+  if(Array.isArray(raw)) return raw;
+  if(typeof raw==="object"){ if(raw.isError===true||(raw.error&&typeof raw.error==="object")) throw new Error(String((raw.error&&(raw.error.message||raw.error.name))||(Array.isArray(raw.content)?raw.content.map(c=>(c&&c.text)||"").join(" "):"")||"tool returned an error")); 
+    if(Array.isArray(raw.content)){ return extractRows(raw.content.map(c=>typeof c==="string"?c:(c&&c.text)||"").join("\n")); }
+    if(typeof raw.result==="string") return extractRows(raw.result);
+    if(typeof raw.text==="string") return extractRows(raw.text);
+    if(typeof raw.data!=="undefined") return extractRows(raw.data);
+    return [raw];
+  }
+  if(typeof raw==="string"){
+    let s=raw.trim();
+    try{ return extractRows(JSON.parse(s)); }catch(e){}
+    const m=s.match(/\[[\s\S]*\]/);
+    if(m){ try{ return JSON.parse(m[0]); }catch(e){} }
+    if(!s) return []; throw new Error("unreadable tool response: "+s.slice(0,160));
+  }
+  return [];
+}
+async function runSql(sql){
+  if(!(window.cowork && window.cowork.callMcpTool)) throw new Error("MCP bridge unavailable — open this inside Cowork.");
+  const res = await window.cowork.callMcpTool(TOOL, {project_id:PROJECT, query:sql});
+  return extractRows(res);
+}
+
+const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const n=v=>(v==null||v==="")?"0":Number(v).toLocaleString("en-US");
+const shortId=v=>v?String(v).slice(0,8):"—";
+function when(ts){ if(!ts) return "—"; const d=new Date(ts); if(isNaN(d)) return esc(ts);
+  return d.toLocaleString("en-US",{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}); }
+const tierChip=t=>`<span class="chip tier">${esc(t||"Rookie")}</span>`;
+
+const PAYLOAD_SQL = `SELECT jsonb_build_object(
+  'econ', COALESCE((SELECT to_jsonb(t) FROM (SELECT * FROM v_rewards_economy) t), '{}'::jsonb),
+  'delivery', COALESCE((SELECT to_jsonb(t) FROM (SELECT (SELECT count(*) FROM user_cosmetics) AS cos_owned, (SELECT count(DISTINCT user_id) FROM user_cosmetics) AS cos_owners, (SELECT count(*) FROM pro_users WHERE granted_by='rewards') AS pro_grants, (SELECT count(*) FROM pro_users WHERE granted_by='rewards' AND (expires_at IS NULL OR expires_at>now())) AS pro_active, (SELECT count(*) FROM redemptions WHERE status='fulfilled') AS fulfilled, (SELECT count(*) FROM saved_wallets WHERE verified_at IS NOT NULL) AS verified_wallets, (SELECT count(*) FROM wallet_verification_challenges WHERE created_at > now()-interval '7 days') AS ch_minted_7d, (SELECT count(*) FROM wallet_verification_challenges WHERE resolved_at > now()-interval '7 days' AND resolved_via NOT IN ('expired','superseded')) AS ch_passed_7d, (SELECT count(*) FROM wallet_verification_challenges WHERE resolved_at > now()-interval '7 days' AND resolved_via='expired') AS ch_expired_7d) t), '{}'::jsonb),
+  'pending', (SELECT COALESCE(jsonb_agg(t), '[]'::jsonb) FROM (SELECT r.id, coalesce(up.username, left(r.user_id::text,8)) AS usr,
+      coalesce(r.fulfillment->>'gift_to', up.topshot_username, wu.username) AS ts_username,
+      si.name AS item, si.type, r.cost_credits, r.requested_at
+    FROM redemptions r JOIN shop_items si ON si.id=r.shop_item_id
+    LEFT JOIN user_profiles up ON up.id=r.user_id
+    LEFT JOIN LATERAL (
+      SELECT wun.username FROM saved_wallets sw JOIN wallet_usernames wun ON lower(wun.wallet_addr)=lower(sw.wallet_addr)
+      WHERE sw.user_id = r.user_id
+      ORDER BY (sw.verified_at IS NOT NULL) DESC, sw.verified_at DESC NULLS LAST, sw.id DESC LIMIT 1
+    ) wu ON true
+    WHERE r.status='pending'
+    ORDER BY r.requested_at DESC LIMIT 100) t),
+  'balances', (SELECT COALESCE(jsonb_agg(t), '[]'::jsonb) FROM (SELECT * FROM v_rewards_user_balances ORDER BY status DESC, spendable DESC LIMIT 200) t),
+  'ledger', (SELECT COALESCE(jsonb_agg(t), '[]'::jsonb) FROM (SELECT l.created_at, coalesce(up.username, left(l.user_id::text,8)) AS usr,
+      l.delta, l.status_delta, l.kind, l.reason, l.created_by
+    FROM points_ledger l LEFT JOIN user_profiles up ON up.id=l.user_id
+    ORDER BY l.created_at DESC LIMIT 100) t),
+  'raffle_items', (SELECT COALESCE(jsonb_agg(t), '[]'::jsonb) FROM (SELECT si.name, si.active, count(re.id) AS entries, count(DISTINCT re.user_id) AS entrants, coalesce(sum(re.credits),0) AS credits
+    FROM shop_items si LEFT JOIN raffle_entries re ON re.shop_item_id=si.id WHERE si.type='raffle' GROUP BY si.id, si.name, si.active ORDER BY si.name) t),
+  'raffle_draws', (SELECT COALESCE(jsonb_agg(t), '[]'::jsonb) FROM (SELECT coalesce(up.username,left(d.winner_user_id::text,8)) AS winner, si.name AS item, d.total_entrants, d.total_credits, d.drawn_at
+    FROM raffle_draws d JOIN shop_items si ON si.id=d.shop_item_id LEFT JOIN user_profiles up ON up.id=d.winner_user_id ORDER BY d.drawn_at DESC LIMIT 20) t),
+  'shop', (SELECT COALESCE(jsonb_agg(t), '[]'::jsonb) FROM (SELECT id, name, type, cost_credits, coalesce(stock::text,'∞') AS stock,
+      min_status, requires_verified_wallet, active
+    FROM shop_items ORDER BY active DESC, type, cost_credits) t),
+  'rules', (SELECT COALESCE(jsonb_agg(t), '[]'::jsonb) FROM (SELECT action_key, label, points, cooldown_seconds,
+      coalesce(daily_cap::text,'—') AS daily_cap, coalesce(per_user_limit::text,'—') AS per_user_limit, active
+    FROM points_rules ORDER BY active DESC, points DESC) t)
+) AS payload;`;
+
+async function fetchPayload(){
+  const rows=await runSql(PAYLOAD_SQL);
+  const row=(rows&&rows[0])||{};
+  let p=row.payload;
+  if(typeof p==="string"){ try{ p=JSON.parse(p); }catch(e){ p=null; } }
+  if(!p||typeof p!=="object") throw new Error("payload missing from query result");
+  return p;
+}
+
+function loadEcon(e){
+  e=e||{};
+  const cards=[
+    ["Credits issued", n(e.total_issued_credits), "accent", "lifetime earned"],
+    ["Credits spent", n(e.total_spent_credits), "", "redeemed"],
+    ["Outstanding", n(e.outstanding_liability_credits), "accent", "credits in circulation (liability)"],
+    ["Status awarded", n(e.total_status_awarded), "", "lifetime status pts"],
+    ["Participants", n(e.participants), "", "users with ≥1 ledger row"],
+    ["Redemptions pending", n(e.redemptions_pending), e.redemptions_pending>0?"accent":"", "awaiting fulfillment"],
+    ["Redemptions fulfilled", n(e.redemptions_fulfilled), "", "delivered"]
+  ];
+  document.getElementById("econ").innerHTML = cards.map(c=>
+    `<div class="kpi"><div class="label">${c[0]}</div><div class="val ${c[2]}">${c[1]}</div><div class="hint">${c[3]}</div></div>`).join("");
+}
+
+function loadDelivery(c){
+  c=c||{};
+  const cards=[
+    ["Cosmetics owned", n(c.cos_owned), "", "delivered + equipped"],
+    ["Cosmetic owners", n(c.cos_owners), "", "distinct users"],
+    ["Pro grants (rewards)", n(c.pro_grants), "accent", "redeemed for credits"],
+    ["Pro active (rewards)", n(c.pro_active), "", "not expired"],
+    ["Redemptions delivered", n(c.fulfilled), "", "all types"],
+    ["Wallets verified", n(c.verified_wallets), "accent", "all methods"],
+    ["Challenges minted (7d)", n(c.ch_minted_7d), "", "verify attempts"],
+    ["Challenges passed (7d)", n(c.ch_passed_7d), c.ch_passed_7d>0?"accent":"", "verified via listing"],
+    ["Challenges expired (7d)", n(c.ch_expired_7d), "", "didn't complete"]
+  ];
+  document.getElementById("delivery").innerHTML = cards.map(x=>
+    `<div class="kpi"><div class="label">${x[0]}</div><div class="val ${x[2]}">${x[1]}</div><div class="hint">${x[3]}</div></div>`).join("");
+}
+
+function tableOrEmpty(el, rows, head, rowFn, emptyMsg){
+  if(!rows||!rows.length){ el.innerHTML=`<div class="empty">${emptyMsg}</div>`; return; }
+  el.innerHTML = `<table><thead><tr>${head}</tr></thead><tbody>${rows.map(rowFn).join("")}</tbody></table>`;
+}
+
+function loadPending(rows){
+  tableOrEmpty(document.getElementById("pending"), rows,
+    `<th>#</th><th>User</th><th>Gift to (TS)</th><th>Item</th><th>Type</th><th class="num">Cost</th><th>Requested</th>`,
+    r=>`<tr><td class="mono">${esc(r.id)}</td><td>${esc(r.usr)}</td><td class="mono">${r.ts_username?esc(r.ts_username):'<span class="chip off" title="no resolved Top Shot username — ask the user">unresolved</span>'}</td><td>${esc(r.item)}</td><td><span class="chip type">${esc(r.type)}</span></td><td class="num">${n(r.cost_credits)}</td><td>${when(r.requested_at)}</td></tr>`,
+    "No pending redemptions. Pro + cosmetics auto-deliver; only Moments + swag land here for manual fulfillment.");
+}
+
+function loadBalances(rows){
+  tableOrEmpty(document.getElementById("balances"), rows,
+    `<th>User</th><th>Tier</th><th class="num">Spendable</th><th class="num">Status</th><th class="num">Earned</th><th class="num">Spent</th><th>Last activity</th>`,
+    r=>`<tr><td>${esc(r.username||shortId(r.user_id))}</td><td>${tierChip(r.tier)}</td><td class="num">${n(r.spendable)}</td><td class="num">${n(r.status)}</td><td class="num">${n(r.lifetime_earned)}</td><td class="num">${n(r.lifetime_spent)}</td><td>${when(r.last_activity)}</td></tr>`,
+    "No participants yet. Rows appear once users start earning.");
+}
+
+function loadLedger(rows){
+  tableOrEmpty(document.getElementById("ledger"), rows,
+    `<th>When</th><th>User</th><th>Kind</th><th class="num">Δ Credits</th><th class="num">Δ Status</th><th>Reason</th><th>By</th>`,
+    r=>{ const d=Number(r.delta); const dc=d<0?`<span class="neg">${n(d)}</span>`:`<span class="pos">+${n(d)}</span>`;
+      return `<tr><td>${when(r.created_at)}</td><td>${esc(r.usr)}</td><td><span class="chip type">${esc(r.kind)}</span></td><td class="num">${dc}</td><td class="num">${r.status_delta>0?"+"+n(r.status_delta):n(r.status_delta)}</td><td class="mono" style="font-size:12px">${esc(r.reason)}</td><td class="mono" style="font-size:11.5px;color:var(--muted)">${esc(r.created_by)}</td></tr>`; },
+    "No ledger activity yet. Every earn, spend, and adjustment will be recorded here — append-only.");
+}
+
+function loadRaffles(items, draws){
+  const el=document.getElementById("raffles");
+  if(!items||!items.length){ el.innerHTML=`<div class="empty">No raffle items.</div>`; return; }
+  let html=`<table><thead><tr><th>Raffle</th><th>Status</th><th class="num">Entrants</th><th class="num">Entries</th><th class="num">Credits in</th></tr></thead><tbody>`;
+  html+=items.map(r=>`<tr><td>${esc(r.name)}</td><td>${r.active?'<span class="chip live">live</span>':'<span class="chip off">held</span>'}</td><td class="num">${n(r.entrants)}</td><td class="num">${n(r.entries)}</td><td class="num">${n(r.credits)}</td></tr>`).join("");
+  html+=`</tbody></table>`;
+  if(draws && draws.length){
+    html+=`<table style="margin-top:0;border-top:3px solid var(--line)"><thead><tr><th>Past draw — winner</th><th>Raffle</th><th class="num">Entrants</th><th class="num">Credits</th><th>Drawn</th></tr></thead><tbody>`;
+    html+=draws.map(d=>`<tr><td>${esc(d.winner||'—')}</td><td>${esc(d.item)}</td><td class="num">${n(d.total_entrants)}</td><td class="num">${n(d.total_credits)}</td><td>${when(d.drawn_at)}</td></tr>`).join("");
+    html+=`</tbody></table>`;
+  }
+  el.innerHTML=html;
+}
+
+function loadShop(rows){
+  tableOrEmpty(document.getElementById("shop"), rows,
+    `<th>Item</th><th>Type</th><th class="num">Cost</th><th class="num">Stock</th><th>Live</th>`,
+    r=>`<tr><td>${esc(r.name)}${r.requires_verified_wallet?' <span class="chip" title="requires verified wallet">🔒</span>':''}${Number(r.min_status)>0?` <span class="chip" title="min status">≥${n(r.min_status)}</span>`:''}</td><td><span class="chip type">${esc(r.type)}</span></td><td class="num">${n(r.cost_credits)}</td><td class="num">${esc(r.stock)}</td><td>${r.active?'<span class="chip live">live</span>':'<span class="chip off">off</span>'}</td></tr>`,
+    "No shop items.");
+}
+
+function loadRules(rows){
+  tableOrEmpty(document.getElementById("rules"), rows,
+    `<th>Action</th><th class="num">Pts</th><th class="num">Daily</th><th class="num">Max</th><th>Live</th>`,
+    r=>`<tr><td title="${esc(r.action_key)}">${esc(r.label)}</td><td class="num">${n(r.points)}</td><td class="num">${esc(r.daily_cap)}</td><td class="num">${esc(r.per_user_limit)}</td><td>${r.active?'<span class="chip live">on</span>':'<span class="chip off">off</span>'}</td></tr>`,
+    "No earn rules.");
+}
+
+async function main(){
+  document.getElementById("stamp").textContent = "loaded " + new Date().toLocaleString("en-US",{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"});
+  if(!(window.cowork && window.cowork.callMcpTool)){
+    document.getElementById("bridgeWarn").innerHTML = `<div class="err">Open this inside Cowork to load live data (the MCP bridge isn't available here).</div>`;
+  }
+  try{
+    const P = await fetchPayload();
+    const jobs=[
+      ()=>loadEcon(P.econ),
+      ()=>loadDelivery(P.delivery),
+      ()=>loadPending(P.pending||[]),
+      ()=>loadBalances(P.balances||[]),
+      ()=>loadLedger(P.ledger||[]),
+      ()=>loadRaffles(P.raffle_items||[], P.raffle_draws||[]),
+      ()=>loadShop(P.shop||[]),
+      ()=>loadRules(P.rules||[])
+    ];
+    const ids=["econ","delivery","pending","balances","ledger","raffles","shop","rules"];
+    jobs.forEach((fn,i)=>{
+      try{ fn(); }
+      catch(e){ const el=document.getElementById(ids[i]); if(el) el.innerHTML=`<div class="err">Failed: ${esc(e.message||e)}</div>`; }
+    });
+  }catch(e){
+    for(const id of ["econ","delivery","pending","balances","ledger","raffles","shop","rules"]){
+      const el=document.getElementById(id); if(el) el.innerHTML=`<div class="err">Failed: ${esc(e.message||e)}</div>`;
+    }
+  }
+}
+main();
+</script>

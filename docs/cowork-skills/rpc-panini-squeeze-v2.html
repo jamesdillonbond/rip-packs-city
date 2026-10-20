@@ -1,0 +1,520 @@
+<title>Panini Prizm Squeeze</title>
+<style>:root{color-scheme:dark}</style>
+<script>
+/* Port shim (2026-10-20, known-issue #114). These dashboards were written for the
+   desktop Cowork bridge (window.cowork.callMcpTool). On claude.ai they read through
+   the page's `mcp` capability instead. Every failure THROWS here, so a query that
+   did not run can never render as an empty result set. */
+(function(){
+  var mcpP = (window.claude && typeof window.claude.use === "function") ? window.claude.use("mcp") : Promise.resolve(null);
+  var FIX = {
+    needs_reauth: "Reconnect {s} in claude.ai Settings, Connectors, then Reload.",
+    server_not_connected: "Add the {s} connector in claude.ai Settings, Connectors, then Reload.",
+    selection_required: "Choose which {s} connector this page should use, then Reload.",
+    not_in_manifest: "{s} is not allowed for this page. Allow it from the artifact's Permissions menu, then Reload.",
+    approval_required: "This page needs your approval to read from {s}. Reload and choose Allow.",
+    blocked_by_policy: "Your organization's policy blocks this {s} tool.",
+    server_unavailable: "{s} did not answer in time. Try Reload in a minute.",
+    not_granted: "Connectors are not available in this view. Open the page in claude.ai.",
+    capability_disabled: "Connectors are not available in this view. Open the page in claude.ai."
+  };
+  function serverFor(t){ return /list_deployments$/.test(t) ? "Vercel" : "Supabase"; }
+  function sleep(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }
+  async function call(mcp, s, name, args, retried){
+    try { return await mcp.callTool(s, name, args, { cache: false }); }
+    catch (e) {
+      var c = (e && e.code) || "upstream_error";
+      if (e && e.retryable && !retried) { await sleep(Math.min(e.retryAfterMs || 0, 15000) + 600 + Math.random() * 900); return call(mcp, s, name, args, true); }
+      var hint = (FIX[c] || "").replace("{s}", s);
+      var msg = s + " query did not run (" + c + ")" + (hint ? ". " + hint : (e && e.message ? ": " + String(e.message).slice(0, 240) : ""));
+      var err = new Error(msg); err.code = c; throw err;
+    }
+  }
+  window.cowork = { callMcpTool: async function(tool, args){
+    var mcp = await mcpP;
+    if (!mcp) throw new Error("Live data is not available in this view. Open the page in claude.ai with the Supabase connector connected.");
+    var s = serverFor(tool), name = String(tool).split("__").pop();
+    var res = await call(mcp, s, name, args, false);
+    var p = res && res.payload;
+    if (p && typeof p === "object" && !Array.isArray(p) && p.error && typeof p.error === "object")
+      throw new Error(s + " query failed: " + String(p.error.message || p.error.name || "error").slice(0, 300));
+    var out = { content: (res && res.content) || [] };
+    if (res && typeof res.structuredContent !== "undefined") out.structuredContent = res.structuredContent;
+    return out;
+  } };
+})();
+</script>
+<style>
+  :root{ color-scheme:dark; --rpc-red:#E03A2F; --bg:#0c0c0e; --card:#16161a; --card2:#1b1b20;
+         --ink:#ECEAE3; --head:#F2F0EA; --muted:#9A968C; --line:rgba(255,255,255,0.10); --line2:rgba(255,255,255,0.07);
+         --good:#5fd6a0; --goodbg:rgba(46,160,110,0.20); --mid:#e0a64b; --midbg:rgba(186,117,23,0.22);
+         --bad:#e88a8a; --badbg:rgba(185,28,28,0.20); --blue:#7FB2F0;
+         --t-ult:#d6b4ff; --t-leg:#e0a64b; --t-rare:#7FB2F0; --t-com:#9A968C; }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.45}
+  .wrap{max-width:1200px;margin:0 auto;padding:18px 16px 46px}
+  h1{font-size:20px;letter-spacing:.07em;text-transform:uppercase;color:var(--head);margin:0 0 2px;border-bottom:3px solid var(--rpc-red);padding-bottom:8px;display:inline-block}
+  .sub{color:var(--muted);font-size:12px;margin:8px 0 16px;font-variant-numeric:tabular-nums}
+  .mono,.num{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+  @media(min-width:760px){.grid{grid-template-columns:repeat(5,1fr)}}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:13px 14px}
+  .card h3{font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);margin:0 0 7px;font-weight:700}
+  .big{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:22px;font-weight:600;color:var(--rpc-red);line-height:1.05}
+  .csub{color:var(--muted);font-size:11px;margin-top:6px}
+  h2.sec{font-size:12px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);font-weight:700;margin:26px 0 4px;border-bottom:1px solid var(--line);padding-bottom:6px}
+  .hint{color:var(--muted);font-size:11.5px;margin:8px 0 12px;line-height:1.5}
+  .hint b{color:var(--ink)}
+  .controls{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0 6px}
+  .controls input{background:var(--card2);border:1px solid var(--line);border-radius:8px;color:var(--ink);padding:6px 10px;font-size:12.5px;font-family:inherit;min-width:180px}
+  .controls .seg{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .controls .seg button{background:transparent;border:0;color:var(--muted);padding:6px 10px;font-size:11px;letter-spacing:.04em;text-transform:uppercase;cursor:pointer;font-weight:700}
+  .controls .seg button.on{background:var(--rpc-red);color:#fff}
+  .scroll{overflow-x:auto}
+  table{width:100%;border-collapse:collapse;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:transparent}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line2);vertical-align:middle;white-space:nowrap}
+  th{font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);font-weight:700;cursor:pointer;user-select:none}
+  th.num,td.num{text-align:right;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  th:hover{color:var(--ink)} th.act{color:var(--head)}
+  tr:last-child td{border-bottom:none}
+  tbody tr:hover td{background:rgba(255,255,255,0.03)}
+  .setn{font-weight:600;color:var(--head)}
+  .par{color:var(--muted);font-size:11px}
+  .tier{font-size:9.5px;font-weight:800;letter-spacing:.05em;padding:2px 6px;border-radius:4px;text-transform:uppercase}
+  .tier.ULTIMATE{color:var(--t-ult);background:rgba(214,180,255,.14)}
+  .tier.LEGENDARY{color:var(--t-leg);background:rgba(224,166,75,.14)}
+  .tier.RARE{color:var(--t-rare);background:rgba(127,178,240,.14)}
+  .tier.COMMON{color:var(--t-com);background:rgba(154,150,140,.12)}
+  .flag{font-size:9.5px;font-weight:800;letter-spacing:.04em;padding:2px 6px;border-radius:4px;text-transform:uppercase;color:var(--rpc-red);background:var(--rpc-red-bg,rgba(224,58,47,.15))}
+  .bar{height:5px;border-radius:3px;background:rgba(255,255,255,0.10);overflow:hidden;margin-top:4px;min-width:64px}
+  .bar > i{display:block;height:100%;background:var(--rpc-red)}
+  .rc{font-size:9px;font-weight:800;letter-spacing:.03em;padding:1px 4px;border-radius:3px;color:#0c0c0e;background:var(--good);vertical-align:middle}
+  .rs{color:var(--muted);font-size:10px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .cf{margin-left:6px;padding:1px 4px;border:1px solid #4a4a52;border-radius:3px;color:var(--muted);font-size:9px;letter-spacing:.08em;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .seal{color:var(--good);font-weight:700}
+  .exp{color:var(--mid);font-weight:700}
+  .foot{color:var(--muted);font-size:11.5px;margin-top:22px;line-height:1.6}
+  .foot b{color:var(--ink)}
+  .err{color:var(--bad);font-size:12px;margin:8px 0}
+  td.errcell{color:var(--bad);white-space:normal}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:var(--card2);padding:1px 5px;border-radius:4px;font-size:12px;color:var(--ink)}
+  .empty{color:var(--muted);font-size:12px;padding:14px;border:1px dashed var(--line);border-radius:10px;background:var(--card)}
+  .errbox{color:var(--bad);font-size:12px;padding:14px;border:1px solid rgba(185,28,28,.45);background:rgba(185,28,28,.10);border-radius:10px}
+</style>
+
+
+<div class="wrap">
+  <h1>RPC · Panini — WC Prizm Squeeze</h1>
+  <div class="sub" id="stamp">Reading live Panini data from Supabase…</div>
+
+  <div class="grid" id="kpis"></div>
+
+  <h2 class="sec">Squeeze board — 2026 Prizm World Cup Soccer</h2>
+  <div class="hint">
+    The intelligence Panini's own site doesn't surface: real chase cards with their <b>still-sealed-in-packs</b> count. <b>Rip%</b> = pulled ÷ mint; <b>In packs</b> = copies not yet opened (the scarcity signal); <b>Sealed $</b> = in-packs × FMV = dollars still locked in unopened packs. FMV is RPC's sales-first estimate; <b>Ask</b> is the current marketplace floor. Click a header to re-sort.
+  </div>
+  <div class="controls">
+    <input id="q" type="text" placeholder="Filter player or parallel…" autocomplete="off">
+    <div class="seg" id="capseg">
+      <button data-cap="0" class="on">All</button>
+      <button data-cap="25">≤ /25 chases</button>
+      <button data-cap="10">≤ /10</button>
+      <button data-cap="1">1-of-1s</button>
+    </div>
+    <div class="seg"><button id="rookiebtn">🌟 Rookies</button></div>
+  </div>
+  <div class="scroll">
+    <table id="tbl">
+      <thead><tr>
+        <th data-k="player_name">Player</th>
+        <th data-k="set_name">Parallel</th>
+        <th data-k="tier">Tier</th>
+        <th data-k="mint_cap" class="num">Mint</th>
+        <th data-k="still_in_packs" class="num">In packs</th>
+        <th data-k="rip_pct" class="num">Rip %</th>
+        <th data-k="sealed_fmv_exposure_usd" class="num">Sealed $</th>
+        <th data-k="serial_low_ask_usd" class="num">Ask</th>
+        <th data-k="fmv_usd" class="num act">FMV ▼</th>
+      </tr></thead>
+      <tbody><tr><td colspan="9" class="csub">Loading…</td></tr></tbody>
+    </table>
+  </div>
+
+  <h2 class="sec">Deals — listed below FMV</h2>
+  <div class="hint">Listed serials asking under their <b>serial FMV</b> (edition FMV × the fitted #1/jersey/perfect premium; sales-backed FMV only, ≥$25). <b>Discount</b> = 1 − ask ÷ serial FMV; <b>Est. profit</b> = serial FMV − ask. Candidates to verify, not guarantees.</div>
+  <div id="dealsBox"></div>
+
+  <h2 class="sec">Players — most value still sealed in packs</h2>
+  <div class="hint">Per player across the whole WC Prizm set: how many parallels, how many copies are still sealed, and the dollar value that represents (<b>Sealed $</b> = Σ in-packs × FMV). The set's squeeze, by name.</div>
+  <div class="scroll">
+    <table id="playertbl">
+      <thead><tr>
+        <th data-pk="player_name">Player</th>
+        <th data-pk="editions" class="num">Editions</th>
+        <th data-pk="chases" class="num">Chases ≤/25</th>
+        <th data-pk="sealed_in_packs" class="num">Sealed copies</th>
+        <th data-pk="top_fmv_usd" class="num">Top FMV</th>
+        <th data-pk="avg_rip_pct" class="num">Avg rip%</th>
+        <th data-pk="sealed_fmv_exposure_usd" class="num act">Sealed $ ▼</th>
+      </tr></thead>
+      <tbody><tr><td colspan="7" class="csub">Loading…</td></tr></tbody>
+    </table>
+  </div>
+
+  <h2 class="sec">Nations — where the sealed value lives</h2>
+  <div class="hint">The World Cup lens: per country, how much FMV is still locked in unopened packs (<b>Sealed $</b> = Σ remaining copies × FMV), plus low-cap chases (≤/25), players indexed, and the marquee name. Nation is resolved from each player's dominant national team. Click a header to re-sort.</div>
+  <div class="scroll">
+    <table id="nationtbl">
+      <thead><tr>
+        <th data-nk="nation">Nation</th>
+        <th data-nk="players" class="num">Players</th>
+        <th data-nk="editions" class="num">Editions</th>
+        <th data-nk="chases" class="num">Chases ≤/25</th>
+        <th data-nk="sealed_copies" class="num">Sealed copies</th>
+        <th data-nk="top_fmv_usd" class="num">Top card</th>
+        <th data-nk="top_player">Top player</th>
+        <th data-nk="sealed_fmv_exposure_usd" class="num act">Sealed $ ▼</th>
+      </tr></thead>
+      <tbody><tr><td colspan="8" class="csub">Loading…</td></tr></tbody>
+    </table>
+  </div>
+
+  <h2 class="sec">Pack reality + EV — WC Prizm packs</h2>
+  <div class="hint">
+    <b>Actual EV</b> = supply-weighted expected pull value (chase-inclusive); <b>Typical pull</b> = median-based, what a normal pack returns; <b>Net edge</b> = Actual EV − pack cost. Slot odds are the <b>published pack contents</b> (verified 2026-07-18): Hobby = 2 silver + base parallel + other + bonus, insert 7-in-20. <b>FOTL = Hobby + one guaranteed FOTL-exclusive parallel</b> (#/11–1/1: Aguila/Maple Leaf/Old Glory/Nebula), excluded from Hobby. Families are weighted by copies <b>still in packs</b> — the remaining pool you actually draw from — so EV tracks as the best chases deplete. At current prices <b>FOTL rips +EV</b>; <b>Hobby does not (≈ fair)</b>. <span class="par" id="packmodel"></span>
+  </div>
+  <div class="scroll">
+    <table id="packtbl">
+      <thead><tr>
+        <th>Pack</th>
+        <th class="num">Total</th>
+        <th class="num">Remaining</th>
+        <th class="num">Ripped %</th>
+        <th class="num">Typical pull</th>
+        <th class="num">Actual EV</th>
+        <th class="num">Pack cost</th>
+        <th class="num">Net edge</th>
+      </tr></thead>
+      <tbody><tr><td colspan="8" class="csub">Loading…</td></tr></tbody>
+    </table>
+  </div>
+
+  <h2 class="sec">Special serials — #1 / jersey / perfect mints</h2>
+  <div class="hint">Every indexed <b>#1</b>, <b>jersey-match</b>, and <b>perfect-mint</b> serial with owner, ask, best offer, real last sale, and a premium-adjusted <b>serial FMV</b> (edition FMV × the fitted flag premium: jersey 1.40×, perfect 1.21×, #1 1.11×, from real sales). Panini's site shows one card at a time; this is the whole special-serial market.</div>
+  <div id="serialsBox"></div>
+
+  <div class="foot" id="foot">
+    <b>What this is.</b> RPC's live index of Panini Blockchain's <span class="mono">2026 Prizm World Cup Soccer</span> set — every player × parallel, its remaining sealed-in-pack supply, an RPC FMV, and the full special-serial market. Panini's marketplace shows a card's price but never how many copies are still locked in unopened packs, nor aggregates the #1/jersey/perfect serials; this does. <b>Source.</b> A residential runner walks the logged-in marketplace (the API bot-walls datacenter egress), pushing <span class="mono">getCardMarketStats</span> → <code>panini_editions</code>/<code>panini_fmv_snapshots</code> + per-serial <span class="mono">getPskuTotalCardsList</span> → <code>panini_card_serials</code>. Use the header <b>Reload</b> to re-query. Pre-launch — internal preview, not yet public.
+  </div>
+</div>
+<script>
+const TOOL="mcp__24ab6d77-3292-4646-b039-669cc9535ef8__execute_sql";
+const PROJECT="bxcqstmqfzmuolpuynti";
+
+// ⚠ 2026-07-28: this board used to fetch EVERYTHING in ONE json_build_object —
+// ~113 KB in a single tool response. When that one call did not come back the
+// page sat at "Loading…" forever with no error anywhere, because every table
+// depended on the same promise. It is now THREE independent queries, each with
+// its own timeout and its own error rendered into its own table. One slow or
+// broken section can no longer take the whole board down, and a failure always
+// says so on the surface instead of looking like a load that never finished.
+const SQL_HEAD=[
+ "SELECT json_build_object(",
+ "'stats',(SELECT json_build_object('editions',count(*),'with_residual',count(*) FILTER (WHERE still_in_packs>0),'total_sealed',coalesce(sum(still_in_packs),0),'parallels',count(DISTINCT set_name),'chases',count(*) FILTER (WHERE mint_cap<=25),'data_fresh',max(last_seen_at)) FROM panini_editions),",
+ "'totals',(SELECT row_to_json(t) FROM panini_squeeze_totals t),",
+ "'specials',(SELECT count(*) FROM panini_special_serials_board),",
+ "'packs',(SELECT coalesce(json_agg(p),'[]'::json) FROM panini_pack_ev_board p)",
+ ") AS payload;"
+].join("");
+
+const SQL_SQUEEZE=[
+ "SELECT json_build_object(",
+ "'squeeze',(SELECT coalesce(json_agg(s),'[]'::json) FROM (SELECT player_name,set_name,tier,mint_cap,pulled_count,still_in_packs,rip_pct,fmv_usd,sealed_fmv_exposure_usd,serial_low_ask_usd,is_rookie,is_debut,serials_with_recorded_price,coverage_flag FROM panini_squeeze_board WHERE fmv_usd IS NOT NULL ORDER BY fmv_usd DESC NULLS LAST LIMIT 120) s)",
+ ") AS payload;"
+].join("");
+
+const SQL_DEALS=[
+ "SELECT json_build_object(",
+ "'deals',(SELECT coalesce(json_agg(d),'[]'::json) FROM (SELECT player_name,parallel,tier,serial_number,mint_cap,ask_usd,fmv_usd,discount_pct,est_profit_usd,special_flag FROM panini_deal_board ORDER BY discount_pct DESC NULLS LAST LIMIT 40) d)",
+ ") AS payload;"
+].join("");
+
+const SQL_ROLLUPS=[
+ "SELECT json_build_object(",
+ "'players',(SELECT coalesce(json_agg(p),'[]'::json) FROM (SELECT player_name,editions,chases,sealed_in_packs,top_fmv_usd,avg_rip_pct,sealed_fmv_exposure_usd FROM panini_player_board ORDER BY sealed_fmv_exposure_usd DESC NULLS LAST LIMIT 50) p),",
+ "'nations',(SELECT coalesce(json_agg(n),'[]'::json) FROM (SELECT nation,editions,players,chases,sealed_copies,sealed_fmv_exposure_usd,top_fmv_usd,top_player FROM panini_nation_board LIMIT 40) n),",
+ "'serials',(SELECT coalesce(json_agg(x),'[]'::json) FROM (SELECT player_name,parallel,serial_number,mint_cap,headline_flag,serial_ask_usd,best_offer_usd,last_sale_usd,edition_fmv_usd,serial_fmv_usd,premium_mult FROM panini_special_serials_board ORDER BY serial_fmv_usd DESC NULLS LAST LIMIT 60) x)",
+ ") AS payload;"
+].join("");
+
+// The Supabase MCP double-wraps its answer: content[0].text is itself a JSON
+// envelope {"result":"<prose> ... <untrusted-data-uuid> [rows] </...>"}. This
+// recurses through both layers, then falls back to slicing the bracketed array
+// out of the prose. Never bracket-slice BEFORE unwrapping — the inner array is
+// still backslash-escaped at that point and JSON.parse dies on the first \".
+function extractRows(raw){
+  if(raw==null) return [];
+  if(Array.isArray(raw)) return raw;
+  if(typeof raw==="object"){ if(raw.isError===true||(raw.error&&typeof raw.error==="object")) throw new Error(String((raw.error&&(raw.error.message||raw.error.name))||(Array.isArray(raw.content)?raw.content.map(c=>(c&&c.text)||"").join(" "):"")||"tool returned an error")); 
+    if(typeof raw.structuredContent!=="undefined"){ const r=extractRows(raw.structuredContent); if(r.length) return r; }
+    if(Array.isArray(raw.content)){ return extractRows(raw.content.map(c=>typeof c==="string"?c:(c&&c.text)||"").join("\n")); }
+    if(typeof raw.result==="string") return extractRows(raw.result);
+    if(typeof raw.text==="string") return extractRows(raw.text);
+    if(typeof raw.data!=="undefined") return extractRows(raw.data);
+    return [raw];
+  }
+  if(typeof raw==="string"){
+    let s=raw.trim();
+    try{ return extractRows(JSON.parse(s)); }catch(e){}
+    const m=s.match(/\[[\s\S]*\]/);
+    if(m){ try{ return JSON.parse(m[0]); }catch(e){} }
+    if(!s) return []; throw new Error("unreadable tool response: "+s.slice(0,160));
+  }
+  return [];
+}
+
+function withTimeout(p,ms,label){
+  return Promise.race([p,new Promise((_,rej)=>setTimeout(()=>rej(new Error(label+" timed out after "+Math.round(ms/1000)+"s")),ms))]);
+}
+async function fetchPayload(sql,label){
+  const r=await window.cowork.callMcpTool(TOOL,{project_id:PROJECT,query:sql});
+  if(r && r.isError) throw new Error(label+" — tool reported an error");
+  const rows=extractRows(r);
+  if(!rows.length) throw new Error(label+" — no rows in response (grant or query problem)");
+  let payload=rows.length?rows[0].payload:null;
+  if(typeof payload==="string"){ try{ payload=JSON.parse(payload); }catch(e){} }
+  if(!payload||typeof payload!=="object") throw new Error(label+" — unexpected result shape");
+  return payload;
+}
+function tableErr(sel,cols,msg){
+  const tb=document.querySelector(sel+" tbody");
+  if(tb) tb.innerHTML='<tr><td colspan="'+cols+'" class="errcell">'+String(msg)+'</td></tr>';
+}
+function boxErr(id,msg){
+  const el=document.getElementById(id);
+  if(el) el.innerHTML='<div class="errbox">'+String(msg)+'</div>';
+}
+
+function num(x,d){ return (x==null||isNaN(x))?"—":Number(x).toLocaleString(undefined,{maximumFractionDigits:(d==null?0:d)}); }
+function usd(x){ if(x==null||isNaN(x)||Number(x)<=0) return "—"; const v=Number(x); return "$"+v.toLocaleString(undefined,{maximumFractionDigits:(Math.abs(v)<100?2:0)}); }
+function usd0(x){ if(x==null||isNaN(x)||Number(x)<=0) return "—"; return "$"+Number(x).toLocaleString(undefined,{maximumFractionDigits:0}); }
+
+let SQ=[], sortK="fmv_usd", sortAsc=false, capFloor=0, query="", rookieOnly=false;
+let PL=[], psortK="sealed_fmv_exposure_usd", psortAsc=false;
+let NA=[], nsortK="sealed_fmv_exposure_usd", nsortAsc=false;
+
+function render(){
+  const tb=document.querySelector("#tbl tbody");
+  let rows=SQ.filter(r=>{
+    if(capFloor===1){ if(Number(r.mint_cap)!==1) return false; }
+    else if(capFloor>0){ if(Number(r.mint_cap)>capFloor) return false; }
+    if(rookieOnly && !r.is_rookie) return false;
+    if(query){ const s=(r.player_name+" "+r.set_name).toLowerCase(); if(!s.includes(query)) return false; }
+    return true;
+  });
+  rows.sort((a,b)=>cmp(a,b,sortK,sortAsc));
+  tb.innerHTML=rows.map(r=>{
+    const pct=Math.max(0,Math.min(100,Number(r.rip_pct)||0));
+    const t=(r.tier||"").toUpperCase();
+    const rc=r.is_rookie?' <span class="rc" title="Rookie card">RC</span>':'';
+    const rs=Number(r.serials_with_recorded_price)>0?'<span class="rs" title="'+r.serials_with_recorded_price+' of this edition\'s serials carry a recorded sale price (coverage only — FMV confidence comes from the marketplace txn count, not this)"> ·'+r.serials_with_recorded_price+'</span>':'';
+    const cf=(r.coverage_flag==='broad'||r.coverage_flag==='partial')?'':'<span class="cf" title="Listing-biased sample — this set\'s discovery skews toward listed cards. Sample breadth, NOT catalogue coverage.">SAMPLE</span>';
+    return "<tr>"+
+      '<td><span class="setn">'+(r.player_name||"—")+"</span>"+rc+"</td>"+
+      '<td class="par">'+(r.set_name||"—")+cf+"</td>"+
+      '<td><span class="tier '+t+'">'+(t||"—")+"</span></td>"+
+      '<td class="num">/'+num(r.mint_cap)+"</td>"+
+      '<td class="num '+(Number(r.still_in_packs)>0?"seal":"")+'">'+num(r.still_in_packs)+"</td>"+
+      '<td class="num">'+num(r.rip_pct,1)+'%<div class="bar"><i style="width:'+pct+'%"></i></div></td>'+
+      '<td class="num exp">'+usd0(r.sealed_fmv_exposure_usd)+"</td>"+
+      '<td class="num">'+usd(r.serial_low_ask_usd)+"</td>"+
+      '<td class="num"><b>'+usd(r.fmv_usd)+'</b><span class="rs">'+rs+"</span></td>"+
+    "</tr>";
+  }).join("")||'<tr><td colspan="9" class="csub">No editions match.</td></tr>';
+  markSort("#tbl","data-k",sortK,sortAsc);
+}
+function renderPacks(packs){
+  const tb=document.querySelector("#packtbl tbody");
+  const model=(packs&&packs[0])||{};
+  document.getElementById("packmodel").textContent=model.model_note?("Slot EVs: silver "+usd0(model.silver_ev)+" · base parallel "+usd0(model.base_parallel_ev)+" · insert "+usd0(model.insert_ev)+" · FOTL-exclusive "+usd0(model.fotl_exclusive_ev)+" (FOTL packs only)"):"";
+  tb.innerHTML=(packs||[]).map(p=>{
+    const nm=p.pack_type==="fotl"?"WC Prizm — FOTL":(p.pack_type==="hobby"?"WC Prizm — Hobby":(p.id||"Pack"));
+    const pct=Math.max(0,Math.min(100,Number(p.packs_ripped_pct)||0));
+    return "<tr>"+
+      '<td><span class="setn">'+nm+'</span> <span class="par">#'+p.id+'</span></td>'+
+      '<td class="num">'+num(p.packs_total)+"</td>"+
+      '<td class="num seal">'+num(p.packs_remaining)+"</td>"+
+      '<td class="num">'+num(p.packs_ripped_pct,1)+'%<div class="bar"><i style="width:'+pct+'%"></i></div></td>'+
+      '<td class="num">'+usd0(p.typical_ev_usd)+"</td>"+
+      '<td class="num exp"><b>'+usd0(p.actual_ev_usd)+"</b></td>"+
+      '<td class="num">'+usd0(p.pack_cost_usd)+"</td>"+
+      '<td class="num '+(Number(p.net_rip_edge_usd)>0?"seal":"")+'"><b>'+(p.net_rip_edge_usd==null?"—":usd0(p.net_rip_edge_usd))+"</b></td>"+
+    "</tr>";
+  }).join("")||'<tr><td colspan="8" class="csub">No pack data.</td></tr>';
+}
+function renderPlayers(){
+  const tb=document.querySelector("#playertbl tbody");
+  const rows=[...PL].sort((a,b)=>cmp(a,b,psortK,psortAsc));
+  tb.innerHTML=rows.map(r=>"<tr>"+
+    '<td><span class="setn">'+(r.player_name||"—")+"</span></td>"+
+    '<td class="num">'+num(r.editions)+"</td>"+
+    '<td class="num">'+num(r.chases)+"</td>"+
+    '<td class="num seal">'+num(r.sealed_in_packs)+"</td>"+
+    '<td class="num">'+usd(r.top_fmv_usd)+"</td>"+
+    '<td class="num">'+num(r.avg_rip_pct,1)+"%</td>"+
+    '<td class="num exp"><b>'+usd0(r.sealed_fmv_exposure_usd)+"</b></td>"+
+  "</tr>").join("")||'<tr><td colspan="7" class="csub">No players.</td></tr>';
+  markSort("#playertbl","data-pk",psortK,psortAsc);
+}
+function renderNations(){
+  const tb=document.querySelector("#nationtbl tbody");
+  const rows=[...NA].sort((a,b)=>cmp(a,b,nsortK,nsortAsc));
+  tb.innerHTML=rows.map(r=>"<tr>"+
+    '<td><span class="setn">'+(r.nation||"—")+"</span></td>"+
+    '<td class="num">'+num(r.players)+"</td>"+
+    '<td class="num">'+num(r.editions)+"</td>"+
+    '<td class="num">'+num(r.chases)+"</td>"+
+    '<td class="num seal">'+num(r.sealed_copies)+"</td>"+
+    '<td class="num">'+usd(r.top_fmv_usd)+"</td>"+
+    '<td class="par">'+(r.top_player||"—")+"</td>"+
+    '<td class="num exp"><b>'+usd0(r.sealed_fmv_exposure_usd)+"</b></td>"+
+  "</tr>").join("")||'<tr><td colspan="8" class="csub">No nations.</td></tr>';
+  markSort("#nationtbl","data-nk",nsortK,nsortAsc);
+}
+function renderSerials(serials){
+  const box=document.getElementById("serialsBox");
+  if(!serials||!serials.length){
+    box.innerHTML='<div class="empty">No special serials indexed yet. Run the runner (or <code>node scripts/panini-replay.mjs</code>) to populate #1 / jersey / perfect mints.</div>';
+    return;
+  }
+  box.innerHTML='<div class="scroll"><table><thead><tr><th>Player</th><th>Parallel</th><th class="num">Serial</th><th>Type</th><th class="num">Ask</th><th class="num">Best offer</th><th class="num">Last sale</th><th class="num">Edition FMV</th><th class="num">Serial FMV</th></tr></thead><tbody>'+
+    serials.map(s=>{
+      const mult=Number(s.premium_mult)||1;
+      const multlbl=mult>1?'<span class="rs" title="serial premium"> ×'+mult.toFixed(2)+"</span>":"";
+      return "<tr>"+
+      '<td><span class="setn">'+(s.player_name||"—")+"</span></td>"+
+      '<td class="par">'+(s.parallel||"—")+"</td>"+
+      '<td class="num">#'+num(s.serial_number)+" / "+num(s.mint_cap)+"</td>"+
+      '<td><span class="flag">'+(s.headline_flag||"—").toUpperCase()+"</span></td>"+
+      '<td class="num">'+usd(s.serial_ask_usd)+"</td>"+
+      '<td class="num">'+usd(s.best_offer_usd)+"</td>"+
+      '<td class="num">'+usd(s.last_sale_usd)+"</td>"+
+      '<td class="num">'+usd(s.edition_fmv_usd)+"</td>"+
+      '<td class="num exp"><b>'+usd(s.serial_fmv_usd)+"</b>"+multlbl+"</td>"+
+    "</tr>";}).join("")+"</tbody></table></div>";
+}
+function renderDeals(deals){
+  const box=document.getElementById("dealsBox");
+  if(!deals||!deals.length){ box.innerHTML='<div class="empty">No listed serials are meaningfully below sales-backed FMV right now.</div>'; return; }
+  box.innerHTML='<div class="scroll"><table><thead><tr><th>Player</th><th>Parallel</th><th class="num">Serial</th><th>Special</th><th class="num">Ask</th><th class="num">FMV</th><th class="num">Discount</th><th class="num">Est. profit</th></tr></thead><tbody>'+
+    deals.map(d=>"<tr>"+
+      '<td><span class="setn">'+(d.player_name||"—")+"</span></td>"+
+      '<td class="par">'+(d.parallel||"—")+"</td>"+
+      '<td class="num">#'+num(d.serial_number)+" / "+num(d.mint_cap)+"</td>"+
+      '<td>'+(d.special_flag?'<span class="flag">'+d.special_flag.toUpperCase()+"</span>":"")+"</td>"+
+      '<td class="num">'+usd(d.ask_usd)+"</td>"+
+      '<td class="num">'+usd(d.fmv_usd)+"</td>"+
+      '<td class="num seal">'+num(d.discount_pct)+"%</td>"+
+      '<td class="num exp"><b>'+usd0(d.est_profit_usd)+"</b></td>"+
+    "</tr>").join("")+"</tbody></table></div>";
+}
+function cmp(a,b,k,asc){
+  let x=a[k], y=b[k];
+  if(k==="player_name"||k==="set_name"||k==="tier"||k==="nation"||k==="top_player"){ x=(x||"").toLowerCase(); y=(y||"").toLowerCase(); return asc?(x<y?-1:x>y?1:0):(x<y?1:x>y?-1:0); }
+  x=(x==null?(asc?Infinity:-Infinity):Number(x)); y=(y==null?(asc?Infinity:-Infinity):Number(y));
+  return asc?x-y:y-x;
+}
+function markSort(sel,attr,k,asc){
+  document.querySelectorAll(sel+" th").forEach(th=>{
+    const kk=th.getAttribute(attr); th.classList.toggle("act",kk===k);
+    th.textContent=th.textContent.replace(/ [▲▼]$/,"")+(kk===k?(asc?" ▲":" ▼"):"");
+  });
+}
+function renderKpis(st,totals,specials){
+  var t=totals||{};
+  var hasHc=(t.sealed_fmv_exposure_usd_hc!==undefined&&t.sealed_fmv_exposure_usd_hc!==null);
+  // Fail soft: if the _hc columns are ever absent, show the blend WITHOUT the
+  // lower-bias labelling. Mislabelling a blended number is worse than a blend.
+  var sealedCard=hasHc
+    ? '<div class="card"><h3>Value sealed in packs</h3><div class="big">'+usd0(t.sealed_fmv_exposure_usd_hc)+'</div><div class="csub">'+num(t.editions_hc)+' lower-bias editions · all sets '+usd0(t.sealed_fmv_exposure_usd)+' ('+t.pct_sealed_usd_from_biased_sets+'% from listing-biased sets)</div></div>'
+    : '<div class="card"><h3>Value sealed in packs</h3><div class="big">'+usd0(t.sealed_fmv_exposure_usd)+'</div><div class="csub">Σ in-packs × FMV — all sets</div></div>';
+  document.getElementById("kpis").innerHTML=
+    '<div class="card"><h3>Editions</h3><div class="big">'+num(st.editions)+'</div><div class="csub">player × parallel</div></div>'+
+    sealedCard+
+    '<div class="card"><h3>Chases ≤ /25</h3><div class="big">'+num(st.chases)+'</div><div class="csub">low-cap parallels</div></div>'+
+    '<div class="card"><h3>Special serials</h3><div class="big">'+num(specials)+'</div><div class="csub">#1 / jersey / perfect</div></div>'+
+    '<div class="card"><h3>Sealed copies</h3><div class="big">'+num(st.total_sealed)+'</div><div class="csub">not yet opened</div></div>';
+}
+
+// Stamp is assembled from whatever HAS resolved, so a partial load still says
+// what it knows and names what failed, rather than sitting on the initial text.
+const STAMP={fresh:null,sq:null,pl:null,errs:[]};
+function updateStamp(){
+  const bits=[];
+  if(STAMP.sq!=null) bits.push(num(STAMP.sq)+" priced editions");
+  if(STAMP.pl!=null) bits.push(num(STAMP.pl)+" players");
+  if(STAMP.fresh!==null){
+    const ageH=(Date.now()-STAMP.fresh)/3600000;
+    const fl=ageH<1?"data refreshed <1h ago":"data refreshed "+ageH.toFixed(ageH<10?1:0)+"h ago";
+    bits.push(ageH>8?'<span style="color:var(--bad)">⚠ '+fl+' — residential runner stale</span>':'<span style="color:var(--good)">'+fl+'</span>');
+  }
+  let s=bits.length?("Live · "+bits.join(" · ")):"Reading live Panini data from Supabase…";
+  if(STAMP.errs.length) s+=' <span class="err">· '+STAMP.errs.length+" section"+(STAMP.errs.length>1?"s":"")+" failed: "+STAMP.errs.join("; ")+"</span>";
+  document.getElementById("stamp").innerHTML=s;
+}
+function noteErr(e){ STAMP.errs.push(String(e&&e.message||e)); updateStamp(); }
+
+async function load(){
+  const head=withTimeout(fetchPayload(SQL_HEAD,"headline + packs"),75000,"headline + packs")
+    .then(p=>{
+      renderKpis(p.stats||{},p.totals,p.specials);
+      renderPacks(p.packs||[]);
+      const df=(p.stats&&p.stats.data_fresh)?new Date(p.stats.data_fresh):null;
+      STAMP.fresh=df?df.getTime():null;
+      updateStamp();
+    })
+    .catch(e=>{
+      document.getElementById("kpis").innerHTML='<div class="card" style="grid-column:1/-1"><div class="errbox">'+String(e.message||e)+'</div></div>';
+      tableErr("#packtbl",8,e.message||e); noteErr(e);
+    });
+
+  const board=withTimeout(fetchPayload(SQL_SQUEEZE,"squeeze board"),75000,"squeeze board")
+    .then(p=>{ SQ=p.squeeze||[]; STAMP.sq=SQ.length; render(); updateStamp(); })
+    .catch(e=>{ tableErr("#tbl",9,e.message||e); noteErr(e); });
+
+  const deals=withTimeout(fetchPayload(SQL_DEALS,"deals"),75000,"deals")
+    .then(p=>{ renderDeals(p.deals||[]); })
+    .catch(e=>{ boxErr("dealsBox",String(e.message||e)); noteErr(e); });
+
+  const rollups=withTimeout(fetchPayload(SQL_ROLLUPS,"players + nations + serials"),75000,"players + nations + serials")
+    .then(p=>{
+      PL=p.players||[]; NA=p.nations||[]; STAMP.pl=PL.length;
+      renderPlayers(); renderNations(); renderSerials(p.serials||[]); updateStamp();
+    })
+    .catch(e=>{ tableErr("#playertbl",7,e.message||e); tableErr("#nationtbl",8,e.message||e); boxErr("serialsBox",String(e.message||e)); noteErr(e); });
+
+  await Promise.all([head,board,deals,rollups]);
+}
+document.querySelectorAll("#tbl th").forEach(th=>th.addEventListener("click",()=>{
+  const k=th.getAttribute("data-k");
+  if(k===sortK) sortAsc=!sortAsc; else { sortK=k; sortAsc=false; }
+  render();
+}));
+document.querySelectorAll("#playertbl th").forEach(th=>th.addEventListener("click",()=>{
+  const k=th.getAttribute("data-pk");
+  if(k===psortK) psortAsc=!psortAsc; else { psortK=k; psortAsc=false; }
+  renderPlayers();
+}));
+document.querySelectorAll("#nationtbl th").forEach(th=>th.addEventListener("click",()=>{
+  const k=th.getAttribute("data-nk");
+  if(k===nsortK) nsortAsc=!nsortAsc; else { nsortK=k; nsortAsc=false; }
+  renderNations();
+}));
+document.getElementById("rookiebtn").addEventListener("click",e=>{ rookieOnly=!rookieOnly; e.target.classList.toggle("on",rookieOnly); render(); });
+document.getElementById("q").addEventListener("input",e=>{ query=e.target.value.trim().toLowerCase(); render(); });
+document.querySelectorAll("#capseg button").forEach(b=>b.addEventListener("click",()=>{
+  document.querySelectorAll("#capseg button").forEach(x=>x.classList.remove("on"));
+  b.classList.add("on"); capFloor=Number(b.getAttribute("data-cap")); render();
+}));
+load();
+</script>

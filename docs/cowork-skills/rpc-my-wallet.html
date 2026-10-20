@@ -1,0 +1,417 @@
+<title>My Wallet Portfolio</title>
+<style>:root{color-scheme:dark}</style>
+<script>
+/* Port shim (2026-10-20, known-issue #114). These dashboards were written for the
+   desktop Cowork bridge (window.cowork.callMcpTool). On claude.ai they read through
+   the page's `mcp` capability instead. Every failure THROWS here, so a query that
+   did not run can never render as an empty result set. */
+(function(){
+  var mcpP = (window.claude && typeof window.claude.use === "function") ? window.claude.use("mcp") : Promise.resolve(null);
+  var FIX = {
+    needs_reauth: "Reconnect {s} in claude.ai Settings, Connectors, then Reload.",
+    server_not_connected: "Add the {s} connector in claude.ai Settings, Connectors, then Reload.",
+    selection_required: "Choose which {s} connector this page should use, then Reload.",
+    not_in_manifest: "{s} is not allowed for this page. Allow it from the artifact's Permissions menu, then Reload.",
+    approval_required: "This page needs your approval to read from {s}. Reload and choose Allow.",
+    blocked_by_policy: "Your organization's policy blocks this {s} tool.",
+    server_unavailable: "{s} did not answer in time. Try Reload in a minute.",
+    not_granted: "Connectors are not available in this view. Open the page in claude.ai.",
+    capability_disabled: "Connectors are not available in this view. Open the page in claude.ai."
+  };
+  function serverFor(t){ return /list_deployments$/.test(t) ? "Vercel" : "Supabase"; }
+  function sleep(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }
+  async function call(mcp, s, name, args, retried){
+    try { return await mcp.callTool(s, name, args, { cache: false }); }
+    catch (e) {
+      var c = (e && e.code) || "upstream_error";
+      if (e && e.retryable && !retried) { await sleep(Math.min(e.retryAfterMs || 0, 15000) + 600 + Math.random() * 900); return call(mcp, s, name, args, true); }
+      var hint = (FIX[c] || "").replace("{s}", s);
+      var msg = s + " query did not run (" + c + ")" + (hint ? ". " + hint : (e && e.message ? ": " + String(e.message).slice(0, 240) : ""));
+      var err = new Error(msg); err.code = c; throw err;
+    }
+  }
+  window.cowork = { callMcpTool: async function(tool, args){
+    var mcp = await mcpP;
+    if (!mcp) throw new Error("Live data is not available in this view. Open the page in claude.ai with the Supabase connector connected.");
+    var s = serverFor(tool), name = String(tool).split("__").pop();
+    var res = await call(mcp, s, name, args, false);
+    var p = res && res.payload;
+    if (p && typeof p === "object" && !Array.isArray(p) && p.error && typeof p.error === "object")
+      throw new Error(s + " query failed: " + String(p.error.message || p.error.name || "error").slice(0, 300));
+    var out = { content: (res && res.content) || [] };
+    if (res && typeof res.structuredContent !== "undefined") out.structuredContent = res.structuredContent;
+    return out;
+  } };
+})();
+</script>
+<style>
+:root { color-scheme: light }
+body, html { margin: 0; padding: 0; background: transparent; color: #1a1a1a; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 14px; line-height: 1.5; }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 16px 20px 40px; }
+h1 { font-size: 22px; font-weight: 500; margin: 0 0 4px; letter-spacing: -0.01em; }
+h2 { font-size: 16px; font-weight: 500; margin: 22px 0 10px; }
+.muted { color: #6b6b66; font-size: 12px; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 12px 0 4px; }
+.kpi { background: #fafaf7; border-radius: 8px; padding: 12px 14px; }
+.kpi .lbl { color: #6b6b66; font-size: 12px; }
+.kpi .val { font-size: 22px; font-weight: 500; margin-top: 2px; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.kpi .sub { color: #6b6b66; font-size: 11px; margin-top: 2px; font-variant-numeric: tabular-nums; }
+.card { background: #fff; border: 0.5px solid rgba(0,0,0,0.12); border-radius: 12px; padding: 14px 16px; margin-top: 12px; }
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 760px) { .row2 { grid-template-columns: 1fr; } }
+.section-head { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; }
+button.refresh { font-size: 12px; padding: 4px 10px; border: 0.5px solid rgba(0,0,0,0.25); background: #fafaf7; border-radius: 6px; cursor: pointer; }
+button.refresh:hover { background: #f0efe8; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+th { text-align: left; font-weight: 500; color: #6b6b66; padding: 6px 8px; border-bottom: 0.5px solid rgba(0,0,0,0.12); white-space: nowrap; }
+td { padding: 6px 8px; border-bottom: 0.5px solid rgba(0,0,0,0.06); }
+tr:last-child td { border-bottom: none; }
+td.num { text-align: right; }
+.pill { display: inline-flex; padding: 1px 6px; border-radius: 999px; font-size: 11px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.pill.HIGH    { background: #eaf3de; color: #3b6d11 }
+.pill.MEDIUM  { background: #e6f1fb; color: #0c447c }
+.pill.LOW     { background: #faeeda; color: #854f0b }
+.pill.STALE   { background: #f1efe8; color: #5f5e5a }
+.pill.NO_DATA { background: #fcebeb; color: #a32d2d }
+.pill.ASK_ONLY { background: #eeedfe; color: #3c3489 }
+.pill.SALES_ONLY { background: #fbeaf0; color: #72243e }
+.spinner { color: #6b6b66; font-size: 12px; padding: 6px 0; }
+.legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 11px; color: #6b6b66; margin-bottom: 6px; }
+.legend .sw { width: 10px; height: 10px; border-radius: 2px; display: inline-block; margin-right: 4px; vertical-align: middle; }
+.chart-wrap { position: relative; height: 220px; }
+.tab { display: inline-block; padding: 4px 10px; border-radius: 999px; border: 0.5px solid rgba(0,0,0,0.15); margin: 2px 4px 2px 0; cursor: pointer; font-size: 12px; }
+.tab.active { background: #1a1a1a; color: #fff; border-color: #1a1a1a; }
+/* === RPC BRAND (2026-05-30) === */
+:root { --rpc-red: #E03A2F; --rpc-red-bg: rgba(224,58,47,0.08); --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace; }
+body, html { letter-spacing: 0.005em; }
+h1 { font-size: 26px !important; font-weight: 700 !important; text-transform: uppercase !important; letter-spacing: 0.04em !important; line-height: 1.1 !important; }
+h1::after { content: ""; display: block; width: 56px; height: 3px; background: var(--rpc-red); margin-top: 8px; }
+h2 { font-size: 13px !important; font-weight: 700 !important; text-transform: uppercase !important; letter-spacing: 0.1em !important; color: #2a2a2a !important; }
+.kpi .val { color: var(--rpc-red); font-family: var(--font-mono); font-weight: 600 !important; }
+.kpi .lbl { text-transform: uppercase; letter-spacing: 0.1em; font-weight: 700 !important; font-size: 10px !important; }
+button.refresh { border: 1px solid var(--rpc-red) !important; background: var(--rpc-red-bg) !important; color: var(--rpc-red) !important; font-weight: 700 !important; text-transform: uppercase !important; letter-spacing: 0.1em !important; padding: 6px 14px !important; font-size: 10px !important; border-radius: 4px !important; }
+button.refresh:hover { background: var(--rpc-red) !important; color: #fff !important; }
+th { font-weight: 700 !important; text-transform: uppercase !important; letter-spacing: 0.06em !important; font-size: 10px !important; }
+td.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.muted, .tinyw, .spinner, .legend { font-family: var(--font-mono); }
+.pill { font-family: var(--font-mono); letter-spacing: 0.04em; text-transform: uppercase; font-weight: 700 !important; font-size: 10px !important; border-radius: 3px !important; padding: 2px 6px !important; }
+.tab.active { background: var(--rpc-red) !important; border-color: var(--rpc-red) !important; }
+/* === RPC DARK THEME (2026-06-15) === */
+:root{color-scheme:dark!important;}
+html,body{background:#0c0c0e!important;color:#ECEAE3!important;}
+.wrap,.container,main{background:transparent!important;}
+.card,.panel,.box,.tile,section.card{background:#16161a!important;border-color:rgba(255,255,255,0.10)!important;}
+.kpi,.stat,.metric{background:#1b1b20!important;border-color:rgba(255,255,255,0.08)!important;}
+.muted,.sub,.spinner,.legend,.tinyw,.kpi .lbl,.stat .lbl,small{color:#9A968C!important;}
+h1{color:#F2F0EA!important;}
+h2,h3,h4{color:#D8D5CC!important;}
+table{color:#E4E2DB!important;}
+th{color:#9A968C!important;border-bottom-color:rgba(255,255,255,0.12)!important;}
+td{border-bottom-color:rgba(255,255,255,0.07)!important;}
+tr:hover td{background:rgba(255,255,255,0.03)!important;}
+.tab{border-color:rgba(255,255,255,0.18)!important;color:#CFCAC4!important;background:transparent!important;}
+.tab.active{background:var(--rpc-red,#E03A2F)!important;color:#fff!important;border-color:var(--rpc-red,#E03A2F)!important;}
+button{color:#ECEAE3;}
+button.refresh{background:rgba(224,58,47,0.16)!important;}
+input,select,textarea{background:#16161a!important;color:#ECEAE3!important;border-color:rgba(255,255,255,0.15)!important;}
+a{color:#7FB2F0;}
+.pill.HIGH{background:rgba(46,160,110,0.22)!important;color:#5fd6a0!important;}
+.pill.MEDIUM{background:rgba(55,138,221,0.22)!important;color:#74b6ef!important;}
+.pill.LOW{background:rgba(186,117,23,0.24)!important;color:#e0a64b!important;}
+.pill.STALE{background:rgba(255,255,255,0.10)!important;color:#b9b6ad!important;}
+.pill.NO_DATA{background:rgba(163,45,45,0.24)!important;color:#e88a8a!important;}
+.pill.ASK_ONLY{background:rgba(83,74,183,0.26)!important;color:#a39df0!important;}
+.pill.SALES_ONLY{background:rgba(156,42,111,0.26)!important;color:#e487bb!important;}
+/* keep red accents */
+.kpi .val,.stat .val,.metric .val{color:var(--rpc-red,#E03A2F)!important;}
+button.refresh:hover{background:var(--rpc-red,#E03A2F)!important;color:#fff!important;}
+</style>
+
+<div class="wrap">
+  <div class="section-head">
+    <div>
+      <h1>My wallet — 0xbd94cade097e50ac</h1>
+      <div class="muted" id="ts">Loading…</div>
+    </div>
+    <button class="refresh" onclick="loadAll()">Reload</button>
+  </div>
+
+  <div class="kpis" id="kpi-top"></div>
+
+  <h2>Confidence breakdown (moment-weighted)</h2>
+  <div class="card">
+    <div class="legend" id="conf-legend"></div>
+    <div class="chart-wrap"><canvas id="c-conf" role="img" aria-label="Wallet FMV confidence breakdown stacked bar by collection"></canvas></div>
+    <div class="muted" style="margin-top:6px">Most TS moments lean on a single stale comp. This is the truth about Top Shot's long tail — not a pipeline issue.</div>
+  </div>
+
+  <h2>Top 10 holdings by FMV</h2>
+  <div class="card">
+    <div id="top-holdings" class="spinner">Loading…</div>
+  </div>
+
+  <div class="row2">
+    <div>
+      <h2>Set concentration (top 10)</h2>
+      <div class="card"><div id="sets" class="spinner">Loading…</div></div>
+    </div>
+    <div>
+      <h2>Tier mix</h2>
+      <div class="card"><div id="tier" class="spinner">Loading…</div></div>
+    </div>
+  </div>
+
+  <h2>FMV writes on your editions — last 24h</h2>
+  <div class="card">
+    <div class="muted" style="margin-bottom:6px">If today's writes flipped a held edition's confidence, the row appears here. Helps catch silent clobbers like the Step 6 cycle.</div>
+    <div id="changes" class="spinner">Loading…</div>
+  </div>
+
+  <h2>Pack history</h2>
+  <div class="card">
+    <div id="packs" class="spinner">Loading…</div>
+  </div>
+
+  <div class="muted" style="margin-top:18px">FMV per holding = latest snapshot per edition × held count. STALE = no comp ≥60d; treat as soft mark. Per-FMV details live in <code>fmv_snapshots</code> and <code>pinnacle_fmv_snapshots</code>.</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js" integrity="sha384-iU8HYtnGQ8Cy4zl7gbNMOhsDTTKX02BTXptVP/vqAWIaTfM7isw76iyZCsjL2eVi" crossorigin="anonymous"></script>
+<script>if(window.Chart){Chart.defaults.color="#9A968C";Chart.defaults.borderColor="rgba(255,255,255,0.12)";try{Chart.defaults.scale.grid.color="rgba(255,255,255,0.06)";}catch(e){}}</script>
+<script>
+const PROJECT_ID = "bxcqstmqfzmuolpuynti";
+const W = "0xbd94cade097e50ac";
+const COLS = { TS:"95f28a17-224a-4025-96ad-adf8a4c63bfd", AD:"dee28451-5d62-409e-a1ad-a83f763ac070", GZ:"06248cc4-b85f-47cd-af67-1855d14acd75", UF:"9b4824a8-736d-4a96-b450-8dcc0c46b023", PN:"7dd9dd11-e8b6-45c4-ac99-71331f959714" };
+const CONFS = ["HIGH","MEDIUM","LOW","ASK_ONLY","SALES_ONLY","STALE","NO_DATA"];
+const CONF_COLOR = { HIGH:"#1d9e75", MEDIUM:"#378add", LOW:"#bA7517", ASK_ONLY:"#534ab7", SALES_ONLY:"#9C2A6F", STALE:"#888780", NO_DATA:"#d3d1c7" };
+
+function extractRows(raw){ if(raw==null)return[]; if(Array.isArray(raw))return raw; if(typeof raw==="object"){ if(raw.isError===true||(raw.error&&typeof raw.error==="object")) throw new Error(String((raw.error&&(raw.error.message||raw.error.name))||(Array.isArray(raw.content)?raw.content.map(c=>(c&&c.text)||"").join(" "):"")||"tool returned an error"));  if(typeof raw.structuredContent!=="undefined")return extractRows(raw.structuredContent); if(Array.isArray(raw.content))return extractRows(raw.content.map(c=>typeof c==="string"?c:(c&&c.text)||"").join("\n")); if(typeof raw.result==="string")return extractRows(raw.result); if(typeof raw.text==="string")return extractRows(raw.text); if(typeof raw.data!=="undefined")return extractRows(raw.data); return [raw]; } if(typeof raw==="string"){ let s=raw.trim(); try{return extractRows(JSON.parse(s));}catch(e){} const m=s.match(/\[[\s\S]*\]/); if(m){try{return JSON.parse(m[0]);}catch(e){}} if(!s) return []; throw new Error("unreadable tool response: "+s.slice(0,160)); } return []; }
+async function sql(query) {
+  const r = await window.cowork.callMcpTool("mcp__24ab6d77-3292-4646-b039-669cc9535ef8__execute_sql", { project_id: PROJECT_ID, query });
+  if (r && r.isError) throw new Error(String((r.content && r.content[0] && r.content[0].text) || "query failed").slice(0, 200));
+  return extractRows(r);
+}
+function n(v) { return v == null ? "—" : Number(v).toLocaleString(); }
+function usd(v) { return v == null ? "—" : "$" + Number(v).toLocaleString(undefined, {maximumFractionDigits: v < 100 ? 2 : 0}); }
+function pill(conf) { return `<span class="pill ${conf}">${conf}</span>`; }
+
+// ONE statement → ONE approval prompt (was 7 parallel calls).
+// Shared CTEs compute the latest FMV snapshot once per DISTINCT held edition (recent-partition-first
+// per-edition LATERAL — the idx_fmv_edition_time pattern), then every panel reads from them.
+// Panel semantics are identical to the original per-panel queries.
+const PAYLOAD_QUERY = `
+SET LOCAL statement_timeout = '110s';
+WITH wmc AS (
+  SELECT w.collection_id, w.edition_key, COUNT(*) AS held_count, MIN(w.serial_number) AS lowest_serial
+  FROM wallet_moments_cache w
+  WHERE w.wallet_address = '${W}'
+  GROUP BY w.collection_id, w.edition_key
+),
+ed AS (
+  SELECT wm.collection_id, wm.edition_key, wm.held_count, wm.lowest_serial,
+         e.id AS edition_id, e.name, e.tier, e.set_name
+  FROM wmc wm
+  JOIN editions e ON e.external_id = wm.edition_key AND e.collection_id = wm.collection_id
+),
+recent AS (
+  SELECT ed.edition_id, la.confidence::text AS conf, la.fmv_usd, la.computed_at, la.algo_version
+  FROM ed
+  LEFT JOIN LATERAL (
+    SELECT confidence, fmv_usd, computed_at, algo_version FROM fmv_snapshots fs2
+    WHERE fs2.edition_id = ed.edition_id AND fs2.computed_at >= NOW() - INTERVAL '120 days'
+    ORDER BY computed_at DESC LIMIT 1
+  ) la ON true
+),
+older AS (
+  SELECT m.edition_id, la.confidence::text AS conf, la.fmv_usd, la.computed_at, la.algo_version
+  FROM (SELECT edition_id FROM recent WHERE conf IS NULL) m
+  JOIN LATERAL (
+    SELECT confidence, fmv_usd, computed_at, algo_version FROM fmv_snapshots fs2
+    WHERE fs2.edition_id = m.edition_id
+    ORDER BY computed_at DESC LIMIT 1
+  ) la ON true
+),
+latest_any AS (
+  SELECT r.edition_id,
+    COALESCE(r.conf, o.conf) AS conf_any,
+    CASE WHEN r.conf IS NOT NULL THEN r.fmv_usd ELSE o.fmv_usd END AS fmv_any,
+    CASE WHEN r.conf IS NOT NULL THEN r.computed_at ELSE o.computed_at END AS computed_at,
+    CASE WHEN r.conf IS NOT NULL THEN r.algo_version ELSE o.algo_version END AS algo_version
+  FROM recent r LEFT JOIN older o ON o.edition_id = r.edition_id
+),
+latest_pos AS (
+  SELECT m.edition_id, lp.fmv_usd, lp.confidence::text AS conf
+  FROM (SELECT edition_id FROM latest_any WHERE conf_any IS NOT NULL AND (fmv_any IS NULL OR fmv_any <= 0)) m
+  JOIN LATERAL (
+    SELECT confidence, fmv_usd FROM fmv_snapshots fs2
+    WHERE fs2.edition_id = m.edition_id AND fs2.fmv_usd > 0
+    ORDER BY computed_at DESC LIMIT 1
+  ) lp ON true
+),
+fmv AS (
+  SELECT la.edition_id, la.conf_any,
+    CASE WHEN la.fmv_any > 0 THEN la.fmv_any ELSE lp.fmv_usd END AS fmv_usd,
+    CASE WHEN la.fmv_any > 0 THEN la.conf_any ELSE lp.conf END AS conf_pos
+  FROM latest_any la
+  LEFT JOIN latest_pos lp ON lp.edition_id = la.edition_id
+)
+SELECT jsonb_build_object(
+  'kpis', (SELECT COALESCE(jsonb_agg(t),'[]'::jsonb) FROM (
+    SELECT c.slug,
+      COALESCE((SELECT SUM(wm.held_count) FROM wmc wm WHERE wm.collection_id = c.id), 0) AS moments,
+      COALESCE((SELECT COUNT(DISTINCT wm.edition_key) FROM wmc wm WHERE wm.collection_id = c.id), 0) AS editions,
+      COALESCE((SELECT SUM(ed.held_count * f.fmv_usd) FROM ed JOIN fmv f ON f.edition_id = ed.edition_id WHERE ed.collection_id = c.id AND f.fmv_usd IS NOT NULL), 0) AS fmv
+    FROM collections c
+    WHERE c.slug IN ('nba_top_shot','nfl_all_day','disney_pinnacle','ufc_strike','laliga_golazos')
+    ORDER BY moments DESC
+  ) t),
+  'confidence', (SELECT COALESCE(jsonb_agg(t),'[]'::jsonb) FROM (
+    SELECT c.slug, f.conf_any AS conf, SUM(ed.held_count) AS n
+    FROM ed
+    JOIN collections c ON c.id = ed.collection_id
+    JOIN fmv f ON f.edition_id = ed.edition_id
+    WHERE c.slug IN ('nba_top_shot','nfl_all_day') AND f.conf_any IS NOT NULL
+    GROUP BY c.slug, f.conf_any
+    ORDER BY c.slug, f.conf_any
+  ) t),
+  'top_holdings', (SELECT COALESCE(jsonb_agg(t),'[]'::jsonb) FROM (
+    SELECT c.slug AS collection, ed.name, ed.tier, ed.held_count, ed.lowest_serial,
+      f.fmv_usd, f.conf_pos AS conf, ed.held_count * f.fmv_usd AS holding_value
+    FROM ed
+    JOIN collections c ON c.id = ed.collection_id
+    JOIN fmv f ON f.edition_id = ed.edition_id
+    WHERE f.fmv_usd IS NOT NULL
+    ORDER BY holding_value DESC LIMIT 15
+  ) t),
+  'sets', (SELECT COALESCE(jsonb_agg(t),'[]'::jsonb) FROM (
+    SELECT ed.set_name, SUM(ed.held_count) AS moments, COUNT(DISTINCT ed.edition_key) AS editions
+    FROM ed
+    WHERE ed.collection_id = '${COLS.TS}'
+    GROUP BY ed.set_name ORDER BY SUM(ed.held_count) DESC LIMIT 10
+  ) t),
+  'tier', (SELECT COALESCE(jsonb_agg(t),'[]'::jsonb) FROM (
+    SELECT COALESCE(ed.tier::text, '(null)') AS tier, SUM(ed.held_count) AS moments
+    FROM ed
+    WHERE ed.collection_id = '${COLS.TS}'
+    GROUP BY ed.tier ORDER BY SUM(ed.held_count) DESC
+  ) t),
+  'changes', (SELECT COALESCE(jsonb_agg(t),'[]'::jsonb) FROM (
+    WITH today AS (
+      SELECT la.edition_id, la.conf_any AS conf_today, la.fmv_any AS fmv_today, la.algo_version, la.computed_at
+      FROM latest_any la
+      WHERE la.computed_at >= NOW() - INTERVAL '24 hours'
+    ),
+    prior AS (
+      SELECT td.edition_id, p.confidence::text AS conf_prior, p.fmv_usd AS fmv_prior
+      FROM today td
+      JOIN LATERAL (
+        SELECT confidence, fmv_usd FROM fmv_snapshots fs
+        WHERE fs.edition_id = td.edition_id AND fs.computed_at < NOW() - INTERVAL '24 hours'
+        ORDER BY computed_at DESC LIMIT 1
+      ) p ON true
+    )
+    SELECT e.name, e.tier, c.slug AS collection,
+      p.conf_prior, t.conf_today, p.fmv_prior, t.fmv_today, t.algo_version
+    FROM today t JOIN prior p ON p.edition_id = t.edition_id
+    JOIN editions e ON e.id = t.edition_id
+    JOIN collections c ON c.id = e.collection_id
+    WHERE t.conf_today <> p.conf_prior OR ABS(COALESCE(t.fmv_today,0) - COALESCE(p.fmv_prior,0)) > 1
+    ORDER BY ABS(COALESCE(t.fmv_today,0) - COALESCE(p.fmv_prior,0)) DESC LIMIT 12
+  ) t),
+  'packs', (SELECT COALESCE(jsonb_agg(t),'[]'::jsonb) FROM (
+    SELECT * FROM get_wallet_pack_summary('${W}')
+  ) t)
+) AS payload`;
+
+function renderTopKpis(rows) {
+  rows = rows || [];
+  let total_m = 0, total_e = 0, total_v = 0;
+  for (const r of rows) { total_m += Number(r.moments); total_e += Number(r.editions); total_v += Number(r.fmv); }
+  const el = document.getElementById("kpi-top");
+  el.innerHTML = `
+    <div class="kpi"><div class="lbl">Total moments</div><div class="val">${n(total_m)}</div><div class="sub">${n(total_e)} distinct editions</div></div>
+    <div class="kpi"><div class="lbl">FMV (latest, ≥0)</div><div class="val">${usd(total_v)}</div><div class="sub">TS + AllDay sum</div></div>
+    ${rows.filter(r => Number(r.moments) > 0).map(r => `<div class="kpi"><div class="lbl">${r.slug}</div><div class="val">${n(r.moments)}</div><div class="sub">${usd(r.fmv)} · ${n(r.editions)} eds</div></div>`).join("")}
+  `;
+}
+
+function renderConfidence(rows) {
+  rows = rows || [];
+  const labels = ["nba_top_shot", "nfl_all_day"];
+  const dataByConf = {}; for (const k of CONFS) dataByConf[k] = labels.map(() => 0);
+  for (const r of rows) {
+    const i = labels.indexOf(r.slug); if (i < 0) continue;
+    if (!(r.conf in dataByConf)) dataByConf[r.conf] = labels.map(() => 0);
+    dataByConf[r.conf][i] = Number(r.n);
+  }
+  const ctx = document.getElementById("c-conf").getContext("2d");
+  if (window._chConf) window._chConf.destroy();
+  window._chConf = new Chart(ctx, {
+    type: "bar",
+    data: { labels, datasets: CONFS.map(k => ({ label: k, data: dataByConf[k], backgroundColor: CONF_COLOR[k], stack: "s" })) },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, indexAxis: "y", scales: { x: { stacked: true }, y: { stacked: true } } }
+  });
+  // legend
+  document.getElementById("conf-legend").innerHTML = CONFS.map(k => `<span><span class="sw" style="background:${CONF_COLOR[k]}"></span>${k}</span>`).join("");
+}
+
+function renderTopHoldings(rows) {
+  rows = rows || [];
+  document.getElementById("top-holdings").innerHTML = `<table><thead><tr><th>Player / Moment</th><th>Tier</th><th class="num">#</th><th class="num">Lowest serial</th><th class="num">FMV ea.</th><th>Conf.</th><th class="num">Value</th></tr></thead><tbody>${
+    rows.map(r => `<tr><td>${r.name || "(no name)"}<br><span class="muted">${r.collection}</span></td><td>${r.tier || "—"}</td><td class="num">${r.held_count}</td><td class="num">#${r.lowest_serial || "—"}</td><td class="num">${usd(r.fmv_usd)}</td><td>${pill(r.conf)}</td><td class="num"><strong>${usd(r.holding_value)}</strong></td></tr>`).join("")
+  }</tbody></table>`;
+}
+
+function renderSets(rows) {
+  rows = rows || [];
+  document.getElementById("sets").innerHTML = `<table><thead><tr><th>Set</th><th class="num">Moments</th><th class="num">Editions</th></tr></thead><tbody>${
+    rows.map(r => `<tr><td>${r.set_name || "—"}</td><td class="num">${n(r.moments)}</td><td class="num">${n(r.editions)}</td></tr>`).join("")
+  }</tbody></table>`;
+}
+
+function renderTier(rows) {
+  rows = rows || [];
+  document.getElementById("tier").innerHTML = `<table><thead><tr><th>Tier</th><th class="num">Moments</th></tr></thead><tbody>${rows.map(r => `<tr><td>${r.tier}</td><td class="num">${n(r.moments)}</td></tr>`).join("")}</tbody></table>`;
+}
+
+function renderChanges(rows) {
+  rows = rows || [];
+  if (!rows.length) { document.getElementById("changes").innerHTML = `<div class="muted">No material confidence flips or &gt;$1 FMV changes on held editions in the last 24h.</div>`; return; }
+  document.getElementById("changes").innerHTML = `<table><thead><tr><th>Moment</th><th>Tier</th><th>Prior</th><th>Today</th><th class="num">Prior FMV</th><th class="num">Today FMV</th><th>Algo</th></tr></thead><tbody>${
+    rows.map(r => `<tr><td>${r.name || "—"}<br><span class="muted">${r.collection}</span></td><td>${r.tier || "—"}</td><td>${pill(r.conf_prior)}</td><td>${pill(r.conf_today)}</td><td class="num">${usd(r.fmv_prior)}</td><td class="num">${usd(r.fmv_today)}</td><td><span class="muted">${r.algo_version}</span></td></tr>`).join("")
+  }</tbody></table>`;
+}
+
+function renderPacks(rows) {
+  if (!rows || !rows.length) { document.getElementById("packs").innerHTML = `<div class="muted">No pack history.</div>`; return; }
+  let s = rows[0];
+  // get_wallet_pack_summary returns jsonb, so the row arrives wrapped under the function-name key — unwrap it
+  const wk = Object.keys(s);
+  if (wk.length === 1 && s[wk[0]] && typeof s[wk[0]] === "object") s = s[wk[0]];
+  if (s.totals && typeof s.totals === "object") s = s.totals;
+  // Shape may vary — render generic key/value
+  document.getElementById("packs").innerHTML = `<table><tbody>${
+    Object.entries(s).filter(([k,v]) => v != null && typeof v !== "object").map(([k,v]) => `<tr><td><span class="muted">${k}</span></td><td class="num">${typeof v === "number" ? n(v) : v}</td></tr>`).join("")
+  }</tbody></table>`;
+}
+
+async function loadAll() {
+  document.getElementById("ts").textContent = "Refreshing…";
+  try {
+    const rows = await sql(PAYLOAD_QUERY);
+    let payload = rows[0] && rows[0].payload;
+    if (typeof payload === "string") payload = JSON.parse(payload);
+    if (!payload) throw new Error("Empty payload from query");
+    renderTopKpis(payload.kpis);
+    renderConfidence(payload.confidence);
+    renderTopHoldings(payload.top_holdings);
+    renderSets(payload.sets);
+    renderTier(payload.tier);
+    renderChanges(payload.changes);
+    renderPacks(payload.packs);
+    document.getElementById("ts").textContent = "Updated " + new Date().toLocaleString();
+  } catch (e) {
+    document.getElementById("ts").innerHTML = `<span style="color:#a32d2d">Error: ${e.message}</span>`;
+  }
+}
+loadAll();
+</script>

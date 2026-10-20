@@ -1,0 +1,197 @@
+<title>Candy Chain Two Onboarding</title>
+<style>:root{color-scheme:dark}</style>
+<script>
+/* Port shim (2026-10-20, known-issue #114). These dashboards were written for the
+   desktop Cowork bridge (window.cowork.callMcpTool). On claude.ai they read through
+   the page's `mcp` capability instead. Every failure THROWS here, so a query that
+   did not run can never render as an empty result set. */
+(function(){
+  var mcpP = (window.claude && typeof window.claude.use === "function") ? window.claude.use("mcp") : Promise.resolve(null);
+  var FIX = {
+    needs_reauth: "Reconnect {s} in claude.ai Settings, Connectors, then Reload.",
+    server_not_connected: "Add the {s} connector in claude.ai Settings, Connectors, then Reload.",
+    selection_required: "Choose which {s} connector this page should use, then Reload.",
+    not_in_manifest: "{s} is not allowed for this page. Allow it from the artifact's Permissions menu, then Reload.",
+    approval_required: "This page needs your approval to read from {s}. Reload and choose Allow.",
+    blocked_by_policy: "Your organization's policy blocks this {s} tool.",
+    server_unavailable: "{s} did not answer in time. Try Reload in a minute.",
+    not_granted: "Connectors are not available in this view. Open the page in claude.ai.",
+    capability_disabled: "Connectors are not available in this view. Open the page in claude.ai."
+  };
+  function serverFor(t){ return /list_deployments$/.test(t) ? "Vercel" : "Supabase"; }
+  function sleep(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }
+  async function call(mcp, s, name, args, retried){
+    try { return await mcp.callTool(s, name, args, { cache: false }); }
+    catch (e) {
+      var c = (e && e.code) || "upstream_error";
+      if (e && e.retryable && !retried) { await sleep(Math.min(e.retryAfterMs || 0, 15000) + 600 + Math.random() * 900); return call(mcp, s, name, args, true); }
+      var hint = (FIX[c] || "").replace("{s}", s);
+      var msg = s + " query did not run (" + c + ")" + (hint ? ". " + hint : (e && e.message ? ": " + String(e.message).slice(0, 240) : ""));
+      var err = new Error(msg); err.code = c; throw err;
+    }
+  }
+  window.cowork = { callMcpTool: async function(tool, args){
+    var mcp = await mcpP;
+    if (!mcp) throw new Error("Live data is not available in this view. Open the page in claude.ai with the Supabase connector connected.");
+    var s = serverFor(tool), name = String(tool).split("__").pop();
+    var res = await call(mcp, s, name, args, false);
+    var p = res && res.payload;
+    if (p && typeof p === "object" && !Array.isArray(p) && p.error && typeof p.error === "object")
+      throw new Error(s + " query failed: " + String(p.error.message || p.error.name || "error").slice(0, 300));
+    var out = { content: (res && res.content) || [] };
+    if (res && typeof res.structuredContent !== "undefined") out.structuredContent = res.structuredContent;
+    return out;
+  } };
+})();
+</script>
+<style>
+  :root{--bg:#0c0c0e;--surf:#141417;--line:#26262c;--txt:#ececf1;--mut:#8b8b96;--red:#E03A2F;--ok:#3fa66a;--warn:#d99b2b}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--txt);font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;padding:28px 30px 60px;line-height:1.55}
+  h1{font-size:26px;font-weight:800;letter-spacing:.10em;text-transform:uppercase;padding-bottom:10px;border-bottom:3px solid var(--red);margin-bottom:6px}
+  h2{font-size:12px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:var(--mut);margin:30px 0 12px;padding-bottom:7px;border-bottom:1px solid var(--line)}
+  .sub{color:var(--mut);font-size:13px;margin-bottom:4px}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
+  .card{background:var(--surf);border:1px solid var(--line);border-radius:8px;padding:16px 18px}
+  .card h3{font-size:12px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--mut);margin-bottom:10px}
+  .slug{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:15px;color:var(--txt);margin-bottom:12px}
+  .kv{display:grid;grid-template-columns:1fr auto;gap:6px 12px;font-size:13px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .kv span{color:var(--mut)}
+  .kv b{color:var(--txt);font-weight:700}
+  .pill{display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;letter-spacing:.1em;font-weight:800;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .pill.on{background:rgba(63,166,106,.15);color:var(--ok);border:1px solid rgba(63,166,106,.4)}
+  .pill.off{background:rgba(217,155,43,.13);color:var(--warn);border:1px solid rgba(217,155,43,.4)}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{text-align:left;font-size:11px;letter-spacing:.13em;text-transform:uppercase;color:var(--mut);font-weight:800;padding:8px 10px;border-bottom:1px solid var(--line)}
+  td{padding:8px 10px;border-bottom:1px solid #1c1c21;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  td.n{text-align:right}
+  .err{background:rgba(224,58,47,.10);border:1px solid rgba(224,58,47,.45);border-radius:8px;padding:14px 16px;color:#f0b3ae;font-size:13px}
+  .err b{color:var(--red)}
+  .note{color:var(--mut);font-size:12px;margin-top:10px}
+  ul{margin:8px 0 0 18px;font-size:13.5px}
+  li{margin-bottom:7px}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:#1b1b20;padding:1px 5px;border-radius:3px;font-size:12px}
+</style>
+
+<h1>Chain Two · Candy (Solana) Onboarding</h1>
+<div class="sub">Live post-launch state, re-queried from Supabase every time this opens. Use <b>Reload</b> above to refresh.</div>
+
+<h2>Live collection state</h2>
+<div id="state"><div class="sub mono">Loading…</div></div>
+
+<h2>Candy board coverage</h2>
+<div id="boards"><div class="sub mono">Loading…</div></div>
+
+<h2>Launch status — SHIPPED 2026-07-31</h2>
+<div class="card">
+  <div class="kv" style="margin-bottom:12px">
+    <span><code>CANDY_MLB_PUBLIC</code></span><b><span class="pill on">TRUE — LIVE</span></b>
+    <span>public board</span><b><code>/insights/candy-mlb</code></b>
+    <span>go-live</span><b>2026-07-31 · commit 1a4c77a7</b>
+  </div>
+  <ul>
+    <li><b>Done:</b> <code>CANDY_MLB_PUBLIC</code> flipped <code>true</code> in <code>lib/launch-flags.ts</code> (2026-07-31). The one line atomically un-gated the proxy wall, added the sitemap slug + <code>/insights</code> hub card + footer link, dropped <code>robots: noindex</code>, and armed the smoke-test public-page probe. CI + Smoke Tests GHA verified green.</li>
+    <li><b>Done:</b> <code>candy-sales-indexer</code> raised <code>medium</code> → <code>high</code> in <code>pipeline_cadence_watchlist</code> as the launch-ride DB change.</li>
+    <li><b>Still OFF by design (NOT a to-do):</b> the registry <code>published</code> flag in <code>lib/collections.ts</code> stays <code>false</code> (the 28-shared-RPC Candy arm isn't done; turning it on would expose Flow-shaped tabs with no Candy branch), and <code>collections.is_active</code> stays <code>false</code>. The board reads Candy <b>directly</b>, so it needs neither.</li>
+    <li><b>Rollback (if ever needed):</b> set <code>CANDY_MLB_PUBLIC</code> back to <code>false</code> + push (~3 min, no DB unwind); revert severity with <code>UPDATE pipeline_cadence_watchlist SET severity='medium' WHERE pipeline='candy-sales-indexer'</code>.</li>
+  </ul>
+  <div class="note">This board is now the live coverage monitor for the shipped surface — if a board's row count drops to 0 its writer has stopped. Launch detail: <code>claude/go-live-candy-panini-2026-07-28.md</code> · <code>docs/candy-go-live-flip-2026-07-25.md</code>.</div>
+</div>
+
+<script>
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
+function num(n){return n==null?'—':Number(n).toLocaleString()}
+
+// Robust extractor. On failure it records WHY (the observed shape) instead of
+// swallowing it, so a future break is diagnosable rather than opaque.
+var LAST_SHAPE = null;
+// 2026-10-20 (#114 port): the canonical helper from rpc-insights-health.html — throws on a failed or unreadable read; callers catch into failBox.
+function extractRows(raw){
+  if(raw==null) return [];
+  if(Array.isArray(raw)) return raw;
+  if(typeof raw==="object"){
+    // ⛔ A FAILED READ MUST NOT RENDER AS AN EMPTY RESULT SET. Measured 2026-09-14:
+    // the live Supabase MCP server answers a missing relation with {error:{name,message}},
+    // which fell through to `return [raw]` — no throw — so every panel showed "–"/"empty"
+    // and the banner asserted "7 surface(s) have an EMPTY backing view — investigate."
+    // Failure and emptiness must not share a rendering.
+    if(raw.isError===true||(raw.error&&typeof raw.error==="object")) throw new Error(String((raw.error&&(raw.error.message||raw.error.name))||(Array.isArray(raw.content)?raw.content.map(c=>(c&&c.text)||"").join(" "):"")||"tool returned an error"));
+    if(Array.isArray(raw.content)) return extractRows(raw.content.map(c=>typeof c==="string"?c:(c&&c.text)||"").join("\n"));
+    if(typeof raw.result==="string") return extractRows(raw.result);
+    if(typeof raw.text==="string") return extractRows(raw.text);
+    if(typeof raw.data!=="undefined") return extractRows(raw.data);
+    return [raw];
+  }
+  if(typeof raw==="string"){ const s=raw.trim(); if(!s) return []; try{return extractRows(JSON.parse(s));}catch(e){} const m=s.match(/\[[\s\S]*\]/); if(m){try{return JSON.parse(m[0]);}catch(e){}} throw new Error("unreadable tool response: "+s.slice(0,160)); }
+  return [];
+}
+
+// ⚠ NEVER assert figures here. An earlier version of this artifact baked a
+// 2026-07-16 snapshot ("0 editions / 0 wallet rows / 0 sales") into its catch
+// block; once the query started failing it published those stale zeros as
+// "known state" for weeks, on the one board you would open to judge whether
+// Candy was ready to launch. A failed read shows nothing and says so.
+function failBox(where, msg){
+  return '<div class="err"><b>Live query failed</b> — '+esc(where)+': '+esc(msg)+
+    (LAST_SHAPE?'<br><span class="mono" style="font-size:11px">response shape: '+esc(LAST_SHAPE)+'</span>':'')+
+    '<div class="note">No figures are shown, deliberately. This board does not display remembered numbers — a stale figure on a launch-readiness surface is worse than no figure. Hit Reload; if it persists the query or the tool grant needs looking at.</div></div>';
+}
+
+function card(r){
+  var active = (r.is_active===true||r.is_active==='true');
+  var hasContract = !!(r.contract_address);
+  return '<div class="card">'
+    +'<h3>'+esc(r.chain||'—')+'</h3>'
+    +'<div class="slug">'+esc(r.slug)+' '
+      +'<span class="pill '+(active?'on':'off')+'">'+(active?'IS_ACTIVE':'INERT')+'</span></div>'
+    +'<div class="kv">'
+      +'<span>contract</span><b>'+(hasContract?'set':'—')+'</b>'
+      +'<span>editions</span><b>'+num(r.editions)+'</b>'
+      +'<span>wallet rows</span><b>'+num(r.wmc)+'</b>'
+      +'<span>sales (all time)</span><b>'+num(r.sales)+'</b>'
+    +'</div></div>';
+}
+
+async function call(q){
+  return await window.cowork.callMcpTool(
+    'mcp__24ab6d77-3292-4646-b039-669cc9535ef8__execute_sql',
+    {project_id:'bxcqstmqfzmuolpuynti', query:q});
+}
+
+async function loadState(){
+  var el=document.getElementById('state');
+  var q="SELECT c.slug, c.chain::text AS chain, c.is_active, c.contract_address, "
+    +"(SELECT count(*) FROM editions e WHERE e.collection_id=c.id) AS editions, "
+    +"(SELECT count(*) FROM wallet_moments_cache w WHERE w.collection_id=c.id) AS wmc, "
+    +"(SELECT count(*) FROM sales s WHERE s.collection_id=c.id) AS sales "
+    +"FROM public.collections c WHERE c.slug IN ('candy_mlb','panini_blockchain') ORDER BY c.slug";
+  try{
+    var rows=extractRows(await call(q));
+    if(!rows) throw new Error('could not read rows');
+    if(!rows.length) throw new Error('query returned zero rows');
+    el.innerHTML='<div class="cards">'+rows.map(card).join('')+'</div>';
+  }catch(e){ el.innerHTML=failBox('collection state', e.message||e) }
+}
+
+async function loadBoards(){
+  var el=document.getElementById('boards');
+  var q="SELECT 'candy_secondary_board' AS board,(SELECT count(*) FROM candy_secondary_board) AS n "
+    +"UNION ALL SELECT 'candy_scarcity_board',(SELECT count(*) FROM candy_scarcity_board) "
+    +"UNION ALL SELECT 'candy_player_board',(SELECT count(*) FROM candy_player_board) "
+    +"UNION ALL SELECT 'candy_holder_board',(SELECT count(*) FROM candy_holder_board) "
+    +"UNION ALL SELECT 'candy_special_serials_board',(SELECT count(*) FROM candy_special_serials_board) "
+    +"UNION ALL SELECT 'candy_deals_board',(SELECT count(*) FROM candy_deals_board) "
+    +"UNION ALL SELECT 'candy_packs',(SELECT count(*) FROM candy_packs) "
+    +"UNION ALL SELECT 'candy_pack_sales',(SELECT count(*) FROM candy_pack_sales)";
+  try{
+    var rows=extractRows(await call(q));
+    if(!rows) throw new Error('could not read rows');
+    el.innerHTML='<table><thead><tr><th>Board</th><th style="text-align:right">Rows</th></tr></thead><tbody>'
+      +rows.map(function(r){return '<tr><td>'+esc(r.board)+'</td><td class="n">'+num(r.n)+'</td></tr>'}).join('')
+      +'</tbody></table><div class="note">Every count is read live. If a board drops to 0 its writer has stopped — that is the signal this table exists for.</div>';
+  }catch(e){ el.innerHTML=failBox('board coverage', e.message||e) }
+}
+
+loadState(); loadBoards();
+</script>

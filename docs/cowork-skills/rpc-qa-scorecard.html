@@ -1,0 +1,238 @@
+<title>RPC QA Scorecard</title>
+<style>:root{color-scheme:dark}</style>
+<script>
+/* Port shim (2026-10-20, known-issue #114). These dashboards were written for the
+   desktop Cowork bridge (window.cowork.callMcpTool). On claude.ai they read through
+   the page's `mcp` capability instead. Every failure THROWS here, so a query that
+   did not run can never render as an empty result set. */
+(function(){
+  var mcpP = (window.claude && typeof window.claude.use === "function") ? window.claude.use("mcp") : Promise.resolve(null);
+  var FIX = {
+    needs_reauth: "Reconnect {s} in claude.ai Settings, Connectors, then Reload.",
+    server_not_connected: "Add the {s} connector in claude.ai Settings, Connectors, then Reload.",
+    selection_required: "Choose which {s} connector this page should use, then Reload.",
+    not_in_manifest: "{s} is not allowed for this page. Allow it from the artifact's Permissions menu, then Reload.",
+    approval_required: "This page needs your approval to read from {s}. Reload and choose Allow.",
+    blocked_by_policy: "Your organization's policy blocks this {s} tool.",
+    server_unavailable: "{s} did not answer in time. Try Reload in a minute.",
+    not_granted: "Connectors are not available in this view. Open the page in claude.ai.",
+    capability_disabled: "Connectors are not available in this view. Open the page in claude.ai."
+  };
+  function serverFor(t){ return /list_deployments$/.test(t) ? "Vercel" : "Supabase"; }
+  function sleep(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }
+  async function call(mcp, s, name, args, retried){
+    try { return await mcp.callTool(s, name, args, { cache: false }); }
+    catch (e) {
+      var c = (e && e.code) || "upstream_error";
+      if (e && e.retryable && !retried) { await sleep(Math.min(e.retryAfterMs || 0, 15000) + 600 + Math.random() * 900); return call(mcp, s, name, args, true); }
+      var hint = (FIX[c] || "").replace("{s}", s);
+      var msg = s + " query did not run (" + c + ")" + (hint ? ". " + hint : (e && e.message ? ": " + String(e.message).slice(0, 240) : ""));
+      var err = new Error(msg); err.code = c; throw err;
+    }
+  }
+  window.cowork = { callMcpTool: async function(tool, args){
+    var mcp = await mcpP;
+    if (!mcp) throw new Error("Live data is not available in this view. Open the page in claude.ai with the Supabase connector connected.");
+    var s = serverFor(tool), name = String(tool).split("__").pop();
+    var res = await call(mcp, s, name, args, false);
+    var p = res && res.payload;
+    if (p && typeof p === "object" && !Array.isArray(p) && p.error && typeof p.error === "object")
+      throw new Error(s + " query failed: " + String(p.error.message || p.error.name || "error").slice(0, 300));
+    var out = { content: (res && res.content) || [] };
+    if (res && typeof res.structuredContent !== "undefined") out.structuredContent = res.structuredContent;
+    return out;
+  } };
+})();
+</script>
+<style>
+  :root{ color-scheme: light; --rpc-red:#E03A2F; --ink:#15171a; --muted:#6b7280; --line:#e6e8eb; --ok:#15803d; --okbg:#eafaf0; --flag:#b91c1c; --flagbg:#fdecec; --warn:#b45309; --warnbg:#fef6e7; --info:#1f4ed8; --infobg:#eef2ff; --card:#ffffff; --bg:#f7f8fa; }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.45}
+  .wrap{max-width:1000px;margin:0 auto;padding:18px 16px 40px}
+  h1{font-size:20px;letter-spacing:.06em;text-transform:uppercase;margin:0 0 2px;border-bottom:3px solid var(--rpc-red);padding-bottom:8px;display:inline-block}
+  .sub{color:var(--muted);font-size:12px;margin:8px 0 16px;font-variant-numeric:tabular-nums}
+  .banner{display:flex;align-items:center;gap:10px;padding:13px 15px;border-radius:10px;border:1px solid var(--line);background:var(--card);margin-bottom:16px;font-weight:700;letter-spacing:.02em}
+  .dot{width:13px;height:13px;border-radius:50%;flex:0 0 auto;background:#cbd5e1}
+  .grid{display:grid;grid-template-columns:1fr;gap:12px}
+  @media(min-width:560px){.grid{grid-template-columns:1fr 1fr}}
+  @media(min-width:860px){.grid{grid-template-columns:1fr 1fr 1fr}}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 15px;border-left:4px solid var(--line)}
+  .card.g{border-left-color:var(--ok)} .card.a{border-left-color:var(--warn)} .card.r{border-left-color:var(--flag)} .card.i{border-left-color:var(--info)}
+  .card h3{font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);margin:0 0 8px;font-weight:700;display:flex;justify-content:space-between;align-items:center}
+  .big{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:25px;font-weight:600;color:var(--rpc-red);line-height:1}
+  .detail{color:var(--muted);font-size:12px;margin-top:8px}
+  .pill{font-size:10px;font-weight:700;letter-spacing:.05em;padding:2px 8px;border-radius:999px;text-transform:uppercase}
+  .p-ok{color:var(--ok);background:var(--okbg)} .p-flag{color:var(--flag);background:var(--flagbg)} .p-warn{color:var(--warn);background:var(--warnbg)} .p-info{color:var(--info);background:var(--infobg)} .p-load{color:var(--muted);background:#f1f3f5}
+  .foot{color:var(--muted);font-size:11.5px;margin-top:20px;line-height:1.6}
+  a{color:var(--rpc-red)}
+  /* === RPC DARK THEME (2026-06-15) === */
+  :root{color-scheme:dark!important;}
+  html,body{background:#0c0c0e!important;color:#ECEAE3!important;}
+  .wrap,.container,main{background:transparent!important;}
+  .card,.panel,.box,.tile,section.card{background:#16161a!important;border-color:rgba(255,255,255,0.10)!important;}
+  .kpi,.stat,.metric{background:#1b1b20!important;border-color:rgba(255,255,255,0.08)!important;}
+  .muted,.sub,.spinner,.legend,.tinyw,.kpi .lbl,.stat .lbl,small{color:#9A968C!important;}
+  h1{color:#F2F0EA!important;}
+  h2,h3,h4{color:#D8D5CC!important;}
+  table{color:#E4E2DB!important;}
+  th{color:#9A968C!important;border-bottom-color:rgba(255,255,255,0.12)!important;}
+  td{border-bottom-color:rgba(255,255,255,0.07)!important;}
+  tr:hover td{background:rgba(255,255,255,0.03)!important;}
+  .tab{border-color:rgba(255,255,255,0.18)!important;color:#CFCAC4!important;background:transparent!important;}
+  .tab.active{background:var(--rpc-red,#E03A2F)!important;color:#fff!important;border-color:var(--rpc-red,#E03A2F)!important;}
+  button{color:#ECEAE3;}
+  button.refresh{background:rgba(224,58,47,0.16)!important;}
+  input,select,textarea{background:#16161a!important;color:#ECEAE3!important;border-color:rgba(255,255,255,0.15)!important;}
+  a{color:#7FB2F0;}
+  .pill.HIGH{background:rgba(46,160,110,0.22)!important;color:#5fd6a0!important;}
+  .pill.MEDIUM{background:rgba(55,138,221,0.22)!important;color:#74b6ef!important;}
+  .pill.LOW{background:rgba(186,117,23,0.24)!important;color:#e0a64b!important;}
+  .pill.STALE{background:rgba(255,255,255,0.10)!important;color:#b9b6ad!important;}
+  .pill.NO_DATA{background:rgba(163,45,45,0.24)!important;color:#e88a8a!important;}
+  .pill.ASK_ONLY{background:rgba(83,74,183,0.26)!important;color:#a39df0!important;}
+  .pill.SALES_ONLY{background:rgba(156,42,111,0.26)!important;color:#e487bb!important;}
+  /* keep red accents */
+  .kpi .val,.stat .val,.metric .val{color:var(--rpc-red,#E03A2F)!important;}
+  /* qa-scorecard extras */
+  .p-ok{background:rgba(21,128,61,0.2)!important;color:#5fd6a0!important;}
+  .p-flag{background:rgba(185,28,28,0.2)!important;color:#e88a8a!important;}
+  .p-warn{background:rgba(180,83,9,0.2)!important;color:#e0a64b!important;}
+  .p-info{background:rgba(31,78,216,0.2)!important;color:#7FB2F0!important;}
+  .p-load{background:rgba(255,255,255,0.08)!important;color:#9A968C!important;}
+  .banner{background:#16161a!important;border-color:rgba(255,255,255,0.1)!important;color:#ECEAE3!important;}
+  body{background:#0c0c0e!important;}
+  .sub,.detail,.foot{color:#9A968C!important;}
+  .big{color:var(--rpc-red,#E03A2F)!important;}
+</style>
+
+
+<div class="wrap">
+  <h1>RPC QA Scorecard</h1>
+  <div class="sub" id="stamp">Rolling up QA signals…</div>
+  <div class="banner" id="banner"><span class="dot"></span><span id="bannertext">Running checks…</span></div>
+  <div class="grid" id="grid"></div>
+  <div class="foot">
+    One-glance roll-up across the QA loop (see <span class="mono">docs/operations/qa-loop.md</span>). Each domain self-scores; the banner is the worst card. Deep dives: <a href="#">rpc-live-health</a>, <a href="#">rpc-offers-intelligence</a>, <a href="#">rpc-deploys-and-cost</a> (security, pipeline-reliability + FMV-watch detail were folded into rpc-live-health + the daily monitor 2026-06-12). Offer-sanity gaps are transient (amber) — <span class="mono">edition_offers</span> are GREATEST-raised to the on-chain number in the ~20-min offers-sweep and self-clear. Use the view header's Reload to refresh.
+  </div>
+</div>
+<script>
+const SB="mcp__24ab6d77-3292-4646-b039-669cc9535ef8__execute_sql";
+const VC="mcp__9147546a-a5d7-42b9-9cd6-d67951a51908__list_deployments";
+const PROJECT="bxcqstmqfzmuolpuynti";
+const TS="95f28a17-224a-4025-96ad-adf8a4c63bfd";
+
+function extractRows(raw){
+  if(raw==null) return [];
+  if(Array.isArray(raw)) return raw;
+  if(typeof raw==="object"){ if(raw.isError===true||(raw.error&&typeof raw.error==="object")) throw new Error(String((raw.error&&(raw.error.message||raw.error.name))||(Array.isArray(raw.content)?raw.content.map(c=>(c&&c.text)||"").join(" "):"")||"tool returned an error")); 
+    if(Array.isArray(raw.content)){ return extractRows(raw.content.map(c=>typeof c==="string"?c:(c&&c.text)||"").join("\n")); }
+    if(typeof raw.result==="string") return extractRows(raw.result);
+    if(typeof raw.text==="string") return extractRows(raw.text);
+    if(typeof raw.deployments!=="undefined") return [raw];
+    if(typeof raw.data!=="undefined") return extractRows(raw.data);
+    return [raw];
+  }
+  if(typeof raw==="string"){ let s=raw.trim(); try{ return extractRows(JSON.parse(s)); }catch(e){} const m=s.match(/\[[\s\S]*\]/); if(m){ try{ return JSON.parse(m[0]); }catch(e){} } const o=s.match(/\{[\s\S]*\}/); if(o){ try{ return [JSON.parse(o[0])]; }catch(e){} } if(!s) return []; throw new Error("unreadable tool response: "+s.slice(0,160)); }
+  return [];
+}
+async function sb(sql){ if(!(window.cowork&&window.cowork.callMcpTool)) throw new Error("MCP bridge unavailable"); return extractRows(await window.cowork.callMcpTool(SB,{project_id:PROJECT,query:sql})); }
+function num(x){ return (x==null||isNaN(x))?"—":Number(x).toLocaleString(); }
+function rel(iso){ if(!iso) return "—"; const h=(Date.now()-new Date(iso).getTime())/3.6e6; if(isNaN(h)) return ""; if(h<1) return Math.round(h*60)+"m"; if(h<48) return h.toFixed(1)+"h"; return (h/24).toFixed(1)+"d"; }
+
+// 2026-09-06: 'fmv' reads edition_fmv_current (the platform's latest-FMV-per-edition denorm) instead of a
+// per-edition ORDER BY computed_at DESC LIMIT 1 lateral over fmv_snapshots — measured 77,203 → 16,181
+// buffers / 4.7 s → 0.4 s for the same 20,441 TS editions (hm 7,689 vs 7,687, within FMV drift). 'fresh' is
+// the true last write (max computed_at on the PARENT, 7 buffers) so the 60-min freshness gate does not
+// inherit the denorm's refresh lag. 2026-09-13: this read was FROM fmv_snapshots_2026 --
+// a hardcoded year partition. Writes move to fmv_snapshots_2027 on 2027-01-01, after which the hardcode
+// would have pinned 'fresh' at the last 2026 write FOREVER and rendered it as current, with no error,
+// on the one metric that says whether the rest is trustworthy. The parent costs the SAME 7 buffers
+// (measured: partition 7, parent 7, partition-pruned 7) and agrees on all 7 collections today, so the
+// hardcode bought nothing. Do NOT re-pin it to a partition. A 30d-bounded variant was REJECTED: it
+// returns NULL once a stall exceeds the window, turning "very stale" into "no data". 'sentinel' allows the `setID:playID::subeditionID` external_id format
+// the canonical sentinel (rpc_ops_snapshot / rpc-live-health) already allows — the strict regex flagged
+// 608 well-formed subedition rows as a leak (inbox 2026-09-06T0315Z).
+const PAYLOAD_SQL = `SET statement_timeout = '120s';
+SELECT jsonb_build_object(
+  'sec', COALESCE((SELECT to_jsonb(t) FROM (SELECT (SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind IN ('r','p') AND c.relrowsecurity=false) AS rls, (SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind IN ('r','p') AND c.relrowsecurity=false AND (has_table_privilege('anon',c.oid,'INSERT') OR has_table_privilege('anon',c.oid,'UPDATE'))) AS wr, (SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind='v' AND has_table_privilege('anon',c.oid,'SELECT') AND NOT EXISTS(SELECT 1 FROM unnest(COALESCE(c.reloptions,'{}')) o WHERE o LIKE 'security_invoker=%')) AS dv) t), '{}'::jsonb),
+  'stall', COALESCE((SELECT to_jsonb(t) FROM (SELECT coalesce(jsonb_array_length(detect_stalled_pipelines()),0)::int AS n) t), '{}'::jsonb),
+  'fmvsan', COALESCE((SELECT to_jsonb(t) FROM (SELECT count(*)::int AS n FROM v_fmv_sanity_flags) t), '{}'::jsonb),
+  'offsan', COALESCE((SELECT to_jsonb(t) FROM (SELECT count(*)::int AS n, count(*) FILTER (WHERE flag='gql_blank_chain_has')::int AS blank FROM v_offer_sanity_flags) t), '{}'::jsonb),
+  'fmv', jsonb_build_object(
+    'hm', (SELECT count(*) FROM edition_fmv_current f WHERE f.collection_id='${TS}' AND f.confidence IN ('HIGH','MEDIUM')),
+    'fresh', (SELECT max(computed_at) FROM fmv_snapshots WHERE collection_id='${TS}')),
+  'offidx', COALESCE((SELECT to_jsonb(t) FROM (SELECT (SELECT count(*) FROM pipeline_runs WHERE pipeline='topshot-offers-indexer' AND finished_at>now()-interval '24 hours' AND ok) AS ts, (SELECT count(*) FROM pipeline_runs WHERE pipeline='allday-offers-indexer' AND finished_at>now()-interval '24 hours' AND ok) AS ad, (SELECT count(*) FROM offers) AS offers) t), '{}'::jsonb),
+  'sentinel', COALESCE((SELECT to_jsonb(t) FROM (SELECT count(*)::int AS n FROM editions WHERE collection_id='${TS}' AND external_id !~ '^[0-9]+:[0-9]+(::[0-9]+)?$' AND created_at>now()-interval '48 hours') t), '{}'::jsonb),
+  'db', COALESCE((SELECT to_jsonb(t) FROM (SELECT pg_size_pretty(pg_database_size(current_database())) AS s, (pg_database_size(current_database())/1024/1024)::int AS mb) t), '{}'::jsonb)
+) AS payload;`;
+
+let payloadPromise=null;
+function getPayload(){
+  if(!payloadPromise){
+    payloadPromise = sb(PAYLOAD_SQL).then(rows=>{
+      const row=(rows&&rows[0])||{};
+      let p=row.payload;
+      if(typeof p==="string"){ try{ p=JSON.parse(p); }catch(e){ p=null; } }
+      if(!p||typeof p!=="object") throw new Error("payload missing from query result");
+      return p;
+    });
+  }
+  return payloadPromise;
+}
+
+const RANK=[["ok","p-ok","g"],["info","p-info","i"],["watch","p-warn","a"],["alert","p-flag","r"]];
+
+const CARDS=[
+  { id:"sec", title:"Security", run:async()=>{
+      const r=(await getPayload()).sec||{};
+      const bad=(Number(r.rls)||0)+(Number(r.wr)||0)+(Number(r.dv)||0);
+      return { big:(r.rls||0)+" / "+(r.wr||0)+" / "+(r.dv||0), rank:bad===0?0:3, detail:"RLS-off base / anon-write holes / anon-readable definer views" }; } },
+  { id:"stall", title:"Pipelines stalled", run:async()=>{
+      const r=(await getPayload()).stall||{}; const n=Number(r.n)||0;
+      return { big:String(n), rank:n===0?0:3, detail:n===0?"No watched pipeline past its silence threshold.":"Re-fire the cron(s)." }; } },
+  { id:"fmvsan", title:"FMV sanity", run:async()=>{
+      const r=(await getPayload()).fmvsan||{}; const n=Number(r.n)||0;
+      return { big:String(n), rank:n===0?0:2, detail:n===0?"No edition diverges from its set's sales median.":n+" mispriced edition(s) flagged — review." }; } },
+  { id:"offsan", title:"Offer reconciliation", run:async()=>{
+      const r=(await getPayload()).offsan||{}; const n=Number(r.n)||0;
+      return { big:String(n), rank:n===0?0:1, detail:(n===0?"On-chain agrees with the GQL number.":n+" TS editions where on-chain beats/blanks GQL ("+(r.blank||0)+" blank). Transient — self-clears as the offers-sweep GREATEST-raises edition_offers.") }; } },
+  { id:"fmv", title:"FMV health (TS)", run:async()=>{
+      const r=(await getPayload()).fmv||{}; if(r.hm==null) throw new Error("fmv leg returned no count");
+      const hm=Number(r.hm)||0; const mins=r.fresh?((Date.now()-new Date(r.fresh).getTime())/6e4):9999;
+      const rank = (hm>=400 && mins<60)?0 : (hm>=300?2:3);
+      return { big:num(hm), rank, detail:"HIGH+MED editions (edition_fmv_current) · last snapshot write "+rel(r.fresh)+" ago" }; } },
+  { id:"offidx", title:"Offer indexers (24h)", run:async()=>{
+      const r=(await getPayload()).offidx||{}; const ts=Number(r.ts)||0, ad=Number(r.ad)||0;
+      const rank=(ts>0&&ad>0)?0:((ts>0||ad>0)?2:3);
+      return { big:num(r.offers), rank, detail:"offers rows · TS "+ts+" / AllDay "+ad+" ok runs in 24h"+((ts===0||ad===0)?" — check the cron":"") }; } },
+  { id:"sentinel", title:"Sentinel leak (48h)", run:async()=>{
+      const r=(await getPayload()).sentinel||{}; if(r.n==null) throw new Error("sentinel leg returned no count");
+      const n=Number(r.n)||0;
+      return { big:num(n), rank:n<250?0:(n<2000?2:3), detail:"TS edition rows in 48h whose external_id is not setID:playID or setID:playID::subedition (ok<250) — same regex as rpc_ops_snapshot." }; } },
+  { id:"db", title:"DB size", run:async()=>{
+      const r=(await getPayload()).db||{}; const mb=Number(r.mb)||0;
+      return { big:r.s||"—", rank:mb<7500?1:2, detail:"flag >7.5 GB." }; } },
+  { id:"deploy", title:"Latest prod deploy", run:async()=>{
+      const raw=await window.cowork.callMcpTool(VC,{projectId:"prj_YBJ6Utl32GfyBOIzbsp3kbshJh96",teamId:"team_YWGCVToPBJSS60NgVh8jiCFV"});
+      let d=extractRows(raw)[0]; if(d&&d.result&&typeof d.result==="object") d=d.result; let list=(d&&d.deployments&&d.deployments.deployments)||(d&&d.deployments); if(!Array.isArray(list)) throw new Error("Vercel answered without a deployments list");
+      const prod=list.filter(x=>x&&x.target==="production"); const latest=prod[0]||list[0]||{};
+      const errs=prod.slice(0,20).filter(x=>x.state==="ERROR").length;
+      const st=latest.state||"?"; const rank=(st==="READY"&&errs===0)?0:(st==="ERROR"||errs>0?3:1);
+      const sha=(latest.meta&&latest.meta.githubCommitSha)?latest.meta.githubCommitSha.slice(0,7):"";
+      return { big:st, rank, detail:(sha?("commit "+sha+" · "):"")+errs+" ERROR in last 20" }; } }
+];
+
+const grid=document.getElementById("grid");
+for(const c of CARDS){ const el=document.createElement("div"); el.className="card i"; el.id="card-"+c.id; el.innerHTML='<h3>'+c.title+' <span class="pill p-load" id="p-'+c.id+'">…</span></h3><div class="big" id="v-'+c.id+'">…</div><div class="detail" id="d-'+c.id+'"></div>'; grid.appendChild(el); }
+
+let worst=0, done=0, anyErr=false;
+function banner(){ if(done<CARDS.length) return; const dot=document.querySelector("#banner .dot"), t=document.getElementById("bannertext");
+  if(anyErr){ dot.style.background="#cbd5e1"; t.textContent="Some checks could not run — open inside Cowork and Reload."; return; }
+  const m=RANK[worst]; dot.style.background = worst===0?"var(--ok)":(worst===1?"var(--info)":(worst===2?"var(--warn)":"var(--flag)"));
+  t.textContent = worst<=1?"All clear — every QA domain green.":(worst===2?"Healthy with watch items — see the amber cards.":"Action needed — a red card needs attention."); }
+async function run(c){ const card=document.getElementById("card-"+c.id), p=document.getElementById("p-"+c.id), v=document.getElementById("v-"+c.id), d=document.getElementById("d-"+c.id);
+  try{ const o=await c.run(); const m=RANK[o.rank]; v.textContent=o.big; d.textContent=o.detail||""; p.textContent=m[0]; p.className="pill "+m[1]; card.className="card "+m[2]; if(o.rank>worst) worst=o.rank; }
+  catch(e){ anyErr=true; v.textContent="—"; p.textContent="error"; p.className="pill p-flag"; d.textContent=(e&&e.message)||String(e); }
+  finally{ done++; banner(); } }
+(async()=>{ document.getElementById("stamp").textContent="As of "+new Date().toLocaleString()+" · live read · QA loop roll-up"; for(const c of CARDS){ run(c); } })();
+</script>
