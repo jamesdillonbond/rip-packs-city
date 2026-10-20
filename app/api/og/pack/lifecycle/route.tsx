@@ -26,6 +26,8 @@ import { OgMark } from "@/lib/og/marks"
 import { boundedRead } from "@/lib/api/bounded-read"
 import { OG_FETCH_TIMEOUT_MS } from "@/lib/og/og-fetch"
 import { usdSignFirst } from "@/lib/usd-format"
+import { isFiledUnderAnotherCollection, lifecycleRpcFor } from "@/lib/pack-detail/lifecycle-rpc"
+import { getCollectionByUrlSlug } from "@/lib/collection-slug"
 
 export const runtime = "edge"
 
@@ -82,7 +84,7 @@ interface Lifecycle {
   error?: string | null
 }
 
-async function fetchLifecycle(packNftId: string): Promise<Lifecycle | null> {
+async function fetchLifecycle(packNftId: string, collectionUuid: string | null): Promise<Lifecycle | null> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!url || !key) return null
@@ -95,8 +97,13 @@ async function fetchLifecycle(packNftId: string): Promise<Lifecycle | null> {
   // sweep exists to prevent. This card's own contract is "fall back to a generic
   // card, never 500"; without this it held only for the error-return path.
   try {
-    const { data, error } = await boundedRead(sb.rpc("get_pack_lifecycle", { p_pack_nft_id: packNftId }), "og/pack/lifecycle/get_pack_lifecycle", OG_FETCH_TIMEOUT_MS)
+    // ⛔ Pack NFT ids are per-contract (2,294 Golazos ids are also All Day rips):
+    // read the collection's own lifecycle RPC, and draw the generic card rather
+    // than another collection's pack (lib/pack-detail/lifecycle.ts, 2026-10-19).
+    const rpc = lifecycleRpcFor(collectionUuid)
+    const { data, error } = await boundedRead(sb.rpc(rpc, { p_pack_nft_id: packNftId }), `og/pack/lifecycle/${rpc}`, OG_FETCH_TIMEOUT_MS)
     if (error || !data || typeof data !== "object") return null
+    if (isFiledUnderAnotherCollection(data, collectionUuid)) return null
     return data as Lifecycle
   } catch {
     return null
@@ -113,7 +120,8 @@ export async function GET(req: NextRequest) {
   const id = sp.get("id") ?? ""
 
   let lc: Lifecycle | null = null
-  if (id) lc = await fetchLifecycle(id)
+  const collectionUuid = getCollectionByUrlSlug(sp.get("collection") ?? "")?.id ?? null
+  if (id) lc = await fetchLifecycle(id, collectionUuid)
 
   const resolved = lc && lc.status !== "unknown" && !lc.error
   const distTitle = lc?.distribution?.title ?? null

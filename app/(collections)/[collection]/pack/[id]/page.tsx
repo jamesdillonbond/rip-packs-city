@@ -106,7 +106,7 @@ export async function generateMetadata(props: PageProps): Promise<Metadata> {
   // pack are different answers; this function treated both as "no lifecycle" and
   // published the generic fallback description for a real pack whose read merely
   // timed out — indexable, with no indication anything went wrong.
-  const lifecycleRes = coll ? await fetchLifecycle(id) : null
+  const lifecycleRes = coll ? await fetchLifecycle(id, undefined, undefined, coll.id) : null
   const lifecycle = lifecycleRes?.lifecycle ?? null
   const readOk = lifecycleRes ? lifecycleRes.ok : true
   if (coll && !lifecycle && !readOk) {
@@ -195,7 +195,7 @@ export default async function PackLifecyclePage(props: PageProps) {
     return <NotFoundCard collectionSlug={routeSlug} id={id} reason="unknown_collection" />
   }
 
-  const { lifecycle, ok } = await fetchLifecycle(id)
+  const { lifecycle, ok } = await fetchLifecycle(id, undefined, undefined, coll.id)
 
   // The RPC FAILED — say so. Do NOT fall through to the not-found/redirect
   // branch below: telling a visitor this pack does not exist, or bouncing them

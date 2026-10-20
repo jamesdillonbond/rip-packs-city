@@ -101,3 +101,43 @@ describe("isKnownDistId", () => {
     expect(res).toEqual({ known: true, ok: true })
   })
 })
+
+// ⛔ PACK NFT IDS ARE PER-CONTRACT (2026-10-19): 2,294 Golazos pack ids are also
+// the ids of DIFFERENT All Day rips, and get_pack_lifecycle is keyed on the id
+// alone. A collection-scoped read must reach that collection's own RPC and must
+// never answer with a pack filed under another collection.
+describe("fetchLifecycle is scoped to the collection asked about", () => {
+  const GZ = "06248cc4-b85f-47cd-af67-1855d14acd75"
+  const AD = "dee28451-5d62-409e-a1ad-a83f763ac070"
+  const TS = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
+  const spyDb = (data: unknown) => {
+    const calls: string[] = []
+    return { calls, db: { rpc: async (name: string) => { calls.push(name); return { data, error: null } } } }
+  }
+
+  it("Golazos reads get_golazos_pack_lifecycle, not the Flow-table RPC", async () => {
+    const { calls, db } = spyDb({ collection_id: GZ, status: "ripped" })
+    const res = await fetchLifecycle("1", db, 500, GZ)
+    expect(calls).toEqual(["get_golazos_pack_lifecycle"])
+    expect(res).toEqual({ lifecycle: { collection_id: GZ, status: "ripped" }, ok: true })
+  })
+
+  it("a payload filed under ANOTHER collection is not this collection's pack", async () => {
+    const { calls, db } = spyDb({ collection_id: AD, status: "ripped" })
+    const res = await fetchLifecycle("1", db, 500, TS)
+    expect(calls).toEqual(["get_pack_lifecycle"])
+    expect(res).toEqual({ lifecycle: null, ok: true })
+    expect(res.lifecycle).not.toMatchObject({ collection_id: AD })
+  })
+
+  it("the matching collection's payload passes through", async () => {
+    const { db } = spyDb({ collection_id: AD, status: "sealed" })
+    expect((await fetchLifecycle("1", db, 500, AD)).lifecycle).toEqual({ collection_id: AD, status: "sealed" })
+  })
+
+  it("unscoped (no collection) keeps the historical read", async () => {
+    const { calls, db } = spyDb({ collection_id: AD, status: "sealed" })
+    expect((await fetchLifecycle("1", db, 500)).lifecycle).toEqual({ collection_id: AD, status: "sealed" })
+    expect(calls).toEqual(["get_pack_lifecycle"])
+  })
+})

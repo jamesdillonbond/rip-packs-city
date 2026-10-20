@@ -23,6 +23,8 @@ import { apiErrorResponse } from "@/lib/api-error";
 import { boundedRead } from "@/lib/api/bounded-read";
 import { supabaseAdmin } from "@/lib/supabase"
 import { requireUser } from "@/lib/auth/supabase-server"
+import { getCollectionByDbSlug, getCollectionByUrlSlug } from "@/lib/collection-slug"
+import { isFiledUnderAnotherCollection, lifecycleRpcFor } from "@/lib/pack-detail/lifecycle-rpc"
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const sb: any = supabaseAdmin
@@ -70,12 +72,23 @@ export async function GET(req: NextRequest) {
     const isBurst = packNftId.startsWith("burst:")
     let lifecycle: Record<string, unknown> = { pack_nft_id: packNftId, status: "ripped" }
     if (!isBurst) {
-      const { data, error } = await boundedRead(sb.rpc("get_pack_lifecycle", { p_pack_nft_id: packNftId }), "api/wallet/pack-lifecycle/get_pack_lifecycle")
+      // ⛔ Pack NFT ids are per-contract (2,294 Golazos ids are also All Day
+      // rips): with a collection, read its own lifecycle RPC and never return a
+      // pack filed under another collection (lib/pack-detail/lifecycle-rpc.ts).
+      // The dashboard sends the history row's DB slug (laliga_golazos); accept
+      // the URL form too, as get_wallet_pack_pulls does.
+      const collectionUuid = collection
+        ? (getCollectionByUrlSlug(collection) ?? getCollectionByDbSlug(collection))?.id ?? null
+        : null
+      const rpc = lifecycleRpcFor(collectionUuid)
+      const { data, error } = await boundedRead(sb.rpc(rpc, { p_pack_nft_id: packNftId }), `api/wallet/pack-lifecycle/${rpc}`)
       if (error) {
         console.error("[wallet/pack-lifecycle]", error.message)
         return apiErrorResponse(error, "api/wallet/pack-lifecycle");
       }
-      lifecycle = { ...(data ?? {}) }
+      lifecycle = isFiledUnderAnotherCollection(data, collectionUuid)
+        ? { pack_nft_id: packNftId, status: "unknown" }
+        : { ...(data ?? {}) }
     }
 
     let pullsSource: string | null = null

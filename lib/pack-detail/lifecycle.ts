@@ -17,6 +17,7 @@
 import { supabaseAdmin } from "@/lib/supabase"
 import { withBoardBudget } from "@/lib/insights/board-page-fetch"
 import type { PackLifecycle } from "@/app/(collections)/[collection]/pack/[id]/types"
+import { isFiledUnderAnotherCollection, lifecycleRpcFor } from "@/lib/pack-detail/lifecycle-rpc"
 
 /**
  * ⚠ Both reads are keyed lookups on one pack, not aggregates, so they get a
@@ -33,18 +34,28 @@ export interface LifecycleResult {
   ok: boolean
 }
 
+/**
+ * ⛔ PACK NFT IDS ARE PER-CONTRACT, NOT GLOBAL (measured 2026-10-19: 2,294
+ * Golazos pack ids are also the ids of different All Day rips). get_pack_lifecycle
+ * is keyed on the id alone, so `/laliga-golazos/pack/<id>` rendered an All Day pack.
+ * With `collectionUuid`, the read goes to that collection's RPC and a payload filed
+ * under ANOTHER collection is refused — answered as "not in the index" (lifecycle
+ * null, ok true), never as the other collection's pack. Omitted, the historical
+ * unscoped read is kept.
+ */
 export async function fetchLifecycle(
   packNftId: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   db: any = supabaseAdmin,
   timeoutMs: number = PACK_LIFECYCLE_TIMEOUT_MS,
+  collectionUuid?: string,
 ): Promise<LifecycleResult> {
   try {
     const { data, error } = await withBoardBudget<{
       data: unknown
       error: { message: string } | null
     }>(
-      db.rpc("get_pack_lifecycle", { p_pack_nft_id: packNftId }),
+      db.rpc(lifecycleRpcFor(collectionUuid), { p_pack_nft_id: packNftId }),
       "pack-lifecycle",
       timeoutMs,
       "pack/",
@@ -54,6 +65,7 @@ export async function fetchLifecycle(
       return { lifecycle: null, ok: false }
     }
     if (!data || typeof data !== "object") return { lifecycle: null, ok: true }
+    if (isFiledUnderAnotherCollection(data, collectionUuid)) return { lifecycle: null, ok: true }
     return { lifecycle: data as PackLifecycle, ok: true }
   } catch (e) {
     console.log(`[pack-lifecycle] read bound for ${packNftId}:`, e instanceof Error ? e.message : e)
