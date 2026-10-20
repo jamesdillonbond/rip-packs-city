@@ -60,6 +60,14 @@ Live 10-17: `alerts-dispatch` 104/104 runs ok in 24 h; 14 `alert_deliveries` in 
   - FMV alerts fire on the transition; channel `both` delivers to both.
   - webz_80's four reports closed the loop by email.
 - **10-17:** `pipeline-failure-alerts` (ops paging) reads the whole hour instead of its newest ~27 min. Its source is now in git.
+- **10-19 (Claude Code cloud, one evening): the concierge covers Panini end to end.** Every tool was swept for what it does when a Panini page is the default scope. Fixed:
+  - **Wrong claims:** the prompt said Panini had "no Collection analyzer, no Sniper", and `explain_fmv` printed "Floor price is $0.00" (no Panini snapshot carries a floor).
+  - **Empty answers from tables with no Panini rows:** `search_live_deals` / `search_catalog_deals` (now the Sniper tab's snapshot), Panini `compare_pack_value` (now Panini's pack plane), `get_edition_listings` (now `panini_market_board`), `search_across_collections` (Panini was filtered out; now `paniniFloorReader`).
+  - **Substitutions:** `check_wallet` / `find_quirky_serials` / `analyze_wallet_holdings` resolved a Panini name as a Top Shot username (another person's wallet); `get_premiums` answered with Top Shot's boards on every collection.
+  - **Refusals of answerable questions:** `get_top_sales` refused Panini although its board has served Panini since 10-10.
+  - **New reads:** `get_insight_board` boards `panini_pack_market` (with a `rip_verdict`; never "+EV" unless the simulated P(pull ≥ cost) ≥ 50 %) and `panini_premiums`.
+  - **Honest refusals:** the team tools say Panini has no team data (0 of 36,511 editions carry one).
+- **10-19: Panini price alerts.** The edition page's Watch control was hidden on Panini because `edition_live_ask` (the dispatcher's ask) had no Panini source; it now reads `panini_market_board` (`20261020031908`), and the same evening the function's All Day / Candy arms were made ~5× cheaper (`20261020041750`). Detail and revert paths: ledger 10-19, [panini.md](../collections/panini.md).
 
 ## Open issues
 
@@ -84,6 +92,8 @@ Live 10-17: `alerts-dispatch` 104/104 runs ok in 24 h; 14 `alert_deliveries` in 
 
 **Later**
 5. **Concierge answers for the official Yearbook / Squad Goals scoring**, only once Trevor supplies it. RPC will not publish its own rank as Top Shot's.
+
+- ⚠ **Publishing a collection is not done until every concierge tool has been checked against it** (10-19 lesson; checklist in [concierge.md](../../reference/concierge.md), end). Panini was published 09-25 and sat three weeks with half the tools answering from tables that hold no Panini rows.
 
 ## Decisions on record (do not re-litigate)
 

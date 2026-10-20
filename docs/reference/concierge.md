@@ -192,3 +192,14 @@ Tests: 5 new cases in `__tests__/api-support-chat-check-wallet-fallback.test.ts`
 - **Real use, measured 10-11:** 0 human concierge turns since 10-03 and 1 open (10-10). Not breakage — Smoke Tests (alive daily, full battery Sundays) passed on every deploy that day, and opens were always beta-tester spikes (11 on 10-01, 8 on 09-29). `usage_events` `concierge_opened` / `chat-message-sent` are the instruments; `support_conversations` alone cannot tell "nobody asked" from "it broke".
 - **The concierge's escalation copy now matches the product** (second pass, above), and the chat client's failed sends are error bubbles excluded from the model's history — so the next transcript review reads real answers only.
 
+## A new collection is not "in the concierge" until every tool has been swept for it (2026-10-19)
+
+Panini was published 09-25. By 10-19 the concierge still said it had no Collection or Sniper tab, answered its deals, edition asks and cross-collection searches with "none" (they read tables holding 0 Panini rows), resolved a Panini name as a Top Shot username (another person's wallet), answered its premiums with Top Shot's boards, and refused its top sales. No test failed, because each tool was correct for the collections it was written against. The fixes are in the ledger (10-19, ten entries). The checklist that would have caught them, for the next collection:
+
+- **List every tool, then ask each one: when this collection is the page default, which table does it read, and does that table hold this collection's rows?** A tool reading a table with 0 rows for the collection answers "none". That is the worst kind of empty state: it concludes.
+- **A tool that ignores `collectionId` serves its home collection's rows under the page's name.** Either give it the new collection's source or refuse with `unsupported_collection` and the reason. Never let it fall through to Top Shot.
+- **Owner identity is chain-specific.** A username on one platform is not a username on another (Panini usernames vs Top Shot / Dapper). Never pass one through another platform's resolver.
+- **Check the prompt's hand-written claims against the registry** (`lib/collections.ts` `pages`). `__tests__/concierge-panini-boards.test.ts` now fails any sentence that denies a tab the registry lists, for every published collection.
+- **Check what the public boards already serve before building.** `get_top_sales` refused Panini for nine days while its own board filtered `panini_blockchain`.
+- **Route-level tests, each proven by a planted defect.** `__tests__/concierge-panini-edition-listings.test.ts` drives the real route with a Panini page context and asserts the Top Shot resolvers are never called.
+
