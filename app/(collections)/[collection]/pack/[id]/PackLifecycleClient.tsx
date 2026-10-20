@@ -136,7 +136,12 @@ export function TxChip({ hash }: { hash: string }) {
 // OwnershipTimeline — vertical dot-line-dot chain of purchase events
 // ─────────────────────────────────────────────────────────────────────────
 
-export function OwnershipTimeline({ events }: { events: OwnershipEvent[] }) {
+// ⚠ An EMPTY chain is an absence in OUR index, not a fact about the pack. The
+// empty state said "Acquired off-chain" — a conclusion no read supports, and on
+// Disney Pinnacle (RPC indexes 0 pack purchases) it was said of every pack
+// (2026-10-19). It now says what is known; `emptyNote` names a collection-level
+// reason when there is one.
+export function OwnershipTimeline({ events, emptyNote }: { events: OwnershipEvent[]; emptyNote?: string | null }) {
   if (events.length === 0) {
     return (
       <div
@@ -150,7 +155,10 @@ export function OwnershipTimeline({ events }: { events: OwnershipEvent[] }) {
           textAlign: "center",
         }}
       >
-        Acquired off-chain
+        No purchase on record
+        {emptyNote ? (
+          <div style={{ marginTop: 6, fontFamily: "var(--font-mono)", fontSize: 11 }}>{emptyNote}</div>
+        ) : null}
       </div>
     )
   }

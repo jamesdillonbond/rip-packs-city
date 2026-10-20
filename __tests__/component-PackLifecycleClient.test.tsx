@@ -158,6 +158,16 @@ describe("OwnershipTimeline", () => {
     expect((container.textContent ?? "").trim().length).toBeGreaterThan(0)
   })
 
+  // 2026-10-19: an empty chain is an absence in our index. "Acquired off-chain"
+  // concluded a fact from it — on Pinnacle (0 indexed pack buys) for every pack.
+  it("an empty chain never claims how the pack was acquired", () => {
+    const { container } = render(<OwnershipTimeline events={[]} emptyNote="Disney Pinnacle pack purchases aren't indexed yet." />)
+    const t = container.textContent ?? ""
+    expect(t).not.toContain("Acquired off-chain")
+    expect(t).toContain("No purchase on record")
+    expect(t).toContain("aren't indexed yet")
+  })
+
   it("renders one entry per ownership event, in the order given", () => {
     const events = [
       { buyer: "0x1111111111111111", seller: "0x2222222222222222", price_usd: 10, occurred_at: "2026-07-01T00:00:00Z", tx_hash: HASH, kind: "primary_withdraw" },

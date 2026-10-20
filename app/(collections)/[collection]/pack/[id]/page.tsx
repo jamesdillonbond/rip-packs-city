@@ -533,7 +533,16 @@ function PackLifecycleView({
       {/* Ownership chain */}
       <section style={{ marginBottom: "var(--space-2xl)" }}>
         <SectionHeading>Ownership chain</SectionHeading>
-        <OwnershipTimeline events={lifecycle.ownership_chain} />
+        <OwnershipTimeline
+          events={lifecycle.ownership_chain}
+          emptyNote={
+            routeSlug === "disney-pinnacle"
+              ? "Disney Pinnacle pack purchases aren't indexed yet."
+              : routeSlug === "laliga-golazos"
+                ? "Golazos pack sales are indexed through April 2023."
+                : null
+          }
+        />
       </section>
 
       {/* Rip perforation + pulls — only when ripped */}
