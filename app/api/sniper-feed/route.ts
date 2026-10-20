@@ -23,6 +23,7 @@ import {
 // `deals: []` and the UI concluded "No deals match your filters."
 import { createSourceFailureSink, sniperFeedDegraded, type SourceFailureSink } from "@/lib/sniper/source-failures";
 import { decorateAutographs, filterAutographsOnly, isAutographCollection } from "@/lib/sniper/autograph-decorate";
+import { AUTOGRAPH_BADGE_SLUG, AUTOGRAPH_BADGE_TITLE, fetchTopShotAutographedKeys } from "@/lib/autographs";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -2128,7 +2129,7 @@ async function computeSniperFeed(opts: {
   ));
 
   // 4. Fire all Supabase lookups in parallel
-  const [fmvMap, badgeRead, jerseyMap, retiredIds, teamOptions] = await Promise.all([
+  const [fmvMap, badgeRead, jerseyMap, retiredIds, teamOptions, signedRead] = await Promise.all([
     fetchFmvBatch(supabase, Array.from(tsEditionKeys)).catch(() => new Map<string, any>()),
     fetchBadgesByEditionKey(supabase).catch(() => ({
       map: new Map<string, Array<{ id: string; title: string }>>(),
@@ -2137,12 +2138,25 @@ async function computeSniperFeed(opts: {
     fetchJerseyNumbers(supabase, allPlayerNames).catch(() => new Map<string, string>()),
     fetchRetiredMomentIds(supabase).catch(() => new Set<string>()),
     fetchLeagueTeamOptions(supabase, TOPSHOT_LEAGUES).catch(() => [] as string[]),
+    fetchTopShotAutographedKeys(supabase as any, "sniper-feed/autographs#badges"),
   ]);
   console.log(`[sniper-feed] retiredIds size=${retiredIds.size}`);
   const badgeMap = badgeRead.map;
+  // A signed edition is a badge too, and it must be in the map BEFORE "Badges only"
+  // filters on it — otherwise a signed edition with no moment tag was dropped here and
+  // the later autograph decoration never saw it.
+  if (signedRead.ok) {
+    for (const key of signedRead.value) {
+      const tags = badgeMap.get(key) ?? [];
+      if (!tags.some((t) => t.id === AUTOGRAPH_BADGE_SLUG)) {
+        badgeMap.set(key, [{ id: AUTOGRAPH_BADGE_SLUG, title: AUTOGRAPH_BADGE_TITLE }, ...tags]);
+      }
+    }
+  }
   // With "Badges only" the badge map is the filter, so an incomplete read
   // suppresses deals and must not read as a quiet board (see fetchBadgesByEditionKey).
   if (badgeOnly && !badgeRead.complete) sink.note("badge_editions");
+  if (badgeOnly && !signedRead.ok) sink.note("autographs");
 
   // 4b. Enrich the RPC augment rows with REAL badges, then apply the
   // badge/serial predicates to them.

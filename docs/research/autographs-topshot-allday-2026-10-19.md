@@ -71,3 +71,26 @@ Rookie Debut: Signature Edition /50 (45/45) · Metallic Gold LE Signature Editio
 - **Sniper**: signed deals carry the `autograph` badge ("Auto"); new **AUTOGRAPHS ONLY** filter (Top Shot + All Day; `?autographOnly=true`). A failed autograph read degrades the board under that filter (`sourcesFailed: ["autographs"]`), never an empty "nothing signed" board. All Day rows are matched on player + set, claimed only when every edition of the pair is signed.
 - **Wallet Collection tab**: "Autographed" pill (via `/api/badges`) + **✍ AUTOGRAPHS** toggle.
 - **Concierge**: every edition row carries `autographed` — true / false (Atlas-verified unsigned, needs a check row) / null (not checked).
+
+## Decided NOT to build (2026-10-19 ~9:55 PM PT): pricing a signed edition off its unsigned printing
+
+**Question:** would "the unsigned counterpart's 30-day median sale × the set's signed/unsigned multiple" predict a signed edition's sales better than the edition's own FMV?
+
+**Backtest** (one query, re-runnable): every sale of a signed edition in the past 365 days that has a counterpart. The counterpart is the base set's edition for "Signature Edition" sets, or the Blockchain /99 for a signed Rookie Debut Hardcourt.
+- Predictor A is the edition's newest `fmv_snapshots` row computed BEFORE the sale.
+- Predictor B is the counterpart's median sale in the 30 days before the sale × the cell's median multiple over the OTHER pairs (leave-one-out by edition, all-time medians — a leak in the model's FAVOUR).
+- Error is |ln(predicted / sold)|.
+
+| cell | sales with both | FMV error | model error | model wins |
+|---|---|---|---|---|
+| **all** | **363 of 1,706** | **0.240** | **0.307** | **43 %** |
+| WNBA Rookie Debut / Hardcourt | 210 | 0.194 | 0.251 | 39 % |
+| WNBA Rookie Debut 2025 – Signature Edition | 44 | 0.447 | 0.629 | 30 % |
+| Rookie Debut / Hardcourt | 40 | 0.286 | 0.421 | 53 % |
+| Rookie Debut: Signature Edition (All Day) | 23 | 0.588 | 0.552 | 61 % |
+| WNBA Fresh Gems: Signature Edition | 18 | 0.196 | 0.419 | 44 % |
+| Metallic Gold LE Signature Edition | 16 | 0.312 | 0.204 | 63 % |
+| WNBA Rookie Revelation: Signature Edition | 7 | 0.642 | 0.328 | 71 % |
+
+**Verdict:** the model is worse where both exist, including the two largest cells, even with a leak helping it. Its wins sit in cells of 7–23 sales. Under the accuracy gate it must not price the editions FMV leaves unpriced either: a predictor that loses where it can be checked has not earned the places where it cannot. Revisit only with a new estimator, and beat 0.240 on this same query first.
+

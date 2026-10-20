@@ -239,6 +239,25 @@ describe("sniper-feed enrichment fan-out (populated lookups)", () => {
     expect(body.sourcesFailed ?? []).not.toContain("badge_editions")
   })
 
+  // 2026-10-19: a signed edition is a badge, and it joins the badge map BEFORE
+  // "Badges only" filters — a signed edition with no moment tag used to be
+  // dropped there, before the autograph decoration ever saw it.
+  it("badgeOnly keeps a SIGNED edition that carries no moment tag", async () => {
+    const t = enrichedTables({ badge_editions: { data: [] } })
+    t.editions.data[0] = { ...t.editions.data[0], autographed_at: "2025-09-18T00:00:00Z" } as never
+    fx.tables = t
+    const body = await (await GET(get("?collection=nba-top-shot&badgeOnly=true"))).json()
+    expect(body.deals.length).toBeGreaterThan(0)
+    expect(body.deals[0].badgeSlugs).toContain("autograph")
+    expect(body.deals[0].isAutographed).toBe(true)
+  })
+
+  it("badgeOnly drops an UNSIGNED edition that carries no moment tag (no-change control)", async () => {
+    fx.tables = enrichedTables({ badge_editions: { data: [] } })
+    const body = await (await GET(get("?collection=nba-top-shot&badgeOnly=true"))).json()
+    expect(body.deals).toHaveLength(0)
+  })
+
   it("badgeOnly with a complete badge read reports no badge failure", async () => {
     fx.tables = enrichedTables()
     const body = await (await GET(get("?collection=nba-top-shot&badgeOnly=true"))).json()
