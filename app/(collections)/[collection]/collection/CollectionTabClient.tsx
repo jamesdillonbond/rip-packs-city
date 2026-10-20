@@ -202,22 +202,22 @@ function WalletMomentsBody() {
   // Hydrate filter state from localStorage on mount
   useEffect(function() {
     try {
-      var stored = function(key: string) { return localStorage.getItem("rpc_collection_" + key) }
-      var sk = stored("sortKey")
+      const stored = function(key: string) { return localStorage.getItem("rpc_collection_" + key) }
+      const sk = stored("sortKey")
       if (sk) dispatchView({ type: "SET", field: "sortKey", value: JSON.parse(sk) as SortKey })
-      var sd = stored("sortDirection")
+      const sd = stored("sortDirection")
       if (sd) dispatchView({ type: "SET", field: "sortDirection", value: JSON.parse(sd) as "asc" | "desc" })
-      var pf = stored("playerFilter")
+      const pf = stored("playerFilter")
       if (pf) dispatchView({ type: "SET", field: "playerFilter", value: JSON.parse(pf) })
-      var sf = stored("setFilter")
+      const sf = stored("setFilter")
       if (sf) dispatchView({ type: "SET", field: "setFilter", value: JSON.parse(sf) })
-      var serf = stored("seriesFilter")
+      const serf = stored("seriesFilter")
       if (serf) dispatchView({ type: "SET", field: "seriesFilter", value: JSON.parse(serf) })
-      var rf = stored("rarityFilter")
+      const rf = stored("rarityFilter")
       if (rf) dispatchView({ type: "SET", field: "rarityFilter", value: JSON.parse(rf) })
-      var lf = stored("lockedFilter")
+      const lf = stored("lockedFilter")
       if (lf) dispatchView({ type: "SET", field: "lockedFilter", value: JSON.parse(lf) })
-      var bf = stored("badgeFilter")
+      const bf = stored("badgeFilter")
       if (bf) dispatchView({ type: "SET", field: "badgeFilter", value: JSON.parse(bf) === true })
     } catch {}
   }, [])

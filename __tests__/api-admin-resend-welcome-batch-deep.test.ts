@@ -91,7 +91,7 @@ describe("POST /api/admin/resend-welcome-batch", () => {
     const body = await (await POST(post({ qs: "?dormant_since_days=7" }))).json()
     expect(body.mode).toBe("dormant")
     expect(body.matched).toBe(1) // only 0xunseen remains
-    expect(body.dormant_since_days).toBeUndefined // not on the response body (it's in extra)
+    expect(body.dormant_since_days).toBeUndefined() // not on the response body (it's in extra)
   })
   it("dormant mode: an invalid days value → 500", async () => {
     expect((await POST(post({ qs: "?dormant_since_days=0" }))).status).toBe(500)

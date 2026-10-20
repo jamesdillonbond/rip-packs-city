@@ -1682,7 +1682,7 @@ async function runIngest(env: Env, mode: Mode, startedMs: number): Promise<Respo
   let alldayForwardChunks = 0;
   let alldayForwardEvents = 0;
   let alldayForwardActualCursor = 0;
-  let alldayForwardCounts: PurchasesFlushCounts = { ...EMPTY_PURCHASES_COUNTS };
+  const alldayForwardCounts: PurchasesFlushCounts = { ...EMPTY_PURCHASES_COUNTS };
   const alldayForwardAccumulated: PurchaseRow[] = [];
 
   if (mode === "live") {

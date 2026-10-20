@@ -374,7 +374,7 @@ export async function POST(req: NextRequest) {
         throw new Error(`cursor read error: ${cursorErr.message}`)
       }
 
-      let lastBlock = Number(cursorRow?.last_processed_block ?? 0)
+      const lastBlock = Number(cursorRow?.last_processed_block ?? 0)
       const currentHeight = await getLatestSealedHeight()
 
       // First-run init: anchor cursor at sealed tip and exit. We only want

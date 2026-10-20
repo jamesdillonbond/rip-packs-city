@@ -934,10 +934,10 @@ async function main() {
     // both only worth doing on a page that actually rendered this card's data.
     if (got) await loadAllSerialPages();
     if (got) {
-      if (await openSalesHistory()) { salesPages++; (await openRecentSales()) ? recentPages++ : recentMissed++; }
+      if (await openSalesHistory()) { salesPages++; if (await openRecentSales()) recentPages++; else recentMissed++; }
       else salesTabMissed++;
     }
-    walked++; got ? captured++ : missed++;
+    walked++; if (got) captured++; else missed++;
     if (walked % 50 === 0) console.log(`[panini-runner] progress ${walked}/${pskus.length} captured=${captured} missed=${missed} sales_pages=${salesPages} sales_records=${salesRecords} ${Math.round((Date.now()-tWalk)/60000)}m`);
     if (cards.length + serials.length + sales.length >= BATCH) { await post({ cards, serials, sales }); cards = []; serials = []; sales = []; }
   }

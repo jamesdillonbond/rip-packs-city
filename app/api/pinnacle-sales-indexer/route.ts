@@ -171,7 +171,7 @@ async function runIndexer(req: NextRequest) {
       return NextResponse.json({ error: "Failed to read cursor" }, { status: 500 })
     }
 
-    let lastBlock = Number(cursorRow?.last_processed_block ?? 0)
+    const lastBlock = Number(cursorRow?.last_processed_block ?? 0)
     const currentHeight = await getLatestSealedHeight()
     if (lastBlock >= currentHeight) {
       // Even when there's nothing new to scan, fire the resolver so any

@@ -1882,7 +1882,7 @@ export async function runPaginatedDetailsBackfill(args: PaginatedBackfillArgs): 
         break
       }
       const count = Math.min(activeChunk, onChainIds.length - start)
-      let chunkRows: Array<Record<string, unknown>> = []
+      const chunkRows: Array<Record<string, unknown>> = []
       try {
         if (mode === "allday") {
           const raw = await withFlowTimeout(

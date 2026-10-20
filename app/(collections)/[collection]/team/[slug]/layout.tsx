@@ -67,19 +67,22 @@ export default async function TeamSegmentLayout({ children, params }: LayoutProp
   // slug — so the canonical target can only ever resolve via the primary lane
   // and immediately compares equal. Fails OPEN on any RPC error/throw.
   let detail: { team_name?: string | null } | null = null
+  let failOpen = false
   try {
     const { data, error } = await fetchEntityDetailRaw("team", coll.id, slug)
     if (error) {
       console.warn(`[team-layout] detail rpc error slug=${slug}: ${error.message} — failing OPEN`)
-      return <>{children}</>
+      failOpen = true
+    } else {
+      detail = firstEntityRow<{ team_name?: string | null }>(data)
     }
-    detail = firstEntityRow<{ team_name?: string | null }>(data)
   } catch (err) {
     console.warn(
       `[team-layout] detail rpc threw slug=${slug}: ${err instanceof Error ? err.message : String(err)} — failing OPEN`,
     )
-    return <>{children}</>
+    failOpen = true
   }
+  if (failOpen) return <>{children}</>
 
   if (detail == null) notFound()
 

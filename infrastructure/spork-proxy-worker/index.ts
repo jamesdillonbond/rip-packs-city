@@ -7,7 +7,7 @@
 // Forwards Flow REST API requests to historical access nodes on port 8070.
 // Used by Supabase edge functions to scan pre-current-spork blockchain history.
 
-export interface Env {}
+export type Env = Record<string, never>
 
 const SPORK_NODES: Record<string, string> = {
   mainnet24: "http://access-001.mainnet24.nodes.onflow.org:8070",

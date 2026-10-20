@@ -516,7 +516,7 @@ export default function SupportChat({ pageContext, pageEntity, collectionId, use
         // Returning beta tester: rewrite the welcome with a warmer, status-aware message.
         if (ctx.returningBetaTester) {
           const open = ctx.lastOpenFeedback;
-          let nameLine = ownerKey ? `Welcome back, ${ownerKey}.` : "Welcome back.";
+          const nameLine = ownerKey ? `Welcome back, ${ownerKey}.` : "Welcome back.";
           let statusLine: string | null = null;
           // 2026-10-03: what shipped SINCE THEY WERE LAST HERE outranks the
           // status of the single newest row. `null` = the read failed (unknown),

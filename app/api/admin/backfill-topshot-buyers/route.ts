@@ -200,7 +200,7 @@ export async function POST(req: NextRequest) {
         // `decodeTopShotSaleTxViaSpork` learns a new buyer path, these rows are
         // candidates again — run a one-off pass with this predicate removed rather
         // than deleting it here, and watch `exhausted_in_window` fall.
-        let q = (supabaseAdmin as any)
+        const q = (supabaseAdmin as any)
           .from("sales")
           .select("id, nft_id, transaction_hash, sold_at, seller_address")
           .eq("collection", "nba_top_shot")
