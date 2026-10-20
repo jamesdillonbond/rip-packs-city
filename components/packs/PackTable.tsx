@@ -394,6 +394,14 @@ function trackPackBuyClick(collection: string, r: PackRow, href: string, surface
   })
 }
 
+// Rows render in pages of PACK_PAGE (2026-10-20). The board loads up to 500 packs
+// and rendered every one TWICE — the desktop table and the mobile cards, one of
+// them hidden by CSS — so the Top Shot board was ~30,600 elements and ~1,000
+// images on first paint (measured against production data). Same pattern as the
+// Sniper (SNIPER_PAGE): the count resets whenever the rows or the sort change
+// (keyed, not reset in an effect).
+export const PACK_PAGE = 100
+
 export default function PackTable({
   rows,
   collection,
@@ -426,6 +434,12 @@ export default function PackTable({
     })
     return arr
   }, [rows, sortKey, sortDir])
+
+  const [pageSel, setPageSel] = useState<{ rows: PackRow[]; sortKey: SortKey; sortDir: 'asc' | 'desc'; n: number }>(
+    { rows, sortKey, sortDir, n: PACK_PAGE },
+  )
+  const shownCount = pageSel.rows === rows && pageSel.sortKey === sortKey && pageSel.sortDir === sortDir ? pageSel.n : PACK_PAGE
+  const shown = sorted.slice(0, shownCount)
 
   const setSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -487,7 +501,7 @@ export default function PackTable({
             </tr>
           </thead>
           <tbody>
-            {sorted.map((r) => (
+            {shown.map((r) => (
               <tr
                 key={r.id}
                 onClick={(e) => { const t = e.target as HTMLElement; if (t.closest('a,button')) return; if (r.detailHref) router.push(r.detailHref) }}
@@ -670,7 +684,7 @@ export default function PackTable({
 
       {/* Mobile + small tablet: card layout */}
       <div className={`md:hidden space-y-2 ${className}`}>
-        {sorted.map((r) => (
+        {shown.map((r) => (
           <div key={r.id} role="presentation" onClick={(e) => { const t = e.target as HTMLElement; if (t.closest('a,button')) return; if (r.detailHref) router.push(r.detailHref) }} className={'rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-3' + (r.detailHref ? ' cursor-pointer' : '')}>
             <div className="flex items-start gap-3">
               {r.detailHref ? (
@@ -820,6 +834,19 @@ export default function PackTable({
           </div>
         ))}
       </div>
+
+      {sorted.length > shown.length && (
+        <div className="flex items-center justify-center gap-3 flex-wrap" style={{ marginTop: 12, fontFamily: 'var(--font-mono)', fontSize: 'var(--text-sm)', color: 'var(--rpc-text-muted)' }}>
+          <span>SHOWING {shown.length} OF {sorted.length}</span>
+          <button
+            type="button"
+            className="rpc-chip min-h-[44px]"
+            onClick={() => setPageSel({ rows, sortKey, sortDir, n: shown.length + PACK_PAGE })}
+          >
+            SHOW {Math.min(PACK_PAGE, sorted.length - shown.length)} MORE
+          </button>
+        </div>
+      )}
     </>
   )
 }

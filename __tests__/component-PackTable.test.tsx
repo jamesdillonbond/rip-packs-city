@@ -17,7 +17,7 @@ vi.mock("next/link", () => ({
   ),
 }))
 
-import PackTable, { type PackRow, depletionAgeLabel } from "@/components/packs/PackTable"
+import PackTable, { type PackRow, depletionAgeLabel, PACK_PAGE } from "@/components/packs/PackTable"
 
 afterEach(() => {
   cleanup()
@@ -432,5 +432,41 @@ describe("PackTable — row navigation + header sort", () => {
     expect(ages.some((a) => /^as of 11[01]d ago$/.test(a ?? ""))).toBe(true)
     expect(depletionAgeLabel(null)).toBe("age unknown")
     expect(depletionAgeLabel(undefined)).toBe("age unknown")
+  })
+})
+
+// 2026-10-20: the board loads up to 500 packs and rendered every one twice (the
+// desktop table AND the hidden mobile cards) — ~30,600 elements on Top Shot. Both
+// layouts now page by PACK_PAGE, like the Sniper.
+describe("PackTable — rows render a page at a time", () => {
+  const many = () => Array.from({ length: 250 }, (_, i) => row({ title: `Pack ${i}`, evMarginPct: (250 - i) / 1000 }))
+
+  it("renders the first PACK_PAGE rows in BOTH layouts, not all of them", () => {
+    const { container } = render(<PackTable rows={many()} collection="nba-top-shot" />)
+    expect(container.querySelectorAll("tbody tr")).toHaveLength(PACK_PAGE)
+    expect(container.querySelectorAll(".md\\:hidden > div")).toHaveLength(PACK_PAGE)
+    expect(container.textContent).toContain(`SHOWING ${PACK_PAGE} OF 250`)
+  })
+
+  it("SHOW MORE adds the next page, and the last page names only what is left", () => {
+    const { container, getByRole } = render(<PackTable rows={many()} collection="nba-top-shot" />)
+    fireEvent.click(getByRole("button", { name: `SHOW ${PACK_PAGE} MORE` }))
+    expect(container.querySelectorAll("tbody tr")).toHaveLength(2 * PACK_PAGE)
+    fireEvent.click(getByRole("button", { name: "SHOW 50 MORE" }))
+    expect(container.querySelectorAll("tbody tr")).toHaveLength(250)
+    expect(container.textContent).not.toContain("SHOWING")
+  })
+
+  it("a new row set starts again at the first page", () => {
+    const { container, getByRole, rerender } = render(<PackTable rows={many()} collection="nba-top-shot" />)
+    fireEvent.click(getByRole("button", { name: `SHOW ${PACK_PAGE} MORE` }))
+    rerender(<PackTable rows={many()} collection="nba-top-shot" />)
+    expect(container.querySelectorAll("tbody tr")).toHaveLength(PACK_PAGE)
+  })
+
+  it("a board of PACK_PAGE or fewer shows no pager", () => {
+    const { container } = render(<PackTable rows={many().slice(0, 40)} collection="nba-top-shot" />)
+    expect(container.querySelectorAll("tbody tr")).toHaveLength(40)
+    expect(container.textContent).not.toContain("SHOW")
   })
 })
