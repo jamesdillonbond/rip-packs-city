@@ -640,6 +640,15 @@ const PINS = [
     migration: "supabase/migrations/20261011050000_audit_20261010_pack_ev_keys_a_dist_dapper_never_indexed_by_its_dist_id.sql",
   },
   {
+    // Added 2026-10-19. Pins the verdicts that withdraw a supply counter contradicting the opens
+    // we observed. A box/case writes no rip row, so its opens come from Dapper's index -- valid
+    // for "opened by the stamp" only (checked_at bounds the open time from above).
+    fn: "refresh_pack_supply_counter_checks",
+    test: "supabase/tests/refresh_pack_supply_counter_checks.sql",
+    migration:
+      "supabase/migrations/20261020044126_audit_20261019_counter_checks_count_container_opens_dapper_confirmed.sql",
+  },
+  {
     // Added 2026-09-26. Pins the lane that prices every pack a saved wallet
     // OPENED from Dapper's own list of what it yielded (searchPackNft.nfts):
     // collection-scoped edition resolution, whole-pack all-or-nothing pricing
