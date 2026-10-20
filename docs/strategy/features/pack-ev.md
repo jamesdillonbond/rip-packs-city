@@ -34,6 +34,24 @@ Three values must never be labelled as one another (packs.md 09-26): the EV of w
 
 - **10-18 ~8:10 PM PT (Cowork cloud):** Pack Net P&L counts packs with no buy row (inferred drop cost) in its spend-coverage floor, and the Collection tab's Packs view now withholds on the same rule — it had published per-collection Net P&L with no check (ledger 10-18; `57e945a`).
 
+## Cross-collection parity (2026-10-19 ~8 PM PT, Claude Code cloud)
+
+Shipped this pass (ledger 10-19):
+- **Golazos dist page:** observed lifecycle and realized pull value (`v_golazos_pack_lifecycle`, complete open history: 78,830 = the index total).
+- **All Day and Golazos dist pages:** "What drives the remaining EV" (`get_pack_ev_contributors` 3-arg, takes the collection).
+- **Golazos single-pack page** `/laliga-golazos/pack/<id>`: `get_golazos_pack_lifecycle`.
+- ⛔ **PackNFT ids are per-contract.** 2,294 Golazos pack ids are also the ids of different All Day rips. Every single-pack read is now collection-scoped (`lib/pack-detail/lifecycle-rpc.ts`).
+- **Collection tab "Packs" column** reads the collection's own PackNFT type (TS/AD/Golazos). It used to read Top Shot's packs on every collection. Collections with no source show no column.
+- **Pinnacle pack rows** link to no simulator (0 `pack_drop_pool` rows).
+
+Still open, with the reason each one waits:
+- **Golazos / Pinnacle sealed resale and pack sales history:** no secondary data. `golazos_pack_sales_history` is drop (primary) sales only, ending 2023-04. Pinnacle has 0 pack buys.
+- **Pack Sniper beyond TS/AD:** Golazos had 1 collector-listed dist (read 10-19). Pinnacle has no Flow listing feed.
+- **Pinnacle single-pack page:** `pinnacle_pack_opens.opener_address` is the platform custodian for ~99 % of opens, and its pulls need the render-grain join (`pinnacle_catalog`), not `editions`.
+- **Pinnacle simulator, grails and top pulls:** blocked on a drop pool. EV is render-pooled per drop (#157), and no table holds the pool.
+- **`/analytics/packs`** lists UFC, which has no packs, and omits Panini and Candy, which have their own pack planes.
+- **Insights pack-reality and pack-market boards** are TS/AD only. A Golazos realized board would have no modeled side, because pulls are priced years after the open.
+
 ## Open issues
 
 - **Pre-2023-11-08 Top Shot custodial pack opens are missing** for 33 of 34 saved wallets (#190). Declined: every free source is ruled out, and the keyed ones are infra spend.
