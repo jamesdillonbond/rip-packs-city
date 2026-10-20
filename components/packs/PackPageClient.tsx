@@ -4,6 +4,7 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import PackTable, { type PackRow, type SortKey as TableSortKey } from './PackTable'
 import GrailsView from './GrailsView'
+import { collectionHasDropPool } from '@/lib/packs/drop-pool'
 import { useWarmCache } from '@/lib/warmup/WarmupContext'
 import { topshotPackUrl, dapperMarketPackUrl } from '@/lib/pack-urls'
 import { packEvBasis, derivePackAvailability } from '@/lib/pack-availability'
@@ -238,9 +239,9 @@ function toPackRow(
     // for Top Shot, All Day and Golazos. Disney Pinnacle EV is priced per DROP
     // from its render pool (#157) and has no `pack_drop_pool` rows (0 of 159
     // dists, read 2026-10-19), so its link opened an empty simulator: no link.
-    simulatorHref: collectionUrlSlug === 'disney-pinnacle'
-      ? null
-      : `/${collectionUrlSlug}/packs/simulator/${r.dist_id}`,
+    simulatorHref: collectionHasDropPool(collectionUrlSlug)
+      ? `/${collectionUrlSlug}/packs/simulator/${r.dist_id}`
+      : null,
     // Buy link — only set when we have a live overlay (so the listing is
     // confirmed active). The old ?packListingId= deep link is dead (TS rotated
     // the pattern May 2026, see lib/pack-urls.ts); use the centralized
@@ -496,19 +497,22 @@ export default function PackPageClient({ collection, tiers, title, accent = 'var
           >
             Standard
           </button>
+          {/* Grails reads pack_grail_metrics_mv, built from the drop pool: none for
+              Pinnacle, whose grid could only say "No grail-bearing packs matched.
+              Try lowering the filters" — so no toggle there (2026-10-19). */}
           {/* brand-exception: active button text-white sits on backgroundColor:accent fill */}
-          <button
+          {collectionHasDropPool(collection) && <button
             onClick={() => setViewMode('grails')}
             className={'rounded-md px-3 py-1 text-xs font-semibold uppercase tracking-wide transition ' + (viewMode === 'grails' ? 'text-white' : 'text-[color:var(--rpc-text-secondary)] hover:text-[color:var(--rpc-text-primary)]')}
             style={viewMode === 'grails' ? { backgroundColor: accent } : undefined}
             title="Chase-led card grid powered by pack_grail_metrics_mv"
           >
             Grails
-          </button>
+          </button>}
         </div>
       </div>
 
-      {viewMode === 'grails' && (
+      {viewMode === 'grails' && collectionHasDropPool(collection) && (
         <Suspense fallback={null}>
           <GrailsView collection={collection} accent={accent} />
         </Suspense>

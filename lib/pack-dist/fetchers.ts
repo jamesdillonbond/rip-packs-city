@@ -43,6 +43,7 @@
 
 import { supabaseAdmin } from "@/lib/supabase"
 import { getCollection } from "@/lib/collections"
+import { collectionHasDropPool } from "@/lib/packs/drop-pool"
 import { rpcWithRetry } from "@/lib/analytics/rpc-with-retry"
 import { computeTopPulls, type TopPull } from "@/lib/pack-dist-odds"
 import { withBoardBudget } from "@/lib/insights/board-page-fetch"
@@ -771,11 +772,9 @@ export async function fetchPackMarket(
 
 // ── Pool-derived reads ──────────────────────────────────────────────────────
 
-const EV_CONTRIBUTOR_COLLECTIONS: ReadonlySet<string> = new Set(["nba-top-shot", "nfl-all-day", "laliga-golazos"])
-
 /** True when the pack page can list "What drives the remaining EV" for this collection. */
 export function hasEvContributors(collectionSlug: string): boolean {
-  return EV_CONTRIBUTOR_COLLECTIONS.has(collectionSlug)
+  return collectionHasDropPool(collectionSlug)
 }
 
 export async function fetchEvContributors(
@@ -787,7 +786,7 @@ export async function fetchEvContributors(
   // Top Shot, All Day, Golazos; the RPC takes the collection, its pool and FMV
   // both scoped to it). Pinnacle prices per drop from its render pool (#157) and
   // has no pool rows, so it issues no read.
-  const collectionId = EV_CONTRIBUTOR_COLLECTIONS.has(collectionSlug)
+  const collectionId = collectionHasDropPool(collectionSlug)
     ? getCollection(collectionSlug)?.supabaseCollectionId
     : undefined
   if (!collectionId) return { rows: [], ok: true }

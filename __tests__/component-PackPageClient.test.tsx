@@ -306,3 +306,18 @@ describe("PackPageClient — filters, quick toggles, sort, price range", () => {
     expect(rowsText(container)).toContain("rows:2")
   })
 })
+
+// 2026-10-19: Grails reads pack_grail_metrics_mv, built from pack_drop_pool.
+// Pinnacle has no pool, so its grid could only say "No grail-bearing packs
+// matched. Try lowering the filters" — a claim no filter can change.
+describe("PackPageClient — Grails toggle only where a drop pool exists", () => {
+  it("Top Shot offers Grails", () => {
+    const { queryByText } = render(<PackPageClient {...baseProps} />)
+    expect(queryByText("Grails")).not.toBeNull()
+  })
+  it("Pinnacle offers no Grails toggle", () => {
+    const { queryByText } = render(<PackPageClient {...baseProps} collection="disney-pinnacle" />)
+    expect(queryByText("Grails")).toBeNull()
+    expect(queryByText("Standard")).not.toBeNull()
+  })
+})

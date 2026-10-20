@@ -10,6 +10,7 @@
 // pack-lifecycle.
 
 import { useCallback, useEffect, useMemo, useState } from "react"
+import { collectionHasDropPool } from "@/lib/packs/drop-pool"
 import { fmtUsd, relativeTime } from "@/lib/dashboard/format"
 import { currencySuffix, displayCurrency, isUsdPegged } from "@/lib/usd-format"
 import { packCoverage } from "@/lib/packs-wallet-view-format"
@@ -762,6 +763,14 @@ function ExpandableRow({ row, isOpen, lifecycle, onClick }: { row: HistoryRow; i
   const sc = statusColor(row.status)
   const packNameContent = row.pack_name ?? `Pack #${row.pack_nft_id.slice(-6)}`
   const showLink = row.dist_id != null
+  // The simulator samples the drop pool; a collection with none (Pinnacle) links
+  // the drop's own page instead of an empty simulator (2026-10-19).
+  const rowUrlSlug = urlSlug(row.collection_slug)
+  const packHref = row.dist_id == null
+    ? null
+    : collectionHasDropPool(rowUrlSlug)
+      ? `/${rowUrlSlug}/packs/simulator/${encodeURIComponent(row.dist_id)}`
+      : `/${rowUrlSlug}/pack/dist/${encodeURIComponent(row.dist_id)}`
   return (
     <>
       <tr
@@ -785,7 +794,7 @@ function ExpandableRow({ row, isOpen, lifecycle, onClick }: { row: HistoryRow; i
               {showLink ? (
                 <Link
                   onClick={(e) => e.stopPropagation()}
-                  href={`/${urlSlug(row.collection_slug)}/packs/simulator/${encodeURIComponent(row.dist_id!)}`}
+                  href={packHref!}
                   style={{ color: "var(--rpc-text-primary)", textDecoration: "none", fontFamily: condensedFont, fontWeight: 700, fontSize: 13, letterSpacing: "0.02em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
                 >
                   {packNameContent}
@@ -910,7 +919,7 @@ function LifecycleDetail({ lifecycle, row }: { lifecycle: any; row: HistoryRow }
           What this pack pulled isn&apos;t identified yet.
         </div>
       )}
-      {row.dist_id && (
+      {row.dist_id && collectionHasDropPool(urlSlug(row.collection_slug)) && (
         <div>
           <Link
             href={`/${urlSlug(row.collection_slug)}/packs/simulator/${encodeURIComponent(row.dist_id)}`}
