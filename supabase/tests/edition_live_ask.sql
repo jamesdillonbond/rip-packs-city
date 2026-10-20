@@ -1,13 +1,13 @@
 -- DB invariant: public.edition_live_ask(uuid, text) -- the LIVE low ask of ONE edition, read
 -- by both FMV-alert functions (check_triggered_fmv_alerts, dispatch_triggered_fmv_alerts).
 -- The SQL twin of lib/asks/edition-live-ask.ts. Pinned: source priority (All Day floor / Candy
--- confirmed floor > edition_offers seen <= 7 d > badge_editions <= 7 d), freshness on
+-- confirmed floor / Panini confirmed ask > edition_offers seen <= 7 d > badge_editions <= 7 d), freshness on
 -- low_ask_confirmed_at (NOT updated_at) for edition_offers, the <= 3x FMV gate with the first
 -- CONNECTED candidate winning, no FMV -> no ask, a zero ask ignored, and the EDITION key: a
 -- same-named key in another collection is never read (#183: the old name match mixed parallels).
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20261010142824_audit_20261010_fmv_alerts_read_the_editions_own_live_ask.sql);
+-- (supabase/migrations/20261020031908_audit_20261019_edition_live_ask_reads_panini_confirmed_ask.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -20,6 +20,8 @@ CREATE TABLE allday_edition_floor_ask (edition_id uuid, floor_ask numeric);
 CREATE TABLE candy_listing_floor (edition_id uuid, confirmed_floor_usd numeric);
 CREATE TABLE edition_offers (collection_id uuid, external_id text, low_ask numeric, low_ask_confirmed_at timestamptz, updated_at timestamptz);
 CREATE TABLE badge_editions (collection_id uuid, external_id text, low_ask numeric, updated_at timestamptz);
+CREATE TABLE panini_market_board (external_id text, low_ask_usd numeric);
+CREATE TABLE collections (id uuid, slug text);
 
 -- >>> BEGIN verbatim edition_live_ask (keep byte-identical to the migration) >>>
 CREATE OR REPLACE FUNCTION public.edition_live_ask(p_collection_id uuid, p_edition_key text)
@@ -31,6 +33,7 @@ AS $function$
   -- The LIVE low ask of ONE edition: what a buyer would pay now. The SQL twin of
   -- lib/asks/edition-live-ask.ts (resolveLiveAsks); keep the two rules identical.
   --   priority 1: allday_edition_floor_ask (ghost listings excluded) / candy_listing_floor.confirmed_floor_usd
+  --               / panini_market_board.low_ask_usd (Panini: lowest ask re-confirmed in 7 d; 2026-10-19)
   --   priority 2: edition_offers.low_ask last SEEN (low_ask_confirmed_at) within 7 days
   --   priority 3: badge_editions.low_ask updated within 7 days
   -- An ask is returned only when the edition has an FMV and the ask is <= 3x it
@@ -48,6 +51,12 @@ AS $function$
     UNION ALL
     SELECT c.confirmed_floor_usd, 'candy_confirmed_floor', 1
       FROM public.candy_listing_floor c JOIN ed ON c.edition_id = ed.id
+    UNION ALL
+    SELECT m.low_ask_usd, 'panini_confirmed_ask', 1
+      FROM public.panini_market_board m
+     WHERE m.external_id = p_edition_key
+       AND EXISTS (SELECT 1 FROM public.collections pc
+                    WHERE pc.id = p_collection_id AND pc.slug = 'panini_blockchain')
     UNION ALL
     SELECT o.low_ask, 'edition_offers', 2
       FROM public.edition_offers o
@@ -111,6 +120,25 @@ SELECT _assert_eq((SELECT count(*)::text FROM edition_live_ask('00000000-0000-00
 SELECT _assert_eq((SELECT ask::text||'/'||source FROM edition_live_ask('00000000-0000-0000-0000-00000000aaaa','k6')), '7/candy_confirmed_floor', 'Candy confirmed floor is read');
 SELECT _assert_eq((SELECT count(*)::text FROM edition_live_ask('00000000-0000-0000-0000-00000000aaaa','k7')), '0', 'a zero floor and a stale badge ask give no ask');
 SELECT _assert_eq((SELECT count(*)::text FROM edition_live_ask('00000000-0000-0000-0000-00000000aaaa','nope')), '0', 'an unknown edition gives no ask');
+
+-- 2026-10-19: Panini (collection cccc, slug panini_blockchain). FMV 20 on p1..p3.
+INSERT INTO collections VALUES ('00000000-0000-0000-0000-00000000cccc','panini_blockchain'), ('00000000-0000-0000-0000-00000000aaaa','nba_top_shot');
+INSERT INTO editions VALUES
+  ('00000000-0000-0000-0000-0000000000c1','p1','00000000-0000-0000-0000-00000000cccc'),
+  ('00000000-0000-0000-0000-0000000000c2','p2','00000000-0000-0000-0000-00000000cccc'),
+  ('00000000-0000-0000-0000-0000000000c3','p3','00000000-0000-0000-0000-00000000cccc'),
+  ('00000000-0000-0000-0000-0000000000a9','p1','00000000-0000-0000-0000-00000000aaaa');
+INSERT INTO edition_fmv_current VALUES
+  ('00000000-0000-0000-0000-0000000000c1', 20), ('00000000-0000-0000-0000-0000000000c2', 20),
+  ('00000000-0000-0000-0000-0000000000c3', 20), ('00000000-0000-0000-0000-0000000000a9', 20);
+-- p1: confirmed Panini ask 15 beats a lower stale-shaped offers row (priority 1). p2: 70 > 3x20 is skipped.
+INSERT INTO panini_market_board VALUES ('p1', 15), ('p2', 70);
+INSERT INTO edition_offers VALUES ('00000000-0000-0000-0000-00000000cccc','p1', 12, now(), now());
+
+SELECT _assert_eq((SELECT ask::text||'/'||source FROM edition_live_ask('00000000-0000-0000-0000-00000000cccc','p1')), '15/panini_confirmed_ask', 'Panini: the confirmed ask is priority 1');
+SELECT _assert_eq((SELECT count(*)::text FROM edition_live_ask('00000000-0000-0000-0000-00000000cccc','p2')), '0', 'Panini: an ask > 3x FMV is not an ask');
+SELECT _assert_eq((SELECT count(*)::text FROM edition_live_ask('00000000-0000-0000-0000-00000000cccc','p3')), '0', 'Panini: no board row -> no ask');
+SELECT _assert_eq((SELECT count(*)::text FROM edition_live_ask('00000000-0000-0000-0000-00000000aaaa','p1')), '0', 'the Panini board is never read for the same key in another collection');
 
 SELECT '✓ edition_live_ask invariants pass' AS result;
 ROLLBACK;

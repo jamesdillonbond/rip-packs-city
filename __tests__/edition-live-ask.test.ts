@@ -84,6 +84,39 @@ describe("resolveLiveAsks", () => {
   })
 })
 
+describe("resolveLiveAsks — Panini's confirmed ask (2026-10-19)", () => {
+  const PN = COLLECTION_UUID_BY_SLUG["panini-blockchain"]
+  const PE = [{ id: "p1", external_id: "packcard-1_1_1_1" }, { id: "p2", external_id: "packcard-2_2_2_2" }]
+  it("reads panini_market_board as priority 1, under the 3x FMV gate", async () => {
+    const { asks, errors } = await resolveLiveAsks(db({
+      editions: { data: PE },
+      edition_fmv_current: { data: [{ edition_id: "p1", fmv_usd: 20 }, { edition_id: "p2", fmv_usd: 20 }] },
+      panini_market_board: { data: [{ external_id: "packcard-1_1_1_1", low_ask_usd: 15 }, { external_id: "packcard-2_2_2_2", low_ask_usd: 70 }] },
+      edition_offers: { data: [{ external_id: "packcard-1_1_1_1", low_ask: 12 }] },
+    }), PN, ["packcard-1_1_1_1", "packcard-2_2_2_2"])
+    expect(errors).toEqual([])
+    expect(asks.get("packcard-1_1_1_1")).toEqual({ ask: 15, source: "panini_confirmed_ask" })
+    expect(asks.has("packcard-2_2_2_2")).toBe(false) // 70 > 3x20
+  })
+  it("the Panini board is never read for another collection", async () => {
+    const { asks } = await resolveLiveAsks(db({
+      editions: { data: [EDS[0]] },
+      edition_fmv_current: { data: [{ edition_id: "e1", fmv_usd: 10 }] },
+      panini_market_board: { data: [{ external_id: "1:1", low_ask_usd: 5 }] },
+    }), TS, ["1:1"])
+    expect(asks.has("1:1")).toBe(false)
+  })
+  it("a failed Panini board read is reported, never 'no ask'", async () => {
+    const { asks, errors } = await resolveLiveAsks(db({
+      editions: { data: PE },
+      edition_fmv_current: { data: [{ edition_id: "p1", fmv_usd: 20 }] },
+      panini_market_board: { error: { message: "boom" } },
+    }), PN, ["packcard-1_1_1_1"])
+    expect(asks.size).toBe(0)
+    expect(errors.some((e) => e.startsWith("panini_market_board"))).toBe(true)
+  })
+})
+
 describe("resolveLiveAsks freshness column", () => {
   it("judges edition_offers by low_ask_confirmed_at (when the ask was SEEN) and badge_editions by updated_at", async () => {
     const gts: Array<[string, string]> = []

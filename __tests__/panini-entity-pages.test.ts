@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest"
-import { readFileSync } from "node:fs"
+import { readFileSync, readdirSync } from "node:fs"
 import { join } from "node:path"
 
 /**
@@ -185,8 +185,21 @@ describe("the edition page's Panini arms (source facts)", () => {
     // an empty list only says "no recorded sale" when the whole history was read
     expect(section).toMatch(/coverage\?\.kind === "all"\s*\?\s*"This edition has no recorded sale/)
   })
-  it("offers no FMV/ask alert on Panini (the dispatcher cannot see Panini asks)", () => {
-    expect(src).toContain("{!isPinnacle && !isPanini && detail.external_id && (")
+  // Re-pinned 2026-10-19 (premise changed, not inverted): the Watch control was hidden on
+  // Panini because the dispatcher's ask arm could not see a Panini ask. The property held is
+  // "offer an alert only where the dispatcher can fire it" — so the control is now offered,
+  // AND this asserts the premise that makes it honest: both ask resolvers read Panini's board.
+  it("offers the FMV/ask alert on Panini only because the dispatcher can now see Panini asks", () => {
+    expect(src).toContain("{!isPinnacle && detail.external_id && (")
+    expect(src).not.toContain("{!isPinnacle && !isPanini && detail.external_id && (")
+    const ts = readFileSync(join(process.cwd(), "lib", "asks", "edition-live-ask.ts"), "utf8")
+    expect(ts).toContain('from("panini_market_board")')
+    const migs = readdirSync(join(process.cwd(), "supabase", "migrations"))
+      .filter((f) => f.endsWith(".sql"))
+      .sort()
+      .filter((f) => readFileSync(join(process.cwd(), "supabase", "migrations", f), "utf8").includes("FUNCTION public.edition_live_ask"))
+    const newest = readFileSync(join(process.cwd(), "supabase", "migrations", migs[migs.length - 1]), "utf8")
+    expect(newest).toContain("FROM public.panini_market_board m")
   })
   it("hides the sale-print chart ranges on Panini", () => {
     expect(src).toContain("salesTracked={!isPanini}")

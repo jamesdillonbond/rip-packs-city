@@ -54,6 +54,9 @@ describe("editionHref", () => {
   it("Candy MLB alerts link to the shared edition page", () => {
     expect(editionHref({ collection_id: "209ade70-32c5-4470-bc7c-4793d660f713", edition_key: "e1" })).toBe("/candy-mlb/edition/e1")
   })
+  it("Panini alerts link to the shared edition page (watch offered there since 2026-10-19)", () => {
+    expect(editionHref({ collection_id: "d1a0a7f5-609a-49f4-a1a7-4eaac55b020b", edition_key: "packcard-1_2_3_4" })).toBe("/panini-blockchain/edition/packcard-1_2_3_4")
+  })
   it("COLLECTION_URL_SLUG has no Pinnacle entry (watch button not offered there)", () => {
     expect(COLLECTION_URL_SLUG["7dd9dd11-e8b6-45c4-ac99-71331f959714"]).toBeUndefined()
   })

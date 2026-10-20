@@ -1178,9 +1178,11 @@ export default async function EditionPage(
       {/* ── Watch this edition (FMV / ask alert) ─────────────────────────── */}
       {/* Pinnacle FMV lives in its own tables the alert dispatcher doesn't read,
           so the watch control is gated to the editions+fmv_snapshots collections. */}
-      {/* Panini too: the alert dispatcher's ask arm reads the shared ask tables,
-          which carry no Panini asks, so an ask alert could never fire. */}
-      {!isPinnacle && !isPanini && detail.external_id && (
+      {/* Panini is offered since 2026-10-19: the alert dispatcher's ask arm
+          (edition_live_ask, and its TS twin lib/asks/edition-live-ask.ts) reads
+          panini_market_board, the confirmed ask this page shows. Until then a
+          Panini ask alert could never fire, which is why it was hidden. */}
+      {!isPinnacle && detail.external_id && (
         <div style={{ marginTop: 14 }}>
           <WatchEditionButton
             editionKey={detail.external_id}

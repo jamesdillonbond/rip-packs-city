@@ -16,6 +16,8 @@
 //   2. edition_offers.low_ask, last SEEN (low_ask_confirmed_at) in the last 7 days;
 //   3. badge_editions.low_ask, updated in the last 7 days;
 //   Candy: candy_listing_floor.confirmed_floor_usd (lib/fmv-candy-ceiling.ts);
+//   Panini: panini_market_board.low_ask_usd — the lowest ask re-confirmed in 7 days,
+//     the edition page's own ask (2026-10-19; service-role only, like every panini_*);
 // and an ask is used ONLY when the edition has an FMV and the ask is <= 3x it
 // (the estate's disconnected-ask multiple): a lone ask on an unpriced edition is
 // the troll shape. Pinnacle and UFC have no source here and get none.
@@ -30,7 +32,7 @@
 
 import { COLLECTION_UUID_BY_SLUG } from "@/lib/collections"
 
-export type LiveAskSource = "allday_floor" | "edition_offers" | "badge_editions" | "candy_confirmed_floor"
+export type LiveAskSource = "allday_floor" | "edition_offers" | "badge_editions" | "candy_confirmed_floor" | "panini_confirmed_ask"
 
 export interface LiveAsk {
   ask: number
@@ -45,6 +47,7 @@ export interface LiveAskResult {
 // From the registry, never retyped (a hand-typed UUID here was wrong once already).
 const ALL_DAY = COLLECTION_UUID_BY_SLUG["nfl-all-day"]
 const CANDY = COLLECTION_UUID_BY_SLUG["candy-mlb"]
+const PANINI = COLLECTION_UUID_BY_SLUG["panini-blockchain"]
 const MAX_ASK_AGE_DAYS = 7
 const MAX_ASK_TO_FMV = 3
 const CHUNK = 300
@@ -127,6 +130,21 @@ export async function resolveLiveAsks(
     for (const [id, ask] of res.floors) {
       const k = keyById.get(id)
       if (k) offer(k, ask, "candy_confirmed_floor", 1)
+    }
+  }
+
+  // Panini: its view already keeps only serials re-read in the last 7 days.
+  if (collectionId === PANINI) {
+    for (let i = 0; i < keys.length; i += CHUNK) {
+      const slice = keys.slice(i, i + CHUNK)
+      const { data, error } = await db.from("panini_market_board").select("external_id, low_ask_usd").in("external_id", slice)
+      if (error) {
+        errors.push(`panini_market_board: ${error.message}`)
+        continue
+      }
+      for (const r of (data ?? []) as Array<{ external_id: string; low_ask_usd: unknown }>) {
+        offer(r.external_id, r.low_ask_usd, "panini_confirmed_ask", 1)
+      }
     }
   }
 

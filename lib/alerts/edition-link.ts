@@ -31,6 +31,9 @@ export const COLLECTION_URL_SLUG: Record<string, string> = {
   // Candy MLB editions render on the shared /[collection]/edition page (the
   // same href app/api/candy-set-progress builds via lib/entity-href).
   "209ade70-32c5-4470-bc7c-4793d660f713": "candy-mlb",
+  // Panini editions render on the shared /[collection]/edition page; the Watch
+  // control is offered there since 2026-10-19 (edition_live_ask reads Panini).
+  "d1a0a7f5-609a-49f4-a1a7-4eaac55b020b": "panini-blockchain",
 }
 
 export function editionHref(a: { collection_id: string | null; edition_key: string }): string | null {
