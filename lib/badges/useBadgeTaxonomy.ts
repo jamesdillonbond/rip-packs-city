@@ -89,7 +89,10 @@ export const COLOR_FAMILY_CLASSES: Record<string, string> = {
   indigo: 'bg-indigo-950 text-indigo-300 border-indigo-800',
   emerald: 'bg-emerald-950 text-emerald-300 border-emerald-800',
   cyan: 'bg-cyan-950 text-cyan-300 border-cyan-800',
-  neutral: 'bg-white/5 text-white/80 border-white/10',
+  // Theme-aware tokens, not white-alpha: `text-white/80` has no light-theme
+  // override, so a neutral badge (MVP Year on the Sniper) read 1.06:1 in light
+  // theme — invisible (a11y run 39457454062, 2026-10-20).
+  neutral: 'bg-[var(--rpc-surface-raised)] text-[color:var(--rpc-text-secondary)] border-[color:var(--rpc-border)]',
 }
 
 const NEUTRAL_CLASSES = COLOR_FAMILY_CLASSES.neutral

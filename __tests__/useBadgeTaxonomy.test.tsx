@@ -148,6 +148,15 @@ describe("classesForColorFamily", () => {
     expect(classesForColorFamily("gold")).toBe(COLOR_FAMILY_CLASSES.gold)
     expect(classesForColorFamily("emerald")).toBe(COLOR_FAMILY_CLASSES.emerald)
   })
+  // Light theme overrides the Tailwind palette TEXT utilities (app/rpc-tokens.css)
+  // but not white/black alpha, so a family painted with them is invisible in one
+  // theme — the neutral family read 1.06:1 in light until 2026-10-20.
+  it("paints no family with theme-blind white/black alpha", () => {
+    for (const [family, cls] of Object.entries(COLOR_FAMILY_CLASSES)) {
+      expect(cls, family).not.toMatch(/\b(?:text|bg|border)-(?:white|black)\/\d+/)
+    }
+  })
+
   it("falls back to neutral for null/undefined/unknown families", () => {
     expect(classesForColorFamily(null)).toBe(COLOR_FAMILY_CLASSES.neutral)
     expect(classesForColorFamily(undefined)).toBe(COLOR_FAMILY_CLASSES.neutral)
