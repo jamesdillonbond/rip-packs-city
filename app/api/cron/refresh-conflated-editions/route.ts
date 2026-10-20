@@ -30,7 +30,10 @@ const supabaseAdmin = createClient(
 ) as any;
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 120;
+// 2026-10-20: 120 -> 300. Completed runs took 97.8 s (10-18) and 90.5 s (10-19) — 75-82 %
+// of the old wall — and the 10-20 8:17 AM PT run was killed at 120 s (heartbeat landed, no
+// run row; Vercel "Task timed out after 120 seconds"). 300 s keeps ~3x headroom; Pro cap 800.
+export const maxDuration = 300;
 
 const PIPELINE_NAME = "refresh-conflated-editions";
 
