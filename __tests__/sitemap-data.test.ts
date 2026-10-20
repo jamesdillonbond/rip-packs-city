@@ -244,7 +244,9 @@ describe("segment 0 — static + insights + overviews + series + profiles", () =
     // 88 → 89 on 2026-10-03: /insights/market-cap (market cap on collector-held supply).
     // 89 → 90 on 2026-10-10: /insights/panini-premiums (Panini parallel + serial premiums).
     // 90 → 91 on 2026-10-14: /blog/premium-chance-hit-vs-chance-hit.
-    expect(s).toHaveLength(91)
+    // 91 → 92 on 2026-10-19: /insights/autographs (signed Top Shot / All Day editions).
+    expect(s).toHaveLength(92)
+    expect(s.find((x) => x.url === `${BASE}/insights/autographs`)).toBeTruthy()
     expect(s.find((x) => x.url === `${BASE}/sniper`)).toBeTruthy()
     expect(s.find((x) => x.url === `${BASE}/market`)).toBeTruthy()
     expect(s.find((x) => x.url === `${BASE}/panini-blockchain/analytics`)).toBeTruthy()

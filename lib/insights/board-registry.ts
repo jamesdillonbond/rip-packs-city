@@ -77,6 +77,14 @@ export const INSIGHTS_BOARDS: readonly InsightsBoard[] = [
     publicApi: true,
   },
   {
+    slug: "autographs",
+    kind: "dataset",
+    name: "Autographed Moments",
+    description:
+      "Every signed NBA Top Shot and NFL All Day edition, read from Dapper's own autograph data, with its lowest live ask, recent sales, and the price of the same Moment unsigned.",
+    publicApi: true,
+  },
+  {
     slug: "candy-mlb",
     kind: "dataset",
     name: "Candy MLB ICONs — Solana Secondary Market Intelligence",

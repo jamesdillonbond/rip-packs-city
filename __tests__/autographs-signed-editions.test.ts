@@ -204,3 +204,21 @@ describe("wallet Collection: the AUTOGRAPHS toggle", () => {
     expect(off).toHaveLength(3)
   })
 })
+
+describe("deal alerts: the Autographed badge filter stores the value the dispatcher compares", () => {
+  // dispatch_due_deal_alerts / build_deal_alerts_for_subscription match a
+  // subscription's badges against regexp_replace(lower(title), '[^a-z0-9]', '')
+  // of get_edition_badges_unified's titles. The chip must store THAT, not the
+  // badge id "autograph", which would silently never match. Verified live
+  // 2026-10-19: 462 / 462 signed editions match 'autographed'.
+  it("AlertsClient offers 'autographed' = the normalized AUTOGRAPH_BADGE_TITLE", async () => {
+    const { readFileSync } = await import("node:fs")
+    const { join } = await import("node:path")
+    const { AUTOGRAPH_BADGE_TITLE: title, AUTOGRAPH_BADGE_SLUG: id } = await import("@/lib/autographs")
+    const src = readFileSync(join(__dirname, "..", "app", "alerts", "AlertsClient.tsx"), "utf8")
+    const normalized = title.toLowerCase().replace(/[^a-z0-9]/g, "")
+    expect(normalized).toBe("autographed")
+    expect(src).toContain(`{ slug: "${normalized}", label: "${title}" }`)
+    expect(src).not.toContain(`{ slug: "${id}",`)
+  })
+})

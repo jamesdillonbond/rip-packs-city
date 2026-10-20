@@ -71,6 +71,8 @@ Rookie Debut: Signature Edition /50 (45/45) · Metallic Gold LE Signature Editio
 - **Sniper**: signed deals carry the `autograph` badge ("Auto"); new **AUTOGRAPHS ONLY** filter (Top Shot + All Day; `?autographOnly=true`). A failed autograph read degrades the board under that filter (`sourcesFailed: ["autographs"]`), never an empty "nothing signed" board. All Day rows are matched on player + set, claimed only when every edition of the pair is signed.
 - **Wallet Collection tab**: "Autographed" pill (via `/api/badges`) + **✍ AUTOGRAPHS** toggle.
 - **Concierge**: every edition row carries `autographed` — true / false (Atlas-verified unsigned, needs a check row) / null (not checked).
+- **Public board** `/insights/autographs` (`v_insights_autographs`, `20261020051112`): every signed edition per collection, sortable by cheapest live ask, premium over the unsigned printing, last sale, scarcity. Market facts only — no FMV.
+- **Alerts**: deal-alert subscriptions take an **Autographed** badge filter (`/alerts`). The dispatcher compares the normalized badge TITLE, so the stored value is `autographed` (the id `autograph` would never match); 462 / 462 signed editions match it live. Per-edition Watch alerts already work on any signed edition's page.
 
 ## Decided NOT to build (2026-10-19 ~9:55 PM PT): pricing a signed edition off its unsigned printing
 

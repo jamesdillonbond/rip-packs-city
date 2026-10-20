@@ -49,9 +49,13 @@ const PARALLELS = [
   "Embellished Enamel", "Colored Enamel", "Color Splash", "Radiant Chrome",
   "Apex", "Genesis", "Xenith", "Quartis", "Quinova", "Standard", // Disney Pinnacle
 ];
-// Real Top Shot edition badge slugs (saved now; enforced once the live
-// per-serial listing feed lands — see the "applies to live listings" note).
+// Edition badge filters. Each slug is the NORMALIZED TITLE the dispatcher compares
+// (dispatch_due_deal_alerts / build_deal_alerts_for_subscription match
+// regexp_replace(lower(title), '[^a-z0-9]', '') from get_edition_badges_unified),
+// so "Autographed" is `autographed` — NOT the badge id `autograph`, which would
+// silently never match. Autographed covers NBA Top Shot AND NFL All Day.
 const BADGES = [
+  { slug: "autographed", label: "Autographed" },
   { slug: "topshotdebut", label: "Top Shot Debut" },
   { slug: "rookieyear", label: "Rookie Year" },
   { slug: "rookiemint", label: "Rookie Mint" },

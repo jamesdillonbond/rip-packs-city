@@ -23,6 +23,7 @@ Each board is a schema.org Dataset (or WebApplication for the wallet tools); mos
 - /insights/underpriced-serials — Underpriced #1s & Perfect Mints. Headline Top Shot serials listed below their serial-FMV estimate.
 - /insights/serial-premiums — Serial Premiums — #1 Watch. How much more the #1 serial sold for than the edition's typical price.
 - /insights/parallel-premiums — Parallel Premiums. The premium NBA Top Shot parallel editions command over the Standard base edition of the same play.
+- /insights/autographs — Autographed Moments. Every signed NBA Top Shot and NFL All Day edition, with its lowest live ask, recent sales, and the unsigned printing's price.
 - /insights/trophies — The Trophy Room. The rarest Top Shot and All Day editions — every 1-of-1 and Ultimate-tier moment — ranked by FMV.
 - /insights/top-sales — Top Sales — Whale Watch. The biggest recent Top Shot and All Day sales, with buyer and seller resolved to Top Shot handles.
 - /insights/first-mint — Top Shot First-Mint Trophy Tracker. Every serial #1 sale of the last 90 days with its multiplier vs the average-serial price.

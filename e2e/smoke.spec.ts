@@ -95,6 +95,7 @@ const PAGES: PageCheck[] = [
   { path: "/insights/pack-reality", name: "insights · pack reality" },
   { path: "/insights/pack-sniper", name: "insights · pack sniper" },
   { path: "/insights/parallel-premiums", name: "insights · parallel premiums" },
+  { path: "/insights/autographs", name: "insights · autographs" },
   { path: "/insights/pinnacle-scarcity", name: "insights · pinnacle scarcity" },
   { path: "/insights/rookie-board", name: "insights · rookie board" },
   { path: "/insights/rookies", name: "insights · rookies" },
