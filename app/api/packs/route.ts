@@ -98,39 +98,54 @@ export async function GET(req: NextRequest) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const distIds = Array.from(new Set((rows as any[]).map((r) => r.dist_id).filter((x) => x != null)))
 
-  // Reality-adjusted EV (Top Shot only): merge v_topshot_pack_ev_calibrated by
-  // dist_id so the packs page can headline calibrated EV where we have enough
-  // observed opens. The view is TS-only (~800 rows) and bakes in the
-  // modeled-fallback, so we fetch it whole and map by dist_id. Non-fatal: if it
-  // errors the page just shows pure modeled EV.
+  // Reality-adjusted EV (Top Shot only): the calibrated EV from the MV-backed
+  // v_topshot_pack_realized_ev, merged by dist_id onto the page's rows.
+  //
+  // 2026-10-19: this read v_topshot_pack_ev_calibrated, which rebuilds
+  // pack_ev_latest — a DISTINCT ON over all ~666k pack_ev_history rows that the
+  // Top Shot filter cannot push below — on every call (mean 3.3 s, ~106k buffers,
+  // two 8 s timeouts in 48 h; pack-ev.md). Its calibrated_ev is the MV's own
+  // column (gross identical on all 213 overlapping dists, measured 10-19), so the
+  // MV is read directly and the view's two other choices are made HERE:
+  //   - Calibration applies only where the board row carries a modeled EV
+  //     (gross_ev not null). The view also calibrated 5 dists whose EV the board's
+  //     own guard withholds (pack_table_rows' "EV > 3× live ask" / sentinel
+  //     rules), and 90 more have a realized calibration but no board EV at all:
+  //     none of them is given an EV here that the board withheld.
+  //   - Net and margin are against the row's live secondary ask only — the board's
+  //     verdict anchor (PackPageClient: primary/retail is never the anchor). The
+  //     view used its own stale price (dist 1202: $2 retail vs the $4 live ask).
+  // Non-fatal: on error the page shows pure modeled EV.
   if (collection === "nba-top-shot" && rows.length) {
-    const { data: calData, error: calError } = await boundedRead(supabase
-      .from("v_topshot_pack_ev_calibrated")
-      .select(
-        "dist_id, calibrated_gross_ev, calibrated_net_ev, calibrated_margin_pct, calibration_applied",
-      )
-      .eq("calibration_applied", true)
-      .in("dist_id", distIds), "api/packs/v_topshot_pack_ev_calibrated")
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const evIds = (rows as any[]).filter((r) => r.gross_ev != null).map((r) => r.dist_id)
+    const { data: calData, error: calError } = evIds.length
+      ? await boundedRead(supabase
+          .from("v_topshot_pack_realized_ev")
+          .select("dist_id, calibrated_ev")
+          .not("calibrated_ev", "is", null)
+          .in("dist_id", evIds), "api/packs/v_topshot_pack_realized_ev")
+      : { data: [], error: null }
     if (calError) {
       console.error("[api/packs] calibrated merge", calError.message)
     } else if (calData?.length) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const calMap = new Map<string, any>(
+      const calMap = new Map<string, number>(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (calData as any[]).map((c) => [String(c.dist_id), c]),
+        (calData as any[]).map((c) => [String(c.dist_id), Number(c.calibrated_ev)]),
       )
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       rows = (rows as any[]).map((r) => {
-        const c = calMap.get(String(r.dist_id))
-        return c
-          ? {
-              ...r,
-              calibrated_gross_ev: c.calibrated_gross_ev,
-              calibrated_net_ev: c.calibrated_net_ev,
-              calibrated_margin_pct: c.calibrated_margin_pct,
-              calibration_applied: c.calibration_applied,
-            }
-          : r
+        const cal = r.gross_ev != null ? calMap.get(String(r.dist_id)) : undefined
+        if (cal === undefined || !Number.isFinite(cal)) return r
+        const ask = r.secondary_available === true && Number(r.secondary_ask) > 0 ? Number(r.secondary_ask) : null
+        return {
+          ...r,
+          calibrated_gross_ev: cal,
+          calibrated_net_ev: ask === null ? null : Math.round((cal - ask) * 100) / 100,
+          calibrated_margin_pct: ask === null ? null : Math.round(((cal - ask) / ask) * 1000) / 10,
+          calibration_applied: true,
+        }
       })
     }
   }

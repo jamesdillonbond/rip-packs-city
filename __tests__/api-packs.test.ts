@@ -126,25 +126,45 @@ describe("GET /api/packs", () => {
     expect(d2.ev_method).toBeUndefined()
   })
 
-  it("overlays Top Shot calibrated EV onto matching dists (the v_topshot_pack_ev_calibrated merge)", async () => {
+  it("overlays Top Shot calibrated EV onto matching dists (the v_topshot_pack_realized_ev merge)", async () => {
     tables.pack_table_rows = {
-      data: [{ dist_id: "t1", title: "TS Pack", gross_ev: 37, pack_ev: 32 }],
+      data: [{ dist_id: "t1", title: "TS Pack", gross_ev: 37, pack_ev: 32, secondary_available: true, secondary_ask: 5 }],
       count: 1,
       error: null,
     }
-    tables.v_topshot_pack_ev_calibrated = {
-      data: [
-        { dist_id: "t1", calibrated_gross_ev: 18, calibrated_net_ev: 13, calibrated_margin_pct: 25, calibration_applied: true },
-      ],
-      error: null,
-    }
+    tables.v_topshot_pack_realized_ev = { data: [{ dist_id: "t1", calibrated_ev: 18 }], error: null }
     const res = await GET(req("https://t/api/packs?collection=nba-top-shot"))
     expect(res.status).toBe(200)
     const body = await res.json()
     const t1 = body.rows.find((r: any) => r.dist_id === "t1")
     expect(t1.calibrated_gross_ev).toBe(18)
+    // Net and margin are against the row's live secondary ask (18 − 5).
     expect(t1.calibrated_net_ev).toBe(13)
+    expect(t1.calibrated_margin_pct).toBe(260)
     expect(t1.calibration_applied).toBe(true)
+  })
+
+  // 2026-10-19: the old view calibrated 5 dists whose EV the board's own guard
+  // withholds. A row with no modeled EV gets no calibrated EV either.
+  it("never calibrates a row whose EV the board withheld (gross_ev null)", async () => {
+    tables.pack_table_rows = { data: [{ dist_id: "t9", title: "Withheld", gross_ev: null }], count: 1, error: null }
+    tables.v_topshot_pack_realized_ev = { data: [{ dist_id: "t9", calibrated_ev: 400 }], error: null }
+    const t9 = (await (await GET(req("https://t/api/packs?collection=nba-top-shot"))).json()).rows[0]
+    expect(t9.calibrated_gross_ev).toBeUndefined()
+    expect(t9.calibration_applied).toBeUndefined()
+  })
+
+  it("no live secondary ask → calibrated gross only, no net/margin against a retail price", async () => {
+    tables.pack_table_rows = {
+      data: [{ dist_id: "t1", title: "TS", gross_ev: 37, secondary_available: false, secondary_ask: null, retail_price_usd: 2 }],
+      count: 1,
+      error: null,
+    }
+    tables.v_topshot_pack_realized_ev = { data: [{ dist_id: "t1", calibrated_ev: 18 }], error: null }
+    const t1 = (await (await GET(req("https://t/api/packs?collection=nba-top-shot"))).json()).rows[0]
+    expect(t1.calibrated_gross_ev).toBe(18)
+    expect(t1.calibrated_net_ev).toBeNull()
+    expect(t1.calibrated_margin_pct).toBeNull()
   })
 
   // ── sort + param handling ──────────────────────────────────────────────
@@ -190,7 +210,7 @@ describe("GET /api/packs", () => {
   // ── Top Shot calibrated merge: non-fatal edges ─────────────────────────
   it("keeps modeled EV when the TS calibrated view errors (non-fatal)", async () => {
     tables.pack_table_rows = { data: [{ dist_id: "t1", title: "TS", gross_ev: 37 }], count: 1, error: null }
-    tables.v_topshot_pack_ev_calibrated = { data: null, error: { message: "cal boom" } }
+    tables.v_topshot_pack_realized_ev = { data: null, error: { message: "cal boom" } }
     const res = await GET(req("https://t/api/packs?collection=nba-top-shot"))
     expect(res.status).toBe(200)
     const t1 = (await res.json()).rows.find((r: any) => r.dist_id === "t1")
@@ -207,10 +227,7 @@ describe("GET /api/packs", () => {
       count: 2,
       error: null,
     }
-    tables.v_topshot_pack_ev_calibrated = {
-      data: [{ dist_id: "t1", calibrated_gross_ev: 18, calibrated_net_ev: 13, calibrated_margin_pct: 25, calibration_applied: true }],
-      error: null,
-    }
+    tables.v_topshot_pack_realized_ev = { data: [{ dist_id: "t1", calibrated_ev: 18 }], error: null }
     const rows = (await (await GET(req("https://t/api/packs?collection=nba-top-shot"))).json()).rows
     expect(rows.find((r: any) => r.dist_id === "t1").calibrated_gross_ev).toBe(18)
     expect(rows.find((r: any) => r.dist_id === "t2").calibrated_gross_ev).toBeUndefined()
