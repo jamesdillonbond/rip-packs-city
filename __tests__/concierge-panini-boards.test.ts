@@ -258,3 +258,49 @@ describe("readPaniniCollectionForConcierge — a Panini username, never a Top Sh
     expect(panini).toBeLessThan(topshot)
   })
 })
+
+describe("paniniFloorReader — search_across_collections' Panini arm (2026-10-19)", () => {
+  // Panini was filtered out of the cross-collection search entirely. The reader reads the
+  // board's own rule (listed, price > 0, re-read in 7 d) straight from panini_card_serials.
+  function db(tables: Record<string, Array<{ data?: unknown[]; error?: { message: string } | null }>>) {
+    const calls: Record<string, number> = {}
+    return {
+      from(t: string) {
+        const i = calls[t] = (calls[t] ?? -1) + 1
+        const res = (tables[t] ?? [])[i] ?? (tables[t] ?? [])[0] ?? { data: [] }
+        const b: Record<string, unknown> = {}
+        for (const m of ["select", "in", "eq", "gt", "gte", "order", "limit"]) b[m] = () => b
+        b.then = (ok: (v: unknown) => unknown) => Promise.resolve({ data: res.data ?? [], error: res.error ?? null }).then(ok)
+        return b
+      },
+    }
+  }
+  it("keeps the cheapest confirmed ask per edition, keyed by edition id, with the Panini link", async () => {
+    const { paniniFloorReader } = await import("@/lib/concierge/search-edition-floors")
+    const r = await paniniFloorReader(db({
+      editions: [{ data: [{ id: "e1", external_id: "packcard-1_1_1_1" }, { id: "e2", external_id: "packcard-2_2_2_2" }] }],
+      panini_card_serials: [{ data: [
+        { edition_external_id: "packcard-1_1_1_1", price_usd: 4 },
+        { edition_external_id: "packcard-1_1_1_1", price_usd: 9 },
+      ] }],
+    }), ["e1", "e2"])
+    expect(r.ok).toBe(true)
+    expect(r.floors.get("e1")?.ask).toBe(4)
+    expect(r.floors.get("e1")?.buyUrl).toContain("packcard-1_1_1_1")
+    expect(r.floors.has("e2")).toBe(false) // no confirmed ask: absent, never $0
+  })
+  it("a failed serial read, a failed edition read, or a capped chunk is ok:false — never 'none listed'", async () => {
+    const { paniniFloorReader } = await import("@/lib/concierge/search-edition-floors")
+    const eds = [{ data: [{ id: "e1", external_id: "packcard-1_1_1_1" }] }]
+    expect((await paniniFloorReader(db({ editions: eds, panini_card_serials: [{ error: { message: "boom" } }] }), ["e1"])).ok).toBe(false)
+    expect((await paniniFloorReader(db({ editions: [{ error: { message: "boom" } }] }), ["e1"])).ok).toBe(false)
+    const capped = Array.from({ length: 1000 }, () => ({ edition_external_id: "packcard-1_1_1_1", price_usd: 1 }))
+    expect((await paniniFloorReader(db({ editions: eds, panini_card_serials: [{ data: capped }] }), ["e1"])).ok).toBe(false)
+  })
+  it("search_across_collections includes Panini and reads it through paniniFloorReader", () => {
+    const i = ROUTE.indexOf('if (toolName === "search_across_collections")')
+    const body = ROUTE.slice(i, i + 2500)
+    expect(body).toContain('c.id === "panini-blockchain"')
+    expect(body).toContain("paniniFloorReader")
+  })
+})

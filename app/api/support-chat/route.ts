@@ -56,7 +56,7 @@ import {
   keepCanonicalEditions,
 } from "@/lib/concierge/edition-listings";
 import { closedMarket } from "@/lib/market-closed";
-import { searchEditionFloorsByName, candyFloorReader } from "@/lib/concierge/search-edition-floors";
+import { searchEditionFloorsByName, candyFloorReader, paniniFloorReader } from "@/lib/concierge/search-edition-floors";
 import { readsCatalogDealsFromIndex, fetchIndexCatalogDeals } from "@/lib/concierge/catalog-deals-index";
 import { safeApiError } from "@/lib/api-error";
 import { runMarketCapTool } from "@/lib/concierge/market-cap-tool";
@@ -471,7 +471,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "search_across_collections",
-    description: "Search for a player or subject across ALL published collections simultaneously. Use when the user asks 'does RPC have [player]' without specifying a collection, or when comparing a name across collections. Top Shot rows are serial-level asks; NFL All Day and LaLiga Golazos rows are EDITION floors from RPC's on-chain listing index, and Candy MLB rows are edition floors from RPC's swept Magic Eden / OpenSea book (serial is null — link edition_url), and editions_matched tells you how many of that player's editions exist even when none is listed: then say they are not listed, never that RPC doesn't have them. A group with market_closed (UFC Strike) means the market is closed, not that the player is absent.",
+    description: "Search for a player or subject across ALL published collections simultaneously. Use when the user asks 'does RPC have [player]' without specifying a collection, or when comparing a name across collections. Top Shot rows are serial-level asks; NFL All Day and LaLiga Golazos rows are EDITION floors from RPC's on-chain listing index, Candy MLB rows are edition floors from RPC's swept Magic Eden / OpenSea book, and Panini rows are each edition's lowest ask re-confirmed by RPC's walk of Panini's marketplace in the last 7 days (serial is null — link edition_url), and editions_matched tells you how many of that player's editions exist even when none is listed: then say they are not listed, never that RPC doesn't have them. A group with market_closed (UFC Strike) means the market is closed, not that the player is absent.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -2858,12 +2858,15 @@ async function executeToolInner(
       // cached_listings holds FLOW listings only; Candy MLB's (Solana, published
       // 2026-09-06) live in candy_listings, which its own arm reads below
       // (2026-10-18) with get_edition_listings' freshness rules.
-      const published = publishedCollections().filter((c) => c.dbChain === "flow" || c.id === "candy-mlb");
+      // 2026-10-19: Panini was filtered out here, so "does RPC have Messi?" searched
+      // every collection EXCEPT the one holding his ~110 editions. It reads its
+      // confirmed asks from panini_card_serials (paniniFloorReader).
+      const published = publishedCollections().filter((c) => c.dbChain === "flow" || c.id === "candy-mlb" || c.id === "panini-blockchain");
       const queries = published.map(async (col) => {
-        if (col.id === "candy-mlb") {
-          const candyUuid = col.supabaseCollectionId;
-          if (!candyUuid) return { collection: col.label, collectionId: col.id, results: [], failed: true };
-          return searchEditionFloorsByName(supabase, col, candyUuid, candyFloorReader, name, perCollection, base);
+        if (col.id === "candy-mlb" || col.id === "panini-blockchain") {
+          const uuid = col.supabaseCollectionId;
+          if (!uuid) return { collection: col.label, collectionId: col.id, results: [], failed: true };
+          return searchEditionFloorsByName(supabase, col, uuid, col.id === "candy-mlb" ? candyFloorReader : paniniFloorReader, name, perCollection, base);
         }
         if (isPinnacle(col.id)) {
           return searchPinnacleByName(supabase, name, perCollection);

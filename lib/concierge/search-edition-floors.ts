@@ -19,6 +19,7 @@
 import type { Collection } from "@/lib/collections"
 import { marketplaceMomentUrl } from "@/lib/collections"
 import { absoluteEditionPageUrl, discountPct } from "@/lib/concierge/edition-listings"
+import { paniniEditionUrl } from "@/lib/panini/edition-url"
 
 type Supabase = any
 
@@ -148,6 +149,53 @@ export const candyFloorReader: FloorReader = async (supabase, ids) => {
       listedAt: null,
       // An OpenSea ask links only to the URL OpenSea returned, never to Magic Eden.
       buyUrl: r.venue === "opensea" ? (r.venue_url || null) : marketplaceMomentUrl("candy-mlb", String(r.token_mint)),
+    })
+  }
+  return { ok: true, floors }
+}
+
+/** Panini (2026-10-19): the confirmed ask the edition page shows (panini_market_board) —
+ *  the cheapest LISTED serial re-read in the last 7 days. Read from panini_card_serials
+ *  directly: the board view filters a multi-key list only AFTER aggregating every serial
+ *  (~50k buffers / 220 ms for 50 keys), while the serial index answers 25 keys in ~110.
+ *  Same rule as the view, so the two agree. A chunk that hits the row cap is a failed read. */
+export const PANINI_ASK_CONFIRMED_DAYS = 7
+
+export const paniniFloorReader: FloorReader = async (supabase, ids) => {
+  const floors = new Map<string, EditionFloor>()
+  const { data: eds, error: edErr } = await supabase.from("editions").select("id, external_id").in("id", ids)
+  if (edErr) return { ok: false, floors }
+  const idByKey = new Map<string, string>()
+  for (const e of (eds ?? []) as Array<{ id: string; external_id: string }>) idByKey.set(String(e.external_id), String(e.id))
+  const keys = [...idByKey.keys()]
+  const since = new Date(Date.now() - PANINI_ASK_CONFIRMED_DAYS * 86_400_000).toISOString()
+  const CHUNK = 25
+  const ROW_CAP = 1000
+  const reads = await Promise.all(
+    Array.from({ length: Math.ceil(keys.length / CHUNK) }, (_, i) => keys.slice(i * CHUNK, (i + 1) * CHUNK)).map((c) =>
+      supabase
+        .from("panini_card_serials")
+        .select("edition_external_id, price_usd, captured_at")
+        .in("edition_external_id", c)
+        .eq("is_listed", true)
+        .gt("price_usd", 0)
+        .gt("captured_at", since)
+        .order("price_usd", { ascending: true })
+        .limit(ROW_CAP),
+    ),
+  )
+  if (reads.some((r: any) => r.error || (r.data ?? []).length >= ROW_CAP)) return { ok: false, floors }
+  for (const r of reads.flatMap((x: any) => x.data ?? []) as Array<Record<string, any>>) {
+    const id = idByKey.get(String(r.edition_external_id))
+    const ask = num(r.price_usd)
+    if (!id || ask == null || !(ask > 0)) continue
+    const prev = floors.get(id)
+    if (prev && prev.ask <= ask) continue
+    floors.set(id, {
+      ask,
+      // captured_at is when the walk last re-read the serial, not when it was listed.
+      listedAt: null,
+      buyUrl: paniniEditionUrl(String(r.edition_external_id)),
     })
   }
   return { ok: true, floors }
