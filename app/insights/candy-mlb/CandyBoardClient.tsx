@@ -861,10 +861,15 @@ export default function CandyBoardClient({
             <b>Underpriced listings</b> — active secondary-market asks that sit below the auto-computed FMV{" "}
             <b>and</b> below what the edition actually trades at. FMV is fitted off a handful of sales, so a single
             high print can lift it above every other trade; a listing only appears here if it also beats the{" "}
-            <b>median sale</b>, and both numbers are shown so you can judge which one to believe. The book is thin —
-            treat these as <b>indicative, not arbitrage</b>.
+            <b>median sale</b>, and both numbers are shown so you can judge which one to believe. FMV is also capped at
+            the cheapest current ask, so a listing shows here only when a new ask undercuts it, until the next reprice.
+            The book is thin — treat these as <b>indicative, not arbitrage</b>.
           </div>
-          <DataTable rows={deals} cols={dealCols} defaultSort="discount_vs_median_pct" empty={sectionEmptyCopy("Deals", degraded, "No underpriced listings yet — the ask feed is live and will populate when listings open.")} />
+          {/* ⚠ The empty copy used to say the board "will populate when listings open" — false with
+              1,498 open asks (2026-10-19). Since the 09-25 confirmed-ask ceiling (lib/fmv-candy-ceiling.ts)
+              FMV never sits above the cheapest ask seen in 12 h, so an empty board is the normal state,
+              not a feed waiting to open. */}
+          <DataTable rows={deals} cols={dealCols} defaultSort="discount_vs_median_pct" empty={sectionEmptyCopy("Deals", degraded, "No listing is priced below FMV right now. Candy FMV never sits above the cheapest current ask, so one appears here only when a new ask undercuts it.")} />
         </>
       )}
 

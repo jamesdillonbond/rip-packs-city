@@ -219,6 +219,16 @@ describe("CandyBoardClient — Deals tab", () => {
     expect(container.textContent ?? "").toContain("—")
   })
 
+  // 2026-10-19: with 1,498 open asks the empty board told users it would "populate when
+  // listings open". FMV is capped at the cheapest confirmed ask, so empty is the normal state.
+  it("an empty Deals board does not claim listings have yet to open", () => {
+    const { container } = mount({ deals: [] })
+    fireEvent.click(tabButton(container, "Deals"))
+    const text = container.textContent ?? ""
+    expect(text).not.toMatch(/when listings open|populate/i)
+    expect(text).toMatch(/cheapest current ask/i)
+  })
+
   it("explains the median guard rather than promising arbitrage", () => {
     const { container } = mount()
     fireEvent.click(tabButton(container, "Deals"))
