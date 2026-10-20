@@ -234,9 +234,13 @@ function toPackRow(
     packEvDollar,
     isRareSinglePack: r.is_rare_single_pack === true,
     detailHref: `/${collectionUrlSlug}/pack/dist/${r.dist_id}`,
-    // Simulator deep-link — always available since the simulator works for
-    // any dist_id that has a populated drop pool (which is most TS+AllDay).
-    simulatorHref: `/${collectionUrlSlug}/packs/simulator/${r.dist_id}`,
+    // Simulator deep-link — the simulator samples `pack_drop_pool`, populated
+    // for Top Shot, All Day and Golazos. Disney Pinnacle EV is priced per DROP
+    // from its render pool (#157) and has no `pack_drop_pool` rows (0 of 159
+    // dists, read 2026-10-19), so its link opened an empty simulator: no link.
+    simulatorHref: collectionUrlSlug === 'disney-pinnacle'
+      ? null
+      : `/${collectionUrlSlug}/packs/simulator/${r.dist_id}`,
     // Buy link — only set when we have a live overlay (so the listing is
     // confirmed active). The old ?packListingId= deep link is dead (TS rotated
     // the pattern May 2026, see lib/pack-urls.ts); use the centralized

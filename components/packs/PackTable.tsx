@@ -140,9 +140,9 @@ export interface PackRow {
   actionLabel?: string
   /** When set, the title cell links here (the pack detail page). */
   detailHref?: string
-  /** Internal href to the rip simulator for this distribution. Always set
-   *  when toPackRow runs over a row from /api/packs; used by the Action
-   *  cell when no external Buy link is available. */
+  /** Internal href to the rip simulator for this distribution. Set by
+   *  toPackRow for every collection with a `pack_drop_pool` (null for Disney
+   *  Pinnacle); used by the Action cell when no external Buy link is available. */
   simulatorHref?: string | null
   /** External marketplace URL for this pack. Set only when an active live
    *  secondary listing exists AND the collection has a known marketplace

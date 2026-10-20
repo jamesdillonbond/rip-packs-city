@@ -21,6 +21,8 @@ const req = (u: string) => ({ url: u }) as any
 
 function studioPage(edges: any[], hasNextPage = false, endCursor: string | null = null) {
   return {
+    ok: true,
+    status: 200,
     json: async () => ({
       data: { searchPackNftAggregation: { pageInfo: { endCursor, hasNextPage }, totalCount: edges.length, edges } },
     }),
@@ -89,7 +91,7 @@ describe("GET /api/wallet-packs", () => {
   })
 
   it("degrades GraphQL errors to an empty 200 (never a 500)", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => ({ json: async () => ({ errors: [{ message: "rate limited" }] }) })))
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ errors: [{ message: "rate limited" }] }) })))
     const res = await GET(req("https://t/api/wallet-packs?wallet=0xbd94cade097e50ac"))
     expect(res.status).toBe(200)
     const body = await res.json()
@@ -108,5 +110,53 @@ describe("GET /api/wallet-packs", () => {
     expect(typeof body.error).toBe("string")
     expect(body.error.length).toBeGreaterThan(0)
     expect(body.packsByTitle).toEqual({})
+  })
+
+  // ⛔ SUBSTITUTION (2026-10-19): the PackNFT type was Top Shot's for every
+  // collection, so an All Day Collection tab matched its set names against the
+  // wallet's Top Shot packs. The read is scoped to the collection asked about.
+  const typeNameSent = (fetchMock: any) =>
+    JSON.parse(fetchMock.mock.calls[0][1].body).variables.filters[0].type_name.eq
+
+  it("reads the PackNFT type of the collection asked about, not Top Shot's", async () => {
+    const fetchMock = vi.fn(async () => studioPage([edge("d9", "AD Pack")]))
+    vi.stubGlobal("fetch", fetchMock)
+    const res = await GET(req("https://t/api/wallet-packs?wallet=0xbd94cade097e50ac&collection=nfl-all-day"))
+    expect(res.status).toBe(200)
+    expect(typeNameSent(fetchMock)).toBe("A.e4cf4bdc1751c65d.PackNFT.NFT")
+    expect(typeNameSent(fetchMock)).not.toBe("A.0b2a3299cc857e29.PackNFT.NFT")
+    expect((await res.json()).collection).toBe("nfl-all-day")
+  })
+
+  it("keeps the Top Shot default when the collection param is absent", async () => {
+    const fetchMock = vi.fn(async () => studioPage([]))
+    vi.stubGlobal("fetch", fetchMock)
+    await GET(req("https://t/api/wallet-packs?wallet=0xbd94cade097e50ac"))
+    expect(typeNameSent(fetchMock)).toBe("A.0b2a3299cc857e29.PackNFT.NFT")
+  })
+
+  it("refuses a collection it cannot read, without answering with another's packs", async () => {
+    const fetchMock = vi.fn(async () => studioPage([edge("d1", "Pack A")]))
+    vi.stubGlobal("fetch", fetchMock)
+    const res = await GET(req("https://t/api/wallet-packs?wallet=0xbd94cade097e50ac&collection=disney-pinnacle"))
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(body.packsByTitle).toBeUndefined()
+    expect(body.totalSealedPacks).toBeUndefined()
+  })
+
+  it("an HTTP error is a failed read, not an empty wallet", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 503, json: async () => ({}) })))
+    const body = await (await GET(req("https://t/api/wallet-packs?wallet=0xbd94cade097e50ac"))).json()
+    expect(typeof body.error).toBe("string")
+    expect(body.error.length).toBeGreaterThan(0)
+  })
+
+  it("a `{ data: null }` reply is a failed read, not an empty wallet", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ data: null }) })))
+    const body = await (await GET(req("https://t/api/wallet-packs?wallet=0xbd94cade097e50ac"))).json()
+    expect(typeof body.error).toBe("string")
+    expect(body.error.length).toBeGreaterThan(0)
   })
 })

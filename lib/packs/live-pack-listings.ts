@@ -98,6 +98,18 @@ export function isSupportedPackCollection(slug: string): slug is PackCollectionS
   return (SUPPORTED_PACK_COLLECTIONS as string[]).includes(slug)
 }
 
+/**
+ * The Dapper Studio PackNFT `type_name` for a collection whose sealed packs the
+ * Studio aggregation indexes (Top Shot, All Day, Golazos), else null. Used by
+ * /api/wallet-packs so a wallet's sealed packs are read for the collection being
+ * viewed — it used to read Top Shot's for every collection (2026-10-19).
+ */
+export function packNftTypeName(slug: string): string | null {
+  return Object.prototype.hasOwnProperty.call(COLLECTION_CONFIG, slug)
+    ? COLLECTION_CONFIG[slug as ListingCollectionSlug].typeName
+    : null
+}
+
 function buildFilters(cfg: { typeName: string; reserveOwner: string }) {
   return [
     {

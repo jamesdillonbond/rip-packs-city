@@ -194,7 +194,10 @@ export default function CollectionMomentTable(props: {
   // Returns null when the sealed-pack read FAILED, a number when it answered.
   // ⚠ Not `number` with 0 for both — an em-dash for a failed read is a measured
   // zero the reader cannot tell from the real one. See CollectionTabClient.
-  getPackCount: (setName: string) => number | null
+  // NULL when this collection has no sealed-pack source: the column is absent,
+  // not a column of "?" (a read that never happens has not failed) and never a
+  // column of another collection's packs (2026-10-19).
+  getPackCount: ((setName: string) => number | null) | null
   // Collection brand accent (collectionObj?.accent ?? var(--rpc-red)) — used by
   // the mobile thumbnail fallback + the primary-badge stat chip.
   accent: string
@@ -520,7 +523,7 @@ export default function CollectionMomentTable(props: {
                 <th className="hidden md:table-cell">{isPinnacle ? labels.tier : "Rarity"}</th>
                 <th className="hidden sm:table-cell">Serial / Mint</th>
                 <th className="hidden lg:table-cell">{heldLabel}</th>
-                <th className="hidden xl:table-cell">Packs</th>
+                {getPackCount && <th className="hidden xl:table-cell">Packs</th>}
                 <th className="whitespace-nowrap">FMV</th>
                 <th className="hidden xl:table-cell">Paid</th>
                 <th className="hidden xl:table-cell">P&amp;L</th>
@@ -710,7 +713,7 @@ export default function CollectionMomentTable(props: {
                           <div className="mt-1 text-[10px] text-purple-400 font-mono">1/1</div>
                         )}
                       </td>
-                      <td className="text-sm hidden xl:table-cell">
+                      {getPackCount && <td className="text-sm hidden xl:table-cell">
                         {(function() {
                           const count = getPackCount(row.setName)
                           if (count === null) {
@@ -730,7 +733,7 @@ export default function CollectionMomentTable(props: {
                             </a>
                           )
                         })()}
-                      </td>
+                      </td>}
                       <td className="rpc-table-cell--mono min-w-[90px] whitespace-nowrap">
                         <div
                           className={"font-semibold text-sm " + (fmv.muted && !fmv.stale ? "text-[color:var(--rpc-text-muted)]" : "text-[color:var(--rpc-text-primary)]")}

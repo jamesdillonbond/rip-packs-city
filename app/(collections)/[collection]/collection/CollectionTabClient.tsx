@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useReducer, useEffect, useCallback, useRef, Suspense } from "react"
 import { seriesPageLabel } from "@/lib/series-label"
+import { packNftTypeName } from "@/lib/packs/live-pack-listings"
 import Link from "next/link"
 import { useRouter, useParams, useSearchParams } from "next/navigation"
 import { PackSubNav, subSectionFromParams } from "@/components/collection/PackSubNav"
@@ -148,6 +149,7 @@ function WalletMomentsBody() {
   // during the 2026-08-28/29 Top Shot outage: `public-api.nbatopshot.com`
   // returned Cloudflare 530/503 for 21 h, which is exactly when that branch runs.
   const [packsFailed, setPacksFailed] = useState(false)
+  const sealedPackSource = packNftTypeName(collectionSlug) != null
   // A failed /api/badges chunk leaves up to 100 rows with no pills, and a
   // badge filter then drops them — read as "no badges" unless it is SAID.
   const [badgesPartial, setBadgesPartial] = useState(false)
@@ -924,12 +926,18 @@ function WalletMomentsBody() {
       // totalSealedPacks was previously stored in a `sealedPackCount` state that
       // nothing ever read — dropped 2026-07-28; re-add a reader before the state.)
       setPacksFailed(false)
+      setPacksByTitle({})
+      // ⛔ Scoped to THIS collection (2026-10-19): the route read Top Shot's
+      // PackNFT type for every collection, so an All Day set name was matched
+      // against the wallet's Top Shot pack titles. A collection with no sealed-
+      // pack source does not fetch at all; its table has no Packs column.
+      if (!sealedPackSource) return
       // Signed out, the proxy 401s this; skipping lands in the same unknown
       // (packsFailed) state the 401 did, minus the console error.
       signedInOnce()
         .then(function(si) {
           if (si === false) return null
-          return fetch("/api/wallet-packs?wallet=" + encodeURIComponent(trimmed))
+          return fetch("/api/wallet-packs?wallet=" + encodeURIComponent(trimmed) + "&collection=" + encodeURIComponent(collectionSlug))
             .then(function(r) { return r.ok ? r.json() : null })
         })
         .then(function(d) {
@@ -945,7 +953,7 @@ function WalletMomentsBody() {
     } finally {
       setLoading(false)
     }
-  }, [router, collectionSlug, ownerKeyChain, view.sortKey, view.sortDirection, view.playerFilter, view.seriesFilter, view.rarityFilter, view.leagueFilter])
+  }, [router, collectionSlug, sealedPackSource, ownerKeyChain, view.sortKey, view.sortDirection, view.playerFilter, view.seriesFilter, view.rarityFilter, view.leagueFilter])
 
   // Auto-search on mount: prefer the raw input the user last typed
   // (rpc_last_wallet — username or address) over the resolved ownerKey.
@@ -1490,7 +1498,7 @@ function WalletMomentsBody() {
           hasSearched={hasSearched}
           loading={loading}
           showDebug={showDebug}
-          getPackCount={getPackCount}
+          getPackCount={sealedPackSource ? getPackCount : null}
           accent={accent}
         />
 
