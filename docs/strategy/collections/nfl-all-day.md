@@ -24,6 +24,7 @@
 
 ## Shipped recently (since mid-September)
 
+- **10-20 (Cowork cloud, ~7:20–7:55 AM PT): the V1 ask book is checked against the chain, once and from now on.** #197: 2,862 buyable Dapper listings the 09-25 closure took down are back (`20261020142417`). Then every open `direct_v1` ask was read on chain for the first time: 464 dead closed, 287 of them an edition's floor (`20261020143828`). #198: pg_cron 762 re-verifies V1 weekly (`20261020144618`). ⚠ **A change point for M2 and the floor-ask reads:** both moves change `cached_listings_v2`, which the LOW→MEDIUM corroboration reads through `allday_edition_floor_ask`; split any M2 or ASK_ONLY read on 10-20 ~7:40 AM PT.
 - **10-18 (Claude Code cloud, ~4:18 PM PT): All Day surfaces stop reading Flowty's v1 slice.** The Analytics Order Book Depth card counts **28,857** on-chain asks (was Flowty's 108); `/nfl-all-day/market` no longer falls back to v1 on an empty answer (verified on production); the concierge's search, catalog-deal and live-deal fallback tools read `get_allday_market_editions_v3` / the edition floor view ("Mahomes": 0 → 26 listed editions), scoped to the resolved person.
 
 - **09-25 · Flowty fork closed `unpurchasable`.** 27,406 listings sat on a storefront fork whose `purchase()` asserts false. They were setting the ask floor, and so the FMV ceiling, for 2,724 editions (`20260925230134`).
