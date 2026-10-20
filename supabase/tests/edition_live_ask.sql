@@ -7,7 +7,7 @@
 -- same-named key in another collection is never read (#183: the old name match mixed parallels).
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20261020031908_audit_20261019_edition_live_ask_reads_panini_confirmed_ask.sql);
+-- (supabase/migrations/20261020041750_audit_20261019_edition_live_ask_probes_floor_views_by_edition_id.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -46,11 +46,14 @@ AS $function$
     SELECT f.fmv_usd FROM public.edition_fmv_current f JOIN ed ON f.edition_id = ed.id
      WHERE f.fmv_usd > 0
   ), cand AS (
+    -- A SCALAR edition id, not a JOIN: the planner pushes it into both floor
+    -- views (DISTINCT ON / GROUP BY edition_id) instead of materialising every
+    -- open listing first (2026-10-19: ~10k buffers / 70 ms per call -> ~1.2k).
     SELECT a.floor_ask AS ask, 'allday_floor'::text AS source, 1 AS pri
-      FROM public.allday_edition_floor_ask a JOIN ed ON a.edition_id = ed.id
+      FROM public.allday_edition_floor_ask a WHERE a.edition_id = (SELECT ed.id FROM ed)
     UNION ALL
     SELECT c.confirmed_floor_usd, 'candy_confirmed_floor', 1
-      FROM public.candy_listing_floor c JOIN ed ON c.edition_id = ed.id
+      FROM public.candy_listing_floor c WHERE c.edition_id = (SELECT ed.id FROM ed)
     UNION ALL
     SELECT m.low_ask_usd, 'panini_confirmed_ask', 1
       FROM public.panini_market_board m

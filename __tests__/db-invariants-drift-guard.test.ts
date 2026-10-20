@@ -1832,7 +1832,7 @@ const PINS = [
     fn: "edition_live_ask",
     test: "supabase/tests/edition_live_ask.sql",
     migration:
-      "supabase/migrations/20261020031908_audit_20261019_edition_live_ask_reads_panini_confirmed_ask.sql",
+      "supabase/migrations/20261020041750_audit_20261019_edition_live_ask_probes_floor_views_by_edition_id.sql",
   },
   {
     fn: "get_special_serial_owners_board",
