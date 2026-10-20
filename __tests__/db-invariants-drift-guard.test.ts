@@ -648,8 +648,9 @@ const PINS = [
     fn: "collect_wallet_pack_pulls",
     test: "supabase/tests/collect_wallet_pack_pulls.sql",
     // 2026-09-29: box packs yield packs. 2026-10-10 (#188): new inner packs queued for identity.
+    // 2026-10-19: a Top Shot pack the index left at Revealed was opened -- its nfts are read.
     migration:
-      "supabase/migrations/20261011020700_audit_20261010_collect_wallet_pack_pulls_queues_inner_packs_for_identity.sql",
+      "supabase/migrations/20261020030627_audit_20261019_a_top_shot_pack_dapper_left_revealed_was_opened.sql",
   },
   {
     // Added 2026-09-18. Pins the FIX for "my wallet shows 0 sold packs when I have
@@ -685,8 +686,9 @@ const PINS = [
     // v21 (2026-10-10, #187): a pack out of a box this wallet opened was not bought -- no buy, no P/L.
     // v22 (same night): the box realizes what its packs became (P/L only when all are realized).
     // v23 (2026-10-11): status decided before enrichment; a filtered read enriches only its rows (perf only).
+    // v24 (2026-10-19): a Top Shot pack the index left at Revealed is an open, never a hold.
     migration:
-      "supabase/migrations/20261011161254_audit_20261011_wallet_pack_history_status_filter_before_enrichment.sql",
+      "supabase/migrations/20261020030627_audit_20261019_a_top_shot_pack_dapper_left_revealed_was_opened.sql",
   },
   {
     // Added 2026-09-18 with the sibling above: the hero totals (packs_sold,

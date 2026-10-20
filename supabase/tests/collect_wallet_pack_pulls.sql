@@ -187,7 +187,9 @@ BEGIN
              r.wallet
       FROM jsonb_array_elements(v_edges) e
       CROSS JOIN LATERAL regexp_split_to_table(coalesce(e->'node'->>'nfts', ''), '\s*,\s*') AS t(tok)
-      WHERE e->'node'->>'status' = 'Opened'
+      WHERE (e->'node'->>'status' = 'Opened'
+             -- 2026-10-19: a Top Shot pack Dapper left at 'Revealed' WAS opened (see header)
+             OR (e->'node'->>'status' = 'Revealed' AND e->'node'->>'type_name' = 'A.0b2a3299cc857e29.PackNFT.NFT'))
         AND e->'node'->>'id' IS NOT NULL
         AND e->'node'->>'type_name' IN ('A.0b2a3299cc857e29.PackNFT.NFT', 'A.e4cf4bdc1751c65d.PackNFT.NFT', 'A.87ca73a41bb50ad5.PackNFT.NFT')
         AND t.tok ~ '^A\.[0-9a-f]+\.PackNFT\.[0-9]+$'
@@ -217,7 +219,9 @@ BEGIN
                r.wallet
         FROM jsonb_array_elements(v_edges) e
         CROSS JOIN LATERAL regexp_split_to_table(coalesce(e->'node'->>'nfts', ''), '\s*,\s*') AS t(tok)
-        WHERE e->'node'->>'status' = 'Opened'
+        WHERE (e->'node'->>'status' = 'Opened'
+             -- 2026-10-19: a Top Shot pack Dapper left at 'Revealed' WAS opened (see header)
+             OR (e->'node'->>'status' = 'Revealed' AND e->'node'->>'type_name' = 'A.0b2a3299cc857e29.PackNFT.NFT'))
           AND e->'node'->>'id' IS NOT NULL
           AND e->'node'->>'type_name' IN ('A.0b2a3299cc857e29.PackNFT.NFT', 'A.e4cf4bdc1751c65d.PackNFT.NFT', 'A.87ca73a41bb50ad5.PackNFT.NFT')
           AND t.tok ~ '^A\.[0-9a-f]+\.[A-Za-z]+\.[0-9]+$'
@@ -264,7 +268,7 @@ BEGIN
               'after', v_body->'data'->'searchPackNft'->'pageInfo'->>'endCursor',
               'filters', jsonb_build_array(
                 jsonb_build_object('owner_address', jsonb_build_object('eq', substr(r.wallet, 3))),
-                jsonb_build_object('status', jsonb_build_object('eq', 'Opened')))
+                jsonb_build_object('status', jsonb_build_object('in', jsonb_build_array('Opened', 'Revealed'))))
             ))
           ),
           headers := '{"Content-Type":"application/json","Origin":"https://nbatopshot.com","Referer":"https://nbatopshot.com/","User-Agent":"RipPacksCity/1.0"}'::jsonb,
@@ -733,6 +737,25 @@ BEGIN
   PERFORM public.collect_wallet_pack_pulls();
   PERFORM _assert_eq((SELECT count(*)::text FROM public.pack_box_contents WHERE opener_address = '0xboxer'), '3', 'a re-collected box adds no contents');
   PERFORM _assert_eq((SELECT count(*)::text FROM public.pack_nft_identity_queue), '0', 'a re-collected box queues nothing again');
+END $$;
+
+-- 2026-10-19: a TOP SHOT pack Dapper left at 'Revealed' WAS opened (37 of 37 Revealed boxes: all
+-- 259 inner packs exist), so its nfts are recorded like an Opened pack's. An All Day 'Revealed' is
+-- unmeasured and Pinnacle's points at a placeholder contract: not read (RVAD1 is the control).
+INSERT INTO public.pack_pull_wallet_state (wallet, requested_at) VALUES ('0xrevealer', now());
+INSERT INTO public.pack_pull_requests (request_id, kind, wallet, page) VALUES (79, 'wallet', '0xrevealer', 1);
+INSERT INTO net._http_response VALUES (79, 200, $j${"data":{"searchPackNft":{"totalCount":3,"pageInfo":{"endCursor":"r1","hasNextPage":false},"edges":[
+  {"node":{"id":"RVBOX1","type_name":"A.0b2a3299cc857e29.PackNFT.NFT","status":"Revealed","nfts":"A.0b2a3299cc857e29.PackNFT.17592188683480,A.0b2a3299cc857e29.PackNFT.39582421234969"}},
+  {"node":{"id":"RVPK1","type_name":"A.0b2a3299cc857e29.PackNFT.NFT","status":"Revealed","nfts":"A.0b2a3299cc857e29.TopShot.41663287"}},
+  {"node":{"id":"RVAD1","type_name":"A.e4cf4bdc1751c65d.PackNFT.NFT","status":"Revealed","nfts":"A.e4cf4bdc1751c65d.AllDay.555"}}
+]}}}$j$, NULL);
+DO $$
+BEGIN
+  PERFORM public.collect_wallet_pack_pulls();
+  PERFORM _assert_eq((SELECT string_agg(pack_nft_id, ',' ORDER BY pack_nft_id) FROM public.pack_box_contents WHERE box_pack_nft_id = 'RVBOX1'),
+                     '17592188683480,39582421234969', 'a Top Shot Revealed box records its inner packs');
+  PERFORM _assert_eq((SELECT string_agg(nft_id, ',') FROM public.pack_open_pulls WHERE pack_nft_id = 'RVPK1'), '41663287', 'a Top Shot Revealed pack records its moment');
+  PERFORM _assert(NOT EXISTS (SELECT 1 FROM public.pack_open_pulls WHERE pack_nft_id = 'RVAD1'), 'an All Day Revealed pack is not read as an open (control)');
 END $$;
 
 ROLLBACK;

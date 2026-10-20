@@ -352,9 +352,12 @@ BEGIN
   --     on-chain coverage. Ranked below every sale and rip we hold.
   index_holds AS (
     SELECT pack_nft_id, collection_id, acquired_at AS at,  -- 2026-09-24: never the CHECK time (see header)
-           CASE WHEN status = 'Opened' THEN 'idx_open' ELSE 'idx_hold' END AS role
+           CASE WHEN status = 'Opened'
+                     -- 2026-10-19: a Top Shot 'Revealed' pack WAS opened -- its contents were delivered (see header)
+                     OR (status = 'Revealed' AND collection_id = v_ts) THEN 'idx_open' ELSE 'idx_hold' END AS role
     FROM public.pack_nft_identity
-    WHERE owner_address = v_wallet AND status IN ('Sealed', 'Opened')
+    WHERE owner_address = v_wallet
+      AND (status IN ('Sealed', 'Opened') OR (status = 'Revealed' AND collection_id = v_ts))
       -- ... and this wallet's own last clean walk still found it here. Without
       -- this arm a pack that LEFT keeps owner_address = this wallet for ever --
       -- pack_nft_identity_queue only ever enqueues a pack carrying a purchase or
@@ -1657,6 +1660,31 @@ BEGIN
   SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'BX3';
   PERFORM _assert_eq(row_->>'status', 'transferred', 'BX3 a stale Opened row is a departure, not an open');
   PERFORM _assert_eq((public.get_wallet_pack_history('0xboxw', NULL, 'held', 50, 0))->>'total_count', '1', 'held counts BX2 only');
+END $$;
+
+-- v24 (2026-10-19): a TOP SHOT pack Dapper's index left at 'Revealed' WAS opened -- its contents
+-- were delivered (37 of 37 Revealed boxes: all 259 inner packs exist). Bought + Revealed read HELD
+-- (a Playoffs Box at its $212 market ask). All Day's 'Revealed' is unmeasured and Pinnacle's is a
+-- placeholder, so RV2 (All Day) stays HELD: the no-change control the fix must not move.
+INSERT INTO public.pack_wallet_sync VALUES ('0xrvw', '2026-10-19 00:00', '2026-10-19 00:05', 1, 2, NULL, '2026-10-19 00:00');
+INSERT INTO public.pack_purchases (collection_id, pack_nft_id, buyer_address, seller_address, sale_price, sealed_at, is_primary_drop, event_kind)
+VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'RV1', '0xrvw', '0xseller', 250, '2026-05-20', false, 'secondary_sale'),
+       ('dee28451-5d62-409e-a1ad-a83f763ac070', 'RV2', '0xrvw', '0xseller', 50, '2026-05-21', false, 'secondary_sale');
+INSERT INTO public.pack_nft_identity VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'RV1', 'D1', 'Revealed', '0xrvw', '2026-10-19 01:00', '2026-05-20');
+INSERT INTO public.pack_nft_identity VALUES ('dee28451-5d62-409e-a1ad-a83f763ac070', 'RV2', NULL, 'Revealed', '0xrvw', '2026-10-19 01:00', '2026-05-21');
+-- RV3: index-only (no buy of ours) Top Shot Revealed -> an open, listed under ripped
+INSERT INTO public.pack_nft_identity VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'RV3', 'D1', 'Revealed', '0xrvw', '2026-10-19 01:00', '2026-06-01');
+DO $$
+DECLARE r jsonb; row_ jsonb;
+BEGIN
+  r := public.get_wallet_pack_history('0xrvw', NULL, NULL, 50, 0);
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'RV1';
+  PERFORM _assert_eq(row_->>'status', 'ripped', 'RV1 bought + Top Shot Revealed -> opened, never held');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'RV2';
+  PERFORM _assert_eq(row_->>'status', 'held', 'RV2 All Day Revealed is not read as an open (control)');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'RV3';
+  PERFORM _assert_eq(row_->>'status', 'ripped', 'RV3 index-only Top Shot Revealed is listed as an open');
+  PERFORM _assert_eq((public.get_wallet_pack_history('0xrvw', NULL, 'held', 50, 0))->>'total_count', '1', 'held counts RV2 only');
 END $$;
 
 
