@@ -45,6 +45,7 @@ import { supabaseAdmin } from "@/lib/supabase"
 import { apiErrorResponse } from "@/lib/api-error"
 import { boundedRead } from "@/lib/api/bounded-read"
 import { isSolanaAddress } from "@/lib/address"
+import { marketplaceMomentUrl } from "@/lib/collections"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 30
@@ -186,6 +187,9 @@ export async function GET(req: NextRequest) {
       priceSol: number | null
       lastSeenAt: string | null
       confirmed: boolean
+      /** The pack's Magic Eden page (2026-10-19) — the outbound link Top Shot /
+       *  All Day pack rows carry; null unless the mint is a valid Solana address. */
+      url: string | null
     }[] = []
     let confirmedFloorUsd: number | null = null
     let confirmedFloorSol: number | null = null
@@ -224,7 +228,8 @@ export async function GET(req: NextRequest) {
         } else {
           unconfirmedCount++
         }
-        asks.push({ priceUsd: usd, priceSol: sol, lastSeenAt: r.last_seen_at, confirmed })
+        const url = isSolanaAddress(r.token_mint) ? marketplaceMomentUrl("candy-mlb", r.token_mint) : null
+        asks.push({ priceUsd: usd, priceSol: sol, lastSeenAt: r.last_seen_at, confirmed, url })
       }
       // Confirmed first (cheapest first within each group) — an unconfirmed ask
       // must never be the top row a reader takes as "the price".

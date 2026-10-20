@@ -167,9 +167,18 @@ describe("collection-slug facade agrees with the collections.ts registry", () =>
     expect(arm).toBeGreaterThan(body)
     expect(arm).toBeLessThan(view.indexOf("<PackPageClient", body))
     const src = readFileSync(join(process.cwd(), "components/packs/PaniniPackMarket.tsx"), "utf8")
-    for (const needle of ["href", "<Link", "/edition/", "/player/", "/set/", "/team/", "router.push"]) {
+    for (const needle of ["<Link", "/edition/", "/player/", "/set/", "/team/", "router.push"]) {
       expect(src, `PaniniPackMarket must not contain ${needle}`).not.toContain(needle)
     }
+    // 2026-10-19: the ONE href allowed is the pack's OUTBOUND page on Panini's
+    // marketplace (`p.marketUrl`, which /api/panini-pack-market only sets for an
+    // https://nft.paniniamerica.net/ URL). The property this arm protects is "no
+    // INTERNAL entity link can 404"; an external link is not one. Any other href —
+    // an internal path, a template literal — still reds this.
+    const hrefs = src.match(/href\s*=\s*(\{[^}]*\}|"[^"]*"|'[^']*')/g) ?? []
+    expect(src.match(/href/g)?.length ?? 0, "every href must be the checked form").toBe(hrefs.length)
+    for (const h of hrefs) expect(h.replace(/\s/g, "")).toBe("href={p.marketUrl}")
+    if (hrefs.length > 0) expect(src).toContain('target="_blank"')
   })
 
   it("Panini's Sets arm is link-free (LINK_FREE_THIN_ARMS is backed)", () => {

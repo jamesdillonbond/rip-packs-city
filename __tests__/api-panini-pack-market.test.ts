@@ -255,3 +255,26 @@ describe("GET /api/panini-pack-market — Panini drop price", () => {
     expect(json.products[0].costBasis).toBe("floor")
   })
 })
+
+// 2026-10-19: each pack links to its page on Panini's marketplace — the outbound
+// link Top Shot / All Day pack rows already carry. Only Panini's own host passes.
+describe("GET /api/panini-pack-market — marketplace link", () => {
+  it("serves the pack's Panini marketplace page", async () => {
+    state.panini_pack_ev_board = { data: [HOBBY], error: null }
+    state.panini_pack_state = { data: [{ id: "1038", pack_type: "hobby", raw: {}, page_url: "https://nft.paniniamerica.net/marketplace-details/subpack-1038-1.html" }], error: null }
+    const { json } = await body()
+    expect(json.products[0].marketUrl).toBe("https://nft.paniniamerica.net/marketplace-details/subpack-1038-1.html")
+  })
+  it("a URL on any other host is never served as the link", async () => {
+    state.panini_pack_ev_board = { data: [HOBBY], error: null }
+    state.panini_pack_state = { data: [{ id: "1038", pack_type: "hobby", raw: {}, page_url: "https://evil.example/marketplace-details/x.html" }], error: null }
+    const { json } = await body()
+    expect(json.products[0].marketUrl).toBeNull()
+  })
+  it("no state row (or a failed details read) is no link, not a guessed one", async () => {
+    state.panini_pack_ev_board = { data: [HOBBY], error: null }
+    state.panini_pack_state = { data: null, error: { message: "boom" } }
+    const { json } = await body()
+    expect(json.products[0].marketUrl).toBeNull()
+  })
+})

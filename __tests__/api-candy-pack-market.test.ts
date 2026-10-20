@@ -220,3 +220,19 @@ describe("GET /api/candy-pack-market", () => {
     expect(json.owned_error).toBeTruthy()
   })
 })
+
+// 2026-10-19: each ask links to the pack's Magic Eden page (the outbound link Top
+// Shot / All Day pack rows carry), built from the mint only when it is a real
+// Solana address — a mangled key is no link, never a link to the wrong asset.
+describe("GET /api/candy-pack-market — Magic Eden links", () => {
+  const MINT = "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU"
+  it("a valid mint links to magiceden.io/item-details/<mint>, verbatim", async () => {
+    state.candy_pack_listings = { data: [{ token_mint: MINT, price_usd: 36.44, price_sol: 0.3, last_seen_at: FRESH, expiry: null }], error: null }
+    const { json } = await body()
+    expect(json.asks[0].url).toBe(`https://magiceden.io/item-details/${MINT}`)
+  })
+  it("a mint that is not a Solana address gets no link", async () => {
+    const { json } = await body()
+    for (const a of json.asks) expect(a.url).toBeNull()
+  })
+})

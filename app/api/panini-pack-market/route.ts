@@ -80,7 +80,7 @@ export async function GET() {
     const db = supabaseAdmin as any
     const [evRes, stateRes, histRes, coverage] = await Promise.all([
       boundedRead(db.from("panini_pack_ev_board").select(EV_COLS).order("pack_type", { ascending: true }), "panini-pack-market/ev"),
-      boundedRead(db.from("panini_pack_state").select("id,pack_type,raw,price_usd"), "panini-pack-market/state"),
+      boundedRead(db.from("panini_pack_state").select("id,pack_type,raw,price_usd,page_url"), "panini-pack-market/state"),
       boundedRead(
         db
           .from("panini_pack_state_history")
@@ -102,11 +102,17 @@ export async function GET() {
     // (packDetails.subpack_price). Used as the cost ONLY when the pack has no secondary floor or
     // average sale yet, and labelled as such (costBasis "primary"), never presented as a floor.
     const primaryPrice = new Map<string, number>()
+    // The pack's page on Panini's own marketplace (2026-10-19): the outbound link
+    // Top Shot / All Day pack rows already carry. Only Panini's own host is passed
+    // through, so a malformed scrape can never become a link to somewhere else.
+    const marketUrl = new Map<string, string>()
     if (stateRes.error) {
       console.error("[panini-pack-market] product details read failed:", stateRes.error)
     } else {
-      for (const r of (stateRes.data ?? []) as { id: string; raw: unknown; price_usd?: unknown }[]) {
+      for (const r of (stateRes.data ?? []) as { id: string; raw: unknown; price_usd?: unknown; page_url?: unknown }[]) {
         details.set(String(r.id), parsePackDetails(r.raw))
+        const u = str(r.page_url)
+        if (u && u.startsWith("https://nft.paniniamerica.net/")) marketUrl.set(String(r.id), u)
         const pp = num(r.price_usd)
         if (pp !== null && pp > 0) primaryPrice.set(String(r.id), pp)
       }
@@ -131,6 +137,7 @@ export async function GET() {
         sport: str(p.sport),
         evModeled,
         imageUrl: d?.imageUrl ?? null,
+        marketUrl: marketUrl.get(String(p.id)) ?? null,
         labels: d?.labels ?? [],
         cardsPerPack: num(p.cards_per_pack),
         costUsd: num(p.pack_cost_usd) ?? primaryPrice.get(String(p.id)) ?? null,

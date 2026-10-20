@@ -54,7 +54,7 @@ interface PackMarketResponse {
     note: string | null
   } | null
   ev_error: boolean
-  asks: { priceUsd: number | null; priceSol: number | null; lastSeenAt: string | null; confirmed: boolean }[] | null
+  asks: { priceUsd: number | null; priceSol: number | null; lastSeenAt: string | null; confirmed: boolean; url?: string | null }[] | null
   asks_error: boolean
   sales: { serial: number | null; priceUsd: number | null; priceSol: number | null; marketplace: string | null; soldAt: string | null }[] | null
   sales_error: boolean
@@ -269,6 +269,7 @@ export default function CandyPackMarket() {
                     <th style={th}>Ask</th>
                     <th style={th}>SOL</th>
                     <th style={th}>Last seen</th>
+                    <th style={th}>Listing</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -279,6 +280,13 @@ export default function CandyPackMarket() {
                       <td style={td}>
                         {ptDate(a.lastSeenAt)}
                         {a.confirmed ? "" : " · unconfirmed"}
+                      </td>
+                      <td style={td}>
+                        {a.url ? (
+                          <a href={a.url} target="_blank" rel="noopener noreferrer" style={{ color: "var(--rpc-text-secondary)" }}>
+                            Magic Eden ↗
+                          </a>
+                        ) : "—"}
                       </td>
                     </tr>
                   ))}

@@ -38,6 +38,8 @@ export interface PaniniPackProduct {
   /** True only when the pack-EV model prices this pack's product (today: WC Prizm). */
   evModeled?: boolean
   imageUrl?: string | null
+  /** The pack's page on Panini's marketplace (nft.paniniamerica.net); null when unknown. */
+  marketUrl?: string | null
   labels: PaniniPackLabel[]
   cardsPerPack: number | null
   costUsd: number | null
@@ -164,6 +166,16 @@ function ProductCard({ p, staleAfterHours }: { p: PaniniPackProduct; staleAfterH
             {title}{p.cardsPerPack !== null ? ` · ${p.cardsPerPack} cards` : ""}
           </h2>
           {subtitle ? <Note>{subtitle}</Note> : null}
+          {p.marketUrl ? (
+            <a
+              href={p.marketUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ fontFamily: mono, fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--rpc-text-secondary)" }}
+            >
+              View on Panini ↗
+            </a>
+          ) : null}
         </div>
       </div>
       {p.stale ? (
