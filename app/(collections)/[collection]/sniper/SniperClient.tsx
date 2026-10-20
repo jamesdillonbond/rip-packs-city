@@ -5,7 +5,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useWarmCache } from "@/lib/warmup/WarmupContext";
-import { getCollection, COLLECTION_UUID_BY_SLUG, collectionHasLocking, marketplaceMomentUrl } from "@/lib/collections";
+import { getCollection, COLLECTION_UUID_BY_SLUG, collectionHasLocking, collectionHasPage, marketplaceMomentUrl } from "@/lib/collections";
 import { resolveListingUrl } from "@/lib/market-format";
 import { PackSubNav, subSectionFromParams } from "@/components/collection/PackSubNav";
 import PackSniperClient from "@/app/insights/pack-sniper/PackSniperClient";
@@ -2074,7 +2074,9 @@ export default function SniperClient() {
   const accent = collectionObj?.accent ?? "var(--rpc-red)";
   const searchParams = useSearchParams();
   const section = subSectionFromParams(searchParams);
-  const hasPacks = collectionSlug === "nba-top-shot" || collectionSlug === "nfl-all-day";
+  // The Packs sub-toggle shows where the collection exposes a Pack Sniper page —
+  // the registry decides (2026-10-19), not a literal pair beside it.
+  const hasPacks = collectionHasPage(collectionSlug, "pack-sniper");
   const packsActive = hasPacks && section === "packs";
 
   return (

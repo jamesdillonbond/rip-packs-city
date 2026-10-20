@@ -13,9 +13,10 @@ export async function generateMetadata(
   return pageMetadata("packs", collection.label, collection.id)
 }
 
-// Packs currently exist only for Top Shot + NFL All Day. For other
-// collections, render a graceful "coming soon" shell rather than letting
-// the packs page fetch endpoints that will 404 and flash broken UI.
+// The Packs page renders where the registry lists "packs" (Top Shot, All Day,
+// Golazos and Pinnacle on pack_distributions; Panini and Candy on their native
+// pack planes). For other collections, render a graceful "coming soon" shell
+// rather than letting the packs page fetch endpoints that will 404.
 export default async function PacksLayout(props: { children: ReactNode; params: Promise<{ collection: string }> }) {
   const { collection: id } = await props.params
   if (collectionHasPage(id, "packs")) {

@@ -7,8 +7,10 @@
 // collection (compact heading, no standalone hero, no TS/AllDay toggle — the
 // collection layout already supplies that context via its header + tabs).
 //
-// Only Top Shot + NFL All Day have pack data, so the "pack-sniper" page is in
-// those two collections' `pages` arrays; any other slug notFound()s.
+// Only Top Shot + NFL All Day have a live sealed-pack listing book worth sniping
+// (Golazos: 1 dist listed, 2 with gated EV, read 2026-10-19; Pinnacle and the
+// rest: no listing feed), so the "pack-sniper" page is in those two collections'
+// `pages` arrays; any other slug notFound()s.
 
 import { notFound } from "next/navigation"
 import { getPackDeals, type PackDeal } from "@/lib/packs/pack-deals"

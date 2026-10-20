@@ -207,9 +207,8 @@ const EDITION_COLLECTION_IDS = [
   'd1a0a7f5-609a-49f4-a1a7-4eaac55b020b', // panini_blockchain
 ]
 
-// Pack distributions exist for the edition collections plus Disney Pinnacle.
-// (Pinnacle currently has 0 pack_distributions rows but is included so new
-// Pinnacle drops are picked up automatically.)
+// Pack distributions exist for the edition collections plus Disney Pinnacle
+// (159 Pinnacle rows, read 2026-10-19; new drops are discovered from the opens).
 const PACK_COLLECTION_IDS = [
   ...EDITION_COLLECTION_IDS,
   '7dd9dd11-e8b6-45c4-ac99-71331f959714', // disney_pinnacle
