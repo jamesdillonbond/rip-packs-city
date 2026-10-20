@@ -41,6 +41,10 @@ const ROUTES = [
   // not looking.
   "/nba-top-shot/sniper",
   "/nba-top-shot/collection?wallet=0xbd94cade097e50ac",
+  // The set tracker itself (added 10-20). Bare /sets is the "no wallet loaded"
+  // prompt (253 elements) — kept above, it is a real page — but until this route
+  // the tracker's 272 set cards (4,464 elements) had never been audited.
+  "/nba-top-shot/sets?wallet=0xbd94cade097e50ac",
 ]
 const THEMES = ["dark", "light"] as const
 const SERIOUS = new Set(["serious", "critical"])
@@ -68,15 +72,26 @@ const NETWORK_IDLE_CAP_MS = 15_000
 // is not seen. Auditing 25 rows beats the zero this gate was really auditing.
 const ROW_SCOPE_EXCLUDE = "tbody > tr:nth-child(n+26)"
 
-// ⚠ A ROUTE WHOSE CONTENT IS A TABLE MUST SHOW ITS ROWS BEFORE IT CAN PASS. An
-// audit of a loading or error state is a check that did not run, and it read
-// as a 3 s green on /nba-top-shot/packs for as long as the route has been listed
-// (its "296 elements, 0 table rows, 45 rules passed" is that state — reproduced
-// locally with the data unreachable). Waited for, then asserted.
-const MIN_TABLE_ROWS: Record<string, number> = {
-  "/nba-top-shot/packs": 25,
+// ⚠ A DATA ROUTE MUST SHOW ITS CONTENT BEFORE IT CAN PASS. An audit of a
+// loading or error state is a check that did not run, and it read as a 3 s green
+// on /nba-top-shot/packs for as long as the route has been listed (its "296
+// elements, 0 table rows, 45 rules passed" is that state — reproduced locally
+// with the data unreachable). Waited for, then asserted. Every route that renders
+// data is listed; the minimums sit well under what production showed on 10-20
+// (packs 500 rows, collection 365, squeeze 200, analytics 55, rookies 61,
+// market 50, sets 272 cards), so a thin market day does not red the gate.
+// Unlisted: static pages, and the Sniper, whose default board can honestly
+// hold a handful of deals (4 on 10-20).
+const READY: Record<string, { selector: string; min: number; what: string }> = {
+  "/nba-top-shot/packs": { selector: "tbody > tr", min: 25, what: "table rows" },
+  "/nba-top-shot/collection?wallet=0xbd94cade097e50ac": { selector: "tbody > tr", min: 25, what: "table rows" },
+  "/insights/squeeze": { selector: "tbody > tr", min: 10, what: "table rows" },
+  "/insights/rookies": { selector: "tbody > tr", min: 10, what: "table rows" },
+  "/nba-top-shot/market": { selector: "tbody > tr", min: 10, what: "table rows" },
+  "/nba-top-shot/analytics": { selector: "tbody > tr", min: 10, what: "table rows" },
+  "/nba-top-shot/sets?wallet=0xbd94cade097e50ac": { selector: "text=/total sets/i", min: 1, what: "set-tracker summaries" },
 }
-const ROWS_WAIT_MS = 20_000
+const READY_WAIT_MS = 20_000
 
 // ⚠ AXE GETS A BUDGET OF ITS OWN. Before 10-20 an axe run that never finished
 // hit the TEST timeout inside `frame.evaluate` and wrote NOTHING to
@@ -136,9 +151,9 @@ for (const path of ROUTES) for (const theme of THEMES) {
     await page.waitForLoadState("networkidle", { timeout: NETWORK_IDLE_CAP_MS }).catch(() => {})
     await page.waitForTimeout(SETTLE_MS)
 
-    const minRows = MIN_TABLE_ROWS[path] ?? 0
-    if (minRows > 0) {
-      await page.locator(`tbody > tr:nth-child(${minRows})`).first().waitFor({ timeout: ROWS_WAIT_MS }).catch(() => {})
+    const ready = READY[path]
+    if (ready) {
+      await page.locator(ready.selector).nth(ready.min - 1).waitFor({ timeout: READY_WAIT_MS }).catch(() => {})
     }
 
     // What axe is about to read — printed for every route, so an audit of a
@@ -148,11 +163,12 @@ for (const path of ROUTES) for (const theme of THEMES) {
       rows: document.querySelectorAll("tbody > tr").length,
     }))
     const scope = `${dom.elements} elements, ${dom.rows} table rows (≤25 per table audited)`
-    if (dom.rows < minRows) {
-      const line = `### ${path} [${theme}] — ❌ not audited: ${scope}; this route must show ≥${minRows} rows (a loading or error state is not the page)\n`
+    const shown = ready ? await page.locator(ready.selector).count() : 0
+    if (ready && shown < ready.min) {
+      const line = `### ${path} [${theme}] — ❌ not audited: ${scope}; ${shown} ${ready.what}, this route must show ≥${ready.min} (a loading or error state is not the page)\n`
       console.log(line)
       appendFileSync(SUMMARY, line + "\n")
-      throw new Error(`${url}: only ${dom.rows} table rows after ${ROWS_WAIT_MS / 1000}s (need ≥${minRows}) — the audit would read a loading or error state`)
+      throw new Error(`${url}: only ${shown} ${ready.what} after ${READY_WAIT_MS / 1000}s (need ≥${ready.min}) — the audit would read a loading or error state`)
     }
 
     const t0 = Date.now()
