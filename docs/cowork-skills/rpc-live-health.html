@@ -270,7 +270,7 @@ a{color:#7FB2F0;}
   </div>
   <div class="muted" style="margin-top:8px">A surface is healthy when its backing view returns rows. Row probes are capped at <b>500+</b> — a bounded liveness check, not a full count. This checks the DATA layer; pair with the on-push smoke tests for HTTP-level coverage. squeeze-check &amp; tc-report are wallet-paste tools (no standing dataset).</div>
 
-  <div class="muted" style="margin-top: 24px;">Source: one consolidated Supabase query over <code>pipeline_runs</code>, <code>fmv_snapshots</code>, <code>pinnacle_fmv_snapshots</code>, <code>pinnacle_fmv_history</code>, <code>cached_listings_v2</code>, <code>sales</code>, <code>unmapped_sales</code>, <code>get_pipeline_alerts()</code>, and the /insights backing views. Reload re-runs it (one approval prompt). When the DB is saturated (cron rush at :00/:20/:40), the heavy FMV legs self-skip and show a busy notice — Reload off the rush.</div>
+  <div class="muted" style="margin-top: 24px;">Source: one consolidated Supabase query over <code>pipeline_runs</code>, <code>fmv_snapshots</code>, <code>pinnacle_fmv_history</code>, <code>cached_listings_v2</code>, <code>sales</code>, <code>unmapped_sales</code>, <code>get_pipeline_alerts()</code>, and the /insights backing views. Reload re-runs it (one approval prompt). When the DB is saturated (cron rush at :00/:20/:40), the heavy FMV legs self-skip and show a busy notice — Reload off the rush.</div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js" integrity="sha384-iU8HYtnGQ8Cy4zl7gbNMOhsDTTKX02BTXptVP/vqAWIaTfM7isw76iyZCsjL2eVi" crossorigin="anonymous"></script>
@@ -580,7 +580,7 @@ const SURFACES=[
   ["/insights/trophies","v_insights_trophies","trophies",false],
   ["/insights/new-collectors","mv_insights_new_collectors_cohorts","new_collectors",false]
 ];
-const WALLET_TOOLS=[["/insights/squeeze-check","get_wallet_squeeze (RPC)"],["/insights/tc-report","get_wallet_tc_report (RPC)"]];
+const WALLET_TOOLS=[["/insights/squeeze-check","get_wallet_squeeze_exposure (RPC)"],["/insights/tc-report","get_wallet_tc_report (RPC)"]];
 
 function renderInsights(countRows, freshRows) {
   let empties = 0;

@@ -3,50 +3,49 @@
 This is the *what to check* source of truth. Re-derive live facts (which artifacts exist, which
 objects are current) each run — every count and id here is a dated sample, not a constant.
 
-## Part 1 — Artifacts (live Cowork dashboards)
+## Part 1 — Artifacts (live dashboards)
 
-Live artifacts live at `C:\Users\TDill\Claude\Artifacts\<id>\index.html` (authoritative path per the
-Cowork artifact manifest — `list_artifacts` returns the current set and their `path`s; the old
-`OneDrive\Documents` path is stale). The `Read` tool can reach that path even though it's outside the
-connected folders; `Grep`/`bash` cannot.
+**Since 2026-10-20 (#114) the estate is 11 claude.ai artifacts**, ported from the legacy desktop
+Cowork store. The URL map is in `docs/reference/known-issues.md` #114; the source of each is
+`docs/cowork-skills/<name>.html` (flat, so the helper guard test covers it). `Artifact`
+`action:"list"` returns the current set; `action:"read"` with a URL returns the published page.
+The legacy desktop copies still exist (only in the desktop sidebar; `list_legacy_live_artifacts`
+from a session linked to Trevor's computer) but are superseded — do not refresh them.
 
-Candidate ids to check if present (many are retired — only read the ones `list_artifacts` shows):
-`rpc-live-health`, `rpc-fmv-watch`, `rpc-pipeline-reliability`, `rpc-security-drift`,
-`rpc-insights-health`, `rpc-traction`, `rpc-deploys-and-cost`, `rpc-my-wallet`,
-`rpc-cross-collection`, `rpc-trophy-ladder`, `rpc-audit-followups`, `rtr-pack-finder`,
-`rpc-offers-intelligence`, `rpc-qa-scorecard`. (As of 2026-08-27 only **5** existed:
-`rpc-live-health`, `rpc-my-wallet`, `rpc-traction`, `rpc-deploys-and-cost`, `rpc-qa-scorecard`.)
+The 11: `rpc-qa-scorecard`, `rpc-live-health`, `rpc-deploys-and-cost`, `rpc-my-wallet`,
+`rpc-rewards-console`, `candy-chain-two-onboarding-v2`, `rpc-panini-squeeze-v2`,
+`rpc-set-challenge-roi`, `rpc-pack-lifecycle`, `rpc-tracked-fmv-confidence`, `rpc-traction`.
 
-For each artifact that exists:
+For each:
 
 **(a) Stale object references** — flag any of: `topshot_rookies_board` (→ `topshot_2025_rookie_index`),
 live-presented `flowty_*` or old `cached_listings` (`cached_listings_v2` is current),
 `topshot-listings-indexer` (retired 2026-05-26), any dropped index, any wrong collection UUID, or a
 retired function name in an *executed* query. **Verify object existence against the live DB in one
-query** (collect every table/view/function the artifact SQL references, then
-`WHERE NOT EXISTS (…pg_class…/…pg_proc…)`), rather than eyeballing. A stale name in a *display-only
-label* (a row the artifact marks "interactive" and never queries) is cosmetic, not an error.
+query** (collect every table/view/function the page SQL references, then
+`WHERE to_regclass('public.'||n) IS NULL` / `NOT EXISTS (…pg_proc…)`), rather than eyeballing. All
+referenced objects existed on 2026-10-20.
 
 **(b) Drifted prose** — live KPIs self-update, but hardcoded narrative numbers/dates/statuses go
 stale (e.g. an item marked OPEN that has since shipped). Flag genuine drift.
 
-**(c) Brand** — RPC red `#E03A2F` / `var(--rpc-red)` accent, uppercase letter-spaced display headers,
-monospace numbers. Chart.js/canvas hex literals are the documented allowed exception.
+**(c) Failure handling** — `node scripts/audit-cowork-artifact-failure-handling.mjs docs/cowork-skills`
+must report 0 blind, and the helper test must pass. A non-Supabase reader (the two Vercel deploy
+readers) must throw on a missing list, never default to `[]`.
 
-**Only `update_artifact` for a genuine inaccuracy** (read full HTML → write corrected to a scratch
-file → update). Known-deferred, do NOT burn a risky full-file reinstall on these alone — report them:
-- `rpc-live-health` footer + `rpc-my-wallet` footer name the dropped `pinnacle_fmv_snapshots` in
-  **prose only**; the actual SQL correctly uses `pinnacle_fmv_history`.
-- ~~`rpc-qa-scorecard` sentinel predicate `^[0-9]+:[0-9]+$` over-counts `::subID` parallels~~ —
-  **already fixed** (2026-09-25 pass): the live artifact (updatedAt 2026-09-07) uses
-  `^[0-9]+:[0-9]+(::[0-9]+)?$`. Do not re-chase.
-- (2026-08-27 new, same low-priority class) `rpc-live-health`'s wallet-tools row labels
-  `/insights/squeeze-check` as backed by `get_wallet_squeeze`; the live function is
-  `get_wallet_squeeze_exposure`. Display-only label, not an executed query.
+**(d) Brand** — RPC red `#E03A2F` accent, uppercase letter-spaced display headers, monospace
+numbers. Chart.js/canvas hex literals are the documented allowed exception.
 
-- (2026-10-03, DECIDED — option 2 of `inbox/2026-09-08T0110Z`) `rpc-qa-scorecard`'s `offsan` card is WRONG on both halves: it names the dead `offers-sweep` as its self-clear, and it asserts a self-clear that cannot happen. ~99 % of `v_offer_sanity_flags` rows are serial/subedition-grain bids that the live raiser (pg_cron jobid 216) excludes by design, so the count (1,172 on 10-03) never trends to zero. **Fix at the next interactive refresh:** retitle the card as informational — *"editions whose best chain bid is narrower than edition-level (serial/subedition)"* — drop the self-clear sentence, and stop ranking it as something that should fall. Keep the view: it is the only watch on a serial bid above the edition offer. The view's own `COMMENT` already states this. Not a user-facing bug; do not re-file the count.
+**Refresh only for a genuine inaccuracy:** edit the repo source, publish it with the `Artifact` tool
+(the artifact's `url`), `cmp` the published file against the repo copy, commit + ledger. The
+long-deferred items were fixed in the 2026-10-20 port — do not re-chase: the `pinnacle_fmv_snapshots`
+footer prose (`rpc-live-health`, `rpc-my-wallet`), the `get_wallet_squeeze` label (now
+`get_wallet_squeeze_exposure`), the QA scorecard sentinel predicate (fixed 09-25), and the QA
+scorecard offer card (retitled "Serial-grain chain bids", informational, never ranked; it no longer
+names the dead offers-sweep or claims a self-clear, and throws when its count is missing).
 
-Fix these known items only during an interactive artifact refresh where each rebuild can be eyeballed.
+⚠ A first open in a browser waits on a per-connector consent prompt ("Continue"); a QA pass cannot
+click it on Trevor's behalf. Report such a page as "not live-verified", not as broken.
 
 ## Part 2 — Live pages (Claude in Chrome, www.rippackscity.com)
 

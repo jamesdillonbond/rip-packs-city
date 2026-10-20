@@ -112,7 +112,7 @@
   <div class="banner" id="banner"><span class="dot"></span><span id="bannertext">Running checks…</span></div>
   <div class="grid" id="grid"></div>
   <div class="foot">
-    One-glance roll-up across the QA loop (see <span class="mono">docs/operations/qa-loop.md</span>). Each domain self-scores; the banner is the worst card. Deep dives: <a href="#">rpc-live-health</a>, <a href="#">rpc-offers-intelligence</a>, <a href="#">rpc-deploys-and-cost</a> (security, pipeline-reliability + FMV-watch detail were folded into rpc-live-health + the daily monitor 2026-06-12). Offer-sanity gaps are transient (amber) — <span class="mono">edition_offers</span> are GREATEST-raised to the on-chain number in the ~20-min offers-sweep and self-clear. Use the view header's Reload to refresh.
+    One-glance roll-up across the QA loop (see <span class="mono">docs/operations/qa-loop.md</span>). Each domain self-scores; the banner is the worst card. Deep dives: <a href="#">rpc-live-health</a>, <a href="#">rpc-offers-intelligence</a>, <a href="#">rpc-deploys-and-cost</a> (security, pipeline-reliability + FMV-watch detail were folded into rpc-live-health + the daily monitor 2026-06-12). The offer card is informational: almost every row is a serial- or subedition-grain chain bid, which the edition-level offer raiser skips by design, so it does not trend to zero. Use the view header's Reload to refresh.
   </div>
 </div>
 <script>
@@ -193,9 +193,11 @@ const CARDS=[
   { id:"fmvsan", title:"FMV sanity", run:async()=>{
       const r=(await getPayload()).fmvsan||{}; const n=Number(r.n)||0;
       return { big:String(n), rank:n===0?0:2, detail:n===0?"No edition diverges from its set's sales median.":n+" mispriced edition(s) flagged — review." }; } },
-  { id:"offsan", title:"Offer reconciliation", run:async()=>{
-      const r=(await getPayload()).offsan||{}; const n=Number(r.n)||0;
-      return { big:String(n), rank:n===0?0:1, detail:(n===0?"On-chain agrees with the GQL number.":n+" TS editions where on-chain beats/blanks GQL ("+(r.blank||0)+" blank). Transient — self-clears as the offers-sweep GREATEST-raises edition_offers.") }; } },
+  { id:"offsan", title:"Serial-grain chain bids", run:async()=>{
+      const r=(await getPayload()).offsan;
+      if(!r||r.n==null) throw new Error("offer-sanity count missing from the payload");
+      const n=Number(r.n), blank=Number(r.blank);
+      return { big:String(n), rank:0, detail:"Informational, not ranked: editions whose best chain bid is narrower than edition level (serial/subedition). "+(Number.isFinite(blank)?blank+" have no GQL offer at all. ":"")+"The edition offer raiser skips these by design." }; } },
   { id:"fmv", title:"FMV health (TS)", run:async()=>{
       const r=(await getPayload()).fmv||{}; if(r.hm==null) throw new Error("fmv leg returned no count");
       const hm=Number(r.hm)||0; const mins=r.fresh?((Date.now()-new Date(r.fresh).getTime())/6e4):9999;

@@ -78,14 +78,17 @@ function liftHelper(src) {
 
 const rows = []
 for (const entry of readdirSync(store)) {
-  const file = path.join(store, entry, "index.html")
-  if (!existsSync(file)) continue
+  // Two layouts: the desktop store (<store>/<name>/index.html) and the repo's flat
+  // sources (docs/cowork-skills/<name>.html), which are the live estate since 2026-10-20.
+  const flat = entry.endsWith(".html")
+  const file = flat ? path.join(store, entry) : path.join(store, entry, "index.html")
+  if (!existsSync(file) || !statSync(file).isFile()) continue
   const src = readFileSync(file, "utf8")
   const helper = liftHelper(src)
   if (!helper) continue
 
   rows.push({
-    artifact: entry,
+    artifact: flat ? entry.replace(/\.html$/, "") : entry,
     throwsOnErrorObject:
       /raw\.error\s*&&\s*typeof\s+raw\.error\s*===\s*["']object["']/.test(helper) ||
       /raw\.isError\s*===\s*true/.test(helper),
@@ -127,7 +130,8 @@ console.log(`  ...and no call-site isError guard either (FULLY BLIND): ${fullyBl
 if (fullyBlind.length) console.log(`  fully blind: ${fullyBlind.map((r) => r.artifact).join(", ")}`)
 console.log(
   `\nFix: copy the helper from docs/cowork-skills/rpc-insights-health.html into each,` +
-    `\nthen update_artifact each one from a Cowork DESKTOP session (this repo's tooling cannot republish them).`,
+    `\nthen republish each with the Artifact tool (since 2026-10-20 the live estate is claude.ai artifacts` +
+    `\nsourced from docs/cowork-skills/<name>.html — see known-issues #114).`,
 )
 
 process.exit(vulnerable.length === 0 ? 0 : 1)

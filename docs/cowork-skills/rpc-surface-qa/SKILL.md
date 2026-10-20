@@ -28,7 +28,7 @@ the brand tokens, and the two-collection-vocabulary footguns this QA leans on.
 ## What you may and may not do (the discipline)
 
 - **The default output is a report (the digest).** When in doubt, report — don't act.
-- **You MAY** refresh a genuinely stale live artifact (`update_artifact`) and ship **additive
+- **You MAY** refresh a genuinely stale live artifact (edit its repo source, republish with the `Artifact` tool, commit the same bytes) and ship **additive
   doc fixes** into the repo.
 - **You MUST NOT** change route code, `.tsx`, or `workers/*` — not because Cowork cannot push (it often can: see `docs/reference/tooling-gotchas.md`) but because this pass cannot run the render/test loop that change needs
   path and those are the highest-risk surfaces. Package any needed code fix as a **Claude-Code
@@ -45,8 +45,9 @@ every artifact id, every specific URL and what it must show, every grep pattern 
 lives in `references/surface-checklist.md`. Read it before starting; it is the source of truth
 for *what* to check.** This body is the *how* and *why*.
 
-1. **Artifact freshness + brand.** Read each live Cowork dashboard artifact that exists (many
-   listed ids have been retired — only some exist; `list_artifacts` gives the truth). For each:
+1. **Artifact freshness + brand.** Read each live dashboard artifact (since 2026-10-20 the estate
+   is claude.ai artifacts — the URL map is in known-issues #114, the sources are
+   `docs/cowork-skills/<name>.html`; `Artifact` `action:"list"` gives the truth). For each:
    confirm embedded queries reference **current** DB objects (verify object existence against the
    live DB in one query rather than eyeballing), flag hardcoded prose numbers/statuses that have
    drifted, and check brand (RPC red accent, uppercase letter-spaced headers, monospace numbers;

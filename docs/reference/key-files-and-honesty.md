@@ -2101,6 +2101,12 @@ actually RUN live in OneDrive, outside every connected folder, and
 are a mirror, not the running code** — the same direction-of-drift caveat the
 cowork-skill-bundle guard carries. Registered as **#114**.
 
+✅ **SUPERSEDED 2026-10-20 (#114 resolved):** the live estate is now 11 claude.ai
+artifacts published from `docs/cowork-skills/<name>.html` with the `Artifact` tool,
+so the repo copies ARE the published code (publish from a copy, `cmp`, commit the
+same bytes). The test above covers all of them. The scope caveat still holds for the
+superseded desktop copies, which nothing republishes.
+
 ---
 
 ## 🚨 A FALSE CLAIM OF CAUSE IS THE SAME DEFECT AS A FALSE CLAIM OF FACT — and I shipped one into user-facing copy off half an error string (2026-09-14)
