@@ -113,6 +113,18 @@ function describeViolation(v: Violation, nodes: AxeNode[] = v.nodes): string {
   return `${v.impact ?? "unknown"} · ${v.id} (${nodes.length} node${nodes.length === 1 ? "" : "s"}): ${v.help} — ${targets}`
 }
 
+// A gated contrast failure must be fixable from the LOG. A bare selector
+// (".border", the 10-20 Sniper case) is not, and the evidence otherwise sits in
+// an artifact of tens to hundreds of MB. So each failing node's colours, ratio
+// and opening HTML are printed too (first 3 nodes).
+function contrastDetail(v: Violation, nodes: AxeNode[]): string[] {
+  if (v.id !== "color-contrast") return []
+  return nodes.slice(0, 3).map((n) => {
+    const d = (n.any?.[0]?.data ?? {}) as { fgColor?: string; bgColor?: string; contrastRatio?: number; expectedContrastRatio?: string; fontSize?: string }
+    return `    ↳ ${d.fgColor} on ${d.bgColor} = ${d.contrastRatio}:1 (needs ${d.expectedContrastRatio}, ${d.fontSize}) — ${n.html.slice(0, 160)}`
+  })
+}
+
 for (const path of ROUTES) for (const theme of THEMES) {
   test(`axe: ${path} [${theme}]`, async ({ page }) => {
     test.setTimeout(TEST_TIMEOUT_MS)
@@ -158,7 +170,7 @@ for (const path of ROUTES) for (const theme of THEMES) {
       const nodes = v.nodes.filter((n) => !isAcceptedException(v, n))
       excepted += v.nodes.length - nodes.length
       if (!nodes.length) continue
-      if (SERIOUS.has(v.impact ?? "") && GATED.has(v.id)) gated.push(describeViolation(v, nodes))
+      if (SERIOUS.has(v.impact ?? "") && GATED.has(v.id)) gated.push([describeViolation(v, nodes), ...contrastDetail(v, nodes)].join("\n"))
       else if (SERIOUS.has(v.impact ?? "")) reported.push(describeViolation(v, nodes))
       else advisory.push(describeViolation(v, nodes))
     }
