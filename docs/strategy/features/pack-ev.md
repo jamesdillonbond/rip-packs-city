@@ -48,7 +48,8 @@ Shipped this pass (ledger 10-19):
 Still open, with the reason each one waits:
 - **Golazos / Pinnacle sealed resale and pack sales history:** no secondary data. `golazos_pack_sales_history` is drop (primary) sales only, ending 2023-04. Pinnacle has 0 pack buys.
 - **Pack Sniper beyond TS/AD:** Golazos had 1 collector-listed dist (read 10-19). Pinnacle has no Flow listing feed.
-- **Pinnacle single-pack page:** `pinnacle_pack_opens.opener_address` is the platform custodian for ~99 % of opens, and its pulls need the render-grain join (`pinnacle_catalog`), not `editions`.
+- ~~**Pinnacle single-pack page.**~~ ✅ Shipped 10-19 (`get_pinnacle_pack_lifecycle`). Its pulls are named by the pricing lane's own ladder (300 random multi-pull packs: 990 pulls, 0 unnamed). ⚠ **Correction:** the reason recorded here earlier ("the opener is the platform custodian for ~99 % of opens") was WRONG. There are 5,577 distinct openers, and the custodial account `0xedf9df96c92f4595` opened 11,851 of 91,471 (13 %). The 99.3 % figure is the share of *that account's* opens that are platform batches.
+- Pack-page pull cards now link `/laliga-golazos/edition/<external_id>` and `/pinnacle/moment/<render_id>`. `/moment/<nft_id>` 404'd for both collections because neither has rows in `moments`.
 - **Pinnacle simulator, grails and top pulls:** blocked on a drop pool. EV is render-pooled per drop (#157), and no table holds the pool.
 - ~~**`/analytics/packs`** lists UFC, which has no packs, and omits Panini and Candy.~~ ✅ 10-19: UFC removed; Panini and Candy panels link to their own pack boards. Their models are not in `analytics_packs_summary`.
 - **Insights pack-reality and pack-market boards** are TS/AD only. A Golazos realized board would have no modeled side, because pulls are priced years after the open.
