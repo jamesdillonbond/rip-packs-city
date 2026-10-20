@@ -2980,8 +2980,9 @@ const PINS = [
     // to temp), another collection's newer snapshot ignored, ordering + p_limit.
     fn: "get_pack_ev_contributors",
     test: "supabase/tests/get_pack_ev_contributors.sql",
+    // 2026-10-19: re-pinned — p_collection_id added (All Day / Golazos panels).
     migration:
-      "supabase/migrations/20261003031302_audit_20261002_pack_ev_contributors_latest_fmv_by_index_probe.sql",
+      "supabase/migrations/20261020021235_audit_20261019_pack_ev_contributors_takes_the_collection.sql",
   },
   {
     // Added 2026-10-02. The edition page's recent-sales table: newest first,

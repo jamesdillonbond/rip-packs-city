@@ -29,6 +29,7 @@ import {
   fetchDistFallback,
   fetchPackLifecycle,
   hasCompleteOpenHistory,
+  hasEvContributors,
   fetchPackRealizedEv,
   fetchAllDayCorrectedEv,
   fetchPinnacleDropEv,
@@ -289,8 +290,10 @@ describe("a section that does not apply to the collection reports ok:true", () =
     expect(res).toEqual({ data: null, ok: true })
   })
 
-  it("fetchEvContributors on a non-Top-Shot collection", async () => {
-    expect(await fetchEvContributors("nfl-all-day", "1", makeDb({}).db)).toEqual({ rows: [], ok: true })
+  // Re-pinned 2026-10-19 from nfl-all-day, which gained the panel; Pinnacle has
+  // no pack_drop_pool rows (its EV is per drop, #157).
+  it("fetchEvContributors on a collection with no drop pool", async () => {
+    expect(await fetchEvContributors("disney-pinnacle", "1", makeDb({}).db)).toEqual({ rows: [], ok: true })
   })
 
   it("issues no query at all for an inapplicable collection", async () => {
@@ -298,7 +301,7 @@ describe("a section that does not apply to the collection reports ok:true", () =
     await fetchPackMarket("laliga-golazos", "1", db)
     await fetchPackLifecycle("ufc", "1", db)
     await fetchPackRealizedEv("ufc", "1", db)
-    await fetchEvContributors("nfl-all-day", "1", db)
+    await fetchEvContributors("disney-pinnacle", "1", db)
     await fetchAllDayCorrectedEv("nba-top-shot", "1", db)
     expect(calls).toEqual([])
   })
@@ -518,6 +521,30 @@ describe("fetchEvContributors", () => {
     const { db } = makeDb({ "rpc:get_pack_ev_contributors": { data: { oops: true }, error: null } })
     expect(await fetchEvContributors("nba-top-shot", "1", db)).toEqual({ rows: [], ok: true })
   })
+
+  // ⛔ SUBSTITUTION (2026-10-19): the RPC hardcoded Top Shot's collection id. Each
+  // collection must pass ITS OWN id, or an All Day pack lists Top Shot editions.
+  it.each([
+    ["nba-top-shot", "95f28a17-224a-4025-96ad-adf8a4c63bfd"],
+    ["nfl-all-day", "dee28451-5d62-409e-a1ad-a83f763ac070"],
+    ["laliga-golazos", "06248cc4-b85f-47cd-af67-1855d14acd75"],
+  ])("%s passes its own collection id to the RPC", async (slug, uuid) => {
+    const args: unknown[] = []
+    const b: Record<string, unknown> = {}
+    b.then = (onF?: (v: unknown) => unknown) => Promise.resolve({ data: [{ edition_id: "e1" }], error: null }).then(onF)
+    const db = { rpc: (name: string, a: unknown) => { args.push([name, a]); return b } }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const res = await fetchEvContributors(slug, "7", db as any)
+    expect(res).toEqual({ rows: [{ edition_id: "e1" }], ok: true })
+    expect(args).toEqual([["get_pack_ev_contributors", { p_dist_id: "7", p_limit: 12, p_collection_id: uuid }]])
+    expect(hasEvContributors(slug)).toBe(true)
+  })
+
+  it("no read and no panel where there is no drop pool", () => {
+    for (const slug of ["disney-pinnacle", "ufc", "panini-blockchain", "candy-mlb"]) {
+      expect(hasEvContributors(slug)).toBe(false)
+    }
+  })
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -599,9 +626,10 @@ describe("bounds — a hung read is not an unindexed pack", () => {
 
   it("CONTROL — a section that does not APPLY is still ok:true, not a failure", async () => {
     // The third state this file's header calls the one carrying the most weight:
-    // a Top-Shot-only panel on an All Day pack must not read as an outage, or
-    // every All Day pack page carries a permanent "unavailable" banner.
-    const res = await fetchEvContributors("nfl-all-day", "d1", hangingDb())
+    // a drop-pool-only panel on a Pinnacle pack must not read as an outage, or
+    // every Pinnacle pack page carries a permanent "unavailable" banner.
+    // (Re-pinned 2026-10-19 from nfl-all-day, which gained the panel.)
+    const res = await fetchEvContributors("disney-pinnacle", "d1", hangingDb())
 
     expect(res).toEqual({ rows: [], ok: true })
   })

@@ -1,6 +1,7 @@
 -- DB invariant: public.get_pack_ev_contributors — the top editions of a Top
 -- Shot dist by EV contribution (pack-dist page, "What drives the remaining EV").
--- Added 2026-10-02 with the LATERAL rewrite. Claims:
+-- Added 2026-10-02 with the LATERAL rewrite; 2026-10-19 the collection became a
+-- parameter (a 3-arg form; the 2-arg form wraps it with Top Shot). Claims:
 --
 --   1. Each pool edition is priced from its LATEST Top Shot fmv_snapshots row
 --      (a newer row in ANOTHER collection with the same edition_id is ignored).
@@ -8,9 +9,11 @@
 --   3. Zero-weight pool rows and other dists are excluded.
 --   4. pull_prob / ev_per_slot / pct_of_ev are over the whole pool; rows are
 --      ordered by drop_weight * fmv DESC and cut at p_limit.
+--   5. p_collection_id selects BOTH the pool and the FMV collection; the 2-arg
+--      call is Top Shot (it keeps its 2026-10-02 meaning).
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20261003031302_audit_20261002_pack_ev_contributors_latest_fmv_by_index_probe.sql).
+-- (supabase/migrations/20261020021235_audit_20261019_pack_ev_contributors_takes_the_collection.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -22,7 +25,7 @@ CREATE TABLE public.editions (id uuid PRIMARY KEY, external_id text, name text, 
 CREATE TABLE public.fmv_snapshots (collection_id uuid, edition_id uuid, fmv_usd numeric, confidence text, computed_at timestamptz);
 
 -- >>> BEGIN verbatim >>>
-CREATE OR REPLACE FUNCTION public.get_pack_ev_contributors(p_dist_id text, p_limit integer DEFAULT 12)
+CREATE OR REPLACE FUNCTION public.get_pack_ev_contributors(p_dist_id text, p_limit integer, p_collection_id uuid)
  RETURNS TABLE(edition_id uuid, external_id text, name text, player_name text, set_name text, tier text, circulation_count integer, fmv_usd numeric, confidence text, pull_prob numeric, ev_per_slot numeric, pct_of_ev numeric)
  LANGUAGE sql
  STABLE SECURITY DEFINER
@@ -31,12 +34,13 @@ AS $function$
   WITH pool AS (
     SELECT dp.edition_id, dp.drop_weight
     FROM public.pack_drop_pool dp
-    WHERE dp.collection_id='95f28a17-224a-4025-96ad-adf8a4c63bfd'
+    WHERE dp.collection_id = p_collection_id
       AND dp.dist_id = p_dist_id AND dp.drop_weight > 0
   ),
   -- 2026-10-02: each pool edition's latest snapshot by a per-edition index
   -- probe (collection_id, edition_id, computed_at DESC), not a DISTINCT ON
   -- over every snapshot of every pool edition (which sorted to temp files).
+  -- 2026-10-19: the collection is a parameter (the 2-arg form passes Top Shot).
   j AS (
     SELECT p.edition_id, p.drop_weight, e.external_id, e.name, e.player_name, e.set_name,
            e.tier::text AS tier, e.circulation_count, lf.fmv_usd, lf.confidence
@@ -44,7 +48,7 @@ AS $function$
     LEFT JOIN LATERAL (
       SELECT fs.fmv_usd, fs.confidence::text AS confidence
       FROM public.fmv_snapshots fs
-      WHERE fs.collection_id='95f28a17-224a-4025-96ad-adf8a4c63bfd'
+      WHERE fs.collection_id = p_collection_id
         AND fs.edition_id = p.edition_id
       ORDER BY fs.computed_at DESC
       LIMIT 1
@@ -59,6 +63,16 @@ AS $function$
   FROM j CROSS JOIN tot t
   ORDER BY j.drop_weight*coalesce(j.fmv_usd,0) DESC
   LIMIT p_limit;
+$function$;
+
+-- The 2-arg form: Top Shot, as since 2026-10-02.
+CREATE OR REPLACE FUNCTION public.get_pack_ev_contributors(p_dist_id text, p_limit integer DEFAULT 12)
+ RETURNS TABLE(edition_id uuid, external_id text, name text, player_name text, set_name text, tier text, circulation_count integer, fmv_usd numeric, confidence text, pull_prob numeric, ev_per_slot numeric, pct_of_ev numeric)
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  SELECT * FROM public.get_pack_ev_contributors(p_dist_id, p_limit, '95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid);
 $function$;
 -- <<< END verbatim <<<
 
@@ -95,6 +109,12 @@ BEGIN
   PERFORM _assert_eq((SELECT pull_prob::text || '|' || ev_per_slot::text || '|' || pct_of_ev::text FROM public.get_pack_ev_contributors('7', 12) WHERE external_id = 'A'),
                      '0.60000|1.20|37.5', 'A: 3/5 of the pool, 0.6 x 2.00, 6 of 16 weighted dollars (claim 4)');
   PERFORM _assert_eq((SELECT count(*)::text FROM public.get_pack_ev_contributors('7', 2)), '2', 'cut at p_limit (claim 4)');
+  PERFORM _assert_eq((SELECT string_agg(external_id || '=' || coalesce(fmv_usd::text, 'null'), ',') FROM public.get_pack_ev_contributors('7', 12, 'dee28451-5d62-409e-a1ad-a83f763ac070')),
+                     'C=null', 'All Day: its own pool row only, priced from All Day snapshots — C has none there (claim 5)');
+  PERFORM _assert_eq((SELECT fmv_usd::text FROM public.get_pack_ev_contributors('7', 12, 'dee28451-5d62-409e-a1ad-a83f763ac070') WHERE external_id = 'C'), NULL,
+                     'All Day C is not priced by a Top Shot snapshot (claim 5)');
+  PERFORM _assert_eq((SELECT string_agg(external_id, ',' ORDER BY external_id) FROM public.get_pack_ev_contributors('7', 12, '95f28a17-224a-4025-96ad-adf8a4c63bfd')),
+                     'A,B,D', 'an explicit Top Shot id equals the default (claim 5)');
 END $$;
 
 ROLLBACK;

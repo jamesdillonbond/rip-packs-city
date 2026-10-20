@@ -42,6 +42,7 @@
 // without a database — the same shape `lib/insights/candy-board.ts` uses.
 
 import { supabaseAdmin } from "@/lib/supabase"
+import { getCollection } from "@/lib/collections"
 import { rpcWithRetry } from "@/lib/analytics/rpc-with-retry"
 import { computeTopPulls, type TopPull } from "@/lib/pack-dist-odds"
 import { withBoardBudget } from "@/lib/insights/board-page-fetch"
@@ -770,14 +771,28 @@ export async function fetchPackMarket(
 
 // ── Pool-derived reads ──────────────────────────────────────────────────────
 
+const EV_CONTRIBUTOR_COLLECTIONS: ReadonlySet<string> = new Set(["nba-top-shot", "nfl-all-day", "laliga-golazos"])
+
+/** True when the pack page can list "What drives the remaining EV" for this collection. */
+export function hasEvContributors(collectionSlug: string): boolean {
+  return EV_CONTRIBUTOR_COLLECTIONS.has(collectionSlug)
+}
+
 export async function fetchEvContributors(
   collectionSlug: string,
   distId: string,
   db: Db = supabaseAdmin,
 ): Promise<RowsResult<EvContributor>> {
-  if (collectionSlug !== "nba-top-shot") return { rows: [], ok: true }
+  // Every collection whose pack EV is priced from `pack_drop_pool` (2026-10-19:
+  // Top Shot, All Day, Golazos; the RPC takes the collection, its pool and FMV
+  // both scoped to it). Pinnacle prices per drop from its render pool (#157) and
+  // has no pool rows, so it issues no read.
+  const collectionId = EV_CONTRIBUTOR_COLLECTIONS.has(collectionSlug)
+    ? getCollection(collectionSlug)?.supabaseCollectionId
+    : undefined
+  if (!collectionId) return { rows: [], ok: true }
   const { data, error } = await bounded(
-    db.rpc("get_pack_ev_contributors", { p_dist_id: distId, p_limit: 12 }),
+    db.rpc("get_pack_ev_contributors", { p_dist_id: distId, p_limit: 12, p_collection_id: collectionId }),
     "ev_contributors",
   )
   if (error) {

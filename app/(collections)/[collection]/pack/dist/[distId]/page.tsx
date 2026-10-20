@@ -2194,8 +2194,10 @@ async function PackStreamedTop({
   const showCalibrated = computeShowCalibrated(hasModeled, reCalibrated, reModeled)
   const reVerdict = deriveRealizedVsModeledVerdict(reRatio)
 
-  // EV contributors (Top Shot)
-  const showEvContributors = collection === "nba-top-shot" && evContributors.length > 0
+  // EV contributors — every collection with a drop pool (hasEvContributors:
+  // Top Shot, All Day, Golazos since 2026-10-19); the fetcher reads nothing for
+  // the rest, so a non-empty list is the whole gate.
+  const showEvContributors = evContributors.length > 0
 
   // Sealed-pack resale market
   const pmSales = num(packMarket?.n_sales)
