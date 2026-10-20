@@ -132,11 +132,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ deals: [] });
     }
 
+    // A row with no positive ask is not a deal, and an unknown discount is null —
+    // `parseFloat(low_ask ?? "0")` and `: 0` once published a $0 ask at "0% off"
+    // (2026-10-19).
     const deals = data
+      .filter((row: any) => {
+        const a = row.low_ask == null ? NaN : parseFloat(row.low_ask);
+        return Number.isFinite(a) && a > 0;
+      })
       .map((row: any) => {
         const fmv = row.fmv_usd ? parseFloat(row.fmv_usd) : null;
-        const ask = parseFloat(row.low_ask ?? "0");
-        const discount = row.discount_pct ?? (fmv && ask ? Math.round(((fmv - ask) / fmv) * 100) : 0);
+        const ask = parseFloat(row.low_ask);
+        const discount: number | null =
+          row.discount_pct ?? (fmv && ask ? Math.round(((fmv - ask) / fmv) * 100) : null);
         const badges: string[] = Array.isArray(row.play_tags)
           ? row.play_tags.map((t: any) => t.title ?? t).filter(Boolean)
           : [];
@@ -150,7 +158,7 @@ export async function POST(req: NextRequest) {
           low_ask: ask,
           fmv,
           confidence: row.confidence ?? null,
-          discount_pct: Math.round(discount),
+          discount_pct: discount == null ? null : Math.round(discount),
           circulation: row.circulation_count ?? null,
           badges,
           edition_key: row.external_id ?? "",
@@ -161,10 +169,11 @@ export async function POST(req: NextRequest) {
       .slice(0, limit);
 
     const totalDeals = deals.length;
+    const known = deals.filter((d: any) => d.discount_pct != null);
     const avgDiscount =
-      totalDeals > 0
-        ? Math.round(deals.reduce((s: number, d: any) => s + d.discount_pct, 0) / totalDeals)
-        : 0;
+      known.length > 0
+        ? Math.round(known.reduce((s: number, d: any) => s + d.discount_pct, 0) / known.length)
+        : null;
 
     return NextResponse.json({ deals, meta: { total: totalDeals, avgDiscount } });
   } catch (err: any) {

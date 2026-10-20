@@ -75,4 +75,18 @@ describe("POST /api/support-chat/search-deals", () => {
     expect(body.deals[0].discount_pct).toBe(50)
     expect(body.meta.total).toBe(1)
   })
+
+  // 2026-10-19: a row with no ask was published as a $0 ask, and an uncomputable
+  // discount as "0% off" (`parseFloat(low_ask ?? "0")`, `: 0`).
+  it("drops a row with no ask and leaves an unknown discount null, never a $0 ask or 0% off", async () => {
+    state.data = [
+      { player_name: "NoAsk", tier: "MOMENT_TIER_RARE", set_name: "Base", series_number: 8, low_ask: null, fmv_usd: "100", discount_pct: null, external_id: "1:3" },
+      { player_name: "NoFmv", tier: "MOMENT_TIER_RARE", set_name: "Base", series_number: 8, low_ask: "40", fmv_usd: null, discount_pct: null, external_id: "1:4" },
+    ]
+    const body = await (await POST(req({}))).json()
+    expect(body.deals.map((d: any) => d.player_name)).toEqual(["NoFmv"])
+    expect(body.deals[0].low_ask).toBe(40)
+    expect(body.deals[0].discount_pct).toBeNull()
+    expect(body.meta.avgDiscount).toBeNull()
+  })
 })
