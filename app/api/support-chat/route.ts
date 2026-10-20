@@ -110,6 +110,8 @@ import { ALLOWED_ORIGINS } from "@/lib/allowed-origins";
 import { lookupUiField } from "@/lib/concierge/ui-field-dictionary";
 import { ownLookup } from "@/lib/safe-lookup";
 import { readPaniniDealsForConcierge, readPaniniPackMarketForConcierge, readPaniniPremiumsForConcierge } from "@/lib/concierge/panini-boards";
+import { fetchPaniniEditionAsk, fetchPaniniEditionSerials } from "@/lib/panini/edition-market";
+import { paniniEditionUrl } from "@/lib/panini/edition-url";
 
 const supabase: any = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -588,7 +590,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "get_edition_listings",
-    description: "THE tool for 'what's the cheapest one listed right now?' about ONE specific edition — and the only tool that can answer it. Every other listing tool (search_live_deals, search_catalog_deals, search_serial_deals) is a DEAL board: each one requires a discount below FMV, so an edition listed AT or ABOVE FMV returns nothing from them and that empty result says NOTHING about whether it is for sale. Use this whenever the user names a specific moment/edition and asks about buying it, its floor, its cheapest listing, its ask, or where to get one — including as the follow-up after search_catalog or get_fmv identifies the edition. Pass editionKey when you have it (Top Shot setID:playID, e.g. '48:1652'); otherwise pass playerName plus setName (and tier if needed) and the tool resolves it, returning the candidates if the name is ambiguous. Returns: floor_ask, listings_count, fmv + confidence, discount_pct, edition_url, and any chase serials (#1 / perfect mint) currently listed with their own buy_url. CRITICAL — listings_status has THREE values and you MUST read it before saying anything about availability: 'listed' = there are asks, quote floor_ask; 'none_listed' = the marketplace answered and nothing is for sale, say that plainly; 'unavailable' = the live check FAILED, so you must say the check failed and link edition_url — never report 'unavailable' as 'nothing is listed', and never present fmv as if it were a listing price. Live floor covers NBA Top Shot (marketplace GQL), NFL All Day and LaLiga Golazos (RPC's on-chain listing index, which also returns floor_buy_url and floor_listed_at). Disney Pinnacle is resolved per RENDER from the Pinnacle catalog (pass renderId, or characterName plus setName/variant) — its floor is a periodic snapshot rather than a live query, so state floor_listed_at when you quote it, and a render with no ask is genuinely not listed. Pinnacle asks are per-render, so an ambiguous match returns candidates and you must NOT quote one render's floor for another. UFC Strike's Flow market CLOSED on 2026-05-13: it returns market_closed with the closure date, and you must say the market is closed rather than that the check failed — never imply a UFC moment can be bought on Flow.",
+    description: "THE tool for 'what's the cheapest one listed right now?' about ONE specific edition — and the only tool that can answer it. Every other listing tool (search_live_deals, search_catalog_deals, search_serial_deals) is a DEAL board: each one requires a discount below FMV, so an edition listed AT or ABOVE FMV returns nothing from them and that empty result says NOTHING about whether it is for sale. Use this whenever the user names a specific moment/edition and asks about buying it, its floor, its cheapest listing, its ask, or where to get one — including as the follow-up after search_catalog or get_fmv identifies the edition. Pass editionKey when you have it (Top Shot setID:playID, e.g. '48:1652'); otherwise pass playerName plus setName (and tier if needed) and the tool resolves it, returning the candidates if the name is ambiguous. Returns: floor_ask, listings_count, fmv + confidence, discount_pct, edition_url, and any chase serials (#1 / perfect mint) currently listed with their own buy_url. CRITICAL — listings_status has THREE values and you MUST read it before saying anything about availability: 'listed' = there are asks, quote floor_ask; 'none_listed' = the marketplace answered and nothing is for sale, say that plainly; 'unavailable' = the live check FAILED, so you must say the check failed and link edition_url — never report 'unavailable' as 'nothing is listed', and never present fmv as if it were a listing price. Live floor covers NBA Top Shot (marketplace GQL), NFL All Day and LaLiga Golazos (RPC's on-chain listing index, which also returns floor_buy_url and floor_listed_at). Disney Pinnacle is resolved per RENDER from the Pinnacle catalog (pass renderId, or characterName plus setName/variant) — its floor is a periodic snapshot rather than a live query, so state floor_listed_at when you quote it, and a render with no ask is genuinely not listed. Pinnacle asks are per-render, so an ambiguous match returns candidates and you must NOT quote one render's floor for another. Panini (panini-blockchain) reads RPC's walk of Panini's marketplace: the floor is the lowest ask re-confirmed in the last 7 days (floor_listed_at is when), so say 'as of' and link floor_buy_url; 'none_listed' there means no ask was confirmed this week. UFC Strike's Flow market CLOSED on 2026-05-13: it returns market_closed with the closure date, and you must say the market is closed rather than that the check failed — never imply a UFC moment can be bought on Flow.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -3121,10 +3123,22 @@ async function executeToolInner(
       // user-facing answer — policy per lib/fmv-basis.ts; the sales note already
       // discloses the basis in plain words. The structured `confidence` field is
       // still returned separately for the model to reason about, just not echoed.
+      // ⛔ 2026-10-19: `wap_usd || 0` and `floor_price_usd || 0` wrote "$0.00" for an
+      // UNKNOWN value — every Panini snapshot (36,511 of 36,511 carry no floor) and
+      // ~2,900 Flow editions read "Floor price is $0.00". An unknown is said as one.
+      const wap = Number(snapshot.wap_usd);
+      const floor = Number(snapshot.floor_price_usd);
       const basis = salesCountUnknown
         ? "from the recorded sales of this edition's cards (Panini has no 30-day sale count)"
-        : `based on a 30-day average sales price of $${Number(snapshot.wap_usd || 0).toFixed(2)} ${salesNote}`;
-      const explanation = `FMV is $${Number(snapshot.fmv_usd).toFixed(2)} ${basis}. Floor price is $${Number(snapshot.floor_price_usd || 0).toFixed(2)}. Last computed ${computedAgo}.${snapshot.ask_proxy_fmv ? ` Ask proxy FMV: $${Number(snapshot.ask_proxy_fmv).toFixed(2)}.` : ""}`;
+        : wap > 0
+          ? `based on a 30-day average sales price of $${wap.toFixed(2)} ${salesNote}`
+          : "with no 30-day average sale price on record";
+      const floorSentence = floor > 0
+        ? ` Floor price is $${floor.toFixed(2)}.`
+        : salesCountUnknown
+          ? " This snapshot carries no floor — get_edition_listings reads the current Panini ask."
+          : " This snapshot carries no floor price.";
+      const explanation = `FMV is $${Number(snapshot.fmv_usd).toFixed(2)} ${basis}.${floorSentence} Last computed ${computedAgo}.${snapshot.ask_proxy_fmv ? ` Ask proxy FMV: $${Number(snapshot.ask_proxy_fmv).toFixed(2)}.` : ""}`;
 
       // Badges + supply belong in an FMV EXPLANATION: "why is this priced where
       // it is" is answered partly by what the moment is (a rookie, a debut) and
@@ -3365,6 +3379,9 @@ async function executeToolInner(
       // Venue of the Candy floor ask (Magic Eden or OpenSea); null off the Candy arm.
       let candyFloorVenue: string | null = null;
       let listedAt: string | null = null;
+      // Panini's chase serials come from its own serial table (set on its arm below).
+      let paniniChase: any[] | null = null;
+      let paniniChaseFailed = false;
       const closed = closedMarket(slug);
       const floorView = editionFloorViewFor(slug);
 
@@ -3473,6 +3490,35 @@ async function executeToolInner(
               : marketplaceMomentUrl(slug, String(floorRow.token_mint));
           fetchedAt = newest ?? null;
         }
+      } else if (slug === "panini-blockchain") {
+        // 2026-10-19: Panini had no arm, so every "cheapest one listed?" answered
+        // 'unavailable' ("the live check failed") about a book RPC holds:
+        // panini_market_board, the edition page's own ask (lowest ask CONFIRMED by
+        // a re-read in the last 7 days, ~3 buffers). An ask not re-read in 7 days
+        // is not counted, so 'none_listed' here means "no ask confirmed this week".
+        const [askRes, serialRes] = await Promise.all([
+          fetchPaniniEditionAsk(editionKey!, supabase),
+          fetchPaniniEditionSerials(editionKey!, supabase),
+        ]);
+        floorOk = askRes.ok;
+        if (askRes.ok && askRes.ask) {
+          floorAsk = askRes.ask.lowAskUsd;
+          listingsCount = askRes.ask.listedCount ?? (floorAsk != null ? 1 : 0);
+          listedAt = askRes.ask.askConfirmedAt;
+          floorBuyUrl = floorAsk != null ? paniniEditionUrl(editionKey) : null;
+        }
+        paniniChase = (serialRes.listed ?? [])
+          .filter((r) => r.flags.includes("#1") || r.flags.includes("last_mint"))
+          .slice(0, 10)
+          .map((r) => ({
+            serial: r.serial,
+            mint_cap: r.mintCap,
+            ask_usd: r.askUsd,
+            tag: r.flags.includes("#1") ? "#1" : "perfect serial (last mint)",
+            ask_seen_at: r.seenAt,
+            buy_url: paniniEditionUrl(editionKey),
+          }));
+        paniniChaseFailed = serialRes.listed === null;
       }
 
       const status = listingsStatus(floorOk, listingsCount, floorAsk);
@@ -3522,7 +3568,9 @@ async function executeToolInner(
                   ? "RPC's on-chain listing index"
                   : slug === "candy-mlb"
                     ? `${candyFloorVenue ?? "Magic Eden"} (RPC's Candy listing index, re-checked every 3 hours; fetched_at is the last sweep)`
-                    : "a live marketplace",
+                    : slug === "panini-blockchain"
+                      ? "Panini's marketplace (RPC's walk; only asks re-confirmed in the last 7 days count, and floor_listed_at is when the floor ask was last confirmed — say 'as of', and send the user to floor_buy_url to check it is still there)"
+                      : "a live marketplace",
             ),
         market_closed: closed ? { closed_on: closed.closedOn, venue: closed.venue } : null,
         floor_ask: status === "listed" ? floorAsk : null,
@@ -3537,9 +3585,14 @@ async function executeToolInner(
         fmv_note: "fmv is a modelled catalog estimate, NOT an ask. Never present it as a price something is listed at.",
         discount_pct: status === "listed" ? discountPct(floorAsk, fmv) : null,
         edition_url: absoluteEditionPageUrl(base, slug, editionKey!),
-        special_serials_listed: specialSerials,
-        special_serials_note:
-          specialSerials.length > 0
+        special_serials_listed: paniniChase ?? specialSerials,
+        special_serials_note: slug === "panini-blockchain"
+          ? paniniChaseFailed
+            ? "The Panini chase-serial read failed — say you could not check #1 / perfect serials; do not say none are listed."
+            : (paniniChase?.length ?? 0) > 0
+              ? "Panini #1 / perfect (last-mint) serials with an ask confirmed in the last 7 days. buy_url opens the edition on Panini's marketplace."
+              : "No #1 or perfect (last-mint) serial of this edition has an ask confirmed in the last 7 days."
+          : specialSerials.length > 0
             ? "Chase serials with a live ask. Each buy_url goes straight to that moment on the Top Shot marketplace."
             : "No #1 or perfect-mint serial has a live ask in our serial feed. That feed refreshes every few hours and covers chase serials only — it is NOT the full order book, so this does not mean the edition is unlisted.",
         fetched_at: fetchedAt,

@@ -274,6 +274,39 @@ describe("concierge tools — explain_fmv", () => {
     expect(String(r.explanation)).toContain("no 30-day sale count")
   })
 
+  // 2026-10-19: `floor_price_usd || 0` / `wap_usd || 0` printed "$0.00" for an
+  // UNKNOWN value — every Panini snapshot carries no floor (36,511 of 36,511).
+  it("⛔ an unknown floor is never 'Floor price is $0.00' (Panini points at the live ask instead)", async () => {
+    install({
+      editions: { data: [{ id: "ed-p", player_name: "Caitlin Clark", set_name: "Prizm", tier: null, collection_id: "d1a0a7f5-609a-49f4-a1a7-4eaac55b020b" }], error: null },
+      fmv_snapshots: {
+        data: [{ fmv_usd: 42, confidence: "HIGH", wap_usd: null, floor_price_usd: null, computed_at: new Date().toISOString(), sales_count_30d: 0, days_since_sale: 3, ask_proxy_fmv: null, algo_version: "panini-1.3.1" }],
+        error: null,
+      },
+    })
+    script("explain_fmv", { editionKey: "panini:123" })
+    await POST(post("why is this priced like that"))
+    const r = toolResult()
+    expect(String(r.explanation)).not.toMatch(/\$0\.00/)
+    expect(String(r.explanation)).toContain("get_edition_listings")
+  })
+
+  it("⛔ a Flow edition with no average sale and no floor says so — no fabricated $0.00 for either", async () => {
+    install({
+      editions: { data: [{ id: "ed-2", player_name: "Dame", set_name: "Base", tier: "RARE" }], error: null },
+      fmv_snapshots: {
+        data: [{ fmv_usd: 12, confidence: "LOW", wap_usd: 0, floor_price_usd: null, computed_at: new Date().toISOString(), sales_count_30d: 0, days_since_sale: 90, ask_proxy_fmv: null, algo_version: "1.7.0" }],
+        error: null,
+      },
+    })
+    script("explain_fmv", { editionKey: "3:45" })
+    await POST(post("why is this priced like that"))
+    const r = toolResult()
+    expect(String(r.explanation)).not.toMatch(/\$0\.00/)
+    expect(String(r.explanation)).toContain("no 30-day average sale price on record")
+    expect(String(r.explanation)).toContain("no floor price")
+  })
+
   it("CONTROL — a Top Shot edition's real 0 is still passed through as 0", async () => {
     install({
       editions: { data: [{ id: "ed-t", player_name: "Dame", set_name: "Base", tier: "RARE", collection_id: "95f28a17-224a-4025-96ad-adf8a4c63bfd" }], error: null },
