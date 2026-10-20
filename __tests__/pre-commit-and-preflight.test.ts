@@ -149,6 +149,33 @@ describe("the hooks are wired", () => {
   })
 })
 
+// 2026-10-20: a migration with a syntax error reached `main` on 10-19
+// (20261020044118, line 66) because no pre-push step parsed SQL; CI's db-tests
+// job was the first to see it, ~5 red pushes later.
+describe("preflight: SQL changes select the SQL gates", () => {
+  it("parses exactly the changed migrations, not the whole directory", () => {
+    const p = planFor(["supabase/migrations/20261020000000_a.sql", "lib/x.ts", "supabase/migrations/20261020000001_b.sql"])
+    expect(p.sqlMigrations).toEqual(["supabase/migrations/20261020000000_a.sql", "supabase/migrations/20261020000001_b.sql"])
+    expect(p.sqlTests).toBe(false)
+  })
+
+  it("a changed SQL test, or the runner itself, selects the DB-invariant suite", () => {
+    expect(planFor(["supabase/tests/foo.sql"]).sqlTests).toBe(true)
+    expect(planFor(["supabase/tests/_helpers.sql"]).sqlTests).toBe(true)
+    expect(planFor(["scripts/run-db-tests.sh"]).sqlTests).toBe(true)
+  })
+
+  it("selects nothing SQL for a change with no SQL in it", () => {
+    const p = planFor(["lib/x.ts", "components/a.tsx"])
+    expect([p.sqlMigrations, p.sqlTests]).toEqual([[], false])
+  })
+
+  it("the parse script accepts a file list, so preflight's subset is the same instrument as CI's sweep", () => {
+    const sh = readFileSync(join(ROOT, "scripts/check-migration-sql-parses.sh"), "utf8")
+    expect(sh).toMatch(/if \[ "\$#" -gt 0 \]; then FILES=\("\$@"\)/)
+  })
+})
+
 describe("preflight: the derived selections see what `vitest related` cannot", () => {
   // 2026-10-13: both reds on main that morning were TREE-WALKING guards
   // (no-credential-literals-in-tracked-files, insights-client-dates-are-

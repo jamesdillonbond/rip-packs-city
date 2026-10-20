@@ -28,7 +28,13 @@
 # aborts if that is NOT detected — so a silenced/localized/miswired psql cannot
 # make this guard pass by seeing nothing.
 #
-# Usage: DATABASE_URL=postgres://... bash scripts/check-migration-sql-parses.sh
+# Usage: DATABASE_URL=postgres://... bash scripts/check-migration-sql-parses.sh [file.sql ...]
+#
+# With no arguments it sweeps every migration (CI, ~2 min for ~1,950 files). With
+# file arguments it parses only those — what preflight passes for the migrations a
+# change touches (2026-10-20: a syntax error reached `main` on 10-19 because no
+# pre-push step parsed SQL at all). The self-test and the inspected-count check
+# apply either way.
 set -uo pipefail
 
 export LC_ALL=C LC_MESSAGES=C   # the check greps an English server message
@@ -73,7 +79,8 @@ rm -f "$CANARY"
 
 # ── The sweep ─────────────────────────────────────────────────────────────
 inspected=0; bad=0
-for f in "$DIR"/*.sql; do
+if [ "$#" -gt 0 ]; then FILES=("$@"); else FILES=("$DIR"/*.sql); fi
+for f in "${FILES[@]}"; do
   [ -e "$f" ] || continue
   inspected=$((inspected + 1))
   n="$(parse_errors "$f")"

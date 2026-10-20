@@ -46,6 +46,7 @@
 import { execFileSync, spawnSync } from "node:child_process"
 import { readdirSync, readFileSync } from "node:fs"
 import { pathToFileURL } from "node:url"
+import { startScratchPostgres } from "./lib/local-postgres.mjs"
 
 /** PURE. CI's docs-only rule (`.github/workflows/ci.yml`, job `changes`). */
 export function isDocsPath(p) {
@@ -64,6 +65,10 @@ export function planFor(paths, { full = false, quick = false } = {}) {
   )
   const workers = code.some((p) => p.startsWith("workers/") || /^__tests__\/worker-.*\.test\.ts$/.test(p))
   const related = code.filter((p) => /\.(ts|tsx|mjs|js)$/.test(p) && !p.startsWith("e2e/"))
+  // SQL gates (2026-10-20). Until then only CI parsed SQL, and a migration with a
+  // syntax error reached `main` on 10-19 and held it red across ~5 pushes.
+  const sqlMigrations = code.filter((p) => /^supabase\/migrations\/[^/]+\.sql$/.test(p))
+  const sqlTests = code.some((p) => /^supabase\/tests\/[^/]+\.sql$/.test(p) || p === "scripts/run-db-tests.sh")
   return {
     isCode,
     quick,
@@ -74,6 +79,8 @@ export function planFor(paths, { full = false, quick = false } = {}) {
     components,
     workers,
     full: isCode && full && !quick,
+    sqlMigrations,
+    sqlTests,
   }
 }
 
@@ -171,8 +178,14 @@ function main() {
   if (plan.components) (quick ? skippedSlow : steps).push(["component coverage gate", npm, ["run", "-s", "test:coverage:components"]])
   if (plan.workers) (quick ? skippedSlow : steps).push(["worker coverage gate", npm, ["run", "-s", "test:coverage:workers"]])
   if (plan.full) steps.push(["primary coverage gate", npm, ["run", "-s", "test:coverage"]])
+  // SQL gates run against a throwaway local Postgres, the same instrument as CI's
+  // `db-tests` job. Changed migrations are parsed even in quick mode (a few
+  // seconds); the whole DB-invariant suite (~35 s, 270 files) only in full mode.
+  const sqlSteps = []
+  if (plan.sqlMigrations.length) sqlSteps.push([`migration parse (${plan.sqlMigrations.length} changed)`, "bash", ["scripts/check-migration-sql-parses.sh", ...plan.sqlMigrations]])
+  if (plan.sqlTests) (quick ? skippedSlow : sqlSteps).push(["DB-invariant SQL tests", "bash", ["scripts/run-db-tests.sh"]])
 
-  console.log("plan:\n" + steps.map(([l]) => `  - ${l}`).join("\n"))
+  console.log("plan:\n" + [...steps, ...sqlSteps].map(([l]) => `  - ${l}`).join("\n"))
   if (quick) {
     console.log("  (quick: tsc + lint:ratchet skipped)")
     for (const [l] of skippedSlow) console.log(`  ⚠ NOT RUN, and this change selects it: ${l} — run \`npm run preflight\` before relying on CI`)
@@ -182,6 +195,19 @@ function main() {
   // ⚠ Run EVERY step even after a failure: one red step hiding the next is how
   // the six guards behind `tsc` went unseen on CI (testing-and-ci.md).
   const results = steps.map(([l, c, a, e, o]) => step(l, c, a, e, o))
+  if (sqlSteps.length) {
+    const pg = startScratchPostgres()
+    if (pg.error) {
+      // Named, never silent: CI still runs these, but this push is not covered here.
+      for (const [l] of sqlSteps) console.log(`\n⚠ NOT RUN (${pg.error}): ${l} — CI's db-tests job is the first place this change's SQL is parsed`)
+    } else {
+      try {
+        for (const [l, c, a] of sqlSteps) results.push(step(l, c, a, { DATABASE_URL: pg.url }, { noShell: true }))
+      } finally {
+        pg.stop()
+      }
+    }
+  }
   const bad = results.filter((r) => !r.ok)
   console.log(`\npreflight — ${results.length} step(s) ran, ${bad.length} failed`)
   for (const r of results) console.log(`  ${r.ok ? "✓" : "✗"} ${r.label} (${r.s}s)`)
