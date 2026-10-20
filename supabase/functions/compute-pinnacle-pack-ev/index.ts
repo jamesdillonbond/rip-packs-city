@@ -182,6 +182,11 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
       if (!cursor) break
     }
 
+    // When availableSupply was read. pack_table_rows dates Pinnacle's depletion % from
+    // metadata.supply_as_of; pd.updated_at is not that age (pack_distributions has a
+    // second Pinnacle writer).
+    const supplyReadAt = new Date().toISOString()
+
     if (nodes.length === 0) {
       await logPipelineRun({
         startedAt: startedAtIso, rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
@@ -252,6 +257,11 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
           // Persist the render pool so v_pinnacle_pack_ev_corrected can recompute
           // a median-robust EV (unnest edition_ids → pinnacle_catalog).
           edition_ids: node.editionIds ?? [],
+          // Stamped only when Studio returned both counts. Without them the
+          // depletion figure is not a read, so it gets no age.
+          ...(node.totalSupply != null && node.availableSupply != null
+            ? { supply_as_of: supplyReadAt }
+            : {}),
         },
         updated_at: new Date().toISOString(),
       })
