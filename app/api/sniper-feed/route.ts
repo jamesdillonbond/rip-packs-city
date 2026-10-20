@@ -22,6 +22,7 @@ import {
 // collapse to an empty list on failure, so the route answered 200 with
 // `deals: []` and the UI concluded "No deals match your filters."
 import { createSourceFailureSink, sniperFeedDegraded, type SourceFailureSink } from "@/lib/sniper/source-failures";
+import { decorateAutographs, filterAutographsOnly, isAutographCollection } from "@/lib/sniper/autograph-decorate";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -155,6 +156,8 @@ export interface SniperDeal {
   badgeSlugs: string[];
   badgeLabels: string[];
   badgePremiumPct: number;
+  /** Signed edition (editions.autographed_at, via lib/sniper/autograph-decorate). Top Shot + All Day only. */
+  isAutographed?: boolean;
   serialMult: number;
   isSpecialSerial: boolean;
   isJersey: boolean;
@@ -1207,6 +1210,8 @@ const feedParamsSchema = z.object({
   player: z.string().default(""), // post-fetch filter on playerName
   team: z.string().default("all"),
   badgeOnly: z.enum(["true", "false"]).default("false"),
+  // Signed editions only (NBA Top Shot + NFL All Day; editions.autographed_at).
+  autographOnly: z.enum(["true", "false"]).default("false"),
   serial: z.string().default("all"),
   maxPrice: z.coerce.number().min(0).default(0),
   limit: z.coerce.number().min(1).max(500).default(0), // 0 = no limit
@@ -1233,6 +1238,7 @@ export async function GET(req: Request) {
   const effectiveRarity = params.tier !== "all" ? params.tier : params.rarity;
   const { minDiscount, team, sortBy, maxPrice, player, limit } = params;
   const badgeOnly = params.badgeOnly === "true";
+  const autographOnly = params.autographOnly === "true";
   const serialFilter = params.serial;
 
   // Phase 2: collectionId takes precedence over legacy `collection` param.
@@ -1299,7 +1305,21 @@ export async function GET(req: Request) {
     return () => computeSniperFeed({ minDiscount, rarity: effectiveRarity, team, player, badgeOnly, serialFilter, maxPrice, sortBy, league: params.league });
   }
 
-  type FeedResult = { count: number; tsCount: number; flowtyCount: number; lastRefreshed: string; deals: SniperDeal[]; cached?: boolean; sourcesFailed?: string[]; teamOptions?: string[] };
+  type FeedResult = { count: number; tsCount: number; flowtyCount: number; lastRefreshed: string; deals: SniperDeal[]; cached?: boolean; sourcesFailed?: string[]; teamOptions?: string[]; autographsRead?: boolean };
+
+  // Signed editions are marked inside the CACHED build, so every view of a board
+  // carries the same chips; the read is one bounded page (~240 rows).
+  function buildComputeWithAutographs(): () => Promise<unknown> {
+    const compute = buildComputeFn();
+    if (!isAutographCollection(collection)) return compute;
+    const c = collection;
+    return async () => {
+      const built = (await compute()) as FeedResult;
+      if (!built || !Array.isArray(built.deals)) return built;
+      const { deals, autographsRead } = await decorateAutographs(supabaseAdmin as any, c, built.deals);
+      return { ...built, deals, autographsRead };
+    };
+  }
 
   function applyOuterFilters(deals: SniperDeal[]): SniperDeal[] {
     let out = deals;
@@ -1314,12 +1334,18 @@ export async function GET(req: Request) {
     if (params.flowWalletOnly === "true") {
       out = out.filter((d) => d.paymentToken === "FLOW" || d.paymentToken === "USDC_E");
     }
+    if (autographOnly) out = filterAutographsOnly(out);
     return out;
   }
 
   try {
-    const result = (await getOrSetCache(baseCacheKey, CACHE_TTL, buildComputeFn())) as FeedResult;
-    const sourcesFailed = result.sourcesFailed ?? [];
+    const result = (await getOrSetCache(baseCacheKey, CACHE_TTL, buildComputeWithAutographs())) as FeedResult;
+    // With "Autographs only" the autograph read IS the filter: a failed read must
+    // degrade the board, never render "no signed Moments listed".
+    const sourcesFailed = [
+      ...(result.sourcesFailed ?? []),
+      ...(autographOnly && isAutographCollection(collection) && result.autographsRead !== true ? ["autographs"] : []),
+    ];
     // ⚠ Do not let a degraded build sit in the warm-lambda cache for the full
     // TTL — the next request would inherit this request's outage. The response
     // stays honest either way; this just shortens how long it lasts.

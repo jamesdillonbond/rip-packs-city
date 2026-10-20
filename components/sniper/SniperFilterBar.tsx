@@ -50,6 +50,9 @@ export default function SniperFilterBar(props: {
   onSortChange: (value: SortOption) => void;
   badgeOnly: boolean;
   onBadgeOnlyChange: (b: boolean) => void;
+  /** Signed editions only — NBA Top Shot + NFL All Day (editions.autographed_at). */
+  autographOnly?: boolean;
+  onAutographOnlyChange?: (b: boolean) => void;
   showVerifiedOnly: boolean;
   onVerifiedChange: (b: boolean) => void;
   afterFeesOnly: boolean;
@@ -76,6 +79,7 @@ export default function SniperFilterBar(props: {
     serialFilter, onSerialChange,
     sortBy, sortOptions, onSortChange,
     badgeOnly, onBadgeOnlyChange,
+    autographOnly = false, onAutographOnlyChange,
     showVerifiedOnly, onVerifiedChange,
     afterFeesOnly, onAfterFeesChange,
     ownedFilter, onOwnedFilterChange, ownedCount,
@@ -188,6 +192,7 @@ export default function SniperFilterBar(props: {
               if (maxPrice > 0) count++;
               if (search.length > 0) count++;
               if (badgeOnly) count++;
+              if (autographOnly) count++;
               return count > 0 ? " (" + count + ")" : "";
             })()}
           </button>
@@ -250,6 +255,16 @@ export default function SniperFilterBar(props: {
             onChange={(e) => onBadgeOnlyChange(e.target.checked)}
           />
           BADGES ONLY
+        </label>
+        )}
+        {onAutographOnlyChange && (collectionSlug === "nba-top-shot" || collectionSlug === "nfl-all-day") && (
+        <label className="flex items-center gap-1.5 cursor-pointer select-none" style={{ color: "var(--rpc-text-muted)" }}>
+          <input
+            type="checkbox"
+            checked={autographOnly}
+            onChange={(e) => onAutographOnlyChange(e.target.checked)}
+          />
+          AUTOGRAPHS ONLY
         </label>
         )}
         <label className="flex items-center gap-1.5 cursor-pointer select-none" style={{ color: "var(--rpc-text-muted)" }}>

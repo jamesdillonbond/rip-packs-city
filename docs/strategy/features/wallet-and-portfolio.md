@@ -57,7 +57,7 @@ There is no wallet verification. It was removed by decision (#0, 08-08).
   - Set 218 (Series 8 Base) is excluded on purpose.
   - Dune-era sets lag, because Constellations trade-ins burn Rares the walk does not index.
   - The backfill needs ~8 more runs before squeeze census-complete stabilises.
-  - Autograph and partnered-athlete status has no DB field.
+  - Autographs: tracked since 2026-10-19 (`editions.autographed_at`; Collection tab AUTOGRAPHS toggle + "Autographed" pill). Partner-athlete status is still not stored.
 - **Mega-wallets above ~100k moments** have no id source (#138; deactivated by decision).
 - **#190:** pre-2023 Top Shot pack opens are missing for 33 of 34 saved wallets (declined).
 - **The parallel seeder watch.** `never_queued` was 66,001 at the 10-17 fix and must fall each ~20 h cycle. If it does not fall across two cycles, file it (focus.md).

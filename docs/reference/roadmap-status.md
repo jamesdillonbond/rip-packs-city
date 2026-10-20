@@ -140,7 +140,7 @@ Done 10-15 → 10-17 (Claude Code cloud, session_014vWuubmVKLyyyMQAwWzT2W; Trevo
 - 🔜 **Owed 2026-10-20 ~7 PM PT:** a fresh-session scheduled task verifies series-9 ingest end to end (sets, `collection_series` 9, circulation vs Atlas, index rows, pack labels).
 - 🔜 **Owed on/after 2026-11-11:** build the 2026 rookie class from Series 9 rookie sets (the 2025 list is a VIEW over Series 8 set names) and point the rookie boards at it. Do not seed it from the draft or the four announced partners: 4 of ~60 would silently drop the rest.
 - ❓ **Needs Trevor:** how the 2026-27 Yearbook / Blue Chip / Squad Goals leaderboards are scored. RPC will not publish its own rank as Top Shot's. The board worth building is "cost to climb into the top N", and it needs the official scoring.
-- **Not tracked yet:** autograph / partnered-athlete status (no DB field). Constellations trade-ins burn older-season Rares that the index does not walk (Dune-era sets), so holder counts there lag.
+- **Tracked since 2026-10-19:** `editions.autographed_at` (from Atlas `autographedAt`, swept daily by pg_cron `rpc-autograph-sweep`; 236 Top Shot + 226 All Day signed editions at the census). Partner-athlete status itself is still not stored: Atlas's `activePartnerAthlete` flag marks only 4 players and is not the signer list. Research: [autographs-topshot-allday-2026-10-19.md](../research/autographs-topshot-allday-2026-10-19.md). **Not tracked yet:** Constellations trade-ins burn older-season Rares that the index does not walk (Dune-era sets), so holder counts there lag.
 
 ## ⭐ NEW 2026-10-15 — DEMAND READ, WEEK OF 10-08..10-14 PT (baseline for the next one)
 

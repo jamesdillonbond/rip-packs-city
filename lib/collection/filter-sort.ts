@@ -21,6 +21,7 @@ import {
 } from "@/lib/collection/helpers"
 import type { MomentRow, SortKey, CollectionSeriesEntry } from "@/lib/collection/types"
 import type { CollectionViewState } from "@/lib/collection/view-reducer"
+import { AUTOGRAPH_BADGE_TITLE } from "@/lib/autographs"
 
 export interface FilterSortContext {
   collectionSeriesMap?: Map<number, CollectionSeriesEntry>
@@ -50,6 +51,7 @@ export function computeFilteredSortedRows(
     if (view.lockedFilter === "unlocked" && !(isLockKnown(r) && !getLocked(r))) return false
     if (view.badgeFilter && !r.badgeInfo?.badge_score) return false
     if (view.filterBadges && !(r.officialBadges?.length || (r as any).badgeScore > 0)) return false
+    if (view.filterAutographs && !(r.badgeInfo?.badge_titles ?? []).includes(AUTOGRAPH_BADGE_TITLE)) return false
     if (view.filterHasOffer && !(typeof r.bestOffer === "number" && r.bestOffer > 0)) return false
     if (view.filterListed && r.lowAsk == null) return false
     if (view.filterLoanDefaultsOnly && r.acquisitionMethod !== "loan_default") return false

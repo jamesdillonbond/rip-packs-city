@@ -499,3 +499,17 @@ Verified live 2026-10-15 (Claude Code cloud). Service-role only unless stated; R
 
 Superseded and DROPPED 2026-10-15 (`20261015195905`): `get_market_team_options`, AD v1, both `_v2`.
 
+## Autographs — signed editions (2026-10-19)
+
+Source of truth: Atlas `EditionService/SearchEditions` → `autographedAt` (null = unsigned). Nothing else carries it: not `badge_editions` tags, not pack tier counts (`autograph` = 0 even on packs that held signed Moments), not set/parallel names, not prices. Census + full set/parallel table: [autographs-topshot-allday-2026-10-19.md](../research/autographs-topshot-allday-2026-10-19.md).
+
+| object | what it is |
+|---|---|
+| `editions.autographed_at timestamptz` | NOT NULL = a signed edition (Top Shot + All Day). **NULL = unsigned OR never checked.** Written ONLY on change (editions.updated_at is the sitemap lastModified). Partial index `idx_editions_autographed`. |
+| `edition_autograph_checks (edition_id PK, autographed_at, checked_at)` | one row per edition Atlas returned in a sweep, re-stamped every cycle. The only basis for a NEGATIVE claim ("verified unsigned"). anon SELECT. No FK (edition merges must not be blocked). |
+| `autograph_sweep_state` / `autograph_sweep_requests` | cycle state per product (`nba` / `nfl`) and the pg_net request log. |
+| `autograph_sweep_tick(int)` | pg_cron `rpc-autograph-sweep` `*/2`, logs `autograph-sweep`: drains finished pages, dispatches 2 per product; a full cycle (~145 + 59 pages) every ~20 h. 403 pages are retried. |
+| `get_edition_badges_unified` | emits `{id:'autograph', title:'Autographed', source:'autograph'}` first for a signed edition (pinned, `20261020030510`), so the edition page, moment page, OG cards and `market_edition_badges` (the Market Badges filter) carry it. |
+
+⚠ Signing is per EDITION: Series 8 Rookie Debut Hardcourt /50 is signed for 27 players and unsigned for 34. Join keys: Top Shot `topshot_atlas_edition_map.atlas_edition_id` (1:1); All Day `editions.external_id` = the Atlas id.
+

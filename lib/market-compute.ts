@@ -81,7 +81,7 @@ export type MarketTruthRow = {
     | "none"
 
   // Six-tier confidence model aligned with research spec
-  marketConfidence: "liquid" | "trading" | "thin" | "illiquid" | "autograph" | "parallel-thin" | "none"
+  marketConfidence: "liquid" | "trading" | "thin" | "illiquid" | "special-serial" | "parallel-thin" | "none"
 
   rowLowAsk: number | null
   rowBestOffer: number | null
@@ -238,7 +238,9 @@ function computeSerialMultiplier(
 //   TRADING:       3-9 sales/90d
 //   THIN:          1-2 sales/90d
 //   ILLIQUID:      0 sales/90d (~70% of all editions)
-//   AUTOGRAPH:     1-of-1 autograph/inscription
+//   SPECIAL-SERIAL: a special serial (#1, jersey, …) with no sale and no market.
+//                   Named "autograph" until 2026-10-19, which it never measured —
+//                   signed editions are editions.autographed_at (lib/autographs.ts).
 //   PARALLEL-THIN: new parallel tier with no sales history
 
 function resolveConfidenceTier(
@@ -248,7 +250,7 @@ function resolveConfidenceTier(
   isSpecial: boolean,
   hasAnyMarket: boolean
 ): MarketTruthRow["marketConfidence"] {
-  if (isSpecial && editionSaleCount === 0 && !hasAnyMarket) return "autograph"
+  if (isSpecial && editionSaleCount === 0 && !hasAnyMarket) return "special-serial"
   if (isParallel && editionSaleCount < 3) return "parallel-thin"
   if (editionSaleCount >= 10 && editionAskCount > 0) return "liquid"
   if (editionSaleCount >= 3) return "trading"

@@ -41,6 +41,7 @@ export const BADGE_LABELS: Record<string, string> = {
   "Rookie Year": "Rookie Year", "Rookie Mint": "Rookie Mint", "Rookie Premiere": "Rookie Premiere",
   "Top Shot Debut": "TS Debut", "Three-Star Rookie": "3★ Rookie", "MVP Year": "MVP",
   "Championship Year": "Champ Year", "Rookie of the Year": "ROTY", "Fresh": "Fresh",
+  "Autographed": "Auto",
 }
 
 /** Set of every recognized badge key (both slug and title forms). */

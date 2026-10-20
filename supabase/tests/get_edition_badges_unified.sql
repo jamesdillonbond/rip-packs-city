@@ -22,10 +22,12 @@
 --     there — deduped below set_play, above flag, and suppressing the derived
 --     fallback like any real tag; the id is the slugged title with no edge
 --     separators ("Rainbow (Blue)" -> rainbow-blue);
---   * final order: flag, play, set_play, edition, derived, then key; empty ⇒ '[]'.
+--   * (2026-10-19) editions.autographed_at NOT NULL ⇒ an 'autograph'-source "Autographed"
+--     badge, id 'autograph', that does NOT count as a real tag (derived badges survive it);
+--   * final order: autograph, flag, play, set_play, edition, derived, then key; empty ⇒ '[]'.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260925084355_audit_20260925_edition_badge_ids_trim_separators.sql);
+-- (supabase/migrations/20261020030510_audit_20261019_edition_badges_carry_the_autograph.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -40,7 +42,8 @@ CREATE EXTENSION IF NOT EXISTS unaccent WITH SCHEMA extensions;
 
 -- ── minimal fixtures ─────────────────────────────────────────────────────────
 CREATE TABLE public.editions (
-  id uuid PRIMARY KEY, external_id text, collection_id uuid, set_name text, badges text[]);
+  id uuid PRIMARY KEY, external_id text, collection_id uuid, set_name text, badges text[],
+  autographed_at timestamptz);
 CREATE TABLE public.badge_editions (
   external_id text, collection_id uuid, play_tags jsonb, set_play_tags jsonb,
   has_rookie_mint boolean, is_three_star_rookie boolean);
@@ -64,7 +67,7 @@ AS $function$
   WITH ed AS (
     SELECT e.id, e.external_id,
            split_part(e.external_id::text, '::', 1) AS base_external_id,
-           e.collection_id, e.set_name, e.badges
+           e.collection_id, e.set_name, e.badges, e.autographed_at
     FROM editions e WHERE e.id = p_edition_id
   ),
   be_row AS (
@@ -111,6 +114,14 @@ AS $function$
     CROSS JOIN LATERAL unnest(coalesce(ed.badges, '{}'::text[])) AS b
     WHERE btrim(coalesce(b, '')) <> ''
   ),
+  -- 2026-10-19: the edition is SIGNED (editions.autographed_at, written from Atlas
+  -- autographedAt by autograph_sweep_tick). Its own source, kept OUT of real_tags so
+  -- a signed edition with no synced tags still gets its set-name derived badges.
+  sync_autograph AS (
+    SELECT jsonb_build_object('id','autograph','title','Autographed') AS tag, 'autograph' AS source
+    FROM ed
+    WHERE ed.autographed_at IS NOT NULL
+  ),
   -- real synced tags (excluding the derived-from-Three-Star injection below)
   real_tags AS (
     SELECT tag, source FROM sync_play
@@ -149,6 +160,8 @@ AS $function$
     UNION ALL
     SELECT tag, source FROM derived
     WHERE NOT EXISTS (SELECT 1 FROM combined_real)
+    UNION ALL
+    SELECT tag, source FROM sync_autograph
   ),
   normalized AS (
     SELECT
@@ -166,7 +179,7 @@ AS $function$
         PARTITION BY norm_key
         ORDER BY CASE source
           WHEN 'play' THEN 1 WHEN 'set_play' THEN 2 WHEN 'edition' THEN 3
-          WHEN 'flag' THEN 4 WHEN 'derived' THEN 5
+          WHEN 'flag' THEN 4 WHEN 'derived' THEN 5 WHEN 'autograph' THEN 6
         END
       ) AS rnk
     FROM normalized
@@ -183,7 +196,7 @@ AS $function$
          ELSE tag
        END) || jsonb_build_object('source', source)
       ORDER BY
-        CASE source WHEN 'flag' THEN 1 WHEN 'play' THEN 2 WHEN 'set_play' THEN 3 WHEN 'edition' THEN 4 WHEN 'derived' THEN 5 END,
+        CASE source WHEN 'autograph' THEN 0 WHEN 'flag' THEN 1 WHEN 'play' THEN 2 WHEN 'set_play' THEN 3 WHEN 'edition' THEN 4 WHEN 'derived' THEN 5 END,
         norm_key
     ),
     '[]'::jsonb
@@ -205,6 +218,8 @@ $function$;
 \set edF '''ffffffff-ffff-ffff-ffff-ffffffffffff'''
 \set edG '''99999999-9999-4999-8999-999999999999'''
 \set edH '''88888888-8888-4888-8888-888888888888'''
+\set edI '''77777777-7777-4777-8777-777777777777'''
+\set edJ '''66666666-6666-4666-8666-666666666666'''
 
 INSERT INTO public.editions (id, external_id, collection_id, set_name) VALUES
   (:edA::uuid, '1:1', :cid::uuid, 'Rookie Set'),
@@ -219,6 +234,11 @@ INSERT INTO public.editions (id, external_id, collection_id, set_name, badges) V
   -- edH: an edition badge AND a set name that derives one -> the real tag wins,
   -- the derived fallback stays out (same rule as every other real source).
   (:edH::uuid, 'x-pink', :cid::uuid, 'Playoffs Set', ARRAY['Rainbow (Pink)']);
+-- 2026-10-19: signed editions. edI has no badge_editions row and a set that derives a badge (the
+-- autograph must not suppress it); edJ is signed AND carries a real MVP Year tag.
+INSERT INTO public.editions (id, external_id, collection_id, set_name, autographed_at) VALUES
+  (:edI::uuid, '7:7', :cid::uuid, 'Playoffs Set', '2025-09-18 00:00:00+00'),
+  (:edJ::uuid, '8:8', :cid::uuid, 'Nothing Set', '2026-10-20 00:00:00+00');
 
 INSERT INTO public.badge_editions (external_id, collection_id, play_tags, set_play_tags, has_rookie_mint, is_three_star_rookie) VALUES
   -- edA: three-star combo (year+premiere+mint-flag) + a whitelisted All-Star + a
@@ -237,7 +257,8 @@ INSERT INTO public.badge_editions (external_id, collection_id, play_tags, set_pl
   -- edF: same key from play AND set_play — play wins.
   ('6:6', :cid::uuid,
    '[{"id":"all-star","title":"All-Star"}]'::jsonb,
-   '[{"id":"all-star","title":"All-Star"}]'::jsonb, false, false);
+   '[{"id":"all-star","title":"All-Star"}]'::jsonb, false, false),
+  ('8:8', :cid::uuid, '[{"id":"mvp-year","title":"MVP Year"}]'::jsonb, '[]'::jsonb, false, false);
 -- edC + edD deliberately have NO badge_editions row (derived-only / empty paths).
 
 -- ── 1. edA: three-star subsume + allowlist + set_play + flag-first ordering ────
@@ -282,6 +303,21 @@ SELECT _assert(NOT (public.get_edition_badges_unified(:edH::uuid)::text ILIKE '%
 
 -- ── 9. no-change control: edD (no badges column value) is still empty ────────
 SELECT _assert_eq(public.get_edition_badges_unified(:edD::uuid)::text, '[]', 'edD -> still empty with a NULL badges column');
+
+-- ── 10. edI: a signed edition with no synced tags -> Autographed FIRST + the derived badge kept ─
+SELECT _assert_eq(jsonb_array_length(public.get_edition_badges_unified(:edI::uuid))::text, '2', 'edI -> Autographed + derived Playoffs');
+SELECT _assert_eq((public.get_edition_badges_unified(:edI::uuid) -> 0 ->> 'title'), 'Autographed', 'edI: the autograph badge is ordered first');
+SELECT _assert_eq((public.get_edition_badges_unified(:edI::uuid) -> 0 ->> 'id'), 'autograph', 'edI: id autograph (the sniper BADGE_LABELS key)');
+SELECT _assert_eq((public.get_edition_badges_unified(:edI::uuid) -> 0 ->> 'source'), 'autograph', 'edI: source autograph');
+SELECT _assert(public.get_edition_badges_unified(:edI::uuid)::text ILIKE '%Playoffs%', 'edI: the autograph is not a real tag, so the derived badge survives');
+
+-- ── 11. edJ: signed + a real tag -> both, autograph first ─────────────────────
+SELECT _assert_eq(jsonb_array_length(public.get_edition_badges_unified(:edJ::uuid))::text, '2', 'edJ -> Autographed + MVP Year');
+SELECT _assert_eq((public.get_edition_badges_unified(:edJ::uuid) -> 1 ->> 'title'), 'MVP Year', 'edJ: the real tag follows the autograph');
+
+-- ── 12. no-change control: an unsigned edition never carries it ──────────────
+SELECT _assert(NOT (public.get_edition_badges_unified(:edA::uuid)::text ILIKE '%Autographed%'), 'edA (autographed_at NULL) -> no Autographed badge');
+SELECT _assert(NOT (public.get_edition_badges_unified(:edC::uuid)::text ILIKE '%Autographed%'), 'edC (unsigned, derived-only) -> no Autographed badge');
 
 SELECT '✓ get_edition_badges_unified: all assertions passed' AS result;
 

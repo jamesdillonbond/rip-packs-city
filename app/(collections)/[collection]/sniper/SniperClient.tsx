@@ -15,6 +15,7 @@ import { slugifyName, getEntityLabels } from "@/lib/entity-labels";
 import { pinnacleRenderHref } from "@/lib/entity-href";
 import MomentDetailModal from "@/components/MomentDetailModal";
 import BadgeIcon from "@/components/BadgeIcon";
+import { AUTOGRAPH_BADGE_SLUG, AUTOGRAPH_BADGE_TITLE } from "@/lib/autographs";
 import SerialFmvBadge from "@/components/SerialFmvBadge";
 import NetOfFeesNote from "@/components/sniper/NetOfFeesNote";
 import { type LeagueValue } from "@/components/filters/LeagueFilter";
@@ -175,6 +176,7 @@ function SniperMomentsBody() {
   const [leagueFilter, setLeagueFilter] = useState<LeagueValue>("all");
   const [serialFilter, setSerialFilter] = useState("all");
   const [badgeOnly, setBadgeOnly] = useState(false);
+  const [autographOnly, setAutographOnly] = useState(false);
   const [flowWalletOnly, setFlowWalletOnly] = useState(false);
   const [search, setSearch] = useState("");
   // Team (sports) / Franchise (Pinnacle) filter. Reset when the collection
@@ -247,10 +249,11 @@ function SniperMomentsBody() {
       league: leagueFilter,
       serial: serialFilter,
       badge_only: badgeOnly,
+      autograph_only: autographOnly,
       verified_only: showVerifiedOnly,
       owned: ownedFilter,
     });
-  }, [tierTab, sortBy, minDiscount, maxPrice, leagueFilter, serialFilter, badgeOnly, showVerifiedOnly, ownedFilter]);
+  }, [tierTab, sortBy, minDiscount, maxPrice, leagueFilter, serialFilter, badgeOnly, autographOnly, showVerifiedOnly, ownedFilter]);
 
   // ── Task 10: Tab visibility pause/resume
   const [tabHidden, setTabHidden] = useState(false);
@@ -515,6 +518,7 @@ function SniperMomentsBody() {
     if (playerFilter) params.set("player", playerFilter);
     if (serialFilter !== "all") params.set("serial", serialFilter);
     if (badgeOnly) params.set("badgeOnly", "true");
+    if (autographOnly && (collectionSlug === "nba-top-shot" || collectionSlug === "nfl-all-day")) params.set("autographOnly", "true");
     if (flowWalletOnly) params.set("flowWalletOnly", "true");
     if (collectionSlug === "nba-top-shot" && leagueFilter !== "all") params.set("league", leagueFilter);
     // Top Shot and All Day filter by team SERVER-side, over the whole listing
@@ -523,7 +527,7 @@ function SniperMomentsBody() {
     if (SERVER_TEAM_FILTER.has(collectionSlug) && teamFilter !== "all") params.set("team", teamFilter);
     params.set("sortBy", sortBy);
     return `${feedEndpoint}?${params}`;
-  }, [tierTab, minDiscount, maxPrice, playerFilter, serialFilter, badgeOnly, flowWalletOnly, sortBy, feedEndpoint, feedCollection, collectionSlug, leagueFilter, teamFilter]);
+  }, [tierTab, minDiscount, maxPrice, playerFilter, serialFilter, badgeOnly, autographOnly, flowWalletOnly, sortBy, feedEndpoint, feedCollection, collectionSlug, leagueFilter, teamFilter]);
 
   const feedKey = buildFeedUrl();
 
@@ -1020,6 +1024,8 @@ function SniperMomentsBody() {
             onSortChange={setSortBy}
             badgeOnly={badgeOnly}
             onBadgeOnlyChange={setBadgeOnly}
+            autographOnly={autographOnly}
+            onAutographOnlyChange={setAutographOnly}
             showVerifiedOnly={showVerifiedOnly}
             onVerifiedChange={setShowVerifiedOnly}
             afterFeesOnly={afterFeesOnly}
@@ -1296,7 +1302,7 @@ function SniperMomentsBody() {
               <button
                 onClick={() => {
                   setTierTab("all"); setMinDiscount(0); setMaxPrice(0);
-                  setSerialFilter("all"); setBadgeOnly(false);
+                  setSerialFilter("all"); setBadgeOnly(false); setAutographOnly(false);
                   setFlowWalletOnly(false); setShowVerifiedOnly(false); setSearch("");
                   setBoardFilter({ team: "all", studio: "all", chaserOnly: false });
                 }}
@@ -1442,7 +1448,7 @@ function SniperMomentsBody() {
                     {!isPinnacle && deal.hasBadge && deal.badgeSlugs.length > 0 && (
                       <div className="flex gap-1 flex-wrap items-center">
                         {Array.from(new Set(deal.badgeSlugs)).slice(0, 3).map((slug) => (
-                          <BadgeIcon key={slug} title={slug} collectionId={badgeCollectionId} />
+                          <BadgeIcon key={slug} title={slug === AUTOGRAPH_BADGE_SLUG ? AUTOGRAPH_BADGE_TITLE : slug} collectionId={badgeCollectionId} />
                         ))}
                       </div>
                     )}
@@ -1660,7 +1666,7 @@ function SniperMomentsBody() {
                       {!isPinnacle && deal.hasBadge && deal.badgeSlugs.length > 0 && (
                         <div className="flex flex-wrap items-center gap-1 mt-1">
                           {Array.from(new Set(deal.badgeSlugs)).slice(0, 4).map((slug) => (
-                            <BadgeIcon key={slug} title={slug} size={24} collectionId={badgeCollectionId} />
+                            <BadgeIcon key={slug} title={slug === AUTOGRAPH_BADGE_SLUG ? AUTOGRAPH_BADGE_TITLE : slug} size={24} collectionId={badgeCollectionId} />
                           ))}
                         </div>
                       )}

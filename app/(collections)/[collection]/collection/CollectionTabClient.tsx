@@ -463,6 +463,9 @@ function WalletMomentsBody() {
         const res = await fetch("/api/badges?" + params.toString())
         if (!res.ok) { setBadgesPartial(true); continue }
         const json = await res.json()
+        // The autograph half of the read failed: the badges are served, but a
+        // missing "Autographed" pill is not evidence the edition is unsigned.
+        if (json?.meta?.autographsRead === false) setBadgesPartial(true)
         allEditions.push(...(json.editions ?? []))
       }
       // ⛔ Keyed by EDITION (badge_editions.external_id = row.editionKey), never
@@ -1394,6 +1397,7 @@ function WalletMomentsBody() {
           dispatchView={dispatchView}
           toggleSort={toggleSort}
           showLoanDefaultsToggle={view.filterLoanDefaultsOnly || rows.some(function(r) { return r.acquisitionMethod === "loan_default" })}
+          showAutographsToggle={collectionSlug === "nba-top-shot" || collectionSlug === "nfl-all-day"}
           showCsvButtons={filteredRows.length > 0 && ["0xbd94cade097e50ac"].includes((connectedWallet || ownerKey || input.trim()).toLowerCase())}
           onExportCsv={handleExportCsv}
           fullCsvHref={"/api/portfolio-export?wallet=" + encodeURIComponent(connectedWallet || ownerKey || input.trim()) + "&collection=" + encodeURIComponent(collectionSlug)}

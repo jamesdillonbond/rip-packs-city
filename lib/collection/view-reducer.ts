@@ -18,6 +18,8 @@ export interface CollectionViewState {
   sortKey: SortKey
   sortDirection: "asc" | "desc"
   filterBadges: boolean
+  /** Signed editions only (badgeInfo carries "Autographed" from /api/badges). */
+  filterAutographs: boolean
   badgeFilter: boolean
   filterHasOffer: boolean
   filterListed: boolean
@@ -32,7 +34,7 @@ export const initialCollectionView: CollectionViewState = {
   playerFilter: "all", setFilter: "all", seriesFilter: "all", rarityFilter: "all",
   lockedFilter: "all", leagueFilter: "all", searchWithin: "",
   sortKey: "fmv", sortDirection: "desc",
-  filterBadges: false, badgeFilter: false, filterHasOffer: false, filterListed: false,
+  filterBadges: false, filterAutographs: false, badgeFilter: false, filterHasOffer: false, filterListed: false,
   filterLoanDefaultsOnly: false, filterDupsOnly: false, dupDismissed: false,
   expandedRows: {}, selectedMoment: null,
 }
@@ -61,7 +63,7 @@ export function collectionViewReducer(
     case "RESET_FILTERS": return {
       ...s, playerFilter: "all", setFilter: "all", seriesFilter: "all", rarityFilter: "all",
       lockedFilter: "all", leagueFilter: "all", searchWithin: "",
-      filterBadges: false, badgeFilter: false, filterHasOffer: false, filterListed: false,
+      filterBadges: false, filterAutographs: false, badgeFilter: false, filterHasOffer: false, filterListed: false,
       filterLoanDefaultsOnly: false, filterDupsOnly: false,
     }
     default: return s

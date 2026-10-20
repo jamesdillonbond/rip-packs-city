@@ -13,6 +13,8 @@ export const ROOKIE_BADGES_HIDDEN_WHEN_THREE_STAR = new Set(["Rookie Year", "Roo
 export const BADGE_PILL_TITLES = new Set([
   "Rookie Year", "Rookie Premiere", "Top Shot Debut",
   "Rookie of the Year", "Rookie Mint", "Championship Year",
+  // Signed edition (editions.autographed_at -> /api/badges); see lib/autographs.ts.
+  "Autographed",
 ])
 
 // Fallback Top Shot series maps — used when collection_series data is not yet loaded

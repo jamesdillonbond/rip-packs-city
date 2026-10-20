@@ -62,4 +62,12 @@ Rookie Debut: Signature Edition /50 (45/45) · Metallic Gold LE Signature Editio
 
 - **Within a set, signed is per player.** A rule such as "Hardcourt = signed" is false 34 times out of 61. Store the flag per edition, from Atlas, and refresh it: the newest `autographedAt` values (Signature Series) carry the census day's date (the stamps are date-granular), so signings land on editions that already exist.
 - **The 2026-27 rule (a partner's scarcest parallel is signed; blog 10-14) is a forecast, not data.** Read Series 9 from Atlas as it mints.
-- `lib/sniper/feed-helpers.ts:40` "Auto" label: no upstream tag feeds it. `lib/market-compute.ts:251` "autograph" confidence keys on special serials, not signatures.
+- (At the census) `lib/sniper/feed-helpers.ts` "Auto" label had no upstream feeding it, and `lib/market-compute.ts`'s "autograph" confidence keyed on special serials — renamed `special-serial` in the build below.
+
+## Built 2026-10-19 (same evening)
+
+- **DB** (`20261020030228`): `editions.autographed_at` + `edition_autograph_checks` + the daily Atlas sweep (`autograph_sweep_tick`, pg_cron `rpc-autograph-sweep`, pipeline `autograph-sweep` on the cadence watchlist). Seeded from this census. Schema notes: [schema-truth.md](../reference/schema-truth.md) "Autographs".
+- **Badges** (`20261020030510`, pinned): `get_edition_badges_unified` emits "Autographed" first → edition page, moment page, OG cards, trophy case and the Market **Badges** filter (via `market_edition_badges`). `badge_taxonomy` row `autographed` (`20261020031442`).
+- **Sniper**: signed deals carry the `autograph` badge ("Auto"); new **AUTOGRAPHS ONLY** filter (Top Shot + All Day; `?autographOnly=true`). A failed autograph read degrades the board under that filter (`sourcesFailed: ["autographs"]`), never an empty "nothing signed" board. All Day rows are matched on player + set, claimed only when every edition of the pair is signed.
+- **Wallet Collection tab**: "Autographed" pill (via `/api/badges`) + **✍ AUTOGRAPHS** toggle.
+- **Concierge**: every edition row carries `autographed` — true / false (Atlas-verified unsigned, needs a check row) / null (not checked).

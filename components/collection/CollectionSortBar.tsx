@@ -18,6 +18,8 @@ export default function CollectionSortBar(props: {
   dispatchView: React.Dispatch<CollectionViewAction>
   toggleSort: (key: SortKey) => void
   showLoanDefaultsToggle: boolean
+  /** NBA Top Shot + NFL All Day only — the collections with signed editions. */
+  showAutographsToggle?: boolean
   showCsvButtons: boolean
   onExportCsv: () => void
   fullCsvHref: string
@@ -27,7 +29,7 @@ export default function CollectionSortBar(props: {
   onCopySeeds: () => void
 }) {
   const {
-    view, dispatchView, toggleSort, showLoanDefaultsToggle, showCsvButtons,
+    view, dispatchView, toggleSort, showLoanDefaultsToggle, showAutographsToggle = false, showCsvButtons,
     onExportCsv, fullCsvHref, debugMode, showDebug, onToggleShowDebug, onCopySeeds,
   } = props
   return (
@@ -54,6 +56,9 @@ export default function CollectionSortBar(props: {
       })}
       <div className="border-l border-[color:var(--rpc-border-hover)] mx-1" />
       <button onClick={function() { dispatchView({ type: "SET", field: "filterBadges", value: !view.filterBadges }) }} className={"rpc-filter-toggle shrink-0" + (view.filterBadges ? " rpc-filter-toggle--active" : "")}>🏷 BADGES</button>
+      {showAutographsToggle && (
+        <button onClick={function() { dispatchView({ type: "SET", field: "filterAutographs", value: !view.filterAutographs }) }} className={"rpc-filter-toggle shrink-0" + (view.filterAutographs ? " rpc-filter-toggle--active" : "")} title="Show only signed (autographed) editions">✍ AUTOGRAPHS</button>
+      )}
       <button onClick={function() { dispatchView({ type: "SET", field: "filterHasOffer", value: !view.filterHasOffer }) }} className={"rpc-filter-toggle shrink-0" + (view.filterHasOffer ? " rpc-filter-toggle--active" : "")}>💰 HAS OFFER</button>
       <button onClick={function() { dispatchView({ type: "SET", field: "filterListed", value: !view.filterListed }) }} className={"rpc-filter-toggle shrink-0" + (view.filterListed ? " rpc-filter-toggle--active" : "")}>📋 LISTED</button>
       {showLoanDefaultsToggle && (

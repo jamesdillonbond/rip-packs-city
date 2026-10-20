@@ -84,6 +84,6 @@ The walk only knows wallets that are already indexed or in `topshot_ownership_wa
 - **Squad Goals /10:** top 10 per team, snapshot July 1, playoffs and Finals count.
 - **Constellations /99 and /10:** All-Star trade-ins, which burn Rares from the current AND earlier seasons.
 - **Signature Style /49:** trade-in auctions.
-- Partnered athletes (10-17): Dybantsa, Peterson, Boozer, Wilson. The scarcest parallel of their Moments is signed. The DB has no autograph/partner field yet.
+- Partnered athletes (10-17): Dybantsa, Peterson, Boozer, Wilson. The scarcest parallel of their Moments is signed. Signed editions are in `editions.autographed_at` since 2026-10-19 (Atlas `autographedAt`, daily sweep); partner status itself is not stored.
 - ⚠ **Do not publish an RPC rank as if it were Top Shot's.** Historically Top Shot ranked by locked Top Shot Score (purchase price or ASP × 10), and the 2026-27 scoring is unpublished.
   The defensible RPC product is "cost to climb into the top N", which needs the official scoring (asked of Trevor 10-17).

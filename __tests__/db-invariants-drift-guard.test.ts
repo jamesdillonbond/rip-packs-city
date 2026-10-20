@@ -1228,9 +1228,9 @@ const PINS = [
   {
     fn: "get_edition_badges_unified",
     test: "supabase/tests/get_edition_badges_unified.sql",
-    // Re-pinned 2026-09-25: editions.badges is a fourth real source ('edition'),
-    // the column Candy MLB's Rainbow parallels live in; ids trimmed in the follow-up.
-    migration: "supabase/migrations/20260925084355_audit_20260925_edition_badge_ids_trim_separators.sql",
+    // Re-pinned 2026-10-19: a signed edition (editions.autographed_at) gets an 'autograph'-source
+    // "Autographed" badge, ordered first, that does not suppress the derived fallback.
+    migration: "supabase/migrations/20261020030510_audit_20261019_edition_badges_carry_the_autograph.sql",
   },
   {
     fn: "refresh_seeded_wallet_stats",

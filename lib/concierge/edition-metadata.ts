@@ -48,11 +48,22 @@ export type EditionMetadata = {
   metadata_as_of: string | null;
 };
 
+/**
+ * Autograph state of one edition (editions.autographed_at + edition_autograph_checks,
+ * written from Atlas `autographedAt`; see lib/autographs.ts). THREE states:
+ * `true` = signed · `false` = Atlas VERIFIED it unsigned (a check row) · `null` = not
+ * checked — a NULL autographed_at alone is never a "no".
+ */
+export type EditionAutograph = { autographed: boolean | null; checked_at: string | null };
+
 export type EditionMetadataResult = {
   /** ok = read succeeded (a key absent from byKey has NO metadata row) · error = read FAILED · skipped = not attempted (no collection / no keys / unsupported collection). */
   status: "ok" | "error" | "skipped";
   byKey: Map<string, EditionMetadata>;
   message?: string;
+  /** Top Shot + All Day only. "error" = the autograph read FAILED (badges may still be fine). */
+  autographStatus?: "ok" | "error" | "skipped";
+  autographs?: Map<string, EditionAutograph>;
 };
 
 // The collections `badge_editions` carries rows for. Pinnacle keys are render
@@ -64,9 +75,16 @@ const METADATA_COLLECTION_UUIDS = new Set<string>([
   "06248cc4-b85f-47cd-af67-1855d14acd75", // laliga_golazos
 ]);
 const TOP_SHOT_UUID = "95f28a17-224a-4025-96ad-adf8a4c63bfd";
+const ALL_DAY_UUID = "dee28451-5d62-409e-a1ad-a83f763ac070";
+// Atlas carries autographedAt for exactly these two products.
+const AUTOGRAPH_COLLECTION_UUIDS = new Set<string>([TOP_SHOT_UUID, ALL_DAY_UUID]);
+
+export const AUTOGRAPH_NOTE =
+  "autographed (NBA Top Shot / NFL All Day) is read from Atlas: true = this edition is signed by the player; false = verified unsigned; null = not checked, so say you cannot tell. Signing is per edition, often only one parallel of a player's Moment (e.g. a Rookie Debut Hardcourt /50), so never infer it from the set, parallel or price.";
 
 export const BADGES_NOTE =
-  "badges are NBA Top Shot moment tags (Rookie Year, Top Shot Debut, Championship Year, Rookie Premiere, MVP Year, Rookie of the Year, Challenge / Leaderboard Reward). Factor them into any ranking or 'why is this worth more' answer. An empty list on a Top Shot row means the edition carries no tag; other collections have parallels/variants rather than moment tags, so an empty list there says nothing.";
+  "badges are NBA Top Shot moment tags (Rookie Year, Top Shot Debut, Championship Year, Rookie Premiere, MVP Year, Rookie of the Year, Challenge / Leaderboard Reward). Factor them into any ranking or 'why is this worth more' answer. An empty list on a Top Shot row means the edition carries no tag; other collections have parallels/variants rather than moment tags, so an empty list there says nothing. " +
+  AUTOGRAPH_NOTE;
 
 /** Dedupe a `play_tags` jsonb array ([{id,title}, …]) to its titles. */
 export function badgeTitles(playTags: unknown): string[] {
@@ -169,9 +187,64 @@ export async function fetchEditionMetadata(
         byKey.set(row.external_id, toEditionMetadata(row));
       }
     }
-    return { status: "ok", byKey };
+    const autographRead = await fetchAutographs(supabase, collectionUuid, keys);
+    return { status: "ok", byKey, ...autographRead };
   } catch {
     return { status: "error", byKey: new Map(), message: "edition metadata read failed" };
+  }
+}
+
+/**
+ * Autograph state for the same keys. Never throws, and its failure never fails the
+ * badge read: it comes back as autographStatus "error", which surfaces as
+ * `autographed: null` (could not check) — never as `false`.
+ */
+async function fetchAutographs(
+  supabase: MetadataClient,
+  collectionUuid: string,
+  keys: string[],
+): Promise<Pick<EditionMetadataResult, "autographStatus" | "autographs">> {
+  const autographs = new Map<string, EditionAutograph>();
+  if (!AUTOGRAPH_COLLECTION_UUIDS.has(collectionUuid)) return { autographStatus: "skipped", autographs };
+  try {
+    const idByKey = new Map<string, string>();
+    for (let i = 0; i < keys.length; i += 200) {
+      const { data, error } = await supabase
+        .from("editions")
+        .select("id, external_id, autographed_at")
+        .eq("collection_id", collectionUuid)
+        .in("external_id", keys.slice(i, i + 200));
+      if (error) return { autographStatus: "error", autographs: new Map() };
+      for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+        if (typeof row.external_id !== "string" || typeof row.id !== "string") continue;
+        if (typeof row.autographed_at === "string" && row.autographed_at) {
+          autographs.set(row.external_id, { autographed: true, checked_at: null });
+        } else {
+          idByKey.set(row.external_id, row.id);
+        }
+      }
+    }
+    // An unsigned-looking edition is "false" only with a check row behind it.
+    const ids = Array.from(idByKey.values());
+    const checkedById = new Map<string, string>();
+    for (let i = 0; i < ids.length; i += 200) {
+      const { data, error } = await supabase
+        .from("edition_autograph_checks")
+        .select("edition_id, autographed_at, checked_at")
+        .in("edition_id", ids.slice(i, i + 200));
+      if (error) return { autographStatus: "error", autographs: new Map() };
+      for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+        if (typeof row.edition_id !== "string" || typeof row.checked_at !== "string") continue;
+        if (row.autographed_at == null) checkedById.set(row.edition_id, row.checked_at);
+      }
+    }
+    for (const [key, id] of idByKey) {
+      const checkedAt = checkedById.get(id);
+      autographs.set(key, checkedAt ? { autographed: false, checked_at: checkedAt } : { autographed: null, checked_at: null });
+    }
+    return { autographStatus: "ok", autographs };
+  } catch {
+    return { autographStatus: "error", autographs: new Map() };
   }
 }
 
@@ -193,16 +266,19 @@ export function metadataFieldsFor(
   supply: { circulation: number | null; burned: number | null; locked: number | null; effective: number | null; squeeze_pct: number | null } | null;
   rookie_flags: { has_rookie_mint: boolean | null; is_three_star_rookie: boolean | null } | null;
   metadata_as_of: string | null;
+  autographed: boolean | null;
+  autograph_status: "ok" | "unavailable" | "not_tracked";
 } {
   const m = externalId ? result.byKey.get(externalId) : undefined;
+  const autograph = autographFieldsFor(result, externalId, collectionUuid);
   if (result.status === "error") {
-    return { badges: null, badges_status: "unavailable", team: null, series_number: null, parallel_name: null, supply: null, rookie_flags: null, metadata_as_of: null };
+    return { badges: null, badges_status: "unavailable", team: null, series_number: null, parallel_name: null, supply: null, rookie_flags: null, metadata_as_of: null, ...autograph };
   }
   if (result.status === "skipped" || !m) {
     // Not tracked for this collection, or no metadata row for this key. Both
     // are "we hold nothing", never "it has nothing" — except on Top Shot, where
     // a missing row is rare and still not a claim about tags.
-    return { badges: null, badges_status: "not_tracked", team: null, series_number: null, parallel_name: null, supply: null, rookie_flags: null, metadata_as_of: null };
+    return { badges: null, badges_status: "not_tracked", team: null, series_number: null, parallel_name: null, supply: null, rookie_flags: null, metadata_as_of: null, ...autograph };
   }
   const tagsTracked = collectionUuid === TOP_SHOT_UUID;
   return {
@@ -220,5 +296,19 @@ export function metadataFieldsFor(
     },
     rookie_flags: { has_rookie_mint: m.has_rookie_mint, is_three_star_rookie: m.is_three_star_rookie },
     metadata_as_of: m.metadata_as_of,
+    ...autograph,
   };
+}
+
+/** The autograph half of a row's fields: `null` whenever we could not check. */
+export function autographFieldsFor(
+  result: EditionMetadataResult,
+  externalId: string | null | undefined,
+  collectionUuid: string | null | undefined,
+): { autographed: boolean | null; autograph_status: "ok" | "unavailable" | "not_tracked" } {
+  if (!collectionUuid || !AUTOGRAPH_COLLECTION_UUIDS.has(collectionUuid)) return { autographed: null, autograph_status: "not_tracked" };
+  if (result.status === "error" || result.autographStatus === "error") return { autographed: null, autograph_status: "unavailable" };
+  const a = externalId ? result.autographs?.get(externalId) : undefined;
+  if (!a || a.autographed == null) return { autographed: null, autograph_status: result.autographStatus === "ok" ? "not_tracked" : "unavailable" };
+  return { autographed: a.autographed, autograph_status: "ok" };
 }

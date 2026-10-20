@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js"
 import { sanitizeOrIlikeValue } from "@/lib/postgrest-safe"
 import { apiErrorResponse } from "@/lib/api-error"
 import { boundedRead } from "@/lib/api/bounded-read"
+import { AUTOGRAPH_BADGE_SLUG, AUTOGRAPH_BADGE_TITLE } from "@/lib/autographs"
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -186,11 +187,38 @@ export async function GET(req: NextRequest) {
       return PLAY_TAG_BADGE_TITLES.has(norm)
     }
 
+    // Signed editions (editions.autographed_at, from Atlas). POSITIVE claims only:
+    // a failed read adds no badge and says so in meta.autographsRead, rather than
+    // reading as "none of these is signed".
+    const pageKeys = Array.from(new Set(
+      (dataResult.data ?? []).map((e: any) => e?.external_id).filter((k: unknown): k is string => typeof k === "string" && k !== ""),
+    )).slice(0, 1000)
+    let signedKeys = new Set<string>()
+    let autographsRead = true
+    if (pageKeys.length > 0) {
+      const signedResult = await boundedRead(supabase
+        .from("editions")
+        .select("external_id")
+        .eq("collection_id", collection_id)
+        .not("autographed_at", "is", null)
+        .in("external_id", pageKeys)
+        .limit(1000), "api/badges/autographs")
+      if (signedResult.error) {
+        autographsRead = false
+        console.error("[badges] autograph read failed:", signedResult.error?.message ?? signedResult.error)
+      } else {
+        signedKeys = new Set((signedResult.data ?? []).map((r: any) => String(r.external_id)))
+      }
+    }
+
     const editions = (dataResult.data ?? []).map((e: any) => {
       // Unified badges array — mirrors what get_edition_badges_unified(edition_id)
       // returns on the Postgres side: play_tags tagged with source 'play',
       // set_play_tags tagged 'set_play'.
       const unifiedBadges = [
+        ...(signedKeys.has(e.external_id)
+          ? [{ id: AUTOGRAPH_BADGE_SLUG, title: AUTOGRAPH_BADGE_TITLE, source: "autograph" }]
+          : []),
         ...(e.play_tags ?? [])
           .filter((t: any) => isBadgePlayTag(t?.title))
           .map((t: any) => ({ id: t.id, title: t.title, source: "play" })),
@@ -253,6 +281,7 @@ export async function GET(req: NextRequest) {
         sort:     sortCol,
         dir,
         lastSync: syncData?.updated_at ?? null,
+        autographsRead,
       },
     })
   } catch (err) {
