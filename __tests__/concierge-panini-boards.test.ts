@@ -12,6 +12,7 @@ import {
   paniniRipVerdict,
   readPaniniPackMarketForConcierge,
   readPaniniPremiumsForConcierge,
+  readPaniniDealsForConcierge,
 } from "@/lib/concierge/panini-boards"
 import { stripComments } from "../scripts/lib/strip-comments.mjs"
 
@@ -105,6 +106,60 @@ describe("readPaniniPremiumsForConcierge", () => {
   })
 })
 
+describe("readPaniniDealsForConcierge — the Sniper tab's snapshot, never 'no deals' out of a failed read", () => {
+  const deal = (o: Record<string, unknown>) => ({
+    sku: "packcard-2420_1_2_3__4_8", player_name: "Caitlin Clark", product_name: "2026 Prizm WNBA", sport: "Womens Basketball",
+    parallel: "Silver", ask_usd: 10, fmv_usd: 20, discount_pct: 50, deal_basis: "fmv_only", ...o,
+  })
+  const snap = (payload: Record<string, unknown>, ageMs = 30 * 60_000) =>
+    async () => ({ payload, ageMs, stale: false, refreshedAt: "2026-10-20T01:52:18Z" })
+
+  it("no snapshot is an error, not an empty board", async () => {
+    const out = JSON.parse(await readPaniniDealsForConcierge("https://x", {}, async () => null))
+    expect(out.status).toBe("error")
+    expect(out.results).toBeUndefined()
+  })
+  it("a snapshot whose deal read failed is an error, even with an empty array", async () => {
+    const out = JSON.parse(await readPaniniDealsForConcierge("https://x", {}, snap({ deals_all: [], deals_all_error: true })))
+    expect(out.status).toBe("error")
+  })
+  it("sale-backed deals lead, then the deepest discount; edition + Panini links derive from the sku", async () => {
+    const out = JSON.parse(await readPaniniDealsForConcierge("https://x", {}, snap({ deals_all: [
+      deal({ sku: "packcard-1_1_1_1__1_5", discount_pct: 80 }),
+      deal({ sku: "packcard-2_2_2_2__1_5", discount_pct: 20, deal_basis: "fmv_and_recent_sales" }),
+    ] })))
+    expect(out.status).toBe("ok")
+    expect(out.results.map((r: { discount_pct: number }) => r.discount_pct)).toEqual([20, 80])
+    expect(out.results[0].backed_by_recent_sales).toBe(true)
+    expect(out.results[0].edition_url).toBe("https://x/panini-blockchain/edition/packcard-2_2_2_2")
+    expect(out.results[0].panini_url).toContain("packcard-2_2_2_2")
+    expect(out.scope).toBe("every walked Panini product")
+  })
+  it("filters by player, sport, max price and a fractional or percent minDiscount", async () => {
+    const payload = { deals_all: [
+      deal({ sku: "packcard-1_1_1_1__1_5", player_name: "Lionel Messi", sport: "Soccer", ask_usd: 500, discount_pct: 30 }),
+      deal({ sku: "packcard-2_2_2_2__1_5", discount_pct: 10 }),
+      deal({ sku: "packcard-3_3_3_3__1_5", discount_pct: 40 }),
+    ] }
+    const byPlayer = JSON.parse(await readPaniniDealsForConcierge("https://x", { player: "messi" }, snap(payload)))
+    expect(byPlayer.results).toHaveLength(1)
+    const bySport = JSON.parse(await readPaniniDealsForConcierge("https://x", { sport: "womens basketball", minDiscount: 0.3 }, snap(payload)))
+    expect(bySport.results.map((r: { discount_pct: number }) => r.discount_pct)).toEqual([40])
+    const cheap = JSON.parse(await readPaniniDealsForConcierge("https://x", { maxPrice: 100, minDiscount: 30 }, snap(payload)))
+    expect(cheap.matched).toBe(1)
+  })
+  it("a filter that matches nothing says no_matching_deals with the board total, never an empty ok", async () => {
+    const out = JSON.parse(await readPaniniDealsForConcierge("https://x", { player: "nobody" }, snap({ deals_all: [deal({})] })))
+    expect(out.status).toBe("no_matching_deals")
+    expect(out.board_total).toBe(1)
+  })
+  it("an old snapshot is flagged stale and carries its age", async () => {
+    const out = JSON.parse(await readPaniniDealsForConcierge("https://x", {}, snap({ deals_all: [deal({})] }, 5 * 3_600_000)))
+    expect(out.snapshot_stale).toBe(true)
+    expect(out.snapshot_age_hours).toBe(5)
+  })
+})
+
 describe("the concierge prompt never denies a tab the registry lists", () => {
   const CLAIMS: Array<[string, RegExp]> = [
     ["collection", /\bno Collection (analy[sz]er|tab)\b/i],
@@ -137,6 +192,17 @@ describe("the concierge prompt never denies a tab the registry lists", () => {
     expect(ROUTE).toMatch(/"panini_pack_market", "panini_premiums"/)
     expect(ROUTE).toContain('toolInput.board === "panini_pack_market"')
     expect(ROUTE).toContain('toolInput.board === "panini_premiums"')
+  })
+  it("Panini-scoped search_live_deals / search_catalog_deals read the Panini snapshot before any Flow source", () => {
+    for (const tool of ["search_live_deals", "search_catalog_deals"]) {
+      const i = ROUTE.indexOf(`if (toolName === "${tool}")`)
+      expect(i, tool).toBeGreaterThan(0)
+      const head = ROUTE.slice(i, i + 900)
+      expect(head, tool).toContain('effectiveCollectionId === "panini-blockchain"')
+      expect(head, tool).toContain("readPaniniDealsForConcierge(")
+      const flow = Math.min(...["/api/sniper-feed", '.from("cached_listings")', "isPinnacle("].map((k) => { const j = ROUTE.indexOf(k, i); return j < 0 ? Infinity : j }))
+      expect(ROUTE.indexOf("readPaniniDealsForConcierge(", i), tool).toBeLessThan(flow)
+    }
   })
   it("a Panini-scoped compare_pack_value answers from Panini's pack plane, not the empty Flow table", () => {
     const i = ROUTE.indexOf('if (toolName === "compare_pack_value")')

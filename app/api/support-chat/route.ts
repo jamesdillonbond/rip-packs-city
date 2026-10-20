@@ -109,7 +109,7 @@ import {
 import { ALLOWED_ORIGINS } from "@/lib/allowed-origins";
 import { lookupUiField } from "@/lib/concierge/ui-field-dictionary";
 import { ownLookup } from "@/lib/safe-lookup";
-import { readPaniniPackMarketForConcierge, readPaniniPremiumsForConcierge } from "@/lib/concierge/panini-boards";
+import { readPaniniDealsForConcierge, readPaniniPackMarketForConcierge, readPaniniPremiumsForConcierge } from "@/lib/concierge/panini-boards";
 
 const supabase: any = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -369,13 +369,14 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "search_live_deals",
-    description: "Search for live deals from the RPC sniper feed for the active collection. Use this when the user explicitly wants to shop or hunt deals — NOT for support-flavored questions. Returns real listings with prices, FMV discounts, and buy links. Defaults to the page's active collection when collectionId is omitted. CRITICAL: when the user names a specific person — a player (NBA/NFL/Golazos/UFC) or a character (Disney Pinnacle: Mickey, Goofy, Greef Karga, etc.) — you MUST pass that name in the `player` parameter (or `character` for Pinnacle). Never return unfiltered top-discount results when the user asked about someone specific.",
+    description: "Search for live deals from the RPC sniper feed for the active collection. Use this when the user explicitly wants to shop or hunt deals — NOT for support-flavored questions. Returns real listings with prices, FMV discounts, and buy links. Defaults to the page's active collection when collectionId is omitted. CRITICAL: when the user names a specific person — a player (NBA/NFL/Golazos/UFC) or a character (Disney Pinnacle: Mickey, Goofy, Greef Karga, etc.) — you MUST pass that name in the `player` parameter (or `character` for Pinnacle). Never return unfiltered top-discount results when the user asked about someone specific. On Panini (panini-blockchain) it reads the hourly deal snapshot behind the Panini Sniper tab across every Panini product: filter with player, setName (product or parallel name), sport (Soccer, Basketball, Football, Womens Basketball, Baseball…), maxPrice and minDiscount (a percent); lead with deals backed_by_recent_sales and quote snapshot_age_hours.",
     input_schema: {
       type: "object" as const,
       properties: {
         collectionId: { type: "string", description: "Collection id (nba-top-shot, nfl-all-day, laliga-golazos, disney-pinnacle). Defaults to the active page's collection." },
         player: { type: "string", description: "Player or subject name to filter by (partial match, case-insensitive). REQUIRED whenever the user names a specific person — pass 'LeBron James', 'Patrick Mahomes', 'Messi', etc. For sports collections." },
         character: { type: "string", description: "Character name for Disney Pinnacle (e.g. 'Goofy', 'Mickey Mouse', 'Greef Karga'). REQUIRED whenever the user names a specific character on Pinnacle. Aliased to `player` server-side; pass either field." },
+        sport: { type: "string", description: "Panini only: the product's sport (Soccer, Basketball, Football, Womens Basketball, Baseball, Racing). Ignored elsewhere." },
         team: { type: "string", description: "Team name filter, partial ok (e.g. 'Blazers', 'Chiefs'). Use whenever the user asks for deals on a TEAM's moments. Routes to the edition-grain deals board (Top Shot, All Day, Pinnacle)." },
         setName: { type: "string", description: "Set name filter, partial ok (e.g. 'Archive Set', 'Run It Back', 'Base Set'). Pass whenever the user names a SET. Note this filters the DEAL board — for whether one specific edition is listed at all, use get_edition_listings instead." },
         tier: { type: "string", description: "Tier filter (collection-dependent labels)" },
@@ -2023,6 +2024,15 @@ async function executeToolInner(
 
   // ── Existing concierge tools (deal hunting, FMV, wallets) ─────────────────
   if (toolName === "search_live_deals") {
+    // 2026-10-19: Panini's deals are the hourly snapshot behind its Sniper tab. The
+    // sniper feed answers an EMPTY board for Panini and cached_listings holds no
+    // Panini rows, so this tool said "no deals" while the tab showed hundreds.
+    if (effectiveCollectionId === "panini-blockchain") {
+      if (toolInput.team) {
+        return JSON.stringify({ status: "unsupported_filter", message: "Panini deals can't be filtered by team (the deal board has no team field). Offer a player or sport filter, or link /panini-blockchain/sniper." });
+      }
+      return readPaniniDealsForConcierge(base, { ...toolInput, player: toolInput.player ?? toolInput.playerName });
+    }
     // Per-source failure flags. A source that fails is NOT a source that found
     // nothing, and this tool has three of them — see the terminal exit.
     let liveFeedFailed = false;
@@ -2324,6 +2334,11 @@ async function executeToolInner(
   }
 
   if (toolName === "search_catalog_deals") {
+    // Same Panini read as search_live_deals: there is no separate Panini catalog
+    // floor table this tool's fallbacks could reach (2026-10-19).
+    if (effectiveCollectionId === "panini-blockchain") {
+      return readPaniniDealsForConcierge(base, { ...toolInput, player: toolInput.player ?? toolInput.playerName });
+    }
     if (isPinnacle(effectiveCollectionId)) {
       const pinnacleListings = await searchPinnacleDeals(supabase, toolInput, { source: "catalog" });
       const pinnacleParsed = JSON.parse(pinnacleListings);

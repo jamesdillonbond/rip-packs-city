@@ -16,8 +16,19 @@
 //     pack that usually pays — the same gate the Packs tab applies (panini.md Next 4).
 //   · FMV CONFIDENCE IS INTERNAL (CLAUDE.md concierge rule 3): the premiums rows drop the
 //     *_confidence fields before they reach the model.
+//
+// ── DEALS (added the same evening) ──────────────────────────────────────────
+// search_live_deals on a Panini page called /api/sniper-feed, which answers an EMPTY board
+// for every collection it has no source for, then fell back to `cached_listings`, which
+// holds no Panini rows: "no deals" while the Sniper tab showed hundreds. Panini's deals are
+// the hourly `panini-boards` snapshot (`deals_all`) the Sniper tab is seeded from. This
+// reads that SNAPSHOT ONLY, at any age, stamped with its age: the live rebuild is ~138k
+// buffers and must not run per chat message (lib/insights/panini-more-boards.ts).
 
 import { fetchPaniniPremiums } from "@/lib/insights/panini-premiums"
+import { readBoardSnapshot } from "@/lib/insights/board-cache"
+import { editionKeyOfSku } from "@/lib/panini/overview-feeds"
+import { paniniEditionUrl } from "@/lib/panini/edition-url"
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = any
@@ -167,4 +178,105 @@ export async function readPaniniPremiumsForConcierge(db: Db, base: string, limit
   } catch {
     return JSON.stringify({ status: "error", message: "The Panini premiums read failed — say the check failed; do NOT say there are no premiums." })
   }
+}
+
+/** The deal-basis value the board uses for a deal its recent sales also back. */
+const DEAL_BACKED = "fmv_and_recent_sales"
+/** Past this age the snapshot is called stale to the model (three missed hourly warms). */
+export const PANINI_DEALS_STALE_HOURS = 3
+
+export interface PaniniDealFilters {
+  player?: unknown
+  setName?: unknown
+  sport?: unknown
+  maxPrice?: unknown
+  minDiscount?: unknown
+  limit?: unknown
+}
+
+export async function readPaniniDealsForConcierge(
+  base: string,
+  f: PaniniDealFilters,
+  read: typeof readBoardSnapshot = readBoardSnapshot,
+): Promise<string> {
+  const failed = JSON.stringify({
+    status: "error",
+    message: "The Panini deal board could not be read — say the check failed and link the Sniper tab; do NOT say there are no deals.",
+    sniper_url: `${base}/panini-blockchain/sniper`,
+  })
+  const snap = await read("panini-boards")
+  if (!snap) return failed
+  const p = snap.payload
+  const allProducts = Array.isArray(p.deals_all)
+  const raw = allProducts ? p.deals_all : p.deals
+  if (!Array.isArray(raw) || (allProducts ? p.deals_all_error === true : p.deals_error === true)) return failed
+
+  const lower = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim().toLowerCase() : null)
+  const player = lower(f.player)
+  const set = lower(f.setName)
+  const sport = lower(f.sport)
+  const maxPrice = num(f.maxPrice)
+  // The board's discount_pct is a PERCENT (e.g. 42); a model passing 0.3 means 30 %.
+  const md = num(f.minDiscount)
+  const minDiscount = md === null ? null : md > 0 && md < 1 ? md * 100 : md
+  const limit = Math.min(Math.max(Math.trunc(num(f.limit) ?? 5) || 5, 1), 15)
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rows = (raw as any[]).filter((r) => {
+    if (!r || typeof r !== "object") return false
+    if (player && !String(r.player_name ?? "").toLowerCase().includes(player)) return false
+    if (set && !`${r.product_name ?? ""} ${r.parallel ?? ""}`.toLowerCase().includes(set)) return false
+    if (sport && String(r.sport ?? "").toLowerCase() !== sport) return false
+    const ask = num(r.ask_usd)
+    if (ask === null || ask <= 0) return false
+    if (maxPrice !== null && ask > maxPrice) return false
+    if (minDiscount !== null && (num(r.discount_pct) ?? 0) < minDiscount) return false
+    return true
+  })
+  // Sale-backed deals lead (the Sniper tab's order), then the deepest discount.
+  rows.sort((a, b) =>
+    Number(b.deal_basis === DEAL_BACKED) - Number(a.deal_basis === DEAL_BACKED) ||
+    (num(b.discount_pct) ?? 0) - (num(a.discount_pct) ?? 0) ||
+    String(a.sku).localeCompare(String(b.sku)))
+
+  const ageHours = Math.round((snap.ageMs / 3_600_000) * 10) / 10
+  return JSON.stringify({
+    status: rows.length ? "ok" : "no_matching_deals",
+    scope: allProducts ? "every walked Panini product" : "2026 Prizm World Cup only (older snapshot)",
+    board_total: raw.length,
+    board_capped: allProducts ? p.deals_all_capped === true : p.deals_capped === true,
+    matched: rows.length,
+    results: rows.slice(0, limit).map((r) => {
+      const ek = editionKeyOfSku(r.sku)
+      return {
+        player: r.player_name ?? null,
+        product: r.product_name ?? null,
+        sport: r.sport ?? null,
+        parallel: r.parallel ?? null,
+        serial: num(r.serial_number),
+        mint_cap: num(r.mint_cap),
+        ask_usd: num(r.ask_usd),
+        fmv_usd: num(r.fmv_usd),
+        discount_pct: num(r.discount_pct),
+        est_edge_before_fees_usd: num(r.est_profit_usd),
+        last_sale_usd: num(r.last_sale_usd),
+        recent_sales_median_usd: num(r.recent_sales_median_usd),
+        recent_sales_30d: num(r.recent_sales_n),
+        backed_by_recent_sales: r.deal_basis === DEAL_BACKED,
+        special_serial: r.special_flag ?? null,
+        ask_seen_at: r.ask_confirmed_at ?? null,
+        edition_url: ek ? `${base}/panini-blockchain/edition/${encodeURIComponent(ek)}` : null,
+        panini_url: paniniEditionUrl(ek),
+      }
+    }),
+    snapshot_refreshed_at: snap.refreshedAt,
+    snapshot_age_hours: ageHours,
+    snapshot_stale: ageHours > PANINI_DEALS_STALE_HOURS,
+    sniper_url: `${base}/panini-blockchain/sniper`,
+    note:
+      "Discounted Panini asks vs RPC FMV, from the hourly deal snapshot behind the Sniper tab. Lead with backed_by_recent_sales deals; " +
+      "a deal NOT backed by recent sales rests on FMV alone and you must say so. Asks are as of ask_seen_at and may be gone — " +
+      "send the user to panini_url to check. no_matching_deals means no DISCOUNTED ask matched the filters, never that nothing is listed. " +
+      "Panini's index is listing-fed (a floor, not a census). RPC does not buy or sell.",
+  })
 }
