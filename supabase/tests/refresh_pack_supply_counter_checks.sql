@@ -11,7 +11,7 @@
 --   5. The existing post-stamp arm still uses exact rip times (P2).
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20261020044126_audit_20261019_counter_checks_count_container_opens_dapper_confirmed.sql).
+-- (supabase/migrations/20261020044228_audit_20261019_counter_checks_count_container_opens_dapper_confirmed.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
