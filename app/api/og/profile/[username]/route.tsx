@@ -772,8 +772,10 @@ export async function GET(
     // answers it now is the per-wallet Dapper-index walk (`pack_wallet_sync`, hourly
     // for every saved wallet) read through get_wallet_pack_history('held') — the
     // pack-history page's own Held count. A bought box the index said was OPENED
-    // read held until 20261010170411; the residue is the index's "Revealed" status
-    // (9 packs of 5,644 on 33 wallets). fetchHeldSealedPacks withholds the figure
+    // read held until 20261010170411; the residue was the index's "Revealed" status
+    // (9 packs of 5,644 on 33 wallets). A Top Shot Revealed pack WAS opened, and reads
+    // as one since 20261020030627; All Day's (1 pack) is unmeasured and still reads
+    // held. fetchHeldSealedPacks withholds the figure
     // ("—") unless every wallet's walk is clean and < 48 h old: the most-shared
     // surface gets a confirmed number or none.
     const statTiles: Array<{ label: string; value: string; small?: boolean }> = [
