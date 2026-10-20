@@ -1,4 +1,4 @@
-# Inbox index — 590 live filings
+# Inbox index — 591 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -32,9 +32,10 @@ failure it documents.
 
 ---
 
-## 2026-10-20 — 1 filing
+## 2026-10-20 — 2 filings
 
 - [🟢 Daytime monitor (10-20 ~06:19Z, GREEN infra) — 2 low-risk housekeeping candidates: leftover `scratch_20261019_counter_checks_before` was the root cause of the 04:42–05:34Z smoke `rls_off` failures (now RLS-masked, drop it); `pg_net_http_404` arm 9 un-attributable 404s/2h with a Next.js `__next_error__` body (attribute to a cron hitting a 10-19-changed route)](2026-10-20T0619Z-scratch-counter-table-smoke-and-pgnet-404-attribution.md)
+- [🟢 Daytime monitor (10-20 ~15:09Z, GREEN infra sweep) — WATCH candidate: confirm the new hourly All Day V1 reverify lane `rpc-allday-v1-listing-reverify` (pg_cron 762, shipped 14:46Z after the overnight handoff) succeeds on its first ticks; registered+active, no run yet at 15:08Z (first due 15:24Z)](2026-10-20T1509Z-daytime-monitor-verify-allday-v1-reverify-lane-first-ticks.md)
 
 ## 2026-10-19 — 2 filings
 
