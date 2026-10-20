@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest"
 import { render, cleanup, fireEvent, waitFor } from "@testing-library/react"
-import CollectionMomentTable from "@/components/collection/CollectionMomentTable"
+import CollectionMomentTable, { COLLECTION_PAGE } from "@/components/collection/CollectionMomentTable"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 
@@ -495,5 +495,55 @@ describe("CollectionMomentTable — FMV alert popover + rich expanded panel", ()
     expect(container.textContent).toContain("Rookie Trait")
     expect(container.textContent).toContain("Circ:")
     expect(container.textContent).toContain("Edition ask:")
+  })
+})
+
+// 2026-10-20: on desktop the tab auto-fetches every page of the wallet and
+// rendered every row (~21,000 elements for the test wallet's 365 moments). The
+// RENDER now pages by COLLECTION_PAGE; every loaded row still feeds filters/sort.
+describe("CollectionMomentTable — rows render a page at a time", () => {
+  const many = (n: number) => Array.from({ length: n }, (_, i) => row({ momentId: String(i), flowId: `f${i}`, playerName: `Player ${i}` }))
+  const has = (c: HTMLElement, name: string) => (c.textContent ?? "").includes(name)
+
+  for (const isMobile of [false, true]) {
+    it(`renders the first COLLECTION_PAGE rows, then SHOW MORE adds the next page (${isMobile ? "mobile" : "desktop"})`, () => {
+      const { container, getByRole } = render(<CollectionMomentTable {...baseProps({ isMobile, filteredRows: many(250), rowsCount: 250 })} />)
+      expect(has(container, `Player ${COLLECTION_PAGE - 1}`)).toBe(true)
+      expect(has(container, `Player ${COLLECTION_PAGE}`)).toBe(false)
+      expect(container.textContent).toContain(`SHOWING ${COLLECTION_PAGE} OF 250`)
+      fireEvent.click(getByRole("button", { name: `SHOW ${COLLECTION_PAGE} MORE` }))
+      expect(has(container, `Player ${2 * COLLECTION_PAGE - 1}`)).toBe(true)
+      expect(container.textContent).toContain(`SHOWING ${2 * COLLECTION_PAGE} OF 250`)
+    })
+  }
+
+  it("a background page appending rows does NOT snap SHOW MORE back to the first page", () => {
+    const props = baseProps({ filteredRows: many(150), rowsCount: 150 })
+    const { container, getByRole, rerender } = render(<CollectionMomentTable {...props} />)
+    fireEvent.click(getByRole("button", { name: "SHOW 50 MORE" }))
+    expect(has(container, "Player 149")).toBe(true)
+    // The auto-paginate loop delivers 100 more: a NEW array, same view.
+    rerender(<CollectionMomentTable {...props} filteredRows={many(250)} rowsCount={250} />)
+    expect(has(container, "Player 149")).toBe(true)
+    // The click asked for one more page (100 + 100), so the new rows fill it in;
+    // the failure this pins is a reset to the first 100.
+    expect(container.textContent).toContain(`SHOWING ${2 * COLLECTION_PAGE} OF 250`)
+    expect(container.textContent).not.toContain(`SHOWING ${COLLECTION_PAGE} OF 250`)
+  })
+
+  it("a sort or filter change starts again at the first page", () => {
+    const props = baseProps({ filteredRows: many(250), rowsCount: 250 })
+    const { container, getByRole, rerender } = render(<CollectionMomentTable {...props} />)
+    fireEvent.click(getByRole("button", { name: `SHOW ${COLLECTION_PAGE} MORE` }))
+    rerender(<CollectionMomentTable {...props} view={{ ...props.view, sortKey: "fmv" }} />)
+    expect(container.textContent).toContain(`SHOWING ${COLLECTION_PAGE} OF 250`)
+    rerender(<CollectionMomentTable {...props} view={{ ...props.view, sortKey: "fmv", rarityFilter: "RARE" }} />)
+    expect(has(container, `Player ${COLLECTION_PAGE}`)).toBe(false)
+  })
+
+  it("a wallet of COLLECTION_PAGE or fewer shows no pager", () => {
+    const { container } = render(<CollectionMomentTable {...baseProps({ filteredRows: many(40), rowsCount: 40 })} />)
+    expect(has(container, "Player 39")).toBe(true)
+    expect(container.textContent).not.toContain("SHOWING")
   })
 })

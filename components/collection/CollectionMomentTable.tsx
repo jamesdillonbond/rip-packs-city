@@ -173,6 +173,16 @@ function LockPill({ row }: { row: MomentRow }) {
   )
 }
 
+// Rows render in pages of COLLECTION_PAGE (2026-10-20). On desktop the tab
+// auto-fetches EVERY page of the wallet (maxRows = Infinity in
+// CollectionTabClient) and rendered every row: the test wallet's tab was ~21,000
+// elements for 365 moments, and a 15K-moment wallet renders 15K rows. Only the
+// RENDER is paged — every loaded row still feeds the filters, search and sort.
+// The count resets when a filter or the sort changes, NOT when background pages
+// append (the row array changes on every append, so keying on it would snap a
+// reader's SHOW MORE back to the first page mid-load).
+export const COLLECTION_PAGE = 100
+
 export default function CollectionMomentTable(props: {
   isMobile: boolean
   filteredRows: MomentRow[]
@@ -243,6 +253,28 @@ export default function CollectionMomentTable(props: {
 
   const rows = { length: rowsCount }
 
+  const v = view
+  const pageKey = JSON.stringify([
+    collectionSlug, ownerKey, v.playerFilter, v.setFilter, v.seriesFilter, v.rarityFilter, v.lockedFilter, v.leagueFilter,
+    v.searchWithin, v.sortKey, v.sortDirection, v.filterBadges, v.filterAutographs, v.badgeFilter, v.filterHasOffer,
+    v.filterListed, v.filterLoanDefaultsOnly, v.filterDupsOnly,
+  ])
+  const [pageSel, setPageSel] = useState<{ key: string; n: number }>({ key: pageKey, n: COLLECTION_PAGE })
+  const shownCount = pageSel.key === pageKey ? pageSel.n : COLLECTION_PAGE
+  const shownRows = filteredRows.slice(0, shownCount)
+  const pager = filteredRows.length > shownRows.length ? (
+    <div className="flex items-center justify-center gap-3 flex-wrap" style={{ marginTop: 12, fontFamily: "var(--font-mono)", fontSize: "var(--text-sm)", color: "var(--rpc-text-muted)" }}>
+      <span>SHOWING {shownRows.length} OF {filteredRows.length}</span>
+      <button
+        type="button"
+        className="rpc-chip min-h-[44px]"
+        onClick={() => setPageSel({ key: pageKey, n: shownRows.length + COLLECTION_PAGE })}
+      >
+        SHOW {Math.min(COLLECTION_PAGE, filteredRows.length - shownRows.length)} MORE
+      </button>
+    </div>
+  ) : null
+
   return (
     <>
         {/* Main table / mobile cards */}
@@ -260,7 +292,7 @@ export default function CollectionMomentTable(props: {
                   ? "No " + unitNoun + " found for this wallet on this collection."
                   : "No " + unitNoun + " match your current filters. Try adjusting the filters above."}
               </div>
-            ) : filteredRows.map(function(row) {
+            ) : shownRows.map(function(row) {
               const expanded = !!view.expandedRows[row.momentId]
               const fmv = fmvDisplay(row)
               const mIsThreeStar = !!row.badgeInfo?.is_three_star_rookie
@@ -542,7 +574,7 @@ export default function CollectionMomentTable(props: {
                       : "No " + unitNoun + " match your current filters. Try adjusting the filters above."}
                   </td>
                 </tr>
-              ) : filteredRows.map(function(row) {
+              ) : shownRows.map(function(row) {
                 const scopeKey = buildEditionScopeKey({ editionKey: row.editionKey, setName: row.setName, playerName: row.playerName, parallel: row.parallel, subedition: row.subedition })
                 const editionCounts = { owned: row.editionsOwned ?? batchEditionStats.get(scopeKey)?.owned ?? 0, locked: row.editionsLocked ?? batchEditionStats.get(scopeKey)?.locked ?? 0 }
                 const expanded = !!view.expandedRows[row.momentId]
@@ -1116,6 +1148,7 @@ export default function CollectionMomentTable(props: {
           </table>
         </div>
         )}
+        {pager}
     </>
   )
 }
