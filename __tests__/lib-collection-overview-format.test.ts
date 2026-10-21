@@ -42,6 +42,11 @@ describe("collection-overview-format — fmtAge / minutesSince", () => {
 })
 
 describe("collection-overview-format — freshnessFromAge", () => {
+  it("labels a sale-driven cadence by its cadence, never as a market claim", () => {
+    expect(freshnessFromAge(600, false, false, "sale-driven").label).toBe("PER SALE")
+    expect(freshnessFromAge(600, false, false, "sale-driven").label).not.toMatch(/ON SALE|LIVE/)
+    expect(freshnessFromAge(null, false, false, "sale-driven").label).toBe("UNKNOWN")
+  })
   it("loading short-circuits before everything", () => {
     expect(freshnessFromAge(5, true).label).toBe("Loading…")
     expect(freshnessFromAge(5, true).loading).toBe(true)

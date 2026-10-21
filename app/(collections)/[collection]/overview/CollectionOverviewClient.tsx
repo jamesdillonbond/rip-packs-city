@@ -819,7 +819,7 @@ export default function CollectionOverviewClient({
             <span className="rpc-label">Candy MLB board</span>
           </div>
           <div className="rpc-mono" style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-muted)", marginBottom: 12, lineHeight: 1.6 }}>
-            Every edition with its floor, best ask, FMV and 24h sales — the full Candy MLB intelligence board, updated continuously.
+            Every edition with its floor, best ask, FMV and 24h sales — the full Candy MLB intelligence board.
           </div>
           <Link href="/insights/candy-mlb" className="rpc-heading" style={{ display: "inline-block", padding: "10px 18px", background: accent, color: "#0B0B0D", borderRadius: 6, fontSize: "var(--text-sm)", letterSpacing: "0.06em", textTransform: "uppercase", textDecoration: "none" }}>
             Open the Candy MLB board →

@@ -93,8 +93,10 @@ export async function GET() {
   const headline = !fetched
     ? "Couldn't load the live board — open the page for current data."
     : priced != null && total != null && priced > 0
-      ? `${priced} of ${total} ICON editions priced off live Solana sales`
-      : "Live secondary FMV for the 2026 MLB Base Series"
+      ? `${priced} of ${total} ICON editions priced off Solana sales`
+      // 2026-10-20 sweep: no "live" — Candy has had no sale since 10-11; FMV and asks are
+      // what RPC last read, and the card cannot tell a quiet market from a moved venue (#58).
+      : "Secondary FMV for the 2026 MLB Base Series"
 
   return new ImageResponse(
     (

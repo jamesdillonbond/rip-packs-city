@@ -66,7 +66,10 @@ export function freshnessFromAge(
   // Report the cadence, keep the age visible, never colour it as a fault.
   if (cadence === "sale-driven" && !frozenMarket) {
     if (minutes == null) return { color: "var(--rpc-text-muted)", label: "UNKNOWN" }
-    return { color: "var(--rpc-text-muted)", label: "ON SALE" }
+    // "PER SALE", not "ON SALE": the 2026-10-20 sweep read "Pipeline Status | ON SALE" on
+    // /candy-mlb/overview as a claim the market is selling (no Candy sale since 10-11).
+    // The label names the cadence — recomputed per sale — and asserts no activity.
+    return { color: "var(--rpc-text-muted)", label: "PER SALE" }
   }
   // Twice-daily FMV (Disney Pinnacle): the render recalc runs at 3:07 AM and
   // 3:37 PM PT (pipeline_runs 'pinnacle-fmv-recalc', measured 09-29 — the 09-28

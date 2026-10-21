@@ -628,7 +628,7 @@ export default function CandyBoardClient({
       <style dangerouslySetInnerHTML={{ __html: CSS }} />
       <h1 className="cdy-h1">Candy · MLB ICONs</h1>
       <div className="cdy-sub">
-        2026 MLB Base Series ICONs — Candy Digital on Solana. Live secondary FMV, asks, best offers, scarcity, and
+        2026 MLB Base Series ICONs — Candy Digital on Solana. Secondary FMV, asks, best offers, scarcity, and
         pack EV. Updated <FreshnessStamp iso={fetchedAt} />
       </div>
 
