@@ -138,7 +138,7 @@ const COLLECTION_ABOUT: Record<string, AboutBlock[]> = {
     },
     {
       title: "The Candy Ecosystem",
-      body: "Candy runs a compact catalogue — base and ICON series across Common and Legendary tiers — with secondary trading on Magic Eden and OpenSea. Because the set is small and trades daily, RPC prices every edition, and the share of prices backed by recent sales is the highest on the platform.",
+      body: "Candy runs a compact catalogue — base and ICON series across Common and Legendary tiers — with secondary trading on Magic Eden and OpenSea. Because the set is small, RPC prices every edition from its own recent sales and confirmed asks.",
     },
     {
       title: "What Is Live Here",

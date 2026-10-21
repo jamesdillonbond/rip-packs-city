@@ -84,9 +84,26 @@ export function planFor(paths, { full = false, quick = false } = {}) {
   }
 }
 
-/** PURE. Does a test file's source walk the tree (and so see files it never imports)? */
-export function isTreeWalkingTest(src) {
-  return /readdirSync|ls-files|\bwalk\(/.test(src)
+const WALKS = /readdirSync|ls-files|\bwalk\(/
+
+/**
+ * PURE. Does a test file's source walk the tree (and so see files it never imports)?
+ *
+ * ⚠ 2026-10-20: a test can walk THROUGH A HELPER — the migration guards call
+ * `newestDefinitions(migrationFiles())` from `__tests__/helpers/migration-defs.ts`,
+ * and their own source has no `readdirSync`. 33 such tests were invisible here, so a
+ * migration whose replace() anchor read as a definition passed preflight and reddened
+ * `main` (allday-golazos-readers-stay-on-the-onchain-book, 20261021024344). Pass the
+ * basenames of the helpers that walk (`walkingHelpers()` derives them from source).
+ */
+export function isTreeWalkingTest(src, walkingHelperNames = []) {
+  if (WALKS.test(src)) return true
+  return walkingHelperNames.some((h) => new RegExp(`helpers/${escapeRe(h)}(?:\\.tsx?)?["']`).test(src))
+}
+
+/** PURE. Basenames (no extension) of helper files whose own source walks the tree. */
+export function walkingHelpers(helpers) {
+  return helpers.filter(({ src }) => WALKS.test(src)).map(({ file }) => file.replace(/^.*\//, "").replace(/\.tsx?$/, ""))
 }
 
 /** PURE. Test files whose source names one of the changed (non-test) paths. */
@@ -172,7 +189,12 @@ function main() {
   const tests = readTests()
   const named = testsNamingPaths(tests, paths)
   if (named.length) steps.push([`tests that name a changed path (${named.length})`, ...vitest(["run", "--passWithNoTests", ...named])])
-  const walkers = tests.filter((t) => isTreeWalkingTest(t.src)).map((t) => t.file)
+  const helperNames = walkingHelpers(
+    readdirSync("__tests__/helpers")
+      .filter((f) => /\.tsx?$/.test(f) && !/\.test\.tsx?$/.test(f))
+      .map((f) => ({ file: f, src: readFileSync(`__tests__/helpers/${f}`, "utf8") })),
+  )
+  const walkers = tests.filter((t) => isTreeWalkingTest(t.src, helperNames)).map((t) => t.file)
   const skippedSlow = []
   ;(quick ? skippedSlow : steps).push([`tree-walking guards (${walkers.length})`, ...vitest(["run", ...walkers])])
   if (plan.components) (quick ? skippedSlow : steps).push(["component coverage gate", npm, ["run", "-s", "test:coverage:components"]])

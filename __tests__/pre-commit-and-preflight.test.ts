@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { execFileSync, spawnSync } from "node:child_process"
-import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync, readFileSync, statSync, rmSync } from "node:fs"
+import { readdirSync, mkdtempSync, mkdirSync, writeFileSync, copyFileSync, readFileSync, statSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import {
@@ -8,7 +8,7 @@ import {
   droppedLedgerHeadings,
   selectChecks,
 } from "@/scripts/pre-commit-check.mjs"
-import { isDocsPath, planFor, isTreeWalkingTest, testsNamingPaths } from "@/scripts/preflight.mjs"
+import { isDocsPath, planFor, isTreeWalkingTest, testsNamingPaths, walkingHelpers } from "@/scripts/preflight.mjs"
 
 // 2026-10-12. The local hooks exist because CI found these minutes AFTER the
 // push, on a branch other sessions were pushing to (pre-commit-check.mjs and
@@ -185,6 +185,21 @@ describe("preflight: the derived selections see what `vitest related` cannot", (
       expect(isTreeWalkingTest(readFileSync(join(ROOT, "__tests__", `${f}.test.ts`), "utf8")), f).toBe(true)
     }
     expect(isTreeWalkingTest('import { x } from "@/lib/x"\nexpect(x(1)).toBe(2)')).toBe(false)
+  })
+
+  // 2026-10-20: the migration guards walk the tree THROUGH __tests__/helpers/migration-defs.ts,
+  // so their own source has no readdirSync. Preflight skipped all 33 such tests; a migration
+  // whose replace() anchor read as a function definition passed it and reddened main.
+  it("classifies a test that walks through a helper as tree-walking, from the real files", () => {
+    const helpers = readdirSync(join(ROOT, "__tests__", "helpers"))
+      .filter((f) => /\.tsx?$/.test(f) && !/\.test\.tsx?$/.test(f))
+      .map((f) => ({ file: f, src: readFileSync(join(ROOT, "__tests__", "helpers", f), "utf8") }))
+    const names = walkingHelpers(helpers)
+    expect(names).toContain("migration-defs")
+    const src = readFileSync(join(ROOT, "__tests__", "allday-golazos-readers-stay-on-the-onchain-book.test.ts"), "utf8")
+    expect(isTreeWalkingTest(src), "own source alone does not walk").toBe(false)
+    expect(isTreeWalkingTest(src, names)).toBe(true)
+    expect(isTreeWalkingTest('import { x } from "./helpers/route-harness"', names)).toBe(false)
   })
 
   it("selects a test that NAMES a changed file even though it imports nothing", () => {
