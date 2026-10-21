@@ -34,6 +34,17 @@ const GRAIN_NOUN: Record<MarketCapEntityGroup, string> = {
   set: "sets",
   series: "series",
 }
+// Disney Pinnacle's "player" grain is a CHARACTER and its "team" grain a FRANCHISE
+// (refresh_market_cap_current builds them from the pin's characters / franchises
+// traits); "of 499 players in Disney Pinnacle" named people who are not there
+// (2026-10-20 sweep, /disney-pinnacle/player/wicket-w-warrick).
+const PINNACLE_GRAIN_NOUN: Partial<Record<MarketCapEntityGroup, string>> = {
+  player: "characters",
+  team: "franchises",
+}
+function grainNoun(group: MarketCapEntityGroup, collectionDbSlug: string): string {
+  return (collectionDbSlug === "disney_pinnacle" ? PINNACLE_GRAIN_NOUN[group] : undefined) ?? GRAIN_NOUN[group]
+}
 
 function fmtPct(x: number | null, signed = false): string {
   if (x == null || !Number.isFinite(x)) return "—"
@@ -116,7 +127,7 @@ export function MarketCapTileBody({
             group === "collection"
               ? `of ${fmtCount(row.groups_ranked)} collections with a known cap`
               : row.groups_ranked > 0
-                ? `of ${fmtCount(row.groups_ranked)} ${GRAIN_NOUN[group]} in ${collectionDisplayName(row.collection_slug)} with a known cap`
+                ? `of ${fmtCount(row.groups_ranked)} ${grainNoun(group, row.collection_slug)} in ${collectionDisplayName(row.collection_slug)} with a known cap`
                 : `none in ${collectionDisplayName(row.collection_slug)} has a known cap`
           }
         />

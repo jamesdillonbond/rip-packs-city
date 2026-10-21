@@ -62,6 +62,14 @@ describe("MarketCapTile", () => {
     expect(state.calls).toEqual([{ fn: "get_market_cap_entity", args: { p_group: "player", p_collection: "nba_top_shot", p_match: "lebron-james" } }])
   })
 
+  it("names a Disney Pinnacle character grain as characters, not players", async () => {
+    state.data = [{ ...ROW, collection_slug: "disney_pinnacle", groups_ranked: 499 }]
+    const { container } = await renderTile({ group: "player", collectionDbSlug: "disney_pinnacle", match: "wicket-w-warrick" })
+    const t = container.textContent ?? ""
+    expect(t).toContain("of 499 characters in Disney Pinnacle with a known cap")
+    expect(t).not.toContain("players in Disney Pinnacle")
+  })
+
   it("compares collector-held to minted only when every edition's split is known", async () => {
     state.data = [{ ...ROW, editions: 138, editions_supply_known: 138 }]
     const { container } = await renderTile({ group: "player", collectionDbSlug: "nba_top_shot", match: "lebron-james" })

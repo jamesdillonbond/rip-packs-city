@@ -648,6 +648,19 @@ export default function DealsBoardClient({
             Pinnacle prices on a per-render basis, so a pin&apos;s FMV reflects
             that specific render, not a blended set average.
           </p>
+          {/* 2026-10-20 sweep: the board read as Pinnacle-only (20 rows) beside a title naming
+              four collections. Not a failed read: on Top Shot, All Day and Candy the FMV is
+              capped at the cheapest live ask (fmv-recalc's ask ceiling), so the floor/FMV ratio
+              of every HIGH/MEDIUM All Day edition was >= 1.00 (1,665 of 1,665, 213 exactly
+              equal) and only 2 Top Shot rows qualified. Say so, rather than let an empty leg
+              read as "no deals" or as an outage. Register #203. */}
+          <p>
+            <strong>Why most rows are Disney Pinnacle:</strong> on NBA Top Shot, NFL All
+            Day and Candy MLB, a sales-based FMV is never published above the cheapest
+            live ask, so a listing sits below FMV there only between a new, cheaper ask
+            and the next re-price. Those rows are real but rare and short-lived. Disney
+            Pinnacle&apos;s FMV is not capped at its floor, so its gaps persist.
+          </p>
           <p>
             Each leg carries a minimum ask so penny-floor artifacts don&apos;t
             headline: <strong>$5+</strong> on Top Shot, <strong>$1+</strong> on
