@@ -135,11 +135,20 @@ describe("seo: closed markets publish no schema.org Offer", () => {
     expect(offerOf(editionJsonLd(noFmv, "nba-top-shot", 42))).toMatchObject({ price: 42 })
   })
 
-  it("still renders the Product itself, so the page is not de-indexed", () => {
-    // Suppressing the price must not suppress the page.
+  // RE-PINNED 2026-10-20. The old title ("still renders the Product itself, so the
+  // page is not de-indexed") rested on a false premise: JSON-LD type does not
+  // govern indexing, while an offer-less Product is an INVALID Product snippet in
+  // Search Console. The property that matters is kept: suppressing the price must
+  // not suppress the node — it still renders, as a CreativeWork, with the closure
+  // disclosed and no Offer. The page's robots stay index, follow either way.
+  it("still renders the node (as a CreativeWork, no Offer) with the closure disclosed", () => {
     const graph = (editionJsonLd(detail, "ufc") as { "@graph": Array<Record<string, unknown>> })["@graph"]
-    expect(graph[0]["@type"]).toBe("Product")
+    expect(graph[0]["@type"]).toBe("CreativeWork")
+    expect(graph[0].offers).toBeUndefined()
+    expect(String(graph[0].name)).toContain("A Fighter")
     expect(String(graph[0].description)).toContain("closed")
+    // control: the same detail on a live market is still a Product with an Offer
+    expect((editionJsonLd(detail, "nba-top-shot") as { "@graph": Array<Record<string, unknown>> })["@graph"][0]["@type"]).toBe("Product")
   })
 })
 

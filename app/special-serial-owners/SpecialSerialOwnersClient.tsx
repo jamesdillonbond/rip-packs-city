@@ -309,7 +309,13 @@ export default function SpecialSerialOwnersClient() {
                     <div className="rpc-sso-row-holder">
                       <div className="rpc-sso-holder-label">Holder</div>
                       {r.holder_address ? (
-                        <Link href={`/profile/${encodeURIComponent(r.holder_address)}`} className="rpc-sso-holder-link" title={r.holder_address}>
+                        // 2026-10-20 (Search Console): this linked to /profile/<address>,
+                        // which does not exist — /profile/<handle> resolves an RPC
+                        // username only — so every holder was a 404 for readers and
+                        // Googlebot (37 /profile/0x… 404s crawled Oct 2–10). Same bug
+                        // WalletLink fixed 09-06; route to the wallet analyzer instead
+                        // (anon-public, robots-disallowed via ?wallet=, nofollow).
+                        <Link href={`/${collection}/collection?wallet=${encodeURIComponent(r.holder_address)}`} rel="nofollow" className="rpc-sso-holder-link" title={r.holder_address}>
                           {r.holder_username ? `@${r.holder_username}` : truncAddr(r.holder_address)}
                         </Link>
                       ) : (

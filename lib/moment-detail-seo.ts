@@ -14,6 +14,7 @@
 import { fromDbSlug } from "@/lib/collections"
 import { proxyIpfsUrl } from "@/lib/ipfs-media"
 import { joinMetaParts, metaField } from "@/lib/format"
+import { productOrCreativeWork } from "@/lib/jsonld-product"
 
 // Deterministic hero badges for the current serial that the
 // special_serial_holders sweep may not have populated (#1 + the perfect serial
@@ -122,7 +123,8 @@ export function buildMomentProductLd(input: {
   const hasLiveListing =
     (isListed === true && (listPrice ?? 0) > 0) ||
     (topShotAsk != null && topShotAsk > 0)
-  return {
+  // No Offer → not a Product (an offer-less Product is an invalid snippet): lib/jsonld-product.ts
+  return productOrCreativeWork({
     "@context": "https://schema.org",
     "@type": "Product",
     // Same trim/dedupe rule as generateMetadata — a null set_name must not leave
@@ -142,5 +144,5 @@ export function buildMomentProductLd(input: {
             : "https://schema.org/OutOfStock",
         }
       : undefined,
-  }
+  })
 }

@@ -8,6 +8,7 @@ import { ASK_STALE_HOURS } from "@/lib/market/ask-freshness"
 import { MAX_ASK_AGE_HOURS_CORROBORATION } from "@/lib/fmv-confidence"
 import { parallelLabelFromBadges } from "@/lib/edition-parallel"
 import { editionDescriptionSnippet } from "@/lib/edition/description"
+import { productOrCreativeWork } from "@/lib/jsonld-product"
 import { getInsightsBoard, type InsightsBoard } from "@/lib/insights/board-registry"
 
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.rippackscity.com'
@@ -1432,7 +1433,8 @@ export function editionJsonLd(
   return {
     "@context": "https://schema.org",
     "@graph": [
-      product,
+      // No Offer → not a Product (an offer-less Product is an invalid snippet): lib/jsonld-product.ts
+      productOrCreativeWork(product),
       breadcrumbJsonLd([
         { name: "Home", url: BASE_URL },
         { name: label, url: `${BASE_URL}/${collectionUrlSlug}` },
@@ -1568,7 +1570,7 @@ export function packJsonLd(opts: {
   return {
     "@context": "https://schema.org",
     "@graph": [
-      product,
+      productOrCreativeWork(product),
       breadcrumbJsonLd([
         { name: "Home", url: BASE_URL },
         { name: label, url: `${BASE_URL}/${opts.collectionUrlSlug}` },

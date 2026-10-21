@@ -36,6 +36,7 @@ const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.c
 
 import { load, decodeId, type LegacyData } from "@/lib/pinnacle/moment-detail"
 import { OG_INHERITED, TWITTER_INHERITED, breadcrumbJsonLd } from "@/lib/seo"
+import { productOrCreativeWork } from "@/lib/jsonld-product"
 import { usdSignFirst } from "@/lib/usd-format"
 import { setEntityHref, pinnacleCharacterHref, pinnacleFranchiseHref, pinnacleSeriesHref } from "@/lib/entity-href"
 
@@ -218,7 +219,7 @@ export default async function PinnacleMomentPage({
         }
       : {}),
   }
-  const jsonLd = { "@context": "https://schema.org", "@graph": [product, crumbs] }
+  const jsonLd = { "@context": "https://schema.org", "@graph": [productOrCreativeWork(product), crumbs] }
 
   return (
     <PinnacleShell>

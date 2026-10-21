@@ -642,17 +642,24 @@ describe("packJsonLd", () => {
     )
   })
 
-  it("no retail price + unknown collection → no offers, 'Flow' brand, explicit image kept", () => {
+  // RE-PINNED 2026-10-20: an offer-less Product is an INVALID Product snippet
+  // (Search Console), so with no retail price the node is a CreativeWork and the
+  // Product-only `brand` is dropped (lib/jsonld-product.ts). The 'Flow' fallback
+  // LABEL is still exercised — in the description and the breadcrumb.
+  it("no retail price + unknown collection → CreativeWork, no offers/brand, 'Flow' label, explicit image kept", () => {
     const ld = packJsonLd({
       title: "Pack B",
       image: "http://img",
       collectionUrlSlug: "zzz",
       distId: "d2",
     }) as any
-    const [product] = ld["@graph"]
-    expect(product.offers).toBeUndefined()
-    expect(product.brand.name).toBe("Flow")
-    expect(product.image).toBe("http://img")
+    const [node, crumbs] = ld["@graph"]
+    expect(node["@type"]).toBe("CreativeWork")
+    expect(node.offers).toBeUndefined()
+    expect(node.brand).toBeUndefined()
+    expect(node.description).toContain("on Flow.")
+    expect(crumbs.itemListElement[1].name).toBe("Flow")
+    expect(node.image).toBe("http://img")
   })
 })
 
