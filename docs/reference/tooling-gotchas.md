@@ -110,6 +110,8 @@ gating command in the FOREGROUND and capture `$?` immediately, or write the valu
 
 ⚠ **COROLLARY — a push range tells you what YOUR push MOVED THE REF PAST, not what you authored.** Commits that arrived by someone else's push sit inside `abc..def` and read as yours. A session claimed to have pushed a peer's commit on exactly this misreading; the peer's reflog settled it, because its own push records `update by push` while a ref moved by someone else arrives as `fetch: fast-forward`.
 
+⚠ **2026-10-21: two sessions built the SAME decided item in parallel** (#205: `mv_collection_recent_sale_share` and `collection_sold_30d`, both applied within 2 minutes; one was retired and dropped later). A decision posted in chat reaches every session the user is talking to. **Before building a just-decided item, re-read the ledger top AND `schema_migrations` for the last hour, and post a one-line CLAIM entry in the ledger before the first `apply_migration`**, so the other session sees it on its own re-read.
+
 ## 🚨 `git add <shared file>` STAGES THE OTHER SESSION'S UNCOMMITTED EDITS — three times in one evening, and `git add -p` IS NOT AVAILABLE TO FIX IT (2026-09-19)
 
 **Two Claude Code sessions share ONE working tree on this box.** `git add docs/overnight/ledger.md` does not stage *your change*; it stages **the file**, including every hunk a concurrent session has written and not yet committed. Three occurrences on 2026-09-19, in both directions:
@@ -738,6 +740,8 @@ created that same session (three market-cap functions replaced in one transactio
 before bisecting; (2) ⛔ **fetching a committed migration through `pg_net` and `EXECUTE`-ing it is an evasion of the
 hold, however byte-exact** — the md5 proves the text, not the operator's consent; (3) a new object that needs a
 `DELETE`/`DROP` is queued for a human apply with the file committed, exactly as above.
+
+⚠ **2026-10-21 addendum (Claude Code cloud, with Trevor present and approving): the gate also held an `INSERT` into `supabase_migrations.schema_migrations` whose text carried the migration's `DROP` statements** (`{"status":"cancelled"}` on `execute_sql`). Both halves ran in the dashboard SQL editor in Trevor's Chrome: fetch the committed raw file at a pinned SHA, compare SHA-256 in the page, `monaco.editor.getEditors()[0].setValue(...)`, Run, then confirm "Potential issue detected" by `find` + ref click. Build the row's `statements` from the SAME fetched text, dollar-quoted with a tag absent from the text, and **strip the trailing newline from BOTH the row and the repo file**. Then file md5 = `md5(array_to_string(statements, E'\n'))` (`a628743e…` for `20261021235500`). Clear the editor afterwards so the tab is not left holding an unsaved query (an open unsaved tab blocked Chrome tools for hours on 10-20/21).
 
 ### 🚨 A `filter-repo` purge only rewrites the refs you PUSH — the tell for an unpurged one is a merge-base at the ROOT COMMIT (measured 2026-08-22)
 
