@@ -1,9 +1,13 @@
 -- audit_20261020_topshot_challenges_retire_stale_slot_rows
 -- anon-exec: unchanged for ingest_topshot_challenges_atlas_collect — CREATE OR REPLACE keeps its ACL (service_role only, set in 20261021022355).
 --
--- ⚠ NOT APPLIED as of 2026-10-20 7:45 PM PT — NEEDS TREVOR: paste into the Supabase dashboard SQL
--- editor and Run, then insert its schema_migrations row (version 20261021023000, this name).
--- Every MCP route refuses SQL containing DELETE, and the auto-mode classifier blocked the editor.
+-- APPLIED 2026-10-20 ~10:45 PM PT through the Supabase dashboard SQL editor in Trevor's Chrome (Cowork
+-- cloud, Trevor approved in chat), then its schema_migrations row inserted by hand (version 20261021023000,
+-- this name). Every MCP route refuses SQL containing DELETE, which is why it did not go through apply_migration.
+-- Amended before apply (Cowork): the retires are COUNTED (extra.stale_rows_retired, from ROW_COUNT), so the
+-- run reports what it removed instead of dropping the stale_rows_not_retired key with nothing in its place.
+-- Also amended: a slot that resolved to NOTHING this run keeps its eligible editions (per-slot form of the
+-- kept_previous_slot_list rule); costs refresh when anything was retired.
 --
 -- What it adds to 20261021022355: after writing a challenge's slots and eligible editions, retire the
 -- rows this run did NOT write (write first, then retire only the difference, R123), instead of only
@@ -35,6 +39,7 @@ DECLARE
   v_multi int := 0; v_kept_old int := 0; v_n int;
   v_extra jsonb;
   v_slot_js jsonb; v_ed_js jsonb;
+  v_retired int := 0;
 BEGIN
   SELECT * INTO v_req FROM public.topshot_challenge_ingest_requests
    WHERE collected_at IS NULL ORDER BY requested_at DESC LIMIT 1;
@@ -199,17 +204,22 @@ BEGIN
       ON CONFLICT DO NOTHING;
       GET DIAGNOSTICS v_n = ROW_COUNT; v_slot_eds := v_slot_eds + v_n;
 
-      -- only now retire what this run did not write
+      -- only now retire what this run did not write — and only inside a slot that resolved to at least
+      -- one edition THIS run (a slot that resolved to nothing keeps its last good list, the per-slot form
+      -- of the kept_previous_slot_list rule above; it is still counted in unresolved_slots)
       DELETE FROM public.challenge_slot_editions cse
        WHERE cse.challenge_id = v_id
+         AND EXISTS (SELECT 1 FROM jsonb_to_recordset(v_ed_js) AS r(slot_order int) WHERE r.slot_order = cse.slot_order)
          AND NOT EXISTS (SELECT 1 FROM jsonb_to_recordset(v_ed_js) AS d(slot_order int, external_id text)
                           WHERE d.slot_order = cse.slot_order AND d.external_id = cse.external_id);
+      GET DIAGNOSTICS v_n = ROW_COUNT; v_retired := v_retired + v_n;
       DELETE FROM public.challenge_slots cs
        WHERE cs.challenge_id = v_id
          AND NOT EXISTS (SELECT 1 FROM jsonb_to_recordset(v_slot_js) AS s(slot_order int) WHERE s.slot_order = cs.slot_order);
+      GET DIAGNOSTICS v_n = ROW_COUNT; v_retired := v_retired + v_n;
     END LOOP;
 
-    IF v_inserted > 0 OR v_slot_eds > 0 THEN
+    IF v_inserted > 0 OR v_slot_eds > 0 OR v_retired > 0 THEN   -- a retired edition can move a slot's cheapest pick
       PERFORM public.refresh_challenge_costs(c_coll);
     END IF;
     PERFORM public.expire_ended_challenges(c_coll);
@@ -220,7 +230,8 @@ BEGIN
       'challenges_inserted', v_inserted, 'slots_written', v_slots, 'slot_editions_inserted', v_slot_eds,
       'unresolved_slots', v_unresolved, 'unmapped_atlas_edition_refs', v_unmapped,
       'multi_target_slots', v_multi, 'kept_previous_slot_list', v_kept_old,
-      'costs_refreshed', (v_inserted > 0 OR v_slot_eds > 0));
+      'stale_rows_retired', v_retired,
+      'costs_refreshed', (v_inserted > 0 OR v_slot_eds > 0 OR v_retired > 0));
     PERFORM public.log_pipeline_run('ingest-topshot-challenges', true, v_extra);
     RETURN v_extra || jsonb_build_object('ok', true);
   EXCEPTION WHEN query_canceled OR OTHERS THEN
