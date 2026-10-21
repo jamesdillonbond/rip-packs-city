@@ -2,6 +2,7 @@
 import { describe, it, expect, afterEach } from "vitest"
 import { render, cleanup, fireEvent } from "@testing-library/react"
 import MomentHeroMedia from "@/components/MomentHeroMedia"
+import { heroSrcSet, ENTITY_HERO_SIZES } from "@/lib/hero-srcset"
 
 // The resilient moment hero: an ordered image-candidate fallback (advance on
 // each onError, then a "No media" / custom placeholder) plus a video overlay
@@ -75,5 +76,34 @@ describe("MomentHeroMedia", () => {
       <MomentHeroMedia imageCandidates={[]} videoUrl={null} alt="hero" />,
     )
     expect(getByText("No media")).toBeTruthy()
+  })
+
+  // 2026-10-21 (Lighthouse mobile, edition LCP 5.4 s): the hero fetched one fixed
+  // 960/1080 px image for a 320 px box. Real URL shapes from production.
+  const IPFS = "/api/public/ipfs-thumb/bafybeicbsvc3jdqlxptud6tara7kbfpl3aam7qfehxgpado2w4fk7fzx6q?w=960"
+  const TS = "https://assets.nbatopshot.com/media/41528247/image?width=1080"
+
+  it("with sizes, a resizable hero carries a srcset; the next candidate gets its own", () => {
+    const { container } = render(
+      <MomentHeroMedia imageCandidates={[TS, IPFS]} videoUrl={null} alt="hero" sizes={ENTITY_HERO_SIZES} />,
+    )
+    const img = () => container.querySelector("img")!
+    expect(img().getAttribute("srcset")).toBe(
+      "https://assets.nbatopshot.com/media/41528247/image?width=320 320w, https://assets.nbatopshot.com/media/41528247/image?width=640 640w, https://assets.nbatopshot.com/media/41528247/image?width=1080 1080w",
+    )
+    expect(img().getAttribute("sizes")).toBe("320px")
+    fireEvent.error(img())
+    expect(img().getAttribute("srcset")).toContain("ipfs-thumb/bafybeicbsvc3jdqlxptud6tara7kbfpl3aam7qfehxgpado2w4fk7fzx6q?w=640 640w")
+    expect(img().getAttribute("src")).toBe(IPFS)
+  })
+
+  it("MIRROR: no sizes → no srcset (the moment page is unchanged); an unknown URL → no srcset", () => {
+    const a = render(<MomentHeroMedia imageCandidates={[IPFS]} videoUrl={null} alt="hero" />)
+    expect(a.container.querySelector("img")?.hasAttribute("srcset")).toBe(false)
+    cleanup()
+    const b = render(<MomentHeroMedia imageCandidates={["https://cdn.example/x.png"]} videoUrl={null} alt="hero" sizes="320px" />)
+    expect(b.container.querySelector("img")?.hasAttribute("srcset")).toBe(false)
+    expect(b.container.querySelector("img")?.hasAttribute("sizes")).toBe(false)
+    expect(heroSrcSet("/api/public/ipfs-thumb/abc?w=960&x=1")).toBeNull()
   })
 })

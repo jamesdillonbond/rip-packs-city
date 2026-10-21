@@ -31,6 +31,7 @@ import { fetchTitleDisambiguator } from "@/lib/edition/title-twins"
 import { editionPageMetadata, editionJsonLd, collectionDisplayName, NOT_FOUND_METADATA } from "@/lib/seo"
 import Breadcrumbs from "@/components/entity/Breadcrumbs"
 import MomentHeroMedia from "@/components/MomentHeroMedia"
+import { ENTITY_HERO_SIZES } from "@/lib/hero-srcset"
 import { proxyIpfsImageUrl } from "@/lib/ipfs-media"
 import PackThumb from "@/components/packs/PackThumb"
 import { slugifyName } from "@/lib/entity-labels"
@@ -802,6 +803,7 @@ export default async function EditionPage(
               imageCandidates={heroImageCandidates}
               videoUrl={hasVideo ? detail.video_url : null}
               alt={editionTitle}
+              sizes={ENTITY_HERO_SIZES}
               placeholder={
                 // Branded placeholder for artless editions (~54% TS thumbnail
                 // coverage) so the empty media box reads as intentional, not broken.

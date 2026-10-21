@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
+import { heroSrcSet } from "@/lib/hero-srcset";
 
 // MomentHeroMedia — resilient hero media for the /moment/[id] page.
 //
@@ -22,6 +23,7 @@ export default function MomentHeroMedia({
   videoUrl,
   alt,
   placeholder,
+  sizes,
 }: {
   imageCandidates: string[];
   videoUrl: string | null;
@@ -30,6 +32,10 @@ export default function MomentHeroMedia({
   // video. Defaults to a "No media" text chip; the edition page passes its
   // branded "RPC / No preview" card so artless editions keep their styling.
   placeholder?: ReactNode;
+  // The hero box's rendered width (an <img sizes> value). When given, a resizable
+  // candidate (our IPFS resizer, Top Shot's media CDN) gets a srcset so a phone
+  // fetches the width it paints, not 960 px (lib/hero-srcset.ts, 2026-10-21).
+  sizes?: string;
 }) {
   const candidates = imageCandidates.filter(Boolean);
   const [imgIdx, setImgIdx] = useState(0);
@@ -66,6 +72,8 @@ export default function MomentHeroMedia({
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src={currentImg}
+          srcSet={sizes ? heroSrcSet(currentImg) ?? undefined : undefined}
+          sizes={sizes && heroSrcSet(currentImg) ? sizes : undefined}
           alt={alt}
           loading="eager"
           fetchPriority="high"
