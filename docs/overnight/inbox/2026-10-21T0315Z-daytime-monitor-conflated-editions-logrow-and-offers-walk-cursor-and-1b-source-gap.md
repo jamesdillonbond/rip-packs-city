@@ -1,0 +1,27 @@
+# Daytime health monitor — candidate filings 2026-10-21T0315Z (10-20 ~8:15 PM PT)
+
+Read-only daytime sweep. Platform GREEN overall: security invariants/anon-write/rls-off/secdef-anon all `[]`; `check_pgcron_recent_failures()` empty; sentinel ts_uuid editions 48h = 0; cross-collection MV fresh; client-error beacon 24h = 0; latest prod deploy READY (`accf92c19`); 3 committed dashboards validated (every referenced DB object present). Positive control `io_wait=1 / active=5` → NOT a saturation spell, so the causal reads below are interpretable. ⚠ Trevor's tree is HOT (multiple sessions shipping market/challenge/db changes ~7:30–8:15 PM PT 10-20); the newest prod commits are CANCELED = docs/sql skip-build pattern (no ERROR). Tonight's ships are too fresh to correlate with any regression — deferred to the next tick / night pass.
+
+## 1. refresh-conflated-editions — terminal pipeline_runs row missing on the 10-20 15:17Z tick (MEDIUM, data-harm mitigated)
+- **Source:** `rpc_ops_snapshot()` + `detect_stalled_pipelines()` — `refresh-conflated-editions` silent 2149 min; last logged run 2026-10-19T15:17Z; heartbeat (invoked) 2026-10-20T15:17Z; classification `invoked_but_never_logged`. Watchlist armed 2026-09-20.
+- **What:** the daily cron-job.org route (`/api/cron/refresh-conflated-editions`, 08:17 PT) was invoked on 10-20 but wrote no terminal `pipeline_runs` row — the 120s maxDuration-kill shape, the same class as 09-19/09-20 that armed the watch.
+- **Risk read:** LOW user harm. Both guard tables stay fresh by other paths: the independent pg_cron backstop `rpc-refresh-thin-fmv-guard` (job 63) succeeded daily through 2026-10-20 08:30Z, and `topshot_thin_fmv_editions` was in fact written 2026-10-20 15:19:10Z (19 rows, ~19h old — well under the 57.9h staleness that armed the watch). Only the terminal LOG row is missing; no stale thin-FMV set, no deal-board mispricing → the watchlist's own promote-to-high condition is NOT met, stays MEDIUM.
+- **Suggested action (night pass):** make `/api/cron/refresh-conflated-editions` log its terminal row inside the 120s wall (log before the slow leg, or move the compute to a pg_cron one-shot like the backstop). NOT a data-integrity fix; the watch is working as designed.
+
+## 2. topshot_missing_fill_offers_walk cursor jumped +9.4M blocks on 2026-10-19T18:12Z (MEDIUM — focus re-open trigger)
+- **Source:** `rpc_ops_snapshot().backward_cursor_rewinds` — cursor `topshot_missing_fill_offers_walk` from_block 158890658 → to_block 168305306 (low-water 130890658), rewind_count 2, rewound_at 2026-10-19T18:12Z. Absent from the 2026-10-18 metrics baseline → NEW.
+- **What:** this was a FINISHED one-time walk (`done=true`, bounded suppression `20261011144350`); the 10-11 focus steer says re-open ONLY if the cursor MOVES (re-dispatch). It moved.
+- **Risk read:** MEDIUM. The arm's own note: a forward jump on a down-walking cursor discards walk progress nothing re-walks; "either a cursor write regressed (the ee90eb54c class fixed 09-02) or someone re-seeded it deliberately — both look identical from state alone." Establish which before dismissing.
+- **Suggested action (night pass):** determine deliberate-reseed vs. cursor-write regression for `topshot_missing_fill_offers_walk` (who/what wrote the cursor at 10-19 ~18:12Z; was a re-dispatch intended?). If a regression, fix the writer and re-apply the bounded suppression; if deliberate, confirm the walk completes and re-suppress.
+
+## 3. Artifact-validation (task §1b) inputs are not in the repo as specified (LOW — process/docs)
+- **Source:** task §1b (rewritten 2026-10-20, cites known-issue #114) vs. live repo.
+- **What:** §1b says the 11 live dashboards are claude.ai artifacts with sources at `docs/cowork-skills/<name>.html` and a name→URL map in `#114`. In the repo: none of the 11 named HTML files exist there (`docs/cowork-skills/` holds only `rpc-insights-health`, `rpc-pipeline-reliability`, `rpc-security-drift`), and `#114` is the 2026-09-13 "empty-result-set" item with no such map. So 1b-from-repo-source cannot run as written.
+- **Risk read:** LOW now, but a blind spot going forward. The 3 committed dashboards validated clean this run (`get_wallet_squeeze` was a label string in `WALLET_TOOLS`, not an executed query; the real fn is `get_wallet_squeeze_exposure`). The 11 ported dashboards are currently un-validatable from the repo, so a daytime schema break in one would go unseen.
+- **Suggested action:** commit the 11 ported dashboard sources to `docs/cowork-skills/<name>.html` and add the name→URL map to `#114` — or correct the task prompt + known-issue pointer to the real location.
+
+## 4. metrics-latest.json is 3 days stale; nba_top_shot FMV HIGH+MED drifted −1514 (LOW — re-baseline)
+- **Source:** `docs/overnight/metrics-latest.json` (generated 2026-10-18 08:15Z) vs. `rpc_ops_snapshot()` 2026-10-21 03:05Z.
+- **What:** the 10-19/10-20 night passes were no-op (0 shipped) and did not overwrite the baseline. FMV HIGH+MED: nba_top_shot 8000 → 6486 (−1514), panini 11121 → 15571 (+4450), nfl_all_day 1815 → 1669 (−146); DB 39,171 → 40,323 MB (+1,152).
+- **Risk read:** LOW. Plausibly the continued FMV 1.8.x MEDIUM-gating tightening (nba) plus panini coverage expansion by sibling sessions, not a regression; not in a spell, so the read is interpretable, but the baseline is too old to be the comparison point.
+- **Suggested action (night pass):** overwrite metrics-latest.json with a fresh baseline; spot-check that the nba_top_shot MEDIUM drop is gating (intended), not coverage loss.
