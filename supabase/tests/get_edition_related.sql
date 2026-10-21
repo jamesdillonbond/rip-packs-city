@@ -18,7 +18,8 @@
 --   * p_limit 0 and an unknown edition both return zero rows (never an error).
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260925084253_audit_20260925_candy_parallels_edition_badges_reach_the_unified_reader_and_related_tiles.sql);
+-- (supabase/migrations/20261021134844_audit_20261021_player_top_sales_and_related_editions_skip_another_persons_editions.sql;
+-- was: supabase/migrations/20260925084253_audit_20260925_candy_parallels_edition_badges_reach_the_unified_reader_and_related_tiles.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -29,8 +30,28 @@ BEGIN;
 CREATE TABLE public.editions (
   id uuid PRIMARY KEY, collection_id uuid, external_id varchar, player_name text,
   team_name text, set_name text, tier text, series smallint, circulation_count integer,
-  thumbnail_url text, badges text[]);
+  thumbnail_url text, badges text[], player_id uuid);
 CREATE TABLE public.fmv_snapshots (edition_id uuid, computed_at timestamptz, fmv_usd numeric);
+-- 2026-10-21: the player leg skips another person's editions (helper copied from 20261021034822).
+CREATE TABLE public.player_relations (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(), collection_id uuid, player_id uuid,
+  related_player_id uuid, relation text, name text, note text);
+CREATE OR REPLACE FUNCTION public.edition_player_is_other_person(p_edition_player_id uuid, p_page_player_id uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE
+ SET search_path TO 'public'
+AS $function$
+  SELECT p_edition_player_id IS NOT NULL
+     AND p_edition_player_id IS DISTINCT FROM p_page_player_id
+     AND EXISTS (
+       SELECT 1 FROM player_relations r
+        WHERE (r.relation IN ('parent_of', 'namesake')
+               AND ((r.player_id = p_page_player_id AND r.related_player_id = p_edition_player_id)
+                 OR (r.player_id = p_edition_player_id AND r.related_player_id = p_page_player_id)))
+           OR (r.relation = 'name_change' AND r.player_id = p_edition_player_id)
+     )
+$function$;
 
 -- >>> BEGIN verbatim get_edition_related (keep byte-identical to the migration) >>>
 CREATE OR REPLACE FUNCTION public.get_edition_related(p_edition_id uuid, p_limit int DEFAULT 6)
@@ -55,7 +76,7 @@ SET search_path = public
 SET statement_timeout = '5s'
 AS $$
 WITH src AS (
-  SELECT e.id, e.collection_id, e.player_name, e.set_name
+  SELECT e.id, e.collection_id, e.player_name, e.set_name, e.player_id
   FROM editions e
   WHERE e.id = p_edition_id
 ),
@@ -73,6 +94,12 @@ by_player AS (
   WHERE s.player_name IS NOT NULL
     AND e.external_id IS NOT NULL
     AND e.external_id !~ '^[0-9a-f]{8}-'
+    -- 2026-10-21: a shared LABEL is not a shared PERSON (rule 2). Marvin Harrison Jr.'s Rookie Revelation
+    -- (label "Marvin Harrison") listed Sr.'s Colts editions as "More Marvin Harrison Editions". Skip a
+    -- candidate when player_relations records its linked player and the source's as different people,
+    -- in either direction (a name_change row is keyed on the renamed player, who may be either side).
+    AND NOT public.edition_player_is_other_person(e.player_id, s.player_id)
+    AND NOT public.edition_player_is_other_person(s.player_id, e.player_id)
   ORDER BY f.fmv_usd DESC NULLS LAST, e.circulation_count ASC NULLS LAST
   LIMIT GREATEST(p_limit, 0)
 ),
@@ -190,5 +217,27 @@ SELECT _assert_eq(
 SELECT _assert(
   (SELECT badges IS NULL FROM get_edition_related('00000000-0000-4000-8000-000000000001', 6) WHERE external_id = '2:3'),
   'an edition without badges returns NULL badges');
+
+-- 8. (2026-10-21) a shared LABEL is not a shared PERSON. Live: Marvin Harrison Jr.'s edition 3699
+--    (label "Marvin Harrison") listed Sr.'s Colts editions as "More Marvin Harrison Editions".
+INSERT INTO public.player_relations (player_id, related_player_id, relation, name) VALUES
+  ('d0000000-0000-4000-8000-000000000002', 'd0000000-0000-4000-8000-000000000001', 'parent_of', NULL),
+  ('d0000000-0000-4000-8000-000000000004', NULL, 'name_change', 'Josh Allen');
+INSERT INTO public.editions (id, collection_id, external_id, player_name, set_name, circulation_count, player_id) VALUES
+  ('00000000-0000-4000-8000-000000000101', '33333333-3333-4333-8333-333333333333', '101', 'MH', 'X1', 10, 'd0000000-0000-4000-8000-000000000002'), -- Jr. (SOURCE)
+  ('00000000-0000-4000-8000-000000000102', '33333333-3333-4333-8333-333333333333', '102', 'MH', 'X2', 20, 'd0000000-0000-4000-8000-000000000001'), -- Sr.
+  ('00000000-0000-4000-8000-000000000103', '33333333-3333-4333-8333-333333333333', '103', 'MH', 'X3', 30, 'd0000000-0000-4000-8000-000000000002'), -- Jr.
+  ('00000000-0000-4000-8000-000000000104', '33333333-3333-4333-8333-333333333333', '104', 'MH', 'X4', 40, NULL),                                     -- unlinked
+  ('00000000-0000-4000-8000-000000000105', '44444444-4444-4444-8444-444444444444', '105', 'JA', 'Y1', 10, 'd0000000-0000-4000-8000-000000000004'), -- renamed (SOURCE)
+  ('00000000-0000-4000-8000-000000000106', '44444444-4444-4444-8444-444444444444', '106', 'JA', 'Y2', 20, 'd0000000-0000-4000-8000-000000000003'); -- the other Josh Allen
+SELECT _assert_eq(
+  (SELECT string_agg(external_id, ',' ORDER BY external_id) FROM get_edition_related('00000000-0000-4000-8000-000000000101', 6) WHERE relation = 'player'),
+  '103,104', 'Jr.''s page: his own edition and the unlinked one, never Sr.''s');
+SELECT _assert_eq(
+  (SELECT string_agg(external_id, ',' ORDER BY external_id) FROM get_edition_related('00000000-0000-4000-8000-000000000102', 6) WHERE relation = 'player'),
+  '104', 'Sr.''s page: never Jr.''s editions under the shared label');
+SELECT _assert(
+  NOT EXISTS (SELECT 1 FROM get_edition_related('00000000-0000-4000-8000-000000000105', 6) WHERE external_id = '106'),
+  'a renamed player''s edition does not pull in the other person who now holds the old name (name_change, source side)');
 
 ROLLBACK;

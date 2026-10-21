@@ -467,14 +467,11 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
                 {detail.team && (teamHref ? (
                   <Link href={teamHref} style={{ color: "var(--rpc-text-primary)", textDecoration: "none" }}>{detail.team}</Link>
                 ) : <span>{detail.team}</span>)}
-                {/* Panini: players.is_active is a column DEFAULT on the bridged rows,
-                    not a measured status — an "active" badge would be a claim. */}
-                {detail.is_active === true && !isPanini && (
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                    <span style={{ width: 6, height: 6, borderRadius: 999, background: "var(--rpc-success)", boxShadow: "0 0 6px var(--rpc-success)" }} />
-                    <span style={{ color: "var(--rpc-success-text)" }}>active</span>
-                  </span>
-                )}
+                {/* ⛔ No "active" badge (removed 2026-10-21). players.is_active is a column DEFAULT in
+                    every collection, not a measured status: TRUE on all 1,355 Top Shot and 1,468 All
+                    Day rows, so Marvin Harrison Sr., Gary Payton and Joey Porter Sr. read "active".
+                    Panini already suppressed it for the same reason. Re-add only with a writer that
+                    measures it. */}
               </div>
             )}
           </div>

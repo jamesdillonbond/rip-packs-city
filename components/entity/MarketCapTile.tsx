@@ -149,7 +149,11 @@ export function MarketCapTileBody({
         <StatCell
           label="7-Day Change"
           value={change != null ? fmtPct(change, true) : "—"}
-          sub={change != null ? `from ${fmtUsdCompact(row.mcap_usd_7d_ago)}` : "history began Oct 3, 2026"}
+          // 2026-10-21: a null baseline no longer only means "before Oct 3". The player grain was
+          // regrouped by person on 10-20 (20261021041717), so a regrouped key's older rows were moved
+          // aside (docs/audits/2026-10-21-market-cap-history-regroup-break.sql) rather than compared
+          // across the definition change ("+1992.8%" on Patrick Mahomes). Say only what is true.
+          sub={change != null ? `from ${fmtUsdCompact(row.mcap_usd_7d_ago)}` : "no comparable figure from 7 days ago"}
         />
         {split && <IssuerSplitCell split={split} />}
       </div>

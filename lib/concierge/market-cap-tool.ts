@@ -174,7 +174,7 @@ export async function runMarketCapTool(
     editions: row.editions,
     editions_with_supply_split: row.editions_supply_known,
     change_7d: sevenDayChange(row.mcap_usd, row.mcap_usd_7d_ago),
-    change_7d_note: row.mcap_usd_7d_ago == null ? "No 7-day history yet (daily snapshots began Oct 3, 2026)." : undefined,
+    change_7d_note: row.mcap_usd_7d_ago == null ? "No comparable figure from 7 days ago (daily snapshots began Oct 3, 2026; player groups regrouped by person on Oct 20 restart their history)." : undefined,
     refreshed_at: row.refreshed_at,
     board_url: `${deps.siteBase}/insights/market-cap`,
     definition: METHOD_NOTE,

@@ -159,12 +159,15 @@ describe("MarketCapTileBody", () => {
     expect(groupNoPrice.container.textContent).toContain("none of its editions has a price yet")
   })
 
-  it("7-day change: shown when history exists, otherwise says when history began", () => {
+  // Re-pinned 2026-10-21: a missing baseline is not only "before Oct 3" — regrouped player keys had
+  // their pre-10-21 rows moved aside — so the sub states the absence, not a start date it cannot know.
+  it("7-day change: shown when history exists, otherwise says there is no comparable figure", () => {
     const withHistory = render(<MarketCapTileBody group="set" row={{ ...ROW, mcap_usd: 110, mcap_usd_7d_ago: 100 }} />)
     expect(withHistory.container.textContent).toContain("+10%")
     cleanup()
     const without = render(<MarketCapTileBody group="set" row={ROW} />)
-    expect(without.container.textContent).toContain("history began Oct 3, 2026")
+    expect(without.container.textContent).toContain("no comparable figure from 7 days ago")
+    expect(without.container.textContent).not.toMatch(/history began/)
   })
 })
 

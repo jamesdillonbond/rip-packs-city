@@ -398,8 +398,9 @@ const PINS = [
     // Pins the catalog pin match (duos included), render_id sales, the fallback.
     fn: "get_player_top_sales",
     test: "supabase/tests/get_player_top_sales.sql",
+    // Re-pinned 2026-10-21: the name fallback skips another person's editions (rule 2).
     migration:
-      "supabase/migrations/20260929060006_audit_20260928_pinnacle_top_sales_say_which_pins_are_numbered.sql",
+      "supabase/migrations/20261021134844_audit_20261021_player_top_sales_and_related_editions_skip_another_persons_editions.sql",
   },
   {
     // Added 2026-09-26. The Pinnacle franchise checklist joined wallet holdings on
@@ -1083,7 +1084,8 @@ const PINS = [
     test: "supabase/tests/get_edition_related.sql",
     // Re-pinned 2026-09-25: a trailing `badges text[]` column (DROP + CREATE) so
     // the edition page's related tiles can name a Candy Rainbow parallel.
-    migration: "supabase/migrations/20260925084253_audit_20260925_candy_parallels_edition_badges_reach_the_unified_reader_and_related_tiles.sql",
+    // Re-pinned 2026-10-21: the player leg skips another person's editions (rule 2).
+    migration: "supabase/migrations/20261021134844_audit_20261021_player_top_sales_and_related_editions_skip_another_persons_editions.sql",
   },
   {
     fn: "sync_ts_listings_from_atlas",

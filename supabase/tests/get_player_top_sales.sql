@@ -13,7 +13,8 @@
 --      an unknown slug is [].
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20260929060006_audit_20260928_pinnacle_top_sales_say_which_pins_are_numbered.sql; was:)
+-- (supabase/migrations/20261021134844_audit_20261021_player_top_sales_and_related_editions_skip_another_persons_editions.sql; was:)
+-- (supabase/migrations/20260929060006_audit_20260928_pinnacle_top_sales_say_which_pins_are_numbered.sql; before that:)
 -- (supabase/migrations/20260926211939_audit_20260926_pinnacle_character_top_sales_read_the_pins.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
@@ -23,7 +24,35 @@ BEGIN;
 
 CREATE SCHEMA IF NOT EXISTS extensions;
 CREATE EXTENSION IF NOT EXISTS unaccent SCHEMA extensions;
-CREATE TABLE public.players (id serial PRIMARY KEY, collection_id uuid, name text);
+-- players.id is a uuid (as in prod): the standard path compares it with editions.player_id.
+CREATE TABLE public.players (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), collection_id uuid, name text);
+CREATE TABLE public.editions (
+  id uuid PRIMARY KEY, collection_id uuid, player_id uuid, player_name text, name text,
+  external_id text, set_name text, tier text, thumbnail_url text);
+CREATE TABLE public.sales (
+  id bigserial PRIMARY KEY, edition_id uuid, serial_number int, price_usd numeric, marketplace text,
+  source text, buyer_address text, seller_address text, nft_id bigint, transaction_hash text, sold_at timestamptz);
+-- 2026-10-21: the standard path's name fallback skips another person's editions (helper copied from
+-- 20261021034822; not itself pinned).
+CREATE TABLE public.player_relations (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(), collection_id uuid, player_id uuid,
+  related_player_id uuid, relation text, name text, note text);
+CREATE OR REPLACE FUNCTION public.edition_player_is_other_person(p_edition_player_id uuid, p_page_player_id uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE
+ SET search_path TO 'public'
+AS $function$
+  SELECT p_edition_player_id IS NOT NULL
+     AND p_edition_player_id IS DISTINCT FROM p_page_player_id
+     AND EXISTS (
+       SELECT 1 FROM player_relations r
+        WHERE (r.relation IN ('parent_of', 'namesake')
+               AND ((r.player_id = p_page_player_id AND r.related_player_id = p_edition_player_id)
+                 OR (r.player_id = p_edition_player_id AND r.related_player_id = p_page_player_id)))
+           OR (r.relation = 'name_change' AND r.player_id = p_edition_player_id)
+     )
+$function$;
 CREATE TABLE public.pinnacle_catalog (
   render_id text PRIMARY KEY, characters text[], character_name text, set_name text,
   variant text, thumbnail_url text, limited_edition boolean);
@@ -158,7 +187,10 @@ BEGIN
       SELECT id, name, external_id, set_name, tier::text AS tier, thumbnail_url
       FROM editions
       WHERE collection_id = p_collection_id
-        AND (player_id = v_player.id OR player_name = v_player.name)
+        -- 2026-10-21: the name fallback skips an edition linked to ANOTHER PERSON per player_relations
+        -- (get_player_detail's rule, 20261021034822): Marvin Harrison Sr.'s page listed Jr.'s Rookie
+        -- Revelation sales, labelled "Marvin Harrison" on chain.
+        AND (player_id = v_player.id OR (player_name = v_player.name AND NOT public.edition_player_is_other_person(player_id, v_player.id)))
     ),
     top_sales AS (
       SELECT
@@ -245,6 +277,36 @@ UPDATE public.pinnacle_catalog SET limited_edition = (render_id = 'r1') WHERE re
 SELECT _assert_eq((SELECT string_agg(DISTINCT (x->>'route_slug') || ':' || COALESCE(x->>'serial_numbered', 'null'), ',') FROM jsonb_array_elements(public.get_player_top_sales(:pin::uuid, 'luke-skywalker', 10)) x),
   'r1:true,r2:false', 'serial_numbered carries the pin''s limited_edition');
 SELECT _assert_eq((public.get_player_top_sales(:pin::uuid, 'han-solo', 10) -> 0 ->> 'serial_numbered'), NULL, 'unknown limited_edition stays null, never false');
+
+-- ── 5. (2026-10-21) standard path: a shared LABEL is not a shared PERSON ─────
+-- Live: /nfl-all-day/player/marvin-harrison (Sr.) listed Jr.'s Rookie Revelation sales — linked to Jr.,
+-- labelled "Marvin Harrison" on chain.
+\set AD '''dee28451-5d62-409e-a1ad-a83f763ac070'''
+INSERT INTO public.players (id, collection_id, name) VALUES
+  ('d0000000-0000-4000-8000-000000000001', :AD::uuid, 'Marvin Harrison'),
+  ('d0000000-0000-4000-8000-000000000002', :AD::uuid, 'Marvin Harrison Jr.'),
+  ('d0000000-0000-4000-8000-000000000003', :AD::uuid, 'Shell Twin'),
+  ('d0000000-0000-4000-8000-000000000004', :AD::uuid, 'Shell Twin.');
+INSERT INTO public.player_relations (collection_id, player_id, related_player_id, relation) VALUES
+  (:AD::uuid, 'd0000000-0000-4000-8000-000000000002', 'd0000000-0000-4000-8000-000000000001', 'parent_of');
+INSERT INTO public.editions (id, collection_id, player_id, player_name, name, external_id, set_name, tier) VALUES
+  ('e0000000-0000-4000-8000-000000000001', :AD::uuid, 'd0000000-0000-4000-8000-000000000001', 'Marvin Harrison', 'Sr. Colts', '1', 'Legends', 'RARE'),
+  ('e0000000-0000-4000-8000-000000000002', :AD::uuid, 'd0000000-0000-4000-8000-000000000002', 'Marvin Harrison', 'Jr. Rookie', '2', 'Rookie Revelation', 'RARE'),
+  -- an UNLINKED edition still matches by name (the fallback the arm exists for)
+  ('e0000000-0000-4000-8000-000000000003', :AD::uuid, NULL, 'Marvin Harrison', 'Unlinked', '3', 'Base', 'COMMON'),
+  -- a same-person twin row with no relation keeps matching by name
+  ('e0000000-0000-4000-8000-000000000004', :AD::uuid, 'd0000000-0000-4000-8000-000000000004', 'Shell Twin', 'Twin', '4', 'Base', 'COMMON');
+INSERT INTO public.sales (edition_id, price_usd, sold_at) VALUES
+  ('e0000000-0000-4000-8000-000000000001', 100, now()),
+  ('e0000000-0000-4000-8000-000000000002', 300, now()),
+  ('e0000000-0000-4000-8000-000000000003',  50, now()),
+  ('e0000000-0000-4000-8000-000000000004',  20, now());
+SELECT _assert_eq((SELECT string_agg(x->>'price_usd', ',') FROM jsonb_array_elements(public.get_player_top_sales(:AD::uuid, 'marvin-harrison', 10)) x),
+  '100,50', 'Sr.: his own sale and the unlinked one — never Jr.''s $300');
+SELECT _assert_eq((SELECT string_agg(x->>'price_usd', ',') FROM jsonb_array_elements(public.get_player_top_sales(:AD::uuid, 'marvin-harrison-jr-', 10)) x),
+  '300', 'Jr.: his own sale by player_id');
+SELECT _assert_eq((SELECT string_agg(x->>'price_usd', ',') FROM jsonb_array_elements(public.get_player_top_sales(:AD::uuid, 'shell-twin', 10)) x),
+  '20', 'CONTROL: a twin row with no recorded relation still matches by name');
 
 SELECT '✓ get_player_top_sales: all assertions passed' AS result;
 
