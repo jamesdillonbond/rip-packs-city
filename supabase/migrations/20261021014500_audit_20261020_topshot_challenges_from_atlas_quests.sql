@@ -284,7 +284,7 @@ BEGIN
       'costs_refreshed', (v_inserted > 0 OR v_slot_eds > 0));
     PERFORM public.log_pipeline_run('ingest-topshot-challenges', true, v_extra);
     RETURN v_extra || jsonb_build_object('ok', true);
-  EXCEPTION WHEN OTHERS THEN
+  EXCEPTION WHEN query_canceled OR OTHERS THEN
     PERFORM public.log_pipeline_run('ingest-topshot-challenges', false, jsonb_build_object(
       'source','atlas_quest','request_id',v_req.request_id,'error', left(SQLERRM, 300), 'sqlstate', SQLSTATE));
     RETURN jsonb_build_object('ok', false, 'error', SQLERRM);
