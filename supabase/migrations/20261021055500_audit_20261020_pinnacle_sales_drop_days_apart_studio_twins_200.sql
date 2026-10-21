@@ -1,8 +1,9 @@
 -- audit_20261020_pinnacle_sales_drop_days_apart_studio_twins_200
 --
 -- 2026-10-20 ~10:55 PM PT (Cowork cloud; register #200, filed 9:49 PM PT by Claude Code; Trevor approved the
--- dashboard-editor DELETE in chat). Applied through the Supabase dashboard SQL editor (the MCP holds DELETE);
--- its schema_migrations row is inserted by hand.
+-- dashboard-editor DELETE in chat). APPLIED 2026-10-20 ~10:47 PM PT through the Supabase dashboard SQL editor in
+-- Trevor's Chrome (the MCP holds DELETE); its schema_migrations row was inserted by hand. Verified by MCP read:
+-- backup 5,804 rows ($112,984), 0 of them left in pinnacle_sales, studio rows 118,868 -> 113,064.
 --
 -- WHAT. Disney Pinnacle still held studio-history twins of on-chain sales that the 09-28 pass
 -- (20260929062127, ±2 days) did not match: the studio feed's date runs up to ~30 days EARLY. Measured live

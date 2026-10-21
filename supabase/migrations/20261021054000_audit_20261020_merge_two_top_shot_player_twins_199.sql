@@ -1,8 +1,10 @@
 -- audit_20261020_merge_two_top_shot_player_twins_199
 --
 -- 2026-10-20 ~10:40 PM PT (Cowork cloud; register #199, filed 9:27 PM PT by Claude Code; Trevor approved
--- running the dashboard-editor DELETEs in chat). Applied through the Supabase dashboard SQL editor (the MCP
--- holds DELETE); its schema_migrations row is inserted by hand.
+-- running the dashboard-editor DELETEs in chat). APPLIED 2026-10-20 ~10:45 PM PT through the Supabase dashboard SQL
+-- editor in Trevor's Chrome (the MCP holds DELETE); its schema_migrations row was inserted by hand. Verified by MCP
+-- read: twins gone, edition 159:5587 on the Abdul-Rauf row, Holland 8 editions, aliases mahmoud-abul-rauf and
+-- ron-holland-ii on the kept rows, backups 2 players + 1 edition.
 --
 -- WHAT. Two Top Shot people still had a same-person twin `players` row (the D26 class; pattern
 -- 20261004190000). Measured live 10:35 PM PT:
