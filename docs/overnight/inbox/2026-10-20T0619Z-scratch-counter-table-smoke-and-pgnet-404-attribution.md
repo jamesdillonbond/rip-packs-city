@@ -19,3 +19,6 @@ Two NEW low-risk housekeeping candidates:
 - **Context:** the 10-19 sweep deleted `/api/migrate-acquired-at` and changed many routes; a pg_cron/pg_net job still dispatching to a retired or renamed path would answer `__next_error__` 404 while pg_cron logs `succeeded` (dispatch worked, no `pipeline_runs` row).
 - **Risk:** low, read-only correlation; the arm is ambiguous by design and loses nothing.
 - **Suggested action (night pass):** join recent `net._http_response` 404 ids to `net.http_request_queue` (URL lives there until drained) to name the endpoint; if it is a retired route still on a schedule, point the dispatch at the live route or retire the job. If it settles to 0 on its own on the next window, drop.
+
+## Drained 2026-10-20 — both candidates closed
+(1) The three scratch tables were dropped 10-20 7:37 AM PT by one-off pg_cron 761 (ledger 10-20 "DROPPED (3 scratch tables)"). (2) The 404 arm was attributed 10-19 ~11:45 PM PT (ledger entry "both 06:19Z inbox candidates attributed"); re-read 10-20 ~8:00 PM PT (Cowork cloud): the `__next_error__` 404 bodies are past `net._http_response` retention and none recurred in the trailing 6 h — the only 404s now are 5 recorded Flow REST session probes (ledger 10-20 "4xx arm attributes the autograph …").

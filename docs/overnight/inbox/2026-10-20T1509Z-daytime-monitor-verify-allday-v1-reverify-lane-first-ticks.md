@@ -9,3 +9,6 @@ Read-only 3h health pass. Infra GREEN: security clean (invariants/anon_write/rls
 - **State observed:** job is registered + `active=true` with a valid schedule but had **no run yet** at 15:08Z (first tick due 15:24Z). Expected for a just-created hourly job, **not** a finding this pass.
 - **Risk read:** low. New infra that drains its own Flow REST scripts against the live All Day V1 listing surface, closes ghosted/vanished/purchased rows, and re-checks rows >7d. Read-only to re-verify; the write path is the tick itself.
 - **Suggested action (night pass / next tick):** read `cron.job_run_details` for jobid 762 and `pipeline_runs` for the lane — expect `ok=true` and rows stamped `live` / closed ghosted-vanished-purchased. Fold into the existing recent-ship watch for #197/#198. File a real finding only if the first several ticks are `ok=false` or the lane wedges; otherwise close the watch.
+
+## Drained 2026-10-20 — confirmed
+`allday-v1-listing-reverify` (pg_cron 762): 12 runs, 12 ok, 8:24 AM → 7:24 PM PT 10-20 (read ~8:00 PM PT, Cowork cloud). The first real dispatch (V1 asks older than 7 days) is due ~10-27 8:24 AM PT — the dated check in #198.

@@ -28,3 +28,6 @@ Classify, then pick one:
 Re-verify guard freshness (`topshot_thin_fmv_editions.computed_at`, `topshot_conflated_editions.detected_at`) before any change. No revert path (read-only observation).
 
 **Source:** `rpc_ops_snapshot().stalled_pipelines` + `detect_stalled_pipelines()`; Vercel runtime-error group `/api/cron/refresh-conflated-editions` (120s timeout, last 2026-10-20T15:17:13Z); guard-table freshness + `cron.job_run_details` for `rpc-refresh-thin-fmv-guard`.
+
+## Drained 2026-10-20 — fix already shipped; verify on the next tick
+The daytime pass raised the route to 300 s (`4392d28`, 10-20 12:22 PM PT) after the 8:17 AM PT kill, so this filing reads the last pre-fix tick. Verify on the 10-21 8:17 AM PT run: a terminal `refresh-conflated-editions` row with `ok=true` and `lanes_failed` []; `detect_stalled_pipelines()` should then drop it. Re-read ~8:00 PM PT 10-20 (Cowork cloud): guard tables fresh, stalled-detector row still present as expected until that tick.
