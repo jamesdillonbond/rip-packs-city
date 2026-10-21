@@ -136,7 +136,8 @@ const PINS = [
     // empty stage refuses to wipe the table.
     fn: "refresh_market_cap_current",
     test: "supabase/tests/get_market_cap_board.sql",
-    migration: "supabase/migrations/20261003221539_audit_20261003_market_cap_series_and_pinnacle_character_franchise_tiles.sql",
+    // Re-pointed 2026-10-20: the player grain groups by the linked person, not the label.
+    migration: "supabase/migrations/20261021041717_audit_20261020_market_cap_player_grain_groups_by_person.sql",
   },
   {
     // Added 2026-10-09. The one pg_net page request + request row, shared by the

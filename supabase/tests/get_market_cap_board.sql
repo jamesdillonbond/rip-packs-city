@@ -38,6 +38,8 @@ CREATE FUNCTION public.log_pipeline_run(p_pipeline text, p_started_at timestampt
 RETURNS bigint LANGUAGE sql AS $$ INSERT INTO public.pipeline_log VALUES (p_pipeline, p_ok, p_extra) RETURNING 1::bigint $$;
 
 CREATE TABLE public.collections (id uuid PRIMARY KEY, slug varchar);
+-- 2026-10-20: the player grain names the LINKED person (empty here until the case below).
+CREATE TABLE public.players (id uuid PRIMARY KEY, name text);
 CREATE TABLE public.editions (
   id uuid PRIMARY KEY, external_id varchar, collection_id uuid, player_id uuid,
   player_name text, team_name text, set_name text, tier text, series smallint,
@@ -384,8 +386,9 @@ BEGIN
   ),
   sl AS MATERIALIZED (
     SELECT ed.*,
-           regexp_replace(lower(ed.player_name), '[^a-z0-9]+', '-', 'g') AS p_plain,
-           regexp_replace(lower(extensions.unaccent(ed.player_name)), '[^a-z0-9]+', '-', 'g') AS p_ascii,
+           coalesce(pl.name, ed.player_name) AS person_name,
+           regexp_replace(lower(coalesce(pl.name, ed.player_name)), '[^a-z0-9]+', '-', 'g') AS p_plain,
+           regexp_replace(lower(extensions.unaccent(coalesce(pl.name, ed.player_name))), '[^a-z0-9]+', '-', 'g') AS p_ascii,
            regexp_replace(lower(ed.team_name), '[^a-z0-9]+', '-', 'g') AS t_plain,
            regexp_replace(lower(extensions.unaccent(ed.team_name)), '[^a-z0-9]+', '-', 'g') AS t_ascii,
            (ed.player_name <> '' AND NOT coalesce(ed.is_team_moment, false)) AS is_player,
@@ -393,6 +396,11 @@ BEGIN
            pc.franchises AS pin_fr
     FROM ed
     LEFT JOIN public.pinnacle_catalog pc ON ed.coll = 'disney_pinnacle' AND pc.render_id = ed.ext_id
+    -- 2026-10-20: the PERSON the edition is linked to (player_key = editions.player_id
+    -- when linked), so one person's label variants are one group.
+    LEFT JOIN public.players pl
+      ON pl.id = CASE WHEN ed.player_key ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+                      THEN ed.player_key::uuid END
   ),
   tk AS MATERIALIZED (
     SELECT d.coll, d.t_plain,
@@ -404,7 +412,7 @@ BEGIN
     UNION ALL
     SELECT s.coll, 'edition', s.ext_id, coalesce(nullif(s.player_name, ''), nullif(s.team_name, ''), s.set_name), s.minted, s.burned, s.issuer_held, s.collector_held, s.fmv_usd, s.confidence FROM sl s
     UNION ALL
-    SELECT s.coll, 'player', s.p_ascii, s.player_name, s.minted, s.burned, s.issuer_held, s.collector_held, s.fmv_usd, s.confidence FROM sl s WHERE s.is_player
+    SELECT s.coll, 'player', s.p_ascii, s.person_name, s.minted, s.burned, s.issuer_held, s.collector_held, s.fmv_usd, s.confidence FROM sl s WHERE s.is_player
     UNION ALL
     SELECT s.coll, 'team', coalesce(t.fkey, s.t_plain), s.team_name, s.minted, s.burned, s.issuer_held, s.collector_held, s.fmv_usd, s.confidence FROM sl s
       LEFT JOIN tk t ON t.coll = s.coll AND t.t_plain = s.t_plain
@@ -734,6 +742,20 @@ SELECT _assert_eq((SELECT string_agg(DISTINCT grain, ',' ORDER BY grain) FROM ma
 -- A second, identical run changes nothing and deletes nothing.
 SELECT _assert_eq((SELECT (r->>'changed') || '/' || (r->>'deleted') FROM (SELECT refresh_market_cap_current() r) x), '0/0',
   'an identical second run rewrites no row');
+
+-- 2026-10-20 (20261021041717): ONE PERSON, TWO LABELS is one market-cap player. Live:
+-- Patrick Mahomes' 32 All Day editions (one players row) were split by label into
+-- "Patrick Mahomes" (6, rank #122) and "Patrick Mahomes II" (26, rank #1).
+INSERT INTO public.players (id, name) VALUES ('00000000-0000-0000-0000-000000000b01', 'Alice');
+UPDATE public.editions SET player_name = 'Alice II' WHERE external_id = '1:5';
+SELECT refresh_market_cap_current();
+SELECT _assert_eq((SELECT group_label || '/' || editions FROM get_market_cap_entity('player', 'nba_top_shot', 'alice')), 'Alice/2',
+  'a linked person''s label variants roll up into ONE player (the linked row''s name)');
+SELECT _assert(NOT EXISTS (SELECT 1 FROM market_cap_current WHERE grain = 'player' AND group_key = 'alice-ii'),
+  'no second "player" is minted from a label variant');
+-- CONTROL: an edition whose player_id has no players row keeps its label (Bob).
+SELECT _assert_eq((SELECT group_label FROM get_market_cap_entity('player', 'nba_top_shot', 'bob')), 'Bob',
+  'an edition with no linked players row keeps its label');
 
 -- A key that disappears is retired — but only after the new set was written.
 DELETE FROM public.editions WHERE external_id = '1:3';
