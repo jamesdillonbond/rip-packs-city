@@ -25,6 +25,9 @@ import { fetchAllPaged } from "@/lib/supabase-paginate";
 import { withPagedBoardBudget } from "@/lib/insights/board-page-fetch";
 
 const MIN_OPENS = 5;
+// realized_mean averages over n_valued, not n_opens: a row needs this many VALUED
+// packs (lib/insights/pack-reality-board.ts MIN_VALUED, 2026-10-20).
+const MIN_VALUED = 10;
 
 type RealizedRow = {
   dist_id: string;
@@ -57,6 +60,7 @@ export async function GET(_req: NextRequest) {
           "dist_id, title, pack_price, modeled_gross_ev, ev_method, low_confidence_ev, n_opens, n_valued, realized_mean, realized_median, realized_total, realized_to_modeled_ratio"
         )
         .gte("n_opens", MIN_OPENS)
+        .gte("n_valued", MIN_VALUED)
         .eq("low_confidence_ev", false)
         // Same cost guard as the page: this view aggregates 2.8M rows (~26s), so
         // filtering server-side keeps the paged read to a single round trip.
@@ -84,7 +88,7 @@ export async function GET(_req: NextRequest) {
   }));
 
   const priced = rows.filter(
-    (r) => (r.pack_price ?? 0) > 0 && r.modeled_gross_ev != null
+    (r) => (r.pack_price ?? 0) > 0 && r.modeled_gross_ev != null && (r.n_valued ?? 0) >= MIN_VALUED
   );
   // Guard against depleted-pool fossils: a corrected modeled EV many multiples
   // above the pack price is a survivor-bias artefact, not a headline.
@@ -136,7 +140,7 @@ export async function GET(_req: NextRequest) {
       fetched_at: new Date().toISOString(),
       sources: ["v_allday_pack_realized_ev"],
       elapsed_ms: elapsedMs,
-      filters: { min_opens: MIN_OPENS, exclude_low_confidence: true },
+      filters: { min_opens: MIN_OPENS, min_valued: MIN_VALUED, exclude_low_confidence: true },
     },
     model_vs_reality: {
       qualifying_dists: priced.length,

@@ -152,3 +152,27 @@ describe("fetchNewCollectorsBoard", () => {
     expect(board.cohorts[0].median_days_to_10th).toBeNull()
   })
 })
+
+// 2026-10-20 live sweep: the Oct 2026 cohort (under 3 weeks old) read
+// "Repeat 30d / 60d / 90d 40.9% / 40.9% / 40.9%" — a partial window is a lower
+// bound, not a rate.
+describe("repeatWindowClosed — a cohort rate only once every member had the window", () => {
+  const at = (iso: string) => Date.parse(iso)
+  it("a 3-week-old cohort has no closed window", async () => {
+    const { repeatWindowClosed } = await import("@/lib/new-collectors-board")
+    for (const d of [30, 60, 90]) expect(repeatWindowClosed("2026-10-01", d, at("2026-10-21T03:00:00Z")), `${d}d`).toBe(false)
+  })
+  it("September closes 30d on Oct 31 and 90d on Dec 30 (its last member joined Sep 30)", async () => {
+    const { repeatWindowClosed } = await import("@/lib/new-collectors-board")
+    expect(repeatWindowClosed("2026-09-01", 30, at("2026-10-21T03:00:00Z"))).toBe(false)
+    expect(repeatWindowClosed("2026-09-01", 30, at("2026-10-31T00:00:00Z"))).toBe(true)
+    expect(repeatWindowClosed("2026-09-01", 90, at("2026-12-29T23:00:00Z"))).toBe(false)
+    expect(repeatWindowClosed("2026-09-01", 90, at("2026-12-30T00:00:00Z"))).toBe(true)
+    // December rolls the year
+    expect(repeatWindowClosed("2025-12-01", 30, at("2026-01-31T00:00:00Z"))).toBe(true)
+  })
+  it("an unparseable month is never 'closed'", async () => {
+    const { repeatWindowClosed } = await import("@/lib/new-collectors-board")
+    expect(repeatWindowClosed("garbage", 30, Date.now())).toBe(false)
+  })
+})

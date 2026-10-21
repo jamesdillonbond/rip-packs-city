@@ -355,11 +355,13 @@ export default function RookieBoardClient({ initialRows, initialFetchedAt, initi
         <p className="rpc-rb-lede">
           {/* "confidence tag" named an internal scoring enum a visitor cannot
               calibrate — the standing no-confidence-UI policy. The differentiator
-              is the per-parallel split itself, so say that. (2026-08-01) */}
+              is the per-parallel split itself, so say that. (2026-08-01)
+              2026-10-20: the "$389 Standard vs $1,794 Jukebox" example was a typed-in
+              sample from an old dataset; no row on the page showed either price. */}
           Every 2025 NBA Top Shot rookie edition broken out by <strong>parallel</strong> — Standard,
           Hexwave, Jukebox, Galactic, Omega — each with its <strong>own FMV</strong>,
-          circulation, ask, burn and lock rate. One blended average per moment hides that a Standard sells
-          for $389 while its Jukebox prints $1,794.
+          circulation, ask, burn and lock rate. One blended average per moment hides how far apart
+          the parallels of the same Moment trade.
         </p>
         <div className="rpc-rb-meta-row">
           <span className="rpc-rb-meta">

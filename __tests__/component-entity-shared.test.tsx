@@ -7,7 +7,7 @@ vi.mock("next/link", () => ({
 }))
 
 import {
-  fmtUsd, fmtCount, fmtPercent, fmtShare, truncWallet, relTime, tileSubject, fmvTotalSub, recentLowTotalSub, RECENT_LOW_HINT,
+  fmtUsd, fmtCount, fmtPercent, fmtShare, truncWallet, relTime, tileSubject, fmvTotalSub, recentLowTotalSub, RECENT_LOW_HINT, RECENT_LOW_TOTAL_HINT,
   marketplaceLabel, fmvBasisText, FmvBasis, TierBadge, WalletLink, EM_DASH,
   SectionUnavailable,
 } from "@/components/entity/_shared"
@@ -90,7 +90,11 @@ describe("_shared formatters", () => {
   it("⛔ Pinnacle Recent-Low Total says it is live asks and how many pins are listed; others keep the generic hint (#24)", () => {
     expect(recentLowTotalSub({ listed_count: 2, edition_count: 3 })).toBe("Lowest live asks · 2 of 3 listed")
     expect(recentLowTotalSub({ listed_count: 0, edition_count: 3 })).toBe("Lowest live asks · 0 of 3 listed")
-    expect(recentLowTotalSub({ edition_count: 3 })).toBe(RECENT_LOW_HINT)
+    // 2026-10-20: the non-Pinnacle total falls back to FMV per edition (COALESCE), so
+    // its sub-line says so; the TILE hint (no fallback) is a different string.
+    expect(recentLowTotalSub({ edition_count: 3 })).toBe(RECENT_LOW_TOTAL_HINT)
+    expect(RECENT_LOW_TOTAL_HINT).toMatch(/FMV where there is none/)
+    expect(RECENT_LOW_TOTAL_HINT).not.toBe(RECENT_LOW_HINT)
   })
 
   it("marketplaceLabel canonicalises the collection vocabularies", () => {

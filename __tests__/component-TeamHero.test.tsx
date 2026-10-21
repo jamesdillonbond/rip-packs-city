@@ -7,7 +7,7 @@ vi.mock("@/components/entity/TeamFollowButton", () => ({
   default: () => <span data-testid="follow-btn" />,
 }))
 
-import TeamHero, { type TeamNextGame } from "@/components/entity/TeamHero"
+import TeamHero, { type TeamNextGame, isStaleScheduledGame } from "@/components/entity/TeamHero"
 
 // Pins the Team Hub hero — the branded/fallback split and, most importantly, the
 // gameLabel next-game copy (only reachable through the rendered GameChip). A
@@ -21,8 +21,10 @@ afterEach(cleanup)
 const game = (over: Partial<TeamNextGame> = {}): TeamNextGame => ({
   opponent_abbr: "LAL",
   home_away: "home",
-  tipoff_at: "2026-07-30T02:00:00Z",
-  game_date: "2026-07-29",
+  // A FUTURE tipoff: a scheduled row whose tipoff has passed is a stale feed and
+  // renders no chip (isStaleScheduledGame, 2026-10-20).
+  tipoff_at: new Date(Date.now() + 2 * 86400_000).toISOString(),
+  game_date: "2099-01-01",
   status: "scheduled",
   is_playoff: false,
   series_label: null,
@@ -103,6 +105,22 @@ describe("TeamHero — gameLabel (via GameChip)", () => {
   it("prefixes a playoff game with the Playoffs marker", () => {
     render(<TeamHero {...base} primaryColor="#E03A2F" nextGame={game({ is_playoff: true })} />)
     expect(screen.getByText(/Playoffs ·/)).toBeTruthy()
+  })
+
+  // 2026-10-20 live sweep: the Lakers page read "🏀 Playoffs · Plays @ SAC · 15 days ago".
+  it("a scheduled row whose tipoff is days past renders NO chip (stale feed, not an upcoming game)", () => {
+    const past = new Date(Date.now() - 15 * 86400_000).toISOString()
+    const { container } = render(<TeamHero {...base} primaryColor="#E03A2F" nextGame={game({ is_playoff: true, opponent_abbr: "SAC", home_away: "away", tipoff_at: past })} />)
+    expect(container.textContent).not.toMatch(/Plays/)
+    expect(container.textContent).not.toMatch(/Playoffs/)
+    expect(container.textContent).not.toMatch(/ago/)
+  })
+
+  it("a just-started game (inside the grace window) and a completed past game still render", () => {
+    const now = Date.now()
+    expect(isStaleScheduledGame({ status: "scheduled", tipoff_at: new Date(now - 3600_000).toISOString() }, now)).toBe(false)
+    expect(isStaleScheduledGame({ status: "final", tipoff_at: new Date(now - 15 * 86400_000).toISOString() }, now)).toBe(false)
+    expect(isStaleScheduledGame({ status: "scheduled", tipoff_at: new Date(now - 7 * 3600_000).toISOString() }, now)).toBe(true)
   })
 })
 

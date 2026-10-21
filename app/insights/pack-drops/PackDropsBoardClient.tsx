@@ -25,6 +25,7 @@ import { sectionEmptyCopy } from "@/lib/entity/section-empty-copy"
 import Link from "next/link"
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
 import type { ScoredDrop, ScoredEdition } from "@/lib/pack-drops-board"
+import { isBuyableNow } from "@/lib/pack-drops-sale-state"
 import { usdSignFirst } from "@/lib/usd-format"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
@@ -328,7 +329,7 @@ export default function PackDropsBoardClient({ initialDrops, initialFetchedAt, i
   }
 
   const kpis = useMemo(() => {
-    const liveCount = drops.filter((d) => d.sale_state?.saleOpen).length
+    const liveCount = drops.filter((d) => isBuyableNow(d.sale_state)).length
     const valueCount = drops.filter((d) => d.verdict_kind === "value").length
     return { total: drops.length, live: liveCount, value: valueCount }
   }, [drops])
@@ -382,7 +383,7 @@ export default function PackDropsBoardClient({ initialDrops, initialFetchedAt, i
           <div className="rpc-pd-kpi-value">{fmtInt(kpis.total)}</div>
         </div>
         <div className="rpc-pd-kpi">
-          <div className="rpc-pd-kpi-label">Sale open</div>
+          <div className="rpc-pd-kpi-label">For sale now</div>
           <div className="rpc-pd-kpi-value">{fmtInt(kpis.live)}</div>
         </div>
         <div className="rpc-pd-kpi">

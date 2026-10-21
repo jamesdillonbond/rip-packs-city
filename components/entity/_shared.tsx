@@ -34,9 +34,16 @@ export const LIVE_ASK_HINT = "Lowest live ask — what a copy costs now"
 // as 0.9 x the ask, 77% of the catalog's FMV total when measured). Other
 // collections return neither, and their cells keep the generic hint.
 
+// The header TOTAL is SUM(COALESCE(floor_price_usd, fmv_usd)) in get_player_detail /
+// get_team_detail / get_series_detail / get_set_detail / get_team_sets, so an edition
+// with no recent low contributes its FMV. 2026-10-20 live sweep: Stephen Curry read
+// "Recent-Low Total $47,047" over tiles summing $37,047 (a $10,000 Supernova whose
+// tile shows "Recent Low —"). The sub-line says what the total is made of.
+export const RECENT_LOW_TOTAL_HINT = "Recent lows, FMV where there is none — not a live floor"
+
 /** Sub-line for "Recent-Low Total": Pinnacle's total is live asks only. */
 export function recentLowTotalSub(d: { listed_count?: number | null; edition_count?: number | null }): string {
-  if (d.listed_count == null) return RECENT_LOW_HINT
+  if (d.listed_count == null) return RECENT_LOW_TOTAL_HINT
   const of = d.edition_count != null ? ` of ${fmtCount(d.edition_count)}` : ""
   return `Lowest live asks · ${fmtCount(d.listed_count)}${of} listed`
 }

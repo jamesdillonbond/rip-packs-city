@@ -24,6 +24,8 @@
 // paper over the undervaluation (that's the serial-FMV layer's job).
 
 import type { SupabaseClient } from "@supabase/supabase-js"
+import { isBuyableNow, type VaultopolisSaleState } from "@/lib/pack-drops-sale-state"
+export { isBuyableNow, type VaultopolisSaleState }
 
 const VAULTOPOLIS_BASE = "https://data.vaultopolis.com/api/drops"
 
@@ -81,14 +83,6 @@ export type VaultopolisOdds = {
   disclaimer?: string | null
 }
 
-export type VaultopolisSaleState = {
-  listed: number | null
-  sold: number | null
-  total: number | null
-  saleOpen: boolean | null
-  soldOut: boolean | null
-  saleStartsAt?: string | null
-}
 
 export type VaultopolisDropListItem = {
   dropId: number
@@ -447,6 +441,20 @@ export async function scoreDrop(
   }
 }
 
+/** PURE. The verdict once the sale state is known: no "to buy" claim when nothing is for sale. */
+export function applySaleState(s: ScoredDrop, st: VaultopolisSaleState | null): ScoredDrop {
+  s.sale_state = st
+  if (!st || isBuyableNow(st)) return s
+  if (st.soldOut === true || st.listed === 0) {
+    const ev = s.rpc_pack_ev_usd
+    s.verdict = ev != null
+      ? `RPC values this pack's contents at ~$${ev.toFixed(2)} per pack. None is for sale right now.`
+      : "None is for sale right now."
+    s.verdict_kind = "unknown"
+  }
+  return s
+}
+
 // Top-level orchestrator: discover → fetch each drop's composition/odds/sale-state
 // → score. Returns drops sorted live-first then newest id. Skips cancelled drops
 // and drops with no TopShot assets.
@@ -480,18 +488,20 @@ export async function fetchScoredDrops(sb: SupabaseClient): Promise<ScoredDrop[]
       }
       const comp = compRes.kind === "ok" ? compRes.data : null
       if (!comp || !comp.assets?.TopShot || comp.assets.TopShot.length === 0) return null
+      // A drop whose sale state reports 0 packs in total has nothing to score
+      // (the operator's "Test Drop"s, 10-20). An unknown sale state keeps the drop.
+      if (saleState && saleState.total === 0) return null
       const s = await scoreDrop(sb, comp, li, flowUsd)
       s.odds = odds
-      s.sale_state = saleState
-      return s
+      return applySaleState(s, saleState)
     }),
   )
   const scored: ScoredDrop[] = perDrop.filter((s): s is ScoredDrop => s !== null)
 
   // Live / sale-open drops first, then by newest drop id.
   scored.sort((a, b) => {
-    const aLive = a.sale_state?.saleOpen ? 1 : 0
-    const bLive = b.sale_state?.saleOpen ? 1 : 0
+    const aLive = isBuyableNow(a.sale_state) ? 1 : 0
+    const bLive = isBuyableNow(b.sale_state) ? 1 : 0
     if (aLive !== bLive) return bLive - aLive
     return b.drop_id - a.drop_id
   })

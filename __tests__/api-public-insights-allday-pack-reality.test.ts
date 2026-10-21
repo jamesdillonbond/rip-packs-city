@@ -43,11 +43,13 @@ describe("GET /api/public/insights/allday-pack-reality", () => {
     tables.v_allday_pack_realized_ev = {
       data: [
         // over-modeled: ratio<0.6, modeled within 1.5x pack price, modeled>=2
-        { dist_id: "o1", pack_price: 10, modeled_gross_ev: 12, realized_to_modeled_ratio: 0.4, n_opens: 20 },
+        { dist_id: "o1", pack_price: 10, modeled_gross_ev: 12, realized_to_modeled_ratio: 0.4, n_opens: 20, n_valued: 20 },
         // under-modeled: ratio>1.8
-        { dist_id: "u1", pack_price: 10, modeled_gross_ev: 5, realized_to_modeled_ratio: 2.5, n_opens: 15 },
+        { dist_id: "u1", pack_price: 10, modeled_gross_ev: 5, realized_to_modeled_ratio: 2.5, n_opens: 15, n_valued: 15 },
         // on-model: ratio ~1.0
-        { dist_id: "m1", pack_price: 10, modeled_gross_ev: 9, realized_to_modeled_ratio: 1.0, n_opens: 40 },
+        { dist_id: "m1", pack_price: 10, modeled_gross_ev: 9, realized_to_modeled_ratio: 1.0, n_opens: 40, n_valued: 40 },
+        // 2026-10-20: 300 opens but ONE valued pack — its "average" is one pull, so it is not a row
+        { dist_id: "one", pack_price: 10, modeled_gross_ev: 9, realized_to_modeled_ratio: 2.9, n_opens: 300, n_valued: 1 },
       ],
       error: null,
     }
@@ -57,6 +59,7 @@ describe("GET /api/public/insights/allday-pack-reality", () => {
     expect(body.model_vs_reality.over_modeled.map((r: any) => r.dist_id)).toContain("o1")
     expect(body.model_vs_reality.under_modeled.map((r: any) => r.dist_id)).toContain("u1")
     expect(body.model_vs_reality.on_model.map((r: any) => r.dist_id)).toContain("m1")
+    expect(body.model_vs_reality.under_modeled.map((r: any) => r.dist_id)).not.toContain("one")
   })
 
   it("500s on a view query error", async () => {

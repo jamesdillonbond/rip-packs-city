@@ -27,6 +27,15 @@ import { withPagedBoardBudget } from "@/lib/insights/board-page-fetch"
 export const MIN_OPENS = 5
 
 /**
+ * Minimum opened packs that actually GOT a value. `realized_mean` averages over
+ * `n_valued`, not `n_opens`. 2026-10-20 live sweep: three headline rows ("Holo Icon:
+ * Legendary Guaranteed Hit (November - 2025)" $549 / 287.23× over "300 opens", the
+ * top over-valued Packers Feast row, Holo Icon September) each rested on ONE valued
+ * pack. 211 of 493 priced rows had 1–10 valued packs that day.
+ */
+export const MIN_VALUED = 10
+
+/**
  * ⚠ THE FOSSIL GUARD. A distribution whose MODELED EV sits above 1.5× its pack
  * price is almost always a depleted pool: CLAUDE.md records that a drained Top
  * Shot pool prices at 40–86×, because once the good moments are pulled the
@@ -110,7 +119,7 @@ export function bucketPackRealityRows(
   rows: PackRealityRow[],
 ): Omit<PackRealityBuckets, "ok" | "fetchedAt"> {
   const priced = rows.filter(
-    (r) => (num(r.pack_price) ?? 0) > 0 && num(r.modeled_gross_ev) != null,
+    (r) => (num(r.pack_price) ?? 0) > 0 && num(r.modeled_gross_ev) != null && (num(r.n_valued) ?? 0) >= MIN_VALUED,
   )
   const ratio = (r: PackRealityRow) => num(r.realized_to_modeled_ratio)
   const nonFossil = (r: PackRealityRow) => {
@@ -165,6 +174,7 @@ export async function fetchPackRealityBuckets(
             "dist_id, title, pack_price, modeled_gross_ev, ev_method, n_opens, n_valued, realized_mean, realized_median, realized_to_modeled_ratio",
           )
           .gte("n_opens", MIN_OPENS)
+          .gte("n_valued", MIN_VALUED)
           .eq("low_confidence_ev", false)
           // ⚠ The `priced` filter is pushed into SQL as well as applied in JS.
           // This view costs ~26s (it aggregates 2.8M pack_rips rows), so paging

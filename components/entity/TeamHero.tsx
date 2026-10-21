@@ -82,6 +82,20 @@ function Chip({ children }: { children: React.ReactNode }) {
   )
 }
 
+/**
+ * A row still `scheduled` whose tipoff is well in the past is a STALE feed, not an
+ * upcoming game. 2026-10-20 live sweep: /nba-top-shot/team/los-angeles-lakers read
+ * "🏀 Playoffs · Plays @ SAC · 15 days ago" off a 10-06 row the dead NBA games sync
+ * never closed (13 such rows, 0 future games). We know neither the result nor the
+ * next game, so the chip is dropped rather than worded.
+ */
+export const STALE_SCHEDULED_GRACE_MS = 6 * 3600 * 1000
+export function isStaleScheduledGame(g: Pick<TeamNextGame, "status" | "tipoff_at">, now: number = Date.now()): boolean {
+  if ((g.status ?? "").toLowerCase() !== "scheduled" || !g.tipoff_at) return false
+  const t = Date.parse(g.tipoff_at)
+  return Number.isFinite(t) && now - t > STALE_SCHEDULED_GRACE_MS
+}
+
 function gameLabel(g: TeamNextGame): string {
   const opp = g.opponent_abbr ?? "TBD"
   const vs = g.home_away === "away" ? "@" : "vs"
@@ -138,6 +152,7 @@ function HeroExtras({
   teamPath?: string
 }) {
   const showFollow = !!followLeague && !!followShortSlug && !!teamPath
+  if (nextGame && isStaleScheduledGame(nextGame)) nextGame = null
   if (!nextGame && !showFollow) return null
   return (
     <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap", alignItems: "center" }}>

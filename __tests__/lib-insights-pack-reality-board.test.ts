@@ -10,6 +10,7 @@ import {
   OVER_MIN_MODELED_EV,
   UNDER_MIN_MODELED_EV,
   MIN_OPENS,
+  MIN_VALUED,
   RANK_LIMIT,
   type PackRealityRow,
 } from "@/lib/insights/pack-reality-board"
@@ -35,6 +36,19 @@ function row(p: Partial<PackRealityRow> & { dist_id: string }): PackRealityRow {
     ...p,
   }
 }
+
+describe("bucketPackRealityRows — the valued-pack floor (2026-10-20 live sweep)", () => {
+  it("drops a row whose average rests on fewer than MIN_VALUED valued packs, however many were opened", () => {
+    const b = bucketPackRealityRows([
+      row({ dist_id: "one-valued", n_opens: 300, n_valued: 1, realized_to_modeled_ratio: 287.23 }),
+      row({ dist_id: "enough", n_opens: 300, n_valued: MIN_VALUED, realized_to_modeled_ratio: 3 }),
+    ])
+    const ids = [...b.over, ...b.under, ...b.onModel].map((r) => r.dist_id)
+    expect(ids).not.toContain("one-valued")
+    expect(ids).toContain("enough")
+    expect(b.qualifying).toBe(1)
+  })
+})
 
 describe("bucketPackRealityRows — the three buckets", () => {
   it("splits over / under / on-model by the realized-to-modeled ratio", () => {
@@ -241,6 +255,8 @@ describe("fetchPackRealityBuckets", () => {
     for (const m of ["select", "gte", "eq", "gt", "not", "order", "range"]) {
       builder[m] = (...args: unknown[]) => {
         calls[m] = args
+        // every gte, in order (n_opens AND n_valued, 2026-10-20)
+        if (m === "gte") (calls.gteAll = (calls.gteAll as unknown[][] | undefined) ?? []).push(args)
         return builder
       }
     }
@@ -287,7 +303,7 @@ describe("fetchPackRealityBuckets", () => {
     const { calls, db } = dbReturning({ rows: [] })
     await fetchPackRealityBuckets(db)
     expect(calls.from).toBe("v_allday_pack_realized_ev")
-    expect(calls.gte).toEqual(["n_opens", MIN_OPENS])
+    expect(calls.gteAll).toEqual([["n_opens", MIN_OPENS], ["n_valued", MIN_VALUED]])
     expect(calls.eq, "stale-FMV distributions are excluded at the source").toEqual([
       "low_confidence_ev",
       false,

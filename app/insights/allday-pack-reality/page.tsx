@@ -77,7 +77,7 @@ function RealizedTable({ rows, accent }: { rows: PackRealityRow[]; accent: strin
             <th style={{ padding: "6px 10px", fontWeight: 600, textAlign: "right" }}>Realized avg</th>
             <th style={{ padding: "6px 10px", fontWeight: 600, textAlign: "right" }}>Median</th>
             <th style={{ padding: "6px 10px", fontWeight: 600, textAlign: "right" }}>Ratio</th>
-            <th style={{ padding: "6px 10px", fontWeight: 600, textAlign: "right" }}>Opens</th>
+            <th style={{ padding: "6px 10px", fontWeight: 600, textAlign: "right" }}>Opens · valued</th>
           </tr>
         </thead>
         <tbody>
@@ -97,7 +97,7 @@ function RealizedTable({ rows, accent }: { rows: PackRealityRow[]; accent: strin
                 <td style={{ padding: "8px 10px", textAlign: "right", color: accentText(accent), fontWeight: 700 }}>{fmtUsd(num(r.realized_mean))}</td>
                 <td style={{ padding: "8px 10px", textAlign: "right", color: "var(--rpc-text-secondary)" }}>{fmtUsd(num(r.realized_median))}</td>
                 <td style={{ padding: "8px 10px", textAlign: "right", color: accentText(accent) }}>{ratio != null ? `${ratio.toFixed(2)}×` : "—"}</td>
-                <td style={{ padding: "8px 10px", textAlign: "right", color: "var(--rpc-text-secondary)" }}>{fmtCount(num(r.n_opens))}</td>
+                <td style={{ padding: "8px 10px", textAlign: "right", color: "var(--rpc-text-secondary)" }}>{fmtCount(num(r.n_opens))} · {fmtCount(num(r.n_valued))}</td>
               </tr>
             )
           })}

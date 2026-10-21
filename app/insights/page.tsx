@@ -192,7 +192,7 @@ const CARDS: Card[] = [
     eyebrow: "Live",
     title: "Rookie Board — By Parallel",
     blurb:
-      "The 2025 rookie class, every edition broken out by parallel — Standard, Hexwave, Jukebox, Galactic, Omega — each with its own FMV, plus circulation, ask, burn and lock. One blended average per moment hides that a Standard sells for $389 while its Jukebox prints $1,794.",
+      "The 2025 rookie class, every edition broken out by parallel — Standard, Hexwave, Jukebox, Galactic, Omega — each with its own FMV, plus circulation, ask, burn and lock. One blended average per moment hides how far apart the parallels of the same Moment trade.",
     cta: "Open rookie board",
     available: true,
   },

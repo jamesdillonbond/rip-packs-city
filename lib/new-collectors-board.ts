@@ -100,6 +100,20 @@ function numOr0(v: unknown): number {
 
 // `supabase` is the service-role client (typed any per the repo convention for
 // API routes / server components).
+/**
+ * PURE. Had every member of a monthly cohort had `days` days to repeat by `asOf`?
+ * The cohort's LAST member joined at the end of its month, so the window closes
+ * at (first of the next month) + days. 2026-10-20 live sweep: the Oct 2026 cohort,
+ * under 3 weeks old, read "Repeat 30d / 60d / 90d 40.9% / 40.9% / 40.9%" — a partial
+ * window is a lower bound, not a rate, so it renders "—" until it closes.
+ */
+export function repeatWindowClosed(cohortMonth: string, days: number, asOf: number): boolean {
+  const m = /^(\d{4})-(\d{2})/.exec(cohortMonth)
+  if (!m) return false
+  const nextMonth = Date.UTC(Number(m[1]), Number(m[2]), 1) // month index is 0-based, so this is the NEXT month
+  return asOf >= nextMonth + days * 86400_000
+}
+
 export async function fetchNewCollectorsBoard(supabase: any): Promise<NewCollectorsBoard> {
   const [summary, spend, gateway, cohorts] = await Promise.all([
     supabase.from("mv_insights_new_collectors_summary").select("*"),
@@ -159,17 +173,25 @@ export async function fetchNewCollectorsBoard(supabase: any): Promise<NewCollect
     w.players.sort((a, b) => a.rnk - b.rnk)
   }
 
-  const cohortRows: NCCohortRow[] = ((cohorts.data ?? []) as any[]).map((r) => ({
-    cohort_month: String(r.cohort_month),
-    cohort_size: numOr0(r.cohort_size),
-    repeat_30d_pct: num(r.repeat_30d_pct),
-    repeat_60d_pct: num(r.repeat_60d_pct),
-    repeat_90d_pct: num(r.repeat_90d_pct),
-    ltv_median: num(r.ltv_median),
-    ltv_avg: num(r.ltv_avg),
-    whales: numOr0(r.whales),
-    median_days_to_10th: num(r.median_days_to_10th),
-  }))
+  // Judged at the MV's own refresh time, not the wall clock: the repeat flags were
+  // computed then. An unparseable stamp falls back to now.
+  const cohortRows: NCCohortRow[] = ((cohorts.data ?? []) as any[]).map((r) => {
+    const month = String(r.cohort_month)
+    const asOfMs = Date.parse(String(r.computed_at ?? ""))
+    const asOf = Number.isFinite(asOfMs) ? asOfMs : Date.now()
+    const rate = (v: unknown, days: number) => (repeatWindowClosed(month, days, asOf) ? num(v) : null)
+    return {
+      cohort_month: month,
+      cohort_size: numOr0(r.cohort_size),
+      repeat_30d_pct: rate(r.repeat_30d_pct, 30),
+      repeat_60d_pct: rate(r.repeat_60d_pct, 60),
+      repeat_90d_pct: rate(r.repeat_90d_pct, 90),
+      ltv_median: num(r.ltv_median),
+      ltv_avg: num(r.ltv_avg),
+      whales: numOr0(r.whales),
+      median_days_to_10th: num(r.median_days_to_10th),
+    }
+  })
 
   const computedAt = summaryRows[0]?.computed_at ?? null
 

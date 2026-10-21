@@ -362,7 +362,8 @@ export default function NewCollectorsBoardClient({ initialBoard, initialFetchedA
               Cohort = wallets whose first observed marketplace buy fell in that month.
               <strong> Retention and LTV are reliable</strong>; cohort <em>size</em> for
               older months undercounts (those buyers&apos; first buys predate full buyer
-              resolution) and rises as the deep-history backfill lands.
+              resolution) and rises as the deep-history backfill lands. A repeat rate reads
+              &ldquo;&mdash;&rdquo; until every buyer in that cohort has had the full 30, 60 or 90 days.
             </p>
           </section>
 
