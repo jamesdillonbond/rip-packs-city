@@ -74,7 +74,7 @@ export interface ChallengesResult {
  *     2026-08-29 — `public-api.nbatopshot.com` is decommissioned (last OK day
  *     2026-08-28). ⭐ 2026-10-20 the lane was PORTED, same pipeline name, to
  *     Atlas `QuestService/GetQuestStatus` (pg_cron begin :41 / collect :44,
- *     `ingest_topshot_challenges_atlas_collect`, migration 20261021014500), so
+ *     `ingest_topshot_challenges_atlas_collect`, migration 20261021022355), so
  *     this check reads the new lane's successes without a code change.
  *   • The paths that can ADD a challenge: that collect function
  *     (source='atlas_quest'), the dead `upsert_challenge_from_gql`, and a

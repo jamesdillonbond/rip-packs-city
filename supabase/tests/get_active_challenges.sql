@@ -8,7 +8,8 @@
 -- totals/completion math, and the netEv/worthIt formula.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260801231000_audit_20260801_snapshot_get_active_challenges.sql);
+-- (supabase/migrations/20261021022635_audit_20261020_challenge_net_ev_one_pack_per_completion_for_atlas_quests.sql;
+-- re-pinned 2026-10-20 from 20260822 — the one-pack-per-completion arm for source='atlas_quest');
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts, and the
 -- md5 of pg_get_functiondef was confirmed byte-identical to LIVE prod on 2026-08-01
 -- (1bb18544686f8c61ef8d018101481c7d).
@@ -17,7 +18,7 @@
 
 BEGIN;
 
-CREATE TABLE challenges (id uuid, collection_id uuid, status text, ends_at timestamptz, slug text, name text, challenge_type text, image_url text, set_name text, reward_kind text, reward_label text, total_reward_allocation int, completed_count int, cached_entry_floor numeric, cached_reward_value numeric);
+CREATE TABLE challenges (id uuid, collection_id uuid, status text, ends_at timestamptz, slug text, name text, challenge_type text, image_url text, set_name text, reward_kind text, reward_label text, total_reward_allocation int, completed_count int, cached_entry_floor numeric, cached_reward_value numeric, source text);
 CREATE TABLE badge_editions (external_id text, collection_id uuid, low_ask numeric);
 CREATE TABLE challenge_slot_editions (challenge_id uuid, slot_order int, external_id text);
 CREATE TABLE challenge_slots (challenge_id uuid, slot_order int);
@@ -69,7 +70,7 @@ SELECT jsonb_build_object(
       'status', c.status, 'endsAt', c.ends_at, 'imageUrl', c.image_url, 'setName', c.set_name,
       'rewardKind', c.reward_kind, 'rewardLabel', c.reward_label,
       'totalRewardAllocation', c.total_reward_allocation, 'completedCount', c.completed_count,
-      'packsPerUser', ROUND(c.total_reward_allocation::numeric / NULLIF(c.completed_count, 0), 2),
+      'packsPerUser', CASE WHEN c.source = 'atlas_quest' THEN 1 ELSE ROUND(c.total_reward_allocation::numeric / NULLIF(c.completed_count, 0), 2) END,
       'totalRequired', COALESCE(t.total_slots, 0),
       'ownedCount', COALESCE(a.filled_slots, 0),
       'missingCount', COALESCE(t.total_slots,0) - COALESCE(a.filled_slots,0),
@@ -78,10 +79,10 @@ SELECT jsonb_build_object(
       'costToComplete', a.cost_to_complete, 'entryFloor', c.cached_entry_floor,
       'rewardValue', c.cached_reward_value,
       'netEv', CASE WHEN c.cached_reward_value IS NULL OR a.cost_to_complete IS NULL THEN NULL
-                    ELSE ROUND(c.cached_reward_value * GREATEST(COALESCE(c.total_reward_allocation::numeric / NULLIF(c.completed_count,0), 1), 1) - a.cost_to_complete, 2) END,
+                    ELSE ROUND(c.cached_reward_value * CASE WHEN c.source = 'atlas_quest' THEN 1 ELSE GREATEST(COALESCE(c.total_reward_allocation::numeric / NULLIF(c.completed_count,0), 1), 1) END - a.cost_to_complete, 2) END,
       'worthIt', CASE WHEN c.cached_reward_value IS NULL OR a.cost_to_complete IS NULL THEN NULL
-                      ELSE (c.cached_reward_value * GREATEST(COALESCE(c.total_reward_allocation::numeric / NULLIF(c.completed_count,0), 1), 1) - a.cost_to_complete) > 0 END)
-      ORDER BY (c.cached_reward_value * GREATEST(COALESCE(c.total_reward_allocation::numeric / NULLIF(c.completed_count,0), 1), 1) - a.cost_to_complete) DESC NULLS LAST, c.ends_at ASC NULLS LAST)
+                      ELSE (c.cached_reward_value * CASE WHEN c.source = 'atlas_quest' THEN 1 ELSE GREATEST(COALESCE(c.total_reward_allocation::numeric / NULLIF(c.completed_count,0), 1), 1) END - a.cost_to_complete) > 0 END)
+      ORDER BY (c.cached_reward_value * CASE WHEN c.source = 'atlas_quest' THEN 1 ELSE GREATEST(COALESCE(c.total_reward_allocation::numeric / NULLIF(c.completed_count,0), 1), 1) END - a.cost_to_complete) DESC NULLS LAST, c.ends_at ASC NULLS LAST)
     FROM ch c LEFT JOIN totals t ON t.challenge_id = c.id LEFT JOIN agg a ON a.challenge_id = c.id), '[]'::jsonb)
 )
 $function$;
@@ -153,6 +154,22 @@ SELECT _assert_eq(
   '1',
   'while the exact stored form still matches — the control that keeps the case above
    from passing for the wrong reason');
+
+
+-- ── ONE PACK PER COMPLETION FOR ATLAS QUESTS (re-pinned 2026-10-20) ──
+-- An Atlas QuestService challenge (source='atlas_quest') pays ONE pack per completion; its
+-- total_reward_allocation is a CAP on completions, not a pool split among completers. The first
+-- ingest read Run It Back: Origins as netEv +44.57 / worthIt=true from 129 x 340/85 - 471.43; one
+-- pack against that cost is -342.43. Same numbers here, in their own collection; CH1 above (no
+-- source) is the control that the old multiplier still applies everywhere else.
+INSERT INTO challenges (id, collection_id, status, ends_at, slug, name, challenge_type, total_reward_allocation, completed_count, cached_entry_floor, cached_reward_value, source) VALUES
+  ('00000000-0000-0000-0000-0000000c0009','00000000-0000-0000-0000-00000000eeee','active', now()+interval '10 days','tsq-x','Quest X','set_locking', 340, 85, 471.43, 129.00, 'atlas_quest');
+INSERT INTO challenge_slots (challenge_id, slot_order) VALUES ('00000000-0000-0000-0000-0000000c0009',1);
+INSERT INTO challenge_slot_editions (challenge_id, slot_order, external_id) VALUES ('00000000-0000-0000-0000-0000000c0009',1,'ekQ');
+INSERT INTO badge_editions (external_id, collection_id, low_ask) VALUES ('ekQ','00000000-0000-0000-0000-00000000eeee',471.43);
+SELECT _assert((get_active_challenges(NULL,'00000000-0000-0000-0000-00000000eeee')->'challenges'->0->>'packsPerUser')::numeric = 1, 'atlas_quest: packsPerUser is 1, not alloc/completed (340/85 = 4)');
+SELECT _assert((get_active_challenges(NULL,'00000000-0000-0000-0000-00000000eeee')->'challenges'->0->>'netEv')::numeric = -342.43, 'atlas_quest: netEv = one pack 129.00 - cost 471.43');
+SELECT _assert_eq((get_active_challenges(NULL,'00000000-0000-0000-0000-00000000eeee')->'challenges'->0->>'worthIt'), 'false', 'atlas_quest: the old multiplier''s false worthIt=true is gone');
 
 SELECT '✓ get_active_challenges invariants pass' AS result;
 ROLLBACK;

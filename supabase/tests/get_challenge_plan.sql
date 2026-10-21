@@ -10,7 +10,8 @@
 -- filled/cheapest slot ORDER, and the totals/netEv math.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260801231100_audit_20260801_snapshot_get_challenge_plan.sql);
+-- (supabase/migrations/20261021022635_audit_20261020_challenge_net_ev_one_pack_per_completion_for_atlas_quests.sql;
+-- re-pinned 2026-10-20 from 20260822 — the one-pack-per-completion arm for source='atlas_quest');
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts, and the
 -- md5 of pg_get_functiondef was confirmed byte-identical to LIVE prod on 2026-08-01
 -- (73cfdc158434860d1827db469e815699).
@@ -19,7 +20,7 @@
 
 BEGIN;
 
-CREATE TABLE challenges (id uuid, collection_id uuid, ends_at timestamptz, slug text, name text, challenge_type text, description text, status text, starts_at timestamptz, set_name text, total_reward_allocation int, completed_count int, reward_kind text, reward_label text, image_url text, cached_reward_value numeric);
+CREATE TABLE challenges (id uuid, collection_id uuid, ends_at timestamptz, slug text, name text, challenge_type text, description text, status text, starts_at timestamptz, set_name text, total_reward_allocation int, completed_count int, reward_kind text, reward_label text, image_url text, cached_reward_value numeric, source text);
 CREATE TABLE badge_editions (external_id text, collection_id uuid, low_ask numeric, lock_rate_pct numeric, burn_rate_pct numeric);
 CREATE TABLE wallet_moments_cache (wallet_address text, collection_id uuid, edition_key text);
 CREATE TABLE challenge_slot_editions (challenge_id uuid, slot_order int, external_id text);
@@ -92,8 +93,8 @@ SELECT jsonb_build_object(
   'missingCount', a.total_slots - a.filled_slots, 'unresolvedSlots', a.unresolved_slots,
   'completionPct', ROUND(100.0 * a.filled_slots::numeric / NULLIF(a.total_slots, 0), 1),
   'costToComplete', a.cost_to_complete, 'rewardValue', ch.cached_reward_value,
-  'netEv', CASE WHEN ch.cached_reward_value IS NULL OR a.cost_to_complete IS NULL THEN NULL ELSE ROUND(ch.cached_reward_value * GREATEST(COALESCE(ch.total_reward_allocation::numeric / NULLIF(ch.completed_count,0), 1), 1) - a.cost_to_complete, 2) END,
-  'worthIt', CASE WHEN ch.cached_reward_value IS NULL OR a.cost_to_complete IS NULL THEN NULL ELSE (ch.cached_reward_value * GREATEST(COALESCE(ch.total_reward_allocation::numeric / NULLIF(ch.completed_count,0), 1), 1) - a.cost_to_complete) > 0 END,
+  'netEv', CASE WHEN ch.cached_reward_value IS NULL OR a.cost_to_complete IS NULL THEN NULL ELSE ROUND(ch.cached_reward_value * CASE WHEN ch.source = 'atlas_quest' THEN 1 ELSE GREATEST(COALESCE(ch.total_reward_allocation::numeric / NULLIF(ch.completed_count,0), 1), 1) END - a.cost_to_complete, 2) END,
+  'worthIt', CASE WHEN ch.cached_reward_value IS NULL OR a.cost_to_complete IS NULL THEN NULL ELSE (ch.cached_reward_value * CASE WHEN ch.source = 'atlas_quest' THEN 1 ELSE GREATEST(COALESCE(ch.total_reward_allocation::numeric / NULLIF(ch.completed_count,0), 1), 1) END - a.cost_to_complete) > 0 END,
   'slots', COALESCE((
     SELECT jsonb_agg(jsonb_build_object(
       'slotOrder', ss.slot_order, 'label', ss.label, 'playCategory', ss.play_category, 'helpText', ss.help_text,
@@ -176,6 +177,18 @@ SELECT _assert_eq((SELECT (e->'pick' = 'null'::jsonb)::text FROM jsonb_array_ele
 -- Expired challenge -> ch CTE empty -> function returns a row with null challengeId.
 UPDATE challenges SET ends_at = now() - interval '1 day' WHERE id='00000000-0000-0000-0000-0000000c0001';
 SELECT _assert((get_challenge_plan('0xWALLET00000001','00000000-0000-0000-0000-0000000c0001')->>'challengeId') IS NULL, 'an expired challenge yields no challenge object');
+
+
+-- ── ONE PACK PER COMPLETION FOR ATLAS QUESTS (re-pinned 2026-10-20) ── see get_active_challenges.sql.
+-- CH1 above (no source, packsPerUser 2, netEv 160) is the control that the old multiplier still applies.
+INSERT INTO challenges (id, collection_id, ends_at, slug, name, challenge_type, total_reward_allocation, completed_count, cached_reward_value, source) VALUES
+  ('00000000-0000-0000-0000-0000000c0009','00000000-0000-0000-0000-00000000cccc', now()+interval '10 days','tsq-x','Quest X','set_locking', 340, 85, 129.00, 'atlas_quest');
+INSERT INTO challenge_slots (challenge_id, slot_order, label) VALUES ('00000000-0000-0000-0000-0000000c0009',1,'Slot Q');
+INSERT INTO challenge_slot_editions (challenge_id, slot_order, external_id) VALUES ('00000000-0000-0000-0000-0000000c0009',1,'ekQ');
+INSERT INTO editions (external_id, collection_id, player_name, tier, thumbnail_url) VALUES ('ekQ','00000000-0000-0000-0000-00000000cccc','PlayerQ','COMMON','tQ');
+INSERT INTO badge_editions (external_id, collection_id, low_ask, lock_rate_pct, burn_rate_pct) VALUES ('ekQ','00000000-0000-0000-0000-00000000cccc',471.43,0,0);
+SELECT _assert((get_challenge_plan(NULL,'00000000-0000-0000-0000-0000000c0009')->>'netEv')::numeric = -342.43, 'atlas_quest: netEv = one pack 129.00 - cost 471.43, not 129 x 340/85');
+SELECT _assert_eq((get_challenge_plan(NULL,'00000000-0000-0000-0000-0000000c0009')->>'worthIt'), 'false', 'atlas_quest: worthIt false');
 
 SELECT '✓ get_challenge_plan invariants pass' AS result;
 ROLLBACK;

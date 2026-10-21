@@ -1,7 +1,7 @@
 -- audit_20261020_topshot_challenge_ingest_requests_table
 -- The request-id table for the Atlas QuestService challenge ingest (begin/collect over pg_net).
--- Applied on its own ahead of 20261021014500_audit_20261020_topshot_challenges_from_atlas_quests,
--- whose functions carry the DELETE text the migration tool refuses; see that file for the lane.
+-- Applied on its own ahead of 20261021022355_audit_20261020_topshot_challenges_from_atlas_quests
+-- (the begin/collect lane); see that file.
 --
 -- REVERT: DROP TABLE public.topshot_challenge_ingest_requests;
 

@@ -27,24 +27,28 @@
 --       editions carry that name in that series) whose player matches by _norm_player.
 -- Both together resolved 326 of 326 slots in a dry run.
 --
--- WRITE DISCIPLINE (R120/R123): write first, delete only what this run did not write; a slot list
--- that resolves to NOTHING is not written over a non-empty one. ok is derived from the writes landing
+-- WRITE DISCIPLINE (R120/R123): write first; a slot list that resolves to NOTHING is not written
+-- over a non-empty one. Rows that were eligible before and are not returned now are COUNTED in
+-- extra.stale_rows_not_retired but NOT retired in this version: retiring them needs a statement the
+-- migration tool refuses, so it ships separately as 20261021023000 (applied in the dashboard editor).
+-- Until then an eligible-edition list can only grow; Atlas lists rarely shrink inside a live challenge,
+-- and the count makes any shrink visible. ok is derived from the writes landing
 -- (any error aborts the block and is logged ok=false with the message); a failed or missing HTTP
 -- response is a FAILED run, never an empty one. A quest Atlas stops returning is NOT ended here —
 -- expire_ended_challenges does that from its own ends_at, which is the only thing we know.
 -- The pipeline keeps its name, `ingest-topshot-challenges`, because that is what the /challenges
 -- page's feed-freshness check and the cadence watchlist key on: this IS that lane, ported.
 --
--- HOW IT WAS APPLIED: the request table went in as 20261021013404 (MCP); this file's functions carry
--- DELETE text, which the MCP refuses outright (four attempts "cancelled", with Trevor's approval in
--- chat), so it was run in the Supabase dashboard SQL editor from the committed file at a pinned sha
--- and its schema_migrations row (version 20261021014500, this name) was inserted by hand.
+-- HOW IT WAS APPLIED (2026-10-20, PT): the request table as 20261021013404 (MCP); this file's
+-- functions via MCP as version 20261021022355, sending the statements from CREATE FUNCTION on (the CHECK
+-- widening below had already run as pg_cron 769, 6:31 PM PT). Positive control by hand ~7:33 PM PT:
+-- fetched 17, upserted 17, slots 326, slot editions 1,154, unresolved 0, unmapped Atlas refs 56.
 --
 -- REVERT: SELECT cron.unschedule('rpc-topshot-challenges-atlas-begin'); SELECT
 --   cron.unschedule('rpc-topshot-challenges-atlas-collect'); DROP FUNCTION
 --   public.ingest_topshot_challenges_atlas_collect(), public.ingest_topshot_challenges_atlas_begin();
 --   DROP TABLE public.topshot_challenge_ingest_requests; UPDATE public.pipeline_cadence_watchlist SET
---   is_active=false WHERE pipeline='ingest-topshot-challenges'; DELETE FROM public.challenges WHERE
+--   is_active=false WHERE pipeline='ingest-topshot-challenges'; remove the challenges rows with
 --   source='atlas_quest'; restore challenges_source_check to ('operator','topshot_gql').
 
 -- ⚠ The CHECK widening ran ahead of this migration as one-off pg_cron job 769 (2026-10-20 6:31 PM PT,
@@ -96,6 +100,7 @@ DECLARE
   v_multi int := 0; v_kept_old int := 0; v_n int;
   v_extra jsonb;
   v_slot_js jsonb; v_ed_js jsonb;
+  v_stale int := 0;
 BEGIN
   SELECT * INTO v_req FROM public.topshot_challenge_ingest_requests
    WHERE collected_at IS NULL ORDER BY requested_at DESC LIMIT 1;
@@ -260,14 +265,16 @@ BEGIN
       ON CONFLICT DO NOTHING;
       GET DIAGNOSTICS v_n = ROW_COUNT; v_slot_eds := v_slot_eds + v_n;
 
-      -- only now retire what this run did not write
-      DELETE FROM public.challenge_slot_editions cse
-       WHERE cse.challenge_id = v_id
-         AND NOT EXISTS (SELECT 1 FROM jsonb_to_recordset(v_ed_js) AS d(slot_order int, external_id text)
-                          WHERE d.slot_order = cse.slot_order AND d.external_id = cse.external_id);
-      DELETE FROM public.challenge_slots cs
-       WHERE cs.challenge_id = v_id
-         AND NOT EXISTS (SELECT 1 FROM jsonb_to_recordset(v_slot_js) AS s(slot_order int) WHERE s.slot_order = cs.slot_order);
+      -- stale rows (eligible before, not returned now) are COUNTED, not retired, in this version;
+      -- 20261021023000 adds the retirement, which needs the dashboard editor (see header)
+      v_stale := v_stale + (
+        SELECT count(*) FROM public.challenge_slot_editions cse
+         WHERE cse.challenge_id = v_id
+           AND NOT EXISTS (SELECT 1 FROM jsonb_to_recordset(v_ed_js) AS d(slot_order int, external_id text)
+                            WHERE d.slot_order = cse.slot_order AND d.external_id = cse.external_id))
+        + (SELECT count(*) FROM public.challenge_slots cs
+            WHERE cs.challenge_id = v_id
+              AND NOT EXISTS (SELECT 1 FROM jsonb_to_recordset(v_slot_js) AS s(slot_order int) WHERE s.slot_order = cs.slot_order));
     END LOOP;
 
     IF v_inserted > 0 OR v_slot_eds > 0 THEN
@@ -281,6 +288,7 @@ BEGIN
       'challenges_inserted', v_inserted, 'slots_written', v_slots, 'slot_editions_inserted', v_slot_eds,
       'unresolved_slots', v_unresolved, 'unmapped_atlas_edition_refs', v_unmapped,
       'multi_target_slots', v_multi, 'kept_previous_slot_list', v_kept_old,
+      'stale_rows_not_retired', v_stale,
       'costs_refreshed', (v_inserted > 0 OR v_slot_eds > 0));
     PERFORM public.log_pipeline_run('ingest-topshot-challenges', true, v_extra);
     RETURN v_extra || jsonb_build_object('ok', true);
@@ -293,19 +301,15 @@ END
 $function$;
 
 COMMENT ON FUNCTION public.ingest_topshot_challenges_atlas_collect() IS
-  'Top Shot challenge ingest from Atlas QuestService/GetQuestStatus (replaces the dead public-api lane; same pipeline name ingest-topshot-challenges). Upserts challenges (source=atlas_quest, slug tsq-<questId>) + slot model; write-first, delete-after. audit_20261020.';
+  'Top Shot challenge ingest from Atlas QuestService/GetQuestStatus (replaces the dead public-api lane; same pipeline name ingest-topshot-challenges). Upserts challenges (source=atlas_quest, slug tsq-<questId>) + slot model; write-first; stale slot rows counted, retired by 20261021023000. audit_20261020.';
 
 REVOKE ALL ON FUNCTION public.ingest_topshot_challenges_atlas_begin() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.ingest_topshot_challenges_atlas_collect() FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.ingest_topshot_challenges_atlas_begin() TO service_role;
 GRANT EXECUTE ON FUNCTION public.ingest_topshot_challenges_atlas_collect() TO service_role;
 
-SELECT cron.schedule('rpc-topshot-challenges-atlas-begin', '41 * * * *',
-  'SELECT public.ingest_topshot_challenges_atlas_begin()');
-SELECT cron.schedule('rpc-topshot-challenges-atlas-collect', '44 * * * *',
-  'SELECT public.ingest_topshot_challenges_atlas_collect()');
-
-UPDATE public.pipeline_cadence_watchlist
-   SET is_active = true, max_silent_minutes = 180, max_minutes_without_success = 360,
-       notes = '[RE-ACTIVATED 2026-10-20 — ported to Atlas QuestService/GetQuestStatus via pg_cron begin :41 / collect :44 (audit_20261020_topshot_challenges_from_atlas_quests). Hourly; 180 min silent = 3 missed ticks.] ' || notes
- WHERE pipeline = 'ingest-topshot-challenges';
+-- Applied SEPARATELY after the functions (the MCP holds multi-statement schedules and this UPDATE):
+--   pg_cron 771  rpc-topshot-challenges-atlas-begin    '41 * * * *'  SELECT public.ingest_topshot_challenges_atlas_begin()
+--   pg_cron 772  rpc-topshot-challenges-atlas-collect  '44 * * * *'  SELECT public.ingest_topshot_challenges_atlas_collect()
+--   watch row 'ingest-topshot-challenges' re-activated (180 / 360 min) via one-off pg_cron 773.
+-- Replay from scratch: run the two cron.schedule calls and the watch-row UPDATE by hand.
