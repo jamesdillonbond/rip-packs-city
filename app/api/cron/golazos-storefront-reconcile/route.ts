@@ -28,6 +28,7 @@ import { normalizeAddress } from "@/lib/address"
 import {
   STOREFRONT_COLLECTIONS,
   STOREFRONT_PAGE_IDS,
+  clipScriptError,
   parseStorefrontPage,
   planReconcile,
   storefrontScriptFor,
@@ -103,7 +104,7 @@ async function runScript(script: string, args: unknown[], blockHeight: string): 
     if (res.status !== 429 || attempt >= RATE_LIMIT_RETRIES) break
     await new Promise((r) => setTimeout(r, RATE_LIMIT_BASE_MS * 2 ** attempt + Math.floor(Math.random() * 200)))
   }
-  if (!res.ok) throw new Error(`script HTTP ${res.status}: ${text.slice(0, 160)}`)
+  if (!res.ok) throw new Error(`script HTTP ${res.status}: ${clipScriptError(text)}`)
   return unwrapCdc(JSON.parse(Buffer.from(JSON.parse(text), "base64").toString("utf8")))
 }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import {
+import { clipScriptError,
   GOLAZOS_COLLECTION_ID,
   STOREFRONT_COLLECTIONS,
   STOREFRONT_PAGE_IDS,
@@ -227,5 +227,19 @@ describe("parseStorefrontPage — paged storefront reads (2026-10-09)", () => {
     expect(src).toContain("getCurrentBlock().height")
     expect(src).not.toContain("for id in sf!.getListingIDs()")
     expect(STOREFRONT_PAGE_IDS).toBeGreaterThan(0)
+  })
+})
+
+describe("clipScriptError keeps the Cadence cause", () => {
+  it("a long Flow REST error keeps its END, where the panic is named (10-20: 0x1a21c240c0e4e27e)", () => {
+    const head = 'Invalid Flow argument: failed to execute script: [Error Code: 1101] failed to execute script at block (' + "a".repeat(64) + "): "
+    const text = head + "x".repeat(800) + "error: panic: the cause we need"
+    const out = clipScriptError(text)
+    expect(out).toContain("the cause we need")
+    expect(out.startsWith("Invalid Flow argument")).toBe(true)
+    expect(out.length).toBeLessThan(420)
+  })
+  it("a short error passes through whole", () => {
+    expect(clipScriptError("rate limited")).toBe("rate limited")
   })
 })
