@@ -38,10 +38,10 @@
 --     statement of intent, and it is what makes the behaviour obvious to a
 --     reader instead of an accident of three-valued logic.
 --
--- The function DDL below is VERBATIM from the committed snapshot migration
--- (supabase/migrations/20260816080000_audit_20260816_snapshot_remaining_scheduled_mv_and_rollup_writers.sql),
--- pulled from live prod via pg_get_functiondef on 2026-08-16
--- (md5 9eeba20a688cedab9f707a0dac136c3e).
+-- The function DDL below is VERBATIM from the committed migration
+-- (supabase/migrations/20261021181724_audit_20261021_players_current_team_from_current_season_stats.sql,
+-- applied 2026-10-21 ~12:17 PM PT; it adds the current-season stats path to the
+-- 20260816080000 snapshot's catalogue path, which is unchanged).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -56,10 +56,26 @@ CREATE TABLE public.editions (
 );
 
 CREATE TABLE public.players (
+  id            uuid DEFAULT gen_random_uuid(),
   collection_id uuid,
   name          text,
   team          text,
   updated_at    timestamptz
+);
+
+CREATE TABLE public.player_identities (
+  player_id uuid,
+  league    text,
+  espn_id   text
+);
+
+CREATE TABLE public.player_season_stats (
+  league      text,
+  espn_id     text,
+  season      integer,
+  season_type integer,
+  team_slug   text,
+  is_total    boolean
 );
 
 -- >>> BEGIN verbatim refresh_players_current_team (byte-identical to the migration/prod) >>>
@@ -87,13 +103,49 @@ BEGIN
        AND e.game_date IS NOT NULL
        AND e.game_date >= h.mg - interval '18 months'
      ORDER BY e.player_name, e.game_date DESC
+  ),
+  -- 2026-10-21: the catalogue only learns a trade when a NEW moment mints, so every
+  -- offseason move read the old team until then (LeBron James "Los Angeles Lakers" beside
+  -- his own 2026-27 Philadelphia 76ers stat line). The league's CURRENT regular season,
+  -- when the stats feed has it and the player has exactly ONE team in it, wins; a
+  -- mid-season trade (two teams) and an unmapped slug fall back to the catalogue.
+  latest AS (
+    SELECT s.league, max(s.season) AS season
+      FROM public.player_season_stats s
+     WHERE s.season_type = 2
+     GROUP BY s.league
+  ), cur AS (
+    SELECT i.player_id, min(s.team_slug) AS team_slug
+      FROM public.player_identities i
+      JOIN public.players p ON p.id = i.player_id AND p.collection_id = p_collection_id
+      JOIN latest l ON l.league = i.league
+      JOIN public.player_season_stats s
+        ON s.league = i.league AND s.espn_id = i.espn_id AND s.season = l.season
+       AND s.season_type = 2 AND NOT s.is_total AND coalesce(s.team_slug, '') <> ''
+     WHERE i.espn_id IS NOT NULL
+     GROUP BY i.player_id
+    HAVING count(DISTINCT s.team_slug) = 1
+  ), names AS (
+    SELECT DISTINCT ON (k.slug) k.slug, k.team_name
+      FROM (SELECT regexp_replace(lower(e.team_name), '[^a-z0-9]+', '-', 'g') AS slug, e.team_name
+              FROM public.editions e
+             WHERE e.collection_id = p_collection_id AND e.team_name IS NOT NULL) k
+     ORDER BY k.slug, k.team_name
+  ), want AS (
+    SELECT p.id, coalesce(n.team_name, r.team_name) AS team
+      FROM public.players p
+      LEFT JOIN r ON r.player_name = p.name
+      LEFT JOIN cur c ON c.player_id = p.id
+      LEFT JOIN names n ON n.slug = c.team_slug
+     WHERE p.collection_id = p_collection_id
   ), upd AS (
     UPDATE public.players p
-       SET team = r.team_name, updated_at = now()
-      FROM r
-     WHERE p.collection_id = p_collection_id
-       AND p.name = r.player_name
-       AND p.team IS DISTINCT FROM r.team_name
+       SET team = w.team, updated_at = now()
+      FROM want w
+     WHERE p.id = w.id
+       AND p.collection_id = p_collection_id
+       AND w.team IS NOT NULL
+       AND p.team IS DISTINCT FROM w.team
     RETURNING 1
   )
   SELECT count(*) INTO v_updated FROM upd;
@@ -193,6 +245,61 @@ SELECT _assert_eq(
   (SELECT team FROM public.players WHERE collection_id = :AD::uuid AND name = 'Traded Player'),
   'AllDay Team',
   'another collection''s player of the SAME NAME is never relabelled'
+);
+
+-- ── The league's CURRENT season beats a stale catalogue (2026-10-21) ─────────
+-- The catalogue learns a trade only when a new moment mints: LeBron James read
+-- "Los Angeles Lakers" beside his own 2026-27 Philadelphia 76ers stat line. One
+-- current-season team wins; anything ambiguous falls back to the catalogue.
+INSERT INTO public.editions (collection_id, player_name, team_name, game_date) VALUES
+  (:TS::uuid, 'Moved Player',      'Old Club',    DATE '2022-01-01'),
+  (:TS::uuid, 'Split Player',      'Old Club',    DATE '2022-01-01'),
+  (:TS::uuid, 'Old Season Player', 'Old Club',    DATE '2022-01-01'),
+  (:TS::uuid, 'Unmapped Player',   'Old Club',    DATE '2022-01-01'),
+  -- the only source of the display name "Philly Team" for the slug philly-team
+  (:TS::uuid, 'Someone Else',      'Philly Team', DATE '2021-06-01');
+INSERT INTO public.players (collection_id, name, team, updated_at) VALUES
+  (:TS::uuid, 'Moved Player',      'Old Club', '2026-01-01T00:00:00Z'),
+  (:TS::uuid, 'Split Player',      'Old Club', '2026-01-01T00:00:00Z'),
+  (:TS::uuid, 'Old Season Player', 'Old Club', '2026-01-01T00:00:00Z'),
+  (:TS::uuid, 'Unmapped Player',   'Old Club', '2026-01-01T00:00:00Z');
+INSERT INTO public.player_identities (player_id, league, espn_id)
+  SELECT id, 'nba', 'espn-' || name FROM public.players WHERE collection_id = :TS::uuid
+     AND name IN ('Moved Player','Split Player','Old Season Player','Unmapped Player');
+INSERT INTO public.player_season_stats (league, espn_id, season, season_type, team_slug, is_total) VALUES
+  ('nba', 'espn-Moved Player',      2027, 2, 'philly-team', false),
+  ('nba', 'espn-Moved Player',      2027, 2, '',            true),
+  ('nba', 'espn-Moved Player',      2027, 3, 'old-club',    false),
+  ('nba', 'espn-Split Player',      2027, 2, 'philly-team', false),
+  -- ⚠ the second team must NOT be the catalogue's: min(slug) = 'philly-team' then makes a
+  -- >= 1 mutation observable (with 'old-club' it would write the same team and pass).
+  ('nba', 'espn-Split Player',      2027, 2, 'zz-other-team', false),
+  ('nba', 'espn-Old Season Player', 2026, 2, 'philly-team', false),
+  ('nba', 'espn-Unmapped Player',   2027, 2, 'nowhere-fc',  false);
+
+SELECT _assert_eq(
+  public.refresh_players_current_team()::text, '1',
+  'only the one unambiguous current-season move is written'
+);
+SELECT _assert_eq(
+  (SELECT team FROM public.players WHERE name = 'Moved Player'),
+  'Philly Team',
+  'a single current-season team wins over a stale catalogue team, under the catalogue''s own display name'
+);
+SELECT _assert_eq(
+  (SELECT team FROM public.players WHERE name = 'Split Player'),
+  'Old Club',
+  'two teams in the current season (a mid-season trade) is ambiguous — the catalogue stands'
+);
+SELECT _assert_eq(
+  (SELECT team FROM public.players WHERE name = 'Old Season Player'),
+  'Old Club',
+  'a team from an OLDER season never overrides — only the league''s latest season counts'
+);
+SELECT _assert_eq(
+  (SELECT team FROM public.players WHERE name = 'Unmapped Player'),
+  'Old Club',
+  'a slug no catalogue team name maps to falls back — never a raw slug, never a blank'
 );
 
 -- ── The anchor, demonstrated ───────────────────────────────────────────────

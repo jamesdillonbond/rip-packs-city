@@ -2843,10 +2843,12 @@ const PINS = [
     //
     // Also pins latest-appearance-wins, and that a teamless edition cannot BLANK
     // a team already known.
+    // Re-pinned 2026-10-21: the league's current-season team (player_season_stats) now wins
+    // over a stale catalogue team when the player has exactly one team in that season.
     fn: "refresh_players_current_team",
     test: "supabase/tests/refresh_players_current_team.sql",
     migration:
-      "supabase/migrations/20260816080000_audit_20260816_snapshot_remaining_scheduled_mv_and_rollup_writers.sql",
+      "supabase/migrations/20261021181724_audit_20261021_players_current_team_from_current_season_stats.sql",
   },
   {
     // pg_cron `24 * * * *`. Copies All Day minted/opened totals onto
