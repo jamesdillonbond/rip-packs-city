@@ -142,6 +142,15 @@ describe("MarketCapTileBody", () => {
     expect(t).toContain("none in UFC Strike has a known cap")
   })
 
+  it("with NO edition's split known, says so — never 'on the 0 of N editions' and never a 0 held", () => {
+    const { container } = render(
+      <MarketCapTileBody group="edition" row={{ ...ROW, editions: 1, editions_supply_known: 0, minted: 99, collector_held: 0 }} />,
+    )
+    const t = container.textContent ?? ""
+    expect(t).not.toContain("on the 0 of")
+    expect(t).toContain("holder split not known yet")
+  })
+
   it("an Unknown cap names the cause the row proves — never 'no burn count' beside a published burn count", () => {
     // 253:9148 (Olivia Miles /1, 2026-10-14): supply fully known, burned 0, no price.
     const oneOfOne = { ...ROW, editions: 1, editions_supply_known: 1, editions_priced: 0, minted: 1, burned: 0, issuer_held: 0, collector_held: 1, mcap_usd: null, mcap_high_conf_usd: null, mcap_minted_usd: null, mcap_rank: null }

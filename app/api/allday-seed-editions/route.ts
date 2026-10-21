@@ -1,3 +1,4 @@
+import { parseGameDate } from "@/lib/game-date"
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 
@@ -211,7 +212,7 @@ export async function POST(req: NextRequest) {
           series: ed.seriesNumber,
           circulation_count: ed.circulationCount ?? null,
           play_type: ed.playType ?? null,
-          game_date: ed.gameDate ?? null,
+          game_date: parseGameDate(ed.gameDate),
           home_team: ed.homeTeam ?? null,
           away_team: ed.awayTeam ?? null,
           updated_at: now,

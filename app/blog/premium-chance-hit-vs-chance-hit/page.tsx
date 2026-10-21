@@ -359,8 +359,7 @@ export default function PremiumChanceHitVsChanceHit() {
 
       <p style={FOOTNOTE}>
         Methodology: pack counts and per-tier Moment counts are the original
-        contents Top Shot published for each distribution (stored in{" "}
-        <code>pack_distributions.metadata</code>), pulled Oct 14, 2026. Pairs
+        contents Top Shot published for each distribution, pulled Oct 14, 2026. Pairs
         match a Premium Chance Hit drop with the Chance Hit pack from the same
         release. Prices are Top Shot&rsquo;s retail price per pack. Nothing in
         this post is investment advice.

@@ -143,7 +143,7 @@ const COLLECTION_ABOUT: Record<string, AboutBlock[]> = {
     },
     {
       title: "What Is Live Here",
-      body: "This overview carries the market pulse; the full Candy MLB board (floors, asks, 24h sales, per-edition history) is one tap away below. Wallet analytics and pack tools for Solana wallets are next — they appear here when they are real, not before.",
+      body: "This overview carries the market pulse; the full Candy MLB board (floors, asks, 24h sales, per-edition history) is one tap away below. Binder, Sets, Pack EV and Analytics below read Solana wallets and Candy's own packs.",
     },
   ],
   "panini-blockchain": [

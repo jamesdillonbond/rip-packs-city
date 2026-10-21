@@ -133,13 +133,17 @@ export function MarketCapTileBody({
         />
         <StatCell
           label="Collector-held"
-          value={fmtCount(row.collector_held)}
+          // No edition with a known split → no collector-held figure at all, not a 0.
+          value={row.editions_supply_known === 0 ? "—" : fmtCount(row.collector_held)}
           // 2026-10-20 sweep: `minted` sums EVERY edition, collector-held only the ones
           // with a known holder split, so "297,296 of 534,172 minted" on the Chiefs page
           // set two populations side by side (94,525 unaccounted for). Name the coverage.
           sub={
             row.minted == null
               ? undefined
+              // 2026-10-21 sweep: "on the 0 of 1 editions with a known split" (/nfl-all-day/edition/15).
+              : row.editions_supply_known === 0
+                ? "holder split not known yet"
               : partial
                 ? `on the ${fmtCount(row.editions_supply_known)} of ${fmtCount(row.editions)} editions with a known split`
                 : `of ${fmtCount(row.minted)} minted`

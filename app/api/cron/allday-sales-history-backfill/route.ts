@@ -1,3 +1,4 @@
+import { parseGameDate } from "@/lib/game-date"
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { dropAlreadyRecorded } from "@/lib/ingest/already-recorded"
@@ -338,8 +339,7 @@ function buildOnChainEditionRow(editionID: string, data: Record<string, string>,
   const seriesID = Number(data.seriesID)
   const setIdOnchain = Number(data.setID)
   const playIdOnchain = Number(data.playID)
-  const dateRaw = data.dateOfMoment ? String(data.dateOfMoment).slice(0, 10) : null
-  const gameDate = dateRaw && /^\d{4}-\d{2}-\d{2}$/.test(dateRaw) ? dateRaw : null
+  const gameDate = parseGameDate(data.dateOfMoment)
   const composedName = playerName && setName ? `${playerName} — ${setName}` : playerName ?? setName
   return {
     external_id: editionID,

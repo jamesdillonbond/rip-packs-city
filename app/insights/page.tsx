@@ -165,7 +165,7 @@ const CARDS: Card[] = [
     eyebrow: "Live",
     title: "All Day Pack Market",
     blurb:
-      "What a sealed NFL All Day pack actually resells for — above or below the price it dropped at. The complete on-chain secondary sale history of unopened packs, ranked by discount-to-retail, resale premium, and volume. A read Top Shot's own site never surfaces.",
+      "What a sealed NFL All Day pack actually resells for — above or below the price it dropped at. The complete on-chain secondary sale history of unopened packs, ranked by discount-to-retail, resale premium, and volume. A read All Day's own site never surfaces.",
     cta: "Open All Day pack market",
     available: true,
   },
