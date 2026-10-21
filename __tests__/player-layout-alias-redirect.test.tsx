@@ -42,6 +42,23 @@ beforeEach(() => {
   resolvePlayerAlias.mockReset()
 })
 
+describe("player segment layout — a Jr./Sr. slug without its trailing dash (2026-10-21)", () => {
+  it("308s marvin-harrison-jr to the dashed slug the site builds from \"Jr.\"", async () => {
+    entityResolves.mockImplementation(async (_g: string, _c: string, s: string) => s === "marvin-harrison-jr-")
+    resolvePlayerAlias.mockResolvedValue({ ok: true, target: null })
+    await expect(run("nfl-all-day", "marvin-harrison-jr")).rejects.toThrow(
+      "NEXT_REDIRECT:/nfl-all-day/player/marvin-harrison-jr-",
+    )
+    expect(notFound).not.toHaveBeenCalled()
+  })
+  it("still 404s when neither the slug nor its dashed form resolves", async () => {
+    entityResolves.mockResolvedValue(false)
+    resolvePlayerAlias.mockResolvedValue({ ok: true, target: null })
+    await expect(run("nfl-all-day", "nobody-at-all")).rejects.toThrow("NEXT_NOT_FOUND")
+    expect(permanentRedirect).not.toHaveBeenCalled()
+  })
+})
+
 describe("player segment layout — alias redirect", () => {
   it("308s an alias slug to its canonical player", async () => {
     entityResolves.mockResolvedValue(false)

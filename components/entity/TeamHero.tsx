@@ -96,6 +96,19 @@ export function isStaleScheduledGame(g: Pick<TeamNextGame, "status" | "tipoff_at
   return Number.isFinite(t) && now - t > STALE_SCHEDULED_GRACE_MS
 }
 
+/**
+ * A FINISHED game older than this is not "the last game" worth a chip. 2026-10-21 sweep:
+ * /nba-top-shot/team/cleveland-cavaliers read "Playoffs · Last: vs NY" — a 2026-05-26 final with
+ * no score, five months old, on the night the new season tipped off. The scheduled rule above only
+ * drops rows still marked "scheduled", so an old final went through. Dropped, not reworded.
+ */
+export const STALE_FINISHED_MS = 14 * 24 * 3600 * 1000
+export function isStaleFinishedGame(g: Pick<TeamNextGame, "status" | "tipoff_at">, now: number = Date.now()): boolean {
+  if ((g.status ?? "").toLowerCase() === "scheduled" || !g.tipoff_at) return false
+  const t = Date.parse(g.tipoff_at)
+  return Number.isFinite(t) && now - t > STALE_FINISHED_MS
+}
+
 function gameLabel(g: TeamNextGame): string {
   const opp = g.opponent_abbr ?? "TBD"
   const vs = g.home_away === "away" ? "@" : "vs"
@@ -152,7 +165,7 @@ function HeroExtras({
   teamPath?: string
 }) {
   const showFollow = !!followLeague && !!followShortSlug && !!teamPath
-  if (nextGame && isStaleScheduledGame(nextGame)) nextGame = null
+  if (nextGame && (isStaleScheduledGame(nextGame) || isStaleFinishedGame(nextGame))) nextGame = null
   if (!nextGame && !showFollow) return null
   return (
     <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap", alignItems: "center" }}>

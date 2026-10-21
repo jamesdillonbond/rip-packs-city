@@ -7,7 +7,7 @@ vi.mock("@/components/entity/TeamFollowButton", () => ({
   default: () => <span data-testid="follow-btn" />,
 }))
 
-import TeamHero, { type TeamNextGame, isStaleScheduledGame } from "@/components/entity/TeamHero"
+import TeamHero, { type TeamNextGame, isStaleScheduledGame, isStaleFinishedGame } from "@/components/entity/TeamHero"
 
 // Pins the Team Hub hero — the branded/fallback split and, most importantly, the
 // gameLabel next-game copy (only reachable through the rendered GameChip). A
@@ -121,6 +121,22 @@ describe("TeamHero — gameLabel (via GameChip)", () => {
     expect(isStaleScheduledGame({ status: "scheduled", tipoff_at: new Date(now - 3600_000).toISOString() }, now)).toBe(false)
     expect(isStaleScheduledGame({ status: "final", tipoff_at: new Date(now - 15 * 86400_000).toISOString() }, now)).toBe(false)
     expect(isStaleScheduledGame({ status: "scheduled", tipoff_at: new Date(now - 7 * 3600_000).toISOString() }, now)).toBe(true)
+  })
+})
+
+describe("TeamHero — a months-old final is not 'the last game' (2026-10-21)", () => {
+  it("drops a final older than 14 days and keeps a recent one", () => {
+    const now = Date.parse("2026-10-21T14:00:00Z")
+    expect(isStaleFinishedGame({ status: "final", tipoff_at: "2026-05-26T23:00:00Z" }, now)).toBe(true)
+    expect(isStaleFinishedGame({ status: "final", tipoff_at: new Date(now - 2 * 86400_000).toISOString() }, now)).toBe(false)
+    expect(isStaleFinishedGame({ status: "scheduled", tipoff_at: "2026-05-26T23:00:00Z" }, now)).toBe(false)
+  })
+  it("renders no chip for the Cavaliers' May final (the live case)", () => {
+    const { container } = render(
+      <TeamHero {...base} primaryColor="#E03A2F"
+        nextGame={game({ status: "final", is_playoff: true, opponent_abbr: "NY", tipoff_at: "2026-05-26T23:00:00Z" })} />,
+    )
+    expect(container.textContent).not.toMatch(/Last: vs NY/)
   })
 })
 

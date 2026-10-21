@@ -47,6 +47,12 @@ export default async function PlayerSegmentLayout({ children, params }: LayoutPr
     if (alias.target && alias.target !== slug) {
       permanentRedirect(`/${collection}/player/${encodeURIComponent(alias.target)}`)
     }
+    // The slug rule turns a "Jr." / "Sr." suffix into a trailing dash ("marvin-harrison-jr-"), so the URL a person types or
+    // another site links — "…/marvin-harrison-jr" — 404'd (2026-10-21 sweep: Marvin Harrison Jr.,
+    // Tim Hardaway Jr.). Only on the 404 path, one extra lookup through the same cached gate.
+    if (!slug.endsWith("-") && (await entityResolves("player", coll.id, `${slug}-`))) {
+      permanentRedirect(`/${collection}/player/${encodeURIComponent(`${slug}-`)}`)
+    }
     notFound()
   }
 
