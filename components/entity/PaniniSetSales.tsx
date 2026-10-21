@@ -51,7 +51,10 @@ export default function PaniniSetSalesBody({ collection, res }: { collection: st
       </div>
       <div style={muted}>
         {complete
-          ? `Every sale of this set's ${fmtCount(res.editions)} editions is on record.`
+          // 2026-10-20 live sweep: this read "Every sale … is on record" on Base Prizms
+          // Cracked Ice, but editions_read counts complete_since IS NOT NULL — complete
+          // FROM a date (Jun 19 – Aug 7 there), with 117 earlier sales partial.
+          ? `Every sale of this set's ${fmtCount(res.editions)} editions since RPC began reading them is on record; earlier history may be partial.`
           : `Sales RPC holds across this set's ${fmtCount(res.editions)} editions — ${fmtCount(res.editionsRead)} of them with every sale on record so far; the rest fill in as the walk reads them, so counts are floors.`}
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 16 }}>

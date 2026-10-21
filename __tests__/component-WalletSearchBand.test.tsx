@@ -170,6 +170,20 @@ describe("WalletSearchBand", () => {
     expect(pushMock).toHaveBeenCalledWith("/insights/tc-report?wallet=0xbd94cade097e50ac")
   })
 
+  // 2026-10-20 live sweep: the Panini boards offered "Top Shot username or 0x wallet…".
+  it("a Panini insights board gets the Panini username band, never the Flow wallet box", () => {
+    mockPath = "/insights/panini-squeeze"
+    const { container } = render(<WalletSearchBand scope="insights" />)
+    expect(container.querySelector("[data-rpc-panini-band]")).not.toBeNull()
+    expect(container.textContent).not.toMatch(/Top Shot username|0x wallet/)
+  })
+
+  it("the Candy MLB (Solana) board shows no wallet box at all", () => {
+    mockPath = "/insights/candy-mlb"
+    const { container } = render(<WalletSearchBand scope="insights" />)
+    expect(container.innerHTML).toBe("")
+  })
+
   it("keeps the two placements' surfaces attributable (they must not collide)", () => {
     const a = render(<WalletSearchBand scope="collection" collectionId="nba-top-shot" />)
     typeAndSubmit(a.container, "0x1111111111111111")

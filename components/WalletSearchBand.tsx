@@ -237,6 +237,15 @@ export default function WalletSearchBand({
     if (c && c.dbChain !== "flow") return null
   }
 
+  // 2026-10-20 live sweep: /insights/panini-premiums and /insights/panini-squeeze
+  // offered "Top Shot username or 0x wallet…" (the Flow Top Collector Report) on a
+  // Panini (Ethereum, username-owned) board. A Panini board gets the Panini band;
+  // the Candy MLB (Solana) board gets none — the report reads Flow wallets only.
+  if (scope === "insights" && pathname) {
+    if (pathname.startsWith("/insights/panini-")) return <PaniniUsernameBand collectionId="panini-blockchain" />
+    if (pathname.startsWith("/insights/candy-mlb")) return null
+  }
+
   const copy =
     scope === "insights" ? COPY.__insights : COPY[collectionId ?? ""] ?? COPY.__default
 

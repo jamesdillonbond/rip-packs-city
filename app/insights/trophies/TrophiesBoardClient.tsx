@@ -332,7 +332,9 @@ export default function TrophiesBoardClient({
           <div className="rpc-tr-kpi-value">{boardCountFloor(kpis.oneOfOne, kpis.truncated)}</div>
         </div>
         <div className="rpc-tr-kpi">
-          <div className="rpc-tr-kpi-label">With a comp</div>
+          {/* 2026-10-20: was "With a comp" — but the count is any non-null FMV, and 77 of the
+              top 200 are priced off a live ask, not a comparable sale. */}
+          <div className="rpc-tr-kpi-label">With a price</div>
           <div className="rpc-tr-kpi-value">{boardCountFloor(kpis.priced, kpis.truncated)}</div>
         </div>
         <div className="rpc-tr-kpi">
