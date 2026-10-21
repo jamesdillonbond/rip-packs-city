@@ -131,10 +131,12 @@ describe("askStampKind — which of the three a collection's ask timestamp IS", 
     // Named 2026-09-19; until then it took the unknown fallback and was told
     // its re-observation timestamp was a price change.
     expect(askStampKind("candy_mlb")).toBe("checked")
-    // nfl_all_day / laliga_golazos: cached_listings_v2.listed_at -> when the
-    // SELLER posted it, over an index a row leaves when the listing closes.
-    expect(askStampKind("nfl_all_day")).toBe("listed")
+    // laliga_golazos: cached_listings_v2.listed_at -> when the SELLER posted it,
+    // over an index a row leaves when the listing closes.
     expect(askStampKind("laliga_golazos")).toBe("listed")
+    // nfl_all_day: since 2026-10-20 every All Day surface reads
+    // floor_ask_verified_at, the last on-chain verification -> last CHECKED.
+    expect(askStampKind("nfl_all_day")).toBe("checked")
   })
 
   it("accepts BOTH collection-string conventions — both are live in this codebase", () => {
@@ -142,7 +144,8 @@ describe("askStampKind — which of the three a collection's ask timestamp IS", 
     // underscores; a resolver that knew only one would silently fall through to
     // the default on half the call sites.
     expect(askStampKind("nba-top-shot")).toBe("changed")
-    expect(askStampKind("nfl-all-day")).toBe("listed")
+    expect(askStampKind("nfl-all-day")).toBe("checked")
+    expect(askStampKind("laliga-golazos")).toBe("listed")
     expect(askStampKind("disney-pinnacle")).toBe("checked")
     expect(askStampKind("candy-mlb")).toBe("checked")
   })
@@ -311,18 +314,20 @@ describe("askAgeStamp", () => {
     expect(ts).not.toEqual(askAgeStamp(hoursAgo(3), 10, "candy_mlb", NOW)!.title)
   })
 
-  it("a LISTED stamp (All Day / Golazos) never carries the stale warning — its age is the listing's, not our check's", () => {
+  it("a LISTED stamp (Golazos) never carries the stale warning — its age is the listing's, not our check's", () => {
     // 2026-10-20: All Day edition 956's $8 floor, chain-verified that morning,
     // read "⚠ ask unconfirmed 90d" because listed_at is when the seller posted it.
-    for (const slug of ["nfl_all_day", "nfl-all-day", "laliga_golazos"]) {
+    for (const slug of ["laliga_golazos", "laliga-golazos"]) {
       const old = askAgeStamp(hoursAgo(90 * 24), 10, slug, NOW)!
       expect(old.stale, slug).toBe(false)
       expect(old.label, slug).not.toContain("⚠")
       expect(old.label, slug).toMatch(/^listed .+ ago$/)
       expect(old.title, slug).toMatch(/posted/i)
     }
-    // no-change control: a CHECKED stamp of the same age still warns.
+    // no-change control: a CHECKED stamp of the same age still warns — All Day's
+    // included, now that its stamp is a verification time.
     expect(askAgeStamp(hoursAgo(90 * 24), 10, "candy_mlb", NOW)!.stale).toBe(true)
+    expect(askAgeStamp(hoursAgo(90 * 24), 10, "nfl_all_day", NOW)!.stale).toBe(true)
   })
 
   it("the threshold it splits on is the shared one, not a private copy", () => {

@@ -102,17 +102,17 @@ function fmtInt(n: number | null): string {
 
 // ── Ask staleness ───────────────────────────────────────────────────────────
 //
-// 🚨 `ask_updated_at` DOES NOT MEAN THE SAME THING IN ALL THREE BRANCHES of
-// mv_cross_collection_deals, and treating it uniformly publishes a false claim
-// for a third of the board:
+// 🚨 `ask_updated_at` DID NOT MEAN THE SAME THING IN EVERY BRANCH of
+// mv_cross_collection_deals, and treating it uniformly would have published a
+// false claim for a third of the board. Per branch (the tooltip wording still
+// comes from askStampKind, per collection):
 //   • nba_top_shot   — edition_offers.updated_at        → last VERIFIED by offers-sweep
 //   • disney_pinnacle— pinnacle_catalog.floor_ask_updated_at → last VERIFIED
-//   • nfl_all_day    — allday_edition_floor_ask.floor_ask_listed_at
-//                      → when the listing was CREATED. A 90-day-old value there
-//                        means a long-standing listing, NOT an unchecked one, and
-//                        `allday_edition_floor_ask` has no verification column to
-//                        use instead — so All Day is deliberately EXCLUDED rather
-//                        than mislabelled.
+//   • nfl_all_day    — allday_edition_floor_ask.floor_ask_verified_at → last
+//                      VERIFIED on chain (since 2026-10-20; until then the arm
+//                      carried floor_ask_listed_at, when the listing was CREATED,
+//                      and All Day was excluded here rather than mislabelled).
+//   • candy_mlb      — candy_deals_board.last_seen_at → last seen by the sweep
 //
 // WHY THIS EXISTS (2026-08-29). `offers-sweep` is the only writer of
 // edition_offers.updated_at. It normally completes 8–18 full wraps a day (every
@@ -142,8 +142,6 @@ const ASK_STALE_HOURS = 12
 // for "we haven't re-checked this ask".
 function askVerifiedAgeHours(r: Row, nowMs: number | null): number | null {
   if (nowMs === null) return null
-  // Only the two branches where the column means "verified" can answer this.
-  if (r.collection_slug === "nfl_all_day") return null
   if (!r.ask_updated_at) return null
   const t = Date.parse(r.ask_updated_at)
   if (Number.isNaN(t)) return null

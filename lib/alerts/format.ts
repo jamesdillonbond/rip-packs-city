@@ -188,9 +188,9 @@ function askAgeClause(d: Deal, now: Date): string | null {
   if (hours === null) return null;
   const h = Math.max(0, hours);
   const age = h < 1 ? `${Math.round(h * 60)}m` : fmtAskAge(h);
-  // 2026-10-20: on the All Day / Golazos branch the stamp is when the seller POSTED
-  // the listing, not when we last saw it — "ask seen 90d ago — may be gone" was false
-  // for asks re-verified on chain every 2 h (V2) or weekly (V1, #198). Say "listed".
+  // 2026-10-20: on a LISTED branch the stamp is when the seller POSTED the listing,
+  // not when we last saw it — say "listed". (All Day was one until its board arm moved
+  // to floor_ask_verified_at the same evening; it now reads "seen", like Top Shot.)
   if (askStampKind(d.collection_slug) === "listed") return `ask listed ${age} ago`;
   const stale = isAskStale(d.ask_updated_at, now.getTime());
   return `ask seen ${age} ago${stale ? " — may be gone" : ""}`;

@@ -984,11 +984,13 @@ export default async function EditionPage(
                 // Age UNKNOWN (no timestamp, or the cross-market fallback). No
                 // marker — an unknown age must never render as a fresh one.
                 ? undefined
-                // 2026-10-20: a LISTED stamp (All Day / Golazos: cached_listings_v2.listed_at)
-                // dates when the seller POSTED the ask, not when we last checked it. Rendering
-                // it as "⚠ ask unconfirmed 90d" claimed a 90-day verification gap on asks the
-                // reconcilers re-check every 2 h (V2) and weekly (V1, #198) — e.g. All Day
-                // edition 956's $8 floor, chain-verified that morning. Say what it is.
+                // 2026-10-20: a LISTED stamp dates when the seller POSTED the ask, not when we
+                // last checked it. Rendering it as "⚠ ask unconfirmed 90d" claimed a 90-day
+                // verification gap on asks the reconcilers re-check — e.g. All Day edition
+                // 956's $8 floor, chain-verified that morning. Say what it is. (All Day itself
+                // left this branch the same evening: get_edition_high_offer now returns the
+                // floor's floor_ask_verified_at, so its kind is "checked" and the age below
+                // is a real verification age.)
                 : askStampKind(collection) === "listed"
                   ? (
                     <span title={askAgeTitle(askAge, "listed")}>

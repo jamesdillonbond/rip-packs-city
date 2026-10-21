@@ -477,7 +477,11 @@ async function fetchEditionMarketEditions(
     is_locked: false,
     raw_data: null,
     listed_at: r.last_listed_at ?? null,
-    cached_at: r.last_listed_at ?? null,
+    // The ask-age stamp. `last_listed_at` is the edition's NEWEST listing's posting
+    // time, not the floor ask's, so on All Day (whose stamp kind is "checked" since
+    // 2026-10-20) it would claim a check that never happened: no stamp there. Golazos
+    // keeps it under its "listed" wording.
+    cached_at: arm.source === "allday" ? null : (r.last_listed_at ?? null),
     collection_id: arm.collectionId,
   }))
 }

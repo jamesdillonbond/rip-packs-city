@@ -13,13 +13,15 @@ import DealsBoardClient, { type Row } from "@/app/insights/deals/DealsBoardClien
 // reading "Asks refresh continuously". That stamp is the MATERIALIZED VIEW's refresh
 // time, so it looks BEST exactly when the underlying feed is deadest.
 //
-// 🚨 THE CONTROL THAT MATTERS IS THE ALL DAY ONE. `ask_updated_at` does NOT mean the
-// same thing across the three UNION branches: Top Shot and Pinnacle carry a
-// last-VERIFIED timestamp, but All Day carries `floor_ask_listed_at` — when the
-// listing was CREATED. A 90-day-old All Day value means a long-standing listing, not
-// an unchecked one, and `allday_edition_floor_ask` has NO verification column to use
-// instead. Labelling it "unconfirmed 90d" would be a NEW false claim on a third of
-// the board, which is precisely the mistake this test exists to prevent.
+// 🚨 THE ALL DAY CASE. `ask_updated_at` did NOT mean the same thing across the UNION
+// branches: Top Shot and Pinnacle carried a last-VERIFIED timestamp, but All Day
+// carried `floor_ask_listed_at` — when the listing was CREATED — so until 2026-10-20
+// All Day was excluded from the marker (calling a long-standing listing "unconfirmed"
+// would have been a NEW false claim). Since 20261021003446 the All Day arm carries
+// `floor_ask_verified_at`, the last on-chain verification, so an old All Day stamp IS
+// an unchecked ask and must be flagged like any other. The DB half of that contract
+// (the arm really carries the verified column) is pinned in
+// allday-ask-stamps-are-verifications.test.ts — this file pins the client half.
 
 const HOUR = 3_600_000
 
@@ -65,18 +67,26 @@ describe("/insights/deals reports how old an ask is instead of implying it is li
     expect(container.textContent).not.toMatch(/ask unconfirmed/i)
   })
 
-  it("🚨 CONTROL — an OLD All Day timestamp is NOT flagged: there it means 'listed at', not 'last checked'", () => {
+  it("an OLD All Day stamp IS flagged — since 2026-10-20 it is a verification time, not a posting time", () => {
     const { container } = draw([
       row({
         collection_slug: "nfl_all_day",
         collection_name: "NFL All Day",
-        ask_updated_at: new Date(Date.now() - 90 * 24 * HOUR).toISOString(),
+        ask_updated_at: new Date(Date.now() - 4 * 24 * HOUR).toISOString(),
       }),
     ])
-    expect(
-      container.textContent,
-      "All Day's column is floor_ask_listed_at — calling a long-standing listing 'unconfirmed' is a NEW false claim",
-    ).not.toMatch(/ask unconfirmed/i)
+    expect(container.textContent).toMatch(/ask unconfirmed/i)
+  })
+
+  it("CONTROL — a freshly verified All Day ask carries no caveat", () => {
+    const { container } = draw([
+      row({
+        collection_slug: "nfl_all_day",
+        collection_name: "NFL All Day",
+        ask_updated_at: new Date(Date.now() - 1 * HOUR).toISOString(),
+      }),
+    ])
+    expect(container.textContent).not.toMatch(/ask unconfirmed/i)
   })
 
   it("the header stops asserting 'Asks refresh continuously' when the rows say otherwise", () => {
