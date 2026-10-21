@@ -977,7 +977,7 @@ A dated snapshot. The item text in [known-issues.md](known-issues.md) wins over 
 
 The 09-19 list below is kept as moved. Four of its lines are stale: #55 is closed, #8 is reworded, the go-live numbers have moved, and fmv-recalc broke today. Current state, each item re-derived from the live system (read-only):
 
-- **#22 credential purge: GitHub half DONE 2026-10-20** (ticket #4811268 solved; the commit no longer fetches by sha — git `not our ref`, API 422/404; PRs #8–15 refs gone). **Still Trevor-only:** rotate the Dapper session regardless.
+- **#22 credential purge: GitHub half DONE 2026-10-20** (ticket #4811268 solved; the commit no longer fetches by sha — git `not our ref`, API 422/404; PRs #8–15 refs gone; github.com commit page 404; never archived by Software Heritage). **Still Trevor-only:** rotate the Dapper session regardless.
 - **#8 NBA projections: SHELVED (no paid provider pre-revenue).** Still 0/16 ok in 48 h. The alarm suppression lapses **10-27 5:00 PM PT**; re-look then.
 - **#55 two-hourly Routines: CLOSED 09-23** (deleted; both ids not-found 10-17). Drop it from any open list.
 - **fmv-recalc: it wedged ~12:48 → ~5:25 PM PT 10-17** (`fmv_sweep_wedge_hours` breach). The cursor-advance fix is live (5:35 PM run `cursor_held=false`). 24 h sweep coverage reads 78.2 %, still depressed by the wedge; confirm recovery over the next day. ✅ **Recovered (re-read 10-18 ~1:05 PM PT, Cowork): every catalogue-sweep run since noon PT wrote 499–1,493 rows; the 10-17 inbox HIGH is marked closed.** The "wasteful, SIZED" note stands.
