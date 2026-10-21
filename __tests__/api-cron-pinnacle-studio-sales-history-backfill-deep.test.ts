@@ -373,6 +373,48 @@ describe("pinnacle-studio-sales-history-backfill — on-chain twins (#22)", () =
     expect(await res.json()).toMatchObject({ sales_inserted: 2, dupes_skipped: 1 })
   })
 
+  it("⛔ #200: a studio row up to 30 days BEFORE an on-chain sale to the SAME buyer at the same price is that sale again — but not when it is AFTER it, not past 30 days, and not when a buyer is unknown", async () => {
+    fetchMock = installFetchMock([
+      studioStub([
+        histPage([
+          goodNode({ nft_id: "111", receiver_address: "abcabcabcabcabca", created_at: { block_time: "2026-01-01T00:00:00Z", transaction_hash: "0xa" } }),
+          goodNode({ nft_id: "222", receiver_address: "abcabcabcabcabca", created_at: { block_time: "2026-01-20T00:00:00Z", transaction_hash: "0xb" } }),
+          goodNode({ nft_id: "333", receiver_address: "abcabcabcabcabca", created_at: { block_time: "2026-01-01T00:00:00Z", transaction_hash: "0xc" } }),
+          goodNode({ nft_id: "444", receiver_address: null, created_at: { block_time: "2026-01-01T00:00:00Z", transaction_hash: "0xd" } }),
+        ]),
+      ]),
+    ])
+    const spy = install({
+      [PROGRESS_TABLE]: [
+        { data: [target()], error: null },
+        { data: null, error: null },
+        { data: null, error: null, count: 0 } as never,
+      ],
+      pinnacle_sales: [
+        { data: [], error: null },
+        {
+          data: [
+            // on-chain row 8 days AFTER the studio row, same buyer + price → twin (the #200 shape)
+            { nft_id: "111", sale_price_usd: 2.5, sold_at: "2026-01-09T00:00:00Z", buyer_address: "0xABCABCABCABCABCA" },
+            // on-chain row 8 days BEFORE the studio row → not the observed shape, keep it
+            { nft_id: "222", sale_price_usd: 2.5, sold_at: "2026-01-12T00:00:00Z", buyer_address: "0xABCABCABCABCABCA" },
+            // 45 days after → past the window, keep it
+            { nft_id: "333", sale_price_usd: 2.5, sold_at: "2026-02-15T00:00:00Z", buyer_address: "0xABCABCABCABCABCA" },
+            // 8 days after, but the studio row has no buyer → cannot prove identity, keep it
+            { nft_id: "444", sale_price_usd: 2.5, sold_at: "2026-01-09T00:00:00Z", buyer_address: "0xABCABCABCABCABCA" },
+          ],
+          error: null,
+        },
+        { data: null, error: null }, // insert ok
+      ],
+    })
+
+    const res = await POST(req())
+    const rows = (spy.writes.pinnacle_sales ?? []).flatMap((w) => w.rows)
+    expect(rows.map((r) => (r as { id: string }).id).sort()).toEqual(["0xb_222", "0xc_333", "0xd_444"])
+    expect(await res.json()).toMatchObject({ sales_inserted: 3, dupes_skipped: 1 })
+  })
+
   it("⛔ a same-price resale to a DIFFERENT buyer inside the window is a real sale, not a twin", async () => {
     fetchMock = installFetchMock([
       studioStub([

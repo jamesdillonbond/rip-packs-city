@@ -276,16 +276,21 @@ async function drainRender(
     }
   }
   const TWIN_WINDOW_MS = 2 * 86_400_000
+  // ⛔ The studio feed's date can run up to ~30 days EARLY (#200, 2026-10-20): 5,804 twins the
+  // ±2-day rule missed sat 2–30 days BEFORE their on-chain row — same nft, price and buyer, every
+  // pair one-to-one, no other sale of that nft between the two dates. So a studio row up to 30 days
+  // before a non-studio sale is that sale again — but ONLY when BOTH buyers are known and equal
+  // (a missing buyer cannot prove identity at that distance; inside ±2 days the old rule stands).
+  const EARLY_TWIN_WINDOW_MS = 30 * 86_400_000
   const hasTwin = (row: PinSaleRow): boolean => {
     const ms = Date.parse(row.sold_at)
     if (row.nft_id == null) return false
     const buyer = normBuyer(row.buyer_address)
-    return (twinsByNft.get(row.nft_id) ?? []).some(
-      (t) =>
-        Math.abs(t.price - row.sale_price_usd) < 1e-9 &&
-        Math.abs(t.ms - ms) <= TWIN_WINDOW_MS &&
-        (buyer == null || t.buyer == null || buyer === t.buyer),
-    )
+    return (twinsByNft.get(row.nft_id) ?? []).some((t) => {
+      if (Math.abs(t.price - row.sale_price_usd) >= 1e-9) return false
+      if (Math.abs(t.ms - ms) <= TWIN_WINDOW_MS) return buyer == null || t.buyer == null || buyer === t.buyer
+      return buyer != null && t.buyer != null && buyer === t.buyer && t.ms > ms && t.ms - ms <= EARLY_TWIN_WINDOW_MS
+    })
   }
 
   const toInsert: PinSaleRow[] = []
