@@ -1,7 +1,7 @@
 -- audit_20261020_topshot_challenges_retire_stale_slot_rows
 -- anon-exec: unchanged for ingest_topshot_challenges_atlas_collect — CREATE OR REPLACE keeps its ACL (service_role only, set in 20261021022355).
 --
--- APPLIED 2026-10-20 ~10:45 PM PT through the Supabase dashboard SQL editor in Trevor's Chrome (Cowork
+-- APPLIED 2026-10-20 ~10:28 PM PT through the Supabase dashboard SQL editor in Trevor's Chrome (Cowork
 -- cloud, Trevor approved in chat), then its schema_migrations row inserted by hand (version 20261021023000,
 -- this name). Every MCP route refuses SQL containing DELETE, which is why it did not go through apply_migration.
 -- Amended before apply (Cowork): the retires are COUNTED (extra.stale_rows_retired, from ROW_COUNT), so the

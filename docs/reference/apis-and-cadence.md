@@ -150,9 +150,10 @@ Guessed names (`ChallengeService/*`, `QuestService/SearchQuests|ListQuests|GetAc
 `ingest_topshot_challenges_atlas_begin/collect` (migration `20261021022355`, pg_cron 771 :41 / 772 :44,
 LIVE 10-20 ~7:40 PM PT; first run 17 / 326 slots / 0 unresolved). ⚠ Each quest pays ONE pack per
 completion — `maxCompletions` is a CAP, not a pool — so `get_active_challenges` / `get_challenge_plan`
-use a multiplier of 1 for `source='atlas_quest'` (`20261021022635`). ⚠ Retiring slot rows a later
-payload drops needs a DELETE the MCP refuses: `20261021023000` is committed, NOT applied (Trevor's
-editor paste); until then watch `extra.stale_rows_not_retired`. Discovery method that worked: load the real page in Chrome, list
+use a multiplier of 1 for `source='atlas_quest'` (`20261021022635`). Slot rows a later payload
+drops are retired since `20261021023000` (applied 10-20 ~10:28 PM PT through the dashboard SQL editor —
+the MCP refuses DELETE-bearing SQL): write first, then retire only inside a slot that resolved this run;
+`extra.stale_rows_retired` counts them (the old `stale_rows_not_retired` key is gone). Discovery method that worked: load the real page in Chrome, list
 `performance.getEntriesByType('resource')` for `atlas.v1.*`, replay the call from the page.
 
 ### 🚨 Counterparty source floors — where each upstream BOTTOMS OUT (measured 2026-09-07/08)
