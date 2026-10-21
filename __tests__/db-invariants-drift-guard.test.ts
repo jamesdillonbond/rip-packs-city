@@ -359,8 +359,9 @@ const PINS = [
     // editions.description (Pinnacle arms NULL) for the edition page + its meta.
     // Re-pointed 2026-10-19: a legacy key's live_ask reads the render floor.
     // Re-pointed 2026-10-20: the editions arm names the linked player row (player_page_name).
+    // Re-pointed 2026-10-21: the editions arm carries play_category/play_type/game_date/subedition_name (SEO titles).
     migration:
-      "supabase/migrations/20261021040431_audit_20261020_edition_detail_names_the_linked_player_page.sql",
+      "supabase/migrations/20261021142334_audit_20261021_edition_detail_carries_play_and_parallel.sql",
   },
   {
     fn: "get_platform_stats",

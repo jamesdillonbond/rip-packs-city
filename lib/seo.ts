@@ -6,7 +6,7 @@ import { isMarketClosed, closedMarket, formatClosedOn } from "@/lib/market-close
 import { COLLECTIONS, collectionHasPage, getCollection, type CollectionPage } from "@/lib/collections"
 import { ASK_STALE_HOURS } from "@/lib/market/ask-freshness"
 import { MAX_ASK_AGE_HOURS_CORROBORATION } from "@/lib/fmv-confidence"
-import { parallelLabelFromBadges } from "@/lib/edition-parallel"
+import { editionTitleContext } from "@/lib/edition-title-context"
 import { editionDescriptionSnippet } from "@/lib/edition/description"
 import { productOrCreativeWork } from "@/lib/jsonld-product"
 import { getInsightsBoard, type InsightsBoard } from "@/lib/insights/board-registry"
@@ -1061,8 +1061,10 @@ export function editionPageMetadata(payload: Payload, collectionUrlSlug: string)
   // fold them. The parallel comes from the edition's badges through the one
   // registry that knows the vocabulary (lib/edition-parallel.ts); Top Shot's
   // ::subedition pages already carry theirs in the slug and are unaffected.
-  const parallel = parallelLabelFromBadges(Array.isArray(payload.badges) ? (payload.badges as unknown[]).map((b) => (typeof b === "string" ? b : null)) : null)
-  const context = parallel ? `${setName} · ${parallel}` : setName
+  // 2026-10-21: the context also names the PLAY, its DATE, Top Shot's ::N
+  // parallel and (All Day / Golazos) the mint size — 71 % of Top Shot edition
+  // titles were shared with another edition. lib/edition-title-context.ts.
+  const context = editionTitleContext(payload, collectionUrlSlug, setName)
   // ⛔ NO DOLLAR FIGURE IN THE TITLE (2026-09-06, Search Console read §5).
   // The title used to interpolate the live FMV — "… · Value $1.11 | …" — which
   // is wrong on two counts. (1) It re-writes the <title> of ~20K entity URLs on
@@ -1355,7 +1357,9 @@ export function editionJsonLd(
     "@type": "Product",
     "@id": url,
     url,
-    name: `${playerName} — ${setName ?? label}`,
+    // 2026-10-21: same disambiguated context as the <title> (lib/edition-title-context.ts),
+    // so two editions of one player in one set are not two identical Products.
+    name: `${playerName} — ${editionTitleContext(detail, collectionUrlSlug, setName ?? label)}`,
     brand: { "@type": "Brand", name: label },
     image: thumb || ogImage || `${BASE_URL}/api/og/default`,
     description: `${playerName}${setName ? " — " + setName : ""}${tier ? " (" + tier + ")" : ""} on ${label}. ${

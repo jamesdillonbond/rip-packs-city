@@ -41,7 +41,9 @@ CREATE TABLE public.sets (id uuid PRIMARY KEY, collection_id uuid);
 CREATE TABLE public.editions (id uuid PRIMARY KEY, collection_id uuid, set_id uuid, tier text,
   external_id text, name text, player_name text, set_name text, series int, edition_kind text,
   circulation_count int, thumbnail_url text, video_url text, team_name text, first_minted_at timestamptz,
-  description text, player_id uuid);
+  description text, player_id uuid,
+  play_category text, play_type text, game_date date, subedition_name text);
+-- 2026-10-21 (20261021142334): the editions arm carries play_category/play_type/game_date/subedition_name.
 -- 2026-10-20 (20261021040431): the editions arm names the LINKED player row.
 CREATE TABLE public.players (id uuid PRIMARY KEY, name text);
 CREATE TABLE public.fmv_snapshots (edition_id uuid, collection_id uuid, confidence text, computed_at timestamptz,
@@ -400,6 +402,10 @@ BEGIN
       ),
       'thumbnail_url',     e.thumbnail_url,
       'video_url',         e.video_url,
+      'play_category',     e.play_category,
+      'play_type',         e.play_type,
+      'game_date',         e.game_date,
+      'subedition_name',   e.subedition_name,
       'team_name',         e.team_name,
       'first_minted_at',   e.first_minted_at,
       'fmv', CASE
