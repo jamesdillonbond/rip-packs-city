@@ -81,6 +81,10 @@ describe("robots blocks RSC flight payloads and the analytics beacon", () => {
     }
   })
 
+  it("emits no Host directive (ignored by Google; GSC's only robots.txt warning)", () => {
+    expect(robots()).not.toHaveProperty("host")
+  })
+
   it("the matcher itself is not vacuous (planted cases)", () => {
     expect(allowed("/api/private-thing")).toBe(false)
     expect(allowed("/nba-top-shot/collection?wallet=0xabc")).toBe(false)

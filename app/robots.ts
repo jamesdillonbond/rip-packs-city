@@ -135,6 +135,10 @@ export default function robots(): MetadataRoute.Robots {
       // reintroduce it without one.
     ],
     sitemap: `${BASE_URL}/sitemap.xml`,
-    host: BASE_URL,
+    // 2026-10-21: `host: BASE_URL` REMOVED. It emitted `Host:`, a Yandex-only
+    // directive (Yandex itself retired it in 2018) that Google ignores — GSC's
+    // robots.txt report flagged it on all four host variants as "Rule ignored
+    // by Googlebot", the file's only warning. The canonical host is carried by
+    // the apex → www redirect and every page's <link rel="canonical">.
   }
 }
