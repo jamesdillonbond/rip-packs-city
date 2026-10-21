@@ -180,7 +180,10 @@ export function survivorBiasCaveat(input: {
   grossEv: number | null | undefined
   fmtUsd: (n: number) => string
 }): string {
-  const opened = input.depletionPct != null ? `${Math.round(input.depletionPct)}% depleted` : "heavily depleted"
+  // "pool … drawn", not "depleted": this is POOL depletion (pack_ev_latest.ev_depletion_pct), and the
+  // page's Depletion tile beside it is PACKS opened — /nba-top-shot/pack/dist/1205 read "(84% depleted)"
+  // next to "Depletion 86%" (2026-10-21 sweep), one word for two measures.
+  const opened = input.depletionPct != null ? `pool ${Math.round(input.depletionPct)}% drawn` : "pool heavily drawn"
   const ask = input.secondaryAvailable === true && input.secondaryAsk != null && input.secondaryAsk > 0
     ? input.secondaryAsk
     : null

@@ -525,6 +525,16 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // The PUBLISHED 30-day count (fmv_snapshots.sales_count_30d) counts every in-window market sale,
+    // not the pricing sample. 2026-10-21 live sweep: /nfl-all-day/edition/1047 read "10 sales in the
+    // last 30 days" over 32 listed (Top Shot 124:4360: 8 over 12) — the count was captured AFTER the
+    // Step 2a wash-trade filter, which drops every sale in a 3-in-10-minutes cluster (bot sweeps,
+    // pack-rip sell-offs). That filter is a PRICING choice; the count is a FACT with the window in its
+    // name. Kept per edition with serials so the Step 2a-ter mis-key guard (an impossible serial is a
+    // mis-attributed sale, not this edition's) applies to it too. Confidence still gates on count30.
+    const marketSerials30ByEdition = new Map<string, (number | null)[]>()
+    for (const [id, d] of editionSalesMap) marketSerials30ByEdition.set(id, d.sales.map((x) => x.serial))
+
     // ── Step 2-bis: page editions whose ONLY in-window sales are buy-backs ───
     // 2026-10-10 (known-issues #169 re-measure). The page selector reads `sales`
     // on purpose so a buy-back-only edition stays in the work list and is
@@ -1045,6 +1055,12 @@ export async function POST(req: NextRequest) {
         `[FMV-RECALC] Mis-key guard: dropped ${miskeyDroppedSales} serial>circulation sales (${miskeyEmptiedEditions} editions emptied)`,
       )
     }
+    // Same guard over the published-count serials (above): a mis-keyed sale is not this edition's.
+    for (const [edId, serials] of marketSerials30ByEdition) {
+      const circ = editionMetaById.get(edId)?.circulationCount ?? null
+      if (circ == null || circ <= 0) continue
+      marketSerials30ByEdition.set(edId, serials.filter((sn) => sn == null || sn <= circ))
+    }
 
     // ── Step 2a-quater: 90d window extension for thin editions ───────────────
     // Audit 2026-06-09: when an edition's 30d window rolls down to < 5 sales, a
@@ -1338,6 +1354,8 @@ export async function POST(req: NextRequest) {
       // the edition (it is filled from the same map this loop walks).
       const count30 = count30ByEdition.get(editionId)
         ?? sales.filter((s) => s.soldAt.getTime() >= Date.parse(windowStart)).length
+      // What the snapshot PUBLISHES: every in-window market sale (never fewer than the gate's count).
+      const published30 = Math.max(marketSerials30ByEdition.get(editionId)?.length ?? count30, count30)
       confidence = gateHighToRecentVolume(confidence, count30)
       // 1.8.2: MEDIUM needs at least one sale in the true 30-day window (lib/fmv-confidence.ts).
       // ⛔ 1.8.3 (2026-10-18): counted over the sales the PRICE can use — the
@@ -1407,8 +1425,8 @@ export async function POST(req: NextRequest) {
         // Both columns carry the TRUE 30d count (sales_count_7d is retained for
         // schema compat and has mirrored the 30d window since 1.7.0). The sample
         // the price was computed over is `liquidity_rating`'s input, not these.
-        sales_count_7d: count30,
-        sales_count_30d: count30,
+        sales_count_7d: published30,
+        sales_count_30d: published30,
         days_since_sale: daysSinceSale,
         algo_version: ALGO_VERSION,
       }))

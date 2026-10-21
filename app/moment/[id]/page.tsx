@@ -903,7 +903,7 @@ export default async function MomentPage(
               }}
             >
               {f?.sales_count_30d
-                ? `${f.sales_count_30d} sales / 30d`
+                ? `${f.sales_count_30d} ${f.sales_count_30d === 1 ? "sale" : "sales"} / 30d`
                 : `${f?.sales_count_7d} sales / 7d`}
             </div>
           ) : null}

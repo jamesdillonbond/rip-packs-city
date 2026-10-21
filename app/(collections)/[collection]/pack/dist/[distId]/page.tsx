@@ -718,7 +718,10 @@ export default async function PackDetailPage(
   // the user knows whether the verdict is computed against retail or P2P ask.
   // priceSource = 'none' suppresses the verdict entirely.
   const evAnchorSummary: string | null = (() => {
-    if (isRewardPack) return "Reward pack — distributed for free, no price-based verdict."
+    // 2026-10-21 sweep: retail_price_usd = 0 is "no standalone retail", not "free" — of 1,337 such
+    // packs, 433 are box/case toppers and Premium Packs that ship inside PAID boxes (dist 8545,
+    // "2026 NBA Finals Premium Pack", trades ~$242), so "distributed for free" was false there.
+    if (isRewardPack) return "No standalone retail price (a reward or box-content pack) — no price-based verdict."
     if (isHoldingPack) return null
     if (secondaryAskAnchor != null) {
       return `Pack EV computed against the live secondary ask [${fmtUsd(secondaryAskAnchor)}] — what a sealed pack actually resells for, the only honest anchor for its value.`
@@ -914,9 +917,9 @@ export default async function PackDetailPage(
                     background: "rgba(14,165,233,0.10)",
                     border: "1px solid rgba(14,165,233,0.40)",
                   }}
-                  title="Distributed for free (retail price $0)."
+                  title="No standalone retail price: a reward pack, or one that ships inside a box or case."
                 >
-                  Reward pack
+                  No retail price
                 </span>
               )}
               {merged.is_rare_single_pack && (
@@ -1154,7 +1157,7 @@ export default async function PackDetailPage(
         <KpiCell
           label="Actual EV"
           value={isSentinelEv || isHoldingPack || evSurvivorBiased ? "—" : fmtUsd(grossEv)}
-          sub={isHoldingPack ? "Holding pack — not a consumer pack" : isSentinelEv ? "awaiting pool data" : isRewardPack ? "Reward pack — free, no secondary-ask verdict" : evSurvivorBiased ? `≈ ${fmtUsd(grossEv)} ceiling · ${coverageCaveat ?? `pool ${poolDepletionPct != null ? Math.round(poolDepletionPct) + "% depleted" : "heavily depleted"} — survivor-biased`}` : secondaryAskAnchor == null ? "Mean pull value · no live secondary ask" : coverageCaveat ? (packEv !== null ? `Net ${packEv >= 0 ? "+" : "−"}${fmtUsd(Math.abs(packEv))} vs ask · ${coverageCaveat}` : coverageCaveat) : packEv !== null ? `Mean pull · Net ${packEv >= 0 ? "+" : "−"}${fmtUsd(Math.abs(packEv))} vs ask` : undefined}
+          sub={isHoldingPack ? "Holding pack — not a consumer pack" : isSentinelEv ? "awaiting pool data" : isRewardPack ? "No standalone retail — no secondary-ask verdict" : evSurvivorBiased ? `≈ ${fmtUsd(grossEv)} ceiling · ${coverageCaveat ?? `pool ${poolDepletionPct != null ? Math.round(poolDepletionPct) + "% depleted" : "heavily depleted"} — survivor-biased`}` : secondaryAskAnchor == null ? "Mean pull value · no live secondary ask" : coverageCaveat ? (packEv !== null ? `Net ${packEv >= 0 ? "+" : "−"}${fmtUsd(Math.abs(packEv))} vs ask · ${coverageCaveat}` : coverageCaveat) : packEv !== null ? `Mean pull · Net ${packEv >= 0 ? "+" : "−"}${fmtUsd(Math.abs(packEv))} vs ask` : undefined}
           color={isSentinelEv || isHoldingPack || evSurvivorBiased || !showColoredVerdict || packEv === null ? undefined : packEv >= 0 ? accentText("rgb(110,231,183)") : accentText("rgb(248,113,113)")}
         />
         {/* Typical Pull EV (2026-07-16) — the value of a typical pull (weighted
@@ -1181,7 +1184,7 @@ export default async function PackDetailPage(
         <KpiCell
           label="Value ratio"
           value={!showPriceVerdict || valueRatio === null || evSurvivorBiased ? "—" : `${valueRatio.toFixed(2)}x`}
-          sub={isHoldingPack ? "Holding pack — n/a" : isRewardPack ? "Free pack — n/a" : evSurvivorBiased ? (coverageCaveat ?? "survivor-biased — not meaningful") : priceSource === "none" ? undefined : coverageCaveat ? (evMargin === null ? coverageCaveat : `${fmtPct(evMargin)} margin · ${coverageCaveat}`) : evMargin === null ? undefined : `${fmtPct(evMargin)} margin`}
+          sub={isHoldingPack ? "Holding pack — n/a" : isRewardPack ? "No retail price — n/a" : evSurvivorBiased ? (coverageCaveat ?? "survivor-biased — not meaningful") : priceSource === "none" ? undefined : coverageCaveat ? (evMargin === null ? coverageCaveat : `${fmtPct(evMargin)} margin · ${coverageCaveat}`) : evMargin === null ? undefined : `${fmtPct(evMargin)} margin`}
           color={evSurvivorBiased || !showColoredVerdict || valueRatio === null ? undefined : valueRatio >= 1 ? accentText("rgb(110,231,183)") : accentText("rgb(248,113,113)")}
         />
         <KpiCell

@@ -1548,8 +1548,12 @@ async function EditionBottomSections({
                       surface depletion when it's actually > 0. */}
                   {p.drop_weight === 0
                     ? "exhausted"
-                    : p.drop_weight !== null
+                    : p.drop_weight !== null && Number.isInteger(p.drop_weight)
                     ? `${p.drop_weight} slot${p.drop_weight === 1 ? "" : "s"}`
+                    // 2026-10-21 sweep: Golazos pools carry FRACTIONAL weights, which rendered as a
+                    // raw "0.042184 slots" — not a slot count. Name it for what it is, rounded.
+                    : p.drop_weight !== null
+                    ? `drop weight ${Number(p.drop_weight.toPrecision(2))}`
                     : "weight unknown"}
                   {p.depletion_pct ? <> · {Math.round(p.depletion_pct)}% depleted</> : null}
                 </div>

@@ -416,10 +416,12 @@ export default function PackRealityClient({
         <p className="rpc-pr-sub">
           {evCount != null ? `${evCount} positive-EV` : "Positive-EV"} TS packs
           you can actually rip right now — filtered to packs under 90% sold out, priced in the last
-          48h, with FMV coverage of 40%+. <strong>High-variance</strong> = FMV
-          coverage below 80%, so the EV rests on a small fraction of priced
-          editions; we cap its value ratio and treat the dollar figure as an
-          upper bound, not a guaranteed return. It&rsquo;s a short list on
+          48h, with FMV coverage of 40%+. <strong>High-variance</strong> = any
+          of: FMV coverage below 80% (the EV rests on part of the pool), the drop
+          60%+ depleted (what is left is a survivor sample), or an EV more than
+          3× the pack&rsquo;s secondary ask (the market does not believe it). We
+          cap its value ratio and treat the dollar figure as an upper bound, not
+          a guaranteed return. It&rsquo;s a short list on
           purpose — most listed packs are near sold-out or stale-priced, and
           we&rsquo;d rather show three honest packs than eighty fossils.
         </p>
@@ -481,7 +483,7 @@ export default function PackRealityClient({
                   </td>
                   <td
                     className={`rpc-pr-td-num${row.high_variance ? " rpc-pr-td-soft" : ""}`}
-                    title={row.high_variance ? "High variance — EV rests on <80% priced editions; ratio capped" : undefined}
+                    title={row.high_variance ? "High variance — under 80% priced, 60%+ depleted, or EV over 3× the secondary ask; ratio capped" : undefined}
                   >
                     {fmtRatio(row.value_ratio, row.high_variance)}
                   </td>
