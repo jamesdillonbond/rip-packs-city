@@ -121,14 +121,14 @@ describe("EditionsGridPaginated — ownership line", () => {
 describe("EditionsGridPaginated — filters", () => {
   it("narrows by rarity and reports the count against LOADED rows", () => {
     renderGrid()
-    fireEvent.change(screen.getByLabelText("All Rarities"), { target: { value: "LEGENDARY" } })
+    fireEvent.change(screen.getByLabelText("Filter by rarity"), { target: { value: "LEGENDARY" } })
     expect(screen.getByTestId("edition-filter-count").textContent).toBe("1 of 3 loaded editions")
     expect(shown()).toEqual(["1:1"])
   })
 
   it("filters Standard vs a named parallel", () => {
     renderGrid()
-    fireEvent.change(screen.getByLabelText("All Parallels"), { target: { value: "Hexwave" } })
+    fireEvent.change(screen.getByLabelText("Filter by parallel"), { target: { value: "Hexwave" } })
     expect(screen.getByTestId("edition-filter-count").textContent).toBe("1 of 3 loaded editions")
     expect(shown()).toEqual(["1:2::17"])
   })
@@ -142,12 +142,12 @@ describe("EditionsGridPaginated — filters", () => {
 
   it("offers the Ownership filter only once the wallet's counts are known", async () => {
     renderGrid()
-    expect(screen.queryByLabelText("Ownership")).toBeNull()
+    expect(screen.queryByLabelText("Filter by ownership")).toBeNull()
     cleanup()
     localStorage.setItem("rpc_owner_key", WALLET)
     fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ editions: { "1:2": { owned: 2, locked: 2 } } }) } as any)
     renderGrid()
-    const sel = await screen.findByLabelText("Ownership")
+    const sel = await screen.findByLabelText("Filter by ownership")
     fireEvent.change(sel, { target: { value: "locked" } })
     expect(screen.getByTestId("edition-filter-count").textContent).toBe("1 of 3 loaded editions")
     expect(shown()).toEqual(["1:2"])
@@ -155,7 +155,7 @@ describe("EditionsGridPaginated — filters", () => {
 
   it("Clear filters restores the full grid", () => {
     renderGrid()
-    fireEvent.change(screen.getByLabelText("All Teams"), { target: { value: "Milwaukee Bucks" } })
+    fireEvent.change(screen.getByLabelText("Filter by team"), { target: { value: "Milwaukee Bucks" } })
     fireEvent.click(screen.getByText("Clear filters"))
     expect(screen.queryByTestId("edition-filter-count")).toBeNull()
     expect(shown()).toHaveLength(3)
@@ -165,7 +165,7 @@ describe("EditionsGridPaginated — filters", () => {
 describe("EditionsGridPaginated — badge filter", () => {
   it("requests badges for the loaded slugs and offers them rookie-first", async () => {
     renderGrid()
-    const sel = (await screen.findByLabelText("All Badges")) as HTMLSelectElement
+    const sel = (await screen.findByLabelText("Filter by badge")) as HTMLSelectElement
     // A GET (proxy.ts opens /api/entity/* to signed-out readers for GET only).
     expect(badgeMock.mock.calls[0][1]?.method ?? "GET").toBe("GET")
     const u = new URL(String(badgeMock.mock.calls[0][0]), "https://t")
@@ -176,7 +176,7 @@ describe("EditionsGridPaginated — badge filter", () => {
 
   it("narrows to editions carrying the badge", async () => {
     renderGrid()
-    fireEvent.change(await screen.findByLabelText("All Badges"), { target: { value: "Rookie Year" } })
+    fireEvent.change(await screen.findByLabelText("Filter by badge"), { target: { value: "Rookie Year" } })
     expect(shown()).toEqual(["1:1", "1:2::17"])
   })
 
@@ -184,7 +184,7 @@ describe("EditionsGridPaginated — badge filter", () => {
     badgeMock.mockImplementation(async () => ({ ok: false, status: 503, json: async () => ({}) }))
     renderGrid()
     await screen.findByText(/Couldn.t load badges for 3 editions/)
-    expect(screen.queryByLabelText("All Badges")).toBeNull()
+    expect(screen.queryByLabelText("Filter by badge")).toBeNull()
   })
 
   it("Retry re-reads the failed badges and the failure line clears only once THEY load (reviewed 2026-09-25)", async () => {
@@ -200,7 +200,7 @@ describe("EditionsGridPaginated — badge filter", () => {
     const u = new URL(String(badgeMock.mock.calls[1][0]), "https://t")
     expect(u.searchParams.get("slugs")!.split(",")).toEqual(["1:1", "1:2", "1:2::17"])
     await waitFor(() => expect(screen.queryByText(/Couldn.t load badges/)).toBeNull())
-    expect(await screen.findByLabelText("All Badges")).toBeTruthy()
+    expect(await screen.findByLabelText("Filter by badge")).toBeTruthy()
   })
 
   it("an Ownership choice does not stay active behind a hidden select once ownership becomes unknown", async () => {
@@ -222,7 +222,7 @@ describe("EditionsGridPaginated — badge filter", () => {
   it("an edition the badge read does not return is unknown: it cannot match, and the grid counts it", async () => {
     badgeMock.mockImplementation(async () => ({ ok: true, json: async () => ({ badges: { "1:1": ["Rookie Year"] } }) }))
     renderGrid()
-    fireEvent.change(await screen.findByLabelText("All Badges"), { target: { value: "Rookie Year" } })
+    fireEvent.change(await screen.findByLabelText("Filter by badge"), { target: { value: "Rookie Year" } })
     expect(shown()).toEqual(["1:1"])
     expect(screen.getByText(/Badges not known for 2 loaded editions/)).toBeTruthy()
   })

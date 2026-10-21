@@ -34,6 +34,7 @@ import { ownLookup } from "@/lib/safe-lookup"
 import { getOwnerKeyForChain, onOwnerKeyChangeForChain, ownerKeyMatchesChain } from "@/lib/owner-key"
 import { editionPlayLabel } from "@/lib/edition-title-context"
 import { editionRouteHref } from "@/lib/entity-href"
+import FilterSelect from "@/components/filters/FilterSelect"
 
 export interface EditionTile {
   route_slug: string
@@ -667,12 +668,14 @@ function EditionFilterBar({
 }) {
   const set = <K extends keyof EditionFilters>(k: K, v: EditionFilters[K]) => setFilters({ ...filters, [k]: v })
   // A select with one option filters nothing — hide it rather than offer a no-op.
-  const selects: Array<{ k: "team" | "set" | "series" | "tier" | "parallel"; all: string; opts: string[]; label?: (v: string) => string }> = [
-    { k: "team", all: "All Teams", opts: options.teams },
-    { k: "set", all: "All Sets", opts: options.sets },
-    { k: "series", all: "All Series", opts: options.series, label: (v) => tileSeriesLabel(v, collectionUrlSlug) ?? v },
-    { k: "tier", all: "All Rarities", opts: options.tiers },
-    { k: "parallel", all: "All Parallels", opts: options.parallels },
+  // `name` is the control's accessible name (the FIELD, not its default value —
+  // a screen reader announcing "All Teams, All Teams" said nothing).
+  const selects: Array<{ k: "team" | "set" | "series" | "tier" | "parallel"; name: string; all: string; opts: string[]; label?: (v: string) => string }> = [
+    { k: "team", name: "Filter by team", all: "All Teams", opts: options.teams },
+    { k: "set", name: "Filter by set", all: "All Sets", opts: options.sets },
+    { k: "series", name: "Filter by series", all: "All Series", opts: options.series, label: (v) => tileSeriesLabel(v, collectionUrlSlug) ?? v },
+    { k: "tier", name: "Filter by rarity", all: "All Rarities", opts: options.tiers },
+    { k: "parallel", name: "Filter by parallel", all: "All Parallels", opts: options.parallels },
   ]
   return (
     <div data-testid="edition-filters" className="grid gap-2 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4" style={{ marginBottom: 10 }}>
@@ -684,23 +687,17 @@ function EditionFilterBar({
         className="rpc-filter-input col-span-2 sm:col-span-1"
       />
       {selects.filter((s) => s.opts.length > 1 || filters[s.k] !== "all").map((s) => (
-        <select key={s.k} aria-label={s.all} value={filters[s.k]} onChange={(ev) => set(s.k, ev.target.value)} className="rpc-filter-select">
-          <option value="all">{s.all}</option>
-          {s.opts.map((v) => <option key={v} value={v}>{s.label ? s.label(v) : v}</option>)}
-        </select>
+        <FilterSelect key={s.k} fill label={s.name} value={filters[s.k]} allLabel={s.all} options={s.opts} formatOption={s.label} onChange={(v) => set(s.k, v)} />
       ))}
       {/* Offered once at least one loaded edition's badges are KNOWN to carry
           a badge; a single badge is still a useful filter (has it vs not). */}
       {(badgeOptions.length > 0 || filters.badge !== "all") && (
-        <select aria-label="All Badges" value={filters.badge} onChange={(ev) => set("badge", ev.target.value)} className="rpc-filter-select">
-          <option value="all">All Badges</option>
-          {badgeOptions.map((b) => <option key={b} value={b}>{b}</option>)}
-        </select>
+        <FilterSelect fill label="Filter by badge" value={filters.badge} allLabel="All Badges" options={badgeOptions} onChange={(v) => set("badge", v)} />
       )}
       {/* Only offered once the wallet's counts are KNOWN — otherwise "Owned"
           would filter against nothing and read as "you own none of these". */}
       {ownershipKnown && (
-        <select aria-label="Ownership" value={filters.own} onChange={(ev) => set("own", ev.target.value as EditionOwnFilter)} className="rpc-filter-select">
+        <select aria-label="Filter by ownership" value={filters.own} onChange={(ev) => set("own", ev.target.value as EditionOwnFilter)} className="rpc-filter-select">
           <option value="all">All Ownership</option>
           <option value="owned">Owned</option>
           <option value="not_owned">Not Owned</option>

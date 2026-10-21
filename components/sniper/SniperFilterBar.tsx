@@ -6,7 +6,7 @@
 // advanced-filters row. All state stays in the page; this component reads values
 // and reports changes through the callback props below. No data-fetch logic here.
 import LeagueFilter, { type LeagueValue } from "@/components/filters/LeagueFilter";
-import SearchableSelect, { SEARCHABLE_SELECT_MIN } from "@/components/filters/SearchableSelect";
+import FilterSelect from "@/components/filters/FilterSelect";
 import { variantColor } from "@/lib/sniper/helpers";
 import { getEntityLabels } from "@/lib/entity-labels";
 import type { SortOption } from "@/lib/sniper/types";
@@ -107,59 +107,34 @@ export default function SniperFilterBar(props: {
         {/* 2026-09-27 — the Team / Franchise filter, the same control on every
             collection (Trevor: Pinnacle's Sniper filters by Character and
             Franchise). Hidden when the board offers nothing to choose between. */}
+        {/* A <div>, not a <label>: a click inside a label is forwarded to its
+            first control, so picking from the searchable list re-opened it.
+            Each control carries its own accessible name. */}
         {onTeamChange && teamOptions.length >= 2 && (
-          <label className="flex items-center gap-1.5" style={{ color: "var(--rpc-text-muted)" }}>
-            <span>{labels.team.toUpperCase()}</span>
-            {teamOptions.length > SEARCHABLE_SELECT_MIN ? (
-              <SearchableSelect
-                label={labels.team}
-                value={teamFilter}
-                allValue="all"
-                allLabel={"All " + (labels.team === "Franchise" ? "Franchises" : "Teams")}
-                options={teamOptions}
-                onChange={onTeamChange}
-                maxWidth={isMobile ? "100%" : 200}
-              />
-            ) : (
-            <select
-              aria-label={labels.team}
+          <div className="flex items-center gap-1.5" style={{ color: "var(--rpc-text-muted)" }}>
+            <span aria-hidden>{labels.team.toUpperCase()}</span>
+            <FilterSelect
+              label={labels.team}
               value={teamFilter}
-              onChange={(e) => onTeamChange(e.target.value)}
-              className="rpc-filter-select"
-              style={{ maxWidth: isMobile ? "100%" : 200 }}
-            >
-              <option value="all">{"All " + (labels.team === "Franchise" ? "Franchises" : "Teams")}</option>
-              {teamOptions.map((t) => <option key={t} value={t}>{t}</option>)}
-            </select>
-            )}
-          </label>
+              allLabel={"All " + (labels.team === "Franchise" ? "Franchises" : "Teams")}
+              options={teamOptions}
+              onChange={onTeamChange}
+              maxWidth={isMobile ? "100%" : 200}
+            />
+          </div>
         )}
         {onStudioChange && studioOptions.length >= 2 && (
-          <label className="flex items-center gap-1.5" style={{ color: "var(--rpc-text-muted)" }}>
-            <span>STUDIO</span>
-            {studioOptions.length > SEARCHABLE_SELECT_MIN ? (
-              <SearchableSelect
-                label="Studio"
-                value={studioFilter}
-                allValue="all"
-                allLabel="All Studios"
-                options={studioOptions}
-                onChange={onStudioChange}
-                maxWidth={isMobile ? "100%" : 220}
-              />
-            ) : (
-            <select
-              aria-label="Studio"
+          <div className="flex items-center gap-1.5" style={{ color: "var(--rpc-text-muted)" }}>
+            <span aria-hidden>STUDIO</span>
+            <FilterSelect
+              label="Studio"
               value={studioFilter}
-              onChange={(e) => onStudioChange(e.target.value)}
-              className="rpc-filter-select"
-              style={{ maxWidth: isMobile ? "100%" : 220 }}
-            >
-              <option value="all">All Studios</option>
-              {studioOptions.map((t) => <option key={t} value={t}>{t}</option>)}
-            </select>
-            )}
-          </label>
+              allLabel="All Studios"
+              options={studioOptions}
+              onChange={onStudioChange}
+              maxWidth={isMobile ? "100%" : 220}
+            />
+          </div>
         )}
         {onChaserOnlyChange && showChaserToggle && (
           <label className="flex items-center gap-1.5 cursor-pointer" style={{ color: "var(--rpc-text-muted)" }}>

@@ -83,10 +83,16 @@ describe("SniperFilterBar — Character / Franchise on Pinnacle, Player / Team e
     const teams = ["Atlanta Hawks", "Boston Celtics", "Chicago Bulls", "Denver Nuggets", "Golden State Warriors", "Miami Heat", "Portland Trail Blazers", "Seattle Storm", "Utah Jazz"]
     const { select, picked } = bar("nba-top-shot", teams)
     expect(select).toBeNull()
-    fireEvent.click(screen.getByRole("button", { name: "Team" }))
+    const trigger = screen.getByRole("button", { name: "Team" })
+    // ⚠ Not inside a <label>: a real browser forwards a click on any non-interactive
+    // descendant of a label (an option row) to the label's first control — the
+    // trigger — so a pick re-opened the list (live 10-21, confirmed in Chromium).
+    // jsdom does not implement that forwarding, so the click test below cannot see it.
+    expect(trigger.closest("label")).toBeNull()
+    fireEvent.click(trigger)
     const box = screen.getByRole("listbox", { name: "Team" })
     expect(within(box).getByRole("option", { name: "All Teams" })).toBeTruthy()
-    fireEvent.change(screen.getByRole("searchbox", { name: "Filter Team options" }), { target: { value: "port" } })
+    fireEvent.change(screen.getByRole("combobox", { name: "Filter Team options" }), { target: { value: "port" } })
     expect(within(box).getAllByRole("option").map((o) => o.textContent)).toEqual(["Portland Trail Blazers"])
     fireEvent.click(within(box).getByRole("option", { name: "Portland Trail Blazers" }))
     expect(picked).toEqual(["Portland Trail Blazers"])
@@ -94,7 +100,7 @@ describe("SniperFilterBar — Character / Franchise on Pinnacle, Player / Team e
   })
   it("a short list keeps the native dropdown", () => {
     expect(bar("nba-top-shot", ["Lakers", "Trail Blazers"]).select).not.toBeNull()
-    expect(screen.queryByRole("searchbox")).toBeNull()
+    expect(screen.queryByRole("combobox", { name: /Filter/ })).toBeNull()
   })
   it("no dropdown when the board offers fewer than two choices", () => {
     expect(bar("disney-pinnacle", ["Star Wars"]).select).toBeNull()

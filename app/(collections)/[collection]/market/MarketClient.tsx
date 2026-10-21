@@ -33,7 +33,7 @@ import type { MarketFacets } from "@/lib/market/facets"
 import { parseList, fmtDiscount, resolveListingUrl, fmtUsd, TIER_COLORS, tierColor, ownLockLabel } from "@/lib/market-format"
 import { filterListingsByOwned, countActiveFilters } from "@/lib/market/filters"
 import BadgeIcon from "@/components/BadgeIcon"
-import { SEARCHABLE_SELECT_MIN } from "@/components/filters/SearchableSelect"
+import MultiSelect from "@/components/filters/MultiSelect"
 import { trackOutboundClick } from "@/lib/track-click"
 import { collectionHasPage, dapperMarketMomentUrl, getCollection, getCollectionUuid, collectionHasLocking, collectionHasBadges } from "@/lib/collections"
 import IpfsImg from "@/components/media/IpfsImg"
@@ -758,11 +758,11 @@ function MarketInner() {
 
         {/* Row 3: multi-select dropdowns + special serials + owned filter */}
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          <MultiSelectChip label="Set" selected={setsSel} options={setOptions} onChange={setSetsSel} />
-          <MultiSelectChip label="Series" selected={seriesSel} options={seriesOptions} onChange={setSeriesSel} formatOption={(v) => marketSeriesLabel(v, collectionId)} />
-          <MultiSelectChip label={getEntityLabels(collectionId).team} selected={teamsSel} options={teamOptions} onChange={setTeamsSel} />
+          <MultiSelect label="Set" selected={setsSel} options={setOptions} onChange={setSetsSel} />
+          <MultiSelect label="Series" selected={seriesSel} options={seriesOptions} onChange={setSeriesSel} formatOption={(v) => marketSeriesLabel(v, collectionId)} />
+          <MultiSelect label={getEntityLabels(collectionId).team} selected={teamsSel} options={teamOptions} onChange={setTeamsSel} />
           {collectionHasBadges(collectionId) && (
-            <MultiSelectChip label="Badges" selected={badgesSel} options={badgeOptions} onChange={setBadgesSel} />
+            <MultiSelect label="Badges" selected={badgesSel} options={badgeOptions} onChange={setBadgesSel} />
           )}
 
           {showOwnedFilter && (
@@ -882,144 +882,6 @@ function MarketInner() {
 // ── Sub-components ──────────────────────────────────────────────────────
 
 // collectDistinct extracted to @/lib/market-format (imported below).
-
-function MultiSelectChip({
-  label, selected, options, onChange, formatOption,
-}: {
-  label: string
-  selected: string[]
-  options: string[]
-  onChange: (next: string[]) => void
-  /** Display label for an option value (the VALUE still round-trips to the API). */
-  formatOption?: (v: string) => string
-}) {
-  const [open, setOpen] = useState(false)
-  const [query, setQuery] = useState("")
-  const fmt = formatOption ?? ((v: string) => v)
-  // A long list (Team: ~30 NBA + WNBA + historic labels) gets a type-to-filter box.
-  const searchable = options.length > SEARCHABLE_SELECT_MIN
-  const q = query.trim().toLowerCase()
-  const visible = searchable && q ? options.filter(o => fmt(o).toLowerCase().includes(q)) : options
-  const summary = selected.length === 0 ? "Any" : selected.length === 1 ? fmt(selected[0]) : `${selected.length} selected`
-  const toggle = (v: string) => {
-    if (selected.includes(v)) onChange(selected.filter(x => x !== v))
-    else onChange([...selected, v])
-  }
-  return (
-    <div style={{ position: "relative", display: "inline-flex", alignItems: "center", gap: 6 }}>
-      <span className="rpc-label">{label}</span>
-      <button
-        type="button"
-        onClick={() => { setOpen(o => !o); setQuery("") }}
-        className="rpc-chip"
-        style={{
-          minWidth: 110,
-          background: selected.length > 0 ? "var(--rpc-surface-hover)" : "transparent",
-          color: selected.length > 0 ? "var(--rpc-text-primary)" : "var(--rpc-text-muted)",
-          fontWeight: selected.length > 0 ? 700 : 500,
-        }}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        disabled={options.length === 0}
-        title={options.length === 0 ? "No options in current results" : undefined}
-      >
-        {summary} ▾
-      </button>
-      {open && options.length > 0 && (
-        <div
-          role="listbox"
-          style={{
-            position: "absolute",
-            top: "calc(100% + 4px)",
-            left: 0,
-            zIndex: 50,
-            // ⚠ OPAQUE token. --rpc-surface-raised is a 3% tint, so the open list
-            // painted see-through over the Owned chips + "50 of 500+" beneath it.
-            background: "var(--rpc-surface)",
-            border: "1px solid var(--rpc-border)",
-            borderRadius: "var(--radius-sm)",
-            boxShadow: "0 6px 18px rgba(0,0,0,0.6)",
-            padding: 6,
-            minWidth: searchable ? 220 : 180,
-            maxHeight: searchable ? 300 : 240,
-            overflow: "auto",
-            fontFamily: "var(--font-mono)",
-            fontSize: 11,
-          }}
-        >
-          {searchable && (
-            <input
-              type="search"
-              value={query}
-              onChange={e => setQuery(e.target.value)}
-              onKeyDown={e => { if (e.key === "Escape") { setOpen(false); setQuery("") } }}
-              placeholder={`Type to filter ${label.toLowerCase()}…`}
-              aria-label={`Filter ${label} options`}
-              style={{
-                ...inputStyle,
-                position: "sticky",
-                top: 0,
-                zIndex: 1,
-                width: "100%",
-                boxSizing: "border-box",
-                marginBottom: 4,
-                background: "var(--rpc-surface)",
-                // 16px keeps iOS Safari from zooming the page on focus.
-                fontSize: 16,
-              }}
-            />
-          )}
-          {selected.length > 0 && (
-            <button
-              type="button"
-              onClick={() => onChange([])}
-              style={{
-                display: "block",
-                width: "100%",
-                padding: "4px 6px",
-                marginBottom: 4,
-                background: "transparent",
-                border: "none",
-                textAlign: "left",
-                color: "var(--rpc-text-muted)",
-                cursor: "pointer",
-                fontFamily: "inherit",
-                fontSize: 10,
-                letterSpacing: "0.08em",
-                textTransform: "uppercase",
-              }}
-            >
-              Clear
-            </button>
-          )}
-          {searchable && visible.length === 0 && (
-            <div style={{ padding: "4px 6px", color: "var(--rpc-text-muted)" }}>No match for “{query.trim()}”</div>
-          )}
-          {visible.map(opt => (
-            <label
-              key={opt}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                padding: "4px 6px",
-                cursor: "pointer",
-                color: selected.includes(opt) ? "var(--rpc-text-primary)" : "var(--rpc-text-secondary)",
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={selected.includes(opt)}
-                onChange={() => toggle(opt)}
-              />
-              <span>{fmt(opt)}</span>
-            </label>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
 
 const inputStyle: React.CSSProperties = {
   padding: "5px 10px",

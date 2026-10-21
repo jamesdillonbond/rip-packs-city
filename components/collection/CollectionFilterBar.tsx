@@ -5,6 +5,7 @@
 // extraction — reads/writes the view reducer via {view, dispatchView} and the
 // option arrays the page already derives. No data-fetch logic here.
 import LeagueFilter from "@/components/filters/LeagueFilter"
+import FilterSelect from "@/components/filters/FilterSelect"
 import { collectionHasLocking } from "@/lib/collections"
 import { getEntityLabels } from "@/lib/entity-labels"
 import { isPinnacleUrlSlug } from "@/lib/collection-slug"
@@ -12,6 +13,11 @@ import type {
   CollectionViewState,
   CollectionViewAction,
 } from "@/lib/collection/view-reducer"
+
+// The option arrays arrive with the "all" sentinel first; FilterSelect adds its own.
+function withoutAll(opts: string[]): string[] {
+  return opts.filter(function(o) { return o !== "all" })
+}
 
 export default function CollectionFilterBar(props: {
   view: CollectionViewState
@@ -25,15 +31,11 @@ export default function CollectionFilterBar(props: {
   const { view, dispatchView, availablePlayers, availableSets, availableSeries, availableRarities, collectionSlug } = props
   return (
     <div className="mb-5 grid gap-2 grid-cols-2 sm:grid-cols-3 xl:grid-cols-7">
-      <select aria-label={"Filter by " + getEntityLabels(collectionSlug).players.toLowerCase()} value={view.playerFilter} onChange={function(e) { dispatchView({ type: "SET", field: "playerFilter", value: e.target.value }) }} className="rpc-filter-select">
-        {availablePlayers.map(function(p) { return <option key={p} value={p}>{p === "all" ? "All " + getEntityLabels(collectionSlug).players : p}</option> })}
-      </select>
-      <select aria-label="Filter by set" value={view.setFilter} onChange={function(e) { dispatchView({ type: "SET", field: "setFilter", value: e.target.value }) }} className="rpc-filter-select">
-        {availableSets.map(function(s) { return <option key={s} value={s}>{s === "all" ? "All Sets" : s}</option> })}
-      </select>
-      <select aria-label="Filter by series" value={view.seriesFilter} onChange={function(e) { dispatchView({ type: "SET", field: "seriesFilter", value: e.target.value }) }} className="rpc-filter-select">
-        {availableSeries.map(function(s) { return <option key={s} value={s}>{s === "all" ? "All Series" : s}</option> })}
-      </select>
+      {/* Player / Set / Series lists run to hundreds on a big wallet: past
+          SEARCHABLE_SELECT_MIN they get a type-to-filter box (FilterSelect). */}
+      <FilterSelect fill label={"Filter by " + getEntityLabels(collectionSlug).players.toLowerCase()} value={view.playerFilter} allLabel={"All " + getEntityLabels(collectionSlug).players} options={withoutAll(availablePlayers)} onChange={function(v) { dispatchView({ type: "SET", field: "playerFilter", value: v }) }} />
+      <FilterSelect fill label="Filter by set" value={view.setFilter} allLabel="All Sets" options={withoutAll(availableSets)} onChange={function(v) { dispatchView({ type: "SET", field: "setFilter", value: v }) }} />
+      <FilterSelect fill label="Filter by series" value={view.seriesFilter} allLabel="All Series" options={withoutAll(availableSeries)} onChange={function(v) { dispatchView({ type: "SET", field: "seriesFilter", value: v }) }} />
       <select aria-label={isPinnacleUrlSlug(collectionSlug) ? "Filter by variant" : "Filter by rarity"} value={view.rarityFilter} onChange={function(e) { dispatchView({ type: "SET", field: "rarityFilter", value: e.target.value }) }} className="rpc-filter-select">
         {availableRarities.map(function(tier) { return <option key={tier} value={tier}>{tier === "all" ? (isPinnacleUrlSlug(collectionSlug) ? "All Variants" : "All Rarities") : tier}</option> })}
       </select>
