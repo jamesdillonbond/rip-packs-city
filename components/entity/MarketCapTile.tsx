@@ -23,6 +23,8 @@ import type { IssuerSplitEditionRow, MarketCapEntityGroup, MarketCapEntityRow } 
 import { collectionDisplayName, fmtCount, fmtUsdCompact, sevenDayChange, unknownCapReason } from "@/lib/insights/market-cap-format"
 import { isSplitKnown, splitStatusShort } from "@/lib/insights/topshot-issuer-split-format"
 import { Section, SectionUnavailable, StatCell } from "@/components/entity/_shared"
+import { closedMarket } from "@/lib/market-closed"
+import { fromDbSlug } from "@/lib/collections"
 
 const GRAIN_NOUN: Record<MarketCapEntityGroup, string> = {
   collection: "collections",
@@ -78,8 +80,12 @@ export function MarketCapTileBody({
   split?: IssuerSplitState | null
 }) {
   const known = row.mcap_usd != null
-  const hc = known && row.mcap_usd! > 0 && row.mcap_high_conf_usd != null ? row.mcap_high_conf_usd / row.mcap_usd! : null
   const change = sevenDayChange(row.mcap_usd, row.mcap_usd_7d_ago)
+  // 2026-10-20 live sweep: a UFC edition page read "Current FMV —" (the market
+  // closed 13 May 2026) beside "≤ $1,875 on minted supply", a bound computed from
+  // that same last price with nothing saying so. A closed market's figures are
+  // closing values; say it on both branches.
+  const closing = closedMarket(fromDbSlug(row.collection_slug) ?? null) ? ", at closing prices" : ""
   const partial = row.editions_supply_known < row.editions
   return (
     <>
@@ -89,9 +95,14 @@ export function MarketCapTileBody({
           value={known ? fmtUsdCompact(row.mcap_usd) : "Unknown"}
           sub={
             known
-              ? `${fmtPct(hc)} priced from sales`
+              // 2026-10-20: was "N% priced from sales" = mcap_high_conf_usd / mcap_usd,
+              // i.e. the HIGH/MEDIUM share under another name (FMV confidence is
+              // internal, 10-18), and false as worded: it read "0% priced from
+              // sales" on editions priced from their own recent sales (a LOW
+              // sales-priced edition counts 0). The sub now says what the cap is.
+              ? `collector-held × FMV${closing}`
               : row.mcap_minted_usd != null
-                ? `≤ ${fmtUsdCompact(row.mcap_minted_usd)} on minted supply`
+                ? `≤ ${fmtUsdCompact(row.mcap_minted_usd)} on minted supply${closing}`
                 : unknownCapReason(row, group === "edition")
           }
         />

@@ -71,7 +71,12 @@ describe("MarketCapTile", () => {
     expect(t).toContain("of 1,362 players in NBA Top Shot with a known cap")
     expect(t).toContain("273,774")
     expect(t).toContain("of 310,049 minted")
-    expect(t).toContain("49.6% priced from sales")
+    // 2026-10-20: the sub was "49.6% priced from sales" = mcap_high_conf_usd / mcap_usd,
+    // the HIGH/MEDIUM share renamed (FMV confidence is internal) and false as worded.
+    expect(t).not.toContain("priced from sales")
+    expect(t).not.toContain("49.6%")
+    expect(t).toContain("collector-held × FMV")
+    expect(t).not.toContain("closing prices")
     expect(t).toContain("Covers 134 of 138 editions")
   })
 
@@ -107,7 +112,8 @@ describe("MarketCapTileBody", () => {
     )
     const t = container.textContent ?? ""
     expect(t).toContain("Unknown")
-    expect(t).toContain("≤ $12.5K on minted supply")
+    // UFC's market closed 13 May 2026: the bound is built from closing prices and says so.
+    expect(t).toContain("≤ $12.5K on minted supply, at closing prices")
     expect(t).not.toMatch(/\$0\b/)
     expect(t).not.toContain("#")
     // groups_ranked counts known caps only: with none known, the rank line must not

@@ -276,10 +276,18 @@ function RecentTile({ r, nowMs }: { r: Row; nowMs: number | null }) {
   )
 }
 
+// The row's collection, named with the filter chip's own label. 2026-10-20 live
+// sweep: the default "All" view was mostly Panini rows under a heading naming Top
+// Shot and All Day, and nothing on a row said which collection it came from.
+function collectionChipLabel(c: string | null): string | null {
+  return COLLECTIONS.find((x) => x.val !== "all" && x.val === c)?.label ?? null
+}
+
 // Ranked list row.
 function SaleRow({ r, rank, nowMs }: { r: Row; rank: number; nowMs: number | null }) {
   const title = r.player_name || r.set_name || "—"
   const sl = serialLabel(r)
+  const coll = collectionChipLabel(r.collection)
   return (
     <Link href={rowHref(r)} className="rpc-ts-row">
       <div className="rpc-ts-rank">{rank}</div>
@@ -289,6 +297,12 @@ function SaleRow({ r, rank, nowMs }: { r: Row; rank: number; nowMs: number | nul
       <div className="rpc-ts-row-main">
         <div className="rpc-ts-row-name">{title}</div>
         <div className="rpc-ts-row-sub">
+          {coll ? (
+            <>
+              <span>{coll}</span>
+              {r.set_name ? <span className="rpc-ts-dot">·</span> : null}
+            </>
+          ) : null}
           {r.set_name ? <span>{r.set_name}</span> : null}
           {sl ? (
             <>
@@ -522,7 +536,7 @@ export default function TopSalesBoardClient({ initialRows, initialFetchedAt, ini
         <div className="rpc-ts-eyebrow">RPC Insights · Public</div>
         <h1 className="rpc-ts-h1">Top Sales</h1>
         <p className="rpc-ts-lede">
-          The biggest recent sales across NBA Top Shot and NFL All Day — and the
+          The biggest recent sales across every collection we track — and the
           one thing the marketplace activity feed won&apos;t put in front of you:{" "}
           <strong>who bought it, and who sold it.</strong> The whales of the
           week, refreshed continuously.
@@ -662,11 +676,12 @@ export default function TopSalesBoardClient({ initialRows, initialFetchedAt, ini
         <div className="rpc-ts-method">
           <h3 className="rpc-ts-h3">What this board is</h3>
           <p>
-            Every sale of <strong>$100 or more</strong> across NBA Top Shot and
-            NFL All Day in the selected window, ranked by price. Each row names
-            the <strong>buyer</strong> and the <strong>seller</strong> — resolved
-            to their Top Shot handle where we know it, a truncated wallet address
-            where we don&apos;t.
+            Every sale of <strong>$100 or more</strong> across the collections
+            we track (filter by the chips above) in the selected window, ranked by
+            price. Each row names its collection, the <strong>buyer</strong> and
+            the <strong>seller</strong> — resolved to their marketplace username
+            where we know it (a Top Shot handle, a Panini username), a truncated
+            wallet address where we don&apos;t.
           </p>
           <p>
             Prices are the actual on-chain sale, not an estimate. Click any row

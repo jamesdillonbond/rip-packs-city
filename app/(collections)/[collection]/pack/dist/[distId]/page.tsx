@@ -53,6 +53,7 @@ import {
   deriveEvVerdict,
   isEvInflatedVsAsk,
   isSurvivorBiased,
+  survivorBiasCaveat,
   isEvSnapshotStale,
   deriveRealizedVsModeledVerdict,
   deriveSealedResaleVerdict,
@@ -705,11 +706,7 @@ export default async function PackDetailPage(
       return `EV last computed ${age} ago — not a current read; treat it as historical`
     }
     if (evUnreliable) {
-      const honest = secondaryAvailable && secondaryAsk != null && secondaryAsk > 0
-        ? ` honest value ≈ secondary ask ${fmtUsd(secondaryAsk)}`
-        : " treat as a ceiling"
-      const opened = poolDepletionPct != null ? `${Math.round(poolDepletionPct)}% depleted` : "heavily depleted"
-      return `EV inflated by survivor bias (${opened}) —${honest}`
+      return survivorBiasCaveat({ depletionPct: poolDepletionPct, secondaryAvailable, secondaryAsk, grossEv, fmtUsd })
     }
     if (showPriceVerdict && !coverageOk && fmvCoverage != null) {
       return `${fmvCoverage}% FMV cov — EV is a floor`

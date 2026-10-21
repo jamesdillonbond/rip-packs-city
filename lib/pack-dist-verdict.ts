@@ -166,6 +166,31 @@ export function isSurvivorBiased(input: {
   )
 }
 
+// The caveat a pack page prints when its EV is survivor-biased (pool mostly
+// opened, or EV > 3× a live ask). Survivor bias only ever pushes the pull-value
+// EV UP, so it makes the EV a CEILING. "honest value ≈ secondary ask" is the
+// right correction only when that ceiling sits AT OR ABOVE the ask (the market
+// price is the better read). 2026-10-20: dist 1127 printed "Actual EV $1.73 ·
+// honest value ≈ secondary ask $6.00", telling the reader a pack whose ceiling
+// is $1.73 is worth $6.00. When the ceiling is already below the ask, say so.
+export function survivorBiasCaveat(input: {
+  depletionPct: number | null | undefined
+  secondaryAvailable: boolean | null | undefined
+  secondaryAsk: number | null | undefined
+  grossEv: number | null | undefined
+  fmtUsd: (n: number) => string
+}): string {
+  const opened = input.depletionPct != null ? `${Math.round(input.depletionPct)}% depleted` : "heavily depleted"
+  const ask = input.secondaryAvailable === true && input.secondaryAsk != null && input.secondaryAsk > 0
+    ? input.secondaryAsk
+    : null
+  if (ask == null) return `EV inflated by survivor bias (${opened}) — treat as a ceiling`
+  if (input.grossEv != null && input.grossEv < ask) {
+    return `EV inflated by survivor bias (${opened}) — a ceiling, already below the ${input.fmtUsd(ask)} ask`
+  }
+  return `EV inflated by survivor bias (${opened}) — honest value ≈ secondary ask ${input.fmtUsd(ask)}`
+}
+
 // ── Realized-vs-modeled panel verdicts (lifted from the pack/dist page) ──────
 // These drive the coloured verdict lines under the realized-pull-distribution
 // panel. Kept here alongside deriveEvVerdict so the pack-dist verdict logic

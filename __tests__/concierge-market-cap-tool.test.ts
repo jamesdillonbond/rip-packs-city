@@ -74,7 +74,9 @@ describe("get_market_cap", () => {
     const out: any = await runMarketCapTool({ grain: "player", name: "lebron" }, "nba-top-shot", deps())
     expect(resolverCalls).toEqual(["player:lebron"])
     expect(calls).toEqual([{ fn: "get_market_cap_entity", args: { p_group: "player", p_collection: "nba_top_shot", p_match: "lebron-james" } }])
-    expect(out).toMatchObject({ status: "ok", name: "LeBron James", market_cap_usd: 4495214.02, rank: 1, ranked_out_of_with_known_cap: 1362, high_confidence_share: 0.496 })
+    expect(out).toMatchObject({ status: "ok", name: "LeBron James", market_cap_usd: 4495214.02, rank: 1, ranked_out_of_with_known_cap: 1362 })
+    // FMV confidence is internal (10-18): the concierge never quotes a confidence share.
+    expect(out).not.toHaveProperty("high_confidence_share")
     expect(out.change_7d).toBeNull()
     expect(out.change_7d_note).toMatch(/Oct 3, 2026/)
   })

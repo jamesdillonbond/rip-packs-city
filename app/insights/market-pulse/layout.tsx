@@ -7,9 +7,9 @@ const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.c
 export const metadata: Metadata = {
   // The root metadata template in lib/seo.ts appends " | Rip Packs City",
   // so baking the brand in here rendered it twice. (deep-audit D24)
-  title: "Market Pulse — Flow Collectibles Volume, Buyers & Sellers",
+  title: "Market Pulse — Digital Collectibles Volume, Buyers & Sellers",
   description:
-    "Live secondary-market health for every Flow collection — NBA Top Shot, NFL All Day, Disney Pinnacle, LaLiga Golazos, UFC Strike — volume, sales, buyers and sellers across 24h, 7d and 30d. All five leagues in one view. Free.",
+    "Live secondary-market health for every collection we track — NBA Top Shot, Panini, Disney Pinnacle, NFL All Day, LaLiga Golazos, UFC Strike and Candy MLB — volume, sales, buyers and sellers across 24h, 7d and 30d, in one view. Free.",
   keywords: [
     "NBA Top Shot volume",
     "Top Shot market stats",
@@ -20,8 +20,8 @@ export const metadata: Metadata = {
   ].join(", "),
   alternates: { canonical: `${SITE_URL}/insights/market-pulse` },
   openGraph: {
-    title: "Market Pulse — Flow Collectibles Volume, Buyers & Sellers",
-    description: "Every Flow collection's secondary-market health in one view — volume, buyers, sellers across 24h/7d/30d.",
+    title: "Market Pulse — Digital Collectibles Volume, Buyers & Sellers",
+    description: "Every collection's secondary-market health in one view — volume, buyers, sellers across 24h/7d/30d.",
     url: `${SITE_URL}/insights/market-pulse`,
     siteName: "Rip Packs City",
     images: [{ url: `${SITE_URL}/api/og/insights/market-pulse`, width: 1200, height: 630, alt: "Market Pulse — Rip Packs City" }],
@@ -31,8 +31,8 @@ export const metadata: Metadata = {
   twitter: {
     ...TWITTER_INHERITED,
     card: "summary_large_image",
-    title: "Market Pulse — Flow Collectibles Volume, Buyers & Sellers",
-    description: "Every Flow collection's secondary-market health in one view.",
+    title: "Market Pulse — Digital Collectibles Volume, Buyers & Sellers",
+    description: "Every collection's secondary-market health in one view.",
     images: [`${SITE_URL}/api/og/insights/market-pulse`],
     creator: "@RipPacksCity",
   },

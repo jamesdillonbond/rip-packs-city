@@ -75,7 +75,7 @@ export function tickerItems(collectionUrlSlug: string, liveItems: readonly strin
  * So a new tool card with a trading claim reds the suite instead of shipping.
  */
 export const TOOL_CARD_DESC: Record<string, string> = {
-  collection: "FMV · Flowty asks · badge intel",
+  collection: "FMV · listing asks · badge intel",
   packs: "Expected value vs price",
   sniper: "Real-time deals below FMV",
   sets: "Completion + bottleneck finder",
@@ -83,9 +83,17 @@ export const TOOL_CARD_DESC: Record<string, string> = {
   market: "Edition lookup + leaderboards",
 }
 
-/** Pinnacle prices from its own listing feed, not Flowty. Pre-existing override. */
-const PINNACLE_TOOL_CARD_DESC: Record<string, string> = {
-  collection: "FMV · listing prices · deal finder",
+/**
+ * Collections with no edition badges. 2026-10-20 live sweep: Candy MLB (Solana)
+ * and Panini read "FMV · Flowty asks · badge intel" — a Flow marketplace and a
+ * badge system neither has. "Flowty" was stale everywhere by then (Top Shot asks
+ * come from Atlas, All Day / Golazos from the on-chain book since 10-18), so the
+ * base string no longer names a venue, and only the collections that HAVE badges
+ * (`market_edition_badges`: Top Shot, All Day) keep "badge intel".
+ */
+const BADGE_COLLECTION_URL_SLUGS: ReadonlySet<string> = new Set(["nba-top-shot", "nfl-all-day"])
+const NO_BADGE_TOOL_CARD_DESC: Record<string, string> = {
+  collection: "FMV · listing prices · sales history",
 }
 
 const CLOSED_TOOL_CARD_DESC: Record<string, string> = {
@@ -102,16 +110,16 @@ function own<T>(map: Record<string, T>, key: string): T | undefined {
 /**
  * Description for one Tools-grid card.
  *
- * Order is deliberate: a closed market wins over the Pinnacle override, because
- * "listing prices" is as much a trading claim as "Flowty asks" is.
+ * Order is deliberate: a closed market wins over the no-badge override, because
+ * "listing prices" is as much a trading claim as "listing asks" is.
  */
 export function toolCardDesc(page: string, collectionUrlSlug: string): string {
   if (closedMarket(collectionUrlSlug)) {
     const closed = own(CLOSED_TOOL_CARD_DESC, page)
     if (closed) return closed
-  } else if (collectionUrlSlug === "disney-pinnacle") {
-    const pinnacle = own(PINNACLE_TOOL_CARD_DESC, page)
-    if (pinnacle) return pinnacle
+  } else if (!BADGE_COLLECTION_URL_SLUGS.has(collectionUrlSlug)) {
+    const noBadge = own(NO_BADGE_TOOL_CARD_DESC, page)
+    if (noBadge) return noBadge
   }
   return own(TOOL_CARD_DESC, page) ?? ""
 }

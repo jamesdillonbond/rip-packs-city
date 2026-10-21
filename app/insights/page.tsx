@@ -318,7 +318,7 @@ const CARDS: Card[] = [
     eyebrow: "Live",
     title: "Market Pulse",
     blurb:
-      "Secondary-market health for every Flow collection in one view — volume, sales, buyers and sellers across 24h, 7d and 30d. Top Shot and dapper.market show one league at a time; this shows all five.",
+      "Secondary-market health for every collection we track in one view — volume, sales, buyers and sellers across 24h, 7d and 30d, Panini and Candy MLB included. Top Shot and dapper.market show one league at a time; this shows them all.",
     cta: "Open market pulse",
     available: true,
   },
@@ -420,8 +420,8 @@ export default async function InsightsIndexPage() {
       </section>
 
       {stats?.market ? (
-        <section className="rpc-ins-market" aria-label="Flow market pulse">
-          <div className="rpc-ins-market-label">Flow market pulse</div>
+        <section className="rpc-ins-market" aria-label="Market pulse">
+          <div className="rpc-ins-market-label">Market pulse · every collection</div>
           <div className="rpc-ins-market-grid">
             <div className="rpc-ins-market-kpi">
               <div className="rpc-ins-market-val">{fmtUsd(stats.market.gmv24h)}</div>

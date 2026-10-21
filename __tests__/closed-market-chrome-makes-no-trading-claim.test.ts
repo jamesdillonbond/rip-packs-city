@@ -113,16 +113,27 @@ describe("closed-market collection chrome", () => {
       expect(tickerStatusLabel(slug), slug).toBe(TICKER_STATUS_LIVE)
       expect(tickerItems(slug, LIVE_TICKER), slug).toEqual(LIVE_TICKER)
       for (const page of toolPages) {
+        // Golazos has no edition badges, so its Binder card is the no-badge copy (below).
+        if (slug === "laliga-golazos" && page === "collection") continue
         expect(toolCardDesc(page, slug), `${slug}/${page}`).toBe(TOOL_CARD_DESC[page])
       }
     }
   })
 
-  it("the Pinnacle listing-feed override survives the move out of the component", () => {
-    // It was an inline ternary before this refactor; losing it silently would
-    // put "Flowty asks" on a collection that has never used Flowty.
-    expect(toolCardDesc("collection", "disney-pinnacle")).toBe("FMV · listing prices · deal finder")
-    expect(toolCardDesc("collection", "nba-top-shot")).toBe("FMV · Flowty asks · badge intel")
+  it("only the collections that have badges are promised badge intel (2026-10-20 live sweep)", () => {
+    // Candy MLB (Solana) and Panini read "FMV · Flowty asks · badge intel": a Flow
+    // marketplace and a badge system neither has.
+    expect(toolCardDesc("collection", "nba-top-shot")).toBe("FMV · listing asks · badge intel")
+    expect(toolCardDesc("collection", "nfl-all-day")).toBe("FMV · listing asks · badge intel")
+    for (const slug of ["candy-mlb", "panini-blockchain", "disney-pinnacle", "laliga-golazos"]) {
+      expect(toolCardDesc("collection", slug), slug).toBe("FMV · listing prices · sales history")
+    }
+  })
+
+  it("no tool card names Flowty, whose API is being shut down and feeds no ask", () => {
+    for (const slug of ["nba-top-shot", "nfl-all-day", "laliga-golazos", "disney-pinnacle", "candy-mlb", "panini-blockchain", "ufc"]) {
+      for (const page of toolPages) expect(toolCardDesc(page, slug), `${slug}/${page}`).not.toMatch(/flowty/i)
+    }
   })
 })
 

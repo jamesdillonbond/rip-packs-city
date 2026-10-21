@@ -44,7 +44,7 @@ export async function GET(req: NextRequest) {
       <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", background: "#0D0D0D", color: "#F1F1F1", padding: "56px 64px", fontFamily: fam.display }}>
         <div style={{ display: "flex", color: "#E03A2F", fontSize: 24, fontWeight: 700, letterSpacing: 2 }}>RIP PACKS CITY · MARKET PULSE</div>
         <div style={{ display: "flex", fontSize: 52, fontWeight: 800, marginTop: 14, lineHeight: 1.05, maxWidth: 920 }}>
-          Every Flow collection&apos;s market, one view
+          Every collection&apos;s market, one view
         </div>
         <div style={{ display: "flex", flexDirection: "column", marginTop: 34 }}>
           {rows.length > 0 ? rows.map((r, i) => (

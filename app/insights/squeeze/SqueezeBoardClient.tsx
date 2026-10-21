@@ -740,7 +740,7 @@ export default function SqueezeBoardClient({
           <p>
             <strong>Low ask</strong> is the lowest live listing. A listing more
             than <strong>10&times; this edition&rsquo;s FMV</strong> is shown as
-            <em> &mdash; &ldquo;ask &gg; FMV&rdquo;</em> rather than as a price:
+            <em> &mdash; &ldquo;ask &#8811; FMV&rdquo;</em> rather than as a price:
             at that distance it is either a troll listing or a stale FMV, and
             either way it is not what the moment trades for. The row itself is
             never removed &mdash; hover the flag to see the listed number.

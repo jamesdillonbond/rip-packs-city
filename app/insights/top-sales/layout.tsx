@@ -16,7 +16,7 @@ export const metadata: Metadata = {
   // so baking the brand in here rendered it twice. (deep-audit D24)
   title: "Top Sales — The Whales of the Week",
   description:
-    "The biggest recent sales across NBA Top Shot and NFL All Day — with who bought and who sold each one. The freshest board on Flow. Free. No signup.",
+    "The biggest recent sales across NBA Top Shot, NFL All Day, Panini and Candy MLB — with who bought and who sold each one. Free. No signup.",
   keywords: [
     "NBA Top Shot biggest sales",
     "Top Shot whale watch",
@@ -32,7 +32,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "Top Sales — The Whales of the Week",
     description:
-      "The biggest recent sales across NBA Top Shot and NFL All Day — with who bought and who sold each one.",
+      "The biggest recent sales across NBA Top Shot, NFL All Day, Panini and Candy MLB — with who bought and who sold each one.",
     url: `${SITE_URL}/insights/top-sales`,
     siteName: "Rip Packs City",
     images: [
@@ -51,7 +51,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "Top Sales — The Whales of the Week",
     description:
-      "The biggest recent sales across NBA Top Shot and NFL All Day — with who bought and who sold each one.",
+      "The biggest recent sales across NBA Top Shot, NFL All Day, Panini and Candy MLB — with who bought and who sold each one.",
     images: [`${SITE_URL}/api/og/insights/top-sales`],
     creator: "@RipPacksCity",
   },
