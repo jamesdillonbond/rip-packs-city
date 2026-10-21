@@ -70,12 +70,15 @@ export interface ChallengesResult {
  * correctly applied to the READ. But a read of a healthy table can succeed,
  * return zero active challenges, and still be reporting a dead SOURCE:
  *
- *   • `ingest-topshot-challenges` has returned HTTP 530 on EVERY run since
- *     2026-08-29 — `public-api.nbatopshot.com` is decommissioned. Last OK day:
- *     2026-08-28.
- *   • The only paths that can ADD a challenge are `upsert_challenge_from_gql`
- *     (fed by that ingest) and a manual `upsert_challenge`. Enumerated over
- *     `pg_proc`, because nothing in the repo writes the table directly.
+ *   • `ingest-topshot-challenges` returned HTTP 530 on EVERY run from
+ *     2026-08-29 — `public-api.nbatopshot.com` is decommissioned (last OK day
+ *     2026-08-28). ⭐ 2026-10-20 the lane was PORTED, same pipeline name, to
+ *     Atlas `QuestService/GetQuestStatus` (pg_cron begin :41 / collect :44,
+ *     `ingest_topshot_challenges_atlas_collect`, migration 20261021014500), so
+ *     this check reads the new lane's successes without a code change.
+ *   • The paths that can ADD a challenge: that collect function
+ *     (source='atlas_quest'), the dead `upsert_challenge_from_gql`, and a
+ *     manual `upsert_challenge`. Enumerated over `pg_proc`.
  *   • ...and the table still LOOKS fresh: all 31 rows have an `updated_at`
  *     inside 7 days, because `refresh_challenge_costs` re-prices them on its
  *     own cadence. Freshness of the ROWS is not freshness of the FEED.
