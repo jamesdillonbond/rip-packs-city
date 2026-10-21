@@ -4,7 +4,7 @@ import { makeSupabaseFixture } from "./helpers/route-harness"
 // GET /api/market — the LaLiga Golazos arm (2026-10-18). Golazos had no arm, so
 // the Market page fell through to v1 `cached_listings`: Flowty's 100 rows
 // against ~4.3k open asks in the on-chain index. It now reads
-// get_golazos_market_editions (cached_listings_v2), and — like All Day, Candy,
+// get_golazos_market_editions_v2 (cached_listings_v2), and — like All Day, Candy,
 // Panini and Pinnacle — an empty or failed answer never falls through to v1.
 
 const state = vi.hoisted(() => ({ sb: null as unknown }))
@@ -45,19 +45,19 @@ const ROW = {
 beforeEach(() => { state.sb = null })
 
 describe("GET /api/market — LaLiga Golazos on-chain edition arm", () => {
-  it("reads get_golazos_market_editions, never the Flowty v1 book", async () => {
-    install({ "rpc:get_golazos_market_editions": { data: [ROW], error: null }, cached_listings: FLOWTY_V1, editions: { data: [], error: null } })
+  it("reads get_golazos_market_editions_v2, never the Flowty v1 book", async () => {
+    install({ "rpc:get_golazos_market_editions_v2": { data: [ROW], error: null }, cached_listings: FLOWTY_V1, editions: { data: [], error: null } })
     const res = await GET(req(`https://t/api/market?collectionId=${GOLAZOS}`))
     expect(res.status).toBe(200)
     const body = await res.json()
     const names = (body.listings as Array<{ player_name?: string; playerName?: string }>).map((l) => l.player_name ?? l.playerName)
     expect(names).toContain("Iago Aspas")
     expect(JSON.stringify(body)).not.toContain("Flowty Only")
-    expect(spy.rpcCalls.map((c) => c.name)).toContain("get_golazos_market_editions")
+    expect(spy.rpcCalls.map((c) => c.name)).toContain("get_golazos_market_editions_v2")
   })
 
   it("an EMPTY on-chain answer is an empty market — it does not fall through to Flowty's v1 rows", async () => {
-    install({ "rpc:get_golazos_market_editions": { data: [], error: null }, cached_listings: FLOWTY_V1 })
+    install({ "rpc:get_golazos_market_editions_v2": { data: [], error: null }, cached_listings: FLOWTY_V1 })
     const body = await (await GET(req(`https://t/api/market?collectionId=${GOLAZOS}&player=nobody`))).json()
     expect(body.listings).toEqual([])
     expect(body.diagnostics.source).toBe("onchain_market_editions")
@@ -65,16 +65,16 @@ describe("GET /api/market — LaLiga Golazos on-chain edition arm", () => {
   })
 
   it("a FAILED read is 503 market_unavailable, never 'no listings'", async () => {
-    install({ "rpc:get_golazos_market_editions": { data: null, error: { message: "statement timeout" } }, cached_listings: FLOWTY_V1 })
+    install({ "rpc:get_golazos_market_editions_v2": { data: null, error: { message: "statement timeout" } }, cached_listings: FLOWTY_V1 })
     const res = await GET(req(`https://t/api/market?collectionId=${GOLAZOS}`))
     expect(res.status).toBe(503)
     expect((await res.json()).error).toBe("market_unavailable")
   })
 
   it("the browse filters reach the RPC (same argument builder as All Day)", async () => {
-    install({ "rpc:get_golazos_market_editions": { data: [], error: null } })
+    install({ "rpc:get_golazos_market_editions_v2": { data: [], error: null } })
     await GET(req(`https://t/api/market?collectionId=${GOLAZOS}&player=Aspas&minPrice=0.5`))
-    const call = spy.rpcCalls.find((c) => c.name === "get_golazos_market_editions")!
+    const call = spy.rpcCalls.find((c) => c.name === "get_golazos_market_editions_v2")!
     expect(call.args).toMatchObject({ p_player: "Aspas", p_min_price: 0.5 })
   })
 
@@ -82,17 +82,17 @@ describe("GET /api/market — LaLiga Golazos on-chain edition arm", () => {
   // (an unknown one read as "owns none"); the page still re-filters (ownedApplied false).
   it("Owned reaches the RPC for a KNOWN wallet, and not for an unknown one", async () => {
     const url = `https://t/api/market?collectionId=${GOLAZOS}&owned=owned&wallet=0xabcdef0123456789`
-    install({ "rpc:get_golazos_market_editions": { data: [ROW], error: null }, wallet_moments_cache: { data: [{ wallet_address: "0xabcdef0123456789" }], error: null } })
+    install({ "rpc:get_golazos_market_editions_v2": { data: [ROW], error: null }, wallet_moments_cache: { data: [{ wallet_address: "0xabcdef0123456789" }], error: null } })
     const known = await (await GET(req(url))).json()
-    expect(spy.rpcCalls.find((c) => c.name === "get_golazos_market_editions")?.args).toMatchObject({ p_owned: "owned", p_wallet: "0xabcdef0123456789" })
+    expect(spy.rpcCalls.find((c) => c.name === "get_golazos_market_editions_v2")?.args).toMatchObject({ p_owned: "owned", p_wallet: "0xabcdef0123456789" })
     expect(known.ownedApplied).toBe(false)
-    install({ "rpc:get_golazos_market_editions": { data: [ROW], error: null }, wallet_moments_cache: { data: [], error: null } })
+    install({ "rpc:get_golazos_market_editions_v2": { data: [ROW], error: null }, wallet_moments_cache: { data: [], error: null } })
     await GET(req(url))
-    expect(spy.rpcCalls.find((c) => c.name === "get_golazos_market_editions")?.args).not.toHaveProperty("p_owned")
+    expect(spy.rpcCalls.find((c) => c.name === "get_golazos_market_editions_v2")?.args).not.toHaveProperty("p_owned")
   })
 
   it("All Day: an EMPTY on-chain answer no longer falls through to Flowty's v1 rows either", async () => {
-    install({ "rpc:get_allday_market_editions_v3": { data: [], error: null }, cached_listings: { ...FLOWTY_V1, data: [{ ...FLOWTY_V1.data[0], collection_id: ALLDAY }] } })
+    install({ "rpc:get_allday_market_editions_v4": { data: [], error: null }, cached_listings: { ...FLOWTY_V1, data: [{ ...FLOWTY_V1.data[0], collection_id: ALLDAY }] } })
     const body = await (await GET(req(`https://t/api/market?collectionId=${ALLDAY}&player=nobody`))).json()
     expect(body.listings).toEqual([])
     expect(JSON.stringify(body)).not.toContain("Flowty Only")

@@ -477,16 +477,18 @@ async function fetchEditionMarketEditions(
     is_locked: false,
     raw_data: null,
     listed_at: r.last_listed_at ?? null,
-    // No ask-age stamp on these edition-grain rows. `last_listed_at` is the edition's
-    // NEWEST listing's posting time, not the floor ask's, and both arms' stamp kind is
-    // "checked" since 2026-10-20, so it would claim a check that never happened.
-    cached_at: null,
+    // The ask-age stamp is the FLOOR row's last on-chain verification
+    // (`floor_ask_verified_at`, 2026-10-20), never `last_listed_at`: that is the
+    // edition's NEWEST listing's posting time, not the floor ask's, and both arms'
+    // stamp kind is "checked", so it would claim a check that never happened.
+    // NULL (no floor row ever verified) renders no stamp.
+    cached_at: r.floor_ask_verified_at ?? null,
     collection_id: arm.collectionId,
   }))
 }
 
 /** The browse filters as RPC arguments, for the two arms served by an RPC
- *  (`get_topshot_sniper_deals_v3`, `get_allday_market_editions_v3`, migrations
+ *  (`get_topshot_sniper_deals_v3`, `get_allday_market_editions_v4`, migrations
  *  `audit_20260923_market_rpcs_take_the_browse_filters`,
  *  `audit_20261014_market_rpcs_v2_multi_team_and_badges` and
  *  `audit_20261015_market_rpcs_v3_owned_filter`). The RPC applies them

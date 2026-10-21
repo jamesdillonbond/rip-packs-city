@@ -14,9 +14,12 @@ export const TOPSHOT_MARKET_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bf
 // cached_listings — Flowty's 100 rows against ~4.3k open on-chain asks, and an
 // empty page on the day Flowty's API goes dark. One mapper for both, so the
 // two cannot drift.
+// 2026-10-20: v4 / v2 (migration 20261021024344) are the same functions plus a
+// trailing `floor_ask_verified_at`, the last on-chain check of the floor row, so
+// the Market tab can date the ask it shows. The old names stay for the concierge.
 export const EDITION_MARKET_ARMS = {
-  allday: { rpc: "get_allday_market_editions_v3", collectionId: "dee28451-5d62-409e-a1ad-a83f763ac070", source: "allday" },
-  golazos: { rpc: "get_golazos_market_editions", collectionId: "06248cc4-b85f-47cd-af67-1855d14acd75", source: "golazos" },
+  allday: { rpc: "get_allday_market_editions_v4", collectionId: "dee28451-5d62-409e-a1ad-a83f763ac070", source: "allday" },
+  golazos: { rpc: "get_golazos_market_editions_v2", collectionId: "06248cc4-b85f-47cd-af67-1855d14acd75", source: "golazos" },
 } as const
 
 /** Collections whose Market filters run in the database: Top Shot's sniper RPC plus every edition arm. */

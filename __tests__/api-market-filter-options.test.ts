@@ -40,7 +40,7 @@ describe("GET /api/market/filter-options", () => {
     expect(rpc.args).toBeNull()
   })
 
-  // 2026-10-18: Golazos' get_golazos_market_editions filters against editions
+  // 2026-10-18: Golazos' get_golazos_market_editions_v2 filters against editions
   // like the v3 RPCs; a hand list left it on the 50-row facets.
   it("serves the catalog for EVERY DB-filtered arm, Golazos included", async () => {
     for (const id of DB_FILTERED_MARKET_COLLECTION_IDS) {

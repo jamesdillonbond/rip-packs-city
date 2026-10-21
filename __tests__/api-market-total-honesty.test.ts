@@ -235,7 +235,7 @@ describe("GET /api/market — modern path total flagging + in-memory sort", () =
     }
   }
   const modern = (rows: unknown[]) => ({
-    "rpc:get_allday_market_editions_v3": { data: rows, error: null },
+    "rpc:get_allday_market_editions_v4": { data: rows, error: null },
     editions: { data: [], error: null },
   })
 

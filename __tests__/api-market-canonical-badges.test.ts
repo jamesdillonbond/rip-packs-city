@@ -31,7 +31,7 @@ beforeEach(() => {
 // Three All Day editions; the RPC's own `badges` is EMPTY, as it is in
 // production (it reads editions.badges).
 const alldayRows = {
-  "rpc:get_allday_market_editions_v3": {
+  "rpc:get_allday_market_editions_v4": {
     data: [
       { external_id: "a", player_name: "A", set_name: "Rookie Debut", floor_ask: 1, fmv_usd: 2, tier: "COMMON", listed_count: 1, circulation_count: 10, badges: [], last_listed_at: "2026-10-03T00:00:00Z" },
       { external_id: "b", player_name: "B", set_name: "Base", floor_ask: 1, fmv_usd: 2, tier: "COMMON", listed_count: 1, circulation_count: 10, badges: [], last_listed_at: "2026-10-02T00:00:00Z" },

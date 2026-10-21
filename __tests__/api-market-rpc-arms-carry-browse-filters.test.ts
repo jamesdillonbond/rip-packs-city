@@ -48,7 +48,7 @@ const FILTER_KEYS = ["p_sets", "p_series", "p_player", "p_min_price", "p_teams",
 
 describe.each([
   ["Top Shot", TS, "get_topshot_sniper_deals_v3"],
-  ["All Day", ALLDAY, "get_allday_market_editions_v3"],
+  ["All Day", ALLDAY, "get_allday_market_editions_v4"],
 ])("GET /api/market — %s arm hands the browse filters to its RPC", (_label, collectionId, rpc) => {
   it("passes set / series / player / min price as RPC parameters (sets trimmed)", async () => {
     await GET(
