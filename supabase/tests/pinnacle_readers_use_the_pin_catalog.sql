@@ -41,7 +41,9 @@ CREATE TABLE public.sets (id uuid PRIMARY KEY, collection_id uuid);
 CREATE TABLE public.editions (id uuid PRIMARY KEY, collection_id uuid, set_id uuid, tier text,
   external_id text, name text, player_name text, set_name text, series int, edition_kind text,
   circulation_count int, thumbnail_url text, video_url text, team_name text, first_minted_at timestamptz,
-  description text);
+  description text, player_id uuid);
+-- 2026-10-20 (20261021040431): the editions arm names the LINKED player row.
+CREATE TABLE public.players (id uuid PRIMARY KEY, name text);
 CREATE TABLE public.fmv_snapshots (edition_id uuid, collection_id uuid, confidence text, computed_at timestamptz,
   fmv_usd numeric, floor_price_usd numeric, asp_usd numeric, sales_count_30d int, days_since_sale int, cross_market_ask numeric);
 CREATE TABLE public.sales_2026 (id bigserial, collection_id uuid, price_usd numeric, sold_at timestamptz);
@@ -381,6 +383,7 @@ BEGIN
       'name',              e.name,
       'description',       e.description,
       'player_name',       e.player_name,
+      'player_page_name',  (SELECT p.name FROM players p WHERE p.id = e.player_id),
       'set_name',          e.set_name,
       'set_slug',          CASE
         WHEN e.set_name IS NULL THEN NULL
@@ -759,6 +762,13 @@ SELECT _assert(public.get_edition_detail(:ts::uuid, '5:145') ? 'description', 'e
 SELECT _assert(public.get_edition_detail(:ts::uuid, '5:146') ? 'description', 'editions arm: the key is present when the column is NULL');
 SELECT _assert((public.get_edition_detail(:ts::uuid, '5:146') ->> 'description') IS NULL, 'editions arm: a NULL column is a NULL key, never a stand-in string');
 SELECT _assert_eq((public.get_edition_detail(:ts::uuid, '5:145') ->> 'source'), 'editions', 'editions arm: still the editions row');
+-- 2026-10-20: player_page_name = the linked players row (Marvin Harrison Jr.'s editions are
+-- labelled "Marvin Harrison"); NULL when the edition is unlinked, and player_name is untouched.
+INSERT INTO public.players (id, name) VALUES ('d0000000-0000-4000-8000-0000000000aa', 'Damian Lillard Jr.');
+UPDATE public.editions SET player_id = 'd0000000-0000-4000-8000-0000000000aa' WHERE external_id = '5:145';
+SELECT _assert_eq((public.get_edition_detail(:ts::uuid, '5:145') ->> 'player_page_name'), 'Damian Lillard Jr.', 'editions arm: player_page_name is the linked row''s name');
+SELECT _assert((public.get_edition_detail(:ts::uuid, '5:146') ->> 'player_page_name') IS NULL, 'editions arm: an unlinked edition has no player_page_name');
+SELECT _assert((public.get_edition_detail(:ts::uuid, '5:145') ->> 'player_name') IS DISTINCT FROM 'Damian Lillard Jr.', 'editions arm: player_name stays the label, not the linked name');
 SELECT _assert(public.get_edition_detail(:pin::uuid, 'r1') ? 'description', 'pinnacle catalog arm: same key set');
 SELECT _assert((public.get_edition_detail(:pin::uuid, 'r1') ->> 'description') IS NULL, 'pinnacle catalog arm: description is NULL');
 SELECT _assert(public.get_edition_detail(:pin::uuid, 'M') ? 'description', 'pinnacle legacy arm: same key set');

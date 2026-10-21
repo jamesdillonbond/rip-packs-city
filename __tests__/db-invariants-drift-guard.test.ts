@@ -357,8 +357,9 @@ const PINS = [
     // Re-pointed 2026-10-12 (review E4): the editions arm carries
     // editions.description (Pinnacle arms NULL) for the edition page + its meta.
     // Re-pointed 2026-10-19: a legacy key's live_ask reads the render floor.
+    // Re-pointed 2026-10-20: the editions arm names the linked player row (player_page_name).
     migration:
-      "supabase/migrations/20261019145210_audit_20261019_pinnacle_legacy_key_live_ask_reads_the_render_floor.sql",
+      "supabase/migrations/20261021040431_audit_20261020_edition_detail_names_the_linked_player_page.sql",
   },
   {
     fn: "get_platform_stats",

@@ -105,6 +105,13 @@ interface EditionDetail {
    */
   description: string | null
   player_name: string | null
+  /**
+   * The name of the players row this edition is LINKED to (20261021040431), for the
+   * player LINK only. player_name is the league's label and can be another person's
+   * name: Marvin Harrison Jr.'s editions are labelled "Marvin Harrison". NULL when
+   * unlinked (and on Pinnacle arms) — the link then falls back to player_name.
+   */
+  player_page_name?: string | null
   set_name: string | null
   set_slug: string | null
   tier: string | null
@@ -663,7 +670,7 @@ export default async function EditionPage(
   const playerHref =
     isPanini && !paniniSubjectIsPlayer(detail.player_name, detail.set_name)
       ? null
-      : momentSubjectHref(collection, detail.player_name, detail.team_name)
+      : momentSubjectHref(collection, detail.player_page_name || detail.player_name, detail.team_name)
   // ⚠ THE DENYLIST IS ENFORCED AT THE DESTINATION, SO IT MUST BE ENFORCED HERE.
   // /[collection]/team/[slug] (and its layout) notFound() the 12 exhibition
   // rosters, and the sitemap and PopularOnCollection both filter them -- but the
