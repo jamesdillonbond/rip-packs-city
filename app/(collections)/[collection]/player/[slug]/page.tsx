@@ -431,7 +431,7 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
       <Breadcrumbs
         items={[
           { name: "Home", href: "/" },
-          { name: collectionDisplayName(collection), href: `/${collection}` },
+          { name: collectionDisplayName(collection), href: `/${collection}/overview` },
           ...(detail.team && teamHref ? [{ name: detail.team, href: teamHref }] : []),
           { name: detail.name },
         ]}

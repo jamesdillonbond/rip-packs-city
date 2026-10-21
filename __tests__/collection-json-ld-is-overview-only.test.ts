@@ -47,6 +47,17 @@ describe("the collection JSON-LD lives on the overview only", () => {
     }
   })
 
+  it("the VISIBLE breadcrumbs link the collection to /overview, and the root redirect is permanent", () => {
+    for (const p of ["series/[slug]", "team/[slug]", "player/[slug]", "set/[slug]", "edition/[slug]", "pack/dist/[distId]"]) {
+      const src = stripComments(read(`app/(collections)/[collection]/${p}/page.tsx`))
+      expect(src, p).not.toMatch(/href: `\/\$\{collection\}`/)
+      expect(src, p).toContain("href: `/${collection}/overview`")
+    }
+    const root = stripComments(read("app/(collections)/[collection]/page.tsx"))
+    expect(root).toContain("permanentRedirect(")
+    expect(root).not.toMatch(/\bredirect\(/)
+  })
+
   it("no lib/seo.ts trail builds the bare collection URL", () => {
     const src = stripComments(read("lib/seo.ts"))
     expect(src).not.toMatch(/name: label, url: `\$\{BASE_URL\}\/\$\{(opts\.)?collectionUrlSlug\}`/)

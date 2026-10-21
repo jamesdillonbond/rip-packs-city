@@ -785,7 +785,7 @@ export default async function EditionPage(
       <Breadcrumbs
         items={[
           { name: "Home", href: "/" },
-          { name: collectionDisplayName(collection), href: `/${collection}` },
+          { name: collectionDisplayName(collection), href: `/${collection}/overview` },
           ...(setHref && detail.set_name ? [{ name: detail.set_name, href: setHref }] : []),
           { name: editionTitle },
         ]}

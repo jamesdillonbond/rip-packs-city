@@ -784,7 +784,7 @@ export default async function PackDetailPage(
       <Breadcrumbs
         items={[
           { name: "Home", href: "/" },
-          { name: coll.displayName, href: `/${collection}` },
+          { name: coll.displayName, href: `/${collection}/overview` },
           { name: title },
         ]}
       />

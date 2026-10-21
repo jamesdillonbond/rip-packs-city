@@ -285,7 +285,7 @@ export default async function SeriesPage(props: { params: Promise<{ collection: 
       <Breadcrumbs
         items={[
           { name: "Home", href: "/" },
-          { name: collectionDisplayName(collection), href: `/${collection}` },
+          { name: collectionDisplayName(collection), href: `/${collection}/overview` },
           { name: seriesPageLabel(detail.series_number, detail.display_label, collection) },
         ]}
       />

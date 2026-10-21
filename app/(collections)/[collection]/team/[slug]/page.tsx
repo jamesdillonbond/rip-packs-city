@@ -242,7 +242,7 @@ export default async function TeamPage(props: { params: Promise<{ collection: st
       <Breadcrumbs
         items={[
           { name: "Home", href: "/" },
-          { name: collectionDisplayName(collection), href: `/${collection}` },
+          { name: collectionDisplayName(collection), href: `/${collection}/overview` },
           { name: detail.team_name },
         ]}
       />

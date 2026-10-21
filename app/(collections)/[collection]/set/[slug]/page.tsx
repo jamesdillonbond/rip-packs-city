@@ -230,7 +230,7 @@ export default async function SetPage(props: { params: Promise<{ collection: str
       <Breadcrumbs
         items={[
           { name: "Home", href: "/" },
-          { name: collectionDisplayName(collection), href: `/${collection}` },
+          { name: collectionDisplayName(collection), href: `/${collection}/overview` },
           { name: detail.set_name },
         ]}
       />
