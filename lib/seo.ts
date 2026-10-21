@@ -1294,6 +1294,15 @@ export function collectionDisplayName(collectionUrlSlug: string): string {
   return ownMeta(COLLECTION_DISPLAY_NAMES, collectionUrlSlug) ?? "Flow"
 }
 
+/**
+ * The collection rung of an entity breadcrumb. `/<collection>` itself 307s to
+ * `/<collection>/overview` (2026-10-21, measured), and a BreadcrumbList item
+ * should name the URL that answers 200 — the same one collectionPageJsonLd uses.
+ */
+export function collectionCrumbUrl(collectionUrlSlug: string): string {
+  return `${BASE_URL}/${collectionUrlSlug}/overview`
+}
+
 export function breadcrumbJsonLd(items: { name: string; url: string }[]): LdValue {
   return {
     "@type": "BreadcrumbList",
@@ -1444,7 +1453,7 @@ export function editionJsonLd(
       productOrCreativeWork(product),
       breadcrumbJsonLd([
         { name: "Home", url: BASE_URL },
-        { name: label, url: `${BASE_URL}/${collectionUrlSlug}` },
+        { name: label, url: collectionCrumbUrl(collectionUrlSlug) },
         ...(setSlug && setName ? [{ name: setName, url: `${BASE_URL}/${collectionUrlSlug}/set/${encodeURIComponent(setSlug)}` }] : []),
         { name: playerName, url },
       ]),
@@ -1468,7 +1477,7 @@ export function playerJsonLd(detail: Payload, collectionUrlSlug: string, slug: s
       person,
       breadcrumbJsonLd([
         { name: "Home", url: BASE_URL },
-        { name: label, url: `${BASE_URL}/${collectionUrlSlug}` },
+        { name: label, url: collectionCrumbUrl(collectionUrlSlug) },
         { name, url },
       ]),
     ],
@@ -1487,7 +1496,7 @@ export function teamJsonLd(detail: Payload, collectionUrlSlug: string, slug: str
       { "@type": isFranchise ? "Organization" : "SportsTeam", "@id": url, url, name },
       breadcrumbJsonLd([
         { name: "Home", url: BASE_URL },
-        { name: label, url: `${BASE_URL}/${collectionUrlSlug}` },
+        { name: label, url: collectionCrumbUrl(collectionUrlSlug) },
         { name, url },
       ]),
     ],
@@ -1541,7 +1550,7 @@ export function collectionEntityJsonLd(opts: {
       page,
       breadcrumbJsonLd([
         { name: "Home", url: BASE_URL },
-        { name: label, url: `${BASE_URL}/${opts.collectionUrlSlug}` },
+        { name: label, url: collectionCrumbUrl(opts.collectionUrlSlug) },
         { name: opts.crumbName, url: opts.url },
       ]),
     ],
@@ -1580,7 +1589,7 @@ export function packJsonLd(opts: {
       productOrCreativeWork(product),
       breadcrumbJsonLd([
         { name: "Home", url: BASE_URL },
-        { name: label, url: `${BASE_URL}/${opts.collectionUrlSlug}` },
+        { name: label, url: collectionCrumbUrl(opts.collectionUrlSlug) },
         { name: opts.title, url },
       ]),
     ],

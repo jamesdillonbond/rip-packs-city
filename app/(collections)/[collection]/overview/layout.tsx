@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import type { ReactNode } from "react"
 import { getCollection } from "@/lib/collections"
-import { pageMetadata, unknownCollectionMetadata } from "@/lib/seo"
+import { collectionPageJsonLd, pageMetadata, unknownCollectionMetadata } from "@/lib/seo"
 import PopularOnCollection from "@/components/entity/PopularOnCollection"
 
 // ISR-cache the segment hourly so the server-rendered public fan-out
@@ -22,8 +22,15 @@ export default async function OverviewLayout(props: {
   params: Promise<{ collection: string }>
 }) {
   const { collection } = await props.params
+  // The collection's CollectionPage + BreadcrumbList (Home → collection) belongs
+  // on the collection's own front door only — moved here from the [collection]
+  // layout 2026-10-21, where it duplicated every entity page's own trail.
+  const known = getCollection(collection)
   return (
     <>
+      {known ? (
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(collectionPageJsonLd(known.id)) }} />
+      ) : null}
       {props.children}
       <PopularOnCollection collection={collection} />
     </>

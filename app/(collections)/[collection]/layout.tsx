@@ -2,7 +2,7 @@ import type { Metadata } from "next"
 import Link from "next/link"
 import { notFound } from "next/navigation"
 import { getCollection } from "@/lib/collections"
-import { collectionLayoutMetadata, collectionPageJsonLd } from "@/lib/seo"
+import { collectionLayoutMetadata } from "@/lib/seo"
 import ActiveCollectionSync from "./ActiveCollectionSync"
 import WalletHydrator from "@/components/WalletHydrator"
 import FunnelTracker from "@/components/FunnelTracker"
@@ -59,17 +59,14 @@ export default async function CollectionSegmentLayout(props: any) {
     )
   }
 
-  // CollectionPage + BreadcrumbList JSON-LD for every page under
-  // /[collection]/*. Inlined as a <script> so search engines consume it on
-  // SSR — Google's Rich Results Test will validate against this exact block.
-  const jsonLd = collectionPageJsonLd(collection.id)
+  // 2026-10-21: the collection CollectionPage + BreadcrumbList JSON-LD moved to
+  // overview/layout.tsx. Emitted here it sat on EVERY page under /[collection]/*,
+  // so an edition page carried two BreadcrumbLists (this 2-rung Home → collection
+  // one beside its own 4-rung trail) and a CollectionPage whose @id was /overview.
+  // Pinned: __tests__/collection-json-ld-is-overview-only.test.ts.
 
   return (
     <div data-collection={collection.id}>
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
-      />
       <ActiveCollectionSync collectionId={collection.id} />
       <WalletHydrator />
       {/* Funnel: one collection_view per tab. perPath re-fires on pathname
