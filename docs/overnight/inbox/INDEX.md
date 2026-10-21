@@ -1,4 +1,4 @@
-# Inbox index — 594 live filings
+# Inbox index — 595 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -32,10 +32,11 @@ failure it documents.
 
 ---
 
-## 2026-10-21 — 2 filings
+## 2026-10-21 — 3 filings
 
 - [🟢 Daytime monitor (10-21 ~00:15Z, infra GREEN) — refresh-conflated-editions hits its 120s Vercel wall on the daily 15:17Z tick, writes no terminal pipeline_runs row → detect_stalled_pipelines fires (silent 1969m), but both guard tables stay fresh (thin 8.8h + pg_cron 08:30 backstop OK; conflated 3.6h via 23 */6 remap). LOW: instrumentation gap, not stale data](2026-10-21T0015Z-daytime-monitor-refresh-conflated-editions-120s-wall-no-terminal-row.md)
 - [**🔵 Daytime monitor (10-20 ~8:15 PM PT) — GREEN sweep, 4 candidates: (medium) refresh-conflated-editions missing its terminal log row on the 10-20 tick, data still fresh via the job-63 backstop; (medium) topshot_missing_fill_offers_walk cursor moved +9.4M blocks 10-19 (focus re-open trigger); (low) task 1b artifact sources + #114 map absent from the repo; (low) metrics baseline 3d stale, nba FMV HIGH+MED -1514**](2026-10-21T0315Z-daytime-monitor-conflated-editions-logrow-and-offers-walk-cursor-and-1b-source-gap.md)
+- [🔴 Daytime monitor (10-21 ~15:15Z / ~08:15 AM PT) — HIGH: fmv-recalc Step 6 (`force_stale` liveness touch) has touched nothing for ~41.7h / 260 consecutive runs; trust arm `fmv_stale_touch_hours` BREACH (41.7 vs 36). Route ok=true throughout — silent cohort-selection regression, not a crash; ~692 HIGH/MED no-recent-sale editions (579 TS + 113 AllDay) ageing. Suspect: Step 6/6b/7 gate+re-stamp churn 10-17→10-18. Night pass to bisect ~10-19 21:30Z onset](2026-10-21T1515Z-daytime-monitor-fmv-recalc-step6-force-stale-touch-flatlined-41h.md)
 
 ## 2026-10-20 — 3 filings
 
