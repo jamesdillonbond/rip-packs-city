@@ -18,23 +18,26 @@ const title = (p: Record<string, unknown>, c: string) => {
 const productName = (p: Record<string, unknown>, c: string) =>
   String((editionJsonLd(p, c) as { "@graph": Array<Record<string, unknown>> })["@graph"][0].name)
 
-const knueppel = (route: string, play: string, date: string) => ({
+const knueppel = (route: string, play_category: string, play_type: string, date: string) => ({
   route_slug: route, external_id: route, player_name: "Kon Knueppel", set_name: "Signature Series",
-  play_category: play, play_type: play, game_date: date, subedition_name: null, circulation_count: 1, tier: "ULTIMATE",
+  play_category, play_type, game_date: date, subedition_name: null, circulation_count: 1, tier: "ULTIMATE",
 })
 
 describe("edition titles name the play, date and parallel", () => {
   it("the five Knueppel Signature Series 1/1s get five distinct titles (the case)", () => {
+    // Real editions rows (read from production 2026-10-21 ~7:45 AM PT).
     const eds = [
-      knueppel("260:8820", "Block", "2026-03-02"),
-      knueppel("241:8246", "Assist", "2026-02-20"),
-      knueppel("241:8444", "3 Pointer", "2026-01-14"),
-      knueppel("241:8449", "3 Pointer", "2025-11-08"),
-      knueppel("241:8054", "3 Pointer", "2025-12-30"),
+      knueppel("260:8820", "Assist", "Assist", "2025-12-31"),
+      knueppel("241:8246", "Assist", "Assist", "2026-02-20"),
+      knueppel("241:8444", "3 Pointer", "3 Pointer", "2026-04-02"),
+      knueppel("241:8449", "Dunk", "Rim", "2025-11-15"),
+      knueppel("241:8054", "3 Pointer", "3 Pointer", "2026-02-27"),
     ]
     const titles = eds.map((e) => title(e, "nba-top-shot"))
     expect(new Set(titles).size).toBe(5)
     expect(titles[1]).toBe("Kon Knueppel — Signature Series · Assist · Feb 20, 2026 · Value, Floor & Sales | NBA Top Shot | Rip Packs City")
+    // play_category wins over play_type (241:8449 is category Dunk, type Rim).
+    expect(titles[3]).toContain("Signature Series · Dunk · Nov 15, 2025")
     // The Product name carries the same context.
     expect(new Set(eds.map((e) => productName(e, "nba-top-shot"))).size).toBe(5)
   })
