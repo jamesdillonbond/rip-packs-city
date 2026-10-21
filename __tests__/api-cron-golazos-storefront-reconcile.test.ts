@@ -202,6 +202,45 @@ describe("/api/cron/golazos-storefront-reconcile — a run", () => {
     expect(log.p_extra).toMatchObject({ sellers_walked: 0, sellers_walk_errors: 1 })
   })
 
+  // 2026-10-20: seller 0x1a21c240c0e4e27e publishes a capability to an unmigrated third-party
+  // NFTStorefrontV2 copy; Flow cannot load that program, so no script can read the account.
+  const loadFailure = (program: string) =>
+    JSON.stringify({
+      code: 400,
+      message:
+        "Invalid Flow argument: failed to execute script: [Error Code: 1101] failed to execute script at block (bb21): [Error Code: 1101] error caused by: 1 error occurred:\n\t* [Error Code: 1101] cadence runtime error: Execution failed:\nerror: error getting program " +
+        program +
+        ": failed to derive value: load program failed: Parsing failed:\nerror: `pub` is no longer a valid access modifier\n",
+    })
+
+  it("a storefront path that points at an UNLOADABLE third-party program is reported apart, closes nothing, and does not fail the run", async () => {
+    state.flow = () => ({ ok: false, status: 400, text: loadFailure("eee6bdee2b2bdfc8.NFTStorefrontV2") })
+    await mod.GET(makeReq({ method: "GET", auth: "Bearer gz-cron" }))
+    await runAfter()
+
+    expect(state.ops.filter((o) => o.op === "update" || o.op === "upsert")).toHaveLength(0)
+    const log = state.logs.at(-1)
+    expect(log.p_ok).toBe(true)
+    expect(log.p_extra).toMatchObject({
+      sellers_walked: 0,
+      sellers_walk_errors: 0,
+      sellers_unreadable_foreign_storefront: 1,
+    })
+    expect(log.p_extra.foreign_storefront_sample[0]).toContain("0xeee6bdee2b2bdfc8.NFTStorefrontV2")
+  })
+
+  it("CONTROL — our OWN storefront or collection contract failing to load is still a failed walk", async () => {
+    for (const program of ["4eb8a10cb9f87357.NFTStorefrontV2", "87ca73a41bb50ad5.Golazos"]) {
+      state.logs.length = 0
+      state.flow = () => ({ ok: false, status: 400, text: loadFailure(program) })
+      await mod.GET(makeReq({ method: "GET", auth: "Bearer gz-cron" }))
+      await runAfter()
+      const log = state.logs.at(-1)
+      expect(log.p_ok, program).toBe(false)
+      expect(log.p_extra, program).toMatchObject({ sellers_walk_errors: 1, sellers_unreadable_foreign_storefront: 0 })
+    }
+  })
+
   it("a 429 from the shared Flow endpoint is retried, not recorded as a failed walk", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout"] })
     const good = state.flow!

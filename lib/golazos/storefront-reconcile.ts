@@ -405,3 +405,37 @@ export function clipScriptError(text: string): string {
   const cause = errorLines.length > 0 ? ` | ${errorLines.join(" | ")}` : ""
   return `${text.slice(0, 100)}${cause} … ${text.slice(-200)}`
 }
+
+/** Dapper's NFTStorefrontV2, the contract the storefront script imports. */
+export const NFT_STOREFRONT_V2_ADDRESS = "0x4eb8a10cb9f87357"
+
+/**
+ * A seller whose storefront PUBLIC PATH points at a resource from a third-party program that Flow
+ * can no longer load. Found 10-20: `0x1a21c240c0e4e27e` publishes a capability to
+ * `0xeee6bdee2b2bdfc8.NFTStorefrontV2`, a copy never migrated to Cadence 1.0 (`pub contract`), so
+ * ANY touch of that path — `borrow`, `capabilities.get(..).check()`, even `capabilities.exists` —
+ * fails with "error getting program … load program failed" (all three probed via Flow REST). No
+ * script can read that account, so counting it as a walk error kept the lane `ok=false` for the
+ * seller's whole sale window. It is reported on its own, and the seller is left untouched (exactly as
+ * a failed walk is: never read as "no listings").
+ */
+export class ForeignStorefrontProgramError extends Error {
+  constructor(readonly program: string, message: string) {
+    super(message)
+  }
+}
+
+/**
+ * The `0x…​.Contract` Flow failed to LOAD, when a script error is that and the program is NOT one of
+ * `ownPrograms` (our storefront and collection contracts — a failure to load THOSE is an outage and
+ * must stay a walk error). Null otherwise.
+ */
+export function foreignProgramLoadFailure(text: string, ownPrograms: string[]): string | null {
+  const m = /error getting program ([0-9a-f]{16})\.([A-Za-z][A-Za-z0-9_]*): [^\n]*?load program failed/.exec(
+    text.replace(/\\n/g, "\n"),
+  )
+  if (!m) return null
+  const address = `0x${m[1]}`
+  if (ownPrograms.map((a) => a.toLowerCase()).includes(address)) return null
+  return `${address}.${m[2]}`
+}

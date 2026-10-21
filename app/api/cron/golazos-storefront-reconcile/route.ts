@@ -29,6 +29,9 @@ import {
   STOREFRONT_COLLECTIONS,
   STOREFRONT_PAGE_IDS,
   clipScriptError,
+  ForeignStorefrontProgramError,
+  NFT_STOREFRONT_V2_ADDRESS,
+  foreignProgramLoadFailure,
   parseStorefrontPage,
   planReconcile,
   storefrontScriptFor,
@@ -84,7 +87,7 @@ function unwrapCdc(node: unknown): unknown {
   return value
 }
 
-async function runScript(script: string, args: unknown[], blockHeight: string): Promise<unknown> {
+async function runScript(script: string, args: unknown[], blockHeight: string, ownPrograms: string[]): Promise<unknown> {
   const body = JSON.stringify({
     script: Buffer.from(script).toString("base64"),
     arguments: args.map((a) => Buffer.from(JSON.stringify(a)).toString("base64")),
@@ -104,7 +107,11 @@ async function runScript(script: string, args: unknown[], blockHeight: string): 
     if (res.status !== 429 || attempt >= RATE_LIMIT_RETRIES) break
     await new Promise((r) => setTimeout(r, RATE_LIMIT_BASE_MS * 2 ** attempt + Math.floor(Math.random() * 200)))
   }
-  if (!res.ok) throw new Error(`script HTTP ${res.status}: ${clipScriptError(text)}`)
+  if (!res.ok) {
+    const message = `script HTTP ${res.status}: ${clipScriptError(text)}`
+    const foreign = foreignProgramLoadFailure(text, ownPrograms)
+    throw foreign ? new ForeignStorefrontProgramError(foreign, message) : new Error(message)
+  }
   return unwrapCdc(JSON.parse(Buffer.from(JSON.parse(text), "base64").toString("utf8")))
 }
 
@@ -113,7 +120,7 @@ async function runScript(script: string, args: unknown[], blockHeight: string): 
 // cannot change between slices. Any failed page fails the whole walk: a partial
 // storefront must never be planned as a complete one (its missing listings would
 // be closed as "vanished").
-async function walkSeller(script: string, seller: string): Promise<StorefrontListing[]> {
+async function walkSeller(script: string, seller: string, ownPrograms: string[]): Promise<StorefrontListing[]> {
   const byId = new Map<string, StorefrontListing>()
   let height = "sealed"
   for (let page = 0; ; page++) {
@@ -124,7 +131,7 @@ async function walkSeller(script: string, seller: string): Promise<StorefrontLis
       { type: "Int", value: String(start) },
       { type: "Int", value: String(STOREFRONT_PAGE_IDS) },
     ]
-    const result = parseStorefrontPage(await runScript(script, args, height))
+    const result = parseStorefrontPage(await runScript(script, args, height, ownPrograms))
     for (const l of result.listings) byId.set(l.listingId, l)
     // No meta row = a single complete result; otherwise stop once the slices cover the total.
     if (result.total == null || start + STOREFRONT_PAGE_IDS >= result.total) break
@@ -181,6 +188,8 @@ async function run(cfg: StorefrontCollection, startMs: number, startedAt: string
     const script = storefrontScriptFor(cfg)
     const walked = new Map<string, StorefrontListing[]>()
     const walkErrors: string[] = []
+    const foreignStorefronts: string[] = []
+    const ownPrograms = [NFT_STOREFRONT_V2_ADDRESS, cfg.contractAddress]
     let unwalked = 0
     let next = 0
     async function worker() {
@@ -191,9 +200,10 @@ async function run(cfg: StorefrontCollection, startMs: number, startedAt: string
           continue
         }
         try {
-          walked.set(seller, await walkSeller(script, seller))
+          walked.set(seller, await walkSeller(script, seller, ownPrograms))
         } catch (e) {
-          walkErrors.push(`${seller}: ${e instanceof Error ? e.message : String(e)}`)
+          if (e instanceof ForeignStorefrontProgramError) foreignStorefronts.push(`${seller}: ${e.program}`)
+          else walkErrors.push(`${seller}: ${e instanceof Error ? e.message : String(e)}`)
         }
       }
     }
@@ -203,6 +213,9 @@ async function run(cfg: StorefrontCollection, startMs: number, startedAt: string
     extra.sellers_walked = walked.size
     extra.sellers_walk_errors = walkErrors.length
     extra.walk_error_sample = walkErrors.slice(0, 5)
+    // Unreadable by ANY script (see ForeignStorefrontProgramError); left untouched, not a run failure.
+    extra.sellers_unreadable_foreign_storefront = foreignStorefronts.length
+    extra.foreign_storefront_sample = foreignStorefronts.slice(0, 5)
     extra.sellers_unwalked_budget = unwalked
     extra.onchain_listings = onChain.length
 
@@ -299,7 +312,8 @@ async function run(cfg: StorefrontCollection, startMs: number, startedAt: string
     extra.close_errors = closeErrors
     extra.close_error = firstCloseError
 
-    // ok means the run observed every seller and every write landed.
+    // ok means the run observed every READABLE seller and every write landed. A seller whose storefront
+    // path holds an unloadable third-party program is reported above, not here: no script can read it.
     const problems: string[] = []
     if (walkErrors.length > 0) problems.push(`${walkErrors.length} storefront walk(s) failed`)
     if (unwalked > 0) problems.push(`${unwalked} seller(s) not walked (time budget)`)
