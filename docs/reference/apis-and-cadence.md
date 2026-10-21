@@ -135,6 +135,26 @@ and every header variant (browser UA, honest UA, no origin, bare) 403'd identica
 challenge is rate-shaped, not header-shaped. Total Atlas traffic today ≈ 5 req/min (editions + market);
 never probe in bursts, and read `topshot_atlas_market_requests.error` before blaming the code.
 
+⭐ **Top Shot CHALLENGES live in Atlas `QuestService/GetQuestStatus` (found 2026-10-20, PT).**
+`POST /public/atlas.v1.QuestService/GetQuestStatus` `{"product":"nba"}` (⚠ `nba`, not `PRODUCT_TOP_SHOT`;
+the latter is what `CampaignService/GetActiveCampaigns` rejects with `product is required`) answers 200 from
+pg_net with every live set challenge: `questId`, `questName`, `cadence` (`flash`), `startsAt`/`expiresAt`,
+`totalCompletions`/`maxCompletions`/`maxCompletionsPerUser`, `rewards[0]` (`rewardType:'pack'`,
+`rewardItemId` = pack dist id), `metadata.set_id`, and `actions[]` (`lock_nft`, `targetCount`, a `link` that
+is EITHER `/search?editions=<atlas edition ids>` OR `/search?series=&sets=<name>&players=<name>`). 17 were
+live on 10-20 (326 slots). ⚠ `nbatopshot.com/challenges` 302s to `v1.nbatopshot.com/challenges`, an error
+page — challenges render per SET page now, which is why sweeping Atlas service names never found them.
+Guessed names (`ChallengeService/*`, `QuestService/SearchQuests|ListQuests|GetActiveQuests`) are plain
+`404 page not found`. `CampaignService/GetActiveCampaigns {product:'nba'}` is the pack-DROP calendar
+(daily periods with `distributionIds` through mid-November), not challenges. Ingest:
+`ingest_topshot_challenges_atlas_begin/collect` (migration `20261021022355`, pg_cron 771 :41 / 772 :44,
+LIVE 10-20 ~7:40 PM PT; first run 17 / 326 slots / 0 unresolved). ⚠ Each quest pays ONE pack per
+completion — `maxCompletions` is a CAP, not a pool — so `get_active_challenges` / `get_challenge_plan`
+use a multiplier of 1 for `source='atlas_quest'` (`20261021022635`). ⚠ Retiring slot rows a later
+payload drops needs a DELETE the MCP refuses: `20261021023000` is committed, NOT applied (Trevor's
+editor paste); until then watch `extra.stale_rows_not_retired`. Discovery method that worked: load the real page in Chrome, list
+`performance.getEntriesByType('resource')` for `atlas.v1.*`, replay the call from the page.
+
 ### 🚨 Counterparty source floors — where each upstream BOTTOMS OUT (measured 2026-09-07/08)
 
 ⚠ **Every source for `sales.seller_address` / `buyer_address` has a floor, and three of the four floors
