@@ -1,0 +1,18 @@
+-- 2026-10-21 ~1:03 PM PT (Claude Code cloud) — STOP the duplicate #205 precompute.
+--
+-- Two sessions built #205 in parallel. The other one shipped first (20261021193648:
+-- mv_collection_recent_sale_share + refresh_collection_recent_sale_share + pg_cron
+-- rpc-collection-recent-sale-share; on main as eb6206328, following Trevor's "keep the label"), and it is
+-- equal or stricter (Panini counts sale_kind = 'Marketplace' only; it logs pipeline_runs). This
+-- session's duplicate (20261021193802 + 20261021194255: table collection_sold_30d, function
+-- refresh_collection_sold_30d, pg_cron rpc-collection-sold-30d) was never read by any deployed code — its
+-- reader change was discarded before commit.
+--
+-- This migration only UNSCHEDULES it, so it stops running hourly. The table and function are left inert:
+-- dropping them was held by the MCP's destructive-statement confirmation, which this session cannot give.
+-- For Trevor (dashboard SQL editor), when convenient:
+--   DROP FUNCTION IF EXISTS public.refresh_collection_sold_30d();
+--   DROP TABLE IF EXISTS public.collection_sold_30d;
+--
+-- REVERT: SELECT cron.schedule('rpc-collection-sold-30d', '26 * * * *', 'SELECT public.refresh_collection_sold_30d()');
+SELECT cron.unschedule('rpc-collection-sold-30d');

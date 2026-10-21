@@ -34,6 +34,8 @@ interface SetDetail {
   set_name: string
   set_name_variants: string[] | null
   underlying_set_count: number | null
+  /** Panini only (2026-10-21, #204): the PRODUCTS behind a shared set name, largest first. */
+  underlying_sets?: { name: string; editions: number }[] | null
   edition_count: number | null
   editions_with_fmv: number | null
   total_circulation: number | null
@@ -245,7 +247,18 @@ export default async function SetPage(props: { params: Promise<{ collection: str
             a single spelling variant — so key the banner on the underlying set
             COUNT, not on distinct spellings. Falls back to the old spellings
             banner only if the count field is absent (old RPC during a deploy). */}
-        {detail.underlying_set_count != null && detail.underlying_set_count > 1 ? (
+        {Array.isArray(detail.underlying_sets) && detail.underlying_sets.length > 1 ? (
+          // 2026-10-21 (#204): a Panini set name spans PRODUCTS (Base Prizms Blue: the 2026 World Cup
+          // catalog, 2022-23 Basketball and the 2022 World Cup), so the grid mixed sports with no word
+          // of it. Name each product; its "<product> · <set>" name drops the repeated set suffix.
+          <div data-testid="set-products-banner" className="rpc-mono" style={{ marginTop: 6, fontSize: 11, color: "var(--rpc-text-muted)" }}>
+            Combined view: {detail.underlying_sets.length} products share this set name —{" "}
+            {detail.underlying_sets
+              .map((u) => `${u.name.split(" · ")[0]} (${u.editions.toLocaleString("en-US")} edition${u.editions === 1 ? "" : "s"})`)
+              .join(" · ")}
+            . Editions, sales and totals below are combined across all of them.
+          </div>
+        ) : detail.underlying_set_count != null && detail.underlying_set_count > 1 ? (
           <div className="rpc-mono" style={{ marginTop: 6, fontSize: 11, color: "var(--rpc-text-muted)" }}>
             Combined view: {detail.underlying_set_count} sets share this name
             {seriesLabel ? ` (${seriesLabel})` : ""}

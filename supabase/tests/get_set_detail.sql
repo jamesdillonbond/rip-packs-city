@@ -22,7 +22,7 @@
 --   * the jsonb envelope carries the summary passthrough fields + collection slug.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20261019005911_audit_20261018_set_detail_underlying_count_needs_editions.sql; was 20260929063531, 20260928064405;
+-- (supabase/migrations/20261021195016_audit_20261021_set_detail_panini_names_the_products_behind_a_set_name.sql; was 20261019005911, 20260929063531, 20260928064405;
 -- before that, 20260822193500_audit_20260822_snapshot_get_set_detail_underlying_set_count.sql);
 -- re-pinned 2026-08-22: `db-pin-staleness` had reported this pin STALE on every
 -- run since 2026-08-10 (13 consecutive, known-issues #24). Diffed rather than
@@ -65,6 +65,7 @@ CREATE OR REPLACE FUNCTION public.get_set_detail(p_collection_id uuid, p_set_slu
 AS $function$
 DECLARE
   v_pinnacle_uuid CONSTANT uuid := '7dd9dd11-e8b6-45c4-ac99-71331f959714';
+  v_panini_uuid   CONSTANT uuid := 'd1a0a7f5-609a-49f4-a1a7-4eaac55b020b';
   v_set       RECORD;
   v_fmv_total numeric;
   v_floor_total numeric;
@@ -74,6 +75,7 @@ DECLARE
   v_edition_count int;
   v_collection_slug text;
   v_underlying_set_count int;
+  v_underlying_sets jsonb;
   v_pin_circulation bigint;
 BEGIN
   SELECT * INTO v_set
@@ -146,15 +148,31 @@ BEGIN
   -- construction merge signal (name-identical seasonal repeats included, which
   -- set_name_variants misses). Reads the 914-row `sets` table — trivially cheap.
   -- Pinnacle has no `sets` rows → 0 (page keys the banner on > 1).
-  SELECT count(*) INTO v_underlying_set_count
-  FROM sets s
-  WHERE s.collection_id = p_collection_id
-    AND s.name::text = ANY(v_set.set_name_variants)
-    -- 2026-10-18 (R58 residual): only sets that HAVE editions count. An editionless
-    -- stub (`WNBA Skyline` auto_onchain_254) made /wnba-skyline say "Combined view:
-    -- 2 sets share this name" over one real set (1 false + 3 overcounted banners,
-    -- Top Shot). idx_editions_set makes this one index probe per candidate row.
-    AND EXISTS (SELECT 1 FROM editions e WHERE e.set_id = s.id);
+  IF p_collection_id = v_panini_uuid THEN
+    -- 2026-10-21 (#204): Panini's `sets` rows are PRODUCT-scoped ("<product> · <set>"), so the
+    -- name test below matches none of them, and a set name several products share (Base Prizms
+    -- Blue: the 2026 World Cup catalog 499 editions, 2022-23 Basketball 97, 2022 World Cup 6)
+    -- rendered as ONE set with no banner — LeBron James in a World Cup set. Count and NAME the
+    -- products from the editions' own set_id (idx_editions_collection_set_name; ~3 ms).
+    SELECT count(*), jsonb_agg(jsonb_build_object('name', x.name, 'editions', x.n) ORDER BY x.n DESC, x.name)
+      INTO v_underlying_set_count, v_underlying_sets
+      FROM (SELECT s.id, s.name::text AS name, count(*) AS n
+              FROM editions e
+              JOIN sets s ON s.id = e.set_id
+             WHERE e.collection_id = p_collection_id
+               AND e.set_name = ANY(v_set.set_name_variants)
+             GROUP BY s.id, s.name) x;
+  ELSE
+    SELECT count(*) INTO v_underlying_set_count
+    FROM sets s
+    WHERE s.collection_id = p_collection_id
+      AND s.name::text = ANY(v_set.set_name_variants)
+      -- 2026-10-18 (R58 residual): only sets that HAVE editions count. An editionless
+      -- stub (`WNBA Skyline` auto_onchain_254) made /wnba-skyline say "Combined view:
+      -- 2 sets share this name" over one real set (1 false + 3 overcounted banners,
+      -- Top Shot). idx_editions_set makes this one index probe per candidate row.
+      AND EXISTS (SELECT 1 FROM editions e WHERE e.set_id = s.id);
+  END IF;
 
   RETURN jsonb_build_object(
     'collection_id',       v_set.collection_id,
@@ -163,6 +181,7 @@ BEGIN
     'set_name',            v_set.set_name,
     'set_name_variants',   v_set.set_name_variants,
     'underlying_set_count', v_underlying_set_count,
+    'underlying_sets',     v_underlying_sets,
     'edition_count',       v_edition_count,
     'editions_with_fmv',   v_editions_with_fmv,
     'total_circulation',   CASE WHEN p_collection_id = v_pinnacle_uuid THEN v_pin_circulation ELSE v_set.total_circulation END,
@@ -264,6 +283,34 @@ INSERT INTO public.pinnacle_catalog (set_name, fmv_usd, floor_ask, total_minted)
 SELECT _assert_eq((public.get_set_detail(:pin::uuid,'mf-vol-1') ->> 'total_circulation'), '23788', 'Pinnacle Total Mint = sum over its pins (9268+7328+7192), not the set-level 9268');
 SELECT _assert((public.get_set_detail(:pin::uuid,'gap-set') ->> 'total_circulation') IS NULL, 'Pinnacle Total Mint is NULL, not a partial 400, when a pin''s count is unknown');
 SELECT _assert_eq((public.get_set_detail(:pin::uuid,'mf-vol-1') ->> 'edition_count'), '3', 'Pinnacle pin count from the catalog (unchanged)');
+-- ── 7. Panini (2026-10-21, #204): one set NAME across several PRODUCTS ──────────
+-- Panini's `sets` rows are product-scoped ("<product> · <set>"), so the generic name
+-- test matched none of them and a page mixing three products showed no banner. The
+-- Panini arm counts and NAMES the products from the editions' own set_id.
+\set pan '''d1a0a7f5-609a-49f4-a1a7-4eaac55b020b'''
+\set ps1 '''bbbbbbbb-0000-0000-0000-000000000001'''
+\set ps2 '''bbbbbbbb-0000-0000-0000-000000000002'''
+INSERT INTO public.collections (id, slug) VALUES (:pan::uuid, 'panini_blockchain');
+INSERT INTO public.sets_summary (collection_id, set_slug, set_name, set_name_variants, total_circulation, tiers_present, min_series, max_series, computed_at)
+VALUES (:pan::uuid, 'base-prizms-blue', 'Base Prizms Blue', ARRAY['Base Prizms Blue'], 10, ARRAY['COMMON'], 1, 1, now());
+INSERT INTO public.sets (id, collection_id, name) VALUES
+  (:ps1::uuid, :pan::uuid, 'Base Prizms Blue'),
+  (:ps2::uuid, :pan::uuid, '2022-23 Panini NFT Prizm Basketball · Base Prizms Blue');
+INSERT INTO public.editions (id, collection_id, set_name, thumbnail_url, set_id) VALUES
+  ('cccccccc-0000-0000-0000-000000000001', :pan::uuid, 'Base Prizms Blue', 'https://img/p1', :ps1::uuid),
+  ('cccccccc-0000-0000-0000-000000000002', :pan::uuid, 'Base Prizms Blue', 'https://img/p2', :ps1::uuid),
+  ('cccccccc-0000-0000-0000-000000000003', :pan::uuid, 'Base Prizms Blue', 'https://img/p3', :ps2::uuid),
+  -- another set name entirely, same product row: must not count
+  ('cccccccc-0000-0000-0000-000000000004', :pan::uuid, 'Base Prizms Red',  'https://img/p4', :ps2::uuid);
+SELECT _assert_eq((public.get_set_detail(:pan::uuid,'base-prizms-blue') ->> 'underlying_set_count'), '2',
+  'Panini: two products share the set name — counted from the editions, not from sets.name (which matched only one)');
+SELECT _assert_eq((public.get_set_detail(:pan::uuid,'base-prizms-blue') -> 'underlying_sets' -> 1 ->> 'name'),
+  '2022-23 Panini NFT Prizm Basketball · Base Prizms Blue', 'Panini: the products are NAMED, largest first');
+SELECT _assert_eq((public.get_set_detail(:pan::uuid,'base-prizms-blue') -> 'underlying_sets' -> 0 ->> 'editions'), '2',
+  'Panini: per-product edition count');
+-- Every other collection keeps the generic count and carries no product list.
+SELECT _assert((public.get_set_detail(:cid::uuid,'base-set') -> 'underlying_sets') = 'null'::jsonb, 'non-Panini: no underlying_sets list');
+
 -- 2026-09-28 (#24): Recent-Low Total = live asks only; the ASK_ONLY part of the FMV total is disclosed.
 UPDATE public.pinnacle_catalog SET floor_ask = NULL WHERE total_minted = 7192;
 UPDATE public.pinnacle_catalog SET fmv_confidence = 'ASK_ONLY' WHERE total_minted = 9268;

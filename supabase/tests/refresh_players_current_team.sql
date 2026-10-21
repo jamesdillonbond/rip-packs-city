@@ -40,7 +40,7 @@
 --
 -- The function DDL below is VERBATIM from the committed migration
 -- (supabase/migrations/20261021181724_audit_20261021_players_current_team_from_current_season_stats.sql,
--- applied 2026-10-21 ~12:17 PM PT; it adds the current-season stats path to the
+-- applied 2026-10-21 ~11:17 AM PT; it adds the current-season stats path to the
 -- 20260816080000 snapshot's catalogue path, which is unchanged).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --

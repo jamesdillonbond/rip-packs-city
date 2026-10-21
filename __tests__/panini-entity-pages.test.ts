@@ -221,3 +221,19 @@ describe("the player and set pages' Panini arms (source facts)", () => {
     expect(set).toContain("{!isPanini && <StatCell label={RECENT_LOW_TOTAL_LABEL}")
   })
 })
+
+// 2026-10-21 (#204): a Panini set name spans PRODUCTS (Base Prizms Blue: the 2026 World Cup
+// catalog 499, 2022-23 Basketball 97, 2022 World Cup 6), and the set page mixed them with no
+// banner — LeBron James in a World Cup set. get_set_detail now returns `underlying_sets` for
+// Panini; the page must name the products whenever more than one is behind the name.
+describe("the set page names the products behind a shared Panini set name (source facts)", () => {
+  const src = read("app/(collections)/[collection]/set/[slug]/page.tsx")
+  it("renders a products banner from underlying_sets when there is more than one", () => {
+    expect(src).toMatch(/Array\.isArray\(detail\.underlying_sets\) && detail\.underlying_sets\.length > 1/)
+    expect(src).toContain('data-testid="set-products-banner"')
+    expect(src).toContain("products share this set name")
+  })
+  it("keeps the generic sets banner for every other collection", () => {
+    expect(src).toMatch(/: detail\.underlying_set_count != null && detail\.underlying_set_count > 1 \?/)
+  })
+})

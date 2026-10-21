@@ -1,11 +1,11 @@
--- 2026-10-21 ~12:20 PM PT (Claude Code cloud; Trevor: "Keep going") — players.team from the league's
+-- 2026-10-21 ~11:15 AM PT (Claude Code cloud; Trevor: "Keep going") — players.team from the league's
 -- CURRENT season when the stats feed has it.
 --
 -- Found by the tenth live sweep: /nba-top-shot/player/lebron-james read "# 23 Los Angeles Lakers" in its
 -- header beside its own Season Stats row "2026-27 Philadelphia 76ers" (ESPN). refresh_players_current_team
 -- derives the team from the catalogue's latest moment, and the catalogue learns a trade only when a NEW
 -- moment mints, so every offseason move reads the old team until then (Series 9 started minting 10-21).
--- Measured 12:15 PM PT: 37 Top Shot players have 2026-27 stats so far; 5 disagree with players.team
+-- Measured ~11:05 AM PT: 37 Top Shot players have 2026-27 stats so far; 5 disagree with players.team
 -- (LeBron James, Kentavious Caldwell-Pope, Anfernee Simons → Philadelphia 76ers; John Collins → Detroit
 -- Pistons; Andre Drummond → New York Knicks), and the count grows as ESPN fills the season.
 --

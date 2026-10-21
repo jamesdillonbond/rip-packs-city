@@ -1322,7 +1322,8 @@ const PINS = [
     test: "supabase/tests/get_set_detail.sql",
     // 2026-09-27: Pinnacle Total Mint summed over the set's pins.
     // 2026-10-18: D20 underlying_set_count counts only sets that have editions (R58 residual).
-    migration: "supabase/migrations/20261019005911_audit_20261018_set_detail_underlying_count_needs_editions.sql",
+    // 2026-10-21 (#204): Panini counts and NAMES the products behind a shared set name.
+    migration: "supabase/migrations/20261021195016_audit_20261021_set_detail_panini_names_the_products_behind_a_set_name.sql",
   },
   {
     // Pinned 2026-10-18 (new): the hourly render-id pass now FILLS player_name from the
