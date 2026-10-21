@@ -2249,6 +2249,12 @@ export async function POST(req: NextRequest) {
     // Null when the step ran; the error string when its candidate query failed.
     // Without this a count of 0 cannot be told apart from a step that never ran.
     let staleTouchError: string | null = null
+    // How many cold editions the candidate query handed the re-stamp (null = the
+    // query did not run or failed). 2026-10-21: since 1.8.2 a re-stamp lands on LOW,
+    // which leaves the HIGH/MEDIUM cohort, so the step drained its ~692 editions on
+    // 10-18 and has had none since (measured: 0 Top Shot, 0 All Day). stale_touch = 0
+    // alone could not tell that from a dead step; fmv_stale_touch_hours reads this.
+    let staleTouchCandidates: number | null = null
     if (forceStale) {
       try {
         const { data: staleRows, error: staleErr } = await supabaseAdmin
@@ -2398,6 +2404,7 @@ export async function POST(req: NextRequest) {
           // Skip editions already written in this run to avoid duplicate today rows.
           const skipSet = new Set<string>(insertRows.map((r) => String(r.edition_id)))
           const touchSource = rows.filter((r) => !skipSet.has(String(r.edition_id)))
+          staleTouchCandidates = touchSource.length
           // ⚠ 2026-09-26 — the Candy ask-CEILING (Step 2a-ter(b')) applied only to
           // editions PRICED this run. A cold Candy edition is never priced, so this
           // re-stamp carried its pre-ceiling FMV forward dated NOW, every night:
@@ -2845,6 +2852,7 @@ export async function POST(req: NextRequest) {
           allday_ask_fallback: allDayAskBackfillCount,
           allday_ask_fallback_error: allDayAskError,
           stale_touch: staleTouchCount,
+          stale_touch_candidates: staleTouchCandidates,
           stale_touch_error: staleTouchError,
           haircut_rows: haircutRowsTotal,
           haircut_collections_run: haircutCollectionsRun,

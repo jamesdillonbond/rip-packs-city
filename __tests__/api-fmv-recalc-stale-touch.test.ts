@@ -340,6 +340,11 @@ describe("fmv-recalc — Step 7 stale touch (?force_stale=true)", () => {
 
     expect(terminalLog(rpcCalls)).toMatchObject({ p_pipeline: "fmv-recalc", p_ok: true })
     expect((inserted.fmv_snapshots ?? []).filter((r) => String(r.edition_id).startsWith("cold-"))).toHaveLength(0)
+    // A failed probe is NOT an empty cohort: fmv_stale_touch_hours treats
+    // candidates = 0 as healthy, so a failure must report null here, never 0.
+    const extra = terminalLog(rpcCalls)?.p_extra as Record<string, unknown>
+    expect(extra.stale_touch_candidates).toBeNull()
+    expect(extra.stale_touch_error).toBe("query_sql timeout")
   })
 
   it("is a clean no-op when no edition is cold enough to need a touch", async () => {
@@ -351,6 +356,27 @@ describe("fmv-recalc — Step 7 stale touch (?force_stale=true)", () => {
 
     expect(terminalLog(rpcCalls)).toMatchObject({ p_ok: true })
     expect((inserted.fmv_snapshots ?? []).filter((r) => String(r.edition_id).startsWith("cold-"))).toHaveLength(0)
+    // The measured empty cohort is reported as 0, distinct from a step that did not run.
+    const extra = terminalLog(rpcCalls)?.p_extra as Record<string, unknown>
+    expect(extra.stale_touch_candidates).toBe(0)
+    expect(extra.stale_touch_error).toBeNull()
+  })
+
+  it("reports how many candidates it was handed, beside how many it wrote", async () => {
+    state.querySqlByMarker = { recent_traded: { data: [staleRow("cold-1", 5), staleRow("cold-2", 7.25)], error: null } }
+    const { rpcCalls } = instrument(baseFixtures())
+    await POST(req("?force_stale=true"))
+    await runDeferred()
+    const extra = terminalLog(rpcCalls)?.p_extra as Record<string, unknown>
+    expect(extra.stale_touch_candidates).toBe(2)
+    expect(extra.stale_touch).toBe(2)
+  })
+
+  it("without the flag the candidate count is null (not measured), not 0", async () => {
+    const { rpcCalls } = instrument(baseFixtures())
+    await POST(req())
+    await runDeferred()
+    expect((terminalLog(rpcCalls)?.p_extra as Record<string, unknown>).stale_touch_candidates).toBeNull()
   })
 })
 
