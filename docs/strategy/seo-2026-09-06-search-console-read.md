@@ -79,3 +79,16 @@ Sitemap: one index, 5 segments, 34,125 discovered URLs, last read 2026-09-06, st
 - **Measured nulls (do not re-open without new evidence):** page weight (heaviest 443 KB raw / 37 KB gzip); edition-page DB reads per call on live editions — `get_edition_detail` ~29 ms, `get_edition_recent_sales` 25–62 ms, `get_edition_high_offer` ~109 ms. The large pg_stat_statements means (160 / 686 ms) are pooled over past IO spells and are not a current problem.
 - **Owed:** Search Console re-read on **Oct 28, 2026** (scheduled check-in): sitemap children all "Success"; "Crawled – not indexed" and "Duplicate" counts; 28-day clicks/impressions and the Premium Chance Hit query; Breadcrumbs / Product snippets enhancement counts.
 - **Still Trevor's, by decision:** external links (held by the accuracy gate, roadmap-2026-08-03); the GitHub repo "Website" field.
+
+## 2026-10-20 read (early, Cowork via Trevor's Chrome) — index data "Last update 10/11/26"
+
+Read ahead of the 10-28 date because Trevor asked for an SEO pass. ⚠ The index data stops at 10/11, so **the 10-28 re-read is still owed** for anything that depends on post-10-11 crawls.
+
+- **Index:** 43.6K indexed (31.8K on 10-03) · 28.8K not indexed (17.6K).
+- **Crawled – currently not indexed: 13,785 (5,033).** The 1,000-row example sample is 995 Panini edition pages, crawled ~Oct 13. That is Google sampling the ~16.7K Panini editions the 10-03 robots fix opened, not a regression. ⛔ **Not a reason to prune Panini from the sitemap:** Panini editions are now the best organic surface (28 d: **19 of 41 clicks**, 474 of 1.75K impressions, 285 pages with impressions). Measured null: a Panini edition serves ~3.8K chars of streamed text vs ~9.2K on a Top Shot edition — thinner, not empty.
+- **Blocked by robots.txt: 4,029, validation FAILED 10-04.** Panini player/set rows were all last crawled Oct 1–3 (before the fix took effect) and drain on recrawl. The rest are by design (`/login?next=…`, `/<c>/collection?wallet=…`), so this validation can never pass — do not re-click it.
+- **404: 365, FAILED.** 288 UUID-form `/nba-top-shot/edition/<set>:<play>` (crawled mostly Aug; the 4,447-pair 308 map shipped 10-03; the one Oct row is an ambiguous pair, honest 404) · 22 stale `/_next/static` font hashes (harmless) · **37 `/profile/0x…` — a live bug, FIXED this pass** (special-serial-owners holder link) · 12 old All Day `/pack/dist/*` now 200 · team-label player slugs (decided honest 404).
+- **Page with redirect: 152, FAILED** — legacy `/moment/<uuid>` 308s, apex → www. By design; the validation can never pass.
+- **Sitemaps:** index Success, 104,777 discovered; all 9 children Success (last read Oct 12–20).
+- **Enhancements:** Breadcrumbs 139 valid / 0 invalid · Product snippets 39 valid / **5 invalid → FIXED this pass** (offer-less Product → CreativeWork, all four emitters) · Merchant listings 39 / 0 · CWV no CrUX data · HTTPS 86 / 0.
+- **Performance 28 d:** 41 clicks / 1.75K impressions / CTR 2.3 % / pos 12.4 (10-03: 9 clicks / 1.4K / pos 15.3). "premium chance hit": no impressions. ⓘ Transactional player queries ("nihat kahveci buy", "ketlen souza sell", "sandro mamukelashvili buy") rank pos 4–10 with 0 clicks on 3–10 impressions each — too few to act on; watch at 10-28.
