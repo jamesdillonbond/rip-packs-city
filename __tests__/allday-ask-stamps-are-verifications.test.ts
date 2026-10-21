@@ -52,4 +52,24 @@ describe("All Day ask stamps are verifications, matching askStampKind", () => {
     expect(b).toMatch(/golazos_edition_floor_ask/)
     expect(b).toMatch(/THEN gfa\.floor_ask_verified_at/)
   })
+
+  // 2026-10-20 ~6:20 PM PT: the first two migrations fixed the board MV and the edition RPC but
+  // missed edition_current_ask (the price-only alert pool), which kept publishing
+  // floor_ask_listed_at as ask_updated_at — a posting date the alert formatter now words as a
+  // check. Named objects let a missed reader through; walk them all.
+  it("no object anywhere publishes a posting date as ask_updated_at", () => {
+    const offenders = [...defs.entries()]
+      .filter(([, d]) => !d.dropped && /floor_ask_listed_at\s+AS\s+ask_updated_at/i.test(d.body))
+      .map(([name, d]) => `${name} (${d.file})`)
+    expect(offenders).toEqual([])
+    // not vacuous: the walk sees the object that was missed, and it carries the verified stamp
+    expect(body("edition_current_ask")).toMatch(/af\.floor_ask_verified_at AS ask_updated_at/)
+    expect(body("edition_current_ask")).toMatch(/gf\.floor_ask_verified_at AS ask_updated_at/)
+  })
+
+  it("the autographs board's ask_seen_at is a check on its All Day arm too (public API field)", () => {
+    const b = body("v_insights_autographs")
+    expect(b).toMatch(/af\.floor_ask_verified_at/)
+    expect(b).not.toMatch(/floor_ask_listed_at/)
+  })
 })
