@@ -25,6 +25,7 @@ import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
 import type { DegradedSummary } from "@/lib/insights/board-status"
 import { paniniEditionUrl } from "@/lib/panini/edition-url"
 import { trackOutboundClick } from "@/lib/track-click"
+import { textIncludes } from "@/lib/filter-match"
 
 type Num = number | null
 
@@ -136,9 +137,9 @@ export default function PaniniSniper({ data, degraded }: { data: PaniniSniperDat
         (!sport || r.sport === sport) &&
         (r.discount_pct ?? 0) >= minDiscount &&
         (!q ||
-          (r.player_name ?? "").toLowerCase().includes(q) ||
-          (r.parallel ?? "").toLowerCase().includes(q) ||
-          (r.product_name ?? "").toLowerCase().includes(q)),
+          textIncludes(r.player_name, q) ||
+          textIncludes(r.parallel, q) ||
+          textIncludes(r.product_name, q)),
     )
     // Sale-backed first, then by estimated edge — the board's own order, restated so a
     // filter can never reorder it.

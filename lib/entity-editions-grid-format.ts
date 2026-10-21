@@ -11,6 +11,7 @@
 // drops the Top Shot per-moment image fallback.
 
 import { proxyIpfsImageUrl, thumbWidthFor } from "@/lib/ipfs-media"
+import { textIncludes } from "@/lib/filter-match"
 
 export type EditionSortKey = "fmv_desc" | "circ_asc" | "series_desc" | "alpha"
 
@@ -346,8 +347,8 @@ export function filterEditions<T extends FilterableEdition>(
     }
     if (f.badge !== "all" && !(badges.get(e.route_slug) ?? []).includes(f.badge)) return false
     if (q) {
-      const hay = [e.name, e.player_name, e.team_name, e.set_name, e.subedition_name].filter(Boolean).join(" ").toLowerCase()
-      if (!hay.includes(q)) return false
+      const hay = [e.name, e.player_name, e.team_name, e.set_name, e.subedition_name].filter(Boolean).join(" ")
+      if (!textIncludes(hay, q)) return false
     }
     return true
   })

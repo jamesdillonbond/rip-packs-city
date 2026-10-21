@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp";
 import DegradedDataNotice from "@/components/insights/DegradedDataNotice";
 import type { DegradedSummary } from "@/lib/insights/board-status";
+import { textIncludes } from "@/lib/filter-match";
 
 type Row = {
   external_id: string | null;
@@ -416,7 +417,7 @@ export default function CandyBoardClient({
   const marketRows = useMemo(() => {
     let r = initialRows.filter((x) => {
       if (tier && (x.tier || "").toUpperCase() !== tier) return false;
-      if (q && !((x.player_name || "") + " " + (x.edition_name || "")).toLowerCase().includes(q)) return false;
+      if (q && !textIncludes((x.player_name || "") + " " + (x.edition_name || ""), q)) return false;
       return true;
     });
     r = [...r].sort((a, b) => {

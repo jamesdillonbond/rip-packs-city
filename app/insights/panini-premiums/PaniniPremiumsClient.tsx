@@ -19,6 +19,7 @@
 import { useMemo, useState, type CSSProperties } from "react"
 import Link from "next/link"
 import type { PaniniPremiumsPayload, PaniniParallelPremium, PaniniSerialPremium } from "@/lib/insights/panini-premiums"
+import { textIncludes } from "@/lib/filter-match"
 
 type Tab = "parallels" | "serials"
 
@@ -75,7 +76,7 @@ function sportsOf(rows: { sport: string | null }[]): string[] {
 
 function matches(q: string, ...fields: (string | null | undefined)[]): boolean {
   if (!q) return true
-  return fields.some((f) => (f ?? "").toLowerCase().includes(q))
+  return fields.some((f) => textIncludes(f, q))
 }
 
 export default function PaniniPremiumsClient({

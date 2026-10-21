@@ -66,3 +66,12 @@ export function highlightParts(label: string, query: string): Array<{ text: stri
   }
   return parts
 }
+
+/**
+ * Accent- and case-blind substring test for a free-text search box: "doncic"
+ * finds "Luka Dončić", "atletico" finds "Atlético". For plain ASCII it is exactly
+ * `haystack.toLowerCase().includes(needle.toLowerCase())`.
+ */
+export function textIncludes(haystack: string | null | undefined, needle: string): boolean {
+  return foldForMatch(haystack ?? "").includes(foldForMatch(needle))
+}

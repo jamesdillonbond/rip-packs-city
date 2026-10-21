@@ -23,6 +23,7 @@ import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
 import TrackedOutboundLink from "@/components/TrackedOutboundLink"
 import { usdSignFirst } from "@/lib/usd-format"
 import { accentText } from "@/lib/accent-text"
+import { textIncludes } from "@/lib/filter-match"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 const REFRESH_INTERVAL = 30
@@ -399,7 +400,7 @@ export default function PackSniperClient({ initialDeals, initialFetchedAt, locke
     if (recentOnly) rows = rows.filter((d) => d.isNew || d.isPriceDrop)
     if (search.trim()) {
       const s = search.trim().toLowerCase()
-      rows = rows.filter((d) => (d.title || "").toLowerCase().includes(s))
+      rows = rows.filter((d) => textIncludes(d.title, s))
     }
     return [...rows].sort(SORTERS[sortBy])
   }, [deals, showHighVariance, tierTab, maxAsk, minRatio, recentOnly, search, sortBy])

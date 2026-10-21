@@ -22,6 +22,7 @@ import {
 import type { MomentRow, SortKey, CollectionSeriesEntry } from "@/lib/collection/types"
 import type { CollectionViewState } from "@/lib/collection/view-reducer"
 import { AUTOGRAPH_BADGE_TITLE } from "@/lib/autographs"
+import { textIncludes } from "@/lib/filter-match"
 
 export interface FilterSortContext {
   collectionSeriesMap?: Map<number, CollectionSeriesEntry>
@@ -60,8 +61,8 @@ export function computeFilteredSortedRows(
       if (!duplicateEditions.has(key)) return false
     }
     if (q) {
-      const haystack = [r.playerName, r.team ?? "", r.league ?? "", r.series ?? "", r.setName, getParallel(r), r.tier ?? "", ...(r.officialBadges ?? []), ...(r.badgeInfo?.badge_titles ?? []), ...getTraits(r)].join(" ").toLowerCase()
-      if (!haystack.includes(q)) return false
+      const haystack = [r.playerName, r.team ?? "", r.league ?? "", r.series ?? "", r.setName, getParallel(r), r.tier ?? "", ...(r.officialBadges ?? []), ...(r.badgeInfo?.badge_titles ?? []), ...getTraits(r)].join(" ")
+      if (!textIncludes(haystack, q)) return false
     }
     return true
   })

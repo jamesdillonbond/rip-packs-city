@@ -7,6 +7,7 @@ import { useState } from "react"
 import SearchableSelect from "@/components/filters/SearchableSelect"
 import MultiSelect from "@/components/filters/MultiSelect"
 import FilterSelect from "@/components/filters/FilterSelect"
+import Autocomplete from "@/components/filters/Autocomplete"
 
 afterEach(cleanup)
 
@@ -98,6 +99,15 @@ describe("SearchableSelect", () => {
     expect(screen.queryByRole("listbox")).toBeNull()
   })
 
+  it("a highlighted option keeps its spaces in its accessible name", () => {
+    render(<Single options={[...TEAMS, "Luka Dončić"]} />)
+    fireEvent.click(screen.getByRole("button", { name: "Team" }))
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "doncic" } })
+    // A <span> per plain run read as "LukaDončić" (the walk trims at element edges).
+    expect(screen.getByRole("option", { name: "Luka Dončić" })).toBeTruthy()
+    expect(screen.getByRole("option").querySelector("mark")?.textContent).toBe("Dončić")
+  })
+
   it("says so when nothing matches, instead of an empty box", () => {
     render(<Single />)
     fireEvent.click(screen.getByRole("button", { name: "Team" }))
@@ -171,5 +181,60 @@ describe("FilterSelect", () => {
     rerender(<FilterSelect label="Team" value="all" allLabel="All Teams" options={TEAMS} onChange={() => {}} />)
     expect(container.querySelector("select")).toBeNull()
     expect(within(container).getByRole("button", { name: "Team" })).toBeTruthy()
+  })
+})
+
+function Auto({ suggestions = ["Luka Dončić", "Luka Garza", "Damian Lillard"] }: { suggestions?: string[] }) {
+  const [v, setV] = useState("")
+  return (
+    <>
+      <Autocomplete label="Search by player" value={v} onChange={setV} suggestions={suggestions} />
+      <output data-testid="value">{v}</output>
+    </>
+  )
+}
+
+describe("Autocomplete", () => {
+  it("the typed text is the filter; no list until something is typed", () => {
+    render(<Auto />)
+    const box = screen.getByRole("combobox", { name: "Search by player" })
+    fireEvent.focus(box)
+    expect(screen.queryByRole("listbox")).toBeNull()
+    fireEvent.change(box, { target: { value: "luka" } })
+    expect(value()).toBe("luka")
+    expect(screen.getAllByRole("option").map((o) => o.textContent)).toEqual(["Luka Dončić", "Luka Garza"])
+  })
+
+  it("↓ then Enter takes the suggestion; Enter with nothing active keeps the typed text", () => {
+    render(<Auto />)
+    const box = screen.getByRole("combobox")
+    fireEvent.change(box, { target: { value: "luka" } })
+    fireEvent.keyDown(box, { key: "Enter" })
+    expect(value()).toBe("luka")
+    fireEvent.keyDown(box, { key: "ArrowDown" })
+    fireEvent.keyDown(box, { key: "ArrowDown" })
+    expect(document.getElementById(box.getAttribute("aria-activedescendant")!)?.textContent).toBe("Luka Garza")
+    fireEvent.keyDown(box, { key: "Enter" })
+    expect(value()).toBe("Luka Garza")
+    expect(screen.queryByRole("listbox")).toBeNull()
+  })
+
+  it("Escape closes the list but keeps what was typed", () => {
+    render(<Auto />)
+    const box = screen.getByRole("combobox")
+    fireEvent.change(box, { target: { value: "dami" } })
+    fireEvent.keyDown(box, { key: "Escape" })
+    expect(screen.queryByRole("listbox")).toBeNull()
+    expect(value()).toBe("dami")
+    expect(box.getAttribute("aria-expanded")).toBe("false")
+  })
+
+  it("a suggestion identical to the text is not offered again, an accent-only difference is", () => {
+    render(<Auto />)
+    const box = screen.getByRole("combobox")
+    fireEvent.change(box, { target: { value: "Damian Lillard" } })
+    expect(screen.queryByRole("listbox")).toBeNull()
+    fireEvent.change(box, { target: { value: "luka doncic" } })
+    expect(screen.getAllByRole("option").map((o) => o.textContent)).toEqual(["Luka Dončić"])
   })
 })

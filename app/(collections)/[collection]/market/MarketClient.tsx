@@ -34,6 +34,8 @@ import { parseList, fmtDiscount, resolveListingUrl, fmtUsd, TIER_COLORS, tierCol
 import { filterListingsByOwned, countActiveFilters } from "@/lib/market/filters"
 import BadgeIcon from "@/components/BadgeIcon"
 import MultiSelect from "@/components/filters/MultiSelect"
+import Autocomplete from "@/components/filters/Autocomplete"
+import ActiveFilterPills from "@/components/filters/ActiveFilterPills"
 import { trackOutboundClick } from "@/lib/track-click"
 import { collectionHasPage, dapperMarketMomentUrl, getCollection, getCollectionUuid, collectionHasLocking, collectionHasBadges } from "@/lib/collections"
 import IpfsImg from "@/components/media/IpfsImg"
@@ -730,19 +732,14 @@ function MarketInner() {
           />
 
           <span className="rpc-label" style={{ marginLeft: 12 }}>{getEntityLabels(collectionId).player}</span>
-          <input
-            type="text"
+          <Autocomplete
+            label={`Search by ${getEntityLabels(collectionId).player.toLowerCase()}`}
             placeholder="Search…"
-            aria-label={`Search by ${getEntityLabels(collectionId).player.toLowerCase()}`}
             value={playerQuery}
-            onChange={(e) => setPlayerQuery(e.target.value)}
-            list="market-player-suggestions"
-            autoComplete="off"
-            style={{ ...inputStyle, width: 180 }}
+            onChange={setPlayerQuery}
+            suggestions={playerSuggestions}
+            inputStyle={{ ...inputStyle, width: 180 }}
           />
-          <datalist id="market-player-suggestions">
-            {playerSuggestions.map((p) => <option key={p} value={p} />)}
-          </datalist>
 
           {activeFilterCount > 0 && (
             <button
@@ -789,6 +786,14 @@ function MarketInner() {
             </div>
           )}
         </div>
+
+        {/* Row 3b: one removable pill per multi-select pick — "3 selected" on a chip hides which. */}
+        <ActiveFilterPills groups={[
+          { label: "Set", values: setsSel, onRemove: (v) => setSetsSel(setsSel.filter((x) => x !== v)) },
+          { label: "Series", values: seriesSel, onRemove: (v) => setSeriesSel(seriesSel.filter((x) => x !== v)), format: (v) => marketSeriesLabel(v, collectionId) },
+          { label: getEntityLabels(collectionId).team, values: teamsSel, onRemove: (v) => setTeamsSel(teamsSel.filter((x) => x !== v)) },
+          { label: "Badge", values: badgesSel, onRemove: (v) => setBadgesSel(badgesSel.filter((x) => x !== v)) },
+        ]} />
 
         {/* Row 4: result summary */}
         <div className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.08em" }}>

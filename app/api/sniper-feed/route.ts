@@ -24,6 +24,7 @@ import {
 import { createSourceFailureSink, sniperFeedDegraded, type SourceFailureSink } from "@/lib/sniper/source-failures";
 import { decorateAutographs, filterAutographsOnly, isAutographCollection } from "@/lib/sniper/autograph-decorate";
 import { AUTOGRAPH_BADGE_SLUG, AUTOGRAPH_BADGE_TITLE, fetchTopShotAutographedKeys } from "@/lib/autographs";
+import { textIncludes } from "@/lib/filter-match";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1323,7 +1324,7 @@ export async function GET(req: Request) {
     }
     if (player && player.trim()) {
       const lower = player.trim().toLowerCase();
-      out = out.filter((d) => d.playerName.toLowerCase().includes(lower));
+      out = out.filter((d) => textIncludes(d.playerName, lower));
     }
     if (params.flowWalletOnly === "true") {
       out = out.filter((d) => d.paymentToken === "FLOW" || d.paymentToken === "USDC_E");

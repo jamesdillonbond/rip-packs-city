@@ -4,7 +4,7 @@
 // dismiss on an outside press, keep the panel inside the viewport on a phone,
 // focus the search box when opened with a mouse, and render a highlighted label.
 
-import { useEffect, useLayoutEffect, useRef, type RefObject } from "react"
+import { Fragment, useEffect, useLayoutEffect, useRef, type RefObject } from "react"
 import { highlightParts } from "@/lib/filter-match"
 
 /** Above this many options a filter gets a type-to-filter box. */
@@ -86,7 +86,9 @@ export function HighlightedLabel({ text, query }: { text: string; query: string 
     <>
       {parts.map((p, i) => p.match
         ? <mark key={i} style={{ background: "transparent", color: "var(--rpc-text-primary)", fontWeight: 700, textDecoration: "underline", textUnderlineOffset: 2 }}>{p.text}</mark>
-        : <span key={i}>{p.text}</span>)}
+        // Bare text, not a <span>: an accessible-name walk can trim at element
+        // edges and read "Luka Dončić" as "LukaDončić".
+        : <Fragment key={i}>{p.text}</Fragment>)}
     </>
   )
 }

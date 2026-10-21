@@ -4,6 +4,7 @@ import { FreshnessStamp } from "@/components/insights/FreshnessStamp";
 import DegradedDataNotice from "@/components/insights/DegradedDataNotice";
 import type { DegradedSummary } from "@/lib/insights/board-status";
 import { fmvBasis } from "@/lib/fmv-basis";
+import { textIncludes } from "@/lib/filter-match";
 
 type Row = {
   player_name: string | null;
@@ -209,7 +210,7 @@ export default function PaniniSqueezeClient({
     let r = initialRows.filter((x) => {
       if (cap === 1 ? Number(x.mint_cap) !== 1 : cap > 0 && Number(x.mint_cap) > cap) return false;
       if (rookie && !x.is_rookie) return false;
-      if (q && !((x.player_name || "") + " " + (x.set_name || "")).toLowerCase().includes(q)) return false;
+      if (q && !textIncludes((x.player_name || "") + " " + (x.set_name || ""), q)) return false;
       return true;
     });
     r = [...r].sort((a, b) => {

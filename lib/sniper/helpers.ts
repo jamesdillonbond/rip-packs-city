@@ -9,6 +9,7 @@ import { marketplaceMomentUrl, dapperMarketMomentUrl } from "@/lib/collections";
 import { PINNACLE_VARIANT_COLORS, PINNACLE_VARIANT_LABELS } from "@/lib/pinnacle/pinnacleTypes";
 import { trackOutboundClick } from "@/lib/track-click";
 import type { SniperDeal } from "./types";
+import { textIncludes } from "@/lib/filter-match";
 
 // P2.5 — a deal is "verified" when its FMV is backed by real recent sales
 // (HIGH/MEDIUM confidence) and was NOT thin-data-clamped or ask-fallback.
@@ -207,9 +208,9 @@ export function filterSniperDeals(deals: SniperDeal[], opts: SniperDealFilterOpt
     if (opts.chaserOnly && d.isChaser !== true) return false;
     if (q) {
       if (
-        !d.playerName.toLowerCase().includes(q) &&
-        !d.setName.toLowerCase().includes(q) &&
-        !d.teamName.toLowerCase().includes(q)
+        !textIncludes(d.playerName, q) &&
+        !textIncludes(d.setName, q) &&
+        !textIncludes(d.teamName, q)
       )
         return false;
     }

@@ -771,11 +771,57 @@ describe("MarketClient — controls", () => {
     filterOptionsResponse = () => json(200, CATALOG)
     render(<MarketClient />)
     await screen.findByText("Damian Lillard")
+    const box = screen.getByRole("combobox", { name: /Search by player/i })
+    const suggested = async (q: string) => {
+      fireEvent.change(box, { target: { value: q } })
+      const list = await screen.findByRole("listbox", { name: /suggestions/ })
+      return within(list).getAllByRole("option").map((o) => o.textContent)
+    }
+    // catalog player (not on the page) and page player (not in the catalog) both offered
+    await waitFor(async () => expect(await suggested("paige")).toContain("Paige Bueckers"))
+    expect(await suggested("lillard")).toContain("Damian Lillard")
+  })
+
+  // 2026-10-21: the <datalist> matched accent-SENSITIVELY and the route's ilike is
+  // too, so "doncic" found no listing for "Luka Dončić" and the board read empty.
+  it("suggests the accented catalog spelling for an unaccented query, and picking it sends that spelling", async () => {
+    filterOptionsResponse = () => json(200, { ...CATALOG, players: ["Luka Dončić", "Paige Bueckers"] })
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    const box = screen.getByRole("combobox", { name: /Search by player/i })
+    fireEvent.change(box, { target: { value: "doncic" } })
+    const list = await screen.findByRole("listbox", { name: /suggestions/ })
+    fireEvent.click(within(list).getByRole("option", { name: "Luka Dončić" }))
+    expect((box as HTMLInputElement).value).toBe("Luka Dončić")
     await waitFor(() => {
-      const values = Array.from(document.querySelectorAll("#market-player-suggestions option")).map((o) => o.getAttribute("value"))
-      expect(values).toContain("Paige Bueckers")
-      expect(values).toContain("Damian Lillard")
+      const urls = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.startsWith("/api/market?"))
+      expect(urls.some((u) => new URL(u, "https://t").searchParams.get("player") === "Luka Dončić")).toBe(true)
     })
+  })
+
+  it("shows each multi-select pick as a pill that removes just that one", async () => {
+    searchParams = new URLSearchParams("set=Archive+Set&team=Portland+Fire,Seattle+Storm")
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    const pills = screen.getByRole("list", { name: "Active filters" })
+    expect(within(pills).getAllByRole("button").map((b) => b.getAttribute("aria-label"))).toEqual([
+      "Remove Set filter: Archive Set",
+      "Remove Team filter: Portland Fire",
+      "Remove Team filter: Seattle Storm",
+    ])
+    fireEvent.click(within(pills).getByRole("button", { name: "Remove Team filter: Portland Fire" }))
+    await waitFor(() => {
+      const last = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.startsWith("/api/market?")).pop()!
+      const team = new URL(last, "https://t").searchParams.get("team")
+      expect(team).toBe("Seattle Storm")
+      expect(new URL(last, "https://t").searchParams.get("set")).toBe("Archive Set")
+    })
+  })
+
+  it("renders no pill row when nothing is picked", async () => {
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    expect(screen.queryByRole("list", { name: "Active filters" })).toBeNull()
   })
 
   it("still offers the page's teams when the catalog cannot be read", async () => {

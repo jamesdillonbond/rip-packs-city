@@ -12,6 +12,7 @@ import { PINNACLE_MARKETPLACE_URL, type PinnacleSniperDeal } from "@/lib/pinnacl
 import { pinnacleSerialFmv, pinnacleSerialFmvData, toMultiplierMap } from "@/lib/pinnacle/serial-fmv"
 import { isSerialisedEditionType } from "@/lib/pinnacle/serialisation"
 import { applyFmvStalenessPenalty, fmvCannotAnchorDiscount } from "@/lib/sniper/fmv-staleness"
+import { textIncludes } from "@/lib/filter-match"
 
 /** Pinnacle LOW = at most one sale in 30 days: too thin to anchor a discount. */
 export function pinnacleLowIsThin(confidence: string | null | undefined): boolean {
@@ -242,10 +243,10 @@ export async function computePinnacleSniperFeed(opts: PinnacleSniperOpts = {}): 
   if (playerFilter) {
     const q = playerFilter.toLowerCase()
     deals = deals.filter((d) =>
-      d.characterName.toLowerCase().includes(q) ||
-      (d.pinName ?? "").toLowerCase().includes(q) ||
-      d.franchise.toLowerCase().includes(q) ||
-      d.setName.toLowerCase().includes(q)
+      textIncludes(d.characterName, q) ||
+      textIncludes(d.pinName, q) ||
+      textIncludes(d.franchise, q) ||
+      textIncludes(d.setName, q)
     )
   }
 
