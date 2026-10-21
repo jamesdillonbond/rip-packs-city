@@ -98,7 +98,7 @@ export async function GET(req: NextRequest) {
             maxWidth: 1000,
           }}
         >
-          Pinnacle doesn&apos;t lock or burn. Its scarcity is mint count + variant family. Editions ranked vs their variant&apos;s average.
+          Pinnacle scarcity: mint count + variant family, not lock + burn. Editions ranked vs their variant&apos;s average.
         </div>
 
         <div style={{ marginTop: 34, display: "flex", flexDirection: "column", gap: 12 }}>

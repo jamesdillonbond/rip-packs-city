@@ -130,13 +130,19 @@ export default async function SniperHubPage() {
             ) : null}
           </div>
 
+          {/* 2026-10-21 sweep: this list read as every collection's biggest discounts (all 12 rows Pinnacle,
+              best −43%) while /panini-blockchain listed −82%. The board admits only listings below an FMV
+              backed by steady recent sales; a collection's own sniper also ranks thinner prices. */}
+          <p data-testid="sniper-hub-scope" className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-muted)", margin: "0 0 10px" }}>
+            Only listings below an FMV backed by steady recent sales. Each collection&apos;s sniper above also ranks thinner-priced editions.
+          </p>
           {readFailed ? (
             <p data-testid="sniper-hub-unavailable" style={noticeStyle}>
               Deals couldn&apos;t be loaded right now. Each collection&apos;s sniper above still works.
             </p>
           ) : rows.length === 0 ? (
             <p data-testid="sniper-hub-empty" style={noticeStyle}>
-              No listing is 10% or more below its FMV right now.
+              No listing on this board is 10% or more below its FMV right now.
             </p>
           ) : (
             <ol data-testid="sniper-hub-deals" style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 8 }}>

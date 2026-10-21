@@ -498,7 +498,7 @@ export default function CollectionOverviewClient({
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
             <div style={{ width: 6, height: 6, borderRadius: "50%", background: accent }} />
             <span className="rpc-label">
-              {collection === "disney-pinnacle" ? "Cheapest Available Asks" : "Top 5 Sniper Deals"}
+              {collection === "disney-pinnacle" ? "Cheapest Available Asks" : "Top Sniper Deals"}
             </span>
             <Link href={basePath + "/sniper"} className="rpc-mono rpc-tap44" style={{ marginLeft: "auto", fontSize: "var(--text-xs)", color: "var(--rpc-text-muted)", textDecoration: "none" }}>
               View all {"\u2192"}

@@ -304,7 +304,7 @@ export const INSIGHTS_BOARDS: readonly InsightsBoard[] = [
     kind: "dataset",
     name: "The Trophy Room",
     description:
-      "Ranks the rarest NBA Top Shot and NFL All Day editions — every 1-of-1 and Ultimate-tier moment — by fair market value.",
+      "Ranks the rarest editions across every collection RPC tracks — every 1-of-1 and Ultimate-tier moment — by fair market value.",
     publicApi: true,
   },
   {

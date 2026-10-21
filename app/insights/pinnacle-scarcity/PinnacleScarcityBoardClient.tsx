@@ -137,8 +137,8 @@ export default function PinnacleScarcityBoardClient({
         <div className="rpc-ps-eyebrow">RPC Insights · Public</div>
         <h1 className="rpc-ps-h1">Pinnacle Scarcity Board</h1>
         <p className="rpc-ps-lede">
-          Disney Pinnacle doesn&apos;t have Top Shot&apos;s lock + burn
-          mechanic. Its scarcity comes from <strong>low mint counts</strong>{" "}
+          Disney Pinnacle has no lock, and this board does not rank by burned
+          supply. Its scarcity comes from <strong>low mint counts</strong>{" "}
           within a variant family, <strong>chaser status</strong>, and
           premium variants. This board ranks editions by how far below their
           variant family&apos;s average mint they sit.

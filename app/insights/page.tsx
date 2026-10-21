@@ -228,7 +228,7 @@ const CARDS: Card[] = [
     eyebrow: "Live",
     title: "Disney Pinnacle Scarcity Board",
     blurb:
-      "Pinnacle doesn't have lock + burn. Its scarcity is mint count + variant family + chaser status. Editions ranked by how far below their variant family's average mint they sit.",
+      "Pinnacle scarcity read from mint count + variant family + chaser status, not lock + burn. Editions ranked by how far below their variant family's average mint they sit.",
     cta: "Open Pinnacle board",
     available: true,
   },
@@ -237,7 +237,7 @@ const CARDS: Card[] = [
     eyebrow: "Live",
     title: "NFL All Day Scarcity Board",
     blurb:
-      "All Day doesn't lock or burn either. Its scarcity is mint count + set + tier family. Editions ranked by how far below their family's average mint they sit — low-mint parallels and #1 mints, surfaced.",
+      "All Day scarcity read from mint count + set + tier family, not lock + burn. Editions ranked by how far below their family's average mint they sit — low-mint parallels and #1 mints, surfaced.",
     cta: "Open All Day board",
     available: true,
   },
@@ -273,7 +273,7 @@ const CARDS: Card[] = [
     eyebrow: "Live",
     title: "The Trophy Room",
     blurb:
-      "Every 1-of-1 and Ultimate-tier moment across Top Shot and NFL All Day, ranked by value. The rarest editions on Flow, in one place — most have never traded, which is exactly what makes them trophies.",
+      "Every 1-of-1 and Ultimate-tier moment across every collection RPC tracks, ranked by value. The rarest editions in one place — most have never traded, which is exactly what makes them trophies.",
     cta: "Open trophy room",
     available: true,
   },

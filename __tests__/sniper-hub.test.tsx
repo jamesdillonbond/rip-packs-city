@@ -63,6 +63,10 @@ describe("sniper hub — the deals list's three states", () => {
     const { queryByTestId } = await renderHub()
     expect(queryByTestId("sniper-hub-empty")).not.toBeNull()
     expect(queryByTestId("sniper-hub-unavailable")).toBeNull()
+    // The board is a subset (FMVs backed by steady sales); its empty state must not conclude for
+    // every collection (2026-10-21 sweep: Panini listed −82% while this list held only Pinnacle).
+    expect(queryByTestId("sniper-hub-empty")?.textContent).toContain("on this board")
+    expect(queryByTestId("sniper-hub-scope")).not.toBeNull()
   })
 
   it("rows render as links to their drill-down", async () => {

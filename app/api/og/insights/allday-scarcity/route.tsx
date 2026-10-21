@@ -97,7 +97,7 @@ export async function GET(req: NextRequest) {
             maxWidth: 1000,
           }}
         >
-          All Day doesn&apos;t lock or burn. Its scarcity is mint count + set + tier. Editions ranked vs their family&apos;s average.
+          All Day scarcity: mint count + set + tier, not lock + burn. Editions ranked vs their family&apos;s average.
         </div>
 
         <div style={{ marginTop: 34, display: "flex", flexDirection: "column", gap: 12 }}>

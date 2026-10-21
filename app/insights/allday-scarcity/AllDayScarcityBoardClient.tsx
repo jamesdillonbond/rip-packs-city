@@ -135,8 +135,9 @@ export default function AllDayScarcityBoardClient({
         <div className="rpc-ads-eyebrow">RPC Insights · Public</div>
         <h1 className="rpc-ads-h1">NFL All Day Scarcity Board</h1>
         <p className="rpc-ads-lede">
-          NFL All Day doesn&apos;t have Top Shot&apos;s lock + burn mechanic or
-          Pinnacle&apos;s variant system. Its scarcity comes from{" "}
+          Unlike Top Shot&apos;s Squeeze Board, this board does not rank by
+          locked + burned supply, and All Day has no Pinnacle-style variant
+          system. Here scarcity comes from{" "}
           <strong>low mint counts</strong> within a set + tier family —
           parallels, #1 mints, and premium-tier moments. This board ranks
           editions by how far below their family&apos;s average mint they sit.
