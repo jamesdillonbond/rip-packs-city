@@ -57,6 +57,25 @@ if [ "${VERCEL_ENV:-}" = "preview" ]; then
 fi
 
 base="${VERCEL_GIT_PREVIOUS_SHA:-}"
+
+# ── A LATE BUILD OF AN OLDER COMMIT MUST NOT REPLACE A NEWER LIVE ONE (2026-10-21)
+# Git deployments arrived 17–22 min after their push that morning, and a build of
+# an OLDER commit that becomes READY after a newer one takes the production
+# alias: 8e28e329's late build rolled 7807764a off prod 8:00–8:18 AM PT, and
+# 02d1325a's rolled 6ccc20ef off 8:23–8:38. The diff below could not see it —
+# Vercel clones only the commit it builds (`Cloning … Commit: 02d1325`), the
+# newer live sha is absent, and the fallback is HEAD^, which shows code → BUILD.
+# So: fetch the live sha if the clone lacks it, and if HEAD is STRICTLY its
+# ancestor, everything in HEAD is already live — skip. Any failure to fetch or
+# decide falls through to the existing logic (build), never to "skip".
+if [ -n "$base" ] && [ "$base" != "$(git rev-parse HEAD 2>/dev/null)" ]; then
+  git cat-file -e "${base}^{commit}" 2>/dev/null || git fetch -q --depth=200 origin "$base" 2>/dev/null || true
+  if git cat-file -e "${base}^{commit}" 2>/dev/null && git merge-base --is-ancestor HEAD "$base" 2>/dev/null; then
+    echo "vercel-ignore-build: skip — $(git rev-parse --short HEAD) is already contained in the live deployment (${base})"
+    exit 0
+  fi
+fi
+
 if [ -z "$base" ] || ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
   base="HEAD^"
 fi

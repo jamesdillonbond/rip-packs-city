@@ -117,6 +117,63 @@ describe("the gate, executed against a real repository", () => {
     expect(gateSkips(dir, deployed)).toBe(true)
   })
 
+  // 2026-10-21: late git builds of OLDER commits took the production alias from
+  // newer live ones twice in one morning (8e28e329 over 7807764a, 02d1325a over
+  // 6ccc20ef). Vercel clones only the commit it builds, so the newer live sha is
+  // not in the clone — the second case below is that exact shape.
+  it("🚨 a late build of a commit OLDER than the live one is skipped (it would roll prod back)", () => {
+    const { dir } = repo()
+    writeFileSync(path.join(dir, "app.ts"), "export const v = 2\n")
+    git(dir, "commit", "-aqm", "older code")
+    const older = git(dir, "rev-parse", "HEAD").trim()
+    writeFileSync(path.join(dir, "app.ts"), "export const v = 3\n")
+    git(dir, "commit", "-aqm", "newer code — live")
+    const live = git(dir, "rev-parse", "HEAD").trim()
+    git(dir, "checkout", "-q", older)
+    expect(gateSkips(dir, live), "HEAD is an ancestor of what is live").toBe(true)
+  })
+
+  it("🚨 …also from a SHALLOW clone of the older commit that lacks the live sha (fetched by the gate)", () => {
+    const { dir: origin } = repo()
+    git(origin, "config", "uploadpack.allowAnySHA1InWant", "true")
+    writeFileSync(path.join(origin, "app.ts"), "export const v = 2\n")
+    git(origin, "commit", "-aqm", "older code")
+    const older = git(origin, "rev-parse", "HEAD").trim()
+    writeFileSync(path.join(origin, "app.ts"), "export const v = 3\n")
+    git(origin, "commit", "-aqm", "newer code — live")
+    const live = git(origin, "rev-parse", "HEAD").trim()
+    const clone = mkdtempSync(path.join(tmpdir(), "deploy-gate-clone-"))
+    git(clone, "init", "-q")
+    git(clone, "remote", "add", "origin", `file://${origin}`)
+    git(clone, "fetch", "-q", "--depth=1", "origin", older)
+    git(clone, "checkout", "-q", older)
+    let present = true
+    try { git(clone, "cat-file", "-e", `${live}^{commit}`) } catch { present = false }
+    expect(present, "control: the shallow clone does not have the live sha").toBe(false)
+    expect(gateSkips(clone, live)).toBe(true)
+  })
+
+  it("MIRROR: a NEWER commit than the live one with code still builds; the same commit is unchanged", () => {
+    const { dir, deployed } = repo()
+    writeFileSync(path.join(dir, "app.ts"), "export const v = 2\n")
+    git(dir, "commit", "-aqm", "code")
+    expect(gateSkips(dir, deployed)).toBe(false)
+    const head = git(dir, "rev-parse", "HEAD").trim()
+    expect(gateSkips(dir, head), "same sha: no diff → skipped, as before").toBe(true)
+  })
+
+  it("MIRROR: a sibling branch (not an ancestor of live) with code still builds", () => {
+    const { dir, deployed } = repo()
+    writeFileSync(path.join(dir, "app.ts"), "export const v = 2\n")
+    git(dir, "commit", "-aqm", "live")
+    const live = git(dir, "rev-parse", "HEAD").trim()
+    git(dir, "checkout", "-q", "-b", "side", deployed)
+    writeFileSync(path.join(dir, "lib.ts"), "export const w = 1\n")
+    git(dir, "add", "-A")
+    git(dir, "commit", "-qm", "sibling code")
+    expect(gateSkips(dir, live)).toBe(false)
+  })
+
   it("⛔ an unknown or empty previous sha degrades to HEAD^ rather than skipping a code change", () => {
     const { dir } = repo()
     writeFileSync(path.join(dir, "app.ts"), "export const v = 2\n")
