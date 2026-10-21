@@ -193,7 +193,7 @@ Full canon + every instance: [docs/reference/key-files-and-honesty.md](docs/refe
 - **A docs-only push never rebuilds** — `ignoreCommand` diffs vs the LAST DEPLOY and also skips migrations/tests/`.github` (#61); ⚠ the v13 POST does NOT override it. Touch a non-docs file.
 - **Pro Lambda `maxDuration` hard cap is 800s.** Higher sends the deploy to ERROR *invisibly*.
 - 🚨 **A GREEN SUITE IS NOT A DEPLOY GATE FOR SEGMENT SEMANTICS** — `DYNAMIC_SERVER_USAGE` lives only in a real render, so `tsc`/vitest/lint and even a guard pinning the CALL are blind; it 500'd a live route (09-20). **CI `build-render` renders all routes (09-25); PREVIEW-verify too.**
-- ⚠ **`get_deployment.state` LAGS** — corroborate with `ready` vs `buildingAt`; **check a deploy EXISTS and its state PER COMMIT** — a push can create NONE (09-26). 🚨 Rollback aliases LIE; disk IO can fail a build: tooling-gotchas.md.
+- ⚠ **`get_deployment.state` LAGS** (`ready` vs `buildingAt`); **check the deploy PER COMMIT** — "none" may be a ~20-min LAG, and a late OLD build then STEALS prod (10-21). 🚨 Rollback aliases LIE; disk IO can fail a build: tooling-gotchas.md.
 
 ---
 
