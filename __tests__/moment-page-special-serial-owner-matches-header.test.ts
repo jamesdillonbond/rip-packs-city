@@ -18,3 +18,14 @@ describe("moment page: the Special serials row for THIS serial names the header'
     expect(table).toMatch(/isThisSerial\s*&&\s*ss\?\.owner_address\s*\?\s*\(\s*<OwnerLink address=\{ss\.owner_address\}/)
   })
 })
+
+// 2026-10-21 sweep: /moment/50285673 read "1 sale / 30d" beside a listed $594 sale 6 days earlier —
+// that sale was to TopShot_Buyback_2, which sales_market (the count's source) excludes by design.
+// The label must say what it counts.
+describe("moment page: the 30d / 7d sales count says it counts MARKET sales", () => {
+  it("labels both windows as market sales", () => {
+    expect(src).toMatch(/`\$\{f\.sales_count_30d\} market \$\{/)
+    expect(src).toMatch(/`\$\{f\?\.sales_count_7d\} market \$\{/)
+    expect(src).not.toMatch(/`\$\{f\?\.sales_count_7d\} sales \/ 7d`/)
+  })
+})

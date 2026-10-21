@@ -894,6 +894,10 @@ export default async function MomentPage(
               front-end content) — keep only the factual sales-count basis. */}
           {showSalesCount && (f?.sales_count_30d || f?.sales_count_7d) ? (
             <div
+              // The count is market sales only (sales_market): a sale to a platform buyback wallet
+              // is listed in Recent activity but not counted (/moment/50285673, 2026-10-21: "1 sale /
+              // 30d" beside a $594 sale to TopShot_Buyback_2).
+              title="Market sales only: sales to a platform buyback wallet are listed below but not counted."
               style={{
                 fontFamily: "var(--font-mono)",
                 fontSize: "var(--text-xs, 12px)",
@@ -903,8 +907,8 @@ export default async function MomentPage(
               }}
             >
               {f?.sales_count_30d
-                ? `${f.sales_count_30d} ${f.sales_count_30d === 1 ? "sale" : "sales"} / 30d`
-                : `${f?.sales_count_7d} sales / 7d`}
+                ? `${f.sales_count_30d} market ${f.sales_count_30d === 1 ? "sale" : "sales"} / 30d`
+                : `${f?.sales_count_7d} market ${f?.sales_count_7d === 1 ? "sale" : "sales"} / 7d`}
             </div>
           ) : null}
 
