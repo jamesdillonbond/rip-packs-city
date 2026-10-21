@@ -1041,7 +1041,7 @@ function formatSeriesLabel(label: string, collectionUrlSlug: string): string {
  * Edition detail page. Expects a payload with route_slug + name fields and
  * optionally fmv.fmv_usd. Pinnacle payloads carry the same fields.
  */
-export function editionPageMetadata(payload: Payload, collectionUrlSlug: string): Metadata {
+export function editionPageMetadata(payload: Payload, collectionUrlSlug: string, titleTieBreak: string | null = null): Metadata {
   const collectionLabel = ownMeta(COLLECTION_DISPLAY_NAMES, collectionUrlSlug) ?? "Flow"
   const routeSlug = s(payload, "route_slug") ?? s(payload, "external_id") ?? ""
   // Team moments have no player_name — fall back to the team before the raw
@@ -1064,7 +1064,10 @@ export function editionPageMetadata(payload: Payload, collectionUrlSlug: string)
   // 2026-10-21: the context also names the PLAY, its DATE, Top Shot's ::N
   // parallel and (All Day / Golazos) the mint size — 71 % of Top Shot edition
   // titles were shared with another edition. lib/edition-title-context.ts.
-  const context = editionTitleContext(payload, collectionUrlSlug, setName)
+  // titleTieBreak (lib/edition/title-twins.ts): the fewest words separating this
+  // edition from siblings that would otherwise render the identical title.
+  const baseContext = editionTitleContext(payload, collectionUrlSlug, setName)
+  const context = titleTieBreak ? `${baseContext} · ${titleTieBreak}` : baseContext
   // ⛔ NO DOLLAR FIGURE IN THE TITLE (2026-09-06, Search Console read §5).
   // The title used to interpolate the live FMV — "… · Value $1.11 | …" — which
   // is wrong on two counts. (1) It re-writes the <title> of ~20K entity URLs on

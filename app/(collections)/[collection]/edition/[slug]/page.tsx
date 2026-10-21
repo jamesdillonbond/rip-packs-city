@@ -27,6 +27,7 @@ import { fetchPackProvenance, fetchOwnerUsernames } from "@/lib/edition/fetchers
 import { editionDescriptionText } from "@/lib/edition/description"
 import { lookupTopShotFossilRedirect } from "@/lib/edition/fossil-redirect"
 import { lookupTopShotEditionAliasRedirect } from "@/lib/edition/alias-redirect"
+import { fetchTitleDisambiguator } from "@/lib/edition/title-twins"
 import { editionPageMetadata, editionJsonLd, collectionDisplayName, NOT_FOUND_METADATA } from "@/lib/seo"
 import Breadcrumbs from "@/components/entity/Breadcrumbs"
 import MomentHeroMedia from "@/components/MomentHeroMedia"
@@ -467,7 +468,9 @@ export async function generateMetadata(
     return { title: { absolute: `${slug} | ${coll.displayName} | Rip Packs City` } }
   }
   if (!detail) return NOT_FOUND_METADATA
-  return editionPageMetadata(detail as unknown as Record<string, unknown>, collection)
+  const payload = detail as unknown as Record<string, unknown>
+  const tieBreak = await fetchTitleDisambiguator(coll.id, payload, collection)
+  return editionPageMetadata(payload, collection, tieBreak)
 }
 
 // ── Page ────────────────────────────────────────────────────────────────────
