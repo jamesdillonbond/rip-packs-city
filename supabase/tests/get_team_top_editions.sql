@@ -164,6 +164,8 @@ BEGIN
         e.video_url,
         e.team_name,
         e.subedition_name,
+        e.play_category,
+        e.game_date,
         e.play_type,
         fmv.fmv_usd,
         fmv.floor_price_usd                                AS floor_usd,

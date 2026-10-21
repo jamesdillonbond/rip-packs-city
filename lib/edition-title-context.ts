@@ -74,3 +74,19 @@ export function editionTitleContext(p: Payload, collectionUrlSlug: string, setFa
   }
   return parts.filter((x): x is string => !!x).join(" · ")
 }
+
+/**
+ * "<play> · <date>" for an edition GRID TILE (2026-10-21, 20261021145002) —
+ * the same play + date the page title carries, so a player's several editions
+ * in one set are not identical tiles (Kon Knueppel's Signature Series 1/1s
+ * read "Signature Series · ULTIMATE · Series 2025-26" three times). Top Shot,
+ * All Day, Golazos only; null when neither part is known. A team moment's tile
+ * subject already names its play, so only the date is added there.
+ */
+export function editionPlayLabel(p: Payload, collectionUrlSlug: string): string | null {
+  if (!PLAY_COLLECTIONS.has(collectionUrlSlug)) return null
+  const isTeamMoment = !str(p, "player_name")
+  const play = isTeamMoment ? null : (str(p, "play_category") ?? str(p, "play_type"))
+  const parts = [play, formatGameDate(p.game_date)].filter((x): x is string => !!x)
+  return parts.length ? parts.join(" · ") : null
+}

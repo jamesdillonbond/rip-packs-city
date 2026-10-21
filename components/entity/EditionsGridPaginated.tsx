@@ -32,6 +32,7 @@ import {
 import { getCollection, collectionHasLocking, COLLECTION_UUID_BY_SLUG } from "@/lib/collections"
 import { ownLookup } from "@/lib/safe-lookup"
 import { getOwnerKeyForChain, onOwnerKeyChangeForChain, ownerKeyMatchesChain } from "@/lib/owner-key"
+import { editionPlayLabel } from "@/lib/edition-title-context"
 import { editionRouteHref } from "@/lib/entity-href"
 
 export interface EditionTile {
@@ -65,6 +66,11 @@ export interface EditionTile {
   // 20260925173217); NULL for a Standard edition, undefined elsewhere. Without
   // it a player's seven printings of one play rendered as seven identical tiles.
   subedition_name?: string | null
+  // 2026-10-21 (20261021145002): the play and its date, from the five entity
+  // edition RPCs (editions branch). A player's several plays in one set were
+  // identical tiles; editionPlayLabel prints "<play> · <date>" under the subject.
+  play_category?: string | null
+  game_date?: string | null
   // Image recovery (2026-06-22 audit, Item 1): a representative on-chain nft_id
   // for the edition. Legacy TS thumbnail_url (assets.nbatopshot.com/editions/…)
   // 404s for ~9k Series 1-4 editions; the per-moment media/<nft_id>/image form
@@ -567,6 +573,11 @@ function EditionTileCard({
       <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 14, color: "var(--rpc-text-primary)", letterSpacing: "0.04em", lineHeight: 1.2, marginBottom: 4 }}>
         {tileSubject(e)}
       </div>
+      {editionPlayLabel(e as unknown as Record<string, unknown>, collectionUrlSlug) ? (
+        <div className="rpc-mono" data-testid="tile-play" style={{ fontSize: 10, color: "var(--rpc-text-secondary)", marginBottom: 4 }}>
+          {editionPlayLabel(e as unknown as Record<string, unknown>, collectionUrlSlug)}
+        </div>
+      ) : null}
       {showSetLink && e.set_name && (
         <div className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-secondary)", marginBottom: 6 }}>{e.set_name}</div>
       )}

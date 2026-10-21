@@ -434,8 +434,9 @@ const PINS = [
     // pin, and the legacy fallback.
     fn: "get_team_top_editions",
     test: "supabase/tests/get_team_top_editions.sql",
+    // Re-pointed 2026-10-21: the editions branch projects play_category + game_date (grid tiles).
     migration:
-      "supabase/migrations/20260929055624_audit_20260928_pinnacle_tiles_named_by_pin.sql",
+      "supabase/migrations/20261021145002_audit_20261021_entity_edition_grids_project_play_and_date.sql",
   },
   {
     fn: "get_team_players",
@@ -450,8 +451,9 @@ const PINS = [
     // rollups.
     fn: "get_series_editions",
     test: "supabase/tests/get_series_editions.sql",
+    // Re-pointed 2026-10-21: the editions branch projects play_category + game_date (grid tiles).
     migration:
-      "supabase/migrations/20260929055624_audit_20260928_pinnacle_tiles_named_by_pin.sql",
+      "supabase/migrations/20261021145002_audit_20261021_entity_edition_grids_project_play_and_date.sql",
   },
   {
     // Added 2026-09-28 (#24). The Pinnacle series header summed
@@ -483,8 +485,9 @@ const PINS = [
     fn: "get_player_editions",
     test: "supabase/tests/get_player_editions.sql",
     // Re-pointed 2026-10-20: the name fallback skips an edition linked to another person.
+    // Re-pointed 2026-10-21: the editions branch projects play_category + game_date (grid tiles).
     migration:
-      "supabase/migrations/20261021034822_audit_20261020_player_pages_never_borrow_another_persons_editions.sql",
+      "supabase/migrations/20261021145002_audit_20261021_entity_edition_grids_project_play_and_date.sql",
   },
   {
     // Added 2026-09-26. Every pinnacle_editions writer walks wallet holdings, so

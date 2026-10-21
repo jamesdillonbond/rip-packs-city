@@ -53,6 +53,36 @@ describe("EditionsGridPaginated", () => {
     expect(chips.map((c) => c.textContent)).toEqual(["Hexwave"])
   })
 
+  it("names each tile's play and date, so one player's plays in one set are not identical tiles (2026-10-21)", () => {
+    // /nba-top-shot/player/kon-knueppel listed Signature Series 1/1s that all read
+    // "Signature Series · ULTIMATE · Series 2025-26". Real editions rows (20261021145002).
+    const k = (slug: string, play_category: string, game_date: string) =>
+      tile(slug, { player_name: "Kon Knueppel", set_name: "Signature Series", play_category, game_date })
+    render(
+      <EditionsGridPaginated
+        collectionUrlSlug="nba-top-shot"
+        fetchUrl="/api/x"
+        initial={[k("260:8820", "Assist", "2025-12-31"), k("241:8246", "Assist", "2026-02-20"), k("241:8054", "3 Pointer", "2026-02-27"), tile("90:3571")]}
+        pageSize={10}
+      />,
+    )
+    const lines = screen.getAllByTestId("tile-play").map((c) => c.textContent)
+    expect(lines).toEqual(["Assist · Dec 31, 2025", "Assist · Feb 20, 2026", "3 Pointer · Feb 27, 2026"])
+    expect(new Set(lines).size).toBe(3)
+  })
+
+  it("prints no play line outside the play collections, or with nothing known (2026-10-21)", () => {
+    render(
+      <EditionsGridPaginated
+        collectionUrlSlug="panini-blockchain"
+        fetchUrl="/api/x"
+        initial={[tile("packcard-1", { play_category: "Dunk", game_date: "2026-01-01" })]}
+        pageSize={10}
+      />,
+    )
+    expect(screen.queryAllByTestId("tile-play")).toHaveLength(0)
+  })
+
   it("names a Candy MLB parallel from the edition name's suffix, and only on Candy (2026-09-25)", () => {
     // /candy-mlb/team/tampa-bay-rays: five "Junior Caminero · LEGENDARY · Mint 15"
     // tiles — BLUE / GREEN / ORANGE / PINK / YELLOW live only in the edition name.

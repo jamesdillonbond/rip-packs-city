@@ -37,7 +37,8 @@ RETURNS TABLE (fmv_usd numeric, floor_usd numeric, confidence text, computed_at 
 LANGUAGE sql AS $$ SELECT 5::numeric, 4::numeric, 'LOW'::text, now(), 5::numeric, 5::numeric, 1 $$;
 -- Only reached by the non-Pinnacle branch; defined so the function body resolves.
 CREATE TABLE public.editions (id uuid, collection_id uuid, external_id text, player_id uuid, player_name text, name text, set_name text,
-  tier text, series int, circulation_count int, thumbnail_url text, video_url text, team_name text, subedition_name text, first_minted_at timestamptz);
+  tier text, series int, circulation_count int, thumbnail_url text, video_url text, team_name text, subedition_name text, first_minted_at timestamptz,
+  play_category text, game_date date);
 CREATE TABLE public.fmv_snapshots (edition_id uuid, fmv_usd numeric, floor_price_usd numeric, confidence text, computed_at timestamptz);
 CREATE FUNCTION public.entity_rep_nft_id(uuid, text, uuid) RETURNS text LANGUAGE sql AS $$ SELECT NULL::text $$;
 
@@ -182,6 +183,8 @@ BEGIN
         e.video_url,
         e.team_name,
         e.subedition_name,
+        e.play_category,
+        e.game_date,
         fmv.fmv_usd,
         fmv.floor_price_usd                                AS floor_usd,
         fmv.confidence::text                               AS fmv_confidence,
