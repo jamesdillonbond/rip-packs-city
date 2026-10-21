@@ -112,3 +112,7 @@ Live 10-17: `alerts-dispatch` 104/104 runs ok in 24 h; 14 `alert_deliveries` in 
 - [platform-review-security-marketing-seo-compliance-2026-10-11.md](../../audits/platform-review-security-marketing-seo-compliance-2026-10-11.md): C2 and M10.
 - Code: `app/api/cron/weekly-digest/route.ts` (the flag), `lib/emails/sender-identity.ts`, `lib/alerts.ts`.
 - Register: #8, #139, #164, #176, #183 in [known-issues.md](../../reference/known-issues.md); R73, R77 in [deep-audit-register.md](../../audits/deep-audit-register.md).
+
+## Note — `ask_is_alertable`'s comment is stale, its logic is not (2026-10-20)
+
+Its body says the All Day / Golazos exemption is because "the stamp is the seller's listing date". Since 10-20 evening those arms carry `floor_ask_verified_at` (a check). The exemption is still right: All Day V1 asks re-verify only weekly (#198), so a 12 h gate would silence correct alerts. The comment was left as is because the function is embedded verbatim in three pin files (`ask_is_alertable.sql`, `dispatch_due_deal_alerts.sql`, `build_deal_alerts_for_subscription.sql`), each registered in the drift guard; rewrite it the next time that body changes for a real reason.
