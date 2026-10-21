@@ -84,6 +84,31 @@ export default function robots(): MetadataRoute.Robots {
           '/*?owner=',
           '/*?owner_key=',
           '/*?address=',
+          // 2026-10-21 (Search Console → Settings → Crawl stats, 90 d): of 128K
+          // Googlebot requests only 32% were HTML. 45% (57.9K) were Next.js
+          // RSC flight payloads — `<page>?_rsc=<hash>`, the client-navigation /
+          // prefetch format, not a document — and 14% (18K) were the Vercel
+          // Web Analytics beacon (`/15dcfe7049762b91/view`). Neither is
+          // indexable, and every fetch spends crawl budget the ~13.8K
+          // "Crawled/Discovered – not indexed" pages need.
+          // ⭐ SAFE BECAUSE a page needs neither to RENDER — measured, not
+          // assumed: 9 page types rendered under a Googlebot UA with every
+          // `_rsc` and analytics request aborted are byte-identical in visible
+          // text, links and URL to the open render, and that render made ZERO
+          // `_rsc` requests (Next serves bots blocking HTML and does not
+          // prefetch for them). Positive control: hovering/clicking the same
+          // page in a normal browser produced 59. So these block only
+          // Googlebot's STANDALONE re-crawls of those URLs. Users unaffected.
+          // `_rsc` is appended with `?` or `&` depending on existing params,
+          // hence both. The two hashed prefixes are this Vercel project's
+          // Analytics (`15dcfe…`) and Speed Insights (`7485f3…`) script/beacon
+          // paths, read from the served page; if Vercel rotates them the rule
+          // goes inert, which is harmless.
+          // Pinned: __tests__/robots-blocks-rsc-flight-and-analytics.test.ts.
+          '/*?_rsc=',
+          '/*&_rsc=',
+          '/15dcfe7049762b91/',
+          '/7485f3c010ece1f3/',
           // 2026-10-03 (Search Console): `Disallow: /panini-blockchain/` REMOVED.
           // It was added 2026-04-26 as "unpublished collection" and never
           // revisited when Panini was PUBLISHED on 2026-09-25 (ledger, #64) and
