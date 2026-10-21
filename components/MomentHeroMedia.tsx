@@ -42,6 +42,22 @@ export default function MomentHeroMedia({
   const [videoFailed, setVideoFailed] = useState(false);
 
   const currentImg = imgIdx < candidates.length ? candidates[imgIdx] : null;
+  // With a srcset the browser picks the file, so a poster naming currentImg (the
+  // fixed-width src) is a SECOND download of the same picture — measured
+  // 2026-10-21: ?width=640 (img) + ?width=1080 (poster) on every Top Shot
+  // edition. The poster takes the file the <img> actually loaded (currentSrc,
+  // already cached) once it has; until then the image underneath shows.
+  const srcSet = sizes ? heroSrcSet(currentImg) : null;
+  const [loadedSrc, setLoadedSrc] = useState<{ for: string; src: string } | null>(null);
+  const poster = srcSet
+    ? (loadedSrc && loadedSrc.for === currentImg ? loadedSrc.src : undefined)
+    : (currentImg ?? undefined);
+  // An SSR image can finish loading before hydration, so its onLoad never
+  // reaches React; the ref callback reads the element when it attaches.
+  const captureLoaded = (el: HTMLImageElement | null) => {
+    if (!el || !srcSet || !currentImg || loadedSrc?.for === currentImg) return;
+    if (el.complete && el.naturalWidth > 0) setLoadedSrc({ for: currentImg, src: el.currentSrc || currentImg });
+  };
   const showVideo = !!videoUrl && !videoFailed;
 
   if (!currentImg && !showVideo) {
@@ -72,8 +88,10 @@ export default function MomentHeroMedia({
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src={currentImg}
-          srcSet={sizes ? heroSrcSet(currentImg) ?? undefined : undefined}
-          sizes={sizes && heroSrcSet(currentImg) ? sizes : undefined}
+          ref={captureLoaded}
+          srcSet={srcSet ?? undefined}
+          sizes={srcSet ? sizes : undefined}
+          onLoad={(e) => { if (srcSet && currentImg) setLoadedSrc({ for: currentImg, src: e.currentTarget.currentSrc || currentImg }) }}
           alt={alt}
           loading="eager"
           fetchPriority="high"
@@ -91,7 +109,7 @@ export default function MomentHeroMedia({
       {showVideo ? (
         <video
           src={videoUrl!}
-          poster={currentImg ?? undefined}
+          poster={poster}
           // preload="none" (2026-07-27): this was the ONLY autoplaying <video>
           // in the app without it — every sibling clip surface (TrophySlab,
           // EditionsGridPaginated, MomentMedia, the profile trophy tiles) is

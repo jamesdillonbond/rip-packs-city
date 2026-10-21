@@ -106,4 +106,21 @@ describe("MomentHeroMedia", () => {
     expect(b.container.querySelector("img")?.hasAttribute("sizes")).toBe(false)
     expect(heroSrcSet("/api/public/ipfs-thumb/abc?w=960&x=1")).toBeNull()
   })
+
+  it("with a srcset the video poster never names the fixed-width src (no second download)", () => {
+    const { container } = render(
+      <MomentHeroMedia imageCandidates={[TS]} videoUrl="https://ipfs.example/clip.mp4" alt="hero" sizes={ENTITY_HERO_SIZES} />,
+    )
+    const video = container.querySelector("video")!
+    expect(video.hasAttribute("poster")).toBe(false)
+    const img = container.querySelector("img")!
+    Object.defineProperty(img, "currentSrc", { value: "https://assets.nbatopshot.com/media/41528247/image?width=640" })
+    fireEvent.load(img)
+    expect(container.querySelector("video")!.getAttribute("poster")).toBe("https://assets.nbatopshot.com/media/41528247/image?width=640")
+  })
+
+  it("MIRROR: without sizes the poster is the image src, as before", () => {
+    const { container } = render(<MomentHeroMedia imageCandidates={[TS]} videoUrl="https://ipfs.example/clip.mp4" alt="hero" />)
+    expect(container.querySelector("video")!.getAttribute("poster")).toBe(TS)
+  })
 })
