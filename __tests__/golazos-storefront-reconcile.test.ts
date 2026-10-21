@@ -239,6 +239,17 @@ describe("clipScriptError keeps the Cadence cause", () => {
     expect(out.startsWith("Invalid Flow argument")).toBe(true)
     expect(out.length).toBeLessThan(420)
   })
+  it("pulls the Cadence `error:` line out even when a caret excerpt fills the tail (the 10-20 6:13 PM PT run)", () => {
+    const text =
+      '{\n\t"code": 400,\n\t"message": "Invalid Flow argument: failed to execute script: [Error Code: 1101] failed to execute script at block (' +
+      "b".repeat(64) +
+      "): [Error Code: 1101] cadence runtime error: Execution failed:\\nerror: failed to borrow the capability: broken value\\n --> 0x01:105:11\\n    |\\n105 | let sf = getAccount(seller).capabilities.borrow\\u003c\\u0026{NFTStorefrontV2.StorefrontPublic}\\u003e(NFTStorefrontV2.StorefrontPublicPath)\\n  |            " +
+      "^".repeat(120) +
+      '\\n\\nWas this error unhelpful?\\nConsider suggesting an improvement here: https://github.com/onflow/cadence/issues.\\n\\n\\n"\n}'
+    const out = clipScriptError(text)
+    expect(out).toContain("error: failed to borrow the capability: broken value")
+  })
+
   it("a short error passes through whole", () => {
     expect(clipScriptError("rate limited")).toBe("rate limited")
   })

@@ -389,6 +389,19 @@ export function planReconcile(input: {
 // actual Cadence panic at the END. Keeping only the head recorded every 1101 walk error
 // with its cause cut off (10-20: seller 0x1a21c240c0e4e27e, two runs, undiagnosable), so
 // keep the head and the tail.
+// 10-20 6:13 PM PT: the tail alone still missed it — after the Cadence `error:` line the
+// message carries a source excerpt with a long caret underline and a "Was this error
+// unhelpful?" footer, which filled the 300 chars. So the `error:` line(s) are pulled out
+// first, then the tail.
 export function clipScriptError(text: string): string {
-  return text.length <= 400 ? text : `${text.slice(0, 100)} … ${text.slice(-300)}`
+  if (text.length <= 400) return text
+  const unescaped = text.replace(/\\n/g, "\n").replace(/\\u003c/g, "<").replace(/\\u003e/g, ">")
+  const errorLines = unescaped
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => /^error:/.test(l))
+    .slice(0, 3)
+    .map((l) => l.slice(0, 200))
+  const cause = errorLines.length > 0 ? ` | ${errorLines.join(" | ")}` : ""
+  return `${text.slice(0, 100)}${cause} … ${text.slice(-200)}`
 }
