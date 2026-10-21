@@ -709,6 +709,32 @@ describe("MarketClient — controls", () => {
     expect(within(box).getByText("Portland Trail Blazers")).toBeTruthy()
   })
 
+  // 2026-10-21 (Trevor): a long list (Team) needs a place to type.
+  it("filters a long multi-select by typing, and keeps a short one plain", async () => {
+    const teams = ["Atlanta Hawks", "Boston Celtics", "Chicago Bulls", "Denver Nuggets", "Golden State Warriors", "Miami Heat", "Portland Fire", "Seattle Storm", "Utah Jazz"]
+    filterOptionsResponse = () => json(200, { ...CATALOG, teams })
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    const box = await openChip("Team")
+    await within(box).findByText("Utah Jazz")
+    const input = within(box).getByRole("searchbox", { name: "Filter Team options" })
+    fireEvent.change(input, { target: { value: "port" } })
+    expect(within(box).getByText("Portland Trail Blazers")).toBeTruthy()
+    expect(within(box).getByText("Portland Fire")).toBeTruthy()
+    expect(within(box).queryByText("Utah Jazz")).toBeNull()
+    fireEvent.change(input, { target: { value: "zzz" } })
+    expect(within(box).getByText(/No match for/)).toBeTruthy()
+    fireEvent.change(input, { target: { value: "seat" } })
+    fireEvent.click(within(box).getByText("Seattle Storm"))
+    await waitFor(() => {
+      const urls = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.startsWith("/api/market"))
+      expect(urls.some((u) => u.includes("team=Seattle"))).toBe(true)
+    })
+    fireEvent.keyDown(input, { key: "Escape" })
+    expect(screen.queryByRole("listbox")).toBeNull()
+    expect(within(await openChip("Set")).queryByRole("searchbox")).toBeNull()
+  })
+
   it("offers a set that has no listing on the current page", async () => {
     filterOptionsResponse = () => json(200, CATALOG)
     render(<MarketClient />)

@@ -882,6 +882,9 @@ function MarketInner() {
 
 // collectDistinct extracted to @/lib/market-format (imported below).
 
+/** Above this many options a MultiSelectChip shows a type-to-filter box. */
+const MULTISELECT_SEARCH_MIN = 8
+
 function MultiSelectChip({
   label, selected, options, onChange, formatOption,
 }: {
@@ -893,7 +896,12 @@ function MultiSelectChip({
   formatOption?: (v: string) => string
 }) {
   const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState("")
   const fmt = formatOption ?? ((v: string) => v)
+  // A long list (Team: ~30 NBA + WNBA + historic labels) gets a type-to-filter box.
+  const searchable = options.length > MULTISELECT_SEARCH_MIN
+  const q = query.trim().toLowerCase()
+  const visible = searchable && q ? options.filter(o => fmt(o).toLowerCase().includes(q)) : options
   const summary = selected.length === 0 ? "Any" : selected.length === 1 ? fmt(selected[0]) : `${selected.length} selected`
   const toggle = (v: string) => {
     if (selected.includes(v)) onChange(selected.filter(x => x !== v))
@@ -904,7 +912,7 @@ function MultiSelectChip({
       <span className="rpc-label">{label}</span>
       <button
         type="button"
-        onClick={() => setOpen(o => !o)}
+        onClick={() => { setOpen(o => !o); setQuery("") }}
         className="rpc-chip"
         style={{
           minWidth: 110,
@@ -934,13 +942,35 @@ function MultiSelectChip({
             borderRadius: "var(--radius-sm)",
             boxShadow: "0 6px 18px rgba(0,0,0,0.6)",
             padding: 6,
-            minWidth: 180,
-            maxHeight: 240,
+            minWidth: searchable ? 220 : 180,
+            maxHeight: searchable ? 300 : 240,
             overflow: "auto",
             fontFamily: "var(--font-mono)",
             fontSize: 11,
           }}
         >
+          {searchable && (
+            <input
+              type="search"
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              onKeyDown={e => { if (e.key === "Escape") { setOpen(false); setQuery("") } }}
+              placeholder={`Type to filter ${label.toLowerCase()}…`}
+              aria-label={`Filter ${label} options`}
+              style={{
+                ...inputStyle,
+                position: "sticky",
+                top: 0,
+                zIndex: 1,
+                width: "100%",
+                boxSizing: "border-box",
+                marginBottom: 4,
+                background: "var(--rpc-surface)",
+                // 16px keeps iOS Safari from zooming the page on focus.
+                fontSize: 16,
+              }}
+            />
+          )}
           {selected.length > 0 && (
             <button
               type="button"
@@ -964,7 +994,10 @@ function MultiSelectChip({
               Clear
             </button>
           )}
-          {options.map(opt => (
+          {searchable && visible.length === 0 && (
+            <div style={{ padding: "4px 6px", color: "var(--rpc-text-muted)" }}>No match for “{query.trim()}”</div>
+          )}
+          {visible.map(opt => (
             <label
               key={opt}
               style={{
