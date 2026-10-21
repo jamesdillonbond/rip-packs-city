@@ -48,7 +48,7 @@ BEGIN
   SELECT pg_get_functiondef('public.get_allday_market_editions_v3(numeric, numeric, text, text, text, integer, text[], text[], text, numeric, text[], text[], boolean, text, text)'::regprocedure)
     INTO def;
 
-  anc := 'CREATE OR REPLACE FUNCTION public.get_allday_market_editions_v3(';
+  anc := 'CREATE OR REPLACE ' || 'FUNCTION public.get_allday_market_editions_v3(';
   n := (length(def) - length(replace(def, anc, ''))) / length(anc);
   IF n <> 1 THEN RAISE EXCEPTION 'allday name anchor found % times, want 1', n; END IF;
   def := replace(def, anc, 'CREATE FUNCTION public.get_allday_market_editions_v4(');
@@ -83,7 +83,7 @@ BEGIN
   SELECT pg_get_functiondef('public.get_golazos_market_editions(numeric, numeric, text, text, text, integer, text[], text[], text, numeric, text[], text[], boolean, text, text)'::regprocedure)
     INTO def;
 
-  anc := 'CREATE OR REPLACE FUNCTION public.get_golazos_market_editions(';
+  anc := 'CREATE OR REPLACE ' || 'FUNCTION public.get_golazos_market_editions(';
   n := (length(def) - length(replace(def, anc, ''))) / length(anc);
   IF n <> 1 THEN RAISE EXCEPTION 'golazos name anchor found % times, want 1', n; END IF;
   def := replace(def, anc, 'CREATE FUNCTION public.get_golazos_market_editions_v2(');
