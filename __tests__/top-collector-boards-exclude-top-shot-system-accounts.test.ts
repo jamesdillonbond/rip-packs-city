@@ -49,6 +49,15 @@ describe("Top Shot collector boards exclude Top Shot's own accounts", () => {
     expect(body, file).not.toMatch(LITERAL_SYSTEM_ADDRESS)
   })
 
+  it("refresh_topshot_edition_concentration_v2 (newest definition) splits system holdings by the registry", () => {
+    const { file, body } = newestBody(
+      /CREATE (?:OR REPLACE )?FUNCTION public\.refresh_topshot_edition_concentration_v2\(/,
+      (sql, at) => sql.indexOf("$function$;", at),
+    )
+    expect(body, file).toMatch(REGISTRY)
+    expect(body, file).not.toMatch(LITERAL_SYSTEM_ADDRESS)
+  })
+
   it("the guard fails on the real MV body with the predicate removed (planted defect)", () => {
     const { body } = newestBody(
       /CREATE MATERIALIZED VIEW public\.topshot_rookie_collector_leaderboard_mv\b/,
