@@ -61,6 +61,28 @@ CREATE FUNCTION public.get_pinnacle_edition_fmv_collapsed(p_id uuid)
   SELECT 12::numeric, 10::numeric WHERE p_id IS NOT NULL
 $$;
 
+-- 2026-10-20: the name fallback skips an edition linked to ANOTHER PERSON per
+-- player_relations (the helper is copied from 20261021034822; not itself pinned).
+CREATE TABLE public.player_relations (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(), collection_id uuid, player_id uuid,
+  related_player_id uuid, relation text, name text, note text);
+CREATE OR REPLACE FUNCTION public.edition_player_is_other_person(p_edition_player_id uuid, p_page_player_id uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE
+ SET search_path TO 'public'
+AS $function$
+  SELECT p_edition_player_id IS NOT NULL
+     AND p_edition_player_id IS DISTINCT FROM p_page_player_id
+     AND EXISTS (
+       SELECT 1 FROM player_relations r
+        WHERE (r.relation IN ('parent_of', 'namesake')
+               AND ((r.player_id = p_page_player_id AND r.related_player_id = p_edition_player_id)
+                 OR (r.player_id = p_edition_player_id AND r.related_player_id = p_page_player_id)))
+           OR (r.relation = 'name_change' AND r.player_id = p_edition_player_id)
+     )
+$function$;
+
 -- >>> BEGIN verbatim get_player_detail (keep byte-identical to the migration) >>>
 CREATE OR REPLACE FUNCTION public.get_player_detail(p_collection_id uuid, p_player_slug text)
  RETURNS jsonb
@@ -88,7 +110,7 @@ BEGIN
     SELECT p.*,
       (SELECT count(*) FROM editions e
          WHERE e.collection_id = p_collection_id
-           AND (e.player_id = p.id OR e.player_name = p.name)
+           AND (e.player_id = p.id OR (e.player_name = p.name AND NOT public.edition_player_is_other_person(e.player_id, p.id)))
            AND e.team_name IS NOT DISTINCT FROM p.team) AS team_edition_count
     FROM players p
     WHERE p.collection_id = p_collection_id
@@ -188,7 +210,7 @@ BEGIN
       WHERE edition_id = e.id ORDER BY computed_at DESC LIMIT 1
     ) fmv ON true
     WHERE e.collection_id = p_collection_id
-      AND (e.player_id = v_player.id OR e.player_name = v_player.name);
+      AND (e.player_id = v_player.id OR (e.player_name = v_player.name AND NOT public.edition_player_is_other_person(e.player_id, v_player.id)));
   END IF;
 
   RETURN jsonb_build_object(
@@ -361,6 +383,40 @@ INSERT INTO public.players (id, collection_id, name, team, is_active, headshot_u
 SELECT _assert_eq((public.get_player_detail(:TS::uuid,'nikola-jokic') ->> 'id'), '99999999-9999-4999-8999-999999999901', 'an ASCII slug resolves an accented player name');
 SELECT _assert_eq((public.get_player_detail(:TS::uuid,'nikola-joki-') ->> 'id'), '99999999-9999-4999-8999-999999999901', 'the pre-fix slug shape (accent stripped to a dash) still resolves via the exact-name branch');
 SELECT _assert((public.get_player_detail(:TS::uuid,'nikola-jokicc')) IS NULL, 'a slug that matches neither spelling is still NULL');
+
+-- ── 8. A NAME IS NOT A PERSON (20261021034822) ────────────────────────────────
+-- Live 10-20: /nfl-all-day/player/joey-porter (Sr.) listed Jr.'s 2024 Stadium
+-- edition — linked to Jr.'s player row, but carrying player_name "Joey Porter".
+-- Josh Allen (Bills QB) listed 8 editions of Josh Hines-Allen (played as "Josh
+-- Allen" to 2023). The name fallback must skip an edition linked to a player
+-- player_relations records as ANOTHER person.
+\set AD  '''dee28451-5d62-409e-a1ad-a83f763ac070'''
+INSERT INTO public.collections (id, slug) VALUES (:AD::uuid, 'nfl_all_day');
+INSERT INTO public.players (id, collection_id, name, team, is_active, headshot_url, external_id, first_name, last_name, jersey_number, position, player_tier) VALUES
+  ('d0000000-0000-4000-8000-000000000001', :AD::uuid, 'Joey Porter',      'Steelers', false, NULL, 'JP1', 'Joey', 'Porter', 55, 'LB', NULL),
+  ('d0000000-0000-4000-8000-000000000002', :AD::uuid, 'Joey Porter Jr.',  'Steelers', true,  NULL, 'JP2', 'Joey', 'Porter', 24, 'CB', NULL),
+  ('d0000000-0000-4000-8000-000000000003', :AD::uuid, 'Josh Allen',       'Bills',    true,  NULL, 'JA1', 'Josh', 'Allen', 17, 'QB', NULL),
+  ('d0000000-0000-4000-8000-000000000004', :AD::uuid, 'Josh Hines-Allen', 'Jaguars',  true,  NULL, 'JA2', 'Josh', 'Hines-Allen', 41, 'DE', NULL),
+  ('d0000000-0000-4000-8000-000000000005', :AD::uuid, 'Shell Twin',       'Team',     true,  NULL, 'ST1', NULL, NULL, NULL, NULL, NULL),
+  ('d0000000-0000-4000-8000-000000000006', :AD::uuid, 'Shell Twin.',      'Team',     true,  NULL, 'ST2', NULL, NULL, NULL, NULL, NULL);
+INSERT INTO public.player_relations (collection_id, player_id, related_player_id, relation, name) VALUES
+  (:AD::uuid, 'd0000000-0000-4000-8000-000000000002', 'd0000000-0000-4000-8000-000000000001', 'parent_of', NULL),
+  (:AD::uuid, 'd0000000-0000-4000-8000-000000000004', NULL, 'name_change', 'Josh Allen');
+INSERT INTO public.editions (id, collection_id, player_id, player_name, team_name, circulation_count, first_minted_at, game_date) VALUES
+  ('f0000000-0000-4000-8000-000000000001', :AD::uuid, 'd0000000-0000-4000-8000-000000000001', 'Joey Porter', 'Steelers', 10, NULL, DATE '2008-01-01'),
+  ('f0000000-0000-4000-8000-000000000002', :AD::uuid, 'd0000000-0000-4000-8000-000000000002', 'Joey Porter', 'Steelers', 20, NULL, DATE '2024-10-01'),
+  ('f0000000-0000-4000-8000-000000000003', :AD::uuid, 'd0000000-0000-4000-8000-000000000003', 'Josh Allen',  'Bills',    30, NULL, DATE '2024-10-01'),
+  ('f0000000-0000-4000-8000-000000000004', :AD::uuid, 'd0000000-0000-4000-8000-000000000004', 'Josh Allen',  'Jaguars',  40, NULL, DATE '2022-10-01'),
+  -- an UNLINKED edition still matches by name (the fallback the arm exists for)
+  ('f0000000-0000-4000-8000-000000000005', :AD::uuid, NULL,                                   'Josh Allen',  'Bills',     5, NULL, DATE '2024-10-02'),
+  -- a same-person twin row with no relation keeps matching by name (D26 class, merged separately)
+  ('f0000000-0000-4000-8000-000000000006', :AD::uuid, 'd0000000-0000-4000-8000-000000000006', 'Shell Twin',  'Team',      7, NULL, DATE '2024-10-03');
+SELECT _assert_eq((public.get_player_detail(:AD::uuid,'joey-porter') ->> 'edition_count'), '1', 'Joey Porter (Sr.) does not count Jr.''s edition');
+SELECT _assert_eq((public.get_player_detail(:AD::uuid,'joey-porter') ->> 'total_circulation'), '10', 'Sr.''s circulation is his own');
+SELECT _assert_eq((public.get_player_detail(:AD::uuid,'joey-porter-jr-') ->> 'edition_count'), '1', 'Jr.''s own page keeps his edition');
+SELECT _assert_eq((public.get_player_detail(:AD::uuid,'josh-allen') ->> 'total_circulation'), '35', 'Josh Allen (QB) = his edition + the unlinked one, never Hines-Allen''s (30 + 5)');
+SELECT _assert_eq((public.get_player_detail(:AD::uuid,'josh-hines-allen') ->> 'total_circulation'), '40', 'Hines-Allen keeps the edition labelled with his old name');
+SELECT _assert_eq((public.get_player_detail(:AD::uuid,'shell-twin') ->> 'total_circulation'), '7', 'CONTROL: a twin row with no recorded relation still matches by name');
 
 SELECT '✓ get_player_detail: all assertions passed' AS result;
 

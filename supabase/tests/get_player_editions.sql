@@ -41,6 +41,28 @@ CREATE TABLE public.editions (id uuid, collection_id uuid, external_id text, pla
 CREATE TABLE public.fmv_snapshots (edition_id uuid, fmv_usd numeric, floor_price_usd numeric, confidence text, computed_at timestamptz);
 CREATE FUNCTION public.entity_rep_nft_id(uuid, text, uuid) RETURNS text LANGUAGE sql AS $$ SELECT NULL::text $$;
 
+-- 2026-10-20: the name fallback skips an edition linked to ANOTHER PERSON per
+-- player_relations (the helper is copied from 20261021034822; not itself pinned).
+CREATE TABLE public.player_relations (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(), collection_id uuid, player_id uuid,
+  related_player_id uuid, relation text, name text, note text);
+CREATE OR REPLACE FUNCTION public.edition_player_is_other_person(p_edition_player_id uuid, p_page_player_id uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE
+ SET search_path TO 'public'
+AS $function$
+  SELECT p_edition_player_id IS NOT NULL
+     AND p_edition_player_id IS DISTINCT FROM p_page_player_id
+     AND EXISTS (
+       SELECT 1 FROM player_relations r
+        WHERE (r.relation IN ('parent_of', 'namesake')
+               AND ((r.player_id = p_page_player_id AND r.related_player_id = p_edition_player_id)
+                 OR (r.player_id = p_edition_player_id AND r.related_player_id = p_page_player_id)))
+           OR (r.relation = 'name_change' AND r.player_id = p_edition_player_id)
+     )
+$function$;
+
 CREATE OR REPLACE FUNCTION public.get_player_editions(p_collection_id uuid, p_player_slug text, p_limit integer DEFAULT 100, p_offset integer DEFAULT 0)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -170,7 +192,7 @@ BEGIN
         WHERE edition_id = e.id ORDER BY computed_at DESC LIMIT 1
       ) fmv ON true
       WHERE e.collection_id = p_collection_id
-        AND (e.player_id = v_player.id OR e.player_name = v_player.name)
+        AND (e.player_id = v_player.id OR (e.player_name = v_player.name AND NOT public.edition_player_is_other_person(e.player_id, v_player.id)))
         AND e.thumbnail_url IS NOT NULL
       ORDER BY fmv.fmv_usd DESC NULLS LAST, e.first_minted_at DESC NULLS LAST
       LIMIT v_safe_limit OFFSET v_safe_offset
@@ -235,5 +257,26 @@ SELECT _assert_eq(
 SELECT _assert_eq(
   (SELECT string_agg(e->>'route_slug', ',') FROM jsonb_array_elements(public.get_player_editions('7dd9dd11-e8b6-45c4-ac99-71331f959714', 'zipper')) e),
   'OEV1-CDRR-MOJA-S2', 'a single character still lists a pin it is IN (element match), no more');
+
+-- 7: A NAME IS NOT A PERSON (20261021034822). Live 10-20: Joey Porter (Sr.)'s
+-- page listed Jr.'s edition, linked to Jr.'s row but named "Joey Porter".
+INSERT INTO public.players (id, collection_id, name) VALUES
+  ('d0000000-0000-4000-8000-000000000001', 'dee28451-5d62-409e-a1ad-a83f763ac070', 'Joey Porter'),
+  ('d0000000-0000-4000-8000-000000000002', 'dee28451-5d62-409e-a1ad-a83f763ac070', 'Joey Porter Jr.');
+INSERT INTO public.player_relations (collection_id, player_id, related_player_id, relation) VALUES
+  ('dee28451-5d62-409e-a1ad-a83f763ac070', 'd0000000-0000-4000-8000-000000000002', 'd0000000-0000-4000-8000-000000000001', 'parent_of');
+INSERT INTO public.editions (id, collection_id, external_id, player_id, player_name, name, set_name, tier, series, circulation_count, thumbnail_url) VALUES
+  ('f0000000-0000-4000-8000-000000000001', 'dee28451-5d62-409e-a1ad-a83f763ac070', 'SR-1', 'd0000000-0000-4000-8000-000000000001', 'Joey Porter', 'x', 's', 'COMMON', 1, 10, 't1'),
+  ('f0000000-0000-4000-8000-000000000002', 'dee28451-5d62-409e-a1ad-a83f763ac070', '3591', 'd0000000-0000-4000-8000-000000000002', 'Joey Porter', 'x', 's', 'COMMON', 1, 10, 't2'),
+  ('f0000000-0000-4000-8000-000000000003', 'dee28451-5d62-409e-a1ad-a83f763ac070', 'UNLINKED', NULL, 'Joey Porter', 'x', 's', 'COMMON', 1, 10, 't3');
+SELECT _assert_eq(
+  jsonb_array_length(public.get_player_editions('dee28451-5d62-409e-a1ad-a83f763ac070', 'joey-porter'))::text,
+  '2', 'Sr. lists his own edition and the UNLINKED one by name, never Jr.''s');
+SELECT _assert(
+  public.get_player_editions('dee28451-5d62-409e-a1ad-a83f763ac070', 'joey-porter')::text NOT LIKE '%3591%',
+  'Jr.''s edition 3591 is not on Sr.''s page');
+SELECT _assert(
+  public.get_player_editions('dee28451-5d62-409e-a1ad-a83f763ac070', 'joey-porter-jr-')::text LIKE '%3591%',
+  'Jr.''s own page lists 3591');
 
 ROLLBACK;

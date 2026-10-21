@@ -478,8 +478,9 @@ const PINS = [
     // duos by joined name), the fallback, and the unknown-slug empty.
     fn: "get_player_editions",
     test: "supabase/tests/get_player_editions.sql",
+    // Re-pointed 2026-10-20: the name fallback skips an edition linked to another person.
     migration:
-      "supabase/migrations/20260926191644_audit_20260926_pinnacle_duo_character_pages_find_their_pins.sql",
+      "supabase/migrations/20261021034822_audit_20261020_player_pages_never_borrow_another_persons_editions.sql",
   },
   {
     // Added 2026-09-26. Every pinnacle_editions writer walks wallet holdings, so
@@ -1364,7 +1365,8 @@ const PINS = [
     fn: "get_player_detail",
     test: "supabase/tests/get_player_detail.sql",
     // Re-pointed 2026-09-27: Pinnacle mint dates only when every row carries one.
-    migration: "supabase/migrations/20260929063531_audit_20260928_pinnacle_entity_totals_say_what_they_sum.sql",
+    // Re-pointed 2026-10-20: the name fallback skips an edition linked to another person.
+    migration: "supabase/migrations/20261021034822_audit_20261020_player_pages_never_borrow_another_persons_editions.sql",
   },
   {
     fn: "get_wallet_collection_snapshot",
