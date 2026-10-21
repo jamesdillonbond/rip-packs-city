@@ -115,7 +115,7 @@
 
 ## Decisions on record (do not re-litigate)
 
-- **10-10 ~3:15 PM PT: the 0.35 dispersion gate stays.** The 7+-sale LOW set misses by a median 25.0 % against MEDIUM's 20.0 % (n 463 / 2,405). Re-open only if a later backtest puts that set level with MEDIUM.
+- **10-10 ~3:15 PM PT: the 0.35 dispersion gate stays.** The 7+-sale LOW set misses by a median 25.0 % against MEDIUM's 20.0 % (n 463 / 2,405). Re-open only if a later backtest puts that set level with MEDIUM. ↳ **Re-measured 10-21 ~7:15 AM PT (Cowork cloud), same instrument shape (`sales_market`, 14 d, serial > 25, snapshot in force 1 day before each sale): still NOT level — LOW 7+ median error 22.1 % vs MEDIUM 18.8 % (n 874 / 3,451), within ±25 % 57.7 vs 61.2, median miss $0.05 vs $0.04. The gap narrowed from 5.0 to 3.3 points, so re-read it weekly; it is level with MEDIUM's 5–6-sale subset (58.4 % within ±25 %), which has no spread test at all — the gate's inconsistency, not a reason to relabel. Sized: 121 editions today, +1.9 pts (27.2 → 29.1 %), so even a relabel would not by itself pass M2. Top Shot's LOW 7+ (106 editions, 7 d) reads 67.1 % within ±25 % vs MEDIUM 63.2 %, but that collection already meets M1.
 - **09-30 #161 + 10-03 #169:** buybacks count as market sales and are tracked. FMV writers exclude them via `sales_market`, in one view only.
 - **09-25:** the Flowty fork is `unpurchasable`. All Day asks come from Dapper's storefront.
 - **Standing:**
