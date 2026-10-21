@@ -2,7 +2,8 @@
 
 // PaniniBoardsTabs — the four Panini WC Prizm boards that were built but never
 // surfaced (deals, pack EV, special serials, players), as tabs under the squeeze
-// board. Server-seeded from the hourly `panini-boards` snapshot
+// board, plus Holders (2026-10-21): per-edition holder concentration across every
+// walked product, counts only — no collector is named. Server-seeded from the hourly `panini-boards` snapshot
 // (lib/insights/panini-more-boards.ts); nothing here fetches.
 //
 // Honesty rules this component keeps:
@@ -82,6 +83,24 @@ export interface PlayerRow {
   sealed_fmv_exposure_usd: Num;
   avg_rip_pct: Num;
 }
+export interface HolderRow {
+  external_id: string;
+  product_set_id: Num;
+  player_name: string | null;
+  set_name: string | null;
+  parallel: string | null;
+  tier: string | null;
+  mint_cap: Num;
+  owned_copies: Num;
+  unopened_copies: Num;
+  burnt_copies: Num;
+  holders: Num;
+  top1_copies: Num;
+  top3_copies: Num;
+  top1_share: Num;
+  top3_share: Num;
+  computed_at: string | null;
+}
 export interface PaniniBoardsPayload {
   deals?: DealRow[] | null;
   deals_error?: boolean;
@@ -95,16 +114,41 @@ export interface PaniniBoardsPayload {
   players?: PlayerRow[] | null;
   players_error?: boolean;
   players_capped?: boolean;
+  holders?: HolderRow[] | null;
+  holders_error?: boolean;
+  holders_capped?: boolean;
+  holders_eligible?: Num;
+  holders_stacked?: Num;
+  holders_cornered?: Num;
   coverage?: { total_editions?: Num; pct_trustworthy?: Num } | null;
 }
 
-type Tab = "deals" | "packs" | "specials" | "players";
+type Tab = "deals" | "packs" | "specials" | "players" | "holders";
 const TABS: { k: Tab; label: string }[] = [
   { k: "deals", label: "Deals" },
   { k: "packs", label: "Pack EV" },
   { k: "specials", label: "Special serials" },
   { k: "players", label: "Players" },
+  { k: "holders", label: "Holders" },
 ];
+
+// Mirrors HOLDER_STACKED_SHARE / HOLDER_CORNERED_SHARE in lib/insights/panini-more-boards.ts (that module
+// imports the server client, so a client component cannot import it).
+const STACKED_SHARE = 0.25;
+const CORNERED_SHARE = 0.5;
+
+function pct(share: Num | undefined): string {
+  if (share === null || share === undefined || !Number.isFinite(Number(share))) return "—";
+  return `${Math.round(Number(share) * 100)}%`;
+}
+function grip(r: HolderRow): string {
+  const top1 = Number(r.top1_share ?? 0);
+  const top3 = Number(r.top3_share ?? 0);
+  if (top1 >= STACKED_SHARE && top3 >= CORNERED_SHARE) return "Stacked · Cornered";
+  if (top1 >= STACKED_SHARE) return "Stacked";
+  if (top3 >= CORNERED_SHARE) return "Cornered";
+  return "—";
+}
 
 const mono = "var(--font-mono)";
 const display = "var(--font-display)";
@@ -308,6 +352,39 @@ export default function PaniniBoardsTabs({
                 </tr>
               ))}
             </Table>
+          </>
+        )
+      ) : tab === "holders" ? (
+        data.holders_error || !data.holders ? (
+          <Failed what="Holders" />
+        ) : data.holders.length === 0 ? (
+          <Note>No edition with a complete serial read has 10+ copies out of packs yet.</Note>
+        ) : (
+          <>
+            <Note>
+              Editions where a few collectors own most of the copies that have left packs. Shares are of owned copies — unopened
+              and burnt copies are left out — and only for editions where RPC has read every serial and at least 10 copies are owned.
+              <b> Stacked</b>: one collector owns {pct(STACKED_SHARE)} or more. <b>Cornered</b>: the top three own {pct(CORNERED_SHARE)} or more.
+              {data.holders_eligible != null && data.holders_stacked != null && data.holders_cornered != null
+                ? ` Of ${int(data.holders_eligible)} such editions, ${int(data.holders_stacked)} are stacked and ${int(data.holders_cornered)} are cornered.`
+                : ""}
+              {" "}Holders are counted, never named. Updated daily{data.holders[0]?.computed_at ? ` (${ptDate(data.holders[0].computed_at)})` : ""}.
+            </Note>
+            <Table head={["Player", "Set · Parallel", "Owned", "Holders", "Top holder", "Top 3", "Unopened", "Grip"]}>
+              {data.holders.map((r) => (
+                <tr key={r.external_id}>
+                  <td style={td}>{r.player_name ?? "—"}</td>
+                  <td style={td}>{[r.set_name, r.parallel].filter(Boolean).join(" · ") || "—"}{r.mint_cap ? ` /${r.mint_cap}` : ""}</td>
+                  <td style={td}>{int(r.owned_copies)}</td>
+                  <td style={td}>{int(r.holders)}</td>
+                  <td style={td}>{pct(r.top1_share)} · {int(r.top1_copies)}</td>
+                  <td style={td}>{pct(r.top3_share)}</td>
+                  <td style={td}>{int(r.unopened_copies)}</td>
+                  <td style={td}>{grip(r)}</td>
+                </tr>
+              ))}
+            </Table>
+            {data.holders_capped ? <Note>Showing the {int(data.holders.length)} editions with the largest single-holder share; more are tracked.</Note> : null}
           </>
         )
       ) : data.players_error || !players ? (

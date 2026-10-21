@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest"
-import { fetchPaniniMoreBoards, PANINI_BOARD_LIMIT } from "@/lib/insights/panini-more-boards"
+import {
+  fetchPaniniMoreBoards,
+  PANINI_BOARD_LIMIT,
+  HOLDER_MIN_COPIES,
+  HOLDER_STACKED_SHARE,
+  HOLDER_CORNERED_SHARE,
+} from "@/lib/insights/panini-more-boards"
 
 /**
  * The Panini more-boards snapshot. Stated as absences: a failed board read is
@@ -20,6 +26,7 @@ function db(over: Record<string, Res> = {}) {
     panini_special_serials_board: { data: [{ sku: "s" }], count: 10 },
     panini_player_board: { data: [{ player_name: "P" }] },
     panini_coverage_summary: { data: [{ total_editions: 5094, pct_trustworthy: 35.1 }] },
+    mv_panini_holder_concentration: { data: [{ external_id: "packcard-1", top1_share: 0.4, top3_share: 0.6 }], count: 7 },
     ...over,
   }
   return {
@@ -38,6 +45,10 @@ function db(over: Record<string, Res> = {}) {
         },
         in: (col: string, v: unknown[]) => {
           ;(eqs[table] ??= []).push(`${col} in ${v.join("|")}`)
+          return b
+        },
+        gte: (col: string, v: unknown) => {
+          ;(eqs[table] ??= []).push(`${col}>=${String(v)}`)
           return b
         },
         order: (col: string) => {
@@ -130,3 +141,43 @@ describe("fetchPaniniMoreBoards — pack EV rows are the modeled product's only"
   })
 })
 
+
+// Holders (2026-10-21, ripz.one "Chokehold" parity): the MV holds counts only, so no handle can leave;
+// shares are shown only over a complete census with enough owned copies; a failed read is flagged.
+describe("fetchPaniniMoreBoards — holders", () => {
+  it("reads only complete-census editions with >= HOLDER_MIN_COPIES owned, biggest single holder first", async () => {
+    const d = db() as any
+    const r = await fetchPaniniMoreBoards(d)
+    const p = r.payload as any
+    expect(p.holders).toHaveLength(1)
+    expect(p.holders_error).toBe(false)
+    expect(d.eqs.mv_panini_holder_concentration).toEqual(
+      expect.arrayContaining(["census_complete=true", `owned_copies>=${HOLDER_MIN_COPIES}`]),
+    )
+    expect(d.orders.mv_panini_holder_concentration?.[0]).toBe("top1_share")
+    expect(p.holders_eligible).toBe(7)
+    expect(p.holders_stacked).toBe(7)
+    expect(p.holders_cornered).toBe(7)
+  })
+
+  it("the stacked / cornered counts use the exported thresholds", async () => {
+    const d = db() as any
+    await fetchPaniniMoreBoards(d)
+    expect(d.eqs.mv_panini_holder_concentration).toEqual(
+      expect.arrayContaining([`top1_share>=${HOLDER_STACKED_SHARE}`, `top3_share>=${HOLDER_CORNERED_SHARE}`]),
+    )
+  })
+
+  it("never selects a holder handle from the concentration view", async () => {
+    const d = db() as any
+    await fetchPaniniMoreBoards(d)
+    for (const cols of d.selects.mv_panini_holder_concentration ?? []) expect(cols).not.toMatch(/\bowner\b/)
+  })
+
+  it("a failed holders read is flagged, not 'none', and the payload is not cached", async () => {
+    const r = await fetchPaniniMoreBoards(db({ mv_panini_holder_concentration: { data: null, error: { message: "has not been populated" } } }))
+    expect((r.payload as any).holders).toBeNull()
+    expect((r.payload as any).holders_error).toBe(true)
+    expect(r.ok).toBe(false)
+  })
+})

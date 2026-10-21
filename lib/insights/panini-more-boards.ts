@@ -61,6 +61,21 @@ const SPECIAL_COLS =
 const PLAYER_COLS =
   "player_name,editions,chases,rookie_editions,sealed_in_packs,top_fmv_usd,catalog_fmv_usd,sealed_fmv_exposure_usd,avg_rip_pct"
 
+// ── HOLDERS (2026-10-21, ripz.one "Chokehold" parity) ──────────────────────────
+// mv_panini_holder_concentration (audit_20261021_panini_holder_concentration) is COUNTS ONLY: no
+// username is stored, so none can leave. Shares are of OWNED copies — a blank owner is an unopened
+// card and a BURNT serial is gone, both counted apart. Only editions whose census is complete
+// (serials read >= 98 % of mint_cap) and with >= HOLDER_MIN_COPIES owned copies are shown, so a
+// share never rests on a partial read or a three-copy edition. The MV refreshes daily (51 s pass).
+export const HOLDER_MIN_COPIES = 10
+/** One collector owns at least this share of the owned copies. */
+export const HOLDER_STACKED_SHARE = 0.25
+/** The top three collectors own at least this share of the owned copies. */
+export const HOLDER_CORNERED_SHARE = 0.5
+const HOLDER_COLS =
+  "external_id,product_set_id,player_name,set_name,parallel,tier,mint_cap,owned_copies,unopened_copies,burnt_copies," +
+  "holders,top1_copies,top3_copies,top1_share,top3_share,computed_at"
+
 interface Read<T> {
   rows: T[] | null
   error: string | null
@@ -84,7 +99,7 @@ async function read<T>(q: PromiseLike<{ data: T[] | null; error: { message: stri
 export async function fetchPaniniMoreBoards(
   db: Db = supabaseAdmin,
 ): Promise<BoardLiveResult<Record<string, unknown>>> {
-  const [deals, dealsAll, packs, specials, players, coverage, specialCount] = await Promise.all([
+  const [deals, dealsAll, packs, specials, players, coverage, specialCount, holders, holderCount] = await Promise.all([
     read(
       db.from("panini_deal_board").select(DEAL_COLS)
         // Sale-corroborated deals FIRST ('fmv_and_recent_sales' sorts before
@@ -154,6 +169,34 @@ export async function fetchPaniniMoreBoards(
         return { total: null, listed: null, error: e instanceof Error ? e.message : String(e) }
       }
     })(),
+    read(
+      db.from("mv_panini_holder_concentration").select(HOLDER_COLS)
+        .eq("census_complete", true)
+        .gte("owned_copies", HOLDER_MIN_COPIES)
+        .order("top1_share", { ascending: false, nullsFirst: false })
+        .order("external_id", { ascending: true })
+        .limit(PANINI_BOARD_LIMIT),
+      "mv_panini_holder_concentration",
+    ),
+    // How many shown-eligible editions are stacked / cornered, so the tab can say "N of M"
+    // rather than letting the top-200 list stand in for the whole count.
+    (async (): Promise<{ eligible: number | null; stacked: number | null; cornered: number | null; error: string | null }> => {
+      try {
+        const base = () => db.from("mv_panini_holder_concentration").select("external_id", { count: "exact", head: true })
+          .eq("census_complete", true).gte("owned_copies", HOLDER_MIN_COPIES)
+        const [e, s, c] = await Promise.all([
+          base(),
+          base().gte("top1_share", HOLDER_STACKED_SHARE),
+          base().gte("top3_share", HOLDER_CORNERED_SHARE),
+        ])
+        if (e.error || s.error || c.error || e.count == null || s.count == null || c.count == null) {
+          return { eligible: null, stacked: null, cornered: null, error: (e.error ?? s.error ?? c.error)?.message ?? "count unavailable" }
+        }
+        return { eligible: e.count, stacked: s.count, cornered: c.count, error: null }
+      } catch (err) {
+        return { eligible: null, stacked: null, cornered: null, error: err instanceof Error ? err.message : String(err) }
+      }
+    })(),
   ])
 
   const statuses: BoardStatus[] = [
@@ -162,9 +205,11 @@ export async function fetchPaniniMoreBoards(
     { label: "Pack EV", ok: packs.error === null, partial: false },
     { label: "Special serials", ok: specials.error === null, partial: false },
     { label: "Players", ok: players.error === null, partial: false },
+    { label: "Holders", ok: holders.error === null, partial: false },
   ]
-  const errors = [deals, dealsAll, packs, specials, players, coverage].map((r) => r.error).filter(Boolean) as string[]
+  const errors = [deals, dealsAll, packs, specials, players, coverage, holders].map((r) => r.error).filter(Boolean) as string[]
   if (specialCount.error) errors.push(`special serial counts: ${specialCount.error}`)
+  if (holderCount.error) errors.push(`holder counts: ${holderCount.error}`)
 
   return {
     payload: {
@@ -183,6 +228,12 @@ export async function fetchPaniniMoreBoards(
       players: players.rows,
       players_error: players.error !== null,
       players_capped: (players.rows?.length ?? 0) >= PANINI_BOARD_LIMIT,
+      holders: holders.rows,
+      holders_error: holders.error !== null,
+      holders_capped: (holders.rows?.length ?? 0) >= PANINI_BOARD_LIMIT,
+      holders_eligible: holderCount.eligible,
+      holders_stacked: holderCount.stacked,
+      holders_cornered: holderCount.cornered,
       coverage: coverage.rows?.[0] ?? null,
       degraded: summarizeDegraded(statuses),
       fetchedAt: new Date().toISOString(),

@@ -54,4 +54,24 @@ describe("PaniniBoardsTabs", () => {
     fireEvent.click(getByText("Players"))
     expect(container.textContent).toMatch(/comes from asks/)
   })
-})
+
+  it("the holders tab counts collectors, never names them, and labels the grip", () => {
+    const holder = { external_id: "packcard-x", product_set_id: 2332, player_name: "Pedri", set_name: "Base Prizms", parallel: "Gold", tier: "LEGENDARY", mint_cap: 10, owned_copies: 10, unopened_copies: 0, burnt_copies: 0, holders: 3, top1_copies: 6, top3_copies: 10, top1_share: 0.6, top3_share: 1, computed_at: "2026-10-21T12:29:00Z" };
+    const { container, getByText } = render(
+      <PaniniBoardsTabs data={{ ...base, holders: [holder], holders_error: false, holders_eligible: 100, holders_stacked: 12, holders_cornered: 9 }} degraded={null} />,
+    );
+    fireEvent.click(getByText("Holders"));
+    expect(container.textContent).toContain("Stacked · Cornered");
+    expect(container.textContent).toContain("60%");
+    expect(container.textContent).toContain("Of 100 such editions, 12 are stacked and 9 are cornered.");
+    expect(container.textContent).toContain("never named");
+  });
+
+  it("a failed holders read says it failed, not 'none'", () => {
+    const { container, getByText } = render(<PaniniBoardsTabs data={{ ...base, holders: null, holders_error: true }} degraded={null} />);
+    fireEvent.click(getByText("Holders"));
+    expect(container.textContent).toContain("couldn't load");
+    expect(container.textContent).not.toContain("No edition with a complete serial read");
+  });
+});
+
