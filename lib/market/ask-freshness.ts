@@ -120,16 +120,16 @@ export function fmtAskAge(hours: number): string {
  *   · `disney_pinnacle` — `pinnacle_catalog_set_floor_asks()` writes
  *     `floor_ask_updated_at = p_checked_at` on EVERY row every sweep (its own
  *     comment says `= freshness`). A real **checked** stamp.
- *   · `laliga_golazos` — `cached_listings_v2.listed_at`, when the SELLER posted
- *     it, over an index a row LEAVES when the listing closes. A **listed** stamp;
- *     an old one describes a live listing, not a neglected one.
- *   · `nfl_all_day` — **checked** since 2026-10-20: every All Day ask surface now
- *     reads `allday_edition_floor_ask.floor_ask_verified_at` (the freshest
- *     on-chain verification of the floor listing — storefront reconcile every
- *     2 h, the V1 lane weekly), not `floor_ask_listed_at`. ⛔ A new All Day
- *     surface must read the VERIFIED column; feeding it `listed_at` under this
- *     kind would claim a check that is really a posting date. The Market tab's
- *     edition rows carry no All Day stamp at all (their only timestamp was the
+ *   · `nfl_all_day` / `laliga_golazos` — **checked** since 2026-10-20: every ask
+ *     surface for them reads `<collection>_edition_floor_ask.floor_ask_verified_at`
+ *     (the freshest on-chain verification of the floor listing — storefront
+ *     reconcile every 2 h, All Day's V1 lane weekly). Until then they dated asks
+ *     by `cached_listings_v2.listed_at` (when the SELLER posted it) under the
+ *     **listed** kind below, which no collection resolves to any more; it is kept
+ *     for a future source that only knows a posting time. ⛔ A new surface for
+ *     either must read the VERIFIED column; feeding it `listed_at` under this kind
+ *     would claim a check that is really a posting date. The Market tab's
+ *     edition-grain rows carry no stamp at all (their only timestamp was the
  *     edition's NEWEST listing, which never described the floor ask shown).
  *   · `candy_mlb` — `candy_listings.last_seen_at`, written as
  *     `new Date().toISOString()` on EVERY row the Magic Eden sweep upserts, not
@@ -158,11 +158,13 @@ export type AskStampKind = "changed" | "checked" | "listed"
  *  convention (`nba_top_shot` / `nba-top-shot`) — both are live in this codebase. */
 export function askStampKind(collectionSlug: string | null | undefined): AskStampKind {
   const s = (collectionSlug ?? "").replace(/-/g, "_").toLowerCase()
-  if (s === "laliga_golazos") return "listed"
   // Panini (2026-09-27): the stamp is panini_card_serials.captured_at, the time
   // the walk last READ the serial — a check, not a listing or change time.
-  // All Day (2026-10-20): floor_ask_verified_at, the last on-chain verification.
-  if (s === "disney_pinnacle" || s === "candy_mlb" || s === "panini_blockchain" || s === "nfl_all_day") return "checked"
+  // All Day / Golazos (2026-10-20): floor_ask_verified_at, the last on-chain verification.
+  if (
+    s === "disney_pinnacle" || s === "candy_mlb" || s === "panini_blockchain" ||
+    s === "nfl_all_day" || s === "laliga_golazos"
+  ) return "checked"
   return "changed"
 }
 
@@ -240,7 +242,7 @@ export function askAgeStamp(
   const hours = askAgeHours(cachedAt, now)
   if (hours == null) return null
   const kind = askStampKind(collectionSlug)
-  // 2026-10-20: a LISTED stamp (Golazos `listed_at`; All Day until it moved to its verified stamp) dates when the seller
+  // 2026-10-20: a LISTED stamp (All Day / Golazos `listed_at`, until both moved to their verified stamp) dates when the seller
   // POSTED the ask. Its age says nothing about how long since we checked it — those
   // books are re-verified on chain (V2 every 2 h, V1 weekly, #198) — so a 90-day-old
   // listing is a long-standing ask, not a stale one: never the ⚠ warning.

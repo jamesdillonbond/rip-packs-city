@@ -291,19 +291,6 @@ describe("deal alerts state how old the ask is", () => {
     expect(none[0].fields.some((f: any) => f.name === "Ask seen")).toBe(false)
   })
 
-  it("a Golazos ask says LISTED, never 'seen … may be gone' — its stamp is the posting time", () => {
-    const old = { ask_usd: 10, ask_updated_at: "2026-06-06T12:00:00Z", collection_slug: "laliga_golazos" } // 90d
-    const s = buildTelegramMessage([dealDelivery(old)], NOW)
-    expect(s).toContain("ask listed 90d ago")
-    expect(s).not.toContain("ask seen")
-    expect(s).not.toContain("may be gone")
-    const embeds = buildDiscordEmbeds([dealDelivery(old)], NOW)
-    expect(embeds[0].fields.find((f: any) => f.name === "Ask listed")?.value).toBe("90d ago")
-    expect(embeds[0].fields.some((f: any) => f.name === "Ask seen")).toBe(false)
-    // no-change control: the same age on a checked/changed branch still warns.
-    expect(buildTelegramMessage([dealDelivery({ ...old, collection_slug: "nba_top_shot" })], NOW)).toContain("may be gone")
-  })
-
   it("an All Day ask's stamp is a VERIFICATION since 2026-10-20 — an old one says seen … may be gone", () => {
     // The board arm now carries allday_edition_floor_ask.floor_ask_verified_at
     // (allday-ask-stamps-are-verifications.test.ts pins that half).

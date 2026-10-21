@@ -43,4 +43,13 @@ describe("All Day ask stamps are verifications, matching askStampKind", () => {
     expect(b).toMatch(/THEN afa\.floor_ask_verified_at/)
     expect(b).not.toMatch(/floor_ask_listed_at/)
   })
+
+  // Golazos joined the same evening (20261021004010): same kind, same pairing.
+  it("Golazos: the kind is checked and its floor view + edition RPC carry the verified stamp", () => {
+    expect(askStampKind("laliga_golazos")).toBe("checked")
+    expect(body("golazos_edition_floor_ask")).toMatch(/max\(t\.verified_at\)[\s\S]*AS floor_ask_verified_at/)
+    const b = body("get_edition_high_offer")
+    expect(b).toMatch(/golazos_edition_floor_ask/)
+    expect(b).toMatch(/THEN gfa\.floor_ask_verified_at/)
+  })
 })
