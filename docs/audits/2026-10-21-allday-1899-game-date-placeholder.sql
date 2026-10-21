@@ -1,4 +1,4 @@
--- 2026-10-21 ~11:00 AM PT (Claude Code cloud; Trevor: "Keep going") — All Day "Dynamic" Series 5
+-- 2026-10-21 ~10:40 AM PT (Claude Code cloud; Trevor: "Keep going") — All Day "Dynamic" Series 5
 -- editions carried game_date 1899-12-30, the zero date of a spreadsheet epoch ("no date"), and
 -- player/team pages rendered "Dec 30, 1899" (/nfl-all-day/player/josh-allen,
 -- /nfl-all-day/team/denver-broncos). 80 editions, all set_name 'Dynamic', series 5, last written
@@ -15,7 +15,7 @@ UPDATE public.editions
    AND collection_id = 'dee28451-5d62-409e-a1ad-a83f763ac070'
 RETURNING id;
 
--- ── RAN 2026-10-21 ~11:02 AM PT: 80 rows. Exact revert:
+-- ── RAN 2026-10-21 10:44 AM PT: 80 rows. Exact revert:
 -- UPDATE public.editions SET game_date = '1899-12-30' WHERE id IN (
 --   '0139b72e-4c27-4cb2-9b33-f2f8958bf225','013c8880-6afb-4b2a-8218-4454a5d018b7','030965c9-1b77-434d-b711-cc978f81b686','11007b19-6361-4e87-99a6-eee9685ffe3a','15be0a43-bb31-48e8-9dac-8e6d29ef0eb4','16f37295-7c9d-4543-8cbd-23c5b9ec6df0','189e3ebd-e0a2-498c-91f6-ea2736025b55','19d987d4-683c-4fc4-924c-6d3dc00ad40d','1d86fe35-6ef5-47e3-a5e5-42acdc55be7a','2401c111-d39a-48ff-88c0-f9234877870a',
 --   '24dc7d4e-d796-4766-b714-9d8129f6c860','2528cbec-ebaf-4007-b6e9-6609a5b10a69','28467452-f296-4f94-bba5-0c696abb9d65','29b6d349-b652-41dc-9d8d-475cf2df082c','2b175225-241f-4091-8aeb-6219374c6abf','2b73ffee-f11b-40f7-bcff-1876fa462455','2dd94c96-ccb2-414d-bcfe-f975ce76cf80','30fd0eb7-c04f-4029-80d2-0d8e56979111','34a3629a-0fa2-4ba0-b234-28f8c30872cd','3953b030-de84-40dd-9643-2e70542b4e72',
