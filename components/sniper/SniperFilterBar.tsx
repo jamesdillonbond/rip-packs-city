@@ -6,6 +6,7 @@
 // advanced-filters row. All state stays in the page; this component reads values
 // and reports changes through the callback props below. No data-fetch logic here.
 import LeagueFilter, { type LeagueValue } from "@/components/filters/LeagueFilter";
+import SearchableSelect, { SEARCHABLE_SELECT_MIN } from "@/components/filters/SearchableSelect";
 import { variantColor } from "@/lib/sniper/helpers";
 import { getEntityLabels } from "@/lib/entity-labels";
 import type { SortOption } from "@/lib/sniper/types";
@@ -109,6 +110,17 @@ export default function SniperFilterBar(props: {
         {onTeamChange && teamOptions.length >= 2 && (
           <label className="flex items-center gap-1.5" style={{ color: "var(--rpc-text-muted)" }}>
             <span>{labels.team.toUpperCase()}</span>
+            {teamOptions.length > SEARCHABLE_SELECT_MIN ? (
+              <SearchableSelect
+                label={labels.team}
+                value={teamFilter}
+                allValue="all"
+                allLabel={"All " + (labels.team === "Franchise" ? "Franchises" : "Teams")}
+                options={teamOptions}
+                onChange={onTeamChange}
+                maxWidth={isMobile ? "100%" : 200}
+              />
+            ) : (
             <select
               aria-label={labels.team}
               value={teamFilter}
@@ -119,11 +131,23 @@ export default function SniperFilterBar(props: {
               <option value="all">{"All " + (labels.team === "Franchise" ? "Franchises" : "Teams")}</option>
               {teamOptions.map((t) => <option key={t} value={t}>{t}</option>)}
             </select>
+            )}
           </label>
         )}
         {onStudioChange && studioOptions.length >= 2 && (
           <label className="flex items-center gap-1.5" style={{ color: "var(--rpc-text-muted)" }}>
             <span>STUDIO</span>
+            {studioOptions.length > SEARCHABLE_SELECT_MIN ? (
+              <SearchableSelect
+                label="Studio"
+                value={studioFilter}
+                allValue="all"
+                allLabel="All Studios"
+                options={studioOptions}
+                onChange={onStudioChange}
+                maxWidth={isMobile ? "100%" : 220}
+              />
+            ) : (
             <select
               aria-label="Studio"
               value={studioFilter}
@@ -134,6 +158,7 @@ export default function SniperFilterBar(props: {
               <option value="all">All Studios</option>
               {studioOptions.map((t) => <option key={t} value={t}>{t}</option>)}
             </select>
+            )}
           </label>
         )}
         {onChaserOnlyChange && showChaserToggle && (

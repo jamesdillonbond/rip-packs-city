@@ -33,6 +33,7 @@ import type { MarketFacets } from "@/lib/market/facets"
 import { parseList, fmtDiscount, resolveListingUrl, fmtUsd, TIER_COLORS, tierColor, ownLockLabel } from "@/lib/market-format"
 import { filterListingsByOwned, countActiveFilters } from "@/lib/market/filters"
 import BadgeIcon from "@/components/BadgeIcon"
+import { SEARCHABLE_SELECT_MIN } from "@/components/filters/SearchableSelect"
 import { trackOutboundClick } from "@/lib/track-click"
 import { collectionHasPage, dapperMarketMomentUrl, getCollection, getCollectionUuid, collectionHasLocking, collectionHasBadges } from "@/lib/collections"
 import IpfsImg from "@/components/media/IpfsImg"
@@ -882,9 +883,6 @@ function MarketInner() {
 
 // collectDistinct extracted to @/lib/market-format (imported below).
 
-/** Above this many options a MultiSelectChip shows a type-to-filter box. */
-const MULTISELECT_SEARCH_MIN = 8
-
 function MultiSelectChip({
   label, selected, options, onChange, formatOption,
 }: {
@@ -899,7 +897,7 @@ function MultiSelectChip({
   const [query, setQuery] = useState("")
   const fmt = formatOption ?? ((v: string) => v)
   // A long list (Team: ~30 NBA + WNBA + historic labels) gets a type-to-filter box.
-  const searchable = options.length > MULTISELECT_SEARCH_MIN
+  const searchable = options.length > SEARCHABLE_SELECT_MIN
   const q = query.trim().toLowerCase()
   const visible = searchable && q ? options.filter(o => fmt(o).toLowerCase().includes(q)) : options
   const summary = selected.length === 0 ? "Any" : selected.length === 1 ? fmt(selected[0]) : `${selected.length} selected`

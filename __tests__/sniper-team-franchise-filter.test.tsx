@@ -4,7 +4,7 @@
 // the label comes from the collection's vocabulary (lib/entity-labels), the
 // options from the board itself.
 import { describe, it, expect, afterEach } from "vitest"
-import { render, cleanup, fireEvent } from "@testing-library/react"
+import { render, cleanup, fireEvent, screen, within } from "@testing-library/react"
 import SniperFilterBar from "@/components/sniper/SniperFilterBar"
 import { filterSniperDeals, sniperClientTeamFilter, sniperTeamOptions } from "@/lib/sniper/helpers"
 import type { SniperDeal } from "@/lib/sniper/types"
@@ -76,6 +76,25 @@ describe("SniperFilterBar — Character / Franchise on Pinnacle, Player / Team e
     expect(text).toMatch(/PLAYER/)
     expect(text).toMatch(/TEAM/)
     expect(text).toMatch(/All Teams/)
+  })
+  // 2026-10-21 (Trevor): a long Team list needs a place to type — a native <select>
+  // opens a scroll wheel on a phone. Above 8 options it becomes a searchable list.
+  it("a long team list gets a type-to-filter box; picking a match sends it", () => {
+    const teams = ["Atlanta Hawks", "Boston Celtics", "Chicago Bulls", "Denver Nuggets", "Golden State Warriors", "Miami Heat", "Portland Trail Blazers", "Seattle Storm", "Utah Jazz"]
+    const { select, picked } = bar("nba-top-shot", teams)
+    expect(select).toBeNull()
+    fireEvent.click(screen.getByRole("button", { name: "Team" }))
+    const box = screen.getByRole("listbox", { name: "Team" })
+    expect(within(box).getByRole("option", { name: "All Teams" })).toBeTruthy()
+    fireEvent.change(screen.getByRole("searchbox", { name: "Filter Team options" }), { target: { value: "port" } })
+    expect(within(box).getAllByRole("option").map((o) => o.textContent)).toEqual(["Portland Trail Blazers"])
+    fireEvent.click(within(box).getByRole("option", { name: "Portland Trail Blazers" }))
+    expect(picked).toEqual(["Portland Trail Blazers"])
+    expect(screen.queryByRole("listbox")).toBeNull()
+  })
+  it("a short list keeps the native dropdown", () => {
+    expect(bar("nba-top-shot", ["Lakers", "Trail Blazers"]).select).not.toBeNull()
+    expect(screen.queryByRole("searchbox")).toBeNull()
   })
   it("no dropdown when the board offers fewer than two choices", () => {
     expect(bar("disney-pinnacle", ["Star Wars"]).select).toBeNull()
