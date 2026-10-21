@@ -120,10 +120,10 @@ export const UI_FIELD_DICTIONARY: readonly UiFieldEntry[] = [
   {
     id: "overview.priced-from-sales",
     surface: "collection overview (/[collection]/overview)",
-    field: "Priced from Sales",
-    aliases: ["priced from sales", "priced", "coverage", "how much is priced", "overview percentage"],
+    field: "Priced from Recent Sales",
+    aliases: ["priced from recent sales", "priced from sales", "priced", "coverage", "how much is priced", "overview percentage"],
     meaning:
-      "The share of this collection's editions whose FMV rests on corroborated recent sales (HIGH or MEDIUM confidence) rather than an ask or nothing. It is NOT the share of editions that have any FMV at all, which is much larger. \"—\" means the figure could not be read, not 0%.",
+      "The share of this collection's editions whose FMV rests on corroborated recent sales rather than an ask, older sales or nothing — so a closed market reads 0% even though its closing values come from sales. It is NOT the share of editions that have any FMV at all, which is much larger. \"—\" means the figure could not be read, not 0%.",
     source: "app/(collections)/[collection]/overview/CollectionOverviewClient.tsx (fmv_high_medium_pct; no fallback to fmv_pct)",
   },
   {

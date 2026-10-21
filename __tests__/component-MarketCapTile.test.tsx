@@ -62,6 +62,14 @@ describe("MarketCapTile", () => {
     expect(state.calls).toEqual([{ fn: "get_market_cap_entity", args: { p_group: "player", p_collection: "nba_top_shot", p_match: "lebron-james" } }])
   })
 
+  it("compares collector-held to minted only when every edition's split is known", async () => {
+    state.data = [{ ...ROW, editions: 138, editions_supply_known: 138 }]
+    const { container } = await renderTile({ group: "player", collectionDbSlug: "nba_top_shot", match: "lebron-james" })
+    const t = container.textContent ?? ""
+    expect(t).toContain("of 310,049 minted")
+    expect(t).not.toContain("with a known split")
+  })
+
   it("renders the cap, the rank among the collection's players, and the supply split", async () => {
     state.data = [ROW]
     const { container } = await renderTile({ group: "player", collectionDbSlug: "nba_top_shot", match: "lebron-james" })
@@ -70,7 +78,11 @@ describe("MarketCapTile", () => {
     expect(t).toContain("#1")
     expect(t).toContain("of 1,362 players in NBA Top Shot with a known cap")
     expect(t).toContain("273,774")
-    expect(t).toContain("of 310,049 minted")
+    // 2026-10-20: this row covers 134 of 138 editions, and `minted` sums all 138 while
+    // collector-held sums the 134 — so the sub names the coverage instead of setting the
+    // two side by side (Chiefs page: 297,296 "of 534,172 minted", 94,525 unaccounted).
+    expect(t).toContain("on the 134 of 138 editions with a known split")
+    expect(t).not.toContain("of 310,049 minted")
     // 2026-10-20: the sub was "49.6% priced from sales" = mcap_high_conf_usd / mcap_usd,
     // the HIGH/MEDIUM share renamed (FMV confidence is internal) and false as worded.
     expect(t).not.toContain("priced from sales")

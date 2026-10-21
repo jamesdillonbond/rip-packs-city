@@ -7,6 +7,7 @@ import { nameOrDash, fmtPrice, fmtAge, minutesSince, freshnessFromAge, EM_DASH }
 import InsiderSignalsPanel from "@/components/InsiderSignalsPanel"
 import { MarketplaceStatusBanner } from "@/components/marketplace-status"
 import { toolCardDesc } from "@/lib/collection/closed-market-chrome"
+import { closedMarket } from "@/lib/market-closed"
 import PaniniCoverageNote from "@/components/collection/PaniniCoverageNote"
 import { trackOutboundClick } from "@/lib/track-click"
 import type { PaniniCoverage } from "@/lib/panini/coverage"
@@ -296,7 +297,10 @@ export default function CollectionOverviewClient({
   const hasSniperTab = enabledPages.has("sniper" as never)
   // ⚠ Explicit "flow", not `?? "flow"`: Panini's dbChain is null (no chain
   // identity established), and the old default ran Flow detectors for it.
-  const hasInsiderDetectors = collectionObj ? collectionObj.dbChain === "flow" : true
+  // 2026-10-20 sweep: a closed market (UFC Strike, 13 May 2026) rendered "Insider
+  // Signals — Anomalies in the last 24h" — a live-trading monitor over a market that
+  // has no trades. It is a Flow-chain panel for OPEN markets only.
+  const hasInsiderDetectors = (collectionObj ? collectionObj.dbChain === "flow" : true) && !closedMarket(collection)
   // Panini (published 2026-09-25): its 24h sales KPIs stay null (Panini sales
   // reach RPC ~2 days late), its list panels read Panini's own deal snapshot and
   // $100+ sales (2026-10-14, lib/panini/overview-feeds.ts), and every surface
@@ -405,8 +409,12 @@ export default function CollectionOverviewClient({
             unchanged: the share of this collection's editions whose FMV rests on
             corroborated recent sales rather than an ask or nothing. Relabelled
             rather than deleted, so the KPI row keeps its three cells. */}
+        {/* 2026-10-20 sweep: "Priced from Sales | 0%" on /ufc/overview sat beside "Every
+            value here is a closing one, built from the sales recorded" — both true only
+            once the label says what the share counts: corroborated RECENT sales (a market
+            closed five months has none). The tile stays (10-18: a basis fact). */}
         <KpiCard
-          label="Priced from Sales"
+          label="Priced from Recent Sales"
           accent={accent}
           loading={loading}
           valueColor={accent}

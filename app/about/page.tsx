@@ -87,8 +87,10 @@ export default function AboutPage() {
           <Section title="Independent">
             <p>
               Rip Packs City is built and operated by a single developer.
-              It is not affiliated with Dapper Labs, the NBA, NFLPA, or any
-              league or league partner. The platform exists to serve
+              It is not affiliated with Dapper Labs, Panini America, Candy
+              Digital, Disney, the UFC, the NBA, NFL, MLB, LaLiga, their
+              players&apos; associations, or any league, team or platform it
+              covers (the full list is in the Terms). The platform exists to serve
               collectors with honest pricing and analytics — nothing more
               and nothing less.
             </p>

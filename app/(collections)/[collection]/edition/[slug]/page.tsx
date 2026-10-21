@@ -1639,10 +1639,14 @@ async function EditionBottomSections({
             <div style={{ marginTop: 10 }}>
               <Link
                 href={`/special-serial-owners?player=${encodeURIComponent(detail.player_name)}`}
+                // The holders board is sign-in only (holder-exposure decision, 2026-06-19) and this
+                // page is cached for every visitor, so the link says so instead of landing a
+                // signed-out reader on the sign-in page unannounced; nofollow keeps crawlers off it.
+                rel="nofollow"
                 className="rpc-mono"
                 style={{ fontSize: 11, letterSpacing: "0.04em", color: "var(--rpc-red-text)", textDecoration: "none" }}
               >
-                See who holds {detail.player_name}&rsquo;s special serials →
+                See who holds {detail.player_name}&rsquo;s special serials (sign in) →
               </Link>
             </div>
           ) : null}

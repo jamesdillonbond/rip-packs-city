@@ -123,7 +123,16 @@ export function MarketCapTileBody({
         <StatCell
           label="Collector-held"
           value={fmtCount(row.collector_held)}
-          sub={row.minted != null ? `of ${fmtCount(row.minted)} minted` : undefined}
+          // 2026-10-20 sweep: `minted` sums EVERY edition, collector-held only the ones
+          // with a known holder split, so "297,296 of 534,172 minted" on the Chiefs page
+          // set two populations side by side (94,525 unaccounted for). Name the coverage.
+          sub={
+            row.minted == null
+              ? undefined
+              : partial
+                ? `on the ${fmtCount(row.editions_supply_known)} of ${fmtCount(row.editions)} editions with a known split`
+                : `of ${fmtCount(row.minted)} minted`
+          }
         />
         <StatCell label="Burned" value={fmtCount(row.burned)} sub={row.issuer_held != null ? `${fmtCount(row.issuer_held)} still with the issuer` : undefined} />
         <StatCell
