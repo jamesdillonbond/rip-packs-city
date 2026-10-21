@@ -119,6 +119,34 @@ export type SaleRow = {
   serial_number: number | null
   buyer_address: string | null
   seller_address: string | null
+  source?: string | null
+  nft_id?: string | null
+}
+
+const STUDIO_HISTORY_SOURCE = "pinnacle_studio_history_v1"
+const normAddr = (a: string | null | undefined) => (a ?? "").toLowerCase().replace(/^0x/, "")
+
+/**
+ * PURE. Drop a studio-history sale that an on-chain row already records: same NFT,
+ * same price, same buyer. 2026-10-20 live sweep: /pinnacle/moment/LEV1-EP4S-REBE-S6
+ * listed #62 $29 twice (Feb 25 studio, Mar 5 on-chain), #278 and #201 likewise. The
+ * 09-28 cleanup (#159) removed twins a median 0.34 h apart; these are DAYS apart (the
+ * studio feed's dates run early), ~5,033 pairs on 1,633 pins, all > 30 days old. The
+ * data cleanup is a DELETE held for a human (known-issues #200); until then the page
+ * does not show one purchase as two. The on-chain row wins: it carries the seller.
+ */
+export function dedupeStudioTwinSales<T extends SaleRow>(rows: T[]): T[] {
+  const onchain = new Set(
+    rows
+      .filter((r) => r.source !== STUDIO_HISTORY_SOURCE && r.nft_id)
+      .map((r) => `${r.nft_id}|${Number(r.sale_price_usd)}|${normAddr(r.buyer_address)}`),
+  )
+  return rows.filter(
+    (r) =>
+      r.source !== STUDIO_HISTORY_SOURCE ||
+      !r.nft_id ||
+      !onchain.has(`${r.nft_id}|${Number(r.sale_price_usd)}|${normAddr(r.buyer_address)}`),
+  )
 }
 
 // A sibling printing of the SAME pin (same shape_render_id) — a different variant
@@ -369,7 +397,7 @@ export async function load(
       Promise.all([
     supa
       .from("pinnacle_sales")
-      .select("sale_price_usd, sold_at, serial_number, buyer_address, seller_address")
+      .select("sale_price_usd, sold_at, serial_number, buyer_address, seller_address, source, nft_id")
       .eq("render_id", renderId)
       .order("sold_at", { ascending: false, nullsFirst: false })
       .limit(25),
@@ -411,7 +439,7 @@ export async function load(
   }
 
   const siblings = Array.isArray(siblingsRes.data) ? (siblingsRes.data as SiblingRow[]) : []
-  const sales = (salesRes.data ?? []) as SaleRow[]
+  const sales = dedupeStudioTwinSales((salesRes.data ?? []) as SaleRow[])
 
   // Resolve buyer/seller usernames (best-effort) so Recent Sales matches the
   // TS/AllDay convention (@name vs truncated 0x…).

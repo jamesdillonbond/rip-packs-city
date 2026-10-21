@@ -35,10 +35,10 @@ const TOP_SALES_N = 8
 
 export function generateMetadata(): Metadata {
   return {
-    title: "Market — Flow Collectibles Sales & Volume by Collection",
+    title: "Market — Collectibles Sales & Volume by Collection",
     alternates: { canonical: "https://www.rippackscity.com/market" },
     description:
-      "24-hour sales and volume for every Flow collection RPC tracks — NBA Top Shot, NFL All Day, Disney Pinnacle and more — plus the week's biggest sales.",
+      "24-hour sales and volume for every collection RPC tracks — NBA Top Shot, NFL All Day, Disney Pinnacle, Panini, Candy MLB and more — plus the week's biggest sales.",
     openGraph: {
       ...OG_INHERITED,
       title: "Market — Rip Packs City",

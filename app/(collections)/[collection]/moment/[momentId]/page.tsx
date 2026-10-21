@@ -14,6 +14,7 @@
 
 import { redirect, notFound } from "next/navigation"
 import { getCollection, publishedCollections } from "@/lib/collections"
+import { resolveScopedMoment } from "@/lib/moment/scoped-moment-href"
 
 export const dynamic = "force-dynamic"
 
@@ -38,8 +39,18 @@ export default async function MomentRedirectPage({ params }: PageProps) {
     redirect(`/${collection}/collection`)
   }
 
-  // Canonical per-NFT / edition detail page. It self-resolves the id and renders
-  // the specific serial when the id is an nft_id / moment uuid, or the edition
-  // aggregate for an edition uuid; it notFound()s if the id is truly unknown.
-  redirect(`/moment/${encodeURIComponent(momentId)}`)
+  // ⛔ 2026-10-20 live sweep: a bare forward to /moment/<id> DROPPED THE COLLECTION,
+  // and /moment resolves an nft_id with no collection (resolve_moment_id prefers Top
+  // Shot on a collision). /nfl-all-day/moment/1000080 rendered Top Shot's Gordon
+  // Hayward instead of All Day's Dallas Goedert #390 — ~1% of All Day ids collide
+  // (203 of 20,000 sampled). A flow nft_id is unique only WITHIN a collection, so it
+  // is resolved here, scoped (CLAUDE.md: scope every moment_id read by collection).
+  const target = await resolveScopedMoment(undefined, collection, momentId)
+  if (target === "unavailable") {
+    // Read failed: the unscoped forward is the pre-10-20 behaviour, and for the ~99%
+    // of ids that do not collide it is correct; no worse than before.
+    redirect(`/moment/${encodeURIComponent(momentId)}`)
+  }
+  if (!target) notFound()
+  redirect(target)
 }

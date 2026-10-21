@@ -151,6 +151,31 @@ export interface MomentDetailPayload {
   [key: string]: unknown
 }
 
+type OwnerSerial = {
+  owner_address?: string | null
+  owner_from_last_sale?: boolean
+  last_sale?: { sold_at?: string | null; buyer_address?: string | null } | null
+}
+
+/**
+ * PURE. The serial's owner, corrected by a NEWER sale. `moments.owner_address` is a
+ * hydration snapshot; 2026-10-20 live sweep: /moment/52684229 read "Owner @KIDD082003"
+ * while its own Recent activity showed that seller passing #25 to @LHSknights, who
+ * sold it on "today" — the snapshot (10-19 5:27 PM PT) predated both sales. When the
+ * last sale is LATER than the snapshot and names a different buyer, the buyer is the
+ * owner as of that sale. A snapshot newer than the sale wins (a transfer after it).
+ * Unknown timestamps change nothing.
+ */
+export function ownerCorrectedBySale<T extends OwnerSerial>(ss: T, ownerUpdatedAt: string | null | undefined): T {
+  const buyer = ss.last_sale?.buyer_address
+  const soldAt = ss.last_sale?.sold_at ? Date.parse(ss.last_sale.sold_at) : NaN
+  const snapAt = ownerUpdatedAt ? Date.parse(ownerUpdatedAt) : NaN
+  if (!buyer || !Number.isFinite(soldAt) || !Number.isFinite(snapAt)) return ss
+  if ((ss.owner_address ?? "").toLowerCase() === buyer.toLowerCase()) return ss
+  if (soldAt <= snapAt) return ss
+  return { ...ss, owner_address: buyer, owner_from_last_sale: true }
+}
+
 /**
  * The moment payload. `cache()`d because generateMetadata and the page component
  * both need it, and React's per-request cache collapses the two calls into one.
@@ -170,7 +195,21 @@ export const fetchMomentDetail = cache(async function fetchMomentDetail(
       console.warn(`[moment-page] rpc error id=${id}: ${error.message}`)
       return { data: null, ok: false }
     }
-    return { data: (data as MomentDetailPayload | null) ?? null, ok: true }
+    const payload = (data as MomentDetailPayload | null) ?? null
+    // Owner correction (2026-10-20): read the snapshot's age only when a later
+    // sale could contradict it. A failed read keeps the payload as it was.
+    const res = payload?.resolved as { kind?: string; moment_id?: string | null } | undefined
+    const ss = payload?.serial_specific as OwnerSerial | undefined
+    if (payload && res?.kind === "moment" && res.moment_id && ss?.last_sale?.buyer_address &&
+        (ss.owner_address ?? "").toLowerCase() !== ss.last_sale.buyer_address.toLowerCase()) {
+      try {
+        const m = await bounded(db.from("moments").select("updated_at").eq("id", res.moment_id).limit(1), "owner-age")
+        if (!m.error) payload.serial_specific = ownerCorrectedBySale(ss, m.data?.[0]?.updated_at ?? null)
+      } catch {
+        /* keep the snapshot owner */
+      }
+    }
+    return { data: payload, ok: true }
   } catch (err) {
     console.warn(
       `[moment-page] fetch threw id=${id}: ${err instanceof Error ? err.message : String(err)}`,

@@ -202,6 +202,8 @@ interface MomentSerialSpecific {
   serial_number: number | null
   nft_id: string | null
   owner_address: string | null
+  /** True when owner_address is the buyer of a sale newer than the owner snapshot (fetchers.ts ownerCorrectedBySale). */
+  owner_from_last_sale?: boolean
   is_listed: boolean | null
   list_price: number | null
   listed_at: string | null
@@ -1336,7 +1338,7 @@ export default async function MomentPage(
               gap: 12,
             }}
           >
-            <StatCell label="Owner" value={<OwnerLink address={ss.owner_address} name={nameFor(ss.owner_address)} collectionUrlSlug={walletSlug} />} />
+            <StatCell label="Owner" value={<><OwnerLink address={ss.owner_address} name={nameFor(ss.owner_address)} collectionUrlSlug={walletSlug} />{ss.owner_from_last_sale ? <span style={{ display: "block", fontSize: 11, color: "var(--rpc-text-muted)", fontWeight: 400 }}>buyer in its latest sale</span> : null}</>} />
             {/* Listed (Bug 13, 2026-07-03): restored off cached_listings_v2 — the
                 live on-chain listing feed — instead of the dead ts_listings source.
                 Shows the cheapest active ask for this serial's nft_id, or a dash
