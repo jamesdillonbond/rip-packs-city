@@ -1,6 +1,6 @@
 -- audit_20261020_edition_detail_names_the_linked_player_page
 --
--- 2026-10-20 ~10:05 PM PT (Claude Code cloud). Follow-on to 20261021034822 (a NAME
+-- 2026-10-20 ~9:05 PM PT (Claude Code cloud). Follow-on to 20261021034822 (a NAME
 -- is not a PERSON). The edition page links its player by slugifying
 -- editions.player_name, the league's label — so Marvin Harrison Jr.'s 8 All Day
 -- editions (labelled "Marvin Harrison") link to his father's page, Josh

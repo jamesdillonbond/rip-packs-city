@@ -1,6 +1,6 @@
 -- audit_20261020_market_cap_player_grain_groups_by_person
 --
--- 2026-10-20 ~10:40 PM PT (Claude Code cloud). CLAUDE.md rule 2: a NAME is not a
+-- 2026-10-20 ~9:17 PM PT (Claude Code cloud). CLAUDE.md rule 2: a NAME is not a
 -- PERSON — here the mirror case, one person split into several "players".
 --
 -- WHAT WAS WRONG. refresh_market_cap_current keys the player grain by the slug of

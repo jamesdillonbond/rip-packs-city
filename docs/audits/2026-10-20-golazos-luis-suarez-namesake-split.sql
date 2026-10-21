@@ -1,4 +1,4 @@
--- 2026-10-20 ~10:15 PM PT (Claude Code cloud) — Golazos: two different Luis Suárez on one player row.
+-- 2026-10-20 ~9:10 PM PT (Claude Code cloud) — Golazos: two different Luis Suárez on one player row.
 --
 -- Found by a read-only sweep: /laliga-golazos/player/luis-suarez listed five editions
 -- under one player_id (400ad0fc-…), two of them UD Almería "Talentos" (external_id

@@ -1,6 +1,6 @@
 -- audit_20261020_player_pages_never_borrow_another_persons_editions
 --
--- 2026-10-20 ~9:35 PM PT (Claude Code cloud; Trevor: "work on roadmap items and
+-- 2026-10-20 ~8:50 PM PT (Claude Code cloud; Trevor: "work on roadmap items and
 -- known issues"). CLAUDE.md concierge rule 2: a NAME is not a PERSON. Found by a
 -- read-only sweep of live player pages.
 --
@@ -8,7 +8,7 @@
 -- player page by `e.player_id = v.id OR e.player_name = v.name`. The name arm is
 -- the fallback for editions not yet linked to a player row, but it also fires for
 -- editions LINKED to somebody else who happens to carry (or once carried) the
--- name. Measured live 10-20 ~9:30 PM PT: exactly 17 editions, all on All Day:
+-- name. Measured live 10-20 ~8:50 PM PT: exactly 17 editions, all on All Day:
 --   /nfl-all-day/player/josh-allen       8 editions of Josh Hines-Allen (the Jaguars
 --                                         edge rusher; played as "Josh Allen" to 2023)
 --   /nfl-all-day/player/marvin-harrison  8 editions of Marvin Harrison Jr.
