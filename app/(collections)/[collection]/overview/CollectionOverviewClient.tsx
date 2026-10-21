@@ -52,6 +52,13 @@ interface CollectionStats {
   // Reframes the older fmv_pct, which counted any snapshot — including NO_DATA.
   fmv_high_medium_count?: number | null
   fmv_high_medium_pct?: number | null
+  // #205 (2026-10-21): % of editions with >= 1 market sale in the last 30 days
+  // (mv_collection_recent_sale_share, hourly). What the "Priced from Recent
+  // Sales" tile shows. null = unread or too old to publish.
+  recent_sale_pct?: number | null
+  recent_sale_count?: number | null
+  recent_sale_editions?: number | null
+  recent_sale_failed?: boolean
   fmv_age_minutes: number | null
   // null when the collection's sales are NOT a tracked feed (Panini: the route
   // sets `sales_tracked: false` and nulls these rather than serving the Flow
@@ -428,9 +435,14 @@ export default function CollectionOverviewClient({
              "Priced from Sales". Null renders an em dash, which says nothing
              rather than something false. Zero is a real value here and still
              renders as "0%". */
+          /* #205 (Trevor 2026-10-21, "make it a real sales stat"): the cell now reads
+             recent_sale_pct — editions with a market sale in the last 30 days — not the
+             HIGH/MEDIUM confidence share, which read 0 % on Golazos beside 84 editions
+             sold this month. Still NO fallback: when recent_sale_pct is null (failed or
+             stale read) the cell is an em dash, never fmv_high_medium_pct or fmv_pct. */
           value={
-            stats && stats.fmv_high_medium_pct != null
-              ? `${Math.round(stats.fmv_high_medium_pct)}%`
+            stats && stats.recent_sale_pct != null
+              ? `${Math.round(stats.recent_sale_pct)}%`
               : null
           }
         />

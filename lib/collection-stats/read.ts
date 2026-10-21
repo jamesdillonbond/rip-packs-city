@@ -58,6 +58,19 @@ export async function readCollectionStats(
           }
         : { value: data }
 
+    // ── "Priced from Recent Sales" (known-issues #205, Trevor 2026-10-21) ────
+    // The tile used to render fmv_high_medium_pct, the HIGH/MEDIUM confidence
+    // share, under a SALES label (Golazos read 0 % beside 84 editions sold this
+    // month). It now reads the real share: editions with >= 1 market sale in
+    // the last 30 days, from mv_collection_recent_sale_share (hourly). Keyed on
+    // the RPC's own normalized slug, so its aliases (`ufc`, `nba`) still land.
+    // A failed read OR a row older than RECENT_SALE_MAX_AGE_MS nulls the figure
+    // and says why — never a stale or substituted number under this label.
+    if (data && typeof data === "object" && !Array.isArray(data)) {
+      const share = await readRecentSaleShare(client, String((data as any).slug ?? normalizedSlug), where)
+      Object.assign(enriched, share)
+    }
+
     // ── Panini (published 2026-09-25) ──────────────────────────────────────
     // get_collection_stats' generic arm reads SALES and LISTINGS from the Flow
     // feeds (`sales_*`, `cached_listings`), which hold ZERO Panini rows — so it
@@ -100,6 +113,61 @@ export async function readCollectionStats(
     return { ok: true, stats: enriched }
   } catch (err) {
     return { ok: false, kind: "unavailable", error: err }
+  }
+}
+
+/** The MV refreshes hourly (pg_cron :31); three missed refreshes and the figure is withheld. */
+export const RECENT_SALE_MAX_AGE_MS = 3 * 60 * 60 * 1000
+
+export interface RecentSaleShare {
+  recent_sale_pct: number | null
+  recent_sale_count: number | null
+  recent_sale_editions: number | null
+  recent_sale_as_of: string | null
+  /** true when the row could not be read OR is too old to publish. */
+  recent_sale_failed: boolean
+}
+
+const NO_SHARE = (): RecentSaleShare => ({
+  recent_sale_pct: null,
+  recent_sale_count: null,
+  recent_sale_editions: null,
+  recent_sale_as_of: null,
+  recent_sale_failed: true,
+})
+
+export async function readRecentSaleShare(
+  client: SupabaseClient,
+  rpcSlug: string,
+  where: string,
+  now: number = Date.now(),
+): Promise<RecentSaleShare> {
+  try {
+    const { data, error } = await boundedRead(
+      (client as any)
+        .from("mv_collection_recent_sale_share")
+        .select("editions,editions_sold_30d,recent_sale_pct,computed_at")
+        .eq("slug", rpcSlug)
+        .limit(1),
+      where + "/mv_collection_recent_sale_share",
+    )
+    if (error || !Array.isArray(data) || data.length === 0) return NO_SHARE()
+    const row = data[0] as Record<string, unknown>
+    const asOf = typeof row.computed_at === "string" ? row.computed_at : null
+    const ageMs = asOf ? now - Date.parse(asOf) : NaN
+    const pct = row.recent_sale_pct == null ? NaN : Number(row.recent_sale_pct)
+    if (!Number.isFinite(ageMs) || ageMs > RECENT_SALE_MAX_AGE_MS || !Number.isFinite(pct)) {
+      return { ...NO_SHARE(), recent_sale_as_of: asOf }
+    }
+    return {
+      recent_sale_pct: pct,
+      recent_sale_count: row.editions_sold_30d == null ? null : Number(row.editions_sold_30d),
+      recent_sale_editions: row.editions == null ? null : Number(row.editions),
+      recent_sale_as_of: asOf,
+      recent_sale_failed: false,
+    }
+  } catch {
+    return NO_SHARE()
   }
 }
 

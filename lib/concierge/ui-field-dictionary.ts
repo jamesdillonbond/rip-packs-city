@@ -123,8 +123,8 @@ export const UI_FIELD_DICTIONARY: readonly UiFieldEntry[] = [
     field: "Priced from Recent Sales",
     aliases: ["priced from recent sales", "priced from sales", "priced", "coverage", "how much is priced", "overview percentage"],
     meaning:
-      "The share of this collection's editions whose FMV rests on corroborated recent sales rather than an ask, older sales or nothing — so a closed market reads 0% even though its closing values come from sales. It is NOT the share of editions that have any FMV at all, which is much larger. \"—\" means the figure could not be read, not 0%.",
-    source: "app/(collections)/[collection]/overview/CollectionOverviewClient.tsx (fmv_high_medium_pct; no fallback to fmv_pct)",
+      "The share of this collection's editions that had at least one marketplace sale in the last 30 days (sales to a platform buyback wallet don't count), so their price can rest on a recent sale. A closed market reads 0% even though its closing values come from older sales. It is NOT the share of editions that have any FMV at all, which is much larger. Updated hourly. \"—\" means the figure could not be read or is out of date, not 0%.",
+    source: "app/(collections)/[collection]/overview/CollectionOverviewClient.tsx (recent_sale_pct from mv_collection_recent_sale_share via lib/collection-stats/read.ts; no fallback to fmv_high_medium_pct or fmv_pct)",
   },
   {
     id: "alerts.notify-mode",
