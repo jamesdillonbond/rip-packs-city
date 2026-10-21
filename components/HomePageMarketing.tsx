@@ -202,8 +202,9 @@ export default function HomePageMarketing() {
     trackFunnelEvent({ eventType: "home_view", surface: "home" });
   }, []);
 
-  // WebSite entity carrying the sitelinks SearchAction. The root layout already
-  // emits the WebApplication (organizationJsonLd) on every page; this is a
+  // WebSite entity carrying the sitelinks SearchAction. Since 2026-10-21 the
+  // WebApplication (organizationJsonLd) is emitted HERE, on the homepage only —
+  // it used to ride on every page from the root layout; this is a
   // distinct WebSite type (where schema.org expects potentialAction) rather
   // than a second near-identical WebApplication — fixes the duplicate-JSON-LD
   // finding from the 2026-06-12 audit. (2026-06-13)
@@ -227,6 +228,10 @@ export default function HomePageMarketing() {
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(webSiteJsonLd) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }}
       />
 
       <style>{`

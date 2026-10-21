@@ -5,7 +5,7 @@ import MobileNav from "@/components/MobileNav"
 import { SpeedInsights } from "@vercel/speed-insights/next"
 import { Analytics } from "@vercel/analytics/next"
 import WarmupProvider from "@/lib/warmup/WarmupContext"
-import { rootMetadata, organizationJsonLd } from "@/lib/seo"
+import { rootMetadata } from "@/lib/seo"
 import WalletPreloader from "@/components/WalletPreloader"
 import ConsoleGreeting from "@/components/visual/ConsoleGreeting"
 import TelemetryPageView from "@/components/TelemetryPageView"
@@ -85,10 +85,12 @@ export default function RootLayout({
             — its whole value is being reached on the first Tab. Its target is
             <MainContentAnchor /> below, right before {children}. */}
         <SkipToContent />
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }}
-        />
+        {/* 2026-10-21: the site-wide WebApplication JSON-LD (organizationJsonLd)
+            moved to the homepage (components/HomePageMarketing.tsx). Emitted here
+            it rode on EVERY page, so Google's Rich Results Test read each card,
+            player and pack page as a free "Software App" alongside its Product —
+            structured data describing the site, not the page's subject. Pinned:
+            __tests__/site-app-json-ld-is-homepage-only.test.ts. */}
         <ConsoleGreeting />
         <TelemetryPageView />
         <RefCapture />
