@@ -1785,7 +1785,7 @@ function PaniniEditionMarketSection({
 // Rendered when get_edition_detail could not be READ — distinct from an edition
 // that does not exist (that still 404s). Reports our failure and makes no claim
 // about the edition's market.
-function EditionUnavailable({ collection, slug }: { collection: string; slug: string }) {
+function EditionUnavailable({ collection }: { collection: string; slug: string }) {
   return (
     <main style={{ minHeight: "60vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "48px 24px", gap: 16 }}>
       <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, letterSpacing: "0.3em", textTransform: "uppercase", color: "var(--rpc-text-muted)" }}>

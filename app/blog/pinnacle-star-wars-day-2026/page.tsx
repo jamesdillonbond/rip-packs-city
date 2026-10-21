@@ -215,22 +215,22 @@ export default function PinnacleStarWarsDay2026() {
         }}
       />
       <p style={KICKER}>Disney Pinnacle · {formatPostDate(POST.date)}</p>
-      <h1 style={H1}>Star Wars Day 2026 on Disney Pinnacle: What's Actually Moving</h1>
+      <h1 style={H1}>Star Wars Day 2026 on Disney Pinnacle: What&apos;s Actually Moving</h1>
       <p style={SUBTITLE}>
-        53 editions, 14 sets, 408 historical sales. Here's where the Mandalorian
+        53 editions, 14 sets, 408 historical sales. Here&apos;s where the Mandalorian
         peak buyers are now underwater, the only edition with steady sales
-        trading below FMV, and what we still don't know yet.
+        trading below FMV, and what we still don&apos;t know yet.
       </p>
       <p style={BYLINE}>
         By Rip Packs City · 8 min read · Numbers as of 2026-05-07 16:30 UTC
       </p>
 
-      <h2 style={H2}>What we're looking at</h2>
+      <h2 style={H2}>What we&apos;re looking at</h2>
       <p style={P}>
-        Star Wars Day landed Sunday and runs through May 11. Pinnacle's Star
-        Wars catalog isn't dropping a one-time celebration set this year, so the
-        relevant question for collectors isn't <em>"what's the new mint?"</em>{" "}
-        — it's <em>"what's the existing catalog actually worth right now?"</em>
+        Star Wars Day landed Sunday and runs through May 11. Pinnacle&apos;s Star
+        Wars catalog isn&apos;t dropping a one-time celebration set this year, so the
+        relevant question for collectors isn&apos;t <em>&quot;what&apos;s the new mint?&quot;</em>{" "}
+        — it&apos;s <em>&quot;what&apos;s the existing catalog actually worth right now?&quot;</em>
       </p>
       <p style={P}>
         We have 53 Star Wars editions on Pinnacle today, spanning 14 sets from{" "}
@@ -243,39 +243,39 @@ export default function PinnacleStarWarsDay2026() {
         <strong style={STRONG}>Holiday</strong>,{" "}
         <strong style={STRONG}>Comic Humor</strong>). 408 historical sales
         across the franchise. Most editions trade in a tight $1–$3 band today.
-        A handful don't.
+        A handful don&apos;t.
       </p>
 
       <h2 style={H2}>The Grogu Brushed Silver story</h2>
       <p style={P}>
-        The most interesting data point in the whole catalog. Grogu's Brushed
+        The most interesting data point in the whole catalog. Grogu&apos;s Brushed
         Silver pin from <strong style={STRONG}>The Mandalorian Vol.1</strong>{" "}
         (mint 736) has had{" "}
         <strong style={STRONG}>131 historical sales</strong> at an average of{" "}
         <strong style={STRONG}>$26.50</strong>, with one peak transaction at{" "}
-        <strong style={STRONG}>$575</strong>. That's roughly the deepest paper
+        <strong style={STRONG}>$575</strong>. That&apos;s roughly the deepest paper
         history of any single Star Wars edition on the platform.
       </p>
       <p style={P}>
-        It's also the worst-performing position in our coverage. The 30-day
+        It&apos;s also the worst-performing position in our coverage. The 30-day
         average sale price is <strong style={STRONG}>$2.00</strong> across 4
         sales — a{" "}
-        <strong style={STRONG}>91.9% drawdown vs the platform's FMV ($24.83)</strong>{" "}
+        <strong style={STRONG}>91.9% drawdown vs the platform&apos;s FMV ($24.83)</strong>{" "}
         and a much steeper drop from where the early buyers entered. Someone
-        paid $575 for one of these. Today's floor is two dollars.
+        paid $575 for one of these. Today&apos;s floor is two dollars.
       </p>
       <div style={CALLOUT}>
         <strong style={STRONG}>Read it carefully.</strong> A 92% gap between
         FMV and current sale prints can mean two things. Either FMV is stale
         and needs to come down, or current sales are temporarily depressed and
-        FMV is closer to right. We're flagging it so you can decide; we're not
+        FMV is closer to right. We&apos;re flagging it so you can decide; we&apos;re not
         telling you to buy.
       </div>
 
       <h2 style={H2}>The volume leaders right now</h2>
       <p style={P}>
         These are the editions actually moving on Pinnacle this week. Volume
-        means liquidity — if you want a Star Wars Day pickup that won't sit on
+        means liquidity — if you want a Star Wars Day pickup that won&apos;t sit on
         your wallet for six months, this is where to start.
       </p>
       <div style={{ overflowX: "auto" }}>
@@ -336,7 +336,7 @@ export default function PinnacleStarWarsDay2026() {
       </div>
       <p style={P}>
         Two takeaways. First, the floor is clamped at $1 across most of the
-        Saga Standard catalog — Pinnacle's primary-market pricing has set the
+        Saga Standard catalog — Pinnacle&apos;s primary-market pricing has set the
         ceiling at the floor for these. Second, the only Standards trading at
         even a small premium are Luke and Admiral Ackbar — which tracks with
         the LiveToken-era heuristic that protagonists and named-but-rare
@@ -357,35 +357,35 @@ export default function PinnacleStarWarsDay2026() {
       </ul>
       <p style={P}>
         This is the only Star Wars edition with this much recent sales volume
-        behind its FMV, and it's trading below that FMV with consistent
+        behind its FMV, and it&apos;s trading below that FMV with consistent
         volume. If you want one Star Wars Day
         position you can defend with the data, this is it.
       </p>
 
-      <h2 style={H2}>What we don't know yet</h2>
+      <h2 style={H2}>What we don&apos;t know yet</h2>
       <p style={P}>
-        Honesty pass on coverage gaps so you don't read more into numbers
+        Honesty pass on coverage gaps so you don&apos;t read more into numbers
         than is there:
       </p>
       <ul style={UL}>
         <li>
           <strong style={STRONG}>Mint counts:</strong> only 6 of 53 Star Wars
           editions have a verified mint count in our DB today. The rest show
-          NULL — Pinnacle doesn't publish printing data uniformly across sets,
-          and we haven't backfilled from on-chain enumeration yet for Pinnacle.
+          NULL — Pinnacle doesn&apos;t publish printing data uniformly across sets,
+          and we haven&apos;t backfilled from on-chain enumeration yet for Pinnacle.
         </li>
         <li>
           <strong style={STRONG}>Ask floors:</strong> zero Star Wars editions
           currently have a real on-marketplace ask price above $1 in our cache.
           Most rows show NULL or the $1 stub. Until our Pinnacle ask-floor
-          ingest matures, "discount vs ask" calls aren't trustworthy on this
-          franchise — only "discount vs FMV" and historical sale prints are.
+          ingest matures, &quot;discount vs ask&quot; calls aren&apos;t trustworthy on this
+          franchise — only &quot;discount vs FMV&quot; and historical sale prints are.
         </li>
         <li>
-          <strong style={STRONG}>Capsule odds and EV:</strong> Pinnacle hasn't
-          released a Star Wars Day capsule for 2026, and we don't compute
+          <strong style={STRONG}>Capsule odds and EV:</strong> Pinnacle hasn&apos;t
+          released a Star Wars Day capsule for 2026, and we don&apos;t compute
           synthetic capsule EV against secondary catalogs. If Disney does a
-          surprise drop before May 11, we'll publish odds the same day.
+          surprise drop before May 11, we&apos;ll publish odds the same day.
         </li>
       </ul>
 
@@ -407,7 +407,7 @@ export default function PinnacleStarWarsDay2026() {
         <li>
           <strong style={STRONG}>If you want a contrarian read:</strong> Grogu
           Brushed Silver at the current $2 floor has 131 historical sales of
-          paper interest behind it. The crowd that bid $575 in 2024 isn't
+          paper interest behind it. The crowd that bid $575 in 2024 isn&apos;t
           buying it back at $2; whether that prints a bottom is the live
           question.
         </li>
@@ -429,7 +429,7 @@ export default function PinnacleStarWarsDay2026() {
         Methodology: Sales data sourced from{" "}
         <code>pinnacle_sales</code>, FMV from{" "}
         <code>pinnacle_fmv_snapshots</code> (latest computed_at per edition),
-        edition metadata from <code>pinnacle_editions</code>. "30-day"
+        edition metadata from <code>pinnacle_editions</code>. &quot;30-day&quot;
         windows are rolling and computed against NOW() at query time. FMV
         follows the same methodology used across NBA Top Shot — see{" "}
         <Link href="/legal/fmv-methodology" style={{ color: "var(--rpc-red, #E03A2F)" }}>

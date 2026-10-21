@@ -176,7 +176,7 @@ function MessageText({ text }: { text: string }) {
   );
 }
 
-function FeedbackButtons({ messageId, sessionId, dbId, feedback: initialFeedback }: { messageId: string; sessionId: string; dbId?: number; feedback?: "up" | "down" | null }) {
+function FeedbackButtons({ sessionId, dbId, feedback: initialFeedback }: { messageId: string; sessionId: string; dbId?: number; feedback?: "up" | "down" | null }) {
   const [feedback, setFeedback] = useState<"up" | "down" | null>(initialFeedback || null);
   const [sent, setSent] = useState(false);
   const sendFeedback = async (value: "up" | "down") => {
@@ -790,7 +790,7 @@ export default function SupportChat({ pageContext, pageEntity, collectionId, use
                     <MessageText text={msg.text} />
                   )}
                   {msg.escalated && (
-                    <div style={{ marginTop: 8, padding: "6px 10px", background: "rgba(224,58,47,0.1)", border: "1px solid rgba(224,58,47,0.25)", borderRadius: 8, fontSize: 12, color: "var(--rpc-red-text)" }}>📋 Flagged for the team — we'll follow up</div>
+                    <div style={{ marginTop: 8, padding: "6px 10px", background: "rgba(224,58,47,0.1)", border: "1px solid rgba(224,58,47,0.25)", borderRadius: 8, fontSize: 12, color: "var(--rpc-red-text)" }}>📋 Flagged for the team — we&apos;ll follow up</div>
                   )}
                 </div>
                 {msg.momentCards && msg.momentCards.length > 0 && (

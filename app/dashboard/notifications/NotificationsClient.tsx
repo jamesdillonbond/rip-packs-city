@@ -177,7 +177,7 @@ export default function NotificationsClient() {
         <h1 style={{ fontFamily: "var(--font-display)", fontSize: "2rem", letterSpacing: "0.04em", margin: "0 0 1rem", color: "var(--rpc-red, #E03A2F)" }}>Email notifications</h1>
 
         {confirmStatus === "ok" && (
-          <div style={{ background: "#064e3b", color: "#a7f3d0", padding: "12px 16px", borderRadius: 8, marginBottom: 16 }}>Email confirmed — you're all set.</div>
+          <div style={{ background: "#064e3b", color: "#a7f3d0", padding: "12px 16px", borderRadius: 8, marginBottom: 16 }}>Email confirmed — you&apos;re all set.</div>
         )}
         {confirmStatus === "missing" && (
           <div style={{ background: "#7c2d12", color: "#fed7aa", padding: "12px 16px", borderRadius: 8, marginBottom: 16 }}>Missing confirmation token.</div>

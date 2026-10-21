@@ -1200,7 +1200,7 @@ function ShippingModal({
         </h3>
         <p style={{ color: accentText("#9a9a9a"), fontSize: 13, marginTop: 0 }}>
           Where should we send your <strong style={{ color: accentText("#e7e7e7") }}>{itemName}</strong>? Only RPC
-          sees this — it's never shown publicly.
+          sees this — it&apos;s never shown publicly.
         </p>
 
         <label style={{ display: "block", fontFamily: MONO, fontSize: 11, color: accentText("#9a9a9a"), marginTop: 10 }}>

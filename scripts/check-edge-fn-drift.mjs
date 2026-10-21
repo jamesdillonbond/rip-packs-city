@@ -396,7 +396,6 @@ export async function runContentCensus({ repo, deployed, attempted = true, fetch
   let bodiesFailed = 0
   let eszipContained = 0
   let eszipParsed = 0
-  let eszipAttempted = false
 
   if (!attempted) return { contentDrift, contentMatched, bodiesRead, bodiesFailed, bodyFailures, eszipMisses, parseMismatches, parseMatchModes, eszipParsed, ran: false }
 
@@ -441,7 +440,6 @@ export async function runContentCensus({ repo, deployed, attempted = true, fetch
       // never the PROVEN drift set.
       if (body && typeof body === "object" && typeof body.eszip === "string") {
         bodiesRead++
-        eszipAttempted = true
         const hay = body.eszip.replace(/\s+/g, " ")
         const needle = src.replace(/\s+/g, " ").trim()
         if (needle && !hay.includes(needle)) {

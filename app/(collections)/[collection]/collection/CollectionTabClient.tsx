@@ -1200,15 +1200,6 @@ function WalletMomentsBody() {
     [rows, collectionSeriesMap],
   )
 
-  // True when the loaded collection belongs to the signed-in / connected user
-  const isOwnCollection = useMemo(function() {
-    if (!input.trim()) return false
-    const q = input.trim().toLowerCase()
-    if (ownerKey && ownerKey.toLowerCase() === q) return true
-    if (connectedWallet && connectedWallet.toLowerCase() === q) return true
-    return false
-  }, [input, ownerKey, connectedWallet])
-
   // ── Task 14: Detect duplicate editions ──────────────────────────────────
   const duplicateEditions = useMemo(function() {
     return computeDuplicateEditionKeys(rows)

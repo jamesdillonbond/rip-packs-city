@@ -1944,7 +1944,7 @@ async function computeSniperFeed(opts: {
   //    firehose (open Dapper-marketplace listings verified in the last 24 h;
   //    migration 20260907020428). Before 2026-09-07 this table held one row
   //    from May and the feed was edition-level only.
-  const { listings: tsListings, tsCount, teamLabels } = await fetchTopShotPool(supabase as any, sink, team, player, rarity, maxPrice);
+  const { listings: tsListings, teamLabels } = await fetchTopShotPool(supabase as any, sink, team, player, rarity, maxPrice);
 
   console.log(`[sniper-feed] fetched ts=${tsListings.length}`);
 

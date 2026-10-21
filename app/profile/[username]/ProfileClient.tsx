@@ -344,7 +344,6 @@ export default function ProfileClient(props: {
 
   // Derived stats
   const accentColor = bio?.accent_color ?? "#E03A2F"; // brand-exception: parsed by hexToRgba — must be a literal hex, not a CSS var
-  const accentBg = hexToRgba(accentColor, 0.15);
   const accentBorder = hexToRgba(accentColor, 0.4);
   const filledCount = slabs.filter(Boolean).length;
   // The Top Shot username behind the collector's saved wallet(s), if the

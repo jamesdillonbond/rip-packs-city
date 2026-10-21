@@ -448,7 +448,6 @@ export default function CandyBoardClient({
   // editions is a measurement and keeps printing 0.
   const marketFailed = (degraded?.failed ?? []).some((l) => l === "Market" || l === "Candy MLB board");
   const priced = useMemo(() => initialRows.filter((r) => r.fmv_usd != null).length, [initialRows]);
-  const sales24h = useMemo(() => initialRows.reduce((s, r) => s + (Number(r.sales_24h) || 0), 0), [initialRows]);
   const withOffer = useMemo(() => initialRows.filter((r) => r.best_offer_usd != null).length, [initialRows]);
   const hiddenOutliers = useMemo(
     () => initialRows.reduce((s, r) => s + (Number(r.excluded_troll_count) || 0), 0),

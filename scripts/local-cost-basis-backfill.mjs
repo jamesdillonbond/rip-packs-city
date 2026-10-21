@@ -318,7 +318,6 @@ async function main() {
   let totalProcessed = 0;
   let totalInserted = 0;
   let totalNoPrice = 0;
-  let totalWithPrice = 0;
   let totalCount = 0;
   const startTime = Date.now();
 
@@ -365,8 +364,6 @@ async function main() {
         totalNoPrice++;
         continue;
       }
-
-      totalWithPrice++;
 
       // Get the average sale price at acquisition time (for fmv_at_acquisition)
       const avgSalePrice = moment.edition?.marketplaceInfo?.averageSaleData?.averagePrice

@@ -518,7 +518,7 @@ function LockRoiSection({ walletAddr }: { walletAddr: string }) {
           lineHeight: 1.6,
         }}
       >
-        Estimates are approximate. Points are derived from FMV and scaled by tier rarity and serial scarcity, then ranked by points per dollar — an interim heuristic we'll calibrate against real Top Shot Run 2 scoring data as it's collected.
+        Estimates are approximate. Points are derived from FMV and scaled by tier rarity and serial scarcity, then ranked by points per dollar — an interim heuristic we&apos;ll calibrate against real Top Shot Run 2 scoring data as it&apos;s collected.
       </div>
 
       {data.loading && !data.data ? (

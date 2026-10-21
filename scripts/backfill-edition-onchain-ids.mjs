@@ -222,10 +222,6 @@ async function main() {
 
   // Check remaining nulls
   try {
-    const remaining = await supabaseSelect(
-      "editions",
-      "select=id&or=(set_id_onchain.is.null,play_id_onchain.is.null)&limit=1&offset=0"
-    );
     // Need a count — use a HEAD request with Prefer: count=exact
     const countRes = await fetch(
       `${SUPABASE_URL}/rest/v1/editions?select=id&or=(set_id_onchain.is.null,play_id_onchain.is.null)`,

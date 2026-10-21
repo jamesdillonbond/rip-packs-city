@@ -301,7 +301,7 @@ export default function SetSqueezeBoardClient({
             on-chain badge ingestion.
           </p>
           <p>
-            <strong>Why "covered editions" might be less than the set&apos;s
+            <strong>Why &quot;covered editions&quot; might be less than the set&apos;s
             real edition count:</strong> some legacy TS sets aren&apos;t in
             our badge data yet. The Avg figure is over the covered subset;
             Total Circ / Locked / Burned / Buyable are also subset sums. The

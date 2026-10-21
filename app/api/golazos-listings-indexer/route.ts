@@ -334,7 +334,6 @@ export async function POST(req: NextRequest) {
 
           const processCompl = (blocks: FlowEventBlock[], version: StorefrontVersion, incr: () => void) => {
             for (const blk of blocks) {
-              const bh = Number(blk.block_height)
               const bts = blk.block_timestamp
               for (const evt of blk.events ?? []) {
                 incr()

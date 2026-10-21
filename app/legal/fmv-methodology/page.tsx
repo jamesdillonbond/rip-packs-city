@@ -145,9 +145,9 @@ export default async function FmvMethodologyPage() {
 
       <h3 style={H3}>Active asks (secondary signal)</h3>
       <p style={P}>
-        We snapshot the lowest active listing price across NBA Top Shot's native
-        marketplace and Flowty's secondary market. The lowest ask sets a soft
-        ceiling — if no one will pay above this, FMV shouldn't either.
+        We snapshot the lowest active listing price across NBA Top Shot&apos;s native
+        marketplace and Flowty&apos;s secondary market. The lowest ask sets a soft
+        ceiling — if no one will pay above this, FMV shouldn&apos;t either.
       </p>
 
       <h3 style={H3}>Distributional shape</h3>

@@ -147,7 +147,6 @@ function SniperMomentsBody() {
   // Collection UUID for collection-scoped badge art (BadgeIcon → badge_taxonomy
   // RPC). Badges are hidden for Pinnacle, so keying off the route slug is safe.
   const badgeCollectionId = ownLookup(COLLECTION_UUID_BY_SLUG, collectionSlug) ?? null;
-  const brandLabel = isPinnacle ? "Pinnacle" : collectionObj?.shortLabel ?? "Top Shot";
 
   const isMobile = useMobile();
   const [countdown, setCountdown] = useState(REFRESH_INTERVAL);
@@ -277,7 +276,7 @@ function SniperMomentsBody() {
   const [soldDeals, setSoldDeals] = useState<Map<string, SniperDeal>>(new Map());
 
   // ── Task 2: Edition depth panel ─────────────────────────────────────────────
-  const [expandedEditionKey, setExpandedEditionKey] = useState<string | null>(null);
+  const [, setExpandedEditionKey] = useState<string | null>(null);
   const [expandedFlowId, setExpandedFlowId] = useState<string | null>(null);
   const [selectedDeal, setSelectedDeal] = useState<SniperDeal | null>(null);
   const router = useRouter();

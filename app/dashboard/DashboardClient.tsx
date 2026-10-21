@@ -1257,7 +1257,7 @@ function ProfilePageInner() {
           {(groupedWallets.length === 0 && !heroFormShown) || showAddWallet ? (
           <>
           <div style={{ fontFamily: monoFont, fontSize: 11, color: "var(--rpc-text-muted)", marginBottom: 8, lineHeight: 1.5 }}>
-            Add a wallet by entering your Dapper username or a wallet address — we'll associate a Dapper username or Flow address with NBA Top Shot, NFL All Day, LaLiga Golazos, Disney Pinnacle and UFC Strike automatically, and a Solana address with Candy MLB.
+            Add a wallet by entering your Dapper username or a wallet address — we&apos;ll associate a Dapper username or Flow address with NBA Top Shot, NFL All Day, LaLiga Golazos, Disney Pinnacle and UFC Strike automatically, and a Solana address with Candy MLB.
           </div>
 
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>

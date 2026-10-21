@@ -432,7 +432,7 @@ async function main() {
   console.log(`[ts-livetoken] csv:  ${csvPath}`)
   console.log(`[ts-livetoken] confidence filter: ${confidenceList.join(", ")}`)
 
-  const { activitiesByMoment, totalParsed, inboundRows, skippedByActivity } =
+  const { activitiesByMoment, totalParsed, inboundRows } =
     await parseLivetokenCsv(csvPath)
   console.log(
     `[ts-livetoken] parsed ${totalParsed} rows → ${inboundRows} inbound across ${activitiesByMoment.size} nft_ids`
