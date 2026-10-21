@@ -185,6 +185,9 @@ function DropCard({ drop }: { drop: ScoredDrop }) {
   const sold = ss?.sold ?? null
   const total = ss?.total ?? drop.pack_count ?? null
   const left = total != null && sold != null ? total - sold : ss?.listed ?? null
+  // The sale can offer fewer packs than the drop holds (Gold Rush 2026-10-21: 30 packs, 26 put on
+  // sale, "26 sold · 0 left" under "Packs 30"). Name the offered total so the three numbers add up.
+  const offered = ss?.total != null && drop.pack_count != null && ss.total !== drop.pack_count ? ss.total : null
 
   return (
     <article className="rpc-pd-card">
@@ -213,6 +216,7 @@ function DropCard({ drop }: { drop: ScoredDrop }) {
             <span className="rpc-pd-stat-sub">
               {sold != null ? `${fmtInt(sold)} sold` : "—"}
               {left != null ? ` · ${fmtInt(left)} left` : ""}
+              {offered != null ? ` of ${fmtInt(offered)} offered` : ""}
             </span>
           </span>
           <span className="rpc-pd-stat">

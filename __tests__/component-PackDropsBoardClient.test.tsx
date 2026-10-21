@@ -65,6 +65,20 @@ describe("PackDropsBoardClient", () => {
     expect(container.textContent).toMatch(/RPC priced/i)
   })
 
+  // 2026-10-21 sweep: Gold Rush read "Packs 30 · 26 sold · 0 left" — the sale offered 26 of the 30.
+  it("names the offered total when the sale offers fewer packs than the drop holds", () => {
+    const ss = { saleOpen: true, sold: 26, total: 26, listed: 0, soldOut: true } as ScoredDrop["sale_state"]
+    const { container } = render(<PackDropsBoardClient initialDrops={[drop({ pack_count: 30, sale_state: ss })]} initialFetchedAt="2026-08-01T00:00:00Z" />)
+    expect(container.textContent).toContain("26 sold · 0 left of 26 offered")
+  })
+
+  it("adds nothing when every pack was offered", () => {
+    const ss = { saleOpen: true, sold: 20, total: 20, listed: 0, soldOut: true } as ScoredDrop["sale_state"]
+    const { container } = render(<PackDropsBoardClient initialDrops={[drop({ pack_count: 20, sale_state: ss })]} initialFetchedAt="2026-08-01T00:00:00Z" />)
+    expect(container.textContent).toContain("20 sold · 0 left")
+    expect(container.textContent).not.toContain("offered")
+  })
+
   // 2026-09-29 link crawl: "Jaime Jaquez Jr." linked /player/jaime-jaquez-jr (404); the page and
   // the sitemap key it as `jaime-jaquez-jr-`, so the edge hyphen must not be trimmed.
   it("links a player whose name ends in a period to the slug the player page resolves", () => {

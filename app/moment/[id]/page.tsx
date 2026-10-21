@@ -1433,6 +1433,10 @@ export default async function MomentPage(
                       <Td>
                         {n.holder_address ? (
                           <OwnerLink address={n.holder_address} name={nameFor(n.holder_address)} collectionUrlSlug={walletSlug} />
+                        ) : isThisSerial && ss?.owner_address ? (
+                          // 2026-10-21 sweep (/moment/52193764): the header named this serial's owner while
+                          // its own row read "—" (the notable-serials holder index had no row for it).
+                          <OwnerLink address={ss.owner_address} name={nameFor(ss.owner_address)} collectionUrlSlug={walletSlug} />
                         ) : (
                           <span style={{ color: "var(--rpc-text-muted)" }}>—</span>
                         )}

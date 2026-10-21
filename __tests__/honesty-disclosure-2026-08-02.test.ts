@@ -272,6 +272,9 @@ describe("pack EV basis disclosure", () => {
 
   it("the original-supply note warns that it overstates a drained pack", () => {
     expect(packEvBasis("nfl-all-day")!.note.toLowerCase()).toContain("overstates")
+    // It renders once above the packs LIST (and in /api/packs), so it speaks of the packs, plural —
+    // the 2026-10-21 sweep found "this pack's pool" above a list still reading "Loading packs…".
+    expect(packEvBasis("nfl-all-day")!.note).not.toMatch(/this pack's/i)
   })
 
   it("Pinnacle gets NO basis label, because neither basis is true for it", () => {

@@ -14,6 +14,7 @@
 // — see lib/collections.ts pages array.
 
 import { getEntityLabels } from "@/lib/entity-labels"
+import { fmtChancePct } from "@/lib/pack-chance-pct"
 import type { Metadata } from "next"
 import { Suspense } from "react"
 import { momentSubjectName } from "@/lib/entity-href"
@@ -1600,7 +1601,7 @@ function PackHeroStrip({ collection, editions }: { collection: string; editions:
         {editions.map((e, i) => {
           const chip = tierChip(String(e.tier ?? "common"))
           const hitPct = e.hit_probability != null && Number.isFinite(e.hit_probability)
-            ? `${(e.hit_probability * 100).toFixed(2)}%`
+            ? fmtChancePct(e.hit_probability)
             : null
           const inner = (
             <>
@@ -2409,7 +2410,7 @@ async function PackStreamedTop({
                       <Td color={c.tier ? accentText(tierChip(String(c.tier)).color) : undefined}>
                         {c.tier ? String(c.tier).charAt(0).toUpperCase() + String(c.tier).slice(1) : "—"}
                       </Td>
-                      <Td align="right">{pull === null ? "—" : `${(pull * 100).toFixed(2)}%`}</Td>
+                      <Td align="right">{pull === null ? "—" : fmtChancePct(pull)}</Td>
                       <Td align="right">{fmtUsd(num(c.fmv_usd))}</Td>
                       <Td align="right">{evShare === null ? "—" : `${evShare.toFixed(1)}%`}</Td>
                     </tr>

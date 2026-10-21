@@ -156,7 +156,7 @@ const ORIGINAL: PackEvBasisInfo = {
   basis: "original",
   label: "Original supply",
   note:
-    "We have no record of this pack's pool being drawn down, so expected value is weighted by the " +
+    "We have no record of these packs' pools being drawn down, so expected value is weighted by the " +
     "ORIGINAL minted supply rather than what is left. On a pack that has already been heavily opened " +
     "that overstates the chance of pulling a card that is largely gone. Treat it as the value of the " +
     "pack as printed, not as the value of a pack bought today.",
