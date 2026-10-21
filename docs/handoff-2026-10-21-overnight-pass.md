@@ -1,5 +1,7 @@
 # Overnight pass — 2026-10-21 (~01:15 AM PT)
 
+> ✅ **Correction 2026-10-21 ~6:40 AM PT (Cowork cloud):** Queued #3 (DROP 3 leftover scratch tables) is already done — dropped 10-20 7:37 AM PT by one-off pg_cron 761 (ledger 10-20 "DROPPED (3 scratch tables)"); re-read live: 0 `scratch_*` / `zz_probe*` relations in `public`. Queued #1 shipped 10-21 3:04 AM PT as `20261021100313`. Only #2 (#58, Trevor) remains.
+
 **Verdict: GREEN · 0 production shipped · idle: routed-to-claude-code · oldest routed: #58 OPENSEA_API_KEY ~26 nights (Trevor).**
 
 > ⚠ **3+ nights routed:** #58 OPENSEA_API_KEY has sat ~26 nights (Trevor-only; `candy_sales_stale` now 220.8h). Not idle — it has a queue and a single owner (Trevor), see below.
