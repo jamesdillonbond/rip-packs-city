@@ -33,6 +33,8 @@ const sb = vi.hoisted(() => {
     seriesCensus: null as any, knownSeries: { data: [], error: null } as any,
     upserts: [] as any[], upsertResult: { data: [], error: null } as any,
     _sel: "", _pendingUpsert: false,
+    // The play-metadata pass's read (editions still missing game_date). Default: none.
+    playMetaEds: { data: [], error: null } as any,
   }
   s.from = (t: string) => { s._table = t; s._in = false; s._sel = ""; return s }
   for (const m of ["eq", "is", "not", "order"]) s[m] = () => s
@@ -40,6 +42,7 @@ const sb = vi.hoisted(() => {
   s.limit = () => {
     if (s._table === "sets" && s._sel === "series") return Promise.resolve(s.seriesCensus ?? { data: [], error: null })
     if (s._table === "collection_series") return Promise.resolve(s.knownSeries)
+    if (s._table === "editions" && s._sel.includes("play_id_onchain")) return Promise.resolve(s.playMetaEds)
     if (s._table === "editions") return Promise.resolve(s.strandedEds)
     if (s._table === "sets" && s._in) return Promise.resolve(s.seriesedSets)
     return Promise.resolve(s.readError ? { data: null, error: s.readError } : { data: s.rows, error: null })
@@ -56,7 +59,7 @@ const sb = vi.hoisted(() => {
 })
 vi.mock("@/lib/supabase", () => ({ supabaseAdmin: sb, supabase: sb }))
 
-import { GET, POST, NOT_ON_CHAIN, decodeSeriesArray } from "@/app/api/cron/topshot-set-series-onchain/route"
+import { GET, POST, NOT_ON_CHAIN, decodeSeriesArray, decodePlayMetaArray, toGameDate } from "@/app/api/cron/topshot-set-series-onchain/route"
 
 function flowResult(nums: number[]) {
   const cadence = { type: "Array", value: nums.map((n) => ({ type: "UInt32", value: String(n) })) }
@@ -85,6 +88,7 @@ beforeEach(() => {
   sb.strandedEds = { data: [], error: null }; sb.seriesedSets = { data: [], error: null }
   sb.seriesCensus = null; sb.knownSeries = { data: [], error: null }; sb.upserts = []; sb.upsertResult = { data: [], error: null }
   sb._pendingUpsert = false
+  sb.playMetaEds = { data: [], error: null }
   sb.updateResults = { sets: { data: [{ id: "x" }], error: null }, editions: { data: [{ id: "e1" }, { id: "e2" }], error: null } }
   heartbeat.mockClear(); terminal.mockClear()
 })
@@ -261,5 +265,113 @@ describe("topshot-set-series-onchain — registers a new series", () => {
     expect(sb.upserts).toHaveLength(0)
     expect(t.ok).toBe(false)
     expect(t.extra.register_error).toContain("collection_series read failed")
+  })
+})
+
+// ── Play metadata pass (2026-10-21) ─────────────────────────────────────────
+// Editions the Atlas catalog created with NULL game_date / play_type /
+// play_category get them from TopShot.getPlayMetaData, fill-only.
+
+const opt = (v: string | null) => ({ type: "Optional", value: v == null ? null : { type: "String", value: v } })
+// The exact JSON-Cadence shape Flow REST returned on 10-21 for play 9318 and an old-format play.
+const REAL_SHAPE = {
+  type: "Array",
+  value: [
+    { type: "Array", value: [opt("2026-10-20T23:00:00Z"), opt("3 Pointer"), opt("3 Pointer")] },
+    { type: "Array", value: [opt("2022-10-23 02:00:00 +0000 UTC"), opt("Rim"), opt("Layup")] },
+    { type: "Array", value: [opt(null), opt(null), opt(null)] },
+  ],
+}
+function stubPlayMeta(shape: unknown, ok = true) {
+  const payload = JSON.stringify({ value: Buffer.from(JSON.stringify(shape), "utf8").toString("base64") })
+  const f = vi.fn(async () => ({
+    ok, status: ok ? 200 : 503,
+    json: async () => JSON.parse(payload),
+    text: async () => (ok ? payload : "execution node unavailable"),
+  }))
+  vi.stubGlobal("fetch", f as any)
+  return f
+}
+
+describe("toGameDate / decodePlayMetaArray", () => {
+  it("takes the UTC calendar date in both on-chain formats; junk is null, never a guessed date", () => {
+    expect(toGameDate("2026-10-20T23:00:00Z")).toBe("2026-10-20")
+    expect(toGameDate("2022-10-23 02:00:00 +0000 UTC")).toBe("2022-10-23")
+    expect(toGameDate("")).toBeNull()
+    expect(toGameDate("Oct 20")).toBeNull()
+    expect(toGameDate(null)).toBeNull()
+  })
+  it("decodes the real Flow REST shape, and a play with no metadata decodes to all-null", () => {
+    expect(decodePlayMetaArray(REAL_SHAPE, 3)).toEqual([
+      { gameDate: "2026-10-20", playType: "3 Pointer", playCategory: "3 Pointer" },
+      { gameDate: "2022-10-23", playType: "Rim", playCategory: "Layup" },
+      { gameDate: null, playType: null, playCategory: null },
+    ])
+  })
+  it("throws on a shape surprise or a length mismatch", () => {
+    expect(() => decodePlayMetaArray({ type: "Optional", value: null }, 1)).toThrow(/Array/)
+    expect(() => decodePlayMetaArray({ type: "Array", value: [{ type: "Array", value: [opt("x")] }] }, 1)).toThrow(/3-element/)
+    expect(() => decodePlayMetaArray(REAL_SHAPE, 2)).toThrow(/3 rows for 2 plays/)
+  })
+})
+
+describe("the play-metadata pass", () => {
+  it("fills game_date for every play, and type/category ONLY where a NULL-date edition lacks them — all keyed on the column being NULL", async () => {
+    sb.playMetaEds = { data: [
+      { play_id_onchain: 9318, play_type: null, play_category: null },
+      { play_id_onchain: 9318, play_type: null, play_category: null },
+      { play_id_onchain: 2956, play_type: "Rim", play_category: "Layup" },
+      { play_id_onchain: 4000, play_type: "Dunk", play_category: "Dunk" },
+    ], error: null }
+    const f = stubPlayMeta(REAL_SHAPE)
+    await GET(req("Bearer cron-tok")); await captured!()
+
+    expect(f).toHaveBeenCalledTimes(1)
+    const arg = JSON.parse(Buffer.from(JSON.parse((f as any).mock.calls[0][1].body).arguments[0], "base64").toString("utf8"))
+    expect(arg.value.map((v: any) => v.value)).toEqual(["9318", "2956", "4000"])
+
+    const eds = sb.updates.filter((u: any) => u.table === "editions").map((u: any) => u.patch)
+    expect(eds).toEqual(expect.arrayContaining([
+      { game_date: "2026-10-20" }, { play_type: "3 Pointer" }, { play_category: "3 Pointer" },
+      { game_date: "2022-10-23" },
+    ]))
+    // 2956 already has type + category: only its date is written. 4000 has no date on chain: nothing written.
+    expect(eds).not.toContainEqual({ play_type: "Rim" })
+    expect(eds).toHaveLength(4)
+
+    const t = lastTerminal()
+    expect(t.ok).toBe(true)
+    expect(t.extra.play_meta).toMatchObject({ plays: 3, no_date: 1, editions_dated: 4, editions_typed: 2, editions_categorised: 2, script_calls: 1, script_errors: 0 })
+  })
+
+  it("a Flow REST failure FAILS the run and writes nothing — never a 'nothing to fill'", async () => {
+    sb.playMetaEds = { data: [{ play_id_onchain: 9318, play_type: null, play_category: null }], error: null }
+    stubPlayMeta(REAL_SHAPE, false)
+    await GET(req("Bearer cron-tok")); await captured!()
+    expect(sb.updates.filter((u: any) => u.table === "editions")).toHaveLength(0)
+    const t = lastTerminal()
+    expect(t.ok).toBe(false)
+    expect(t.error).toMatch(/play-meta flow rest: Flow REST HTTP 503/)
+    expect(t.extra.play_meta).toMatchObject({ script_errors: 1, editions_dated: 0 })
+  })
+
+  it("a failed read fails the run and is reported as the read failing", async () => {
+    sb.playMetaEds = { data: null, error: { message: "boom" } }
+    stubPlayMeta(REAL_SHAPE)
+    await GET(req("Bearer cron-tok")); await captured!()
+    const t = lastTerminal()
+    expect(t.ok).toBe(false)
+    expect(t.extra.play_meta).toBeNull()
+    expect(t.extra.play_meta_error).toMatch(/play-meta editions read failed: boom/)
+  })
+
+  it("a write error fails the run; the count is rows that LANDED", async () => {
+    sb.playMetaEds = { data: [{ play_id_onchain: 9318, play_type: "3 Pointer", play_category: "3 Pointer" }], error: null }
+    stubPlayMeta({ type: "Array", value: [REAL_SHAPE.value[0]] })
+    sb.updateResults.editions = { data: null, error: { message: "deadlock" } }
+    await GET(req("Bearer cron-tok")); await captured!()
+    const t = lastTerminal()
+    expect(t.ok).toBe(false)
+    expect(t.extra.play_meta).toMatchObject({ editions_dated: 0, write_errors: 1 })
   })
 })

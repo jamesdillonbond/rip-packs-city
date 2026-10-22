@@ -213,6 +213,193 @@ async function registerNewSeries(): Promise<{ registered: number[]; unlabelled: 
   return { registered, unlabelled }
 }
 
+// ── Play metadata (game_date / play_type / play_category) ────────────────────
+//
+// WHY (2026-10-21, Series 2026-27 launch day). `catalog_topshot_from_atlas`
+// creates editions WITHOUT `game_date`, `play_type` or `play_category` (Atlas'
+// badge_editions carries none of them), and the only writer that ever filled
+// them from chain — POST /api/backfill-edition-names — has no scheduled caller
+// (and also overwrites `circulation_count` with the raw mint count, which would
+// undo topshot_normalize_circulation, so it must NOT be revived as-is). Result:
+// every Top Shot edition catalogued since ~2026-09-04 (1,460 rows / 685 plays on
+// 10-21, incl. all of Series 2026-27) had `game_date` NULL, and the Team
+// Checklist's 'contemporary' scope (`play_season = series_season`, play_season
+// derived from game_date) silently dropped them. The chain has all three for
+// every one of those 685 plays (probed 10-21 via Flow REST: 685/685).
+//
+// HOW. Read editions still missing `game_date` (newest play first, so a launch
+// day's plays go first), take up to MAX_PLAYS_PER_RUN distinct plays, one script
+// per PLAYS_PER_SCRIPT ids, then FILL-ONLY writes keyed on the column being NULL.
+// The date is the UTC calendar date of `DateOfMoment` (`slice(0,10)`) — the
+// convention every already-filled row uses (verified 10-21 on 9 plays across
+// 2022 and 2026). Counts are rows the UPDATEs RETURNED; a script or write error
+// fails the run. A play the chain answers with no date is counted
+// (`play_meta_no_date`) — if that ever grows, those rows sit at the head of the
+// desc-ordered read and the lane must move to a cursor.
+const MAX_PLAYS_PER_RUN = 200
+const PLAYS_PER_SCRIPT = 40
+const PLAY_META_CONCURRENCY = 8
+
+// Verified on mainnet 2026-10-21 through Flow REST (685 plays, 18 calls).
+export const PLAY_META_SCRIPT = `
+import TopShot from 0x0b2a3299cc857e29
+access(all) fun main(playIDs: [UInt32]): [[String?]] {
+  let out: [[String?]] = []
+  for id in playIDs {
+    let m = TopShot.getPlayMetaData(playID: id) ?? {}
+    out.append([m["DateOfMoment"], m["PlayType"], m["PlayCategory"]])
+  }
+  return out
+}
+`
+
+export type PlayMeta = { gameDate: string | null; playType: string | null; playCategory: string | null }
+
+/** `DateOfMoment` → its UTC calendar date ("2026-10-20T23:00:00Z" and
+ *  "2022-10-23 02:00:00 +0000 UTC" both → the first 10 chars), or null. */
+export function toGameDate(raw: string | null | undefined): string | null {
+  if (!raw) return null
+  const d = raw.trim().slice(0, 10)
+  return /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null
+}
+
+/** Decode the script's JSON-Cadence `[[String?]]`. Throws on any shape surprise. */
+export function decodePlayMetaArray(decoded: unknown, expected: number): PlayMeta[] {
+  const node = decoded as { type?: string; value?: unknown }
+  if (!node || node.type !== "Array" || !Array.isArray(node.value)) {
+    throw new Error("play-meta result is not a JSON-Cadence Array")
+  }
+  const rows = (node.value as Array<{ type?: string; value?: unknown }>).map((row) => {
+    if (!row || row.type !== "Array" || !Array.isArray(row.value) || row.value.length !== 3) {
+      throw new Error("play-meta row is not a 3-element Array")
+    }
+    const str = (cell: any): string | null => {
+      // Optional(String) → { type: "Optional", value: null | { type: "String", value } }
+      const inner = cell?.type === "Optional" ? cell.value : cell
+      if (inner == null) return null
+      if (inner.type !== "String" || typeof inner.value !== "string") throw new Error("play-meta cell is not a String")
+      return inner.value.trim() === "" ? null : inner.value
+    }
+    const [date, type, category] = (row.value as unknown[]).map(str)
+    return { gameDate: toGameDate(date), playType: type, playCategory: category }
+  })
+  if (rows.length !== expected) throw new Error(`play-meta script returned ${rows.length} rows for ${expected} plays`)
+  return rows
+}
+
+async function readPlayMeta(playIds: number[]): Promise<PlayMeta[]> {
+  const arg = { type: "Array", value: playIds.map((p) => ({ type: "UInt32", value: String(p) })) }
+  const body = {
+    script: Buffer.from(PLAY_META_SCRIPT, "utf8").toString("base64"),
+    arguments: [Buffer.from(JSON.stringify(arg), "utf8").toString("base64")],
+  }
+  const res = await fetch(`${FLOW_REST}/v1/scripts?block_height=sealed`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(SCRIPT_TIMEOUT_MS),
+  })
+  if (!res.ok) {
+    const snippet = await res.text().then((t) => t.slice(0, 200).replace(/\s+/g, " ")).catch(() => "")
+    throw new Error(`Flow REST HTTP ${res.status}${snippet ? `: ${snippet}` : ""}`)
+  }
+  const json = (await res.json()) as { value?: string } | string
+  const raw = typeof json === "string" ? json : String(json.value ?? "")
+  if (!raw) throw new Error("Flow REST returned an empty script result")
+  const decoded = JSON.parse(Buffer.from(raw.trim().replace(/^"|"$/g, ""), "base64").toString("utf8"))
+  return decodePlayMetaArray(decoded, playIds.length)
+}
+
+type PlayMetaResult = {
+  plays: number
+  editions_dated: number
+  editions_typed: number
+  editions_categorised: number
+  no_date: number
+  script_calls: number
+  script_errors: number
+  write_errors: number
+  complete: boolean
+  error: string | null
+}
+
+async function fillPlayMetadata(): Promise<PlayMetaResult> {
+  const out: PlayMetaResult = {
+    plays: 0, editions_dated: 0, editions_typed: 0, editions_categorised: 0, no_date: 0,
+    script_calls: 0, script_errors: 0, write_errors: 0, complete: true, error: null,
+  }
+  const { data, error } = await (supabaseAdmin as any)
+    .from("editions")
+    .select("play_id_onchain,play_type,play_category")
+    .eq("collection_id", COLLECTION_ID)
+    .is("game_date", null)
+    .not("play_id_onchain", "is", null)
+    .order("play_id_onchain", { ascending: false })
+    .limit(1000)
+  if (error) throw new Error(`play-meta editions read failed: ${error.message}`)
+  const rows = (data ?? []) as { play_id_onchain: unknown; play_type: string | null; play_category: string | null }[]
+
+  // Per play: does any NULL-date edition also lack a type / a category?
+  const needs = new Map<number, { type: boolean; category: boolean }>()
+  for (const r of rows) {
+    const p = Number(r.play_id_onchain)
+    if (!Number.isInteger(p) || p <= 0) continue
+    const n = needs.get(p) ?? { type: false, category: false }
+    if (r.play_type == null) n.type = true
+    if (r.play_category == null) n.category = true
+    needs.set(p, n)
+  }
+  const all = [...needs.keys()]
+  const plays = all.slice(0, MAX_PLAYS_PER_RUN)
+  out.plays = plays.length
+  out.complete = all.length <= MAX_PLAYS_PER_RUN && rows.length < 1000
+  if (plays.length === 0) return out
+
+  const fill = async (playId: number, col: "game_date" | "play_type" | "play_category", value: string) => {
+    const { data: upd, error: upErr } = await (supabaseAdmin as any)
+      .from("editions")
+      .update({ [col]: value })
+      .eq("collection_id", COLLECTION_ID)
+      .eq("play_id_onchain", playId)
+      .is(col, null)
+      .select("id")
+    if (upErr) {
+      out.write_errors++
+      out.error = out.error ?? `play-meta ${col} write: ${upErr.message}`
+      return 0
+    }
+    return Array.isArray(upd) ? upd.length : 0
+  }
+
+  for (let i = 0; i < plays.length; i += PLAYS_PER_SCRIPT) {
+    const chunk = plays.slice(i, i + PLAYS_PER_SCRIPT)
+    let meta: PlayMeta[]
+    try {
+      out.script_calls++
+      meta = await readPlayMeta(chunk)
+    } catch (e) {
+      out.script_errors++
+      out.error = out.error ?? `play-meta flow rest: ${e instanceof Error ? e.message : String(e)}`
+      continue
+    }
+    // `x += await f()` reads x BEFORE the await, so concurrent tasks would overwrite
+    // each other's counts: await into a local first (caught by the route test, 10-21).
+    const tasks: Array<() => Promise<void>> = []
+    chunk.forEach((playId, k) => {
+      const m = meta[k]
+      const need = needs.get(playId)!
+      if (!m.gameDate) out.no_date++
+      else tasks.push(async () => { const n = await fill(playId, "game_date", m.gameDate!); out.editions_dated += n })
+      if (need.type && m.playType) tasks.push(async () => { const n = await fill(playId, "play_type", m.playType!); out.editions_typed += n })
+      if (need.category && m.playCategory) tasks.push(async () => { const n = await fill(playId, "play_category", m.playCategory!); out.editions_categorised += n })
+    })
+    for (let j = 0; j < tasks.length; j += PLAY_META_CONCURRENCY) {
+      await Promise.all(tasks.slice(j, j + PLAY_META_CONCURRENCY).map((t) => t()))
+    }
+  }
+  return out
+}
+
 function authorized(request: NextRequest): boolean {
   const auth = request.headers.get("authorization") ?? ""
   const cron = process.env.CRON_SECRET
@@ -316,6 +503,22 @@ async function run(request: NextRequest) {
       errMsg = errMsg ?? strandedError
     }
 
+    // Play metadata for editions the Atlas catalog created without it.
+    let playMeta: PlayMetaResult | null = null
+    let playMetaError: string | null = null
+    try {
+      playMeta = await fillPlayMetadata()
+      editionsWritten += playMeta.editions_dated
+      if (playMeta.error) {
+        ok = false
+        errMsg = errMsg ?? playMeta.error
+      }
+    } catch (e) {
+      ok = false
+      playMetaError = e instanceof Error ? e.message : String(e)
+      errMsg = errMsg ?? playMetaError
+    }
+
     // A new series becomes visible site-wide only once it has a collection_series row.
     try {
       const r = await registerNewSeries()
@@ -354,6 +557,8 @@ async function run(request: NextRequest) {
         series_registered: seriesRegistered,
         unlabelled_series: unlabelledSeries,
         register_error: registerError,
+        play_meta: playMeta,
+        play_meta_error: playMetaError,
         duration_ms: Date.now() - startedMs,
       },
     })
