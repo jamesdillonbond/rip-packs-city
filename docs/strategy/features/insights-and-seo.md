@@ -54,19 +54,20 @@ Boards read precomputed MVs or cached reads. Their honesty layer is `boardUnavai
   - external links, held by the accuracy gate;
   - the GitHub repo "Website" field;
   - the Search Console re-read owed **2026-10-28**. The ~10-06 title click-rate re-read was never recorded and folds into it.
-- **The 10-22 demand re-read is owned by the night pass** (handed to the night pass via `docs/overnight/focus.md` (steer 10-17 ~7:40 PM PT)). A fresh-session scheduled task cannot carry the Supabase connector in this org, so none was armed. If no new demand block appears by 10-23, run it by hand.
+- ✅ **The 10-22 demand re-read is done** (Claude Code cloud, 10-22 morning): method codified as `scripts/demand-read.sql`, numbers and read in roadmap-status.md ("DEMAND RE-READ, WEEK OF 10-15..10-21"). Next on/after 10-29 — run the script with the new week's params.
 - **Instrument caveats:**
   - Vercel Web Analytics counted 5,710 "visitors", almost all headless.
   - 29,580 of 29,914 beacons were automated.
   - `bot_ua` under-catches (R59).
-  - Discount the unflagged headless fingerprint before reading anything.
+  - Discount the unflagged headless fingerprint before reading anything (the script does: a visit needs a `vid` and a page-view).
+  - ⚠ `signin_click` is in `funnel_events`, not `usage_events` (both earlier reads said "0" from the wrong table).
 - **Frozen-market boards** (Candy since 10-12, Golazos since 10-01, UFC closed) must keep saying "none indexed", never $0, and never conclude.
 - **The rookie boards still read the 2025 class** (a view over Series 8 set names) until the Series 9 rookie sets exist (11-11).
 
 ## Next — prioritized
 
 **Now**
-1. **10-22 demand re-read** (window 10-15 → 10-21), using the same queries as the baseline. Report against it: Google one-page share (19/26) and paste → sign-in click (10 → 0), plus the share CTA and `magic-link-requested` counts. Why: four surfaces shipped against the baseline and none has been read. Falsifier: no movement means acquisition, not activation, is the binding problem.
+1. ✅ **10-22 demand re-read — done** (roadmap-status.md): Google flat (24 → 23 visits, ~70 % one-page), share-CTA 0 → 1 click → 1 signup (the first), `magic-link-requested` 5 sent, signups 1 → 2. The share-card reload loop the read found is fixed. **Next: 10-29 re-read** with `scripts/demand-read.sql`; the falsifier stands (no further movement → acquisition is the binding problem).
 2. **Series 2026-27 (10-20).** New sets appear on the squeeze, market-cap and pack boards with correct series labels, and the sitemap picks up new series pages. 📏 **Pre-checked 10-18 ~2:40 PM PT (Claude Code cloud):** the sitemap's series segment is DB-driven (`lib/sitemap-data.ts` `getCollectionSeries()` over `collection_series`, which `registerNewSeries` inserts by itself). A series the rollup measures at 0 editions is left out (it is noindex), and one with no rollup row yet is kept as unknown. So Series 9 enters `/sitemap/0.xml` with no code change once its editions exist. The 10-20 read only has to confirm it. Falsifier: a new-series page missing from `/sitemap/0.xml` 24 h after its first edition.
 
 **Next**
