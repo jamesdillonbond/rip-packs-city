@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest"
+import { readFileSync } from "node:fs"
 import { setEntityHref, pinnacleRenderHref, editionHref, editionRouteHref, pinnacleCharacterHref, pinnacleFranchiseHref, pinnacleSeriesHref } from "@/lib/entity-href"
 import { publishedCollections } from "@/lib/collections"
 
@@ -75,5 +76,29 @@ describe("Pinnacle entity links from a pin page", () => {
   })
   it("series by its name", () => {
     expect(pinnacleSeriesHref("2026")).toBe("/disney-pinnacle/series/2026")
+  })
+})
+
+// 2026-10-21 (#204): a Panini set NAME spans products; the name slug of one the 2026 World Cup
+// catalog carries IS that catalog's set. A row's edition key names its product, so the link goes
+// to the edition's OWN product's set page — never another product's.
+describe("setEntityHref — Panini rows link their own product's set", () => {
+  it("a 2022-23 Basketball card's 'Base Prizms Blue' links that product's set, not the World Cup set", () => {
+    expect(setEntityHref("panini-blockchain", "Base Prizms Blue", "packcard-1819_346882_9127452_138")).toBe("/panini-blockchain/set/p1819-base-prizms-blue")
+  })
+  it("a 2026 World Cup (2332) card links the plain slug — the catalog's own key", () => {
+    expect(setEntityHref("panini-blockchain", "Base Prizms Blue", "packcard-2332_486967_12675075_10")).toBe("/panini-blockchain/set/base-prizms-blue")
+  })
+  it("CONTROLS: no key, an unparseable key, or another collection keep the name slug", () => {
+    expect(setEntityHref("panini-blockchain", "Base Prizms Blue")).toBe("/panini-blockchain/set/base-prizms-blue")
+    expect(setEntityHref("panini-blockchain", "Base Prizms Blue", "weird-key")).toBe("/panini-blockchain/set/base-prizms-blue")
+    expect(setEntityHref("nba-top-shot", "Base Set", "packcard-1819_1")).toBe("/nba-top-shot/set/base-set")
+  })
+  it("both Panini row tables pass the edition key", () => {
+    const table = readFileSync("components/collection/CollectionMomentTable.tsx", "utf8")
+    expect(table.match(/setEntityHref\(collectionSlug, row\.setName, row\.editionKey\)/g)?.length).toBe(4)
+    expect(table).not.toMatch(/setEntityHref\(collectionSlug, row\.setName\)/)
+    const market = readFileSync("app/(collections)/[collection]/market/MarketClient.tsx", "utf8")
+    expect(market).toContain("setEntityHref(collectionUrlSlug, l.setName, l.editionKey)")
   })
 })

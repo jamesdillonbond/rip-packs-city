@@ -1,5 +1,6 @@
 import { isPinnacleUrlSlug } from "@/lib/collection-slug"
 import { slugifyName, slugifyPlayerName } from "@/lib/entity-labels"
+import { paniniProductSetSlug } from "@/lib/panini/set-page-slug"
 
 /**
  * The destination for a Moment's "who" link.
@@ -162,12 +163,26 @@ export function pinnacleSeriesHref(seriesName: string): string {
  * ⛔ Do NOT "fix" this by seeding `sets`/`editions` for Pinnacle — its FMV,
  * pricing and every public surface key on `render_id`, and CLAUDE.md records
  * that separation as deliberate, not as debt.
+ *
+ * ⚠ PANINI (2026-10-21, #204): a set NAME spans products, and the name slug of a
+ * name the 2026 World Cup catalog carries IS that catalog's set — so a 2022-23
+ * Basketball card's "Base Prizms Blue" would link the World Cup set. Pass the
+ * row's `editionKey` and a Panini link goes to the edition's OWN product's set
+ * (`packcard-<product>_…` names the product; the key rebuilt from it matched
+ * `sets.external_id` on 38,784 of 38,784 editions, 10-21). Without a key it is
+ * the name slug, as before — a real page (the catalog's set or the combined view).
  */
 export function setEntityHref(
   collectionUrlSlug: string,
   setName: string | null | undefined,
+  editionKey?: string | null,
 ): string | null {
   const name = setName?.trim()
   if (!name) return null
+  if (collectionUrlSlug === "panini-blockchain" && editionKey) {
+    const product = /^packcard-(\d+)_/.exec(editionKey)
+    const slug = product ? paniniProductSetSlug(Number(product[1]), name) : null
+    if (slug) return `/${collectionUrlSlug}/set/${encodeURIComponent(slug)}`
+  }
   return `/${collectionUrlSlug}/set/${encodeURIComponent(slugifyName(name))}`
 }

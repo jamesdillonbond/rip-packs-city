@@ -86,6 +86,7 @@ import {
 import { fetchBadgeArt } from "@/lib/badges/server-art"
 import ParallelTierSwitcher from "@/components/entity/ParallelTierSwitcher"
 import { OG_INHERITED } from "@/lib/seo"
+import { askAgeStamp, askVerifiedAt } from "@/lib/market/ask-freshness"
 
 // Display label for the native marketplace per URL slug. Only collections with
 // a marketplaceMomentUrl template can produce a valid deep link.
@@ -668,6 +669,13 @@ export default async function MomentPage(
     : (highOffer?.updated_at ?? null)
   const bestOfferGrain = isSerialMoment ? (momentBestOffer?.grain ?? null) : "edition"
   const hasBestOffer = bestOfferAmount != null && bestOfferAmount > 0
+  // 2026-10-21 (#206 f): the ask cell printed a bare edition floor. /moment/52193764 read
+  // "Top Shot ask $915.00" five days after that very $915 listing SOLD (edition_offers last
+  // confirmed it 10-15). The edition page already dates this number; the moment page did not.
+  // Stamped ONLY when the shown value IS highOffer.low_ask — the timestamp says nothing about
+  // the fmv/cross-market fallbacks, and an age on a different number is worse than none.
+  const askFromOffers = !isCandyColl && highOffer?.low_ask != null
+  const askStamp = askFromOffers ? askAgeStamp(askVerifiedAt(highOffer), highOffer?.low_ask, collectionSlugUrl) : null
 
   // Item 3b — deterministic hero badges for the current serial that the
   // special_serial_holders sweep may not have populated (#1 + the perfect
@@ -1017,6 +1025,17 @@ export default async function MomentPage(
                   ? candyAsks?.floorUsd
                   : highOffer?.low_ask ?? f?.top_shot_ask ?? f?.cross_market_ask,
               )}
+              sub={
+                askStamp ? (
+                  <span
+                    data-testid="moment-ask-age"
+                    title={askStamp.title}
+                    style={askStamp.stale ? { color: "var(--rpc-warning-text)", fontWeight: 600 } : undefined}
+                  >
+                    {askStamp.label}
+                  </span>
+                ) : undefined
+              }
             />
             {hasBestOffer && (
               <StatCell
@@ -1847,7 +1866,7 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
   )
 }
 
-function StatCell({ label, value }: { label: string; value: React.ReactNode }) {
+function StatCell({ label, value, sub }: { label: string; value: React.ReactNode; sub?: React.ReactNode }) {
   const titleAttr = typeof value === "string" ? value : undefined
   return (
     <div
@@ -1887,6 +1906,9 @@ function StatCell({ label, value }: { label: string; value: React.ReactNode }) {
       >
         {value}
       </div>
+      {sub != null && (
+        <div style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-xs, 11px)", color: "var(--rpc-text-muted)" }}>{sub}</div>
+      )}
     </div>
   )
 }

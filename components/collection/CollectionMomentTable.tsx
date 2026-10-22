@@ -390,9 +390,9 @@ export default function CollectionMomentTable(props: {
                   )}
                   {/* Row 2: Set + Series */}
                   <div className="text-xs text-[color:var(--rpc-text-secondary)]">
-                    {setEntityHref(collectionSlug, row.setName) ? (
+                    {setEntityHref(collectionSlug, row.setName, row.editionKey) ? (
                       <Link
-                        href={setEntityHref(collectionSlug, row.setName)!}
+                        href={setEntityHref(collectionSlug, row.setName, row.editionKey)!}
                         prefetch={false}
                         onClick={function(e) { e.stopPropagation() }}
                         style={{ color: "inherit", textDecoration: "none" }}
@@ -707,9 +707,9 @@ export default function CollectionMomentTable(props: {
                         </div>
                       </td>
                       <td className="text-sm hidden sm:table-cell">
-                        {setEntityHref(collectionSlug, row.setName) ? (
+                        {setEntityHref(collectionSlug, row.setName, row.editionKey) ? (
                           <Link
-                            href={setEntityHref(collectionSlug, row.setName)!}
+                            href={setEntityHref(collectionSlug, row.setName, row.editionKey)!}
                             prefetch={false}
                             style={{ color: "inherit", textDecoration: "none" }}
                           >

@@ -25,7 +25,7 @@ import { getOwnerKeyForChain, ownerKeyMatchesChain } from "@/lib/owner-key"
 import { useOwnFlowWallet } from "@/lib/hooks/useOwnFlowWallet"
 import { slugifyName } from "@/lib/entity-labels"
 import { seriesDisplay } from "@/lib/series-label"
-import { momentSubjectHref, pinnacleRenderHref, editionRouteHref, momentSubjectName } from "@/lib/entity-href"
+import { momentSubjectHref, pinnacleRenderHref, editionRouteHref, momentSubjectName, setEntityHref } from "@/lib/entity-href"
 import { getEntityLabels } from "@/lib/entity-labels"
 import { COLLECTION_TIERS } from "@/lib/collection-tiers"
 import { useMarketFilterOptions } from "@/lib/hooks/useMarketFilterOptions"
@@ -1149,7 +1149,7 @@ function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColu
                     l.setName
                   ) : l.setName ? (
                     <Link
-                      href={`/${collectionUrlSlug}/set/${slugifyName(l.setName)}`}
+                      href={setEntityHref(collectionUrlSlug, l.setName, l.editionKey) ?? `/${collectionUrlSlug}/set/${slugifyName(l.setName)}`}
                       prefetch={false}
                       style={{ color: "inherit", textDecoration: "none" }}
                     >

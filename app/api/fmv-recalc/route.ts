@@ -49,6 +49,8 @@ import { topShotAskObservedAt } from "@/lib/market/ask-freshness"
 
 const ALGO_VERSION = FMV_ALGO_VERSION
 const WINDOW_DAYS = 30
+/** Step 5e: a topshot_parallel_asks row older than this was not re-observed by its daily sweep (#206). */
+const PARALLEL_ASK_MAX_AGE_HOURS = 48
 
 // ── Page size MUST stay below PostgREST's 1000-row cap ───────────────────────
 // 2026-08-03: DEFAULT_LIMIT was 2500. `fmv_recalc_edition_page` is called over
@@ -2032,6 +2034,16 @@ export async function POST(req: NextRequest) {
     // low_ask × 0.90 with the same <=$10k troll-ask ceiling. Scoped to :: editions
     // reading STALE / NO_DATA / no-snapshot — an edition with a fresh sales label
     // (HIGH/MEDIUM/LOW/SALES_ONLY) is strictly better and is never stolen.
+    //
+    // ⛔ 2026-10-21 (#206): ONLY A RECENTLY-SWEPT ASK IS A LIVE ASK. The table's only writer
+    // (admin/backfill-topshot-subedition-circulation) was unscheduled 09-08 — its GraphQL host has
+    // answered 530 since ~08-28 — so every row is frozen at its last sweep (newest 2026-08-27). With
+    // no age gate this step kept re-flooring parallels that aged to STALE from those frozen asks:
+    // measured 10-21, 614 Top Shot parallels' CURRENT price was a 55-day-old ask × 0.90 ($197,853),
+    // e.g. 149:5376::8 at $6,999.30 from a $7,777 ask last seen 08-27. The writer swept daily, so a
+    // row older than PARALLEL_ASK_MAX_AGE_HOURS was not re-observed by the last two sweeps. Today
+    // that admits ZERO rows (the honest answer while the feed is down); the step re-arms on its own
+    // the day the feed is re-pointed and swept.
     let parallelAskBackfillCount = 0
     // Null when the step ran; the error string when its candidate query failed.
     // Without this a count of 0 cannot be told apart from a step that never ran.
@@ -2056,6 +2068,7 @@ export async function POST(req: NextRequest) {
               AND (l.edition_id IS NULL OR l.confidence IN ('STALE','NO_DATA'))
               AND ta.low_ask > 0
               AND ta.low_ask <= 10000
+              AND ta.updated_at > now() - interval '${PARALLEL_ASK_MAX_AGE_HOURS} hours'
               AND (e.tier IS NULL OR e.tier <> 'ULTIMATE')
             LIMIT 2000
           `,
