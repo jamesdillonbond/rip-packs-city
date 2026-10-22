@@ -49,7 +49,14 @@ vi.mock("@supabase/supabase-js", () => ({
     },
     // 2026-09-25 (batch 62): segment 3 asks team_historic_slugs per collection
     // and treats a non-list answer as a failed read; an answered-empty list here.
-    rpc: async () => ({ data: [], error: null }),
+    // 2026-10-21 (#204): panini_product_set_pages is paged (.order().range()), so a thenable builder.
+    rpc: () => {
+      const r: any = {}
+      r.order = () => r
+      r.range = () => r
+      r.then = (resolve: any, reject: any) => Promise.resolve({ data: [], error: null }).then(resolve, reject)
+      return r
+    },
   }),
 }))
 

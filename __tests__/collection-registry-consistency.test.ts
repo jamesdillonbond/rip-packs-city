@@ -80,8 +80,11 @@ const FACADE_GATED_PAGES = ["market"]
 // about). 2026-09-27: Panini's Packs tab dispatches to PaniniPackMarket (pack
 // products + EV, no card rows), pinned as a source fact below — the arm is only
 // exempt while it really links nothing.
-// Sets joined 2026-09-27 (PaniniSetProgress — set rows, no card links).
-const LINK_FREE_THIN_ARMS: Record<string, string[]> = { "panini-blockchain": ["packs", "sets"] }
+// Sets joined 2026-09-27 (PaniniSetProgress — set rows, no card links) and LEFT 2026-10-21
+// (#204): each row now links its product's set page, which resolves through the facade
+// Panini has been in since 09-27 (pinned below). The exemption only ever mattered for a
+// THIN collection, and Panini is not one.
+const LINK_FREE_THIN_ARMS: Record<string, string[]> = { "panini-blockchain": ["packs"] }
 const exempt = (id: string, p: string) =>
   FACADE_GATED_PAGES.includes(p) || (LINK_FREE_THIN_ARMS[id] ?? []).includes(p)
 
@@ -181,16 +184,28 @@ describe("collection-slug facade agrees with the collections.ts registry", () =>
     if (hrefs.length > 0) expect(src).toContain('target="_blank"')
   })
 
-  it("Panini's Sets arm is link-free (LINK_FREE_THIN_ARMS is backed)", () => {
+  // 2026-10-21 (#204): re-pinned, not deleted. The Sets arm was pinned LINK-FREE because a link
+  // from a collection outside the facade 404s. It now links each row to its PRODUCT's set page,
+  // so the property becomes: the only link is a /panini-blockchain/set/ URL built by the bridge's
+  // own key rule, and Panini resolves through the facade (so that link cannot be the 54-dead-link
+  // class). No card/player/team link, no router push.
+  it("Panini's Sets arm links only its products' set pages, and Panini is in the facade", () => {
     const page = readFileSync(join(process.cwd(), "app/(collections)/[collection]/sets/page.tsx"), "utf8")
     const arm = page.indexOf('collection === "panini-blockchain"')
     expect(arm).toBeGreaterThan(-1)
     expect(page.slice(arm, arm + 80)).toContain("<PaniniSetProgress />")
     expect(arm).toBeLessThan(page.indexOf("return <CollectionSetsClient"))
+    expect(getCollectionByUrlSlug("panini-blockchain")).not.toBeNull()
     const src = readFileSync(join(process.cwd(), "components/collection/PaniniSetProgress.tsx"), "utf8")
-    for (const needle of ["href=", "<Link", "/edition/", "/player/", "/set/", "/team/", "router.push"]) {
+    for (const needle of ["/edition/", "/player/", "/team/", "router.push"]) {
       expect(src, `PaniniSetProgress must not contain ${needle}`).not.toContain(needle)
     }
+    const hrefs = src.match(/href\s*=\s*(\{[^}]*\}|"[^"]*"|'[^']*')/g) ?? []
+    expect(src.match(/href=/g)?.length ?? 0, "every href must be the checked form").toBe(hrefs.length)
+    expect(hrefs.length).toBe(1)
+    // (the brace-bounded match stops at the template's first `}`)
+    expect(hrefs[0]!.replace(/\s/g, "")).toBe("href={`/panini-blockchain/set/${encodeURIComponent(slug)}")
+    expect(src).toContain("const slug = paniniProductSetSlug(productSetId, setName)")
   })
 
   it.each(ENTITY_PAGE_URL_SLUGS)("%s: UUID + dbSlug match across both modules", (urlSlug) => {

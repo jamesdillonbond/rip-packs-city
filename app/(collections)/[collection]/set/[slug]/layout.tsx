@@ -19,7 +19,7 @@
 
 import { notFound, permanentRedirect } from "next/navigation"
 import { getCollectionByUrlSlug } from "@/lib/collection-slug"
-import { entityResolves, decodeSlugOrNull, resolveSetAlias } from "@/lib/entity-detail-gate"
+import { entityResolves, decodeSlugOrNull, resolveSetAlias, fetchEntityDetailRaw, firstEntityRow } from "@/lib/entity-detail-gate"
 
 interface LayoutProps {
   children: React.ReactNode
@@ -50,5 +50,31 @@ export default async function SetSegmentLayout({ children, params }: LayoutProps
     notFound()
   }
 
+  // 2026-10-21 (#204 design half): a Panini product's set has ONE URL. A product key whose set
+  // name no other product carries (p1814-… when only it has "Splash!") answers 308 to the name
+  // slug get_set_detail names as canonical, so the two spellings are never two indexed pages.
+  // Same cache()'d read as the gate above — no extra round trip — and it fails open: an error
+  // or a missing field renders the page where it is.
+  if (collection === "panini-blockchain") {
+    const { canonical } = await paniniCanonicalSetSlug(coll.id, slug)
+    if (canonical && canonical !== slug) {
+      permanentRedirect(`/${collection}/set/${encodeURIComponent(canonical)}`)
+    }
+  }
+
   return <>{children}</>
+}
+
+// A failed read is `ok: false` — distinguishable from "no canonical slug" (a combined view, or a
+// read that predates the field) — and either way the page renders where it is: the 308 is skipped,
+// never replaced by a 404, and the SAME product's set is shown, so nothing false is asserted.
+async function paniniCanonicalSetSlug(collectionId: string, slug: string): Promise<{ canonical: string | null; ok: boolean }> {
+  try {
+    const { data, error } = await fetchEntityDetailRaw("set", collectionId, slug)
+    if (error) return { canonical: null, ok: false }
+    const row = firstEntityRow<{ canonical_slug?: unknown }>(data)
+    return { canonical: row && typeof row.canonical_slug === "string" && row.canonical_slug ? row.canonical_slug : null, ok: true }
+  } catch {
+    return { canonical: null, ok: false }
+  }
 }

@@ -22,7 +22,7 @@
 --   * the jsonb envelope carries the summary passthrough fields + collection slug.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20261021195016_audit_20261021_set_detail_panini_names_the_products_behind_a_set_name.sql; was 20261019005911, 20260929063531, 20260928064405;
+-- (supabase/migrations/20261022004414_audit_20261021_panini_set_pages_are_product_scoped.sql; was 20261021195016, 20261019005911, 20260929063531, 20260928064405;
 -- before that, 20260822193500_audit_20260822_snapshot_get_set_detail_underlying_set_count.sql);
 -- re-pinned 2026-08-22: `db-pin-staleness` had reported this pin STALE on every
 -- run since 2026-08-10 (13 consecutive, known-issues #24). Diffed rather than
@@ -42,18 +42,20 @@ BEGIN;
 
 -- ── minimal fixtures ─────────────────────────────────────────────────────────
 CREATE TABLE public.sets_summary (
-  collection_id uuid, set_slug text, set_name text, set_name_variants text[],
-  total_circulation int, tiers_present text[], min_series int, max_series int,
+  collection_id uuid, set_slug text, set_name text, set_name_variants text[], edition_count bigint,
+  total_circulation bigint, tiers_present text[], min_series smallint, max_series smallint,
   first_minted_at timestamptz, last_updated_at timestamptz, computed_at timestamptz);
 CREATE TABLE public.collections (id uuid PRIMARY KEY, slug text);
 CREATE TABLE public.editions (
-  id uuid PRIMARY KEY, collection_id uuid, set_name text, thumbnail_url text, set_id uuid);
+  id uuid PRIMARY KEY, collection_id uuid, set_name text, thumbnail_url text, set_id uuid,
+  circulation_count int, tier text, series smallint, first_minted_at timestamptz, updated_at timestamptz);
 CREATE TABLE public.fmv_snapshots (
   edition_id uuid, fmv_usd numeric, floor_price_usd numeric, computed_at timestamptz);
 CREATE TABLE public.pinnacle_catalog (
   set_name text, fmv_usd numeric, floor_ask numeric, total_minted int, fmv_confidence text);
 CREATE TABLE public.sets (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(), collection_id uuid, name text);
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(), collection_id uuid, name text, external_id text);
+CREATE TABLE public.panini_products (set_id int PRIMARY KEY, name text);
 
 -- >>> BEGIN verbatim get_set_detail (keep byte-identical to the migration) >>>
 CREATE OR REPLACE FUNCTION public.get_set_detail(p_collection_id uuid, p_set_slug text)
@@ -77,14 +79,59 @@ DECLARE
   v_underlying_set_count int;
   v_underlying_sets jsonb;
   v_pin_circulation bigint;
+  v_sid uuid;              -- Panini: the `sets` row a product-scoped slug names (#204)
+  v_product_name text;
+  v_canonical_slug text;
+  v_related jsonb;
+  v_variants text[];
 BEGIN
-  SELECT * INTO v_set
-  FROM sets_summary
-  WHERE collection_id = p_collection_id
-    AND set_slug = p_set_slug;
+  -- 2026-10-21 (#204, design half): a Panini slug that IS a `sets` row's key (its external_id
+  -- minus 'panini-') is that PRODUCT's set — 'p1819-base-prizms-blue' is 2022-23 Prizm
+  -- Basketball's, and the plain 'base-prizms-blue' is the 2026 World Cup catalog's own row (the
+  -- bridge keys product 2332's sets without a product prefix). The header row is built from that
+  -- row's editions alone — each Panini `sets` row carries exactly ONE editions.set_name (measured
+  -- 0 of 2,693 with two) — so every stat below is scoped to one editions.set_id. Any other slug
+  -- keeps the name-keyed sets_summary row: the combined view, which names and links its products.
+  IF p_collection_id = v_panini_uuid THEN
+    SELECT s.id INTO v_sid
+      FROM sets s
+     WHERE s.external_id = 'panini-' || p_set_slug
+       AND s.collection_id = p_collection_id;
+  END IF;
 
-  IF v_set IS NULL THEN
-    RETURN NULL;
+  IF v_sid IS NOT NULL THEN
+    -- ⚠ Column for column the TYPES of sets_summary (bigint / smallint / text[]): v_set is one
+    -- RECORD read by both branches, and a field whose type differs between calls on one connection
+    -- fails the cached plan ("type of parameter N does not match").
+    SELECT p_collection_id                                                              AS collection_id,
+           p_set_slug::text                                                             AS set_slug,
+           min(e.set_name)::text                                                        AS set_name,
+           ARRAY[min(e.set_name)]::text[]                                               AS set_name_variants,
+           count(*)::bigint                                                             AS edition_count,
+           (sum(e.circulation_count) FILTER (WHERE e.circulation_count IS NOT NULL))::bigint AS total_circulation,
+           (array_agg(DISTINCT e.tier::text) FILTER (WHERE e.tier IS NOT NULL))::text[] AS tiers_present,
+           min(e.series)::smallint                                                      AS min_series,
+           max(e.series)::smallint                                                      AS max_series,
+           min(e.first_minted_at)::timestamptz                                          AS first_minted_at,
+           max(e.updated_at)::timestamptz                                               AS last_updated_at,
+           now()                                                                        AS computed_at
+      INTO v_set
+      FROM editions e
+     WHERE e.set_id = v_sid
+       AND e.collection_id = p_collection_id;
+    -- A `sets` row with no editions is not a page (no name to show, nothing to count).
+    IF v_set.set_name IS NULL THEN
+      RETURN NULL;
+    END IF;
+  ELSE
+    SELECT * INTO v_set
+    FROM sets_summary
+    WHERE collection_id = p_collection_id
+      AND set_slug = p_set_slug;
+
+    IF v_set IS NULL THEN
+      RETURN NULL;
+    END IF;
   END IF;
 
   SELECT slug INTO v_collection_slug FROM collections WHERE id = p_collection_id;
@@ -130,6 +177,7 @@ BEGIN
       ) fmv ON true
       WHERE e.collection_id = p_collection_id
         AND e.set_name = ANY(v_set.set_name_variants)
+        AND (v_sid IS NULL OR e.set_id = v_sid)
         AND e.thumbnail_url IS NOT NULL;
     END IF;
   EXCEPTION WHEN query_canceled THEN
@@ -154,14 +202,45 @@ BEGIN
     -- Blue: the 2026 World Cup catalog 499 editions, 2022-23 Basketball 97, 2022 World Cup 6)
     -- rendered as ONE set with no banner — LeBron James in a World Cup set. Count and NAME the
     -- products from the editions' own set_id (idx_editions_collection_set_name; ~3 ms).
-    SELECT count(*), jsonb_agg(jsonb_build_object('name', x.name, 'editions', x.n) ORDER BY x.n DESC, x.name)
-      INTO v_underlying_set_count, v_underlying_sets
-      FROM (SELECT s.id, s.name::text AS name, count(*) AS n
-              FROM editions e
-              JOIN sets s ON s.id = e.set_id
-             WHERE e.collection_id = p_collection_id
-               AND e.set_name = ANY(v_set.set_name_variants)
-             GROUP BY s.id, s.name) x;
+    -- 2026-10-21 (#204, design half): each product carries its page's slug — its own key when
+    -- several products share the name, the name slug when it is the only one (one product, one
+    -- URL) — and is labelled by its PRODUCT name (the main catalog's `sets.name` is the bare set
+    -- name, so its label is product 2332's). A product page lists the OTHER products as
+    -- related_products and reports its own canonical_slug (the page 308s to it).
+    v_variants := CASE WHEN v_sid IS NULL THEN v_set.set_name_variants
+                       ELSE COALESCE((SELECT ss.set_name_variants FROM sets_summary ss
+                                       WHERE ss.collection_id = p_collection_id
+                                         AND ss.set_slug = regexp_replace(lower(v_set.set_name), '[^a-z0-9]+', '-', 'g')),
+                                     v_set.set_name_variants) END;
+    WITH x AS (
+      SELECT s.id, s.name::text AS name, substring(s.external_id FROM 8) AS key_slug,
+             s.external_id !~ '^panini-p[0-9]+-' AS is_main, count(*) AS n
+        FROM editions e
+        JOIN sets s ON s.id = e.set_id
+       WHERE e.collection_id = p_collection_id
+         AND e.set_name = ANY(v_variants)
+       GROUP BY s.id, s.name, s.external_id
+    ), y AS (
+      SELECT x.id, x.n,
+             CASE WHEN x.is_main THEN (SELECT pr.name::text FROM panini_products pr WHERE pr.set_id = 2332)
+                  ELSE split_part(x.name, ' · ', 1) END                                   AS product,
+             CASE WHEN NOT x.is_main AND count(*) OVER () = 1
+                  THEN regexp_replace(lower(v_set.set_name), '[^a-z0-9]+', '-', 'g')
+                  ELSE x.key_slug END                                                     AS slug
+        FROM x
+    )
+    SELECT count(*),
+           jsonb_agg(jsonb_build_object('name', y.product, 'editions', y.n, 'slug', y.slug) ORDER BY y.n DESC, y.product)
+             FILTER (WHERE v_sid IS NULL OR y.id <> v_sid),
+           max(y.product) FILTER (WHERE y.id = v_sid),
+           max(y.slug)    FILTER (WHERE y.id = v_sid)
+      INTO v_underlying_set_count, v_underlying_sets, v_product_name, v_canonical_slug
+      FROM y;
+    IF v_sid IS NOT NULL THEN
+      v_related := v_underlying_sets;
+      v_underlying_sets := NULL;
+      v_underlying_set_count := 1;
+    END IF;
   ELSE
     SELECT count(*) INTO v_underlying_set_count
     FROM sets s
@@ -182,6 +261,10 @@ BEGIN
     'set_name_variants',   v_set.set_name_variants,
     'underlying_set_count', v_underlying_set_count,
     'underlying_sets',     v_underlying_sets,
+    'set_id',              v_sid,
+    'product_name',        v_product_name,
+    'canonical_slug',      v_canonical_slug,
+    'related_products',    v_related,
     'edition_count',       v_edition_count,
     'editions_with_fmv',   v_editions_with_fmv,
     'total_circulation',   CASE WHEN p_collection_id = v_pinnacle_uuid THEN v_pin_circulation ELSE v_set.total_circulation END,
@@ -287,29 +370,83 @@ SELECT _assert_eq((public.get_set_detail(:pin::uuid,'mf-vol-1') ->> 'edition_cou
 -- Panini's `sets` rows are product-scoped ("<product> · <set>"), so the generic name
 -- test matched none of them and a page mixing three products showed no banner. The
 -- Panini arm counts and NAMES the products from the editions' own set_id.
+-- 2026-10-21 (design half): 'base-prizms-blue' matches no `sets` key here (neither
+-- product is the 2026 World Cup catalog), so it is the COMBINED view, and each product
+-- is named by its PRODUCT and carries the slug of its own page.
 \set pan '''d1a0a7f5-609a-49f4-a1a7-4eaac55b020b'''
 \set ps1 '''bbbbbbbb-0000-0000-0000-000000000001'''
 \set ps2 '''bbbbbbbb-0000-0000-0000-000000000002'''
+\set ps3 '''bbbbbbbb-0000-0000-0000-000000000003'''
+\set ps4 '''bbbbbbbb-0000-0000-0000-000000000004'''
+\set ps5 '''bbbbbbbb-0000-0000-0000-000000000005'''
 INSERT INTO public.collections (id, slug) VALUES (:pan::uuid, 'panini_blockchain');
-INSERT INTO public.sets_summary (collection_id, set_slug, set_name, set_name_variants, total_circulation, tiers_present, min_series, max_series, computed_at)
-VALUES (:pan::uuid, 'base-prizms-blue', 'Base Prizms Blue', ARRAY['Base Prizms Blue'], 10, ARRAY['COMMON'], 1, 1, now());
-INSERT INTO public.sets (id, collection_id, name) VALUES
-  (:ps1::uuid, :pan::uuid, 'Base Prizms Blue'),
-  (:ps2::uuid, :pan::uuid, '2022-23 Panini NFT Prizm Basketball · Base Prizms Blue');
-INSERT INTO public.editions (id, collection_id, set_name, thumbnail_url, set_id) VALUES
-  ('cccccccc-0000-0000-0000-000000000001', :pan::uuid, 'Base Prizms Blue', 'https://img/p1', :ps1::uuid),
-  ('cccccccc-0000-0000-0000-000000000002', :pan::uuid, 'Base Prizms Blue', 'https://img/p2', :ps1::uuid),
-  ('cccccccc-0000-0000-0000-000000000003', :pan::uuid, 'Base Prizms Blue', 'https://img/p3', :ps2::uuid),
-  -- another set name entirely, same product row: must not count
-  ('cccccccc-0000-0000-0000-000000000004', :pan::uuid, 'Base Prizms Red',  'https://img/p4', :ps2::uuid);
+INSERT INTO public.panini_products (set_id, name) VALUES (2332, '2026 Panini NFT Prizm World Cup Soccer');
+INSERT INTO public.sets_summary (collection_id, set_slug, set_name, set_name_variants, total_circulation, tiers_present, min_series, max_series, computed_at) VALUES
+  (:pan::uuid, 'base-prizms-blue', 'Base Prizms Blue', ARRAY['Base Prizms Blue'], 10, ARRAY['COMMON'], 1, 1, now()),
+  (:pan::uuid, 'splash-',          'Splash!',          ARRAY['Splash!'],          1,  ARRAY['RARE'],   1, 1, now());
+INSERT INTO public.sets (id, collection_id, name, external_id) VALUES
+  (:ps1::uuid, :pan::uuid, '2022 Panini NFT Prizm FIFA World Cup Soccer · Base Prizms Blue', 'panini-p1733-base-prizms-blue'),
+  (:ps2::uuid, :pan::uuid, '2022-23 Panini NFT Prizm Basketball · Base Prizms Blue',         'panini-p1819-base-prizms-blue'),
+  (:ps3::uuid, :pan::uuid, 'Base Prizms Red',                                                'panini-base-prizms-red'),
+  (:ps4::uuid, :pan::uuid, '2022-23 Panini NFT Prizm Basketball · Base Prizms Red',          'panini-p1819-base-prizms-red'),
+  (:ps5::uuid, :pan::uuid, '2023-24 Panini NFT Best of The NBA · Splash!',                   'panini-p1814-splash');
+INSERT INTO public.editions (id, collection_id, set_name, thumbnail_url, set_id, circulation_count, tier) VALUES
+  ('cccccccc-0000-0000-0000-000000000001', :pan::uuid, 'Base Prizms Blue', 'https://img/p1', :ps1::uuid, 10, 'RARE'),
+  ('cccccccc-0000-0000-0000-000000000002', :pan::uuid, 'Base Prizms Blue', 'https://img/p2', :ps1::uuid, 20, 'RARE'),
+  ('cccccccc-0000-0000-0000-000000000003', :pan::uuid, 'Base Prizms Blue', 'https://img/p3', :ps2::uuid, 49, 'RARE'),
+  -- another set name entirely: must not count toward Base Prizms Blue
+  ('cccccccc-0000-0000-0000-000000000004', :pan::uuid, 'Base Prizms Red',  'https://img/p4', :ps3::uuid, 5,  'COMMON'),
+  ('cccccccc-0000-0000-0000-000000000005', :pan::uuid, 'Base Prizms Red',  'https://img/p5', :ps4::uuid, 7,  'COMMON'),
+  ('cccccccc-0000-0000-0000-000000000006', :pan::uuid, 'Splash!',          'https://img/p6', :ps5::uuid, 3,  'RARE');
+INSERT INTO public.fmv_snapshots (edition_id, fmv_usd, floor_price_usd, computed_at) VALUES
+  ('cccccccc-0000-0000-0000-000000000001', 100, 100, now()),
+  ('cccccccc-0000-0000-0000-000000000003', 7, 7, now());
 SELECT _assert_eq((public.get_set_detail(:pan::uuid,'base-prizms-blue') ->> 'underlying_set_count'), '2',
   'Panini: two products share the set name — counted from the editions, not from sets.name (which matched only one)');
 SELECT _assert_eq((public.get_set_detail(:pan::uuid,'base-prizms-blue') -> 'underlying_sets' -> 1 ->> 'name'),
-  '2022-23 Panini NFT Prizm Basketball · Base Prizms Blue', 'Panini: the products are NAMED, largest first');
+  '2022-23 Panini NFT Prizm Basketball', 'Panini: the products are NAMED (by product), largest first');
 SELECT _assert_eq((public.get_set_detail(:pan::uuid,'base-prizms-blue') -> 'underlying_sets' -> 0 ->> 'editions'), '2',
   'Panini: per-product edition count');
+SELECT _assert_eq((public.get_set_detail(:pan::uuid,'base-prizms-blue') -> 'underlying_sets' -> 0 ->> 'slug'), 'p1733-base-prizms-blue',
+  'Panini combined view: each product links its OWN page (its sets key)');
+SELECT _assert_eq((public.get_set_detail(:pan::uuid,'base-prizms-blue') ->> 'edition_count'), '3',
+  'Panini combined view: still the combined count (labelled as such on the page)');
 -- Every other collection keeps the generic count and carries no product list.
 SELECT _assert((public.get_set_detail(:cid::uuid,'base-set') -> 'underlying_sets') = 'null'::jsonb, 'non-Panini: no underlying_sets list');
+SELECT _assert((public.get_set_detail(:cid::uuid,'base-set') -> 'set_id') = 'null'::jsonb, 'non-Panini: no set_id (name-keyed as before)');
+
+-- ── 8. Panini (2026-10-21, #204 design half): a PRODUCT's set page ─────────────
+-- The falsifier #204 named: a product page whose editions and totals all carry ONE set_id.
+SELECT _assert_eq((public.get_set_detail(:pan::uuid,'p1819-base-prizms-blue') ->> 'edition_count'), '1',
+  'Panini product page: counts ONE product''s editions (not the 3 sharing the name)');
+SELECT _assert_eq((public.get_set_detail(:pan::uuid,'p1819-base-prizms-blue') ->> 'fmv_total_usd'), '7',
+  'Panini product page: FMV total is that product''s (7), not the name''s (107)');
+SELECT _assert_eq((public.get_set_detail(:pan::uuid,'p1819-base-prizms-blue') ->> 'total_circulation'), '49',
+  'Panini product page: Total Mint from that product''s editions, not sets_summary''s combined 10');
+SELECT _assert_eq((public.get_set_detail(:pan::uuid,'p1819-base-prizms-blue') ->> 'set_id'), 'bbbbbbbb-0000-0000-0000-000000000002', 'Panini product page: set_id');
+SELECT _assert_eq((public.get_set_detail(:pan::uuid,'p1819-base-prizms-blue') ->> 'set_name'), 'Base Prizms Blue', 'Panini product page: the set''s own name');
+SELECT _assert_eq((public.get_set_detail(:pan::uuid,'p1819-base-prizms-blue') ->> 'product_name'), '2022-23 Panini NFT Prizm Basketball', 'Panini product page: product name');
+SELECT _assert_eq((public.get_set_detail(:pan::uuid,'p1819-base-prizms-blue') ->> 'canonical_slug'), 'p1819-base-prizms-blue', 'Panini product page: shared name -> its own key is canonical');
+SELECT _assert_eq((public.get_set_detail(:pan::uuid,'p1819-base-prizms-blue') ->> 'underlying_set_count'), '1', 'Panini product page: one set, no combined banner');
+SELECT _assert((public.get_set_detail(:pan::uuid,'p1819-base-prizms-blue') -> 'underlying_sets') = 'null'::jsonb, 'Panini product page: no combined list');
+SELECT _assert_eq((public.get_set_detail(:pan::uuid,'p1819-base-prizms-blue') -> 'related_products' -> 0 ->> 'slug'), 'p1733-base-prizms-blue',
+  'Panini product page: the OTHER product sharing the name is linked');
+SELECT _assert_eq(jsonb_array_length(public.get_set_detail(:pan::uuid,'p1819-base-prizms-blue') -> 'related_products')::text, '1',
+  'Panini product page: related excludes itself');
+-- The 2026 World Cup catalog's row has no product prefix: the plain name slug IS that product.
+SELECT _assert_eq((public.get_set_detail(:pan::uuid,'base-prizms-red') ->> 'edition_count'), '1',
+  'Panini: the plain slug of a name the 2026 catalog owns is the CATALOG product (1), not the name (2)');
+SELECT _assert_eq((public.get_set_detail(:pan::uuid,'base-prizms-red') ->> 'product_name'), '2026 Panini NFT Prizm World Cup Soccer',
+  'Panini: the main catalog row is labelled by its product, not its bare set name');
+SELECT _assert_eq((public.get_set_detail(:pan::uuid,'base-prizms-red') ->> 'canonical_slug'), 'base-prizms-red', 'Panini: catalog product canonical = its key');
+SELECT _assert_eq((public.get_set_detail(:pan::uuid,'p1819-base-prizms-red') -> 'related_products' -> 0 ->> 'slug'), 'base-prizms-red',
+  'Panini: a product page links the catalog product at the plain slug');
+-- A name only ONE product carries: its page is the name slug; the key 308s there.
+SELECT _assert_eq((public.get_set_detail(:pan::uuid,'p1814-splash') ->> 'canonical_slug'), 'splash-',
+  'Panini: a single-product name -> the name slug is canonical (no duplicate URL)');
+SELECT _assert_eq((public.get_set_detail(:pan::uuid,'splash-') -> 'underlying_sets' -> 0 ->> 'slug'), 'splash-',
+  'Panini: the combined view of a single product names the same canonical slug');
+SELECT _assert(public.get_set_detail(:pan::uuid,'p9999-no-such-set') IS NULL, 'Panini: an unknown key -> NULL (404), never another set');
 
 -- 2026-09-28 (#24): Recent-Low Total = live asks only; the ASK_ONLY part of the FMV total is disclosed.
 UPDATE public.pinnacle_catalog SET floor_ask = NULL WHERE total_minted = 7192;

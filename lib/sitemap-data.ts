@@ -546,6 +546,39 @@ async function getRoutableSetSlugs(): Promise<Set<string>> {
   return out
 }
 
+/**
+ * Panini PRODUCT set pages (2026-10-21, #204): /panini-blockchain/set/<product key> for each set
+ * whose NAME several products share — the key is then that product's canonical page. (A name one
+ * product carries, and every 2026 World Cup catalog set, is already listed under its name slug by
+ * the editions walk above; their keys 308 there and are not listed.) From
+ * `panini_product_set_pages()`, ~1,070 rows — past PostgREST's 1,000-row clamp, so it is paged.
+ * A failed or partial read throws (this file's contract).
+ */
+async function getPaniniProductSetPages(): Promise<Array<{ slug: string; editions: number; ts: Date | null }>> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!url || !key) throw new SitemapReadIncomplete('panini product set pages: supabase env missing, so nothing could be read')
+  const sb: any = createClient(url, key)
+  const PAGE = 1000
+  const out: Array<{ slug: string; editions: number; ts: Date | null }> = []
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await sb
+      .rpc('panini_product_set_pages')
+      .order('slug', { ascending: true })
+      .range(from, from + PAGE - 1)
+    if (error) throw new SitemapReadIncomplete('panini_product_set_pages read failed: ' + error.message)
+    if (!Array.isArray(data)) throw new SitemapReadIncomplete('panini_product_set_pages returned no list')
+    for (const r of data as Array<{ slug?: unknown; editions?: unknown; last_updated_at?: unknown }>) {
+      const n = Number(r.editions)
+      if (typeof r.slug !== 'string' || !r.slug || !Number.isFinite(n)) continue
+      const ts = typeof r.last_updated_at === 'string' ? new Date(r.last_updated_at) : null
+      out.push({ slug: r.slug, editions: n, ts: ts && !Number.isNaN(ts.getTime()) ? ts : null })
+    }
+    if (data.length < PAGE) break
+  }
+  return out
+}
+
 async function getCollectionSeries(): Promise<SeriesRow[]> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -858,6 +891,7 @@ async function buildSitemapSegmentUncapped(id: number): Promise<MetadataRoute.Si
     const aliasMap = await getPlayerAliasMap()
     const historicTeams = await getHistoricTeamSlugs(EDITION_COLLECTION_IDS)
     const routableSets = await getRoutableSetSlugs()
+    const paniniProductSets = await getPaniniProductSetPages()
 
     // /moment/<edition uuid> is NO LONGER LISTED (2026-09-06, Search Console).
     // Every one of those URLs canonicalises to /<collection>/edition/<slug>
@@ -948,6 +982,12 @@ async function buildSitemapSegmentUncapped(id: number): Promise<MetadataRoute.Si
     // linked — only the sitemap stops advertising them, the same rule as the
     // 09-07 pack-dist pruning.
     for (const [k, n] of setEditionCount) if (n < 2) setMap.delete(k)
+    // Panini product set pages (#204), under the same one-edition rule.
+    for (const p of paniniProductSets) {
+      if (p.editions < 2) continue
+      const k = `panini-blockchain|${p.slug}`
+      if (!setMap.has(k)) setMap.set(k, p.ts)
+    }
 
     return [
       ...momentPages,

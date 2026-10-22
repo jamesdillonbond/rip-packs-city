@@ -70,12 +70,18 @@ export interface TierMixResult {
  * The client is DEFAULTED rather than passed in, so the page can drop its
  * `@/lib/supabase` import — the property the server-page data-access ratchet
  * keys on. Tests inject `db`.
+ *
+ * `setId` (2026-10-21, #204): a Panini PRODUCT's set page is one `sets` row, and
+ * a set name can span several products, so the name filter alone would count
+ * every product's editions into one product's bar. With a set id the mix is
+ * scoped to that row too, matching the page's header and grid.
  */
 export async function fetchFullTierMix(
   collectionId: string,
   setNames: string[],
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   db: any = supabaseAdmin,
+  setId: string | null = null,
 ): Promise<TierMixResult> {
   const names = Array.from(new Set(setNames.filter(Boolean)))
   // ⚠ ok:true — asking about no sets is not a failed read, and reporting it as
@@ -88,16 +94,20 @@ export async function fetchFullTierMix(
     let data: unknown
     let error: { message: string } | null = null
     try {
+      // Built FRESH per page and inside the try: a supabase-js builder mutates in place (one reused
+      // across the loop would stack its orders), and a throw while building is a failed read too.
+      let q = db
+        .from("editions")
+        .select("tier")
+        .eq("collection_id", collectionId)
+        .in("set_name", names)
+      if (setId) q = q.eq("set_id", setId)
       ;({ data, error } = await withBoardBudget<{
         data: unknown
         error: { message: string } | null
       }>(
         Promise.resolve(
-          db
-            .from("editions")
-            .select("tier")
-            .eq("collection_id", collectionId)
-            .in("set_name", names)
+          q
             .not("thumbnail_url", "is", null)
             // ⚠ ORDERED: paging an unordered read can repeat or skip rows between
             // pages, so the counts would be over a set that never existed.

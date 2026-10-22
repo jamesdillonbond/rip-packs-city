@@ -70,6 +70,7 @@ import { fetchEditionFmvEstimate, estimateBasisText, type EditionFmvEstimate } f
 import WatchEditionButton from "@/components/alerts/WatchEditionButton"
 import TrackedOutboundLink from "@/components/TrackedOutboundLink"
 import { dapperMarketEditionUrl } from "@/lib/collections"
+import { fetchPaniniEditionSetSlug, type PaniniEditionSetSlug } from "@/lib/panini/edition-set-slug"
 import {
   fetchPaniniEditionAsk,
   fetchPaniniEditionSerials,
@@ -551,8 +552,11 @@ export default async function EditionPage(
   // failed or absent read renders nothing.
   const isTopShotParallel = collection === "nba-top-shot" && typeof detail.external_id === "string" && detail.external_id.includes("::")
   let estimateRes: { estimate: EditionFmvEstimate | null; ok: boolean } = { estimate: null, ok: !isTopShotParallel }
+  // Panini (2026-10-21, #204): the edition's OWN product's set page. Defaults to a failed read, so
+  // an unexpected throw leaves the set name unlinked rather than linked to another product's set.
+  let paniniSetSlug: PaniniEditionSetSlug = { slug: null, ok: !isPanini }
   try {
-    ;[history, bundleRes, insightRes, badgeArt, repSales, paniniAskRes, estimateRes] = await Promise.all([
+    ;[history, bundleRes, insightRes, badgeArt, repSales, paniniAskRes, estimateRes, paniniSetSlug] = await Promise.all([
     fetchHistory(coll.id, slug, 30),
     // high_offer + subedition (parallel) ladder + IPFS assets in ONE round-trip.
     fetchMarketBundle(detail.id, detail.external_id),
@@ -576,6 +580,9 @@ export default async function EditionPage(
     isTopShotParallel
       ? fetchEditionFmvEstimate(detail.id)
       : Promise.resolve({ estimate: null, ok: true }),
+    isPanini && detail.external_id
+      ? fetchPaniniEditionSetSlug(detail.external_id)
+      : Promise.resolve({ slug: null, ok: true }),
     ])
   } catch (e) {
     // ⚠ Must NOT return a whole-page view. The declared defaults above are
@@ -666,7 +673,10 @@ export default async function EditionPage(
   const dapperEditionUrl = marketClosed
     ? null
     : dapperMarketEditionUrl(collection, detail.external_id)
-  const setHref = detail.set_slug ? `/${collection}/set/${encodeURIComponent(detail.set_slug)}` : null
+  // Panini: a set name spans products, so the name slug is the 2026 catalog's page — the edition's
+  // own product's set comes from panini_edition_set_slug, and a failed read leaves it unlinked.
+  const setSlugForLink = isPanini ? (paniniSetSlug.ok ? paniniSetSlug.slug : null) : detail.set_slug
+  const setHref = setSlugForLink ? `/${collection}/set/${encodeURIComponent(setSlugForLink)}` : null
   // A team Moment stores the team in player_name; momentSubjectHref sends it to /team, which
   // exists, instead of /player, which 404s for all 370 of them.
   // Panini: dual-player cards and the Team Badges / World Cup Posters sets have no
@@ -781,7 +791,7 @@ export default async function EditionPage(
     <div>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(editionJsonLd(detail as unknown as Record<string, unknown>, collection, isPanini ? askValue : (highOffer?.low_ask ?? null), askAt)) }}
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(editionJsonLd({ ...(detail as unknown as Record<string, unknown>), set_slug: setSlugForLink }, collection, isPanini ? askValue : (highOffer?.low_ask ?? null), askAt)) }}
       />
       <Breadcrumbs
         items={[

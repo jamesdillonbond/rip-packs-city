@@ -87,3 +87,26 @@ export async function fetchPaniniSetSales(
     return null
   }
 }
+
+/**
+ * A Panini PRODUCT's set (one `sets` row, 2026-10-21 #204): panini_product_set_sales — the same
+ * shape and rules as panini_set_sales, its editions taken from the row, so one product's page never
+ * lists another product's sales under a shared set name. null = the read failed or was malformed.
+ */
+export async function fetchPaniniProductSetSales(
+  setId: string,
+  db: any = supabaseAdmin, // eslint-disable-line @typescript-eslint/no-explicit-any
+): Promise<PaniniSetSales | null> {
+  if (!setId) return null
+  try {
+    const { data, error } = await withQueryDeadline<unknown>(
+      db.rpc("panini_product_set_sales", { p_set_id: setId, p_limit: LIST }),
+      "set/panini-product-sales",
+      apiReadTimeoutMs(),
+    )
+    if (error) return null
+    return parsePaniniSetSales(data)
+  } catch {
+    return null
+  }
+}

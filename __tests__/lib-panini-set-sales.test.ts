@@ -80,7 +80,8 @@ describe("fetchPaniniSetSales", () => {
 describe("the set page's Panini sales section (source facts)", () => {
   const set = readFileSync(join(process.cwd(), "app/(collections)/[collection]/set/[slug]/page.tsx"), "utf8")
   it("Panini renders its own Sales section; the shared activity feed stays off for Panini", () => {
-    expect(set).toContain("const paniniSalesP: Promise<PaniniSetSales | null> | null = isPanini ? fetchPaniniSetSales(setNames) : null")
+    // 2026-10-21 (#204): a PRODUCT's page reads its set id's sales; the combined view keeps the names.
+    expect(set).toMatch(/const paniniSalesP: Promise<PaniniSetSales \| null> \| null = isPanini\s*\? \(productSetId \? fetchPaniniProductSetSales\(productSetId\) : fetchPaniniSetSales\(setNames\)\)\s*: null/)
     expect(set).toMatch(/\{isPanini && \(\s*<Section title="Sales">\s*<PaniniSetSalesBody collection=\{collection\} res=\{paniniSales\} \/>/)
     expect(set).toContain("const wantsActivity = !isPinnacleUrlSlug(collection) && !isPanini")
   })

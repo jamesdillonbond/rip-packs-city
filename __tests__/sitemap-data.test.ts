@@ -61,7 +61,19 @@ vi.mock("@supabase/supabase-js", () => ({
     },
     // 2026-09-25 (batch 62): team_historic_slugs per collection; a test sets
     // h.r[<fn>] to answer, the default is an answered-empty list.
-    rpc: async (fn: string) => h.r[fn] ?? { data: [], error: null },
+    // 2026-10-21 (#204): a thenable builder, because panini_product_set_pages is PAGED
+    // (.order().range()) past the 1,000-row clamp; the window is sliced as for tables.
+    rpc: (fn: string) => {
+      const r: any = {}
+      r.order = () => r
+      r.range = (from: number, to: number) => { r._range = [from, to]; return r }
+      r.then = (resolve: any, reject: any) => {
+        const res = h.r[fn] ?? { data: [], error: null }
+        const out = res.error || !Array.isArray(res.data) || !r._range ? res : { data: res.data.slice(r._range[0], r._range[1] + 1), error: null }
+        return Promise.resolve(out).then(resolve, reject)
+      }
+      return r
+    },
   }),
 }))
 
@@ -513,6 +525,27 @@ describe("segment 3 — set/player/team entities + top moments", () => {
     const sets = (await buildSitemapSegment(3)).filter((x) => x.url.includes("/set/")).map((x) => x.url)
     expect(sets).not.toContain(`${BASE}/nba-top-shot/set/brand-new-set`)
     expect(sets).toEqual([`${BASE}/nba-top-shot/set/old-set`])
+  })
+
+  it("lists Panini PRODUCT set pages (#204) with ≥2 editions, paged past 1,000 rows; a one-edition product is not listed", async () => {
+    const rows = Array.from({ length: 1100 }, (_, i) => ({ slug: `p1-k-${String(i).padStart(4, "0")}`, editions: 1, last_updated_at: null }))
+    rows[1050] = { slug: "p1819-base-prizms-blue", editions: 97, last_updated_at: "2026-10-21T00:00:00Z" } as any
+    h.r.panini_product_set_pages = ok(rows)
+    try {
+      const sets = (await buildSitemapSegment(3)).filter((x) => x.url.includes("/set/")).map((x) => x.url)
+      expect(sets).toEqual([`${BASE}/panini-blockchain/set/p1819-base-prizms-blue`])
+    } finally {
+      delete h.r.panini_product_set_pages
+    }
+  })
+
+  it("a panini_product_set_pages read FAILURE rejects — never a sitemap silently missing the product pages", async () => {
+    h.r.panini_product_set_pages = err("boom")
+    try {
+      await expect(buildSitemapSegment(3)).rejects.toThrow(SitemapReadIncomplete)
+    } finally {
+      delete h.r.panini_product_set_pages
+    }
   })
 
   it("a sets_summary read FAILURE rejects — it must not fall back to listing unresolvable sets, nor publish none", async () => {

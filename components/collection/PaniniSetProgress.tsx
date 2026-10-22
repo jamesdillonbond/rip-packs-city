@@ -18,9 +18,11 @@
 //   · a failed read is "couldn't load", never an empty table
 
 import { useCallback, useEffect, useRef, useState } from "react"
+import Link from "next/link"
 import PaniniCoverageNote from "@/components/collection/PaniniCoverageNote"
 import type { PaniniCoverage } from "@/lib/panini/coverage"
 import { paniniProductLabel, type PaniniProductRow, type PaniniSetRow } from "@/lib/panini/set-progress"
+import { paniniProductSetSlug } from "@/lib/panini/set-page-slug"
 
 export interface PaniniSetProgressResponse {
   username: string | null
@@ -294,7 +296,9 @@ function SetsBody({ data, onPickProduct }: { data: PaniniSetProgressResponse; on
             <tbody>
               {data.sets.map((s) => (
                 <tr key={`${data.product?.setId ?? ""}:${s.setName}`}>
-                  <td style={{ ...td, color: "var(--rpc-text-primary)" }}>{s.setName}</td>
+                  <td style={{ ...td, color: "var(--rpc-text-primary)" }}>
+                    <SetNameCell productSetId={data.product?.setId ?? null} setName={s.setName} />
+                  </td>
                   <td style={td}>{count(s.editionsSeen)}</td>
                   <td style={td}>{capLabel(s.minMintCap, s.maxMintCap)}</td>
                   {tracking && data.userSeen ? (
@@ -334,5 +338,17 @@ function SetsBody({ data, onPickProduct }: { data: PaniniSetProgressResponse; on
         </Note>
       </div>
     </>
+  )
+}
+
+// 2026-10-21 (#204): each row is ONE product's set, so it links that product's set page (not the
+// set name's, which other products may share).
+function SetNameCell({ productSetId, setName }: { productSetId: number | null; setName: string }) {
+  const slug = paniniProductSetSlug(productSetId, setName)
+  if (!slug) return <>{setName}</>
+  return (
+    <Link href={`/panini-blockchain/set/${encodeURIComponent(slug)}`} style={{ color: "inherit", textDecoration: "none", borderBottom: "1px dotted var(--rpc-border)" }}>
+      {setName}
+    </Link>
   )
 }

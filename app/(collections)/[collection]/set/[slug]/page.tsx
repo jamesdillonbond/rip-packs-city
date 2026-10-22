@@ -18,7 +18,7 @@ import EditionsGridPaginated, { type EditionTile } from "@/components/entity/Edi
 import TeamActivity, { type ActivityRow } from "@/components/entity/TeamActivity"
 import Breadcrumbs from "@/components/entity/Breadcrumbs"
 import HeroMontage from "@/components/entity/HeroMontage"
-import { fetchPaniniSetSales, type PaniniSetSales } from "@/lib/panini/set-sales"
+import { fetchPaniniSetSales, fetchPaniniProductSetSales, type PaniniSetSales } from "@/lib/panini/set-sales"
 import PaniniSetSalesBody from "@/components/entity/PaniniSetSales"
 import { Suspense } from "react"
 import MarketCapTile from "@/components/entity/MarketCapTile"
@@ -34,8 +34,18 @@ interface SetDetail {
   set_name: string
   set_name_variants: string[] | null
   underlying_set_count: number | null
-  /** Panini only (2026-10-21, #204): the PRODUCTS behind a shared set name, largest first. */
-  underlying_sets?: { name: string; editions: number }[] | null
+  /** Panini only (2026-10-21, #204): the PRODUCTS behind a shared set name, largest first, each with its own page's slug. */
+  underlying_sets?: PaniniProductRef[] | null
+  /**
+   * Panini only (2026-10-21, #204 design half): set when the slug names ONE product's set (a
+   * `sets` row) — every stat, the grid, the tier mix and the sales are then that row's alone.
+   */
+  set_id?: string | null
+  product_name?: string | null
+  /** The product page's canonical slug; the layout 308s any other spelling to it. */
+  canonical_slug?: string | null
+  /** The OTHER products that share this set name, each with its page's slug. */
+  related_products?: PaniniProductRef[] | null
   edition_count: number | null
   editions_with_fmv: number | null
   total_circulation: number | null
@@ -50,7 +60,25 @@ interface SetDetail {
   summary_computed_at: string | null
 }
 
+interface PaniniProductRef {
+  name: string | null
+  editions: number
+  slug?: string | null
+}
+
 const PAGE_SIZE = 100
+
+/**
+ * The title of a Panini product's set page. Several products share a set name, so the bare
+ * name would give their pages one title; the product disambiguates it. Every other page (and a
+ * Panini set name only one product carries) keeps the bare name.
+ */
+function setTitleName(detail: Pick<SetDetail, "set_name" | "set_id" | "product_name" | "related_products">): string {
+  if (detail.set_id && detail.product_name && Array.isArray(detail.related_products) && detail.related_products.length > 0) {
+    return `${detail.set_name} · ${detail.product_name}`
+  }
+  return detail.set_name
+}
 
 // Routed through the shared cache()'d fetch so the segment layout's 404 gate,
 // generateMetadata and this render collapse into ONE get_set_detail call per
@@ -108,7 +136,7 @@ export async function generateMetadata(props: { params: Promise<{ collection: st
     return { title: { absolute: `${slug.replace(/-/g, " ")} | ${coll.displayName} | Rip Packs City` } }
   }
   if (!detail) return NOT_FOUND_METADATA
-  return setPageMetadata(detail as unknown as Record<string, unknown>, collection, slug)
+  return setPageMetadata({ ...(detail as unknown as Record<string, unknown>), set_name: setTitleName(detail) }, collection, slug)
 }
 
 // ── Page ────────────────────────────────────────────────────────────────────
@@ -177,11 +205,16 @@ export default async function SetPage(props: { params: Promise<{ collection: str
   const wantsActivity = !isPinnacleUrlSlug(collection) && !isPanini
   // Panini's own sales (2026-09-30): panini_sales via panini_set_sales. Bounded and never throws;
   // null = the read failed, and the section says so.
-  const paniniSalesP: Promise<PaniniSetSales | null> | null = isPanini ? fetchPaniniSetSales(setNames) : null
+  // 2026-10-21 (#204): a PRODUCT's page (set_id) reads that `sets` row's sales, tier mix and grid,
+  // never the set name's — a name several products share would pour their sales into this one.
+  const productSetId = isPanini && detail.set_id ? detail.set_id : null
+  const paniniSalesP: Promise<PaniniSetSales | null> | null = isPanini
+    ? (productSetId ? fetchPaniniProductSetSales(productSetId) : fetchPaniniSetSales(setNames))
+    : null
   try {
     ;[editionsRes, tierMix, activityRes] = await Promise.all([
       structuralSection<EditionTile>("set editions", fetchEditions(coll.id, slug, PAGE_SIZE, 0)),
-      fetchFullTierMix(coll.id, setNames),
+      fetchFullTierMix(coll.id, setNames, undefined, productSetId),
       wantsActivity ? fetchActivity(coll.id, slug, 20) : Promise.resolve({ rows: [], ok: true }),
     ])
   } catch (e) {
@@ -212,6 +245,11 @@ export default async function SetPage(props: { params: Promise<{ collection: str
   // FAILED editions read that page is `[]` — which would render the bar off a
   // sample of nothing.
   const tierMixRows = tierMix.ok && editionsOk ? buildTierMixRows(tierMix.rows, editions) : []
+  const titleName = setTitleName(detail)
+  const related = Array.isArray(detail.related_products) ? detail.related_products : []
+  // market_cap_current groups by set NAME, so on a product page whose name other products share
+  // its figure is all of them — withheld rather than shown as this product's.
+  const showMarketCap = !(productSetId && related.length > 0)
 
   return (
     <div>
@@ -226,14 +264,14 @@ export default async function SetPage(props: { params: Promise<{ collection: str
       {editionsOk && (
         <script
           type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(collectionEntityJsonLd({ name: detail.set_name, url: entityUrl(collection, "set", slug), collectionUrlSlug: collection, eds: editions as unknown as Array<Record<string, unknown>>, crumbName: detail.set_name })) }}
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(collectionEntityJsonLd({ name: titleName, url: entityUrl(collection, "set", slug), collectionUrlSlug: collection, eds: editions as unknown as Array<Record<string, unknown>>, crumbName: titleName })) }}
         />
       )}
       <Breadcrumbs
         items={[
           { name: "Home", href: "/" },
           { name: collectionDisplayName(collection), href: `/${collection}/overview` },
-          { name: detail.set_name },
+          { name: titleName },
         ]}
       />
       {/* ── Hero ─────────────────────────────────────────────────────────── */}
@@ -242,6 +280,24 @@ export default async function SetPage(props: { params: Promise<{ collection: str
         <h1 style={{ margin: 0, fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 32, letterSpacing: "0.04em", color: "var(--rpc-text-primary)", lineHeight: 1.05, textTransform: "uppercase" }}>
           {detail.set_name}
         </h1>
+        {productSetId && detail.product_name && (
+          <div data-testid="set-product-name" className="rpc-mono" style={{ marginTop: 6, fontSize: 12, color: "var(--rpc-text-secondary)", letterSpacing: "0.04em" }}>
+            {detail.product_name}
+          </div>
+        )}
+        {related.length > 0 && (
+          // 2026-10-21 (#204 design half): this page is ONE product's set; the others sharing the
+          // name have their own pages, linked here rather than merged in.
+          <div data-testid="set-related-products" className="rpc-mono" style={{ marginTop: 6, fontSize: 11, color: "var(--rpc-text-muted)", lineHeight: 1.6 }}>
+            Also a set in:{" "}
+            {related.map((u, i) => (
+              <span key={u.slug ?? i}>
+                {i > 0 ? " · " : ""}
+                <ProductLink collection={collection} product={u} />
+              </span>
+            ))}
+          </div>
+        )}
         {/* D20: disclose merged sets. The big merges are name-IDENTICAL seasonal
             repeats (e.g. AllDay "Draw It Up" = 10 sets across S3–9), which produce
             a single spelling variant — so key the banner on the underlying set
@@ -253,10 +309,13 @@ export default async function SetPage(props: { params: Promise<{ collection: str
           // of it. Name each product; its "<product> · <set>" name drops the repeated set suffix.
           <div data-testid="set-products-banner" className="rpc-mono" style={{ marginTop: 6, fontSize: 11, color: "var(--rpc-text-muted)" }}>
             Combined view: {detail.underlying_sets.length} products share this set name —{" "}
-            {detail.underlying_sets
-              .map((u) => `${u.name.split(" · ")[0]} (${u.editions.toLocaleString("en-US")} edition${u.editions === 1 ? "" : "s"})`)
-              .join(" · ")}
-            . Editions, sales and totals below are combined across all of them.
+            {detail.underlying_sets.map((u, i) => (
+              <span key={u.slug ?? i}>
+                {i > 0 ? " · " : ""}
+                <ProductLink collection={collection} product={u} />
+              </span>
+            ))}
+            . Editions, sales and totals below are combined across all of them; each product links its own set page.
           </div>
         ) : detail.underlying_set_count != null && detail.underlying_set_count > 1 ? (
           <div className="rpc-mono" style={{ marginTop: 6, fontSize: 11, color: "var(--rpc-text-muted)" }}>
@@ -302,9 +361,11 @@ export default async function SetPage(props: { params: Promise<{ collection: str
       )}
 
       {/* ── Market cap (market_cap_current; streamed, renders nothing without a row) ── */}
-      <Suspense fallback={null}>
-        <MarketCapTile group="set" collectionDbSlug={coll.dbSlug} match={slug} />
-      </Suspense>
+      {showMarketCap && (
+        <Suspense fallback={null}>
+          <MarketCapTile group="set" collectionDbSlug={coll.dbSlug} match={slug} />
+        </Suspense>
+      )}
 
       {/* ── Tier mix bar ─────────────────────────────────────────────────── */}
       {tierMixRows.length > 0 && (
@@ -365,6 +426,18 @@ export default async function SetPage(props: { params: Promise<{ collection: str
         )}
       </Section>
     </div>
+  )
+}
+
+// One product of a Panini set name: "<product> (N editions)", linked to its own set page when the
+// read carried the slug (an old RPC during a deploy did not — the text then stands unlinked).
+function ProductLink({ collection, product }: { collection: string; product: PaniniProductRef }) {
+  const label = `${product.name ?? "Unnamed product"} (${product.editions.toLocaleString("en-US")} edition${product.editions === 1 ? "" : "s"})`
+  if (!product.slug) return <>{label}</>
+  return (
+    <Link href={`/${collection}/set/${encodeURIComponent(product.slug)}`} style={{ color: "var(--rpc-red-text)", textDecoration: "none" }}>
+      {label}
+    </Link>
   )
 }
 
