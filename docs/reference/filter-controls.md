@@ -106,5 +106,5 @@ touch, where the keyboard would cover half the list.
 - **The served bundle:** `www.rippackscity.com` is blocked to curl/Chromium here, but
   `pg_net` reaches it (tooling-gotchas.md, 2026-09-13): `net.http_get` the page, pull the
   `/_next/static/immutable/chunks/*.js` paths out of `content` with `regexp_matches`,
-  `net.http_get` each, then `content LIKE '%Type to filter %'`. Include a NEGATIVE
+  `net.http_get` each, then `content LIKE '%Type to filter %'`. ⚠ `net.http_get` times out at 5 s by default — pass `timeout_milliseconds := 60000` for heavier API calls (`/api/market-analytics?detail=full` failed without it). Include a NEGATIVE
   control (a string from an unshipped change) so a hit means something.
