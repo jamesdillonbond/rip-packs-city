@@ -36,6 +36,13 @@ export async function GET(req: NextRequest) {
     }
 
     const snap = data && typeof data === "object" ? (data as any) : {}
+    // ⚠ AN EMPTY SNAPSHOT IS TRANSITIONAL — never pin it at the CDN (2026-10-22). /share/<wallet>
+    // renders ShareEmptyState on 0 moments, which queues indexing and polls THIS route with a
+    // cache-buster; when the poll sees moments it reloads, and the page's server fetch (through the
+    // site URL, so through the CDN) got the cached 0 back for up to s-maxage=300 (+ SWR) — so the
+    // page reloaded every ~9 s. Measured live 10-21: a Google visitor's own share card reloaded 36
+    // times in 6 minutes (72 "share views" that week came from 6 browsers).
+    const isEmpty = (Number(snap.totalMoments) || 0) === 0
 
     return NextResponse.json(
       {
@@ -62,7 +69,7 @@ export async function GET(req: NextRequest) {
       },
       {
         headers: {
-          "Cache-Control": "public, s-maxage=300, stale-while-revalidate=600",
+          "Cache-Control": isEmpty ? "no-store" : "public, s-maxage=300, stale-while-revalidate=600",
         },
       }
     )

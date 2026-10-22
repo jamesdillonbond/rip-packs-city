@@ -33,6 +33,18 @@ beforeEach(() => {
 })
 
 describe("GET /api/collection-snapshot", () => {
+  // 2026-10-22: an EMPTY snapshot is transitional (the share page's empty state polls and reloads
+  // on it); pinned at the CDN for 300 s it made /share/<wallet> reload every ~9 s for ~6 minutes.
+  it("an empty snapshot is never CDN-cached; a populated one is (control)", async () => {
+    rpcState.data = { totalMoments: 0 }
+    const empty = await GET(req("https://t/api/collection-snapshot?wallet=0xABC"))
+    expect(empty.status).toBe(200)
+    expect(empty.headers.get("Cache-Control")).toBe("no-store")
+    rpcState.data = { totalMoments: 5 }
+    const full = await GET(req("https://t/api/collection-snapshot?wallet=0xABC"))
+    expect(full.headers.get("Cache-Control")).toContain("s-maxage=300")
+  })
+
   it("400s when wallet is missing/blank", async () => {
     expect((await GET(req("https://t/api/collection-snapshot"))).status).toBe(400)
     expect((await GET(req("https://t/api/collection-snapshot?wallet=%20%20"))).status).toBe(400)

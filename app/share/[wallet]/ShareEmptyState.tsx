@@ -20,7 +20,30 @@ const FLOW_ADDRESS = /^0x[0-9a-fA-F]{16}$/;
 const POLL_INTERVAL_MS = 8_000;
 const POLL_MAX_ATTEMPTS = 10; // ~80s of indexing budget
 
-type Mode = "analyzing" | "retry";
+// ⚠ AT MOST TWO AUTOMATIC RELOADS per wallet per 10 minutes (2026-10-22). Each reload remounts this
+// component and restarts the poll with its counter at 0, so a page that keeps rendering empty after
+// the poll saw moments (a cached empty snapshot) reloaded forever — 36 times in 6 minutes for one
+// visitor. Past the cap the reader gets a button instead of another reload.
+const MAX_AUTO_RELOADS = 2;
+const RELOAD_WINDOW_MS = 10 * 60_000;
+
+/** Records one automatic reload; false when the cap is already spent, or when storage is unavailable (no count = no loop). */
+export function claimAutoReload(wallet: string, now: number = Date.now()): boolean {
+  const key = `rpc_share_reloads:${wallet.toLowerCase()}`;
+  try {
+    const raw = window.sessionStorage.getItem(key);
+    const prior = (raw ? (JSON.parse(raw) as unknown) : []) as unknown;
+    const recent = Array.isArray(prior) ? prior.filter((t): t is number => typeof t === "number" && now - t < RELOAD_WINDOW_MS) : [];
+    if (recent.length >= MAX_AUTO_RELOADS) return false;
+    window.sessionStorage.setItem(key, JSON.stringify([...recent, now]));
+    return true;
+  } catch {
+    // No storage (private mode / blocked): we cannot count, so never loop — allow nothing automatic.
+    return false;
+  }
+}
+
+type Mode = "analyzing" | "ready" | "retry";
 
 export default function ShareEmptyState({ wallet }: { wallet: string }) {
   const router = useRouter();
@@ -53,10 +76,14 @@ export default function ShareEmptyState({ wallet }: { wallet: string }) {
         if (!cancelled && res.ok) {
           const data = await res.json().catch(() => null);
           if (data && Number(data.totalMoments) > 0) {
-            // Indexed — reload into the real card. The page reads the snapshot
-            // with no-store, so the reload renders fresh.
-            router.refresh();
-            window.location.reload();
+            // Indexed — reload into the real card, unless this tab already reloaded twice and still
+            // landed here (then the reader gets a button, never an endless loop).
+            if (claimAutoReload(wallet)) {
+              router.refresh();
+              window.location.reload();
+            } else {
+              setMode("ready");
+            }
             return;
           }
         }
@@ -189,6 +216,27 @@ export default function ShareEmptyState({ wallet }: { wallet: string }) {
             {wallet}
           </div>
           <style>{`@keyframes rpc-share-spin{to{transform:rotate(360deg)}}.rpc-share-spinner{animation:rpc-share-spin 0.9s linear infinite}@media (prefers-reduced-motion: reduce){.rpc-share-spinner{animation-duration:2.4s}}`}</style>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Ready state (the poll saw moments, but auto-reload is spent) ────────────
+  if (mode === "ready") {
+    return (
+      <div style={wrap}>
+        <div style={{ textAlign: "center", maxWidth: 460, width: "100%" }}>
+          <div style={{ fontSize: 20, color: "var(--rpc-text-primary)", marginBottom: 12 }}>
+            Your card is ready.
+          </div>
+          <button
+            type="button"
+            data-testid="share-ready-reload"
+            onClick={() => window.location.reload()}
+            style={{ padding: "10px 18px", border: "1px solid var(--rpc-red-border)", color: "var(--rpc-red-text)", background: "transparent", fontFamily: "var(--font-mono)", letterSpacing: "0.2em", textTransform: "uppercase", fontSize: 12, cursor: "pointer" }}
+          >
+            Show my card
+          </button>
         </div>
       </div>
     );
