@@ -141,6 +141,13 @@ function pct(share: Num | undefined): string {
   if (share === null || share === undefined || !Number.isFinite(Number(share))) return "—";
   return `${Math.round(Number(share) * 100)}%`;
 }
+/** Set and parallel, once each — on most Panini editions the two are the same string ("Kaboom · Kaboom"). */
+function setLabel(r: HolderRow): string {
+  const set = r.set_name?.trim() || null;
+  const par = r.parallel?.trim() || null;
+  if (set && par) return set === par ? set : `${set} · ${par}`;
+  return set ?? par ?? "—";
+}
 function grip(r: HolderRow): string {
   const top1 = Number(r.top1_share ?? 0);
   const top3 = Number(r.top3_share ?? 0);
@@ -374,7 +381,7 @@ export default function PaniniBoardsTabs({
               {data.holders.map((r) => (
                 <tr key={r.external_id}>
                   <td style={td}>{r.player_name ?? "—"}</td>
-                  <td style={td}>{[r.set_name, r.parallel].filter(Boolean).join(" · ") || "—"}{r.mint_cap ? ` /${r.mint_cap}` : ""}</td>
+                  <td style={td}>{setLabel(r)}{r.mint_cap ? ` /${r.mint_cap}` : ""}</td>
                   <td style={td}>{int(r.owned_copies)}</td>
                   <td style={td}>{int(r.holders)}</td>
                   <td style={td}>{pct(r.top1_share)} · {int(r.top1_copies)}</td>

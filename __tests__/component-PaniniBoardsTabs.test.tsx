@@ -67,6 +67,14 @@ describe("PaniniBoardsTabs", () => {
     expect(container.textContent).toContain("never named");
   });
 
+  it("names a set once when its parallel is the same string (live data: 'Kaboom' / 'Kaboom')", () => {
+    const holder = { external_id: "packcard-k", product_set_id: 1574, player_name: "LeBron James", set_name: "Kaboom", parallel: "Kaboom", tier: null, mint_cap: 25, owned_copies: 15, unopened_copies: 0, burnt_copies: 10, holders: 1, top1_copies: 15, top3_copies: 15, top1_share: 1, top3_share: 1, computed_at: "2026-10-21T15:14:00Z" };
+    const { container, getByText } = render(<PaniniBoardsTabs data={{ ...base, holders: [holder], holders_error: false }} degraded={null} />);
+    fireEvent.click(getByText("Holders"));
+    expect(container.textContent).toContain("Kaboom /25");
+    expect(container.textContent).not.toContain("Kaboom · Kaboom");
+  });
+
   it("a failed holders read says it failed, not 'none'", () => {
     const { container, getByText } = render(<PaniniBoardsTabs data={{ ...base, holders: null, holders_error: true }} degraded={null} />);
     fireEvent.click(getByText("Holders"));

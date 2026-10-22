@@ -65,7 +65,7 @@ export default function PaniniCoverageNote({
         ) : null}{" "}
         Other Panini products (NBA, NFL and more) are walked too, but only for cards that are listed or held by a
         collector linked to RPC, so their coverage is thinner than World Cup&rsquo;s and not included in these figures.
-        Sale prices are not a complete feed: RPC records the last sale of each card it checks, not every sale.
+        Sale prices are not a complete feed: RPC reads each card&apos;s sale history as it walks that card, so a sale shows up only once its card is re-checked.
       </div>
     </section>
   )
