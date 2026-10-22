@@ -88,6 +88,13 @@ touch, where the keyboard would cover half the list.
      Use this spelling, and the Sniper pick that no longer re-opens; page width 390
      throughout. ⚠ Without the app's CSS the harness reported a false 400 px overflow —
      compile `app/globals.css` (Tailwind v4 PostCSS) into any such harness.
+6b. **NFD does not decompose every accented letter.** ø ł đ ħ ı ß æ œ þ survive
+   `normalize("NFD")` + stripping marks, so "sorloth" missed Alexander Sørloth; the
+   catalog also stores the curly ’ ("Aiden O’Neill") and joiners (WALL•E).
+   `foldForMatch` maps them explicitly (as Postgres `unaccent` does). Measured
+   2026-10-21 over every edition / Candy / Panini / Pinnacle name: ø 2, ’ 5, ģ 1,
+   • 1 — and no ł ř ğ at all, so the table-arm pattern widens g and the apostrophe
+   but leaves l / r literal.
 7. **No per-option counts on the market.** Its options merge the catalog with facets of a
    window capped at 1,000 fetched rows, so a count would read as a census it is not
    (CLAUDE.md: a window is not a census).
