@@ -19,6 +19,7 @@ Live reads ~6:00 PM PT 10-17 unless marked otherwise.
 
 ## Shipped recently (since mid-September)
 
+- **10-21** — A set page that mixes several PRODUCTS under one set name now says so and names them (#204, disclosure half; `get_set_detail` `20261021195016`). For example, Base Prizms Blue: the 2026 World Cup catalog 499 · 2022-23 Basketball 97 · 2022 World Cup 6. Product-scoped set URLs remain open (#204 design half). The overview's recent-sales tile counts Panini via `panini_sales` (#205, `20261021193648`).
 - **09-19..09-24** — The walk goes stalest-first ([panini-go-live-2026-09-19.md](../panini-go-live-2026-09-19.md)). The runner reads RECENT sales. FMV `panini-1.1.0` was backfilled over 5,093 editions (09-24). The Sentinel got a Panini arm. The team-walk rotation runs on the laptop.
 - **09-25** — **Published** (Overview + Market) on the shared routes (#64). The FMV write became insert-then-supersede.
 - **09-27..09-28** — Entity pages (edition/player/set), the Collection tab by username plus the collector walk, Sets, Packs and Sniper tabs, card art, the trophy case, and the per-product pricing bridge ([panini-multi-product-2026-09-28.md](../panini-multi-product-2026-09-28.md)).
