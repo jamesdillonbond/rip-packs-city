@@ -824,6 +824,23 @@ describe("MarketClient — controls", () => {
     expect(screen.queryByRole("list", { name: "Active filters" })).toBeNull()
   })
 
+  // 2026-10-21: the route's ilike is accent-sensitive, so "luka doncic" typed in
+  // full (not picked from the suggestions) read as an empty market for Dončić.
+  it("an empty search offers the accented spelling it missed, and only that", async () => {
+    searchParams = new URLSearchParams("player=luka doncic")
+    filterOptionsResponse = () => json(200, { ...CATALOG, players: ["Luka Dončić", "Luka Garza"] })
+    marketResponse = () => json(200, market({ listings: [] }))
+    render(<MarketClient />)
+    const hint = await screen.findByText(/Nothing matches “luka doncic” as typed/)
+    const box = hint.closest("[role=status]") as HTMLElement
+    expect(within(box).getAllByRole("button").map((b) => b.textContent)).toEqual(["Luka Dončić"])
+    fireEvent.click(within(box).getByRole("button", { name: "Luka Dončić" }))
+    await waitFor(() => {
+      const urls = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.startsWith("/api/market?"))
+      expect(urls.some((u) => new URL(u, "https://t").searchParams.get("player") === "Luka Dončić")).toBe(true)
+    })
+  })
+
   it("still offers the page's teams when the catalog cannot be read", async () => {
     filterOptionsResponse = () => json(503, {})
     render(<MarketClient />)

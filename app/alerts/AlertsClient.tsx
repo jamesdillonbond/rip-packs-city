@@ -23,6 +23,7 @@ import {
 } from "@/lib/alerts/notify-mode";
 import SupportChatConnected from "@/components/SupportChatConnected";
 import { accentText } from "@/lib/accent-text";
+import { textIncludes } from "@/lib/filter-match";
 
 const DISPLAY = "var(--font-display)";
 const MONO = "var(--font-mono)";
@@ -827,7 +828,7 @@ function OptionTypeahead({
   const labelFor = (v: string) => options.find((o) => o.value === v)?.label ?? v;
   const q = query.trim().toLowerCase();
   const suggestions = options.filter(
-    (o) => !value.includes(o.value) && (q === "" || o.label.toLowerCase().includes(q)),
+    (o) => !value.includes(o.value) && (q === "" || textIncludes(o.label, q)),
   );
   function add(v: string) {
     if (!value.includes(v)) onChange([...value, v]);

@@ -29,6 +29,7 @@ import { fetchPaniniPremiums } from "@/lib/insights/panini-premiums"
 import { readBoardSnapshot } from "@/lib/insights/board-cache"
 import { editionKeyOfSku } from "@/lib/panini/overview-feeds"
 import { paniniEditionUrl } from "@/lib/panini/edition-url"
+import { textIncludes } from "@/lib/filter-match"
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = any
@@ -226,8 +227,8 @@ export async function readPaniniDealsForConcierge(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const rows = (raw as any[]).filter((r) => {
     if (!r || typeof r !== "object") return false
-    if (player && !String(r.player_name ?? "").toLowerCase().includes(player)) return false
-    if (set && !`${r.product_name ?? ""} ${r.parallel ?? ""}`.toLowerCase().includes(set)) return false
+    if (player && !textIncludes(String(r.player_name ?? ""), player)) return false
+    if (set && !textIncludes(`${r.product_name ?? ""} ${r.parallel ?? ""}`, set)) return false
     if (sport && String(r.sport ?? "").toLowerCase() !== sport) return false
     const ask = num(r.ask_usd)
     if (ask === null || ask <= 0) return false

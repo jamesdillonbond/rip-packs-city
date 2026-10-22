@@ -36,6 +36,7 @@ import BadgeIcon from "@/components/BadgeIcon"
 import MultiSelect from "@/components/filters/MultiSelect"
 import Autocomplete from "@/components/filters/Autocomplete"
 import ActiveFilterPills from "@/components/filters/ActiveFilterPills"
+import { textIncludes } from "@/lib/filter-match"
 import { trackOutboundClick } from "@/lib/track-click"
 import { collectionHasPage, dapperMarketMomentUrl, getCollection, getCollectionUuid, collectionHasLocking, collectionHasBadges } from "@/lib/collections"
 import IpfsImg from "@/components/media/IpfsImg"
@@ -826,7 +827,10 @@ function MarketInner() {
           </span>
         </div>
       ) : filteredListings.length === 0 ? (
-        <EmptyState collectionId={collectionId} thinVolume={thinVolume} filtersActive={activeFilterCount > 0} />
+        <>
+          <SpellingHint typed={debouncedPlayer} names={playerSuggestions} onPick={setPlayerQuery} />
+          <EmptyState collectionId={collectionId} thinVolume={thinVolume} filtersActive={activeFilterCount > 0} />
+        </>
       ) : view === "grid" ? (
         <div className="rpc-binder">
           {filteredListings.map((l) => (
@@ -1241,6 +1245,35 @@ const td: React.CSSProperties = {
   // beside the name sits comfortably and thumbnail-less rows keep the same
   // vertical rhythm instead of crowding.
   height: 72,
+}
+
+// The route matches the Player box with an accent-SENSITIVE ilike, so a name
+// typed without its accent ("luka doncic") finds no listing for "Luka Dončić" and
+// the page reads as an empty market. The suggestion list fixes that when the user
+// picks from it; this catches the case where they typed the whole name and hit
+// search. Offered ONLY for names that differ from the typed text by accents —
+// a name the route would already have matched has, truly, no listings here.
+export function accentOnlyMatches(typed: string, names: string[]): string[] {
+  const t = typed.trim()
+  if (!t) return []
+  return names.filter((n) => textIncludes(n, t) && !n.toLowerCase().includes(t.toLowerCase())).slice(0, 5)
+}
+
+function SpellingHint({ typed, names, onPick }: { typed: string; names: string[]; onPick: (n: string) => void }) {
+  const alts = accentOnlyMatches(typed, names)
+  if (alts.length === 0) return null
+  return (
+    <div className="rpc-card" role="status" style={{ padding: "12px 16px", marginBottom: 10, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
+      <span className="rpc-mono" style={{ fontSize: 12, color: "var(--rpc-text-muted)" }}>
+        Nothing matches &ldquo;{typed.trim()}&rdquo; as typed. Did you mean
+      </span>
+      {alts.map((n) => (
+        <button key={n} type="button" className="rpc-chip" onClick={() => onPick(n)} style={{ color: "var(--rpc-text-primary)" }}>
+          {n}
+        </button>
+      ))}
+    </div>
+  )
 }
 
 function EmptyState({ collectionId, thinVolume, filtersActive = false }: { collectionId: string; thinVolume: boolean; filtersActive?: boolean }) {

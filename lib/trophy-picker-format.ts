@@ -5,6 +5,7 @@
 
 import { NEUTRAL_TIER_COLOR } from '@/lib/tier-color'
 import { usdSignFirst } from '@/lib/usd-format'
+import { textIncludes } from "@/lib/filter-match"
 
 export type TrophyTierFilter =
   | 'ALL'
@@ -170,7 +171,7 @@ export function filterSortMoments<T extends TrophyMomentLike>(
     (m) =>
       !q ||
       [displayName(m), m.set_name, m.team_name, m.character_name].some((s) =>
-        (s ?? '').toLowerCase().includes(q),
+        textIncludes(s, q),
       ),
   )
   filtered.sort((a, b) => {

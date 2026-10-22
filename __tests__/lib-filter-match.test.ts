@@ -72,4 +72,13 @@ describe("textIncludes — the free-text search boxes", () => {
     const rows = [e("Vinícius Júnior", "a"), e("Jude Bellingham", "b")]
     expect(filterEditions(rows, { ...EMPTY_EDITION_FILTERS, q: "vinicius" }, "laliga-golazos", null).map((r) => r.route_slug)).toEqual(["a"])
   })
+
+  it("the market's Did-you-mean offers only names the accent-sensitive route MISSED", async () => {
+    const { accentOnlyMatches } = await import("@/app/(collections)/[collection]/market/MarketClient")
+    const names = ["Luka Dončić", "Luka Garza", "Nikola Jokić"]
+    expect(accentOnlyMatches("luka doncic", names)).toEqual(["Luka Dončić"])
+    // "luka" already matches both via ilike: an empty page there is a true empty — no hint
+    expect(accentOnlyMatches("luka", names)).toEqual([])
+    expect(accentOnlyMatches("  ", names)).toEqual([])
+  })
 })

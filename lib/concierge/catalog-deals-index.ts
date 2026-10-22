@@ -13,6 +13,7 @@
 
 import { marketplaceMomentUrl } from "@/lib/collections"
 import { absoluteEditionPageUrl, EDITION_FLOOR_VIEW } from "@/lib/concierge/edition-listings"
+import { textIncludes } from "@/lib/filter-match"
 
 type Supabase = any
 
@@ -140,7 +141,7 @@ export async function fetchIndexCatalogDeals(
     if (r == null) return { ok: false }
     data = r
   }
-  if (setNeedle) data = data.filter((r) => String(r.set_name ?? "").toLowerCase().includes(setNeedle))
+  if (setNeedle) data = data.filter((r) => textIncludes(String(r.set_name ?? ""), setNeedle))
   data = data.slice(0, limit)
 
   // get_allday_market_editions_v3 returns no floor_flow_id (Golazos' RPC does), so
