@@ -74,11 +74,20 @@ touch, where the keyboard would cover half the list.
    - **the page**, for what the route cannot decide (ambiguity): the Player
      `Autocomplete` suggests the catalog spelling, and an empty search offers *"Did you
      mean …"* for names differing only by accents (`accentOnlyMatches`).
-   - **Not covered (not audited):** other callers that pass a typed name straight to a
-     `p_player` RPC — `/api/market-analytics`, several concierge tools
-     (`app/api/support-chat/route.ts`, `lib/concierge/catalog-deals-index.ts`), the
-     special-serial owners board. Some concierge paths resolve names via
-     `resolve_player_name` first; which ones was not checked.
+   - **Other callers (closed the same night, #207):** `/api/market-analytics` (player
+     search), the public special-serial owners board, and the concierge's team-deals and
+     wallet-breakdown tools now take the spelling from `resolve_player_name` — the
+     platform's accent-, alias- and namesake-aware resolver — via
+     `singleRetryLabel` (`lib/concierge/player-identity.ts`): only when it names ONE
+     person with ONE label. The two routes retry only an EMPTY answer and report
+     `playerResolved` / `meta.player_resolved`; their pages say "showing …". The other
+     concierge player tools were already resolved through the same resolver.
+   - **Verified in real Chromium at 390 px on the real components** (MarketClient,
+     SniperFilterBar, with the app's compiled Tailwind): 73-team list, type-to-filter,
+     multi-pick stays open, outside tap closes, pill, Autocomplete, the "showing" note +
+     Use this spelling, and the Sniper pick that no longer re-opens; page width 390
+     throughout. ⚠ Without the app's CSS the harness reported a false 400 px overflow —
+     compile `app/globals.css` (Tailwind v4 PostCSS) into any such harness.
 7. **No per-option counts on the market.** Its options merge the catalog with facets of a
    window capped at 1,000 fetched rows, so a count would read as a census it is not
    (CLAUDE.md: a window is not a census).
