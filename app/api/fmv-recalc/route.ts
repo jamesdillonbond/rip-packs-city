@@ -2038,9 +2038,11 @@ export async function POST(req: NextRequest) {
     // ⛔ 2026-10-21 (#206): ONLY A RECENTLY-SWEPT ASK IS A LIVE ASK. The table's only writer
     // (admin/backfill-topshot-subedition-circulation) was unscheduled 09-08 — its GraphQL host has
     // answered 530 since ~08-28 — so every row is frozen at its last sweep (newest 2026-08-27). With
-    // no age gate this step kept re-flooring parallels that aged to STALE from those frozen asks:
-    // measured 10-21, 614 Top Shot parallels' CURRENT price was a 55-day-old ask × 0.90 ($197,853),
-    // e.g. 149:5376::8 at $6,999.30 from a $7,777 ask last seen 08-27. The writer swept daily, so a
+    // no age gate this step kept re-flooring parallels that aged to STALE from those frozen asks.
+    // Measured 10-21: 614 parallels' current ASK_ONLY equals a frozen row × 0.90, but 553 of them are
+    // ALSO backed by a fresh badge_editions ask at the same price (cold-tail re-prices from that) —
+    // the frozen-only cases were 17 with NO live ask ($19,773) and 44 whose live ask has moved
+    // ($5,580 shown vs $3,594 at today's ask). Count the backing, not the match. The writer swept daily, so a
     // row older than PARALLEL_ASK_MAX_AGE_HOURS was not re-observed by the last two sweeps. Today
     // that admits ZERO rows (the honest answer while the feed is down); the step re-arms on its own
     // the day the feed is re-pointed and swept.

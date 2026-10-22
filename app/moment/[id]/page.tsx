@@ -87,6 +87,7 @@ import { fetchBadgeArt } from "@/lib/badges/server-art"
 import ParallelTierSwitcher from "@/components/entity/ParallelTierSwitcher"
 import { OG_INHERITED } from "@/lib/seo"
 import { askAgeStamp, askVerifiedAt } from "@/lib/market/ask-freshness"
+import { fetchPrintingAskChangedAt, isParallelExternalId, type PrintingAskStamp } from "@/lib/market/printing-ask-stamp"
 
 // Display label for the native marketplace per URL slug. Only collections with
 // a marketplaceMomentUrl template can produce a valid deep link.
@@ -588,7 +589,7 @@ export default async function MomentPage(
   // serials table that had rendered fine from the other. The badges are now
   // derived from the single read below (mapNotableTagsToSpecialSerials).
   const isCandyColl = e.collection_slug === "candy_mlb"
-  const [highOfferRes, parallelsRes, badgesRes, momentBestOfferRes, notableSerialsRes, activeListingAskRes, subSiblingsRes, candyAsksRes] = await Promise.all([
+  const [highOfferRes, parallelsRes, badgesRes, momentBestOfferRes, notableSerialsRes, activeListingAskRes, subSiblingsRes, candyAsksRes, printingAskRes] = await Promise.all([
     fetchHighOffer(e.id),
     fetchParallels(e.id),
     fetchBadges(e.id),
@@ -615,6 +616,10 @@ export default async function MomentPage(
     isCandyColl
       ? fetchCandyAsks(e.id, r?.kind === "moment" ? ss?.nft_id ?? null : null)
       : Promise.resolve({ data: null as CandyAsks | null, ok: true }),
+    // A parallel's ask stamp is its own printing row's, never the offer's (lib/market/printing-ask-stamp.ts).
+    isParallelExternalId(e.external_id) && r?.collection_id
+      ? fetchPrintingAskChangedAt(r.collection_id, e.external_id as string)
+      : Promise.resolve<PrintingAskStamp>({ at: null, ok: true }),
   ])
   const highOffer = highOfferRes.data
   const parallels = parallelsRes.rows
@@ -674,8 +679,13 @@ export default async function MomentPage(
   // confirmed it 10-15). The edition page already dates this number; the moment page did not.
   // Stamped ONLY when the shown value IS highOffer.low_ask — the timestamp says nothing about
   // the fmv/cross-market fallbacks, and an age on a different number is worse than none.
+  // ⚠ For a PARALLEL the RPC's updated_at dates the OFFER it returns, not low_ask, so the stamp
+  // comes from the printing's own edition_offers row — and a failed read of it renders no age.
   const askFromOffers = !isCandyColl && highOffer?.low_ask != null
-  const askStamp = askFromOffers ? askAgeStamp(askVerifiedAt(highOffer), highOffer?.low_ask, collectionSlugUrl) : null
+  const askAt = isParallelExternalId(e.external_id)
+    ? (printingAskRes.ok ? printingAskRes.at : null)
+    : askVerifiedAt(highOffer)
+  const askStamp = askFromOffers ? askAgeStamp(askAt, highOffer?.low_ask, collectionSlugUrl) : null
 
   // Item 3b — deterministic hero badges for the current serial that the
   // special_serial_holders sweep may not have populated (#1 + the perfect

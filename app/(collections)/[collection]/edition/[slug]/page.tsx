@@ -71,6 +71,7 @@ import WatchEditionButton from "@/components/alerts/WatchEditionButton"
 import TrackedOutboundLink from "@/components/TrackedOutboundLink"
 import { dapperMarketEditionUrl } from "@/lib/collections"
 import { fetchPaniniEditionSetSlug, type PaniniEditionSetSlug } from "@/lib/panini/edition-set-slug"
+import { fetchPrintingAskChangedAt, isParallelExternalId, type PrintingAskStamp } from "@/lib/market/printing-ask-stamp"
 import {
   fetchPaniniEditionAsk,
   fetchPaniniEditionSerials,
@@ -555,8 +556,12 @@ export default async function EditionPage(
   // Panini (2026-10-21, #204): the edition's OWN product's set page. Defaults to a failed read, so
   // an unexpected throw leaves the set name unlinked rather than linked to another product's set.
   let paniniSetSlug: PaniniEditionSetSlug = { slug: null, ok: !isPanini }
+  // A parallel's ask stamp (2026-10-21, #206 f): the bundle's high_offer.updated_at dates the OFFER on a
+  // `::` edition, so the ask is dated from its own printing row. Defaults to a failed read (no age).
+  const isParallelPage = isParallelExternalId(detail.external_id)
+  let printingAsk: PrintingAskStamp = { at: null, ok: !isParallelPage }
   try {
-    ;[history, bundleRes, insightRes, badgeArt, repSales, paniniAskRes, estimateRes, paniniSetSlug] = await Promise.all([
+    ;[history, bundleRes, insightRes, badgeArt, repSales, paniniAskRes, estimateRes, paniniSetSlug, printingAsk] = await Promise.all([
     fetchHistory(coll.id, slug, 30),
     // high_offer + subedition (parallel) ladder + IPFS assets in ONE round-trip.
     fetchMarketBundle(detail.id, detail.external_id),
@@ -583,6 +588,9 @@ export default async function EditionPage(
     isPanini && detail.external_id
       ? fetchPaniniEditionSetSlug(detail.external_id)
       : Promise.resolve({ slug: null, ok: true }),
+    isParallelPage
+      ? fetchPrintingAskChangedAt(coll.id, detail.external_id as string)
+      : Promise.resolve<PrintingAskStamp>({ at: null, ok: true }),
     ])
   } catch (e) {
     // ⚠ Must NOT return a whole-page view. The declared defaults above are
@@ -780,7 +788,12 @@ export default async function EditionPage(
   // ONLY from the branch the timestamp actually describes, and every other branch
   // renders no marker. Server component: the default clock is fine here (this is
   // never hydrated), same arrangement `relTime` itself uses.
-  const askAt = isPanini ? (paniniAsk?.askConfirmedAt ?? null) : askVerifiedAt(highOffer)
+  const askAt = isPanini
+    ? (paniniAsk?.askConfirmedAt ?? null)
+    : isParallelPage
+      // The printing row's own stamp, and only when the ask shown IS that row's (low_ask present).
+      ? (highOffer?.low_ask != null && printingAsk.ok ? printingAsk.at : null)
+      : askVerifiedAt(highOffer)
   const askAge = askAgeHours(askAt)
   // Best-offer cell (H1): only render when there's a real positive offer.
   // edition_offers is Top-Shot-only today, so an em-dash here would be a
