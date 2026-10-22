@@ -60,10 +60,12 @@ export function resolveAccentedPlayer(typed: string, names: readonly string[]): 
 }
 
 // Letters that most often carry a diacritic in the names we hold (á é í ó ú ü ý
-// ñ ç č ć š ž). Each becomes `_` (one character) in the ilike pattern. Rarer
-// carriers (ł ř ğ) are left literal: widening them too bloats the retry window
-// for little gain — the Autocomplete and Did-you-mean still cover those names.
-const ACCENTABLE = /[aeiouycnsz]/g
+// ñ ç č ć š ž ģ), plus the apostrophe (the catalog stores the curly ’ in
+// "Aiden O’Neill"). Each becomes `_` (one character) in the ilike pattern.
+// Measured 2026-10-21 over every edition / Candy / Panini / Pinnacle name: no
+// ł ř ğ occurs, so those stay literal rather than widen every retry window.
+// ø and other non-decomposing letters fold in foldForMatch (o is widened).
+const ACCENTABLE = /[aeiouycnszg']/g
 
 /**
  * An ilike body that matches `typed` with or without accents, or null when it

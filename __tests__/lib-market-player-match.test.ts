@@ -36,6 +36,14 @@ describe("accentTolerantPattern", () => {
     expect(ilike("José Ramírez", accentTolerantPattern("jose ramirez")!)).toBe(true)
     expect(ilike("Atlético de Madrid", accentTolerantPattern("atletico")!)).toBe(true)
   })
+  it("covers the measured catalog letters: ø, ģ and the curly apostrophe", () => {
+    expect(ilike("Alexander Sørloth", accentTolerantPattern("alexander sorloth")!)).toBe(true)
+    expect(ilike("Kristaps Porziņģis", accentTolerantPattern("porzingis")!)).toBe(true)
+    expect(ilike("Aiden O’Neill", accentTolerantPattern("aiden o'neill")!)).toBe(true)
+  })
+  it("resolves an unaccented ø name in the catalog", () => {
+    expect(resolveAccentedPlayer("sorloth", ["Alexander Sørloth", "Alexander Isak"])).toBe("Alexander Sørloth")
+  })
   it("keeps a typed % or _ literal", () => {
     const p = accentTolerantPattern("a_b%x")
     expect(p).not.toBeNull()

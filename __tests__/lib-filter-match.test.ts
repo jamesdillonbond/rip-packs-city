@@ -50,6 +50,26 @@ describe("filter-match", () => {
   })
 })
 
+// 2026-10-21: NFD does not decompose ø ł đ ß, and the catalog stores curly
+// apostrophes — "sorloth" missed Alexander Sørloth, "o'neill" missed Aiden O’Neill.
+describe("foldForMatch — letters NFD leaves alone, and curly apostrophes", () => {
+  it("folds the non-decomposing letters the catalog holds", () => {
+    expect(textIncludes("Alexander Sørloth", "sorloth")).toBe(true)
+    expect(textIncludes("Martin Ødegaard", "odegaard")).toBe(true)
+    expect(textIncludes("Łukasz Fabiański", "lukasz fabianski")).toBe(true)
+    expect(textIncludes("Đorđe Petrović", "dorde")).toBe(true)
+    expect(textIncludes("Kristaps Porziņģis", "porzingis")).toBe(true)
+  })
+  it("treats a curly apostrophe as a straight one, both ways", () => {
+    expect(textIncludes("Aiden O’Neill", "o'neill")).toBe(true)
+    expect(textIncludes("D'Angelo Russell", "d’angelo")).toBe(true)
+  })
+  it("drops WALL•E-style joiners, and still highlights a 1:1 fold", () => {
+    expect(textIncludes("WALL•E", "walle")).toBe(true)
+    expect(highlightParts("Alexander Sørloth", "sorl").filter((p) => p.match).map((p) => p.text)).toEqual(["Sørl"])
+  })
+})
+
 describe("textIncludes — the free-text search boxes", () => {
   it("is accent- and case-blind, and plain substring otherwise", () => {
     expect(textIncludes("Luka Dončić", "doncic")).toBe(true)

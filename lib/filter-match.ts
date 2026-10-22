@@ -6,9 +6,21 @@
 // - Ranked: the whole label starting with the query, then a word starting with
 //   it, then a match anywhere; ties keep the list's own order.
 
+// Letters NFD does not decompose, so stripping combining marks leaves them as-is:
+// "sorloth" missed "Alexander Sørloth" (measured 2026-10-21: ø in 2 catalog names).
+// Curly apostrophes become straight ones — "o'neill" missed "Aiden O’Neill", and ’
+// sits in 5 catalog names — and the WALL•E-style joiners drop out. Postgres
+// `unaccent` (resolve_player_name) folds the same letters, so both sides agree.
+const NON_DECOMPOSING: Record<string, string> = {
+  "ø": "o", "Ø": "o", "ł": "l", "Ł": "l", "đ": "d", "Đ": "d", "ħ": "h", "Ħ": "h", "ı": "i",
+  "ß": "ss", "æ": "ae", "Æ": "ae", "œ": "oe", "Œ": "oe", "þ": "th", "Þ": "th",
+  "’": "'", "‘": "'", "ʼ": "'", "`": "'", "•": "", "·": "",
+}
+const NON_DECOMPOSING_RE = /[øØłŁđĐħĦıßæÆœŒþÞ’‘ʼ`•·]/g
+
 /** Lower-case and strip diacritics so "Atlético" and "atletico" compare equal. */
 export function foldForMatch(s: string): string {
-  return s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase()
+  return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(NON_DECOMPOSING_RE, (c) => NON_DECOMPOSING[c] ?? c).toLowerCase()
 }
 
 function queryWords(query: string): string[] {
