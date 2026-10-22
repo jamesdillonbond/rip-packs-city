@@ -92,6 +92,8 @@ Live reads ~6:00 PM PT 10-17 unless marked otherwise.
 - **10-10:** no LOW→MEDIUM promotion for 31–90-day sales; no Panini Market Pulse row (sale lag); no "Either A or B" pack parser arm; no ASK_ONLY family cap ([methodology](../panini-fmv-packev-methodology.md)).
 - **10-14:** the between-walk repricer was refuted (gate on `first_seen_at`, not `sold_at`).
 - **10-15:** `panini-1.3.0` spread grading shipped (Trevor: "Do what makes sense"). Public per-edition confidence chips stay banned.
+- **10-21 (Trevor: "Do what you think is best"):** the tier is RPC's mint-cap band, not Panini's rarity word — COMMON = caps ≥ 200 (Panini's Uncommon AND Common), RARE = 26–199, LEGENDARY = 2–25, ULTIMATE = 1 (`lib/chains/panini/ingest-normalize.ts`). Kept so tier filters, tier mix and pack EV mean the same in every collection; Panini's own label stays in `panini_editions.rarity_label` (#206 c).
+- **10-21:** a set page is ONE `sets` row (product-scoped slug; #204).
 - **Product rules:** read-only; accuracy is the gate; no paid tier until 100 WAU; no infra spend before revenue.
 
 ## Needs Trevor
