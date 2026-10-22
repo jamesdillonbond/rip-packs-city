@@ -109,3 +109,28 @@ Read ahead of the 10-28 date because Trevor asked for an SEO pass. ⚠ The index
 - **Shipped:** `get_edition_detail` carries play_category / play_type / game_date / subedition_name (`20261021142334`); `lib/edition-title-context.ts` titles = set · parallel · play · date · /circulation (circulation for All Day + Golazos only). Duplicates → **82 / 50 / 88**. Live: "Kon Knueppel — Signature Series · Dunk · Nov 15, 2025", "LaMelo Ball — Holo Icon · Omega · 3 Pointer · Jan 6, 2026", "A.J. Brown — Road to 100 · Reception · Oct 29, 2023 · /397".
 - **Watch at 10-28 and after:** "Duplicate, Google chose different canonical" and "Crawled – not indexed" for Top Shot / All Day editions; Google re-reads titles on recrawl, so expect weeks, not days.
 - **Also 10-21:** robots.txt now blocks RSC payloads + analytics beacons (Crawl stats: 59 % of requests were non-documents); site-wide WebApplication JSON-LD moved to the homepage.
+
+## 2026-10-21 afternoon — titles, breadcrumbs, redirects, page speed (Cowork cloud, session_01L8xC29bjgWAanLeKvoNg4X)
+
+All shipped to `main`, each with a ledger entry and revert path, each verified on the live site (not by deploy status).
+
+- **Grid tiles name the play and date** (`20261021145002` + `7807764a`). The player/set/series/team/pack grids and franchise hubs showed a player's several plays in one set as identical tiles, with identical link anchor text. The five grid RPCs project `play_category` + `game_date`; tiles print "<play> · <date>". Live: Kon Knueppel's player page renders 10 distinct play · date lines.
+- **Edition title twins get a tie-break** (`6ccc20ef`). The remaining duplicate titles (82 TS / 50 AD / 88 Golazos) were editions identical on every titled field (Golazos 293/350 — two plays of one Abdón Prats goal; TS 141:5149/5150 — two FANDOM /4347 Celtics Redemptions). `lib/edition/title-twins.ts` reads the player/team + set siblings (bounded 2 s, fail-soft to the old title) and appends the fewest separating words: tier → (TS) mint size → `#<edition>`. Non-twins unchanged.
+- **One breadcrumb trail per page** (`42cfedc1`). Every page under /[collection]/* carried TWO BreadcrumbLists (the layout's Home → collection beside the page's own trail) plus a CollectionPage whose @id was /overview. The collection JSON-LD now renders on the overview only.
+- **Breadcrumbs name the 200 URL; the collection root is a 308** (`329f4384`). Trails (JSON-LD and visible) linked `/<collection>`, which 307'd to `/overview`; they now link `/overview`, and `/<collection>` is `permanentRedirect` (308).
+- **Search Console Breadcrumbs report:** 153 valid / 0 invalid (read 10-21 12:40 PM).
+- **Page speed — measured with Lighthouse mobile** (Search Console Core Web Vitals has **no CrUX data**: too little real traffic). Home 98 / LCP 1.5 s · /insights/deals 98 / 1.6 s · overview 81–86 / 3.1–3.3 s (CLS 0.116 in the lab, ~0.0006 in an unthrottled browser — left) · player 83 / 3.9 s · **edition 60–74 / LCP 3.9–5.8 s** (poor > 4 s). The edition LCP element is the hero image.
+  - **Hero srcset** (`44900ac0`): the hero was one fixed width (ipfs-thumb 960 px = 142 KB; Top Shot CDN 1080 px = 73 KB) in a box capped at 320 px. `lib/hero-srcset.ts` serves 320/640/960 (ipfs) or 320/640/1080 (TS); phones now fetch 640 (27–80 KB).
+  - ⚠ **It first caused a DOUBLE download** — the `<video poster>` still named the fixed-width src, so pages fetched ?width=640 AND ?width=1080 (they used to be one URL). Caught by Lighthouse after deploy; fixed (`9df32664`): the poster reuses the file the `<img>` actually loaded (`currentSrc`). **Lesson: a srcset on an `<img>` must be applied to every other element that names the same picture (poster, preload, og) or it adds a fetch instead of shrinking one.**
+  - **recharts off the critical path** (`fac029a3`): the plot moved to `components/entity/FmvHistoryPlot.tsx`, loaded with `next/dynamic({ ssr:false })` in the existing 220 px box. Recharts is now requested at Low priority ~1.1–3 s in (was in the initial set). Chart verified rendering in a real browser.
+  - **Result, honestly:** across 3 Lighthouse runs per page after all three changes the edition LCP reads **3.5–5.6 s** — run-to-run noise is larger than any change, so no LCP gain is claimed. The image now waits on hydration CPU (react-dom ~1.5 s of script time under 4× throttle) and ~437 KB of JS (supabase-js 206 KB raw on a public page). **That is the next lever and it is a real refactor** (fewer/lighter client components on the edition page; supabase-js only where a signed-in action needs it).
+- **Deploy hazard found and fixed** (matters for every SEO ship): pushes reached Vercel 17–22 min late that morning, and a late build of an OLDER commit took the production alias from a newer one twice (the tile and twin-title changes were each off prod ~15 min). `scripts/vercel-ignore-build.sh` now fetches the live sha and skips a build whose commit is an ancestor of what is live (`2d604b32`). ⚠ **Not yet exercised in production** — the queue was prompt for the rest of the day; the first late stale build will print `vercel-ignore-build: skip —` in its log.
+
+### Owed at the 10-28 Search Console re-read (adds to the list above)
+
+- "Duplicate, Google chose different canonical" and "Crawled – not indexed" for TS / All Day editions (titles changed today; expect weeks).
+- Breadcrumbs count (should keep 0 invalid; trails now single and pointing at /overview).
+- Crawl stats: "Other file type" share falling (robots `_rsc` block), HTML share rising.
+- The `/profile/0x…` 404 referrer (URL Inspection).
+- Product snippets validation (offer-less Product → CreativeWork, started 10-20).
+- If CrUX data appears in Core Web Vitals: edition-page LCP is the number to watch.
