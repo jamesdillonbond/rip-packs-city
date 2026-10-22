@@ -1,0 +1,85 @@
+# Filter controls — the shared dropdowns, search boxes and their traps
+
+Written 2026-10-21 (PT) from four rounds of work on Trevor's ask: *"the filters need to
+have a typing spot when there's a ton of options, like on the teams filter"* → *"keep
+digging and improving these filters, using best practices"*. Ledger entries for each
+round are dated 10-21; this page is the durable summary.
+
+## What to use
+
+All under `components/filters/`; matching lives in `lib/filter-match.ts`.
+
+| need | component | notes |
+|---|---|---|
+| single choice, any length | **`FilterSelect`** | native `<select>` up to `SEARCHABLE_SELECT_MIN` (8) options — the OS picker is the best control for a short list — and `SearchableSelect` above it. `fill` for a grid cell. |
+| single choice, always searchable | `SearchableSelect` | WAI-ARIA combobox + listbox. Prefer `FilterSelect`. |
+| multi choice (chip) | **`MultiSelect`** | market Set / Series / Team / Badges. Search box above 8 options; `aria-multiselectable`; picks pinned to the top **at open time** (re-sorting on each toggle moves rows under the pointer). |
+| free text with suggestions | **`Autocomplete`** | market Player box. The typed text IS the filter; a suggestion replaces it with the catalog spelling. |
+| show what is active | `ActiveFilterPills` | one removable pill per multi-select value ("Team: Portland Fire ×"). |
+| free-text search over rows | **`textIncludes(haystack, q)`** | accent- and case-blind; identical to `toLowerCase().includes` for ASCII. |
+| rank a long option list | `filterOptions(options, q, labelOf?)` | every word must match; label-prefix, then word-prefix, then anywhere. |
+
+Where they are used (2026-10-21): Sniper Team/Franchise + Studio (`SniperFilterBar`),
+market multi-selects + Player box + pills (`MarketClient`), wallet collection Player /
+Set / Series (`CollectionFilterBar`), editions grid Team / Set / Series / Rarity /
+Parallel / Badge (`EditionsGridPaginated`). The profile favourite-team picker was left
+native on purpose — a once-per-account setting, not a filter.
+
+Keys (all three popups): ↓/↑ move · Enter picks (MultiSelect: toggles, stays open) ·
+Escape closes and returns focus to the trigger · Tab closes · ↓ on a closed trigger
+opens. Space toggles in MultiSelect only when the search box is empty (a query may hold
+spaces). The search box focuses on open with a **mouse** (`pointer: fine`) but not on
+touch, where the keyboard would cover half the list.
+
+## ⛔ The traps — each was live or caught in a real browser
+
+1. **Never put a popup trigger inside a `<label>`.** A browser forwards a click on any
+   non-interactive descendant of a label (an option row) to the label's first control —
+   the trigger — so a pick RE-OPENED the Sniper Team list (live 10-21 from ~8:53 to ~11:28 AM PT;
+   confirmed in Chromium with a 3-line page). **jsdom does not implement this
+   forwarding, so no click test can see it**: it is pinned structurally in
+   `sniper-team-franchise-filter.test.tsx` (`trigger.closest("label")` is null,
+   mutation-proved). Wrap visual labels in a `<div>`; the controls carry their own
+   accessible names.
+2. **On a phone, `window.innerWidth` is the LAYOUT viewport and grows to fit overflow.**
+   With a right-edge panel open it read 534 px on a 390 px screen, so the keep-on-screen
+   nudge came out at −8 px and the page scrolled sideways. Measure with
+   `document.documentElement.clientWidth`.
+3. **A `transform` does not remove overflow.** Chrome still counted a `translateX`-ed
+   panel's untransformed box as page width (scrollWidth stayed 534). Apply the nudge as
+   a layout offset (`left`), as `useKeepInViewport` does.
+4. **A `<span>` per plain text run breaks the accessible name** — the name walk trims at
+   element edges, so a highlighted "Luka **Dončić**" was named "LukaDončić". Plain runs
+   are bare text nodes in `HighlightedLabel`.
+5. **`x.toLowerCase().includes(q)` is accent-SENSITIVE.** "doncic" found nothing for
+   Luka Dončić at fifteen search and filter sites. Banned at zero by
+   `__tests__/a-search-box-matches-accented-names.test.ts` (tree walk over app/,
+   components/, lib/; silent about the two-step `hay = x.toLowerCase(); hay.includes(q)`
+   form — use `textIncludes`).
+6. **The market route's player match is accent-sensitive too** (`ilike '%q%'`, and the
+   Top Shot / All Day RPCs' `p_player`). Client side covers it twice: the Player
+   `Autocomplete` suggests the catalog spelling, and a search that comes back empty offers
+   *"Did you mean Luka Dončić?"* for names that differ from the typed text **only by
+   accents** (`accentOnlyMatches` in `MarketClient`) — a name the route would already
+   have matched has, truly, no listings, so it is not offered. Making the route itself
+   accent-blind (`unaccent`, the pinned RPCs) is a DB decision not taken.
+7. **No per-option counts on the market.** Its options merge the catalog with facets of a
+   window capped at 1,000 fetched rows, so a count would read as a census it is not
+   (CLAUDE.md: a window is not a census).
+
+## Verifying — what a sandbox can and cannot see
+
+- **jsdom (vitest)** proves keys, ARIA wiring and state — `component-filter-selects.test.tsx`,
+  `lib-filter-match.test.ts`, the market / sniper suites. It is blind to traps 1–3.
+- **Real Chromium on the components, without the app:** build a 20-line React page that
+  imports the components with Vite (`build({ root, resolve: { alias: { "@": <repo>,
+  react: <repo>/node_modules/react, "react-dom": <repo>/node_modules/react-dom } } })`),
+  serve `dist/` with `python3 -m http.server`, and drive it with Playwright
+  (`executablePath: "/opt/pw-browsers/chromium"`, `devices["iPhone 13"]` at 390 px for
+  touch). Assert `document.documentElement.scrollWidth === 390` with a panel open. Run
+  the scripts from inside the repo (a copy) so `playwright` resolves.
+- **The served bundle:** `www.rippackscity.com` is blocked to curl/Chromium here, but
+  `pg_net` reaches it (tooling-gotchas.md, 2026-09-13): `net.http_get` the page, pull the
+  `/_next/static/immutable/chunks/*.js` paths out of `content` with `regexp_matches`,
+  `net.http_get` each, then `content LIKE '%Type to filter %'`. Include a NEGATIVE
+  control (a string from an unshipped change) so a hit means something.
