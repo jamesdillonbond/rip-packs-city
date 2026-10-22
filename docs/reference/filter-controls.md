@@ -56,13 +56,29 @@ touch, where the keyboard would cover half the list.
    `__tests__/a-search-box-matches-accented-names.test.ts` (tree walk over app/,
    components/, lib/; silent about the two-step `hay = x.toLowerCase(); hay.includes(q)`
    form — use `textIncludes`).
-6. **The market route's player match is accent-sensitive too** (`ilike '%q%'`, and the
-   Top Shot / All Day RPCs' `p_player`). Client side covers it twice: the Player
-   `Autocomplete` suggests the catalog spelling, and a search that comes back empty offers
-   *"Did you mean Luka Dončić?"* for names that differ from the typed text **only by
-   accents** (`accentOnlyMatches` in `MarketClient`) — a name the route would already
-   have matched has, truly, no listings, so it is not offered. Making the route itself
-   accent-blind (`unaccent`, the pinned RPCs) is a DB decision not taken.
+6. **The market's player match is accent-sensitive in the database** (`ilike '%q%'` in
+   every arm: the Top Shot / All Day / Golazos RPCs' `p_player` and the PostgREST table
+   arms). Resolved 10-21 (#207) **in the route, without a DB change**, by
+   `lib/market/player-match.ts` — and only when the ordinary search came back EMPTY, so a
+   search that matched costs nothing extra and is never altered:
+   - **catalog arms** (Top Shot, All Day, Golazos): the typed text is resolved against
+     `get_market_filter_options` (≈115 ms, memoized per instance for an hour). Exactly one
+     name matching only accent-blind → the arms re-run with it and the response carries
+     `playerResolved: { from, to }`; the page shows *"No exact match for “luka doncic” —
+     showing Luka Dončić"* with **Use this spelling**. Never a silent swap (CLAUDE.md's
+     substitution rule). Two or more candidates → no guess.
+   - **table arms** (Pinnacle, Candy, Panini — they page in code): `withAccentFallback`
+     retries with an accent-tolerant ilike (vowels + c n s z y → `_`, typed `%`/`_`
+     escaped) and keeps only rows `textIncludes` confirms. Rarer accent carriers (ł ř ğ)
+     are not widened.
+   - **the page**, for what the route cannot decide (ambiguity): the Player
+     `Autocomplete` suggests the catalog spelling, and an empty search offers *"Did you
+     mean …"* for names differing only by accents (`accentOnlyMatches`).
+   - **Not covered (not audited):** other callers that pass a typed name straight to a
+     `p_player` RPC — `/api/market-analytics`, several concierge tools
+     (`app/api/support-chat/route.ts`, `lib/concierge/catalog-deals-index.ts`), the
+     special-serial owners board. Some concierge paths resolve names via
+     `resolve_player_name` first; which ones was not checked.
 7. **No per-option counts on the market.** Its options merge the catalog with facets of a
    window capped at 1,000 fetched rows, so a count would read as a census it is not
    (CLAUDE.md: a window is not a census).
