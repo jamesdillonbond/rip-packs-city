@@ -36,7 +36,7 @@ import BadgeIcon from "@/components/BadgeIcon"
 import MultiSelect from "@/components/filters/MultiSelect"
 import Autocomplete from "@/components/filters/Autocomplete"
 import ActiveFilterPills from "@/components/filters/ActiveFilterPills"
-import { textIncludes } from "@/lib/filter-match"
+import { accentOnlyMatches } from "@/lib/market/player-match"
 import { trackOutboundClick } from "@/lib/track-click"
 import { collectionHasPage, dapperMarketMomentUrl, getCollection, getCollectionUuid, collectionHasLocking, collectionHasBadges } from "@/lib/collections"
 import IpfsImg from "@/components/media/IpfsImg"
@@ -160,6 +160,9 @@ type MarketResponse = {
   coverage_failed?: boolean
   // Options present across the route's whole fetched window (lib/market/facets.ts).
   facets?: MarketFacets
+  // #207: the Player search matched nothing as typed and the route retried it
+  // with the one catalog name it matches accent-blind. The page MUST say so.
+  playerResolved?: { from: string; to: string }
   // true = /api/market applied Owned / Not owned over the whole market (Top Shot,
   // All Day); the page must not re-filter its own 50 rows.
   ownedApplied?: boolean
@@ -807,6 +810,10 @@ function MarketInner() {
         </div>
       </section>
 
+      {!loading && !error && data?.playerResolved && (
+        <PlayerResolvedNote resolved={data.playerResolved} onUse={setPlayerQuery} />
+      )}
+
       {/* ── Results ── */}
       {loading ? (
         <div className="rpc-card" style={{ padding: 40, textAlign: "center" }}>
@@ -1247,20 +1254,27 @@ const td: React.CSSProperties = {
   height: 72,
 }
 
-// The route matches the Player box with an accent-SENSITIVE ilike, so a name
-// typed without its accent ("luka doncic") finds no listing for "Luka Dončić" and
-// the page reads as an empty market. The suggestion list fixes that when the user
-// picks from it; this catches the case where they typed the whole name and hit
-// search. Offered ONLY for names that differ from the typed text by accents —
+// The route matches the Player box with an accent-SENSITIVE ilike. Since #207 it
+// retries an empty search itself when exactly ONE catalog name matches
+// accent-blind (and says so — PlayerResolvedNote). This hint covers what the route
+// cannot decide: two or more candidates, or an arm whose names the route could
+// not resolve. Offered ONLY for names differing from the typed text by accents —
 // a name the route would already have matched has, truly, no listings here.
-export function accentOnlyMatches(typed: string, names: string[]): string[] {
-  const t = typed.trim()
-  if (!t) return []
-  return names.filter((n) => textIncludes(n, t) && !n.toLowerCase().includes(t.toLowerCase())).slice(0, 5)
+function PlayerResolvedNote({ resolved, onUse }: { resolved: { from: string; to: string }; onUse: (n: string) => void }) {
+  return (
+    <div className="rpc-card" role="status" style={{ padding: "10px 16px", marginBottom: 10, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
+      <span className="rpc-mono" style={{ fontSize: 12, color: "var(--rpc-text-muted)" }}>
+        No exact match for &ldquo;{resolved.from}&rdquo; — showing <strong style={{ color: "var(--rpc-text-primary)" }}>{resolved.to}</strong>.
+      </span>
+      <button type="button" className="rpc-chip" onClick={() => onUse(resolved.to)} style={{ fontSize: 11 }}>
+        Use this spelling
+      </button>
+    </div>
+  )
 }
 
 function SpellingHint({ typed, names, onPick }: { typed: string; names: string[]; onPick: (n: string) => void }) {
-  const alts = accentOnlyMatches(typed, names)
+  const alts = accentOnlyMatches(typed, names).slice(0, 5)
   if (alts.length === 0) return null
   return (
     <div className="rpc-card" role="status" style={{ padding: "12px 16px", marginBottom: 10, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>

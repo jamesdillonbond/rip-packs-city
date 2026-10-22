@@ -20,6 +20,11 @@
 // components/ and lib/. A literal argument (`msg.toLowerCase().includes("slow
 // down")`) is an error-string check, not a search, and is not matched.
 //
+// ⓘ The one DELIBERATE case-only comparison is `ilikeWouldMatch` in
+// lib/market/player-match.ts (#207): it models what the database's accent-
+// sensitive ILIKE will find, so it must NOT fold accents. It is a named helper
+// so that intent is visible; it is not a search box.
+//
 // ⚠ What this is structurally SILENT about: the two-step form — lowercase a
 // haystack into a variable, then `hay.includes(q)` on a later line. The walk
 // cannot tell that from any other `.includes`. Use `textIncludes(hay, q)`.

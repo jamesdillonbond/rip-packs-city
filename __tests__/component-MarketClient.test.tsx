@@ -841,6 +841,25 @@ describe("MarketClient — controls", () => {
     })
   })
 
+  // #207: the route retried "luka doncic" as "Luka Dončić" — the page must SAY so,
+  // never show another player's listings under the typed name silently.
+  it("says when the route searched a different spelling, and can adopt it", async () => {
+    searchParams = new URLSearchParams("player=luka doncic")
+    marketResponse = () => json(200, market({ playerResolved: { from: "luka doncic", to: "Luka Dončić" } }))
+    render(<MarketClient />)
+    const note = await screen.findByText(/No exact match for/)
+    const box = note.closest("[role=status]") as HTMLElement
+    expect(box.textContent).toMatch(/No exact match for “luka doncic” — showing Luka Dončić\./)
+    fireEvent.click(within(box).getByRole("button", { name: "Use this spelling" }))
+    expect((screen.getByRole("combobox", { name: /Search by player/i }) as HTMLInputElement).value).toBe("Luka Dončić")
+  })
+
+  it("shows no spelling note when the route did not resolve one", async () => {
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    expect(screen.queryByText(/No exact match for/)).toBeNull()
+  })
+
   it("still offers the page's teams when the catalog cannot be read", async () => {
     filterOptionsResponse = () => json(503, {})
     render(<MarketClient />)

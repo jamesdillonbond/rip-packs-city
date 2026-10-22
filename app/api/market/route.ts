@@ -46,6 +46,7 @@ import { getCollectionUuid } from "@/lib/collections"
 import { normalizeAddress } from "@/lib/address"
 import { collectMarketFacets } from "@/lib/market/facets"
 import { expandFranchiseLabels } from "@/lib/market/franchise-teams"
+import { resolveAccentedPlayer, withAccentFallback } from "@/lib/market/player-match"
 
 export const dynamic = "force-dynamic"
 // AllDay's get_allday_market_listings was rewritten for LIMIT-pushdown (~62ms), but
@@ -843,23 +844,27 @@ async function fetchModernListings(
     sets: string[]; seriesList: string[]; player: string; minPrice: number
   }
 ): Promise<any[] | null> {
+  // The three TABLE arms fetch a window and page in code, so an empty player
+  // search can be retried accent-tolerantly and re-checked exactly (#207,
+  // lib/market/player-match.ts). Rows carry the matched name as `player_name`.
+  const nameOf = (r: { player_name?: string | null }) => r.player_name
   if (collectionId === PANINI_COLLECTION_ID_FOR_DISPATCH) {
-    return fetchPaniniMarketListings({
+    return withAccentFallback(filters.player, (player) => fetchPaniniMarketListings({
       tier: filters.tier, maxPrice: filters.maxPrice, sortBy: filters.sortBy, limit: filters.limit,
-      sets: filters.sets, seriesList: filters.seriesList, player: filters.player, minPrice: filters.minPrice,
-    })
+      sets: filters.sets, seriesList: filters.seriesList, player, minPrice: filters.minPrice,
+    }), nameOf)
   }
   if (collectionId === CANDY_COLLECTION_ID_FOR_DISPATCH) {
-    return fetchCandyMarketListings({
+    return withAccentFallback(filters.player, (player) => fetchCandyMarketListings({
       tier: filters.tier, maxPrice: filters.maxPrice, sortBy: filters.sortBy, limit: filters.limit,
-      sets: filters.sets, seriesList: filters.seriesList, player: filters.player, minPrice: filters.minPrice,
-    })
+      sets: filters.sets, seriesList: filters.seriesList, player, minPrice: filters.minPrice,
+    }), nameOf)
   }
   if (collectionId === PINNACLE_COLLECTION_ID_FOR_DISPATCH) {
-    return fetchPinnacleModernListings(collectionId, {
+    return withAccentFallback(filters.player, (player) => fetchPinnacleModernListings(collectionId, {
       tier: filters.tier, maxPrice: filters.maxPrice, sortBy: filters.sortBy,
-      sets: filters.sets, seriesList: filters.seriesList, player: filters.player, minPrice: filters.minPrice,
-    })
+      sets: filters.sets, seriesList: filters.seriesList, player, minPrice: filters.minPrice,
+    }), nameOf)
   }
   // AllDay Market is edition-level (Trevor, 2026-07-18): one row per edition via
   // get_allday_market_editions (SQL aggregate over 80k+ active listings), NOT the
@@ -962,6 +967,37 @@ async function fetchModernListings(
 
 const MARKET_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
+// ── #207: accent-blind player resolution for the catalog arms ──────────────
+// Top Shot / All Day / Golazos match the Player box inside their RPCs with an
+// accent-sensitive ilike. When that matched NOTHING, the typed text is resolved
+// against the collection's player catalog (get_market_filter_options — ~115 ms,
+// so it runs only on an empty search and is memoized per instance for an hour).
+// A failed catalog read resolves nothing: the empty answer stands, as before.
+const CATALOG_PLAYER_COLLECTIONS = DB_FILTERED_MARKET_COLLECTION_IDS
+const CATALOG_PLAYERS_TTL_MS = 60 * 60 * 1000
+const catalogPlayersMemo = new Map<string, { at: number; names: string[] }>()
+
+async function resolveCatalogPlayer(collectionId: string, typed: string): Promise<string | null> {
+  let hit = catalogPlayersMemo.get(collectionId)
+  if (!hit || Date.now() - hit.at > CATALOG_PLAYERS_TTL_MS) {
+    const db = supabaseAdmin as unknown as { rpc: (fn: string, args: Record<string, unknown>) => PromiseLike<{ data: unknown; error: { message: string } | null }> }
+    const { data, error } = await boundedRead(
+      db.rpc("get_market_filter_options", { p_collection_id: collectionId }),
+      "api/market/player-resolve",
+    )
+    const players = data != null && typeof data === "object" && !Array.isArray(data)
+      ? (data as Record<string, unknown>).players
+      : null
+    if (error || !Array.isArray(players)) {
+      console.error("[/api/market] player catalog unavailable — no accent resolution", error?.message ?? "bad payload")
+      return null
+    }
+    hit = { at: Date.now(), names: players.filter((v): v is string => typeof v === "string" && v !== "") }
+    catalogPlayersMemo.set(collectionId, hit)
+  }
+  return resolveAccentedPlayer(typed, hit.names)
+}
+
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams
 
@@ -996,7 +1032,11 @@ export async function GET(req: NextRequest) {
   const minDiscount = parseFloat(sp.get("minDiscount") || "")
   const hasMinDiscountFilter = Number.isFinite(minDiscount) && minDiscount > 0
   const maxDiscount = parseFloat(sp.get("maxDiscount") || "")
-  const player = (sp.get("player") || "").trim()
+  const playerTyped = (sp.get("player") || "").trim()
+  // #207: may become the catalog spelling when the typed text matched nothing
+  // as typed (see the resolution after the arms run). Reported as playerResolved.
+  let player = playerTyped
+  let playerResolved: { from: string; to: string } | null = null
   const setRaw = sp.get("set") || ""
   const sets = setRaw
     ? setRaw.split(",").map(s => s.trim()).filter(Boolean)
@@ -1081,7 +1121,7 @@ export async function GET(req: NextRequest) {
         ? await expandFranchiseLabels(supabaseAdmin, collectionId, teams)
         : { labels: teams, degraded: false }
       if (franchise.degraded) console.log("[/api/market] franchise labels unavailable — filtering by the picked labels only")
-      const parts = await Promise.all(tierList.map((tier) => fetchModernListings(collectionId, {
+      const runArms = (playerQuery: string) => Promise.all(tierList.map((tier) => fetchModernListings(collectionId, {
         tier,
         teams: franchise.labels,
         badges,
@@ -1100,9 +1140,25 @@ export async function GET(req: NextRequest) {
         limit: hasMinDiscountFilter ? MAX_LIMIT : limit,
         sets,
         seriesList,
-        player,
+        player: playerQuery,
         minPrice: Number.isFinite(minPrice) ? minPrice : 0,
       })))
+      let parts = await runArms(player)
+      // #207: a catalog-arm player search that matched NOTHING as typed is
+      // retried once with the single catalog name it matches accent-blind
+      // ("luka doncic" → "Luka Dončić"), and the swap is reported, never silent.
+      // A search that matched anything — or failed — is left exactly as it was.
+      if (playerTyped && CATALOG_PLAYER_COLLECTIONS.has(collectionId) && parts.every((p) => p !== null && p.length === 0)) {
+        const to = await resolveCatalogPlayer(collectionId, playerTyped)
+        if (to) {
+          const again = await runArms(to)
+          if (again.every((p) => p !== null) && again.some((p) => p!.length > 0)) {
+            parts = again
+            player = to
+            playerResolved = { from: playerTyped, to }
+          }
+        }
+      }
       modernRows = parts.some((p) => p === null) ? null : parts.flat() as any[]
     } catch (e) {
       if (!(e instanceof MarketModernReadFailed)) throw e
@@ -1366,6 +1422,8 @@ export async function GET(req: NextRequest) {
 
       return NextResponse.json({
         listings: paged,
+        // #207: the search was retried with this catalog spelling; the page must say so.
+        ...(playerResolved ? { playerResolved } : {}),
         pagination: {
           total,
           page,
@@ -1600,6 +1658,8 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       listings: paged,
+      // #207: the search was retried with this catalog spelling; the page must say so.
+      ...(playerResolved ? { playerResolved } : {}),
       pagination: {
         total,
         page,
