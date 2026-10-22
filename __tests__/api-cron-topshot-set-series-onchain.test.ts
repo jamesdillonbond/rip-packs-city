@@ -297,6 +297,10 @@ describe("toGameDate / decodePlayMetaArray", () => {
   it("takes the UTC calendar date in both on-chain formats; junk is null, never a guessed date", () => {
     expect(toGameDate("2026-10-20T23:00:00Z")).toBe("2026-10-20")
     expect(toGameDate("2022-10-23 02:00:00 +0000 UTC")).toBe("2022-10-23")
+    // The third on-chain format (191 plays on 10-21, e.g. 9305): US month/day/year, no time.
+    expect(toGameDate("9/27/2026")).toBe("2026-09-27")
+    expect(toGameDate("10/2/2026")).toBe("2026-10-02")
+    expect(toGameDate("13/2/2026")).toBeNull()
     expect(toGameDate("")).toBeNull()
     expect(toGameDate("Oct 20")).toBeNull()
     expect(toGameDate(null)).toBeNull()

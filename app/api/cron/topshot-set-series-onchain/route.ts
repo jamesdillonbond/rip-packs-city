@@ -224,19 +224,25 @@ async function registerNewSeries(): Promise<{ registered: number[]; unlabelled: 
 // every Top Shot edition catalogued since ~2026-09-04 (1,460 rows / 685 plays on
 // 10-21, incl. all of Series 2026-27) had `game_date` NULL, and the Team
 // Checklist's 'contemporary' scope (`play_season = series_season`, play_season
-// derived from game_date) silently dropped them. The chain has all three for
-// every one of those 685 plays (probed 10-21 via Flow REST: 685/685).
+// derived from game_date) silently dropped them. Probed 10-21 via Flow REST over
+// those 685 plays: 488 carry a DateOfMoment in one of THREE formats (ISO
+// "2026-10-20T23:00:00Z" 13, "2022-10-24 00:30:00 +0000 UTC" 284, US
+// "9/27/2026" 191 — month ≤ 10 and day up to 31 across all 191, so M/D, never
+// D/M); 197 OLD plays (ids 3506–6363) carry an EMPTY DateOfMoment and stay NULL
+// (counted as `no_date`, never guessed).
 //
 // HOW. Read editions still missing `game_date` (newest play first, so a launch
 // day's plays go first), take up to MAX_PLAYS_PER_RUN distinct plays, one script
 // per PLAYS_PER_SCRIPT ids, then FILL-ONLY writes keyed on the column being NULL.
 // The date is the UTC calendar date of `DateOfMoment` (`slice(0,10)`) — the
 // convention every already-filled row uses (verified 10-21 on 9 plays across
-// 2022 and 2026). Counts are rows the UPDATEs RETURNED; a script or write error
-// fails the run. A play the chain answers with no date is counted
-// (`play_meta_no_date`) — if that ever grows, those rows sit at the head of the
-// desc-ordered read and the lane must move to a cursor.
-const MAX_PLAYS_PER_RUN = 200
+// 2022 and 2026); a US date carries no time, so it is taken as written. Counts
+// are rows the UPDATEs RETURNED; a script or write error fails the run. ⚠ The
+// dateless plays never leave the read, so the cap must stay ABOVE their count
+// (197 on 10-21) or they choke everything older than them (at 200 the old
+// backlog advanced 3 plays a run). `play_meta.no_date` watches it; if it nears
+// MAX_PLAYS_PER_RUN, move this lane to a cursor.
+const MAX_PLAYS_PER_RUN = 400
 const PLAYS_PER_SCRIPT = 40
 const PLAY_META_CONCURRENCY = 8
 
@@ -255,11 +261,19 @@ access(all) fun main(playIDs: [UInt32]): [[String?]] {
 
 export type PlayMeta = { gameDate: string | null; playType: string | null; playCategory: string | null }
 
-/** `DateOfMoment` → its UTC calendar date ("2026-10-20T23:00:00Z" and
- *  "2022-10-23 02:00:00 +0000 UTC" both → the first 10 chars), or null. */
+/** `DateOfMoment` → a calendar date, or null. ISO forms ("2026-10-20T23:00:00Z",
+ *  "2022-10-23 02:00:00 +0000 UTC") → their UTC date (the first 10 chars); the
+ *  US form "9/27/2026" → "2026-09-27". Anything else (incl. "") → null. */
 export function toGameDate(raw: string | null | undefined): string | null {
   if (!raw) return null
-  const d = raw.trim().slice(0, 10)
+  const t = raw.trim()
+  const us = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(t)
+  if (us) {
+    const [mo, da, yr] = [Number(us[1]), Number(us[2]), Number(us[3])]
+    if (mo < 1 || mo > 12 || da < 1 || da > 31) return null
+    return `${yr}-${String(mo).padStart(2, "0")}-${String(da).padStart(2, "0")}`
+  }
+  const d = t.slice(0, 10)
   return /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null
 }
 
