@@ -476,7 +476,9 @@ from the #70 lane). Join to `offers.offer_id`. See database.md "The Top Shot `of
   (names no single product owns), which links each product. Canonical: the key when several products
   share the name, the name slug when one does (its key 308s). ⚠ Each Panini `sets` row carries exactly
   ONE `editions.set_name` (0 of 2,693 with two, 10-21) — the scheme depends on it. ⚠ `rpc_search_catalog`
-  still reads Panini set hits from `sets_summary` (`20261015052846`), so search links the NAME slug.
+  still reads Panini set hits from `sets_summary` (`20261015052846`), so search links the NAME slug (by design:
+  one hit per name). Row links use `setEntityHref(collection, name, editionKey)`, which rebuilds the product key
+  from `packcard-<product>_` (38,784/38,784 matched).
 - **`collections.is_active` is `true` for Panini since 2026-10-19 (`20261019181627`, #64)** — was `false` by decision 09-25 → 10-19. Every reader that would read Panini from `sales` / `wallet_moments_cache` / `cached_listings` either arms it from Panini's own tables or excludes it by slug (list in known-issues #64). Published status is still the registry's.
   Consumers that admit Panini anyway do it by slug: `rpc_search_catalog` (`20261015042434`).
 - **FMV engine `panini-1.3.0` (2026-10-15):** `confidence` means how closely the edition's last ≤3 sales agree
