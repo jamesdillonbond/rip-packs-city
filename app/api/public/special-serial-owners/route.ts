@@ -29,6 +29,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin as supabase } from "@/lib/supabase"
 import { boardUnavailable } from "@/lib/insights/board-error"
+import { getCollectionUuid } from "@/lib/collections"
+import { resolvePlayerName, singleRetryLabel } from "@/lib/concierge/player-identity"
 import { withBoardBudget } from "@/lib/insights/board-page-fetch"
 import {
   fetchSpecialSerialOwners,
@@ -98,6 +100,27 @@ export async function GET(req: NextRequest) {
     return boardUnavailable(e, "special-serial-owners")
   }
 
+  // #207: the board RPC ILIKEs p_player accent-sensitively. An EMPTY player answer
+  // is retried once with the resolver's spelling when it names one person with one
+  // label, and reported in meta.player_resolved — never a silent swap. A failed
+  // retry keeps the (measured) empty answer.
+  let playerResolved: { from: string; to: string } | null = null
+  if (player && rows.length === 0) {
+    const uuid = getCollectionUuid(collection)
+    const to = uuid ? singleRetryLabel(await resolvePlayerName(supabase, uuid, player), player) : null
+    if (to) {
+      try {
+        const again = await withBoardBudget(
+          fetchSpecialSerialOwners(supabase, { tag, tier, player: to, holder, sort, limit, offset, collection }),
+          "special-serial-owners",
+        )
+        if (again.length > 0) { rows = again; playerResolved = { from: player, to } }
+      } catch (e) {
+        console.error("[public/special-serial-owners] resolved-name retry", e instanceof Error ? e.message : String(e))
+      }
+    }
+  }
+
   // Resolve holder wallet → @username (Item 7, 2026-06-22 audit) so the board
   // reads "@JJLSmith" not a raw 0x…, matching the edition page + recent-sales
   // rows. Service-role read (the page is anon and can't call the auth-gated
@@ -138,6 +161,7 @@ export async function GET(req: NextRequest) {
       total_rows: rows.length,
       elapsed_ms: elapsedMs,
       filters: { collection, tag, tier, player, holder, sort, limit, offset },
+      ...(playerResolved ? { player_resolved: playerResolved } : {}),
     },
     rows,
   })

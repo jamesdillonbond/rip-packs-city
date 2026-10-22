@@ -473,3 +473,43 @@ describe("updateSession — a failed chat_sessions read leaves the row untouched
     expect(spy.writes.chat_sessions ?? []).toEqual([])
   })
 })
+
+// #207 (2026-10-21): concierge_wallet_breakdown and concierge_market_deals ILIKE
+// p_player accent-sensitively, so "luka doncic" matched nothing for "Luka Dončić".
+// Both now take the resolver's spelling when it names one person with one label.
+describe("accent-blind player names reach the ILIKE RPCs in the resolver's spelling (#207)", () => {
+  const ONE = { status: "one", query: "luka doncic", query_slug: "luka-doncic", matched_via: "exact", namesakes: [], aliases: [], identity: null, relations: [], matched_query_as: "exact",
+    player: { id: "p1", name: "Luka Dončić", slug: "luka-doncic", team: "Los Angeles Lakers", edition_count: 103, labels: ["Luka Dončić"] } }
+  const AMBIGUOUS = { status: "ambiguous", query: "luka", query_slug: "luka", candidates: [], note: "two people" }
+  const argsOf = (spy: ReturnType<typeof install>, name: string) => spy.rpcCalls.filter((c) => c.name === name).map((c) => c.args)
+
+  it("wallet breakdown: an unaccented name is sent as the resolved spelling", async () => {
+    const spy = install({
+      "rpc:resolve_player_name": { data: ONE, error: null },
+      "rpc:concierge_wallet_breakdown": { data: { total_moments: 3, groups: [] }, error: null },
+    })
+    script("analyze_wallet_holdings", { walletAddress: HEX, player: "luka doncic" })
+    await POST(post("how many doncic moments do I have"))
+    expect(argsOf(spy, "concierge_wallet_breakdown").map((a) => a?.p_player)).toEqual(["Luka Dončić"])
+  })
+
+  it("wallet breakdown: an ambiguous name keeps the typed text (behaviour unchanged)", async () => {
+    const spy = install({
+      "rpc:resolve_player_name": { data: AMBIGUOUS, error: null },
+      "rpc:concierge_wallet_breakdown": { data: { total_moments: 0, groups: [] }, error: null },
+    })
+    script("analyze_wallet_holdings", { walletAddress: HEX, player: "luka" })
+    await POST(post("my luka moments"))
+    expect(argsOf(spy, "concierge_wallet_breakdown").map((a) => a?.p_player)).toEqual(["luka"])
+  })
+
+  it("team deals board: the player filter is sent as the resolved spelling", async () => {
+    const spy = install({
+      "rpc:resolve_player_name": { data: ONE, error: null },
+      "rpc:concierge_market_deals": { data: { deals: [] }, error: null },
+    })
+    script("search_live_deals", { collectionId: "nba-top-shot", team: "Lakers", player: "luka doncic" })
+    await POST(post("lakers deals on doncic"))
+    expect(argsOf(spy, "concierge_market_deals").map((a) => a?.p_player)).toEqual(["Luka Dončić"])
+  })
+})

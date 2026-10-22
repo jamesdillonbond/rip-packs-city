@@ -85,12 +85,14 @@ function BoardImage({ r, collection }: { r: OwnerRow; collection: BoardCollectio
   );
 }
 
-type ApiResponse = { meta: { fetched_at: string; total_rows: number }; rows: OwnerRow[] };
+type ApiResponse = { meta: { fetched_at: string; total_rows: number; player_resolved?: { from: string; to: string } }; rows: OwnerRow[] };
 
 export default function SpecialSerialOwnersClient() {
   const [rows, setRows] = useState<OwnerRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // #207: the route searched the resolver's spelling ("luka doncic" → "Luka Dončić").
+  const [playerResolved, setPlayerResolved] = useState<{ from: string; to: string } | null>(null);
 
   const [collection, setCollection] = useState<BoardCollection>("nba-top-shot");
   const [tag, setTag] = useState<TagFilter>("all");
@@ -138,6 +140,7 @@ export default function SpecialSerialOwnersClient() {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const j = (await r.json()) as ApiResponse;
         setRows(j.rows ?? []);
+        setPlayerResolved(j.meta?.player_resolved ?? null);
       } catch (e: unknown) {
         if ((e as { name?: string })?.name === "AbortError") return;
         setError(e instanceof Error ? e.message : "Failed to load");
@@ -274,6 +277,12 @@ export default function SpecialSerialOwnersClient() {
           ) : rows.length === 0 ? (
             <div className="rpc-sso-state">No special serials match those filters.</div>
           ) : (
+            <>
+            {playerResolved && (
+              <p role="status" className="rpc-sso-state" style={{ padding: "6px 0" }}>
+                No exact match for &ldquo;{playerResolved.from}&rdquo; — showing {playerResolved.to}.
+              </p>
+            )}
             <div className="rpc-sso-list">
               {rows.map((r, i) => {
                 const href = editionHref(r, collection);
@@ -330,6 +339,7 @@ export default function SpecialSerialOwnersClient() {
                 );
               })}
             </div>
+            </>
           )}
         </section>
 

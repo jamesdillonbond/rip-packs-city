@@ -45,7 +45,7 @@ import {
   type ConciergeErrorMode,
 } from "@/lib/concierge/errors";
 import { editionKeyCollectionMismatch } from "@/lib/concierge/edition-key";
-import { resolvePlayerName, identityContextFor, playerLabelsFor, type PlayerResolution } from "@/lib/concierge/player-identity";
+import { resolvePlayerName, identityContextFor, playerLabelsFor, singleRetryLabel, type PlayerResolution } from "@/lib/concierge/player-identity";
 import {
   listingsStatus,
   listingsNote,
@@ -2074,7 +2074,9 @@ async function executeToolInner(
         const { data: board, error: boardErr } = await (supabase as any).rpc("concierge_market_deals", {
           p_collection_slug: effectiveCollectionId ? (APP_ID_TO_LONG_SLUG[effectiveCollectionId] ?? null) : null,
           p_team: toolInput.team,
-          p_player: toolInput.player ?? null,
+          // #207: the RPC ILIKEs p_player accent-sensitively; search_live_deals is
+          // player-scoped, so use the resolver's spelling when it is one person, one label.
+          p_player: toolInput.player && playerScope.labels?.length === 1 ? playerScope.labels[0] : (toolInput.player ?? null),
           p_tier: toolInput.tier ?? null,
           p_max_price: toolInput.maxPrice ?? null,
           p_min_discount_pct: toolInput.minDiscount ?? null,
@@ -2754,12 +2756,19 @@ async function executeToolInner(
         return JSON.stringify({ status: "error", message: "groupBy must be one of: player, team, set, tier, series." });
       }
 
+      // #207: the RPC ILIKEs p_player accent-sensitively ("luka doncic" missed "Luka
+      // Dončić"). Use the resolver's spelling when it names one person with one label;
+      // an ambiguous, unknown or failed resolution keeps the typed text, as before.
+      let breakdownPlayer: string | null = toolInput.player ?? null;
+      if (breakdownPlayer && collectionUuid) {
+        breakdownPlayer = singleRetryLabel(await resolvePlayerName(supabase, collectionUuid, breakdownPlayer), breakdownPlayer) ?? breakdownPlayer;
+      }
       const { data: breakdown, error: bdErr } = await (supabase as any).rpc("concierge_wallet_breakdown", {
         p_wallet: walletKey,
         p_collection_id: collectionUuid,
         p_group_by: groupBy,
         p_team: toolInput.team ?? null,
-        p_player: toolInput.player ?? null,
+        p_player: breakdownPlayer,
         p_set: toolInput.set ?? null,
         p_tier: toolInput.tier ?? null,
         p_badge: toolInput.badge ?? null,

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { COLLECTION_UUID_BY_SLUG } from "@/lib/collections"
+import { resolvePlayerName, singleRetryLabel } from "@/lib/concierge/player-identity"
 
 // Disney Pinnacle lives in its own tables (pinnacle_sales, pinnacle_editions,
 // pinnacle_fmv_snapshots). When `collection=disney-pinnacle` is requested,
@@ -228,7 +229,29 @@ export async function GET(req: NextRequest) {
         body.dailySeriesVolume = panel("dailySeriesVolume", dailySeriesRes)
         // ⚠ Only when a player was actually searched — an unsearched panel is
         // absent, not failed, and `playerRes` is undefined in that case.
-        if (player) body.playerSearch = panel("playerSearch", playerRes)
+        if (player) {
+          body.playerSearch = panel("playerSearch", playerRes)
+          // #207: search_player_analytics ILIKEs p_player accent-sensitively, so
+          // "luka doncic" read as no sales for Luka Dončić. On an EMPTY (not failed)
+          // answer, retry once with the resolver's spelling when it names one person
+          // with one label — and report it, never a silent swap.
+          const searched = body.playerSearch as unknown[]
+          if (!playerRes?.error && searched.length === 0) {
+            const to = singleRetryLabel(await resolvePlayerName(supabaseAdmin, collectionId, player), player)
+            if (to) {
+              const again = await (supabaseAdmin as any).rpc("search_player_analytics", {
+                p_collection_id: collectionId,
+                p_player: to,
+                p_since: startIso,
+                p_limit: 20,
+              })
+              if (!again.error && Array.isArray(again.data) && again.data.length > 0) {
+                body.playerSearch = again.data
+                body.playerResolved = { from: player, to }
+              }
+            }
+          }
+        }
       }
     }
 

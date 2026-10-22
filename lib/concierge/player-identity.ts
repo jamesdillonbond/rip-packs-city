@@ -180,3 +180,17 @@ export function playerLabelsFor(res: PlayerResolution | null): string[] | null {
   if (labels.length > 0) return labels
   return res.player.name ? [res.player.name] : null
 }
+
+/**
+ * The single spelling a typed name should be (re-)searched with, or null (#207,
+ * 2026-10-21). An RPC that ILIKEs `p_player` is accent-SENSITIVE ("luka doncic"
+ * matches no "Luka Dončić"); the resolver is not. Non-null ONLY when it named
+ * exactly ONE person carrying exactly ONE label that differs from the typed text —
+ * an ambiguous, unknown or failed resolution, or a multi-label person, keeps the
+ * typed text and the caller's existing behaviour.
+ */
+export function singleRetryLabel(res: PlayerResolution | null, typed: string): string | null {
+  const labels = playerLabelsFor(res)
+  if (!labels || labels.length !== 1) return null
+  return labels[0] !== typed.trim() ? labels[0] : null
+}

@@ -352,3 +352,46 @@ describe("GET /api/market-analytics — degraded panels are named, not silently 
     expect(body.playerSearch).toBeUndefined()
   })
 })
+
+// #207 (2026-10-21): search_player_analytics ILIKEs p_player accent-sensitively,
+// so "luka doncic" read as "no sales" for Luka Dončić.
+describe("GET /api/market-analytics — accent-blind player retry (#207)", () => {
+  const ONE = { status: "one", query: "luka doncic", query_slug: "luka-doncic", matched_via: "exact", namesakes: [], aliases: [], identity: null, relations: [], matched_query_as: "exact",
+    player: { id: "p1", name: "Luka Dončić", slug: "luka-doncic", team: null, edition_count: 103, labels: ["Luka Dončić"] } }
+  function installByPlayer(resolve: unknown) {
+    const fx = makeSupabaseFixture({} as never) as any
+    const calls: Array<{ name: string; args: any }> = []
+    const base = fx.rpc.bind(fx)
+    fx.rpc = async (name: string, args: any) => {
+      calls.push({ name, args })
+      if (name === "search_player_analytics") return { data: args.p_player === "Luka Dončić" ? [{ player_name: "Luka Dončić", sales: 9 }] : [], error: null }
+      if (name === "resolve_player_name") return { data: resolve, error: null }
+      return base(name, args)
+    }
+    state.sb = fx
+    return calls
+  }
+
+  it("an empty unaccented search is retried with the resolved spelling and reported", async () => {
+    const calls = installByPlayer(ONE)
+    const body = await (await GET(req("https://t/api/market-analytics?collection=nba-top-shot&detail=full&player=luka%20doncic"))).json()
+    expect(calls.filter((c) => c.name === "search_player_analytics").map((c) => c.args.p_player)).toEqual(["luka doncic", "Luka Dončić"])
+    expect(body.playerSearch).toEqual([{ player_name: "Luka Dončić", sales: 9 }])
+    expect(body.playerResolved).toEqual({ from: "luka doncic", to: "Luka Dončić" })
+  })
+
+  it("a search that matched is untouched: one call, no resolver read, no note", async () => {
+    const calls = installByPlayer(ONE)
+    const body = await (await GET(req("https://t/api/market-analytics?collection=nba-top-shot&detail=full&player=Luka%20Don%C4%8Di%C4%87"))).json()
+    expect(calls.filter((c) => c.name === "search_player_analytics")).toHaveLength(1)
+    expect(calls.some((c) => c.name === "resolve_player_name")).toBe(false)
+    expect(body.playerResolved).toBeUndefined()
+  })
+
+  it("an unresolvable name stays a measured empty, with no note", async () => {
+    installByPlayer({ status: "none", query: "zzz" })
+    const body = await (await GET(req("https://t/api/market-analytics?collection=nba-top-shot&detail=full&player=zzz"))).json()
+    expect(body.playerSearch).toEqual([])
+    expect(body.playerResolved).toBeUndefined()
+  })
+})

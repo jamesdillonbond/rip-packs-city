@@ -905,6 +905,8 @@ function AnalyticsInner() {
   // Distinct from "no results": a failed search must not claim the player has no
   // marketplace activity. See the debounced-search effect below.
   const [playerFailed, setPlayerFailed] = useState(false)
+  // #207: the route searched the resolver's spelling ("luka doncic" → "Luka Dončić").
+  const [playerResolved, setPlayerResolved] = useState<{ from: string; to: string } | null>(null)
 
   const collectionMeta = useMemo(() => getCollection(collection), [collection])
   const accent = collectionMeta?.accent ?? "#EF4444"
@@ -1029,6 +1031,7 @@ function AnalyticsInner() {
       // Drop the previous player's rows BEFORE the new request — they answer a
       // question the user is no longer asking.
       setPlayerResults(null)
+      setPlayerResolved(null)
       try {
         const res = await fetch(
           `/api/market-analytics?collection=${encodeURIComponent(collection)}&period=30d&detail=full&player=${encodeURIComponent(q)}`
@@ -1036,6 +1039,7 @@ function AnalyticsInner() {
         if (res.ok) {
           const j = await res.json()
           setPlayerResults(j.playerSearch ?? [])
+          setPlayerResolved(j.playerResolved ?? null)
         } else {
           setPlayerFailed(true)
         }
@@ -1590,6 +1594,11 @@ function AnalyticsInner() {
                 <div className="py-6 text-center text-sm text-[color:var(--rpc-text-muted)]">{pickEmpty()}</div>
               ) : (
                 <div className="overflow-x-auto">
+                {playerResolved && (
+                  <p role="status" className="pb-2 text-xs text-[color:var(--rpc-text-muted)]">
+                    No exact match for &ldquo;{playerResolved.from}&rdquo; — showing <strong className="text-[color:var(--rpc-text-primary)]">{playerResolved.to}</strong>.
+                  </p>
+                )}
                 <table className="w-full text-sm" style={{ fontFamily: "var(--font-mono)" }}>
                   <thead>
                     <tr className="border-b border-[color:var(--rpc-border)] text-left text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">
