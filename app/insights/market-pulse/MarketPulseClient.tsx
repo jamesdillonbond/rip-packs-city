@@ -32,11 +32,12 @@ function cnt(n: number | null): string {
 
 const WINDOW_LABEL: Record<Win, string> = { "24h": "the last 24 hours", "7d": "the last 7 days", "30d": "the last 30 days" }
 
-/** "Oct 11, 8:21 PM ET" — same zone as the page's "Updated" stamp. */
-function whenEt(iso: string): string | null {
+/** "Oct 11, 8:21 PM PT" — same zone as the page's "Updated" stamp, and as the site's other
+ *  server-rendered stamps (this board alone read ET until the 2026-10-21 sweep). */
+function whenPt(iso: string): string | null {
   const t = Date.parse(iso)
   if (!Number.isFinite(t)) return null
-  return `${new Date(t).toLocaleString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} ET`
+  return `${new Date(t).toLocaleString("en-US", { timeZone: "America/Los_Angeles", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} PT`
 }
 
 /**
@@ -51,7 +52,7 @@ function noSalesLine(r: MarketPulseRow, w: Win): string {
   const head = `No sales indexed in ${WINDOW_LABEL[w]}.`
   if (r.last_sale_at === undefined) return head
   if (r.last_sale_at === null) return `${head} None in the last 30 days either.`
-  const when = whenEt(r.last_sale_at)
+  const when = whenPt(r.last_sale_at)
   return when ? `${head} Last indexed sale: ${when}.` : head
 }
 
@@ -137,7 +138,7 @@ export default function MarketPulseClient({ initialRows, fetchedAt }: { initialR
       <p style={{ marginTop: 18, fontSize: 11, color: "var(--rpc-text-muted)", lineHeight: 1.5 }}>
         Secondary-market sales across all indexed sources (not just one marketplace). Buyers/sellers are distinct wallets in the window.{" "}
         {fetchedAt
-          ? `Updated ${new Date(fetchedAt).toLocaleString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} ET.`
+          ? `Updated ${new Date(fetchedAt).toLocaleString("en-US", { timeZone: "America/Los_Angeles", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} PT.`
           : "Updated — (the read did not complete, so there is no data time to show)."}{" "}
         See the biggest individual sales on <Link href="/insights/top-sales" style={{ color: "var(--rpc-red-text)" }}>Top Sales</Link>.
       </p>

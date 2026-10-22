@@ -64,7 +64,8 @@ describe("MarketPulseClient", () => {
       expect(card).not.toMatch(/\$0(\.00)?\b/)
       expect(card).not.toMatch(/Sales\s*0/)
       expect(card).toContain("No sales indexed in the last 24 hours.")
-      expect(card).toContain("Last indexed sale: Oct 11, 11:21 PM ET.")
+      // Re-pinned 2026-10-21: PT, like every other server-rendered stamp (was ET).
+      expect(card).toContain("Last indexed sale: Oct 11, 8:21 PM PT.")
     })
 
     it("none in 30 days says so; an older payload without the field claims no date", () => {

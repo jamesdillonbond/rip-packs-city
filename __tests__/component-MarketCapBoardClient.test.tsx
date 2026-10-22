@@ -56,6 +56,18 @@ describe("MarketCapBoardClient", () => {
     expect(container.textContent ?? "").not.toMatch(/confidence/i)
   })
 
+  // 2026-10-21 sweep: All Day's held + burned + issuer sat 1.27M short of Minted with nothing
+  // saying the split covered 5,599 of 6,190 editions. The collections table names its coverage.
+  it("names how many editions the supply split covers, beside Minted", () => {
+    const partial: MarketCapBoard = { ...collections, rows: [row({ editions: 6190, editions_supply_known: 5599 })] }
+    const { container } = render(
+      <MarketCapBoardClient initialCollections={partial} initialDrill={emptyDrill} initialFetchedAt="2026-10-03T20:00:00Z" />,
+    )
+    expect(container.textContent).toContain("Split known on")
+    const ts = Array.from(container.querySelectorAll("tr")).find((tr) => tr.textContent?.includes("NBA Top Shot"))!
+    expect(ts.textContent).toMatch(/5,599\s*\/\s*6,190/)
+  })
+
   it("the headline total sums KNOWN caps only and names the unknown count", () => {
     const { container } = render(
       <MarketCapBoardClient initialCollections={collections} initialDrill={emptyDrill} initialFetchedAt="2026-10-03T20:00:00Z" />,

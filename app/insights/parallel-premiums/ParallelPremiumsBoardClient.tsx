@@ -248,7 +248,7 @@ export default function ParallelPremiumsBoardClient({
       <p style={{ marginTop: 18, fontSize: 11, color: "var(--rpc-text-muted)", lineHeight: 1.5 }}>
         Premium = parallel FMV ÷ Standard-base FMV for the same play.{" "}
         {fetchedAt
-          ? `Updated ${new Date(fetchedAt).toLocaleString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} ET.`
+          ? `Updated ${new Date(fetchedAt).toLocaleString("en-US", { timeZone: "America/Los_Angeles", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} PT.`
           : "Updated — (the read did not complete, so there is no data time to show)."}
       </p>
     </main>

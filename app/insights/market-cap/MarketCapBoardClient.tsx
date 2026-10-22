@@ -103,7 +103,7 @@ function Label({ r, group }: { r: MarketCapRow; group: MarketCapGroup }) {
 function CollectionsTable({ rows }: { rows: MarketCapRow[] }) {
   return (
     <div className="rpc-scroll-x" style={{ marginTop: 14, overflowX: "auto" }}>
-      <table style={{ width: "100%", minWidth: 820, borderCollapse: "collapse" }}>
+      <table style={{ width: "100%", minWidth: 900, borderCollapse: "collapse" }}>
         <thead>
           <tr>
             <th style={thStyle("left")}>Collection</th>
@@ -113,6 +113,10 @@ function CollectionsTable({ rows }: { rows: MarketCapRow[] }) {
             <th style={thStyle("right")}>Burned</th>
             <th style={thStyle("right")}>Issuer-held</th>
             <th style={thStyle("right")}>Minted</th>
+            {/* 2026-10-21 sweep: All Day's held + burned + issuer (9.40M) sat 1.27M short of
+                "Minted 10.67M" — those three cover only editions with a known split (5,599 of
+                6,190), Minted covers all. The drill tables named their coverage; this one did not. */}
+            <th style={thStyle("right")} title="Editions with a known burned / issuer-held split, of all editions. Collector-held, Burned and Issuer-held cover only these; Minted covers all.">Split known on</th>
           </tr>
         </thead>
         <tbody>
@@ -127,6 +131,7 @@ function CollectionsTable({ rows }: { rows: MarketCapRow[] }) {
               <td style={tdStyle("right")} className="rpc-mono">{fmtCount(r.burned)}</td>
               <td style={tdStyle("right")} className="rpc-mono">{fmtCount(r.issuer_held)}</td>
               <td style={tdStyle("right")} className="rpc-mono">{fmtCount(r.minted)}</td>
+              <td style={tdStyle("right")} className="rpc-mono"><Coverage r={r} /></td>
             </tr>
           ))}
         </tbody>
