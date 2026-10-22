@@ -115,3 +115,16 @@ touch, where the keyboard would cover half the list.
   `/_next/static/immutable/chunks/*.js` paths out of `content` with `regexp_matches`,
   `net.http_get` each, then `content LIKE '%Type to filter %'`. ⚠ `net.http_get` times out at 5 s by default — pass `timeout_milliseconds := 60000` for heavier API calls (`/api/market-analytics?detail=full` failed without it). Include a NEGATIVE
   control (a string from an unshipped change) so a hit means something.
+- **The live site in a real phone browser:** a Vercel Sandbox reaches www.rippackscity.com
+  (`create_sandboxes_v4`, `networkPolicy: allow-all`; Playwright needs
+  `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64` and `sudo`; run long steps in the
+  background and poll in < 55 s calls). Done 2026-10-22 ~1:10 PM PT on prod `c882416cc`,
+  iPhone 13 at 390 px — all passed, no page errors, width 390 throughout: Top Shot market
+  Team (73 options, "port" → Portland Fire / Portland Trail Blazers, pick stays open,
+  outside tap closes, pill "Remove Team filter: Portland Trail Blazers", `?team=` in the
+  URL), Player box "jokic" → Nikola Jokić; Golazos `?player=alexis sanchez` → "No exact
+  match … showing Alexis Sánchez" + Use this spelling, "sorloth" → Alexander Sørloth;
+  Sniper Team searchable, not inside a `<label>`, closes after a pick. ⚠ Two script traps
+  that read as product bugs: a "tap outside" near the bottom of a phone viewport hits the
+  **bottom nav** and navigates away (tap the page heading instead); the Sniper's filters sit
+  behind **⚙ FILTERS** on a phone, and its Team control appears only once deals load.
