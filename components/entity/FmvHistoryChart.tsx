@@ -20,18 +20,9 @@
 // (the RPC returns `grain` per row, so the label is measured, not assumed).
 
 import { useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react"
-import {
-  Area,
-  Bar,
-  CartesianGrid,
-  ComposedChart,
-  Line,
-  ResponsiveContainer,
-  Scatter,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts"
+import dynamic from "next/dynamic"
+// recharts loads after the page (2026-10-21, Lighthouse): see FmvHistoryPlot.tsx.
+const FmvHistoryPlot = dynamic(() => import("@/components/entity/FmvHistoryPlot"), { ssr: false, loading: () => null })
 import { usdSignFirst } from "@/lib/usd-format"
 
 // OVERLAYS (beta feedback 10259 / 10261 / 10263, 2026-10-03). Opt-in, off by
@@ -423,101 +414,11 @@ export default function FmvHistoryChart({ collectionUrlSlug, routeSlug, initial,
         </div>
       ) : (
         <div style={{ width: "100%", height: 220 }}>
-          {/* recharts warns "width(-1) and height(-1) …" on every SERVER render
-              when BOTH starting dimensions are <= 0 (its default initialDimension
-              is -1 x -1). `minWidth={0}` does not touch either, so it never
-              silenced it (prod logs 10-14: one warn per edition render). A
-              positive starting HEIGHT (the wrapper's fixed 220) does; width stays
-              -1, so the server still draws nothing until the client measures. */}
-          <ResponsiveContainer minWidth={0} initialDimension={{ width: -1, height: 220 }}>
-            <ComposedChart data={series} margin={{ top: 8, right: showVolume ? 4 : 16, bottom: 8, left: 4 }}>
-              <CartesianGrid stroke={grid} strokeDasharray="3 3" />
-              <XAxis
-                dataKey="label"
-                stroke={axis}
-                tick={{ fontSize: 10, fill: tick }}
-                axisLine={false}
-                tickLine={false}
-                minTickGap={32}
-              />
-              <YAxis
-                yAxisId="usd"
-                stroke={axis}
-                tick={{ fontSize: 10, fill: tick }}
-                axisLine={false}
-                tickLine={false}
-                tickFormatter={v => fmtUsd(v as number)}
-                width={48}
-              />
-              {showVolume && (
-                <YAxis
-                  yAxisId="vol"
-                  orientation="right"
-                  stroke={axis}
-                  tick={{ fontSize: 10, fill: tick }}
-                  axisLine={false}
-                  tickLine={false}
-                  allowDecimals={false}
-                  width={32}
-                />
-              )}
-              <Tooltip
-                contentStyle={{
-                  background: tipBg,
-                  border: "1px solid var(--rpc-border)",
-                  borderRadius: 6,
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 11,
-                }}
-                labelStyle={{ color: "var(--rpc-text-secondary)" }}
-                formatter={(value, name, item) => {
-                  const p = item?.payload as { count?: number | null; low?: number | null; high?: number | null; maWindow?: number; buyNote?: string | null } | undefined
-                  if (name === "asp") return [fmtUsd(value as number), "ASP 30d"]
-                  if (name === "range") {
-                    const r = value as unknown as [number, number] | null
-                    return [r ? `${fmtUsd(r[0])}–${fmtUsd(r[1])}` : "—", "Low–high prints"]
-                  }
-                  if (name === "volume") return [String(value), "Sales"]
-                  if (name === "ma") return [fmtUsd(value as number), `MA ${p?.maWindow ?? 7}`]
-                  if (name === "buy") return [p?.buyNote ?? fmtUsd(value as number), "My buy"]
-                  if (name !== "value") return [String(value), String(name)]
-                  if (source === "sales") {
-                    const range =
-                      p?.low != null && p?.high != null && Number(p.low) !== Number(p.high)
-                        ? ` (${fmtUsd(Number(p.low))}–${fmtUsd(Number(p.high))})`
-                        : ""
-                    return [
-                      `${fmtUsd(value as number)}${range}${p?.count ? ` · ${p.count} sale${p.count === 1 ? "" : "s"}` : ""}`,
-                      "Median sale",
-                    ]
-                  }
-                  return [
-                    `${fmtUsd(value as number)}${p?.count ? ` · ${p.count} sales/30d` : ""}`,
-                    "FMV",
-                  ]
-                }}
-              />
-              {/* brand-exception: recharts SVG stroke/fill can't resolve var(--rpc-red) / theme tokens */}
-              {showVolume && (
-                <Bar yAxisId="vol" dataKey="volume" name="volume" fill={light ? "rgba(0,0,0,0.14)" : "rgba(255,255,255,0.14)"} isAnimationActive={false} />
-              )}
-              {showRange && (
-                <Area yAxisId="usd" type="monotone" dataKey="range" name="range" stroke="none" fill="#E03A2F" fillOpacity={0.12} connectNulls isAnimationActive={false} />
-              )}
-              {/* brand-exception: recharts SVG stroke can't resolve var(--rpc-red) */}
-              <Line yAxisId="usd" type="monotone" dataKey="value" name="value" stroke="#E03A2F" strokeWidth={2} dot={false} isAnimationActive={false} />
-              {showAsp && source === "fmv" && (
-                /* brand-exception: recharts SVG stroke can't resolve theme tokens */
-                <Line yAxisId="usd" type="monotone" dataKey="asp" name="asp" stroke={light ? "rgba(0,0,0,0.55)" : "rgba(255,255,255,0.65)"} strokeWidth={1.5} strokeDasharray="4 3" dot={false} connectNulls isAnimationActive={false} />
-              )}
-              {showMa && (
-                <Line yAxisId="usd" type="monotone" dataKey="ma" name="ma" stroke="#F59E0B" strokeWidth={1.5} dot={false} isAnimationActive={false} />
-              )}
-              {showBuys && wallet && (
-                <Scatter yAxisId="usd" dataKey="buy" name="buy" fill="#22C55E" shape="circle" isAnimationActive={false} />
-              )}
-            </ComposedChart>
-          </ResponsiveContainer>
+          {/* The fixed 220 px box is the space reserved for the plot, which loads
+              client-side after the page (FmvHistoryPlot, next/dynamic ssr:false),
+              so nothing shifts when it arrives. The old server render drew
+              nothing here anyway (recharts measures width on the client). */}
+          <FmvHistoryPlot series={series} source={source} showVolume={showVolume} showRange={showRange} showAsp={showAsp} showMa={showMa} showBuys={showBuys} wallet={wallet} light={light} axis={axis} tick={tick} grid={grid} tipBg={tipBg} />
         </div>
       )}
     </div>

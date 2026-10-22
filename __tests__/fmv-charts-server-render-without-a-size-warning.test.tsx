@@ -1,7 +1,11 @@
 // @vitest-environment node
 import { describe, it, expect, vi, afterEach } from "vitest"
 import { renderToString } from "react-dom/server"
+import { readFileSync } from "node:fs"
+import path from "node:path"
+import { stripComments } from "../scripts/lib/strip-comments.mjs"
 import FmvHistoryChart from "@/components/entity/FmvHistoryChart"
+import FmvHistoryPlot from "@/components/entity/FmvHistoryPlot"
 import PinnacleFmvChart from "@/components/pinnacle/PinnacleFmvChart"
 
 // recharts' ResponsiveContainer warns "The width(-1) and height(-1) of chart
@@ -43,7 +47,30 @@ describe("FMV charts server-render without recharts' size warning", () => {
     }))
     let html = ""
     const n = sizeWarnings(() => (html = renderToString(<FmvHistoryChart collectionUrlSlug="nba-top-shot" routeSlug="1-1" initial={initial} />)))
-    // the chart branch rendered (not the empty state), so the container was exercised
+    // 2026-10-21 RE-PIN (premise changed, not inverted): the plot is now
+    // client-only (FmvHistoryPlot via next/dynamic ssr:false) so recharts is off
+    // the page's critical path. The server renders the reserved 220 px box —
+    // the chart branch, not an empty state — and no recharts at all.
+    expect(html).toContain("height:220px")
+    expect(html).not.toMatch(/Building price history|Couldn.{1,8}t load|Too few recorded sales/)
+    expect(html).not.toContain("recharts-responsive-container")
+    expect(n).toBe(0)
+  })
+
+  it("recharts stays off the edition page's critical path: no static import, plot is ssr:false", () => {
+    // A test render cannot tell ssr:true from ssr:false (the lazy component never
+    // resolves in renderToString), so the property is pinned at the source.
+    const src = stripComments(readFileSync(path.join(process.cwd(), "components/entity/FmvHistoryChart.tsx"), "utf8"))
+    expect(src).not.toMatch(/from ["']recharts["']/)
+    expect(src).toMatch(/dynamic\(\s*\(\)\s*=>\s*import\(["']@\/components\/entity\/FmvHistoryPlot["']\)\s*,\s*\{[^}]*ssr:\s*false/)
+  })
+
+  it("FmvHistoryPlot (the recharts half) still starts at the box height — no size warning", () => {
+    const series = days.map((d, i) => ({ label: d, value: 10 + i }))
+    let html = ""
+    const n = sizeWarnings(() => (html = renderToString(
+      <FmvHistoryPlot series={series} source="fmv" showVolume={false} showRange={false} showAsp={false} showMa={false} showBuys={false} wallet={null} light={false} axis="#000" tick="#000" grid="#000" tipBg="#000" />,
+    )))
     expect(html).toContain("recharts-responsive-container")
     expect(n).toBe(0)
   })
