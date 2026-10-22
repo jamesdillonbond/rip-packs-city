@@ -213,53 +213,67 @@ async function registerNewSeries(): Promise<{ registered: number[]; unlabelled: 
   return { registered, unlabelled }
 }
 
-// ── Play metadata (game_date / play_type / play_category) ────────────────────
+// ── Play metadata (game_date / play_type / play_category / jersey_number) ─────
 //
 // WHY (2026-10-21, Series 2026-27 launch day). `catalog_topshot_from_atlas`
-// creates editions WITHOUT `game_date`, `play_type` or `play_category` (Atlas'
-// badge_editions carries none of them), and the only writer that ever filled
-// them from chain — POST /api/backfill-edition-names — has no scheduled caller
-// (and also overwrites `circulation_count` with the raw mint count, which would
-// undo topshot_normalize_circulation, so it must NOT be revived as-is). Result:
-// every Top Shot edition catalogued since ~2026-09-04 (1,460 rows / 685 plays on
-// 10-21, incl. all of Series 2026-27) had `game_date` NULL, and the Team
-// Checklist's 'contemporary' scope (`play_season = series_season`, play_season
-// derived from game_date) silently dropped them. Probed 10-21 via Flow REST over
-// those 685 plays: 488 carry a DateOfMoment in one of THREE formats (ISO
-// "2026-10-20T23:00:00Z" 13, "2022-10-24 00:30:00 +0000 UTC" 284, US
-// "9/27/2026" 191 — month ≤ 10 and day up to 31 across all 191, so M/D, never
-// D/M); 197 OLD plays (ids 3506–6363) carry an EMPTY DateOfMoment and stay NULL
-// (counted as `no_date`, never guessed).
+// creates editions WITHOUT `game_date`, `play_type`, `play_category` or
+// `jersey_number` (Atlas' badge_editions carries none of them). The writers that
+// once filled them from chain do not run: POST /api/backfill-edition-names has no
+// scheduled caller (and overwrites `circulation_count` with the raw mint count,
+// which would undo topshot_normalize_circulation — do NOT revive it as-is), and
+// scripts/backfill-edition-jersey.mjs is a manual script that assumed the ingest
+// writer kept jerseys fresh, which the Atlas catalog bypasses. Result on 10-21:
+// 1,460 Top Shot editions (685 plays, every one catalogued since ~09-04, incl.
+// all of Series 2026-27) had `game_date` NULL, so the Team Checklist's
+// 'contemporary' scope (play_season from game_date) silently dropped them; and
+// 2,235 editions (1,197 plays) had `jersey_number` NULL, which the jersey-serial
+// pricing, the special-serials boards and the jersey deal alerts key on.
 //
-// HOW. Read editions still missing `game_date` (newest play first, so a launch
-// day's plays go first), take up to MAX_PLAYS_PER_RUN distinct plays, one script
-// per PLAYS_PER_SCRIPT ids, then FILL-ONLY writes keyed on the column being NULL.
-// The date is the UTC calendar date of `DateOfMoment` (`slice(0,10)`) — the
-// convention every already-filled row uses (verified 10-21 on 9 plays across
-// 2022 and 2026); a US date carries no time, so it is taken as written. Counts
-// are rows the UPDATEs RETURNED; a script or write error fails the run. ⚠ The
-// dateless plays never leave the read, so the cap must stay ABOVE their count
-// (197 on 10-21) or they choke everything older than them (at 200 the old
-// backlog advanced 3 plays a run). `play_meta.no_date` watches it; if it nears
-// MAX_PLAYS_PER_RUN, move this lane to a cursor.
-const MAX_PLAYS_PER_RUN = 400
+// WHAT THE CHAIN HOLDS (Flow REST probes, 10-21). DateOfMoment comes in THREE
+// formats — ISO "2026-10-20T23:00:00Z", "2022-10-23 02:00:00 +0000 UTC", and US
+// "9/27/2026" (191 plays; month ≤ 10 and day up to 31 across all of them, so M/D,
+// never D/M) — and 197 OLD plays (ids 3506–6363) carry an EMPTY date. JerseyNumber
+// is a 1–3 digit string on 861 of 1,197 jersey-less plays; 336 have none (absent,
+// or the literal "<invalid Value>"). "00" is written as 0, the convention of the
+// jersey script and the ingest writer (the serial > 0 jersey gate ignores 0).
+// Values the chain does not have stay NULL and are counted (`no_date`,
+// `no_jersey`), never guessed.
+//
+// HOW. Page EVERY edition still missing a date or a jersey (`.range()` on the
+// unique `id`, ≤ MAX_READ_PAGES pages), process up to MAX_PLAYS_PER_RUN distinct
+// plays newest first (a launch day's plays always lead), one script per
+// PLAYS_PER_SCRIPT ids, then FILL-ONLY writes keyed on the column being NULL.
+// Counts are rows the UPDATEs RETURNED; a read, script or write error fails the
+// run. ⚠ Plays with nothing on chain never leave the read (405 on 10-21: the
+// union of no-date and no-jersey), so MAX_PLAYS_PER_RUN must stay well ABOVE
+// that population or they choke everything older than them — a first draft
+// capped at 200 advanced the old backlog 3 plays a run. Steady state is ~11
+// script calls a run; if `play_meta.complete` goes false, move to a cursor.
+const MAX_PLAYS_PER_RUN = 1000
 const PLAYS_PER_SCRIPT = 40
 const PLAY_META_CONCURRENCY = 8
+const READ_PAGE = 1000
+const MAX_READ_PAGES = 10
 
-// Verified on mainnet 2026-10-21 through Flow REST (685 plays, 18 calls).
+// Verified on mainnet 2026-10-21 through Flow REST (1,248 plays).
 export const PLAY_META_SCRIPT = `
 import TopShot from 0x0b2a3299cc857e29
 access(all) fun main(playIDs: [UInt32]): [[String?]] {
   let out: [[String?]] = []
   for id in playIDs {
     let m = TopShot.getPlayMetaData(playID: id) ?? {}
-    out.append([m["DateOfMoment"], m["PlayType"], m["PlayCategory"]])
+    out.append([m["DateOfMoment"], m["PlayType"], m["PlayCategory"], m["JerseyNumber"]])
   }
   return out
 }
 `
 
-export type PlayMeta = { gameDate: string | null; playType: string | null; playCategory: string | null }
+export type PlayMeta = {
+  gameDate: string | null
+  playType: string | null
+  playCategory: string | null
+  jersey: number | null
+}
 
 /** `DateOfMoment` → a calendar date, or null. ISO forms ("2026-10-20T23:00:00Z",
  *  "2022-10-23 02:00:00 +0000 UTC") → their UTC date (the first 10 chars); the
@@ -277,6 +291,14 @@ export function toGameDate(raw: string | null | undefined): string | null {
   return /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null
 }
 
+/** `JerseyNumber` → 0–999, or null. Only a 1–3 digit string counts ("00" → 0);
+ *  "", "<invalid Value>" and anything else → null. */
+export function toJersey(raw: string | null | undefined): number | null {
+  if (!raw) return null
+  const t = raw.trim()
+  return /^\d{1,3}$/.test(t) ? Number(t) : null
+}
+
 /** Decode the script's JSON-Cadence `[[String?]]`. Throws on any shape surprise. */
 export function decodePlayMetaArray(decoded: unknown, expected: number): PlayMeta[] {
   const node = decoded as { type?: string; value?: unknown }
@@ -284,8 +306,8 @@ export function decodePlayMetaArray(decoded: unknown, expected: number): PlayMet
     throw new Error("play-meta result is not a JSON-Cadence Array")
   }
   const rows = (node.value as Array<{ type?: string; value?: unknown }>).map((row) => {
-    if (!row || row.type !== "Array" || !Array.isArray(row.value) || row.value.length !== 3) {
-      throw new Error("play-meta row is not a 3-element Array")
+    if (!row || row.type !== "Array" || !Array.isArray(row.value) || row.value.length !== 4) {
+      throw new Error("play-meta row is not a 4-element Array")
     }
     const str = (cell: any): string | null => {
       // Optional(String) → { type: "Optional", value: null | { type: "String", value } }
@@ -294,8 +316,8 @@ export function decodePlayMetaArray(decoded: unknown, expected: number): PlayMet
       if (inner.type !== "String" || typeof inner.value !== "string") throw new Error("play-meta cell is not a String")
       return inner.value.trim() === "" ? null : inner.value
     }
-    const [date, type, category] = (row.value as unknown[]).map(str)
-    return { gameDate: toGameDate(date), playType: type, playCategory: category }
+    const [date, type, category, jersey] = (row.value as unknown[]).map(str)
+    return { gameDate: toGameDate(date), playType: type, playCategory: category, jersey: toJersey(jersey) }
   })
   if (rows.length !== expected) throw new Error(`play-meta script returned ${rows.length} rows for ${expected} plays`)
   return rows
@@ -329,7 +351,9 @@ type PlayMetaResult = {
   editions_dated: number
   editions_typed: number
   editions_categorised: number
+  editions_jerseyed: number
   no_date: number
+  no_jersey: number
   script_calls: number
   script_errors: number
   write_errors: number
@@ -337,39 +361,62 @@ type PlayMetaResult = {
   error: string | null
 }
 
+type Need = { date: boolean; type: boolean; category: boolean; jersey: boolean }
+type MetaRow = {
+  play_id_onchain: unknown
+  game_date: string | null
+  play_type: string | null
+  play_category: string | null
+  jersey_number: number | null
+}
+
 async function fillPlayMetadata(): Promise<PlayMetaResult> {
   const out: PlayMetaResult = {
-    plays: 0, editions_dated: 0, editions_typed: 0, editions_categorised: 0, no_date: 0,
-    script_calls: 0, script_errors: 0, write_errors: 0, complete: true, error: null,
+    plays: 0, editions_dated: 0, editions_typed: 0, editions_categorised: 0, editions_jerseyed: 0,
+    no_date: 0, no_jersey: 0, script_calls: 0, script_errors: 0, write_errors: 0, complete: true, error: null,
   }
-  const { data, error } = await (supabaseAdmin as any)
-    .from("editions")
-    .select("play_id_onchain,play_type,play_category")
-    .eq("collection_id", COLLECTION_ID)
-    .is("game_date", null)
-    .not("play_id_onchain", "is", null)
-    .order("play_id_onchain", { ascending: false })
-    .limit(1000)
-  if (error) throw new Error(`play-meta editions read failed: ${error.message}`)
-  const rows = (data ?? []) as { play_id_onchain: unknown; play_type: string | null; play_category: string | null }[]
 
-  // Per play: does any NULL-date edition also lack a type / a category?
-  const needs = new Map<number, { type: boolean; category: boolean }>()
+  // Every edition still missing a date or a jersey, paged on the unique id.
+  const rows: MetaRow[] = []
+  let readComplete = false
+  for (let page = 0; page < MAX_READ_PAGES; page++) {
+    const { data, error } = await (supabaseAdmin as any)
+      .from("editions")
+      .select("id,play_id_onchain,game_date,play_type,play_category,jersey_number")
+      .eq("collection_id", COLLECTION_ID)
+      .not("play_id_onchain", "is", null)
+      .or("game_date.is.null,jersey_number.is.null")
+      .order("id", { ascending: true })
+      .range(page * READ_PAGE, page * READ_PAGE + READ_PAGE - 1)
+    if (error) throw new Error(`play-meta editions read failed: ${error.message}`)
+    const got = (data ?? []) as MetaRow[]
+    rows.push(...got)
+    if (got.length < READ_PAGE) { readComplete = true; break }
+  }
+
+  // Per play: which columns does at least one of its editions still lack?
+  const needs = new Map<number, Need>()
   for (const r of rows) {
     const p = Number(r.play_id_onchain)
     if (!Number.isInteger(p) || p <= 0) continue
-    const n = needs.get(p) ?? { type: false, category: false }
+    const n = needs.get(p) ?? { date: false, type: false, category: false, jersey: false }
+    if (r.game_date == null) n.date = true
     if (r.play_type == null) n.type = true
     if (r.play_category == null) n.category = true
+    if (r.jersey_number == null) n.jersey = true
     needs.set(p, n)
   }
-  const all = [...needs.keys()]
+  const all = [...needs.keys()].sort((a, b) => b - a)
   const plays = all.slice(0, MAX_PLAYS_PER_RUN)
   out.plays = plays.length
-  out.complete = all.length <= MAX_PLAYS_PER_RUN && rows.length < 1000
+  out.complete = readComplete && all.length <= MAX_PLAYS_PER_RUN
   if (plays.length === 0) return out
 
-  const fill = async (playId: number, col: "game_date" | "play_type" | "play_category", value: string) => {
+  const fill = async (
+    playId: number,
+    col: "game_date" | "play_type" | "play_category" | "jersey_number",
+    value: string | number,
+  ) => {
     const { data: upd, error: upErr } = await (supabaseAdmin as any)
       .from("editions")
       .update({ [col]: value })
@@ -402,8 +449,14 @@ async function fillPlayMetadata(): Promise<PlayMetaResult> {
     chunk.forEach((playId, k) => {
       const m = meta[k]
       const need = needs.get(playId)!
-      if (!m.gameDate) out.no_date++
-      else tasks.push(async () => { const n = await fill(playId, "game_date", m.gameDate!); out.editions_dated += n })
+      if (need.date) {
+        if (!m.gameDate) out.no_date++
+        else tasks.push(async () => { const n = await fill(playId, "game_date", m.gameDate!); out.editions_dated += n })
+      }
+      if (need.jersey) {
+        if (m.jersey == null) out.no_jersey++
+        else tasks.push(async () => { const n = await fill(playId, "jersey_number", m.jersey!); out.editions_jerseyed += n })
+      }
       if (need.type && m.playType) tasks.push(async () => { const n = await fill(playId, "play_type", m.playType!); out.editions_typed += n })
       if (need.category && m.playCategory) tasks.push(async () => { const n = await fill(playId, "play_category", m.playCategory!); out.editions_categorised += n })
     })
@@ -522,7 +575,7 @@ async function run(request: NextRequest) {
     let playMetaError: string | null = null
     try {
       playMeta = await fillPlayMetadata()
-      editionsWritten += playMeta.editions_dated
+      editionsWritten += playMeta.editions_dated + playMeta.editions_jerseyed
       if (playMeta.error) {
         ok = false
         errMsg = errMsg ?? playMeta.error
