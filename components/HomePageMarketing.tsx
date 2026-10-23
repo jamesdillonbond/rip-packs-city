@@ -481,7 +481,7 @@ export default function HomePageMarketing() {
           <div className="rpc-home-eyebrow">◈ FREE INTELLIGENCE · NO SIGNUP ◈</div>
           <h2 className="rpc-home-h2">THINGS TOP SHOT WON&rsquo;T TELL YOU</h2>
           <p className="rpc-home-sub">
-            The Lock-Rate Squeeze Board, Pack Reality, the 2025 Rookie Index, First-Mint Trophy Tracker, and the Cross-Collection Whale Map — the math the marketplace structurally won&rsquo;t ship. Free, no account needed.
+            The Lock-Rate Squeeze Board, Pack Reality, the Rookie Index (2025 and 2026 classes), First-Mint Trophy Tracker, and the Cross-Collection Whale Map — the math the marketplace structurally won&rsquo;t ship. Free, no account needed.
           </p>
           <Link
             href="/insights"

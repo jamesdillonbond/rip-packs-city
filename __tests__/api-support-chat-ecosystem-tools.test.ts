@@ -223,6 +223,14 @@ describe("concierge — market-pulse / rookies", () => {
     await POST(post("rookies"))
     expect(f.calls.find((c) => c.url.includes("/rookies"))!.url).toContain("sort=mint_desc")
   })
+  it("get_rookies forwards class=2026 (this season's rookies) beside sort", async () => {
+    const f = stubFetch([jsonRoute("/api/public/insights/rookies", { rows: [] })])
+    script("get_rookies", { class: "2026", sort: "gmv" })
+    await POST(post("this year's rookies"))
+    const url = f.calls.find((c) => c.url.includes("/rookies"))!.url
+    expect(url).toContain("class=2026")
+    expect(url).toContain("sort=gmv")
+  })
 })
 
 describe("concierge — get_premiums enum dispatch", () => {
