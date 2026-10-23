@@ -46,9 +46,7 @@
 -- estimate's on two consecutive weekly reads (recompute the uncapped figure from
 -- `ask_proxy_fmv`, which this guard leaves untouched) → revert.
 --
--- anon-exec: intentional — trigger function (RETURNS trigger), never callable through
--- PostgREST; mirrors fmv_snapshots_cap_closed_market_confidence
--- (fmv_snapshots_cap_allday_ask_only_to_recent_sales)
+-- anon-exec: intentional — trigger function (RETURNS trigger), never callable through PostgREST; its default grant was revoked in 20261023045044 the same minute (fmv_snapshots_cap_allday_ask_only_to_recent_sales)
 --
 -- REVERT: remove the trigger fmv_snapshots_cap_allday_ask_only_to_recent_sales_trg from
 --   public.fmv_snapshots and then the function fmv_snapshots_cap_allday_ask_only_to_recent_sales()
