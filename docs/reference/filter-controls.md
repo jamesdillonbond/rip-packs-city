@@ -94,6 +94,36 @@ touch, where the keyboard would cover half the list.
      Use this spelling, and the Sniper pick that no longer re-opens; page width 390
      throughout. ⚠ Without the app's CSS the harness reported a false 400 px overflow —
      compile `app/globals.css` (Tailwind v4 PostCSS) into any such harness.
+   - **Platform-wide (2026-10-22, Trevor: "apply all of this logic throughout the
+     platform").** One rule, three tools, all in `lib/search/`:
+     - **a person's name** → `retryEmptyPlayerSearch` (`player-search-retry.ts`): an EMPTY,
+       non-failed answer is retried once with `resolve_player_name`'s single label
+       (`singleRetryLabel`; a cross-collection read retries only when every collection
+       agrees), reported as `player_resolved` / `playerResolved` and shown with
+       `components/filters/PlayerResolvedNote`. On: the public Deals, First Mint,
+       Squeeze, Offer Spread, Candy MLB and Panini Squeeze boards (API + page note),
+       `/api/edition-search`, the concierge's listing search, special-serial listings,
+       edition-floor search and `search-deals`. A retry that fails or throws leaves the
+       original empty answer — it may only ever improve one.
+     - **text that is not a person** (pack titles, Pinnacle character names) →
+       `accentInsensitiveRegex` / `retryEmptyWithAccentRegex` (`accent-regex.ts`): each
+       letter becomes the class of every character `foldForMatch` folds to it, joiners
+       optional, run with PostgREST `imatch` (`~*`). EXACT — no over-match — so a page's
+       count, sort and paging stay right ("clasico" → 23 "ElClásico" packs; "walle" →
+       WALL•E). On: `/api/packs` search and the four Pinnacle concierge searches.
+     - **names a user types that are later compared for EQUALITY** →
+       `canonicalPlayerNames`: a deal alert's `player_names` match `lower(x) = lower(…)`
+       when the alert runs, so a typed "luka doncic" would never fire. Saved as the
+       resolver's spelling, and the page says which. The Alerts player typeahead leads
+       with the resolver's names and matches any word's start ("jok" → Nikola Jokić).
+     - ⚠ **Rebuild the query for the retry.** A supabase-js builder mutates in place: a
+       second `.ilike` on the same builder STACKS on the first and the retry can never
+       match. Every retry above takes a `run(…)` that builds afresh.
+     - **Guards:** `__tests__/a-player-search-survives-a-missing-accent.test.ts` (every
+       `player_name` / `character_name` ilike and non-null `p_player` sits within 40 lines
+       of a retry/resolver, or is SANCTIONED with a reason — per occurrence), and the
+       widened `a-search-box-matches-accented-names.test.ts` (`.toLowerCase().includes(`
+       with ANY non-literal argument). Both proved with planted defects.
 6b. **NFD does not decompose every accented letter.** ø ł đ ħ ı ß æ œ þ survive
    `normalize("NFD")` + stripping marks, so "sorloth" missed Alexander Sørloth; the
    catalog also stores the curly ’ ("Aiden O’Neill") and joiners (WALL•E).
