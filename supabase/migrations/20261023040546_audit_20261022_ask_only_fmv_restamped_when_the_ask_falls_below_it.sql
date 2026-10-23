@@ -28,6 +28,8 @@
 -- BASE: 20261004030511_audit_20261003_run_durations_no_longer_wrap_at_60_seconds.sql — live prosrc md5
 -- 54b87a10fa45a1c012be6ea19c471950 re-read 2026-10-22 ~8:58 PM PT, equal to that file's stamped md5.
 --
+-- POST-APPLY md5 of prosrc: drain_fmv_cold_tail 4bfb47bea63c43b8e31dbf6cb004b348 (applied 2026-10-22 ~9:06 PM PT as 20261023040546)
+--
 -- anon-exec: unchanged (revoked; service_role only) — CREATE OR REPLACE preserves the ACL (drain_fmv_cold_tail)
 --
 -- REVERT: re-apply the drain_fmv_cold_tail block of the base migration named above.
