@@ -12,9 +12,13 @@
 --   R5. No answer: kept pending (not re-dispatched) for 10 min, then closed 'failed'.
 --   R7. Requests are kept as the record (status, result, finished_at).
 --   R6. A call carries <= 1,000 ids and a run sends <= 10 calls.
+--   R8. (2026-10-24, #181) While mainnet24 is dark, a floor probe HELD at the live root is retired:
+--       status 'failed', last_error naming the pre-mainnet27 reason, finished_at set; the held record stays.
+--   R9. Same for a floor probe whose whole interval lies below the live root (hi <= 130,290,700);
+--       an in-flight floor probe and non-floor probes are untouched; the run reports retired_pre_mainnet27.
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20261010231932_audit_20261010_chain_arrival_refloors_on_the_live_root_while_mainnet24_is_dark.sql).
+-- (supabase/migrations/20261023213517_audit_20261023_chain_arrival_retires_pre_mainnet27_lookups.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -78,6 +82,9 @@ access(all) fun main(owner: Address, ids: [UInt64]): [UInt64] {
 }';
   r record; v_resp record; v_held bigint[]; v_req bigint; v_dark boolean;
   v_collected int := 0; v_moved int := 0; v_kept int := 0; v_failed int := 0; v_dispatched int := 0;
+  v_retired int := 0;
+  -- 2026-10-24 (#181): the reason a retired probe carries, worded for the pack-history surface
+  v_retired_why constant text := 'arrived before 2025-10-22 (mainnet27 root): Flow retired the mainnet24-26 access nodes, so the arrival is not traceable (#181)';
   v_last_error text; v_n int;
 BEGIN
   -- collect
@@ -127,6 +134,19 @@ BEGIN
   SELECT EXISTS (SELECT 1 FROM public.chain_arrival_dark_nodes
                   WHERE node LIKE '%mainnet24%' AND cleared_at IS NULL) INTO v_dark;
   IF v_dark THEN
+    -- 2026-10-24 (#181; decided 10-10 "revisit if still dark on 10-24", re-read 10-14 / 10-22 / 10-23:
+    -- mainnet24/25/26 have no DNS record). The pre-mainnet27 lookups are RETIRED: a floor probe that
+    -- is HELD at the live root (it arrived inside the dark window) or whose whole interval lies below
+    -- it is closed 'failed' with the reason, never parked for a node that is gone. The held record
+    -- stays (the chain fact that settled it). Only while mainnet24 is parked dark: if Flow ever
+    -- serves those heights again, new probes floor-check as before; the retired ones are not re-opened.
+    UPDATE public.chain_arrival_probes p
+       SET status = 'failed', last_error = v_retired_why, finished_at = now(), request_id = NULL
+     WHERE p.status = 'floor' AND p.request_id IS NULL
+       AND (p.hi <= v_live
+            OR EXISTS (SELECT 1 FROM public.chain_arrival_refloor_held h
+                        WHERE h.wallet = p.wallet AND h.nft_id = p.nft_id));
+    GET DIAGNOSTICS v_retired = ROW_COUNT;
     FOR r IN
       SELECT q.wallet, array_agg(q.nft_id ORDER BY q.nft_id) AS ids
         FROM (SELECT p.wallet, p.nft_id,
@@ -163,11 +183,12 @@ BEGIN
     (v_failed = 0), v_last_error,
     'nba_top_shot', NULL, NULL,
     jsonb_build_object('collected', v_collected, 'moved_to_bisect', v_moved, 'held_at_live_root', v_kept,
-                       'failed', v_failed, 'dispatched', v_dispatched, 'mainnet24_dark', v_dark));
+                       'failed', v_failed, 'dispatched', v_dispatched, 'mainnet24_dark', v_dark,
+                       'retired_pre_mainnet27', v_retired));
 
   RETURN jsonb_build_object('ok', v_failed = 0, 'collected', v_collected, 'moved_to_bisect', v_moved,
                             'held_at_live_root', v_kept, 'failed', v_failed, 'dispatched', v_dispatched,
-                            'mainnet24_dark', v_dark, 'last_error', v_last_error);
+                            'mainnet24_dark', v_dark, 'retired_pre_mainnet27', v_retired, 'last_error', v_last_error);
 END;
 $function$;
 -- <<< END verbatim <<<
@@ -199,12 +220,15 @@ BEGIN
   v := public.run_chain_arrival_refloor();
   PERFORM _assert_eq((SELECT count(*) FROM net.calls)::text, '0', 'R1: no dispatch while mainnet24 is not dark');
   PERFORM _assert_eq(v->>'mainnet24_dark', 'false', 'R1: reports mainnet24 not dark');
+  PERFORM _assert_eq(v->>'retired_pre_mainnet27', '0', 'R1: nothing is retired while mainnet24 is not dark');
+  PERFORM _assert((SELECT count(*) = 0 FROM public.chain_arrival_probes WHERE status = 'failed'), 'R1: no probe retired while mainnet24 is not dark');
 
   -- R2: dark -> one call per wallet, only eligible ids, at the live root on mainnet27
   INSERT INTO public.chain_arrival_dark_nodes (node, dark_until) VALUES
     ('http://access-001.mainnet24.nodes.onflow.org:8070', now() + interval '1 hour');
   v := public.run_chain_arrival_refloor();
   PERFORM _assert_eq(v->>'dispatched', '2', 'R2: one call per wallet');
+  PERFORM _assert_eq(v->>'retired_pre_mainnet27', '1', 'R9: the first dark run retires the probe whose interval lies below the live root');
   v_req := pg_temp.req_of('0xaa');
   PERFORM _assert(pg_temp.call_ids(v_req) = ARRAY[1, 2]::bigint[],
                   'R2: asks only floor probes not in flight with hi above the live root');
@@ -228,12 +252,20 @@ BEGIN
   PERFORM _assert((SELECT lo = 130290700 AND status = 'bisect' AND attempts = 0 AND last_error IS NULL
                      FROM public.chain_arrival_probes WHERE nft_id = 1),
                   'R3: not held at the live root -> bisect from 130,290,700');
-  PERFORM _assert((SELECT status = 'floor' AND lo = 65300000 FROM public.chain_arrival_probes WHERE nft_id = 2),
-                  'R3: held at the live root -> stays floor');
+  PERFORM _assert((SELECT status = 'failed' AND finished_at IS NOT NULL AND request_id IS NULL
+                      AND last_error LIKE 'arrived before 2025-10-22 (mainnet27 root)%#181)'
+                     FROM public.chain_arrival_probes WHERE nft_id = 2),
+                  'R8: held at the live root -> retired as failed with the pre-mainnet27 reason (2026-10-24, #181)');
   PERFORM _assert(EXISTS (SELECT 1 FROM public.chain_arrival_refloor_held WHERE wallet = '0xaa' AND nft_id = 2),
-                  'R3: held id recorded');
-  PERFORM _assert((SELECT status = 'floor' AND lo = 65300000 FROM public.chain_arrival_probes WHERE nft_id = 3),
-                  'R3: a probe with hi in the dark window is untouched');
+                  'R3: held id recorded (the record outlives the retirement)');
+  PERFORM _assert((SELECT status = 'failed' AND last_error LIKE 'arrived before 2025-10-22%' AND lo = 65300000
+                     FROM public.chain_arrival_probes WHERE nft_id = 3),
+                  'R9: a floor probe whose whole interval lies below the live root is retired too');
+  PERFORM _assert((SELECT status = 'floor' AND request_id = 77 FROM public.chain_arrival_probes WHERE nft_id = 4),
+                  'R9: an in-flight floor probe is left to its call');
+  PERFORM _assert((SELECT status = 'bisect' FROM public.chain_arrival_probes WHERE nft_id = 5),
+                  'R9: a bisect probe is untouched');
+  PERFORM _assert_eq(v->>'retired_pre_mainnet27', '1', 'R8: this run retired the held id (the below-root one went on the first dark run)');
   PERFORM _assert_eq(v->>'moved_to_bisect', '1', 'R3: the count is rows moved');
   PERFORM _assert_eq(v->>'ok', 'false', 'R4: a non-200 answer fails the run');
   PERFORM _assert_eq(v->>'failed', '1', 'R4: one failure');
