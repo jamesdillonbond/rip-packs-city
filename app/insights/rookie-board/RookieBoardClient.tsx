@@ -3,7 +3,8 @@
 // app/insights/rookie-board/RookieBoardClient.tsx
 //
 // Client interactivity for the public Rookie Edition Board. The server component
-// (page.tsx) fetches the whole board (~431 rows) and passes it as initialRows,
+// (page.tsx) fetches the whole board (both rookie classes, ~560 rows; a CLASS tab
+// filters it, default 2025) and passes it as initialRows,
 // so the grouped per-parallel tables + drill-down links render in the raw server
 // HTML (crawlable). This component layers the Board/Burn view toggle and the
 // tier/parallel filters on top, filtering in-memory (the dataset is small).
@@ -22,7 +23,7 @@ import { sectionEmptyCopy } from "@/lib/entity/section-empty-copy"
 import Link from "next/link"
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
 import type { RookieEditionRow as Row } from "@/lib/rookie-edition-board"
-import { PARALLEL_ORDER } from "@/lib/rookie-edition-board"
+import { PARALLEL_ORDER, ROOKIE_CLASSES, type RookieClass } from "@/lib/rookie-edition-board"
 import { usdSignFirst } from "@/lib/usd-format"
 import { accentText } from "@/lib/accent-text"
 
@@ -248,18 +249,21 @@ export default function RookieBoardClient({ initialRows, initialFetchedAt, initi
   const [view, setView] = useState<ViewMode>("board")
   const [tier, setTier] = useState<TierFilter>("all")
   const [parallel, setParallel] = useState<ParallelFilter>("all")
+  const [cls, setCls] = useState<RookieClass>("2025")
 
   const rows = initialRows
 
   // Filter once; both views read the filtered set.
   const filtered = useMemo(() => {
     return rows.filter((r) => {
+      // A row with no class predates the 2026 class (every such row was 2025).
+      if ((r.rookie_class ?? "2025") !== cls) return false
       if (tier !== "all" && normalizeTier(r.tier) !== tier) return false
       if (parallel === "standard" && (r.parallel_id ?? 0) !== 0) return false
       if (parallel === "parallels" && (r.parallel_id ?? 0) === 0) return false
       return true
     })
-  }, [rows, tier, parallel])
+  }, [rows, tier, parallel, cls])
 
   // Top chases: highest-FMV editions across the (filtered) board, parallels
   // included — the Galactic/Omega chases are the headline grails.
@@ -331,9 +335,9 @@ export default function RookieBoardClient({ initialRows, initialFetchedAt, initi
   const shareUrl = `${SITE_URL}/insights/rookie-board`
   const tweetIntent = useMemo(() => {
     const text =
-      "Every 2025 Top Shot rookie edition broken out by parallel — per-parallel FMV, plus burn and lock rates.\n\nRookie Board:"
+      `Every ${cls} Top Shot rookie edition broken out by parallel — per-parallel FMV, plus burn and lock rates.\n\nRookie Board:`
     return `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(shareUrl)}`
-  }, [shareUrl])
+  }, [shareUrl, cls])
   const [copied, setCopied] = useState(false)
   const copyLink = async () => {
     try {
@@ -358,7 +362,7 @@ export default function RookieBoardClient({ initialRows, initialFetchedAt, initi
               is the per-parallel split itself, so say that. (2026-08-01)
               2026-10-20: the "$389 Standard vs $1,794 Jukebox" example was a typed-in
               sample from an old dataset; no row on the page showed either price. */}
-          Every 2025 NBA Top Shot rookie edition broken out by <strong>parallel</strong> — Standard,
+          Every {cls} NBA Top Shot rookie edition broken out by <strong>parallel</strong> — Standard,
           Hexwave, Jukebox, Galactic, Omega — each with its <strong>own FMV</strong>,
           circulation, ask, burn and lock rate. One blended average per moment hides how far apart
           the parallels of the same Moment trade.
@@ -371,7 +375,7 @@ export default function RookieBoardClient({ initialRows, initialFetchedAt, initi
             Updated <FreshnessStamp iso={initialFailed ? null : initialFetchedAt} />
           </span>
           <span className="rpc-rb-meta-sep">·</span>
-          <span className="rpc-rb-meta">NBA Top Shot · 2025 class</span>
+          <span className="rpc-rb-meta">NBA Top Shot · {cls} class</span>
           <span className="rpc-rb-meta-sep">·</span>
           <span className="rpc-rb-meta">No signup</span>
         </div>
@@ -418,6 +422,21 @@ export default function RookieBoardClient({ initialRows, initialFetchedAt, initi
       ) : null}
 
       <section className="rpc-rb-controls" aria-label="Filters">
+        <div className="rpc-rb-pill-group" role="tablist" aria-label="Rookie class">
+          <span className="rpc-rb-pill-label">CLASS</span>
+          {ROOKIE_CLASSES.map((c) => (
+            <button
+              key={c}
+              role="tab"
+              aria-selected={cls === c}
+              className={`rpc-rb-pill ${cls === c ? "rpc-rb-pill-active" : ""}`}
+              onClick={() => setCls(c)}
+            >
+              {c} class
+            </button>
+          ))}
+        </div>
+
         <div className="rpc-rb-pill-group" role="tablist" aria-label="View">
           <span className="rpc-rb-pill-label">VIEW</span>
           <button
@@ -519,7 +538,7 @@ export default function RookieBoardClient({ initialRows, initialFetchedAt, initi
         <div className="rpc-rb-method">
           <h3 className="rpc-rb-h3">What this board is</h3>
           <p>
-            The 2025 NBA Top Shot rookie class, every edition split out by <strong>parallel</strong> rather
+            The {cls} NBA Top Shot rookie class, every edition split out by <strong>parallel</strong> rather
             than rolled into one number. Each printing carries its own <strong>fair market value</strong>,
             priced from that printing&apos;s own sales rather than the moment&apos;s blended average, so you
             can see exactly how much a Hexwave or Jukebox commands over the Standard.

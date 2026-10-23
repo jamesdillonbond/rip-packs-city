@@ -222,9 +222,9 @@ export const INSIGHTS_BOARDS: readonly InsightsBoard[] = [
   {
     slug: "rookie-board",
     kind: "dataset",
-    name: "Rookie Board — 2025 Class",
+    name: "Rookie Board — 2025 & 2026 Classes",
     description:
-      "Breaks every 2025 NBA Top Shot rookie edition out by parallel with per-parallel FMV, circulation, ask, burn and lock rates from real on-chain data.",
+      "Breaks every 2025 and 2026 NBA Top Shot rookie edition out by parallel with per-parallel FMV, circulation, ask, burn and lock rates from real on-chain data.",
     publicApi: true,
   },
   {

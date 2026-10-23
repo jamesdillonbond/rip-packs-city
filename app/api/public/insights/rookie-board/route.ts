@@ -13,12 +13,14 @@ import { supabaseAdmin as supabase } from "@/lib/supabase"
 import { boardUnavailable } from "@/lib/insights/board-error"
 import {
   fetchRookieEditionBoard,
+  type RookieClass,
   type RookieBoardMode,
   type RookieSortKey,
 } from "@/lib/rookie-edition-board"
 
 import { boardRowMeta } from "@/lib/insights/board-meta"
 const VALID_TIERS = new Set(["COMMON", "RARE", "FANDOM", "LEGENDARY", "ULTIMATE"])
+const VALID_CLASSES = new Set<string>(["2025", "2026"])
 const VALID_SORTS = new Set<RookieSortKey>(["fmv", "burned", "burn_rate", "circulation", "lock_rate"])
 
 export async function GET(req: NextRequest) {
@@ -45,6 +47,13 @@ export async function GET(req: NextRequest) {
     parallelId = p
   }
 
+  // ?class=2025|2026 narrows to one rookie class; absent = both. Unknown = 400.
+  const classRaw = sp.get("class")?.trim() || null
+  if (classRaw && !VALID_CLASSES.has(classRaw)) {
+    return NextResponse.json({ error: `class must be one of ${[...VALID_CLASSES].join(",")}` }, { status: 400 })
+  }
+  const rookieClass = classRaw as RookieClass | null
+
   const player = sp.get("player")?.trim() || null
   const set = sp.get("set")?.trim() || null
 
@@ -52,12 +61,13 @@ export async function GET(req: NextRequest) {
   // Default sort depends on mode: burn rankings lead with burn count.
   const sort: RookieSortKey = VALID_SORTS.has(sortRaw) ? sortRaw : mode === "burn" ? "burned" : "fmv"
 
-  // Whole board is ~431 rows; allow fetching all of it for the grouped view.
-  const limit = Math.max(1, Math.min(500, Number(sp.get("limit")) || 500))
+  // The whole board (551 rows on 2026-10-22, both classes) must fit in one read
+  // for the grouped view; 1000 is PostgREST's own cap. boardRowMeta flags a hit.
+  const limit = Math.max(1, Math.min(1000, Number(sp.get("limit")) || 1000))
 
   let rows
   try {
-    rows = await fetchRookieEditionBoard(supabase, { mode, tier, parallelId, player, set, sort, limit })
+    rows = await fetchRookieEditionBoard(supabase, { mode, tier, parallelId, player, set, rookieClass, sort, limit })
   } catch (e) {
     return boardUnavailable(e, "insights/rookie-board")
   }
@@ -74,7 +84,7 @@ export async function GET(req: NextRequest) {
       mode,
       ...boardRowMeta(rows.length, limit),
       elapsed_ms: elapsedMs,
-      filters: { mode, tier, parallel_id: parallelId, player, set, sort, limit },
+      filters: { mode, tier, parallel_id: parallelId, player, set, class: rookieClass, sort, limit },
     },
     rows,
   })

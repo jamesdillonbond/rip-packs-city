@@ -1,7 +1,7 @@
 // app/insights/rookie-board/page.tsx
 //
 // Server component for the public Rookie Edition Board. Fetches the whole board
-// (~431 rows) once and passes it to the client, so the grouped per-parallel
+// (both rookie classes, ~560 rows) once and passes it to the client, so the grouped per-parallel
 // tables + drill-down links render in the raw server HTML (crawlable — the SEO
 // thesis). The client layers grouping, mode/tier/parallel filters, and the burn-
 // rankings view on top without refetching (the dataset is small enough to filter
@@ -31,7 +31,9 @@ export default async function RookieBoardPage() {
       player: null,
       set: null,
       sort: "fmv",
-      limit: 500,
+      // ⚠ Was 500 while the view held 551 rows (2026-10-22): the board silently
+      // dropped its 51 lowest-FMV editions. 1000 is PostgREST's cap.
+      limit: 1000,
     }),
   )
   return (

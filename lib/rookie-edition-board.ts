@@ -3,8 +3,9 @@
 // Shared config + fetch for the public Rookie Edition Board
 // (/insights/rookie-board). One backing view, security_invoker=on, anon-granted:
 //
-//   topshot_rookie_edition_board — one row per 2025-rookie edition (set ×
-//   parallel), spine = editions, scoped to topshot_2025_rookie_players.
+//   topshot_rookie_edition_board — one row per rookie edition (set ×
+//   parallel), spine = editions, scoped to the 2025 and (since 2026-10-22)
+//   2026 classes; `rookie_class` names the class.
 //
 // Data-honesty contract (must be respected by every renderer):
 //   has_full_economics=true  → BASE editions only. low_ask / highest_offer /
@@ -50,7 +51,12 @@ export type RookieEditionRow = {
   has_full_economics: boolean
   thumbnail_url: string | null
   video_url: string | null
+  /** '2025' | '2026' — the rookie class. Optional: a row without it predates the 2026 class (all 2025). */
+  rookie_class?: string | null
 }
+
+export type RookieClass = "2025" | "2026"
+export const ROOKIE_CLASSES: readonly RookieClass[] = ["2025", "2026"]
 
 // Parallel display order (Standard first, then ascending rarity). Mirrors the
 // on-chain subedition ids: 0 Standard, 17 Blockchain, 18 Hardcourt, 19 Hexwave,
@@ -87,6 +93,7 @@ const COLS = [
   "has_full_economics",
   "thumbnail_url",
   "video_url",
+  "rookie_class",
 ].join(", ")
 
 function num(v: unknown): number | null {
@@ -118,6 +125,7 @@ export function normalizeRow(raw: Record<string, unknown>): RookieEditionRow {
     has_full_economics: raw.has_full_economics === true,
     thumbnail_url: (raw.thumbnail_url as string) ?? null,
     video_url: (raw.video_url as string) ?? null,
+    rookie_class: (raw.rookie_class as string) ?? null,
   }
 }
 
@@ -127,6 +135,7 @@ export type FetchOpts = {
   parallelId?: number | null
   player?: string | null
   set?: string | null
+  rookieClass?: RookieClass | null
   sort: RookieSortKey
   limit: number
 }
@@ -147,6 +156,7 @@ export async function fetchRookieEditionBoard(
   if (opts.parallelId != null) q = q.eq("parallel_id", opts.parallelId)
   if (opts.player) q = q.eq("player_name", opts.player)
   if (opts.set) q = q.eq("set_name", opts.set)
+  if (opts.rookieClass) q = q.eq("rookie_class", opts.rookieClass)
 
   if (opts.mode === "burn") {
     // Burn rankings are only meaningful on base editions (parallels carry no
