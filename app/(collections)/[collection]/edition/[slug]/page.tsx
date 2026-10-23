@@ -32,7 +32,7 @@ import { editionPageMetadata, editionJsonLd, collectionDisplayName, NOT_FOUND_ME
 import Breadcrumbs from "@/components/entity/Breadcrumbs"
 import MomentHeroMedia from "@/components/MomentHeroMedia"
 import { ENTITY_HERO_SIZES } from "@/lib/hero-srcset"
-import { proxyIpfsImageUrl } from "@/lib/ipfs-media"
+import { proxyIpfsImageUrl, proxyIpfsUrl } from "@/lib/ipfs-media"
 import PackThumb from "@/components/packs/PackThumb"
 import { slugifyName } from "@/lib/entity-labels"
 import { isExhibitionTeamSlug } from "@/lib/team-denylist"
@@ -824,7 +824,13 @@ export default async function EditionPage(
           <div style={{ position: "relative", width: "100%", maxWidth: 320, aspectRatio: "1 / 1", background: "rgba(0,0,0,0.4)", border: "1px solid var(--rpc-border)", borderRadius: 6, overflow: "hidden" }}>
             <MomentHeroMedia
               imageCandidates={heroImageCandidates}
-              videoUrl={hasVideo ? detail.video_url : null}
+              // 2026-10-22: through the same-origin proxy, as the grid tiles already do.
+              // UFC's (and legacy Series-1 Top Shot's) clips are bare ipfs.io URLs, and
+              // ipfs.io now answers with Cross-Origin-Resource-Policy, so the browser
+              // blocked the hero <video> (net::ERR_BLOCKED_BY_RESPONSE.NotSameOrigin on
+              // 6 of 6 UFC editions swept at 390 px) and the hero fell back to the still
+              // image the 10-18 registry change had meant to replace.
+              videoUrl={hasVideo ? proxyIpfsUrl(detail.video_url) : null}
               alt={editionTitle}
               sizes={ENTITY_HERO_SIZES}
               placeholder={

@@ -16,6 +16,7 @@ Live reads, ~6:00 PM PT 10-17:
 - **10-10:** #186 closed as **not a defect**. The chain confirms our UFC holdings, and Dapper's `searchUFCNft` owner index is stale in both directions. UFC lock UI was removed after an on-chain check found no locking.
 - **10-14:** the `/ufc/overview` About card no longer promises a sniper. The closed-market guard gained a trading-claim arm. The `ufc-listing-cache` route got an E5 heartbeat.
 - **10-17:** UFC Series 0 (0 editions) is now `noindex` with honest copy (`3bcf40138`), and it is out of the sitemap (`f5a4aa06e`, verified live 4:10 PM PT).
+- **10-22 (Cowork cloud, ~10:50 PM PT):** the edition hero clip plays again. The 10-18 registry change had switched UFC heroes to video, but `page.tsx` passed the bare `ipfs.io` URL and ipfs.io now sends `Cross-Origin-Resource-Policy`, so the browser blocked the `<video>` on every UFC edition page (6/6 in a 390 px sweep) and the hero fell back to the still. It now goes through `/api/public/ipfs-media/<cid>` like the grid tiles (`proxyIpfsUrl`).
 
 ## Open issues
 No numbered register item is open for UFC. Recorded but not changed:

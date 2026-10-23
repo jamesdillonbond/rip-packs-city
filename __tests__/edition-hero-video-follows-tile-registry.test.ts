@@ -16,6 +16,17 @@ describe("edition hero video follows the tile-video registry", () => {
     expect(line).not.toMatch(/collection === "/)
   })
 
+  // 2026-10-22: the hero passed detail.video_url RAW while the grid tiles proxy it.
+  // UFC clips are bare ipfs.io URLs and ipfs.io now sends Cross-Origin-Resource-Policy,
+  // so the browser blocked the hero video on every UFC edition page swept (6/6) and
+  // the 10-18 change above still rendered a still image there.
+  it("the hero video goes through the same-origin IPFS proxy, like the tiles", () => {
+    const line = SRC.split("\n").find((l) => l.includes("videoUrl={hasVideo"))
+    expect(line, "hero videoUrl prop").toBeDefined()
+    expect(line).toContain("proxyIpfsUrl(detail.video_url)")
+    expect(line).not.toMatch(/videoUrl=\{hasVideo \? detail\.video_url/)
+  })
+
   it("the registry covers the collections whose editions carry clips", () => {
     for (const slug of ["nba-top-shot", "nfl-all-day", "laliga-golazos", "ufc", "candy-mlb"]) {
       expect(isTileVideoEnabled(slug), slug).toBe(true)
