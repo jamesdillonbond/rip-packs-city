@@ -1,4 +1,4 @@
-# Inbox index — 597 live filings
+# Inbox index — 599 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -36,9 +36,13 @@ failure it documents.
 
 - [🟡 Daytime monitor (10-23 ~03:10Z, infra GREEN, 11/11 dashboards OK) — allday-buyer-backfill decode dead-zone: 100%-decode-fail band ~2026-05-19→06-13 re-walked each cursor wrap, flaps the pipeline red ~31%](2026-10-23T0310Z-daytime-monitor-allday-buyer-backfill-decode-dead-zone-may-jun-2026.md)
 
-## 2026-10-22 — 1 filing
+## 2026-10-22 — 3 filings
+
+- [🟢 Daytime monitor (10-22 ~21:15Z, infra GREEN) — `topshot_missing_fill_offers_walk` cursor jumped forward 9.4M blocks on 10-19: establish re-seed vs regression (since answered: weekly re-seed, arm fixed 10-22); holder-concentration scheduled-tick watch CLEARED (12:29Z ok=true)](2026-10-22T2115Z-daytime-monitor-green-missing-fill-offers-cursor-reseed-and-holder-concentration-watch-cleared.md)
 
 - [🟢 Daytime monitor (10-22 ~03:13Z, infra GREEN, 11/11 dashboards OK) — `/api/public/pinnacle-image/[renderId]` MODULE_NOT_FOUND RECURRED 10-21 23:43Z on a new renderId (LEV1-SLBT-FORE-S6) and a new deploy, refuting the 10-19 "cold-start artifact / no recurrence" read; intermittent packaging break on a user-facing image route, not self-resolving — night pass to curl-confirm + fix, supersede 10-19 benign disposition](2026-10-22T0313Z-daytime-monitor-pinnacle-image-notfound-RECURRED-refutes-coldstart.md)
+
+- [🟢 Daytime monitor (10-22 ~00:15Z, infra GREEN) — `rpc-insights-health` dashboard captions squeeze-check as `get_wallet_squeeze` (live fn is `get_wallet_squeeze_exposure`; caption only, fixed in repo mirror 10-23); watch: first scheduled panini-holder-concentration tick under the 300s + single-pass MV fix (cleared by the 21:15Z filing)](2026-10-22T0015Z-daytime-monitor-insights-health-label-drift-and-holder-concentration-postfix-watch.md)
 
 ## 2026-10-21 — 3 filings
 

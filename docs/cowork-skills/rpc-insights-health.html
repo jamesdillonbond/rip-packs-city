@@ -73,7 +73,7 @@ const SURFACES=[
   ["/insights/cross-collection","cross_collection_cohort_stats","cross_collection"],
   ["/insights/pinnacle-scarcity","pinnacle_scarcity_board","pinnacle_scarcity"]
 ];
-const WALLET_TOOLS=[["/insights/squeeze-check","get_wallet_squeeze (RPC)"],["/insights/tc-report","get_wallet_tc_report (RPC)"]];
+const WALLET_TOOLS=[["/insights/squeeze-check","get_wallet_squeeze_exposure (RPC)"],["/insights/tc-report","get_wallet_tc_report (RPC)"]];
 const Q_COUNTS="SELECT 'squeeze' surface, count(*) n FROM topshot_squeeze_board UNION ALL SELECT 'set_squeeze', count(*) FROM topshot_set_squeeze_board UNION ALL SELECT 'pack_reality_top_ev', count(*) FROM topshot_pack_reality_top_ev UNION ALL SELECT 'rookies', count(*) FROM topshot_2025_rookie_index UNION ALL SELECT 'first_mint', count(*) FROM topshot_first_mint_trophies UNION ALL SELECT 'cross_collection', count(*) FROM cross_collection_cohort_stats UNION ALL SELECT 'pinnacle_scarcity', count(*) FROM pinnacle_scarcity_board;";
 const Q_FRESH="SELECT 'FMV latest write' k, max(computed_at)::text v FROM fmv_snapshots UNION ALL SELECT 'Pack EV latest', max(snapshotted_at)::text FROM pack_ev_latest;";
 
