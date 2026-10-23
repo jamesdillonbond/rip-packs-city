@@ -24,6 +24,8 @@ import Link from "next/link"
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
 import type { RookieEditionRow as Row } from "@/lib/rookie-edition-board"
 import { PARALLEL_ORDER, ROOKIE_CLASSES, type RookieClass } from "@/lib/rookie-edition-board"
+import { rookieBoardShareUrl } from "@/lib/rookie-class-link"
+import { useRookieClassParam } from "@/lib/use-rookie-class-param"
 import { usdSignFirst } from "@/lib/usd-format"
 import { accentText } from "@/lib/accent-text"
 
@@ -249,7 +251,12 @@ export default function RookieBoardClient({ initialRows, initialFetchedAt, initi
   const [view, setView] = useState<ViewMode>("board")
   const [tier, setTier] = useState<TierFilter>("all")
   const [parallel, setParallel] = useState<ParallelFilter>("all")
-  const [cls, setCls] = useState<RookieClass>("2025")
+  // 2026-10-23: `?class=2026` on the PAGE URL opens that tab. The URL is read as
+  // an external store (null on the server and at hydration — the page is ISR, so
+  // the server cannot read the query); a tab click overrides it.
+  const urlClass = useRookieClassParam(ROOKIE_CLASSES) as RookieClass | null
+  const [pickedClass, setCls] = useState<RookieClass | null>(null)
+  const cls: RookieClass = pickedClass ?? urlClass ?? "2025"
 
   const rows = initialRows
 
@@ -332,7 +339,7 @@ export default function RookieBoardClient({ initialRows, initialFetchedAt, initi
     return { players, parallels, topChase }
   }, [filtered, chases, initialFailed])
 
-  const shareUrl = `${SITE_URL}/insights/rookie-board`
+  const shareUrl = rookieBoardShareUrl(`${SITE_URL}/insights/rookie-board`, cls)
   const tweetIntent = useMemo(() => {
     const text =
       `Every ${cls} Top Shot rookie edition broken out by parallel — per-parallel FMV, plus burn and lock rates.\n\nRookie Board:`

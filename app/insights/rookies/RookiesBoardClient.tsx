@@ -19,6 +19,8 @@ import type { DegradedSummary } from "@/lib/insights/board-status"
 import { sectionEmptyCopy } from "@/lib/entity/section-empty-copy"
 import { slugifyPlayerName } from "@/lib/entity-labels"
 import { usdSignFirst } from "@/lib/usd-format"
+import { rookieBoardShareUrl } from "@/lib/rookie-class-link"
+import { useRookieClassParam } from "@/lib/use-rookie-class-param"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -113,7 +115,14 @@ export default function RookiesBoardClient({ initial, initialDegraded = null }: 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [sort, setSort] = useState<SortKey>("gmv")
-  const [cls, setCls] = useState<CohortClass>("2025")
+  // 2026-10-23: `?class=2026` on the PAGE URL opens that tab. The URL is read as
+  // an external store (null on the server and at hydration — the page is ISR, so
+  // the server cannot read the query); a tab click overrides it. A URL class
+  // reaches the fetch effect below as a class change, so its 2026 rows come from
+  // the server seed like a clicked tab's.
+  const urlClass = useRookieClassParam(["2025", "2026"]) as CohortClass | null
+  const [pickedClass, setCls] = useState<CohortClass | null>(null)
+  const cls: CohortClass = pickedClass ?? urlClass ?? "2025"
 
   // Skip the very first fetch when params match the server-fetched default
   // (sort=gmv) — the server already provided those rows.
@@ -161,7 +170,7 @@ export default function RookiesBoardClient({ initial, initialDegraded = null }: 
   const copy = CLASS_COPY[cls]
   const tweetIntent = useMemo(() => {
     const text = `${CLASS_COPY[cls].tweet}\n\nTop mover, mint-#1 trophies, locked-and-pricey leader — all live:`
-    const url = `${SITE_URL}/insights/rookies`
+    const url = rookieBoardShareUrl(`${SITE_URL}/insights/rookies`, cls)
     return `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`
   }, [cls])
 
