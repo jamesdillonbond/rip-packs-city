@@ -1,6 +1,6 @@
 // app/insights/rookies/layout.tsx
 //
-// SEO surface for the public 2025 NBA Rookie Class Index.
+// SEO surface for the public NBA Rookie Class Index (2025 + 2026 classes since 2026-10-22).
 
 import type { Metadata } from "next"
 import { TWITTER_INHERITED, insightsBoardJsonLd } from "@/lib/seo"
@@ -10,12 +10,15 @@ const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.c
 export const metadata: Metadata = {
   // The root metadata template in lib/seo.ts appends " | Rip Packs City",
   // so baking the brand in here rendered it twice. (deep-audit D24)
-  title: "2025 NBA Rookie Class Index",
+  title: "NBA Rookie Class Index — 2025 & 2026",
   description:
-    "The 2025 NBA rookie class on Top Shot — 30-day GMV, lock rates, average prices, first-mint trophy multipliers. Dylan Harper, Cooper Flagg, Kon Knueppel, VJ Edgecombe. Free. No signup.",
+    "The 2025 and 2026 NBA rookie classes on Top Shot — 30-day GMV, lock rates, average prices, first-mint trophy multipliers. Cooper Flagg, Dylan Harper, Kon Knueppel, Darryn Peterson, Cameron Boozer. Free. No signup.",
   keywords: [
     "NBA Top Shot rookies",
     "2025 NBA Draft Top Shot",
+    "2026 NBA rookies Top Shot",
+    "Darryn Peterson Top Shot",
+    "Cameron Boozer Top Shot",
     "Top Shot rookie ranking",
     "Cooper Flagg Top Shot",
     "Dylan Harper Top Shot",
@@ -25,9 +28,9 @@ export const metadata: Metadata = {
     canonical: `${SITE_URL}/insights/rookies`,
   },
   openGraph: {
-    title: "2025 NBA Rookie Class Index",
+    title: "NBA Rookie Class Index — 2025 & 2026",
     description:
-      "30-day GMV, lock rates, mint #1 trophy presence across the 2025 NBA rookie class on Top Shot.",
+      "30-day GMV, lock rates, mint #1 trophy presence across the 2025 and 2026 NBA rookie classes on Top Shot.",
     url: `${SITE_URL}/insights/rookies`,
     siteName: "Rip Packs City",
     images: [
@@ -35,7 +38,7 @@ export const metadata: Metadata = {
         url: `${SITE_URL}/api/og/insights/rookies`,
         width: 1200,
         height: 630,
-        alt: "2025 NBA Rookie Class Index — Rip Packs City",
+        alt: "NBA Rookie Class Index — Rip Packs City",
       },
     ],
     locale: "en_US",
@@ -44,9 +47,9 @@ export const metadata: Metadata = {
   twitter: {
     ...TWITTER_INHERITED,
     card: "summary_large_image",
-    title: "2025 NBA Rookie Class Index",
+    title: "NBA Rookie Class Index — 2025 & 2026",
     description:
-      "The 2025 NBA rookie class on Top Shot. GMV, lock rates, first-mint trophies.",
+      "The 2025 and 2026 NBA rookie classes on Top Shot. GMV, lock rates, first-mint trophies.",
     images: [`${SITE_URL}/api/og/insights/rookies`],
     creator: "@RipPacksCity",
   },

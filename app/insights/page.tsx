@@ -181,9 +181,9 @@ const CARDS: Card[] = [
   {
     slug: "/insights/rookies",
     eyebrow: "Live",
-    title: "2025 Rookie Class Index",
+    title: "Rookie Class Index — 2025 & 2026",
     blurb:
-      "The 2025 NBA rookie class as a cohort. 30-day GMV, lock-rate, average price, and first-mint trophy multipliers, player by player.",
+      "The 2025 NBA rookie class as a cohort — and the 2026 class as it mints. 30-day GMV, lock-rate, average price, and first-mint trophy multipliers, player by player.",
     cta: "Open rookie index",
     available: true,
   },

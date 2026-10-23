@@ -87,7 +87,7 @@ export type BoardCacheKey =
  *  telemetry; `key` is the snapshot row + the value each page passes to the cache. */
 export const WARM_BOARDS: { key: BoardCacheKey; label: string; warmEveryMs?: number }[] = [
   { key: "deals", label: "Below FMV" },
-  { key: "rookies", label: "2025 Rookie Index" },
+  { key: "rookies", label: "Rookie Index" },
   { key: "first-mint", label: "First-Mint Trophies" },
   { key: "candy-mlb", label: "Candy MLB ICONs" },
   { key: "panini-squeeze", label: "Panini WC Squeeze" },

@@ -101,7 +101,7 @@ export async function GET(req: NextRequest) {
             display: "flex",
           }}
         >
-          2025 ROOKIE INDEX
+          ROOKIE INDEX · 2025 & 2026
         </div>
         <div
           style={{
@@ -114,7 +114,7 @@ export async function GET(req: NextRequest) {
             maxWidth: 1000,
           }}
         >
-          The 2025 NBA rookie class on Top Shot, ranked by 30-day GMV. Lock rates and mint-#1 trophies.
+          The 2025 and 2026 NBA rookie classes on Top Shot, ranked by 30-day GMV. Lock rates and mint-#1 trophies.
         </div>
 
         <div

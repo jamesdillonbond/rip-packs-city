@@ -230,9 +230,9 @@ export const INSIGHTS_BOARDS: readonly InsightsBoard[] = [
   {
     slug: "rookies",
     kind: "dataset",
-    name: "2025 NBA Rookie Class Index",
+    name: "NBA Rookie Class Index — 2025 & 2026",
     description:
-      "Per-player 30-day GMV, lock-rate, and first-mint trophy presence for the 2025 NBA rookie class on Top Shot. Refreshes hourly.",
+      "Per-player 30-day GMV, lock-rate, and first-mint trophy presence for the 2025 and 2026 NBA rookie classes on Top Shot. Refreshes hourly.",
     publicApi: true,
   },
   {

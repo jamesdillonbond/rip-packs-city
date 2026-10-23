@@ -1,6 +1,6 @@
 // app/insights/rookies/page.tsx
 //
-// Public 2025 NBA Rookie Class Index — SERVER component. Fetches the
+// Public NBA Rookie Class Index (2025 + 2026) — SERVER component. Fetches the
 // default-view cohort stats + GMV-ranked rows directly from the public
 // topshot_2025_rookie_cohort_stats + topshot_2025_rookie_index views via
 // supabaseAdmin (exactly as /api/public/insights/rookies does) and hands them
@@ -25,6 +25,6 @@ export default async function RookiesPage() {
   const { payload, source } = await readBoardOrLive("rookies", () => fetchRookiesDefault())
   return <RookiesBoardClient
       initial={payload as unknown as ApiResponse}
-      initialDegraded={degradedFromSource(source, "2025 Rookie Index")}
+      initialDegraded={degradedFromSource(source, "Rookie Index")}
     />
 }

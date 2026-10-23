@@ -2,7 +2,8 @@
 
 // app/insights/rookies/RookiesBoardClient.tsx
 //
-// Client interactivity layer for the public 2025 NBA Rookie Index. The server
+// Client interactivity layer for the public NBA Rookie Index (2025 and, since
+// 2026-10-22, 2026 classes — a class tab; both seeded by the server). The server
 // component (page.tsx) fetches the default-view cohort stats + ranked rows
 // server-side and passes them in as `initial`, so the ranked table + the
 // per-player entity drill-down links render in the raw server HTML (crawlable)
@@ -51,9 +52,33 @@ export type ApiResponse = {
   meta: { fetched_at: string | null }
   cohort_stats: CohortStats
   rows: Row[]
+  /** 2026 class from the server seed; null when that read failed, absent on an API refetch. */
+  class_2026?: { cohort_stats: CohortStats; rows: Row[] } | null
 }
 
 type SortKey = "gmv" | "lock" | "avg_price" | "sales" | "mint_one"
+type CohortClass = "2025" | "2026"
+
+const CLASS_COPY: Record<CohortClass, { lede: string; tweet: string; cohort: string }> = {
+  "2025": {
+    lede: "The 2025 NBA rookie class on Top Shot as a cohort. 30-day GMV, lock-rate, average serial price, mint-#1 trophy presence. Refreshes daily.",
+    tweet: "The 2025 NBA rookie class on Top Shot, ranked by 30d GMV + lock-rate.",
+    cohort:
+      "any player with at least one Top Shot edition in a Series 8 rookie-themed set (Rookie Debut COMMON, Origins RARE, Rookie Revelation LEGENDARY, 2025 Rookie Ultimates ULTIMATE).",
+  },
+  "2026": {
+    lede: "The 2026 NBA rookie class on Top Shot, as it mints. 30-day GMV, lock-rate, average serial price, mint-#1 trophy presence. The class grows as each rookie's first Moment drops.",
+    tweet: "The 2026 NBA rookie class on Top Shot, as it mints — ranked by 30d GMV + lock-rate.",
+    cohort:
+      "any player with an edition in the Series 2026-27 Rookie Debut set, the set every rookie's first Moment enters. It is built from minted Moments, never from the draft, so it fills as Rookie Debut drops.",
+  },
+}
+
+function seedFor(initial: ApiResponse, cls: CohortClass): ApiResponse | null {
+  if (cls === "2025") return initial
+  if (!initial.class_2026) return null
+  return { meta: initial.meta, cohort_stats: initial.class_2026.cohort_stats, rows: initial.class_2026.rows }
+}
 
 function fmtInt(n: number | null | undefined): string {
   if (n == null) return "—"
@@ -88,6 +113,7 @@ export default function RookiesBoardClient({ initial, initialDegraded = null }: 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [sort, setSort] = useState<SortKey>("gmv")
+  const [cls, setCls] = useState<CohortClass>("2025")
 
   // Skip the very first fetch when params match the server-fetched default
   // (sort=gmv) — the server already provided those rows.
@@ -96,14 +122,24 @@ export default function RookiesBoardClient({ initial, initialDegraded = null }: 
   useEffect(() => {
     if (isFirstRun.current) {
       isFirstRun.current = false
-      if (sort === "gmv") return
+      if (sort === "gmv" && cls === "2025") return
+    }
+    // The default sort of either class is in the server seed — no refetch. A class
+    // whose seed read FAILED (class_2026 null) falls through to a live fetch.
+    const seeded = sort === "gmv" ? seedFor(initial, cls) : null
+    if (seeded) {
+      setData(seeded)
+      setDegraded(initialDegraded)
+      setError(null)
+      setLoading(false)
+      return
     }
     const ctrl = new AbortController()
     async function run() {
       setLoading(true)
       setError(null)
       try {
-        const r = await fetch(`/api/public/insights/rookies?sort=${sort}&limit=100`, {
+        const r = await fetch(`/api/public/insights/rookies?class=${cls}&sort=${sort}&limit=100`, {
           signal: ctrl.signal,
           cache: "no-store",
         })
@@ -120,13 +156,14 @@ export default function RookiesBoardClient({ initial, initialDegraded = null }: 
     }
     run()
     return () => ctrl.abort()
-  }, [sort])
+  }, [sort, cls, initial, initialDegraded])
 
+  const copy = CLASS_COPY[cls]
   const tweetIntent = useMemo(() => {
-    const text = `The 2025 NBA rookie class on Top Shot, ranked by 30d GMV + lock-rate.\n\nTop mover, mint-#1 trophies, locked-and-pricey leader — all live:`
+    const text = `${CLASS_COPY[cls].tweet}\n\nTop mover, mint-#1 trophies, locked-and-pricey leader — all live:`
     const url = `${SITE_URL}/insights/rookies`
     return `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`
-  }, [])
+  }, [cls])
 
   const rows = data?.rows ?? []
   const cohort = data?.cohort_stats
@@ -137,12 +174,8 @@ export default function RookiesBoardClient({ initial, initialDegraded = null }: 
 
       <section className="rpc-rk-hero">
         <div className="rpc-rk-eyebrow">RPC Insights · Public</div>
-        <h1 className="rpc-rk-h1">2025 NBA Rookie Index</h1>
-        <p className="rpc-rk-lede">
-          The 2025 NBA rookie class on Top Shot as a cohort. 30-day GMV,
-          lock-rate, average serial price, mint-#1 trophy presence. Refreshes
-          daily.
-        </p>
+        <h1 className="rpc-rk-h1">{cls} NBA Rookie Index</h1>
+        <p className="rpc-rk-lede">{copy.lede}</p>
         {/*
           FRESHNESS IS NOT OPTIONAL ON A SNAPSHOT-CACHED BOARD. This page is served
           through readBoardOrLive, whose stale-cache leg hands back the last-good
@@ -194,6 +227,20 @@ export default function RookiesBoardClient({ initial, initialDegraded = null }: 
           <div className="rpc-rk-kpi-label">Top mint-1 sale</div>
           <div className="rpc-rk-kpi-value">{fmtUsd(cohort?.top_mint_one_sale)}</div>
         </div>
+      </section>
+
+      <section className="rpc-rk-controls" aria-label="Rookie class">
+        <span className="rpc-rk-pill-label">CLASS</span>
+        {(["2025", "2026"] as const).map((c) => (
+          <button
+            key={c}
+            className={`rpc-rk-pill ${cls === c ? "rpc-rk-pill-active" : ""}`}
+            aria-pressed={cls === c}
+            onClick={() => setCls(c)}
+          >
+            {c} class
+          </button>
+        ))}
       </section>
 
       <section className="rpc-rk-controls" aria-label="Sort">
@@ -286,10 +333,8 @@ export default function RookiesBoardClient({ initial, initialDegraded = null }: 
         <div className="rpc-rk-method">
           <h3 className="rpc-rk-h3">Methodology</h3>
           <p>
-            <strong>Cohort</strong> = any player with at least one Top Shot
-            edition in a Series 8 rookie-themed set (Rookie Debut COMMON,
-            Origins RARE, Rookie Revelation LEGENDARY, 2025 Rookie Ultimates
-            ULTIMATE). Currently {fmtInt(cohort?.rookie_count)} players.
+            <strong>Cohort</strong> = {copy.cohort} Currently{" "}
+            {fmtInt(cohort?.rookie_count)} players.
           </p>
           <p>
             <strong>GMV 30d</strong> sums every USD-priced sale of those

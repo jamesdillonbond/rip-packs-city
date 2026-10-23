@@ -21,7 +21,12 @@
 //   Cooper Flagg:  top mint-#1 sale $14,999
 //   Cohort total:  $147,753 GMV / 30d, $51 avg active price
 //
+// 2026-10-22: `class=2026` reads the 2026 class (topshot_2026_rookie_index /
+// _cohort_stats — the same bodies over the Series 9 Rookie Debut set, so it grows
+// as that set mints). Any other value is a 400, never a silent 2025 answer.
+//
 // Query params:
+//   class=2025|2026                default 2025
 //   sort=gmv|lock|avg_price|sales  default gmv
 //   limit=<1..100>                 default 100
 //
@@ -33,13 +38,24 @@ import { boardUnavailable } from "@/lib/insights/board-error";
 import { boundedRead } from "@/lib/api/bounded-read";
 
 const VALID_SORTS = new Set(["gmv", "lock", "avg_price", "sales", "mint_one"]);
+const VALID_CLASSES = new Set(["2025", "2026"]);
 
 export async function GET(req: NextRequest) {
   const startedAt = Date.now();
   const url = new URL(req.url);
   const sort = url.searchParams.get("sort") ?? "gmv";
+  const cohortClass = url.searchParams.get("class") ?? "2025";
   const limitRaw = Number(url.searchParams.get("limit") ?? "100");
   const limit = Math.max(1, Math.min(100, Number.isFinite(limitRaw) ? limitRaw : 100));
+
+  if (!VALID_CLASSES.has(cohortClass)) {
+    return NextResponse.json(
+      { error: `class must be one of ${[...VALID_CLASSES].join(",")}` },
+      { status: 400 }
+    );
+  }
+  const indexView = `topshot_${cohortClass}_rookie_index`;
+  const statsView = `topshot_${cohortClass}_rookie_cohort_stats`;
 
   if (!VALID_SORTS.has(sort)) {
     return NextResponse.json(
@@ -49,7 +65,7 @@ export async function GET(req: NextRequest) {
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let q = (supabase as any).from("topshot_2025_rookie_index").select("*");
+  let q = (supabase as any).from(indexView).select("*");
   if (sort === "gmv") q = q.order("gmv_30d", { ascending: false, nullsFirst: false });
   else if (sort === "lock") q = q.order("avg_lock_rate_pct", { ascending: false, nullsFirst: false });
   else if (sort === "avg_price")
@@ -61,8 +77,8 @@ export async function GET(req: NextRequest) {
 
   const [statsRes, indexRes] = await Promise.all([
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    boundedRead((supabase as any).from("topshot_2025_rookie_cohort_stats").select("*").limit(1), "api/public/insights/rookies/topshot_2025_rookie_cohort_stats"),
-    boundedRead(q, "api/public/insights/rookies/topshot_2025_rookie_index"),
+    boundedRead((supabase as any).from(statsView).select("*").limit(1), `api/public/insights/rookies/${statsView}`),
+    boundedRead(q, `api/public/insights/rookies/${indexView}`),
   ]);
 
   if (statsRes.error) {
@@ -76,12 +92,9 @@ export async function GET(req: NextRequest) {
   const res = NextResponse.json({
     meta: {
       fetched_at: new Date().toISOString(),
-      sources: [
-        "topshot_2025_rookie_cohort_stats",
-        "topshot_2025_rookie_index",
-      ],
+      sources: [statsView, indexView],
       elapsed_ms: elapsedMs,
-      filters: { sort, limit },
+      filters: { class: cohortClass, sort, limit },
     },
     cohort_stats: statsRes.data?.[0] ?? null,
     rows: indexRes.data ?? [],

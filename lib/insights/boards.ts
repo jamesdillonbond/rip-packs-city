@@ -48,22 +48,43 @@ export async function fetchDealsDefault(
   }
 }
 
-/** 2025 Rookie Index default view: cohort stats + GMV-ranked rows, top 100. */
+/**
+ * Rookie Index default view: cohort stats + GMV-ranked rows, top 100, for the 2025
+ * class (top level, the board's original shape) AND the 2026 class (`class_2026`).
+ *
+ * Both classes ride one snapshot so the page's class tab never needs a cold read for
+ * its default sort, and the 2026 rookies are in the crawlable server HTML. `ok` needs
+ * all four reads: a failed 2026 read falls back to the last-good snapshot (with its
+ * age) rather than caching a board whose 2026 tab would say "no rookies" over an error.
+ */
 export async function fetchRookiesDefault(
   db: Db = supabaseAdmin
 ): Promise<
-  BoardLiveResult<{ meta: { fetched_at: string | null }; cohort_stats: unknown; rows: unknown[] }>
+  BoardLiveResult<{
+    meta: { fetched_at: string | null }
+    cohort_stats: unknown
+    rows: unknown[]
+    class_2026: { cohort_stats: unknown; rows: unknown[] } | null
+  }>
 > {
-  const [statsRes, indexRes] = await Promise.all([
+  const [statsRes, indexRes, stats26Res, index26Res] = await Promise.all([
     db.from("topshot_2025_rookie_cohort_stats").select("*").limit(1),
     db
       .from("topshot_2025_rookie_index")
       .select("*")
       .order("gmv_30d", { ascending: false, nullsFirst: false })
       .limit(100),
+    db.from("topshot_2026_rookie_cohort_stats").select("*").limit(1),
+    db
+      .from("topshot_2026_rookie_index")
+      .select("*")
+      .order("gmv_30d", { ascending: false, nullsFirst: false })
+      .limit(100),
   ])
   const rows = (indexRes.data ?? []) as unknown[]
-  const ok = !statsRes.error && !indexRes.error
+  const rows26 = (index26Res.data ?? []) as unknown[]
+  const ok26 = !stats26Res.error && !index26Res.error
+  const ok = !statsRes.error && !indexRes.error && ok26
   return {
     payload: {
       // ⚠ null on a failed read, NEVER now(): the page renders this as "Updated …",
@@ -73,12 +94,16 @@ export async function fetchRookiesDefault(
       meta: { fetched_at: ok ? new Date().toISOString() : null },
       cohort_stats: statsRes.data?.[0] ?? null,
       rows,
+      // null — never an empty class — when the 2026 read failed.
+      class_2026: ok26 ? { cohort_stats: stats26Res.data?.[0] ?? null, rows: rows26 } : null,
     },
     ok,
-    rowCount: rows.length,
+    rowCount: rows.length + rows26.length,
     error: describeBoardFailures([
       { label: "topshot_2025_rookie_cohort_stats", ok: !statsRes.error, error: statsRes.error?.message },
       { label: "topshot_2025_rookie_index", ok: !indexRes.error, error: indexRes.error?.message },
+      { label: "topshot_2026_rookie_cohort_stats", ok: !stats26Res.error, error: stats26Res.error?.message },
+      { label: "topshot_2026_rookie_index", ok: !index26Res.error, error: index26Res.error?.message },
     ]),
   }
 }
