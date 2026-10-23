@@ -121,6 +121,11 @@ touch, where the keyboard would cover half the list.
        when the alert runs, so a typed "luka doncic" would never fire. Saved as the
        resolver's spelling, and the page says which. The Alerts player typeahead leads
        with the resolver's names and matches any word's start ("jok" → Nikola Jokić).
+     - **site search** (`rpc_search_catalog`) already folded accents (`unaccent`) but
+       KEPT joiners, so "walle" / "wall-e" missed WALL•E (1 of 9,079 players carries • or
+       ·). Since `20261023135624` the player arm also matches the whole query against a
+       joined name with joiners read as "-" or dropped — gated on the name carrying one,
+       so every other result is byte-identical (10 control queries, md5-compared).
      - ⚠ **Rebuild the query for the retry.** A supabase-js builder mutates in place: a
        second `.ilike` on the same builder STACKS on the first and the retry can never
        match. Every retry above takes a `run(…)` that builds afresh.
