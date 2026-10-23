@@ -1978,10 +1978,10 @@ const PINS = [
       "supabase/migrations/20260804060000_audit_20260804_fmv_zero_stale_sales_count.sql",
   },
   {
+    // Re-pinned 2026-10-23: the Golazos arm (the same cap, the same measured shape).
     fn: "fmv_snapshots_cap_allday_ask_only_to_recent_sales",
     test: "supabase/tests/fmv_snapshots_cap_allday_ask_only_to_recent_sales.sql",
-    migration:
-      "supabase/migrations/20261023044923_audit_20261023_fmv_snapshots_cap_allday_ask_only_to_recent_sales.sql",
+    migration: "supabase/migrations/20261023134231_audit_20261023_ask_only_sales_cap_covers_golazos.sql",
   },
   {
     // 2026-10-23: the sitemap's readers for the cross-collection hubs — the bulk form

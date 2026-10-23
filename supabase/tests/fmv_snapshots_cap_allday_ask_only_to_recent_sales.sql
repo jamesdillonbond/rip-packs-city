@@ -1,13 +1,15 @@
 -- DB invariant: public.fmv_snapshots_cap_allday_ask_only_to_recent_sales — the BEFORE INSERT
--- guard on fmv_snapshots that caps an NFL All Day ASK_ONLY price at the median of the
--- edition's last 3 market sales within 180 days. Measured 2026-10-22 (migration header):
+-- guard on fmv_snapshots that caps an NFL All Day (2026-10-22) or LaLiga Golazos (2026-10-23)
+-- ASK_ONLY price at the median of the edition's last 3 market sales within 180 days. Measured 2026-10-22 (migration header):
 -- All Day's ask × 0.90 price sat at a median 1.80× the price the edition then sold for
 -- (n 326 / 30 d; offer fills at 2.70×), and min(ask price, last-3 median) was the best
 -- estimator on every axis (ratio 1.80 → 1.00, WAPE 132 → 62). One trigger covers all
 -- three writers of that price (fmv-recalc 1.8.x, drain_fmv_cold_tail,
 -- allday-listing-ask-v1), which is why it lives in the DB and not in each caller.
 --
--- The function DDL below is a VERBATIM copy of the committed migration;
+-- The function DDL below is a VERBATIM copy of the committed migration
+-- (20261023134231, the Golazos arm; Golazos read the same 1.80 / 20.0 shape on 70 sales and
+-- the cap 1.62 → 1.00 on the 25 with a prior sale);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -30,11 +32,12 @@ SECURITY DEFINER
 SET search_path TO 'public', 'pg_temp'
 AS $function$
 DECLARE
-  -- NFL All Day (collections.id). Scoped by measurement: the same cap is not a win on Top Shot.
-  c_allday constant uuid := 'dee28451-5d62-409e-a1ad-a83f763ac070';
+  -- NFL All Day and LaLiga Golazos (collections.id). Scoped by measurement: the same cap is not a win on Top Shot.
+  c_allday  constant uuid := 'dee28451-5d62-409e-a1ad-a83f763ac070';
+  c_golazos constant uuid := '06248cc4-b85f-47cd-af67-1855d14acd75';
   v_med numeric;
 BEGIN
-  IF NEW.collection_id = c_allday
+  IF NEW.collection_id IN (c_allday, c_golazos)
      AND NEW.confidence = 'ASK_ONLY'
      AND NEW.fmv_usd IS NOT NULL
      AND NEW.edition_id IS NOT NULL
@@ -75,6 +78,7 @@ CREATE TRIGGER trg_cap_allday_ask_only BEFORE INSERT ON fmv_snapshots
 --   e6  All Day, recent sales are all special serials (#1, #7, #25) at 500 each, and
 --       one ordinary serial at 3 → median 3.00 (special serials are not the edition's price)
 --   e7  Top Shot, three recent sales 2 / 3 / 4 — the control: out of scope
+--   e8  Golazos, three recent sales 2 / 3 / 4 — in scope since 2026-10-23
 INSERT INTO sales_market VALUES
   ('e1000000-0000-0000-0000-000000000001', now() - interval '10 days',  2.00, 500),
   ('e1000000-0000-0000-0000-000000000001', now() - interval '20 days',  3.00, 501),
@@ -94,7 +98,10 @@ INSERT INTO sales_market VALUES
   ('e1000000-0000-0000-0000-000000000006', now() - interval '6 days',   3.00, 26),
   ('e1000000-0000-0000-0000-000000000007', now() - interval '10 days',  2.00, 500),
   ('e1000000-0000-0000-0000-000000000007', now() - interval '20 days',  3.00, 501),
-  ('e1000000-0000-0000-0000-000000000007', now() - interval '30 days',  4.00, 502);
+  ('e1000000-0000-0000-0000-000000000007', now() - interval '30 days',  4.00, 502),
+  ('e1000000-0000-0000-0000-000000000008', now() - interval '10 days',  2.00, 500),
+  ('e1000000-0000-0000-0000-000000000008', now() - interval '20 days',  3.00, 501),
+  ('e1000000-0000-0000-0000-000000000008', now() - interval '30 days',  4.00, 502);
 
 -- Every row is written the way the writers write it: ask × 0.90, ask kept beside it.
 INSERT INTO fmv_snapshots VALUES
@@ -105,6 +112,9 @@ INSERT INTO fmv_snapshots VALUES
   ('e1000000-0000-0000-0000-000000000005', 'dee28451-5d62-409e-a1ad-a83f763ac070', 18.00, 'ASK_ONLY', 'allday-listing-ask-v1', 18.00, 20.00),
   ('e1000000-0000-0000-0000-000000000006', 'dee28451-5d62-409e-a1ad-a83f763ac070',  8.10, 'ASK_ONLY', '1.8.3', 8.10, 9.00),
   ('e1000000-0000-0000-0000-000000000007', '09e00000-0000-0000-0000-000000000002',  8.10, 'ASK_ONLY', '1.8.3', 8.10, 9.00),
+  ('e1000000-0000-0000-0000-000000000008', '06248cc4-b85f-47cd-af67-1855d14acd75',  8.10, 'ASK_ONLY', 'golazos-listing-ask-v1', 8.10, 9.00),
+  -- Golazos with a sales label: out of scope like All Day's
+  ('e1000000-0000-0000-0000-000000000008', '06248cc4-b85f-47cd-af67-1855d14acd75',  8.10, 'LOW',      '1.8.3', 8.10, 9.00),
   -- All Day, same edition as e1 but a SALES label: the guard is for ASK_ONLY only
   ('e1000000-0000-0000-0000-000000000001', 'dee28451-5d62-409e-a1ad-a83f763ac070',  8.10, 'LOW',      '1.8.3', 8.10, 9.00),
   -- All Day ASK_ONLY with NO price: nothing to cap, must pass through
@@ -158,6 +168,15 @@ SELECT _assert_eq(
   (SELECT fmv_usd::text || '|' || algo_version FROM fmv_snapshots
     WHERE edition_id = 'e1000000-0000-0000-0000-000000000007'),
   '8.10|1.8.3', 'a Top Shot ASK_ONLY row is out of scope and untouched');
+-- Golazos (2026-10-23), identical sales shape to e1: capped, and marked.
+SELECT _assert_eq(
+  (SELECT fmv_usd::text || '|' || algo_version || '|' || ask_proxy_fmv::text FROM fmv_snapshots
+    WHERE edition_id = 'e1000000-0000-0000-0000-000000000008' AND confidence = 'ASK_ONLY'),
+  '3.00|golazos-listing-ask-v1_salescap|8.10', 'a Golazos ASK_ONLY row is capped at its last-3 median, the ask kept beside it');
+SELECT _assert_eq(
+  (SELECT fmv_usd::text || '|' || algo_version FROM fmv_snapshots
+    WHERE edition_id = 'e1000000-0000-0000-0000-000000000008' AND confidence = 'LOW'),
+  '8.10|1.8.3', 'a Golazos row with a sales label is out of scope');
 -- All Day with a sales label: NOT capped (those prices come from sales already).
 SELECT _assert_eq(
   (SELECT fmv_usd::text || '|' || algo_version FROM fmv_snapshots
@@ -170,7 +189,7 @@ SELECT _assert_eq(
   '1', 'a NULL fmv_usd is passed through unchanged');
 
 -- Nothing in the guard writes anywhere else: the sales table is read-only to it.
-SELECT _assert_eq((SELECT count(*)::text FROM sales_market), '19', 'the guard reads sales_market and never writes it');
+SELECT _assert_eq((SELECT count(*)::text FROM sales_market), '22', 'the guard reads sales_market and never writes it');
 
 SELECT '✓ fmv_snapshots_cap_allday_ask_only_to_recent_sales invariants pass' AS result;
 ROLLBACK;
