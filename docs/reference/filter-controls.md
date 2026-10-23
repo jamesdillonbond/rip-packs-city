@@ -73,6 +73,10 @@ touch, where the keyboard would cover half the list.
      retries with an accent-tolerant ilike (vowels + c n s z y → `_`, typed `%`/`_`
      escaped) and keeps only rows `textIncludes` confirms. Rarer accent carriers (ł ř ğ)
      are not widened.
+   - **the Sniper** (`/api/sniper-feed`, closed 2026-10-22): the same accent-sensitive
+     match in its Top Shot pool and the All Day / Golazos RPCs ("doncic" → 0 deals live,
+     "Dončić" → 96). Same rule through the shared `lib/market/catalog-player.ts`; the page
+     shows the same `PlayerResolvedNote`.
    - **the page**, for what the route cannot decide (ambiguity): the Player
      `Autocomplete` suggests the catalog spelling, and an empty search offers *"Did you
      mean …"* for names differing only by accents (`accentOnlyMatches`).
