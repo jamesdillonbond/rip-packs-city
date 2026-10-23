@@ -136,6 +136,13 @@ export async function POST(req: NextRequest) {
     const gameIds = (games ?? []).map(g => g.id)
     const gameLookup = new Map((games ?? []).map(g => [g.id, g]))
 
+    // The RANKABLE projection per player, whatever its source (known-issues #8,
+    // 2026-10-23). This read used to pin `source = 'draftkings'`, which made the
+    // free ESPN lane (`nba-espn-projections`) invisible here. The DB guarantees
+    // at most ONE row with proj_fp_dk NOT NULL per (player, game_date) — trigger
+    // `nba_projection_single_rankable`, priority draftkings > espn > other — so
+    // filtering on it yields one row per player and `projByPlayer` cannot keep
+    // the wrong source of two.
     let projRows: any[] = []
     if (gameIds.length > 0) {
       const { data, error: projErr } = await supabase
@@ -143,7 +150,7 @@ export async function POST(req: NextRequest) {
         .select("nba_player_id, game_id, proj_fp_dk, proj_minutes, injury_status")
         .in("game_id", gameIds)
         .eq("game_date", gameDate)
-        .eq("source", "draftkings")
+        .not("proj_fp_dk", "is", null)
       if (projErr) {
         console.error("[fast-break-optimize] projections:", projErr.message)
         return NextResponse.json(
@@ -156,8 +163,9 @@ export async function POST(req: NextRequest) {
     const projByPlayer = new Map<string, any>(projRows.map(r => [r.nba_player_id, r]))
 
     // ── Is an empty lineup OUR data or the user's roster? (known-issues #8) ──
-    // Both NBA feeds (`sync-nba-games`, `sync-nba-projections`) have been dead since
-    // 2026-08-04 and no paid provider is bought before revenue. With them down, the
+    // The edge-function NBA feeds (`sync-nba-games`, `sync-nba-projections`) have
+    // been dead since 2026-08-04; since 2026-10-23 the free ESPN DB lane
+    // (`nba-espn-projections`) writes the slate and projections. With a feed down, the
     // reply used to be `consideredCount: 0`, which the client renders as "None of
     // your eligible players are on tonight's slate" — a claim about the USER'S
     // roster produced by OUR missing data. Three states, never two:
@@ -178,8 +186,8 @@ export async function POST(req: NextRequest) {
     const runEnd = day((run as any).end_date)
     const runLiveToday = runStart != null && runEnd != null && runStart <= gameDate && gameDate <= runEnd
 
-    // Is the NBA feed ANSWERING? `sync-nba-projections` is the sole writer of
-    // nba_games, so a successful run of it inside the window means an empty slate
+    // Is the NBA feed ANSWERING? A successful run of either nba_games writer
+    // (lib/fast-break/nba-feed.ts) inside the window means an empty slate
     // today is the NBA's schedule (an off-day), not our outage. Only asked when it
     // decides the answer. ⚠ A failed or unreadable check proves nothing about the
     // feed, so it keeps the outage wording rather than asserting an off-day we

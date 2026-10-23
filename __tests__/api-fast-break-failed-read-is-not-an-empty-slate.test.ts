@@ -28,7 +28,7 @@ const state: { tables: Record<string, any>; rpc: Record<string, any> } = { table
 vi.mock("@/lib/supabase", () => {
   const makeBuilder = (table: string) => {
     const b: any = {}
-    for (const m of ["select", "eq", "in", "order", "gt", "gte", "lt", "limit"]) b[m] = () => b
+    for (const m of ["select", "eq", "in", "not", "order", "gt", "gte", "lt", "limit"]) b[m] = () => b
     b.single = async () => state.tables[table]?.single ?? { data: null, error: null }
     b.maybeSingle = async () => state.tables[table]?.single ?? { data: null, error: null }
     b.then = (resolve: any) => resolve(state.tables[table]?.list ?? { data: [], error: null })

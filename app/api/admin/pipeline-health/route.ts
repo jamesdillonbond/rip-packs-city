@@ -76,6 +76,9 @@ const EXPECTED_INTERVAL_MIN: Record<string, number> = {
   "check-alerts": 20,
   "editions-hydrate-at-insert": 30,
   "sync-nba-projections": 60,
+  // ESPN DB lane (known-issues #8, 2026-10-23): pg_cron dispatch :18, drain logs
+  // at :21 hourly — 90 min allows one late drain before it reads stale.
+  "nba-espn-projections": 90,
   "sync-nba-odds": 60,
   // ⚠ NAME IS VESTIGIAL — READ THE SCHEDULE, NOT THE NAME. These two look
   // identical and only one was right. Verified against cron.job 2026-08-25:

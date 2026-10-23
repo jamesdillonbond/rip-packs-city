@@ -64,7 +64,7 @@ export async function GET() {
     }
 
     if (!games || games.length === 0) {
-      // ⚠ An empty slate is the NBA's schedule only when nba_games' sole writer
+      // ⚠ An empty slate is the NBA's schedule only when an nba_games writer
       // answered recently (known-issues #8: dead since 2026-08-04). Otherwise it
       // is our outage, in the optimize route's own vocabulary.
       const fresh = await nbaFeedAnsweredRecently(supabase, "[fast-break-today]")
@@ -76,12 +76,16 @@ export async function GET() {
 
     const gameIds = games.map(g => g.id)
 
+    // The rankable projection per player, any source — see the matching read in
+    // /api/fast-break/optimize: the DB guarantees one proj_fp_dk NOT NULL row per
+    // (player, game_date), so this no longer pins `source = 'draftkings'`, which
+    // hid the free ESPN lane (known-issues #8, 2026-10-23).
     const { data: projRows, error: projErr } = await supabase
       .from("nba_player_projections")
       .select("nba_player_id, game_id, proj_fp_dk, proj_minutes, injury_status")
       .in("game_id", gameIds)
       .eq("game_date", gameDate)
-      .eq("source", "draftkings")
+      .not("proj_fp_dk", "is", null)
 
     if (projErr) {
       console.error("[fast-break-today] projections lookup:", projErr.message)

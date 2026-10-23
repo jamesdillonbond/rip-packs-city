@@ -19,6 +19,7 @@ vi.mock("@/lib/supabase", () => {
   const b: any = {
     select: () => b,
     eq: () => b,
+    in: () => b,
     order: () => b,
     limit: () => b,
     gte: () => b,

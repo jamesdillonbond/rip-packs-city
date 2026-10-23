@@ -32,7 +32,7 @@ function routedDb(
       asked.push(t)
       const r = tables[t] ?? {}
       const b: Record<string, unknown> = {}
-      for (const m of ["select", "eq", "gte", "order", "limit"]) b[m] = () => b
+      for (const m of ["select", "eq", "in", "gte", "order", "limit"]) b[m] = () => b
       const settle = () => ({ data: r.data ?? null, count: r.count ?? null, error: r.error ?? null })
       b.then = (onF?: (v: unknown) => unknown, onR?: (e: unknown) => unknown) =>
         Promise.resolve(settle()).then(onF, onR)
