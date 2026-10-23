@@ -127,4 +127,6 @@ touch, where the keyboard would cover half the list.
   Sniper Team searchable, not inside a `<label>`, closes after a pick. ⚠ Two script traps
   that read as product bugs: a "tap outside" near the bottom of a phone viewport hits the
   **bottom nav** and navigates away (tap the page heading instead); the Sniper's filters sit
-  behind **⚙ FILTERS** on a phone, and its Team control appears only once deals load.
+  behind **⚙ FILTERS** on a phone, and its Team control gets real options only once deals
+  load — since 10-22 a disabled, `aria-busy` "Loading teams…" (Franchises on Pinnacle; none
+  on UFC) holds its place during the first read (`teamPending`); a failed read still hides it.
