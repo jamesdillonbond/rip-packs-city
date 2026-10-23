@@ -48,6 +48,7 @@ import { collectMarketFacets } from "@/lib/market/facets"
 import { expandFranchiseLabels } from "@/lib/market/franchise-teams"
 import { withAccentFallback } from "@/lib/market/player-match"
 import { CATALOG_PLAYER_COLLECTIONS, resolveCatalogPlayer } from "@/lib/market/catalog-player"
+import { resolvePlayerName, singleRetryLabel } from "@/lib/concierge/player-identity"
 
 export const dynamic = "force-dynamic"
 // AllDay's get_allday_market_listings was rewritten for LIMIT-pushdown (~62ms), but
@@ -1121,8 +1122,14 @@ export async function GET(req: NextRequest) {
       // retried once with the single catalog name it matches accent-blind
       // ("luka doncic" → "Luka Dončić"), and the swap is reported, never silent.
       // A search that matched anything — or failed — is left exactly as it was.
-      if (playerTyped && CATALOG_PLAYER_COLLECTIONS.has(collectionId) && parts.every((p) => p !== null && p.length === 0)) {
-        const to = await resolveCatalogPlayer(collectionId, playerTyped, "api/market")
+      // 2026-10-23: the TABLE arms (Candy, Panini, Pinnacle) too — their in-arm
+      // widened-ilike fallback cannot form a pattern for a short name ("acuna":
+      // every letter can carry an accent), and live "acuna" answered 0 Candy
+      // listings while "Acuña" answered 5. They resolve through resolve_player_name.
+      if (playerTyped && parts.every((p) => p !== null && p.length === 0)) {
+        const to = CATALOG_PLAYER_COLLECTIONS.has(collectionId)
+          ? await resolveCatalogPlayer(collectionId, playerTyped, "api/market")
+          : singleRetryLabel(await resolvePlayerName(supabaseAdmin, collectionId, playerTyped), playerTyped)
         if (to) {
           const again = await runArms(to)
           if (again.every((p) => p !== null) && again.some((p) => p!.length > 0)) {
