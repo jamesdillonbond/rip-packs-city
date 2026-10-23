@@ -34,7 +34,7 @@ failure it documents.
 
 ## 2026-10-23 — 1 filing
 
-- [🟡 Daytime monitor (10-23 ~03:10Z, infra GREEN, 11/11 dashboards OK) — allday-buyer-backfill decode dead-zone: 100%-decode-fail band ~2026-05-19→06-13 re-walked each cursor wrap, flaps the pipeline red ~31%](2026-10-23T0310Z-daytime-monitor-allday-buyer-backfill-decode-dead-zone-may-jun-2026.md)
+- [✅ DRAINED 2026-10-22 11:20 PM PT (Claude Code: `cd292b289` + `4b8bae0e7`; the band was the Dapper custodian, not a decode dead zone; the lane is caught up as of the 10-23 2:15 PM PT run) — 🟡 Daytime monitor (10-23 ~03:10Z, infra GREEN, 11/11 dashboards OK) — allday-buyer-backfill decode dead-zone: 100%-decode-fail band ~2026-05-19→06-13 re-walked each cursor wrap, flaps the pipeline red ~31%](2026-10-23T0310Z-daytime-monitor-allday-buyer-backfill-decode-dead-zone-may-jun-2026.md)
 
 ## 2026-10-22 — 3 filings
 
