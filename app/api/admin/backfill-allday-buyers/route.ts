@@ -71,7 +71,8 @@ export const maxDuration = 800
 // Deposit.to). 480 ≈ 2 min a run, ~3,840 rows/day, ~22 days; MAX_RUN_MS still bounds a run
 // if per-row latency drifts, and the cursor only advances past rows actually processed.
 const BATCH = 480
-// Forward lane owns current-spork rows only (mainnet27, from 2025-10-22):
+// Forward lane owns current-spork rows only (mainnet28, from its root block
+// 2025-12-29T03:11:27Z — the spork rest-mainnet.onflow.org serves, 2026-10-23):
 // pre-spork rows can't be decoded via current-spork REST and just churn the
 // cursor at rows_written=0 (#192 — the old "2025-01-01" floor did exactly that).
 // Bounding the select also lets the planner partition-prune.

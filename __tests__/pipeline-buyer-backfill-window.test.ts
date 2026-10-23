@@ -6,8 +6,11 @@ import { CURRENT_SPORK_START_ISO, buyerBackfillVerdict } from "@/lib/pipeline/bu
 // root (2025-10-22), which current-spork REST cannot decode — 480 of 480 failed
 // every run, 0 written, ok=true. These pin the floor and the verdict.
 describe("buyer backfill window + verdict (#192)", () => {
-  it("floors the window at mainnet27's root, not a calendar year", () => {
-    expect(CURRENT_SPORK_START_ISO).toBe("2025-10-22T00:00:00Z")
+  it("floors the window at the root block of the spork rest-mainnet serves, not a calendar date", () => {
+    // 2026-10-23: the root block of the spork rest-mainnet.onflow.org serves
+    // (mainnet28, 137,390,146), not a midnight date — a date floor admitted 41
+    // pre-mainnet27 rows that failed every wrap.
+    expect(CURRENT_SPORK_START_ISO).toBe("2025-12-29T03:11:27Z")
     const route = readFileSync("app/api/admin/backfill-allday-buyers/route.ts", "utf8")
     expect(route).toMatch(/const FORWARD_WINDOW_START = CURRENT_SPORK_START_ISO/)
     expect(route).not.toMatch(/"2025-01-01T00:00:00Z"/)

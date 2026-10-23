@@ -12,7 +12,20 @@
 // ok=true, walking ~10 months of rows that can never resolve (known-issues
 // #192). The historical access nodes that could decode them (mainnet24-26)
 // went dark 10-08/09 (#181).
-export const CURRENT_SPORK_START_ISO = "2025-10-22T00:00:00Z"
+//
+// ⚠ 2026-10-23 ~2:20 AM PT: THE FLOOR IS THE NODE'S ROOT BLOCK, NOT A DATE. The
+// 2:15 AM run (the first to reach the window floor after the custodial fix)
+// found 41 rows it could never decode: `allday_studio_history_v1` sales dated
+// 2025-10-22 00:19–09:24 UTC — BEFORE mainnet27's sporkTime (13:00 UTC, per
+// onflow/flow sporks.json), i.e. mainnet26 transactions, which no live node
+// serves. A midnight floor admitted them, so every cursor wrap ended on a
+// "decode wall: all 41 non-custodial rows failed" — one red run per cycle, the
+// exact shape the 10-17 floor was meant to end. And rest-mainnet.onflow.org is
+// not mainnet27 any more: measured tonight, it serves blocks from 137,390,146
+// (mainnet28's root, sealed 2025-12-29T03:11:27Z; 137,390,131 → 404). The floor
+// is that root block's timestamp. Between mainnet27's and mainnet28's roots
+// 0 unresolved rows remain (measured), so nothing is newly excluded.
+export const CURRENT_SPORK_START_ISO = "2025-12-29T03:11:27Z"
 
 export type BuyerBackfillCounts = {
   found: number
