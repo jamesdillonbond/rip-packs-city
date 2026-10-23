@@ -116,6 +116,12 @@ export type PriceReason =
 
 export interface V1TxDecodeResult {
   buyer: string | null
+  /**
+   * True when the sale's `Deposit.to` was a CUSTODIAN (CUSTODIAL_DEPOSIT_TARGETS): the tx was
+   * decoded, and it says the buyer is not knowable from it — distinct from a tx that could not be
+   * read. Optional so existing result literals stay valid; absent = false.
+   */
+  custodialDeposit?: boolean
   seller: string | null
   priceDuc: number | null
   priceCertain: boolean
@@ -175,7 +181,12 @@ export async function decodeV1SaleTx(
           if (typeof to === "string" && to.length > 0) {
             // ⛔ A CUSTODIAL deposit target is NOT the buyer, and this repo already
             // decided that in writing. See CUSTODIAL_DEPOSIT_TARGETS below.
-            result.buyer = isCustodialDepositTarget(to) ? null : to
+            if (isCustodialDepositTarget(to)) {
+              result.buyer = null
+              result.custodialDeposit = true
+            } else {
+              result.buyer = to
+            }
           }
         }
         continue

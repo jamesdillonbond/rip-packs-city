@@ -18,18 +18,31 @@ export type BuyerBackfillCounts = {
   found: number
   decodeFailed: number
   updateFailed: number
+  /**
+   * Rows whose tx DECODED and named the Dapper custodian as the deposit target (2026-10-22): the
+   * buyer is not knowable from that tx, by a recorded decision — not a decode failure. Optional
+   * for callers that predate it (absent = 0).
+   */
+  custodial?: number
 }
 
 // A run is NOT ok when it wrote nothing it read: every row in a non-empty
 // batch failed to decode (a decode wall — the shape #192 hid behind ok=true),
 // or any resolved row's UPDATE failed (a swallowed write). Rows that decode to
 // no buyer one at a time are normal and stay counted in decode_failed.
+//
+// ⚠ 2026-10-22: a CUSTODIAL row is not a failure. ~1,295 All Day sales (mostly 2026-05-18 → 06-29)
+// deposit to the Dapper custodian 0xddfbe848a81b2236, which the decoder rightly refuses as a buyer.
+// Counted as decode_failed, every batch that fell in that band was a "decode wall" — 5 of 16 runs
+// red over three days, re-walked on every wrap (inbox 2026-10-23T0310Z). The wall is now measured
+// over the rows that COULD have yielded a buyer.
 export function buyerBackfillVerdict(c: BuyerBackfillCounts): { ok: boolean; error: string | null } {
   if (c.updateFailed > 0) {
     return { ok: false, error: `${c.updateFailed} sales update(s) failed` }
   }
-  if (c.found > 0 && c.decodeFailed >= c.found) {
-    return { ok: false, error: `decode wall: all ${c.found} rows failed to decode` }
+  const decodable = c.found - (c.custodial ?? 0)
+  if (decodable > 0 && c.decodeFailed >= decodable) {
+    return { ok: false, error: `decode wall: all ${decodable} non-custodial rows failed to decode` }
   }
   return { ok: true, error: null }
 }

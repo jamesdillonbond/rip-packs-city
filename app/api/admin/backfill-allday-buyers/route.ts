@@ -173,6 +173,8 @@ async function handle(req: NextRequest) {
     let viaDeposit = 0
     let viaAuthorizers = 0
     let decodeFailed = 0
+    // Decoded, but the deposit went to the Dapper custodian: no buyer is knowable from this tx.
+    let custodial = 0
     let updateFailed = 0
     let bailedEarly = false
     let ok = true
@@ -245,7 +247,8 @@ async function handle(req: NextRequest) {
               : null
 
           if (!buyer && !seller) {
-            decodeFailed++
+            if (dec.custodialDeposit) custodial++
+            else decodeFailed++
           } else {
             const patch: Record<string, unknown> = {}
             if (buyer) patch.buyer_address = buyer
@@ -295,7 +298,7 @@ async function handle(req: NextRequest) {
       // Short batch ⇒ bottom of the unresolved set for this pass; wrap the cursor
       // so the next run starts a fresh top-down sweep (retries old-spork misses).
       cursorAfter = rows.length < BATCH ? null : minSoldAt
-      const verdict = buyerBackfillVerdict({ found, decodeFailed, updateFailed })
+      const verdict = buyerBackfillVerdict({ found, decodeFailed, updateFailed, custodial })
       if (!verdict.ok) {
         ok = false
         errMsg = verdict.error
@@ -314,7 +317,7 @@ async function handle(req: NextRequest) {
           finished_at: new Date().toISOString(),
           rows_found: found,
           rows_written: buyersResolved,
-          rows_skipped: decodeFailed,
+          rows_skipped: decodeFailed + custodial,
           ok,
           error: errMsg ? errMsg.slice(0, 500) : null,
           extra: {
@@ -325,6 +328,7 @@ async function handle(req: NextRequest) {
             via_deposit_to: viaDeposit,
             via_tx_authorizers: viaAuthorizers,
             decode_failed: decodeFailed,
+            custodial_deposit: custodial,
             update_failed: updateFailed,
             wrapped: cursorAfter === null,
             bailed_early: bailedEarly,

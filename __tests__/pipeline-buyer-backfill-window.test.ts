@@ -31,7 +31,29 @@ describe("buyer backfill window + verdict (#192)", () => {
   it("the route counts update errors and applies the verdict", () => {
     const route = readFileSync("app/api/admin/backfill-allday-buyers/route.ts", "utf8")
     expect(route).toMatch(/updateFailed\+\+/)
-    expect(route).toMatch(/buyerBackfillVerdict\(\{ found, decodeFailed, updateFailed \}\)/)
+    expect(route).toMatch(/buyerBackfillVerdict\(\{ found, decodeFailed, updateFailed, custodial \}\)/)
     expect(route).toMatch(/update_failed: updateFailed/)
+  })
+})
+
+// 2026-10-22 (inbox 2026-10-23T0310Z): ~1,295 All Day sales (mostly 05-18 → 06-29) deposit to the
+// Dapper custodian 0xddfbe848a81b2236. The decoder rightly returns no buyer; counted as decode
+// failures, every batch in that band was a "decode wall" and the pipeline flapped red each wrap.
+describe("buyer backfill verdict — custodial deposits are not decode failures", () => {
+  it("a batch of only custodial rows is ok — the txs decoded and say no buyer is knowable", () => {
+    expect(buyerBackfillVerdict({ found: 480, decodeFailed: 0, updateFailed: 0, custodial: 480 })).toEqual({ ok: true, error: null })
+  })
+  it("CONTROL: genuine failures among the non-custodial rows still make a wall", () => {
+    const v = buyerBackfillVerdict({ found: 480, decodeFailed: 30, updateFailed: 0, custodial: 450 })
+    expect(v.ok).toBe(false)
+    expect(v.error).toMatch(/all 30 non-custodial rows/)
+  })
+  it("a mixed batch that resolved some rows stays ok", () => {
+    expect(buyerBackfillVerdict({ found: 480, decodeFailed: 10, updateFailed: 0, custodial: 400 }).ok).toBe(true)
+  })
+  it("the route counts a custodial no-buyer row as custodial, not decode_failed, and reports it", () => {
+    const route = readFileSync("app/api/admin/backfill-allday-buyers/route.ts", "utf8")
+    expect(route).toMatch(/if \(dec\.custodialDeposit\) custodial\+\+\s*else decodeFailed\+\+/)
+    expect(route).toContain("custodial_deposit: custodial")
   })
 })
