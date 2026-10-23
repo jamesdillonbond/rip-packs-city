@@ -1,12 +1,35 @@
 # Franchise hubs — one page per real-world team, across collections
 
-**Status:** foundation SHIPPED 2026-09-23 (PT). Trevor's call: "Both, foundation first" — build the hub foundation now, then scope Panini NBA/MLB ingest as a follow-up with its own accuracy check.
+**Status:** foundation SHIPPED 2026-09-23 (PT). ⭐ **Panini cards on the hubs SHIPPED 2026-10-22/23** — every NBA hub today, MLB / NFL / WNBA as the team walk reaches them (section "Panini on the hubs" just below; it supersedes "Why every hub shows ONE panel today" and the walk's "Not done, on purpose"). Trevor's 09-23 call: "Both, foundation first"; his 10-22 call: "general player, team, etc pages that are agnostic … Do it all". Player hubs: [player-hubs.md](player-hubs.md).
 
 ## What a hub is
 
 `/teams/<league>/<short slug>` — e.g. `/teams/nba/blazers`, `/teams/mlb/tigers`. One page per franchise that gathers **every collection carrying that team**. Each collection gets a panel with the same numbers the per-collection team page shows (the panel reads the SAME `get_team_detail`, so the two cannot disagree) and a link into that page.
 
 The goal from the thread that started this: the **Blazers** hub shows Top Shot + Panini NBA cards; the **Tigers** hub shows Candy MLB + Panini MLB cards.
+
+## Panini on the hubs (2026-10-22/23)
+
+**Why it needed its own path.** Panini editions carry NO team (`editions.team_name` NULL on every Panini row), so `get_team_detail` cannot see them and Panini has no `league_collections` row (deliberately still none — the registry also drives `/my-teams` and the `/teams` directory). The team walk's `panini_team_listings.franchise_keys` ('NBA:blazers' — the franchise Panini's own marketplace team filter lists a card under) is the source; nothing on the site read it before 10-22.
+
+| When | Migration / commit | What |
+|---|---|---|
+| 10-22 11:22 PM PT | `20261023060839`, `4b59a2e74` | `get_panini_franchise_panel(league, slug)` (NULL when no catalogued Panini edition maps; else editions / players / mint / FMV total + the league's live coverage), `get_panini_franchise_editions(…, limit, offset)` (team-tile shape, `e.id` tiebreak, `set_slug` = the card's own PRODUCT key), `franchise_hub_keys(pairs)` (search team rows → hub; 17.6 ms, the inline form was 901 ms). Hub page Panini panel + `/api/entity/panini-team-editions`; `hubIsIndexable` counts an ok Panini panel; `/api/search` team rows → hub, one row per franchise (`lib/search/team-hub-hits.ts`) |
+| 10-23 6:35 AM PT | `20261023132830`, `20261023132904`, `532efe176` | roster 31 → 105 (30 NBA · 24 MLB cities · 36 NFL incl. 4 historic labels · 15 WNBA); sport CHECKs widened; `panini_resolve_team_keys` maps Football / Womens Basketball labels (current + historic) through `league_team_abbr`; `panini_team_walk_plan_for(limit, sports)` — the receiver plans only the sports the walker names |
+| 10-23 7:00 AM PT | `20261023135645` | MLB shared cities (below) |
+| 10-23 7:58 AM PT | `20261023145800` | the plan interleaves sports among never-walked targets |
+
+**The panel is three-state, and its "empty" renders NOTHING.** `absent` (no mapped card) shows no panel — for most leagues the walk mapped no team, so "no Panini cards" would be a false claim; `failed` renders unavailable; `ok` shows the numbers, a coverage sentence ("That filter places 10,329 of the 10,898 Panini basketball cards we track on a team (94%)" — floored) and the top 6 cards.
+
+**Coverage, measured 10-22 ~11:00 PM PT** (catalogued Panini editions with a key / in that sport): Basketball 10,329 / 10,898 · Baseball 24 / 732 · Football, Soccer, Womens Basketball, Racing 0. The walk also sees ~24k listed cards the catalogue does not hold; those have no edition page and are not counted. Blazers: 454 editions / 40 players / FMV $9,652. A card's team does not change once seen; the panel counts retired listings too.
+
+**⚠ The old laptop script and the starvation trap.** The pre-10-23 `panini-team-walk.mjs` drops any target that is not Basketball/Baseball client-side, and the plan hands out never-attempted rows first — a dropped row is never stamped, would stay stalest forever and starve the rotation. So `/api/cron/panini-team-walk`'s `plan` op defaults to `['Basketball','Baseball']` when the walker names no sports (`LEGACY_PLAN_SPORTS`, pinned by "never hands a walker that names no sports a Football or WNBA target"); the new script names all four. NFL / WNBA are walked only after the laptop checkout is pulled.
+
+**⚠ NFL / WNBA labels are teams_master's spelling, not read from Panini** (its marketplace is unreachable from the cloud sandbox). For the NBA that spelling matched 24 of 30 with no alias. A label Panini spells differently walks an empty grid: `last_listings = 0` on its `panini_team_walk_targets` row after its first walk is the tell; the fix is a roster row in Panini's spelling (the resolver already maps every current and historic name).
+
+**MLB shared cities (`20261023135645`).** Panini has no MLB club license: baseball cards carry the CITY only. Los Angeles, New York and Chicago are two clubs each. A shared-city card maps to a club only when EXACTLY ONE of that city's two clubs appears among the card-year−1..card-year MLB seasons of ANY person with the athlete's name — MLB's Stats API (`statsapi.mlb.com`, through `pg_net`) via `mlb_player_lookup_request` / `_collect` into `mlb_player_lookups` + `mlb_player_club_seasons`; `panini_mlb_shared_city_key`, `panini_resolve_team_keys_for`; `panini_reresolve_team_keys(sport)` re-keys rows walked before a lookup landed. Namesakes fall out of the union (Will Smith: Dodgers catcher + Braves/Giants pitcher → one LA club). Lookups: all 319 catalogued Panini baseball names — 318 resolved (6 via MLB's spelling: Nick Castellanos, Hoy Park, Hyun Jin Ryu, Michael Soroka, Andrew Young, Jonathan Heasley, stored under Panini's spelling), 1 deliberately left 'none' (Luis V. Garcia — "Luis Garcia" is several MLB players). Spot checks: Ohtani LA 2022 → angels · Betts → dodgers · Judge → yankees · Alonso → mets · Robert → white-sox · Bryant CHI 2021 → cubs · Judge on an LA card → NULL. Sizing (widest window): LA 33/34 players (118 editions), NY 28/28 (74), CHI 25/26 (52). A new Panini baseball player needs a lookup: `select mlb_player_lookup_request(array[...])`, then `mlb_player_lookup_collect(<ids>)` in a LATER call (pg_net sends on commit), then `panini_reresolve_team_keys('Baseball')`.
+
+**Indexing / sitemap.** NBA hubs became `index, follow` on 10-22 (an ok Panini panel = a second collection); another session listed them in the sitemap 10-23 (`20261023073556`, `list_indexable_franchise_hubs` — the same predicate). MLB/NFL/WNBA hubs follow automatically as the walk maps their cards.
 
 ## What shipped (2026-09-23)
 
@@ -21,7 +44,7 @@ The goal from the thread that started this: the **Blazers** hub shows Top Shot +
 | App | `/my-teams` cards open the franchise hub; MLB is a followable league; the bound wallet is passed to a team's checklist **only when its chain matches** the collection (a Flow wallet against Candy would have read as "you own 0") |
 | App | `proxy.ts`: `/teams/<league>/<slug>` is public and page-rate-limited |
 
-**Indexing.** A hub is `noindex, follow` until it gathers **2+** enabled collections (`hubIsIndexable`) — a one-collection hub is a near-duplicate of the per-collection team page. It is not in the sitemap yet for the same reason.
+**Indexing.** A hub is `noindex, follow` until it gathers **2+** enabled collections (`hubIsIndexable`) — a one-collection hub is a near-duplicate of the per-collection team page. It is not in the sitemap yet for the same reason. (⚠ 10-22: an ok Panini panel counts as the second collection; the indexable hubs are in the sitemap since 10-23.)
 
 ## Panel extras (2026-09-24, QA pass batch 2)
 
@@ -34,7 +57,7 @@ section's failed copy, not an empty grid. Every per-collection team page
 (`/<collection>/team/<slug>`) links its hub ("<Team> across every collection →") when the team has a
 `team_short_slug` and its league is a hub league (exhibition slugs excluded).
 
-## Why every hub shows ONE panel today
+## Why every hub shows ONE panel today — ⚠ SUPERSEDED 2026-10-22 (see "Panini on the hubs" above; kept as the 09-23 record)
 
 RPC's Panini data is **100% FIFA World Cup 2026 soccer** (Prizm World Cup, `setId 2332`, walked from `marketplace/nfts.html?sport=Soccer`). There are no Panini NBA or MLB cards in the database, so no Panini panel can exist yet. Measured 2026-09-23: `panini_editions` has 5,090 rows across 62 soccer sets; its only people columns are `player_name` and `nation`.
 
@@ -95,9 +118,9 @@ Examples: **Blazers** — Scoot Henderson, Donovan Clingan, Toumani Camara, Carm
 | `panini_team_listings_ingest` | upsert; retires listings a walk no longer saw **only when the walk was complete** (ended on an empty page and every flush landed) |
 | `panini_team_listing_franchise_summary` | operator read-back: active listings / editions / min ask per franchise |
 
-All service-role only; **nothing on the site reads it**. `pipeline_runs`: `panini-team-walk` (+ `-heartbeat` before each target). ⚠ The first two rows under that name (2026-09-24 7:32 AM PT, ok=false, "no readable products response") are the GitHub Actions attempt, not the laptop arm.
+All service-role only; **nothing on the site reads it** — ⚠ superseded 2026-10-22: the hubs' Panini panel reads it (`get_panini_franchise_panel`). `pipeline_runs`: `panini-team-walk` (+ `-heartbeat` before each target). ⚠ The first two rows under that name (2026-09-24 7:32 AM PT, ok=false, "no readable products response") are the GitHub Actions attempt, not the laptop arm.
 
-**Not done, on purpose:** no `league_collections` row for Panini yet (a hub panel reads `get_team_detail`, and Panini NBA/MLB is not in `editions`); no pricing (listings are asks, not FMV); no other teams (widen `PANINI_TEAM_TARGETS` once the pilot's numbers are read).
+**Not done, on purpose (09-24 — ⚠ superseded 10-22/23 except the `league_collections` row, still deliberately absent):** no `league_collections` row for Panini yet (a hub panel reads `get_team_detail`, and Panini NBA/MLB is not in `editions`); no pricing (listings are asks, not FMV); no other teams (widen `PANINI_TEAM_TARGETS` once the pilot's numbers are read).
 
 **Next:** read two or three more daily runs (watch for backoff lines and any `after 4 attempts` failure) → widen. **Sizing (measured, not guessed):** Blazers-sized teams take ~16 min, so all 30 NBA teams ≈ 8 h. The walk shares `RPC Panini Ingest`'s **2 h ExecutionTimeLimit** with the ~75 min soccer runner, so ≈ 2 teams fit per daily pass. Widening beyond that wants either a rotation (a few teams/day off a cursor) or its OWN scheduled task at an hour the soccer runner is idle (both drive the same debug Chrome, so never overlapping) → decide how Panini NBA prices are judged against the accuracy gate → bridge into `editions` and flip `league_collections`.
 
@@ -105,6 +128,7 @@ All service-role only; **nothing on the site reads it**. `pipeline_runs`: `panin
 
 - App: revert the commit (message starts `feat(teams): franchise hubs`).
 - DB: `DROP FUNCTION public.get_franchise_hub(text, text);` restore the two pre-image bodies below; `DROP TABLE public.league_collections;` `DELETE FROM public.teams_master WHERE league = 'MLB';` (`league_t` keeps `MLB` — enum values cannot be dropped; an unused value is inert.) ⚠ Delete MLB rows from `user_favorite_teams` first if anyone has followed an MLB team.
+- Panini on the hubs (10-22/23), newest first — each migration header carries its exact revert: `20261023145800` (re-apply the plan from `20261023132830`) · `20261023135645` (re-apply the ingest from `20261023132830`; remove the three roster rows, five functions, three `mlb_*` tables) · `20261023132904` / `20261023132830` (roster rows, CHECKs, resolver, ingest, plan_for) · `20261023060839` (three functions) — app: `git revert 532efe176 4b59a2e74`.
 
 ### Pre-image: `get_my_fan_teams()` (before 2026-09-23)
 
