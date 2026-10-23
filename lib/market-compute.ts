@@ -158,8 +158,9 @@ export function isSpecialSerial(traits?: string[] | null): boolean {
 // since we're applying it to lowAsk (floor) rather than an isolated comp.
 // These will be replaced by isolated comp lookups once 90d crawler is live.
 
-// ⚠ EXPORTED so the marketing copy can be PINNED to it. `__tests__/homepage-serial-premium-copy-matches-the-model.test.ts`
-// asserts every "N×" the homepage prints is a real entry here. Deep-audit R105 (2026-09-18) found the homepage
+// ⚠ NOT THE LIVE SERIAL MODEL (2026-10-22): computeFmv's only caller, /api/market-truth, has no client.
+// Live serial prices come from the SQL serial_fmv_estimate. The homepage used to quote these numbers;
+// it no longer quotes any (__tests__/homepage-serial-premium-copy-matches-the-model.test.ts). Deep-audit R105 (2026-09-18) found the homepage
 // publishing "low serials = 4.5x, last mint = 3x" - neither exists in this file, and the second is flatly
 // contradicted by computeSerialMultiplier() returning exactly 1.0 at or above the median serial.
 export const SPECIAL_SERIAL_MULTIPLIERS: Record<SpecialSerialBadge, number> = {

@@ -163,12 +163,16 @@ const HOW_STEPS: Array<{ n: string; title: string; copy: string }> = [
 
 const DEPTH_BULLETS: Array<{ icon: string; copy: string }> = [
   { icon: "◈", copy: "Outlier-filtered FMV with distributional shape (p10 / p50 / p90)." },
-  // ⚠ EVERY "N×" ON THIS LINE IS PINNED to lib/market-compute.ts by
-  // __tests__/homepage-serial-premium-copy-matches-the-model.test.ts. Do not add a number here
-  // that the model does not implement. Deep-audit R105 (2026-09-18): this bullet used to read
-  // "1-of-1 = 12×, low serials = 4.5×, last mint = 3×" — 4.5× existed nowhere, and "last mint = 3×"
-  // was contradicted by our own code, which returns exactly 1.0 for any serial at or above the median.
-  { icon: "▲", copy: "Serial premium multipliers — #1 = 12×, jersey = 8×, perfect-mint = 6×, plus a tier-calibrated curve for serials below an edition's median." },
+  // Deep-audit R105 (2026-09-18): this bullet once read "1-of-1 = 12×, low serials = 4.5×, last mint =
+  // 3×" — numbers no model implemented. Do not put a fixed multiplier back here (see below).
+  // ⚠ 2026-10-22: re-pinned to the LIVE model. The "#1 = 12×, jersey = 8×, perfect-mint = 6×" + "a
+  // curve for serials below the median" bullet quoted lib/market-compute.ts, whose only caller
+  // (/api/market-truth) has no client. Every live surface prices serials through the SQL
+  // serial_fmv_estimate (fitted models with set + player effects), which prices ONLY #1 /
+  // perfect-mint / jersey-match serials and varies by tier and mint size (#1 measured 5.3× on a
+  // /99 Rare, 10.2× on a 15,000 Common, 12.8× on a /25 Legendary) — so a flat number is false for
+  // most editions. Pinned by __tests__/homepage-serial-premium-copy-matches-the-model.test.ts.
+  { icon: "▲", copy: "Special-serial premiums fitted to real sales — #1, perfect-mint and jersey-match serials, each priced by tier and mint size, not one flat multiplier." },
   { icon: "≋", copy: "Liquidity ratings on every edition based on 30-day depth." },
   { icon: "⚡", copy: "Real-time deal sniping on Top Shot." },
   { icon: "✦", copy: "Badge-aware pricing — Top Shot Debut, Rookie Year, Championship, Fresh." },
