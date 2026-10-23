@@ -1186,89 +1186,20 @@ export async function POST(req: NextRequest) {
     // exactly what was measured: the FRESHNESS of `cached_listings`. Whether Flowty's marketplace
     // is up, down, or partially retired was NOT measured here, so nothing above asserts it.
 
-    // ── Step 3: Delete TODAY's snapshots for these editions only ─────────────
-    // History matters: yesterday + earlier rows must persist so we can chart
-    // price moves, market movers, and trend detection. The 20-min recalc cron
-    // overwrites today's row in place.
-    // Use the post-ULTIMATE-skip set so we never delete today's ultimate-v1 row.
-    // Chunked .in() — at limit=2500 a single .in() exceeds the PostgREST URL
-    // cap and supabase-js silently returns deleteError, exiting the run with
-    // no pipeline_runs row. Bug from 2026-05-24 (cursor ≥5000 page returned
-    // ~2000 distinct editions and silently stalled the entire pipeline).
-    const editionIdsToWrite = [...editionSalesMap.keys()]
+    // ── Step 3: (moved) today's replace-delete runs AFTER Step 4's insert ─────
+    // 2026-10-23: this step used to DELETE today's snapshots for every edition
+    // in the page BEFORE Step 4 built the new rows. Step 4 can skip an edition
+    // (every sale removed by dampenGrailSpike, the single-sale common guard, a
+    // failed insert chunk), and a skipped edition then kept NEITHER row: today's
+    // row from another writer (drain_fmv_cold_tail's ask re-stamp, 185:6539 at
+    // 2:47 AM PT) was deleted and readers fell back to an older snapshot. Now
+    // Step 4 inserts first and purge_fmv_snapshots_today_except deletes today's
+    // rows ONLY for the editions it wrote, minus the rows it just inserted (the
+    // R123 order edition-floor already uses). History (pre-today rows) is never
+    // touched; ULTIMATE editions never enter editionSalesMap, so today's
+    // ultimate-v1 row is never deleted.
     const todayStart = new Date()
     todayStart.setUTCHours(0, 0, 0, 0)
-    {
-      const DEL_CHUNK = 500
-      let chunkFailed = false
-      let lastDeleteMessage: string | null = null
-      let lastDelStatus: number | undefined
-      let failedChunkOffset = -1
-      for (let i = 0; i < editionIdsToWrite.length; i += DEL_CHUNK) {
-        const slice = editionIdsToWrite.slice(i, i + DEL_CHUNK)
-        // Retry a failed chunk once after a short pause — these failures are
-        // overwhelmingly transient DB-saturation/statement-timeout, not a bad
-        // query. One retry only; on hard failure the cursor stays put so the
-        // same page is retried next tick anyway (mirrors rpcRetry/SMOKE-RETRY).
-        let deleteError: { message: string } | null = null
-        let delStatus: number | undefined
-        for (let attempt = 0; attempt < 2; attempt++) {
-          // 2026-07-13: moved off the inline PostgREST .delete() (which runs via
-          // the authenticator, whose ~8s lock_timeout survives SET ROLE and made
-          // this today-purge die "canceling statement due to lock timeout" under
-          // evening contention) into a SECURITY DEFINER fn carrying
-          // lock_timeout=25s, so a brief lock overlap waits it out. Same class as
-          // the 07-11 upsert_pack_rips fix. Behavior-identical delete.
-          const res = await supabaseAdmin.rpc("purge_fmv_snapshots_today", {
-            p_edition_ids: slice,
-            p_today_start: todayStart.toISOString(),
-          })
-          deleteError = res.error
-          delStatus = res.status
-          if (!deleteError) break
-          if (attempt === 0) await new Promise((r) => setTimeout(r, 750))
-        }
-        if (deleteError) {
-          console.error(
-            `[FMV-RECALC] Step 3 delete chunk ${i}-${i + slice.length} failed:`,
-            deleteError.message,
-            { status: delStatus },
-          )
-          chunkFailed = true
-          lastDeleteMessage = deleteError.message
-          lastDelStatus = delStatus
-          failedChunkOffset = i
-          break
-        }
-      }
-      if (chunkFailed) {
-        try {
-          await supabaseAdmin.rpc("log_pipeline_run", {
-            p_pipeline: "fmv-recalc",
-            p_started_at: new Date(startTime).toISOString(),
-            p_rows_found: editionIds.length,
-            p_rows_written: 0,
-            p_rows_skipped: 0,
-            p_ok: false,
-            // Keep the constant as a prefix so existing pipeline_runs scans
-            // still match, but carry the real PG error text for diagnosis.
-            p_error: `step3_delete_chunk_failed: ${lastDeleteMessage ?? "unknown"}`,
-            p_collection_slug: null,
-            p_cursor_before: String(offset),
-            p_cursor_after: String(offset),
-            p_extra: {
-              algo_version: ALGO_VERSION,
-              stage: "step3_today_purge",
-              failed_chunk_offset: failedChunkOffset,
-              del_status: lastDelStatus ?? null,
-            },
-          })
-        } catch {
-          // best-effort — main failure is already in console
-        }
-        return
-      }
-    }
 
     // ── Step 4: Build and insert fresh snapshots ──────────────────────────────
     // Sales-only FMV (1.8.0): median of the 7 most recent typical sales, with the
@@ -1436,19 +1367,20 @@ export async function POST(req: NextRequest) {
 
     const CHUNK_SIZE = 100
     let snapshotsUpdated = 0
-    // ⛔ Step 3 has ALREADY deleted today's rows for this page. A failed insert
-    // here used to be a console.error while the run logged ok:true and moved the
-    // sweep cursor on, so those editions fell back to yesterday's snapshot until
-    // the sweep wrapped (~1.5 d). Now the run holds the cursor at this page, as
-    // the Step 3 failure path does, and reports the failure (2026-10-09).
+    // A failed insert holds the cursor at this page and reports the failure
+    // (2026-10-09). Since 2026-10-23 nothing was deleted first, so a failed
+    // chunk leaves those editions on their previous rows, never on none.
     let step4RowsFailed = 0
     let step4InsertError: string | null = null
+    const keepIds: string[] = []
+    const writtenEditionIds = new Set<string>()
 
     for (let i = 0; i < insertRows.length; i += CHUNK_SIZE) {
       const chunk = insertRows.slice(i, i + CHUNK_SIZE)
-      const { error: insertError } = await supabaseAdmin
+      const { data: inserted, error: insertError } = await supabaseAdmin
         .from("fmv_snapshots")
         .insert(chunk)
+        .select("id, edition_id")
 
       if (insertError) {
         console.error("DB write failed:", insertError, { chunkIndex: i, chunkSize: chunk.length })
@@ -1456,6 +1388,39 @@ export async function POST(req: NextRequest) {
         step4InsertError = step4InsertError ?? insertError.message
       } else {
         snapshotsUpdated += chunk.length
+        for (const r of (inserted ?? []) as Array<{ id: string; edition_id: string }>) {
+          keepIds.push(r.id)
+          writtenEditionIds.add(r.edition_id)
+        }
+      }
+    }
+
+    // Step 3 (replace-delete): today's OLDER rows for the editions just written.
+    // Chunked like the old purge (a single .in() over a 2,500-edition page blew
+    // the PostgREST URL cap, 2026-05-24); one retry for transient lock contention.
+    // A failure leaves duplicates for today (readers take the newest computed_at,
+    // so prices are right) but is reported and holds the cursor, as before.
+    let step3ReplaceDeleteError: string | null = null
+    {
+      const written = [...writtenEditionIds]
+      const DEL_CHUNK = 500
+      for (let i = 0; i < written.length && !step3ReplaceDeleteError; i += DEL_CHUNK) {
+        const slice = written.slice(i, i + DEL_CHUNK)
+        let err: { message: string } | null = null
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const res = await supabaseAdmin.rpc("purge_fmv_snapshots_today_except", {
+            p_edition_ids: slice,
+            p_today_start: todayStart.toISOString(),
+            p_keep_ids: keepIds,
+          })
+          err = res.error
+          if (!err) break
+          if (attempt === 0) await new Promise((r) => setTimeout(r, 750))
+        }
+        if (err) {
+          console.error(`[FMV-RECALC] Step 3 replace-delete chunk ${i}-${i + slice.length} failed:`, err.message)
+          step3ReplaceDeleteError = err.message
+        }
       }
     }
 
@@ -2821,18 +2786,21 @@ export async function POST(req: NextRequest) {
         p_rows_found: editionIds.length,
         p_rows_written: snapshotsUpdated,
         p_rows_skipped: step4RowsFailed,
-        // A failed Step 4 insert holds the cursor on this page (its today rows
-        // were purged in Step 3); the next tick re-prices it.
-        p_ok: step4RowsFailed === 0,
-        p_error: step4RowsFailed > 0 ? `step4_insert_failed: ${step4InsertError ?? "unknown"}` : null,
+        // A failed Step 4 insert or Step 3 replace-delete holds the cursor on this
+        // page; the next tick re-prices it (and re-cleans any duplicate today rows).
+        p_ok: step4RowsFailed === 0 && !step3ReplaceDeleteError,
+        p_error: step4RowsFailed > 0
+          ? `step4_insert_failed: ${step4InsertError ?? "unknown"}`
+          : step3ReplaceDeleteError ? `step3_replace_delete_failed: ${step3ReplaceDeleteError}` : null,
         p_collection_slug: null,
         p_cursor_before: String(offset),
-        p_cursor_after: step4RowsFailed > 0 ? String(offset) : (hasMore ? String(offset + limit) : null),
+        p_cursor_after: step4RowsFailed > 0 || step3ReplaceDeleteError ? String(offset) : (hasMore ? String(offset + limit) : null),
         p_extra: {
           algo_version: ALGO_VERSION,
           duration_ms: duration,
           step4_insert_rows_failed: step4RowsFailed,
           step4_insert_error: step4InsertError,
+          step3_replace_delete_error: step3ReplaceDeleteError,
           // 2026-08-03: extra recorded haircut/wash-trade/clamp counts but NOT
           // the pagination state, so a sweep that never advanced looked healthy
           // for 20 hours. These three are the ones that would have shown it.

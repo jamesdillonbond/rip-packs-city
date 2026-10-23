@@ -130,6 +130,28 @@ function terminalLog(rpcCalls: RpcCall[]): Record<string, unknown> | undefined {
   return rpcCalls.filter((c) => c.name === "log_pipeline_run").at(-1)?.args
 }
 
+/** Make fmv_snapshots `.insert(rows).select(...)` resolve to the inserted rows'
+ *  ids (as PostgREST does) while the instrumented insert still records them.
+ *  Step 4 keys its replace-delete on these ids (2026-10-23). */
+function echoSnapshotInsertIds() {
+  const sb = state.sb as { from: (t: string) => Record<string, unknown> }
+  const baseFrom = sb.from.bind(sb)
+  sb.from = (t: string) => {
+    const b = baseFrom(t)
+    if (t === "fmv_snapshots") {
+      const recordInsert = b.insert as (rows: unknown) => unknown
+      b.insert = (rows: unknown) => {
+        recordInsert(rows)
+        const arr = (Array.isArray(rows) ? rows : [rows]) as Array<{ edition_id: string }>
+        return {
+          select: () => Promise.resolve({ data: arr.map((r, i) => ({ id: `snap-new-${i}`, edition_id: r.edition_id })), error: null }),
+        }
+      }
+    }
+    return b
+  }
+}
+
 describe("fmv-recalc deferred sweep — happy path", () => {
   it("prices an edition from its sales, inserts a snapshot, and logs ok=true with a null wrap cursor", async () => {
     const { rpcCalls, inserted } = instrument({
@@ -144,6 +166,7 @@ describe("fmv-recalc deferred sweep — happy path", () => {
       fmv_snapshots: { data: [], error: null },
       ...QUIET_TAIL,
     })
+    echoSnapshotInsertIds()
 
     const res = await POST(req())
     expect(res.status).toBe(200)
@@ -177,9 +200,12 @@ describe("fmv-recalc deferred sweep — happy path", () => {
       p_cursor_after: null,
     })
 
-    // The today-purge ran for the edition before the insert (delete-then-insert).
-    const purge = rpcCalls.find((c) => c.name === "purge_fmv_snapshots_today")
+    // Insert FIRST, then the replace-delete for the WRITTEN edition, keeping the
+    // row just inserted (2026-10-23; the old order deleted before building).
+    expect(rpcCalls.some((c) => c.name === "purge_fmv_snapshots_today")).toBe(false)
+    const purge = rpcCalls.find((c) => c.name === "purge_fmv_snapshots_today_except")
     expect(purge?.args?.p_edition_ids).toEqual(["ed-1"])
+    expect(purge?.args?.p_keep_ids).toEqual(["snap-new-0"])
 
     // Chain continues to listing-cache.
     expect(state.chained).toEqual([{ path: "/api/listing-cache", chain: false }])
@@ -360,7 +386,7 @@ describe("fmv-recalc Step 4 — a failed snapshot insert holds the cursor (2026-
     sb.from = (t: string) => {
       const b = baseFrom(t)
       if (t === "fmv_snapshots") {
-        b.insert = () => Promise.resolve({ data: null, error: { code: "57014", message: "statement timeout" } })
+        b.insert = () => ({ select: () => Promise.resolve({ data: null, error: { code: "57014", message: "statement timeout" } }) })
       }
       return b
     }
@@ -378,6 +404,8 @@ describe("fmv-recalc Step 4 — a failed snapshot insert holds the cursor (2026-
     })
     expect(String(log?.p_error)).toContain("step4_insert_failed")
     expect((log?.p_extra as Record<string, unknown>).step4_insert_rows_failed).toBe(1)
+    // Nothing was written, so nothing is deleted: the edition keeps its prior rows.
+    expect(rpcCalls.some((c) => c.name === "purge_fmv_snapshots_today_except")).toBe(false)
   })
 })
 
@@ -517,9 +545,13 @@ describe("fmv-recalc deferred sweep — every exit path logs (the 2026-05-25 inc
     expect(inserted.fmv_snapshots ?? []).toHaveLength(0)
   })
 
-  it("Step 3 today-purge hard failure logs step3_delete_chunk_failed and aborts before inserting", async () => {
+  // 2026-10-23: the replace-delete runs AFTER the insert (it used to run before
+  // and abort the run). A failure now leaves the new rows in place beside today's
+  // older ones (readers take the newest), is retried once, then is REPORTED and
+  // holds the cursor so the next tick re-cleans the page.
+  it("Step 3 replace-delete failure after a landed insert logs step3_replace_delete_failed and holds the cursor", async () => {
     const { rpcCalls, inserted } = instrument({
-      pipeline_runs: { data: null, error: null },
+      pipeline_runs: { data: { cursor_after: "3000" }, error: null },
       "rpc:fmv_recalc_edition_page": { data: [{ edition_id: "ed-1" }], error: null },
       sales_market: {
         data: [sale(10, 300, 1), sale(10, 400, 3), sale(10, 500, 6), sale(10, 600, 10), sale(10, 700, 15)],
@@ -528,21 +560,46 @@ describe("fmv-recalc deferred sweep — every exit path logs (the 2026-05-25 inc
       editions: EDITION_META,
       edition_offers: { data: [], error: null },
       ...QUIET_TAIL,
-      "rpc:purge_fmv_snapshots_today": { data: null, error: { message: "canceling statement due to lock timeout" } },
+      "rpc:purge_fmv_snapshots_today_except": { data: null, error: { message: "canceling statement due to lock timeout" } },
     })
+    echoSnapshotInsertIds()
 
     await POST(req())
     await runDeferred()
 
     const log = terminalLog(rpcCalls)
-    expect(log).toMatchObject({ p_pipeline: "fmv-recalc", p_ok: false })
-    expect(String(log?.p_error)).toContain("step3_delete_chunk_failed")
-    // Delete-then-insert discipline: a failed purge must never be followed by
-    // an insert (that would double today's rows on the next successful pass).
-    expect(inserted.fmv_snapshots ?? []).toHaveLength(0)
-    // The purge was retried once (transient-saturation retry) before giving up.
-    expect(rpcCalls.filter((c) => c.name === "purge_fmv_snapshots_today")).toHaveLength(2)
+    expect(log).toMatchObject({ p_pipeline: "fmv-recalc", p_ok: false, p_cursor_before: "3000", p_cursor_after: "3000" })
+    expect(String(log?.p_error)).toContain("step3_replace_delete_failed")
+    expect((log?.p_extra as Record<string, unknown>).step3_replace_delete_error).toContain("lock timeout")
+    // The insert landed FIRST — the page is priced even though the cleanup failed.
+    expect(inserted.fmv_snapshots ?? []).toHaveLength(1)
+    // The replace-delete was retried once (transient-saturation retry) before giving up.
+    expect(rpcCalls.filter((c) => c.name === "purge_fmv_snapshots_today_except")).toHaveLength(2)
   }, 15000)
+
+  // The 2026-10-23 bug: Step 3 deleted today's rows for EVERY page edition before
+  // Step 4 decided to skip some, so a skipped edition lost today's row from another
+  // writer (a drain_fmv_cold_tail ask re-stamp) and fell back to an older snapshot.
+  it("an edition Step 4 skips is never deleted (single-sale common guard)", async () => {
+    const { rpcCalls, inserted } = instrument({
+      pipeline_runs: { data: null, error: null },
+      "rpc:fmv_recalc_edition_page": { data: [{ edition_id: "ed-1" }], error: null },
+      // One $900 sale on a COMMON edition → LOW, fmv > 500, 1 sale → skipped.
+      sales_market: { data: [sale(900, 300, 2)], error: null },
+      editions: EDITION_META,
+      edition_offers: { data: [], error: null },
+      fmv_snapshots: { data: [], error: null },
+      ...QUIET_TAIL,
+    })
+    echoSnapshotInsertIds()
+
+    await POST(req())
+    await runDeferred()
+
+    expect(inserted.fmv_snapshots ?? []).toHaveLength(0)
+    expect(rpcCalls.some((c) => c.name === "purge_fmv_snapshots_today")).toBe(false)
+    expect(rpcCalls.some((c) => c.name === "purge_fmv_snapshots_today_except")).toBe(false)
+  })
 
   it("a throw inside the sweep logs fatal_after_throw instead of dying silently", async () => {
     const { rpcCalls } = instrument(
