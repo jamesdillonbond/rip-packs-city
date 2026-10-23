@@ -192,6 +192,7 @@ describe("POST /api/admin/backfill-topshot-buyers (forward lane)", () => {
     })
     expect(runRow.extra).toMatchObject({
       cursor_sold_at: null,
+      cursor_id: null,
       cursor_before: "2026-07-01T00:00:00Z",
       buyers_resolved: 1,
       exec_accounts_resolved: 1,
@@ -253,7 +254,69 @@ describe("POST /api/admin/backfill-topshot-buyers (forward lane)", () => {
 
     const runRow = (spy.writes.pipeline_runs ?? []).find((w) => w.method === "insert")!.rows[0]
     expect(runRow).toMatchObject({ rows_found: 100, rows_written: 0, rows_skipped: 100, ok: true })
-    expect(runRow.extra).toMatchObject({ cursor_sold_at: oldest, wrapped: false })
+    expect(runRow.extra).toMatchObject({ cursor_sold_at: oldest, cursor_id: "s99", wrapped: false })
+    // the below-floor band is counted only on a WRAPPING run: null here, never a 0
+    expect(runRow.extra).toMatchObject({ exhausted_in_window: null, below_forward_floor: null })
+  })
+
+  // 2026-10-23: measured live at the 12:04 AM PT run's boundary — SIX Top Shot
+  // sales shared the cursor's exact sold_at (06:30:53.446Z), and the 12:34 AM
+  // run's `sold_at < cursor` skipped the ones the first batch had not reached.
+  it("a full batch records the smallest (sold_at, id) it processed — the id breaks a shared-timestamp tie", async () => {
+    vi.useFakeTimers()
+    const rows = Array.from({ length: 100 }, (_, i) => ({
+      id: `b${String(i).padStart(4, "0")}`,
+      nft_id: String(i),
+      transaction_hash: `txt${i}`,
+      sold_at: new Date(Date.UTC(2026, 9, 23, 6) - i * 60_000).toISOString(),
+      seller_address: null,
+    }))
+    // the batch's oldest timestamp is shared by its last two rows, in the walk's
+    // (sold_at DESC, id DESC) order: the smaller id is the row to resume below
+    rows[98].sold_at = rows[99].sold_at
+    rows[98].id = "a9999"
+    rows[99].id = "a0001"
+    const spy = install({
+      pipeline_runs: { data: { extra: { cursor_sold_at: "2026-10-23T07:00:00.000Z", cursor_id: "zzzz" } }, error: null },
+      sales: [{ data: rows, error: null }, { data: null, error: null }],
+    })
+    const res = await tsRoute.POST(
+      adminReq("https://t/api/admin/backfill-topshot-buyers", { authorization: "Bearer ingest-secret" }),
+    )
+    expect(res.status).toBe(200)
+    const deferred = runDeferred()
+    await vi.runAllTimersAsync()
+    await deferred
+    const runRow = (spy.writes.pipeline_runs ?? []).find((w) => w.method === "insert")!.rows[0]
+    expect(runRow.rows_found).toBe(100)
+    expect(runRow.extra).toMatchObject({
+      cursor_before: "2026-10-23T07:00:00.000Z",
+      cursor_sold_at: rows[99].sold_at,
+      cursor_id: "a0001",
+      wrapped: false,
+    })
+  })
+
+  it("a wrapping run counts the unresolved rows below the forward floor (the historical lane's band) — a failed count is -1, never 0", async () => {
+    const run = async (belowFixture: { data: null; error: unknown; count?: number }) => {
+      const spy = install({
+        pipeline_runs: { data: null, error: null },
+        sales: [
+          { data: [], error: null }, // buyer lane: nothing null-buyer → wraps
+          { data: null, error: null, count: 4987 }, // exhausted count
+          belowFixture, // below-forward-floor count
+          { data: [], error: null }, // exec fill select
+          { data: null, error: null, count: 0 }, // exec backlog count
+        ],
+      })
+      await tsRoute.POST(
+        adminReq("https://t/api/admin/backfill-topshot-buyers", { authorization: "Bearer ingest-secret" }),
+      )
+      await runDeferred()
+      return (spy.writes.pipeline_runs ?? []).find((w) => w.method === "insert")!.rows[0].extra as Record<string, unknown>
+    }
+    expect(await run({ data: null, error: null, count: 1 })).toMatchObject({ wrapped: true, exhausted_in_window: 4987, below_forward_floor: 1 })
+    expect(await run({ data: null, error: { message: "count boom" } })).toMatchObject({ below_forward_floor: -1 })
   })
 
   it("still writes an ok=false pipeline_runs row when the select fails (nothing is invisible)", async () => {
@@ -280,6 +343,7 @@ describe("POST /api/admin/backfill-topshot-buyers (forward lane)", () => {
       sales: [
         { data: [], error: null }, // buyer lane: nothing null-buyer
         { data: null, error: null, count: 0 }, // exhausted count (the empty batch wraps)
+        { data: null, error: null, count: 0 }, // below-forward-floor count (wrap)
         {
           data: [
             { id: "e1", nft_id: "901", transaction_hash: "txe1", sold_at: "2026-10-09T12:00:00Z" },
@@ -327,6 +391,7 @@ describe("POST /api/admin/backfill-topshot-buyers (forward lane)", () => {
       sales: [
         { data: [], error: null },
         { data: null, error: null, count: 0 }, // exhausted count (wrap)
+        { data: null, error: null, count: 0 }, // below-forward-floor count (wrap)
         { data: null, error: { message: "exec boom" } },
         { data: null, error: null, count: 0 },
       ],
@@ -348,6 +413,7 @@ describe("POST /api/admin/backfill-topshot-buyers (forward lane)", () => {
       sales: [
         { data: [], error: null },
         { data: null, error: null, count: 0 }, // exhausted count (wrap)
+        { data: null, error: null, count: 0 }, // below-forward-floor count (wrap)
         { data: [], error: null },
         { data: null, error: { message: "count boom" } },
       ],

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { decodeTopShotSaleTx, decodeTopShotSaleTxViaSpork } from "@/lib/chains/flow/dapper-v1-tx-decode"
+import { CURRENT_SPORK_START_ISO, cursorOrFilter, cursorRowBelow, type SaleCursorRow } from "@/lib/pipeline/buyer-backfill-window"
 
 // POST /api/admin/backfill-topshot-buyers — Authorization: Bearer $INGEST_SECRET_TOKEN
 //
@@ -12,12 +13,20 @@ import { decodeTopShotSaleTx, decodeTopShotSaleTxViaSpork } from "@/lib/chains/f
 // buyer (TopShot.Deposit.to) plus the execution accounts (payer/proposer) — the
 // same decode the live sales-indexer now runs forward (Items 1+2, 2026-06-09).
 //
-// Resumable + idempotent: it walks sold_at DESCENDING via a cursor stored in
-// pipeline_runs.extra->>cursor_sold_at. Each run fixes a window and records the
-// oldest sold_at it reached; the next run continues below that. When it reaches
-// the bottom (a short/empty batch) the cursor wraps back to NULL so the next run
-// starts another top-down pass — retrying any rows that transiently failed to
-// decode. Every UPDATE is gated on buyer_address IS NULL, so re-runs are safe.
+// Resumable + idempotent: it walks (sold_at, id) DESCENDING via a cursor stored
+// in pipeline_runs.extra->>cursor_sold_at + cursor_id. Each run fixes a window
+// and records the smallest (sold_at, id) it reached; the next run continues
+// strictly below that pair. When it reaches the bottom (a short/empty batch) the
+// cursor wraps back to NULL so the next run starts another top-down pass —
+// retrying any rows that transiently failed to decode. Every UPDATE is gated on
+// buyer_address IS NULL, so re-runs are safe.
+// ⚠ WHY THE ID IS PART OF THE CURSOR (2026-10-23). `sold_at` is not unique: the
+// 10-23 12:04 AM PT run's batch ended inside a timestamp shared by SIX sales
+// (06:30:53.446Z), and the next run's `sold_at < cursor` skipped the ones the
+// batch had not reached. On this lane a skipped row is only delayed (the walk
+// wraps every run or two and re-selects it), but the All Day lane measured 9
+// rows parked at its cursor's exact value for a day on the same shape. A cursor
+// logged before `cursor_id` existed resumes below `sold_at` alone (cursorOrFilter).
 // Wire a temporary cron until the null-buyer backlog drains, then disable.
 
 const TOKEN = process.env.INGEST_SECRET_TOKEN ?? ""
@@ -60,8 +69,9 @@ const EXEC_FILL_WINDOW_DAYS = 3
 
 // ── Historical (spork) lane (2026-06-19, INERT by default) ───────────────────
 // The forward lane above decodes via the CURRENT mainnet REST node, which only
-// serves current-spork txs (~late-2024 onward) — so it can never resolve the
-// 2022–2024 null-buyer tail (~42K rows), whose txs live in historical sporks.
+// serves current-spork txs (mainnet28, from 2025-12-29 — CURRENT_SPORK_START_ISO)
+// — so it can never resolve the older null-buyer tail (~42K rows in 2022–2024
+// when this was written), whose txs live in historical sporks.
 // This lane (POST ?mode=historical) routes those through the spork-proxy worker
 // (decodeTopShotSaleTxViaSpork → worker walks mainnet19→26). It is OFF unless
 // TS_HISTORICAL_BUYER_BACKFILL_ENABLED=1 AND SPORK_PROXY_URL/SPORK_PROXY_SECRET
@@ -91,7 +101,22 @@ const EXEC_FILL_WINDOW_DAYS = 3
 const HIST_PIPELINE_NAME = "topshot-buyer-backfill-historical"
 const HIST_BATCH = 120 // recent-spork rows decode fast; the MAX_RUN_MS guard + cursor advance bound the run regardless
 const HIST_WINDOW_START = "2023-11-08T16:07:03Z" // ≥ this: reachable via the surviving sporks (mainnet24 root floor; was 2022-04-06 / mainnet17 until 2026-08-28)
-const HIST_WINDOW_END = "2025-01-01T00:00:00Z"   // < this: pre current-spork (forward lane owns 2025+)
+// ⚠ THE TWO LANES TILE AT THE ROOT BLOCK OF THE SPORK rest-mainnet SERVES, NOT AT A
+// CALENDAR DATE (2026-10-23; the All Day lane's #192 lesson). The forward lane
+// decodes through rest-mainnet.onflow.org, which serves mainnet28 only (blocks
+// from 137,390,146, sealed 2025-12-29T03:11:27Z; 137,390,131 → 404). Its window
+// began 2025-01-01 on the belief that "2025+" was current-spork, so one
+// `ts_history_backfill_v1` sale dated 2025-05-05 (a mainnet26 tx no live node
+// serves) was re-fetched and re-failed on EVERY run — `rows_found 1 ·
+// decode_failed 1` at every :34 tick, 48 decodes a day for a row that cannot
+// resolve, and the one `decode_failed` every wrapping run reported. Now the
+// forward lane owns [mainnet28 root, ∞) and the historical lane [mainnet24 root,
+// mainnet28 root): the band in between is the historical lane's (inert; its
+// proxy reaches mainnet27, mainnet24–26 are dark — #181). The rows the forward
+// lane leaves there are COUNTED on every wrapping run (`below_forward_floor`),
+// not merely excluded. Measured at ship: exactly 1 such row.
+const HIST_WINDOW_END = CURRENT_SPORK_START_ISO   // < this: pre current-spork (forward lane owns mainnet28+)
+const FORWARD_WINDOW_START = CURRENT_SPORK_START_ISO
 
 export const dynamic = "force-dynamic"
 // 800 is the 800s Pro Lambda HARD cap (over 800 silently ERRORs the deploy — do
@@ -141,7 +166,9 @@ export async function POST(req: NextRequest) {
 
     after(async () => {
       let cursorBefore: string | null = null
+      let cursorBeforeId: string | null = null
       let cursorAfter: string | null = null
+      let cursorAfterId: string | null = null
       let found = 0
       let buyersResolved = 0
       let execResolved = 0
@@ -175,6 +202,10 @@ export async function POST(req: NextRequest) {
           (lastRun?.extra && typeof lastRun.extra.cursor_sold_at === "string"
             ? lastRun.extra.cursor_sold_at
             : null) ?? null
+        cursorBeforeId =
+          (cursorBefore && lastRun?.extra && typeof lastRun.extra.cursor_id === "string"
+            ? lastRun.extra.cursor_id
+            : null) ?? null
 
         // ⚠ `payer_address IS NULL` IS LOAD-BEARING, AND IT IS THE FIX FOR A TREADMILL
         // THIS LANE RAN FOR DAYS (2026-09-02).
@@ -200,7 +231,7 @@ export async function POST(req: NextRequest) {
         // `decodeTopShotSaleTxViaSpork` learns a new buyer path, these rows are
         // candidates again — run a one-off pass with this predicate removed rather
         // than deleting it here, and watch `exhausted_in_window` fall.
-        const q = (supabaseAdmin as any)
+        let q = (supabaseAdmin as any)
           .from("sales")
           .select("id, nft_id, transaction_hash, sold_at, seller_address")
           .eq("collection", "nba_top_shot")
@@ -208,9 +239,15 @@ export async function POST(req: NextRequest) {
           .is("payer_address", null)
           .not("transaction_hash", "is", null)
           .gte("sold_at", HIST_WINDOW_START)
-          .lt("sold_at", cursorBefore && cursorBefore < HIST_WINDOW_END ? cursorBefore : HIST_WINDOW_END)
+          .lt("sold_at", HIST_WINDOW_END)
           .order("sold_at", { ascending: false })
+          .order("id", { ascending: false })
           .limit(HIST_BATCH)
+        // Resume strictly below the stored (sold_at, id); a cursor at or above the
+        // window's end (logged before the end moved) is the same as no cursor.
+        if (cursorBefore && cursorBefore < HIST_WINDOW_END) {
+          q = q.or(cursorOrFilter({ soldAt: cursorBefore, id: cursorBeforeId }))
+        }
 
         const { data, error } = await q
         if (error) {
@@ -235,10 +272,10 @@ export async function POST(req: NextRequest) {
           .lt("sold_at", HIST_WINDOW_END)
         exhaustedInWindow = exhaustedErr ? -1 : (exhaustedCount ?? -1)
 
-        let minSoldAt: string | null = null
+        let minRow: SaleCursorRow | null = null
         for (const row of rows) {
           if (Date.now() - startedAt > MAX_RUN_MS) { bailedEarly = true; break }
-          if (minSoldAt === null || row.sold_at < minSoldAt) minSoldAt = row.sold_at
+          if (minRow === null || cursorRowBelow(row, minRow)) minRow = { sold_at: row.sold_at, id: row.id }
           try {
             const dec = await decodeTopShotSaleTxViaSpork(
               String(row.transaction_hash), String(row.nft_id), sporkUrl, sporkSecret,
@@ -271,7 +308,8 @@ export async function POST(req: NextRequest) {
           }
           await delay(TX_DECODE_DELAY_MS)
         }
-        cursorAfter = rows.length < HIST_BATCH ? null : minSoldAt
+        cursorAfter = rows.length < HIST_BATCH ? null : (minRow?.sold_at ?? null)
+        cursorAfterId = cursorAfter === null ? null : (minRow?.id ?? null)
       } catch (err) {
         ok = false
         errMsg = err instanceof Error ? err.message : String(err)
@@ -301,6 +339,7 @@ export async function POST(req: NextRequest) {
             extra: {
               lane: "historical",
               cursor_sold_at: cursorAfter,
+              cursor_id: cursorAfterId,
               cursor_before: cursorBefore,
               buyers_resolved: buyersResolved,
               exec_accounts_resolved: execResolved,
@@ -340,7 +379,9 @@ export async function POST(req: NextRequest) {
 
   after(async () => {
     let cursorBefore: string | null = null
+    let cursorBeforeId: string | null = null
     let cursorAfter: string | null = null
+    let cursorAfterId: string | null = null
     let found = 0
     let buyersResolved = 0
     let execResolved = 0
@@ -359,6 +400,11 @@ export async function POST(req: NextRequest) {
     // the run that WRAPS (≈ once a day): the count measured 9.8 s / 18k buffers,
     // too dear for every run. null = not counted this run; -1 = the count failed.
     let exhaustedInWindow: number | null = null
+    // Unresolved rows OLDER than this lane's floor (see HIST_WINDOW_END): the band
+    // only the historical lane can reach. Counted on the wrapping run like
+    // `exhausted_in_window` (measured 96 buffers / 14 ms), so a shrunken window
+    // is a reported population, not a silent exclusion. null / -1 as above.
+    let belowForwardFloor: number | null = null
 
     try {
       // Resume cursor from the last run.
@@ -372,6 +418,10 @@ export async function POST(req: NextRequest) {
       cursorBefore =
         (lastRun?.extra && typeof lastRun.extra.cursor_sold_at === "string"
           ? lastRun.extra.cursor_sold_at
+          : null) ?? null
+      cursorBeforeId =
+        (cursorBefore && lastRun?.extra && typeof lastRun.extra.cursor_id === "string"
+          ? lastRun.extra.cursor_id
           : null) ?? null
 
       let q = (supabaseAdmin as any)
@@ -397,14 +447,16 @@ export async function POST(req: NextRequest) {
         // decoder un-skips them: run a one-off pass with this filter removed.
         .is("payer_address", null)
         .not("transaction_hash", "is", null)
-        // Forward lane owns 2025+ only; the pre-current-spork rows below this bound
-        // can't be decoded via current-spork REST (that's the historical lane's job)
-        // and just churn the cursor at rows_written≈0. Bounding here also lets the
-        // planner partition-prune to sales_2025/sales_2026.
-        .gte("sold_at", HIST_WINDOW_END)
+        // Forward lane owns mainnet28+ only (FORWARD_WINDOW_START, see HIST_WINDOW_END);
+        // the pre-current-spork rows below this bound can't be decoded via
+        // current-spork REST (that's the historical lane's job) and just churn the
+        // cursor at rows_written≈0. Bounding here also lets the planner
+        // partition-prune to sales_2025/sales_2026.
+        .gte("sold_at", FORWARD_WINDOW_START)
         .order("sold_at", { ascending: false })
+        .order("id", { ascending: false })
         .limit(BATCH)
-      if (cursorBefore) q = q.lt("sold_at", cursorBefore)
+      if (cursorBefore) q = q.or(cursorOrFilter({ soldAt: cursorBefore, id: cursorBeforeId }))
 
       const { data, error } = await q
       if (error) {
@@ -416,13 +468,13 @@ export async function POST(req: NextRequest) {
       const rows = (data ?? []) as NullBuyerRow[]
       found = rows.length
 
-      let minSoldAt: string | null = null
+      let minRow: SaleCursorRow | null = null
       for (const row of rows) {
         // Wall-clock self-bound: stop before starting another ~4s decode once
-        // we've burned the run budget. minSoldAt already reflects only processed
+        // we've burned the run budget. minRow already reflects only processed
         // rows, so the cursor resumes correctly below them next pass.
         if (Date.now() - startedAt > MAX_RUN_MS) { bailedEarly = true; break }
-        if (minSoldAt === null || row.sold_at < minSoldAt) minSoldAt = row.sold_at
+        if (minRow === null || cursorRowBelow(row, minRow)) minRow = { sold_at: row.sold_at, id: row.id }
         try {
           const dec = await decodeTopShotSaleTx(String(row.transaction_hash), String(row.nft_id))
           const patch: Record<string, unknown> = {}
@@ -458,7 +510,8 @@ export async function POST(req: NextRequest) {
 
       // Short batch ⇒ reached the bottom of the null-buyer set for this pass;
       // wrap the cursor so the next run starts a fresh top-down sweep.
-      cursorAfter = rows.length < BATCH ? null : minSoldAt
+      cursorAfter = rows.length < BATCH ? null : (minRow?.sold_at ?? null)
+      cursorAfterId = cursorAfter === null ? null : (minRow?.id ?? null)
 
       if (cursorAfter === null) {
         const { count: exhaustedCount, error: exhaustedErr } = await (supabaseAdmin as any)
@@ -468,8 +521,21 @@ export async function POST(req: NextRequest) {
           .is("buyer_address", null)
           .not("payer_address", "is", null)
           .not("transaction_hash", "is", null)
-          .gte("sold_at", HIST_WINDOW_END)
+          .gte("sold_at", FORWARD_WINDOW_START)
         exhaustedInWindow = exhaustedErr ? -1 : (exhaustedCount ?? -1)
+
+        // The same candidate predicate as this lane's select, over the band below
+        // its floor: what this lane will never touch and the historical lane owns.
+        const { count: belowCount, error: belowErr } = await (supabaseAdmin as any)
+          .from("sales")
+          .select("id", { count: "exact", head: true })
+          .eq("collection", "nba_top_shot")
+          .is("buyer_address", null)
+          .is("payer_address", null)
+          .not("transaction_hash", "is", null)
+          .gte("sold_at", HIST_WINDOW_START)
+          .lt("sold_at", FORWARD_WINDOW_START)
+        belowForwardFloor = belowErr ? -1 : (belowCount ?? -1)
       }
 
       // Exec-account fill (see EXEC_FILL_BATCH). Skipped when the buyer loop
@@ -556,6 +622,7 @@ export async function POST(req: NextRequest) {
           error: errMsg ? errMsg.slice(0, 500) : null,
           extra: {
             cursor_sold_at: cursorAfter,
+            cursor_id: cursorAfterId,
             cursor_before: cursorBefore,
             buyers_resolved: buyersResolved,
             exec_accounts_resolved: execResolved,
@@ -569,6 +636,7 @@ export async function POST(req: NextRequest) {
             exec_fill_backlog: execFillBacklog,
             exec_fill_error: execFillError,
             exhausted_in_window: exhaustedInWindow,
+            below_forward_floor: belowForwardFloor,
             duration_ms: Date.now() - startedAt,
           },
         })

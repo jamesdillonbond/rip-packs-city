@@ -106,4 +106,48 @@ describe("buyer backfill cursor — (sold_at, id), never sold_at alone", () => {
     expect(route).toContain("cursor_id: cursorAfterId")
     expect(route).toMatch(/cursorRowBelow\(row, minRow\)/)
   })
+
+  // 2026-10-23 (same morning): the Top Shot lane had the identical shape on BOTH
+  // of its walks. Measured live at the 12:04 AM PT run's boundary: SIX sales
+  // shared the cursor's exact sold_at (06:30:53.446Z); the 12:34 AM run's
+  // `sold_at < cursor` skipped the ones the first batch had not reached.
+  it("the Top Shot route's two walks order by (sold_at, id) and resume via cursorOrFilter — the only bare .lt(sold_at) left is the historical window's fixed end", () => {
+    const route = readFileSync("app/api/admin/backfill-topshot-buyers/route.ts", "utf8")
+    // both lanes: the walk order carries the tiebreak
+    expect(route.match(/\.order\("sold_at", \{ ascending: false \}\)\s*\.order\("id", \{ ascending: false \}\)/g)).toHaveLength(2)
+    expect(route.match(/\.or\(cursorOrFilter\(\{ soldAt: cursorBefore, id: cursorBeforeId \}\)\)/g)).toHaveLength(2)
+    expect(route.match(/cursorRowBelow\(row, minRow\)/g)).toHaveLength(2)
+    expect(route.match(/cursor_id: cursorAfterId/g)).toHaveLength(2)
+    // the defect: a cursor applied as a plain upper bound on sold_at
+    expect(route).not.toMatch(/\.lt\("sold_at", cursorBefore/)
+    expect(route).not.toMatch(/cursorBefore < HIST_WINDOW_END \? cursorBefore/)
+    // the legitimate bare bounds — the historical window's fixed end, on its select and its exhausted count
+    expect(route.match(/\.lt\("sold_at", HIST_WINDOW_END\)/g)).toHaveLength(2)
+    // the exec-fill phase is a window, not a cursor walk: its order is unchanged
+    expect(route).toMatch(/\.order\("sold_at", \{ ascending: false \}\)\s*\.order\("id", \{ ascending: true \}\)\s*\.limit\(EXEC_FILL_BATCH\)/)
+  })
+})
+
+// 2026-10-23: the Top Shot forward lane's floor is the same root block (#192's
+// lesson, a second time). Its window began 2025-01-01, so one mainnet26-era sale
+// (2025-05-05, `ts_history_backfill_v1`) was re-fetched and re-failed on every
+// run: `rows_found 1 · decode_failed 1` at every :34 tick, 48 decodes a day.
+describe("Top Shot buyer backfill — the two lanes tile at the spork root, and the band below the forward floor is counted", () => {
+  const route = readFileSync("app/api/admin/backfill-topshot-buyers/route.ts", "utf8")
+  it("forward lane floor = historical lane end = CURRENT_SPORK_START_ISO; no calendar-date floor remains", () => {
+    expect(route).toMatch(/const HIST_WINDOW_END = CURRENT_SPORK_START_ISO/)
+    expect(route).toMatch(/const FORWARD_WINDOW_START = CURRENT_SPORK_START_ISO/)
+    expect(route).not.toMatch(/"2025-01-01T00:00:00Z"/)
+    // the forward select and its exhausted count both read the SAME floor
+    expect(route.match(/\.gte\("sold_at", FORWARD_WINDOW_START\)/g)).toHaveLength(2)
+    // nothing in the forward lane still reads the historical end as its own floor
+    expect(route).not.toMatch(/\.gte\("sold_at", HIST_WINDOW_END\)/)
+  })
+  it("the rows the forward lane no longer walks are COUNTED on the wrapping run (below_forward_floor), with the same candidate predicate", () => {
+    expect(route).toMatch(
+      /\.is\("buyer_address", null\)\s*\.is\("payer_address", null\)\s*\.not\("transaction_hash", "is", null\)\s*\.gte\("sold_at", HIST_WINDOW_START\)\s*\.lt\("sold_at", FORWARD_WINDOW_START\)/,
+    )
+    expect(route).toMatch(/belowForwardFloor = belowErr \? -1 : \(belowCount \?\? -1\)/)
+    expect(route).toContain("below_forward_floor: belowForwardFloor")
+  })
 })
