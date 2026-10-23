@@ -112,6 +112,7 @@
 - **Book M2 per full NFL week** from the series, never a leg. The season runs to February, so volume will fall after it.
   - Falsifier for "volume will fix it": four weeks at ~4× August volume left M2 flat.
 - **STALE high end (882 editions, median $69):** the only lever is more sales, so it stays labelled. Revisit only if a backtest shows the label is wrong.
+  - ↳ **A backtest showed the PRICE was wrong (2026-10-23 ~3:20 PM PT, Cowork cloud; #209):** on 60 d of sales under a current STALE snapshot (n 61) the published price read 5.0× realised (8.2 % within ±25 %) while the edition's own last sale read 2.0× (23.0 %). STALE prices are now capped at the last market sale (`20261023222201`, 189 of the 512 All Day STALE rows with a qualifying sale re-stamped, median 1.60× lower); the label is untouched. Weekly read beside the ASK_ONLY cap from ~10-30.
 - **Pack EV:** keep it historical and secondary. No primary-drop work unless `allday_drop_windows` shows a new start.
 
 ## Decisions on record (do not re-litigate)

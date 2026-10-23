@@ -1990,6 +1990,14 @@ const PINS = [
     migration: "supabase/migrations/20261023134231_audit_20261023_ask_only_sales_cap_covers_golazos.sql",
   },
   {
+  // 2026-10-23 (#209): a Top Shot / All Day STALE price is capped at the edition's LAST market sale.
+  // Backtested 60 d on sales under a CURRENT STALE snapshot: published 2.0× (TS) / 5.0× (AD) realised,
+  // min(published, last sale) 1.25× / 1.40×, best on every axis, never worse by last-sale age.
+    fn: "fmv_snapshots_cap_stale_to_last_sale",
+    test: "supabase/tests/fmv_snapshots_cap_stale_to_last_sale.sql",
+    migration: "supabase/migrations/20261023222201_audit_20261023_fmv_snapshots_cap_stale_to_last_sale.sql",
+  },
+  {
     // 2026-10-23: the sitemap's readers for the cross-collection hubs — the bulk form
     // of the predicate each hub page applies (and get_player_hub's canonical slug).
     fn: "list_indexable_player_hubs",
