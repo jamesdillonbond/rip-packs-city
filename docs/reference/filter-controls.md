@@ -71,7 +71,12 @@ touch, where the keyboard would cover half the list.
      substitution rule). Two or more candidates → no guess.
    - **table arms** (Pinnacle, Candy, Panini — they page in code): `withAccentFallback`
      retries with an accent-tolerant ilike (vowels + c n s z y → `_`, typed `%`/`_`
-     escaped) and keeps only rows `textIncludes` confirms. Rarer accent carriers (ł ř ğ)
+     escaped) and keeps only rows `textIncludes` confirms. ⚠ That widened pattern
+     cannot be formed for a short name whose every letter can carry an accent ("acuna",
+     "agustin" — fewer than 2 literal characters): live 10-23, Candy "acuna" answered 0
+     listings while "Acuña" answered 5. Since 10-23 the route's retry also covers the
+     table arms through `resolve_player_name` (single label, reported as
+     `playerResolved`), after the in-arm fallback has had its turn. Rarer accent carriers (ł ř ğ)
      are not widened.
    - **the Sniper** (`/api/sniper-feed`, closed 2026-10-22): the same accent-sensitive
      match in its Top Shot pool and the All Day / Golazos RPCs ("doncic" → 0 deals live,
