@@ -2057,3 +2057,27 @@ describe("SniperClient — every column header carries scope=\"col\"", () => {
     expect(all.filter((t) => !/\bscope="col"/.test(t))).toEqual([])
   })
 })
+
+// #207 on the Sniper (2026-10-22): "doncic" answered 0 deals live while "Dončić"
+// answered 96. The feed now retries an accent-only miss with the catalog spelling
+// and reports it; the page must SAY so — never a silent subject swap.
+describe("SniperClient — an accent-resolved player search is labelled", () => {
+  it("names the swap and offers the spelling for the Player box", async () => {
+    warm = {
+      data: feed({ deals: [deal({ playerName: "Luka Dončić" })], playerResolved: { from: "doncic", to: "Luka Dončić" } }),
+      loading: false, error: null, refresh: vi.fn(),
+    }
+    render(<SniperClient />)
+    const note = (await screen.findByText(/No exact match for/)).closest("[role=status]")!
+    expect(note.textContent).toContain("No exact match for “doncic” — showing Luka Dončić.")
+    fireEvent.click(screen.getByRole("button", { name: "Use this spelling" }))
+    expect((screen.getByPlaceholderText("e.g. LeBron") as HTMLInputElement).value).toBe("Luka Dončić")
+  })
+
+  it("says nothing when the feed did not resolve a spelling", async () => {
+    warm = { data: feed({ deals: [deal({ playerName: "Stephen Curry" })] }), loading: false, error: null, refresh: vi.fn() }
+    render(<SniperClient />)
+    await screen.findAllByText(/Stephen Curry/)
+    expect(screen.queryByText(/No exact match for/)).toBeNull()
+  })
+})

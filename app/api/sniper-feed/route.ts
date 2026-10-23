@@ -25,6 +25,8 @@ import { createSourceFailureSink, sniperFeedDegraded, type SourceFailureSink } f
 import { decorateAutographs, filterAutographsOnly, isAutographCollection } from "@/lib/sniper/autograph-decorate";
 import { AUTOGRAPH_BADGE_SLUG, AUTOGRAPH_BADGE_TITLE, fetchTopShotAutographedKeys } from "@/lib/autographs";
 import { textIncludes } from "@/lib/filter-match";
+import { CATALOG_PLAYER_COLLECTIONS, resolveCatalogPlayer } from "@/lib/market/catalog-player";
+import { getCollectionUuid } from "@/lib/collections";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1252,10 +1254,12 @@ export async function GET(req: Request) {
   const collection = COLLECTION_ALIASES[rawCollection] ?? rawCollection;
 
   // Cache key based on all query params — same params = same response for 25s.
-  const baseCacheKey = `sniper-feed:${JSON.stringify(params)}`;
+  // The player is a parameter of each run: an accent-only miss re-runs with the
+  // catalog spelling (#207, below), and that run caches under its own key.
+  const cacheKeyFor = (p: string) => `sniper-feed:${JSON.stringify({ ...params, player: p })}`;
   const CACHE_TTL = 25_000;
 
-  function buildComputeFn(): () => Promise<unknown> {
+  function buildComputeFn(player: string): () => Promise<unknown> {
     if (collection === "nfl-all-day") {
       return () => computeAllDaySniperFeed({ minDiscount, rarity: effectiveRarity, team, player, maxPrice, sortBy });
     }
@@ -1304,8 +1308,8 @@ export async function GET(req: Request) {
 
   // Signed editions are marked inside the CACHED build, so every view of a board
   // carries the same chips; the read is one bounded page (~240 rows).
-  function buildComputeWithAutographs(): () => Promise<unknown> {
-    const compute = buildComputeFn();
+  function buildComputeWithAutographs(player: string): () => Promise<unknown> {
+    const compute = buildComputeFn(player);
     if (!isAutographCollection(collection)) return compute;
     const c = collection;
     return async () => {
@@ -1316,7 +1320,7 @@ export async function GET(req: Request) {
     };
   }
 
-  function applyOuterFilters(deals: SniperDeal[]): SniperDeal[] {
+  function applyOuterFilters(deals: SniperDeal[], player: string): SniperDeal[] {
     let out = deals;
     if (params.editionKey) {
       const ek = params.editionKey;
@@ -1333,8 +1337,9 @@ export async function GET(req: Request) {
     return out;
   }
 
-  try {
-    const result = (await getOrSetCache(baseCacheKey, CACHE_TTL, buildComputeWithAutographs())) as FeedResult;
+  async function runFeed(player: string) {
+    const key = cacheKeyFor(player);
+    const result = (await getOrSetCache(key, CACHE_TTL, buildComputeWithAutographs(player))) as FeedResult;
     // With "Autographs only" the autograph read IS the filter: a failed read must
     // degrade the board, never render "no signed Moments listed".
     const sourcesFailed = [
@@ -1344,8 +1349,32 @@ export async function GET(req: Request) {
     // ⚠ Do not let a degraded build sit in the warm-lambda cache for the full
     // TTL — the next request would inherit this request's outage. The response
     // stays honest either way; this just shortens how long it lasts.
-    if (sniperFeedDegraded(sourcesFailed)) deleteCache(baseCacheKey);
-    const filteredDeals = applyOuterFilters(result.deals);
+    if (sniperFeedDegraded(sourcesFailed)) deleteCache(key);
+    return { result, sourcesFailed, filteredDeals: applyOuterFilters(result.deals, player) };
+  }
+
+  try {
+    let run = await runFeed(player);
+    // #207 (2026-10-22): the Top Shot pool, the All Day RPC and the Golazos RPC
+    // match the player with an accent-SENSITIVE ilike — live, "doncic" answered
+    // 0 deals and "Dončić" 96. A search that matched NOTHING (and did not fail) is
+    // retried once with the single catalog name it matches accent-blind, and the
+    // swap is REPORTED (playerResolved), never silent. Anything else is untouched.
+    let playerResolved: { from: string; to: string } | null = null;
+    const typed = player.trim();
+    const collectionUuid = getCollectionUuid(collection);
+    if (typed && run.filteredDeals.length === 0 && !sniperFeedDegraded(run.sourcesFailed)
+      && collectionUuid && CATALOG_PLAYER_COLLECTIONS.has(collectionUuid)) {
+      const to = await resolveCatalogPlayer(collectionUuid, typed, "api/sniper-feed");
+      if (to) {
+        const again = await runFeed(to);
+        if (!sniperFeedDegraded(again.sourcesFailed) && again.filteredDeals.length > 0) {
+          run = again;
+          playerResolved = { from: typed, to };
+        }
+      }
+    }
+    const { result, sourcesFailed, filteredDeals } = run;
 
     // Final shaping uses the filtered set.
     let finalDeals = filteredDeals;
@@ -1389,6 +1418,7 @@ export async function GET(req: Request) {
         sourcesFailed,
         degraded: sniperFeedDegraded(sourcesFailed),
         teamApplied: team !== "all" && (collection === "nba-top-shot" || collection === "nfl-all-day") ? team : null,
+        ...(playerResolved ? { playerResolved } : {}),
       },
       {
         // A degraded feed is evicted from the lambda cache above; it must not be

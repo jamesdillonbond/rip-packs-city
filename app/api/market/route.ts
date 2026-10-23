@@ -46,7 +46,8 @@ import { getCollectionUuid } from "@/lib/collections"
 import { normalizeAddress } from "@/lib/address"
 import { collectMarketFacets } from "@/lib/market/facets"
 import { expandFranchiseLabels } from "@/lib/market/franchise-teams"
-import { resolveAccentedPlayer, withAccentFallback } from "@/lib/market/player-match"
+import { withAccentFallback } from "@/lib/market/player-match"
+import { CATALOG_PLAYER_COLLECTIONS, resolveCatalogPlayer } from "@/lib/market/catalog-player"
 
 export const dynamic = "force-dynamic"
 // AllDay's get_allday_market_listings was rewritten for LIMIT-pushdown (~62ms), but
@@ -968,35 +969,7 @@ async function fetchModernListings(
 const MARKET_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 // ── #207: accent-blind player resolution for the catalog arms ──────────────
-// Top Shot / All Day / Golazos match the Player box inside their RPCs with an
-// accent-sensitive ilike. When that matched NOTHING, the typed text is resolved
-// against the collection's player catalog (get_market_filter_options — ~115 ms,
-// so it runs only on an empty search and is memoized per instance for an hour).
-// A failed catalog read resolves nothing: the empty answer stands, as before.
-const CATALOG_PLAYER_COLLECTIONS = DB_FILTERED_MARKET_COLLECTION_IDS
-const CATALOG_PLAYERS_TTL_MS = 60 * 60 * 1000
-const catalogPlayersMemo = new Map<string, { at: number; names: string[] }>()
-
-async function resolveCatalogPlayer(collectionId: string, typed: string): Promise<string | null> {
-  let hit = catalogPlayersMemo.get(collectionId)
-  if (!hit || Date.now() - hit.at > CATALOG_PLAYERS_TTL_MS) {
-    const db = supabaseAdmin as unknown as { rpc: (fn: string, args: Record<string, unknown>) => PromiseLike<{ data: unknown; error: { message: string } | null }> }
-    const { data, error } = await boundedRead(
-      db.rpc("get_market_filter_options", { p_collection_id: collectionId }),
-      "api/market/player-resolve",
-    )
-    const players = data != null && typeof data === "object" && !Array.isArray(data)
-      ? (data as Record<string, unknown>).players
-      : null
-    if (error || !Array.isArray(players)) {
-      console.error("[/api/market] player catalog unavailable — no accent resolution", error?.message ?? "bad payload")
-      return null
-    }
-    hit = { at: Date.now(), names: players.filter((v): v is string => typeof v === "string" && v !== "") }
-    catalogPlayersMemo.set(collectionId, hit)
-  }
-  return resolveAccentedPlayer(typed, hit.names)
-}
+// lib/market/catalog-player.ts (shared with /api/sniper-feed).
 
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams
@@ -1149,7 +1122,7 @@ export async function GET(req: NextRequest) {
       // ("luka doncic" → "Luka Dončić"), and the swap is reported, never silent.
       // A search that matched anything — or failed — is left exactly as it was.
       if (playerTyped && CATALOG_PLAYER_COLLECTIONS.has(collectionId) && parts.every((p) => p !== null && p.length === 0)) {
-        const to = await resolveCatalogPlayer(collectionId, playerTyped)
+        const to = await resolveCatalogPlayer(collectionId, playerTyped, "api/market")
         if (to) {
           const again = await runArms(to)
           if (again.every((p) => p !== null) && again.some((p) => p!.length > 0)) {

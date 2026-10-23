@@ -107,6 +107,11 @@ export interface FeedResult {
    * label of the franchise). Null/absent when no team filter was applied.
    */
   teamApplied?: string | null;
+  /**
+   * #207: the typed player matched nothing as typed, so the route retried with
+   * the single catalog name it matches accent-blind. Absent otherwise.
+   */
+  playerResolved?: { from: string; to: string };
 }
 
 export type SortOption =

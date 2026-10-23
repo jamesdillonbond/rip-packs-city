@@ -35,6 +35,7 @@ import { filterListingsByOwned, countActiveFilters } from "@/lib/market/filters"
 import BadgeIcon from "@/components/BadgeIcon"
 import MultiSelect from "@/components/filters/MultiSelect"
 import Autocomplete from "@/components/filters/Autocomplete"
+import PlayerResolvedNote from "@/components/filters/PlayerResolvedNote"
 import ActiveFilterPills from "@/components/filters/ActiveFilterPills"
 import { accentOnlyMatches } from "@/lib/market/player-match"
 import { trackOutboundClick } from "@/lib/track-click"
@@ -1260,19 +1261,6 @@ const td: React.CSSProperties = {
 // cannot decide: two or more candidates, or an arm whose names the route could
 // not resolve. Offered ONLY for names differing from the typed text by accents —
 // a name the route would already have matched has, truly, no listings here.
-function PlayerResolvedNote({ resolved, onUse }: { resolved: { from: string; to: string }; onUse: (n: string) => void }) {
-  return (
-    <div className="rpc-card" role="status" style={{ padding: "10px 16px", marginBottom: 10, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
-      <span className="rpc-mono" style={{ fontSize: 12, color: "var(--rpc-text-muted)" }}>
-        No exact match for &ldquo;{resolved.from}&rdquo; — showing <strong style={{ color: "var(--rpc-text-primary)" }}>{resolved.to}</strong>.
-      </span>
-      <button type="button" className="rpc-chip" onClick={() => onUse(resolved.to)} style={{ fontSize: 11 }}>
-        Use this spelling
-      </button>
-    </div>
-  )
-}
-
 function SpellingHint({ typed, names, onPick }: { typed: string; names: string[]; onPick: (n: string) => void }) {
   const alts = accentOnlyMatches(typed, names).slice(0, 5)
   if (alts.length === 0) return null

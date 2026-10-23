@@ -1,5 +1,7 @@
 -- audit_20261023_fmv_snapshots_cap_allday_ask_only_to_recent_sales
 --
+-- anon-exec: revoked in the follow-up 20261023045044 (FROM PUBLIC, anon, authenticated) — a trigger function, never called through PostgREST (fmv_snapshots_cap_allday_ask_only_to_recent_sales)
+--
 -- WHY (measured 2026-10-22 ~9:50–10:20 PM PT, Cowork cloud, `fmv_sales_backtest` shape):
 -- An NFL All Day edition with no sale in 30 days and a live floor ask is published
 -- ASK_ONLY at floor_ask × 0.90 (fmv-recalc 1.8.x main sweep, drain_fmv_cold_tail,

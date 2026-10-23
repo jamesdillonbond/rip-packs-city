@@ -27,6 +27,7 @@ import { SerialBadge } from "@/components/sniper/SerialBadge";
 import SpecialSerialGlyph from "@/components/SpecialSerialGlyph";
 import { ActionCell } from "@/components/sniper/ActionCell";
 import SniperFilterBar from "@/components/sniper/SniperFilterBar";
+import PlayerResolvedNote from "@/components/filters/PlayerResolvedNote";
 import SniperStatsBar from "@/components/sniper/SniperStatsBar";
 import { MarketplaceStatusBanner } from "@/components/marketplace-status";
 import { sniperSubtitle } from "@/lib/sniper/header-copy";
@@ -1057,6 +1058,9 @@ function SniperMomentsBody() {
           <div className="rpc-hud" style={{ marginBottom: 16, borderColor: "var(--rpc-danger)", color: "var(--rpc-danger-text)", fontSize: "var(--text-sm)", fontFamily: "var(--font-mono)" }}>
             FEED ERROR: {error}
           </div>
+        )}
+        {data?.playerResolved && (
+          <PlayerResolvedNote resolved={data.playerResolved} onUse={handlePlayerChange} />
         )}
 
         {deepLinkMomentId && !deepLinkDismissed && deepLinkResolved !== "pending" && (
