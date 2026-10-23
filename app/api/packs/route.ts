@@ -137,7 +137,6 @@ export async function GET(req: NextRequest) {
     if (calError) {
       console.error("[api/packs] calibrated merge", calError.message)
     } else if (calData?.length) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const calMap = new Map<string, number>(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (calData as any[]).map((c) => [String(c.dist_id), Number(c.calibrated_ev)]),

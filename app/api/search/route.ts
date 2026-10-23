@@ -51,6 +51,7 @@ import { buildSearchHref, type SearchHit } from "@/lib/search/href"
 import { mergePlayerHubHits, type SearchResultWithSlug } from "@/lib/search/player-hub-hits"
 import { mergeTeamHubHits, type FranchiseHubKey } from "@/lib/search/team-hub-hits"
 import { boundedRead } from "@/lib/api/bounded-read"
+import { accentOnlyLabelMatches, loadAccentedLabels } from "@/lib/search/accented-labels"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -140,6 +141,41 @@ async function fetchFranchiseHubKeys(
   }
 }
 
+/**
+ * #207 (2026-10-23): the team and set arms match the raw query, so "atletico"
+ * found no Atlético de Madrid team row. When the query matches an accented team /
+ * set label only accent-blind, the search re-runs with that exact label and its
+ * team / set row LEADS (it is what the query meant). A failed re-run adds nothing.
+ */
+async function withAccentedLabelHits(
+  supa: { rpc: (fn: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: { message: string } | null }> },
+  q: string,
+  collectionId: string | null,
+  limit: number,
+  rows: SearchHit[],
+): Promise<SearchHit[]> {
+  const matches = accentOnlyLabelMatches(q, await loadAccentedLabels(supa))
+  if (matches.length === 0) return rows
+  const key = (r: SearchHit) => `${r.kind}|${r.collection_id}|${r.slug}`
+  const seen = new Set(rows.map(key))
+  const lead: SearchHit[] = []
+  for (const m of matches) {
+    try {
+      const { data, error } = await boundedRead(
+        supa.rpc("rpc_search_catalog", { p_q: m.label, p_collection_id: collectionId, p_limit: limit }),
+        "api/search/rpc_search_catalog_accented",
+      )
+      if (error || !Array.isArray(data)) continue
+      for (const r of data as SearchHit[]) {
+        if (r.kind !== m.kind || r.label !== m.label || seen.has(key(r))) continue
+        seen.add(key(r))
+        lead.push(r)
+      }
+    } catch { /* a failed re-run adds nothing */ }
+  }
+  return [...lead, ...rows]
+}
+
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams
   const q = (sp.get("q") ?? "").trim().slice(0, MAX_Q)
@@ -196,7 +232,7 @@ export async function GET(req: NextRequest) {
     )
   }
 
-  const rows = Array.isArray(data) ? (data as SearchHit[]) : []
+  const rows = await withAccentedLabelHits(supa, q, collectionId, limit, Array.isArray(data) ? (data as SearchHit[]) : [])
   const mapped = rows
     .map((r): SearchResultWithSlug | null => {
       const coll = getCollectionByUuid(r.collection_id)
