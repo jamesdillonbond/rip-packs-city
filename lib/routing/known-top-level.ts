@@ -42,6 +42,7 @@ export const STATIC_TOP_LEVEL_SEGMENTS: ReadonlySet<string> = new Set([
   "my-teams",
   "nba",
   "pinnacle",
+  "players",
   "pricing",
   "privacy",
   "profile",

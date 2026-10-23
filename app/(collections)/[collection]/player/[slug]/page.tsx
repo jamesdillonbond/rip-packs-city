@@ -28,6 +28,7 @@ import { editionRouteHref } from "@/lib/entity-href"
 import { fetchPaniniPlayerSales, type PaniniPlayerSale } from "@/lib/panini/player-sales"
 import { saleSerialLabel } from "@/lib/entity/sale-serial-label"
 import MarketCapTile from "@/components/entity/MarketCapTile"
+import { fetchPlayerHub, playerHubPath, routableEntries } from "@/lib/player-hub"
 import { indexCoverageNote, type IndexCoverage } from "@/lib/entity/index-coverage-note"
 
 export const revalidate = 600
@@ -340,6 +341,25 @@ async function SeasonStatsSection({ playerId, playerName, collectionSlug }: { pl
   return <PlayerSeasonStats result={row} ok={ok} playerName={playerName} />
 }
 
+// Link to the player hub when 2+ collections carry the name. Reads the same
+// get_player_hub the hub page does, so the link exists exactly when the hub
+// would gather something (a one-collection hub redirects back here).
+async function PlayerHubLink({ slug, name }: { slug: string; name: string }) {
+  const { hub, ok } = await fetchPlayerHub(slug)
+  if (!ok || !hub) return null
+  const colls = routableEntries(hub)
+  if (colls.length < 2) return null
+  return (
+    <Link
+      href={playerHubPath(hub.canonical_slug)}
+      className="rpc-mono"
+      style={{ fontSize: 12, color: "var(--rpc-red-text)", letterSpacing: "0.04em", textDecoration: "none" }}
+    >
+      {name} across every collection ({colls.map((c) => c.collection.displayName).join(" + ")}) →
+    </Link>
+  )
+}
+
 // ── Metadata ────────────────────────────────────────────────────────────────
 
 export async function generateMetadata(props: { params: Promise<{ collection: string; slug: string }> }): Promise<Metadata> {
@@ -473,6 +493,13 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
                     Panini already suppressed it for the same reason. Re-add only with a writer that
                     measures it. */}
               </div>
+            )}
+            {/* 2026-10-22: the cross-collection player hub (/players/<slug>) — shown only
+                when another collection carries this name. Decorative: a failed read omits it. */}
+            {!isCharacter && (
+              <Suspense fallback={null}>
+                <PlayerHubLink slug={slug} name={detail.name} />
+              </Suspense>
             )}
           </div>
         </div>

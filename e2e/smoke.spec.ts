@@ -171,6 +171,10 @@ const PAGES: PageCheck[] = [
   { path: "/nba/fast-break", name: "fast break optimizer" },
   // 2026-09-25: the team-hub directory — in the sitemap from the same commit.
   { path: "/teams", name: "team hubs directory" },
+  // 2026-10-22: a player hub (not in the sitemap — reached from search and the
+  // per-collection player pages). Lillard is the case it was built for: Top
+  // Shot + Panini on one page.
+  { path: "/players/damian-lillard", name: "player hub" },
 ]
 
 for (const p of PAGES) {

@@ -34,6 +34,7 @@ import { GET } from "@/app/api/search/route"
 
 const TS = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
 const CANDY = "209ade70-32c5-4470-bc7c-4793d660f713"
+const PANINI = "d1a0a7f5-609a-49f4-a1a7-4eaac55b020b"
 // Panini Blockchain — published:false, collections.is_active false, and ZERO
 // rows in `editions`, so it has no entity route and never will until it gets
 // one. It replaced Candy as this file's route-less fixture on 2026-09-19.
@@ -86,10 +87,33 @@ describe("GET /api/search", () => {
     expect(j.results[0]).toMatchObject({
       kind: "player",
       label: "Damian Lillard",
-      href: "/nba-top-shot/player/damian-lillard",
+      // 2026-10-22: player rows link the collection-agnostic hub (re-pinned from
+      // /nba-top-shot/player/…; the hub redirects there when Top Shot alone has him).
+      href: "/players/damian-lillard",
       collection: "nba-top-shot",
       editionCount: 65,
     })
+  })
+
+  // The 2026-10-22 defect: "damian lillard" listed a Panini row and a Top Shot
+  // row, and Enter opened Panini's page alone.
+  it("collapses one player's per-collection rows into ONE hub row", async () => {
+    state.rpc = {
+      data: [
+        row({ collection_id: PANINI, collection_slug: "panini_blockchain", edition_count: 129 }),
+        row({ edition_count: 68 }),
+      ],
+      error: null,
+    }
+    const j = await (await GET(req("?q=damian%20lillard"))).json()
+    expect(j.results).toHaveLength(1)
+    expect(j.results[0]).toMatchObject({
+      kind: "player",
+      href: "/players/damian-lillard",
+      collections: ["panini-blockchain", "nba-top-shot"],
+      editionCount: 197,
+    })
+    expect(j.results[0]).not.toHaveProperty("slug")
   })
 
   it("503s (never 200-with-empty-results) when the search RPC fails", async () => {
@@ -141,7 +165,7 @@ describe("GET /api/search", () => {
     expect(j.results[0]).toMatchObject({
       kind: "player",
       label: "Mike Trout",
-      href: "/candy-mlb/player/mike-trout",
+      href: "/players/mike-trout", // 2026-10-22: via the player hub (redirects to /candy-mlb/player/…)
       collection: "candy-mlb",
       collectionName: "Candy MLB",
     })

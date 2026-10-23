@@ -48,6 +48,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { getCollectionByUrlSlug, getCollectionByUuid } from "@/lib/collection-slug"
 import { buildSearchHref, type SearchHit } from "@/lib/search/href"
+import { mergePlayerHubHits, type SearchResultWithSlug } from "@/lib/search/player-hub-hits"
 import { boundedRead } from "@/lib/api/bounded-read"
 
 export const runtime = "nodejs"
@@ -168,8 +169,8 @@ export async function GET(req: NextRequest) {
   }
 
   const rows = Array.isArray(data) ? (data as SearchHit[]) : []
-  const results = rows
-    .map((r) => {
+  const mapped = rows
+    .map((r): SearchResultWithSlug | null => {
       const coll = getCollectionByUuid(r.collection_id)
       if (!coll) return null // unpublished/unknown collection → no route to link to
       const href = buildSearchHref(r.kind, coll.urlSlug, r.slug)
@@ -183,9 +184,13 @@ export async function GET(req: NextRequest) {
         collectionName: coll.displayName,
         thumbnailUrl: r.thumbnail_url,
         editionCount: r.edition_count,
+        slug: r.slug,
       }
     })
-    .filter(Boolean)
+    .filter((r): r is SearchResultWithSlug => r != null)
+  // 2026-10-22: player rows link to the collection-agnostic hub, and one
+  // player's per-collection rows collapse into one (lib/search/player-hub-hits.ts).
+  const results = mergePlayerHubHits(mapped)
 
   return NextResponse.json(
     {

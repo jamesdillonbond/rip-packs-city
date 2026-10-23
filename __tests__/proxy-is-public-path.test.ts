@@ -185,6 +185,11 @@ const TABLE: Row[] = [
   ["/teams/", "HEAD", true, "the hub directory, trailing slash"],
   ["/teams", "POST", false, "GET/HEAD only"],
   ["/teams/nba/blazers/edit", "GET", false, "deeper paths are not hubs"],
+  // Player hubs (2026-10-22) — exactly /players/<slug>.
+  ["/players/damian-lillard", "GET", true],
+  ["/players/marvin-harrison-jr-", "GET", true, "a slug may end in a dash"],
+  ["/players", "GET", false, "no player directory — /players alone stays gated"],
+  ["/players/damian-lillard/edit", "GET", false, "deeper paths are not hubs"],
 
   // ── Per-collection overview + its backing API ───────────────────────────────
   ["/nba-top-shot/overview", "GET", true],

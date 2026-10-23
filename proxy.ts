@@ -215,6 +215,8 @@ export function isRateLimitedPageRoute(pathname: string): boolean {
   if (pathname.startsWith("/moment/")) return true
   // Franchise hubs fan out one get_team_detail per collection — DB-backed, enumerable.
   if (pathname.startsWith("/teams/")) return true
+  // Player hubs (2026-10-22) fan out one get_player_detail per collection — same shape.
+  if (pathname.startsWith("/players/")) return true
   if (pathname === "/special-serial-owners") return true
 
   const segments = pathname.split("/").filter(Boolean)
@@ -838,6 +840,10 @@ export function isPublicPath(pathname: string, method: string): boolean {
   // /teams — the hub directory (2026-09-25): every registered franchise by
   // league, read-only, one get_teams_for_league per league. GET/HEAD only.
   if ((method === "GET" || method === "HEAD") && /^\/teams\/?$/.test(pathname)) return true
+  // /players/<slug> — player hub (2026-10-22): one public, read-only page per
+  // player name gathering every collection that carries it (Lillard = Top Shot
+  // + Panini). Exactly one segment, so /players alone or deeper paths stay gated.
+  if (/^\/players\/[^/]+\/?$/.test(pathname)) return true
 
   // ── Public entity detail pages ───────────────────────────────────────
   // /<collection>/{edition,set,player,team,series,pack}/<slug> — the

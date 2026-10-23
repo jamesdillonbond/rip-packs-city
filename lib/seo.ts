@@ -1007,6 +1007,12 @@ export function franchiseHubMetadata(opts: { name: string; description: string; 
   return buildMeta({ title, description: opts.description, canonical: opts.canonical, image: null })
 }
 
+/** Player hub (/players/<slug>, 2026-10-22) — same contract as franchiseHubMetadata. */
+export function playerHubMetadata(opts: { name: string; description: string; canonical: string }): Metadata {
+  const title = `${opts.name} | Rip Packs City`
+  return buildMeta({ title, description: opts.description, canonical: opts.canonical, image: null })
+}
+
 // Top Shot on-chain series number (UInt32) -> display name, per the series map
 // in CLAUDE.md. get_edition_detail returns series_label as the bare on-chain
 // number (e.g. "7"), so a naked "7." in a meta description reads as a dangling
