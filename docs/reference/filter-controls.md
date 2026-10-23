@@ -12,7 +12,7 @@ All under `components/filters/`; matching lives in `lib/filter-match.ts`.
 | need | component | notes |
 |---|---|---|
 | single choice, any length | **`FilterSelect`** | native `<select>` up to `SEARCHABLE_SELECT_MIN` (8) options — the OS picker is the best control for a short list — and `SearchableSelect` above it. `fill` for a grid cell. |
-| single choice, always searchable | `SearchableSelect` | WAI-ARIA combobox + listbox. Prefer `FilterSelect`. |
+| single choice, always searchable | `SearchableSelect` | WAI-ARIA combobox + listbox. Prefer `FilterSelect`. Omit `allValue`/`allLabel` for a pick-one list with no "All" row; `groupOf` gives `<optgroup>`-style `role="group"` sections (options in group order; a query also matches the heading and keeps group order). |
 | multi choice (chip) | **`MultiSelect`** | market Set / Series / Team / Badges. Search box above 8 options; `aria-multiselectable`; picks pinned to the top **at open time** (re-sorting on each toggle moves rows under the pointer). |
 | free text with suggestions | **`Autocomplete`** | market Player box. The typed text IS the filter; a suggestion replaces it with the catalog spelling. |
 | show what is active | `ActiveFilterPills` | one removable pill per multi-select value ("Team: Portland Fire ×"). |
@@ -22,7 +22,9 @@ All under `components/filters/`; matching lives in `lib/filter-match.ts`.
 Where they are used (2026-10-21): Sniper Team/Franchise + Studio (`SniperFilterBar`),
 market multi-selects + Player box + pills (`MarketClient`), wallet collection Player /
 Set / Series (`CollectionFilterBar`), editions grid Team / Set / Series / Rarity /
-Parallel / Badge (`EditionsGridPaginated`). The profile favourite-team picker was left
+Parallel / Badge (`EditionsGridPaginated`), the Panini Sets page Product picker
+(`PaniniSetProgress`, 106 products across 6 sports on 2026-10-22 — grouped by sport;
+native `<optgroup>`s at 8 or fewer). The profile favourite-team picker was left
 native on purpose — a once-per-account setting, not a filter.
 
 Keys (all three popups): ↓/↑ move · Enter picks (MultiSelect: toggles, stays open) ·
