@@ -66,6 +66,8 @@ import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { readMvAsOf } from "@/lib/insights/mv-freshness";
 import { boardUnavailable } from "@/lib/insights/board-error";
 import { boundedRead } from "@/lib/api/bounded-read";
+import { retryEmptyPlayerSearch } from "@/lib/search/player-search-retry";
+import { fromDbSlug, getCollectionUuid } from "@/lib/collections";
 
 import { boardRowMeta } from "@/lib/insights/board-meta"
 // Keep in sync with COLLECTIONS in app/insights/deals/DealsBoardClient.tsx.
@@ -112,25 +114,35 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: `sort must be one of ${[...VALID_SORTS].join(",")}` }, { status: 400 });
   }
 
-  let q = (supabase as any)
-    .from("cross_collection_deals_board")
-    .select("external_id, name, player_name, set_name, tier, circulation_count, fmv_usd, confidence, low_ask, discount_pct, discount_usd, ask_updated_at, collection_slug, collection_name, render_id, detail_url, thumbnail_url, low_confidence_fmv")
-    .gte("discount_pct", minDiscount);
+  const build = (player: string | null) => {
+    let q = (supabase as any)
+      .from("cross_collection_deals_board")
+      .select("external_id, name, player_name, set_name, tier, circulation_count, fmv_usd, confidence, low_ask, discount_pct, discount_usd, ask_updated_at, collection_slug, collection_name, render_id, detail_url, thumbnail_url, low_confidence_fmv")
+      .gte("discount_pct", minDiscount);
 
-  if (collection) q = q.eq("collection_slug", collection);
-  if (tier) q = q.eq("tier", tier);
-  if (confidence) q = q.eq("confidence", confidence);
-  if (setFilter) q = q.ilike("set_name", `%${setFilter}%`);
-  if (playerFilter) q = q.ilike("player_name", `%${playerFilter}%`);
+    if (collection) q = q.eq("collection_slug", collection);
+    if (tier) q = q.eq("tier", tier);
+    if (confidence) q = q.eq("confidence", confidence);
+    if (setFilter) q = q.ilike("set_name", `%${setFilter}%`);
+    if (player) q = q.ilike("player_name", `%${player}%`);
 
-  if (sort === "discount") q = q.order("discount_pct", { ascending: false });
-  else if (sort === "fmv") q = q.order("fmv_usd", { ascending: false, nullsFirst: false });
-  else if (sort === "ask") q = q.order("low_ask", { ascending: true });
-  else if (sort === "circulation") q = q.order("circulation_count", { ascending: true, nullsFirst: false });
+    if (sort === "discount") q = q.order("discount_pct", { ascending: false });
+    else if (sort === "fmv") q = q.order("fmv_usd", { ascending: false, nullsFirst: false });
+    else if (sort === "ask") q = q.order("low_ask", { ascending: true });
+    else if (sort === "circulation") q = q.order("circulation_count", { ascending: true, nullsFirst: false });
 
-  q = q.limit(limit);
+    return boundedRead(q.limit(limit), "api/public/insights/deals/cross_collection_deals_board");
+  };
 
-  const { data, error } = await boundedRead(q, "api/public/insights/deals/cross_collection_deals_board");
+  // #207: an accent-only miss ("doncic") is retried with the resolver's single
+  // spelling and reported in meta.player_resolved (lib/search/player-search-retry).
+  const { data, error, playerResolved } = await retryEmptyPlayerSearch({
+    supabase,
+    collectionUuid: (collection ? [collection] : [...VALID_COLLECTIONS]).map((c) => getCollectionUuid(fromDbSlug(c) ?? "")).filter((u): u is string => !!u),
+    typed: playerFilter,
+    first: await build(playerFilter),
+    run: (label) => build(label),
+  });
   if (error) {
     return boardUnavailable(error, "insights/deals");
   }
@@ -145,6 +157,7 @@ export async function GET(req: NextRequest) {
       ...boardRowMeta(data?.length ?? 0, limit),
       elapsed_ms: Date.now() - startedAt,
       filters: { collection, tier, min_discount: minDiscount, confidence, set: setFilter, player: playerFilter, sort, limit },
+      ...(playerResolved ? { player_resolved: playerResolved } : {}),
     },
     rows: data ?? [],
   });

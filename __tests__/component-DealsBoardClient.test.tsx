@@ -117,3 +117,26 @@ describe("DealsBoardClient", () => {
     expect(calls.some((c) => String(c[0]).includes("/api/public/insights/deals"))).toBe(true)
   })
 })
+
+// #207 platform-wide (2026-10-22): a ?player= drill-down the route resolved
+// accent-blind ("doncic" → "Luka Dončić") is labelled on the page — never a
+// silent subject swap — and "Use this spelling" adopts the catalog name.
+describe("DealsBoardClient — an accent-resolved player drill-down", () => {
+  it("names the swap and re-queries with the spelling on Use this spelling", async () => {
+    window.history.pushState({}, "", "/insights/deals?player=doncic")
+    const fetchMock = vi.fn(() =>
+      Promise.resolve({
+        ok: true,
+        json: async () => ({ rows: [{ ...fullRow, player_name: "Luka Dončić", name: "Luka Dončić" }], meta: { fetched_at: null, data_as_of: null, total_rows: 1, elapsed_ms: 1, player_resolved: { from: "doncic", to: "Luka Dončić" } } }),
+      } as Response),
+    )
+    vi.stubGlobal("fetch", fetchMock)
+    const { findByText, getByRole } = render(<DealsBoardClient initialRows={[]} initialFetchedAt={null} />)
+    const note = (await findByText(/No exact match for/)).closest("[role=status]")!
+    expect(note.textContent).toContain("No exact match for “doncic” — showing Luka Dončić.")
+    fireEvent.click(getByRole("button", { name: "Use this spelling" }))
+    await new Promise((r) => setTimeout(r, 0))
+    expect(fetchMock.mock.calls.some((c) => String((c as unknown[])[0]).includes("player=Luka+Don%C4%8Di%C4%87"))).toBe(true)
+    window.history.pushState({}, "", "/")
+  })
+})

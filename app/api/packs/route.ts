@@ -3,6 +3,7 @@ import { PACK_LISTING_COLLECTIONS } from "@/lib/packs/pack-listing-collections"
 import { createClient } from "@supabase/supabase-js"
 import { derivePackAvailability, packEvBasis } from "@/lib/pack-availability"
 import { apiErrorResponse } from "@/lib/api-error"
+import { accentInsensitiveRegex } from "@/lib/search/accent-regex"
 import { boundedRead } from "@/lib/api/bounded-read"
 
 // GET /api/packs?collection=<slug>&sort=<key>&tier=<tier>&search=<q>&limit=<n>
@@ -59,28 +60,35 @@ export async function GET(req: NextRequest) {
   const sort: SortKey = ALLOWED_SORTS.has(sortParam) ? sortParam : "value_ratio_desc"
   const { column, ascending, nullsFirst } = sortToColumn(sort)
 
-  let query = supabase
-    .from("pack_table_rows")
-    .select("*", { count: "exact" })
-    .eq("collection_slug", collection)
-
-  if (tier) query = query.eq("tier", tier)
-  if (search) query = query.ilike("title", "%" + search + "%")
-
-  // Golazos: hide the Dapper internal test/split dists ("Jornadas 1-9 (Stress
-  // test)", any "(Split)") — they're not real consumer packs and the stress-test
-  // dist headlines the board with an inflated 5.9x ratio. Mirrors the Pinnacle
-  // "[OLD]" filtering. Scoped to Golazos so other collections are untouched.
-  // Stress-test dists are Dapper-internal QA in every collection (e.g. TS
-  // "2026 Stress Test Pack 5") — hide them from the board universally.
-  query = query.not("title", "ilike", "%Stress test%")
-  if (collection === "laliga-golazos") {
-    query = query.not("title", "ilike", "%(Split)%")
+  // The board's scope, shared by the ordinary read and its accent-blind retry.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const scoped = (q: any) => {
+    q = q.eq("collection_slug", collection)
+    if (tier) q = q.eq("tier", tier)
+    // Golazos: hide the Dapper internal test/split dists ("Jornadas 1-9 (Stress
+    // test)", any "(Split)") — they're not real consumer packs and the stress-test
+    // dist headlines the board with an inflated 5.9x ratio. Mirrors the Pinnacle
+    // "[OLD]" filtering. Scoped to Golazos so other collections are untouched.
+    // Stress-test dists are Dapper-internal QA in every collection (e.g. TS
+    // "2026 Stress Test Pack 5") — hide them from the board universally.
+    q = q.not("title", "ilike", "%Stress test%")
+    if (collection === "laliga-golazos") q = q.not("title", "ilike", "%(Split)%")
+    return q
   }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const readPage = (titleFilter: (q: any) => any) =>
+    titleFilter(scoped(supabase.from("pack_table_rows").select("*", { count: "exact" })))
+      .order(column, { ascending, nullsFirst })
+      .limit(limit)
 
-  const { data, count, error } = await query
-    .order(column, { ascending, nullsFirst })
-    .limit(limit)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let { data, count, error } = await readPage((q: any) => (search ? q.ilike("title", "%" + search + "%") : q))
+  // #207: "clasico" found none of Golazos' 23 "ElClásico" packs. An EMPTY search
+  // is re-run once with the exact accent-blind regex (lib/search/accent-regex), so
+  // count, sort and paging stay exact. A search that matched is never re-run.
+  const titleRx = !error && search && (data ?? []).length === 0 ? accentInsensitiveRegex(search) : null
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  if (titleRx) ({ data, count, error } = await readPage((q: any) => q.filter("title", "imatch", titleRx)))
 
   if (error) {
     return apiErrorResponse(error, "api/packs")

@@ -11,6 +11,8 @@
 // its inputs; nothing user-facing reaches it.
 
 import { NextRequest, NextResponse } from "next/server";
+import { retryEmptyPlayerSearch } from "@/lib/search/player-search-retry";
+import { getCollectionUuid } from "@/lib/collections";
 import { createClient } from "@supabase/supabase-js";
 import { safeApiError, statusForSafeError } from "@/lib/api-error";
 import { secretEquals } from "@/lib/concierge/request-guards";
@@ -105,14 +107,24 @@ export async function POST(req: NextRequest) {
     const limit = Math.min(Math.max(Math.trunc(num(body.limit) ?? 8), 1), 40);
 
     // Use get_top_deals RPC instead of broken nested select
-    const { data, error } = await supabase.rpc("get_top_deals", {
-      p_player: player ?? null,
+    const topDeals = (p: string | null) => supabase.rpc("get_top_deals", {
+      p_player: p,
       p_team: team ?? null,
       p_tier: tier ? normalizeTier(tier) : null,
       p_max_price: maxPrice ?? null,
       p_min_discount: minDiscount ?? 0,
       p_has_badge: hasBadge ?? false,
       p_limit: limit,
+    });
+    // #207: get_top_deals ILIKEs p_player accent-sensitively ("doncic" → none); an
+    // empty answer is retried with the resolver's single spelling (Top Shot, the
+    // RPC's default collection) and reported as player_resolved.
+    const { data, error, playerResolved } = await retryEmptyPlayerSearch({
+      supabase,
+      collectionUuid: getCollectionUuid("nba-top-shot"),
+      typed: player,
+      first: await topDeals(player ?? null),
+      run: (label) => topDeals(label),
     });
 
     // A failed search must NOT look like a successful empty search.
@@ -175,7 +187,7 @@ export async function POST(req: NextRequest) {
         ? Math.round(known.reduce((s: number, d: any) => s + d.discount_pct, 0) / known.length)
         : null;
 
-    return NextResponse.json({ deals, meta: { total: totalDeals, avgDiscount } });
+    return NextResponse.json({ deals, meta: { total: totalDeals, avgDiscount, ...(playerResolved ? { player_resolved: playerResolved } : {}) } });
   } catch (err: any) {
     console.error("[search-deals] Unexpected error:", err);
     return dealsUnavailable(err);

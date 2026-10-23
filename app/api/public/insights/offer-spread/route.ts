@@ -81,7 +81,7 @@ export async function GET(req: NextRequest) {
   // The QUERY lives in lib/insights/offer-spread-board.ts, shared with the server page
   // so the crawlable board and this route cannot drift. This route keeps its
   // own failure policy (boardUnavailable).
-  const { data, error } = await fetchOfferSpreadBoard(
+  const { data, error, playerResolved } = await fetchOfferSpreadBoard(
     { tier, set: setFilter, player: playerFilter, bidMeetsAsk, minAsk, sort, limit },
     supabase,
   );
@@ -96,6 +96,7 @@ export async function GET(req: NextRequest) {
       ...boardRowMeta(data?.length ?? 0, limit),
       elapsed_ms: Date.now() - startedAt,
       filters: { tier, min_ask: minAsk, bid_meets_ask: bidMeetsAsk, set: setFilter, player: playerFilter, sort, limit },
+      ...(playerResolved ? { player_resolved: playerResolved } : {}),
     },
     rows: data ?? [],
   });

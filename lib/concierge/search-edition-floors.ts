@@ -16,6 +16,7 @@
 // `editions_matched`, so the model can say "N editions, none listed" instead
 // of "RPC doesn't have them".
 
+import { retryEmptyPlayerSearch, type PlayerResolved } from "@/lib/search/player-search-retry"
 import type { Collection } from "@/lib/collections"
 import { marketplaceMomentUrl } from "@/lib/collections"
 import { absoluteEditionPageUrl, discountPct } from "@/lib/concierge/edition-listings"
@@ -50,6 +51,8 @@ export interface EditionFloorGroup {
   editions_matched?: number
   editions_listed?: number
   note?: string
+  /** #207: the typed name matched nothing; the search ran with the resolver's spelling. */
+  player_resolved?: PlayerResolved
 }
 
 const num = (v: unknown): number | null => {
@@ -210,15 +213,20 @@ export async function searchEditionFloorsByName(
   perCollection: number,
   base: string,
 ): Promise<EditionFloorGroup> {
-  const head = { collection: col.label, collectionId: col.id }
+  const head: { collection: string; collectionId: string; player_resolved?: PlayerResolved } = { collection: col.label, collectionId: col.id }
 
-  const { data: eds, error: edErr } = await supabase
+  const editionsFor = (n: string) => supabase
     .from("editions")
     .select("id, external_id, player_name, set_name, tier")
     .eq("collection_id", collectionUuid)
-    .ilike("player_name", `%${name}%`)
+    .ilike("player_name", `%${n}%`)
     .order("id", { ascending: true })
     .limit(EDITION_SEARCH_CAP + 1)
+  // #207: an accent-only miss ("doncic") is retried with the resolver's spelling.
+  const { data: eds, error: edErr, playerResolved } = await retryEmptyPlayerSearch({
+    supabase, collectionUuid, typed: name, first: await editionsFor(name), run: editionsFor,
+  })
+  if (playerResolved) head.player_resolved = playerResolved
   if (edErr) return { ...head, results: [], failed: true }
 
   const all = (eds ?? []) as Array<Record<string, any>>

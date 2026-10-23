@@ -23,6 +23,7 @@ import { proxyIpfsImageUrl } from "@/lib/ipfs-media"
 import { askAgeTitle, askStampKind } from "@/lib/market/ask-freshness"
 import { usdSignFirst } from "@/lib/usd-format"
 import { accentText } from "@/lib/accent-text"
+import PlayerResolvedNote from "@/components/filters/PlayerResolvedNote"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -48,7 +49,7 @@ export type Row = {
 }
 
 type ApiResponse = {
-  meta: { fetched_at: string; data_as_of: string | null; total_rows: number; elapsed_ms: number }
+  meta: { fetched_at: string; data_as_of: string | null; total_rows: number; elapsed_ms: number; player_resolved?: { from: string; to: string } }
   rows: Row[]
 }
 
@@ -252,6 +253,7 @@ export default function DealsBoardClient({
   const [sort, setSort] = useState<SortKey>("discount")
   const [setFilter, setSetFilter] = useState<string | null>(null)
   const [playerFilter, setPlayerFilter] = useState<string | null>(null)
+  const [playerResolved, setPlayerResolved] = useState<{ from: string; to: string } | null>(null)
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -296,6 +298,7 @@ export default function DealsBoardClient({
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
         const j = (await r.json()) as ApiResponse
         setRows(j.rows ?? [])
+        setPlayerResolved(j.meta?.player_resolved ?? null)
         // data_as_of = age of the ROWS; meta.fetched_at is only when the API answered.
         setFetchedAt(j.meta?.data_as_of ?? null)
         setDegraded(null)
@@ -426,6 +429,11 @@ export default function DealsBoardClient({
       </section>
 
       <DegradedDataNotice summary={degraded} />
+
+      {/* #207: an accent-only miss ("doncic") was retried with the catalog spelling — say so. */}
+      {playerResolved && (
+        <PlayerResolvedNote resolved={playerResolved} onUse={(n) => setPlayerFilter(n)} />
+      )}
 
       {setFilter || playerFilter ? (
         <section className="rpc-dl-active-filter" aria-label="Active drill-down filter">

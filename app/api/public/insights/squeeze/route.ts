@@ -111,7 +111,7 @@ export async function GET(req: NextRequest) {
     teamResolution = { status: tr.status, current_name: tr.currentName, labels: tr.labels.length };
   }
 
-  const { data, error } = await fetchSqueezeBoard(
+  const { data, error, playerResolved } = await fetchSqueezeBoard(
     { tier, set: setFilter, player: playerFilter, minSqueeze, maxBuyable, maxCirculation, minCirculation, minBuyable, teamNames, sort, limit },
     supabase,
   );
@@ -144,6 +144,7 @@ export async function GET(req: NextRequest) {
         sort,
         limit,
       },
+      ...(playerResolved ? { player_resolved: playerResolved } : {}),
     },
     rows: data ?? [],
   });

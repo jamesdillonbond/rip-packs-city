@@ -24,6 +24,7 @@ import {
 } from "@/lib/market/bid-age"
 import { usdSignFirst } from "@/lib/usd-format"
 import { accentText } from "@/lib/accent-text"
+import PlayerResolvedNote from "@/components/filters/PlayerResolvedNote"
 
 // The page seed and every refetch read at most this many rows.
 const OFFER_SPREAD_LIMIT = 200
@@ -49,7 +50,7 @@ export type Row = {
 }
 
 type ApiResponse = {
-  meta: { fetched_at: string; total_rows: number; elapsed_ms: number }
+  meta: { fetched_at: string; total_rows: number; elapsed_ms: number; player_resolved?: { from: string; to: string } }
   rows: Row[]
 }
 
@@ -163,6 +164,7 @@ export default function OfferSpreadBoardClient({
   // Pre-filter to a set or player when arriving from another surface.
   const [setFilter, setSetFilter] = useState<string | null>(null)
   const [playerFilter, setPlayerFilter] = useState<string | null>(null)
+  const [playerResolved, setPlayerResolved] = useState<{ from: string; to: string } | null>(null)
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -207,6 +209,7 @@ export default function OfferSpreadBoardClient({
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
         const j = (await r.json()) as ApiResponse
         setRows(j.rows ?? [])
+        setPlayerResolved(j.meta?.player_resolved ?? null)
         setFetchedAt(j.meta?.fetched_at ?? null)
         setDegraded(null)
       } catch (e: unknown) {
@@ -306,6 +309,11 @@ export default function OfferSpreadBoardClient({
       </section>
 
       <DegradedDataNotice summary={degraded} />
+
+      {/* #207: an accent-only miss ("doncic") was retried with the catalog spelling — say so. */}
+      {playerResolved && (
+        <PlayerResolvedNote resolved={playerResolved} onUse={(n) => setPlayerFilter(n)} />
+      )}
 
       {setFilter || playerFilter ? (
         <section className="rpc-os-active-filter" aria-label="Active drill-down filter">

@@ -21,6 +21,7 @@ import type { DegradedSummary } from "@/lib/insights/board-status"
 import { sectionUnavailableCopy } from "@/lib/entity/section-empty-copy"
 import { usdSignFirst } from "@/lib/usd-format"
 import { accentText } from "@/lib/accent-text"
+import PlayerResolvedNote from "@/components/filters/PlayerResolvedNote"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -62,6 +63,7 @@ type ApiResponse = {
     total_rows: number
     elapsed_ms: number
     filters?: { team?: string | null; team_resolution?: { status: string; current_name: string | null; labels: number } | null }
+    player_resolved?: { from: string; to: string }
   }
   rows: Row[]
 }
@@ -169,6 +171,7 @@ export default function SqueezeBoardClient({
   // hard-link nav).
   const [setFilter, setSetFilter] = useState<string | null>(null)
   const [playerFilter, setPlayerFilter] = useState<string | null>(null)
+  const [playerResolved, setPlayerResolved] = useState<{ from: string; to: string } | null>(null)
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -260,6 +263,7 @@ export default function SqueezeBoardClient({
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
         const j = (await r.json()) as ApiResponse
         setRows(j.rows ?? [])
+        setPlayerResolved(j.meta?.player_resolved ?? null)
         setFetchedAt(j.meta?.fetched_at ?? null)
         setTeamResolution(teamFilter ? (j.meta?.filters?.team_resolution ?? null) : null)
         setDegraded(null)
@@ -391,6 +395,11 @@ export default function SqueezeBoardClient({
       </section>
 
       <DegradedDataNotice summary={degraded} />
+
+      {/* #207: an accent-only miss ("doncic") was retried with the catalog spelling — say so. */}
+      {playerResolved && (
+        <PlayerResolvedNote resolved={playerResolved} onUse={(n) => setPlayerFilter(n)} />
+      )}
 
       {setFilter || playerFilter ? (
         <section className="rpc-sq-active-filter" aria-label="Active drill-down filter">

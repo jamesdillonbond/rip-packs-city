@@ -20,6 +20,7 @@
 // counterpart in app/api/support-chat/route.ts so the LLM sees a consistent
 // tool result regardless of which path produced it.
 
+import { retryEmptyWithAccentRegex } from "@/lib/search/accent-regex"
 import { PINNACLE_MARKETPLACE_URL } from "@/lib/pinnacle/pinnacleTypes"
 
 const PINNACLE_COLLECTION_ID = "disney-pinnacle"
@@ -119,19 +120,28 @@ export async function searchPinnacleDeals(
 ): Promise<string> {
   try {
     const cap = Math.min(Math.max(input.limit ?? 8, 1), 20)
-    let query = supabase
-      .from("pinnacle_catalog")
-      .select(CATALOG_DEAL_COLUMNS)
-      // floor_ask present = the render is currently listed on the marketplace.
-      .not("floor_ask", "is", null)
-      .order("floor_ask", { ascending: true })
-      .limit(cap)
-    // Pinnacle uses character_name (not player_name) and variant (not tier).
-    if (input.player) query = query.ilike("character_name", `%${input.player}%`)
-    if (input.tier) query = query.ilike("variant", `%${input.tier}%`)
-    if (input.maxPrice) query = query.lte("floor_ask", input.maxPrice)
-    const { data: rows, error } = await query
-    if (error) return JSON.stringify({ status: "error", message: error.message })
+    // Built per read (a builder mutates in place): the #207 retry swaps the
+    // character ilike for the accent-blind regex ("padme" → "Padmé Amidala").
+    const dealsRead = (character: (q: any) => any) => {
+      let query = supabase
+        .from("pinnacle_catalog")
+        .select(CATALOG_DEAL_COLUMNS)
+        // floor_ask present = the render is currently listed on the marketplace.
+        .not("floor_ask", "is", null)
+        .order("floor_ask", { ascending: true })
+        .limit(cap)
+      // Pinnacle uses character_name (not player_name) and variant (not tier).
+      query = character(query)
+      if (input.tier) query = query.ilike("variant", `%${input.tier}%`)
+      if (input.maxPrice) query = query.lte("floor_ask", input.maxPrice)
+      return query
+    }
+    const { data: rows, error } = await retryEmptyWithAccentRegex(
+      input.player,
+      await dealsRead((q: any) => (input.player ? q.ilike("character_name", `%${input.player}%`) : q)),
+      (rx) => dealsRead((q: any) => q.filter("character_name", "imatch", rx)),
+    )
+    if (error) return JSON.stringify({ status: "error", message: (error as { message?: string }).message })
     if (!rows || rows.length === 0) {
       return JSON.stringify({ status: "no_results", message: "No Pinnacle listings found matching those criteria." })
     }
@@ -225,13 +235,17 @@ export async function getPinnacleFmv(
       })
     }
     if (input.playerName) {
-      const { data: rows } = await supabase
-        .from("pinnacle_catalog")
-        .select(CATALOG_FMV_COLUMNS)
-        .ilike("character_name", `%${input.playerName}%`)
-        .not("fmv_usd", "is", null)
-        .order("fmv_sales_count_30d", { ascending: false })
-        .limit(50)
+      const fmvRead = (character: (q: any) => any) =>
+        character(supabase.from("pinnacle_catalog").select(CATALOG_FMV_COLUMNS))
+          .not("fmv_usd", "is", null)
+          .order("fmv_sales_count_30d", { ascending: false })
+          .limit(50)
+      // #207: an accent-only miss ("lumiere") is re-run accent-blind.
+      const { data: rows } = await retryEmptyWithAccentRegex(
+        input.playerName,
+        await fmvRead((q: any) => q.ilike("character_name", `%${input.playerName}%`)),
+        (rx) => fmvRead((q: any) => q.filter("character_name", "imatch", rx)),
+      )
       if (!rows || rows.length === 0) {
         return JSON.stringify({ status: "not_found", message: "No priced Pinnacle renders found for that character." })
       }
@@ -329,13 +343,16 @@ export async function searchPinnacleByName(
   // Per-render spine (pinnacle_catalog), same rationale as searchPinnacleDeals:
   // floor_ask + fmv_usd live on the same render row, so no cross-pin leak and
   // no dependency on the frozen dead-Flowty pinnacle_cached_listings table.
-  const { data: rows, error } = await supabase
-    .from("pinnacle_catalog")
-    .select(CATALOG_DEAL_COLUMNS)
-    .not("floor_ask", "is", null)
-    .ilike("character_name", `%${name}%`)
-    .order("floor_ask", { ascending: true })
-    .limit(perCollection)
+  const byName = (character: (q: any) => any) =>
+    character(supabase.from("pinnacle_catalog").select(CATALOG_DEAL_COLUMNS).not("floor_ask", "is", null))
+      .order("floor_ask", { ascending: true })
+      .limit(perCollection)
+  // #207: an accent-only miss ("walle" → "WALL•E") is re-run accent-blind.
+  const { data: rows, error } = await retryEmptyWithAccentRegex(
+    name,
+    await byName((q: any) => q.ilike("character_name", `%${name}%`)),
+    (rx) => byName((q: any) => q.filter("character_name", "imatch", rx)),
+  )
   if (error) return { collection: "Disney Pinnacle", collectionId: PINNACLE_COLLECTION_ID, results: [], failed: true }
   return {
     collection: "Disney Pinnacle",
@@ -408,21 +425,29 @@ export async function getPinnacleEditionListings(
   siteBase: string
 ): Promise<string> {
   try {
-    let q = supabase.from("pinnacle_catalog").select(CATALOG_LISTING_COLUMNS)
-    if (input.renderId) {
-      q = q.eq("render_id", input.renderId)
-    } else {
-      if (input.characterName) q = q.ilike("character_name", `%${input.characterName}%`)
-      if (input.setName) q = q.ilike("set_name", `%${input.setName}%`)
-      if (input.variant) q = q.ilike("variant", `%${input.variant}%`)
-      if (!input.characterName && !input.setName && !input.variant) {
-        return JSON.stringify({
-          status: "error",
-          message: "Provide renderId, or characterName and/or setName for a Pinnacle pin.",
-        })
-      }
+    if (!input.renderId && !input.characterName && !input.setName && !input.variant) {
+      return JSON.stringify({
+        status: "error",
+        message: "Provide renderId, or characterName and/or setName for a Pinnacle pin.",
+      })
     }
-    const { data, error } = await q.limit(25)
+    const listingsRead = (character: (q: any) => any) => {
+      let q = supabase.from("pinnacle_catalog").select(CATALOG_LISTING_COLUMNS)
+      if (input.renderId) {
+        q = q.eq("render_id", input.renderId)
+      } else {
+        q = character(q)
+        if (input.setName) q = q.ilike("set_name", `%${input.setName}%`)
+        if (input.variant) q = q.ilike("variant", `%${input.variant}%`)
+      }
+      return q.limit(25)
+    }
+    // #207: an accent-only character miss ("hector rivera") is re-run accent-blind.
+    const { data, error } = await retryEmptyWithAccentRegex(
+      input.renderId ? null : input.characterName,
+      await listingsRead((q: any) => (input.characterName ? q.ilike("character_name", `%${input.characterName}%`) : q)),
+      (rx) => listingsRead((q: any) => q.filter("character_name", "imatch", rx)),
+    )
     // supabase-js RETURNS errors rather than throwing, so this must branch on
     // `error` and not on whether rows came back — otherwise a statement timeout
     // becomes "nothing is listed", the conflation this whole tool exists to stop.

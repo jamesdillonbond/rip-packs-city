@@ -46,6 +46,8 @@ import {
 } from "@/lib/concierge/errors";
 import { editionKeyCollectionMismatch } from "@/lib/concierge/edition-key";
 import { resolvePlayerName, identityContextFor, playerLabelsFor, singleRetryLabel, type PlayerResolution } from "@/lib/concierge/player-identity";
+import { retryEmptyPlayerSearch } from "@/lib/search/player-search-retry";
+import { textIncludes } from "@/lib/filter-match";
 import {
   listingsStatus,
   listingsNote,
@@ -1905,7 +1907,7 @@ async function executeToolInner(
   const playerFilter = (q: any, typed: unknown): any =>
     playerScope.labels ? q.in("player_name", playerScope.labels) : q.ilike("player_name", `%${typed}%`);
   const playerLabelMatches = (label: unknown, typed: unknown): boolean =>
-    playerScope.labels ? playerScope.labels.includes(String(label ?? "")) : String(label ?? "").toLowerCase().includes(String(typed).toLowerCase());
+    playerScope.labels ? playerScope.labels.includes(String(label ?? "")) : textIncludes(String(label ?? ""), String(typed));
 
   // Delegates to the pure guard in @/lib/concierge/edition-key (unit-tested);
   // the JSON string shape handed back to the model is unchanged.
@@ -2116,7 +2118,7 @@ async function executeToolInner(
       // question belongs to get_edition_listings.
       const deals = (data.deals || data || []).filter((d: any) => {
         if (toolInput.player && !playerLabelMatches(d.playerName, toolInput.player)) return false;
-        if (toolInput.setName && !d.setName?.toLowerCase().includes(String(toolInput.setName).toLowerCase())) return false;
+        if (toolInput.setName && !textIncludes(d.setName, String(toolInput.setName))) return false;
         return true;
       });
       if (deals && deals.length > 0) {
@@ -2904,19 +2906,25 @@ async function executeToolInner(
         if (floorView) {
           return searchEditionFloorsByName(supabase, col, uuid, floorView, name, perCollection, base);
         }
-        const { data, error } = await supabase
+        const listingsFor = (n: string) => supabase
           .from("cached_listings")
           .select("player_name, set_name, tier, serial_number, ask_price, fmv, discount, buy_url")
           .eq("collection_id", uuid)
-          .ilike("player_name", `%${name}%`)
+          .ilike("player_name", `%${n}%`)
           .order("discount", { ascending: false })
           .limit(perCollection);
+        // #207: an accent-only miss ("doncic") is retried with the resolver's
+        // spelling for this collection, and the swap is reported to the model.
+        const { data, error, playerResolved } = await retryEmptyPlayerSearch({
+          supabase, collectionUuid: uuid, typed: name, first: await listingsFor(name), run: listingsFor,
+        });
         // A failed read is UNKNOWN, not "no listings": flag it so the model is
         // never handed an empty group it would repeat as a fact.
         if (error) return { collection: col.label, collectionId: col.id, results: [], failed: true };
         return {
           collection: col.label,
           collectionId: col.id,
+          ...(playerResolved ? { player_resolved: playerResolved } : {}),
           results: (data ?? []).map((r: any) => ({
             player: r.player_name,
             set: r.set_name,
@@ -3826,16 +3834,24 @@ async function executeToolInner(
       }
 
       // listedOnly path: ALL currently-listed special serials (join editions for names; compute discount).
-      let q2 = supabase
-        .from("topshot_active_listings")
-        .select("serial_number, nft_id, ask_usd, serial_fmv_usd, edition_key, edition_id, editions!inner(player_name, set_name, tier, circulation_count, collection_id, team_name, external_id)")
-        .eq("active", true);
-      if (tsUuid) q2 = q2.eq("editions.collection_id", tsUuid);
-      if (player) q2 = q2.ilike("editions.player_name", `%${player}%`);
-      if (team) q2 = q2.ilike("editions.team_name", `%${team}%`);
-      if (tier) q2 = q2.eq("editions.tier", tier);
-      if (tag === "#1") q2 = q2.eq("serial_number", 1);
-      const { data: l, error: le } = await q2.limit(200);
+      // Built fresh per read: a supabase-js builder mutates in place, so a retry
+      // on the same builder would stack a second player filter on the first.
+      // #207: an accent-only player miss is retried with the resolver's spelling.
+      const listedFor = (p: string | null) => {
+        let q2 = supabase
+          .from("topshot_active_listings")
+          .select("serial_number, nft_id, ask_usd, serial_fmv_usd, edition_key, edition_id, editions!inner(player_name, set_name, tier, circulation_count, collection_id, team_name, external_id)")
+          .eq("active", true);
+        if (tsUuid) q2 = q2.eq("editions.collection_id", tsUuid);
+        if (p) q2 = q2.ilike("editions.player_name", `%${p}%`);
+        if (team) q2 = q2.ilike("editions.team_name", `%${team}%`);
+        if (tier) q2 = q2.eq("editions.tier", tier);
+        if (tag === "#1") q2 = q2.eq("serial_number", 1);
+        return q2.limit(200);
+      };
+      const { data: l, error: le } = await retryEmptyPlayerSearch({
+        supabase, collectionUuid: tsUuid ?? null, typed: player, first: await listedFor(player ?? null), run: (label) => listedFor(label),
+      });
       if (le) return JSON.stringify({ status: "error", message: safeApiError(le).error });
       let raw = (l ?? []);
       if (badge) {

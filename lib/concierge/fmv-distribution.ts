@@ -1,4 +1,5 @@
 import { keepCanonicalEditionRows } from "@/lib/concierge/edition-listings"
+import { retryEmptyWithAccentRegex } from "@/lib/search/accent-regex"
 import { COLLECTION_UUID_BY_SLUG } from "@/lib/collections"
 // lib/concierge/fmv-distribution.ts
 //
@@ -541,16 +542,28 @@ export async function fetchPinnacleFmvDistribution(
   // no-filter call could. The unified (Top Shot / All Day / Golazos) path is
   // the one where the cap really binds: "Base Set" alone matches 5,016.
   // Re-measure before assuming this still holds if the catalog grows.
-  let query = supabase
-    .from("pinnacle_catalog")
-    .select(cols)
-    .not("character_name", "is", null)
-    .neq("character_name", "")
-    .not("fmv_usd", "is", null)
-  if (input.character) query = query.ilike("character_name", `%${input.character}%`)
-  if (input.setName) query = query.ilike("set_name", `%${input.setName}%`)
-  if (input.variant) query = query.ilike("variant", `%${input.variant}%`)
-  const { data: renders } = await query.limit(500)
+  // Built per read (a builder mutates in place) so the #207 retry can swap the
+  // character ilike for the accent-blind regex ("padme" → "Padmé Amidala").
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rendersRead = (character: (q: any) => any) => {
+    let query = character(supabase
+      .from("pinnacle_catalog")
+      .select(cols)
+      .not("character_name", "is", null)
+      .neq("character_name", "")
+      .not("fmv_usd", "is", null))
+    if (input.setName) query = query.ilike("set_name", `%${input.setName}%`)
+    if (input.variant) query = query.ilike("variant", `%${input.variant}%`)
+    return query.limit(500)
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: renders } = await retryEmptyWithAccentRegex<any, unknown>(
+    input.character,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await rendersRead((q: any) => (input.character ? q.ilike("character_name", `%${input.character}%`) : q)),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (rx) => rendersRead((q: any) => q.filter("character_name", "imatch", rx)),
+  )
   if (!renders || renders.length === 0) {
     return { status: "no_results", message: "No priced Pinnacle renders matched those filters." }
   }

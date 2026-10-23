@@ -29,6 +29,8 @@ import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { readMvAsOf } from "@/lib/insights/mv-freshness";
 import { boardUnavailable } from "@/lib/insights/board-error";
 import { boundedRead } from "@/lib/api/bounded-read";
+import { retryEmptyPlayerSearch } from "@/lib/search/player-search-retry";
+import { getCollectionUuid } from "@/lib/collections";
 
 export async function GET(req: NextRequest) {
   const startedAt = Date.now();
@@ -47,33 +49,44 @@ export async function GET(req: NextRequest) {
   const playerFilter = url.searchParams.get("player")?.trim() ?? null;
   const setFilter = url.searchParams.get("set")?.trim() ?? null;
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let q = (supabase as any)
-    .from("topshot_first_mint_trophies")
-    .select(
-      "edition_id, external_id, player_name, set_name, tier, circulation_count, mint_one_sold_at, mint_one_price_usd, avg_other_serial_price_usd, other_serial_sample_n, multiplier, transaction_hash"
-    );
-  if (minMult != null && Number.isFinite(minMult)) {
-    q = q.gte("multiplier", minMult);
-  }
-  if (maxCirculation != null && Number.isFinite(maxCirculation)) {
-    q = q.lte("circulation_count", maxCirculation);
-  }
-  if (tier) {
-    q = q.eq("tier", tier);
-  }
-  if (playerFilter) {
-    q = q.ilike("player_name", `%${playerFilter}%`);
-  }
-  if (setFilter) {
-    q = q.ilike("set_name", `%${setFilter}%`);
-  }
-  q = q.order("multiplier", { ascending: false, nullsFirst: false }).limit(limit);
+  const buildTrophies = (player: string | null) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let q = (supabase as any)
+      .from("topshot_first_mint_trophies")
+      .select(
+        "edition_id, external_id, player_name, set_name, tier, circulation_count, mint_one_sold_at, mint_one_price_usd, avg_other_serial_price_usd, other_serial_sample_n, multiplier, transaction_hash"
+      );
+    if (minMult != null && Number.isFinite(minMult)) {
+      q = q.gte("multiplier", minMult);
+    }
+    if (maxCirculation != null && Number.isFinite(maxCirculation)) {
+      q = q.lte("circulation_count", maxCirculation);
+    }
+    if (tier) {
+      q = q.eq("tier", tier);
+    }
+    if (player) {
+      q = q.ilike("player_name", `%${player}%`);
+    }
+    if (setFilter) {
+      q = q.ilike("set_name", `%${setFilter}%`);
+    }
+    q = q.order("multiplier", { ascending: false, nullsFirst: false }).limit(limit);
+    return boundedRead(q, "api/public/insights/first-mint/topshot_first_mint_trophies");
+  };
 
   const [statsRes, trophiesRes] = await Promise.all([
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     boundedRead((supabase as any).from("topshot_first_mint_trophy_stats").select("*").limit(1), "api/public/insights/first-mint/topshot_first_mint_trophy_stats"),
-    boundedRead(q, "api/public/insights/first-mint/topshot_first_mint_trophies"),
+    // #207: an accent-only miss ("doncic") is retried with the resolver's single
+    // spelling and reported in meta.player_resolved (lib/search/player-search-retry).
+    (async () => retryEmptyPlayerSearch({
+      supabase,
+      collectionUuid: getCollectionUuid("nba-top-shot"),
+      typed: playerFilter,
+      first: await buildTrophies(playerFilter),
+      run: (label) => buildTrophies(label),
+    }))(),
   ]);
 
   if (statsRes.error) {
@@ -93,6 +106,7 @@ export async function GET(req: NextRequest) {
       sources: ["topshot_first_mint_trophy_stats", "topshot_first_mint_trophies"],
       elapsed_ms: elapsedMs,
       filters: { limit, min_multiplier: minMult, max_circulation: maxCirculation, tier, player: playerFilter, set: setFilter },
+      ...(trophiesRes.playerResolved ? { player_resolved: trophiesRes.playerResolved } : {}),
     },
     stats: statsRes.data?.[0] ?? null,
     trophies: trophiesRes.data ?? [],

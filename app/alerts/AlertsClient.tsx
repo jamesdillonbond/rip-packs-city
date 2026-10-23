@@ -314,10 +314,15 @@ export default function AlertsClient() {
         return;
       }
       setForm(EMPTY_FORM);
+      // #207: the route stores the catalog spelling of a typed player name (alerts
+      // match names exactly) — say which, so the saved alert is not a surprise.
+      const renamed = Array.isArray(data.player_names_resolved) && data.player_names_resolved.length
+        ? ` Saved player name${data.player_names_resolved.length === 1 ? "" : "s"} as ${data.player_names_resolved.map((r: { from: string; to: string }) => `“${r.to}” (you typed “${r.from}”)`).join(", ")}.`
+        : "";
       setMsg(
-        data.subscription?.preview_count != null
+        (data.subscription?.preview_count != null
           ? `Saved. ${data.subscription.preview_count} deal(s) match right now.`
-          : "Saved."
+          : "Saved.") + renamed
       );
       load();
     } catch {

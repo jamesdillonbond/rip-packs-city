@@ -9,6 +9,8 @@ import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { readMvAsOf } from "@/lib/insights/mv-freshness";
 import { boardUnavailable } from "@/lib/insights/board-error";
 import { boundedRead } from "@/lib/api/bounded-read";
+import { retryEmptyPlayerSearch } from "@/lib/search/player-search-retry";
+import { getCollectionUuid } from "@/lib/collections";
 
 import { boardRowMeta } from "@/lib/insights/board-meta"
 const COLS =
@@ -56,15 +58,26 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: `invalid tier '${tier}'` }, { status: 400 });
   }
 
-  let q = (supabase as any).from("panini_squeeze_board").select(COLS).not("fmv_usd", "is", null);
-  if (tier) q = q.eq("tier", tier);
-  if (set) q = q.ilike("set_name", `%${set}%`);
-  if (player) q = q.ilike("player_name", `%${player}%`);
-  if (rookie) q = q.eq("is_rookie", true);
-  if (maxMint && Number.isFinite(maxMint)) q = q.lte("mint_cap", maxMint);
-  q = q.order(sortKey, { ascending: false, nullsFirst: false }).limit(limit);
+  const build = (p: string | null) => {
+    let q = (supabase as any).from("panini_squeeze_board").select(COLS).not("fmv_usd", "is", null);
+    if (tier) q = q.eq("tier", tier);
+    if (set) q = q.ilike("set_name", `%${set}%`);
+    if (p) q = q.ilike("player_name", `%${p}%`);
+    if (rookie) q = q.eq("is_rookie", true);
+    if (maxMint && Number.isFinite(maxMint)) q = q.lte("mint_cap", maxMint);
+    q = q.order(sortKey, { ascending: false, nullsFirst: false }).limit(limit);
+    return boundedRead(q, "api/public/insights/panini-squeeze/panini_squeeze_board");
+  };
 
-  const { data, error } = await boundedRead(q, "api/public/insights/panini-squeeze/panini_squeeze_board");
+  // #207: "mbappe" found nothing for "Kylian Mbappé" — an accent-only miss is
+  // retried with the resolver's single spelling and reported in meta.player_resolved.
+  const { data, error, playerResolved } = await retryEmptyPlayerSearch({
+    supabase,
+    collectionUuid: getCollectionUuid("panini-blockchain"),
+    typed: player,
+    first: await build(player),
+    run: (label) => build(label),
+  });
   if (error) {
     return boardUnavailable(error, "insights/panini-squeeze");
   }
@@ -156,6 +169,7 @@ export async function GET(req: NextRequest) {
       coverage,
       sale_price_feed: salePriceFeed,
       filters: { tier, set, player, rookie, max_mint: maxMint, sort: sortKey, limit },
+      ...(playerResolved ? { player_resolved: playerResolved } : {}),
     },
     rows: data ?? [],
   });

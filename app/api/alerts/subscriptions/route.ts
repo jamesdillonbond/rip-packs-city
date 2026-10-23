@@ -24,6 +24,8 @@ import {
   type Channel,
 } from "@/lib/alerts";
 import { notifyModeOr } from "@/lib/alerts/notify-mode";
+import { canonicalPlayerNames } from "@/lib/search/player-search-retry";
+import { COLLECTION_UUID_BY_SLUG } from "@/lib/collections";
 
 // ⚠ `cadence` (instant / daily / weekly) is NOT read by the dispatcher and is no
 // longer accepted from the body: "Daily digest" and "Weekly digest" were never
@@ -148,6 +150,17 @@ export async function POST(req: NextRequest) {
   }
   const row = result.row;
 
+  // #207: player_names are matched by EQUALITY when the alert runs, so a typed
+  // "luka doncic" would never fire. Store the catalog spelling instead, and say so.
+  let playerNamesResolved: Array<{ from: string; to: string }> = [];
+  if (Array.isArray(row.player_names) && row.player_names.length > 0) {
+    const scope = (row.collection_ids as string[] | null) ?? Object.values(COLLECTION_UUID_BY_SLUG);
+    const canon = await canonicalPlayerNames(supabase, row.player_names as string[], scope);
+    row.player_names = canon.names;
+    playerNamesResolved = canon.resolved;
+  }
+  const resolvedField = playerNamesResolved.length ? { player_names_resolved: playerNamesResolved } : {};
+
   try {
     if (body.id) {
       // Update — scoped to owner_key so a user can't edit another's sub.
@@ -161,7 +174,7 @@ export async function POST(req: NextRequest) {
       if (error) throw new Error(error.message);
       if (!data) return NextResponse.json({ error: "Subscription not found" }, { status: 404 });
       const preview = await buildDealAlertsForSubscription(data.id);
-      return NextResponse.json({ subscription: { ...data, preview_count: preview?.deals_count ?? null } });
+      return NextResponse.json({ subscription: { ...data, preview_count: preview?.deals_count ?? null }, ...resolvedField });
     }
 
     const { data, error } = await supabase
@@ -172,7 +185,7 @@ export async function POST(req: NextRequest) {
     if (error) throw new Error(error.message);
     const preview = await buildDealAlertsForSubscription(data.id);
     return NextResponse.json(
-      { subscription: { ...data, preview_count: preview?.deals_count ?? null } },
+      { subscription: { ...data, preview_count: preview?.deals_count ?? null }, ...resolvedField },
       { status: 201 }
     );
   } catch (err: any) {

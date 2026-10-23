@@ -14,6 +14,8 @@
 // claim is "these bids are closest to their ask". The page pins 5 and the route
 // exposes it as `min_ask` with the same default.
 
+import { retryEmptyPlayerSearch, type PlayerResolved } from "@/lib/search/player-search-retry"
+import { getCollectionUuid } from "@/lib/collections"
 import { supabaseAdmin } from "@/lib/supabase"
 
 /** Columns both consumers select. Duplicating this list was the drift risk. */
@@ -39,6 +41,23 @@ type Db = any
 export async function fetchOfferSpreadBoard(
   opts: OfferSpreadBoardOptions,
   db: Db = supabaseAdmin,
+): Promise<{ data: unknown[] | null; error: { message: string } | null; playerResolved: PlayerResolved | null }> {
+  // #207: an accent-only miss ("doncic") is retried with the resolver's single
+  // spelling; both callers report playerResolved (lib/search/player-search-retry).
+  const first = await runFetchOfferSpreadBoard(opts, db)
+  const out = await retryEmptyPlayerSearch({
+    supabase: db,
+    collectionUuid: getCollectionUuid("nba-top-shot"),
+    typed: opts.player,
+    first,
+    run: (label) => runFetchOfferSpreadBoard({ ...opts, player: label }, db),
+  })
+  return { data: out.data, error: out.error as { message: string } | null, playerResolved: out.playerResolved }
+}
+
+async function runFetchOfferSpreadBoard(
+  opts: OfferSpreadBoardOptions,
+  db: Db,
 ): Promise<{ data: unknown[] | null; error: { message: string } | null }> {
   const {
     tier = null,

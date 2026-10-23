@@ -35,7 +35,15 @@ import { join } from "node:path"
 import { stripComments } from "../scripts/lib/strip-comments.mjs"
 
 const ROOTS = ["app", "components", "lib"]
-const SHAPE = /\.toLowerCase\(\)\s*\.includes\(\s*[A-Za-z_$][\w$]*\s*\)/g
+// 2026-10-22: widened from `.includes(<identifier>)` to ANY non-literal argument —
+// `.includes(String(typed).toLowerCase())` in the concierge (two sites) slipped
+// past the narrower shape. A string-literal argument is still an error check.
+const SHAPE = /\.toLowerCase\(\)\s*\.includes\(\s*(?!["'`])/g
+
+/** file → why its one case-only comparison is deliberate. */
+const SANCTIONED: Record<string, string> = {
+  "lib/market/player-match.ts": "ilikeWouldMatch models Postgres ILIKE, which IS accent-sensitive — folding here would hide the misses the retry exists to catch",
+}
 
 function walk(dir: string, out: string[] = []): string[] {
   for (const name of readdirSync(dir)) {
@@ -56,8 +64,12 @@ describe("a search box matches accented names", () => {
   it("no `x.toLowerCase().includes(q)` search remains — use textIncludes()", () => {
     const hits: string[] = []
     for (const f of files) {
+      if (SANCTIONED[f]) continue
       const src = stripComments(readFileSync(f, "utf8"))
-      for (const m of src.matchAll(SHAPE)) hits.push(`${f}: ${m[0]}`)
+      for (const m of src.matchAll(SHAPE)) {
+        const line = src.slice(0, m.index).split("\n").length
+        hits.push(`${f}:${line}: ${src.split("\n")[line - 1].trim()}`)
+      }
     }
     expect(hits).toEqual([])
   })
@@ -67,6 +79,8 @@ describe("a search box matches accented names", () => {
     expect(has(`d.playerName.toLowerCase().includes(q)`)).toBe(true)
     expect(has(`(x || "").toLowerCase() .includes( needle )`)).toBe(true)
     expect(has(`raw.toLowerCase().includes("slow down")`)).toBe(false)
+    expect(has(`String(label).toLowerCase().includes(String(typed).toLowerCase())`)).toBe(true)
+    expect(has(`x.toLowerCase().includes('a')`)).toBe(false)
     expect(has(`textIncludes(d.playerName, q)`)).toBe(false)
   })
 })

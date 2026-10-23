@@ -17,6 +17,7 @@ import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
 import type { DegradedSummary } from "@/lib/insights/board-status"
 import { usdSignFirst } from "@/lib/usd-format"
 import { accentText } from "@/lib/accent-text"
+import PlayerResolvedNote from "@/components/filters/PlayerResolvedNote"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -47,7 +48,7 @@ export type Trophy = {
 }
 
 export type ApiResponse = {
-  meta: { fetched_at: string; data_as_of?: string | null }
+  meta: { fetched_at: string; data_as_of?: string | null; player_resolved?: { from: string; to: string } }
   stats: Stats
   trophies: Trophy[]
 }
@@ -110,6 +111,7 @@ export default function FirstMintBoardClient({ initial, initialDegraded = null }
   // Drill-down filters arriving via URL — typically from /insights/rookies
   // (player) or /insights/set-squeeze (set). One-shot read on mount.
   const [playerFilter, setPlayerFilter] = useState<string | null>(null)
+  const [playerResolved, setPlayerResolved] = useState<{ from: string; to: string } | null>(null)
   const [setFilter, setSetFilter] = useState<string | null>(null)
 
   useEffect(() => {
@@ -152,6 +154,7 @@ export default function FirstMintBoardClient({ initial, initialDegraded = null }
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
         const j = (await r.json()) as ApiResponse
         setData(j)
+        setPlayerResolved(j.meta?.player_resolved ?? null)
       } catch (e: unknown) {
         if ((e as { name?: string })?.name === "AbortError") return
         setError(e instanceof Error ? e.message : "Failed to load")
@@ -310,6 +313,11 @@ export default function FirstMintBoardClient({ initial, initialDegraded = null }
           ))}
         </div>
       </section>
+
+      {/* #207: an accent-only miss ("doncic") was retried with the catalog spelling — say so. */}
+      {playerResolved && (
+        <PlayerResolvedNote resolved={playerResolved} onUse={(n) => setPlayerFilter(n)} />
+      )}
 
       <section className="rpc-fm-table-wrap" aria-label="Trophy list">
         {error ? (

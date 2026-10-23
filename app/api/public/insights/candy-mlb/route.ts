@@ -12,6 +12,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { boardUnavailable } from "@/lib/insights/board-error";
 import { boundedRead } from "@/lib/api/bounded-read";
+import { retryEmptyPlayerSearch } from "@/lib/search/player-search-retry";
+import { getCollectionUuid } from "@/lib/collections";
 
 import { boardRowMeta } from "@/lib/insights/board-meta"
 const COLS =
@@ -46,13 +48,24 @@ export async function GET(req: NextRequest) {
   // Fetch the WHOLE board (125 rows, well under the PostgREST 1000 cap) so client-side filters stay
   // complete. Do NOT filter out null-FMV rows here — the cold tail (no-sale editions) is part of the
   // honest picture and renders as "—" FMV, optionally with a best-offer floor.
-  let q = (supabase as any).from("candy_secondary_board").select(COLS);
-  if (tier) q = q.eq("tier", tier);
-  if (player) q = q.ilike("player_name", `%${player}%`);
-  if (rainbow) q = q.eq("is_rainbow", true);
-  q = q.order(sortKey, { ascending: false, nullsFirst: false }).limit(limit);
+  const build = (p: string | null) => {
+    let q = (supabase as any).from("candy_secondary_board").select(COLS);
+    if (tier) q = q.eq("tier", tier);
+    if (p) q = q.ilike("player_name", `%${p}%`);
+    if (rainbow) q = q.eq("is_rainbow", true);
+    q = q.order(sortKey, { ascending: false, nullsFirst: false }).limit(limit);
+    return boundedRead(q, "api/public/insights/candy-mlb/candy_secondary_board");
+  };
 
-  const { data, error } = await boundedRead(q, "api/public/insights/candy-mlb/candy_secondary_board");
+  // #207: "acuna" found nothing for "Ronald Acuña Jr." — an accent-only miss is
+  // retried with the resolver's single spelling and reported in meta.player_resolved.
+  const { data, error, playerResolved } = await retryEmptyPlayerSearch({
+    supabase,
+    collectionUuid: getCollectionUuid("candy-mlb"),
+    typed: player,
+    first: await build(player),
+    run: (label) => build(label),
+  });
   if (error) {
     return boardUnavailable(error, "insights/candy-mlb");
   }
@@ -130,6 +143,7 @@ export async function GET(req: NextRequest) {
       },
       pack_ev: packEv,
       filters: { tier, player, rainbow, sort: sortKey, limit },
+      ...(playerResolved ? { player_resolved: playerResolved } : {}),
     },
     rows,
   });

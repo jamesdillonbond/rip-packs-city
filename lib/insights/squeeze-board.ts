@@ -22,6 +22,8 @@
 // That looks like drift and is not — the client refetches with its own explicit
 // limit. This module owns the QUERY, not the policy.
 
+import { retryEmptyPlayerSearch, type PlayerResolved } from "@/lib/search/player-search-retry"
+import { getCollectionUuid } from "@/lib/collections"
 import { supabaseAdmin } from "@/lib/supabase"
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -110,6 +112,23 @@ export interface SqueezeBoardOptions {
 export async function fetchSqueezeBoard(
   opts: SqueezeBoardOptions,
   db: Db = supabaseAdmin,
+): Promise<{ data: unknown[] | null; error: { message: string } | null; playerResolved: PlayerResolved | null }> {
+  // #207: an accent-only miss ("doncic") is retried with the resolver's single
+  // spelling; both callers report playerResolved (lib/search/player-search-retry).
+  const first = await runFetchSqueezeBoard(opts, db)
+  const out = await retryEmptyPlayerSearch({
+    supabase: db,
+    collectionUuid: getCollectionUuid("nba-top-shot"),
+    typed: opts.player,
+    first,
+    run: (label) => runFetchSqueezeBoard({ ...opts, player: label }, db),
+  })
+  return { data: out.data, error: out.error as { message: string } | null, playerResolved: out.playerResolved }
+}
+
+async function runFetchSqueezeBoard(
+  opts: SqueezeBoardOptions,
+  db: Db,
 ): Promise<{ data: unknown[] | null; error: { message: string } | null }> {
   const {
     tier = null,
