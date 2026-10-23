@@ -126,6 +126,14 @@ touch, where the keyboard would cover half the list.
        ·). Since `20261023135624` the player arm also matches the whole query against a
        joined name with joiners read as "-" or dropped — gated on the name carrying one,
        so every other result is byte-identical (10 control queries, md5-compared).
+     - **site search, team & set arms** match the RAW query (trigram indexes), so none of
+       the 12 accented team / set labels was findable without its accent ("atletico",
+       "cadiz", "malaga", "clasico", "idolos"…). Not fixed in the hot function: `/api/search`
+       reads `public.search_accented_labels()` (12 rows, ~30 ms, memoized 1 h —
+       `lib/search/accented-labels.ts`) and, for a query that matches a label ONLY
+       accent-blind, re-runs with the exact label and LEADS with its team / set row. ⚠ The
+       label test is accented LETTERS (`[À-ÖØ-öø-ɏ’‘]`), not "non-ASCII": Panini set names
+       carry a "·" separator and the first version returned 2,829 rows.
      - ⚠ **Rebuild the query for the retry.** A supabase-js builder mutates in place: a
        second `.ilike` on the same builder STACKS on the first and the retry can never
        match. Every retry above takes a `run(…)` that builds afresh.
