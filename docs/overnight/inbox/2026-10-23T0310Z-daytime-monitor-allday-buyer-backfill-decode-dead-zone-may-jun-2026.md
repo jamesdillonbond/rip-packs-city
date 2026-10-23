@@ -1,0 +1,19 @@
+# Daytime monitor candidate — 2026-10-23 ~03:10Z (≈2026-10-22 20:10 PT)
+
+Infra GREEN. Security invariants/RLS/anon-write all clean, 37/38 trust metrics ok (the lone BREACH is `candy_sales_stale_hours`, the known #58 Trevor-owned OpenSea-key item — not re-raised), 0 stalled pipelines, `check_pgcron_recent_failures()` empty, 11/11 live dashboards' SQL objects + 7 RPC functions all resolve, last production deploy READY (`2c0e492c`; the two CANCELED tips above it are rapid-succession docs-only commits), runtime errors 2 groups × count=1 (designed IPFS gateway-race abort + one honest pack-detail exhausted_count timeout). Not a saturation spell — `rpc_ops_snapshot()` returned in full, pipeline durations are each job's own budget. One new candidate below.
+
+---
+
+## 🟡 CANDIDATE — allday-buyer-backfill has a 100%-decode-fail dead-zone band (~2026-05-19 → ~2026-06-13 All Day sales) that each cursor wrap re-walks, flapping the pipeline red
+
+- **Source:** pipeline `allday-buyer-backfill` (every 3h). `rpc_ops_snapshot().pipeline_alerts` flagged it `failure_rate` medium: "5/16 runs failed (31.3%) over the last 3 calendar days. Last error: decode wall: all 412 rows failed to decode". Confirmed in `pipeline_runs` + `extra` payloads for 10-21 09:15Z → 10-23 00:15Z.
+
+- **What the run payloads show (the cursor is NOT stuck — it advances and wraps):** the backfill walks All Day `sales` downward by `sold_at`, and on reaching the floor sets `wrapped:true`, `cursor_sold_at:null`, then restarts from the top next run. Tracing `cursor_before → cursor_sold_at`:
+  - Runs in the band **sold_at ≈ 2026-05-19 … 2026-06-13** return `decode_failed:480, buyers_resolved:0, ok:false` every single time (10-21 21:15, 10-22 09:15/12:15/21:15, 10-23 00:15 — and a fast `decode_failed:12` floor-hit at 10-22 15:15).
+  - Runs **outside** that band decode and resolve normally the same cycle: 10-22 00:15 resolved 217, 03:15 resolved 363, 06:15 resolved 116, 18:15 resolved 36; 10-21 12:15/15:15 resolved 452/466. So the decoder is healthy everywhere except this contiguous ~3.5-week window.
+
+- **Read:** this is a specific contiguous band of All Day sales where the buyer decode is 100% failing while sales on both sides decode fine — i.e. a transaction-format / spork boundary inside ~2026-05-19→06-13 the current decoder doesn't handle, NOT a random pre-boundary tail and NOT the #192 recent-rows decode question (that was verified closed 10-17 at the top of the cursor, 480/480). Because the walk wraps and re-reads, the band is re-attempted every full cycle and will keep flapping `ok=false` indefinitely, poisoning this pipeline's success rate and masking any genuinely-new future failure behind the recurring one. No user-facing breakage: All Day buyers above the original #192 cursor are complete; this is historical backlog attribution only (`decode_failed` rows stay NULL-buyer).
+
+- **Risk:** LOW to characterize (read-only). The likely fix (night pass / Trevor) is also low-risk: either quarantine the undecodable band (record those `sales` rows as decode-unresolvable so the walk skips them and stops re-failing) or derive `ok` from "made progress OR nothing decodable left in range" rather than failing the whole run on a known-dead band — consistent with the CLAUDE.md honesty canon that a backfill hitting a permanent decode boundary should mark + advance, not report the run as failed.
+
+- **Suggested action (night pass):** (1) pin the exact decode-dead block bounds by walking `sales` for `collection='nfl_all_day'` across 2026-05-15..2026-06-15 and confirming the decode failure is 100% inside it and ~0% just outside; (2) identify what changed on-chain in that window (All Day storefront/transaction format or a spork) vs. the decoder path; (3) decide quarantine-the-band vs. honest-ok-on-no-progress. Sensing-only here — no fix shipped.
