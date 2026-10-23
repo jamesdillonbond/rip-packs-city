@@ -49,6 +49,7 @@ import { supabaseAdmin } from "@/lib/supabase"
 import { getCollectionByUrlSlug, getCollectionByUuid } from "@/lib/collection-slug"
 import { buildSearchHref, type SearchHit } from "@/lib/search/href"
 import { mergePlayerHubHits, type SearchResultWithSlug } from "@/lib/search/player-hub-hits"
+import { mergeTeamHubHits, type FranchiseHubKey } from "@/lib/search/team-hub-hits"
 import { boundedRead } from "@/lib/api/bounded-read"
 
 export const runtime = "nodejs"
@@ -110,6 +111,33 @@ function coverageNote(coverage: CoverageRow[] | null): string {
     " It matches words, not concepts — if a phrase finds nothing, try the words the story would use" +
     " (\"game winning\" rather than \"game winner\"), or add the player's name."
   )
+}
+
+/**
+ * The franchise hub of each team row, in ONE call. A failed or slow read
+ * returns [] and the rows keep their collection team-page links — correct
+ * pages, so the fallback states nothing false; it only skips the upgrade.
+ */
+async function fetchFranchiseHubKeys(
+  supa: { rpc: (fn: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: { message: string } | null }> },
+  rows: SearchResultWithSlug[],
+): Promise<FranchiseHubKey[]> {
+  const pairs = rows.filter((r) => r.kind === "team").map((r) => ({ collection_id: r.collectionId, team_slug: r.slug }))
+  if (pairs.length === 0) return []
+  try {
+    const { data, error } = await boundedRead(
+      supa.rpc("franchise_hub_keys", { p_pairs: pairs }),
+      "api/search/franchise_hub_keys",
+    )
+    if (error) {
+      console.error("[api/search] franchise_hub_keys", error.message)
+      return []
+    }
+    return Array.isArray(data) ? (data as FranchiseHubKey[]) : []
+  } catch (e) {
+    console.error("[api/search] franchise_hub_keys bound", e instanceof Error ? e.message : e)
+    return []
+  }
 }
 
 export async function GET(req: NextRequest) {
@@ -185,12 +213,15 @@ export async function GET(req: NextRequest) {
         thumbnailUrl: r.thumbnail_url,
         editionCount: r.edition_count,
         slug: r.slug,
+        collectionId: coll.id,
       }
     })
     .filter((r): r is SearchResultWithSlug => r != null)
-  // 2026-10-22: player rows link to the collection-agnostic hub, and one
-  // player's per-collection rows collapse into one (lib/search/player-hub-hits.ts).
-  const results = mergePlayerHubHits(mapped)
+  // 2026-10-22: team rows link their franchise hub and player rows the player
+  // hub; each entity's per-collection rows collapse into one
+  // (lib/search/team-hub-hits.ts, lib/search/player-hub-hits.ts).
+  const teamKeys = await fetchFranchiseHubKeys(supa, mapped)
+  const results = mergePlayerHubHits(mergeTeamHubHits(mapped, teamKeys))
 
   return NextResponse.json(
     {

@@ -76,10 +76,7 @@ export function parseHubParams(rawLeague: string, rawSlug: string): { league: Le
   return { league, slug }
 }
 
-/** Canonical path for a franchise hub. */
-export function franchiseHubPath(league: string, teamSlug: string): string {
-  return `/teams/${league.toLowerCase()}/${encodeURIComponent(teamSlug)}`
-}
+export { franchiseHubPath } from "@/lib/franchise-hub-path"
 
 export async function fetchFranchiseHub(
   league: League,
@@ -216,6 +213,93 @@ export async function fetchHubPanelExtras(
  * the per-collection team page with a different frame — indexing it would hand
  * search engines a near-duplicate of a page they already have.
  */
-export function hubIsIndexable(hub: Pick<FranchiseHub, "collections">): boolean {
-  return hub.collections.length >= 2
+export function hubIsIndexable(hub: Pick<FranchiseHub, "collections">, panini?: PaniniHubPanel): boolean {
+  // 2026-10-22: a Panini panel with cards counts as a gathered collection.
+  return hub.collections.length + (panini?.state === "ok" ? 1 : 0) >= 2
+}
+
+// ── Panini panel (2026-10-22) ────────────────────────────────────────────────
+//
+// Panini editions carry no team, so get_team_detail cannot see them and
+// league_collections does not map Panini. The team walk does: it records the
+// franchise Panini's own marketplace team filter lists each card under
+// (panini_team_listings.franchise_keys, 'NBA:blazers'). get_panini_franchise_panel
+// reads that — PARTIAL by construction (a card never listed there is not
+// matched), so the panel carries its league's live coverage.
+//
+// ⚠ THREE STATES, and the empty one renders NOTHING:
+//   absent — no catalogued Panini card maps to this franchise. For most
+//            leagues the walk maps no team at all, so this is an UNMEASURED
+//            absence; a "no Panini cards" panel would be a false claim.
+//   failed — could not ask; renders as unavailable.
+//   ok     — the numbers, plus the first page of cards (its own three states).
+
+export interface PaniniFranchiseDetail {
+  edition_count?: number | null
+  player_count?: number | null
+  total_circulation?: number | null
+  fmv_total_usd?: number | string | null
+  coverage?: { sport?: string | null; catalogued?: number | null; mapped?: number | null } | null
+}
+
+export type PaniniHubPanel =
+  | { state: "absent" }
+  | { state: "failed" }
+  | { state: "ok"; detail: PaniniFranchiseDetail; editions: { rows: unknown[]; ok: boolean } }
+
+export async function fetchPaniniHubPanel(
+  hub: Pick<FranchiseHub, "league" | "team_slug">,
+  db: RpcClient = supabaseAdmin as unknown as RpcClient,
+  fetchSection: SectionFetcher = defaultSectionFetcher,
+): Promise<PaniniHubPanel> {
+  const args = { p_league: hub.league, p_team_slug: hub.team_slug }
+  const label = `${hub.league}:${hub.team_slug}`
+  const editionsP = withBoardBudget(
+    fetchSection("get_panini_franchise_editions", { ...args, p_limit: HUB_TOP_EDITIONS, p_offset: 0 }),
+    `franchise-panini-editions:${label}`,
+    PANEL_TIMEOUT_MS,
+    "teams/",
+  )
+    .then((r) => ({ rows: Array.isArray(r.rows) ? r.rows : [], ok: r.ok === true }))
+    .catch((e) => {
+      console.error("[teams/franchise-hub] panini editions bound:", e instanceof Error ? e.message : e)
+      return { rows: [] as unknown[], ok: false }
+    })
+  try {
+    const { data, error } = await withBoardBudget(
+      Promise.resolve(db.rpc("get_panini_franchise_panel", args)),
+      `franchise-panini:${label}`,
+      PANEL_TIMEOUT_MS,
+      "teams/",
+    )
+    if (error) {
+      console.error("[teams/franchise-hub] get_panini_franchise_panel error:", error.message)
+      await editionsP
+      return { state: "failed" }
+    }
+    const detail = firstEntityRow<PaniniFranchiseDetail>(data)
+    if (!detail || !(Number(detail.edition_count) > 0)) {
+      await editionsP
+      return { state: "absent" }
+    }
+    return { state: "ok", detail, editions: await editionsP }
+  } catch (e) {
+    console.error("[teams/franchise-hub] get_panini_franchise_panel bound:", e instanceof Error ? e.message : e)
+    await editionsP
+    return { state: "failed" }
+  }
+}
+
+/**
+ * The league's Panini team-match coverage, or null when the read carried no
+ * usable figure (the panel then omits the sentence rather than inventing one).
+ * The percentage is FLOORED: "95%" must never overstate 94.8.
+ */
+export function paniniCoverage(
+  c: PaniniFranchiseDetail["coverage"],
+): { sport: string; mapped: number; catalogued: number; pct: number } | null {
+  const mapped = Number(c?.mapped)
+  const catalogued = Number(c?.catalogued)
+  if (!c?.sport || !Number.isFinite(mapped) || !Number.isFinite(catalogued) || catalogued <= 0 || mapped < 0) return null
+  return { sport: c.sport, mapped, catalogued, pct: Math.floor((mapped / catalogued) * 100) }
 }

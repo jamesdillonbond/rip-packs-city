@@ -7,10 +7,12 @@
 // the SAME get_team_detail the per-collection team page reads, so the hub and
 // the page it links to cannot disagree. Data layer: lib/franchise-hub.ts.
 //
-// ⚠ Today every league maps to ONE enabled collection, so a hub shows one
-// panel. The second arrives when Panini NBA/MLB clears the accuracy gate and
-// its league_collections row is enabled — a DATA change, no deploy. Until a
-// hub gathers 2+ collections it is noindex (see hubIsIndexable).
+// ⚠ Today every league maps to ONE enabled collection in league_collections.
+// Since 2026-10-22 a SECOND panel comes from Panini, outside that registry:
+// Panini editions carry no team, so the team walk's franchise match
+// (get_panini_franchise_panel, lib/franchise-hub.ts) feeds it — today all 30
+// NBA franchises. Until a hub gathers 2+ collections it is noindex (see
+// hubIsIndexable).
 //
 // ⚠ A FAILED READ MUST NOT BECOME notFound() — only a clean NULL from
 // get_franchise_hub 404s. And a failed PANEL renders as unavailable, never as
@@ -28,12 +30,15 @@ import {
   fetchFranchiseHub,
   fetchHubPanelExtras,
   fetchHubPanels,
+  fetchPaniniHubPanel,
   franchiseHubPath,
   hubIsIndexable,
+  paniniCoverage,
   parseHubParams,
   type FranchiseHub,
   type HubPanel,
   type HubPanelExtras,
+  type PaniniHubPanel,
 } from "@/lib/franchise-hub"
 import { Section, SectionUnavailable, StatCell, fmtCount, fmtUsd } from "@/components/entity/_shared"
 import Breadcrumbs from "@/components/entity/Breadcrumbs"
@@ -69,6 +74,8 @@ function num(v: number | string | null | undefined): number | null {
 // succeeded, and the entry cached that split until the next deploy. With the
 // read deduplicated, metadata and body always describe the same outcome.
 const fetchFranchiseHubOnce = cache((league: League, slug: string) => fetchFranchiseHub(league, slug))
+// 2026-10-22: the Panini panel decides indexability too, so it is shared the same way.
+const fetchPaniniHubPanelOnce = cache((league: League, slug: string) => fetchPaniniHubPanel({ league, team_slug: slug }))
 
 export async function generateMetadata(props: { params: Promise<{ league: string; slug: string }> }): Promise<Metadata> {
   const { league: rawLeague, slug: rawSlug } = await props.params
@@ -90,7 +97,7 @@ export async function generateMetadata(props: { params: Promise<{ league: string
       description: `Every ${hub.team_name} digital collectible Rip Packs City tracks, gathered in one place — editions, fair market value and 30-day market activity per collection.`,
       canonical,
     }),
-    robots: hubIsIndexable(hub) ? { index: true, follow: true } : { index: false, follow: true },
+    robots: hubIsIndexable(hub, await fetchPaniniHubPanelOnce(key.league, key.slug)) ? { index: true, follow: true } : { index: false, follow: true },
   }
 }
 
@@ -105,7 +112,7 @@ export default async function FranchiseHubPage(props: { params: Promise<{ league
   if (!ok) return <HubUnavailable />
   if (!hub) notFound()
 
-  const panels = await fetchHubPanels(hub)
+  const [panels, panini] = await Promise.all([fetchHubPanels(hub), fetchPaniniHubPanelOnce(key.league, key.slug)])
   // 2026-09-24: the cards themselves — top editions + recent sales per
   // collection, from the same RPCs the per-collection team page reads.
   const extras = await fetchHubPanelExtras(hub, panels)
@@ -129,7 +136,7 @@ export default async function FranchiseHubPage(props: { params: Promise<{ league
       />
 
       <Section title={`${hub.team_name} across collections`}>
-        {panels.length === 0 ? (
+        {panels.length === 0 && panini.state === "absent" ? (
           // Every mapped collection is one the app cannot route to. That is a
           // registry gap, not a catalogue fact — say what we know.
           <div className="rpc-mono" style={{ fontSize: 12, color: "var(--rpc-text-muted)" }}>
@@ -140,6 +147,7 @@ export default async function FranchiseHubPage(props: { params: Promise<{ league
             {panels.map((p) => (
               <CollectionPanel key={p.collection.id} panel={p} hub={hub} extras={extras.get(p.collection.id) ?? null} />
             ))}
+            {panini.state !== "absent" && <PaniniPanel panel={panini} hub={hub} />}
           </div>
         )}
       </Section>
@@ -214,6 +222,64 @@ function CollectionPanel({ panel, hub, extras }: { panel: HubPanel; hub: Franchi
             >
               Open {hub.team_name} on {name} →
             </Link>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
+// Panini cards (2026-10-22). Matched to the franchise by the team walk — Panini's
+// editions carry no team of their own — so the panel says how much of the
+// league's Panini catalogue that match covers. No per-collection team page
+// exists for Panini, so the cards themselves are the links.
+function PaniniPanel({ panel, hub }: { panel: Exclude<PaniniHubPanel, { state: "absent" }>; hub: FranchiseHub }) {
+  const name = "Panini Blockchain"
+  return (
+    <div className="rpc-card" style={{ padding: 16, borderTop: `3px solid ${hub.secondary_color || "var(--rpc-red)"}` }}>
+      <div
+        className="rpc-mono"
+        style={{ fontSize: 11, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--rpc-text-muted)", marginBottom: 12 }}
+      >
+        {name}
+      </div>
+
+      {panel.state === "failed" && <SectionUnavailable noun={`${hub.team_name} on ${name}`} />}
+
+      {panel.state === "ok" && (
+        <>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 10 }}>
+            <StatCell label="Editions" value={fmtCount(panel.detail.edition_count)} />
+            <StatCell label="Players" value={fmtCount(panel.detail.player_count)} />
+            <StatCell label="FMV Total" value={fmtUsd(num(panel.detail.fmv_total_usd))} />
+          </div>
+          <div className="rpc-mono" style={{ marginTop: 10, fontSize: 11, color: "var(--rpc-text-muted)", lineHeight: 1.6 }}>
+            {(() => {
+              const cov = paniniCoverage(panel.detail.coverage)
+              return (
+                <>
+                  Matched to the {hub.team_name} by Panini&rsquo;s own marketplace team filter, so a card never listed there is not counted.
+                  {cov ? <> That filter places {fmtCount(cov.mapped)} of the {fmtCount(cov.catalogued)} Panini {cov.sport.toLowerCase()} cards we track on a team ({cov.pct}%).</> : null}
+                </>
+              )
+            })()}
+          </div>
+          {(panel.editions.rows.length > 0 || !panel.editions.ok) && (
+            <div style={{ marginTop: 16 }}>
+              <PanelLabel>Top editions</PanelLabel>
+              {!panel.editions.ok ? (
+                <SectionUnavailable noun={`${hub.team_name}\u2019s ${name} editions`} />
+              ) : (
+                <EditionsGridPaginated
+                  collectionUrlSlug="panini-blockchain"
+                  fetchUrl={`/api/entity/panini-team-editions?league=${encodeURIComponent(hub.league)}&team=${encodeURIComponent(hub.team_slug)}`}
+                  initial={panel.editions.rows as EditionTile[]}
+                  initialFailed={false}
+                  pageSize={HUB_TOP_EDITIONS}
+                  showSetLink
+                />
+              )}
+            </div>
           )}
         </>
       )}

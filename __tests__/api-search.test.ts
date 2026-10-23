@@ -11,10 +11,12 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 
 const state: {
   rpc: { data: any; error: any }
+  keys: { data: any; error: any }
   coverage: { data: any; error: any }
   calls: any[]
 } = {
   rpc: { data: [], error: null },
+  keys: { data: [], error: null },
   coverage: { data: [], error: null },
   calls: [],
 }
@@ -23,6 +25,8 @@ vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: {
     rpc: async (fn: string, args: any) => {
       state.calls.push({ fn, args })
+      // 2026-10-22: team rows resolve their franchise hub in a second call.
+      if (fn === "franchise_hub_keys") return state.keys
       return state.rpc
     },
     // edition_description_coverage — the LIVE prose-coverage read.
@@ -57,6 +61,7 @@ const row = (over: Partial<any> = {}) => ({
 })
 
 beforeEach(() => {
+  state.keys = { data: [], error: null }
   state.rpc = { data: [], error: null }
   state.coverage = { data: [], error: null }
   state.calls = []
@@ -169,6 +174,50 @@ describe("GET /api/search", () => {
       collection: "candy-mlb",
       collectionName: "Candy MLB",
     })
+  })
+
+  // 2026-10-22: team rows open the franchise hub (which also carries Panini's
+  // cards), named by the franchise; a franchise's labels collapse into one row.
+  it("links a team row to its franchise hub and collapses a franchise's historic labels", async () => {
+    state.rpc = {
+      data: [
+        row({ kind: "team", label: "Seattle SuperSonics", slug: "seattle-supersonics", edition_count: 4 }),
+        row({ kind: "team", label: "Oklahoma City Thunder", slug: "oklahoma-city-thunder", edition_count: 90 }),
+      ],
+      error: null,
+    }
+    state.keys = {
+      data: [
+        { collection_id: TS, team_slug: "seattle-supersonics", league: "NBA", hub_slug: "thunder", team_name: "Oklahoma City Thunder" },
+        { collection_id: TS, team_slug: "oklahoma-city-thunder", league: "NBA", hub_slug: "thunder", team_name: "Oklahoma City Thunder" },
+      ],
+      error: null,
+    }
+    const j = await (await GET(req("?q=thunder"))).json()
+    expect(j.results).toHaveLength(1)
+    expect(j.results[0]).toMatchObject({ kind: "team", label: "Oklahoma City Thunder", href: "/teams/nba/thunder", editionCount: 94 })
+    expect(j.results[0]).not.toHaveProperty("collectionId")
+    const keyCall = state.calls.find((c) => c.fn === "franchise_hub_keys")
+    expect(keyCall.args.p_pairs).toEqual([
+      { collection_id: TS, team_slug: "seattle-supersonics" },
+      { collection_id: TS, team_slug: "oklahoma-city-thunder" },
+    ])
+  })
+
+  it("keeps a team row's collection link when the hub-key read fails (never a 503, never a dropped row)", async () => {
+    state.rpc = { data: [row({ kind: "team", label: "Portland Trail Blazers", slug: "portland-trail-blazers" })], error: null }
+    state.keys = { data: null, error: { message: "boom" } }
+    const res = await GET(req("?q=blazers"))
+    expect(res.status).toBe(200)
+    const j = await res.json()
+    expect(j.results).toHaveLength(1)
+    expect(j.results[0].href).toBe("/nba-top-shot/team/portland-trail-blazers")
+  })
+
+  it("does not call the hub-key read when no team row came back", async () => {
+    state.rpc = { data: [row()], error: null }
+    await GET(req("?q=lillard"))
+    expect(state.calls.some((c) => c.fn === "franchise_hub_keys")).toBe(false)
   })
 
   it("drops a row whose kind has no known route instead of guessing one", async () => {

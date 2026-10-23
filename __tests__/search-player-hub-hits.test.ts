@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest"
 import { mergePlayerHubHits, type SearchResultWithSlug } from "@/lib/search/player-hub-hits"
 
 const row = (o: Partial<SearchResultWithSlug>): SearchResultWithSlug => ({
+  collectionId: "95f28a17-224a-4025-96ad-adf8a4c63bfd",
   kind: "player",
   label: "Damian Lillard",
   sublabel: null,

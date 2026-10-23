@@ -31,9 +31,10 @@ export interface SearchResult {
   collections?: string[]
 }
 
-/** The input row: a mapped result plus the RPC's entity slug. */
+/** The input row: a mapped result plus the RPC's entity slug and collection uuid (both stripped from the output). */
 export interface SearchResultWithSlug extends SearchResult {
   slug: string
+  collectionId: string
 }
 
 const NOT_HUBBED = new Set(["disney-pinnacle"])
@@ -41,7 +42,7 @@ const NOT_HUBBED = new Set(["disney-pinnacle"])
 export function mergePlayerHubHits(rows: SearchResultWithSlug[]): SearchResult[] {
   const out: SearchResult[] = []
   const bySlug = new Map<string, SearchResult>()
-  for (const { slug, ...r } of rows) {
+  for (const { slug, collectionId, ...r } of rows) {
     if (r.kind !== "player" || NOT_HUBBED.has(r.collection) || !slug) {
       out.push(r)
       continue
