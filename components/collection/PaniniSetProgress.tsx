@@ -23,6 +23,7 @@ import PaniniCoverageNote from "@/components/collection/PaniniCoverageNote"
 import type { PaniniCoverage } from "@/lib/panini/coverage"
 import { paniniProductLabel, type PaniniProductRow, type PaniniSetRow } from "@/lib/panini/set-progress"
 import { paniniProductSetSlug } from "@/lib/panini/set-page-slug"
+import SearchableSelect, { SEARCHABLE_SELECT_MIN } from "@/components/filters/SearchableSelect"
 
 export interface PaniniSetProgressResponse {
   username: string | null
@@ -227,9 +228,36 @@ function ProductPicker({ data, onPick }: { data: PaniniSetProgressResponse; onPi
     if (!groups.has(k)) groups.set(k, [])
     groups.get(k)!.push(p)
   }
+  const optionLabel = (p: PaniniProductRow) =>
+    `${paniniProductLabel(p)} · ${count(p.sets)} sets${showHeld && p.owned > 0 ? ` · ${count(p.owned)} seen held` : ""}`
+  const labelStyle: React.CSSProperties = { fontFamily: mono, fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--rpc-text-muted)" }
+  // 2026-10-22: 106 products across 6 sports — too many for a phone's picker
+  // wheel, so a long list gets a type-to-filter box, grouped by sport like the
+  // native <optgroup>s. The visible label is a <div>, never a <label> around or
+  // for the popup (a press inside a label re-opens it: filter-controls.md trap 1).
+  if (products.length > SEARCHABLE_SELECT_MIN) {
+    const ordered = [...groups.values()].flat()
+    const byId = new Map(ordered.map((p) => [String(p.setId), p]))
+    return (
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", margin: "12px 0" }}>
+        <div aria-hidden style={labelStyle}>Product</div>
+        <div style={{ flex: "1 1 260px", minWidth: 0, maxWidth: "100%" }}>
+          <SearchableSelect
+            label="Product"
+            value={data.product ? String(data.product.setId) : ""}
+            options={ordered.map((p) => String(p.setId))}
+            formatOption={(v) => { const p = byId.get(v); return p ? optionLabel(p) : v }}
+            groupOf={(v) => byId.get(v)?.sport ?? "Other"}
+            onChange={onPick}
+            fill
+          />
+        </div>
+      </div>
+    )
+  }
   return (
     <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", margin: "12px 0" }}>
-      <label htmlFor="panini-product" style={{ fontFamily: mono, fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--rpc-text-muted)" }}>
+      <label htmlFor="panini-product" style={labelStyle}>
         Product
       </label>
       <select
@@ -242,7 +270,7 @@ function ProductPicker({ data, onPick }: { data: PaniniSetProgressResponse; onPi
           <optgroup key={sport} label={sport}>
             {rows.map((p) => (
               <option key={p.setId} value={String(p.setId)}>
-                {paniniProductLabel(p)} · {count(p.sets)} sets{showHeld && p.owned > 0 ? ` · ${count(p.owned)} seen held` : ""}
+                {optionLabel(p)}
               </option>
             ))}
           </optgroup>

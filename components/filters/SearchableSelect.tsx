@@ -11,7 +11,7 @@
 // editable filter). Keys in the box: ↓/↑ move, Enter picks, Escape closes and
 // returns focus to the trigger, Tab closes. ↓ / Enter / Space on the trigger opens.
 
-import { useId, useMemo, useRef, useState } from "react"
+import { Fragment, useId, useMemo, useRef, useState } from "react"
 import { filterOptions } from "@/lib/filter-match"
 import {
   HighlightedLabel, NoMatch, optionStyle, panelStyle, searchInputStyle,
@@ -20,17 +20,17 @@ import {
 
 export { SEARCHABLE_SELECT_MIN } from "@/components/filters/filter-popover"
 
-type Item = { value: string; label: string }
+type Item = { value: string; label: string; group?: string }
 
 export default function SearchableSelect({
-  label, value, allValue, allLabel, options, onChange, maxWidth, formatOption, fill = false,
+  label, value, allValue = "", allLabel, options, onChange, maxWidth, formatOption, fill = false, groupOf,
 }: {
   /** Accessible name of the trigger and the list ("Team", "Franchise"). */
   label: string
   value: string
-  /** The value meaning "no filter" (e.g. "all"). */
-  allValue: string
-  allLabel: string
+  /** The value meaning "no filter" (e.g. "all"). Omit both for a pick-one list with no "all" row. */
+  allValue?: string
+  allLabel?: string
   options: string[]
   onChange: (next: string) => void
   maxWidth?: number | string
@@ -38,6 +38,9 @@ export default function SearchableSelect({
   formatOption?: (v: string) => string
   /** Fill the parent's width (a grid cell) instead of sizing to the text. */
   fill?: boolean
+  /** Heading the option sits under (Panini's sport), like an <optgroup>. Options
+   *  must already be in group order; a query also matches the heading. */
+  groupOf?: (v: string) => string
 }) {
   const id = useId()
   const listId = `${id}-list`
@@ -51,14 +54,31 @@ export default function SearchableSelect({
 
   const fmt = useMemo(() => formatOption ?? ((v: string) => v), [formatOption])
   const items: Item[] = useMemo(() => {
-    const opts = options.map(v => ({ value: v, label: fmt(v) }))
-    if (!query.trim()) return [{ value: allValue, label: allLabel }, ...opts]
-    return filterOptions(opts, query, o => o.label)
-  }, [options, query, allValue, allLabel, fmt])
+    const opts = options.map(v => ({ value: v, label: fmt(v), group: groupOf?.(v) }))
+    if (!query.trim()) return allLabel === undefined ? opts : [{ value: allValue, label: allLabel }, ...opts]
+    // Keep group order (a ranked list would scatter one sport's rows under
+    // several repeated headings); rank within each group.
+    const ranked = filterOptions(opts, query, o => (o.group ? `${o.label} ${o.group}` : o.label))
+    if (!groupOf) return ranked
+    const order = new Map<string | undefined, number>()
+    for (const o of opts) if (!order.has(o.group)) order.set(o.group, order.size)
+    return ranked.map((o, i) => ({ o, i })).sort((a, b) => order.get(a.o.group)! - order.get(b.o.group)! || a.i - b.i).map(x => x.o)
+  }, [options, query, allValue, allLabel, fmt, groupOf])
+
+  // Runs of consecutive items sharing a heading → role="group" sections.
+  const sections = useMemo(() => {
+    const out: Array<{ group?: string; rows: Array<{ it: Item; i: number }> }> = []
+    items.forEach((it, i) => {
+      const last = out[out.length - 1]
+      if (last && last.group === it.group) last.rows.push({ it, i })
+      else out.push({ group: it.group, rows: [{ it, i }] })
+    })
+    return out
+  }, [items])
 
   const openList = () => {
     setQuery("")
-    const opts = [allValue, ...options]
+    const opts = allLabel === undefined ? options : [allValue, ...options]
     setActive(Math.max(0, opts.indexOf(value)))
     setOpen(true)
   }
@@ -83,7 +103,7 @@ export default function SearchableSelect({
     else if (e.key === "Tab") close(false)
   }
 
-  const summary = value === allValue ? allLabel : fmt(value)
+  const summary = allLabel !== undefined && value === allValue ? allLabel : fmt(value)
 
   return (
     <div ref={rootRef} style={{ position: "relative", display: fill ? "block" : "inline-block", width: fill ? "100%" : undefined, minWidth: 0, maxWidth }}>
@@ -124,7 +144,8 @@ export default function SearchableSelect({
             style={searchInputStyle}
           />
           <div id={listId} role="listbox" aria-label={label} style={{ maxHeight: 300, overflowY: "auto", overscrollBehavior: "contain" }}>
-            {items.map((it, i) => (
+            {sections.map((sec, si) => {
+              const rows = sec.rows.map(({ it, i }) => (
               <div
                 key={it.value}
                 id={`${id}-opt-${i}`}
@@ -143,11 +164,24 @@ export default function SearchableSelect({
                   <HighlightedLabel text={it.label} query={query} />
                 </span>
               </div>
-            ))}
+              ))
+              if (sec.group === undefined) return <Fragment key={`s${si}`}>{rows}</Fragment>
+              return (
+                <div key={`s${si}`} role="group" aria-label={sec.group}>
+                  <div aria-hidden style={groupHeadingStyle}>{sec.group}</div>
+                  {rows}
+                </div>
+              )
+            })}
           </div>
           {query.trim() && items.length === 0 && <NoMatch query={query} />}
         </div>
       )}
     </div>
   )
+}
+
+const groupHeadingStyle: React.CSSProperties = {
+  padding: "8px 10px 4px", fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase",
+  color: "var(--rpc-text-muted)", position: "sticky", top: 0, background: "var(--rpc-surface)",
 }

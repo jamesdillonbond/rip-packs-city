@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from "vitest"
-import { render, cleanup, waitFor, fireEvent } from "@testing-library/react"
+import { render, cleanup, waitFor, fireEvent, within } from "@testing-library/react"
 
 import PaniniSetProgress from "@/components/collection/PaniniSetProgress"
 
@@ -129,6 +129,26 @@ describe("PaniniSetProgress", () => {
     const c = await mount()
     fireEvent.change(c.querySelector("#panini-product")!, { target: { value: "1940" } })
     await waitFor(() => expect(calls.some((u) => u.includes("product=1940"))).toBe(true))
+  })
+
+  // 2026-10-22: the live list is 106 products across 6 sports — a phone's picker
+  // wheel for that is a slog, so a long list gets the type-to-filter dropdown.
+  it("a long product list is searchable, grouped by sport, and a pick re-reads that product", async () => {
+    const many = Array.from({ length: 12 }, (_, i) => ({
+      setId: 3000 + i, name: `Panini Product ${i}`, sport: i < 6 ? "Soccer" : "Basketball", sets: 4, editionsSeen: 10, owned: 0, ownerLastSeenAt: null,
+    }))
+    mockFetch(200, payload({ products: many, product: many[0] }))
+    const c = await mount()
+    expect(c.querySelector("#panini-product")).toBeNull()
+    const trigger = within(c).getByRole("button", { name: "Product" })
+    expect(trigger.closest("label")).toBeNull()
+    expect(trigger.textContent).toContain("Panini Product 0")
+    fireEvent.click(trigger)
+    const list = within(c).getByRole("listbox", { name: "Product" })
+    expect(within(list).getAllByRole("group").map((g) => g.getAttribute("aria-label"))).toEqual(["Soccer", "Basketball"])
+    fireEvent.change(within(c).getByRole("combobox", { name: "Filter Product options" }), { target: { value: "product 11" } })
+    fireEvent.click(within(c).getByRole("option", { name: /Panini Product 11/ }))
+    await waitFor(() => expect(calls.some((u) => u.includes("product=3011"))).toBe(true))
   })
 
   it("a tracked collector holding nothing in this product is told so — not '0 of 62' as if they collect it", async () => {

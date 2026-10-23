@@ -117,6 +117,44 @@ describe("SearchableSelect", () => {
   })
 })
 
+// 2026-10-22: the Panini product picker (106 products, 6 sports) — a pick-one
+// list with no "All" row, grouped by sport like the native <optgroup>s.
+describe("SearchableSelect with groups and no All row", () => {
+  const SPORT: Record<string, string> = { "WC Prizm": "Soccer", "Select WC": "Soccer", "Prizm FB": "Football", "Mosaic FB": "Football", "Prizm BK": "Basketball" }
+  function Grouped() {
+    const [v, setV] = useState("Prizm FB")
+    return (
+      <>
+        <SearchableSelect label="Product" value={v} options={Object.keys(SPORT)} groupOf={(o) => SPORT[o]} onChange={setV} />
+        <output data-testid="value">{v}</output>
+      </>
+    )
+  }
+  it("renders one named group per sport, in order, with no All row; opens on the current pick", () => {
+    render(<Grouped />)
+    fireEvent.click(screen.getByRole("button", { name: "Product" }))
+    const list = screen.getByRole("listbox", { name: "Product" })
+    expect(within(list).getAllByRole("group").map((g) => g.getAttribute("aria-label"))).toEqual(["Soccer", "Football", "Basketball"])
+    expect(within(within(list).getByRole("group", { name: "Football" })).getAllByRole("option").map((o) => o.textContent!.replace("✓", ""))).toEqual(["Prizm FB", "Mosaic FB"])
+    expect(within(list).getAllByRole("option")).toHaveLength(5)
+    const box = screen.getByRole("combobox")
+    expect(document.getElementById(box.getAttribute("aria-activedescendant")!)?.textContent!.replace("✓", "")).toBe("Prizm FB")
+  })
+  it("a query matches the sport heading too, keeps group order, and the keys walk across groups", () => {
+    render(<Grouped />)
+    fireEvent.click(screen.getByRole("button", { name: "Product" }))
+    const box = screen.getByRole("combobox")
+    fireEvent.change(box, { target: { value: "football" } })
+    expect(screen.getAllByRole("option").map((o) => o.textContent!.replace("✓", ""))).toEqual(["Prizm FB", "Mosaic FB"])
+    fireEvent.change(box, { target: { value: "prizm" } })
+    expect(screen.getAllByRole("option").map((o) => o.textContent!.replace("✓", ""))).toEqual(["WC Prizm", "Prizm FB", "Prizm BK"])
+    fireEvent.keyDown(box, { key: "ArrowDown" })
+    fireEvent.keyDown(box, { key: "ArrowDown" })
+    fireEvent.keyDown(box, { key: "Enter" })
+    expect(value()).toBe("Prizm BK")
+  })
+})
+
 describe("MultiSelect", () => {
   it("toggles with Enter and stays open; picked options are pinned first on the next open", () => {
     render(<Multi />)
