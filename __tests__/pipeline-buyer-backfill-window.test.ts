@@ -53,10 +53,17 @@ describe("buyer backfill verdict — custodial deposits are not decode failures"
   })
   // The persistence half (Cowork, 10-22 ~9 PM PT): without it every cursor wrap
   // re-fetched ~1,300 custodial txs and spent 3 runs in 8 before a new row.
-  it("the candidate select excludes rows already recorded as custodial-held, keyed on the tx PROPOSER, never buyer_address", () => {
+  // 10-22 ~11:20 PM PT (first run's outcome table): 154 of the 480 rows the lane
+  // stamped were proposed by the DUC co-signer, not the custodian, so an exclusion
+  // keyed on "proposer IS a custodial target" let a third of the churn back in.
+  // The lane is the only writer of proposer_address on these rows: the STAMP is
+  // the exclusion, whichever signer proposed.
+  it("the candidate select excludes rows already STAMPED custodial-held (proposer_address IS NULL), never keyed on which signer proposed, never on buyer_address", () => {
     const route = readFileSync("app/api/admin/backfill-allday-buyers/route.ts", "utf8")
-    expect(route).toMatch(/\.or\(custodialProposerFilter\)/)
-    expect(route).toMatch(/proposer_address\.is\.null,proposer_address\.not\.in\./)
+    expect(route).toMatch(/\.is\("proposer_address", null\)/)
+    // the signer-keyed form is the defect: a co-signer-proposed row escaped it
+    expect(route).not.toMatch(/proposer_address\.not\.in\./)
+    expect(route).not.toMatch(/custodialProposerFilter/)
     // the custodian never lands in buyer_address (#83)
     expect(route).not.toMatch(/buyer_address\s*=\s*signers\.proposer/)
     expect(route).not.toMatch(/patch\.buyer_address\s*=\s*signers\.proposer/)

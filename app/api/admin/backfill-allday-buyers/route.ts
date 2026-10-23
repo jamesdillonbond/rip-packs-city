@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse, after } from "next/server"
 import { tokenMatches } from "@/lib/auth/bearer-secret"
 import { supabaseAdmin } from "@/lib/supabase"
-import { decodeV1SaleTx, CUSTODIAL_DEPOSIT_TARGETS } from "@/lib/chains/flow/dapper-v1-tx-decode"
+import { decodeV1SaleTx } from "@/lib/chains/flow/dapper-v1-tx-decode"
 import { normalizeFlowEventAddress } from "@/lib/address"
 import { CURRENT_SPORK_START_ISO, buyerBackfillVerdict } from "@/lib/pipeline/buyer-backfill-window"
 
@@ -46,9 +46,16 @@ import { CURRENT_SPORK_START_ISO, buyerBackfillVerdict } from "@/lib/pipeline/bu
 // in 8 before reaching a genuinely new row. Now the decode's own facts are
 // written once — `proposer_address` / `payer_address` from the tx, the columns
 // the Top Shot lane fills the same way — and the candidate select excludes rows
-// whose proposer is a custodial target. `buyer_address` stays NULL: writing the
-// custodian there is the lie #83 undid. A future custodian-forward lane can
-// re-key these rows (custodial proposer + NULL buyer) by nft_id.
+// this lane has already stamped (`proposer_address IS NULL` is the candidate
+// test). `buyer_address` stays NULL: writing the custodian there is the lie #83
+// undid. A future custodian-forward lane can re-key these rows (stamped proposer
+// + NULL buyer) by nft_id.
+// ⚠ 10-22 ~11:20 PM PT, first run's outcome table: the exclusion was first keyed
+// on "proposer IS a custodial target", and 154 of the 480 rows it stamped were
+// proposed by the DUC co-signer 0xead892083b3e2c6c, not the custodian — a third
+// of the churn would have come back every wrap. This lane is the ONLY writer of
+// `proposer_address` on All Day / Golazos rows (measured: 480 of 480 stamped rows
+// are its own), so a stamped row IS a recorded one, whichever signer proposed.
 
 const TOKEN = process.env.INGEST_SECRET_TOKEN ?? ""
 const CRON = process.env.CRON_SECRET ?? ""
@@ -167,11 +174,6 @@ async function fetchTxSigners(txHash: string): Promise<TxSigners> {
   }
 }
 
-// Candidate predicate, second half: a row already recorded as custodial-held
-// (its tx's proposer is a custodial target) is not re-asked by this lane.
-const custodialProposerFilter =
-  `proposer_address.is.null,proposer_address.not.in.(${Array.from(CUSTODIAL_DEPOSIT_TARGETS).join(",")})`
-
 interface UnresolvedRow {
   id: string
   nft_id: string
@@ -245,9 +247,10 @@ async function handle(req: NextRequest) {
         .or(orFilter)
         .not("transaction_hash", "is", null)
         .gte("sold_at", FORWARD_WINDOW_START)
-        // A second .or() ANDs with the first in PostgREST: unresolved buyer AND
-        // not already recorded as custodial-held.
-        .or(custodialProposerFilter)
+        // Candidate predicate, second half (ANDed with the .or above): unresolved
+        // buyer AND not already stamped as custodial-held by this lane. Keyed on
+        // the stamp itself, not on WHICH custodial signer proposed (header).
+        .is("proposer_address", null)
         .order("sold_at", { ascending: false })
         .limit(BATCH)
       if (cursorBefore) q = q.lt("sold_at", cursorBefore)
