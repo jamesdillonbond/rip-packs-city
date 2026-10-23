@@ -7,13 +7,23 @@
 
 export const TEAM_WALK_PIPELINE = "panini-team-walk"
 export const MAX_ROWS_PER_POST = 1000
-const SPORTS = new Set(["Basketball", "Baseball"])
+// 2026-10-23: Football (NFL) and Womens Basketball (WNBA) join — the values Panini's
+// grid URL takes (the soccer runner walks the same sport= strings).
+export const TEAM_WALK_SPORTS = ["Basketball", "Baseball", "Football", "Womens Basketball"] as const
+const SPORTS = new Set<string>(TEAM_WALK_SPORTS)
+/**
+ * What a `plan` that names no sports gets: the two the laptop walker supported
+ * before 2026-10-23. ⚠ Load-bearing: that walker DROPS any other sport's targets
+ * client-side, the plan hands out never-attempted rows first, and a dropped row is
+ * never stamped — so handing it football would starve its whole rotation.
+ */
+export const LEGACY_PLAN_SPORTS = ["Basketball", "Baseball"]
 const ISO_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,6})?)?Z$/
 
 export const MAX_PLAN_TARGETS = 50
 
 export type TeamWalkOp =
-  | { op: "plan"; limit: number }
+  | { op: "plan"; limit: number; sports: string[] }
   | { op: "heartbeat"; sport: string; team: string; walkStartedAt: string }
   | { op: "ingest"; sport: string; team: string; walkStartedAt: string; rows: unknown[]; complete: boolean }
   | {
@@ -40,10 +50,15 @@ export function parseTeamWalkBody(body: unknown): { ok: true; value: TeamWalkOp 
   if (b.op === "plan") {
     const limit = typeof b.limit === "number" && Number.isInteger(b.limit) ? b.limit : NaN
     if (!(limit >= 1 && limit <= MAX_PLAN_TARGETS)) return { ok: false, reason: `limit must be an integer from 1 to ${MAX_PLAN_TARGETS}` }
-    return { ok: true, value: { op: "plan", limit } }
+    // The sports the CALLER can walk. Absent = a walker from before 2026-10-23.
+    if (b.sports === undefined) return { ok: true, value: { op: "plan", limit, sports: [...LEGACY_PLAN_SPORTS] } }
+    if (!Array.isArray(b.sports) || b.sports.length === 0 || !b.sports.every((s) => typeof s === "string" && SPORTS.has(s))) {
+      return { ok: false, reason: `sports must be a non-empty array of ${TEAM_WALK_SPORTS.join(", ")}` }
+    }
+    return { ok: true, value: { op: "plan", limit, sports: [...new Set(b.sports as string[])] } }
   }
   const sport = typeof b.sport === "string" ? b.sport : ""
-  if (!SPORTS.has(sport)) return { ok: false, reason: "sport must be Basketball or Baseball" }
+  if (!SPORTS.has(sport)) return { ok: false, reason: `sport must be one of ${TEAM_WALK_SPORTS.join(", ")}` }
   const team = typeof b.team === "string" ? b.team.trim() : ""
   if (!team || team.length > 80) return { ok: false, reason: "team must be a non-empty string of at most 80 characters" }
   const walkStartedAt = typeof b.walk_started_at === "string" ? b.walk_started_at : ""

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// scripts/panini-team-walk.mjs — Panini NBA/MLB team walk for franchise hubs (2026-09-24).
+// scripts/panini-team-walk.mjs — Panini team walk for franchise hubs (2026-09-24; NBA + MLB,
+// NFL + WNBA since 2026-10-23).
 //
 // Walks Panini's marketplace grid FILTERED BY TEAM
 //   https://nft.paniniamerica.net/marketplace/nfts.html?sport=<Sport>&team=<Team>&p=<N>
@@ -47,6 +48,12 @@ import { TIMED_OUT, sleep, withDeadline } from "./lib/with-deadline.mjs"
 
 export const BASE = "https://nft.paniniamerica.net/marketplace/nfts.html"
 export const DEFAULT_TARGETS = "Basketball:Portland Trail Blazers;Baseball:Detroit"
+/**
+ * The sports this walker can walk — the grid's own sport= values (2026-10-23: Football
+ * and Womens Basketball join; the soccer runner walks the same strings). Sent with the
+ * `plan` op so the receiver never hands this walker a target it would drop.
+ */
+export const SUPPORTED_SPORTS = ["Basketball", "Baseball", "Football", "Womens Basketball"]
 const FLUSH_EVERY_PAGES = 10
 export const MAX_PAGE_ATTEMPTS = 4
 
@@ -68,7 +75,7 @@ export function parseTargets(raw) {
     if (i <= 0 || i === part.length - 1) throw new Error(`bad PANINI_TEAM_TARGETS entry: "${part}" (want Sport:Team)`)
     const sport = part.slice(0, i).trim()
     const team = part.slice(i + 1).trim()
-    if (!/^(Basketball|Baseball)$/.test(sport)) throw new Error(`unsupported sport "${sport}" (Basketball | Baseball)`)
+    if (!SUPPORTED_SPORTS.includes(sport)) throw new Error(`unsupported sport "${sport}" (${SUPPORTED_SPORTS.join(" | ")})`)
     out.push({ sport, team })
   }
   if (out.length === 0) throw new Error("PANINI_TEAM_TARGETS is empty")
@@ -274,7 +281,7 @@ async function walkTarget(tab, freshTab, target, { maxPages, delayMs, onFlush, l
 /** Receiver plan rows -> targets, keeping only sports this walker supports. */
 export function planToTargets(rows) {
   return (Array.isArray(rows) ? rows : [])
-    .filter((r) => r && (r.sport === "Basketball" || r.sport === "Baseball") && typeof r.team === "string" && r.team.trim())
+    .filter((r) => r && SUPPORTED_SPORTS.includes(r.sport) && typeof r.team === "string" && r.team.trim())
     .map((r) => ({ sport: r.sport, team: r.team.trim() }))
 }
 
@@ -335,7 +342,7 @@ async function main() {
     targets = parseTargets(process.env.PANINI_TEAM_TARGETS)
   } else if (rotation > 0) {
     if (!url || !token) throw new Error("rotation mode needs RPC_PANINI_TEAM_WALK_URL / INGEST_SECRET_TOKEN")
-    const plan = await post(url, token, { op: "plan", limit: rotation })
+    const plan = await post(url, token, { op: "plan", limit: rotation, sports: SUPPORTED_SPORTS })
     if (!plan.ok || !Array.isArray(plan.data?.targets)) throw new Error(`plan failed (http ${plan.status}): ${plan.data?.error ?? "no targets"}`)
     targets = planToTargets(plan.data.targets)
     log(`rotation: ${targets.map((t) => `${t.sport}:${t.team}`).join(", ")}`)

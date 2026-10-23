@@ -46,6 +46,11 @@ describe("parseTargets", () => {
     expect(() => parseTargets("")).toThrow(/empty/)
     expect(() => parseTargets("Basketball:")).toThrow(/bad/)
     expect(() => parseTargets("Soccer:Brazil")).toThrow(/unsupported sport/)
+    // 2026-10-23: NFL and WNBA, under the grid's own sport= values.
+    expect(parseTargets("Football:Kansas City Chiefs;Womens Basketball:Las Vegas Aces")).toEqual([
+      { sport: "Football", team: "Kansas City Chiefs" },
+      { sport: "Womens Basketball", team: "Las Vegas Aces" },
+    ])
   })
 })
 
@@ -129,9 +134,15 @@ describe("planToTargets", () => {
         { sport: "Basketball", team: " Atlanta Hawks ", last_complete_at: null },
         { sport: "Soccer", team: "Brazil" },
         { sport: "Baseball", team: "" },
+        { sport: "Football", team: "Kansas City Chiefs" },
+        { sport: "Womens Basketball", team: "Las Vegas Aces" },
         null,
       ]),
-    ).toEqual([{ sport: "Basketball", team: "Atlanta Hawks" }])
+    ).toEqual([
+      { sport: "Basketball", team: "Atlanta Hawks" },
+      { sport: "Football", team: "Kansas City Chiefs" },
+      { sport: "Womens Basketball", team: "Las Vegas Aces" },
+    ])
   })
   it("treats a non-array as no targets", () => {
     expect(planToTargets(undefined)).toEqual([])

@@ -147,7 +147,35 @@ describe("plan (rotation mode)", () => {
       { sport: "Basketball", team: "Atlanta Hawks", last_complete_at: null },
       { sport: "Baseball", team: "Detroit", last_complete_at: "2026-09-24T23:22:49Z" },
     ])
-    expect(calls[0]).toEqual({ fn: "panini_team_walk_plan", args: { p_limit: 5 } })
+    // 2026-10-23 re-pin: the plan is filtered by sport; a walker naming none is a
+    // pre-10-23 walker and gets the two sports it can walk.
+    expect(calls[0]).toEqual({ fn: "panini_team_walk_plan_for", args: { p_limit: 5, p_sports: ["Basketball", "Baseball"] } })
+  })
+  // ⚠ Load-bearing (2026-10-23): the pre-10-23 laptop walker DROPS any other sport's
+  // targets client-side, and the plan hands out never-attempted rows first — a dropped
+  // row is never stamped, so it would stay stalest forever and starve the rotation.
+  it("never hands a walker that names no sports a Football or WNBA target", async () => {
+    rpcResult.data = []
+    await POST(req({ op: "plan", limit: 5 }))
+    const sports = calls[0].args.p_sports as string[]
+    expect(sports).not.toContain("Football")
+    expect(sports).not.toContain("Womens Basketball")
+  })
+  it("passes the sports a walker names", async () => {
+    rpcResult.data = []
+    await POST(req({ op: "plan", limit: 5, sports: ["Basketball", "Football", "Womens Basketball", "Football"] }))
+    expect(calls[0]).toEqual({ fn: "panini_team_walk_plan_for", args: { p_limit: 5, p_sports: ["Basketball", "Football", "Womens Basketball"] } })
+  })
+  it("rejects an unknown, empty or malformed sports list before any DB call", async () => {
+    for (const sports of [["Soccer"], [], "Football", [1]]) {
+      expect((await POST(req({ op: "plan", limit: 5, sports }))).status).toBe(400)
+    }
+    expect(calls).toHaveLength(0)
+  })
+  it("accepts a Football target on the walk ops", async () => {
+    rpcResult.data = true
+    const r = await POST(req({ op: "heartbeat", sport: "Football", team: "Kansas City Chiefs", walk_started_at: base.walk_started_at }))
+    expect(r.status).not.toBe(400)
   })
   it("rejects a limit outside 1..50 before any DB call", async () => {
     for (const limit of [0, 51, 2.5, "5", undefined]) {

@@ -4,8 +4,8 @@ REM Panini NBA/MLB TEAM WALK launcher — its own daily Windows task (2026-09-24
 REM Registered by scripts\panini-team-walk-schedule.bat (daily 3:35 AM, between the
 REM soccer runner's 2 AM and 6 AM slots, which each run ~80-90 min).
 REM
-REM Walks the 5 STALEST teams on the roster (panini_team_walk_targets: 30 NBA +
-REM Detroit) through Panini's team-filtered grid and posts to
+REM Walks the 5 STALEST teams on the roster (panini_team_walk_targets: 30 NBA,
+REM 24 MLB cities, and since 2026-10-23 36 NFL + 15 WNBA labels) through Panini's team-filtered grid and posts to
 REM /api/cron/panini-team-walk. Staging only — nothing on the site reads it yet.
 REM Shares the soccer runner's debug Chrome and INGEST_SECRET_TOKEN; needs nothing new.
 REM Detail: docs/features/franchise-hubs.md.

@@ -1,8 +1,8 @@
 // app/api/cron/panini-team-walk/route.ts
 //
-// Receiver for scripts/panini-team-walk.mjs — the Panini NBA/MLB team-filtered grid
-// walk that feeds franchise-hub STAGING (panini_team_listings; nothing on the site
-// reads it yet — docs/features/franchise-hubs.md).
+// Receiver for scripts/panini-team-walk.mjs — the Panini team-filtered grid walk
+// (NBA, MLB, and since 2026-10-23 NFL + WNBA) that feeds panini_team_listings, which
+// the franchise hubs' Panini panel reads (get_panini_franchise_panel, 2026-10-22).
 //
 // ⚠ WHY A ROUTE. Panini's Cloudflare answers GitHub Actions runners with a 403
 // (1000-series error box, measured 2026-09-24), so the walk runs on Trevor's box
@@ -66,7 +66,9 @@ export async function POST(req: NextRequest) {
   const db = supabaseAdmin as any
 
   if (v.op === "plan") {
-    const { data, error } = await boundedRpc(db, "panini_team_walk_plan", { p_limit: v.limit })
+    // 2026-10-23: the plan is filtered to the sports the walker can walk (parseTeamWalkBody
+    // defaults an old walker to Basketball/Baseball) — see LEGACY_PLAN_SPORTS.
+    const { data, error } = await boundedRpc(db, "panini_team_walk_plan_for", { p_limit: v.limit, p_sports: v.sports })
     if (error) return apiErrorResponse(error, "api/cron/panini-team-walk")
     if (!Array.isArray(data)) return NextResponse.json({ error: "plan returned no list" }, { status: 502 })
     const targets = (data as Array<Record<string, unknown>>)
