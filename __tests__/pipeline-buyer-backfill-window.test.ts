@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { readFileSync } from "node:fs"
-import { CURRENT_SPORK_START_ISO, buyerBackfillVerdict } from "@/lib/pipeline/buyer-backfill-window"
+import { CURRENT_SPORK_START_ISO, buyerBackfillVerdict, cursorOrFilter, cursorRowBelow } from "@/lib/pipeline/buyer-backfill-window"
 
 // #192: the All Day/Golazos buyer backfill walked rows older than mainnet27's
 // root (2025-10-22), which current-spork REST cannot decode — 480 of 480 failed
@@ -79,5 +79,31 @@ describe("buyer backfill verdict — custodial deposits are not decode failures"
     const route = readFileSync("app/api/admin/backfill-allday-buyers/route.ts", "utf8")
     expect(route).toMatch(/if \(dec\.custodialDeposit\) custodial\+\+\s*else decodeFailed\+\+/)
     expect(route).toContain("custodial_deposit: custodial")
+  })
+})
+
+// 2026-10-23: the walk's cursor is (sold_at, id). `sold_at` alone is not unique,
+// and a batch ending inside a shared timestamp skipped the rest of that
+// timestamp (9 All Day rows measured at the 8:15 PM cursor's own value).
+describe("buyer backfill cursor — (sold_at, id), never sold_at alone", () => {
+  it("cursorRowBelow orders by sold_at DESC then id DESC (the walk order)", () => {
+    expect(cursorRowBelow({ sold_at: "2026-06-11T14:55:09.664Z", id: "b" }, { sold_at: "2026-06-11T14:55:10.000Z", id: "a" })).toBe(true)
+    expect(cursorRowBelow({ sold_at: "2026-06-11T14:55:09.664Z", id: "a" }, { sold_at: "2026-06-11T14:55:09.664Z", id: "b" })).toBe(true)
+    expect(cursorRowBelow({ sold_at: "2026-06-11T14:55:09.664Z", id: "b" }, { sold_at: "2026-06-11T14:55:09.664Z", id: "a" })).toBe(false)
+    expect(cursorRowBelow({ sold_at: "2026-06-11T14:55:09.664Z", id: "a" }, { sold_at: "2026-06-11T14:55:09.664Z", id: "a" })).toBe(false)
+  })
+  it("cursorOrFilter resumes strictly below (sold_at, id), and below sold_at alone for a cursor logged before the id half existed", () => {
+    expect(cursorOrFilter({ soldAt: "2026-06-11T14:55:09.664+00:00", id: "0f7b" })).toBe(
+      "sold_at.lt.2026-06-11T14:55:09.664+00:00,and(sold_at.eq.2026-06-11T14:55:09.664+00:00,id.lt.0f7b)",
+    )
+    expect(cursorOrFilter({ soldAt: "2026-06-11T14:55:09.664+00:00", id: null })).toBe("sold_at.lt.2026-06-11T14:55:09.664+00:00")
+  })
+  it("the All Day route orders by (sold_at, id), filters by cursorOrFilter and writes cursor_id — never a bare .lt(sold_at)", () => {
+    const route = readFileSync("app/api/admin/backfill-allday-buyers/route.ts", "utf8")
+    expect(route).toMatch(/\.order\("sold_at", \{ ascending: false \}\)\s*\.order\("id", \{ ascending: false \}\)/)
+    expect(route).toMatch(/\.or\(cursorOrFilter\(\{ soldAt: cursorBefore, id: cursorBeforeId \}\)\)/)
+    expect(route).not.toMatch(/\.lt\("sold_at"/)
+    expect(route).toContain("cursor_id: cursorAfterId")
+    expect(route).toMatch(/cursorRowBelow\(row, minRow\)/)
   })
 })

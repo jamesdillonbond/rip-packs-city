@@ -693,4 +693,54 @@ describe("/api/admin/backfill-allday-buyers", () => {
     expect(runRow).toMatchObject({ pipeline: "golazos-buyer-backfill", collection_slug: "laliga-golazos" })
     expect(runRow.extra).toMatchObject({ sellers_filled: 1, buyers_resolved: 1 })
   })
+
+  // 2026-10-23: the cursor is (sold_at, id), not sold_at alone — a batch ending
+  // inside a shared timestamp skipped the rest of that timestamp (9 rows measured).
+  it("a full batch records the smallest (sold_at, id) it processed as the cursor — the id breaks a shared-timestamp tie", async () => {
+    vi.useFakeTimers()
+    const rows = Array.from({ length: 480 }, (_, i) => ({
+      id: `b${String(i).padStart(4, "0")}`,
+      nft_id: String(i),
+      transaction_hash: `txz${i}`,
+      sold_at: new Date(Date.UTC(2026, 5, 30) - i * 60_000).toISOString(),
+      buyer_address: null,
+      seller_address: null,
+    }))
+    // the batch's oldest timestamp is SHARED by its last two rows, in the walk's
+    // (sold_at DESC, id DESC) order: the smaller id is the row to resume below
+    rows[478].sold_at = rows[479].sold_at
+    rows[478].id = "a9999" // sorts above…
+    rows[479].id = "a0001" // …this one: the cursor
+    // every tx decodes to a buyer, so no row falls to the tx-signers fetch (its
+    // 10 s timeout under fake timers would trip MAX_RUN_MS at row ~58)
+    for (const r of rows) state.decodeResults[r.transaction_hash] = { ...EMPTY_V1_DECODE, buyer: `0x${r.id}000000000000`, seller: null }
+    const spy = install({
+      pipeline_runs: { data: null, error: null },
+      sales: [{ data: rows, error: null }, { data: null, error: null }],
+      audit_20260706_allday_buyer_backfill: { data: null, error: null },
+    })
+    const res = await alldayRoute.POST(alldayReq("https://t/api/admin/backfill-allday-buyers", "Bearer ingest-secret"))
+    expect(res.status).toBe(200)
+    const deferred = runDeferred()
+    await vi.runAllTimersAsync()
+    await deferred
+    const runRow = (spy.writes.pipeline_runs ?? []).find((w) => w.method === "insert")!.rows[0]
+    expect(runRow.rows_found).toBe(480)
+    expect(runRow.extra).toMatchObject({ cursor_sold_at: rows[479].sold_at, cursor_id: "a0001", wrapped: false })
+  })
+
+  it("a short batch wraps BOTH halves of the cursor", async () => {
+    const spy = install({
+      pipeline_runs: { data: { extra: { cursor_sold_at: "2026-07-10T00:00:00Z", cursor_id: "zz" } }, error: null },
+      sales: [
+        { data: [{ id: "a1", nft_id: "10", transaction_hash: "txw1", sold_at: "2026-07-09T00:00:00Z", buyer_address: null, seller_address: null }], error: null },
+        { data: null, error: null },
+      ],
+    })
+    state.decodeResults["txw1"] = { ...EMPTY_V1_DECODE, buyer: "0xw000000000000001", seller: null }
+    await alldayRoute.POST(alldayReq("https://t/api/admin/backfill-allday-buyers", "Bearer ingest-secret"))
+    await runDeferred()
+    const runRow = (spy.writes.pipeline_runs ?? []).find((w) => w.method === "insert")!.rows[0]
+    expect(runRow.extra).toMatchObject({ cursor_before: "2026-07-10T00:00:00Z", cursor_sold_at: null, cursor_id: null, wrapped: true })
+  })
 })

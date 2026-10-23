@@ -59,3 +59,37 @@ export function buyerBackfillVerdict(c: BuyerBackfillCounts): { ok: boolean; err
   }
   return { ok: true, error: null }
 }
+
+// ── The walk's cursor: (sold_at, id), never sold_at alone ───────────────────
+//
+// ⚠ 2026-10-23 ~6:30 AM PT: the walk paged `sold_at < cursor` on a NON-unique
+// key. Nine unresolved All Day rows share one `sold_at` (2026-06-11 14:55:09.664)
+// with the row the 8:15 PM run's batch ended on; `lt` skipped them, and they
+// stayed skipped until a later cycle's batch boundaries happened to fall
+// elsewhere. CLAUDE.md's rule — "cursor paging needs a UNIQUE tiebreak" — made
+// concrete: the cursor is the smallest (sold_at, id) the run processed, and the
+// next run resumes STRICTLY below it in that order, so a timestamp shared across
+// a batch boundary loses no row. `id` is a uuid; Postgres orders uuids bytewise,
+// which is the lexical order of their lowercase hex text, so a string compare
+// here agrees with `ORDER BY id DESC` there.
+export interface SaleCursorRow {
+  sold_at: string
+  id: string
+}
+
+/** True when `a` sorts strictly below `b` in (sold_at DESC, id DESC) walk order. */
+export function cursorRowBelow(a: SaleCursorRow, b: SaleCursorRow): boolean {
+  if (a.sold_at !== b.sold_at) return a.sold_at < b.sold_at
+  return a.id < b.id
+}
+
+/**
+ * The PostgREST `or=` filter that continues the walk strictly below a cursor.
+ * Without an id (a run logged before 2026-10-23) it is the old `sold_at <` and
+ * the next run writes the full cursor.
+ */
+export function cursorOrFilter(c: { soldAt: string; id: string | null }): string {
+  return c.id
+    ? `sold_at.lt.${c.soldAt},and(sold_at.eq.${c.soldAt},id.lt.${c.id})`
+    : `sold_at.lt.${c.soldAt}`
+}

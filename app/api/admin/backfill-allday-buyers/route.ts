@@ -3,7 +3,7 @@ import { tokenMatches } from "@/lib/auth/bearer-secret"
 import { supabaseAdmin } from "@/lib/supabase"
 import { decodeV1SaleTx } from "@/lib/chains/flow/dapper-v1-tx-decode"
 import { normalizeFlowEventAddress } from "@/lib/address"
-import { CURRENT_SPORK_START_ISO, buyerBackfillVerdict } from "@/lib/pipeline/buyer-backfill-window"
+import { CURRENT_SPORK_START_ISO, buyerBackfillVerdict, cursorOrFilter, cursorRowBelow } from "@/lib/pipeline/buyer-backfill-window"
 
 // POST /api/admin/backfill-allday-buyers — Authorization: Bearer $INGEST_SECRET_TOKEN
 //   (or Bearer $CRON_SECRET for the Vercel cron, or ?token=$INGEST_SECRET_TOKEN)
@@ -212,7 +212,9 @@ async function handle(req: NextRequest) {
 
   after(async () => {
     let cursorBefore: string | null = null
+    let cursorBeforeId: string | null = null
     let cursorAfter: string | null = null
+    let cursorAfterId: string | null = null
     let found = 0
     let buyersResolved = 0
     let sellersFilled = 0
@@ -240,6 +242,11 @@ async function handle(req: NextRequest) {
         (lastRun?.extra && typeof lastRun.extra.cursor_sold_at === "string"
           ? lastRun.extra.cursor_sold_at
           : null) ?? null
+      // The id half of the cursor (2026-10-23): absent on a run logged before it.
+      cursorBeforeId =
+        (cursorBefore && lastRun?.extra && typeof lastRun.extra.cursor_id === "string"
+          ? lastRun.extra.cursor_id
+          : null) ?? null
 
       let q = (supabaseAdmin as any)
         .from("sales")
@@ -252,9 +259,13 @@ async function handle(req: NextRequest) {
         // buyer AND not already stamped as custodial-held by this lane. Keyed on
         // the stamp itself, not on WHICH custodial signer proposed (header).
         .is("proposer_address", null)
+        // (sold_at, id) is the walk order AND the cursor: sold_at alone is not
+        // unique, and a batch ending inside a shared timestamp skipped the rest
+        // of that timestamp (9 rows measured 2026-10-23). A third .or() ANDs.
         .order("sold_at", { ascending: false })
+        .order("id", { ascending: false })
         .limit(BATCH)
-      if (cursorBefore) q = q.lt("sold_at", cursorBefore)
+      if (cursorBefore) q = q.or(cursorOrFilter({ soldAt: cursorBefore, id: cursorBeforeId }))
 
       const { data, error } = await q
       if (error) {
@@ -267,11 +278,12 @@ async function handle(req: NextRequest) {
       found = rows.length
 
       const auditRows: any[] = []
-      let minSoldAt: string | null = null
+      // The smallest (sold_at, id) PROCESSED — the next run resumes strictly below it.
+      let minRow: { sold_at: string; id: string } | null = null
 
       for (const row of rows) {
         if (Date.now() - startedAt > MAX_RUN_MS) { bailedEarly = true; break }
-        if (minSoldAt === null || row.sold_at < minSoldAt) minSoldAt = row.sold_at
+        if (minRow === null || cursorRowBelow(row, minRow)) minRow = { sold_at: row.sold_at, id: row.id }
 
         try {
           // Primary: AllDay/Golazos.Deposit.to matching this nft_id.
@@ -373,7 +385,8 @@ async function handle(req: NextRequest) {
 
       // Short batch ⇒ bottom of the unresolved set for this pass; wrap the cursor
       // so the next run starts a fresh top-down sweep (retries old-spork misses).
-      cursorAfter = rows.length < BATCH ? null : minSoldAt
+      cursorAfter = rows.length < BATCH ? null : (minRow?.sold_at ?? null)
+      cursorAfterId = cursorAfter === null ? null : (minRow?.id ?? null)
       const verdict = buyerBackfillVerdict({ found, decodeFailed, updateFailed, custodial })
       if (!verdict.ok) {
         ok = false
@@ -398,6 +411,8 @@ async function handle(req: NextRequest) {
           error: errMsg ? errMsg.slice(0, 500) : null,
           extra: {
             cursor_sold_at: cursorAfter,
+            // the id half of the cursor (2026-10-23): with cursor_sold_at, the exact row to resume below
+            cursor_id: cursorAfterId,
             cursor_before: cursorBefore,
             buyers_resolved: buyersResolved,
             sellers_filled: sellersFilled,
