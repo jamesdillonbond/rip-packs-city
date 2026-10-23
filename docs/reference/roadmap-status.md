@@ -1022,7 +1022,7 @@ A dated snapshot. The item text in [known-issues.md](known-issues.md) wins over 
 The 09-19 list below is kept as moved. Four of its lines are stale: #55 is closed, #8 is reworded, the go-live numbers have moved, and fmv-recalc broke today. Current state, each item re-derived from the live system (read-only):
 
 - **#22 credential purge: GitHub half DONE 2026-10-20** (ticket #4811268 solved; the commit no longer fetches by sha — git `not our ref`, API 422/404; PRs #8–15 refs gone; github.com commit page 404; never archived by Software Heritage). **Still Trevor-only:** rotate the Dapper session regardless.
-- **#8 NBA projections: SHELVED (no paid provider pre-revenue).** Still 0/16 ok in 48 h. The alarm suppression lapses **10-27 5:00 PM PT**; re-look then.
+- **#8 NBA projections: FED BY A FREE SOURCE since 2026-10-23** — ESPN via the DB's pg_net egress (`nba-espn-projections`, hourly; Fast Break reads it since `0262dd4`, verified live `dataStatus: "ok"`). Still Trevor's: disable the old edge lane's cron-job.org job 7568448 (its alarm suppression lapses **10-27 5:00 PM PT**). ⓘ Was: SHELVED (no paid provider pre-revenue), 0/16 ok in 48 h.
 - **#55 two-hourly Routines: CLOSED 09-23** (deleted; both ids not-found 10-17). Drop it from any open list.
 - **fmv-recalc: it wedged ~12:48 → ~5:25 PM PT 10-17** (`fmv_sweep_wedge_hours` breach). The cursor-advance fix is live (5:35 PM run `cursor_held=false`). 24 h sweep coverage reads 78.2 %, still depressed by the wedge; confirm recovery over the next day. ✅ **Recovered (re-read 10-18 ~1:05 PM PT, Cowork): every catalogue-sweep run since noon PT wrote 499–1,493 rows; the 10-17 inbox HIGH is marked closed.** The "wasteful, SIZED" note stands.
 - **Go-live:** M1 MET (55.8 %, 23/23 legs, wk 10-12). M2 NOT MET (26.3 %, 0 legs at bar for three weeks). Full table in the 10-17 headline block above and [roadmap-2026-10-17.md](../strategy/roadmap-2026-10-17.md) §2.
@@ -1033,7 +1033,7 @@ The 09-19 list below is kept as moved. Four of its lines are stale: #55 is close
 
 **Open items, stated rather than quietly dropped:**
 
-- **sports-proxy `403` — ⛔ "PROXY ESPN" IS MEASURED DEAD** (#8).
+- **sports-proxy `403` — ⛔ "PROXY ESPN" IS MEASURED DEAD** (#8). ⚠ **2026-10-23: ESPN answers the DATABASE's pg_net egress** (not the edge, not Vercel) — that is the lane #8 now runs on.
 - `fmv-recalc` — wasteful, NOT broken, SIZED (it owns the DB's #1 reader): roadmap-status.md.
 - 🚨 **Needs TREVOR, not code — two:** the **credential-purge residue** (branch deleted 09-07; ask GitHub to **GC** the unreachable objects, **rotate regardless** — #22) · ⛔ **both 2-hourly Routines STILL DISABLED, no approval card — re-verified live 09-18, last fire 09-01, 17 days dead** (#55). **Added 2026-10-13 from the 10-11 platform review (audit doc, status paragraph):** the CAN-SPAM postal address (C2; digests stay flag-off until it exists) · the brand-red-on-small-text contrast call (white on `#E03A2F` 4.36:1, a brand decision) · S1 rotation / S3 admin-via-session / S6 verified rate tier (cron-job.org + GHA + Vercel env) · `OPENSEA_API_KEY` (#58; Candy OpenSea indexers unscheduled until it exists).
 - **GO-LIVE bars + blockers: [go-live-2026-09.md](../strategy/go-live-2026-09.md)** — verification gate DROPPED (#59), beacon LIVE (its "first real finding" was RETRACTED — a crawler, #69), **M1 53.1 / M2 28.7 mean, 27 legs to 09-18 (23/27 ≥50 · 6/27 ≥30) — READ THE SERIES (`rpc_trust_health_history`), NEVER A LEG; M2's blocker RELAXED (NFL season)** (#63, #64).

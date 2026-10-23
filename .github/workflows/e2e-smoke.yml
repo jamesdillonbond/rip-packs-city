@@ -52,7 +52,7 @@ jobs:
       github.event_name != 'deployment_status' ||
       (github.event.deployment_status.state == 'success' &&
        github.event.deployment.environment == 'Production')
-    timeout-minutes: 10
+    timeout-minutes: 20 # 10 → 20 (2026-10-23): room for the bounded install retries above
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -73,8 +73,24 @@ jobs:
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      # ⚠ BOUNDED (2026-10-23). `--with-deps` apt-installs OS packages from the
+      # runner's Azure Ubuntu mirror, and that download can STALL with no timeout
+      # of its own: on 10-23 the 5:10, 6:39 and 10:48 AM PT runs (job logs read)
+      # sat on `Get: fonts-wqy-zenhei` / `xvfb` until the 10-min job limit and
+      # ended `cancelled` — the smoke never ran, and `cancelled` reads like a
+      # superseded deploy run, so nobody looked. apt now gives up on a stalled
+      # transfer after 30 s and retries it (Acquire::*), and the whole install is
+      # retried up to 3× under a hard `timeout`, so a stall costs a retry, not the run.
       - name: Install Chromium
-        run: npx playwright install --with-deps chromium
+        run: |
+          echo 'Acquire::Retries "5"; Acquire::http::Timeout "30"; Acquire::https::Timeout "30";' | sudo tee /etc/apt/apt.conf.d/80-rpc-ci-retries >/dev/null
+          for attempt in 1 2 3; do
+            if timeout 240 npx playwright install --with-deps chromium; then exit 0; fi
+            echo "::warning::playwright install attempt $attempt failed or stalled; retrying"
+            sudo dpkg --configure -a || true
+          done
+          echo "::error::playwright install failed 3 times"
+          exit 1
       - name: Save Playwright browsers
         if: github.event_name != 'deployment_status' && steps.pw-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -128,7 +144,7 @@ jobs:
   a11y-audit:
     runs-on: ubuntu-latest
     if: github.event_name != 'deployment_status'
-    timeout-minutes: 10
+    timeout-minutes: 20 # 10 → 20 (2026-10-23): room for the bounded install retries above
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -142,7 +158,16 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
       - name: Install Chromium
-        run: npx playwright install --with-deps chromium
+        # Bounded + retried like dom-smoke's install (the apt-mirror stall, 2026-10-23).
+        run: |
+          echo 'Acquire::Retries "5"; Acquire::http::Timeout "30"; Acquire::https::Timeout "30";' | sudo tee /etc/apt/apt.conf.d/80-rpc-ci-retries >/dev/null
+          for attempt in 1 2 3; do
+            if timeout 240 npx playwright install --with-deps chromium; then exit 0; fi
+            echo "::warning::playwright install attempt $attempt failed or stalled; retrying"
+            sudo dpkg --configure -a || true
+          done
+          echo "::error::playwright install failed 3 times"
+          exit 1
       - name: Run axe audit (gated — see GATED in e2e/a11y.spec.ts)
         id: axe
         env:
