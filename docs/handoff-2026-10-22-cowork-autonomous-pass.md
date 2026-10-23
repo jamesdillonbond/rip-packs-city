@@ -1,4 +1,4 @@
-# Handoff — 2026-10-22 Cowork autonomous pass (8:37 PM → 10-23 ~9:50 AM PT)
+# Handoff — 2026-10-22 Cowork autonomous pass (8:37 PM → 10-23 ~10:40 AM PT)
 
 Cowork cloud, laptop linked (not used; everything ran from the sandbox). Trevor: "Can you work on roadmap and known issues? Work autonomously for the next 12 hours." — then 6:24 AM "Keep going" and 9:22 AM "work through anything you can handle that is still unresolved … then update any relevant documentation before I archive this thread" (the last section below). A Claude Code cloud session (session_01W7x9yCaphqxBSZRbsFKLqa) was shipping on the same repo the whole time. Full detail: `docs/overnight/ledger.md` (10-22 entries from 9:25 PM PT) and `docs/sessions/2026-10.md`.
 
@@ -30,7 +30,7 @@ Cowork cloud, laptop linked (not used; everything ran from the sandbox). Trevor:
 - ✅ **11:15 PM PT 10-22** `allday-buyer-backfill` 480/480 stamped · ✅ **2:15 AM 10-23** 346/346 stamped + wrapped (the 41-row red was the floor defect, fixed) · ✅ **5:15 AM** 460/460 stamped, 20 buyers resolved, `decode_failed 0`, `ok=true` (1,286 stamped in all) · ✅ **8:15 AM** 9 found / 9 stamped / 0 failed / wrapped in 4 s — the proof of the stamp, the floor and the cursor fixes together.
 - ✅ **3:05 AM PT 10-23:** both 2026 rookies' `players` rows landed on the 2:50 / 2:55 AM crons (4 editions linked each); `/nba-top-shot/player/cameron-boozer` and `/players/cameron-boozer` 200.
 - ✅ The non-unique cursor named at 5:20 AM was fixed at 6:40 AM (`8a91eff26`, above); the Top Shot lane’s twin shape at ~9:50 AM (last shipped row).
-- **10-23 later today / 10-24:** `topshot-buyer-backfill` wrapping runs — `decode_failed 0`, `below_forward_floor 1` (was `decode_failed 1` every wrap); the first full batch after deploy carries a non-null `cursor_id`.
+- ✅ **10:04 / 10:34 AM PT 10-23:** `topshot-buyer-backfill` on the new code — first full batch carries `cursor_id`; the first wrapping run reads `decode_failed 0 · below_forward_floor 1 · ok true` (was `decode_failed 1` on every wrap for 36 h). Closed in its first cycle.
 - **Franchise hubs in the sitemap:** still 31 at 9:45 AM (NBA 30, MLB 1) — `panini_team_listings` holds Basketball + 1 Baseball club only; the walk’s NFL/WNBA/MLB coverage (`532efe176`, `a8162d6e8`) grows `/sitemap/3.xml` by construction when it lands, nothing to do.
 - **10-24:** #181 decision (retire pre-mainnet27 lookups); Pinnacle #193 gate (≥ 500 post-10-09 HIGH sales — **469 of 500 at 3:05 AM on the gate's own cutoff**, gap unchanged: published 62.3 / naive-5 69.5 within ±25 %, WAPE 32.7 vs 23.0; the `07:00+00` cutoff already reads 532 but is not the gate); Panini 1.4.0 window.
 - **10-26 ~7:23 AM PT:** weekly missing-fill walk — the rewind arm must stay `[]`.
