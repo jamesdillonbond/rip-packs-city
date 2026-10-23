@@ -82,6 +82,12 @@ interface CollectionStats {
 
 type AboutBlock = { title: string; body: string }
 
+// ⚠ 2026-10-22: these panels said FMV is "never ask prices" (All Day), "not ask prices" (Top Shot),
+// "rather than what sellers are asking" (Candy) — while every one of those collections prices an
+// edition with no recent sales from its lowest live ask (ASK_ONLY, marked "from asks"; the
+// methodology page says so) — and Pinnacle's said "driven by ask-price intelligence" when ~2/3 of
+// its priced pins are priced from sales. Pinned by
+// __tests__/collection-about-copy-matches-fmv-method.test.ts.
 const COLLECTION_ABOUT: Record<string, AboutBlock[]> = {
   "nba-top-shot": [
     {
@@ -90,11 +96,11 @@ const COLLECTION_ABOUT: Record<string, AboutBlock[]> = {
     },
     {
       title: "The Top Shot Ecosystem",
-      body: "NBA Top Shot has traded over $1 billion in moments since 2020. Behind those numbers is a global community of collectors who track serial numbers, chase badge premiums, complete sets, and hunt deals across multiple marketplaces. RPC gives that community the intelligence layer it deserves — FMV that reflects real sales, not ask prices.",
+      body: "NBA Top Shot has traded over $1 billion in moments since 2020. Behind those numbers is a global community of collectors who track serial numbers, chase badge premiums, complete sets, and hunt deals across multiple marketplaces. RPC gives that community the intelligence layer it deserves — FMV built from what collectors actually paid.",
     },
     {
       title: "Data-First Philosophy",
-      body: "Every tool here is built on the same principle: show collectors what the market is actually paying, not what sellers are asking. Fair market value, scarcity analysis, badge premiums, set completion — transparent data, not guesswork.",
+      body: "Every tool here is built on the same principle: show collectors what the market is actually paying. When an edition has no recent sales, its estimate comes from its lowest live ask and is marked as such. Fair market value, scarcity analysis, badge premiums, set completion — transparent data, not guesswork.",
     },
   ],
   "nfl-all-day": [
@@ -104,11 +110,11 @@ const COLLECTION_ABOUT: Record<string, AboutBlock[]> = {
     },
     {
       title: "The All Day Ecosystem",
-      body: "All Day has minted hundreds of thousands of moments since launch, with packs dropping alongside the NFL season. Pack EV is a core tool here — we break down expected value against drop price so you can decide when to rip and when to pass. Set completion matters, and RPC tracks your progress across every tier.",
+      body: "All Day has minted millions of moments since launch, with packs dropping alongside the NFL season. Pack EV is a core tool here — we break down expected value against drop price so you can decide when to rip and when to pass. Set completion matters, and RPC tracks your progress across every tier.",
     },
     {
       title: "Intelligence for Every Drop",
-      body: "FMV on All Day reflects real sales data — never ask prices. The sniper works across both the pack-era primary market and secondary marketplaces, so you catch mispriced moments the moment they list.",
+      body: "FMV on All Day is built from real sales; an edition with no recent sale is priced from its lowest live ask and marked as such. The sniper scans live All Day listings for moments listed below FMV.",
     },
   ],
   "disney-pinnacle": [
@@ -122,7 +128,7 @@ const COLLECTION_ABOUT: Record<string, AboutBlock[]> = {
     },
     {
       title: "FMV for Entertainment Collectibles",
-      body: "Pinnacle FMV is driven by ask-price intelligence, with deal-finding that spans character lines, franchise affiliations, and variant rarity. The sniper flags pins priced below what comparable pins are asking elsewhere — spot deals across Mickey, Marvel heroes, or Pixar favourites in one view.",
+      body: "Pinnacle FMV is priced pin by pin from recent sales; a pin with too few sales is priced from its lowest live ask and marked as such. Deal-finding spans character lines, franchise affiliations, and variant rarity — the sniper flags pins listed below their FMV, across Mickey, Marvel heroes, or Pixar favourites in one view.",
     },
   ],
   "laliga-golazos": [
@@ -136,13 +142,13 @@ const COLLECTION_ABOUT: Record<string, AboutBlock[]> = {
     },
     {
       title: "Deals Relative to Market",
-      body: "The Golazos sniper uses relative deal scoring rather than raw FMV discount — comparing each ask against the edition's current floor and against comparable moments. A 100x-floor outlier filter keeps stray high-asks from distorting the signal, so deals you see are deals you can act on.",
+      body: "The Golazos sniper uses relative deal scoring rather than raw FMV discount — comparing each live ask against the edition's recent median sale. A 100x-floor outlier filter keeps stray high asks from distorting the signal.",
     },
   ],
   "candy-mlb": [
     {
       title: "Built for Baseball Collectors",
-      body: "Candy MLB brings officially licensed MLB moments on-chain — Solana, under Candy Digital. RPC tracks every edition, prices it from real secondary sales, and shows collectors what the market is actually paying rather than what sellers are asking.",
+      body: "Candy MLB brings officially licensed MLB moments on-chain — Solana, under Candy Digital. RPC tracks every edition and prices it from its recent secondary sales, or from a confirmed live ask when it has none — and says which.",
     },
     {
       title: "The Candy Ecosystem",

@@ -38,14 +38,19 @@ const TICKER_ITEMS: Record<string, string[]> = {
     "✨ SNIPER — pins priced below market",
     "✨ MARKET — sortable feed of every listing, filter by variant",
     "✨ ANALYTICS — tier + franchise volume trends",
-    "✨ THIN-VOLUME MODEL — relative deal scoring for Pinnacle-scale liquidity",
+    // 2026-10-22: was "THIN-VOLUME MODEL — relative deal scoring", which is the GOLAZOS sniper's
+    // mechanism; Pinnacle's discounts against FMV and refuses a one-sale price as an anchor
+    // (lib/sniper/pinnacle.ts).
+    "✨ THIN-SALE GUARD — a pin priced from one sale never anchors a deal",
   ],
   "laliga-golazos": [
     "⚽ COLLECTION ANALYZER — relative deal scoring + FMV",
     "⚽ SNIPER — floor deals with 100x-floor outlier filter",
     "⚽ MARKET — sort every listing by discount, price, or recency",
     "⚽ ANALYTICS — tier + club volume trends",
-    "⚽ FMV COVERAGE — growing from real Flow sales data",
+    // 2026-10-22: was "growing" — Golazos HIGH/MEDIUM has sat at ~1 % for weeks by design (an
+    // illiquid market is labelled, not forced; roadmap §2).
+    "⚽ FMV — from real Flow sales where Golazos trades; thin editions labelled",
   ],
   "ufc": [
     "⚡ COLLECTION ANALYZER — FMV + active listing prices",
@@ -58,7 +63,9 @@ const TICKER_ITEMS: Record<string, string[]> = {
   // coming" sat on every tab after both tabs had shipped. The list now names
   // tools that exist and makes no comparative a later reading can falsify.
   "candy-mlb": [
-    "⚾ CANDY MLB ON SOLANA — every edition priced from real secondary sales",
+    // 2026-10-22: was "every edition priced from real secondary sales" — Candy also prices from a
+    // confirmed live ask, and no Candy sale has been indexed since 10-11 (#58).
+    "⚾ CANDY MLB ON SOLANA — every edition priced from its secondary sales or a confirmed ask",
     "⚾ COLLECTION ANALYZER — paste a Solana wallet for FMV on every card",
     "⚾ SET TRACKER — 100-player checklist + cost to finish from live asks",
     "⚾ PACK MARKET — confirmed floor, recent pack sales and pull value",
