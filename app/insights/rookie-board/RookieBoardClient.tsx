@@ -9,10 +9,10 @@
 // HTML (crawlable). This component layers the Board/Burn view toggle and the
 // tier/parallel filters on top, filtering in-memory (the dataset is small).
 //
-// HONESTY CONTRACT (load-bearing): has_full_economics=false rows are PARALLEL
-// (::subID) editions — they carry FMV + circulation ONLY. ask/avg/offer/burned/
-// locked are NULL by definition and render "—", never $0. Only base (Standard)
-// rows show the full economics columns. The per-parallel FMV is the differentiator
+// HONESTY CONTRACT (load-bearing): has_full_economics=false rows have no badge
+// row for that printing — FMV + circulation ONLY; ask/avg/offer/burned/locked are
+// NULL and render "—", never $0. (Until badge data went per-parallel this meant
+// "every parallel"; read 2026-10-22, all 336 rookie parallels have their own.) The per-parallel FMV is the differentiator
 // vs the competitor's single blended average per moment. (The public copy used to
 // advertise a "confidence tag" alongside it; that named an internal enum and came
 // off 2026-08-01 under the standing no-confidence-UI policy — the tag was never
@@ -545,9 +545,9 @@ export default function RookieBoardClient({ initialRows, initialFetchedAt, initi
           </p>
           <p>
             FMV and circulation come from RPC&apos;s own indexer for every printing. Ask, average sale, top
-            offer, <strong>burn</strong> and <strong>lock</strong> rates are tracked on the Standard editions
-            (the on-chain badge data is base-only); parallel rows show “—” for those, never a fake $0. Click
-            any printing for its full edition page.
+            offer, <strong>burn</strong> and <strong>lock</strong> rates come from each printing&apos;s own
+            on-chain badge data — the Standard and each parallel separately. A printing with no badge data
+            shows “—” for those, never a fake $0. Click any printing for its full edition page.
           </p>
         </div>
         <div className="rpc-rb-share">

@@ -8,15 +8,20 @@
 //   2026 classes; `rookie_class` names the class.
 //
 // Data-honesty contract (must be respected by every renderer):
-//   has_full_economics=true  → BASE editions only. low_ask / highest_offer /
-//                              avg_sale_price / burned / locked / *_rate_pct are
-//                              real. (badge_editions is base-only.)
-//   has_full_economics=false → PARALLEL (::subID) rows. They carry FMV +
-//                              circulation_count ONLY; every ask/offer/sale/burn/
-//                              lock field is NULL by definition — render "—",
-//                              never $0.
+//   has_full_economics=true  → the printing has its OWN badge_editions row, so
+//                              low_ask / highest_offer / avg_sale_price / burned /
+//                              locked / *_rate_pct are real for THAT printing.
+//                              ⚠ This used to mean "base editions only" — badge
+//                              data was base-only. Read 2026-10-22: every one of
+//                              the 336 rookie parallel rows has its own badge row
+//                              (181 with burns, 0 mirroring their base, 1 of 336
+//                              asks equal to the base's), so parallels carry real,
+//                              independent economics too.
+//   has_full_economics=false → no badge row for the printing: FMV + circulation
+//                              only; every ask/offer/sale/burn/lock field is NULL
+//                              — render "—", never $0.
 //
-// The dataset is small (~431 rows / 61 players / 7 parallels), so the page
+// The dataset is small (559 rows / 63 players / 7 parallels on 2026-10-22), so the page
 // fetches the whole board once and groups client-side. The API route exists for
 // the OG card, the rpc-insights-qa gate, and external consumers, and supports
 // server-side filtering for the burn-rankings mode + drill-down filters.
@@ -159,8 +164,9 @@ export async function fetchRookieEditionBoard(
   if (opts.rookieClass) q = q.eq("rookie_class", opts.rookieClass)
 
   if (opts.mode === "burn") {
-    // Burn rankings are only meaningful on base editions (parallels carry no
-    // burn data). Surface the editions that have actually been burned.
+    // Burn rankings need real burn data: printings with their own badge row
+    // (base AND, since badge data went per-parallel, parallels). Surface the
+    // printings that have actually been burned.
     q = q.eq("has_full_economics", true).gt("burned", 0)
   }
 

@@ -4,9 +4,9 @@
 // topshot_rookie_edition_board view via the service-role client. Feeds the page
 // (when filtered server-side), the OG card, and external consumers.
 //
-// Honesty: parallel (::subID) rows carry FMV + circulation ONLY — every
-// ask/offer/sale/burn/lock field is NULL. The `has_full_economics` flag tells a
-// consumer which fields are real; the view already enforces it.
+// Honesty: `has_full_economics` says whether a printing (base or parallel) has its
+// own badge row; without one, every ask/offer/sale/burn/lock field is NULL. The
+// view enforces it (see lib/rookie-edition-board.ts for the 2026-10-22 read).
 
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin as supabase } from "@/lib/supabase"
