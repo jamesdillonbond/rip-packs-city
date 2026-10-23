@@ -108,7 +108,26 @@ WAU); its *measurements* were superseded five times over. **For any number, scro
 
 ---
 
-## ⭐ HEADLINE METRIC — re-read live 2026-10-17 ~6 PM PT from `rpc_trust_health_history`, BY PT WEEK (supersedes the 10-10 block below)
+## ⭐ HEADLINE METRIC — re-read live 2026-10-22 ~9:30 PM PT from `rpc_trust_health_history`, BY PT WEEK (supersedes the 10-17 block below)
+
+Same instrument (six-hourly precompute legs, weekly mean; weeks start Monday). **Wk 10-19 is PARTIAL: 16 legs, Monday 10-19 → Thursday 10-22 ~6:50 PM PT.** Values are `value <> 999` legs only. Cowork cloud, read-only.
+
+| collection | bar | wk 10-05 | wk 10-12 | wk 10-19 (partial, 16 legs) | spread (lo–hi) |
+|---|---|---:|---:|---:|---|
+| Top Shot (M1) | ≥ 50 % | 57.1 | 54.8 | **44.5** 🔴 by decision | 44.0–44.7 |
+| All Day (M2) | ≥ 30 % | 27.2 | 26.7 | **27.3** 🔴 | 27.0–27.6 |
+| Pinnacle (own leg, never average it) | — | 31.5 | 32.8 | **33.4** | 32.9–34.6 |
+| Candy MLB | — | 23.0 | 56.0 | **54.1** ⚠ relabel, frozen market | 49.6–57.6 |
+| Panini | — | — | 29.0 (18 legs) | **42.4** | 36.4–45.2 |
+| Golazos | — | 1.0 | 1.0 | **0.1** | 0–0.2 |
+| UFC | — | 0.0 | 0.0 | **0.0** (closed: honest) | — |
+
+- 🔴 **M1 is under its bar for the first time since 09-21, and this was DECIDED, not discovered.** 1.8.2 (`gateMediumToRecentSale`, 10-17 ~9:35 PM PT, Trevor delegated) makes MEDIUM need a usable sale in 30 days; the decision record priced it at "M1 reads ~44 % until more editions trade". The 10-19 week landed at 44.5 with a 0.7-point spread — the predicted level, flat, not drifting. The accuracy half did not move: Top Shot 7-day backtest 10-22, HIGH 10.0 % MdAPE / 81.4 % within ±25 % (naive 10.0 / 81.9), ALL 16.0 / 65.1 (naive 15.0 / 66.8). ⚠ **New this week: the published ratio reads 0.952** (HIGH 0.960, MEDIUM 0.952; was 1.000 on 10-17) while naive last-3 reads 1.000 — Series 2026-27 launch week, where a 7-sale median lags a rising market more than a 3-sale one. One week is a watch, not a finding; a second week at ≤ 0.95 is the thing to bring to Trevor with the bar question (the 30-day window turns over ~11-17).
+- **M2 27.3, flat.** 0 legs at the bar this week. ASK_ONLY accuracy was addressed 10-22 (#208: ask × 0.90 capped at the edition's last-3 sales within 180 d, backtested 1.80 → 1.00 ratio) — that moves All Day's realised-sales error, not its HIGH/MEDIUM share.
+- **Panini 42.4** is the 1.3.x re-grade finishing (done ~10-20 evening) plus coverage growth, not a backtested gain; its live 1.3.0 read (10-21 morning) put HIGH at 56.0 % within ±25 % vs naive 67.3 on the same sales. **Golazos 0.1**: its newest sale (10-01) left the 30-day window — honest. **Candy 54.1**: the 10-11 relabel, still unscored (market frozen since 10-11 8:21 PM PT, #58); expect the fall from ~11-10.
+- **Demand**: unchanged from the 10-22 morning read (block below); next re-read on/after 10-29.
+
+## ⭐ HEADLINE METRIC — re-read live 2026-10-17 ~6 PM PT from `rpc_trust_health_history`, BY PT WEEK (supersedes the 10-10 block below) [SUPERSEDED by the 10-22 block above]
 
 Same instrument as 10-10 (six-hourly precompute legs, weekly mean; weeks start Monday; wk 10-12 = 23 legs to the 12:50 PM PT leg). The plan these feed: [roadmap-2026-10-17.md](../strategy/roadmap-2026-10-17.md) §2.
 

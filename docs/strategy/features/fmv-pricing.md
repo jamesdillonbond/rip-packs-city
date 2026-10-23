@@ -9,15 +9,17 @@ FMV is the product's core claim and the accuracy gate's subject. One engine per 
 - **Panini**: engine `panini-1.3.0` (10-15). Prices are unchanged from 1.2.0; confidence is re-graded by how closely the last ≤3 sales agree.
 - **Read path**: `edition_fmv_current` (denormalised; R107/R126 keep it in sync with haircut writes) plus the display and thin-FMV guards.
 
-**Headline metric M1/M2.** HIGH/MED share from `rpc_trust_health_precompute`. Read the series in `rpc_trust_health_history`, never a single leg. Live 10-17 ~12:48 PM PT:
+**Headline metric M1/M2.** HIGH/MED share from `rpc_trust_health_precompute`. Read the series in `rpc_trust_health_history`, never a single leg. Weekly means of the six-hourly legs (weeks start Monday; wk 10-19 = 16 legs to 10-22 ~6:50 PM PT), read 10-22 ~9:30 PM PT:
 
-| Top Shot (M1, bar 50) | All Day (M2, bar 30) | Candy | Pinnacle* | Panini* | Golazos | UFC |
-|---|---|---|---|---|---|---|
-| **55.2** | **26.4** | 56.8 | 33.9 | 32.0 | 1.0 | 0.0 |
+| week | Top Shot (M1, bar 50) | All Day (M2, bar 30) | Candy | Pinnacle* | Panini* | Golazos | UFC |
+|---|---|---|---|---|---|---|---|
+| 10-05 | 57.1 | 27.2 | 23.0 | 31.5 | — | 1.0 | 0.0 |
+| 10-12 | 54.8 | 26.7 | 56.0 | 32.8 | 29.0 | 1.0 | 0.0 |
+| **10-19 (partial)** | **44.5** (44.0–44.7) | **27.3** (27.0–27.6) | 54.1 | 33.4 | 42.4 | 0.1 | 0.0 |
 
-\* Pinnacle and Panini come from different tables and grains. Never average them into an estate figure. M1 has been met on every leg since 09-21. M2 has had 0 legs at the bar since the week of 09-28.
+\* Pinnacle and Panini come from different tables and grains. Never average them into an estate figure. **M1 reads BELOW its bar for the first time since 09-21 — by the 10-17 decision, not by a pricing regression:** 1.8.2 (`gateMediumToRecentSale`) made MEDIUM need a usable sale in 30 days, and the decision record priced that at "M1 reads ~44 % until more editions trade" (below). The 10-19 week landed at 44.5 with a 0.7-point spread, i.e. the predicted level, not a drift. The out-of-sample accuracy (next paragraph) is the gate's other half and did not move. M2 has had 0 legs at the bar since the week of 09-28 except the 10-18 12:48 AM leg (30.8, the corroboration fix). Golazos's 0.1 is its newest sale (10-01) leaving the window.
 
-**Out-of-sample accuracy** (`fmv_sales_backtest` / `topshot_fmv_backtest`, R125): Top Shot 7 d, published median absolute error 14.3 % at ratio 1.000; HIGH 9.5 % (10-17 afternoon pass). R125 closed 10-17 on a PAIRED read: published matches or beats a naive last-3 median on TS HIGH/MED and AD MED/LOW.
+**Out-of-sample accuracy** (`fmv_sales_backtest` / `topshot_fmv_backtest`, R125): Top Shot 7 d, published median absolute error 14.3 % at ratio 1.000; HIGH 9.5 % (10-17 afternoon pass). R125 closed 10-17 on a PAIRED read: published matches or beats a naive last-3 median on TS HIGH/MED and AD MED/LOW. **Re-read 10-22 ~9:40 PM PT (7 d):** Top Shot published 16.0 % MdAPE, within ±25 % 65.1, **ratio 0.952** (naive last-3: 15.0 / 66.8 / 1.000; HIGH level at 10.0 / 81.4 vs 10.0 / 81.9; MEDIUM 18.2 / 61.5 vs 16.7 / 62.9 — 1.4 points, inside the 3-point reopen rule). The ratio sitting ~5 % under 1.0 is new this week (Series 2026-27 launch week; a 7-sale median lags a rising market more than a 3-sale one) — a watch, not a finding, until a second week says the same. All Day published HIGH 7.1 / 84.5 (beats naive 12.5 / 70.8), MEDIUM 20.0 / 59.7 (level), LOW 25.9 / 49.5 vs 23.1 / 51.9; **ASK_ONLY 170 % / 8.6 / ratio 2.70 (n 105)** → shipped as the cap in the 10-22 bullet below (#208).
 
 ## Shipped recently (since mid-September)
 
@@ -47,6 +49,7 @@ FMV is the product's core claim and the accuracy gate's subject. One engine per 
 - **10-17:**
   - The sweep cursor advances past a genuinely-empty page. This fixes the `fmv_sweep_wedge_hours` breach of 4.53 h: every run logged `ok` while wedged.
   - The thin-FMV and display guards compute before they TRUNCATE, which ends the `[edition] insight_links` statement timeouts.
+- **10-22 (#208, Cowork cloud, `20261023044923`):** an **All Day ASK_ONLY** price is capped at the median of the edition's last 3 market sales within 180 days, by a BEFORE INSERT guard on `fmv_snapshots` that covers all three writers of that price (fmv-recalc 1.8.x, `drain_fmv_cold_tail`, `allday-listing-ask-v1`). Why: the ask × 0.90 price backtested at ratio 1.80 over 30 d (n 326; offer fills 2.70) and `min(ask price, last-3 median)` at 1.00 / within25 34.4 / WAPE 61.6 — the "do 31–180-day sales predict today's price" backtest the 10-18 note asked for. Scope is All Day only by measurement (Top Shot's ASK_ONLY reads 0.97; the cap would not help it). 682 current rows re-stamped in place (backup table). Exit ~10-30: the 7-day ASK_ONLY row near ratio 1.0, within ±25 % ≥ 30 %.
 
 ## Open issues
 
@@ -64,6 +67,7 @@ FMV is the product's core claim and the accuracy gate's subject. One engine per 
   - Candy's last indexed sale was 10-11 8:21 PM PT: Magic Eden silent, OpenSea unkeyed (#58).
   - Golazos's last sale was 10-01. UFC is closed.
   - Confidence on those must decay honestly. Candy's 56.8 % is a relabel from `a56214193` (10-11; the lifted cohort was backtested at 19.2 % before ship), not a failed read. But no sale has scored it since, and it should fall from ~11-10 as pre-freeze sales leave the 30 d window ([candy-mlb.md](../collections/candy-mlb.md)).
+- **#208 residue (10-22):** 591 All Day ASK_ONLY editions have no sale in 180 d, so the ask × 0.90 is still their only input (70 of the 326 backtest sales); pricing them between a bid and the ask needs an All Day bid book RPC does not index. Side finding: `fmv_apply_thin_sale_haircut` is inert on ask × 0.90 rows (its `fmv ≈ floor` predicate never matches fmv = 0.9 × floor), so its depth-based haircut has not applied to an ASK_ONLY row since the × 0.90 convention began — decide whether it should (it would stack with the new cap) before touching it.
 - **#174:** `/api/fmv-backfill` still stamps `1.5.0` with the old formula. Decided no change, but it is a second writer of one column.
 - **`fmv-recalc` cost:** "wasteful, not broken" (roadmap-status 09-04 sizing). Re-derive per-call blocks before any lever.
 

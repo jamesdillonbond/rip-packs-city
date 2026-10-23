@@ -64,7 +64,7 @@
 
    This is the R123 write-side class: a run counted a success that resolved nothing. It matches the route's own warning that pre-current-spork transactions cannot be decoded via current REST. If so, the 10-10 sizing (82,984 rows, ~22 days) counted rows that can never resolve. Total null-buyer All Day `sales`: 590,508 (live). ✅ **Filed and fixed the same evening as [#192](../../reference/known-issues.md):** the floor is now mainnet27's root (2025-10-22); a decode wall or a failed UPDATE fails the run. Pre-spork null-buyer rows are retired from this lane, not resolved.
 3. **Flowty shutdown pending** (Trevor 09-25, "soon"). `allday-listing-cache` still ingests 72/72 a day into legacy `cached_listings`. No priced column depends on it (re-verified 10-03), and the remaining work is only teardown.
-4. **ASK_ONLY 1,205 and STALE 882 together are a third of the catalogue.** ASK_ONLY is the worst backtest bucket (ratio ~1.8, n 68). STALE (median $69) moves only with sales.
+4. **ASK_ONLY 1,205 and STALE 882 together are a third of the catalogue.** ASK_ONLY is the worst backtest bucket (ratio ~1.8, n 68). STALE (median $69) moves only with sales. ✅ **10-22 ~9:50 PM PT (Cowork cloud, [#208](../../reference/known-issues.md), `20261023044923`): the ASK_ONLY half is addressed.** Re-measured at n 326 / 30 d: ratio 1.80, within ±25 % 25.2 %, WAPE 132 % — 115 offer fills at ratio 2.70, 211 listing purchases at 1.35; the asks were fresh, so the lowest ask on a thin edition is simply not where it clears. An All Day ASK_ONLY price is now capped at the median of the edition's last 3 market sales within 180 d (BEFORE INSERT guard, all three writers; backtested `min(ask price, last-3)` 1.00 / 34.4 / 61.6 on the 256 sales with such a history); 682 of 1,392 current rows re-stamped ($130,408 → $120,820). The 591 with no sale in 180 d keep the ask × 0.90 — nothing else to price from without a bid book. STALE's 21 listing sales in 30 d read ratio 6.0 (n small) — same shape, next candidate once n is meaningful.
 
 ## Next — prioritized
 
@@ -106,6 +106,7 @@
   - Gate: the lane's own `pageErrors` and empty-book failures, not one probe.
 - **Weekly paired backtest read.**
   - Why: R125 reopens if a tier's paired within-25 share sits > 3 pts below last-3 on two consecutive weeks.
+  - ↳ **Read 10-22 ~9:40 PM PT (Cowork cloud, 7 d):** HIGH published 7.1 % / 84.5 within ±25 % (naive 12.5 / 70.8 — published wins), MEDIUM 20.0 / 59.7 vs 20.0 / 58.1 (level), LOW 25.9 / 49.5 vs 23.1 / 51.9 (2.4 pts below; inside the rule, first week). ASK_ONLY 170 % / 8.6 / ratio 2.70 → the #208 cap above. Next read ~10-29.
 
 **Later**
 - **Book M2 per full NFL week** from the series, never a leg. The season runs to February, so volume will fall after it.
