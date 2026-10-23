@@ -1978,6 +1978,12 @@ const PINS = [
       "supabase/migrations/20260804060000_audit_20260804_fmv_zero_stale_sales_count.sql",
   },
   {
+    fn: "fmv_snapshots_cap_allday_ask_only_to_recent_sales",
+    test: "supabase/tests/fmv_snapshots_cap_allday_ask_only_to_recent_sales.sql",
+    migration:
+      "supabase/migrations/20261023044923_audit_20261023_fmv_snapshots_cap_allday_ask_only_to_recent_sales.sql",
+  },
+  {
     fn: "fmv_snapshots_block_stale_ingest_algo",
     test: "supabase/tests/fmv_snapshots_block_stale_ingest_algo.sql",
     migration:

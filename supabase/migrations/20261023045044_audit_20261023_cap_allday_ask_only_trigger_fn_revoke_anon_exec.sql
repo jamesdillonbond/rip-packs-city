@@ -1,0 +1,12 @@
+-- audit_20261023_cap_allday_ask_only_trigger_fn_revoke_anon_exec
+--
+-- Follow-up to 20261023044923 (same pass, ~9:55 PM PT 10-22): the new trigger function was
+-- created SECURITY DEFINER with PostgreSQL's default PUBLIC EXECUTE, and
+-- check_secdef_anon_exec_drift() flagged it at once (anon: true, authenticated: true).
+-- Its siblings on fmv_snapshots (cap_closed_market_confidence, zero_stale_sales_count,
+-- block_phantoms) carry {postgres=X, service_role=X} only. Match them: a trigger function
+-- is fired by the INSERT, never called through PostgREST, and EXECUTE is checked when the
+-- trigger is created, not when it fires.
+-- anon-exec: intentional — REVOKE only; no function body in this file (fmv_snapshots_cap_allday_ask_only_to_recent_sales)
+-- REVERT: GRANT EXECUTE ON FUNCTION public.fmv_snapshots_cap_allday_ask_only_to_recent_sales() TO PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.fmv_snapshots_cap_allday_ask_only_to_recent_sales() FROM PUBLIC, anon, authenticated;
