@@ -686,6 +686,50 @@ describe("segment 3 — set/player/team entities + top moments", () => {
     // found nothing would pass the assertion above vacuously).
     expect(s.length).toBeGreaterThan(0)
   })
+
+  // 2026-10-23: the cross-collection hubs became indexable on 10-22 evening
+  // (player hubs; franchise hubs once their Panini panel counts) and the sitemap
+  // did not list them. Both readers are set-returning RPCs, PAGED past the
+  // 1,000-row clamp; a failed read fails the segment (never a partial list).
+  it("lists the indexable player hubs (/players/<slug>) and franchise hubs (/teams/<league>/<slug>), paged past 1,000 rows, with no fabricated lastModified (2026-10-23)", async () => {
+    const players = Array.from({ length: 1100 }, (_, i) => ({ slug: `hub-${String(i).padStart(4, "0")}` }))
+    players[1050] = { slug: "damian-lillard" }
+    h.r.list_indexable_player_hubs = ok(players)
+    h.r.list_indexable_franchise_hubs = ok([{ league: "MLB", slug: "tigers" }, { league: "NBA", slug: "blazers" }])
+    try {
+      const s = await buildSitemapSegment(3)
+      const hubs = s.filter((x) => x.url.includes("/players/") || x.url.includes("/teams/"))
+      expect(hubs).toHaveLength(1102)
+      expect(hubs.map((x) => x.url)).toContain(`${BASE}/players/damian-lillard`)
+      expect(hubs.map((x) => x.url)).toContain(`${BASE}/teams/nba/blazers`)
+      expect(hubs.map((x) => x.url)).toContain(`${BASE}/teams/mlb/tigers`)
+      // the league is lower-cased in the URL (franchiseHubPath), the slug kept
+      expect(hubs.some((x) => x.url.includes("/teams/NBA/"))).toBe(false)
+      // never "now": a hub's freshness is not carried by this read
+      expect(hubs.every((x) => x.lastModified === undefined)).toBe(true)
+    } finally {
+      delete h.r.list_indexable_player_hubs
+      delete h.r.list_indexable_franchise_hubs
+    }
+  })
+
+  it("a hub-list read FAILURE (either reader) rejects — never a sitemap silently missing the hubs (2026-10-23)", async () => {
+    try {
+      h.r.list_indexable_player_hubs = err("canceling statement due to statement timeout")
+      await expect(buildSitemapSegment(3)).rejects.toThrow(/list_indexable_player_hubs read failed: canceling statement/)
+      h.r.list_indexable_player_hubs = ok([])
+      h.r.list_indexable_franchise_hubs = { data: null, error: null }
+      await expect(buildSitemapSegment(3)).rejects.toThrow(/list_indexable_franchise_hubs returned no list/)
+    } finally {
+      delete h.r.list_indexable_player_hubs
+      delete h.r.list_indexable_franchise_hubs
+    }
+  })
+
+  it("NO-CHANGE CONTROL: with no indexable hubs the segment still builds, listing none (2026-10-23)", async () => {
+    const s = await buildSitemapSegment(3)
+    expect(s.filter((x) => x.url.includes("/players/") || x.url.includes("/teams/"))).toHaveLength(0)
+  })
 })
 
 describe("segment 4 — pack distributions + Pinnacle pins", () => {

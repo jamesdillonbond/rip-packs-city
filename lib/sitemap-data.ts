@@ -74,6 +74,8 @@ import { isTeamMoment, pinnacleFranchiseName } from '@/lib/entity-href'
 import { isExhibitionTeamSlug } from '@/lib/team-denylist'
 import { CANDY_MLB_PUBLIC, PANINI_PUBLIC } from '@/lib/launch-flags'
 import { PUBLIC_TAB_PAGES } from '@/lib/seo'
+import { franchiseHubPath } from '@/lib/franchise-hub-path'
+import { playerHubPath } from '@/lib/player-hub-path'
 
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.rippackscity.com'
 
@@ -109,9 +111,11 @@ export const STATIC_SITEMAP_PAGES: ReadonlyArray<{
   { path: '/blog/pinnacle-star-wars-day-2026', changeFrequency: 'monthly', priority: 0.5 },
   { path: '/blog/premium-chance-hit-vs-chance-hit', changeFrequency: 'monthly', priority: 0.5 },
   // 2026-09-25: the team-hub directory (app/teams/page.tsx). The hubs it links
-  // stay OUT of the sitemap while hubIsIndexable() keeps them noindex (one
-  // collection per league today) — a noindex URL in a sitemap is a
-  // contradiction the crawler resolves against us.
+  // were kept OUT of the sitemap while hubIsIndexable() kept them noindex (one
+  // collection per league then) — a noindex URL in a sitemap is a
+  // contradiction the crawler resolves against us. 2026-10-23: the hubs a page
+  // renders indexable (Panini panel = a second collection, 10-22) are listed in
+  // segment 3 from list_indexable_franchise_hubs(); the rest stay out.
   { path: '/teams',                            changeFrequency: 'weekly',  priority: 0.6 },
   // /nba/fast-break added 2026-08-01: public (proxy.ts) and the header comment
   // at the top of this file had claimed it was covered since the file was
@@ -554,6 +558,62 @@ async function getRoutableSetSlugs(): Promise<Set<string>> {
  * `panini_product_set_pages()`, ~1,070 rows — past PostgREST's 1,000-row clamp, so it is paged.
  * A failed or partial read throws (this file's contract).
  */
+/**
+ * The cross-collection hubs the sitemap lists (2026-10-23). Both hub pages
+ * became indexable on 10-22 evening: a player hub (/players/<slug>) is
+ * `index, follow` when one sport group gathers 2+ collections, and a franchise
+ * hub (/teams/<league>/<slug>) once its Panini panel counts as a gathered
+ * collection — the 30 NBA franchises flipped that night. The 09-25 note on the
+ * static list ("the hubs stay OUT while hubIsIndexable() keeps them noindex")
+ * had inverted. `list_indexable_player_hubs()` / `list_indexable_franchise_hubs()`
+ * are the BULK form of the predicate each page applies (and the player hub's
+ * canonical_slug rule), so the sitemap agrees with the page by construction —
+ * 40 of 40 sampled slugs read canonical = slug through get_player_hub on apply.
+ *
+ * Both are set-returning RPCs, so they are PAGED like panini_product_set_pages
+ * (PostgREST clamps a set-returning result at 1,000 rows silently; the player
+ * list is ~2,000). A failed or partial read throws (this file's contract).
+ */
+async function getIndexableHubPaths(): Promise<string[]> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!url || !key) throw new SitemapReadIncomplete('indexable hubs: supabase env missing, so nothing could be read')
+  const sb: any = createClient(url, key)
+  const PAGE = 1000
+  const out: string[] = []
+
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await sb
+      .rpc('list_indexable_player_hubs')
+      .order('slug', { ascending: true })
+      .range(from, from + PAGE - 1)
+    if (error) throw new SitemapReadIncomplete('list_indexable_player_hubs read failed: ' + error.message)
+    if (!Array.isArray(data)) throw new SitemapReadIncomplete('list_indexable_player_hubs returned no list')
+    for (const r of data as Array<{ slug?: unknown }>) {
+      if (typeof r.slug === 'string' && r.slug) out.push(playerHubPath(r.slug))
+    }
+    if (data.length < PAGE) break
+  }
+
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await sb
+      .rpc('list_indexable_franchise_hubs')
+      .order('league', { ascending: true })
+      .order('slug', { ascending: true })
+      .range(from, from + PAGE - 1)
+    if (error) throw new SitemapReadIncomplete('list_indexable_franchise_hubs read failed: ' + error.message)
+    if (!Array.isArray(data)) throw new SitemapReadIncomplete('list_indexable_franchise_hubs returned no list')
+    for (const r of data as Array<{ league?: unknown; slug?: unknown }>) {
+      if (typeof r.league === 'string' && r.league && typeof r.slug === 'string' && r.slug) {
+        out.push(franchiseHubPath(r.league, r.slug))
+      }
+    }
+    if (data.length < PAGE) break
+  }
+
+  return out
+}
+
 async function getPaniniProductSetPages(): Promise<Array<{ slug: string; editions: number; ts: Date | null }>> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -892,6 +952,7 @@ async function buildSitemapSegmentUncapped(id: number): Promise<MetadataRoute.Si
     const historicTeams = await getHistoricTeamSlugs(EDITION_COLLECTION_IDS)
     const routableSets = await getRoutableSetSlugs()
     const paniniProductSets = await getPaniniProductSetPages()
+    const hubPaths = await getIndexableHubPaths()
 
     // /moment/<edition uuid> is NO LONGER LISTED (2026-09-06, Search Console).
     // Every one of those URLs canonicalises to /<collection>/edition/<slug>
@@ -994,6 +1055,15 @@ async function buildSitemapSegmentUncapped(id: number): Promise<MetadataRoute.Si
       ...entityPages(setMap, 'set', 0.6),
       ...entityPages(playerMap, 'player', 0.6),
       ...entityPages(teamMap, 'team', 0.55),
+      // Cross-collection hubs (2026-10-23): the player hubs and franchise hubs
+      // their pages render indexable (getIndexableHubPaths). No lastModified —
+      // a hub's freshness is its panels', which this read does not carry, and
+      // "now" is never written (header).
+      ...hubPaths.map((path) => ({
+        url: `${BASE_URL}${path}`,
+        changeFrequency: 'weekly' as const,
+        priority: 0.6,
+      })),
     ]
   }
 

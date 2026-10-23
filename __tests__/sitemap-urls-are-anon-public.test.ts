@@ -50,11 +50,17 @@ vi.mock("@supabase/supabase-js", () => ({
     // 2026-09-25 (batch 62): segment 3 asks team_historic_slugs per collection
     // and treats a non-list answer as a failed read; an answered-empty list here.
     // 2026-10-21 (#204): panini_product_set_pages is paged (.order().range()), so a thenable builder.
-    rpc: () => {
+    // 2026-10-23: the two hub readers answer one row each, so the sweep below
+    // proves /players/<slug> and /teams/<league>/<slug> are anon-public too.
+    rpc: (fn: string) => {
       const r: any = {}
       r.order = () => r
       r.range = () => r
-      r.then = (resolve: any, reject: any) => Promise.resolve({ data: [], error: null }).then(resolve, reject)
+      const data =
+        fn === "list_indexable_player_hubs" ? [{ slug: "damian-lillard" }]
+        : fn === "list_indexable_franchise_hubs" ? [{ league: "NBA", slug: "blazers" }]
+        : []
+      r.then = (resolve: any, reject: any) => Promise.resolve({ data, error: null }).then(resolve, reject)
       return r
     },
   }),

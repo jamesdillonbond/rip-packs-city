@@ -47,6 +47,8 @@ Boards read precomputed MVs or cached reads. Their honesty layer is `boardUnavai
 - **10-14 (from the traffic read):** Panini username band, share-card sign-up CTA, dashboard first-alert card, `/login` `magic-link-requested` beacon.
 - **10-15:** squeeze "Top 5 hold" is walk-confirmed against live supply. The Panini squeeze MV refreshes hourly.
 - **10-17:** UFC Series 0 is noindex and out of the sitemap ("Submitted URL marked noindex" avoided).
+- **10-22 (Claude Code cloud):** player hubs `/players/<slug>` (every collection carrying a name, grouped by sport; indexable when one sport group gathers 2+ collections) and Panini on the franchise hubs (`/teams/nba/<slug>` indexable once the Panini panel counts); accent-blind search platform-wide (#207); the 2026 rookie class on both rookie boards.
+- **10-23 (Cowork cloud, `20261023073556`):** **the sitemap lists those hubs** — segment 3 gains ~2,008 player hubs (basketball 866, football 845, soccer 228, baseball 45) and 31 franchise hubs (30 NBA + MLB tigers) from two bulk readers that apply the pages' own indexability predicates and get_player_hub's canonical slug (40/40 sampled agree). Read the two families in Search Console ~10-30.
 
 ## Open issues
 

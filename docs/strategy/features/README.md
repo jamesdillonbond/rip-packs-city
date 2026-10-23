@@ -21,6 +21,6 @@
 - ✅ 10-20 Series 2026-27 ingest check (done; first mint 10-21, Rookie Debut early) · ✅ 10-22 demand re-read (done, `scripts/demand-read.sql`; next on/after 10-29).
 - **10-24:** #181 retire/keep pre-mainnet27 lookups (still dark 10-22; 1,241 floor probes) · Pinnacle #193 gate lands (HIGH n 467 of 500 on 10-22) · Panini 1.4.0 window opens.
 - **10-26 ~7:23 AM PT:** the weekly missing-fill walk re-seeds its cursor — `check_backward_cursor_rewind()` must stay `[]` (direction-by-majority fix, 10-22).
-- **~10-28:** R73 concierge watch · Search Console re-read · #202 `panini_fmv_ask_cap_shadow_backtest(7)`.
+- **~10-28:** R73 concierge watch · Search Console re-read (now incl. the `/players/` and `/teams/nba/` hub families the sitemap lists since 10-23) · #202 `panini_fmv_ask_cap_shadow_backtest(7)`.
 - **~10-30, then weekly:** #208 — `fmv_sales_backtest('nfl_all_day', 7)` ASK_ONLY row near ratio 1.0, within ±25 % ≥ 30 %.
 - **On or after 11-11:** rookie class rebuilt from Series 9.

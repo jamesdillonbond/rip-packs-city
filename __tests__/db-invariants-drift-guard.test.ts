@@ -1984,6 +1984,18 @@ const PINS = [
       "supabase/migrations/20261023044923_audit_20261023_fmv_snapshots_cap_allday_ask_only_to_recent_sales.sql",
   },
   {
+    // 2026-10-23: the sitemap's readers for the cross-collection hubs — the bulk form
+    // of the predicate each hub page applies (and get_player_hub's canonical slug).
+    fn: "list_indexable_player_hubs",
+    test: "supabase/tests/list_indexable_hubs.sql",
+    migration: "supabase/migrations/20261023073556_audit_20261023_sitemap_lists_the_indexable_hubs.sql",
+  },
+  {
+    fn: "list_indexable_franchise_hubs",
+    test: "supabase/tests/list_indexable_hubs.sql",
+    migration: "supabase/migrations/20261023073556_audit_20261023_sitemap_lists_the_indexable_hubs.sql",
+  },
+  {
     fn: "fmv_snapshots_block_stale_ingest_algo",
     test: "supabase/tests/fmv_snapshots_block_stale_ingest_algo.sql",
     migration:
