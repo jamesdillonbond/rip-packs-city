@@ -999,6 +999,7 @@ function SniperMomentsBody() {
             playerInput={playerInput}
             onPlayerChange={handlePlayerChange}
             teamOptions={teamOptions}
+            teamPending={!data && loading && !isUfc}
             teamFilter={teamFilter}
             onTeamChange={setTeamFilter}
             studioOptions={studioOptions}

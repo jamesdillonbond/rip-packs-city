@@ -25,6 +25,8 @@ export default function SniperFilterBar(props: {
   onPlayerChange: (value: string) => void;
   /** Team (sports) / Franchise (Disney Pinnacle) dropdown — options from the board. */
   teamOptions?: string[];
+  /** The first feed read is still in flight: hold the Team control's place (disabled) instead of popping it in later. */
+  teamPending?: boolean;
   teamFilter?: string;
   onTeamChange?: (value: string) => void;
   /** Studio dropdown (Disney Pinnacle) — options from the board; hidden under 2. */
@@ -70,7 +72,7 @@ export default function SniperFilterBar(props: {
     isMobile, isPinnacle, isAllDay, accent, collectionSlug,
     showFilters, onToggleFilters,
     playerInput, onPlayerChange,
-    teamOptions = [], teamFilter = "all", onTeamChange,
+    teamOptions = [], teamFilter = "all", onTeamChange, teamPending = false,
     studioOptions = [], studioFilter = "all", onStudioChange,
     showChaserToggle = false, chaserOnly = false, onChaserOnlyChange,
     tierTab, tabs, onTierChange,
@@ -121,6 +123,23 @@ export default function SniperFilterBar(props: {
               onChange={onTeamChange}
               maxWidth={isMobile ? "100%" : 200}
             />
+          </div>
+        )}
+        {/* 2026-10-22 — until the first feed read lands there are no options, so the
+            control used to appear seconds after the bar did (live on a phone). Hold
+            its place, disabled; a failed read is not "pending" and hides it as before. */}
+        {onTeamChange && teamPending && teamOptions.length < 2 && (
+          <div className="flex items-center gap-1.5" style={{ color: "var(--rpc-text-muted)" }}>
+            <span aria-hidden>{labels.team.toUpperCase()}</span>
+            <select
+              aria-label={labels.team}
+              aria-busy="true"
+              disabled
+              defaultValue=""
+              style={{ width: isMobile ? "100%" : 200, background: "var(--rpc-surface-raised)", border: "1px solid var(--rpc-border)", borderRadius: "var(--radius-sm)", padding: "6px 12px", color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: "var(--text-sm)", opacity: 0.7 }}
+            >
+              <option value="">{"Loading " + (labels.team === "Franchise" ? "franchises" : "teams") + "…"}</option>
+            </select>
           </div>
         )}
         {onStudioChange && studioOptions.length >= 2 && (

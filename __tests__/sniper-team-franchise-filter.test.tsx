@@ -119,3 +119,45 @@ describe("serialCellText — serial 0 is never printed as '#0'", () => {
     expect(serialCellText(0, "laliga-golazos")).toBe("—")
   })
 })
+
+// 2026-10-22 — live on a phone, the Team control appeared seconds after the bar
+// (its options come from the feed). While the first read is in flight the bar
+// now holds its place with a disabled "Loading teams…"; a failed read (not
+// pending) still hides it, so the placeholder never outlives the load.
+describe("the Team control while the first feed read is in flight", () => {
+  function pendingBar(slug: string, teamPending: boolean, teamOptions: string[] = []) {
+    return render(
+      <SniperFilterBar
+        isMobile={false} isPinnacle={slug === "disney-pinnacle"} isAllDay={false} isGolazos={false} accent="#A855F7" collectionSlug={slug}
+        showFilters onToggleFilters={() => {}} playerInput="" onPlayerChange={() => {}}
+        teamOptions={teamOptions} teamFilter="all" onTeamChange={() => {}} teamPending={teamPending}
+        tierTab="all" tabs={["all"]} onTierChange={() => {}} minDiscount={0} onMinDiscountChange={() => {}}
+        maxPrice={0} onMaxPriceChange={() => {}} search="" onSearchChange={() => {}} serialFilter="" onSerialChange={() => {}}
+        sortBy={"discount" as never} sortOptions={[]} onSortChange={() => {}} badgeOnly={false} onBadgeOnlyChange={() => {}}
+        showVerifiedOnly={false} onVerifiedChange={() => {}} afterFeesOnly={false} onAfterFeesChange={() => {}} ownedFilter="all" onOwnedFilterChange={() => {}} ownedCount={0}
+        leagueFilter={"all" as never} onLeagueChange={() => {}} copyLinkMsg={null} onCopyLink={() => {}}
+      />,
+    )
+  }
+  it("holds the place with a disabled, busy control named Team", () => {
+    pendingBar("nba-top-shot", true)
+    const ctl = screen.getByRole("combobox", { name: "Team" })
+    expect((ctl as HTMLSelectElement).disabled).toBe(true)
+    expect(ctl.getAttribute("aria-busy")).toBe("true")
+    expect(ctl.textContent).toBe("Loading teams…")
+  })
+  it("speaks the collection's vocabulary (Franchise on Pinnacle)", () => {
+    pendingBar("disney-pinnacle", true)
+    expect(screen.getByRole("combobox", { name: "Franchise" }).textContent).toBe("Loading franchises…")
+  })
+  it("is absent once not pending with nothing to choose (a failed or empty read)", () => {
+    pendingBar("nba-top-shot", false)
+    expect(screen.queryByRole("combobox", { name: "Team" })).toBeNull()
+    expect(screen.queryByText(/Loading teams/)).toBeNull()
+  })
+  it("gives way to the real control as soon as options exist", () => {
+    pendingBar("nba-top-shot", true, ["Boston Celtics", "Portland Trail Blazers"])
+    expect(screen.queryByText(/Loading teams/)).toBeNull()
+    expect(screen.getAllByRole("combobox", { name: "Team" }).every((el) => !(el as HTMLSelectElement).disabled)).toBe(true)
+  })
+})
