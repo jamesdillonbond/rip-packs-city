@@ -51,6 +51,20 @@ describe("buyer backfill verdict — custodial deposits are not decode failures"
   it("a mixed batch that resolved some rows stays ok", () => {
     expect(buyerBackfillVerdict({ found: 480, decodeFailed: 10, updateFailed: 0, custodial: 400 }).ok).toBe(true)
   })
+  // The persistence half (Cowork, 10-22 ~9 PM PT): without it every cursor wrap
+  // re-fetched ~1,300 custodial txs and spent 3 runs in 8 before a new row.
+  it("the candidate select excludes rows already recorded as custodial-held, keyed on the tx PROPOSER, never buyer_address", () => {
+    const route = readFileSync("app/api/admin/backfill-allday-buyers/route.ts", "utf8")
+    expect(route).toMatch(/\.or\(custodialProposerFilter\)/)
+    expect(route).toMatch(/proposer_address\.is\.null,proposer_address\.not\.in\./)
+    // the custodian never lands in buyer_address (#83)
+    expect(route).not.toMatch(/buyer_address\s*=\s*signers\.proposer/)
+    expect(route).not.toMatch(/patch\.buyer_address\s*=\s*signers\.proposer/)
+    // a signers write only after the tx was actually read
+    expect(route).toMatch(/dec\.custodialDeposit === true && signers\.ok && signers\.proposer !== null/)
+    expect(route).toContain("custodial_recorded: custodialRecorded")
+  })
+
   it("the route counts a custodial no-buyer row as custodial, not decode_failed, and reports it", () => {
     const route = readFileSync("app/api/admin/backfill-allday-buyers/route.ts", "utf8")
     expect(route).toMatch(/if \(dec\.custodialDeposit\) custodial\+\+\s*else decodeFailed\+\+/)

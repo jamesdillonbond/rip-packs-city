@@ -51,7 +51,9 @@ const EMPTY_V1_DECODE = {
   sampleAmounts: [],
 }
 
-vi.mock("@/lib/chains/flow/dapper-v1-tx-decode", () => ({
+vi.mock("@/lib/chains/flow/dapper-v1-tx-decode", async (importOriginal) => ({
+  // the route reads CUSTODIAL_DEPOSIT_TARGETS (a constant) from the real module
+  ...(await importOriginal<typeof import("@/lib/chains/flow/dapper-v1-tx-decode")>()),
   decodeTopShotSaleTx: async (tx: string, nftId: string) => {
     state.tsDecodeCalls.push({ tx, nftId })
     return state.decodeResults[tx] ?? EMPTY_TS_DECODE
@@ -525,6 +527,136 @@ describe("/api/admin/backfill-allday-buyers", () => {
       cursor_sold_at: null, // 3 < BATCH → wrapped
       wrapped: true,
     })
+  })
+
+  // Custodial-held rows, the persistence half (inbox 2026-10-23T0310Z; counting
+  // half in cd292b289): a Deposit to the Dapper custodian names no person. The
+  // lane records the tx's signers once (proposer/payer) and leaves buyer NULL, so
+  // the candidate select (which excludes a custodial proposer) stops re-asking.
+  function custodialSignersStub(tx: string): FetchStub {
+    return {
+      match: (url) => url.includes(`/v1/transactions/${tx}`),
+      respond: () => ({
+        json: {
+          // The real shape, read from the chain 2026-10-22: proposer = the custodian,
+          // authorizers = AllDay contract + DUC co-signer + custodian, payer = escrow.
+          proposal_key: { address: "ddfbe848a81b2236" },
+          authorizers: ["e4cf4bdc1751c65d", "ead892083b3e2c6c", "ddfbe848a81b2236"],
+          payer: "18eb4ee6b3c026d2",
+        },
+      }),
+    }
+  }
+  const CUSTODIAL_DECODE = {
+    ...EMPTY_V1_DECODE,
+    buyer: null,
+    seller: "0xseller9",
+    custodialDeposit: true,
+    priceReason: "matched",
+  }
+
+  it("records a custodial-held row's signers, leaves its buyer NULL, and keeps it apart from a decode failure", async () => {
+    const spy = install({
+      pipeline_runs: { data: null, error: null },
+      sales: [
+        {
+          data: [
+            { id: "c1", nft_id: "2803410", transaction_hash: "txcust", sold_at: "2026-06-13T17:00:55Z", buyer_address: null, seller_address: "0xseller9" },
+            { id: "d1", nft_id: "31", transaction_hash: "txdead", sold_at: "2026-06-12T00:00:00Z", buyer_address: null, seller_address: null },
+            { id: "r1", nft_id: "32", transaction_hash: "txres", sold_at: "2026-06-11T00:00:00Z", buyer_address: null, seller_address: null },
+          ],
+          error: null,
+        },
+        { data: null, error: null },
+      ],
+      audit_20260706_allday_buyer_backfill: { data: null, error: null },
+    })
+    state.decodeResults["txcust"] = CUSTODIAL_DECODE
+    state.decodeResults["txres"] = { ...EMPTY_V1_DECODE, buyer: "0xB0B0000000000002", seller: null }
+    // txdead → EMPTY_V1_DECODE (no Deposit at all) + ambiguous signers = a real decode failure.
+    fetchMock = installFetchMock([
+      custodialSignersStub("txcust"),
+      {
+        match: (url) => url.includes("/v1/transactions/txdead"),
+        respond: () => ({ json: { proposal_key: { address: "1111111111111111" }, authorizers: ["2222222222222222"], payer: null } }),
+      },
+    ])
+
+    await alldayRoute.POST(alldayReq("https://t/api/admin/backfill-allday-buyers", "Bearer ingest-secret"))
+    await runDeferred()
+
+    const updates = (spy.writes.sales ?? []).filter((w) => w.method === "update")
+    expect(updates).toHaveLength(2)
+    // The decoded FACTS, and nothing in buyer_address — the custodian is not a person (#83).
+    expect(updates[0].rows[0]).toEqual({
+      proposer_address: "0xddfbe848a81b2236",
+      payer_address: "0x18eb4ee6b3c026d2",
+    })
+    expect(updates[0].rows[0]).not.toHaveProperty("buyer_address")
+    // the ordinary row is untouched by the signers patch
+    expect(updates[1].rows[0]).toEqual({ buyer_address: "0xb0b0000000000002" })
+    // Only the resolved buyer reaches the buyer audit table.
+    const audit = (spy.writes.audit_20260706_allday_buyer_backfill ?? []).filter((w) => w.method === "upsert")
+    expect(audit).toHaveLength(1)
+    expect(audit[0].rows.map((r) => r.sale_id)).toEqual(["r1"])
+
+    const runRow = (spy.writes.pipeline_runs ?? []).find((w) => w.method === "insert")!.rows[0]
+    expect(runRow).toMatchObject({ rows_found: 3, rows_written: 1, rows_skipped: 2, ok: true })
+    expect(runRow.extra).toMatchObject({ custodial_deposit: 1, custodial_recorded: 1, decode_failed: 1, buyers_resolved: 1 })
+  })
+
+  it("a custodial Deposit whose tx could NOT be read records nothing (retried), and is still not a decode failure", async () => {
+    const spy = install({
+      pipeline_runs: { data: null, error: null },
+      sales: [
+        {
+          data: [
+            { id: "c1", nft_id: "1", transaction_hash: "txc1", sold_at: "2026-06-13T00:00:00Z", buyer_address: null, seller_address: "0xs" },
+          ],
+          error: null,
+        },
+        { data: null, error: null },
+      ],
+      audit_20260706_allday_buyer_backfill: { data: null, error: null },
+    })
+    state.decodeResults["txc1"] = CUSTODIAL_DECODE
+    fetchMock = installFetchMock([
+      { match: (url) => url.includes("/v1/transactions/txc1"), respond: () => ({ status: 503, json: { message: "unavailable" } }) },
+    ])
+
+    await alldayRoute.POST(alldayReq("https://t/api/admin/backfill-allday-buyers", "Bearer ingest-secret"))
+    await runDeferred()
+
+    expect((spy.writes.sales ?? []).filter((w) => w.method === "update")).toHaveLength(0)
+    const runRow = (spy.writes.pipeline_runs ?? []).find((w) => w.method === "insert")!.rows[0]
+    expect(runRow.extra).toMatchObject({ custodial_deposit: 1, custodial_recorded: 0, decode_failed: 0 })
+    expect(runRow.ok).toBe(true)
+  })
+
+  it("a failed signers write fails the run — a swallowed write is not a recorded fact", async () => {
+    const spy = install({
+      pipeline_runs: { data: null, error: null },
+      sales: [
+        {
+          data: [
+            { id: "c1", nft_id: "1", transaction_hash: "txc1", sold_at: "2026-06-13T00:00:00Z", buyer_address: null, seller_address: "0xs" },
+          ],
+          error: null,
+        },
+        { data: null, error: { message: "permission denied" } },
+      ],
+      audit_20260706_allday_buyer_backfill: { data: null, error: null },
+    })
+    state.decodeResults["txc1"] = CUSTODIAL_DECODE
+    fetchMock = installFetchMock([custodialSignersStub("txc1")])
+
+    await alldayRoute.POST(alldayReq("https://t/api/admin/backfill-allday-buyers", "Bearer ingest-secret"))
+    await runDeferred()
+
+    const runRow = (spy.writes.pipeline_runs ?? []).find((w) => w.method === "insert")!.rows[0]
+    expect(runRow.ok).toBe(false)
+    expect(runRow.error).toMatch(/update\(s\) failed/)
+    expect(runRow.extra).toMatchObject({ custodial_deposit: 1, custodial_recorded: 0, update_failed: 1 })
   })
 
   it("?collection=golazos swaps the contract config and pipeline identity", async () => {

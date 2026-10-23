@@ -17,7 +17,10 @@ vi.mock("next/server", async (importOriginal) => {
 vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: { from: () => ({}), rpc: async () => ({ data: null, error: null }) },
 }))
-vi.mock("@/lib/chains/flow/dapper-v1-tx-decode", () => ({ decodeV1SaleTx: async () => ({}) }))
+vi.mock("@/lib/chains/flow/dapper-v1-tx-decode", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/chains/flow/dapper-v1-tx-decode")>()),
+  decodeV1SaleTx: async () => ({}),
+}))
 
 describe("/api/admin/backfill-allday-buyers — no secret (fail-closed)", () => {
   let GET: (req: any) => Promise<Response>

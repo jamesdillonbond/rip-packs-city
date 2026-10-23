@@ -91,7 +91,7 @@ function unwrapCdc(node: unknown): unknown {
  * the REAL buyer and is decoded by `decodeTopShotSaleTx` below, which is untouched.
  * ⚠ Add an address here only with evidence; a wrong entry silently NULLs real buyers.
  */
-const CUSTODIAL_DEPOSIT_TARGETS: ReadonlySet<string> = new Set([
+export const CUSTODIAL_DEPOSIT_TARGETS: ReadonlySet<string> = new Set([
   "0xddfbe848a81b2236", // NFL All Day — constant Dapper custodian, re-forwards later
 ])
 

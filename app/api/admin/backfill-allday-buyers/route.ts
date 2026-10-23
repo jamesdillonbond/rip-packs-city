@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse, after } from "next/server"
 import { tokenMatches } from "@/lib/auth/bearer-secret"
 import { supabaseAdmin } from "@/lib/supabase"
-import { decodeV1SaleTx } from "@/lib/chains/flow/dapper-v1-tx-decode"
+import { decodeV1SaleTx, CUSTODIAL_DEPOSIT_TARGETS } from "@/lib/chains/flow/dapper-v1-tx-decode"
 import { normalizeFlowEventAddress } from "@/lib/address"
 import { CURRENT_SPORK_START_ISO, buyerBackfillVerdict } from "@/lib/pipeline/buyer-backfill-window"
 
@@ -31,6 +31,24 @@ import { CURRENT_SPORK_START_ISO, buyerBackfillVerdict } from "@/lib/pipeline/bu
 //
 // ?collection=golazos parameterizes the same decode for the Golazos "— —" buyer
 // tail (contract 0x87ca73a41bb50ad5); default is AllDay.
+//
+// CUSTODIAL-HELD ROWS, the persistence half (2026-10-22 ~9 PM PT, Cowork cloud;
+// the counting half landed in cd292b289 the same evening). A sale whose
+// `AllDay.Deposit.to` is the constant Dapper custodian 0xddfbe848a81b2236 has no
+// person to name: the decoder withholds the buyer on purpose (register #83) and
+// the tx's signers are the AllDay contract, the DUC co-signer and the custodian
+// itself. Measured 10-22 against the chain: 1,336 such rows sat in the forward
+// window (May–June 2026, all `onchain_dapper_v1`), and 7 of 8 sampled nfts were
+// STILL in the custodian's collection (17,233 All Day NFTs) four months on — the
+// "re-forwards later" story does not describe them, and nothing this lane can
+// read names the buyer. Counting them honestly (cd292b289) stopped the red runs;
+// it did not stop every cursor wrap re-fetching ~1,300 txs and spending 3 runs
+// in 8 before reaching a genuinely new row. Now the decode's own facts are
+// written once — `proposer_address` / `payer_address` from the tx, the columns
+// the Top Shot lane fills the same way — and the candidate select excludes rows
+// whose proposer is a custodial target. `buyer_address` stays NULL: writing the
+// custodian there is the lie #83 undid. A future custodian-forward lane can
+// re-key these rows (custodial proposer + NULL buyer) by nft_id.
 
 const TOKEN = process.env.INGEST_SECRET_TOKEN ?? ""
 const CRON = process.env.CRON_SECRET ?? ""
@@ -109,25 +127,50 @@ function delay(ms: number) {
 // address that dropped its leading zeros was written short.
 const normalizeAddress = normalizeFlowEventAddress
 
+interface TxSigners {
+  /** The tx was fetched and parsed; false ⇒ the fields below are unknown, not empty. */
+  ok: boolean
+  proposer: string | null
+  payer: string | null
+  /** proposer/authorizers/payer minus the known intermediaries (the V2 fallback's candidates). */
+  candidates: string[]
+}
+
+const NO_SIGNERS: TxSigners = { ok: false, proposer: null, payer: null, candidates: [] }
+
 // V2 Flowty-fork fallback: the tx's proposer/authorizers/payer minus the known
-// intermediaries. Only unambiguous (exactly-one-candidate) results are used.
-async function fetchTxAuthorizers(txHash: string): Promise<string[]> {
+// intermediaries. Only unambiguous (exactly-one-candidate) results are used as
+// the buyer; the raw proposer/payer are kept so a custodial-held row can record
+// the tx's signers (see the header).
+async function fetchTxSigners(txHash: string): Promise<TxSigners> {
   const clean = txHash.replace(/^0x/, "")
   const res = await fetch(`${FLOW_REST}/v1/transactions/${clean}`, {
     signal: AbortSignal.timeout(8000),
   })
-  if (!res.ok) return []
+  if (!res.ok) return NO_SIGNERS
   const j = (await res.json()) as {
     proposal_key?: { address?: string }
     authorizers?: string[]
     payer?: string
   }
+  const proposer = j.proposal_key?.address ? normalizeAddress(j.proposal_key.address) : null
+  const payer = j.payer ? normalizeAddress(j.payer) : null
   const candidates = new Set<string>()
-  if (j.proposal_key?.address) candidates.add(normalizeAddress(j.proposal_key.address))
+  if (proposer) candidates.add(proposer)
   for (const a of j.authorizers ?? []) candidates.add(normalizeAddress(a))
-  if (j.payer) candidates.add(normalizeAddress(j.payer))
-  return Array.from(candidates).filter((a) => !EXCLUDED_ADDRESSES.has(a))
+  if (payer) candidates.add(payer)
+  return {
+    ok: true,
+    proposer,
+    payer,
+    candidates: Array.from(candidates).filter((a) => !EXCLUDED_ADDRESSES.has(a)),
+  }
 }
+
+// Candidate predicate, second half: a row already recorded as custodial-held
+// (its tx's proposer is a custodial target) is not re-asked by this lane.
+const custodialProposerFilter =
+  `proposer_address.is.null,proposer_address.not.in.(${Array.from(CUSTODIAL_DEPOSIT_TARGETS).join(",")})`
 
 interface UnresolvedRow {
   id: string
@@ -175,6 +218,8 @@ async function handle(req: NextRequest) {
     let decodeFailed = 0
     // Decoded, but the deposit went to the Dapper custodian: no buyer is knowable from this tx.
     let custodial = 0
+    // Custodial rows whose tx signers were written (proposer/payer), so the next cycle skips them.
+    let custodialRecorded = 0
     let updateFailed = 0
     let bailedEarly = false
     let ok = true
@@ -200,6 +245,9 @@ async function handle(req: NextRequest) {
         .or(orFilter)
         .not("transaction_hash", "is", null)
         .gte("sold_at", FORWARD_WINDOW_START)
+        // A second .or() ANDs with the first in PostgREST: unresolved buyer AND
+        // not already recorded as custodial-held.
+        .or(custodialProposerFilter)
         .order("sold_at", { ascending: false })
         .limit(BATCH)
       if (cursorBefore) q = q.lt("sold_at", cursorBefore)
@@ -236,9 +284,19 @@ async function handle(req: NextRequest) {
             if (!EXCLUDED_ADDRESSES.has(b)) { buyer = b; method = "deposit_to" }
           }
           // Fallback: V2 Flowty-fork — tx authorizers, only if unambiguous.
+          let signers: TxSigners = NO_SIGNERS
           if (!buyer) {
-            const cands = await fetchTxAuthorizers(String(row.transaction_hash))
-            if (cands.length === 1) { buyer = cands[0]; method = "tx_authorizers" }
+            signers = await fetchTxSigners(String(row.transaction_hash))
+            if (signers.candidates.length === 1) { buyer = signers.candidates[0]; method = "tx_authorizers" }
+          }
+          // Custodial-held and the tx WAS read: record its signers once. A fetch
+          // failure records nothing (the row is retried), never a guessed value.
+          const recordSigners =
+            !buyer && dec.custodialDeposit === true && signers.ok && signers.proposer !== null
+          const signerPatch: Record<string, unknown> = {}
+          if (recordSigners) {
+            signerPatch.proposer_address = signers.proposer
+            if (signers.payer) signerPatch.payer_address = signers.payer
           }
 
           const seller =
@@ -249,8 +307,21 @@ async function handle(req: NextRequest) {
           if (!buyer && !seller) {
             if (dec.custodialDeposit) custodial++
             else decodeFailed++
+            if (recordSigners) {
+              const { error: sErr } = await (supabaseAdmin as any)
+                .from("sales")
+                .update(signerPatch)
+                .eq("id", row.id)
+                .or(orFilter)
+              if (sErr) {
+                updateFailed++
+                console.log(`[backfill-allday-buyers:${cfgKey}] signers update err id=${row.id}: ${sErr.message}`)
+              } else {
+                custodialRecorded++
+              }
+            }
           } else {
-            const patch: Record<string, unknown> = {}
+            const patch: Record<string, unknown> = { ...signerPatch }
             if (buyer) patch.buyer_address = buyer
             if (seller) patch.seller_address = seller
             const { error: upErr } = await (supabaseAdmin as any)
@@ -277,6 +348,7 @@ async function handle(req: NextRequest) {
                 })
               }
               if (seller) sellersFilled++
+              if (recordSigners) { custodial++; custodialRecorded++ }
             }
           }
         } catch (err) {
@@ -329,6 +401,8 @@ async function handle(req: NextRequest) {
             via_tx_authorizers: viaAuthorizers,
             decode_failed: decodeFailed,
             custodial_deposit: custodial,
+            // of those, rows whose proposer/payer were written (the next cycle skips them)
+            custodial_recorded: custodialRecorded,
             update_failed: updateFailed,
             wrapped: cursorAfter === null,
             bailed_early: bailedEarly,
@@ -341,7 +415,7 @@ async function handle(req: NextRequest) {
         )
       }
       console.log(
-        `[backfill-allday-buyers:${cfgKey}] done found=${found} buyers=${buyersResolved} (deposit=${viaDeposit} authz=${viaAuthorizers}) sellers=${sellersFilled} failed=${decodeFailed} cursorAfter=${cursorAfter}`,
+        `[backfill-allday-buyers:${cfgKey}] done found=${found} buyers=${buyersResolved} (deposit=${viaDeposit} authz=${viaAuthorizers}) sellers=${sellersFilled} failed=${decodeFailed} custodial=${custodial}/${custodialRecorded} cursorAfter=${cursorAfter}`,
       )
     }
   })
