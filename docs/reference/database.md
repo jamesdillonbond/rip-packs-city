@@ -3112,3 +3112,21 @@ Profiling `run_all_insider_detectors` one detector at a time ran five VOLATILE f
 ### ⚠ A SUMMARY TABLE DISAGREEING WITH ITS SOURCE IS A DELETER'S FOOTPRINT (2026-10-23)
 `edition_fmv_current` is a mark-and-sweep copy of the newest `fmv_snapshots` row. On 10-23 it held a 2:47 AM PT drain re-stamp (computed_at 09:47Z, $193.50) that `fmv_snapshots` no longer had — the newest surviving snapshot was a stale 10-20 row. A copy can only be AHEAD of its source if something deleted from the source after the copy ran, so the diff `edition_fmv_current.computed_at` with no matching `fmv_snapshots` row is a direct census of delete-without-replace (2 of 10,244 Top Shot rows that day). It named the cause in minutes: `fmv-recalc` Step 3 purged today's rows for every page edition BEFORE Step 4 decided which to write. Fixed by order (insert first, `purge_fmv_snapshots_today_except` deletes only the replaced rows — `c22d58963`). ⭐ When a writer is delete-then-insert, run that diff after any change to it; a non-zero count is the window reopening.
 
+### ⚠ A supabase-js query builder MUTATES in place — rebuild it for a retry (2026-10-23)
+
+`q.ilike(...)` returns the SAME builder with the filter appended, not a copy. A retry
+written as `q.ilike("player_name", label)` on the builder that already carries
+`.ilike("player_name", typed)` STACKS both filters, and the retry can never match
+(caught in review on the concierge's special-serial listings path, #207). Every retry
+takes a `run(…)` that builds the query afresh — the pattern in `lib/search/player-search-retry.ts`
+and `lib/search/accent-regex.ts`. The same holds for `.or()`, `.in()`, `.order()` and `.limit()`.
+
+### ⚠ "Non-ASCII" is not an accent test (2026-10-23)
+
+`~ '[^\x01-\x7e]'` also matches separators: Panini's set names carry " · ", so a
+"which labels are accented?" function returned 2,829 rows — over PostgREST's 1,000-row cap
+— instead of 12. Test for accented LETTERS: `~ '[À-ÖØ-öø-ɏ’‘]'` (Latin-1 Supplement and
+Latin Extended-A/B, without × and ÷, plus curly apostrophes). Measured populations
+(2026-10-23): 194 player names, 7 team labels, 5 set names, 10 Pinnacle characters,
+163 pack titles; joiners (• ·) in exactly 1 of 9,079 player names (WALL•E).
+

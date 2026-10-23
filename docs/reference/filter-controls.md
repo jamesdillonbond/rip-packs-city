@@ -169,6 +169,12 @@ touch, where the keyboard would cover half the list.
   `/_next/static/immutable/chunks/*.js` paths out of `content` with `regexp_matches`,
   `net.http_get` each, then `content LIKE '%Type to filter %'`. ⚠ `net.http_get` times out at 5 s by default — pass `timeout_milliseconds := 60000` for heavier API calls (`/api/market-analytics?detail=full` failed without it). Include a NEGATIVE
   control (a string from an unshipped change) so a hit means something.
+- **Re-verified 2026-10-23 ~9:30 AM PT (iPhone 13, 390 px, prod):** the Sniper's "Loading teams…"
+  placeholder is in the DOM during the first feed read (529 ms) and gives way to the searchable Team
+  control (734 ms); the Panini Sets Product picker opens on 106 products in 6 sport groups, "basketball"
+  narrows to 2 groups / 50, a pick closes the list and loads `?product=…`; width 390, no page errors.
+  ⚠ Do not slow `/api/sniper-feed` with `page.route` to "see" the placeholder — that run showed neither
+  state; sample the DOM every 200 ms instead.
 - **The live site in a real phone browser:** a Vercel Sandbox reaches www.rippackscity.com
   (`create_sandboxes_v4`, `networkPolicy: allow-all`; Playwright needs
   `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64` and `sudo`; run long steps in the
