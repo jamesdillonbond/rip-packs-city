@@ -25,6 +25,7 @@ import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 import { normalizeAddress } from "@/lib/address"
+import { ownLookup } from "@/lib/safe-lookup"
 import {
   STOREFRONT_COLLECTIONS,
   STOREFRONT_PAGE_IDS,
@@ -348,7 +349,7 @@ async function run(cfg: StorefrontCollection, startMs: number, startedAt: string
 async function handle(req: NextRequest) {
   if (!authorized(req)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   const slug = req.nextUrl.searchParams.get("collection") ?? "laliga_golazos"
-  const cfg = STOREFRONT_COLLECTIONS[slug]
+  const cfg = ownLookup(STOREFRONT_COLLECTIONS, slug)
   // An unknown collection is refused, never defaulted to another collection's walk.
   if (!cfg) return NextResponse.json({ error: `unknown collection: ${slug}` }, { status: 400 })
   const startMs = Date.now()

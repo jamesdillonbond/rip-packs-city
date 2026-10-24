@@ -43,6 +43,7 @@
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { bearerMatches } from "@/lib/auth/bearer-secret"
+import { ownLookup } from "@/lib/safe-lookup"
 
 export const dynamic = "force-dynamic"
 // 800s ceiling (Vercel Pro Lambda hard cap).
@@ -98,7 +99,7 @@ const SYNC_ROUND_TRIP_CAP_BY_COLLECTION: Record<string, number> = {
 }
 const SYNC_ROUND_TRIP_CAP_MAX = 4
 function capFor(slug: string): number {
-  return SYNC_ROUND_TRIP_CAP_BY_COLLECTION[slug] ?? SYNC_ROUND_TRIP_CAP_DEFAULT
+  return ownLookup(SYNC_ROUND_TRIP_CAP_BY_COLLECTION, slug) ?? SYNC_ROUND_TRIP_CAP_DEFAULT
 }
 
 interface SyncTarget {

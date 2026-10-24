@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
+import { ownLookup } from "@/lib/safe-lookup"
 
 // On-chain lock-check pipeline.
 //
@@ -379,7 +380,7 @@ async function runBatch(startedAtIso: string): Promise<void> {
   for (const [k, items] of groups.entries()) {
     if (Date.now() - started > SOFT_DEADLINE_MS) break
     const [wallet, collectionId, slug] = k.split("|")
-    const script = SLUG_SCRIPTS[slug]
+    const script = ownLookup(SLUG_SCRIPTS, slug)
     if (!script) {
       unsupportedCollections[slug] = (unsupportedCollections[slug] ?? 0) + items.length
       continue

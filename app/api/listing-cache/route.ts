@@ -3,6 +3,7 @@ import * as Report from "@/lib/observability/report";
 import { createClient } from "@supabase/supabase-js";
 import { fireNextPipelineStep } from "@/lib/pipeline-chain";
 import { isFlowtyIngestEnabled } from "@/lib/flowty-flags";
+import { ownLookup } from "@/lib/safe-lookup";
 
 const supabase: any = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -82,7 +83,7 @@ const COLLECTIONS: Record<string, CollectionConfig> = {
 };
 
 function getCollectionConfig(slug: string | null): CollectionConfig {
-  if (slug && Object.prototype.hasOwnProperty.call(COLLECTIONS, slug)) return COLLECTIONS[slug];
+  if (slug) { const own = ownLookup(COLLECTIONS, slug); if (own) return own; }
   return COLLECTIONS["nba-top-shot"];
 }
 

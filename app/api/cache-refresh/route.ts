@@ -3,6 +3,7 @@ import fcl from "@/lib/chains/flow/flow"
 import * as t from "@onflow/types"
 import { createClient } from "@supabase/supabase-js"
 import { makeInstanceRateLimiter, clientKeyFrom } from "@/lib/http/instance-rate-limit"
+import { ownLookup } from "@/lib/safe-lookup"
 
 const supabase: any = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -287,7 +288,7 @@ export async function GET(req: NextRequest) {
     // route to speak Solana would duplicate a working lane. Grep before you
     // build; the thing was already there.
     const collectionSlug = sp.get("collection")?.trim() || "nba-top-shot"
-    const scripts = COLLECTION_SCRIPTS[collectionSlug]
+    const scripts = ownLookup(COLLECTION_SCRIPTS, collectionSlug)
     if (!scripts) {
       return NextResponse.json(
         {

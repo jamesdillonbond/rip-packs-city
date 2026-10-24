@@ -32,6 +32,7 @@ import { boardUnavailable } from "@/lib/insights/board-error"
 import { getCollectionUuid } from "@/lib/collections"
 import { resolvePlayerName, singleRetryLabel } from "@/lib/concierge/player-identity"
 import { withBoardBudget } from "@/lib/insights/board-page-fetch"
+import { ownLookup } from "@/lib/safe-lookup"
 import {
   fetchSpecialSerialOwners,
   VALID_TAGS_BY_COLLECTION,
@@ -54,7 +55,7 @@ export async function GET(req: NextRequest) {
     )
   }
   const collection = collRaw as OwnersCollection
-  const validTags = VALID_TAGS_BY_COLLECTION[collection]
+  const validTags = ownLookup(VALID_TAGS_BY_COLLECTION, collection) ?? []
   const validTiers = validTiersFor(collection)
 
   const tagRaw = sp.get("tag")?.trim() || null

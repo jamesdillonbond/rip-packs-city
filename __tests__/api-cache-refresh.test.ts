@@ -89,6 +89,16 @@ describe("GET /api/cache-refresh", () => {
     expect((await res.json()).error).toContain("Unsupported collection")
   })
 
+  // 2026-10-23: a bare COLLECTION_SCRIPTS[slug] read resolved "constructor" to a
+  // truthy inherited member, skipping this 400.
+  it("400s on an Object.prototype key, never treating it as a supported collection", async () => {
+    for (const key of ["constructor", "toString", "__proto__", "hasOwnProperty"]) {
+      const res = await GET(req(`https://t/api/cache-refresh?wallet=0xbd94cade097e50ac&collection=${key}`))
+      expect(res.status, key).toBe(400)
+      expect((await res.json()).error, key).toContain("Unsupported collection")
+    }
+  })
+
   it("returns a clean zero-state when the wallet holds no on-chain moments", async () => {
     state.ids = []
     const res = await GET(req("https://t/api/cache-refresh?wallet=0xbd94cade097e50ac"))

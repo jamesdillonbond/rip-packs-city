@@ -153,6 +153,16 @@ describe("/api/cron/golazos-storefront-reconcile — auth and collection", () =>
     expect(state.afterCbs).toHaveLength(0)
   })
 
+  // 2026-10-23: a bare STOREFRONT_COLLECTIONS[slug] read resolved "constructor"
+  // to a truthy inherited member, so it skipped this 400 and scheduled a walk.
+  it("refuses an Object.prototype key with 400 and schedules no walk", async () => {
+    for (const key of ["constructor", "toString", "__proto__", "hasOwnProperty"]) {
+      const res = await mod.GET(makeReq({ method: "GET", auth: "Bearer gz-cron", url: `https://t/api/cron/x?collection=${key}` }))
+      expect(res.status, key).toBe(400)
+    }
+    expect(state.afterCbs).toHaveLength(0)
+  })
+
   it("?collection=nfl_all_day walks the All Day contract and logs under its own pipeline", async () => {
     state.tables.cached_listings_v2 = []
     await mod.GET(makeReq({ method: "GET", auth: "Bearer gz-cron", url: "https://t/api/cron/x?collection=nfl_all_day" }))
