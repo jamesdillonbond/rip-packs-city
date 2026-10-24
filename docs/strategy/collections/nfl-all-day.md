@@ -107,6 +107,7 @@
 - **Weekly paired backtest read.**
   - Why: R125 reopens if a tier's paired within-25 share sits > 3 pts below last-3 on two consecutive weeks.
   - ↳ **Read 10-22 ~9:40 PM PT (Cowork cloud, 7 d):** HIGH published 7.1 % / 84.5 within ±25 % (naive 12.5 / 70.8 — published wins), MEDIUM 20.0 / 59.7 vs 20.0 / 58.1 (level), LOW 25.9 / 49.5 vs 23.1 / 51.9 (2.4 pts below; inside the rule, first week). ASK_ONLY 170 % / 8.6 / ratio 2.70 → the #208 cap above. Next read ~10-29.
+  - ↳ **LOW split 10-23 ~5:30 PM PT (Cowork cloud, 7 d: LOW published 27.5 / 48.3 / ratio 1.091 vs naive 25.0 / 50.7 / 1.042):** the overshoot sits in the THIN sub-classes — 1–2 sales in 30 d (1.8.1 n 279 ratio 1.29; 1.8.3 n 75 ratio 1.50) and 0 sales (n 48 / 35, 1.37–1.56) — none at the floor, so no cap reaches them; the dispersion class (≥ 5 sales, n 541) reads 1.000 / 59.3 and beats naive. Tested the one estimator that can be backtested there, `min(published, edition’s last sale)`, on recalc-priced LOW with 1–2 sales: it wins days 0–15 (n 379: within ±25 % 45.6 vs 38.3, WAPE 45.1 vs 51.3) and LOSES days 15–30 (n 131: 29.8 vs 42.0). Not robust across halves → **not shipped**; a two-week thin-market move, re-read on 10-29. (Top Shot’s thin LOW: published 1.000 / 51.3 beats both variants.) The same read found the haircut’s dead depth term — #210, Top Shot only; All Day’s 0-sale haircut cell (n 25) was inconclusive.
 
 **Later**
 - **Book M2 per full NFL week** from the series, never a leg. The season runs to February, so volume will fall after it.
