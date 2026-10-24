@@ -92,12 +92,15 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Check active alerts for this owner
-    const { data: alertRows } = await supabase
+    // Check active alerts for this owner. A failed read is "unknown" (null),
+    // not "no alert" — until 2026-10-23 the error was discarded and every row
+    // read has_alert:false.
+    const { data: alertRows, error: alertErr } = await supabase
       .from("fmv_alerts")
       .select("edition_key")
       .eq("owner_key", rowKey)
       .eq("active", true);
+    if (alertErr) console.error("[watchlist GET] fmv_alerts read failed:", alertErr.message);
 
     const alertSet = new Set<string>();
     for (const row of alertRows ?? []) {
@@ -113,7 +116,7 @@ export async function GET(req: NextRequest) {
         fmv != null && low_ask != null && fmv > 0
           ? Math.round(((fmv - low_ask) / fmv) * 100)
           : null;
-      const has_alert = alertSet.has(row.edition_key);
+      const has_alert = alertErr ? null : alertSet.has(row.edition_key);
 
       return { ...row, fmv, low_ask, discount_pct, has_alert };
     });

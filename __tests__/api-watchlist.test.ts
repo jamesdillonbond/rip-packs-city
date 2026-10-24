@@ -161,6 +161,19 @@ describe("/api/watchlist success paths", () => {
     expect(body[0].has_alert).toBe(true)
   })
 
+  it("GET reports has_alert null (unknown), never false, when the fmv_alerts read fails", async () => {
+    state.tables.watchlist = { data: [{ edition_key: "73:2785", owner_key: "trevor" }], error: null }
+    state.tables.editions = { data: [{ id: "ed-uuid", external_id: "73:2785" }], error: null }
+    state.tables.fmv_current = { data: [{ edition_id: "ed-uuid", fmv_usd: 100 }], error: null }
+    state.tables.badge_editions = { data: [], error: null }
+    state.tables.fmv_alerts = { data: null, error: { message: "statement timeout" } }
+    const res = await get("owner_key=trevor")
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body[0].has_alert).toBeNull()
+    expect(body[0].fmv).toBe(100) // the rest of the row still renders
+  })
+
   it("POST 201s, echoes the upserted row, and awards the GUARDED session user", async () => {
     state.single = { data: { id: "wl1", owner_key: "trevor", edition_key: "73:2785" }, error: null }
     const res = await post({ owner_key: "trevor", edition_key: "73:2785" })

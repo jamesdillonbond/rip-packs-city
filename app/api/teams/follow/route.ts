@@ -32,12 +32,16 @@ export async function GET(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ authed: false, following: false })
 
-  const { data } = await supabase
+  // A failed read is not "not following": TeamFollowButton renders a 5xx as
+  // "Follow unavailable", but a 200 { following:false } offered a follower the
+  // Follow button instead (until 2026-10-23 the error was discarded here).
+  const { data, error } = await supabase
     .from("user_favorite_teams")
     .select("team_slug")
     .eq("user_id", user.id)
     .eq("league", league)
     .maybeSingle()
+  if (error) return apiErrorResponse(error, "api/teams/follow")
 
   return NextResponse.json({ authed: true, following: (data as { team_slug?: string } | null)?.team_slug === slug })
 }

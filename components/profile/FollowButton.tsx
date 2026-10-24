@@ -31,7 +31,11 @@ interface Props {
   accentColor: string;
 }
 
-type State = "loading" | "anon" | "self" | "following" | "not-following";
+// "unknown": the probe FAILED. The route answers an anonymous visitor with
+// 200 { authed:false }, so a non-ok or thrown probe is not "signed out" —
+// until 2026-10-23 this button rendered "SIGN IN TO FOLLOW" to a signed-in
+// viewer on any probe failure (TeamFollowButton made the same fix 09-26).
+type State = "loading" | "anon" | "self" | "following" | "not-following" | "unknown";
 
 const baseStyle: React.CSSProperties = {
   display: "inline-flex",
@@ -62,15 +66,14 @@ export default function FollowButton({ username, accentColor }: Props) {
       .then((r) => (r.ok ? r.json() : null))
       .then((j) => {
         if (cancelled) return;
-        // A failed probe must not render as "not following" — that would show
-        // a Follow button whose click then 500s. Fall back to the sign-in CTA,
-        // which is inert and honest.
-        if (!j) { setState("anon"); return; }
+        // A failed probe must not render as "not following" (a Follow button
+        // whose click then fails) NOR as "signed out" — it is unknown.
+        if (!j || typeof j.authed !== "boolean") { setState("unknown"); return; }
         if (!j.authed) { setState("anon"); return; }
         if (j.self) { setState("self"); return; }
         setState(j.following ? "following" : "not-following");
       })
-      .catch(() => { if (!cancelled) setState("anon"); });
+      .catch(() => { if (!cancelled) setState("unknown"); });
 
     return () => { cancelled = true; };
   }, [username]);
@@ -112,6 +115,23 @@ export default function FollowButton({ username, accentColor }: Props) {
         }}
       >
         ···
+      </span>
+    );
+  }
+
+  if (state === "unknown") {
+    return (
+      <span
+        data-testid="follow-status-unknown"
+        title="Follow status couldn't be loaded — refresh to try again"
+        style={{
+          ...baseStyle,
+          color: "var(--rpc-text-muted)",
+          border: "1px solid rgba(255,255,255,0.14)",
+          cursor: "default",
+        }}
+      >
+        FOLLOW UNAVAILABLE
       </span>
     );
   }

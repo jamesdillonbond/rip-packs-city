@@ -19,13 +19,27 @@ import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { getCurrentUser, requireUser } from "@/lib/auth/supabase-server";
 import { apiErrorResponse } from "@/lib/api-error";
 
-async function resolveUserIdByUsername(username: string): Promise<string | null> {
-  const { data } = await supabase
+// THREE outcomes, never two (2026-10-23): until then a failed read returned
+// null, so the probe answered "not following", and POST/DELETE answered
+// "User not found" 404 for a user who exists.
+//
+// `ilike` is a PATTERN: `_` and `%` in a username are wildcards, so "a_b" also
+// matched "axb" (and two such rows made maybeSingle error). The pattern is
+// escaped to a literal and the returned name re-compared exactly, as
+// lib/auth/owner-key-guard.ts does.
+type Resolved = { ok: true; userId: string | null } | { ok: false; error: unknown };
+
+async function resolveUserIdByUsername(username: string): Promise<Resolved> {
+  const literal = username.replace(/[\\%_*]/g, (c) => `\\${c}`);
+  const { data, error } = await supabase
     .from("profile_bio")
-    .select("user_id")
-    .ilike("username", username)
+    .select("user_id, username")
+    .ilike("username", literal)
     .maybeSingle();
-  return (data as any)?.user_id ?? null;
+  if (error) return { ok: false, error };
+  const row = data as { user_id?: string; username?: string } | null;
+  const exact = typeof row?.username === "string" && row.username.trim().toLowerCase() === username;
+  return { ok: true, userId: exact ? row?.user_id ?? null : null };
 }
 
 export async function GET(req: NextRequest) {
@@ -41,7 +55,9 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    const followeeId = await resolveUserIdByUsername(probeUsername.toLowerCase());
+    const resolved = await resolveUserIdByUsername(probeUsername.toLowerCase());
+    if (!resolved.ok) return apiErrorResponse(resolved.error, "api/profile/follows/probe");
+    const followeeId = resolved.userId;
     if (!followeeId) {
       return NextResponse.json(
         { authed: true, following: false, self: false },
@@ -96,10 +112,12 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ follows: [] });
   }
 
-  const { data: bios } = await supabase
+  // A failed bio read would render every followee as a nameless row.
+  const { data: bios, error: biosErr } = await supabase
     .from("profile_bio")
     .select("user_id, username, display_name, avatar_url, accent_color")
     .in("user_id", followeeIds);
+  if (biosErr) return apiErrorResponse(biosErr, "api/profile/follows/bios");
 
   const bioMap = new Map<string, any>();
   (bios ?? []).forEach((b: any) => bioMap.set(b.user_id, b));
@@ -130,7 +148,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "username required" }, { status: 400 });
   }
 
-  const followeeId = await resolveUserIdByUsername(String(username).toLowerCase());
+  const resolved = await resolveUserIdByUsername(String(username).toLowerCase());
+  if (!resolved.ok) return apiErrorResponse(resolved.error, "api/profile/follows");
+  const followeeId = resolved.userId;
   if (!followeeId) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
@@ -166,7 +186,9 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ error: "username required" }, { status: 400 });
   }
 
-  const followeeId = await resolveUserIdByUsername(String(username).toLowerCase());
+  const resolved = await resolveUserIdByUsername(String(username).toLowerCase());
+  if (!resolved.ok) return apiErrorResponse(resolved.error, "api/profile/follows");
+  const followeeId = resolved.userId;
   if (!followeeId) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }

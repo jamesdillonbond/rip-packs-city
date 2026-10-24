@@ -8,8 +8,9 @@ import { render, cleanup, fireEvent, waitFor } from "@testing-library/react"
 // not-following, toggling via POST/DELETE.
 //
 // The behaviours worth pinning here are the honest-failure ones: a failed or
-// unparseable probe must fall back to the inert sign-in CTA rather than to a
-// Follow button that would 500 on click, and an optimistic toggle must roll
+// unparseable probe must render "unavailable" — neither a Follow button that
+// would fail on click nor a sign-in CTA shown to a signed-in viewer (inverted
+// 2026-10-23; it used to pin the sign-in fallback) — and an optimistic toggle must roll
 // back when the write fails — otherwise the UI claims a follow that the DB
 // does not have.
 
@@ -102,12 +103,28 @@ describe("FollowButton", () => {
     await waitFor(() => expect(container.textContent).toContain("SIGN IN TO FOLLOW"))
   })
 
-  it("falls back to the sign-in CTA when the probe itself fails", async () => {
-    // A failed probe rendering "+ FOLLOW" would hand the user a button whose
-    // click cannot succeed. The inert CTA is the honest fallback.
+  it("a thrown probe is unknown — never '+ FOLLOW', never 'SIGN IN TO FOLLOW'", async () => {
     vi.stubGlobal("fetch", vi.fn(() => Promise.reject(new Error("network"))))
-    const { findByText } = render(<FollowButton {...props} />)
-    expect(await findByText(/SIGN IN TO FOLLOW/)).toBeTruthy()
+    const { findByTestId, container } = render(<FollowButton {...props} />)
+    expect(await findByTestId("follow-status-unknown")).toBeTruthy()
+    expect(container.textContent).not.toContain("SIGN IN TO FOLLOW")
+    expect(container.textContent).not.toMatch(/\+ FOLLOW/)
+    expect(container.querySelector("button")).toBeNull()
+  })
+
+  it("a non-ok probe (the route's 5xx on a failed read) is unknown, never 'SIGN IN TO FOLLOW'", async () => {
+    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve({ ok: false, status: 503, json: async () => ({ code: "unavailable" }) } as Response)))
+    const { findByTestId, container } = render(<FollowButton {...props} />)
+    expect(await findByTestId("follow-status-unknown")).toBeTruthy()
+    expect(container.textContent).not.toContain("SIGN IN TO FOLLOW")
+    expect(container.querySelector("button")).toBeNull()
+  })
+
+  it("a probe body without a boolean authed is unknown, not signed-out", async () => {
+    probe = { error: "x" }
+    const { findByTestId, container } = render(<FollowButton {...props} />)
+    expect(await findByTestId("follow-status-unknown")).toBeTruthy()
+    expect(container.textContent).not.toContain("SIGN IN TO FOLLOW")
   })
 
   it("probes the username it was given, url-encoded", async () => {

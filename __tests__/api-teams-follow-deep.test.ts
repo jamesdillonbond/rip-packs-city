@@ -8,7 +8,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 
 const st = vi.hoisted(() => ({
   user: { id: "u1" } as any,
-  sel: { data: null as any },
+  sel: { data: null as any } as { data: any; error?: any },
   upsert: { error: null as any },
   del: { error: null as any },
 }))
@@ -54,6 +54,15 @@ describe("GET /api/teams/follow", () => {
   it("authed + different pick → following:false", async () => {
     st.sel = { data: { team_slug: "celtics" } }
     expect((await (await GET(getReq("?league=NBA&slug=lakers"))).json()).following).toBe(false)
+  })
+  // 2026-10-23: the read error was discarded, so a failed read answered 200
+  // { following:false } and TeamFollowButton's "Follow unavailable" branch
+  // (non-ok) could never fire — a follower was offered "Follow".
+  it("a failed read → 5xx, never { following:false }", async () => {
+    st.sel = { data: null, error: { message: "canceling statement due to statement timeout", code: "57014" } }
+    const res = await GET(getReq("?league=NBA&slug=lakers"))
+    expect(res.status).toBeGreaterThanOrEqual(500)
+    expect(await res.json()).not.toHaveProperty("following")
   })
 })
 
