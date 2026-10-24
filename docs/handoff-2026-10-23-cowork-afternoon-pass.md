@@ -47,7 +47,7 @@ Gate read 2:20 PM PT: HIGH n 491 of 500; **498 at 4:18 PM and still 498 at 5:30 
 ## Watches for the next pass
 
 - **#210:** new TS LOW `_haircut` rows with `sales_count_30d = 0` sit at `floor × 0.75` (first real one 5:08 PM PT ✓); the daily cron-job.org `RPC Apply FMV Haircut` (3:35 PM PT) `rows_haircut` / dollars should look like any other day. Exit ~10-30 in `fmv_sales_backtest('nba_top_shot', 7)`: LOW `median_ratio` ≥ 0.93 without losing within-±25 %. Falsifier: the 0-sale haircut sub-class > 1.10 two weeks running → revert (migration header).
-- **Hourly minter/linker (459/612):** `cron.job_run_details` shows `succeeded` at :49 / :57 each hour, < 10 s; the next newly minted Top Shot player’s `/nba-top-shot/player/<slug>` is 200 within ~1 h + 10 min. Falsifier: a failed or > 10 s run → back to daily.
+- **Hourly minter/linker (459/612):** first ticks verified 5:49:00 / 5:57:00 PM PT, both `succeeded`, 1.34 s / 0.23 s. Keep reading `cron.job_run_details` for `succeeded` at :49 / :57 each hour, < 10 s; the next newly minted Top Shot player’s `/nba-top-shot/player/<slug>` is 200 within ~1 h + 10 min. Falsifier: a failed or > 10 s run → back to daily.
 - **#193 gate:** `SELECT * FROM pinnacle_fmv_sales_backtest('2026-10-09 14:00-07')` HIGH n ≥ 500 → ship from the stashed pin (see the #193 section).
 
 - `pipeline_runs` `chain-arrival-refloor`: `retired_pre_mainnet27` 0 on every run after 2:44 PM PT; `chain_arrival_probes` `floor` 0 between the 4:13 AM PT seeds; the four offset lanes at ~0 s.
