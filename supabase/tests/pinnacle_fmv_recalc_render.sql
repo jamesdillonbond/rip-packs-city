@@ -16,7 +16,8 @@
 --   * confidence / counts / days are unchanged; no sales → NULL price, NO_DATA.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20261009205054_audit_20261009_pinnacle_young_render_fmv_last5_and_no_drop_day_high.sql);
+-- (supabase/migrations/20261024015511_audit_20261023_pinnacle_high_render_prices_at_last5_median.sql;
+-- previously 20261009205054_audit_20261009_pinnacle_young_render_fmv_last5_and_no_drop_day_high.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -77,6 +78,20 @@ BEGIN
   SELECT COUNT(*) INTO v_n90
   FROM pinnacle_sales WHERE render_id = p_render_id AND sold_at > NOW() - interval '90 days' AND sale_price_usd > 0;
   IF v_age IS NOT NULL AND v_age < 7 AND v_n90 >= 5 THEN
+    SELECT percentile_disc(0.5) WITHIN GROUP (ORDER BY l.sale_price_usd) INTO v_wmed
+    FROM (SELECT sale_price_usd FROM pinnacle_sales
+           WHERE render_id = p_render_id AND sold_at > NOW() - interval '90 days' AND sale_price_usd > 0
+           ORDER BY sold_at DESC LIMIT 5) l;
+  END IF;
+
+  -- A HIGH-ELIGIBLE render (5+ sales in 30 days, last sale <= 14 days ago) prices at the median of its
+  -- LAST 5 sales (2026-10-23, register #193) — the young-render rule, extended to mature renders.
+  -- Out-of-sample on realised sales since the 10-09 engine change (pinnacle_fmv_sales_backtest, the
+  -- #193 gate at >= 500 HIGH sales): published HIGH within +-25 % 62-63 % / WAPE 32-33 % vs the last-5
+  -- median 69-70 % / 23 %, on every read 10-18 -> 10-23; MEDIUM level with its naive (69 vs 70, WAPE
+  -- 24 vs 24), so MEDIUM and LOW keep the weighted median. The 30-day-max cap below still applies
+  -- (a no-op here: the last 5 sales of a HIGH render all fall inside 30 days).
+  IF COALESCE(v_s30, 0) >= 5 AND v_days IS NOT NULL AND v_days <= 14 THEN
     SELECT percentile_disc(0.5) WITHIN GROUP (ORDER BY l.sale_price_usd) INTO v_wmed
     FROM (SELECT sale_price_usd FROM pinnacle_sales
            WHERE render_id = p_render_id AND sold_at > NOW() - interval '90 days' AND sale_price_usd > 0
@@ -194,9 +209,23 @@ INSERT INTO public.pinnacle_sales VALUES
   ('R8', 24, now() - interval '1 day 5 hours'), ('R8', 23, now() - interval '1 day 4 hours'), ('R8', 22, now() - interval '1 day 3 hours'),
   ('R8', 21, now() - interval '1 day 2 hours'), ('R8', 20, now() - interval '1 day 1 hour');
 SELECT _assert_eq((public.pinnacle_fmv_recalc_render('R7')->>'confidence'), 'HIGH', 'R7: a MATURE render with 5 recent sales is still HIGH');
-SELECT _assert_eq((public.pinnacle_fmv_recalc_render('R7')->>'fmv_usd')::numeric::text, '7.0000', 'R7: a mature render keeps the weighted median (last-5 rule does not apply)');
+SELECT _assert_eq((public.pinnacle_fmv_recalc_render('R7')->>'fmv_usd')::numeric::text, '7.0000', 'R7: a mature HIGH render prices at the median of its last 5 sales (5..9 → 7; here equal to the weighted median)');
 SELECT _assert_eq((public.pinnacle_fmv_recalc_render('R8')->>'fmv_usd')::numeric::text, '22.0000', 'R8: a 2-day-old falling render prices at the median of its last 5 sales (22), not all 8 (24)');
 SELECT _assert_eq((public.pinnacle_fmv_recalc_render('R8')->>'confidence'), 'LOW', 'R8: 8 sales in 30 d, but 2 days old → LOW');
 SELECT _assert_eq((public.pinnacle_fmv_recalc_render('R8')->>'sales_count_30d'), '8', 'R8: counts unchanged by the young-render rule');
+
+-- 2026-10-23 (#193): a MATURE, HIGH-eligible render (5+ sales in 30 d, last sale <= 14 d) prices at the
+-- median of its LAST 5 sales, not the recency-weighted 90-day median. R9 is RISING: four $2 sales
+-- 20-40 d ago, then 10/12/14/16/18 over the last 5 days. Weighted median = 12 (half the weight is
+-- reached at the 12), last-5 median = 14. The 30-day max (18) does not cap it. MEDIUM/LOW renders are
+-- untouched (R2 above would read 18 if the rule leaked onto MEDIUM).
+INSERT INTO public.pinnacle_sales VALUES
+  ('R9', 2, now() - interval '40 days'), ('R9', 2, now() - interval '25 days'),
+  ('R9', 2, now() - interval '22 days'), ('R9', 2, now() - interval '20 days'),
+  ('R9', 10, now() - interval '5 days'), ('R9', 12, now() - interval '4 days'), ('R9', 14, now() - interval '3 days'),
+  ('R9', 16, now() - interval '2 days'), ('R9', 18, now() - interval '1 day');
+SELECT _assert_eq((public.pinnacle_fmv_recalc_render('R9')->>'confidence'), 'HIGH', 'R9: a mature render with 8 sales in 30 d and a sale yesterday is HIGH');
+SELECT _assert_eq((public.pinnacle_fmv_recalc_render('R9')->>'fmv_usd')::numeric::text, '14.0000', 'R9: a HIGH-eligible render prices at the median of its last 5 sales (14), not the weighted 90-day median (12) (#193)');
+SELECT _assert_eq((public.pinnacle_fmv_recalc_render('R2')->>'fmv_usd')::numeric::text, '3.0000', 'R2 control: a MEDIUM render keeps the weighted median (the last-5 rule is HIGH-only)');
 
 ROLLBACK;

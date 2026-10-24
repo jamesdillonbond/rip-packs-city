@@ -1066,7 +1066,8 @@ const PINS = [
     // 2026-09-27 (#155): price = recency-weighted MEDIAN, not a WAP-centred trim.
     // 2026-09-29: capped at the 30-day max sale when the render has 2+ sales in 30 d.
     // 2026-10-09: a render < 7 d old prices at its last 5 sales; < 3 d at most LOW, 3-6 d at most MEDIUM.
-    migration: "supabase/migrations/20261009205054_audit_20261009_pinnacle_young_render_fmv_last5_and_no_drop_day_high.sql",
+    // 2026-10-23 (#193): a HIGH-eligible render (5+ sales in 30 d, last sale <= 14 d) prices at the median of its last 5 sales.
+    migration: "supabase/migrations/20261024015511_audit_20261023_pinnacle_high_render_prices_at_last5_median.sql",
   },
   {
     fn: "panini_serial_premium_mult",
