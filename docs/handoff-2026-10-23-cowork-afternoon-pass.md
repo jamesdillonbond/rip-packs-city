@@ -48,8 +48,8 @@ Gate read 2:20 PM PT: HIGH n 491 of 500; **498 at 4:18 PM and still 498 at 5:30 
 2. ✅ **DONE 10:15 PM PT via Claude in Chrome on Trevor's laptop (Trevor: "Use chrome to do it"); verified by MCP read.** Was: **[P3, Trevor, 1 night] Golazos venue row is stale — paste `docs/audits/2026-10-23-golazos-marketplace-status-thin-not-idle.sql` in the dashboard SQL editor (1 statement, `UPDATE 1`).** The row still says `idle_since_2026_10_02`; the chain says 88 trades on 10-20/21 (= the 88 indexed sales), 0 on 10-22/23 — thin, not idle. The MCP held the UPDATE for this session (as on 10-17). Nothing on screen depends on it (status stays `healthy`).
 3. **[P3, Trevor, 1 night] #209 basis line.** The price is fixed (above); whether a STALE price shows "last sale Nd ago" touches the 07-11 rule and is his.
 4. ✅ **DONE 10:08 PM PT via Claude in Chrome (jobs list reads Inactive).** Was: **[P3, Trevor, carried] cron-job.org 7568448 `RPC NBA Projections Sync`** — disable it; its `pipeline_alert_suppression` lapses 10-27 5 PM PT and the failure-rate arm will go red on a superseded lane.
-5. **[P3, interactive session, dated] Panini 1.4.0 on/after 10-24** — re-run `scripts/panini-fmv-paired-read.sql` with a 10-16/17 cutoff first (decided 10-19: not a night-pass ship).
-6. **[P3, Trevor, carried] the 2 scratch FUNCTIONS to DROP** (handoff-2026-10-23 item 3; EXECUTE already revoked; the MCP holds DROPs).
+5. ✅ **SHIPPED 10-24 ~8:30–9:00 AM PT (`20261024152200` + `5427f2c`; live rows stamped `panini-1.4.0` from 8:29:48 AM PT; see Shipped 0).** Was: **[P3, interactive session, dated] Panini 1.4.0 on/after 10-24** — re-run `scripts/panini-fmv-paired-read.sql` with a 10-16/17 cutoff first (decided 10-19: not a night-pass ship).
+6. ✅ **DONE 10-24 ~8:20 AM PT via the dashboard SQL editor (Claude in Chrome); 0 `scratch_%` functions remain.** Was: **[P3, Trevor, carried] the 2 scratch FUNCTIONS to DROP** (handoff-2026-10-23 item 3; EXECUTE already revoked; the MCP holds DROPs).
 
 ## Watches for the next pass
 
