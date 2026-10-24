@@ -635,11 +635,15 @@ async function getCollectionIdForSlug(slug?: string): Promise<string | null> {
   if (!dbSlug) return null
   if (COLLECTION_ID_CACHE.has(dbSlug)) return COLLECTION_ID_CACHE.get(dbSlug) ?? null
   try {
-    const { data } = await supabaseAdmin
+    const { data, error } = await supabaseAdmin
       .from("collections")
       .select("id")
       .eq("slug", dbSlug)
       .single()
+    // Cache only a read that LANDED: until 2026-10-23 a transient error was
+    // cached as null, so one failed lookup dropped acquisition stats from every
+    // later wallet search on that warm instance.
+    if (error) return null
     const id = data?.id ?? null
     COLLECTION_ID_CACHE.set(dbSlug, id)
     return id

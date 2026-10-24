@@ -396,3 +396,22 @@ describe("POST /api/wallet-search — pre-walk dispatch", () => {
     expect(body.error).toContain("/api/pinnacle-wallet")
   })
 })
+
+// 2026-10-23: getCollectionIdForSlug's module-level cache stored the null a
+// FAILED collections read returned, so one transient error dropped acquisition
+// stats from every later search on that warm instance. A fresh module import
+// gives this test an empty cache.
+describe("POST /api/wallet-search — a failed collection-id read is not cached", () => {
+  it("the next request, with a healthy read, still gets acquisition stats", async () => {
+    vi.resetModules()
+    const { POST: freshPost } = await import("@/app/api/wallet-search/route")
+
+    install(baseFixtures({ collections: { data: null, error: { message: "canceling statement due to statement timeout" } } }))
+    const first = await (await freshPost(post({ input: WALLET }))).json()
+    expect(first.acquisitionStats).toBeNull()
+
+    install(baseFixtures())
+    const second = await (await freshPost(post({ input: WALLET }))).json()
+    expect(second.acquisitionStats).toMatchObject({ total_count: 2 })
+  })
+})
