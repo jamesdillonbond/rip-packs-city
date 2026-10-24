@@ -27,6 +27,9 @@ const st = vi.hoisted(() => ({
   throwInWalk: false,
   recent: { data: [] as unknown[] | null, error: null as null | { message: string } },
   recentCalls: [] as unknown[],
+  // panini-1.4.0 (2026-10-24): the default engine reads panini_recent_sales_fmv_v2 (panini_sales); the
+  // 1.3.1 kill switch reads panini_recent_sales_fmv (serials). Same fixture, separate call logs.
+  recentV2Calls: [] as unknown[],
   // panini_last_sales_fmv (the 1.2.0 LOW-tier input, 2026-09-30).
   last: { data: [] as unknown[] | null, error: null as null | { message: string } },
   lastCalls: [] as unknown[],
@@ -58,6 +61,7 @@ vi.mock("@/lib/supabase", () => ({
     // kept out of st.runs so every "st.runs[i] is a logRun" assertion below still holds.
     rpc: async (n: string, args: unknown) => {
       if (n === "panini_recent_sales_fmv") { st.recentCalls.push(args); return st.recent }
+      if (n === "panini_recent_sales_fmv_v2") { st.recentV2Calls.push(args); return st.recent }
       if (n === "panini_last_sales_fmv") { st.lastCalls.push(args); return st.last }
       if (n === "panini_sales_spread") { st.spreadCalls.push(args); return st.spread }
       if (n === "panini_prior_sales_median") { st.priorCalls.push(args); return st.prior }
@@ -107,6 +111,9 @@ vi.mock("@/lib/chains/panini/ingest-normalize", () => ({
   // The spike guard is unit-tested for real in panini-ingest-normalize.test.ts; the stub records the prior row.
   toFmvRowV131: (c: { sku: string; fmv?: number }, _n: string, r?: { fmv_usd: number } | null, l?: { fmv_usd: number } | null, sp?: { n_sales: number } | null, pr?: { prior_median_usd: number } | null) =>
     (c.fmv ? { edition_id: c.sku, fmv_usd: r?.fmv_usd ?? l?.fmv_usd ?? c.fmv, algo_version: "panini-1.3.1", spread_n: sp?.n_sales ?? null, prior_med: pr?.prior_median_usd ?? null } : null),
+  // 1.4.0 is 1.3.1's rows re-stamped; the stub records the same inputs under the 1.4.0 label.
+  toFmvRowV14: (c: { sku: string; fmv?: number }, _n: string, r?: { fmv_usd: number } | null, l?: { fmv_usd: number } | null, sp?: { n_sales: number } | null, pr?: { prior_median_usd: number } | null) =>
+    (c.fmv ? { edition_id: c.sku, fmv_usd: r?.fmv_usd ?? l?.fmv_usd ?? c.fmv, algo_version: "panini-1.4.0", spread_n: sp?.n_sales ?? null, prior_med: pr?.prior_median_usd ?? null } : null),
   toPackRow: (p: any, _n: string, sid: number | null = null) => { st.packRowsArgs.push([p, sid]); return { id: p.pack_sku, product_set_id: sid } },
   // The real parser, except that the fixtures' short skus ("c1", "a") stand for WC cards — the
   // product the route has always written — so every pre-existing case keeps its meaning.
@@ -131,7 +138,7 @@ beforeEach(() => {
   st.packUpsert = { data: [{ id: "p1" }], error: null }
   st.saleUpdate = {}; st.saleUpdateDefault = { data: [{ id: "u1" }], error: null }
   st.updates = []; st.runs = []; st.captured = null; st.throwInWalk = false; st.isFilters = []
-  st.recent = { data: [], error: null }; st.recentCalls = []
+  st.recent = { data: [], error: null }; st.recentCalls = []; st.recentV2Calls = []
   st.last = { data: [], error: null }; st.lastCalls = []
   st.spread = { data: [], error: null }; st.spreadCalls = []
   st.prior = { data: [], error: null }; st.priorCalls = []
@@ -432,9 +439,12 @@ describe("panini-ingest — the after() walk", () => {
   it("prices from the recent-sales read and reports the engine", async () => {
     st.recent = { data: [{ edition_id: "c1", fmv_usd: 3, n_recent: 3 }], error: null }
     await accept({ cards: [{ sku: "c1", fmv: 5 }] }); await st.captured!()
-    expect(st.recentCalls[0]).toEqual({ p_edition_ids: ["c1"] })
-    // Re-pinned 2026-10-19: the default engine is panini-1.3.1 (1.3.0 plus the thin-window spike guard).
-    expect(st.runs[0].p_extra.fmv_engine).toBe("panini-1.3.1")
+    // Re-pinned 2026-10-24: the default engine is panini-1.4.0 — 1.3.1's rules fed by the SALES-FEED read
+    // (panini_recent_sales_fmv_v2); the serials read is not called at all.
+    expect(st.recentV2Calls[0]).toEqual({ p_edition_ids: ["c1"] })
+    expect(st.recentCalls).toHaveLength(0)
+    expect(st.runs[0].p_extra.fmv_engine).toBe("panini-1.4.0")
+    expect(st.runs[0].p_extra.fmv_recent_source).toBe("panini_recent_sales_fmv_v2")
     expect(st.runs[0].p_extra.fmv_recent_hits).toBe(1)
     expect(st.runs[0].p_ok).toBe(true)
   })
@@ -455,8 +465,8 @@ describe("panini-ingest — the after() walk", () => {
     await accept({ cards: [{ sku: "c1", fmv: 5 }, { sku: "c2", fmv: 9 }] }); await st.captured!()
     expect(st.lastCalls).toEqual([{ p_edition_ids: ["c2"] }])
     const rows = st.fmvInserted.flat()
-    expect(rows.find((r) => r.edition_id === "c2")).toMatchObject({ fmv_usd: 1.5, algo_version: "panini-1.3.1" })
-    expect(st.runs[0].p_extra.fmv_engine).toBe("panini-1.3.1")
+    expect(rows.find((r) => r.edition_id === "c2")).toMatchObject({ fmv_usd: 1.5, algo_version: "panini-1.4.0" })
+    expect(st.runs[0].p_extra.fmv_engine).toBe("panini-1.4.0")
     expect(st.runs[0].p_extra.fmv_last_hits).toBe(1)
     expect(st.runs[0].p_extra.fmv_last_error).toBeNull()
     expect(st.runs[0].p_ok).toBe(true)
@@ -480,8 +490,8 @@ describe("panini-ingest — the after() walk", () => {
     expect(st.spreadCalls).toEqual([{ p_edition_ids: ["c1", "c2"] }])
     const rows = st.fmvInserted.flat()
     // Re-pinned 2026-10-19 (default engine 1.3.1, which carries 1.3.0's spread row through unchanged).
-    expect(rows.find((r) => r.edition_id === "c1")).toMatchObject({ algo_version: "panini-1.3.1", spread_n: 3 })
-    expect(rows.find((r) => r.edition_id === "c2")).toMatchObject({ algo_version: "panini-1.3.1", spread_n: 2 })
+    expect(rows.find((r) => r.edition_id === "c1")).toMatchObject({ algo_version: "panini-1.4.0", spread_n: 3 })
+    expect(rows.find((r) => r.edition_id === "c2")).toMatchObject({ algo_version: "panini-1.4.0", spread_n: 2 })
     expect(st.runs[0].p_extra.fmv_spread_hits).toBe(2)
     expect(st.runs[0].p_extra.fmv_spread_error).toBeNull()
     expect(st.runs[0].p_ok).toBe(true)
@@ -504,9 +514,9 @@ describe("panini-ingest — the after() walk", () => {
     await accept({ cards: [{ sku: "c1", fmv: 5 }, { sku: "c2", fmv: 5 }, { sku: "c3", fmv: 5 }] }); await st.captured!()
     expect(st.priorCalls).toEqual([{ p_edition_ids: ["c1", "c3"] }])
     const rows = st.fmvInserted.flat()
-    expect(rows.find((r) => r.edition_id === "c1")).toMatchObject({ algo_version: "panini-1.3.1", prior_med: 1 })
-    expect(rows.find((r) => r.edition_id === "c2")).toMatchObject({ algo_version: "panini-1.3.1", prior_med: null })
-    expect(st.runs[0].p_extra).toMatchObject({ fmv_engine: "panini-1.3.1", fmv_prior_hits: 1, fmv_prior_error: null })
+    expect(rows.find((r) => r.edition_id === "c1")).toMatchObject({ algo_version: "panini-1.4.0", prior_med: 1 })
+    expect(rows.find((r) => r.edition_id === "c2")).toMatchObject({ algo_version: "panini-1.4.0", prior_med: null })
+    expect(st.runs[0].p_extra).toMatchObject({ fmv_engine: "panini-1.4.0", fmv_prior_hits: 1, fmv_prior_error: null })
     expect(st.runs[0].p_ok).toBe(true)
   })
 
@@ -514,7 +524,7 @@ describe("panini-ingest — the after() walk", () => {
     st.recent = { data: [{ edition_id: "c1", fmv_usd: 3, n_recent: 3 }], error: null }
     await accept({ cards: [{ sku: "c1", fmv: 5 }] }); await st.captured!()
     expect(st.priorCalls).toHaveLength(0)
-    expect(st.runs[0].p_extra.fmv_engine).toBe("panini-1.3.1")
+    expect(st.runs[0].p_extra.fmv_engine).toBe("panini-1.4.0")
   })
 
   it("a failed prior read falls back to 1.3.0 rows AND fails the run (no silent downgrade)", async () => {
@@ -524,6 +534,32 @@ describe("panini-ingest — the after() walk", () => {
     expect(st.fmvInserted.flat()[0].algo_version).toBe("panini-1.3.0")
     expect(st.runs[0].p_extra.fmv_engine).toBe("panini-1.3.0")
     expect(st.runs[0].p_extra.fmv_prior_error).toBe("prior boom")
+    expect(st.runs[0].p_ok).toBe(false)
+  })
+
+  // FMV engine panini-1.4.0 (2026-10-24): the 30-day read comes from panini_sales (…_v2). The rows are
+  // 1.3.1's; only the input and the stamp change, so the kill switch is the old read + the old stamp.
+  it("PANINI_FMV_ENGINE=1.3.1 is the 1.4.0 kill switch: the SERIALS read runs, the sales-feed read does not, 1.3.1 rows, healthy run", async () => {
+    process.env.PANINI_FMV_ENGINE = "1.3.1"
+    st.recent = { data: [{ edition_id: "c1", fmv_usd: 3, n_recent: 3 }], error: null }
+    await accept({ cards: [{ sku: "c1", fmv: 5 }] }); await st.captured!()
+    expect(st.recentCalls).toEqual([{ p_edition_ids: ["c1"] }])
+    expect(st.recentV2Calls).toHaveLength(0)
+    expect(st.spreadCalls).toHaveLength(1)
+    expect(st.fmvInserted.flat()[0].algo_version).toBe("panini-1.3.1")
+    expect(st.runs[0].p_extra.fmv_engine).toBe("panini-1.3.1")
+    expect(st.runs[0].p_extra.fmv_recent_source).toBe("panini_recent_sales_fmv")
+    expect(st.runs[0].p_ok).toBe(true)
+  })
+
+  it("a failed sales-feed (v2) read falls back to 1.0.0 rows AND fails the run — never silently to the serials read", async () => {
+    st.recent = { data: null, error: { message: "v2 boom" } }
+    await accept({ cards: [{ sku: "c1", fmv: 5 }] }); await st.captured!()
+    expect(st.recentV2Calls).toHaveLength(1)
+    expect(st.recentCalls).toHaveLength(0)
+    expect(st.fmvInserted.flat()[0].algo_version).toBe("panini-1.0.0")
+    expect(st.runs[0].p_extra.fmv_engine).toBe("panini-1.0.0")
+    expect(st.runs[0].p_extra.fmv_recent_error).toBe("v2 boom")
     expect(st.runs[0].p_ok).toBe(false)
   })
 

@@ -424,3 +424,30 @@ describe("toPackRow from a DROP page (packDetails, 2026-09-29)", () => {
     expect(toPackRow({ __pack_id: "1038", market_stats: { floor_price: 144 } }, NOW).price_usd).toBeNull()
   })
 })
+
+// panini-1.4.0 (2026-10-24): the arms are 1.3.1's — only the stamp differs. The INPUT switch happens in the
+// route (which read it hands in), so this pins that the function changes nothing but the label.
+import { toFmvRowV14 as _v14, toFmvRowV131 as _v131 } from "@/lib/chains/panini/ingest-normalize"
+describe("toFmvRowV14 (panini-1.4.0)", () => {
+  const now = "2026-10-24T15:00:00.000Z"
+  const card = { sku: "p1", market_stats: { volume_txns: 4, recent_sale: 10, avg_sale: 12, floor_price: 9, for_sale_count: 2 } }
+  it("is 1.3.1's row re-stamped panini-1.4.0 — same price, same label, every arm", () => {
+    const cases: Array<[any, any, any, any]> = [
+      [{ fmv_usd: 11, n_recent: 3 }, null, { n_sales: 3, min_usd: 10, max_usd: 12 }, null],            // HIGH, tight
+      [{ fmv_usd: 770, n_recent: 1 }, null, { n_sales: 2, min_usd: 1, max_usd: 770 }, { prior_median_usd: 1, n_prior: 5 }], // spike guard fires
+      [null, { fmv_usd: 4, n_sales: 2 }, { n_sales: 2, min_usd: 3, max_usd: 5 }, null],               // LOW from last sales
+      [null, null, null, null],                                                                         // lifetime avg_sale, LOW
+    ]
+    for (const [r, l, sp, pr] of cases) {
+      const a = _v131(card as any, now, r, l, sp, pr)!
+      const b = _v14(card as any, now, r, l, sp, pr)!
+      expect(b).toEqual({ ...a, algo_version: "panini-1.4.0" })
+      expect(a.algo_version).toBe("panini-1.3.1")
+    }
+  })
+  it("returns null exactly when 1.3.1 does", () => {
+    const noData = { sku: "p2", market_stats: { volume_txns: 0 } }
+    expect(_v14(noData as any, now, null, null, null, null)).toBeNull()
+    expect(_v131(noData as any, now, null, null, null, null)).toBeNull()
+  })
+})

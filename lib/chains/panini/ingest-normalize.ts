@@ -354,3 +354,27 @@ export function latestSalesBySku(records: any[]): Map<string, PaniniSale> {
 export function isStrictIsoUtc(v: string | null): v is string {
   return !!v && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,6})?)?Z$/.test(v);
 }
+
+// panini-1.4.0 (2026-10-24, decided 10-19 under Trevor's "make decisions"; shipped by the first interactive
+// session on/after 10-24, after the 1.3.x live read) — 1.3.1's rules, unchanged, with ONE input change made
+// by the ROUTE: the 30-day `recent` read comes from the recorded sales feed (panini_recent_sales_fmv_v2 over
+// panini_sales) instead of the per-serial last-sale columns (panini_recent_sales_fmv over
+// panini_card_serials). A serial's last_sale_* holds ONE sale per serial, so a serial that traded twice in
+// the window showed once and the 30-day COUNT — which 1.3.0's MEDIUM and 1.3.1's spike guard key on —
+// under-read. Gate (panini_sales_fmv_backtest, 45 d, covered editions, next sale as truth): 10-19 sales
+// median-3 MdAPE 11.8 % / within ±25 % 60.9 vs serials 13.4 / 59.4 (n 27,746); 10-24 at ship, on the 27,019
+// targets both inputs price: 5.3 / 63.1 vs 8.3 / 62.0, plus 5,214 targets only the sales feed can price.
+// This function only stamps the version: the arms are 1.3.1's, so a row is a 1.4.0 row exactly when the
+// route fed it the v2 read. PANINI_FMV_ENGINE=1.3.1 is the kill switch (old read, old stamp).
+export function toFmvRowV14(
+  c: PaniniCardStats,
+  nowIso: string,
+  recent?: { fmv_usd: number; n_recent: number } | null,
+  last?: { fmv_usd: number; n_sales: number } | null,
+  spread?: { n_sales: number; min_usd: number; max_usd: number } | null,
+  prior?: { prior_median_usd: number; n_prior: number } | null,
+) {
+  const row = toFmvRowV131(c, nowIso, recent, last, spread, prior)
+  if (!row) return null
+  return { ...row, algo_version: "panini-1.4.0" }
+}

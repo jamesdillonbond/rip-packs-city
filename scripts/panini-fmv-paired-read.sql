@@ -46,6 +46,6 @@ SELECT algo_version, conf, count(*) AS n,
        round(100.0 * sum(abs(med3 - p)) / sum(p), 1)           AS naive3_wape,
        round((percentile_cont(0.5) WITHIN GROUP (ORDER BY (e / p)::double precision))::numeric, 3) AS pub_ratio
 FROM pub
-WHERE algo_version IN ('panini-1.3.0', 'panini-1.3.1', 'panini-1.2.0')   -- add 'panini-1.4.0' once it ships
+WHERE algo_version IN ('panini-1.4.0', 'panini-1.3.1', 'panini-1.3.0', 'panini-1.2.0')   -- 1.4.0 shipped 2026-10-24 (20261024152200)
 GROUP BY 1, 2
 ORDER BY 1 DESC, 2;
