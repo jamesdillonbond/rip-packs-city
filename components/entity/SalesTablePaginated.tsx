@@ -166,12 +166,12 @@ export default function SalesTablePaginated({ collectionUrlSlug, routeSlug, init
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr>
-              <th style={TH}>Serial</th>
-              {hasParallelCol && <th style={TH}>Parallel</th>}
-              <th style={TH}>Price</th>
-              <th style={TH}>Buyer</th>
-              <th style={TH}>Seller</th>
-              <th style={TH}>When</th>
+              <th scope="col" style={TH}>Serial</th>
+              {hasParallelCol && <th scope="col" style={TH}>Parallel</th>}
+              <th scope="col" style={TH}>Price</th>
+              <th scope="col" style={TH}>Buyer</th>
+              <th scope="col" style={TH}>Seller</th>
+              <th scope="col" style={TH}>When</th>
             </tr>
           </thead>
           <tbody>

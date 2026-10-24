@@ -296,13 +296,13 @@ export default function TcReportPage() {
               <table className="rpc-tc-table">
                 <thead>
                   <tr>
-                    <th>Edition</th>
-                    <th className="rpc-tc-th-num">Tier</th>
-                    <th className="rpc-tc-th-num">Held</th>
-                    <th className="rpc-tc-th-num">Circ</th>
-                    <th className="rpc-tc-th-num">Locked</th>
-                    <th className="rpc-tc-th-num">Burned</th>
-                    <th className="rpc-tc-th-num rpc-tc-th-emph">Squeeze</th>
+                    <th scope="col">Edition</th>
+                    <th scope="col" className="rpc-tc-th-num">Tier</th>
+                    <th scope="col" className="rpc-tc-th-num">Held</th>
+                    <th scope="col" className="rpc-tc-th-num">Circ</th>
+                    <th scope="col" className="rpc-tc-th-num">Locked</th>
+                    <th scope="col" className="rpc-tc-th-num">Burned</th>
+                    <th scope="col" className="rpc-tc-th-num rpc-tc-th-emph">Squeeze</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -362,11 +362,11 @@ export default function TcReportPage() {
               <table className="rpc-tc-table">
                 <thead>
                   <tr>
-                    <th>Set</th>
-                    <th className="rpc-tc-th-num">Owned</th>
-                    <th className="rpc-tc-th-num">Total</th>
-                    <th className="rpc-tc-th-num">Moments</th>
-                    <th className="rpc-tc-th-num rpc-tc-th-emph">Completion</th>
+                    <th scope="col">Set</th>
+                    <th scope="col" className="rpc-tc-th-num">Owned</th>
+                    <th scope="col" className="rpc-tc-th-num">Total</th>
+                    <th scope="col" className="rpc-tc-th-num">Moments</th>
+                    <th scope="col" className="rpc-tc-th-num rpc-tc-th-emph">Completion</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -442,10 +442,10 @@ export default function TcReportPage() {
               <table className="rpc-tc-table">
                 <thead>
                   <tr>
-                    <th>Edition</th>
-                    <th className="rpc-tc-th-num">Tier</th>
-                    <th className="rpc-tc-th-num">Price</th>
-                    <th className="rpc-tc-th-num">When</th>
+                    <th scope="col">Edition</th>
+                    <th scope="col" className="rpc-tc-th-num">Tier</th>
+                    <th scope="col" className="rpc-tc-th-num">Price</th>
+                    <th scope="col" className="rpc-tc-th-num">When</th>
                   </tr>
                 </thead>
                 <tbody>

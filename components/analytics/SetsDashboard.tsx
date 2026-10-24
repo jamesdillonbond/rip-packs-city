@@ -276,12 +276,12 @@ function SeriesOverview({ rows }: { rows: SetsSeriesOverviewRow[] }) {
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] font-semibold border-b border-[color:var(--rpc-border)] bg-[var(--rpc-surface)]">
-                <th className="py-2.5 px-4">Series</th>
-                <th className="py-2.5 px-3 text-right">Sets</th>
-                <th className="py-2.5 px-3 text-right">Editions</th>
-                <th className="py-2.5 px-3 text-right">Coverage</th>
-                <th className="py-2.5 px-3 text-right">Median FMV</th>
-                <th className="py-2.5 px-3 text-right">Total robust FMV</th>
+                <th scope="col" className="py-2.5 px-4">Series</th>
+                <th scope="col" className="py-2.5 px-3 text-right">Sets</th>
+                <th scope="col" className="py-2.5 px-3 text-right">Editions</th>
+                <th scope="col" className="py-2.5 px-3 text-right">Coverage</th>
+                <th scope="col" className="py-2.5 px-3 text-right">Median FMV</th>
+                <th scope="col" className="py-2.5 px-3 text-right">Total robust FMV</th>
               </tr>
             </thead>
             <tbody>
@@ -660,14 +660,14 @@ export default function SetsDashboard() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-left text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] font-semibold border-b border-[color:var(--rpc-border)] bg-[var(--rpc-surface)]">
-                    <th className="py-2.5 px-4">Set</th>
-                    <th className="py-2.5 px-3">Collection</th>
-                    <th className="py-2.5 px-3">Series</th>
-                    <th className="py-2.5 px-3 text-right">Editions</th>
-                    <th className="py-2.5 px-3">Coverage</th>
-                    <th className="py-2.5 px-3 text-right">Median FMV</th>
-                    <th className="py-2.5 px-3 text-right">Robust total</th>
-                    <th className="py-2.5 px-3"></th>
+                    <th scope="col" className="py-2.5 px-4">Set</th>
+                    <th scope="col" className="py-2.5 px-3">Collection</th>
+                    <th scope="col" className="py-2.5 px-3">Series</th>
+                    <th scope="col" className="py-2.5 px-3 text-right">Editions</th>
+                    <th scope="col" className="py-2.5 px-3">Coverage</th>
+                    <th scope="col" className="py-2.5 px-3 text-right">Median FMV</th>
+                    <th scope="col" className="py-2.5 px-3 text-right">Robust total</th>
+                    <th scope="col" className="py-2.5 px-3"></th>
                   </tr>
                 </thead>
                 <tbody>

@@ -43,13 +43,13 @@ export default function SalesHistoryCard({ wallet, urlSlug }: { wallet: string; 
       <table className="w-full text-sm" style={{ fontFamily: "var(--font-mono)" }}>
         <thead>
           <tr className="border-b border-[color:var(--rpc-border)] text-left text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">
-            <th className="py-1.5 pr-2">Side</th>
-            <th className="py-1.5 pr-2">{getEntityLabels(urlSlug).player}</th>
-            <th className="py-1.5 pr-2">Set</th>
-            <th className="py-1.5 pr-2">Serial</th>
-            <th className="py-1.5 pr-2 text-right">Price</th>
-            <th className="py-1.5 pr-2">Marketplace</th>
-            <th className="py-1.5 text-right">Date</th>
+            <th scope="col" className="py-1.5 pr-2">Side</th>
+            <th scope="col" className="py-1.5 pr-2">{getEntityLabels(urlSlug).player}</th>
+            <th scope="col" className="py-1.5 pr-2">Set</th>
+            <th scope="col" className="py-1.5 pr-2">Serial</th>
+            <th scope="col" className="py-1.5 pr-2 text-right">Price</th>
+            <th scope="col" className="py-1.5 pr-2">Marketplace</th>
+            <th scope="col" className="py-1.5 text-right">Date</th>
           </tr>
         </thead>
         <tbody>

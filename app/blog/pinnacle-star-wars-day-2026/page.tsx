@@ -282,10 +282,10 @@ export default function PinnacleStarWarsDay2026() {
         <table style={TABLE}>
           <thead>
             <tr>
-              <th style={TH}>Edition</th>
-              <th style={TH}>Variant</th>
-              <th style={{ ...TH, textAlign: "right" }}>Sales 30d</th>
-              <th style={{ ...TH, textAlign: "right" }}>Avg sale</th>
+              <th scope="col" style={TH}>Edition</th>
+              <th scope="col" style={TH}>Variant</th>
+              <th scope="col" style={{ ...TH, textAlign: "right" }}>Sales 30d</th>
+              <th scope="col" style={{ ...TH, textAlign: "right" }}>Avg sale</th>
             </tr>
           </thead>
           <tbody>

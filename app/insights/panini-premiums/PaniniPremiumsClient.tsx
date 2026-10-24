@@ -208,7 +208,7 @@ function ParallelTable({ rows }: { rows: PaniniParallelPremium[] }) {
         <thead>
           <tr>
             {["Player", "Product", "Parallel", "FMV", "Base", "Base FMV", "Premium"].map((h) => (
-              <th key={h} style={th}>{h}</th>
+              <th scope="col" key={h} style={th}>{h}</th>
             ))}
           </tr>
         </thead>
@@ -242,7 +242,7 @@ function SerialTable({ rows }: { rows: PaniniSerialPremium[] }) {
         <thead>
           <tr>
             {["Player", "Product", "Parallel", "Serial", "Sold for", "Typical sale", "Premium", "Sold"].map((h) => (
-              <th key={h} style={th}>{h}</th>
+              <th scope="col" key={h} style={th}>{h}</th>
             ))}
           </tr>
         </thead>

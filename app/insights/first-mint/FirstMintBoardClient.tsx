@@ -350,13 +350,13 @@ export default function FirstMintBoardClient({ initial, initialDegraded = null }
           <table className="rpc-fm-table">
             <thead>
               <tr>
-                <th>Edition</th>
-                <th className="rpc-fm-th-num">Tier</th>
-                <th className="rpc-fm-th-num">Circ</th>
-                <th className="rpc-fm-th-num">#1 sold</th>
-                <th className="rpc-fm-th-num">#1 price</th>
-                <th className="rpc-fm-th-num">Avg other</th>
-                <th className="rpc-fm-th-num rpc-fm-th-emph">Multiplier</th>
+                <th scope="col">Edition</th>
+                <th scope="col" className="rpc-fm-th-num">Tier</th>
+                <th scope="col" className="rpc-fm-th-num">Circ</th>
+                <th scope="col" className="rpc-fm-th-num">#1 sold</th>
+                <th scope="col" className="rpc-fm-th-num">#1 price</th>
+                <th scope="col" className="rpc-fm-th-num">Avg other</th>
+                <th scope="col" className="rpc-fm-th-num rpc-fm-th-emph">Multiplier</th>
               </tr>
             </thead>
             <tbody>

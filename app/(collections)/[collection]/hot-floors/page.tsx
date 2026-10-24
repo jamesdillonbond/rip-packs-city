@@ -93,15 +93,15 @@ export default async function HotFloorsPage(props: { params: Promise<{ collectio
           <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "var(--font-mono)", fontSize: 13, minWidth: 720 }}>
             <thead>
               <tr style={{ textAlign: "left", color: "var(--rpc-text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", fontSize: 11 }}>
-                <th style={{ padding: "10px 12px" }}>#</th>
-                <th style={{ padding: "10px 12px" }}>Moment</th>
-                <th style={{ padding: "10px 12px", textAlign: "right" }}>Sweepers</th>
-                <th style={{ padding: "10px 12px", textAlign: "right" }}>Swept sales</th>
-                <th style={{ padding: "10px 12px", textAlign: "right" }}>Swept $</th>
-                <th style={{ padding: "10px 12px", textAlign: "right" }}>Avg paid</th>
-                <th style={{ padding: "10px 12px", textAlign: "right" }}>Floor</th>
-                <th style={{ padding: "10px 12px", textAlign: "right" }}>FMV</th>
-                <th style={{ padding: "10px 12px", textAlign: "right" }}>Last</th>
+                <th scope="col" style={{ padding: "10px 12px" }}>#</th>
+                <th scope="col" style={{ padding: "10px 12px" }}>Moment</th>
+                <th scope="col" style={{ padding: "10px 12px", textAlign: "right" }}>Sweepers</th>
+                <th scope="col" style={{ padding: "10px 12px", textAlign: "right" }}>Swept sales</th>
+                <th scope="col" style={{ padding: "10px 12px", textAlign: "right" }}>Swept $</th>
+                <th scope="col" style={{ padding: "10px 12px", textAlign: "right" }}>Avg paid</th>
+                <th scope="col" style={{ padding: "10px 12px", textAlign: "right" }}>Floor</th>
+                <th scope="col" style={{ padding: "10px 12px", textAlign: "right" }}>FMV</th>
+                <th scope="col" style={{ padding: "10px 12px", textAlign: "right" }}>Last</th>
               </tr>
             </thead>
             <tbody>

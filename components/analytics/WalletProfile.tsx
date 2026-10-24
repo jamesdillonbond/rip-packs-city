@@ -368,12 +368,12 @@ export default function WalletProfile({
             <table className="w-full text-sm min-w-[640px]">
               <thead>
                 <tr className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] border-b border-[color:var(--rpc-border)]">
-                  <th className="py-2 px-3 text-left font-semibold">Collection</th>
-                  <th className="py-2 px-3 text-left font-semibold">Side</th>
-                  <th className="py-2 px-3 text-left font-semibold">Counterparty</th>
-                  <th className="py-2 px-3 text-right font-semibold">Principal</th>
-                  <th className="py-2 px-3 text-center font-semibold">Status</th>
-                  <th className="py-2 px-3 text-right font-semibold">Funded</th>
+                  <th scope="col" className="py-2 px-3 text-left font-semibold">Collection</th>
+                  <th scope="col" className="py-2 px-3 text-left font-semibold">Side</th>
+                  <th scope="col" className="py-2 px-3 text-left font-semibold">Counterparty</th>
+                  <th scope="col" className="py-2 px-3 text-right font-semibold">Principal</th>
+                  <th scope="col" className="py-2 px-3 text-center font-semibold">Status</th>
+                  <th scope="col" className="py-2 px-3 text-right font-semibold">Funded</th>
                 </tr>
               </thead>
               <tbody>
@@ -927,14 +927,14 @@ function PositionTransferPanel({
           <table className="w-full text-xs min-w-[420px]">
             <thead>
               <tr className="text-[9px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] border-b border-[color:var(--rpc-border)]">
-                <th className="py-1.5 px-2 text-left font-semibold">Collection</th>
-                <th className="py-1.5 px-2 text-left font-semibold">
+                <th scope="col" className="py-1.5 px-2 text-left font-semibold">Collection</th>
+                <th scope="col" className="py-1.5 px-2 text-left font-semibold">
                   {isOutgoing ? "Recipient" : "Origin"}
                 </th>
-                <th className="py-1.5 px-2 text-left font-semibold">Borrower</th>
-                <th className="py-1.5 px-2 text-right font-semibold">Principal</th>
-                <th className="py-1.5 px-2 text-center font-semibold">Status</th>
-                <th className="py-1.5 px-2 text-right font-semibold">Funded</th>
+                <th scope="col" className="py-1.5 px-2 text-left font-semibold">Borrower</th>
+                <th scope="col" className="py-1.5 px-2 text-right font-semibold">Principal</th>
+                <th scope="col" className="py-1.5 px-2 text-center font-semibold">Status</th>
+                <th scope="col" className="py-1.5 px-2 text-right font-semibold">Funded</th>
               </tr>
             </thead>
             <tbody>

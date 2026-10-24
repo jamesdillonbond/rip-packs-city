@@ -119,14 +119,14 @@ export default function LenderPerformanceTable({
           <table className="w-full text-sm min-w-[680px]">
             <thead className="sticky top-0 bg-[var(--rpc-surface)] backdrop-blur">
               <tr className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] border-b border-[color:var(--rpc-border)]">
-                <th className="py-2 px-3 text-left font-semibold w-8">#</th>
-                <th className="py-2 px-3 text-left font-semibold">Wallet</th>
-                <th className="py-2 px-3 text-right font-semibold">Loans</th>
-                <th className="py-2 px-3 text-right font-semibold">Principal</th>
-                <th className="py-2 px-3 text-right font-semibold">Interest</th>
-                <th className="py-2 px-3 text-right font-semibold">Yield</th>
-                <th className="py-2 px-3 text-right font-semibold">Default</th>
-                <th className="py-2 px-3 text-right font-semibold">Active</th>
+                <th scope="col" className="py-2 px-3 text-left font-semibold w-8">#</th>
+                <th scope="col" className="py-2 px-3 text-left font-semibold">Wallet</th>
+                <th scope="col" className="py-2 px-3 text-right font-semibold">Loans</th>
+                <th scope="col" className="py-2 px-3 text-right font-semibold">Principal</th>
+                <th scope="col" className="py-2 px-3 text-right font-semibold">Interest</th>
+                <th scope="col" className="py-2 px-3 text-right font-semibold">Yield</th>
+                <th scope="col" className="py-2 px-3 text-right font-semibold">Default</th>
+                <th scope="col" className="py-2 px-3 text-right font-semibold">Active</th>
               </tr>
             </thead>
             <tbody>

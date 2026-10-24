@@ -123,7 +123,7 @@ function Table({ head, children }: { head: string[]; children: React.ReactNode }
   return (
     <div style={{ overflowX: "auto" }}>
       <table style={{ width: "100%", borderCollapse: "collapse" }}>
-        <thead><tr>{head.map((h, i) => <th key={i} style={th}>{h}</th>)}</tr></thead>
+        <thead><tr>{head.map((h, i) => <th scope="col" key={i} style={th}>{h}</th>)}</tr></thead>
         <tbody>{children}</tbody>
       </table>
     </div>

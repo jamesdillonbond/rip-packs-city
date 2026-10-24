@@ -295,14 +295,14 @@ function CreateDraft({ call, onCreated }: { call: Call; onCreated: () => void })
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr>
-                  <th style={th} />
-                  <th style={th}>Player</th>
-                  <th style={th}>Set</th>
-                  <th style={th}>Tier</th>
-                  <th style={th}>Serial</th>
-                  <th style={th}>Team</th>
-                  <th style={th}>FMV</th>
-                  {connected ? <th style={th}>From</th> : null}
+                  <th scope="col" style={th} />
+                  <th scope="col" style={th}>Player</th>
+                  <th scope="col" style={th}>Set</th>
+                  <th scope="col" style={th}>Tier</th>
+                  <th scope="col" style={th}>Serial</th>
+                  <th scope="col" style={th}>Team</th>
+                  <th scope="col" style={th}>FMV</th>
+                  {connected ? <th scope="col" style={th}>From</th> : null}
                 </tr>
               </thead>
               <tbody>
@@ -463,13 +463,13 @@ function DropPanel({ drop, call, onChanged }: { drop: DropRow; call: Call; onCha
         <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 10 }}>
           <thead>
             <tr>
-              <th style={th}>Pack</th>
-              <th style={th}>Gift to</th>
-              <th style={th}>Moment</th>
-              <th style={th}>Player</th>
-              <th style={th}>Serial</th>
-              <th style={th}>FMV</th>
-              <th style={th}>Status</th>
+              <th scope="col" style={th}>Pack</th>
+              <th scope="col" style={th}>Gift to</th>
+              <th scope="col" style={th}>Moment</th>
+              <th scope="col" style={th}>Player</th>
+              <th scope="col" style={th}>Serial</th>
+              <th scope="col" style={th}>FMV</th>
+              <th scope="col" style={th}>Status</th>
             </tr>
           </thead>
           <tbody>

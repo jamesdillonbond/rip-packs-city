@@ -256,7 +256,7 @@ export default function PaniniSqueezeClient({
   );
 
   const th = (k: keyof Row, label: string, n = false) => (
-    <th
+    <th scope="col"
       className={n ? "n" : ""}
       onClick={() => (k === sortK ? setAsc(!asc) : (setSortK(k), setAsc(false)))}
       tabIndex={0}

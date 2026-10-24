@@ -272,7 +272,7 @@ function Table({ head, rows }: { head: string[]; rows: React.ReactNode[][] }) {
         <thead>
           <tr style={{ textAlign: "left", background: "rgba(255,255,255,0.03)" }}>
             {head.map((h) => (
-              <th key={h} style={{ padding: "8px 10px", fontSize: 10, color: dim, textTransform: "uppercase", letterSpacing: "0.1em" }}>{h}</th>
+              <th scope="col" key={h} style={{ padding: "8px 10px", fontSize: 10, color: dim, textTransform: "uppercase", letterSpacing: "0.1em" }}>{h}</th>
             ))}
           </tr>
         </thead>

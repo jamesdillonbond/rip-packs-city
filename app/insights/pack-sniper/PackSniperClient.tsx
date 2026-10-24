@@ -728,13 +728,13 @@ export default function PackSniperClient({ initialDeals, initialFetchedAt, locke
           <table className="rpc-ps-table">
             <thead>
               <tr>
-                <th className="rpc-ps-th-pack">Pack</th>
-                <th className="rpc-ps-th-num">Tier</th>
-                <th className="rpc-ps-th-num rpc-ps-th-emph">Live ask</th>
-                <th className="rpc-ps-th-num rpc-ps-col-optional">Gross EV</th>
-                <th className="rpc-ps-th-num rpc-ps-th-emph">EV / ask</th>
-                <th className="rpc-ps-th-num rpc-ps-col-optional">FMV cov.</th>
-                <th className="rpc-ps-th-act">Actions</th>
+                <th scope="col" className="rpc-ps-th-pack">Pack</th>
+                <th scope="col" className="rpc-ps-th-num">Tier</th>
+                <th scope="col" className="rpc-ps-th-num rpc-ps-th-emph">Live ask</th>
+                <th scope="col" className="rpc-ps-th-num rpc-ps-col-optional">Gross EV</th>
+                <th scope="col" className="rpc-ps-th-num rpc-ps-th-emph">EV / ask</th>
+                <th scope="col" className="rpc-ps-th-num rpc-ps-col-optional">FMV cov.</th>
+                <th scope="col" className="rpc-ps-th-act">Actions</th>
               </tr>
             </thead>
             <tbody>

@@ -808,10 +808,10 @@ function WhaleLeaderboard({ short, urlSlug }: { short: string; urlSlug: string }
         <table className="w-full text-sm" style={{ fontFamily: "var(--font-mono)" }}>
           <thead>
             <tr className="border-b border-[color:var(--rpc-border)] text-left text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">
-              <th className="py-1.5 pr-2">#</th>
-              <th className="py-1.5 pr-2">Wallet</th>
-              <th className="py-1.5 pr-2 text-right">Sales</th>
-              <th className="py-1.5 text-right">Volume</th>
+              <th scope="col" className="py-1.5 pr-2">#</th>
+              <th scope="col" className="py-1.5 pr-2">Wallet</th>
+              <th scope="col" className="py-1.5 pr-2 text-right">Sales</th>
+              <th scope="col" className="py-1.5 text-right">Volume</th>
             </tr>
           </thead>
           <tbody>
@@ -1307,13 +1307,13 @@ function AnalyticsInner() {
                 <table className="w-full text-sm" style={{ fontFamily: "var(--font-mono)" }}>
                   <thead>
                     <tr className="border-b border-[color:var(--rpc-border)] text-left text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">
-                      <th className="py-2 pr-2">#</th>
-                      <th className="py-2 pr-2">{labels.player}</th>
-                      <th className="py-2 pr-2">Set</th>
-                      <th className="py-2 pr-2">{labels.tier}</th>
-                      <th className="py-2 pr-2 text-right">Serial</th>
-                      <th className="py-2 pr-2 text-right">Price</th>
-                      <th className="py-2 text-right">Date</th>
+                      <th scope="col" className="py-2 pr-2">#</th>
+                      <th scope="col" className="py-2 pr-2">{labels.player}</th>
+                      <th scope="col" className="py-2 pr-2">Set</th>
+                      <th scope="col" className="py-2 pr-2">{labels.tier}</th>
+                      <th scope="col" className="py-2 pr-2 text-right">Serial</th>
+                      <th scope="col" className="py-2 pr-2 text-right">Price</th>
+                      <th scope="col" className="py-2 text-right">Date</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1359,12 +1359,12 @@ function AnalyticsInner() {
                 <table className="w-full text-sm" style={{ fontFamily: "var(--font-mono)" }}>
                   <thead>
                     <tr className="border-b border-[color:var(--rpc-border)] text-left text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">
-                      <th className="py-2 pr-2">{labels.player}</th>
-                      <th className="py-2 pr-2">Set</th>
-                      <th className="py-2 pr-2">{labels.tier}</th>
-                      <th className="py-2 pr-2 text-right">Sales</th>
-                      <th className="py-2 pr-2 text-right">Volume</th>
-                      <th className="py-2 text-right">Avg Price</th>
+                      <th scope="col" className="py-2 pr-2">{labels.player}</th>
+                      <th scope="col" className="py-2 pr-2">Set</th>
+                      <th scope="col" className="py-2 pr-2">{labels.tier}</th>
+                      <th scope="col" className="py-2 pr-2 text-right">Sales</th>
+                      <th scope="col" className="py-2 pr-2 text-right">Volume</th>
+                      <th scope="col" className="py-2 text-right">Avg Price</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1602,15 +1602,15 @@ function AnalyticsInner() {
                 <table className="w-full text-sm" style={{ fontFamily: "var(--font-mono)" }}>
                   <thead>
                     <tr className="border-b border-[color:var(--rpc-border)] text-left text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">
-                      <th className="py-2 pr-2">{labels.player}</th>
-                      <th className="py-2 pr-2">Set</th>
-                      <th className="py-2 pr-2">{labels.tier}</th>
-                      <th className="py-2 pr-2">Series</th>
-                      <th className="py-2 pr-2 text-right">Sales</th>
-                      <th className="py-2 pr-2 text-right">Volume</th>
-                      <th className="py-2 pr-2 text-right">Avg</th>
-                      <th className="py-2 pr-2 text-right">Min</th>
-                      <th className="py-2 text-right">Max</th>
+                      <th scope="col" className="py-2 pr-2">{labels.player}</th>
+                      <th scope="col" className="py-2 pr-2">Set</th>
+                      <th scope="col" className="py-2 pr-2">{labels.tier}</th>
+                      <th scope="col" className="py-2 pr-2">Series</th>
+                      <th scope="col" className="py-2 pr-2 text-right">Sales</th>
+                      <th scope="col" className="py-2 pr-2 text-right">Volume</th>
+                      <th scope="col" className="py-2 pr-2 text-right">Avg</th>
+                      <th scope="col" className="py-2 pr-2 text-right">Min</th>
+                      <th scope="col" className="py-2 text-right">Max</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1908,9 +1908,9 @@ function AnalyticsInner() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-[color:var(--rpc-border)] text-left text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">
-                        <th className="pb-2">Series</th>
-                        <th className="pb-2 text-right">{labels.units}</th>
-                        <th className="pb-2 text-right">Total FMV</th>
+                        <th scope="col" className="pb-2">Series</th>
+                        <th scope="col" className="pb-2 text-right">{labels.units}</th>
+                        <th scope="col" className="pb-2 text-right">Total FMV</th>
                       </tr>
                     </thead>
                     <tbody style={{ fontFamily: "var(--font-mono)" }}>

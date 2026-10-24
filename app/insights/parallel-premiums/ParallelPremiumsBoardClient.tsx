@@ -208,12 +208,12 @@ export default function ParallelPremiumsBoardClient({
         <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "var(--font-mono)", fontSize: 12 }}>
           <thead>
             <tr style={{ textAlign: "left", color: "var(--rpc-text-muted)", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>
-              <th style={th}>Player</th>
-              <th style={th}>Parallel</th>
-              <th style={{ ...th, textAlign: "right" }}>Mint</th>
-              <th style={{ ...th, textAlign: "right" }}>Base FMV</th>
-              <th style={{ ...th, textAlign: "right" }}>Parallel FMV</th>
-              <th style={{ ...th, textAlign: "right" }}>Premium</th>
+              <th scope="col" style={th}>Player</th>
+              <th scope="col" style={th}>Parallel</th>
+              <th scope="col" style={{ ...th, textAlign: "right" }}>Mint</th>
+              <th scope="col" style={{ ...th, textAlign: "right" }}>Base FMV</th>
+              <th scope="col" style={{ ...th, textAlign: "right" }}>Parallel FMV</th>
+              <th scope="col" style={{ ...th, textAlign: "right" }}>Premium</th>
             </tr>
           </thead>
           <tbody>

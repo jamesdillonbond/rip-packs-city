@@ -547,12 +547,12 @@ function Console({ token, onSignOut }: { token: string; onSignOut: () => void })
               <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: MONO, fontSize: 13 }}>
                 <thead>
                   <tr style={{ textAlign: "left", color: accentText("#9a9a9a") }}>
-                    <th style={th}>User</th>
-                    <th style={th}>Tier</th>
-                    <th style={{ ...th, textAlign: "right" }}>Status</th>
-                    <th style={{ ...th, textAlign: "right" }}>Credits</th>
-                    <th style={{ ...th, textAlign: "right" }}>Earned</th>
-                    <th style={{ ...th, textAlign: "right" }}>Spent</th>
+                    <th scope="col" style={th}>User</th>
+                    <th scope="col" style={th}>Tier</th>
+                    <th scope="col" style={{ ...th, textAlign: "right" }}>Status</th>
+                    <th scope="col" style={{ ...th, textAlign: "right" }}>Credits</th>
+                    <th scope="col" style={{ ...th, textAlign: "right" }}>Earned</th>
+                    <th scope="col" style={{ ...th, textAlign: "right" }}>Spent</th>
                   </tr>
                 </thead>
                 <tbody>

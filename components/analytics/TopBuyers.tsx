@@ -143,13 +143,13 @@ export default function TopBuyers({ collection = "nba_top_shot" }: { collection?
           <table className="w-full text-sm" style={{ fontFamily: "var(--font-mono)" }}>
             <thead>
               <tr className="border-b border-[color:var(--rpc-border)] text-left text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">
-                <th className="py-1.5 pr-2">#</th>
-                <th className="py-1.5 pr-2">Wallet</th>
-                <th className="py-1.5 pr-2 text-right">Buys</th>
-                <th className="py-1.5 pr-2 text-right">Editions</th>
-                <th className="py-1.5 pr-2 text-right">Spend</th>
-                <th className="py-1.5 pr-2 text-right">Avg</th>
-                <th className="py-1.5 pl-3">Sweeping</th>
+                <th scope="col" className="py-1.5 pr-2">#</th>
+                <th scope="col" className="py-1.5 pr-2">Wallet</th>
+                <th scope="col" className="py-1.5 pr-2 text-right">Buys</th>
+                <th scope="col" className="py-1.5 pr-2 text-right">Editions</th>
+                <th scope="col" className="py-1.5 pr-2 text-right">Spend</th>
+                <th scope="col" className="py-1.5 pr-2 text-right">Avg</th>
+                <th scope="col" className="py-1.5 pl-3">Sweeping</th>
               </tr>
             </thead>
             <tbody>

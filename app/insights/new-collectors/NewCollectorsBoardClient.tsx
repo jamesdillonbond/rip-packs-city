@@ -325,14 +325,14 @@ export default function NewCollectorsBoardClient({ initialBoard, initialFetchedA
               <table className="rpc-nc-table">
                 <thead>
                   <tr>
-                    <th className="rpc-nc-th-left">Cohort</th>
-                    <th>Size</th>
-                    <th>Repeat 30d</th>
-                    <th>Repeat 60d</th>
-                    <th>Repeat 90d</th>
-                    <th>LTV (median)</th>
-                    <th>Whales</th>
-                    <th>Days to 10th</th>
+                    <th scope="col" className="rpc-nc-th-left">Cohort</th>
+                    <th scope="col">Size</th>
+                    <th scope="col">Repeat 30d</th>
+                    <th scope="col">Repeat 60d</th>
+                    <th scope="col">Repeat 90d</th>
+                    <th scope="col">LTV (median)</th>
+                    <th scope="col">Whales</th>
+                    <th scope="col">Days to 10th</th>
                   </tr>
                 </thead>
                 <tbody>

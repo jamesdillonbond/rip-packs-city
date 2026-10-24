@@ -144,13 +144,13 @@ export default async function WalletsIndexPage() {
               <table className="w-full text-sm min-w-[640px]">
                 <thead>
                   <tr className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] border-b border-[color:var(--rpc-border)]">
-                    <th className="py-2 px-3 text-left font-semibold w-10">#</th>
-                    <th className="py-2 px-3 text-left font-semibold">Wallet</th>
-                    <th className="py-2 px-3 text-left font-semibold">Role</th>
-                    <th className="py-2 px-3 text-right font-semibold">Loans</th>
-                    <th className="py-2 px-3 text-right font-semibold">Volume</th>
-                    <th className="py-2 px-3 text-right font-semibold">Last active</th>
-                    <th className="py-2 px-3 w-10"></th>
+                    <th scope="col" className="py-2 px-3 text-left font-semibold w-10">#</th>
+                    <th scope="col" className="py-2 px-3 text-left font-semibold">Wallet</th>
+                    <th scope="col" className="py-2 px-3 text-left font-semibold">Role</th>
+                    <th scope="col" className="py-2 px-3 text-right font-semibold">Loans</th>
+                    <th scope="col" className="py-2 px-3 text-right font-semibold">Volume</th>
+                    <th scope="col" className="py-2 px-3 text-right font-semibold">Last active</th>
+                    <th scope="col" className="py-2 px-3 w-10"></th>
                   </tr>
                 </thead>
                 <tbody>

@@ -279,15 +279,15 @@ export default function CrossCollectionBoardClient({ initial, initialFailed = fa
           <table className="rpc-cc-table">
             <thead>
               <tr>
-                <th>Wallet</th>
-                <th className="rpc-cc-th-num">Coll</th>
-                <th className="rpc-cc-th-num">Total</th>
-                <th className="rpc-cc-th-num">TS</th>
-                <th className="rpc-cc-th-num">AllDay</th>
-                <th className="rpc-cc-th-num">Golazos</th>
-                <th className="rpc-cc-th-num">Pinnacle</th>
-                <th className="rpc-cc-th-num">UFC</th>
-                <th className="rpc-cc-th-num rpc-cc-th-emph">Approx FMV</th>
+                <th scope="col">Wallet</th>
+                <th scope="col" className="rpc-cc-th-num">Coll</th>
+                <th scope="col" className="rpc-cc-th-num">Total</th>
+                <th scope="col" className="rpc-cc-th-num">TS</th>
+                <th scope="col" className="rpc-cc-th-num">AllDay</th>
+                <th scope="col" className="rpc-cc-th-num">Golazos</th>
+                <th scope="col" className="rpc-cc-th-num">Pinnacle</th>
+                <th scope="col" className="rpc-cc-th-num">UFC</th>
+                <th scope="col" className="rpc-cc-th-num rpc-cc-th-emph">Approx FMV</th>
               </tr>
             </thead>
             <tbody>
@@ -365,9 +365,9 @@ export default function CrossCollectionBoardClient({ initial, initialFailed = fa
           <table className="rpc-cc-table">
             <thead>
               <tr>
-                <th>Set</th>
-                <th className="rpc-cc-th-num">Cohort holders</th>
-                <th className="rpc-cc-th-num">Cohort moments</th>
+                <th scope="col">Set</th>
+                <th scope="col" className="rpc-cc-th-num">Cohort holders</th>
+                <th scope="col" className="rpc-cc-th-num">Cohort moments</th>
               </tr>
             </thead>
             <tbody>

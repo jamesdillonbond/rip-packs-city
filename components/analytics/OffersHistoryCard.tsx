@@ -104,13 +104,13 @@ export default function OffersHistoryCard({ wallet, urlSlug }: { wallet: string;
             <table className="w-full text-sm" style={{ fontFamily: "var(--font-mono)" }}>
               <thead>
                 <tr className="border-b border-[color:var(--rpc-border)] text-left text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">
-                  <th className="py-1.5 pr-2">Type</th>
-                  <th className="py-1.5 pr-2">{getEntityLabels(urlSlug).player}</th>
-                  <th className="py-1.5 pr-2">Set</th>
-                  <th className="py-1.5 pr-2">Serial</th>
-                  <th className="py-1.5 pr-2 text-right">Offer</th>
-                  <th className="py-1.5 pr-2">Status</th>
-                  <th className="py-1.5 text-right">Made</th>
+                  <th scope="col" className="py-1.5 pr-2">Type</th>
+                  <th scope="col" className="py-1.5 pr-2">{getEntityLabels(urlSlug).player}</th>
+                  <th scope="col" className="py-1.5 pr-2">Set</th>
+                  <th scope="col" className="py-1.5 pr-2">Serial</th>
+                  <th scope="col" className="py-1.5 pr-2 text-right">Offer</th>
+                  <th scope="col" className="py-1.5 pr-2">Status</th>
+                  <th scope="col" className="py-1.5 text-right">Made</th>
                 </tr>
               </thead>
               <tbody>

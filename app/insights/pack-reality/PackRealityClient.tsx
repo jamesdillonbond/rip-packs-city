@@ -440,13 +440,13 @@ export default function PackRealityClient({
           <table className="rpc-pr-table">
             <thead>
               <tr>
-                <th>Pack</th>
-                <th className="rpc-pr-th-num">Price</th>
-                <th className="rpc-pr-th-num">Pack EV</th>
-                <th className="rpc-pr-th-num">Value ratio</th>
-                <th className="rpc-pr-th-num">FMV cov.</th>
-                <th className="rpc-pr-th-num">Sealed</th>
-                <th className="rpc-pr-th-num">Flag</th>
+                <th scope="col">Pack</th>
+                <th scope="col" className="rpc-pr-th-num">Price</th>
+                <th scope="col" className="rpc-pr-th-num">Pack EV</th>
+                <th scope="col" className="rpc-pr-th-num">Value ratio</th>
+                <th scope="col" className="rpc-pr-th-num">FMV cov.</th>
+                <th scope="col" className="rpc-pr-th-num">Sealed</th>
+                <th scope="col" className="rpc-pr-th-num">Flag</th>
               </tr>
             </thead>
             <tbody>
@@ -574,11 +574,11 @@ function MvrTable({
       <table className="rpc-pr-table rpc-pr-mvr-table">
         <thead>
           <tr>
-            <th>Pack</th>
-            <th className="rpc-pr-th-num">Model EV</th>
-            <th className="rpc-pr-th-num">Actually pulls</th>
-            <th className="rpc-pr-th-num">Reality</th>
-            <th className="rpc-pr-th-num">Opens</th>
+            <th scope="col">Pack</th>
+            <th scope="col" className="rpc-pr-th-num">Model EV</th>
+            <th scope="col" className="rpc-pr-th-num">Actually pulls</th>
+            <th scope="col" className="rpc-pr-th-num">Reality</th>
+            <th scope="col" className="rpc-pr-th-num">Opens</th>
           </tr>
         </thead>
         <tbody>

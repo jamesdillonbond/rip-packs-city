@@ -135,11 +135,11 @@ function OffersTable({ offers, initialNames, ok = true, collectionUrlSlug }: { o
       <table style={{ width: "100%", borderCollapse: "collapse" }}>
         <thead>
           <tr>
-            <th style={TH}>Serial</th>
-            <th style={TH}>Offer</th>
-            <th style={TH}>Bidder</th>
-            <th style={TH}>Scope</th>
-            <th style={TH}>When</th>
+            <th scope="col" style={TH}>Serial</th>
+            <th scope="col" style={TH}>Offer</th>
+            <th scope="col" style={TH}>Bidder</th>
+            <th scope="col" style={TH}>Scope</th>
+            <th scope="col" style={TH}>When</th>
           </tr>
         </thead>
         <tbody>

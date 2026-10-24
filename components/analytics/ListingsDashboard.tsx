@@ -305,15 +305,15 @@ export default function ListingsDashboard() {
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] font-semibold border-b border-[color:var(--rpc-border)]">
-                <th className="py-2 pr-3">#</th>
-                <th className="py-2 pr-3">Collection</th>
-                <th className="py-2 pr-3 text-right">Principal</th>
-                <th className="py-2 pr-3 text-right">APR</th>
-                <th className="py-2 pr-3 text-right">Term</th>
-                <th className="py-2 pr-3">NFT ID</th>
-                <th className="py-2 pr-3">Borrower</th>
-                <th className="py-2 pr-3">Listed</th>
-                <th className="py-2 pr-0 text-right">Action</th>
+                <th scope="col" className="py-2 pr-3">#</th>
+                <th scope="col" className="py-2 pr-3">Collection</th>
+                <th scope="col" className="py-2 pr-3 text-right">Principal</th>
+                <th scope="col" className="py-2 pr-3 text-right">APR</th>
+                <th scope="col" className="py-2 pr-3 text-right">Term</th>
+                <th scope="col" className="py-2 pr-3">NFT ID</th>
+                <th scope="col" className="py-2 pr-3">Borrower</th>
+                <th scope="col" className="py-2 pr-3">Listed</th>
+                <th scope="col" className="py-2 pr-0 text-right">Action</th>
               </tr>
             </thead>
             <tbody>
@@ -462,11 +462,11 @@ export default function ListingsDashboard() {
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] font-semibold border-b border-[color:var(--rpc-border)]">
-                <th className="py-2 pr-3">Collection</th>
-                <th className="py-2 pr-3 text-right">Listings sampled</th>
-                <th className="py-2 pr-3 text-right">Min ask</th>
-                <th className="py-2 pr-3 text-right">Median ask</th>
-                <th className="py-2 pr-0 text-right">Max ask</th>
+                <th scope="col" className="py-2 pr-3">Collection</th>
+                <th scope="col" className="py-2 pr-3 text-right">Listings sampled</th>
+                <th scope="col" className="py-2 pr-3 text-right">Min ask</th>
+                <th scope="col" className="py-2 pr-3 text-right">Median ask</th>
+                <th scope="col" className="py-2 pr-0 text-right">Max ask</th>
               </tr>
             </thead>
             <tbody>

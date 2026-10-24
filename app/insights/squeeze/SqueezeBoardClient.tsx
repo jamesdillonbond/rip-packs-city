@@ -631,16 +631,16 @@ export default function SqueezeBoardClient({
           <table className="rpc-sq-table">
             <thead>
               <tr>
-                <th className="rpc-sq-th-player">Edition</th>
-                <th className="rpc-sq-th-num">Tier</th>
-                <th className="rpc-sq-th-num">Circ</th>
-                <th className="rpc-sq-th-num">Locked</th>
-                <th className="rpc-sq-th-num">Burned</th>
-                <th className="rpc-sq-th-num rpc-sq-th-emph">Squeeze</th>
-                <th className="rpc-sq-th-num rpc-sq-th-emph">Buyable</th>
-                <th className="rpc-sq-th-num" title="Combined share of circulation held by the 5 largest collector wallets (on-chain owner census; unopened-pack and buyback accounts excluded). — = no complete census for this edition yet.">Top 5 hold</th>
-                <th className="rpc-sq-th-num">FMV</th>
-                <th className="rpc-sq-th-num">Low ask</th>
+                <th scope="col" className="rpc-sq-th-player">Edition</th>
+                <th scope="col" className="rpc-sq-th-num">Tier</th>
+                <th scope="col" className="rpc-sq-th-num">Circ</th>
+                <th scope="col" className="rpc-sq-th-num">Locked</th>
+                <th scope="col" className="rpc-sq-th-num">Burned</th>
+                <th scope="col" className="rpc-sq-th-num rpc-sq-th-emph">Squeeze</th>
+                <th scope="col" className="rpc-sq-th-num rpc-sq-th-emph">Buyable</th>
+                <th scope="col" className="rpc-sq-th-num" title="Combined share of circulation held by the 5 largest collector wallets (on-chain owner census; unopened-pack and buyback accounts excluded). — = no complete census for this edition yet.">Top 5 hold</th>
+                <th scope="col" className="rpc-sq-th-num">FMV</th>
+                <th scope="col" className="rpc-sq-th-num">Low ask</th>
               </tr>
             </thead>
             <tbody>

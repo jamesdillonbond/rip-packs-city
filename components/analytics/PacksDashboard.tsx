@@ -449,14 +449,14 @@ export default function PacksDashboard() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-left text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] font-semibold border-b border-[color:var(--rpc-border)] bg-[var(--rpc-surface)]">
-                    <th className="py-2.5 px-4">#</th>
-                    <th className="py-2.5 px-3">Collection</th>
-                    <th className="py-2.5 px-3">Pack</th>
-                    <th className="py-2.5 px-3 text-right">Price</th>
-                    <th className="py-2.5 px-3 text-right">EV</th>
-                    <th className="py-2.5 px-3 text-right">Ratio</th>
-                    <th className="py-2.5 px-3 text-right">Coverage</th>
-                    <th className="py-2.5 px-3 text-right">Unopened</th>
+                    <th scope="col" className="py-2.5 px-4">#</th>
+                    <th scope="col" className="py-2.5 px-3">Collection</th>
+                    <th scope="col" className="py-2.5 px-3">Pack</th>
+                    <th scope="col" className="py-2.5 px-3 text-right">Price</th>
+                    <th scope="col" className="py-2.5 px-3 text-right">EV</th>
+                    <th scope="col" className="py-2.5 px-3 text-right">Ratio</th>
+                    <th scope="col" className="py-2.5 px-3 text-right">Coverage</th>
+                    <th scope="col" className="py-2.5 px-3 text-right">Unopened</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -506,14 +506,14 @@ export default function PacksDashboard() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-left text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] font-semibold border-b border-[color:var(--rpc-border)] bg-[var(--rpc-surface)]">
-                    <th className="py-2.5 px-4">#</th>
-                    <th className="py-2.5 px-3">Collection</th>
-                    <th className="py-2.5 px-3">Pack</th>
-                    <th className="py-2.5 px-3 text-right">Price</th>
-                    <th className="py-2.5 px-3 text-right">EV</th>
-                    <th className="py-2.5 px-3 text-right">Ratio</th>
-                    <th className="py-2.5 px-3 text-right">Unopened</th>
-                    <th className="py-2.5 px-3 text-right">First seen</th>
+                    <th scope="col" className="py-2.5 px-4">#</th>
+                    <th scope="col" className="py-2.5 px-3">Collection</th>
+                    <th scope="col" className="py-2.5 px-3">Pack</th>
+                    <th scope="col" className="py-2.5 px-3 text-right">Price</th>
+                    <th scope="col" className="py-2.5 px-3 text-right">EV</th>
+                    <th scope="col" className="py-2.5 px-3 text-right">Ratio</th>
+                    <th scope="col" className="py-2.5 px-3 text-right">Unopened</th>
+                    <th scope="col" className="py-2.5 px-3 text-right">First seen</th>
                   </tr>
                 </thead>
                 <tbody>

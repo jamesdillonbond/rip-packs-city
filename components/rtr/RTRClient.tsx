@@ -573,7 +573,7 @@ function LockRoiSection({ walletAddr }: { walletAddr: string }) {
                   <SortHeader label="Player"     col="playerName"             sortKey={sortKey} sortDir={sortDir} onClick={setSort} />
                   <SortHeader label="Set"        col="setName"                sortKey={sortKey} sortDir={sortDir} onClick={setSort} />
                   <SortHeader label="Current FMV" col="currentFmvUsd"          sortKey={sortKey} sortDir={sortDir} onClick={setSort} align="right" />
-                  <th style={{ padding: "8px 10px" }}>Locked?</th>
+                  <th scope="col" style={{ padding: "8px 10px" }}>Locked?</th>
                   <SortHeader label="Est Pts"    col="estimatedPlayoffPoints" sortKey={sortKey} sortDir={sortDir} onClick={setSort} align="right" />
                   <SortHeader label="Pts / $"    col="pointsPerDollar"        sortKey={sortKey} sortDir={sortDir} onClick={setSort} align="right" />
                 </tr>
@@ -698,7 +698,7 @@ function SortHeader({
 }) {
   const active = col === sortKey
   return (
-    <th
+    <th scope="col"
       onClick={() => onClick(col)}
       tabIndex={0}
       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(col) } }}

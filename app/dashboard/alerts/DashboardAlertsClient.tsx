@@ -250,12 +250,12 @@ export default function DashboardAlertsClient() {
           <table className="rpc-al-table">
             <thead>
               <tr>
-                <th>Edition</th>
-                <th>Condition</th>
-                <th style={{ textAlign: "right" }}>Threshold</th>
-                <th style={{ textAlign: "right" }}>Current</th>
-                <th>Status</th>
-                <th style={{ textAlign: "right" }}>Actions</th>
+                <th scope="col">Edition</th>
+                <th scope="col">Condition</th>
+                <th scope="col" style={{ textAlign: "right" }}>Threshold</th>
+                <th scope="col" style={{ textAlign: "right" }}>Current</th>
+                <th scope="col">Status</th>
+                <th scope="col" style={{ textAlign: "right" }}>Actions</th>
               </tr>
             </thead>
             <tbody>

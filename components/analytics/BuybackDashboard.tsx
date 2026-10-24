@@ -310,11 +310,11 @@ export default function BuybackDashboard() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr style={{ color: "var(--rpc-text-muted)" }} className="text-left text-xs uppercase">
-                      <th className="py-1 pr-3">Wallet</th>
-                      <th className="py-1 pr-3 text-right">Purchases</th>
-                      <th className="py-1 pr-3 text-right">Editions</th>
-                      <th className="py-1 pr-3 text-right">Priced buys</th>
-                      <th className="py-1 text-right">Spend</th>
+                      <th scope="col" className="py-1 pr-3">Wallet</th>
+                      <th scope="col" className="py-1 pr-3 text-right">Purchases</th>
+                      <th scope="col" className="py-1 pr-3 text-right">Editions</th>
+                      <th scope="col" className="py-1 pr-3 text-right">Priced buys</th>
+                      <th scope="col" className="py-1 text-right">Spend</th>
                     </tr>
                   </thead>
                   <tbody>

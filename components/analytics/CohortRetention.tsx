@@ -106,10 +106,10 @@ export default function CohortRetention({ rows }: CohortRetentionProps) {
         <table className="w-full text-xs">
           <thead>
             <tr className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">
-              <th className="pb-3 pr-4 text-left font-semibold">Cohort</th>
-              <th className="pb-3 pr-3 text-right font-semibold">Size</th>
+              <th scope="col" className="pb-3 pr-4 text-left font-semibold">Cohort</th>
+              <th scope="col" className="pb-3 pr-3 text-right font-semibold">Size</th>
               {offsets.map((o) => (
-                <th key={o} className="pb-3 px-1 text-center font-semibold">
+                <th scope="col" key={o} className="pb-3 px-1 text-center font-semibold">
                   M{o}
                 </th>
               ))}

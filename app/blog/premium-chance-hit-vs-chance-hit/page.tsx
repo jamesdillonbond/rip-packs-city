@@ -275,9 +275,9 @@ export default function PremiumChanceHitVsChanceHit() {
         <table style={TABLE}>
           <thead>
             <tr>
-              <th style={TH}>Release</th>
-              <th style={{ ...TH, textAlign: "right" }}>Premium: price · hits/pack · $/hit</th>
-              <th style={{ ...TH, textAlign: "right" }}>Chance Hit: price · hits/pack · $/hit</th>
+              <th scope="col" style={TH}>Release</th>
+              <th scope="col" style={{ ...TH, textAlign: "right" }}>Premium: price · hits/pack · $/hit</th>
+              <th scope="col" style={{ ...TH, textAlign: "right" }}>Chance Hit: price · hits/pack · $/hit</th>
             </tr>
           </thead>
           <tbody>

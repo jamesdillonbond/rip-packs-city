@@ -203,12 +203,12 @@ export default function AllDayScarcityBoardClient({
           <table className="rpc-ads-table">
             <thead>
               <tr>
-                <th>Player / Set</th>
-                <th className="rpc-ads-th-num">Tier</th>
-                <th className="rpc-ads-th-num">Mint</th>
-                <th className="rpc-ads-th-num">Fam avg</th>
-                <th className="rpc-ads-th-num rpc-ads-th-emph">Scarcity</th>
-                <th className="rpc-ads-th-num">FMV</th>
+                <th scope="col">Player / Set</th>
+                <th scope="col" className="rpc-ads-th-num">Tier</th>
+                <th scope="col" className="rpc-ads-th-num">Mint</th>
+                <th scope="col" className="rpc-ads-th-num">Fam avg</th>
+                <th scope="col" className="rpc-ads-th-num rpc-ads-th-emph">Scarcity</th>
+                <th scope="col" className="rpc-ads-th-num">FMV</th>
               </tr>
             </thead>
             <tbody>

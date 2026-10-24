@@ -246,7 +246,7 @@ export default function PaniniSniper({ data, degraded }: { data: PaniniSniperDat
                 <thead>
                   <tr>
                     {["Player", ...(wcOnly ? [] : ["Product"]), "Parallel", "Serial", "Ask", "FMV", "Under FMV", "Est. edge", "Recent sales", "Ask seen", ""].map((h, i) => (
-                      <th key={i} style={th}>{h}</th>
+                      <th scope="col" key={i} style={th}>{h}</th>
                     ))}
                   </tr>
                 </thead>

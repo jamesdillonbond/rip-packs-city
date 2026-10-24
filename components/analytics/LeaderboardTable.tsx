@@ -115,10 +115,10 @@ export default function LeaderboardTable({ rows, party: role, window }: Leaderbo
           <table className="w-full text-sm" style={{ minWidth: 640 }}>
             <thead className="sticky top-0 bg-[var(--rpc-surface)] backdrop-blur">
               <tr className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] border-b border-[color:var(--rpc-border)]">
-                <th className="py-2 px-3 text-left font-semibold w-8">#</th>
-                <th className="py-2 px-3 text-left font-semibold">Wallet</th>
-                <th className="py-2 px-3 text-right font-semibold">{COUNT_LABEL[role]}</th>
-                <th className="py-2 px-3 text-right font-semibold">Volume</th>
+                <th scope="col" className="py-2 px-3 text-left font-semibold w-8">#</th>
+                <th scope="col" className="py-2 px-3 text-left font-semibold">Wallet</th>
+                <th scope="col" className="py-2 px-3 text-right font-semibold">{COUNT_LABEL[role]}</th>
+                <th scope="col" className="py-2 px-3 text-right font-semibold">Volume</th>
               </tr>
             </thead>
             <tbody>

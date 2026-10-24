@@ -106,17 +106,17 @@ function CollectionsTable({ rows }: { rows: MarketCapRow[] }) {
       <table style={{ width: "100%", minWidth: 900, borderCollapse: "collapse" }}>
         <thead>
           <tr>
-            <th style={thStyle("left")}>Collection</th>
-            <th style={thStyle("right")}>Market cap</th>
-            <th style={thStyle("right")}>7d</th>
-            <th style={thStyle("right")}>Collector-held</th>
-            <th style={thStyle("right")}>Burned</th>
-            <th style={thStyle("right")}>Issuer-held</th>
-            <th style={thStyle("right")}>Minted</th>
+            <th scope="col" style={thStyle("left")}>Collection</th>
+            <th scope="col" style={thStyle("right")}>Market cap</th>
+            <th scope="col" style={thStyle("right")}>7d</th>
+            <th scope="col" style={thStyle("right")}>Collector-held</th>
+            <th scope="col" style={thStyle("right")}>Burned</th>
+            <th scope="col" style={thStyle("right")}>Issuer-held</th>
+            <th scope="col" style={thStyle("right")}>Minted</th>
             {/* 2026-10-21 sweep: All Day's held + burned + issuer (9.40M) sat 1.27M short of
                 "Minted 10.67M" — those three cover only editions with a known split (5,599 of
                 6,190), Minted covers all. The drill tables named their coverage; this one did not. */}
-            <th style={thStyle("right")} title="Editions with a known burned / issuer-held split, of all editions. Collector-held, Burned and Issuer-held cover only these; Minted covers all.">Split known on</th>
+            <th scope="col" style={thStyle("right")} title="Editions with a known burned / issuer-held split, of all editions. Collector-held, Burned and Issuer-held cover only these; Minted covers all.">Split known on</th>
           </tr>
         </thead>
         <tbody>
@@ -146,11 +146,11 @@ function DrillTable({ rows, group }: { rows: MarketCapRow[]; group: MarketCapGro
       <table style={{ width: "100%", minWidth: 640, borderCollapse: "collapse" }}>
         <thead>
           <tr>
-            <th style={thStyle("right")}>#</th>
-            <th style={thStyle("left")}>{GROUP_LABELS[group].replace(/s$/, "")}</th>
-            <th style={thStyle("right")}>Market cap</th>
-            <th style={thStyle("right")}>Collector-held</th>
-            <th style={thStyle("right")}>Editions</th>
+            <th scope="col" style={thStyle("right")}>#</th>
+            <th scope="col" style={thStyle("left")}>{GROUP_LABELS[group].replace(/s$/, "")}</th>
+            <th scope="col" style={thStyle("right")}>Market cap</th>
+            <th scope="col" style={thStyle("right")}>Collector-held</th>
+            <th scope="col" style={thStyle("right")}>Editions</th>
           </tr>
         </thead>
         <tbody>

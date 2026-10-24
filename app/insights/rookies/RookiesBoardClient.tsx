@@ -282,15 +282,15 @@ export default function RookiesBoardClient({ initial, initialDegraded = null }: 
           <table className="rpc-rk-table">
             <thead>
               <tr>
-                <th>Player</th>
-                <th className="rpc-rk-th-num">Eds</th>
-                <th className="rpc-rk-th-num">Sales 30d</th>
-                <th className="rpc-rk-th-num">GMV 30d</th>
-                <th className="rpc-rk-th-num">Avg price</th>
-                <th className="rpc-rk-th-num">Max sale 30d</th>
-                <th className="rpc-rk-th-num">Lock %</th>
-                <th className="rpc-rk-th-num">Squeeze %</th>
-                <th className="rpc-rk-th-num">Top mint-1</th>
+                <th scope="col">Player</th>
+                <th scope="col" className="rpc-rk-th-num">Eds</th>
+                <th scope="col" className="rpc-rk-th-num">Sales 30d</th>
+                <th scope="col" className="rpc-rk-th-num">GMV 30d</th>
+                <th scope="col" className="rpc-rk-th-num">Avg price</th>
+                <th scope="col" className="rpc-rk-th-num">Max sale 30d</th>
+                <th scope="col" className="rpc-rk-th-num">Lock %</th>
+                <th scope="col" className="rpc-rk-th-num">Squeeze %</th>
+                <th scope="col" className="rpc-rk-th-num">Top mint-1</th>
               </tr>
             </thead>
             <tbody>

@@ -126,18 +126,18 @@ function TopMoversTable({
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] font-semibold border-b border-[color:var(--rpc-border)] bg-[var(--rpc-surface)]">
-              <th className="py-2.5 px-4">#</th>
-              <th className="py-2.5 px-3">Collection</th>
-              <th className="py-2.5 px-3">Edition</th>
-              <th className="py-2.5 px-3 text-right">Current FMV</th>
-              <th className="py-2.5 px-3 text-right">Prior FMV</th>
-              <th className="py-2.5 px-3 text-right">Change</th>
-              <th className="py-2.5 px-3 text-right">% Change</th>
+              <th scope="col" className="py-2.5 px-4">#</th>
+              <th scope="col" className="py-2.5 px-3">Collection</th>
+              <th scope="col" className="py-2.5 px-3">Edition</th>
+              <th scope="col" className="py-2.5 px-3 text-right">Current FMV</th>
+              <th scope="col" className="py-2.5 px-3 text-right">Prior FMV</th>
+              <th scope="col" className="py-2.5 px-3 text-right">Change</th>
+              <th scope="col" className="py-2.5 px-3 text-right">% Change</th>
               {/* 2026-10-10: was "Sales 7d". The column is fmv_snapshots.sales_count_7d,
                   which fmv-recalc has filled with the TRUE 30-day count since 1.7.0
                   (27,055 of 27,468 Top Shot/All Day rows in a day had 7d == 30d), so
                   every row published a 30-day volume as a 7-day one. */}
-              <th className="py-2.5 px-3 text-right">Sales 30d</th>
+              <th scope="col" className="py-2.5 px-3 text-right">Sales 30d</th>
             </tr>
           </thead>
           <tbody>
@@ -300,11 +300,11 @@ function TierPulseSection({ rows, failed = false }: { rows: FmvTierPulseRow[]; f
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-left text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] font-semibold border-b border-[color:var(--rpc-border)]">
-                    <th className="py-2 pr-3">Tier</th>
-                    <th className="py-2 pr-3 text-right">Editions</th>
-                    <th className="py-2 pr-3 text-right">Total FMV</th>
-                    <th className="py-2 pr-3 text-right">Avg FMV</th>
-                    <th className="py-2 pr-3 text-right">Median FMV</th>
+                    <th scope="col" className="py-2 pr-3">Tier</th>
+                    <th scope="col" className="py-2 pr-3 text-right">Editions</th>
+                    <th scope="col" className="py-2 pr-3 text-right">Total FMV</th>
+                    <th scope="col" className="py-2 pr-3 text-right">Avg FMV</th>
+                    <th scope="col" className="py-2 pr-3 text-right">Median FMV</th>
                   </tr>
                 </thead>
                 <tbody>

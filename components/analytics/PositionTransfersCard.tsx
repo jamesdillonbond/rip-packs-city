@@ -263,9 +263,9 @@ function TopWalletsTable({
         <table className="w-full text-sm">
           <thead>
             <tr className="text-[9px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] border-b border-[color:var(--rpc-border)]">
-              <th className="py-1.5 px-3 text-left font-semibold">Wallet</th>
-              <th className="py-1.5 px-3 text-right font-semibold">Transfers</th>
-              <th className="py-1.5 px-3 text-right font-semibold">Principal</th>
+              <th scope="col" className="py-1.5 px-3 text-left font-semibold">Wallet</th>
+              <th scope="col" className="py-1.5 px-3 text-right font-semibold">Transfers</th>
+              <th scope="col" className="py-1.5 px-3 text-right font-semibold">Principal</th>
             </tr>
           </thead>
           <tbody>
@@ -326,11 +326,11 @@ function RecentTransfersTable({
           <table className="w-full text-sm min-w-[640px]">
             <thead>
               <tr className="text-[9px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] border-b border-[color:var(--rpc-border)]">
-                <th className="py-1.5 px-3 text-left font-semibold">Funded</th>
-                <th className="py-1.5 px-3 text-left font-semibold">Collection</th>
-                <th className="py-1.5 px-3 text-left font-semibold">Origin → Recipient</th>
-                <th className="py-1.5 px-3 text-right font-semibold">Principal</th>
-                <th className="py-1.5 px-3 text-center font-semibold">Status</th>
+                <th scope="col" className="py-1.5 px-3 text-left font-semibold">Funded</th>
+                <th scope="col" className="py-1.5 px-3 text-left font-semibold">Collection</th>
+                <th scope="col" className="py-1.5 px-3 text-left font-semibold">Origin → Recipient</th>
+                <th scope="col" className="py-1.5 px-3 text-right font-semibold">Principal</th>
+                <th scope="col" className="py-1.5 px-3 text-center font-semibold">Status</th>
               </tr>
             </thead>
             <tbody>

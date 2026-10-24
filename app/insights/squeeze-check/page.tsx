@@ -207,13 +207,13 @@ export default function SqueezeCheckPage() {
               <table className="rpc-sc-table">
                 <thead>
                   <tr>
-                    <th>Edition</th>
-                    <th className="rpc-sc-th-num">Tier</th>
-                    <th className="rpc-sc-th-num">Held</th>
-                    <th className="rpc-sc-th-num">Circ</th>
-                    <th className="rpc-sc-th-num">Locked</th>
-                    <th className="rpc-sc-th-num">Burned</th>
-                    <th className="rpc-sc-th-num rpc-sc-th-emph">Squeeze</th>
+                    <th scope="col">Edition</th>
+                    <th scope="col" className="rpc-sc-th-num">Tier</th>
+                    <th scope="col" className="rpc-sc-th-num">Held</th>
+                    <th scope="col" className="rpc-sc-th-num">Circ</th>
+                    <th scope="col" className="rpc-sc-th-num">Locked</th>
+                    <th scope="col" className="rpc-sc-th-num">Burned</th>
+                    <th scope="col" className="rpc-sc-th-num rpc-sc-th-emph">Squeeze</th>
                   </tr>
                 </thead>
                 <tbody>

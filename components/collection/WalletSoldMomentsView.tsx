@@ -200,11 +200,11 @@ export default function WalletSoldMomentsView({ collection }: { collection: stri
             <table style={{ width: "100%", minWidth: 640, borderCollapse: "collapse", fontFamily: mono, fontSize: 11 }}>
               <thead>
                 <tr style={{ borderBottom: "1px solid var(--rpc-border)", color: "var(--rpc-text-muted)", textTransform: "uppercase", letterSpacing: "0.1em", fontSize: 9 }}>
-                  <th style={{ padding: "9px 12px", textAlign: "left", fontWeight: 700 }}>Moment</th>
-                  <th style={{ padding: "9px 12px", textAlign: "left", fontWeight: 700 }}>Serial</th>
-                  <th style={{ padding: "9px 12px", textAlign: "left", fontWeight: 700 }}>When</th>
-                  <th style={{ padding: "9px 12px", textAlign: "left", fontWeight: 700 }}>Buyer</th>
-                  <th style={{ padding: "9px 12px", textAlign: "right", fontWeight: 700 }}>Sold for</th>
+                  <th scope="col" style={{ padding: "9px 12px", textAlign: "left", fontWeight: 700 }}>Moment</th>
+                  <th scope="col" style={{ padding: "9px 12px", textAlign: "left", fontWeight: 700 }}>Serial</th>
+                  <th scope="col" style={{ padding: "9px 12px", textAlign: "left", fontWeight: 700 }}>When</th>
+                  <th scope="col" style={{ padding: "9px 12px", textAlign: "left", fontWeight: 700 }}>Buyer</th>
+                  <th scope="col" style={{ padding: "9px 12px", textAlign: "right", fontWeight: 700 }}>Sold for</th>
                 </tr>
               </thead>
               <tbody>

@@ -78,15 +78,15 @@ function MarketTable({ rows, accent, showRatio }: { rows: PackMarketRow[]; accen
       <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "var(--font-mono)", fontSize: 12 }}>
         <thead>
           <tr style={{ color: "var(--rpc-text-muted)", textAlign: "left" }}>
-            <th style={{ padding: "6px 10px", fontWeight: 600 }}>Pack</th>
-            <th style={{ padding: "6px 10px", fontWeight: 600, textAlign: "right" }}>Retail</th>
-            <th style={{ padding: "6px 10px", fontWeight: 600, textAlign: "right" }}>Median 90d</th>
-            <th style={{ padding: "6px 10px", fontWeight: 600, textAlign: "right" }}>Last</th>
+            <th scope="col" style={{ padding: "6px 10px", fontWeight: 600 }}>Pack</th>
+            <th scope="col" style={{ padding: "6px 10px", fontWeight: 600, textAlign: "right" }}>Retail</th>
+            <th scope="col" style={{ padding: "6px 10px", fontWeight: 600, textAlign: "right" }}>Median 90d</th>
+            <th scope="col" style={{ padding: "6px 10px", fontWeight: 600, textAlign: "right" }}>Last</th>
             {showRatio ? (
-              <th style={{ padding: "6px 10px", fontWeight: 600, textAlign: "right" }}>vs retail</th>
+              <th scope="col" style={{ padding: "6px 10px", fontWeight: 600, textAlign: "right" }}>vs retail</th>
             ) : null}
-            <th style={{ padding: "6px 10px", fontWeight: 600, textAlign: "right" }}>Sales</th>
-            <th style={{ padding: "6px 10px", fontWeight: 600, textAlign: "right" }}>Opened</th>
+            <th scope="col" style={{ padding: "6px 10px", fontWeight: 600, textAlign: "right" }}>Sales</th>
+            <th scope="col" style={{ padding: "6px 10px", fontWeight: 600, textAlign: "right" }}>Opened</th>
           </tr>
         </thead>
         <tbody>

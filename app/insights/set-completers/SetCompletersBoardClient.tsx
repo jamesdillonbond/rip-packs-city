@@ -104,11 +104,11 @@ export default function SetCompletersBoardClient({
           <table style={{ width: "100%", minWidth: 620, borderCollapse: "collapse" }}>
             <thead>
               <tr>
-                <th style={thStyle("left")}>Set</th>
-                <th style={thStyle("right")}>Plays</th>
-                <th style={thStyle("right")}>Completers</th>
-                <th style={thStyle("right")}>Holders</th>
-                <th style={thStyle("right")}>Completion rate</th>
+                <th scope="col" style={thStyle("left")}>Set</th>
+                <th scope="col" style={thStyle("right")}>Plays</th>
+                <th scope="col" style={thStyle("right")}>Completers</th>
+                <th scope="col" style={thStyle("right")}>Holders</th>
+                <th scope="col" style={thStyle("right")}>Completion rate</th>
               </tr>
             </thead>
             <tbody>

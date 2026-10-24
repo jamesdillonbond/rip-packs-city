@@ -69,11 +69,11 @@ export default function CollectionRecentSales({
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b border-[color:var(--rpc-border)]">
-                <th className="text-left pb-2 text-[color:var(--rpc-text-muted)] font-medium">Player</th>
-                <th className="text-right pb-2 text-[color:var(--rpc-text-muted)] font-medium">Serial</th>
-                <th className="text-right pb-2 text-[color:var(--rpc-text-muted)] font-medium">Price</th>
-                <th className="text-right pb-2 text-[color:var(--rpc-text-muted)] font-medium">vs FMV</th>
-                <th className="text-right pb-2 text-[color:var(--rpc-text-muted)] font-medium">When</th>
+                <th scope="col" className="text-left pb-2 text-[color:var(--rpc-text-muted)] font-medium">Player</th>
+                <th scope="col" className="text-right pb-2 text-[color:var(--rpc-text-muted)] font-medium">Serial</th>
+                <th scope="col" className="text-right pb-2 text-[color:var(--rpc-text-muted)] font-medium">Price</th>
+                <th scope="col" className="text-right pb-2 text-[color:var(--rpc-text-muted)] font-medium">vs FMV</th>
+                <th scope="col" className="text-right pb-2 text-[color:var(--rpc-text-muted)] font-medium">When</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[color:var(--rpc-border)]">

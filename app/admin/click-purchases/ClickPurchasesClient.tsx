@@ -209,7 +209,7 @@ function Table({ head, rows, empty }: { head: string[]; rows: React.ReactNode[][
         <thead>
           <tr>
             {head.map((h) => (
-              <th key={h} style={{ textAlign: "left", padding: "6px 8px", color: dim, fontWeight: 600, borderBottom: "1px solid rgba(255,255,255,0.1)", whiteSpace: "nowrap" }}>
+              <th scope="col" key={h} style={{ textAlign: "left", padding: "6px 8px", color: dim, fontWeight: 600, borderBottom: "1px solid rgba(255,255,255,0.1)", whiteSpace: "nowrap" }}>
                 {h}
               </th>
             ))}

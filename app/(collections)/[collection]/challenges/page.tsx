@@ -111,13 +111,13 @@ export default async function ChallengesPage(props: { params: Promise<{ collecti
           <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "var(--font-mono)", fontSize: 13, minWidth: 760 }}>
             <thead>
               <tr style={{ textAlign: "left", color: "var(--rpc-text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", fontSize: 11 }}>
-                <th style={{ padding: "10px 12px" }}>Challenge</th>
-                <th style={{ padding: "10px 12px" }}>Reward</th>
-                <th style={{ padding: "10px 12px", textAlign: "right" }}>Required</th>
-                <th style={{ padding: "10px 12px", textAlign: "right" }}>Cost to complete</th>
-                <th style={{ padding: "10px 12px", textAlign: "right" }}>Reward value</th>
-                <th style={{ padding: "10px 12px", textAlign: "right" }}>Net EV</th>
-                <th style={{ padding: "10px 12px", textAlign: "right" }}>Ends</th>
+                <th scope="col" style={{ padding: "10px 12px" }}>Challenge</th>
+                <th scope="col" style={{ padding: "10px 12px" }}>Reward</th>
+                <th scope="col" style={{ padding: "10px 12px", textAlign: "right" }}>Required</th>
+                <th scope="col" style={{ padding: "10px 12px", textAlign: "right" }}>Cost to complete</th>
+                <th scope="col" style={{ padding: "10px 12px", textAlign: "right" }}>Reward value</th>
+                <th scope="col" style={{ padding: "10px 12px", textAlign: "right" }}>Net EV</th>
+                <th scope="col" style={{ padding: "10px 12px", textAlign: "right" }}>Ends</th>
               </tr>
             </thead>
             <tbody>

@@ -55,10 +55,10 @@ export default function IssuerHeldSplitPanel({ rows, failed }: { rows: IssuerSpl
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, color: "var(--rpc-text-primary)" }}>
               <thead>
                 <tr>
-                  <th style={th("left")}>Tier</th>
-                  <th style={th("right")}>Issuer-held</th>
-                  <th style={th("right")}>In unopened packs</th>
-                  <th style={th("right")}>Reserve, never packed</th>
+                  <th scope="col" style={th("left")}>Tier</th>
+                  <th scope="col" style={th("right")}>Issuer-held</th>
+                  <th scope="col" style={th("right")}>In unopened packs</th>
+                  <th scope="col" style={th("right")}>Reserve, never packed</th>
                 </tr>
               </thead>
               <tbody>

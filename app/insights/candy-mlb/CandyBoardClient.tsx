@@ -256,7 +256,7 @@ function DataTable({
         <thead>
           <tr>
             {cols.map((c) => (
-              <th
+              <th scope="col"
                 key={c.k}
                 className={c.n ? "n" : ""}
                 title={c.title}
@@ -457,7 +457,7 @@ export default function CandyBoardClient({
   const withAsk = useMemo(() => initialRows.filter((r) => r.floor_ask_usd != null).length, [initialRows]);
 
   const th = (k: keyof Row, label: string, n = false) => (
-    <th
+    <th scope="col"
       className={n ? "n" : ""}
       onClick={() => (k === sortK ? setAsc(!asc) : (setSortK(k), setAsc(false)))}
       tabIndex={0}

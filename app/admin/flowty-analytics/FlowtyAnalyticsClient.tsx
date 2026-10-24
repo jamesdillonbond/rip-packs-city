@@ -947,7 +947,7 @@ function LeaderboardCard({
             <thead>
               <tr style={{ borderBottom: "1px solid var(--rpc-border)" }}>
                 {columns.map((col) => (
-                  <th
+                  <th scope="col"
                     key={col.key}
                     style={{
                       textAlign: col.align ?? "left",

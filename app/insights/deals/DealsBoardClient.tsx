@@ -535,13 +535,13 @@ export default function DealsBoardClient({
             <table className="rpc-dl-table">
               <thead>
                 <tr>
-                  <th className="rpc-dl-th-player">Edition</th>
-                  <th className="rpc-dl-th-num">Tier</th>
-                  <th className="rpc-dl-th-num">FMV</th>
-                  <th className="rpc-dl-th-num">Floor ask</th>
-                  <th className="rpc-dl-th-num rpc-dl-th-emph">Discount</th>
-                  <th className="rpc-dl-th-num" title="What you'd keep reselling at FMV after the marketplace's published seller fee, and that net against what you'd pay. Top Shot and All Day charge 5%; Disney Pinnacle charges 7.5% with a $0.50 listing-fee floor. Candy MLB trades on Magic Eden and OpenSea (Solana), whose rates we have not verified, so its rows show an em-dash here rather than a guess.">Net of fees</th>
-                  <th className="rpc-dl-th-num">Mint</th>
+                  <th scope="col" className="rpc-dl-th-player">Edition</th>
+                  <th scope="col" className="rpc-dl-th-num">Tier</th>
+                  <th scope="col" className="rpc-dl-th-num">FMV</th>
+                  <th scope="col" className="rpc-dl-th-num">Floor ask</th>
+                  <th scope="col" className="rpc-dl-th-num rpc-dl-th-emph">Discount</th>
+                  <th scope="col" className="rpc-dl-th-num" title="What you'd keep reselling at FMV after the marketplace's published seller fee, and that net against what you'd pay. Top Shot and All Day charge 5%; Disney Pinnacle charges 7.5% with a $0.50 listing-fee floor. Candy MLB trades on Magic Eden and OpenSea (Solana), whose rates we have not verified, so its rows show an em-dash here rather than a guess.">Net of fees</th>
+                  <th scope="col" className="rpc-dl-th-num">Mint</th>
                 </tr>
               </thead>
               <tbody>

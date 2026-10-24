@@ -266,10 +266,10 @@ export default function CandyPackMarket() {
               <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 360 }}>
                 <thead>
                   <tr>
-                    <th style={th}>Ask</th>
-                    <th style={th}>SOL</th>
-                    <th style={th}>Last seen</th>
-                    <th style={th}>Listing</th>
+                    <th scope="col" style={th}>Ask</th>
+                    <th scope="col" style={th}>SOL</th>
+                    <th scope="col" style={th}>Last seen</th>
+                    <th scope="col" style={th}>Listing</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -325,9 +325,9 @@ export default function CandyPackMarket() {
             <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 360 }}>
               <thead>
                 <tr>
-                  <th style={th}>Date</th>
-                  <th style={th}>Pack #</th>
-                  <th style={th}>Price</th>
+                  <th scope="col" style={th}>Date</th>
+                  <th scope="col" style={th}>Pack #</th>
+                  <th scope="col" style={th}>Price</th>
                 </tr>
               </thead>
               <tbody>

@@ -548,21 +548,21 @@ export default function CollectionMomentTable(props: {
           <table className="rpc-table">
             <thead>
               <tr>
-                <th>{labels.player}</th>
-                <th className="hidden sm:table-cell">Set</th>
-                <th className="hidden sm:table-cell">Series</th>
-                <th className="hidden md:table-cell">Parallel</th>
-                <th className="hidden md:table-cell">{isPinnacle ? labels.tier : "Rarity"}</th>
-                <th className="hidden sm:table-cell">Serial / Mint</th>
-                <th className="hidden lg:table-cell">{heldLabel}</th>
-                {getPackCount && <th className="hidden xl:table-cell">Packs</th>}
-                <th className="whitespace-nowrap">FMV</th>
-                <th className="hidden xl:table-cell">Paid</th>
-                <th className="hidden xl:table-cell">P&amp;L</th>
-                <th className="hidden lg:table-cell">Low Ask</th>
-                <th className="hidden lg:table-cell">Best Offer</th>
-                <th className="hidden xl:table-cell">Acquired</th>
-                <th>Details</th>
+                <th scope="col">{labels.player}</th>
+                <th scope="col" className="hidden sm:table-cell">Set</th>
+                <th scope="col" className="hidden sm:table-cell">Series</th>
+                <th scope="col" className="hidden md:table-cell">Parallel</th>
+                <th scope="col" className="hidden md:table-cell">{isPinnacle ? labels.tier : "Rarity"}</th>
+                <th scope="col" className="hidden sm:table-cell">Serial / Mint</th>
+                <th scope="col" className="hidden lg:table-cell">{heldLabel}</th>
+                {getPackCount && <th scope="col" className="hidden xl:table-cell">Packs</th>}
+                <th scope="col" className="whitespace-nowrap">FMV</th>
+                <th scope="col" className="hidden xl:table-cell">Paid</th>
+                <th scope="col" className="hidden xl:table-cell">P&amp;L</th>
+                <th scope="col" className="hidden lg:table-cell">Low Ask</th>
+                <th scope="col" className="hidden lg:table-cell">Best Offer</th>
+                <th scope="col" className="hidden xl:table-cell">Acquired</th>
+                <th scope="col">Details</th>
               </tr>
             </thead>
             <tbody>

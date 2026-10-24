@@ -412,11 +412,11 @@ export default function PaniniPackMarket() {
             <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 420 }}>
               <thead>
                 <tr>
-                  <th style={th}>Seen</th>
-                  <th style={th}>Pack</th>
-                  <th style={th}>Floor</th>
-                  <th style={th}>Recent sale</th>
-                  <th style={th}>Sealed</th>
+                  <th scope="col" style={th}>Seen</th>
+                  <th scope="col" style={th}>Pack</th>
+                  <th scope="col" style={th}>Floor</th>
+                  <th scope="col" style={th}>Recent sale</th>
+                  <th scope="col" style={th}>Sealed</th>
                 </tr>
               </thead>
               <tbody>

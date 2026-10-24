@@ -368,11 +368,11 @@ export default async function PinnacleMomentPage({
             <table className="rpc-pm-sales-table">
               <thead>
                 <tr>
-                  <th>Date</th>
-                  {salesHaveSerials ? <th className="rpc-pm-num">Serial</th> : null}
-                  <th className="rpc-pm-num">Price</th>
-                  <th>Buyer</th>
-                  <th>Seller</th>
+                  <th scope="col">Date</th>
+                  {salesHaveSerials ? <th scope="col" className="rpc-pm-num">Serial</th> : null}
+                  <th scope="col" className="rpc-pm-num">Price</th>
+                  <th scope="col">Buyer</th>
+                  <th scope="col">Seller</th>
                 </tr>
               </thead>
               <tbody>

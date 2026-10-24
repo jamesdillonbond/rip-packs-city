@@ -158,10 +158,10 @@ function OddsTable({ drop }: { drop: ScoredDrop }) {
       <table className="rpc-pd-table rpc-pd-odds-table">
         <thead>
           <tr>
-            <th className="rpc-pd-th">Tier</th>
-            <th className="rpc-pd-th rpc-pd-num">Count</th>
-            <th className="rpc-pd-th rpc-pd-num">Per card</th>
-            <th className="rpc-pd-th rpc-pd-num">≥1 per pack</th>
+            <th scope="col" className="rpc-pd-th">Tier</th>
+            <th scope="col" className="rpc-pd-th rpc-pd-num">Count</th>
+            <th scope="col" className="rpc-pd-th rpc-pd-num">Per card</th>
+            <th scope="col" className="rpc-pd-th rpc-pd-num">≥1 per pack</th>
           </tr>
         </thead>
         <tbody>
@@ -236,13 +236,13 @@ function DropCard({ drop }: { drop: ScoredDrop }) {
         <table className="rpc-pd-table">
           <thead>
             <tr>
-              <th className="rpc-pd-th">Moment</th>
-              <th className="rpc-pd-th">Set</th>
-              <th className="rpc-pd-th">Their tier</th>
-              <th className="rpc-pd-th rpc-pd-num">Their est.</th>
-              <th className="rpc-pd-th rpc-pd-num">RPC FMV</th>
-              <th className="rpc-pd-th">Price source</th>
-              <th className="rpc-pd-th rpc-pd-match">Matched</th>
+              <th scope="col" className="rpc-pd-th">Moment</th>
+              <th scope="col" className="rpc-pd-th">Set</th>
+              <th scope="col" className="rpc-pd-th">Their tier</th>
+              <th scope="col" className="rpc-pd-th rpc-pd-num">Their est.</th>
+              <th scope="col" className="rpc-pd-th rpc-pd-num">RPC FMV</th>
+              <th scope="col" className="rpc-pd-th">Price source</th>
+              <th scope="col" className="rpc-pd-th rpc-pd-match">Matched</th>
             </tr>
           </thead>
           <tbody>

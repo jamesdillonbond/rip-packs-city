@@ -472,8 +472,8 @@ function InsiderSignalsPanel({ signals }: { signals: InsiderSignalsBlock }) {
           <table style={tableStyle}>
             <thead>
               <tr style={{ borderBottom: "1px solid var(--rpc-border)" }}>
-                <th style={thStyle}>Type</th>
-                <th style={{ ...thStyle, textAlign: "right" }}>Count</th>
+                <th scope="col" style={thStyle}>Type</th>
+                <th scope="col" style={{ ...thStyle, textAlign: "right" }}>Count</th>
               </tr>
             </thead>
             <tbody>
@@ -504,8 +504,8 @@ function FeatureEngagementPanel({ engagement }: { engagement: Record<string, num
         <table style={tableStyle}>
           <thead>
             <tr style={{ borderBottom: "1px solid var(--rpc-border)" }}>
-              <th style={thStyle}>Feature</th>
-              <th style={{ ...thStyle, textAlign: "right" }}>Events 7d</th>
+              <th scope="col" style={thStyle}>Feature</th>
+              <th scope="col" style={{ ...thStyle, textAlign: "right" }}>Events 7d</th>
             </tr>
           </thead>
           <tbody>

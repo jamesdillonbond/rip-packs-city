@@ -460,6 +460,7 @@ export default function PackTable({
 
   const HeaderCell = ({ k, label, className: thClass = '' }: { k: SortKey; label: string; className?: string }) => (
     <th
+      scope="col"
       onClick={() => setSort(k)}
       // Keyboard + screen-reader sortable (2026-10-11): was mouse-only.
       tabIndex={0}
@@ -495,7 +496,7 @@ export default function PackTable({
               <HeaderCell k="evMarginPct" label="EV Margin %" />
               <HeaderCell k="fmvCoverage" label="FMV Coverage" />
               <HeaderCell k="depletionPct" label="Depletion %" />
-              <th className="rpc-label" style={{ textAlign: 'left', padding: '10px 12px' }}>
+              <th scope="col" className="rpc-label" style={{ textAlign: 'left', padding: '10px 12px' }}>
                 Action
               </th>
             </tr>

@@ -1762,7 +1762,7 @@ function PaniniEditionMarketSection({
             : (
               <div className="rpc-scroll-x">
                 <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 380 }}>
-                  <thead><tr><th style={head}>Serial</th><th style={head}>Ask</th><th style={head}>Seen</th><th style={head}>Special</th></tr></thead>
+                  <thead><tr><th scope="col" style={head}>Serial</th><th scope="col" style={head}>Ask</th><th scope="col" style={head}>Seen</th><th scope="col" style={head}>Special</th></tr></thead>
                   <tbody>
                     {serials.listed.map((r, i) => (
                       <tr key={`${r.serial}-${i}`}>
@@ -1807,7 +1807,7 @@ function PaniniEditionMarketSection({
             : (
               <div className="rpc-scroll-x">
                 <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 380 }}>
-                  <thead><tr><th style={head}>Serial</th><th style={head}>Sold for</th><th style={head}>When</th><th style={head}>Special</th></tr></thead>
+                  <thead><tr><th scope="col" style={head}>Serial</th><th scope="col" style={head}>Sold for</th><th scope="col" style={head}>When</th><th scope="col" style={head}>Special</th></tr></thead>
                   <tbody>
                     {history.sales.slice(0, PANINI_SALES_TABLE_ROWS).map((r) => (
                       <tr key={`${r.sku}|${r.soldAt}`}>

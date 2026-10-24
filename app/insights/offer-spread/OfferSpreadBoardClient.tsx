@@ -418,14 +418,14 @@ export default function OfferSpreadBoardClient({
             <table className="rpc-os-table">
               <thead>
                 <tr>
-                  <th className="rpc-os-th-player">Edition</th>
-                  <th className="rpc-os-th-num">Tier</th>
-                  <th className="rpc-os-th-num rpc-os-th-emph">Top bid</th>
-                  <th className="rpc-os-th-num">Bid age</th>
-                  <th className="rpc-os-th-num">Floor ask</th>
-                  <th className="rpc-os-th-num rpc-os-th-emph">Bid % of floor</th>
-                  <th className="rpc-os-th-num">Spread</th>
-                  <th className="rpc-os-th-num">Mint</th>
+                  <th scope="col" className="rpc-os-th-player">Edition</th>
+                  <th scope="col" className="rpc-os-th-num">Tier</th>
+                  <th scope="col" className="rpc-os-th-num rpc-os-th-emph">Top bid</th>
+                  <th scope="col" className="rpc-os-th-num">Bid age</th>
+                  <th scope="col" className="rpc-os-th-num">Floor ask</th>
+                  <th scope="col" className="rpc-os-th-num rpc-os-th-emph">Bid % of floor</th>
+                  <th scope="col" className="rpc-os-th-num">Spread</th>
+                  <th scope="col" className="rpc-os-th-num">Mint</th>
                 </tr>
               </thead>
               <tbody>

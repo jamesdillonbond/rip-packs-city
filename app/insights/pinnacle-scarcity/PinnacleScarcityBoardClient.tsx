@@ -214,13 +214,13 @@ export default function PinnacleScarcityBoardClient({
           <table className="rpc-ps-table">
             <thead>
               <tr>
-                <th>Character / Set</th>
-                <th className="rpc-ps-th-num">Variant</th>
-                <th className="rpc-ps-th-num">Mint</th>
-                <th className="rpc-ps-th-num">Var avg</th>
-                <th className="rpc-ps-th-num rpc-ps-th-emph">Scarcity</th>
-                <th className="rpc-ps-th-num">FMV</th>
-                <th className="rpc-ps-th-num">Ask</th>
+                <th scope="col">Character / Set</th>
+                <th scope="col" className="rpc-ps-th-num">Variant</th>
+                <th scope="col" className="rpc-ps-th-num">Mint</th>
+                <th scope="col" className="rpc-ps-th-num">Var avg</th>
+                <th scope="col" className="rpc-ps-th-num rpc-ps-th-emph">Scarcity</th>
+                <th scope="col" className="rpc-ps-th-num">FMV</th>
+                <th scope="col" className="rpc-ps-th-num">Ask</th>
               </tr>
             </thead>
             <tbody>

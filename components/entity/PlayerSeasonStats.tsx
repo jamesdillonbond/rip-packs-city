@@ -57,9 +57,9 @@ export default function PlayerSeasonStats({
                 <table style={{ borderCollapse: "collapse", minWidth: 420, width: "100%", fontFamily: "var(--font-mono)", fontSize: 12 }}>
                   <thead>
                     <tr>
-                      <th style={{ textAlign: "left", padding: "4px 8px", color: "var(--rpc-text-muted)", fontWeight: 400, whiteSpace: "nowrap" }}>Season</th>
+                      <th scope="col" style={{ textAlign: "left", padding: "4px 8px", color: "var(--rpc-text-muted)", fontWeight: 400, whiteSpace: "nowrap" }}>Season</th>
                       {t.labels.map((l, i) => (
-                        <th key={`${l}-${i}`} style={{ textAlign: "right", padding: "4px 8px", color: "var(--rpc-text-muted)", fontWeight: 400, whiteSpace: "nowrap" }}>{l}</th>
+                        <th scope="col" key={`${l}-${i}`} style={{ textAlign: "right", padding: "4px 8px", color: "var(--rpc-text-muted)", fontWeight: 400, whiteSpace: "nowrap" }}>{l}</th>
                       ))}
                     </tr>
                   </thead>

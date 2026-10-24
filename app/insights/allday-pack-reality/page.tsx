@@ -72,12 +72,12 @@ function RealizedTable({ rows, accent }: { rows: PackRealityRow[]; accent: strin
       <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "var(--font-mono)", fontSize: 12 }}>
         <thead>
           <tr style={{ color: "var(--rpc-text-muted)", textAlign: "left" }}>
-            <th style={{ padding: "6px 10px", fontWeight: 600 }}>Pack</th>
-            <th style={{ padding: "6px 10px", fontWeight: 600, textAlign: "right" }}>Model EV</th>
-            <th style={{ padding: "6px 10px", fontWeight: 600, textAlign: "right" }}>Realized avg</th>
-            <th style={{ padding: "6px 10px", fontWeight: 600, textAlign: "right" }}>Median</th>
-            <th style={{ padding: "6px 10px", fontWeight: 600, textAlign: "right" }}>Ratio</th>
-            <th style={{ padding: "6px 10px", fontWeight: 600, textAlign: "right" }}>Opens · valued</th>
+            <th scope="col" style={{ padding: "6px 10px", fontWeight: 600 }}>Pack</th>
+            <th scope="col" style={{ padding: "6px 10px", fontWeight: 600, textAlign: "right" }}>Model EV</th>
+            <th scope="col" style={{ padding: "6px 10px", fontWeight: 600, textAlign: "right" }}>Realized avg</th>
+            <th scope="col" style={{ padding: "6px 10px", fontWeight: 600, textAlign: "right" }}>Median</th>
+            <th scope="col" style={{ padding: "6px 10px", fontWeight: 600, textAlign: "right" }}>Ratio</th>
+            <th scope="col" style={{ padding: "6px 10px", fontWeight: 600, textAlign: "right" }}>Opens · valued</th>
           </tr>
         </thead>
         <tbody>

@@ -313,12 +313,12 @@ function SetsBody({ data, onPickProduct }: { data: PaniniSetProgressResponse; on
           <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 560 }}>
             <thead>
               <tr>
-                <th style={th}>Set</th>
-                <th style={th}>Editions seen</th>
-                <th style={th}>Serials</th>
-                {tracking && data.userSeen ? <th style={th}>Seen held</th> : null}
-                <th style={th}>Cost to finish</th>
-                <th style={th}>Largest ask</th>
+                <th scope="col" style={th}>Set</th>
+                <th scope="col" style={th}>Editions seen</th>
+                <th scope="col" style={th}>Serials</th>
+                {tracking && data.userSeen ? <th scope="col" style={th}>Seen held</th> : null}
+                <th scope="col" style={th}>Cost to finish</th>
+                <th scope="col" style={th}>Largest ask</th>
               </tr>
             </thead>
             <tbody>

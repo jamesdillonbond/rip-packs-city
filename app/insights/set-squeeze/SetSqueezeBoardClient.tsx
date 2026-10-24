@@ -221,15 +221,15 @@ export default function SetSqueezeBoardClient({
           <table className="rpc-ss-table">
             <thead>
               <tr>
-                <th>Set</th>
-                <th className="rpc-ss-th-num">Tier</th>
-                <th className="rpc-ss-th-num">Eds</th>
-                <th className="rpc-ss-th-num">Circ</th>
-                <th className="rpc-ss-th-num">Locked</th>
-                <th className="rpc-ss-th-num">Burned</th>
-                <th className="rpc-ss-th-num">Buyable</th>
-                <th className="rpc-ss-th-num rpc-ss-th-emph">Avg squeeze</th>
-                <th className="rpc-ss-th-num">Max</th>
+                <th scope="col">Set</th>
+                <th scope="col" className="rpc-ss-th-num">Tier</th>
+                <th scope="col" className="rpc-ss-th-num">Eds</th>
+                <th scope="col" className="rpc-ss-th-num">Circ</th>
+                <th scope="col" className="rpc-ss-th-num">Locked</th>
+                <th scope="col" className="rpc-ss-th-num">Burned</th>
+                <th scope="col" className="rpc-ss-th-num">Buyable</th>
+                <th scope="col" className="rpc-ss-th-num rpc-ss-th-emph">Avg squeeze</th>
+                <th scope="col" className="rpc-ss-th-num">Max</th>
               </tr>
             </thead>
             <tbody>

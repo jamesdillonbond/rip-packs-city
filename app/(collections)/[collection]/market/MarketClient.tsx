@@ -1070,18 +1070,18 @@ function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColu
       <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "var(--font-mono)", fontSize: 11 }}>
         <thead className="rpc-thead-scanline">
           <tr style={{ borderBottom: "1px solid var(--rpc-border)", color: "var(--rpc-text-muted)", fontSize: 9, textTransform: "uppercase", letterSpacing: "0.14em" }}>
-            <th style={th}>{getEntityLabels(collectionUrlSlug).player}</th>
-            <th style={th}>{getEntityLabels(collectionUrlSlug).tier}</th>
-            <th style={th}>Series</th>
-            <th style={th}>Set</th>
-            {showBadges && <th style={th}>Badges</th>}
-            <th style={{ ...th, textAlign: "right" }}># Listed</th>
-            <th style={{ ...th, textAlign: "right" }}>Mint</th>
-            {showOwnedColumn && <th style={{ ...th, textAlign: "right" }}>{collectionHasLocking(collectionUrlSlug) ? "Own / Lock" : "Own"}</th>}
-            <th style={{ ...th, textAlign: "right" }}>Floor Ask</th>
-            <th style={{ ...th, textAlign: "right" }}>FMV</th>
-            <th style={{ ...th, textAlign: "right" }}>Discount</th>
-            <th style={th}></th>
+            <th scope="col" style={th}>{getEntityLabels(collectionUrlSlug).player}</th>
+            <th scope="col" style={th}>{getEntityLabels(collectionUrlSlug).tier}</th>
+            <th scope="col" style={th}>Series</th>
+            <th scope="col" style={th}>Set</th>
+            {showBadges && <th scope="col" style={th}>Badges</th>}
+            <th scope="col" style={{ ...th, textAlign: "right" }}># Listed</th>
+            <th scope="col" style={{ ...th, textAlign: "right" }}>Mint</th>
+            {showOwnedColumn && <th scope="col" style={{ ...th, textAlign: "right" }}>{collectionHasLocking(collectionUrlSlug) ? "Own / Lock" : "Own"}</th>}
+            <th scope="col" style={{ ...th, textAlign: "right" }}>Floor Ask</th>
+            <th scope="col" style={{ ...th, textAlign: "right" }}>FMV</th>
+            <th scope="col" style={{ ...th, textAlign: "right" }}>Discount</th>
+            <th scope="col" style={th}></th>
           </tr>
         </thead>
         <tbody>
