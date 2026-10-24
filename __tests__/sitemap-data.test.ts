@@ -488,6 +488,7 @@ describe("segment 3 — set/player/team entities + top moments", () => {
       { id: "m3", external_id: "1:2", collection_id: TS_ID, updated_at: null, player_name: null, set_name: "A Set", team_name: null },
     ])
     h.t.sets_summary = ok([{ collection_id: TS_ID, set_slug: "a-set" }, { collection_id: TS_ID, set_slug: "shared-set" }])
+    h.t.players = ok([{ id: "p1", collection_id: TS_ID, name: "A Player" }])
     const s = await buildSitemapSegment(3)
     const moments = s.filter((x) => x.url.includes("/moment/"))
     const sets = s.filter((x) => x.url.includes("/set/"))
@@ -573,6 +574,11 @@ describe("segment 3 — set/player/team entities + top moments", () => {
       { id: "u3", external_id: "cccc-3", collection_id: UFC_ID, updated_at: null, player_name: "Fighter C", set_name: "UFC 300 Base", team_name: null },
     ])
     h.t.sets_summary = ok([{ collection_id: UFC_ID, set_slug: "ufc-237-ko-tko" }, { collection_id: UFC_ID, set_slug: "ufc-300-base" }])
+    h.t.players = ok([
+      { id: "f1", collection_id: UFC_ID, name: "Fighter A" },
+      { id: "f2", collection_id: UFC_ID, name: "Fighter B" },
+      { id: "f3", collection_id: UFC_ID, name: "Fighter C" },
+    ])
     const s = await buildSitemapSegment(3)
     const sets = s.filter((x) => x.url.includes("/set/")).map((x) => x.url)
     expect(sets).not.toContain(`${BASE}/ufc/set/ufc-237-ko-tko`)
@@ -590,6 +596,9 @@ describe("segment 3 — set/player/team entities + top moments", () => {
       { id: "t1", external_id: "3:3", collection_id: TS_ID, updated_at: null, player_name: "Dallas Wings", set_name: "WNBA Skyline", team_name: "Dallas Wings" },
       { id: "t2", external_id: "4:4", collection_id: TS_ID, updated_at: null, player_name: "Vít Krejčí", set_name: "Base Set", team_name: "Atlanta Hawks" },
     ])
+    // The players row spells the name without the accent (measured 2026-09-06: the
+    // label and the row disagree on diacritics) — slugifyPlayerName folds both to one key.
+    h.t.players = ok([{ id: "p2", collection_id: TS_ID, name: "Vit Krejci" }])
     const s = await buildSitemapSegment(3)
     const players = s.filter((x) => x.url.includes("/player/")).map((x) => x.url)
     const teams = s.filter((x) => x.url.includes("/team/")).map((x) => x.url).sort()
@@ -597,6 +606,44 @@ describe("segment 3 — set/player/team entities + top moments", () => {
     expect(players).not.toContain(`${BASE}/nba-top-shot/player/v-t-krej-`)
     expect(players).toEqual([`${BASE}/nba-top-shot/player/vit-krejci`])
     expect(teams).toEqual([`${BASE}/nba-top-shot/team/atlanta-hawks`, `${BASE}/nba-top-shot/team/dallas-wings`])
+  })
+
+  it("lists only players the player page can RESOLVE (a players row) — a label whose row the minter has not created yet is NOT listed (2026-10-23)", async () => {
+    // 2026-10-23 3:27 PM PT: the deployment smoke discovered /nba-top-shot/player/keaton-wagler
+    // from this sitemap and got a 404 — his 4 Rookie Debut editions had landed at 3:29 PM, his
+    // `players` row was due at the daily 2:50 AM PT minter. Assert the ABSENCE of the 404 URL,
+    // with a resolvable control from the same edition rows.
+    h.t.editions = ok([
+      { id: "r1", external_id: "9:1", collection_id: TS_ID, updated_at: "2026-10-23T22:29:00.000Z", player_name: "Keaton Wagler", set_name: "Rookie Debut", team_name: "Toronto Raptors" },
+      { id: "r2", external_id: "9:2", collection_id: TS_ID, updated_at: "2026-10-23T22:29:00.000Z", player_name: "Cameron Boozer", set_name: "Rookie Debut", team_name: "Utah Jazz" },
+      { id: "r3", external_id: "9:3", collection_id: TS_ID, updated_at: null, player_name: "Cameron Boozer", set_name: "Rookie Debut", team_name: "Utah Jazz" },
+    ])
+    h.t.players = ok([{ id: "p5", collection_id: TS_ID, name: "Cameron Boozer" }])
+    const s = await buildSitemapSegment(3)
+    const players = s.filter((x) => x.url.includes("/player/")).map((x) => x.url)
+    expect(players).not.toContain(`${BASE}/nba-top-shot/player/keaton-wagler`)
+    expect(players).toEqual([`${BASE}/nba-top-shot/player/cameron-boozer`])
+    // The set and team URLs from the same rows are unaffected by the player filter.
+    expect(s.map((x) => x.url)).toContain(`${BASE}/nba-top-shot/team/toronto-raptors`)
+  })
+
+  it("a players read FAILURE rejects — it must not fall back to listing every label, nor publish no players", async () => {
+    h.t.editions = ok([
+      { id: "r1", external_id: "9:1", collection_id: TS_ID, updated_at: null, player_name: "Cameron Boozer", set_name: "Rookie Debut", team_name: "Utah Jazz" },
+    ])
+    h.t.players = err("canceling statement due to statement timeout")
+    await expect(buildSitemapSegment(3)).rejects.toThrow(/players read failed/)
+  })
+
+  it("pages players past PostgREST's 1,000-row cap — a player on the second page is still listed", async () => {
+    const rows = Array.from({ length: 1100 }, (_, i) => ({ id: `p-${String(i).padStart(4, "0")}`, collection_id: TS_ID, name: `Filler ${i}` }))
+    rows[1050] = { id: "p-1050", collection_id: TS_ID, name: "Second Page Player" }
+    h.t.players = ok(rows)
+    h.t.editions = ok([
+      { id: "r1", external_id: "9:1", collection_id: TS_ID, updated_at: null, player_name: "Second Page Player", set_name: "Base Set", team_name: "Utah Jazz" },
+    ])
+    const s = await buildSitemapSegment(3)
+    expect(s.filter((x) => x.url.includes("/player/")).map((x) => x.url)).toEqual([`${BASE}/nba-top-shot/player/second-page-player`])
   })
 
   it("lists a player whose edition label is a registered ALIAS under the canonical slug, never under the URL that 308s (2026-09-25, #139)", async () => {
@@ -610,6 +657,12 @@ describe("segment 3 — set/player/team entities + top moments", () => {
     ])
     h.t.player_name_aliases = ok([
       { collection_id: TS_ID, alias_slug: "jimmy-butler", players: { name: "Jimmy Butler III" } },
+    ])
+    // Only the canonical row exists — "Jimmy Butler" is an alias, not a row — so the
+    // alias label must be matched through the canonical slug, not dropped.
+    h.t.players = ok([
+      { id: "p3", collection_id: TS_ID, name: "Jimmy Butler III" },
+      { id: "p4", collection_id: TS_ID, name: "Gary Payton" },
     ])
     const s = await buildSitemapSegment(3)
     const players = s.filter((x) => x.url.includes("/player/"))

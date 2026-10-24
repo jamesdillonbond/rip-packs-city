@@ -551,6 +551,50 @@ async function getRoutableSetSlugs(): Promise<Set<string>> {
 }
 
 /**
+ * The player slugs the player page can RESOLVE, per collection (2026-10-23).
+ * `get_player_detail` matches a `players` row by name slug; segment 3 derives
+ * player URLs from `editions.player_name` LIVE, so a newly minted player was
+ * advertised the moment its first edition landed while its `players` row
+ * waited for the minter (`rpc-ensure-players-from-edition-names`, daily until
+ * 10-23, hourly since) — an indexable 404 for up to a day, and a red deployment
+ * smoke whenever its sitemap discovery picked that URL (10-23 3:27 PM PT,
+ * /nba-top-shot/player/keaton-wagler, run 40033753464). Same rule as
+ * getRoutableSetSlugs: list only what the page resolves TODAY; the player
+ * appears on the next build after its row exists.
+ *
+ * Keys are `${urlSlug}|${slugifyPlayerName(name)}` — the same slug the walk
+ * builds from the edition label (and the alias map resolves to), so an alias
+ * label is matched by its CANONICAL row. Pinnacle characters are not players
+ * and are listed from the catalog below, not through this set. Paged past the
+ * 1,000-row clamp on a unique key; a failed or partial read throws (this
+ * file's contract).
+ */
+async function getRoutablePlayerSlugs(): Promise<Set<string>> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!url || !key) throw new SitemapReadIncomplete('routable player slugs: supabase env missing, so nothing could be read')
+  const sb: any = createClient(url, key)
+  const PAGE = 1000
+  const out = new Set<string>()
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await sb
+      .from('players')
+      .select('id, collection_id, name')
+      .order('id', { ascending: true })
+      .range(from, from + PAGE - 1)
+    if (error) throw new SitemapReadIncomplete('players read failed: ' + error.message)
+    if (!Array.isArray(data)) throw new SitemapReadIncomplete('players returned no list')
+    for (const r of data as Array<{ collection_id?: unknown; name?: unknown }>) {
+      if (typeof r.collection_id !== 'string' || typeof r.name !== 'string' || !r.name.trim()) continue
+      const coll = getCollectionByUuid(r.collection_id)
+      if (coll) out.add(`${coll.urlSlug}|${slugifyPlayerName(r.name)}`)
+    }
+    if (data.length < PAGE) break
+  }
+  return out
+}
+
+/**
  * Panini PRODUCT set pages (2026-10-21, #204): /panini-blockchain/set/<product key> for each set
  * whose NAME several products share — the key is then that product's canonical page. (A name one
  * product carries, and every 2026 World Cup catalog set, is already listed under its name slug by
@@ -951,6 +995,7 @@ async function buildSitemapSegmentUncapped(id: number): Promise<MetadataRoute.Si
     const aliasMap = await getPlayerAliasMap()
     const historicTeams = await getHistoricTeamSlugs(EDITION_COLLECTION_IDS)
     const routableSets = await getRoutableSetSlugs()
+    const routablePlayers = await getRoutablePlayerSlugs()
     const paniniProductSets = await getPaniniProductSetPages()
     const hubPaths = await getIndexableHubPaths()
 
@@ -1005,8 +1050,12 @@ async function buildSitemapSegmentUncapped(id: number): Promise<MetadataRoute.Si
         const raw = `${coll.urlSlug}|${slugifyPlayerName(e.player_name)}`
         const canonical = aliasMap.get(raw)
         const k = canonical ? `${coll.urlSlug}|${canonical}` : raw
-        const prev = playerMap.get(k)
-        if (newer(prev, ts)) playerMap.set(k, ts)
+        // 2026-10-23: only a player the page can resolve (see getRoutablePlayerSlugs) —
+        // a label whose `players` row the minter has not created yet is a 404 today.
+        if (routablePlayers.has(k)) {
+          const prev = playerMap.get(k)
+          if (newer(prev, ts)) playerMap.set(k, ts)
+        }
       }
       if (e.team_name) {
         const teamSlug = slugifyName(e.team_name)
