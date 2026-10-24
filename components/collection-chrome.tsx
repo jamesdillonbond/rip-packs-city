@@ -102,9 +102,13 @@ export function CollectionTicker({ collection }: { collection: Collection }) {
           every tab. */}
       <div style={{ background: "var(--rpc-red)", padding: "0 12px", fontSize: 9, fontFamily: "var(--font-mono)", letterSpacing: "0.15em", color: "#fff", height: "100%", display: "flex", alignItems: "center", flexShrink: 0, fontWeight: 700 }}>{statusLabel}</div>
       <div style={{ overflow: "hidden", flex: 1 }}>
-        <div style={{ display: "flex", gap: 64, animation: "ticker 38s linear infinite", whiteSpace: "nowrap", paddingLeft: 24 }}>
+        {/* 2026-10-24 (WCAG 2.2.2): pauses on hover / keyboard focus and stops
+            under prefers-reduced-motion (.rpc-ticker-track in app/globals.css);
+            the second copy exists only to make the loop seamless, so it is
+            hidden from screen readers rather than read twice. */}
+        <div className="rpc-ticker-track" style={{ display: "flex", gap: 64, animation: "ticker 38s linear infinite", whiteSpace: "nowrap", paddingLeft: 24 }}>
           {doubled.map((item, i) => (
-            <span key={i} style={{ fontSize: 10, fontFamily: "var(--font-mono)", color: "var(--rpc-text-muted)", letterSpacing: "0.07em" }}>{item}</span>
+            <span key={i} aria-hidden={i >= items.length ? true : undefined} style={{ fontSize: 10, fontFamily: "var(--font-mono)", color: "var(--rpc-text-muted)", letterSpacing: "0.07em" }}>{item}</span>
           ))}
         </div>
       </div>

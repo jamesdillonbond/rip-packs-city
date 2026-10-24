@@ -12,6 +12,7 @@
 // show/hide toggle. There are no fetch-changing filters, so this component
 // never refetches; freshness is handled by the server page's revalidate.
 
+import { accentText } from "@/lib/accent-text"
 import { useMemo, useState } from "react"
 import Link from "next/link"
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
@@ -397,7 +398,7 @@ export default function MarketIndexClient({ initialRows, initialFetchedAt, loadE
             const up = (h.change30d ?? 0) >= 0
             return (
               <div key={t} className="rpc-mk-card" style={{ borderTopColor: TIER_HEX[t] }}>
-                <div className="rpc-mk-card-tier" style={{ color: TIER_HEX[t] }}>
+                <div className="rpc-mk-card-tier" style={{ color: accentText(TIER_HEX[t]) }}>
                   {t}
                 </div>
                 <div className="rpc-mk-card-index">{h.latestIndex != null ? Math.round(h.latestIndex) : "—"}</div>
@@ -584,7 +585,7 @@ const CSS = `
   margin-top: 8px;
   font-weight: 700;
 }
-.rpc-mk-up { color: #34D399; }
+.rpc-mk-up { color: var(--rpc-success-text); }
 .rpc-mk-down { color: var(--rpc-red-text); }
 .rpc-mk-chg-cap { color: var(--rpc-text-muted); font-weight: 400; letter-spacing: 2px; }
 

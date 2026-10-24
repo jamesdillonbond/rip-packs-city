@@ -129,13 +129,19 @@ export default function LoginClient() {
               fontSize: 18, textTransform: "uppercase", letterSpacing: "0.04em",
               marginBottom: 8,
             }}>Check your email</div>
-            <div style={{
-              fontFamily: "var(--font-mono)", fontSize: 11,
+            <div role="status" style={{
+              fontFamily: "var(--font-mono)", fontSize: 13,
               color: "var(--rpc-text-secondary)", lineHeight: 1.7,
             }}>
               We sent a magic link to <span style={{ color: "var(--rpc-text-primary)" }}>{email}</span>.
               <br />
-              Click it to sign in. The link expires in 1 hour.
+              Click it to sign in.
+              <br />
+              {/* 2026-10-24: the commonest dead end after "check your email" is a
+                  link sitting in spam / promotions. (The old "expires in 1 hour"
+                  was not verifiable from the repo, so it is not promised here.) */}
+              Not there after a minute? Check spam and promotions, or{" "}
+              <Link href="/help" style={{ color: "var(--rpc-red-text)", textDecoration: "underline" }}>get help</Link>.
             </div>
             <button
               onClick={() => { setStatus("idle"); setEmail("") }}

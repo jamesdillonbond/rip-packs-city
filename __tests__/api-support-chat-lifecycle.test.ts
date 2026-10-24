@@ -102,7 +102,7 @@ describe("concierge lifecycle — greeting short-circuit", () => {
   it("anonymous greeting returns the generic welcome (no model call)", async () => {
     const res = await POST(post("hi"))
     const body = await res.json()
-    expect(String(body.response)).toContain("free beta")
+    expect(String(body.response)).toContain("no invite needed")
     // A greeting short-circuits before the tool loop — the model is never called.
     expect(A.createCalls.length).toBe(0)
   })
@@ -126,7 +126,7 @@ describe("concierge lifecycle — greeting short-circuit", () => {
     expect(res.headers.get("X-RPC-Stream")).toBe("1")
     expect(res.headers.get("Content-Type")).toContain("text/plain")
     const text = await res.text()
-    expect(text).toContain("free beta")
+    expect(text).toContain("no invite needed")
   })
 })
 

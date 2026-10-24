@@ -159,6 +159,7 @@ const PAGES: PageCheck[] = [
   // first scheduled run is their validation. If one fails, TRIAGE IT: these are
   // pages already advertised to Googlebot, so a failure here is a true positive.
   { path: "/about", name: "about" },
+  { path: "/help", name: "help" },
   { path: "/sniper", name: "sniper hub" },
   { path: "/market", name: "market hub" },
   { path: "/privacy", name: "privacy policy" },

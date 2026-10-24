@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import GlobalSiteHeader from "@/components/GlobalSiteHeader";
+import { PageContentAnchor } from "@/components/SkipToContent";
 
 export const metadata: Metadata = {
   title: "Dashboard",
@@ -24,6 +25,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   return (
     <>
       <GlobalSiteHeader />
+      <PageContentAnchor />
       {children}
     </>
   );

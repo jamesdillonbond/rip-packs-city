@@ -361,10 +361,16 @@ export async function GET(req: NextRequest) {
   // the field. We keep it terse and beta-flavored so it can't override the
   // client-side voice.
 
-  let pageWelcome = "Free beta — I'm here for support, Q&A, and feedback for the team. Deals, FMV, wallet analysis, and live market data (top sales, movers, rookies, scarcity) too if you want.";
+  let pageWelcome = "I can price a moment, find listings under FMV, break down a wallet, pull live market data (top sales, movers, rookies, scarcity) — or log a bug or idea for the team.";
+  // A shipped item is news ONCE. recentlyShipped (counted since the reader's
+  // previous turn) is that news; when it read OK and found nothing, the newest
+  // shipped row is OLD and was already announced — 10-24 the widget greeted a
+  // returning tester with a July ship (#4692) three months on. Only fall back to
+  // the newest row's status when the recentlyShipped read FAILED (null).
+  const lastIsShipped = String(lastOpenFeedback?.feedback_status ?? "new") === "shipped";
   if (returningBetaTester && recentlyShipped && recentlyShipped.count > 0) {
     pageWelcome = `Welcome back. ${shippedSinceLine(recentlyShipped)}`;
-  } else if (returningBetaTester && lastOpenFeedback?.feedback_summary) {
+  } else if (returningBetaTester && lastOpenFeedback?.feedback_summary && !(lastIsShipped && recentlyShipped)) {
     const status = String(lastOpenFeedback.feedback_status ?? "new");
     if (status === "shipped") {
       pageWelcome = `Welcome back. Your feedback "${lastOpenFeedback.feedback_summary}" shipped — thanks for the catch.`;

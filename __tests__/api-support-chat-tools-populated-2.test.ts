@@ -274,7 +274,11 @@ describe("concierge tools — search_catalog_deals (on-chain index collections)"
     script("search_catalog_deals", { collectionId: "nfl-all-day" })
     await POST(post("All Day deals"))
     const row = (toolResult().results as Array<Record<string, unknown>>)[0]
-    expect(row).toMatchObject({ fmv: null, confidence: null, discount_pct: null })
+    expect(row).toMatchObject({ fmv: null, discount_pct: null })
+    // 2026-10-24: confidence never reaches the model (lib/concierge/scrub-confidence.ts);
+    // an unpriced row carries no basis at all rather than a fabricated one.
+    expect(row).not.toHaveProperty("confidence")
+    expect(row).not.toHaveProperty("pricing_basis")
   })
 
   it("a failed index read is an error, never 'no moments found'", async () => {

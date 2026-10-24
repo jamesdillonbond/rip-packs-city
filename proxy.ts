@@ -513,6 +513,9 @@ export function isPublicPath(pathname: string, method: string): boolean {
   if (pathname === "/pricing" || pathname.startsWith("/pricing/")) return true
   // /about — marketing surface
   if (pathname === "/about" || pathname.startsWith("/about/")) return true
+  // /help — help, FAQ and contact (2026-10-24). A visitor who cannot sign in is
+  // exactly who needs it, so it must never bounce to /login.
+  if (pathname === "/help" || pathname.startsWith("/help/")) return true
   // /sniper — the cross-collection Sniper hub, the bottom bar's SNIPER tab
   // (2026-09-28). Exact match: collection snipers live at /{collection}/sniper.
   if (pathname === "/sniper") return true

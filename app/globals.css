@@ -75,3 +75,33 @@ select optgroup {
     min-height: 44px;
   }
 }
+
+/* ── Motion & accessibility (UI audit 2026-10-24) ─────────────────────────────
+   The collection ticker pauses while hovered or focused (WCAG 2.2.2), and every
+   animation/transition collapses for readers who ask the OS for reduced motion —
+   skeleton pulses, spinners, the ticker and fades included (only 7 sites honoured
+   it before). !important is required: most animations here are inline styles. */
+.rpc-ticker-track:hover,
+.rpc-ticker-track:focus-within {
+  animation-play-state: paused !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Links inside running text must be distinguishable by more than colour (WCAG
+   1.4.1 / axe link-in-text-block, 8 sites on 2026-10-24 — several set
+   text-decoration:none inline, hence !important). Scoped to unclassed links in
+   paragraphs, so buttons, cards and nav styled with a class are untouched. */
+p a:not([class]),
+.rpc-ss-inline-link {
+  text-decoration-line: underline !important;
+  text-underline-offset: 2px;
+}

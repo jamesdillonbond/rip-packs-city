@@ -60,7 +60,7 @@ const KICKER: React.CSSProperties = {
   fontSize: 11,
   letterSpacing: "0.22em",
   textTransform: "uppercase",
-  color: "var(--rpc-red, #E03A2F)",
+  color: "var(--rpc-red-text)",
   fontWeight: 700,
   margin: "0 0 12px",
 }
@@ -432,7 +432,7 @@ export default function PinnacleStarWarsDay2026() {
         edition metadata from <code>pinnacle_editions</code>. &quot;30-day&quot;
         windows are rolling and computed against NOW() at query time. FMV
         follows the same methodology used across NBA Top Shot — see{" "}
-        <Link href="/legal/fmv-methodology" style={{ color: "var(--rpc-red, #E03A2F)" }}>
+        <Link href="/legal/fmv-methodology" style={{ color: "var(--rpc-red-text)" }}>
           how we calculate FMV
         </Link>
         . Nothing in this post is investment advice. Trade your own book.

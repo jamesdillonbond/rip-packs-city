@@ -27,6 +27,7 @@ import { WalletLink } from "@/components/entity/_shared"
 import PinnacleFmvChart from "@/components/pinnacle/PinnacleFmvChart"
 import MarketCapTile from "@/components/entity/MarketCapTile"
 import GlobalSiteHeader from "@/components/GlobalSiteHeader"
+import { PageContentAnchor } from "@/components/SkipToContent"
 import SiteFooter from "@/components/SiteFooter"
 import { CollectionTicker, CollectionBanner } from "@/components/collection-chrome"
 import { getCollection } from "@/lib/collections"
@@ -549,6 +550,7 @@ function PinnacleShell({ children }: { children: ReactNode }) {
   return (
     <div style={{ minHeight: "100vh", background: "var(--rpc-black)", color: "var(--rpc-text-primary)" }} data-collection="disney-pinnacle">
       <GlobalSiteHeader />
+      <PageContentAnchor />
       {pinnacle ? (
         <>
           <CollectionTicker collection={pinnacle} />

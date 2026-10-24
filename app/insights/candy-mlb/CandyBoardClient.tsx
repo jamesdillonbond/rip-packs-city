@@ -70,19 +70,19 @@ const CSS = `
 .cdy-ev{background:var(--rpc-surface,#16161a);border:1px solid var(--rpc-border,rgba(255,255,255,.10));border-radius:10px;padding:14px 16px;margin:0 0 16px}
 .cdy-ev-row{display:flex;flex-wrap:wrap;gap:20px;align-items:flex-end}
 .cdy-ev-lead h3{font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--rpc-text-secondary,#9A968C);margin:0 0 5px;font-weight:700}
-.cdy-ev-lead .v{font-family:var(--font-mono,ui-monospace),monospace;font-size:30px;font-weight:700;color:#5fd6a0;line-height:1}
+.cdy-ev-lead .v{font-family:var(--font-mono,ui-monospace),monospace;font-size:30px;font-weight:700;color:var(--rpc-success-text);line-height:1}
 .cdy-ev-sec h3{font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--rpc-text-secondary,#9A968C);margin:0 0 5px;font-weight:700}
 .cdy-ev-sec .v{font-family:var(--font-mono,ui-monospace),monospace;font-size:19px;font-weight:600;color:var(--rpc-text-secondary,#C6C2B8);line-height:1}
 .cdy-ev-cost{margin-left:auto;text-align:right}
 .cdy-ev-cost h3{font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--rpc-text-secondary,#9A968C);margin:0 0 5px;font-weight:700}
 .cdy-ev-cost .v{font-family:var(--font-mono,ui-monospace),monospace;font-size:19px;font-weight:600;color:var(--rpc-text-primary,#ECEAE3)}
-.cdy-ev-warn{margin-top:11px;padding-top:10px;border-top:1px solid rgba(255,255,255,.08);font-size:11.5px;line-height:1.55;color:#e0a64b}
-.cdy-ev-warn b{color:#f2c879;font-weight:700}
+.cdy-ev-warn{margin-top:11px;padding-top:10px;border-top:1px solid var(--rpc-border-subtle);font-size:11.5px;line-height:1.55;color:var(--rpc-warning-text)}
+.cdy-ev-warn b{color:var(--rpc-warning-text);font-weight:700}
 .cdy-kpis{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:18px}
 @media(min-width:760px){.cdy-kpis{grid-template-columns:repeat(4,1fr)}}
 .cdy-card{background:var(--rpc-surface,#16161a);border:1px solid var(--rpc-border,rgba(255,255,255,.10));border-radius:10px;padding:13px 14px}
 .cdy-card h3{font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--rpc-text-secondary,#9A968C);margin:0 0 7px;font-weight:700}
-.cdy-big{font-family:var(--font-mono,ui-monospace),monospace;font-size:22px;font-weight:600;color:var(--rpc-red,#E03A2F)}
+.cdy-big{font-family:var(--font-mono,ui-monospace),monospace;font-size:22px;font-weight:600;color:var(--rpc-red-text)}
 .cdy-tabs{display:flex;gap:4px;flex-wrap:wrap;border-bottom:1px solid var(--rpc-border,rgba(255,255,255,.10));margin:0 0 16px}
 .cdy-tabs button{background:transparent;border:0;border-bottom:2px solid transparent;color:var(--rpc-text-secondary,#9A968C);padding:8px 12px;font-size:11.5px;letter-spacing:.04em;text-transform:uppercase;cursor:pointer;font-weight:700}
 .cdy-tabs button.on{color:var(--rpc-text-primary,#F2F0EA);border-bottom-color:var(--rpc-red,#E03A2F)}
@@ -105,8 +105,8 @@ const CSS = `
 .cdy-trunc{margin:8px 2px 0;line-height:1.5}
 .cdy-trunc b{color:var(--rpc-text-primary,#ECEAE3);font-weight:700}
 .cdy-rb{font-size:9px;font-weight:800;padding:1px 5px;border-radius:3px;color:#0c0c0e;background:linear-gradient(90deg,#f472b6,#a78bfa,#60a5fa);margin-left:5px}
-.cdy-off{color:#e0a64b;font-weight:700}
-.cdy-disc{color:#5fd6a0;font-weight:700}
+.cdy-off{color:var(--rpc-warning-text);font-weight:700}
+.cdy-disc{color:var(--rpc-success-text);font-weight:700}
 .cdy-kind{font-size:9px;font-weight:800;padding:1px 5px;border-radius:3px;text-transform:uppercase;letter-spacing:.03em}
 .cdy-kind.first{color:#0c0c0e;background:#f2c879}
 .cdy-kind.last{color:var(--rpc-text-primary,#ECEAE3);background:var(--rpc-surface-hover,rgba(255,255,255,.14))}
@@ -116,7 +116,7 @@ const CSS = `
 .cdy-note{color:var(--rpc-text-secondary,#9A968C);font-size:11.5px;margin:10px 2px 0}
 .cdy-note b{color:var(--rpc-text-primary,#ECEAE3);font-weight:700}
 .cdy-par2{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin:0 0 16px}
-.cdy-par2 .cdy-card .mul{font-size:11px;color:#5fd6a0;font-weight:700;margin-top:5px}
+.cdy-par2 .cdy-card .mul{font-size:11px;color:var(--rpc-success-text);font-weight:700;margin-top:5px}
 `;
 
 // ── Generic sortable table for the non-Market sections ──────────────────────

@@ -23,6 +23,7 @@
 import type { Metadata } from "next"
 import Link from "next/link"
 import GlobalSiteHeader from "@/components/GlobalSiteHeader"
+import { PageContentAnchor } from "@/components/SkipToContent"
 import SiteFooter from "@/components/SiteFooter"
 import LastCollectionShortcut from "@/components/hub/LastCollectionShortcut"
 import { publishedCollections } from "@/lib/collections"
@@ -59,6 +60,7 @@ export default async function SniperHubPage() {
   return (
     <div style={{ minHeight: "100vh", background: "var(--rpc-black)", color: "var(--rpc-text-primary)" }}>
       <GlobalSiteHeader />
+      <PageContentAnchor />
       <main style={{ maxWidth: 960, margin: "0 auto", padding: "28px 16px 96px", display: "flex", flexDirection: "column", gap: 28 }}>
         <header style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <h1

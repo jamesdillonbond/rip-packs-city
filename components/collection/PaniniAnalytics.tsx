@@ -171,7 +171,7 @@ function DailyBars({ daily }: { daily: PaniniDay[] }) {
           ? `${dayLabel(d.day)}: ${int(d.sales)} sales · ${usd(d.volume_usd)} · median ${usd(d.median_usd)}`
           : `${dayLabel(d.day)}: not complete — ${d.covered_pct ?? 0}% of traded editions fully on record`
         return (
-          <div key={d.day} title={tip} aria-label={tip} data-complete={done ? "true" : "false"} style={{ flex: "1 1 0", minWidth: 4, height: "100%", display: "flex", alignItems: "flex-end" }}>
+          <div key={d.day} role="img" title={tip} aria-label={tip} data-complete={done ? "true" : "false"} style={{ flex: "1 1 0", minWidth: 4, height: "100%", display: "flex", alignItems: "flex-end" }}>
             {done ? (
               <div style={{ width: "100%", height: `${Math.max(2, (d.sales / max) * 100)}%`, background: "var(--rpc-red)", borderRadius: "4px 4px 0 0" }} />
             ) : (

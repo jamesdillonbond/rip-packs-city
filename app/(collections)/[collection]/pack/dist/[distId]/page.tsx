@@ -2589,7 +2589,7 @@ async function PackStreamedBottom({
 // error boundary never ran on this ISR route.
 function PackUnavailable({ collection }: { collection: string }) {
   return (
-    <main style={{ minHeight: "60vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "48px 24px", gap: 16 }}>
+    <section style={{ minHeight: "60vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "48px 24px", gap: 16 }}>
       <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, letterSpacing: "0.3em", textTransform: "uppercase", color: "var(--rpc-text-muted)" }}>
         Pack unavailable
       </div>
@@ -2603,6 +2603,6 @@ function PackUnavailable({ collection }: { collection: string }) {
       <a href={`/${collection}/packs`} style={{ marginTop: 8, padding: "10px 18px", border: "1px solid var(--rpc-red-border)", color: "var(--rpc-red-text)", background: "transparent", fontFamily: "var(--font-mono)", letterSpacing: "0.2em", textTransform: "uppercase", fontSize: 12, textDecoration: "none" }}>
         All packs
       </a>
-    </main>
+    </section>
   )
 }

@@ -36,19 +36,19 @@ export default function TopMoversCard(props: { ownerKey: string }) {
 
   function MoverRowDisplay(props: { row: MoverRow; positive: boolean }) {
     const r = props.row;
-    const color = props.positive ? "#34D399" : "#F87171";
+    const color = props.positive ? "var(--rpc-success-text)" : "var(--rpc-danger-text)";
     const sign = props.positive ? "+" : "−";
     const fmv = Number(r.current_fmv ?? 0);
     const delta = Math.abs(Number(r.delta ?? 0));
     const pct = r.pct_change != null ? Math.abs(Number(r.pct_change)).toFixed(1) : null;
     return (
-      <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 10, padding: "8px 0", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 10, padding: "8px 0", borderBottom: "1px solid var(--rpc-border-subtle)" }}>
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 12, color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{momentSubjectName(r.player_name, null, r.set_name)}</div>
-          <div style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.5)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{/* the set is already the subject when there is no player */ r.player_name ? (r.set_name ?? "") : ""}</div>
+          <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 12, color: "var(--rpc-text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{momentSubjectName(r.player_name, null, r.set_name)}</div>
+          <div style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{/* the set is already the subject when there is no player */ r.player_name ? (r.set_name ?? "") : ""}</div>
         </div>
         <div style={{ textAlign: "right" }}>
-          <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 12, color: "#fff" }}>{fmtDollars(fmv)}</div>
+          <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 12, color: "var(--rpc-text-primary)" }}>{fmtDollars(fmv)}</div>
           <div style={{ fontSize: 9, fontFamily: monoFont, color: color, fontWeight: 700 }}>
             {sign + fmtDollars(delta) + (pct != null ? " · " + sign + pct + "%" : "")}
           </div>
@@ -58,31 +58,31 @@ export default function TopMoversCard(props: { ownerKey: string }) {
   }
 
   return (
-    <section className="rpc-card" style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 10, padding: "16px 18px" }}>
+    <section className="rpc-card" style={{ background: "var(--rpc-surface)", border: "1px solid var(--rpc-border)", borderRadius: 10, padding: "16px 18px" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
         <span style={labelStyle}>📊 Top Movers · 7d</span>
-        <span style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.5)" }}>FMV deltas across owned editions</span>
+        <span style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-muted)" }}>FMV deltas across owned editions</span>
       </div>
       {pending ? (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {[90, 80, 70, 60].map(function(w, i) { return <div key={i} style={{ width: w + "%", height: 14, background: "rgba(255,255,255,0.04)", borderRadius: 4, animation: "pulse 1.6s ease-in-out infinite" }} />; })}
+          {[90, 80, 70, 60].map(function(w, i) { return <div key={i} style={{ width: w + "%", height: 14, background: "var(--rpc-surface-hover)", borderRadius: 4, animation: "pulse 1.6s ease-in-out infinite" }} />; })}
         </div>
       ) : failed ? (
-        <div style={{ fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.5)", padding: "6px 0", lineHeight: 1.6 }}>Couldn&apos;t load top movers right now.</div>
+        <div style={{ fontSize: 10, fontFamily: monoFont, color: "var(--rpc-text-muted)", padding: "6px 0", lineHeight: 1.6 }}>Couldn&apos;t load top movers right now.</div>
       ) : empty ? (
-        <div style={{ fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.5)", padding: "6px 0", lineHeight: 1.6 }}>FMV history building — check back in a few days.</div>
+        <div style={{ fontSize: 10, fontFamily: monoFont, color: "var(--rpc-text-muted)", padding: "6px 0", lineHeight: 1.6 }}>FMV history building — check back in a few days.</div>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }}>
           <div>
             <div style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-success-text)", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 6, fontWeight: 700 }}>↑ Biggest Gainers</div>
             {data && data.gainers.length > 0 ? data.gainers.map(function(g) { return <MoverRowDisplay key={g.edition_id} row={g} positive={true} />; }) : (
-              <div style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.5)", padding: "8px 0" }}>No gainers in window.</div>
+              <div style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-muted)", padding: "8px 0" }}>No gainers in window.</div>
             )}
           </div>
           <div>
             <div style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-danger-text)", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 6, fontWeight: 700 }}>↓ Biggest Losers</div>
             {data && data.losers.length > 0 ? data.losers.map(function(l) { return <MoverRowDisplay key={l.edition_id} row={l} positive={false} />; }) : (
-              <div style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.5)", padding: "8px 0" }}>No losers in window.</div>
+              <div style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-muted)", padding: "8px 0" }}>No losers in window.</div>
             )}
           </div>
         </div>

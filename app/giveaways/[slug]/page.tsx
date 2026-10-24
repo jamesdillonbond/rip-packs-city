@@ -6,6 +6,7 @@
 
 import type { Metadata } from "next"
 import GlobalSiteHeader from "@/components/GlobalSiteHeader"
+import { PageContentAnchor } from "@/components/SkipToContent"
 import SiteFooter from "@/components/SiteFooter"
 import GiveawayClient from "./GiveawayClient"
 
@@ -26,6 +27,7 @@ export default async function GiveawayPage({ params }: { params: Promise<{ slug:
   return (
     <>
       <GlobalSiteHeader />
+      <PageContentAnchor />
       <main style={{ maxWidth: 960, margin: "0 auto", padding: "28px 16px 96px" }}>
         <GiveawayClient slug={slug} />
       </main>

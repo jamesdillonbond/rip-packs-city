@@ -9,11 +9,13 @@
 
 import type { ReactNode } from "react"
 import GlobalSiteHeader from "@/components/GlobalSiteHeader"
+import { PageContentAnchor } from "@/components/SkipToContent"
 
 export default function MomentLayout({ children }: { children: ReactNode }) {
   return (
     <>
       <GlobalSiteHeader />
+      <PageContentAnchor />
       {children}
     </>
   )

@@ -7,6 +7,7 @@ import ActiveCollectionSync from "./ActiveCollectionSync"
 import WalletHydrator from "@/components/WalletHydrator"
 import FunnelTracker from "@/components/FunnelTracker"
 import WalletSearchBand from "@/components/WalletSearchBand"
+import { PageContentAnchor } from "@/components/SkipToContent"
 import { CollectionTicker, CollectionBanner } from "@/components/collection-chrome"
 
 export async function generateMetadata(
@@ -41,6 +42,7 @@ export default async function CollectionSegmentLayout(props: any) {
         <CollectionTicker collection={collection} />
         <CollectionBanner collection={collection} />
         <main className="rpc-main" style={{ maxWidth: 1440, margin: "0 auto", padding: "24px 24px 60px" }}>
+          <PageContentAnchor />
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: "80px 24px" }}>
             <div style={{ fontSize: 56, marginBottom: 20 }}>{collection.icon}</div>
             <div style={{ fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 28, letterSpacing: "0.06em", color: "var(--rpc-text-primary)", textTransform: "uppercase", marginBottom: 12 }}>
@@ -78,6 +80,7 @@ export default async function CollectionSegmentLayout(props: any) {
       <CollectionTicker collection={collection} />
       <CollectionBanner collection={collection} />
       <main className="rpc-main" style={{ maxWidth: 1440, margin: "0 auto", padding: "24px 24px 60px" }}>
+          <PageContentAnchor />
         {/* Wallet-lookup wedge, mounted ONCE for every tab under
             /[collection]/*. Deliberately here rather than on /overview:
             /overview is only 8.8% of collection_view, while edition/* (51%),

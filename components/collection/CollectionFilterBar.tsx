@@ -47,7 +47,7 @@ export default function CollectionFilterBar(props: {
         <option value="unlocked">Unlocked</option>
       </select>
       )}
-      <input value={view.searchWithin} onChange={function(e) { dispatchView({ type: "SET", field: "searchWithin", value: e.target.value }) }} placeholder={isPinnacleUrlSlug(collectionSlug) ? "Filter pins…" : "Filter moments…"} className="rpc-filter-input col-span-2 sm:col-span-1" />
+      <input aria-label={isPinnacleUrlSlug(collectionSlug) ? "Filter pins" : "Filter moments"} value={view.searchWithin} onChange={function(e) { dispatchView({ type: "SET", field: "searchWithin", value: e.target.value }) }} placeholder={isPinnacleUrlSlug(collectionSlug) ? "Filter pins…" : "Filter moments…"} className="rpc-filter-input col-span-2 sm:col-span-1" />
       <LeagueFilter value={view.leagueFilter} onChange={function(v) { dispatchView({ type: "SET", field: "leagueFilter", value: v }) }} visible={collectionSlug === "nba-top-shot"} />
     </div>
   )

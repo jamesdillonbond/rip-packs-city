@@ -156,7 +156,9 @@ const UNBOUNDED = POPULATION.filter((r) => !r.bounded)
  * `summary: null` (rendered as "0 pts"); it now answers apiErrorResponse() and
  * bounds that read with boundedRead().
  */
-const BUDGET = 19
+// 19 → 18 on 2026-10-24: /api/subscribe/unsubscribe gained a POST (RFC 8058 one-click),
+// so it is no longer a read-only route and leaves this population.
+const BUDGET = 18
 
 describe("read-only API routes outside the honest-error population are counted", () => {
   it("is not vacuous — the walk found a real tree and a real complement", () => {

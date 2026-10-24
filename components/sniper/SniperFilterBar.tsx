@@ -192,7 +192,7 @@ export default function SniperFilterBar(props: {
             onClick={() => onTierChange(t)}
             className={`rpc-chip min-h-[44px] ${tierTab === t ? "active" : ""}`}
             style={tierTab === t
-              ? { textTransform: "uppercase", background: `${accent}1A`, borderColor: `${accent}66`, color: isPinnacle && t !== "all" ? variantColor(t) : accentText(accent) }
+              ? { textTransform: "uppercase", background: `${accent}1A`, borderColor: `${accent}66`, color: isPinnacle && t !== "all" ? accentText(variantColor(t)) : accentText(accent) }
               : { textTransform: "uppercase" }}
           >
             {t}
@@ -220,7 +220,7 @@ export default function SniperFilterBar(props: {
       {/* Advanced Filters — always visible on desktop, collapsible on mobile */}
       {(!isMobile || showFilters) && (
       <div className={isMobile ? "flex flex-col gap-3 mb-4" : "flex flex-wrap items-center gap-3"} style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-sm)" }}>
-        <input
+        <input aria-label={isPinnacle ? "Search deals by character, set or franchise" : "Search deals by player, set or team"}
           type="text"
           placeholder={isPinnacle ? "Search character, set, franchise…" : "Search player, set, team…"}
           value={search}

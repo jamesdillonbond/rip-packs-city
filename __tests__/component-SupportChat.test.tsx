@@ -204,6 +204,17 @@ describe("SupportChat", () => {
     expect(container.textContent).toContain("Welcome back, dana.")
   })
 
+  // 2026-10-24: an OLD shipped row is not re-announced when the since-last-visit read worked.
+  it("does not re-announce an old shipped row when recentlyShipped read OK and is empty", async () => {
+    const { container } = await openWith({
+      returningBetaTester: true,
+      lastOpenFeedback: { feedback_summary: "July search bug", feedback_status: "shipped" },
+      recentlyShipped: { count: 0, since: "2026-10-19T00:00:00Z", items: [] },
+    })
+    await waitFor(() => expect(container.textContent).toContain("Welcome back, dana."))
+    expect(container.textContent).not.toContain("July search bug")
+  })
+
   // 2026-10-03: what shipped since the last visit outranks the newest row's status.
   it("leads with what shipped since the last visit when the context carries it", async () => {
     const { container } = await openWith({

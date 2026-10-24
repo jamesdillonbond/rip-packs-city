@@ -127,7 +127,7 @@ const CSS = `
 @media(min-width:760px){.psq-kpis{grid-template-columns:repeat(4,1fr)}}
 .psq-card{background:var(--rpc-surface,#16161a);border:1px solid var(--rpc-border,rgba(255,255,255,.10));border-radius:10px;padding:13px 14px}
 .psq-card h3{font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--rpc-text-secondary,#9A968C);margin:0 0 7px;font-weight:700}
-.psq-big{font-family:var(--font-mono,ui-monospace),monospace;font-size:22px;font-weight:600;color:var(--rpc-red,#E03A2F)}
+.psq-big{font-family:var(--font-mono,ui-monospace),monospace;font-size:22px;font-weight:600;color:var(--rpc-red-text)}
 .psq-alt{color:var(--rpc-text-secondary,#9A968C);font-size:10.5px;margin-top:5px;line-height:1.4}
 .psq-alt b{color:var(--rpc-text-primary,#ECEAE3);font-weight:600;font-family:var(--font-mono,ui-monospace),monospace}
 .psq-band{font-size:9px;font-weight:800;letter-spacing:.03em;padding:2px 5px;border-radius:3px;text-transform:uppercase;white-space:nowrap}

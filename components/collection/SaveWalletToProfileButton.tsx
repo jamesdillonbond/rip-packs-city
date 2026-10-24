@@ -25,10 +25,19 @@ export default function SaveWalletToProfileButton({
   wallet,
   collectionUuid,
   dbChain,
+  via = "saved-wallets",
 }: {
   wallet: string
   collectionUuid: string
   dbChain: string | null | undefined
+  /**
+   * 2026-10-24: "flow-associate" saves a Flow wallet the way the dashboard does —
+   * POST /api/profile/resolve-and-associate, which fans one Dapper wallet out
+   * across every Flow collection (a per-collection save would save one of five).
+   * Signed-in collectors searched their OWN username here and had no way to keep it
+   * (mavhill, shashmeister, TrustProcess in funnel_events.wallet_paste, 10-10 → 10-24).
+   */
+  via?: "saved-wallets" | "flow-associate"
 }) {
   const [state, setState] = useState<State>("unknown")
   const [message, setMessage] = useState<string | null>(null)
@@ -81,17 +90,22 @@ export default function SaveWalletToProfileButton({
     setState("saving")
     setMessage(null)
     try {
-      const res = await fetch("/api/profile/saved-wallets", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ walletAddr: addr, collectionId: collectionUuid }),
-      })
+      const res = via === "flow-associate"
+        ? await fetch("/api/profile/resolve-and-associate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ address: addr }),
+          })
+        : await fetch("/api/profile/saved-wallets", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ walletAddr: addr, collectionId: collectionUuid }),
+          })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
         setState("error")
-        setMessage(
-          typeof data?.message === "string" ? data.message : `Couldn't save this wallet (HTTP ${res.status}).`,
-        )
+        const reason = typeof data?.message === "string" ? data.message : typeof data?.error === "string" ? data.error : null
+        setMessage(reason ?? "Couldn't save this wallet. Try again in a moment.")
         return
       }
       setState("saved")
@@ -123,10 +137,10 @@ export default function SaveWalletToProfileButton({
       <button
         onClick={save}
         disabled={state === "saving"}
-        title="Save this wallet to your RPC profile and dashboard"
+        title={via === "flow-associate" ? "Save this wallet to your dashboard — it is added to every Flow collection RPC tracks" : "Save this wallet to your RPC profile and dashboard"}
         style={{ ...baseStyle, cursor: state === "saving" ? "wait" : "pointer" }}
       >
-        {state === "saving" ? "Saving…" : "Save to my profile"}
+        {state === "saving" ? "Saving…" : via === "flow-associate" ? "Save as my collection" : "Save to my profile"}
       </button>
       {message && (
         <span role="alert" style={{ fontSize: "var(--text-xs)", color: "var(--rpc-danger-text)", maxWidth: 280 }}>

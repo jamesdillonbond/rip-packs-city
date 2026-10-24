@@ -67,7 +67,7 @@ const META: React.CSSProperties = {
   fontSize: 11,
   letterSpacing: "0.16em",
   textTransform: "uppercase",
-  color: "var(--rpc-red, #E03A2F)",
+  color: "var(--rpc-red-text)",
   fontWeight: 700,
   marginBottom: 8,
 }

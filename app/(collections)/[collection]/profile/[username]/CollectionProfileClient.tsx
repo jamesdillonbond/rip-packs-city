@@ -379,14 +379,14 @@ function BioEditor(props: {
     <div style={{ ...cardStyle, marginTop: 12, maxWidth: 400, marginLeft: "auto", marginRight: "auto" }}>
       <div style={{ ...labelStyle, marginBottom: 8 }}>EDIT PROFILE</div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        <input
+        <input aria-label="Avatar URL"
           type="text"
           placeholder="Avatar URL"
           value={avatarUrl}
           onChange={function(e) { setAvatarUrl(e.target.value); }}
           style={{ background: "var(--rpc-surface-raised)", border: "1px solid var(--rpc-border)", borderRadius: 4, padding: "6px 10px", fontSize: 11, fontFamily: monoFont, color: "var(--rpc-text-primary)", outline: "none" }}
         />
-        <textarea
+        <textarea aria-label="Short bio"
           placeholder="Write a short bio..."
           value={bioText}
           onChange={function(e) { setBioText(e.target.value); }}

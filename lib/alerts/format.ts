@@ -298,7 +298,7 @@ export function buildDiscordEmbeds(deliveries: Delivery[], now: Date = new Date(
 
 // ── Email (Resend) ───────────────────────────────────────────────────────────
 
-export function buildEmailMessage(deliveries: Delivery[], now: Date = new Date()): {
+export function buildEmailMessage(deliveries: Delivery[], now: Date = new Date(), opts: { pauseUrl?: string | null } = {}): {
   subject: string;
   html: string;
   text: string;
@@ -361,7 +361,7 @@ export function buildEmailMessage(deliveries: Delivery[], now: Date = new Date()
     })
     .join("");
 
-  const html = `<!doctype html><html><body style="margin:0;background:#0a0a0a;color:#fafafa;font-family:-apple-system,Segoe UI,Roboto,sans-serif;">
+  const html = `<!doctype html><html><head><meta name="color-scheme" content="dark"><meta name="supported-color-schemes" content="dark"></head><body style="margin:0;background:#0a0a0a;color:#fafafa;font-family:-apple-system,Segoe UI,Roboto,sans-serif;">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:32px 16px;">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#18181b;border:1px solid #27272a;border-radius:14px;">
         <tr><td style="padding:28px 28px 8px 28px;">
@@ -373,6 +373,10 @@ export function buildEmailMessage(deliveries: Delivery[], now: Date = new Date()
           ${fmvs.length ? `<div style="margin-top:16px;font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:rgba(255,255,255,0.5);font-weight:700;">FMV alerts</div><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${fmvRows}</table>` : ""}
           <p style="margin:22px 0 0 0;text-align:center;">
             <a href="${SITE}/alerts" style="color:rgba(255,255,255,0.55);font-size:12px;text-decoration:underline;">Manage your alerts</a>
+            ${opts.pauseUrl ? `<span style="color:rgba(255,255,255,0.55);font-size:12px;"> · </span><a href="${esc(opts.pauseUrl)}" style="color:rgba(255,255,255,0.55);font-size:12px;text-decoration:underline;">Pause alert emails</a>` : ""}
+          </p>
+          <p style="margin:10px 0 0 0;text-align:center;color:rgba(255,255,255,0.55);font-size:11px;line-height:1.5;">
+            You get this because you turned on email alerts at Rip Packs City. Rip Packs City is read-only collector intelligence; nothing here is financial advice.
           </p>
         </td></tr>
       </table>
@@ -396,6 +400,7 @@ export function buildEmailMessage(deliveries: Delivery[], now: Date = new Date()
     textLines.push(`• ${p.player_name || p.edition_key} — ask ${money(p.lowest_ask)} / FMV ${money(p.current_fmv)}`);
   }
   textLines.push("", `Manage: ${SITE}/alerts`);
+  if (opts.pauseUrl) textLines.push(`Pause alert emails: ${opts.pauseUrl}`);
 
   return { subject, html, text: textLines.join("\n") };
 }

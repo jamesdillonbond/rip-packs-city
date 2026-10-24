@@ -105,7 +105,7 @@ describe("get_fmv distribution names the badged editions", () => {
     expect(r.mode).toBe("distribution")
     const rookie = r.sample_editions.find((s) => s.external_id === "125:4340")
     expect(rookie, "the badged rookie edition is named").toBeDefined()
-    expect(rookie).toMatchObject({ fmv: 155.05, confidence: "HIGH", badges: ["Rookie Year", "Top Shot Debut"], badges_status: "ok" })
+    expect(rookie).toMatchObject({ fmv: 155.05, pricing_basis: "priced from plenty of recent sales", badges: ["Rookie Year", "Top Shot Debut"], badges_status: "ok" })
     expect(r.badged_editions_in_filter).toBe(1)
     // the max-FMV edition is named too, and nothing is duplicated
     expect(r.sample_editions.some((s) => s.external_id === "266:8928::20")).toBe(true)

@@ -446,7 +446,7 @@ export default function ProfileClient(props: {
               username (the address is deliberately stripped from the public
               payload); with none known there is nothing honest to link. */}
           {analyzeKey && (
-            <Link href={"/nba-top-shot/collection?q=" + encodeURIComponent(analyzeKey)} className="rpc-btn-ghost" style={{ textDecoration: "none", fontSize: 10, color: accentColor, borderColor: accentBorder }}>
+            <Link href={"/nba-top-shot/collection?q=" + encodeURIComponent(analyzeKey)} className="rpc-btn-ghost" style={{ textDecoration: "none", fontSize: 10, color: accentText(accentColor), borderColor: accentBorder }}>
               {"ANALYZE " + username.toUpperCase() + "'S WALLET →"}
             </Link>
           )}
@@ -690,7 +690,7 @@ export default function ProfileClient(props: {
                   fontSize: 9,
                   fontFamily: monoFont,
                   letterSpacing: "0.1em",
-                  color: accentColor,
+                  color: accentText(accentColor),
                   border: "1px solid " + accentColor,
                   borderRadius: 4,
                   padding: "3px 8px",
@@ -711,7 +711,7 @@ export default function ProfileClient(props: {
                   fontSize: 9,
                   fontFamily: monoFont,
                   letterSpacing: "0.1em",
-                  color: accentColor,
+                  color: accentText(accentColor),
                   border: "1px solid " + accentColor,
                   borderRadius: 4,
                   padding: "3px 8px",

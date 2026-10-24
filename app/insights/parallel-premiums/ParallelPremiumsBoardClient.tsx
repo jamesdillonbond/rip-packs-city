@@ -163,6 +163,7 @@ export default function ParallelPremiumsBoardClient({
         ))}
         <span style={{ flex: 1 }} />
         <select
+          aria-label="Sort parallels"
           value={sort}
           onChange={(e) => setSort(e.target.value as ParallelSortKey)}
           className="rpc-mono"

@@ -168,11 +168,11 @@ export default function NotificationsClient() {
   }
 
   if (loading) {
-    return <main style={{ padding: "2rem", color: "#fafafa", background: "#0a0a0a", minHeight: "100vh" }}>Loading…</main>
+    return <main style={{ padding: "2rem", color: "var(--rpc-text-primary)", background: "var(--rpc-bg)", minHeight: "100vh" }}>Loading…</main>
   }
 
   return (
-    <main style={{ padding: "2rem", color: "#fafafa", background: "#0a0a0a", minHeight: "100vh", fontFamily: "system-ui, sans-serif" }}>
+    <main style={{ padding: "2rem", color: "var(--rpc-text-primary)", background: "var(--rpc-bg)", minHeight: "100vh", fontFamily: "system-ui, sans-serif" }}>
       <div style={{ maxWidth: 640, margin: "0 auto" }}>
         <h1 style={{ fontFamily: "var(--font-display)", fontSize: "2rem", letterSpacing: "0.04em", margin: "0 0 1rem", color: "var(--rpc-red, #E03A2F)" }}>Email notifications</h1>
 
@@ -195,7 +195,7 @@ export default function NotificationsClient() {
           </p>
         )}
 
-        <section style={{ background: "#18181b", border: "1px solid #27272a", borderRadius: 12, padding: 24, marginBottom: 24 }}>
+        <section style={{ background: "var(--rpc-surface)", border: "1px solid var(--rpc-border)", borderRadius: 12, padding: 24, marginBottom: 24 }}>
           <h2 style={{ fontSize: "1.1rem", margin: "0 0 12px" }}>What to receive</h2>
           <label style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 0" }}>
             <input type="checkbox" checked={digestWeekly} onChange={e => setDigestWeekly(e.target.checked)} />
@@ -216,26 +216,26 @@ export default function NotificationsClient() {
         </section>
 
         {dealAlerts && (
-          <section style={{ background: "#18181b", border: "1px solid #27272a", borderRadius: 12, padding: 24, marginBottom: 24 }}>
+          <section style={{ background: "var(--rpc-surface)", border: "1px solid var(--rpc-border)", borderRadius: 12, padding: 24, marginBottom: 24 }}>
             <h2 style={{ fontSize: "1.1rem", margin: "0 0 12px" }}>Deal filters</h2>
             <label style={{ display: "block", margin: "0 0 12px" }}>
               <div style={{ fontSize: 13, color: "rgba(255,255,255,0.65)", marginBottom: 4 }}>Minimum discount % below FMV</div>
-              <input type="number" min={5} max={90} value={minDiscount} onChange={e => setMinDiscount(parseInt(e.target.value, 10) || 20)} style={{ background: "#0a0a0a", color: "#fafafa", border: "1px solid #27272a", padding: 8, borderRadius: 6, width: 120 }} />
+              <input type="number" min={5} max={90} value={minDiscount} onChange={e => setMinDiscount(parseInt(e.target.value, 10) || 20)} style={{ background: "var(--rpc-surface-raised)", color: "var(--rpc-text-primary)", border: "1px solid var(--rpc-border-hover)", padding: 8, borderRadius: 6, width: 120 }} />
             </label>
             <label style={{ display: "block", margin: "0 0 12px" }}>
               <div style={{ fontSize: 13, color: "rgba(255,255,255,0.65)", marginBottom: 4 }}>Max price (USD, blank = no cap)</div>
-              <input type="number" min={1} value={maxPrice} onChange={e => setMaxPrice(e.target.value)} style={{ background: "#0a0a0a", color: "#fafafa", border: "1px solid #27272a", padding: 8, borderRadius: 6, width: 120 }} />
+              <input type="number" min={1} value={maxPrice} onChange={e => setMaxPrice(e.target.value)} style={{ background: "var(--rpc-surface-raised)", color: "var(--rpc-text-primary)", border: "1px solid var(--rpc-border-hover)", padding: 8, borderRadius: 6, width: 120 }} />
             </label>
             <div style={{ fontSize: 13, color: "rgba(255,255,255,0.65)", marginBottom: 8 }}>Tiers</div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
               {TIERS.map(t => (
-                <button key={t} type="button" onClick={() => toggleArray(t, dealTiers, setDealTiers)} style={{ padding: "4px 12px", borderRadius: 999, border: "1px solid #27272a", background: dealTiers.includes(t) ? "var(--rpc-red, #E03A2F)" : "#0a0a0a", color: dealTiers.includes(t) ? "#0a0a0a" : "#fafafa", cursor: "pointer" }}>{t}</button>
+                <button key={t} type="button" onClick={() => toggleArray(t, dealTiers, setDealTiers)} style={{ padding: "4px 12px", borderRadius: 999, border: "1px solid var(--rpc-border-hover)", background: dealTiers.includes(t) ? "var(--rpc-red)" : "var(--rpc-surface-raised)", color: dealTiers.includes(t) ? "#0a0a0a" : "var(--rpc-text-primary)", cursor: "pointer" }}>{t}</button>
               ))}
             </div>
             <div style={{ fontSize: 13, color: "rgba(255,255,255,0.65)", marginBottom: 8 }}>Collections</div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
               {COLLECTIONS.map(c => (
-                <button key={c.id} type="button" onClick={() => toggleArray(c.id, collectionIds, setCollectionIds)} style={{ padding: "4px 12px", borderRadius: 999, border: "1px solid #27272a", background: collectionIds.includes(c.id) ? "var(--rpc-red, #E03A2F)" : "#0a0a0a", color: collectionIds.includes(c.id) ? "#0a0a0a" : "#fafafa", cursor: "pointer" }}>{c.label}</button>
+                <button key={c.id} type="button" onClick={() => toggleArray(c.id, collectionIds, setCollectionIds)} style={{ padding: "4px 12px", borderRadius: 999, border: "1px solid var(--rpc-border-hover)", background: collectionIds.includes(c.id) ? "var(--rpc-red)" : "var(--rpc-surface-raised)", color: collectionIds.includes(c.id) ? "#0a0a0a" : "var(--rpc-text-primary)", cursor: "pointer" }}>{c.label}</button>
               ))}
             </div>
           </section>

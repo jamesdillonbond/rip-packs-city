@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { track } from "@/lib/telemetry/track";
 import { getFunnelContext } from "@/lib/track-funnel";
 import { tierColorAlpha } from "@/lib/tier-color";
-import { parseRichText, isExternalHref, isOffSiteHref } from "@/lib/concierge/rich-text";
+import { parseRichText, parseRichBlocks, isExternalHref, isOffSiteHref } from "@/lib/concierge/rich-text";
 import { proxyIpfsImageUrl } from "@/lib/ipfs-media";
 import { trackOutboundClick } from "@/lib/track-click";
 import { accentText } from "@/lib/accent-text"
@@ -36,6 +36,13 @@ interface ChatMessage {
 function errorBubble(text: string): ChatMessage {
   const now = new Date();
   return { id: `e_${now.getTime()}`, role: "assistant", text, isError: true, timestamp: now };
+}
+
+// Categories the route stamps on a reply that is an outage / limit / error line
+// rather than an answer (classifyCategory + the degradation paths).
+const ERROR_CATEGORIES = new Set(["concierge_unavailable", "rate_limit", "daily_limit_reached", "error"]);
+export function isErrorCategory(category: unknown): boolean {
+  return typeof category === "string" && ERROR_CATEGORIES.has(category);
 }
 
 function getOrCreateSessionId(): string {
@@ -144,7 +151,7 @@ function MomentCardUI({ card }: { card: MomentCard }) {
 // and returns TOKENS, never markup — see the security note in that file. There
 // is deliberately no dangerouslySetInnerHTML here: the message quotes tool
 // results, which carry values RPC does not control.
-function MessageText({ text }: { text: string }) {
+function InlineText({ text }: { text: string }) {
   const tokens = parseRichText(text);
   return (
     <>
@@ -161,7 +168,7 @@ function MessageText({ text }: { text: string }) {
             <a
               key={i}
               href={t.href}
-              {...(external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
+              {...(external ? { target: "_blank", rel: "noopener noreferrer", "aria-label": `${t.text} (opens in a new tab)` } : {})}
               {...(offSite ? { title: offSiteHost ? `Opens ${offSiteHost} (leaves Rip Packs City)` : "Leaves Rip Packs City", "data-offsite": "1" } : {})}
               style={{ color: "var(--rpc-red-text)", textDecoration: "underline", textUnderlineOffset: 2, wordBreak: "break-word" }}
             >
@@ -171,6 +178,50 @@ function MessageText({ text }: { text: string }) {
           );
         }
         return <span key={i}>{t.text}</span>;
+      })}
+    </>
+  );
+}
+
+// 2026-10-24: replies arrive as light markdown (headings, rules, bullets, pipe
+// tables) and were shown as raw "##" and "|" text. Blocks come from
+// lib/concierge/rich-text.ts parseRichBlocks; every line still renders through
+// InlineText, so nothing here builds markup from model text.
+function MessageText({ text }: { text: string }) {
+  const blocks = parseRichBlocks(text);
+  return (
+    <>
+      {blocks.map((b, i) => {
+        const gap = i === 0 ? 0 : 8;
+        if (b.type === "heading") return <div key={i} style={{ marginTop: gap, fontWeight: 700, fontSize: "1em" }}><InlineText text={b.text} /></div>;
+        if (b.type === "rule") return <hr key={i} style={{ margin: "10px 0", border: 0, borderTop: "1px solid var(--rpc-border-subtle)" }} />;
+        if (b.type === "list") {
+          const Tag = b.ordered ? "ol" : "ul";
+          return (
+            <Tag key={i} style={{ margin: `${gap}px 0 0`, paddingLeft: 18, whiteSpace: "normal" }}>
+              {b.items.map((it, j) => <li key={j} style={{ marginTop: j ? 3 : 0 }}><InlineText text={it} /></li>)}
+            </Tag>
+          );
+        }
+        if (b.type === "table") {
+          return (
+            <div key={i} style={{ marginTop: gap, overflowX: "auto", whiteSpace: "normal" }}>
+              <table style={{ borderCollapse: "collapse", fontSize: "0.92em", width: "100%" }}>
+                {b.header ? (
+                  <thead>
+                    <tr>{b.header.map((h, j) => <th key={j} scope="col" style={{ textAlign: "left", padding: "4px 8px 4px 0", borderBottom: "1px solid var(--rpc-border)", fontWeight: 700, whiteSpace: "nowrap" }}><InlineText text={h} /></th>)}</tr>
+                  </thead>
+                ) : null}
+                <tbody>
+                  {b.rows.map((r, j) => (
+                    <tr key={j}>{r.map((c, k) => <td key={k} style={{ padding: "4px 8px 4px 0", borderBottom: "1px solid var(--rpc-border-subtle)", verticalAlign: "top" }}><InlineText text={c} /></td>)}</tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          );
+        }
+        return <div key={i} style={{ marginTop: gap }}><InlineText text={b.text} /></div>;
       })}
     </>
   );
@@ -360,14 +411,20 @@ export default function SupportChat({ pageContext, pageEntity, collectionId, use
   const [quickSuggestions, setQuickSuggestions] = useState<string[]>([]);
   const [inputFocused, setInputFocused] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  // In-flight request, so the reader can stop a long answer (2026-10-24).
+  const abortRef = useRef<AbortController | null>(null);
+
   const panelRef = useRef<HTMLDivElement>(null);
   const launcherRef = useRef<HTMLButtonElement>(null);
   // Did this mount ever send a user message? Drives concierge_closed_without_send.
   // A ref, not state: it must not re-render anything and must survive the close.
   const sentAnyRef = useRef(false);
 
-  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
+  useEffect(() => {
+    const reduce = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    messagesEndRef.current?.scrollIntoView({ behavior: reduce ? "auto" : "smooth" });
+  }, [messages]);
   useEffect(() => { if (isOpen) { setTimeout(() => inputRef.current?.focus(), 300); setHasNewMessage(false); } }, [isOpen]);
 
   // ── Funnel instrumentation ────────────────────────────────────────────────
@@ -407,6 +464,15 @@ export default function SupportChat({ pageContext, pageEntity, collectionId, use
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, pageContext, collectionId, walletConnected]);
 
+  // One close path for Escape, the header ✕ and the launcher (2026-10-24): the ✕
+  // used to drop focus on <body>, because the launcher hides while an input is
+  // focused and a hidden element cannot take focus — clear that flag first.
+  const closePanel = useCallback(() => {
+    setIsOpen(false);
+    setInputFocused(false);
+    setTimeout(() => launcherRef.current?.focus(), 0);
+  }, []);
+
   // Escape closes the panel and returns focus to the launcher. Every other
   // overlay on the site already does this (MomentDetailModal, PaywallModal,
   // GlobalSearch); the chat was the outlier, so a keyboard user who opened it
@@ -418,18 +484,16 @@ export default function SupportChat({ pageContext, pageEntity, collectionId, use
       // Don't steal Escape from a nested overlay that is handling it.
       if (!panelRef.current?.contains(document.activeElement)) return;
       e.stopPropagation();
-      setIsOpen(false);
       // The launcher hides itself (display:none) whenever an input is focused —
       // a mobile-keyboard affordance — and a hidden element cannot take focus.
-      // Escape is almost always pressed FROM the input, so clearing that flag
-      // first is what makes the restore actually land; without it focus falls
-      // to <body> and a keyboard user is dumped at the top of the page.
-      setInputFocused(false);
-      setTimeout(() => launcherRef.current?.focus(), 0);
+      // Escape is almost always pressed FROM the input, so closePanel clears that
+      // flag first; without it focus falls to <body> and a keyboard user is
+      // dumped at the top of the page.
+      closePanel();
     }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [isOpen]);
+  }, [isOpen, closePanel]);
 
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | null = null;
@@ -527,7 +591,10 @@ export default function SupportChat({ pageContext, pageEntity, collectionId, use
             const more = rs.count - named.length;
             const list = named.length ? `: ${named.join(", ")}${more > 0 ? ` (+${more} more)` : ""}` : "";
             statusLine = `Since your last visit, ${rs.count} of your request${rs.count === 1 ? "" : "s"} shipped${list}. Ask me "what shipped?" for the full list.`;
-          } else if (open?.feedback_summary) {
+          } else if (open?.feedback_summary && !(String(open.feedback_status ?? "") === "shipped" && rs && typeof rs.count === "number")) {
+            // ⚠ A shipped row is news ONCE: when recentlyShipped read OK and
+            // found nothing since the last visit, the newest shipped row is old
+            // and already announced (a July ship was re-announced on 10-24).
             const status = String(open.feedback_status ?? "new");
             if (status === "shipped") {
               statusLine = `Your last feedback ("${open.feedback_summary}") shipped — thanks for the catch.`;
@@ -587,9 +654,12 @@ export default function SupportChat({ pageContext, pageEntity, collectionId, use
       }));
     setMessages((prev) => [...prev, { id: "typing", role: "system", text: "...", timestamp: new Date() }]);
     const visit = getFunnelContext();
+    const controller = new AbortController();
+    abortRef.current = controller;
     try {
       const res = await fetch("/api/support-chat", {
         method: "POST", headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
         body: JSON.stringify({
           message: trimmed,
           sessionId,
@@ -608,8 +678,14 @@ export default function SupportChat({ pageContext, pageEntity, collectionId, use
         }),
       });
       if (res.status === 429) {
+        // The server's own copy names WHICH limit (hourly, daily quota, global
+        // budget); the generic line is only the fallback.
+        const body429: { response?: unknown } = await res.json().catch(() => ({}));
+        const msg429 = typeof body429.response === "string" && body429.response.trim() && body429.response.length < 400
+          ? body429.response
+          : "You’ve sent a lot of messages — I need a short break. Come back in an hour and I’ll be ready to help again.";
         setMessages((prev) => prev.filter((m) => m.id !== "typing"));
-        setMessages((prev) => [...prev, errorBubble("You’ve sent a lot of messages — I need a short break. Come back in an hour and I’ll be ready to help again.")]);
+        setMessages((prev) => [...prev, errorBubble(msg429)]);
         return;
       }
       // A refused request (400 / 403 / 413) carries `{ error }`, not an answer.
@@ -632,7 +708,7 @@ export default function SupportChat({ pageContext, pageEntity, collectionId, use
         // (server emits escalate=true, escalated=false) reuses the existing
         // "Flagged for Trevor" banner and suppresses thumbs-up/down on a
         // message the bot didn't actually answer.
-        setMessages((prev) => [...prev, { id: `b_${Date.now()}`, dbId: data.messageId, role: "assistant", text: data.response || "Sorry, try again?", isError: !data.response, escalated: !!(data.escalated || data.escalate), momentCards: data.momentCards, feedback: null, timestamp: new Date() }]);
+        setMessages((prev) => [...prev, { id: `b_${Date.now()}`, dbId: data.messageId, role: "assistant", text: data.response || "Sorry, try again?", isError: !data.response || isErrorCategory(data.category), escalated: !!(data.escalated || data.escalate), momentCards: data.momentCards, feedback: null, timestamp: new Date() }]);
         if (!isOpen) setHasNewMessage(true);
         return;
       }
@@ -671,14 +747,22 @@ export default function SupportChat({ pageContext, pageEntity, collectionId, use
         try { meta = JSON.parse(metaJson); } catch { meta = null; }
       }
       if (meta) {
-        setMessages((prev) => prev.map((m) => m.id === msgId ? { ...m, dbId: meta.messageId, escalated: !!(meta.escalated || meta.escalate), momentCards: meta.momentCards } : m));
+        // A streamed error/outage line (category concierge_* / rate_limit / error)
+        // is not an answer: no thumbs, and never replayed to the model as one.
+        setMessages((prev) => prev.map((m) => m.id === msgId ? { ...m, dbId: meta.messageId, escalated: !!(meta.escalated || meta.escalate), momentCards: meta.momentCards, isError: isErrorCategory(meta.category) || undefined } : m));
       }
       if (!isOpen) setHasNewMessage(true);
-    } catch {
+    } catch (err) {
+      // The reader pressed Stop: keep what arrived, add nothing alarming.
+      if ((err as { name?: string })?.name === "AbortError") {
+        setMessages((prev) => prev.filter((m) => m.id !== "typing" && !(m.role === "assistant" && m.text === "" && !m.isError)));
+        return;
+      }
       setMessages((prev) => prev.filter((m) => m.id !== "typing"));
       setMessages((prev) => [...prev, errorBubble("Connection issue — your message may not have sent. Your text is back in the box; try again in a moment.")]);
       setInput((cur) => cur || trimmed);
     } finally {
+      abortRef.current = null;
       setIsLoading(false);
       // The input is readOnly (not disabled) while loading so it keeps focus;
       // restore it explicitly for the suggestion-pill path, which moves focus.
@@ -707,7 +791,9 @@ export default function SupportChat({ pageContext, pageEntity, collectionId, use
         @keyframes rpc-chat-fade-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes rpc-pulse { 0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); } 40% { opacity: 1; transform: scale(1); } }
         @keyframes rpc-badge-pop { 0% { transform: scale(0); } 70% { transform: scale(1.2); } 100% { transform: scale(1); } }
-        .rpc-chat-panel { animation: rpc-chat-slide-up 0.25s ease-out; }
+        .rpc-chat-panel { animation: rpc-chat-slide-up 0.25s ease-out; bottom: calc(88px + env(safe-area-inset-bottom, 0px)); height: min(580px, calc(100vh - 120px)); height: min(580px, calc(100dvh - 120px - env(safe-area-inset-bottom, 0px))); }
+        .rpc-chat-input { resize: none; font-family: inherit; line-height: 1.4; max-height: 120px; }
+        @media (pointer: coarse) { .rpc-chat-iconbtn { min-width: 44px; min-height: 44px; } }
         .rpc-msg-enter { animation: rpc-chat-fade-in 0.2s ease-out; }
         .rpc-typing-dot { width: 6px; height: 6px; border-radius: 50%; background: #888; display: inline-block; margin: 0 2px; }
         .rpc-typing-dot:nth-child(1) { animation: rpc-pulse 1.2s infinite 0s; }
@@ -721,7 +807,9 @@ export default function SupportChat({ pageContext, pageEntity, collectionId, use
         .rpc-hide-scrollbar::-webkit-scrollbar { display: none; }
         @media (max-width: 768px) {
           .rpc-chat-bubble { bottom: 68px !important; right: 10px !important; width: 44px !important; height: 44px !important; font-size: 19px !important; border-radius: 12px !important; }
-          .rpc-chat-panel { bottom: 124px !important; }
+          .rpc-chat-panel { bottom: calc(124px + env(safe-area-inset-bottom, 0px)) !important; height: min(580px, calc(100vh - 150px)) !important; height: min(580px, calc(100dvh - 150px - env(safe-area-inset-bottom, 0px))) !important; }
+          /* iOS zooms the page when a focused field is under 16px. */
+          .rpc-chat-input { font-size: 16px !important; }
         }
       `}</style>
 
@@ -732,13 +820,13 @@ export default function SupportChat({ pageContext, pageEntity, collectionId, use
           role="dialog"
           aria-modal="false"
           aria-label="RPC Concierge chat"
-          style={{ position: "fixed", bottom: 88, right: 16, width: "min(400px, calc(100vw - 32px))", height: "min(580px, calc(100vh - 120px))", background: "var(--rpc-surface)", border: "1px solid var(--rpc-border)", borderRadius: 16, display: "flex", flexDirection: "column", overflow: "hidden", zIndex: 9998, boxShadow: "var(--shadow-elevated, 0 24px 80px rgba(0,0,0,0.6))" }}>
+          style={{ position: "fixed", right: 16, width: "min(400px, calc(100vw - 32px))", background: "var(--rpc-surface)", border: "1px solid var(--rpc-border)", borderRadius: 16, display: "flex", flexDirection: "column", overflow: "hidden", zIndex: 9998, boxShadow: "var(--shadow-elevated, 0 24px 80px rgba(0,0,0,0.6))" }}>
           <div style={{ padding: "14px 16px", background: "linear-gradient(135deg, var(--rpc-red-bg) 0%, var(--rpc-surface) 100%)", borderBottom: "1px solid var(--rpc-border-subtle)", display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
             <div style={{ width: 32, height: 32, borderRadius: 8, background: "linear-gradient(135deg, var(--rpc-red) 0%, #b82e25 100%)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>🏙️</div>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 14, fontWeight: 700, color: "var(--rpc-text-primary)", letterSpacing: "-0.01em" }}>RPC Concierge</div>
               <div style={{ fontSize: 11, color: "var(--rpc-text-muted)", marginTop: 1 }}>
-                {signedInLabel ? `Signed in as ${signedInLabel}` : "Beta support · Powered by Claude"}
+                {signedInLabel ? `Signed in as ${signedInLabel}` : "AI concierge · Powered by Claude"}
                 {signedInLabel ? (
                   <>
                     {" · "}
@@ -756,16 +844,19 @@ export default function SupportChat({ pageContext, pageEntity, collectionId, use
                 ) : null}
               </div>
             </div>
-            <button onClick={() => setIsOpen(false)} aria-label="Close chat" style={{ background: "none", border: "none", color: "var(--rpc-text-muted)", cursor: "pointer", padding: 4, fontSize: 18, lineHeight: 1, borderRadius: 6 }}>✕</button>
+            <button type="button" onClick={closePanel} aria-label="Close chat" className="rpc-chat-iconbtn" style={{ background: "none", border: "none", color: "var(--rpc-text-muted)", cursor: "pointer", padding: 4, fontSize: 18, lineHeight: 1, borderRadius: 6 }}>✕</button>
           </div>
 
-          {/* aria-live so a screen reader hears the reply. "polite" rather than
-              "assertive" because the answer streams token by token and an
-              assertive region would interrupt on every chunk. */}
+          {/* role=log is a polite live region. While an answer streams the log is
+              aria-busy, so a screen reader waits and reads the finished reply
+              once instead of re-reading partial sentences on every chunk
+              (2026-10-24). */}
           <div
             className="rpc-chat-scrollbar"
+            role="log"
             aria-live="polite"
-            aria-atomic="false"
+            aria-busy={isLoading}
+            aria-label="Conversation"
             style={{ flex: 1, overflowY: "auto", padding: "12px 14px", display: "flex", flexDirection: "column", gap: 10 }}>
             {messages.map((msg) => (
               <div key={msg.id} className="rpc-msg-enter" style={{ display: "flex", flexDirection: "column", alignItems: msg.role === "user" ? "flex-end" : "flex-start" }}>
@@ -780,7 +871,8 @@ export default function SupportChat({ pageContext, pageEntity, collectionId, use
                 }}>
                   {msg.id === "typing" ? (
                     <span style={{ display: "inline-flex", alignItems: "center", padding: "4px 0" }}>
-                      <span className="rpc-typing-dot" /><span className="rpc-typing-dot" /><span className="rpc-typing-dot" />
+                      <span className="sr-only">Concierge is typing</span>
+                      <span aria-hidden="true" className="rpc-typing-dot" /><span aria-hidden="true" className="rpc-typing-dot" /><span aria-hidden="true" className="rpc-typing-dot" />
                     </span>
                   ) : msg.role === "user" ? (
                     // The user's own text is never marked up — echoing their
@@ -820,15 +912,24 @@ export default function SupportChat({ pageContext, pageEntity, collectionId, use
 
           <div style={{ padding: "10px 14px 14px", borderTop: "1px solid var(--rpc-border-subtle)", background: "var(--rpc-bg-elev)", flexShrink: 0 }}>
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <input ref={inputRef} className="rpc-chat-input" type="text" value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={handleKeyDown}
+              {/* A textarea, so Shift+Enter really adds a line (the old type="text"
+                  input made that branch unreachable); it grows to ~5 lines. */}
+              <textarea ref={inputRef} className="rpc-chat-input" rows={1} value={input}
+                onChange={(e) => { setInput(e.target.value); const el = e.currentTarget; el.style.height = "auto"; el.style.height = `${Math.min(el.scrollHeight, 120)}px`; }}
+                onKeyDown={handleKeyDown}
                 aria-label="Message the RPC concierge"
                 placeholder={ownerKey ? "Report a bug, ask a question, or look up a moment…" : "Ask a question, report a bug, or hunt deals…"}
                 maxLength={2000} readOnly={isLoading} aria-busy={isLoading}
                 style={{ flex: 1, padding: "10px 14px", background: "var(--rpc-surface-raised)", border: "1px solid var(--rpc-border)", borderRadius: 10, color: "var(--rpc-text-primary)", fontSize: 13.5, transition: "box-shadow 0.15s" }} />
+              {isLoading ? (
+                <button type="button" onClick={() => abortRef.current?.abort()} aria-label="Stop the answer" title="Stop"
+                  style={{ width: 38, height: 38, borderRadius: 10, border: "1px solid var(--rpc-border-hover)", background: "var(--rpc-surface-hover)", color: "var(--rpc-text-primary)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, flexShrink: 0 }}>■</button>
+              ) : (
               <button onClick={() => sendMessage()} disabled={!input.trim() || isLoading} aria-label="Send"
                 style={{ /* brand-exception: white arrow on the red send button */ width: 38, height: 38, borderRadius: 10, border: "none", background: input.trim() && !isLoading ? "linear-gradient(135deg, var(--rpc-red) 0%, #c43028 100%)" : "var(--rpc-surface-hover)", color: input.trim() && !isLoading ? "#fff" : "var(--rpc-text-ghost)", cursor: input.trim() && !isLoading ? "pointer" : "not-allowed", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>↑</button>
+              )}
             </div>
-            <div style={{ marginTop: 6, fontSize: 10, color: "var(--rpc-text-muted)", textAlign: "center" }}>Free beta · AI assistant, it can be wrong · Messages go to Anthropic and are kept 90 days · Not financial advice</div>
+            <div style={{ marginTop: 6, fontSize: 10, color: "var(--rpc-text-muted)", textAlign: "center" }}>AI assistant, it can be wrong · Messages go to Anthropic and are kept 90 days · Not financial advice</div>
           </div>
         </div>
       )}

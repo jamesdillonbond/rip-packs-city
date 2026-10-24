@@ -35,6 +35,7 @@ import Link from "next/link"
 import { redirect } from "next/navigation"
 import WalletSearch from "@/components/WalletSearch"
 import GlobalSiteHeader from "@/components/GlobalSiteHeader"
+import { PageContentAnchor } from "@/components/SkipToContent"
 import { getCurrentUser } from "@/lib/auth/supabase-server"
 
 export const dynamic = "force-dynamic" // reads the session cookie
@@ -66,6 +67,7 @@ export default async function ProfileEntryPage() {
   return (
     <>
     <GlobalSiteHeader />
+    <PageContentAnchor />
     <main
       style={{
         maxWidth: 720,

@@ -71,6 +71,15 @@ export default function GlobalError({
           >
             Try Again
           </button>
+          {/* 2026-10-24: a plain link home — "Try Again" alone traps a reader on a
+              route that keeps crashing. A full navigation, not <Link>: the app
+              shell is what failed. */}
+          <div style={{ marginTop: "1rem" }}>
+            {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- a full navigation is the point: the app shell crashed */}
+            <a href="/" style={{ color: "#a1a1aa", textDecoration: "underline", textUnderlineOffset: 4 }}>
+              Go to the home page
+            </a>
+          </div>
         </div>
       </body>
     </html>

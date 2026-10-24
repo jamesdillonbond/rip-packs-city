@@ -28,6 +28,9 @@ import {
   type Delivery,
 } from "@/lib/alerts";
 import { buildEmailMessage, buildTelegramMessage, buildDiscordEmbeds } from "@/lib/alerts/format";
+import { alertEmailPauseUrl } from "@/lib/alerts/email-pause";
+
+const SITE_URL = "https://www.rippackscity.com";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -81,11 +84,27 @@ const DELIVERY_TIMEOUT_MS = 10_000;
 async function sendEmailGroup(to: string, group: Delivery[]): Promise<void> {
   const key = process.env.RESEND_API_KEY;
   if (!key) throw new Error("RESEND_API_KEY missing");
-  const { subject, html, text } = buildEmailMessage(group);
+  // 2026-10-24: a one-tap pause link (no sign-in) in the footer AND as the RFC
+  // 8058 List-Unsubscribe header Gmail / Yahoo require of bulk senders, plus a
+  // reply-to that reaches a person (noreply@ replies went nowhere).
+  // No signing secret ⇒ no pause link (logged), never a lost alert.
+  let pauseUrl: string | null = null;
+  try { pauseUrl = alertEmailPauseUrl(SITE_URL, to); } catch (e) { console.error(`[alerts-send] no pause link: ${e instanceof Error ? e.message : String(e)}`); }
+  const { subject, html, text } = buildEmailMessage(group, new Date(), { pauseUrl });
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ from: "Rip Packs City <noreply@rippackscity.com>", to, subject, html, text }),
+    body: JSON.stringify({
+      from: "Rip Packs City <noreply@rippackscity.com>",
+      reply_to: "rippackscity@gmail.com",
+      to,
+      subject,
+      html,
+      text,
+      ...(pauseUrl
+        ? { headers: { "List-Unsubscribe": `<${pauseUrl}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" } }
+        : {}),
+    }),
     signal: AbortSignal.timeout(DELIVERY_TIMEOUT_MS),
   });
   if (!res.ok) throw new Error(`resend ${res.status}: ${(await res.text()).slice(0, 200)}`);

@@ -46,6 +46,15 @@ export const UI_FIELD_DICTIONARY: readonly UiFieldEntry[] = [
     source: "components/entity/TeamChecklist.tsx + app/api/entity/team-checklist-full-editions/route.ts (view, scope)",
   },
   {
+    id: "squeeze.pct",
+    surface: "team page \"Squeeze & Scarcity\" (/[collection]/team/[slug]), /insights/squeeze, /insights/set-squeeze, edition supply blocks",
+    field: "Squeeze % and \"N / M\" buyable count",
+    aliases: ["squeeze", "squeeze %", "squeeze pct", "squeezed", "squeeze percentage", "locked + burned", "effective supply", "effectively buyable", "buyable", "scarcity", "lock rate"],
+    meaning:
+      "The share of an edition's minted supply that can no longer be bought: (locked + burned) ÷ circulation. Burned copies are destroyed; locked copies are held in a Top Shot lock and cannot be listed until it expires. The \"N / M\" beside it is the effectively-buyable count (circulation minus locked minus burned) over the minted circulation. A higher squeeze means fewer copies can ever reach the market, so a tighter supply — it is a supply fact, not a price or a prediction. The team page ranks that franchise's editions by it.",
+    source: "components/entity/TeamSqueeze.tsx (squeeze_pct, effectively_buyable) + supabase/migrations/20261003181445 (round(100 × (locked + burned) / circulation, 1))",
+  },
+  {
     id: "fmv",
     surface: "edition page, moment cards, wallet views",
     field: "FMV",

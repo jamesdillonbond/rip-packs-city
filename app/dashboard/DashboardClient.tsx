@@ -990,6 +990,25 @@ function ProfilePageInner() {
             >
               Alerts
             </Link>
+            {/* 2026-10-24: email preferences had NO link anywhere on the site —
+                only the email-confirm redirect reached this page. */}
+            <Link
+              href="/dashboard/notifications"
+              style={{
+                fontFamily: condensedFont,
+                fontWeight: 700,
+                fontSize: 11,
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+                color: "var(--rpc-text-secondary)",
+                textDecoration: "none",
+                padding: "7px 12px",
+                border: `1px solid ${ACCENT_RED}66`,
+                borderRadius: 5,
+              }}
+            >
+              Email settings
+            </Link>
             <Link
               href="/profile/edit"
               style={{
@@ -1261,7 +1280,7 @@ function ProfilePageInner() {
           </div>
 
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
-            <input
+            <input aria-label="Username or wallet address to add"
               value={usernameInput}
               onChange={(e) => setUsernameInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") resolveAndAssociate(); }}

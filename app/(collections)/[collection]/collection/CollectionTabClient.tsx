@@ -1,5 +1,6 @@
 "use client"
 
+import { labelOn } from "@/lib/accent-text"
 import { useMemo, useState, useReducer, useEffect, useCallback, useRef, Suspense } from "react"
 import { seriesPageLabel } from "@/lib/series-label"
 import { packNftTypeName } from "@/lib/packs/live-pack-listings"
@@ -1272,7 +1273,7 @@ function WalletMomentsBody() {
 
         {/* Search bar */}
         <div className="mb-5 flex flex-col gap-2 sm:flex-row">
-          <input
+          <input aria-label="Wallet address or username"
             value={input}
             onChange={function(e) { setInput(e.target.value) }}
             onKeyDown={function(e) { if (e.key === "Enter" && !loading && input.trim()) handleSearch() }}
@@ -1336,9 +1337,9 @@ function WalletMomentsBody() {
                 {copied ? "Link copied!" : "Share"}
               </button>
             )}
-            {/* Candy (Solana) only: Flow wallets are saved through the
-                dashboard, which fans one Dapper wallet out across all five Flow
-                collections — a per-collection save here would save one of five. */}
+            {/* Candy (Solana): a per-collection save. Flow wallets (below) go
+                through the dashboard's resolve-and-associate, which fans one Dapper
+                wallet out across all five Flow collections. */}
             {collectionObj?.dbChain === "solana" && collectionObj.supabaseCollectionId && activeWallet && rows.length > 0 && (
               <SaveWalletToProfileButton
                 key={activeWallet}
@@ -1347,6 +1348,13 @@ function WalletMomentsBody() {
                 dbChain={collectionObj.dbChain}
               />
             )}
+              {/* 2026-10-24: Flow collections too — signed-in collectors searched their
+                  own username here with no way to keep it. Saved the dashboard's way
+                  (all Flow collections at once); hidden when signed out. */}
+              {collectionObj?.dbChain === "flow" && collectionObj.supabaseCollectionId && activeWallet && rows.length > 0 && (
+                <SaveWalletToProfileButton key={`flow-${activeWallet}`} wallet={activeWallet}
+                  collectionUuid={collectionObj.supabaseCollectionId} dbChain={collectionObj.dbChain} via="flow-associate" />
+              )}
           </div>
         </div>
 
@@ -1602,7 +1610,7 @@ function CollectionSection() {
                   // brand-exception: active state paints white text on the
                   // colored `accent` fill — theme-independent (text on a colored
                   // surface), so #fff is correct in both light and dark.
-                  color: on ? "#fff" : "var(--rpc-text-muted)",
+                  color: on ? labelOn(accent) : "var(--rpc-text-muted)",
                   border: `1px solid ${on ? accent : "var(--rpc-border)"}`,
                 }}
               >

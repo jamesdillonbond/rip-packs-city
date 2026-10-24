@@ -60,7 +60,7 @@ const KICKER: React.CSSProperties = {
   fontSize: 11,
   letterSpacing: "0.22em",
   textTransform: "uppercase",
-  color: "var(--rpc-red, #E03A2F)",
+  color: "var(--rpc-red-text)",
   fontWeight: 700,
   margin: "0 0 12px",
 }
@@ -152,7 +152,7 @@ const FOOTNOTE: React.CSSProperties = {
   lineHeight: 1.7,
 }
 
-const LINK: React.CSSProperties = { color: "var(--rpc-red, #E03A2F)", textDecoration: "none" }
+const LINK: React.CSSProperties = { color: "var(--rpc-red-text)", textDecoration: "underline", textUnderlineOffset: 3 }
 
 const UPDATE_BOX: React.CSSProperties = {
   margin: "0 0 28px",

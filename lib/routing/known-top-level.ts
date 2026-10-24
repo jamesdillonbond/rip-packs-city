@@ -33,6 +33,7 @@ export const STATIC_TOP_LEVEL_SEGMENTS: ReadonlySet<string> = new Set([
   "edition",
   "feed.xml",
   "giveaways",
+  "help",
   "go",
   "insights",
   "legal",

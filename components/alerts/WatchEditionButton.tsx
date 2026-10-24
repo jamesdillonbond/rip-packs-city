@@ -143,7 +143,7 @@ export default function WatchEditionButton({
         </button>
       </div>
 
-      <select
+      <select aria-label="Alert type"
         value={alertType}
         onChange={(e) => setAlertType(e.target.value as AlertType)}
         className="rpc-mono"
@@ -156,7 +156,7 @@ export default function WatchEditionButton({
 
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
         <span className="rpc-mono" style={{ color: "var(--rpc-text-secondary)", fontSize: 13, width: 16, textAlign: "center" }}>{unit}</span>
-        <input
+        <input aria-label="Alert threshold"
           type="number"
           min={0}
           step="any"

@@ -10,10 +10,10 @@ function html(message: string): string {
   .card{padding:32px;border:1px solid rgba(224,58,47,0.3);border-radius:10px;text-align:center;max-width:420px}
   h1{font-family:'Barlow Condensed',sans-serif;letter-spacing:.05em;color:#E03A2F;margin:0 0 12px}
   p{color:rgba(255,255,255,0.6);font-size:13px;line-height:1.6;margin:0}</style></head>
-  <body><div class="card"><h1>${message}</h1><p>You can re-subscribe any time from your profile.</p></div></body></html>`
+  <body><div class="card"><h1>${message}</h1><p>Change it back any time on <a href="/dashboard/notifications" style="color:#fca5a5">Notifications</a> (sign in first).</p></div></body></html>`
 }
 
-export async function GET(req: NextRequest) {
+async function unsubscribe(req: NextRequest) {
   const token = req.nextUrl.searchParams.get("token")?.trim()
   if (!token) {
     return new NextResponse(html("Invalid unsubscribe link"), { status: 400, headers: { "Content-Type": "text/html" } })
@@ -32,4 +32,14 @@ export async function GET(req: NextRequest) {
   } catch {
     return new NextResponse(html("Could not unsubscribe"), { status: 500, headers: { "Content-Type": "text/html" } })
   }
+}
+
+export async function GET(req: NextRequest) {
+  return unsubscribe(req)
+}
+
+// RFC 8058 one-click (2026-10-24): Gmail / Yahoo POST "List-Unsubscribe=One-Click"
+// to the List-Unsubscribe URL and expect the opt-out with no further step.
+export async function POST(req: NextRequest) {
+  return unsubscribe(req)
 }

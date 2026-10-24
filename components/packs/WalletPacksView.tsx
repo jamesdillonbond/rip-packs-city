@@ -36,7 +36,7 @@ import {
   packCoverage,
   type PackCoverageTotals,
 } from "@/lib/packs-wallet-view-format"
-import { accentText } from "@/lib/accent-text"
+import { accentText, labelOn } from "@/lib/accent-text"
 
 interface SummaryCollection {
   collection_id: string
@@ -304,7 +304,7 @@ export default function WalletPacksView({ collection }: { collection: string }) 
                 borderRadius: 4,
                 cursor: "pointer",
                 background: on ? accent : "transparent",
-                color: on ? "#fff" : "var(--rpc-text-muted)",
+                color: on ? labelOn(accent) : "var(--rpc-text-muted)",
                 border: `1px solid ${on ? accent : "var(--rpc-border)"}`,
               }}
             >

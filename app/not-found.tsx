@@ -45,6 +45,7 @@ export default function NotFound() {
           margin: 0,
         }}
       >
+        <span className="sr-only">Page not found. </span>
         Bingo Bango Bongo
       </h1>
 
@@ -60,6 +61,37 @@ export default function NotFound() {
       >
         But the page you&apos;re looking for isn&apos;t here.
       </p>
+
+      {/* 2026-10-24: a dead end offered only "home". The places a lost collector
+          most often meant to go, one tap each. */}
+      <nav aria-label="Popular pages" style={{ display: "flex", flexWrap: "wrap", gap: 10, justifyContent: "center", marginTop: 4 }}>
+        {[
+          { href: "/market", label: "Market" },
+          { href: "/sniper", label: "Sniper" },
+          { href: "/insights", label: "Insights" },
+          { href: "/teams", label: "Teams" },
+          { href: "/help", label: "Help" },
+        ].map((l) => (
+          <Link
+            key={l.href}
+            href={l.href}
+            className="rpc-tap44"
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 12,
+              letterSpacing: "0.12em",
+              textTransform: "uppercase",
+              color: "var(--rpc-text-primary)",
+              border: "1px solid var(--rpc-border-hover)",
+              borderRadius: "var(--radius-sm)",
+              padding: "10px 14px",
+              textDecoration: "none",
+            }}
+          >
+            {l.label}
+          </Link>
+        ))}
+      </nav>
 
       <Link
         href="/"

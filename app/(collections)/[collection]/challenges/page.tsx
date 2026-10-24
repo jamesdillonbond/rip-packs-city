@@ -123,7 +123,7 @@ export default async function ChallengesPage(props: { params: Promise<{ collecti
             <tbody>
               {challenges.map((c) => {
                 const netColor =
-                  c.netEv == null ? "var(--rpc-text-muted)" : c.netEv > 0 ? "#34d399" : "#f87171"
+                  c.netEv == null ? "var(--rpc-text-muted)" : c.netEv > 0 ? "var(--rpc-success-text)" : "var(--rpc-danger-text)"
                 return (
                   <tr key={c.challengeId} style={{ borderTop: "1px solid var(--rpc-border)" }}>
                     <td style={{ padding: "10px 12px" }}>

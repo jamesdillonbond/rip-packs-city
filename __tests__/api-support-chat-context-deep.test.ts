@@ -80,8 +80,11 @@ describe("GET /api/support-chat/context — signed-in beta tester", () => {
     expect(body.returningBetaTester).toBe(true)
     expect(body.conversationCount).toBe(3)
     expect(body.lastOpenFeedback.id).toBe(7)
-    expect(body.pageWelcome).toContain("shipped")
-    expect(body.pageWelcome).toContain("dark mode toggle")
+    // 2026-10-24 (re-pin): the newest row shipped back in JULY and the
+    // since-last-visit read worked and found nothing — so it was already
+    // announced, and the welcome must not re-announce it (a July ship greeted a
+    // returning tester on 10-24). The conversation count and pills still stand.
+    expect(body.pageWelcome).not.toContain("dark mode toggle")
     expect(body.pageSuggestions).toContain("Find me a deal")
     expect(body.recentlyShipped).toEqual({ count: 0, since: expect.any(String), items: [] })
   })

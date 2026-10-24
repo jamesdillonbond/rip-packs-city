@@ -16,6 +16,7 @@
 import type { Metadata } from "next"
 import ProfileEditClient from "./ProfileEditClient"
 import GlobalSiteHeader from "@/components/GlobalSiteHeader"
+import { PageContentAnchor } from "@/components/SkipToContent"
 
 // The tab read as the generic site title until 2026-09-02 (onboarding QA #9);
 // a signed-in-only form should also never be indexed.
@@ -28,6 +29,7 @@ export default function EditProfilePage() {
   return (
     <>
       <GlobalSiteHeader />
+      <PageContentAnchor />
       <ProfileEditClient />
     </>
   )

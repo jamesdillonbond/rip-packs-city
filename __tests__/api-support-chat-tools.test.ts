@@ -419,7 +419,10 @@ describe("concierge tools — feedback intake + escalation", () => {
     script("log_feedback", { summary: "nice", details: "" })
     await POST(post("nice site"))
     expect(toolResult()).toMatchObject({ status: "error" })
-    expect(spy.writes.support_conversations ?? []).toHaveLength(0)
+    // No FEEDBACK row. (Since 2026-10-24 the turn's own transcript row is written
+    // before the reply returns, so it is excluded by its missing feedback_type.)
+    const feedbackRows = (spy.writes.support_conversations ?? []).flatMap((w: any) => w.rows ?? []).filter((r: any) => r?.feedback_type)
+    expect(feedbackRows).toHaveLength(0)
   })
 
   it("HIGH-urgency escalation pages Telegram and reports paged", async () => {

@@ -180,12 +180,12 @@ function fmtInt(n: number | null): string {
 export function formatCoverageForPrompt(result: CoverageResult | null, nowMs: number = Date.now()): string {
   const head = "\n## Live FMV coverage (measured from the database";
   if (!result || result.status === "error") {
-    return `${head} — READ FAILED this turn)\nCoverage could not be measured. Do NOT quote a coverage percentage for any collection; answer from the confidence on each tool row instead.`;
+    return `${head} — READ FAILED this turn)\nCoverage could not be measured. Do NOT quote a coverage percentage for any collection; answer from the sales facts on each tool row instead (how many sales, how recent) — never a confidence tier.`;
   }
   const ageMin = Math.max(0, Math.round((nowMs - new Date(result.measured_at).getTime()) / 60000));
   const lines = result.rows.map((r) => {
     if (r.read_failed) return `- ${r.collection}: coverage read failed — do not quote a figure for this collection.`;
     return `- ${r.collection}: ${fmtInt(r.editions)} editions, ${fmtInt(r.priced)} carry an FMV, ${r.high_med_pct ?? "?"}% (${fmtInt(r.high_med)}) at HIGH/MEDIUM confidence`;
   });
-  return `${head}, ${ageMin} min ago)\n${lines.join("\n")}\nThese are the ONLY coverage figures you may quote, and quote them as "as of this reading". The HIGH/MEDIUM share is what "coverage" means on RPC — an edition can carry an FMV row at LOW / ASK_ONLY / NO_DATA that is directional at best. Where the HIGH/MEDIUM share is under 50%, proactively note the limitation and lean on floor + recent-sales context.`;
+  return `${head}, ${ageMin} min ago)\n${lines.join("\n")}\nINTERNAL — for your judgement only (2026-10-18 rule: FMV confidence is never shown to users). Never quote these percentages, a confidence share, or the words HIGH / MEDIUM / LOW / ASK_ONLY to the user. An edition can carry an FMV row at LOW / ASK_ONLY / NO_DATA that is directional at best: where this share is under 50%, say in plain words that prices in this collection rest on thin sales, and lean on the floor and recent sales.`;
 }

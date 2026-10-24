@@ -131,8 +131,17 @@ export async function POST(req: NextRequest) {
 
   if (otpError) {
     console.error("[request-magic-link] signInWithOtp error", otpError)
-    const msg = otpError.message || "Sign-in service is temporarily unavailable. Please try again in a moment."
     const status = (otpError as { status?: number }).status ?? 500
+    // 2026-10-24: Supabase's own English ("For security purposes, you can only
+    // request this after 51 seconds", SMTP errors) reached the login form as-is.
+    // Say what the reader can DO; the raw message stays in the log line above.
+    const raw = String(otpError.message ?? "")
+    const msg =
+      status === 429 || /rate|after \d+ seconds|too many/i.test(raw)
+        ? "We just sent you a link. Please wait a minute before asking for another — and check your spam folder."
+        : /invalid.*email|email.*invalid/i.test(raw)
+          ? "That email address doesn't look right. Check it and try again."
+          : "We couldn't send the sign-in email just now. Please try again in a moment."
     return NextResponse.json({ ok: false, error: msg }, { status })
   }
 

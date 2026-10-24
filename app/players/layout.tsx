@@ -14,6 +14,7 @@
 
 import type { ReactNode } from "react"
 import GlobalSiteHeader from "@/components/GlobalSiteHeader"
+import { PageContentAnchor } from "@/components/SkipToContent"
 import SiteFooter from "@/components/SiteFooter"
 import SupportChatConnected from "@/components/SupportChatConnected"
 
@@ -21,6 +22,7 @@ export default function PlayersLayout({ children }: { children: ReactNode }) {
   return (
     <div style={{ minHeight: "100vh", background: "var(--rpc-black)", color: "var(--rpc-text-primary)" }}>
       <GlobalSiteHeader />
+      <PageContentAnchor />
       <main
         className="rpc-main"
         style={{

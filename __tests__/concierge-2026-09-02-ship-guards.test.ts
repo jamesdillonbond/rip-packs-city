@@ -61,7 +61,8 @@ describe("prompt-cache breakpoint holds only invariant text", () => {
     // candyTabs (2026-09-25): Candy's registry `pages`, as paths — constant per deploy.
     // PANINI_TAB_PATHS / CANDY_TAB_PATHS (2026-09-25, Panini's publish): module-level
     // constants derived from the registry's `pages` — constant per deploy.
-    const DEPLOY_CONSTANT = new Set(["publishedLabels", "FMV_METHODOLOGY_BLOCK", "candyTabs", "PANINI_TAB_PATHS", "CANDY_TAB_PATHS"])
+    // publishedTabsLine (2026-10-24): every published collection's registry `pages` — constant per deploy.
+    const DEPLOY_CONSTANT = new Set(["publishedLabels", "FMV_METHODOLOGY_BLOCK", "candyTabs", "PANINI_TAB_PATHS", "CANDY_TAB_PATHS", "publishedTabsLine"])
     expect(
       interpolations.filter((n) => !DEPLOY_CONSTANT.has(n)),
       "per-request values must live in `dynamic`, BELOW the cache breakpoint — " +

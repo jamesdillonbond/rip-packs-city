@@ -34,6 +34,26 @@ function stubFetch(handler: (url: string, init?: RequestInit) => Response) {
 const mount = (wallet = CANDY, dbChain: string | null = "solana") =>
   render(<SaveWalletToProfileButton wallet={wallet} collectionUuid={CANDY_UUID} dbChain={dbChain} />)
 
+// 2026-10-24: a Flow wallet searched on a Flow collection tab is saved the
+// dashboard's way (all Flow collections at once), never per collection.
+describe("SaveWalletToProfileButton — flow-associate", () => {
+  it("posts the address to resolve-and-associate, not saved-wallets", async () => {
+    const calls = stubFetch((_url, init) => (init?.method === "POST" ? json({ ok: true }) : json({ wallets: [] })))
+    render(<SaveWalletToProfileButton wallet="0xBD94CADE097E50AC" collectionUuid="95f28a17-224a-4025-96ad-adf8a4c63bfd" dbChain="flow" via="flow-associate" />)
+    fireEvent.click(await screen.findByText("Save as my collection"))
+    expect(await screen.findByText(/Saved to profile/)).toBeTruthy()
+    const post = calls.find((c) => c.init?.method === "POST")!
+    expect(post.url).toBe("/api/profile/resolve-and-associate")
+    expect(JSON.parse(String(post.init!.body))).toEqual({ address: "0xbd94cade097e50ac" })
+  })
+  it("shows the route's error text when the save is refused", async () => {
+    stubFetch((_url, init) => (init?.method === "POST" ? json({ error: "Wallet limit reached" }, 402) : json({ wallets: [] })))
+    render(<SaveWalletToProfileButton wallet="0xbd94cade097e50ac" collectionUuid="95f28a17-224a-4025-96ad-adf8a4c63bfd" dbChain="flow" via="flow-associate" />)
+    fireEvent.click(await screen.findByText("Save as my collection"))
+    expect(await screen.findByText("Wallet limit reached")).toBeTruthy()
+  })
+})
+
 describe("SaveWalletToProfileButton", () => {
   it("renders nothing for a signed-out viewer (401)", async () => {
     const calls = stubFetch(() => json({ error: "Authentication required" }, 401))

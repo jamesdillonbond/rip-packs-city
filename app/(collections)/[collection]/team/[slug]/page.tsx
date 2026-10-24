@@ -395,7 +395,7 @@ export default async function TeamPage(props: { params: Promise<{ collection: st
 function TeamUnavailable({ collection, slug }: { collection: string; slug: string }) {
   const name = slug.replace(/-/g, " ")
   return (
-    <main style={{ minHeight: "60vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "48px 24px", gap: 16 }}>
+    <section style={{ minHeight: "60vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "48px 24px", gap: 16 }}>
       <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, letterSpacing: "0.3em", textTransform: "uppercase", color: "var(--rpc-text-muted)" }}>
         Team unavailable
       </div>
@@ -412,6 +412,6 @@ function TeamUnavailable({ collection, slug }: { collection: string; slug: strin
       >
         Back to overview
       </a>
-    </main>
+    </section>
   )
 }

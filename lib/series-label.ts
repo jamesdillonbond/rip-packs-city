@@ -21,11 +21,18 @@ export const SERIES_DISPLAY: Record<number, string> = {
   6: "Series 2023-24",
   7: "Series 2024-25",
   8: "Series 2025-26",
-  // 2026-10-15: anticipated. On-chain TopShot.currentSeries still read 8 that day; Top Shot
-  // announced "Series 2026-27" tipping off Oct 20, and startNewSeries increments by one.
-  // Re-verify against getSetSeries once the first new set mints.
+  // 2026-10-15: anticipated; CONFIRMED 2026-10-24 — 21 Top Shot editions with series 9
+  // were ingested 10-21..10-23 (Series 2026-27 Rookie Debut et al.).
   9: "Series 2026-27",
 }
+
+/**
+ * The CURRENT Top Shot season — the highest mapped series (2026-10-24: series 9
+ * minted its first editions 2026-10-21). Derived from the map so adding the next
+ * season's entry moves every reader (the concierge prompt states it) at once.
+ */
+export const CURRENT_TOP_SHOT_SERIES: number = Math.max(...Object.keys(SERIES_DISPLAY).map(Number))
+export const CURRENT_TOP_SHOT_SERIES_LABEL: string = SERIES_DISPLAY[CURRENT_TOP_SHOT_SERIES]
 
 /** Analytics-board series label (collection-agnostic). Unmapped/nullish → "Unknown". */
 export function seriesLabel(n: number | null | undefined): string {

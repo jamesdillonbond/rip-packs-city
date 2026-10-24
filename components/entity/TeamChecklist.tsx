@@ -680,7 +680,7 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
             <span className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-secondary)" }}>
               Paste your wallet to see what you&rsquo;re missing:
             </span>
-            <input
+            <input aria-label="Wallet address to score the checklist"
               type="text"
               inputMode="text"
               autoComplete="off"

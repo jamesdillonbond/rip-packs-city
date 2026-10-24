@@ -193,6 +193,9 @@ export default function SiteFooter() {
         <span>&copy; 2026 RIP PACKS CITY</span>
         <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
           <Link href="/about" style={{ color: "var(--rpc-text-secondary)", textDecoration: "none" }}>ABOUT</Link>
+          {/* HELP (2026-10-24): FAQ + the contact email, which until then lived
+              only inside /privacy and /terms. */}
+          <Link href="/help" style={{ color: "var(--rpc-text-secondary)", textDecoration: "none" }}>HELP &amp; CONTACT</Link>
           {/* PRICING left the footer 2026-09-07 (Trevor): it was the site's #1
               internal-link target (27,566 links in Search Console) for a page
               that says the product is free. The page stays live for the

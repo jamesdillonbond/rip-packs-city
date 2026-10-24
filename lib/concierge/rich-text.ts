@@ -191,3 +191,75 @@ export function isOffSiteHref(href: string): boolean {
     return true;
   }
 }
+
+// ── Blocks (2026-10-24) ──────────────────────────────────────────────────────
+// The model answers in light markdown — headings, "---" rules, "- " bullets and
+// pipe tables — and the bubble rendered all of it as raw text ("## Current Top
+// Shot Series", "| Pack | Status |"), measured live on 10-24. This splits a reply
+// into BLOCKS so the bubble can render real structure; every cell and line still
+// goes through parseRichText, so the no-markup security property is unchanged.
+export type RichBlock =
+  | { type: "para"; text: string }
+  | { type: "heading"; text: string }
+  | { type: "rule" }
+  | { type: "list"; ordered: boolean; items: string[] }
+  | { type: "table"; header: string[] | null; rows: string[][] }
+
+const TABLE_LINE = /^\s*\|.*\|\s*$/
+const TABLE_SEPARATOR = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/
+const BULLET = /^\s*[-*•]\s+(.*)$/
+const NUMBERED = /^\s*\d{1,3}[.)]\s+(.*)$/
+const HEADING = /^\s{0,3}#{1,6}\s+(.*?)\s*#*\s*$/
+const RULE = /^\s*([-*_])(\s*\1){2,}\s*$/
+
+function splitRow(line: string): string[] {
+  const inner = line.trim().replace(/^\|/, "").replace(/\|$/, "")
+  return inner.split("|").map((c) => c.trim())
+}
+
+export function parseRichBlocks(input: string): RichBlock[] {
+  if (!input) return []
+  const lines = input.replace(/\r\n?/g, "\n").split("\n")
+  const blocks: RichBlock[] = []
+  let para: string[] = []
+  const flush = () => {
+    if (para.length) blocks.push({ type: "para", text: para.join("\n") })
+    para = []
+  }
+  let i = 0
+  while (i < lines.length) {
+    const line = lines[i]
+    if (TABLE_LINE.test(line) && i + 1 < lines.length && TABLE_SEPARATOR.test(lines[i + 1]) && lines[i + 1].includes("|")) {
+      flush()
+      const header = splitRow(line)
+      const rows: string[][] = []
+      i += 2
+      while (i < lines.length && TABLE_LINE.test(lines[i])) rows.push(splitRow(lines[i++]))
+      blocks.push({ type: "table", header, rows })
+      continue
+    }
+    if (RULE.test(line)) { flush(); blocks.push({ type: "rule" }); i++; continue }
+    const h = HEADING.exec(line)
+    if (h) { flush(); blocks.push({ type: "heading", text: h[1] }); i++; continue }
+    const isBullet = BULLET.test(line), isNum = !isBullet && NUMBERED.test(line)
+    if (isBullet || isNum) {
+      flush()
+      const items: string[] = []
+      const re = isBullet ? BULLET : NUMBERED
+      while (i < lines.length) {
+        const m = re.exec(lines[i])
+        if (m) { items.push(m[1]); i++; continue }
+        // A wrapped continuation line (indented, non-empty) belongs to the item.
+        if (items.length && /^\s{2,}\S/.test(lines[i])) { items[items.length - 1] += " " + lines[i].trim(); i++; continue }
+        break
+      }
+      blocks.push({ type: "list", ordered: isNum, items })
+      continue
+    }
+    if (line.trim() === "") { flush(); i++; continue }
+    para.push(line)
+    i++
+  }
+  flush()
+  return blocks
+}

@@ -274,7 +274,10 @@ export default function CandyPackMarket() {
                 </thead>
                 <tbody>
                   {data.asks.map((a, i) => (
-                    <tr key={i} style={{ opacity: a.confirmed ? 1 : 0.55 }}>
+                    // An unconfirmed ask is marked in words and set in the muted
+                    // text colour — not dimmed with opacity, which took the row
+                    // below 3:1 contrast in both themes (axe, 2026-10-24).
+                    <tr key={i} style={a.confirmed ? undefined : { color: "var(--rpc-text-muted)", fontStyle: "italic" }}>
                       <td style={td}>{usd(a.priceUsd)}</td>
                       <td style={td}>{a.priceSol === null ? "—" : a.priceSol.toFixed(3)}</td>
                       <td style={td}>

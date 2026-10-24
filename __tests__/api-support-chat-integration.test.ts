@@ -71,7 +71,7 @@ describe("POST /api/support-chat — guard + greeting branches", () => {
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.escalated).toBe(false)
-    expect(body.response).toContain("Welcome to RPC")
+    expect(body.response).toContain("Welcome to Rip Packs City")
     expect(body.category).toBeDefined()
   })
 
@@ -79,7 +79,7 @@ describe("POST /api/support-chat — guard + greeting branches", () => {
     for (const [i, g] of ["hey", "gm", "sup"].entries()) {
       const res = await POST(post({ message: g, sessionId: `s-greet-${i}-b` }))
       expect(res.status).toBe(200)
-      expect((await res.json()).response).toContain("Welcome to RPC")
+      expect((await res.json()).response).toContain("Welcome to Rip Packs City")
     }
   })
 

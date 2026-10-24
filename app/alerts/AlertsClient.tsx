@@ -857,7 +857,7 @@ function OptionTypeahead({
           ))}
         </div>
       )}
-      <input
+      <input aria-label={placeholder ?? "Search options"}
         value={query}
         onChange={(e) => {
           setQuery(e.target.value);
@@ -971,7 +971,7 @@ function ChipTypeahead({
           ))}
         </div>
       )}
-      <input
+      <input aria-label={placeholder ?? "Search"}
         value={query}
         onChange={(e) => {
           setQuery(e.target.value);

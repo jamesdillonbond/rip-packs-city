@@ -409,7 +409,7 @@ export default async function SeriesPage(props: { params: Promise<{ collection: 
 function SeriesUnavailable({ collection, slug }: { collection: string; slug: string }) {
   const label = slug.replace(/-/g, " ")
   return (
-    <main style={{ minHeight: "60vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "48px 24px", gap: 16 }}>
+    <section style={{ minHeight: "60vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "48px 24px", gap: 16 }}>
       <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, letterSpacing: "0.3em", textTransform: "uppercase", color: "var(--rpc-text-muted)" }}>
         Series unavailable
       </div>
@@ -423,6 +423,6 @@ function SeriesUnavailable({ collection, slug }: { collection: string; slug: str
       <a href={`/${collection}/sets`} style={{ marginTop: 8, padding: "10px 18px", border: "1px solid var(--rpc-red-border)", color: "var(--rpc-red-text)", background: "transparent", fontFamily: "var(--font-mono)", letterSpacing: "0.2em", textTransform: "uppercase", fontSize: 12, textDecoration: "none" }}>
         All sets
       </a>
-    </main>
+    </section>
   )
 }

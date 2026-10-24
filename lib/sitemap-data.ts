@@ -99,6 +99,8 @@ export const STATIC_SITEMAP_PAGES: ReadonlyArray<{
 }> = [
   { path: '/',                                 changeFrequency: 'daily',   priority: 1.0 },
   { path: '/about',                            changeFrequency: 'monthly', priority: 0.5 },
+  // 2026-10-24: help, FAQ and contact (app/help/page.tsx).
+  { path: '/help',                             changeFrequency: 'monthly', priority: 0.4 },
   // 2026-09-28: the cross-collection Sniper hub (app/sniper/page.tsx).
   { path: '/sniper',                           changeFrequency: 'daily',   priority: 0.7 },
   // 2026-09-28: the cross-collection Market hub (app/market/page.tsx).

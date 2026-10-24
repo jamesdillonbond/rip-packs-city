@@ -87,10 +87,13 @@ describe("search_live_deals ranks verified-FMV deals first", () => {
   it("the verified row leads; flagged rows follow and say so", async () => {
     await POST(post())
     const r = toolResult()
-    expect(r.results[0]).toMatchObject({ player: "Alvin Kamara", fmv_confidence: "MEDIUM", low_confidence_fmv: false })
+    // 2026-10-24: the model sees the plain-language basis, never the tier
+    // (lib/concierge/scrub-confidence.ts) — the ranking itself is unchanged.
+    expect(r.results[0]).toMatchObject({ player: "Alvin Kamara", fmv_pricing_basis: "priced from several recent sales", thin_pricing_fmv: false })
     const kincaid = r.results.find((x: any) => x.player === "Dalton Kincaid")
-    expect(kincaid).toMatchObject({ fmv_confidence: "STALE", low_confidence_fmv: true })
-    expect(r.results.findIndex((x: any) => x.low_confidence_fmv)).toBeGreaterThan(0)
+    expect(kincaid).toMatchObject({ fmv_pricing_basis: "based on older sales — may be out of date", thin_pricing_fmv: true })
+    expect(r.results.findIndex((x: any) => x.thin_pricing_fmv)).toBeGreaterThan(0)
+    expect(JSON.stringify(r)).not.toMatch(/confidence/i)
   })
 
   it("the prompt forbids headlining a low-confidence discount", async () => {

@@ -1004,7 +1004,8 @@ export default async function EditionPage(
         <StatCell
           label="24h Change"
           value={dayDelta === null ? EM_DASH : (
-            <span style={{ color: dayDelta >= 0 ? "var(--rpc-success-text)" : "var(--rpc-danger-text)" }}>
+            // A flat day is neutral, not green (2026-10-24: "0.0%" rendered as a gain).
+            <span style={{ color: Math.abs(dayDelta) < 0.05 ? "var(--rpc-text-secondary)" : dayDelta > 0 ? "var(--rpc-success-text)" : "var(--rpc-danger-text)" }}>
               {fmtPercent(dayDelta)}
             </span>
           )}
@@ -1836,7 +1837,7 @@ function PaniniEditionMarketSection({
 // about the edition's market.
 function EditionUnavailable({ collection }: { collection: string; slug: string }) {
   return (
-    <main style={{ minHeight: "60vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "48px 24px", gap: 16 }}>
+    <section style={{ minHeight: "60vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "48px 24px", gap: 16 }}>
       <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, letterSpacing: "0.3em", textTransform: "uppercase", color: "var(--rpc-text-muted)" }}>
         Moment unavailable
       </div>
@@ -1853,6 +1854,6 @@ function EditionUnavailable({ collection }: { collection: string; slug: string }
       >
         Browse collection
       </a>
-    </main>
+    </section>
   )
 }

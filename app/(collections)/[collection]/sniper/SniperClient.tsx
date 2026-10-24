@@ -73,6 +73,8 @@ import {
 import { sniperTierTabs } from "@/lib/collection-tiers";
 import { ownLookup } from "@/lib/safe-lookup";
 import { accentText, textSafeChip } from "@/lib/accent-text"
+import { useModalA11y } from "@/lib/hooks/useModalA11y"
+import { loadSniperFilters, saveSniperFilters, urlHasSniperFilters } from "@/lib/sniper/saved-filters"
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 
@@ -261,6 +263,9 @@ function SniperMomentsBody() {
 
   // ── Task 7: Listing suggestions panel
   const [showSuggestions, setShowSuggestions] = useState(false);
+  // The suggestions drawer is a modal sheet: trap focus, close on Escape, return
+  // focus to the opener (UI audit 2026-10-24 — it had none of the three).
+  const suggestionsRef = useModalA11y<HTMLDivElement>(showSuggestions, () => setShowSuggestions(false));
   const [suggestions, setSuggestions] = useState<ListingSuggestion[]>([]);
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
   /**
@@ -307,6 +312,12 @@ function SniperMomentsBody() {
     livetokenFmv: number | null;
   } | null>(null);
   const [depthFloorError, setDepthFloorError] = useState<string | null>(null);
+  // 2026-10-24: Top Shot's live listing API has been a dead host since 08-28
+  // (known-issues #81), so /api/edition-floor 503s on every Top Shot row and the
+  // panel only ever said "Could not load floor data". RPC's own book holds a
+  // re-confirmed ask (the binder's /api/best-asks rule) — shown, LABELLED as a
+  // recent ask, when the live read fails. Its absence claims nothing.
+  const [depthRecentAsk, setDepthRecentAsk] = useState<number | null>(null);
   // ⚠ The depth panel has TWO legs and only the floor one reported failure. The
   // listings leg swallowed both its exits, so a failed read rendered "No other
   // listings for this edition." — on the surface a collector uses to decide
@@ -374,6 +385,29 @@ function SniperMomentsBody() {
   const [playerInput, setPlayerInput] = useState(urlFilters.player ?? "");
   const [playerFilter, setPlayerFilter] = useState(urlFilters.player ?? "");
   const playerDebounceRef = useRef<NodeJS.Timeout | null>(null);
+
+  // ── Remembered filters (lib/sniper/saved-filters.ts, 2026-10-24) ──────────
+  // Restored once per collection when the URL carries none; saved on change
+  // after that restore has run, so the defaults never overwrite a saved board.
+  const filtersRestoredRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (filtersRestoredRef.current === collectionSlug) return;
+    filtersRestoredRef.current = collectionSlug;
+    if (urlHasSniperFilters(urlFilters)) return;
+    const saved = loadSniperFilters(collectionSlug);
+    if (!saved) return;
+    if (saved.tier && (tierTabs as readonly string[]).includes(saved.tier)) setTierTab(saved.tier as TierTab);
+    if (saved.sort && SORT_OPTIONS.some((o) => o.value === saved.sort)) setSortBy(saved.sort as SortOption);
+    if (typeof saved.minDiscount === "number") setMinDiscount(saved.minDiscount);
+    if (typeof saved.maxPrice === "number") setMaxPrice(saved.maxPrice);
+    if (saved.team) setBoardSel({ slug: collectionSlug, team: saved.team, studio: "all", chaserOnly: false });
+    if (saved.player) { setPlayerInput(saved.player); setPlayerFilter(saved.player); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [collectionSlug]);
+  useEffect(() => {
+    if (filtersRestoredRef.current !== collectionSlug) return;
+    saveSniperFilters(collectionSlug, { tier: tierTab, sort: sortBy, minDiscount, maxPrice, team: teamFilter, player: playerFilter });
+  }, [collectionSlug, tierTab, sortBy, minDiscount, maxPrice, teamFilter, playerFilter]);
 
   const handlePlayerChange = useCallback((value: string) => {
     setPlayerInput(value);
@@ -714,6 +748,7 @@ function SniperMomentsBody() {
     setDepthDeals([]);
     setDepthFloor(null);
     setDepthFloorError(null);
+    setDepthRecentAsk(null);
     setDepthListingsError(null);
 
     // Fetch edition floor data and other listings in parallel
@@ -724,7 +759,22 @@ function SniperMomentsBody() {
             return res.json();
           })
           .then((json) => setDepthFloor(json))
-          .catch(() => setDepthFloorError("Could not load floor data"))
+          .catch(async () => {
+            setDepthFloorError("Could not load floor data");
+            const collUuid = ownLookup(COLLECTION_UUID_BY_SLUG, collectionSlug) ?? null;
+            if (!collUuid || !deal.editionKey) return;
+            try {
+              const r = await fetch("/api/best-asks", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ collectionId: collUuid, editionKeys: [deal.editionKey] }),
+              });
+              if (!r.ok) return;
+              const j = await r.json();
+              const hit = Array.isArray(j?.results) ? j.results.find((x: { editionKey?: string }) => x.editionKey === deal.editionKey) : null;
+              if (hit && typeof hit.ask === "number" && hit.ask > 0) setDepthRecentAsk(hit.ask);
+            } catch { /* the error line stands */ }
+          })
       : Promise.resolve(setDepthFloorError("No edition data available"));
 
     const listingsPromise = fetch(`${feedEndpoint}?collection=${feedCollection}&editionKey=${encodeURIComponent(deal.editionKey)}&limit=20`, { cache: "no-store" })
@@ -1372,7 +1422,7 @@ function SniperMomentsBody() {
                         <span style={{ fontFamily: "var(--font-display)", fontWeight: 700, color: "var(--rpc-text-primary)" }} className="truncate">{deal.playerName}</span>
                       )}
                       {isPinnacle ? (
-                        <span style={{ color: variantColor(deal.tier), fontWeight: 600, fontSize: "var(--text-xs)", border: `1px solid ${variantColor(deal.tier)}40`, background: `${variantColor(deal.tier)}15`, borderRadius: 3, padding: "0 4px" }}>
+                        <span style={{ color: accentText(variantColor(deal.tier)), fontWeight: 600, fontSize: "var(--text-xs)", border: `1px solid ${variantColor(deal.tier)}40`, background: `${variantColor(deal.tier)}15`, borderRadius: 3, padding: "0 4px" }}>
                           {deal.tier}
                         </span>
                       ) : (
@@ -1623,7 +1673,9 @@ function SniperMomentsBody() {
                         {isPinnacle ? (
                           <span
                             style={{
-                              color: variantColor(deal.tier),
+                              // Text on its own 8 % tint: the theme-safe shade (silver
+                              // read 1.45:1 in light theme, axe 2026-10-24).
+                              color: accentText(variantColor(deal.tier)),
                               fontWeight: 600,
                               border: `1px solid ${variantColor(deal.tier)}40`,
                               background: `${variantColor(deal.tier)}15`,
@@ -1858,7 +1910,17 @@ function SniperMomentsBody() {
                           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                             {/* Cross-market floor data */}
                             {depthFloorError ? (
+                              depthRecentAsk != null ? (
+                                <div className="flex flex-wrap items-center gap-3" style={{ padding: "6px 0" }}>
+                                  <div className="rpc-chip" title="The lowest ask RPC has re-confirmed for this edition in the last 7 days. The marketplace's live floor could not be read, so check the listing before buying." style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                    <span style={{ fontSize: 9, color: "var(--rpc-text-muted)", letterSpacing: "0.08em" }}>RECENT ASK</span>
+                                    <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)", color: "var(--rpc-text-primary)", fontWeight: 600 }}>${fmt(depthRecentAsk)}</span>
+                                    <span style={{ fontSize: 9, color: "var(--rpc-text-muted)" }}>seen within 7 days · live floor unavailable</span>
+                                  </div>
+                                </div>
+                              ) : (
                               <div className="rpc-mono" style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-muted)", padding: "4px 0" }}>{depthFloorError}</div>
+                              )
                             ) : depthFloor ? (
                               <div className="flex flex-wrap items-center gap-3" style={{ padding: "6px 0" }}>
                                 <div className="rpc-chip" style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -1988,7 +2050,7 @@ function SniperMomentsBody() {
 
       {/* Task 7: Listing Suggestions slide-in panel */}
       {showSuggestions && (
-        <div role="dialog" aria-label="Listing suggestions" style={{
+        <div ref={suggestionsRef} role="dialog" aria-modal="true" aria-label="Listing suggestions" style={{
           position: "fixed", top: 0, right: 0, bottom: 0, width: "min(340px, 100vw)",
           background: "var(--rpc-bg, #080808)", borderLeft: "1px solid var(--rpc-border)",
           zIndex: 200, overflowY: "auto", padding: 20,
