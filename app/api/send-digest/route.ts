@@ -3,7 +3,8 @@
 // DISABLED BY DEFAULT: sends nothing unless SEND_DIGEST_ENABLED === "1" and the
 // CAN-SPAM postal address (RPC_SENDER_POSTAL_ADDRESS) is set.
 // Pulls verified subscribers with digest_weekly=true, composes a personalized
-// HTML email (portfolio summary + market pulse + top deals), and sends via Resend.
+// HTML + plain-text email (portfolio summary + market pulse + top deals), and sends
+// via Resend with a one-click List-Unsubscribe header.
 
 import { NextRequest, NextResponse } from "next/server"
 import { normalizeAddress } from "@/lib/address"
@@ -20,6 +21,25 @@ function fmtUsd(n: number | null | undefined): string {
   if (Math.abs(n) >= 1000) return "$" + Math.round(n).toLocaleString()
   return "$" + Number(n).toFixed(2)
 }
+
+// Database text (player / set / collection names) goes into HTML — escape it.
+function esc(v: unknown): string {
+  return String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] as string)
+}
+
+type PulseRow = { collection_name?: string; sales_24h?: number; volume_24h?: number; top_sale_24h?: number | null }
+
+// 2026-10-24: the pulse block used to print `JSON.stringify(pulse)` into a <pre>
+// — raw JSON in a customer email. Now one line per collection, and ONLY
+// collections that recorded sales: a collection whose feed is frozen (Candy,
+// #58) reads 0 here, and "0 sales" in an email would state a fact nobody
+// measured.
+function pulseRows(pulse: unknown): PulseRow[] {
+  return Array.isArray(pulse) ? (pulse as PulseRow[]).filter((r) => (r?.sales_24h ?? 0) > 0) : []
+}
+
+// Same bound as alerts-send / weekly-digest (Resend p95 ~1.6 s, one 58 s outlier).
+const SEND_TIMEOUT_MS = 10_000
 
 type Subscriber = {
   email: string
@@ -49,7 +69,7 @@ async function readMarket(): Promise<{ market: MarketBlocks; failed: string[] }>
   return { market: { pulse: pulseErr ? null : pulse, deals: dealsErr ? null : deals }, failed }
 }
 
-async function buildEmail(origin: string, sub: Subscriber, market: MarketBlocks): Promise<{ subject: string; html: string } | null> {
+async function buildEmail(origin: string, sub: Subscriber, market: MarketBlocks): Promise<{ subject: string; html: string; text: string; unsubUrl: string | null } | null> {
   let portfolio: any = null
   if (sub.wallet_address) {
     // ⛔ 2026-09-19 — was `.toLowerCase()`. A folded base58 wallet returns a
@@ -80,12 +100,16 @@ async function buildEmail(origin: string, sub: Subscriber, market: MarketBlocks)
   const dealsBlock = dealRows.length
     ? `<h3 style="margin-top:24px">Top Deals This Week</h3>
        <ul>${dealRows.slice(0, 5).map((d: any) =>
-         `<li>${d.player_name ?? d.set_name ?? "Listing"} — ${fmtUsd(d.ask_price)} (${d.discount ?? "?"}% below FMV)</li>`
+         `<li>${esc(d.player_name ?? d.set_name ?? "Listing")} — ${fmtUsd(d.ask_price)}${d.discount != null ? ` (${esc(d.discount)}% below FMV)` : ""}</li>`
        ).join("")}</ul>`
     : ""
 
-  const pulseBlock = pulse
-    ? `<h3 style="margin-top:24px">Market Pulse</h3><pre style="background:#f5f5f5;padding:10px;font-size:12px;overflow:auto">${JSON.stringify(pulse, null, 2).slice(0, 1500)}</pre>`
+  const pulse24h = pulseRows(pulse)
+  const pulseBlock = pulse24h.length
+    ? `<h3 style="margin-top:24px">Market Pulse — last 24 hours</h3>
+       <table role="presentation" style="border-collapse:collapse;font-size:13px">${pulse24h.map((r) =>
+         `<tr><td style="padding:3px 12px 3px 0">${esc(r.collection_name)}</td><td style="padding:3px 12px 3px 0">${Number(r.sales_24h).toLocaleString()} sales</td><td style="padding:3px 0">${fmtUsd(r.volume_24h)} volume</td></tr>`
+       ).join("")}</table>`
     : ""
 
   const html = `
@@ -102,7 +126,23 @@ async function buildEmail(origin: string, sub: Subscriber, market: MarketBlocks)
     </div>
   `
 
-  return { subject: "RPC Weekly Digest", html }
+  // Plain-text part (2026-10-24): HTML-only mail scores worse with spam filters
+  // and is unreadable in text-only clients.
+  const lines: string[] = ["Rip Packs City — Weekly Digest", ""]
+  if (portfolio && portfolio.collections?.length) {
+    lines.push("YOUR PORTFOLIO", `Total FMV: ${fmtUsd(portfolio.total_fmv)} across ${portfolio.collection_count ?? portfolio.collections.length} collections (${portfolio.total_moments ?? 0} moments)`)
+    if (portfolio.total_pnl != null) lines.push(`P&L: ${portfolio.total_pnl >= 0 ? "+" : ""}${fmtUsd(portfolio.total_pnl)}`)
+    lines.push("")
+  }
+  if (dealRows.length) {
+    lines.push("TOP DEALS THIS WEEK", ...dealRows.slice(0, 5).map((d: any) => `- ${d.player_name ?? d.set_name ?? "Listing"} — ${fmtUsd(d.ask_price)}${d.discount != null ? ` (${d.discount}% below FMV)` : ""}`), "")
+  }
+  if (pulse24h.length) {
+    lines.push("MARKET PULSE — LAST 24 HOURS", ...pulse24h.map((r) => `- ${r.collection_name}: ${Number(r.sales_24h).toLocaleString()} sales, ${fmtUsd(r.volume_24h)} volume`), "")
+  }
+  lines.push("--", `Manage preferences: ${origin}/profile`, `Unsubscribe: ${unsubUrl}`, commercialSenderLine())
+
+  return { subject: "RPC Weekly Digest", html, text: lines.join("\n"), unsubUrl: sub.verification_token ? unsubUrl : null }
 }
 
 export async function GET(req: NextRequest) {
@@ -162,9 +202,17 @@ export async function GET(req: NextRequest) {
         body: JSON.stringify({
           from: FROM,
           to: sub.email,
+          reply_to: "rippackscity@gmail.com",
           subject: composed.subject,
           html: composed.html,
+          text: composed.text,
+          // RFC 8058 one-click unsubscribe (Gmail / Yahoo bulk-sender rule);
+          // /api/subscribe/unsubscribe accepts the POST.
+          ...(composed.unsubUrl
+            ? { headers: { "List-Unsubscribe": `<${composed.unsubUrl}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" } }
+            : {}),
         }),
+        signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
       })
       if (r.ok) sent += 1
       else errors += 1

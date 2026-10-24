@@ -234,4 +234,68 @@ describe("GET /api/send-digest — a failed read never ships as an emptier email
     expect(await res.json()).toMatchObject({ subscribers: 1, sent: 0, errors: 1 })
     expect(fetchMock).not.toHaveBeenCalled()
   })
+
+  // 2026-10-24: text part, one-click unsubscribe, readable pulse, escaped names.
+  it("sends a plain-text part, a reply-to and an RFC 8058 one-click unsubscribe header", async () => {
+    seedOneSubscriber()
+    process.env.RESEND_API_KEY = "re_test"
+    const fetchMock = vi.fn(async () => ({ ok: true }) as any)
+    vi.stubGlobal("fetch", fetchMock)
+    await GET(req(`Bearer ${TOKEN}`))
+    const body = JSON.parse(String((fetchMock.mock.calls[0] as any[])[1].body))
+    expect(body.text).toContain("Weekly Digest")
+    expect(body.text).toContain("Luka")
+    expect(body.text).toContain("PO Box 123, Portland, OR 97201")
+    expect(body.text).toContain("/api/subscribe/unsubscribe?token=vt1")
+    expect(body.text).not.toMatch(/<[a-z]/i)
+    expect(body.reply_to).toBe("rippackscity@gmail.com")
+    expect(body.headers["List-Unsubscribe"]).toMatch(/^<https?:\/\/[^>]+\/api\/subscribe\/unsubscribe\?token=vt1>$/)
+    expect(body.headers["List-Unsubscribe-Post"]).toBe("List-Unsubscribe=One-Click")
+  })
+
+  it("renders the market pulse as lines, never raw JSON, and omits collections with no recorded sales", async () => {
+    seedOneSubscriber()
+    state.rpc.get_market_pulse_all = {
+      data: [
+        { collection_name: "NBA Top Shot", sales_24h: 2699, volume_24h: 8865.78 },
+        { collection_name: "Candy MLB", sales_24h: 0, volume_24h: 0 },
+      ],
+      error: null,
+    }
+    process.env.RESEND_API_KEY = "re_test"
+    const fetchMock = vi.fn(async () => ({ ok: true }) as any)
+    vi.stubGlobal("fetch", fetchMock)
+    await GET(req(`Bearer ${TOKEN}`))
+    const body = JSON.parse(String((fetchMock.mock.calls[0] as any[])[1].body))
+    expect(body.html).toContain("NBA Top Shot")
+    expect(body.html).toContain("2,699 sales")
+    expect(body.html).not.toContain("<pre")
+    expect(body.html).not.toContain('"sales_24h"')
+    expect(body.html).not.toContain("Candy MLB") // a frozen feed must not print as "0 sales"
+    expect(body.text).toContain("NBA Top Shot: 2,699 sales")
+  })
+
+  it("escapes database text before it goes into the HTML", async () => {
+    seedOneSubscriber()
+    state.rpc.get_cross_collection_deals = { data: { deals: [{ player_name: "<img src=x onerror=alert(1)>", ask_price: 8, discount: 40 }] }, error: null }
+    process.env.RESEND_API_KEY = "re_test"
+    const fetchMock = vi.fn(async () => ({ ok: true }) as any)
+    vi.stubGlobal("fetch", fetchMock)
+    await GET(req(`Bearer ${TOKEN}`))
+    const body = JSON.parse(String((fetchMock.mock.calls[0] as any[])[1].body))
+    expect(body.html).not.toContain("<img src=x")
+    expect(body.html).toContain("&lt;img src=x")
+  })
+
+  it("omits the one-click header when the subscriber has no token (no URL to post to)", async () => {
+    seedOneSubscriber()
+    state.result = { data: [{ email: "a@b.com", wallet_address: "0xAbC", verification_token: null }], error: null }
+    process.env.RESEND_API_KEY = "re_test"
+    const fetchMock = vi.fn(async () => ({ ok: true }) as any)
+    vi.stubGlobal("fetch", fetchMock)
+    await GET(req(`Bearer ${TOKEN}`))
+    const body = JSON.parse(String((fetchMock.mock.calls[0] as any[])[1].body))
+    expect(body.headers).toBeUndefined()
+    expect(body.text).toContain("Unsubscribe:")
+  })
 })

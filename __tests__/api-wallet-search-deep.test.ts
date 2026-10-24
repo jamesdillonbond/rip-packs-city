@@ -373,7 +373,10 @@ describe("POST /api/wallet-search — pre-walk dispatch", () => {
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.rows).toHaveLength(0)
-    expect(body.error).toContain("Flow EVM wallets are not yet supported")
+    expect(body.error).toContain("Flow EVM wallets aren't supported")
+    // Tells the user what works instead, and promises nothing unscheduled.
+    expect(body.error).toMatch(/Flow address|username/)
+    expect(body.error).not.toMatch(/coming soon/i)
     // returned before any owned-ids walk or DB read
     expect(spy.rpcCalls).toHaveLength(0)
   })

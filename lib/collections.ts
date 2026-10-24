@@ -81,6 +81,13 @@ export interface Collection {
   badge?: "BETA" | "ALPHA"
   /** Per-collection news feed — rendered on overview. Keep 3-6 items. */
   news?: Array<{ title: string; date: string; summary: string; url: string }>
+  /**
+   * Has /[collection]/team/[slug] checklist pages — i.e. `league_collections`
+   * maps a league to it (NBA + WNBA → Top Shot, NFL → All Day, LALIGA →
+   * Golazos, MLB → Candy MLB; checked 2026-10-24). Drives the Overview's "Team
+   * checklists" link. A new league mapping needs this flag in the same change.
+   */
+  teamPages?: true
 }
 
 export const COLLECTIONS: Collection[] = [
@@ -96,6 +103,7 @@ export const COLLECTIONS: Collection[] = [
     accentSoft: "#FF4D40",
     icon: "\u{1F3C0}",
     pages: ["overview", "collection", "market", "packs", "pack-sniper", "sniper", "play", "sets", "challenges", "hot-floors", "analytics"],
+    teamPages: true,
     published: true,
     graphqlUrl: "https://public-api.nbatopshot.com/graphql",
     flowContractName: "TopShot",
@@ -125,6 +133,7 @@ export const COLLECTIONS: Collection[] = [
     accentSoft: "#6FAEF0",
     icon: "\u{1F3C8}",
     pages: ["overview", "collection", "market", "packs", "pack-sniper", "sniper", "sets", "analytics"],
+    teamPages: true,
     published: true,
     graphqlUrl: "https://public-api.nflallday.com/graphql",
     flowContractName: "AllDay",
@@ -187,6 +196,7 @@ export const COLLECTIONS: Collection[] = [
     // playbook) now populates real EV — 16 priced dists in mv_pack_ev_latest.
     // (Removed 2026-05-19 when the old compute-laliga-pack-ev cron had 0 rows.)
     pages: ["overview", "collection", "market", "packs", "sniper", "sets", "analytics"],
+    teamPages: true,
     published: true,
     graphqlUrl: "https://public-api.laligagolazos.com/graphql",
     flowContractName: "Golazos",
@@ -424,6 +434,7 @@ export const COLLECTIONS: Collection[] = [
     // sold (retired by migration 20260926020528); the tab leads with the floor
     // over asks CONFIRMED in the last 12 h and lists unconfirmed ones last.
     pages: ["overview", "market", "collection", "packs", "sets", "analytics"],
+    teamPages: true,
     published: true,
     supabaseCollectionId: "209ade70-32c5-4470-bc7c-4793d660f713",
     pitch: "Wallet analytics, FMV, and pack/edition intelligence for Candy MLB on Solana — Metaplex Core, secondary on Magic Eden and OpenSea.",

@@ -234,4 +234,21 @@ describe("weekly-digest — dry-run legs", () => {
     expect(body.ok).toBe(false)
     expect(body.dry).toBe(true)
   })
+
+  // 2026-10-24: the weekly digest carries a plain-text part and RFC 8058 headers.
+  it("sends a plain-text part, a reply-to and a one-click unsubscribe header", async () => {
+    h.cfg.movers = [mover()]
+    h.cfg.emailSubQueue = [withToken]
+    h.cfg.alertSentQueue = [null]
+    await call(await load())
+    await h.afterFns[0]()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const body = JSON.parse(String((fetchMock.mock.calls[0] as any[])[1].body))
+    expect(body.text).toContain("Estimated value:")
+    expect(body.text).toContain("/api/subscribe/unsubscribe?token=")
+    expect(body.text).not.toMatch(/<[a-z]/i)
+    expect(body.reply_to).toBe("rippackscity@gmail.com")
+    expect(body.headers["List-Unsubscribe"]).toMatch(/^<https?:\/\/[^>]+\/api\/subscribe\/unsubscribe\?token=[^>]+>$/)
+    expect(body.headers["List-Unsubscribe-Post"]).toBe("List-Unsubscribe=One-Click")
+  })
 })

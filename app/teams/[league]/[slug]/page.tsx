@@ -188,6 +188,38 @@ function CollectionPanel({ panel, hub, extras }: { panel: HubPanel; hub: Franchi
             <StatCell label="30d Sales" value={fmtCount(panel.detail.sales_30d)} />
             <StatCell label="30d Volume" value={fmtUsd(num(panel.detail.volume_30d_usd))} />
           </div>
+          {/* 2026-10-24 (webz_80: "I can't see the checklist from the team hub"):
+              the ONLY route to the checklist was a link at the very bottom of the
+              panel, under the paginated editions grid and the sales list, and the
+              word "checklist" appeared nowhere on the page. It now leads the panel. */}
+          {teamHref && (
+            <Link
+              href={teamHref}
+              className="rpc-mono"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 10,
+                marginTop: 12,
+                minHeight: 44,
+                padding: "10px 14px",
+                border: "1px solid var(--rpc-red-border)",
+                background: "var(--rpc-red-bg)",
+                borderRadius: "var(--radius-sm)",
+                color: "var(--rpc-red-text)",
+                fontSize: 12,
+                letterSpacing: "0.04em",
+                textDecoration: "none",
+              }}
+            >
+              <span>
+                <strong style={{ letterSpacing: "0.08em", textTransform: "uppercase" }}>{hub.team_name} checklist</strong>
+                <span style={{ color: "var(--rpc-text-secondary)" }}> · every edition, what you own, cost to complete</span>
+              </span>
+              <span aria-hidden="true">→</span>
+            </Link>
+          )}
           {/* Top editions — three-state: unavailable / measured absence (omitted) / grid. */}
           {extras && (extras.topEditions.rows.length > 0 || !extras.topEditions.ok) && (
             <div style={{ marginTop: 16 }}>
@@ -220,7 +252,7 @@ function CollectionPanel({ panel, hub, extras }: { panel: HubPanel; hub: Franchi
               className="rpc-mono"
               style={{ display: "inline-block", marginTop: 14, fontSize: 12, color: "var(--rpc-red-text)", letterSpacing: "0.04em", textDecoration: "none" }}
             >
-              Open {hub.team_name} on {name} →
+              Open the full {hub.team_name} checklist on {name} →
             </Link>
           )}
         </>

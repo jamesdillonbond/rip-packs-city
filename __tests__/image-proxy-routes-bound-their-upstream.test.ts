@@ -85,9 +85,11 @@ const UNBOUNDED = ROWS.filter((r) => !r.bound)
  * 25 → 24 on 2026-10-10: `wallet-search` bounded its Golazos-trigger fetch
  * (`5f6e80084`, AbortSignal.timeout(10_000)) without lowering this; CI was red
  * on three tips (3919afa9a, 0c9fa9236, 6fa0f9e9c) until the ratchet caught up.
+ * 24 → 23 on 2026-10-24: `send-digest` bounded its Resend call
+ * (AbortSignal.timeout(10_000), the alerts-send / weekly-digest bound).
  * Lower this when you convert one. NEVER raise it.
  */
-const BUDGET = 24
+const BUDGET = 23
 
 describe("image proxies bound their upstream, and the wider class only shrinks", () => {
   it("is not vacuous — the walk found API routes, and found some that ARE bound", () => {

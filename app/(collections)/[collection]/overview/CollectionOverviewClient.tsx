@@ -788,6 +788,46 @@ export default function CollectionOverviewClient({
         </section>
       )}
 
+      {/* ── Team checklists cross-link (team-sport collections) ──
+          2026-10-24, webz_80 on this page: "I can't easily find the team set
+          pages." No tab leads to a team, and the header's My Teams is signed-in
+          only. /teams lists every franchise; each hub now opens with its
+          checklist link. */}
+      {getCollection(collection)?.teamPages && (
+        <section className="rpc-card" style={{ padding: "16px 20px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 2, flex: 1, minWidth: 240 }}>
+              <span className="rpc-label" style={{ fontFamily: "var(--font-display)" }}>
+                Team checklists
+              </span>
+              <span className="rpc-mono" style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-muted)" }}>
+                Every edition a franchise has minted, what you own, and the cost to complete it
+              </span>
+            </div>
+            <Link
+              href="/teams"
+              className="rpc-mono"
+              style={{
+                fontSize: "var(--text-xs)",
+                color: "var(--rpc-red-text)",
+                textDecoration: "none",
+                padding: "8px 14px",
+                minHeight: 36,
+                display: "inline-flex",
+                alignItems: "center",
+                border: "1px solid var(--rpc-red-border)",
+                background: "var(--rpc-red-bg)",
+                borderRadius: "var(--radius-sm)",
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+              }}
+            >
+              Browse teams →
+            </Link>
+          </div>
+        </section>
+      )}
+
       {/* ── Fast Break cross-link (Top Shot only) ── */}
       {process.env.NEXT_PUBLIC_SHOW_FAST_BREAK === "1" && collection === "nba-top-shot" && (
         <section

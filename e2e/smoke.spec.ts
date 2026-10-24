@@ -169,7 +169,10 @@ const PAGES: PageCheck[] = [
   { path: "/blog/permanent-moments-ipfs", name: "blog · permanent moments" },
   { path: "/blog/pinnacle-star-wars-day-2026", name: "blog · pinnacle star wars day" },
   { path: "/blog/premium-chance-hit-vs-chance-hit", name: "blog · premium chance hit" },
-  { path: "/nba/fast-break", name: "fast break optimizer" },
+  // /nba/fast-break REMOVED 2026-10-24: parked since launch — its layout.tsx
+  // redirect("/")s every visitor, so this entry was smoke-testing the HOME page
+  // under the name "fast break optimizer" (and the sitemap dropped it 09-24 for
+  // the same reason). Re-add it in the commit that removes that redirect.
   // 2026-09-25: the team-hub directory — in the sitemap from the same commit.
   { path: "/teams", name: "team hubs directory" },
   // 2026-10-22: a player hub (not in the sitemap — reached from search and the

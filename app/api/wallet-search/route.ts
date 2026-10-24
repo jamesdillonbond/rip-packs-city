@@ -1268,8 +1268,8 @@ export async function POST(req: NextRequest) {
 
     // Soft-recognize Flow EVM addresses (40-hex 0x...) so Beezie-style EVM
     // wallets don't surface as "Username not found" errors. The structure is
-    // valid, just not yet supported — Phase 1 of Flow EVM scaffolding ships
-    // the detection branch only. Status 200 mirrors the existing
+    // valid, just not supported (2026-10-24: the message no longer promises
+    // EVM collections — none is scheduled; it tells the user what DOES work). Status 200 mirrors the existing
     // rows:[] + error string contract so the UI's error renderer fires
     // unchanged without a 4xx redirect.
     if (detectAddressChain(input) === "evm") {
@@ -1277,7 +1277,7 @@ export async function POST(req: NextRequest) {
         {
           rows: [],
           summary: { totalMoments: 0, returnedMoments: 0, remainingMoments: 0 },
-          error: "Flow EVM wallets are not yet supported in RPC. Beezie and other Flow EVM collections are coming soon.",
+          error: "Flow EVM wallets aren't supported on RPC. Paste your Dapper account's Flow address (0x followed by 16 characters) or your username instead.",
         } satisfies WalletSearchResponse,
         { status: 200 }
       )

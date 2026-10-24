@@ -88,7 +88,7 @@ async function alreadySent(ownerKey: string, bucket: string): Promise<boolean | 
   return alreadySentEmail({ ownerKey, alertKind: "weekly_digest", subjectKey: SUBJECT_KEY, bucket })
 }
 
-function buildEmail(m: Mover, unsubscribeUrl: string): { subject: string; html: string } {
+function buildEmail(m: Mover, unsubscribeUrl: string): { subject: string; html: string; text: string } {
   const up = (m.delta_usd ?? 0) >= 0;
   const arrow = up ? "▲" : "▼";
   const color = up ? "#16A34A" : "#DC2626";
@@ -120,7 +120,22 @@ function buildEmail(m: Mover, unsubscribeUrl: string): { subject: string; html: 
       ${commercialSenderLine()}
     </p>
   </div></body></html>`;
-  return { subject, html };
+  // Plain-text part (2026-10-24): HTML-only mail scores worse with spam filters
+  // and is unreadable in text-only clients. Same facts, same order.
+  const text = [
+    "Rip Packs City — your weekly portfolio",
+    "",
+    `Estimated value: ${usd(m.latest_fmv)}`,
+    `${up ? "Up" : "Down"} ${usd(Math.abs(m.delta_usd ?? 0))} (${pctLabel(m.delta_pct)}) this week`,
+    `${m.moment_count ?? 0} moments tracked`,
+    "",
+    `Open your dashboard: ${dashUrl}`,
+    "",
+    "Estimated from indexed sales — not financial advice.",
+    `Unsubscribe from weekly emails: ${unsubscribeUrl}`,
+    commercialSenderLine(),
+  ].join("\n");
+  return { subject, html, text };
 }
 
 // Per-request cap on the outbound transactional call below.
@@ -144,13 +159,23 @@ function buildEmail(m: Mover, unsubscribeUrl: string): { subject: string; html: 
 // costing every remaining recipient their email.
 const SEND_TIMEOUT_MS = 10_000;
 
-async function sendEmail(to: string, subject: string, html: string): Promise<void> {
+async function sendEmail(to: string, subject: string, html: string, text: string, unsubscribeUrl: string): Promise<void> {
   const key = process.env.RESEND_API_KEY;
   if (!key) throw new Error("RESEND_API_KEY missing");
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ from: FROM, to, subject, html }),
+    body: JSON.stringify({
+      from: FROM,
+      to,
+      reply_to: "rippackscity@gmail.com",
+      subject,
+      html,
+      text,
+      // RFC 8058 one-click unsubscribe (Gmail / Yahoo bulk-sender rule);
+      // /api/subscribe/unsubscribe accepts the POST.
+      headers: { "List-Unsubscribe": `<${unsubscribeUrl}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" },
+    }),
     signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
   });
   if (!res.ok) throw new Error(`resend ${res.status}: ${(await res.text()).slice(0, 200)}`);
@@ -291,10 +316,10 @@ async function run(req: NextRequest) {
         if (sentBefore) { skipped++; continue; }
 
         const unsubscribeUrl = `${ORIGIN}/api/subscribe/unsubscribe?token=${tok.token}`;
-        const { subject, html } = buildEmail(m, unsubscribeUrl);
+        const { subject, html, text } = buildEmail(m, unsubscribeUrl);
 
         try {
-          await sendEmail(email, subject, html);
+          await sendEmail(email, subject, html, text, unsubscribeUrl);
         } catch (e) {
           // Transient send failure: count it, write NO alert_deliveries row, so a
           // later run this week retries the recipient.
