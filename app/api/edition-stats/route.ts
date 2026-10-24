@@ -49,7 +49,7 @@ export async function GET(req: NextRequest) {
     // NOTE: must be query_sql (RETURNS jsonb rows), NOT execute_sql (RETURNS void).
     // With execute_sql `patterns` was always null, so this endpoint always returned
     // empty analysis — the whole "best time to buy" feature was silently dead.
-    const { data: patterns } = await boundedRead(supabaseAdmin.rpc("query_sql", {
+    const { data: patterns, error: patternsErr } = await boundedRead(supabaseAdmin.rpc("query_sql", {
       query: `
         SELECT
           EXTRACT(dow FROM sold_at)::int AS dow,
@@ -64,6 +64,9 @@ export async function GET(req: NextRequest) {
         ORDER BY avg_price ASC
       `,
     }), "api/edition-stats/query_sql")
+    // A failed read is not "no buying pattern": until 2026-10-23 the error was
+    // dropped and an empty analysis was served under a 1-hour public cache.
+    if (patternsErr) return apiErrorResponse(patternsErr, "api/edition-stats/query_sql")
 
     const rows = (patterns as { dow: number; hour: number; avg_price: number; sale_count: number }[]) ?? []
 

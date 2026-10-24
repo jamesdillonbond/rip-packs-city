@@ -258,6 +258,54 @@ describe("GET /api/sniper-feed — a failed source is never rendered as a quiet 
     expect(body.degraded).toBe(true)
   })
 
+  // 2026-10-23: fetchFmvBatch dropped both read errors. An empty FMV map drops
+  // every Top Shot listing (`if (!fmvRow) continue`), so the leg emptied while
+  // the envelope said `degraded: false`.
+  const curryListing = () => ({
+    data: [{
+      listing_id: "l1", flow_id: "f1", set_id: 1, play_id: 2, serial_number: 3,
+      circulation_count: 100, price_usd: 10, player_name: "Stephen Curry",
+      set_name: "Base Set", moment_tier: "COMMON", series_number: 0,
+      is_locked: false, listed_at: null, ingested_at: null,
+    }],
+    error: null,
+  })
+  const curryEditionRpc = (fmvError: boolean) => async (name: string) => {
+    if (name === "get_editions_for_sniper") {
+      return { data: [{ name: "Stephen Curry \u2014 Base Set", series: 0, external_id: "1:2" }], error: null }
+    }
+    if (name === "get_editions_latest_fmv_wide") {
+      return fmvError ? { data: null, error: { message: "statement timeout" } } : { data: [], error: null }
+    }
+    return { data: [], error: null }
+  }
+
+  it("a failed Top Shot editions read under the FMV lookup is named, not a quiet empty leg", async () => {
+    st.tsListings = curryListing()
+    st.editions = { data: null as any, error: { message: "canceling statement due to statement timeout" } }
+    rpc.mockImplementation(curryEditionRpc(false))
+    const body = await (await GET(get(TSQS))).json()
+    expect(body.sourcesFailed).toContain("topshot-fmv")
+    expect(body.degraded).toBe(true)
+  })
+
+  it("a failed Top Shot FMV RPC is named, not a quiet empty leg", async () => {
+    st.tsListings = curryListing()
+    st.editions = { data: [{ id: "ed-1", external_id: "1:2", set_id_onchain: 1, play_id_onchain: 2, thumbnail_url: null }], error: null }
+    rpc.mockImplementation(curryEditionRpc(true))
+    const body = await (await GET(get(TSQS))).json()
+    expect(body.sourcesFailed).toContain("topshot-fmv")
+    expect(body.degraded).toBe(true)
+  })
+
+  it("control: the same listing with healthy reads and no FMV row is NOT degraded", async () => {
+    st.tsListings = curryListing()
+    st.editions = { data: [{ id: "ed-1", external_id: "1:2", set_id_onchain: 1, play_id_onchain: 2, thumbnail_url: null }], error: null }
+    rpc.mockImplementation(curryEditionRpc(false))
+    const body = await (await GET(get(TSQS))).json()
+    expect(body.sourcesFailed ?? []).not.toContain("topshot-fmv")
+  })
+
   it("a failed get_topshot_sniper_deals augment is named", async () => {
     rpc.mockImplementation(async (name: string) =>
       name === "get_topshot_sniper_deals" ? { data: null, error: { message: "boom" } } : { data: [], error: null })

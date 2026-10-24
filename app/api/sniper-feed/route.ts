@@ -995,10 +995,15 @@ async function fetchFmvBatch(
 ): Promise<Map<string, FmvRow>> {
   if (!integerKeys.length) return new Map();
 
-  const { data: editionRows } = await (supabase as any)
+  // 2026-10-23: both reads below THROW on error. They used to drop it, and an
+  // empty map drops every Top Shot listing (`if (!fmvRow) continue`) — so a
+  // failed read emptied the leg while the feed reported `degraded: false`.
+  // The caller notes "topshot-fmv" on the throw.
+  const { data: editionRows, error: editionsErr } = await (supabase as any)
     .from("editions")
     .select("id, external_id, set_id_onchain, play_id_onchain, thumbnail_url")
     .in("external_id", integerKeys);
+  if (editionsErr) throw new Error(`editions: ${editionsErr.message}`);
 
   if (!editionRows?.length) {
     console.log(`[sniper-feed] Supabase editions: 0 hits for ${integerKeys.length} integer keys`);
@@ -1040,8 +1045,9 @@ async function fetchFmvBatch(
   // 1000 rows too, and one row per id must never sit exactly on the cap.
   const FMV_CHUNK = 500;
   for (let i = 0; i < fmvEditionIds.length; i += FMV_CHUNK) {
-    const { data } = await (supabase as any)
+    const { data, error } = await (supabase as any)
       .rpc("get_editions_latest_fmv_wide", { p_edition_ids: fmvEditionIds.slice(i, i + FMV_CHUNK) });
+    if (error) throw new Error(`get_editions_latest_fmv_wide: ${error.message}`);
     if (data?.length) fmvRows.push(...data);
   }
 
@@ -2163,7 +2169,11 @@ async function computeSniperFeed(opts: {
 
   // 4. Fire all Supabase lookups in parallel
   const [fmvMap, badgeRead, jerseyMap, retiredIds, teamOptions, signedRead] = await Promise.all([
-    fetchFmvBatch(supabase, Array.from(tsEditionKeys)).catch(() => new Map<string, any>()),
+    fetchFmvBatch(supabase, Array.from(tsEditionKeys)).catch((e) => {
+      console.error("[sniper-feed] topshot fmv read failed:", e instanceof Error ? e.message : String(e));
+      sink.note("topshot-fmv");
+      return new Map<string, any>();
+    }),
     fetchBadgesByEditionKey(supabase).catch(() => ({
       map: new Map<string, Array<{ id: string; title: string }>>(),
       complete: false,
@@ -2206,6 +2216,11 @@ async function computeSniperFeed(opts: {
   // board. Checking "Badges only" therefore dropped the single ts_listings row
   // and passed ~200 unfiltered, all-flagged-unbadged RPC rows straight through
   // - a silent no-op returning exclusively un-badged moments.
+  //
+  // ⚠ CORRECTED 2026-10-23: ts_listings is LIVE again — 25,088 rows, a rolling
+  // 24 h window (ingested_at 10-23 04:33Z → 10-24 04:31Z). So the augment no
+  // longer fires on every request (only when the pool or a team pick is sparse),
+  // and the ts_listings leg's own FMV/badge paths below carry real rows.
   //
   // badge_editions.external_id === the RPC's moment_id, so the same map used
   // by the ts_listings leg applies here. Verified live: 200/200 rows join and

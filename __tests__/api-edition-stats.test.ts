@@ -89,4 +89,15 @@ describe("GET /api/edition-stats", () => {
     // Pin the fix: patterns must come from query_sql (jsonb rows), not execute_sql (void).
     expect(state.lastRpc).toBe("query_sql")
   })
+
+  // 2026-10-23: the pattern read's error was dropped, so a failed query shipped
+  // an EMPTY analysis — under a 1-hour public cache.
+  it("a failed pattern read is an error, never an empty (cacheable) analysis", async () => {
+    state.edition = { data: { id: "uuid-1" } }
+    state.patterns = { data: null, error: { message: "canceling statement due to statement timeout" } }
+    const res = await GET(req("https://t/api/edition-stats?editionKey=73:2785"))
+    expect(res.status).toBeGreaterThanOrEqual(500)
+    expect(res.headers.get("Cache-Control") ?? "").not.toContain("max-age=3600")
+    expect(await res.json()).not.toHaveProperty("bestTimeToBuy")
+  })
 })
