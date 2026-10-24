@@ -32,7 +32,7 @@
 
 ## #193 — Pinnacle HIGH → last-5 median — ✅ SHIPPED 7:00 PM PT (`20261024015511`)
 
-**The gate landed at 6:53 PM PT: HIGH n 500** (published 63.2 / WAPE 31.6 vs naive-5 70.0 / 22.4; MEDIUM 68.8 / 23.9 vs 69.2 / 23.5 — level). Applied from the stashed pin (pin == live by md5 before and after), guard row moved, planted defect proved; `pinnacle_fmv_recalc_render_all()` run by hand at 6:56 PM as the writer: 84 of 262 HIGH renders re-priced (median ratio 1.106, p10 0.70 / p90 2.00, 0 labels), $3,230.85 → $3,275.00 exactly as pre-computed, 0 catalog rows disagree with the function. Weekly exit from ~10-30 (HIGH within ±25 % ≥ 68 %, MEDIUM holding); falsifier → revert to `20261009205054`. Watch: jobid 200's 9:37 PM PT backstop tick `succeeded` ~11 s. Earlier text follows.
+**The gate landed at 6:53 PM PT: HIGH n 500** (published 63.2 / WAPE 31.6 vs naive-5 70.0 / 22.4; MEDIUM 68.8 / 23.9 vs 69.2 / 23.5 — level). Applied from the stashed pin (pin == live by md5 before and after), guard row moved, planted defect proved; `pinnacle_fmv_recalc_render_all()` run by hand at 6:56 PM as the writer: 84 of 262 HIGH renders re-priced (median ratio 1.106, p10 0.70 / p90 2.00, 0 labels), $3,230.85 → $3,275.00 exactly as pre-computed, 0 catalog rows disagree with the function. Weekly exit from ~10-30 (HIGH within ±25 % ≥ 68 %, MEDIUM holding); falsifier → revert to `20261009205054`. **Watch met 9:37 PM PT:** backstop tick `succeeded` 14.9 s (15.1 s before — no added cost); minter/linker green on four hourly cycles; 0 failed pg_cron runs in 6 h. Earlier text follows.
 
 ### (superseded) prepared; NOT applied before 6:53 PM
 
