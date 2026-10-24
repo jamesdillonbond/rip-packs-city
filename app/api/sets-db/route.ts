@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { classifySetTier } from "@/lib/set-completion-tier"
 import { safeApiError, statusForSafeError } from "@/lib/api-error"
+import { ownLookup } from "@/lib/safe-lookup"
 
 // 🚨 `disney-pinnacle` was REMOVED 2026-09-20 and must not come back. This route
 // joins `editions` + `sets` on `collection_id`, and Pinnacle has **0 rows in
@@ -66,7 +67,7 @@ export async function GET(req: NextRequest) {
   const collectionSlug = req.nextUrl.searchParams.get("collection") ?? ""
   if (!wallet) return NextResponse.json({ error: "wallet required" }, { status: 400 })
 
-  const collectionId = COLLECTION_UUID_MAP[collectionSlug]
+  const collectionId = ownLookup(COLLECTION_UUID_MAP, collectionSlug)
   if (!collectionId) return NextResponse.json({ error: "Unknown collection" }, { status: 400 })
 
   try {

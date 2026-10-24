@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { COLLECTION_UUID_BY_SLUG } from "@/lib/collections"
 import { resolvePlayerName, singleRetryLabel } from "@/lib/concierge/player-identity"
+import { ownLookup } from "@/lib/safe-lookup"
 
 // Disney Pinnacle lives in its own tables (pinnacle_sales, pinnacle_editions,
 // pinnacle_fmv_snapshots). When `collection=disney-pinnacle` is requested,
@@ -51,7 +52,7 @@ export async function GET(req: NextRequest) {
   const comparison = req.nextUrl.searchParams.get("comparison") === "true"
   const player = req.nextUrl.searchParams.get("player")?.trim() || null
 
-  const collectionId = COLLECTION_UUID_MAP[collectionSlug]
+  const collectionId = ownLookup(COLLECTION_UUID_MAP, collectionSlug)
   if (!collectionId) {
     return NextResponse.json({ error: "Unknown collection" }, { status: 400 })
   }

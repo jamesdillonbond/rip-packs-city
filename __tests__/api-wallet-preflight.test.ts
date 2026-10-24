@@ -57,6 +57,12 @@ describe("GET /api/wallet-preflight — input guards", () => {
   it("400s on an unknown collection", async () => {
     expect((await GET(req(`https://t/api/wallet-preflight?address=${ADDR}&collection=nope`))).status).toBe(400)
   })
+
+  it("400s on an Object.prototype key (bare map[key] resolved it to a function)", async () => {
+    for (const key of ["constructor", "toString", "__proto__", "hasOwnProperty"]) {
+      expect((await GET(req(`https://t/api/wallet-preflight?address=${ADDR}&collection=${key.toLowerCase()}`))).status, key).toBe(400)
+    }
+  })
   it("400s on an out-of-range count", async () => {
     expect((await GET(req(good("&count=0")))).status).toBe(400)
     expect((await GET(req(good("&count=5000")))).status).toBe(400)

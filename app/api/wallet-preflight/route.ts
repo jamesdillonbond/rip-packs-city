@@ -36,6 +36,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { WALLET_PREFLIGHT_CADENCE } from "@/lib/chains/flow/cadence/wallet-preflight";
+import { ownLookup } from "@/lib/safe-lookup";
 
 const FLOW_REST = "https://rest-mainnet.onflow.org/v1";
 
@@ -71,7 +72,7 @@ export async function GET(req: NextRequest) {
   }
 
   const collection = (url.searchParams.get("collection") ?? "topshot").toLowerCase();
-  const path = COLLECTION_PATHS[collection];
+  const path = ownLookup(COLLECTION_PATHS, collection);
   if (!path) {
     return NextResponse.json(
       {

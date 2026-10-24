@@ -125,6 +125,14 @@ describe("GET /api/insider-signals — limit + slug handling", () => {
     expect(body.collection).toBe("candy_mlb")
   })
 
+  it("passes an Object.prototype key through as a STRING, never a function", async () => {
+    for (const key of ["constructor", "toString", "__proto__", "hasOwnProperty"]) {
+      await GET(req(`https://t/api/insider-signals?collection=${key}`))
+      expect(typeof state.rpcArgs.p_collection_slug, key).toBe("string")
+      expect(state.rpcArgs.p_collection_slug, key).toBe(key)
+    }
+  })
+
   it("defaults alerts to [] when the RPC returns null data", async () => {
     state.rpc = { data: null, error: null }
     expect((await (await GET(req("https://t/api/insider-signals?collection=nba-top-shot"))).json()).alerts).toEqual([])

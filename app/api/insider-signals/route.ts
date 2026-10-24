@@ -18,6 +18,7 @@ import { supabaseAdmin } from "@/lib/supabase"
 import { getCurrentUser } from "@/lib/auth/supabase-server"
 import { apiErrorResponse } from "@/lib/api-error"
 import { boundedRead } from "@/lib/api/bounded-read"
+import { ownLookup } from "@/lib/safe-lookup"
 
 export const dynamic = "force-dynamic"
 
@@ -40,7 +41,7 @@ export async function GET(req: NextRequest) {
 
   if (collection) {
     // Public, collection-scoped market intelligence — no session required.
-    const dbSlug = KEBAB_TO_DB_SLUG[collection] ?? collection
+    const dbSlug = ownLookup(KEBAB_TO_DB_SLUG, collection) ?? collection
     const { data, error } = await boundedRead((supabaseAdmin as any).rpc(
       "get_insider_signals_top_n",
       { p_collection_slug: dbSlug, p_limit: limit }

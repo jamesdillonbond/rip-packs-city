@@ -29,6 +29,15 @@ describe("GET /api/market-analytics", () => {
     expect((await res.json()).error).toBe("Unknown collection")
   })
 
+  // 2026-10-23: a bare COLLECTION_UUID_MAP[slug] read resolved "constructor" to
+  // Object's constructor (truthy), so a crafted slug skipped this 400.
+  it("400s on an Object.prototype key, never treating it as a collection", async () => {
+    for (const key of ["constructor", "toString", "__proto__", "hasOwnProperty"]) {
+      const res = await GET(req(`https://t/api/market-analytics?collection=${key}`))
+      expect(res.status, key).toBe(400)
+    }
+  })
+
   it("returns a basic-detail payload with empty totals when there are no sales", async () => {
     const res = await GET(req("https://t/api/market-analytics?collection=nba-top-shot&period=30d"))
     expect(res.status).toBe(200)

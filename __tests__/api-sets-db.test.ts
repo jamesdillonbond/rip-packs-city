@@ -38,6 +38,13 @@ describe("GET /api/sets-db", () => {
     expect((await res.json()).error).toBe("Unknown collection")
   })
 
+  it("400s on an Object.prototype key (bare map[key] resolved it to a function)", async () => {
+    for (const key of ["constructor", "toString", "__proto__", "hasOwnProperty"]) {
+      const res = await GET(req(`https://t/api/sets-db?wallet=0xabc&collection=${key}`))
+      expect(res.status, key).toBe(400)
+    }
+  })
+
   it("returns an empty sets payload when the tables are empty", async () => {
     const res = await GET(req("https://t/api/sets-db?wallet=0xABC&collection=nba-top-shot"))
     expect(res.status).toBe(200)
