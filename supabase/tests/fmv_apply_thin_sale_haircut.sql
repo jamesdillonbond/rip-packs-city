@@ -3,13 +3,17 @@
 -- editions where FMV has collapsed onto the ask floor (fmv ~= floor within $0.01,
 -- sales_count_30d <= 2, confidence LOW/ASK_ONLY) — the "an ask masquerading as a
 -- sale-backed price" class. Pinned: the candidate gate (all four exclusions), the
--- liquidity-depth multiplier ladder (0.85/0.75/0.65/0.55), latest-per-edition
+-- liquidity-depth multiplier ladder (0.85/0.75/0.65/0.55 — and, since 2026-10-23, 0.75 for a
+-- Top Shot LOW row whose depth is unknown, because `listing_count` is NULL on every haircut row
+-- and the 0.55 cut backtested worst in both 30-day halves; other collections and ASK_ONLY keep
+-- 0.55), latest-per-edition
 -- selection, the collection scope, the dollars-removed accounting, the
 -- algo_version '..._haircut' stamp, and above all the DRY-RUN contract (computes
 -- the same counts but writes NOTHING — the operator preview).
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260801230600_audit_20260801_snapshot_fmv_apply_thin_sale_haircut.sql);
+-- (supabase/migrations/20261023235545_audit_20261023_fmv_haircut_topshot_low_unknown_depth_is_075_not_055.sql;
+-- previously 20260801230600_audit_20260801_snapshot_fmv_apply_thin_sale_haircut.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts, and the
 -- md5 of pg_get_functiondef was confirmed byte-identical to LIVE prod on 2026-08-01
 -- (67d33fe865c082fc6ca1b74a7a3dac14).
@@ -66,6 +70,8 @@ BEGIN
         WHEN COALESCE(l.sales_count_30d, 0) >= 1 THEN 0.85  -- mild
         WHEN COALESCE(l.listing_count, 0)  >= 5 THEN 0.75  -- multi-seller, no sales
         WHEN COALESCE(l.listing_count, 0)  >= 2 THEN 0.65  -- few sellers, no sales
+        WHEN l.collection_id = '95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid
+         AND l.confidence = 'LOW'                      THEN 0.75  -- Top Shot LOW, depth unknown: 0.75 (measured 2026-10-23, see migration header)
         ELSE 0.55                                            -- single seller / unknown
       END AS haircut
     FROM latest l
@@ -102,6 +108,8 @@ BEGIN
         WHEN COALESCE(fs.sales_count_30d, 0) >= 1 THEN 0.85
         WHEN COALESCE(fs.listing_count, 0)  >= 5 THEN 0.75
         WHEN COALESCE(fs.listing_count, 0)  >= 2 THEN 0.65
+        WHEN fs.collection_id = '95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid
+         AND fs.confidence = 'LOW'                      THEN 0.75  -- Top Shot LOW, depth unknown: 0.75 (measured 2026-10-23, see migration header)
         ELSE 0.55
       END, 2),
       algo_version = fs.algo_version || '_haircut'
@@ -130,7 +138,11 @@ INSERT INTO fmv_snapshots (edition_id, collection_id, fmv_usd, floor_price_usd, 
   ('00000000-0000-0000-0000-0000000000e7','00000000-0000-0000-0000-00000000cccc', 100,100, 3,0,'LOW',     now(), 'v1'),  -- excluded: sales > 2
   ('00000000-0000-0000-0000-0000000000e8','00000000-0000-0000-0000-00000000cccc', 100,100, 0,0,'LOW',     now() - interval '2 days', 'v1'),  -- OLDER qualifying
   ('00000000-0000-0000-0000-0000000000e8','00000000-0000-0000-0000-00000000cccc', 100,100, 0,0,'HIGH',    now(), 'v1'),  -- NEWER, not qualifying -> latest wins -> excluded
-  ('00000000-0000-0000-0000-0000000000e9','00000000-0000-0000-0000-00000000dddd', 100,100, 0,0,'LOW',     now(), 'v1');  -- qualifies but OTHER collection
+  ('00000000-0000-0000-0000-0000000000e9','00000000-0000-0000-0000-00000000dddd', 100,100, 0,0,'LOW',     now(), 'v1'),  -- qualifies but OTHER collection
+  -- Top Shot (the real collection uuid, 2026-10-23): LOW with unknown depth takes 0.75; ASK_ONLY still 0.55.
+  ('00000000-0000-0000-0000-0000000000f1','95f28a17-224a-4025-96ad-adf8a4c63bfd', 100,100, 0,NULL,'LOW',     now(), 'v1'),  -- TS LOW, depth NULL -> 0.75 -> 75, -25
+  ('00000000-0000-0000-0000-0000000000f2','95f28a17-224a-4025-96ad-adf8a4c63bfd', 100,100, 0,NULL,'ASK_ONLY', now(), 'v1'),  -- TS ASK_ONLY, depth NULL -> 0.55 -> 55, -45
+  ('00000000-0000-0000-0000-0000000000f3','95f28a17-224a-4025-96ad-adf8a4c63bfd', 100,100, 1,NULL,'LOW',     now(), 'v1');  -- TS LOW with a sale -> 0.85 -> 85, -15 (the sale arm wins)
 
 -- 1) DRY RUN over collection C: examines 4, haircuts 4, removes $120 — and writes NOTHING.
 SELECT _assert_eq((SELECT rows_examined::text  FROM fmv_apply_thin_sale_haircut('00000000-0000-0000-0000-00000000cccc'::uuid, true)), '4', 'dry-run examines the 4 qualifying editions');
@@ -156,6 +168,18 @@ SELECT _assert((SELECT fmv_usd FROM fmv_snapshots WHERE edition_id='00000000-000
 SELECT _assert_eq((SELECT count(*)::text FROM fmv_snapshots WHERE edition_id='00000000-0000-0000-0000-0000000000e8' AND fmv_usd = 100), '2', 'e8 both snapshots untouched (latest HIGH shadows the older qualifying one)');
 -- collection scope: the C-run must not touch collection D's qualifying edition.
 SELECT _assert((SELECT fmv_usd FROM fmv_snapshots WHERE edition_id='00000000-0000-0000-0000-0000000000e9') = 100, 'collection-scoped run leaves other collections untouched');
+
+-- 3) TOP SHOT (2026-10-23): a LOW row with unknown depth takes 0.75, not the 0.55 "unknown" default;
+--    ASK_ONLY and the sale arm are unchanged. Collection C's e1 (0.55 above) is the other-collection control.
+SELECT _assert_eq((SELECT rows_haircut::text FROM fmv_apply_thin_sale_haircut('95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid, true)), '3', 'TS dry-run counts 3 haircuts');
+SELECT _assert((SELECT total_dollars_removed FROM fmv_apply_thin_sale_haircut('95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid, true)) = 85, 'TS dry-run totals $85 removed (25 + 45 + 15)');
+SELECT _assert_eq((SELECT sum(fmv_usd)::text FROM fmv_snapshots WHERE collection_id='95f28a17-224a-4025-96ad-adf8a4c63bfd'), '300', 'TS dry-run wrote NOTHING');
+CREATE TEMP TABLE live_ts AS SELECT * FROM fmv_apply_thin_sale_haircut('95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid, false);
+SELECT _assert((SELECT fmv_usd FROM fmv_snapshots WHERE edition_id='00000000-0000-0000-0000-0000000000f1') = 75, 'f1 Top Shot LOW with unknown depth takes 0.75 (2026-10-23)');
+SELECT _assert((SELECT fmv_usd FROM fmv_snapshots WHERE edition_id='00000000-0000-0000-0000-0000000000f2') = 55, 'f2 Top Shot ASK_ONLY keeps 0.55');
+SELECT _assert((SELECT fmv_usd FROM fmv_snapshots WHERE edition_id='00000000-0000-0000-0000-0000000000f3') = 85, 'f3 Top Shot LOW with a sale keeps 0.85');
+SELECT _assert((SELECT total_dollars_removed FROM live_ts) = 85, 'TS live run reports $85 removed');
+SELECT _assert((SELECT fmv_usd FROM fmv_snapshots WHERE edition_id='00000000-0000-0000-0000-0000000000e1') = 55, 'e1 (another collection, LOW, unknown depth) still 0.55 — the 0.75 arm is Top Shot only');
 
 SELECT '✓ fmv_apply_thin_sale_haircut invariants pass' AS result;
 ROLLBACK;

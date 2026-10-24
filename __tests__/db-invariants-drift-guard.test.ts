@@ -1852,7 +1852,7 @@ const PINS = [
     fn: "fmv_apply_thin_sale_haircut",
     test: "supabase/tests/fmv_apply_thin_sale_haircut.sql",
     migration:
-      "supabase/migrations/20260801230600_audit_20260801_snapshot_fmv_apply_thin_sale_haircut.sql",
+      "supabase/migrations/20261023235545_audit_20261023_fmv_haircut_topshot_low_unknown_depth_is_075_not_055.sql",
   },
   {
     fn: "check_triggered_fmv_alerts",
