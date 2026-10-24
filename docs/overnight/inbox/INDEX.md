@@ -1,4 +1,4 @@
-# Inbox index — 599 live filings
+# Inbox index — 600 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -31,6 +31,10 @@ still open should have a register row, and if it does not, that gap is the findi
 failure it documents.
 
 ---
+
+## 2026-10-24 — 1 filing
+
+- [🟢 Daytime monitor (10-24 ~18:05Z, infra GREEN, 11/11 dashboards OK) — post-ship WATCH: panini-1.4.0 (Panini HIGH/MED now priced from panini_recent_sales_fmv_v2(panini_sales)) shipped ~15:22Z (commit 5427f2c7, migration 20261024152200); the 18:05Z snapshot's Panini FMV computed_at (13:35Z) predates the deploy, so the current green trust arms are a pre-engine-change reading — night pass to verify HIGH/MED + accuracy after the first full recalc under 1.4.0](2026-10-24T1807Z-daytime-monitor-panini-1.4.0-postship-watch-fmv-recalc-not-yet-swept.md)
 
 ## 2026-10-23 — 1 filing
 
