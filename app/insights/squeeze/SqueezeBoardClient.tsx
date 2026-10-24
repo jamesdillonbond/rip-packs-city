@@ -879,7 +879,7 @@ const CSS = `
   cursor: pointer;
   margin-left: 4px;
 }
-.rpc-sq-active-clear:hover { background: var(--rpc-red); color: #fff; }
+.rpc-sq-active-clear:hover { background: var(--rpc-red-fill); color: #fff; }
 
 .rpc-sq-controls {
   max-width: 1180px;
@@ -1105,7 +1105,7 @@ const CSS = `
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: var(--rpc-red);
+  background: var(--rpc-red-fill);
   color: #fff;
   font-family: var(--font-mono);
   font-size: 12px;
@@ -1116,7 +1116,7 @@ const CSS = `
   text-decoration: none;
   transition: background 120ms;
 }
-.rpc-sq-share-btn:hover { background: var(--rpc-red-hover); }
+.rpc-sq-share-btn:hover { background: var(--rpc-red-fill-hover); }
 .rpc-sq-back {
   font-family: var(--font-mono);
   font-size: 12px;

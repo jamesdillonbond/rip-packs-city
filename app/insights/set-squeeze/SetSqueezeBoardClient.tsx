@@ -382,8 +382,8 @@ const CSS = `
 .rpc-ss-method code { font-family: var(--font-mono); font-size: 12px; color: var(--rpc-text-primary); }
 .rpc-ss-fav { margin-top: 14px; padding: 10px 12px; background: var(--rpc-red-bg); border-left: 3px solid var(--rpc-red); font-size: 13px; color: var(--rpc-text-secondary); }
 .rpc-ss-share { display: flex; flex-direction: column; gap: 12px; align-items: stretch; }
-.rpc-ss-share-btn { display: inline-flex; align-items: center; justify-content: center; background: var(--rpc-red); color: #fff; font-family: var(--font-mono); font-size: 12px; letter-spacing: 2.5px; text-transform: uppercase; padding: 13px 18px; border-radius: 2px; text-decoration: none; }
-.rpc-ss-share-btn:hover { background: var(--rpc-red-hover); }
+.rpc-ss-share-btn { display: inline-flex; align-items: center; justify-content: center; background: var(--rpc-red-fill); color: #fff; font-family: var(--font-mono); font-size: 12px; letter-spacing: 2.5px; text-transform: uppercase; padding: 13px 18px; border-radius: 2px; text-decoration: none; }
+.rpc-ss-share-btn:hover { background: var(--rpc-red-fill-hover); }
 .rpc-ss-back { font-family: var(--font-mono); font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-secondary); text-decoration: none; padding: 10px; text-align: center; }
 .rpc-ss-back:hover { color: var(--rpc-red-text); }
 

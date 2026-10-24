@@ -139,7 +139,7 @@ const CSS = `
 .psq-controls input{background:var(--rpc-surface,#1b1b20);border:1px solid var(--rpc-border,rgba(255,255,255,.12));border-radius:8px;color:var(--rpc-text-primary,#ECEAE3);padding:7px 11px;font-size:12.5px;min-width:200px}
 .psq-seg{display:flex;border:1px solid var(--rpc-border,rgba(255,255,255,.12));border-radius:8px;overflow:hidden}
 .psq-seg button{background:transparent;border:0;color:var(--rpc-text-secondary,#9A968C);padding:7px 11px;font-size:11px;letter-spacing:.04em;text-transform:uppercase;cursor:pointer;font-weight:700}
-.psq-seg button.on{background:var(--rpc-red,#E03A2F);color:#fff}
+.psq-seg button.on{background:var(--rpc-red-fill,#D93529);color:#fff}
 .psq-scroll{overflow-x:auto}
 .psq-tbl{width:100%;border-collapse:collapse;border:1px solid var(--rpc-border,rgba(255,255,255,.10));border-radius:10px;overflow:hidden}
 .psq-tbl th,.psq-tbl td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--rpc-border-subtle,rgba(255,255,255,.06));white-space:nowrap}

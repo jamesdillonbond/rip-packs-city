@@ -157,7 +157,7 @@ export default function GrailsView({ collection, accent }: Props) {
           aria-pressed={buyableOnly}
           style={{
             padding: '6px 12px',
-            background: buyableOnly ? 'var(--rpc-red)' : 'var(--rpc-surface-raised)',
+            background: buyableOnly ? 'var(--rpc-red-fill)' : 'var(--rpc-surface-raised)',
             // brand-exception: white text on the selected --rpc-red fill
             color: buyableOnly ? '#fff' : 'var(--rpc-text-secondary)',
             border: `1px solid ${buyableOnly ? 'var(--rpc-red)' : 'var(--rpc-border)'}`,
@@ -220,7 +220,7 @@ function GrailCard({ row, accent, collection }: { row: GrailRow; accent: string;
         )}
         {/* Chase ribbon */}
         {row.max_pull_fmv != null && (
-          <div style={{ position: 'absolute', bottom: 8, left: 8, right: 8, /* brand-exception: white on the red chase ribbon */ background: 'var(--rpc-red)', color: '#fff', padding: '6px 9px', borderRadius: 4, display: 'flex', alignItems: 'center', gap: 8, boxShadow: '0 4px 14px rgba(0,0,0,0.5)' }}>
+          <div style={{ position: 'absolute', bottom: 8, left: 8, right: 8, /* brand-exception: white on the red chase ribbon */ background: 'var(--rpc-red-fill)', color: '#fff', padding: '6px 9px', borderRadius: 4, display: 'flex', alignItems: 'center', gap: 8, boxShadow: '0 4px 14px rgba(0,0,0,0.5)' }}>
             {row.max_pull_thumbnail && (
               <img src={proxyIpfsImageUrl(row.max_pull_thumbnail, 160) ?? undefined} alt={row.max_pull_player ?? 'Chase moment'} style={{ width: 30, height: 30, objectFit: 'cover', borderRadius: 2, border: `2px solid ${tierBorder}`, flexShrink: 0 }} />
             )}

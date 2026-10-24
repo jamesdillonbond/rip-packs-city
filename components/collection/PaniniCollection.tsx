@@ -172,7 +172,7 @@ export default function PaniniCollection() {
         />
         <button
           type="submit"
-          style={{ padding: "8px 16px", fontFamily: display, fontWeight: 700, fontSize: 13, letterSpacing: "0.06em", textTransform: "uppercase", background: "var(--rpc-red)", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer" }}
+          style={{ padding: "8px 16px", fontFamily: display, fontWeight: 700, fontSize: 13, letterSpacing: "0.06em", textTransform: "uppercase", background: "var(--rpc-red-fill)", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer" }}
         >
           Look up
         </button>

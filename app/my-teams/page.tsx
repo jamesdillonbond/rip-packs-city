@@ -286,7 +286,7 @@ function TeamCard({
               letterSpacing: "0.08em",
               padding: "3px 7px",
               borderRadius: 4,
-              background: "var(--rpc-red)",
+              background: "var(--rpc-red-fill)",
               // brand-exception: white text on the --rpc-red button
               color: "#fff",
             }}

@@ -13,7 +13,7 @@
 // The parent page reads the same param independently to decide which body to
 // mount, so the two stay decoupled. "Moments" is relabeled "Pins" for Pinnacle.
 
-import { labelOn } from "@/lib/accent-text"
+import { labelOn, accentFill } from "@/lib/accent-text"
 import { useCallback } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 
@@ -90,7 +90,7 @@ export function PackSubNav({
               borderRadius: "calc(var(--radius-sm) - 2px)",
               border: "none",
               cursor: "pointer",
-              background: on ? accent : "transparent",
+              background: on ? accentFill(accent) : "transparent",
               color: on ? labelOn(accent) : "var(--rpc-text-muted)",
               transition: "background 0.15s, color 0.15s",
             }}

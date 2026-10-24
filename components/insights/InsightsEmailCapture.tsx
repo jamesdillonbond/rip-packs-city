@@ -166,7 +166,7 @@ const CSS = `
 }
 .rpc-ins-capture-input::placeholder { color: var(--rpc-text-muted); }
 .rpc-ins-capture-btn {
-  background: var(--rpc-red);
+  background: var(--rpc-red-fill);
   border: none;
   /* brand-exception: white text on the --rpc-red button */
   color: #fff;

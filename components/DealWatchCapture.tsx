@@ -201,7 +201,7 @@ const CSS = `
 }
 .rpc-dw-input::placeholder { color: rgba(255,255,255,0.5); }
 .rpc-dw-btn {
-  background: var(--rpc-red);
+  background: var(--rpc-red-fill);
   border: none;
   color: #fff;
   font-family: var(--font-display);

@@ -100,7 +100,7 @@ export default function PipelineHealthClient() {
             type="submit"
             style={{
               padding: "8px 16px",
-              background: "var(--rpc-red)",
+              background: "var(--rpc-red-fill)",
               color: "#fff",
               border: "none",
               borderRadius: 4,
@@ -277,7 +277,7 @@ function Stat({ label, value, accent }: { label: string; value: string; accent?:
 
 function Th({ children }: { children: React.ReactNode }) {
   return (
-    <th style={{ padding: "10px 12px", fontWeight: 700, fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.12em", textTransform: "uppercase" }}>
+    <th scope="col" style={{ padding: "10px 12px", fontWeight: 700, fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.12em", textTransform: "uppercase" }}>
       {children}
     </th>
   );

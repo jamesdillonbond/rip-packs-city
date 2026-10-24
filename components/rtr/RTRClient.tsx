@@ -196,7 +196,7 @@ function LivePickCard({
           aria-hidden
           style={{
             flexShrink: 0, width: 44, height: 44, borderRadius: 999,
-            background: "var(--rpc-red)", color: "#fff",
+            background: "var(--rpc-red-fill)", color: "#fff",
             display: "flex", alignItems: "center", justifyContent: "center",
             fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 18, letterSpacing: "0.02em",
           }}

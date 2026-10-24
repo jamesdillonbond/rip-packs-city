@@ -560,7 +560,7 @@ export default function MomentDetailModal({ moment, marketplaceSource, dapperUrl
                 marginTop: "auto",
                 display: "inline-block",
                 textAlign: "center",
-                background: "var(--rpc-red)",
+                background: "var(--rpc-red-fill)",
                 // brand-exception: white label on the red CTA — theme-independent
                 color: "#fff",
                 padding: "10px 16px",

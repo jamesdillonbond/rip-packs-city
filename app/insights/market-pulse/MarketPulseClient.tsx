@@ -94,7 +94,7 @@ export default function MarketPulseClient({ initialRows, fetchedAt }: { initialR
             style={{
               padding: "8px 18px", borderRadius: 999, fontSize: 13, cursor: "pointer",
               border: `1px solid ${win === w ? "var(--rpc-red)" : "var(--rpc-border)"}`,
-              background: win === w ? "var(--rpc-red)" : "transparent",
+              background: win === w ? "var(--rpc-red-fill)" : "transparent",
               color: win === w ? "#fff" : "var(--rpc-text-secondary)",
             }}
           >

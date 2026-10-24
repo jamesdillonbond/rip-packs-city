@@ -448,7 +448,7 @@ const CSS = `
 .rpc-fm-active-label { font-family: var(--font-mono); font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-red-text); }
 .rpc-fm-active-value { font-family: var(--font-body); font-size: 14px; color: var(--rpc-text-primary); font-weight: 700; }
 .rpc-fm-active-clear { font-family: var(--font-mono); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; background: transparent; border: 1px solid var(--rpc-red-border); color: var(--rpc-red-text); padding: 4px 8px; border-radius: 2px; cursor: pointer; }
-.rpc-fm-active-clear:hover { background: var(--rpc-red); color: #fff; }
+.rpc-fm-active-clear:hover { background: var(--rpc-red-fill); color: #fff; }
 .rpc-fm-eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: 4px; text-transform: uppercase; color: var(--rpc-red-text); margin-bottom: 12px; }
 .rpc-fm-h1 { font-family: var(--font-display); font-weight: 800; font-size: clamp(38px, 6vw, 64px); letter-spacing: 0.5px; line-height: 1.02; margin: 0 0 14px; text-transform: uppercase; }
 .rpc-fm-h3 { font-family: var(--font-display); font-weight: 800; font-size: 22px; letter-spacing: 1px; text-transform: uppercase; margin: 0 0 10px; }
@@ -494,8 +494,8 @@ const CSS = `
 .rpc-fm-method p { font-size: 14px; line-height: 1.65; color: var(--rpc-text-secondary); margin: 0 0 12px; }
 .rpc-fm-method strong { color: var(--rpc-text-primary); }
 .rpc-fm-share { display: flex; flex-direction: column; gap: 12px; align-items: stretch; }
-.rpc-fm-share-btn { display: inline-flex; align-items: center; justify-content: center; background: var(--rpc-red); color: #fff; font-family: var(--font-mono); font-size: 12px; letter-spacing: 2.5px; text-transform: uppercase; padding: 13px 18px; border-radius: 2px; text-decoration: none; }
-.rpc-fm-share-btn:hover { background: var(--rpc-red-hover); }
+.rpc-fm-share-btn { display: inline-flex; align-items: center; justify-content: center; background: var(--rpc-red-fill); color: #fff; font-family: var(--font-mono); font-size: 12px; letter-spacing: 2.5px; text-transform: uppercase; padding: 13px 18px; border-radius: 2px; text-decoration: none; }
+.rpc-fm-share-btn:hover { background: var(--rpc-red-fill-hover); }
 .rpc-fm-back { font-family: var(--font-mono); font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-secondary); text-decoration: none; padding: 10px; text-align: center; }
 .rpc-fm-back:hover { color: var(--rpc-red-text); }
 

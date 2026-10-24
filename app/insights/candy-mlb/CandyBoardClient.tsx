@@ -91,7 +91,7 @@ const CSS = `
 .cdy-controls input{background:var(--rpc-surface,#1b1b20);border:1px solid var(--rpc-border,rgba(255,255,255,.12));border-radius:8px;color:var(--rpc-text-primary,#ECEAE3);padding:7px 11px;font-size:12.5px;min-width:200px}
 .cdy-seg{display:flex;border:1px solid var(--rpc-border,rgba(255,255,255,.12));border-radius:8px;overflow:hidden}
 .cdy-seg button{background:transparent;border:0;color:var(--rpc-text-secondary,#9A968C);padding:7px 11px;font-size:11px;letter-spacing:.04em;text-transform:uppercase;cursor:pointer;font-weight:700}
-.cdy-seg button.on{background:var(--rpc-red,#E03A2F);color:#fff}
+.cdy-seg button.on{background:var(--rpc-red-fill,#D93529);color:#fff}
 .cdy-blurb{font-size:12px;line-height:1.55;color:var(--rpc-text-secondary,#9A968C);margin:0 0 12px}
 .cdy-blurb b{color:var(--rpc-text-primary,#ECEAE3);font-weight:700}
 .cdy-scroll{overflow-x:auto}

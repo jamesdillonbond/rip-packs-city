@@ -776,8 +776,8 @@ const CSS = `
 .rpc-pr-xlink { color: var(--rpc-red-text); text-decoration: none; font-weight: 600; }
 .rpc-pr-xlink:hover { text-decoration: underline; }
 .rpc-pr-share { display: flex; flex-direction: column; gap: 12px; align-items: stretch; }
-.rpc-pr-share-btn { display: inline-flex; align-items: center; justify-content: center; background: var(--rpc-red); color: #fff; font-family: var(--font-mono); font-size: 12px; letter-spacing: 2.5px; text-transform: uppercase; padding: 13px 18px; border-radius: 2px; text-decoration: none; transition: background 120ms; }
-.rpc-pr-share-btn:hover { background: var(--rpc-red-hover); }
+.rpc-pr-share-btn { display: inline-flex; align-items: center; justify-content: center; background: var(--rpc-red-fill); color: #fff; font-family: var(--font-mono); font-size: 12px; letter-spacing: 2.5px; text-transform: uppercase; padding: 13px 18px; border-radius: 2px; text-decoration: none; transition: background 120ms; }
+.rpc-pr-share-btn:hover { background: var(--rpc-red-fill-hover); }
 .rpc-pr-back { font-family: var(--font-mono); font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-secondary); text-decoration: none; padding: 10px; text-align: center; }
 .rpc-pr-back:hover { color: var(--rpc-red-text); }
 

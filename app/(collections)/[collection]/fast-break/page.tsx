@@ -81,7 +81,7 @@ export default async function FastBreakPage(props: {
               display: "inline-block",
               marginTop: 20,
               padding: "10px 20px",
-              background: "var(--rpc-red)",
+              background: "var(--rpc-red-fill)",
               color: "#fff",
               borderRadius: "var(--radius-sm)",
               fontFamily: "var(--font-mono)",

@@ -330,7 +330,7 @@ function PaniniUsernameBand({ collectionId }: { collectionId: string }) {
         <button
           type="submit"
           // brand-exception: white label on the red CTA button — theme-independent
-          style={{ height: 52, padding: "0 18px", background: "var(--rpc-red)", border: "none", borderRadius: 8, color: "#fff", fontFamily: "var(--font-display)", fontWeight: 800, letterSpacing: "0.06em", cursor: "pointer" }}
+          style={{ height: 52, padding: "0 18px", background: "var(--rpc-red-fill)", border: "none", borderRadius: 8, color: "#fff", fontFamily: "var(--font-display)", fontWeight: 800, letterSpacing: "0.06em", cursor: "pointer" }}
         >
           Go →
         </button>

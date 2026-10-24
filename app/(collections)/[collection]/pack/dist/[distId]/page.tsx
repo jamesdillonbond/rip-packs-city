@@ -962,7 +962,7 @@ export default async function PackDetailPage(
                   style={{
                     display: "inline-block",
                     padding: "8px 16px",
-                    background: "var(--rpc-red)",
+                    background: "var(--rpc-red-fill)",
                     color: "#fff", // brand-exception: white text on the red fill (stays white in both themes)
                     fontFamily: "var(--font-display)",
                     fontWeight: 700,

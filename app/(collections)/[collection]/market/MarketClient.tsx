@@ -50,7 +50,7 @@ import PackMarketView from "@/components/packs/PackMarketView"
 import PaniniCoverageNote from "@/components/collection/PaniniCoverageNote"
 import type { PaniniCoverage } from "@/lib/panini/coverage"
 import { getCollectionByUrlSlug, isPinnacleUrlSlug } from "@/lib/collection-slug"
-import { accentText, labelOn } from "@/lib/accent-text"
+import { accentText, labelOn, accentFill } from "@/lib/accent-text"
 
 // ── Ask age ─────────────────────────────────────────────────────────────────
 //
@@ -688,7 +688,7 @@ function MarketInner() {
                     fontSize: 10,
                     letterSpacing: "0.12em",
                     textTransform: "uppercase",
-                    background: view === v ? accent : "transparent",
+                    background: view === v ? accentFill(accent) : "transparent",
                     // brand-exception: white text on the selected accent fill
                     color: view === v ? labelOn(accent) : "var(--rpc-text-muted)",
                     border: "none",

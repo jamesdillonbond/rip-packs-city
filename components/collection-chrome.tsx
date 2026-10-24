@@ -100,7 +100,7 @@ export function CollectionTicker({ collection }: { collection: Collection }) {
           ⛔ The label is DERIVED, never the literal "LIVE": on a closed market
           this pill was asserting a trading venue in brand red at the top of
           every tab. */}
-      <div style={{ background: "var(--rpc-red)", padding: "0 12px", fontSize: 9, fontFamily: "var(--font-mono)", letterSpacing: "0.15em", color: "#fff", height: "100%", display: "flex", alignItems: "center", flexShrink: 0, fontWeight: 700 }}>{statusLabel}</div>
+      <div style={{ background: "var(--rpc-red-fill)", padding: "0 12px", fontSize: 9, fontFamily: "var(--font-mono)", letterSpacing: "0.15em", color: "#fff", height: "100%", display: "flex", alignItems: "center", flexShrink: 0, fontWeight: 700 }}>{statusLabel}</div>
       <div style={{ overflow: "hidden", flex: 1 }}>
         {/* 2026-10-24 (WCAG 2.2.2): pauses on hover / keyboard focus and stops
             under prefers-reduced-motion (.rpc-ticker-track in app/globals.css);

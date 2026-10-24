@@ -270,7 +270,7 @@ function FilterChip({ active, onClick, label }: { active: boolean; onClick: () =
         fontSize: 12,
         cursor: "pointer",
         border: `1px solid ${active ? "var(--rpc-red)" : "var(--rpc-border)"}`,
-        background: active ? "var(--rpc-red)" : "transparent",
+        background: active ? "var(--rpc-red-fill)" : "transparent",
         color: active ? "#fff" : "var(--rpc-text-secondary)",
       }}
     >

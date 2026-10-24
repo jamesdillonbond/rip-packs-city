@@ -52,7 +52,7 @@ export default async function CollectionSegmentLayout(props: any) {
               {"We\u2019re building something great for " + collection.label + " \u2014 check back soon."}
             </div>
             {/* brand-exception: white label on the red button \u2014 theme-independent */}
-            <Link href="/nba-top-shot/overview" style={{ display: "inline-block", padding: "10px 24px", background: "var(--rpc-red)", borderRadius: 6, color: "#fff", fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 13, letterSpacing: "0.06em", textTransform: "uppercase", textDecoration: "none" }}>
+            <Link href="/nba-top-shot/overview" style={{ display: "inline-block", padding: "10px 24px", background: "var(--rpc-red-fill)", borderRadius: 6, color: "#fff", fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 13, letterSpacing: "0.06em", textTransform: "uppercase", textDecoration: "none" }}>
               Back to NBA Top Shot
             </Link>
           </div>

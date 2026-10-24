@@ -804,7 +804,7 @@ export function StatusBadge({ status }: { status: PackStatus }) {
           letterSpacing: "0.14em",
           fontSize: 12,
           padding: "4px 10px",
-          background: "var(--rpc-red)",
+          background: "var(--rpc-red-fill)",
           color: "#fff",
           borderRadius: "var(--radius-sm)",
         }}

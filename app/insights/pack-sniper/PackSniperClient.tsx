@@ -969,7 +969,7 @@ const CSS = `
 .rpc-ps-act { font-family: var(--font-mono); font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase; text-decoration: none; color: var(--rpc-text-secondary); padding: 6px 8px; border-radius: 2px; }
 .rpc-ps-act:hover { color: var(--rpc-red-text); }
 .rpc-ps-act-buy { color: var(--rpc-red-text); border: 1px solid var(--rpc-red-border); margin-right: 6px; }
-.rpc-ps-act-buy:hover { background: var(--rpc-red); color: #fff; }
+.rpc-ps-act-buy:hover { background: var(--rpc-red-fill); color: #fff; }
 
 .rpc-ps-footer { max-width: 1180px; margin: 36px auto 0; display: grid; grid-template-columns: 2fr 1fr; gap: 32px; }
 .rpc-ps-method h3 { font-family: var(--font-display); font-weight: 800; font-size: 22px; letter-spacing: 1px; text-transform: uppercase; margin: 0 0 10px; }
@@ -979,8 +979,8 @@ const CSS = `
 .rpc-ps-xlink { color: var(--rpc-red-text); text-decoration: none; font-weight: 600; }
 .rpc-ps-xlink:hover { text-decoration: underline; }
 .rpc-ps-share { display: flex; flex-direction: column; gap: 12px; align-items: stretch; }
-.rpc-ps-share-btn { display: inline-flex; align-items: center; justify-content: center; background: var(--rpc-red); color: #fff; font-family: var(--font-mono); font-size: 12px; letter-spacing: 2.5px; text-transform: uppercase; padding: 13px 18px; border-radius: 2px; text-decoration: none; transition: background 120ms; }
-.rpc-ps-share-btn:hover { background: var(--rpc-red-hover); }
+.rpc-ps-share-btn { display: inline-flex; align-items: center; justify-content: center; background: var(--rpc-red-fill); color: #fff; font-family: var(--font-mono); font-size: 12px; letter-spacing: 2.5px; text-transform: uppercase; padding: 13px 18px; border-radius: 2px; text-decoration: none; transition: background 120ms; }
+.rpc-ps-share-btn:hover { background: var(--rpc-red-fill-hover); }
 .rpc-ps-back { font-family: var(--font-mono); font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-secondary); text-decoration: none; padding: 10px; text-align: center; }
 .rpc-ps-back:hover { color: var(--rpc-red-text); }
 

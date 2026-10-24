@@ -58,10 +58,21 @@ export function textSafeChip<T extends { color?: unknown; background?: unknown }
 /**
  * The label colour for text ON a collection-accent FILL (a button). White reads
  * 2.2–4.0:1 on every non-red registry accent; near-black #0B0B0D reads 5.0–9.2:1
- * (measured 2026-10-18). The brand red keeps white — the accepted white-on-#E03A2F
- * exception. The overview's accent buttons already used #0B0B0D; this makes it
+ * (measured 2026-10-18). The brand red keeps white, painted on accentFill()'s
+ * deeper --rpc-red-fill (2026-10-24: white on #E03A2F itself is 4.36:1). The overview's accent buttons already used #0B0B0D; this makes it
  * the rule. Theme-independent on purpose: the fill is identical in both themes.
  */
+/**
+ * The FILL to paint under a labelOn() label. The brand red under white reads
+ * 4.36:1 (under AA's 4.5); --rpc-red-fill is the same red one step deeper
+ * (4.68:1). Every other accent passes through unchanged — labelOn() gives it
+ * near-black. Pair the two: `background: accentFill(a), color: labelOn(a)`.
+ */
+export function accentFill(fill: string): string {
+  const f = fill.trim()
+  return BRAND_RED.test(f) || /^var\(--rpc-red(\s*,[^)]*)?\)$/.test(f) ? "var(--rpc-red-fill)" : fill
+}
+
 export function labelOn(fill: string | null | undefined): string {
   if (!fill) return "#fff"
   const f = fill.trim()
@@ -99,4 +110,27 @@ export function readableOn(fill: string | null | undefined, preferred?: string |
   const dark = contrastRatio(fill, "#0B0B0D"), light = contrastRatio(fill, "#FFFFFF")
   if (dark === null || light === null) return preferred || "#fff"
   return dark >= light ? "#0B0B0D" : "#FFFFFF"
+}
+
+/**
+ * A DATA-DEFINED fill (a team's primary colour) that some label can read on.
+ * Mid-tone reds/oranges sit near 4.4:1 against BOTH white and near-black
+ * (Rayo Vallecano #E53027: 4.47 / 4.21), so no text colour clears AA. Such a
+ * fill is darkened toward black in 4 % steps until white reads >= 4.5:1 — the
+ * smallest change that keeps the club's colour recognisable. Any fill that
+ * already has a readable label, and any non-hex value, passes through.
+ */
+export function readableFill(fill: string | null | undefined): string | null | undefined {
+  if (!fill) return fill
+  const m = /^#?([0-9a-f]{6})$/i.exec(fill.trim())
+  if (!m) return fill
+  const best = Math.max(contrastRatio(fill, "#0B0B0D") ?? 0, contrastRatio(fill, "#FFFFFF") ?? 0)
+  if (best >= 4.5) return fill
+  const n = parseInt(m[1], 16)
+  const rgb = [(n >> 16) & 255, (n >> 8) & 255, n & 255]
+  for (let k = 0.96; k > 0.4; k -= 0.04) {
+    const hex = "#" + rgb.map((v) => Math.round(v * k).toString(16).padStart(2, "0")).join("").toUpperCase()
+    if ((contrastRatio(hex, "#FFFFFF") ?? 0) >= 4.5) return hex
+  }
+  return fill
 }

@@ -161,7 +161,7 @@ export default function TrophyNoteEditor({
             padding: "4px 10px",
             borderRadius: 5,
             border: "1px solid var(--rpc-red)",
-            background: "var(--rpc-red)",
+            background: "var(--rpc-red-fill)",
             color: "#fff",
             cursor: saving ? "not-allowed" : "pointer",
             opacity: saving ? 0.6 : 1,

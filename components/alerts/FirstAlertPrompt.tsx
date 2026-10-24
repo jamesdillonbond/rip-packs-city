@@ -71,7 +71,7 @@ export default function FirstAlertPrompt() {
         href="/alerts"
         onClick={() => track("first-alert-prompt-click", { surface: "dashboard" })}
         // brand-exception: white label on the red CTA button — theme-independent
-        style={{ padding: "12px 20px", background: "var(--rpc-red)", borderRadius: 8, color: "#fff", fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 13, letterSpacing: "0.08em", textTransform: "uppercase", textDecoration: "none" }}
+        style={{ padding: "12px 20px", background: "var(--rpc-red-fill)", borderRadius: 8, color: "#fff", fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 13, letterSpacing: "0.08em", textTransform: "uppercase", textDecoration: "none" }}
       >
         Create an alert →
       </Link>

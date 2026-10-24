@@ -11,6 +11,8 @@ Built 2026-10-17/18 (known-issues #194, closed). Read this before painting TEXT 
 | a collection accent, a hex, an `rgb()` literal, or a variable holding one | `accentText(value)` | `lib/accent-text.ts` — brand red → `--rpc-red-text`, a fill token → its twin, anything else → `color-mix` toward `--rpc-accent-text-mix` by `--rpc-accent-text-amt` (12 % white dark / 55 % black light) |
 | a chip STYLE object whose text sits on its OWN translucent tint | `textSafeChip(style)` | `lib/accent-text.ts` — wraps only `color`, only when the background is a translucent tint; an opaque fill is left alone |
 | a label ON an accent FILL (a button) | `labelOn(fill)` | `lib/accent-text.ts` — white on the brand red, `#0B0B0D` on every other accent |
+| the FILL under that label (a button, an active tab) | `accentFill(fill)`, or `var(--rpc-red-fill)` / `var(--rpc-red-fill-hover)` directly | `lib/accent-text.ts` + token — the brand red becomes `#D93529` (white 4.68:1; `#E03A2F` is 4.36:1), every other accent passes through. Decided 2026-10-24. |
+| a DATA-defined fill (a team's primary colour) | `readableFill(fill)` then `readableOn(fill, preferred)` | `lib/accent-text.ts` — a mid-tone colour no label reads on (Rayo Vallecano) is darkened just enough for white |
 | a Tailwind palette text utility (`text-emerald-400` …) | nothing — it is overridden in light theme | generated block at the end of `app/rpc-tokens.css` ("LIGHT THEME — Tailwind palette TEXT utilities") |
 | muted / secondary copy | `var(--rpc-text-muted)` / `var(--rpc-text-secondary)` | tokens. ⛔ never `--rpc-text-ghost` (1.78:1 — decorative only) and never white-alpha below 0.5 |
 
@@ -20,11 +22,12 @@ Built 2026-10-17/18 (known-issues #194, closed). Read this before painting TEXT 
 - **Never on an SVG presentation attribute** (`<polyline stroke>`, a `<Sparkline color>` prop): attributes cannot resolve `var()` / `color-mix()`.
 - **Never in OG image routes, `lib/og/**`, email HTML (`lib/emails/**`) or `app/global-error.tsx`**: Satori and mail clients resolve neither, and global-error may render without the token stylesheet.
 - **Never on text that sits on a fixed fill that does not change with the theme** — the trophy slab's silver plate (`#C8C8C5`) uses a theme-independent `color-mix(…, #000 65%)`; Recharts tooltips (dark `contentStyle`) keep their light text.
-- **Text on a red fill stays `#fff`** (the accepted pre-launch white-on-`#E03A2F` exception, roadmap-status "Brand red on small text").
+- **Text on a red fill stays `#fff` — on `--rpc-red-fill`, never on `--rpc-red`** (2026-10-24: the pre-launch white-on-`#E03A2F` exception is retired; `--rpc-red` stays for accents, borders, bars, dots and the wordmark). Hover goes DARKER (`--rpc-red-fill-hover`), not to the lighter `--rpc-red-hover` (white 3.29:1).
 
 ## Guards (all tree walks; a planted defect proves each)
 
 - `__tests__/text-color-uses-text-safe-tokens.test.ts` — bans `color: var(--rpc-red | --por-red | --rpc-text-ghost)` (direct and as a same-line ternary branch) and `color: rgba(255,255,255,<0.5)`; counted suppressions only (a decorative watermark, a disabled send arrow).
+- `__tests__/red-fill-contrast.test.ts` — both fill tokens clear 4.5:1 under white, `labelOn` on `accentFill` clears it for every registry accent, `readableFill` fixes Rayo, and a tree walk bans `background: var(--rpc-red…)` + white text on one line in `app/` and `components/` (planted defects in three spellings).
 - `__tests__/accent-text-contrast.test.ts` — every registry accent, every twin and `labelOn` clear 4.5:1 in both themes on every canvas, a raised card and the colour's own 15 % tint — read from the CSS and `COLLECTIONS`, so a new accent or a weaker token fails.
 - `__tests__/tailwind-palette-text-has-a-light-theme-rule.test.ts` — every `text-<hue>-300/400/500` (and variants) and dark badge fill `bg-<hue>-800/900/950` the app uses has a light-theme rule.
 - `e2e/a11y.spec.ts` (E2E DOM Smoke → `a11y-audit`) — axe on production routes in both themes; the accepted white-on-red signature is the only exclusion.

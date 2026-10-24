@@ -651,8 +651,8 @@ const CSS = `
 .rpc-sp-method p { font-size: 14px; line-height: 1.65; color: var(--rpc-text-secondary); margin: 0 0 12px; }
 .rpc-sp-method strong { color: var(--rpc-text-primary); }
 .rpc-sp-share { display: flex; flex-direction: column; gap: 12px; align-items: stretch; }
-.rpc-sp-share-btn { display: inline-flex; align-items: center; justify-content: center; background: var(--rpc-red); color: #fff; font-family: var(--font-mono); font-size: 12px; letter-spacing: 2.5px; text-transform: uppercase; padding: 13px 18px; border-radius: 2px; text-decoration: none; transition: background 120ms; }
-.rpc-sp-share-btn:hover { background: var(--rpc-red-hover); }
+.rpc-sp-share-btn { display: inline-flex; align-items: center; justify-content: center; background: var(--rpc-red-fill); color: #fff; font-family: var(--font-mono); font-size: 12px; letter-spacing: 2.5px; text-transform: uppercase; padding: 13px 18px; border-radius: 2px; text-decoration: none; transition: background 120ms; }
+.rpc-sp-share-btn:hover { background: var(--rpc-red-fill-hover); }
 .rpc-sp-copy-btn { display: inline-flex; align-items: center; justify-content: center; background: transparent; color: var(--rpc-text-primary); border: 1px solid var(--rpc-border); font-family: var(--font-mono); font-size: 12px; letter-spacing: 2.5px; text-transform: uppercase; padding: 13px 18px; border-radius: 2px; cursor: pointer; transition: border-color 120ms, color 120ms; }
 .rpc-sp-copy-btn:hover { border-color: var(--rpc-red); color: var(--rpc-red-text); }
 .rpc-sp-back { font-family: var(--font-mono); font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-secondary); text-decoration: none; padding: 10px; text-align: center; }

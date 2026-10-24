@@ -235,7 +235,7 @@ function Chip({ active, onClick, label }: { active: boolean; onClick: () => void
         fontSize: 12,
         cursor: "pointer",
         border: `1px solid ${active ? "var(--rpc-red)" : "var(--rpc-border)"}`,
-        background: active ? "var(--rpc-red)" : "transparent",
+        background: active ? "var(--rpc-red-fill)" : "transparent",
         color: active ? "#fff" : "var(--rpc-text-secondary)",
       }}
     >

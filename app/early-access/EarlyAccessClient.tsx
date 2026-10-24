@@ -289,7 +289,7 @@ export default function EarlyAccessClient() {
                       onClick={() => toggleCollection(c.slug)}
                       aria-pressed={active}
                       style={{
-                        background: active ? "var(--rpc-red)" : "transparent",
+                        background: active ? "var(--rpc-red-fill)" : "transparent",
                         border: `1px solid ${active ? "var(--rpc-red)" : "var(--rpc-border)"}`,
                         // brand-exception: when active, white sits on the var(--rpc-red) fill
                         color: active ? "#fff" : "var(--rpc-text-secondary)",
@@ -358,7 +358,7 @@ export default function EarlyAccessClient() {
               type="submit"
               disabled={status === "submitting" || !!formError}
               style={{
-                background: "var(--rpc-red)",
+                background: "var(--rpc-red-fill)",
                 border: "none",
                 // brand-exception: white sits on the var(--rpc-red) submit-button fill
                 color: "#fff",
@@ -436,7 +436,7 @@ function SuccessCard({ duplicate }: { duplicate: boolean }) {
         style={{
           display: "inline-block",
           marginTop: 22,
-          background: "var(--rpc-red)",
+          background: "var(--rpc-red-fill)",
           border: "none",
           // brand-exception: white sits on the var(--rpc-red) fill
           color: "#fff",

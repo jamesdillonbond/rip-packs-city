@@ -398,7 +398,7 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
                           ) : null}
                           {h.is_trophy ? (
                             // brand-exception: white text on the red TROPHY badge — theme-independent
-                            <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.06em", color: "#fff", background: "var(--rpc-red, #E03A2F)", padding: "2px 6px", borderRadius: 4 }}>TROPHY</span>
+                            <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.06em", color: "#fff", background: "var(--rpc-red-fill)", padding: "2px 6px", borderRadius: 4 }}>TROPHY</span>
                           ) : null}
                         </div>
                         <div style={{ fontWeight: 700, fontSize: 14, color: "var(--rpc-text-primary)", marginBottom: 2, fontFamily: "var(--font-display)" }}>

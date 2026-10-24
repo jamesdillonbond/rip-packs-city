@@ -178,7 +178,7 @@ export default async function ProfileEntryPage() {
             minHeight: 48,
             padding: "0 20px",
             borderRadius: 8,
-            background: "var(--rpc-red)",
+            background: "var(--rpc-red-fill)",
             color: "#fff",
             fontSize: 13,
             letterSpacing: "0.14em",

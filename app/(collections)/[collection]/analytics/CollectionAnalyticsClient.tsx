@@ -33,7 +33,7 @@ import CrossCollectionHoldingsCard from "@/components/analytics/CrossCollectionH
 import { useOwnFlowWallet } from "@/lib/hooks/useOwnFlowWallet"
 import { fmt, fmtUsd, shortAddr, relativeDate, shortSlug } from "@/lib/analytics/format"
 import { classifyTsOrderbook, TS_ORDERBOOK_STALE_LABEL, tsOrderbookStaleBody, TS_ORDERBOOK_UNKNOWN_LABEL, TS_ORDERBOOK_UNKNOWN_BODY } from "@/lib/analytics/ts-orderbook-freshness"
-import { accentText, labelOn } from "@/lib/accent-text"
+import { accentText, labelOn, accentFill } from "@/lib/accent-text"
 
 // ── Slug mapping ────────────────────────────────────────────────────────────
 // URL slug ("nba-top-shot") → RPC short slug ("topshot") used by the
@@ -1663,7 +1663,7 @@ function AnalyticsInner() {
                 className="rounded-lg border px-5 py-2 font-semibold uppercase tracking-widest disabled:opacity-50"
                 style={{
                   fontFamily: "var(--font-display)",
-                  background: accent,
+                  background: accentFill(accent),
                   color: labelOn(accent),
                   borderColor: accent,
                 }}

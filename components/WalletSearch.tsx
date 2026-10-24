@@ -108,7 +108,7 @@ const VARIANTS: Record<WalletSearchVariant, VariantSpec> = {
 const SCOPED_CSS = `
 .rpc-wallet-search input::placeholder{color:var(--rpc-text-muted);}
 .rpc-wallet-search-go{transition:background 120ms ease;}
-.rpc-wallet-search-go:hover:not(:disabled){background:var(--rpc-red-hover);}
+.rpc-wallet-search-go:hover:not(:disabled){background:var(--rpc-red-fill-hover);}
 `
 
 export default function WalletSearch({
@@ -292,7 +292,7 @@ export default function WalletSearch({
           disabled={pending}
           className="rpc-wallet-search-go"
           style={{
-            background: "var(--rpc-red)",
+            background: "var(--rpc-red-fill)",
             border: "none",
             // brand-exception: white label on the red CTA — theme-independent
             color: "#fff",

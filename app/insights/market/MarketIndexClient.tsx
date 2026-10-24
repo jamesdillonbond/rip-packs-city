@@ -682,7 +682,7 @@ const CSS = `
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: var(--rpc-red);
+  background: var(--rpc-red-fill);
   /* brand-exception: white text on the --rpc-red share button */
   color: #fff;
   font-family: var(--font-mono);
@@ -694,7 +694,7 @@ const CSS = `
   text-decoration: none;
   transition: background 120ms;
 }
-.rpc-mk-share-btn:hover { background: var(--rpc-red-hover); }
+.rpc-mk-share-btn:hover { background: var(--rpc-red-fill-hover); }
 .rpc-mk-back {
   font-family: var(--font-mono);
   font-size: 12px;

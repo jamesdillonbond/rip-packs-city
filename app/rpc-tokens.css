@@ -13,6 +13,15 @@
      AA's 4.5:1 (axe color-contrast, first scheduled audit 2026-10-12). This
      is the red that clears it in each theme; fills and borders keep --rpc-red. */
   --rpc-red-text: #FF4D40;
+  /* Red as a FILL UNDER WHITE LABEL TEXT (buttons, active tabs, CTAs). #E03A2F
+     under #FFF is 4.36:1 — under WCAG AA's 4.5 for normal-size text, and axe
+     flagged it on every primary button. #D93529 is 4.68:1 and visually the same
+     red; the hover goes DARKER (5.65:1), because the old lighter hover (#FF4D40)
+     read 3.29:1. Decided 2026-10-24 under delegation. Accents, borders, bars,
+     dots and the wordmark keep --rpc-red; red TEXT keeps --rpc-red-text.
+     Same value in both themes: the label sits on the fill, not the canvas. */
+  --rpc-red-fill: #D93529;
+  --rpc-red-fill-hover: #C42B22;
   /* A collection ACCENT painted as TEXT goes through lib/accent-text.ts:
      color-mix(in srgb, <accent>, <mix> <amt>). Dark lifts every accent 12 %
      toward white (worst case 4.83:1 on the dark canvases and accent-tinted
@@ -420,7 +429,7 @@ tr[class*="rpc-holo-"]::after { content: none !important; }
 }
 
 .rpc-btn-primary {
-  background: linear-gradient(135deg, var(--rpc-red), #C42B22);
+  background: linear-gradient(135deg, var(--rpc-red-fill), var(--rpc-red-fill-hover));
   border: none;
   color: #fff;
   padding: 7px 18px;
@@ -433,7 +442,7 @@ tr[class*="rpc-holo-"]::after { content: none !important; }
   transition: all var(--transition-fast);
 }
 .rpc-btn-primary:hover {
-  background: linear-gradient(135deg, var(--rpc-red-hover), var(--rpc-red));
+  background: var(--rpc-red-fill-hover);
   transform: translateY(-1px);
 }
 

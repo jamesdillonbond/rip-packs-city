@@ -318,7 +318,7 @@ export default function FastBreakClient() {
                   scrollSnapAlign: "start",
                   minWidth: 116,
                   padding: "10px 14px",
-                  background: isSelected ? "var(--rpc-red)" : "var(--rpc-surface-raised)",
+                  background: isSelected ? "var(--rpc-red-fill)" : "var(--rpc-surface-raised)",
                   border: "1px solid " + (isSelected ? "var(--rpc-red)" : "var(--rpc-border)"),
                   borderRadius: 8,
                   color: isSelected ? "#fff" : "var(--rpc-text-primary)",

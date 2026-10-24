@@ -126,7 +126,7 @@ export default function FmvHealthClient() {
             type="submit"
             style={{
               padding: "8px 16px",
-              background: "var(--rpc-red)",
+              background: "var(--rpc-red-fill)",
               color: "#fff",
               border: "none",
               borderRadius: 4,
@@ -160,7 +160,7 @@ export default function FmvHealthClient() {
               onClick={() => setWindowKey(opt.key)}
               style={{
                 padding: "4px 10px",
-                background: windowKey === opt.key ? "var(--rpc-red)" : "transparent",
+                background: windowKey === opt.key ? "var(--rpc-red-fill)" : "transparent",
                 color: windowKey === opt.key ? "#fff" : "var(--rpc-text-secondary)",
                 border: "1px solid var(--rpc-border)",
                 borderRadius: 4,
@@ -285,7 +285,7 @@ function Stat({ label, value, accent }: { label: string; value: string; accent?:
 
 function Th({ children }: { children: React.ReactNode }) {
   return (
-    <th style={{ padding: "10px 12px", fontWeight: 700, fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.12em", textTransform: "uppercase" }}>
+    <th scope="col" style={{ padding: "10px 12px", fontWeight: 700, fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.12em", textTransform: "uppercase" }}>
       {children}
     </th>
   );

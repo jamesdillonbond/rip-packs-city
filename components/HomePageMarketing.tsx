@@ -490,7 +490,7 @@ export default function HomePageMarketing() {
               alignItems: "center",
               gap: 8,
               padding: "12px 22px",
-              background: "var(--rpc-red)",
+              background: "var(--rpc-red-fill)",
               border: "none",
               borderRadius: 6,
               // brand-exception: white text on the --rpc-red button
@@ -533,7 +533,7 @@ export default function HomePageMarketing() {
               alignItems: "center",
               gap: 8,
               padding: "12px 22px",
-              background: "var(--rpc-red)",
+              background: "var(--rpc-red-fill)",
               border: "none",
               borderRadius: 6,
               // brand-exception: white text on the --rpc-red button
@@ -695,7 +695,7 @@ export default function HomePageMarketing() {
                   href="/login"
                   onClick={() => trackFunnelEvent({ eventType: "signin_click", surface: "home_trophy_case" })}
                   style={{
-                    background: "var(--rpc-red)",
+                    background: "var(--rpc-red-fill)",
                     // brand-exception: white text on the --rpc-red button
                     color: "#fff",
                     padding: "12px 22px",
@@ -802,7 +802,7 @@ export default function HomePageMarketing() {
             onClick={() => trackFunnelEvent({ eventType: "signin_click", surface: "home_pricing" })}
             style={{
               marginTop: 8,
-              background: "var(--rpc-red)",
+              background: "var(--rpc-red-fill)",
               // brand-exception: white text on the --rpc-red button
               color: "#fff",
               padding: "14px 28px",

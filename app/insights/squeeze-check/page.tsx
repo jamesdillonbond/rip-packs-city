@@ -331,8 +331,8 @@ const CSS = `
 .rpc-sc-form { display: flex; gap: 12px; flex-wrap: wrap; }
 .rpc-sc-input { flex: 1; min-width: 240px; font-family: var(--font-mono); font-size: 16px; letter-spacing: 0.5px; padding: 14px 16px; background: var(--rpc-surface); border: 1px solid var(--rpc-border); color: var(--rpc-text-primary); border-radius: 2px; }
 .rpc-sc-input:focus { outline: none; border-color: var(--rpc-red); }
-.rpc-sc-btn { font-family: var(--font-mono); font-size: 12px; letter-spacing: 2.5px; text-transform: uppercase; background: var(--rpc-red); color: #fff; padding: 14px 26px; border: 0; border-radius: 2px; cursor: pointer; }
-.rpc-sc-btn:hover { background: var(--rpc-red-hover); }
+.rpc-sc-btn { font-family: var(--font-mono); font-size: 12px; letter-spacing: 2.5px; text-transform: uppercase; background: var(--rpc-red-fill); color: #fff; padding: 14px 26px; border: 0; border-radius: 2px; cursor: pointer; }
+.rpc-sc-btn:hover { background: var(--rpc-red-fill-hover); }
 .rpc-sc-btn:disabled { opacity: 0.6; cursor: progress; }
 .rpc-sc-error { margin-top: 10px; font-family: var(--font-mono); font-size: 12px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--rpc-danger-text); }
 

@@ -500,8 +500,8 @@ const CSS = `
 .rpc-cc-method strong { color: var(--rpc-text-primary); }
 .rpc-cc-method code { font-family: var(--font-mono); font-size: 12px; color: var(--rpc-text-primary); }
 .rpc-cc-share { display: flex; flex-direction: column; gap: 12px; align-items: stretch; }
-.rpc-cc-share-btn { display: inline-flex; align-items: center; justify-content: center; background: var(--rpc-red); color: #fff; font-family: var(--font-mono); font-size: 12px; letter-spacing: 2.5px; text-transform: uppercase; padding: 13px 18px; border-radius: 2px; text-decoration: none; }
-.rpc-cc-share-btn:hover { background: var(--rpc-red-hover); }
+.rpc-cc-share-btn { display: inline-flex; align-items: center; justify-content: center; background: var(--rpc-red-fill); color: #fff; font-family: var(--font-mono); font-size: 12px; letter-spacing: 2.5px; text-transform: uppercase; padding: 13px 18px; border-radius: 2px; text-decoration: none; }
+.rpc-cc-share-btn:hover { background: var(--rpc-red-fill-hover); }
 .rpc-cc-back { font-family: var(--font-mono); font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-secondary); text-decoration: none; padding: 10px; text-align: center; }
 .rpc-cc-back:hover { color: var(--rpc-red-text); }
 

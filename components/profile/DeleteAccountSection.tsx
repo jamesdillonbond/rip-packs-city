@@ -154,7 +154,7 @@ export default function DeleteAccountSection() {
                 letterSpacing: "0.06em",
                 textTransform: "uppercase",
                 padding: "8px 16px",
-                background: armed ? "var(--rpc-red)" : "var(--rpc-surface-hover)",
+                background: armed ? "var(--rpc-red-fill)" : "var(--rpc-surface-hover)",
                 // brand-exception: white text on the --rpc-red destructive button
                 color: armed ? "#fff" : "var(--rpc-text-muted)",
                 border: "none",

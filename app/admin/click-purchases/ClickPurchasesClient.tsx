@@ -243,7 +243,7 @@ function Stat({ label, value }: { label: string; value: string }) {
 function btn(primary: boolean): React.CSSProperties {
   return {
     padding: "6px 12px",
-    background: primary ? "var(--rpc-red)" : "transparent",
+    background: primary ? "var(--rpc-red-fill)" : "transparent",
     color: "#fff",
     border: "1px solid rgba(255,255,255,0.15)",
     borderRadius: 4,

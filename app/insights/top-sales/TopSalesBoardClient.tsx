@@ -1135,7 +1135,7 @@ const CSS = `
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: var(--rpc-red);
+  background: var(--rpc-red-fill);
   color: #fff;
   font-family: var(--font-mono);
   font-size: 12px;
@@ -1146,7 +1146,7 @@ const CSS = `
   text-decoration: none;
   transition: background 120ms;
 }
-.rpc-ts-share-btn:hover { background: var(--rpc-red-hover); }
+.rpc-ts-share-btn:hover { background: var(--rpc-red-fill-hover); }
 .rpc-ts-copy-btn {
   display: inline-flex;
   align-items: center;

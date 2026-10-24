@@ -24,7 +24,7 @@ import {
 } from "@/lib/wallet/verified-wallets"
 import { proxyIpfsImageUrl } from "@/lib/ipfs-media"
 import { ownLookup } from "@/lib/safe-lookup"
-import { accentText, labelOn } from "@/lib/accent-text"
+import { accentText, labelOn, accentFill } from "@/lib/accent-text"
 
 const condensedFont = "var(--font-display)"
 const monoFont = "var(--font-mono)"
@@ -435,7 +435,7 @@ export default function PackHistoryClient() {
             <div style={{ fontFamily: monoFont, fontSize: 11, color: "var(--rpc-text-secondary)", marginBottom: 12 }}>
               Pack history reads from your saved wallets. Save a wallet from your dashboard, then come back here.
             </div>
-            <Link href="/dashboard" style={{ display: "inline-block", padding: "8px 16px", background: "var(--rpc-red, #E03A2F)", color: "#fff", borderRadius: 6, fontFamily: condensedFont, fontWeight: 700, fontSize: 12, letterSpacing: "0.08em", textTransform: "uppercase", textDecoration: "none" }}>
+            <Link href="/dashboard" style={{ display: "inline-block", padding: "8px 16px", background: "var(--rpc-red-fill)", color: "#fff", borderRadius: 6, fontFamily: condensedFont, fontWeight: 700, fontSize: 12, letterSpacing: "0.08em", textTransform: "uppercase", textDecoration: "none" }}>
               Open dashboard
             </Link>
           </div>
@@ -580,7 +580,7 @@ export default function PackHistoryClient() {
                 onClick={() => setStatus(o.key)}
                 style={{
                   padding: "6px 12px",
-                  background: o.key === status ? o.color : "var(--rpc-surface)",
+                  background: o.key === status ? accentFill(o.color) : "var(--rpc-surface)",
                   color: o.key === status ? labelOn(o.color) : "var(--rpc-text-secondary)",
                   border: `1px solid ${o.key === status ? o.color : "var(--rpc-border)"}`,
                   borderRadius: 5,
@@ -923,7 +923,7 @@ function LifecycleDetail({ lifecycle, row }: { lifecycle: any; row: HistoryRow }
         <div>
           <Link
             href={`/${urlSlug(row.collection_slug)}/packs/simulator/${encodeURIComponent(row.dist_id)}`}
-            style={{ display: "inline-block", padding: "6px 12px", background: "var(--rpc-red, #E03A2F)", color: "#fff", borderRadius: 5, fontFamily: condensedFont, fontWeight: 700, fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", textDecoration: "none" }}
+            style={{ display: "inline-block", padding: "6px 12px", background: "var(--rpc-red-fill)", color: "#fff", borderRadius: 5, fontFamily: condensedFont, fontWeight: 700, fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", textDecoration: "none" }}
           >
             Open simulator for this drop
           </Link>

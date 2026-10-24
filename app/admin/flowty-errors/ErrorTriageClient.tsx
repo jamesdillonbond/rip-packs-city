@@ -553,7 +553,7 @@ function Badge({ text, style }: { text: string; style: React.CSSProperties }) {
 
 function Th({ children, align }: { children: React.ReactNode; align?: "left" | "right" }) {
   return (
-    <th
+    <th scope="col"
       style={{
         textAlign: align ?? "left",
         padding: "10px 12px",

@@ -1,5 +1,6 @@
 import type { ReactNode } from "react"
 import Link from "next/link"
+import { accentFill, labelOn } from "@/lib/accent-text"
 import { collectionHasPage, getCollection, PAGE_LABELS, type CollectionPage } from "@/lib/collections"
 
 // FeatureTabGate — shared "this tab isn't available for this collection" shell
@@ -32,6 +33,8 @@ export default function FeatureTabGate({
   if (collectionHasPage(id, page)) return <>{children}</>
 
   const collection = getCollection(id)
+  // The button fill and its label come from the same accent (labelOn/accentFill).
+  const gateAccent = collection?.accent ?? "var(--rpc-red)"
   const label = collection?.label ?? "this collection"
   const pageLabel = PAGE_LABELS[page]
   return (
@@ -46,7 +49,7 @@ export default function FeatureTabGate({
       </div>
       <Link
         href={`/${id}/overview`}
-        style={{ display: "inline-block", padding: "10px 24px", background: collection?.accent ?? "var(--rpc-red)", borderRadius: 6, color: "#fff", fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 13, letterSpacing: "0.06em", textTransform: "uppercase", textDecoration: "none", marginTop: 8 }}
+        style={{ display: "inline-block", padding: "10px 24px", background: accentFill(gateAccent), borderRadius: 6, color: labelOn(gateAccent), fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 13, letterSpacing: "0.06em", textTransform: "uppercase", textDecoration: "none", marginTop: 8 }}
       >
         Back to Overview
       </Link>

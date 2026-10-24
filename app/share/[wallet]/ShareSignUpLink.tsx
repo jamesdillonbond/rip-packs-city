@@ -18,7 +18,7 @@ export default function ShareSignUpLink({ wallet }: { wallet: string }) {
       href={href}
       onClick={() => trackFunnelEvent({ eventType: "signin_click", walletAddress: wallet, surface: "share_cta" })}
       // brand-exception: white label on the red CTA button — theme-independent
-      style={{ display: "inline-block", padding: "12px 28px", background: "var(--rpc-red)", borderRadius: 8, color: "#fff", fontWeight: 700, fontSize: 14, textDecoration: "none", letterSpacing: "0.06em" }}
+      style={{ display: "inline-block", padding: "12px 28px", background: "var(--rpc-red-fill)", borderRadius: 8, color: "#fff", fontWeight: 700, fontSize: 14, textDecoration: "none", letterSpacing: "0.06em" }}
     >
       Create a free account →
     </a>

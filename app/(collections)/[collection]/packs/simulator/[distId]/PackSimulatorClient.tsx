@@ -16,7 +16,7 @@ import Link from "next/link"
 import { COLLECTION_UUID_BY_SLUG, getCollection } from "@/lib/collections"
 import { proxyIpfsImageUrl } from "@/lib/ipfs-media"
 import { ownLookup } from "@/lib/safe-lookup"
-import { accentText, labelOn } from "@/lib/accent-text"
+import { accentText, labelOn, accentFill } from "@/lib/accent-text"
 
 interface PackInfo {
   dist_id: string
@@ -311,7 +311,7 @@ export default function PackSimulatorClient({ collectionSlug, distId }: Props) {
           )}
         </div>
         <div style={{ marginTop: 18 }}>
-          <Link href={`/${collectionSlug}/packs`} style={{ /* brand-exception: white text on the accent button */ display: "inline-block", padding: "8px 16px", background: accent, color: labelOn(accent), borderRadius: 6, fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 12, letterSpacing: "0.08em", textTransform: "uppercase", textDecoration: "none" }}>
+          <Link href={`/${collectionSlug}/packs`} style={{ /* brand-exception: white text on the accent button */ display: "inline-block", padding: "8px 16px", background: accentFill(accent), color: labelOn(accent), borderRadius: 6, fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 12, letterSpacing: "0.08em", textTransform: "uppercase", textDecoration: "none" }}>
             Back to packs
           </Link>
         </div>
@@ -460,7 +460,7 @@ function RipButton({ onClick, label, accent, disabled }: { onClick: () => void; 
       onClick={onClick}
       disabled={disabled}
       className="rpc-sim-button"
-      style={{ /* label: white on the brand red, near-black on any other accent (labelOn) */ padding: "12px 22px", background: accent, color: labelOn(accent), border: "none", borderRadius: 6, fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 14, letterSpacing: "0.12em", textTransform: "uppercase" }}
+      style={{ /* label: white on the brand red, near-black on any other accent (labelOn) */ padding: "12px 22px", background: accentFill(accent), color: labelOn(accent), border: "none", borderRadius: 6, fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 14, letterSpacing: "0.12em", textTransform: "uppercase" }}
     >
       {label}
     </button>

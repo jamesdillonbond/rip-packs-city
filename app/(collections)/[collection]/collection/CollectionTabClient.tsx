@@ -1,6 +1,6 @@
 "use client"
 
-import { labelOn } from "@/lib/accent-text"
+import { labelOn, accentFill } from "@/lib/accent-text"
 import { useMemo, useState, useReducer, useEffect, useCallback, useRef, Suspense } from "react"
 import { seriesPageLabel } from "@/lib/series-label"
 import { packNftTypeName } from "@/lib/packs/live-pack-listings"
@@ -1606,7 +1606,7 @@ function CollectionSection() {
                   minHeight: 32,
                   borderRadius: 4,
                   cursor: "pointer",
-                  background: on ? accent : "transparent",
+                  background: on ? accentFill(accent) : "transparent",
                   // brand-exception: active state paints white text on the
                   // colored `accent` fill — theme-independent (text on a colored
                   // surface), so #fff is correct in both light and dark.

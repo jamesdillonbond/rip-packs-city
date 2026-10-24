@@ -131,7 +131,7 @@ export default function ListingRetryQueueClient() {
           <button
             type="submit"
             style={{
-              padding: "8px 16px", background: "var(--rpc-red)", color: "#fff",
+              padding: "8px 16px", background: "var(--rpc-red-fill)", color: "#fff",
               border: "none", borderRadius: 4,
               fontFamily: "var(--font-display)", fontWeight: 700,
               fontSize: 12, letterSpacing: "0.08em", textTransform: "uppercase",
@@ -570,7 +570,7 @@ function Th({
   onClick?: () => void;
 }) {
   return (
-    <th
+    <th scope="col"
       onClick={onClick}
       style={{
         textAlign: "left", padding: "8px 10px",

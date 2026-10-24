@@ -274,7 +274,7 @@ export default function BetaActivityClient() {
 
 function Th({ children }: { children: React.ReactNode }) {
   return (
-    <th style={{ padding: "10px 12px", fontWeight: 700, fontSize: 10, color: "rgba(255,255,255,0.5)", letterSpacing: "0.12em", textTransform: "uppercase" }}>
+    <th scope="col" style={{ padding: "10px 12px", fontWeight: 700, fontSize: 10, color: "rgba(255,255,255,0.5)", letterSpacing: "0.12em", textTransform: "uppercase" }}>
       {children}
     </th>
   );

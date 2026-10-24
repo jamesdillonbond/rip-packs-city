@@ -657,7 +657,7 @@ const CSS = `
   .rpc-al-actions { display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
   .rpc-al-cta {
     display: inline-flex; align-items: center; justify-content: center;
-    background: var(--rpc-red, #E03A2F); color: #fff; border: none;
+    background: var(--rpc-red-fill); color: #fff; border: none;
     padding: 10px 18px; border-radius: var(--radius-sm, 6px);
     font-family: var(--font-display); font-weight: 800;
     font-size: 13px; letter-spacing: 0.14em; text-transform: uppercase;

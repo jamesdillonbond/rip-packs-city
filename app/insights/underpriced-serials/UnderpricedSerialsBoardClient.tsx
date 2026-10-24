@@ -646,16 +646,16 @@ const CSS = `
 .rpc-us-row-prices { font-family: var(--font-mono); font-size: 13px; display: flex; align-items: center; gap: 7px; min-width: 0; }
 .rpc-us-row-right { text-align: right; white-space: nowrap; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
 .rpc-us-row-disc { font-family: var(--font-display); font-weight: 800; font-size: 22px; color: var(--rpc-red-text); letter-spacing: 0.5px; }
-.rpc-us-buy { font-family: var(--font-mono); font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase; color: #fff; background: var(--rpc-red); border-radius: 2px; padding: 6px 10px; text-decoration: none; transition: background 120ms; }
-.rpc-us-buy:hover { background: var(--rpc-red-hover); }
+.rpc-us-buy { font-family: var(--font-mono); font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase; color: #fff; background: var(--rpc-red-fill); border-radius: 2px; padding: 6px 10px; text-decoration: none; transition: background 120ms; }
+.rpc-us-buy:hover { background: var(--rpc-red-fill-hover); }
 
 .rpc-us-footer { max-width: 1180px; margin: 40px auto 0; padding-top: 24px; border-top: 1px solid var(--rpc-border-subtle); display: grid; grid-template-columns: 2fr 1fr; gap: 32px; }
 .rpc-us-method h3 { font-family: var(--font-display); font-weight: 800; font-size: 22px; letter-spacing: 1px; text-transform: uppercase; margin: 0 0 10px; }
 .rpc-us-method p { font-size: 14px; line-height: 1.65; color: var(--rpc-text-secondary); margin: 0 0 12px; }
 .rpc-us-method strong { color: var(--rpc-text-primary); }
 .rpc-us-share { display: flex; flex-direction: column; gap: 12px; align-items: stretch; }
-.rpc-us-share-btn { display: inline-flex; align-items: center; justify-content: center; background: var(--rpc-red); color: #fff; font-family: var(--font-mono); font-size: 12px; letter-spacing: 2.5px; text-transform: uppercase; padding: 13px 18px; border-radius: 2px; text-decoration: none; transition: background 120ms; }
-.rpc-us-share-btn:hover { background: var(--rpc-red-hover); }
+.rpc-us-share-btn { display: inline-flex; align-items: center; justify-content: center; background: var(--rpc-red-fill); color: #fff; font-family: var(--font-mono); font-size: 12px; letter-spacing: 2.5px; text-transform: uppercase; padding: 13px 18px; border-radius: 2px; text-decoration: none; transition: background 120ms; }
+.rpc-us-share-btn:hover { background: var(--rpc-red-fill-hover); }
 .rpc-us-copy-btn { display: inline-flex; align-items: center; justify-content: center; background: transparent; color: var(--rpc-text-primary); border: 1px solid var(--rpc-border); font-family: var(--font-mono); font-size: 12px; letter-spacing: 2.5px; text-transform: uppercase; padding: 13px 18px; border-radius: 2px; cursor: pointer; transition: border-color 120ms, color 120ms; }
 .rpc-us-copy-btn:hover { border-color: var(--rpc-red); color: var(--rpc-red-text); }
 .rpc-us-back { font-family: var(--font-mono); font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-secondary); text-decoration: none; padding: 10px; text-align: center; }

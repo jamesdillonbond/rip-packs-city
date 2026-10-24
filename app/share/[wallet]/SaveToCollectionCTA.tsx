@@ -129,7 +129,7 @@ export default function SaveToCollectionCTA({ wallet }: { wallet: string }) {
         disabled={state.kind === "saving"}
         style={{
           padding: "12px 24px",
-          background: "var(--rpc-red)",
+          background: "var(--rpc-red-fill)",
           border: "none",
           borderRadius: 8,
           // brand-exception: white label on the red button — theme-independent

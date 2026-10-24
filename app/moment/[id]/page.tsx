@@ -1076,7 +1076,7 @@ export default async function MomentPage(
                   style={{
                     display: "inline-flex", alignItems: "center", gap: 4,
                     padding: "3px 9px",
-                    background: "var(--rpc-red)",
+                    background: "var(--rpc-red-fill)",
                     color: "var(--rpc-text-primary, #fff)",
                     fontFamily: "var(--font-mono)",
                     fontSize: "var(--text-xs, 11px)",
@@ -1094,7 +1094,7 @@ export default async function MomentPage(
                   style={{
                     display: "inline-flex", alignItems: "center", gap: 4,
                     padding: "3px 9px",
-                    background: "var(--rpc-red)",
+                    background: "var(--rpc-red-fill)",
                     color: "var(--rpc-text-primary, #fff)",
                     fontFamily: "var(--font-mono)",
                     fontSize: "var(--text-xs, 11px)",
@@ -1176,7 +1176,7 @@ export default async function MomentPage(
                 justifyContent: "center",
                 gap: 8,
                 padding: "12px 20px",
-                background: "var(--rpc-red)",
+                background: "var(--rpc-red-fill)",
                 // brand-exception: white label on the red CTA button — theme-independent
                 color: "#fff",
                 borderRadius: 8,

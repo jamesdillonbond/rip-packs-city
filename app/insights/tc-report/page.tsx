@@ -573,8 +573,8 @@ const CSS = `
 .rpc-tc-form { display: flex; gap: 12px; flex-wrap: wrap; }
 .rpc-tc-input { flex: 1; min-width: 240px; font-family: var(--font-mono); font-size: 16px; letter-spacing: 0.5px; padding: 14px 16px; background: var(--rpc-surface); border: 1px solid var(--rpc-border); color: var(--rpc-text-primary); border-radius: 2px; }
 .rpc-tc-input:focus { outline: none; border-color: var(--rpc-red); }
-.rpc-tc-btn { font-family: var(--font-mono); font-size: 12px; letter-spacing: 2.5px; text-transform: uppercase; background: var(--rpc-red); color: #fff; padding: 14px 26px; border: 0; border-radius: 2px; cursor: pointer; }
-.rpc-tc-btn:hover { background: var(--rpc-red-hover); }
+.rpc-tc-btn { font-family: var(--font-mono); font-size: 12px; letter-spacing: 2.5px; text-transform: uppercase; background: var(--rpc-red-fill); color: #fff; padding: 14px 26px; border: 0; border-radius: 2px; cursor: pointer; }
+.rpc-tc-btn:hover { background: var(--rpc-red-fill-hover); }
 .rpc-tc-btn:disabled { opacity: 0.6; cursor: progress; }
 .rpc-tc-error { margin-top: 10px; font-family: var(--font-mono); font-size: 12px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--rpc-danger-text); }
 
