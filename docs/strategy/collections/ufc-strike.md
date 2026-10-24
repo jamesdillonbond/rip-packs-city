@@ -30,7 +30,7 @@ No numbered register item is open for UFC. Recorded but not changed:
 - ✅ **Stale text — FIXED 2026-10-18 ~8:10 AM PT** (the registry header and `pitch` had already been corrected by another session; this pass fixed the rest: the `/analytics` methodology line, the UFC banner and moment-page copy ("is migrating" → "moved to Aptos; Flow trading closed in May 2026"), and the `collection_config` marketplace notes). Original list kept below:
   - The [lib/collections.ts](../../../lib/collections.ts) header says "UFC Strike — unpublished". It is `published: true`.
   - The UFC `pitch` says "147 editions tracked, 29 with FMV… backfill in progress". Live: 518 editions, all STALE, no backfill running.
-  - The `v_collection_marketplace_status.notes` row still says "sales-indexer kept loose… studio history backfill + wallet walks continue" and "813k". Those lanes were retired 08-27 (#44), and the total is now 846k.
+  - The `v_collection_marketplace_status.notes` row still says "sales-indexer kept loose… studio history backfill + wallet walks continue" and "813k". Those lanes were retired 08-27 (#44), and the total is now 846k. ↳ ✅ **Already fixed (re-read 2026-10-23 ~10 PM PT, Claude Code cloud):** the live notes were rewritten 10-18 and read "~846k historical Flow sales … sales indexer and history backfills were retired 08-27 (#44)".
   - [roadmap-2026-08-02](../roadmap-2026-08-02.md) calls Flowty's UFC history "essentially absent… likely unrecoverable". That is now true only before the 2023-11 floor.
 
 ## Next — prioritized

@@ -35,7 +35,7 @@ Candy MLB is RPC's only Solana collection: 125 editions, `is_active=true` since 
 ## Next — prioritized
 
 **Now**
-1. **Find out where Candy volume went (#58).** If Candy trades on OpenSea, RPC's FMV is pricing a dead venue. *Gate:* Trevor's key. *Falsifier:* the first OpenSea sales run (`windows_completed`) returns 0 sales since 10-12, which confirms a true market-wide freeze.
+1. **Find out where Candy volume went (#58).** If Candy trades on OpenSea, RPC's FMV is pricing a dead venue. *Gate:* Trevor's key. *Falsifier:* the first OpenSea sales run (`windows_completed`) returns 0 sales since 10-12, which confirms a true market-wide freeze. ↳ **The same first read re-stamps `v_collection_marketplace_status`'s Candy row**, which reads `silent_since_2026_10_11` since 10-23 (`20261024054148`): name the venue (`live` on OpenSea) or record the measured freeze. The row is a literal in the view body, so it is a view replace that restates `security_invoker = true`.
 2. **Score the 10-11 relabel when sales resume.** Re-run the out-of-sample MdAPE on lifted vs native MEDIUM vs LOW. *Falsifier:* the lifted cohort scores worse than LOW-that-stays-LOW (27 %). If so, revert `a56214193`; the next recalc restores the labels.
 
 **Next**
