@@ -66,7 +66,7 @@ There is no wallet verification. It was removed by decision (#0, 08-08).
 ## Next — prioritized
 
 **Now**
-1. **10-20 Series 2026-27 launch verification** (owed ~7 PM PT): index rows for new sets, candidates seeded within the hour, and the unplaced queue draining. Why: launch-day collectors are walked or invisible. Falsifier: a new-set holding missing from `topshot_ownership` 24 h after its first sale.
+1. ✅ **VERIFIED 2026-10-24 ~8:50 AM PT (Cowork cloud; Q4 of `docs/operations/series-2026-27-launch-checks.sql` + a per-sale join):** 21 Series-9 editions (6 base + 15 parallels), 15 `topshot_ownership` rows on them; all 4 Series-9 sales so far (first 10-21 8:04 PM PT; one moment resold) are indexed to their CURRENT owner (`onchain_walk`, observed within the day); `series8_era_backfill` unwalked 0; walks 7 ok-unbudgeted of 7 in 24 h. Falsifier not hit. Was: **10-20 Series 2026-27 launch verification** (owed ~7 PM PT): index rows for new sets, candidates seeded within the hour, and the unplaced queue draining. Why: launch-day collectors are walked or invisible. Falsifier: a new-set holding missing from `topshot_ownership` 24 h after its first sale.
 2. **Watch the parallel seeder `never_queued` count** across two cycles (query in focus.md 10-17).
 3. **Read the share-card CTA in the 10-22 demand re-read.** Count share view → `signin_click share_cta` → account. Falsifier: still 0 clicks on ≥10 views, in which case the CTA is not the fix.
 
