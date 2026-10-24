@@ -685,8 +685,13 @@ tr[class*="rpc-holo-"]::after { content: none !important; }
   96%      { opacity: 1; }
 }
 .rpc-live-pill {
-  background: var(--por-red);
-  color: var(--por-white);
+  /* Pure white on the DEEPER fill: the CRT flicker dips the whole pill to 0.92
+     opacity, which blends label and fill toward the canvas — #D93529 then reads
+     4.23:1 on the light canvas, #C42B22 holds >= 5.04:1 on every canvas through the
+     dip. #F1F1F1 on #E03A2F read 3.7:1 there and was the last carve-out in the a11y
+     gate (retired 2026-10-24). */
+  background: var(--rpc-red-fill-hover);
+  color: #FFFFFF;
   font-family: var(--font-mono);
   font-size: 9px;
   letter-spacing: 0.15em;

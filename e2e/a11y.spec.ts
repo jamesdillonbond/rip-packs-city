@@ -9,7 +9,7 @@ import AxeBuilder from "@axe-core/playwright"
 //
 // ⭐ PROMOTED TO A GATE 2026-10-18. The 10-17/18 work (known-issues #194,
 // docs/reference/text-colour-system.md) took `color-contrast` to ZERO on every route
-// in both themes apart from ONE accepted exception, and `select-name` to zero — so
+// in both themes (the ONE accepted exception was retired 2026-10-24), and `select-name` to zero — so
 // those two rules are now BLOCKING. Every other serious/critical rule is still
 // PRINTED but does not fail the run, EXCEPT `nested-interactive` and
 // `aria-conditional-attr`: the #196 row-interactivity pattern, redesigned 10-18
@@ -17,11 +17,11 @@ import AxeBuilder from "@axe-core/playwright"
 // production (run 39180539821) and were GATED the same evening.
 // Move a rule into GATED once it reads zero; never move one out to make a run green.
 //
-// ⛔ THE ONE EXCLUSION is the accepted pre-launch exception (roadmap-status "Brand
-// red on small text"): white text on a #E03A2F fill, plus the login `.rpc-live-pill`
-// (the same white-on-red, read mid-flicker by its CRT animation). It is matched by
-// SIGNATURE (colours / selector), never by route — a new contrast failure anywhere
-// else still fails.
+// ✅ NO EXCLUSIONS since 2026-10-24. The one this file carried — white text on a
+// #E03A2F fill, plus the login `.rpc-live-pill` — was retired with the exception
+// itself: labelled red fills now use --rpc-red-fill (#D93529, white 4.68:1), pinned
+// by __tests__/red-fill-contrast.test.ts. Do not re-add a signature carve-out; fix
+// the fill.
 
 const ROUTES = [
   "/",
@@ -56,6 +56,13 @@ const ROUTES = [
   "/disney-pinnacle/sniper",
   "/candy-mlb/packs",
   "/blog",
+  // 2026-10-24 (third batch): the red-fill retirement's own surfaces — team chips
+  // (readableFill), Panini's segmented control, a market-pulse window tab, and the
+  // login live pill — each read 0 violations on production in both themes first.
+  "/teams",
+  "/insights/panini-squeeze",
+  "/insights/market-pulse",
+  "/login",
 ]
 const THEMES = ["dark", "light"] as const
 const SERIOUS = new Set(["serious", "critical"])
@@ -121,16 +128,6 @@ function within<T>(ms: number, p: Promise<T>): Promise<T | "timeout"> {
 type Violation = Awaited<ReturnType<AxeBuilder["analyze"]>>["violations"][number]
 type AxeNode = Violation["nodes"][number]
 
-/** The accepted white-on-#E03A2F exception, by signature. */
-export function isAcceptedException(v: Pick<Violation, "id">, n: Pick<AxeNode, "target" | "any">): boolean {
-  if (v.id !== "color-contrast") return false
-  const target = (Array.isArray(n.target) ? n.target.join(" ") : String(n.target))
-  if (target.includes("rpc-live-pill")) return true
-  const d = (n.any?.[0]?.data ?? {}) as { fgColor?: string; bgColor?: string }
-  const fg = String(d.fgColor ?? "").toLowerCase(), bg = String(d.bgColor ?? "").toLowerCase()
-  return bg === "#e03a2f" && /^#f[0-9a-f]f[0-9a-f]f[0-9a-f]$/.test(fg)
-}
-
 function describeViolation(v: Violation, nodes: AxeNode[] = v.nodes): string {
   const targets = nodes
     .slice(0, 3)
@@ -192,10 +189,8 @@ for (const path of ROUTES) for (const theme of THEMES) {
     }
     const results = outcome
     const gated: string[] = [], reported: string[] = [], advisory: string[] = []
-    let excepted = 0
     for (const v of results.violations) {
-      const nodes = v.nodes.filter((n) => !isAcceptedException(v, n))
-      excepted += v.nodes.length - nodes.length
+      const nodes = v.nodes
       if (!nodes.length) continue
       if (SERIOUS.has(v.impact ?? "") && GATED.has(v.id)) gated.push([describeViolation(v, nodes), ...contrastDetail(v, nodes)].join("\n"))
       else if (SERIOUS.has(v.impact ?? "")) reported.push(describeViolation(v, nodes))
@@ -205,7 +200,7 @@ for (const path of ROUTES) for (const theme of THEMES) {
     // Everything is PRINTED, whatever the verdict: the reported and advisory tiers are
     // the backlog, and a green run that said nothing would hide it.
     const lines = [
-      `### ${path} [${theme}] (${scope}) — ${gated.length} gated, ${reported.length} reported (serious, not gated), ${advisory.length} advisory, ${excepted} accepted-exception node(s), ${results.passes.length} rules passed`,
+      `### ${path} [${theme}] (${scope}) — ${gated.length} gated, ${reported.length} reported (serious, not gated), ${advisory.length} advisory, ${results.passes.length} rules passed`,
       ...gated.map((d) => `- ❌ ${d}`),
       ...reported.map((d) => `- ⚠ ${d}`),
       ...advisory.map((d) => `- · ${d}`),
