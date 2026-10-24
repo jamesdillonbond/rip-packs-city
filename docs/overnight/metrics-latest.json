@@ -43,7 +43,7 @@
   "deltas_vs_prev": "db +370 MB (41,469 -> 41,839). FMV HIGH+MED: nba 6,500 -> 6,519 (+19); panini 17,212 -> 17,274 (+62); nfl 1,685 -> 1,697 (+12); pinnacle 974 -> 935 (-39, #193 churn/gate-landing); candy 71 -> 72 (+1); golazos 1 flat; ufc 0 flat. editions: panini 38,902 -> 38,985 (+83), nba 14,545 -> 14,549 (+4), others flat. trust breaches 1 -> 1 (candy_sales_stale 268.8 -> 292.8h).",
   "carried_queue": [
     "#58 OPENSEA_API_KEY (~29 nights; candy_sales_stale 292.8h) - Trevor.",
-    "DROP 3 leftover scratch_* tables (~4.8MB, RLS-on, no exposure) - Trevor/interactive SQL editor.",
+    "DROP 2 orphaned scratch_* FUNCTIONS (scratch_20261022_get_player_hub, scratch_20261023_search_catalog_joined) - NOT tables (none exist); EXECUTE postgres/service_role only, 0 callers/cron; safe; MCP holds DROPs -> Trevor/interactive.",
     "(Closed by 10-23 CC: demand-read canonical doc; 5 zero-yield lanes suppressed 20261023132818.)"
   ],
   "housekeeping": "0 production shipped, 0 reverted. Green-night ledger entry spliced above the first ### heading. Session-log entry prepended to docs/sessions/2026-10.md. Handoff written. metrics overwritten. Inbox NOT touched (append-only; newest filing 2026-10-23T0310Z resolved - backfill walked past the decode dead zone). Lock released. Pushed via laptop-VM clone (cloud add_repo/gh unavailable)."
