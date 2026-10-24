@@ -5,6 +5,7 @@
 // extraction of the primary-filters row, the tier/variant quick tabs, and the
 // advanced-filters row. All state stays in the page; this component reads values
 // and reports changes through the callback props below. No data-fetch logic here.
+import Link from "next/link";
 import LeagueFilter, { type LeagueValue } from "@/components/filters/LeagueFilter";
 import FilterSelect from "@/components/filters/FilterSelect";
 import { variantColor } from "@/lib/sniper/helpers";
@@ -67,6 +68,8 @@ export default function SniperFilterBar(props: {
   onLeagueChange: (value: LeagueValue) => void;
   copyLinkMsg: string | null;
   onCopyLink: () => void;
+  /** "Alert me when this board matches" (2026-10-24): /alerts prefilled from these filters. */
+  alertHref?: string | null;
 }) {
   const {
     isMobile, isPinnacle, isAllDay, accent, collectionSlug,
@@ -86,7 +89,7 @@ export default function SniperFilterBar(props: {
     afterFeesOnly, onAfterFeesChange,
     ownedFilter, onOwnedFilterChange, ownedCount,
     leagueFilter, onLeagueChange,
-    copyLinkMsg, onCopyLink,
+    copyLinkMsg, onCopyLink, alertHref,
   } = props;
   const labels = getEntityLabels(collectionSlug);
 
@@ -336,6 +339,11 @@ export default function SniperFilterBar(props: {
         >
           {copyLinkMsg ?? "🔗 COPY LINK"}
         </button>
+        {alertHref ? (
+          <Link href={alertHref} className="rpc-chip" title="Get an alert when a new listing matches these filters" style={{ textDecoration: "none" }}>
+            🔔 ALERT ME
+          </Link>
+        ) : null}
       </div>
       )}
     </>

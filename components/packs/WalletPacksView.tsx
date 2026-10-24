@@ -463,5 +463,5 @@ function Stat({ label, value, tint, title }: { label: string; value: string; tin
 }
 
 function Th({ children, right }: { children: React.ReactNode; right?: boolean }) {
-  return <th style={{ padding: "9px 12px", textAlign: right ? "right" : "left", fontWeight: 700 }}>{children}</th>
+  return <th scope="col" style={{ padding: "9px 12px", textAlign: right ? "right" : "left", fontWeight: 700 }}>{children}</th>
 }

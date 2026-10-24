@@ -154,7 +154,7 @@ const CSS = `
 .psq-tier{font-size:9.5px;font-weight:800;padding:2px 6px;border-radius:4px;text-transform:uppercase}
 /* Ask-derived FMV marker. Deliberately quiet -- it sits beside the value, not on top of it,
    because it qualifies the number rather than replacing it. */
-.psq-basis{display:block;font-size:9px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#e0a64b;margin-top:2px;cursor:help}
+.psq-basis{display:block;font-size:9px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--rpc-warning-text);margin-top:2px;cursor:help}
 `;
 
 // Ask-derived FMV marker for one row. Returns null for every sale-derived price, so the

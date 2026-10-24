@@ -13,6 +13,7 @@
 // this page adds no inline reader to the server-page data-access ratchet.
 // A league whose read failed says so; it is never rendered as "no teams".
 
+import { readableOn } from "@/lib/accent-text"
 import type { Metadata } from "next"
 import Link from "next/link"
 import { franchiseHubMetadata } from "@/lib/seo"
@@ -110,7 +111,8 @@ function LeagueSection({ league }: { league: DirectoryLeague }) {
                   borderRadius: 4,
                   background: t.primary_color || "var(--rpc-surface, rgba(255,255,255,0.04))",
                   // brand-exception: a team's own colours are theme-independent
-                  color: t.secondary_color || "#fff",
+                  // …but only when it reads on the primary (readableOn, 2026-10-24).
+                  color: readableOn(t.primary_color, t.secondary_color),
                 }}
               >
                 {t.abbreviation || "—"}

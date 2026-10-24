@@ -203,3 +203,18 @@ Panini was published 09-25. By 10-19 the concierge still said it had no Collecti
 - **Check what the public boards already serve before building.** `get_top_sales` refused Panini for nine days while its own board filtered `panini_blockchain`.
 - **Route-level tests, each proven by a planted defect.** `__tests__/concierge-panini-edition-listings.test.ts` drives the real route with a Panini page context and asserts the Top Shot resolvers are never called.
 
+
+## 2026-10-24 pass — confidence never reaches the model; the Top Shot floor answers again; current season derived
+
+**Input:** a signed-in 10-question battery on production (before and after), a code audit of the route and widget, and Trevor's 10-24 user-activity handoff.
+
+- **Model:** `CONCIERGE_MODEL` is `claude-sonnet-5-5` (was `claude-sonnet-4-6`). The `model_error` telemetry still flags the next retirement.
+- **FMV confidence is scrubbed from every tool result** (`lib/concierge/scrub-confidence.ts`, applied where `tool_result` blocks are built). A tier becomes `pricing_basis` / `fmv_pricing_basis` — a plain sentence ("priced from very few sales — treat as rough", "estimated from current asking prices, not sales"); per-tier counts are dropped; `low_confidence_*` booleans become `thin_pricing_*`. A prompt rule alone had not held: answers said "LOW confidence FMV" and quoted "~28% HIGH/MEDIUM". The coverage block (`lib/concierge/fmv-coverage.ts`) is marked internal-only. ⚠ **A new tool that returns a confidence field needs nothing** — the scrubber is key-based (`/confidence/i`); a tool that returns a tier under ANOTHER key name would leak, so name it `confidence`.
+- **Top Shot floor:** `public-api.nbatopshot.com` is a dead Cloudflare tunnel (#81), so `/api/edition-floor` 503s on every Top Shot key. `get_edition_listings` now falls back to `resolveLiveAsks` (the binder's rule: an ask re-confirmed in 7 days, ≤ 3× FMV) and says "recently listed at about $X", `floor_basis: "recent_ask_7d"`. Its ABSENCE stays "unavailable" (a change-only feed is not a census, #149). The Sniper depth panel uses the same fallback via `/api/best-asks`.
+- **Current season:** `CURRENT_TOP_SHOT_SERIES(_LABEL)` in `lib/series-label.ts` is the highest mapped series and is stated in the dynamic prompt. Adding next season's `SERIES_DISPLAY` entry moves the bot.
+- **Tabs:** the prompt lists each published collection's real tabs from the registry (`publishedTabsLine`, a deploy constant above the cache breakpoint).
+- **Time budget:** 52 s of the 60 s `maxDuration`; every model call gets the remaining time as its timeout, tools never eat the answer's 12 s, and the last hop runs with `tool_choice: none` so the bot answers from what it gathered instead of "too complex".
+- **Persistence:** the turn's row is written before the reply's meta (not in `after()`), and the meta carries `messageId` so 👍/👎 rate that turn. In streaming mode the stored answer is exactly the streamed text.
+- **Feedback dedupe:** `logBetaFeedback` returns the existing row (`already_logged`) for a same-type report in the same session within 30 min whose summary overlaps ≥ 0.25 (`lib/concierge/feedback-dedupe.ts`).
+- **Widget:** replies render markdown blocks (tables, headings, lists, rules — `parseRichBlocks`, still no `dangerouslySetInnerHTML`); Stop button; textarea; `100dvh` + safe-area + 16 px input on phones; the log is `aria-busy` while streaming; ✕ returns focus; the server's own 429 copy; error categories get no thumbs.
+- **Field dictionary:** `squeeze.pct`. The team page now explains it inline too (feedback 11373).

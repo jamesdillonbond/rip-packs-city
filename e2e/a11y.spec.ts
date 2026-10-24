@@ -45,6 +45,17 @@ const ROUTES = [
   // prompt (253 elements) — kept above, it is a real page — but until this route
   // the tracker's 272 set cards (4,464 elements) had never been audited.
   "/nba-top-shot/sets?wallet=0xbd94cade097e50ac",
+  // 2026-10-24 (CX/UI pass): routes a wider 162-template axe sweep found failing
+  // OUTSIDE this list (light-theme contrast, an unlabelled select) — fixed, then
+  // re-read clean on production in both themes before being added here.
+  "/help",
+  "/insights/parallel-premiums",
+  "/insights/candy-mlb",
+  "/insights/market",
+  "/nba-top-shot/challenges",
+  "/disney-pinnacle/sniper",
+  "/candy-mlb/packs",
+  "/blog",
 ]
 const THEMES = ["dark", "light"] as const
 const SERIOUS = new Set(["serious", "critical"])

@@ -51,3 +51,39 @@ export function saveSniperFilters(slug: string, f: SavedSniperFilters): void {
 export function urlHasSniperFilters(u: { tier?: unknown; sort?: unknown; minDiscount?: unknown; maxPrice?: unknown; team?: unknown; player?: unknown }): boolean {
   return [u.tier, u.sort, u.minDiscount, u.maxPrice, u.team, u.player].some((v) => v !== undefined && v !== null && v !== "")
 }
+
+// ── "Alert me" from the Sniper (2026-10-24) ──────────────────────────────────
+// The retained collector's loop was filter → scan → buy; the alert that would
+// do the scanning for them lived on another page with every filter re-typed.
+// The board's filters travel to /alerts as query params, which AlertsClient
+// reads once to prefill a NEW alert (nothing is saved until they press Save).
+
+export function sniperAlertHref(f: { collectionUuid: string | null; tier?: string; player?: string; team?: string; maxPrice?: number; minDiscount?: number }): string | null {
+  if (!f.collectionUuid) return null
+  const q = new URLSearchParams({ from: "sniper", collection: f.collectionUuid })
+  if (f.tier && f.tier !== "all") q.set("tier", f.tier.toUpperCase())
+  if (f.player) q.set("player", f.player.slice(0, 80))
+  if (f.team && f.team !== "all") q.set("team", f.team.slice(0, 80))
+  if (f.maxPrice && f.maxPrice > 0) q.set("maxPrice", String(f.maxPrice))
+  if (f.minDiscount && f.minDiscount > 0) q.set("minDiscount", String(f.minDiscount))
+  return `/alerts?${q.toString()}`
+}
+
+export type AlertPrefill = { collectionId: string; tier?: string; player?: string; team?: string; maxPrice?: string; minDiscount?: string }
+
+/** Reads a /alerts?from=sniper… query; null unless it came from the Sniper with a collection. */
+export function readAlertPrefill(search: string): AlertPrefill | null {
+  const q = new URLSearchParams(search)
+  if (q.get("from") !== "sniper") return null
+  const collectionId = q.get("collection")
+  if (!collectionId || !/^[0-9a-f-]{36}$/i.test(collectionId)) return null
+  const num = (v: string | null) => (v && /^\d+(\.\d+)?$/.test(v) ? v : undefined)
+  return {
+    collectionId,
+    tier: q.get("tier")?.toUpperCase() || undefined,
+    player: q.get("player")?.slice(0, 80) || undefined,
+    team: q.get("team")?.slice(0, 80) || undefined,
+    maxPrice: num(q.get("maxPrice")),
+    minDiscount: num(q.get("minDiscount")),
+  }
+}

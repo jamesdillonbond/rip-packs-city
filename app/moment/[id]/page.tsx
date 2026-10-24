@@ -1980,7 +1980,7 @@ function EmptyRow({ children }: { children: React.ReactNode }) {
 
 function Th({ children }: { children: React.ReactNode }) {
   return (
-    <th
+    <th scope="col"
       style={{
         padding: "10px 12px",
         textAlign: "left",

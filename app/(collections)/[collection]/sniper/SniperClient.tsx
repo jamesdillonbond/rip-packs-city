@@ -74,7 +74,7 @@ import { sniperTierTabs } from "@/lib/collection-tiers";
 import { ownLookup } from "@/lib/safe-lookup";
 import { accentText, textSafeChip } from "@/lib/accent-text"
 import { useModalA11y } from "@/lib/hooks/useModalA11y"
-import { loadSniperFilters, saveSniperFilters, urlHasSniperFilters } from "@/lib/sniper/saved-filters"
+import { loadSniperFilters, saveSniperFilters, urlHasSniperFilters, sniperAlertHref } from "@/lib/sniper/saved-filters"
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 
@@ -1039,6 +1039,10 @@ function SniperMomentsBody() {
           </div>
 
           <SniperFilterBar
+            alertHref={sniperAlertHref({
+              collectionUuid: ownLookup(COLLECTION_UUID_BY_SLUG, collectionSlug) ?? null,
+              tier: tierTab, player: playerFilter, team: teamFilter, maxPrice, minDiscount,
+            })}
             isMobile={isMobile}
             isPinnacle={isPinnacle}
             isAllDay={isAllDay}

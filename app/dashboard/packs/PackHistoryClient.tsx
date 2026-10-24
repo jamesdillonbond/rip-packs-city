@@ -743,7 +743,7 @@ function CollectionTab({ active, label, sub, pl, onClick }: { active: boolean; l
 
 function Th({ children, right }: { children: React.ReactNode; right?: boolean }) {
   return (
-    <th style={{ padding: "10px 12px", textAlign: right ? "right" : "left", fontFamily: condensedFont, fontWeight: 700, fontSize: 10, letterSpacing: "0.12em", color: "var(--rpc-text-secondary)", textTransform: "uppercase" }}>
+    <th scope="col" style={{ padding: "10px 12px", textAlign: right ? "right" : "left", fontFamily: condensedFont, fontWeight: 700, fontSize: 10, letterSpacing: "0.12em", color: "var(--rpc-text-secondary)", textTransform: "uppercase" }}>
       {children}
     </th>
   )

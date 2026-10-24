@@ -1535,7 +1535,7 @@ function DualPriceKpi({
 
 function Th({ children, align = "left" }: { children: React.ReactNode; align?: "left" | "right" }) {
   return (
-    <th
+    <th scope="col"
       style={{
         textAlign: align,
         padding: "8px 10px",

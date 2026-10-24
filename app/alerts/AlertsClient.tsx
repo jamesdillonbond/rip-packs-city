@@ -10,6 +10,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { readAlertPrefill } from "@/lib/sniper/saved-filters";
 import { csvToArr, arrToCsv, toggle, alertPayloadFromForm, subscriptionFilterSummary } from "@/lib/alerts/form";
 import { FMV_ALERT_LABEL, editionHref } from "@/lib/alerts/edition-link";
 import {
@@ -184,6 +185,22 @@ export default function AlertsClient() {
   const [subs, setSubs] = useState<Subscription[]>([]);
   const [fmvAlerts, setFmvAlerts] = useState<FmvAlert[]>([]);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  // 2026-10-24: "🔔 ALERT ME" on the Sniper lands here with its filters; seed a
+  // NEW alert from them once (nothing is saved until the reader presses Save).
+  useEffect(() => {
+    const pre = typeof window !== "undefined" ? readAlertPrefill(window.location.search) : null;
+    if (!pre) return;
+    setForm({
+      ...EMPTY_FORM,
+      label: "Sniper alert",
+      collection_ids: [pre.collectionId],
+      tiers: pre.tier ? [pre.tier] : [],
+      player_names: pre.player ?? "",
+      team_names: pre.team ?? "",
+      max_price: pre.maxPrice ?? "",
+      min_discount: pre.minDiscount ?? EMPTY_FORM.min_discount,
+    });
+  }, []);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);

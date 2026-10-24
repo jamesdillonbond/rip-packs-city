@@ -38,6 +38,11 @@ export default function TeamSqueeze({ collectionUrlSlug, rows }: { collectionUrl
       <div className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)", marginBottom: 8 }}>
         Ranked by effective-supply squeeze (locked + burned). Fewer buyable copies = tighter supply.
       </div>
+      {/* 2026-10-24 (feedback 11373): the % and the "N / M" had no explanation on
+          the page — a reader had to ask the concierge. One line, always visible. */}
+      <div className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)", marginBottom: 8, lineHeight: 1.5 }}>
+        <strong style={{ color: "var(--rpc-text-secondary)" }}>Squeeze %</strong> = (locked + burned) ÷ minted. <strong style={{ color: "var(--rpc-text-secondary)" }}>N / M</strong> = copies that can still be bought / copies minted. A supply fact, not a price.
+      </div>
       {rows.map((r, i) => (
         <Link
           key={`${r.route_slug}-${i}`}
@@ -64,7 +69,7 @@ export default function TeamSqueeze({ collectionUrlSlug, rows }: { collectionUrl
           <TierBadge tier={r.tier} />
           <div style={{ textAlign: "right", whiteSpace: "nowrap" }}>
             <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 15, color: "var(--rpc-red-text)" }}>{pct(r.squeeze_pct)}</div>
-            <div className="rpc-mono" style={{ fontSize: 9, color: "var(--rpc-text-muted)", letterSpacing: "0.10em" }}>SQUEEZE</div>
+            <div className="rpc-mono" title="Share of minted supply that is locked or burned, so cannot be bought" style={{ fontSize: 9, color: "var(--rpc-text-muted)", letterSpacing: "0.10em" }}>SQUEEZE</div>
           </div>
           <div style={{ textAlign: "right", whiteSpace: "nowrap" }}>
             <div className="rpc-mono" style={{ fontSize: 12, color: "var(--rpc-text-secondary)" }}>

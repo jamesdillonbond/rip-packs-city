@@ -67,3 +67,36 @@ export function labelOn(fill: string | null | undefined): string {
   const f = fill.trim()
   return BRAND_RED.test(f) || /^var\(--rpc-red(\s*,[^)]*)?\)$/.test(f) ? "#fff" : "#0B0B0D"
 }
+
+function hexLum(hex: string): number | null {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim())
+  if (!m) return null
+  const n = parseInt(m[1], 16)
+  const ch = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => {
+    const c = v / 255
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
+  })
+  return 0.2126 * ch[0] + 0.7152 * ch[1] + 0.0722 * ch[2]
+}
+
+/** WCAG contrast ratio of two #rrggbb colours; null when either is not a hex colour. */
+export function contrastRatio(a: string, b: string): number | null {
+  const la = hexLum(a), lb = hexLum(b)
+  if (la === null || lb === null) return null
+  const [hi, lo] = la > lb ? [la, lb] : [lb, la]
+  return (hi + 0.05) / (lo + 0.05)
+}
+
+/**
+ * Text colour for a label on a DATA-DEFINED fill (a team's primary colour):
+ * the preferred colour (a team's secondary) when it reads at >= 4.5:1, else
+ * near-black or white, whichever reads better (2026-10-24 — 76 team chips on
+ * /teams read 2.6:1, e.g. Hawks volt #C1D32F on red #E03A3E).
+ */
+export function readableOn(fill: string | null | undefined, preferred?: string | null): string {
+  if (!fill) return preferred || "#fff"
+  if (preferred && (contrastRatio(fill, preferred) ?? 0) >= 4.5) return preferred
+  const dark = contrastRatio(fill, "#0B0B0D"), light = contrastRatio(fill, "#FFFFFF")
+  if (dark === null || light === null) return preferred || "#fff"
+  return dark >= light ? "#0B0B0D" : "#FFFFFF"
+}
