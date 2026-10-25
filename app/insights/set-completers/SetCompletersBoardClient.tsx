@@ -10,6 +10,7 @@ import Link from "next/link"
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
 import { METHOD_NOTE, type SetCompletersBoard } from "@/lib/set-completers-board"
 import { sectionEmptyCopy } from "@/lib/entity/section-empty-copy"
+import { scrollRegion } from "@/lib/a11y/scroll-region"
 
 type SortKey = "completers" | "rate" | "size"
 
@@ -100,7 +101,7 @@ export default function SetCompletersBoardClient({
           {sectionEmptyCopy(!initialFailed, "Set completers", "No completion data available yet.")}
         </div>
       ) : (
-        <div className="rpc-scroll-x" style={{ marginTop: 14, overflowX: "auto" }}>
+        <div className="rpc-scroll-x" {...scrollRegion("Set completers")} style={{ marginTop: 14, overflowX: "auto" }}>
           <table style={{ width: "100%", minWidth: 620, borderCollapse: "collapse" }}>
             <thead>
               <tr>

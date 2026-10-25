@@ -24,7 +24,10 @@ import { stripComments } from "../scripts/lib/strip-comments.mjs"
 // audit is the instrument for that, this guard only keeps the swapped shape at 0.
 
 // `--por-red` is the same #E03A2F under a second name (found on the login page, 10-18).
-const BANNED = /(?:^|[^-\w])color:\s*['"`]?var\(--(rpc-red|rpc-text-ghost|por-red)\)/g
+// ⚠ 2026-10-25: also the FALLBACK spelling `var(--rpc-red, #E03A2F)` — 14 sites
+// (share card, its empty state, dashboard alerts/notifications) passed this
+// guard for that reason alone while axe read 4.45:1 on the live share card.
+const BANNED = /(?:^|[^-\w])color:\s*['"`]?var\(--(rpc-red|rpc-text-ghost|por-red)(?:\s*,[^)]*)?\)/g
 
 // ⚠ The same tokens as a TERNARY BRANCH (`color: active ? "var(--rpc-red)" : …`)
 // — 28 sites the first swap's regex could not see (2026-10-18). Same-line form.
@@ -35,7 +38,7 @@ const DISABLED_STATE: Record<string, number> = {
   "components/SupportChat.tsx": 1,
 }
 
-const BANNED_BRANCH = /(?:^|[^-\w])color:[^,;}\n]*\?[^,;}\n]*(["'])var\(--(rpc-red|rpc-text-ghost|por-red)\)\1/g
+const BANNED_BRANCH = /(?:^|[^-\w])color:[^,;}\n]*\?[^,;}\n]*(["'])var\(--(rpc-red|rpc-text-ghost|por-red)(?:\s*,[^)]*)?\)\1/g
 
 function offenders(src: string): string[] {
   const code = stripComments(src)

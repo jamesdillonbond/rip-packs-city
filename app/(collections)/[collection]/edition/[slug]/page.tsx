@@ -87,6 +87,7 @@ import {
 } from "@/lib/panini/edition-market"
 import { accentText } from "@/lib/accent-text"
 import { staleTouchDaysSinceSale } from "@/lib/fmv-stale-touch"
+import { scrollRegion } from "@/lib/a11y/scroll-region"
 
 export const revalidate = 600
 export const dynamicParams = true
@@ -1658,7 +1659,7 @@ async function EditionBottomSections({
               {sectionEmptyCopy(notableRes.ok, "Special serials", "No notable serials for this edition yet.")}
             </div>
           ) : (
-            <div className="rpc-scroll-x" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <div className="rpc-scroll-x" {...scrollRegion("Special serials")} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {sortedNotable.map(r => {
                 const owner = ownerBySerial.get(r.serial) ?? null
                 const accent = r.tag === "#1" || r.tag === "jersey"
@@ -1779,7 +1780,7 @@ function PaniniEditionMarketSection({
           : serials.listed.length === 0
             ? note(`No listing of this edition has been re-read in the last ${PANINI_ASK_CONFIRMED_DAYS} days.`)
             : (
-              <div className="rpc-scroll-x">
+              <div className="rpc-scroll-x" {...scrollRegion("Serials listed now")}>
                 <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 380 }}>
                   <thead><tr><th scope="col" style={head}>Serial</th><th scope="col" style={head}>Ask</th><th scope="col" style={head}>Seen</th><th scope="col" style={head}>Special</th></tr></thead>
                   <tbody>
@@ -1824,7 +1825,7 @@ function PaniniEditionMarketSection({
                   : "RPC hasn't recorded a sale of this edition yet.",
               )
             : (
-              <div className="rpc-scroll-x">
+              <div className="rpc-scroll-x" {...scrollRegion("Recent sales")}>
                 <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 380 }}>
                   <thead><tr><th scope="col" style={head}>Serial</th><th scope="col" style={head}>Sold for</th><th scope="col" style={head}>When</th><th scope="col" style={head}>Special</th></tr></thead>
                   <tbody>

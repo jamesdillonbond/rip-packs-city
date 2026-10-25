@@ -30,6 +30,7 @@ import { saleSerialLabel } from "@/lib/entity/sale-serial-label"
 import MarketCapTile from "@/components/entity/MarketCapTile"
 import { fetchPlayerHub, playerHubPath, routableEntries } from "@/lib/player-hub"
 import { indexCoverageNote, type IndexCoverage } from "@/lib/entity/index-coverage-note"
+import { scrollRegion } from "@/lib/a11y/scroll-region"
 
 export const revalidate = 600
 export const dynamicParams = true
@@ -135,7 +136,7 @@ async function fetchTopSales(collectionId: string, slug: string, limit: number):
 
 function TopSalesSkeleton() {
   return (
-    <div className="rpc-scroll-x" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+    <div className="rpc-scroll-x" {...scrollRegion("Top sales (loading)")} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
       {[0, 1, 2].map((i) => (
         <div key={i} className="rpc-card rpc-skeleton" style={{ height: 44 }} />
       ))}
@@ -296,7 +297,7 @@ async function TopCollectorsSection({ playerName }: { playerName: string }) {
           {coverageNote}
         </div>
       )}
-      <div className="rpc-scroll-x" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <div className="rpc-scroll-x" {...scrollRegion("Top collectors")} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         {collectors.map(c => {
           // Same fabrication as Top Sales above — latent here only because
           // Candy has no rows in the ownership graph yet, which is a reason to

@@ -12,6 +12,7 @@
 
 import { Section, SectionUnavailable, relTime } from "@/components/entity/_shared"
 import { buildSeasonStatsTables, type SeasonStatsResult } from "@/lib/player-page-season-stats"
+import { scrollRegion } from "@/lib/a11y/scroll-region"
 
 export default function PlayerSeasonStats({
   result,
@@ -53,7 +54,7 @@ export default function PlayerSeasonStats({
               <div className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 6 }}>
                 {t.title}
               </div>
-              <div className="rpc-scroll-x">
+              <div className="rpc-scroll-x" {...scrollRegion("Season stats")}>
                 <table style={{ borderCollapse: "collapse", minWidth: 420, width: "100%", fontFamily: "var(--font-mono)", fontSize: 12 }}>
                   <thead>
                     <tr>

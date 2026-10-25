@@ -643,7 +643,7 @@ const CSS = `
   }
   .rpc-al-eyebrow {
     font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.18em;
-    text-transform: uppercase; color: var(--rpc-red, #E03A2F);
+    text-transform: uppercase; color: var(--rpc-red-text);
   }
   .rpc-al-h1 {
     font-family: var(--font-display); font-weight: 900;
@@ -683,7 +683,7 @@ const CSS = `
   .rpc-al-paywall-title {
     font-family: var(--font-display); font-weight: 800;
     font-size: 16px; letter-spacing: 0.06em; text-transform: uppercase;
-    color: var(--rpc-red, #E03A2F); margin-bottom: 6px;
+    color: var(--rpc-red-text); margin-bottom: 6px;
   }
   .rpc-al-paywall-body { line-height: 1.55; }
   .rpc-al-err {
@@ -725,7 +725,7 @@ const CSS = `
   .rpc-al-pill-off { background: rgba(255,255,255,0.06); color: var(--rpc-text-muted); }
   .rpc-al-pill-hot {
     background: rgba(224, 58, 47, 0.15);
-    color: var(--rpc-red, #E03A2F);
+    color: var(--rpc-red-text);
     animation: rpc-al-pulse 1.4s ease-in-out infinite;
   }
   @keyframes rpc-al-pulse {
@@ -838,7 +838,7 @@ const CSS = `
   }
   .rpc-al-empty-eyebrow {
     font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.18em;
-    text-transform: uppercase; color: var(--rpc-red, #E03A2F);
+    text-transform: uppercase; color: var(--rpc-red-text);
     margin-bottom: 6px;
   }
   .rpc-al-empty-title {

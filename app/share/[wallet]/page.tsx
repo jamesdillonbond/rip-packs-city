@@ -15,6 +15,7 @@ import { normalizeAddress } from "@/lib/address"
 import { momentSubjectName } from "@/lib/entity-href"
 import { accentText } from "@/lib/accent-text"
 import { resolveUsernames, nameKey } from "@/lib/flowty-username"
+import { scrollRegion } from "@/lib/a11y/scroll-region"
 
 interface SnapshotData {
   wallet: string
@@ -366,13 +367,13 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
               }}
             >
               <span style={{ padding: "8px 14px", border: "1px solid var(--rpc-border)", borderRadius: 999, background: "var(--rpc-surface)", color: "var(--rpc-text-secondary)" }}>
-                <strong style={{ color: "var(--rpc-red, #E03A2F)" }}>{intel.rookie_count}</strong> rookies
+                <strong style={{ color: "var(--rpc-red-text)" }}>{intel.rookie_count}</strong> rookies
               </span>
               <span style={{ padding: "8px 14px", border: "1px solid var(--rpc-border)", borderRadius: 999, background: "var(--rpc-surface)", color: "var(--rpc-text-secondary)" }}>
-                <strong style={{ color: "var(--rpc-red, #E03A2F)" }}>{intel.squeezed_count}</strong> squeezed
+                <strong style={{ color: "var(--rpc-red-text)" }}>{intel.squeezed_count}</strong> squeezed
               </span>
               <span style={{ padding: "8px 14px", border: "1px solid var(--rpc-border)", borderRadius: 999, background: "var(--rpc-surface)", color: "var(--rpc-text-secondary)" }}>
-                <strong style={{ color: "var(--rpc-red, #E03A2F)" }}>{intel.trophy_count}</strong> trophies
+                <strong style={{ color: "var(--rpc-red-text)" }}>{intel.trophy_count}</strong> trophies
               </span>
               <span style={{ padding: "8px 14px", borderRadius: 999, color: "var(--rpc-text-muted)", alignSelf: "center" }}>
                 across {(function () {
@@ -389,7 +390,7 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
             </div>
 
             {intel.highlights.length > 0 ? (
-              <div style={{ display: "flex", gap: 12, overflowX: "auto", paddingBottom: 4 }}>
+              <div {...scrollRegion("Top Shot highlights")} style={{ display: "flex", gap: 12, overflowX: "auto", paddingBottom: 4 }}>
                 {intel.highlights.map((h) => {
                   const tierColor = TIER_COLORS[(h.tier ?? "").toLowerCase()] ?? "var(--tier-common)"
                   const squeeze = h.squeeze_pct == null ? null : Math.max(0, Math.min(100, h.squeeze_pct))
@@ -447,7 +448,7 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
                           </div>
                         ) : null}
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginTop: 8 }}>
-                          <span style={{ fontSize: 16, fontWeight: 800, color: "var(--rpc-red, #E03A2F)", fontFamily: "var(--font-mono, monospace)" }}>
+                          <span style={{ fontSize: 16, fontWeight: 800, color: "var(--rpc-red-text)", fontFamily: "var(--font-mono, monospace)" }}>
                             {h.fmv_usd != null ? `$${Number(h.fmv_usd).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "—"}
                           </span>
                           {/* Confidence tier removed 2026-07-11 — build-time signal only.
@@ -471,7 +472,7 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
                 padding: "10px 22px",
                 border: "1px solid var(--rpc-red, #E03A2F)",
                 borderRadius: 8,
-                color: "var(--rpc-red, #E03A2F)",
+                color: "var(--rpc-red-text)",
                 fontWeight: 700,
                 fontSize: 13,
                 textDecoration: "none",
@@ -529,7 +530,7 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
         {/* Top 5 moments */}
         <div style={{ marginBottom: 32 }}>
           <div style={{ fontSize: 14, letterSpacing: "0.15em", color: "var(--rpc-text-secondary)", marginBottom: 16, textTransform: "uppercase" }}>Top Moments by FMV</div>
-          <div style={{ display: "flex", gap: 12, overflowX: "auto" }}>
+          <div {...scrollRegion("Top moments by FMV")} style={{ display: "flex", gap: 12, overflowX: "auto" }}>
             {data.topMoments.map((m, i) => (
               <div key={i} style={{ flex: "0 0 160px", border: "1px solid var(--rpc-border)", borderRadius: 8, background: "var(--rpc-surface)", overflow: "hidden" }}>
                 {m.thumbnailUrl ? (
@@ -588,7 +589,7 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
           {/* overflowX auto + a 40px floor per bar: nine bars fill a desktop
               row and scroll on a phone instead of widening the page (the full
               labels pushed the layout viewport to 457px on 2026-09-25). */}
-          <div style={{ display: "flex", gap: 8, alignItems: "end", height: 80, overflowX: "auto", paddingBottom: 2 }}>
+          <div {...scrollRegion("Series breakdown")} style={{ display: "flex", gap: 8, alignItems: "end", height: 80, overflowX: "auto", paddingBottom: 2 }}>
             {seriesEntries.map(([label, count]) => (
               <div key={label} title={label} style={{ flex: "1 0 40px", minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
                 <div style={{ fontSize: 11, fontFamily: "monospace", color: "var(--rpc-text-secondary)" }}>{count}</div>

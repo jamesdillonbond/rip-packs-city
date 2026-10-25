@@ -34,7 +34,7 @@ function SiteHeader() {
         <Link href="/" className="flex flex-shrink-0 items-center gap-2.5 no-underline">
           <RpcLogo size={32} />
           <span
-            className="hidden sm:block text-[7px] tracking-widest text-red-500/60"
+            className="hidden sm:block text-[7px] tracking-widest text-[color:var(--rpc-red-text)]"
             style={{ fontFamily: "var(--font-mono)", letterSpacing: "0.2em" }}
           >
             @RIPPACKSCITY

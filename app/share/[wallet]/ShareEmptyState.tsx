@@ -179,7 +179,7 @@ export default function ShareEmptyState({ wallet }: { wallet: string }) {
             style={{
               fontSize: 40,
               fontWeight: 900,
-              color: "var(--rpc-red, #E03A2F)",
+              color: "var(--rpc-red-text)",
               letterSpacing: "0.08em",
               marginBottom: 16,
             }}
@@ -250,7 +250,7 @@ export default function ShareEmptyState({ wallet }: { wallet: string }) {
           style={{
             fontSize: 40,
             fontWeight: 900,
-            color: "var(--rpc-red, #E03A2F)",
+            color: "var(--rpc-red-text)",
             letterSpacing: "0.08em",
             marginBottom: 12,
           }}
@@ -332,7 +332,7 @@ export default function ShareEmptyState({ wallet }: { wallet: string }) {
         {error ? (
           <div
             role="alert"
-            style={{ marginTop: 12, fontFamily: "monospace", fontSize: 12, color: "var(--rpc-red, #E03A2F)" }}
+            style={{ marginTop: 12, fontFamily: "monospace", fontSize: 12, color: "var(--rpc-red-text)" }}
           >
             {error}
           </div>
@@ -342,7 +342,7 @@ export default function ShareEmptyState({ wallet }: { wallet: string }) {
           Or explore the{" "}
           <a
             href="/insights"
-            style={{ color: "var(--rpc-red, #E03A2F)", textDecoration: "none", fontWeight: 700 }}
+            style={{ color: "var(--rpc-red-text)", textDecoration: "none", fontWeight: 700 }}
           >
             free public insights →
           </a>

@@ -28,6 +28,7 @@ import {
   type MarketCapGroup,
   type MarketCapRow,
 } from "@/lib/insights/market-cap-board"
+import { scrollRegion } from "@/lib/a11y/scroll-region"
 
 const DRILL_GROUPS: MarketCapGroup[] = ["player", "team", "set", "series", "tier", "badge", "edition"]
 
@@ -102,7 +103,7 @@ function Label({ r, group }: { r: MarketCapRow; group: MarketCapGroup }) {
 
 function CollectionsTable({ rows }: { rows: MarketCapRow[] }) {
   return (
-    <div className="rpc-scroll-x" style={{ marginTop: 14, overflowX: "auto" }}>
+    <div className="rpc-scroll-x" {...scrollRegion("Market cap by collection")} style={{ marginTop: 14, overflowX: "auto" }}>
       <table style={{ width: "100%", minWidth: 900, borderCollapse: "collapse" }}>
         <thead>
           <tr>
@@ -142,7 +143,7 @@ function CollectionsTable({ rows }: { rows: MarketCapRow[] }) {
 
 function DrillTable({ rows, group }: { rows: MarketCapRow[]; group: MarketCapGroup }) {
   return (
-    <div className="rpc-scroll-x" style={{ marginTop: 14, overflowX: "auto" }}>
+    <div className="rpc-scroll-x" {...scrollRegion("Market cap leaderboard")} style={{ marginTop: 14, overflowX: "auto" }}>
       <table style={{ width: "100%", minWidth: 640, borderCollapse: "collapse" }}>
         <thead>
           <tr>

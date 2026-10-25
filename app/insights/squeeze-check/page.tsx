@@ -12,6 +12,7 @@ import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { useOwnFlowWallet } from "@/lib/hooks/useOwnFlowWallet"
 import { accentText } from "@/lib/accent-text"
+import { scrollRegion } from "@/lib/a11y/scroll-region"
 
 type Bucket = { editions: number; moments: number }
 type Buckets = { liquid: Bucket; moderate: Bucket; squeezed: Bucket; extreme: Bucket }
@@ -203,7 +204,7 @@ export default function SqueezeCheckPage() {
                 yet, or you&apos;ve dodged every challenge so far.
               </div>
             ) : (
-              <div className="rpc-scroll-x">
+              <div className="rpc-scroll-x" {...scrollRegion("Your top squeezed holdings")}>
               <table className="rpc-sc-table">
                 <thead>
                   <tr>

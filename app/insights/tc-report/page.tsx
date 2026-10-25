@@ -18,6 +18,7 @@ import { fromDbSlug, getCollection } from "@/lib/collections"
 import { closedMarket, formatClosedOn } from "@/lib/market-closed"
 import { usdSignFirst } from "@/lib/usd-format"
 import { accentText } from "@/lib/accent-text"
+import { scrollRegion } from "@/lib/a11y/scroll-region"
 
 type Bucket = { editions: number; moments: number }
 type Buckets = { liquid: Bucket; moderate: Bucket; squeezed: Bucket; extreme: Bucket }
@@ -292,7 +293,7 @@ export default function TcReportPage() {
               ) : null}
             </div>
             {sq?.top_squeezed && sq.top_squeezed.length > 0 ? (
-              <div className="rpc-scroll-x">
+              <div className="rpc-scroll-x" {...scrollRegion("Squeeze exposure")}>
               <table className="rpc-tc-table">
                 <thead>
                   <tr>
@@ -358,7 +359,7 @@ export default function TcReportPage() {
           {topSets.length > 0 ? (
             <section className="rpc-tc-section">
               <h2 className="rpc-tc-h2">Top Sets In Progress</h2>
-              <div className="rpc-scroll-x">
+              <div className="rpc-scroll-x" {...scrollRegion("Top sets in progress")}>
               <table className="rpc-tc-table">
                 <thead>
                   <tr>
@@ -438,7 +439,7 @@ export default function TcReportPage() {
           {acq.length > 0 ? (
             <section className="rpc-tc-section">
               <h2 className="rpc-tc-h2">Recent Acquisitions</h2>
-              <div className="rpc-scroll-x">
+              <div className="rpc-scroll-x" {...scrollRegion("Recent acquisitions")}>
               <table className="rpc-tc-table">
                 <thead>
                   <tr>

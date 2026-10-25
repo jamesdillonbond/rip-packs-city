@@ -28,6 +28,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { usdSignFirst } from "@/lib/usd-format"
 import { FMV_ALGO_VERSION } from "@/lib/fmv-recalc-math"
+import { scrollRegion } from "@/lib/a11y/scroll-region"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -436,7 +437,7 @@ export default function PackRealityClient({
                   : "No +EV packs right now."}
           </div>
         ) : (
-          <div className="rpc-scroll-x">
+          <div className="rpc-scroll-x" {...scrollRegion("Honest +EV ranker")}>
           <table className="rpc-pr-table">
             <thead>
               <tr>
@@ -572,7 +573,7 @@ function MvrTable({
     return <div className="rpc-pr-state">No qualifying packs.</div>
   }
   return (
-    <div className="rpc-scroll-x">
+    <div className="rpc-scroll-x" {...scrollRegion("Model EV vs actual pulls")}>
       <table className="rpc-pr-table rpc-pr-mvr-table">
         <thead>
           <tr>

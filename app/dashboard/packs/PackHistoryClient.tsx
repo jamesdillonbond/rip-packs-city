@@ -214,14 +214,14 @@ export function currencyBucketText(ccy: string, vals: SummaryCurrency): string {
 // bought-and-resold subset. WalletPacksView's Sold tab made the same fix.
 type StatusFilter = "all" | "sold_any" | HistoryRow["status"]
 
-const STATUS_OPTIONS: Array<{ key: StatusFilter; label: string; color: string }> = [
-  { key: "all", label: "All", color: "var(--rpc-red, #E03A2F)" },
-  { key: "ripped", label: "Ripped", color: "#3B82F6" },
-  { key: "sold_any", label: "Sold", color: "#34D399" },
-  { key: "flipped", label: "Flipped", color: "#A855F7" },
-  { key: "held", label: "Held", color: "#71717A" },
-  { key: "transferred", label: "Transferred", color: "#F59E0B" },
-  { key: "other", label: "Other", color: "#71717A" },
+const STATUS_OPTIONS: Array<{ key: StatusFilter; label: string; swatch: string }> = [
+  { key: "all", label: "All", swatch: "var(--rpc-red, #E03A2F)" },
+  { key: "ripped", label: "Ripped", swatch: "#3B82F6" },
+  { key: "sold_any", label: "Sold", swatch: "#34D399" },
+  { key: "flipped", label: "Flipped", swatch: "#A855F7" },
+  { key: "held", label: "Held", swatch: "#71717A" },
+  { key: "transferred", label: "Transferred", swatch: "#F59E0B" },
+  { key: "other", label: "Other", swatch: "#71717A" },
 ]
 
 const PAGE_SIZE = 50
@@ -230,7 +230,7 @@ const PAGE_SIZE = 50
 
 function statusColor(s: HistoryRow["status"]): string {
   const match = STATUS_OPTIONS.find((o) => o.key === (s === "sold" ? "sold_any" : s))
-  return match?.color ?? "#71717A"
+  return match?.swatch ?? "#71717A"
 }
 
 function urlSlug(dbSlug: string): string {
@@ -580,9 +580,9 @@ export default function PackHistoryClient() {
                 onClick={() => setStatus(o.key)}
                 style={{
                   padding: "6px 12px",
-                  background: o.key === status ? accentFill(o.color) : "var(--rpc-surface)",
-                  color: o.key === status ? labelOn(o.color) : "var(--rpc-text-secondary)",
-                  border: `1px solid ${o.key === status ? o.color : "var(--rpc-border)"}`,
+                  background: o.key === status ? accentFill(o.swatch) : "var(--rpc-surface)",
+                  color: o.key === status ? labelOn(o.swatch) : "var(--rpc-text-secondary)",
+                  border: `1px solid ${o.key === status ? o.swatch : "var(--rpc-border)"}`,
                   borderRadius: 5,
                   cursor: "pointer",
                   fontFamily: condensedFont,
