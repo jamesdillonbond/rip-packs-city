@@ -49,6 +49,25 @@ export async function GET(req: NextRequest) {
   let totalMoments = 0
   let topPlayers: string[] = []
 
+  // 2026-10-25: the card names the collector's @handle when one resolves (the
+  // share page does the same) — a wallet address is not how collectors know each
+  // other. Read in parallel with the snapshot through the same anon-public
+  // endpoint the client resolver uses; any failure keeps the shortened address.
+  // The name comes from OUR lookup, never from a query param, so a crafted URL
+  // cannot put arbitrary text on an RPC-branded image.
+  const handlePromise: Promise<string | null> = ogFetch(
+    `${BASE_URL}/api/analytics/wallets/resolve-usernames?addrs=${encodeURIComponent(wallet)}`,
+    { next: { revalidate: 3600 } },
+  )
+    .then(async (r) => {
+      if (!r.ok) return null
+      const j = (await r.json()) as { usernames?: Record<string, string> }
+      const u = j?.usernames ?? {}
+      const hit = u[wallet] ?? u[wallet.toLowerCase()] ?? null
+      return typeof hit === "string" && hit.trim() ? hit.trim().replace(/^@/, "") : null
+    })
+    .catch(() => null)
+
   try {
     const res = await ogFetch(`${BASE_URL}/api/collection-snapshot?wallet=${encodeURIComponent(wallet)}`, {
       next: { revalidate: 300 },
@@ -65,6 +84,7 @@ export async function GET(req: NextRequest) {
   } catch {
     /* fetched stays false — the card withholds the figures rather than zeroing them */
   }
+  const handle = await handlePromise
 
   return new ImageResponse(
     (
@@ -86,7 +106,7 @@ export async function GET(req: NextRequest) {
             RIP PACKS CITY
           </div>
           <div style={{ fontSize: 18, color: "#666", fontFamily: fam.mono, display: "flex" }}>
-            {wallet.length > 18 ? wallet.slice(0, 8) + "..." + wallet.slice(-6) : wallet}
+            {handle ? `@${handle}` : wallet.length > 18 ? wallet.slice(0, 8) + "..." + wallet.slice(-6) : wallet}
           </div>
         </div>
 

@@ -124,6 +124,33 @@ describe("/api/og/share — a failed read must not publish a $0 portfolio", () =
     expect(await renderShare()).toContain("0xbd94ca")
   })
 
+  // 2026-10-25: the card names the collector when the wallet resolves to a
+  // handle (usernames, never wallets, in user-facing text), via OUR lookup —
+  // and keeps the address when the lookup fails or finds nothing.
+  it("names the collector's @handle when the wallet resolves, instead of the address", async () => {
+    globalThis.fetch = vi.fn(async (input: any) => {
+      const url = String(input?.url ?? input)
+      if (url.includes("/resolve-usernames")) {
+        return new Response(JSON.stringify({ usernames: { "0xbd94cade097e50ac": "jamesdillonbond" } }), { status: 200 })
+      }
+      return new Response(JSON.stringify({ totalFmv: 10, totalMoments: 1, topMoments: [] }), { status: 200 })
+    }) as unknown as typeof globalThis.fetch
+    const text = await renderShare()
+    expect(text).toContain("@jamesdillonbond")
+    expect(text).not.toContain("0xbd94ca")
+  })
+
+  it("keeps the shortened address when the username lookup fails", async () => {
+    globalThis.fetch = vi.fn(async (input: any) => {
+      const url = String(input?.url ?? input)
+      if (url.includes("/resolve-usernames")) return new Response("down", { status: 503 })
+      return new Response(JSON.stringify({ totalFmv: 10, totalMoments: 1, topMoments: [] }), { status: 200 })
+    }) as unknown as typeof globalThis.fetch
+    const text = await renderShare()
+    expect(text).toContain("0xbd94ca")
+    expect(text).not.toContain("@")
+  })
+
   // 2026-10-11 (platform review M8): the card used to end in the bare domain.
   // One CTA line now sits above it, and it must be present in EVERY state —
   // the failed-read card most of all, since that one shows no figure.

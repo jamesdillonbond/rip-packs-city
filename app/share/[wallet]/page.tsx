@@ -9,11 +9,12 @@ import FunnelTracker from "@/components/FunnelTracker"
 import { proxyIpfsImageUrl } from "@/lib/ipfs-media"
 import { formatClosedOn } from "@/lib/market-closed"
 import { fmvBasis } from "@/lib/fmv-basis"
-import { buildSeriesBarsFrom, compactSeriesLabel, closedMarketNote, shareHeadline, fullCollectionHref } from "@/lib/share-card-view"
+import { buildSeriesBarsFrom, compactSeriesLabel, closedMarketNote, shareHeadline, fullCollectionHref, shareCollectionFmvLabel } from "@/lib/share-card-view"
 import { OG_INHERITED } from "@/lib/seo"
 import { normalizeAddress } from "@/lib/address"
 import { momentSubjectName } from "@/lib/entity-href"
 import { accentText } from "@/lib/accent-text"
+import { resolveUsernames, nameKey } from "@/lib/flowty-username"
 
 interface SnapshotData {
   wallet: string
@@ -143,6 +144,17 @@ async function fetchWalletIntel(wallet: string): Promise<WalletIntel | null> {
   }
 }
 
+/** "@handle" when the wallet resolves to a username, else the address itself. */
+async function shareOwnerLabel(wallet: string): Promise<string> {
+  try {
+    const names = await resolveUsernames([wallet])
+    const handle = names.get(nameKey(wallet))
+    return handle ? `@${handle.replace(/^@/, "")}` : wallet
+  } catch {
+    return wallet
+  }
+}
+
 export async function generateMetadata(
   props: { params: Promise<{ wallet: string }> }
 ): Promise<Metadata> {
@@ -165,19 +177,23 @@ export async function generateMetadata(
   // one. `normalizeAddress` folds hex and leaves base58 verbatim, so the R12
   // de-duplication is preserved exactly for the chain it was written for.
   const canonical = `${siteUrl()}/share/${encodeURIComponent(normalizeAddress(params.wallet))}`
+  // 2026-10-25: name the collector, not the wallet, wherever a handle is known
+  // (standing rule: usernames, never wallets, in user-facing text). Bounded and
+  // never throws — no handle falls back to the address, as before.
+  const who = await shareOwnerLabel(params.wallet)
   return {
-    title: `Collection Card — ${params.wallet}`,
+    title: `Collection Card — ${who}`,
     alternates: { canonical },
     // ⛔ Named "NBA Top Shot" until 2026-09-19 while the card itself is
     // cross-collection (see the per-collection rollup below) — so a Candy MLB
     // wallet's card described itself, in its own <meta> and in every social
     // unfurl, as a Top Shot collection. The snapshot is not fetched here, so the
     // honest form is the collection-neutral one rather than a guess.
-    description: `View the collection for wallet ${params.wallet} on Rip Packs City.`,
+    description: `View ${who}'s collection on Rip Packs City.`,
     openGraph: {
       ...OG_INHERITED,
-      title: `Collection Card — ${params.wallet}`,
-      description: `Collection snapshot for ${params.wallet}`,
+      title: `Collection Card — ${who}`,
+      description: `Collection snapshot for ${who}`,
       type: "website",
       url: `${siteUrl()}/share/${encodeURIComponent(params.wallet)}`,
       siteName: "Rip Packs City",
@@ -190,8 +206,8 @@ export async function generateMetadata(
       // title and a picture and no line of copy under it.
       site: "@RipPacksCity",
       creator: "@RipPacksCity",
-      title: `Collection Card — ${params.wallet}`,
-      description: `Collection snapshot for ${params.wallet}`,
+      title: `Collection Card — ${who}`,
+      description: `Collection snapshot for ${who}`,
       images: [{ url: ogImage, alt: "Collection Card — Rip Packs City" }],
     },
   }
@@ -229,9 +245,10 @@ function ShareUnavailable({ wallet }: { wallet: string }) {
 export default async function SharePage(props: { params: Promise<{ wallet: string }> }) {
   const params = await props.params
   const wallet = params.wallet
-  const [snapshot, intel] = await Promise.all([
+  const [snapshot, intel, owner] = await Promise.all([
     fetchSnapshot(wallet),
     fetchWalletIntel(wallet),
+    shareOwnerLabel(wallet),
   ])
   const data = snapshot.data
 
@@ -261,7 +278,14 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
         {/* Header */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 32 }}>
           <div style={{ fontWeight: 900, fontSize: 28, letterSpacing: "0.08em", color: "var(--rpc-red-text)" }}>RIP PACKS CITY</div>
-          <div style={{ fontSize: 12, fontFamily: "monospace", color: "var(--rpc-text-secondary)", letterSpacing: "0.05em" }}>{wallet}</div>
+          {/* The collector's @handle when one resolves; the address is kept in
+              the tooltip for anyone who needs it. No handle → the address. */}
+          <div
+            title={owner === wallet ? undefined : wallet}
+            style={{ fontSize: owner === wallet ? 12 : 16, fontWeight: owner === wallet ? 400 : 700, fontFamily: "monospace", color: "var(--rpc-text-secondary)", letterSpacing: "0.05em", overflowWrap: "anywhere", textAlign: "right" }}
+          >
+            {owner}
+          </div>
         </div>
 
         {/* Total FMV hero */}
@@ -485,11 +509,11 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
                       return (
                         <>
                           <div style={{ fontSize: 13, fontWeight: 700, color: "var(--rpc-red-text)", fontFamily: "monospace" }}>
-                            ${h.live.toLocaleString("en-US", { maximumFractionDigits: 0 })}
+                            {shareCollectionFmvLabel(h.live, c.moments)}
                           </div>
                           {h.stale > 0 ? (
                             <div style={{ fontSize: 10, color: "var(--rpc-text-secondary)", fontFamily: "monospace", marginTop: 2 }}>
-                              + ${h.stale.toLocaleString("en-US", { maximumFractionDigits: 0 })} stale
+                              + {shareCollectionFmvLabel(h.stale, 1)} stale
                             </div>
                           ) : null}
                         </>

@@ -150,3 +150,19 @@ export function fullCollectionHref(
   if (collectionHasWalletTab(coll)) return `/${urlSlug}/collection?wallet=${enc}`
   return `/${urlSlug}/overview`
 }
+
+/**
+ * The per-collection tile's dollar figure (2026-10-25). It rounded to whole
+ * dollars, so two Golazos moments worth $0.38 read "$0" — a value claim the
+ * data did not make. Under $10 keeps cents; a collection with moments but a
+ * zero total means none of them is priced (no priced row is $0 — measured
+ * 2026-10-25: 0 of 1.92M wallet_moments_cache rows), so it says that instead.
+ */
+export function shareCollectionFmvLabel(fmv: number | null | undefined, _moments?: number): string {
+  // A tile only exists for a collection with moments, so a total at or below
+  // zero can only mean none of them is priced (a negative is not a real state).
+  const v = Number(fmv)
+  if (!Number.isFinite(v) || v <= 0) return "not priced"
+  if (v < 10) return `$${v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  return `$${v.toLocaleString("en-US", { maximumFractionDigits: 0 })}`
+}
