@@ -276,6 +276,40 @@ describe("concierge tools — search_catalog_deals (on-chain index collections)"
     expect(call.args).toMatchObject({ p_player: "Mahomes", p_team: "%Chiefs%", p_has_badges: true, p_sort_by: "discount_desc" })
   })
 
+  // 2026-10-25: the quiet-market note fetches market-pulse from the live site INSIDE the
+  // tool's 6 s budget. It used a 9 s timeout, so a slow pulse threw away a finished deals
+  // answer as `status: "timeout"` — in production, and on CI, where it reddened main
+  // twice. A hung pulse must cost the note, never the answer.
+  it("a hung market-pulse read costs the quiet-market note, never the deals answer", async () => {
+    install({
+      "rpc:get_allday_market_editions_v3": {
+        data: [{ edition_id: "e1", external_id: "ad-9", player_name: "Patrick Mahomes II", set_name: "Base", tier: "RARE", floor_ask: 20, fmv_usd: 40, discount_pct: 50, confidence: "HIGH", badges: null }],
+        error: null,
+      },
+    })
+    const pulseCalls: string[] = []
+    vi.stubGlobal("fetch", vi.fn((input: unknown, init?: RequestInit) => {
+      pulseCalls.push(String(input))
+      // never answers; settles only when the caller's own abort signal fires
+      return new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(new Error("aborted")))
+      })
+    }))
+    try {
+      script("search_catalog_deals", { collectionId: "nfl-all-day" })
+      const t0 = Date.now()
+      await POST(post("All Day deals"))
+      const r = toolResult()
+      expect(pulseCalls.some((u) => u.includes("/api/public/insights/market-pulse"))).toBe(true)
+      expect(r.status).toBe("ok")
+      expect((r.results as unknown[]).length).toBe(1)
+      expect(r.market_activity).toBeUndefined()
+      expect(Date.now() - t0).toBeLessThan(5_000)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it("an unpriced edition is not given a fabricated FMV confidence or discount", async () => {
     install({
       "rpc:get_allday_market_editions_v3": {

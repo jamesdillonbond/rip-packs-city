@@ -1648,10 +1648,11 @@ function annotateEmptyTopSales(raw: string, coll: string, pulseRaw: string, wind
 async function fetchPublicInsight(
   base: string,
   path: string,
-  limit: number
+  limit: number,
+  timeoutMs = 9000,
 ): Promise<string> {
   try {
-    const res = await fetch(`${base}${path}`, { signal: AbortSignal.timeout(9000) });
+    const res = await fetch(`${base}${path}`, { signal: AbortSignal.timeout(timeoutMs) });
     if (!res.ok) {
       return JSON.stringify({ status: "error", http_status: res.status, message: `insights board returned ${res.status}` });
     }
@@ -1916,6 +1917,8 @@ const QUIET_MARKET_TOOLS = new Set([
   "get_edition_listings",
 ]);
 
+const QUIET_MARKET_PULSE_TIMEOUT_MS = 1500;
+
 async function annotateQuietMarket(raw: string, collectionId: string | undefined): Promise<string> {
   if (!collectionId) return raw;
   const dbSlug = toDbSlug(collectionId) ?? (fromDbSlug(collectionId) ? collectionId : null);
@@ -1924,7 +1927,12 @@ async function annotateQuietMarket(raw: string, collectionId: string | undefined
   try { out = JSON.parse(raw) } catch { return raw }
   if (!out || typeof out !== "object" || Array.isArray(out) || out.status === "error") return raw;
   let pulse: any = null;
-  try { pulse = JSON.parse(await fetchPublicInsight(siteUrl(), "/api/public/insights/market-pulse", 20)) } catch { pulse = null }
+  // 2026-10-25: a SHORT budget. This runs inside the deals tool's own budget (6 s by
+  // default), after the answer is already computed — and market-pulse is a slow board
+  // (Vercel logs its 8 s timeouts). At 9 s a slow pulse turned a finished deals result
+  // into `status: "timeout"`, and on CI (where this fetch reaches the live site) it
+  // reddened main twice in a row. The note is optional; the answer is not.
+  try { pulse = JSON.parse(await fetchPublicInsight(siteUrl(), "/api/public/insights/market-pulse", 20, QUIET_MARKET_PULSE_TIMEOUT_MS)) } catch { pulse = null }
   const row = pulse && pulse.status === "ok" && Array.isArray(pulse.rows)
     ? pulse.rows.find((r: any) => r && r.slug === dbSlug)
     : null;
