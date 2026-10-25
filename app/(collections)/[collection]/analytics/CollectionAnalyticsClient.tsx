@@ -12,6 +12,8 @@ import {
 } from "recharts"
 import { getCollection, toDbSlug, collectionHasLocking } from "@/lib/collections"
 import { isCadenceAddress } from "@/lib/address"
+import { useIsSignedIn } from "@/lib/hooks/useIsSignedIn"
+import { walletProfileHref } from "@/lib/analytics/wallet-href"
 import { MarketplaceStatusBanner } from "@/components/marketplace-status"
 import { analyticsSeriesLabel } from "@/lib/series-label"
 import { pivotDailyTier, pivotDailySeries } from "@/lib/analytics-pivot"
@@ -328,10 +330,14 @@ function KpiCard(props: { label: string; value: string; pct?: number | null; per
 }
 
 function HeaderChips({ short }: { short: string }) {
+  // /analytics/** is sign-in only: a signed-out reader is told before the click,
+  // not by the login page after it (lib/analytics/wallet-href.ts).
+  const signedIn = useIsSignedIn()
+  const gated = signedIn ? "" : " · sign in"
   const chips: Array<{ href: string; label: string }> = [
-    { href: `/analytics/sales?collections=${short}`, label: "Sales" },
-    { href: `/analytics/listings?collections=${short}`, label: "Listings" },
-    { href: "/analytics/wallets", label: "Wallets" },
+    { href: `/analytics/sales?collections=${short}`, label: `Sales${gated}` },
+    { href: `/analytics/listings?collections=${short}`, label: `Listings${gated}` },
+    { href: "/analytics/wallets", label: `Wallets${gated}` },
   ]
   return (
     <div className="mb-4 flex flex-wrap gap-2">
@@ -768,6 +774,7 @@ function LiquidityHeatmapCard({ short, countNoun }: { short: string; countNoun: 
 }
 
 function WhaleLeaderboard({ short, urlSlug }: { short: string; urlSlug: string }) {
+  const signedIn = useIsSignedIn()
   const [buyers, setBuyers] = useState<LeaderboardRow[] | null>(null)
   const [sellers, setSellers] = useState<LeaderboardRow[] | null>(null)
   const [loading, setLoading] = useState(true)
@@ -824,7 +831,7 @@ function WhaleLeaderboard({ short, urlSlug }: { short: string; urlSlug: string }
                     // 404s any other key, so a Candy (Solana) whale links to this
                     // collection's own wallet view instead.
                     href={isCadenceAddress(r.addr)
-                      ? `/analytics/wallets/${encodeURIComponent(r.addr)}`
+                      ? walletProfileHref(r.addr, signedIn)
                       : `/${urlSlug}/collection?wallet=${encodeURIComponent(r.addr)}`}
                     className="hover:underline"
                     style={{ color: "var(--rpc-text-primary)" }}
@@ -858,7 +865,7 @@ function WhaleLeaderboard({ short, urlSlug }: { short: string; urlSlug: string }
         >
           On-chain data only — Top Shot&apos;s centralized marketplace carries most of its volume and doesn&apos;t expose wallet identities.{" "}
           <Link href="/analytics/sales" className="underline" style={{ color: "var(--rpc-red-text)" }}>
-            View full sales breakdown at /analytics/sales
+            {signedIn ? "View full sales breakdown at /analytics/sales" : "Sign in for the full sales breakdown at /analytics/sales"}
           </Link>.
         </div>
       )}
@@ -873,6 +880,7 @@ function WhaleLeaderboard({ short, urlSlug }: { short: string; urlSlug: string }
 // ── Main ────────────────────────────────────────────────────────────────────
 
 function AnalyticsInner() {
+  const signedIn = useIsSignedIn()
   const params = useParams()
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -1192,7 +1200,7 @@ function AnalyticsInner() {
             >
               Thin-volume ecosystem — most metrics are directional only.{" "}
               <Link href="/analytics/sales" className="underline" style={{ color: "var(--rpc-red-text)" }}>
-                View richer cross-collection data at /analytics/sales
+                {signedIn ? "View richer cross-collection data at /analytics/sales" : "Sign in for richer cross-collection data at /analytics/sales"}
               </Link>.
             </div>
           )}

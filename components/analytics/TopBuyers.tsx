@@ -15,6 +15,8 @@
 
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
+import { useIsSignedIn } from "@/lib/hooks/useIsSignedIn"
+import { walletProfileHref } from "@/lib/analytics/wallet-href"
 import { useResolveUsernames } from "@/lib/analytics/username-resolver"
 import { fetchJson } from "@/lib/analytics/fetch-json"
 import { usdSignFirst } from "@/lib/usd-format"
@@ -50,6 +52,7 @@ function shortAddr(addr: string): string {
 }
 
 export default function TopBuyers({ collection = "nba_top_shot" }: { collection?: string }) {
+  const signedIn = useIsSignedIn()
   const [days, setDays] = useState<7 | 30>(7)
   const [rows, setRows] = useState<TopBuyerRow[] | null>(null)
   const [loading, setLoading] = useState(true)
@@ -161,7 +164,7 @@ export default function TopBuyers({ collection = "nba_top_shot" }: { collection?
                     <td className="py-1.5 pr-2 text-[color:var(--rpc-text-muted)]">{r.rank}</td>
                     <td className="py-1.5 pr-2 text-[color:var(--rpc-text-secondary)]">
                       <Link
-                        href={`/analytics/wallets/${encodeURIComponent(r.buyer_address)}`}
+                        href={walletProfileHref(r.buyer_address, signedIn)}
                         title={r.buyer_address}
                         className="hover:underline"
                         style={{ color: "var(--rpc-text-primary)" }}

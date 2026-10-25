@@ -663,7 +663,9 @@ describe("CollectionAnalyticsClient — whale leaderboards", () => {
       json(200, { rows: [{ rank: 1, addr: "0xaaaaaaaaaaaaaaaa", username: "whale", sale_count: 10, total_volume_usd: 900, avg_price_usd: 90 }] })
     render(<CollectionAnalyticsClient />)
     const links = await screen.findAllByRole("link", { name: "whale" })
-    expect(links[0].getAttribute("href")).toBe("/analytics/wallets/0xaaaaaaaaaaaaaaaa")
+    // Rendered signed out (no session): the public wallet page, never the sign-in-only
+    // /analytics/wallets/* (2026-10-25, lib/analytics/wallet-href.ts).
+    expect(links[0].getAttribute("href")).toBe("/share/0xaaaaaaaaaaaaaaaa")
   })
 
   it("falls back to a short address when a whale has no username", async () => {
