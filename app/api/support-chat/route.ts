@@ -4709,7 +4709,8 @@ async function executeToolInner(
     // annotation below has nothing to read. Say the lag instead.
     if (coll === "panini_blockchain") return annotatePaniniTopSales(raw);
     if (!coll || !isEmptyOkBoard(raw)) return raw;
-    return annotateEmptyTopSales(raw, coll, await fetchPublicInsight(base, `/api/public/insights/market-pulse`, 20), toolInput.window === "30d" ? "30d" : "7d");
+    // The pulse only annotates an already-empty board, so it gets the short budget.
+    return annotateEmptyTopSales(raw, coll, await fetchPublicInsight(base, `/api/public/insights/market-pulse`, 20, QUIET_MARKET_PULSE_TIMEOUT_MS), toolInput.window === "30d" ? "30d" : "7d");
   }
 
   if (toolName === "get_market_movers") {
@@ -6608,6 +6609,17 @@ export async function POST(req: NextRequest) {
               get_team_intel: 10000,
               get_team_checklist: 10000,
               get_market_cap: 10000,
+              // Public insight boards (fetchPublicInsight, 9 s abort; each board route
+              // bounds its own read at ~8 s and answers with its classified error).
+              // Under the 6 s default a board answering in 6-9 s was thrown away as
+              // a generic "timeout" and the fetch's own abort could never fire
+              // (2026-10-25; guard: concierge-tool-budget-covers-its-board-fetch).
+              get_top_sales: 11000, // board + the 1.5 s empty-board pulse, in sequence
+              get_market_movers: 10000,
+              get_rookies: 10000,
+              get_premiums: 10000,
+              get_ecosystem_stat: 10000,
+              get_insight_board: 10000,
             };
             // Never let a tool eat the time the answer needs after it.
             const toolBudget = Math.max(2_000, Math.min(TOOL_TIMEOUT_MS[tb.name] ?? 6000, remainingMs() - MIN_MODEL_MS));
