@@ -19,6 +19,16 @@ vi.mock("@/lib/supabase", () => ({
 vi.mock("@/lib/auth/supabase-server", () => ({
   getCurrentUser: async () => auth.user,
 }))
+// Ownership (security audit 2026-10-25): wallets in `notOwned` belong to ANOTHER
+// account (saved by this one, but someone else verified or saved it first).
+const notOwned = new Set<string>()
+const ownedChecks: string[] = []
+vi.mock("@/lib/auth/owner-key-guard", () => ({
+  requireOwnedKey: async (w: string) => {
+    ownedChecks.push(w)
+    return notOwned.has(w) ? new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 }) : { user: auth.user }
+  },
+}))
 
 import { GET, POST } from "@/app/api/mcp/keys/route"
 
@@ -26,6 +36,8 @@ const req = (body: any = {}) => ({ json: async () => body }) as any
 
 beforeEach(() => {
   auth.user = null
+  notOwned.clear()
+  ownedChecks.length = 0
   for (const k of Object.keys(rpcState)) delete rpcState[k]
   rpcCalls.length = 0
 })
@@ -267,5 +279,40 @@ describe("/api/mcp/keys — a saved base58 wallet is never turned into 0x-garbag
     await GET()
     const listed = rpcCalls.filter((c) => c.name === "mcp_list_keys").map((c) => c.args.p_wallet_address)
     expect(listed).toEqual(["0xbd94cade097e50ac"])
+  })
+})
+
+describe("/api/mcp/keys — SAVED is not OWNED (security audit 2026-10-25)", () => {
+  // The MCP plan and daily quota are looked up by wallet, so a key issued against
+  // somebody else's saved address borrowed their plan or burned their quota; a
+  // listing exposed their key ids, which DELETE accepts.
+  it("POST refuses to issue a key against a saved wallet another account owns, and never calls mcp_issue_api_key", async () => {
+    auth.user = { id: "u1" }
+    rpcState["get_user_saved_wallets"] = SAVED("0x1234567890abcdef")
+    notOwned.add("0x1234567890abcdef")
+    const res = await POST(req({ wallet_address: "0x1234567890abcdef" }))
+    expect(res.status).toBe(403)
+    expect((await res.json()).error).toBe("wallet_not_owned")
+    expect(rpcCalls.map((c) => c.name)).not.toContain("mcp_issue_api_key")
+  })
+
+  it("POST still issues for an owned wallet (the check ran on the wallet it issues against)", async () => {
+    auth.user = { id: "u1" }
+    rpcState["get_user_saved_wallets"] = SAVED("0x1234567890abcdef")
+    rpcState["mcp_issue_api_key"] = { data: [{ key_id: "k", raw_key: "rpc_mcp_live_x", key_prefix: "p" }], error: null }
+    const res = await POST(req({ wallet_address: "0x1234567890abcdef" }))
+    expect(res.status).toBe(200)
+    expect(ownedChecks).toEqual(["0x1234567890abcdef"])
+  })
+
+  it("GET lists keys only for wallets this account owns", async () => {
+    auth.user = { id: "u1" }
+    rpcState["get_user_saved_wallets"] = SAVED("0x1111111111111111", "0x2222222222222222")
+    notOwned.add("0x2222222222222222")
+    rpcState["mcp_list_keys"] = { data: [{ key_id: "k1", created_at: "2026-10-01T00:00:00Z" }], error: null }
+    const res = await GET()
+    const body = (await res.json()) as { keys: Array<{ wallet_address: string }> }
+    expect(body.keys.map((k) => k.wallet_address)).toEqual(["0x1111111111111111"])
+    expect(rpcCalls.filter((c) => c.name === "mcp_list_keys").map((c) => c.args.p_wallet_address)).toEqual(["0x1111111111111111"])
   })
 })

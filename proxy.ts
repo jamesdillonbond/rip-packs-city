@@ -1327,6 +1327,9 @@ function applySecurityHeaders(response: NextResponse, pathname?: string) {
   // per-transaction *.arweave.net host serving video/mp4 (5 of 5 sampled via
   // pg_net that day, base and Rainbow). Both hosts are needed — the redirect
   // target is the one that actually serves the bytes.
+  // connect-src DROPPED the pinnacle-proxy and topshot-proxy workers 2026-10-25
+  // (security audit): every caller is a server route holding TS_PROXY_SECRET, and
+  // no client bundle fetches either host, so browsers never needed them.
   // img-src + media-src gained assets.paniniamerica.net 2026-09-27 for Panini
   // card art, clips and pack art (host measured, not guessed — lib/panini/assets.ts).
   const policy = (scriptSrc: string) =>
@@ -1337,7 +1340,7 @@ function applySecurityHeaders(response: NextResponse, pathname?: string) {
       "img-src 'self' data: blob: https://assets.nbatopshot.com https://asset-preview.nbatopshot.com https://assets.nflallday.com https://asset-preview.nflallday.com https://media.nflallday.com https://assets.laligagolazos.com https://asset-preview.laligagolazos.com https://assets.disneypinnacle.com https://asset-preview.disneypinnacle.com https://asset-preview.ufcstrike.com https://ipfs.dapperlabs.com https://gateway.pinata.cloud https://ipfs.io https://storage.googleapis.com https://cdn.nba.com https://cdn.wnba.com https://*.supabase.co https://arweave.net https://*.arweave.net https://assets.paniniamerica.net" + (wallet ? ` ${WALLETCONNECT_IMAGES} ${FLOW_WALLET_IMAGES}` : ""),
       "media-src 'self' data: blob: https://assets.nbatopshot.com https://asset-preview.nbatopshot.com https://assets.nflallday.com https://asset-preview.nflallday.com https://media.nflallday.com https://assets.laligagolazos.com https://asset-preview.laligagolazos.com https://assets.disneypinnacle.com https://asset-preview.disneypinnacle.com https://asset-preview.ufcstrike.com https://ipfs.dapperlabs.com https://gateway.pinata.cloud https://ipfs.io https://storage.googleapis.com https://arweave.net https://*.arweave.net https://assets.paniniamerica.net",
       "font-src 'self' https://fonts.gstatic.com",
-      "connect-src 'self' https://*.supabase.co https://public-api.nbatopshot.com https://public-api.nflallday.com https://public-api.laligagolazos.com https://api2.flowty.io https://rest-mainnet.onflow.org https://access-mainnet.onflow.org https://pinnacle-proxy.tdillonbond.workers.dev https://topshot-proxy.tdillonbond.workers.dev wss://*.supabase.co" +
+      "connect-src 'self' https://*.supabase.co https://public-api.nbatopshot.com https://public-api.nflallday.com https://public-api.laligagolazos.com https://api2.flowty.io https://rest-mainnet.onflow.org https://access-mainnet.onflow.org wss://*.supabase.co" +
         (wallet ? ` ${WALLET_DISCOVERY_HOST} ${WALLETCONNECT_CONNECT} ${FLOW_TX_STATUS_STREAM} ${FLOW_WALLET_API}` : ""),
       ...(wallet ? [`frame-src 'self' ${WALLET_DISCOVERY_HOST} ${WALLETCONNECT_FRAMES}`] : []),
       "frame-ancestors 'none'",

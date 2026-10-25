@@ -129,6 +129,8 @@ describe("proxy() — security headers", () => {
       expect(enforced, path).toMatch(/script-src 'self' 'unsafe-inline'(;|$)/)
       expect(enforced, path).not.toContain("'unsafe-eval'")
       expect(res.headers.get("Content-Security-Policy-Report-Only"), path).toBeNull()
+      // Server-only workers are not browser destinations (2026-10-25).
+      expect(enforced, path).not.toContain("tdillonbond.workers.dev")
     }
   })
 

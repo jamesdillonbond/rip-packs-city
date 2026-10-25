@@ -11,6 +11,7 @@
 //   4. Call mcp_revoke_api_key(key_id, wallet_address). The RPC also
 //      enforces (wallet matches) as defense in depth.
 
+import { requireOwnedKey } from "@/lib/auth/owner-key-guard";
 import { NextRequest, NextResponse } from "next/server";
 import { displayAddress } from "@/lib/address";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
@@ -83,6 +84,11 @@ export async function DELETE(_req: NextRequest, ctx: { params: Promise<{ keyId: 
     return NextResponse.json({ error: "Saved-wallet lookup failed" }, { status: 500 });
   }
   if (!userWallets.has(keyWallet)) {
+    return NextResponse.json({ error: "Key does not belong to this account" }, { status: 403 });
+  }
+  // Saved is not owned (security audit 2026-10-25): without this, saving a
+  // victim's address let any account revoke the victim's keys.
+  if ((await requireOwnedKey(keyWallet)) instanceof Response) {
     return NextResponse.json({ error: "Key does not belong to this account" }, { status: 403 });
   }
 

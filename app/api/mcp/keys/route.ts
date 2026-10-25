@@ -18,6 +18,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { displayAddress } from "@/lib/address";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth/supabase-server";
+import { requireOwnedKey } from "@/lib/auth/owner-key-guard";
 
 export const dynamic = "force-dynamic";
 
@@ -145,6 +146,23 @@ export async function POST(req: NextRequest) {
     wallet = firstFlow;
   }
 
+  // ⛔ "Saved on this account" is not ownership: anyone can save any address
+  // (security audit 2026-10-25). The MCP plan and its daily quota are looked up
+  // BY WALLET, so a key issued against someone else's wallet borrowed their plan
+  // (a founder's is unlimited) or burned their quota. Same rule as every other
+  // owner-only surface: the account that verified the wallet, else the one that
+  // saved it first (lib/auth/owner-key-guard.ts, #176).
+  const owned = await requireOwnedKey(wallet);
+  if (owned instanceof Response) {
+    return NextResponse.json(
+      {
+        error: "wallet_not_owned",
+        message: "Another account owns this wallet, so an MCP key cannot be issued against it here.",
+      },
+      { status: 403 }
+    );
+  }
+
   const label =
     typeof body.label === "string" && body.label.trim() ? body.label.trim().slice(0, 80) : null;
 
@@ -203,6 +221,9 @@ export async function GET() {
 
   const all: Array<KeyRow & { wallet_address: string }> = [];
   for (const wallet of userWallets) {
+    // Only wallets this account OWNS — saving someone else's address must not
+    // list their key ids (which DELETE accepts) or labels (security audit 2026-10-25).
+    if ((await requireOwnedKey(wallet)) instanceof Response) continue;
     const { data, error } = await (supabase as any).rpc("mcp_list_keys", { p_wallet_address: wallet });
     if (error) {
       console.log(`[mcp/keys GET] mcp_list_keys failed for ${wallet}:`, error.message);

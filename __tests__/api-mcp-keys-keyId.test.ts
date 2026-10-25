@@ -30,6 +30,13 @@ vi.mock("@/lib/supabase", () => ({
 vi.mock("@/lib/auth/supabase-server", () => ({
   getCurrentUser: async () => auth.user,
 }))
+// Ownership (security audit 2026-10-25): wallets in `notOwned` are saved by this
+// account but OWNED by another one.
+const notOwned = new Set<string>()
+vi.mock("@/lib/auth/owner-key-guard", () => ({
+  requireOwnedKey: async (w: string) =>
+    notOwned.has(w) ? new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 }) : { user: auth.user },
+}))
 
 import { DELETE } from "@/app/api/mcp/keys/[keyId]/route"
 
@@ -38,6 +45,7 @@ const ctx = (keyId: string) => ({ params: Promise.resolve({ keyId }) })
 
 beforeEach(() => {
   auth.user = null
+  notOwned.clear()
   state.keyRows = []
   state.savedWallets = []
   state.revoked = false
@@ -76,5 +84,18 @@ describe("DELETE /api/mcp/keys/[keyId]", () => {
     expect(body.ok).toBe(true)
     expect(body.revoked).toBe(true)
     expect(body.key_id).toBe("11111111-1111-1111-1111-111111111111")
+  })
+})
+
+describe("DELETE /api/mcp/keys/[keyId] — SAVED is not OWNED (security audit 2026-10-25)", () => {
+  it("403s, and never revokes, when the caller merely SAVED the key's wallet that another account owns", async () => {
+    auth.user = { id: "u1" }
+    state.keyRows = [{ wallet_address: "0x1234567890abcdef", status: "active" }]
+    state.savedWallets = [{ wallet_addr: "0x1234567890abcdef" }]
+    state.revoked = true
+    notOwned.add("0x1234567890abcdef")
+    const res = await DELETE(req(), ctx("00000000-0000-0000-0000-000000000000"))
+    expect(res.status).toBe(403)
+    expect((await res.json()).revoked).toBeUndefined()
   })
 })

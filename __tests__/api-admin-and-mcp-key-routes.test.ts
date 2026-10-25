@@ -62,6 +62,10 @@ vi.mock("@/lib/admin-auth", () => ({
     NextResponse.json({ error: "unauthorized" }, { status: 401 }),
 }))
 
+// Ownership is pinned in api-mcp-keys-keyId.test.ts; here every saved wallet is owned.
+vi.mock("@/lib/auth/owner-key-guard", () => ({
+  requireOwnedKey: async () => ({ user: authState.user }),
+}))
 vi.mock("@/lib/auth/supabase-server", () => ({
   getCurrentUser: async () => authState.user,
 }))
