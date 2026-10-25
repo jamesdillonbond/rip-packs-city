@@ -2,7 +2,8 @@
 //
 // Auth-gated (Round 8 Item 2 hardening): the caller must be signed in via
 // Supabase cookie auth, and the requested wallet_address must belong to the
-// signed-in user (via saved_wallets). Pre-hardening this route was open —
+// signed-in user — since 2026-10-25 its OWNER (requireOwnedKey), not merely
+// any account that saved it. Pre-hardening this route was open —
 // anyone who knew a wallet_address could spawn a portal session for it.
 // Stripe itself only shows the customer their own data, so the blast radius
 // was small, but the auth gate matches /api/stripe/checkout's contract.
@@ -10,6 +11,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { apiErrorResponse } from "@/lib/api-error";
 import { getStripe } from "@/lib/stripe"
 import { getCurrentUser } from "@/lib/auth/supabase-server"
+import { requireOwnedKey } from "@/lib/auth/owner-key-guard"
 import { createClient } from "@supabase/supabase-js"
 
 const supabase: any = createClient(
@@ -30,23 +32,16 @@ export async function POST(req: NextRequest) {
     }
     const normalised = walletAddress.trim().toLowerCase()
 
-    // Ownership check: the wallet must be linked to the signed-in user's
-    // saved_wallets. Without this any signed-in user could open the portal
-    // for any wallet they happen to know.
-    const { data: ownership, error: ownErr } = await supabase
-      .from("saved_wallets")
-      .select("wallet_addr")
-      .eq("user_id", user.id)
-      .eq("wallet_addr", normalised)
-      .maybeSingle()
-    if (ownErr) {
-      console.log("[stripe/portal] saved_wallets lookup error:", ownErr.message)
-      return NextResponse.json({ error: "ownership check failed" }, { status: 500 })
-    }
-    if (!ownership) {
+    // Ownership check (security audit 2026-10-25): the caller must OWN the
+    // wallet — its verified saver, else its first saver (lib/auth/owner-key-guard,
+    // the #176 rule). "Saved on this account" was not enough: anyone can save any
+    // address, and a portal session can cancel the subscription and shows the
+    // subscriber's billing email, address and card. Same class as /api/mcp/keys.
+    const owned = await requireOwnedKey(normalised)
+    if (owned instanceof Response) {
       return NextResponse.json(
         { error: "Wallet is not linked to your account" },
-        { status: 403 },
+        { status: owned.status === 401 ? 401 : 403 },
       )
     }
 
