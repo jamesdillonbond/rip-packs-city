@@ -220,7 +220,7 @@ export default {
     }
 
     const auth = request.headers.get("Authorization") ?? "";
-    if (!env.INGEST_SECRET_TOKEN || auth !== `Bearer ${env.INGEST_SECRET_TOKEN}`) {
+    if (!env.INGEST_SECRET_TOKEN || !safeEqual(auth, `Bearer ${env.INGEST_SECRET_TOKEN}`)) {
       return Response.json({ error: "unauthorized" }, { status: 401 });
     }
     if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) {
@@ -237,3 +237,11 @@ export default {
     }
   },
 };
+
+// Constant-time compare (security audit 2026-10-25, R138f).
+function safeEqual(a: string, b: string): boolean {
+  const len = Math.max(a.length, b.length);
+  let diff = a.length ^ b.length;
+  for (let i = 0; i < len; i++) diff |= (a.charCodeAt(i) || 0) ^ (b.charCodeAt(i) || 0);
+  return diff === 0;
+}

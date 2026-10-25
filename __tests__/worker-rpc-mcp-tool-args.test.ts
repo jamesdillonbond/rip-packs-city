@@ -52,6 +52,7 @@ function stubSupabase(rpcs: Record<string, unknown | { status: number; body?: st
   const table: Record<string, unknown> = {
     mcp_validate_api_key: VALID_PRINCIPAL,
     check_feature_quota: QUOTA_OK,
+    mcp_reserve_tool_call: QUOTA_OK,
     ...rpcs,
   }
   const spy = vi.fn(async (input: any, init?: any) => {
@@ -94,7 +95,7 @@ async function callTool(
   )
   expect(res.status).toBe(200)
   const json: any = await res.json()
-  // Let the fire-and-forget mcp_log_tool_call settle so its body is recorded.
+  // Let the fire-and-forget mcp_log_tool_detail settle so its body is recorded.
   await Promise.all(c.waited)
   return {
     payload: JSON.parse(json.result.content[0].text),
@@ -349,7 +350,7 @@ describe("rpc-mcp-proxy tools/call — result envelope + telemetry", () => {
       { collection_slug: "laliga_golazos" }
     )
     expect(isError).toBe(false)
-    const meta = only(calls, "mcp_log_tool_call").body as any
+    const meta = only(calls, "mcp_log_tool_detail").body as any
     expect(meta.p_tool_name).toBe("get_sniper_deals")
     expect(meta.p_wallet_address).toBe("0xabc")
     expect(meta.p_metadata.gaps_count).toBe(1)
@@ -359,7 +360,7 @@ describe("rpc-mcp-proxy tools/call — result envelope + telemetry", () => {
 
   it("logs gaps_count 0 for a result carrying no gaps array", async () => {
     const { calls } = await callTool("get_fmv", { edition_key: "k" }, { mcp_get_fmv: { fmv: 5 } })
-    expect((only(calls, "mcp_log_tool_call").body as any).p_metadata.gaps_count).toBe(0)
+    expect((only(calls, "mcp_log_tool_detail").body as any).p_metadata.gaps_count).toBe(0)
   })
 
   it("converts a null adapter result into a gap-flagged payload, not an error", async () => {
@@ -379,7 +380,7 @@ describe("rpc-mcp-proxy tools/call — result envelope + telemetry", () => {
     expect(isError).toBe(true)
     expect(payload.error).toBe("upstream_supabase_unavailable")
     expect(payload.gaps[0]).toMatch(/^upstream_supabase_unavailable_/)
-    expect((only(calls, "mcp_log_tool_call").body as any).p_metadata.error).toBeTruthy()
+    expect((only(calls, "mcp_log_tool_detail").body as any).p_metadata.error).toBeTruthy()
   })
 
   it("tags a non-Supabase throw as adapter_exception, distinctly from an upstream failure", async () => {
@@ -410,7 +411,7 @@ describe("rpc-mcp-proxy tools/call — result envelope + telemetry", () => {
     const { payload, isError } = await callTool(
       "get_fmv",
       { edition_key: "k" },
-      { mcp_get_fmv: { fmv: 5 }, mcp_log_tool_call: { status: 500, body: "log down" } }
+      { mcp_get_fmv: { fmv: 5 }, mcp_log_tool_detail: { status: 500, body: "log down" } }
     )
     expect(isError).toBe(false)
     expect(payload).toEqual({ fmv: 5 })

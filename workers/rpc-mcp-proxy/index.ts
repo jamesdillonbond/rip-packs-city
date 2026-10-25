@@ -6,9 +6,11 @@
 // plain application/json responses only — no SSE, no session management.
 //
 // Auth: bearer rpc_mcp_live_<token>, sha256 hashed, validated via
-// public.mcp_validate_api_key. Quota enforced via check_feature_quota.
-// Every tool execution is logged via mcp_log_tool_call (fire-and-forget
-// through ctx.waitUntil so it does not extend response latency).
+// public.mcp_validate_api_key. Every request is pre-checked with
+// check_feature_quota (cheap early reject); every TOOL CALL is then counted
+// atomically by mcp_reserve_tool_call before it runs (per-wallet advisory lock,
+// security audit 2026-10-25, R138(a)), and its per-tool row is logged via
+// mcp_log_tool_detail (fire-and-forget through ctx.waitUntil).
 //
 // Tool surface (six tools, all read-only):
 //   get_fmv, get_sniper_deals, compute_pack_ev, find_set_completion_path,
@@ -315,9 +317,25 @@ async function checkQuota(env: Env, walletAddress: string): Promise<QuotaResult>
   });
 }
 
+// Check-and-count in ONE transaction (security audit 2026-10-25, R138(a)).
+// The request-level checkQuota above is a cheap early reject; it cannot stop N
+// parallel tool calls from all reading the same used_today. This RPC takes a
+// per-wallet advisory lock, reads the quota and writes the counted mcp_query row
+// before the tool runs, so the cap holds under concurrency. A denied call writes
+// nothing. Pinned by supabase/tests/mcp_reserve_tool_call.sql.
+async function reserveToolCall(env: Env, walletAddress: string, toolName: string): Promise<QuotaResult> {
+  return callSupabaseRpc<QuotaResult>(env, "mcp_reserve_tool_call", {
+    p_wallet_address: walletAddress,
+    p_tool_name: toolName,
+  });
+}
+
+// Per-tool observability row only — the reservation already wrote the counted
+// row, so this must NOT be mcp_log_tool_call (which writes both and would
+// double-count every call).
 function logToolCall(env: Env, ctx: ExecutionContext, walletAddress: string, toolName: string, metadata: Record<string, unknown>): void {
   ctx.waitUntil(
-    callSupabaseRpc(env, "mcp_log_tool_call", {
+    callSupabaseRpc(env, "mcp_log_tool_detail", {
       p_wallet_address: walletAddress,
       p_tool_name: toolName,
       p_metadata: metadata,
@@ -526,6 +544,23 @@ async function dispatchMcp(env: Env, ctx: ExecutionContext, principal: Principal
       const handler = TOOL_HANDLERS[toolName];
       if (!handler) {
         return rpcError(id, -32602, `unknown_tool: ${toolName}`);
+      }
+
+      // Reserve BEFORE running the tool; fail closed if the reservation cannot be made.
+      let reservation: QuotaResult;
+      try {
+        reservation = await reserveToolCall(env, principal.walletAddress, toolName);
+      } catch {
+        return rpcError(id, -32000, "upstream_supabase_unavailable");
+      }
+      if (!reservation?.allowed) {
+        return rpcError(id, -32002, "quota_exceeded", {
+          reason: reservation?.reason,
+          plan: reservation?.plan,
+          daily_limit: reservation?.daily_limit,
+          used_today: reservation?.used_today,
+          retry_after_seconds: secondsUntilUtcMidnight(),
+        });
       }
 
       const startedAt = Date.now();

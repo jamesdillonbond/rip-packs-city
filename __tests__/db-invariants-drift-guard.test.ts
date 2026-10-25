@@ -807,6 +807,19 @@ const PINS = [
       "supabase/migrations/20260903164254_audit_20260903_mcp_log_tool_call_writes_the_quota_key.sql",
   },
   {
+    // R138(a), 2026-10-25: check-and-count in one transaction under a per-wallet
+    // advisory lock (the worker's quota was check-then-log, so parallel calls all
+    // passed). The SQL test pins counting + denial-writes-nothing sequentially.
+    fn: "mcp_reserve_tool_call",
+    test: "supabase/tests/mcp_reserve_tool_call.sql",
+    migration: "supabase/migrations/20261025232432_audit_20261025_mcp_reserve_tool_call_atomic_quota.sql",
+  },
+  {
+    fn: "mcp_log_tool_detail",
+    test: "supabase/tests/mcp_reserve_tool_call.sql",
+    migration: "supabase/migrations/20261025232432_audit_20261025_mcp_reserve_tool_call_atomic_quota.sql",
+  },
+  {
     fn: "allday_sales_cross_source_dedup",
     test: "supabase/tests/allday_sales_cross_source_dedup.sql",
     migration: "supabase/migrations/20260702130000_audit_20260702_allday_cross_source_dedup_writer_trigger.sql",

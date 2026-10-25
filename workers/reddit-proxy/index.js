@@ -45,7 +45,7 @@ export default {
     if (request.method !== "GET") return new Response("Method not allowed", { status: 405 });
 
     const authHeader = request.headers.get("X-Proxy-Secret");
-    if (!authHeader || authHeader !== env.PROXY_SECRET) {
+    if (!env.PROXY_SECRET || !authHeader || !safeEqual(authHeader, env.PROXY_SECRET)) {
       return new Response("Unauthorized", { status: 401 });
     }
 
@@ -109,3 +109,11 @@ export default {
     return out;
   },
 };
+
+// Constant-time compare (security audit 2026-10-25, R138f).
+function safeEqual(a, b) {
+  const len = Math.max(a.length, b.length);
+  let diff = a.length ^ b.length;
+  for (let i = 0; i < len; i++) diff |= (a.charCodeAt(i) || 0) ^ (b.charCodeAt(i) || 0);
+  return diff === 0;
+}

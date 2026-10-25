@@ -68,7 +68,7 @@ function authOk(request: Request, env: Env): boolean {
   if (!env.PROXY_SECRET) return false;
   const auth = request.headers.get("Authorization") ?? "";
   const m = auth.match(/^Bearer\s+(.+)$/i);
-  return !!m && m[1].trim() === env.PROXY_SECRET;
+  return !!m && !!env.PROXY_SECRET && safeEqual(m[1].trim(), env.PROXY_SECRET);
 }
 
 async function handleEvents(request: Request): Promise<Response> {
@@ -165,3 +165,11 @@ export default {
     return jsonResponse({ error: "route_not_found", path, method }, 404);
   },
 };
+
+// Constant-time compare (security audit 2026-10-25, R138f).
+function safeEqual(a: string, b: string): boolean {
+  const len = Math.max(a.length, b.length);
+  let diff = a.length ^ b.length;
+  for (let i = 0; i < len; i++) diff |= (a.charCodeAt(i) || 0) ^ (b.charCodeAt(i) || 0);
+  return diff === 0;
+}

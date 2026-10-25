@@ -142,7 +142,7 @@ export default {
     }
 
     const auth = request.headers.get("X-Proxy-Secret");
-    if (!auth || auth !== env.PROXY_SECRET) {
+    if (!env.PROXY_SECRET || !auth || !safeEqual(auth, env.PROXY_SECRET)) {
       return jsonResponse({ error: "unauthorized" }, 401);
     }
     if (!env.ODDS_API_KEY) {
@@ -160,3 +160,11 @@ export default {
     }
   },
 };
+
+// Constant-time compare (security audit 2026-10-25, R138f).
+function safeEqual(a: string, b: string): boolean {
+  const len = Math.max(a.length, b.length);
+  let diff = a.length ^ b.length;
+  for (let i = 0; i < len; i++) diff |= (a.charCodeAt(i) || 0) ^ (b.charCodeAt(i) || 0);
+  return diff === 0;
+}

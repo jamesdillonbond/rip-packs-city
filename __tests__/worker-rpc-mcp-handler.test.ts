@@ -208,7 +208,7 @@ describe("rpc-mcp-proxy — /mcp body validation (post-auth)", () => {
 })
 
 describe("rpc-mcp-proxy — /mcp JSON-RPC dispatch", () => {
-  const authed = { mcp_validate_api_key: VALID_PRINCIPAL, check_feature_quota: QUOTA_OK }
+  const authed = { mcp_validate_api_key: VALID_PRINCIPAL, check_feature_quota: QUOTA_OK, mcp_reserve_tool_call: QUOTA_OK }
 
   it("initialize returns the protocol version + serverInfo", async () => {
     stubSupabase(authed)
@@ -261,7 +261,7 @@ describe("rpc-mcp-proxy — /mcp JSON-RPC dispatch", () => {
 
   it("tools/call get_fmv wraps the adapter result as MCP text content", async () => {
     const c = ctx()
-    stubSupabase({ ...authed, mcp_get_fmv: { edition_id: "e1", fmv_usd: 42 }, mcp_log_tool_call: null })
+    stubSupabase({ ...authed, mcp_get_fmv: { edition_id: "e1", fmv_usd: 42 }, mcp_log_tool_detail: null })
     const res = await worker.fetch(
       mcpPost({
         jsonrpc: "2.0",
@@ -285,7 +285,7 @@ describe("rpc-mcp-proxy — /mcp JSON-RPC dispatch", () => {
     stubSupabase({
       ...authed,
       mcp_get_fmv: { status: 500, body: "db exploded" },
-      mcp_log_tool_call: null,
+      mcp_log_tool_detail: null,
     })
     const res = await worker.fetch(
       mcpPost({
@@ -303,5 +303,47 @@ describe("rpc-mcp-proxy — /mcp JSON-RPC dispatch", () => {
     const payload = JSON.parse(body.result.content[0].text)
     expect(payload.error).toBe("upstream_supabase_unavailable")
     expect(Array.isArray(payload.gaps)).toBe(true)
+  })
+})
+
+describe("rpc-mcp-proxy — atomic per-call quota (R138(a), security audit 2026-10-25)", () => {
+  const base = { mcp_validate_api_key: VALID_PRINCIPAL, check_feature_quota: QUOTA_OK }
+  const call = () =>
+    mcpPost({
+      jsonrpc: "2.0",
+      id: 9,
+      method: "tools/call",
+      params: { name: "get_fmv", arguments: { edition_key: "1:2", collection_slug: "nba_top_shot" } },
+    })
+  const called = (spy: ReturnType<typeof vi.fn>, fn: string) =>
+    spy.mock.calls.filter(([i]) => String(typeof i === "string" ? i : i.url).includes(`/rpc/${fn}`)).length
+
+  it("reserves before the tool runs, then logs ONLY the per-tool row (never the double-writing mcp_log_tool_call)", async () => {
+    const c = ctx()
+    const spy = stubSupabase({ ...base, mcp_reserve_tool_call: QUOTA_OK, mcp_get_fmv: { edition_id: "e1" }, mcp_log_tool_detail: null })
+    const res = await worker.fetch(call(), env, c)
+    await Promise.all(c.waited)
+    expect(((await res.json()) as any).result).toBeDefined()
+    expect(called(spy, "mcp_reserve_tool_call")).toBe(1)
+    expect(called(spy, "mcp_log_tool_detail")).toBe(1)
+    expect(called(spy, "mcp_log_tool_call")).toBe(0)
+  })
+
+  it("a denied reservation returns quota_exceeded and the tool never runs", async () => {
+    const spy = stubSupabase({
+      ...base,
+      mcp_reserve_tool_call: { allowed: false, reason: "daily_limit_reached", plan: "free", daily_limit: 100, used_today: 100 },
+      mcp_get_fmv: { edition_id: "e1" },
+    })
+    const body = (await (await worker.fetch(call(), env, ctx())).json()) as any
+    expect(body.error).toMatchObject({ code: -32002, message: "quota_exceeded", data: { reason: "daily_limit_reached" } })
+    expect(called(spy, "mcp_get_fmv")).toBe(0)
+  })
+
+  it("fails CLOSED when the reservation cannot be made", async () => {
+    const spy = stubSupabase({ ...base, mcp_reserve_tool_call: { status: 500, body: "down" }, mcp_get_fmv: { edition_id: "e1" } })
+    const body = (await (await worker.fetch(call(), env, ctx())).json()) as any
+    expect(body.error).toMatchObject({ code: -32000, message: "upstream_supabase_unavailable" })
+    expect(called(spy, "mcp_get_fmv")).toBe(0)
   })
 })

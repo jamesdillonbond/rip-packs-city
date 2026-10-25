@@ -68,7 +68,10 @@ const SUPPRESSED: Record<string, string> = {
   // the right call for a Worker-side fix and the wrong diagnosis: the Worker
   // already calls `mcp_log_tool_call` on every tool call, so the write belonged
   // in the function it was already calling, and no deploy was needed at all.
-  mcp_query: "written from plpgsql, invisible to a TS scan — pinned by supabase/tests/mcp_log_tool_call.sql",
+  // Since 2026-10-25 (R138(a)) the new worker counts through
+  // `mcp_reserve_tool_call` instead — also plpgsql, pinned by its own SQL test.
+  mcp_query:
+    "written from plpgsql (mcp_log_tool_call; mcp_reserve_tool_call since 2026-10-25), invisible to a TS scan — pinned by supabase/tests/mcp_log_tool_call.sql and mcp_reserve_tool_call.sql",
 }
 
 function walk(dir: string, out: string[] = []): string[] {
