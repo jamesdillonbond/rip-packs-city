@@ -25,7 +25,8 @@ describe("the site-wide WebApplication JSON-LD is homepage-only", () => {
 
   it("the homepage component emits it", () => {
     const home = read("components/HomePageMarketing.tsx")
-    expect(home).toMatch(/JSON\.stringify\(organizationJsonLd\)/)
+    // serialised script-safe since 2026-10-25 (lib/seo/json-ld-script.ts)
+    expect(home).toMatch(/jsonLdScript\(organizationJsonLd\)/)
   })
 
   it("the anonymous homepage renders that component", () => {
