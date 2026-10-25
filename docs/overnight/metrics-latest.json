@@ -1,50 +1,52 @@
 {
-  "generated_at_pt": "2026-10-24 ~01:15 AM PT (overnight nightly, cloud, push via laptop-VM clone + .rpc-git-cred)",
-  "generated_at_utc": "2026-10-24T08:15Z",
-  "pass": "Overnight nightly. GREEN, 0 production shipped, 0 reverted. Whole app/api + FMV/pinnacle/sniper surface hot from the 10-23 Claude Code session (committed through ~10:46 PM PT); origin/main did not advance during the run; nothing clean-safe + non-hot + verifiable open -> queue-only. Post-ship watch of the 10-23 CC ships GREEN (the new nba-espn-projections lane is live). Handoff: docs/handoff-2026-10-24-overnight-pass.md",
+  "generated_at_pt": "2026-10-25 ~01:30 AM PT (overnight nightly, cloud, push via laptop-VM clone + .rpc-git-cred)",
+  "generated_at_utc": "2026-10-25T08:30Z",
+  "pass": "Overnight nightly. GREEN, 0 production shipped, 0 reverted. Whole app/api + concierge + Panini surface hot (concierge commits 00:04-01:00 AM PT tonight; Panini franchise/Holders within 24-48h); origin/main did not advance during the run; nothing clean-safe + non-hot + verifiable open -> queue-only. panini-1.4.0 post-ship watch CLOSED (distribution + price accuracy both verified). Handoff: docs/handoff-2026-10-25-overnight-pass.md",
   "shipped": 0,
   "reverted": 0,
-  "idle": "routed-to-trevor",
-  "verdict": "GREEN . 0 shipped . queue-only (whole surface hot) . oldest routed: #58 OPENSEA_API_KEY ~29 nights. Sole trust breach candy_sales_stale (#58, Trevor-only, 292.8h, +24h = 0 new sales). allday-buyer-backfill medium alert = R124 stale-pooling (backfill walked past the May-Jun decode dead zone; last 4 runs clean). Accuracy gate holds.",
+  "idle": "routed-to-claude-code (franchise-panel perf) + routed-to-trevor (#58)",
+  "verdict": "GREEN . 0 shipped . queue-only (whole surface hot) . oldest routed: #58 OPENSEA_API_KEY 30 nights. Sole trust breach candy_sales_stale (#58, Trevor-only, 316.7h, +24h vs prev = 0 new sales). Accuracy gate holds (NBA 0.960, AllDay HIGH 1.000, Panini HIGH 1.008 vs 30d sales median). New queued item: get_panini_franchise_panel bounded-timeout burst 06:32Z (mean 1736ms/max 13805ms over 709 calls) -> Claude Code perf.",
   "health": {
     "security_invariants": "clean (invariants [], anon_write_holes [], rls_off_base_tables [], secdef_anon_violations []) via rpc_ops_snapshot.security",
     "structural": "stalled [], backward_cursor_rewinds [], wmc_null [], function_search_path_drift [], procedure pins [], cross_collection_mat_staleness [], suppression_*_drift [] (all via rpc_ops_snapshot)",
     "trust_health_breaches": 1,
-    "trust_health_note": "37/38 arms ok. candy_sales_stale_hours 292.8 BREACH (breach 168) = known #58 (Trevor-only, 268.8 -> 292.8, +24h = frozen book). edition_integrity_flags 22 (breach 250). unmapped_resolution_backlog_max 18 (breach 100). trust_precompute_max_age_hours 5.33 ok. fmv_stale_touch_hours 0.3, fmv_sweep_wedge_hours 0.2 ok.",
+    "trust_health_note": "1 breach: candy_sales_stale_hours 316.7 BREACH (breach 168) = known #58 (Trevor-only frozen book, 292.8 -> 316.7, +24h = 0 new sales). edition_integrity_flags 22 (breach 250). unmapped_resolution_backlog_max 18 (breach 100). trust_precompute_max_age_hours 5.29 ok (reads fresh/reliable). fmv_stale_touch_hours 0.3, fmv_sweep_wedge_hours 0.16 ok.",
     "stalled_pipelines": "[]",
     "sentinel_ts_uuid_editions_48h": 0,
     "ts_uuid_dupes_created_24h": 0,
-    "pipeline_alerts": "6 rows: 1 medium allday-buyer-backfill = R124 stale-pooling (last 4 runs clean empty-window ok=true; backfill walked past the May-Jun 2026 decode dead zone, inbox 10-23T0310Z); 4 info attributed-upstream Cloudflare 403/400 (Atlas editions/market/pack-supply + flow-moment), all fresh (last 200 08:07Z), none escalated.",
-    "pipeline_fails_24h": "topshot-pack-supply-atlas 293 (designed 403 re-ask, lane fresh), atlas-market-feed 8, sync-nba-projections 7 (RETIRED lane, caller disabled 10-23 - see post_ship_watch), atlas-editions-refresh 3, ingest-topshot-challenges 2, rest <=1.",
+    "pipeline_alerts": "1 critical + 4 info, all known/benign. critical pg_net_http_403 = unattributable-endpoint Cloudflare-challenge arm (2 calls/2h, usually settles). 4 info = attributed Cloudflare 403 (Atlas editions/market/pack-supply) + flow-rest 400 moment-moved (designed); all fresh (last 200/drain 08:03-08:05Z, newest events 08:01Z), 0 sets overdue, none escalated.",
+    "pipeline_fails_24h": "topshot-pack-supply-atlas 170 (designed 403 re-ask, lane fresh), atlas-market-feed 10, member-wallet-usernames-atlas 1, golazos-listing-cache 1. All upstream:0, none stalled.",
     "sentry": "dark (SDK removed #34).",
-    "vercel_24h": "4 chronic runtime-error groups, NO new class: ipfs-media gateway race x9, pack_realized_ev 5s x1, panini market-cap tile 8s x1, wallet-summary RPC timeout x1. Prod serves a3981bcd7 (READY); tip 0a4f71d37 is migration-only -> build correctly skipped (#61); no ERROR deploys.",
-    "db_size_mb": 41839,
-    "db_size_note": "+370 vs 10-23 night (41,469). Panini editions + WAL/autovacuum. Not runaway; Large tier (since 09-20).",
-    "post_ship_watch": "GREEN on the 10-23 Claude Code ships. nba-espn-projections (NEW lane): live, hourly ok=true, 179-281 rankable/day, window advanced to 10-24/10-25. sync-nba-projections (OLD lane): caller 7568448 confirmed disabled (no run after 03:07Z; 06:07Z slot skipped). Pinnacle #193 last-5 median: impossible_flags 0 / pct_stale 0 / render_floor_stale 0.4h (HIGH 297->262 churn/gate-landing, no bad-data signal). ownLookup tree-wide + sniper/follows/wallet honesty fixes: deployed READY, no new error class. Nothing reverted."
+    "vercel_24h": "33 error groups. All chronic/bounded except 1 NEW cluster: get_panini_franchise_panel 10000ms timeout across ~30 NBA franchise hubs in a single 06:32Z burst (first-seen today, not recurring) -> QUEUED. Chronic: ipfs-media gateway race x2, market-pulse/market-cap 8000ms, player-top-sales statement-timeout->empty, pack_contents 5000ms, panini market-cap-tile edition 8000ms. Prod serves dpl_DB2N67RafA8zjUk2jtw5RLfRXBN9; no ERROR deploys.",
+    "db_size_mb": 41400,
+    "db_size_note": "-439 vs 10-24 night (41,839). Autovacuum/WAL reclaim. Large tier (since 09-20).",
+    "client_error_beacon": "0 in 6h, 0 in 24h (newest 2026-10-23 05:04Z).",
+    "accuracy_gate": "NBA published ALL ratio 0.960 (err 16.7%, within25 64.9%), HIGH 0.974/11.1%/80.5%. AllDay published ALL 1.111 (USD err $0.05, sub-$1 market), HIGH 1.000/6.7%/83.6%. Panini (manual, backtest not wired): HIGH vs 30d sales median ratio 1.008, err 25.2% ($2 median), within25 50.0%, n 33,586. All centered.",
+    "post_ship_watch": "GREEN. panini-1.4.0 (5427f2c7) VERIFIED+CLOSED: distribution real (monitor 03:05Z) + price accuracy centered (ratio 1.008 this pass); revert on record git revert 5427f2c7 + re-point FMV to v1. nba-espn-projections lane hourly ok=true 337-363 rows per_date populated. Pinnacle #193 / ownLookup / sniper-follows-wallet honesty fixes: no new error class, beacon quiet. Concierge replay fixes (67e36d1,898964114) another session's work, no attributable new error class. Nothing reverted."
   },
   "fmv_high_med": {
-    "nba_top_shot": 6519,
-    "panini_blockchain": 17274,
-    "nfl_all_day": 1697,
-    "disney_pinnacle": 935,
-    "candy_mlb": 72,
+    "nba_top_shot": 6568,
+    "panini_blockchain": 17567,
+    "nfl_all_day": 1718,
+    "disney_pinnacle": 938,
+    "candy_mlb": 71,
     "laliga_golazos": 1,
     "ufc_strike": 0
   },
-  "fmv_high_med_note": "HIGH+MEDIUM from rpc_ops_snapshot fmv_by_collection (compute 10-24 05:35Z). nba HIGH 1425 + MED 5094. panini HIGH 16360 + MED 914. nfl HIGH 208 + MED 1489. pinnacle HIGH 262 + MED 673. candy HIGH 9 + MED 63. golazos MED 1. ufc 0.",
+  "fmv_high_med_note": "HIGH+MEDIUM from rpc_ops_snapshot fmv_by_collection (compute 10-25 05:35Z). nba HIGH 1424 + MED 5144. panini HIGH 16643 + MED 924. nfl HIGH 212 + MED 1506. pinnacle HIGH 251 + MED 687. candy HIGH 9 + MED 62. golazos MED 1. ufc 0.",
   "editions_by_collection": {
     "nba_top_shot": 14549,
-    "panini_blockchain": 38985,
+    "panini_blockchain": 39170,
     "nfl_all_day": 6190,
     "laliga_golazos": 575,
     "ufc_strike": 617,
     "candy_mlb": 125
   },
-  "deltas_vs_prev": "db +370 MB (41,469 -> 41,839). FMV HIGH+MED: nba 6,500 -> 6,519 (+19); panini 17,212 -> 17,274 (+62); nfl 1,685 -> 1,697 (+12); pinnacle 974 -> 935 (-39, #193 churn/gate-landing); candy 71 -> 72 (+1); golazos 1 flat; ufc 0 flat. editions: panini 38,902 -> 38,985 (+83), nba 14,545 -> 14,549 (+4), others flat. trust breaches 1 -> 1 (candy_sales_stale 268.8 -> 292.8h).",
+  "deltas_vs_prev": "db -439 MB (41,839 -> 41,400, autovacuum/WAL). FMV HIGH+MED: panini 17,274 -> 17,567 (+293); nba 6,519 -> 6,568 (+49); nfl 1,697 -> 1,718 (+21); pinnacle 935 -> 938 (+3); candy 72 -> 71 (-1); golazos 1 flat; ufc 0 flat. editions: panini 38,985 -> 39,170 (+185); nba/nfl/golazos/ufc/candy flat. trust breaches 1 -> 1 (candy_sales_stale 292.8 -> 316.7h).",
   "carried_queue": [
-    "#58 OPENSEA_API_KEY (~29 nights; candy_sales_stale 292.8h) - Trevor.",
-    "DROP 2 orphaned scratch_* FUNCTIONS (scratch_20261022_get_player_hub, scratch_20261023_search_catalog_joined) - NOT tables (none exist); EXECUTE postgres/service_role only, 0 callers/cron; safe; MCP holds DROPs -> Trevor/interactive.",
-    "(Closed by 10-23 CC: demand-read canonical doc; 5 zero-yield lanes suppressed 20261023132818.)"
+    "get_panini_franchise_panel perf (NEW, 1 night, P2, Claude Code) - bounded-timeout burst 06:32Z across ~30 NBA franchise hubs; mean 1736ms/max 13805ms over 709 calls; plan read + index/precompute. Hot Panini surface.",
+    "#58 OPENSEA_API_KEY (30 nights, P2, Trevor; candy_sales_stale 316.7h) - secret, no sandbox lever; indexers UNSCHEDULED (do not run).",
+    "(Closed-for-continuity: scratch functions dropped 10-24; demand-read doc + 5 zero-yield lanes closed by 10-23 CC.)"
   ],
-  "housekeeping": "0 production shipped, 0 reverted. Green-night ledger entry spliced above the first ### heading. Session-log entry prepended to docs/sessions/2026-10.md. Handoff written. metrics overwritten. Inbox NOT touched (append-only; newest filing 2026-10-23T0310Z resolved - backfill walked past the decode dead zone). Lock released. Pushed via laptop-VM clone (cloud add_repo/gh unavailable)."
+  "housekeeping": "0 production shipped, 0 reverted. Green-night ledger entry spliced above the first ^### heading (headings 1056, swallowed 0, future-dated 0). Session-log entry prepended to docs/sessions/2026-10.md. Handoff written + mirrored to Project. metrics overwritten. Inbox NOT touched (append-only; panini-1.4.0 watch filings resolved by this pass's verification, disposition in handoff). Stranded-output sweep clean. Lock released. Pushed via laptop-VM clone (cloud add_repo/attached repo unavailable)."
 }
