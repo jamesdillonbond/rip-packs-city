@@ -220,6 +220,15 @@ describe("edition metadata — failed read ≠ no badges", () => {
     expect(f).toMatchObject({ badges: [], badges_status: "ok" })
     expect(f.supply).toMatchObject({ circulation: 10000, burned: 277, locked: 3066, squeeze_pct: 33.4 })
   })
+  // 2026-10-25 replay: 48:1652 (on-chain series 3) went to users as "Series 3" in
+  // three answers — the row carried only the bare number. Name it at the source.
+  it("a Top Shot row carries the series NAME decoded from the on-chain number", async () => {
+    const client = makeInstrumentedSupabaseFixture({ badge_editions: { data: [{ external_id: "48:1652", play_tags: [], series_number: 3, circulation_count: 10000, burned: 280, locked: 3059 }], error: null } }).fixture as never
+    const f = metadataFieldsFor(await fetchEditionMetadata(client, TS_UUID, ["48:1652"]), "48:1652", TS_UUID)
+    expect(f.series).toBe("Summer 2021")
+    expect(f.series).not.toBe("Series 3")
+    expect(f.series_number).toBe(3)
+  })
   it("skips collections without a badge index instead of returning an honest-looking empty", async () => {
     const client = makeInstrumentedSupabaseFixture({}).fixture as never
     const r = await fetchEditionMetadata(client, "7dd9dd11-e8b6-45c4-ac99-71331f959714", ["abc"])

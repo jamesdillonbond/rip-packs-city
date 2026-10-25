@@ -60,7 +60,7 @@ import {
 import { resolveLiveAsks } from "@/lib/asks/edition-live-ask";
 import { scrubConfidence } from "@/lib/concierge/scrub-confidence";
 import { DEDUPE_WINDOW_MS, isSameReport } from "@/lib/concierge/feedback-dedupe";
-import { CURRENT_TOP_SHOT_SERIES, CURRENT_TOP_SHOT_SERIES_LABEL, SERIES_DISPLAY } from "@/lib/series-label";
+import { CURRENT_TOP_SHOT_SERIES, CURRENT_TOP_SHOT_SERIES_LABEL, SERIES_DISPLAY, seriesDisplay } from "@/lib/series-label";
 import { closedMarket } from "@/lib/market-closed";
 import { searchEditionFloorsByName, candyFloorReader, paniniFloorReader } from "@/lib/concierge/search-edition-floors";
 import { readsCatalogDealsFromIndex, fetchIndexCatalogDeals } from "@/lib/concierge/catalog-deals-index";
@@ -286,7 +286,7 @@ const PANINI_TAB_PATHS = (getCollection("panini-blockchain")?.pages ?? []).map((
 const TOOLS: Anthropic.Tool[] = [
   {
     name: "log_bug",
-    description: "Log a bug report from the user into the team's beta-feedback queue. Call it ONCE per distinct bug, on the first message that carries a surface (a URL, a page name, or the page the user is on) and a symptom. Before calling, CHECK the claim with a tool whenever one can read it (catalog counts, FMV, listings, holdings) and put what you found in `details` — 'user reports X; tool shows Y' is what the team acts on. Ask at most ONE clarifying question, and only when no surface at all was given. Device/browser/expected-vs-saw are noted as 'not stated' if absent, never demanded. The summary must be a clean one-liner naming the actual bug (e.g. 'Team checklist omits Series 1 Legendary editions', NOT 'I found a bug'). After logging, confirm in one line what was captured; do NOT pivot to deals or FMV.",
+    description: "Log a bug report from the user into the team's beta-feedback queue. Call it ONCE per distinct bug, on the first message that carries a surface (a URL, a page name, or the page the user is on) and a symptom. Before calling, CHECK the claim with a tool whenever one can read it (catalog counts, FMV, listings, holdings) and put what you found in `details` — 'user reports X; tool shows Y' is what the team acts on. Ask at most ONE clarifying question, and only when no surface at all was given. Device/browser/expected-vs-saw are noted as 'not stated' if absent, never demanded. The summary must be a clean one-liner naming the actual bug (e.g. 'Team checklist omits Series 1 Legendary editions', NOT 'I found a bug'). After logging, add ONE line confirming what was captured — beneath the answer, never instead of it: a user who can't find something gets the path first ('I can\'t find the team pages' → Overview → Team checklists → /teams). Do NOT pivot to deals or FMV.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -300,7 +300,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "log_feature_request",
-    description: "Log a feature request from the user into the team's beta-feedback queue. Call it ONCE per distinct request, as soon as the message names a surface (a URL, page, board, or the page the user is on) and what it should do; motivation and edge cases go in `details` if given and are never required. A second related request in the same thread is logged immediately with no questions; several requests in one message mean several calls in one turn. Before logging, check whether RPC already does it (answer from tools and product facts first). The summary must be a clean one-liner (e.g. 'Squeeze board: minimum-circulation filter', NOT 'add a filter'). After logging, confirm in one line what was captured; do NOT pivot to deals or FMV.",
+    description: "Log a feature request from the user into the team's beta-feedback queue. Call it ONCE per distinct request, as soon as the message names a surface (a URL, page, board, or the page the user is on) and what it should do; motivation and edge cases go in `details` if given and are never required. A second related request in the same thread is logged immediately with no questions; several requests in one message mean several calls in one turn. Before logging, check whether RPC already does it (answer from tools and product facts first). The summary must be a clean one-liner (e.g. 'Squeeze board: minimum-circulation filter', NOT 'add a filter'). After logging, add ONE line confirming what was captured — beneath the answer, never instead of it: a user who can't find something gets the path first ('I can\'t find the team pages' → Overview → Team checklists → /teams). Do NOT pivot to deals or FMV.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -313,7 +313,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "log_feedback",
-    description: "Log general feedback (praise, confusion, reactions, half-formed thoughts) into the team's beta-feedback queue. Call it ONCE when the user names what they reacted to and where; if they only say 'this is sick' or 'this is confusing' with no subject, ask the single question 'what specifically?' first, then log. Praise IS worth capturing — it signals what's working. The summary must be a clean one-liner (e.g. 'Analytics tier filter is unclear on mobile', NOT 'confusing'). After logging, confirm in one line what was captured; do NOT pivot to deals or FMV.",
+    description: "Log general feedback (praise, confusion, reactions, half-formed thoughts) into the team's beta-feedback queue. Call it ONCE when the user names what they reacted to and where; if they only say 'this is sick' or 'this is confusing' with no subject, ask the single question 'what specifically?' first, then log. Praise IS worth capturing — it signals what's working. The summary must be a clean one-liner (e.g. 'Analytics tier filter is unclear on mobile', NOT 'confusing'). After logging, add ONE line confirming what was captured — beneath the answer, never instead of it: a user who can't find something gets the path first ('I can\'t find the team pages' → Overview → Team checklists → /teams). Do NOT pivot to deals or FMV.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -1114,7 +1114,7 @@ When a user asks what RPC *already* does before requesting it (e.g. "does FMV ac
 
 **"I can't find X" is a navigation question first.** Give the path from the site-navigation facts above (and explain_ui_field), THEN log the discoverability report if they still want it — never reply with only a "Logged" line. **"X isn't on this page"** about something the facts say IS there: say exactly where it sits on the page, ask them to reload, and log a bug only if it is still missing after the reload.
 
-After logging anything, confirm what you captured in one line. If the conversation is clearly done, "Anything else?" is fine once — not after every log. Do NOT pivot to deals or FMV. Do not over-promise a response time; just say it's in the queue. A signed-in user asking "what happened to my request" → call get_my_feedback_status.
+After logging anything, confirm what you captured in one line, placed after whatever answer you owe the user (the log line is never the whole reply when they asked how to find or do something). If the conversation is clearly done, "Anything else?" is fine once — not after every log. Do NOT pivot to deals or FMV. Do not over-promise a response time; just say it's in the queue. A signed-in user asking "what happened to my request" → call get_my_feedback_status.
 
 ## Escalation vs Logging
 **escalate_to_human** is reserved for live emergencies RPC itself can act on — a giveaway pack RPC said it delivered that never arrived, sign-in fully broken, private account data visible to someone else, anything the team needs to resolve within the hour. RPC sells nothing and has no paid plan, so there is no RPC purchase, payment or billing to go wrong: a moment or pack bought on Top Shot, All Day, Disney Pinnacle, Golazos, Magic Eden, OpenSea or Panini that did not arrive is THAT marketplace's support case — say so plainly and point them there, and never offer to escalate a purchase or billing issue. When someone asks how to reach the team, the answer is this chat (you log it for the team) — do not list purchase or billing problems as things you can escalate. Bugs, feature requests, and confusion go through log_bug / log_feature_request / log_feedback — those queue silently for batch triage. If you're unsure, log it; do not escalate. Escalation pages the team live only when urgency='high', so do not casually reach for it.
@@ -4563,8 +4563,8 @@ async function executeToolInner(
       if (sets.length > 1) {
         return JSON.stringify({
           status: "ambiguous_set", setName,
-          candidates: sets.map((s) => ({ set_id: s.id, name: s.name, series: s.series })),
-          message: "Multiple Top Shot sets match — ask the user which series and re-call with that series number.",
+          candidates: sets.map((s) => ({ set_id: s.id, name: s.name, series: s.series != null ? seriesDisplay(Number(s.series), "nba-top-shot") : null, series_onchain: s.series })),
+          message: "Multiple Top Shot sets match — ask the user which series (say the `series` name), then re-call with that candidate's series_onchain number.",
         });
       }
       const setId = sets[0].id;
@@ -4588,7 +4588,7 @@ async function executeToolInner(
       }));
       return JSON.stringify({
         status: "ok",
-        set: data?.set_name, series: data?.series, wallet,
+        set: data?.set_name, series: data?.series != null ? seriesDisplay(Number(data.series), "nba-top-shot") : null, wallet,
         total_plays: data?.total_plays, owned_plays: data?.owned_plays, missing_plays: data?.missing_plays,
         missing_with_listing: data?.missing_with_listing,
         cost_to_complete_at_floor_usd: data?.total_floor_cost, missing_fmv_usd: data?.total_fmv_missing,
@@ -5379,7 +5379,7 @@ async function executeToolInner(
               player: r.player_name,
               set: r.set_name,
               tier: r.tier,
-              series: r.series_number,
+              series: r.series_number != null ? seriesDisplay(Number(r.series_number), "nba-top-shot") : null,
               circulation: r.circulation_count,
               burned: r.burned,
               locked: r.locked,
@@ -5496,13 +5496,14 @@ async function executeToolInner(
           editionKey: r.route_slug ?? null,
           set: r.set_name ?? null,
           tier: r.tier ?? null,
-          series: r.series_label ?? r.series_num ?? null,
           circulation: r.circulation_count ?? null,
           fmv: r.fmv_usd != null ? Number(r.fmv_usd) : null,
           fmv_confidence: r.fmv_confidence ?? null,
           fmv_computed_at: r.fmv_computed_at ?? null,
           floor_indexed_usd: r.floor_usd != null ? Number(r.floor_usd) : null,
           ...metadataFieldsFor(meta, r.route_slug, uuid),
+          // After the spread: this row's own label wins over the metadata's.
+          series: r.series_label ?? (r.series_num != null ? seriesDisplay(Number(r.series_num), slug) : null),
           edition_url: r.route_slug ? editionUrlFor(slug, String(r.route_slug)) : null,
         })),
         badges_note: BADGES_NOTE,

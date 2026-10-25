@@ -25,6 +25,8 @@
 // (circulation / burned / locked) exist for all three. Pinnacle and UFC have no
 // badge_editions rows at all.
 
+import { seriesDisplay } from "@/lib/series-label";
+
 export type EditionMetadata = {
   external_id: string;
   /** Top Shot moment-tag titles, deduplicated ("Rookie Year", "Top Shot Debut"). */
@@ -261,6 +263,9 @@ export function metadataFieldsFor(
   badges: string[] | null;
   badges_status: "ok" | "unavailable" | "not_tracked";
   team: string | null;
+  /** The series NAME ("Summer 2021"); on Top Shot decoded from the on-chain
+   *  number (2026-10-25: a bare 3 reached users as "Series 3"). */
+  series: string | null;
   series_number: number | null;
   parallel_name: string | null;
   supply: { circulation: number | null; burned: number | null; locked: number | null; effective: number | null; squeeze_pct: number | null } | null;
@@ -272,19 +277,20 @@ export function metadataFieldsFor(
   const m = externalId ? result.byKey.get(externalId) : undefined;
   const autograph = autographFieldsFor(result, externalId, collectionUuid);
   if (result.status === "error") {
-    return { badges: null, badges_status: "unavailable", team: null, series_number: null, parallel_name: null, supply: null, rookie_flags: null, metadata_as_of: null, ...autograph };
+    return { badges: null, badges_status: "unavailable", team: null, series: null, series_number: null, parallel_name: null, supply: null, rookie_flags: null, metadata_as_of: null, ...autograph };
   }
   if (result.status === "skipped" || !m) {
     // Not tracked for this collection, or no metadata row for this key. Both
     // are "we hold nothing", never "it has nothing" — except on Top Shot, where
     // a missing row is rare and still not a claim about tags.
-    return { badges: null, badges_status: "not_tracked", team: null, series_number: null, parallel_name: null, supply: null, rookie_flags: null, metadata_as_of: null, ...autograph };
+    return { badges: null, badges_status: "not_tracked", team: null, series: null, series_number: null, parallel_name: null, supply: null, rookie_flags: null, metadata_as_of: null, ...autograph };
   }
   const tagsTracked = collectionUuid === TOP_SHOT_UUID;
   return {
     badges: tagsTracked ? m.badges : m.badges.length ? m.badges : null,
     badges_status: tagsTracked || m.badges.length ? "ok" : "not_tracked",
     team: m.team,
+    series: m.series_number == null ? null : tagsTracked ? seriesDisplay(m.series_number, "nba-top-shot") : `Series ${m.series_number}`,
     series_number: m.series_number,
     parallel_name: m.parallel_name,
     supply: {
