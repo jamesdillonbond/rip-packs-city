@@ -1341,14 +1341,18 @@ function applySecurityHeaders(response: NextResponse, pathname?: string) {
       "base-uri 'self'",
       "form-action 'self'",
     ].join("; ")
-  response.headers.set("Content-Security-Policy", policy("script-src 'self' 'unsafe-inline' 'unsafe-eval'"))
-  // R135 step 1 (security audit 2026-10-25): the SAME policy without
-  // 'unsafe-eval', report-only. Nothing is blocked; a browser that would have
-  // blocked an eval logs a "[Report Only]" console violation instead. If a walk
-  // of the app (wallet connect included) shows none, step 2 drops 'unsafe-eval'
-  // from the enforced header. A nonce CSP was rejected: Next.js nonces force
-  // every page to render dynamically, which would undo ISR on an IO-bound DB.
-  response.headers.set("Content-Security-Policy-Report-Only", policy("script-src 'self' 'unsafe-inline'"))
+  // R135 (security audit 2026-10-25): 'unsafe-eval' DROPPED. Measured first with
+  // a report-only twin: a Playwright walk of 28 production pages logged ONE
+  // violation — asn1.js `_createNamed` via the vm-browserify polyfill
+  // (crypto-browserify → parse-asn1), which wraps the eval in try/catch and falls
+  // back to a plain function. The same pages with the no-eval policy ENFORCED
+  // (route-swapped headers) rendered with 0 page errors, and a scan of every
+  // built client chunk found no other unguarded eval / new Function (the rest
+  // are core-js/regenerator feature probes behind globalThis or try/catch, and
+  // function-bind's shim, which only runs where native bind is missing).
+  // 'unsafe-inline' stays: Next.js inlines its bootstrap scripts, and the only
+  // way off it is a nonce, which forces every page to render dynamically.
+  response.headers.set("Content-Security-Policy", policy("script-src 'self' 'unsafe-inline'"))
   return response
 }
 

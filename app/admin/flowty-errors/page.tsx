@@ -9,6 +9,7 @@
 // the only gate. When the cookie is missing or wrong we render the client
 // without initial data and let it show its sign-in screen.
 
+import { tokenMatches } from "@/lib/auth/bearer-secret";
 import { cookies } from "next/headers";
 import { loadErrorTriage } from "@/lib/admin/error-triage";
 import ErrorTriageClient, {
@@ -27,14 +28,14 @@ export default async function FlowtyErrorsPage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
-  const expected = process.env.RPC_ADMIN_TOKEN ?? "";
   const sp = await searchParams;
   const queryToken =
     typeof sp.token === "string" ? sp.token : Array.isArray(sp.token) ? sp.token[0] : "";
   const cookieStore = await cookies();
   const cookieToken = cookieStore.get("rpc_admin_token")?.value ?? "";
   const presented = queryToken || cookieToken;
-  const authed = !!expected && presented === expected;
+  // Constant-time, fail-closed on an unset RPC_ADMIN_TOKEN (security audit 2026-10-25).
+  const authed = tokenMatches(presented, "RPC_ADMIN_TOKEN");
 
   // ⚠ The reads live in lib/ so they are BOUNDED and TESTABLE — see that
   // module's header. The `loadError` distinction is unchanged; what changed is

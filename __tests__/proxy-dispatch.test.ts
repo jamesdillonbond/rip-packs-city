@@ -122,14 +122,13 @@ describe("proxy() — security headers", () => {
     expect(res.headers.get("Content-Security-Policy")).toContain("frame-ancestors 'none'")
   })
 
-  it("R135 step 1: a report-only twin of the CSP drops 'unsafe-eval' and is otherwise identical", async () => {
-    for (const path of ["/", "/admin/giveaways"]) {
+  it("R135: the enforced CSP no longer allows 'unsafe-eval' (and the measuring report-only twin is gone)", async () => {
+    for (const path of ["/", "/admin/giveaways", "/nba-top-shot/collection"]) {
       const res = await proxy(req(path))
       const enforced = res.headers.get("Content-Security-Policy")!
-      const reportOnly = res.headers.get("Content-Security-Policy-Report-Only")!
-      expect(reportOnly, path).toBeTruthy()
-      expect(reportOnly).not.toContain("'unsafe-eval'")
-      expect(reportOnly.replace("script-src 'self' 'unsafe-inline'", "script-src 'self' 'unsafe-inline' 'unsafe-eval'")).toBe(enforced)
+      expect(enforced, path).toMatch(/script-src 'self' 'unsafe-inline'(;|$)/)
+      expect(enforced, path).not.toContain("'unsafe-eval'")
+      expect(res.headers.get("Content-Security-Policy-Report-Only"), path).toBeNull()
     }
   })
 
