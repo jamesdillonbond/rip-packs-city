@@ -63,6 +63,17 @@ const ROUTES = [
   "/insights/panini-squeeze",
   "/insights/market-pulse",
   "/login",
+  // 2026-10-25 (fourth batch): the collection share card (the most-viewed page type
+  // for real visitors after the Top Shot tabs), the edition and player pages, the
+  // market-cap and pack-reality boards, and the newly public /analytics hub — each
+  // read 0 serious/critical on production in both themes after that day's fixes
+  // (red-text fallback spelling, the share card's dimmed closed-market date).
+  "/share/0xbd94cade097e50ac",
+  "/nba-top-shot/edition/48%3A1652",
+  "/nba-top-shot/player/damian-lillard",
+  "/insights/market-cap",
+  "/insights/pack-reality",
+  "/analytics",
 ]
 const THEMES = ["dark", "light"] as const
 const SERIOUS = new Set(["serious", "critical"])

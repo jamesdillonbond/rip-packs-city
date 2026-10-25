@@ -499,7 +499,7 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
                   {c.market_closed_at ? (
                     <div style={{ fontSize: 11, fontWeight: 700, color: "var(--rpc-text-secondary)", fontFamily: "monospace", lineHeight: 1.3 }}>
                       market closed<br />
-                      <span style={{ fontWeight: 400, opacity: 0.8 }}>{formatClosedOn(String(c.market_closed_at).slice(0, 10))}</span>
+                      <span style={{ fontWeight: 400 }}>{formatClosedOn(String(c.market_closed_at).slice(0, 10))}</span>
                     </div>
                   ) : (
                     // Same basis as the headline: total − stale, with the stale

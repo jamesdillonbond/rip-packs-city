@@ -11,6 +11,7 @@ import type { CSSProperties } from "react"
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
 import { fmtCount } from "@/lib/insights/market-cap-format"
 import { isSplitKnown, splitStatusCopy, tierLabel, type IssuerSplitRow } from "@/lib/insights/topshot-issuer-split-format"
+import { scrollRegion } from "@/lib/a11y/scroll-region"
 
 const th = (align: "left" | "right"): CSSProperties => ({
   textAlign: align, padding: "10px 12px", fontFamily: "var(--font-mono)", fontSize: 10, letterSpacing: "0.1em",
@@ -51,7 +52,7 @@ export default function IssuerHeldSplitPanel({ rows, failed }: { rows: IssuerSpl
               {splitStatusCopy(total.split_status)}
             </div>
           )}
-          <div className="rpc-card" style={{ marginTop: 14, overflowX: "auto" }}>
+          <div className="rpc-card" {...scrollRegion("Issuer-held vs collector-held supply")} style={{ marginTop: 14, overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, color: "var(--rpc-text-primary)" }}>
               <thead>
                 <tr>
