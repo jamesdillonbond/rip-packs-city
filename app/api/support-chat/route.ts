@@ -6596,7 +6596,7 @@ export async function POST(req: NextRequest) {
             // raced out at 6.0s twice while platform RPCs were hitting
             // statement timeouts). Everything else stays snappy at 6s.
             const TOOL_TIMEOUT_MS: Record<string, number> = {
-              check_wallet: 20000,
+              check_wallet: 26000, // its live wallet-search walk aborts at 25 s
               check_wallet_squeeze: 20000,
               analyze_wallet_holdings: 20000,
               // Catalog-wide reads: get_badge_info runs up to 6 (+5 per-tier)
@@ -6620,6 +6620,17 @@ export async function POST(req: NextRequest) {
               get_premiums: 10000,
               get_ecosystem_stat: 10000,
               get_insight_board: 10000,
+              // 2026-10-25, same class: each branch's own fetch abort outlasted the
+              // 6 s default, so the abort was dead code and a 6-10 s answer read as a
+              // generic timeout. On the WRITES this was a false claim: a send or a
+              // save that landed at 7 s was reported to the reader as "timed out".
+              get_collection_snapshot: 11000, // 10 s
+              get_edition_listings: 10000, // 9 s
+              search_catalog: 10000, // 9 s
+              get_price_history: 10000, // 9 s
+              manage_watchlist: 9000, // one 8 s write
+              manage_alerts: 17000, // remove = list (8 s) + delete (8 s)
+              escalate_to_human: 21000, // Telegram (10 s cap) then email (10 s cap), in sequence
             };
             // Never let a tool eat the time the answer needs after it.
             const toolBudget = Math.max(2_000, Math.min(TOOL_TIMEOUT_MS[tb.name] ?? 6000, remainingMs() - MIN_MODEL_MS));

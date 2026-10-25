@@ -44,6 +44,43 @@ function boardTools(): Record<string, number> {
   return out
 }
 
+/** tool name -> the LONGEST single AbortSignal.timeout(N) its branch arms. */
+function abortTools(): Record<string, number> {
+  const out: Record<string, number> = {}
+  const heads = [...SRC.matchAll(/if \(toolName === "([a-z_]+)"\) \{/g)]
+  heads.forEach((h, i) => {
+    const body = SRC.slice(h.index!, i + 1 < heads.length ? heads[i + 1].index! : SRC.length)
+    for (const m of body.matchAll(/AbortSignal\.timeout\(([0-9_]+)\)/g)) {
+      const ms = Number(m[1].replace(/_/g, ""))
+      out[h[1]] = Math.max(out[h[1]] ?? 0, ms)
+    }
+  })
+  return out
+}
+
+// Same class, second shape (2026-10-25): a branch's own fetch abort (8-25 s) under the 6 s
+// default. The abort was dead code, and on the writes (manage_alerts, manage_watchlist,
+// escalate_to_human's page) a save or send that landed after 6 s was reported as "timed out".
+// Rule: the budget covers at least the longest SINGLE abort (sequential calls are sized by hand
+// in TOOL_TIMEOUT_MS's comments; an unbounded loop cannot be covered by any budget).
+describe("every concierge tool's budget covers its own longest fetch abort", () => {
+  const tools = abortTools()
+  const b = budgets()
+
+  it("inspects a real population", () => {
+    expect(Object.keys(tools).length).toBeGreaterThanOrEqual(8)
+    expect(tools).toHaveProperty("escalate_to_human")
+    expect(tools).toHaveProperty("check_wallet")
+  })
+
+  it("no tool's abort outlasts its own budget", () => {
+    const short = Object.entries(tools)
+      .map(([t, ms]) => ({ tool: t, abort_ms: ms, budget_ms: b[t] ?? DEFAULT_BUDGET_MS }))
+      .filter((r) => r.budget_ms < r.abort_ms)
+    expect(short).toEqual([])
+  })
+})
+
 describe("every concierge tool's budget covers the board fetches it makes", () => {
   const tools = boardTools()
   const b = budgets()
