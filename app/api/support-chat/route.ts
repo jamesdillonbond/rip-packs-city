@@ -3197,13 +3197,17 @@ async function executeToolInner(
         if (ids.length === 0) {
           return JSON.stringify({ status: "ok", message: "You have no alert on that moment, so there was nothing to remove.", removed: 0 });
         }
-        let removed = 0;
-        for (const id of ids) {
-          const res = await fetch(`${base}/api/alerts?id=${encodeURIComponent(id)}`, { method: "DELETE", headers: auth, signal: AbortSignal.timeout(8000) });
-          if (!res.ok) {
-            return JSON.stringify({ status: "error", message: `Removed ${removed} of ${ids.length} alerts on that moment; the next failed (HTTP ${res.status}).`, removed });
-          }
-          removed++;
+        // In PARALLEL (2026-10-25): one at a time, N matching alerts cost N × 8 s and no
+        // tool budget can cover an unbounded loop — a remove that finished was reported
+        // as "timed out". Each delete's outcome is counted, so a partial failure still
+        // says exactly how many were removed.
+        const outcomes = await Promise.allSettled(ids.map((id) =>
+          fetch(`${base}/api/alerts?id=${encodeURIComponent(id)}`, { method: "DELETE", headers: auth, signal: AbortSignal.timeout(8000) })));
+        const removed = outcomes.filter((o) => o.status === "fulfilled" && o.value.ok).length;
+        if (removed < ids.length) {
+          const first = outcomes.find((o) => !(o.status === "fulfilled" && o.value.ok));
+          const why = first?.status === "fulfilled" ? `HTTP ${first.value.status}` : "the request failed";
+          return JSON.stringify({ status: "error", message: `Removed ${removed} of ${ids.length} alerts on that moment; ${ids.length - removed} failed (${why}).`, removed });
         }
         return JSON.stringify({ status: "ok", message: removed === 1 ? "Alert removed." : `${removed} alerts removed.`, removed });
       }
@@ -6597,7 +6601,7 @@ export async function POST(req: NextRequest) {
             // raced out at 6.0s twice while platform RPCs were hitting
             // statement timeouts). Everything else stays snappy at 6s.
             const TOOL_TIMEOUT_MS: Record<string, number> = {
-              check_wallet: 26000, // its live wallet-search walk aborts at 25 s
+              check_wallet: 34000, // a username lookup (8 s) then the live wallet-search walk (25 s)
               check_wallet_squeeze: 20000,
               analyze_wallet_holdings: 20000,
               // Catalog-wide reads: get_badge_info runs up to 6 (+5 per-tier)
@@ -6630,7 +6634,7 @@ export async function POST(req: NextRequest) {
               search_catalog: 10000, // 9 s
               get_price_history: 10000, // 9 s
               manage_watchlist: 9000, // one 8 s write
-              manage_alerts: 17000, // remove = list (8 s) + delete (8 s)
+              manage_alerts: 17000, // remove = list (8 s) + the deletes, in parallel (8 s)
               escalate_to_human: 21000, // Telegram (10 s cap) then email (10 s cap), in sequence
             };
             // Never let a tool eat the time the answer needs after it.

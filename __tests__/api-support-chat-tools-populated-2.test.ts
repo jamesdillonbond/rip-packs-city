@@ -626,6 +626,39 @@ describe("concierge tools — manage_alerts (fetch-backed)", () => {
     expect(String(r.message)).toContain("Dame")
   })
 
+  // 2026-10-25: the deletes run in PARALLEL (one at a time, N alerts cost N × 8 s and
+  // outran any tool budget), and a partial failure still reports the exact count.
+  const TS = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
+  const three = [{ id: "a1", edition_key: "3:46", collection_id: TS }, { id: "a2", edition_key: "3:46", collection_id: TS }, { id: "a3", edition_key: "3:46", collection_id: TS }]
+
+  it("removes every matching alert, all deletes issued at once", async () => {
+    signInWithWallet()
+    const m = stubFetch([
+      { match: (u, init) => u.includes("/api/alerts") && init?.method === "DELETE", respond: () => ({ json: { ok: true } }) },
+      jsonRoute("/api/alerts", three),
+    ])
+    script("manage_alerts", { action: "remove", edition_key: "3:46", collectionId: "nba-top-shot" })
+    await POST(post("remove my Dame alerts"))
+    const r = toolResult()
+    expect(r).toMatchObject({ status: "ok", removed: 3 })
+    expect(m.calls.filter((c) => c.init?.method === "DELETE").map((c) => c.url.split("id=")[1]).sort()).toEqual(["a1", "a2", "a3"])
+  })
+
+  it("a partial failure says exactly how many were removed — never 'removed' and never 'none'", async () => {
+    signInWithWallet()
+    stubFetch([
+      { match: (u, init) => u.includes("id=a2") && init?.method === "DELETE", respond: () => ({ status: 500, json: {} }) },
+      { match: (u, init) => u.includes("/api/alerts") && init?.method === "DELETE", respond: () => ({ json: { ok: true } }) },
+      jsonRoute("/api/alerts", three),
+    ])
+    script("manage_alerts", { action: "remove", edition_key: "3:46", collectionId: "nba-top-shot" })
+    await POST(post("remove my Dame alerts"))
+    const r = toolResult()
+    expect(r).toMatchObject({ status: "error", removed: 2 })
+    expect(String(r.message)).toContain("Removed 2 of 3")
+    expect(String(r.message)).toContain("HTTP 500")
+  })
+
   it("refuses without an owner wallet", async () => {
     script("manage_alerts", { action: "list" })
     await POST(post("alerts no wallet"))
