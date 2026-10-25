@@ -1990,6 +1990,12 @@ async function executeToolInner(
   };
 
   // ── Beta feedback intake tools ────────────────────────────────────────────
+  // 2026-10-25 replay: "I can't easily find the team set pages" was answered
+  // with ONLY "Logged … Anything else?" twice — after the prompt and all three
+  // tool descriptions were changed. The tool RESULT is what the model reads last
+  // before it writes, so the rule rides on it.
+  const AFTER_LOG_NEXT =
+    "The log is not the answer. If the user was trying to find, use or understand something, answer that NOW from the site-navigation facts and explain_ui_field (e.g. team checklists: Overview → the Team checklists card → /teams → the team → its checklist link), then add the one-line confirmation underneath.";
   if (toolName === "log_bug") {
     const summary = String(toolInput.summary ?? "").trim();
     const details = String(toolInput.details ?? "").trim();
@@ -2010,6 +2016,7 @@ async function executeToolInner(
         status: "already_logged",
         duplicate_of: duplicateOf,
         message: "This matches a report already logged earlier in this conversation — nothing new was written. Tell the user it is already with the team; do not log it again.",
+        next: AFTER_LOG_NEXT,
       });
     }
     return JSON.stringify({
@@ -2018,6 +2025,7 @@ async function executeToolInner(
       summary,
       severity,
       message: "Logged in the team's beta-feedback queue. He reviews bug reports in batch — no live page on this one.",
+      next: AFTER_LOG_NEXT,
     });
   }
 
@@ -2040,6 +2048,7 @@ async function executeToolInner(
         status: "already_logged",
         duplicate_of: duplicateOf,
         message: "This matches a report already logged earlier in this conversation — nothing new was written. Tell the user it is already with the team; do not log it again.",
+        next: AFTER_LOG_NEXT,
       });
     }
     return JSON.stringify({
@@ -2047,6 +2056,7 @@ async function executeToolInner(
       feedback_type: "feature_request",
       summary,
       message: "Logged as a feature request — the team will see it in the queue.",
+      next: AFTER_LOG_NEXT,
     });
   }
 
@@ -2069,6 +2079,7 @@ async function executeToolInner(
         status: "already_logged",
         duplicate_of: duplicateOf,
         message: "This matches a report already logged earlier in this conversation — nothing new was written. Tell the user it is already with the team; do not log it again.",
+        next: AFTER_LOG_NEXT,
       });
     }
     return JSON.stringify({
@@ -2077,6 +2088,7 @@ async function executeToolInner(
       sentiment,
       summary,
       message: "Logged in the feedback queue — appreciate it.",
+      next: AFTER_LOG_NEXT,
     });
   }
 

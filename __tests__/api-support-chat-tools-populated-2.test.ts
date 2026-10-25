@@ -162,6 +162,18 @@ describe("concierge tools — beta-feedback log helpers", () => {
     await POST(post("empty feedback"))
     expect(toolResult().status).toBe("error")
   })
+
+  // 2026-10-25 replay: "I can't easily find the team set pages" got only "Logged …"
+  // twice. The result the model reads last before replying says the log is not the answer.
+  it.each(["log_bug", "log_feature_request", "log_feedback"])("%s tells the model the log is not the answer", async (tool) => {
+    install({ support_conversations: { data: { id: 11 }, error: null } })
+    script(tool, { summary: "Team pages hard to find", details: "user can't find the team set pages" })
+    await POST(post("I can't easily find the team set pages"))
+    const r = toolResult()
+    expect(r.status).toBe("logged")
+    expect(String(r.next)).toMatch(/The log is not the answer/)
+    expect(String(r.next)).toMatch(/\/teams/)
+  })
 })
 
 describe("concierge tools — search_catalog_deals filter branches", () => {
