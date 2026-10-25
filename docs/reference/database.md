@@ -3130,3 +3130,11 @@ Latin Extended-A/B, without × and ÷, plus curly apostrophes). Measured populat
 (2026-10-23): 194 player names, 7 team labels, 5 set names, 10 Pinnacle characters,
 163 pack titles; joiners (• ·) in exactly 1 of 9,079 player names (WALL•E).
 
+
+## ⚠ `pg_stat_statements` HAS NOT BEEN RESET SINCE 2026-08-12 — its means pool 2.5+ months (read 2026-10-25)
+
+`select stats_reset from pg_stat_statements_info` → `2026-08-12 01:33Z`. Every `mean_exec_time` / `max_exec_time` / blocks-per-call is therefore an average across the pre-09-20 **Small** compute era, every IO spell since, and every fix shipped since — a mean read today cannot show a fix landing (the "rate pooled across a fix" trap). **Justify a perf change on TODAY's evidence** — a fresh `EXPLAIN (ANALYZE, BUFFERS)` (cold and warm) and the live Vercel error groups — and verify it the same way. ⛔ Do not `pg_stat_statements_reset()` to get a clean window: other sessions' instruments read these rows. To see a change, diff two snapshots of `calls` / `total_exec_time` for the one `queryid`.
+
+## ⛔ A CRON REFRESH WRAPPER MUST NOT SWALLOW ITS FAILURE (2026-10-25)
+
+`refresh_panini_league_coverage` wraps its refresh in `EXCEPTION WHEN OTHERS → log ok=false, return` — copied into `refresh_topshot_pack_rip_values` (`20261025170047`), that turned a broken refresh (e.g. a dropped unique index → 55000 forever) into a `succeeded` row in `cron.job_run_details`. Caught before push by the DB pin `supabase/tests/mv_refresh_wrappers.sql`; fixed by `20261025170715`. **Log the SUCCESS, let the failure raise**: nothing reads a failure row anyway (a freshness gate reads ok rows; the cadence watchlist pages on the silence), and `log_pipeline_run` shares the refresh's transaction, so a raise leaves no half-logged state. The pin now probes this wrapper with a dropped index.
