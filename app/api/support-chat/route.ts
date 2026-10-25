@@ -6478,6 +6478,16 @@ export async function POST(req: NextRequest) {
     // answer so the transcript and the bubble agree (a "let me check…" preamble
     // used to be shown, not stored, and concatenated to the answer with no gap).
     let streamedText = "";
+    // ⛔ 2026-10-25: the NON-streamed path (the Telegram / Discord bridge, the
+    // smoke runner) kept only the LAST hop's text, so an answer written before a
+    // tool call — "here's the path… [log_feedback]" — reached the user as just
+    // "I've also logged that … Anything else?". Collect every hop's text, exactly
+    // as streamedText does for the widget.
+    let earlierHopText = "";
+    const hopText = (content: any[]): string =>
+      content.filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n").trim();
+    const withEarlierHops = (last: string): string =>
+      [earlierHopText, last].filter((t) => t && t.trim()).join("\n\n").trim();
 
     const runIterationStreaming = async (finalHop: boolean) => {
       let wroteThisHop = false;
@@ -6543,16 +6553,16 @@ export async function POST(req: NextRequest) {
         if (response.stop_reason === "end_turn") {
           finalResponse = useStream && streamedText.trim()
             ? streamedText.trim()
-            : response.content
-                .filter((b: any) => b.type === "text")
-                .map((b: any) => b.text)
-                .join("\n")
-                .trim();
+            : withEarlierHops(hopText(response.content));
           iterationTraces.push(trace);
           break;
         }
 
         if (response.stop_reason === "tool_use") {
+          if (!useStream) {
+            const t = hopText(response.content);
+            if (t) earlierHopText = earlierHopText ? `${earlierHopText}\n\n${t}` : t;
+          }
           const toolUseBlocks = response.content.filter((b: any) => b.type === "tool_use");
           const toolResults: Anthropic.MessageParam = { role: "user", content: [] };
 
@@ -6625,21 +6635,20 @@ export async function POST(req: NextRequest) {
           continue;
         }
 
-        finalResponse = response.content
-          .filter((b: any) => b.type === "text")
-          .map((b: any) => b.text)
-          .join("\n")
-          .trim();
+        const lastHopText = hopText(response.content);
+        finalResponse = useStream && streamedText.trim()
+          ? streamedText.trim()
+          : withEarlierHops(lastHopText);
         // ⚠ `max_tokens` lands here. Until 2026-09-02 it fell through silently and
         // the user got a mid-sentence answer with nothing marking it as cut off —
         // worst on exactly what this bot is good at, a long markdown table.
-        // ⚠ It has NEVER been observed: across 5,643 support_conversations rows the
-        // longest bot_response is 2,107 chars against a ~4,000-char cap, p95 687.
-        // So this is insurance, not a fix for a live defect — do not re-file it as
-        // one, and do not raise max_tokens on the strength of this comment.
+        // ⚠ Observed 2026-10-25 (it had not been in the first 5,643 rows): a
+        // collector-report answer hop stopped at the old 1,024 cap with NO text,
+        // 2 of 3 runs. The cap is now CONCIERGE_MAX_TOKENS and the no-text case is
+        // retried below; this text-present case keeps the marker.
         // Marking beats continuing: a continuation doubles the spend on the rare
         // path, while an honest "there is more" lets the user ask for the rest.
-        if (response.stop_reason === "max_tokens" && finalResponse) {
+        if (response.stop_reason === "max_tokens" && lastHopText) {
           finalResponse += "\n\n_(I hit my length limit mid-answer — ask me to continue and I'll pick up where this stops.)_";
         }
         // ⛔ 2026-10-25: cut off by the cap with no text at all — the tokens went
@@ -6647,7 +6656,7 @@ export async function POST(req: NextRequest) {
         // to handle in time … check the Sniper page" for a collector report whose
         // tool had already answered in 90 ms. Ask once more with tools off, from
         // the results already gathered; the truncated call is dropped.
-        if (response.stop_reason === "max_tokens" && !finalResponse && !forceAnswerHop && remainingMs() >= MIN_MODEL_MS) {
+        if (response.stop_reason === "max_tokens" && !lastHopText && !forceAnswerHop && remainingMs() >= MIN_MODEL_MS) {
           forceAnswerHop = true;
           iterationTraces.push(trace);
           continue;

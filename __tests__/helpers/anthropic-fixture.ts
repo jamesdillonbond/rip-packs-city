@@ -22,7 +22,8 @@
 //   // per test: A.state.script = [...]; A.state.cursor = 0
 
 export type ScriptTurn =
-  | { tools: Array<{ id?: string; name: string; input: unknown }> }
+  // `preface`: text the model writes BEFORE its tool calls in the same turn.
+  | { tools: Array<{ id?: string; name: string; input: unknown }>; preface?: string }
   | { text: string }
   // Throw from the model call itself (create() rejects; stream().finalMessage()
   // rejects) — drives the handler's classifyAnthropicError / canned-message path.
@@ -69,12 +70,15 @@ function turnToMessage(turn: ScriptTurn | undefined, idx: number): FakeMessage {
   }
   return {
     stop_reason: "tool_use",
-    content: turn.tools.map((t, j) => ({
+    content: [
+      ...(turn.preface ? [{ type: "text" as const, text: turn.preface }] : []),
+      ...turn.tools.map((t, j) => ({
       type: "tool_use" as const,
       id: t.id ?? `tool_${idx}_${j}`,
       name: t.name,
       input: t.input,
     })),
+    ],
   }
 }
 

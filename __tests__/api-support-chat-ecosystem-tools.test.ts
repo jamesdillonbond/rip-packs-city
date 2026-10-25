@@ -467,3 +467,23 @@ describe("concierge — an answer hop cut off with no text is retried once with 
     expect(A.createCalls.length).toBe(2)
   })
 })
+
+// 2026-10-25: the non-streamed path (Telegram / Discord bridge, smoke) kept only
+// the LAST hop's text. "I can't find the team pages" → the model wrote the path,
+// called a log tool, then wrote "I've also logged it" — and the user got only the
+// last line. Every hop's text is kept now, as the streamed widget already does.
+describe("concierge — the non-streamed reply keeps text written before a tool call", () => {
+  it("the path written before the tool call reaches the user, then the closing line", async () => {
+    stubFetch([jsonRoute("/api/public/insights/top-sales", { rows: [{ id: 1 }] })])
+    A.state.script = [
+      { preface: "Open the Team checklists card on the Overview → /teams → your team.", tools: [{ name: "get_top_sales", input: {} }] },
+      { text: "I've also logged that it's hard to find." },
+    ]
+    A.state.cursor = 0
+    const res = await POST(post("I can't easily find the team set pages"))
+    const body = (await res.json()) as { response?: string }
+    expect(body.response).toContain("Open the Team checklists card")
+    expect(body.response).toContain("I've also logged")
+    expect(body.response!.indexOf("Team checklists")).toBeLessThan(body.response!.indexOf("also logged"))
+  })
+})
