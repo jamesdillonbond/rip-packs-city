@@ -35,6 +35,7 @@ import { useOwnFlowWallet } from "@/lib/hooks/useOwnFlowWallet"
 import { fmt, fmtUsd, shortAddr, relativeDate, shortSlug } from "@/lib/analytics/format"
 import { classifyTsOrderbook, TS_ORDERBOOK_STALE_LABEL, tsOrderbookStaleBody, TS_ORDERBOOK_UNKNOWN_LABEL, TS_ORDERBOOK_UNKNOWN_BODY } from "@/lib/analytics/ts-orderbook-freshness"
 import { accentText, labelOn, accentFill } from "@/lib/accent-text"
+import { scrollRegion } from "@/lib/a11y/scroll-region"
 
 // ── Slug mapping ────────────────────────────────────────────────────────────
 // URL slug ("nba-top-shot") → RPC short slug ("topshot") used by the
@@ -805,7 +806,7 @@ function WhaleLeaderboard({ short, urlSlug }: { short: string; urlSlug: string }
       ) : !rows || rows.length === 0 ? (
         <div className="py-4 text-center text-sm text-[color:var(--rpc-text-muted)]">No data.</div>
       ) : (
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto" {...scrollRegion(title)}>
         <table className="w-full text-sm" style={{ fontFamily: "var(--font-mono)" }}>
           <thead>
             <tr className="border-b border-[color:var(--rpc-border)] text-left text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">
@@ -1304,7 +1305,7 @@ function AnalyticsInner() {
               ) : !marketData?.topSales || marketData.topSales.length === 0 ? (
                 <PanelEmpty degraded={marketFailed || panelFailed(marketData, "topSales")} />
               ) : (
-                <div className="overflow-x-auto">
+                <div className="overflow-x-auto" {...scrollRegion("Top sales")}>
                 <table className="w-full text-sm" style={{ fontFamily: "var(--font-mono)" }}>
                   <thead>
                     <tr className="border-b border-[color:var(--rpc-border)] text-left text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">
@@ -1356,7 +1357,7 @@ function AnalyticsInner() {
               ) : !marketData?.topEditions || marketData.topEditions.length === 0 ? (
                 <PanelEmpty degraded={marketFailed || panelFailed(marketData, "topEditions")} />
               ) : (
-                <div className="overflow-x-auto">
+                <div className="overflow-x-auto" {...scrollRegion("Hottest editions")}>
                 <table className="w-full text-sm" style={{ fontFamily: "var(--font-mono)" }}>
                   <thead>
                     <tr className="border-b border-[color:var(--rpc-border)] text-left text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">
@@ -1594,7 +1595,7 @@ function AnalyticsInner() {
               ) : !playerResults || playerResults.length === 0 ? (
                 <div className="py-6 text-center text-sm text-[color:var(--rpc-text-muted)]">{pickEmpty()}</div>
               ) : (
-                <div className="overflow-x-auto">
+                <div className="overflow-x-auto" {...scrollRegion(`${labels.player} sales`)}>
                 {playerResolved && (
                   <p role="status" className="pb-2 text-xs text-[color:var(--rpc-text-muted)]">
                     No exact match for &ldquo;{playerResolved.from}&rdquo; — showing <strong className="text-[color:var(--rpc-text-primary)]">{playerResolved.to}</strong>.
@@ -1905,7 +1906,7 @@ function AnalyticsInner() {
               {!hidePinnacleSeriesAndBadge && (
                 <section className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
                   <div className="mb-3 text-[11px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Series Breakdown</div>
-                  <div className="overflow-x-auto">
+                  <div className="overflow-x-auto" {...scrollRegion("Series breakdown")}>
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-[color:var(--rpc-border)] text-left text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">

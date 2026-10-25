@@ -19,6 +19,7 @@
 import { useMemo, useState } from "react";
 import DegradedDataNotice from "@/components/insights/DegradedDataNotice";
 import type { DegradedSummary } from "@/lib/insights/board-status";
+import { scrollRegion } from "@/lib/a11y/scroll-region"
 
 type Num = number | null;
 
@@ -192,7 +193,7 @@ function Failed({ what }: { what: string }) {
 }
 function Table({ head, children }: { head: string[]; children: React.ReactNode }) {
   return (
-    <div style={{ overflowX: "auto" }}>
+    <div {...scrollRegion(head.join(", "))} style={{ overflowX: "auto" }}>
       <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 560 }}>
         <thead>
           <tr>{head.map((h) => <th scope="col" key={h} style={th}>{h}</th>)}</tr>

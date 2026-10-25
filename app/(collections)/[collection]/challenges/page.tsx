@@ -11,6 +11,7 @@ import Link from "next/link"
 import { getCollection } from "@/lib/collections"
 import { fetchActiveChallenges, fetchChallengeFeed } from "@/lib/challenges/hub-fetchers"
 import { accentText } from "@/lib/accent-text"
+import { scrollRegion } from "@/lib/a11y/scroll-region"
 
 export const revalidate = 300
 
@@ -107,7 +108,7 @@ export default async function ChallengesPage(props: { params: Promise<{ collecti
       )}
 
       {challenges.length > 0 && (
-        <div style={{ overflowX: "auto", border: "1px solid var(--rpc-border)", borderRadius: 10 }}>
+        <div {...scrollRegion("Challenges")} style={{ overflowX: "auto", border: "1px solid var(--rpc-border)", borderRadius: 10 }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "var(--font-mono)", fontSize: 13, minWidth: 760 }}>
             <thead>
               <tr style={{ textAlign: "left", color: "var(--rpc-text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", fontSize: 11 }}>

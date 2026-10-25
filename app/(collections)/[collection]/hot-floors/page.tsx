@@ -13,6 +13,7 @@ import { fetchHotFloors } from "@/lib/hot-floors/fetchers"
 import { proxyIpfsImageUrl } from "@/lib/ipfs-media"
 import { usdSignFirst } from "@/lib/usd-format"
 import { accentText } from "@/lib/accent-text"
+import { scrollRegion } from "@/lib/a11y/scroll-region"
 
 export const revalidate = 300
 
@@ -89,7 +90,7 @@ export default async function HotFloorsPage(props: { params: Promise<{ collectio
       )}
 
       {editions.length > 0 && (
-        <div style={{ overflowX: "auto", border: "1px solid var(--rpc-border)", borderRadius: 10 }}>
+        <div {...scrollRegion("Hot floors")} style={{ overflowX: "auto", border: "1px solid var(--rpc-border)", borderRadius: 10 }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "var(--font-mono)", fontSize: 13, minWidth: 720 }}>
             <thead>
               <tr style={{ textAlign: "left", color: "var(--rpc-text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", fontSize: 11 }}>

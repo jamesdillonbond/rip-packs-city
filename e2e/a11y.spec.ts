@@ -77,7 +77,16 @@ const ROUTES = [
 ]
 const THEMES = ["dark", "light"] as const
 const SERIOUS = new Set(["serious", "critical"])
-const GATED = new Set(["color-contrast", "select-name", "nested-interactive", "aria-conditional-attr"])
+const GATED = new Set(["color-contrast", "select-name", "nested-interactive", "aria-conditional-attr", "scrollable-region-focusable"])
+// ⚠ PHONE-WIDTH PASS (2026-10-25). `scrollable-region-focusable` only fires where a
+// table is wider than its box — at 390 px, not at this file's 1280 px default. It
+// read 16 + 4 + 1 unreachable scrollers on production at phone width while every
+// desktop run here was green. So each route is re-read at PHONE_VIEWPORT for the
+// rules in PHONE_RULES, and a hit fails the run (the rule is GATED above: it read 0
+// at phone width on every route in both themes after lib/a11y/scroll-region.ts
+// landed). Only these rules run there, so it adds seconds, not a second audit.
+const PHONE_VIEWPORT = { width: 390, height: 844 }
+const PHONE_RULES = ["scrollable-region-focusable"]
 const SUMMARY = "a11y-summary.md"
 
 // Same settle as e2e/healthy-page.ts: `load` fires before a streaming App
@@ -223,6 +232,17 @@ for (const path of ROUTES) for (const theme of THEMES) {
       body: JSON.stringify({ path, theme, violations: results.violations, incomplete: results.incomplete }, null, 2),
       contentType: "application/json",
     })
+
+    await page.setViewportSize(PHONE_VIEWPORT)
+    await page.waitForTimeout(SETTLE_MS)
+    const phone = await within(AXE_BUDGET_MS, new AxeBuilder({ page }).withRules(PHONE_RULES).exclude(ROW_SCOPE_EXCLUDE).analyze())
+    if (phone === "timeout") throw new Error(`${url}: phone-width axe pass did not finish in ${AXE_BUDGET_MS / 1000}s`)
+    const phoneGated = phone.violations.filter((v) => v.nodes.length && SERIOUS.has(v.impact ?? "") && GATED.has(v.id))
+      .map((v) => `[${PHONE_VIEWPORT.width}px] ${describeViolation(v, v.nodes)}`)
+    const phoneLine = `#### ${path} [${theme}] at ${PHONE_VIEWPORT.width}px — ${phoneGated.length} gated (${PHONE_RULES.join(", ")})${phoneGated.map((d) => `\n- ❌ ${d}`).join("")}\n`
+    console.log(phoneLine)
+    appendFileSync(SUMMARY, phoneLine + "\n")
+    gated.push(...phoneGated)
 
     expect(gated, `${url} has ${gated.length} gated axe violation(s) (${[...GATED].join(" / ")})`).toEqual([])
   })
