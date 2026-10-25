@@ -13,6 +13,7 @@
 // that hit its row cap says so (`purchases_truncated`) instead of under-summing.
 
 import { NextRequest, NextResponse } from "next/server";
+import { bearerMatches } from "@/lib/auth/bearer-secret";
 import { supabaseAdmin } from "@/lib/supabase";
 
 export const maxDuration = 30;
@@ -21,12 +22,8 @@ export const dynamic = "force-dynamic";
 const PURCHASE_CAP = 500;
 
 function isAuthorized(req: NextRequest): boolean {
-  const auth = req.headers.get("authorization") ?? "";
-  const ingest = process.env.INGEST_SECRET_TOKEN;
-  const admin = process.env.RPC_ADMIN_TOKEN;
-  if (ingest && auth === `Bearer ${ingest}`) return true;
-  if (admin && auth === `Bearer ${admin}`) return true;
-  return false;
+  // Constant-time, fail-closed (lib/auth/bearer-secret.ts; security audit 2026-10-25, R134 step 1).
+  return bearerMatches(req.headers.get("authorization"), "INGEST_SECRET_TOKEN", "RPC_ADMIN_TOKEN");
 }
 
 export interface FunnelRow {

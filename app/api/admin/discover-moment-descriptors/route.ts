@@ -64,6 +64,7 @@
 //     -w "http_status=%{http_code}\n"
 
 import { NextRequest, NextResponse } from "next/server"
+import { bearerMatches } from "@/lib/auth/bearer-secret"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -250,10 +251,8 @@ function summarize(controls: ProbeResult[], probes: ProbeResult[]) {
 }
 
 export async function POST(req: NextRequest) {
-  const admin = process.env.RPC_ADMIN_TOKEN
-  const ingest = process.env.INGEST_SECRET_TOKEN
-  const auth = req.headers.get("authorization") ?? ""
-  const ok = (admin && auth === `Bearer ${admin}`) || (ingest && auth === `Bearer ${ingest}`)
+  // Constant-time, fail-closed (security audit 2026-10-25, R134 step 1).
+  const ok = bearerMatches(req.headers.get("authorization"), "RPC_ADMIN_TOKEN", "INGEST_SECRET_TOKEN")
   if (!ok) return NextResponse.json({ error: "unauthorized" }, { status: 401 })
 
   const sp = req.nextUrl.searchParams

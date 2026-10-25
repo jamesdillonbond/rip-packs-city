@@ -16,6 +16,7 @@
 // Auth: Bearer CRON_SECRET (Vercel cron) | INGEST_SECRET_TOKEN | RPC_ADMIN_TOKEN, or ?token=.
 
 import { NextRequest, NextResponse } from "next/server";
+import { bearerMatches, tokenMatches } from "@/lib/auth/bearer-secret";
 import { verifyAdminRequest, adminUnauthorizedResponse } from "@/lib/admin-auth";
 
 export const maxDuration = 60;
@@ -26,12 +27,10 @@ const BATCH_SIZE = 20000;
 
 function authed(req: NextRequest): boolean {
   if (verifyAdminRequest(req)) return true;
-  const hdr = req.headers.get("authorization") ?? "";
-  const q = req.nextUrl.searchParams.get("token") ?? "";
-  for (const t of [process.env.CRON_SECRET, process.env.INGEST_SECRET_TOKEN, process.env.RPC_ADMIN_TOKEN]) {
-    if (t && (hdr === `Bearer ${t}` || q === t)) return true;
-  }
-  return false;
+  // Constant-time, fail-closed (security audit 2026-10-25, R134 step 1).
+  const names = ["CRON_SECRET", "INGEST_SECRET_TOKEN", "RPC_ADMIN_TOKEN"];
+  if (bearerMatches(req.headers.get("authorization"), ...names)) return true;
+  return tokenMatches(req.nextUrl.searchParams.get("token"), ...names);
 }
 
 async function handle(req: NextRequest): Promise<NextResponse> {

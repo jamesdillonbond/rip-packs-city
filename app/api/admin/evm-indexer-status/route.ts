@@ -8,6 +8,7 @@
 // Auth: Bearer RPC_ADMIN_TOKEN (also accepts ?token=).
 
 import { NextRequest, NextResponse } from "next/server";
+import { verifyAdminRequest } from "@/lib/admin-auth";
 import { supabaseAdmin } from "@/lib/supabase";
 import {
   getBlockNumber,
@@ -23,14 +24,9 @@ const CHAIN_SLUG_BY_ID: Record<number, ChainSlug> = {
 };
 
 function authorized(req: NextRequest): boolean {
-  const expected = process.env.RPC_ADMIN_TOKEN;
-  if (!expected) return false;
-  const bearer = req.headers.get("authorization");
-  if (bearer && bearer.startsWith("Bearer ") && bearer.slice(7) === expected) {
-    return true;
-  }
-  const qp = req.nextUrl.searchParams.get("token");
-  return qp === expected;
+  // Same contract as before (Bearer or ?token=, RPC_ADMIN_TOKEN only, fail-closed)
+  // through the shared constant-time check (security audit 2026-10-25, R134 step 1).
+  return verifyAdminRequest(req);
 }
 
 interface ContractRow {

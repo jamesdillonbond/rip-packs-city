@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { verifyAdminRequest } from '@/lib/admin-auth'
 import { createClient } from '@supabase/supabase-js'
 
 export const runtime = 'nodejs'
@@ -11,10 +12,8 @@ async function handler(req: NextRequest) {
     return NextResponse.json({ error: 'admin_token_not_configured' }, { status: 500 })
   }
 
-  const auth = req.headers.get('authorization') || ''
-  const queryToken = req.nextUrl.searchParams.get('token')
-  const provided = auth.startsWith('Bearer ') ? auth.slice(7) : queryToken
-  if (provided !== adminToken) {
+  // Constant-time (security audit 2026-10-25, R134 step 1). Bearer or ?token=, as before.
+  if (!verifyAdminRequest(req)) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   }
 
