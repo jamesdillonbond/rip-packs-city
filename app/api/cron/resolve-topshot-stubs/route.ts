@@ -157,7 +157,9 @@ export async function POST(req: NextRequest) {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({}),
-        signal: AbortSignal.timeout(120_000),
+        // 110 s, not 120: an abort EQUAL to maxDuration fires with the kill, so the
+        // catch below could never write its failure row (2026-10-25).
+        signal: AbortSignal.timeout(110_000),
       })
 
       const bodyText = await res.text().catch(() => "")

@@ -115,7 +115,9 @@ export function findUnreachableBudgets(files: string[]): {
     if (budgets.length === 0) continue
 
     const worst = budgets.reduce((a, b) => (b.ms > a.ms ? b : a))
-    if (worst.ms > wallMs) {
+    // >= since 2026-10-25: a budget EQUAL to the wall fires in the same instant as the
+    // kill, so the honest-failure write after the abort can never land either.
+    if (worst.ms >= wallMs) {
       violations.push({ rel: toRel(abs), wallMs, declaredMs: worst.ms, kind: worst.kind })
     }
   }
