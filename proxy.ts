@@ -1309,6 +1309,20 @@ export function walletDiscoveryAllowed(pathname: string | undefined): boolean {
   return !!pathname && WALLET_DISCOVERY_PAGES.some((p) => pathname === p || pathname.startsWith(p + "/"))
 }
 
+// ── Third-party bytes served from OUR origin (security audit 2026-10-25) ─────
+// The MEDIA_PROXY_PREFIXES routes stream media fetched from IPFS gateways, NFT
+// image hosts and Dapper's CDNs (or render OG PNGs). As subresources (<img>/<video>) their content can never
+// run script — but a VISITOR SENT STRAIGHT TO THE URL gets the bytes rendered as
+// a document on rippackscity.com, and an IPFS object is attacker-choosable
+// (anyone can pin HTML or an SVG with <script>). Under the site policy
+// (`script-src 'self' 'unsafe-inline'`) that script would run same-origin, with
+// the visitor's cookies and the admin session in localStorage. This policy has
+// no script source at all and `sandbox` (no allow-scripts), so a document
+// rendered from these paths cannot execute anything. Subresource loads are
+// unaffected: a response's own CSP does not govern how a page embeds it.
+export const MEDIA_PROXY_CSP =
+  "default-src 'none'; img-src 'self' data:; media-src 'self'; style-src 'unsafe-inline'; sandbox; frame-ancestors 'none'"
+
 function applySecurityHeaders(response: NextResponse, pathname?: string) {
   const wallet = walletDiscoveryAllowed(pathname)
   response.headers.set("X-Frame-Options", "DENY")
@@ -1358,7 +1372,10 @@ function applySecurityHeaders(response: NextResponse, pathname?: string) {
   // function-bind's shim, which only runs where native bind is missing).
   // 'unsafe-inline' stays: Next.js inlines its bootstrap scripts, and the only
   // way off it is a nonce, which forces every page to render dynamically.
-  response.headers.set("Content-Security-Policy", policy("script-src 'self' 'unsafe-inline'"))
+  response.headers.set(
+    "Content-Security-Policy",
+    pathname && isMediaProxyPath(pathname) ? MEDIA_PROXY_CSP : policy("script-src 'self' 'unsafe-inline'"),
+  )
   return response
 }
 

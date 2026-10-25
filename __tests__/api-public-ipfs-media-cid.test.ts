@@ -92,6 +92,28 @@ describe("GET /api/public/ipfs-media/[cid]", () => {
     get: (k: string) => h[k.toLowerCase()] ?? null,
   })
 
+  // Security audit 2026-10-25: the CID is caller-chosen, so HTML or an SVG with
+  // <script> pinned to IPFS must never stream from OUR origin.
+  for (const type of ["text/html; charset=utf-8", "image/svg+xml", "application/octet-stream"]) {
+    it(`302s a ${type} object to the gateway instead of serving it same-origin`, async () => {
+      const cancel = vi.fn(async () => {})
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => ({
+          ok: true,
+          status: 200,
+          body: { cancel },
+          headers: headersFor({ "content-type": type, "content-length": "120" }),
+        })),
+      )
+      const res = await GET(req, ctx(GOOD_CID))
+      expect(res.status).toBe(302)
+      expect(res.headers.get("location")).toBe(`https://ipfs.dapperlabs.com/ipfs/${GOOD_CID}`)
+      expect(res.headers.get("Content-Type") ?? "").not.toContain(type.split(";")[0])
+      expect(cancel).toHaveBeenCalled()
+    })
+  }
+
   it("302s to the upstream gateway for an object too large to edge-cache", async () => {
     const cancel = vi.fn(async () => {})
     vi.stubGlobal(

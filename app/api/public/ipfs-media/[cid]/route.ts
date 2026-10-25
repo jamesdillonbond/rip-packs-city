@@ -35,7 +35,10 @@
 
 import { NextRequest, NextResponse } from "next/server";
 
+import { isServableMediaType } from "@/lib/media/servable-media-type";
+
 export const runtime = "edge";
+
 
 // CIDv0 (Qm… base58btc, 46 chars) or CIDv1 (b… base32, lowercase). The CID is
 // echoed into the upstream path, so this allowlist regex is the SSRF guard —
@@ -389,6 +392,19 @@ export async function GET(
   }
 
   const contentType = upstream.headers.get("content-type") ?? "application/octet-stream";
+  // ⛔ ONLY RASTER IMAGES AND VIDEO ARE SERVED FROM OUR ORIGIN (security audit
+  // 2026-10-25). The CID is caller-chosen and anyone can pin HTML, or an SVG with
+  // <script>, to IPFS; streamed back here under our origin, a visitor sent to the
+  // URL would run that script as rippackscity.com. Anything else is redirected to
+  // the gateway, where it runs (if at all) on the gateway's origin, not ours.
+  // proxy.ts also sends a script-less sandbox CSP on this path (MEDIA_PROXY_CSP).
+  // 7 days of `ok` lines showed only image/png and image/jpeg.
+  if (!isServableMediaType(contentType)) {
+    clearTimeout(phaseTimer);
+    upstreamBody.cancel().catch(() => {});
+    console.log(`[ipfs-media] non-media redirect cid=${cid} gateway=${gateway} type=${contentType}`);
+    return NextResponse.redirect(upstreamUrl, 302);
+  }
   // The SUCCESS leg is logged too, deliberately. Volume is trivial (26 in 72 h)
   // and it makes one log query answer "what happened to this route" instead of
   // requiring a status-code aggregate alongside a message search.

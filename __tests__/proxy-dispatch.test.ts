@@ -134,6 +134,22 @@ describe("proxy() — security headers", () => {
     }
   })
 
+  it("same-origin media proxies get a script-less sandbox CSP (a document opened from them cannot run script; 2026-10-25)", async () => {
+    const cid = "bafybeihwveacmwxs4zyqgma2f5w3ydeiknoajgyufqh2wfsbnaewtd44yu"
+    for (const path of [`/api/public/ipfs-media/${cid}`, "/api/public/avatar-media", "/api/badge-image", "/api/og/share"]) {
+      const csp = (await proxy(req(path))).headers.get("Content-Security-Policy")!
+      expect(csp, path).toContain("default-src 'none'")
+      expect(csp, path).toMatch(/(^|; )sandbox(;|$)/)
+      expect(csp, path).not.toContain("script-src")
+      expect(csp, path).not.toContain("'unsafe-inline'; img") // not the site policy
+    }
+    // ...and pages / ordinary API routes keep the site policy.
+    for (const path of ["/", "/api/public/ipfs-media-evil", "/api/badge-images"]) {
+      const csp = (await proxy(req(path))).headers.get("Content-Security-Policy")!
+      expect(csp, path).toContain("script-src 'self'")
+    }
+  })
+
   it("only the giveaway pages may frame Flow's wallet picker (2026-09-29; claim page 2026-10-03)", async () => {
     const claim = (await proxy(req("/giveaways/fall-drop"))).headers.get("Content-Security-Policy")!
     expect(claim).toContain("frame-src 'self' https://fcl-discovery.onflow.org")
