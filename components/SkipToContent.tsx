@@ -18,7 +18,8 @@
 // next Tab lands on the first control of the page's own content — no layout
 // change on any page. Its focus ring is suppressed: a 0 px-tall element's
 // outline would paint a stray line across the top of the page.
-import SkipToContentLink, { PAGE_CONTENT_ANCHOR_ATTR } from "@/components/SkipToContentLink"
+import SkipToContentLink from "@/components/SkipToContentLink"
+import { PAGE_CONTENT_ANCHOR_ATTR } from "@/components/skip-to-content-attr"
 
 export const MAIN_CONTENT_ID = "main-content"
 export const SKIP_LINK_CLASS = "rpc-skip-link"

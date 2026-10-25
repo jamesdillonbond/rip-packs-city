@@ -11,8 +11,7 @@
 // to the native #main-content jump when a page has none (or JS has not loaded).
 
 import type { MouseEvent, ReactNode } from "react"
-
-export const PAGE_CONTENT_ANCHOR_ATTR = "data-rpc-content-anchor"
+import { PAGE_CONTENT_ANCHOR_ATTR } from "@/components/skip-to-content-attr"
 
 export default function SkipToContentLink({ href, className, children }: { href: string; className: string; children: ReactNode }) {
   function onClick(e: MouseEvent<HTMLAnchorElement>) {
