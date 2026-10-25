@@ -9,7 +9,7 @@ import { useWarmCache } from '@/lib/warmup/WarmupContext'
 import { topshotPackUrl, dapperMarketPackUrl } from '@/lib/pack-urls'
 import { packEvBasis, derivePackAvailability } from '@/lib/pack-availability'
 import { collectionHasPage } from '@/lib/collections'
-import { accentText } from "@/lib/accent-text"
+import { accentFill, accentText, labelOn } from "@/lib/accent-text"
 
 // Shared client component for the static pack pages (nba-top-shot,
 // nfl-all-day). Renders /api/packs (pack_table_rows view) into the
@@ -489,22 +489,22 @@ export default function PackPageClient({ collection, tiers, title, accent = 'var
         {/* View-mode toggle. Grails mode reads pack_grail_metrics_mv via
             /api/packs/grails and ignores the standard-view filters. */}
         <div className="flex items-center gap-1 rounded-lg border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-0.5">
-          {/* brand-exception: active button text-white sits on backgroundColor:accent fill */}
+          {/* active button: label colour from labelOn() on accentFill() (2026-10-24 — white on Golazos' accent read 2.27:1) */}
           <button
             onClick={() => setViewMode('standard')}
-            className={'rounded-md px-3 py-1 text-xs font-semibold uppercase tracking-wide transition ' + (viewMode === 'standard' ? 'text-white' : 'text-[color:var(--rpc-text-secondary)] hover:text-[color:var(--rpc-text-primary)]')}
-            style={viewMode === 'standard' ? { backgroundColor: accent } : undefined}
+            className={'rounded-md px-3 py-1 text-xs font-semibold uppercase tracking-wide transition ' + (viewMode === 'standard' ? '' : 'text-[color:var(--rpc-text-secondary)] hover:text-[color:var(--rpc-text-primary)]')}
+            style={viewMode === 'standard' ? { backgroundColor: accentFill(accent), color: labelOn(accent) } : undefined}
           >
             Standard
           </button>
           {/* Grails reads pack_grail_metrics_mv, built from the drop pool: none for
               Pinnacle, whose grid could only say "No grail-bearing packs matched.
               Try lowering the filters" — so no toggle there (2026-10-19). */}
-          {/* brand-exception: active button text-white sits on backgroundColor:accent fill */}
+          {/* active button: label colour from labelOn() on accentFill() (2026-10-24 — white on Golazos' accent read 2.27:1) */}
           {collectionHasDropPool(collection) && <button
             onClick={() => setViewMode('grails')}
-            className={'rounded-md px-3 py-1 text-xs font-semibold uppercase tracking-wide transition ' + (viewMode === 'grails' ? 'text-white' : 'text-[color:var(--rpc-text-secondary)] hover:text-[color:var(--rpc-text-primary)]')}
-            style={viewMode === 'grails' ? { backgroundColor: accent } : undefined}
+            className={'rounded-md px-3 py-1 text-xs font-semibold uppercase tracking-wide transition ' + (viewMode === 'grails' ? '' : 'text-[color:var(--rpc-text-secondary)] hover:text-[color:var(--rpc-text-primary)]')}
+            style={viewMode === 'grails' ? { backgroundColor: accentFill(accent), color: labelOn(accent) } : undefined}
             title="Chase-led card grid powered by pack_grail_metrics_mv"
           >
             Grails
@@ -549,19 +549,19 @@ export default function PackPageClient({ collection, tiers, title, accent = 'var
         {/* Row 2: tier chips */}
         <div className="flex flex-wrap items-center gap-1">
           <span className="text-[10px] uppercase tracking-wide text-[color:var(--rpc-text-muted)] mr-1">Tier</span>
-          {/* brand-exception: active chip text-white sits on backgroundColor:accent fill */}
+          {/* active chip: label colour from labelOn() on accentFill() */}
           <button
             onClick={() => setTier('all')}
-            className={chipBase + ' ' + (tier === 'all' ? 'text-white' : chipInactive)}
-            style={tier === 'all' ? { backgroundColor: accent } : undefined}
+            className={chipBase + ' ' + (tier === 'all' ? '' : chipInactive)}
+            style={tier === 'all' ? { backgroundColor: accentFill(accent), color: labelOn(accent) } : undefined}
           >
             All
           </button>
           {tiers.map((t) => (
-            // brand-exception: active chip text-white sits on backgroundColor:accent fill
+            // active chip: label colour from labelOn() on accentFill()
             <button key={t} onClick={() => setTier(t)}
-              className={chipBase + ' capitalize ' + (tier === t ? 'text-white' : chipInactive)}
-              style={tier === t ? { backgroundColor: accent } : undefined}
+              className={chipBase + ' capitalize ' + (tier === t ? '' : chipInactive)}
+              style={tier === t ? { backgroundColor: accentFill(accent), color: labelOn(accent) } : undefined}
             >
               {t.replace(/_/g, ' ')}
             </button>
@@ -571,39 +571,39 @@ export default function PackPageClient({ collection, tiers, title, accent = 'var
         {/* Row 3: quick toggles — +EV / Has chasers / Almost sold out */}
         <div className="flex flex-wrap items-center gap-1">
           <span className="text-[10px] uppercase tracking-wide text-[color:var(--rpc-text-muted)] mr-1">Quick</span>
-          {/* brand-exception: active chip text-white sits on a colored backgroundColor fill */}
+          {/* active chip: label colour from labelOn() on its fill */}
           <button
             onClick={() => setPosEvOnly((v) => !v)}
-            className={chipBase + ' ' + (posEvOnly ? 'text-white' : chipInactive)}
-            style={posEvOnly ? { backgroundColor: '#10B981' } : undefined}
+            className={chipBase + ' ' + (posEvOnly ? '' : chipInactive)}
+            style={posEvOnly ? { backgroundColor: '#10B981', color: labelOn('#10B981') } : undefined}
             title="Gross EV exceeds the live secondary ask"
           >
             +EV only
           </button>
-          {/* brand-exception: active chip text-white sits on backgroundColor:accent fill */}
+          {/* active chip: label colour from labelOn() on accentFill() */}
           <button
             onClick={() => setHasChasers((v) => !v)}
-            className={chipBase + ' ' + (hasChasers ? 'text-white' : chipInactive)}
-            style={hasChasers ? { backgroundColor: accent } : undefined}
+            className={chipBase + ' ' + (hasChasers ? '' : chipInactive)}
+            style={hasChasers ? { backgroundColor: accentFill(accent), color: labelOn(accent) } : undefined}
             title="Gross EV ≥ secondary ask — proxy for chaser-heavy pools"
           >
             Has chasers <span className="ml-1 text-[9px]">(beta)</span>
           </button>
-          {/* brand-exception: active chip text-white sits on a colored backgroundColor fill */}
+          {/* active chip: label colour from labelOn() on its fill */}
           <button
             onClick={() => setAlmostSoldOut((v) => !v)}
-            className={chipBase + ' ' + (almostSoldOut ? 'text-white' : chipInactive)}
-            style={almostSoldOut ? { backgroundColor: '#F97316' } : undefined}
+            className={chipBase + ' ' + (almostSoldOut ? '' : chipInactive)}
+            style={almostSoldOut ? { backgroundColor: '#F97316', color: labelOn('#F97316') } : undefined}
             title="Pool depletion ≥ 80% — most editions in the pool are sold out"
           >
             Almost sold out
           </button>
           {hideZeroByDefault && (
             <button
-              /* brand-exception: active chip text-white sits on a colored backgroundColor fill */
+              /* active chip: label colour from labelOn() on its fill */
               onClick={() => setShowZeroValue((v) => !v)}
-              className={chipBase + ' ' + (showZeroValue ? 'text-white' : chipInactive)}
-              style={showZeroValue ? { backgroundColor: accent } : undefined}
+              className={chipBase + ' ' + (showZeroValue ? '' : chipInactive)}
+              style={showZeroValue ? { backgroundColor: accentFill(accent), color: labelOn(accent) } : undefined}
               title="Show $0 reward / Holiday Box packs (no price, no computed EV) — hidden by default"
             >
               Show $0 / reward packs
@@ -637,19 +637,19 @@ export default function PackPageClient({ collection, tiers, title, accent = 'var
           {packTypeOptions.length > 0 && (
             <div className="flex flex-wrap items-center gap-1">
               <span className="text-[10px] uppercase tracking-wide text-[color:var(--rpc-text-muted)] mr-1">Type</span>
-              {/* brand-exception: active chip text-white sits on backgroundColor:accent fill */}
+              {/* active chip: label colour from labelOn() on accentFill() */}
               <button
                 onClick={() => setPackType('all')}
-                className={chipBase + ' ' + (packType === 'all' ? 'text-white' : chipInactive)}
-                style={packType === 'all' ? { backgroundColor: accent } : undefined}
+                className={chipBase + ' ' + (packType === 'all' ? '' : chipInactive)}
+                style={packType === 'all' ? { backgroundColor: accentFill(accent), color: labelOn(accent) } : undefined}
               >
                 All
               </button>
               {packTypeOptions.map((pt) => (
-                // brand-exception: active chip text-white sits on backgroundColor:accent fill
+                // active chip: label colour from labelOn() on accentFill()
                 <button key={pt} onClick={() => setPackType(pt)}
-                  className={chipBase + ' capitalize ' + (packType === pt ? 'text-white' : chipInactive)}
-                  style={packType === pt ? { backgroundColor: accent } : undefined}
+                  className={chipBase + ' capitalize ' + (packType === pt ? '' : chipInactive)}
+                  style={packType === pt ? { backgroundColor: accentFill(accent), color: labelOn(accent) } : undefined}
                 >
                   {pt}
                 </button>

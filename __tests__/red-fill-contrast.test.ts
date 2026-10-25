@@ -84,8 +84,16 @@ export function findWhiteOnRawRed(src: string): number[] {
   const lines = stripComments(src).split("\n")
   const hits: number[] = []
   lines.forEach((ln: string, i: number) => {
-    // judge only the declarations, not e.g. `:hover { background: …; color: #fff }` on a dot
-    if (RAW_RED_BG.test(ln) && WHITE_TEXT.test(ln)) hits.push(i + 1)
+    if (!RAW_RED_BG.test(ln)) return
+    // Same line, or (2026-10-24) the same multi-line style object: a white
+    // \`color\` within two lines either side, with no brace between them. The
+    // same-line form alone missed two blog CTAs written one property per line.
+    if (WHITE_TEXT.test(ln)) return void hits.push(i + 1)
+    for (const j of [i - 2, i - 1, i + 1, i + 2]) {
+      if (j < 0 || j >= lines.length) continue
+      const between = lines.slice(Math.min(i, j) + 1, Math.max(i, j)).join("\n") + (j < i ? lines[j].split(/color\s*:/)[1] ?? "" : lines[j].split(/color\s*:/)[0])
+      if (WHITE_TEXT.test(lines[j]) && !/[{}]/.test(between) && !/background/.test(lines[j])) return void hits.push(i + 1)
+    }
   })
   return hits
 }
@@ -96,6 +104,10 @@ describe("tree walk: white label text on the raw brand red", () => {
     expect(findWhiteOnRawRed(`.x:hover{background:var(--rpc-red-hover);color:#fff}`)).toEqual([1])
     expect(findWhiteOnRawRed(`.x{background:var(--rpc-red,#E03A2F);color:#fff}`)).toEqual([1])
     expect(findWhiteOnRawRed(`<a style={{ background: "var(--rpc-red-fill)", color: "#fff" }} />`)).toEqual([])
+    // one property per line (the 10-24 blog CTA shape)
+    expect(findWhiteOnRawRed(`const CTA = {\n  padding: 8,\n  background: "var(--rpc-red, #E03A2F)",\n  color: "#fff",\n}`)).toEqual([3])
+    // a white colour in a DIFFERENT object two lines away is not this object's label
+    expect(findWhiteOnRawRed(`const A = { background: "var(--rpc-red)" }\nconst B = { color: "#fff" }`)).toEqual([])
   })
   it("finds none in app/ or components/", () => {
     const files = [...walk(join(ROOT, "app")), ...walk(join(ROOT, "components"))]

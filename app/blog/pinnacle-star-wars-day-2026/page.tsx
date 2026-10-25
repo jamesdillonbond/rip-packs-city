@@ -175,7 +175,7 @@ const CTA_LINK: React.CSSProperties = {
   display: "inline-block",
   marginTop: 10,
   padding: "10px 18px",
-  background: "var(--rpc-red, #E03A2F)",
+  background: "var(--rpc-red-fill)",
   color: "#fff",
   textDecoration: "none",
   fontFamily: "var(--font-display)",

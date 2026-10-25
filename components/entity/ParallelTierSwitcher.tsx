@@ -62,17 +62,19 @@ const PILL_ACTIVE: React.CSSProperties = {
 
 function circ(n: number | null): React.ReactNode {
   return n != null ? (
-    <span className="rpc-mono" style={{ fontSize: 10, fontWeight: 400, opacity: 0.85 }}>/{fmtCount(n)}</span>
+    <span className="rpc-mono" style={{ fontSize: 10, fontWeight: 400 }}>/{fmtCount(n)}</span>
   ) : null
 }
 
-// Premium chip (parallel FMV vs the Standard printing). Muted so it complements
+// Premium chip (parallel FMV vs the Standard printing). (2026-10-24: the 0.9 / 0.85
+// opacities on this chip and the circulation count took both under 4.5:1 — 4.35–4.49
+// on axe — so the dimming is gone; the token colours already clear AA.) Muted so it complements
 // the pill without competing with the printing name. Only meaningful multiples
 // (>= 1.3x) render, so near-parity printings stay clean.
 function premiumChip(mult: number | null): React.ReactNode {
   if (!isPremiumShown(mult)) return null
   return (
-    <span className="rpc-mono" style={{ fontSize: 10, fontWeight: 700, color: "var(--rpc-red-text)", opacity: 0.9 }}>
+    <span className="rpc-mono" style={{ fontSize: 10, fontWeight: 700, color: "var(--rpc-red-text)" }}>
       {fmtMult(mult)}
     </span>
   )

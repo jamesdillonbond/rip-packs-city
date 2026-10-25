@@ -179,7 +179,7 @@ const FOOTER: CSSProperties = {
 }
 
 const PRIMARY_BTN: CSSProperties = {
-  background: "var(--rpc-red, #E03A2F)",
+  background: "var(--rpc-red-fill)",
   color: "#fff",
   border: "none",
   padding: "10px 18px",

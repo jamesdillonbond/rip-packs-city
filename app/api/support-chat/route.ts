@@ -955,8 +955,12 @@ function buildSystemPromptParts(ctx: {
   pageEntity?: { kind: string; slug: string } | null;
   /** Pre-rendered "Live FMV coverage" block (lib/concierge/fmv-coverage). */
   fmvCoverage?: string | null;
+  /** Signed in with a verified email (auth cookie), whether or not allow_list knows them. */
+  signedIn?: boolean;
+  /** Wallets the signed-in user saved on RPC — NOT verified as theirs (see savedWalletsForPrompt). */
+  savedWallets?: Array<{ label: string; addr: string }>;
 }): { cacheable: string; dynamic: string } {
-  const { pageContext, collectionId, ownerKey, userWallet, walletConnected, marketPulse, dailyDeal, profile, priorConversationCount, pageEntity, fmvCoverage } = ctx;
+  const { pageContext, collectionId, ownerKey, userWallet, walletConnected, marketPulse, dailyDeal, profile, priorConversationCount, pageEntity, fmvCoverage, signedIn, savedWallets } = ctx;
 
   const activeCollection = collectionId ? getCollection(collectionId) : null;
   const published = publishedCollections();
@@ -1009,6 +1013,18 @@ Mention this only if the user explicitly asks about deals or market state. Do NO
   if (profile?.favorite_team) profileLines.push(`- Favorite team: ${profile.favorite_team}`);
   if (profile?.twitter) profileLines.push(`- Twitter: ${profile.twitter}`);
   if (userWallet) profileLines.push(`- Connected wallet: ${userWallet}`);
+  // 2026-10-24: every account created since open signup has NO allow_list row, so
+  // ownerKey and userWallet are null for them and the concierge used to treat a
+  // signed-in user exactly like an anonymous visitor. Say they are signed in, and
+  // list the wallets they saved — read-only context for lookups, never the
+  // watchlist / quota key (a saved wallet can be anyone's).
+  if (signedIn && !ownerKey) profileLines.push(`- Signed in to an RPC account (no Top Shot username on file).`);
+  if (!userWallet && savedWallets?.length) {
+    profileLines.push(
+      `- Wallets this user saved on RPC to track (ownership NOT verified — never call one "your wallet" unless they say it is; refer to each by its label, never by its address, and use the address only as a tool argument): ` +
+        savedWallets.map((w) => `${w.label} (${w.addr})`).join("; "),
+    );
+  }
   if (typeof priorConversationCount === "number" && priorConversationCount > 0) {
     profileLines.push(`- Prior support_conversations rows for this user: ${priorConversationCount} (returning beta tester)`);
   } else if (ownerKey) {
@@ -5984,6 +6000,35 @@ async function loadOwnerContext(ownerKey: string): Promise<{
   return { profile, priorConversationCount };
 }
 
+// The wallets a signed-in user saved on RPC (saved_wallets.user_id = auth uid),
+// newest-pinned / most-recently-viewed first, at most 5. Read-only prompt
+// context: these are NOT verified as the user's own, so they never become
+// userWallet (the watchlist and quota key). A failed or slow read is simply no
+// context — the answer must not depend on it.
+async function loadSavedWalletsForPrompt(userId: string): Promise<Array<{ label: string; addr: string }>> {
+  try {
+    const { data, error } = await (supabase as any)
+      .from("saved_wallets")
+      .select("wallet_addr, username, nickname, display_name, pinned_at, last_viewed")
+      .eq("user_id", userId)
+      .order("pinned_at", { ascending: false, nullsFirst: false })
+      .order("last_viewed", { ascending: false, nullsFirst: false })
+      .limit(5)
+      .abortSignal(AbortSignal.timeout(1500));
+    if (error || !Array.isArray(data)) return [];
+    return data
+      .filter((r: any) => typeof r.wallet_addr === "string" && r.wallet_addr.trim())
+      .map((r: any) => ({
+        // Label by the user's own name for it, else the account username — the
+        // concierge refers to wallets by label, never by address.
+        label: String(r.nickname || r.username || r.display_name || "saved wallet").replace(/[\r\n`]/g, " ").slice(0, 60),
+        addr: String(r.wallet_addr).trim().slice(0, 80),
+      }));
+  } catch {
+    return [];
+  }
+}
+
 export async function POST(req: NextRequest) {
   let parsedSessionId: string | null = null;
   let parsedMessage: string | null = null;
@@ -6145,7 +6190,9 @@ export async function POST(req: NextRequest) {
           {
             response: anonBudget.failed
               ? "The assistant is unavailable right now. Please try again in a few minutes."
-              : "The assistant is very busy right now. Sign in for priority access, or try again shortly.",
+              : identity.email
+                ? "The assistant is very busy right now. Please try again in a few minutes."
+                : "The assistant is very busy right now. Sign in for priority access, or try again shortly.",
             escalated: false,
             category: "rate_limit",
           },
@@ -6255,11 +6302,13 @@ export async function POST(req: NextRequest) {
       if (PAGE_ENTITY_KINDS.has(kind) && slug) pageEntity = { kind, slug };
     }
 
-    const [ownerCtx, coverage] = await Promise.all([
+    const [ownerCtx, coverage, savedWallets] = await Promise.all([
       ownerKey ? loadOwnerContext(ownerKey) : Promise.resolve({ profile: null, priorConversationCount: 0 }),
       // Live per-collection FMV coverage for the prompt (module-cached 30 min,
       // 2.5 s budget — a slow read renders as "not measured", never blocks).
       readFmvCoverageCached(supabase),
+      // A signed-in user with no allow_list wallet: the wallets they saved (read-only context).
+      !userWallet && userId && !trustedBot ? loadSavedWalletsForPrompt(userId) : Promise.resolve([]),
     ]);
 
     const systemParts = buildSystemPromptParts({
@@ -6274,6 +6323,8 @@ export async function POST(req: NextRequest) {
       priorConversationCount: ownerCtx.priorConversationCount,
       pageEntity,
       fmvCoverage: formatCoverageForPrompt(coverage),
+      signedIn: !!identity.email,
+      savedWallets,
     });
 
     // ── Prompt caching ────────────────────────────────────────────────────

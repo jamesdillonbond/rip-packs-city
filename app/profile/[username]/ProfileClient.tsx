@@ -15,7 +15,7 @@ import { resolveAvatarUrl } from "@/lib/profile/default-avatar";
 import { avatarDisplayUrl } from "@/lib/media/avatar-proxy";
 import { getCollectionByUuid } from "@/lib/collections";
 import { isMarketClosed } from "@/lib/market-closed";
-import { accentText } from "@/lib/accent-text"
+import { accentFill, accentText, labelOn } from "@/lib/accent-text"
 
 // ── Types ─────────────────────────────────────────────────────────
 interface ProfileBio {
@@ -871,7 +871,7 @@ export default function ProfileClient(props: {
         {/* ── CTA Footer ── */}
         <div style={{ textAlign: "center", paddingTop: 32, borderTop: "1px solid var(--rpc-border)" }}>
           <div style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-muted)", letterSpacing: "0.15em", marginBottom: 12 }}>POWERED BY RIP PACKS CITY</div>
-          <Link href="/dashboard" className="rpc-btn-primary" style={{ textDecoration: "none", display: "inline-block", fontSize: 13, padding: "10px 24px", background: accentColor, borderColor: accentColor }}>
+          <Link href="/dashboard" className="rpc-btn-primary" style={{ textDecoration: "none", display: "inline-block", fontSize: 13, padding: "10px 24px", background: accentFill(accentColor), borderColor: accentFill(accentColor), color: labelOn(accentColor) }}>
             BUILD YOUR OWN PROFILE →
           </Link>
         </div>

@@ -57,7 +57,7 @@ export default function StripeSubscribeButton({ style }: { style?: React.CSSProp
           display: "inline-flex",
           alignItems: "center",
           justifyContent: "center",
-          background: "var(--rpc-red, #E03A2F)",
+          background: "var(--rpc-red-fill)",
           color: "#fff",
           padding: "12px 22px",
           borderRadius: "var(--radius-sm, 6px)",

@@ -131,9 +131,9 @@ const CSS = `
 .psq-alt{color:var(--rpc-text-secondary,#9A968C);font-size:10.5px;margin-top:5px;line-height:1.4}
 .psq-alt b{color:var(--rpc-text-primary,#ECEAE3);font-weight:600;font-family:var(--font-mono,ui-monospace),monospace}
 .psq-band{font-size:9px;font-weight:800;letter-spacing:.03em;padding:2px 5px;border-radius:3px;text-transform:uppercase;white-space:nowrap}
-.psq-band-broad{background:rgba(95,214,160,.16);color:#5fd6a0}
-.psq-band-partial{background:rgba(224,166,75,.16);color:#e0a64b}
-.psq-band-biased{background:rgba(224,58,47,.18);color:#f2705f}
+.psq-band-broad{background:rgba(95,214,160,.16);color:var(--rpc-success-text,#5fd6a0)}
+.psq-band-partial{background:rgba(224,166,75,.16);color:var(--rpc-warning-text,#e0a64b)}
+.psq-band-biased{background:rgba(224,58,47,.18);color:var(--rpc-red-text,#f2705f)}
 .psq-band-listed{background:rgba(255,255,255,.08);color:var(--rpc-text-secondary,#9A968C)}
 .psq-controls{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0 12px}
 .psq-controls input{background:var(--rpc-surface,#1b1b20);border:1px solid var(--rpc-border,rgba(255,255,255,.12));border-radius:8px;color:var(--rpc-text-primary,#ECEAE3);padding:7px 11px;font-size:12.5px;min-width:200px}
@@ -149,8 +149,8 @@ const CSS = `
 .psq-nm{font-weight:600;color:var(--rpc-text-primary,#F2F0EA)}
 .psq-par{color:var(--rpc-text-secondary,#9A968C);font-size:11px}
 .psq-rc{font-size:9px;font-weight:800;padding:1px 4px;border-radius:3px;color:#0c0c0e;background:#5fd6a0;margin-left:5px}
-.psq-seal{color:#5fd6a0;font-weight:700}
-.psq-exp{color:#e0a64b;font-weight:700}
+.psq-seal{color:var(--rpc-success-text,#5fd6a0);font-weight:700}
+.psq-exp{color:var(--rpc-warning-text,#e0a64b);font-weight:700}
 .psq-tier{font-size:9.5px;font-weight:800;padding:2px 6px;border-radius:4px;text-transform:uppercase}
 /* Ask-derived FMV marker. Deliberately quiet -- it sits beside the value, not on top of it,
    because it qualifies the number rather than replacing it. */

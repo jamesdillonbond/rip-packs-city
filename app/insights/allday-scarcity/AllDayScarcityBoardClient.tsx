@@ -342,7 +342,7 @@ const CSS = `
 .rpc-ads-td-num { text-align: right; font-family: var(--font-mono); color: var(--rpc-text-primary); white-space: nowrap; }
 .rpc-ads-td-emph { color: var(--rpc-red-text); font-weight: 700; }
 /* Ask-derived FMV marker — quiet, sits under the value it qualifies. */
-.rpc-ads-basis { display: block; font-size: 9px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #e0a64b; margin-top: 2px; cursor: help; }
+.rpc-ads-basis { display: block; font-size: 9px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--rpc-warning-text); margin-top: 2px; cursor: help; }
 
 .rpc-ads-footer { max-width: 1180px; margin: 36px auto 0; display: grid; grid-template-columns: 2fr 1fr; gap: 32px; }
 .rpc-ads-method p { font-size: 14px; line-height: 1.65; color: var(--rpc-text-secondary); margin: 0 0 12px; }

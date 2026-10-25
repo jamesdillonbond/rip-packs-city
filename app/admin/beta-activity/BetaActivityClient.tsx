@@ -101,7 +101,7 @@ export default function BetaActivityClient() {
             type="submit"
             style={{
               padding: "8px 16px",
-              background: "var(--rpc-red, #E03A2F)",
+              background: "var(--rpc-red-fill)",
               color: "#fff",
               border: "none",
               borderRadius: 4,
@@ -153,7 +153,7 @@ export default function BetaActivityClient() {
               onClick={() => setSortKey(k)}
               style={{
                 padding: "4px 10px",
-                background: sortKey === k ? "var(--rpc-red, #E03A2F)" : "transparent",
+                background: sortKey === k ? "var(--rpc-red-fill)" : "transparent",
                 color: sortKey === k ? "#fff" : "rgba(255,255,255,0.7)",
                 border: "1px solid rgba(255,255,255,0.15)",
                 borderRadius: 4,
