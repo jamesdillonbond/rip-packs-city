@@ -11,7 +11,8 @@ vi.mock("@/lib/analytics/username-resolver", () => ({
   useResolveUsernames: () => ({}),
 }))
 
-import SalesTablePaginated, { BUYBACK_TITLE } from "@/components/entity/SalesTablePaginated"
+import SalesTablePaginated from "@/components/entity/SalesTablePaginated"
+import { BUYBACK_TITLE } from "@/lib/entity/buyback-copy"
 
 afterEach(cleanup)
 

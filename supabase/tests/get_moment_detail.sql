@@ -16,11 +16,13 @@
 --     back to wallet_moments_cache and last_sale falling back to an edition+serial
 --     match when there's no direct moment_id sale;
 --   * recent_sales labels a bare int:int Top Shot edition as the 'Standard' parallel;
+--   * recent_sales.buyback is true exactly when the buyer is a buyback wallet OF THIS
+--     COLLECTION (the sales_market predicate) — 2026-10-25;
 --   * similar_editions surfaces same-player editions.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20261019145416_audit_20261019_pinnacle_moment_detail_legacy_ask_reads_the_render_floor.sql;
--- repointed 2026-10-19 from 20260726016000 when the legacy-key ask moved to the render floor);
+-- (supabase/migrations/20261025215633_audit_20261025_moment_detail_flags_buyback_purchases.sql;
+-- repointed 2026-10-25 for the buyback flag; 2026-10-19 from 20260726016000 when the legacy-key ask moved to the render floor);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -56,6 +58,7 @@ CREATE TABLE public.wallet_moments_cache (
   collection_id uuid, moment_id text, wallet_address text, serial_number int,
   last_seen_at timestamptz);
 CREATE TABLE public.topshot_moment_subeditions (nft_id text, subedition_id int);
+CREATE TABLE public.buyback_wallets (collection_id uuid, wallet_address text, PRIMARY KEY (collection_id, wallet_address));
 
 -- resolve_moment_id is pinned separately; stub it via a fixture table.
 CREATE TABLE public._resolve (
@@ -316,6 +319,12 @@ BEGIN
   enriched AS (
     SELECT r.serial_number, r.price_usd, r.sold_at, r.marketplace,
            r.buyer_address, r.seller_address,
+           -- 2026-10-25: a purchase by the collection's own buyback wallet. The sales
+           -- count and FMV read sales_market, which excludes these; Recent activity
+           -- lists them, so each row says which it is.
+           EXISTS (SELECT 1 FROM buyback_wallets b
+                   WHERE b.collection_id = v_resolved.collection_id
+                     AND b.wallet_address = r.buyer_address::text) AS buyback,
            CASE WHEN v_resolved.collection_slug = 'nba_top_shot' THEN
              COALESCE(
                CASE WHEN tms.subedition_id > 0
@@ -391,6 +400,10 @@ SELECT :E2::uuid, NULL, 'nftF'||g, g, 60 + g, now()-interval '5 days', 'topshot'
 INSERT INTO public.sales (edition_id, moment_id, nft_id, serial_number, price_usd, sold_at, marketplace, buyer_address, seller_address)
 SELECT :E3::uuid, NULL, 'nftG'||g, g, 40 + g, now()-interval '5 days', 'topshot', 'b'||g, 's'||g FROM generate_series(1,3) g;
 
+-- buyback: Top Shot's wallet bought the serial-5 outlier; another collection's
+-- buyback wallet 'b1' must not flag Top Shot buyer 'b1'.
+INSERT INTO public.buyback_wallets VALUES (:TS::uuid, 'bx'), ('dee28451-5d62-409e-a1ad-a83f763ac070'::uuid, 'b1');
+
 -- moment M on edition E: owner NULL (fallback to wmc), no direct moment_id sale
 -- (last_sale falls back to the edition+serial=5 match = the 10000 row).
 INSERT INTO public.moments (id, collection_id, nft_id, serial_number, owner_address, is_listed, list_price, listed_at) VALUES
@@ -433,6 +446,10 @@ SELECT _assert_eq((public.get_moment_detail('MID') -> 'serial_specific' -> 'last
 
 -- ── 5. recent_sales parallel label = Standard for int:int external_id ────────
 SELECT _assert_eq((public.get_moment_detail('MID') -> 'recent_sales' -> 0 ->> 'parallel'), 'Standard', 'bare int:int TS edition labelled Standard parallel');
+
+-- ── 5b. recent_sales.buyback (2026-10-25) ────────────────────────────────────
+SELECT _assert_eq((public.get_moment_detail('MID') -> 'recent_sales' -> 0 ->> 'buyback'), 'true', 'a purchase by this collection''s buyback wallet is flagged');
+SELECT _assert_eq((SELECT count(*) FROM jsonb_array_elements(public.get_moment_detail('MID') -> 'recent_sales') e WHERE (e->>'buyback')::boolean)::text, '1', 'only that row: another collection''s buyback wallet never flags a Top Shot buyer');
 
 -- ── 6. similar_editions: same-player ES present ──────────────────────────────
 SELECT _assert(public.get_moment_detail('MID') -> 'similar_editions' <> '[]'::jsonb, 'similar_editions non-empty (same player Dame)');

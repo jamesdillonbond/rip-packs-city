@@ -1375,7 +1375,7 @@ const PINS = [
   {
     fn: "get_moment_detail",
     test: "supabase/tests/get_moment_detail.sql",
-    migration: "supabase/migrations/20261019145416_audit_20261019_pinnacle_moment_detail_legacy_ask_reads_the_render_floor.sql",
+    migration: "supabase/migrations/20261025215633_audit_20261025_moment_detail_flags_buyback_purchases.sql",
   },
   // ── 2026-07-29 batch 2: more high-traffic read RPCs ─────────────────────────
   {

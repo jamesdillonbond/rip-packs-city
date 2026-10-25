@@ -89,6 +89,7 @@ import { OG_INHERITED } from "@/lib/seo"
 import { askAgeStamp, askVerifiedAt } from "@/lib/market/ask-freshness"
 import { fetchPrintingAskChangedAt, isParallelExternalId, type PrintingAskStamp } from "@/lib/market/printing-ask-stamp"
 import { jsonLdScript } from "@/lib/seo/json-ld-script"
+import { BUYBACK_TITLE } from "@/lib/entity/buyback-copy"
 
 // Display label for the native marketplace per URL slug. Only collections with
 // a marketplaceMomentUrl template can produce a valid deep link.
@@ -228,6 +229,8 @@ interface RecentSale {
   seller_address: string | null
   // Top Shot: which printing (Standard / Hexwave / ...) the sale belongs to.
   parallel?: string | null
+  // Bought by the collection's buyback wallet (get_moment_detail, 2026-10-25).
+  buyback?: boolean | null
 }
 
 interface SimilarEdition {
@@ -916,7 +919,7 @@ export default async function MomentPage(
               // The count is market sales only (sales_market): a sale to a platform buyback wallet
               // is listed in Recent activity but not counted (/moment/50285673, 2026-10-21: "1 sale /
               // 30d" beside a $594 sale to TopShot_Buyback_2).
-              title="Market sales only: sales to a platform buyback wallet are listed below but not counted."
+              title="Market sales only: sales to a platform buyback wallet are listed below, tagged BUYBACK, but not counted."
               style={{
                 fontFamily: "var(--font-mono)",
                 fontSize: "var(--text-xs, 12px)",
@@ -1539,7 +1542,31 @@ export default async function MomentPage(
                         </span>
                       </Td>
                     ) : null}
-                    <Td>{fmtUsd(s.price_usd)}</Td>
+                    <Td>
+                      {fmtUsd(s.price_usd)}
+                      {/* 2026-10-25: the sales count above reads sales_market, which
+                          excludes these (/moment/51492798: "1 market sale / 30d" over
+                          three listed, two bought by TopShot_Buyback_2). */}
+                      {s.buyback === true ? (
+                        <span
+                          title={BUYBACK_TITLE}
+                          style={{
+                            display: "inline-block",
+                            marginLeft: 6,
+                            padding: "1px 6px",
+                            borderRadius: 3,
+                            border: "1px solid var(--rpc-border)",
+                            color: "var(--rpc-text-muted)",
+                            fontSize: 9,
+                            letterSpacing: "0.10em",
+                            textTransform: "uppercase",
+                            verticalAlign: "middle",
+                          }}
+                        >
+                          buyback
+                        </span>
+                      ) : null}
+                    </Td>
                     <Td>
                       <span title={fmtAbsDate(s.sold_at)}>{fmtRelDate(s.sold_at)}</span>
                     </Td>

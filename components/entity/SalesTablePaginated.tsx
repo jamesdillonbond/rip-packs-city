@@ -9,6 +9,7 @@ import Link from "next/link"
 import { EM_DASH, fmtUsd, truncWallet } from "./_shared"
 import { displayAddress } from "@/lib/address"
 import RelTime from "./RelTime"
+import { BUYBACK_TITLE } from "@/lib/entity/buyback-copy"
 import { useResolveUsernames } from "@/lib/analytics/username-resolver"
 
 interface SaleRow {
@@ -28,9 +29,6 @@ interface SaleRow {
   // 30d count, last-sale age and FMV) excludes these, so the row says so.
   buyback?: boolean | null
 }
-
-/** The tag's hover text; exported so the test reads the same words. */
-export const BUYBACK_TITLE = "Bought by the collection's buyback program. Not counted in 30-day sales, last-sale age or FMV."
 
 interface Props {
   collectionUrlSlug: string
