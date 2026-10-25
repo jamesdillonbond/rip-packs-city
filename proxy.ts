@@ -347,13 +347,16 @@ function hasValidBypassToken(request: NextRequest): boolean {
   }
   // Query-param form
   const queryToken = request.nextUrl.searchParams.get("token") || ""
-  if (queryToken && tokenMatches(queryToken)) {
+  if (queryToken) {
     // R133 (security audit 2026-10-25): the ops doc says every cron-job.org
     // job moved to header auth on 2026-06-07, so this arm should have no
-    // callers left. Log the PATH (never the token) for a week; zero lines in
-    // Vercel logs for `[proxy] query-token bypass` = safe to delete the arm.
-    console.warn(`[proxy] query-token bypass used: ${request.method} ${request.nextUrl.pathname}`)
-    return true
+    // callers left. Log the PATH and the outcome (never the token) for a week.
+    // `ok=false` lines are scanners or typos — they are also the instrument's
+    // POSITIVE CONTROL (anyone can produce one), so zero `ok=true` lines next to
+    // some `ok=false` lines proves the arm is unused, not that logging is dark.
+    const ok = tokenMatches(queryToken)
+    console.warn(`[proxy] query-token presented ok=${ok}: ${request.method} ${request.nextUrl.pathname}`)
+    if (ok) return true
   }
   return false
 }
