@@ -5,6 +5,7 @@ import { Book } from "lucide-react"
 import { METHODOLOGY } from "@/lib/analytics/methodology"
 import { analyticsMetadata, ANALYTICS_BASE_URL } from "@/lib/analytics/seo"
 import { ownLookup } from "@/lib/safe-lookup"
+import { jsonLdScript } from "@/lib/seo/json-ld-script"
 
 interface Params {
   topic: string
@@ -58,7 +59,7 @@ export default async function MethodologyTopicPage({
     <div className="space-y-8 max-w-3xl">
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(articleJsonLd) }}
+        dangerouslySetInnerHTML={{ __html: jsonLdScript(articleJsonLd) }}
       />
       <header className="flex items-start gap-3">
         <div className="flex h-10 w-10 items-center justify-center rounded-md bg-emerald-500/10 border border-emerald-500/20 flex-shrink-0">

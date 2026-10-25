@@ -3,6 +3,7 @@ import type { ReactNode } from "react"
 import { getCollection } from "@/lib/collections"
 import { collectionPageJsonLd, pageMetadata, unknownCollectionMetadata } from "@/lib/seo"
 import PopularOnCollection from "@/components/entity/PopularOnCollection"
+import { jsonLdScript } from "@/lib/seo/json-ld-script"
 
 // ISR-cache the segment hourly so the server-rendered public fan-out
 // (PopularOnCollection) doesn't run its query on every request.
@@ -29,7 +30,7 @@ export default async function OverviewLayout(props: {
   return (
     <>
       {known ? (
-        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(collectionPageJsonLd(known.id)) }} />
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdScript(collectionPageJsonLd(known.id)) }} />
       ) : null}
       {props.children}
       <PopularOnCollection collection={collection} />

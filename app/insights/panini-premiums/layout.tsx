@@ -9,6 +9,7 @@
 import type { Metadata } from "next"
 import { PANINI_PUBLIC } from "@/lib/launch-flags"
 import { TWITTER_INHERITED, insightsBoardJsonLd } from "@/lib/seo"
+import { jsonLdScript } from "@/lib/seo/json-ld-script"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -54,7 +55,7 @@ export default function PaniniPremiumsLayout({ children }: { children: React.Rea
   const jsonLd = insightsBoardJsonLd("panini-premiums")
   return (
     <>
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdScript(jsonLd) }} />
       {children}
     </>
   )

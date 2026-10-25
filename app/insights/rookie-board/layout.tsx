@@ -8,6 +8,7 @@
 
 import type { Metadata } from "next"
 import { TWITTER_INHERITED, insightsBoardJsonLd } from "@/lib/seo"
+import { jsonLdScript } from "@/lib/seo/json-ld-script"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -65,7 +66,7 @@ export default function RookieBoardLayout({ children }: { children: React.ReactN
     <>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        dangerouslySetInnerHTML={{ __html: jsonLdScript(jsonLd) }}
       />
       {children}
     </>

@@ -6,6 +6,7 @@
 
 import type { Metadata } from "next"
 import { TWITTER_INHERITED, insightsBoardJsonLd } from "@/lib/seo"
+import { jsonLdScript } from "@/lib/seo/json-ld-script"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -56,7 +57,7 @@ export default function AutographsLayout({ children }: { children: React.ReactNo
   const jsonLd = insightsBoardJsonLd("autographs")
   return (
     <>
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdScript(jsonLd) }} />
       {children}
     </>
   )

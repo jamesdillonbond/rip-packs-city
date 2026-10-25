@@ -10,6 +10,7 @@ import { notFound } from "next/navigation"
 import LoansDashboard from "@/components/analytics/LoansDashboard"
 import { analyticsMetadata, ANALYTICS_BASE_URL } from "@/lib/analytics/seo"
 import { ownLookup } from "@/lib/safe-lookup"
+import { jsonLdScript } from "@/lib/seo/json-ld-script"
 
 interface CollectionConfig {
   slug: string
@@ -133,7 +134,7 @@ export default async function CollectionLoansPage({ params }: PageParams) {
     <>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(datasetJsonLd) }}
+        dangerouslySetInnerHTML={{ __html: jsonLdScript(datasetJsonLd) }}
       />
       <div className="space-y-6">
         <nav className="flex items-center gap-2 text-xs text-[color:var(--rpc-text-muted)]">

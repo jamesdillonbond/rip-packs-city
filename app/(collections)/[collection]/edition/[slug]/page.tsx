@@ -88,6 +88,7 @@ import {
 import { accentText } from "@/lib/accent-text"
 import { staleTouchDaysSinceSale } from "@/lib/fmv-stale-touch"
 import { scrollRegion } from "@/lib/a11y/scroll-region"
+import { jsonLdScript } from "@/lib/seo/json-ld-script"
 
 export const revalidate = 600
 export const dynamicParams = true
@@ -819,7 +820,7 @@ export default async function EditionPage(
     <div>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(editionJsonLd({ ...(detail as unknown as Record<string, unknown>), set_slug: setSlugForLink }, collection, isPanini ? askValue : (highOffer?.low_ask ?? null), askAt)) }}
+        dangerouslySetInnerHTML={{ __html: jsonLdScript(editionJsonLd({ ...(detail as unknown as Record<string, unknown>), set_slug: setSlugForLink }, collection, isPanini ? askValue : (highOffer?.low_ask ?? null), askAt)) }}
       />
       <Breadcrumbs
         items={[

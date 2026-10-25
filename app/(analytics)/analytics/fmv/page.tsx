@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import FmvDashboard from "@/components/analytics/FmvDashboard"
 import { analyticsMetadata, ANALYTICS_BASE_URL } from "@/lib/analytics/seo"
+import { jsonLdScript } from "@/lib/seo/json-ld-script"
 
 export const metadata: Metadata = analyticsMetadata({
   title: "FMV Index — Fair Market Value Across Flow NFTs",
@@ -41,7 +42,7 @@ export default function FmvPage() {
     <>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(datasetJsonLd) }}
+        dangerouslySetInnerHTML={{ __html: jsonLdScript(datasetJsonLd) }}
       />
       <FmvDashboard />
     </>

@@ -28,6 +28,7 @@ import HeroMontage from "@/components/entity/HeroMontage"
 import { Suspense } from "react"
 import MarketCapTile from "@/components/entity/MarketCapTile"
 import { isTeamMoment, momentSubjectHref } from "@/lib/entity-href"
+import { jsonLdScript } from "@/lib/seo/json-ld-script"
 
 export const revalidate = 600
 export const dynamicParams = true
@@ -279,7 +280,7 @@ export default async function SeriesPage(props: { params: Promise<{ collection: 
       {editionsOk && (
         <script
           type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(collectionEntityJsonLd({ name: seriesPageLabel(detail.series_number, detail.display_label, collection), url: entityUrl(collection, "series", slug), collectionUrlSlug: collection, eds: top25 as unknown as Array<Record<string, unknown>>, crumbName: seriesPageLabel(detail.series_number, detail.display_label, collection) })) }}
+          dangerouslySetInnerHTML={{ __html: jsonLdScript(collectionEntityJsonLd({ name: seriesPageLabel(detail.series_number, detail.display_label, collection), url: entityUrl(collection, "series", slug), collectionUrlSlug: collection, eds: top25 as unknown as Array<Record<string, unknown>>, crumbName: seriesPageLabel(detail.series_number, detail.display_label, collection) })) }}
         />
       )}
       <Breadcrumbs

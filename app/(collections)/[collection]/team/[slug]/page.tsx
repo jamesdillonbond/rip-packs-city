@@ -28,6 +28,7 @@ import TeamSets, { type SetRow } from "@/components/entity/TeamSets"
 import TeamSqueeze, { type SqueezeRow } from "@/components/entity/TeamSqueeze"
 import { Suspense } from "react"
 import MarketCapTile from "@/components/entity/MarketCapTile"
+import { jsonLdScript } from "@/lib/seo/json-ld-script"
 
 export const revalidate = 600
 export const dynamicParams = true
@@ -237,7 +238,7 @@ export default async function TeamPage(props: { params: Promise<{ collection: st
     <div>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(teamJsonLd(detail as unknown as Record<string, unknown>, collection, slug)) }}
+        dangerouslySetInnerHTML={{ __html: jsonLdScript(teamJsonLd(detail as unknown as Record<string, unknown>, collection, slug)) }}
       />
       <Breadcrumbs
         items={[

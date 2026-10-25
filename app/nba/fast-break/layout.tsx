@@ -7,6 +7,7 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { TWITTER_INHERITED } from "@/lib/seo"
+import { jsonLdScript } from "@/lib/seo/json-ld-script"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -78,7 +79,7 @@ export default function FastBreakLayout({ children }: { children: React.ReactNod
     <>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        dangerouslySetInnerHTML={{ __html: jsonLdScript(jsonLd) }}
       />
       {children}
     </>

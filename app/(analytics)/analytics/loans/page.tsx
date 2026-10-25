@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import LoansDashboard from "@/components/analytics/LoansDashboard"
 import { analyticsMetadata, ANALYTICS_BASE_URL } from "@/lib/analytics/seo"
+import { jsonLdScript } from "@/lib/seo/json-ld-script"
 
 export const metadata: Metadata = analyticsMetadata({
   title: "Flowty Loan Analytics (Historical) — NFT-Collateralized Lending on Flow",
@@ -53,7 +54,7 @@ export default function LoansPage() {
     <>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(datasetJsonLd) }}
+        dangerouslySetInnerHTML={{ __html: jsonLdScript(datasetJsonLd) }}
       />
       {/* No page-level <h1> here: LoansDashboard renders FilterBar, which already
           emits the visible <h1> ("Flowty Loan Analytics"). This route is auth-gated,

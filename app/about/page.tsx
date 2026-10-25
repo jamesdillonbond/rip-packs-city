@@ -5,6 +5,7 @@ import RpcLogo from "@/components/RpcLogo";
 import SiteFooter from "@/components/SiteFooter";
 import { OG_INHERITED, organizationEntityJsonLd } from "@/lib/seo"
 import { publishedCollections } from "@/lib/collections"
+import { jsonLdScript } from "@/lib/seo/json-ld-script"
 
 // 2026-10-15 (deep audit run 6, P2): this page named five collections while the
 // home page — which reads the registry — said seven. Read the registry here too.
@@ -49,7 +50,7 @@ export default function AboutPage() {
           2026-10-11 nothing told a crawler which X account is ours. */}
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationEntityJsonLd) }}
+        dangerouslySetInnerHTML={{ __html: jsonLdScript(organizationEntityJsonLd) }}
       />
 
       <main style={{ flex: 1, padding: "64px 24px 96px" }}>

@@ -17,6 +17,7 @@ import WalletIdenticon from "@/components/analytics/WalletIdenticon"
 import WalletsHubOverview from "@/components/analytics/WalletsHubOverview"
 import NetMarketplaceLeaderboard from "@/components/analytics/NetMarketplaceLeaderboard"
 import { analyticsMetadata, ANALYTICS_BASE_URL } from "@/lib/analytics/seo"
+import { jsonLdScript } from "@/lib/seo/json-ld-script"
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 600
@@ -94,7 +95,7 @@ export default async function WalletsIndexPage() {
     <>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(datasetJsonLd) }}
+        dangerouslySetInnerHTML={{ __html: jsonLdScript(datasetJsonLd) }}
       />
       <div className="space-y-10">
         <header className="space-y-2">

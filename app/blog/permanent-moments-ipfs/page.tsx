@@ -9,6 +9,7 @@
 import Link from "next/link"
 import { OG_INHERITED, TWITTER_INHERITED, articleJsonLd } from "@/lib/seo"
 import { getBlogPost, blogPostUrl, formatPostDate } from "@/lib/blog/posts"
+import { jsonLdScript } from "@/lib/seo/json-ld-script"
 
 export const dynamic = "force-static"
 export const revalidate = 86400
@@ -172,7 +173,7 @@ export default function PermanentMomentsIpfs() {
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{
-          __html: JSON.stringify(
+          __html: jsonLdScript(
             articleJsonLd({
               headline: POST.title,
               description: POST.blurb,

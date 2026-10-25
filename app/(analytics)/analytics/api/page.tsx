@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import Link from "next/link"
 import { Globe2 } from "lucide-react"
 import { analyticsMetadata, ANALYTICS_BASE_URL } from "@/lib/analytics/seo"
+import { jsonLdScript } from "@/lib/seo/json-ld-script"
 
 export const metadata: Metadata = analyticsMetadata({
   title: "Public API — Programmatic Access to Rip Packs City Analytics",
@@ -109,7 +110,7 @@ export default function ApiPage() {
     <div className="space-y-8 max-w-3xl">
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(datasetJsonLd) }}
+        dangerouslySetInnerHTML={{ __html: jsonLdScript(datasetJsonLd) }}
       />
 
       <header className="flex items-start gap-3">

@@ -95,6 +95,7 @@ import { summarizeDegraded, boardStatus } from "@/lib/insights/board-status"
 import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
 import { accentText } from "@/lib/accent-text"
 import { marketWalletHref } from "@/lib/analytics/wallet-href"
+import { jsonLdScript } from "@/lib/seo/json-ld-script"
 
 export const revalidate = 600
 export const dynamicParams = true
@@ -780,7 +781,7 @@ export default async function PackDetailPage(
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(packJsonLd({ title, image: merged.image_url, collectionUrlSlug: collection, distId, retailPriceUsd: retailPrice })) }}
+        dangerouslySetInnerHTML={{ __html: jsonLdScript(packJsonLd({ title, image: merged.image_url, collectionUrlSlug: collection, distId, retailPriceUsd: retailPrice })) }}
       />
       <Breadcrumbs
         items={[

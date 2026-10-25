@@ -12,6 +12,7 @@ import HomeFmvPreview from "@/components/HomeFmvPreview";
 import { publishedCollections } from "@/lib/collections";
 import { organizationJsonLd } from "@/lib/seo";
 import { accentText } from "@/lib/accent-text"
+import { jsonLdScript } from "@/lib/seo/json-ld-script"
 
 function HomeHeader() {
   return (
@@ -231,11 +232,11 @@ export default function HomePageMarketing() {
     <div className="rpc-home-root" style={{ minHeight: "100vh", background: "var(--rpc-black)", color: "var(--rpc-text-primary)" }}>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(webSiteJsonLd) }}
+        dangerouslySetInnerHTML={{ __html: jsonLdScript(webSiteJsonLd) }}
       />
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }}
+        dangerouslySetInnerHTML={{ __html: jsonLdScript(organizationJsonLd) }}
       />
 
       <style>{`

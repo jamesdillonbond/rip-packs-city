@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import PacksDashboard from "@/components/analytics/PacksDashboard"
 import { analyticsMetadata, ANALYTICS_BASE_URL } from "@/lib/analytics/seo"
+import { jsonLdScript } from "@/lib/seo/json-ld-script"
 
 export const metadata: Metadata = analyticsMetadata({
   title: "Pack Analytics — Pack EV, Drop History, Supply Curves",
@@ -24,7 +25,7 @@ export default function PacksPage() {
     <>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(datasetJsonLd) }}
+        dangerouslySetInnerHTML={{ __html: jsonLdScript(datasetJsonLd) }}
       />
       <PacksDashboard />
     </>

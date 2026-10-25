@@ -40,6 +40,7 @@ import { OG_INHERITED, TWITTER_INHERITED, breadcrumbJsonLd } from "@/lib/seo"
 import { productOrCreativeWork } from "@/lib/jsonld-product"
 import { usdSignFirst } from "@/lib/usd-format"
 import { setEntityHref, pinnacleCharacterHref, pinnacleFranchiseHref, pinnacleSeriesHref } from "@/lib/entity-href"
+import { jsonLdScript } from "@/lib/seo/json-ld-script"
 
 export async function generateMetadata({
   params,
@@ -226,7 +227,7 @@ export default async function PinnacleMomentPage({
     <PinnacleShell>
     <main style={pageStyle}>
       <style>{CSS}</style>
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdScript(jsonLd) }} />
 
       <section className="rpc-pm-hero rpc-pm-hero-flex">
         {/* eslint-disable-next-line @next/next/no-img-element */}

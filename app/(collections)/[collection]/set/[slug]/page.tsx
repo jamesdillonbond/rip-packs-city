@@ -22,6 +22,7 @@ import { fetchPaniniSetSales, fetchPaniniProductSetSales, type PaniniSetSales } 
 import PaniniSetSalesBody from "@/components/entity/PaniniSetSales"
 import { Suspense } from "react"
 import MarketCapTile from "@/components/entity/MarketCapTile"
+import { jsonLdScript } from "@/lib/seo/json-ld-script"
 
 export const revalidate = 600
 export const dynamicParams = true
@@ -264,7 +265,7 @@ export default async function SetPage(props: { params: Promise<{ collection: str
       {editionsOk && (
         <script
           type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(collectionEntityJsonLd({ name: titleName, url: entityUrl(collection, "set", slug), collectionUrlSlug: collection, eds: editions as unknown as Array<Record<string, unknown>>, crumbName: titleName })) }}
+          dangerouslySetInnerHTML={{ __html: jsonLdScript(collectionEntityJsonLd({ name: titleName, url: entityUrl(collection, "set", slug), collectionUrlSlug: collection, eds: editions as unknown as Array<Record<string, unknown>>, crumbName: titleName })) }}
         />
       )}
       <Breadcrumbs

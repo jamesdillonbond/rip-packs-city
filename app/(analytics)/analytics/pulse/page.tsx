@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import PulseDashboard from "@/components/analytics/PulseDashboard"
 import { analyticsMetadata, ANALYTICS_BASE_URL } from "@/lib/analytics/seo"
+import { jsonLdScript } from "@/lib/seo/json-ld-script"
 
 export const metadata: Metadata = analyticsMetadata({
   title: "Pulse — Live Flow NFT Activity",
@@ -41,7 +42,7 @@ export default function PulsePage() {
     <>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(datasetJsonLd) }}
+        dangerouslySetInnerHTML={{ __html: jsonLdScript(datasetJsonLd) }}
       />
       <PulseDashboard />
     </>

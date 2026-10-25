@@ -31,6 +31,7 @@ import MarketCapTile from "@/components/entity/MarketCapTile"
 import { fetchPlayerHub, playerHubPath, routableEntries } from "@/lib/player-hub"
 import { indexCoverageNote, type IndexCoverage } from "@/lib/entity/index-coverage-note"
 import { scrollRegion } from "@/lib/a11y/scroll-region"
+import { jsonLdScript } from "@/lib/seo/json-ld-script"
 
 export const revalidate = 600
 export const dynamicParams = true
@@ -447,7 +448,7 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
     <div>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(playerJsonLd(detail as unknown as Record<string, unknown>, collection, slug)) }}
+        dangerouslySetInnerHTML={{ __html: jsonLdScript(playerJsonLd(detail as unknown as Record<string, unknown>, collection, slug)) }}
       />
       <Breadcrumbs
         items={[

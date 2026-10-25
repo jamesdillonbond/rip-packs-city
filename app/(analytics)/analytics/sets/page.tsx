@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import SetsDashboard from "@/components/analytics/SetsDashboard"
 import { analyticsMetadata, ANALYTICS_BASE_URL } from "@/lib/analytics/seo"
+import { jsonLdScript } from "@/lib/seo/json-ld-script"
 
 export const metadata: Metadata = analyticsMetadata({
   title: "Sets — Catalog Across Flow NFT Collections",
@@ -41,7 +42,7 @@ export default function SetsPage() {
     <>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(datasetJsonLd) }}
+        dangerouslySetInnerHTML={{ __html: jsonLdScript(datasetJsonLd) }}
       />
       <SetsDashboard />
     </>

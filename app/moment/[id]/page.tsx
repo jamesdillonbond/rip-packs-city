@@ -88,6 +88,7 @@ import ParallelTierSwitcher from "@/components/entity/ParallelTierSwitcher"
 import { OG_INHERITED } from "@/lib/seo"
 import { askAgeStamp, askVerifiedAt } from "@/lib/market/ask-freshness"
 import { fetchPrintingAskChangedAt, isParallelExternalId, type PrintingAskStamp } from "@/lib/market/printing-ask-stamp"
+import { jsonLdScript } from "@/lib/seo/json-ld-script"
 
 // Display label for the native marketplace per URL slug. Only collections with
 // a marketplaceMomentUrl template can produce a valid deep link.
@@ -1699,7 +1700,7 @@ export default async function MomentPage(
 
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(productLd) }}
+        dangerouslySetInnerHTML={{ __html: jsonLdScript(productLd) }}
       />
 
       <style>{`

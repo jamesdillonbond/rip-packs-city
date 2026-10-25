@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import BuybackDashboard from "@/components/analytics/BuybackDashboard"
 import { analyticsMetadata, ANALYTICS_BASE_URL } from "@/lib/analytics/seo"
+import { jsonLdScript } from "@/lib/seo/json-ld-script"
 
 export const metadata: Metadata = analyticsMetadata({
   title: "Buyback Tracker — NBA Top Shot & NFL All Day",
@@ -35,7 +36,7 @@ export default function BuybackPage() {
     <>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(datasetJsonLd) }}
+        dangerouslySetInnerHTML={{ __html: jsonLdScript(datasetJsonLd) }}
       />
       <BuybackDashboard />
     </>

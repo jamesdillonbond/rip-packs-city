@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import SalesDashboard from "@/components/analytics/SalesDashboard"
 import { analyticsMetadata, ANALYTICS_BASE_URL } from "@/lib/analytics/seo"
+import { jsonLdScript } from "@/lib/seo/json-ld-script"
 
 export const metadata: Metadata = analyticsMetadata({
   title: "Sales Analytics — On-chain Sales Across Flow Collectibles",
@@ -57,7 +58,7 @@ export default function SalesPage() {
     <>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(datasetJsonLd) }}
+        dangerouslySetInnerHTML={{ __html: jsonLdScript(datasetJsonLd) }}
       />
       {/* No page-level <h1> here: SalesDashboard renders FilterBar, which already
           emits the visible <h1> ("Sales Analytics"). This route is auth-gated, so an

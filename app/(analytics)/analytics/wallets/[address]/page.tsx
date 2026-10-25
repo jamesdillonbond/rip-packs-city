@@ -18,6 +18,7 @@ import {
   loadPositionTransfers,
   lookupUsername,
 } from "@/lib/analytics/wallets/detail-fetchers"
+import { jsonLdScript } from "@/lib/seo/json-ld-script"
 
 export const revalidate = 600
 export const dynamicParams = true
@@ -163,11 +164,11 @@ export default async function WalletPage({ params }: PageParams) {
     <>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(personJsonLd) }}
+        dangerouslySetInnerHTML={{ __html: jsonLdScript(personJsonLd) }}
       />
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(datasetJsonLd) }}
+        dangerouslySetInnerHTML={{ __html: jsonLdScript(datasetJsonLd) }}
       />
       <WalletProfile
         data={data}

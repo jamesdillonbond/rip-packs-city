@@ -1,6 +1,7 @@
 // app/insights/market-pulse/layout.tsx — SEO surface for the public Market Pulse board.
 import type { Metadata } from "next"
 import { TWITTER_INHERITED, insightsBoardJsonLd } from "@/lib/seo"
+import { jsonLdScript } from "@/lib/seo/json-ld-script"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -42,7 +43,7 @@ export default function MarketPulseLayout({ children }: { children: React.ReactN
   const jsonLd = insightsBoardJsonLd("market-pulse")
   return (
     <>
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdScript(jsonLd) }} />
       {children}
     </>
   )

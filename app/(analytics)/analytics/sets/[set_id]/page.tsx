@@ -16,6 +16,7 @@ import { COLLECTION_LABEL } from "@/lib/analytics-sets-dashboard-compute"
 import { joinMetaParts, metaField } from "@/lib/format"
 import EditionGrid from "@/components/analytics/EditionGrid"
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
+import { jsonLdScript } from "@/lib/seo/json-ld-script"
 
 export const revalidate = 21600
 export const dynamicParams = true
@@ -136,7 +137,7 @@ export default async function SetDetailPage({ params }: PageParams) {
     <>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(datasetJsonLd) }}
+        dangerouslySetInnerHTML={{ __html: jsonLdScript(datasetJsonLd) }}
       />
       <div className="space-y-8">
         <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[color:var(--rpc-surface-raised)] p-6">
