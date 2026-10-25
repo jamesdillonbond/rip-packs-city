@@ -114,7 +114,7 @@ For <collection> in nba-top-shot, nfl-all-day, laliga-golazos, ufc, candy-mlb, p
 - /privacy, /terms
 
 ## FMV, briefly
-FMV is a weighted average of recent on-chain sales with recency decay and outlier filtering. Serial premiums apply to #1, jersey-match and perfect-mint serials. Full method: /legal/fmv-methodology.
+FMV is the median of an edition's most recent typical sales (special serials such as #1s and jersey matches, and outlier prints, are set aside; a thinly traded edition only counts sales close in time to its newest one). Serial premiums apply to #1, jersey-match and perfect-mint serials. Full method: /legal/fmv-methodology.
 
 ## Quick answers
 - "What is my Top Shot / All Day / Pinnacle collection worth?" — /insights/account-value, or paste a wallet on the home page for a /share/<wallet> card. No account needed.

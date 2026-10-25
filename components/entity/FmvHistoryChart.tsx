@@ -359,7 +359,7 @@ export default function FmvHistoryChart({ collectionUrlSlug, routeSlug, initial,
       {/* Overlay chips — opt-in, off by default, additive (10259/10261/10263). */}
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }} role="group" aria-label="Chart overlays">
         {source === "fmv" && (
-          <OverlayChip on={showAsp} onClick={() => setShowAsp(v => !v)} title="30-day average sale price as of each day (ASP) — the sales-based average the FMV model starts from">ASP</OverlayChip>
+          <OverlayChip on={showAsp} onClick={() => setShowAsp(v => !v)} title="30-day average sale price as of each day (ASP) — shown for comparison; FMV itself is the median of recent typical sales">ASP</OverlayChip>
         )}
         <OverlayChip on={showRange} onClick={() => setShowRange(v => !v)} title="Low–high band of the sale prints in each bucket. Not candlesticks: RPC keeps no open/close per bucket.">RANGE</OverlayChip>
         <OverlayChip on={showVolume} onClick={() => setShowVolume(v => !v)} title="Sales per bucket, as bars on the right axis">VOLUME</OverlayChip>
