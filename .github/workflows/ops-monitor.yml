@@ -1,6 +1,9 @@
 name: RPC Ops Monitor
 
 on:
+  # R61 (decided 2026-10-25): GitHub runs ~7-8 of these a day (scheduler-liveness), not
+  # what the cron asks. The cron is a ceiling, not the cadence; it is NOT lowered to match,
+  # because a lower ask gets fewer runs (8/day asks get 5-7, 4/day asks get 3-4).
   schedule:
     - cron: '13,43 * * * *'
     - cron: '41 6 * * *'
