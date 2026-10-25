@@ -964,7 +964,7 @@ export default async function EditionPage(
         <p className="rpc-mono" style={{ margin: "12px 2px 2px", fontSize: 13, lineHeight: 1.65, color: "var(--rpc-text-secondary)" }}>
           <strong style={{ color: "var(--rpc-text-primary)", fontWeight: 700 }}>{editionTitle}{detail.set_name ? ` — ${detail.set_name}` : ""}{parallelLabel ? ` · ${parallelLabel}` : ""}</strong>{" "}
           is worth ~{fmtUsd(fmv?.fmv_usd ?? null)} (FMV) on {collectionDisplayName(collection)}
-          {askValue ? <>, with the lowest ask at {fmtUsd(askValue)}</> : fmv?.floor_price_usd ? <>, with a recent-sale low of {fmtUsd(fmv?.floor_price_usd ?? null)}</> : null}
+          {askValue ? <>, with the lowest ask at {fmtUsd(askValue)}</> : fmv?.floor_price_usd ? <>, with a {showLastSaleAge ? "sale" : "recent-sale"} low of {fmtUsd(fmv?.floor_price_usd ?? null)}</> : null}
           {fmv?.sales_count_30d ? <> and {fmtCount(fmv?.sales_count_30d ?? null)} {fmv?.sales_count_30d === 1 ? "sale" : "sales"} in the last 30 days</> : null}
           {showLastSaleAge ? <>; its last sale was {daysSinceLastSale} {daysSinceLastSale === 1 ? "day" : "days"} ago</> : null}
           .{" "}
@@ -1365,7 +1365,10 @@ export default async function EditionPage(
 
       {/* ── FMV history chart ────────────────────────────────────────────── */}
       <Section title="FMV History">
-        <FmvHistoryChart collectionUrlSlug={collection} routeSlug={detail.route_slug ?? slug} initial={history.rows} initialFailed={!history.ok} salesTracked={!isPanini} />
+        {/* confidence stripped from the server-rendered prop (2026-10-25): the chart never
+            renders it, but it shipped the internal tier word ("STALE") in every edition page's
+            public HTML. FMV confidence is internal (CLAUDE.md concierge rule 3). */}
+        <FmvHistoryChart collectionUrlSlug={collection} routeSlug={detail.route_slug ?? slug} initial={history.rows.map((r) => ({ ...r, confidence: null }))} initialFailed={!history.ok} salesTracked={!isPanini} />
       </Section>
 
       {/* ── Heavy bottom sections stream in (recent sales, parallels, packs,
