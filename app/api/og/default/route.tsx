@@ -8,20 +8,18 @@
 import { ImageResponse } from "next/og";
 import { NextRequest } from "next/server";
 // Pure static registry — safe on the edge runtime (no node APIs).
-import { publishedChainsBadge } from "@/lib/collections";
+import { publishedChainsBadge, publishedCollections } from "@/lib/collections";
 import { brandFonts, brandFamilies, OG_CACHE_HEADERS } from "@/lib/og/brand-fonts";
 
 export const runtime = "edge";
 
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com";
 
-const COLLECTIONS = [
-  "NBA Top Shot",
-  "NFL All Day",
-  "LaLiga Golazos",
-  "Disney Pinnacle",
-  "UFC Strike",
-];
+// From the registry, not a hand list (2026-10-25): the hardcoded five omitted
+// Panini and Candy MLB for weeks after they were published, under a headline
+// that said "Flow NFTs" while the footer badge (already registry-driven) said
+// FLOW + SOLANA.
+const COLLECTIONS = publishedCollections().map((c) => c.label);
 
 export async function GET(_req: NextRequest) {
   // Brand typography + a long shared cache. `brandFonts` never rejects and
@@ -109,14 +107,14 @@ export async function GET(_req: NextRequest) {
             maxWidth: 960,
           }}
         >
-          Collector Intelligence for Flow NFTs
+          The Intelligence Layer for Digital Collectibles
         </div>
 
         {/* Collection row */}
         <div
           style={{
             display: "flex",
-            gap: 14,
+            gap: 10,
             marginTop: "auto",
             flexWrap: "wrap",
           }}
@@ -127,9 +125,9 @@ export async function GET(_req: NextRequest) {
                 key={name}
                 style={{
                   color: "#FFFFFF",
-                  fontSize: 20,
+                  fontSize: 17,
                   fontWeight: 700,
-                  padding: "10px 18px",
+                  padding: "8px 13px",
                   borderRadius: 8,
                   background: "rgba(255,255,255,0.05)",
                   border: "1px solid rgba(224,58,47,0.3)",

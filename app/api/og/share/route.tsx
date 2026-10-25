@@ -112,8 +112,11 @@ export async function GET(req: NextRequest) {
 
         {/* Center */}
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
+          {/* ⚠ An explicit column div, not a fragment: satori laid a fragment's
+              children out as a ROW, so the live card printed "COLLECTION FMV",
+              the figure and "N moments" side by side (seen 2026-10-25). */}
           {fetched ? (
-            <>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
               <div style={{ fontSize: 20, color: "#666", letterSpacing: "0.15em", textTransform: "uppercase", display: "flex" }}>
                 COLLECTION FMV
               </div>
@@ -128,16 +131,16 @@ export async function GET(req: NextRequest) {
               <div style={{ fontSize: 22, color: "#888", display: "flex" }}>
                 {totalMoments} moments
               </div>
-            </>
+            </div>
           ) : (
-            <>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
               <div style={{ fontSize: 20, color: "#666", letterSpacing: "0.15em", textTransform: "uppercase", display: "flex" }}>
                 COLLECTION SNAPSHOT
               </div>
               <div style={{ fontSize: 28, color: "#888", display: "flex", textAlign: "center", maxWidth: 800 }}>
                 Open the page for this wallet&apos;s current value
               </div>
-            </>
+            </div>
           )}
         </div>
 
