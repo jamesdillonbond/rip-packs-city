@@ -35,3 +35,10 @@ Built 2026-10-17/18 (known-issues #194, closed). Read this before painting TEXT 
 ## Measuring
 
 Static guards cannot see a parent's fill or a computed colour. The instrument is axe on production in BOTH themes (`?theme=light`), plus a computed-style probe on any FILL you touched (a contrast count cannot see a border that stopped rendering). The 10-18 end state: 68 of 70 route × theme checks clean (25 anonymous + 10 signed-in routes); the 2 are the login `.rpc-live-pill` read mid-flicker.
+
+## 2026-10-25 — the fallback spelling, and what the guard cannot see
+
+- ⚠ **`var(--rpc-red, #E03A2F)` is the same fill red as `var(--rpc-red)`, and the guard missed it.** `text-color-uses-text-safe-tokens.test.ts`'s regex required the `)` straight after the token name, so 14 text sites written with a fallback (share card, its empty state, dashboard alerts + notifications) passed it while axe read 4.45:1 on the live share card. Both `BANNED` regexes now accept an optional `, fallback`; planted against the old tree, it reds. **A guard over a CSS value must match every spelling of the value** — fallback, whitespace, ternary branch.
+- `opacity` on muted text is a contrast change the guard cannot see: the share card's "market closed" date at `opacity: 0.8` read 4.34:1 dark / 3.89:1 light. Remove the opacity; pick a text token.
+- The 7 px `@RIPPACKSCITY` handle in the `/analytics` and `/my-teams` layouts was `text-red-500/60` (2.46:1) — a Tailwind class, also outside the guard's `color:` scope. Now `text-[color:var(--rpc-red-text)]`.
+- Instrument: `e2e/a11y.spec.ts` (6 h, both themes, `color-contrast` GATED) — 32 routes since 10-25, including the share card, edition, player, market-cap, pack-reality and `/analytics`.
