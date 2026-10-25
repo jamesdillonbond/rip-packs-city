@@ -377,6 +377,14 @@ const PINS = [
       "supabase/migrations/20260926215225_audit_20260926_pinnacle_remaining_readers_use_the_pin_catalog.sql",
   },
   {
+    // Added 2026-10-25. The 3x-FMV bound on a "recent low" that the five entity header
+    // totals call; get_set_detail.sql pins its arms.
+    fn: "recent_low_usd",
+    test: "supabase/tests/get_set_detail.sql",
+    migration:
+      "supabase/migrations/20261025221903_audit_20261025_recent_low_totals_ignore_an_ask_far_above_fmv_a.sql",
+  },
+  {
     // Added 2026-09-26. get_team_sets / get_team_activity read only `editions`,
     // which holds no Pinnacle rows, so both franchise-page sections were hidden.
     // Pins the catalog sets (trimmed slug, pins held by render_id) and the
@@ -1331,7 +1339,7 @@ const PINS = [
     // 2026-10-18: D20 underlying_set_count counts only sets that have editions (R58 residual).
     // 2026-10-21 (#204): Panini counts and NAMES the products behind a shared set name.
     // 2026-10-21 (#204 design half): a Panini slug naming a `sets` row is that PRODUCT's page.
-    migration: "supabase/migrations/20261022004414_audit_20261021_panini_set_pages_are_product_scoped.sql",
+    migration: "supabase/migrations/20261025221903_audit_20261025_recent_low_totals_ignore_an_ask_far_above_fmv_a.sql",
   },
   {
     // Pinned 2026-10-18 (new): the hourly render-id pass now FILLS player_name from the
@@ -1383,7 +1391,7 @@ const PINS = [
     test: "supabase/tests/get_player_detail.sql",
     // Re-pointed 2026-09-27: Pinnacle mint dates only when every row carries one.
     // Re-pointed 2026-10-20: the name fallback skips an edition linked to another person.
-    migration: "supabase/migrations/20261021034822_audit_20261020_player_pages_never_borrow_another_persons_editions.sql",
+    migration: "supabase/migrations/20261025221903_audit_20261025_recent_low_totals_ignore_an_ask_far_above_fmv_a.sql",
   },
   {
     fn: "get_wallet_collection_snapshot",

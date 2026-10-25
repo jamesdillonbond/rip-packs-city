@@ -9,6 +9,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import Link from "next/link"
 import { EM_DASH, LIVE_ASK_HINT, LIVE_ASK_LABEL, RECENT_LOW_HINT, RECENT_LOW_LABEL, TierBadge, fmtCount, fmtUsd, tileSubject } from "./_shared"
 import { sectionEmptyCopy } from "@/lib/entity/section-empty-copy"
+import { recentLowUsd } from "@/lib/entity/recent-low"
 import { tileSeriesLabel } from "@/lib/series-label"
 import { proxyIpfsUrl } from "@/lib/ipfs-media"
 import {
@@ -610,7 +611,9 @@ function EditionTileCard({
           ) : (
             <>
               <div className="rpc-mono" style={{ fontSize: 9, color: "var(--rpc-text-muted)", letterSpacing: "0.14em" }} title={RECENT_LOW_HINT}>{RECENT_LOW_LABEL}</div>
-              <div className="rpc-mono" style={{ fontSize: 12, color: "var(--rpc-text-secondary)" }}>{fmtUsd(e.floor_usd ?? null)}</div>
+              {/* 2026-10-25: a floor above 3x FMV is a carried-forward ask, not a recent low (lib/entity/recent-low.ts).
+                  Pinnacle's floor is a live render ask with its own rule, so it is shown as is. */}
+              <div className="rpc-mono" data-testid="tile-recent-low" style={{ fontSize: 12, color: "var(--rpc-text-secondary)" }}>{fmtUsd(collectionUrlSlug === "disney-pinnacle" ? (e.floor_usd ?? null) : recentLowUsd(e.floor_usd, e.fmv_usd))}</div>
             </>
           )}
         </div>

@@ -36,6 +36,8 @@
 -- of throwing and erroring the whole public set page (Sentry NEXTJS-22). The happy
 -- path asserted below is unchanged.
 --
+-- Re-pinned 2026-10-25 to 20261025221903_audit_20261025_recent_low_totals_ignore_an_ask_far_above_fmv_a.sql (Recent-Low Totals call recent_low_usd).
+--
 -- Runs inside a rolled-back transaction so it leaves no residue.
 
 BEGIN;
@@ -58,6 +60,16 @@ CREATE TABLE public.sets (
 CREATE TABLE public.panini_products (set_id int PRIMARY KEY, name text);
 
 -- >>> BEGIN verbatim get_set_detail (keep byte-identical to the migration) >>>
+-- recent_low_usd: VERBATIM from supabase/migrations/20261025221903_audit_20261025_recent_low_totals_ignore_an_ask_far_above_fmv_a.sql (pinned by the drift guard).
+CREATE OR REPLACE FUNCTION public.recent_low_usd(p_floor numeric, p_fmv numeric)
+ RETURNS numeric
+ LANGUAGE sql
+ IMMUTABLE PARALLEL SAFE
+AS $function$
+  SELECT CASE
+           WHEN p_floor > 0 AND (p_fmv IS NULL OR p_fmv <= 0 OR p_floor <= 3 * p_fmv) THEN p_floor
+         END
+$function$;
 CREATE OR REPLACE FUNCTION public.get_set_detail(p_collection_id uuid, p_set_slug text)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -164,7 +176,7 @@ BEGIN
       SELECT
         COUNT(*),
         SUM(fmv.fmv_usd)                                          FILTER (WHERE fmv.fmv_usd > 0),
-        SUM(COALESCE(fmv.floor_price_usd, fmv.fmv_usd))           FILTER (WHERE COALESCE(fmv.floor_price_usd, fmv.fmv_usd) > 0),
+        SUM(COALESCE(public.recent_low_usd(fmv.floor_price_usd, fmv.fmv_usd), fmv.fmv_usd))           FILTER (WHERE COALESCE(public.recent_low_usd(fmv.floor_price_usd, fmv.fmv_usd), fmv.fmv_usd) > 0),
         COUNT(fmv.fmv_usd)                                        FILTER (WHERE fmv.fmv_usd > 0)
       INTO v_edition_count, v_fmv_total, v_floor_total, v_editions_with_fmv
       FROM editions e
@@ -457,6 +469,21 @@ SELECT _assert_eq((public.get_set_detail(:pin::uuid,'mf-vol-1') ->> 'fmv_ask_der
 SELECT _assert((public.get_set_detail(:cid::uuid,'base-set') ->> 'fmv_ask_derived_usd') IS NULL, 'non-Pinnacle: no ask-derived key value');
 -- CONTROL: the non-Pinnacle set still reports the summary figure.
 SELECT _assert_eq((public.get_set_detail(:cid::uuid,'base-set') ->> 'total_circulation'), '100', 'non-Pinnacle Total Mint = sets_summary (unchanged)');
+
+-- ── 2026-10-25: a "recent low" above 3x FMV is a carried-forward ask, not a recent low ──
+-- recent_low_usd arms (the helper every entity header total calls).
+SELECT _assert_eq(public.recent_low_usd(40, 50)::text, '40', 'recent_low_usd: a floor under FMV is kept');
+SELECT _assert_eq(public.recent_low_usd(150, 50)::text, '150', 'recent_low_usd: exactly 3x FMV is kept (the bound is inclusive)');
+SELECT _assert(public.recent_low_usd(57000, 1700) IS NULL, 'recent_low_usd: 33x FMV (the 2025 Rookie Ultimates /1) is not a recent low');
+SELECT _assert_eq(public.recent_low_usd(40, NULL)::text, '40', 'recent_low_usd: unknown FMV keeps the floor');
+SELECT _assert(public.recent_low_usd(0, 50) IS NULL AND public.recent_low_usd(NULL, 50) IS NULL, 'recent_low_usd: no floor -> NULL');
+-- The set total: e2 gains a snapshot whose floor is 50x its FMV. It must contribute its FMV
+-- (10), not the 500 ask: 40 + 10 = 50. Before 20261025221903 this read 540.
+INSERT INTO public.fmv_snapshots (edition_id, fmv_usd, floor_price_usd, computed_at) VALUES (:e2::uuid, 10, 500, now());
+SELECT _assert_eq((public.get_set_detail(:cid::uuid,'base-set') ->> 'floor_total_usd'), '50', 'Recent-Low Total: an out-of-band floor contributes FMV, not the ask');
+-- No-change control: a floor inside the bound (25 = 2.5x) is summed as before: 40 + 25 = 65.
+UPDATE public.fmv_snapshots SET floor_price_usd = 25 WHERE edition_id = :e2::uuid;
+SELECT _assert_eq((public.get_set_detail(:cid::uuid,'base-set') ->> 'floor_total_usd'), '65', 'Recent-Low Total: an in-bound floor is still summed');
 
 SELECT '✓ get_set_detail: all assertions passed' AS result;
 

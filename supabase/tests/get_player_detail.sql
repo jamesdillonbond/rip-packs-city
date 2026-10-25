@@ -32,6 +32,8 @@
 -- before that, 20260926191644_audit_20260926_pinnacle_duo_character_pages_find_their_pins.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
+-- Re-pinned 2026-10-25 to 20261025221903_audit_20261025_recent_low_totals_ignore_an_ask_far_above_fmv_a.sql (Recent-Low Totals call recent_low_usd).
+--
 -- Runs inside a rolled-back transaction so it leaves no residue.
 
 BEGIN;
@@ -84,6 +86,16 @@ AS $function$
 $function$;
 
 -- >>> BEGIN verbatim get_player_detail (keep byte-identical to the migration) >>>
+-- recent_low_usd: VERBATIM from supabase/migrations/20261025221903_audit_20261025_recent_low_totals_ignore_an_ask_far_above_fmv_a.sql (pinned by the drift guard).
+CREATE OR REPLACE FUNCTION public.recent_low_usd(p_floor numeric, p_fmv numeric)
+ RETURNS numeric
+ LANGUAGE sql
+ IMMUTABLE PARALLEL SAFE
+AS $function$
+  SELECT CASE
+           WHEN p_floor > 0 AND (p_fmv IS NULL OR p_fmv <= 0 OR p_floor <= 3 * p_fmv) THEN p_floor
+         END
+$function$;
 CREATE OR REPLACE FUNCTION public.get_player_detail(p_collection_id uuid, p_player_slug text)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -200,7 +212,7 @@ BEGIN
       COUNT(*),
       SUM(e.circulation_count) FILTER (WHERE e.circulation_count IS NOT NULL),
       SUM(fmv.fmv_usd)         FILTER (WHERE fmv.fmv_usd > 0),
-      SUM(COALESCE(fmv.floor_price_usd, fmv.fmv_usd)) FILTER (WHERE COALESCE(fmv.floor_price_usd, fmv.fmv_usd) > 0),
+      SUM(COALESCE(public.recent_low_usd(fmv.floor_price_usd, fmv.fmv_usd), fmv.fmv_usd)) FILTER (WHERE COALESCE(public.recent_low_usd(fmv.floor_price_usd, fmv.fmv_usd), fmv.fmv_usd) > 0),
       MIN(e.first_minted_at),
       MAX(e.first_minted_at)
     INTO v_edition_count, v_total_circulation, v_fmv_total, v_floor_total, v_first_minted, v_last_minted

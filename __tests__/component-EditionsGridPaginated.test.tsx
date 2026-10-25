@@ -414,6 +414,29 @@ describe("EditionsGridPaginated — live ask vs recent low (#143)", () => {
     expect(screen.getAllByText("Recent Low")).toHaveLength(1)
   })
 
+  // 2026-10-25 production sweep: a Top Shot /1 tile read "Recent Low $57,000" over a $1,700 FMV
+  // (an old ask carried forward). Above 3x FMV it is not a recent low (lib/entity/recent-low.ts).
+  it("a floor above 3x FMV renders as no recent low; an in-bound one and Pinnacle's live ask render as is", async () => {
+    fetchMock.mockImplementation(() => Promise.resolve({ ok: false, status: 503 }))
+    const { unmount } = render(
+      <EditionsGridPaginated
+        collectionUrlSlug="nba-top-shot"
+        fetchUrl="/api/x"
+        initial={[tile("220:7651", { fmv_usd: 1700, floor_usd: 57000 }), tile("220:7652", { fmv_usd: 10, floor_usd: 25 })]}
+        pageSize={10}
+      />,
+    )
+    const cells = screen.getAllByTestId("tile-recent-low").map((c) => c.textContent)
+    expect(cells[0]).not.toContain("57,000")
+    expect(cells[0]).toBe("—")
+    expect(cells[1]).toBe("$25.00")
+    unmount()
+    render(
+      <EditionsGridPaginated collectionUrlSlug="disney-pinnacle" fetchUrl="/api/x" initial={[tile("pin-9", { fmv_usd: 10, floor_usd: 500 })]} pageSize={10} />,
+    )
+    expect(screen.getByTestId("tile-recent-low").textContent).toBe("$500")
+  })
+
   it("Pinnacle never asks: its route_slug is not an editions key", async () => {
     fetchMock.mockImplementation(() => Promise.resolve({ ok: true, json: async () => ({ results: [], partial: false }) }))
     render(
