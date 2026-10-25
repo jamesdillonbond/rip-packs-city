@@ -21,6 +21,14 @@ import SwapTestClient from "@/app/admin/swap-test/SwapTestClient"
 import { ADMIN_TOKEN_KEY } from "@/lib/admin/use-admin-resource"
 import { SWAP_CADENCE } from "@/lib/swap-test/swap-cadence"
 
+vi.mock("@/lib/admin-token", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/admin-token")>()),
+  // R134 step 2 helpers: identity exchange, no-op upgrade (the session path has its own tests).
+  toAdminSession: async (t: string) => t,
+  upgradeStoredAdminToken: async () => {},
+}))
+
+
 // The two-signer swap console. What an operator must be able to trust: nothing can be
 // signed before the mainnet simulation passed; the co-signer sees what the RELAYED
 // transaction does (decoded from its own arguments) and is told not to sign anything
@@ -68,13 +76,14 @@ afterEach(() => {
 })
 
 describe("SwapTestClient — token gate", () => {
-  it("asks for the token first", () => {
+  it("asks for the token first", async () => {
     localStorage.clear()
     render(<SwapTestClient />)
     expect(screen.getByText("Admin token required.")).toBeTruthy()
     fireEvent.change(document.querySelector('input[type="password"]')!, { target: { value: "tok" } })
     fireEvent.click(screen.getByRole("button", { name: /continue/i }))
-    expect(screen.getByRole("button", { name: /simulate on mainnet/i })).toBeTruthy()
+    // submit exchanges the token for a session first (R134 step 2), so it lands async
+    expect(await screen.findByRole("button", { name: /simulate on mainnet/i })).toBeTruthy()
   })
 })
 

@@ -6,6 +6,14 @@ import BetaActivityClient from "@/app/admin/beta-activity/BetaActivityClient"
 import FmvHealthClient from "@/app/admin/fmv-health/FmvHealthClient"
 import { ADMIN_TOKEN_KEY } from "@/lib/admin/use-admin-resource"
 
+vi.mock("@/lib/admin-token", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/admin-token")>()),
+  // R134 step 2 helpers: identity exchange, no-op upgrade (the session path has its own tests).
+  toAdminSession: async (t: string) => t,
+  upgradeStoredAdminToken: async () => {},
+}))
+
+
 // Two of the seven admin pages that each carried a byte-identical token-gate + fetch shell.
 // They are covered TOGETHER because the shell is now one module: a case written against one
 // page is a case about all of them, and splitting these into two files would invite the

@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
+import { toAdminSession, upgradeStoredAdminToken } from "@/lib/admin-token"
 
 // The admin token-gate + fetch shell, extracted 2026-08-16.
 //
@@ -74,7 +75,7 @@ export interface AdminResource<T> {
   /** Controlled value for the token entry form. */
   tokenInput: string
   setTokenInput: (v: string) => void
-  /** Store the typed token and start fetching. No-ops on blank input. */
+  /** Exchange the typed master token for a session, store it, start fetching. No-ops on blank input. */
   submitToken: () => void
   data: T | null
   loading: boolean
@@ -105,6 +106,19 @@ export function useAdminResource<T>(url: string | null): AdminResource<T> {
     if (typeof window === "undefined") return
     const cached = localStorage.getItem(ADMIN_TOKEN_KEY)
     if (cached) setToken(cached)
+    // A browser still holding the MASTER token from before sessions existed swaps it
+    // for a 12 h session in the background (security audit 2026-10-25, R134 step 2 —
+    // this hook's 8 pages were missed by the first pass). Reading synchronously first
+    // keeps the page usable if the exchange is slow or fails.
+    let cancelled = false
+    void upgradeStoredAdminToken().then(() => {
+      if (cancelled) return
+      const upgraded = localStorage.getItem(ADMIN_TOKEN_KEY)
+      if (upgraded && upgraded !== cached) setToken(upgraded)
+    })
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   const run = useCallback(async (t: string, target: string) => {
@@ -158,8 +172,12 @@ export function useAdminResource<T>(url: string | null): AdminResource<T> {
   const submitToken = useCallback(() => {
     const t = tokenInput.trim()
     if (!t) return
-    localStorage.setItem(ADMIN_TOKEN_KEY, t)
-    setToken(t)
+    // Store a short-lived SESSION, never the master token (R134 step 2). If the
+    // exchange fails, toAdminSession hands back the input so sign-in still works.
+    void toAdminSession(t).then((stored) => {
+      localStorage.setItem(ADMIN_TOKEN_KEY, stored)
+      setToken(stored)
+    })
   }, [tokenInput])
 
   const refresh = useCallback(() => {

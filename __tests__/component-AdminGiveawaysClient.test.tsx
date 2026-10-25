@@ -22,6 +22,14 @@ vi.mock("@/lib/giveaways/admin-wallet", () => ({
 import AdminGiveawaysClient from "@/app/admin/giveaways/AdminGiveawaysClient"
 import { ADMIN_TOKEN_KEY } from "@/lib/admin/use-admin-resource"
 
+vi.mock("@/lib/admin-token", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/admin-token")>()),
+  // R134 step 2 helpers: identity exchange, no-op upgrade (the session path has its own tests).
+  toAdminSession: async (t: string) => t,
+  upgradeStoredAdminToken: async () => {},
+}))
+
+
 // The giveaway console. What an operator must be able to trust: the moment picker lists only
 // what the CHAIN confirmed giftable (and says how many the cache got wrong), an unreadable
 // response is an error and never an empty list, and the Verify report names any recipient
