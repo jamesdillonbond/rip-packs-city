@@ -16,7 +16,11 @@ export function verifyAdminRequest(req: NextRequest): boolean {
   // The ?token= form stays ONLY because cron-job.org probes are configured with
   // it; retiring it is a cron-job.org console change, not a code change.
   if (bearerMatches(req.headers.get("authorization"), "RPC_ADMIN_TOKEN")) return true;
-  return tokenMatches(req.nextUrl.searchParams.get("token"), "RPC_ADMIN_TOKEN");
+  const ok = tokenMatches(req.nextUrl.searchParams.get("token"), "RPC_ADMIN_TOKEN");
+  // R133/R134 (security audit 2026-10-25): measure who still uses ?token=
+  // before retiring it. Logs the PATH only, never the token.
+  if (ok) console.warn(`[admin-auth] query-token used: ${req.method} ${req.nextUrl.pathname}`);
+  return ok;
 }
 
 export function adminUnauthorizedResponse(): NextResponse {

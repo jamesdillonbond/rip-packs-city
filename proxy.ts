@@ -347,7 +347,14 @@ function hasValidBypassToken(request: NextRequest): boolean {
   }
   // Query-param form
   const queryToken = request.nextUrl.searchParams.get("token") || ""
-  if (queryToken && tokenMatches(queryToken)) return true
+  if (queryToken && tokenMatches(queryToken)) {
+    // R133 (security audit 2026-10-25): the ops doc says every cron-job.org
+    // job moved to header auth on 2026-06-07, so this arm should have no
+    // callers left. Log the PATH (never the token) for a week; zero lines in
+    // Vercel logs for `[proxy] query-token bypass` = safe to delete the arm.
+    console.warn(`[proxy] query-token bypass used: ${request.method} ${request.nextUrl.pathname}`)
+    return true
+  }
   return false
 }
 
@@ -1319,11 +1326,10 @@ function applySecurityHeaders(response: NextResponse, pathname?: string) {
   // target is the one that actually serves the bytes.
   // img-src + media-src gained assets.paniniamerica.net 2026-09-27 for Panini
   // card art, clips and pack art (host measured, not guessed — lib/panini/assets.ts).
-  response.headers.set(
-    "Content-Security-Policy",
+  const policy = (scriptSrc: string) =>
     [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+      scriptSrc,
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       "img-src 'self' data: blob: https://assets.nbatopshot.com https://asset-preview.nbatopshot.com https://assets.nflallday.com https://asset-preview.nflallday.com https://media.nflallday.com https://assets.laligagolazos.com https://asset-preview.laligagolazos.com https://assets.disneypinnacle.com https://asset-preview.disneypinnacle.com https://asset-preview.ufcstrike.com https://ipfs.dapperlabs.com https://gateway.pinata.cloud https://ipfs.io https://storage.googleapis.com https://cdn.nba.com https://cdn.wnba.com https://*.supabase.co https://arweave.net https://*.arweave.net https://assets.paniniamerica.net" + (wallet ? ` ${WALLETCONNECT_IMAGES} ${FLOW_WALLET_IMAGES}` : ""),
       "media-src 'self' data: blob: https://assets.nbatopshot.com https://asset-preview.nbatopshot.com https://assets.nflallday.com https://asset-preview.nflallday.com https://media.nflallday.com https://assets.laligagolazos.com https://asset-preview.laligagolazos.com https://assets.disneypinnacle.com https://asset-preview.disneypinnacle.com https://asset-preview.ufcstrike.com https://ipfs.dapperlabs.com https://gateway.pinata.cloud https://ipfs.io https://storage.googleapis.com https://arweave.net https://*.arweave.net https://assets.paniniamerica.net",
@@ -1335,7 +1341,14 @@ function applySecurityHeaders(response: NextResponse, pathname?: string) {
       "base-uri 'self'",
       "form-action 'self'",
     ].join("; ")
-  )
+  response.headers.set("Content-Security-Policy", policy("script-src 'self' 'unsafe-inline' 'unsafe-eval'"))
+  // R135 step 1 (security audit 2026-10-25): the SAME policy without
+  // 'unsafe-eval', report-only. Nothing is blocked; a browser that would have
+  // blocked an eval logs a "[Report Only]" console violation instead. If a walk
+  // of the app (wallet connect included) shows none, step 2 drops 'unsafe-eval'
+  // from the enforced header. A nonce CSP was rejected: Next.js nonces force
+  // every page to render dynamically, which would undo ISR on an IO-bound DB.
+  response.headers.set("Content-Security-Policy-Report-Only", policy("script-src 'self' 'unsafe-inline'"))
   return response
 }
 

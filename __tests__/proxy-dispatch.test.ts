@@ -122,6 +122,17 @@ describe("proxy() — security headers", () => {
     expect(res.headers.get("Content-Security-Policy")).toContain("frame-ancestors 'none'")
   })
 
+  it("R135 step 1: a report-only twin of the CSP drops 'unsafe-eval' and is otherwise identical", async () => {
+    for (const path of ["/", "/admin/giveaways"]) {
+      const res = await proxy(req(path))
+      const enforced = res.headers.get("Content-Security-Policy")!
+      const reportOnly = res.headers.get("Content-Security-Policy-Report-Only")!
+      expect(reportOnly, path).toBeTruthy()
+      expect(reportOnly).not.toContain("'unsafe-eval'")
+      expect(reportOnly.replace("script-src 'self' 'unsafe-inline'", "script-src 'self' 'unsafe-inline' 'unsafe-eval'")).toBe(enforced)
+    }
+  })
+
   it("only the giveaway pages may frame Flow's wallet picker (2026-09-29; claim page 2026-10-03)", async () => {
     const claim = (await proxy(req("/giveaways/fall-drop"))).headers.get("Content-Security-Policy")!
     expect(claim).toContain("frame-src 'self' https://fcl-discovery.onflow.org")
