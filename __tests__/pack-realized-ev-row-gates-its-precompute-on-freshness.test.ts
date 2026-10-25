@@ -18,8 +18,12 @@ describe("get_pack_realized_ev_row gates its precompute on a logged refresh", ()
   })
 
   it("the refresh logs the run the gate reads", () => {
-    const body = defs.get("refresh_topshot_pack_rip_values")?.body ?? ""
+    // the function's own $function$ body only — the migration's DO block after it says RAISE EXCEPTION
+    const def = defs.get("refresh_topshot_pack_rip_values")?.body ?? ""
+    const body = def.split("$function$")[1] ?? ""
     expect(body).toMatch(/REFRESH\s+MATERIALIZED\s+VIEW\s+CONCURRENTLY\s+public\.mv_topshot_pack_rip_values/i)
-    expect((body.match(/log_pipeline_run\('topshot-pack-rip-values'/g) ?? []).length).toBe(2)
+    expect((body.match(/log_pipeline_run\('topshot-pack-rip-values'/g) ?? []).length).toBe(1)
+    // 20261025170715: a failure must RAISE (cron reads it as failed), never be swallowed into an ok=false row
+    expect(body).not.toMatch(/\bEXCEPTION\b/i)
   })
 })

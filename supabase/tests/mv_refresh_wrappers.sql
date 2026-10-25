@@ -83,6 +83,14 @@ CREATE UNIQUE INDEX mv_topshot_pack_rip_values_uq ON public.mv_topshot_pack_rip_
 CREATE UNIQUE INDEX mv_topshot_edition_median_180d_uq ON public.mv_topshot_edition_median_180d (n);
 CREATE UNIQUE INDEX mv_topshot_set_play_catalog_uq ON public.mv_topshot_set_play_catalog (n);
 
+-- ⚠ FIXTURE FOR THE RIP-VALUES RUN LOG (added 2026-10-25 with 20261025170715). The wrapper logs
+-- `topshot-pack-rip-values` after a successful refresh — get_pack_realized_ev_row reads the MV only
+-- while such an ok row is recent — so log_pipeline_run must exist here. Stub records what it was given.
+CREATE TABLE public.__runs (pipeline text, rows_written int, ok boolean, error text);
+CREATE FUNCTION public.log_pipeline_run(p_pipeline text, p_started_at timestamptz, p_rows_found int, p_rows_written int,
+  p_rows_skipped int, p_ok boolean, p_error text, p_collection_slug text, p_cursor_before text, p_cursor_after text, p_extra jsonb)
+RETURNS void LANGUAGE sql AS $$ INSERT INTO public.__runs VALUES (p_pipeline, p_rows_written, p_ok, p_error) $$;
+
 -- ⚠ FIXTURES FOR THE WATERMARK GATE (added 2026-08-30 with migration
 -- 20260830222057). `refresh_mv_pack_ev_latest` is no longer a one-liner: it
 -- reads a watermark from `pack_ev_history` and a state row, and SKIPS the
@@ -200,9 +208,16 @@ CREATE OR REPLACE FUNCTION public.refresh_topshot_pack_rip_values()
  SET search_path TO 'public'
  SET statement_timeout TO '600s'
 AS $function$
-begin
-  refresh materialized view concurrently public.mv_topshot_pack_rip_values;
-end;
+DECLARE
+  v_started timestamptz := clock_timestamp();
+  v_rows    integer;
+BEGIN
+  REFRESH MATERIALIZED VIEW CONCURRENTLY public.mv_topshot_pack_rip_values;
+  SELECT count(*) INTO v_rows FROM public.mv_topshot_pack_rip_values;
+  PERFORM public.log_pipeline_run('topshot-pack-rip-values', v_started, v_rows, v_rows, 0, v_rows > 0,
+    CASE WHEN v_rows > 0 THEN NULL ELSE 'refreshed to 0 rows' END,
+    'nba-top-shot', NULL, NULL, jsonb_build_object('reads', 'get_pack_realized_ev_row, mv_topshot_pack_realized_ev'));
+END;
 $function$;
 -- <<< END verbatim refresh_topshot_pack_rip_values <<<
 
@@ -324,6 +339,10 @@ SELECT public.refresh_topshot_pack_rip_values();
 SELECT _assert_eq(
   (SELECT n::text FROM public.mv_topshot_pack_rip_values), '7',
   'refresh_topshot_pack_rip_values refreshes mv_topshot_pack_rip_values'
+);
+SELECT _assert_eq(
+  (SELECT string_agg(pipeline || ':' || rows_written || ':' || ok, ',') FROM public.__runs), 'topshot-pack-rip-values:1:true',
+  'refresh_topshot_pack_rip_values logs ONE ok run with the MV row count — the freshness gate of get_pack_realized_ev_row reads it'
 );
 SELECT _assert_eq(
   (SELECT count(*)::text FROM (SELECT n FROM public.sets_summary UNION ALL SELECT n FROM public.mv_pack_ev_latest UNION ALL SELECT n FROM public.mv_allday_pack_realized UNION ALL SELECT n FROM public.mv_allday_pack_sales_agg UNION ALL SELECT n FROM public.mv_topshot_pack_sales_agg UNION ALL SELECT n FROM public.mv_topshot_edition_median_180d UNION ALL SELECT n FROM public.mv_topshot_set_play_catalog) q WHERE q.n = 7), '0',
@@ -478,6 +497,24 @@ EXCEPTION WHEN OTHERS THEN
   PERFORM _assert_eq(SQLSTATE, '55000',
     'a CONCURRENT refresh without a unique index fails 55000 — the index is a hard dependency');
 END $probe$;
+
+-- ⚠ THE SAME COUPLING THROUGH THE RIP-VALUES WRAPPER, which since 20261025170715 has a body (it logs a
+-- run). 20261025170047 briefly wrapped it in EXCEPTION WHEN OTHERS -> log ok=false and return: this probe
+-- would then read 'no error', and a broken refresh would sit in cron.job_run_details as `succeeded`.
+-- The failure must raise, and must log NOTHING (an ok row would open the precompute gate on a stale MV).
+DELETE FROM public.__runs;
+DROP INDEX public.mv_topshot_pack_rip_values_uq;
+DO $probe$
+BEGIN
+  PERFORM public.refresh_topshot_pack_rip_values();
+  PERFORM _assert_eq('no error', 'SQLSTATE 55000',
+    'dropping the unique index must break refresh_topshot_pack_rip_values, not be swallowed');
+EXCEPTION WHEN OTHERS THEN
+  PERFORM _assert_eq(SQLSTATE, '55000',
+    'refresh_topshot_pack_rip_values raises 55000 without its unique index — a failure is never swallowed');
+END $probe$;
+SELECT _assert_eq((SELECT count(*)::text FROM public.__runs), '0',
+  'a failed rip-values refresh logs no run, so the precompute gate stays shut');
 
 -- ⚠ And the mirror: the wrapper that does NOT use CONCURRENTLY is unaffected by
 -- having no unique index at all. That is why it can be the one exception.

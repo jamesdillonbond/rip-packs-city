@@ -2784,7 +2784,7 @@ const PINS = [
     fn: "refresh_topshot_pack_rip_values",
     test: "supabase/tests/mv_refresh_wrappers.sql",
     migration:
-      "supabase/migrations/20260816080000_audit_20260816_snapshot_remaining_scheduled_mv_and_rollup_writers.sql",
+      "supabase/migrations/20261025170715_audit_20261025_rip_values_refresh_failure_raises_instead_of_being_swallowed.sql",
   },
   {
     fn: "refresh_topshot_edition_median",
