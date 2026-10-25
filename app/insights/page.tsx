@@ -282,7 +282,7 @@ const CARDS: Card[] = [
     eyebrow: "Live",
     title: "Top Sales — Whale Watch",
     blurb:
-      "The biggest sales of the week across Top Shot and NFL All Day, ranked by price — with who bought and who sold each one. Top Shot's activity feed shows the trade; we name the whales on both sides.",
+      "The biggest sales of the week across every collection we track, ranked by price — with who bought and who sold each one. Top Shot's activity feed shows the trade; we name the whales on both sides.",
     cta: "Open top sales",
     available: true,
   },

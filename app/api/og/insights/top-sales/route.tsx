@@ -112,7 +112,7 @@ export async function GET(req: NextRequest) {
             maxWidth: 1000,
           }}
         >
-          The biggest recent sales across Top Shot and All Day — and who bought and sold each one.
+          The biggest recent sales across every collection we track — and who bought and sold each one.
         </div>
 
         <div style={{ marginTop: 28, display: "flex", flexDirection: "column", gap: 12 }}>
