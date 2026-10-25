@@ -226,13 +226,27 @@ export function fmvBasisText({
   return null
 }
 
-/** Muted basis sub-line for an FMV value. Renders nothing when there's no basis to show. */
+/**
+ * Muted basis sub-line for an FMV value. Renders nothing when there's no basis to show.
+ *
+ * DECIDED 2026-10-25 (#209, under Trevor's delegation "make any decisions you can
+ * based upon what's best for RPC long term and for our users"): a price with NO sale in
+ * 30 days and NO live ask used to render NOTHING here — the one place the 08-01
+ * "disclose basis, platform-wide" amendment had nothing to say, and exactly where the
+ * price rests on a months-old sale. `daysSinceSale` (the TRUE age, advanced to now by
+ * the caller) now renders "last sale 73d ago". A date fact, like "from asks" — never the
+ * STALE tier word, so the 07-11 no-tier rule holds.
+ */
 export function FmvBasis(props: {
   confidence: string | null | undefined
   salesCount30d: number | null | undefined
   ask: number | null | undefined
+  daysSinceSale?: number | null
 }) {
-  const text = fmvBasisText(props)
+  const facts = fmvBasisText(props)
+  const d = props.daysSinceSale
+  const lastSale = !facts && typeof d === "number" && Number.isFinite(d) && d >= 0 ? `last sale ${d}d ago` : null
+  const text = facts ?? lastSale
   // Ask-derived disclosure: this FMV is a discount on one seller's asking price,
   // not a market price. Plain words only — never the confidence enum.
   const basis = fmvBasis(props.confidence)

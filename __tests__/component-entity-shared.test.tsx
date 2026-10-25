@@ -137,6 +137,26 @@ describe("_shared formatters", () => {
     expect(bare.container.textContent).toBe("from asks")
   })
 
+  // #209, decided 2026-10-25: a price with no 30-day sale and no ask states its last
+  // sale's age — a fact, never the tier word. Only when nothing else backs it.
+  it("FmvBasis states the last sale's age only when there is no other basis, and never the tier", () => {
+    const bare = render(<FmvBasis confidence="STALE" salesCount30d={0} ask={null} daysSinceSale={73} />)
+    expect(bare.container.textContent).toBe("last sale 73d ago")
+    expect(bare.container.textContent).not.toMatch(/stale/i)
+    cleanup()
+
+    // A sales count or an ask is the basis — the age is not added beside it.
+    const sales = render(<FmvBasis confidence="MEDIUM" salesCount30d={3} ask={null} daysSinceSale={4} />)
+    expect(sales.container.textContent).toBe("3 sales (30d)")
+    cleanup()
+    const ask = render(<FmvBasis confidence="ASK_ONLY" salesCount30d={0} ask={45} daysSinceSale={200} />)
+    expect(ask.container.textContent).not.toContain("last sale")
+    cleanup()
+
+    // Unknown age -> nothing (unknown is not "0 days").
+    expect(render(<FmvBasis confidence="STALE" salesCount30d={0} ask={null} daysSinceSale={null} />).container.firstChild).toBeNull()
+  })
+
   it("TierBadge renders nothing without a tier and uses the label override when given", () => {
     expect(render(<TierBadge tier={null} />).container.firstChild).toBeNull()
     cleanup()

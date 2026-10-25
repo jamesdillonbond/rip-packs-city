@@ -86,6 +86,7 @@ import {
   type PaniniEditionSales,
 } from "@/lib/panini/edition-market"
 import { accentText } from "@/lib/accent-text"
+import { staleTouchDaysSinceSale } from "@/lib/fmv-stale-touch"
 
 export const revalidate = 600
 export const dynamicParams = true
@@ -774,6 +775,17 @@ export default async function EditionPage(
     ? (paniniAsk?.lowAskUsd ?? null)
     : (highOffer?.low_ask ?? fmv?.cross_market_ask ?? null)
   const askLabel = ASK_LABEL[collection] ?? "Floor ask"
+  // The edition's TRUE days since its last sale. `days_since_sale` is stamped when the
+  // snapshot is computed, so read raw it understates the age by however long ago that
+  // was; advance it to now with the same helper the stale re-stamp uses (2026-10-25).
+  const daysSinceLastSale = fmv
+    ? staleTouchDaysSinceSale({ computed_at: fmv.computed_at, days_since_sale: fmv.days_since_sale }, new Date())
+    : null
+  // #209 (decided 2026-10-25): a price with no sale in 30 days and no live ask states
+  // how old its last sale is — the fact, never the internal tier word.
+  // The AGE is the evidence (> 30 d means no sale in the 30-day window), not the count:
+  // Panini tracks no 30-day count at all, so a null there must never read as "no recent sale".
+  const showLastSaleAge = !isPanini && !askValue && !fmv?.sales_count_30d && daysSinceLastSale != null && daysSinceLastSale > 30
   // ⚠ WHEN DID WE LAST CONFIRM THAT ASK? The cell below rendered a bare number
   // with no age while its NEIGHBOUR — the best-offer cell, twenty lines down —
   // already stamped `relTime(highOffer.updated_at)`. Same row, same object, same
@@ -954,6 +966,7 @@ export default async function EditionPage(
           is worth ~{fmtUsd(fmv?.fmv_usd ?? null)} (FMV) on {collectionDisplayName(collection)}
           {askValue ? <>, with the lowest ask at {fmtUsd(askValue)}</> : fmv?.floor_price_usd ? <>, with a recent-sale low of {fmtUsd(fmv?.floor_price_usd ?? null)}</> : null}
           {fmv?.sales_count_30d ? <> and {fmtCount(fmv?.sales_count_30d ?? null)} {fmv?.sales_count_30d === 1 ? "sale" : "sales"} in the last 30 days</> : null}
+          {showLastSaleAge ? <>; its last sale was {daysSinceLastSale} {daysSinceLastSale === 1 ? "day" : "days"} ago</> : null}
           .{" "}
           <Link href="/legal/fmv-methodology" style={{ color: "var(--rpc-text-muted)", textDecoration: "none" }}>How FMV is calculated →</Link>
         </p>
@@ -972,6 +985,7 @@ export default async function EditionPage(
                 confidence={fmv?.confidence ?? null}
                 salesCount30d={fmv?.sales_count_30d ?? null}
                 ask={askValue}
+                daysSinceSale={showLastSaleAge ? daysSinceLastSale : null}
               />
               {/* 2026-10-14: "what does the confidence word mean", "does FMV
                   take special serials into account", "how do you handle stale
@@ -1090,7 +1104,7 @@ export default async function EditionPage(
           <StatCell
             label="30d Sales"
             value={fmtCount(fmv?.sales_count_30d ?? null)}
-            sub={fmv?.days_since_sale !== null && fmv?.days_since_sale !== undefined ? `${fmv.days_since_sale}d since last` : undefined}
+            sub={daysSinceLastSale != null ? `${daysSinceLastSale}d since last` : undefined}
           />
         )}
       </section>
