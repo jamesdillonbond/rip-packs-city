@@ -1,8 +1,15 @@
 # Staged: Recent-Low Totals, parts B and C (2026-10-25)
 
 Part A (`supabase/migrations/20261025221903_…_a.sql`) is live: `recent_low_usd` plus the set and
-player header totals. These two parts were **not applied**. The MCP `apply_migration` for part B
-stopped on a confirmation prompt nobody answered, and no change landed.
+player header totals. These two parts were **not applied**. Tracked as known-issues #211.
+
+The MCP `apply_migration` for part B stopped on a confirmation prompt nobody answered, **twice**
+(about 3:20 and 4:15 PM PT on 10-25). Nothing landed either time: the md5s were unchanged and there was
+no `schema_migrations` row. The likely trigger is the `DELETE FROM series_detail_rollup` inside
+`refresh_series_detail_rollup`; the server asks before running a body it reads as destructive.
+**Try part C first** (no DELETE). For part B, either have someone at the session to approve the
+prompt, or split it into `get_series_detail` alone (no DELETE) and the rollup refresh. Bases were
+re-checked live at about 4:15 PM PT 10-25: all four functions still match the md5 guards.
 
 | file | what it is |
 |---|---|

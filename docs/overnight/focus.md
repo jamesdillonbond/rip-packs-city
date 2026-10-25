@@ -4,6 +4,22 @@
 
 **Rewrite rule for whoever edits this next: a focus file STEERS the next night, it is not an archive.** If a section is describing something that shipped more than ~a week ago and is not still a live trap, move it to the ledger and delete it here. A stale steer is worse than no steer.
 
+## STEER — added 2026-10-25 ~4:22 PM PT (Claude Code cloud, session_01JDr9dRaYirH2cYvS9KQw94, thread close) — production HTML sweeps: expected readings + ONE open item
+
+- **What changed (ledger 10-25 ~1:46 → ~3:30 PM PT):**
+  - The skip-link anchor renders (a server component had read a constant from a `"use client"` module; new guard `server-never-reads-a-value-from-a-client-module`).
+  - Edition AND moment Activity tables tag BUYBACK purchases (`get_edition_recent_sales` `20261025211314`, `get_moment_detail` `20261025215633`; shared copy `lib/entity/buyback-copy.ts`).
+  - Squeeze "none held" for system-held editions; Pack Reality names all three high-variance triggers; Top Sales copy names every collection.
+  - Set + player Recent-Low Totals and entity tiles ignore a "recent low" above 3x FMV (`recent_low_usd`, `20261025221903`).
+  - R61 closed: GHA crons stay as asked, commented.
+- **Expected, not anomalies:**
+  - A BUYBACK tag on ~2k Top Shot sales a month (785 editions in 30 d) beside counts that exclude them.
+  - A tile showing "—" where it used to show a "Recent Low" far above FMV.
+  - Set/player Recent-Low Totals dropping where a carried-forward ask was summed (2025 Rookie Ultimates $79,070 → $23,770).
+  - Squeeze "none held" on ~35 editions.
+- **⚠ OPEN — known-issues #211, do this first if you can apply migrations:** parts B (series totals + the rollup refresh) and C (team totals + cheapest entry) are staged in `docs/audits/staged-2026-10-25-recent-low-parts-b-c/` with landing steps. Part B's apply stopped twice on an MCP confirmation prompt nobody answered (likely the `DELETE` in the rollup body). Try C first; apply B with Trevor present. Until then, series and team pages still sum the raw floor. If they disagree with the set/player pages for the same editions, it is this, not a regression.
+- **A regression would look like:** a BUYBACK tag on a row whose buyer is NOT in `buyback_wallets`, or none on one that is (the RPC predicate is the `sales_market` one, collection-scoped). Or `[function(){throw Error(...)}]` back in any page's inline `<style>`: someone re-imported a constant from a client module, and the guard reds on that.
+
 ## STEER — added 2026-10-25 ~12:50 PM PT (Claude Code cloud, session_01JDr9dRaYirH2cYvS9KQw94, thread close) — expected readings from the 10-25 latency / alert / concierge-budget thread
 
 - **What changed (ledger 10-25 ~9:40 AM → 12:50 PM PT, 9 entries):** 4xx-arm idle≠blocked (`20261025164733`); pack page EV row reads `mv_topshot_pack_rip_values` while fresh (`20261025170047` + `20261025170715`); `idx_pack_purchases_dist_coll_nft` (`20261025173631`); concierge tool budgets now cover each tool's own fetch abort (3 code pushes, guard `concierge-tool-budget-covers-its-board-fetch`); `resolve-topshot-stubs` abort 110 s under its 120 s wall.
