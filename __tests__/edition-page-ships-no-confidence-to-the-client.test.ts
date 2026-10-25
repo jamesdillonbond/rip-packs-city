@@ -11,6 +11,8 @@ import { stripComments } from "../scripts/lib/strip-comments.mjs"
 //
 // ⚠ Narrow by design: a general "no tier inside any client prop" walk would need type
 // information. If you pass FMV rows to ANOTHER client component, null `confidence` there too.
+// DECIDED 2026-10-25 not to sweep other boards: they mostly load rows client-side from public JSON
+// APIs that return `confidence` by rule 3, so their page source adds no user-facing exposure.
 
 const SRC = stripComments(readFileSync("app/(collections)/[collection]/edition/[slug]/page.tsx", "utf8"))
 
