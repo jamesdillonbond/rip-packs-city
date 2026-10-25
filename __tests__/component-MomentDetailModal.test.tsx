@@ -171,8 +171,8 @@ describe("MomentDetailModal — financial cells + provenance branches", () => {
     expect(text).toContain("$1200.00") // loanPrincipal (USDC 1:1 USD)
     // the wallet links to its analytics page
     const links = Array.from(container.querySelectorAll("a")).map((a) => a.getAttribute("href"))
-    // Signed out in this harness → the public wallet page (2026-10-25).
-    expect(links).toContain("/share/0xbd94cade097e50ac")
+    // A loan default is a LOAN context → the loan profile (lib/analytics/wallet-href.ts).
+    expect(links).toContain("/analytics/wallets/0xbd94cade097e50ac")
   })
 })
 

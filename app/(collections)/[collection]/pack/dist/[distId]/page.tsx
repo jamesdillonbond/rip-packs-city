@@ -94,7 +94,7 @@ import { pickTierCounts, observedOpensFloorLabel } from "@/lib/pack-dist/tier-co
 import { summarizeDegraded, boardStatus } from "@/lib/insights/board-status"
 import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
 import { accentText } from "@/lib/accent-text"
-import { walletProfileHref } from "@/lib/analytics/wallet-href"
+import { marketWalletHref } from "@/lib/analytics/wallet-href"
 
 export const revalidate = 600
 export const dynamicParams = true
@@ -1972,10 +1972,9 @@ function ShortWallet({ address, name }: { address: string | null; name?: string 
   const trunc = address.length > 12 ? `${address.slice(0, 6)}…${address.slice(-4)}` : address
   return (
     <Link
-      // A server-rendered, cached public page cannot know the reader, so it links
-      // the PUBLIC wallet page; /analytics/wallets/* is sign-in only
-      // (lib/analytics/wallet-href.ts, 2026-10-25).
-      href={walletProfileHref(address.toLowerCase(), false)}
+      // A pack buyer / seller is a MARKET context: the holdings card, not the
+      // loan profile (lib/analytics/wallet-href.ts, 2026-10-25).
+      href={marketWalletHref(address.toLowerCase())}
       title={name ? `${name} · ${address}` : address}
       style={{ color: "var(--rpc-text-primary)", textDecoration: "none", borderBottom: "1px dotted var(--rpc-border-hover)" }}
     >

@@ -35,13 +35,13 @@ const prefetchOf = (c: HTMLElement, label: string) =>
 afterEach(() => cleanup())
 
 describe("TopNav — a signed-out visitor does not preload sign-in-only pages", () => {
-  it("anon: no /analytics link is rendered at all (so nothing can prefetch it); public links keep the default", async () => {
+  // 2026-10-25: /analytics is public now and the link is shown to everyone; an
+  // anonymous visitor still does not need it preloaded on every page view.
+  it("anon: the Analytics link is shown but not prefetched; public links keep the default", async () => {
     authState.user = null
     const { container } = render(<TopNav />)
     await waitFor(() => {})
-    expect(prefetchOf(container, "Analytics")).toBeUndefined()
-    const hrefs = Array.from(container.querySelectorAll("a")).map((a) => a.getAttribute("href"))
-    expect(hrefs).not.toContain("/analytics")
+    expect(prefetchOf(container, "Analytics")).toBe("false")
     expect(prefetchOf(container, "Blog")).toBe("default")
   })
 

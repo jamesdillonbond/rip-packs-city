@@ -23,8 +23,10 @@
 //     intersected with lib/seo `PUBLIC_TAB_PAGES`. Tabs with no PAGE_META entry
 //     (pack-sniper / challenges / hot-floors) are excluded because they
 //     canonicalise to the collection root rather than to themselves.
-//     ⚠ The /analytics/** SECTION (a different surface from the per-collection
-//     /{collection}/analytics TAB) really is auth-gated and stays unlisted.
+//     The /analytics/** SECTION (a different surface from the per-collection
+//     /{collection}/analytics TAB) was auth-gated and unlisted until 2026-10-25;
+//     it is anon-public now and its hub / API / methodology pages are listed in
+//     STATIC_SITEMAP_PAGES.
 //     __tests__/sitemap-urls-are-anon-public.test.ts cross-checks every emitted
 //     URL against proxy.ts `isPublicPath` in BOTH directions, so the claim in
 //     this comment can no longer drift back into unverified prose.
@@ -101,6 +103,12 @@ export const STATIC_SITEMAP_PAGES: ReadonlyArray<{
   { path: '/about',                            changeFrequency: 'monthly', priority: 0.5 },
   // 2026-10-24: help, FAQ and contact (app/help/page.tsx).
   { path: '/help',                             changeFrequency: 'monthly', priority: 0.4 },
+  // 2026-10-25: the /analytics section is anon-public (proxy.ts). Its hub, the
+  // public FMV API doc and the methodology index are advertised; per-wallet and
+  // per-set detail pages are not (an unbounded population, reached by links).
+  { path: '/analytics',                        changeFrequency: 'daily',   priority: 0.6 },
+  { path: '/analytics/api',                    changeFrequency: 'monthly', priority: 0.5 },
+  { path: '/analytics/methodology',            changeFrequency: 'monthly', priority: 0.4 },
   // 2026-09-28: the cross-collection Sniper hub (app/sniper/page.tsx).
   { path: '/sniper',                           changeFrequency: 'daily',   priority: 0.7 },
   // 2026-09-28: the cross-collection Market hub (app/market/page.tsx).

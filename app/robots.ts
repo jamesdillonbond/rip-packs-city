@@ -79,6 +79,11 @@ export default function robots(): MetadataRoute.Robots {
           '/profile/settings',
           '/auth/',
           '/share/',          // share pages are user-scoped one-off renders
+          // 2026-10-25: /analytics/** became anon-public. Its per-wallet loan
+          // profiles are user-scoped like /share/ and read all zeros for any
+          // wallet with no Flowty loans, so they stay out of the crawl. The
+          // hub, its boards and /analytics/sets/* stay crawlable.
+          '/analytics/wallets/',
           // user-scoped query-param permutations
           '/*?wallet=',
           '/*?owner=',

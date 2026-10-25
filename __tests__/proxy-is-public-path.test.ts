@@ -396,8 +396,11 @@ describe("static-extension suffix must not bypass the gate", () => {
   const GATED: ReadonlyArray<readonly [string, string]> = [
     ["/topshot", "collection root — the confirmed live exposure"],
     ["/allday", "collection root"],
-    ["/analytics/wallets/0x1234567890abcdef", "wallet analytics"],
-    ["/analytics/sets/12345", "set analytics"],
+    // 2026-10-25: the two /analytics rows left here — /analytics/** is anon-public now,
+    // so they were no longer gated in their bare form. Replaced with two verified-gated
+    // signed-in surfaces.
+    ["/my-teams", "followed-teams hub (signed-in)"],
+    ["/alerts", "deal alerts (signed-in)"],
     ["/api/mcp/keys/3f8b2c1a-1111-4222-8333-444455556666", "MCP API key management"],
     // ⚠ This row was `/api/analytics/sets/12345` and it was WRONG — that path is
     // PUBLIC in its bare form (the 2026-07-17 soft launch un-gated the whole

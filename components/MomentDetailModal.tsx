@@ -6,8 +6,7 @@ import { fmvBasis } from "@/lib/fmv-basis";
 import { classifySerial } from "@/lib/serials/fun-patterns";
 import { trackOutboundClick } from "@/lib/track-click";
 import { accentText } from "@/lib/accent-text";
-import { useIsSignedIn } from "@/lib/hooks/useIsSignedIn";
-import { walletProfileHref } from "@/lib/analytics/wallet-href";
+import { loanWalletHref } from "@/lib/analytics/wallet-href";
 
 // Was HALF migrated: the three UFC tiers read tokens while the six Flow tiers
 // were still literals -- and literals that disagreed with every other surface
@@ -145,7 +144,6 @@ interface SerialBio {
 }
 
 export default function MomentDetailModal({ moment, marketplaceSource, dapperUrl, collectionUrlSlug, onClose }: MomentDetailModalProps) {
-  const signedIn = useIsSignedIn();
   const [hovered, setHovered] = useState(false);
   const [bio, setBio] = useState<SerialBio | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -535,7 +533,7 @@ export default function MomentDetailModal({ moment, marketplaceSource, dapperUrl
                 <div>
                   Defaulted by{" "}
                   <a
-                    href={walletProfileHref(moment.sourceAddress, signedIn)}
+                    href={loanWalletHref(moment.sourceAddress)}
                     style={{ color: "var(--rpc-text-primary)", fontFamily: "var(--font-mono)", textDecoration: "underline" }}
                   >
                     {truncateAddress(moment.sourceAddress)}

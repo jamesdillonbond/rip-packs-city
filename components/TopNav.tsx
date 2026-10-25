@@ -25,11 +25,9 @@ const LINKS: TopNavLink[] = [
   { label: "Blog", href: "/blog", matchPrefix: "/blog" },
 ]
 
-// "Analytics" (/analytics) is sign-in only — proxy.ts does not list it in
-// isPublicPath, so a signed-out visitor who clicked it got a 307 to /login
-// (platform review 2026-10-11, M7). It is shown to signed-in users only, like
-// My Teams and Alerts below; it is NOT pointed anywhere else — the public
-// per-collection analytics live under each collection's own tab.
+// "Analytics" (/analytics) is PUBLIC since 2026-10-25 (proxy.ts isPublicPath).
+// From 2026-10-11 (platform review M7) to 10-25 it was sign-in only and so shown
+// to signed-in users only; it is now in the nav for everyone.
 const ANALYTICS: TopNavLink = { label: "Analytics", href: "/analytics", matchPrefix: "/analytics" }
 
 // "My Teams" is the auth-gated fan hub (Team Hub Phase 5), so it is only shown
@@ -60,7 +58,7 @@ export default function TopNav() {
     }
   }, [])
 
-  const links = signedIn ? [...LINKS, ANALYTICS, MY_TEAMS, ALERTS] : LINKS
+  const links = signedIn ? [...LINKS, ANALYTICS, MY_TEAMS, ALERTS] : [...LINKS, ANALYTICS]
 
   return (
     // 2026-10-03: between 768 and ~1000 px the row squeezed this nav and the
@@ -88,12 +86,9 @@ export default function TopNav() {
           <Link
             key={l.href}
             href={l.href}
-            // 2026-10-04: /analytics is sign-in only, so for a signed-out visitor
-            // Next's viewport prefetch fetched it on every page and got 307 → /login
-            // (seen in an anonymous Playwright crawl). 2026-10-11: the link itself is
-            // now signed-in only (ANALYTICS above), so an anonymous page never renders
-            // it and nothing is left to suppress; the guard stays as belt-and-braces
-            // should the link ever be shown to anon again.
+            // 2026-10-04: Next's viewport prefetch of /analytics ran on every page.
+            // The page is public since 2026-10-25, but a signed-out visitor still
+            // does not need it preloaded on every page view — kept off for anon.
             prefetch={isAnalytics && !signedIn ? false : undefined}
             className={
               "rounded-md md:px-1 lg:px-2.5 py-1.5 whitespace-nowrap transition-colors font-medium md:tracking-normal lg:tracking-wide " +

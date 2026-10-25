@@ -99,17 +99,22 @@ For <collection> in nba-top-shot, nfl-all-day, laliga-golazos, ufc, candy-mlb, p
 - /profile/<username> — public collector profile: trophy case, bio, saved-wallet summaries
 - /share/<wallet> — a wallet's collection card: total FMV, moment count, badges
 
+## Analytics (public, no signup)
+- /analytics — the cross-collection analytics hub: sales, listings, wallets, packs, loans
+- /analytics/api — the public FMV API and its documentation
+- /analytics/methodology — how the analytics figures are computed
+
 ## Reading
 - /blog — Field Notes: long-form analysis (RSS at /feed.xml)
 - /blog/permanent-moments-ipfs — what Top Shot's IPFS pinning actually guarantees
 - /blog/pinnacle-star-wars-day-2026 — what moved on Disney Pinnacle for Star Wars Day 2026
 - /blog/premium-chance-hit-vs-chance-hit — what a Top Shot Premium Chance Hit pack contains vs a Chance Hit pack, per Top Shot's published pack contents
-- /legal/fmv-methodology — how FMV is computed and what each confidence tier means
+- /legal/fmv-methodology — how FMV is computed
 - /about — who builds this and why
 - /privacy, /terms
 
 ## FMV, briefly
-FMV is a weighted average of recent on-chain sales with recency decay and outlier filtering. Confidence tiers: HIGH (multiple recent sales), MEDIUM (sparse data), LOW (single sale or stale). Serial premiums apply to #1, jersey-match and perfect-mint serials. Full method: /legal/fmv-methodology. Every price on an edition page carries its confidence and the age of the sales behind it.
+FMV is a weighted average of recent on-chain sales with recency decay and outlier filtering. Serial premiums apply to #1, jersey-match and perfect-mint serials. Full method: /legal/fmv-methodology.
 
 ## Quick answers
 - "What is my Top Shot / All Day / Pinnacle collection worth?" — /insights/account-value, or paste a wallet on the home page for a /share/<wallet> card. No account needed.

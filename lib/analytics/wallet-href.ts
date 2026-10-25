@@ -1,21 +1,26 @@
-// Where a wallet name or address links to, by who is looking (2026-10-25).
+// Where a wallet name or address links to, by CONTEXT (2026-10-25).
 //
-// /analytics/** is a SIGN-IN area (proxy.ts; the 10-11 platform review M7 took its
-// nav link away from signed-out readers rather than leave "a visible link that 307s
-// on click — the same dead end one step later"). Public pages still linked wallet
-// names into it — the per-collection Analytics tab's tables, Top Buyers, the moment
-// modal's "Defaulted by", the pack page's buyer/seller cells — so a signed-out reader
-// who clicked a wallet landed on the login page. Measured 2026-10-25 by a signed-out
-// mobile walk of production.
+// RPC has two per-wallet pages and they answer different questions:
+//   • /share/<wallet>              — the holdings card: what the wallet owns and its
+//                                     value across collections. The right page for a
+//                                     buyer, a seller, a whale, a pack opener.
+//   • /analytics/wallets/<wallet>  — the Flowty LOAN profile: borrower / lender stats,
+//                                     loan activity, position transfers. For a wallet
+//                                     with no loans it is a page of zeros
+//                                     (flowty_analytics_wallet_detail returns zeroed
+//                                     roles for any address — measured 2026-10-25).
 //
-// A signed-in reader keeps the full wallet profile; everyone else gets the public
-// wallet page, /share/<wallet>, which reads the same public holdings.
+// Until 2026-10-25 market tables (the Analytics tab's whales, Top Buyers, the pack
+// page's buyers and sellers) linked the loan profile — which was also sign-in only
+// then, so a signed-out click landed on /login. Both pages are public now; the link
+// follows what the reader is looking at.
 
-export const WALLET_PROFILE_PREFIX = "/analytics/wallets/"
-export const PUBLIC_WALLET_PREFIX = "/share/"
+/** A wallet seen in a MARKET context (sales, buyers, sellers, holders). */
+export function marketWalletHref(address: string): string {
+  return `/share/${encodeURIComponent(address)}`
+}
 
-/** The wallet page this reader can open. `signedIn` unknown (loading) → the public page. */
-export function walletProfileHref(address: string, signedIn: boolean): string {
-  const a = encodeURIComponent(address)
-  return signedIn ? `${WALLET_PROFILE_PREFIX}${a}` : `${PUBLIC_WALLET_PREFIX}${a}`
+/** A wallet seen in a LOAN context (borrower, lender, defaulted by). */
+export function loanWalletHref(address: string): string {
+  return `/analytics/wallets/${encodeURIComponent(address)}`
 }

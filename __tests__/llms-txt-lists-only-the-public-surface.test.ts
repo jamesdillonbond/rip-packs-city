@@ -55,7 +55,7 @@ describe("llms.txt names a real population", () => {
 
   it("the instrument can see a gated path (control)", () => {
     expect(isPublicPath("/dashboard", "GET")).toBe(false)
-    expect(isPublicPath("/analytics", "GET")).toBe(false)
+    expect(isPublicPath("/my-teams", "GET")).toBe(false)
     expect(isPublicPath("/nba-top-shot/badges", "GET")).toBe(false)
   })
 })
@@ -66,7 +66,11 @@ describe("BAN: no path in llms.txt is auth-gated per proxy.ts isPublicPath", () 
   })
 
   it("the old gated pointers are gone by name", () => {
-    expect(TEXT).not.toMatch(/^.*\/analytics(\/|\b).*$/m)
+    // /analytics/** was here until 2026-10-25, when it was gated. It is anon-public
+    // now (proxy.ts) and listed; the per-path isPublicPath check above still holds
+    // every listed /analytics path to that, so a re-gate reds this file.
+    expect(TEXT).toMatch(/^- \/analytics /m)
+    expect(isPublicPath("/analytics", "GET")).toBe(true)
     expect(TEXT).not.toMatch(/\/dashboard\b/)
     // The wallet-paste Collection tab is a tool with no indexable content of its own.
     expect(TEXT).not.toMatch(/\/[a-z-]+\/collection\b/)

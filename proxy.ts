@@ -975,6 +975,23 @@ export function isPublicPath(pathname: string, method: string): boolean {
     return true
   }
 
+  // /analytics and /analytics/** — anon-public 2026-10-25 (Trevor: "Do what you think is
+  // best" on the question this section raised). It was the last read-only surface left
+  // behind the 2026-05-31 sign-up funnel after the 07-17 un-gating of the feature tabs, and
+  // the gate contradicted the product: its /analytics/api page documents a FREE PUBLIC FMV
+  // API that a visitor had to sign in to read; the pages carry SEO metadata and JSON-LD;
+  // public pages linked wallet names into /analytics/wallets/*. Anon-safety: NO new API
+  // surface — every endpoint these pages call (the /api/analytics subtree, /api/fmv) is
+  // already anon-public and audited (aggregate market + loan-book data; wallet pages read
+  // public on-chain activity by address). Wallet profile pages are ISR-cached (revalidate
+  // 600) per address, so a crawl costs one render per address per 10 min. GET/HEAD only.
+  if (
+    (method === "GET" || method === "HEAD") &&
+    (pathname === "/analytics" || pathname.startsWith("/analytics/"))
+  ) {
+    return true
+  }
+
   // /<collection>/packs/simulator/<distId> — the per-row "Simulate" CTA, anon-public 2026-10-04.
   // The public /insights/pack-sniper board (every row) and the public /<collection>/packs tab
   // (its table) both link here, and an anonymous click got 307 → /login: a link crawl of the

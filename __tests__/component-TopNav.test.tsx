@@ -35,6 +35,7 @@ vi.mock("@/lib/auth/supabase-client", () => ({
 }))
 
 import TopNav from "@/components/TopNav"
+import { isPublicPath } from "@/proxy"
 import { publishedCollections } from "@/lib/collections"
 
 const labels = (container: HTMLElement) =>
@@ -55,9 +56,10 @@ describe("TopNav — auth-gated links", () => {
     const ls = labels(container)
     expect(ls).toContain("Top Shot")
     expect(ls).toContain("Blog")
-    // /analytics is sign-in only (not in proxy.ts isPublicPath): an anonymous
-    // visitor must not be offered a link that only redirects them to /login.
-    expect(ls).not.toContain("Analytics")
+    // 2026-10-25: /analytics is anon-public (proxy.ts isPublicPath), so it is in
+    // the nav for everyone. My Teams and Alerts stay signed-in only.
+    expect(ls).toContain("Analytics")
+    expect(isPublicPath("/analytics", "GET")).toBe(true)
     expect(ls).not.toContain("My Teams")
     expect(ls).not.toContain("Alerts")
     // 2026-09-06: the collection links are DERIVED from publishedCollections()
@@ -65,10 +67,10 @@ describe("TopNav — auth-gated links", () => {
     // per published collection + Blog. UFC keeps its nav label.
     expect(ls).toContain("Candy")
     expect(ls).toContain("UFC")
-    expect(ls.length).toBe(publishedCollections().length + 1)
-    // And nothing anon sees points at /analytics under any label.
-    const hrefs = Array.from(container.querySelectorAll("a")).map((a) => a.getAttribute("href"))
-    expect(hrefs).not.toContain("/analytics")
+    expect(ls.length).toBe(publishedCollections().length + 2)
+    // Every link an anonymous visitor sees opens without a sign-in wall.
+    const hrefs = Array.from(container.querySelectorAll("a")).map((a) => a.getAttribute("href")).filter((h): h is string => !!h && h.startsWith("/"))
+    for (const h of hrefs) expect(isPublicPath(h.split("?")[0], "GET"), `${h} must be public`).toBe(true)
   })
 
   it("adds Analytics + My Teams + Alerts once the user is signed in", async () => {
