@@ -224,10 +224,46 @@ describe("check_wallet_squeeze", () => {
 })
 
 describe("compare_pack_value", () => {
-  it("judges 'worth buying now' by EV-vs-current-price, not the retail-anchored site ratio", async () => {
-    // A sold-out pack: only buyable at the secondary ask ($100), EV $80 -> the
-    // buyable ratio is 0.8 (NOT positive) even though the retail-based site
-    // value_ratio (1.6) looks great. Pins the 2026-07-11 buyable-economics rule.
+  // ⛔ 2026-10-25: pack_table_rows.pack_ev is EV MINUS the price and value_ratio is
+  // gross ÷ the live ask. The tool divided the NET figure by the price, so the live
+  // "WNBA Top Shot This: Jonquel Jones" — EV $19.12 at a $12.50 ask, the packs
+  // page's 1.53× and is_positive_ev — went to the user as 0.53×, "not +EV".
+  // The fixtures below are shaped like the real view: gross_ev, net pack_ev.
+  it("the live defect: a pack the packs page marks +EV at the ask is +EV here too", async () => {
+    install({
+      pack_table_rows: {
+        data: [
+          {
+            collection_slug: "nba-top-shot", collection_name: "NBA Top Shot", title: "WNBA Top Shot This: Jonquel Jones", tier: "fandom",
+            retail_price_usd: 10, primary_price: null, secondary_ask: 12.5, price_source: "secondary",
+            gross_ev: 19.12, pack_ev: 6.62, value_ratio: 1.53, ev_margin_pct: 53, is_positive_ev: true,
+            primary_available: false, secondary_available: true,
+          },
+        ],
+        error: null,
+      },
+    })
+    script("compare_pack_value", {})
+    await POST(post("which top shot packs are +EV right now?"))
+    const pack = ((toolResult() as { packs: Array<Record<string, unknown>> }).packs)[0]
+    expect(pack).toMatchObject({
+      current_price: 12.5,
+      expected_value_usd: 19.12,
+      ev_minus_price_usd: 6.62,
+      ev_vs_current_price_ratio: 1.53,
+      positive_ev_at_current_price: true,
+      packs_page_value_ratio: 1.53,
+      packs_page_says_positive_ev: true,
+    })
+    // The old field that invited "the site's ratio is retail-based" is gone.
+    expect(pack).not.toHaveProperty("site_value_ratio_retail_based")
+    expect(String((toolResult() as { note?: string }).note)).not.toMatch(/retail-based/)
+  })
+
+  it("judges 'worth buying now' by EV against the price the user would PAY, not a stale ratio", async () => {
+    // A sold-out pack buyable only at the secondary ask ($100), EV $80 → 0.8, NOT
+    // positive, even when the row's value_ratio (1.6, priced against an older basis)
+    // looks great. Pins the 2026-07-11 buyable-economics rule on gross EV.
     install({
       pack_table_rows: {
         data: [
@@ -240,7 +276,8 @@ describe("compare_pack_value", () => {
             primary_price: 50,
             secondary_ask: 100,
             price_source: "secondary",
-            pack_ev: 80,
+            gross_ev: 80,
+            pack_ev: 30,
             value_ratio: 1.6,
             is_positive_ev: true,
             primary_available: false,
@@ -258,11 +295,28 @@ describe("compare_pack_value", () => {
     expect(pack).toMatchObject({
       current_price: 100,
       price_source: "secondary",
-      pack_ev: 80,
+      expected_value_usd: 80,
+      ev_minus_price_usd: -20,
       ev_vs_current_price_ratio: 0.8,
       positive_ev_at_current_price: false,
-      site_value_ratio_retail_based: 1.6,
+      packs_page_value_ratio: 1.6,
     })
+  })
+
+  it("ranks by EV ÷ the buyable price, not by the row's value_ratio", async () => {
+    install({
+      pack_table_rows: {
+        data: [
+          { collection_slug: "nba-top-shot", title: "A", tier: "common", secondary_ask: 10, price_source: "secondary", gross_ev: 11, pack_ev: 1, value_ratio: 3, primary_available: false, secondary_available: true },
+          { collection_slug: "nba-top-shot", title: "B", tier: "common", secondary_ask: 10, price_source: "secondary", gross_ev: 20, pack_ev: 10, value_ratio: 2, primary_available: false, secondary_available: true },
+        ],
+        error: null,
+      },
+    })
+    script("compare_pack_value", {})
+    await POST(post("best pack?"))
+    const packs = (toolResult() as { packs: Array<Record<string, unknown>> }).packs
+    expect(packs.map((p) => p.pack)).toEqual(["B", "A"])
   })
 
   it("filters by the BUYABLE price after computing it (maxPrice under the secondary ask -> no_results)", async () => {
@@ -277,7 +331,8 @@ describe("compare_pack_value", () => {
             primary_price: 50,
             secondary_ask: 100,
             price_source: "secondary",
-            pack_ev: 200,
+            gross_ev: 400,
+            pack_ev: 300,
             value_ratio: 4,
             primary_available: false,
             secondary_available: true,

@@ -54,6 +54,20 @@ interface PacksFreshRow {
   first_seen_at: string | null
 }
 
+/**
+ * 2026-10-25: the routes' `pack_ev` is EV MINUS the price (pack_ev_latest:
+ * gross_ev − pack_price), but this table headed it "EV" beside Price and Ratio —
+ * "$9.99 · EV $289.01 · 29.93×" when the pulls are worth $299. The column shows
+ * the expected value itself, the figure the packs page calls EV; Ratio = EV ÷ price.
+ */
+export function grossEv(r: { pack_ev: number | null; pack_price: number | null; value_ratio: number | null }): number | null {
+  // A null ratio is the no-pool sentinel (gross 0, net 0) — adding the price back
+  // would print a $999 "EV" for a pack RPC could not value. Show "—".
+  if (r.pack_ev == null || r.pack_price == null || r.value_ratio == null) return null
+  const ev = Number(r.pack_ev) + Number(r.pack_price)
+  return Number.isFinite(ev) ? Math.round(ev * 100) / 100 : null
+}
+
 // The collections analytics_packs_summary covers (pack_ev_history / the Pinnacle
 // drop-EV arm). UFC Strike was listed here and always rendered "not yet
 // available": it has no packs at all (no "packs" page in the registry, 0
@@ -453,7 +467,7 @@ export default function PacksDashboard() {
                     <th scope="col" className="py-2.5 px-3">Collection</th>
                     <th scope="col" className="py-2.5 px-3">Pack</th>
                     <th scope="col" className="py-2.5 px-3 text-right">Price</th>
-                    <th scope="col" className="py-2.5 px-3 text-right">EV</th>
+                    <th scope="col" className="py-2.5 px-3 text-right" title="Expected value of the pack's pulls (FMV-weighted). Ratio = EV ÷ price.">EV</th>
                     <th scope="col" className="py-2.5 px-3 text-right">Ratio</th>
                     <th scope="col" className="py-2.5 px-3 text-right">Coverage</th>
                     <th scope="col" className="py-2.5 px-3 text-right">Unopened</th>
@@ -470,7 +484,7 @@ export default function PacksDashboard() {
                       </td>
                       <td className="py-3 px-3 text-[color:var(--rpc-text-primary)] font-medium">{r.pack_name ?? "—"}</td>
                       <td className="py-3 px-3 text-right text-[color:var(--rpc-text-secondary)] tabular-nums">{formatUsd(r.pack_price)}</td>
-                      <td className="py-3 px-3 text-right text-[color:var(--rpc-text-primary)] font-semibold tabular-nums">{formatUsd(r.pack_ev)}</td>
+                      <td className="py-3 px-3 text-right text-[color:var(--rpc-text-primary)] font-semibold tabular-nums">{formatUsd(grossEv(r))}</td>
                       <td
                         className="py-3 px-3 text-right tabular-nums font-semibold"
                         style={{ color: (r.value_ratio ?? 0) >= 1 ? "var(--rpc-success-text)" : "var(--rpc-text-muted)" }}
@@ -510,7 +524,7 @@ export default function PacksDashboard() {
                     <th scope="col" className="py-2.5 px-3">Collection</th>
                     <th scope="col" className="py-2.5 px-3">Pack</th>
                     <th scope="col" className="py-2.5 px-3 text-right">Price</th>
-                    <th scope="col" className="py-2.5 px-3 text-right">EV</th>
+                    <th scope="col" className="py-2.5 px-3 text-right" title="Expected value of the pack's pulls (FMV-weighted). Ratio = EV ÷ price.">EV</th>
                     <th scope="col" className="py-2.5 px-3 text-right">Ratio</th>
                     <th scope="col" className="py-2.5 px-3 text-right">Unopened</th>
                     <th scope="col" className="py-2.5 px-3 text-right">First seen</th>
@@ -527,7 +541,7 @@ export default function PacksDashboard() {
                       </td>
                       <td className="py-3 px-3 text-[color:var(--rpc-text-primary)] font-medium">{r.pack_name ?? "—"}</td>
                       <td className="py-3 px-3 text-right text-[color:var(--rpc-text-secondary)] tabular-nums">{formatUsd(r.pack_price)}</td>
-                      <td className="py-3 px-3 text-right text-[color:var(--rpc-text-primary)] font-semibold tabular-nums">{formatUsd(r.pack_ev)}</td>
+                      <td className="py-3 px-3 text-right text-[color:var(--rpc-text-primary)] font-semibold tabular-nums">{formatUsd(grossEv(r))}</td>
                       <td
                         className="py-3 px-3 text-right tabular-nums font-semibold"
                         style={{ color: (r.value_ratio ?? 0) >= 1 ? "var(--rpc-success-text)" : "var(--rpc-text-muted)" }}

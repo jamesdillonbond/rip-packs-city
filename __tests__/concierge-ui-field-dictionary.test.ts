@@ -50,3 +50,37 @@ describe("ui field dictionary — 2026-10-11 entries", () => {
     expect(lookupUiField("what does the ~ next to slots / pack mean", "pack rip simulator header")[0]?.id).toBe("pack-simulator.header-stats")
   })
 })
+
+// 2026-10-25 — a replay of real questions against production: the concierge said
+// squeeze ignores stacking and that the squeeze board has no team filter, then
+// logged both as new requests. The board has carried "Top 5 hold" and a TEAM box
+// since 10-03, built from that same tester's requests.
+describe("ui field dictionary — squeeze board (2026-10-25 replay)", () => {
+  it("the stacking question reaches the Top 5 hold entry", () => {
+    const hits = lookupUiField(
+      "does the squeeze calculation take into account users stacking the moment. ie. if there are 500 editions but one user is stacking 200 of them",
+      "squeeze (insights)",
+    )
+    expect(hits.map((h) => h.id)).toContain("squeeze-board.top5-hold")
+    const top5 = hits.find((h) => h.id === "squeeze-board.top5-hold")!
+    expect(top5.meaning).toMatch(/5 largest COLLECTOR wallets/)
+    expect(top5.meaning).toMatch(/never 0%/)
+  })
+  it("the squeeze % entry itself points at the stacking column, so either hit answers it", () => {
+    const pct = lookupUiField("what does the squeeze % mean on a team page", "team (nba-top-shot)")[0]
+    expect(pct?.id).toBe("squeeze.pct")
+    expect(pct?.meaning).toMatch(/does NOT count stacking/)
+    expect(pct?.meaning).toMatch(/Top 5 hold/)
+  })
+  it("the filter question reaches the filters entry, which names TEAM and says the player box is drill-down only", () => {
+    const hit = lookupUiField("can we have a player and team filter on the squeeze page as well?", "squeeze (insights)")[0]
+    expect(hit?.id).toBe("squeeze-board.filters")
+    expect(hit?.meaning).toMatch(/TEAM, a typed box/)
+    expect(hit?.meaning).toMatch(/no typed player box/)
+  })
+  it("the 1/1 crowding complaint reaches MIN MINT", () => {
+    const hit = lookupUiField("everything at the top is ultimates and 1/1 rare parallels, maybe have a minimum circulation filter", "squeeze (insights)")[0]
+    expect(hit?.id).toBe("squeeze-board.filters")
+    expect(hit?.meaning).toMatch(/MIN MINT/)
+  })
+})

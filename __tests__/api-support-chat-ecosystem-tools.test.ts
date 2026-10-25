@@ -149,6 +149,35 @@ describe("concierge — get_top_sales on an EMPTY collection window (2026-10-18)
     expect(String(r.note)).toMatch(/Never guess why/)
     expect(f.calls.some((c) => c.url.includes("/market-pulse"))).toBe(true)
   })
+  // 2026-10-25 replay: the board's $100 bar emptied a Golazos week that held 126
+  // indexed sales, and the note said "No sales are INDEXED" — the model repeated it
+  // and offered to log the board as a bug. The window's own count must decide.
+  it("sales indexed UNDER the $100 bar: says they exist, gives the count and top sale, never 'none indexed'", async () => {
+    stubFetch([
+      jsonRoute("/api/public/insights/top-sales", { rows: [] }),
+      jsonRoute("/api/public/insights/market-pulse", {
+        rows: [{ slug: "laliga_golazos", sales_7d: 126, top_sale_7d: 20, sales_30d: 127, top_sale_30d: 20, last_sale_at: "2026-10-25T01:43:51+00:00" }],
+      }),
+    ])
+    script("get_top_sales", { collectionId: "laliga-golazos" })
+    await POST(post("what did the most recent golazos sale go for"))
+    const r = toolResult()
+    expect(r).toMatchObject({ status: "ok", count: 0, board_min_price_usd: 100, indexed_sales_in_window: 126, top_sale_in_window_usd: 20, last_indexed_sale_at: "2026-10-25T01:43:51+00:00" })
+    const note = String(r.note)
+    expect(note).not.toMatch(/No sales are INDEXED/)
+    expect(note).toMatch(/\$100 or more/)
+    expect(note).toMatch(/NOT a bug/)
+    expect(note).toMatch(/126 sales/)
+  })
+  it("reads the 30d counts when the window is 30d", async () => {
+    stubFetch([
+      jsonRoute("/api/public/insights/top-sales", { rows: [] }),
+      jsonRoute("/api/public/insights/market-pulse", { rows: [{ slug: "laliga_golazos", sales_7d: 0, sales_30d: 9, top_sale_30d: 40, last_sale_at: "2026-10-10T00:00:00+00:00" }] }),
+    ])
+    script("get_top_sales", { collectionId: "laliga-golazos", window: "30d" })
+    await POST(post("golazos sales this month"))
+    expect(toolResult()).toMatchObject({ indexed_sales_in_window: 9, top_sale_in_window_usd: 40 })
+  })
   it("a FAILED market-pulse read attaches no date and says it could not be read", async () => {
     stubFetch([
       jsonRoute("/api/public/insights/top-sales", { rows: [] }),
@@ -189,6 +218,18 @@ describe("concierge — the model is told the time, below the cache breakpoint (
     expect(dynamic).toMatch(/## Time\nThe current time is \d{4}-\d{2}-\d{2}T/)
     expect(dynamic).toMatch(/never quote a clock time in UTC/)
     expect(cached).not.toMatch(/The current time is/)
+  })
+  // 2026-10-25 replay: edition-page answers called Lillard's Archive Set (on-chain
+  // 3, Summer 2021) "Series 3". The decode is generated from SERIES_DISPLAY.
+  it("the prompt decodes Top Shot on-chain series numbers from the canonical map", async () => {
+    const { SERIES_DISPLAY } = await import("@/lib/series-label")
+    stubFetch([jsonRoute("/api/public/insights/top-sales", { rows: [{ id: 1 }] })])
+    script("get_top_sales", {})
+    await POST(post("top sales"))
+    const sys = (A.createCalls[0] as unknown as { system: Array<{ text: string }> }).system.map((b) => b.text).join("\n")
+    for (const [n, label] of Object.entries(SERIES_DISPLAY)) expect(sys).toContain(`${n} = ${label}`)
+    expect(sys).toContain("3 = Summer 2021")
+    expect(sys).toMatch(/never "Series N" from the raw number/)
   })
 })
 

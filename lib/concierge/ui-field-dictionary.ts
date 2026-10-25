@@ -51,8 +51,30 @@ export const UI_FIELD_DICTIONARY: readonly UiFieldEntry[] = [
     field: "Squeeze % and \"N / M\" buyable count",
     aliases: ["squeeze", "squeeze %", "squeeze pct", "squeezed", "squeeze percentage", "locked + burned", "effective supply", "effectively buyable", "buyable", "scarcity", "lock rate"],
     meaning:
-      "The share of an edition's minted supply that can no longer be bought: (locked + burned) ÷ circulation. Burned copies are destroyed; locked copies are held in a Top Shot lock and cannot be listed until it expires. The \"N / M\" beside it is the effectively-buyable count (circulation minus locked minus burned) over the minted circulation. A higher squeeze means fewer copies can ever reach the market, so a tighter supply — it is a supply fact, not a price or a prediction. The team page ranks that franchise's editions by it.",
+      "The share of an edition's minted supply that can no longer be bought: (locked + burned) ÷ circulation. Burned copies are destroyed; locked copies are held in a Top Shot lock and cannot be listed until it expires. The \"N / M\" beside it is the effectively-buyable count (circulation minus locked minus burned) over the minted circulation. A higher squeeze means fewer copies can ever reach the market, so a tighter supply — it is a supply fact, not a price or a prediction. The team page ranks that franchise's editions by it. Squeeze % does NOT count stacking (one collector holding many unlocked copies); /insights/squeeze shows that separately in its \"Top 5 hold\" column — see that entry.",
     source: "components/entity/TeamSqueeze.tsx (squeeze_pct, effectively_buyable) + supabase/migrations/20261003181445 (round(100 × (locked + burned) / circulation, 1))",
+  },
+  {
+    // 2026-10-25 replay: asked "does the squeeze calculation take into account
+    // users stacking the moment", the concierge said no and logged a feature
+    // request for the column the board has carried since 10-03 — built from
+    // that same user's request (beta feedback 10256).
+    id: "squeeze-board.top5-hold",
+    surface: "/insights/squeeze (Top Shot squeeze board)",
+    field: "\"Top 5 hold\" column and the \"Top-5 holder share\" sort",
+    aliases: ["top 5 hold", "top 5", "top five", "top-5", "holder share", "holder concentration", "concentration", "stacking", "stacker", "stackers", "whale", "whales", "holders", "one user holding", "ownership concentration", "wallet concentration"],
+    meaning:
+      "The combined share of an edition's circulation held by its 5 largest COLLECTOR wallets, from RPC's on-chain owner census (Top Shot's unopened-pack account and the Dapper buyback account are excluded — they are not collectors). It is the stacking signal: an edition can have a low squeeze % and still be tightly held. Shown only where the census covers the whole edition; \"—\" means no complete census yet, never 0%, and the board states how many of its rows have one. Sort the board by \"Top-5 holder share (desc)\" to rank editions by it. Top Shot only. Added 2026-10-03.",
+    source: "app/insights/squeeze/SqueezeBoardClient.tsx (top5_share_pct, holders; sort 'concentration') + supabase/migrations/20261003184843 (topshot_edition_concentration)",
+  },
+  {
+    id: "squeeze-board.filters",
+    surface: "/insights/squeeze (Top Shot squeeze board)",
+    field: "Board filters: tier, MAX BUYABLE, TROPHY-CIRC, MIN MINT, MIN BUYABLE, TEAM, SORT; set and player drill-downs",
+    aliases: ["filter", "filters", "team filter", "player filter", "min circulation", "minimum circulation", "min mint", "min buyable", "max buyable", "trophy-circ", "1/1", "one of one", "sort", "squeeze board"],
+    meaning:
+      "The squeeze board filters by tier; MAX BUYABLE and MIN BUYABLE (effectively-buyable copies); TROPHY-CIRC (circulation ≤ 100 / 75 / 10) and MIN MINT (circulation ≥ 100 / 500 / 1K / 5K — the fix for 1/1s and Ultimates crowding the top); and TEAM, a typed box that resolves to the franchise and includes its historic names. SORT offers squeeze %, effectively buyable, circulation, FMV and Top-5 holder share. A PLAYER filter exists only as a drill-down: links from the rookies and first-mint boards open /insights/squeeze?player=<name> with a \"FILTERED TO PLAYER\" banner — there is no typed player box (a fair request to log). The TEAM, MIN MINT and MIN BUYABLE filters (and the set / player drill-downs) persist in the URL, so that view can be shared; the other pills reset on reload.",
+    source: "app/insights/squeeze/SqueezeBoardClient.tsx (rpc-sq-controls; teamFilter, minCirculation, minBuyable, playerFilter from ?player=)",
   },
   {
     id: "fmv",

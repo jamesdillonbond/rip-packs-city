@@ -651,13 +651,13 @@ describe("concierge tools — compare_pack_value", () => {
           {
             collection_slug: "nba-top-shot", collection_name: "NBA Top Shot", title: "Base Pack", tier: "COMMON",
             retail_price_usd: 9, primary_price: 9, secondary_ask: null, price_source: "primary",
-            pack_ev: 18, value_ratio: 2.0, ev_margin_pct: 100, is_positive_ev: true,
+            gross_ev: 18, pack_ev: 9, value_ratio: 2.0, ev_margin_pct: 100, is_positive_ev: true,
             primary_available: true, secondary_available: false, fmv_coverage_pct: 90,
           },
           {
             collection_slug: "nba-top-shot", collection_name: "NBA Top Shot", title: "Whale Pack", tier: "LEGENDARY",
             retail_price_usd: 999, primary_price: null, secondary_ask: 999, price_source: "secondary",
-            pack_ev: 500, value_ratio: 0.5, ev_margin_pct: -50, is_positive_ev: false,
+            gross_ev: 500, pack_ev: -499, value_ratio: 0.5, ev_margin_pct: -50, is_positive_ev: false,
             primary_available: false, secondary_available: true, fmv_coverage_pct: 80,
           },
         ],

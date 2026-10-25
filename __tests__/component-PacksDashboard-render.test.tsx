@@ -8,7 +8,7 @@ import { render, cleanup } from "@testing-library/react"
 // their empty states) was dark at ~21%. These tests drive that: the loaded
 // tables, the empty states, and the header, with fetch stubbed per endpoint.
 
-import PacksDashboard from "@/components/analytics/PacksDashboard"
+import PacksDashboard, { grossEv } from "@/components/analytics/PacksDashboard"
 
 const summary = {
   collections: {
@@ -32,7 +32,8 @@ const topEvRow = {
   pack_listing_id: "p1",
   pack_name: "2025 Premium Pack",
   pack_price: 20,
-  pack_ev: 34,
+  // pack_ev is EV MINUS price in pack_ev_history (gross 34 − price 20).
+  pack_ev: 14,
   value_ratio: 1.7,
   fmv_coverage_pct: 92,
   edition_count: 120,
@@ -47,7 +48,7 @@ const freshRow = {
   pack_listing_id: "p2",
   pack_name: "2025 Fresh Drop Pack",
   pack_price: 15,
-  pack_ev: 22,
+  pack_ev: 7.5,
   value_ratio: 1.5,
   is_positive_ev: true,
   total_unopened: 300,
@@ -84,6 +85,16 @@ describe("PacksDashboard render", () => {
     expect(await findByText(/2025 Fresh Drop Pack/)).toBeTruthy()
   })
 
+  // 2026-10-25: the "EV" column printed pack_ev — EV MINUS the price — so a $20
+  // pack worth $34 read "EV $14.00 · 1.70×". It shows the expected value now.
+  it("the EV column shows the expected value (net + price), never the net figure", async () => {
+    const { findByText, queryByText } = render(<PacksDashboard />)
+    expect(await findByText("$34.00")).toBeTruthy()
+    expect(await findByText("$22.50")).toBeTruthy()
+    expect(queryByText("$14.00")).toBeNull()
+    expect(queryByText("$7.50")).toBeNull()
+  })
+
   it("shows the per-table empty states when there are no rows", async () => {
     stub({ topEv: { rows: [] }, fresh: { rows: [] } })
     const { findByText } = render(<PacksDashboard />)
@@ -102,5 +113,14 @@ describe("PacksDashboard render", () => {
     const hrefs = Array.from(container.querySelectorAll("a")).map((a) => a.getAttribute("href"))
     expect(hrefs).toContain("/panini-blockchain/packs")
     expect(hrefs).toContain("/candy-mlb/packs")
+  })
+})
+
+describe("grossEv", () => {
+  it("adds the price back to the net figure", () => {
+    expect(grossEv({ pack_ev: 289.01, pack_price: 9.99, value_ratio: 29.93 })).toBe(299)
+  })
+  it("a no-pool sentinel (null ratio) is unknown, not the pack's price", () => {
+    expect(grossEv({ pack_ev: 0, pack_price: 999, value_ratio: null })).toBeNull()
   })
 })

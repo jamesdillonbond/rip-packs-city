@@ -60,7 +60,7 @@ import {
 import { resolveLiveAsks } from "@/lib/asks/edition-live-ask";
 import { scrubConfidence } from "@/lib/concierge/scrub-confidence";
 import { DEDUPE_WINDOW_MS, isSameReport } from "@/lib/concierge/feedback-dedupe";
-import { CURRENT_TOP_SHOT_SERIES, CURRENT_TOP_SHOT_SERIES_LABEL } from "@/lib/series-label";
+import { CURRENT_TOP_SHOT_SERIES, CURRENT_TOP_SHOT_SERIES_LABEL, SERIES_DISPLAY } from "@/lib/series-label";
 import { closedMarket } from "@/lib/market-closed";
 import { searchEditionFloorsByName, candyFloorReader, paniniFloorReader } from "@/lib/concierge/search-edition-floors";
 import { readsCatalogDealsFromIndex, fetchIndexCatalogDeals } from "@/lib/concierge/catalog-deals-index";
@@ -397,7 +397,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "compare_pack_value",
-    description: "Rank currently buyable packs by value — EV vs cost — across collections (Top Shot, All Day, Golazos, Pinnacle pack EV pipelines; UFC Strike has no pack EV). Panini packs are NOT in this ranking — they are on Panini's own platform with their own model: for any Panini pack question call get_insight_board with board 'panini_pack_market' (passing collectionId panini-blockchain here returns that same read). THE tool for 'which pack is the best value / best cost vs EV / positive-EV packs right now'. Returns packs ordered by value_ratio (EV ÷ current price) with EV, price, price source (primary vs secondary market), and availability. EV figures are the site's calibrated pack EV — cite them as estimates, not guarantees.",
+    description: "Rank currently buyable packs by value — EV vs cost — across collections (Top Shot, All Day, Golazos, Pinnacle pack EV pipelines; UFC Strike has no pack EV). Panini packs are NOT in this ranking — they are on Panini's own platform with their own model: for any Panini pack question call get_insight_board with board 'panini_pack_market' (passing collectionId panini-blockchain here returns that same read). THE tool for 'which pack is the best value / best cost vs EV / positive-EV packs right now'. Returns packs ordered by EV ÷ current price with the expected value (gross), EV minus price, price, price source (primary vs secondary market), and availability. EV figures are the site's calibrated pack EV — cite them as estimates, not guarantees.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -695,7 +695,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "get_top_sales",
-    description: "The biggest recent SALES across Flow (and Panini, on Panini's own platform) — 'whale watch'. Returns the top completed sales (price, player/set/tier, buyer and seller @handles where resolved, sale time) for one collection or all collections. THE tool for 'what were the biggest sales today/this week', 'what grails just sold', 'top sales for <player/collection>'. These are settled sales, not offers — cite them as such. Read-only board; no buy/sell calls.",
+    description: "The biggest recent SALES across Flow (and Panini, on Panini's own platform) — 'whale watch'. Returns the top completed sales (price, player/set/tier, buyer and seller @handles where resolved, sale time) for one collection or all collections. ⚠ Only sales of $100 OR MORE are on this board — it is not a list of every sale, so it cannot answer 'what did the most recent sale go for' on a cheap market; an empty result carries the window's indexed-sale count from market pulse and you must quote that, never call the empty board a bug. THE tool for 'what were the biggest sales today/this week', 'what grails just sold', 'top sales for <player/collection>'. These are settled sales, not offers — cite them as such. Read-only board; no buy/sell calls.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -1061,7 +1061,7 @@ Tailor responses to this page's purpose:
 - **overview**: ecosystem state — news, floor prices, pipeline health
 - **collection**: the user's own moments — FMV, badges, acquisition history, holdings value
 - **market**: sortable/filterable marketplace — help refine filters, recommend sort orders
-- **packs**: pack EV — identify packs where EV > retail, highlight special serial alerts
+- **packs**: pack EV — identify packs whose EV beats the price you would pay now (retail while on sale, the secondary ask once sold out), highlight special serial alerts
 - **sniper**: real-time deals — surface the best discounts, explain why each is a deal
 - **sets**: completion tracking — bottlenecks, cheapest path to finish a set
 - **analytics**: ecosystem intelligence — top sales, tier trends, player analytics, series volume${entitySection}`
@@ -1110,7 +1110,9 @@ When the user describes something that sounds like a bug — error messages, bla
 
 The same three rules apply to log_feature_request (surface + what it should do is enough — motivation and edge cases are noted if given, never demanded; when the user describes a second, related request in the same thread, log it immediately, no questions) and log_feedback (log praise when the user names what they liked; if they only say "this is sick", ask the one question "what specifically?"). Several requests in one message → several log calls in one turn, one confirmation line listing them.
 
-When a user asks what RPC *already* does before requesting it (e.g. "does FMV account for special serials?"), answer from the tools and the product facts first; log a request only if what they want is genuinely missing.
+When a user asks what RPC *already* does before requesting it (e.g. "does FMV account for special serials?"), answer from the tools and the product facts first; log a request only if what they want is genuinely missing. Before ANY log_feature_request about a board or page, call explain_ui_field with that surface: a request for a column, filter or sort it lists is ANSWERED (name it and where it is), not logged.
+
+**"I can't find X" is a navigation question first.** Give the path from the site-navigation facts above (and explain_ui_field), THEN log the discoverability report if they still want it — never reply with only a "Logged" line. **"X isn't on this page"** about something the facts say IS there: say exactly where it sits on the page, ask them to reload, and log a bug only if it is still missing after the reload.
 
 After logging anything, confirm what you captured in one line. If the conversation is clearly done, "Anything else?" is fine once — not after every log. Do NOT pivot to deals or FMV. Do not over-promise a response time; just say it's in the queue. A signed-in user asking "what happened to my request" → call get_my_feedback_status.
 
@@ -1537,7 +1539,7 @@ async function logBetaFeedback(args: {
 // below the cache breakpoint) — never in `cacheable`, where it would defeat the
 // prompt cache (pinned by concierge-2026-09-02-ship-guards).
 function requestTimeBlock(now: Date = new Date()): string {
-  return `\n\n## Time\nThe current time is ${now.toISOString()} (UTC). Tool results stamp times in UTC. When you tell a collector when something happened, say how long ago it was ("about 3 hours ago", "17 days ago") or give the calendar date ("Oct 1") — never quote a clock time in UTC and never write "UTC".\n\n## Current season\nThe current NBA Top Shot season is ${CURRENT_TOP_SHOT_SERIES_LABEL} (on-chain series ${CURRENT_TOP_SHOT_SERIES}). When asked what series or season Top Shot is in, say that — never an older season. Earlier seasons are still traded but are not "current".`;
+  return `\n\n## Time\nThe current time is ${now.toISOString()} (UTC). Tool results stamp times in UTC. When you tell a collector when something happened, say how long ago it was ("about 3 hours ago", "17 days ago") or give the calendar date ("Oct 1") — never quote a clock time in UTC and never write "UTC".\n\n## Current season\nThe current NBA Top Shot season is ${CURRENT_TOP_SHOT_SERIES_LABEL} (on-chain series ${CURRENT_TOP_SHOT_SERIES}). When asked what series or season Top Shot is in, say that — never an older season. Earlier seasons are still traded but are not "current".\n\n## Top Shot series numbers\nA Top Shot \`series\` / \`series_num\` / \`series_number\` in any tool row is the ON-CHAIN number, not the name: ${TOP_SHOT_SERIES_DECODE}. Always say the name — never "Series N" from the raw number (on-chain 3 is Summer 2021; Series 3 is on-chain 4). Other collections number their own series: say "Series N" for those.`;
 }
 
 function annotateMarketPulse(raw: string): string {
@@ -1589,7 +1591,23 @@ function annotatePaniniTopSales(raw: string): string {
   return JSON.stringify(out);
 }
 
-function annotateEmptyTopSales(raw: string, coll: string, pulseRaw: string): string {
+// 2026-10-25 (replay of real questions): the board lists only sales of $100 OR
+// MORE (v_insights_top_sales), so an empty Golazos window held 126 indexed sales
+// under that bar — and this note told the model "No sales are INDEXED", which it
+// repeated as "the per-sale board came back empty even though sales exist" and
+// offered to log as a bug. The window's own count from market-pulse decides:
+// sales under the bar, genuinely none, or unknown.
+const TOP_SALES_MIN_USD = 100;
+
+// 2026-10-25 replay: every edition-page answer called Lillard's Archive Set
+// (on-chain 3) "Series 3" — only get_team_checklist carried the decode map, and
+// every other tool hands the model the raw number. One line in the per-request
+// block, generated from the canonical map so it cannot drift.
+const TOP_SHOT_SERIES_DECODE = Object.entries(SERIES_DISPLAY)
+  .map(([n, label]) => `${n} = ${label}`)
+  .join(", ");
+
+function annotateEmptyTopSales(raw: string, coll: string, pulseRaw: string, window: "7d" | "30d" = "7d"): string {
   let out: any;
   try { out = JSON.parse(raw) } catch { return raw }
   let pulse: any = null;
@@ -1597,14 +1615,24 @@ function annotateEmptyTopSales(raw: string, coll: string, pulseRaw: string): str
   const row = pulse && pulse.status === "ok" && Array.isArray(pulse.rows)
     ? pulse.rows.find((r: any) => r && r.slug === coll)
     : null;
-  if (row && typeof row.last_sale_at === "string") {
-    out.last_indexed_sale_at = row.last_sale_at;
-    out.note = "No sales are INDEXED by RPC in this window. last_indexed_sale_at is the collection's newest indexed sale — say how long ago it was. Never guess why (do not suggest the indexer missed sales), and never say 'nobody traded': RPC indexes the venues it reads.";
-  } else if (row && row.last_sale_at == null) {
-    out.last_indexed_sale_at = null;
-    out.note = "No sales are INDEXED by RPC in this window, and none in the last 30 days. Say exactly that; never guess why.";
+  out.board_min_price_usd = TOP_SALES_MIN_USD;
+  const bar = `This board lists only sales of $${TOP_SALES_MIN_USD} or more, so an empty board is NOT an empty market and NOT a bug — never offer to log it.`;
+  if (!row) {
+    out.note = `${bar} Whether any smaller sales were indexed in this window could not be read right now — say that, and do not guess when the last sale was.`;
+    return JSON.stringify(out);
+  }
+  if (typeof row.last_sale_at === "string") out.last_indexed_sale_at = row.last_sale_at;
+  else if (row.last_sale_at == null) out.last_indexed_sale_at = null;
+  const n = Number(row[`sales_${window}`]);
+  const top = Number(row[`top_sale_${window}`]);
+  if (Number.isFinite(n) && n > 0) {
+    out.indexed_sales_in_window = n;
+    if (Number.isFinite(top)) out.top_sale_in_window_usd = top;
+    out.note = `${bar} RPC DID index ${n} sale${n === 1 ? "" : "s"} of this collection in the last ${window}${Number.isFinite(top) ? `; the largest was $${top}` : ""}, none of them on this board. last_indexed_sale_at is the newest — say how long ago it was. RPC has no per-sale list under $${TOP_SALES_MIN_USD} the concierge can read, so you cannot quote what the most recent sale went for: say so plainly, give the window's count and top sale, and point to the collection's Market tab for edition prices.`;
+  } else if (Number.isFinite(n) && n === 0) {
+    out.note = `No sales are INDEXED by RPC in this ${window} window at any price. ${typeof row.last_sale_at === "string" ? "last_indexed_sale_at is the collection's newest indexed sale — say how long ago it was." : "None in the last 30 days either — say exactly that."} Never guess why (do not suggest the indexer missed sales), and never say 'nobody traded': RPC indexes the venues it reads.`;
   } else {
-    out.note = "No sales are INDEXED by RPC in this window. The collection's last-sale date could not be read right now — say that, and do not guess when the last sale was or why the window is empty.";
+    out.note = `${bar} This window's sale count could not be read — say that, and do not guess.`;
   }
   return JSON.stringify(out);
 }
@@ -2367,8 +2395,8 @@ async function executeToolInner(
       const evFreshCutoff = new Date(Date.now() - EV_SNAPSHOT_MAX_AGE_HOURS * 3600 * 1000).toISOString();
       let query = (supabase as any)
         .from("pack_table_rows")
-        .select("collection_slug, collection_name, title, tier, retail_price_usd, primary_price, secondary_ask, price_source, pack_ev, value_ratio, ev_margin_pct, is_positive_ev, primary_available, secondary_available, fmv_coverage_pct, ev_snapshotted_at")
-        .not("pack_ev", "is", null)
+        .select("collection_slug, collection_name, title, tier, retail_price_usd, primary_price, secondary_ask, price_source, gross_ev, pack_ev, value_ratio, ev_margin_pct, is_positive_ev, primary_available, secondary_available, fmv_coverage_pct, ev_snapshotted_at")
+        .not("gross_ev", "is", null)
         .not("value_ratio", "is", null)
         .or("primary_available.eq.true,secondary_available.eq.true")
         .gte("ev_snapshotted_at", evFreshCutoff)
@@ -2382,21 +2410,27 @@ async function executeToolInner(
       const rows = (packs ?? [])
         .map((p: any) => {
           const price = p.price_source === "primary" ? Number(p.primary_price ?? p.retail_price_usd) : Number(p.secondary_ask ?? p.primary_price ?? p.retail_price_usd);
-          const ev = p.pack_ev != null ? Number(p.pack_ev) : null;
-          // The buyable-now economics: site value_ratio/is_positive_ev are
-          // retail-anchored, but a sold-out pack is only buyable at the
-          // secondary ask — compare EV to what the user would actually pay.
-          const evVsPrice = ev != null && Number.isFinite(price) && price > 0 ? Number((ev / price).toFixed(2)) : null;
+          // ⛔ 2026-10-25 replay: pack_table_rows.pack_ev is the NET figure — gross EV
+          // MINUS the price (the view: round(pev.gross_ev - rb.live_ask, 2)) — and
+          // value_ratio is gross ÷ the live ask, ALREADY rebased at what a buyer pays
+          // (#50, 2026-09-24). This tool divided the NET by the price again, so a
+          // 1.53× pack (EV $19.12 at a $12.50 ask) read 0.53× and "not +EV", against
+          // the packs page's own is_positive_ev — and the note called the site's
+          // ratio "retail-based". Read gross_ev and divide by the buyable price.
+          const gross = p.gross_ev != null ? Number(p.gross_ev) : null;
+          const evVsPrice = gross != null && Number.isFinite(gross) && Number.isFinite(price) && price > 0 ? Number((gross / price).toFixed(2)) : null;
           return {
             collection: p.collection_name ?? p.collection_slug,
             pack: p.title,
             tier: p.tier,
             current_price: Number.isFinite(price) ? price : null,
             price_source: p.price_source,
-            pack_ev: ev,
+            expected_value_usd: gross,
+            ev_minus_price_usd: gross != null && Number.isFinite(price) ? Number((gross - price).toFixed(2)) : null,
             ev_vs_current_price_ratio: evVsPrice,
             positive_ev_at_current_price: evVsPrice != null ? evVsPrice > 1 : null,
-            site_value_ratio_retail_based: p.value_ratio != null ? Number(p.value_ratio) : null,
+            packs_page_value_ratio: p.value_ratio != null ? Number(p.value_ratio) : null,
+            packs_page_says_positive_ev: p.is_positive_ev ?? null,
             // When the availability + ask were last observed. Every row here is
             // inside the 72 h bar by construction; the stamp lets the model say
             // "as of" instead of "now".
@@ -2405,14 +2439,15 @@ async function executeToolInner(
           };
         })
         .filter((p: any) => (maxPrice == null ? true : p.current_price != null && p.current_price <= maxPrice))
+        .sort((a: any, b: any) => (b.ev_vs_current_price_ratio ?? -Infinity) - (a.ev_vs_current_price_ratio ?? -Infinity))
         .slice(0, wantLimit);
       if (!rows.length) {
         return JSON.stringify({ status: "no_results", message: "No buyable packs with computed EV match those filters right now (only packs whose availability and ask were observed in the last 72 hours are considered)." });
       }
       return JSON.stringify({
         status: "ok",
-        ordered_by: "site value ratio (retail-based), best first",
-        note: "pack_ev is the site's calibrated estimate. Judge 'worth buying now' by ev_vs_current_price_ratio / positive_ev_at_current_price — the retail-based site ratio can look great on a pack that's only buyable at a higher secondary ask. Only packs whose availability and ask were observed within the last 72 hours are listed; ev_as_of is that observation time — say 'as of', not 'now'. Cite as estimates, never guarantees.",
+        ordered_by: "expected value ÷ current price, best first",
+        note: "expected_value_usd is the site's calibrated pack EV (gross — what the pulls are worth); ev_minus_price_usd is that minus current_price. Judge 'worth buying now' by ev_vs_current_price_ratio / positive_ev_at_current_price, which compare EV to what the user would pay NOW (the secondary ask when a pack is sold out). packs_page_value_ratio is what the packs page shows; it normally agrees — if the two disagree, say both and do not explain the gap. Only packs whose availability and ask were observed within the last 72 hours are listed; ev_as_of is that observation time — say 'as of', not 'now'. Cite as estimates, never guarantees.",
         packs: rows,
       });
     } catch (err: any) {
@@ -4646,7 +4681,7 @@ async function executeToolInner(
     // annotation below has nothing to read. Say the lag instead.
     if (coll === "panini_blockchain") return annotatePaniniTopSales(raw);
     if (!coll || !isEmptyOkBoard(raw)) return raw;
-    return annotateEmptyTopSales(raw, coll, await fetchPublicInsight(base, `/api/public/insights/market-pulse`, 20));
+    return annotateEmptyTopSales(raw, coll, await fetchPublicInsight(base, `/api/public/insights/market-pulse`, 20), toolInput.window === "30d" ? "30d" : "7d");
   }
 
   if (toolName === "get_market_movers") {
