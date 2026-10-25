@@ -161,6 +161,8 @@ interface SaleRow {
   // Top Shot only — which printing (Standard / Hexwave / ...) the sale belongs
   // to, resolved per-NFT server-side. NULL on other collections (column hidden).
   parallel?: string | null
+  // Bought by the collection's buyback wallet (get_edition_recent_sales, 2026-10-25).
+  buyback?: boolean | null
 }
 
 interface HistoryRow {

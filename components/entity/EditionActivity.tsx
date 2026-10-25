@@ -32,6 +32,8 @@ interface SaleRow {
   sold_at: string | null
   // Top Shot: which printing (Standard / Hexwave / ...) the sale belongs to.
   parallel?: string | null
+  // Bought by the collection's buyback wallet (get_edition_recent_sales, 2026-10-25).
+  buyback?: boolean | null
 }
 
 export interface OfferRow {

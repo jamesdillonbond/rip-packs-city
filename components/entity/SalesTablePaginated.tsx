@@ -24,7 +24,13 @@ interface SaleRow {
   // Top Shot: which printing (Standard / Hexwave / ...) the sale belongs to,
   // resolved per-NFT server-side. NULL on other collections -> column hidden.
   parallel?: string | null
+  // 2026-10-25: bought by the collection's own buyback wallet. sales_market (the
+  // 30d count, last-sale age and FMV) excludes these, so the row says so.
+  buyback?: boolean | null
 }
+
+/** The tag's hover text; exported so the test reads the same words. */
+export const BUYBACK_TITLE = "Bought by the collection's buyback program. Not counted in 30-day sales, last-sale age or FMV."
 
 interface Props {
   collectionUrlSlug: string
@@ -197,7 +203,23 @@ export default function SalesTablePaginated({ collectionUrlSlug, routeSlug, init
                       {s.parallel ?? EM_DASH}
                     </td>
                   )}
-                  <td style={TD}>{fmtUsd(s.price_usd)}</td>
+                  <td style={TD}>
+                    {fmtUsd(s.price_usd)}
+                    {s.buyback === true && (
+                      <span title={BUYBACK_TITLE} style={{
+                        display: "inline-block",
+                        marginLeft: 6,
+                        padding: "1px 6px",
+                        borderRadius: 3,
+                        border: "1px solid var(--rpc-border)",
+                        color: "var(--rpc-text-muted)",
+                        fontSize: 9,
+                        letterSpacing: "0.10em",
+                        textTransform: "uppercase",
+                        verticalAlign: "middle",
+                      }}>buyback</span>
+                    )}
+                  </td>
                   <td style={TD}><WalletCell address={s.buyer_address} name={nameFor(s.buyer_address)} collectionUrlSlug={collectionUrlSlug} /></td>
                   <td style={TD}><WalletCell address={s.seller_address} name={nameFor(s.seller_address)} collectionUrlSlug={collectionUrlSlug} /></td>
                   <td style={{ ...TD, color: "var(--rpc-text-secondary)" }}><RelTime iso={s.sold_at} /></td>

@@ -11,7 +11,7 @@ vi.mock("@/lib/analytics/username-resolver", () => ({
   useResolveUsernames: () => ({}),
 }))
 
-import SalesTablePaginated from "@/components/entity/SalesTablePaginated"
+import SalesTablePaginated, { BUYBACK_TITLE } from "@/components/entity/SalesTablePaginated"
 
 afterEach(cleanup)
 
@@ -90,6 +90,20 @@ describe("SalesTablePaginated", () => {
     const heads = Array.from(container.querySelectorAll("th")).map((h) => h.textContent)
     expect(heads).toContain("Parallel")
     expect(container.textContent).toContain("Hexwave")
+  })
+
+  // 2026-10-25: the stats above the table (30d sales, last-sale age, FMV) read
+  // sales_market, which excludes buyback purchases. A buyback row listed with no
+  // mark read as "the page says 0 sales in 30 days and shows one from last week".
+  it("tags a buyback purchase, and only that row, with the reason it is not counted", () => {
+    const { container } = render(
+      <SalesTablePaginated {...base([sale({ buyback: true }), sale({ buyback: false, transaction_hash: "0xhash2" }), sale({ transaction_hash: "0xhash3" })])} />
+    )
+    const rows = Array.from(container.querySelectorAll("tbody tr"))
+    expect(rows.map((r) => /buyback/i.test(r.textContent ?? ""))).toEqual([true, false, false])
+    const tag = rows[0].querySelector("span[title]")
+    expect(tag?.getAttribute("title")).toBe(BUYBACK_TITLE)
+    expect(BUYBACK_TITLE).toMatch(/not counted/i)
   })
 
   it("shows the 'Load N more' button only when the initial page is full", () => {

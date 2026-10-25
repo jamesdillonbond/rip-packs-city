@@ -9,9 +9,12 @@
 --   3. #142: a sale whose serial exceeds max(edition circulation, base +
 --      parallels total) is refused; one within the base+parallels total stays.
 --   4. Non-Top-Shot collections carry parallel = null.
+--   5. (2026-10-25) `buyback` is true exactly when the buyer is a buyback wallet OF
+--      THIS COLLECTION (the sales_market predicate); another collection's row never
+--      flags it.
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20261004153000_audit_20261004_edition_recent_sales_reads_only_the_page_not_every_sale.sql).
+-- (supabase/migrations/20261025211314_audit_20261025_edition_recent_sales_flags_buyback_purchases.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -21,6 +24,7 @@ BEGIN;
 CREATE TABLE public.editions (id uuid PRIMARY KEY, collection_id uuid, external_id varchar(100), subedition_id int, subedition_name text, circulation_count int);
 CREATE TABLE public.sales (edition_id uuid, serial_number int, price_usd numeric, marketplace text, source text, buyer_address text, seller_address text, nft_id text, transaction_hash text, sold_at timestamptz, id uuid DEFAULT gen_random_uuid());  -- id: the 2026-10-04 body tiebreaks on it
 CREATE TABLE public.topshot_moment_subeditions (nft_id text PRIMARY KEY, subedition_id int);
+CREATE TABLE public.buyback_wallets (collection_id uuid, wallet_address text, PRIMARY KEY (collection_id, wallet_address));
 CREATE TABLE public.pinnacle_sales (edition_id text, serial_number int, sale_price_usd numeric, source text, buyer_address text, seller_address text, nft_id text, sold_at timestamptz);
 
 -- >>> BEGIN verbatim >>>
@@ -127,6 +131,12 @@ BEGIN
       SELECT
         r.serial_number, r.price_usd, r.marketplace, r.source,
         r.buyer_address, r.seller_address, r.nft_id, r.transaction_hash, r.sold_at,
+        -- 2026-10-25: a purchase by the collection's own buyback wallet. sales_market
+        -- (every 30d count, last-sale age and FMV input) excludes these, so the table
+        -- flags them rather than show a sale the stats above it do not count.
+        EXISTS (SELECT 1 FROM buyback_wallets b
+                WHERE b.collection_id = p_collection_id
+                  AND b.wallet_address = r.buyer_address) AS buyback,
         CASE WHEN p_collection_id = v_topshot_uuid THEN
           COALESCE(
             CASE WHEN tms.subedition_id > 0
@@ -158,10 +168,13 @@ INSERT INTO public.editions VALUES
   ('00000000-0000-0000-0000-0000000000b1', 'dee28451-5d62-409e-a1ad-a83f763ac070', '77',       3,    'AAA-not-top-shot', 5),   -- other collection, same id
   ('00000000-0000-0000-0000-0000000000b2', 'dee28451-5d62-409e-a1ad-a83f763ac070', '78',       NULL, NULL,          10);
 INSERT INTO public.topshot_moment_subeditions VALUES ('n1', 0), ('n2', 3), ('n3', 9);
+INSERT INTO public.buyback_wallets VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'bb'),
+  ('dee28451-5d62-409e-a1ad-a83f763ac070', 'b');   -- All Day's buyback is 'b': must not flag Top Shot's 'b' buyers
 INSERT INTO public.sales VALUES
   ('00000000-0000-0000-0000-0000000000a1', 5,   1, 'm', 's', 'b', 'x', 'n1', 't1', '2026-10-01 05:00+00'),
   ('00000000-0000-0000-0000-0000000000a1', 120, 2, 'm', 's', 'b', 'x', 'n2', 't2', '2026-10-01 04:00+00'),  -- above base 100, within 150
-  ('00000000-0000-0000-0000-0000000000a1', 7,   3, 'm', 's', 'b', 'x', 'n3', 't3', '2026-10-01 03:00+00'),  -- uncataloged subedition 9
+  ('00000000-0000-0000-0000-0000000000a1', 7,   3, 'm', 's', 'bb', 'x', 'n3', 't3', '2026-10-01 03:00+00'),  -- uncataloged subedition 9; bought by the Top Shot buyback
   ('00000000-0000-0000-0000-0000000000a1', 999, 4, 'm', 's', 'b', 'x', 'n4', 't4', '2026-10-01 02:00+00'),  -- above 150: refused
   ('00000000-0000-0000-0000-0000000000a1', 8,   5, 'm', 's', 'b', 'x', 'n5', 't5', '2026-10-01 01:00+00'),  -- no tms row
   ('00000000-0000-0000-0000-0000000000b2', 1,   6, 'm', 's', 'b', 'x', 'n2', 't6', '2026-10-01 05:00+00');  -- All Day sale, nft id shared by chance
@@ -175,11 +188,15 @@ BEGIN
                      't1,t2,t3,t5', 'newest first; serial 120 kept under the 150 base+parallels ceiling (claims 1, 3)');
   PERFORM _assert_eq((SELECT string_agg(coalesce(e->>'parallel', 'NULL'), ',' ORDER BY o) FROM jsonb_array_elements(v) WITH ORDINALITY x(e, o)),
                      'Standard,Cosmic,Parallel #9,Standard', 'parallel: 0 -> Standard, 3 -> the Top Shot name, 9 -> fallback, no tms row on a base id -> Standard (claim 2)');
+  PERFORM _assert_eq((SELECT string_agg(e->>'buyback', ',' ORDER BY o) FROM jsonb_array_elements(v) WITH ORDINALITY x(e, o)),
+                     'false,false,true,false', 'buyback: only the Top Shot buyback wallet''s purchase; All Day''s wallet row does not flag a Top Shot buyer (claim 5)');
   PERFORM _assert_eq((SELECT string_agg(e->>'transaction_hash', ',' ORDER BY o) FROM jsonb_array_elements(public.get_edition_recent_sales('95f28a17-224a-4025-96ad-adf8a4c63bfd', '10:20', 2, 1)) WITH ORDINALITY x(e, o)),
                      't2,t3', 'limit/offset (claim 1)');
   v := public.get_edition_recent_sales('dee28451-5d62-409e-a1ad-a83f763ac070', '78', 30, 0);
   PERFORM _assert((SELECT count(*) = 1 AND bool_and(e->'parallel' = 'null'::jsonb) FROM jsonb_array_elements(v) e),
                   'a non-Top-Shot sale carries parallel = null (claim 4)');
+  PERFORM _assert((SELECT bool_and((e->>'buyback')::boolean) FROM jsonb_array_elements(v) e),
+                  'an All Day sale bought by All Day''s buyback wallet is flagged (claim 5)');
 END $$;
 
 ROLLBACK;

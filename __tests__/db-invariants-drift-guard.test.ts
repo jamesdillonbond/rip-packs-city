@@ -3061,7 +3061,7 @@ const PINS = [
     fn: "get_edition_recent_sales",
     test: "supabase/tests/get_edition_recent_sales.sql",
     migration:
-      "supabase/migrations/20261004153000_audit_20261004_edition_recent_sales_reads_only_the_page_not_every_sale.sql",
+      "supabase/migrations/20261025211314_audit_20261025_edition_recent_sales_flags_buyback_purchases.sql",
   },
   {
     // Added 2026-10-03. /admin/visitor-journeys: four streams join into one
