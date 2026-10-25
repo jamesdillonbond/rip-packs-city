@@ -168,13 +168,10 @@ export default async function SetDetailPage({ params }: PageParams) {
           <h1 className="text-3xl font-bold tracking-tight text-[color:var(--rpc-text-primary)] mb-2">
             {data.set_name}
           </h1>
-          {data.set_external_id ? (
-            <p className="text-xs text-[color:var(--rpc-text-muted)] font-mono">
-              External ID · {data.set_external_id}
-            </p>
-          ) : null}
+          {/* 2026-10-25: the "External ID · <uuid>" line is gone — an internal key
+              is not something a collector reads or can use. */}
 
-          <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mt-6 grid gap-4 sm:grid-cols-3">
             <div className="rounded-lg border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
               <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] font-semibold">
                 Editions
@@ -185,17 +182,20 @@ export default async function SetDetailPage({ params }: PageParams) {
             </div>
             <div className="rounded-lg border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
               <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] font-semibold">
-                Robust total FMV
+                Total FMV
               </div>
               <div className="text-2xl font-bold text-[color:var(--rpc-text-primary)] tabular-nums">
                 {formatUsd(robustTotal)}
               </div>
               {hasOutlier ? (
+                // The uncapped sum is shown only when the cap changed it. A second
+                // "Raw total" card printed the same figure twice on every set
+                // without an outlier (2026-10-25).
                 <div
                   className="text-[10px] text-amber-400 mt-1"
-                  title="One or more editions have FMV more than 20× the set median; the robust total caps these to 20× median."
+                  title="One or more editions have FMV more than 20× the set median; the total caps each at 20× the median."
                 >
-                  Outlier capped
+                  Outlier capped · {formatUsd(totalRaw)} uncapped
                 </div>
               ) : null}
             </div>
@@ -205,17 +205,6 @@ export default async function SetDetailPage({ params }: PageParams) {
               </div>
               <div className="text-2xl font-bold text-[color:var(--rpc-text-primary)] tabular-nums">
                 {formatUsd(median)}
-              </div>
-            </div>
-            <div className="rounded-lg border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
-              <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] font-semibold">
-                Raw total FMV
-              </div>
-              <div className="text-2xl font-bold text-[color:var(--rpc-text-secondary)] tabular-nums">
-                {formatUsd(totalRaw)}
-              </div>
-              <div className="text-[10px] text-[color:var(--rpc-text-muted)] mt-1">
-                Pre-cap reference value
               </div>
             </div>
           </div>

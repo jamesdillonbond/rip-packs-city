@@ -48,6 +48,27 @@ describe("AnalyticsBreadcrumb", () => {
     expect(txt).toContain("Cosmic labs")
   })
 
+  it("names an ID segment by its parent instead of spelling out a UUID or an address", () => {
+    // 2026-10-25 live: /analytics/sets/<uuid> printed "Bbdeb724 f790 4d6e 971e …"
+    // as its title crumb, and the wallet page printed the raw address.
+    mockPath = "/analytics/sets/bbdeb724-f790-4d6e-971e-8cf854f5de27"
+    let r = render(<AnalyticsBreadcrumb />)
+    expect(r.container.textContent).toMatch(/Sets.*Set$/)
+    expect(r.container.textContent).not.toMatch(/bbdeb724/i)
+    r.unmount()
+    mockPath = "/analytics/wallets/0xbd94cade097e50ac"
+    r = render(<AnalyticsBreadcrumb />)
+    expect(r.container.textContent).toMatch(/Wallets.*Wallet$/)
+    expect(r.container.textContent).not.toMatch(/0xbd94/i)
+  })
+
+  it("renders a collection's name for the short-slug drill-downs", () => {
+    mockPath = "/analytics/sales/topshot"
+    const { container } = render(<AnalyticsBreadcrumb />)
+    expect(container.textContent).toContain("Top Shot")
+    expect(container.textContent).not.toContain("Topshot")
+  })
+
   it("defaults to /analytics when usePathname returns null", () => {
     mockPath = null
     const { container } = render(<AnalyticsBreadcrumb />)

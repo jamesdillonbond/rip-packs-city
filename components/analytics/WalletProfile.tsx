@@ -56,8 +56,12 @@ const COLLECTION_COLORS: Record<string, string> = {
   other: "#71717a",
 }
 
+// An UNKNOWN amount (null / NaN / Infinity) is an em-dash, not "$0" — a loan whose
+// principal was never captured did not lend nothing (2026-10-25). A real zero or a
+// negative still floors at "$0": a negative principal is not a state on this page.
 function fmtUsd(n: number | null | undefined): string {
-  if (n == null || !Number.isFinite(n) || n <= 0) return "$0"
+  if (n == null || !Number.isFinite(n)) return "—"
+  if (n <= 0) return "$0"
   if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`
   if (n >= 1_000) return `$${(n / 1_000).toFixed(1)}k`
   if (n >= 100) return `$${n.toFixed(0)}`
@@ -207,10 +211,23 @@ export default function WalletProfile({
 
   const role = classifyRole(borrowerCount + limboBorrower, lenderCount + limboLender)
 
-  const totalVolume =
-    (data.as_borrower?.total_principal_usd ?? 0) +
-    (data.as_lender?.total_principal_usd ?? 0)
-  const totalLoans = borrowerCount + lenderCount + limboBorrower + limboLender
+  const inWindowLoans = borrowerCount + lenderCount
+  const limboLoans = limboBorrower + limboLender
+  // Pre-window loans (origination before the Dec 29 2025 scan window) carry no
+  // principal — we only see how they closed. So with NO in-window loans the
+  // volume is UNKNOWN, not $0 (a wallet with 8 settled loans read "Total volume
+  // $0", 2026-10-25); with some, the figure says what it leaves out.
+  const totalVolume: number | null =
+    inWindowLoans > 0
+      ? (data.as_borrower?.total_principal_usd ?? 0) + (data.as_lender?.total_principal_usd ?? 0)
+      : null
+  const totalVolumeNote =
+    inWindowLoans === 0 && limboLoans > 0
+      ? "Pre-window loans only; principal not captured"
+      : limboLoans > 0
+        ? `Excludes ${fmtNumber(limboLoans)} pre-window loan${limboLoans === 1 ? "" : "s"}`
+        : undefined
+  const totalLoans = inWindowLoans + limboLoans
 
   const firstSeen = pickEarliest(
     data.as_borrower?.first_seen_at,
@@ -291,7 +308,8 @@ export default function WalletProfile({
       <section className="grid gap-3 grid-cols-2 lg:grid-cols-4">
         <KpiCell
           label="Total volume"
-          value={fmtUsd(totalVolume)}
+          value={totalVolume == null ? "—" : fmtUsd(totalVolume)}
+          sublabel={totalVolumeNote}
           icon={<HandCoins size={16} className="text-emerald-400" />}
         />
         <KpiCell
@@ -351,9 +369,11 @@ export default function WalletProfile({
         <div className="flex items-center justify-between p-4 border-b border-[color:var(--rpc-border)]">
           <div>
             <h2 className="text-lg font-semibold text-[color:var(--rpc-text-primary)]">Recent loan activity</h2>
-            <p className="text-xs text-[color:var(--rpc-text-muted)] mt-0.5">
-              Last {Math.min(20, mergedLoans.length)} loans, newest first · click a row to expand
-            </p>
+            {mergedLoans.length > 0 ? (
+              <p className="text-xs text-[color:var(--rpc-text-muted)] mt-0.5">
+                Last {Math.min(20, mergedLoans.length)} loans, newest first · click a row to expand
+              </p>
+            ) : null}
           </div>
           <span className="rounded border border-[color:var(--rpc-border)] bg-[color:var(--rpc-surface-raised)] px-2 py-0.5 text-[10px] uppercase tracking-wider font-semibold text-[color:var(--rpc-text-secondary)]">
             {mergedLoans.length} loans
@@ -361,7 +381,12 @@ export default function WalletProfile({
         </div>
         {mergedLoans.length === 0 ? (
           <div className="p-8 text-center text-sm text-[color:var(--rpc-text-muted)]">
-            No funded loans in this wallet&apos;s history.
+            {/* An empty list here means none were FUNDED inside the scan window — not
+                that the wallet never lent or borrowed. With pre-window or transferred
+                loans on the page, "no loans in this wallet's history" was false. */}
+            {totalLoans > 0 || positionTransfers?.has_activity
+              ? "No loans funded by or to this wallet since our scan window opened (Dec 29, 2025). Its earlier loans are counted above by how they closed."
+              : "No Flowty loans found for this wallet."}
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -536,6 +561,8 @@ function RolePanel({
         </span>
       </div>
 
+      {preWindowOnly ? null : (
+      <>
       <div className="grid gap-3 grid-cols-2">
         <Cell label="Funded volume" value={fmtUsd(stats?.total_principal_usd ?? 0)} />
         <Cell label="Repaid volume" value={fmtUsd(stats?.total_repayment_usd ?? 0)} />
@@ -571,6 +598,8 @@ function RolePanel({
           {fmtNumber(uniqueCount)} {uniqueLabel.toLowerCase()}
         </span>
       </div>
+      </>
+      )}
 
       {collections.length > 0 ? (
         <div className="space-y-1.5 pt-3 border-t border-[color:var(--rpc-border-subtle)]">
