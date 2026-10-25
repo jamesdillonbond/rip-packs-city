@@ -4,9 +4,10 @@ import worker from "@/workers/dune-proxy/index.ts"
 // Behavioural coverage for the dune-proxy Cloudflare Worker — the 4th auth
 // rotation surface (DUNE_PROXY_SECRET) that holds the Dune API key so it never
 // reaches Vercel logs. Untested (workers are outside the coverage measure).
-// The security-critical property is the /execute body ALLOWLIST: only
-// query_parameters + performance are forwarded upstream, never arbitrary caller
-// JSON. Also pins the key injection, query_id/execution_id validation, the
+// The security-critical properties are the query_id ALLOWLIST (only RPC's own
+// saved queries may spend our credits; R138c, 2026-10-25) and the /execute body
+// ALLOWLIST: only query_parameters is forwarded upstream — never `performance`
+// (bills more credits) and never arbitrary caller JSON. Also pins the key injection, query_id/execution_id validation, the
 // limit clamp, and the api-key-unset 500. Calls worker.fetch with stubbed fetch.
 
 let fetchMock: ReturnType<typeof vi.fn>
@@ -37,13 +38,13 @@ describe("dune-proxy — gates", () => {
   })
 
   it("401s a results call with no Bearer", async () => {
-    const res = await worker.fetch(new Request("https://p.dev/results?query_id=1"), env)
+    const res = await worker.fetch(new Request("https://p.dev/results?query_id=7899011"), env)
     expect(res.status).toBe(401)
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
   it("401s a wrong Bearer", async () => {
-    const res = await worker.fetch(authed("/results?query_id=1", { headers: { Authorization: "Bearer nope" } }), env)
+    const res = await worker.fetch(authed("/results?query_id=7899011", { headers: { Authorization: "Bearer nope" } }), env)
     expect(res.status).toBe(401)
   })
 
@@ -53,7 +54,7 @@ describe("dune-proxy — gates", () => {
   })
 
   it("500s when the Dune API key is unset", async () => {
-    const res = await worker.fetch(authed("/results?query_id=1"), { DUNE_PROXY_SECRET: "tok", DUNE_API_KEY: "" })
+    const res = await worker.fetch(authed("/results?query_id=7899011"), { DUNE_PROXY_SECRET: "tok", DUNE_API_KEY: "" })
     expect(res.status).toBe(500)
     expect((await res.json()).error).toBe("dune_api_key_unset")
   })
@@ -76,14 +77,14 @@ describe("dune-proxy — /results", () => {
   })
 
   it("clamps limit to the 1000-row Dune page cap and floors a bad offset to 0", async () => {
-    await worker.fetch(authed("/results?query_id=1&limit=99999&offset=-5"), env)
+    await worker.fetch(authed("/results?query_id=7899011&limit=99999&offset=-5"), env)
     const url = upstreamUrl()
     expect(url.searchParams.get("limit")).toBe("1000")
     expect(url.searchParams.get("offset")).toBe("0")
   })
 
   it("falls back to the default page size on a non-numeric limit (no limit=NaN upstream)", async () => {
-    await worker.fetch(authed("/results?query_id=1&limit=foo"), env)
+    await worker.fetch(authed("/results?query_id=7899011&limit=foo"), env)
     // Before the guard this forwarded limit=NaN, which Dune rejects with a 400.
     expect(upstreamUrl().searchParams.get("limit")).toBe("1000")
   })
@@ -95,9 +96,9 @@ describe("dune-proxy — /execute body allowlist (security)", () => {
     expect(res.status).toBe(400)
   })
 
-  it("forwards ONLY query_parameters + performance, dropping arbitrary caller fields", async () => {
+  it("forwards ONLY query_parameters — never performance or arbitrary caller fields", async () => {
     await worker.fetch(
-      authed("/execute?query_id=42", {
+      authed("/execute?query_id=8027085", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -110,26 +111,27 @@ describe("dune-proxy — /execute body allowlist (security)", () => {
       env,
     )
     const sent = JSON.parse(String(upstreamInit().body))
-    expect(sent).toEqual({ query_parameters: { set_ids: "230,253" }, performance: "large" })
+    expect(sent).toEqual({ query_parameters: { set_ids: "230,253" } })
+    expect(sent.performance).toBeUndefined()
     expect(sent.evil).toBeUndefined()
     expect(sent.extra).toBeUndefined()
   })
 
   it("runs with saved defaults (no body) for a body-less execute", async () => {
-    await worker.fetch(authed("/execute?query_id=42", { method: "POST" }), env)
+    await worker.fetch(authed("/execute?query_id=8027085", { method: "POST" }), env)
     expect(upstreamInit().body).toBeUndefined()
     // no Content-Type header when no body is forwarded
     expect((upstreamInit().headers as any)["Content-Type"]).toBeUndefined()
   })
 
   it("ignores a malformed body and runs with saved defaults", async () => {
-    await worker.fetch(authed("/execute?query_id=42", { method: "POST", body: "{not json" }), env)
+    await worker.fetch(authed("/execute?query_id=8027085", { method: "POST", body: "{not json" }), env)
     expect(upstreamInit().body).toBeUndefined()
   })
 
   it("sends no body when the caller supplies only disallowed fields", async () => {
     await worker.fetch(
-      authed("/execute?query_id=42", { method: "POST", body: JSON.stringify({ evil: 1 }) }),
+      authed("/execute?query_id=8027085", { method: "POST", body: JSON.stringify({ evil: 1 }) }),
       env,
     )
     expect(upstreamInit().body).toBeUndefined()
@@ -146,5 +148,28 @@ describe("dune-proxy — /status", () => {
     await worker.fetch(authed("/status?execution_id=01ABC_xyz-99"), env)
     expect(upstreamUrl().pathname).toBe("/api/v1/execution/01ABC_xyz-99/status")
     expect((upstreamInit().headers as any)["X-Dune-API-Key"]).toBe("dune-key")
+  })
+})
+
+describe("dune-proxy — query_id allow-list (R138c, security audit 2026-10-25)", () => {
+  it("403s a numeric query_id RPC does not own, on /results AND /execute, with no upstream call", async () => {
+    const r = await worker.fetch(authed("/results?query_id=1234567"), env)
+    const e = await worker.fetch(authed("/execute?query_id=1234567", { method: "POST" }), env)
+    expect(r.status).toBe(403)
+    expect(e.status).toBe(403)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it("allows each of RPC's own saved queries", async () => {
+    for (const id of ["7899011", "8027085", "8030177"]) {
+      const res = await worker.fetch(authed(`/results?query_id=${id}`), env)
+      expect(res.status, id).toBe(200)
+    }
+  })
+
+  it("DUNE_ALLOWED_QUERY_IDS replaces the default list", async () => {
+    const custom = { ...env, DUNE_ALLOWED_QUERY_IDS: "555, 777" }
+    expect((await worker.fetch(authed("/results?query_id=777"), custom)).status).toBe(200)
+    expect((await worker.fetch(authed("/results?query_id=7899011"), custom)).status).toBe(403)
   })
 })

@@ -604,7 +604,25 @@ const LANDING_HTML = `<!doctype html>
 <div class="label" style="margin-top:32px">Liveness: <a href="/health">/health</a></div>
 </body></html>`;
 
+// /health is anonymous and made 2 Supabase calls per hit, so a loop on it was a
+// free way to load the DB (security audit 2026-10-25, R138b). Cache the probe
+// result per isolate for 60 s; a cold isolate still probes once.
+const HEALTH_CACHE_MS = 60_000;
+let healthCache: { at: number; body: string; status: number } | null = null;
+
 async function handleHealth(env: Env): Promise<Response> {
+  if (healthCache && Date.now() - healthCache.at < HEALTH_CACHE_MS) {
+    return new Response(healthCache.body, {
+      status: healthCache.status,
+      headers: { "Content-Type": "application/json", "X-Health-Cache": "hit", ...CORS_HEADERS },
+    });
+  }
+  const res = await probeHealth(env);
+  healthCache = { at: Date.now(), body: await res.clone().text(), status: res.status };
+  return res;
+}
+
+async function probeHealth(env: Env): Promise<Response> {
   const out: Record<string, unknown> = {
     ok: true,
     version: VERSION,

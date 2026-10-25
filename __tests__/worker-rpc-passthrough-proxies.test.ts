@@ -28,7 +28,8 @@ afterEach(() => {
 
 const upstreamUrl = () => String(fetchMock.mock.calls[0][0])
 
-const rpcBody = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "getHealth" })
+// A DAS method helius-proxy allows (R138d); the simple proxies forward anything.
+const rpcBody = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "getAsset", params: { id: "x" } })
 const post = (secret?: string) =>
   new Request("https://proxy.example.dev/", {
     method: "POST",
@@ -143,5 +144,53 @@ describe("helius-proxy — keyed Solana DAS passthrough", () => {
     fetchMock.mockResolvedValueOnce(new Response("rate limited", { status: 429 }))
     const res = await heliusWorker.fetch(post("h3lius"), env)
     expect(res.status).toBe(429)
+  })
+
+  // R138d (security audit 2026-10-25): only read-only DAS methods reach the key.
+  const authedBody = (body: string) =>
+    new Request("https://p.dev/", { method: "POST", headers: { "X-Proxy-Secret": "h3lius" }, body })
+
+  it("403s a non-DAS method (sendTransaction) without touching the keyed upstream", async () => {
+    const res = await heliusWorker.fetch(
+      authedBody(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "sendTransaction", params: ["AAAA"] })),
+      env,
+    )
+    expect(res.status).toBe(403)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it("403s a batch if ANY element is disallowed (no smuggling behind an allowed call)", async () => {
+    const res = await heliusWorker.fetch(
+      authedBody(JSON.stringify([
+        { jsonrpc: "2.0", id: 1, method: "getAsset", params: { id: "x" } },
+        { jsonrpc: "2.0", id: 2, method: "getProgramAccounts", params: ["Tokenkeg"] },
+      ])),
+      env,
+    )
+    expect(res.status).toBe(403)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it("forwards an all-allowed batch, and 400s malformed JSON or an empty batch", async () => {
+    fetchMock.mockResolvedValue(new Response("[]", { status: 200 }))
+    const ok = await heliusWorker.fetch(
+      authedBody(JSON.stringify([
+        { jsonrpc: "2.0", id: 1, method: "getAssetsByGroup", params: {} },
+        { jsonrpc: "2.0", id: 2, method: "getAssetsByOwner", params: {} },
+      ])),
+      env,
+    )
+    expect(ok.status).toBe(200)
+    expect((await heliusWorker.fetch(authedBody("{nope"), env)).status).toBe(400)
+    expect((await heliusWorker.fetch(authedBody("[]"), env)).status).toBe(400)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("every method a caller actually uses is on the allow-list", async () => {
+    for (const method of ["getAsset", "getAssetsByOwner", "getAssetsByGroup"]) {
+      fetchMock.mockResolvedValueOnce(new Response("{}", { status: 200 }))
+      const res = await heliusWorker.fetch(authedBody(JSON.stringify({ jsonrpc: "2.0", id: 1, method, params: {} })), env)
+      expect(res.status, method).toBe(200)
+    }
   })
 })

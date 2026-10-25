@@ -64,9 +64,21 @@ const CURRENT_SPORK_MIN_HEIGHT = 137_390_146; // mainnet28 root
 // above are untouched and the capability comes straight back.
 const REACHABLE_FLOOR_HEIGHT = 65_264_619; // mainnet24 root @ 2023-11-08T16:07:03Z
 const REACHABLE_SPORKS: Spork[] = SPORKS.filter((s) => s.maxHeight >= REACHABLE_FLOOR_HEIGHT);
+// ⚠ Plain http:// on purpose (R138e reviewed 2026-10-25): the historical access
+// nodes serve REST on :8070 without TLS. Nothing secret is sent upstream (the
+// request is an anonymous public-chain read); the residual risk is an on-path
+// party altering event data, which the callers' downstream joins would surface.
 const NODE_URL = (name: string) =>
   `http://access-001.${name}.nodes.onflow.org:8070`;
 const REQUEST_TIMEOUT_MS = 25_000;
+
+// Constant-time compare (security audit 2026-10-25, R138f).
+function safeEqual(a: string, b: string): boolean {
+  const len = Math.max(a.length, b.length);
+  let diff = a.length ^ b.length;
+  for (let i = 0; i < len; i++) diff |= (a.charCodeAt(i) || 0) ^ (b.charCodeAt(i) || 0);
+  return diff === 0;
+}
 
 function jsonError(status: number, error: string, extra?: Record<string, unknown>) {
   return new Response(
@@ -179,7 +191,7 @@ export default {
 
       const auth = request.headers.get("Authorization") ?? "";
       const expected = `Bearer ${env.SPORK_PROXY_SECRET}`;
-      if (!env.SPORK_PROXY_SECRET || auth !== expected) {
+      if (!env.SPORK_PROXY_SECRET || !safeEqual(auth, expected)) {
         return jsonError(401, "unauthorized");
       }
 
@@ -268,12 +280,14 @@ export default {
         clearTimeout(timeout);
       }
     } catch (err) {
+      // No stack in the body (security audit 2026-10-25, R138e): it leaked worker
+      // internals to any caller. The stack goes to the worker log instead.
       const e = err as Error;
+      console.error(`[spork-proxy] unhandled: ${e?.stack ?? String(err)}`);
       return new Response(
         JSON.stringify({
           code: 500,
           message: e?.message ?? String(err),
-          stack: e?.stack ?? null,
         }),
         { status: 500, headers: { "Content-Type": "application/json" } },
       );

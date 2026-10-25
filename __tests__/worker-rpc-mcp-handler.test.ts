@@ -115,7 +115,19 @@ describe("rpc-mcp-proxy — /health", () => {
     expect(body).toMatchObject({ ok: true, supabase_reachable: true, rpcs_reachable: true, build_sha: "testsha" })
   })
 
+  it("serves a repeat hit inside 60 s from the per-isolate cache (no DB calls; R138b)", async () => {
+    // The previous test just probed; a second anonymous hit must not reach Supabase.
+    const spy = stubSupabase({ mcp_validate_api_key: [], mcp_get_fmv: { error: "edition_not_found" } })
+    const res = await worker.fetch(new Request("https://mcp.example/health", { method: "GET" }), env, ctx())
+    expect(res.status).toBe(200)
+    expect(res.headers.get("X-Health-Cache")).toBe("hit")
+    expect(spy).not.toHaveBeenCalled()
+  })
+
   it("reports ok:false (503) when the supabase probe errors", async () => {
+    // Step past the 60 s health cache so this hit probes for real.
+    const realNow = Date.now()
+    vi.spyOn(Date, "now").mockReturnValue(realNow + 120_000)
     stubSupabase({
       mcp_validate_api_key: { status: 500, body: "db down" },
       mcp_get_fmv: { error: "edition_not_found" },

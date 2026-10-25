@@ -30,6 +30,8 @@
 interface Env {
   DUNE_PROXY_SECRET: string;
   DUNE_API_KEY: string;
+  /** Optional comma list that REPLACES DEFAULT_ALLOWED_QUERY_IDS. */
+  DUNE_ALLOWED_QUERY_IDS?: string;
 }
 
 const DUNE_API = "https://api.dune.com/api/v1";
@@ -49,20 +51,53 @@ function passthrough(text: string, status: number): Response {
   });
 }
 
+// Constant-time compare (security audit 2026-10-25, R138f).
+function safeEqual(a: string, b: string): boolean {
+  const len = Math.max(a.length, b.length);
+  let diff = a.length ^ b.length;
+  for (let i = 0; i < len; i++) diff |= (a.charCodeAt(i) || 0) ^ (b.charCodeAt(i) || 0);
+  return diff === 0;
+}
+
 function authOk(request: Request, env: Env): boolean {
   if (!env.DUNE_PROXY_SECRET) return false;
   const auth = request.headers.get("Authorization") ?? "";
   const m = auth.match(/^Bearer\s+(.+)$/i);
-  return !!m && m[1].trim() === env.DUNE_PROXY_SECRET;
+  return !!m && safeEqual(m[1].trim(), env.DUNE_PROXY_SECRET);
+}
+
+// Only the queries RPC actually runs may spend our Dune credits (security audit
+// 2026-10-25, R138c). Before this, any numeric query_id — anyone's public Dune
+// query — could be executed and paged on our key by a holder of the proxy secret.
+//   7899011 — Top Shot ownership index (sync-topshot-ownership-dune)
+//   8027085 — sales seller recovery   (sync-sales-seller-recovery-dune)
+//   8030177 — sales ingest recovery   (sync-sales-ingest-dune; route kept, schedule retired)
+// Adding a query means adding its id here or
+// setting the DUNE_ALLOWED_QUERY_IDS var (comma list), which REPLACES this list.
+const DEFAULT_ALLOWED_QUERY_IDS = ["7899011", "8027085", "8030177"];
+
+function allowedQueryIds(env: Env): Set<string> {
+  const raw = (env.DUNE_ALLOWED_QUERY_IDS ?? "").trim();
+  const ids = raw ? raw.split(",").map((s) => s.trim()).filter((s) => /^\d+$/.test(s)) : DEFAULT_ALLOWED_QUERY_IDS;
+  return new Set(ids);
+}
+
+function queryIdError(queryId: string | null, env: Env): Response | null {
+  if (!queryId || !/^\d+$/.test(queryId)) {
+    return jsonResponse({ error: "query_id must be a numeric Dune query id" }, 400);
+  }
+  if (!allowedQueryIds(env).has(queryId)) {
+    return jsonResponse({ error: "query_id_not_allowed" }, 403);
+  }
+  return null;
 }
 
 async function handleResults(url: URL, env: Env): Promise<Response> {
   if (!env.DUNE_API_KEY) return jsonResponse({ error: "dune_api_key_unset" }, 500);
 
   const queryId = url.searchParams.get("query_id");
-  if (!queryId || !/^\d+$/.test(queryId)) {
-    return jsonResponse({ error: "query_id must be a numeric Dune query id" }, 400);
-  }
+  const qErr = queryIdError(queryId, env);
+  if (qErr || !queryId) return qErr ?? jsonResponse({ error: "query_id required" }, 400);
 
   // Guard NaN like offset below: Number("foo") is NaN and Math.min/max propagate
   // it, so an unparseable ?limit forwarded `limit=NaN` to Dune → 400 instead of
@@ -88,15 +123,15 @@ async function handleExecute(request: Request, url: URL, env: Env): Promise<Resp
   if (!env.DUNE_API_KEY) return jsonResponse({ error: "dune_api_key_unset" }, 500);
 
   const queryId = url.searchParams.get("query_id");
-  if (!queryId || !/^\d+$/.test(queryId)) {
-    return jsonResponse({ error: "query_id must be a numeric Dune query id" }, 400);
-  }
+  const qErr = queryIdError(queryId, env);
+  if (qErr || !queryId) return qErr ?? jsonResponse({ error: "query_id required" }, 400);
 
   // Forward an OPTIONAL JSON body to Dune's execute endpoint so callers can run a
   // parameterized query (e.g. { query_parameters: { set_ids: "230,253,254" } }).
   // A body-less POST behaves exactly as before (runs the query with saved defaults),
-  // so this is backward-compatible. Only the two allowed execute fields are forwarded;
-  // nothing else from the caller body is echoed upstream.
+  // so this is backward-compatible. Only allowed execute fields are forwarded;
+  // nothing else from the caller body is echoed upstream. (Since 2026-10-25 only
+  // query_parameters is forwarded; see the note on `performance` below.)
   let body: string | undefined;
   try {
     const raw = await request.text();
@@ -107,7 +142,8 @@ async function handleExecute(request: Request, url: URL, env: Env): Promise<Resp
         if (parsed.query_parameters && typeof parsed.query_parameters === "object") {
           out.query_parameters = parsed.query_parameters;
         }
-        if (typeof parsed.performance === "string") out.performance = parsed.performance;
+        // `performance` is deliberately NOT forwarded (R138c): "large" bills more
+        // credits per run and no RPC caller sets it.
       }
       if (Object.keys(out).length > 0) body = JSON.stringify(out);
     }
