@@ -12,7 +12,7 @@ No collision with the overnight ledger (nothing queued/declined touches allow-li
 
 ## Item 1 — auto-attach the allow_list wallet at first login (biggest activation leak)
 
-Evidence: justin.studer07@gmail.com (banana_boat, 9,176 TS moments already cached) logged in 10 seconds after his welcome email and bounced before the save-wallet step — zero saved_wallets rows, so his dashboard keyed off nothing. 5 of tonight's 8 logged in within ~15 minutes; one of those 5 hit this.
+Evidence: <user email redacted 2026-10-25> (banana_boat, 9,176 TS moments already cached) logged in 10 seconds after his welcome email and bounced before the save-wallet step — zero saved_wallets rows, so his dashboard keyed off nothing. 5 of tonight's 8 logged in within ~15 minutes; one of those 5 hit this.
 
 Files (verified): app/api/profile/saved-wallets/route.ts (the POST upsert shape to mirror: onConflict user_id,wallet_addr,collection_id; accent_color defaults '#E03A2F'), app/auth/confirm/page.tsx (login landing, client).
 

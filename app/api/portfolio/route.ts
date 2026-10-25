@@ -1,5 +1,15 @@
 // app/api/portfolio/route.ts
 // GET /api/portfolio?wallet=0x... — cross-collection portfolio breakdown.
+//
+// ⓘ NO OWNERSHIP CHECK, ON PURPOSE (security audit 2026-10-25, finding 9 —
+// re-derived and closed). This returns per-collection holdings counts and FMV
+// totals for a wallet: on-chain holdings priced by public FMV, the same data
+// the anonymous /share/[wallet] page and the public `/<collection>/collection`
+// tab already show for any address (proxy.ts "Public feature-tab surfaces").
+// Cost basis and P&L — the genuinely private figures — live in /api/cost-basis
+// and /api/wallet-cost-basis, which DO call requireOwnedKey. Adding the guard
+// here would also 403 every Candy (base58) wallet, which requireOwnedKey cannot
+// resolve. If this route ever starts returning acquisition cost, gate it.
 
 import { NextRequest, NextResponse } from "next/server"
 import { normalizeAddress } from "@/lib/address"

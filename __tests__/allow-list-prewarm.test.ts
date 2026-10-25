@@ -215,7 +215,7 @@ describe("processSinglePrewarmRow — finish status + seeder branches", () => {
   })
 
   it("complete: non-TopShot collections resolve from the dispatched backfill, not 'deferred'", async () => {
-    // Regression guard for the chase.standen 2026-07-20 signup: the four
+    // Regression guard for a real 2026-07-20 signup: the four
     // non-TopShot collections used to be hardcoded "deferred", which renders
     // "Coming soon" in the welcome email — so a user holding 67 All Day moments
     // was told All Day wasn't available yet. They are now read back from

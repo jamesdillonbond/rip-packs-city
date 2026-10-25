@@ -71,8 +71,11 @@ describe("check-prod-dep-audit — planted defects", () => {
 describe("the committed baseline and the workflow that runs it", () => {
   it("every baselined advisory carries a package and a reason", () => {
     const b = JSON.parse(readFileSync(path.join(ROOT, "prod-dep-audit-baseline.json"), "utf8"))
+    // An EMPTY baseline is the goal state, not a vacuous one (emptied 2026-10-25
+    // when the next/zod bump cleared every root advisory) — so assert the shape
+    // is readable and every entry that exists is justified, never that one exists.
+    expect(b.advisories && typeof b.advisories === "object" && !Array.isArray(b.advisories)).toBe(true)
     const entries = Object.entries(b.advisories) as [string, { package?: string; reason?: string }][]
-    expect(entries.length).toBeGreaterThan(0)
     for (const [url, e] of entries) {
       expect(url).toMatch(/^https:\/\/github\.com\/advisories\/GHSA-/)
       expect(e.package, url).toBeTruthy()

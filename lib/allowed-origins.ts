@@ -6,5 +6,7 @@ export const ALLOWED_ORIGINS: readonly string[] = [
   "https://rip-packs-city.vercel.app",
   "https://rippackscity.com",
   "https://www.rippackscity.com",
-  "http://localhost:3000",
+  // Local dev only (security audit 2026-10-25, finding 14): a production
+  // deployment has no reason to vouch for a page served from localhost.
+  ...(process.env.NODE_ENV === "production" ? [] : ["http://localhost:3000"]),
 ];

@@ -21,7 +21,7 @@
 
 Consequence: when a user sells/transfers a moment, its wmc row lingers up to **14 days**, plus up to 7 more until the next weekly run — a **~14–21 day window** where the dashboard, `/share` card, and `saved_wallets.cached_moment_count` (reconciled nightly from wmc) **overcount** that user's holdings. This is the honesty defect class CLAUDE.md guards hardest (an account-level false claim).
 
-**Confirmed live case (2026-09-14):** new user `danmunroe@gmail.com`, wallet `0x0d79d58c5fe83cdc`. A forced complete Top Shot backfill today (`wallet-backfill`, `terminated_reason=no_more_moments`, `on_chain_count=1109`, 56 pages) re-saw 1,109 moments. wmc holds **1,159** — 50 distinct moment_ids last seen at signup (09-13 19:00), **none** present in today's complete pass. His card overcounts Top Shot by 50 and won't self-correct until ~early October.
+**Confirmed live case (2026-09-14):** new user `<user email redacted 2026-10-25>`, wallet `0x0d79d58c5fe83cdc`. A forced complete Top Shot backfill today (`wallet-backfill`, `terminated_reason=no_more_moments`, `on_chain_count=1109`, 56 pages) re-saw 1,109 moments. wmc holds **1,159** — 50 distinct moment_ids last seen at signup (09-13 19:00), **none** present in today's complete pass. His card overcounts Top Shot by 50 and won't self-correct until ~early October.
 
 Blast radius today is tiny (5 non-seeded real-user wallets), but it grows with every user who trades.
 

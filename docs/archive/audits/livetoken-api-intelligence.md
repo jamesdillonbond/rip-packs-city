@@ -10,20 +10,20 @@ Log into https://livetoken.co → DevTools → Network → find any `/api/topsho
 
 | Header | Example | Notes |
 |--------|---------|-------|
-| `sessionid` | `o0197nr1wwz7` | Session identifier, rotates on login |
-| `token` | `e7c8f37009108ff28ea930ff9778747147295df0` | Auth token |
-| `userid` | `608166543299e1a70865915c` | LiveToken user ID |
-| `ucid` | `6589579015296496` | Unknown context ID |
+| `sessionid` | `<session id — redacted 2026-10-25>` | Session identifier, rotates on login |
+| `token` | `<token — redacted 2026-10-25, revoke if still live>` | Auth token |
+| `userid` | `<user id — redacted>` | LiveToken user ID |
+| `ucid` | `<ucid — redacted>` | Unknown context ID |
 | `av` | `2.97` | App version — may increment over time |
 
 Also include the standard cookie header (for Cloudflare `cf_clearance`).
 
 Set these in `.env.local`:
 ```
-LIVETOKEN_SESSION_ID=o0197nr1wwz7
-LIVETOKEN_TOKEN=e7c8f37009108ff28ea930ff9778747147295df0
-LIVETOKEN_USER_ID=608166543299e1a70865915c
-LIVETOKEN_UCID=6589579015296496
+LIVETOKEN_SESSION_ID=<session id>
+LIVETOKEN_TOKEN=<token>
+LIVETOKEN_USER_ID=<user id>
+LIVETOKEN_UCID=<ucid>
 LIVETOKEN_COOKIE=<full cookie string including cf_clearance>
 ```
 

@@ -433,6 +433,20 @@ describe("proxy() — allow-list ladder", () => {
     expect(setCookie).toContain("rpc_al_check=")
   })
 
+  it("ignores a self-written cache cookie whose expiry is beyond the TTL (falls to RPC, which revokes)", async () => {
+    // The cookie is unsigned; a banned user can write a far-future expiresAt.
+    // The proxy only ever writes now + 60 s, so anything further out is forged.
+    st.user = { email: "member@x.com" }
+    st.rpc = { data: false, error: null }
+    const cookieVal = encodeURIComponent(
+      JSON.stringify({ email: "member@x.com", expiresAt: Date.now() + 365 * 24 * 3600 * 1000 })
+    )
+    const res = await proxy(
+      req("/dashboard", { cookies: { rpc_al_check: cookieVal } })
+    )
+    expect(res.headers.get("location")).toContain("error=access_revoked")
+  })
+
   it("ignores a malformed cache cookie (falls to RPC)", async () => {
     st.user = { email: "member@x.com" }
     st.rpc = { data: true, error: null }

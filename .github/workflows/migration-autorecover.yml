@@ -126,7 +126,11 @@ jobs:
         with:
           node-version: '24'
           cache: npm
-      - run: npm ci
+      # --ignore-scripts (security audit 2026-10-25, finding 8): this is the one
+      # workflow holding contents: write, and checkout persists that token in
+      # .git/config. A dependency's install script would run with it on disk and
+      # could push to main. Nothing this job runs needs an install script.
+      - run: npm ci --ignore-scripts
 
       - name: Recover any migration applied to prod with no committed file
         id: recover
@@ -164,6 +168,8 @@ jobs:
 
       - name: Assert the working tree contains ONLY new migration files
         if: steps.recover.outputs.recovered != '0'
+        env:
+          RECOVERED: ${{ steps.recover.outputs.recovered }}
         run: |
           set -euo pipefail
           # ⚠ Never `git add -A` in this repo — concurrent sessions leave unrelated
@@ -195,7 +201,7 @@ jobs:
             echo "$BADNAME"
             exit 1
           fi
-          N=${{ steps.recover.outputs.recovered }}
+          N="$RECOVERED"
           # A 3-day window legitimately produces a handful. Twenty-five in one window
           # means something structural (a whole blocked session's output, or a widened
           # window) and deserves a person, not an unattended commit.
@@ -230,12 +236,14 @@ jobs:
 
       - name: Commit and push
         if: steps.recover.outputs.recovered != '0' && github.event.inputs.dry_run != 'true'
+        env:
+          RECOVERED: ${{ steps.recover.outputs.recovered }}
         run: |
           set -euo pipefail
           git config user.name  'rpc-migration-autorecover[bot]'
           git config user.email 'rpc-migration-autorecover@users.noreply.github.com'
           git add supabase/migrations
-          N=${{ steps.recover.outputs.recovered }}
+          N="$RECOVERED"
           # ⚠ Built with printf into a file, NOT an inline heredoc: every `run:` body
           # here is indented, and an indented heredoc terminator does not terminate.
           {

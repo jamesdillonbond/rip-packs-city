@@ -31,6 +31,7 @@ export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
+import { tokenMatches } from "@/lib/auth/bearer-secret";
 import { claimChannelLink, resolveChannelOwner, resolveChannelOwnerUsername } from "@/lib/alerts";
 import {
   resolveWalletForChannel,
@@ -110,7 +111,7 @@ function toTelegramPlain(text: string): string {
 export async function POST(req: NextRequest) {
   // Authenticate via Telegram's echoed secret-token header.
   const secret = process.env.TELEGRAM_WEBHOOK_SECRET;
-  if (!secret || req.headers.get("x-telegram-bot-api-secret-token") !== secret) {
+  if (!secret || !tokenMatches(req.headers.get("x-telegram-bot-api-secret-token"), "TELEGRAM_WEBHOOK_SECRET")) {
     return NextResponse.json({ ok: false }, { status: 401 });
   }
 

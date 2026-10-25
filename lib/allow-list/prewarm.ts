@@ -46,7 +46,7 @@ const TELEGRAM_TIMEOUT_MS = 10_000
 // 5 collections in ~95s; whales exceed any sane budget and are left to the
 // hourly reconciler by design.
 //
-// 120s is sized off a real signup: chase.standen (320 moments across TS +
+// 120s is sized off a real 2026-07-20 signup (320 moments across TS +
 // All Day) dispatched 20:44:07Z and its last collection landed 20:45:40Z — 93s.
 // A 60s budget would have timed that out and shown "Loading…" on a wallet that
 // was in fact fully indexed, so the budget must clear the observed case with

@@ -14,7 +14,7 @@ The front door opened 2026-07-20 (self-serve, allow-by-default). Open-door users
 - Top Shot lands **page-capped at exactly 50 moments** (the `limit: 50` fingerprint), even if the user holds more.
 - UFC / Golazos / Pinnacle / All Day land at **0** even when the wallet holds moments there (the shallow search short-circuits for several of them).
 
-**Confirmed live:** `visiondist@gmail.com` signed up 2026-08-08 19:59Z via the open door (no `allow_list` row, magic link confirmed, 5 `saved_wallets` rows auto-attached). Their wallet `0xdcd41c74d2dd0a66` shows **exactly 50** Top Shot moments and **0** in every other collection — the exact signature above.
+**Confirmed live:** `<user email redacted 2026-10-25>` signed up 2026-08-08 19:59Z via the open door (no `allow_list` row, magic link confirmed, 5 `saved_wallets` rows auto-attached). Their wallet `0xdcd41c74d2dd0a66` shows **exactly 50** Top Shot moments and **0** in every other collection — the exact signature above.
 
 Trevor's directive: wallets should **warm up immediately and fully across collections as part of the account-creation CTA.**
 
@@ -67,5 +67,5 @@ Consider dispatching the multicollection backfill once on first dashboard load f
 
 ## Interim (already actioned by Trevor out-of-band)
 
-`visiondist@gmail.com`'s wallet was warmed manually via:
+`<user email redacted 2026-10-25>`'s wallet was warmed manually via:
 `POST /api/wallet-backfill-multicollection` body `{"wallet":"0xdcd41c74d2dd0a66","skip_cached":false}` (Bearer `INGEST_SECRET_TOKEN`).

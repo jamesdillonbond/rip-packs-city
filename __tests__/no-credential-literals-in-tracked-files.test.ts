@@ -58,6 +58,24 @@ const PATTERNS: Pattern[] = [
   // (2026-10-02), so all are banned: even the public anon key belongs in env,
   // and a committed one needs a SUPPRESSIONS entry that says so.
   { name: "jwt", re: /\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g },
+  // 2026-10-25 security audit, finding 3: a third-party session token with NO
+  // vendor prefix sat in a doc for three months (`LIVETOKEN_TOKEN=<40 hex>` under
+  // "Set these in .env.local"). The prefix patterns above cannot see that shape,
+  // so ban the ENV ASSIGNMENT of a long HEX run to a *_TOKEN / *_SECRET / *_KEY /
+  // *_PASSWORD name. Hex only on purpose: fixtures assign readable values
+  // ("test-token-…", "your-service-role-key"), never 32+ hex characters.
+  {
+    name: "env-assigned-hex-secret",
+    re: /\b[A-Z][A-Z0-9_]*(?:TOKEN|SECRET|_KEY|PASSWORD)\s*[=:]\s*["'`]?[0-9a-fA-F]{32,}\b/g,
+  },
+  // Same audit, finding 4: real users' personal addresses were committed in a
+  // fixture and handoffs. Not a credential, but this repo is public and the
+  // privacy policy promises it. The business inbox and the owner's own address
+  // (and its +aliases) are the only freemail addresses allowed in the tree.
+  {
+    name: "personal-email",
+    re: /(?<![A-Za-z0-9._%+-])(?!rippackscity@)(?!tdillonbond(?:\+[a-z0-9._-]+)?@)[A-Za-z0-9._%+-]+@(?:gmail|googlemail|yahoo|hotmail|outlook|icloud|proton|protonmail|aol|live)\.(?:com|me)\b/g,
+  },
 ]
 
 /**
@@ -161,6 +179,8 @@ describe("the scanner fires on each pattern and never echoes the secret (planted
     "telegram-bot-token": "123456789:" + "AA" + run(33),
     "private-key-block": "-----BEGIN " + "PRIVATE KEY-----",
     jwt: [b64url({ alg: "HS256", typ: "JWT" }), b64url({ role: "service_role", iss: "supabase" }), run(43)].join("."),
+    "env-assigned-hex-secret": "LIVETOKEN_" + "TOKEN=" + run(40, "0123456789abcdef"),
+    "personal-email": "some.collector" + "@" + "gmail.com",
   }
 
   it("has one plant per pattern (a new pattern without a plant is unproven)", () => {
@@ -187,6 +207,9 @@ describe("the scanner fires on each pattern and never echoes the secret (planted
       "ANTHROPIC_API_KEY=sk-ant-...",
       "sb_secret_xxx in the dashboard",
       "a 64-hex tx hash " + "ab".repeat(32),
+      "LIVETOKEN_TOKEN=<token>",
+      "SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}",
+      "contact rippackscity" + "@" + "gmail.com or tdillonbond+qa" + "@" + "gmail.com",
     ].join("\n")
     expect(scanText("docs/placeholders.md", text)).toEqual([])
   })

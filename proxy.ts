@@ -1379,6 +1379,12 @@ function readAllowCookie(request: NextRequest): AllowCacheEntry | null {
     const parsed = JSON.parse(raw) as Partial<AllowCacheEntry>
     if (typeof parsed.email !== "string") return null
     if (typeof parsed.expiresAt !== "number") return null
+    // The cookie is unsigned JSON, so a client can write any expiresAt. Only
+    // writeAllowCookie sets it, never more than ALLOWLIST_TTL_SECONDS ahead — an
+    // expiry beyond that (plus clock-skew slack) was not written by us and would
+    // let a banned user skip check_email_allowed indefinitely. Treat it as absent.
+    // (Security audit 2026-10-25, finding 12.)
+    if (parsed.expiresAt > Date.now() + (ALLOWLIST_TTL_SECONDS + 60) * 1000) return null
     return { email: parsed.email, expiresAt: parsed.expiresAt }
   } catch {
     return null

@@ -7,7 +7,7 @@
 
 ## Symptom
 
-New signup `visiondist@gmail.com` / wallet `0xdcd41c74d2dd0a66` (All Day username **ThunderHour**) shows **0 All Day moments** in RPC after a full multicollection backfill, but his live All Day profile shows **3 moments — all locked** (padlock icon on every card: Mike Alstott Common #1/4999, Legendary #59/59, Rare #355/499).
+New signup `<user email redacted 2026-10-25>` / wallet `0xdcd41c74d2dd0a66` (All Day username **ThunderHour**) shows **0 All Day moments** in RPC after a full multicollection backfill, but his live All Day profile shows **3 moments — all locked** (padlock icon on every card: Mike Alstott Common #1/4999, Legendary #59/59, Rare #355/499).
 
 Corroborating: he has **169 All Day sales as SELLER** from this exact wallet (2 as buyer), last on 2026-07-29 — he was a heavy All Day participant, not an empty wallet.
 
@@ -38,7 +38,7 @@ The All Day pipeline is healthy platform-wide (512/667 wallets returned moments 
 
 ## Verify after ship
 
-- `visiondist@gmail.com` / `0xdcd41c74d2dd0a66` shows 3 All Day moments (all `is_locked=true`).
+- `<user email redacted 2026-10-25>` / `0xdcd41c74d2dd0a66` shows 3 All Day moments (all `is_locked=true`).
 - A second known locked-All Day wallet also recovers its locked moments.
 - No regression in unlocked All Day counts for existing wallets (compare wmc All Day totals before/after on a sample).
 - CI green; ledger entry with revert path.

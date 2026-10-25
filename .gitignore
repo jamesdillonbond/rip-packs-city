@@ -214,3 +214,15 @@ _to_delete/
 # Python bytecode — never committed (a .pyc carries NUL bytes; the tree-corruption guard reads it as corruption)
 __pycache__/
 *.pyc
+
+# Credential files (security audit 2026-10-25, finding 14). Nothing tracked matches these.
+service-account*.json
+*-adminsdk-*.json
+*.key
+*.p12
+*.pfx
+id_rsa
+id_rsa.*
+id_ed25519
+id_ed25519.*
+.npmrc

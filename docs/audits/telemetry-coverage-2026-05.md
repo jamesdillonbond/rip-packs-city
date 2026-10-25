@@ -84,7 +84,7 @@ The 6 users who signed in without firing telemetry have not actually used the pr
 
 Steps 4 and 5 are observationally indistinguishable today because we don't have an `auth-session-started` beacon firing at the moment the cookie lands. We do have a `last_sign_in_at` from `auth.users` for those 6, but no follow-on click.
 
-Three of the dormant signups match the cohort flagged in `331d5eb` (`feat(admin): resend-welcome route for dormant allow-listed users`) — `siiksicsix@gmail.com`, `mike@flowty.io`, `ryotaabe@gmail.com`. The pattern is "first-touch never converted to product engagement", not "product is broken."
+Three of the dormant signups match the cohort flagged in `331d5eb` (`feat(admin): resend-welcome route for dormant allow-listed users`) — `<user email redacted 2026-10-25>`, `mike@flowty.io`, `<user email redacted 2026-10-25>`. The pattern is "first-touch never converted to product engagement", not "product is broken."
 
 ## Recommendations (deferred per task — no commits)
 

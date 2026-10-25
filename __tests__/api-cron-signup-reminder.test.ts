@@ -55,7 +55,7 @@ function makeReq(opts: { auth?: string; params?: Record<string, string> } = {}) 
 }
 
 const chaseRow = {
-  email: "chase.standen@gmail.com",
+  email: "collector@example.com",
   wallet_addr: "0x3a7607b98be62a96",
   username: "oofowiemywallet",
   approved_at: "2026-07-20T20:44:06.731Z",
@@ -121,7 +121,7 @@ describe("/api/cron/signup-reminder", () => {
     expect(body.enabled).toBe(false)
     expect(body.eligible_total).toBe(1)
     expect(body.would_send).toBe(1)
-    expect(body.recipients[0].email).toBe("chase.standen@gmail.com")
+    expect(body.recipients[0].email).toBe("collector@example.com")
     expect(body.recipients[0].stage).toBe("nudge2")
     expect(h.afterFns.length).toBe(0)
   })
@@ -167,7 +167,7 @@ describe("/api/cron/signup-reminder", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
     const [url, init] = fetchMock.mock.calls[0] as any[]
     expect(String(url)).toContain("api.resend.com")
-    expect(String(init.body)).toContain("chase.standen@gmail.com")
+    expect(String(init.body)).toContain("collector@example.com")
   })
 
   it("enabled: skips a recipient already reminded at this stage (no send)", async () => {

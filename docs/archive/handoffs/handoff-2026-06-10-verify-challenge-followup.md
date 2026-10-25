@@ -1,6 +1,6 @@
 # Claude Code handoff — 2026-06-10 (late): verify-challenge dead-end (TetrisLblock) — route-side residuals
 
-Context: TetrisLblock (adam.rust@gmail.com, wallet 0xa9435b88c3798c19, allow_list active) is dead-ending on wallet verification with BOTH paths failing: FCL shows "Wallet did not return an address" (expected for Dapper-custodied wallets — copy problem, not a bug) and the listing challenge shows "Couldn't find a free Moment to list right now". Cowork diagnosed + shipped the DB half live; these are the route/UX residuals. Claude Code's direct file inspection wins over this doc on any disagreement.
+Context: TetrisLblock (<user email redacted 2026-10-25>, wallet 0xa9435b88c3798c19, allow_list active) is dead-ending on wallet verification with BOTH paths failing: FCL shows "Wallet did not return an address" (expected for Dapper-custodied wallets — copy problem, not a bug) and the listing challenge shows "Couldn't find a free Moment to list right now". Cowork diagnosed + shipped the DB half live; these are the route/UX residuals. Claude Code's direct file inspection wins over this doc on any disagreement.
 
 What Cowork verified + shipped (do not redo):
 - His wmc is healthy: 1,508 TS rows, 1,501 with fmv>0 + image, cheapest $0.21. 276 rows is_locked, 18 of them in the <=$0.30 tail. wmc lock data 2 days stale (lock_checked_at max 2026-06-09 01:38Z).

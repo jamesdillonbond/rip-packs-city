@@ -1,7 +1,7 @@
 // app/api/cron/signup-reminder/route.ts
 //
 // Cold-signup reminder (retention P3). Re-engages approved allow_list users who
-// never completed first login — the "chase.standen" pattern: approved,
+// never completed first login — the 2026-07-20 signup pattern: approved,
 // prewarmed, welcomed, but never clicked the magic link. Reads the read-only
 // SECURITY DEFINER selector get_cold_signup_reminders (status active, no
 // auth.users, welcome sent, approved within [p_min_hours, p_max_days]) and emails

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { bearerMatches } from "@/lib/auth/bearer-secret"
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 import { logTerminalRun } from "@/lib/pipeline/terminal-run"
 import { readPdsDistFacts, mergePinnacleDistMetadata, type PdsDistFacts } from "@/lib/packs/pds-dist-info"
@@ -56,10 +57,8 @@ async function readUntitled(): Promise<{ rows: DistRow[]; complete: boolean }> {
 }
 
 function authorized(request: NextRequest): boolean {
-  const auth = request.headers.get("authorization") ?? ""
-  const cron = process.env.CRON_SECRET
-  const ingest = process.env.INGEST_SECRET_TOKEN
-  return (!!cron && auth === `Bearer ${cron}`) || (!!ingest && auth === `Bearer ${ingest}`)
+  // Constant-time, fail-closed on an unset secret (security audit 2026-10-25).
+  return bearerMatches(request.headers.get("authorization"), "CRON_SECRET", "INGEST_SECRET_TOKEN")
 }
 
 async function run(request: NextRequest) {

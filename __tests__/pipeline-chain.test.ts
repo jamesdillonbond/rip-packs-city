@@ -19,6 +19,7 @@ beforeEach(() => {
   afterCbs.length = 0
   process.env.INGEST_SECRET_TOKEN = "tok-123"
   delete process.env.VERCEL_URL
+  delete process.env.VERCEL_ENV
 })
 
 afterEach(() => {
@@ -68,6 +69,18 @@ describe("fireNextPipelineStep", () => {
     await runAfters()
     const [url] = fetchMock.mock.calls[0] as unknown as [string, any]
     expect(url).toBe("https://preview.vercel.app/api/cron/next?force=true&chain=true")
+  })
+
+  it("chains to the production domain, NOT the protected deployment URL, in production", async () => {
+    process.env.VERCEL_ENV = "production"
+    process.env.VERCEL_URL = "rip-packs-city-abc123-rippackscity-projects.vercel.app"
+    const fetchMock = vi.fn(async () => ({ status: 202 }))
+    vi.stubGlobal("fetch", fetchMock)
+    await fireNextPipelineStep("/api/cron/next", true)
+    await runAfters()
+    const [url] = fetchMock.mock.calls[0] as unknown as [string, any]
+    expect(url).toBe("https://www.rippackscity.com/api/cron/next?chain=true")
+    expect(url).not.toContain("vercel.app")
   })
 
   it("swallows a fetch rejection inside after()", async () => {
