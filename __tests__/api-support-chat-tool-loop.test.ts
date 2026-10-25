@@ -95,6 +95,8 @@ describe("support-chat tool-use loop (scripted model)", () => {
     const res = await POST(post("do a very long chain"))
     expect(res.status).toBe(200)
     const body = await res.json()
-    expect(body.response).toContain("too complex")
+    // 2026-10-25: the copy no longer sends every unfinished answer to the Sniper.
+    expect(body.response).toContain("couldn't finish that answer in time")
+    expect(body.response).not.toMatch(/Sniper/)
   })
 })

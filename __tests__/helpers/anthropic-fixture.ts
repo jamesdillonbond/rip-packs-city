@@ -27,6 +27,9 @@ export type ScriptTurn =
   // Throw from the model call itself (create() rejects; stream().finalMessage()
   // rejects) — drives the handler's classifyAnthropicError / canned-message path.
   | { error: { message: string; status?: number; name?: string; type?: string } }
+  // Cut off by max_tokens while writing a tool call (no text block) — the
+  // 2026-10-25 collector-report failure shape.
+  | { truncatedTool: { name: string; input: unknown } }
 
 export interface ScriptState {
   script: ScriptTurn[]
@@ -34,7 +37,7 @@ export interface ScriptState {
 }
 
 interface FakeMessage {
-  stop_reason: "tool_use" | "end_turn"
+  stop_reason: "tool_use" | "end_turn" | "max_tokens"
   content: Array<
     | { type: "text"; text: string }
     | { type: "tool_use"; id: string; name: string; input: unknown }
@@ -55,6 +58,12 @@ function turnError(turn: ScriptTurn | undefined): Error | null {
 function turnToMessage(turn: ScriptTurn | undefined, idx: number): FakeMessage {
   // Past the end of the script -> a benign empty end_turn (so a loop that
   // over-calls terminates instead of hanging).
+  if (turn && "truncatedTool" in turn) {
+    return {
+      stop_reason: "max_tokens",
+      content: [{ type: "tool_use" as const, id: `tool_${idx}_cut`, name: turn.truncatedTool.name, input: turn.truncatedTool.input }],
+    }
+  }
   if (!turn || "text" in turn || "error" in turn) {
     return { stop_reason: "end_turn", content: [{ type: "text", text: turn && "text" in turn ? turn.text : "" }] }
   }

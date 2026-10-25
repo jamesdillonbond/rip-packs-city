@@ -1262,6 +1262,8 @@ Bad — fluff: "That's a great question! I'd be happy to help you analyze that..
 Bad — pivoting to deals when the user asked for support: user reports the Profile page is broken; bot responds with "Want me to find some deals while we figure that out?" (no — log the bug, confirm capture, ask if they need anything else).
 Bad — double-logging: user says "I found a bug"; bot calls log_bug immediately with summary "I found a bug" then asks clarifying questions and logs again. (No — clarify FIRST, then call log_bug exactly once with a clean one-liner.)
 Bad — pitch after support: bot logs a bug, then says "Logged it — also, I noticed there are 12 moments listed 30%+ below FMV right now if you want a break from troubleshooting." (No — close with "Anything else?" full stop.)
+Good — can't find something: user on the Top Shot overview says "I can't easily find the team set pages". Bot: "They're the team checklists. From this Overview, open the **Team checklists** card → /teams → pick your team → the "<Team> checklist" link at the top of its panel (e.g. /nba-top-shot/team/detroit-pistons). There's no Teams tab in the tab row, so I've also logged that it's hard to spot."
+Bad — logging INSTEAD of answering: same message; bot replies only "I've logged this as a discoverability issue. Anything else?" (No — the user still can't find the page. Give the path first; the log line goes underneath.)
 
 Respond in whatever language the user writes in.`;
 
@@ -6464,6 +6466,13 @@ export async function POST(req: NextRequest) {
     const DEADLINE_MS = 52_000;
     const remainingMs = () => DEADLINE_MS - (Date.now() - requestStartedMs);
     const MIN_MODEL_MS = 12_000;
+    // 2026-10-25 replay: "Give me the collector report … the full rundown" hit
+    // the old 1,024 cap on its answer hop in 2 of 3 runs. 2,048 costs nothing
+    // unless an answer uses it.
+    const CONCIERGE_MAX_TOKENS = 2048;
+    // Set when an answer hop was cut off by the cap with NO text (the budget went
+    // into a tool call that never finished): one more hop with tools disabled.
+    let forceAnswerHop = false;
 
     // What the reader actually saw streamed, across iterations — persisted as the
     // answer so the transcript and the bubble agree (a "let me check…" preamble
@@ -6475,7 +6484,7 @@ export async function POST(req: NextRequest) {
       const stream = anthropic.messages.stream(
         {
           model: CONCIERGE_MODEL,
-          max_tokens: 1024,
+          max_tokens: CONCIERGE_MAX_TOKENS,
           system: systemBlocks,
           tools: TOOLS,
           ...(finalHop ? { tool_choice: { type: "none" as const } } : {}),
@@ -6508,7 +6517,7 @@ export async function POST(req: NextRequest) {
           cache_write: null,
         };
         // Too little time left for a tool hop AND an answer after it: answer now.
-        const finalHop = iterations > 1 && (iterations >= MAX_ITERATIONS || remainingMs() < MIN_MODEL_MS * 2);
+        const finalHop = forceAnswerHop || (iterations > 1 && (iterations >= MAX_ITERATIONS || remainingMs() < MIN_MODEL_MS * 2));
         if (remainingMs() < 4_000) break;
         const anthropicStart = Date.now();
         const response = useStream
@@ -6516,7 +6525,7 @@ export async function POST(req: NextRequest) {
           : await anthropic.messages.create(
               {
                 model: CONCIERGE_MODEL,
-                max_tokens: 1024,
+                max_tokens: CONCIERGE_MAX_TOKENS,
                 system: systemBlocks,
                 tools: TOOLS,
                 ...(finalHop ? { tool_choice: { type: "none" as const } } : {}),
@@ -6633,6 +6642,16 @@ export async function POST(req: NextRequest) {
         if (response.stop_reason === "max_tokens" && finalResponse) {
           finalResponse += "\n\n_(I hit my length limit mid-answer — ask me to continue and I'll pick up where this stops.)_";
         }
+        // ⛔ 2026-10-25: cut off by the cap with no text at all — the tokens went
+        // into a tool call that never finished. That ended in "too complex for me
+        // to handle in time … check the Sniper page" for a collector report whose
+        // tool had already answered in 90 ms. Ask once more with tools off, from
+        // the results already gathered; the truncated call is dropped.
+        if (response.stop_reason === "max_tokens" && !finalResponse && !forceAnswerHop && remainingMs() >= MIN_MODEL_MS) {
+          forceAnswerHop = true;
+          iterationTraces.push(trace);
+          continue;
+        }
         iterationTraces.push(trace);
         break;
       }
@@ -6650,7 +6669,7 @@ export async function POST(req: NextRequest) {
           // problem, so it gets its own category below — the copy stays the
           // same, because it is the right thing to tell the user either way.
           iterationLimitHit = iterations >= MAX_ITERATIONS;
-          finalResponse = "That query was too complex for me to handle in time. Try breaking it down. You can also check the Sniper page directly for the full live feed.";
+          finalResponse = "I couldn't finish that answer in time. Try asking for one part of it at a time — for example, one collection, one player or one section of a report.";
         }
         if (escalated) {
           finalResponse += "\n\nYou can also DM us directly at https://twitter.com/RipPacksCity for a faster response.";

@@ -431,3 +431,39 @@ describe("concierge — get_premiums is scoped to the collection it names (2026-
     expect(f.calls.some((c) => c.url.includes("/serial-premiums"))).toBe(true)
   })
 })
+
+// 2026-10-25 replay: "Give me the collector report … the full rundown" hit the
+// 1,024-token cap on its answer hop with NO text (the tokens went into a tool call
+// that never finished), and the reader got "too complex for me … check the Sniper
+// page". Now one more hop with tools off answers from what was gathered.
+describe("concierge — an answer hop cut off with no text is retried once with tools off", () => {
+  it("answers instead of the 'could not finish' fallback, and the retry disables tools", async () => {
+    stubFetch([jsonRoute("/api/public/insights/top-sales", { rows: [{ id: 1 }] })])
+    A.state.script = [
+      { tools: [{ name: "get_top_sales", input: {} }] },
+      { truncatedTool: { name: "get_top_sales", input: { limit: 50 } } },
+      { text: "Here is the rundown." },
+    ]
+    A.state.cursor = 0
+    const res = await POST(post("give me the full rundown"))
+    const body = (await res.json()) as { response?: string }
+    expect(body.response).toBe("Here is the rundown.")
+    expect(body.response).not.toMatch(/Sniper|too complex|couldn't finish/)
+    const third = A.createCalls[2] as unknown as { tool_choice?: { type: string }; max_tokens?: number }
+    expect(third.tool_choice).toEqual({ type: "none" })
+    expect(third.max_tokens).toBe(2048)
+  })
+  it("retries only once — a second empty cut-off ends in the honest fallback, not a loop", async () => {
+    A.state.script = [
+      { truncatedTool: { name: "get_top_sales", input: {} } },
+      { truncatedTool: { name: "get_top_sales", input: {} } },
+      { text: "never reached" },
+    ]
+    A.state.cursor = 0
+    const res = await POST(post("give me the full rundown"))
+    const body = (await res.json()) as { response?: string }
+    expect(body.response).toMatch(/couldn't finish that answer in time/)
+    expect(body.response).not.toMatch(/Sniper/)
+    expect(A.createCalls.length).toBe(2)
+  })
+})
