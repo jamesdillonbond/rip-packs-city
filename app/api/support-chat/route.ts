@@ -1368,6 +1368,12 @@ function formatDistributionForModel(
     scanned: result.scanned,
     truncated: result.truncated ?? false,
     ...(result.truncation_note ? { truncation_note: result.truncation_note } : {}),
+    // 2026-10-25: the percentiles, min/max and count cover EVERY matched edition
+    // (computed in SQL); only badge counts and the sample list come from the
+    // first `scanned` editions.
+    ...(result.percentiles_scope === "all_matched"
+      ? { percentiles_scope: `The count, median, p10/p90 and min/max cover all ${result.population_matched ?? result.count} matched editions. badged_editions_in_filter and sample_editions come from the first ${result.scanned} read — say "at least" for the badge count.` }
+      : {}),
   });
 }
 

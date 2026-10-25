@@ -41,6 +41,7 @@ const SANCTIONED: Record<string, string> = {
   "app/api/sniper-feed/route.ts|...(player ? { p_player: player } : {}),": "the handler's runFeed retry re-runs this whole build",
   "lib/concierge/catalog-deals-index.ts|p_player: who,": "callers pass the resolver's labels; the typed text is used only when it named no single person",
   "lib/concierge/fmv-distribution.ts|else if (input.player) out = out.ilike(\"player_name\", `%${input.player}%`)": "player_id (resolver) first; this ilike is the fallback when no single person was named",
+  "lib/concierge/fmv-distribution.ts|p_player: input.playerId ? null : (input.player ?? null),": "the same fallback as the slice's ilike above, sent only after that ilike already matched 500+ editions (so the spelling is not the empty-result case #207 guards)",
   "lib/special-serial-owners-board.ts|p_player: opts.player ?? null,": "its route resolves (singleRetryLabel) and re-calls with the spelling",
 }
 

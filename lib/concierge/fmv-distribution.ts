@@ -81,6 +81,12 @@ export type FmvDistributionResult =
       /** null = unknown: the scan filled its cap and the population could not be counted. */
       truncated?: boolean | null
       truncation_note?: string
+      /**
+       * 2026-10-25: what the percentiles cover. "all_matched" = computed in SQL
+       * over every matched edition (concierge_fmv_population_stats); absent =
+       * computed over the editions in `priced_editions`.
+       */
+      percentiles_scope?: "all_matched"
     }
 
 interface UnifiedInput {
@@ -476,11 +482,67 @@ export async function fetchUnifiedFmvDistribution(
   // population is known exactly anyway (everything that matched fit). Only a
   // failed count on a FULL scan is genuinely unknown.
   const scannedCount = editionRows?.length ?? 0
-  return buildDistribution(enriched, sampleLimit, {
+  const sliced = buildDistribution(enriched, sampleLimit, {
     populationMatched: populationMatched ?? (scannedCount < SCAN_CAP ? scannedCount : null),
     scanned: scannedCount,
     cap: SCAN_CAP,
   })
+  // ⭐ 2026-10-25: when the filter is bigger than the 500-edition read, compute the
+  // percentiles over the WHOLE filter in SQL (concierge_fmv_population_stats —
+  // the same predicates, canonical-key rule and linear-interpolation quantile,
+  // over edition_fmv_current; 55 ms for 4,047 editions). Measured on Top Shot
+  // Base Set COMMON: the first-500 slice said p90 0.73 / max 18.17, the whole
+  // filter is p90 2.00 / max 719.10. A failed read keeps the slice AND its
+  // truncation note — never a silent swap.
+  if (sliced.status === "ok" && sliced.mode === "distribution" && sliced.truncated === true) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: pop, error: popErr } = await (supabase as any).rpc("concierge_fmv_population_stats", {
+      p_collection_id: input.collectionUuid ?? null,
+      p_player_id: input.playerId ?? null,
+      p_player: input.playerId ? null : (input.player ?? null),
+      p_set: input.setName ?? null,
+      p_tier: input.tier ?? null,
+    })
+    if (popErr) {
+      console.warn("[fmv-distribution] population stats failed (keeping the slice):", popErr.message)
+      return sliced
+    }
+    const n = (v: unknown): number | null => (v == null || !Number.isFinite(Number(v)) ? null : Number(v))
+    const priced = n(pop?.priced)
+    const p10 = n(pop?.p10), p50 = n(pop?.p50), p90 = n(pop?.p90), lo = n(pop?.min_fmv), hi = n(pop?.max_fmv)
+    if (priced == null || priced < 2 || p10 == null || p50 == null || p90 == null || lo == null || hi == null) return sliced
+    const top = pop?.top
+    let samples = sliced.sample_editions
+    if (top && top.edition_id && !samples.some((x) => x.edition_id === top.edition_id)) {
+      const topRow: DistributionalSampleEdition = {
+        edition_id: String(top.edition_id),
+        external_id: top.external_id ?? null,
+        player_name: top.player_name ?? null,
+        set_name: top.set_name ?? null,
+        tier: top.tier ?? null,
+        fmv_usd: Number(top.fmv_usd),
+        confidence: top.confidence ?? null,
+        computed_at: top.computed_at ?? null,
+      }
+      samples = [...samples.slice(0, Math.max(samples.length - 1, 0)), topRow]
+    }
+    const matched = n(pop?.matched)
+    return {
+      ...sliced,
+      count: priced,
+      p10: round2(p10),
+      p50: round2(p50),
+      p90: round2(p90),
+      min_fmv: round2(lo),
+      max_fmv: round2(hi),
+      sample_editions: samples,
+      population_matched: matched ?? sliced.population_matched,
+      truncated: false,
+      truncation_note: undefined,
+      percentiles_scope: "all_matched",
+    }
+  }
+  return sliced
 }
 
 interface PinnacleInput {

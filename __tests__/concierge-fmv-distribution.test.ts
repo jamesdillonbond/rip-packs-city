@@ -480,3 +480,65 @@ describe("fetchUnifiedFmvDistribution — the population count fails", () => {
     expect(out.truncation_note).toBeUndefined()
   })
 })
+
+// ── 2026-10-25: a filter bigger than the 500-edition read is summarised over the WHOLE filter ──
+//
+// Replay of a real question ("What is a Base Set common worth on Top Shot? Give me
+// the range"): the first-500 slice said p90 0.73 / max 18.17; the whole filter is
+// p90 2.00 / max 719.10. concierge_fmv_population_stats computes over everything;
+// a failed call keeps the slice AND its truncation note.
+describe("fetchUnifiedFmvDistribution — percentiles over the whole filter when the read is capped", () => {
+  const CAP = 500
+  function makeTruncatedClient(popResult: { data: any; error: any }, matched = 4047) {
+    const rows = Array.from({ length: CAP }, (_, i) => ({
+      id: `e${i}`, external_id: `2:${i}`, player_name: "P", set_name: "Base Set", tier: "COMMON", collection_id: "c",
+    }))
+    const snaps = rows.map((r) => ({ edition_id: r.id, fmv_usd: 0.2, confidence: "HIGH", computed_at: "2026-01-01T00:00:00Z" }))
+    const rpcCalls: Array<[string, any]> = []
+    const client: any = {
+      rpcCalls,
+      from() {
+        let head = false
+        const b: any = {}
+        for (const m of ["eq", "neq", "in", "order", "limit", "is", "not", "ilike", "gte", "lt"]) b[m] = () => b
+        b.select = (_cols?: unknown, opts?: { head?: boolean }) => { head = opts?.head === true; return b }
+        b.maybeSingle = async () => ({ data: null, error: null })
+        b.then = (resolve: any) => resolve(head ? { data: null, count: matched, error: null } : { data: rows, error: null })
+        return b
+      },
+      rpc: async (name: string, args: any) => {
+        rpcCalls.push([name, args])
+        return name === "concierge_fmv_population_stats" ? popResult : { data: snaps, error: null }
+      },
+    }
+    return client
+  }
+  const POP = {
+    matched: 4047, priced: 4017, p10: 0.2, p50: 0.26, p90: 2, min_fmv: 0.1, max_fmv: 719.1,
+    top: { edition_id: "lebron", external_id: "2:133", player_name: "LeBron James", set_name: "Base Set", tier: "COMMON", fmv_usd: 719.1, confidence: "ASK_ONLY", computed_at: "2026-10-25T00:00:00Z" },
+  }
+
+  it("uses the whole-filter numbers, names the top edition, and is no longer marked truncated", async () => {
+    const client = makeTruncatedClient({ data: POP, error: null })
+    const out: any = await fetchUnifiedFmvDistribution(client, { collectionUuid: "c", setName: "Base Set", tier: "common" })
+    expect(out).toMatchObject({ status: "ok", mode: "distribution", count: 4017, p10: 0.2, p50: 0.26, p90: 2, min_fmv: 0.1, max_fmv: 719.1, population_matched: 4047, truncated: false, percentiles_scope: "all_matched" })
+    expect(out.truncation_note).toBeUndefined()
+    expect(out.sample_editions.map((s: any) => s.edition_id)).toContain("lebron")
+    const call = client.rpcCalls.find((c: any) => c[0] === "concierge_fmv_population_stats")
+    expect(call[1]).toEqual({ p_collection_id: "c", p_player_id: null, p_player: null, p_set: "Base Set", p_tier: "common" })
+  })
+
+  it("a FAILED whole-filter read keeps the slice and its truncation note — never a silent swap", async () => {
+    const out: any = await fetchUnifiedFmvDistribution(makeTruncatedClient({ data: null, error: { message: "timeout" } }), { collectionUuid: "c", setName: "Base Set" })
+    expect(out.truncated).toBe(true)
+    expect(String(out.truncation_note)).toMatch(/SLICE/)
+    expect(out.percentiles_scope).toBeUndefined()
+    expect(out.p50).toBe(0.2)
+  })
+
+  it("a filter that fits in one read never calls it", async () => {
+    const client = makeTruncatedClient({ data: POP, error: null }, CAP)
+    await fetchUnifiedFmvDistribution(client, { collectionUuid: "c", setName: "Base Set" })
+    expect(client.rpcCalls.some((c: any) => c[0] === "concierge_fmv_population_stats")).toBe(false)
+  })
+})
