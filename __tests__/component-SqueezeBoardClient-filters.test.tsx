@@ -260,6 +260,17 @@ describe("SqueezeBoardClient — filters are sent to the server", () => {
 // 2026-10-03 (beta feedback 10256): holder concentration. A row without a
 // complete owner census is UNKNOWN — an em-dash with a reason, never "0%".
 describe("SqueezeBoardClient — Top 5 hold column", () => {
+  // 2026-10-25 production sweep: a complete census with 0 collector holders (the
+  // only copy in a system account) printed a bare "0%" beside Locked 1.
+  it("says 'none held' with the reason when every copy is system-held, never a bare 0%", () => {
+    const r = [row({ edition_id: "s", external_id: "220:7430", player_name: "System Held", top5_share_pct: 0, holders: 0 })]
+    const { container } = render(<SqueezeBoardClient initialRows={r} initialFetchedAt={FETCHED} />)
+    const cell = container.querySelector('[data-testid="top5-share"]')!
+    expect(cell.textContent).toBe("none held")
+    expect(cell.textContent).not.toMatch(/%/)
+    expect(cell.querySelector("span")?.getAttribute("title")).toMatch(/system account/i)
+  })
+
   it("prints the share with its holder count, an em-dash + reason without a census, and counts coverage from the rows in hand", () => {
     const r = [
       row({ edition_id: "k", external_id: "141:5", player_name: "Known Census Guy", top5_share_pct: 62.5, holders: 41 }),

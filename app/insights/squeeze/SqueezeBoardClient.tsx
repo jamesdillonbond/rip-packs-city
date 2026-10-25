@@ -683,7 +683,12 @@ export default function SqueezeBoardClient({
                   {/* Holder concentration (beta feedback 10256). A missing census is
                       UNKNOWN and reads as an em-dash with a reason — never as 0 %. */}
                   <td className="rpc-sq-td-num" data-testid="top5-share">
-                    {typeof r.top5_share_pct === "number" ? (
+                    {/* 2026-10-25: a complete census with 0 collector holders (every copy in
+                        an unopened-pack / vault account; 35 editions at the time) read a bare
+                        "0%" beside Locked 1 — true by the definition, unreadable without it. */}
+                    {r.holders === 0 && typeof r.top5_share_pct === "number" ? (
+                      <span title="No collector holds a copy: every one sits in a system account (unopened pack or platform vault), which this share excludes.">none held</span>
+                    ) : typeof r.top5_share_pct === "number" ? (
                       <span title={`${fmtPct(r.top5_share_pct)} of circulation is held by the 5 largest collector wallets${typeof r.holders === "number" ? ` · ${fmtInt(r.holders)} holders` : ""}`}>
                         {fmtPct(r.top5_share_pct)}
                       </span>
