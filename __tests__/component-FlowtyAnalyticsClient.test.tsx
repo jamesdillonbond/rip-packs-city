@@ -3,6 +3,15 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/react"
 import FlowtyAnalyticsClient from "@/app/admin/flowty-analytics/FlowtyAnalyticsClient"
 
+// R134 step 2: the sign-in/upgrade exchange with /api/admin/session is covered in
+// __tests__/admin-session.test.ts; here it is the identity so fetch call order
+// stays the page's own.
+vi.mock("@/lib/admin-token", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/admin-token")>()),
+  toAdminSession: async (t: string) => t,
+  upgradeStoredAdminToken: async () => {},
+}))
+
 // `admin/flowty-analytics` converted to a `*Client.tsx` so the component gate measures it —
 // ~1,050 lines of token gate, chart pivots and leaderboard rendering that matched neither
 // gate's include.

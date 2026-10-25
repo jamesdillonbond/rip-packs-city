@@ -23,6 +23,9 @@ vi.mock("next/link", () => ({
 
 let storedToken: string | null = "admin-token"
 vi.mock("@/lib/admin-token", () => ({
+  // R134 step 2 helpers: identity exchange, no-op upgrade (the session path has its own tests).
+  toAdminSession: async (t: string) => t,
+  upgradeStoredAdminToken: async () => {},
   getAdminToken: () => storedToken,
   setAdminToken: (t: string) => { storedToken = t },
   clearAdminToken: () => { storedToken = null },

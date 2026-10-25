@@ -7,6 +7,7 @@
 // interactive fetches go through the three /api/admin/error-triage/* proxies
 // with Authorization: Bearer <token>.
 
+import { toAdminSession } from "@/lib/admin-token";
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { fmtInt, timeAgo, fmtIso, truncSig, truncAddr, truncMid } from "@/lib/admin/flowty-errors-format";
 import { accentText } from "@/lib/accent-text"
@@ -159,8 +160,10 @@ function setStoredToken(t: string) {
   try {
     window.localStorage.setItem(TOKEN_KEY, t);
   } catch {}
-  // 30-day cookie so the server component can pick it up on next request.
-  document.cookie = `${COOKIE_NAME}=${encodeURIComponent(t)}; path=/; max-age=${60 * 60 * 24 * 30}; SameSite=Lax`;
+  // Cookie so the server component can pick it up on the next request. It now
+  // carries a 12 h session (R134 step 2), so it lives 12 h, not 30 days, and is
+  // never sent on a cross-site request (SameSite=Strict). HSTS keeps it on HTTPS.
+  document.cookie = `${COOKIE_NAME}=${encodeURIComponent(t)}; path=/; max-age=${60 * 60 * 12}; SameSite=Strict`;
 }
 
 function clearStoredToken() {
@@ -168,7 +171,7 @@ function clearStoredToken() {
   try {
     window.localStorage.removeItem(TOKEN_KEY);
   } catch {}
-  document.cookie = `${COOKIE_NAME}=; path=/; max-age=0; SameSite=Lax`;
+  document.cookie = `${COOKIE_NAME}=; path=/; max-age=0; SameSite=Strict`;
 }
 
 // Pure formatters extracted to @/lib/admin/flowty-errors-format (unit-tested there).
@@ -237,7 +240,8 @@ function SignInGate() {
         setErr(`HTTP ${res.status}`);
         return;
       }
-      setStoredToken(t);
+      // Store a 12 h signed session, not the master token (R134 step 2).
+      setStoredToken(await toAdminSession(t));
       // Reload so the server component picks up the cookie and SSRs the dash.
       window.location.reload();
     } catch (e) {

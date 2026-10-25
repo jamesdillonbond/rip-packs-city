@@ -4,6 +4,15 @@ import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/re
 import AdminRewardsClient from "@/app/admin/rewards/AdminRewardsClient"
 import FastBreakClient from "@/app/nba/fast-break/FastBreakClient"
 
+// R134 step 2: the sign-in/upgrade exchange with /api/admin/session is covered in
+// __tests__/admin-session.test.ts; here it is the identity so fetch call order
+// stays the page's own.
+vi.mock("@/lib/admin-token", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/admin-token")>()),
+  toAdminSession: async (t: string) => t,
+  upgradeStoredAdminToken: async () => {},
+}))
+
 // Two more client pages converted for coverage; both carried a fabricated ZERO.
 //
 // ⚠ `AdminRewardsClient` already had the good half — an explicit `loadFailed` guarding every

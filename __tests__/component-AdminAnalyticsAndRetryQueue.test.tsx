@@ -4,6 +4,15 @@ import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/re
 import AdminAnalyticsClient from "@/app/admin/analytics/AdminAnalyticsClient"
 import ListingRetryQueueClient from "@/app/admin/listing-retry-queue/ListingRetryQueueClient"
 
+// R134 step 2: the sign-in/upgrade exchange with /api/admin/session is covered in
+// __tests__/admin-session.test.ts; here it is the identity so fetch call order
+// stays the page's own.
+vi.mock("@/lib/admin-token", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/admin-token")>()),
+  toAdminSession: async (t: string) => t,
+  upgradeStoredAdminToken: async () => {},
+}))
+
 // Two admin pages converted from `page.tsx` to `*Client.tsx` so the COMPONENT gate measures
 // them — `app/**/page.tsx` matches neither gate's include, so ~1,100 lines of operator-facing
 // branching here were unmeasured.

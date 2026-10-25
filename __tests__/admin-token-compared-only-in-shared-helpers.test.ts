@@ -20,6 +20,8 @@ import { readFileSync } from "node:fs"
 const READ = /process\.env\.RPC_ADMIN_TOKEN\b|process\.env\[\s*["']RPC_ADMIN_TOKEN["']\s*\]/
 
 const ALLOWED: Record<string, string> = {
+  "lib/admin-auth.ts": "isAdminCredential verifies a session against the master token (the HMAC key); the compare lives in lib/admin-session.ts",
+  "app/api/admin/session/route.ts": "mints a session signed with the master token, after tokenMatches accepted the master",
   "app/api/admin/recalc-ultimate-fmv/route.ts":
     "presence check only, to answer 500 'not configured' instead of a misleading 401; the compare is verifyAdminRequest",
   "app/api/cron/topshot-catalog-backfill/route.ts":

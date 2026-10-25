@@ -11,6 +11,8 @@
 // renamed or dropped env var would silently open the route (2026-10-09 audit).
 // __tests__/bearer-secret-fails-closed-ratchet.test.ts bans the bare form.
 
+import { ADMIN_SESSION_PREFIX, verifyAdminSession } from "@/lib/admin-session"
+
 /**
  * Constant-time string equality. A plain `===` returns at the first differing
  * character, so the time a 401 takes leaks how many leading bytes the attacker
@@ -60,6 +62,12 @@ export function bearerMatches(header: string | null | undefined, ...envNames: st
     const secret = process.env[name]
     if (typeof secret === "string" && secret.length > 0) {
       matched = constantTimeEqual(header, `Bearer ${secret}`) || matched
+      // R134 step 2: wherever the ADMIN token is accepted, a short-lived session
+      // signed with it is accepted too (lib/admin-session.ts). Header form only —
+      // tokenMatches (the ?token= / cookie form) never takes a session.
+      if (name === "RPC_ADMIN_TOKEN" && header.startsWith(`Bearer ${ADMIN_SESSION_PREFIX}`)) {
+        matched = verifyAdminSession(header.slice(7), secret) || matched
+      }
     }
   }
   return matched

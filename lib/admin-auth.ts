@@ -10,6 +10,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { bearerMatches, tokenMatches } from "@/lib/auth/bearer-secret";
+import { verifyAdminSession } from "@/lib/admin-session";
 
 export function verifyAdminRequest(req: NextRequest): boolean {
   // Constant-time, fail-closed (lib/auth/bearer-secret.ts; review S4 2026-10-11).
@@ -25,4 +26,13 @@ export function verifyAdminRequest(req: NextRequest): boolean {
 
 export function adminUnauthorizedResponse(): NextResponse {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+}
+
+/**
+ * A bare credential VALUE (a cookie, a form field) — the master token or an
+ * unexpired session signed with it (R134 step 2). Constant-time, fail-closed.
+ */
+export function isAdminCredential(value: string | null | undefined): boolean {
+  if (tokenMatches(value, "RPC_ADMIN_TOKEN")) return true;
+  return verifyAdminSession(value, process.env.RPC_ADMIN_TOKEN);
 }

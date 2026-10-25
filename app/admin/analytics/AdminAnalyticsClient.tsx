@@ -7,6 +7,7 @@
 // localStorage under "rpc_admin_token" (same key as flowty-analytics).
 // Auto-refreshes every 60s.
 
+import { toAdminSession, upgradeStoredAdminToken } from "@/lib/admin-token";
 import { useCallback, useEffect, useState } from "react";
 import { usdSignFirst } from "@/lib/usd-format"
 import { accentText } from "@/lib/accent-text"
@@ -126,6 +127,13 @@ export default function AdminAnalyticsClient() {
     const stored = window.localStorage.getItem(TOKEN_KEY);
     if (stored) setToken(stored);
     setAuthChecked(true);
+    // In the background, swap a pre-2026-10-25 stored MASTER token for a 12 h
+    // session (R134 step 2); the next request uses it. The master token keeps
+    // working meanwhile, so this never blocks the first render.
+    void upgradeStoredAdminToken().then(() => {
+      const next = window.localStorage.getItem(TOKEN_KEY);
+      if (next && next !== stored) setToken(next);
+    });
   }, []);
 
   if (!authChecked) {
@@ -142,8 +150,11 @@ export default function AdminAnalyticsClient() {
     return (
       <SignInGate
         onSignedIn={(t) => {
-          if (typeof window !== "undefined") window.localStorage.setItem(TOKEN_KEY, t);
-          setToken(t);
+          // Store a 12 h signed session, not the master token (R134 step 2).
+          void toAdminSession(t).then((s) => {
+            if (typeof window !== "undefined") window.localStorage.setItem(TOKEN_KEY, s);
+            setToken(s);
+          });
         }}
       />
     );

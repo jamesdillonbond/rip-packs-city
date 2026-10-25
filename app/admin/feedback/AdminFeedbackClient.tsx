@@ -11,6 +11,8 @@ import {
   getAdminToken,
   setAdminToken,
   clearAdminToken,
+  toAdminSession,
+  upgradeStoredAdminToken,
 } from "@/lib/admin-token";
 import { accentText } from "@/lib/accent-text";
 
@@ -150,6 +152,8 @@ export default function AdminFeedbackClient() {
 
   // On mount, if a token is in localStorage probe the API to verify.
   useEffect(() => {
+    // Swap a pre-2026-10-25 stored MASTER token for a session first (R134 step 2).
+    void upgradeStoredAdminToken().finally(() => {
     const stored = getAdminToken();
     if (!stored) {
       setAuthChecked(true);
@@ -172,6 +176,7 @@ export default function AdminFeedbackClient() {
         // Network error — leave the gate visible so Trevor can retry.
       })
       .finally(() => setAuthChecked(true));
+    });
   }, []);
 
   if (!authChecked) {
@@ -199,9 +204,12 @@ export default function AdminFeedbackClient() {
     return (
       <SignInGate
         onSignedIn={(t) => {
-          setAdminToken(t);
-          setToken(t);
-          setAuthed(true);
+          // Store a 12 h signed session, not the master token (R134 step 2).
+          void toAdminSession(t).then((s) => {
+            setAdminToken(s);
+            setToken(s);
+            setAuthed(true);
+          });
         }}
       />
     );

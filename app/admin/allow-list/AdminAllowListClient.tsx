@@ -12,6 +12,8 @@ import {
   getAdminToken,
   setAdminToken,
   clearAdminToken,
+  toAdminSession,
+  upgradeStoredAdminToken,
 } from "@/lib/admin-token";
 import { accentText } from "@/lib/accent-text";
 
@@ -146,6 +148,8 @@ function AdminAllowListInner() {
   const [authChecked, setAuthChecked] = useState<boolean>(false);
 
   useEffect(() => {
+    // Swap a pre-2026-10-25 stored MASTER token for a session first (R134 step 2).
+    void upgradeStoredAdminToken().finally(() => {
     const stored = getAdminToken();
     if (!stored) {
       setAuthChecked(true);
@@ -166,6 +170,7 @@ function AdminAllowListInner() {
       })
       .catch(() => {})
       .finally(() => setAuthChecked(true));
+    });
   }, []);
 
   if (!authChecked) return <MinimalChecking />;
@@ -174,9 +179,12 @@ function AdminAllowListInner() {
     return (
       <SignInGate
         onSignedIn={(t) => {
-          setAdminToken(t);
-          setToken(t);
-          setAuthed(true);
+          // Store a 12 h signed session, not the master token (R134 step 2).
+          void toAdminSession(t).then((s) => {
+            setAdminToken(s);
+            setToken(s);
+            setAuthed(true);
+          });
         }}
       />
     );

@@ -10,6 +10,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { accentText } from "@/lib/accent-text";
+import { toAdminSession, upgradeStoredAdminToken } from "@/lib/admin-token";
 
 const TOKEN_KEY = "rpc_admin_token";
 
@@ -59,6 +60,12 @@ export default function ListingRetryQueueClient() {
     if (typeof window === "undefined") return;
     const cached = localStorage.getItem(TOKEN_KEY);
     if (cached) setToken(cached);
+    // In the background, swap a pre-2026-10-25 stored MASTER token for a 12 h
+    // session (R134 step 2); the master keeps working meanwhile.
+    void upgradeStoredAdminToken().then(() => {
+      const next = localStorage.getItem(TOKEN_KEY);
+      if (next && next !== cached) setToken(next);
+    });
   }, []);
 
   const fetchData = useCallback(async (t: string) => {
@@ -103,8 +110,11 @@ export default function ListingRetryQueueClient() {
   function onSubmitToken(e: React.FormEvent) {
     e.preventDefault();
     if (!tokenInput.trim()) return;
-    localStorage.setItem(TOKEN_KEY, tokenInput.trim());
-    setToken(tokenInput.trim());
+    // Store a 12 h signed session, not the master token (R134 step 2).
+    void toAdminSession(tokenInput.trim()).then((s) => {
+      localStorage.setItem(TOKEN_KEY, s);
+      setToken(s);
+    });
     setTokenInput("");
   }
 
