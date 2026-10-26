@@ -104,6 +104,7 @@
 - **Flowty teardown, on the day it goes dark.**
   - What: retire `allday-listing-cache` and its scheduler (cron-job.org presumably), then drop the `flowty` rows deliberately.
   - Gate: the lane's own `pageErrors` and empty-book failures, not one probe.
+- **#213 — re-read with the #209 exit (~10-30).** The STALE cap ignores serials ≤ 25, most of a small edition's supply (Chris Jones Dynamic /30: FMV $520 over a newer $69 sale at serial #9). Backtest 10-25: counting every serial but #1 wins or ties All Day ≤ 50 in both halves (ratio 3.0–3.4 → 2.2–2.5) on only 37 moved sales; Top Shot loses the gate metric. Ship the All Day ≤ 50 scope if it still wins both halves on ≥ 60 moved sales. → [known-issues #213](../../reference/known-issues.md)
 - **Weekly paired backtest read.**
   - Why: R125 reopens if a tier's paired within-25 share sits > 3 pts below last-3 on two consecutive weeks.
   - ↳ **Read 10-22 ~9:40 PM PT (Cowork cloud, 7 d):** HIGH published 7.1 % / 84.5 within ±25 % (naive 12.5 / 70.8 — published wins), MEDIUM 20.0 / 59.7 vs 20.0 / 58.1 (level), LOW 25.9 / 49.5 vs 23.1 / 51.9 (2.4 pts below; inside the rule, first week). ASK_ONLY 170 % / 8.6 / ratio 2.70 → the #208 cap above. Next read ~10-29.

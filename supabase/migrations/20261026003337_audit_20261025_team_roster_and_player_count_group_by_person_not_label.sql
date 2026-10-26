@@ -6,7 +6,7 @@
 -- Editions grid showed 12 "Patrick Mahomes II" cards ($6,999, $3,599 …); the header said "Players
 -- 65" over 64 roster rows. Both labels carry ONE player_id (d44a2afe…, players.name "Patrick
 -- Mahomes"). get_team_players grouped by the label's slug, so "patrick-mahomes-ii" became its own
--- row (26 editions, FMV $16,516) with no players match (id NULL), and the page drops id-less rows;
+-- row (26 editions, FMV $16,516) with no players match (id NULL, is_active NULL), which the roster's default "Current" view (is_active = true only) hid;
 -- get_team_detail counted label slugs. player-identity.md (10-20): anything that GROUPS, LINKS or
 -- COUNTS by person keys on player_id, falling back to the label only when it is NULL — the 10-20
 -- pass fixed four readers but not these two. Measured: 78 people / 367 editions have an edition
