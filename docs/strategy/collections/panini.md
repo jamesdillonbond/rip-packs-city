@@ -55,7 +55,7 @@ Read from the registry (`lib/collections.ts` `pages` / switches), the shared `[c
 | Edition: Top Owners | ✓ named | ✓ **Holders**, counts only (new 10-25) | never a username (10-21 decision) |
 | Edition: Found in packs | ✓ | ✓ **Packs from this product** (new 10-25) | Panini has no per-pack checklist; never "can pull" |
 | Edition: pack provenance | ✓ | ✗ | no Panini pull-provenance data |
-| Team pages | ✓ `/team/<slug>` | ◐ via franchise hubs | Panini editions carry no team; the team walk maps listings to franchises and the hub `/teams/<league>/<slug>` shows a Panini panel with its editions (load more). Mapped share (read 10-25 ~6:45 PM PT, `mv_panini_league_coverage`): NBA 10,433 / 11,011 · NFL 1,320 / 11,005 · MLB 102 / 735 · WNBA 0 / 3,719. `get_panini_franchise_panel` reads ~150 ms with the hourly coverage MV (job 787); the overnight 06:32 burst was concurrency. |
+| Team pages | ✓ `/team/<slug>` | ◐ via franchise hubs | Panini editions carry no team; `panini_edition_team_keys` (new 10-25, hourly) places each catalogued card from the team walk, the team printed on the card, or the same player's other cards in that product (99.7 % held out), and the hub `/teams/<league>/<slug>` shows a Panini panel with its editions (load more). Mapped share 10-25 ~9:50 PM PT: NBA 10,898 / 11,085 · WNBA 2,421 / 3,719 (was 0 — the walk's WNBA URL was broken, fixed the same night) · NFL 3,307 / 11,005 · MLB 431 / 735. `get_panini_franchise_panel` reads ~150 ms with the hourly coverage MV (job 787); the overnight 06:32 burst was concurrency. |
 | Pack Sniper | ✓ | ✗ | Panini secondary packs have floors (`panini_pack_state`), but EV copy is gated (Next 4: no "+EV" unless P(profit) ≥ 50 %) — a "below EV" board would mostly show withheld rows. |
 | Hot Floors | ✓ (Quick-Buy sweeps) | ✓ (new 10-25, `/panini-blockchain/hot-floors`, linked from Sniper) | a sweep = one buyer taking 3+ copies with no gap over 60 min, 7 days of sales on record (`get_panini_hot_floors`); buyers counted, never named |
 | Edition ask history | ✓ (ask over time) | ✓ (new 10-25, edition page "Ask history" table) | daily lane `panini_edition_ask_daily` (`20261026040131`, 5:01 AM PT): a row only on a day the lowest confirmed ask changed; NULL = left the board. Recorded since Oct 21 (seeded from the #202 shadow). Offers not tracked (46 s scan). No chart yet — a table until there are weeks of points |
@@ -63,7 +63,7 @@ Read from the registry (`lib/collections.ts` `pages` / switches), the shared `[c
 | Analytics: volume by series | ✓ | ✓ **Top products by volume · 30 days** (new 10-25) | from the hourly product rollup; Top Shot's named buyer / seller / accumulator boards stay off for Panini (counts-only rule) |
 | Concierge · alerts · search · cross-collection hubs | ✓ | ✓ | 10-19 / 10-22 entries above |
 
-**Next parity candidates, in order:** (1) Team coverage outside the NBA — the NFL / WNBA / MLB walks run on Trevor's laptop (franchise-hubs.md). (2) Floor movers + an ask chart, off the 10-25 ask lane — wait for ~2 weeks of points (from ~Nov 4) so a "7-day move" has a real base.
+**Next parity candidates, in order:** (1) The rest of NFL / WNBA / MLB team coverage — the laptop walk now covers WNBA correctly and reaches ~5 teams a night (franchise-hubs.md); the map picks each walk up within the hour. (2) Floor movers + an ask chart, off the 10-25 ask lane — wait for ~2 weeks of points (from ~Nov 4) so a "7-day move" has a real base.
 
 ## Open issues
 
