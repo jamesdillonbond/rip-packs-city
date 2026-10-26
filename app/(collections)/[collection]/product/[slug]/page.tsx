@@ -9,7 +9,7 @@ import { notFound } from "next/navigation"
 import { getCollectionByUrlSlug } from "@/lib/collection-slug"
 import { getCollection } from "@/lib/collections"
 import { decodeSlugOrNull } from "@/lib/entity-detail-gate"
-import { collectionDisplayName, entityUrl, NOT_FOUND_METADATA, OG_INHERITED } from "@/lib/seo"
+import { collectionDisplayName, entityUrl, NOT_FOUND_METADATA, OG_INHERITED, TWITTER_INHERITED, paniniProductOgUrl } from "@/lib/seo"
 import { fetchPaniniProduct } from "@/lib/panini/product"
 import { fetchPaniniProductPacks } from "@/lib/panini/edition-extras"
 import PaniniProductBody, { PaniniProductUnavailable } from "@/components/entity/PaniniProductBody"
@@ -39,7 +39,9 @@ export async function generateMetadata(props: Props): Promise<Metadata> {
     title,
     description,
     alternates: { canonical: url },
-    openGraph: { ...OG_INHERITED, title, description, url },
+    // 2026-10-26: a branded card like a series page's (/api/og/series), not the site default.
+    openGraph: { ...OG_INHERITED, title, description, url, images: [{ url: paniniProductOgUrl(p.slug), width: 1200, height: 630, alt: p.name }] },
+    twitter: { ...TWITTER_INHERITED, title, description, images: [paniniProductOgUrl(p.slug)] },
   }
 }
 

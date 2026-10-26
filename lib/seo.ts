@@ -1618,3 +1618,13 @@ export const NOT_FOUND_METADATA: Metadata = {
   title: "Not Found",
   robots: { index: false, follow: false },
 }
+
+/** Branded OG card for a Panini product page (2026-10-26; the counterpart of the series card). */
+export function paniniProductOgUrl(slug: string): string {
+  return `${BASE_URL}/api/og/product?slug=${encodeURIComponent(slug)}`
+}
+
+/** The collection's own OG card — for collection-level index pages that have no entity card. */
+export function collectionOgUrl(collectionId: string): string {
+  return `${BASE_URL}/api/og/collection?id=${encodeURIComponent(collectionId)}`
+}
