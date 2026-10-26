@@ -42,4 +42,9 @@ describe("PaniniProductIndex", () => {
     expect(c.querySelector('a[href="/panini-blockchain/product/b1"]')).not.toBeNull()
     expect(c.textContent).not.toMatch(/\b(HIGH|MEDIUM|LOW|ASK_ONLY)\b/)
   })
+  it("heads the WNBA group 'WNBA', never Panini's 'Womens Basketball' (2026-10-26)", () => {
+    const c = render(<PaniniProductIndex collection="panini-blockchain" collectionLabel="Panini" rows={[row({ name: "Prizm WNBA", slug: "w", sport: "Womens Basketball", editions: 3 })]} />).container
+    expect(c.textContent).toContain("WNBA")
+    expect(c.textContent).not.toMatch(/womens basketball/i)
+  })
 })

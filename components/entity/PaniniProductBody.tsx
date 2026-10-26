@@ -18,6 +18,7 @@ import { scrollRegion } from "@/lib/a11y/scroll-region"
 import { serialLabelOfSku } from "@/lib/panini/product-url"
 import type { PaniniProduct, PaniniProductRead } from "@/lib/panini/product"
 import type { PaniniProductPack } from "@/lib/panini/edition-extras"
+import { paniniSportLabel } from "@/lib/panini/sport-label"
 
 const cell: CSSProperties = { padding: "6px 8px", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-secondary)", borderBottom: "1px solid var(--rpc-border-subtle, var(--rpc-border))" }
 const head: CSSProperties = { ...cell, fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--rpc-text-muted)" }
@@ -59,7 +60,7 @@ export default function PaniniProductBody({
 
       <header style={{ marginTop: 8 }}>
         <div className="rpc-mono" style={{ fontSize: 10, letterSpacing: "0.2em", textTransform: "uppercase", color: "var(--rpc-text-muted)" }}>
-          Panini product{p.sport ? ` · ${p.sport}` : ""}
+          Panini product{p.sport ? ` · ${paniniSportLabel(p.sport)}` : ""}
         </div>
         <h1 style={{ fontFamily: "var(--font-display)", fontWeight: 900, fontSize: "clamp(24px, 5vw, 40px)", letterSpacing: "0.03em", textTransform: "uppercase", color: "var(--rpc-text-primary)", margin: "4px 0 6px" }}>
           {p.name}

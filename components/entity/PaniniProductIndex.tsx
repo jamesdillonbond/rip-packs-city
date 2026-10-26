@@ -11,6 +11,7 @@ import Breadcrumbs from "@/components/entity/Breadcrumbs"
 import PaniniCoverageNote from "@/components/collection/PaniniCoverageNote"
 import { scrollRegion } from "@/lib/a11y/scroll-region"
 import { paniniProductHref } from "@/lib/panini/product-url"
+import { paniniSportLabel } from "@/lib/panini/sport-label"
 
 export interface PaniniProductIndexRow {
   name: string
@@ -70,7 +71,7 @@ export default function PaniniProductIndex({
         ordered.map(([sport, list]) => (
           <section key={sport} className="rpc-card" style={{ padding: 18, marginTop: 14 }}>
             <h2 style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 16, letterSpacing: "0.10em", textTransform: "uppercase", color: "var(--rpc-text-primary)", margin: "0 0 10px" }}>
-              {sport}
+              {paniniSportLabel(sport)}
             </h2>
             <div className="rpc-scroll-x" {...scrollRegion("Products in this sport")}>
               <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 520 }}>
