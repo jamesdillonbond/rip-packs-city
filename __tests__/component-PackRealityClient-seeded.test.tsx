@@ -96,8 +96,17 @@ describe("PackRealityClient — unpriced rips are not $0 pulls", () => {
       rips_over_100: 1276, rips_over_100_pct: 2.27, rips_over_1000: 64,
       priced_rips: 56200, unpriced_rips: 7012, unpriced_pct: 11.1,
     },
-    distribution: [{ bucket: "$0", rips: 0, pct: 0 }, { bucket: "$0–$10", rips: 44435, pct: 79.1 }],
+    distribution: [{ bucket: "$0", rips: 0, pct: 0 }, { bucket: "$0–$10", rips: 44435, pct: 79.1 }, { bucket: "$10–$50", rips: 11765, pct: 20.9 }],
   }
+  // 2026-10-25: the two MVs refresh 12 min apart; the caption must quote the buckets' own total.
+  it("the distribution caption quotes the buckets' own total, not a stats count from another refresh", () => {
+    vi.stubGlobal("fetch", neverResolvingFetch())
+    const skewed = { ...live, stats: { ...live.stats, priced_rips: 56242 } }
+    const { container } = render(<PackRealityClient initialData={skewed as never} />)
+    const text = container.textContent ?? ""
+    expect(text).toMatch(/Share of the 56,200 priced rips/)
+    expect(text).not.toMatch(/Share of the 56,242/)
+  })
   it("shows the unpriced share as its own KPI and says they are left out", () => {
     vi.stubGlobal("fetch", neverResolvingFetch())
     const { container } = render(<PackRealityClient initialData={live as never} />)

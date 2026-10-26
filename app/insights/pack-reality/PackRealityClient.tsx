@@ -376,11 +376,22 @@ export default function PackRealityClient({
         <h2 className="rpc-pr-h2">Pull-value distribution</h2>
         {/* The buckets are shares of PRICED rips (20261015015411); say so, or
             a reader adds them up against the 60-day total and finds 11% gone. */}
-        {data?.stats?.priced_rips != null ? (
-          <p className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-muted)", margin: "-8px 0 12px" }}>
-            Share of the {fmtInt(data.stats.priced_rips)} priced rips.
-          </p>
-        ) : null}
+        {/* 2026-10-25: the stats MV (:30) and this histogram's MV (:42) refresh 12 min apart
+            over a rolling 60-day window, so the stats count (51,520) and the buckets (51,478)
+            disagreed and a reader found 42 rips "missing". The buckets' pct is computed against
+            their OWN total — quote that one. */}
+        {(() => {
+          const dist = data?.distribution ?? []
+          const distTotal = dist.length > 0 && dist.every((r) => Number.isFinite(Number(r.rips)))
+            ? dist.reduce((a, r) => a + Number(r.rips), 0)
+            : null
+          const total = distTotal ?? data?.stats?.priced_rips ?? null
+          return total != null ? (
+            <p className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-muted)", margin: "-8px 0 12px" }}>
+              Share of the {fmtInt(total)} priced rips.
+            </p>
+          ) : null
+        })()}
         {error ? (
           <div className="rpc-pr-state">Failed to load: {error}</div>
         ) : loading ? (
