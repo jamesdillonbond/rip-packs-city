@@ -15,6 +15,18 @@ const root = process.cwd()
 
 const PINS = [
   {
+    // Added 2026-10-26. Panini ask history: change rows only, one NULL row when an edition leaves the board.
+    fn: "refresh_panini_edition_ask_daily",
+    test: "supabase/tests/refresh_panini_edition_ask_daily.sql",
+    migration: "supabase/migrations/20261026040131_audit_20261025_panini_edition_ask_daily.sql",
+  },
+  {
+    // Added 2026-10-26. The Panini team map: listing > printed > unanimous same-product sibling; rows never deleted.
+    fn: "refresh_panini_edition_team_keys",
+    test: "supabase/tests/refresh_panini_edition_team_keys.sql",
+    migration: "supabase/migrations/20261026044548_audit_20261025_panini_edition_team_keys.sql",
+  },
+  {
     // 2026-10-19: change-only floor-ask history for Pinnacle renders (#193 instrument).
     fn: "pinnacle_catalog_floor_ask_history_capture",
     test: "supabase/tests/pinnacle_catalog_floor_ask_history_capture.sql",
