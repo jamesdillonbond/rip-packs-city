@@ -53,6 +53,10 @@ type Stats = {
 
 type DistRow = { bucket: string; rips: number | null; pct: number | null }
 
+// The view's "$0" bucket is EXACTLY zero and its "$0–$10" starts at $0.01, so the two labels
+// read as overlapping ranges (2026-10-25). Relabel at render; unknown labels pass through.
+const BUCKET_DISPLAY: Record<string, string> = { "$0": "$0 exactly", "$0–$10": "$0.01–$10" }
+
 type TopEvRow = {
   pack_listing_id: string
   dist_id: string | null
@@ -400,7 +404,7 @@ export default function PackRealityClient({
           <div className="rpc-pr-bars">
             {(data?.distribution ?? []).map((row) => (
               <div key={row.bucket} className="rpc-pr-bar-row">
-                <div className="rpc-pr-bar-label">{row.bucket}</div>
+                <div className="rpc-pr-bar-label">{BUCKET_DISPLAY[row.bucket] ?? row.bucket}</div>
                 <div className="rpc-pr-bar-track">
                   <div
                     className="rpc-pr-bar-fill"

@@ -28,6 +28,8 @@ import { rookieBoardShareUrl } from "@/lib/rookie-class-link"
 import { useRookieClassParam } from "@/lib/use-rookie-class-param"
 import { usdSignFirst } from "@/lib/usd-format"
 import { accentText } from "@/lib/accent-text"
+// Top Shot only — the raw on-chain series read "Series 8" beside every other surface's "Series 2025-26" (2026-10-25).
+import { seriesDisplay } from "@/lib/series-label"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -169,7 +171,7 @@ function PlayerCard({ g }: { g: PlayerGroup }) {
                   {s.series != null ? (
                     <>
                       <span className="rpc-rb-dot">·</span>
-                      <span>Series {s.series}</span>
+                      <span>{seriesDisplay(s.series, "nba-top-shot")}</span>
                     </>
                   ) : null}
                   <span className="rpc-rb-dot">·</span>

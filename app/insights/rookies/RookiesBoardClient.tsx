@@ -66,7 +66,7 @@ const CLASS_COPY: Record<CohortClass, { lede: string; tweet: string; cohort: str
     lede: "The 2025 NBA rookie class on Top Shot as a cohort. 30-day GMV, lock-rate, average serial price, mint-#1 trophy presence. Refreshes daily.",
     tweet: "The 2025 NBA rookie class on Top Shot, ranked by 30d GMV + lock-rate.",
     cohort:
-      "any player with at least one Top Shot edition in a Series 8 rookie-themed set (Rookie Debut COMMON, Origins RARE, Rookie Revelation LEGENDARY, 2025 Rookie Ultimates ULTIMATE).",
+      "any player with at least one Top Shot edition in a Series 2025-26 rookie-themed set (Rookie Debut COMMON, Origins RARE, Rookie Revelation LEGENDARY, 2025 Rookie Ultimates ULTIMATE).",
   },
   "2026": {
     lede: "The 2026 NBA rookie class on Top Shot, as it mints. 30-day GMV, lock-rate, average serial price, mint-#1 trophy presence. The class grows as each rookie's first Moment drops.",

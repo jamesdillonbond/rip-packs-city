@@ -107,6 +107,13 @@ describe("PackRealityClient — unpriced rips are not $0 pulls", () => {
     expect(text).toMatch(/Share of the 56,200 priced rips/)
     expect(text).not.toMatch(/Share of the 56,242/)
   })
+  // 2026-10-25: "$0" (exactly zero) beside "$0–$10" (from $0.01) read as overlapping ranges.
+  it("the zero bucket and the first band do not read as overlapping ranges", () => {
+    vi.stubGlobal("fetch", neverResolvingFetch())
+    const { container } = render(<PackRealityClient initialData={live as never} />)
+    const labels = [...container.querySelectorAll(".rpc-pr-bar-label")].map((l) => l.textContent)
+    expect(labels).toEqual(["$0 exactly", "$0.01–$10", "$10–$50"])
+  })
   it("shows the unpriced share as its own KPI and says they are left out", () => {
     vi.stubGlobal("fetch", neverResolvingFetch())
     const { container } = render(<PackRealityClient initialData={live as never} />)

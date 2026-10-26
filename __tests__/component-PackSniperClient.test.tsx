@@ -57,6 +57,23 @@ describe("PackSniperClient", () => {
     expect(container.textContent).toContain("Legendary Whale")
   })
 
+  // 2026-10-25 — with zero packs the two ratio tiles read "0.0×", a measured
+  // value nothing measured. They must read "—".
+  it("⛔ an empty book renders no EV/ask ratio, not 0.0×", async () => {
+    fetchFn.mockImplementation(async () => ({
+      ok: true, status: 200,
+      json: async () => ({ meta: { fetched_at: "2026-08-02T00:00:00Z", collection: "nba-top-shot" }, deals: [] }),
+    }))
+    const { container } = render(<PackSniperClient initialDeals={[]} initialFetchedAt="2026-08-01T00:00:00Z" />)
+    await waitFor(() => expect(fetchFn).toHaveBeenCalled())
+    const tiles = [...container.querySelectorAll(".rpc-ps-kpi-label")]
+      .filter((l) => /EV \/ ask/i.test(l.textContent ?? ""))
+      .map((l) => l.parentElement?.querySelector(".rpc-ps-kpi-value")?.textContent)
+    expect(tiles).toHaveLength(2)
+    expect(tiles).toEqual(["—", "—"])
+    expect(container.textContent).not.toContain("0.0×")
+  })
+
   it("refetches with the collection param when the NFL All Day tab is clicked", async () => {
     const { container } = render(<PackSniperClient initialDeals={deals} initialFetchedAt={null} />)
     const tab = [...container.querySelectorAll("button")].find((b) => /all day/i.test(b.textContent ?? ""))

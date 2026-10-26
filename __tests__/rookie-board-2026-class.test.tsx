@@ -85,3 +85,18 @@ describe("the page reads the whole board", () => {
     expect(src).not.toMatch(/limit:\s*500\b/)
   })
 })
+
+// 2026-10-25 — the set header printed the raw on-chain series ("Series 8") where every
+// other surface reads that series as "Series 2025-26".
+describe("RookieBoardClient series label", () => {
+  it("decodes the on-chain series through the Top Shot map", () => {
+    const r = normalizeRow({
+      player_name: "Cooper Flagg", rookie_class: "2025", set_name: "Rookie Debut", tier: "COMMON", parallel_id: 0,
+      parallel_name: "Standard", external_id: "Cooper Flagg:1", circulation_count: 500, fmv_usd: 100,
+      has_full_economics: true, series_number: 8,
+    })
+    const { container } = render(<RookieBoardClient initialRows={[r]} initialFetchedAt="2026-10-23T05:00:00Z" />)
+    expect(container.textContent).toContain("Series 2025-26")
+    expect(container.textContent).not.toMatch(/Series 8(?!\d)/)
+  })
+})

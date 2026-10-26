@@ -294,6 +294,29 @@ describe("fetchActiveListingAsk", () => {
     expect(await fetchActiveListingAsk("123", "coll-1", db)).toEqual({ data: null, ok: false })
   })
 
+  // 2026-10-25 — Top Shot has no rows in cached_listings_v2, so every Top Shot
+  // moment page read "Listed —" while the Sniper quoted moment 52683944 at $222
+  // from ts_listings.
+  it("Top Shot reads ts_listings, not cached_listings_v2, and keeps the ghost check", async () => {
+    const TS = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
+    const { db, calls } = makeDb({
+      ts_listings: { data: [{ price_usd: 222, listed_at: "2026-10-26T02:33:25Z" }], error: null },
+      cached_listings_v2: { data: [{ price_usd: 1, listed_at: null }], error: null },
+      sales: { data: [], error: null },
+    })
+    expect(await fetchActiveListingAsk("52683944", TS, db)).toEqual({ data: 222, ok: true })
+    expect(calls).toEqual(["ts_listings", "sales"])
+  })
+
+  it("Top Shot: a ts_listings row older than the latest sale is a ghost", async () => {
+    const TS = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
+    const { db } = makeDb({
+      ts_listings: { data: [{ price_usd: 222, listed_at: "2026-10-01T00:00:00Z" }], error: null },
+      sales: { data: [{ sold_at: "2026-10-20T00:00:00Z" }], error: null },
+    })
+    expect(await fetchActiveListingAsk("52683944", TS, db)).toEqual({ data: null, ok: true })
+  })
+
   it("Pinnacle reads the complete-sweep live table, not cached_listings_v2", async () => {
     const PIN = "7dd9dd11-e8b6-45c4-ac99-71331f959714"
     const { db, calls } = makeDb({

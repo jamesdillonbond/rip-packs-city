@@ -33,7 +33,9 @@ const COLLECTION_COLORS: Record<string, string> = {
 }
 
 function fmtUsd(n: number | null | undefined): string {
-  if (n == null || !Number.isFinite(n) || n <= 0) return "$0"
+  // A missing value is unknown, not zero (2026-10-25: a null principal read "$0").
+  if (n == null || !Number.isFinite(n)) return "—"
+  if (n <= 0) return "$0"
   if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`
   if (n >= 1_000) return `$${(n / 1_000).toFixed(1)}k`
   if (n >= 100) return `$${n.toFixed(0)}`
@@ -163,7 +165,7 @@ export default function PositionTransfersCard() {
                 />
                 <Kpi
                   label="Principal"
-                  value={fmtUsd(totals?.total_principal_usd ?? 0)}
+                  value={fmtUsd(totals?.total_principal_usd)}
                 />
                 <Kpi
                   label="Origin lenders"

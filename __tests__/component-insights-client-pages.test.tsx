@@ -329,7 +329,7 @@ describe("PackRealityClient (app/insights/pack-reality/PackRealityClient.tsx)", 
     await waitFor(() => expect(screen.getByText("Test Pack")).toBeTruthy())
     // KPI strip formatted the headline stats.
     expect(screen.getByText(/Rips \(60d\)/i)).toBeTruthy()
-    expect(screen.getByText("$0")).toBeTruthy() // distribution bucket label
+    expect(screen.getByText("$0 exactly")).toBeTruthy() // distribution bucket label
   })
 
   it("renders the failed-to-load state on a non-ok fetch", async () => {

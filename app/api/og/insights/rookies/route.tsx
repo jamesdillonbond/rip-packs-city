@@ -198,7 +198,7 @@ export async function GET(req: NextRequest) {
             color: "rgba(255,255,255,0.55)",
           }}
         >
-          <div style={{ display: "flex" }}>Series 8 rookie sets · Daily refresh</div>
+          <div style={{ display: "flex" }}>2025 + 2026 rookie classes · Daily refresh</div>
           <div style={{ display: "flex" }}>rippackscity.com/insights/rookies</div>
         </div>
       </div>

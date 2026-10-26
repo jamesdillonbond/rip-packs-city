@@ -442,16 +442,30 @@ export async function fetchActiveListingAsk(
       return { data: Number.isFinite(p) && p > 0 ? p : null, ok: true }
     }
 
+    // Top Shot has NO rows in cached_listings_v2 (measured 2026-10-25: open rows
+    // only for All Day / Golazos / Pinnacle), so every Top Shot moment page read
+    // "Listed —" while the Sniper quoted the same serial's live ask from
+    // ts_listings ($222 on moment 52683944). ts_listings is the Atlas-firehose
+    // window (listings re-reported in the last 24 h) — a hit is a positive, an
+    // absence is NOT proof the serial is unlisted, so the dash stays a dash.
+    const isTopShot = collectionId === getCollectionUuid("nba-top-shot")
     const { data, error } = await bounded(
       Promise.resolve(
-        db
-          .from("cached_listings_v2")
-          .select("price_usd, listed_at")
-          .eq("flow_id", flowId)
-          .eq("collection_id", collectionId)
-          .is("completed_at", null)
-          .order("price_usd", { ascending: true })
-          .limit(5),
+        isTopShot
+          ? db
+              .from("ts_listings")
+              .select("price_usd, listed_at")
+              .eq("flow_id", String(flowId))
+              .order("price_usd", { ascending: true })
+              .limit(5)
+          : db
+              .from("cached_listings_v2")
+              .select("price_usd, listed_at")
+              .eq("flow_id", flowId)
+              .eq("collection_id", collectionId)
+              .is("completed_at", null)
+              .order("price_usd", { ascending: true })
+              .limit(5),
       ),
       "active-listing-ask",
     )

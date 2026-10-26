@@ -1379,7 +1379,9 @@ export default async function MomentPage(
             {/* Listed (Bug 13, 2026-07-03): restored off cached_listings_v2 — the
                 live on-chain listing feed — instead of the dead ts_listings source.
                 Shows the cheapest active ask for this serial's nft_id, or a dash
-                when there's no open listing. See fetchActiveListingAsk. */}
+                when there's no open listing. Top Shot reads ts_listings instead
+                (2026-10-25) — no TS rows exist in cached_listings_v2. See
+                fetchActiveListingAsk. */}
             <StatCell label="Listed" value={fmtUsd(activeListingAsk)} />
             <StatCell
               label="Last sale"

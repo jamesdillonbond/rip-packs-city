@@ -78,6 +78,16 @@ describe("PositionTransfersCard", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
+  // 2026-10-25 — a missing principal rendered "$0", a measured zero nothing measured.
+  it("⛔ a missing principal renders a dash, not $0", async () => {
+    fetchMock.mockReturnValue(okJson({ ...summary, totals: { ...summary.totals, total_principal_usd: null } }))
+    const { container } = render(<PositionTransfersCard />)
+    toggle(container)
+    await waitFor(() => expect(container.textContent).toContain("Total transfers"))
+    const kpi = [...container.querySelectorAll("div")].find((d) => d.textContent === "Principal")
+    expect(kpi?.nextElementSibling?.textContent).toBe("—")
+  })
+
   it("shows the could-not-load fallback on a non-ok response", async () => {
     fetchMock.mockReturnValue(Promise.resolve({ ok: false, json: () => Promise.resolve(null) } as Response))
     const { container } = render(<PositionTransfersCard />)

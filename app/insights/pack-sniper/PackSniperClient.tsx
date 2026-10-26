@@ -407,7 +407,9 @@ export default function PackSniperClient({ initialDeals, initialFetchedAt, locke
 
   const kpis = useMemo(() => {
     const hiddenHiVar = showHighVariance ? 0 : deals.filter((d) => d.highVariance).length
-    if (processed.length === 0) return { count: 0, medianRatio: 0, bestRatio: 0, newCount: 0, hiddenHiVar }
+    // No deals → no ratio to report. NaN renders "—" via fmtRatio; a 0 rendered
+    // "0.0×", a measured value nothing measured (2026-10-25).
+    if (processed.length === 0) return { count: 0, medianRatio: Number.NaN, bestRatio: Number.NaN, newCount: 0, hiddenHiVar }
     const ratios = processed.map((d) => d.liveValueRatio).sort((a, b) => a - b)
     const mid = Math.floor(ratios.length / 2)
     const medianRatio = ratios.length % 2 ? ratios[mid] : (ratios[mid - 1] + ratios[mid]) / 2
