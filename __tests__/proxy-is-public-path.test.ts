@@ -536,3 +536,12 @@ describe("THIN_COLLECTION_MISSING_TABS is the complement of the registry", () =>
     expect(lacked).toBeGreaterThan(0)
   })
 })
+
+describe("the Panini full-collection CSV is reachable signed-out (2026-10-26)", () => {
+  // The Collection tab is anon-public and its "Download all N cards" link points here; a 307 to
+  // /login would download the login page as a .csv.
+  it("GET /api/panini-collection/export is public; a POST is not", () => {
+    expect(isPublicPath("/api/panini-collection/export", "GET")).toBe(true)
+    expect(isPublicPath("/api/panini-collection/export", "POST")).toBe(false)
+  })
+})

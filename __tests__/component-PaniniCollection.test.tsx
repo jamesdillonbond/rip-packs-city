@@ -161,6 +161,8 @@ describe("PaniniCollection — filter, sort and export (2026-10-26)", () => {
     await waitFor(() => expect(c.querySelector('[data-testid="panini-collection-browser"]')).not.toBeNull())
     // cardsHeld (2) == loaded (2) in the fixture, so no partial sentence yet.
     expect(c.querySelector('[data-testid="panini-collection-view-count"]')!.textContent).toContain("2 cards loaded")
+    // Everything is loaded, so there is no separate full export to offer.
+    expect(c.querySelector('[data-testid="panini-collection-export-all"]')).toBeNull()
     fireEvent.change(c.querySelector("#panini-card-search")!, { target: { value: "messi" } })
     expect(c.querySelector('[data-testid="panini-collection-view-count"]')!.textContent).toContain("1 of the 2 loaded cards match")
     expect(c.querySelector('a[href="/panini-blockchain/edition/packcard-1"]')).not.toBeNull()
@@ -176,6 +178,11 @@ describe("PaniniCollection — filter, sort and export (2026-10-26)", () => {
     await waitFor(() => expect(c.querySelector('[data-testid="panini-collection-view-count"]')).not.toBeNull())
     expect(c.querySelector('[data-testid="panini-collection-view-count"]')!.textContent).toContain("cover the 2 highest-FMV cards loaded here, not all 900")
     expect(c.querySelector('[data-testid="panini-collection-export"]')!.textContent).toBe("Export CSV (2)")
+    // 2026-10-26: the whole collection is one link away — the server export pages every card.
+    const all = c.querySelector('[data-testid="panini-collection-export-all"]') as HTMLAnchorElement
+    // The fixture payload is username adlcards (the response username, not the typed one).
+    expect(all.getAttribute("href")).toBe("/api/panini-collection/export?username=adlcards")
+    expect(all.textContent).toContain("Download all 900 cards")
   })
 })
 

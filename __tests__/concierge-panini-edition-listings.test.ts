@@ -164,20 +164,56 @@ describe("wallet and team tools on a Panini page say what Panini lacks — never
   // Panini owners are usernames (no wallets). Without these guards a name resolved as a TOP SHOT
   // username (another person's wallet). Re-pinned 2026-10-25 (premise changed): the TEAM tools left
   // this list — panini_edition_team_keys now places Panini cards on franchises — and are pinned below.
+  // Re-pinned 2026-10-26 (premise changed): analyze_wallet_holdings and find_quirky_serials both
+  // ANSWER Panini now, over the Panini username. The property this block exists for still holds and
+  // is still exercised: neither ever resolves a name as a Top Shot username.
   it.each([
-    ["find_quirky_serials", { walletAddress: "joe" }],
-    // analyze_wallet_holdings left this list 2026-10-26: it answers Panini over the username
-    // (panini_holdings_breakdown) — pinned in its own block below.
-  ])("%s is refused on Panini without resolving a Top Shot username or querying a team", async (tool, input) => {
+    ["find_quirky_serials", { walletAddress: "joe" }, "panini_collection_export"],
+    ["analyze_wallet_holdings", { walletAddress: "joe" }, "panini_holdings_breakdown"],
+  ])("%s on Panini reads the Panini username — never the Top Shot resolver", async (tool, input, rpc) => {
     const inst = makeInstrumentedSupabaseFixture({})
     A.sb = inst.fixture
     A.state.script = [{ tools: [{ name: tool, input }] }, { text: "done" }]
     A.state.cursor = 0
     await POST(post())
-    const r = toolResult()
-    expect(r.status).toBe("unsupported_collection")
-    expect(String(r.message)).toMatch(/Panini/)
     expect(inst.rpcCalls.some((c) => c.name === "resolve_topshot_username")).toBe(false)
+    expect(inst.rpcCalls.some((c) => c.name === rpc && (c.args as any)?.p_username === "joe")).toBe(true)
+  })
+})
+
+describe("find_quirky_serials on a Panini page scans the Panini USERNAME (2026-10-26)", () => {
+  const row = (sku: string, serial: number, over: Record<string, unknown> = {}) => ({
+    sku, edition_key: "packcard-1_2_3_4", player: "Caitlin Clark", set: "Base", sport: "WNBA", serial, mint_cap: 99,
+    is_listed: false, ask_usd: null, last_sale_usd: null, last_sale_at: null, is_number_one: serial === 1, is_jersey_mint: false,
+    is_perfect_mint: false, catalogued: true, fmv_usd: 10, ...over,
+  })
+  it("finds #1 / palindrome / Panini jersey-mint serials, never as a price signal", async () => {
+    const inst = makeInstrumentedSupabaseFixture({ "rpc:panini_collection_export": { data: { username: "joe", source: "profile", rows: [
+      row("a", 1), row("b", 121), row("c", 22, { is_jersey_mint: true }), row("d", 37),
+    ] }, error: null } })
+    A.sb = inst.fixture
+    A.state.script = [{ tools: [{ name: "find_quirky_serials", input: { walletAddress: "joe" } }] }, { text: "done" }]
+    A.state.cursor = 0
+    await POST(post())
+    const r = toolResult()
+    expect(r.status).toBe("ok")
+    expect(r.cards_scanned).toBe(4)
+    expect(r.scan_complete).toBe(true)
+    const kinds = r.findings.flatMap((f: any) => f.quirks.map((q: any) => q.kind))
+    expect(kinds).toEqual(expect.arrayContaining(["first_serial", "palindrome", "jersey_match"]))
+    expect(r.findings.some((f: any) => f.serial === 37)).toBe(false)
+    expect(String(r.not_a_price_signal)).toMatch(/NO value premium/)
+    expect(r.findings[0].edition_url).toMatch(/\/panini-blockchain\/edition\//)
+  })
+  it("a failed page fails the tool — never a partial scan reported as complete", async () => {
+    const inst = makeInstrumentedSupabaseFixture({ "rpc:panini_collection_export": { data: null, error: { message: "timeout" } } })
+    A.sb = inst.fixture
+    A.state.script = [{ tools: [{ name: "find_quirky_serials", input: { walletAddress: "joe" } }] }, { text: "done" }]
+    A.state.cursor = 0
+    await POST(post())
+    const r = toolResult()
+    expect(r.status).toBe("error")
+    expect(String(r.message)).toMatch(/never say this collector has no quirky serials/)
   })
 })
 

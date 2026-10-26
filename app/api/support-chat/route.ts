@@ -115,7 +115,7 @@ import {
 import { ALLOWED_ORIGINS } from "@/lib/allowed-origins";
 import { lookupUiField } from "@/lib/concierge/ui-field-dictionary";
 import { ownLookup } from "@/lib/safe-lookup";
-import { readPaniniBreakdownForConcierge, readPaniniCollectionForConcierge, readPaniniDealsForConcierge, readPaniniPackMarketForConcierge, readPaniniPremiumsForConcierge, readPaniniTeamForConcierge } from "@/lib/concierge/panini-boards";
+import { readPaniniBreakdownForConcierge, readPaniniQuirkySerialsForConcierge, readPaniniCollectionForConcierge, readPaniniDealsForConcierge, readPaniniPackMarketForConcierge, readPaniniPremiumsForConcierge, readPaniniTeamForConcierge } from "@/lib/concierge/panini-boards";
 import { fetchPaniniEditionAsk, fetchPaniniEditionSerials } from "@/lib/panini/edition-market";
 import { paniniEditionUrl } from "@/lib/panini/edition-url";
 
@@ -807,8 +807,8 @@ const TOOLS: Anthropic.Tool[] = [
     input_schema: {
       type: "object" as const,
       properties: {
-        walletAddress: { type: "string", description: "0x wallet address or a Top Shot username. Required." },
-        collectionId: { type: "string", description: "Collection slug (nba-top-shot, nfl-all-day, laliga-golazos, disney-pinnacle, ufc). Defaults to the page's active collection, else nba-top-shot." },
+        walletAddress: { type: "string", description: "0x wallet address or a Top Shot username; on Panini, the Panini username. Required." },
+        collectionId: { type: "string", description: "Collection slug (nba-top-shot, nfl-all-day, laliga-golazos, disney-pinnacle, ufc, panini-blockchain). Defaults to the page's active collection, else nba-top-shot." },
         limit: { type: "number", description: "Max findings to return, 1..40, default 20." },
       },
       required: ["walletAddress"],
@@ -5104,8 +5104,9 @@ async function executeToolInner(
       // 2026-10-19: Panini has no wallets (owners are Panini usernames). A name here
       // would resolve as a TOP SHOT username — another person's Flow wallet, which
       // can hold no Panini card — and come back as "none found".
-      if (effectiveCollectionId === "panini-blockchain") {
-        return JSON.stringify({ status: "unsupported_collection", message: "Panini has no wallets — its collectors are Panini usernames. For a Panini collector call check_wallet with their Panini username; for a Flow wallet, call this tool again with that wallet's own collectionId (e.g. nba-top-shot). Do not say the collector has nothing." });
+      // 2026-10-26: it now scans a Panini USERNAME (the full-collection export pages) instead of refusing.
+      if (toolInput.collectionId === "panini-blockchain" || (!toolInput.collectionId && effectiveCollectionId === "panini-blockchain")) {
+        return await readPaniniQuirkySerialsForConcierge(supabase, base, String(toolInput.walletAddress ?? ""), Number(toolInput.limit ?? 20));
       }
       const inputAddr = String(toolInput.walletAddress ?? "").trim();
       if (!inputAddr) {

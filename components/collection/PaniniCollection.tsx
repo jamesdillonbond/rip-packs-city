@@ -401,6 +401,16 @@ function CardBrowser({ cards, total, username }: { cards: PaniniOwnerCard[]; tot
           {filtered ? `${count(view.length)} of the ${count(cards.length)} loaded cards match.` : `${count(cards.length)} cards loaded.`}
           {partial ? ` Filters, sort and the CSV cover the ${count(cards.length)} highest-FMV cards loaded here, not all ${count(total)}.` : ""}
         </Note>
+        {partial ? (
+          <a
+            href={`/api/panini-collection/export?username=${encodeURIComponent(username)}`}
+            download
+            data-testid="panini-collection-export-all"
+            style={{ display: "inline-block", marginTop: 4, fontFamily: mono, fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--rpc-red-text)", textDecoration: "none" }}
+          >
+            Download all {count(total)} cards (CSV) →
+          </a>
+        ) : null}
       </div>
       {view.length === 0 ? (
         <div data-testid="panini-collection-no-match" style={{ marginTop: 10 }}>

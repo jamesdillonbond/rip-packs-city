@@ -32,6 +32,8 @@ import { paniniEditionUrl } from "@/lib/panini/edition-url"
 import { textIncludes } from "@/lib/filter-match"
 import { resolvePlayerName, singleRetryLabel } from "@/lib/concierge/player-identity"
 import { COLLECTION_UUID_BY_SLUG } from "@/lib/collections"
+import { classifySerial } from "@/lib/serials/fun-patterns"
+import type { PaniniExportRow } from "@/lib/panini/collection-export"
 
 const PANINI_COLLECTION_UUID = COLLECTION_UUID_BY_SLUG["panini-blockchain"] ?? null
 
@@ -642,5 +644,86 @@ export async function readPaniniBreakdownForConcierge(db: Db, base: string, inpu
     })
   } catch {
     return failed("The Panini holdings read failed — say the check failed; never say this collector holds nothing.")
+  }
+}
+
+// ── Panini quirky serials (2026-10-26) ──────────────────────────────────────
+// find_quirky_serials refused Panini. It now scans the cards held under a Panini USERNAME (the same
+// pages as the full-collection CSV, panini_collection_export) through the shared classifySerial —
+// palindromes, repdigits, runs, #1, last mint — plus Panini's own jersey-mint flag (Panini marks a
+// serial that equals the player's jersey number). Same rules as the Top Shot branch: novelty only,
+// never a price signal; a scan stopped at the page cap is a LOWER BOUND and says so; a failed page
+// fails the tool (a partial scan is never presented as complete).
+
+const QUIRK_MAX_PAGES = 8
+
+export async function readPaniniQuirkySerialsForConcierge(db: Db, base: string, typed: string, limit: number): Promise<string> {
+  const failed = (message: string) => JSON.stringify({ status: "error", message })
+  try {
+    const username = String(typed ?? "").trim().replace(/^@/, "")
+    if (!/^[A-Za-z0-9._-]{2,32}$/.test(username)) {
+      return JSON.stringify({ status: "bad_username", message: "That doesn't look like a Panini username — ask the user to check it. A Panini collector is a Panini username, not a wallet." })
+    }
+    const rows: PaniniExportRow[] = []
+    let source: string | null = null
+    let after: string | null = null
+    let truncated = false
+    for (let page = 0; ; page++) {
+      if (page >= QUIRK_MAX_PAGES) { truncated = true; break }
+      const { data, error } = await db.rpc("panini_collection_export", { p_username: username, p_after_sku: after, p_limit: 1000 })
+      const d = (Array.isArray(data) ? data[0] : data) as { source?: string; rows?: PaniniExportRow[] } | null
+      if (error || !d || !Array.isArray(d.rows)) return failed("The Panini collection read failed — say the check failed; never say this collector has no quirky serials.")
+      source = source ?? (d.source ?? null)
+      rows.push(...d.rows)
+      if (d.rows.length < 1000) break
+      after = String(d.rows[d.rows.length - 1].sku)
+    }
+    const tabUrl = `${base}/panini-blockchain/collection?username=${encodeURIComponent(username.toLowerCase())}`
+    if (rows.length === 0) {
+      return JSON.stringify({ status: "not_seen", username: username.toLowerCase(), collection_tab_url: tabUrl,
+        message: "RPC has no profile read and has not seen a card under this Panini username — say exactly that; it does NOT mean they hold nothing." })
+    }
+    const findings = rows
+      .map((r) => {
+        const serial = num(r.serial)
+        const quirks = classifySerial(serial, {
+          circulationCount: num(r.mint_cap),
+          jerseyNumber: r.is_jersey_mint && serial != null ? serial : null,
+        })
+        if (quirks.length === 0) return null
+        return {
+          player: r.player ?? null,
+          set: r.set ?? null,
+          serial,
+          mintCount: num(r.mint_cap),
+          edition_url: r.catalogued && r.edition_key ? `${base}/panini-blockchain/edition/${encodeURIComponent(r.edition_key)}` : null,
+          quirks: quirks.map((q) => ({ kind: q.kind, label: q.label, why: q.kind === "jersey_match" ? "Panini marks this serial as the player's jersey number" : q.why })),
+        }
+      })
+      .filter((x): x is NonNullable<typeof x> => x !== null)
+    const n = Math.min(Math.max(Math.trunc(limit) || 20, 1), 40)
+    const sourceNote = source === "profile"
+      ? "Scanned the collector's public Panini profile as RPC last read it."
+      : "Scanned the cards RPC has SEEN under this username — not the whole collection; say so."
+    if (findings.length === 0) {
+      return JSON.stringify({ status: "no_results", username: username.toLowerCase(), cards_scanned: rows.length, scan_complete: !truncated, source_note: sourceNote,
+        message: "No quirky serials among the cards scanned — an ordinary serial is the normal case." })
+    }
+    return JSON.stringify({
+      status: "ok",
+      username: username.toLowerCase(),
+      collection: "panini-blockchain",
+      source_note: sourceNote,
+      cards_scanned: rows.length,
+      scan_complete: !truncated,
+      total_found: findings.length,
+      count_is_lower_bound: truncated,
+      returned: Math.min(findings.length, n),
+      findings: findings.slice(0, n),
+      collection_tab_url: tabUrl,
+      not_a_price_signal: "These are novelty finds only. They carry NO value premium — do not describe them as valuable, rare, or worth more.",
+    })
+  } catch {
+    return failed("The Panini collection read failed — say the check failed; never say this collector has no quirky serials.")
   }
 }

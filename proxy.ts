@@ -1209,6 +1209,10 @@ export function isPublicPath(pathname: string, method: string): boolean {
     // 2026-09-27: Panini's Collection tab backend (username → cards RPC has seen;
     // the same public listing data Panini's marketplace shows) — same commit.
     "/api/panini-collection",
+    // 2026-10-26: the same tab's "Download all N cards (CSV)" link — same data as the route
+    // above, every card instead of the top 500; GET-only, no session. Same commit as the link.
+    // It pages up to 40 reads of ~0.4 s each, so the /api/* per-IP limiter is its ceiling.
+    "/api/panini-collection/export",
     // 2026-09-25: the Candy Collection tab's SNS name → wallet lookup. GET-only,
     // no session, no DB — a public on-chain name resolution.
     "/api/candy/resolve-name",
