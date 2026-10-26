@@ -7,7 +7,10 @@
 // Runs `npx wrangler deploy` in each workers/<name>/ directory, one at a time,
 // stopping at the first failure. Needs a wrangler login on this machine
 // (`npx wrangler login`) — the cloud sandbox has no Cloudflare credential, which
-// is why these are deployed from Trevor's machine. rpc-mcp-proxy gets
+// is why these are deployed from Trevor's machine.
+// ⭐ Since 2026-10-25 the same script also runs in CI: dispatch
+// .github/workflows/workers-deploy.yml once the CLOUDFLARE_API_TOKEN repo secret is set
+// (an "Edit Cloudflare Workers" token); wrangler reads it from the environment. rpc-mcp-proxy gets
 // `--var BUILD_SHA:<short sha>` so /health shows which commit is live.
 // Works in Git Bash, PowerShell and cmd (no shell syntax in the commands).
 //

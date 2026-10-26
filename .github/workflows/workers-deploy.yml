@@ -1,0 +1,75 @@
+name: Cloudflare workers deploy (from the committed files)
+
+# 2026-10-25. Deploys Cloudflare workers from the files committed on the ref
+# this workflow runs on, by running scripts/deploy-workers.mjs (`npx wrangler
+# deploy` in each workers/<name>/, one at a time, stopping at the first
+# failure). Until now every worker deploy needed `npx wrangler login` on
+# Trevor's machine, because no Cloudflare credential existed anywhere else, so
+# the R138 security fixes (2026-10-25 audit) sat written, tested and pushed but
+# undeployed. With the two repo secrets below set, any session can dispatch
+# this instead.
+#
+# Credentials (repo secrets, Settings -> Secrets and variables -> Actions):
+#   CLOUDFLARE_API_TOKEN   required — a Cloudflare API token made from the
+#                          "Edit Cloudflare Workers" template, scoped to the
+#                          RPC account. wrangler reads it from the environment.
+#   CLOUDFLARE_ACCOUNT_ID  optional — only needed if the token can see more
+#                          than one account.
+# `wrangler deploy` keeps each worker's existing secrets and vars; it ships
+# code and wrangler.toml config only. It ships EVERYTHING in workers/<name>/
+# at this ref, not only the latest change — check `git log -- workers/<name>`.
+#
+# workflow_dispatch only — nothing deploys on push.
+
+on:
+  workflow_dispatch:
+    inputs:
+      workers:
+        description: "Space-separated worker names (directories under workers/). Empty = every worker with a wrangler.toml."
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: workers-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy workers
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      WORKERS: ${{ inputs.workers }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+
+      - name: Pre-flight
+        run: |
+          set -euo pipefail
+          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
+            echo "::error::CLOUDFLARE_API_TOKEN is not configured — nothing deployed."
+            exit 2
+          fi
+          for w in $WORKERS; do
+            if ! printf '%s' "$w" | grep -Eq '^[a-z0-9][a-z0-9-]*$' || [ ! -f "workers/$w/wrangler.toml" ]; then
+              echo "::error::'$w' is not a worker (no workers/$w/wrangler.toml on this ref)."
+              exit 2
+            fi
+          done
+          echo "ref: $(git rev-parse --short HEAD)"
+
+      - name: Deploy
+        run: |
+          set -euo pipefail
+          # Word-splitting on purpose: WORKERS is a validated space-separated list.
+          # shellcheck disable=SC2086
+          node scripts/deploy-workers.mjs $WORKERS
