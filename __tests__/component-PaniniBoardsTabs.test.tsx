@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
-import { describe, it, expect, afterEach } from "vitest"
+import { describe, it, expect, afterEach, vi } from "vitest"
 import type React from "react"
 import { render, cleanup, fireEvent } from "@testing-library/react"
+vi.mock("next/link", () => ({ default: ({ children, href, ...rest }: any) => <a href={href} {...rest}>{children}</a> }))
+
 import PaniniBoardsTabs, { type PaniniBoardsPayload } from "@/app/insights/panini-squeeze/PaniniBoardsTabs"
 
 afterEach(cleanup)
@@ -83,3 +85,28 @@ describe("PaniniBoardsTabs", () => {
   });
 });
 
+describe("PaniniBoardsTabs — Bid vs Floor (2026-10-25)", () => {
+  const row = { external_id: "packcard-1_2_3_4", player_name: "Cade Cunningham", set_name: "Base Prizms Dragon Year", parallel: "Base Prizms Dragon Year", mint_cap: 25, product_name: "2024-25 Panini NFT Prizm Basketball", sport: "Basketball", floor_serial: 5, ask_usd: 21, best_offer_usd: 19, offers_on_copy: 2, offer_pct_of_ask: 90.5, spread_usd: 2, seen_at: "2026-10-25T20:00:00Z", fmv_usd: 22, computed_at: "2026-10-26T05:12:00Z" };
+  it("says the offer is on the same copy, links the edition, and states N of M", () => {
+    const { container, getByText } = render(<PaniniBoardsTabs data={{ ...base, offer_spread: [row], offer_spread_error: false, offer_spread_total: 4575, offer_spread_tight: 64 }} degraded={null} />);
+    fireEvent.click(getByText("Bid vs Floor"));
+    expect(container.textContent).toContain("that same copy");
+    expect(container.textContent).toContain("4,575 floors carry an offer; on 64");
+    expect(container.querySelector('a[href="/panini-blockchain/edition/packcard-1_2_3_4"]')).not.toBeNull();
+    expect(container.textContent).toContain("#5/25");
+    expect(container.textContent).toContain("90.5%");
+    expect(container.textContent).toContain("2 offers");
+  });
+  it("a failed read says it failed — never 'no offer'", () => {
+    const { container, getByText } = render(<PaniniBoardsTabs data={{ ...base, offer_spread: null, offer_spread_error: true }} degraded={null} />);
+    fireEvent.click(getByText("Bid vs Floor"));
+    expect(container.textContent).toContain("couldn't load");
+    expect(container.textContent).not.toMatch(/carries an offer right now/);
+  });
+  it("an ok empty read says none carries an offer, and shows no FMV tier", () => {
+    const { container, getByText } = render(<PaniniBoardsTabs data={{ ...base, offer_spread: [], offer_spread_error: false }} degraded={null} />);
+    fireEvent.click(getByText("Bid vs Floor"));
+    expect(container.textContent).toContain("carries an offer right now");
+    expect(container.textContent).not.toMatch(/\b(HIGH|MEDIUM|LOW|ASK_ONLY)\b/);
+  });
+});

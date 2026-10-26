@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest"
 import {
   fetchPaniniMoreBoards,
   PANINI_BOARD_LIMIT,
+  OFFER_SPREAD_MIN_ASK,
   HOLDER_MIN_COPIES,
   HOLDER_STACKED_SHARE,
   HOLDER_CORNERED_SHARE,
@@ -27,6 +28,7 @@ function db(over: Record<string, Res> = {}) {
     panini_player_board: { data: [{ player_name: "P" }] },
     panini_coverage_summary: { data: [{ total_editions: 5094, pct_trustworthy: 35.1 }] },
     mv_panini_holder_concentration: { data: [{ external_id: "packcard-1", top1_share: 0.4, top3_share: 0.6 }], count: 7 },
+    mv_panini_offer_spread: { data: [{ external_id: "packcard-2", ask_usd: 21, best_offer_usd: 19, offer_pct_of_ask: 90.5 }], count: 4575 },
     ...over,
   }
   return {
@@ -179,5 +181,29 @@ describe("fetchPaniniMoreBoards — holders", () => {
     expect((r.payload as any).holders).toBeNull()
     expect((r.payload as any).holders_error).toBe(true)
     expect(r.ok).toBe(false)
+  })
+})
+
+describe("fetchPaniniMoreBoards — Bid vs Floor (2026-10-25)", () => {
+  it("reads the floor-copy view, tightest first, asks under the minimum left out", async () => {
+    const d = db() as any
+    const r = await fetchPaniniMoreBoards(d)
+    expect(r.ok).toBe(true)
+    expect(d.orders.mv_panini_offer_spread?.[0]).toBe("offer_pct_of_ask")
+    expect(d.eqs.mv_panini_offer_spread).toContain(`ask_usd>=${OFFER_SPREAD_MIN_ASK}`)
+    expect(r.payload.offer_spread).toHaveLength(1)
+    expect(r.payload.offer_spread_error).toBe(false)
+    expect(r.payload.offer_spread_total).toBe(4575)
+  })
+  it("a failed spread read is flagged, never an empty board, and the payload is not cached", async () => {
+    const r = await fetchPaniniMoreBoards(db({ mv_panini_offer_spread: { data: null, error: { message: "boom" } } }))
+    expect(r.payload.offer_spread).toBeNull()
+    expect(r.payload.offer_spread_error).toBe(true)
+    expect(r.ok).toBe(false)
+  })
+  it("selects no owner column", async () => {
+    const d = db() as any
+    await fetchPaniniMoreBoards(d)
+    expect((d.selects.mv_panini_offer_spread ?? []).join(",")).not.toMatch(/owner/)
   })
 })

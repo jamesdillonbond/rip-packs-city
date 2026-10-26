@@ -16,6 +16,7 @@
 //     tab sorts by edition count and says so, rather than ranking by a sum an
 //     ask can inflate.
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import DegradedDataNotice from "@/components/insights/DegradedDataNotice";
 import type { DegradedSummary } from "@/lib/insights/board-status";
@@ -102,6 +103,24 @@ export interface HolderRow {
   top3_share: Num;
   computed_at: string | null;
 }
+export interface SpreadRow {
+  external_id: string;
+  player_name: string | null;
+  set_name: string | null;
+  parallel: string | null;
+  mint_cap: Num;
+  product_name: string | null;
+  sport: string | null;
+  floor_serial: Num;
+  ask_usd: Num;
+  best_offer_usd: Num;
+  offers_on_copy: Num;
+  offer_pct_of_ask: Num;
+  spread_usd: Num;
+  seen_at: string | null;
+  fmv_usd: Num;
+  computed_at: string | null;
+}
 export interface PaniniBoardsPayload {
   deals?: DealRow[] | null;
   deals_error?: boolean;
@@ -121,17 +140,27 @@ export interface PaniniBoardsPayload {
   holders_eligible?: Num;
   holders_stacked?: Num;
   holders_cornered?: Num;
+  offer_spread?: SpreadRow[] | null;
+  offer_spread_error?: boolean;
+  offer_spread_capped?: boolean;
+  offer_spread_total?: Num;
+  offer_spread_tight?: Num;
   coverage?: { total_editions?: Num; pct_trustworthy?: Num } | null;
 }
 
-type Tab = "deals" | "packs" | "specials" | "players" | "holders";
+type Tab = "deals" | "packs" | "specials" | "players" | "holders" | "spread";
 const TABS: { k: Tab; label: string }[] = [
   { k: "deals", label: "Deals" },
   { k: "packs", label: "Pack EV" },
   { k: "specials", label: "Special serials" },
   { k: "players", label: "Players" },
   { k: "holders", label: "Holders" },
+  { k: "spread", label: "Bid vs Floor" },
 ];
+
+// Mirror OFFER_SPREAD_MIN_ASK / OFFER_SPREAD_TIGHT_PCT in lib/insights/panini-more-boards.ts (server module).
+const SPREAD_MIN_ASK = 5;
+const SPREAD_TIGHT_PCT = 80;
 
 // Mirrors HOLDER_STACKED_SHARE / HOLDER_CORNERED_SHARE in lib/insights/panini-more-boards.ts (that module
 // imports the server client, so a client component cannot import it).
@@ -143,7 +172,7 @@ function pct(share: Num | undefined): string {
   return `${Math.round(Number(share) * 100)}%`;
 }
 /** Set and parallel, once each — on most Panini editions the two are the same string ("Kaboom · Kaboom"). */
-function setLabel(r: HolderRow): string {
+function setLabel(r: { set_name: string | null; parallel: string | null }): string {
   const set = r.set_name?.trim() || null;
   const par = r.parallel?.trim() || null;
   if (set && par) return set === par ? set : `${set} · ${par}`;
@@ -360,6 +389,44 @@ export default function PaniniBoardsTabs({
                 </tr>
               ))}
             </Table>
+          </>
+        )
+      ) : tab === "spread" ? (
+        data.offer_spread_error || !data.offer_spread ? (
+          <Failed what="Bid vs Floor" />
+        ) : data.offer_spread.length === 0 ? (
+          <Note>No cheapest listed copy asking ${SPREAD_MIN_ASK} or more carries an offer right now.</Note>
+        ) : (
+          <>
+            <Note>
+              The cheapest listed copy of each edition and the best offer Panini shows on <b>that same copy</b>, closest to its ask first.
+              Panini offers are made on a specific serial, so this is a spread on one card, not an edition-wide bid. Asks under ${SPREAD_MIN_ASK} are left out,
+              and both the ask and the offer were re-read in the last 7 days.
+              {data.offer_spread_total != null && data.offer_spread_tight != null
+                ? ` ${int(data.offer_spread_total)} floors carry an offer; on ${int(data.offer_spread_tight)} it is at least ${SPREAD_TIGHT_PCT}% of the ask.`
+                : ""}
+              {data.offer_spread[0]?.computed_at ? ` Updated ${ptDate(data.offer_spread[0].computed_at)}.` : ""}
+            </Note>
+            <Table head={["Player", "Set · Parallel", "Floor copy", "Ask", "Best offer", "Offer / ask", "Gap", "FMV", "Product"]}>
+              {data.offer_spread.map((r) => (
+                <tr key={r.external_id}>
+                  <td style={td}>
+                    <Link href={`/panini-blockchain/edition/${encodeURIComponent(r.external_id)}`} style={{ color: "var(--rpc-text-primary)", textDecoration: "none" }}>
+                      {r.player_name ?? "—"}
+                    </Link>
+                  </td>
+                  <td style={td}>{setLabel(r)}</td>
+                  <td style={td}>{serial(r.floor_serial, r.mint_cap)}</td>
+                  <td style={td}>{usd(r.ask_usd)}</td>
+                  <td style={td}>{usd(r.best_offer_usd)}{r.offers_on_copy != null && r.offers_on_copy > 1 ? ` · ${int(r.offers_on_copy)} offers` : ""}</td>
+                  <td style={td}>{r.offer_pct_of_ask == null ? "—" : `${r.offer_pct_of_ask}%`}</td>
+                  <td style={td}>{usd(r.spread_usd)}</td>
+                  <td style={td}>{usd(r.fmv_usd)}</td>
+                  <td style={td}>{r.product_name ?? "—"}</td>
+                </tr>
+              ))}
+            </Table>
+            {data.offer_spread_capped ? <Note>Showing the {int(data.offer_spread.length)} tightest; more floors carry an offer.</Note> : null}
           </>
         )
       ) : tab === "holders" ? (

@@ -76,6 +76,18 @@ const HOLDER_COLS =
   "external_id,product_set_id,player_name,set_name,parallel,tier,mint_cap,owned_copies,unopened_copies,burnt_copies," +
   "holders,top1_copies,top3_copies,top1_share,top3_share,computed_at"
 
+// ── BID VS FLOOR (2026-10-25, Top Shot /insights/offer-spread parity) ─────────
+// mv_panini_offer_spread (audit_20261025_panini_offer_spread_floor_copy, hourly): per edition, the CHEAPEST
+// LISTED copy and the best offer Panini shows on THAT copy. Panini offers are per serial, so an edition-wide
+// best offer (often on a #1) is not a bid on a floor copy; this is a spread on one card. Asks under $5 are
+// left off, as on Top Shot's board.
+export const OFFER_SPREAD_MIN_ASK = 5
+/** The offer is at least this share of the ask — "tight". */
+export const OFFER_SPREAD_TIGHT_PCT = 80
+const OFFER_SPREAD_COLS =
+  "external_id,player_name,set_name,parallel,mint_cap,product_name,sport,floor_serial,ask_usd,best_offer_usd," +
+  "offers_on_copy,offer_pct_of_ask,spread_usd,seen_at,fmv_usd,computed_at"
+
 interface Read<T> {
   rows: T[] | null
   error: string | null
@@ -99,7 +111,7 @@ async function read<T>(q: PromiseLike<{ data: T[] | null; error: { message: stri
 export async function fetchPaniniMoreBoards(
   db: Db = supabaseAdmin,
 ): Promise<BoardLiveResult<Record<string, unknown>>> {
-  const [deals, dealsAll, packs, specials, players, coverage, specialCount, holders, holderCount] = await Promise.all([
+  const [deals, dealsAll, packs, specials, players, coverage, specialCount, holders, holderCount, spread, spreadCount] = await Promise.all([
     read(
       db.from("panini_deal_board").select(DEAL_COLS)
         // Sale-corroborated deals FIRST ('fmv_and_recent_sales' sorts before
@@ -197,6 +209,28 @@ export async function fetchPaniniMoreBoards(
         return { eligible: null, stacked: null, cornered: null, error: err instanceof Error ? err.message : String(err) }
       }
     })(),
+    read(
+      db.from("mv_panini_offer_spread").select(OFFER_SPREAD_COLS)
+        .gte("ask_usd", OFFER_SPREAD_MIN_ASK)
+        .order("offer_pct_of_ask", { ascending: false })
+        .order("external_id", { ascending: true })
+        .limit(PANINI_BOARD_LIMIT),
+      "mv_panini_offer_spread",
+    ),
+    // How many floors carry an offer and how many are tight, so the tab says "N of M".
+    (async (): Promise<{ total: number | null; tight: number | null; error: string | null }> => {
+      try {
+        const base = () => db.from("mv_panini_offer_spread").select("external_id", { count: "exact", head: true })
+          .gte("ask_usd", OFFER_SPREAD_MIN_ASK)
+        const [t, k] = await Promise.all([base(), base().gte("offer_pct_of_ask", OFFER_SPREAD_TIGHT_PCT)])
+        if (t.error || k.error || t.count == null || k.count == null) {
+          return { total: null, tight: null, error: (t.error ?? k.error)?.message ?? "count unavailable" }
+        }
+        return { total: t.count, tight: k.count, error: null }
+      } catch (err) {
+        return { total: null, tight: null, error: err instanceof Error ? err.message : String(err) }
+      }
+    })(),
   ])
 
   const statuses: BoardStatus[] = [
@@ -206,10 +240,12 @@ export async function fetchPaniniMoreBoards(
     { label: "Special serials", ok: specials.error === null, partial: false },
     { label: "Players", ok: players.error === null, partial: false },
     { label: "Holders", ok: holders.error === null, partial: false },
+    { label: "Bid vs Floor", ok: spread.error === null, partial: false },
   ]
-  const errors = [deals, dealsAll, packs, specials, players, coverage, holders].map((r) => r.error).filter(Boolean) as string[]
+  const errors = [deals, dealsAll, packs, specials, players, coverage, holders, spread].map((r) => r.error).filter(Boolean) as string[]
   if (specialCount.error) errors.push(`special serial counts: ${specialCount.error}`)
   if (holderCount.error) errors.push(`holder counts: ${holderCount.error}`)
+  if (spreadCount.error) errors.push(`bid vs floor counts: ${spreadCount.error}`)
 
   return {
     payload: {
@@ -234,6 +270,11 @@ export async function fetchPaniniMoreBoards(
       holders_eligible: holderCount.eligible,
       holders_stacked: holderCount.stacked,
       holders_cornered: holderCount.cornered,
+      offer_spread: spread.rows,
+      offer_spread_error: spread.error !== null,
+      offer_spread_capped: (spread.rows?.length ?? 0) >= PANINI_BOARD_LIMIT,
+      offer_spread_total: spreadCount.total,
+      offer_spread_tight: spreadCount.tight,
       coverage: coverage.rows?.[0] ?? null,
       degraded: summarizeDegraded(statuses),
       fetchedAt: new Date().toISOString(),
