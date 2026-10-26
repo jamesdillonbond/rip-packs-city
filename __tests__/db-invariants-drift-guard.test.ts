@@ -389,10 +389,11 @@ const PINS = [
     // which holds no Pinnacle rows, so both franchise-page sections were hidden.
     // Pins the catalog sets (trimmed slug, pins held by render_id) and the
     // render_id sales feed (both lanes agree).
+    // Re-pinned 2026-10-25 (#211 part C): cheapest entry calls recent_low_usd.
     fn: "get_team_sets",
     test: "supabase/tests/get_team_sets.sql",
     migration:
-      "supabase/migrations/20260926213521_audit_20260926_pinnacle_franchise_pages_show_sets_and_recent_sales.sql",
+      "supabase/migrations/20261025235754_audit_20261025_recent_low_totals_ignore_an_ask_far_above_fmv_c.sql",
   },
   {
     fn: "get_team_activity",
@@ -468,10 +469,11 @@ const PINS = [
     // COALESCE(floor_ask, fmv_usd) as its Recent-Low Total and never disclosed
     // that its FMV Total is mostly ask-derived. Pins live asks only, the listed
     // count, the ASK_ONLY part, on both the live path and the rollup.
+    // Re-pinned 2026-10-25 (#211 part B1): the live path calls recent_low_usd.
     fn: "get_series_detail",
     test: "supabase/tests/series_detail_pinnacle_totals.sql",
     migration:
-      "supabase/migrations/20260929063531_audit_20260928_pinnacle_entity_totals_say_what_they_sum.sql",
+      "supabase/migrations/20261025235853_audit_20261025_recent_low_totals_ignore_an_ask_far_above_fmv_b1.sql",
   },
   {
     fn: "refresh_series_detail_rollup",
@@ -1318,7 +1320,8 @@ const PINS = [
     // Re-pinned 2026-09-26: the Pinnacle branch reads the render catalog by
     // each pin's Franchises trait (™ stripped); legacy read kept as fallback.
     // Re-pinned 2026-09-28: the catalog arm reads 30-day activity from pinnacle_sales.
-    migration: "supabase/migrations/20260929063531_audit_20260928_pinnacle_entity_totals_say_what_they_sum.sql",
+    // Re-pinned 2026-10-25 (#211 part C): Recent-Low Total calls recent_low_usd.
+    migration: "supabase/migrations/20261025235754_audit_20261025_recent_low_totals_ignore_an_ask_far_above_fmv_c.sql",
   },
   {
     // Added 2026-09-25 (batch 62). The helpers behind every team read: the

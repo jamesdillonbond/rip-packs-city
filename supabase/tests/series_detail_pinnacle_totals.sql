@@ -14,6 +14,12 @@
 -- (supabase/migrations/20260929063531_audit_20260928_pinnacle_entity_totals_say_what_they_sum.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
+-- Re-pinned 2026-10-25: get_series_detail to
+-- supabase/migrations/20261025235853_audit_20261025_recent_low_totals_ignore_an_ask_far_above_fmv_b1.sql
+-- (its live path calls recent_low_usd). refresh_series_detail_rollup is STILL the 20260929063531 body:
+-- its recent_low_usd change (part B2, docs/audits/staged-2026-10-25-recent-low-parts-b-c/part_b2_rollup.sql)
+-- is not applied yet (known-issues #211).
+--
 -- Runs inside a rolled-back transaction so it leaves no residue.
 
 BEGIN;
@@ -40,6 +46,16 @@ CREATE FUNCTION public.log_pipeline_run(p_pipeline text, p_started_at timestampt
   p_rows_skipped int, p_ok boolean, p_error text, p_collection_slug text, p_cursor_before text, p_cursor_after text, p_extra jsonb)
   RETURNS bigint LANGUAGE sql AS $$ SELECT 1::bigint $$;
 
+-- recent_low_usd: VERBATIM from supabase/migrations/20261025221903_audit_20261025_recent_low_totals_ignore_an_ask_far_above_fmv_a.sql (pinned by the drift guard).
+CREATE OR REPLACE FUNCTION public.recent_low_usd(p_floor numeric, p_fmv numeric)
+ RETURNS numeric
+ LANGUAGE sql
+ IMMUTABLE PARALLEL SAFE
+AS $function$
+  SELECT CASE
+           WHEN p_floor > 0 AND (p_fmv IS NULL OR p_fmv <= 0 OR p_floor <= 3 * p_fmv) THEN p_floor
+         END
+$function$;
 CREATE OR REPLACE FUNCTION public.get_series_detail(p_collection_id uuid, p_series_slug text)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -115,7 +131,7 @@ BEGIN
         COUNT(*),
         SUM(e.circulation_count) FILTER (WHERE e.circulation_count IS NOT NULL),
         SUM(fmv.fmv_usd)         FILTER (WHERE fmv.fmv_usd > 0),
-        SUM(COALESCE(fmv.floor_price_usd, fmv.fmv_usd)) FILTER (WHERE COALESCE(fmv.floor_price_usd, fmv.fmv_usd) > 0),
+        SUM(COALESCE(public.recent_low_usd(fmv.floor_price_usd, fmv.fmv_usd), fmv.fmv_usd)) FILTER (WHERE COALESCE(public.recent_low_usd(fmv.floor_price_usd, fmv.fmv_usd), fmv.fmv_usd) > 0),
         COUNT(DISTINCT e.set_name),
         COUNT(DISTINCT COALESCE(e.player_id::text, e.player_name))
       INTO v_edition_count, v_total_circulation, v_fmv_total, v_floor_total, v_set_count, v_player_count
@@ -326,6 +342,13 @@ SELECT _assert_eq((public.get_series_detail(:'pin'::uuid, 'series-2026') ->> 'fm
 SELECT _assert_eq((public.get_series_detail(:'pin'::uuid, 'series-2026') ->> 'fmv_total_usd'), '58', 'live: FMV total unchanged');
 -- 2. no ASK_ONLY pin
 SELECT _assert((public.get_series_detail(:'pin'::uuid, 'series-2025') ->> 'fmv_ask_derived_usd') IS NULL, 'no ASK_ONLY pin -> NULL, never 0');
+
+-- 2b. 2026-10-25 (#211 part B1): the non-Pinnacle LIVE path ignores a "recent low" above 3x FMV.
+-- (The rollup below still sums the raw floor until part B2 lands; it reads edition_fmv_current.)
+INSERT INTO public.fmv_snapshots VALUES ('00000000-0000-4000-8000-000000000001', 4, 50, now());
+SELECT _assert_eq((public.get_series_detail(:'ts'::uuid, 'series-1') ->> 'floor_total_usd'), '4', 'live: an out-of-band floor (50 = 12.5x) contributes FMV 4, not the ask');
+UPDATE public.fmv_snapshots SET floor_price_usd = 3 WHERE edition_id = '00000000-0000-4000-8000-000000000001';
+SELECT _assert_eq((public.get_series_detail(:'ts'::uuid, 'series-1') ->> 'floor_total_usd'), '3', 'live: an in-bound floor is still summed (no-change control)');
 
 -- 1. the rollup (fast path) agrees with the live path
 SELECT (public.refresh_series_detail_rollup(60) ->> 'ok') IS NOT NULL AS refreshed \gset

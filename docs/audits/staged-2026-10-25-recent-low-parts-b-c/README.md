@@ -1,25 +1,30 @@
-# Staged: Recent-Low Totals, parts B and C (2026-10-25)
+# Staged: Recent-Low Totals, part B2 only (2026-10-25)
 
-Part A (`supabase/migrations/20261025221903_…_a.sql`) is live: `recent_low_usd` plus the set and
-player header totals. These two parts were **not applied**. Tracked as known-issues #211.
+Part A (`20261025221903_…_a.sql`), part C (`20261025235754_…_c.sql`, team totals + cheapest entry) and
+part B1 (`20261025235853_…_b1.sql`, `get_series_detail`'s live path) are **live**. Only **B2** is left:
+`refresh_series_detail_rollup`, the rollup `get_series_detail`'s FAST path reads. Tracked as
+known-issues #211.
 
-The MCP `apply_migration` for part B stopped on a confirmation prompt nobody answered, **twice**
-(about 3:20 and 4:15 PM PT on 10-25). Nothing landed either time: the md5s were unchanged and there was
-no `schema_migrations` row. The likely trigger is the `DELETE FROM series_detail_rollup` inside
-`refresh_series_detail_rollup`; the server asks before running a body it reads as destructive.
-**Try part C first** (no DELETE). For part B, either have someone at the session to approve the
-prompt, or split it into `get_series_detail` alone (no DELETE) and the rollup refresh. Bases were
-re-checked live at about 4:15 PM PT 10-25: all four functions still match the md5 guards.
+Why it is still staged: the MCP `apply_migration` stops on a confirmation prompt for this body, every
+time (3 tries on 10-25: ~3:20 PM, ~4:15 PM, ~5:00 PM PT). C and B1 went through without one, so the
+trigger is the `DELETE FROM series_detail_rollup` inside it (an orphan-row cleanup, unchanged by this
+change). Nothing landed on any try (md5 unchanged, no `schema_migrations` row). **Apply it with
+Trevor present to answer the prompt**, or paste it into the dashboard SQL editor.
+
+Until it lands, a series page whose rollup row exists still sums the raw floor (the live path is fixed
+but only runs when no rollup row exists — i.e. almost never).
 
 | file | what it is |
 |---|---|
-| `part_b_series.sql` | migration: `get_series_detail` (live path) + `refresh_series_detail_rollup` (the rollup its fast path reads) |
-| `part_c_team.sql` | migration: `get_team_detail` + `get_team_sets` (cheapest entry) |
-| `test_*.sql` | the matching `supabase/tests/*.sql`, re-pinned to the new bodies (they still name the old combined migration `20261025221348_…`; change it to the applied file names) |
+| `part_b2_rollup.sql` | the migration (md5 guard on the 10-25 base `0cb641fc0b801a83f786fb2935337c2a`, re-checked ~5:00 PM PT) |
 
-To land them:
-1. Re-check each md5 guard against live `prosrc` (the bases are those of 2026-10-25). If a base moved, re-splice instead of applying.
-2. `apply_migration` part B, then part C, each under its own name. Copy each file into `supabase/migrations/` named with the version prod records.
-3. Copy the test files over `supabase/tests/`. Point their headers and the drift-guard entries (`__tests__/db-invariants-drift-guard.test.ts`) at the new files. Run the DB-invariant suite.
-4. Run `select refresh_series_detail_rollup()` (or wait for jobid 357) so the series rollup rows pick up the change.
+To land it:
+1. Re-check the md5 guard against live `prosrc`. If the base moved, re-splice.
+2. `apply_migration` it; copy the file into `supabase/migrations/` under the version prod records.
+3. In `supabase/tests/series_detail_pinnacle_totals.sql`, change the rollup body's non-Pinnacle
+   `sum(COALESCE(fmv.floor_price_usd, fmv.fmv_usd)) FILTER (...)` line to the `recent_low_usd` form
+   (copy it from the migration), fix the header note, and repoint `refresh_series_detail_rollup` in
+   `__tests__/db-invariants-drift-guard.test.ts` at the new file. Add a rollup assertion like test 2b
+   (an out-of-band `edition_fmv_current` floor contributes FMV). Run the DB-invariant suite.
+4. `select refresh_series_detail_rollup()` (or wait for jobid 357) so the rows pick up the change.
 5. Delete this folder in the same commit.

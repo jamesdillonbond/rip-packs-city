@@ -18,6 +18,8 @@
 -- (supabase/migrations/20260926213521_audit_20260926_pinnacle_franchise_pages_show_sets_and_recent_sales.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
+-- Re-pinned 2026-10-25 to 20261025235754_audit_20261025_recent_low_totals_ignore_an_ask_far_above_fmv_c.sql (cheapest entry calls recent_low_usd; get_team_activity unchanged).
+--
 -- Runs inside a rolled-back transaction so it leaves no residue.
 
 BEGIN;
@@ -30,6 +32,16 @@ CREATE TABLE public.wallet_moments_cache (
 CREATE TABLE public.pinnacle_sales (
   id bigserial PRIMARY KEY, render_id text, serial_number int, sale_price_usd numeric, sold_at timestamptz);
 
+-- recent_low_usd: VERBATIM from supabase/migrations/20261025221903_audit_20261025_recent_low_totals_ignore_an_ask_far_above_fmv_a.sql (pinned by the drift guard).
+CREATE OR REPLACE FUNCTION public.recent_low_usd(p_floor numeric, p_fmv numeric)
+ RETURNS numeric
+ LANGUAGE sql
+ IMMUTABLE PARALLEL SAFE
+AS $function$
+  SELECT CASE
+           WHEN p_floor > 0 AND (p_fmv IS NULL OR p_fmv <= 0 OR p_floor <= 3 * p_fmv) THEN p_floor
+         END
+$function$;
 CREATE OR REPLACE FUNCTION public.get_team_sets(p_collection_id uuid, p_team_slug text, p_wallet text DEFAULT NULL::text)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -130,7 +142,7 @@ BEGIN
       te.set_slug,
       MIN(te.set_name) AS set_name,
       COUNT(*) AS editions,
-      MIN(COALESCE(te.floor_price_usd, te.fmv_usd)) FILTER (WHERE COALESCE(te.floor_price_usd, te.fmv_usd) > 0) AS cheapest_entry_usd,
+      MIN(COALESCE(public.recent_low_usd(te.floor_price_usd, te.fmv_usd), te.fmv_usd)) FILTER (WHERE COALESCE(public.recent_low_usd(te.floor_price_usd, te.fmv_usd), te.fmv_usd) > 0) AS cheapest_entry_usd,
       CASE WHEN p_wallet IS NULL THEN NULL ELSE COUNT(*) FILTER (WHERE te.owned) END AS owned
     FROM te
     GROUP BY te.set_slug
@@ -357,6 +369,27 @@ INSERT INTO public.pinnacle_catalog (render_id, franchises, characters, set_name
   SELECT 'x' || g, ARRAY['Star Wars'], ARRAY['Extra'], 'Set Z', 'Standard' FROM generate_series(1, 700) g;
 SELECT _assert_eq((SELECT string_agg((x->>'route_slug') || '@' || (x->>'price_usd'), ',') FROM jsonb_array_elements(public.get_team_activity(:pin::uuid, 'star-wars', 30, 0)) x),
   'r2@22,r3@33,r1@11', 'wide lane returns the same rows as the narrow one');
+
+-- ── 3. 2026-10-25 (#211 part C): the non-Pinnacle cheapest entry ignores a "recent low" above 3x FMV ──
+CREATE TABLE public.editions (id uuid PRIMARY KEY, collection_id uuid, external_id text, team_name text,
+  set_name text, thumbnail_url text);
+CREATE TABLE public.fmv_snapshots (edition_id uuid, fmv_usd numeric, floor_price_usd numeric, computed_at timestamptz);
+CREATE FUNCTION public.team_franchise_slugs(p_collection_id uuid, p_team_slug text) RETURNS text[]
+  LANGUAGE sql IMMUTABLE AS $$ SELECT ARRAY[p_team_slug] $$;
+\set ts '''00000000-0000-0000-0000-0000000000a1'''
+INSERT INTO public.editions VALUES
+  ('00000000-0000-0000-0000-0000000000e1', :ts::uuid, '1:1', 'Trail Blazers', 'Base Set', '/t/1'),
+  ('00000000-0000-0000-0000-0000000000e2', :ts::uuid, '1:2', 'Trail Blazers', 'Base Set', '/t/2');
+-- e1: an ask 50x its FMV carried forward (the 220:7651 shape); e2: an in-bound floor.
+INSERT INTO public.fmv_snapshots VALUES
+  ('00000000-0000-0000-0000-0000000000e1', 2, 100, now()),
+  ('00000000-0000-0000-0000-0000000000e2', 10, 8, now());
+SELECT _assert_eq((public.get_team_sets(:ts::uuid, 'trail-blazers', NULL) -> 0 ->> 'cheapest_entry_usd'), '2',
+  'cheapest entry: the out-of-band floor contributes its FMV (2), so min(2, 8) = 2');
+-- No-change control: an in-bound floor (5 = 2.5x FMV 2) is still the entry price.
+UPDATE public.fmv_snapshots SET floor_price_usd = 5 WHERE edition_id = '00000000-0000-0000-0000-0000000000e1';
+SELECT _assert_eq((public.get_team_sets(:ts::uuid, 'trail-blazers', NULL) -> 0 ->> 'cheapest_entry_usd'), '5',
+  'cheapest entry: an in-bound floor is kept (min(5, 8))');
 
 SELECT '✓ get_team_sets + get_team_activity: all assertions passed' AS result;
 

@@ -25,6 +25,8 @@
 -- before that, 20260926195205_audit_20260926_pinnacle_franchise_pages_list_every_pin.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
+-- Re-pinned 2026-10-25 to 20261025235754_audit_20261025_recent_low_totals_ignore_an_ask_far_above_fmv_c.sql (Recent-Low Totals call recent_low_usd).
+--
 -- Runs inside a rolled-back transaction so it leaves no residue.
 
 BEGIN;
@@ -191,6 +193,16 @@ END
 $function$;
 
 -- >>> BEGIN verbatim get_team_detail (keep byte-identical to the migration) >>>
+-- recent_low_usd: VERBATIM from supabase/migrations/20261025221903_audit_20261025_recent_low_totals_ignore_an_ask_far_above_fmv_a.sql (pinned by the drift guard).
+CREATE OR REPLACE FUNCTION public.recent_low_usd(p_floor numeric, p_fmv numeric)
+ RETURNS numeric
+ LANGUAGE sql
+ IMMUTABLE PARALLEL SAFE
+AS $function$
+  SELECT CASE
+           WHEN p_floor > 0 AND (p_fmv IS NULL OR p_fmv <= 0 OR p_floor <= 3 * p_fmv) THEN p_floor
+         END
+$function$;
 CREATE OR REPLACE FUNCTION public.get_team_detail(p_collection_id uuid, p_team_slug text)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -355,7 +367,7 @@ BEGIN
       COUNT(*),
       SUM(e.circulation_count) FILTER (WHERE e.circulation_count IS NOT NULL),
       SUM(fmv.fmv_usd)         FILTER (WHERE fmv.fmv_usd > 0),
-      SUM(COALESCE(fmv.floor_price_usd, fmv.fmv_usd)) FILTER (WHERE COALESCE(fmv.floor_price_usd, fmv.fmv_usd) > 0)
+      SUM(COALESCE(public.recent_low_usd(fmv.floor_price_usd, fmv.fmv_usd), fmv.fmv_usd)) FILTER (WHERE COALESCE(public.recent_low_usd(fmv.floor_price_usd, fmv.fmv_usd), fmv.fmv_usd) > 0)
     INTO v_player_count, v_edition_count, v_total_circulation, v_fmv_total, v_floor_total
     FROM editions e
     LEFT JOIN LATERAL (
@@ -547,6 +559,16 @@ SELECT _assert_eq((public.get_team_detail(:ad::uuid,'oakland-raiders') ->> 'team
 SELECT _assert_eq((public.get_team_detail(:ad::uuid,'oakland-raiders') ->> 'edition_count'), '2', 'and counts every era too');
 SELECT _assert_eq((public.get_team_detail(:ad::uuid,'denver-broncos') ->> 'edition_count'), '1', 'a one-label team is unchanged');
 SELECT _assert_eq((public.get_team_detail(:ad::uuid,'denver-broncos') ->> 'team_name'), 'Denver Broncos', 'and keeps its own name');
+
+-- ── 9. 2026-10-25 (#211 part C): a "recent low" above 3x FMV is a carried-forward ask ──
+-- e2 gains a newer snapshot whose floor is 25x its FMV: it contributes its FMV (20), not the
+-- 500 ask: 40 + 20 = 60. Before 20261025235754 this read 540.
+INSERT INTO public.fmv_snapshots (edition_id, fmv_usd, floor_price_usd, computed_at) VALUES (:e2::uuid, 20, 500, now());
+SELECT _assert_eq((public.get_team_detail(:cid::uuid,'trail-blazers') ->> 'floor_total_usd'), '60', 'Recent-Low Total: an out-of-band floor contributes FMV, not the ask');
+SELECT _assert_eq((public.get_team_detail(:cid::uuid,'trail-blazers') ->> 'fmv_total_usd'), '70', 'FMV Total unchanged by the floor bound');
+-- No-change control: a floor inside the bound (50 = 2.5x) is summed as before: 40 + 50 = 90.
+UPDATE public.fmv_snapshots SET floor_price_usd = 50 WHERE edition_id = :e2::uuid AND floor_price_usd = 500;
+SELECT _assert_eq((public.get_team_detail(:cid::uuid,'trail-blazers') ->> 'floor_total_usd'), '90', 'Recent-Low Total: an in-bound floor is still summed');
 
 SELECT '✓ get_team_detail: all assertions passed' AS result;
 
