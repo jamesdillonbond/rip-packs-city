@@ -19,6 +19,7 @@
 // the tab shows those AND says they are World Cup only (scope "wc"), never as all products.
 
 import { Suspense } from "react"
+import Link from "next/link"
 import SniperClient from "./SniperClient"
 import PaniniSniper, { type PaniniSniperData } from "@/components/collection/PaniniSniper"
 import { fetchPaniniMoreBoards } from "@/lib/insights/panini-more-boards"
@@ -57,10 +58,16 @@ export default async function SniperPage(props: { params: Promise<{ collection: 
           }
         : null
     return (
-      <PaniniSniper
-        data={data}
-        degraded={(p?.degraded as DegradedSummary | null) ?? degradedFromSource(source, "Panini deals")}
-      />
+      <>
+        <PaniniSniper
+          data={data}
+          degraded={(p?.degraded as DegradedSummary | null) ?? degradedFromSource(source, "Panini deals")}
+        />
+        {/* 2026-10-25 (Top Shot parity): the sweep board, tab-bar hidden as on Top Shot. */}
+        <Link href={`/${collection}/hot-floors`} className="rpc-mono" data-testid="panini-hot-floors-link" style={{ display: "inline-block", marginTop: 16, fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--rpc-red-text)", textDecoration: "none" }}>
+          Hot Floors — editions being swept →
+        </Link>
+      </>
     )
   }
   return (

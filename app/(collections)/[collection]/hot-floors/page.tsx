@@ -10,6 +10,8 @@
 import Link from "next/link"
 import { getCollection } from "@/lib/collections"
 import { fetchHotFloors } from "@/lib/hot-floors/fetchers"
+import { fetchPaniniHotFloors, PANINI_HOT_FLOORS_DAYS } from "@/lib/hot-floors/panini"
+import PaniniHotFloors from "@/components/collection/PaniniHotFloors"
 import { proxyIpfsImageUrl } from "@/lib/ipfs-media"
 import { usdSignFirst } from "@/lib/usd-format"
 import { accentText } from "@/lib/accent-text"
@@ -50,6 +52,12 @@ export default async function HotFloorsPage(props: { params: Promise<{ collectio
   const collection = getCollection(collectionId)
   const accent = collection?.accent ?? "var(--rpc-red)"
 
+  // Panini (Top Shot parity, 2026-10-25): its own sweep read over panini_sales — Panini has no Quick Buy,
+  // so a sweep is one buyer taking 3+ copies within 60-minute gaps (get_panini_hot_floors).
+  if (collectionId === "panini-blockchain") {
+    const r = await fetchPaniniHotFloors()
+    return <PaniniHotFloors collection={collectionId} editions={r.editions} ok={r.ok} days={PANINI_HOT_FLOORS_DAYS} newestSaleAt={r.newestSaleAt} />
+  }
   // Top Shot-only feature (Quick-Buy proposer account is TS-specific).
   if (collectionId !== "nba-top-shot") {
     return (

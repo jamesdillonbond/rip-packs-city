@@ -112,7 +112,8 @@ describe("dbChain registry invariant", () => {
     // ⭐ `sniper` joined 2026-09-28 — an ARM: the panini-boards deal snapshot,
     // server-seeded into PaniniSniper. Pinned below.
     // ⭐ `analytics` joined 2026-09-28 — an ARM over panini_sales. Pinned below.
-    "": ["overview", "market", "packs", "sets", "collection", "sniper", "analytics"],
+    // ⭐ `hot-floors` joined 2026-10-25 — an ARM: get_panini_hot_floors over panini_sales. Pinned below.
+    "": ["overview", "market", "packs", "sets", "collection", "sniper", "analytics", "hot-floors"],
   }
 
   it("every published NON-Flow collection exposes only pages that have a dispatch for its chain", () => {
@@ -215,6 +216,19 @@ describe("dbChain registry invariant", () => {
     expect(page).toContain("fetchPaniniSalesAnalytics()")
     expect(read("lib/panini/sales-analytics-read.ts")).toContain('db.rpc("panini_sales_analytics_cached"')
     expect(page).toContain("<PaniniAnalytics")
+  })
+
+  it("⚠ Panini's `hot-floors` permission is backed by a Panini arm that returns before the Top Shot read", () => {
+    const read = (rel: string) => readFileSync(join(process.cwd(), rel), "utf8")
+    const page = read("app/(collections)/[collection]/hot-floors/page.tsx")
+    const arm = page.indexOf('collectionId === "panini-blockchain"')
+    expect(arm).toBeGreaterThan(-1)
+    // The Panini arm must return before the Top Shot-only branch and before the Quick-Buy read.
+    expect(arm).toBeLessThan(page.indexOf('collectionId !== "nba-top-shot"'))
+    expect(arm).toBeLessThan(page.indexOf("await fetchHotFloors()"))
+    expect(page).toContain("fetchPaniniHotFloors()")
+    expect(page).toContain("<PaniniHotFloors")
+    expect(read("lib/hot-floors/panini.ts")).toContain('db.rpc("get_panini_hot_floors"')
   })
 
   it("⚠ Panini's `sniper` permission is backed by a Panini arm over the deal snapshot", () => {

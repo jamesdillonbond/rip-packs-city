@@ -338,7 +338,9 @@ export const COLLECTIONS: Collection[] = [
     // 2026-09-28 — ANALYTICS added: sales analytics over panini_sales (every sale the
     // walk reads, kept since 2026-09-28) via panini_sales_analytics, with per-day
     // coverage so a day is called complete only when it is. Its own component.
-    pages: ["overview", "market", "collection", "packs", "sets", "sniper", "analytics"],
+    // 2026-10-25 — HOT FLOORS added (tab-bar hidden like Top Shot's): sweeps over panini_sales, buyers counted
+    // never named (get_panini_hot_floors). Linked from the Sniper tab.
+    pages: ["overview", "market", "collection", "packs", "sets", "sniper", "analytics", "hot-floors"],
     // 2026-10-25 — PRODUCT pages (/panini-blockchain/product/<set_id>-<slug>), the series-page counterpart.
     productPages: true,
     published: true,
