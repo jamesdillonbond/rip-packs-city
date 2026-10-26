@@ -1,4 +1,4 @@
-# Panini Blockchain — collection roadmap (refreshed 2026-10-17, PT; Now/Next items re-read 2026-10-19; concierge, alerts and is_active lines 10-19 night)
+# Panini Blockchain — collection roadmap (refreshed 2026-10-17, PT; Now/Next items re-read 2026-10-19; concierge, alerts and is_active lines 10-19 night; Top Shot parity matrix 10-25 evening)
 > Dated snapshot; every number is a dated sample — re-derive before quoting. Canonical plan: [roadmap-2026-10-17.md](../roadmap-2026-10-17.md). Defects: [known-issues.md](../../reference/known-issues.md) (item text wins over this file). Older plan: [panini-roadmap-2026-07-16.md](../panini-roadmap-2026-07-16.md).
 
 ## Where it stands
@@ -19,6 +19,7 @@ Live reads ~6:00 PM PT 10-17 unless marked otherwise.
 
 ## Shipped recently (since mid-September)
 
+- **10-25 evening — Top Shot parity pass.** Panini **product pages** (`/panini-blockchain/product/<name-slug>`, index at `/panini-blockchain/product`; the series-page counterpart; one page per product NAME — 106 Panini set ids carry 67 names; hourly `panini_product_rollup`, `20261026012737` / `…012927` / `…013714`) and three edition-page sections Top Shot had and Panini lacked: **Offers** (Panini's best offer per serial, 7-day confirmed), **Holders** (counts only, never a username) and **Packs from this product**. Matrix: "Parity with Top Shot" below.
 - **10-22..10-23 — Panini joins the cross-collection hubs.** `/players/<slug>` gathers a name across collections grouped by sport (Lillard: Top Shot 68 + Panini 129 editions) and search opens it ([player-hubs.md](../../features/player-hubs.md)). Franchise hubs carry a Panini panel from the team walk's franchise match (Panini editions carry no team): all 30 NBA teams (10,329 of 10,898 basketball editions mapped), with the walk's roster widened to 24 MLB cities + Los Angeles / New York / Chicago (resolved to one club by the athlete's MLB season), 36 NFL and 15 WNBA labels — NFL/WNBA walk only once the laptop runs the 10-23 script ([franchise-hubs.md](../../features/franchise-hubs.md), "Panini on the hubs"). Still no `league_collections` row for Panini, by design.
 - **10-21** — A set page that mixes several PRODUCTS under one set name now says so and names them (#204, disclosure half; `get_set_detail` `20261021195016`). The same evening, set pages became **product-scoped**: `/set/p1819-base-prizms-blue` is 2022-23 Prizm Basketball's set, the plain slug is the 2026 World Cup catalog's, and the Sets tab, edition pages and sitemap link each product's page (#204 design half; `20261022004414`, `4eb4ea9fb`). For example, Base Prizms Blue: the 2026 World Cup catalog 499 · 2022-23 Basketball 97 · 2022 World Cup 6. Product-scoped set URLs remain open (#204 design half). The overview's recent-sales tile counts Panini via `panini_sales` (#205, `20261021193648`).
 - **09-19..09-24** — The walk goes stalest-first ([panini-go-live-2026-09-19.md](../panini-go-live-2026-09-19.md)). The runner reads RECENT sales. FMV `panini-1.1.0` was backfilled over 5,093 editions (09-24). The Sentinel got a Panini arm. The team-walk rotation runs on the laptop.
@@ -37,6 +38,30 @@ Live reads ~6:00 PM PT 10-17 unless marked otherwise.
 - **10-19 night — cross-collection search includes Panini.** `search_across_collections` filtered Panini out, so "does RPC have Messi?" searched every collection except the one holding his 111 editions (98 with a confirmed ask, cheapest $11 at 10:40 PM PT). `paniniFloorReader` reads the board's own rule straight from `panini_card_serials` (the view aggregates every serial before filtering a multi-key list: ~50k buffers / 220 ms for 50 keys vs ~110 buffers per 25 keys on the serial index).
 - **10-19 night — the concierge's last Panini blind spots.** `get_premiums` read Top Shot's two boards on every page, so a Panini (or All Day…) question got Top Shot's premiums; it now reads Panini's own boards on Panini, refuses any collection without a board, and Top Shot is unchanged. `find_quirky_serials` / `analyze_wallet_holdings` resolved a Panini name as a TOP SHOT username (another person's wallet, which holds no Panini card → "none found"); `get_team_checklist` / `get_team_intel` answered "no team matches" about a catalogue with 0 of 36,511 editions carrying a team. All four now say what Panini lacks and point to what works (Panini username via `check_wallet`, player search). `get_market_cap` (registry slug, 36,511 Panini editions in `market_cap_current`) and `manage_alerts` (collection passed through; `/api/alerts` accepts Panini) already worked.
 - **10-19 evening — Panini price alerts.** The edition page hid the Watch (FMV / ask alert) control on Panini because the alert dispatcher's ask lookup (`edition_live_ask`, and its TS twin `lib/asks/edition-live-ask.ts`) had no Panini source, so an ask alert could never fire. Both now read `panini_market_board` (the confirmed ask the page shows) at priority 1, scoped by collection, under the unchanged 3× FMV gate (`20261020031908`; at apply 27,662 of 34,665 board editions have a usable ask). The control is offered on Panini editions and alert links resolve to the Panini edition page. Verified live: a Panini edition returns `2/panini_confirmed_ask`, a Top Shot edition is unchanged, and a Panini key under Top Shot returns nothing.
+
+## Parity with Top Shot (matrix, 2026-10-25 evening PT)
+
+Read from the registry (`lib/collections.ts` `pages` / switches), the shared `[collection]` routes and the data behind each gap, 2026-10-25. "Live" = verified in code or DB that evening; anything else names its source.
+
+| Surface | Top Shot | Panini | Note |
+|---|---|---|---|
+| Overview · Market · Sets · Sniper · Analytics tabs | ✓ | ✓ | registry `pages` |
+| Collection | wallet address | ✓ by Panini username | no wallet concept (dbChain null) |
+| Packs tab | ✓ | ✓ native pack plane | |
+| Series pages + index | ✓ | ✓ **Product pages + `/product` index** (new 10-25) | one page per product NAME (67); `panini_product_rollup`, hourly |
+| Set · Player pages | ✓ | ✓ | set pages product-scoped (#204) |
+| Edition: FMV, history chart, listings, sales history, alerts | ✓ | ✓ | |
+| Edition: Offers | ✓ | ✓ (new 10-25) | Panini's best offer per serial, 7-day confirmed |
+| Edition: Top Owners | ✓ named | ✓ **Holders**, counts only (new 10-25) | never a username (10-21 decision) |
+| Edition: Found in packs | ✓ | ✓ **Packs from this product** (new 10-25) | Panini has no per-pack checklist; never "can pull" |
+| Edition: pack provenance | ✓ | ✗ | no Panini pull-provenance data |
+| Team pages | ✓ `/team/<slug>` | ◐ via franchise hubs | Panini editions carry no team; the team walk maps listings to franchises and the hub `/teams/<league>/<slug>` shows a Panini panel with its editions (load more). Mapped share (read 10-25 ~6:45 PM PT, `mv_panini_league_coverage`): NBA 10,433 / 11,011 · NFL 1,320 / 11,005 · MLB 102 / 735 · WNBA 0 / 3,719. `get_panini_franchise_panel` reads ~150 ms with the hourly coverage MV (job 787); the overnight 06:32 burst was concurrency. |
+| Pack Sniper | ✓ | ✗ | Panini secondary packs have floors (`panini_pack_state`), but EV copy is gated (Next 4: no "+EV" unless P(profit) ≥ 50 %) — a "below EV" board would mostly show withheld rows. |
+| Hot Floors | ✓ (Sniper filter) | ✗ | needs an edition ASK history; Panini keeps only the current confirmed ask (pack-level history exists). |
+| Play hub · Challenges · Fast Break · Road to the Ring | ✓ | n/a | Top Shot gameplay; Panini has none. |
+| Concierge · alerts · search · cross-collection hubs | ✓ | ✓ | 10-19 / 10-22 entries above |
+
+**Next parity candidates, in order:** (1) Team coverage outside the NBA — the NFL / WNBA / MLB walks run on Trevor's laptop (franchise-hubs.md). (2) An edition ask-history lane (would unlock Hot Floors and ask charts) — new ingest, so weigh against the runner budget.
 
 ## Open issues
 
