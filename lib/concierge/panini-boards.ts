@@ -727,3 +727,86 @@ export async function readPaniniQuirkySerialsForConcierge(db: Db, base: string, 
     return failed("The Panini collection read failed — say the check failed; never say this collector has no quirky serials.")
   }
 }
+
+// ── Panini set completion (2026-10-26) ──────────────────────────────────────
+// get_set_completion_cost / get_cheapest_sets_to_complete are Top Shot tools. On a Panini page a
+// Panini username went to the Top Shot resolver — a DIFFERENT PERSON's wallet, or "not found" (the
+// substitution face: nothing fails, the subject changes). They now read Panini's own set tracker
+// (panini_set_progress_all, the Sets tab's backend), filtered and ordered SERVER-side so the
+// 1,000-row clamp cannot cut the ranking (one collector has 2,712 set rows). Rules carried over
+// from that route: Panini publishes no checklist, so "editions seen" and the cost are FLOORS; a
+// missing edition with no confirmed ask is counted, never priced $0; "owned" is a serial RPC has
+// SEEN under the username, point-in-time.
+
+const PANINI_SET_NOTE =
+  "Panini publishes no checklist: editions_seen counts the editions RPC has seen listed, so a set can be larger. cost_usd sums today's lowest confirmed asks (re-read in 7 days) over the missing editions that have one — missing_without_ask editions are NOT priced, so the cost is a floor whenever that is above 0. owned = editions where RPC has seen a serial under this username on its last read."
+
+function paniniSetRow(r: Record<string, unknown>, base: string, username: string) {
+  const unasked = num(r.missing_unasked) ?? 0
+  return {
+    product: r.product_name ?? null,
+    set: r.set_name ?? null,
+    sport: typeof r.sport === "string" ? r.sport : null,
+    editions_seen: num(r.editions_seen),
+    owned: num(r.owned),
+    missing: num(r.missing),
+    missing_with_ask: num(r.missing_asked),
+    missing_without_ask: unasked,
+    cost_usd: num(r.cost_usd),
+    cost_is_floor: unasked > 0,
+    largest_single_ask_usd: num(r.max_missing_ask_usd),
+    sets_tab_url: `${base}/panini-blockchain/sets?username=${encodeURIComponent(username)}` +
+      (typeof r.product_set_id === "number" || typeof r.product_set_id === "string" ? `&product=${encodeURIComponent(String(r.product_set_id))}` : ""),
+  }
+}
+
+export async function readPaniniSetCompletionForConcierge(
+  db: Db,
+  base: string,
+  input: { username: string; setName?: string | null; limit?: number | null },
+): Promise<string> {
+  const failed = (message: string) => JSON.stringify({ status: "error", message })
+  try {
+    const username = String(input.username ?? "").trim().replace(/^@/, "")
+    if (!/^[A-Za-z0-9._-]{2,32}$/.test(username)) {
+      return JSON.stringify({ status: "bad_username", message: "That doesn't look like a Panini username — ask the user to check it. A Panini collector is a Panini username, not a wallet." })
+    }
+    const n = Math.min(Math.max(Math.trunc(Number(input.limit ?? 10)) || 10, 1), 25)
+    const setName = input.setName ? String(input.setName).trim() : ""
+    let q = db.rpc("panini_set_progress_all", { p_username: username }).gt("owned", 0).gt("missing", 0)
+    if (setName) q = q.ilike("set_name", `%${setName.replace(/[%_]/g, (c: string) => "\\" + c)}%`)
+    const { data, error } = await q
+      .order("missing_unasked", { ascending: true })
+      .order("cost_usd", { ascending: true, nullsFirst: false })
+      .order("missing", { ascending: true })
+      .order("product_set_id", { ascending: true })
+      .order("set_name", { ascending: true })
+      .range(0, n - 1)
+    if (error || !Array.isArray(data)) return failed("The Panini set read failed — say the check failed; never say this collector has no sets in progress.")
+    const tabUrl = `${base}/panini-blockchain/sets?username=${encodeURIComponent(username.toLowerCase())}`
+    if (data.length === 0) {
+      return JSON.stringify({
+        status: "no_results",
+        username: username.toLowerCase(),
+        set_query: setName || null,
+        sets_tab_url: tabUrl,
+        message: setName
+          ? `RPC has not seen this username part-way through a Panini set matching "${setName}". Say exactly that — RPC only sees serials it has read under the name, so it does NOT mean they own none of it.`
+          : "RPC has not seen this username part-way through any Panini set. Say exactly that — it does NOT mean they own nothing; RPC only sees serials it has read under the name.",
+      })
+    }
+    return JSON.stringify({
+      status: "ok",
+      username: username.toLowerCase(),
+      collection: "panini-blockchain",
+      set_query: setName || null,
+      ordering: "fully priced sets first (no missing edition without an ask), then by cost to finish, cheapest first",
+      sets: (data as Record<string, unknown>[]).map((r) => paniniSetRow(r, base, username.toLowerCase())),
+      how_to_read: PANINI_SET_NOTE,
+      sets_tab_url: tabUrl,
+      note: "A Panini collector is a Panini USERNAME, unrelated to any Top Shot account of the same name. RPC is read-only — link the Sets tab; never offer to buy.",
+    })
+  } catch {
+    return failed("The Panini set read failed — say the check failed; never say this collector has no sets in progress.")
+  }
+}

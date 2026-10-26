@@ -115,7 +115,7 @@ import {
 import { ALLOWED_ORIGINS } from "@/lib/allowed-origins";
 import { lookupUiField } from "@/lib/concierge/ui-field-dictionary";
 import { ownLookup } from "@/lib/safe-lookup";
-import { readPaniniBreakdownForConcierge, readPaniniQuirkySerialsForConcierge, readPaniniCollectionForConcierge, readPaniniDealsForConcierge, readPaniniPackMarketForConcierge, readPaniniPremiumsForConcierge, readPaniniTeamForConcierge } from "@/lib/concierge/panini-boards";
+import { readPaniniBreakdownForConcierge, readPaniniQuirkySerialsForConcierge, readPaniniSetCompletionForConcierge, readPaniniCollectionForConcierge, readPaniniDealsForConcierge, readPaniniPackMarketForConcierge, readPaniniPremiumsForConcierge, readPaniniTeamForConcierge } from "@/lib/concierge/panini-boards";
 import { fetchPaniniEditionAsk, fetchPaniniEditionSerials } from "@/lib/panini/edition-market";
 import { paniniEditionUrl } from "@/lib/panini/edition-url";
 
@@ -2939,6 +2939,12 @@ async function executeToolInner(
 
   if (toolName === "check_wallet_squeeze") {
     try {
+      // 2026-10-26: on a Panini page a typed name is a PANINI username. This Top Shot tool would resolve it
+      // as a Top Shot account — a different person's wallet (the substitution face). A 0x Flow address
+      // still works here.
+      if (effectiveCollectionId === "panini-blockchain" && !/^0x[a-fA-F0-9]{16}$/.test(String(toolInput.walletAddress ?? "").trim())) {
+        return JSON.stringify({ status: "unsupported_collection", message: "Squeeze exposure is a Top Shot measure (challenge-locked editions); Panini has no equivalent. A Panini username is not a Top Shot account — do not look it up as one. For a Panini collector use analyze_wallet_holdings or check_wallet with the username; for their Top Shot wallet, ask for its 0x address." });
+      }
       // Mirror check_wallet's username-resolution ladder so the bot can
       // accept either a 0x address or a TS username and not surprise the
       // user. Then call get_wallet_squeeze_exposure RPC, which returns a
@@ -4599,6 +4605,11 @@ async function executeToolInner(
 
   if (toolName === "get_set_completion_cost") {
     try {
+      // 2026-10-26: on a Panini page a typed name is a PANINI username — answer from Panini's own set
+      // tracker instead of resolving it as a Top Shot account (a different person's wallet).
+      if (effectiveCollectionId === "panini-blockchain" && !/^0x[a-fA-F0-9]{16}$/.test(String(toolInput.walletAddress ?? "").trim())) {
+        return await readPaniniSetCompletionForConcierge(supabase, base, { username: String(toolInput.walletAddress ?? ""), setName: toolInput.setName ?? null, limit: 5 });
+      }
       const tsUuid = COLLECTION_UUID_BY_SLUG["nba-top-shot"];
       const setName = String(toolInput.setName ?? "").trim();
       if (!setName) return JSON.stringify({ status: "error", message: "setName is required." });
@@ -4789,6 +4800,11 @@ async function executeToolInner(
 
   if (toolName === "get_cheapest_sets_to_complete") {
     try {
+      // 2026-10-26: on a Panini page a typed name is a PANINI username — answer from Panini's own set
+      // tracker instead of resolving it as a Top Shot account (a different person's wallet).
+      if (effectiveCollectionId === "panini-blockchain" && !/^0x[a-fA-F0-9]{16}$/.test(String(toolInput.walletAddress ?? "").trim())) {
+        return await readPaniniSetCompletionForConcierge(supabase, base, { username: String(toolInput.walletAddress ?? ""), setName: null, limit: Number(toolInput.limit ?? 10) });
+      }
       const inputAddr = String(toolInput.walletAddress ?? "").trim();
       let resolvedAddr = inputAddr;
       if (!/^0x[a-fA-F0-9]{16}$/.test(inputAddr)) {
@@ -4842,6 +4858,12 @@ async function executeToolInner(
 
   if (toolName === "get_collector_report") {
     try {
+      // 2026-10-26: on a Panini page a typed name is a PANINI username. This Top Shot tool would resolve it
+      // as a Top Shot account — a different person's wallet (the substitution face). A 0x Flow address
+      // still works here.
+      if (effectiveCollectionId === "panini-blockchain" && !/^0x[a-fA-F0-9]{16}$/.test(String(toolInput.walletAddress ?? "").trim())) {
+        return JSON.stringify({ status: "unsupported_collection", message: "The collector report is built from Top Shot / Flow wallet data. A Panini username is not a Top Shot account — do not look it up as one. For a Panini collector use check_wallet and analyze_wallet_holdings with the username; for their Flow wallet, ask for its 0x address." });
+      }
       const inputAddr = String(toolInput.walletAddress ?? "").trim();
       let resolvedAddr = inputAddr;
       if (!/^0x[a-fA-F0-9]{16}$/.test(inputAddr)) {

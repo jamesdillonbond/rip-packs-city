@@ -181,6 +181,35 @@ describe("wallet and team tools on a Panini page say what Panini lacks — never
   })
 })
 
+describe("Top Shot wallet tools on a Panini page never look a Panini username up as a Top Shot account (2026-10-26)", () => {
+  it.each([
+    ["get_set_completion_cost", { walletAddress: "joe", setName: "Gold" }, "panini_set_progress_all"],
+    ["get_cheapest_sets_to_complete", { walletAddress: "joe" }, "panini_set_progress_all"],
+  ])("%s answers from Panini's set tracker", async (tool, input, rpc) => {
+    const inst = makeInstrumentedSupabaseFixture({})
+    A.sb = inst.fixture
+    A.state.script = [{ tools: [{ name: tool, input }] }, { text: "done" }]
+    A.state.cursor = 0
+    await POST(post())
+    expect(inst.rpcCalls.some((c) => c.name === "resolve_topshot_username")).toBe(false)
+    expect(inst.rpcCalls.some((c) => c.name === rpc && (c.args as any)?.p_username === "joe")).toBe(true)
+  })
+  it.each([
+    ["check_wallet_squeeze", { walletAddress: "joe" }],
+    ["get_collector_report", { walletAddress: "joe" }],
+  ])("%s refuses a Panini username and never resolves it as Top Shot", async (tool, input) => {
+    const inst = makeInstrumentedSupabaseFixture({})
+    A.sb = inst.fixture
+    A.state.script = [{ tools: [{ name: tool, input }] }, { text: "done" }]
+    A.state.cursor = 0
+    await POST(post())
+    const r = toolResult()
+    expect(r.status).toBe("unsupported_collection")
+    expect(String(r.message)).toMatch(/not a Top Shot account/)
+    expect(inst.rpcCalls.some((c) => c.name === "resolve_topshot_username")).toBe(false)
+  })
+})
+
 describe("find_quirky_serials on a Panini page scans the Panini USERNAME (2026-10-26)", () => {
   const row = (sku: string, serial: number, over: Record<string, unknown> = {}) => ({
     sku, edition_key: "packcard-1_2_3_4", player: "Caitlin Clark", set: "Base", sport: "WNBA", serial, mint_cap: 99,
