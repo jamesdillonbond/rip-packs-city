@@ -23,7 +23,7 @@ function enabled(collection: string): boolean {
 export async function generateMetadata(props: Props): Promise<Metadata> {
   const { collection } = await props.params
   if (!enabled(collection)) return NOT_FOUND_METADATA
-  const title = "Panini Products — Card Values, Sets & Sales by Product | Rip Packs City"
+  const title = "Panini Products — Card Values, Sets & Sales by Product"
   const description = "Every Panini digital card product RPC has seen — soccer, NBA, NFL, WNBA, MLB and NASCAR — with its sets, fair market values, live asks, recent sales and packs."
   const url = `/${collection}/product` // resolved against the root layout's metadataBase
   return { title, description, alternates: { canonical: url }, openGraph: { ...OG_INHERITED, title, description, url } }

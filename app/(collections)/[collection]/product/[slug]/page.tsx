@@ -29,11 +29,11 @@ export async function generateMetadata(props: Props): Promise<Metadata> {
   const { collection, coll, slug } = await load(props)
   if (!(coll && getCollection(coll.urlSlug)?.productPages) || slug === null) return NOT_FOUND_METADATA
   const res = await fetchPaniniProduct(slug)
-  if (!res.ok) return { title: "Panini product | Rip Packs City", robots: { index: false, follow: true } }
+  if (!res.ok) return { title: "Panini product", robots: { index: false, follow: true } }
   const p = res.product
   if (!p) return NOT_FOUND_METADATA
   const url = entityUrl(collection, "product", p.slug)
-  const title = `${p.name} — Panini Card Values, Sets & Sales | Rip Packs City`
+  const title = `${p.name} — Panini Card Values, Sets & Sales`
   const description = `${p.name}: ${p.editions.toLocaleString("en-US")} editions RPC has seen across ${p.sets.toLocaleString("en-US")} sets, with fair market values, live asks on Panini's marketplace, recent sales and packs.`
   return {
     title,
