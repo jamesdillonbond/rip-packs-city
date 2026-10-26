@@ -291,3 +291,49 @@ export async function fetchPaniniEditionPacks(externalId: string, db: Db = supab
     return failed
   }
 }
+
+// ── Ask history (panini_edition_ask_daily, from 2026-10-25) ─────────────────
+//
+// Top Shot's edition page charts its ask over time; Panini had no ask history at all. The
+// daily lane (migration 20261026040131) writes a row ONLY on a PT day the edition's lowest
+// confirmed ask changed; a NULL ask = the edition left the board (no ask re-read in
+// PANINI_ASK_CONFIRMED_DAYS days). Recording began 2026-10-21 (PANINI_ASK_HISTORY_SINCE in the
+// component); before that
+// RPC holds nothing, and an edition with no row is "nothing recorded", never "never listed".
+
+export const PANINI_ASK_HISTORY_LIMIT = 30
+
+export interface PaniniAskChange {
+  /** PT calendar day, YYYY-MM-DD. */
+  day: string
+  /** null = no confirmed ask that day (the edition left the board). */
+  lowAskUsd: number | null
+}
+
+/** Newest first; null = the read failed. */
+export async function fetchPaniniEditionAskHistory(
+  externalId: string,
+  db: Db = supabaseAdmin,
+): Promise<{ rows: PaniniAskChange[] | null }> {
+  try {
+    const { data, error } = await withQueryDeadline<RawRows>(
+      db.from("panini_edition_ask_daily")
+        .select("day,low_ask_usd")
+        .eq("external_id", externalId)
+        .order("day", { ascending: false })
+        .limit(PANINI_ASK_HISTORY_LIMIT),
+      "edition/panini-ask-history",
+      apiReadTimeoutMs(),
+    )
+    if (error) return { rows: null }
+    const rows = ((data ?? []) as Record<string, unknown>[])
+      .filter((r) => typeof r.day === "string")
+      .map((r) => {
+        const ask = num(r.low_ask_usd)
+        return { day: r.day as string, lowAskUsd: ask != null && ask > 0 ? ask : null }
+      })
+    return { rows }
+  } catch {
+    return { rows: null }
+  }
+}

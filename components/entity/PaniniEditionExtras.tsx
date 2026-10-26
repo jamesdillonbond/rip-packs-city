@@ -14,11 +14,14 @@ import type { CSSProperties } from "react"
 import { Section, fmtUsd, fmtCount, fmtShare, relTime } from "@/components/entity/_shared"
 import { scrollRegion } from "@/lib/a11y/scroll-region"
 import { PANINI_ASK_CONFIRMED_DAYS } from "@/lib/panini/edition-market"
-import type { PaniniEditionOffers, PaniniEditionHolders, PaniniEditionPacks } from "@/lib/panini/edition-extras"
+import type { PaniniEditionOffers, PaniniEditionHolders, PaniniEditionPacks, PaniniAskChange } from "@/lib/panini/edition-extras"
 import { paniniProductHref, paniniProductSlug } from "@/lib/panini/product-url"
 
 /** Concentration shares mean nothing on a handful of copies — the Holders board's own floor. */
 export const PANINI_HOLDERS_MIN_OWNED_FOR_SHARE = 10
+
+/** The ask-history lane (migration 20261026040131) holds nothing before this PT day. */
+export const PANINI_ASK_HISTORY_SINCE = "2026-10-21"
 
 const cell: CSSProperties = { padding: "6px 8px", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-secondary)", borderBottom: "1px solid var(--rpc-border-subtle, var(--rpc-border))" }
 const head: CSSProperties = { ...cell, fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--rpc-text-muted)" }
@@ -198,6 +201,65 @@ export function PaniniProductPacksSection({
           <Link href={`/${collection}/packs`} className="rpc-mono" style={{ marginTop: 4, fontSize: 11, letterSpacing: "0.04em", color: "var(--rpc-red-text)", textDecoration: "none" }}>
             Pack values and what a typical pack pulls →
           </Link>
+        </div>
+      )}
+    </Section>
+  )
+}
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+/** "2026-10-24" → "Oct 24, 2026" — read as a calendar day, never through a timezone. */
+export function fmtDay(day: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day)
+  if (!m) return day
+  return `${MONTHS[Number(m[2]) - 1] ?? m[2]} ${Number(m[3])}, ${m[1]}`
+}
+
+/**
+ * Ask history (≈ Top Shot's ask-over-time). One row per day the lowest confirmed ask CHANGED,
+ * newest first, with the move against the previous recorded ask. A null ask reads "no confirmed
+ * ask" — never "$0", never "sold out".
+ */
+export function PaniniAskHistorySection({ rows }: { rows: PaniniAskChange[] | null }) {
+  const since = fmtDay(PANINI_ASK_HISTORY_SINCE)
+  return (
+    <Section title="Ask history">
+      <div className="rpc-mono" style={sub}>
+        The lowest ask RPC confirmed on Panini&rsquo;s marketplace, one row for each day it changed. Recorded since {since}.
+      </div>
+      {rows === null ? (
+        <Note testId="panini-ask-history-failed">Ask history couldn&apos;t be loaded — refresh to try again.</Note>
+      ) : rows.length === 0 ? (
+        <Note testId="panini-ask-history-empty">{`RPC hasn't recorded a confirmed ask for this edition since ${since}.`}</Note>
+      ) : (
+        <div className="rpc-scroll-x" {...scrollRegion("Ask history for this edition")}>
+          <table data-testid="panini-ask-history" style={{ borderCollapse: "collapse", width: "100%", minWidth: 360 }}>
+            <thead>
+              <tr>
+                <th scope="col" style={head}>Day</th>
+                <th scope="col" style={head}>Lowest ask</th>
+                <th scope="col" style={head}>Change</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, i) => {
+                const prev = rows[i + 1]?.lowAskUsd ?? null
+                const move =
+                  r.lowAskUsd != null && prev != null && prev > 0 ? ((r.lowAskUsd - prev) / prev) * 100 : null
+                return (
+                  <tr key={r.day}>
+                    <td style={cell}>{fmtDay(r.day)}</td>
+                    <td style={{ ...cell, color: r.lowAskUsd != null ? "var(--rpc-text-primary)" : "var(--rpc-text-muted)" }}>
+                      {r.lowAskUsd != null ? fmtUsd(r.lowAskUsd) : "no confirmed ask"}
+                    </td>
+                    <td style={cell}>
+                      {move == null ? "—" : `${move > 0 ? "+" : ""}${move.toFixed(1)}%`}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
         </div>
       )}
     </Section>
