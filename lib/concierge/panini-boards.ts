@@ -189,6 +189,12 @@ const DEAL_BACKED = "fmv_and_recent_sales"
 export const PANINI_DEALS_STALE_HOURS = 3
 
 export interface PaniniDealFilters {
+  /** 2026-10-25: edition keys of one franchise (panini_edition_team_keys) — a team filter. */
+  editionKeys?: Set<string> | null
+  team?: string | null
+  /** A typed team: resolved here through paniniTeamEditionKeys (needs `db`). */
+  teamQuery?: unknown
+  db?: Db
   player?: unknown
   setName?: unknown
   sport?: unknown
@@ -207,6 +213,14 @@ export async function readPaniniDealsForConcierge(
     message: "The Panini deal board could not be read — say the check failed and link the Sniper tab; do NOT say there are no deals.",
     sniper_url: `${base}/panini-blockchain/sniper`,
   })
+  if (typeof f.teamQuery === "string" && f.teamQuery.trim() && f.db) {
+    const tk = await paniniTeamEditionKeys(f.db, f.teamQuery)
+    if (tk.status === "ambiguous") return JSON.stringify({ status: "ambiguous", candidates: tk.candidates, message: "More than one franchise matches — ask which, then call again with its full name." })
+    if (tk.status === "none") return JSON.stringify({ status: "no_results", message: `No NBA, WNBA, NFL or MLB team matches "${f.teamQuery}". Offer a player or sport filter.` })
+    if (tk.status === "none_placed_yet") return JSON.stringify({ status: "none_placed_yet", team: tk.team, message: "RPC has not placed any Panini card on this team yet — say exactly that, never that there are no deals for the team; offer a player filter." })
+    if (tk.status !== "ok") return JSON.stringify({ status: "error", message: "The Panini team lookup failed — say the check failed; do NOT say there are no deals. Offer a player filter or link /panini-blockchain/sniper." })
+    f = { ...f, editionKeys: tk.keys, team: tk.team }
+  }
   const snap = await read("panini-boards")
   if (!snap) return failed
   const p = snap.payload
@@ -227,6 +241,10 @@ export async function readPaniniDealsForConcierge(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const rows = (raw as any[]).filter((r) => {
     if (!r || typeof r !== "object") return false
+    if (f.editionKeys) {
+      const ek = editionKeyOfSku(r.sku)
+      if (!ek || !f.editionKeys.has(ek)) return false
+    }
     if (player && !textIncludes(String(r.player_name ?? ""), player)) return false
     if (set && !textIncludes(`${r.product_name ?? ""} ${r.parallel ?? ""}`, set)) return false
     if (sport && String(r.sport ?? "").toLowerCase() !== sport) return false
@@ -246,6 +264,7 @@ export async function readPaniniDealsForConcierge(
   return JSON.stringify({
     status: rows.length ? "ok" : "no_matching_deals",
     scope: allProducts ? "every walked Panini product" : "2026 Prizm World Cup only (older snapshot)",
+    ...(f.team ? { team: f.team, team_note: "Team = the cards RPC's Panini team map places on this franchise (a partial floor); a deal on an unplaced card is not shown." } : {}),
     board_total: raw.length,
     board_capped: allProducts ? p.deals_all_capped === true : p.deals_capped === true,
     matched: rows.length,
@@ -364,5 +383,139 @@ export async function readPaniniCollectionForConcierge(base: string, username: s
     })
   } catch {
     return failed("The Panini collection read failed — say the check failed; never say this collector holds nothing.")
+  }
+}
+
+// ── Panini teams (2026-10-25) ────────────────────────────────────────────────
+// get_team_checklist / get_team_intel refused Panini ("RPC has no team data for Panini cards") —
+// true until 10-25, when panini_edition_team_keys began placing catalogued cards on franchises
+// (the team walk, the team printed on the card, or the same player's other cards in that product).
+// This answers from the same reads as the franchise hub's Panini panel. Coverage is PARTIAL by
+// construction, so every answer carries it and a team with nothing placed is "not placed yet",
+// never "Panini has no cards for that team". No FMV confidence leaves (concierge rule 3).
+
+const PANINI_TEAM_LEAGUES = ["NBA", "WNBA", "NFL", "MLB"] as const
+
+export interface PaniniTeamCandidate {
+  league: string
+  slug: string
+  team_name: string
+}
+
+/** Pick a franchise from teams_master rows for a typed name. Exported for the test. */
+export function pickPaniniTeam(
+  typed: string,
+  rows: PaniniTeamCandidate[],
+): { status: "one"; team: PaniniTeamCandidate } | { status: "ambiguous"; candidates: PaniniTeamCandidate[] } | { status: "none" } {
+  const q = typed.trim().toLowerCase()
+  if (!q) return { status: "none" }
+  const exact = rows.filter((r) => r.team_name.toLowerCase() === q || r.slug === q.replace(/\s+/g, "-"))
+  if (exact.length === 1) return { status: "one", team: exact[0] }
+  const hits = exact.length > 1 ? exact : rows.filter((r) => textIncludes(r.team_name, q))
+  if (hits.length === 1) return { status: "one", team: hits[0] }
+  if (hits.length > 1) return { status: "ambiguous", candidates: hits.slice(0, 8) }
+  return { status: "none" }
+}
+
+export async function readPaniniTeamForConcierge(db: Db, base: string, typed: string, limit: number): Promise<string> {
+  try {
+    const q = typed.trim()
+    if (!q || q.length > 60) return JSON.stringify({ status: "error", message: "team is required." })
+    const { data: tm, error: tmErr } = await db
+      .from("teams_master")
+      .select("league,slug,team_name")
+      .in("league", [...PANINI_TEAM_LEAGUES])
+      .eq("active", true)
+      .limit(400)
+    if (tmErr || !Array.isArray(tm)) {
+      return JSON.stringify({ status: "error", message: "The team lookup failed — say the check failed; do NOT say Panini has no cards for that team." })
+    }
+    const picked = pickPaniniTeam(q, (tm as Record<string, unknown>[]).map((r) => ({ league: String(r.league), slug: String(r.slug), team_name: String(r.team_name) })))
+    if (picked.status === "none") {
+      return JSON.stringify({ status: "no_results", team: q, message: `No NBA, WNBA, NFL or MLB team matches "${q}". Panini's other sports (soccer, racing) are not on teams — offer a player search instead.` })
+    }
+    if (picked.status === "ambiguous") {
+      return JSON.stringify({ status: "ambiguous", team: q, candidates: picked.candidates.map((c) => ({ league: c.league, team: c.team_name })), message: "More than one franchise matches — ask which, then call again with its full name." })
+    }
+    const t = picked.team
+    const hubUrl = `${base}/teams/${t.league.toLowerCase()}/${encodeURIComponent(t.slug)}`
+    const [panel, eds] = await Promise.all([
+      db.rpc("get_panini_franchise_panel", { p_league: t.league, p_team_slug: t.slug }),
+      db.rpc("get_panini_franchise_editions", { p_league: t.league, p_team_slug: t.slug, p_limit: Math.min(Math.max(limit, 1), 15), p_offset: 0 }),
+    ])
+    if (panel.error) {
+      return JSON.stringify({ status: "error", team: t.team_name, hub_url: hubUrl, message: "The Panini team read failed — say the check failed and link hub_url; do NOT say there are no cards." })
+    }
+    const p = panel.data as Record<string, unknown> | null
+    const cov = (p?.coverage ?? null) as Record<string, unknown> | null
+    const coverage = cov && num(cov.catalogued) ? {
+      sport: cov.sport ?? null,
+      cards_placed_on_a_team: num(cov.mapped),
+      cards_tracked: num(cov.catalogued),
+    } : null
+    const how = "Panini cards carry no team field; RPC places a card on a team from Panini's marketplace team filter, the team printed on the card, or the same player's other cards in that product. A card with none of the three is not counted, so these are floors, not complete checklists."
+    if (!p) {
+      return JSON.stringify({ status: "none_placed_yet", team: t.team_name, league: t.league, hub_url: hubUrl, how_teams_are_assigned: how,
+        message: "RPC has not placed any Panini card on this team yet. Say exactly that — never that Panini has no cards for this team." })
+    }
+    const rows = eds.error || !Array.isArray(eds.data) ? null : (eds.data as Record<string, unknown>[])
+    return JSON.stringify({
+      status: "ok",
+      team: t.team_name,
+      league: t.league,
+      hub_url: hubUrl,
+      editions_on_team: num(p.edition_count),
+      players: num(p.player_count),
+      fmv_total_usd: num(p.fmv_total_usd),
+      coverage,
+      how_teams_are_assigned: how,
+      top_editions: rows === null ? null : rows.map((r) => ({
+        player: r.player_name ?? null,
+        set: r.set_name ?? null,
+        fmv_usd: num(r.fmv_usd),
+        mint: num(r.circulation_count),
+        edition_url: typeof r.route_slug === "string" ? `${base}/panini-blockchain/edition/${encodeURIComponent(r.route_slug)}` : null,
+      })),
+      top_editions_note: rows === null ? "The edition list failed to load — link hub_url." : "Highest FMV first.",
+    })
+  } catch {
+    return JSON.stringify({ status: "error", message: "The Panini team read failed — say the check failed; do NOT say Panini has no cards for that team." })
+  }
+}
+
+/**
+ * A typed team → the edition keys RPC's Panini team map places on that franchise (2026-10-25), for the
+ * deal tool's team filter. ok / ambiguous / none / none_placed_yet / error — never an empty set that
+ * would read as "no deals for this team" when the lookup failed.
+ */
+export async function paniniTeamEditionKeys(
+  db: Db,
+  typed: string,
+): Promise<
+  | { status: "ok"; team: string; league: string; slug: string; keys: Set<string> }
+  | { status: "ambiguous"; candidates: { league: string; team: string }[] }
+  | { status: "none" | "none_placed_yet" | "error"; team?: string }
+> {
+  try {
+    const { data: tm, error } = await db.from("teams_master").select("league,slug,team_name").in("league", [...PANINI_TEAM_LEAGUES]).eq("active", true).limit(400)
+    if (error || !Array.isArray(tm)) return { status: "error" }
+    const picked = pickPaniniTeam(typed, (tm as Record<string, unknown>[]).map((r) => ({ league: String(r.league), slug: String(r.slug), team_name: String(r.team_name) })))
+    if (picked.status === "none") return { status: "none" }
+    if (picked.status === "ambiguous") return { status: "ambiguous", candidates: picked.candidates.map((c) => ({ league: c.league, team: c.team_name })) }
+    const t = picked.team
+    // Paged at PostgREST's 1,000-row cap on a unique key, so a big franchise is never silently truncated
+    // (the Lakers held 569 on 2026-10-25). Any failed page fails the whole lookup.
+    const keys = new Set<string>()
+    for (let from = 0; from < 20_000; from += 1000) {
+      const { data, error: kErr } = await db.from("panini_edition_team_keys").select("external_id")
+        .contains("franchise_keys", [`${t.league}:${t.slug}`]).order("external_id", { ascending: true }).range(from, from + 999)
+      if (kErr || !Array.isArray(data)) return { status: "error", team: t.team_name }
+      for (const r of data as Record<string, unknown>[]) keys.add(String(r.external_id))
+      if (data.length < 1000) break
+    }
+    if (keys.size === 0) return { status: "none_placed_yet", team: t.team_name }
+    return { status: "ok", team: t.team_name, league: t.league, slug: t.slug, keys }
+  } catch {
+    return { status: "error" }
   }
 }

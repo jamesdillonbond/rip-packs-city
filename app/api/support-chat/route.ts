@@ -115,7 +115,7 @@ import {
 import { ALLOWED_ORIGINS } from "@/lib/allowed-origins";
 import { lookupUiField } from "@/lib/concierge/ui-field-dictionary";
 import { ownLookup } from "@/lib/safe-lookup";
-import { readPaniniCollectionForConcierge, readPaniniDealsForConcierge, readPaniniPackMarketForConcierge, readPaniniPremiumsForConcierge } from "@/lib/concierge/panini-boards";
+import { readPaniniCollectionForConcierge, readPaniniDealsForConcierge, readPaniniPackMarketForConcierge, readPaniniPremiumsForConcierge, readPaniniTeamForConcierge } from "@/lib/concierge/panini-boards";
 import { fetchPaniniEditionAsk, fetchPaniniEditionSerials } from "@/lib/panini/edition-market";
 import { paniniEditionUrl } from "@/lib/panini/edition-url";
 
@@ -342,7 +342,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "get_team_checklist",
-    description: "The team checklist exactly as the public /[collection]/team/[slug] page computes it: every edition the franchise has minted, grouped by series and tier, with the signed-in (or named) wallet's owned / missing split, cost to complete, and the most valuable missing editions. CALL THIS before answering or logging anything about a team checklist — 'Series 1 looks short', 'how many Pistons Legendaries are there', 'what am I missing for the Lakers', 'what would it cost to finish the Blazers' — so the answer carries the catalog's own counts instead of the user's guess. Top Shot series are the on-chain numbers: 0 is Series 1, 2 is Series 2, 3 is Summer 2021, 4 is Series 3, 5 is Series 4, 6/7/8 are the 2023-24 / 2024-25 / 2025-26 seasons (9 = 2026-27, the current season); say the label, not the raw number. Defaults to the signed-in wallet; pass wallet to look at another collector (public on-chain holdings). Not for Pinnacle (no teams). ⚠ This IS the read the page renders: when the user says they see fewer editions than this tool returns, the page they are looking at is stale or on a different view/scope (Full editions vs All moments, Contemporary vs All-Time, or a cached load) — ask them to reload with the view named, quote the catalog counts, and log a bug ONLY if the reloaded page still disagrees. Do not log 'the checklist is cutting off editions' on the strength of one description.",
+    description: "The team checklist exactly as the public /[collection]/team/[slug] page computes it: every edition the franchise has minted, grouped by series and tier, with the signed-in (or named) wallet's owned / missing split, cost to complete, and the most valuable missing editions. CALL THIS before answering or logging anything about a team checklist — 'Series 1 looks short', 'how many Pistons Legendaries are there', 'what am I missing for the Lakers', 'what would it cost to finish the Blazers' — so the answer carries the catalog's own counts instead of the user's guess. Top Shot series are the on-chain numbers: 0 is Series 1, 2 is Series 2, 3 is Summer 2021, 4 is Series 3, 5 is Series 4, 6/7/8 are the 2023-24 / 2024-25 / 2025-26 seasons (9 = 2026-27, the current season); say the label, not the raw number. Defaults to the signed-in wallet; pass wallet to look at another collector (public on-chain holdings). Not for Pinnacle (no teams). ⚠ This IS the read the page renders: when the user says they see fewer editions than this tool returns, the page they are looking at is stale or on a different view/scope (Full editions vs All moments, Contemporary vs All-Time, or a cached load) — ask them to reload with the view named, quote the catalog counts, and log a bug ONLY if the reloaded page still disagrees. Do not log 'the checklist is cutting off editions' on the strength of one description. On Panini (panini-blockchain) it answers from RPC's Panini team map instead — editions placed on the team, players, FMV total, a few top editions, the hub_url to link, and coverage (a partial floor: quote it, never call the list complete, and a none_placed_yet answer means RPC has not placed a card there yet, not that Panini has none).",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -381,7 +381,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "search_live_deals",
-    description: "Search for live deals from the RPC sniper feed for the active collection. Use this when the user explicitly wants to shop or hunt deals — NOT for support-flavored questions. Returns real listings with prices, FMV discounts, and buy links. Defaults to the page's active collection when collectionId is omitted. CRITICAL: when the user names a specific person — a player (NBA/NFL/Golazos/UFC) or a character (Disney Pinnacle: Mickey, Goofy, Greef Karga, etc.) — you MUST pass that name in the `player` parameter (or `character` for Pinnacle). Never return unfiltered top-discount results when the user asked about someone specific. On Panini (panini-blockchain) it reads the hourly deal snapshot behind the Panini Sniper tab across every Panini product: filter with player, setName (product or parallel name), sport (Soccer, Basketball, Football, Womens Basketball, Baseball…), maxPrice and minDiscount (a percent); lead with deals backed_by_recent_sales and quote snapshot_age_hours.",
+    description: "Search for live deals from the RPC sniper feed for the active collection. Use this when the user explicitly wants to shop or hunt deals — NOT for support-flavored questions. Returns real listings with prices, FMV discounts, and buy links. Defaults to the page's active collection when collectionId is omitted. CRITICAL: when the user names a specific person — a player (NBA/NFL/Golazos/UFC) or a character (Disney Pinnacle: Mickey, Goofy, Greef Karga, etc.) — you MUST pass that name in the `player` parameter (or `character` for Pinnacle). Never return unfiltered top-discount results when the user asked about someone specific. On Panini (panini-blockchain) it reads the hourly deal snapshot behind the Panini Sniper tab across every Panini product: filter with player, setName (product or parallel name), sport (Soccer, Basketball, Football, Womens Basketball, Baseball…), team (an NBA/WNBA/NFL/MLB franchise, from RPC's Panini team map — a partial floor, so a deal on an unplaced card is not shown), maxPrice and minDiscount (a percent); lead with deals backed_by_recent_sales and quote snapshot_age_hours.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -882,7 +882,7 @@ const TOOLS: Anthropic.Tool[] = [
   {
     name: "get_team_intel",
     description:
-      "Team-level intelligence for one team in one collection — the same data as the public /[collection]/team/[slug] page. part='roster' (default): the team's players ranked by total FMV of their editions, with edition counts, rookie flags and jersey numbers (set rookiesOnly=true for 'which rookies does this team have'); part='squeeze': the team's most supply-squeezed editions (burn / lock share, effectively-buyable count, FMV, indexed low ask); part='activity': the team's most recent SALES (player, set, tier, serial, price, when). Use for 'how is the Blazers market', 'which Blazers rookies exist on Top Shot', 'what Blazers moments are locked up', 'what sold for the Lakers today'. Team names resolve from a partial to the FRANCHISE ('Blazers' → Portland Trail Blazers; 'Raiders' → Las Vegas Raiders with Oakland / Los Angeles Raiders listed as historic labels in the `franchise` block — the reads cover EVERY era of the franchise, historic labels included); an ambiguous partial returns the different franchises as candidates. Not for Pinnacle (no teams). Read-only; no buy/sell calls, and for a live ask on any edition chain get_edition_listings.",
+      "Team-level intelligence for one team in one collection — the same data as the public /[collection]/team/[slug] page. part='roster' (default): the team's players ranked by total FMV of their editions, with edition counts, rookie flags and jersey numbers (set rookiesOnly=true for 'which rookies does this team have'); part='squeeze': the team's most supply-squeezed editions (burn / lock share, effectively-buyable count, FMV, indexed low ask); part='activity': the team's most recent SALES (player, set, tier, serial, price, when). Use for 'how is the Blazers market', 'which Blazers rookies exist on Top Shot', 'what Blazers moments are locked up', 'what sold for the Lakers today'. Team names resolve from a partial to the FRANCHISE ('Blazers' → Portland Trail Blazers; 'Raiders' → Las Vegas Raiders with Oakland / Los Angeles Raiders listed as historic labels in the `franchise` block — the reads cover EVERY era of the franchise, historic labels included); an ambiguous partial returns the different franchises as candidates. Not for Pinnacle (no teams). Read-only; no buy/sell calls, and for a live ask on any edition chain get_edition_listings. On Panini (panini-blockchain) it answers from RPC's Panini team map instead — editions placed on the team, players, FMV total, a few top editions, the hub_url to link, and coverage (a partial floor: quote it, never call the list complete, and a none_placed_yet answer means RPC has not placed a card there yet, not that Panini has none).",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -2174,10 +2174,8 @@ async function executeToolInner(
     // sniper feed answers an EMPTY board for Panini and cached_listings holds no
     // Panini rows, so this tool said "no deals" while the tab showed hundreds.
     if (effectiveCollectionId === "panini-blockchain") {
-      if (toolInput.team) {
-        return JSON.stringify({ status: "unsupported_filter", message: "Panini deals can't be filtered by team (the deal board has no team field). Offer a player or sport filter, or link /panini-blockchain/sniper." });
-      }
-      return readPaniniDealsForConcierge(base, { ...toolInput, player: toolInput.player ?? toolInput.playerName });
+      // 2026-10-25: a `team` filter reads RPC's Panini team map inside the reader (the deal board has no team field).
+      return readPaniniDealsForConcierge(base, { ...toolInput, player: toolInput.player ?? toolInput.playerName, teamQuery: toolInput.team, db: supabase });
     }
     // Per-source failure flags. A source that fails is NOT a source that found
     // nothing, and this tool has three of them — see the terminal exit.
@@ -5640,9 +5638,9 @@ async function executeToolInner(
       if (!teamIn) return JSON.stringify({ status: "error", message: "team is required." });
       const slug = effectiveCollectionId ?? "nba-top-shot";
       if (isPinnacle(slug)) return JSON.stringify({ status: "error", message: "Disney Pinnacle has no teams." });
-      // 2026-10-19: Panini cards carry no team, so a team lookup there finds nothing
-      // and would read as "no such team" about a catalogue that holds NBA / NFL / MLB products.
-      if (slug === "panini-blockchain") return JSON.stringify({ status: "unsupported_collection", message: "RPC has no team data for Panini cards (Panini lists players, not teams). Offer a player search instead (get_player_editions or search_live_deals with player); never say Panini has no cards for that team." });
+      // 2026-10-19: Panini cards carry no team field. Since 2026-10-25 panini_edition_team_keys places them on
+      // franchises, so Panini answers from the franchise hub's reads (partial coverage stated in every answer).
+      if (slug === "panini-blockchain") return readPaniniTeamForConcierge(supabase, base, teamIn, Number(toolInput.limit ?? toolInput.missingLimit ?? 10) || 10);
       const uuid = ownLookup(COLLECTION_UUID_BY_SLUG, slug) ?? null;
       if (!uuid) return JSON.stringify({ status: "error", message: `Unknown collection '${slug}'. Valid: nba-top-shot, nfl-all-day, laliga-golazos, ufc.` });
       const resolved = await resolveTeamName(uuid, teamIn);
@@ -5724,9 +5722,9 @@ async function executeToolInner(
       if (!teamIn) return JSON.stringify({ status: "error", message: "team is required." });
       const slug = effectiveCollectionId ?? "nba-top-shot";
       if (isPinnacle(slug)) return JSON.stringify({ status: "error", message: "Disney Pinnacle has no teams." });
-      // 2026-10-19: Panini cards carry no team, so a team lookup there finds nothing
-      // and would read as "no such team" about a catalogue that holds NBA / NFL / MLB products.
-      if (slug === "panini-blockchain") return JSON.stringify({ status: "unsupported_collection", message: "RPC has no team data for Panini cards (Panini lists players, not teams). Offer a player search instead (get_player_editions or search_live_deals with player); never say Panini has no cards for that team." });
+      // 2026-10-19: Panini cards carry no team field. Since 2026-10-25 panini_edition_team_keys places them on
+      // franchises, so Panini answers from the franchise hub's reads (partial coverage stated in every answer).
+      if (slug === "panini-blockchain") return readPaniniTeamForConcierge(supabase, base, teamIn, Number(toolInput.limit ?? toolInput.missingLimit ?? 10) || 10);
       const uuid = ownLookup(COLLECTION_UUID_BY_SLUG, slug) ?? null;
       if (!uuid) return JSON.stringify({ status: "error", message: `Unknown collection '${slug}'. Valid: nba-top-shot, nfl-all-day, laliga-golazos, ufc.` });
       const partIn = String(toolInput.part ?? "roster");

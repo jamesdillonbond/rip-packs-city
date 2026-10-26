@@ -5,6 +5,8 @@
 // get_player_editions(collection_id, player_slug, 200, 0).
 // Pinnacle: is_character flips labels Player→Character, Team→Franchise.
 
+import { fetchPaniniPlayerTeams, PANINI_PLAYER_TEAMS_SHOWN } from "@/lib/panini/player-teams"
+import { franchiseHubPath } from "@/lib/franchise-hub-path"
 import type { Metadata } from "next"
 import { displayAddress, truncateAddressForDisplay } from "@/lib/address"
 import { Suspense } from "react"
@@ -422,6 +424,9 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
   )
   const editions = editionsRes.rows
   const editionsOk = editionsRes.ok
+  // Panini (2026-10-26): no team field on Panini cards — the franchises the team map places this player's
+  // single-player cards on, linked to their hubs. A failed read renders nothing.
+  const paniniTeams = isPanini ? (await fetchPaniniPlayerTeams(detail.name)).teams : []
 
   // Portrait fallback chain: headshot_url → first edition thumbnail → none.
   const portrait = detail.headshot_url ?? proxyIpfsImageUrl(editions[0]?.thumbnail_url, 640) ?? null
@@ -489,6 +494,16 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
                 {detail.team && (teamHref ? (
                   <Link href={teamHref} style={{ color: "var(--rpc-text-primary)", textDecoration: "none" }}>{detail.team}</Link>
                 ) : <span>{detail.team}</span>)}
+                {isPanini && paniniTeams.length > 0 && (
+                  <span data-testid="panini-player-teams" title="Placed on these teams by Panini's marketplace team filter, the team printed on the card, or the same player's other cards in a product — single-player cards only">
+                    {paniniTeams.slice(0, PANINI_PLAYER_TEAMS_SHOWN).map((t, i) => (
+                      <span key={`${t.league}:${t.slug}`}>
+                        {i > 0 ? " · " : ""}
+                        <Link href={franchiseHubPath(t.league, t.slug)} style={{ color: "var(--rpc-text-primary)", textDecoration: "none" }}>{t.teamName}</Link>
+                      </span>
+                    ))}
+                  </span>
+                )}
                 {/* ⛔ No "active" badge (removed 2026-10-21). players.is_active is a column DEFAULT in
                     every collection, not a measured status: TRUE on all 1,355 Top Shot and 1,468 All
                     Day rows, so Marvin Harrison Sr., Gary Payton and Joey Porter Sr. read "active".

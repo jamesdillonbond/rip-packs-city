@@ -161,14 +161,12 @@ describe("check_wallet on a Panini page reads the Panini username — never a To
 })
 
 describe("wallet and team tools on a Panini page say what Panini lacks — never 'none found' (2026-10-19)", () => {
-  // Panini owners are usernames (no wallets) and 0 of 36,511 Panini editions carry a team.
-  // Without these guards a name resolved as a TOP SHOT username (another person's wallet),
-  // and a team lookup found nothing and read as "no such team".
+  // Panini owners are usernames (no wallets). Without these guards a name resolved as a TOP SHOT
+  // username (another person's wallet). Re-pinned 2026-10-25 (premise changed): the TEAM tools left
+  // this list — panini_edition_team_keys now places Panini cards on franchises — and are pinned below.
   it.each([
     ["find_quirky_serials", { walletAddress: "joe" }],
     ["analyze_wallet_holdings", { walletAddress: "joe" }],
-    ["get_team_checklist", { team: "Lakers" }],
-    ["get_team_intel", { team: "Lakers" }],
   ])("%s is refused on Panini without resolving a Top Shot username or querying a team", async (tool, input) => {
     const inst = makeInstrumentedSupabaseFixture({})
     A.sb = inst.fixture
@@ -179,5 +177,68 @@ describe("wallet and team tools on a Panini page say what Panini lacks — never
     expect(r.status).toBe("unsupported_collection")
     expect(String(r.message)).toMatch(/Panini/)
     expect(inst.rpcCalls.some((c) => c.name === "resolve_topshot_username")).toBe(false)
+  })
+})
+
+describe("team tools on a Panini page answer from the Panini team map (2026-10-25)", () => {
+  // Same property as 10-19 — never a Top Shot team lookup, never "no such team" — now with data.
+  const lakers = { "teams_master": { data: [
+    { league: "NBA", slug: "lakers", team_name: "Los Angeles Lakers" },
+    { league: "NFL", slug: "giants", team_name: "New York Giants" },
+    { league: "MLB", slug: "giants", team_name: "San Francisco Giants" },
+  ], error: null } }
+  it.each([
+    ["get_team_checklist", { team: "Lakers" }],
+    ["get_team_intel", { team: "Lakers" }],
+  ])("%s reads the franchise panel, states coverage, links the hub, and never touches the Top Shot resolver", async (tool, input) => {
+    const inst = makeInstrumentedSupabaseFixture({
+      ...lakers,
+      "rpc:get_panini_franchise_panel": { data: { edition_count: 569, player_count: 40, fmv_total_usd: 9000, coverage: { sport: "Basketball", mapped: 10898, catalogued: 11085 } }, error: null },
+      "rpc:get_panini_franchise_editions": { data: [{ route_slug: "packcard-1_2_3_4", player_name: "LeBron James", set_name: "Base", fmv_usd: 50, fmv_confidence: "HIGH", circulation_count: 99 }], error: null },
+    })
+    A.sb = inst.fixture
+    A.state.script = [{ tools: [{ name: tool, input }] }, { text: "done" }]
+    A.state.cursor = 0
+    await POST(post())
+    const r = toolResult()
+    expect(r.status).toBe("ok")
+    expect(r.team).toBe("Los Angeles Lakers")
+    expect(String(r.hub_url)).toMatch(/\/teams\/nba\/lakers$/)
+    expect(r.coverage.cards_placed_on_a_team).toBe(10898)
+    expect(String(r.how_teams_are_assigned)).toMatch(/not counted/)
+    expect(JSON.stringify(r)).not.toMatch(/HIGH|MEDIUM|confidence/)
+    expect(inst.rpcCalls.some((c) => c.name === "get_panini_franchise_panel" && (c.args as any)?.p_team_slug === "lakers")).toBe(true)
+    expect(inst.rpcCalls.some((c) => c.name === "resolve_team_name")).toBe(false)
+  })
+  it("a team with nothing placed is 'not placed yet', never 'no cards'", async () => {
+    const inst = makeInstrumentedSupabaseFixture({ ...lakers, "rpc:get_panini_franchise_panel": { data: null, error: null }, "rpc:get_panini_franchise_editions": { data: [], error: null } })
+    A.sb = inst.fixture
+    A.state.script = [{ tools: [{ name: "get_team_intel", input: { team: "Lakers" } }] }, { text: "done" }]
+    A.state.cursor = 0
+    await POST(post())
+    const r = toolResult()
+    expect(r.status).toBe("none_placed_yet")
+    expect(String(r.message)).toMatch(/never that Panini has no cards/)
+  })
+  it("a name two leagues share asks which", async () => {
+    const inst = makeInstrumentedSupabaseFixture({ ...lakers })
+    A.sb = inst.fixture
+    A.state.script = [{ tools: [{ name: "get_team_checklist", input: { team: "Giants" } }] }, { text: "done" }]
+    A.state.cursor = 0
+    await POST(post())
+    const r = toolResult()
+    expect(r.status).toBe("ambiguous")
+    expect(r.candidates).toHaveLength(2)
+    expect(inst.rpcCalls.some((c) => c.name === "get_panini_franchise_panel")).toBe(false)
+  })
+  it("a failed panel read says the check failed, never 'no cards'", async () => {
+    const inst = makeInstrumentedSupabaseFixture({ ...lakers, "rpc:get_panini_franchise_panel": { data: null, error: { message: "timeout" } } })
+    A.sb = inst.fixture
+    A.state.script = [{ tools: [{ name: "get_team_intel", input: { team: "Los Angeles Lakers" } }] }, { text: "done" }]
+    A.state.cursor = 0
+    await POST(post())
+    const r = toolResult()
+    expect(r.status).toBe("error")
+    expect(String(r.message)).toMatch(/check failed/)
   })
 })
