@@ -729,6 +729,8 @@ export default async function PackDetailPage(
     if (secondaryAskAnchor != null) {
       return `Pack EV computed against the live secondary ask [${fmtUsd(secondaryAskAnchor)}] — what a sealed pack actually resells for, the only honest anchor for its value.`
     }
+    // 2026-10-25: said "showing Gross EV … only" on dist 7528 beside a Gross EV of "—".
+    if (grossEv == null) return "No live secondary ask and no Gross EV for this pack yet — no verdict."
     return "No live secondary ask — showing Gross EV (value still sealed) only, with no net/ratio verdict."
   })()
 
@@ -2528,7 +2530,7 @@ async function PackStreamedBottom({
               ? "unavailable"
               : topPulls.length === 0
                 ? "no pool rows"
-                : `top ${topPulls.length} of ${editionCount ?? "?"}`}
+                : editionCount != null ? `top ${topPulls.length} of ${editionCount}` : `top ${topPulls.length}`}
           </span>
         </div>
         {!topPullsRes.ok ? (
@@ -2579,9 +2581,13 @@ async function PackStreamedBottom({
           </div>
         )}
         <div style={{ marginTop: 10, fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--rpc-text-muted)" }}>
-          Edition EV = FMV × (drop_weight / pool_weight) × slots. Sums to Gross EV over the full pool. Snapshotted{" "}
-          {snapshottedAt ? new Date(snapshottedAt).toLocaleString() : "—"}. Methodology: cached pack_ev_history via the
-          compute-pack-ev edge function.
+          {/* 2026-10-25: was "Snapshotted — . Methodology: cached pack_ev_history via the
+              compute-pack-ev edge function" — an empty stamp, internal table and function
+              names, and a server-zone (UTC) time with no zone. */}
+          Edition EV = FMV × (its share of the pool&apos;s drop weight) × slots. Sums to Gross EV over the full pool.
+          {snapshottedAt && Number.isFinite(Date.parse(snapshottedAt))
+            ? ` Computed ${new Date(snapshottedAt).toLocaleString("en-US", { timeZone: "America/Los_Angeles", month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" })} PT.`
+            : null}
         </div>
       </section>}
     </>

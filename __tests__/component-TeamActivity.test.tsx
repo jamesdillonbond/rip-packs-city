@@ -46,26 +46,38 @@ describe("TeamActivity", () => {
     expect(container.textContent).not.toContain("couldn't be loaded")
   })
 
-  it("renders Recent sales and a price-sorted Biggest recent sales column", () => {
-    const rows = [
-      row({ route_slug: "cheap", player_name: "Cheap One", price_usd: 10 }),
+  // A window wider than the 15-row Recent list: the largest-of column ranks rows not yet shown.
+  const wide = (extra: ReturnType<typeof row>[]) => [
+    ...Array.from({ length: 15 }, (_, i) => row({ route_slug: `r${i}`, player_name: `Filler ${i}`, price_usd: 1 })),
+    ...extra,
+  ]
+
+  it("names the window it ranks: 'Largest of the last N sales', price-sorted, $0 excluded", () => {
+    const rows = wide([
       row({ route_slug: "grail", player_name: "Grail One", price_usd: 5000 }),
-      row({ route_slug: "zero", player_name: "Zero One", price_usd: 0 }), // excluded from biggest
-    ]
-    const { getByText, getAllByText } = render(
-      <TeamActivity collectionUrlSlug="nba-top-shot" rows={rows} />,
-    )
+      row({ route_slug: "zero", player_name: "Zero One", price_usd: 0 }),
+    ])
+    const { getByText, queryByText, container } = render(<TeamActivity collectionUrlSlug="nba-top-shot" rows={rows} />)
     expect(getByText("Recent sales")).toBeTruthy()
-    expect(getByText("Biggest recent sales")).toBeTruthy()
-    // the grail ($5,000) appears in both columns; the $0 row never in "biggest"
-    expect(getAllByText("Grail One").length).toBe(2)
-    expect(getAllByText("Zero One").length).toBe(1) // recent only
+    expect(getByText("Largest of the last 17 sales")).toBeTruthy()
+    expect(container.textContent).not.toContain("Biggest recent sales")
+    expect(queryByText("Grail One")).toBeTruthy() // only reachable through the largest-of column
+    expect(queryByText("Zero One")).toBeNull()
   })
 
-  it("hides the Biggest column when every price is non-positive", () => {
-    const rows = [row({ price_usd: 0 }), row({ price_usd: null })]
+  // 2026-10-25: the franchise hub passes 6 rows; a "biggest" column over them re-sorted the
+  // same sales and read $0.15 beside $938 of 30-day volume. Every row is already listed.
+  it("⛔ no largest-of column when the Recent list already shows every fetched sale", () => {
+    const rows = [row({ route_slug: "a", price_usd: 0.15 }), row({ route_slug: "b", price_usd: 0.1 })]
+    const { container } = render(<TeamActivity collectionUrlSlug="nba-top-shot" rows={rows} />)
+    expect(container.textContent).toContain("Recent sales")
+    expect(container.textContent).not.toMatch(/Largest of|Biggest recent sales/)
+  })
+
+  it("hides the largest-of column when every price is non-positive", () => {
+    const rows: ActivityRow[] = [...wide([]).map(r => ({ ...r, price_usd: 0 })), row({ price_usd: null })]
     const { queryByText } = render(<TeamActivity collectionUrlSlug="nba-top-shot" rows={rows} />)
-    expect(queryByText("Biggest recent sales")).toBeNull()
+    expect(queryByText(/Largest of/)).toBeNull()
     expect(queryByText("Recent sales")).toBeTruthy()
   })
 

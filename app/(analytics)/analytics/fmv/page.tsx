@@ -6,7 +6,7 @@ import { jsonLdScript } from "@/lib/seo/json-ld-script"
 export const metadata: Metadata = analyticsMetadata({
   title: "FMV Index — Fair Market Value Across Flow NFTs",
   description:
-    "Algorithmic fair-market-value pricing across NBA Top Shot and NFL All Day editions. Pipeline health, top movers, and tier-by-tier FMV distribution. Refreshes every 10 minutes.",
+    "Algorithmic fair-market-value pricing across NBA Top Shot, NFL All Day, Disney Pinnacle, LaLiga Golazos and UFC Strike editions. Pipeline health, top movers, and tier-by-tier FMV distribution. Refreshes every 10 minutes.",
   path: "/analytics/fmv",
 })
 

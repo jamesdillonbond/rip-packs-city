@@ -26,6 +26,23 @@ describe("fmvDayDelta", () => {
   it("handles a negative move to a smaller positive base", () => {
     expect(fmvDayDelta([{ fmv_usd: 50 }, { fmv_usd: 25 }])).toBeCloseTo(-50)
   })
+  // 2026-10-25: rows exist only on change days. /nfl-all-day/edition/1516 showed "+546.0%"
+  // as its 24h change for a move made five days earlier.
+  describe("dated rows: a move older than yesterday is not a 24h move", () => {
+    const now = Date.parse("2026-10-26T01:00:00Z")
+    it("⛔ last change five days ago reads 0, never that change's size", () => {
+      expect(fmvDayDelta([{ day: "2026-10-13", fmv_usd: 116.1 }, { day: "2026-10-20", fmv_usd: 750 }], now)).toBe(0)
+    })
+    it("a change dated today compares against the value in force before it, however old", () => {
+      expect(fmvDayDelta([{ day: "2026-10-13", fmv_usd: 100 }, { day: "2026-10-26", fmv_usd: 120 }], now)).toBeCloseTo(20)
+    })
+    it("a change dated yesterday (UTC) still counts — the series is day-granular", () => {
+      expect(fmvDayDelta([{ day: "2026-10-24", fmv_usd: 100 }, { day: "2026-10-25", fmv_usd: 90 }], now)).toBeCloseTo(-10)
+    })
+    it("a timestamp-shaped day is read by its date part", () => {
+      expect(fmvDayDelta([{ day: "2026-10-01T00:00:00+00:00", fmv_usd: 1 }, { day: "2026-10-20T06:48:25Z", fmv_usd: 2 }], now)).toBe(0)
+    })
+  })
 })
 
 describe("sortNotableSerials", () => {

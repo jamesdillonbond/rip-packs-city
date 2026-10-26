@@ -174,6 +174,25 @@ describe("SalesDashboard — an outage must not publish $0 volume", () => {
     expect(screen.getAllByText("—").length).toBeGreaterThanOrEqual(2)
   })
 
+  // 2026-10-25: the panels concluded "No sales in this window yet." / "No marketplace
+  // activity in this window yet." / loan-backfill copy beneath that banner (and in the
+  // server-rendered HTML while loading). Unanswered panels must say so instead.
+  it("⛔ an outage never renders a panel's empty-market conclusion", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => errorEnvelope as any))
+    const { container } = render(<SalesDashboard />)
+    await waitFor(() => expect(container.textContent ?? "").toMatch(/Couldn.t load this panel just now/))
+    const text = container.textContent ?? ""
+    expect(text).not.toMatch(/No sales in this window|No marketplace activity|No (buyer|seller) activity|loan history/)
+  })
+
+  it("⛔ before the reads land, panels say loading — never 'no sales'", () => {
+    vi.stubGlobal("fetch", vi.fn(() => new Promise(() => {})))
+    const { container } = render(<SalesDashboard />)
+    const text = container.textContent ?? ""
+    expect(text).toContain("Loading…")
+    expect(text).not.toMatch(/No sales in this window|No marketplace activity|No (buyer|seller) activity|loan history/)
+  })
+
   it("a real response still renders real figures", async () => {
     // Both directions: the notice must not become the permanent state, and a
     // genuine zero from the API is still a legitimate number to show.

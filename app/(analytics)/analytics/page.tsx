@@ -343,7 +343,7 @@ export default async function AnalyticsOverviewPage() {
     {
       href: "/analytics/fmv",
       label: "FMV Index",
-      description: "Algorithmic fair-market-value pricing across NBA Top Shot and NFL All Day editions.",
+      description: "Algorithmic fair-market-value pricing across NBA Top Shot, NFL All Day, Disney Pinnacle, LaLiga Golazos and UFC Strike editions.",
       icon: Sparkles,
       status: "live",
       methodologyTopic: "fmv",

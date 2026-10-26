@@ -311,11 +311,11 @@ export default function PaniniSqueezeClient({
           {coverage.edition_age_p50_h != null ? (
             <>
               {" "}Cards are re-priced in rotation, not all at once, so rows differ in age: the{" "}
-              <b>typical row was last checked {Math.round(Number(coverage.edition_age_p50_h) / 24)} days ago</b>
+              <b>typical row was last checked {Math.round(Number(coverage.edition_age_p50_h) / 24)} {Math.round(Number(coverage.edition_age_p50_h) / 24) === 1 ? "day" : "days"} ago</b>
               {coverage.edition_age_p90_h != null ? (
                 <>
                   {" "}and the oldest tenth{" "}
-                  <b>{Math.round(Number(coverage.edition_age_p90_h) / 24)} days ago</b>
+                  <b>{Math.round(Number(coverage.edition_age_p90_h) / 24)} {Math.round(Number(coverage.edition_age_p90_h) / 24) === 1 ? "day" : "days"} ago</b>
                 </>
               ) : null}
               .

@@ -237,6 +237,18 @@ export default function LoansDashboard({
   const graceRepayments = limbo?.grace_period_repayments ?? null
   const preReopenRepayments = limbo?.pre_reopen_terminations ?? null
 
+  // 2026-10-25 (same fix as SalesDashboard): a panel whose read has not landed must not
+  // render its empty state ("Backfill in progress", "No lender activity…") — say loading
+  // or failed. Null data = not answered.
+  const pending = (data: unknown, heightClass: string) =>
+    data == null ? (
+      <div
+        className={`flex ${heightClass} items-center justify-center rounded-xl border border-dashed border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] text-sm text-[color:var(--rpc-text-muted)]`}
+      >
+        {loading ? "Loading…" : "Couldn\u2019t load this panel just now."}
+      </div>
+    ) : null
+
   return (
     <div className="space-y-8">
       {loadFailed && (
@@ -442,12 +454,14 @@ export default function LoansDashboard({
             </p>
           </div>
         </div>
-        <VolumeChart
-          rows={timeseries?.rows ?? []}
-          activeCollections={activeCollections}
-          weekly={timeseries?.bucket === "week"}
-          singleCollection={isPinned}
-        />
+        {pending(timeseries, "h-80") ?? (
+          <VolumeChart
+            rows={timeseries?.rows ?? []}
+            activeCollections={activeCollections}
+            weekly={timeseries?.bucket === "week"}
+            singleCollection={isPinned}
+          />
+        )}
       </section>
 
       <section className="grid gap-6 lg:grid-cols-1 xl:grid-cols-2">
@@ -456,14 +470,14 @@ export default function LoansDashboard({
           <p className="text-xs text-[color:var(--rpc-text-muted)] mb-4">
             Weekly first-time lenders and borrowers · cumulative on right axis
           </p>
-          <NewWalletsChart rows={newWallets?.rows ?? []} />
+          {pending(newWallets, "h-64") ?? <NewWalletsChart rows={newWallets?.rows ?? []} />}
         </div>
         <div>
           <h2 className="text-lg font-semibold text-[color:var(--rpc-text-primary)] mb-1">Cohort activity</h2>
           <p className="text-xs text-[color:var(--rpc-text-muted)] mb-4">
             Monthly cohorts · % of cohort active in subsequent months (not strict retention — wallets can return after a gap)
           </p>
-          <CohortRetention rows={cohorts?.rows ?? []} />
+          {pending(cohorts, "h-64") ?? <CohortRetention rows={cohorts?.rows ?? []} />}
         </div>
       </section>
 
@@ -496,20 +510,24 @@ export default function LoansDashboard({
             </button>
           </div>
           {lenderTab === "volume" ? (
-            <LeaderboardTable
-              rows={topLenders?.rows ?? []}
-              party="lender"
-              window={windowLabel}
-            />
+            pending(topLenders, "h-32") ?? (
+              <LeaderboardTable
+                rows={topLenders?.rows ?? []}
+                party="lender"
+                window={windowLabel}
+              />
+            )
           ) : (
             <LenderPerformanceTable collections={activeCollections} />
           )}
         </div>
-        <LeaderboardTable
-          rows={topBorrowers?.rows ?? []}
-          party="borrower"
-          window={windowLabel}
-        />
+        {pending(topBorrowers, "h-32") ?? (
+          <LeaderboardTable
+            rows={topBorrowers?.rows ?? []}
+            party="borrower"
+            window={windowLabel}
+          />
+        )}
       </section>
 
       {hideExploreSection ? null : (

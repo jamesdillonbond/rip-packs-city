@@ -22,6 +22,9 @@ interface VolumeChartProps {
   // When true, the chart is dedicated to a single collection — switch the
   // total fill to that collection's color and skip the stacking treatment.
   singleCollection?: boolean
+  // 2026-10-25: the empty copy is the CALLER's — the loans default read
+  // "chart populates as loan history arrives" on the SALES dashboard too.
+  emptyText?: string
 }
 
 const COLLECTION_COLORS: Record<string, string> = {
@@ -162,6 +165,7 @@ export default function VolumeChart({
   activeCollections,
   weekly,
   singleCollection,
+  emptyText = "Backfill in progress — chart populates as loan history arrives.",
 }: VolumeChartProps) {
   const { points, collections } = useMemo(() => pivot(rows), [rows])
 
@@ -181,7 +185,7 @@ export default function VolumeChart({
   if (!points || points.length === 0) {
     return (
       <div className="flex h-80 items-center justify-center rounded-xl border border-dashed border-[color:var(--rpc-border)] bg-[color:var(--rpc-surface-raised)] text-sm text-[color:var(--rpc-text-muted)]">
-        Backfill in progress — chart populates as loan history arrives.
+        {emptyText}
       </div>
     )
   }

@@ -1,6 +1,6 @@
 // components/entity/TeamActivity.tsx
-// Team Hub Phase 3 (C8). Server component. Recent team sales table + a "Biggest
-// recent sales" subhead derived by sorting the same fetched window by price.
+// Team Hub Phase 3 (C8). Server component. Recent team sales table + a "Largest of
+// the last N sales" subhead derived by sorting the same fetched window by price.
 // Data (get_team_activity via /api/entity/team-activity) is fetched server-side
 // in the team page and passed in.
 
@@ -65,10 +65,17 @@ export default function TeamActivity({ collectionUrlSlug, rows, ok = true }: { c
     )
   }
   const recent = rows.slice(0, 15)
-  const biggest = [...rows]
-    .filter(r => (r.price_usd ?? 0) > 0)
-    .sort((a, b) => (b.price_usd ?? 0) - (a.price_usd ?? 0))
-    .slice(0, 5)
+  // 2026-10-25: this column is the largest of THE FETCHED WINDOW, not of the team's
+  // market (the hub passes 6 rows: its "Biggest recent sales" topped at $0.15 beside
+  // "30d Volume $938" over 823 sales). Name the window it ranks, and show it only when
+  // the window holds sales the Recent list does not already show — otherwise it is the
+  // same rows re-sorted.
+  const biggest = rows.length > recent.length
+    ? [...rows]
+        .filter(r => (r.price_usd ?? 0) > 0)
+        .sort((a, b) => (b.price_usd ?? 0) - (a.price_usd ?? 0))
+        .slice(0, 5)
+    : []
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 18 }}>
@@ -78,7 +85,7 @@ export default function TeamActivity({ collectionUrlSlug, rows, ok = true }: { c
       </div>
       {biggest.length > 0 && (
         <div>
-          <div className="rpc-mono" style={{ fontSize: 10, letterSpacing: "0.16em", textTransform: "uppercase", color: "var(--rpc-text-muted)", marginBottom: 6 }}>Biggest recent sales</div>
+          <div className="rpc-mono" style={{ fontSize: 10, letterSpacing: "0.16em", textTransform: "uppercase", color: "var(--rpc-text-muted)", marginBottom: 6 }}>Largest of the last {rows.length} sales</div>
           {biggest.map((r, i) => <Row key={`big-${r.route_slug}-${i}`} collectionUrlSlug={collectionUrlSlug} r={r} showTime={false} />)}
         </div>
       )}

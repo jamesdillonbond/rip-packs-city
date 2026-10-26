@@ -396,7 +396,7 @@ export default async function SetPage(props: { params: Promise<{ collection: str
           so in the shared wording); a set that genuinely has no recent sales
           omits the section, as the team page does. Pinnacle is never asked.
           Titled "Market Activity", as on the team page: TeamActivity carries
-          its own "Recent sales" / "Biggest recent sales" sub-heads, so a
+          its own "Recent sales" / "Largest of the last N sales" sub-heads, so a
           "Recent Sales" section title read as a doubled heading (seen 09-25). */}
       {wantsActivity && (activityRes.rows.length > 0 || !activityRes.ok) && (
         <Section title="Market Activity">

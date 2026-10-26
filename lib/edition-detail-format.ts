@@ -46,13 +46,26 @@ export function notableTagLabel(tag: string): string {
 // 24h FMV delta (%) from the daily history series: latest day vs the day prior.
 // Returns null when there aren't two points, or either endpoint is missing or
 // the prior is zero (no division by zero, no fabricated ±100% off a null base).
+//
+// ⚠ 2026-10-25: the series holds a row only when the value CHANGED, so the last two
+// points can be a week apart. /nfl-all-day/edition/1516 read "24h Change +546.0%" for a
+// move made five days earlier (10-13 → 10-20). When the latest point is older than
+// yesterday (UTC day) the value has not moved in 24 h: 0, not the last move's size.
+// Rows without a `day` keep the old two-point behaviour.
 export function fmvDayDelta(
-  history: { fmv_usd: number | null }[],
+  history: { fmv_usd: number | null; day?: string | null }[],
+  nowMs: number = Date.now(),
 ): number | null {
   if (history.length < 2) return null
   const last = history[history.length - 1]?.fmv_usd
   const prev = history[history.length - 2]?.fmv_usd
   if (last !== null && prev !== null && prev !== 0 && last !== undefined && prev !== undefined) {
+    const lastDay = history[history.length - 1]?.day
+    const lastDayMs = lastDay ? Date.parse(`${String(lastDay).slice(0, 10)}T00:00:00Z`) : NaN
+    if (Number.isFinite(lastDayMs)) {
+      const todayMs = Date.parse(new Date(nowMs).toISOString().slice(0, 10) + "T00:00:00Z")
+      if (lastDayMs < todayMs - 86_400_000) return 0
+    }
     return ((last - prev) / prev) * 100
   }
   return null

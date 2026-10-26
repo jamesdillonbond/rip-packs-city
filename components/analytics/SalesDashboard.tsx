@@ -161,6 +161,19 @@ export default function SalesDashboard({
     [timeseries]
   )
 
+  // 2026-10-25: a panel whose read has not landed must not render its empty state —
+  // "No sales in this window yet." was the server-rendered HTML of /analytics/sales
+  // (loading) and survived a failed read beneath the banner below, beside a section
+  // reading 99.5k sales in 30 days. Null data = not answered: say loading or failed.
+  const pending = (data: unknown, heightClass: string) =>
+    data == null ? (
+      <div
+        className={`flex ${heightClass} items-center justify-center rounded-xl border border-dashed border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] text-sm text-[color:var(--rpc-text-muted)]`}
+      >
+        {loading ? "Loading…" : "Couldn\u2019t load this panel just now."}
+      </div>
+    ) : null
+
   return (
     <div className="space-y-8">
       {loadFailed && (
@@ -263,27 +276,34 @@ export default function SalesDashboard({
             </p>
           </div>
         </div>
-        <VolumeChart
-          rows={reshapedTimeseries}
-          activeCollections={activeCollections}
-          weekly={timeseries?.bucket === "week"}
-          singleCollection={isPinned}
-        />
+        {pending(timeseries, "h-80") ?? (
+          <VolumeChart
+            rows={reshapedTimeseries}
+            activeCollections={activeCollections}
+            weekly={timeseries?.bucket === "week"}
+            singleCollection={isPinned}
+            emptyText="No sales in this window."
+          />
+        )}
       </section>
 
-      <MarketplaceMix data={summary?.marketplace_breakdown} />
+      {pending(summary, "h-32") ?? <MarketplaceMix data={summary?.marketplace_breakdown} />}
 
       <section className="grid gap-6 lg:grid-cols-2">
-        <LeaderboardTable
-          rows={topBuyers?.rows ?? []}
-          party="buyer"
-          window={windowLabel}
-        />
-        <LeaderboardTable
-          rows={topSellers?.rows ?? []}
-          party="seller"
-          window={windowLabel}
-        />
+        {pending(topBuyers, "h-32") ?? (
+          <LeaderboardTable
+            rows={topBuyers?.rows ?? []}
+            party="buyer"
+            window={windowLabel}
+          />
+        )}
+        {pending(topSellers, "h-32") ?? (
+          <LeaderboardTable
+            rows={topSellers?.rows ?? []}
+            party="seller"
+            window={windowLabel}
+          />
+        )}
       </section>
 
       <section>
@@ -293,7 +313,7 @@ export default function SalesDashboard({
             Largest individual sales in {windowLabel.toLowerCase()} · USD-pegged
           </p>
         </div>
-        <BiggestSales rows={topMoves?.rows ?? []} />
+        {pending(topMoves, "h-32") ?? <BiggestSales rows={topMoves?.rows ?? []} />}
       </section>
 
       {hideExploreSection ? null : (
