@@ -342,7 +342,7 @@ export async function fetchPaniniEditionAskHistory(
 //
 // Panini editions carry no team_name, so the edition page's team chip never rendered. The
 // hourly map places a card on a franchise from the team walk, the team printed on the card, or
-// the same player's other cards in that product (99.7 % held out). A failed read or an
+// the same player's other cards in that product (99.7 % held out), or for NFL / MLB in other products of the same season (99.5 % NFL held out, 10-26). A failed read or an
 // unplaced card renders no chip — an absent team is never stated as "no team".
 
 export interface PaniniEditionTeam {

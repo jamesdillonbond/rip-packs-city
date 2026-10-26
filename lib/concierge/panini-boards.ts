@@ -407,7 +407,7 @@ export async function readPaniniCollectionForConcierge(base: string, username: s
 // ── Panini teams (2026-10-25) ────────────────────────────────────────────────
 // get_team_checklist / get_team_intel refused Panini ("RPC has no team data for Panini cards") —
 // true until 10-25, when panini_edition_team_keys began placing catalogued cards on franchises
-// (the team walk, the team printed on the card, or the same player's other cards in that product).
+// (the team walk, the team printed on the card, or the same player's other cards in that product (for NFL and MLB, in other products of the same season)).
 // This answers from the same reads as the franchise hub's Panini panel. Coverage is PARTIAL by
 // construction, so every answer carries it and a team with nothing placed is "not placed yet",
 // never "Panini has no cards for that team". No FMV confidence leaves (concierge rule 3).
@@ -471,7 +471,7 @@ export async function readPaniniTeamForConcierge(db: Db, base: string, typed: st
       cards_placed_on_a_team: num(cov.mapped),
       cards_tracked: num(cov.catalogued),
     } : null
-    const how = "Panini cards carry no team field; RPC places a card on a team from Panini's marketplace team filter, the team printed on the card, or the same player's other cards in that product. A card with none of the three is not counted, so these are floors, not complete checklists."
+    const how = "Panini cards carry no team field; RPC places a card on a team from Panini's marketplace team filter, the team printed on the card, or the same player's other cards in that product (for NFL and MLB, in other products of the same season). A card with none of the three is not counted, so these are floors, not complete checklists."
     if (!p) {
       return JSON.stringify({ status: "none_placed_yet", team: t.team_name, league: t.league, hub_url: hubUrl, how_teams_are_assigned: how,
         message: "RPC has not placed any Panini card on this team yet. Say exactly that — never that Panini has no cards for this team." })
@@ -641,7 +641,7 @@ export async function readPaniniBreakdownForConcierge(db: Db, base: string, inpu
       group_by: groupBy,
       groups: groups.map((g) => ({ key: g.key ?? null, cards: num(g.cards), fmv_usd: num(g.fmv_usd), fmv_priced_cards: num(g.fmv_priced_cards) })),
       ...(groupBy === "team" || franchiseKey
-        ? { cards_not_on_a_team: num(d.cards_not_on_a_team), team_note: "Panini cards carry no team field; RPC places a card on a team from Panini's team filter, the team printed on the card, or the same player's other cards in that product. Soccer and racing cards are never on a team, and some others are not placed yet — team counts are floors." }
+        ? { cards_not_on_a_team: num(d.cards_not_on_a_team), team_note: "Panini cards carry no team field; RPC places a card on a team from Panini's team filter, the team printed on the card, or the same player's other cards in that product (for NFL and MLB, in other products of the same season). Soccer and racing cards are never on a team, and some others are not placed yet — team counts are floors." }
         : {}),
       ...(groupBy === "sport" ? { cards_sport_unknown: num(d.cards_sport_unknown) } : {}),
       top_cards: topCards.map((c) => ({

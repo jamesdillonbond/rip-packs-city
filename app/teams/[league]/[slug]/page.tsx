@@ -299,7 +299,7 @@ function PaniniPanel({ panel, hub }: { panel: Exclude<PaniniHubPanel, { state: "
               const cov = paniniCoverage(panel.detail.coverage)
               return (
                 <>
-                  Matched to the {hub.team_name} by Panini&rsquo;s marketplace team filter or the team Panini prints on the card; a card with neither takes its team from the same player&rsquo;s other cards in that product, and a card with no match is not counted.
+                  Matched to the {hub.team_name} by Panini&rsquo;s marketplace team filter or the team Panini prints on the card; a card with neither takes its team from the same player&rsquo;s other cards in that product, or for NFL and MLB from the same player&rsquo;s cards in other products of the same season, and a card with no match is not counted.
                   {cov ? <> Together these place {fmtCount(cov.mapped)} of the {fmtCount(cov.catalogued)} Panini {cov.noun} cards we track on a team ({cov.pct}%).</> : null}
                 </>
               )

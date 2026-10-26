@@ -923,7 +923,7 @@ export default async function EditionPage(
                   key={`${t.league}:${t.slug}`}
                   href={franchiseHubPath(t.league, t.slug)}
                   data-testid="panini-edition-team"
-                  title="Placed on this team by Panini's marketplace team filter, the team printed on the card, or the same player's other cards in this product"
+                  title="Placed on this team by Panini's marketplace team filter, the team printed on the card, or the same player's other cards in this product (for NFL and MLB, in other products of the same season)"
                   className="rpc-mono"
                   style={{ fontSize: 11, color: "var(--rpc-text-primary)", textDecoration: "none" }}
                 >

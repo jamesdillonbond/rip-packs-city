@@ -198,3 +198,7 @@ AS $function$
   ORDER BY tm.display_order, tm.team_name;
 $function$;
 ```
+
+## 2026-10-26 — same-season inference (NFL, MLB)
+
+The team map (`panini_edition_team_keys`) gains a fourth inference after listing > printed > same-product sibling: for **Football and Baseball only**, a card with no evidence in its own product takes the team that the same player's directly evidenced cards (listing or printed, one team) in OTHER products of the same season agree on. Never a two-player card, never across seasons, never when those products disagree. Held out 10-26: NFL 1,411 / 1,418 (99.5 %), MLB 73 / 74; NBA 7,251 / 7,511 (96.5 % — trades and mixed `2021` / `2021-22` labels) is excluded, WNBA has no held-out set. Stored as `source = 'sibling'`, `basis = 'same_season'` (same-product siblings are `basis = 'same_product'`): the `source` CHECK allows only the original four values. NFL placed 3,577 → 4,930 of 11,006, MLB 475 → 531 of 735. Migration `20261026220929`; DB pin `supabase/tests/refresh_panini_edition_team_keys.sql` claim 8 (two planted defects red).

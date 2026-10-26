@@ -495,7 +495,7 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
                   <Link href={teamHref} style={{ color: "var(--rpc-text-primary)", textDecoration: "none" }}>{detail.team}</Link>
                 ) : <span>{detail.team}</span>)}
                 {isPanini && paniniTeams.length > 0 && (
-                  <span data-testid="panini-player-teams" title="Placed on these teams by Panini's marketplace team filter, the team printed on the card, or the same player's other cards in a product — single-player cards only">
+                  <span data-testid="panini-player-teams" title="Placed on these teams by Panini's marketplace team filter, the team printed on the card, or the same player's other cards in a product or, for NFL and MLB, a season — single-player cards only">
                     {paniniTeams.slice(0, PANINI_PLAYER_TEAMS_SHOWN).map((t, i) => (
                       <span key={`${t.league}:${t.slug}`}>
                         {i > 0 ? " · " : ""}

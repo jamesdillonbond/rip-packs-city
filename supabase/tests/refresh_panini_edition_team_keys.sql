@@ -1,6 +1,6 @@
 -- DB invariant: public.refresh_panini_edition_team_keys — the per-edition Panini team map behind the franchise
 -- hubs, the edition-page team chip, player-page teams and the concierge (migration
--- 20261026044548_audit_20261025_panini_edition_team_keys.sql). Claims:
+-- 20261026044548_audit_20261025_panini_edition_team_keys.sql; the season rule 20261026220929_audit_20261026_panini_team_keys_same_season). Claims:
 --   1. a card the team walk saw under a team filter takes THAT team (source listing), even when another team is
 --      printed on it;
 --   2. a card with no listing takes the team printed on it (panini_editions.nation) through the resolver (printed);
@@ -8,7 +8,11 @@
 --   4. siblings that disagree decide nothing (none), and a sibling in ANOTHER product is never evidence;
 --   5. only Basketball / Baseball / Football / Womens Basketball products are mapped (soccer is not a team sport here);
 --   6. rows are NEVER deleted: a card that loses its evidence becomes source none with keys '{}';
---   7. a second run with nothing changed writes 0 rows (the IS DISTINCT FROM guard), and every run is logged.
+--   7. a second run with nothing changed writes 0 rows (the IS DISTINCT FROM guard), and every run is logged;
+--   8. (2026-10-26) a Football / Baseball card with no evidence in its own product takes the team the same player's
+--      directly evidenced cards in OTHER products of the same SEASON agree on (source sibling, basis same_season;
+--      a same-product sibling is basis same_product, a listing / printed / none row NULL) — never across seasons,
+--      never when those products disagree, never for a two-player card, never for Basketball.
 --
 -- The function DDL below is VERBATIM from the committed migration;
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
@@ -37,6 +41,7 @@ CREATE TABLE IF NOT EXISTS public.panini_edition_team_keys (
   sport           text        NOT NULL,
   franchise_keys  text[]      NOT NULL DEFAULT '{}',
   source          text        NOT NULL CHECK (source IN ('listing', 'printed', 'sibling', 'none')),
+  basis           text        CHECK (basis IS NULL OR basis IN ('same_product', 'same_season')),
   computed_at     timestamptz NOT NULL DEFAULT now()
 );
 
@@ -44,7 +49,12 @@ INSERT INTO public.panini_products VALUES
   (10, '2023 Panini NFT Prizm Basketball', 'Basketball'),
   (20, '2024 Panini NFT Prizm Basketball', 'Basketball'),
   (30, '2026 Panini NFT Prizm WNBA', 'Womens Basketball'),
-  (99, '2026 Panini Prizm World Cup', 'Soccer');
+  (99, '2026 Panini Prizm World Cup', 'Soccer'),
+  (21, '2024 Panini NFT Hoops Basketball', 'Basketball'),
+  (40, '2024 Panini NFT Prizm Football', 'Football'),
+  (41, '2024 Panini NFT Select Football', 'Football'),
+  (42, '2023 Panini NFT Prizm Football', 'Football'),
+  (43, '2024 Panini NFT Obsidian Football', 'Football');
 
 INSERT INTO public.panini_editions VALUES
   ('packcard-10_1_1_1', 'Listed Guy',   10, 'Boston Celtics'),  -- claim 1: listing (lakers) beats printed (celtics)
@@ -56,13 +66,28 @@ INSERT INTO public.panini_editions VALUES
   ('packcard-10_1_1_7', 'Split Player', 10, NULL),              --          → none
   ('packcard-20_1_1_8', 'Sib Player',   20, NULL),              --          another product → none
   ('packcard-30_1_1_9', 'Clark',        30, 'Indiana Fever'),   -- WNBA printed
-  ('packcard-99_1_1_1', 'Messi',        99, 'Argentina');       -- claim 5: soccer → no row
+  ('packcard-99_1_1_1', 'Messi',        99, 'Argentina'),       -- claim 5: soccer → no row
+  ('packcard-40_1_1_1', 'Season Guy',   40, NULL),              -- claim 8: listed chiefs in 2024 Prizm
+  ('packcard-41_1_1_1', 'Season Guy',   41, NULL),              --          2024 Select, no evidence → chiefs (season)
+  ('packcard-42_1_1_1', 'Season Guy',   42, NULL),              --          2023: another season → none
+  ('packcard-40_1_1_2', 'Traded Guy',   40, NULL),              --          bills in 2024 Prizm …
+  ('packcard-43_1_1_2', 'Traded Guy',   43, NULL),              --          … jets in 2024 Obsidian …
+  ('packcard-41_1_1_2', 'Traded Guy',   41, NULL),              --          … so 2024 Select decides nothing → none
+  ('packcard-40_1_1_3', 'Duo A | Duo B', 40, NULL),             --          a two-player card is evidence for nothing …
+  ('packcard-41_1_1_3', 'Duo A | Duo B', 41, NULL),             --          … and is never placed → none
+  ('packcard-21_1_1_1', 'Hoop Guy',     21, NULL),              --          Basketball: suns in 2024 Hoops …
+  ('packcard-20_1_1_9', 'Hoop Guy',     20, NULL);              --          … 2024 Prizm Basketball stays none (not used)
 
 INSERT INTO public.panini_team_listings VALUES
   ('s1', 'packcard-10_1_1_1', ARRAY['NBA:lakers'], '10', 2023),
   ('s3', 'packcard-10_1_1_3', ARRAY['NBA:bulls'],  '10', 2023),
   ('s5', 'packcard-10_1_1_5', ARRAY['NBA:heat'],   '10', 2023),
-  ('s6', 'packcard-10_1_1_6', ARRAY['NBA:knicks'], '10', 2023);
+  ('s6', 'packcard-10_1_1_6', ARRAY['NBA:knicks'], '10', 2023),
+  ('t1', 'packcard-40_1_1_1', ARRAY['NFL:chiefs'], '40', 2024),
+  ('t2', 'packcard-40_1_1_2', ARRAY['NFL:bills'],  '40', 2024),
+  ('t3', 'packcard-43_1_1_2', ARRAY['NFL:jets'],   '43', 2024),
+  ('t4', 'packcard-40_1_1_3', ARRAY['NFL:chiefs'], '40', 2024),
+  ('t5', 'packcard-21_1_1_1', ARRAY['NBA:suns'],   '21', 2024);
 
 -- >>> BEGIN verbatim refresh_panini_edition_team_keys >>>
 CREATE OR REPLACE FUNCTION public.refresh_panini_edition_team_keys()
@@ -80,7 +105,9 @@ BEGIN
     SELECT pe.external_id, pp.last_grid_sport AS sport, pe.product_set_id,
            nullif(btrim(pe.player_name), '') AS player_name,
            nullif(btrim(pe.nation), '')      AS printed_team,
-           substring(pp.name FROM '(?:19|20)[0-9]{2}')::int AS name_year
+           substring(pp.name FROM '(?:19|20)[0-9]{2}')::int AS name_year,
+           -- the product's season label ("2024", "2021-22") for the same-season rule (audit_20261026)
+           substring(pp.name FROM '^((?:19|20)[0-9]{2}(?:-[0-9]{2})?)') AS season
       FROM public.panini_editions pe
       JOIN public.panini_products pp ON pp.set_id = pe.product_set_id
      WHERE pp.last_grid_sport IN ('Basketball', 'Baseball', 'Football', 'Womens Basketball')
@@ -105,7 +132,7 @@ BEGIN
       FROM (SELECT DISTINCT sport, printed_team, athlete, y FROM c2 WHERE printed_team IS NOT NULL) d
      CROSS JOIN LATERAL public.panini_resolve_team_keys_for(d.sport, d.printed_team, d.athlete, d.y) r
   ), own AS MATERIALIZED (
-    SELECT c.external_id, c.sport, c.product_set_id, c.player_name,
+    SELECT c.external_id, c.sport, c.product_set_id, c.player_name, c.season,
            CASE WHEN cardinality(lk.keys) > 0 THEN lk.keys WHEN cardinality(pt.keys) > 0 THEN pt.keys END AS keys,
            CASE WHEN cardinality(lk.keys) > 0 THEN 'listing' WHEN cardinality(pt.keys) > 0 THEN 'printed' END AS source
       FROM c2 c
@@ -117,25 +144,46 @@ BEGIN
       FROM own
      WHERE keys IS NOT NULL AND player_name IS NOT NULL AND product_set_id IS NOT NULL
      GROUP BY 1, 2
+  ), sea AS MATERIALIZED (
+    -- audit_20261026: the same player's DIRECTLY evidenced (listing / printed, one team) cards in the same sport and
+    -- SEASON. Football and Baseball only (held out 10-26: NFL 1,411 / 1,418 = 99.5 %, MLB 73 / 74; NBA 96.5 % —
+    -- trades and mixed season labels — and WNBA untestable, so not used). Never a two-player card.
+    SELECT o.sport, o.season, o.player_name, min(o.keys[1]) AS k, count(DISTINCT o.keys[1]) AS nk
+      FROM own o
+     WHERE o.source IN ('listing', 'printed') AND cardinality(o.keys) = 1
+       AND o.sport IN ('Football', 'Baseball') AND o.season IS NOT NULL
+       AND o.player_name IS NOT NULL AND o.player_name NOT LIKE '%|%'
+     GROUP BY 1, 2, 3
   ), want AS (
+    -- Priority: listing > printed > unanimous same-product sibling > unanimous same-season other product > none.
+    -- The season rule applies only when the card's OWN product has no evidence for the player (g IS NULL), so its
+    -- evidence is necessarily from other products, and a same-product conflict is never overridden.
+    -- A season placement is source 'sibling' (the same player's other evidenced cards) with basis 'same_season';
+    -- a same-product one keeps basis 'same_product'. basis is NULL for listing / printed / none.
     SELECT o.external_id, o.sport,
-           coalesce(o.keys, CASE WHEN g.nk = 1 THEN g.k::text[] END, '{}'::text[]) AS keys,
-           coalesce(o.source, CASE WHEN g.nk = 1 THEN 'sibling' END, 'none')        AS source
+           coalesce(o.keys, CASE WHEN g.nk = 1 THEN g.k::text[] END,
+                    CASE WHEN g.product_set_id IS NULL AND s.nk = 1 THEN ARRAY[s.k] END, '{}'::text[]) AS keys,
+           coalesce(o.source, CASE WHEN g.nk = 1 THEN 'sibling' END,
+                    CASE WHEN g.product_set_id IS NULL AND s.nk = 1 THEN 'sibling' END, 'none')       AS source,
+           CASE WHEN o.keys IS NOT NULL THEN NULL
+                WHEN g.nk = 1 THEN 'same_product'
+                WHEN g.product_set_id IS NULL AND s.nk = 1 THEN 'same_season' END                  AS basis
       FROM own o
       LEFT JOIN grp g ON g.product_set_id = o.product_set_id AND g.player_name = o.player_name
+      LEFT JOIN sea s ON s.sport = o.sport AND s.season = o.season AND s.player_name = o.player_name
   )
-  INSERT INTO public.panini_edition_team_keys AS t (external_id, sport, franchise_keys, source, computed_at)
-  SELECT external_id, sport, keys, source, v_started FROM want
+  INSERT INTO public.panini_edition_team_keys AS t (external_id, sport, franchise_keys, source, basis, computed_at)
+  SELECT external_id, sport, keys, source, basis, v_started FROM want
   ON CONFLICT (external_id) DO UPDATE SET
     sport = EXCLUDED.sport, franchise_keys = EXCLUDED.franchise_keys,
-    source = EXCLUDED.source, computed_at = EXCLUDED.computed_at
-  WHERE (t.sport, t.franchise_keys, t.source) IS DISTINCT FROM (EXCLUDED.sport, EXCLUDED.franchise_keys, EXCLUDED.source);
+    source = EXCLUDED.source, basis = EXCLUDED.basis, computed_at = EXCLUDED.computed_at
+  WHERE (t.sport, t.franchise_keys, t.source, t.basis) IS DISTINCT FROM (EXCLUDED.sport, EXCLUDED.franchise_keys, EXCLUDED.source, EXCLUDED.basis);
   GET DIAGNOSTICS v_rows = ROW_COUNT;
 
   SELECT count(*) INTO v_mapped FROM public.panini_edition_team_keys WHERE cardinality(franchise_keys) > 0;
 
   PERFORM public.log_pipeline_run('panini-edition-team-keys', v_started, v_mapped, v_rows, 0, true, NULL,
-    'panini_blockchain', NULL, NULL, jsonb_build_object('source', 'audit_20261025', 'changed', v_rows, 'mapped', v_mapped));
+    'panini_blockchain', NULL, NULL, jsonb_build_object('source', 'audit_20261026', 'changed', v_rows, 'mapped', v_mapped));
   RETURN v_rows;
 EXCEPTION WHEN query_canceled OR OTHERS THEN
   PERFORM public.log_pipeline_run('panini-edition-team-keys', v_started, 0, 0, 0, false, SQLERRM,
@@ -151,7 +199,7 @@ DECLARE
   k text;
 BEGIN
   v := public.refresh_panini_edition_team_keys();
-  PERFORM _assert_eq(v::text, '9', 'first run writes one row per catalogued team-sport edition (soccer excluded, claim 5)');
+  PERFORM _assert_eq(v::text, '19', 'first run writes one row per catalogued team-sport edition (soccer excluded, claim 5)');
   PERFORM _assert(NOT EXISTS (SELECT 1 FROM public.panini_edition_team_keys WHERE external_id = 'packcard-99_1_1_1'), 'soccer has no row (claim 5)');
 
   SELECT array_to_string(franchise_keys, ',') || '/' || source INTO k FROM public.panini_edition_team_keys WHERE external_id = 'packcard-10_1_1_1';
@@ -166,6 +214,19 @@ BEGIN
   PERFORM _assert_eq(k, '/none', 'a sibling in another product is not evidence (claim 4)');
   SELECT array_to_string(franchise_keys, ',') || '/' || source INTO k FROM public.panini_edition_team_keys WHERE external_id = 'packcard-30_1_1_9';
   PERFORM _assert_eq(k, 'WNBA:fever/printed', 'a WNBA card is mapped from its printed team');
+  SELECT array_to_string(franchise_keys, ',') || '/' || source INTO k FROM public.panini_edition_team_keys WHERE external_id = 'packcard-41_1_1_1';
+  PERFORM _assert_eq(k, 'NFL:chiefs/sibling', 'no evidence in its own product: the team its same-season other products agree on (claim 8)');
+  PERFORM _assert_eq((SELECT basis FROM public.panini_edition_team_keys WHERE external_id = 'packcard-41_1_1_1'), 'same_season', 'a season placement says so in basis (claim 8)');
+  PERFORM _assert_eq((SELECT basis FROM public.panini_edition_team_keys WHERE external_id = 'packcard-10_1_1_4'), 'same_product', 'a same-product sibling says so in basis (claim 3)');
+  PERFORM _assert((SELECT basis IS NULL FROM public.panini_edition_team_keys WHERE external_id = 'packcard-10_1_1_1'), 'a listing has no basis (claim 1)');
+  SELECT array_to_string(franchise_keys, ',') || '/' || source INTO k FROM public.panini_edition_team_keys WHERE external_id = 'packcard-42_1_1_1';
+  PERFORM _assert_eq(k, '/none', 'another season is not evidence (claim 8)');
+  SELECT array_to_string(franchise_keys, ',') || '/' || source INTO k FROM public.panini_edition_team_keys WHERE external_id = 'packcard-41_1_1_2';
+  PERFORM _assert_eq(k, '/none', 'same-season products that disagree decide nothing (claim 8)');
+  SELECT array_to_string(franchise_keys, ',') || '/' || source INTO k FROM public.panini_edition_team_keys WHERE external_id = 'packcard-41_1_1_3';
+  PERFORM _assert_eq(k, '/none', 'a two-player card is never placed by season (claim 8)');
+  SELECT array_to_string(franchise_keys, ',') || '/' || source INTO k FROM public.panini_edition_team_keys WHERE external_id = 'packcard-20_1_1_9';
+  PERFORM _assert_eq(k, '/none', 'the season rule is not used for Basketball (claim 8)');
 
   v := public.refresh_panini_edition_team_keys();
   PERFORM _assert_eq(v::text, '0', 'an unchanged second run writes nothing (claim 7)');
@@ -176,7 +237,7 @@ BEGIN
   v := public.refresh_panini_edition_team_keys();
   SELECT array_to_string(franchise_keys, ',') || '/' || source INTO k FROM public.panini_edition_team_keys WHERE external_id = 'packcard-10_1_1_4';
   PERFORM _assert_eq(k, '/none', 'a card whose evidence is gone becomes none (claim 6)');
-  PERFORM _assert_eq((SELECT count(*) FROM public.panini_edition_team_keys)::text, '9', 'no row is ever deleted (claim 6)');
+  PERFORM _assert_eq((SELECT count(*) FROM public.panini_edition_team_keys)::text, '19', 'no row is ever deleted (claim 6)');
 END $$;
 
 SELECT '✓ refresh_panini_edition_team_keys invariants pass' AS result;

@@ -21,10 +21,11 @@ const PINS = [
     migration: "supabase/migrations/20261026040131_audit_20261025_panini_edition_ask_daily.sql",
   },
   {
-    // Added 2026-10-26. The Panini team map: listing > printed > unanimous same-product sibling; rows never deleted.
+    // Added 2026-10-26. The Panini team map: listing > printed > unanimous same-product sibling > (NFL / MLB)
+    // unanimous same-season other product (basis same_season, 20261026220929); rows never deleted.
     fn: "refresh_panini_edition_team_keys",
     test: "supabase/tests/refresh_panini_edition_team_keys.sql",
-    migration: "supabase/migrations/20261026044548_audit_20261025_panini_edition_team_keys.sql",
+    migration: "supabase/migrations/20261026220929_audit_20261026_panini_team_keys_same_season.sql",
   },
   {
     // 2026-10-19: change-only floor-ask history for Pinnacle renders (#193 instrument).
