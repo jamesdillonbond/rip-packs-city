@@ -170,7 +170,7 @@ const COLLECTION_ABOUT: Record<string, AboutBlock[]> = {
     },
     {
       title: "Where the Deep Boards Live",
-      body: "The pack squeeze board, deals, pack EV, special serials and player boards are on the Panini WC Prizm board, one tap away below. Market here lists every edition with an ask RPC has confirmed in the last week.",
+      body: "The pack squeeze board, deals, pack EV, special serials, players, holders and bid-vs-floor boards are one tap away below, beside a page for every Panini product RPC has seen and the team hubs (NBA, WNBA, NFL, MLB). Market here lists every edition with an ask RPC has confirmed in the last week.",
     },
   ],
   "ufc": [
@@ -893,11 +893,22 @@ export default function CollectionOverviewClient({
             <span className="rpc-label">Panini WC Prizm board</span>
           </div>
           <div className="rpc-mono" style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-muted)", marginBottom: 12, lineHeight: 1.6 }}>
-            Which cards are still sealed in packs, deals against FMV, pack EV, special serials and the player board — under the same coverage note.
+            Which cards are still sealed in packs, deals against FMV, pack EV, special serials, players, holders and the best offer on each cheapest copy — under the same coverage note.
           </div>
-          <Link href="/insights/panini-squeeze" className="rpc-heading" style={{ display: "inline-block", padding: "10px 18px", background: accent, color: "#0B0B0D", borderRadius: 6, fontSize: "var(--text-sm)", letterSpacing: "0.06em", textTransform: "uppercase", textDecoration: "none" }}>
-            Open the Panini boards →
-          </Link>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
+            <Link href="/insights/panini-squeeze" className="rpc-heading" style={{ display: "inline-block", padding: "10px 18px", background: accent, color: "#0B0B0D", borderRadius: 6, fontSize: "var(--text-sm)", letterSpacing: "0.06em", textTransform: "uppercase", textDecoration: "none" }}>
+              Open the Panini boards →
+            </Link>
+            {/* 2026-10-26: product pages (a registry switch, not a tab) and the cross-collection team hubs. */}
+            {collectionObj?.productPages ? (
+              <Link href={basePath + "/product"} data-testid="panini-overview-products" className="rpc-mono rpc-tap44" style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-primary)", textDecoration: "none" }}>
+                Products →
+              </Link>
+            ) : null}
+            <Link href="/teams" data-testid="panini-overview-teams" className="rpc-mono rpc-tap44" style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-primary)", textDecoration: "none" }}>
+              Team hubs →
+            </Link>
+          </div>
         </section>
       )}
 

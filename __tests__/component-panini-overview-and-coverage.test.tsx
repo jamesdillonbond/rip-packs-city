@@ -114,6 +114,14 @@ describe("Panini overview", () => {
     expect(screen.getByTestId("panini-typical-price-age").textContent).toBe("typical edition checked 22h ago")
   })
 
+  it("links Panini's product pages and the team hubs (2026-10-26)", async () => {
+    okFetch(PANINI_STATS)
+    render(<OverviewPage collection="panini-blockchain" />)
+    await waitFor(() => expect(screen.getByTestId("panini-overview-products")).toBeTruthy())
+    expect(screen.getByTestId("panini-overview-products").getAttribute("href")).toBe("/panini-blockchain/product")
+    expect(screen.getByTestId("panini-overview-teams").getAttribute("href")).toBe("/teams")
+  })
+
   it("no-change control: Top Shot still renders its 24h volume and its insider detectors", async () => {
     okFetch({ edition_count: 100, fmv_pct: 50, volume_24h: 1234, fmv_age_minutes: 5, top_sales: [], sniper_deals: [] })
     render(<OverviewPage collection="nba-top-shot" />)
@@ -122,6 +130,7 @@ describe("Panini overview", () => {
     expect(screen.getByText("FMV Data Age")).toBeTruthy()
     expect(screen.queryByTestId("panini-typical-price-age")).toBeNull()
     expect(screen.queryByTestId("panini-coverage-note")).toBeNull()
+    expect(screen.queryByTestId("panini-overview-products")).toBeNull()
   })
 })
 
