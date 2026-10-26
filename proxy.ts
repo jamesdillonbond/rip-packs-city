@@ -208,6 +208,7 @@ const RATE_LIMITED_COLLECTION_PAGES = new Set([
   "series",
   "pack",
   "moment",
+  "product",
 ])
 
 export function isRateLimitedPageRoute(pathname: string): boolean {
@@ -879,10 +880,14 @@ export function isPublicPath(pathname: string, method: string): boolean {
   // data it wasn't already serving; it just stops the bounce.
   if (
     (method === "GET" || method === "HEAD") &&
-    /^\/[^/]+\/(?:edition|set|player|team|series|pack|moment)\//.test(pathname)
+    /^\/[^/]+\/(?:edition|set|player|team|series|pack|moment|product)\//.test(pathname)
   ) {
     return true
   }
+  // `product` added 2026-10-25: Panini PRODUCT pages (/panini-blockchain/product/<slug>, the series-page
+  // counterpart) and their index (/panini-blockchain/product, exact). Same read-only, sitemap-advertised
+  // shape as the entity pages above; any collection without the registry's `productPages` switch 404s there.
+  if ((method === "GET" || method === "HEAD") && /^\/[^/]+\/product\/?$/.test(pathname)) return true
   // /api/entity/* — GET-only offset pagination backing the entity-detail
   // grids ("Load more" on set/player/series/team editions). Read-only,
   // service-role-backed RPCs (get_set_editions, get_team_top_editions, …);
