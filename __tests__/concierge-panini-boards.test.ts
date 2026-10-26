@@ -249,6 +249,19 @@ describe("readPaniniCollectionForConcierge — a Panini username, never a Top Sh
     expect(out.profile_walk.top_cards[0].edition_url).toBe("https://x/panini-blockchain/edition/c")
     expect(out.collection_tab_url).toBe("https://x/panini-blockchain/collection?username=joe")
   })
+  it("carries the recorded value days (2026-10-26), newest first; a failed history read is null, never []", async () => {
+    const base = {
+      username: "joe", cardsSeen: 0, listedNow: 0, editions: 0, specialSerials: 0, fmvSeenUsd: null, fmvPricedCards: 0, lastSeenAt: null, cards: [],
+      profile: { walk: { lastWalkAt: "2026-10-26T12:00:00Z", profileState: "public" }, cardsHeld: 3, editions: 3, listedNow: 0, specialSerials: 0, fmvHeldUsd: 60, fmvPricedCards: 3, cards: [] },
+    }
+    vi.stubGlobal("fetch", ok({ ...base, valueHistory: [{ day: "2026-10-27", cards: 3, pricedCards: 2, fmvUsd: 61, walkComplete: false }] }))
+    let out = JSON.parse(await (await import("@/lib/concierge/panini-boards")).readPaniniCollectionForConcierge("https://x", "joe"))
+    expect(out.profile_walk.value_by_day).toEqual([{ day: "2026-10-27", fmv_of_priced_cards_usd: 61, priced_cards: 2, cards: 3, walk_complete: false }])
+    expect(out.profile_walk.value_by_day_note).toMatch(/nothing earlier/)
+    vi.stubGlobal("fetch", ok({ ...base, valueHistory: null }))
+    out = JSON.parse(await (await import("@/lib/concierge/panini-boards")).readPaniniCollectionForConcierge("https://x", "joe"))
+    expect(out.profile_walk.value_by_day).toBeNull()
+  })
   it("check_wallet on Panini routes a username to the Panini read BEFORE any Top Shot username resolution", () => {
     const i = ROUTE.indexOf('if (toolName === "check_wallet")')
     const panini = ROUTE.indexOf("readPaniniCollectionForConcierge(", i)

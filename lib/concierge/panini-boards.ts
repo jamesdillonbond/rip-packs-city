@@ -367,6 +367,18 @@ export async function readPaniniCollectionForConcierge(base: string, username: s
             fmv_held_usd: num(profile.fmvHeldUsd),
             fmv_priced_cards: num(profile.fmvPricedCards),
             top_cards: withBase(topCards(Array.isArray(profile.cards) ? profile.cards : [], 5)),
+            // 2026-10-26: the recorded value lane (panini_portfolio_daily), newest first. null = that
+            // read failed (say so); [] = nothing recorded yet (the record starts 2026-10-26).
+            value_by_day: Array.isArray(j.valueHistory)
+              ? (j.valueHistory as Record<string, unknown>[]).slice(0, 7).map((d) => ({
+                  day: d.day ?? null,
+                  fmv_of_priced_cards_usd: num(d.fmvUsd),
+                  priced_cards: num(d.pricedCards),
+                  cards: num(d.cards),
+                  walk_complete: d.walkComplete === true,
+                }))
+              : j.valueHistory === null ? null : undefined,
+            value_by_day_note: "Recorded each morning from the profile as RPC last read it, since 2026-10-26 (nothing earlier). A change can be cards bought or sold or FMV moving — do not call it a gain or loss on the market alone. value_by_day null = that read failed.",
           }
         : null,
       // Cards RPC's marketplace walk has SEEN under this name — not a collection total.
