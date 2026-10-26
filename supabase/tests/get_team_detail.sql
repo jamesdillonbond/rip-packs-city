@@ -25,6 +25,7 @@
 -- before that, 20260926195205_audit_20260926_pinnacle_franchise_pages_list_every_pin.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
+-- Re-pinned 2026-10-25 to 20261026003337_audit_20261025_team_roster_and_player_count_group_by_person_not_label.sql (get_team_players / get_team_detail group and count by player_id, not label).
 -- Re-pinned 2026-10-25 to 20261025235754_audit_20261025_recent_low_totals_ignore_an_ask_far_above_fmv_c.sql (Recent-Low Totals call recent_low_usd).
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -38,7 +39,7 @@ CREATE EXTENSION IF NOT EXISTS unaccent SCHEMA extensions;
 CREATE TABLE public.collections (id uuid PRIMARY KEY, slug text);
 CREATE TABLE public.editions (
   id uuid PRIMARY KEY, collection_id uuid, team_name text, player_name text,
-  circulation_count int);
+  circulation_count int, player_id uuid);
 CREATE TABLE public.fmv_snapshots (
   edition_id uuid, fmv_usd numeric, floor_price_usd numeric, computed_at timestamptz);
 CREATE TABLE public.teams_master (
@@ -362,7 +363,8 @@ BEGIN
     IF v_team_variants IS NULL THEN RETURN NULL; END IF;
 
     SELECT
-      COUNT(DISTINCT regexp_replace(lower(trim(e.player_name)), '[^a-z0-9]+', '-', 'g'))
+      -- 2026-10-25: persons, not labels (Mahomes / Mahomes II are one player_id) — the roster's grouping.
+      COUNT(DISTINCT COALESCE(e.player_id::text, regexp_replace(lower(trim(e.player_name)), '[^a-z0-9]+', '-', 'g')))
         FILTER (WHERE e.player_name IS NOT NULL AND e.player_name <> ''),
       COUNT(*),
       SUM(e.circulation_count) FILTER (WHERE e.circulation_count IS NOT NULL),
@@ -569,6 +571,19 @@ SELECT _assert_eq((public.get_team_detail(:cid::uuid,'trail-blazers') ->> 'fmv_t
 -- No-change control: a floor inside the bound (50 = 2.5x) is summed as before: 40 + 50 = 90.
 UPDATE public.fmv_snapshots SET floor_price_usd = 50 WHERE edition_id = :e2::uuid AND floor_price_usd = 500;
 SELECT _assert_eq((public.get_team_detail(:cid::uuid,'trail-blazers') ->> 'floor_total_usd'), '90', 'Recent-Low Total: an in-bound floor is still summed');
+
+-- ── 10. 2026-10-25: player_count counts PERSONS — two labels of one player_id are one player ──
+-- Anfernee Simons' editions carry one player_id; a third edition labelled 'Anfernee Simons II'
+-- (the league's spelling, same person) must not make a third player. Lillard stays unlinked
+-- (label fallback), so the count is Lillard + Simons = 2, as before.
+UPDATE public.editions SET player_id = '99999999-0000-0000-0000-000000000001' WHERE id = :e2::uuid;
+INSERT INTO public.editions (id, collection_id, team_name, player_name, circulation_count, player_id) VALUES
+  ('99999999-0000-0000-0000-0000000000e7'::uuid, :cid::uuid, 'Trail Blazers', 'Anfernee Simons II', 1, '99999999-0000-0000-0000-000000000001');
+SELECT _assert_eq((public.get_team_detail(:cid::uuid,'trail-blazers') ->> 'player_count'), '2', 'player_count: two labels of one player_id = one player');
+-- Control: a DIFFERENT person under a label (no shared id) is still counted.
+INSERT INTO public.editions (id, collection_id, team_name, player_name, circulation_count, player_id) VALUES
+  ('99999999-0000-0000-0000-0000000000e8'::uuid, :cid::uuid, 'Trail Blazers', 'Scoot Henderson', 1, '99999999-0000-0000-0000-000000000002');
+SELECT _assert_eq((public.get_team_detail(:cid::uuid,'trail-blazers') ->> 'player_count'), '3', 'player_count: another person adds one');
 
 SELECT '✓ get_team_detail: all assertions passed' AS result;
 

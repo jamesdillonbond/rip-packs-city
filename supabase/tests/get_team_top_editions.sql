@@ -13,6 +13,7 @@
 --   4. A franchise no catalog pin names falls through to the legacy
 --      pinnacle_editions read; an unknown slug is [].
 --
+-- Re-pinned 2026-10-25 to 20261026003337_audit_20261025_team_roster_and_player_count_group_by_person_not_label.sql (get_team_players / get_team_detail group and count by player_id, not label).
 -- The function DDL below is VERBATIM from the committed migration
 -- (get_team_activity / get_team_checklist / get_team_top_editions / get_series_editions:
 -- supabase/migrations/20260929055624_audit_20260928_pinnacle_tiles_named_by_pin.sql; the rest:)
@@ -291,11 +292,18 @@ BEGIN
 
     IF v_team_variants IS NULL THEN RETURN '[]'::jsonb; END IF;
 
+    -- 2026-10-25: one row per PERSON, not per label. editions.player_name is the league's
+    -- LABEL and editions.player_id the person (player-identity.md, 10-20), so grouping by the
+    -- label's slug split Patrick Mahomes into "Patrick Mahomes" (6) and "Patrick Mahomes II"
+    -- (26, FMV $16.5k) on the Chiefs page, and the second row had no players match (id NULL),
+    -- so the page dropped it. Group by player_id, falling back to the label only when it is
+    -- NULL (team Moments, unlinked rows); name and slug come from the linked row.
     WITH team_eds AS (
       SELECT
         e.id,
+        e.player_id,
         e.player_name,
-        regexp_replace(lower(trim(e.player_name)), '[^a-z0-9]+', '-', 'g') AS player_slug,
+        regexp_replace(lower(trim(e.player_name)), '[^a-z0-9]+', '-', 'g') AS label_slug,
         e.circulation_count,
         e.thumbnail_url,
         e.first_minted_at
@@ -307,8 +315,9 @@ BEGIN
     ),
     agg AS (
       SELECT
-        te.player_slug,
-        MIN(te.player_name) AS name,
+        (array_agg(te.player_id) FILTER (WHERE te.player_id IS NOT NULL))[1] AS player_id,
+        MIN(te.player_name) AS label_name,
+        MIN(te.label_slug) AS label_slug,
         COUNT(DISTINCT te.id) AS edition_count,
         SUM(te.circulation_count) FILTER (WHERE te.circulation_count IS NOT NULL) AS total_circulation,
         SUM(fmv.fmv_usd) FILTER (WHERE fmv.fmv_usd > 0) AS fmv_total_usd,
@@ -318,34 +327,56 @@ BEGIN
         SELECT fmv_usd FROM fmv_snapshots
         WHERE edition_id = te.id ORDER BY computed_at DESC LIMIT 1
       ) fmv ON true
-      GROUP BY te.player_slug
+      GROUP BY COALESCE(te.player_id::text, te.label_slug)
+    ),
+    matched AS (
+      SELECT
+        a.*,
+        COALESCE(pid.id, plbl.id) AS pm_id,
+        COALESCE(pid.name, plbl.name) AS pm_name,
+        COALESCE(pid.headshot_url, plbl.headshot_url) AS headshot_url,
+        COALESCE(pid.jersey_number, plbl.jersey_number) AS jersey_number,
+        COALESCE(pid.position, plbl.position) AS position,
+        COALESCE(pid.is_active, plbl.is_active) AS is_active
+      FROM agg a
+      -- the linked person
+      LEFT JOIN LATERAL (
+        SELECT p.id, p.name, p.headshot_url, p.jersey_number, p.position, p.is_active
+        FROM players p
+        WHERE a.player_id IS NOT NULL
+          AND p.id = a.player_id
+          AND p.collection_id = p_collection_id
+      ) pid ON true
+      -- no link: the label's namesake row, as before
+      LEFT JOIN LATERAL (
+        SELECT p.id, p.name, p.headshot_url, p.jersey_number, p.position, p.is_active
+        FROM players p
+        WHERE a.player_id IS NULL
+          AND p.collection_id = p_collection_id
+          AND regexp_replace(lower(trim(p.name)), '[^a-z0-9]+', '-', 'g') = a.label_slug
+        ORDER BY (p.headshot_url IS NOT NULL) DESC, p.id
+        LIMIT 1
+      ) plbl ON true
     ),
     with_meta AS (
       SELECT
-        pm.id AS id,
-        a.name,
-        a.player_slug,
-        pm.headshot_url,
-        pm.jersey_number,
-        pm.position,
-        pm.is_active,
+        m.pm_id AS id,
+        COALESCE(m.pm_name, m.label_name) AS name,
+        COALESCE(regexp_replace(lower(trim(m.pm_name)), '[^a-z0-9]+', '-', 'g'), m.label_slug) AS player_slug,
+        m.headshot_url,
+        m.jersey_number,
+        m.position,
+        m.is_active,
         EXISTS (
           SELECT 1 FROM topshot_2025_rookie_players r
-          WHERE regexp_replace(lower(trim(r.player_name)), '[^a-z0-9]+', '-', 'g') = a.player_slug
+          WHERE regexp_replace(lower(trim(r.player_name)), '[^a-z0-9]+', '-', 'g')
+                = COALESCE(regexp_replace(lower(trim(m.pm_name)), '[^a-z0-9]+', '-', 'g'), m.label_slug)
         ) AS is_rookie,
-        a.edition_count,
-        a.total_circulation,
-        a.fmv_total_usd,
-        a.portrait_thumbnail
-      FROM agg a
-      LEFT JOIN LATERAL (
-        SELECT p.id, p.headshot_url, p.jersey_number, p.position, p.is_active
-        FROM players p
-        WHERE p.collection_id = p_collection_id
-          AND regexp_replace(lower(trim(p.name)), '[^a-z0-9]+', '-', 'g') = a.player_slug
-        ORDER BY (p.headshot_url IS NOT NULL) DESC, p.id
-        LIMIT 1
-      ) pm ON true
+        m.edition_count,
+        m.total_circulation,
+        m.fmv_total_usd,
+        m.portrait_thumbnail
+      FROM matched m
     )
     SELECT COALESCE(jsonb_agg(to_jsonb(t.*)), '[]'::jsonb) INTO result
     FROM (
@@ -399,6 +430,38 @@ SELECT _assert_eq((public.get_team_top_editions(:pin::uuid, 'marvel', 50, 0) -> 
 SELECT _assert_eq((public.get_team_players(:pin::uuid, 'marvel', 50, 0) -> 0 ->> 'name'), 'Iron Man', 'roster falls through too');
 SELECT _assert_eq(public.get_team_top_editions(:pin::uuid, 'no-such-franchise', 50, 0)::text, '[]', 'unknown slug -> [] (grid)');
 SELECT _assert_eq(public.get_team_players(:pin::uuid, 'no-such-franchise', 50, 0)::text, '[]', 'unknown slug -> [] (roster)');
+
+-- ── 2026-10-25: the non-Pinnacle roster groups by PERSON (player_id), not by label ──
+-- The Chiefs case: 'Patrick Mahomes' (1 edition) and 'Patrick Mahomes II' (2) are one player_id
+-- whose players row is 'Patrick Mahomes'. Before the fix the II label was its own row with id NULL.
+CREATE TABLE public.editions (id uuid PRIMARY KEY, collection_id uuid, team_name text, player_id uuid,
+  player_name text, circulation_count int, thumbnail_url text, first_minted_at timestamptz);
+CREATE TABLE public.fmv_snapshots (edition_id uuid, fmv_usd numeric, computed_at timestamptz);
+CREATE TABLE public.players (id uuid PRIMARY KEY, collection_id uuid, name text, headshot_url text,
+  jersey_number int, position text, is_active boolean);
+CREATE TABLE public.topshot_2025_rookie_players (player_name text);
+CREATE FUNCTION public.team_franchise_slugs(p_collection_id uuid, p_team_slug text) RETURNS text[]
+  LANGUAGE sql IMMUTABLE AS $$ SELECT ARRAY[p_team_slug] $$;
+\set ad '''00000000-0000-0000-0000-0000000000ad'''
+\set pm '''00000000-0000-0000-0000-0000000000a1'''
+INSERT INTO public.players VALUES
+  (:pm::uuid, :ad::uuid, 'Patrick Mahomes', '/h/pm', 15, 'QB', true),
+  ('00000000-0000-0000-0000-0000000000a2', :ad::uuid, 'Travis Kelce', NULL, 87, 'TE', true);
+INSERT INTO public.editions VALUES
+  ('00000000-0000-0000-0000-0000000000b1', :ad::uuid, 'Kansas City Chiefs', :pm::uuid, 'Patrick Mahomes',    100, '/t/1', '2024-01-01'),
+  ('00000000-0000-0000-0000-0000000000b2', :ad::uuid, 'Kansas City Chiefs', :pm::uuid, 'Patrick Mahomes II',  10, '/t/2', '2025-01-01'),
+  ('00000000-0000-0000-0000-0000000000b3', :ad::uuid, 'Kansas City Chiefs', :pm::uuid, 'Patrick Mahomes II',   5, '/t/3', '2023-01-01'),
+  ('00000000-0000-0000-0000-0000000000b4', :ad::uuid, 'Kansas City Chiefs', NULL,      'Travis Kelce',        50, '/t/4', '2024-01-01'),
+  ('00000000-0000-0000-0000-0000000000b5', :ad::uuid, 'Kansas City Chiefs', NULL,      'Kansas City Chiefs',  20, NULL,   '2024-01-01');
+INSERT INTO public.fmv_snapshots VALUES
+  ('00000000-0000-0000-0000-0000000000b1', 10, now()), ('00000000-0000-0000-0000-0000000000b2', 1000, now()),
+  ('00000000-0000-0000-0000-0000000000b3', 500, now()), ('00000000-0000-0000-0000-0000000000b4', 30, now());
+SELECT _assert_eq((SELECT string_agg((x->>'name') || ':' || (x->>'edition_count') || ':' || COALESCE(x->>'fmv_total_usd','null') || ':' || COALESCE(x->>'id','null') || ':' || (x->>'player_slug'), ',')
+                   FROM jsonb_array_elements(public.get_team_players(:ad::uuid, 'kansas-city-chiefs', 50, 0)) x),
+  'Patrick Mahomes:3:1510:00000000-0000-0000-0000-0000000000a1:patrick-mahomes,Travis Kelce:1:30:00000000-0000-0000-0000-0000000000a2:travis-kelce,Kansas City Chiefs:1:null:null:kansas-city-chiefs',
+  'roster: one row per player_id (Mahomes + Mahomes II = 3 editions, $1,510, the players row''s name and slug); an unlinked label still matches its namesake row by slug; an unmatched label keeps id NULL');
+SELECT _assert_eq((public.get_team_players(:ad::uuid, 'kansas-city-chiefs', 50, 0) -> 0 ->> 'headshot_url'), '/h/pm', 'meta from the linked row');
+SELECT _assert_eq((public.get_team_players(:ad::uuid, 'kansas-city-chiefs', 50, 0) -> 0 ->> 'portrait_thumbnail'), '/t/2', 'portrait = newest-minted edition across both labels');
 
 SELECT '✓ get_team_top_editions + get_team_players: all assertions passed' AS result;
 

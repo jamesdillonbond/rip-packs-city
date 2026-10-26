@@ -457,10 +457,11 @@ const PINS = [
       "supabase/migrations/20261021145002_audit_20261021_entity_edition_grids_project_play_and_date.sql",
   },
   {
+    // Re-pinned 2026-10-25: the non-Pinnacle roster groups by player_id, not by label.
     fn: "get_team_players",
     test: "supabase/tests/get_team_top_editions.sql",
     migration:
-      "supabase/migrations/20260926195205_audit_20260926_pinnacle_franchise_pages_list_every_pin.sql",
+      "supabase/migrations/20261026003337_audit_20261025_team_roster_and_player_count_group_by_person_not_label.sql",
   },
   {
     // Added 2026-09-26. The Pinnacle series pages read pinnacle_editions by
@@ -1330,7 +1331,8 @@ const PINS = [
     // each pin's Franchises trait (™ stripped); legacy read kept as fallback.
     // Re-pinned 2026-09-28: the catalog arm reads 30-day activity from pinnacle_sales.
     // Re-pinned 2026-10-25 (#211 part C): Recent-Low Total calls recent_low_usd.
-    migration: "supabase/migrations/20261025235754_audit_20261025_recent_low_totals_ignore_an_ask_far_above_fmv_c.sql",
+    // Re-pinned 2026-10-25: player_count counts persons (player_id), not labels.
+    migration: "supabase/migrations/20261026003337_audit_20261025_team_roster_and_player_count_group_by_person_not_label.sql",
   },
   {
     // Added 2026-09-25 (batch 62). The helpers behind every team read: the
