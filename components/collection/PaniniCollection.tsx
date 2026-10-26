@@ -38,6 +38,7 @@ import {
   type PaniniCardFilter,
   type PaniniCardSort,
 } from "@/lib/panini/collection-view"
+import { paniniSportLabel } from "@/lib/panini/sport-label"
 
 const STORAGE_KEY = "rpc.panini.collection.username"
 const mono = "var(--font-mono)"
@@ -428,7 +429,7 @@ function CardGrid({ cards }: { cards: PaniniOwnerCard[] }) {
               {c.flags.length ? ` · ${c.flags.map((f) => FLAG_LABEL[f] ?? f).join(", ")}` : ""}
             </div>
             <div style={{ fontFamily: mono, fontSize: 11, color: "var(--rpc-text-secondary)", marginTop: 2 }}>
-              {c.catalogued ? <>FMV {usd(c.fmvUsd)}</> : <>{c.sport ? `${c.sport} · ` : ""}not priced by RPC</>}
+              {c.catalogued ? <>FMV {usd(c.fmvUsd)}</> : <>{c.sport ? `${paniniSportLabel(c.sport)} · ` : ""}not priced by RPC</>}
               {c.isListed && c.askUsd != null ? <> · listed {usd(c.askUsd)}</> : null}
             </div>
           </>

@@ -54,6 +54,25 @@ describe("paniniCardSports", () => {
   })
 })
 
+describe("profile sports are UPPER CASE on Panini (live 2026-10-26: spinotron's CSV said FOOTBALL)", () => {
+  const profileCards = [
+    card({ sku: "p1", sport: "WOMENS BASKETBALL" }),
+    card({ sku: "p2", sport: "FOOTBALL" }),
+    card({ sku: "p3", sport: "Football" }),
+    card({ sku: "p4", sport: "WWE" }),
+  ]
+  it("one label per sport whatever its case — the WNBA filter finds the upper-case profile card", () => {
+    expect(paniniCardSports(profileCards)).toEqual(["Football", "WNBA", "WWE"])
+    expect(ids(filterSortPaniniCards(profileCards, { ...EMPTY_PANINI_CARD_FILTER, sport: "WNBA" }, "fmv_desc"))).toBe("p1")
+    expect(ids(filterSortPaniniCards(profileCards, { ...EMPTY_PANINI_CARD_FILTER, sport: "Football" }, "player_asc"))).toBe("p2p3")
+  })
+  it("the CSV carries the label, never Panini's upper-case value", () => {
+    const csv = buildPaniniCollectionCsv(profileCards)
+    expect(csv).not.toMatch(/"FOOTBALL"|"WOMENS BASKETBALL"/)
+    expect(csv).toContain('"WNBA"')
+  })
+})
+
 describe("buildPaniniCollectionCsv", () => {
   const csv = buildPaniniCollectionCsv(filterSortPaniniCards(CARDS, EMPTY_PANINI_CARD_FILTER, "fmv_desc"))
   const lines = csv.split("\n")
