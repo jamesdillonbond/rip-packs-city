@@ -63,8 +63,8 @@ import ExplainButton from "@/components/ExplainButton"
 import EditionActivity from "@/components/entity/EditionActivity"
 import PaniniSalesChart from "@/components/entity/PaniniSalesChart"
 import { franchiseHubPath } from "@/lib/franchise-hub-path"
-import { PaniniOffersSection, PaniniHoldersSection, PaniniProductPacksSection, PaniniAskHistorySection } from "@/components/entity/PaniniEditionExtras"
-import { fetchPaniniEditionOffers, fetchPaniniEditionHolders, fetchPaniniEditionPacks, fetchPaniniEditionAskHistory, fetchPaniniEditionTeams, type PaniniEditionTeam } from "@/lib/panini/edition-extras"
+import { PaniniOffersSection, PaniniHoldersSection, PaniniProductPacksSection, PaniniAskHistorySection, PaniniSpecialSerialsSection } from "@/components/entity/PaniniEditionExtras"
+import { fetchPaniniEditionOffers, fetchPaniniEditionHolders, fetchPaniniEditionPacks, fetchPaniniEditionAskHistory, fetchPaniniEditionTeams, fetchPaniniSpecialSerials, type PaniniEditionTeam } from "@/lib/panini/edition-extras"
 import ParallelTierSwitcher from "@/components/entity/ParallelTierSwitcher"
 import { MarketplaceStatusBanner } from "@/components/marketplace-status"
 import { isMarketClosed } from "@/lib/market-closed"
@@ -1887,16 +1887,18 @@ function PaniniEditionMarketSection({
 // Panini ↔ Top Shot parity (2026-10-25). Each read fails to its own "couldn't be loaded";
 // see lib/panini/edition-extras.ts for what each one means and does not claim.
 async function PaniniEditionExtrasSections({ externalId, collection }: { externalId: string; collection: string }) {
-  const [offers, holders, packs, askHistory] = await Promise.all([
+  const [offers, holders, packs, askHistory, specials] = await Promise.all([
     fetchPaniniEditionOffers(externalId).catch(() => ({ rows: null, serialsWithOffer: null })),
     fetchPaniniEditionHolders(externalId).catch(() => ({ ok: false, holders: null })),
     fetchPaniniEditionPacks(externalId).catch(() => ({ packs: null, productName: null, stillInPacks: null, fotlExclusive: false, productSetId: null })),
     fetchPaniniEditionAskHistory(externalId).catch(() => ({ rows: null })),
+    fetchPaniniSpecialSerials(externalId).catch(() => ({ rows: null })),
   ])
   return (
     <>
       <PaniniAskHistorySection rows={askHistory.rows} />
       <PaniniOffersSection offers={offers} />
+      <PaniniSpecialSerialsSection rows={specials.rows} />
       <PaniniHoldersSection ok={holders.ok} holders={holders.holders} />
       <PaniniProductPacksSection packs={packs} collection={collection} />
     </>

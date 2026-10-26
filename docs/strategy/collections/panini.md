@@ -54,6 +54,7 @@ Read from the registry (`lib/collections.ts` `pages` / switches), the shared `[c
 | Edition: Offers | ✓ | ✓ (new 10-25) | Panini's best offer per serial, 7-day confirmed |
 | Edition: Top Owners | ✓ named | ✓ **Holders**, counts only (new 10-25) | never a username (10-21 decision) |
 | Edition: Found in packs | ✓ | ✓ **Packs from this product** (new 10-25) | Panini has no per-pack checklist; never "can pull" |
+| Edition: Special Serials | ✓ (#1 / jersey / perfect, with owner) | ✓ (new 10-26, never an owner) | every #1 / jersey-match / perfect serial RPC has read for the edition, listed or not (was: flagged only on listed / sold rows); ask only when re-read in 7 days, else "ask not re-read"; last sale in PT; burnt excluded; ~8 buffers on the special-serial cover index |
 | Edition: pack provenance | ✓ | ✗ | no Panini pull-provenance data |
 | Edition: team chip | ✓ (team_name → team page) | ✓ (new 10-25, from `panini_edition_team_keys` → franchise hub) | Panini editions carry no team_name; a failed read or unplaced card shows no chip |
 | Player page: team | ✓ | ✓ (new 10-26, `get_panini_player_teams` → hubs) | single-player cards only (a two-player card carries both players' teams); up to 4, most cards first |

@@ -384,3 +384,80 @@ export async function fetchPaniniEditionTeams(
     return { ok: false, teams: [] }
   }
 }
+
+// ── Special serials (2026-10-26) ────────────────────────────────────────────
+// Top Shot's edition page has a "Special Serials" section (#1, jersey match, perfect / last
+// mint). Panini flagged them only on serials that are LISTED or just SOLD (the market section),
+// so a #1 nobody is selling was invisible. This lists every special serial RPC has read for the
+// edition (is_special = #1 / jersey / perfect — exactly those three, measured 10-26), burnt ones
+// excluded. NEVER an owner handle (the counts-only rule): `owner` is read only to say "still in a
+// pack". An ask shows only when re-read in the last PANINI_ASK_CONFIRMED_DAYS — an older one is
+// "ask not re-read", never quoted as live.
+
+export const PANINI_SPECIAL_SERIALS_LIMIT = 12
+
+export type PaniniSpecialTag = "#1" | "jersey" | "perfect"
+
+export interface PaniniSpecialSerialRow {
+  serial: number | null
+  mintCap: number | null
+  tags: PaniniSpecialTag[]
+  /** Confirmed ask (listed, re-read within the window); null when not listed or not re-read. */
+  askUsd: number | null
+  /** Listed on the last read, but that read is older than the confirmation window. */
+  askUnconfirmed: boolean
+  lastSaleUsd: number | null
+  lastSaleAt: string | null
+  sealed: boolean
+}
+
+export function toSpecialSerialRow(r: Record<string, unknown>, sinceMs: number): PaniniSpecialSerialRow {
+  const tags: PaniniSpecialTag[] = []
+  if (r.is_number_one === true) tags.push("#1")
+  if (r.is_jersey_mint === true) tags.push("jersey")
+  if (r.is_perfect_mint === true) tags.push("perfect")
+  const price = num(r.price_usd)
+  const listed = r.is_listed === true && price !== null && price > 0
+  const seen = typeof r.captured_at === "string" ? Date.parse(r.captured_at) : NaN
+  const fresh = Number.isFinite(seen) && seen >= sinceMs
+  const owner = typeof r.owner === "string" ? r.owner.trim() : ""
+  const sale = num(r.last_sale_usd)
+  return {
+    serial: num(r.serial_number),
+    mintCap: num(r.mint_cap),
+    tags,
+    askUsd: listed && fresh ? price : null,
+    askUnconfirmed: listed && !fresh,
+    lastSaleUsd: sale !== null && sale > 0 ? sale : null,
+    lastSaleAt: str(r.last_sale_at),
+    sealed: owner === "",
+  }
+}
+
+export async function fetchPaniniSpecialSerials(
+  externalId: string,
+  db: Db = supabaseAdmin,
+  nowMs: number = Date.now(),
+): Promise<{ rows: PaniniSpecialSerialRow[] | null }> {
+  try {
+    const res = await withQueryDeadline<RawRows>(
+      db.from("panini_card_serials")
+        .select("serial_number,mint_cap,is_number_one,is_jersey_mint,is_perfect_mint,is_listed,price_usd,last_sale_usd,last_sale_at,captured_at,owner,serial_state")
+        .eq("edition_external_id", externalId)
+        .eq("is_special", true)
+        .order("serial_number", { ascending: true })
+        .limit(PANINI_SPECIAL_SERIALS_LIMIT),
+      "edition/panini-special-serials",
+      apiReadTimeoutMs(),
+    )
+    if (res.error || !Array.isArray(res.data)) return { rows: null }
+    const since = nowMs - PANINI_ASK_CONFIRMED_DAYS * 86_400_000
+    return {
+      rows: (res.data as Record<string, unknown>[])
+        .filter((r) => r.serial_state !== "BURNT")
+        .map((r) => toSpecialSerialRow(r, since)),
+    }
+  } catch {
+    return { rows: null }
+  }
+}

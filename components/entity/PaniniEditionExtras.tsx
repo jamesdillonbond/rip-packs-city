@@ -14,7 +14,7 @@ import type { CSSProperties } from "react"
 import { Section, fmtUsd, fmtCount, fmtShare, relTime } from "@/components/entity/_shared"
 import { scrollRegion } from "@/lib/a11y/scroll-region"
 import { PANINI_ASK_CONFIRMED_DAYS } from "@/lib/panini/edition-market"
-import type { PaniniEditionOffers, PaniniEditionHolders, PaniniEditionPacks, PaniniAskChange } from "@/lib/panini/edition-extras"
+import type { PaniniEditionOffers, PaniniEditionHolders, PaniniEditionPacks, PaniniAskChange, PaniniSpecialSerialRow } from "@/lib/panini/edition-extras"
 import { paniniProductHref, paniniProductSlug } from "@/lib/panini/product-url"
 
 /** Concentration shares mean nothing on a handful of copies — the Holders board's own floor. */
@@ -258,6 +258,61 @@ export function PaniniAskHistorySection({ rows }: { rows: PaniniAskChange[] | nu
                   </tr>
                 )
               })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Section>
+  )
+}
+
+/** A timestamp's PT calendar day ("Oct 26, 2026"); deterministic — no wall clock. */
+export function ptDay(iso: string | null): string | null {
+  if (!iso) return null
+  const t = Date.parse(iso)
+  if (Number.isNaN(t)) return null
+  return fmtDay(new Date(t).toLocaleDateString("en-CA", { timeZone: "America/Los_Angeles" }))
+}
+
+const SPECIAL_LABEL: Record<string, string> = { "#1": "#1", jersey: "Jersey match", perfect: "Perfect (last mint)" }
+
+/**
+ * Special serials (2026-10-26) — Top Shot's "Special Serials" for Panini: every #1 / jersey /
+ * perfect serial RPC has read for the edition, listed or not. NEVER an owner (counts-only rule).
+ */
+export function PaniniSpecialSerialsSection({ rows }: { rows: PaniniSpecialSerialRow[] | null }) {
+  return (
+    <Section title="Special Serials">
+      <div className="rpc-mono" style={sub}>
+        The #1, jersey-match and perfect (final mint) serials RPC has read for this edition, listed or not. Owners are not shown.
+      </div>
+      {rows === null ? (
+        <Note testId="panini-specials-failed">Special serials couldn&apos;t be loaded — refresh to try again.</Note>
+      ) : rows.length === 0 ? (
+        <Note testId="panini-specials-empty">RPC hasn&apos;t read a #1, jersey-match or perfect serial for this edition yet.</Note>
+      ) : (
+        <div className="rpc-scroll-x" {...scrollRegion("Special serials")}>
+          <table data-testid="panini-specials" style={{ borderCollapse: "collapse", width: "100%", minWidth: 460 }}>
+            <thead>
+              <tr>
+                <th scope="col" style={head}>Serial</th>
+                <th scope="col" style={head}>Special</th>
+                <th scope="col" style={head}>Ask</th>
+                <th scope="col" style={head}>Last sale</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, i) => (
+                <tr key={`${r.serial}-${i}`}>
+                  <td style={cell}>
+                    {serialLabel(r.serial, r.mintCap)}
+                    {r.sealed ? <span style={{ color: "var(--rpc-text-muted)" }}> · still in a pack</span> : null}
+                  </td>
+                  <td style={{ ...cell, color: "var(--rpc-text-primary)" }}>{r.tags.map((t) => SPECIAL_LABEL[t] ?? t).join(", ") || "—"}</td>
+                  <td style={cell}>{r.askUsd != null ? fmtUsd(r.askUsd) : r.askUnconfirmed ? `ask not re-read in ${PANINI_ASK_CONFIRMED_DAYS} days` : "not listed"}</td>
+                  <td style={cell}>{r.lastSaleUsd != null ? `${fmtUsd(r.lastSaleUsd)}${ptDay(r.lastSaleAt) ? ` · ${ptDay(r.lastSaleAt)}` : ""}` : "—"}</td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
