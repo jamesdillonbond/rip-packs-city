@@ -6,7 +6,7 @@ part B1 (`20261025235853_…_b1.sql`, `get_series_detail`'s live path) are **liv
 known-issues #211.
 
 Why it is still staged: the MCP `apply_migration` stops on a confirmation prompt for this body, every
-time (3 tries on 10-25: ~3:20 PM, ~4:15 PM, ~5:00 PM PT). C and B1 went through without one, so the
+time (4 tries on 10-25: ~3:20 PM, ~4:15 PM, ~5:00 PM, ~6:25 PM PT; the last with Trevor in the session, still unanswered inside the 60 s window). C and B1 went through without one, so the
 trigger is the `DELETE FROM series_detail_rollup` inside it (an orphan-row cleanup, unchanged by this
 change). Nothing landed on any try (md5 unchanged, no `schema_migrations` row). **Apply it with
 Trevor present to answer the prompt**, or paste it into the dashboard SQL editor.
