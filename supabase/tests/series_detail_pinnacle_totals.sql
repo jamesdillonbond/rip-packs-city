@@ -16,9 +16,9 @@
 --
 -- Re-pinned 2026-10-25: get_series_detail to
 -- supabase/migrations/20261025235853_audit_20261025_recent_low_totals_ignore_an_ask_far_above_fmv_b1.sql
--- (its live path calls recent_low_usd). refresh_series_detail_rollup is STILL the 20260929063531 body:
--- its recent_low_usd change (part B2, docs/audits/staged-2026-10-25-recent-low-parts-b-c/part_b2_rollup.sql)
--- is not applied yet (known-issues #211).
+-- (its live path calls recent_low_usd), and refresh_series_detail_rollup to
+-- supabase/migrations/20261026013559_audit_20261025_recent_low_totals_ignore_an_ask_far_above_fmv_b2.sql
+-- (part B2, applied 2026-10-25 ~6:35 PM PT via the dashboard SQL editor; closes known-issues #211).
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
 
@@ -256,7 +256,7 @@ BEGIN
         count(e.id),
         sum(e.circulation_count) FILTER (WHERE e.circulation_count IS NOT NULL),
         sum(fmv.fmv_usd)         FILTER (WHERE fmv.fmv_usd > 0),
-        sum(COALESCE(fmv.floor_price_usd, fmv.fmv_usd)) FILTER (WHERE COALESCE(fmv.floor_price_usd, fmv.fmv_usd) > 0),
+        sum(COALESCE(public.recent_low_usd(fmv.floor_price_usd, fmv.fmv_usd), fmv.fmv_usd)) FILTER (WHERE COALESCE(public.recent_low_usd(fmv.floor_price_usd, fmv.fmv_usd), fmv.fmv_usd) > 0),
         count(DISTINCT e.set_name),
         count(DISTINCT COALESCE(e.player_id::text, e.player_name)),
         now()
@@ -344,7 +344,7 @@ SELECT _assert_eq((public.get_series_detail(:'pin'::uuid, 'series-2026') ->> 'fm
 SELECT _assert((public.get_series_detail(:'pin'::uuid, 'series-2025') ->> 'fmv_ask_derived_usd') IS NULL, 'no ASK_ONLY pin -> NULL, never 0');
 
 -- 2b. 2026-10-25 (#211 part B1): the non-Pinnacle LIVE path ignores a "recent low" above 3x FMV.
--- (The rollup below still sums the raw floor until part B2 lands; it reads edition_fmv_current.)
+-- (The rollup reads edition_fmv_current; its own out-of-band check is test 3b below.)
 INSERT INTO public.fmv_snapshots VALUES ('00000000-0000-4000-8000-000000000001', 4, 50, now());
 SELECT _assert_eq((public.get_series_detail(:'ts'::uuid, 'series-1') ->> 'floor_total_usd'), '4', 'live: an out-of-band floor (50 = 12.5x) contributes FMV 4, not the ask');
 UPDATE public.fmv_snapshots SET floor_price_usd = 3 WHERE edition_id = '00000000-0000-4000-8000-000000000001';
@@ -364,6 +364,12 @@ SELECT _assert_eq((SELECT floor_total_usd || '|' || listed_count || '|' || fmv_a
 -- 3. non-Pinnacle row leaves the new columns NULL
 SELECT _assert((SELECT fmv_ask_derived_usd IS NULL AND listed_count IS NULL FROM public.series_detail_rollup WHERE collection_id = :'ts'::uuid AND series_number = 1), 'non-Pinnacle rollup row: new columns NULL');
 SELECT _assert_eq((SELECT floor_total_usd::text FROM public.series_detail_rollup WHERE collection_id = :'ts'::uuid AND series_number = 1), '3', 'non-Pinnacle Recent-Low unchanged');
+
+-- 3b. 2026-10-25 (#211 part B2): the non-Pinnacle ROLLUP ignores a "recent low" above 3x FMV too.
+UPDATE public.edition_fmv_current SET floor_price_usd = 50 WHERE edition_id = '00000000-0000-4000-8000-000000000001';
+SELECT (public.refresh_series_detail_rollup(60) ->> 'ok') IS NOT NULL AS refreshed3 \gset
+SELECT _assert_eq((SELECT floor_total_usd::text FROM public.series_detail_rollup WHERE collection_id = :'ts'::uuid AND series_number = 1), '4', 'rollup: an out-of-band floor (50 = 12.5x) contributes FMV 4, not the ask');
+SELECT _assert_eq((public.get_series_detail(:'ts'::uuid, 'series-1') ->> 'floor_total_usd'), '4', 'fast path returns the rollup''s FMV-substituted Recent-Low');
 
 SELECT '✓ series_detail_pinnacle_totals: all assertions passed' AS result;
 

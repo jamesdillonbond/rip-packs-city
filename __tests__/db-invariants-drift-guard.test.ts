@@ -489,7 +489,7 @@ const PINS = [
     fn: "refresh_series_detail_rollup",
     test: "supabase/tests/series_detail_pinnacle_totals.sql",
     migration:
-      "supabase/migrations/20260929063531_audit_20260928_pinnacle_entity_totals_say_what_they_sum.sql",
+      "supabase/migrations/20261026013559_audit_20261025_recent_low_totals_ignore_an_ask_far_above_fmv_b2.sql",
   },
   {
     // Re-pinned 2026-10-25: top players grouped by player_id, not label.

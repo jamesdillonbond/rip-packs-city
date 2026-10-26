@@ -7,7 +7,7 @@
 ## STEER — added 2026-10-25 ~6:20 PM PT (Claude Code cloud, session_011fh9vTVkSG2QPpsL5ihQbc) — expected readings from the evening #211 / person-key / sweep thread
 
 - **Expected, not anomalies:** All Day team pages and series cards lose their "… II" / "Jr." label rows — one row per person, named by `players.name` (Chiefs: one Patrick Mahomes row, 32 editions); team "Players" headers drop by the number of merged labels. Team Recent-Low Totals and team cheapest entry drop where an ask > 3× FMV was summed. `check_function_search_path_drift()` = `[]` while the Supabase advisor still lists `recent_low_usd` under `function_search_path_mutable` — that is the deliberate exemption (20261026001535), ⛔ do NOT ALTER it (13× slower). `/teams/nba/portland-trail-blazers`-style URLs 308 to the short hub slug.
-- **Still open:** #211 part B2 only (series pages read the rollup, so they still sum the raw floor) — needs Trevor present to answer the MCP prompt.
+- ✅ **#211 CLOSED 2026-10-25 ~6:35 PM PT** (Cowork cloud): part B2 (`20261026013559`) ran through the dashboard SQL editor with Trevor present; rollup refreshed; series Recent-Low Totals ignore an out-of-band floor. Nothing left on this thread.
 - **A regression would look like:** a roster row with `id` NULL for a label whose editions carry a `player_id` (someone re-grouped by label), or `check_function_search_path_drift()` listing `recent_low_usd` (its comment was dropped — a `CREATE OR REPLACE` keeps comments, a DROP/CREATE does not).
 
 ## STEER — added 2026-10-25 ~4:22 PM PT (Claude Code cloud, session_01JDr9dRaYirH2cYvS9KQw94, thread close) — production HTML sweeps: expected readings + ONE open item
