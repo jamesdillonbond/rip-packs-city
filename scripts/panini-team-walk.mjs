@@ -82,9 +82,16 @@ export function parseTargets(raw) {
   return out
 }
 
+/**
+ * ⚠ SPACES MUST BE %20, NEVER "+". URLSearchParams writes a space as "+", and Panini's SPA
+ * reads `sport=Womens+Basketball` as plain `Basketball` (measured 2026-10-25: its own
+ * `products` query carried `sport=Basketball&team=Chicago+Sky` and answered 0 items, so every
+ * WNBA team walked an "empty" grid — 2 of 2 walked, 0 listings — while `Womens%20Basketball`
+ * answers 30 Chicago Sky cards). encodeURIComponent keeps every space as %20.
+ */
 export function pageUrl(sport, team, page) {
-  const q = new URLSearchParams({ sport, team, p: String(page) })
-  return `${BASE}?${q.toString()}`
+  const enc = encodeURIComponent
+  return `${BASE}?sport=${enc(sport)}&team=${enc(team)}&p=${enc(String(page))}`
 }
 
 const num = (v) => {

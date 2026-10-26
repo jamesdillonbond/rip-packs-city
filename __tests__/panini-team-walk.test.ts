@@ -55,10 +55,15 @@ describe("parseTargets", () => {
 })
 
 describe("pageUrl", () => {
-  it("encodes the team filter and page", () => {
+  it("encodes the team filter and page, spaces as %20", () => {
     expect(pageUrl("Basketball", "Portland Trail Blazers", 3)).toBe(
-      "https://nft.paniniamerica.net/marketplace/nfts.html?sport=Basketball&team=Portland+Trail+Blazers&p=3",
+      "https://nft.paniniamerica.net/marketplace/nfts.html?sport=Basketball&team=Portland%20Trail%20Blazers&p=3",
     )
+  })
+  it("never writes a space as '+' — Panini reads sport=Womens+Basketball as Basketball (10-25)", () => {
+    const u = pageUrl("Womens Basketball", "Chicago Sky", 1)
+    expect(u).toContain("sport=Womens%20Basketball")
+    expect(u).not.toContain("+")
   })
 })
 
