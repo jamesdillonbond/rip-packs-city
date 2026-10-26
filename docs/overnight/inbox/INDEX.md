@@ -1,4 +1,4 @@
-# Inbox index — 602 live filings
+# Inbox index — 603 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -32,9 +32,10 @@ failure it documents.
 
 ---
 
-## 2026-10-26 — 1 filing
+## 2026-10-26 — 2 filings
 
 - [✅ RESOLVED 10-25 ~5:20 PM PT by a curated exemption, NOT the ALTER (pinning stops inlining, 13× slower; `20261026001535`) — was: 🟢 Daytime monitor (10-26 ~00:06Z, infra GREEN, 11/11 dashboards OK) — recent_low_usd(numeric,numeric) shipped unpinned; function_search_path_drift non-empty for the first time since the two residual COMMIT procedures (pin via ALTER SET search_path)](2026-10-26T0006Z-daytime-monitor-recent-low-usd-search-path-unpinned.md)
+- [🟢 Daytime monitor (10-26 ~18:06Z, infra GREEN, 11/11 dashboards OK) — candy-listings-indexer 2 consecutive edge-fn timeouts since 12:35Z (LOW; frozen-book #58, FMV/offers fresh, last good listings write 09:35Z)](2026-10-26T1806Z-daytime-monitor-candy-listings-indexer-timeout-2-consecutive.md)
 
 ## 2026-10-25 — 1 filing
 
