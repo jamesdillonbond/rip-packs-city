@@ -197,6 +197,8 @@ describe("Top Shot wallet tools on a Panini page never look a Panini username up
   it.each([
     ["check_wallet_squeeze", { walletAddress: "joe" }],
     ["get_collector_report", { walletAddress: "joe" }],
+    ["get_challenges", { walletAddress: "joe" }],
+    ["get_collection_snapshot", { walletAddress: "joe" }],
   ])("%s refuses a Panini username and never resolves it as Top Shot", async (tool, input) => {
     const inst = makeInstrumentedSupabaseFixture({})
     A.sb = inst.fixture

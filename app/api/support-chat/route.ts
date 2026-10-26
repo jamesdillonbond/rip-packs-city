@@ -3241,6 +3241,11 @@ async function executeToolInner(
 
   if (toolName === "get_collection_snapshot") {
     try {
+      // 2026-10-26: on a Panini page a typed name is a PANINI username; this tool would look it up as a
+      // Top Shot / Flow account — a different person (the substitution face). A 0x Flow address still works.
+      if (effectiveCollectionId === "panini-blockchain" && toolInput.walletAddress && !/^0x[a-fA-F0-9]{16}$/.test(String(toolInput.walletAddress).trim())) {
+        return JSON.stringify({ status: "unsupported_collection", message: "The shareable snapshot reads a Flow wallet. A Panini username is not a Top Shot account or any Flow wallet — do not look it up as one. For a Panini collector call check_wallet with the username and link their Panini Collection tab." });
+      }
       const res = await fetch(
         `${base}/api/collection-snapshot?wallet=${encodeURIComponent(toolInput.walletAddress)}`,
         { signal: AbortSignal.timeout(10000) }
@@ -4662,6 +4667,11 @@ async function executeToolInner(
 
   if (toolName === "get_challenges") {
     try {
+      // 2026-10-26: on a Panini page a typed name is a PANINI username; this tool would look it up as a
+      // Top Shot / Flow account — a different person (the substitution face). A 0x Flow address still works.
+      if (effectiveCollectionId === "panini-blockchain" && toolInput.walletAddress && !/^0x[a-fA-F0-9]{16}$/.test(String(toolInput.walletAddress).trim())) {
+        return JSON.stringify({ status: "unsupported_collection", message: "Challenges are a Top Shot feature; Panini has none. A Panini username is not a Top Shot account — do not look it up as one. To list Top Shot challenges for their Top Shot wallet, ask for its 0x address." });
+      }
       const inputAddr = String(toolInput.walletAddress ?? "").trim();
       let wallet: string | null = null;
       if (inputAddr) {
