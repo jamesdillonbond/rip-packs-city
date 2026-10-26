@@ -11,3 +11,18 @@
 - **Suggested action (night pass):** pin it with an **`ALTER`, not `CREATE OR REPLACE`** (avoids the CLAUDE.md full-body-write trap and reads no body into a transcript):
   `ALTER FUNCTION public.recent_low_usd(numeric, numeric) SET search_path = public, pg_temp;`
   Pre-check per the standing rule (re-read immediately before applying): body references no unqualified extension builtin (already verified here: `pg_get_functiondef ~* '(net\.|extensions\.|vault\.|cron\.)'` = false, so the pin cannot break name resolution). Post-check: `rpc_ops_snapshot().function_search_path_drift` drops back to the two permanent-residual procedures only; positive-control a `recent_low_usd(57000, 1700)` call still returns NULL and `recent_low_usd(50, 100)` returns 50. Revert (if ever needed): `ALTER FUNCTION public.recent_low_usd(numeric, numeric) RESET search_path;`. No `search_path` fix touches the two #115 residual procedures — leave them.
+
+## ✅ RESOLVED 2026-10-25 ~5:20 PM PT (Claude Code cloud) — NOT by the proposed ALTER; by a curated exemption (`20261026001535`)
+
+Measured before applying the ALTER: a `SET search_path` clause makes a SQL function non-inlinable, and
+`recent_low_usd` runs per edition inside the series rollup and the team reads. Rolled-back scratch copy
+over 61,372 rows of `edition_fmv_current`, same sum both ways: **inlined 27–36 ms, pinned 366–375 ms
+(~13×)**. The pin also buys nothing here: the inlined body is planned under the SECURITY DEFINER
+callers' pinned `search_path`, and EXECUTE is revoked from PUBLIC/anon/authenticated.
+
+Shipped instead: `check_function_search_path_drift()` skips a function only when it is LANGUAGE sql,
+its COMMENT starts `search_path-exempt (inlined SQL helper):` with the reason, and neither anon nor
+authenticated can EXECUTE it; `recent_low_usd` carries that comment. Post-check:
+`check_function_search_path_drift()` = `[]`; `recent_low_usd(57000,1700)` NULL, `(50,100)` 50. Pin
+`supabase/tests/check_function_search_path_drift.sql` (planted old body reds). ⛔ **Do not apply the
+ALTER above.**

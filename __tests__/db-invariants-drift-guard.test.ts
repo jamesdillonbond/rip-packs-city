@@ -377,6 +377,15 @@ const PINS = [
       "supabase/migrations/20260926215225_audit_20260926_pinnacle_remaining_readers_use_the_pin_catalog.sql",
   },
   {
+    // Added 2026-10-25. The search_path ban-at-zero and its one curated exemption: an
+    // inlined SQL helper with a 'search_path-exempt' comment and no anon/authenticated
+    // EXECUTE (recent_low_usd: a SET clause stops inlining, measured 13x slower).
+    fn: "check_function_search_path_drift",
+    test: "supabase/tests/check_function_search_path_drift.sql",
+    migration:
+      "supabase/migrations/20261026001535_audit_20261025_search_path_guard_exempts_an_inlined_sql_helper_by_named_claim.sql",
+  },
+  {
     // Added 2026-10-25. The 3x-FMV bound on a "recent low" that the five entity header
     // totals call; get_set_detail.sql pins its arms.
     fn: "recent_low_usd",

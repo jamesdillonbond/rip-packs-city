@@ -34,7 +34,7 @@ failure it documents.
 
 ## 2026-10-26 — 1 filing
 
-- [🟢 Daytime monitor (10-26 ~00:06Z, infra GREEN, 11/11 dashboards OK) — recent_low_usd(numeric,numeric) shipped unpinned; function_search_path_drift non-empty for the first time since the two residual COMMIT procedures (pin via ALTER SET search_path)](2026-10-26T0006Z-daytime-monitor-recent-low-usd-search-path-unpinned.md)
+- [✅ RESOLVED 10-25 ~5:20 PM PT by a curated exemption, NOT the ALTER (pinning stops inlining, 13× slower; `20261026001535`) — was: 🟢 Daytime monitor (10-26 ~00:06Z, infra GREEN, 11/11 dashboards OK) — recent_low_usd(numeric,numeric) shipped unpinned; function_search_path_drift non-empty for the first time since the two residual COMMIT procedures (pin via ALTER SET search_path)](2026-10-26T0006Z-daytime-monitor-recent-low-usd-search-path-unpinned.md)
 
 ## 2026-10-25 — 1 filing
 

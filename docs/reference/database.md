@@ -3138,3 +3138,14 @@ Latin Extended-A/B, without × and ÷, plus curly apostrophes). Measured populat
 ## ⛔ A CRON REFRESH WRAPPER MUST NOT SWALLOW ITS FAILURE (2026-10-25)
 
 `refresh_panini_league_coverage` wraps its refresh in `EXCEPTION WHEN OTHERS → log ok=false, return` — copied into `refresh_topshot_pack_rip_values` (`20261025170047`), that turned a broken refresh (e.g. a dropped unique index → 55000 forever) into a `succeeded` row in `cron.job_run_details`. Caught before push by the DB pin `supabase/tests/mv_refresh_wrappers.sql`; fixed by `20261025170715`. **Log the SUCCESS, let the failure raise**: nothing reads a failure row anyway (a freshness gate reads ok rows; the cadence watchlist pages on the silence), and `log_pipeline_run` shares the refresh's transaction, so a raise leaves no half-logged state. The pin now probes this wrapper with a dropped index.
+
+### ⚠ A `SET search_path` on a per-row SQL helper is a PERF regression, not free hygiene (2026-10-25)
+
+A `SET` clause (any GUC) makes a `LANGUAGE sql` function **non-inlinable**, so every row pays a real
+function call. Measured on `recent_low_usd` over 61,372 rows: **27–36 ms inlined vs 366–375 ms pinned
+(~13×)**, same result. `check_function_search_path_drift()` prescribes exactly that ALTER, so since
+`20261026001535` it skips a function that is LANGUAGE sql, carries a COMMENT starting
+`search_path-exempt (inlined SQL helper):` with its reason, and is not executable by anon/authenticated
+(its callers are SECURITY DEFINER with a pinned path, which is where the inlined body is planned).
+The curated list IS those comments: `select oid::regprocedure from pg_proc where obj_description(oid,'pg_proc') like 'search_path-exempt%'`.
+Measure before pinning any SQL helper that runs inside an aggregate.
