@@ -117,8 +117,11 @@ export const COLLECTIONS: Collection[] = [
     supabaseCollectionId: "95f28a17-224a-4025-96ad-adf8a4c63bfd",
     pitch: "Wallet analysis, FMV pricing, set completion, pack EV, and live sniper deals for NBA Top Shot collectors.",
     news: [
-      { title: "2025-26: Scarcity-first drops & new parallel system", date: "2026-01-15", summary: "Dapper shifts to lower-print-run releases with redesigned parallels. LAVA tools integration live for FMV transparency.", url: "https://blog.nbatopshot.com" },
-      { title: "Top Shot This (TST) — real-time minting from live games", date: "2026-01-10", summary: "Best dunks and moments minted within 24 hours and delivered directly to fans after each game.", url: "https://blog.nbatopshot.com" },
+      // 2026-10-25: the January items had gone stale (one named "LAVA tools integration live");
+      // these are dated RPC changes, each in the ledger. Keep them true, not promotional.
+      { title: "Buyback purchases tagged in Activity", date: "2026-10-25", summary: "Edition and moment Activity tables now mark Top Shot buyback purchases. Sale counts and FMV on those pages already leave them out.", url: "/nba-top-shot/market" },
+      { title: "2026 rookie class on the rookie boards", date: "2026-10-22", summary: "Rookies and Rookie Board gain a 2026 class tab, filled from Series 9 Rookie Debut editions as they mint.", url: "/insights/rookie-board?class=2026" },
+      { title: "Series 9 (2026-27) tracked from its first mint", date: "2026-10-21", summary: "The first Series 9 editions were picked up the day they minted; a new player's page appears within about an hour.", url: "/nba-top-shot/market" },
     ],
   },
   {
@@ -146,7 +149,9 @@ export const COLLECTIONS: Collection[] = [
     supabaseCollectionId: "dee28451-5d62-409e-a1ad-a83f763ac070",
     pitch: "Wallet analytics, pack EV, and live marketplace intelligence for NFL All Day collectors on Flow.",
     news: [
-      { title: "2025-26 base set live — weekly drops active", date: "2026-01-08", summary: "New moments minting every game week. AllDay sales indexer now tracking ~158 events/day across Flowty + AllDay native.", url: "https://nflallday.com" },
+      // 2026-10-25: was a January item naming a stale sales rate; dated RPC changes (ledger).
+      { title: "Ask-based prices capped at recent sales", date: "2026-10-22", summary: "Where an edition has no recent sale to price from and RPC uses its lowest ask, the price no longer sits above what that edition has recently sold for.", url: "/nfl-all-day/market" },
+      { title: "Floor asks dated by their last on-chain check", date: "2026-10-20", summary: "Edition pages say when the floor ask was last verified on chain, not when the newest listing appeared.", url: "/nfl-all-day/market" },
     ],
   },
   {
@@ -209,7 +214,9 @@ export const COLLECTIONS: Collection[] = [
     supabaseCollectionId: "06248cc4-b85f-47cd-af67-1855d14acd75",
     pitch: "Wallet analytics and FMV intelligence for LaLiga Golazos on Flow — 581 editions tracked, dual-source listing sweep.",
     news: [
-      { title: "2025-26 LaLiga season underway — thin-volume alert model live", date: "2026-01-02", summary: "Relative-deals RPC with 100x-floor outlier filter now active to surface genuine deals in a low-volume ecosystem.", url: "https://laligagolazos.com" },
+      // 2026-10-25: was a January item; dated RPC changes (ledger).
+      { title: "Ask-based prices capped at recent sales", date: "2026-10-23", summary: "Where an edition has no recent sale to price from and RPC uses its lowest ask, the price no longer sits above what that edition has recently sold for.", url: "/laliga-golazos/market" },
+      { title: "Floor asks dated by their last on-chain check", date: "2026-10-20", summary: "Edition pages now show when a floor ask was last verified on chain.", url: "/laliga-golazos/market" },
     ],
   },
   {
