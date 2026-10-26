@@ -86,7 +86,8 @@ describe("Series 2026-27 is in every series map that has Series 2025-26", () => 
       }
     }
     // not vacuous: the copies fixed 2026-10-18 and the canonical label map are in the population
-    for (const f of ["app/api/sniper-feed/route.ts", "app/api/support-chat/search-deals/route.ts", "lib/analytics/series-labels.ts",
+    // (2026-10-25: the sniper's map moved from app/api/sniper-feed/route.ts to lib/sniper/series-label.ts)
+    for (const f of ["lib/sniper/series-label.ts", "app/api/support-chat/search-deals/route.ts", "lib/analytics/series-labels.ts",
                      "lib/seo.ts", "lib/collection/helpers.ts", "lib/collection/series-param.ts", "lib/analytics-sets-dashboard-compute.ts"]) {
       expect(withMaps, f).toContain(f)
     }

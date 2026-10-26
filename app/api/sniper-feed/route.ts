@@ -7,6 +7,7 @@ import { computePinnacleSniperFeed } from "@/lib/sniper/pinnacle";
 // Per-serial weighting + display signal lives in a tested lib module.
 import { sniperSerialMultiplier as serialMultiplier } from "@/lib/sniper/serial-multiplier";
 import { applySerialFmvEstimates } from "@/lib/sniper/serial-estimate";
+import { TOPSHOT_SERIES_LABELS, topShotSeriesLabel } from "@/lib/sniper/series-label";
 import { feeNetDeal } from "@/lib/marketplace-fees";
 import { applyFmvStalenessPenalty, fmvCannotAnchorDiscount } from "@/lib/sniper/fmv-staleness";
 import { leagueForSetName } from "@/lib/league";
@@ -276,9 +277,8 @@ const NBA_TEAMS: Record<string, string> = {
   "1610612765": "DET", "1610612766": "CHA",
 };
 
-const SERIES_NAMES: Record<number, string> = {
-  0: "S1", 2: "S2", 3: "Sum 21", 4: "S3", 5: "S4", 6: "23-24", 7: "24-25", 8: "25-26", 9: "26-27",
-};
+// One table for every Top Shot path (lib/sniper/series-label.ts, 2026-10-25).
+const SERIES_NAMES: Record<number, string> = TOPSHOT_SERIES_LABELS;
 
 const PARALLEL_NAMES: Record<number, string> = {
   0: "Base", 1: "Holo MMXX", 2: "Throwbacks", 3: "Camo", 4: "Metaverse",
@@ -2504,6 +2504,8 @@ async function computeSniperFeed(opts: {
   const repriced = sortSniperDeals(applySerialFmvEstimates(sorted, opts.minDiscount), sortBy);
   sorted.length = 0;
   sorted.push(...repriced);
+  // 12. One series label shape on every card (the RPC paths carried a bare "8" / "Series 8").
+  for (const d of sorted) d.seriesName = topShotSeriesLabel(d.seriesName);
 
   const badgedCount = sorted.filter(d => d.hasBadge).length;
   console.log(
