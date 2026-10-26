@@ -85,7 +85,12 @@ export default function IssuerHeldSplitPanel({ rows, failed }: { rows: IssuerSpl
           <p className="rpc-mono" style={{ marginTop: 10, maxWidth: 820, fontSize: 11, lineHeight: 1.6, color: "var(--rpc-text-muted)" }}>
             {known && total.packs_unopened != null && (
               <>
-                {fmtCount(total.packs_unopened)} unopened packs, {fmtCount(total.packs_owned_by_collectors)} of them already bought by collectors.{" "}
+                {/* Top Shot reports ownedCount = unopenedCount on every drop (5,347 of 5,347 on
+                    2026-10-25): an unsold pack is not "unopened", so the two are one population and
+                    "N of them already bought" read the same number twice as if it were a share. */}
+                {total.packs_owned_by_collectors === total.packs_unopened
+                  ? <>{fmtCount(total.packs_unopened)} unopened packs held by collectors.{" "}</>
+                  : <>{fmtCount(total.packs_unopened)} unopened packs, {fmtCount(total.packs_owned_by_collectors)} of them already bought by collectors.{" "}</>}
               </>
             )}
             Pack counts are Top Shot&apos;s own per-drop figures, read from the marketplace one drop at a time and refreshed daily;

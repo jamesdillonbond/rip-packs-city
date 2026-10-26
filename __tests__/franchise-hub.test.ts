@@ -18,6 +18,7 @@ import {
   franchiseHubPath,
   hubIsIndexable,
   parseHubParams,
+  resolveFranchiseHubLongSlug,
   type FranchiseHub,
 } from "@/lib/franchise-hub"
 
@@ -185,5 +186,44 @@ describe("fetchHubPanelExtras — cards per ok panel, three states each", () => 
     })
     expect(calls).toBe(0)
     expect(extras.size).toBe(0)
+  })
+})
+
+
+// 2026-10-25: /teams/nba/portland-trail-blazers 404'd — the collection team page's slug form.
+describe("resolveFranchiseHubLongSlug", () => {
+  const db = (result: { data: unknown; error: { message: string } | null }) => {
+    const calls: Array<[string, unknown]> = []
+    const q: any = {
+      select: () => q,
+      eq: (c: string, v: unknown) => { calls.push([c, v]); return q },
+      limit: () => Promise.resolve(result),
+    }
+    return { client: { from: () => q }, calls }
+  }
+  const TEAMS = [
+    { slug: "blazers", team_name: "Portland Trail Blazers" },
+    { slug: "lakers", team_name: "Los Angeles Lakers" },
+  ]
+
+  it("maps the full team name's slug to the hub's short slug, within the league, active rows only", async () => {
+    const { client, calls } = db({ data: TEAMS, error: null })
+    expect(await resolveFranchiseHubLongSlug("NBA", "portland-trail-blazers", client)).toEqual({ slug: "blazers", ok: true })
+    expect(calls).toEqual([["league", "NBA"], ["active", true]])
+  })
+
+  it("a slug that names no team is a clean miss (the 404 stands), not a guess", async () => {
+    const { client } = db({ data: TEAMS, error: null })
+    expect(await resolveFranchiseHubLongSlug("NBA", "portland", client)).toEqual({ slug: null, ok: true })
+  })
+
+  it("never redirects a short slug to itself", async () => {
+    const { client } = db({ data: [{ slug: "jazz", team_name: "Jazz" }], error: null })
+    expect(await resolveFranchiseHubLongSlug("NBA", "jazz", client)).toEqual({ slug: null, ok: true })
+  })
+
+  it("a failed read is ok:false — never a 404 for a real franchise", async () => {
+    const { client } = db({ data: null, error: { message: "boom" } })
+    expect(await resolveFranchiseHubLongSlug("NBA", "portland-trail-blazers", client)).toEqual({ slug: null, ok: false })
   })
 })

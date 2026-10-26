@@ -104,6 +104,41 @@ export async function fetchFranchiseHub(
 }
 
 /**
+ * 2026-10-25: the per-collection team pages key on the full team name's slug
+ * (/nba-top-shot/team/portland-trail-blazers), the hub on teams_master's short
+ * slug (/teams/nba/blazers), so a reader who swaps the prefix got a 404. On a
+ * CLEAN hub miss the page asks this for the short slug of the active team whose
+ * full name slugifies to `slug`, and 308s there. `slug: null, ok: true` = no such
+ * team (the 404 stands); `ok: false` = could not ask (the page says unavailable,
+ * never 404s a real franchise on a failed read).
+ */
+export async function resolveFranchiseHubLongSlug(
+  league: League,
+  slug: string,
+  db: { from: (t: string) => any } = supabaseAdmin as unknown as { from: (t: string) => any },
+): Promise<{ slug: string | null; ok: boolean }> {
+  try {
+    const { data, error } = await withBoardBudget(
+      Promise.resolve(db.from("teams_master").select("slug, team_name").eq("league", league).eq("active", true).limit(200)),
+      `franchise-hub-long-slug:${league}:${slug}`,
+      HUB_TIMEOUT_MS,
+      "teams/",
+    )
+    if (error) {
+      console.error("[teams/franchise-hub] long-slug lookup error:", error.message)
+      return { slug: null, ok: false }
+    }
+    const rows = (Array.isArray(data) ? data : []) as Array<{ slug: string | null; team_name: string | null }>
+    const hit = rows.find((r) => r.slug && r.team_name && r.slug !== slug &&
+      r.team_name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") === slug)
+    return { slug: hit?.slug ?? null, ok: true }
+  } catch (e) {
+    console.error("[teams/franchise-hub] long-slug lookup bound:", e instanceof Error ? e.message : e)
+    return { slug: null, ok: false }
+  }
+}
+
+/**
  * One panel per enabled collection the app can route to. A mapped collection
  * the registry does not know (no URL slug) is SKIPPED, not rendered as empty —
  * we have nowhere to send the reader, and "no cards" would be a claim we did

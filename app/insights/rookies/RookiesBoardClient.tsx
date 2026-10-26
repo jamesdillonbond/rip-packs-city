@@ -351,8 +351,8 @@ export default function RookiesBoardClient({ initial, initialDegraded = null }: 
             those sale prices.
           </p>
           <p>
-            <strong>Lock %</strong> averages the per-edition lock rate from
-            badge_editions (locked / circulation-after-burn).{" "}
+            <strong>Lock %</strong> averages each edition&apos;s lock rate
+            (locked / circulation after burns), from Top Shot&apos;s own edition counts.{" "}
             <strong>Squeeze %</strong> = (locked + burned) / circulation
             summed across the player&apos;s editions. <strong>Top mint-1</strong>{" "}
             = highest USD sale of a serial #1 across the player&apos;s editions.

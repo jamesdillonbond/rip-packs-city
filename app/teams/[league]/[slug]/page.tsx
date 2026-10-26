@@ -21,7 +21,7 @@
 import type { Metadata } from "next"
 import { cache, type ReactNode } from "react"
 import Link from "next/link"
-import { notFound } from "next/navigation"
+import { notFound, permanentRedirect } from "next/navigation"
 import { isExhibitionTeamSlug } from "@/lib/team-denylist"
 import { NOT_FOUND_METADATA, franchiseHubMetadata } from "@/lib/seo"
 import { LEAGUES, type League } from "@/lib/teams"
@@ -35,6 +35,7 @@ import {
   hubIsIndexable,
   paniniCoverage,
   parseHubParams,
+  resolveFranchiseHubLongSlug,
   type FranchiseHub,
   type HubPanel,
   type HubPanelExtras,
@@ -110,7 +111,15 @@ export default async function FranchiseHubPage(props: { params: Promise<{ league
 
   const { hub, ok } = await fetchFranchiseHubOnce(key.league, key.slug)
   if (!ok) return <HubUnavailable />
-  if (!hub) notFound()
+  if (!hub) {
+    // 2026-10-25: the collection team pages use the full name's slug
+    // (/nba-top-shot/team/portland-trail-blazers); the same slug here 308s to
+    // the hub's short one (/teams/nba/blazers) instead of 404ing.
+    const alias = await resolveFranchiseHubLongSlug(key.league, key.slug)
+    if (!alias.ok) return <HubUnavailable />
+    if (alias.slug) permanentRedirect(franchiseHubPath(key.league, alias.slug))
+    notFound()
+  }
 
   const [panels, panini] = await Promise.all([fetchHubPanels(hub), fetchPaniniHubPanelOnce(key.league, key.slug)])
   // 2026-09-24: the cards themselves — top editions + recent sales per

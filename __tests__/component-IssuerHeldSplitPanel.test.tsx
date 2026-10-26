@@ -78,6 +78,19 @@ describe("IssuerHeldSplitPanel", () => {
     expect(container.textContent).toContain("7 editions whose issuer-held count has not refreshed")
     expect(container.textContent).not.toContain("Not known yet")
   })
+
+  // 2026-10-25: production reads ownedCount = unopenedCount on every drop (one population,
+  // two names). The line must not present the same number twice as a share of itself.
+  it("equal unopened and owned counts read as one figure, never 'N of them already bought'", () => {
+    const rows = [
+      row({ in_packs: 3_000_000, reserve: 448_191, split_status: "ok", editions_split_known: 10, as_of: "2026-10-05T16:00:00Z" }),
+      row({ tier: null, hidden: 3_645_405, in_packs: 3_100_000, reserve: 545_405, split_status: "ok", packs_unopened: 611_294,
+        packs_owned_by_collectors: 611_294, as_of: "2026-10-05T16:00:00Z" }),
+    ]
+    const { container } = render(<IssuerHeldSplitPanel rows={rows} failed={false} />)
+    expect(container.textContent).toContain("611,294 unopened packs held by collectors.")
+    expect(container.textContent).not.toContain("of them already bought")
+  })
 })
 
 describe("splitStatusCopy", () => {

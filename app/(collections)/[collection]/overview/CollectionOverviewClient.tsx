@@ -106,7 +106,7 @@ const COLLECTION_ABOUT: Record<string, AboutBlock[]> = {
   "nfl-all-day": [
     {
       title: "Built for Football Collectors",
-      body: "NFL All Day brings gridiron moments on-chain for serious football collectors. RPC tracks every serial, surfaces badge premiums for Debut, Fresh, and Rookie Year moments, and helps you evaluate scarcity at a glance across the entire All Day catalogue.",
+      body: "NFL All Day brings gridiron moments on-chain for serious football collectors. RPC tracks every serial, surfaces badge premiums for Debut, Rookie Year, and Rookie Mint moments, and helps you evaluate scarcity at a glance across the entire All Day catalogue.",
     },
     {
       title: "The All Day Ecosystem",
