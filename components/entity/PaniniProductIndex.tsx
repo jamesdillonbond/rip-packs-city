@@ -21,6 +21,9 @@ export interface PaniniProductIndexRow {
   fmv_total_usd: number | null
   listed_editions: number
   sales_30d: number
+  /** Optional so callers that only list products need not carry them. */
+  sales_30d_volume_usd?: number | null
+  sales_30d_median_usd?: number | null
 }
 
 const cell: CSSProperties = { padding: "6px 8px", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-secondary)", borderBottom: "1px solid var(--rpc-border-subtle, var(--rpc-border))" }

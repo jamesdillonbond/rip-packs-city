@@ -138,7 +138,7 @@ export async function listPaniniProducts(db: any = supabaseAdmin): Promise<Panin
   try {
     const { data, error } = await withQueryDeadline<Record<string, unknown>[]>(
       db.from("panini_product_rollup")
-        .select("name,slug,sport,editions,sets,fmv_total_usd,listed_editions,sales_30d,computed_at")
+        .select("name,slug,sport,editions,sets,fmv_total_usd,listed_editions,sales_30d,sales_30d_volume_usd,sales_30d_median_usd,computed_at")
         .order("product_set_id", { ascending: true })
         .range(0, 999),
       "panini/product-index",
@@ -157,6 +157,8 @@ export async function listPaniniProducts(db: any = supabaseAdmin): Promise<Panin
         fmv_total_usd: num(r.fmv_total_usd),
         listed_editions: num(r.listed_editions) ?? 0,
         sales_30d: num(r.sales_30d) ?? 0,
+        sales_30d_volume_usd: num(r.sales_30d_volume_usd),
+        sales_30d_median_usd: num(r.sales_30d_median_usd),
       }))
   } catch {
     return null

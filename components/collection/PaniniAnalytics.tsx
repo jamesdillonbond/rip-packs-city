@@ -21,6 +21,8 @@ import Link from "next/link"
 import { slugifyPlayerName } from "@/lib/entity-labels"
 import { paniniEditionUrl } from "@/lib/panini/edition-url"
 
+import type { PaniniProductVolumeRow } from "@/lib/panini/product-volume"
+
 type Num = number | null
 
 export interface PaniniDay { day: string; sales: number; volume_usd: Num; median_usd: Num; covered_pct: Num }
@@ -184,7 +186,17 @@ function DailyBars({ daily }: { daily: PaniniDay[] }) {
   )
 }
 
-export default function PaniniAnalytics({ data }: { data: PaniniSalesAnalytics | null }) {
+export default function PaniniAnalytics({
+  data,
+  byProduct,
+}: {
+  data: PaniniSalesAnalytics | null
+  /**
+   * Top products by 30-day volume (panini_product_rollup, hourly; 2026-10-25 — Top Shot's "Volume by Series").
+   * undefined = not supplied (section absent); null = the read failed (said so); [] = none on record.
+   */
+  byProduct?: PaniniProductVolumeRow[] | null
+}) {
   const [allTime, setAllTime] = useState(false)
   const complete = useMemo(() => (data ? data.daily.filter(isCompleteDay) : []), [data])
 
@@ -378,6 +390,28 @@ export default function PaniniAnalytics({ data }: { data: PaniniSalesAnalytics |
           </tr>
         ))}
       </Table>
+      {byProduct !== undefined ? (
+        <>
+          <H2>Top products by volume · last 30 days</H2>
+          {byProduct === null ? (
+            <div data-testid="panini-analytics-products-failed"><Note>Product volumes couldn&apos;t be loaded — this is not the same as no sales.</Note></div>
+          ) : byProduct.length === 0 ? (
+            <Note>No product has a sale on record in the last 30 days.</Note>
+          ) : (
+            <Table head={["Product", "Sales", "Volume", "Median"]}>
+              {byProduct.map((r) => (
+                <tr key={r.slug}>
+                  <td style={td}><Link href={`/panini-blockchain/product/${encodeURIComponent(r.slug)}`} style={{ color: "inherit" }}>{r.name}</Link></td>
+                  <td style={td}>{int(r.sales_30d)}</td>
+                  <td style={td}>{usd(r.sales_30d_volume_usd)}</td>
+                  <td style={td}>{usd(r.sales_30d_median_usd)}</td>
+                </tr>
+              ))}
+            </Table>
+          )}
+          <Note>Sales on record, which arrive hours to days late; refreshed hourly. <Link href="/panini-blockchain/product" style={{ color: "inherit" }}>All products →</Link></Note>
+        </>
+      ) : null}
       {data.generated_at ? (
         <div style={{ marginTop: 12 }}>
           <Note>Computed {ptWhen(data.generated_at, true)}; refreshes about every 5 minutes.</Note>

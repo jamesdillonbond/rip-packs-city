@@ -12,6 +12,8 @@
 
 import CollectionAnalyticsClient from "./CollectionAnalyticsClient";
 import PaniniAnalytics from "@/components/collection/PaniniAnalytics";
+import { topProductsByVolume } from "@/lib/panini/product-volume";
+import { listPaniniProducts } from "@/lib/panini/product";
 import { fetchPaniniSalesAnalytics } from "@/lib/panini/sales-analytics-read";
 
 // Panini's arm is a ~3 s aggregate; the other collections' shell is static, so
@@ -20,6 +22,10 @@ export const revalidate = 300;
 
 export default async function AnalyticsPage(props: { params: Promise<{ collection: string }> }) {
   const { collection } = await props.params;
-  if (collection === "panini-blockchain") return <PaniniAnalytics data={await fetchPaniniSalesAnalytics()} />;
+  if (collection === "panini-blockchain") {
+    // 2026-10-25: + top products by 30-day volume from the hourly product rollup (Top Shot's "Volume by Series").
+    const [data, products] = await Promise.all([fetchPaniniSalesAnalytics(), listPaniniProducts().catch(() => null)]);
+    return <PaniniAnalytics data={data} byProduct={topProductsByVolume(products === null ? null : products.map((r) => ({ name: r.name, slug: r.slug, sales_30d: r.sales_30d, sales_30d_volume_usd: r.sales_30d_volume_usd ?? null, sales_30d_median_usd: r.sales_30d_median_usd ?? null })))} />;
+  }
   return <CollectionAnalyticsClient />;
 }

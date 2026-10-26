@@ -13,6 +13,7 @@ vi.mock("next/link", () => ({ default: ({ children, href }: any) => <a href={hre
 
 import PaniniAnalytics, { COMPLETE_PCT, isCompleteDay, type PaniniSalesAnalytics } from "@/components/collection/PaniniAnalytics"
 import { parsePaniniSalesAnalytics } from "@/lib/panini/sales-analytics"
+import { topProductsByVolume } from "@/lib/panini/product-volume"
 
 function payload(over: Partial<PaniniSalesAnalytics> = {}): PaniniSalesAnalytics {
   return {
@@ -197,5 +198,33 @@ describe("parsePaniniSalesAnalytics", () => {
     for (const bad of [null, {}, noCov, noWin, noDaily, { ...raw, coverage: { ...raw.coverage, sales_held: null } }]) {
       expect(parsePaniniSalesAnalytics(bad)).toBeNull()
     }
+  })
+})
+
+// 2026-10-25 — "Top products by volume" (Top Shot's "Volume by Series"), fed by the product rollup.
+
+describe("PaniniAnalytics — top products by volume", () => {
+  const rows = [
+    { name: "Small", slug: "small", sales_30d: 3, sales_30d_volume_usd: 10, sales_30d_median_usd: 2 },
+    { name: "Quiet", slug: "quiet", sales_30d: 0, sales_30d_volume_usd: null, sales_30d_median_usd: null },
+    { name: "Big", slug: "big", sales_30d: 9, sales_30d_volume_usd: 900, sales_30d_median_usd: 50 },
+  ]
+  it("ranks by volume and drops products with no sale on record", () => {
+    expect(topProductsByVolume(rows)!.map((r) => r.slug)).toEqual(["big", "small"])
+    expect(topProductsByVolume(null)).toBeNull()
+  })
+  it("not supplied = no section; failed = said, never 'no sales'; rows link their product page", () => {
+    const none = render(<PaniniAnalytics data={payload()} />).container
+    expect(none.textContent).not.toContain("Top products by volume")
+    cleanup()
+    const failed = render(<PaniniAnalytics data={payload()} byProduct={null} />).container
+    expect(failed.querySelector('[data-testid="panini-analytics-products-failed"]')?.textContent).toContain("not the same as no sales")
+    cleanup()
+    const empty = render(<PaniniAnalytics data={payload()} byProduct={[]} />).container
+    expect(empty.textContent).toContain("No product has a sale on record")
+    cleanup()
+    const ok = render(<PaniniAnalytics data={payload()} byProduct={topProductsByVolume(rows)} />).container
+    expect(ok.querySelector('a[href="/panini-blockchain/product/big"]')?.textContent).toBe("Big")
+    expect(ok.querySelector('a[href="/panini-blockchain/product/quiet"]')).toBeNull()
   })
 })
