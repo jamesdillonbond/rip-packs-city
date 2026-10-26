@@ -693,6 +693,35 @@ async function getPaniniProductSetPages(): Promise<Array<{ slug: string; edition
   return out
 }
 
+/**
+ * Panini PRODUCT pages (2026-10-25 parity pass): /panini-blockchain/product/<id>-<slug>, one per product in
+ * `panini_product_rollup` (~106 rows — under PostgREST's 1,000-row clamp, asserted below rather than paged).
+ * Only rows from the newest rollup run resolve (get_panini_product), so only those are listed, and a product
+ * with fewer than 2 editions is left out under the same one-edition rule as sets. A failed or partial read
+ * throws (this file's contract).
+ */
+async function getPaniniProductPaths(): Promise<string[]> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!url || !key) throw new SitemapReadIncomplete('panini products: supabase env missing, so nothing could be read')
+  const sb: any = createClient(url, key)
+  const { data, error } = await sb
+    .from('panini_product_rollup')
+    .select('slug,editions,computed_at')
+    .order('product_set_id', { ascending: true })
+    .range(0, 999)
+  if (error) throw new SitemapReadIncomplete('panini_product_rollup read failed: ' + error.message)
+  if (!Array.isArray(data)) throw new SitemapReadIncomplete('panini_product_rollup returned no list')
+  if (data.length >= 1000) throw new SitemapReadIncomplete('panini_product_rollup reached the 1,000-row clamp; page this read')
+  const rows = data as Array<{ slug?: unknown; editions?: unknown; computed_at?: unknown }>
+  const newest = rows.reduce<string>((m, r) => (typeof r.computed_at === 'string' && r.computed_at > m ? r.computed_at : m), '')
+  const paths = rows
+    .filter((r) => r.computed_at === newest && typeof r.slug === 'string' && r.slug && Number(r.editions) >= 2)
+    .map((r) => `/panini-blockchain/product/${encodeURIComponent(r.slug as string)}`)
+  // The products index rides along whenever there is a product to index.
+  return paths.length ? ['/panini-blockchain/product', ...paths] : paths
+}
+
 async function getCollectionSeries(): Promise<SeriesRow[]> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -1008,6 +1037,7 @@ async function buildSitemapSegmentUncapped(id: number): Promise<MetadataRoute.Si
     const routablePlayers = await getRoutablePlayerSlugs()
     const paniniProductSets = await getPaniniProductSetPages()
     const hubPaths = await getIndexableHubPaths()
+    const paniniProductPaths = await getPaniniProductPaths()
 
     // /moment/<edition uuid> is NO LONGER LISTED (2026-09-06, Search Console).
     // Every one of those URLs canonicalises to /<collection>/edition/<slug>
@@ -1121,6 +1151,12 @@ async function buildSitemapSegmentUncapped(id: number): Promise<MetadataRoute.Si
       ...hubPaths.map((path) => ({
         url: `${BASE_URL}${path}`,
         changeFrequency: 'weekly' as const,
+        priority: 0.6,
+      })),
+      // Panini product pages (2026-10-25) — the series-page counterpart. No lastModified, as for hubs.
+      ...paniniProductPaths.map((path) => ({
+        url: `${BASE_URL}${path}`,
+        changeFrequency: 'daily' as const,
         priority: 0.6,
       })),
     ]

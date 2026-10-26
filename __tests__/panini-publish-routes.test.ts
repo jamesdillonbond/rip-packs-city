@@ -43,6 +43,9 @@ describe("Panini's missing tabs are retired in proxy.ts", () => {
     expect(panini!.published, "this pin is meaningless if Panini is unpublished").toBe(true)
     const { RETIRED_COLLECTION_TABS } = await import("@/proxy")
     const shipped = new Set<string>(panini!.pages)
+    // 2026-10-25: /product (the products index) is Panini's own surface, switched on by the registry's
+    // `productPages` — not a Flow tab it lacks. Any collection without the switch 404s there (the page checks it).
+    if (panini!.productPages) shipped.add("product")
     const missing = tabRouteDirs().filter((t) => !shipped.has(t))
     // Non-vacuous: Panini lacks several Flow-only tabs today (badges, play, …).
     expect(missing.length).toBeGreaterThan(0)

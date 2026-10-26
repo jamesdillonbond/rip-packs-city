@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link"
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { accentText } from "@/lib/accent-text";
@@ -340,12 +341,12 @@ export default function ShareEmptyState({ wallet }: { wallet: string }) {
 
         <div style={{ marginTop: 28, fontSize: 13, color: "var(--rpc-text-secondary)" }}>
           Or explore the{" "}
-          <a
+          <Link
             href="/insights"
             style={{ color: "var(--rpc-red-text)", textDecoration: "none", fontWeight: 700 }}
           >
             free public insights →
-          </a>
+          </Link>
         </div>
       </div>
     </div>

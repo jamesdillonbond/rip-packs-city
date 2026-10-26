@@ -88,6 +88,12 @@ export interface Collection {
    * checklists" link. A new league mapping needs this flag in the same change.
    */
   teamPages?: true
+  /**
+   * Has /[collection]/product/[slug] pages — a Panini PRODUCT (2026 Prizm World Cup, 2022-23 Prizm
+   * Basketball…), the Panini counterpart of a Top Shot series (2026-10-25 parity pass). Read from
+   * panini_product_rollup; any collection without the flag 404s on that route.
+   */
+  productPages?: true
 }
 
 export const COLLECTIONS: Collection[] = [
@@ -333,6 +339,8 @@ export const COLLECTIONS: Collection[] = [
     // walk reads, kept since 2026-09-28) via panini_sales_analytics, with per-day
     // coverage so a day is called complete only when it is. Its own component.
     pages: ["overview", "market", "collection", "packs", "sets", "sniper", "analytics"],
+    // 2026-10-25 — PRODUCT pages (/panini-blockchain/product/<set_id>-<slug>), the series-page counterpart.
+    productPages: true,
     published: true,
     openSeaSlug: "paniniblockchain",
     supabaseCollectionId: "d1a0a7f5-609a-49f4-a1a7-4eaac55b020b",

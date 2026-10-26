@@ -447,13 +447,13 @@ export default function WalletProfile({
           Loan analytics
         </Link>
         <span className="text-[color:var(--rpc-text-muted)]">·</span>
-        <a
+        <Link
           href="/analytics/methodology/wallet-profiles"
           className="inline-flex items-center gap-1 hover:text-emerald-400 transition-colors"
         >
           <Percent size={12} />
           Methodology
-        </a>
+        </Link>
       </footer>
     </div>
   )

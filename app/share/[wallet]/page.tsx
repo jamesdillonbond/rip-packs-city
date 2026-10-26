@@ -1,3 +1,4 @@
+import Link from "next/link"
 import type { Metadata } from "next"
 import ShareButton from "./ShareButton"
 import SaveToCollectionCTA from "./SaveToCollectionCTA"
@@ -464,7 +465,7 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
             ) : null}
 
             {/* Conversion hook tied to the intel surface */}
-            <a
+            <Link
               href="/login"
               style={{
                 display: "inline-block",
@@ -481,7 +482,7 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
               }}
             >
               Track this wallet — get squeeze + deal alerts →
-            </a>
+            </Link>
           </div>
         ) : null}
 

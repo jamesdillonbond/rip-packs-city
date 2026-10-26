@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link"
 import { fetchJson } from "@/lib/analytics/fetch-json"
 
 import { useEffect, useMemo, useState } from "react"
@@ -568,13 +569,13 @@ export default function LoansDashboard({
           {loading ? "Refreshing…" : refreshedAt ? `Refreshed ${new Date(refreshedAt).toLocaleTimeString()}` : "Idle"}
         </span>
         <span className="text-[color:var(--rpc-text-muted)]">·</span>
-        <a
+        <Link
           href="/analytics/methodology/loans"
           className="hover:text-emerald-400 transition-colors inline-flex items-center gap-1"
         >
           <Percent size={12} />
           Methodology
-        </a>
+        </Link>
         <span className="text-[color:var(--rpc-text-muted)]">·</span>
         <span className="inline-flex items-center gap-1.5">
           <CircleDollarSign size={12} />

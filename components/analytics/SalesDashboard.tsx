@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link"
 import { fetchJson } from "@/lib/analytics/fetch-json"
 
 import { useEffect, useMemo, useState } from "react"
@@ -257,12 +258,12 @@ export default function SalesDashboard({
           marketplace (most of total volume) doesn’t expose participant wallets, so leaderboard data is
           concentrated on Flowty and direct on-chain Pinnacle sales. Total volume figures include all
           marketplaces.{" "}
-          <a
+          <Link
             href="/analytics/methodology/sales"
             className="text-amber-300 hover:text-amber-200 underline underline-offset-2"
           >
             Methodology
-          </a>
+          </Link>
         </p>
       </div>
 
@@ -354,13 +355,13 @@ export default function SalesDashboard({
           {loading ? "Refreshing…" : refreshedAt ? `Refreshed ${new Date(refreshedAt).toLocaleTimeString()}` : "Idle"}
         </span>
         <span className="text-[color:var(--rpc-text-muted)]">·</span>
-        <a
+        <Link
           href="/analytics/methodology/sales"
           className="hover:text-emerald-400 transition-colors inline-flex items-center gap-1"
         >
           <BarChart3 size={12} />
           Methodology
-        </a>
+        </Link>
         <span className="text-[color:var(--rpc-text-muted)]">·</span>
         <span className="inline-flex items-center gap-1.5">
           <CircleDollarSign size={12} />

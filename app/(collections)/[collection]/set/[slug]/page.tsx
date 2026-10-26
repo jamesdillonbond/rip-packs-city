@@ -6,6 +6,7 @@
 
 import type { Metadata } from "next"
 import Link from "next/link"
+import { paniniProductHref, paniniProductSlug } from "@/lib/panini/product-url"
 import { notFound } from "next/navigation"
 import { getCollectionByUrlSlug, isPinnacleUrlSlug } from "@/lib/collection-slug"
 import { getEntityLabels } from "@/lib/entity-labels"
@@ -251,6 +252,8 @@ export default async function SetPage(props: { params: Promise<{ collection: str
   // market_cap_current groups by set NAME, so on a product page whose name other products share
   // its figure is all of them — withheld rather than shown as this product's.
   const showMarketCap = !(productSetId && related.length > 0)
+  // Panini (2026-10-25): this set's product page — one page per product NAME, slugified by the rollup's own rule.
+  const productSlug = productSetId && detail.product_name ? paniniProductSlug(detail.product_name) : null
 
   return (
     <div>
@@ -283,7 +286,14 @@ export default async function SetPage(props: { params: Promise<{ collection: str
         </h1>
         {productSetId && detail.product_name && (
           <div data-testid="set-product-name" className="rpc-mono" style={{ marginTop: 6, fontSize: 12, color: "var(--rpc-text-secondary)", letterSpacing: "0.04em" }}>
-            {detail.product_name}
+            {/* 2026-10-25: the product has its own page (/panini-blockchain/product/<id>-<slug>). */}
+            {productSlug ? (
+              <Link href={paniniProductHref(collection, productSlug)} data-testid="set-product-link" style={{ color: "inherit" }}>
+                {detail.product_name}
+              </Link>
+            ) : (
+              detail.product_name
+            )}
           </div>
         )}
         {related.length > 0 && (

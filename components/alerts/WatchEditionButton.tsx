@@ -11,6 +11,7 @@
 // every public edition + moment page). Both shapes mean "sign in", not "the
 // save failed" — a visitor was told "Could not save the alert." with no link.
 
+import Link from "next/link"
 import { useState } from "react";
 
 type AlertType = "fmv_below" | "fmv_above" | "price_below" | "discount_above";
@@ -193,7 +194,7 @@ export default function WatchEditionButton({
       </div>
       {channel === "telegram" && (
         <p className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)", marginTop: 6, lineHeight: 1.5 }}>
-          Link Telegram on the <a href="/alerts" style={{ color: RED_TEXT, textDecoration: "none" }}>Alerts page</a> to receive these.
+          Link Telegram on the <Link href="/alerts" style={{ color: RED_TEXT, textDecoration: "none" }}>Alerts page</Link> to receive these.
         </p>
       )}
 

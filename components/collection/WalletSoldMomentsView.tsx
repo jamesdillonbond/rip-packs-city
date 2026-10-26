@@ -20,6 +20,7 @@
 //     real wallet — but when total_count exceeds the page we say so instead of
 //     silently truncating.
 
+import Link from "next/link"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { useSearchParams } from "next/navigation"
 import { getOwnerKey } from "@/lib/owner-key"
@@ -164,7 +165,7 @@ export default function WalletSoldMomentsView({ collection }: { collection: stri
           Sale history is part of your personal dashboard — it&apos;s available for wallets verified on your
           own account.
         </div>
-        <a href="/login" className="rpc-chip" style={{ marginTop: 4, color: accentText(accent), borderColor: accent }}>Sign in →</a>
+        <Link href="/login" className="rpc-chip" style={{ marginTop: 4, color: accentText(accent), borderColor: accent }}>Sign in →</Link>
       </div>
     )
   }

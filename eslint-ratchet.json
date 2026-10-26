@@ -5,7 +5,6 @@
     "@typescript-eslint/no-explicit-any"
   ],
   "counts": {
-    "@next/next/no-html-link-for-pages": 92,
     "react-hooks/set-state-in-effect": 50,
     "@next/next/no-img-element": 28,
     "import/no-anonymous-default-export": 17,
