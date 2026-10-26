@@ -2031,19 +2031,10 @@ function SniperMomentsBody() {
         )}
 
         {/* Legend */}
+        {/* 2026-10-25: a three-dot Verified / Estimated / Speculative key stood here — an FMV
+            confidence legend (banned on public pages, 10-18) naming a third-party source, for
+            dots no deal row draws any more. */}
         <div className="rpc-mono flex items-center gap-4 flex-wrap" style={{ marginTop: 16, color: "var(--rpc-text-muted)" }}>
-          <span className="flex items-center gap-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" />
-            Verified — backed by real sales
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 inline-block" />
-            Estimated — limited / LiveToken data
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-red-400/70 inline-block" />
-            Speculative — FMV = ask price fallback
-          </span>
           <span style={{ color: "var(--rpc-success-text)" }}>↑</span>
           <span>Avg sales price trending up &nbsp;</span>
           <span style={{ color: "var(--rpc-danger-text)" }}>↓</span>

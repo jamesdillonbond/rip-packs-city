@@ -1286,7 +1286,8 @@ const PINS = [
     fn: "recalc_ultimate_fmv",
     test: "supabase/tests/recalc_ultimate_fmv.sql",
     // Re-pinned 2026-10-03: run duration no longer wraps at 60 s (#147).
-    migration: "supabase/migrations/20261004030511_audit_20261003_run_durations_no_longer_wrap_at_60_seconds.sql",
+    // Re-pinned 2026-10-25: retires a priced row it can no longer support (NO_DATA).
+    migration: "supabase/migrations/20261026025000_audit_20261025_ultimate_fmv_reads_the_editions_own_ask_and_retires_an_unsupported_price.sql",
   },
   {
     // 2026-10-19: the daily Atlas autograph sweep — writes editions.autographed_at on change
@@ -1954,7 +1955,8 @@ const PINS = [
   {
     fn: "compute_ultimate_non_special_fmv",
     test: "supabase/tests/compute_ultimate_non_special_fmv.sql",
-    migration: "supabase/migrations/20261004002116_audit_20261003_fmv_readers_exclude_buyback_wallets.sql",
+    // Re-pinned 2026-10-25: the ask is the edition's own (moment_id = external_id), not the player/set's.
+    migration: "supabase/migrations/20261026025000_audit_20261025_ultimate_fmv_reads_the_editions_own_ask_and_retires_an_unsupported_price.sql",
   },
   {
     fn: "compute_serial_fmv_power_model",

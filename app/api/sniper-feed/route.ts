@@ -6,6 +6,7 @@ import { z } from "zod";
 import { computePinnacleSniperFeed } from "@/lib/sniper/pinnacle";
 // Per-serial weighting + display signal lives in a tested lib module.
 import { sniperSerialMultiplier as serialMultiplier } from "@/lib/sniper/serial-multiplier";
+import { applySerialFmvEstimates } from "@/lib/sniper/serial-estimate";
 import { feeNetDeal } from "@/lib/marketplace-fees";
 import { applyFmvStalenessPenalty, fmvCannotAnchorDiscount } from "@/lib/sniper/fmv-staleness";
 import { leagueForSetName } from "@/lib/league";
@@ -296,8 +297,9 @@ const PARALLEL_NAMES: Record<number, string> = {
 // ─── Serial-adjusted FMV estimate (Phase 2) ────────────────────────────────────
 // Attaches the LiveToken-validated tier×circ #1/perfect premium to qualifying
 // Top Shot deals via the SECDEF serial_fmv_estimate() RPC (the single source of
-// truth — never recomputed here). Additive only: it does NOT touch adjustedFmv,
-// discount, serialMult, or ranking. The qualifying subset (#1 / perfect-mint on
+// truth — never recomputed here). Since 2026-10-25 it also PRICES those deals:
+// applySerialFmvEstimates (lib/sniper/serial-estimate.ts) replaces adjustedFmv, discount,
+// serialMult and the ranking key where it returned an estimate on a HIGH/MEDIUM base. The qualifying subset (#1 / perfect-mint on
 // a HIGH/MEDIUM base) is tiny per feed, so per-deal calls are cheap.
 // Serial-FMV is fitted per collection; both Top Shot and NFL All Day now have a
 // live model (compute_serial_fmv_multipliers/_power_model run + weekly-scheduled
@@ -2495,8 +2497,13 @@ async function computeSniperFeed(opts: {
   // 10. Sort
   const sorted = sortSniperDeals(allDeals, sortBy);
 
-  // 11. Attach the serial-adjusted FMV estimate to #1/perfect deals (additive).
+  // 11. Attach the serial-adjusted FMV estimate to #1/perfect deals, then let it PRICE them:
+  // the flat 8x display multiplier overstated small editions' #1 by ~2.6x median (measured
+  // 2026-10-25, lib/sniper/serial-estimate.ts). Re-sorted because discounts move.
   await attachSerialFmvEstimates(supabase, sorted);
+  const repriced = sortSniperDeals(applySerialFmvEstimates(sorted, opts.minDiscount), sortBy);
+  sorted.length = 0;
+  sorted.push(...repriced);
 
   const badgedCount = sorted.filter(d => d.hasBadge).length;
   console.log(

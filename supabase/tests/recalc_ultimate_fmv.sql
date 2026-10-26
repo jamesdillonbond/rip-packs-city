@@ -70,6 +70,7 @@ DECLARE
   v_ask_only int := 0;
   v_sales_only int := 0;
   v_min int := 0;
+  v_retired int := 0;
   v_start timestamptz := clock_timestamp();
   v_ran timestamptz := now();
   v_finish timestamptz;
@@ -109,6 +110,35 @@ BEGIN
     FROM src s
     WHERE s.fmv IS NOT NULL
     RETURNING 1
+  ),
+  -- 2026-10-25: a price this writer can no longer support is RETIRED, not left standing.
+  -- It inserted only when it found a price, so an edition that lost its (often borrowed)
+  -- ask kept its last ultimate-v1 row as the current FMV indefinitely. A NO_DATA row (NULL
+  -- fmv, the main pipeline's convention) is written ONLY when the edition's latest snapshot
+  -- is this writer's own priced row — an edition it never priced is still never written.
+  ret AS (
+    INSERT INTO fmv_snapshots (
+      edition_id, collection_id, collection,
+      fmv_usd, floor_price_usd, ask_proxy_fmv,
+      confidence, days_since_sale,
+      algo_version, computed_at
+    )
+    SELECT
+      s.ed_id, s.coll_id, s.coll_slug,
+      NULL, NULL, NULL,
+      'NO_DATA'::fmv_confidence, s.days,
+      'ultimate-v1', v_ran
+    FROM src s
+    WHERE s.fmv IS NULL
+      AND s.coll_id IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM (
+          SELECT f.algo_version, f.fmv_usd FROM fmv_snapshots f
+           WHERE f.edition_id = s.ed_id ORDER BY f.computed_at DESC LIMIT 1
+        ) l
+        WHERE l.algo_version LIKE 'ultimate-v1%' AND l.fmv_usd IS NOT NULL
+      )
+    RETURNING 1
   )
   SELECT
     (SELECT COUNT(*)::int FROM src),
@@ -116,8 +146,9 @@ BEGIN
     (SELECT COUNT(*)::int FROM src WHERE src_kind = 'no_data'),
     (SELECT COUNT(*)::int FROM src WHERE src_kind = 'ask_only'),
     (SELECT COUNT(*)::int FROM src WHERE src_kind = 'sale_only'),
-    (SELECT COUNT(*)::int FROM src WHERE src_kind = 'min_sale_ask')
-  INTO v_total, v_inserted, v_no_data, v_ask_only, v_sales_only, v_min;
+    (SELECT COUNT(*)::int FROM src WHERE src_kind = 'min_sale_ask'),
+    (SELECT COUNT(*)::int FROM ret)
+  INTO v_total, v_inserted, v_no_data, v_ask_only, v_sales_only, v_min, v_retired;
 
   v_finish := clock_timestamp();
   v_dur := (EXTRACT(EPOCH FROM (v_finish - v_start)) * 1000)::int;
@@ -128,13 +159,14 @@ BEGIN
   )
   VALUES (
     'ultimate-fmv-recalc-v1', v_start, v_finish,
-    v_total, v_inserted, v_no_data, true,
+    v_total, v_inserted + v_retired, v_no_data, true,
     jsonb_build_object(
       'algo_version', 'ultimate-v1',
       'no_data', v_no_data,
       'ask_only', v_ask_only,
       'sales_only', v_sales_only,
       'min_sale_ask', v_min,
+      'retired_no_data', v_retired,
       'duration_ms', v_dur
     )
   );
@@ -148,30 +180,33 @@ $function$;
 \set edU2 '''22222222-2222-2222-2222-222222222222'''
 \set edU3 '''33333333-3333-3333-3333-333333333333'''
 \set edR1 '''44444444-4444-4444-4444-444444444444'''
+\set edU4 '''55555555-5555-5555-5555-555555555555'''
 \set coll '''95f28a17-224a-4025-96ad-adf8a4c63bfd'''
 
 INSERT INTO public.editions (id, tier) VALUES
   (:edU1::uuid, 'ULTIMATE'), (:edU2::uuid, 'ULTIMATE'),
-  (:edU3::uuid, 'ULTIMATE'), (:edR1::uuid, 'RARE');
+  (:edU3::uuid, 'ULTIMATE'), (:edR1::uuid, 'RARE'), (:edU4::uuid, 'ULTIMATE');
 
 INSERT INTO public._ult_model (ed_id, collection_id, collection_slug, fmv_usd, lowest_non_special_ask, confidence, days_since_sale, source) VALUES
   (:edU1::uuid, :coll::uuid, 'nba_top_shot', 1000, 900, 'HIGH',     2, 'sale_only'),  -- inserts
   (:edU2::uuid, :coll::uuid, 'nba_top_shot', NULL, NULL, 'NO_DATA',  NULL, 'no_data'), -- NO insert
-  (:edU3::uuid, :coll::uuid, 'nba_top_shot',  500, 500, 'ASK_ONLY',  9, 'ask_only');   -- inserts
+  (:edU3::uuid, :coll::uuid, 'nba_top_shot',  500, 500, 'ASK_ONLY',  9, 'ask_only'),   -- inserts
+  (:edU4::uuid, :coll::uuid, 'nba_top_shot', NULL, NULL, 'NO_DATA',  NULL, 'no_data'); -- lost its price -> RETIRED
 
 -- Pre-existing snapshots that the DELETE must NOT touch (except edU1 today/ultimate-v1).
 INSERT INTO public.fmv_snapshots (edition_id, collection_id, collection, fmv_usd, floor_price_usd, ask_proxy_fmv, confidence, days_since_sale, algo_version, computed_at) VALUES
   (:edU1::uuid, :coll::uuid, 'nba_top_shot', 111, 111, 111, 'HIGH', 1, 'ultimate-v1', now() - interval '1 day'),        -- YESTERDAY ultimate-v1 -> survives
   (:edU1::uuid, :coll::uuid, 'nba_top_shot', 222, 222, 222, 'HIGH', 1, 'ultimate-v1', date_trunc('day', now())),        -- TODAY ultimate-v1 -> DELETED + replaced
   (:edU1::uuid, :coll::uuid, 'nba_top_shot', 333, 333, 333, 'HIGH', 1, 'v1.7.0',      date_trunc('day', now())),        -- TODAY other algo -> survives
-  (:edR1::uuid, :coll::uuid, 'nba_top_shot', 444, 444, 444, 'HIGH', 1, 'ultimate-v1', date_trunc('day', now()));        -- TODAY ultimate-v1 on NON-ultimate -> survives
+  (:edR1::uuid, :coll::uuid, 'nba_top_shot', 444, 444, 444, 'HIGH', 1, 'ultimate-v1', date_trunc('day', now())),        -- TODAY ultimate-v1 on NON-ultimate -> survives
+  (:edU4::uuid, :coll::uuid, 'nba_top_shot', 2512.95, 4569, 4569, 'ASK_ONLY', NULL, 'ultimate-v1_haircut', now() - interval '2 days'); -- a priced ultimate-v1 row the model can no longer support
 
 SELECT * FROM public.recalc_ultimate_fmv() \gset run_
 
 -- ── 1. return tuple: 3 ULTIMATE editions, 2 inserted, 1 no_data, 1 ask_only, 1 sales_only ──
-SELECT _assert_eq(:'run_total_editions', '3', 'total_editions = 3 ULTIMATE editions (RARE excluded)');
+SELECT _assert_eq(:'run_total_editions', '4', 'total_editions = 4 ULTIMATE editions (RARE excluded)');
 SELECT _assert_eq(:'run_inserted', '2', 'inserted = 2 (edU1 + edU3; edU2 has NULL fmv)');
-SELECT _assert_eq(:'run_no_data', '1', 'no_data = 1 (edU2)');
+SELECT _assert_eq(:'run_no_data', '2', 'no_data = 2 (edU2, edU4)');
 SELECT _assert_eq(:'run_ask_only', '1', 'ask_only = 1 (edU3)');
 SELECT _assert_eq(:'run_sales_only', '1', 'sales_only = 1 (edU1, source=sale_only)');
 SELECT _assert_eq(:'run_min_sale_ask', '0', 'min_sale_ask = 0');
@@ -201,7 +236,13 @@ SELECT _assert_eq(
 -- ── 7. audit trail: a pipeline_runs row with rows_written = inserted ──────────
 SELECT _assert_eq(
   (SELECT rows_written::text FROM public.pipeline_runs WHERE pipeline='ultimate-fmv-recalc-v1'),
-  '2', 'pipeline_runs audit row logs rows_written = 2');
+  '3', 'pipeline_runs audit row logs rows_written = 3 (2 priced + 1 retired)');
+SELECT _assert_eq((SELECT extra->>'retired_no_data' FROM public.pipeline_runs WHERE pipeline='ultimate-fmv-recalc-v1'), '1', 'extra.retired_no_data names the retirement');
+
+-- ── 8. 2026-10-25: a price this writer can no longer support is RETIRED (NO_DATA, NULL fmv) ──
+SELECT _assert_eq(
+  (SELECT confidence::text || '|' || coalesce(fmv_usd::text, 'null') FROM public.fmv_snapshots WHERE edition_id = :edU4::uuid ORDER BY computed_at DESC LIMIT 1),
+  'NO_DATA|null', '⛔ edU4: its stale $2,512.95 is no longer the latest row');
 
 SELECT '✓ recalc_ultimate_fmv: all assertions passed' AS result;
 

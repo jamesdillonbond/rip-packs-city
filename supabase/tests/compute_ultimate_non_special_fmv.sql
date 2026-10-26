@@ -25,7 +25,7 @@ CREATE TABLE collections (id uuid PRIMARY KEY, slug text);
 CREATE TABLE players (id uuid PRIMARY KEY, jersey_number integer);
 CREATE TABLE editions (
   id uuid PRIMARY KEY, tier text, circulation_count integer,
-  player_id uuid, player_name text, set_name text, collection_id uuid
+  player_id uuid, player_name text, set_name text, collection_id uuid, external_id text
 );
 CREATE TABLE sales (
   edition_id uuid, serial_number integer, price_usd numeric, sold_at timestamptz
@@ -42,7 +42,7 @@ SELECT s.* FROM public.sales s
 
 CREATE TABLE cached_listings (
   collection_id uuid, tier text, player_name text, set_name text,
-  ask_price numeric, serial_number integer
+  ask_price numeric, serial_number integer, moment_id text
 );
 
 -- Stub the special-serials helper: serial 1 is "special" for every edition.
@@ -64,6 +64,7 @@ DECLARE
   v_collection_slug text;
   v_player_name text;
   v_set_name text;
+  v_external_id text;
   v_specials int[];
   v_skip boolean;
   v_last_sale numeric;
@@ -74,8 +75,8 @@ DECLARE
   v_source text;
   v_conf text;
 BEGIN
-  SELECT e.collection_id, c.slug, e.circulation_count, e.player_id, e.player_name, e.set_name
-    INTO v_collection_id, v_collection_slug, v_circ, v_player_id, v_player_name, v_set_name
+  SELECT e.collection_id, c.slug, e.circulation_count, e.player_id, e.player_name, e.set_name, e.external_id
+    INTO v_collection_id, v_collection_slug, v_circ, v_player_id, v_player_name, v_set_name, v_external_id
   FROM editions e
   JOIN collections c ON c.id = e.collection_id
   WHERE e.id = p_edition_id AND e.tier = 'ULTIMATE';
@@ -102,14 +103,18 @@ BEGIN
     v_days := EXTRACT(DAY FROM (now() - v_last_at))::int;
   END IF;
 
-  IF v_player_name IS NOT NULL AND v_set_name IS NOT NULL THEN
+  -- 2026-10-25: the edition's OWN asks. This matched on (player_name, set_name), so one
+  -- listed /1 lent its ask to every other /1 of that player in a same-named set: Kon
+  -- Knueppel's four unlisted Signature Series /1s were priced from 241:8054's ask
+  -- ($4,569 x 0.55 = $2,512.95 each on 10-23). cached_listings.moment_id carries the
+  -- edition key for Top Shot (54 of 54 ULTIMATE listings match an editions.external_id).
+  IF v_external_id IS NOT NULL THEN
     SELECT MIN(cl.ask_price)
       INTO v_low_ask
     FROM cached_listings cl
     WHERE cl.collection_id = v_collection_id
       AND cl.tier = 'ULTIMATE'
-      AND cl.player_name = v_player_name
-      AND cl.set_name = v_set_name
+      AND cl.moment_id = v_external_id
       AND cl.ask_price > 0
       AND (v_skip OR NOT (cl.serial_number = ANY(v_specials)));
   END IF;
@@ -171,6 +176,16 @@ INSERT INTO cached_listings (collection_id, tier, player_name, set_name, ask_pri
 -- E6: only sale is the special serial 1 @ 9999, but circ=1 -> filter skipped -> counts.
 INSERT INTO sales (edition_id, serial_number, price_usd, sold_at) VALUES
   ('66666666-6666-6666-6666-666666666666', 1, 9999, now() - interval '1 day');
+
+-- 2026-10-25: listings are matched to the EDITION (moment_id = external_id), not to the player/set.
+UPDATE editions SET external_id = 'k-' || left(id::text, 8);
+UPDATE cached_listings cl SET moment_id = e.external_id FROM editions e
+ WHERE e.collection_id = cl.collection_id AND e.player_name = cl.player_name AND e.set_name = cl.set_name;
+-- E7: a SIBLING of E3 (same player 'AskOnly', same set 'S3'), never listed itself. Before the fix
+-- it borrowed E3's 400 ask; now it has no ask and no price.
+INSERT INTO editions (id, tier, circulation_count, player_id, player_name, set_name, collection_id, external_id) VALUES
+  ('77777777-7777-7777-7777-777777777777', 'ULTIMATE', 1, NULL, 'AskOnly', 'S3', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'k-77777777');
+SELECT _assert_eq((SELECT source||'|'||coalesce(lowest_non_special_ask::text,'null') FROM compute_ultimate_non_special_fmv('77777777-7777-7777-7777-777777777777')), 'no_data|null', '⛔ E7 an unlisted sibling never borrows E3''s ask');
 
 -- 1) E1: min_sale_ask ladder, and the special serial is excluded on BOTH legs.
 SELECT _assert_eq((SELECT source      FROM compute_ultimate_non_special_fmv('11111111-1111-1111-1111-111111111111')), 'min_sale_ask', 'E1 source is min_sale_ask');
