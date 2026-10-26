@@ -141,7 +141,9 @@ describe("the committed baseline", () => {
     const names = Object.keys(baseline.counts)
     expect(names.length).toBeGreaterThan(10)
     expect(names).toContain("react-hooks/set-state-in-effect")
-    expect(names).toContain("@next/next/no-html-link-for-pages")
+    // 2026-10-25: @next/next/no-html-link-for-pages reached ZERO (its last 8 internal <a> became <Link>)
+    // and left the baseline, so the correctness pin moved to another rule the ratchet still bounds.
+    expect(names).toContain("react-hooks/exhaustive-deps")
     for (const n of Object.values(baseline.counts)) expect(n).toBeGreaterThan(0)
   })
 })
