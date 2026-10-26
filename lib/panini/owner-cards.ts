@@ -183,5 +183,36 @@ export function parsePaniniProfileHoldings(raw: unknown): PaniniProfileHoldings 
   }
 }
 
-/** /api/panini-collection: the listing-seen view plus the profile walk's view. */
-export type PaniniCollectionResponse = PaniniOwnerCards & { profile: PaniniProfileHoldings }
+/** One recorded day of a walked collector's collection value (panini_portfolio_daily, 2026-10-26). */
+export interface PaniniValueDay {
+  day: string
+  cards: number
+  pricedCards: number
+  /** FMV of the priced cards; null when none were priced — never 0. */
+  fmvUsd: number | null
+  /** The walk behind this day read the whole profile. */
+  walkComplete: boolean
+}
+
+/** Rows newest first; malformed rows are dropped, never coerced to zeros. */
+export function parsePaniniValueHistory(raw: unknown): PaniniValueDay[] {
+  if (!Array.isArray(raw)) return []
+  const out: PaniniValueDay[] = []
+  for (const r of raw) {
+    if (!r || typeof r !== "object") continue
+    const o = r as Record<string, unknown>
+    const day = typeof o.day === "string" && /^\d{4}-\d{2}-\d{2}$/.test(o.day) ? o.day : null
+    const cards = num(o.cards)
+    const pricedCards = num(o.priced_cards)
+    if (!day || cards === null || pricedCards === null) continue
+    const fmv = num(o.fmv_usd)
+    out.push({ day, cards, pricedCards, fmvUsd: fmv !== null && fmv > 0 ? fmv : null, walkComplete: o.walk_complete === true })
+  }
+  return out
+}
+
+/**
+ * /api/panini-collection: the listing-seen view plus the profile walk's view, plus the recorded
+ * value history (null = that read failed — rendered as "couldn't load", never as no history).
+ */
+export type PaniniCollectionResponse = PaniniOwnerCards & { profile: PaniniProfileHoldings; valueHistory?: PaniniValueDay[] | null }

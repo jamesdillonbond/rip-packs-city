@@ -33,7 +33,10 @@ import { supabaseAdmin } from "@/lib/supabase"
 import { apiErrorResponse } from "@/lib/api-error"
 import { boundedRead } from "@/lib/api/bounded-read"
 import { normalizePaniniUsername } from "@/lib/profile/collector-identities"
-import { parsePaniniOwnerCards, parsePaniniProfileHoldings } from "@/lib/panini/owner-cards"
+import { parsePaniniOwnerCards, parsePaniniProfileHoldings, parsePaniniValueHistory } from "@/lib/panini/owner-cards"
+
+/** Days of recorded collection value returned (panini_portfolio_daily, newest first). */
+const PANINI_VALUE_HISTORY_DAYS = 30
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 30
@@ -53,9 +56,19 @@ export async function GET(req: NextRequest) {
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const db = supabaseAdmin as any
-    const [seen, held] = await Promise.all([
+    const [seen, held, history] = await Promise.all([
       boundedRead(db.rpc("panini_owner_cards", { p_username: username, p_limit: 200 }), "panini-collection"),
       boundedRead(db.rpc("panini_profile_holdings", { p_username: username, p_limit: 500 }), "panini-collection-profile"),
+      // 2026-10-26: recorded collection value (panini_portfolio_daily). Its own panel: a failure
+      // here is `valueHistory: null` ("couldn't load"), never a failed collection.
+      boundedRead(
+        db.from("panini_portfolio_daily")
+          .select("day,cards,priced_cards,fmv_usd,walk_complete")
+          .eq("username", username)
+          .order("day", { ascending: false })
+          .limit(PANINI_VALUE_HISTORY_DAYS),
+        "panini-collection-value-history",
+      ),
     ])
     if (seen.error) return apiErrorResponse(seen.error, "api/panini-collection", "This collection is unavailable right now.")
     if (held.error) return apiErrorResponse(held.error, "api/panini-collection", "This collection is unavailable right now.")
@@ -64,7 +77,8 @@ export async function GET(req: NextRequest) {
     if (!parsed || !profile) {
       return apiErrorResponse(new Error("panini collection RPC returned an unexpected shape"), "api/panini-collection", "This collection is unavailable right now.")
     }
-    return NextResponse.json({ ...parsed, profile }, { headers: { "Cache-Control": "private, no-store" } })
+    const valueHistory = history.error ? null : parsePaniniValueHistory(history.data)
+    return NextResponse.json({ ...parsed, profile, valueHistory }, { headers: { "Cache-Control": "private, no-store" } })
   } catch (err) {
     return apiErrorResponse(err, "api/panini-collection", "This collection is unavailable right now.")
   }

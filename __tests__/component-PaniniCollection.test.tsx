@@ -222,3 +222,33 @@ describe("PaniniCollection — controls and CSV download (2026-10-26)", () => {
     click.mockRestore()
   })
 })
+
+describe("PaniniCollection — collection value by day (2026-10-26)", () => {
+  it("shows recorded days with priced-card coverage; a partial read says so; unpriced is never $0", async () => {
+    mockFetch(200, payload({ cardsSeen: 0, cards: [], profile: walked(), valueHistory: [
+      { day: "2026-10-27", cards: 148, pricedCards: 140, fmvUsd: 280.5, walkComplete: false },
+      { day: "2026-10-26", cards: 148, pricedCards: 0, fmvUsd: null, walkComplete: true },
+    ] }))
+    const c = await lookUp("jamesdillonbond")
+    await waitFor(() => expect(c.querySelector('[data-testid="panini-value-history"]')).not.toBeNull())
+    const t = c.querySelector('[data-testid="panini-value-history"]')!.textContent ?? ""
+    expect(t).toContain("Oct 27, 2026")
+    expect(t).toContain("$281") // the tab's usd() shows whole dollars at $100+
+    expect(t).toContain("140 of 148 · partial read")
+    // The day with nothing priced shows a dash, never $0.
+    expect(t).toContain("Oct 26, 2026—0 of 148")
+    expect(t).toContain("since Oct 26, 2026")
+  })
+  it("failed vs nothing recorded yet are different sentences", async () => {
+    mockFetch(200, payload({ cardsSeen: 0, cards: [], profile: walked(), valueHistory: null }))
+    let c = await lookUp("jamesdillonbond")
+    await waitFor(() => expect(c.querySelector('[data-testid="panini-value-history"]')).not.toBeNull())
+    expect(c.querySelector('[data-testid="panini-value-history"]')!.textContent).toContain("couldn't be loaded")
+    cleanup()
+    mockFetch(200, payload({ cardsSeen: 0, cards: [], profile: walked(), valueHistory: [] }))
+    c = await lookUp("jamesdillonbond")
+    await waitFor(() => expect(c.querySelector('[data-testid="panini-value-history"]')).not.toBeNull())
+    expect(c.querySelector('[data-testid="panini-value-history"]')!.textContent).toContain("nothing is recorded yet")
+  })
+})
+

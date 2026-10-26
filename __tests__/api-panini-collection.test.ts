@@ -6,14 +6,23 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
  * collection, a malformed username is not "0 cards", an unpriced card is not $0.
  */
 
-const state: { rpc: { data: unknown; error: unknown }; profile: { data: unknown; error: unknown } } = {
+const state: { rpc: { data: unknown; error: unknown }; profile: { data: unknown; error: unknown }; history: { data: unknown; error: unknown } } = {
   rpc: { data: null, error: null },
   profile: { data: null, error: null },
+  history: { data: [], error: null },
 }
+const historyCalls: unknown[][] = []
 const calls: unknown[] = []
 const profileCalls: unknown[] = []
 vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: {
+    // 2026-10-26: the recorded value history (panini_portfolio_daily) — a chainable read.
+    from: (table: string) => {
+      const chain: any = {}
+      for (const m of ["select", "eq", "order", "limit"]) chain[m] = (...a: unknown[]) => { historyCalls.push([table, m, ...a]); return chain }
+      chain.then = (resolve: any) => resolve(state.history)
+      return chain
+    },
     rpc: (fn: string, args: unknown) => {
       if (fn === "panini_profile_holdings") {
         profileCalls.push(args)
@@ -26,7 +35,7 @@ vi.mock("@/lib/supabase", () => ({
 }))
 
 import { GET } from "@/app/api/panini-collection/route"
-import { parsePaniniOwnerCards, parsePaniniProfileHoldings } from "@/lib/panini/owner-cards"
+import { parsePaniniOwnerCards, parsePaniniProfileHoldings, parsePaniniValueHistory } from "@/lib/panini/owner-cards"
 
 const req = (qs: string) => ({ nextUrl: new URL("https://t/api/panini-collection" + qs) }) as any
 const PAYLOAD = {
@@ -54,6 +63,8 @@ beforeEach(() => {
   profileCalls.length = 0
   state.rpc = { data: PAYLOAD, error: null }
   state.profile = { data: NOT_WALKED, error: null }
+  state.history = { data: [], error: null }
+  historyCalls.length = 0
 })
 
 describe("GET /api/panini-collection", () => {
@@ -139,5 +150,37 @@ describe("GET /api/panini-collection", () => {
   it("an unread pack count stays null, never 0", () => {
     const p = parsePaniniProfileHoldings({ ...WALKED, walk: { ...WALKED.walk, unopened_packs: null } })
     expect(p?.walk?.unopenedPacks).toBeNull()
+  })
+})
+
+describe("GET /api/panini-collection — recorded value history (2026-10-26)", () => {
+  it("reads panini_portfolio_daily for the folded username, newest first", async () => {
+    state.profile = { data: WALKED, error: null }
+    state.history = { data: [
+      { day: "2026-10-27", cards: 148, priced_cards: 148, fmv_usd: 280, walk_complete: true },
+      { day: "2026-10-26", cards: 148, priced_cards: 147, fmv_usd: 274, walk_complete: false },
+    ], error: null }
+    const j = await (await GET(req("?username=Jamesdillonbond"))).json()
+    expect(historyCalls).toContainEqual(["panini_portfolio_daily", "eq", "username", "jamesdillonbond"])
+    expect(j.valueHistory).toEqual([
+      { day: "2026-10-27", cards: 148, pricedCards: 148, fmvUsd: 280, walkComplete: true },
+      { day: "2026-10-26", cards: 148, pricedCards: 147, fmvUsd: 274, walkComplete: false },
+    ])
+  })
+  it("a failed history read is valueHistory:null — the collection itself still loads", async () => {
+    state.profile = { data: WALKED, error: null }
+    state.history = { data: null, error: { message: "boom" } }
+    const res = await GET(req("?username=jamesdillonbond"))
+    expect(res.status).toBe(200)
+    const j = await res.json()
+    expect(j.valueHistory).toBeNull()
+    expect(j.profile.walk).not.toBeNull()
+  })
+  it("a day with no priced card is a null FMV, never $0; a malformed row is dropped, not zeroed", () => {
+    expect(parsePaniniValueHistory([
+      { day: "2026-10-26", cards: 3, priced_cards: 0, fmv_usd: null, walk_complete: true },
+      { day: "nope", cards: 3, priced_cards: 3, fmv_usd: 9 },
+      { day: "2026-10-25", cards: null, priced_cards: 3, fmv_usd: 9 },
+    ])).toEqual([{ day: "2026-10-26", cards: 3, pricedCards: 0, fmvUsd: null, walkComplete: true }])
   })
 })

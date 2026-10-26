@@ -28,7 +28,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import MomentMedia from "@/components/MomentMedia"
-import type { PaniniCollectionResponse, PaniniOwnerCard, PaniniProfileHoldings } from "@/lib/panini/owner-cards"
+import { scrollRegion } from "@/lib/a11y/scroll-region"
+import type { PaniniCollectionResponse, PaniniOwnerCard, PaniniProfileHoldings, PaniniValueDay } from "@/lib/panini/owner-cards"
 import {
   EMPTY_PANINI_CARD_FILTER,
   PANINI_CARD_SORTS,
@@ -203,7 +204,7 @@ export default function PaniniCollection() {
 }
 
 function CollectionBody({ data }: { data: PaniniCollectionResponse }) {
-  if (data.profile.walk) return <ProfileBody username={data.username} profile={data.profile} />
+  if (data.profile.walk) return <ProfileBody username={data.username} profile={data.profile} valueHistory={data.valueHistory} />
   return <SeenBody data={data} />
 }
 
@@ -227,7 +228,7 @@ function ptDateTime(iso: string | null): string {
   )
 }
 
-function ProfileBody({ username, profile }: { username: string; profile: PaniniProfileHoldings }) {
+function ProfileBody({ username, profile, valueHistory }: { username: string; profile: PaniniProfileHoldings; valueHistory?: PaniniValueDay[] | null }) {
   const w = profile.walk!
   if (w.profileState === "private" || w.profileState === "not_found") {
     return (
@@ -282,8 +283,59 @@ function ProfileBody({ username, profile }: { username: string; profile: PaniniP
             : ""}
         </Note>
       </div>
+      {valueHistory !== undefined ? <ValueHistory rows={valueHistory} /> : null}
       <CardBrowser cards={profile.cards} total={profile.cardsHeld} username={username} />
     </>
+  )
+}
+
+/** The value-history lane (panini_portfolio_daily) holds nothing before this PT day. */
+export const PANINI_VALUE_HISTORY_SINCE = "2026-10-26"
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+function dayLabel(day: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day)
+  return m ? `${MONTHS[Number(m[2]) - 1] ?? m[2]} ${Number(m[3])}, ${m[1]}` : day
+}
+
+/**
+ * Collection value over time (2026-10-26) — Top Shot's profile portfolio-value history. One row per
+ * PT day RPC recorded this collector (after the morning profile walk): the FMV of the priced cards,
+ * and how many cards that covers. Recorded forward only — nothing before the lane started.
+ */
+function ValueHistory({ rows }: { rows: PaniniValueDay[] | null }) {
+  const head: React.CSSProperties = { padding: "6px 8px", fontFamily: mono, fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--rpc-text-muted)", textAlign: "left" }
+  const cell: React.CSSProperties = { padding: "6px 8px", fontFamily: mono, fontSize: 11, color: "var(--rpc-text-secondary)", borderTop: "1px solid var(--rpc-border)" }
+  return (
+    <div data-testid="panini-value-history" style={{ marginTop: 14 }}>
+      <div style={{ fontFamily: mono, fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--rpc-text-muted)", marginBottom: 6 }}>Collection value by day</div>
+      {rows === null ? (
+        <Note>The value history couldn&apos;t be loaded — refresh to try again.</Note>
+      ) : rows.length === 0 ? (
+        <Note>{`RPC records this collection's value each morning after reading the profile; nothing is recorded yet (the record starts ${dayLabel(PANINI_VALUE_HISTORY_SINCE)}).`}</Note>
+      ) : (
+        <>
+          <div className="rpc-scroll-x" {...scrollRegion("Collection value by day")}>
+            <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 360 }}>
+              <thead>
+                <tr><th scope="col" style={head}>Day</th><th scope="col" style={head}>FMV of priced cards</th><th scope="col" style={head}>Cards priced</th></tr>
+              </thead>
+              <tbody>
+                {rows.slice(0, 14).map((r) => (
+                  <tr key={r.day}>
+                    <td style={cell}>{dayLabel(r.day)}</td>
+                    <td style={{ ...cell, color: "var(--rpc-text-primary)" }}>{usd(r.fmvUsd)}</td>
+                    <td style={cell}>{`${count(r.pricedCards)} of ${count(r.cards)}${r.walkComplete ? "" : " · partial read"}`}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ marginTop: 4 }}>
+            <Note>{`Recorded each morning from the profile as RPC last read it, since ${dayLabel(PANINI_VALUE_HISTORY_SINCE)}. A change can come from cards bought or sold or from FMV moving; unpriced cards are not counted as $0.`}</Note>
+          </div>
+        </>
+      )}
+    </div>
   )
 }
 
