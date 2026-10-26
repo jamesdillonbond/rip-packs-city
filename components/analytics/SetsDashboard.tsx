@@ -572,8 +572,13 @@ export default function SetsDashboard() {
           <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-8 text-center text-sm text-[color:var(--rpc-text-muted)]">
             Loading series overview…
           </div>
+        ) : !seriesResp ? (
+          // 2026-10-25: a failed read (null) rendered SeriesOverview's "No series data available."
+          <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-8 text-center text-sm text-[color:var(--rpc-text-muted)]">
+            Couldn&apos;t load the series overview right now.
+          </div>
         ) : (
-          <SeriesOverview rows={seriesResp?.rows ?? []} />
+          <SeriesOverview rows={seriesResp.rows ?? []} />
         )}
       </section>
 

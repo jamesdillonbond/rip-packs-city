@@ -62,6 +62,18 @@ describe("SetsDashboard", () => {
     await waitFor(() => expect(screen.getByText(/No series data available/i)).toBeTruthy())
   })
 
+  // 2026-10-25: a failed series read rendered "No series data available." (a market claim).
+  it("⛔ a failed series read says it couldn't load, never 'No series data available'", async () => {
+    fetchMock.mockImplementation(async (url: string) =>
+      String(url).includes("/sets/series")
+        ? ({ ok: false, status: 503, json: async () => ({ error: "x" }) } as any)
+        : ({ ok: true, json: async () => ({ rows: [], sets: [], series: [], collections: {} }) } as any),
+    )
+    render(<SetsDashboard />)
+    await waitFor(() => expect(screen.getByText(/Couldn.t load the series overview/i)).toBeTruthy())
+    expect(screen.queryByText(/No series data available/i)).toBeNull()
+  })
+
   it("soft-fails on a rejected fetch without crashing", async () => {
     fetchMock.mockRejectedValue(new Error("network"))
     expect(() => render(<SetsDashboard />)).not.toThrow()
