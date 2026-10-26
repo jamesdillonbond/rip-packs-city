@@ -62,8 +62,9 @@ import FmvHistoryChart from "@/components/entity/FmvHistoryChart"
 import ExplainButton from "@/components/ExplainButton"
 import EditionActivity from "@/components/entity/EditionActivity"
 import PaniniSalesChart from "@/components/entity/PaniniSalesChart"
+import { franchiseHubPath } from "@/lib/franchise-hub-path"
 import { PaniniOffersSection, PaniniHoldersSection, PaniniProductPacksSection, PaniniAskHistorySection } from "@/components/entity/PaniniEditionExtras"
-import { fetchPaniniEditionOffers, fetchPaniniEditionHolders, fetchPaniniEditionPacks, fetchPaniniEditionAskHistory } from "@/lib/panini/edition-extras"
+import { fetchPaniniEditionOffers, fetchPaniniEditionHolders, fetchPaniniEditionPacks, fetchPaniniEditionAskHistory, fetchPaniniEditionTeams, type PaniniEditionTeam } from "@/lib/panini/edition-extras"
 import ParallelTierSwitcher from "@/components/entity/ParallelTierSwitcher"
 import { MarketplaceStatusBanner } from "@/components/marketplace-status"
 import { isMarketClosed } from "@/lib/market-closed"
@@ -567,8 +568,11 @@ export default async function EditionPage(
   // `::` edition, so the ask is dated from its own printing row. Defaults to a failed read (no age).
   const isParallelPage = isParallelExternalId(detail.external_id)
   let printingAsk: PrintingAskStamp = { at: null, ok: !isParallelPage }
+  // Panini (2026-10-25): the franchise(s) panini_edition_team_keys places this card on. A failed read
+  // or an unplaced card renders no team chip — never "no team".
+  let paniniTeams: { ok: boolean; teams: PaniniEditionTeam[] } = { ok: !isPanini, teams: [] }
   try {
-    ;[history, bundleRes, insightRes, badgeArt, repSales, paniniAskRes, estimateRes, paniniSetSlug, printingAsk] = await Promise.all([
+    ;[history, bundleRes, insightRes, badgeArt, repSales, paniniAskRes, estimateRes, paniniSetSlug, printingAsk, paniniTeams] = await Promise.all([
     fetchHistory(coll.id, slug, 30),
     // high_offer + subedition (parallel) ladder + IPFS assets in ONE round-trip.
     fetchMarketBundle(detail.id, detail.external_id),
@@ -598,6 +602,9 @@ export default async function EditionPage(
     isParallelPage
       ? fetchPrintingAskChangedAt(coll.id, detail.external_id as string)
       : Promise.resolve<PrintingAskStamp>({ at: null, ok: true }),
+    isPanini && detail.external_id
+      ? fetchPaniniEditionTeams(detail.external_id)
+      : Promise.resolve({ ok: true, teams: [] as PaniniEditionTeam[] }),
     ])
   } catch (e) {
     // ⚠ Must NOT return a whole-page view. The declared defaults above are
@@ -909,6 +916,20 @@ export default async function EditionPage(
                   <span className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-primary)" }}>{detail.team_name}</span>
                 )
               )}
+              {/* Panini (2026-10-25): no team_name on Panini editions — the team map's franchise(s),
+                  each linked to its cross-collection hub. */}
+              {isPanini && paniniTeams.teams.map((t) => (
+                <Link
+                  key={`${t.league}:${t.slug}`}
+                  href={franchiseHubPath(t.league, t.slug)}
+                  data-testid="panini-edition-team"
+                  title="Placed on this team by Panini's marketplace team filter, the team printed on the card, or the same player's other cards in this product"
+                  className="rpc-mono"
+                  style={{ fontSize: 11, color: "var(--rpc-text-primary)", textDecoration: "none" }}
+                >
+                  {t.name}
+                </Link>
+              ))}
               {isPinnacle && detail.is_chaser && (
                 <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 4, fontSize: 10, letterSpacing: "0.10em", textTransform: "uppercase", color: accentText("#A855F7"), background: "rgba(168,85,247,0.10)", border: "1px solid rgba(168,85,247,0.30)" }}>Chaser</span>
               )}

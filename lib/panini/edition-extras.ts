@@ -337,3 +337,50 @@ export async function fetchPaniniEditionAskHistory(
     return { rows: null }
   }
 }
+
+// ── Team (panini_edition_team_keys, from 2026-10-25) ────────────────────────
+//
+// Panini editions carry no team_name, so the edition page's team chip never rendered. The
+// hourly map places a card on a franchise from the team walk, the team printed on the card, or
+// the same player's other cards in that product (99.7 % held out). A failed read or an
+// unplaced card renders no chip — an absent team is never stated as "no team".
+
+export interface PaniniEditionTeam {
+  league: string
+  slug: string
+  name: string
+}
+
+export async function fetchPaniniEditionTeams(
+  externalId: string,
+  db: Db = supabaseAdmin,
+): Promise<{ ok: boolean; teams: PaniniEditionTeam[] }> {
+  try {
+    const { data, error } = await withQueryDeadline<RawRows>(
+      db.from("panini_edition_team_keys").select("franchise_keys").eq("external_id", externalId).limit(1),
+      "edition/panini-team-keys",
+      apiReadTimeoutMs(),
+    )
+    if (error) return { ok: false, teams: [] }
+    const raw = ((data ?? []) as Record<string, unknown>[])[0]?.franchise_keys
+    const keys = (Array.isArray(raw) ? raw : [])
+      .filter((k): k is string => typeof k === "string" && /^[A-Z]+:[a-z0-9-]+$/.test(k))
+      .map((k) => ({ league: k.split(":")[0], slug: k.split(":")[1] }))
+    if (keys.length === 0) return { ok: true, teams: [] }
+    const leagues = [...new Set(keys.map((k) => k.league))]
+    const { data: tm, error: tmErr } = await withQueryDeadline<RawRows>(
+      db.from("teams_master").select("league,slug,team_name").in("league", leagues).in("slug", keys.map((k) => k.slug)).limit(20),
+      "edition/panini-team-names",
+      apiReadTimeoutMs(),
+    )
+    if (tmErr) return { ok: false, teams: [] }
+    const names = new Map(((tm ?? []) as Record<string, unknown>[]).map((r) => [`${r.league}:${r.slug}`, str(r.team_name)]))
+    // A key with no registry name is left out rather than shown as a raw slug.
+    const teams = keys
+      .map((k) => ({ ...k, name: names.get(`${k.league}:${k.slug}`) ?? null }))
+      .filter((t): t is PaniniEditionTeam => t.name !== null)
+    return { ok: true, teams }
+  } catch {
+    return { ok: false, teams: [] }
+  }
+}
