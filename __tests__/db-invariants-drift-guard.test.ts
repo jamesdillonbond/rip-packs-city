@@ -2046,7 +2046,9 @@ const PINS = [
   {
     fn: "list_indexable_franchise_hubs",
     test: "supabase/tests/list_indexable_hubs.sql",
-    migration: "supabase/migrations/20261023073556_audit_20261023_sitemap_lists_the_indexable_hubs.sql",
+    // Re-pointed 2026-10-25 in the same session as the change: reads panini_edition_team_keys
+    // (walk listing → printed team → sibling) instead of the raw walk listings.
+    migration: "supabase/migrations/20261026044548_audit_20261025_panini_edition_team_keys.sql",
   },
   {
     fn: "fmv_snapshots_block_stale_ingest_algo",

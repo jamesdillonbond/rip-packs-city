@@ -299,8 +299,8 @@ function PaniniPanel({ panel, hub }: { panel: Exclude<PaniniHubPanel, { state: "
               const cov = paniniCoverage(panel.detail.coverage)
               return (
                 <>
-                  Matched to the {hub.team_name} by Panini&rsquo;s own marketplace team filter, so a card never listed there is not counted.
-                  {cov ? <> That filter places {fmtCount(cov.mapped)} of the {fmtCount(cov.catalogued)} Panini {cov.sport.toLowerCase()} cards we track on a team ({cov.pct}%).</> : null}
+                  Matched to the {hub.team_name} by Panini&rsquo;s marketplace team filter or the team Panini prints on the card; a card with neither takes its team from the same player&rsquo;s other cards in that product, and a card with no match is not counted.
+                  {cov ? <> Together these place {fmtCount(cov.mapped)} of the {fmtCount(cov.catalogued)} Panini {cov.sport.toLowerCase()} cards we track on a team ({cov.pct}%).</> : null}
                 </>
               )
             })()}

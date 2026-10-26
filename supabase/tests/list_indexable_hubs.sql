@@ -12,7 +12,9 @@
 -- and a mapped Panini card, and never when inactive.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20261023073556_audit_20261023_sitemap_lists_the_indexable_hubs.sql);
+-- (supabase/migrations/20261023073556_audit_20261023_sitemap_lists_the_indexable_hubs.sql;
+-- list_indexable_franchise_hubs re-pointed 2026-10-25 to 20261026044548_audit_20261025_panini_edition_team_keys.sql,
+-- which reads the per-edition map panini_edition_team_keys instead of the raw walk listings);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -37,7 +39,7 @@ CREATE TABLE panini_products (set_id text, last_grid_sport text);
 CREATE TABLE player_name_aliases (player_id uuid, alias_slug text);
 CREATE TABLE teams_master (league text, slug text, active boolean);
 CREATE TABLE league_collections (league text, collection_id uuid, enabled boolean);
-CREATE TABLE panini_team_listings (psku text, franchise_keys text[]);
+CREATE TABLE panini_edition_team_keys (external_id text, franchise_keys text[]);
 
 -- the namesake guard the count predicate consults (its own migration; a fixture
 -- copy here: a name-matched edition linked to ANOTHER player row is another person)
@@ -103,12 +105,13 @@ VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'e0000000-0000-0000-0000-0000000
 -- NBA sonics inactive but mapped → not; a listing mapped to a different key is not the blazers'
 INSERT INTO teams_master VALUES ('NBA', 'blazers', true), ('NBA', 'lakers', true), ('NFL', 'chiefs', true), ('NBA', 'sonics', false), ('MLB', 'tigers', true);
 INSERT INTO league_collections VALUES ('NBA', '95f28a17-224a-4025-96ad-adf8a4c63bfd', true), ('NFL', 'dee28451-5d62-409e-a1ad-a83f763ac070', false), ('MLB', '20000000-0000-0000-0000-000000000000', true);
-INSERT INTO panini_team_listings VALUES
+INSERT INTO panini_edition_team_keys VALUES
   ('packcard-100_1', ARRAY['NBA:blazers']),
   ('packcard-100_2', ARRAY['NBA:sonics', 'NBA:blazers']),
   ('packcard-200_1', ARRAY['NFL:chiefs']),
   ('packcard-200_2', ARRAY['NBA:lakers-not-this-key']),
-  ('packcard-100_99', ARRAY['MLB:tigers']); -- a listing whose psku is NOT a catalogued edition: not a card
+  ('packcard-100_4', '{}'::text[]),           -- a catalogued edition placed on NO team (source none): never a hub
+  ('packcard-100_99', ARRAY['MLB:tigers']); -- a map row whose id is NOT a catalogued edition: not a card
 
 -- ── function under test (VERBATIM from the migration) ──────────────────────
 CREATE OR REPLACE FUNCTION public.list_indexable_player_hubs()
@@ -190,11 +193,10 @@ AS $function$
 $function$;
 
 CREATE OR REPLACE FUNCTION public.list_indexable_franchise_hubs()
-RETURNS TABLE(league text, slug text)
-LANGUAGE sql
-STABLE
-SECURITY INVOKER
-SET search_path TO 'public', 'pg_temp'
+ RETURNS TABLE(league text, slug text)
+ LANGUAGE sql
+ STABLE
+ SET search_path TO 'public', 'pg_temp'
 AS $function$
   SELECT tm.league::text, tm.slug::text
   FROM public.teams_master tm
@@ -202,10 +204,10 @@ AS $function$
     AND EXISTS (SELECT 1 FROM public.league_collections lc WHERE lc.league = tm.league AND lc.enabled)
     AND EXISTS (
       SELECT 1
-      FROM public.panini_team_listings l
-      JOIN public.editions e ON e.external_id = l.psku
+      FROM public.panini_edition_team_keys t
+      JOIN public.editions e ON e.external_id = t.external_id
       WHERE e.collection_id = 'd1a0a7f5-609a-49f4-a1a7-4eaac55b020b'::uuid
-        AND l.franchise_keys @> ARRAY[tm.league::text || ':' || tm.slug]
+        AND t.franchise_keys @> ARRAY[tm.league::text || ':' || tm.slug]
     )
   ORDER BY tm.league::text, tm.slug;
 $function$;
@@ -242,7 +244,7 @@ BEGIN
 END $$;
 
 -- a mapped Panini card for the lakers flips them in (positive control on the Panini predicate)
-INSERT INTO panini_team_listings VALUES ('packcard-100_3', ARRAY['NBA:lakers']);
+INSERT INTO panini_edition_team_keys VALUES ('packcard-100_3', ARRAY['NBA:lakers']);
 DO $$
 BEGIN
   PERFORM _assert_eq((SELECT string_agg(slug, ',' ORDER BY slug) FROM public.list_indexable_franchise_hubs() WHERE league = 'NBA'), 'blazers,lakers',

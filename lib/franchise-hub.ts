@@ -256,11 +256,13 @@ export function hubIsIndexable(hub: Pick<FranchiseHub, "collections">, panini?: 
 // ── Panini panel (2026-10-22) ────────────────────────────────────────────────
 //
 // Panini editions carry no team, so get_team_detail cannot see them and
-// league_collections does not map Panini. The team walk does: it records the
-// franchise Panini's own marketplace team filter lists each card under
-// (panini_team_listings.franchise_keys, 'NBA:blazers'). get_panini_franchise_panel
-// reads that — PARTIAL by construction (a card never listed there is not
-// matched), so the panel carries its league's live coverage.
+// league_collections does not map Panini. panini_edition_team_keys does (2026-10-25,
+// hourly): per catalogued edition, the franchise Panini's marketplace team filter
+// lists it under (the team walk, panini_team_listings), else the team printed on the
+// card (panini_editions.nation), else the one team every evidenced card of the same
+// player in the same product agrees on (leave-one-out 99.7 %). get_panini_franchise_panel
+// reads that — still PARTIAL (a card with none of the three is not matched), so the
+// panel carries its league's coverage.
 //
 // ⚠ THREE STATES, and the empty one renders NOTHING:
 //   absent — no catalogued Panini card maps to this franchise. For most
