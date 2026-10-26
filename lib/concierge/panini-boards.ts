@@ -30,6 +30,10 @@ import { readBoardSnapshot } from "@/lib/insights/board-cache"
 import { editionKeyOfSku } from "@/lib/panini/overview-feeds"
 import { paniniEditionUrl } from "@/lib/panini/edition-url"
 import { textIncludes } from "@/lib/filter-match"
+import { resolvePlayerName, singleRetryLabel } from "@/lib/concierge/player-identity"
+import { COLLECTION_UUID_BY_SLUG } from "@/lib/collections"
+
+const PANINI_COLLECTION_UUID = COLLECTION_UUID_BY_SLUG["panini-blockchain"] ?? null
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = any
@@ -517,5 +521,126 @@ export async function paniniTeamEditionKeys(
     return { status: "ok", team: t.team_name, league: t.league, slug: t.slug, keys }
   } catch {
     return { status: "error" }
+  }
+}
+
+// ── Panini holdings breakdown (2026-10-26) ──────────────────────────────────
+// analyze_wallet_holdings refused Panini ("Panini has no wallets"). This answers it over a Panini
+// USERNAME from panini_holdings_breakdown: the collector's public profile as of the last walk, or —
+// never mixed — the cards RPC has seen under the name. Filters player / set / sport / team and
+// group_by player / set / sport / team, like the Top Shot breakdown; tier, badge and series have no
+// Panini counterpart and are reported as ignored, never silently dropped. Cards on no team and
+// cards of unknown sport are counted, so a team or sport breakdown is never read as the whole
+// collection. No FMV confidence leaves (concierge rule 3).
+
+export const PANINI_BREAKDOWN_GROUPS = ["player", "set", "sport", "team"] as const
+
+export interface PaniniBreakdownInput {
+  username: string
+  groupBy?: string | null
+  player?: string | null
+  set?: string | null
+  sport?: string | null
+  team?: string | null
+  tier?: string | null
+  badge?: string | null
+  limit?: number | null
+}
+
+export async function readPaniniBreakdownForConcierge(db: Db, base: string, input: PaniniBreakdownInput): Promise<string> {
+  const failed = (message: string) => JSON.stringify({ status: "error", message })
+  try {
+    const username = String(input.username ?? "").trim().replace(/^@/, "")
+    if (!/^[A-Za-z0-9._-]{2,32}$/.test(username)) {
+      return JSON.stringify({ status: "bad_username", message: "That doesn't look like a Panini username — ask the user to check it. A Panini collector is a Panini username, not a wallet." })
+    }
+    const groupBy = input.groupBy ? String(input.groupBy).toLowerCase() : null
+    if (groupBy && !(PANINI_BREAKDOWN_GROUPS as readonly string[]).includes(groupBy)) {
+      return JSON.stringify({ status: "error", message: "On Panini, groupBy must be one of: player, set, sport, team (Panini cards have no tier or series)." })
+    }
+    let franchiseKey: string | null = null
+    let teamName: string | null = null
+    if (input.team && String(input.team).trim()) {
+      const typed = String(input.team).trim()
+      const { data: tm, error: tmErr } = await db
+        .from("teams_master")
+        .select("league,slug,team_name")
+        .in("league", [...PANINI_TEAM_LEAGUES])
+        .eq("active", true)
+        .limit(400)
+      if (tmErr || !Array.isArray(tm)) return failed("The team lookup failed — say the check failed; do NOT say the collector has no cards for that team.")
+      const picked = pickPaniniTeam(typed, (tm as Record<string, unknown>[]).map((r) => ({ league: String(r.league), slug: String(r.slug), team_name: String(r.team_name) })))
+      if (picked.status === "none") return JSON.stringify({ status: "no_results", team: typed, message: `No NBA, WNBA, NFL or MLB team matches "${typed}". Panini's soccer and racing cards are not on teams — offer a player filter instead.` })
+      if (picked.status === "ambiguous") return JSON.stringify({ status: "ambiguous", team: typed, candidates: picked.candidates.map((c) => ({ league: c.league, team: c.team_name })), message: "More than one franchise matches — ask which, then call again with its full name." })
+      franchiseKey = `${picked.team.league}:${picked.team.slug}`
+      teamName = picked.team.team_name
+    }
+    const limit = typeof input.limit === "number" && Number.isFinite(input.limit) ? Math.min(Math.max(1, Math.round(input.limit)), 25) : 10
+    // The function ILIKEs p_player accent-sensitively ("luka doncic" vs "Luka Dončić"): use the
+    // resolver's spelling when it names one person with one label (#207), else the typed text.
+    const typedPlayer = input.player ? String(input.player).trim() : ""
+    const player = typedPlayer
+      ? singleRetryLabel(await resolvePlayerName(db, PANINI_COLLECTION_UUID, typedPlayer), typedPlayer) ?? typedPlayer
+      : null
+    const { data, error } = await db.rpc("panini_holdings_breakdown", {
+      p_username: username,
+      p_group_by: groupBy,
+      p_player: player,
+      p_set: input.set ? String(input.set).trim() || null : null,
+      p_sport: input.sport ? String(input.sport).trim() || null : null,
+      p_franchise_key: franchiseKey,
+      p_limit: limit,
+    })
+    const d = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | null
+    if (error || !d || typeof d !== "object" || num(d.total_cards) === null || num(d.cards) === null) {
+      return failed("The Panini holdings read failed — say the check failed; never say this collector holds nothing.")
+    }
+    const totalCards = num(d.total_cards)!
+    const source = d.source === "profile" ? "profile" : "seen"
+    const tabUrl = `${base}/panini-blockchain/collection?username=${encodeURIComponent(username.toLowerCase())}`
+    if (totalCards === 0) {
+      return JSON.stringify({
+        status: "not_seen",
+        username: username.toLowerCase(),
+        collection_tab_url: tabUrl,
+        message: "RPC has no profile read and has not seen a card under this Panini username. Say exactly that — it does NOT mean they hold nothing. Suggest linking the username on their RPC dashboard so RPC reads their public Panini profile daily.",
+      })
+    }
+    const ignored = [input.tier ? "tier" : null, input.badge ? "badge" : null].filter(Boolean)
+    const groups = Array.isArray(d.groups) ? (d.groups as Record<string, unknown>[]) : []
+    const topCards = Array.isArray(d.top_cards) ? (d.top_cards as Record<string, unknown>[]) : []
+    return JSON.stringify({
+      status: "ok",
+      username: d.username ?? username.toLowerCase(),
+      collection: "panini-blockchain",
+      source,
+      source_note: source === "profile"
+        ? `From the collector's public Panini profile as RPC last read it (${typeof d.last_walk_at === "string" ? d.last_walk_at : "time unknown"}). ${d.last_complete_at ? "" : num(d.reported_total) !== null ? `That read is PARTIAL — the profile reports ${num(d.reported_total)} cards; say the numbers cover the cards read so far.` : ""}`.trim()
+        : "From the cards RPC has SEEN under this username in the Panini products it walks — NOT the whole collection; say so.",
+      total_cards: totalCards,
+      filters: { player: input.player || null, set: input.set || null, sport: input.sport || null, team: teamName },
+      ...(ignored.length ? { ignored_filters: ignored, ignored_note: "Panini cards have no tier or badge in RPC's data — these filters were NOT applied; say so." } : {}),
+      cards: num(d.cards),
+      fmv_usd: num(d.fmv_usd),
+      fmv_priced_cards: num(d.fmv_priced_cards),
+      fmv_note: "fmv_usd covers fmv_priced_cards only; an unpriced card is not $0.",
+      group_by: groupBy,
+      groups: groups.map((g) => ({ key: g.key ?? null, cards: num(g.cards), fmv_usd: num(g.fmv_usd), fmv_priced_cards: num(g.fmv_priced_cards) })),
+      ...(groupBy === "team" || franchiseKey
+        ? { cards_not_on_a_team: num(d.cards_not_on_a_team), team_note: "Panini cards carry no team field; RPC places a card on a team from Panini's team filter, the team printed on the card, or the same player's other cards in that product. Soccer and racing cards are never on a team, and some others are not placed yet — team counts are floors." }
+        : {}),
+      ...(groupBy === "sport" ? { cards_sport_unknown: num(d.cards_sport_unknown) } : {}),
+      top_cards: topCards.map((c) => ({
+        player: c.player ?? null,
+        set: c.set ?? null,
+        sport: c.sport ?? null,
+        fmv_usd: num(c.fmv_usd),
+        edition_url: typeof c.edition_key === "string" && c.edition_key ? `${base}/panini-blockchain/edition/${encodeURIComponent(c.edition_key)}` : null,
+      })),
+      collection_tab_url: tabUrl,
+      note: "A Panini collector is a Panini USERNAME, unrelated to any Top Shot account of the same name. Owners are never named beyond the username the user gave. Link collection_tab_url.",
+    })
+  } catch {
+    return failed("The Panini holdings read failed — say the check failed; never say this collector holds nothing.")
   }
 }

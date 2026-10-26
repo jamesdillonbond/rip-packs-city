@@ -25,10 +25,19 @@
 //     not $0
 //   · a failed read is "couldn't load", never an empty grid
 
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import MomentMedia from "@/components/MomentMedia"
 import type { PaniniCollectionResponse, PaniniOwnerCard, PaniniProfileHoldings } from "@/lib/panini/owner-cards"
+import {
+  EMPTY_PANINI_CARD_FILTER,
+  PANINI_CARD_SORTS,
+  buildPaniniCollectionCsv,
+  filterSortPaniniCards,
+  paniniCardSports,
+  type PaniniCardFilter,
+  type PaniniCardSort,
+} from "@/lib/panini/collection-view"
 
 const STORAGE_KEY = "rpc.panini.collection.username"
 const mono = "var(--font-mono)"
@@ -234,7 +243,6 @@ function ProfileBody({ username, profile }: { username: string; profile: PaniniP
   }
   const complete = w.lastCompleteAt !== null && w.lastCompleteAt === w.lastWalkAt
   const unpriced = profile.cardsHeld - profile.fmvPricedCards
-  const shown = profile.cards.length
   return (
     <>
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
@@ -271,10 +279,9 @@ function ProfileBody({ username, profile }: { username: string; profile: PaniniP
           {unpriced > 0
             ? ` ${count(unpriced)} card${unpriced === 1 ? "" : "s"} ${unpriced === 1 ? "has" : "have"} no RPC price yet — a card is priced once RPC has walked its edition and seen a sale or a live ask; until then it is left unpriced rather than counted as $0.`
             : ""}
-          {shown < profile.cardsHeld ? ` Showing the ${count(shown)} highest-FMV cards of ${count(profile.cardsHeld)}.` : ""}
         </Note>
       </div>
-      <CardGrid cards={profile.cards} />
+      <CardBrowser cards={profile.cards} total={profile.cardsHeld} username={username} />
     </>
   )
 }
@@ -292,7 +299,6 @@ function SeenBody({ data }: { data: PaniniCollectionResponse }) {
     )
   }
   const unlisted = data.cardsSeen - data.listedNow
-  const shown = data.cards.length
   return (
     <>
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
@@ -309,12 +315,100 @@ function SeenBody({ data }: { data: PaniniCollectionResponse }) {
         <Note>
           Last read {ptDate(data.lastSeenAt)}. These are the cards RPC read under this username in the Panini products it walks, not the whole
           collection — products RPC doesn&apos;t walk yet aren&apos;t covered. A card sold since RPC last read its edition can still appear here.
-          {shown < data.cardsSeen ? ` Showing the ${count(shown)} highest-FMV cards of ${count(data.cardsSeen)}.` : ""}
           {linkNote()}
         </Note>
       </div>
-      <CardGrid cards={data.cards} />
+      <CardBrowser cards={data.cards} total={data.cardsSeen} username={data.username} />
     </>
+  )
+}
+
+const controlStyle: React.CSSProperties = {
+  padding: "6px 8px",
+  fontFamily: mono,
+  fontSize: 12,
+  background: "var(--rpc-surface)",
+  color: "var(--rpc-text-primary)",
+  border: "1px solid var(--rpc-border)",
+  borderRadius: 6,
+}
+
+/**
+ * Filter, sort and CSV export over the LOADED cards (2026-10-26, the Top Shot
+ * collection tab's filter bar / sort bar / Export CSV). The loaded cards are the
+ * highest-FMV ones, so whenever they are not the whole collection the export
+ * button and the count say "of the N loaded", never imply the full collection.
+ */
+function CardBrowser({ cards, total, username }: { cards: PaniniOwnerCard[]; total: number; username: string }) {
+  const [filter, setFilter] = useState<PaniniCardFilter>(EMPTY_PANINI_CARD_FILTER)
+  const [sort, setSort] = useState<PaniniCardSort>("fmv_desc")
+  const sports = useMemo(() => paniniCardSports(cards), [cards])
+  const view = useMemo(() => filterSortPaniniCards(cards, filter, sort), [cards, filter, sort])
+  const filtered = view.length !== cards.length
+  const partial = cards.length < total
+
+  const exportCsv = useCallback(() => {
+    try {
+      const blob = new Blob([buildPaniniCollectionCsv(view)], { type: "text/csv;charset=utf-8;" })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `panini-${username.replace(/[^A-Za-z0-9_-]/g, "") || "collection"}.csv`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+    } catch {
+      // A browser without Blob downloads keeps the on-page view; nothing is lost.
+    }
+  }, [view, username])
+
+  if (cards.length === 0) return null
+  return (
+    <div data-testid="panini-collection-browser">
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 14 }}>
+        <label style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)" }} htmlFor="panini-card-search">Search player or card</label>
+        <input
+          id="panini-card-search"
+          type="search"
+          placeholder="Search player or card"
+          value={filter.query}
+          onChange={(e) => setFilter((f) => ({ ...f, query: e.target.value }))}
+          style={{ ...controlStyle, flex: "1 1 180px", minWidth: 0 }}
+        />
+        {sports.length > 1 ? (
+          <select aria-label="Sport" value={filter.sport} onChange={(e) => setFilter((f) => ({ ...f, sport: e.target.value }))} style={controlStyle}>
+            <option value="">Every sport</option>
+            {sports.map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+        ) : null}
+        <select aria-label="Sort" value={sort} onChange={(e) => setSort(e.target.value as PaniniCardSort)} style={controlStyle}>
+          {PANINI_CARD_SORTS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+        </select>
+        <label style={{ fontFamily: mono, fontSize: 12, color: "var(--rpc-text-secondary)", display: "inline-flex", gap: 4, alignItems: "center" }}>
+          <input type="checkbox" checked={filter.listedOnly} onChange={(e) => setFilter((f) => ({ ...f, listedOnly: e.target.checked }))} /> Listed
+        </label>
+        <label style={{ fontFamily: mono, fontSize: 12, color: "var(--rpc-text-secondary)", display: "inline-flex", gap: 4, alignItems: "center" }}>
+          <input type="checkbox" checked={filter.specialOnly} onChange={(e) => setFilter((f) => ({ ...f, specialOnly: e.target.checked }))} /> Special serials
+        </label>
+        <button type="button" onClick={exportCsv} disabled={view.length === 0} data-testid="panini-collection-export" style={{ ...controlStyle, cursor: view.length === 0 ? "default" : "pointer", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+          Export CSV ({count(view.length)})
+        </button>
+      </div>
+      <div style={{ marginTop: 6 }} data-testid="panini-collection-view-count">
+        <Note>
+          {filtered ? `${count(view.length)} of the ${count(cards.length)} loaded cards match.` : `${count(cards.length)} cards loaded.`}
+          {partial ? ` Filters, sort and the CSV cover the ${count(cards.length)} highest-FMV cards loaded here, not all ${count(total)}.` : ""}
+        </Note>
+      </div>
+      {view.length === 0 ? (
+        <div data-testid="panini-collection-no-match" style={{ marginTop: 10 }}>
+          <Note>No loaded card matches these filters.</Note>
+        </div>
+      ) : (
+        <CardGrid cards={view} />
+      )}
+    </div>
   )
 }
 

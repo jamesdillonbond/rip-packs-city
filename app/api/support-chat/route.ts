@@ -115,7 +115,7 @@ import {
 import { ALLOWED_ORIGINS } from "@/lib/allowed-origins";
 import { lookupUiField } from "@/lib/concierge/ui-field-dictionary";
 import { ownLookup } from "@/lib/safe-lookup";
-import { readPaniniCollectionForConcierge, readPaniniDealsForConcierge, readPaniniPackMarketForConcierge, readPaniniPremiumsForConcierge, readPaniniTeamForConcierge } from "@/lib/concierge/panini-boards";
+import { readPaniniBreakdownForConcierge, readPaniniCollectionForConcierge, readPaniniDealsForConcierge, readPaniniPackMarketForConcierge, readPaniniPremiumsForConcierge, readPaniniTeamForConcierge } from "@/lib/concierge/panini-boards";
 import { fetchPaniniEditionAsk, fetchPaniniEditionSerials } from "@/lib/panini/edition-market";
 import { paniniEditionUrl } from "@/lib/panini/edition-url";
 
@@ -462,18 +462,19 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "analyze_wallet_holdings",
-    description: "Break down a collector's wallet holdings with filters and grouping — the tool for ANY 'how many / what's the value of / which do I own most' question about a slice of a wallet. Filters (all optional, combinable): team (e.g. 'Blazers'), player, set, tier, badge (badge/tag title, e.g. 'Top Shot Debut', 'Rookie Mint', 'Championship Year'). group_by one of player|team|set|tier|series returns the top groups by moment count with FMV totals (e.g. group_by=player answers 'which player do I own the most moments for?'). Returns filtered total_moments + total_fmv + top 5 moments in the slice. One collection per call (defaults to NBA Top Shot; team/badge filters are Top Shot–backed). Use check_wallet for whole-portfolio/cross-collection totals instead.",
+    description: "Break down a collector's wallet holdings with filters and grouping — the tool for ANY 'how many / what's the value of / which do I own most' question about a slice of a wallet. Filters (all optional, combinable): team (e.g. 'Blazers'), player, set, tier, badge (badge/tag title, e.g. 'Top Shot Debut', 'Rookie Mint', 'Championship Year'). group_by one of player|team|set|tier|series returns the top groups by moment count with FMV totals (e.g. group_by=player answers 'which player do I own the most moments for?'). Returns filtered total_moments + total_fmv + top 5 moments in the slice. One collection per call (defaults to NBA Top Shot; team/badge filters are Top Shot–backed). On Panini (collectionId panini-blockchain, the default on a Panini page) walletAddress is the collector's PANINI USERNAME; filters player, set, sport (e.g. 'WNBA', 'Soccer'), team, and groupBy player|set|sport|team — no tier, badge or series; the answer says whether it covers the public profile RPC read or only the cards RPC has seen under the name. Use check_wallet for whole-portfolio/cross-collection totals instead.",
     input_schema: {
       type: "object" as const,
       properties: {
-        walletAddress: { type: "string", description: "Flow wallet address (0x + 16 hex) or Top Shot / Dapper username." },
-        collectionId: { type: "string", description: "Optional. EXACTLY one of: nba-top-shot, nfl-all-day, disney-pinnacle, laliga-golazos, ufc. Defaults to nba-top-shot." },
+        walletAddress: { type: "string", description: "Flow wallet address (0x + 16 hex) or Top Shot / Dapper username; on Panini, the Panini username." },
+        collectionId: { type: "string", description: "Optional. EXACTLY one of: nba-top-shot, nfl-all-day, disney-pinnacle, laliga-golazos, ufc, panini-blockchain. Defaults to the page's collection, else nba-top-shot." },
+        sport: { type: "string", description: "Panini only: sport filter (Basketball, WNBA, Football, Baseball, Soccer, Racing…)." },
         team: { type: "string", description: "Team name filter, partial ok (e.g. 'Blazers', 'Lakers')." },
         player: { type: "string", description: "Player name filter, partial ok." },
         set: { type: "string", description: "Set name filter, partial ok." },
         tier: { type: "string", description: "Tier filter (COMMON, FANDOM, RARE, LEGENDARY, ULTIMATE)." },
         badge: { type: "string", description: "Badge / moment-tag title filter, partial ok (e.g. 'Top Shot Debut', 'Rookie Year', 'Rookie Mint')." },
-        groupBy: { type: "string", description: "Optional grouping: player, team, set, tier, or series." },
+        groupBy: { type: "string", description: "Optional grouping: player, team, set, tier, or series (Panini: player, set, sport or team)." },
         limit: { type: "number", description: "Max groups returned when groupBy is set (default 10)." },
       },
       required: ["walletAddress"],
@@ -2837,8 +2838,21 @@ async function executeToolInner(
       // 2026-10-19: Panini has no wallets (owners are Panini usernames). A name here
       // would resolve as a TOP SHOT username — another person's Flow wallet, which
       // can hold no Panini card — and come back as "none found".
-      if (effectiveCollectionId === "panini-blockchain") {
-        return JSON.stringify({ status: "unsupported_collection", message: "Panini has no wallets — its collectors are Panini usernames. For a Panini collector call check_wallet with their Panini username; for a Flow wallet, call this tool again with that wallet's own collectionId (e.g. nba-top-shot). Do not say the collector has nothing." });
+      // 2026-10-26: it now answers Panini over the USERNAME (panini_holdings_breakdown) — the
+      // profile as last read, or the cards seen under the name — instead of refusing.
+      const requestedPanini = toolInput.collectionId === "panini-blockchain" || (!toolInput.collectionId && effectiveCollectionId === "panini-blockchain");
+      if (requestedPanini) {
+        return await readPaniniBreakdownForConcierge(supabase, base, {
+          username: String(toolInput.walletAddress ?? ""),
+          groupBy: toolInput.groupBy ?? null,
+          player: toolInput.player ?? null,
+          set: toolInput.set ?? null,
+          sport: toolInput.sport ?? null,
+          team: toolInput.team ?? null,
+          tier: toolInput.tier ?? null,
+          badge: toolInput.badge ?? null,
+          limit: typeof toolInput.limit === "number" ? toolInput.limit : null,
+        });
       }
       // Username resolution — same ladder as check_wallet (cache RPC first,
       // live resolver fallback), kept inline like check_wallet_squeeze does.

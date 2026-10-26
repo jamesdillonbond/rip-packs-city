@@ -166,7 +166,8 @@ describe("wallet and team tools on a Panini page say what Panini lacks — never
   // this list — panini_edition_team_keys now places Panini cards on franchises — and are pinned below.
   it.each([
     ["find_quirky_serials", { walletAddress: "joe" }],
-    ["analyze_wallet_holdings", { walletAddress: "joe" }],
+    // analyze_wallet_holdings left this list 2026-10-26: it answers Panini over the username
+    // (panini_holdings_breakdown) — pinned in its own block below.
   ])("%s is refused on Panini without resolving a Top Shot username or querying a team", async (tool, input) => {
     const inst = makeInstrumentedSupabaseFixture({})
     A.sb = inst.fixture
@@ -177,6 +178,87 @@ describe("wallet and team tools on a Panini page say what Panini lacks — never
     expect(r.status).toBe("unsupported_collection")
     expect(String(r.message)).toMatch(/Panini/)
     expect(inst.rpcCalls.some((c) => c.name === "resolve_topshot_username")).toBe(false)
+  })
+})
+
+describe("analyze_wallet_holdings on a Panini page answers over the Panini USERNAME (2026-10-26)", () => {
+  const BD = {
+    username: "spinotron", source: "profile", last_walk_at: "2026-10-26T12:17:58Z", last_complete_at: null, profile_state: "public",
+    reported_total: 7585, total_cards: 7584, cards: 767, fmv_usd: 103880.5, fmv_priced_cards: 758, cards_not_on_a_team: null, cards_sport_unknown: 0,
+    groups: [{ key: "WNBA", cards: 767, fmv_usd: 103880.5, fmv_priced_cards: 758 }],
+    top_cards: [{ player: "Caitlin Clark", set: "Base", sport: "WNBA", fmv_usd: 900, edition_key: "packcard-1_2_3_4", confidence: "HIGH" }],
+  }
+  const teams = { "teams_master": { data: [{ league: "NBA", slug: "blazers", team_name: "Portland Trail Blazers" }], error: null } }
+  it("reads panini_holdings_breakdown with the username — never the Top Shot resolver — and says which source it covers", async () => {
+    const inst = makeInstrumentedSupabaseFixture({ "rpc:panini_holdings_breakdown": { data: BD, error: null } })
+    A.sb = inst.fixture
+    A.state.script = [{ tools: [{ name: "analyze_wallet_holdings", input: { walletAddress: "Spinotron", sport: "WNBA", groupBy: "sport", tier: "RARE" } }] }, { text: "done" }]
+    A.state.cursor = 0
+    await POST(post())
+    const r = toolResult()
+    expect(r.status).toBe("ok")
+    expect(r.source).toBe("profile")
+    expect(String(r.source_note)).toMatch(/PARTIAL/)
+    expect(r.cards).toBe(767)
+    expect(r.ignored_filters).toEqual(["tier"])
+    expect(r.top_cards[0].edition_url).toMatch(/\/panini-blockchain\/edition\/packcard-1_2_3_4$/)
+    expect(JSON.stringify(r)).not.toMatch(/HIGH|MEDIUM|confidence/)
+    const call = inst.rpcCalls.find((c) => c.name === "panini_holdings_breakdown")
+    expect((call?.args as any)?.p_username).toBe("Spinotron")
+    expect((call?.args as any)?.p_sport).toBe("WNBA")
+    expect(inst.rpcCalls.some((c) => c.name === "resolve_topshot_username" || c.name === "concierge_wallet_breakdown")).toBe(false)
+  })
+  it("a team filter resolves to the franchise key and states that team counts are floors", async () => {
+    const inst = makeInstrumentedSupabaseFixture({ ...teams, "rpc:panini_holdings_breakdown": { data: { ...BD, source: "seen", cards: 12, cards_not_on_a_team: 3 }, error: null } })
+    A.sb = inst.fixture
+    A.state.script = [{ tools: [{ name: "analyze_wallet_holdings", input: { walletAddress: "adlcards", team: "Blazers" } }] }, { text: "done" }]
+    A.state.cursor = 0
+    await POST(post())
+    const r = toolResult()
+    expect(r.status).toBe("ok")
+    expect(String(r.source_note)).toMatch(/NOT the whole collection/)
+    expect(r.filters.team).toBe("Portland Trail Blazers")
+    expect(String(r.team_note)).toMatch(/floors/)
+    expect((inst.rpcCalls.find((c) => c.name === "panini_holdings_breakdown")?.args as any)?.p_franchise_key).toBe("NBA:blazers")
+  })
+  it("a failed read says the check failed, and a never-seen username is 'not seen', never 'holds nothing'", async () => {
+    let inst = makeInstrumentedSupabaseFixture({ "rpc:panini_holdings_breakdown": { data: null, error: { message: "timeout" } } })
+    A.sb = inst.fixture
+    A.state.script = [{ tools: [{ name: "analyze_wallet_holdings", input: { walletAddress: "adlcards" } }] }, { text: "done" }]
+    A.state.cursor = 0
+    await POST(post())
+    let r = toolResult()
+    expect(r.status).toBe("error")
+    expect(String(r.message)).toMatch(/never say this collector holds nothing/)
+    inst = makeInstrumentedSupabaseFixture({ "rpc:panini_holdings_breakdown": { data: { ...BD, source: "seen", total_cards: 0, cards: 0, groups: [], top_cards: [] }, error: null } })
+    A.sb = inst.fixture
+    A.state.script = [{ tools: [{ name: "analyze_wallet_holdings", input: { walletAddress: "nobody1" } }] }, { text: "done" }]
+    A.state.cursor = 0
+    await POST(post())
+    r = toolResult()
+    expect(r.status).toBe("not_seen")
+    expect(String(r.message)).toMatch(/does NOT mean they hold nothing/)
+  })
+  it("a player typed without accents is searched with the resolver's spelling (#207)", async () => {
+    const inst = makeInstrumentedSupabaseFixture({
+      "rpc:resolve_player_name": { data: { status: "one", query: "luka doncic", player: { name: "Luka Dončić", labels: ["Luka Dončić"] }, namesakes: [] }, error: null },
+      "rpc:panini_holdings_breakdown": { data: BD, error: null },
+    })
+    A.sb = inst.fixture
+    A.state.script = [{ tools: [{ name: "analyze_wallet_holdings", input: { walletAddress: "adlcards", player: "luka doncic" } }] }, { text: "done" }]
+    A.state.cursor = 0
+    await POST(post())
+    expect((inst.rpcCalls.find((c) => c.name === "panini_holdings_breakdown")?.args as any)?.p_player).toBe("Luka Dončić")
+    expect((inst.rpcCalls.find((c) => c.name === "resolve_player_name")?.args as any)?.p_collection_id).toBe("d1a0a7f5-609a-49f4-a1a7-4eaac55b020b")
+  })
+  it("refuses a groupBy Panini has no data for (tier / series)", async () => {
+    const inst = makeInstrumentedSupabaseFixture({ "rpc:panini_holdings_breakdown": { data: BD, error: null } })
+    A.sb = inst.fixture
+    A.state.script = [{ tools: [{ name: "analyze_wallet_holdings", input: { walletAddress: "adlcards", groupBy: "tier" } }] }, { text: "done" }]
+    A.state.cursor = 0
+    await POST(post())
+    expect(toolResult().status).toBe("error")
+    expect(inst.rpcCalls.some((c) => c.name === "panini_holdings_breakdown")).toBe(false)
   })
 })
 

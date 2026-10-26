@@ -153,3 +153,65 @@ describe("PaniniCollection", () => {
     await waitFor(() => expect(c.querySelector('[role="alert"]')).not.toBeNull())
   })
 })
+
+describe("PaniniCollection — filter, sort and export (2026-10-26)", () => {
+  it("filters the loaded cards, says 'of the N loaded', and a no-match filter never reads as an empty collection", async () => {
+    mockFetch(200, payload({ cardsSeen: 0, cards: [], profile: walked({}, { lastCompleteAt: null, reportedTotal: 146 }) }))
+    const c = await lookUp("jamesdillonbond")
+    await waitFor(() => expect(c.querySelector('[data-testid="panini-collection-browser"]')).not.toBeNull())
+    // cardsHeld (2) == loaded (2) in the fixture, so no partial sentence yet.
+    expect(c.querySelector('[data-testid="panini-collection-view-count"]')!.textContent).toContain("2 cards loaded")
+    fireEvent.change(c.querySelector("#panini-card-search")!, { target: { value: "messi" } })
+    expect(c.querySelector('[data-testid="panini-collection-view-count"]')!.textContent).toContain("1 of the 2 loaded cards match")
+    expect(c.querySelector('a[href="/panini-blockchain/edition/packcard-1"]')).not.toBeNull()
+    fireEvent.change(c.querySelector("#panini-card-search")!, { target: { value: "zzz" } })
+    expect(c.querySelector('[data-testid="panini-collection-no-match"]')!.textContent).toBe("No loaded card matches these filters.")
+    expect(c.textContent).not.toContain("hasn't seen a card")
+    expect((c.querySelector('[data-testid="panini-collection-export"]') as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it("when only the highest-FMV cards are loaded, the view says the filters and CSV cover THOSE, not the whole collection", async () => {
+    mockFetch(200, payload({ cardsSeen: 0, cards: [], profile: walked({ cardsHeld: 900 }) }))
+    const c = await lookUp("spinotron")
+    await waitFor(() => expect(c.querySelector('[data-testid="panini-collection-view-count"]')).not.toBeNull())
+    expect(c.querySelector('[data-testid="panini-collection-view-count"]')!.textContent).toContain("cover the 2 highest-FMV cards loaded here, not all 900")
+    expect(c.querySelector('[data-testid="panini-collection-export"]')!.textContent).toBe("Export CSV (2)")
+  })
+})
+
+describe("PaniniCollection — controls and CSV download (2026-10-26)", () => {
+  it("sport, sort, Listed and Special controls narrow the grid; Export downloads the CURRENT view", async () => {
+    mockFetch(200, payload({ cardsSeen: 0, cards: [], profile: walked({ listedNow: 1, cards: [
+      { sku: "x1", editionKey: "packcard-1", serial: 1, mintCap: 10, isListed: true, askUsd: 900, lastSaleUsd: null, lastSaleAt: null, seenAt: null, flags: ["#1"], playerName: "Lionel Messi", setName: "Base Prizms Gold", tier: null, thumbnailUrl: null, fmvUsd: 650, catalogued: true, sport: "Soccer" },
+      { sku: "x2", editionKey: "packcard-9", serial: 4, mintCap: 99, isListed: false, askUsd: null, lastSaleUsd: null, lastSaleAt: null, seenAt: null, flags: [], playerName: "Caitlin Clark", setName: "WNBA Base", tier: null, thumbnailUrl: null, fmvUsd: null, catalogued: false, sport: "Womens Basketball" },
+    ] }) }))
+    const c = await lookUp("jamesdillonbond")
+    await waitFor(() => expect(c.querySelector('[data-testid="panini-collection-browser"]')).not.toBeNull())
+    const sport = c.querySelector('select[aria-label="Sport"]') as HTMLSelectElement
+    expect(Array.from(sport.options).map((o) => o.value)).toEqual(["", "Soccer", "WNBA"])
+    fireEvent.change(sport, { target: { value: "WNBA" } })
+    expect(c.textContent).toContain("Caitlin Clark")
+    expect(c.textContent).not.toContain("Lionel Messi")
+    fireEvent.change(sport, { target: { value: "" } })
+    fireEvent.change(c.querySelector('select[aria-label="Sort"]')!, { target: { value: "player_asc" } })
+    const names = Array.from(c.querySelectorAll(".rpc-card")).map((n) => n.textContent ?? "")
+    expect(names[0]).toContain("Caitlin Clark")
+    const [listed, special] = Array.from(c.querySelectorAll('[data-testid="panini-collection-browser"] input[type="checkbox"]')) as HTMLInputElement[]
+    fireEvent.click(listed)
+    expect(c.textContent).not.toContain("Caitlin Clark")
+    fireEvent.click(listed)
+    fireEvent.click(special)
+    expect(c.querySelector('[data-testid="panini-collection-view-count"]')!.textContent).toContain("1 of the 2 loaded cards match")
+
+    const blobs: Blob[] = []
+    vi.stubGlobal("URL", Object.assign(URL, { createObjectURL: vi.fn((b: Blob) => { blobs.push(b); return "blob:x" }), revokeObjectURL: vi.fn() }))
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {})
+    fireEvent.click(c.querySelector('[data-testid="panini-collection-export"]')!)
+    expect(click).toHaveBeenCalledTimes(1)
+    const text = await blobs[0].text()
+    expect(text.split("\n")).toHaveLength(2) // header + the one special card in view
+    expect(text).toContain('"Lionel Messi"')
+    expect(text).not.toContain("Caitlin Clark")
+    click.mockRestore()
+  })
+})
