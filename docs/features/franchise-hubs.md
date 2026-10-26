@@ -206,3 +206,12 @@ The team map (`panini_edition_team_keys`) gains a fourth inference after listing
 ## 2026-10-26 (later) — Flow-moments inference (WNBA, NFL)
 
 A fifth source, after the same-season rule: a WNBA card takes the team the player's **Top Shot WNBA moments** show in the product's season (game_date May–Oct of that year), an NFL card the team of their **NFL All Day moments** that season (Aug–Feb, so a January game is the season before), resolved through `teams_master`; unanimous only, only when NO Panini evidence for the player exists in the product or (NFL) the season, never a two-player card, names matched case-insensitively. Held out 10-26: WNBA 617 / 622 (99.2 %; 2024 90/90, 2025 90/91, 2026 437/441), NFL 1,428 / 1,435 (99.5 %). Stored as `source = 'sibling'` + `inferred_from = topshot_moments / allday_moments` (new unconstrained column; `same_product` / `same_season` for the Panini siblings). NFL 4,930 → 8,322 of 11,006, WNBA 2,350 → 3,221 of 3,719. Migration `20261026225742`; DB pin claim 9 (two planted defects red).
+
+## 2026-10-26 (evening) — walk capacity: the laptop's Chrome has no free window (measured)
+
+Asked whether the team walk could run more teams a night. Measured from `pipeline_runs` (last 3 nights, PT):
+
+- Team walk 3:35 → ~4:45 AM (5 teams, 66–72 min; an NFL team is 27–34 min / ~260 pages, a WNBA one ~3 min, MLB 5–9 min), then the collector walk ~4:45 → ~5:25 AM, in the same debug Chrome.
+- The ingest runner (every 2 h from 6 AM, `panini-schedule.bat`) is active in that Chrome almost continuously: activity clusters over 24 h were 6:55–9:45, 11:01–13:45, 14:39–16:27, 18:34–21:45, 22:45–1:45, 3:01–5:45 — the only gaps are ~30–60 min after each 2-hourly start.
+- So a 6th nightly team (would start ~4:45) pushes the collector walk past the 6 AM full run; raising `PANINI_TEAM_ROTATION` alone does nothing because `PANINI_WALK_BUDGET_MIN` only stops a team from STARTING. A second daytime slot would share Chrome with an ingest run (more concurrent page loads from one residential IP — the block risk).
+- Not changed. The plan already interleaves never-walked teams by sport (`20261023145800`); on 10-26 14 WNBA, 18 MLB and ≥18 NFL labels were still never walked — ~10–12 more nights at 5 a night (≈ early November) before every roster team has one walk.
