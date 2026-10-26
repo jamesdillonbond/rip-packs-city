@@ -281,7 +281,11 @@ function siteUrl() {
 // /candy-mlb/sniper, a tab Candy does not have (2026-09-25).
 const CANDY_TAB_PATHS = (getCollection("candy-mlb")?.pages ?? []).map((p) => `/candy-mlb/${p}`).join(", ")
 // Panini published 2026-09-25 (Overview + Market) — derived from the registry, like Candy's.
-const PANINI_TAB_PATHS = (getCollection("panini-blockchain")?.pages ?? []).map((p) => `/panini-blockchain/${p}`).join(", ")
+const PANINI_TAB_PATHS = [
+  ...(getCollection("panini-blockchain")?.pages ?? []).map((p) => `/panini-blockchain/${p}`),
+  // 2026-10-25: product pages (the Series-page counterpart) are a registry switch, not a tab.
+  ...(getCollection("panini-blockchain")?.productPages ? ["/panini-blockchain/product (product pages)"] : []),
+].join(", ")
 
 const TOOLS: Anthropic.Tool[] = [
   {

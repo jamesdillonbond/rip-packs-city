@@ -10,7 +10,7 @@ import { describe, expect, it, vi } from "vitest"
 
 vi.mock("@/lib/supabase", () => ({ supabaseAdmin: {} }))
 
-import { fetchPaniniHubPanel, hubIsIndexable, paniniCoverage } from "@/lib/franchise-hub"
+import { fetchPaniniHubPanel, hubIsIndexable, paniniCoverage, paniniSportNoun } from "@/lib/franchise-hub"
 
 const HUB = { league: "NBA" as const, team_slug: "blazers" }
 const TS = { collection_id: "95f28a17-224a-4025-96ad-adf8a4c63bfd", collection_slug: "nba_top_shot" }
@@ -58,7 +58,7 @@ describe("fetchPaniniHubPanel", () => {
 
 describe("paniniCoverage", () => {
   it("floors the share: 94.8 % reads 94, never 95", () => {
-    expect(paniniCoverage(DETAIL.coverage)).toEqual({ sport: "Basketball", mapped: 10329, catalogued: 10898, pct: 94 })
+    expect(paniniCoverage(DETAIL.coverage)).toEqual({ sport: "Basketball", noun: "basketball", mapped: 10329, catalogued: 10898, pct: 94 })
   })
   it("omits a coverage the read did not carry", () => {
     expect(paniniCoverage(null)).toBeNull()
@@ -75,5 +75,12 @@ describe("hubIsIndexable with a Panini panel", () => {
     expect(hubIsIndexable({ collections: [TS] }, { state: "absent" })).toBe(false)
     expect(hubIsIndexable({ collections: [TS] }, { state: "failed" })).toBe(false)
     expect(hubIsIndexable({ collections: [TS] })).toBe(false)
+  })
+})
+
+describe("paniniSportNoun (2026-10-25)", () => {
+  it("names the WNBA, never 'womens basketball'", () => {
+    expect(paniniSportNoun("Womens Basketball")).toBe("WNBA")
+    expect(paniniSportNoun("Football")).toBe("football")
   })
 })

@@ -334,9 +334,14 @@ export async function fetchPaniniHubPanel(
  */
 export function paniniCoverage(
   c: PaniniFranchiseDetail["coverage"],
-): { sport: string; mapped: number; catalogued: number; pct: number } | null {
+): { sport: string; noun: string; mapped: number; catalogued: number; pct: number } | null {
   const mapped = Number(c?.mapped)
   const catalogued = Number(c?.catalogued)
   if (!c?.sport || !Number.isFinite(mapped) || !Number.isFinite(catalogued) || catalogued <= 0 || mapped < 0) return null
-  return { sport: c.sport, mapped, catalogued, pct: Math.floor((mapped / catalogued) * 100) }
+  return { sport: c.sport, noun: paniniSportNoun(c.sport), mapped, catalogued, pct: Math.floor((mapped / catalogued) * 100) }
+}
+
+/** Panini's grid sport as prose: "Womens Basketball" reads "WNBA", never "womens basketball". */
+export function paniniSportNoun(sport: string): string {
+  return sport === "Womens Basketball" ? "WNBA" : sport.toLowerCase()
 }

@@ -65,9 +65,11 @@ describe("/insights/deals names every collection it serves", () => {
     expect(src).toContain('key: "nfl_all_day"')
     expect(src).toContain('key: "disney_pinnacle"')
     expect(src).toContain('key: "candy_mlb"')
+    expect(src).toContain('key: "panini_blockchain"')
     // The union type must admit them too, or the chips won't typecheck.
     expect(src).toMatch(/type CollectionFilter =[^\n]*nfl_all_day/)
     expect(src).toMatch(/type CollectionFilter =[^\n]*candy_mlb/)
+    expect(src).toMatch(/type CollectionFilter =[^\n]*panini_blockchain/)
   })
 
   it("the public API allowlists nfl_all_day and candy_mlb", () => {
@@ -81,6 +83,8 @@ describe("/insights/deals names every collection it serves", () => {
     // A leg in the view but not in the allowlist answers HTTP 400 for rows the
     // payload already carries — the 2026-07-28 defect, repeated.
     expect(listed).toContain("candy_mlb")
+    // 2026-10-25: the Panini leg (mv_panini_public_deals).
+    expect(listed).toContain("panini_blockchain")
   })
 
   it.each([
@@ -101,6 +105,16 @@ describe("/insights/deals names every collection it serves", () => {
   ])("%s names Candy MLB, the fourth leg", (_label, file) => {
     const code = stripComments(read(file))
     expect(code).toMatch(/Candy MLB/)
+  })
+
+  it.each([
+    ["client board", CLIENT],
+    ["SEO layout", LAYOUT],
+    ["OG card", OG],
+    ["insights hub card", HUB],
+  ])("%s names Panini, the fifth leg (2026-10-25)", (_label, file) => {
+    const code = stripComments(read(file))
+    expect(code).toMatch(/Panini/)
   })
 
   it("no surface still claims the board is Top-Shot-plus-Pinnacle only", () => {

@@ -55,7 +55,7 @@ type ApiResponse = {
 
 type TierFilter = "ALL" | "COMMON" | "UNCOMMON" | "RARE" | "LEGENDARY" | "FANDOM" | "ULTIMATE"
 type SortKey = "discount" | "fmv" | "ask" | "circulation"
-type CollectionFilter = "ALL" | "nba_top_shot" | "nfl_all_day" | "disney_pinnacle" | "candy_mlb"
+type CollectionFilter = "ALL" | "nba_top_shot" | "nfl_all_day" | "disney_pinnacle" | "candy_mlb" | "panini_blockchain"
 
 function normalizeTier(t: string | null): string | null {
   if (!t) return null
@@ -80,6 +80,10 @@ const COLLECTIONS: { key: CollectionFilter; label: string }[] = [
   // Candy listings carry no expiry and are only deactivated on positive
   // evidence, so an ungated leg would publish asks last seen up to 51 days ago.
   { key: "candy_mlb", label: "Candy MLB" },
+  // Panini joined 2026-10-25 (10 editions at the time) through its own leg,
+  // mv_panini_public_deals: the cheapest regular serial under FMV AND under the
+  // median of recent sales, on a HIGH/MEDIUM edition FMV.
+  { key: "panini_blockchain", label: "Panini" },
 ]
 
 function fmtPct(n: number | null): string {
@@ -356,7 +360,7 @@ export default function DealsBoardClient({
   }, [rows, seedFailed])
 
   const tweetIntent = useMemo(() => {
-    const text = `Marketplaces show you a listing. We rank listings against a fair value we can stand behind.\n\nThe Below FMV board — Top Shot, NFL All Day, Disney Pinnacle + Candy MLB, what's underpriced right now:`
+    const text = `Marketplaces show you a listing. We rank listings against a fair value we can stand behind.\n\nThe Below FMV board — Top Shot, NFL All Day, Disney Pinnacle, Candy MLB + Panini, what's underpriced right now:`
     const url = `${SITE_URL}/insights/deals`
     return `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`
   }, [])
@@ -379,7 +383,7 @@ export default function DealsBoardClient({
         <div className="rpc-dl-eyebrow">RPC Insights · Public</div>
         <h1 className="rpc-dl-h1">Below FMV</h1>
         <p className="rpc-dl-lede">
-          <strong>Top Shot, NFL All Day, Disney Pinnacle + Candy MLB</strong> editions
+          <strong>Top Shot, NFL All Day, Disney Pinnacle, Candy MLB + Panini</strong> editions
           listed{" "}
           <strong>below a fair value we can stand behind</strong> — editions
           whose FMV rests on thin or stale evidence are excluded. A big gap can
@@ -540,7 +544,7 @@ export default function DealsBoardClient({
                   <th scope="col" className="rpc-dl-th-num">FMV</th>
                   <th scope="col" className="rpc-dl-th-num">Floor ask</th>
                   <th scope="col" className="rpc-dl-th-num rpc-dl-th-emph">Discount</th>
-                  <th scope="col" className="rpc-dl-th-num" title="What you'd keep reselling at FMV after the marketplace's published seller fee, and that net against what you'd pay. Top Shot and All Day charge 5%; Disney Pinnacle charges 7.5% with a $0.50 listing-fee floor. Candy MLB trades on Magic Eden and OpenSea (Solana), whose rates we have not verified, so its rows show an em-dash here rather than a guess.">Net of fees</th>
+                  <th scope="col" className="rpc-dl-th-num" title="What you'd keep reselling at FMV after the marketplace's published seller fee, and that net against what you'd pay. Top Shot and All Day charge 5%; Disney Pinnacle charges 7.5% with a $0.50 listing-fee floor. Candy MLB trades on Magic Eden and OpenSea (Solana), and Panini on its own marketplace; we have not verified those rates, so their rows show an em-dash here rather than a guess.">Net of fees</th>
                   <th scope="col" className="rpc-dl-th-num">Mint</th>
                 </tr>
               </thead>
@@ -649,7 +653,7 @@ export default function DealsBoardClient({
           <p>
             <strong>Discount %</strong> = (FMV − floor ask) ÷ FMV × 100. We only
             list an edition when its floor ask (NBA Top Shot, NFL All Day,
-            Candy MLB) or floor (Disney Pinnacle) sits below{" "}
+            Candy MLB, Panini) or floor (Disney Pinnacle) sits below{" "}
             <strong>a fair value we can stand behind</strong> — one priced from
             recent corroborated sales, not from a lone or stale listing — so a
             gap means something.
@@ -670,9 +674,15 @@ export default function DealsBoardClient({
             Pinnacle&apos;s FMV is not capped at its floor, so its gaps persist.
           </p>
           <p>
+            <strong>Panini rows</strong> are the cheapest regular serial (never a #1, jersey-number or perfect-mint copy)
+            whose ask is under its FMV <em>and</em> under the median of the edition&apos;s recent sales. Panini sales reach RPC
+            hours to days after they happen, and its asks are re-read by RPC&apos;s walk of Panini&apos;s marketplace, so
+            check the listing on Panini before acting.
+          </p>
+          <p>
             Each leg carries a minimum ask so penny-floor artifacts don&apos;t
             headline: <strong>$5+</strong> on Top Shot, <strong>$1+</strong> on
-            NFL All Day, Disney Pinnacle and Candy MLB. A low-priced row is real, but the
+            NFL All Day, Disney Pinnacle, Candy MLB and Panini. A low-priced row is real, but the
             cheaper the ask the more a percentage discount flatters it — check
             the dollar figure, and the net-of-fees column, before acting.
             Filter by collection, or drill into a player or set to see every

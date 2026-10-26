@@ -46,8 +46,11 @@ describe("the concierge prompt does not call a published collection board-only",
     const { getCollection } = await import("@/lib/collections")
     const pages = (getCollection("panini-blockchain")?.pages ?? []) as readonly string[]
     expect(pages.length).toBeGreaterThanOrEqual(2)
+    // 2026-10-25: product pages are a registry SWITCH (productPages), not a tab — derived, so allowed
+    // exactly when the switch is on.
+    const allowed = [...pages, ...(getCollection("panini-blockchain")?.productPages ? ["product"] : [])]
     for (const m of stripComments(ROUTE).matchAll(/\/panini-blockchain\/([a-z-]+)/g)) {
-      expect(pages, `/panini-blockchain/${m[1]} is not a Panini tab`).toContain(m[1])
+      expect(allowed, `/panini-blockchain/${m[1]} is not a Panini tab or registry route`).toContain(m[1])
     }
   })
 

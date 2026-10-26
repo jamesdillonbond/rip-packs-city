@@ -39,7 +39,7 @@
 // image; NULL for TS).
 //
 // Query params:
-//   collection=nba_top_shot|nfl_all_day|disney_pinnacle|candy_mlb
+//   collection=nba_top_shot|nfl_all_day|disney_pinnacle|candy_mlb|panini_blockchain
 //                                                 single collection filter
 //   tier=<text>                                   single tier filter (free-text;
 //                                                 TS enum values or Pinnacle
@@ -80,7 +80,7 @@ import { boardRowMeta } from "@/lib/insights/board-meta"
 // defect filed for NFL All Day on 2026-07-28, when the biggest leg of the board
 // returned HTTP 400. `__tests__/insights-deals-surface-contract.test.ts` pins
 // every surface that has to name a leg; add to it, never weaken it.
-const VALID_COLLECTIONS = new Set(["nba_top_shot", "nfl_all_day", "disney_pinnacle", "candy_mlb"]);
+const VALID_COLLECTIONS = new Set(["nba_top_shot", "nfl_all_day", "disney_pinnacle", "candy_mlb", "panini_blockchain"]);
 const VALID_CONF = new Set(["HIGH", "MEDIUM"]);
 const VALID_SORTS = new Set(["discount", "fmv", "ask", "circulation"]);
 
