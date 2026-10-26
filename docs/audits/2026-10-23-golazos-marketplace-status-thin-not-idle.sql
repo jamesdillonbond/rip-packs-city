@@ -1,4 +1,8 @@
 -- docs/audits/2026-10-23-golazos-marketplace-status-thin-not-idle.sql
+-- ✅ APPLIED (verified live 2026-10-25 ~6:50 PM PT, Cowork cloud): collection_config for laliga_golazos reads
+-- secondary_status 'thin_since_2026_10_02', last_verified_at 2026-10-23T22:05:00+00:00 and the re-verified notes
+-- below. Who ran it and when was not recorded; the PARKED note below is history. Kept as the record + revert.
+--
 -- PARKED 2026-10-23 ~3:12 PM PT (Cowork cloud, autonomous pass): the MCP returned "cancelled" for this
 -- data write (the operator's confirmation hold on plain UPDATEs; precedent 20261018041800, applied by
 -- Trevor in the dashboard SQL editor). ONE statement; paste it into the dashboard SQL editor, run, then
