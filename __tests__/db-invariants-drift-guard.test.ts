@@ -492,10 +492,11 @@ const PINS = [
       "supabase/migrations/20260929063531_audit_20260928_pinnacle_entity_totals_say_what_they_sum.sql",
   },
   {
+    // Re-pinned 2026-10-25: top players grouped by player_id, not label.
     fn: "get_series_rollups",
     test: "supabase/tests/get_series_editions.sql",
     migration:
-      "supabase/migrations/20260930000000_audit_20260929_series_rollups_name_a_team_moments_franchise.sql",
+      "supabase/migrations/20261026005855_audit_20261025_series_rollup_players_group_by_person_not_label.sql",
   },
   {
     // Added 2026-09-26. Pinnacle character pages list the render catalog: 36 of

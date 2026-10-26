@@ -30,7 +30,7 @@ const TICKER_ITEMS: Record<string, string[]> = {
     "⚡ COLLECTION ANALYZER — FMV + marketplace asks + badge intel",
     "⚡ PACK EV CALCULATOR — expected value vs drop price",
     "⚡ SNIPER — live deals below FMV",
-    "⚡ BADGE FILTERS — Debut · Fresh · Rookie Year, on any view",
+    "⚡ BADGE FILTERS — Debut · Rookie Year · Rookie Mint, on any view",
     "⚡ SET TRACKER — completion progress + bottleneck finder",
   ],
   "disney-pinnacle": [

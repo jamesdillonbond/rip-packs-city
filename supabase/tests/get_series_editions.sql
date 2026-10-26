@@ -290,6 +290,7 @@ BEGIN
         CASE WHEN e.player_name IS NULL THEN NULL
              ELSE regexp_replace(lower(trim(e.player_name)), '[^a-z0-9]+', '-', 'g') END AS player_slug,
         e.player_name,
+        e.player_id,
         e.team_name,
         c.fmv_usd
       FROM editions e
@@ -304,13 +305,23 @@ BEGIN
       GROUP BY set_slug, set_name
     ),
     p AS (
-      SELECT player_slug, player_name, count(*) AS edition_count, COALESCE(sum(fmv_usd), 0) AS fmv_total,
-             -- 2026-09-29: a TEAM moment's subject is its franchise (/team/), not a player page.
-             min(btrim(team_name)) FILTER (WHERE btrim(team_name) = btrim(player_name)
-                                              OR starts_with(btrim(team_name), btrim(player_name) || ' ')) AS team_name
-      FROM ed WHERE player_slug IS NOT NULL AND player_name IS NOT NULL
-      GROUP BY player_slug, player_name
-      ORDER BY fmv_total DESC LIMIT 12
+      -- 2026-10-25: one card per PERSON (player_id), the label only when it is NULL; name and
+      -- slug from the linked players row ("Patrick Mahomes" + "Patrick Mahomes II" were two cards).
+      SELECT COALESCE(regexp_replace(lower(trim(pl.name)), '[^a-z0-9]+', '-', 'g'), g.player_slug) AS player_slug,
+             COALESCE(pl.name, g.player_name) AS player_name,
+             g.edition_count, g.fmv_total, g.team_name
+      FROM (
+        SELECT (array_agg(player_id) FILTER (WHERE player_id IS NOT NULL))[1] AS player_id,
+               min(player_slug) AS player_slug, min(player_name) AS player_name,
+               count(*) AS edition_count, COALESCE(sum(fmv_usd), 0) AS fmv_total,
+               -- 2026-09-29: a TEAM moment's subject is its franchise (/team/), not a player page.
+               min(btrim(team_name)) FILTER (WHERE btrim(team_name) = btrim(player_name)
+                                                OR starts_with(btrim(team_name), btrim(player_name) || ' ')) AS team_name
+        FROM ed WHERE player_slug IS NOT NULL AND player_name IS NOT NULL
+        GROUP BY COALESCE(player_id::text, player_slug)
+        ORDER BY fmv_total DESC LIMIT 12
+      ) g
+      LEFT JOIN players pl ON pl.id = g.player_id AND pl.collection_id = p_collection_id
     )
     SELECT jsonb_build_object(
       'sets',    (SELECT COALESCE(jsonb_agg(to_jsonb(s.*) ORDER BY s.fmv_total DESC), '[]'::jsonb) FROM s),
@@ -325,6 +336,7 @@ BEGIN
         CASE WHEN e.player_name IS NULL THEN NULL
              ELSE regexp_replace(lower(trim(e.player_name)), '[^a-z0-9]+', '-', 'g') END AS player_slug,
         e.player_name,
+        e.player_id,
         e.team_name,
         fmv.fmv_usd
       FROM editions e
@@ -342,13 +354,23 @@ BEGIN
       GROUP BY set_slug, set_name
     ),
     p AS (
-      SELECT player_slug, player_name, count(*) AS edition_count, COALESCE(sum(fmv_usd), 0) AS fmv_total,
-             -- 2026-09-29: a TEAM moment's subject is its franchise (/team/), not a player page.
-             min(btrim(team_name)) FILTER (WHERE btrim(team_name) = btrim(player_name)
-                                              OR starts_with(btrim(team_name), btrim(player_name) || ' ')) AS team_name
-      FROM ed WHERE player_slug IS NOT NULL AND player_name IS NOT NULL
-      GROUP BY player_slug, player_name
-      ORDER BY fmv_total DESC LIMIT 12
+      -- 2026-10-25: one card per PERSON (player_id), the label only when it is NULL; name and
+      -- slug from the linked players row ("Patrick Mahomes" + "Patrick Mahomes II" were two cards).
+      SELECT COALESCE(regexp_replace(lower(trim(pl.name)), '[^a-z0-9]+', '-', 'g'), g.player_slug) AS player_slug,
+             COALESCE(pl.name, g.player_name) AS player_name,
+             g.edition_count, g.fmv_total, g.team_name
+      FROM (
+        SELECT (array_agg(player_id) FILTER (WHERE player_id IS NOT NULL))[1] AS player_id,
+               min(player_slug) AS player_slug, min(player_name) AS player_name,
+               count(*) AS edition_count, COALESCE(sum(fmv_usd), 0) AS fmv_total,
+               -- 2026-09-29: a TEAM moment's subject is its franchise (/team/), not a player page.
+               min(btrim(team_name)) FILTER (WHERE btrim(team_name) = btrim(player_name)
+                                                OR starts_with(btrim(team_name), btrim(player_name) || ' ')) AS team_name
+        FROM ed WHERE player_slug IS NOT NULL AND player_name IS NOT NULL
+        GROUP BY COALESCE(player_id::text, player_slug)
+        ORDER BY fmv_total DESC LIMIT 12
+      ) g
+      LEFT JOIN players pl ON pl.id = g.player_id AND pl.collection_id = p_collection_id
     )
     SELECT jsonb_build_object(
       'sets',    (SELECT COALESCE(jsonb_agg(to_jsonb(s.*) ORDER BY s.fmv_total DESC), '[]'::jsonb) FROM s),
@@ -396,7 +418,8 @@ SELECT _assert_eq(public.get_series_rollups('7dd9dd11-e8b6-45c4-ac99-71331f95971
 -- franchise, or its city prefix as All Day stores it), so the page links it to /team/ — a link crawl
 -- found /nba-top-shot/player/los-angeles-lakers 404ing from /nba-top-shot/series/series-4.
 -- Both branches: edition_fmv_current (Top Shot here) and the fmv_snapshots fallback (All Day here).
-CREATE TABLE public.editions (id uuid, collection_id uuid, series int, set_name text, player_name text, team_name text, thumbnail_url text);
+CREATE TABLE public.editions (id uuid, collection_id uuid, series int, set_name text, player_name text, team_name text, thumbnail_url text, player_id uuid);
+CREATE TABLE public.players (id uuid PRIMARY KEY, collection_id uuid, name text);
 CREATE TABLE public.edition_fmv_current (edition_id uuid, collection_id uuid, fmv_usd numeric);
 CREATE TABLE public.fmv_snapshots (edition_id uuid, fmv_usd numeric, computed_at timestamptz);
 CREATE FUNCTION public.series_chain_numbers(p_collection_id uuid, p_series_number int) RETURNS int[]
@@ -423,5 +446,24 @@ SELECT _assert_eq(
 SELECT _assert_eq(
   (SELECT string_agg((p->>'player_slug') || '|' || COALESCE(p->>'team_name', '-'), ',' ORDER BY ord) FROM jsonb_array_elements(public.get_series_rollups('dee28451-5d62-409e-a1ad-a83f763ac070', 'series-1')->'players') WITH ORDINALITY t(p, ord)),
   'denver|Denver Broncos,denver-smith|-', 'fmv_snapshots branch: city prefix is a team; a player whose name merely starts with the city is not');
+
+-- 6 (2026-10-25): players are grouped by PERSON (player_id), the label only when it is NULL.
+-- One player_id under two labels ("Patrick Mahomes" / "Patrick Mahomes II") is ONE card named
+-- by the players row; unlinked labels (the team moments above) are unchanged. Both branches.
+INSERT INTO public.players VALUES ('00000000-0000-0000-0000-0000000000a1', 'dee28451-5d62-409e-a1ad-a83f763ac070', 'Patrick Mahomes'),
+  ('00000000-0000-0000-0000-0000000000a2', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'LeBron James');
+INSERT INTO public.editions VALUES
+  ('00000000-0000-0000-0000-000000000006', 'dee28451-5d62-409e-a1ad-a83f763ac070', 1, 'Base', 'Patrick Mahomes', 'Kansas City Chiefs', 't', '00000000-0000-0000-0000-0000000000a1'),
+  ('00000000-0000-0000-0000-000000000007', 'dee28451-5d62-409e-a1ad-a83f763ac070', 1, 'Base', 'Patrick Mahomes II', 'Kansas City Chiefs', 't', '00000000-0000-0000-0000-0000000000a1'),
+  ('00000000-0000-0000-0000-000000000008', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 4, 'Base Set', 'LeBron James Jr', 'Los Angeles Lakers', 't', '00000000-0000-0000-0000-0000000000a2');
+UPDATE public.editions SET player_id = '00000000-0000-0000-0000-0000000000a2' WHERE id = '00000000-0000-0000-0000-000000000002';
+INSERT INTO public.fmv_snapshots VALUES ('00000000-0000-0000-0000-000000000006', 3, now()), ('00000000-0000-0000-0000-000000000007', 5, now());
+INSERT INTO public.edition_fmv_current VALUES ('00000000-0000-0000-0000-000000000008', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 15);
+SELECT _assert_eq(
+  (SELECT string_agg((p->>'player_slug') || ':' || (p->>'player_name') || ':' || (p->>'edition_count') || ':' || (p->>'fmv_total'), ',' ORDER BY ord) FROM jsonb_array_elements(public.get_series_rollups('dee28451-5d62-409e-a1ad-a83f763ac070', 'series-1')->'players') WITH ORDINALITY t(p, ord)),
+  'denver:Denver:1:9,patrick-mahomes:Patrick Mahomes:2:8,denver-smith:Denver Smith:1:4', 'fmv_snapshots branch: two labels of one player_id = one card, named by the players row');
+SELECT _assert_eq(
+  (SELECT string_agg((p->>'player_slug') || ':' || (p->>'edition_count') || ':' || (p->>'fmv_total'), ',' ORDER BY ord) FROM jsonb_array_elements(public.get_series_rollups('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'series-4')->'players') WITH ORDINALITY t(p, ord)),
+  'lebron-james:2:35,los-angeles-lakers:1:30,los-angeles:1:10', 'edition_fmv_current branch: same rule; team moments unchanged');
 
 ROLLBACK;
