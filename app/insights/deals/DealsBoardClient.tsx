@@ -218,6 +218,8 @@ type Props = {
   initialNowMs?: number | null
   /** Non-null only when the server-side read FAILED (not when it was empty). */
   initialDegraded?: DegradedSummary | null
+  /** Collections on this board whose marketplace is degraded / dormant / shut down, and why (server-read). */
+  marketNotices?: Array<{ collections: string[]; notes: string }>
 }
 
 export default function DealsBoardClient({
@@ -225,6 +227,7 @@ export default function DealsBoardClient({
   initialFetchedAt,
   initialNowMs = null,
   initialDegraded = null,
+  marketNotices = [],
 }: Props) {
   const [rows, setRows] = useState<Row[]>(initialRows)
   // Server already gave us the default board view — not "loading" on first
@@ -390,6 +393,11 @@ export default function DealsBoardClient({
           be a real <em>steal</em> — or a low-serial / stale listing. We show
           the FMV and the floor ask side by side so you can judge.
         </p>
+        {marketNotices.map((n) => (
+          <p key={n.notes} role="status" className="rpc-dl-meta rpc-dl-meta-warn" style={{ margin: "8px 0", lineHeight: 1.6 }}>
+            ⚠ {n.collections.join(", ")}: {n.notes}
+          </p>
+        ))}
         <div className="rpc-dl-meta-row">
           <span className="rpc-dl-meta">
             Board rebuilt <FreshnessStamp iso={fetchedAt} />

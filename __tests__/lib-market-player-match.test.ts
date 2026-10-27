@@ -83,3 +83,19 @@ describe("withAccentFallback", () => {
     expect(await withAccentFallback("jose ramirez", flaky, (r) => r.player_name)).toEqual([])
   })
 })
+
+describe("withAccentFallback never presents a truncated widened window as the market (2026-10-27)", () => {
+  it("a widened read that fills the arm's window keeps the original (empty) answer", async () => {
+    const { withAccentFallback } = await import("@/lib/market/player-match")
+    const run = async (body: string) =>
+      body === "o'neill" ? [] : Array.from({ length: 500 }, (_, i) => ({ player_name: i === 0 ? "Aiden O’Neill" : `Russell ${i}` }))
+    const out = await withAccentFallback("o'neill", run, (r) => r.player_name, 500)
+    expect(out).toEqual([])
+  })
+  it("CONTROL: under the window the confirmed rows are returned", async () => {
+    const { withAccentFallback } = await import("@/lib/market/player-match")
+    const run = async (body: string) => (body === "o'neill" ? [] : [{ player_name: "Aiden O’Neill" }, { player_name: "Russell" }])
+    const out = await withAccentFallback("o'neill", run, (r) => r.player_name, 500)
+    expect(out?.map((r) => r.player_name)).toEqual(["Aiden O’Neill"])
+  })
+})

@@ -87,7 +87,7 @@ import { fetchBadgeArt } from "@/lib/badges/server-art"
 import ParallelTierSwitcher from "@/components/entity/ParallelTierSwitcher"
 import { OG_INHERITED } from "@/lib/seo"
 import { askAgeStamp, askVerifiedAt } from "@/lib/market/ask-freshness"
-import { fetchPrintingAskChangedAt, isParallelExternalId, type PrintingAskStamp } from "@/lib/market/printing-ask-stamp"
+import { fetchPrintingAskChangedAt, isParallelExternalId, PRINTING_ASK_STAMP_KIND, type PrintingAskStamp } from "@/lib/market/printing-ask-stamp"
 import { jsonLdScript } from "@/lib/seo/json-ld-script"
 import { BUYBACK_TITLE } from "@/lib/entity/buyback-copy"
 
@@ -689,7 +689,9 @@ export default async function MomentPage(
   const askAt = isParallelExternalId(e.external_id)
     ? (printingAskRes.ok ? printingAskRes.at : null)
     : askVerifiedAt(highOffer)
-  const askStamp = askFromOffers ? askAgeStamp(askAt, highOffer?.low_ask, collectionSlugUrl) : null
+  const askStamp = askFromOffers
+    ? askAgeStamp(askAt, highOffer?.low_ask, collectionSlugUrl, undefined, isParallelExternalId(e.external_id) ? PRINTING_ASK_STAMP_KIND : undefined)
+    : null
 
   // Item 3b — deterministic hero badges for the current serial that the
   // special_serial_holders sweep may not have populated (#1 + the perfect

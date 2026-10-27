@@ -129,3 +129,25 @@ export async function getMarketplaceStatus(
     return { ...UNKNOWN_FALLBACK, slug: dbSlug, readFailed: true }
   }
 }
+
+/**
+ * Marketplace notices for a CROSS-COLLECTION board (2026-10-27): the per-collection banner lives on collection
+ * pages, so a board mixing several collections (Below FMV) showed frozen asks during Dapper's maintenance with no
+ * word of it. Returns one entry per distinct note among the given collections whose status is degraded / dormant /
+ * shutdown, naming every collection that shares it. A failed status read contributes nothing (never a verdict).
+ */
+export async function nonHealthyMarketNotices(
+  collectionSlugs: readonly string[],
+  displayName: (slug: string) => string,
+): Promise<Array<{ collections: string[]; notes: string }>> {
+  const statuses = await Promise.all(collectionSlugs.map(async (s) => ({ s, st: await getMarketplaceStatus(s) })))
+  const byNote = new Map<string, string[]>()
+  for (const { s, st } of statuses) {
+    if (st.readFailed) continue
+    if (st.status !== "degraded" && st.status !== "dormant" && st.status !== "shutdown") continue
+    const note = (st.notes ?? "").trim()
+    if (!note) continue
+    byNote.set(note, [...(byNote.get(note) ?? []), displayName(s)])
+  }
+  return [...byNote.entries()].map(([notes, collections]) => ({ collections, notes }))
+}

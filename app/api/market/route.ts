@@ -903,13 +903,13 @@ async function fetchModernListings(
     return withAccentFallback(filters.player, (player) => fetchPaniniMarketListings({
       tier: filters.tier, maxPrice: filters.maxPrice, sortBy: filters.sortBy, limit: filters.limit,
       sets: filters.sets, seriesList: filters.seriesList, player, minPrice: filters.minPrice,
-    }), nameOf)
+    }), nameOf, Math.max(filters.limit, 500)) // the arm's window (see withAccentFallback)
   }
   if (collectionId === CANDY_COLLECTION_ID_FOR_DISPATCH) {
     return withAccentFallback(filters.player, (player) => fetchCandyMarketListings({
       tier: filters.tier, maxPrice: filters.maxPrice, sortBy: filters.sortBy, limit: filters.limit,
       sets: filters.sets, seriesList: filters.seriesList, player, minPrice: filters.minPrice,
-    }), nameOf)
+    }), nameOf, Math.max(filters.limit, 500)) // the arm's window (see withAccentFallback)
   }
   if (collectionId === PINNACLE_COLLECTION_ID_FOR_DISPATCH) {
     return withAccentFallback(filters.player, (player) => fetchPinnacleModernListings(collectionId, {

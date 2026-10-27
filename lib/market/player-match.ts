@@ -95,6 +95,13 @@ export async function withAccentFallback<T>(
   typed: string,
   run: (playerIlikeBody: string) => Promise<T[] | null>,
   nameOf: (row: T) => string | null | undefined,
+  /**
+   * The row window `run` fetches (2026-10-27). The widened pattern over-matches ("o'neill" → `_____ll` matches
+   * Mitchell, Russell, Campbell…) and the arm takes its window BEFORE the name re-check, so a widened read that
+   * fills the window may have cut off the very rows wanted — and a partial list must never stand as the whole
+   * market. Then the original answer stands, exactly as before this fallback existed.
+   */
+  window?: number,
 ): Promise<T[] | null> {
   const first = await run(typed)
   if (!typed.trim() || first === null || first.length > 0) return first
@@ -102,5 +109,6 @@ export async function withAccentFallback<T>(
   if (!pattern) return first
   const wide = await run(pattern)
   if (wide === null) return first
+  if (window != null && wide.length >= window) return first
   return wide.filter((r) => textIncludes(nameOf(r) ?? "", typed))
 }

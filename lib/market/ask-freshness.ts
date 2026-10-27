@@ -237,11 +237,13 @@ export function askAgeStamp(
   askPrice: number | null | undefined,
   collectionSlug: string | null | undefined,
   now: number | null = Date.now(),
+  /** The stamp's kind when it is not the collection's usual one (a Top Shot parallel's ask is a CHECK time). */
+  kindOverride?: AskStampKind,
 ): { label: string; title: string; stale: boolean } | null {
   if (!cachedAt || askPrice == null) return null
   const hours = askAgeHours(cachedAt, now)
   if (hours == null) return null
-  const kind = askStampKind(collectionSlug)
+  const kind = kindOverride ?? askStampKind(collectionSlug)
   // 2026-10-20: a LISTED stamp (All Day / Golazos `listed_at`, until both moved to their verified stamp) dates when the seller
   // POSTED the ask. Its age says nothing about how long since we checked it — those
   // books are re-verified on chain (V2 every 2 h, V1 weekly, #198) — so a 90-day-old

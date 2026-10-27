@@ -16,6 +16,11 @@ import DealsBoardClient, { type Row } from "./DealsBoardClient"
 import { readBoardOrLive } from "@/lib/insights/board-cache"
 import { degradedFromSource } from "@/lib/insights/board-status"
 import { fetchDealsDefault } from "@/lib/insights/boards"
+import { nonHealthyMarketNotices } from "@/lib/marketplace-status"
+import { collectionDisplayName } from "@/lib/seo"
+
+// The collections this board carries (its lede names the same five).
+const BOARD_COLLECTIONS = ["nba-top-shot", "nfl-all-day", "disney-pinnacle", "candy-mlb", "panini-blockchain"] as const
 
 // Match the API route's 5-minute edge cache.
 export const revalidate = 300
@@ -24,7 +29,12 @@ export default async function DealsPage() {
   // Serve the default board from the throttle-immune snapshot cache when it is
   // fresh; fall back to the live query, and to the last-good snapshot if the live
   // query fails under disk-IO saturation (nc1 PUBLIC-BOARD-CACHING).
+  // 2026-10-27: a collection whose marketplace is down (Dapper maintenance) says so here — its rows' asks are
+  // frozen while the board keeps rebuilding. A failed status read adds no notice (never a verdict). Started first so
+  // it runs alongside the board read.
+  const noticesP = nonHealthyMarketNotices(BOARD_COLLECTIONS, collectionDisplayName)
   const { payload, source } = await readBoardOrLive("deals", () => fetchDealsDefault())
+  const marketNotices = await noticesP
   const initialRows = (payload.rows as Row[]) ?? []
   // ⚠ UNCOALESCED ON PURPOSE, and it used to be `?? new Date().toISOString()`.
   // This board reads a materialized view since 2026-08-22, so the rows can be a full
@@ -50,6 +60,7 @@ export default async function DealsPage() {
       // on mount anyway.
       initialNowMs={Date.now()}
       initialDegraded={degradedFromSource(source, "Below FMV board")}
+      marketNotices={marketNotices}
     />
   )
 }

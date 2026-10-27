@@ -68,11 +68,33 @@ base="${VERCEL_GIT_PREVIOUS_SHA:-}"
 # So: fetch the live sha if the clone lacks it, and if HEAD is STRICTLY its
 # ancestor, everything in HEAD is already live — skip. Any failure to fetch or
 # decide falls through to the existing logic (build), never to "skip".
-if [ -n "$base" ] && [ "$base" != "$(git rev-parse HEAD 2>/dev/null)" ]; then
+#
+# 2026-10-27 (review of 2d604b32f), two gaps closed with the tip of origin/main:
+#  (a) OVERLAPPING late builds: the live sha only moves when a build finishes, so an older commit whose build
+#      starts while a newer one is still building saw the pre-push live sha and built anyway — and could still
+#      finish last and take prod. A production build of a commit that a NEWER origin/main tip already contains is
+#      skipped: the tip's own build diffs from the live sha, so it carries this commit's changes too.
+#  (b) ROLLBACK by resetting main to an ancestor: the live sha (the bad commit) is no longer on main, and "HEAD is
+#      an ancestor of live" skipped the rollback silently. That skip now applies only while live is still on main.
+# An unfetchable tip leaves the 10-21 behaviour exactly as it was.
+head_sha="$(git rev-parse HEAD 2>/dev/null)"
+tip=""
+if [ "${VERCEL_GIT_COMMIT_REF:-}" = "main" ] && git fetch -q --depth=200 origin main 2>/dev/null; then
+  tip="$(git rev-parse FETCH_HEAD 2>/dev/null || true)"
+fi
+if [ -n "$tip" ] && [ "$tip" != "$head_sha" ] && git merge-base --is-ancestor HEAD "$tip" 2>/dev/null; then
+  echo "vercel-ignore-build: skip — $(git rev-parse --short HEAD) is already contained in the newer main tip (${tip}); that build ships it"
+  exit 0
+fi
+if [ -n "$base" ] && [ "$base" != "$head_sha" ]; then
   git cat-file -e "${base}^{commit}" 2>/dev/null || git fetch -q --depth=200 origin "$base" 2>/dev/null || true
   if git cat-file -e "${base}^{commit}" 2>/dev/null && git merge-base --is-ancestor HEAD "$base" 2>/dev/null; then
-    echo "vercel-ignore-build: skip — $(git rev-parse --short HEAD) is already contained in the live deployment (${base})"
-    exit 0
+    if [ -n "$tip" ] && ! git merge-base --is-ancestor "$base" "$tip" 2>/dev/null; then
+      echo "vercel-ignore-build: build — the live deployment (${base}) is no longer on main (a rollback); shipping $(git rev-parse --short HEAD)"
+    else
+      echo "vercel-ignore-build: skip — $(git rev-parse --short HEAD) is already contained in the live deployment (${base})"
+      exit 0
+    fi
   fi
 fi
 

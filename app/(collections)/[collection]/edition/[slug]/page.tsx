@@ -80,7 +80,7 @@ import WatchEditionButton from "@/components/alerts/WatchEditionButton"
 import TrackedOutboundLink from "@/components/TrackedOutboundLink"
 import { dapperMarketEditionUrl } from "@/lib/collections"
 import { fetchPaniniEditionSetSlug, type PaniniEditionSetSlug } from "@/lib/panini/edition-set-slug"
-import { fetchPrintingAskChangedAt, isParallelExternalId, type PrintingAskStamp } from "@/lib/market/printing-ask-stamp"
+import { fetchPrintingAskChangedAt, isParallelExternalId, PRINTING_ASK_STAMP_KIND, type PrintingAskStamp } from "@/lib/market/printing-ask-stamp"
 import {
   fetchPaniniEditionAsk,
   fetchPaniniEditionSerials,
@@ -836,6 +836,8 @@ export default async function EditionPage(
       ? (highOffer?.low_ask != null && printingAsk.ok ? printingAsk.at : null)
       : askVerifiedAt(highOffer)
   const askAge = askAgeHours(askAt)
+  // A parallel's ask stamp is the printing row's CHECK time (lib/market/printing-ask-stamp.ts), not a change time.
+  const askKind = isParallelPage ? PRINTING_ASK_STAMP_KIND : askStampKind(collection)
   // Best-offer cell (H1): only render when there's a real positive offer.
   // edition_offers is Top-Shot-only today, so an em-dash here would be a
   // permanent placeholder on every other collection.
@@ -1090,7 +1092,7 @@ export default async function EditionPage(
                 // left this branch the same evening: get_edition_high_offer now returns the
                 // floor's floor_ask_verified_at, so its kind is "checked" and the age below
                 // is a real verification age.)
-                : askStampKind(collection) === "listed"
+                : askKind === "listed"
                   ? (
                     <span title={askAgeTitle(askAge, "listed")}>
                       listed {fmtAskAge(askAge)} ago
@@ -1100,7 +1102,7 @@ export default async function EditionPage(
                   ? (
                     // REPORTS, never concludes: it does not say the listing is gone,
                     // only that we have not re-checked it.
-                    <span style={{ color: "var(--rpc-warning-text)", fontWeight: 600 }} title={askAgeTitle(askAge, askStampKind(collection))}>
+                    <span style={{ color: "var(--rpc-warning-text)", fontWeight: 600 }} title={askAgeTitle(askAge, askKind)}>
                       ⚠ ask unconfirmed {fmtAskAge(askAge)}
                     </span>
                   )
@@ -1401,7 +1403,7 @@ export default async function EditionPage(
                 href="/insights/deals"
                 className="rpc-mono"
                 style={INSIGHT_CHIP_STYLE}
-                title={askAge !== null && askAge >= ASK_STALE_HOURS ? askAgeTitle(askAge, askStampKind(collection)) : undefined}
+                title={askAge !== null && askAge >= ASK_STALE_HOURS ? askAgeTitle(askAge, askKind) : undefined}
               >
                 {Math.round(insightLinks.deal_pct)}% below FMV
                 {askAge !== null && askAge >= ASK_STALE_HOURS && (

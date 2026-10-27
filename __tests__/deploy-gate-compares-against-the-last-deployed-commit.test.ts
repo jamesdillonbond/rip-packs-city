@@ -182,4 +182,48 @@ describe("the gate, executed against a real repository", () => {
       expect(gateSkips(dir, bogus), `previous sha ${JSON.stringify(bogus)}`).toBe(false)
     }
   })
+
+  // 2026-10-27 (review of 2d604b32f): the gate also reads the tip of origin/main.
+  const cloneAt = (origin: string, sha: string) => {
+    git(origin, "config", "uploadpack.allowAnySHA1InWant", "true")
+    const clone = mkdtempSync(path.join(tmpdir(), "deploy-gate-clone-"))
+    git(clone, "init", "-q")
+    git(clone, "remote", "add", "origin", `file://${origin}`)
+    git(clone, "fetch", "-q", "--depth=1", "origin", sha)
+    git(clone, "checkout", "-q", sha)
+    return clone
+  }
+
+  it("🚨 OVERLAPPING late builds: an older commit is skipped when a newer main tip contains it (live has not moved yet)", () => {
+    const { dir: origin, deployed } = repo()
+    writeFileSync(path.join(origin, "app.ts"), "export const v = 2\n")
+    git(origin, "commit", "-aqm", "A — older code")
+    const a = git(origin, "rev-parse", "HEAD").trim()
+    writeFileSync(path.join(origin, "app.ts"), "export const v = 3\n")
+    git(origin, "commit", "-aqm", "B — newer code, still building")
+    const clone = cloneAt(origin, a)
+    // Live is still the pre-push deploy, so the 10-21 rule alone would BUILD A.
+    expect(gateSkips(clone, deployed), "A is contained in main's tip B; B's build ships it").toBe(true)
+  })
+
+  it("MIRROR: the main tip itself still builds", () => {
+    const { dir: origin, deployed } = repo()
+    writeFileSync(path.join(origin, "app.ts"), "export const v = 2\n")
+    git(origin, "commit", "-aqm", "tip code")
+    const tip = git(origin, "rev-parse", "HEAD").trim()
+    expect(gateSkips(cloneAt(origin, tip), deployed)).toBe(false)
+  })
+
+  it("🚨 a ROLLBACK (main reset to an ancestor of the live commit) builds instead of being skipped", () => {
+    const { dir: origin } = repo()
+    writeFileSync(path.join(origin, "app.ts"), "export const v = 2\n")
+    git(origin, "commit", "-aqm", "X — good")
+    const x = git(origin, "rev-parse", "HEAD").trim()
+    writeFileSync(path.join(origin, "app.ts"), "export const v = 3\n")
+    git(origin, "commit", "-aqm", "B — broken, live")
+    const live = git(origin, "rev-parse", "HEAD").trim()
+    git(origin, "branch", "keep-b")       // keep B fetchable
+    git(origin, "reset", "-q", "--hard", x) // main backed out to X
+    expect(gateSkips(cloneAt(origin, x), live), "live is no longer on main: ship the rollback").toBe(false)
+  })
 })

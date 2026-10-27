@@ -36,7 +36,7 @@ describe("moment page — the edition floor ask carries its age", () => {
   it("stamps only the value the timestamp describes (highOffer.low_ask), via the shared helper", () => {
     expect(page).toContain("const askFromOffers = !isCandyColl && highOffer?.low_ask != null")
     // (the stamp's SOURCE for a parallel is pinned in __tests__/printing-ask-stamp.test.ts)
-    expect(page).toContain("askAgeStamp(askAt, highOffer?.low_ask, collectionSlugUrl)")
+    expect(page).toMatch(/askAgeStamp\(askAt, highOffer\?\.low_ask, collectionSlugUrl[,)]/) // 2026-10-27: + a kind override for a parallel
     expect(page).toContain('data-testid="moment-ask-age"')
   })
 })

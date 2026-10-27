@@ -20,15 +20,17 @@ function db(result: { data: unknown; error: { message: string } | null } | Error
 }
 
 describe("fetchPrintingAskChangedAt", () => {
-  it("dates the ask from the printing's own edition_offers row", async () => {
-    const d = db({ data: { low_ask: 915, updated_at: "2026-10-15T20:26:00Z" }, error: null })
+  // Re-pinned 2026-10-27: the stamp is the row's low_ask_confirmed_at (the ASK's own check time). updated_at is also
+  // bumped by an OFFER-only change, so it read 150 of 4,221 parallel asks 1 h+ fresher than they were.
+  it("dates the ask from the printing's own edition_offers row — its ask check time, never updated_at", async () => {
+    const d = db({ data: { low_ask: 915, low_ask_confirmed_at: "2026-10-15T20:26:00Z", updated_at: "2026-10-27T15:00:00Z" }, error: null })
     expect(await fetchPrintingAskChangedAt("ts", "261:8716::21", d.db)).toEqual({ at: "2026-10-15T20:26:00Z", ok: true })
     expect(d.eqs).toContainEqual(["table", "edition_offers"])
     expect(d.eqs).toContainEqual(["external_id", "261:8716::21"])
     expect(d.eqs).toContainEqual(["collection_id", "ts"])
   })
   it("a row with no ask has no ask age; a failed read is ok:false (the page then shows NO age)", async () => {
-    expect(await fetchPrintingAskChangedAt("ts", "1:2::3", db({ data: { low_ask: null, updated_at: "x" }, error: null }).db)).toEqual({ at: null, ok: true })
+    expect(await fetchPrintingAskChangedAt("ts", "1:2::3", db({ data: { low_ask: null, low_ask_confirmed_at: "x" }, error: null }).db)).toEqual({ at: null, ok: true })
     expect(await fetchPrintingAskChangedAt("ts", "1:2::3", db({ data: null, error: { message: "57014" } }).db)).toEqual({ at: null, ok: false })
     expect(await fetchPrintingAskChangedAt("ts", "1:2::3", db(new Error("fetch failed")).db)).toEqual({ at: null, ok: false })
   })
@@ -46,9 +48,22 @@ describe("both pages date a parallel's ask from the printing row, never the offe
   const edition = readFileSync(join(process.cwd(), "app/(collections)/[collection]/edition/[slug]/page.tsx"), "utf8")
   it("moment page", () => {
     expect(moment).toMatch(/const askAt = isParallelExternalId\(e\.external_id\)\s*\? \(printingAskRes\.ok \? printingAskRes\.at : null\)\s*: askVerifiedAt\(highOffer\)/)
-    expect(moment).toContain("askAgeStamp(askAt, highOffer?.low_ask, collectionSlugUrl)")
+    expect(moment).toMatch(/askAgeStamp\(askAt, highOffer\?\.low_ask, collectionSlugUrl, undefined, isParallelExternalId\(e\.external_id\) \? PRINTING_ASK_STAMP_KIND : undefined\)/)
   })
   it("edition page", () => {
     expect(edition).toMatch(/: isParallelPage\s*(\/\/[^\n]*\n\s*)?\? \(highOffer\?\.low_ask != null && printingAsk\.ok \? printingAsk\.at : null\)\s*: askVerifiedAt\(highOffer\)/)
+  })
+})
+
+describe("askAgeStamp kind override (2026-10-27)", () => {
+  it("a parallel's check-time stamp is titled as a check, not a change, on Top Shot", async () => {
+    const { askAgeStamp, askAgeTitle } = await import("@/lib/market/ask-freshness")
+    const now = Date.parse("2026-10-27T20:00:00Z")
+    const at = "2026-10-27T10:00:00Z"
+    const checked = askAgeStamp(at, 915, "nba-top-shot", now, "checked")!
+    const changed = askAgeStamp(at, 915, "nba-top-shot", now)!
+    expect(checked.title).toBe(askAgeTitle(10, "checked"))
+    expect(changed.title).toBe(askAgeTitle(10, "changed"))
+    expect(checked.title).not.toBe(changed.title)
   })
 })
