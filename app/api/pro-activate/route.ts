@@ -5,12 +5,13 @@
 
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { bearerMatches } from "@/lib/auth/bearer-secret"
 
 const TOKEN = process.env.INGEST_SECRET_TOKEN ?? ""
 
 export async function POST(req: NextRequest) {
   const auth = req.headers.get("authorization") ?? ""
-  if (!TOKEN || auth !== `Bearer ${TOKEN}`) {
+  if (!TOKEN || !bearerMatches(auth, "INGEST_SECRET_TOKEN")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 

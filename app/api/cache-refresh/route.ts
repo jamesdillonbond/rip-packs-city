@@ -4,6 +4,7 @@ import * as t from "@onflow/types"
 import { createClient } from "@supabase/supabase-js"
 import { makeInstanceRateLimiter, clientKeyFrom } from "@/lib/http/instance-rate-limit"
 import { ownLookup } from "@/lib/safe-lookup"
+import { bearerMatches } from "@/lib/auth/bearer-secret"
 
 const supabase: any = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -315,7 +316,7 @@ export async function GET(req: NextRequest) {
     // ── Cooldown (R98): bound the per-(wallet, collection) refresh rate ──────
     const auth = req.headers.get("authorization") ?? ""
     const ingest = process.env.INGEST_SECRET_TOKEN
-    const trustedCaller = !!ingest && auth === `Bearer ${ingest}`
+    const trustedCaller = !!ingest && bearerMatches(auth, "INGEST_SECRET_TOKEN")
     const manualRefresh = sp.get("refreshLocked") === "1"
     const cooldownMs = manualRefresh ? MANUAL_REFRESH_COOLDOWN_MS : AUTO_REFRESH_COOLDOWN_MS
     if (!trustedCaller) {

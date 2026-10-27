@@ -67,6 +67,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { GET as runCatalogBackfill } from "@/app/api/admin/backfill-topshot-catalog/route";
+import { bearerMatches } from "@/lib/auth/bearer-secret";
 
 export const dynamic = "force-dynamic";
 // The walker self-bounds at maxDuration - 30s and resumes on the next tick via
@@ -78,8 +79,8 @@ function authorized(request: NextRequest): boolean {
   const cronSecret = process.env.CRON_SECRET;
   const ingest = process.env.INGEST_SECRET_TOKEN;
   return (
-    (!!cronSecret && auth === `Bearer ${cronSecret}`) ||
-    (!!ingest && auth === `Bearer ${ingest}`)
+    (!!cronSecret && bearerMatches(auth, "CRON_SECRET")) ||
+    (!!ingest && bearerMatches(auth, "INGEST_SECRET_TOKEN"))
   );
 }
 

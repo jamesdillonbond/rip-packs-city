@@ -20,6 +20,7 @@ import { supabaseAdmin } from "@/lib/supabase"
 import { configureFcl, getFlowAccessNode } from "@/lib/breaks/server-authz"
 import { BREAK_RANDOM_SOURCE } from "@/lib/chains/flow/cadence/break-transactions"
 import { assignTeamsToSpots } from "@/lib/breaks/draft-shuffle"
+import { bearerMatches } from "@/lib/auth/bearer-secret";
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -59,7 +60,7 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  if (!TOKEN || req.headers.get("authorization") !== `Bearer ${TOKEN}`) {
+  if (!TOKEN || !bearerMatches(req.headers.get("authorization"), "BREAKS_ADMIN_TOKEN")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 

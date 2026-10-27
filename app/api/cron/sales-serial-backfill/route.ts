@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse, after } from "next/server";
+import { bearerMatches } from "@/lib/auth/bearer-secret";
 
 // Thin Vercel-cron trigger for the `sales-serial-backfill` Supabase edge function
 // (the on-chain / GQL serial-recovery sweep for sales that landed with a NULL
@@ -47,8 +48,8 @@ async function run(request: NextRequest) {
   const cronSecret = process.env.CRON_SECRET;
   const ingest = process.env.INGEST_SECRET_TOKEN;
   const authorized =
-    (!!cronSecret && auth === `Bearer ${cronSecret}`) ||
-    (!!ingest && auth === `Bearer ${ingest}`);
+    (!!cronSecret && bearerMatches(auth, "CRON_SECRET")) ||
+    (!!ingest && bearerMatches(auth, "INGEST_SECRET_TOKEN"));
   if (!authorized) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

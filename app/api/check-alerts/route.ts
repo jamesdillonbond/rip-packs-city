@@ -11,6 +11,7 @@ import { fitTelegramText } from "@/lib/telegram-message";
 import { supabaseAdmin } from "@/lib/supabase";
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 import crypto from "crypto";
+import { bearerMatches } from "@/lib/auth/bearer-secret";
 
 export const maxDuration = 60;
 
@@ -305,7 +306,7 @@ async function processPipelineAlerts(): Promise<{
 
 export async function GET(req: NextRequest) {
   const auth = req.headers.get("authorization") ?? "";
-  if (!TOKEN || auth !== `Bearer ${TOKEN}`) {
+  if (!TOKEN || !bearerMatches(auth, "INGEST_SECRET_TOKEN")) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 

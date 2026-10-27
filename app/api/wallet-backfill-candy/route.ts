@@ -23,6 +23,7 @@ import { isBurnt,
   normalizeSerial,
   CANDY_MLB_UUID,
 } from "@/lib/chains/solana/normalize"
+import { bearerMatches } from "@/lib/auth/bearer-secret"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 300
@@ -78,7 +79,7 @@ async function logRun(
 export async function POST(req: NextRequest) {
   const authHeader = req.headers.get("authorization")
   const expectedToken = process.env.INGEST_SECRET_TOKEN
-  if (!expectedToken || authHeader !== `Bearer ${expectedToken}`) {
+  if (!expectedToken || !bearerMatches(authHeader, "INGEST_SECRET_TOKEN")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 

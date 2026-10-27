@@ -471,7 +471,7 @@ function authorized(request: NextRequest): boolean {
   const auth = request.headers.get("authorization") ?? ""
   const cron = process.env.CRON_SECRET
   const ingest = process.env.INGEST_SECRET_TOKEN
-  return (!!cron && auth === `Bearer ${cron}`) || (!!ingest && auth === `Bearer ${ingest}`)
+  return (!!cron && bearerMatches(auth, "CRON_SECRET")) || (!!ingest && bearerMatches(auth, "INGEST_SECRET_TOKEN"))
 }
 
 async function run(request: NextRequest) {
@@ -641,3 +641,5 @@ export async function POST(request: NextRequest) {
 export async function GET(request: NextRequest) {
   return run(request)
 }
+
+import { bearerMatches } from "@/lib/auth/bearer-secret"

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
+import { bearerMatches } from "@/lib/auth/bearer-secret";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // NFL All Day per-moment badge ingest — DB-I/O half (the Atlas fetch CANNOT live
@@ -68,8 +69,8 @@ type RunnerRow = {
 
 function authed(req: NextRequest): boolean {
   const auth = req.headers.get("authorization");
-  if (process.env.INGEST_SECRET_TOKEN && auth === `Bearer ${process.env.INGEST_SECRET_TOKEN}`) return true;
-  if (process.env.CRON_SECRET && auth === `Bearer ${process.env.CRON_SECRET}`) return true;
+  if (process.env.INGEST_SECRET_TOKEN && bearerMatches(auth, "INGEST_SECRET_TOKEN")) return true;
+  if (process.env.CRON_SECRET && bearerMatches(auth, "CRON_SECRET")) return true;
   return false;
 }
 

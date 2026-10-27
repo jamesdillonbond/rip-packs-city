@@ -23,6 +23,7 @@
 import { NextRequest, NextResponse, after } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { challengeIngestEnabled, ingestTopshotChallenges } from "@/lib/challenges/topshot-ingest"
+import { bearerMatches } from "@/lib/auth/bearer-secret"
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -38,7 +39,7 @@ function authorized(request: NextRequest): boolean {
   const auth = request.headers.get("authorization") ?? ""
   const cronSecret = process.env.CRON_SECRET
   const ingest = process.env.INGEST_SECRET_TOKEN
-  return (!!cronSecret && auth === `Bearer ${cronSecret}`) || (!!ingest && auth === `Bearer ${ingest}`)
+  return (!!cronSecret && bearerMatches(auth, "CRON_SECRET")) || (!!ingest && bearerMatches(auth, "INGEST_SECRET_TOKEN"))
 }
 
 async function run(request: NextRequest): Promise<NextResponse> {

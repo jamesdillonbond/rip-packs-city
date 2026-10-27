@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { bearerMatches } from "@/lib/auth/bearer-secret"
 
 // Explicit Vercel Function budget (GHA-triggered; some use after() fire-and-forget).
 export const maxDuration = 120;
@@ -31,8 +32,8 @@ async function purgeStaleListings(req: NextRequest) {
   const cronSecret = process.env.CRON_SECRET
   const ingest = process.env.INGEST_SECRET_TOKEN
   const authorized =
-    (!!cronSecret && auth === `Bearer ${cronSecret}`) ||
-    (!!ingest && auth === `Bearer ${ingest}`)
+    (!!cronSecret && bearerMatches(auth, "CRON_SECRET")) ||
+    (!!ingest && bearerMatches(auth, "INGEST_SECRET_TOKEN"))
   if ((cronSecret || ingest) && !authorized) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }

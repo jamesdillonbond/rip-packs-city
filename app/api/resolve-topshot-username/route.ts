@@ -13,6 +13,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { resolveTopShotUsernameCacheAware } from "@/lib/chains/flow/topshot-username-resolve"
+import { bearerMatches } from "@/lib/auth/bearer-secret"
 
 export const dynamic = "force-dynamic"
 
@@ -55,7 +56,7 @@ async function logRun(args: {
 export async function POST(req: NextRequest) {
   const authHeader = req.headers.get("authorization") ?? ""
   const expected = process.env.INGEST_SECRET_TOKEN
-  if (!expected || authHeader !== `Bearer ${expected}`) {
+  if (!expected || !bearerMatches(authHeader, "INGEST_SECRET_TOKEN")) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 })
   }
 

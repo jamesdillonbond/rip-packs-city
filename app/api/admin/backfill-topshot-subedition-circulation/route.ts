@@ -44,6 +44,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { verifyAdminRequest, adminUnauthorizedResponse } from "@/lib/admin-auth";
+import { bearerMatches } from "@/lib/auth/bearer-secret";
 
 export const maxDuration = 300;
 export const dynamic = "force-dynamic";
@@ -181,8 +182,8 @@ function authed(req: NextRequest): boolean {
   const hdr = req.headers.get("authorization") ?? "";
   const ingest = process.env.INGEST_SECRET_TOKEN;
   const cron = process.env.CRON_SECRET;
-  if (ingest && hdr === `Bearer ${ingest}`) return true;
-  if (cron && hdr === `Bearer ${cron}`) return true;
+  if (ingest && bearerMatches(hdr, "INGEST_SECRET_TOKEN")) return true;
+  if (cron && bearerMatches(hdr, "CRON_SECRET")) return true;
   return false;
 }
 

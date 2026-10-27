@@ -15,6 +15,7 @@ import {
   CADENCE_UFC,
   UFC_COLLECTION_UUID,
 } from "@/lib/chains/flow/wallet-backfill-helpers"
+import { bearerMatches } from "@/lib/auth/bearer-secret"
 
 export const dynamic = "force-dynamic"
 // maxDuration must cover the WHOLE after() chain: runIdOnlyBackfill (the
@@ -40,7 +41,7 @@ const CONFIG = {
 export async function POST(req: NextRequest) {
   const authHeader = req.headers.get("authorization")
   const expectedToken = process.env.INGEST_SECRET_TOKEN
-  if (!expectedToken || authHeader !== `Bearer ${expectedToken}`) {
+  if (!expectedToken || !bearerMatches(authHeader, "INGEST_SECRET_TOKEN")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 

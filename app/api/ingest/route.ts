@@ -6,6 +6,7 @@ import { hydrateTopShotEditions, toUpsertRow } from "@/lib/editions-hydrate"
 import { teamMomentSubject } from "@/lib/topshot-edition-name"
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 import { logTerminalRun } from "@/lib/pipeline/terminal-run"
+import { bearerMatches } from "@/lib/auth/bearer-secret"
 
 // The pipeline_runs name. Stable and route-owned — NOT the workflow step label,
 // which can be renamed without anyone noticing the telemetry key moved. ⚠ It is
@@ -615,7 +616,7 @@ export async function POST(req: NextRequest) {
   // Auth — Bearer token
   const authHeader = req.headers.get("authorization")
   const expectedToken = process.env.INGEST_SECRET_TOKEN
-  if (expectedToken && authHeader !== `Bearer ${expectedToken}`) {
+  if (expectedToken && !bearerMatches(authHeader, "INGEST_SECRET_TOKEN")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 

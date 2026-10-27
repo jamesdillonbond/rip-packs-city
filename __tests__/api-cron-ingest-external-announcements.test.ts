@@ -4,9 +4,9 @@ import { makeReq } from "./cron-req-helper"
 // Route integration test for GET/POST /api/cron/ingest-external-announcements.
 // Fail-closed auth: the handler accepts Bearer INGEST_SECRET_TOKEN / CRON_SECRET
 // or ?token=INGEST_SECRET_TOKEN and 401s otherwise before serving its retirement
-// notice. The token is captured at MODULE LOAD (`const INGEST_SECRET_TOKEN =
-// process.env.INGEST_SECRET_TOKEN!`), so the success path is exercised via a
-// two-regime dynamic import with the secret set before import.
+// notice. Re-pinned 2026-10-27: the secret was captured at MODULE LOAD; it is now
+// read at REQUEST time by the constant-time helper (bearerMatches / tokenMatches),
+// so the authed block sets its token before EACH test (the dynamic import stays).
 //
 // This route was retired 2026-05-07: its authed "success" response is a
 // structured 410 Gone (`{ error:"gone", replacement:"/api/admin/announcements" }`)
@@ -49,6 +49,10 @@ describe("GET /api/cron/ingest-external-announcements — retirement 410 (authed
     const mod = await import("@/app/api/cron/ingest-external-announcements/route")
     SGET = mod.GET as any
     SPOST = mod.POST as any
+  })
+
+  beforeEach(() => {
+    process.env.INGEST_SECRET_TOKEN = TOKEN
   })
 
   afterAll(() => {

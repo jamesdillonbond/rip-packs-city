@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { topshotGraphql } from "@/lib/chains/flow/topshot"
+import { bearerMatches } from "@/lib/auth/bearer-secret"
 
 // Process at most 100 NFTs per run to stay within Vercel's ~25s timeout.
 const BATCH_SIZE = 100
@@ -82,7 +83,7 @@ export async function POST(req: Request) {
   // Auth — Bearer token
   const authHeader = req.headers.get("authorization")
   const expectedToken = process.env.INGEST_SECRET_TOKEN
-  if (expectedToken && authHeader !== `Bearer ${expectedToken}`) {
+  if (expectedToken && !bearerMatches(authHeader, "INGEST_SECRET_TOKEN")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 

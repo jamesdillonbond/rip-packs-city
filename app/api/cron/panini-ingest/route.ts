@@ -43,6 +43,7 @@ import { fetchAllPaged } from "@/lib/supabase-paginate";
 import { parseStall } from "@/lib/chains/panini/stall-report";
 import { paniniRunMode } from "@/lib/chains/panini/run-mode";
 import { parseProductNameObservations, decideProductNames } from "@/lib/chains/panini/product-names";
+import { bearerMatches } from "@/lib/auth/bearer-secret";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -289,7 +290,7 @@ export async function POST(req: NextRequest) {
   const auth = req.headers.get("authorization") || "";
   const ingest = process.env.INGEST_SECRET_TOKEN;
   const cron = process.env.CRON_SECRET;
-  const ok = (ingest && auth === `Bearer ${ingest}`) || (cron && auth === `Bearer ${cron}`);
+  const ok = (ingest && bearerMatches(auth, "INGEST_SECRET_TOKEN")) || (cron && bearerMatches(auth, "CRON_SECRET"));
   if (!ok) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const startedAtIso = new Date().toISOString();
   let body: any = {};
@@ -700,7 +701,7 @@ export async function GET(req: NextRequest) {
   const auth = req.headers.get("authorization") || "";
   const ingest = process.env.INGEST_SECRET_TOKEN;
   const cron = process.env.CRON_SECRET;
-  const authed = (ingest && auth === `Bearer ${ingest}`) || (cron && auth === `Bearer ${cron}`);
+  const authed = (ingest && bearerMatches(auth, "INGEST_SECRET_TOKEN")) || (cron && bearerMatches(auth, "CRON_SECRET"));
   if (!authed) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const sp = new URL(req.url).searchParams;

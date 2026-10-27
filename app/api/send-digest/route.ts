@@ -11,6 +11,7 @@ import { normalizeAddress } from "@/lib/address"
 import { supabaseAdmin } from "@/lib/supabase"
 import { usdSignFirst } from "@/lib/usd-format"
 import { commercialSendBlockedReason, commercialSenderLine } from "@/lib/emails/sender-identity"
+import { bearerMatches } from "@/lib/auth/bearer-secret"
 
 const TOKEN = process.env.INGEST_SECRET_TOKEN ?? ""
 const FROM = "rpc-digest@rippackscity.com"
@@ -147,7 +148,7 @@ async function buildEmail(origin: string, sub: Subscriber, market: MarketBlocks)
 
 export async function GET(req: NextRequest) {
   const auth = req.headers.get("authorization") ?? ""
-  if (!TOKEN || auth !== `Bearer ${TOKEN}`) {
+  if (!TOKEN || !bearerMatches(auth, "INGEST_SECRET_TOKEN")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 

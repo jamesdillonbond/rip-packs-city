@@ -16,6 +16,7 @@ import {apiErrorResponse, safeApiError} from "@/lib/api-error";
 import { supabaseAdmin } from "@/lib/supabase"
 import { CANONICAL_NBA_TEAMS } from "@/lib/breaks/draft-shuffle"
 import { getFlowAccessNode } from "@/lib/breaks/server-authz"
+import { bearerMatches } from "@/lib/auth/bearer-secret";
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -54,7 +55,7 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  if (!TOKEN || req.headers.get("authorization") !== `Bearer ${TOKEN}`) {
+  if (!TOKEN || !bearerMatches(req.headers.get("authorization"), "BREAKS_ADMIN_TOKEN")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 

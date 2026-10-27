@@ -27,6 +27,7 @@
 import { createHash, randomUUID } from "node:crypto"
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { bearerMatches } from "@/lib/auth/bearer-secret"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -40,7 +41,7 @@ function verifyBearer(req: NextRequest): boolean {
   const header = req.headers.get("authorization") ?? ""
   // Header lane only. See the 🚨 block at the top of this file before adding
   // any URL-borne lane back.
-  return header === `Bearer ${expected}`
+  return bearerMatches(header, "ANNOUNCEMENTS_INGEST_TOKEN")
 }
 
 function isValidUrl(s: string): boolean {

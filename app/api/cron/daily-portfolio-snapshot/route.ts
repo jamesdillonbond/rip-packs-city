@@ -10,6 +10,7 @@
 
 import { NextRequest, NextResponse, after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
+import { bearerMatches } from "@/lib/auth/bearer-secret";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -21,8 +22,8 @@ export async function GET(req: NextRequest) {
   const cronSecret = process.env.CRON_SECRET;
 
   const isValid =
-    (ingestSecret && authHeader === `Bearer ${ingestSecret}`) ||
-    (cronSecret && authHeader === `Bearer ${cronSecret}`) ||
+    (ingestSecret && bearerMatches(authHeader, "INGEST_SECRET_TOKEN")) ||
+    (cronSecret && bearerMatches(authHeader, "CRON_SECRET")) ||
     (ingestSecret && queryToken === ingestSecret);
 
   if (!isValid) {

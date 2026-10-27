@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { backfillAllDayEditionVideos } from "@/lib/chains/flow/allday-video"
+import { bearerMatches } from "@/lib/auth/bearer-secret"
 
 // ── AllDay FMV cursor sweep ──────────────────────────────────────────────────
 //
@@ -118,7 +119,7 @@ async function fetchPage(cursor: string | null): Promise<PageResult> {
 export async function GET(req: NextRequest) {
   const bearer = req.headers.get("authorization") ?? ""
   const urlToken = req.nextUrl.searchParams.get("token") ?? ""
-  const authed = !!TOKEN && (bearer === `Bearer ${TOKEN}` || urlToken === TOKEN)
+  const authed = !!TOKEN && (bearerMatches(bearer, "INGEST_SECRET_TOKEN") || urlToken === TOKEN)
   if (!authed) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }

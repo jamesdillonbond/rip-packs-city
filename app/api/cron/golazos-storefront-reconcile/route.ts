@@ -40,6 +40,7 @@ import {
   type StorefrontCollection,
   type StorefrontListing,
 } from "@/lib/golazos/storefront-reconcile"
+import { bearerMatches } from "@/lib/auth/bearer-secret"
 
 const FLOW_REST = "https://rest-mainnet.onflow.org"
 const SCRIPT_TIMEOUT_MS = 20_000
@@ -67,7 +68,7 @@ function authorized(req: NextRequest): boolean {
   const auth = req.headers.get("authorization") ?? ""
   const cron = process.env.CRON_SECRET
   const ingest = process.env.INGEST_SECRET_TOKEN
-  return (!!cron && auth === `Bearer ${cron}`) || (!!ingest && auth === `Bearer ${ingest}`)
+  return (!!cron && bearerMatches(auth, "CRON_SECRET")) || (!!ingest && bearerMatches(auth, "INGEST_SECRET_TOKEN"))
 }
 
 function unwrapCdc(node: unknown): unknown {

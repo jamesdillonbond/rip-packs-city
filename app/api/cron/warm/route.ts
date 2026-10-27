@@ -19,6 +19,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { fetchUnderpricedSerials } from "@/lib/underpriced-serials-board";
+import { bearerMatches } from "@/lib/auth/bearer-secret";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -108,8 +109,8 @@ async function run(request: NextRequest) {
   const cronSecret = process.env.CRON_SECRET;
   const ingest = process.env.INGEST_SECRET_TOKEN;
   const authorized =
-    (!!cronSecret && auth === `Bearer ${cronSecret}`) ||
-    (!!ingest && auth === `Bearer ${ingest}`);
+    (!!cronSecret && bearerMatches(auth, "CRON_SECRET")) ||
+    (!!ingest && bearerMatches(auth, "INGEST_SECRET_TOKEN"));
   if (!authorized) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

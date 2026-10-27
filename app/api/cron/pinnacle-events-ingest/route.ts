@@ -17,6 +17,7 @@
 
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { bearerMatches } from "@/lib/auth/bearer-secret"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 300
@@ -126,7 +127,7 @@ export async function POST(req: NextRequest) {
   if (!expected) return NextResponse.json({ error: "INGEST_SECRET_TOKEN not set" }, { status: 500 })
   const auth = req.headers.get("authorization") ?? ""
   const urlToken = req.nextUrl.searchParams.get("token") ?? ""
-  if (auth !== `Bearer ${expected}` && urlToken !== expected) return unauthorized()
+  if (!bearerMatches(auth, "INGEST_SECRET_TOKEN") && urlToken !== expected) return unauthorized()
 
   const startedAtIso = new Date().toISOString()
   const startedMs = Date.now()

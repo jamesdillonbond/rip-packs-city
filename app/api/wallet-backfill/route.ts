@@ -24,6 +24,7 @@ import {
 } from "@/lib/chains/flow/wmc-chunk-upsert"
 import { claimPipelineLockDetailed, releasePipelineLock, skippedReasonFor, walletBackfillLockKey } from "@/lib/wallet-backfill-lock"
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
+import { bearerMatches } from "@/lib/auth/bearer-secret"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 300
@@ -656,7 +657,7 @@ async function recordScan(wallet: string, foundCount: number) {
 export async function POST(req: NextRequest) {
   const authHeader = req.headers.get("authorization")
   const expectedToken = process.env.INGEST_SECRET_TOKEN
-  if (!expectedToken || authHeader !== `Bearer ${expectedToken}`) {
+  if (!expectedToken || !bearerMatches(authHeader, "INGEST_SECRET_TOKEN")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 

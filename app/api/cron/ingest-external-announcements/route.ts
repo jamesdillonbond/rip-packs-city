@@ -8,11 +8,11 @@
 // and then this file together once both have aged out.
 
 import { NextRequest, NextResponse } from "next/server"
+import { bearerMatches, tokenMatches } from "@/lib/auth/bearer-secret"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 5
 
-const INGEST_SECRET_TOKEN = process.env.INGEST_SECRET_TOKEN!
 
 const RETIRED_BODY = {
   error: "gone",
@@ -26,9 +26,9 @@ export async function GET(req: NextRequest) {
   const queryToken = req.nextUrl.searchParams.get("token")
   const cronSecret = process.env.CRON_SECRET
   const isValid =
-    authHeader === `Bearer ${INGEST_SECRET_TOKEN}` ||
-    (cronSecret && authHeader === `Bearer ${cronSecret}`) ||
-    queryToken === INGEST_SECRET_TOKEN
+    bearerMatches(authHeader, "INGEST_SECRET_TOKEN") ||
+    (cronSecret && bearerMatches(authHeader, "CRON_SECRET")) ||
+    tokenMatches(queryToken, "INGEST_SECRET_TOKEN")
   if (!isValid) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 })
   }

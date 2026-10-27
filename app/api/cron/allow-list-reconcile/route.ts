@@ -14,6 +14,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { logTerminalRun } from "@/lib/pipeline/terminal-run"
+import { bearerMatches } from "@/lib/auth/bearer-secret"
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -75,8 +76,8 @@ async function handle(request: NextRequest) {
   // ~9 of 24 daily ticks). Same shape as app/api/candy-listings-indexer.
   const cronToken = process.env.CRON_SECRET
   const auth = request.headers.get("authorization")
-  const okIngest = auth === `Bearer ${ingestToken}`
-  const okCron = Boolean(cronToken) && auth === `Bearer ${cronToken}`
+  const okIngest = bearerMatches(auth, "INGEST_SECRET_TOKEN")
+  const okCron = Boolean(cronToken) && bearerMatches(auth, "CRON_SECRET")
   if (!okIngest && !okCron) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 })
   }

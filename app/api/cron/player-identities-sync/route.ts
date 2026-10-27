@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase"
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 import { logTerminalRun } from "@/lib/pipeline/terminal-run"
 import { NFLVERSE_PLAYERS_CSV_URL, chunk, nflverseToIdentityRows } from "@/lib/player-identities/nflverse"
+import { bearerMatches } from "@/lib/auth/bearer-secret"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // player-identities-sync — refresh the league-id crosswalk (player_identities)
@@ -36,8 +37,8 @@ const FETCH_TIMEOUT_MS = 90_000
 
 function authed(req: NextRequest): boolean {
   const auth = req.headers.get("authorization")
-  if (process.env.INGEST_SECRET_TOKEN && auth === `Bearer ${process.env.INGEST_SECRET_TOKEN}`) return true
-  if (process.env.CRON_SECRET && auth === `Bearer ${process.env.CRON_SECRET}`) return true
+  if (process.env.INGEST_SECRET_TOKEN && bearerMatches(auth, "INGEST_SECRET_TOKEN")) return true
+  if (process.env.CRON_SECRET && bearerMatches(auth, "CRON_SECRET")) return true
   return false
 }
 

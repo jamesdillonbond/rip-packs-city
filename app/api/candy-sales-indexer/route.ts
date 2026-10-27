@@ -37,6 +37,7 @@ import {
   isPack,
   normalizeSerial,
 } from "@/lib/chains/solana/normalize"
+import { bearerMatches } from "@/lib/auth/bearer-secret"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 300
@@ -173,8 +174,8 @@ function authed(req: NextRequest): boolean {
   const header = req.headers.get("authorization") ?? ""
   const ingest = process.env.INGEST_SECRET_TOKEN
   const cron = process.env.CRON_SECRET
-  if (ingest && header === `Bearer ${ingest}`) return true
-  if (cron && header === `Bearer ${cron}`) return true
+  if (ingest && bearerMatches(header, "INGEST_SECRET_TOKEN")) return true
+  if (cron && bearerMatches(header, "CRON_SECRET")) return true
   return false
 }
 

@@ -22,15 +22,14 @@
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
+import { bearerMatches } from "@/lib/auth/bearer-secret";
 
 function handler(req: NextRequest) {
   const authHeader = req.headers.get("authorization");
-  const ingestToken = process.env.INGEST_SECRET_TOKEN;
-  const cronSecret = process.env.CRON_SECRET;
   const isValid =
     authHeader != null &&
-    (authHeader === `Bearer ${ingestToken}` ||
-      authHeader === `Bearer ${cronSecret}`);
+    (bearerMatches(authHeader, "INGEST_SECRET_TOKEN") ||
+      bearerMatches(authHeader, "CRON_SECRET"));
   if (!isValid) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

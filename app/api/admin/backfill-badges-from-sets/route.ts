@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { topshotGraphql } from "@/lib/chains/flow/topshot"
 import { supabaseAdmin } from "@/lib/supabase"
+import { bearerMatches } from "@/lib/auth/bearer-secret"
 
 // Backfill badge_editions rows for the ~199 canonical Top Shot editions that
 // the catalog badge-sweep (searchMarketplaceEditions) structurally misses —
@@ -359,8 +360,8 @@ function authed(req: NextRequest): boolean {
   const header = req.headers.get("authorization") ?? ""
   const ingest = process.env.INGEST_SECRET_TOKEN
   const cron = process.env.CRON_SECRET
-  if (ingest && header === `Bearer ${ingest}`) return true
-  if (cron && header === `Bearer ${cron}`) return true
+  if (ingest && bearerMatches(header, "INGEST_SECRET_TOKEN")) return true
+  if (cron && bearerMatches(header, "CRON_SECRET")) return true
   return false
 }
 

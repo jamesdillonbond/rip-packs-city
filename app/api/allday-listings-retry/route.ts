@@ -22,7 +22,6 @@ import { allDayListingSource } from "@/lib/allday/listing-source"
 
 export const maxDuration = 300
 
-const TOKEN = process.env.INGEST_SECRET_TOKEN ?? ""
 const ALLDAY_COLLECTION_ID = "dee28451-5d62-409e-a1ad-a83f763ac070"
 const COLLECTION_SLUG = "nfl_all_day"
 const PIPELINE_NAME = "allday-listings-retry"
@@ -191,7 +190,7 @@ interface QueuedFailure {
 
 export async function POST(req: NextRequest) {
   const auth = req.headers.get("authorization") ?? ""
-  if (auth !== `Bearer ${TOKEN}`) return unauthorized()
+  if (!bearerMatches(auth, "INGEST_SECRET_TOKEN")) return unauthorized()
 
   const startedAt = new Date().toISOString()
   const start = Date.now()
@@ -535,3 +534,5 @@ export async function POST(req: NextRequest) {
 export async function GET(req: NextRequest) {
   return POST(req)
 }
+
+import { bearerMatches } from "@/lib/auth/bearer-secret"

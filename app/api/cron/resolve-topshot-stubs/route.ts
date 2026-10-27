@@ -13,6 +13,7 @@
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
+import { bearerMatches } from "@/lib/auth/bearer-secret"
 
 export const dynamic = "force-dynamic"
 // ⚠ 120, NOT 30 — RAISED 2026-09-05 because the 30 s wall was KILLING REAL WORK.
@@ -37,8 +38,8 @@ function isAuthed(req: NextRequest): boolean {
   const auth = req.headers.get("authorization") ?? ""
   const ingest = process.env.INGEST_SECRET_TOKEN
   const cron = process.env.CRON_SECRET
-  if (ingest && auth === `Bearer ${ingest}`) return true
-  if (cron && auth === `Bearer ${cron}`) return true
+  if (ingest && bearerMatches(auth, "INGEST_SECRET_TOKEN")) return true
+  if (cron && bearerMatches(auth, "CRON_SECRET")) return true
   const qToken = req.nextUrl.searchParams.get("token") ?? ""
   if (ingest && qToken === ingest) return true
   if (cron && qToken === cron) return true

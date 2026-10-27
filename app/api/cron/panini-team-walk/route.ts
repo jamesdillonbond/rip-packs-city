@@ -26,6 +26,7 @@ import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 import { apiErrorResponse } from "@/lib/api-error"
 import { withBoardBudget } from "@/lib/insights/board-page-fetch"
 import { parseTeamWalkBody, TEAM_WALK_PIPELINE } from "@/lib/chains/panini/team-walk"
+import { bearerMatches } from "@/lib/auth/bearer-secret"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 60
@@ -47,7 +48,7 @@ function authorized(req: NextRequest): boolean {
   const auth = req.headers.get("authorization") || ""
   const ingest = process.env.INGEST_SECRET_TOKEN
   const cron = process.env.CRON_SECRET
-  return Boolean((ingest && auth === `Bearer ${ingest}`) || (cron && auth === `Bearer ${cron}`))
+  return Boolean((ingest && bearerMatches(auth, "INGEST_SECRET_TOKEN")) || (cron && bearerMatches(auth, "CRON_SECRET")))
 }
 
 export async function POST(req: NextRequest) {

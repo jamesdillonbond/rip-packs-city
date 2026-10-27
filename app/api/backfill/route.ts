@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { apiErrorResponse } from "@/lib/api-error";
 import { createClient } from "@supabase/supabase-js";
 import { logTerminalRun } from "@/lib/pipeline/terminal-run";
+import { bearerMatches } from "@/lib/auth/bearer-secret";
 
 // Explicit Vercel Function budget (GHA-triggered; some use after() fire-and-forget).
 export const maxDuration = 300;
@@ -199,7 +200,7 @@ export async function POST(req: NextRequest) {
   // Auth — Bearer token
   const authHeader = req.headers.get("authorization")
   const expectedToken = process.env.INGEST_SECRET_TOKEN
-  if (expectedToken && authHeader !== `Bearer ${expectedToken}`) {
+  if (expectedToken && !bearerMatches(authHeader, "INGEST_SECRET_TOKEN")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 

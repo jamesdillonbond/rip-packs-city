@@ -28,6 +28,7 @@ import * as t from "@onflow/types"
 import { supabaseAdmin } from "@/lib/supabase"
 import { configureFcl, buildHotWalletAuthz } from "@/lib/breaks/server-authz"
 import { BREAK_MULTI_TRANSFER_TS } from "@/lib/chains/flow/cadence/break-transactions"
+import { bearerMatches } from "@/lib/auth/bearer-secret";
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -67,7 +68,7 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  if (!TOKEN || req.headers.get("authorization") !== `Bearer ${TOKEN}`) {
+  if (!TOKEN || !bearerMatches(req.headers.get("authorization"), "BREAKS_ADMIN_TOKEN")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 

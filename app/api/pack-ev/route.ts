@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { computeDualPrice, bestPrice, serialPremiumLabel, priceIsCallerInfluenced } from "@/lib/pack-ev-pricing"
 import { apiErrorResponse } from "@/lib/api-error"
+import { bearerMatches } from "@/lib/auth/bearer-secret"
 
 const TOPSHOT_GRAPHQL = "https://public-api.nbatopshot.com/graphql"
 
@@ -433,8 +434,8 @@ function persistAuthorized(req: NextRequest): boolean {
   const cronSecret = process.env.CRON_SECRET
   const ingest = process.env.INGEST_SECRET_TOKEN
   return (
-    (!!cronSecret && auth === `Bearer ${cronSecret}`) ||
-    (!!ingest && auth === `Bearer ${ingest}`)
+    (!!cronSecret && bearerMatches(auth, "CRON_SECRET")) ||
+    (!!ingest && bearerMatches(auth, "INGEST_SECRET_TOKEN"))
   )
 }
 
