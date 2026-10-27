@@ -20,6 +20,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { randomUUID } from "crypto"
 import { supabaseAdmin } from "@/lib/supabase"
+import { normalizeAddress } from "@/lib/address"
 import { safeApiError, errorLogDetail } from "@/lib/api-error"
 import { anonIpKey, bumpAnonRates } from "@/lib/abuse/anon-rate"
 
@@ -124,7 +125,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true })
     }
 
-    const walletAddress = body.walletAddress ? String(body.walletAddress).trim().toLowerCase() : null
+    // ⛔ 2026-10-26 — was `.trim().toLowerCase()`. A Candy (Solana) address is base58 and
+    // CASE-SENSITIVE: folding it stores a DIFFERENT key that resolves to nothing, and the
+    // weekly digest's 09-19 fix (normalizeAddress on READ) cannot undo a write that already
+    // destroyed it — a Candy holder who used Deal Watch on /share/<wallet> got a digest with
+    // no portfolio block. normalizeAddress folds hex (Flow / EVM) exactly as before.
+    const walletAddress = body.walletAddress ? normalizeAddress(String(body.walletAddress)) || null : null
     const verificationToken = randomUUID()
     const { error: insertErr } = await (supabaseAdmin as any)
       .from("email_subscribers")

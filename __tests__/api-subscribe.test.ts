@@ -88,6 +88,16 @@ describe("POST /api/subscribe — guards", () => {
 })
 
 describe("POST /api/subscribe — a new address", () => {
+  it("stores a Candy (Solana) wallet VERBATIM — case kept — and still folds a hex one (2026-10-26)", async () => {
+    const SOL = "99UgF7Tt4HPDpJ7mK63kvucts21mhymgWkzu1EjsLjAy"
+    await POST(post(JSON.stringify({ email: "sol@b.com", dealAlerts: true, walletAddress: ` ${SOL} ` })))
+    expect(db.inserts[0].wallet_address).toBe(SOL)
+    expect(db.inserts[0].wallet_address).not.toBe(SOL.toLowerCase())
+    db.inserts = []
+    await POST(post(JSON.stringify({ email: "hex@b.com", dealAlerts: true, walletAddress: "0xBD94CADE097E50AC" })))
+    expect(db.inserts[0].wallet_address).toBe("0xbd94cade097e50ac")
+  })
+
   it("inserts a row with the body's preferences and mails a verification link", async () => {
     const res = await POST(post(JSON.stringify({ email: "A@B.com", digestWeekly: false, dealAlerts: true })))
     expect(res.status).toBe(200)
