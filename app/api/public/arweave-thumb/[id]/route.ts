@@ -28,7 +28,10 @@ export const maxDuration = 30
 const ID_RE = /^[A-Za-z0-9_-]{43}$/
 const WIDTHS = new Set<number>(IPFS_THUMB_WIDTHS)
 const MAX_INPUT_BYTES = 20 * 1024 * 1024
-const FETCH_TIMEOUT_MS = 20_000
+// 10 s, not ipfs-thumb's 20: measured live 2026-10-26, a COLD 7.5 MB arweave original ran past 20 s and
+// the reader waited all of it before the fail-open 302 sent them to the same original. Failing open
+// sooner costs nothing (the next request retries; warm fetches took ~1–5 s).
+const FETCH_TIMEOUT_MS = 10_000
 
 function toOriginal(id: string): NextResponse {
   return new NextResponse(null, {
