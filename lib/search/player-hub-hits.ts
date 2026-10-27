@@ -57,8 +57,10 @@ export function mergePlayerHubHits(rows: SearchResultWithSlug[]): SearchResult[]
     if (seen.collections?.includes(r.collection)) continue
     seen.collections = [...(seen.collections ?? []), r.collection]
     seen.collectionName = `${seen.collectionName} + ${r.collectionName}`
-    seen.editionCount =
-      seen.editionCount == null && r.editionCount == null ? null : (seen.editionCount ?? 0) + (r.editionCount ?? 0)
+    // Never summed across collections (2026-10-27): the hub matches by NAME, and one search row read
+    // "Larry Johnson · NBA Top Shot + NFL All Day + Panini" with a basketball and a football player's editions added
+    // together. The hub page breaks the count down per sport; the merged row carries none.
+    seen.editionCount = null
     seen.thumbnailUrl = seen.thumbnailUrl ?? r.thumbnailUrl
   }
   return out

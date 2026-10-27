@@ -116,7 +116,7 @@ describe("GET /api/search", () => {
       kind: "player",
       href: "/players/damian-lillard",
       collections: ["panini-blockchain", "nba-top-shot"],
-      editionCount: 197,
+      editionCount: null, // re-pinned 2026-10-27: a merged hub row never sums counts across collections (a name can be two athletes)
     })
     expect(j.results[0]).not.toHaveProperty("slug")
   })

@@ -30,7 +30,7 @@ import { editionRouteHref } from "@/lib/entity-href"
 import { fetchPaniniPlayerSales, type PaniniPlayerSale } from "@/lib/panini/player-sales"
 import { saleSerialLabel } from "@/lib/entity/sale-serial-label"
 import MarketCapTile from "@/components/entity/MarketCapTile"
-import { fetchPlayerHub, playerHubPath, routableEntries } from "@/lib/player-hub"
+import { fetchPlayerHub, playerHubPath, routableEntries, groupBySport } from "@/lib/player-hub"
 import { indexCoverageNote, type IndexCoverage } from "@/lib/entity/index-coverage-note"
 import { scrollRegion } from "@/lib/a11y/scroll-region"
 import { jsonLdScript } from "@/lib/seo/json-ld-script"
@@ -428,13 +428,18 @@ async function PlayerHubLink({ slug, name }: { slug: string; name: string }) {
   if (!ok || !hub) return null
   const colls = routableEntries(hub)
   if (colls.length < 2) return null
+  // 2026-10-27: the hub matches by NAME. When its collections span more than one sport it holds more than one
+  // athlete (a basketball and a football Larry Johnson), so the link must not call them one person.
+  const manyPeople = groupBySport(colls.map((c) => c.entry)).length > 1
   return (
     <Link
       href={playerHubPath(hub.canonical_slug)}
       className="rpc-mono"
       style={{ fontSize: 12, color: "var(--rpc-red-text)", letterSpacing: "0.04em", textDecoration: "none" }}
     >
-      {name} across every collection ({colls.map((c) => c.collection.displayName).join(" + ")}) →
+      {manyPeople
+        ? `Everyone named ${name} across collections (${colls.map((c) => c.collection.displayName).join(" + ")}) →`
+        : `${name} across every collection (${colls.map((c) => c.collection.displayName).join(" + ")}) →`}
     </Link>
   )
 }

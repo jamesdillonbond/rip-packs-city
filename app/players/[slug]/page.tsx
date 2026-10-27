@@ -142,7 +142,19 @@ export default async function PlayerHubPage(props: { params: Promise<{ slug: str
               {hub.name}
             </h1>
             <div className="rpc-mono" style={{ fontSize: 12, color: "var(--rpc-text-secondary)", letterSpacing: "0.06em" }}>
-              {fmtCount(totalEditions)} editions across {collectionsPhrase(routable.map((r) => r.collection.displayName))}
+              {/* 2026-10-27: one total only when every collection is one athlete's sport — with more than one
+                  athlete it summed two people ("20 editions across NBA Top Shot, NFL All Day and Panini" for a
+                  basketball and a football Larry Johnson), contradicting the line below. */}
+              {manyPeople
+                ? groups
+                    .map((g) => {
+                      const ids = new Set(g.entries.map((e) => e.collection_id))
+                      const inGroup = routable.filter((r) => ids.has(r.entry.collection_id))
+                      const n = inGroup.reduce((sum, r) => sum + (Number(r.entry.edition_count) || 0), 0)
+                      return `${g.label}: ${fmtCount(n)} editions across ${collectionsPhrase(inGroup.map((r) => r.collection.displayName))}`
+                    })
+                    .join(" · ")
+                : `${fmtCount(totalEditions)} editions across ${collectionsPhrase(routable.map((r) => r.collection.displayName))}`}
             </div>
             <div className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-muted)", lineHeight: 1.6 }}>
               {manyPeople

@@ -35,7 +35,8 @@ describe("mergePlayerHubHits", () => {
       href: "/players/damian-lillard",
       collectionName: "Panini Blockchain + NBA Top Shot",
       collections: ["panini-blockchain", "nba-top-shot"],
-      editionCount: 197,
+      // Re-pinned 2026-10-27: never summed across collections — a name can be two athletes (see below).
+      editionCount: null,
       thumbnailUrl: "https://x/ts.jpg",
     })
     // The hub row is what Enter opens — it must not be a single collection's page.
@@ -63,5 +64,18 @@ describe("mergePlayerHubHits", () => {
 
   it("does not leak the internal slug field", () => {
     expect(mergePlayerHubHits([row({})])[0]).not.toHaveProperty("slug")
+  })
+
+  it("never adds two athletes' editions together (a basketball and a football Larry Johnson, 2026-10-27)", () => {
+    const out = mergePlayerHubHits([
+      row({ label: "Larry Johnson", slug: "larry-johnson", editionCount: 11, href: "/nba-top-shot/player/larry-johnson" }),
+      row({ label: "Larry Johnson", slug: "larry-johnson", collection: "nfl-all-day", collectionName: "NFL All Day", editionCount: 3, href: "/nfl-all-day/player/larry-johnson" }),
+    ])
+    expect(out[0].editionCount).toBeNull()
+    expect(out[0].editionCount).not.toBe(14)
+  })
+  it("CONTROL: a single-collection row keeps its own count", () => {
+    const out = mergePlayerHubHits([row({ label: "Steph Curry", slug: "steph-curry", editionCount: 42 })])
+    expect(out[0].editionCount).toBe(42)
   })
 })

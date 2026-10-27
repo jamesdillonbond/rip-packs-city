@@ -101,6 +101,17 @@ describe("deal alerts store the catalog spelling of a typed player name", () => 
     expect(out.names).toEqual(["Luka Dončić", "Nobody Atall"])
     expect(out.resolved).toEqual([{ from: "luka doncic", to: "Luka Dončić" }])
   })
+
+  // 2026-10-27: a collection that already spells the name as typed abstained, so ONE other collection's spelling
+  // replaced it and the alert stopped matching in the first collection.
+  it("keeps the typed spelling when any collection in scope already names it that way", async () => {
+    const { canonicalPlayerNames } = await import("@/lib/search/player-search-retry")
+    const TS = "95f28a17-224a-4025-96ad-adf8a4c63bfd", PANINI = "d1a0a7f5-609a-49f4-a1a7-4eaac55b020b"
+    st.verdict = (a) => (a.p_collection_id === TS ? one("KJ Martin") : one("Kenyon Martin Jr."))
+    const out = await canonicalPlayerNames(fake, ["Kenyon Martin Jr."], [TS, PANINI])
+    expect(out.names).toEqual(["Kenyon Martin Jr."])
+    expect(out.resolved).toEqual([])
+  })
 })
 
 describe("the alerts player typeahead", () => {

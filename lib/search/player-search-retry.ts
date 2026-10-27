@@ -20,7 +20,7 @@
 // The market and the Sniper resolve through their own catalog
 // (lib/market/catalog-player.ts); the same contract.
 
-import { resolvePlayerName, singleRetryLabel } from "@/lib/concierge/player-identity"
+import { playerLabelsFor, resolvePlayerName, singleRetryLabel } from "@/lib/concierge/player-identity"
 
 export type PlayerResolved = { from: string; to: string }
 
@@ -73,10 +73,18 @@ export async function canonicalPlayerNames(
   const out = await Promise.all(names.map(async (typed) => {
     const t = typed.trim()
     if (!t || collectionUuids.length === 0) return typed
-    const labels = await Promise.all(collectionUuids.map(async (u) => singleRetryLabel(await resolvePlayerName(supabase, u, t), t)))
-    const distinct = new Set(labels.filter((l): l is string => l !== null))
+    // Every collection that names exactly one person VOTES with that spelling — including a collection whose
+    // spelling IS the typed text (2026-10-27). singleRetryLabel abstains on an exact match, so with it one other
+    // collection's spelling won by default: "Kenyon Martin Jr." typed from Panini's list was saved as Top Shot's
+    // "KJ Martin", and Panini deals for him stopped matching. Now any collection already matching keeps the typed text.
+    const votes = await Promise.all(collectionUuids.map(async (u) => {
+      const labels = playerLabelsFor(await resolvePlayerName(supabase, u, t))
+      return labels && labels.length === 1 ? labels[0] : null
+    }))
+    const distinct = new Set(votes.filter((l): l is string => l !== null))
     if (distinct.size !== 1) return typed
     const [to] = distinct
+    if (to === t) return typed
     resolved.push({ from: t, to })
     return to
   }))
