@@ -2771,3 +2771,14 @@ All Day / Golazos asks are dated by `cached_listings_v2.listed_at`: when the SEL
 
 - ⛔ **"ACCEPTED, ALWAYS EMPTY" is substitution's quiet twin.** `/insights/top-sales?collection=disney_pinnacle` was a valid filter the validator accepted, and it answered with zero rows every time: Pinnacle sales live in `pinnacle_sales`, never in the `sales` table the board's view joins. The concierge then told collectors RPC had indexed N Pinnacle sales, "none of them on this board", which reads as "nothing sold for $100+" (147 had, in 30 days). The alert engine had the same shape on the write side: it accepted a Pinnacle alert it could never price (FMV and ask both read NULL for a collection with 0 `editions` rows). **For every value a filter or write path ACCEPTS, check its READ side returns rows for that value.** A guard on the accepted set is not enough.
 - ⚠ **Before filing a gap as "no data at RPC", count it at the SOURCE, with a positive control.** On 10-26 three gaps were filed that way. Top Owners was wrong: the wallet cache held 2.7 % of minted copies, but the owner map built from mint events and sales covered them. Pack Sniper and Offers were right, and for an upstream reason: 0 listed Pinnacle packs (All Day 975) and 0 Pinnacle OffersV2 offers in ~300k blocks (All Day 378). It took one probe script per gap. "No honest source" is a claim about the first table checked.
+
+## ⛔ An AVERAGE over an empty population is a FOURTH state, not a zero (2026-10-26)
+
+Failed · empty · unrenderable · value — and for an average there is one more: **undefined over nothing**. A count of 0 and a total of $0 are true measured zeros; an average of them is not, and `$0.00` claims sales happened at $0. Six instances found and fixed in one evening, every one the same shape (`count > 0 ? total / count : 0`, `avg ?? 0`, or a server `avgPrice: 0` passed through):
+
+- `/ufc/analytics` KPI strip — "Total Sales 0 · **Avg Sale Price $0.00**" (the server also emits `avgPrice: 0` over 0 sales, so gate on the COUNT, not on the field being present).
+- Wallet Marketplace Breakdown Top Shot / Flowty cards — "0 purchases · $0 · **avg $0**"; the tier-volume tooltip "Avg $0 · 0 sales".
+- `WalletProfile` "Avg loan size" — `$0.00` whenever the server omitted the field (the sibling "Avg APR" already rendered "—").
+- Pack dist pages — "**PACK PRICE $0.00**" beside the page's own "No retail price" for reward / box-content packs (a stored 0 is "no price"; `legacyPackPriceIsKnown` in `lib/pack-dist-odds.ts`).
+
+**Rule:** render an average (or any per-unit price) only when its own denominator is > 0, else "—". Leave the zero COUNT and TOTAL alone. Found by `scripts/qa/mobile-sweep.mjs`'s `dollarZero` census, then by grepping the expression, not the file. Tests: `component-CollectionAnalyticsClient` ("average of no sales", "NO purchases"), `component-WalletProfile` ("absent avg_loan_size_usd"), `lib-pack-dist-odds` ("legacyPackPriceIsKnown"), each red on the old code.
