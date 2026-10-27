@@ -4,7 +4,7 @@ import { render, cleanup } from "@testing-library/react"
 import SniperStatsBar from "@/components/sniper/SniperStatsBar"
 
 // SniperStatsBar shows a deal-summary row. The interesting behavior is the
-// collection-conditional visibility: badge count is hidden for Pinnacle/AllDay
+// collection-conditional visibility: badge count is hidden for Pinnacle
 // (and when zero); special-serial count is hidden for AllDay (and when zero);
 // owned-editions caption hidden for AllDay (and when zero); the updated-at
 // stamp only renders when lastRefreshed is set.
@@ -30,12 +30,14 @@ describe("SniperStatsBar", () => {
     expect(txt).toContain("7 owned editions tracked")
   })
 
-  it("hides badged + special-serial + owned for an AllDay bar", () => {
+  // RE-PINNED 2026-10-26: All Day deals carry badges now (get_allday_listing_badges), so the badged
+  // count shows; special serials and owned stay hidden (the All Day feed sets neither).
+  it("shows badged but hides special-serial + owned for an AllDay bar", () => {
     const { container } = render(
       <SniperStatsBar stats={stats()} isPinnacle={false} isAllDay={true} ownedCount={7} lastRefreshed={null} />
     )
     const txt = container.textContent!
-    expect(txt).not.toContain("badged")
+    expect(txt).toContain("badged")
     expect(txt).not.toContain("special serials")
     expect(txt).not.toContain("owned editions tracked")
   })

@@ -10,7 +10,7 @@ import SniperFilterBar from "@/components/sniper/SniperFilterBar"
 // visibility rules. The component holds no state — every input reports through a
 // callback prop — so a mis-wired handler silently applies the wrong filter (e.g.
 // the max-price box driving discount). It also HIDES controls per collection
-// (All Day has no badges / discount / owned-filter; Pinnacle relabels Player →
+// (All Day has no owned-filter; Pinnacle relabels Player →
 // Character and hides badges), which is real branching, not decoration.
 
 afterEach(cleanup)
@@ -98,12 +98,16 @@ describe("SniperFilterBar — wiring (Top Shot desktop)", () => {
 
 describe("SniperFilterBar — per-collection visibility", () => {
   // INVERTED 2026-10-15 (R127): All Day now has real FMV and the feed applies
-  // minDiscount on its path, so MIN DISC. shows; it still has no badges.
-  it("All Day shows MIN DISC. and hides BADGES ONLY", () => {
+  // minDiscount on its path, so MIN DISC. shows.
+  // RE-PINNED 2026-10-26 (premise changed): All Day deals carry their edition's
+  // badges (get_allday_listing_badges over badge_editions.set_play_tags), so
+  // BADGES ONLY shows. "Hides badges" stays exercised by Pinnacle below, which
+  // genuinely has none.
+  it("All Day shows MIN DISC. and BADGES ONLY", () => {
     const { props } = makeProps({ isAllDay: true, collectionSlug: "nfl-all-day" })
     render(<SniperFilterBar {...props} />)
     expect(screen.getByText("MIN DISC.")).toBeTruthy()
-    expect(screen.queryByText(/BADGES ONLY/i)).toBeNull()
+    expect(screen.getByText(/BADGES ONLY/i)).toBeTruthy()
   })
 
   it("Pinnacle relabels Player -> Character (and placeholder) and hides badges", () => {

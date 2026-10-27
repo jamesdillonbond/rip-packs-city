@@ -266,9 +266,9 @@ export default function SniperFilterBar(props: {
             <option key={o.value} value={o.value}>{o.label}</option>
           ))}
         </select>
-        {/* All Day has no badge system, so the toggle and downstream
-            badge stats are hidden for nfl-all-day (same as Pinnacle). */}
-        {!isPinnacle && !isAllDay && (
+        {/* Pinnacle has no moment badges, so the toggle is hidden there. All Day's
+            badges arrive from badge_editions.set_play_tags (2026-10-26). */}
+        {!isPinnacle && (
         <label className="flex items-center gap-1.5 cursor-pointer select-none" style={{ color: "var(--rpc-text-muted)" }}>
           <input
             type="checkbox"

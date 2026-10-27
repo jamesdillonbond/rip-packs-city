@@ -32,6 +32,7 @@ const COVER = /retryEmptyPlayerSearch|retryEmptyWithAccentRegex|resolveCatalogPl
 
 /** path:line-of-match-text → why it needs no retry. Keyed on the matched line's text so a moved line still matches. */
 const SANCTIONED: Record<string, string> = {
+  "lib/concierge/allday-boards.ts|q = opts.playerId ? q.eq(\"player_id\", opts.playerId) : opts.playerLabels ? q.in(\"player_name\", opts.playerLabels) : q.ilike(\"player_name\", `%${opts.player}%`)": "the concierge resolves the PERSON up front (executeTool → resolvePlayerForDistribution → playerScope.playerId / labels, passed in as opts); the ilike runs only when that resolution found nothing, exactly as the Top Shot get_badge_info arm",
   "app/api/badges/route.ts|countQ = countQ.ilike(\"player_name\", player)": "exact-match API param (no wildcard), filled by callers from catalog names; no search box sends it",
   "app/api/badges/route.ts|dataQ  = dataQ.ilike(\"player_name\", player)": "same read as the count above",
   "app/api/collection-moments/route.ts|p_player: playerFilter || null,": "the wallet Player filter is a dropdown of the wallet's own exact names",

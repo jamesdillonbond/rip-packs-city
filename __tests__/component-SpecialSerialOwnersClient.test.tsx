@@ -173,3 +173,25 @@ describe("SpecialSerialOwnersClient — the filters reach the request", () => {
     await waitFor(() => expect(lastUrl(f)).toMatch(/player=lillard/), { timeout: 2000 })
   })
 })
+
+// 2026-10-26: edition pages link `?player=<name>[&collection=nfl-all-day]`; the board read neither, so the
+// link promised "See who holds X's special serials" and opened the unfiltered Top Shot board.
+import { boardSeed } from "@/app/special-serial-owners/SpecialSerialOwnersClient"
+
+describe("SpecialSerialOwnersClient — seeded from the edition-page link", () => {
+  it("boardSeed reads player + collection and refuses an unknown collection", () => {
+    expect(boardSeed({ player: " Patrick Mahomes II ", collection: "nfl-all-day" })).toEqual({ player: "Patrick Mahomes II", collection: "nfl-all-day" })
+    expect(boardSeed({ player: ["Lillard", "x"], collection: "candy-mlb" })).toEqual({ player: "Lillard", collection: "nba-top-shot" })
+    expect(boardSeed(undefined)).toEqual({ player: "", collection: "nba-top-shot" })
+  })
+  it("the FIRST read asks for the seeded player in the seeded collection", async () => {
+    const f = okFetch([ROW])
+    vi.stubGlobal("fetch", f)
+    render(<SpecialSerialOwnersClient initialPlayer="Patrick Mahomes II" initialCollection="nfl-all-day" />)
+    await waitFor(() => expect(f).toHaveBeenCalled())
+    const urls = f.mock.calls.map((c) => String((c as unknown[])[0]))
+    const url = new URL(urls.find((u) => u.includes("special-serial-owners")) ?? "", "https://x")
+    expect(url.searchParams.get("player")).toBe("Patrick Mahomes II")
+    expect(url.searchParams.get("collection")).toBe("nfl-all-day")
+  })
+})

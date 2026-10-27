@@ -673,6 +673,9 @@ export function pageMetadata(page: string, collectionLabel: string, collectionId
 // reachable by direct URL only, so their mapping rests on the pitches above,
 // not on observed navigation. Recorded so the next reader knows which of the
 // three is evidence and which two are reasoned.
+// ↳ 2026-10-26: `hot-floors` is now linked from the Sniper tab on every
+// collection that ships it (Top Shot, All Day; Panini since 10-25), so its
+// `market` parent is still a reasoned mapping but the page is no longer orphaned.
 export const FOLDED_TAB_PARENT: Record<string, string> = {
   'pack-sniper': 'packs',
   challenges: 'play',

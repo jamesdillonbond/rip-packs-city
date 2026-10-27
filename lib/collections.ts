@@ -141,7 +141,10 @@ export const COLLECTIONS: Collection[] = [
     accent: "#4F94D4",
     accentSoft: "#6FAEF0",
     icon: "\u{1F3C8}",
-    pages: ["overview", "collection", "market", "packs", "pack-sniper", "sniper", "sets", "analytics"],
+    // 2026-10-26 — HOT FLOORS added (tab-bar hidden like Top Shot's): sweeps over sales_market — one
+    // collector taking 3+ copies within 60-minute gaps (All Day sales carry no Quick-Buy proposer), buyers
+    // counted never named (get_allday_hot_floors). Linked from the Sniper tab.
+    pages: ["overview", "collection", "market", "packs", "pack-sniper", "sniper", "sets", "analytics", "hot-floors"],
     teamPages: true,
     published: true,
     graphqlUrl: "https://public-api.nflallday.com/graphql",

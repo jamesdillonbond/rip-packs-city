@@ -402,6 +402,43 @@ describe("GET /api/sniper-feed?collection=nfl-all-day — computeAllDaySniperFee
     expect(by("Alvin Kamara").lowConfidenceFmv).toBe(false)
   })
 
+  // 2026-10-26 (All Day parity): this path built every deal with hasBadge=false, so BADGES ONLY was dead on All Day.
+  it("RPC-fallback decorates deals with their edition's badges by listing id", async () => {
+    gqlEdges = []
+    rpc.mockImplementation(async (name: string, params?: any) => {
+      if (name === "get_allday_sniper_deals") {
+        return { data: [
+          { flow_id: "r", moment_id: "mr", tier: "COMMON", confidence: "HIGH", player_name: "RJ Harvey", ask_price: 1, fmv_usd: 2, discount_pct: 50, listing_resource_id: "111" },
+          { flow_id: "q", moment_id: "mq", tier: "COMMON", confidence: "HIGH", player_name: "Quinn Meinerz", ask_price: 1, fmv_usd: 2, discount_pct: 50, listing_resource_id: "222" },
+        ], error: null }
+      }
+      if (name === "get_allday_listing_badges") {
+        expect(params.p_listing_ids.sort()).toEqual([111, 222])
+        return { data: [{ listing_resource_id: 111, edition_key: "4273", badges: ["Rookie Mint", "Rookie Year"] }, { listing_resource_id: 222, edition_key: "3674", badges: [] }], error: null }
+      }
+      return { data: [], error: null }
+    })
+    const body = await (await GET(get(ADQS))).json()
+    const by = (p: string) => body.deals.find((d: any) => d.playerName === p)
+    expect(by("RJ Harvey")).toMatchObject({ hasBadge: true, badgeSlugs: ["Rookie Mint", "Rookie Year"] })
+    expect(by("Quinn Meinerz")).toMatchObject({ hasBadge: false, badgeSlugs: [] })
+  })
+
+  it("a failed badge read leaves deals undecorated and does NOT mark the board degraded (enrichment, not a source)", async () => {
+    gqlEdges = []
+    rpc.mockImplementation(async (name: string) => {
+      if (name === "get_allday_sniper_deals") {
+        return { data: [{ flow_id: "r", moment_id: "mr", tier: "COMMON", confidence: "HIGH", player_name: "RJ Harvey", ask_price: 1, fmv_usd: 2, discount_pct: 50, listing_resource_id: "111" }], error: null }
+      }
+      if (name === "get_allday_listing_badges") return { data: null, error: { message: "timeout" } }
+      return { data: [], error: null }
+    })
+    const body = await (await GET(get(ADQS))).json()
+    expect(body.deals).toHaveLength(1)
+    expect(body.deals[0].hasBadge).toBe(false)
+    expect(body.sourcesFailed ?? []).not.toContain("allday-badges")
+  })
+
   it("RPC-fallback error → empty result", async () => {
     gqlEdges = []
     rpc.mockImplementation(async (name: string) => {

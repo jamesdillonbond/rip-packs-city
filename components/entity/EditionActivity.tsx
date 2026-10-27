@@ -8,8 +8,9 @@
 //
 // Offer rows of type edition/subedition carry no serial (fillable by any
 // serial) so the Serial column is blank — that's honest, not a bug. serial
-// offers show their serial. offers is Top-Shot-only on-chain today; other
-// collections show an empty Offers state and never error.
+// offers show their serial. Sources (get_edition_offers): Top Shot's on-chain
+// `offers`, Candy's Magic Eden bids (10-26) and All Day's OffersV2 edition bids
+// (`allday_open_offers`, 10-26 — no bidder or bid time is kept, so both render "—").
 
 import { useMemo, useState } from "react"
 import { sectionEmptyCopy } from "@/lib/entity/section-empty-copy"

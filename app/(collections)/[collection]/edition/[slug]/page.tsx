@@ -1769,10 +1769,11 @@ async function EditionBottomSections({
               })}
             </div>
           )}
-          {collection === "nba-top-shot" && detail.player_name ? (
+          {(collection === "nba-top-shot" || collection === "nfl-all-day") && detail.player_name ? (
             <div style={{ marginTop: 10 }}>
               <Link
-                href={`/special-serial-owners?player=${encodeURIComponent(detail.player_name)}`}
+                // 2026-10-26: All Day too (the board has both); the collection rides the URL so the board opens on it.
+                href={`/special-serial-owners?player=${encodeURIComponent(detail.player_name)}${collection === "nfl-all-day" ? "&collection=nfl-all-day" : ""}`}
                 // The holders board is sign-in only (holder-exposure decision, 2026-06-19) and this
                 // page is cached for every visitor, so the link says so instead of landing a
                 // signed-out reader on the sign-in page unannounced; nofollow keeps crawlers off it.

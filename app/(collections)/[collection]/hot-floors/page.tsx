@@ -12,6 +12,8 @@ import { getCollection } from "@/lib/collections"
 import { fetchHotFloors } from "@/lib/hot-floors/fetchers"
 import { fetchPaniniHotFloors, PANINI_HOT_FLOORS_DAYS } from "@/lib/hot-floors/panini"
 import PaniniHotFloors from "@/components/collection/PaniniHotFloors"
+import { fetchAllDayHotFloors, ALLDAY_HOT_FLOORS_DAYS } from "@/lib/hot-floors/allday"
+import AllDayHotFloors from "@/components/collection/AllDayHotFloors"
 import { proxyIpfsImageUrl } from "@/lib/ipfs-media"
 import { usdSignFirst } from "@/lib/usd-format"
 import { accentText } from "@/lib/accent-text"
@@ -58,7 +60,13 @@ export default async function HotFloorsPage(props: { params: Promise<{ collectio
     const r = await fetchPaniniHotFloors()
     return <PaniniHotFloors collection={collectionId} editions={r.editions} ok={r.ok} days={PANINI_HOT_FLOORS_DAYS} newestSaleAt={r.newestSaleAt} />
   }
-  // Top Shot-only feature (Quick-Buy proposer account is TS-specific).
+  // NFL All Day (Top Shot parity, 2026-10-26): its sales carry no Quick-Buy proposer, so a sweep is one
+  // collector taking 3+ copies within 60-minute gaps over sales_market (get_allday_hot_floors).
+  if (collectionId === "nfl-all-day") {
+    const r = await fetchAllDayHotFloors()
+    return <AllDayHotFloors collection={collectionId} editions={r.editions} ok={r.ok} days={ALLDAY_HOT_FLOORS_DAYS} newestSaleAt={r.newestSaleAt} />
+  }
+  // Every other collection: the Quick-Buy proposer account is Top Shot-specific.
   if (collectionId !== "nba-top-shot") {
     return (
       <div style={{ padding: "48px 8px", color: "var(--rpc-text-secondary)", fontFamily: "var(--font-mono)", fontSize: 14 }}>

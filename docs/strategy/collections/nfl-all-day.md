@@ -1,4 +1,4 @@
-# NFL All Day — collection roadmap (refreshed 2026-10-17, PT)
+# NFL All Day — collection roadmap (refreshed 2026-10-17, PT; parity matrix 2026-10-26)
 
 > Dated snapshot; every number is a dated sample — re-derive before quoting. Canonical plan: [roadmap-2026-10-17.md](../roadmap-2026-10-17.md). Defects: [known-issues.md](../../reference/known-issues.md) (item text wins over this file).
 
@@ -116,6 +116,35 @@
 - **STALE high end (882 editions, median $69):** the only lever is more sales, so it stays labelled. Revisit only if a backtest shows the label is wrong.
   - ↳ **A backtest showed the PRICE was wrong (2026-10-23 ~3:20 PM PT, Cowork cloud; #209):** on 60 d of sales under a current STALE snapshot (n 61) the published price read 5.0× realised (8.2 % within ±25 %) while the edition's own last sale read 2.0× (23.0 %). STALE prices are now capped at the last market sale (`20261023222201`, 189 of the 512 All Day STALE rows with a qualifying sale re-stamped, median 1.60× lower); the label is untouched. Weekly read beside the ASK_ONLY cap from ~10-30.
 - **Pack EV:** keep it historical and secondary. No primary-drop work unless `allday_drop_windows` shows a new start.
+
+## Parity with Top Shot (matrix, 2026-10-26 evening PT)
+
+Read from a code sweep of every Top Shot-only branch (≈58 rows) and a DB check behind each gap, 2026-10-26. "new" = shipped that evening (ledger 10-26, "All Day ↔ Top Shot parity, pass 1"). Gaps that are a false claim or Top Shot data on an All Day page went first.
+
+| Surface | Top Shot | All Day | Note |
+|---|---|---|---|
+| Overview · Market · Collection · Packs · Pack Sniper · Sniper · Sets · Analytics | ✓ | ✓ | registry `pages` |
+| Hot Floors | ✓ (Quick-Buy sweeps) | ✓ (new) | All Day sales carry no proposer, so a sweep = one collector, 3+ copies, no gap over 60 min, 7 days (`get_allday_hot_floors`). Linked from the Sniper (Top Shot's board had no inbound link) |
+| Challenges · Play · Fast Break · Road to the Ring | ✓ | ✗ | no All Day challenge ingest; concierge says so (new) |
+| Edition: FMV, chart, sales, floor ask (dated by last check), % listed, best offer, special serials, pack provenance, market cap, badges | ✓ | ✓ | |
+| Edition: Offers tab | ✓ | ✓ (new) | was a false "No open offers" on every edition; `allday_open_offers` arm, bidder / bid time unknown → "—" |
+| Edition: "See who holds X's special serials" | ✓ | ✓ (new) | the board read no URL params, so the link opened unfiltered on Top Shot too — fixed for both |
+| Edition: Top Owners | ✓ (Dune index) | ✗ | wmc covers ~315 All Day wallets — a thin lower bound; needs an ownership walk before it can be shown honestly |
+| Edition: insight chips | ✓ | ✗ | next: `cross_collection_deals_board` + `allday_scarcity_board` arms |
+| Edition: parallel ladder · thin-parallel estimate | ✓ | ✗ | All Day editions are numeric ids with no `::sub` grouping |
+| Market Cap: issuer-held split | ✓ | ✗ | no All Day issuer / pack-inventory source |
+| Player: season stats | ✓ | ✓ | ESPN NFL |
+| Player: Top Collectors | ✓ (rookie index) | ✗ | same wmc coverage limit as Top Owners |
+| Team: Squeeze & Scarcity | ✓ | ✗ | `allday_scarcity_board` exists; a team arm is a next step |
+| Team: checklist "Contemporary" scope | ✓ | ✗ | needs an All Day season rule |
+| Collection tab: "close to completing" sets | ✓ | ✗ | `/api/allday-set-progress` exists — wire it next |
+| Sniper: BADGES ONLY + badged stat | ✓ | ✓ (new) | `get_allday_listing_badges`; the path built every deal `hasBadge=false` |
+| Sniper: Own / Lock chips · special-serial stat | ✓ | ✗ | the All Day path sets no `editionKey`; setting it routes `/api/edition-floor` without a collection — fix that route first |
+| Analytics: marketplace breakdown | ✓ | ✗ | a V1 / V2 storefront split is possible from `sales.source` |
+| Insights boards with an All Day leg | — | autographs, deals, top-sales, trophies, market-cap, market-pulse, cross-collection, pack-sniper, account-value, special-serial-owners, buyback + All Day's own scarcity / pack-market / pack-reality | |
+| Insights boards Top Shot only | squeeze, set-squeeze, rookie-board, rookies, first-mint, serial / parallel premiums, underpriced-serials, offer-spread, set-completers, new-collectors, market index | ✗ | candidates in order of data on hand: offer-spread (bids indexed), rookies (Rookie Year / Rookie Mint badges), first-mint |
+| Concierge: hot floors · special-serial owners · badges · set completion | ✓ | ✓ (new) | each read Top Shot on an All Day question (substitution) or said "Top Shot only" |
+| Concierge: edition sweep · serial deals · challenges · rookies | ✓ | not_applicable (new) | each answered with Top Shot data before |
 
 ## Decisions on record (do not re-litigate)
 

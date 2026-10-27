@@ -1739,6 +1739,36 @@ async function computeAllDaySniperFeed(opts: {
         isLowestAsk: false,
       };
     });
+    // 2026-10-26 (All Day parity): badges. Every deal above is built with hasBadge=false, so BADGES ONLY
+    // could not work on All Day. get_allday_listing_badges maps each listing to its edition's badge titles
+    // (badge_editions.set_play_tags). An ENRICHMENT read: on failure the deals render undecorated and it is
+    // logged, not noted in the sink (lib/sniper/source-failures.ts — noting a decoration read would make the
+    // empty-state copy fire on an honestly empty board), the same rule as Top Shot's badge decoration.
+    const adListingIds = Array.from(new Set(
+      fallback.map((d) => Number(d.listingResourceID)).filter((n) => Number.isFinite(n) && n > 0),
+    )).slice(0, 500);
+    if (adListingIds.length > 0) {
+      const br = await boundedRead(
+        (supabase as any).rpc("get_allday_listing_badges", { p_listing_ids: adListingIds }),
+        "get_allday_listing_badges",
+      );
+      if (br.error) {
+        console.error(`[sniper-feed] get_allday_listing_badges error: ${br.error.message}`);
+      } else {
+        const badgeMap = new Map<string, string[]>();
+        for (const b of (br.data ?? []) as Array<{ listing_resource_id: number | string; badges: string[] | null }>) {
+          badgeMap.set(String(b.listing_resource_id), Array.isArray(b.badges) ? b.badges.filter(Boolean) : []);
+        }
+        for (const d of fallback) {
+          const titles = badgeMap.get(String(d.listingResourceID ?? ""));
+          if (titles && titles.length > 0) {
+            d.hasBadge = true;
+            d.badgeSlugs = titles;
+            d.badgeLabels = titles;
+          }
+        }
+      }
+    }
     // Several franchise labels arrive as separately-ordered lists: re-sort the merge.
     const fallbackDeals = adTeams.length > 1 ? sortSniperDeals(fallback, opts.sortBy) : fallback;
     return {

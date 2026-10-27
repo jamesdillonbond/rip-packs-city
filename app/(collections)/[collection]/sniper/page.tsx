@@ -25,6 +25,7 @@ import PaniniSniper, { type PaniniSniperData } from "@/components/collection/Pan
 import { fetchPaniniMoreBoards } from "@/lib/insights/panini-more-boards"
 import { readBoardOrLive } from "@/lib/insights/board-cache"
 import { degradedFromSource, type DegradedSummary } from "@/lib/insights/board-status"
+import { collectionHasPage } from "@/lib/collections"
 
 // Panini's arm reads a snapshot that moves hourly; the other collections' shell is
 // static, so ISR at the insights board's own cadence costs them nothing.
@@ -79,6 +80,13 @@ export default async function SniperPage(props: { params: Promise<{ collection: 
       }
     >
       <SniperClient />
+      {/* 2026-10-26 (All Day parity): the tab-bar-hidden sweep board had no inbound link on any
+          Flow collection (lib/seo.ts, measured 08-21); link it wherever the collection ships one. */}
+      {collectionHasPage(collection, "hot-floors") && (
+        <Link href={`/${collection}/hot-floors`} className="rpc-mono" data-testid="hot-floors-link" style={{ display: "inline-block", marginTop: 16, fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--rpc-red-text)", textDecoration: "none" }}>
+          Hot Floors — editions being swept →
+        </Link>
+      )}
     </Suspense>
   )
 }

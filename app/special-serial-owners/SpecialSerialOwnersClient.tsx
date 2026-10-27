@@ -87,19 +87,28 @@ function BoardImage({ r, collection }: { r: OwnerRow; collection: BoardCollectio
 
 type ApiResponse = { meta: { fetched_at: string; total_rows: number; player_resolved?: { from: string; to: string } }; rows: OwnerRow[] };
 
-export default function SpecialSerialOwnersClient() {
+/** Seeds from the URL (2026-10-26): edition pages link `?player=<name>[&collection=nfl-all-day]`, and the
+ *  board read neither, so every link landed on the unfiltered Top Shot board. */
+export function boardSeed(sp: { player?: string | string[]; collection?: string | string[] } | null | undefined): { player: string; collection: BoardCollection } {
+  const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? ""
+  const player = one(sp?.player).trim().slice(0, 80)
+  const collection: BoardCollection = one(sp?.collection) === "nfl-all-day" ? "nfl-all-day" : "nba-top-shot"
+  return { player, collection }
+}
+
+export default function SpecialSerialOwnersClient({ initialPlayer = "", initialCollection = "nba-top-shot" }: { initialPlayer?: string; initialCollection?: BoardCollection } = {}) {
   const [rows, setRows] = useState<OwnerRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   // #207: the route searched the resolver's spelling ("luka doncic" → "Luka Dončić").
   const [playerResolved, setPlayerResolved] = useState<{ from: string; to: string } | null>(null);
 
-  const [collection, setCollection] = useState<BoardCollection>("nba-top-shot");
+  const [collection, setCollection] = useState<BoardCollection>(initialCollection);
   const [tag, setTag] = useState<TagFilter>("all");
   const [tier, setTier] = useState<TierFilter>("all");
   const [sort, setSort] = useState<OwnersSortKey>("fmv");
-  const [playerInput, setPlayerInput] = useState("");
-  const [player, setPlayer] = useState("");
+  const [playerInput, setPlayerInput] = useState(initialPlayer);
+  const [player, setPlayer] = useState(initialPlayer);
 
   const TAGS = TAGS_BY_COLLECTION[collection];
   const TIERS = TIERS_BY_COLLECTION[collection];

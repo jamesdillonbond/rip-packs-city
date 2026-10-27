@@ -117,6 +117,7 @@ import {
 import { ALLOWED_ORIGINS } from "@/lib/allowed-origins";
 import { lookupUiField } from "@/lib/concierge/ui-field-dictionary";
 import { ownLookup } from "@/lib/safe-lookup";
+import { isAllDaySlug, allDayNotApplicable, readAllDayHotFloorsForConcierge, readAllDayBadgesForConcierge, readAllDaySetCompletionForConcierge, ALLDAY_NEEDS_FLOW_WALLET, isFlowAddress } from "@/lib/concierge/allday-boards";
 import { resolveCandyWallet, CANDY_NEEDS_SOLANA_WALLET, CANDY_COLLECTION_UUID, readCandySetCompletionForConcierge, readCandyPackMarketForConcierge, readCandySpecialSerialsForConcierge, readCandyDealsForConcierge, candyNotApplicable } from "@/lib/concierge/candy-boards";
 import { readPaniniBreakdownForConcierge, readPaniniQuirkySerialsForConcierge, readPaniniSetCompletionForConcierge, readPaniniCollectionForConcierge, readPaniniDealsForConcierge, readPaniniPackMarketForConcierge, readPaniniPremiumsForConcierge, readPaniniTeamForConcierge } from "@/lib/concierge/panini-boards";
 import { fetchPaniniEditionAsk, fetchPaniniEditionSerials } from "@/lib/panini/edition-market";
@@ -622,13 +623,13 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "get_special_serial_owners",
-    description: "Find who currently holds the chase serials on Top Shot — the #1 mint, the perfect mint (#N/N), and the jersey-match serial — among tracked wallets. Use for ownership questions like 'who owns the #1 of [player] [set]?' or 'what special serials does [wallet] hold?'. NBA Top Shot, and Candy MLB (pass collectionId candy-mlb, or ask on a Candy page: Candy's #1 / last-serial / jersey-match board, holder = a Solana wallet). Provide playerName to find a player's special serials, OR a holder wallet address to list everything that wallet holds; you can also narrow by tag and tier. Returns the current holder, the serial + kind, the edition FMV, and a link to the edition page. Holder is the latest tracked owner, not a guarantee of present custody.",
+    description: "Find who currently holds the chase serials on Top Shot — the #1 mint, the perfect mint (#N/N), and the jersey-match serial — among tracked wallets. Use for ownership questions like 'who owns the #1 of [player] [set]?' or 'what special serials does [wallet] hold?'. NBA Top Shot, and Candy MLB (pass collectionId candy-mlb, or ask on a Candy page: Candy's #1 / last-serial / jersey-match board, holder = a Solana wallet). Provide playerName to find a player's special serials, OR a holder wallet address to list everything that wallet holds; you can also narrow by tag and tier. NFL All Day too (pass collectionId nfl-all-day, or ask on an All Day page: All Day's #1 / perfect / jersey board). Returns the current holder, the serial + kind, the edition FMV, and a link to the edition page. Holder is the latest tracked owner, not a guarantee of present custody.",
     input_schema: {
       type: "object" as const,
       properties: {
         playerName: { type: "string", description: "Player name (partial match)." },
         holder: { type: "string", description: "Exact Flow wallet address (0x + 16 hex) to list that wallet's special serials; for Candy, a Solana wallet (verbatim) or SNS name." },
-        collectionId: { type: "string", description: "Optional. nba-top-shot (default) or candy-mlb." },
+        collectionId: { type: "string", description: "Optional. nba-top-shot (default), nfl-all-day or candy-mlb." },
         tag: { type: "string", enum: ["#1", "perfect", "jersey"], description: "Restrict to one chase-serial kind." },
         tier: { type: "string", description: "Top Shot tier (COMMON, RARE, FANDOM, LEGENDARY, ULTIMATE)." },
         limit: { type: "number", description: "Max rows, 1..100, default 25." },
@@ -656,11 +657,12 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "get_hot_floors",
-    description: "Top Shot 'hot floors' — the editions whose floor is being actively SWEPT (bought in bulk via Dapper Quick Buy) right now. Ranked by how many distinct buyers are sweeping each edition over the last few days, with the swept-sale count, the average price sweepers are paying, and the current floor ask + FMV. THE tool for 'what's being accumulated / swept right now', 'what commons are people bulk-buying', 'where's the sweep pressure'. Top Shot only.",
+    description: "Top Shot 'hot floors' — the editions whose floor is being actively SWEPT (bought in bulk via Dapper Quick Buy) right now. Ranked by how many distinct buyers are sweeping each edition over the last few days, with the swept-sale count, the average price sweepers are paying, and the current floor ask + FMV. THE tool for 'what's being accumulated / swept right now', 'what commons are people bulk-buying', 'where's the sweep pressure'. NFL All Day too (collectionId nfl-all-day or an All Day page): there a sweep is one collector buying 3+ copies in a row (All Day records no Quick Buy), over 7 days by default.",
     input_schema: {
       type: "object" as const,
       properties: {
-        days: { type: "number", description: "Lookback window in days (1..7, default 3)." },
+        collectionId: { type: "string", description: "Optional. nba-top-shot (default) or nfl-all-day." },
+        days: { type: "number", description: "Lookback window in days (Top Shot 1..7, default 3; All Day 1..30, default 7)." },
         limit: { type: "number", description: "Max editions, 1..40, default 15." },
       },
       required: [],
@@ -668,7 +670,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "get_edition_sweep",
-    description: "Check whether a specific Top Shot edition's floor is being SWEPT (accumulated in bulk via Quick Buy). Returns, over the window: how many of its Quick-Buy sales came from sweepers, the share that were sweeps, how many distinct sweep-buyers, and when it was last swept. Use for 'is anyone sweeping [edition]?', 'is this common being accumulated?', 'is there sweep pressure on this moment?'. Requires the edition key (setID:playID). Top Shot only.",
+    description: "Check whether a specific Top Shot edition's floor is being SWEPT (accumulated in bulk via Quick Buy). Returns, over the window: how many of its Quick-Buy sales came from sweepers, the share that were sweeps, how many distinct sweep-buyers, and when it was last swept. Use for 'is anyone sweeping [edition]?', 'is this common being accumulated?', 'is there sweep pressure on this moment?'. Requires the edition key (setID:playID). Top Shot only — on All Day use get_hot_floors.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -680,7 +682,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "get_set_completion_cost",
-    description: "Cost to COMPLETE a Top Shot set at the current floor, for a given wallet — the editions the wallet is missing, the total to buy them all at the current floor ask, and how that compares to their combined FMV (so the user sees if finishing the set is +EV or a premium). Use for 'what would it cost to finish the [X] set?', 'how much to complete my [X] set?'. Requires a set name and a wallet (0x address or Top Shot username). If the set name matches more than one set (e.g. multiple 'Base Set' across series), the tool returns the candidates — ask the user which series. Top Shot only.",
+    description: "Cost to COMPLETE a Top Shot set at the current floor, for a given wallet — the editions the wallet is missing, the total to buy them all at the current floor ask, and how that compares to their combined FMV (so the user sees if finishing the set is +EV or a premium). Use for 'what would it cost to finish the [X] set?', 'how much to complete my [X] set?'. Requires a set name and a wallet (0x address or Top Shot username). If the set name matches more than one set (e.g. multiple 'Base Set' across series), the tool returns the candidates — ask the user which series. On NFL All Day (collectionId nfl-all-day or an All Day page) it reads All Day's set tracker and needs the 0x Flow wallet; there the money figure is the missing editions' value at FMV (a lower bound), not a cost at the floor.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -846,12 +848,13 @@ const TOOLS: Anthropic.Tool[] = [
   {
     name: "get_badge_info",
     description:
-      "What a BADGE means and how common it is — RPC's badge taxonomy (title, category, description) plus a live census of the NBA Top Shot editions that carry each moment tag, by tier. Use for 'what is a Top Shot Debut / Rookie Year / Championship Year badge', 'which badges exist', 'how rare is the Rookie Premiere tag', or — with `player` — 'which of Lillard's moments carry a Rookie Year badge'. Omit `badge` to list every badge grouped by category. `badge: 'autographed'` (or 'signed') answers from the autograph field instead: live counts of SIGNED editions for Top Shot AND All Day, and with `player` that player's signed editions in both. Moment tags are indexed for Top Shot only; All Day, Golazos, Pinnacle and UFC use parallels / variants and set themes instead, and this tool says so rather than reporting zero. ⚠ It reports HOW MANY editions carry a tag, not what the tag is WORTH — a premium is a price question: answer it by pricing badged vs. unbadged editions of the same set and tier with get_fmv / get_player_editions, never from memory.",
+      "What a BADGE means and how common it is — RPC's badge taxonomy (title, category, description) plus a live census of the NBA Top Shot editions that carry each moment tag, by tier. Use for 'what is a Top Shot Debut / Rookie Year / Championship Year badge', 'which badges exist', 'how rare is the Rookie Premiere tag', or — with `player` — 'which of Lillard's moments carry a Rookie Year badge'. Omit `badge` to list every badge grouped by category. `badge: 'autographed'` (or 'signed') answers from the autograph field instead: live counts of SIGNED editions for Top Shot AND All Day, and with `player` that player's signed editions in both. On NFL All Day (collectionId nfl-all-day or an All Day page) it reports All Day's own badges (ALL DAY Debut, Rookie Year, Rookie Mint, Championship Year, …) with live counts; Golazos, Pinnacle and UFC use parallels / variants and set themes instead, and this tool says so rather than reporting zero. ⚠ It reports HOW MANY editions carry a tag, not what the tag is WORTH — a premium is a price question: answer it by pricing badged vs. unbadged editions of the same set and tier with get_fmv / get_player_editions, never from memory.",
     input_schema: {
       type: "object" as const,
       properties: {
         badge: { type: "string", description: "Badge name, partial ok ('rookie' matches every Rookie badge; 'debut' matches Top Shot Debut). Omit to list all badges." },
-        player: { type: "string", description: "Optional player name (partial match). Returns that player's Top Shot editions carrying the matched badge(s)." },
+        player: { type: "string", description: "Optional player name (partial match). Returns that player's editions carrying the matched badge(s) in the collection asked about." },
+        collectionId: { type: "string", description: "Optional. nba-top-shot (default) or nfl-all-day." },
       },
       required: [],
     },
@@ -1896,7 +1899,9 @@ async function executeTool(toolName: string, toolInput: any, ctx: ToolCtx): Prom
     const typed = String(toolInput.playerName ?? toolInput.player ?? toolInput.character ?? toolInput.characterName ?? "").trim();
     const collectionId: string | undefined = toolInput.collectionId ?? ctx.collectionId ?? undefined;
     if (typed && !isPinnacle(collectionId)) {
-      const uuid = TOP_SHOT_ONLY_TOOLS.has(toolName)
+      // 2026-10-26: special-serial owners and badges answer All Day from All Day's own tables, so the
+      // name resolves to the All Day PERSON there (search_serial_deals stays Top Shot-only).
+      const uuid = TOP_SHOT_ONLY_TOOLS.has(toolName) && !(toolName !== "search_serial_deals" && isAllDaySlug(collectionId))
         ? COLLECTION_UUID_BY_SLUG["nba-top-shot"]
         : (collectionId ? (ownLookup(COLLECTION_UUID_BY_SLUG, collectionId) ?? null) : null);
       const who = await resolvePlayerForDistribution(uuid, typed);
@@ -3439,6 +3444,11 @@ async function executeToolInner(
         limit: Number(toolInput.limit) || 25,
       });
     }
+    // 2026-10-26: the board takes p_collection (default nba-top-shot); on an All Day question this answered
+    // with Top Shot rows. All Day reads its own rows, keyed and linked under All Day.
+    const ssoAllDay = isAllDaySlug(effectiveCollectionId);
+    const ssoSlug = ssoAllDay ? "nfl-all-day" : "nba-top-shot";
+    const ssoUuid = ownLookup(COLLECTION_UUID_BY_SLUG, ssoSlug) ?? COLLECTION_UUID_BY_SLUG["nba-top-shot"];
     try {
       const player = String(toolInput.playerName ?? toolInput.player ?? "").trim() || null;
       const holder = String(toolInput.holder ?? "").trim() || null;
@@ -3455,7 +3465,7 @@ async function executeToolInner(
       // The board RPC ILIKEs the label. For a resolved person ask once per
       // label the person's editions carry (up to 4) and keep only rows whose
       // label is one of them — "Marvin Harrison" no longer returns the son.
-      const boardArgs = { p_tag: tag, p_tier: tier, p_holder: holder, p_sort: "fmv", p_limit: limit, p_offset: 0 };
+      const boardArgs = { p_tag: tag, p_tier: tier, p_holder: holder, p_sort: "fmv", p_limit: limit, p_offset: 0, p_collection: ssoSlug };
       const labelsToAsk = player && playerScope.labels ? playerScope.labels.slice(0, 4) : [player];
       let data: any[] = [];
       let error: any = null;
@@ -3475,7 +3485,7 @@ async function executeToolInner(
           .sort((a: any, b: any) => Number(b.edition_fmv ?? -1) - Number(a.edition_fmv ?? -1))
           .slice(0, limit);
       }
-      const ownersMeta = await fetchEditionMetadata(supabase, COLLECTION_UUID_BY_SLUG["nba-top-shot"], (data ?? []).map((r: any) => r.edition_key));
+      const ownersMeta = await fetchEditionMetadata(supabase, ssoUuid, (data ?? []).map((r: any) => r.edition_key));
       const rows = (data ?? []).map((r: any) => ({
         editionKey: r.edition_key ?? null,
         player: r.player_name,
@@ -3486,13 +3496,14 @@ async function executeToolInner(
         kind: r.tag, // '#1' | 'perfect' | 'jersey'
         holder: r.holder_address,
         edition_fmv: r.edition_fmv != null ? Number(r.edition_fmv) : null,
-        ...metadataFieldsFor(ownersMeta, r.edition_key, COLLECTION_UUID_BY_SLUG["nba-top-shot"]),
-        edition_url: r.edition_key ? `${base}/nba-top-shot/edition/${encodeURIComponent(r.edition_key)}` : null,
+        ...metadataFieldsFor(ownersMeta, r.edition_key, ssoUuid),
+        edition_url: r.edition_key ? `${base}/${ssoSlug}/edition/${encodeURIComponent(r.edition_key)}` : null,
       }));
       return JSON.stringify({
         status: "ok",
         badges_note: BADGES_NOTE,
-        note: "Top Shot only. 'holder' is the current owner among tracked wallets (latest seen), not a present-custody guarantee.",
+        collection: ssoSlug,
+        note: `${ssoAllDay ? "NFL All Day" : "NBA Top Shot"} special serials. 'holder' is the current owner among tracked wallets (latest seen), not a present-custody guarantee.`,
         total: rows.length,
         rows,
       });
@@ -3909,6 +3920,9 @@ async function executeToolInner(
     // 2026-10-26: Top Shot-only feed; on a Candy question it answered with Top Shot listings.
     if (toolInput.collectionId === "candy-mlb" || (!toolInput.collectionId && effectiveCollectionId === "candy-mlb")) {
       return candyNotApplicable("search_serial_deals", "The special-serial deal feed covers Top Shot only.", "For Candy, call get_special_serial_owners (who holds each #1 / jersey / last serial) and get_edition_listings for an edition's live Magic Eden asks.");
+    }
+    if (isAllDaySlug(effectiveCollectionId)) {
+      return allDayNotApplicable("search_serial_deals", "The special-serial deal feed reads Top Shot's listing feed only.", "For All Day, call get_special_serial_owners (who holds each #1 / perfect / jersey serial) and get_edition_listings for an edition's live asks.");
     }
     try {
       const player = String(toolInput.playerName ?? toolInput.player ?? "").trim() || null;
@@ -4647,6 +4661,10 @@ async function executeToolInner(
     if (toolInput.collectionId === "candy-mlb" || (!toolInput.collectionId && effectiveCollectionId === "candy-mlb")) {
       return candyNotApplicable("get_hot_floors", "Hot Floors reads Top Shot's Quick-Buy sweeps; Candy trades on Magic Eden, which has no such path, and RPC has recorded no Candy sale since Oct 11.", "Say Candy has no sweep signal; get_top_sales covers its recorded sales.");
     }
+    // 2026-10-26: All Day has its own board (get_allday_hot_floors, collectors buying 3+ copies in a row).
+    if (isAllDaySlug(effectiveCollectionId)) {
+      return readAllDayHotFloorsForConcierge(supabase, base, { days: Number(toolInput.days ?? 7), limit: Number(toolInput.limit ?? 15) });
+    }
     try {
       const days = Math.min(Math.max(Math.trunc(Number(toolInput.days ?? 3)) || 3, 1), 7);
       const limit = Math.min(Math.max(Math.trunc(Number(toolInput.limit ?? 15)) || 15, 1), 40);
@@ -4671,6 +4689,9 @@ async function executeToolInner(
   if (toolName === "get_edition_sweep") {
     if (toolInput.collectionId === "candy-mlb" || (!toolInput.collectionId && effectiveCollectionId === "candy-mlb")) {
       return candyNotApplicable("get_edition_sweep", "The sweep signal reads Top Shot's Quick-Buy sales only.");
+    }
+    if (isAllDaySlug(effectiveCollectionId)) {
+      return allDayNotApplicable("get_edition_sweep", "The per-edition sweep signal reads Top Shot's Quick-Buy sales; All Day sales record no Quick-Buy path.", "Call get_hot_floors on All Day: it lists the editions collectors are buying in bulk (3+ copies in a row) over the last 7 days.");
     }
     try {
       const key = String(toolInput.editionKey ?? "").trim();
@@ -4703,6 +4724,12 @@ async function executeToolInner(
       if (cw.kind === "error") return cw.payload;
       if (cw.kind === "wallet") return readCandySetCompletionForConcierge(base, cw.wallet);
       if (effectiveCollectionId === "candy-mlb" || toolInput.collectionId === "candy-mlb") return CANDY_NEEDS_SOLANA_WALLET;
+    }
+    // 2026-10-26: on All Day, answer from All Day's Sets tab backend (it used to price a Top Shot set).
+    if (isAllDaySlug(effectiveCollectionId)) {
+      const w = String(toolInput.walletAddress ?? "").trim();
+      if (!isFlowAddress(w)) return ALLDAY_NEEDS_FLOW_WALLET;
+      return readAllDaySetCompletionForConcierge(base, w.toLowerCase(), { setName: toolInput.setName ?? null, limit: 5 });
     }
     try {
       // 2026-10-26: on a Panini page a typed name is a PANINI username — answer from Panini's own set
@@ -4783,6 +4810,9 @@ async function executeToolInner(
     }
     if (effectiveCollectionId === "candy-mlb" || isSolanaAddress(String(toolInput.walletAddress ?? "").trim())) {
       return candyNotApplicable("get_challenges", "Challenges are a Top Shot feature; Candy MLB has none.");
+    }
+    if (isAllDaySlug(effectiveCollectionId)) {
+      return allDayNotApplicable("get_challenges", "RPC tracks Top Shot's challenges only; it has no All Day challenge data.", "Say so; do not describe Top Shot challenges as All Day ones.");
     }
     try {
       // 2026-10-26: on a Panini page a typed name is a PANINI username; this tool would look it up as a
@@ -4882,6 +4912,9 @@ async function executeToolInner(
     if (isPinnacle(effectiveCollectionId)) {
       return pinnacleNotApplicable("get_rookies", "The rookie index is Top Shot's (NBA rookies); Disney Pinnacle has characters, not players.", "For a character's pins, use search_catalog or get_market_cap with the character.");
     }
+    if (isAllDaySlug(effectiveCollectionId)) {
+      return allDayNotApplicable("get_rookies", "The rookie index and rookie boards cover Top Shot's NBA rookie classes only.", "For an All Day rookie, get_badge_info with badge 'rookie' and the player lists their Rookie Year / Rookie Mint editions; get_player_editions prices them.");
+    }
     const params = new URLSearchParams();
     // 2026-10-22: the description used to suggest sort "momentum" / "value", which the
     // route 400s on; both params are enums now and the route still validates them.
@@ -4935,6 +4968,11 @@ async function executeToolInner(
       if (cw.kind === "error") return cw.payload;
       if (cw.kind === "wallet") return readCandySetCompletionForConcierge(base, cw.wallet);
       if (effectiveCollectionId === "candy-mlb" || toolInput.collectionId === "candy-mlb") return CANDY_NEEDS_SOLANA_WALLET;
+    }
+    if (isAllDaySlug(effectiveCollectionId)) {
+      const w = String(toolInput.walletAddress ?? "").trim();
+      if (!isFlowAddress(w)) return ALLDAY_NEEDS_FLOW_WALLET;
+      return readAllDaySetCompletionForConcierge(base, w.toLowerCase(), { cheapestFirst: true, limit: 8 });
     }
     try {
       // 2026-10-26: on a Panini page a typed name is a PANINI username — answer from Panini's own set
@@ -5522,8 +5560,13 @@ async function executeToolInner(
           premium_note: "This tool does NOT price an autograph. Compare a signed edition with its unsigned printing through get_fmv to discuss a premium, quoting both rows.",
         });
       }
+      // 2026-10-26: All Day badges are indexed too (badge_editions.set_play_tags) — this note used to say
+      // Top Shot only. On an All Day question, answer from All Day's own badges.
+      if (isAllDaySlug(effectiveCollectionId)) {
+        return readAllDayBadgesForConcierge(supabase, base, { badge: String(toolInput.badge ?? ""), player, playerLabels: playerScope.labels, playerId: playerScope.playerId });
+      }
       const coverageNote =
-        "Moment tags (badges) are indexed for NBA Top Shot only. NFL All Day, LaLiga Golazos, Disney Pinnacle and UFC Strike use parallels / variants and set themes rather than moment badges — do not report a zero count for them as 'no badges'.";
+        "This census counts NBA Top Shot moment tags. NFL All Day has its own badges (ALL DAY Debut, Rookie Year, Rookie Mint and others) — ask with collectionId nfl-all-day for those. LaLiga Golazos, Disney Pinnacle and UFC Strike use parallels / variants and set themes rather than moment badges — do not report a zero count for them as 'no badges'.";
       const { data: tax, error: taxErr } = await (supabase as any)
         .from("badge_taxonomy")
         .select("id, title, category, description, priority, normalized_key")

@@ -38,7 +38,7 @@ export default function SniperStatsBar(props: {
       <div className="rpc-mono flex items-center gap-6 flex-wrap" style={{ maxWidth: "var(--max-width)", margin: "0 auto", color: "var(--rpc-text-muted)" }}>
         <span><span style={{ color: "var(--rpc-text-primary)", fontWeight: 600 }}>{stats.total}</span> deals</span>
         <span><span style={{ color: "var(--rpc-danger-text)", fontWeight: 600 }}>{stats.hot}</span> hot (40%+)</span>
-        {!isPinnacle && !isAllDay && stats.badge > 0 && (
+        {!isPinnacle && stats.badge > 0 && (
           <span><span style={{ color: "var(--tier-legendary-text)", fontWeight: 600 }}>{stats.badge}</span> badged</span>
         )}
         {!isAllDay && stats.special > 0 && (
