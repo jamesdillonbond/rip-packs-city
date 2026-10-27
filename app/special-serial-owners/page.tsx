@@ -1,4 +1,5 @@
-import SpecialSerialOwnersClient, { boardSeed } from "./SpecialSerialOwnersClient"
+import SpecialSerialOwnersClient from "./SpecialSerialOwnersClient"
+import { boardSeed } from "./board-seed"
 
 // Server wrapper. The interactive body lives in SpecialSerialOwnersClient.tsx so the
 // component coverage gate measures it (`vitest.components.config.ts` includes

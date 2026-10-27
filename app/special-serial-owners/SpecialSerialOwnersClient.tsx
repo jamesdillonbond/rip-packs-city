@@ -20,7 +20,7 @@ import SpecialSerialGlyph from "@/components/SpecialSerialGlyph";
 import type { OwnerRow, SpecialSerialTag, OwnersSortKey } from "@/lib/special-serial-owners-board";
 import { accentText } from "@/lib/accent-text"
 
-type BoardCollection = "nba-top-shot" | "nfl-all-day";
+import type { BoardCollection } from "./board-seed";
 type TagFilter = "all" | SpecialSerialTag;
 type TierFilter = "all" | string;
 
@@ -86,15 +86,6 @@ function BoardImage({ r, collection }: { r: OwnerRow; collection: BoardCollectio
 }
 
 type ApiResponse = { meta: { fetched_at: string; total_rows: number; player_resolved?: { from: string; to: string } }; rows: OwnerRow[] };
-
-/** Seeds from the URL (2026-10-26): edition pages link `?player=<name>[&collection=nfl-all-day]`, and the
- *  board read neither, so every link landed on the unfiltered Top Shot board. */
-export function boardSeed(sp: { player?: string | string[]; collection?: string | string[] } | null | undefined): { player: string; collection: BoardCollection } {
-  const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? ""
-  const player = one(sp?.player).trim().slice(0, 80)
-  const collection: BoardCollection = one(sp?.collection) === "nfl-all-day" ? "nfl-all-day" : "nba-top-shot"
-  return { player, collection }
-}
 
 export default function SpecialSerialOwnersClient({ initialPlayer = "", initialCollection = "nba-top-shot" }: { initialPlayer?: string; initialCollection?: BoardCollection } = {}) {
   const [rows, setRows] = useState<OwnerRow[]>([]);

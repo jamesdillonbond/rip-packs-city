@@ -176,7 +176,7 @@ describe("SpecialSerialOwnersClient — the filters reach the request", () => {
 
 // 2026-10-26: edition pages link `?player=<name>[&collection=nfl-all-day]`; the board read neither, so the
 // link promised "See who holds X's special serials" and opened the unfiltered Top Shot board.
-import { boardSeed } from "@/app/special-serial-owners/SpecialSerialOwnersClient"
+import { boardSeed } from "@/app/special-serial-owners/board-seed"
 
 describe("SpecialSerialOwnersClient — seeded from the edition-page link", () => {
   it("boardSeed reads player + collection and refuses an unknown collection", () => {
