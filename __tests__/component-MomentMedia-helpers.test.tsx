@@ -36,8 +36,16 @@ describe("getImageUrl", () => {
   // the fix the Hero_ suffix was glued onto every one of these, and the Candy
   // pack art 404'd (the Arweave tx id with a filename appended). Shapes copied
   // from `editions.thumbnail_url` in prod.
+  // 2026-10-26 re-pin (premise changed): Candy's bare Arweave tx id now goes through the
+  // same-origin resizer — still a complete URL (no Hero_ suffix glued on), still no video.
+  it("Candy Arweave art (bare tx id) goes to the resizer — no Hero_ suffix, no video", () => {
+    const url = "https://arweave.net/wRxRV-zmlAN6gB8WaeFKfhkqqXv_NA2RVV9_J49u3e4"
+    expect(getImageUrl(url)).toBe("/api/public/arweave-thumb/wRxRV-zmlAN6gB8WaeFKfhkqqXv_NA2RVV9_J49u3e4?w=640")
+    expect(getImageUrl(url)).not.toContain("Hero_")
+    expect(getVideoUrl(url)).toBeNull()
+  })
+
   it.each([
-    ["Candy Arweave art (bare tx id)", "https://arweave.net/wRxRV-zmlAN6gB8WaeFKfhkqqXv_NA2RVV9_J49u3e4"],
     ["All Day media endpoint", "https://media.nflallday.com/editions/2577/media/image?width=512&format=webp&quality=90"],
     ["Top Shot media endpoint", "https://assets.nbatopshot.com/media/52882112?type=hero"],
   ])("passes %s through unchanged — no Hero_ suffix, no video", (_label, url) => {

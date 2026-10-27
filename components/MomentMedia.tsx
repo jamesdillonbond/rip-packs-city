@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { proxyIpfsImageUrl } from "@/lib/ipfs-media";
+import { proxyIpfsImageUrl, ARWEAVE_TX_RE } from "@/lib/ipfs-media";
 
 // True for bare public-IPFS-gateway art (https://<gateway>/ipfs/<cid>) that
 // carries no TS-CDN resize semantics — appending the Hero_/Animated_ suffixes
@@ -34,6 +34,11 @@ export function getImageUrl(prefix: string | null | undefined): string | null {
   // append the TopShot Hero_/Animated_ suffixes below (that produced a broken
   // URL).
   if (isBareIpfsGatewayUrl(prefix)) {
+    return proxyIpfsImageUrl(prefix, 640);
+  }
+  // 2026-10-26: Candy's Arweave art (a bare 43-char tx id, 0.5–7.5 MB originals) goes through the
+  // same-origin resizer too (/api/public/arweave-thumb, fails open to the original).
+  if (ARWEAVE_TX_RE.test(prefix)) {
     return proxyIpfsImageUrl(prefix, 640);
   }
   if (prefix.endsWith(".png") || prefix.endsWith(".webp") || prefix.endsWith(".jpg")) {

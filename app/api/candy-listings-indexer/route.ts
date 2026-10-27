@@ -169,14 +169,37 @@ async function fetchActivities(offset: number): Promise<MeActivity[]> {
 // Activity types that END a listing: an explicit delist, or a fill.
 const LISTING_ENDING_TYPES = new Set(["delist", "buyNow", "buyNowFill", "acceptBid"])
 
-async function fetchListings(offset: number): Promise<MeListing[]> {
+async function fetchListingsOnce(offset: number): Promise<MeListing[]> {
   const url = `${ME_BASE}/collections/${encodeURIComponent(CANDY_MLB_ME_SYMBOL)}/listings?offset=${offset}&limit=${ME_LIMIT}`
   const resp = await fetch(url, { headers: meHeaders(), signal: AbortSignal.timeout(ME_FETCH_TIMEOUT_MS) })
   if (!resp.ok) {
-    throw new Error(`ME listings HTTP ${resp.status}: ${(await resp.text().catch(() => "")).slice(0, 200)}`)
+    throw Object.assign(new Error(`ME listings HTTP ${resp.status}: ${(await resp.text().catch(() => "")).slice(0, 200)}`), { status: resp.status })
   }
   const json = await resp.json()
   return Array.isArray(json) ? (json as MeListing[]) : []
+}
+
+// ⭐ ONE RETRY per listings page (2026-10-26). A single page that timed out threw the
+// whole tick: 3 of 8 sweeps on 10-26 (5:35, 8:35, 11:35 AM PT) died "The operation
+// was aborted due to timeout" holding 300–1,100 listings they had already read,
+// and wrote NONE of them — so the book went 9 h without a refresh while the next
+// tick succeeded in 11–45 s. A transient Magic Eden stall is the common case; a
+// second try 1.5 s later is cheap. Retried: a timeout / network error, a 429 and a
+// 5xx. NOT retried: any other 4xx (a wrong request will not fix itself). A second
+// failure throws as before (ok=false, nothing deactivated — deactivation is
+// evidence-based, see below).
+const ME_LISTINGS_RETRY_DELAY_MS = 1_500
+async function fetchListings(offset: number): Promise<MeListing[]> {
+  try {
+    return await fetchListingsOnce(offset)
+  } catch (e) {
+    const status = (e as { status?: number }).status
+    const retryable = status == null || status === 429 || status >= 500
+    if (!retryable) throw e
+    console.log(`[${PIPELINE_NAME}] listings page offset=${offset} failed (${e instanceof Error ? e.message.slice(0, 120) : String(e)}); retrying once`)
+    await new Promise((r) => setTimeout(r, ME_LISTINGS_RETRY_DELAY_MS))
+    return await fetchListingsOnce(offset)
+  }
 }
 
 async function logRun(

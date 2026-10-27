@@ -379,6 +379,60 @@ describe("candy-listings-indexer — every Magic Eden call is time-bounded", () 
   })
 })
 
+describe("candy-listings-indexer — a stalled listings page is retried once (2026-10-26)", () => {
+  // 3 of 8 sweeps on 10-26 died on ONE timed-out page holding 300–1,100 listings already read,
+  // and wrote none of them. A single retry turns a transient Magic Eden stall into a full sweep.
+  it("a page that times out once and then answers yields a COMPLETE, ok sweep that writes its rows", async () => {
+    let listingCalls = 0
+    const listings: MeListing[] = [
+      { pdaAddress: "pda1", tokenMint: "mint1", price: 0.5, seller: "s", auctionHouse: "ah", tokenSize: 1, expiry: 0 },
+    ]
+    fetchMock = installFetchMock([
+      {
+        match: (u) => /\/listings/.test(u),
+        respond: () => {
+          listingCalls++
+          if (listingCalls === 1) throw Object.assign(new Error("The operation was aborted due to timeout"), { name: "TimeoutError" })
+          return { json: listingCalls === 2 ? listings : [] }
+        },
+      },
+      jsonRoute("/activities", []),
+    ])
+    const spy = install({
+      wallet_moments_cache: { data: [{ moment_id: "mint1", edition_key: "candy-mlb:trout" }], error: null },
+      editions: { data: [{ id: "ed-trout", external_id: "candy-mlb:trout" }], error: null },
+      candy_listings: [{ error: null }, { data: [] }, { data: [] }],
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    expect(listingCalls).toBeGreaterThanOrEqual(2)
+    const log = logRun(spy.rpcCalls)
+    expect(log).toMatchObject({ p_ok: true, p_rows_written: 1 })
+    expect((log?.p_extra as Record<string, unknown>).sweep_complete).toBe(true)
+  }, 15_000)
+
+  it("a page that fails TWICE still fails the run (ok=false) — the retry never hides a real outage", async () => {
+    let listingCalls = 0
+    fetchMock = installFetchMock([
+      {
+        match: (u) => /\/listings/.test(u),
+        respond: () => {
+          listingCalls++
+          throw Object.assign(new Error("The operation was aborted due to timeout"), { name: "TimeoutError" })
+        },
+      },
+      jsonRoute("/activities", []),
+    ])
+    const spy = install({ candy_listings: [{ data: [] }, { data: [] }] })
+    await POST(req())
+    await runDeferred()
+    expect(listingCalls).toBe(2)
+    expect(logRun(spy.rpcCalls)).toMatchObject({ p_ok: false })
+  }, 15_000)
+})
+
 describe("candy-listings-indexer — deactivation needs evidence, not absence", () => {
   it("does NOT deactivate an unseen ask when the feed returns nothing", async () => {
     fetchMock = installFetchMock([jsonRoute("/listings", []), jsonRoute("/activities", [])])
