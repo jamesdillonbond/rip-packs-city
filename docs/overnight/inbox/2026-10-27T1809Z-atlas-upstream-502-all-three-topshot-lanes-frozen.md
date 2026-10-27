@@ -24,3 +24,11 @@ LOW-to-MEDIUM blast radius **while it stays short**: the drains RAISE on non-200
 1. **Verify recovery first** — re-check `max(started_at) FILTER (WHERE ok)` on the three lanes and `topshot_atlas_market_requests` status_code mix. If a 200 has landed since, this has self-cleared; **close with no code change** (upstream blip).
 2. If still 502 at the overnight pass: this is a Top Shot/Cloudflare origin outage — **nothing to ship**. Note the TS freshness gap in metrics-latest drift and confirm the freshness arms are the ones carrying the signal (they are; working as designed).
 3. Do **not** attempt a proxy/egress change on a 502 — it is origin-down, not a bot-challenge; the existing retry-from-offset-0 behavior is already the correct handling.
+
+## Follow-up — 2026-10-27 ~11:20 AM PT (Claude Code cloud, session_014vX7Q6Cam1dR9kzm4npa2L)
+Still down at 11:18 AM PT (all three lanes: last ok 10:03–10:04 AM PT). Wider than Atlas — **every Dapper-run marketplace stopped together, while the Flow chain kept working**:
+- Newest sale per collection: Top Shot 9:29:09 AM PT, Disney Pinnacle 9:28:57 AM PT (12 s apart), NFL All Day 8:33 AM PT.
+- `allday-sales-indexer` (on-chain): raw storefront events per 20-min tick ran 34–137 (V2 Dapper) / 18–195 (V1) all morning, then **exactly 0 from the 9:56 AM PT tick on**, for V1 and V2 alike. `blocks_scanned` stayed ~1,500/tick, so the cursor is advancing at the normal block rate.
+- The chain answered: `allday-v1-listing-reverify` got HTTP 200 Cadence script results from rest-mainnet at 10:24 AM PT (654 listings verified live).
+- Read: an upstream Dapper outage (the marketplace backend behind Atlas, Top Shot Market and the Dapper-wallet storefronts), not our ingest. Nothing to ship. Every lane is `ok`-honest (the indexers report 0 events found, not a fabricated count) and resumes by itself.
+- **Night pass:** confirm the sales gap closes (newest `sales.sold_at` moves for Top Shot / All Day and `pinnacle_sales`). If Dapper backfills purchases made during the outage, the on-chain indexers pick them up from their cursors. The Atlas market feed re-walks from offset 0. Do not read today's 30-day sales counts or M2 as a regression while this window is in them.
