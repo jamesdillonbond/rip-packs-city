@@ -41,6 +41,8 @@ export interface AllDayHotFloorsResult {
   ok: boolean
   /** Newest All Day market sale in the last 30 days — how current "the last N days" is. */
   newestSaleAt: string | null
+  /** When the board was computed (the 15-minute snapshot), or null for a live computation. */
+  computedAt: string | null
 }
 
 export async function fetchAllDayHotFloors(
@@ -48,7 +50,37 @@ export async function fetchAllDayHotFloors(
   db: any = supabaseAdmin,
   timeoutMs: number = HOT_FLOORS_TIMEOUT_MS,
 ): Promise<AllDayHotFloorsResult> {
-  const failed: AllDayHotFloorsResult = { editions: [], ok: false, newestSaleAt: null }
+  const failed: AllDayHotFloorsResult = { editions: [], ok: false, newestSaleAt: null, computedAt: null }
+  // 2026-10-26: read the 15-minute snapshot (pg_cron allday-hot-floors-snapshot) — one primary-key row. The
+  // first cold renders of the live sessionizing read hit the 8 s bound (daytime monitor, 10-27 03:09Z). Only
+  // when NO snapshot exists yet does the page compute live; a FAILED snapshot read is a failed read.
+  try {
+    const snap = await withBoardBudget<{
+      data: Array<{ payload: { editions?: unknown; newest_sale_at?: unknown } | null; computed_at: string | null }> | null
+      error: { message: string } | null
+    }>(db.from("allday_hot_floors_snapshot").select("payload, computed_at").eq("id", 1).limit(1), "allday-hot-floors-snapshot", 3_000, "collection/")
+    if (snap.error) {
+      console.error("[allday-hot-floors] snapshot read error:", snap.error.message)
+      return failed
+    }
+    const row = Array.isArray(snap.data) ? snap.data[0] : null
+    if (row?.payload) {
+      const rows = row.payload.editions
+      if (!Array.isArray(rows)) {
+        console.error("[allday-hot-floors] snapshot payload shape")
+        return failed
+      }
+      return {
+        editions: rows as AllDayHotEdition[],
+        ok: true,
+        newestSaleAt: typeof row.payload.newest_sale_at === "string" ? row.payload.newest_sale_at : null,
+        computedAt: row.computed_at ?? null,
+      }
+    }
+  } catch (e) {
+    console.error("[allday-hot-floors] snapshot read bound:", e instanceof Error ? e.message : e)
+    return failed
+  }
   try {
     const { data, error } = await withBoardBudget<{
       data: { editions?: unknown; newest_sale_at?: unknown } | null
@@ -67,6 +99,7 @@ export async function fetchAllDayHotFloors(
       editions: rows as AllDayHotEdition[],
       ok: true,
       newestSaleAt: typeof data?.newest_sale_at === "string" ? data.newest_sale_at : null,
+      computedAt: null,
     }
   } catch (e) {
     console.error("[allday-hot-floors] read bound:", e instanceof Error ? e.message : e)

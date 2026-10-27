@@ -13,7 +13,13 @@ vi.mock("@/lib/insights/board-page-fetch", () => ({ withBoardBudget: (p: Promise
 import { fetchAllDayHotFloors, ALLDAY_HOT_FLOORS_DAYS } from "@/lib/hot-floors/allday"
 import { collectionHasPage } from "@/lib/collections"
 
-const db = (res: unknown, calls: unknown[] = []) => ({
+// `snap` is the snapshot table read; `res` the live RPC (used only when no snapshot row exists).
+const db = (res: unknown, calls: unknown[] = [], snap: unknown = { data: [], error: null }) => ({
+  from: (t: string) => {
+    calls.push(["from", t])
+    const b: any = { select: () => b, eq: () => b, limit: () => Promise.resolve(snap) }
+    return b
+  },
   rpc: (name: string, args: unknown) => {
     calls.push([name, args])
     return Promise.resolve(res)
@@ -22,11 +28,24 @@ const db = (res: unknown, calls: unknown[] = []) => ({
 const read = (rel: string) => readFileSync(join(process.cwd(), rel), "utf8")
 
 describe("fetchAllDayHotFloors", () => {
-  it("reads get_allday_hot_floors over the All Day window", async () => {
+  it("reads the 15-minute snapshot and does NOT compute live when a snapshot exists", async () => {
+    const calls: unknown[] = []
+    const snap = { data: [{ payload: { editions: [{ external_id: "6112" }], newest_sale_at: "2026-10-27T03:00:00Z" }, computed_at: "2026-10-27T03:08:00Z" }], error: null }
+    const r = await fetchAllDayHotFloors(db({ data: null, error: null }, calls, snap))
+    expect(calls).toEqual([["from", "allday_hot_floors_snapshot"]])
+    expect(r).toEqual({ ok: true, editions: [{ external_id: "6112" }], newestSaleAt: "2026-10-27T03:00:00Z", computedAt: "2026-10-27T03:08:00Z" })
+  })
+  it("a FAILED snapshot read is a failed read — never a silent live computation", async () => {
+    const calls: unknown[] = []
+    const r = await fetchAllDayHotFloors(db({ data: { editions: [] }, error: null }, calls, { data: null, error: { message: "timeout" } }))
+    expect(r.ok).toBe(false)
+    expect(calls.some((c) => (c as unknown[])[0] === "get_allday_hot_floors")).toBe(false)
+  })
+  it("no snapshot yet → reads get_allday_hot_floors over the All Day window", async () => {
     const calls: unknown[] = []
     const r = await fetchAllDayHotFloors(db({ data: { editions: [{ external_id: "3201" }], newest_sale_at: "2026-10-27T00:51:49Z" }, error: null }, calls))
-    expect(calls).toEqual([["get_allday_hot_floors", { p_days: ALLDAY_HOT_FLOORS_DAYS }]])
-    expect(r).toEqual({ ok: true, editions: [{ external_id: "3201" }], newestSaleAt: "2026-10-27T00:51:49Z" })
+    expect(calls).toEqual([["from", "allday_hot_floors_snapshot"], ["get_allday_hot_floors", { p_days: ALLDAY_HOT_FLOORS_DAYS }]])
+    expect(r).toEqual({ ok: true, editions: [{ external_id: "3201" }], newestSaleAt: "2026-10-27T00:51:49Z", computedAt: null })
   })
   it("an empty list is a real, ok answer", async () => {
     expect((await fetchAllDayHotFloors(db({ data: { editions: [] }, error: null }))).ok).toBe(true)
@@ -37,7 +56,8 @@ describe("fetchAllDayHotFloors", () => {
     expect((await fetchAllDayHotFloors(db({ data: { editions: "nope" }, error: null }))).ok).toBe(false)
   })
   it("a thrown read is a failed read", async () => {
-    expect((await fetchAllDayHotFloors({ rpc: () => Promise.reject(new Error("boom")) })).ok).toBe(false)
+    const throwing = { from: () => { const b: any = { select: () => b, eq: () => b, limit: () => Promise.resolve({ data: [], error: null }) }; return b }, rpc: () => Promise.reject(new Error("boom")) }
+    expect((await fetchAllDayHotFloors(throwing)).ok).toBe(false)
   })
 })
 

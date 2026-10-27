@@ -64,7 +64,7 @@ export default async function HotFloorsPage(props: { params: Promise<{ collectio
   // collector taking 3+ copies within 60-minute gaps over sales_market (get_allday_hot_floors).
   if (collectionId === "nfl-all-day") {
     const r = await fetchAllDayHotFloors()
-    return <AllDayHotFloors collection={collectionId} editions={r.editions} ok={r.ok} days={ALLDAY_HOT_FLOORS_DAYS} newestSaleAt={r.newestSaleAt} />
+    return <AllDayHotFloors collection={collectionId} editions={r.editions} ok={r.ok} days={ALLDAY_HOT_FLOORS_DAYS} newestSaleAt={r.newestSaleAt} computedAt={r.computedAt} />
   }
   // Every other collection: the Quick-Buy proposer account is Top Shot-specific.
   if (collectionId !== "nba-top-shot") {

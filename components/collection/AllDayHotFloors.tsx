@@ -30,6 +30,7 @@ export default function AllDayHotFloors({
   ok,
   days,
   newestSaleAt,
+  computedAt = null,
   now,
 }: {
   collection: string
@@ -37,6 +38,8 @@ export default function AllDayHotFloors({
   ok: boolean
   days: number
   newestSaleAt: string | null
+  /** When the 15-minute snapshot was computed; null = computed for this render. */
+  computedAt?: string | null
   /** Tests pin a clock; omitted, relTime / askAgeStamp use their own default. */
   now?: number
 }) {
@@ -52,7 +55,7 @@ export default function AllDayHotFloors({
         </p>
         {newestSaleAt && (
           <p data-testid="allday-hot-floors-newest" style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-muted)", margin: "6px 0 0", maxWidth: 720 }}>
-            Newest sale on record: {relTime(newestSaleAt, now)}.
+            Newest sale on record: {relTime(newestSaleAt, now)}.{computedAt ? ` Board updated ${relTime(computedAt, now)}.` : ""}
           </p>
         )}
       </header>
