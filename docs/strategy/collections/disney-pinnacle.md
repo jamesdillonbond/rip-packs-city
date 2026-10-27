@@ -25,7 +25,10 @@ Read from the registry (`lib/collections.ts`), the shared `[collection]` routes,
 | Pin page: outbound marketplace CTA | ✓ dapper.market | ✓ (new) | per listing + "Cheapest listing on Disney Pinnacle" → `disneypinnacle.com/pin/<nft_id>` (verified in Chrome 10-26) |
 | Pin page: Found in these packs | ✓ | ✓ (new) | `mv_pinnacle_render_pack_pulls`, every 3 h; ~81 % of pulls named, so a lower bound (page says so) |
 | Pin page: Watch / price alerts | ✓ | ✓ (new) | the engine read `editions` + `fmv_snapshots` (no Pinnacle rows), so an alert could never fire; `dispatch_triggered_fmv_alerts` now has a Pinnacle arm (catalog FMV; floor ask ≤ 48 h old, ≤ 3× FMV), GET `/api/alerts` previews it (`lib/alerts/pinnacle-ask.ts`), alerts link the pin page |
-| Pin page: Top Owners | ✓ (Dune lower bound) | ✗ | the wallet cache holds 2.7 % of minted copies (tracked wallets only); `pinnacle_ownership_snapshots` is a latest-owner map keyed set-level for pre-spork mints — no honest per-pin owner ranking yet |
+| Pin page: Top Owners | ✓ (Dune lower bound) | ✓ (new, pass 2) | `mv_pinnacle_render_owners` (mints since the Dec 2025 spork floor × the owner map, latest sale wins when newer). Ranked only when ≥ 95 % of copies are attributable (948 pins); older pins say how many copies RPC can see |
+| Character page: Top Collectors | ✓ (rookie index) | ✓ (new, pass 2) | same map, ranked by FMV held; always states its copy coverage (pre-2025-12 pins are not attributable) |
+| Analytics: Top Accumulators (buyer-side sweeps) | ✓ | ✓ (new, pass 2) | `get_pinnacle_top_accumulators` over `pinnacle_sales`; the route used to refuse Pinnacle because the shared RPC cannot see its sales |
+| Collection tab: "Close to completing" | ✓ | ✓ (new, pass 2) | `/api/pinnacle-set-progress`; unpriced slots make the cost a lower bound; link now goes to the collection's own Sets tab |
 | Pin page: Offers | ✓ | ✗ | RPC indexes no Pinnacle offers |
 | Pin page: insight chips | ✓ | partial | footer links the scarcity board; no per-pin chip feed |
 | Top Sales board | ✓ | ✓ (new) | `v_pinnacle_top_sales` merged server-side; was an accepted filter that always read 0 rows |
