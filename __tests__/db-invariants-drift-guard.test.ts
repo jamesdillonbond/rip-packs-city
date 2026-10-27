@@ -2051,6 +2051,13 @@ const PINS = [
     migration: "supabase/migrations/20261023222201_audit_20261023_fmv_snapshots_cap_stale_to_last_sale.sql",
   },
   {
+    // 2026-10-26 (#202, panini-1.4.1): a Panini LOW price is capped at the edition's lowest live ask.
+    // Forward shadow read 10-21..10-26: on the 82 sales the cap changed, within ±25 % 1.2 % -> 53.7 %; no tier loses.
+    fn: "fmv_snapshots_cap_panini_low_to_live_ask",
+    test: "supabase/tests/fmv_snapshots_cap_panini_low_to_live_ask.sql",
+    migration: "supabase/migrations/20261027030854_audit_20261026_panini_fmv_low_cap_to_live_ask.sql",
+  },
+  {
     // 2026-10-23: the sitemap's readers for the cross-collection hubs — the bulk form
     // of the predicate each hub page applies (and get_player_hub's canonical slug).
     fn: "list_indexable_player_hubs",
