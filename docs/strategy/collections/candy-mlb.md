@@ -31,6 +31,7 @@ Read from the registry (`lib/collections.ts`), the shared `[collection]` routes 
 | Surface | Top Shot | Candy | Note |
 |---|---|---|---|
 | Overview · Market · Collection · Packs · Sets · Analytics tabs | ✓ | ✓ | registry `pages` |
+| Market tab: live listings only, # Listed, count noun | ✓ | ✓ (fixed, pass 5) | The arm showed every `is_active` row (108 of 1,498 last re-seen 3+ days ago); now re-seen within 12 h of the book's newest sweep. "# Listed" = the edition's confirmed listing count (was "—"). Count reads LISTINGS (was "500+ EDITIONS" of 125). The public Spreads view prices the confirmed floor too (`20261027023304`) |
 | Analytics: Pack EV card | ✓ | ✓ (fixed, pass 3) | Read `analytics_packs_summary`, which holds no Candy row, so it said "Pack analytics not yet available" while `/candy-mlb/packs` showed a live model. Now reads `/api/candy-pack-market`: typical pull vs pack cost, chase-inclusive mean labelled as such, sealed floor |
 | Sniper tab | ✓ | ✗ by decision | the edge already 307s `/candy-mlb/sniper` to Overview (proxy.ts); `sniper/layout.tsx` now also wraps `FeatureTabGate` like every other tab, as defense in depth (the client shell would otherwise render "No deals match your filters" from a feed with no Candy source). Deals for Candy live on `/insights/deals` (empty by construction while FMV is capped at the confirmed ask) |
 | Hot Floors | ✓ (Quick-Buy sweeps) | ✗ | no Quick Buy on Magic Eden and no sale since 10-11 — a board would be empty (#58) |

@@ -595,6 +595,9 @@ function exactSetMatch<T extends Record<string, unknown>>(
 // launch partner on 2026-08-31, and /api/candy-opensea-listings-indexer now
 // writes venue='opensea' rows; each row names and links the venue that
 // reported it. See docs/reference/chain-strategy.md.
+/** A Candy listing is live when the whole-book sweep re-saw it within this window of its newest sweep. */
+const CANDY_MARKET_RESEEN_HOURS = 12
+
 async function fetchCandyMarketListings(
   filters: {
     tier: string; maxPrice: number; sortBy: string; limit: number
@@ -608,11 +611,38 @@ async function fetchCandyMarketListings(
     sets: string[]; seriesList: string[]; player: string; minPrice: number
   }
 ): Promise<any[] | null> {
+  // ⚠ 2026-10-26: candy_market_board keeps every `is_active` row, and the 3-hourly
+  // whole-book sweep does NOT always flip a listing it stopped seeing — measured:
+  // 108 of 1,498 board rows last re-seen 3+ days ago (oldest 07-26), all shown as
+  // live asks. The edition page's "% Listed", the floor CTA and candy_listing_floor
+  // already gate on "re-seen within 12 h"; this arm now does too, RELATIVE TO THE
+  // BOOK'S OWN NEWEST SWEEP — so a sweep outage shows the last complete book (each
+  // row still carries its own age) instead of an empty market.
+  const { data: newest, error: newestErr } = await boundedRead(
+    (supabaseAdmin as any)
+      .from("candy_listings")
+      .select("last_seen_at")
+      .eq("is_active", true)
+      .not("last_seen_at", "is", null)
+      .order("last_seen_at", { ascending: false })
+      .limit(1),
+    "api/market/candy_book_newest",
+  )
+  if (newestErr) {
+    console.log("[/api/market] candy book-age read err:", newestErr.message)
+    return null
+  }
+  const bookNewest = (newest ?? [])[0]?.last_seen_at as string | undefined
+  const reSeenSince = bookNewest
+    ? new Date(Date.parse(bookNewest) - CANDY_MARKET_RESEEN_HOURS * 3600_000).toISOString()
+    : null
+
   let q = (supabaseAdmin as any)
     .from("candy_market_board")
     .select(
       "token_mint, edition_id, external_id, player_name, edition_name, set_name, team_name, tier, circulation_count, thumbnail_url, serial_number, ask_usd, fmv_usd, confidence, discount_pct, seller, first_seen_at, last_seen_at, venue, venue_url"
     )
+  if (reSeenSince) q = q.gte("last_seen_at", reSeenSince)
   if (filters.tier && filters.tier !== "all") q = q.eq("tier", filters.tier.toUpperCase())
   if (filters.maxPrice > 0) q = q.lte("ask_usd", filters.maxPrice)
   q = applyBrowseFilters(q, { set: "set_name", player: "player_name", price: "ask_usd" }, filters)
@@ -667,6 +697,24 @@ async function fetchCandyMarketListings(
     }
   }
 
+  // "# Listed" (2026-10-26): copies of the row's EDITION listed and re-seen in
+  // 12 h — candy_listing_floor.confirmed_listing_count, the count the edition
+  // page's "% Listed" uses. The column read "—" on every Candy row. A failed read
+  // leaves it null ("—", unknown), never 0; an edition absent from the view (no
+  // confirmed listing) cannot be on this board, so it is null too, not 0.
+  const listedByEdition = new Map<string, number>()
+  if (editionIds.length > 0) {
+    const { data: fl, error: flErr } = await boundedRead(
+      (supabaseAdmin as any).from("candy_listing_floor").select("edition_id, confirmed_listing_count").in("edition_id", editionIds),
+      "api/market/candy_listed_counts",
+    )
+    if (flErr) console.log("[/api/market] candy listed-count read err:", flErr.message)
+    for (const f of (fl ?? []) as { edition_id: string; confirmed_listing_count: number | null }[]) {
+      const n = f.confirmed_listing_count != null ? Number(f.confirmed_listing_count) : NaN
+      if (Number.isFinite(n) && n > 0) listedByEdition.set(f.edition_id, n)
+    }
+  }
+
   return rows.map((r: any) => ({
     id: r.token_mint ?? `${CANDY_COLLECTION_ID_FOR_DISPATCH}:${r.edition_id}`,
     flow_id: null,
@@ -705,6 +753,7 @@ async function fetchCandyMarketListings(
           : null,
     thumbnail_url: r.thumbnail_url ?? null,
     badge_slugs: badgesByEdition.get(r.edition_id) ?? null,
+    listed_count: listedByEdition.get(r.edition_id) ?? null,
     listing_resource_id: null,
     storefront_address: null,
     is_locked: false,

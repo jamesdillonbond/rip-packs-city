@@ -668,3 +668,51 @@ describe("GET /api/market — collectionId accepts a slug, refuses junk", () => 
   })
 })
 
+
+// 2026-10-26 (Candy parity pass 5) — candy_market_board keeps every `is_active`
+// row, and the sweep does not always flip a listing it stopped seeing: 108 of
+// 1,498 board rows were last re-seen 3+ days ago (oldest 07-26), shown as live
+// asks. The arm gates on "re-seen within 12 h of the book's NEWEST sweep" and
+// fills "# Listed" from candy_listing_floor.
+describe("GET /api/market — Candy listings are LIVE, not merely is_active", () => {
+  function spyGte() {
+    const sb = state.sb as { from: (t: string) => Record<string, unknown> }
+    const baseFrom = sb.from.bind(sb)
+    const gtes: unknown[][] = []
+    sb.from = (t: string) => {
+      const b = baseFrom(t)
+      if (t === "candy_market_board") {
+        const prev = b.gte as (...a: unknown[]) => unknown
+        b.gte = (...a: unknown[]) => { gtes.push(a); return prev(...a) }
+      }
+      return b
+    }
+    return gtes
+  }
+
+  it("filters the board to rows re-seen within 12 h of the book's newest sweep — relative to the BOOK, not the clock", async () => {
+    install({ ...candyRows(), candy_listings: { data: [{ last_seen_at: "2026-09-12T00:00:00.000Z" }], error: null } })
+    const gtes = spyGte()
+    const res = await GET(req(`https://t/api/market?collectionId=${CANDY}`))
+    expect(res.status).toBe(200)
+    expect(gtes).toContainEqual(["last_seen_at", "2026-09-11T12:00:00.000Z"])
+  })
+
+  it("a FAILED book-age read is a failed market read — never an unfiltered (stale) or empty market", async () => {
+    install({ ...candyRows(), candy_listings: { data: null, error: { message: "timeout" } } })
+    const res = await GET(req(`https://t/api/market?collectionId=${CANDY}`))
+    expect(res.status).not.toBe(200)
+  })
+
+  it("# Listed comes from the edition's confirmed listing count; a failed count read is unknown (null), never 0", async () => {
+    install({ ...candyRows(), candy_listing_floor: { data: [{ edition_id: "e1", confirmed_listing_count: 4 }], error: null } })
+    let body = await (await GET(req(`https://t/api/market?collectionId=${CANDY}`))).json()
+    const byMint = (b: any, m: string) => b.listings.find((r: any) => r.momentId === m)
+    expect(byMint(body, "mintA").listedCount).toBe(4)
+    expect(byMint(body, "mintB").listedCount).toBeNull()
+    install({ ...candyRows(), candy_listing_floor: { data: null, error: { message: "x" } } })
+    body = await (await GET(req(`https://t/api/market?collectionId=${CANDY}`))).json()
+    expect(byMint(body, "mintA").listedCount).toBeNull()
+    expect(byMint(body, "mintA").listedCount).not.toBe(0)
+  })
+})

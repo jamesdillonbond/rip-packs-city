@@ -572,6 +572,10 @@ function MarketInner() {
   const total = data?.pagination.total ?? 0
   // A windowed total is printed as a floor ("500+"), never as the market's size.
   const totalPlus = data?.pagination.totalIsExact === false ? "+" : ""
+  // Candy's Market is LISTING grain (one row per listed card — it has no Sniper to
+  // carry serials), so its count is listings: "50 OF 500+ EDITIONS" claimed 500+
+  // of a 125-edition collection (2026-10-26). Every other arm is edition grain.
+  const rowNoun = collectionId === "candy-mlb" ? "LISTING" : "EDITION"
   const hasMore = data?.pagination.hasMore ?? false
   const showOwnedColumn = !!ownerKey && editionStats.size > 0
   const showOwnedFilter = !!ownerKey
@@ -803,7 +807,7 @@ function MarketInner() {
         {/* Row 4: result summary */}
         <div className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.08em" }}>
           {loading ? "LOADING…" : error ? `ERROR — ${error}` :
-            `${filteredListings.length.toLocaleString()} OF ${total.toLocaleString()}${totalPlus} EDITION${total === 1 && !totalPlus ? "" : "S"}` +
+            `${filteredListings.length.toLocaleString()} OF ${total.toLocaleString()}${totalPlus} ${rowNoun}${total === 1 && !totalPlus ? "" : "S"}` +
             (data?.diagnostics && data.diagnostics.rawCount > data.diagnostics.postClampCount
               ? ` · ${(data.diagnostics.rawCount - data.diagnostics.postClampCount).toLocaleString()} OUTLIERS CLAMPED`
               : "")

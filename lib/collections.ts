@@ -420,8 +420,10 @@ export const COLLECTIONS: Collection[] = [
     //   whale leaderboard    real — 60+ base58 wallets, top buyer $1,534
     //   badge premium        RPC returns SQL NULL -> panel() gives [] -> the
     //                        honest empty state (Candy has no badge scheme)
-    //   pack EV              "not yet available for this collection" — TRUE of
-    //                        `pack_distributions`, which has zero Candy rows
+    //   pack EV              2026-10-26: reads Candy's own model
+    //                        (`/api/candy-pack-market`) — `pack_distributions` has
+    //                        zero Candy rows, so the shared card's "not yet
+    //                        available" was false beside a live /candy-mlb/packs
     //   /api/ready           readiness_collection_stats lists Candy,
     //                        thin_volume=false, so no false thin-volume banner
     //

@@ -291,6 +291,18 @@ describe("MarketClient — results", () => {
     expect(document.body.textContent).toContain("PAGE 1 / 10+")
   })
 
+  it("Candy's Market is LISTING grain: its count says LISTINGS, never '500+ EDITIONS' of a 125-edition collection (2026-10-26)", async () => {
+    PARAMS.collection = "candy-mlb"
+    try {
+      marketResponse = () => json(200, market({ pagination: { total: 500, page: 1, limit: 50, hasMore: true, totalIsExact: false } }))
+      render(<MarketClient />)
+      await waitFor(() => expect(document.body.textContent).toContain("1 OF 500+ LISTINGS"))
+      expect(document.body.textContent).not.toContain("EDITIONS")
+    } finally {
+      PARAMS.collection = "nba-top-shot"
+    }
+  })
+
   it("singularises the count for a one-edition market", async () => {
     marketResponse = () => json(200, market({ pagination: { total: 1, page: 1, limit: 50, hasMore: false } }))
     render(<MarketClient />)
