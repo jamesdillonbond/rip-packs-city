@@ -143,13 +143,21 @@ describe("edge-fn drift detector — tier 1 is a proof", () => {
     // so tier 1 applies to it; pipeline-failure-alerts has NO runtime import (fetch
     // only, plus the type-only edge-runtime.d.ts side-effect import), so tier 1 is
     // inapplicable to it and tier 2 is its verdict.
+    // 2026-10-26: six R137 retirements (deployed-only, verify_jwt=false, 0 callers) joined as
+    // 410 tombstones — same shape as the R21 batch, so tier 1 is inapplicable to them too.
     expect(res.inapplicable.sort()).toEqual([
+      "allday-unmapped-resolver",
+      "audit-storefront-wallets",
       "backfill-golazos-series",
+      "backfill-ufc-thumbs",
+      "flowty-loan-indexer",
       "flowty-proxy",
+      "ingest-external-announcements",
       "pipeline-failure-alerts",
       "resolve-allday-pack-dist",
       "scan-allday-wallet",
       "scan-golazos-wallet",
+      "scan-storefront-events",
       "seed-allday-editions",
       "seed-golazos-editions",
       "sync-nba-games",

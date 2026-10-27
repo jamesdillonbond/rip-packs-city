@@ -81,9 +81,13 @@ function importsOf(f: string): string[] {
   return out
 }
 // The analytics section's own pages and dashboards are loan / ecosystem contexts.
-const INSIDE_ANALYTICS = (rel: string) =>
-  rel.startsWith("app/(analytics)/") || rel.startsWith("app/admin/") || rel.startsWith("app/api/")
-const ENTRY = /\/(page|layout|template|not-found|error)\.tsx$/
+// Both read forward slashes on every OS — with "/" only, a Windows walk matched no entry and
+// reached 0 files, so the guard went red on this box only (2026-10-26).
+const INSIDE_ANALYTICS = (rel: string) => {
+  const r = rel.split("\\").join("/")
+  return r.startsWith("app/(analytics)/") || r.startsWith("app/admin/") || r.startsWith("app/api/")
+}
+const ENTRY = /[\\/](page|layout|template|not-found|error)\.tsx$/
 const RAW = /["'`]\/analytics\/wallets\//
 
 function reachableOutsideAnalytics(): Set<string> {
@@ -113,7 +117,7 @@ describe("tree walk: pages outside the analytics section link wallets through a 
   it("finds none", () => {
     const bad: string[] = []
     for (const f of reach) {
-      const rel = relative(ROOT, f)
+      const rel = relative(ROOT, f).split("\\").join("/")
       if (rel === "lib/analytics/wallet-href.ts") continue
       if (RAW.test(stripComments(readFileSync(f, "utf8")))) bad.push(rel)
     }

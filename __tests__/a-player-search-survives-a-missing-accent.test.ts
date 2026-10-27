@@ -50,7 +50,9 @@ function walk(dir: string, out: string[] = []): string[] {
   for (const name of readdirSync(dir)) {
     const p = join(dir, name)
     if (statSync(p).isDirectory()) walk(p, out)
-    else if (/\.(ts|tsx)$/.test(name)) out.push(p)
+    // Forward slashes on every OS: the SANCTIONED keys are written that way, so a Windows
+    // backslash path matched none of them and the guard went red on this box only (2026-10-26).
+    else if (/\.(ts|tsx)$/.test(name)) out.push(p.split("\\").join("/"))
   }
   return out
 }
