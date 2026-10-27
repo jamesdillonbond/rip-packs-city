@@ -12,6 +12,8 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-10-26 · 🔧 SHIPPED (CI) — **edge-fn-deploy.yml concurrency is per function, so batch dispatches stop cancelling each other** (Claude Code, Windows, ~8:55 PM PT; Trevor: "keep going"). GitHub keeps one PENDING run per concurrency group and cancels the older pending one; with the single global `edge-fn-deploy` group, six back-to-back R137 dispatches deployed the first and last and silently cancelled the middle four (re-dispatched one at a time, all six verified 410). Group is now `edge-fn-deploy-${{ inputs.function }}`; two deploys of the same slug still serialise. **Revert:** `git revert` the commit.
+
 ### 2026-10-26 · 🔐 CLOSED (docs) — **#22 and #212 resolved: Trevor signed out of Dapper and LiveToken on his laptop and phone; neither site offers sign-out-all-devices and both use his Google sign-in** (Cowork cloud, ~8:45 PM PT).
 LiveToken's leaked values are a server-side session captured in the laptop browser, so that sign-out ends it; Dapper's was an April login token, long expired. Neither credential was re-tested by using it. CLAUDE.md's Needs-TREVOR line now names only the worker deploys. **Revert:** `git revert` the commit.
 
