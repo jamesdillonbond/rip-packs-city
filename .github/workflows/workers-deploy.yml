@@ -19,9 +19,17 @@ name: Cloudflare workers deploy (from the committed files)
 # code and wrangler.toml config only. It ships EVERYTHING in workers/<name>/
 # at this ref, not only the latest change — check `git log -- workers/<name>`.
 #
-# workflow_dispatch only — nothing deploys on push.
+# Triggers:
+#   push to main touching workers/**  (2026-10-26) — deploys ONLY the workers whose
+#     directory changed in the push. Until CLOUDFLARE_API_TOKEN exists it SKIPS with a
+#     notice instead of failing, so main never goes red over a missing secret; on a
+#     manual dispatch a missing token is still an error.
+#   workflow_dispatch — any worker list, or all of them.
 
 on:
+  push:
+    branches: [main]
+    paths: ['workers/**']
   workflow_dispatch:
     inputs:
       workers:
@@ -46,6 +54,8 @@ jobs:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       WORKERS: ${{ inputs.workers }}
+      EVENT: ${{ github.event_name }}
+      BEFORE: ${{ github.event.before }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -53,12 +63,41 @@ jobs:
           node-version: '24'
 
       - name: Pre-flight
+        id: pre
         run: |
           set -euo pipefail
           if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
+            if [ "$EVENT" = "push" ]; then
+              echo "::notice::CLOUDFLARE_API_TOKEN is not configured — push deploy skipped (deploy from the laptop: node scripts/deploy-workers.mjs)."
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
             echo "::error::CLOUDFLARE_API_TOKEN is not configured — nothing deployed."
             exit 2
           fi
+          if [ "$EVENT" = "push" ]; then
+            # Only the workers whose directory this push changed. A first push or an
+            # unfetchable base falls back to the tip commit's own changes.
+            changed=""
+            if [ -n "${BEFORE:-}" ] && ! printf '%s' "$BEFORE" | grep -Eq '^0+$' \
+               && git fetch --no-tags --depth=1 origin "$BEFORE" >/dev/null 2>&1; then
+              changed=$(git diff --name-only "$BEFORE" HEAD -- workers)
+            else
+              changed=$(git diff-tree --no-commit-id --name-only -r HEAD -- workers)
+            fi
+            WORKERS=""
+            for d in $(printf '%s\n' "$changed" | awk -F/ 'NF>=3 {print $2}' | sort -u); do
+              if [ -f "workers/$d/wrangler.toml" ]; then WORKERS="$WORKERS $d"; fi
+            done
+            WORKERS="${WORKERS# }"
+            if [ -z "$WORKERS" ]; then
+              echo "::notice::No deployable worker changed in this push."
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "push deploy: $WORKERS"
+          fi
+          echo "workers=$WORKERS" >> "$GITHUB_OUTPUT"
           for w in $WORKERS; do
             if ! printf '%s' "$w" | grep -Eq '^[a-z0-9][a-z0-9-]*$' || [ ! -f "workers/$w/wrangler.toml" ]; then
               echo "::error::'$w' is not a worker (no workers/$w/wrangler.toml on this ref)."
@@ -68,6 +107,9 @@ jobs:
           echo "ref: $(git rev-parse --short HEAD)"
 
       - name: Deploy
+        if: steps.pre.outputs.skip != 'true'
+        env:
+          WORKERS: ${{ steps.pre.outputs.workers }}
         run: |
           set -euo pipefail
           # Word-splitting on purpose: WORKERS is a validated space-separated list.
