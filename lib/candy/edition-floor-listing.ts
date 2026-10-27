@@ -30,6 +30,7 @@ export interface CandyFloorListing {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = any
+type FloorRows = Array<{ token_mint: string | null; price_usd: unknown }>
 
 export async function fetchCandyFloorListing(
   editionId: string,
@@ -38,7 +39,7 @@ export async function fetchCandyFloorListing(
   const db: Db = injected ?? supabaseAdmin
   const since = new Date(Date.now() - CANDY_LISTING_CONFIRMED_HOURS * 3600_000).toISOString()
   try {
-    const { data, error } = await withQueryDeadline<Array<{ token_mint: string | null; price_usd: unknown }>>(
+    const { data, error } = await withQueryDeadline<FloorRows>(
       db.from("candy_listings")
         .select("token_mint,price_usd")
         .eq("edition_id", editionId)

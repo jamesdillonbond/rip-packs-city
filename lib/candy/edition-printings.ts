@@ -33,6 +33,9 @@ export interface CandyPrinting {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = any
+type SelfRows = Array<{ player_id: string | null }>
+type SibRows = Array<Record<string, unknown>>
+type FmvRows = Array<{ edition_id: string; fmv_usd: unknown }>
 
 function num(v: unknown): number | null {
   if (v === null || v === undefined || v === "") return null
@@ -46,7 +49,7 @@ export async function fetchCandyPrintings(
 ): Promise<{ ok: boolean; printings: CandyPrinting[] }> {
   const db: Db = injected ?? supabaseAdmin
   try {
-    const self = await withQueryDeadline<Array<{ player_id: string | null }>>(
+    const self = await withQueryDeadline<SelfRows>(
       db.from("editions").select("player_id").eq("id", editionId).eq("collection_id", CANDY_COLLECTION_ID).limit(1),
       "edition/candy-printings-self",
       apiReadTimeoutMs(),
@@ -54,7 +57,7 @@ export async function fetchCandyPrintings(
     if (self.error) return { ok: false, printings: [] }
     const playerId = (self.data ?? [])[0]?.player_id ?? null
     if (!playerId) return { ok: true, printings: [] }
-    const sibs = await withQueryDeadline<Array<Record<string, unknown>>>(
+    const sibs = await withQueryDeadline<SibRows>(
       db.from("editions")
         .select("id,external_id,badges,circulation_count,thumbnail_url")
         .eq("collection_id", CANDY_COLLECTION_ID)
@@ -68,7 +71,7 @@ export async function fetchCandyPrintings(
     if (sibs.error) return { ok: false, printings: [] }
     const rows = (sibs.data ?? []).filter((r) => typeof r.id === "string" && typeof r.external_id === "string")
     if (rows.length < 2) return { ok: true, printings: [] }
-    const fmv = await withQueryDeadline<Array<{ edition_id: string; fmv_usd: unknown }>>(
+    const fmv = await withQueryDeadline<FmvRows>(
       db.from("candy_fmv_current").select("edition_id,fmv_usd").in("edition_id", rows.map((r) => r.id as string)),
       "edition/candy-printings-fmv",
       apiReadTimeoutMs(),

@@ -27,6 +27,7 @@
 
 import { isSolanaAddress } from "@/lib/address"
 import { parseSnsName, resolveSnsName } from "@/lib/chains/solana/sns"
+import { resolvePlayerName, singleRetryLabel } from "@/lib/concierge/player-identity"
 
 export const CANDY_COLLECTION_UUID = "209ade70-32c5-4470-bc7c-4793d660f713"
 export const CANDY_URL_SLUG = "candy-mlb"
@@ -207,7 +208,12 @@ export async function readCandySpecialSerialsForConcierge(
     let q = db
       .from("candy_special_serials_board")
       .select("external_id,player_name,edition_name,tier,circulation_count,serial_number,kind,owner,is_treasury,fmv_usd,last_sale_usd,last_sale_at")
-    const player = input.player ? String(input.player).trim() : ""
+    // #207: an ilike is accent-sensitive ("acuna" misses "Acuña") — search the resolver's spelling
+    // when the typed name names one Candy player; an ambiguous / unknown name keeps the typed text.
+    const typedPlayer = input.player ? String(input.player).trim() : ""
+    const player = typedPlayer
+      ? (singleRetryLabel(await resolvePlayerName(db, CANDY_COLLECTION_UUID, typedPlayer).catch(() => null), typedPlayer) ?? typedPlayer)
+      : ""
     if (player) q = q.ilike("player_name", `%${player.replace(/[%_]/g, (c: string) => "\\" + c)}%`)
     // ⛔ verbatim — a base58 holder is case-sensitive.
     const holder = input.holder ? String(input.holder).trim() : ""
