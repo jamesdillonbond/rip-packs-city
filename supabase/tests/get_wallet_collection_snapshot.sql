@@ -6,7 +6,10 @@
 --   * totalMoments / totalFmv over the wallet's wmc rows (FMV rounded, nulls -> 0);
 --   * topMoments = up to 5 with fmv_usd > 0, FMV-desc (a $0/NULL moment never shows
 --     as a "top" moment);
---   * badgeCount = DISTINCT badge_editions matched by the wallet's edition_keys;
+--   * badgeCount = DISTINCT badge_editions matched by the wallet's edition_keys, PLUS (2026-10-26)
+--     the distinct held Candy MLB editions whose editions.badges carry Rookie / First Mint
+--     (a Rainbow colour badge is the parallel and does not count; another collection's
+--     editions.badges never count);
 --   * series bars (2026-09-24/25): the wallet's LARGEST collection only, labelled by
 --     series_display_label, one bar per LABEL (on-chain 0 and stored 1 are both
 --     Top Shot "Series 1"); another collection's series never leaks in;
@@ -18,7 +21,7 @@
 --     once per distinct edition — the SAME answers as the per-moment forms they replaced.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20261002153028_audit_20261002_share_snapshot_plans_per_wallet_and_resolves_labels_and_confidence_once.sql);
+-- (supabase/migrations/20261027032833_audit_20261026_collection_card_counts_candy_designations.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -34,7 +37,7 @@ CREATE TABLE public.badge_editions (external_id text);
 CREATE TABLE public.collections (id uuid PRIMARY KEY, slug text, name text, market_closed_at timestamptz);
 -- 2026-09-04/06 (20260904045817, 20260906174634): the stale split reads each
 -- holding's CURRENT FMV confidence through editions → edition_fmv_current.
-CREATE TABLE public.editions (id uuid PRIMARY KEY, external_id text, collection_id uuid);
+CREATE TABLE public.editions (id uuid PRIMARY KEY, external_id text, collection_id uuid, badges text[]);
 CREATE TABLE public.edition_fmv_current (edition_id uuid, confidence text);
 CREATE TABLE public.collection_series (id int, collection_id uuid, series_number int, display_label text, season text);
 
@@ -155,9 +158,21 @@ BEGIN
     FROM series_rows
   ),
   badges AS (
-    SELECT count(DISTINCT be.external_id)::int AS c
-    FROM badge_editions be
-    WHERE be.external_id IN (SELECT DISTINCT edition_key FROM w WHERE edition_key IS NOT NULL)
+    SELECT ((
+      SELECT count(DISTINCT be.external_id)
+      FROM badge_editions be
+      WHERE be.external_id IN (SELECT DISTINCT edition_key FROM w WHERE edition_key IS NOT NULL)
+    ) + (
+      -- 2026-10-26: Candy MLB's designations (editions.badges 'Rookie' / 'First Mint', from Candy's
+      -- checklist; the Rainbow colours are the parallel, not a designation). badge_editions holds no
+      -- Candy rows, so a Candy card read "0 badges" beside 111 designated cards.
+      SELECT count(DISTINCT e.external_id)
+      FROM editions e
+      WHERE e.collection_id = '209ade70-32c5-4470-bc7c-4793d660f713'::uuid
+        AND e.badges && ARRAY['Rookie', 'First Mint']::text[]
+        AND e.external_id IN (SELECT DISTINCT w.edition_key FROM w
+                               WHERE w.collection_id = '209ade70-32c5-4470-bc7c-4793d660f713'::uuid)
+    ))::int AS c
   ),
   -- 2026-10-02: each held edition's CURRENT confidence, resolved ONCE per distinct
   -- (edition_key, collection) instead of a LATERAL probe per moment (58k buffers
@@ -284,6 +299,25 @@ SELECT _assert_eq((public.get_wallet_collection_snapshot('W') -> 'topMoments' ->
 
 -- ── 3. badgeCount = distinct matched edition_keys ────────────────────────────
 SELECT _assert_eq((public.get_wallet_collection_snapshot('W') ->> 'badgeCount'), '2', 'badgeCount = 2 (k1,k3)');
+-- 2026-10-26: Candy MLB's designations live on editions.badges (badge_editions holds no Candy rows).
+-- Wallet C holds 2 copies of a Rookie edition, 1 First Mint, 1 Rainbow-only (the parallel, not a
+-- designation) and 1 undesignated card -> 2 badged EDITIONS. A Top Shot edition's editions.badges
+-- never counts through this arm (only badge_editions speaks for Top Shot).
+INSERT INTO public.collections (id, slug, name) VALUES ('209ade70-32c5-4470-bc7c-4793d660f713', 'candy_mlb', 'Candy MLB');
+INSERT INTO public.editions (id, external_id, collection_id, badges) VALUES
+  ('00000000-0000-0000-0000-0000000000c1', 'c-rookie', '209ade70-32c5-4470-bc7c-4793d660f713', ARRAY['Rookie']),
+  ('00000000-0000-0000-0000-0000000000c2', 'c-first',  '209ade70-32c5-4470-bc7c-4793d660f713', ARRAY['First Mint', 'Rainbow (Pink)']),
+  ('00000000-0000-0000-0000-0000000000c3', 'c-pink',   '209ade70-32c5-4470-bc7c-4793d660f713', ARRAY['Rainbow (Pink)']),
+  ('00000000-0000-0000-0000-0000000000c4', 'c-plain',  '209ade70-32c5-4470-bc7c-4793d660f713', NULL),
+  ('00000000-0000-0000-0000-0000000000c5', 'ts-tagged', :TS::uuid, ARRAY['Rookie']);
+INSERT INTO public.wallet_moments_cache (wallet_address, player_name, set_name, tier, serial_number, edition_key, image_url, series_number, fmv_usd, mint_count, collection_id) VALUES
+  ('C','R','ICONs','COMMON',1,'c-rookie','i',1,1,250,'209ade70-32c5-4470-bc7c-4793d660f713'),
+  ('C','R','ICONs','COMMON',2,'c-rookie','i',1,1,250,'209ade70-32c5-4470-bc7c-4793d660f713'),
+  ('C','F','ICONs','LEGENDARY',3,'c-first','i',1,1,15,'209ade70-32c5-4470-bc7c-4793d660f713'),
+  ('C','P','ICONs','LEGENDARY',4,'c-pink','i',1,1,15,'209ade70-32c5-4470-bc7c-4793d660f713'),
+  ('C','N','ICONs','COMMON',5,'c-plain','i',1,1,250,'209ade70-32c5-4470-bc7c-4793d660f713'),
+  ('C','T','Base','COMMON',6,'ts-tagged','i',4,1,100,:TS::uuid);
+SELECT _assert_eq((public.get_wallet_collection_snapshot('C') ->> 'badgeCount'), '2', 'Candy: 2 designated EDITIONS (Rookie x2 copies, First Mint); Rainbow-only, plain and a Top Shot editions.badges tag do not count');
 
 -- ── 4. series bars: the largest collection only, named, one bar per label ─────
 SELECT _assert_eq((public.get_wallet_collection_snapshot('W') -> 'seriesBreakdown' ->> 'Series 4'), '3', 'Top Shot (largest) series 4 = 3, named "Series 4"');

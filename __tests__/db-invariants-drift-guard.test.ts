@@ -1441,7 +1441,8 @@ const PINS = [
     test: "supabase/tests/get_wallet_collection_snapshot.sql",
     // re-pointed 2026-10-02: plpgsql EXECUTE … USING (per-wallet plan), labels and confidence
     // resolved once per distinct value; same eight invariants.
-    migration: "supabase/migrations/20261002153028_audit_20261002_share_snapshot_plans_per_wallet_and_resolves_labels_and_confidence_once.sql",
+    // re-pointed 2026-10-26: badgeCount adds Candy MLB's editions.badges designations (+1 assertion).
+    migration: "supabase/migrations/20261027032833_audit_20261026_collection_card_counts_candy_designations.sql",
   },
   {
     fn: "get_pack_detail_bundle",
