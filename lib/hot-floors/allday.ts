@@ -19,6 +19,9 @@ import { HOT_FLOORS_TIMEOUT_MS } from "@/lib/hot-floors/fetchers"
  */
 export const ALLDAY_HOT_FLOORS_DAYS = 7
 
+/** Eight missed 15-minute refreshes (pg_cron allday-hot-floors-snapshot): past this the snapshot is not the board. */
+export const ALLDAY_HOT_FLOORS_SNAPSHOT_MAX_AGE_MS = 2 * 60 * 60 * 1000
+
 export interface AllDayHotEdition {
   external_id: string
   player_name: string | null
@@ -53,7 +56,8 @@ export async function fetchAllDayHotFloors(
   const failed: AllDayHotFloorsResult = { editions: [], ok: false, newestSaleAt: null, computedAt: null }
   // 2026-10-26: read the 15-minute snapshot (pg_cron allday-hot-floors-snapshot) — one primary-key row. The
   // first cold renders of the live sessionizing read hit the 8 s bound (daytime monitor, 10-27 03:09Z). Only
-  // when NO snapshot exists yet does the page compute live; a FAILED snapshot read is a failed read.
+  // when NO current snapshot exists (none yet, or stale) does the page compute live; a FAILED snapshot read
+  // is a failed read.
   try {
     const snap = await withBoardBudget<{
       data: Array<{ payload: { editions?: unknown; newest_sale_at?: unknown } | null; computed_at: string | null }> | null
@@ -64,7 +68,15 @@ export async function fetchAllDayHotFloors(
       return failed
     }
     const row = Array.isArray(snap.data) ? snap.data[0] : null
-    if (row?.payload) {
+    // 2026-10-27: a row older than ALLDAY_HOT_FLOORS_SNAPSHOT_MAX_AGE_MS (or undated) is not served as the
+    // board — the refresh keeps the previous row on every failure, so a stalled lane would otherwise publish
+    // an arbitrarily old "last 7 days". Past it the page computes live (bounded), like a missing row.
+    const ageMs = row?.computed_at ? Date.now() - Date.parse(row.computed_at) : NaN
+    const current = Number.isFinite(ageMs) && ageMs <= ALLDAY_HOT_FLOORS_SNAPSHOT_MAX_AGE_MS
+    if (row?.payload && !current) {
+      console.warn(`[allday-hot-floors] snapshot is stale (computed_at ${row.computed_at ?? "none"}) — computing live`)
+    }
+    if (row?.payload && current) {
       const rows = row.payload.editions
       if (!Array.isArray(rows)) {
         console.error("[allday-hot-floors] snapshot payload shape")

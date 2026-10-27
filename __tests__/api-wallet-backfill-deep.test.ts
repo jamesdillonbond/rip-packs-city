@@ -331,6 +331,8 @@ describe("wallet-backfill — walk + upsert contract", () => {
     const log = walkLog(spy.rpcCalls)
     expect(log).toMatchObject({ p_ok: true, p_rows_found: 2, p_rows_written: 1 })
     expect(log?.p_extra).toMatchObject({ total_moments_seen: 1 })
+    // 2026-10-27: ok, but NOT a scan — moment 2 was never read, so the wallet is not "fully re-enumerated".
+    expect(scanCall(spy.rpcCalls)).toBeUndefined()
   })
 
   // A per-moment metadata failure (above) is a tolerable partial — the moment was

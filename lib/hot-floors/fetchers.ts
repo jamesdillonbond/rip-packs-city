@@ -87,12 +87,14 @@ export async function fetchHotFloors(
   const snap = await readHotFloorsSnapshot(db, "nba-top-shot")
   if (snap.state === "failed") return failed
   if (snap.state === "row") {
-    const editions = parseEditions(snap.payload)
-    if (editions == null) {
+    // ⚠ Stricter than the live read: the refresh only ever stores an `editions` ARRAY (it raises
+    // otherwise), so a stored payload without one is a shape change, never "no sweeps".
+    const rows = snap.payload.editions
+    if (!Array.isArray(rows)) {
       console.error("[hot-floors] snapshot payload shape")
       return failed
     }
-    return { editions, ok: true, computedAt: snap.computedAt }
+    return { editions: rows as HotEdition[], ok: true, computedAt: snap.computedAt }
   }
   try {
     const { data, error } = await withBoardBudget<{

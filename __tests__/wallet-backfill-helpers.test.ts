@@ -624,6 +624,24 @@ describe("runIdOnlyBackfill", () => {
     expect(H.state.rpcCalls.some((c: any) => c.name ==="refresh_seeded_wallet_stats")).toBe(true)
   })
 
+  // 2026-10-27 (code review): an empty getIDs() is a scan only when the proof read agrees.
+  describe("empty getIDs() + the empty proof (ufc_strike has a proof script)", () => {
+    const UFC = { ...CFG, slug: "ufc_strike", pipelineName: "wallet-backfill-ufc" }
+    const intResponse = (n: number) => ({ ok: true, status: 200, text: async () => Buffer.from(JSON.stringify({ type: "Int", value: String(n) }), "utf8").toString("base64") })
+    it("proof says 0 → a scan", async () => {
+      ;(fetch as any).mockResolvedValueOnce(flowIdsResponse([])).mockResolvedValueOnce(intResponse(0))
+      expect(await runIdOnlyBackfill(baseArgs({ config: UFC }))).toEqual({ rowsFound: 0, scanned: true })
+    })
+    it("proof CONTRADICTS the empty list (not_empty) → never a scan", async () => {
+      ;(fetch as any).mockResolvedValueOnce(flowIdsResponse([])).mockResolvedValueOnce(intResponse(7))
+      expect(await runIdOnlyBackfill(baseArgs({ config: UFC }))).toEqual({ rowsFound: 0, scanned: false })
+    })
+    it("proof read FAILED → never a scan", async () => {
+      ;(fetch as any).mockResolvedValueOnce(flowIdsResponse([])).mockResolvedValueOnce({ ok: false, status: 429, text: async () => "" })
+      expect(await runIdOnlyBackfill(baseArgs({ config: UFC }))).toEqual({ rowsFound: 0, scanned: false })
+    })
+  })
+
   it("upserts every id and reports written count when not skipping cache", async () => {
     ;(fetch as any).mockResolvedValue(flowIdsResponse([10, 11, 12]))
     H.state.upsertResult = { data: { written: 3 }, error: null }
@@ -1020,6 +1038,12 @@ describe("runPinnacleDetailsBackfill", () => {
     expect(lastLog().p_extra.mode).toBe("details_pinnacle")
   })
 
+  it("a NON-ARRAY details result is an unreadable answer — never a scan (2026-10-27)", async () => {
+    H.state.fclQuery = async () => null
+    const out = await runPinnacleDetailsBackfill(pinArgs())
+    expect(out.scanned).toBe(false)
+  })
+
   it("writes object-shaped details and runs the pinnacle post-pass", async () => {
     H.state.fclQuery = async () => [
       { id: "1", editionKey: "royal:foil:1", serial: "5" },
@@ -1104,7 +1128,7 @@ describe("runPaginatedDetailsBackfill", () => {
   it("logs no_more_moments when getIDs() returns empty", async () => {
     ;(fetch as any).mockResolvedValue(flowIdsResponse([]))
     const out = await runPaginatedDetailsBackfill(pagArgs())
-    expect(out).toEqual({ rowsFound: 0, complete: true, nextStartIndex: null, scanned: true })
+    expect(out).toEqual({ rowsFound: 0, complete: true, nextStartIndex: null, scanned: false })
     expect(lastLog().p_extra.terminated_reason).toBe("no_more_moments")
   })
 
@@ -1825,9 +1849,10 @@ describe("runAllDayDetailsBackfill — studio custody union", () => {
     // 100 on chain, 200 locked via studio, 300 genuinely gone.
     H.state.cachedRows = [{ moment_id: "100" }, { moment_id: "200" }, { moment_id: "300" }]
 
-    await runAllDayDetailsBackfill(baseArgs({ config: STUDIO_CFG, skipCached: false }))
+    const out = await runAllDayDetailsBackfill(baseArgs({ config: STUDIO_CFG, skipCached: false }))
 
     expect(H.state.wmcDeletes.flatMap((d: any) => d.ids)).toEqual(["300"])
+    expect(out.scanned).toBe(true) // CONTROL: a healthy custody walk is a scan
   })
 
   it("does NOT delete when the custody walk degraded — its missing ids are not evidence of a sale", async () => {
@@ -1835,8 +1860,10 @@ describe("runAllDayDetailsBackfill — studio custody union", () => {
     ;(fetch as any).mockResolvedValue({ ok: false, status: 503, text: async () => "down" })
     H.state.cachedRows = [{ moment_id: "100" }, { moment_id: "200" }]
 
-    await runAllDayDetailsBackfill(baseArgs({ config: STUDIO_CFG, skipCached: false }))
+    const out = await runAllDayDetailsBackfill(baseArgs({ config: STUDIO_CFG, skipCached: false }))
 
+    // 2026-10-27: the same incompleteness means the wallet was not fully read — not a scan.
+    expect(out.scanned).toBe(false)
     const extra = lastLog().p_extra
     expect(extra.studio_ok).toBe(false)
     expect(H.state.wmcDeletes).toHaveLength(0)

@@ -337,7 +337,9 @@ async function runBackfill(
           elapsed_ms: Date.now() - startedMs,
         },
       })
-      return { rowsFound: 0, scanned: !unseen.error }
+      // An empty getIDs() is a measurement only when the proof read agrees (or the wallet has no collection,
+      // or no proof script exists for it): "not_empty" contradicts it and "read_failed" proves nothing.
+      return { rowsFound: 0, scanned: !unseen.error && (emptyProof === "proven_empty" || emptyProof === "no_collection" || emptyProof === "no_proof_script") }
     }
 
     // THE CACHE-SKIP PATH IS AN OWNERSHIP VERIFICATION, NOT A GAP.
@@ -532,7 +534,12 @@ async function runBackfill(
         elapsed_ms: Date.now() - startedMs,
       },
     })
-    return { rowsFound: onChainIds.length, scanned: chunkTally.chunkErrors === 0 }
+    // A scan is a FINISHED walk: not cut at the soft deadline or the safety ceiling, every metadata read landed
+    // (a per-moment failure degrades that row, but the wallet was then not fully read), every chunk written.
+    return {
+      rowsFound: onChainIds.length,
+      scanned: terminatedReason === "no_more_moments" && totalFetched === idsToWalk.length && chunkTally.chunkErrors === 0,
+    }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     const elapsedMs = Date.now() - startedMs

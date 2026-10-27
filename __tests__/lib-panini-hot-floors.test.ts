@@ -9,6 +9,10 @@ import { describe, it, expect, vi } from "vitest"
 vi.mock("@/lib/insights/board-page-fetch", () => ({ withBoardBudget: (p: Promise<unknown>) => p }))
 
 import { fetchPaniniHotFloors, PANINI_HOT_FLOORS_DAYS } from "@/lib/hot-floors/panini"
+import { HOT_FLOORS_SNAPSHOT_MAX_AGE_MS } from "@/lib/hot-floors/snapshot"
+
+/** A computed_at N minutes ago — snapshot rows are age-gated, so fixtures must be relative. */
+const minsAgo = (m: number) => new Date(Date.now() - m * 60_000).toISOString()
 
 // `snap` is the snapshot table read; `res` the live RPC (used only when no snapshot row exists).
 const db = (res: unknown, calls: unknown[] = [], snap: unknown = { data: [], error: null }) => ({
@@ -26,10 +30,18 @@ const db = (res: unknown, calls: unknown[] = [], snap: unknown = { data: [], err
 describe("fetchPaniniHotFloors", () => {
   it("reads the snapshot and does NOT compute live when a snapshot exists", async () => {
     const calls: unknown[] = []
-    const snap = { data: [{ payload: { editions: [{ external_id: "s" }], newest_sale_at: "2026-10-26T00:00:00Z" }, computed_at: "2026-10-27T14:29:00Z" }], error: null }
+    const at = minsAgo(12)
+    const snap = { data: [{ payload: { editions: [{ external_id: "s" }], newest_sale_at: "2026-10-26T00:00:00Z" }, computed_at: at }], error: null }
     const r = await fetchPaniniHotFloors(db({ data: null, error: null }, calls, snap))
     expect(calls).toEqual([["from", "hot_floors_snapshot"], ["eq", "board", "panini-blockchain"]])
-    expect(r).toEqual({ ok: true, editions: [{ external_id: "s" }], newestSaleAt: "2026-10-26T00:00:00Z", computedAt: "2026-10-27T14:29:00Z" })
+    expect(r).toEqual({ ok: true, editions: [{ external_id: "s" }], newestSaleAt: "2026-10-26T00:00:00Z", computedAt: at })
+  })
+  it("a STALE snapshot is not served as the board — computed live instead", async () => {
+    const calls: unknown[] = []
+    const snap = { data: [{ payload: { editions: [{ external_id: "old" }] }, computed_at: minsAgo(HOT_FLOORS_SNAPSHOT_MAX_AGE_MS["panini-blockchain"] / 60_000 + 5) }], error: null }
+    const r = await fetchPaniniHotFloors(db({ data: { editions: [{ external_id: "live" }] }, error: null }, calls, snap))
+    expect(calls.some((c) => (c as unknown[])[0] === "get_panini_hot_floors")).toBe(true)
+    expect(r).toMatchObject({ ok: true, editions: [{ external_id: "live" }], computedAt: null })
   })
   it("a FAILED snapshot read is a failed read — never a silent live computation", async () => {
     const calls: unknown[] = []
@@ -38,7 +50,7 @@ describe("fetchPaniniHotFloors", () => {
     expect(calls.some((c) => (c as unknown[])[0] === "get_panini_hot_floors")).toBe(false)
   })
   it("a snapshot whose editions is not an array is a failed read", async () => {
-    const snap = { data: [{ payload: { editions: "nope" }, computed_at: "2026-10-27T14:29:00Z" }], error: null }
+    const snap = { data: [{ payload: { editions: "nope" }, computed_at: minsAgo(3) }], error: null }
     expect((await fetchPaniniHotFloors(db({ data: null, error: null }, [], snap))).ok).toBe(false)
   })
   it("no snapshot yet → reads get_panini_hot_floors over the Panini window", async () => {

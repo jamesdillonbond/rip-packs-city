@@ -99,6 +99,8 @@ describe("fetchHotFloors", () => {
 })
 
 describe("fetchHotFloors — the snapshot (2026-10-27, #HF)", () => {
+  /** A computed_at N minutes ago — snapshot rows are age-gated, so fixtures must be relative. */
+  const minsAgo = (m: number) => new Date(Date.now() - m * 60_000).toISOString()
   /** A db whose snapshot read answers `snap`; records every table/RPC it is asked for. */
   const snapDb = (snap: unknown, calls: string[]) => ({
     from: (t: string) => {
@@ -114,9 +116,10 @@ describe("fetchHotFloors — the snapshot (2026-10-27, #HF)", () => {
 
   it("serves the Top Shot snapshot row and does NOT compute live", async () => {
     const calls: string[] = []
-    const res = await fetchHotFloors(snapDb({ data: [{ payload: { editions: [{ external_id: "1:2" }] }, computed_at: "2026-10-27T14:13:00Z" }], error: null }, calls), 500)
+    const at = minsAgo(7)
+    const res = await fetchHotFloors(snapDb({ data: [{ payload: { editions: [{ external_id: "1:2" }] }, computed_at: at }], error: null }, calls), 500)
 
-    expect(res).toEqual({ editions: [{ external_id: "1:2" }], ok: true, computedAt: "2026-10-27T14:13:00Z" })
+    expect(res).toEqual({ editions: [{ external_id: "1:2" }], ok: true, computedAt: at })
     expect(calls).toEqual(["from:hot_floors_snapshot", "eq:nba-top-shot"])
   })
 
@@ -129,9 +132,24 @@ describe("fetchHotFloors — the snapshot (2026-10-27, #HF)", () => {
   })
 
   it("a snapshot whose `editions` is not an array is a failed read, not a quiet market", async () => {
-    const res = await fetchHotFloors(snapDb({ data: [{ payload: { editions: "nope" }, computed_at: "2026-10-27T14:13:00Z" }], error: null }, []), 500)
+    const res = await fetchHotFloors(snapDb({ data: [{ payload: { editions: "nope" }, computed_at: minsAgo(7) }], error: null }, []), 500)
 
     expect(res.ok).toBe(false)
+  })
+
+  it("a stored payload with NO editions array is a failed read — the refresh only stores arrays", async () => {
+    // Unlike the live read (an absent key = an empty answer), a snapshot without the array is a shape change.
+    const res = await fetchHotFloors(snapDb({ data: [{ payload: { window_days: 3 }, computed_at: minsAgo(7) }], error: null }, []), 500)
+
+    expect(res.ok).toBe(false)
+  })
+
+  it("a STALE snapshot is not served as the board — computed live instead", async () => {
+    const calls: string[] = []
+    const res = await fetchHotFloors(snapDb({ data: [{ payload: { editions: [{ external_id: "old" }] }, computed_at: minsAgo(3 * 60) }], error: null }, calls), 500)
+
+    expect(calls).toContain("rpc:get_topshot_hot_floors")
+    expect(res).toEqual({ editions: [{ external_id: "live" }], ok: true, computedAt: null })
   })
 
   it("no snapshot row yet → computes live", async () => {

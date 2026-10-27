@@ -665,7 +665,9 @@ export async function runIdOnlyBackfill(args: BackfillArgs): Promise<{ rowsFound
           elapsed_ms: Date.now() - startedMs,
         },
       })
-      return { rowsFound: 0, scanned: !unseen.error }
+      // An empty getIDs() is a measurement only when the proof read agrees (or the wallet has no collection,
+      // or no proof script exists for it): "not_empty" contradicts it and "read_failed" proves nothing.
+      return { rowsFound: 0, scanned: !unseen.error && (emptyProof === "proven_empty" || emptyProof === "no_collection" || emptyProof === "no_proof_script") }
     }
 
     const cachedIds = skipCached ? await loadCachedMomentIds(wallet, config.collectionUuid) : new Set<string>()
@@ -1163,7 +1165,7 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<Back
         mode: detailsMode,
       },
     })
-    return { rowsFound: triples.length, complete: true, nextStartIndex: null, scanned: chunkTally.chunkErrors === 0 }
+    return { rowsFound: triples.length, complete: true, nextStartIndex: null, scanned: chunkTally.chunkErrors === 0 && studioHealthyForDelete }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     const elapsedMs = Date.now() - startedMs
@@ -1429,7 +1431,8 @@ export async function runPinnacleDetailsBackfill(args: BackfillArgs): Promise<Ba
           mode: "details_pinnacle",
         },
       })
-      return { rowsFound: 0, complete: true, nextStartIndex: null, scanned: true }
+      // A non-array result was coerced to [] above: an unreadable answer, not an empty wallet.
+      return { rowsFound: 0, complete: true, nextStartIndex: null, scanned: Array.isArray(raw) }
     }
 
     // Enrichment-aware skip — same fix as runAllDayDetailsBackfill above
@@ -1736,7 +1739,9 @@ export async function runPaginatedDetailsBackfill(args: PaginatedBackfillArgs): 
           mode: fullMode,
         },
       })
-      return { rowsFound: 0, complete: true, nextStartIndex: null, scanned: true }
+      // The parent only came here because the details read hit a limit — the wallet HAS ids, so an
+      // empty getIDs() now is a bad read, not an empty wallet: never a scan.
+      return { rowsFound: 0, complete: true, nextStartIndex: null, scanned: false }
     }
 
     const cachedMap = skipCached
@@ -2120,7 +2125,7 @@ export async function runPaginatedDetailsBackfill(args: PaginatedBackfillArgs): 
         mode: fullMode,
       },
     })
-    return { rowsFound: onChainIds.length, complete: isComplete, nextStartIndex, scanned: isComplete && !allChunksFailed && chunkTally.chunkErrors === 0 }
+    return { rowsFound: onChainIds.length, complete: isComplete, nextStartIndex, scanned: isComplete && chunkErrors === 0 && chunkTally.chunkErrors === 0 && studioHealthyForDelete }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     // ⛔ getIDs() ITSELF over the script limit: no script can enumerate this wallet, so pagination
