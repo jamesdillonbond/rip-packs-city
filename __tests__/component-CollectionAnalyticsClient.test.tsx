@@ -488,6 +488,17 @@ describe("CollectionAnalyticsClient — tabs and wallet search", () => {
       expect(urls.some((u) => u.startsWith("/api/marketplace-breakdown?") && u.includes("collection=nba-top-shot"))).toBe(true)
     })
   })
+  it("a marketplace side with NO purchases shows 0 / $0 but no average — \"avg —\", never \"avg $0\" (2026-10-26)", async () => {
+    searchParams = new URLSearchParams("wallet=0xmine&tab=portfolio")
+    routes["/api/marketplace-breakdown"] = () =>
+      json(200, { topshot: { count: 4, total_spent: 40, avg_price: 10 }, flowty: { count: 0, total_spent: 0, avg_price: 0 } })
+    render(<CollectionAnalyticsClient />)
+    await waitFor(() => expect(document.body.textContent).toContain("avg $10"))
+    const text = document.body.textContent ?? ""
+    expect(text).toContain("avg —")
+    expect(text).not.toMatch(/avg \$0(?![\d.,])/)
+  })
+
   it("never asks for the marketplace breakdown on another collection", async () => {
     PARAMS.collection = "nfl-all-day"
     try {

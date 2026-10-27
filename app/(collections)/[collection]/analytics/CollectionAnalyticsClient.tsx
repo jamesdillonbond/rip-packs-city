@@ -1598,7 +1598,7 @@ function AnalyticsInner() {
                             return [
                               <span key="body">
                                 {fmtUsd(Number(v) || 0)}
-                                <div style={{ fontSize: 10, color: "#a1a1aa" }}>Avg {fmtUsd(row.avg_price || 0)} · {Number(row.sale_count).toLocaleString("en-US")} sales</div>
+                                <div style={{ fontSize: 10, color: "#a1a1aa" }}>Avg {Number(row.sale_count) > 0 ? fmtUsd(row.avg_price || 0) : "—"} · {Number(row.sale_count).toLocaleString("en-US")} sales</div>
                               </span>,
                               "Volume",
                             ]
@@ -1930,7 +1930,7 @@ function AnalyticsInner() {
                         </div>
                         <div className="mt-1 text-xl font-black text-[color:var(--rpc-text-primary)]" style={{ fontFamily: "var(--font-mono)" }}>{(ts.count ?? 0).toLocaleString("en-US")}</div>
                         <div className="mt-1 text-[11px] text-[color:var(--rpc-text-muted)]">purchases · {fmt(Number(ts.total_spent ?? 0))}</div>
-                        <div className="mt-1 text-[11px] text-[color:var(--rpc-text-muted)]">avg {fmt(Number(ts.avg_price ?? 0))}</div>
+                        <div className="mt-1 text-[11px] text-[color:var(--rpc-text-muted)]">avg {(ts.count ?? 0) > 0 ? fmt(Number(ts.avg_price ?? 0)) : "—"}</div>
                       </div>
                       <div className="rounded-lg border border-[color:var(--rpc-border)] bg-[var(--rpc-black)] p-3">
                         <div className="flex items-center justify-between">
@@ -1939,7 +1939,7 @@ function AnalyticsInner() {
                         </div>
                         <div className="mt-1 text-xl font-black text-[color:var(--rpc-text-primary)]" style={{ fontFamily: "var(--font-mono)" }}>{(fl.count ?? 0).toLocaleString("en-US")}</div>
                         <div className="mt-1 text-[11px] text-[color:var(--rpc-text-muted)]">purchases · {fmt(Number(fl.total_spent ?? 0))}</div>
-                        <div className="mt-1 text-[11px] text-[color:var(--rpc-text-muted)]">avg {fmt(Number(fl.avg_price ?? 0))}</div>
+                        <div className="mt-1 text-[11px] text-[color:var(--rpc-text-muted)]">avg {(fl.count ?? 0) > 0 ? fmt(Number(fl.avg_price ?? 0)) : "—"}</div>
                       </div>
                     </div>
                     <div className="mt-3 text-[11px] text-[color:var(--rpc-text-muted)]">

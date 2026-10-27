@@ -51,6 +51,22 @@ describe("WalletProfile", () => {
     expect(container.querySelector('a[href="https://flowscan.io/account/0xaaaaaaaaaaaaaaaa"]')).toBeTruthy()
   })
 
+  it("an absent avg_loan_size_usd reads \"—\", never \"$0.00\" — an average nobody computed is not a zero (2026-10-26)", () => {
+    // baseData's role stats carry loan_count + principal but no avg_loan_size_usd.
+    const { container } = render(<WalletProfile data={baseData()} />)
+    const cells = Array.from(container.querySelectorAll("*")).filter((e) => e.children.length === 0 && e.textContent === "Avg loan size")
+    expect(cells.length).toBeGreaterThan(0)
+    for (const label of cells) {
+      const cell = label.parentElement!
+      expect(cell.textContent).not.toContain("$0")
+      expect(cell.textContent).toContain("—")
+    }
+    // and a real average still renders
+    const withAvg = baseData({ as_lender: { loan_count: 2, total_principal_usd: 500, avg_loan_size_usd: 250 } })
+    const r2 = render(<WalletProfile data={withAvg} />)
+    expect(r2.container.textContent).toContain("$250")
+  })
+
   it("classifies a lender-only wallet as Lender", () => {
     const data = baseData({
       as_borrower: { loan_count: 0, total_principal_usd: 0 },

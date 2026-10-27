@@ -570,7 +570,8 @@ function RolePanel({
         <Cell label="Repaid" value={fmtNumber(stats?.repaid_count ?? 0)} />
         <Cell label="Settled" value={fmtNumber(stats?.settled_count ?? 0)} accent="rose" />
         <Cell label="Default rate" value={fmtPct(stats?.default_rate_pct)} />
-        <Cell label="Avg loan size" value={fmtUsd(stats?.avg_loan_size_usd ?? 0)} />
+        {/* An average over no funded loans does not exist — "—", like Avg APR below (2026-10-26). */}
+        <Cell label="Avg loan size" value={fundedCount > 0 && stats?.avg_loan_size_usd != null ? fmtUsd(stats.avg_loan_size_usd) : "—"} />
         {isLender ? (
           <Cell
             label="Avg APR"
