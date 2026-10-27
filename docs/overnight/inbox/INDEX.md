@@ -1,4 +1,4 @@
-# Inbox index — 605 live filings
+# Inbox index — 606 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -32,7 +32,9 @@ failure it documents.
 
 ---
 
-## 2026-10-27 — 1 filing
+## 2026-10-27 — 2 filings
+
+- [🔴 Daytime monitor (10-27 ~18:09Z) — Atlas upstream 502 froze all three Top Shot Atlas lanes (market-feed / editions-refresh / pack-supply) since ~17:03Z; atlas-market-upstream-403 arm at HIGH on freshness; origin-down 502, no rows lost, verify recovery — HIGH(freshness)/upstream](2026-10-27T1809Z-atlas-upstream-502-all-three-topshot-lanes-frozen.md)
 
 - [✅ RESOLVED 10-27 ~7:45 AM PT (Claude Code cloud; `20261027140941` + `9f5cb7912`: Top Shot and Panini read a snapshot like All Day) — was: 🟢 Daytime monitor (10-27 ~03:09Z, infra GREEN, dashboard objects OK) — hot-floors board reads exceed the 8s read-bound on TODAY's all-day/Panini Top Shot-parity deploy (allday-hot-floors + panini-hot-floors, both first-seen today on dpl_5gW6jqNC a33bf9e8); degrades to empty, count 1 each — LOW, recent-ship perf watch](2026-10-27T0309Z-daytime-monitor-hot-floors-read-bound-allday-panini-parity.md)
 
