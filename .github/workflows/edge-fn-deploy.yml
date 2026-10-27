@@ -43,8 +43,12 @@ on:
 permissions:
   contents: read
 
+# Per FUNCTION, not global (2026-10-26). GitHub keeps only ONE pending run per group and
+# cancels any older pending one, so with a single global group six back-to-back
+# dispatches deployed the first and last and silently CANCELLED the middle four (R137).
+# Two deploys of the SAME slug still serialise.
 concurrency:
-  group: edge-fn-deploy
+  group: edge-fn-deploy-${{ inputs.function }}
   cancel-in-progress: false
 
 jobs:
