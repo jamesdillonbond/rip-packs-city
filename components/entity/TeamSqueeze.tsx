@@ -1,8 +1,9 @@
 // components/entity/TeamSqueeze.tsx
 // Team Hub Phase 3 (C8). Server component. Ranked squeeze table (effective-supply
 // lock+burn) for the team, from get_team_squeeze via /api/entity/team-squeeze.
-// Top Shot-only (the RPC returns [] elsewhere); the team page only renders the
-// section when rows are non-empty, so this self-hides for other collections.
+// Top Shot and NFL All Day (All Day arm 2026-10-26: badge_editions locked/burned,
+// verified floor as the ask; the RPC returns [] elsewhere). The team page only
+// renders the section when rows are non-empty, so it self-hides for other collections.
 
 import Link from "next/link"
 import { EM_DASH, fmtUsd, fmtCount, TierBadge, tileSubject } from "./_shared"

@@ -198,6 +198,10 @@ export const MARKETPLACE_LABEL: Record<string, string> = {
   // and the fallback capitalized them to "Nflallday" in the marketplace mix.
   nflallday: "AllDay Native",
   laligagolazos: "Golazos Native",
+  // All Day's analytics split by how the sale happened (get_allday_daily_sale_kind_volume, 2026-10-26).
+  allday_listing: "Listings",
+  allday_offer_fill: "Accepted offers",
+  allday_buyback: "Pack buybacks",
   "on-chain": "On-chain",
   unknown: "Unknown",
 }
@@ -218,6 +222,9 @@ export const MARKETPLACE_COLOR: Record<string, string> = {
   magic_eden: "#FB923C",
   nflallday: "#4F94D4",
   laligagolazos: "#22C55E",
+  allday_listing: "#4F94D4",
+  allday_offer_fill: "#F59E0B",
+  allday_buyback: "#94A3B8",
   "on-chain": "#94A3B8",
   unknown: "#6B7280",
 }

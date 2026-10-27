@@ -1756,10 +1756,16 @@ async function computeAllDaySniperFeed(opts: {
         console.error(`[sniper-feed] get_allday_listing_badges error: ${br.error.message}`);
       } else {
         const badgeMap = new Map<string, string[]>();
-        for (const b of (br.data ?? []) as Array<{ listing_resource_id: number | string; badges: string[] | null }>) {
+        const keyMap = new Map<string, string>();
+        for (const b of (br.data ?? []) as Array<{ listing_resource_id: number | string; edition_key?: string | null; badges: string[] | null }>) {
           badgeMap.set(String(b.listing_resource_id), Array.isArray(b.badges) ? b.badges.filter(Boolean) : []);
+          if (b.edition_key) keyMap.set(String(b.listing_resource_id), String(b.edition_key));
         }
         for (const d of fallback) {
+          // 2026-10-26 (parity pass 3): the edition key too, so the Own / Lock cell (wallet edition counts are
+          // keyed by the All Day edition id) and the edition link work. A deal this read cannot map keeps "".
+          const key = keyMap.get(String(d.listingResourceID ?? ""));
+          if (key) d.editionKey = key;
           const titles = badgeMap.get(String(d.listingResourceID ?? ""));
           if (titles && titles.length > 0) {
             d.hasBadge = true;

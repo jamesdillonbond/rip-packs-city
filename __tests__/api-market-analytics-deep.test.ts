@@ -395,3 +395,29 @@ describe("GET /api/market-analytics — accent-blind player retry (#207)", () =>
     expect(body.playerResolved).toBeUndefined()
   })
 })
+
+// 2026-10-26 (All Day parity): every All Day sale carries marketplace = "nflallday", so the Marketplace Breakdown was
+// one row. All Day reads get_allday_daily_sale_kind_volume (same sales rows, split by listing / accepted offer /
+// buyback); other collections keep get_daily_marketplace_volume.
+describe("GET /api/market-analytics — All Day sale kinds", () => {
+  it("All Day reads the sale-kind split, never the single-marketplace RPC", async () => {
+    install({
+      "rpc:get_allday_daily_sale_kind_volume": {
+        data: [
+          { day: "2026-10-25", marketplace: "allday_listing", sale_count: 10, volume_usd: 6 },
+          { day: "2026-10-25", marketplace: "allday_offer_fill", sale_count: 1, volume_usd: 4 },
+        ],
+        error: null,
+      },
+      "rpc:get_daily_marketplace_volume": { data: [{ day: "2026-10-25", marketplace: "nflallday", sale_count: 999, volume_usd: 999 }], error: null },
+    })
+    const body = await (await GET(req("https://t/api/market-analytics?collection=nfl-all-day&period=30d"))).json()
+    expect(body.daily.map((d: { marketplace: string }) => d.marketplace)).toEqual(["allday_listing", "allday_offer_fill"])
+    expect(body.totals.totalSales).toBe(11)
+  })
+  it("Top Shot keeps the marketplace RPC", async () => {
+    install({ "rpc:get_daily_marketplace_volume": { data: [{ day: "2026-10-25", marketplace: "topshot", sale_count: 2, volume_usd: 3 }], error: null } })
+    const body = await (await GET(req("https://t/api/market-analytics?collection=nba-top-shot&period=30d"))).json()
+    expect(body.daily[0].marketplace).toBe("topshot")
+  })
+})

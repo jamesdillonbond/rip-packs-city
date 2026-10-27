@@ -70,8 +70,16 @@ export async function GET(req: NextRequest) {
     // (~1.5 days of TopShot sales) so 30-day breakdowns missed most of the
     // window. The RPCs aggregate server-side and return one row per
     // (day, marketplace).
+    // 2026-10-26 (All Day parity): every All Day sale carries marketplace = "nflallday", so the Marketplace
+    // Breakdown was one row. All Day splits the SAME sales rows by how the sale happened (listing purchase /
+    // accepted offer / pack buyback) — totals identical to get_daily_marketplace_volume (16,223 / $14,367.98 over
+    // the 30 days to 10-26 from both).
     const { data: rows, error } = isPinnacle
       ? await (supabaseAdmin as any).rpc("get_daily_marketplace_volume_pinnacle", {
+          p_start_iso: startIso,
+        })
+      : collectionSlug === "nfl-all-day"
+      ? await (supabaseAdmin as any).rpc("get_allday_daily_sale_kind_volume", {
           p_start_iso: startIso,
         })
       : await (supabaseAdmin as any).rpc("get_daily_marketplace_volume", {

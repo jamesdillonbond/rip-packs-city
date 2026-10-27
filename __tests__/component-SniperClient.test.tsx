@@ -2081,3 +2081,72 @@ describe("SniperClient — an accent-resolved player search is labelled", () => 
     expect(screen.queryByText(/No exact match for/)).toBeNull()
   })
 })
+
+// 2026-10-26 (All Day parity pass 3): All Day deals carry their edition key (from get_allday_listing_badges), so the
+// Own / Lock cell shows real counts there; a deal the lookup could not key is UNKNOWN, never "Not owned"; and the
+// depth panel reads the collection-scoped live ask, never Top Shot's /api/edition-floor.
+describe("SniperClient — All Day ownership + depth (2026-10-26)", () => {
+  afterEach(() => { routeCollection = "nba-top-shot" })
+  function mountAd(deals: unknown[], counts: Record<string, { owned: number; locked: number }>, calls: string[] = []) {
+    routeCollection = "nfl-all-day"
+    warm = { data: feed({ deals }), loading: false, error: null, refresh: vi.fn() }
+    fetchMock.mockImplementation(async (input: unknown, init?: { body?: string }) => {
+      const u = String(input)
+      calls.push(u + (init?.body ? ` ${init.body}` : ""))
+      if (u.startsWith("/api/wallet/edition-counts")) return { ok: true, status: 200, json: async () => ({ editions: counts }) }
+      if (u.startsWith("/api/best-asks")) return { ok: true, status: 200, json: async () => ({ results: [{ editionKey: "3201", ask: 0.18, askSource: "allday_floor" }] }) }
+      return { ok: true, status: 200, json: async () => ({ ids: [], deals: [], benchmarks: {} }) }
+    })
+    render(<SniperClient />)
+  }
+
+  it("shows Own / Lock from the All Day edition counts", async () => {
+    const calls: string[] = []
+    mountAd([deal({ editionKey: "3201", source: "allday" })], { "3201": { owned: 3, locked: 1 } }, calls)
+    const row = (await waitFor(() => document.querySelector("#sniper-row-111"))) as HTMLElement
+    await waitFor(() => expect(row.textContent).toMatch(/(Own )?3 \/ (Lock )?1/))
+    expect(row.textContent).not.toMatch(/Not owned/)
+    expect(calls.some((c) => c.startsWith("/api/wallet/edition-counts") && c.includes("collection=nfl-all-day"))).toBe(true)
+  })
+
+  it("a deal with no edition key is unknown — never 'Not owned'", async () => {
+    mountAd([deal({ editionKey: "", intEditionKey: null, source: "allday" })], {})
+    const row = (await waitFor(() => document.querySelector("#sniper-row-111"))) as HTMLElement
+    await waitFor(() => expect(row.querySelector('[data-testid="ownership-unknown"]')).toBeTruthy())
+    expect(row.textContent).not.toMatch(/Not owned/)
+  })
+
+  it("the depth panel asks /api/best-asks for All Day, never /api/edition-floor", async () => {
+    const calls: string[] = []
+    mountAd([deal({ editionKey: "3201", source: "allday" })], {}, calls)
+    fireEvent.click(await waitFor(() => document.querySelector("#sniper-row-111") as HTMLElement))
+    await waitFor(() => expect(document.querySelector('[data-testid="allday-depth-floor"]')?.textContent).toMatch(/\$0\.18/))
+    expect(calls.some((c) => c.startsWith("/api/edition-floor"))).toBe(false)
+  })
+
+  it("a failed All Day floor read says so — no floor chip, no Top Shot fallback", async () => {
+    const calls: string[] = []
+    mountAd([deal({ editionKey: "3201", source: "allday" })], {}, calls)
+    const base = fetchMock.getMockImplementation() as unknown as (input: unknown, init?: { body?: string }) => Promise<unknown>
+    fetchMock.mockImplementation(async (input: unknown, init?: { body?: string }) => {
+      if (String(input).startsWith("/api/best-asks")) { calls.push(String(input)); return { ok: false, status: 500, json: async () => ({}) } }
+      return base(input, init)
+    })
+    fireEvent.click(await waitFor(() => document.querySelector("#sniper-row-111") as HTMLElement))
+    await waitFor(() => expect(document.body.textContent).toMatch(/Could not load floor data/))
+    expect(document.querySelector('[data-testid="allday-depth-floor"]')).toBeNull()
+    expect(calls.some((c) => c.startsWith("/api/edition-floor"))).toBe(false)
+  })
+
+  it("a thrown All Day floor read is a failure too", async () => {
+    mountAd([deal({ editionKey: "3201", source: "allday" })], {})
+    const base = fetchMock.getMockImplementation() as unknown as (input: unknown, init?: { body?: string }) => Promise<unknown>
+    fetchMock.mockImplementation(async (input: unknown, init?: { body?: string }) => {
+      if (String(input).startsWith("/api/best-asks")) throw new Error("network")
+      return base(input, init)
+    })
+    fireEvent.click(await waitFor(() => document.querySelector("#sniper-row-111") as HTMLElement))
+    await waitFor(() => expect(document.body.textContent).toMatch(/Could not load floor data/))
+    expect(document.querySelector('[data-testid="allday-depth-floor"]')).toBeNull()
+  })
+})

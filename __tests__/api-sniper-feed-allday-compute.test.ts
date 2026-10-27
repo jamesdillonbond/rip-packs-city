@@ -422,6 +422,9 @@ describe("GET /api/sniper-feed?collection=nfl-all-day — computeAllDaySniperFee
     const by = (p: string) => body.deals.find((d: any) => d.playerName === p)
     expect(by("RJ Harvey")).toMatchObject({ hasBadge: true, badgeSlugs: ["Rookie Mint", "Rookie Year"] })
     expect(by("Quinn Meinerz")).toMatchObject({ hasBadge: false, badgeSlugs: [] })
+    // pass 3: the edition key rides along, so the Own / Lock cell can match wallet edition counts
+    expect(by("RJ Harvey").editionKey).toBe("4273")
+    expect(by("Quinn Meinerz").editionKey).toBe("3674")
   })
 
   it("a failed badge read leaves deals undecorated and does NOT mark the board degraded (enrichment, not a source)", async () => {
@@ -436,6 +439,7 @@ describe("GET /api/sniper-feed?collection=nfl-all-day — computeAllDaySniperFee
     const body = await (await GET(get(ADQS))).json()
     expect(body.deals).toHaveLength(1)
     expect(body.deals[0].hasBadge).toBe(false)
+    expect(body.deals[0].editionKey).toBe("") // unmapped: the client renders ownership as unknown
     expect(body.sourcesFailed ?? []).not.toContain("allday-badges")
   })
 

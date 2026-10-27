@@ -365,7 +365,7 @@ export default async function TeamPage(props: { params: Promise<{ collection: st
         </Section>
       )}
 
-      {/* ── Squeeze & Scarcity (Top Shot only; self-hides when empty) ─────── */}
+      {/* ── Squeeze & Scarcity (Top Shot + All Day; self-hides when empty) ─────── */}
       {squeeze.length > 0 && (
         <Section title="Squeeze & Scarcity">
           <TeamSqueeze collectionUrlSlug={collection} rows={squeeze} />

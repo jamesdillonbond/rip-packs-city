@@ -752,7 +752,25 @@ function SniperMomentsBody() {
     setDepthListingsError(null);
 
     // Fetch edition floor data and other listings in parallel
-    const floorPromise = deal.editionKey
+    // /api/edition-floor reads Top Shot + Flowty only; an All Day key there is the wrong collection's
+    // question (2026-10-26). All Day reads the collection-scoped live ask instead.
+    const floorPromise = deal.editionKey && isAllDay
+      ? (async () => {
+          try {
+            const collUuid = ownLookup(COLLECTION_UUID_BY_SLUG, collectionSlug) ?? null;
+            if (!collUuid) { setDepthFloorError("Could not load floor data"); return; }
+            const r = await fetch("/api/best-asks", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ collectionId: collUuid, editionKeys: [deal.editionKey] }),
+            });
+            if (!r.ok) { setDepthFloorError("Could not load floor data"); return; }
+            const j = await r.json();
+            const hit = Array.isArray(j?.results) ? j.results.find((x: { editionKey?: string }) => x.editionKey === deal.editionKey) : null;
+            if (hit && typeof hit.ask === "number" && hit.ask > 0) setDepthRecentAsk(hit.ask);
+          } catch { setDepthFloorError("Could not load floor data"); }
+        })()
+      : deal.editionKey
       ? fetch(`/api/edition-floor?editionKey=${encodeURIComponent(deal.editionKey)}`, { cache: "no-store" })
           .then(async (res) => {
             if (!res.ok) throw new Error("Floor fetch failed");
@@ -1467,7 +1485,8 @@ function SniperMomentsBody() {
                       // shape today (AllDay sniper feed emits "set:play"; wmc stores plain
                       // "play". Pinnacle skips the editionStats fetch entirely). Until
                       // those mappings are unified, hide the chip rather than mislead.
-                      if (isAllDay || isPinnacle) return null;
+                      // All Day joined 2026-10-26 (wallet edition counts are keyed by its edition id).
+                      if (isPinnacle) return null;
                       if (!ownerKey) {
                         return (
                           <Link
@@ -1477,6 +1496,14 @@ function SniperMomentsBody() {
                           >
                             Sign in to see ownership
                           </Link>
+                        );
+                      }
+                      // A deal with no edition key cannot be matched: unknown, never "Not owned".
+                      if (!deal.editionKey && !deal.intEditionKey) {
+                        return (
+                          <span data-testid="ownership-unknown" style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-mono)", color: "var(--rpc-text-muted)" }} title="This listing could not be matched to an edition">
+                            Own —
+                          </span>
                         );
                       }
                       const eStats =
@@ -1803,7 +1830,7 @@ function SniperMomentsBody() {
                         page can write rpc_owner_key from username lookup). */}
                     <td style={{ padding: "8px 12px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)", color: "var(--rpc-text-muted)" }}>
                       {(() => {
-                        if (isAllDay || isPinnacle) return "—";
+                        if (isPinnacle) return "—";
                         if (!ownerKey) {
                           return (
                             <Link
@@ -1813,6 +1840,13 @@ function SniperMomentsBody() {
                             >
                               Sign in
                             </Link>
+                          );
+                        }
+                        if (!deal.editionKey && !deal.intEditionKey) {
+                          return (
+                            <span data-testid="ownership-unknown" style={{ color: "var(--rpc-text-muted)" }} title="This listing could not be matched to an edition">
+                              —
+                            </span>
                           );
                         }
                         const eStats =
@@ -1965,6 +1999,15 @@ function SniperMomentsBody() {
                                     LT FMV: ${fmt(depthFloor.livetokenFmv)}
                                   </span>
                                 )}
+                              </div>
+                            ) : isAllDay && depthRecentAsk != null ? (
+                              // All Day (2026-10-26): the edition's verified floor from /api/best-asks
+                              // (allday_edition_floor_ask — ghost listings excluded), never Top Shot's route.
+                              <div className="flex flex-wrap items-center gap-3" style={{ padding: "6px 0" }} data-testid="allday-depth-floor">
+                                <div className="rpc-chip" title="The edition's lowest open ask, last verified on chain. Check the listing before buying." style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                  <span style={{ fontSize: 9, color: "var(--rpc-text-muted)", letterSpacing: "0.08em" }}>EDITION FLOOR</span>
+                                  <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)", color: "var(--rpc-text-primary)", fontWeight: 600 }}>${fmt(depthRecentAsk)}</span>
+                                </div>
                               </div>
                             ) : null}
 

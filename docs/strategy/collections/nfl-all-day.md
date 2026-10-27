@@ -135,12 +135,13 @@ Read from a code sweep of every Top Shot-only branch (≈58 rows) and a DB check
 | Market Cap: issuer-held split | ✓ | ✗ | no All Day issuer / pack-inventory source |
 | Player: season stats | ✓ | ✓ | ESPN NFL |
 | Player: Top Collectors | ✓ (rookie index) | ✗ | same wmc coverage limit as Top Owners |
-| Team: Squeeze & Scarcity | ✓ | ✗ | `allday_scarcity_board` exists; a team arm is a next step |
+| Team: Squeeze & Scarcity | ✓ | ✓ (new, pass 3) | `get_team_squeeze` All Day arm over `badge_editions` locked / burned (same Atlas ingest); an edition with an unread count is left out, never shown as 0 %; ask = the verified floor. 12 rows on the Chiefs (10-26) |
 | Team: checklist "Contemporary" scope | ✓ | ✗ | needs an All Day season rule |
 | Collection tab: "close to completing" sets | ✓ | ✓ (new, pass 2) | reads `/api/allday-set-progress`; links All Day's Sets tab; no dollar figure (the tracker sums FMV, not asks) |
 | Sniper: BADGES ONLY + badged stat | ✓ | ✓ (new) | `get_allday_listing_badges`; the path built every deal `hasBadge=false` |
-| Sniper: Own / Lock chips · special-serial stat | ✓ | ✗ | the All Day path sets no `editionKey`; setting it routes `/api/edition-floor` without a collection — fix that route first |
-| Analytics: marketplace breakdown | ✓ | ✗ | a V1 / V2 storefront split is possible from `sales.source` |
+| Sniper: Own / Lock chips · expand-panel depth | ✓ | ✓ (new, pass 3) | the badge lookup now carries `edition_key`; a deal with no key reads "Own —", never "Not owned"; the expand panel reads `/api/best-asks` with the All Day collection (never `/api/edition-floor`, which takes no collection) |
+| Sniper: special-serial stat | ✓ | ✗ | |
+| Analytics: marketplace breakdown | ✓ | ✓ (new, pass 3) | split by how the sale happened — listings · accepted offers · pack buybacks (`get_allday_daily_sale_kind_volume`); 30-day totals identical to the old one-row read (16,223 / $14,367.98) |
 | Insights boards with an All Day leg | — | autographs, deals, top-sales, trophies, market-cap, market-pulse, cross-collection, pack-sniper, account-value, special-serial-owners, buyback + All Day's own scarcity / pack-market / pack-reality | |
 | Bid vs Floor (`/insights/offer-spread`) | ✓ | ✓ (new, pass 2) | All Day toggle (`?collection=nfl-all-day`) over `allday_offer_ask_spread`: 1,008 editions with a bid and a floor ≥ $5 (10-26); bid age unknown (not kept), so the longest-standing sort is Top Shot only |
 | Insights boards Top Shot only | squeeze, set-squeeze, rookie-board, rookies, first-mint, serial / parallel premiums, underpriced-serials, set-completers, new-collectors, market index | ✗ | next by data on hand: rookies (Rookie Year / Rookie Mint badges), first-mint |
