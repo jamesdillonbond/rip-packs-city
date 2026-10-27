@@ -12,6 +12,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-10-26 · ⚾ SHIPPED (code) — **Candy card art goes through a resizer: `/api/public/arweave-thumb/<tx>?w=` (pages got multi-MB PNGs; Rainbow social cards had no art)** (Cowork cloud, ~9:35–10:00 PM PT; Trevor: "Keep going").
+- **Found** reviewing the Candy OG cards. Every Candy image is a full-size PNG on arweave.net (3.9 MB for a base ICON, 7.5 MB for a Rainbow, measured), rendered with a plain `<img>`. An edition page with the hero, the Parallel Printings ladder and "More editions" downloaded tens of MB, and every Rainbow edition's social card rendered with no picture, because the OG 4 MB cap drops the 7.5 MB original.
+- **Code:**
+  - New `app/api/public/arweave-thumb/[id]/route.ts`, the same shape as UFC's `ipfs-thumb` (#162): a 43-char tx-id allowlist, fixed widths, sharp resizing to WebP (`&f=png` for OG, because satori cannot decode WebP), an immutable cache, and it fails open with a 302 to the original.
+  - `proxyIpfsImageUrl` now also rewrites a bare `https://arweave.net/<tx>`, so every image call site that already goes through it picks this up.
+  - `ogImageTarget` asks for a 640 px PNG.
+  - `heroSrcSet`, the `proxy.ts` media rate-limit bucket and the `robots.ts` Allow list now include the new route.
+  - Re-pinned `component-TopSalesBoardClient` (its premise changed: arweave art is resized, still never sent through the avatar proxy).
+  - The Candy insights OG copy said "a days-old market"; the market has traded since 07-22, so it now reads "a young, thin market".
+- Full preflight was green.
+- **Revert:** `git revert` the "feat(candy): arweave art resizer" commit (pages hotlink the originals again).
+
 ### 2026-10-26 · 🔧 SHIPPED (code + 2 migrations) — **All Day ↔ Top Shot parity, pass 3: Sniper Own/Lock + depth, Analytics sale-kind breakdown, Team Squeeze** (Cowork cloud, ~9:00–9:30 PM PT; Trevor: "keep going").
 - **Sniper Own/Lock on All Day.** `/api/sniper-feed`'s badge lookup (`get_allday_listing_badges`) now also sets each deal's `editionKey` from `edition_key`, so the Own/Lock cell renders on All Day; a deal with no key reads "Own —", never "Not owned". The expand panel reads POST `/api/best-asks` with the All Day collection UUID (never `/api/edition-floor`, which takes no collection — substitution risk) and shows an EDITION FLOOR chip. **Revert:** `git revert` the code commit.
 - **Analytics Marketplace Breakdown on All Day** — every sale carried `marketplace='nflallday'`, so the panel had one row. New `get_allday_daily_sale_kind_volume(timestamptz)` (migration `20261027040236`, service-role only) splits listings / accepted offers / pack buybacks over the same sales rows; 30-day totals identical to the old read (16,223 / $14,367.98). **Revert:** `DROP FUNCTION public.get_allday_daily_sale_kind_volume(timestamptz);` + revert the route arm (it would 500).
