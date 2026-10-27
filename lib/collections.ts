@@ -418,8 +418,9 @@ export const COLLECTIONS: Collection[] = [
     //   FMV tier pulse       real — LEGENDARY 24 eds, COMMON 100
     //   liquidity heatmap    real — 125 editions, 0 cold
     //   whale leaderboard    real — 60+ base58 wallets, top buyer $1,534
-    //   badge premium        RPC returns SQL NULL -> panel() gives [] -> the
-    //                        honest empty state (Candy has no badge scheme)
+    //   badge premium        2026-10-26: get_badge_premium reads Candy's own
+    //                        designations (editions.badges Rookie / First Mint,
+    //                        20261027031432) — it returned NULL ("No data") before
     //   pack EV              2026-10-26: reads Candy's own model
     //                        (`/api/candy-pack-market`) — `pack_distributions` has
     //                        zero Candy rows, so the shared card's "not yet
