@@ -412,15 +412,17 @@ function MarketplaceBreakdownCard({
         <div className="py-8 text-center text-sm text-[color:var(--rpc-text-muted)]">No marketplace activity in the last {period}.</div>
       ) : enriched.length === 1 ? (
         <div
-          className="flex items-center justify-between gap-3 rounded-lg border border-[color:var(--rpc-border)] bg-[var(--rpc-black)]/30 p-3"
+          // flex-wrap (2026-10-26): label + "Volume · sales · 100%" did not wrap, and at 320px a
+          // phone widened its layout viewport to 365px for this one row.
+          className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[color:var(--rpc-border)] bg-[var(--rpc-black)]/30 p-3"
           style={{ fontFamily: "var(--font-mono)" }}
         >
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: enriched[0].color }} />
             <span className="text-sm font-semibold text-[color:var(--rpc-text-primary)]">{enriched[0].label}</span>
             <span className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">single source</span>
           </div>
-          <div className="flex items-center gap-4 text-[11px] text-[color:var(--rpc-text-secondary)]">
+          <div className="flex flex-wrap items-center gap-4 text-[11px] text-[color:var(--rpc-text-secondary)]">
             <span>Volume {fmt(enriched[0].volume)}</span>
             <span className="text-[color:var(--rpc-text-muted)]">·</span>
             <span>{enriched[0].transactions.toLocaleString("en-US")} sales</span>
@@ -1308,7 +1310,10 @@ function AnalyticsInner() {
             const periodLabel = marketData?.period ?? "30d"
             const totalVolume = cur?.volume ?? marketData?.totals?.totalVolume ?? 0
             const totalSalesLocal = cur?.sales ?? marketData?.totals?.totalSales ?? 0
-            const avgPrice = cur?.avgPrice ?? (totalSalesLocal > 0 ? totalVolume / totalSalesLocal : 0)
+            // The average of NO sales does not exist — null renders "—", never "$0.00" (2026-10-26:
+            // /ufc/analytics read "Total Sales 0 · Avg Sale Price $0.00"; a server avgPrice of 0
+            // over 0 sales is the same fabricated value, so the sales count gates both arms).
+            const avgPrice = totalSalesLocal > 0 ? (cur?.avgPrice ?? totalVolume / totalSalesLocal) : null
             const uniqueEds = cur?.uniqueEditions ?? 0
             // Failed fetch => em-dash, not 0. Rendering 0 here told visitors the
             // Top Shot market had no sales in 30 days while the Overview tab on
@@ -1326,7 +1331,7 @@ function AnalyticsInner() {
               <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">
                 <KpiCard label="Total Volume" value={kpi(fmt(totalVolume))} pct={pc ? ch?.volumePct : undefined} period={periodLabel} />
                 <KpiCard label="Total Sales" value={kpi(totalSalesLocal.toLocaleString("en-US"))} pct={pc ? ch?.salesPct : undefined} period={periodLabel} />
-                <KpiCard label="Avg Sale Price" value={kpi(fmtUsd(avgPrice))} pct={pc ? ch?.avgPricePct : undefined} period={periodLabel} />
+                <KpiCard label="Avg Sale Price" value={kpi(avgPrice == null ? dash : fmtUsd(avgPrice))} pct={pc ? ch?.avgPricePct : undefined} period={periodLabel} />
                 <KpiCard label={isPinnacle ? "Unique Pins" : "Unique Editions"} value={kpi(uniqueEds.toLocaleString("en-US"))} pct={pc ? ch?.uniqueEditionsPct : undefined} period={periodLabel} />
               </div>
             )

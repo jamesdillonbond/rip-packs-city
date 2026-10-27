@@ -167,6 +167,21 @@ describe("CollectionAnalyticsClient — the market KPI band", () => {
     expect(document.body.textContent).not.toContain("— 0%")
   })
 
+  it("a SUCCESSFUL read of zero sales shows Total Sales 0 but NO average — the average of no sales is \"—\", never $0.00 (2026-10-26, /ufc/analytics)", async () => {
+    // Volume $0 and Sales 0 are true measured zeros here; an "Avg Sale Price $0.00" is not —
+    // it claims sales happened at $0. A server avgPrice of 0 over 0 sales is the same claim.
+    routes["/api/market-analytics"] = () =>
+      json(200, {
+        ...MARKET,
+        totals: { totalSales: 0, totalVolume: 0 },
+        periodComparison: { ...MARKET.periodComparison, current: { volume: 0, sales: 0, avgPrice: 0, uniqueEditions: 0 } },
+      })
+    render(<CollectionAnalyticsClient />)
+    await waitFor(() => expect(kpiValue("Total Sales")).toBe("0"))
+    expect(kpiValue("Avg Sale Price")).toBe("—")
+    expect(kpiValue("Avg Sale Price")).not.toContain("$0")
+  })
+
   it("adds the thin-volume ecosystem notice ONLY on a real, small market", async () => {
     routes["/api/market-analytics"] = () => json(200, { ...MARKET, totals: { totalSales: 12, totalVolume: 40 } })
     render(<CollectionAnalyticsClient />)
