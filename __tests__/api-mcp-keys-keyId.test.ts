@@ -33,9 +33,13 @@ vi.mock("@/lib/auth/supabase-server", () => ({
 // Ownership (security audit 2026-10-25): wallets in `notOwned` are saved by this
 // account but OWNED by another one.
 const notOwned = new Set<string>()
+const lookupFails = new Set<string>()
 vi.mock("@/lib/auth/owner-key-guard", () => ({
   requireOwnedKey: async (w: string) =>
-    notOwned.has(w) ? new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 }) : { user: auth.user },
+    lookupFails.has(w)
+      ? new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { "X-Owner-Check": "unavailable" } })
+      : notOwned.has(w) ? new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 }) : { user: auth.user },
+  ownerCheckUnavailable: (r: Response) => r.headers.get("X-Owner-Check") === "unavailable",
 }))
 
 import { DELETE } from "@/app/api/mcp/keys/[keyId]/route"
@@ -97,5 +101,22 @@ describe("DELETE /api/mcp/keys/[keyId] — SAVED is not OWNED (security audit 20
     const res = await DELETE(req(), ctx("00000000-0000-0000-0000-000000000000"))
     expect(res.status).toBe(403)
     expect((await res.json()).revoked).toBeUndefined()
+  })
+
+  it("a FAILED ownership lookup is a 503 and never revokes — not 'Key does not belong to this account' (2026-10-27)", async () => {
+    auth.user = { id: "u1" }
+    state.keyRows = [{ wallet_address: "0x1234567890abcdef", status: "active" }]
+    state.savedWallets = [{ wallet_addr: "0x1234567890abcdef" }]
+    state.revoked = true
+    lookupFails.add("0x1234567890abcdef")
+    try {
+      const res = await DELETE(req(), ctx("00000000-0000-0000-0000-000000000000"))
+      expect(res.status).toBe(503)
+      const body = await res.json()
+      expect(body.revoked).toBeUndefined()
+      expect(String(body.error)).not.toMatch(/does not belong/)
+    } finally {
+      lookupFails.clear()
+    }
   })
 })

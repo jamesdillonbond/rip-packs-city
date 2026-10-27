@@ -99,7 +99,7 @@ vi.mock("@/lib/supabase", () => {
   return { supabase: client, supabaseAdmin: client }
 })
 
-import { requireOwnedKey } from "@/lib/auth/owner-key-guard"
+import { ownerCheckUnavailable, requireOwnedKey } from "@/lib/auth/owner-key-guard"
 
 async function bodyOf(res: Response) {
   return JSON.parse(await res.text())
@@ -413,5 +413,19 @@ describe("requireOwnedKey — fails closed", () => {
     expect(((await requireOwnedKey("   ")) as Response).status).toBe(403)
     expect(((await requireOwnedKey(undefined as unknown as string)) as Response).status).toBe(403)
     expect(calls).toHaveLength(0)
+  })
+})
+
+// 2026-10-27: a deny from a FAILED lookup is tagged, so a caller never turns it into a verdict ("not yours",
+// "no keys"). Still the same fail-closed 403.
+describe("requireOwnedKey — a failed lookup is tagged, a decided deny is not", () => {
+  it("tags the claimant-lookup failure as unavailable", async () => {
+    state.claimant = { data: null, error: { message: "boom", code: "PGRST116" } }
+    const failed = (await requireOwnedKey("trevor")) as Response
+    expect(failed.status).toBe(403)
+    expect(ownerCheckUnavailable(failed)).toBe(true)
+  })
+  it("CONTROL: an empty key (a decided deny) carries no tag", async () => {
+    expect(ownerCheckUnavailable((await requireOwnedKey("")) as Response)).toBe(false)
   })
 })

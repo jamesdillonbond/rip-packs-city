@@ -19,12 +19,12 @@
 //   6. Allow-list cache (cookie) → service-role check_email_allowed RPC.
 //      On revocation: signOut + /login?error=access_revoked.
 //
-// The allow-list cookie `rpc_al_check` carries { email, expiresAt } JSON for
-// 60s. It is httpOnly + sameSite=lax + secure but NOT cryptographically
-// signed — worst case if a user tampers, they buy at most 60s of stale
-// access; the next miss-the-cache hit catches them via the RPC. The `email`
-// match guard prevents using one user's cached cookie under another user's
-// session.
+// The allow-list cookie `rpc_al_check` carries { email, expiresAt, sig } JSON for
+// 60s, httpOnly + sameSite=lax + secure, and since 2026-10-27 HMAC-SIGNED
+// (lib/auth/allow-cookie.ts). Unsigned, a removed user could rewrite a fresh
+// 60 s expiry on every request and never meet check_email_allowed again. A
+// missing or bad signature reads as no cookie (one RPC). The `email` match
+// guard still prevents using one user's cached cookie under another session.
 
 import { NextRequest, NextResponse } from "next/server"
 import { createServerClient } from "@supabase/ssr"
@@ -33,6 +33,7 @@ import { CANDY_MLB_PUBLIC, PANINI_PUBLIC } from "@/lib/launch-flags"
 import { ALLOWED_ORIGINS } from "@/lib/allowed-origins"
 import { bearerMatches, tokenMatches as secretTokenMatches } from "@/lib/auth/bearer-secret"
 import { isRoutableFirstSegment } from "@/lib/routing/known-top-level"
+import { decodeAllowCookie, encodeAllowCookie, type AllowCacheEntry } from "@/lib/auth/allow-cookie"
 
 const CORS_API_PATHS = ["/api/fmv", "/api/sniper-feed", "/api/health"]
 
@@ -1422,32 +1423,22 @@ function makeAdminClient() {
   )
 }
 
-type AllowCacheEntry = { email: string; expiresAt: number }
-
 function readAllowCookie(request: NextRequest): AllowCacheEntry | null {
-  const raw = request.cookies.get(ALLOWLIST_COOKIE)?.value
-  if (!raw) return null
-  try {
-    const parsed = JSON.parse(raw) as Partial<AllowCacheEntry>
-    if (typeof parsed.email !== "string") return null
-    if (typeof parsed.expiresAt !== "number") return null
-    // The cookie is unsigned JSON, so a client can write any expiresAt. Only
-    // writeAllowCookie sets it, never more than ALLOWLIST_TTL_SECONDS ahead — an
-    // expiry beyond that (plus clock-skew slack) was not written by us and would
-    // let a banned user skip check_email_allowed indefinitely. Treat it as absent.
-    // (Security audit 2026-10-25, finding 12.)
-    if (parsed.expiresAt > Date.now() + (ALLOWLIST_TTL_SECONDS + 60) * 1000) return null
-    return { email: parsed.email, expiresAt: parsed.expiresAt }
-  } catch {
-    return null
-  }
+  // Signed since 2026-10-27: only a value this proxy wrote verifies (lib/auth/allow-cookie.ts).
+  const parsed = decodeAllowCookie(request.cookies.get(ALLOWLIST_COOKIE)?.value, process.env.SUPABASE_SERVICE_ROLE_KEY)
+  if (!parsed) return null
+  // Defence in depth, kept from the 10-25 audit (finding 12): never trust an expiry further out than one TTL.
+  if (parsed.expiresAt > Date.now() + (ALLOWLIST_TTL_SECONDS + 60) * 1000) return null
+  return parsed
 }
 
 function writeAllowCookie(response: NextResponse, email: string) {
   const expiresAt = Date.now() + ALLOWLIST_TTL_SECONDS * 1000
+  const value = encodeAllowCookie(email, expiresAt, process.env.SUPABASE_SERVICE_ROLE_KEY)
+  if (!value) return // no key to sign with: no cache, every request asks the RPC
   response.cookies.set({
     name: ALLOWLIST_COOKIE,
-    value: JSON.stringify({ email, expiresAt }),
+    value,
     httpOnly: true,
     sameSite: "lax",
     secure: true,

@@ -20,6 +20,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
+import { tokenMatches } from "@/lib/auth/bearer-secret";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -30,9 +31,7 @@ const PIPELINE = "pinnacle-render-cache-fill";
 
 function authed(req: NextRequest): boolean {
   const bearer = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
-  const ingest = process.env.INGEST_SECRET_TOKEN;
-  const cron = process.env.CRON_SECRET;
-  return !!bearer && ((!!ingest && bearer === ingest) || (!!cron && bearer === cron));
+  return tokenMatches(bearer, "INGEST_SECRET_TOKEN", "CRON_SECRET");
 }
 
 // Every render_id referenced by a trophy-pinned Pinnacle slab.

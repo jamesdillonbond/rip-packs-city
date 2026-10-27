@@ -62,11 +62,23 @@ import { getCurrentUser } from "@/lib/auth/supabase-server"
 
 export type OwnedKeyGate = { user: User } | Response
 
-function deny(status: number, error: string): Response {
+/**
+ * Set on a deny that came from a FAILED ownership lookup, not a decided "not yours" (2026-10-27). The response is
+ * still the fail-closed 403 every caller relies on; a caller that would otherwise turn a deny into a claim ("you
+ * have no keys", "not your key") reads this to say the check could not be made instead.
+ */
+export const OWNER_CHECK_HEADER = "X-Owner-Check"
+
+function deny(status: number, error: string, unavailable = false): Response {
   return new Response(JSON.stringify({ error }), {
     status,
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...(unavailable ? { [OWNER_CHECK_HEADER]: "unavailable" } : {}) },
   })
+}
+
+/** True when `gate` is a deny produced by a failed lookup (see OWNER_CHECK_HEADER). */
+export function ownerCheckUnavailable(gate: Response): boolean {
+  return gate.headers.get(OWNER_CHECK_HEADER) === "unavailable"
 }
 
 /**
@@ -111,7 +123,7 @@ export async function requireOwnedKey(ownerKey: string): Promise<OwnedKeyGate> {
     if (walletErr) {
       // FAIL CLOSED — we could not determine ownership.
       console.error("[requireOwnedKey] saved_wallets lookup failed", walletErr)
-      return deny(403, "Forbidden")
+      return deny(403, "Forbidden", true)
     }
 
     const rows = ((walletRows ?? []) as Array<{ id?: unknown; user_id?: unknown; verified_at?: unknown }>)
@@ -162,7 +174,7 @@ export async function requireOwnedKey(ownerKey: string): Promise<OwnedKeyGate> {
   if (claimantErr) {
     // FAIL CLOSED. We could not determine ownership, so we must not assume it.
     console.error("[requireOwnedKey] claimant lookup failed", claimantErr)
-    return deny(403, "Forbidden")
+    return deny(403, "Forbidden", true)
   }
 
   const claimantId: string | null = claimant?.user_id ?? null
@@ -214,7 +226,7 @@ export async function requireOwnedKey(ownerKey: string): Promise<OwnedKeyGate> {
   if (selfErr) {
     // FAIL CLOSED, same reasoning as above.
     console.error("[requireOwnedKey] self lookup failed", selfErr)
-    return deny(403, "Forbidden")
+    return deny(403, "Forbidden", true)
   }
 
   const selfUsername =

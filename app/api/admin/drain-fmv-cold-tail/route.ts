@@ -2,6 +2,7 @@ import { NextRequest, NextResponse, after } from "next/server"
 import { boundedRead } from "@/lib/api/bounded-read"
 import { supabaseAdmin } from "@/lib/supabase"
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
+import { bearerMatches, tokenMatches } from "@/lib/auth/bearer-secret"
 
 // POST /api/admin/drain-fmv-cold-tail?collection=all&limit=200
 // Authorization: Bearer $INGEST_SECRET_TOKEN  OR  ?token=$INGEST_SECRET_TOKEN
@@ -96,9 +97,8 @@ function isAuthorized(req: NextRequest): boolean {
   const token = process.env.INGEST_SECRET_TOKEN
   if (!token) return false
   const auth = req.headers.get("authorization") ?? ""
-  if (auth === `Bearer ${token}`) return true
-  const qp = req.nextUrl.searchParams.get("token")
-  return qp === token
+  if (bearerMatches(auth, "INGEST_SECRET_TOKEN")) return true
+  return tokenMatches(req.nextUrl.searchParams.get("token"), "INGEST_SECRET_TOKEN")
 }
 
 function isStaleCollection(s: string): s is StaleSlug {

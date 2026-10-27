@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { bearerMatches } from "@/lib/auth/bearer-secret"
 
 // POST /api/admin/prune-pipeline-runs — Authorization: Bearer $INGEST_SECRET_TOKEN
 //
@@ -18,7 +19,7 @@ export const dynamic = "force-dynamic"
 export const maxDuration = 300
 
 export async function POST(req: NextRequest) {
-  if (!TOKEN || req.headers.get("authorization") !== `Bearer ${TOKEN}`) {
+  if (!TOKEN || !bearerMatches(req.headers.get("authorization"), "INGEST_SECRET_TOKEN")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 

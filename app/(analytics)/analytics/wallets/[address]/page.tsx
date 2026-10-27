@@ -7,6 +7,7 @@
 // without rebuilding. dynamicParams: true means we generate on first
 // request rather than statically pre-rendering all 60+ wallets at build.
 
+import { summarizeWalletLoans } from "@/lib/analytics/wallets/loan-summary"
 import type { Metadata } from "next"
 import { notFound, redirect } from "next/navigation"
 import { resolveUsernames, displayName } from "@/lib/flowty-username"
@@ -57,17 +58,9 @@ export async function generateMetadata({ params }: PageParams): Promise<Metadata
   const names = await resolveUsernames([addr])
   const display = displayName(addr, names)
 
-  const totalVolume =
-    (data.as_borrower?.total_principal_usd ?? 0) +
-    (data.as_lender?.total_principal_usd ?? 0)
-  const totalLoans =
-    (data.as_borrower?.loan_count ?? 0) + (data.as_lender?.loan_count ?? 0)
+  const loans = summarizeWalletLoans(data)
   const defaultRate =
     data.as_lender?.default_rate_pct ?? data.as_borrower?.default_rate_pct ?? null
-
-  const isLender = (data.as_lender?.loan_count ?? 0) > 0
-  const isBorrower = (data.as_borrower?.loan_count ?? 0) > 0
-  const role = isLender && isBorrower ? "Lender + borrower" : isLender ? "Lender" : "Borrower"
 
   const firstSeen =
     data.as_borrower?.first_seen_at ||
@@ -81,8 +74,8 @@ export async function generateMetadata({ params }: PageParams): Promise<Metadata
     : "recently"
 
   const description =
-    `${role} on Flowty NFT lending (historical archive). ` +
-    `$${Math.round(totalVolume).toLocaleString()} funded across ${totalLoans} loans` +
+    `${loans.role ?? "Wallet"} on Flowty NFT lending (historical archive). ` +
+    loans.sentence +
     (defaultRate != null ? `, ${defaultRate.toFixed(2)}% default rate` : "") +
     `, active since ${firstSeenLabel}.`
 
@@ -128,11 +121,7 @@ export default async function WalletPage({ params }: PageParams) {
   const names = await resolveUsernames([addr])
   const username = names.get(addr) ?? null
 
-  const totalVolume =
-    (data.as_borrower?.total_principal_usd ?? 0) +
-    (data.as_lender?.total_principal_usd ?? 0)
-  const totalLoans =
-    (data.as_borrower?.loan_count ?? 0) + (data.as_lender?.loan_count ?? 0)
+  const loans = summarizeWalletLoans(data)
 
   const personJsonLd = {
     "@context": "https://schema.org",
@@ -148,7 +137,7 @@ export default async function WalletPage({ params }: PageParams) {
     name: `Flowty loan history for ${username || addr} (historical archive)`,
     description:
       `Historical on-chain Flowty loan history for Flow address ${addr} (marketplace closed May 2026). ` +
-      `${totalLoans} funded loans totaling $${Math.round(totalVolume).toLocaleString()} of principal.`,
+      `${loans.sentence}.`,
     creator: { "@type": "Organization", name: "Rip Packs City" },
     url: `${ANALYTICS_BASE_URL}/analytics/wallets/${addr}`,
     distribution: [

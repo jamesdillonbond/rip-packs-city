@@ -22,12 +22,15 @@ vi.mock("@/lib/auth/supabase-server", () => ({
 // Ownership (security audit 2026-10-25): wallets in `notOwned` belong to ANOTHER
 // account (saved by this one, but someone else verified or saved it first).
 const notOwned = new Set<string>()
+const lookupFails = new Set<string>()
 const ownedChecks: string[] = []
 vi.mock("@/lib/auth/owner-key-guard", () => ({
   requireOwnedKey: async (w: string) => {
     ownedChecks.push(w)
+    if (lookupFails.has(w)) return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { "X-Owner-Check": "unavailable" } })
     return notOwned.has(w) ? new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 }) : { user: auth.user }
   },
+  ownerCheckUnavailable: (r: Response) => r.headers.get("X-Owner-Check") === "unavailable",
 }))
 
 import { GET, POST } from "@/app/api/mcp/keys/route"
@@ -207,12 +210,26 @@ describe("GET /api/mcp/keys — multi-wallet merge", () => {
     )
   })
 
-  it("skips a wallet whose key listing errors instead of failing the whole request", async () => {
+  // INVERTED 2026-10-27: this pinned the defect — a failed listing answered `{ok:true, keys:[]}`, telling the owner
+  // they have no keys. A partial list is never presented as the whole one.
+  it("a wallet whose key listing errors fails the request (503), never an ok empty list", async () => {
     rpcState.get_user_saved_wallets = SAVED("0xaaaaaaaaaaaaaaaa")
     rpcState.mcp_list_keys = { data: null, error: { message: "list down" } }
     const res = await GET()
-    expect(res.status).toBe(200)
-    expect((await res.json()).keys).toEqual([])
+    expect(res.status).toBe(503)
+    expect((await res.json()).keys).toBeUndefined()
+  })
+
+  it("a FAILED ownership lookup is a 503, not a silently skipped wallet (2026-10-27)", async () => {
+    rpcState.get_user_saved_wallets = SAVED("0xaaaaaaaaaaaaaaaa")
+    rpcState.mcp_list_keys = { data: [], error: null }
+    lookupFails.add("0xaaaaaaaaaaaaaaaa")
+    try {
+      const res = await GET()
+      expect(res.status).toBe(503)
+    } finally {
+      lookupFails.clear()
+    }
   })
 
   it("dedups a wallet saved under multiple collections", async () => {

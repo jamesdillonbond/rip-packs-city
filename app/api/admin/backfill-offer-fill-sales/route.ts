@@ -9,6 +9,7 @@ import {
 } from "@/lib/chains/flow/topshot-offer-fill"
 import { supabaseAdmin } from "@/lib/supabase"
 import { apiErrorResponse } from "@/lib/api-error"
+import { tokenMatches } from "@/lib/auth/bearer-secret"
 
 // ── Backfill: recover accepted-offer sales (the OffersV2 fill gap) ────────────
 //
@@ -142,7 +143,7 @@ export async function POST(req: NextRequest) {
   const auth = req.headers.get("authorization") ?? ""
   const bearer = auth.replace(/^Bearer\s+/i, "")
   const urlToken = req.nextUrl.searchParams.get("token") ?? ""
-  if (!TOKEN || (bearer !== TOKEN && urlToken !== TOKEN)) return unauthorized()
+  if (!TOKEN || !(tokenMatches(bearer, "INGEST_SECRET_TOKEN") || tokenMatches(urlToken, "INGEST_SECRET_TOKEN"))) return unauthorized()
 
   const rangeParam = Number(req.nextUrl.searchParams.get("range") ?? DEFAULT_RANGE)
   const maxRange = Math.min(Math.max(rangeParam || DEFAULT_RANGE, CHUNK_SIZE), RANGE_CAP)

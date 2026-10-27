@@ -13,6 +13,7 @@
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { processSinglePrewarmRow, type AllowListRow } from "@/lib/allow-list/prewarm"
+import { bearerMatches } from "@/lib/auth/bearer-secret"
 
 export const maxDuration = 300
 
@@ -22,7 +23,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "CRON_SECRET not configured" }, { status: 500 })
   }
   const authHeader = req.headers.get("authorization") ?? ""
-  if (authHeader !== `Bearer ${expected}`) {
+  if (!bearerMatches(authHeader, "CRON_SECRET")) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 })
   }
 

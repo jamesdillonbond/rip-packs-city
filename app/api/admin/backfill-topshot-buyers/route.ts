@@ -2,6 +2,7 @@ import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { decodeTopShotSaleTx, decodeTopShotSaleTxViaSpork } from "@/lib/chains/flow/dapper-v1-tx-decode"
 import { CURRENT_SPORK_START_ISO, cursorOrFilter, cursorRowBelow, type SaleCursorRow } from "@/lib/pipeline/buyer-backfill-window"
+import { tokenMatches } from "@/lib/auth/bearer-secret"
 
 // POST /api/admin/backfill-topshot-buyers — Authorization: Bearer $INGEST_SECRET_TOKEN
 //
@@ -141,7 +142,7 @@ export async function POST(req: NextRequest) {
   const auth = req.headers.get("authorization") ?? ""
   const bearer = auth.replace(/^Bearer\s+/i, "")
   const urlToken = req.nextUrl.searchParams.get("token") ?? ""
-  if (!TOKEN || (bearer !== TOKEN && urlToken !== TOKEN)) {
+  if (!TOKEN || !(tokenMatches(bearer, "INGEST_SECRET_TOKEN") || tokenMatches(urlToken, "INGEST_SECRET_TOKEN"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
+import { bearerMatches } from "@/lib/auth/bearer-secret";
 
 // POST /api/admin/refresh-flowty-analytics
 // Authorization: Bearer <INGEST_SECRET_TOKEN | CRON_SECRET>
@@ -12,11 +13,7 @@ export const dynamic = "force-dynamic";
 
 function isAuthorized(req: NextRequest): boolean {
   const auth = req.headers.get("authorization") ?? "";
-  const ingest = process.env.INGEST_SECRET_TOKEN;
-  const cron = process.env.CRON_SECRET;
-  if (ingest && auth === `Bearer ${ingest}`) return true;
-  if (cron && auth === `Bearer ${cron}`) return true;
-  return false;
+  return bearerMatches(auth, "INGEST_SECRET_TOKEN", "CRON_SECRET");
 }
 
 export async function POST(req: NextRequest) {

@@ -18,7 +18,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { displayAddress } from "@/lib/address";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth/supabase-server";
-import { requireOwnedKey } from "@/lib/auth/owner-key-guard";
+import { requireOwnedKey, ownerCheckUnavailable } from "@/lib/auth/owner-key-guard";
 
 export const dynamic = "force-dynamic";
 
@@ -223,11 +223,20 @@ export async function GET() {
   for (const wallet of userWallets) {
     // Only wallets this account OWNS — saving someone else's address must not
     // list their key ids (which DELETE accepts) or labels (security audit 2026-10-25).
-    if ((await requireOwnedKey(wallet)) instanceof Response) continue;
+    const gate = await requireOwnedKey(wallet);
+    if (gate instanceof Response) {
+      // A failed ownership LOOKUP is not "not yours": answering an ok list without this wallet's keys would tell
+      // the owner they have none (2026-10-27). A decided deny (someone else's address) is still skipped.
+      if (ownerCheckUnavailable(gate)) {
+        return NextResponse.json({ error: "Key ownership check failed — try again" }, { status: 503 });
+      }
+      continue;
+    }
     const { data, error } = await (supabase as any).rpc("mcp_list_keys", { p_wallet_address: wallet });
     if (error) {
+      // Same for a failed list read: a partial list must not render as the whole one.
       console.log(`[mcp/keys GET] mcp_list_keys failed for ${wallet}:`, error.message);
-      continue;
+      return NextResponse.json({ error: "Key list read failed — try again" }, { status: 503 });
     }
     const rows = (data ?? []) as KeyRow[];
     for (const r of rows) all.push({ ...r, wallet_address: wallet });

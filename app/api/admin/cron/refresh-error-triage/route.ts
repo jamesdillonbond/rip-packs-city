@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse, after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
+import { bearerMatches } from "@/lib/auth/bearer-secret";
 
 // POST /api/admin/cron/refresh-error-triage
 // Authorization: Bearer <INGEST_SECRET_TOKEN>
@@ -12,7 +13,7 @@ export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
   const auth = req.headers.get("authorization") ?? "";
-  if (!process.env.INGEST_SECRET_TOKEN || auth !== `Bearer ${process.env.INGEST_SECRET_TOKEN}`) {
+  if (!process.env.INGEST_SECRET_TOKEN || !bearerMatches(auth, "INGEST_SECRET_TOKEN")) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 

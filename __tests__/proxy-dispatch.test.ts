@@ -56,6 +56,7 @@ vi.mock("@supabase/supabase-js", () => ({
 }))
 
 import { proxy } from "@/proxy"
+import { encodeAllowCookie } from "@/lib/auth/allow-cookie"
 
 // A distinct source IP per case keeps the module-scope rate-limit Maps from
 // bleeding one test's request count into the next.
@@ -420,13 +421,13 @@ describe("proxy() — allow-list ladder", () => {
     expect(res.headers.get("X-Frame-Options")).toBe("DENY")
   })
 
-  it("honors a valid cache cookie WITHOUT calling the RPC", async () => {
+  it("honors a valid (signed) cache cookie WITHOUT calling the RPC", async () => {
     st.user = { email: "member@x.com" }
     // If the RPC were consulted it would revoke; a passthrough proves the
-    // cookie short-circuited it.
+    // cookie short-circuited it. Re-pinned 2026-10-27: a valid cookie is one the proxy SIGNED.
     st.rpc = { data: false, error: null }
     const cookieVal = encodeURIComponent(
-      JSON.stringify({ email: "member@x.com", expiresAt: Date.now() + 30_000 })
+      encodeAllowCookie("member@x.com", Date.now() + 30_000, "service-key")!
     )
     const res = await proxy(
       req("/dashboard", { cookies: { rpc_al_check: cookieVal } })
@@ -472,6 +473,24 @@ describe("proxy() — allow-list ladder", () => {
     const res = await proxy(
       req("/dashboard", { cookies: { rpc_al_check: cookieVal } })
     )
+    expect(res.headers.get("location")).toContain("error=access_revoked")
+  })
+
+  it("ignores a self-written UNSIGNED cookie with a fresh in-TTL expiry (falls to RPC, which revokes) — 2026-10-27", async () => {
+    // The attack the 10-25 TTL cap did not stop: a removed user rewrites { email, expiresAt: now + 30 s } each request.
+    st.user = { email: "member@x.com" }
+    st.rpc = { data: false, error: null }
+    const cookieVal = encodeURIComponent(JSON.stringify({ email: "member@x.com", expiresAt: Date.now() + 30_000 }))
+    const res = await proxy(req("/dashboard", { cookies: { rpc_al_check: cookieVal } }))
+    expect(res.headers.get("location")).toContain("error=access_revoked")
+  })
+
+  it("ignores a cookie whose expiry was edited after signing (falls to RPC, which revokes)", async () => {
+    st.user = { email: "member@x.com" }
+    st.rpc = { data: false, error: null }
+    const signed = JSON.parse(encodeAllowCookie("member@x.com", Date.now() - 1_000, "service-key")!)
+    const cookieVal = encodeURIComponent(JSON.stringify({ ...signed, expiresAt: Date.now() + 30_000 }))
+    const res = await proxy(req("/dashboard", { cookies: { rpc_al_check: cookieVal } }))
     expect(res.headers.get("location")).toContain("error=access_revoked")
   })
 
