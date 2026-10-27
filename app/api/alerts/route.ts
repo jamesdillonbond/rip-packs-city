@@ -47,16 +47,20 @@ const PINNACLE_COLLECTION = COLLECTION_UUID_BY_SLUG["disney-pinnacle"].toLowerCa
 // came back null and no price_below / discount_above alert could ever preview
 // as triggered. Its tests passed because the fixture invented the column.
 //
-// HONESTY. A failed read is reported per leg (`fmvFailed`, `askFailedFor`) so
-// the caller can say "unknown" instead of publishing "not triggered".
+// HONESTY. A failed read is reported per leg AND per collection (`fmvFailedFor`,
+// `askFailedFor`) so the caller can say "unknown" instead of publishing "not
+// triggered". ⚠ 2026-10-27: the FMV flag was one boolean, so a failed Pinnacle
+// catalog read blanked every Top Shot / All Day FMV preview (and a failed shared
+// editions read blanked Pinnacle's, which comes from another table) — a failure
+// flag for one source gating a field fed by another.
 async function fetchMarketData(
   alerts: Array<{ edition_key: string; collection_id: string | null }>
 ) {
   const fmvByKey = new Map<string, number>();
   const askByKey = new Map<string, number>();
   const askFailedFor = new Set<string>(); // collection ids whose ask read failed
-  let fmvFailed = false;
-  if (!alerts.length) return { fmvByKey, askByKey, fmvFailed, askFailedFor };
+  const fmvFailedFor = new Set<string>(); // collection ids whose FMV read failed
+  if (!alerts.length) return { fmvByKey, askByKey, fmvFailedFor, askFailedFor };
 
   const key = (collectionId: string | null, ext: string) => `${collectionId ?? TS_COLLECTION}:${ext}`;
 
@@ -70,7 +74,7 @@ async function fetchMarketData(
       .select("render_id, fmv_usd, floor_ask, floor_ask_updated_at")
       .in("render_id", pinKeys);
     if (pinErr) {
-      fmvFailed = true;
+      fmvFailedFor.add(PINNACLE_COLLECTION);
       askFailedFor.add(PINNACLE_COLLECTION);
     } else {
       const now = Date.now();
@@ -83,7 +87,7 @@ async function fetchMarketData(
     }
   }
   const shared = alerts.filter((a) => (a.collection_id ?? "").toLowerCase() !== PINNACLE_COLLECTION);
-  if (!shared.length) return { fmvByKey, askByKey, fmvFailed, askFailedFor };
+  if (!shared.length) return { fmvByKey, askByKey, fmvFailedFor, askFailedFor };
   const editionKeys = [...new Set(shared.map((a) => a.edition_key))];
 
   // Resolve edition internal ids (scoped to the collections in play).
@@ -93,7 +97,8 @@ async function fetchMarketData(
     .select("id, external_id, collection_id")
     .in("external_id", editionKeys)
     .in("collection_id", collectionIds);
-  if (editionErr) fmvFailed = true;
+  // The editions and fmv_current reads span every shared collection in play, so a failure marks each of them.
+  if (editionErr) for (const c of collectionIds) fmvFailedFor.add(c);
 
   const idToKey = new Map<string, string>();
   const internalIds: string[] = [];
@@ -121,7 +126,7 @@ async function fetchMarketData(
       .from("fmv_current")
       .select("edition_id, fmv_usd")
       .in("edition_id", chunk);
-    if (fmvErr) fmvFailed = true;
+    if (fmvErr) for (const c of collectionIds) fmvFailedFor.add(c);
     for (const row of fmvRows ?? []) {
       const k = idToKey.get(row.edition_id);
       if (k && !fmvByKey.has(k) && row.fmv_usd != null) fmvByKey.set(k, Number(row.fmv_usd));
@@ -139,7 +144,7 @@ async function fetchMarketData(
     }
   }
 
-  return { fmvByKey, askByKey, fmvFailed, askFailedFor };
+  return { fmvByKey, askByKey, fmvFailedFor, askFailedFor };
 }
 
 const ASK_LEG = new Set(["price_below", "discount_above"]);
@@ -200,7 +205,7 @@ export async function GET(req: NextRequest) {
     if (error) throw new Error(error.message);
     if (!alerts || alerts.length === 0) return NextResponse.json([]);
 
-    const { fmvByKey, askByKey, fmvFailed, askFailedFor } = await fetchMarketData(alerts);
+    const { fmvByKey, askByKey, fmvFailedFor, askFailedFor } = await fetchMarketData(alerts);
     const enriched = alerts.map((alert: any) => {
       const k = `${alert.collection_id ?? TS_COLLECTION}:${alert.edition_key}`;
       const fmv = fmvByKey.get(k) ?? null;
@@ -217,7 +222,7 @@ export async function GET(req: NextRequest) {
           Number(alert.threshold),
           fmv,
           ask,
-          fmvFailed,
+          fmvFailedFor.has(alert.collection_id ?? TS_COLLECTION),
           askFailedFor.has(alert.collection_id ?? TS_COLLECTION),
         ),
       };

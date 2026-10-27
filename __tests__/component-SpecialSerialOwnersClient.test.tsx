@@ -181,7 +181,9 @@ import { boardSeed } from "@/app/special-serial-owners/board-seed"
 describe("SpecialSerialOwnersClient — seeded from the edition-page link", () => {
   it("boardSeed reads player + collection and refuses an unknown collection", () => {
     expect(boardSeed({ player: " Patrick Mahomes II ", collection: "nfl-all-day" })).toEqual({ player: "Patrick Mahomes II", collection: "nfl-all-day" })
-    expect(boardSeed({ player: ["Lillard", "x"], collection: "candy-mlb" })).toEqual({ player: "Lillard", collection: "nba-top-shot" })
+    // 2026-10-27: inverted to match the title — an unknown collection was mapped to Top Shot (substitution);
+    // it is now refused (null) and the page says the board covers Top Shot and All Day only.
+    expect(boardSeed({ player: ["Lillard", "x"], collection: "candy-mlb" })).toEqual({ player: "Lillard", collection: null })
     expect(boardSeed(undefined)).toEqual({ player: "", collection: "nba-top-shot" })
   })
   it("the FIRST read asks for the seeded player in the seeded collection", async () => {

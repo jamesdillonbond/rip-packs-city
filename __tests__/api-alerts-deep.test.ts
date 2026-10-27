@@ -468,4 +468,47 @@ describe("GET /api/alerts — Disney Pinnacle (2026-10-26)", () => {
     const body = await (await GET(getReq())).json()
     expect(body[0].currently_triggered).toBeNull()
   })
+
+  it("a failed Pinnacle catalog read does NOT blank a Top Shot alert's FMV leg (per-collection flag, 2026-10-27)", async () => {
+    state.user = { id: "u1", email: "a@b.co" }
+    install({
+      fmv_alerts: {
+        data: [
+          { id: "p1", owner_key: "u1", edition_key: "OEV1-PXIC-BUZZ-S3", collection_id: PIN, alert_type: "fmv_below", threshold: 3 },
+          { id: "t1", owner_key: "u1", edition_key: "1:2", collection_id: "95f28a17-224a-4025-96ad-adf8a4c63bfd", alert_type: "fmv_below", threshold: 10 },
+        ],
+        error: null,
+      },
+      pinnacle_catalog: { data: null, error: { message: "canceling statement due to statement timeout" } },
+      editions: { data: [{ id: "ed1", external_id: "1:2", collection_id: "95f28a17-224a-4025-96ad-adf8a4c63bfd" }], error: null },
+      // The Top Shot edition has NO current FMV — a successful read of "none", so its leg is decidable.
+      fmv_current: { data: [], error: null },
+    })
+    const body = await (await GET(getReq())).json()
+    const pin = body.find((a: { id: string }) => a.id === "p1")
+    const ts = body.find((a: { id: string }) => a.id === "t1")
+    expect(pin.currently_triggered).toBeNull() // its own source failed: unknown
+    expect(ts.fmv).toBeNull()
+    expect(ts.currently_triggered).toBe(false) // its source answered "no FMV": not triggered, NOT unknown
+  })
+
+  it("a failed shared FMV read does NOT blank a Pinnacle alert priced from its own catalog", async () => {
+    state.user = { id: "u1", email: "a@b.co" }
+    const fresh = new Date(Date.now() - 3_600_000).toISOString()
+    install({
+      fmv_alerts: {
+        data: [
+          { id: "p1", owner_key: "u1", edition_key: "OEV1-PXIC-BUZZ-S3", collection_id: PIN, alert_type: "fmv_below", threshold: 3 },
+          { id: "t1", owner_key: "u1", edition_key: "1:2", collection_id: "95f28a17-224a-4025-96ad-adf8a4c63bfd", alert_type: "fmv_below", threshold: 10 },
+        ],
+        error: null,
+      },
+      // The pin's catalog row answered, with no FMV — decidable from its own source.
+      pinnacle_catalog: { data: [{ render_id: "OEV1-PXIC-BUZZ-S3", fmv_usd: null, floor_ask: 2, floor_ask_updated_at: fresh }], error: null },
+      editions: { data: null, error: { message: "canceling statement due to statement timeout" } },
+    })
+    const body = await (await GET(getReq())).json()
+    expect(body.find((a: { id: string }) => a.id === "p1").currently_triggered).toBe(false) // its own read said "no FMV"
+    expect(body.find((a: { id: string }) => a.id === "t1").currently_triggered).toBeNull()
+  })
 })

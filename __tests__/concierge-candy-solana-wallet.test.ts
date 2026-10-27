@@ -198,6 +198,18 @@ describe("Top Shot boards on a Candy page", () => {
     expect(r.rows[0].edition_url).toContain("/candy-mlb/edition/")
   })
 
+  it("a Candy player name is never resolved against TOP SHOT's player table first (2026-10-27)", async () => {
+    const inst = makeInstrumentedSupabaseFixture({
+      candy_special_serials_board: { data: [], error: null },
+    })
+    A.sb = inst.fixture
+    script("get_special_serial_owners", { playerName: "Ohtani" })
+    await POST(post("candy-mlb"))
+    const tsUuid = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
+    expect(inst.rpcCalls.some((c) => c.name === "resolve_player_name" && c.args?.p_collection_id === tsUuid)).toBe(false)
+    expect(toolResult()).toMatchObject({ collection: "candy-mlb" })
+  })
+
   for (const tool of ["search_serial_deals", "get_hot_floors", "get_edition_sweep"]) {
     it(`${tool} → not_applicable on Candy, no Top Shot read`, async () => {
       const inst = makeInstrumentedSupabaseFixture({})

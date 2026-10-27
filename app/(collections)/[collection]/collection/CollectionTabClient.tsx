@@ -899,7 +899,8 @@ function WalletMomentsBody() {
         })
           .then(function(r) { return r.ok ? r.json() : null })
           .then(function(json: WalletSearchResponse | null) {
-            if (!json) return
+            // A slower response for a wallet the user has since replaced must not land on the new one.
+            if (!json || lastSearchedRef.current !== trimmed) return
             setSummary(json.summary)
             // (The client no longer echoes these rows to /api/wallet-cache:
             // /api/wallet-search persists them server-side, and the echo let a
@@ -927,13 +928,14 @@ function WalletMomentsBody() {
       if (setsUrl) {
         fetch(setsUrl)
           .then(function(r) { return r.ok ? r.json() : null })
-          .then(function(d) { if (d) setSetsData(d) })
+          .then(function(d) { if (d && lastSearchedRef.current === trimmed) setSetsData(d) })
           .catch(function() {})
       } else if (collectionSlug === "disney-pinnacle") {
         // 2026-10-26 (Top Shot parity): Pinnacle's own Set Tracker backend (one slot per character).
         // A missing slot with no live ask is UNPRICED, so the callout's cost is a lower bound there.
         setSetsData(null)
-        void loadPinnacleCalloutSets(trimmed).then(setSetsData)
+        // Guarded like the fetch above: a previous wallet's slower answer must not overwrite this one's (2026-10-27).
+        void loadPinnacleCalloutSets(trimmed).then(function(d) { if (lastSearchedRef.current === trimmed) setSetsData(d) })
       } else {
         setSetsData(null)
       }

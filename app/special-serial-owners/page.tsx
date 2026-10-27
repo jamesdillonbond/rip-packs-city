@@ -1,3 +1,4 @@
+import Link from "next/link"
 import SpecialSerialOwnersClient from "./SpecialSerialOwnersClient"
 import { boardSeed } from "./board-seed"
 
@@ -14,5 +15,16 @@ import { boardSeed } from "./board-seed"
 // from `searchParams` (no useSearchParams, so no Suspense boundary); the board is sign-in only and per-viewer.
 export default async function SpecialSerialOwnersPage(props: { searchParams: Promise<{ player?: string | string[]; collection?: string | string[] }> }) {
   const seed = boardSeed(await props.searchParams)
+  if (seed.collection === null) {
+    // A collection this board does not cover: refuse, never another collection's holders (board-seed.ts).
+    return (
+      <div data-testid="sso-unsupported-collection" style={{ padding: "48px 16px", maxWidth: 720, margin: "0 auto", fontFamily: "var(--font-mono)", fontSize: 14, color: "var(--rpc-text-secondary)", lineHeight: 1.6 }}>
+        The special-serial holders board covers NBA Top Shot and NFL All Day only.{" "}
+        <Link href="/special-serial-owners" style={{ color: "var(--rpc-text-primary)" }}>Top Shot</Link>
+        {" · "}
+        <Link href="/special-serial-owners?collection=nfl-all-day" style={{ color: "var(--rpc-text-primary)" }}>NFL All Day</Link>
+      </div>
+    )
+  }
   return <SpecialSerialOwnersClient initialPlayer={seed.player} initialCollection={seed.collection} />
 }

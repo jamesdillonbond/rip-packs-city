@@ -1898,7 +1898,11 @@ async function executeTool(toolName: string, toolInput: any, ctx: ToolCtx): Prom
   if (PLAYER_SCOPED_TOOLS.has(toolName) && toolInput && typeof toolInput === "object") {
     const typed = String(toolInput.playerName ?? toolInput.player ?? toolInput.character ?? toolInput.characterName ?? "").trim();
     const collectionId: string | undefined = toolInput.collectionId ?? ctx.collectionId ?? undefined;
-    if (typed && !isPinnacle(collectionId)) {
+    // ⛔ 2026-10-27: on a Candy question the Top Shot-only tools answer from Candy's own data (or refuse), so
+    // resolving the name against TOP SHOT's player table first could only substitute — a Top Shot namesake's
+    // disambiguation prompt, or a Top Shot identity attached to a Candy answer. Each Candy arm reads the name raw.
+    const candyAsk = collectionId === "candy-mlb" && TOP_SHOT_ONLY_TOOLS.has(toolName);
+    if (typed && !isPinnacle(collectionId) && !candyAsk) {
       // 2026-10-26: special-serial owners and badges answer All Day from All Day's own tables, so the
       // name resolves to the All Day PERSON there (search_serial_deals stays Top Shot-only).
       const uuid = TOP_SHOT_ONLY_TOOLS.has(toolName) && !(toolName !== "search_serial_deals" && isAllDaySlug(collectionId))
