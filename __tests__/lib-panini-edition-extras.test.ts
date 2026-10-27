@@ -44,39 +44,44 @@ describe("packTitle", () => {
 })
 
 describe("fetchPaniniEditionPacks", () => {
-  const board = [
-    { id: "1038", pack_type: "hobby", floor_usd: 135, avg_sale_usd: null, packs_total: 5000, packs_remaining: 900, product_name: "WC" },
-    { id: "1039", pack_type: "fotl", floor_usd: null, avg_sale_usd: 209, packs_total: 2000, packs_remaining: 1400, product_name: "WC" },
-  ]
+  // 2026-10-27: one read of panini_pack_state (the packs, their names and their links) — not the EV board
+  // view, which recomputes the EV model on every read (23.7k buffers vs 113).
   const state = [
-    { id: "1038", pack_name: null, page_url: "https://nft.paniniamerica.net/pack/1038" },
-    { id: "1039", pack_name: null, page_url: "https://evil.example.com/x" },
+    { id: "1038", pack_type: "hobby", floor_usd: 135, avg_sale_usd: null, packs_total: 5000, packs_remaining: 900, product_name: "WC", pack_name: null, page_url: "https://nft.paniniamerica.net/pack/1038" },
+    { id: "1039", pack_type: "fotl", floor_usd: null, avg_sale_usd: 209, packs_total: 2000, packs_remaining: 1400, product_name: "WC", pack_name: null, page_url: "https://evil.example.com/x" },
+    { id: "1043", pack_type: "pack", floor_usd: 12, avg_sale_usd: null, packs_total: 100, packs_remaining: 40, product_name: "WC", pack_name: "White Sparkle", page_url: null },
   ]
   it("a FOTL exclusive keeps only FOTL packs; a non-Panini link is dropped", async () => {
     const r = await fetchPaniniEditionPacks("e", fakeDb({
       panini_editions: { data: [{ product_set_id: 2332, still_in_packs: 3, is_fotl_exclusive: true }], error: null },
-      panini_pack_ev_board: { data: board, error: null },
       panini_pack_state: { data: state, error: null },
     }))
     expect(r.packs?.map((p) => p.id)).toEqual(["1039"])
     expect(r.packs?.[0]).toMatchObject({ costBasis: "avg_sale", marketUrl: null })
   })
-  it("a failed board read is null, not []", async () => {
+  it("a Panini link is kept and an untyped pack takes its published name", async () => {
     const r = await fetchPaniniEditionPacks("e", fakeDb({
       panini_editions: { data: [{ product_set_id: 2332, still_in_packs: 3, is_fotl_exclusive: false }], error: null },
-      panini_pack_ev_board: { data: null, error: { message: "boom" } },
+      panini_pack_state: { data: state, error: null },
+    }))
+    expect(r.packs?.find((p) => p.id === "1038")).toMatchObject({ title: "Hobby pack", marketUrl: "https://nft.paniniamerica.net/pack/1038", costBasis: "floor", costUsd: 135 })
+    expect(r.packs?.find((p) => p.id === "1043")?.title).toBe("White Sparkle")
+  })
+  it("a failed pack read is null, not []", async () => {
+    const r = await fetchPaniniEditionPacks("e", fakeDb({
+      panini_editions: { data: [{ product_set_id: 2332, still_in_packs: 3, is_fotl_exclusive: false }], error: null },
+      panini_pack_state: { data: null, error: { message: "boom" } },
     }))
     expect(r.packs).toBeNull()
     expect(r.stillInPacks).toBe(3)
   })
-  it("a failed state read only drops names/links, never the packs", async () => {
-    const r = await fetchPaniniEditionPacks("e", fakeDb({
-      panini_editions: { data: [{ product_set_id: 2332, still_in_packs: 0, is_fotl_exclusive: false }], error: null },
-      panini_pack_ev_board: { data: board, error: null },
-      panini_pack_state: { data: null, error: { message: "boom" } },
-    }))
-    expect(r.packs?.length).toBe(2)
-    expect(r.packs?.every((p) => p.marketUrl === null)).toBe(true)
+  it("never reads the EV board view (it recomputes the EV model per read)", async () => {
+    const tables: string[] = []
+    const db = fakeDb({ panini_editions: { data: [{ product_set_id: 2332, still_in_packs: 3, is_fotl_exclusive: false }], error: null }, panini_pack_state: { data: state, error: null } })
+    const spy = { from: (t: string) => { tables.push(t); return db.from(t) } }
+    await fetchPaniniEditionPacks("e", spy)
+    expect(tables).not.toContain("panini_pack_ev_board")
+    expect(tables).toContain("panini_pack_state")
   })
 })
 
@@ -85,7 +90,7 @@ describe("fetchPaniniEditionPacks — product link", () => {
     const r = await fetchPaniniEditionPacks("e", fakeDb({
       panini_editions: { data: [{ product_set_id: 1959, still_in_packs: 0, is_fotl_exclusive: false }], error: null },
       panini_products: { data: [{ name: "2023-24 Panini NFT Prizm Basketball" }], error: null },
-      panini_pack_ev_board: { data: [], error: null },
+      panini_pack_state: { data: [], error: null },
     }))
     expect(r).toMatchObject({ productName: "2023-24 Panini NFT Prizm Basketball", productSetId: 1959 })
   })
@@ -93,7 +98,7 @@ describe("fetchPaniniEditionPacks — product link", () => {
     const r = await fetchPaniniEditionPacks("e", fakeDb({
       panini_editions: { data: [{ product_set_id: 1959, still_in_packs: 0, is_fotl_exclusive: false }], error: null },
       panini_products: { data: null, error: { message: "x" } },
-      panini_pack_ev_board: { data: [], error: null },
+      panini_pack_state: { data: [], error: null },
     }))
     expect(r.productSetId).toBeNull()
   })

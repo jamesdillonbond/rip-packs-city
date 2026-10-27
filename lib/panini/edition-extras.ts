@@ -209,47 +209,36 @@ export async function fetchPaniniProductPacks(
 ): Promise<{ packs: PaniniProductPack[] | null; productName: string | null }> {
   if (productSetIds.length === 0) return { packs: [], productName: null }
   try {
-    const [boardRes, stateRes] = await Promise.all([
-      withQueryDeadline<RawRows>(
-        db.from("panini_pack_ev_board")
-          .select("id,pack_type,floor_usd,avg_sale_usd,packs_total,packs_remaining,updated_at,product_name")
-          .in("product_set_id", productSetIds)
-          .limit(50),
-        "panini/product-packs-board",
-        apiReadTimeoutMs(),
-      ).catch((err: unknown) => ({ data: null, error: err })),
-      withQueryDeadline<RawRows>(
-        db.from("panini_pack_state").select("id,pack_name:raw->>pack_name,page_url").in("product_set_id", productSetIds).limit(50),
-        "panini/product-packs-state",
-        apiReadTimeoutMs(),
-      ).catch((err: unknown) => ({ data: null, error: err })),
-    ])
+    // 2026-10-27: read panini_pack_state directly, not panini_pack_ev_board. Every column this needs is a
+    // plain pack_state column; the board view cross-joins the one-row EV model (panini_pack_ev_model), which
+    // recomputes on every read — 23.7k buffers per call vs 113, at ~16.6k calls a day from edition and product
+    // pages. Same rows: the model is a single-row aggregate. Names and links come from the same row.
+    const boardRes = await withQueryDeadline<RawRows>(
+      db.from("panini_pack_state")
+        .select("id,pack_type,floor_usd,avg_sale_usd,packs_total,packs_remaining,updated_at,product_name,pack_name:raw->>pack_name,page_url")
+        .in("product_set_id", productSetIds)
+        .limit(50),
+      "panini/product-packs-board",
+      apiReadTimeoutMs(),
+    ).catch((err: unknown) => ({ data: null, error: err }))
     if (boardRes.error) return { packs: null, productName: null }
-    // The state read only adds names and links; its failure leaves them off, never the packs.
-    const meta = new Map<string, { name: string | null; url: string | null }>()
-    if (!stateRes.error) {
-      for (const s of (stateRes.data ?? []) as Record<string, unknown>[]) {
-        const url = str(s.page_url)
-        meta.set(String(s.id), { name: str(s.pack_name), url: url && /^https:\/\/[a-z0-9.-]*paniniamerica\.net\//i.test(url) ? url : null })
-      }
-    }
     let productName: string | null = null
     let packs: PaniniProductPack[] = ((boardRes.data ?? []) as Record<string, unknown>[]).map((r) => {
       const id = String(r.id)
-      const m = meta.get(id)
+      const url = str(r.page_url)
       const floor = num(r.floor_usd)
       const avg = num(r.avg_sale_usd)
       productName ??= str(r.product_name)
       return {
         id,
-        title: packTitle(str(r.pack_type), m?.name ?? null),
+        title: packTitle(str(r.pack_type), str(r.pack_name)),
         productName: str(r.product_name),
         costUsd: floor ?? avg,
         costBasis: floor !== null ? "floor" : avg !== null ? "avg_sale" : null,
         packsRemaining: num(r.packs_remaining),
         packsTotal: num(r.packs_total),
         updatedAt: typeof r.updated_at === "string" ? r.updated_at : null,
-        marketUrl: m?.url ?? null,
+        marketUrl: url && /^https:\/\/[a-z0-9.-]*paniniamerica\.net\//i.test(url) ? url : null,
       }
     })
     // A FOTL exclusive comes only from FOTL packs — showing the Hobby box would mislead.
