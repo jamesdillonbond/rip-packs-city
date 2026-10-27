@@ -126,17 +126,86 @@ describe("check_wallet — a Candy MLB (Solana) wallet", () => {
   })
 })
 
-describe("the Flow-only wallet tools refuse a Solana wallet explicitly", () => {
-  for (const tool of ["analyze_wallet_holdings", "check_wallet_squeeze", "find_quirky_serials"]) {
-    it(`${tool} → unsupported_chain, not a username miss`, async () => {
+// 2026-10-26 (Candy ↔ Top Shot parity) — RE-PIN, premise changed: wallet_moments_cache holds a
+// FULL daily census of every Candy card, so analyze_wallet_holdings and find_quirky_serials now
+// READ a Solana wallet (verbatim, no 0x, no username lookup) instead of refusing it. The property
+// held in place is unchanged: a base58 key is never folded, prefixed or resolved as a Top Shot
+// username. check_wallet_squeeze (a Top Shot locks/burns concept) still refuses.
+describe("a Solana wallet in the Candy-capable wallet tools", () => {
+  it("check_wallet_squeeze → unsupported_chain, not a username miss", async () => {
+    const inst = makeInstrumentedSupabaseFixture({})
+    A.sb = inst.fixture
+    script("check_wallet_squeeze", { walletAddress: SOL })
+    await POST(post("candy-mlb"))
+    const r = toolResult()
+    expect(r.status).toBe("unsupported_chain")
+    expect(r.message).toContain("check_wallet")
+    expect(inst.rpcCalls.some((c) => c.name === "resolve_topshot_username")).toBe(false)
+  })
+
+  it("analyze_wallet_holdings reads the Candy census with the base58 key VERBATIM", async () => {
+    const inst = makeInstrumentedSupabaseFixture({
+      "rpc:concierge_wallet_breakdown": { data: { status: "ok", total_moments: 3, total_fmv: 12.5, groups: [] }, error: null },
+    })
+    A.sb = inst.fixture
+    script("analyze_wallet_holdings", { walletAddress: SOL })
+    await POST(post("candy-mlb"))
+    const call = inst.rpcCalls.find((c) => c.name === "concierge_wallet_breakdown")
+    expect(call?.args).toMatchObject({ p_wallet: SOL, p_collection_id: "209ade70-32c5-4470-bc7c-4793d660f713" })
+    expect(inst.rpcCalls.some((c) => c.name === "resolve_topshot_username")).toBe(false)
+    const r = toolResult()
+    expect(r).toMatchObject({ status: "ok", collection: "candy-mlb", wallet: SOL })
+    expect(r.status).not.toBe("unsupported_chain")
+  })
+
+  it("find_quirky_serials scans the Candy census with the base58 key VERBATIM (never 0x-prefixed)", async () => {
+    const inst = makeInstrumentedSupabaseFixture({
+      wallet_moments_cache: { data: [{ serial_number: 1, mint_count: 250, player_name: "Shohei Ohtani", set_name: "2026 MLB Base Series ICONs", edition_key: "shohei-ohtani" }], error: null },
+      editions: { data: [], error: null },
+    })
+    A.sb = inst.fixture
+    script("find_quirky_serials", { walletAddress: SOL })
+    await POST(post("candy-mlb"))
+    expect(inst.rpcCalls.some((c) => c.name === "resolve_topshot_username")).toBe(false)
+    const r = toolResult()
+    expect(r.status).not.toBe("unsupported_chain")
+    expect(r.wallet).toBe(SOL)
+    expect(r.collection).toBe("candy-mlb")
+  })
+
+  it("a Top Shot username on a Candy page is asked for a Solana wallet, never looked up as Top Shot", async () => {
+    const inst = makeInstrumentedSupabaseFixture({})
+    A.sb = inst.fixture
+    script("analyze_wallet_holdings", { walletAddress: "somecollector" })
+    await POST(post("candy-mlb"))
+    expect(toolResult().status).toBe("need_solana_wallet")
+    expect(inst.rpcCalls.some((c) => c.name === "resolve_topshot_username")).toBe(false)
+  })
+})
+
+// 2026-10-26: Top Shot-only boards must not answer a Candy question (substitution).
+describe("Top Shot boards on a Candy page", () => {
+  it("get_special_serial_owners reads Candy's own board, never the Top Shot RPC", async () => {
+    const inst = makeInstrumentedSupabaseFixture({
+      candy_special_serials_board: { data: [{ external_id: "shohei-ohtani", player_name: "Shohei Ohtani", kind: "first_mint", serial_number: 1, owner: SOL, is_treasury: false, fmv_usd: 40 }], error: null },
+    })
+    A.sb = inst.fixture
+    script("get_special_serial_owners", { playerName: "Ohtani" })
+    await POST(post("candy-mlb"))
+    expect(inst.rpcCalls.some((c) => c.name === "get_special_serial_owners_board")).toBe(false)
+    const r = toolResult()
+    expect(r).toMatchObject({ status: "ok", collection: "candy-mlb" })
+    expect(r.rows[0].edition_url).toContain("/candy-mlb/edition/")
+  })
+
+  for (const tool of ["search_serial_deals", "get_hot_floors", "get_edition_sweep"]) {
+    it(`${tool} → not_applicable on Candy, no Top Shot read`, async () => {
       const inst = makeInstrumentedSupabaseFixture({})
       A.sb = inst.fixture
-      script(tool, { walletAddress: SOL })
+      script(tool, { editionKey: "1:2" })
       await POST(post("candy-mlb"))
-      const r = toolResult()
-      expect(r.status).toBe("unsupported_chain")
-      expect(r.message).toContain("check_wallet")
-      expect(inst.rpcCalls.some((c) => c.name === "resolve_topshot_username")).toBe(false)
+      expect(toolResult().status).toBe("not_applicable")
+      expect(inst.rpcCalls.length).toBe(0)
     })
   }
 })

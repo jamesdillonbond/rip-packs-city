@@ -3,6 +3,7 @@ import type { ReactNode } from "react"
 import { getCollection } from "@/lib/collections"
 import { pageMetadata, unknownCollectionMetadata } from "@/lib/seo"
 import PopularOnCollection from "@/components/entity/PopularOnCollection"
+import FeatureTabGate from "@/components/collection/FeatureTabGate"
 
 export async function generateMetadata(
   props: { params: Promise<{ collection: string }> }
@@ -25,10 +26,15 @@ export default async function SniperLayout(props: {
   params: Promise<{ collection: string }>
 }) {
   const { collection } = await props.params
+  // 2026-10-26 (Candy parity pass): the only tab layout without its FeatureTabGate. On a
+  // collection that does not ship a Sniper (Candy MLB, UFC) the client shell rendered and the
+  // feed answered `deals: []` with no failure flag, so the page told a reader "No deals match
+  // your filters" — a market claim about a board that has no source for that collection.
+  // Every in-site link to this tab is already gated on collectionHasPage(…, "sniper").
   return (
-    <>
+    <FeatureTabGate id={collection} page="sniper">
       {props.children}
       <PopularOnCollection collection={collection} />
-    </>
+    </FeatureTabGate>
   )
 }

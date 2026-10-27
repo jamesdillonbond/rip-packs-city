@@ -115,6 +115,7 @@ import {
 import { ALLOWED_ORIGINS } from "@/lib/allowed-origins";
 import { lookupUiField } from "@/lib/concierge/ui-field-dictionary";
 import { ownLookup } from "@/lib/safe-lookup";
+import { resolveCandyWallet, CANDY_NEEDS_SOLANA_WALLET, CANDY_COLLECTION_UUID, readCandySetCompletionForConcierge, readCandyPackMarketForConcierge, readCandySpecialSerialsForConcierge, candyNotApplicable } from "@/lib/concierge/candy-boards";
 import { readPaniniBreakdownForConcierge, readPaniniQuirkySerialsForConcierge, readPaniniSetCompletionForConcierge, readPaniniCollectionForConcierge, readPaniniDealsForConcierge, readPaniniPackMarketForConcierge, readPaniniPremiumsForConcierge, readPaniniTeamForConcierge } from "@/lib/concierge/panini-boards";
 import { fetchPaniniEditionAsk, fetchPaniniEditionSerials } from "@/lib/panini/edition-market";
 import { paniniEditionUrl } from "@/lib/panini/edition-url";
@@ -401,11 +402,11 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "compare_pack_value",
-    description: "Rank currently buyable packs by value — EV vs cost — across collections (Top Shot, All Day, Golazos, Pinnacle pack EV pipelines; UFC Strike has no pack EV). Panini packs are NOT in this ranking — they are on Panini's own platform with their own model: for any Panini pack question call get_insight_board with board 'panini_pack_market' (passing collectionId panini-blockchain here returns that same read). THE tool for 'which pack is the best value / best cost vs EV / positive-EV packs right now'. Returns packs ordered by EV ÷ current price with the expected value (gross), EV minus price, price, price source (primary vs secondary market), and availability. EV figures are the site's calibrated pack EV — cite them as estimates, not guarantees.",
+    description: "Rank currently buyable packs by value — EV vs cost — across collections (Top Shot, All Day, Golazos, Pinnacle pack EV pipelines; UFC Strike has no pack EV). Panini packs are NOT in this ranking — they are on Panini's own platform with their own model: for any Panini pack question call get_insight_board with board 'panini_pack_market' (passing collectionId panini-blockchain here returns that same read). Candy MLB's single pack product is also NOT in this ranking — pass collectionId candy-mlb for its own read (supply, confirmed floor ask, EV model, verdict). THE tool for 'which pack is the best value / best cost vs EV / positive-EV packs right now'. Returns packs ordered by EV ÷ current price with the expected value (gross), EV minus price, price, price source (primary vs secondary market), and availability. EV figures are the site's calibrated pack EV — cite them as estimates, not guarantees.",
     input_schema: {
       type: "object" as const,
       properties: {
-        collectionId: { type: "string", description: "Optional. EXACTLY one of: nba-top-shot, nfl-all-day, disney-pinnacle, laliga-golazos. Omit to rank across all collections." },
+        collectionId: { type: "string", description: "Optional. EXACTLY one of: nba-top-shot, nfl-all-day, disney-pinnacle, laliga-golazos, panini-blockchain, candy-mlb (the last two answer from their own pack planes). Omit to rank across the Flow collections." },
         tier: { type: "string", description: "Optional pack tier filter (e.g. rare, common)." },
         maxPrice: { type: "number", description: "Maximum current pack price in USD." },
         limit: { type: "number", description: "Number of packs, default 5." },
@@ -466,7 +467,7 @@ const TOOLS: Anthropic.Tool[] = [
     input_schema: {
       type: "object" as const,
       properties: {
-        walletAddress: { type: "string", description: "Flow wallet address (0x + 16 hex) or Top Shot / Dapper username; on Panini, the Panini username." },
+        walletAddress: { type: "string", description: "Flow wallet address (0x + 16 hex) or Top Shot / Dapper username; on Panini, the Panini username. For Candy MLB: a Solana wallet address (base58, no 0x — pass it EXACTLY, case matters) or an SNS name like alice.sol." },
         collectionId: { type: "string", description: "Optional. EXACTLY one of: nba-top-shot, nfl-all-day, disney-pinnacle, laliga-golazos, ufc, panini-blockchain. Defaults to the page's collection, else nba-top-shot." },
         sport: { type: "string", description: "Panini only: sport filter (Basketball, WNBA, Football, Baseball, Soccer, Racing…)." },
         team: { type: "string", description: "Team name filter, partial ok (e.g. 'Blazers', 'Lakers')." },
@@ -619,12 +620,13 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "get_special_serial_owners",
-    description: "Find who currently holds the chase serials on Top Shot — the #1 mint, the perfect mint (#N/N), and the jersey-match serial — among tracked wallets. Use for ownership questions like 'who owns the #1 of [player] [set]?' or 'what special serials does [wallet] hold?'. Top Shot ONLY (NBA Top Shot). Provide playerName to find a player's special serials, OR a holder wallet address to list everything that wallet holds; you can also narrow by tag and tier. Returns the current holder, the serial + kind, the edition FMV, and a link to the edition page. Holder is the latest tracked owner, not a guarantee of present custody.",
+    description: "Find who currently holds the chase serials on Top Shot — the #1 mint, the perfect mint (#N/N), and the jersey-match serial — among tracked wallets. Use for ownership questions like 'who owns the #1 of [player] [set]?' or 'what special serials does [wallet] hold?'. NBA Top Shot, and Candy MLB (pass collectionId candy-mlb, or ask on a Candy page: Candy's #1 / last-serial / jersey-match board, holder = a Solana wallet). Provide playerName to find a player's special serials, OR a holder wallet address to list everything that wallet holds; you can also narrow by tag and tier. Returns the current holder, the serial + kind, the edition FMV, and a link to the edition page. Holder is the latest tracked owner, not a guarantee of present custody.",
     input_schema: {
       type: "object" as const,
       properties: {
         playerName: { type: "string", description: "Player name (partial match)." },
-        holder: { type: "string", description: "Exact Flow wallet address (0x + 16 hex) to list that wallet's special serials." },
+        holder: { type: "string", description: "Exact Flow wallet address (0x + 16 hex) to list that wallet's special serials; for Candy, a Solana wallet (verbatim) or SNS name." },
+        collectionId: { type: "string", description: "Optional. nba-top-shot (default) or candy-mlb." },
         tag: { type: "string", enum: ["#1", "perfect", "jersey"], description: "Restrict to one chase-serial kind." },
         tier: { type: "string", description: "Top Shot tier (COMMON, RARE, FANDOM, LEGENDARY, ULTIMATE)." },
         limit: { type: "number", description: "Max rows, 1..100, default 25." },
@@ -681,7 +683,7 @@ const TOOLS: Anthropic.Tool[] = [
       type: "object" as const,
       properties: {
         setName: { type: "string", description: "Set name, partial match (e.g. 'Base Set', 'Metallic Gold LE')." },
-        walletAddress: { type: "string", description: "Flow wallet address (0x + 16 hex) or Top Shot / Dapper username." },
+        walletAddress: { type: "string", description: "Flow wallet address (0x + 16 hex) or Top Shot / Dapper username. For Candy MLB: a Solana wallet address (base58, no 0x — pass it EXACTLY, case matters) or an SNS name like alice.sol." },
         series: { type: "number", description: "Optional on-chain series number to disambiguate when multiple sets share a name." },
       },
       required: ["setName", "walletAddress"],
@@ -807,7 +809,7 @@ const TOOLS: Anthropic.Tool[] = [
     input_schema: {
       type: "object" as const,
       properties: {
-        walletAddress: { type: "string", description: "0x wallet address or a Top Shot username; on Panini, the Panini username. Required." },
+        walletAddress: { type: "string", description: "0x wallet address or a Top Shot username; on Panini, the Panini username. For Candy MLB: a Solana wallet address (base58, no 0x — pass it EXACTLY, case matters) or an SNS name like alice.sol. Required." },
         collectionId: { type: "string", description: "Collection slug (nba-top-shot, nfl-all-day, laliga-golazos, disney-pinnacle, ufc, panini-blockchain). Defaults to the page's active collection, else nba-top-shot." },
         limit: { type: "number", description: "Max findings to return, 1..40, default 20." },
       },
@@ -821,7 +823,7 @@ const TOOLS: Anthropic.Tool[] = [
     input_schema: {
       type: "object" as const,
       properties: {
-        walletAddress: { type: "string", description: "Flow wallet address (0x + 16 hex) or a Top Shot username. Required." },
+        walletAddress: { type: "string", description: "Flow wallet address (0x + 16 hex) or a Top Shot username. For Candy MLB: a Solana wallet address (base58, no 0x — pass it EXACTLY, case matters) or an SNS name like alice.sol. Required." },
         limit: { type: "number", description: "How many sets to rank, 1..25, default 10." },
       },
       required: ["walletAddress"],
@@ -2409,6 +2411,11 @@ async function executeToolInner(
     if (toolInput.collectionId === "panini-blockchain") {
       return readPaniniPackMarketForConcierge(base, Math.min(Math.max(1, Math.trunc(Number(toolInput.limit)) || 5), 15));
     }
+    // 2026-10-26: Candy's one pack product lives on its own plane (candy_pack_market), not in
+    // pack_table_rows — the Flow read answered "no buyable packs" for it.
+    if (toolInput.collectionId === "candy-mlb" || (!toolInput.collectionId && effectiveCollectionId === "candy-mlb")) {
+      return readCandyPackMarketForConcierge(base);
+    }
     try {
       const wantLimit = Math.min(Math.max(1, toolInput.limit || 5), 15);
       // Fetch WIDE (not wantLimit): the buyable price is computed per-row below
@@ -2858,8 +2865,38 @@ async function executeToolInner(
       // live resolver fallback), kept inline like check_wallet_squeeze does.
       const inputAddr = String(toolInput.walletAddress ?? "").trim();
       const isHex = /^0x[a-fA-F0-9]{16}$/.test(inputAddr);
-      if (isSolanaAddress(inputAddr)) {
-        return JSON.stringify({ status: "unsupported_chain", chain: "solana", message: "analyze_wallet_holdings reads Flow wallets only. For a Candy MLB (Solana) wallet, call check_wallet with collectionId candy-mlb. Do not say the wallet is empty or that the username was not found." });
+      // 2026-10-26 (Candy parity): a Solana wallet (or an SNS name on a Candy page) is read over
+      // Candy's full daily census — verbatim, never folded — instead of being refused.
+      const candyAskedHoldings = toolInput.collectionId === "candy-mlb" || (!toolInput.collectionId && effectiveCollectionId === "candy-mlb");
+      if (isSolanaAddress(inputAddr) || (candyAskedHoldings && !isHex)) {
+        const cw = await resolveCandyWallet(inputAddr);
+        if (cw.kind === "error") return cw.payload;
+        if (cw.kind === "not_candy") return CANDY_NEEDS_SOLANA_WALLET;
+        const groupByC = typeof toolInput.groupBy === "string" && toolInput.groupBy ? toolInput.groupBy.toLowerCase() : null;
+        if (groupByC && !["player", "team", "set", "tier", "series"].includes(groupByC)) {
+          return JSON.stringify({ status: "error", message: "groupBy must be one of: player, team, set, tier, series." });
+        }
+        let playerC: string | null = toolInput.player ?? null;
+        if (playerC) playerC = singleRetryLabel(await resolvePlayerName(supabase, CANDY_COLLECTION_UUID, playerC), playerC) ?? playerC;
+        const { data: bdC, error: bdCErr } = await (supabase as any).rpc("concierge_wallet_breakdown", {
+          p_wallet: cw.wallet,
+          p_collection_id: CANDY_COLLECTION_UUID,
+          p_group_by: groupByC,
+          p_team: toolInput.team ?? null,
+          p_player: playerC,
+          p_set: toolInput.set ?? null,
+          p_tier: toolInput.tier ?? null,
+          p_badge: toolInput.badge ?? null,
+          p_limit: typeof toolInput.limit === "number" ? Math.min(Math.max(1, toolInput.limit), 25) : 10,
+        });
+        if (bdCErr) return JSON.stringify({ status: "error", message: safeApiError(bdCErr).error });
+        return JSON.stringify({
+          ...bdC,
+          collection: "candy-mlb",
+          wallet: cw.wallet,
+          name_input: cw.via === "sns" ? cw.typed : null,
+          note: "Candy MLB (Solana): counts/FMV cover EVERY Candy card this wallet holds in RPC's daily on-chain census (a listed card counts for its seller). The Rainbow colours are LEGENDARY printings of five players. groups[] is ordered by card count.",
+        });
       }
       let resolvedAddr = inputAddr;
       if (!isHex) {
@@ -3368,6 +3405,24 @@ async function executeToolInner(
   }
 
   if (toolName === "get_special_serial_owners") {
+    // 2026-10-26: the board below is Top Shot's — on a Candy question it answered with Top Shot
+    // rows (substitution). Candy has its own board (candy_special_serials_board).
+    if (toolInput.collectionId === "candy-mlb" || (!toolInput.collectionId && effectiveCollectionId === "candy-mlb")) {
+      const holderIn = String(toolInput.holder ?? "").trim();
+      let holderC: string | null = null;
+      if (holderIn) {
+        const cw = await resolveCandyWallet(holderIn);
+        if (cw.kind === "error") return cw.payload;
+        if (cw.kind === "not_candy") return CANDY_NEEDS_SOLANA_WALLET;
+        holderC = cw.wallet;
+      }
+      return readCandySpecialSerialsForConcierge(supabase, base, {
+        player: String(toolInput.playerName ?? toolInput.player ?? "").trim() || null,
+        holder: holderC,
+        tag: String(toolInput.tag ?? "").trim() || null,
+        limit: Number(toolInput.limit) || 25,
+      });
+    }
     try {
       const player = String(toolInput.playerName ?? toolInput.player ?? "").trim() || null;
       const holder = String(toolInput.holder ?? "").trim() || null;
@@ -3832,6 +3887,10 @@ async function executeToolInner(
   }
 
   if (toolName === "search_serial_deals") {
+    // 2026-10-26: Top Shot-only feed; on a Candy question it answered with Top Shot listings.
+    if (toolInput.collectionId === "candy-mlb" || (!toolInput.collectionId && effectiveCollectionId === "candy-mlb")) {
+      return candyNotApplicable("search_serial_deals", "The special-serial deal feed covers Top Shot only.", "For Candy, call get_special_serial_owners (who holds each #1 / jersey / last serial) and get_edition_listings for an edition's live Magic Eden asks.");
+    }
     try {
       const player = String(toolInput.playerName ?? toolInput.player ?? "").trim() || null;
       const tagIn = String(toolInput.tag ?? "").trim();
@@ -4563,6 +4622,9 @@ async function executeToolInner(
 
   // ── Bulk-buy / sweep intelligence (Top Shot Quick Buy) ────────────────────
   if (toolName === "get_hot_floors") {
+    if (toolInput.collectionId === "candy-mlb" || (!toolInput.collectionId && effectiveCollectionId === "candy-mlb")) {
+      return candyNotApplicable("get_hot_floors", "Hot Floors reads Top Shot's Quick-Buy sweeps; Candy trades on Magic Eden, which has no such path, and RPC has recorded no Candy sale since Oct 11.", "Say Candy has no sweep signal; get_top_sales covers its recorded sales.");
+    }
     try {
       const days = Math.min(Math.max(Math.trunc(Number(toolInput.days ?? 3)) || 3, 1), 7);
       const limit = Math.min(Math.max(Math.trunc(Number(toolInput.limit ?? 15)) || 15, 1), 40);
@@ -4585,6 +4647,9 @@ async function executeToolInner(
   }
 
   if (toolName === "get_edition_sweep") {
+    if (toolInput.collectionId === "candy-mlb" || (!toolInput.collectionId && effectiveCollectionId === "candy-mlb")) {
+      return candyNotApplicable("get_edition_sweep", "The sweep signal reads Top Shot's Quick-Buy sales only.");
+    }
     try {
       const key = String(toolInput.editionKey ?? "").trim();
       if (!/^\d+:\d+$/.test(key)) {
@@ -4609,6 +4674,14 @@ async function executeToolInner(
   }
 
   if (toolName === "get_set_completion_cost") {
+    // 2026-10-26: a Solana wallet (or an SNS name on a Candy page) answers from Candy's own set
+    // tracker — it used to be resolved as a Top Shot username and asked for "the 0x address".
+    if (isSolanaAddress(String(toolInput.walletAddress ?? "").trim()) || effectiveCollectionId === "candy-mlb" || toolInput.collectionId === "candy-mlb") {
+      const cw = await resolveCandyWallet(toolInput.walletAddress);
+      if (cw.kind === "error") return cw.payload;
+      if (cw.kind === "wallet") return readCandySetCompletionForConcierge(base, cw.wallet);
+      if (effectiveCollectionId === "candy-mlb" || toolInput.collectionId === "candy-mlb") return CANDY_NEEDS_SOLANA_WALLET;
+    }
     try {
       // 2026-10-26: on a Panini page a typed name is a PANINI username — answer from Panini's own set
       // tracker instead of resolving it as a Top Shot account (a different person's wallet).
@@ -4809,6 +4882,12 @@ async function executeToolInner(
   }
 
   if (toolName === "get_cheapest_sets_to_complete") {
+    if (isSolanaAddress(String(toolInput.walletAddress ?? "").trim()) || effectiveCollectionId === "candy-mlb" || toolInput.collectionId === "candy-mlb") {
+      const cw = await resolveCandyWallet(toolInput.walletAddress);
+      if (cw.kind === "error") return cw.payload;
+      if (cw.kind === "wallet") return readCandySetCompletionForConcierge(base, cw.wallet);
+      if (effectiveCollectionId === "candy-mlb" || toolInput.collectionId === "candy-mlb") return CANDY_NEEDS_SOLANA_WALLET;
+    }
     try {
       // 2026-10-26: on a Panini page a typed name is a PANINI username — answer from Panini's own set
       // tracker instead of resolving it as a Top Shot account (a different person's wallet).
@@ -5147,11 +5226,18 @@ async function executeToolInner(
       // Same username-resolution ladder as check_wallet / analyze_wallet_holdings,
       // kept inline to match this file's convention.
       const isHex = /^0x[a-fA-F0-9]{16}$/.test(inputAddr);
-      if (isSolanaAddress(inputAddr)) {
-        return JSON.stringify({ status: "unsupported_chain", chain: "solana", message: "find_quirky_serials reads Flow wallets only. For a Candy MLB (Solana) wallet, call check_wallet with collectionId candy-mlb. Do not say the wallet is empty or that the username was not found." });
+      // 2026-10-26 (Candy parity): a Solana wallet / SNS name scans the Candy census verbatim
+      // (the scan below is collection-generic) instead of being refused.
+      let candyQuirkWallet: string | null = null;
+      const candyAskedQuirks = toolInput.collectionId === "candy-mlb" || (!toolInput.collectionId && effectiveCollectionId === "candy-mlb");
+      if (isSolanaAddress(inputAddr) || (candyAskedQuirks && !isHex)) {
+        const cw = await resolveCandyWallet(inputAddr);
+        if (cw.kind === "error") return cw.payload;
+        if (cw.kind === "not_candy") return CANDY_NEEDS_SOLANA_WALLET;
+        candyQuirkWallet = cw.wallet;
       }
       let resolvedAddr = inputAddr;
-      if (!isHex) {
+      if (!isHex && !candyQuirkWallet) {
         const { data: rpcResult } = await (supabase as any).rpc("resolve_topshot_username", {
           p_username: inputAddr,
         });
@@ -5166,12 +5252,14 @@ async function executeToolInner(
           });
         }
       }
-      const walletKey = resolvedAddr.startsWith("0x") ? resolvedAddr : `0x${resolvedAddr}`;
+      // ⛔ a Candy (base58) key is used VERBATIM — the 0x prefix below is for Flow only.
+      const walletKey = candyQuirkWallet ?? (resolvedAddr.startsWith("0x") ? resolvedAddr : `0x${resolvedAddr}`);
 
-      const requestedCollection: string =
-        (typeof toolInput.collectionId === "string" && toolInput.collectionId) ||
-        effectiveCollectionId ||
-        "nba-top-shot";
+      const requestedCollection: string = candyQuirkWallet
+        ? "candy-mlb"
+        : (typeof toolInput.collectionId === "string" && toolInput.collectionId) ||
+          effectiveCollectionId ||
+          "nba-top-shot";
       const collectionUuid = ownLookup(COLLECTION_UUID_BY_SLUG, requestedCollection) ?? null;
       if (!collectionUuid) {
         return JSON.stringify({
@@ -5689,7 +5777,7 @@ async function executeToolInner(
       // franchises, so Panini answers from the franchise hub's reads (partial coverage stated in every answer).
       if (slug === "panini-blockchain") return readPaniniTeamForConcierge(supabase, base, teamIn, Number(toolInput.limit ?? toolInput.missingLimit ?? 10) || 10);
       const uuid = ownLookup(COLLECTION_UUID_BY_SLUG, slug) ?? null;
-      if (!uuid) return JSON.stringify({ status: "error", message: `Unknown collection '${slug}'. Valid: nba-top-shot, nfl-all-day, laliga-golazos, ufc.` });
+      if (!uuid) return JSON.stringify({ status: "error", message: `Unknown collection '${slug}'. Valid: nba-top-shot, nfl-all-day, laliga-golazos, ufc, candy-mlb.` });
       const resolved = await resolveTeamName(uuid, teamIn);
       if (resolved.status === "error") return JSON.stringify({ status: "error", message: resolved.safeCopy });
       if (resolved.status === "no_results") {
@@ -5704,7 +5792,12 @@ async function executeToolInner(
       const view = toolInput.view === "full" ? "full" : "all";
       const missingLimit = Math.min(Math.max(Math.trunc(Number(toolInput.missingLimit ?? 15)) || 15, 1), 40);
       const walletIn = String(toolInput.wallet ?? ctx.userWallet ?? "").trim();
-      const wallet = /^0x[0-9a-f]{16}$/i.test(walletIn) ? walletIn.toLowerCase() : null;
+      // 2026-10-26: a Candy wallet is base58 and case-sensitive — passed VERBATIM (the route's
+      // parseChecklistWallet validates it against the collection's chain). It used to be dropped,
+      // so a Candy team checklist was never scored.
+      const wallet = /^0x[0-9a-f]{16}$/i.test(walletIn)
+        ? walletIn.toLowerCase()
+        : slug === "candy-mlb" && isSolanaAddress(walletIn) ? walletIn : null;
       const params = new URLSearchParams({ collection: slug, slug: teamSlug, scope, view });
       if (wallet) params.set("wallet", wallet);
       const res = await fetch(`${base}/api/entity/team-checklist-full-editions?${params.toString()}`, {

@@ -24,6 +24,35 @@ Candy MLB is RPC's only Solana collection: 125 editions, `is_active=true` since 
 - **10-14:** A window with no indexed sales no longer renders as "$0" (Market Pulse, overview tile, concierge `no_sales_indexed`). Stale-sales arm retuned. Every-collection wallet-cache metadata self-heal (D8).
 - **10-17:** Candy pack art: `getImageUrl` no longer appends Top Shot's suffix to bare Arweave ids (`3bcf40138`, verified on the rendered page). OpenSea three-step "way back" documented everywhere.
 
+## Parity with Top Shot (matrix, 2026-10-26 evening PT)
+
+Read from the registry (`lib/collections.ts`), the shared `[collection]` routes and the data behind each gap, 2026-10-26 (code sweep + rendered pages signed out). "new" = shipped that evening (ledger 10-26, "Candy ↔ Top Shot parity").
+
+| Surface | Top Shot | Candy | Note |
+|---|---|---|---|
+| Overview · Market · Collection · Packs · Sets · Analytics tabs | ✓ | ✓ | registry `pages` |
+| Sniper tab | ✓ | ✗ by decision → now gated (new) | the tab rendered and the feed answered `deals: []` with no failure flag ("No deals match your filters"); `sniper/layout.tsx` now wraps `FeatureTabGate` like every other tab (UFC gets the same). Deals for Candy live on `/insights/deals` (empty by construction while FMV is capped at the confirmed ask) |
+| Hot Floors | ✓ (Quick-Buy sweeps) | ✗ | no Quick Buy on Magic Eden and no sale since 10-11 — a board would be empty (#58) |
+| Challenges · Play · Badges · Fast Break | ✓ | ✗ | Top Shot product concepts |
+| Edition: FMV, chart, sales, alerts, market cap, special serials, related | ✓ | ✓ | |
+| Edition: Offers | ✓ | ✓ (new) | `get_edition_offers` Candy arm over `candy_offers` (same active predicate as `candy_best_offers`); bid time unknown → "—" (Magic Eden gives no creation time) |
+| Edition: % Listed | ✓ | ✓ (new) | `get_edition_market_bundle.active_listings` Candy arm: tokens the 3-hourly whole-book sweep re-saw in 12 h; NULL when the book is older (an `is_active` row the sweep stopped seeing is not live — measured) |
+| Edition: Top Owners | ✓ (Dune index, lower bound) | ✓ (new, exact) | `get_candy_edition_top_owners` over the daily full census (wmc = minted, 25,375); treasury + Magic Eden escrow excluded |
+| Edition: Parallel Printings ladder | ✓ (`::sub`) | ✓ (new) | Base /250 + Rainbow /15 colours = editions of one `player_id` (`lib/candy/edition-printings.ts`) |
+| Edition: outbound marketplace CTA | ✓ dapper.market | ✓ (new) | Magic Eden has no edition page — links the cheapest listing re-seen in 12 h |
+| Edition: Found in packs / pack provenance | ✓ | ✗ | `candy_packs` holds pack NFTs, not contents |
+| Edition: insight chips | ✓ | ✗ | Candy's boards are on `/insights/candy-mlb` |
+| Player: Top Collectors | ✓ (rookie index) | ✓ (new) | `get_candy_player_top_collectors` (census, ranked by FMV held) |
+| Player: Season Stats | ✓ | ✗ | no MLB stats feed / identity crosswalk |
+| Team: Squeeze & Scarcity | ✓ | ✗ | no locks/burns on Candy |
+| Profile: collection value by day | ✓ | ✓ (fixed) | `/api/profile/portfolio-history` never passed a collection and the RPC defaults to Top Shot — every non-Top-Shot owner chart priced Top Shot holdings; now `?collection=` |
+| Concierge: holdings breakdown · quirky serials | ✓ | ✓ (new) | Solana wallet / SNS name verbatim over the census (were `unsupported_chain`) |
+| Concierge: set completion | ✓ | ✓ (new) | `/api/candy-set-progress` (were resolved as a Top Shot username) |
+| Concierge: pack value | ✓ | ✓ (new) | `/api/candy-pack-market` with a rip verdict (was "no buyable packs" from `pack_table_rows`) |
+| Concierge: special-serial owners | ✓ | ✓ (new) | `candy_special_serials_board` (was Top Shot rows — substitution) |
+| Concierge: serial deals · hot floors · sweep | ✓ | ✗ → not_applicable (new) | each answered with Top Shot data on a Candy page |
+| Concierge: team checklist with a wallet | ✓ | ✓ (fixed) | a base58 wallet was dropped by a 0x regex |
+
 ## Open issues
 
 - **#58: no OpenSea data.** RPC records zero Candy volume from OpenSea, where Candy is a launch partner. Shelved 09-23, lanes parked 10-13.

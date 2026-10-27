@@ -146,6 +146,28 @@ describe("GET /api/profile/portfolio-history", () => {
     expect((await GET(req("https://t/api/profile/portfolio-history?ownerKey=t"))).status).toBe(500)
   })
 
+  // 2026-10-26: the RPC's p_collection_id defaults to TOP SHOT. A collection profile must scope it,
+  // or a Candy wallet's chart prices its (absent) Top Shot holdings — a flat $0 about the wrong subject.
+  it("scopes the wallet history to ?collection, verbatim wallet", async () => {
+    state.rpc = { data: [], error: null }
+    const res = await GET(req("https://t/api/profile/portfolio-history?wallet=8N1TijQXFM3vVki2TjKSBCUFjMcsS4UQCyqMXo5EdiDM&collection=candy-mlb"))
+    expect(res.status).toBe(200)
+    expect(state.rpcArgs.p_collection_id).toBe("209ade70-32c5-4470-bc7c-4793d660f713")
+    expect(state.rpcArgs.p_wallet).toBe("8N1TijQXFM3vVki2TjKSBCUFjMcsS4UQCyqMXo5EdiDM")
+  })
+
+  it("refuses an unknown ?collection instead of answering with Top Shot", async () => {
+    state.rpcArgs = null
+    const res = await GET(req("https://t/api/profile/portfolio-history?wallet=0xabc&collection=not-a-collection"))
+    expect(res.status).toBe(400)
+    expect(state.rpcArgs).toBeNull()
+  })
+
+  it("keeps the historical default when ?collection is absent", async () => {
+    await GET(req("https://t/api/profile/portfolio-history?wallet=0xabc"))
+    expect(state.rpcArgs).not.toHaveProperty("p_collection_id")
+  })
+
   it("caps ?days at 90 and defaults it to 30", async () => {
     await GET(req("https://t/api/profile/portfolio-history?wallet=0xabc&days=999"))
     expect(state.rpcArgs.p_days).toBe(90)

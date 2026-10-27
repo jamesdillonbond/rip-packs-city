@@ -24,6 +24,8 @@ import {
   EMPTY_MARKET_BUNDLE,
 } from "@/lib/entity/edition-market-fetchers"
 import { fetchPackProvenance, fetchOwnerUsernames } from "@/lib/edition/fetchers"
+import { fetchCandyFloorListing } from "@/lib/candy/edition-floor-listing"
+import { fetchCandyPrintings } from "@/lib/candy/edition-printings"
 import { editionDescriptionText } from "@/lib/edition/description"
 import { lookupTopShotFossilRedirect } from "@/lib/edition/fossil-redirect"
 import { lookupTopShotEditionAliasRedirect } from "@/lib/edition/alias-redirect"
@@ -343,6 +345,13 @@ interface TopOwnerRow {
 
 async function fetchTopOwners(editionId: string): Promise<TopOwnerRow[]> {
   return sectionRows<TopOwnerRow>("edition top owners", "get_edition_top_owners", { p_edition_id: editionId, p_limit: 10 })
+}
+
+// Candy MLB (Top Shot parity, 2026-10-26): the same section from Candy's daily
+// on-chain census (wallet_moments_cache holds every minted Candy card), with the
+// issuer treasury and the Magic Eden listing escrow excluded. Same row shape.
+async function fetchCandyTopOwners(editionId: string): Promise<TopOwnerRow[]> {
+  return sectionRows<TopOwnerRow>("candy edition top owners", "get_candy_edition_top_owners", { p_edition_id: editionId, p_limit: 10 })
 }
 
 // Resolve owner wallet addresses → @username so the Special Serials owner cell
@@ -1273,6 +1282,13 @@ export default async function EditionPage(
         </div>
       )}
 
+      {/* ── Outbound: Candy's cheapest live listing on Magic Eden (2026-10-26) ── */}
+      {collection === "candy-mlb" && !marketClosed && (
+        <Suspense fallback={null}>
+          <CandyFloorListingCta editionId={detail.id} dbSlug={coll.dbSlug} detail={detail} fmvUsd={fmv?.fmv_usd ?? null} />
+        </Suspense>
+      )}
+
       {/* ── Watch this edition (FMV / ask alert) ─────────────────────────── */}
       {/* Pinnacle FMV lives in its own tables the alert dispatcher doesn't read,
           so the watch control is gated to the editions+fmv_snapshots collections. */}
@@ -1335,6 +1351,14 @@ export default async function EditionPage(
             })}
           </div>
         </Section>
+      )}
+
+      {/* Candy (2026-10-26): the same ladder from Candy's own shape — the player's /250 base
+          card and its /15 Rainbow colours are separate editions of one player_id. */}
+      {collection === "candy-mlb" && (
+        <Suspense fallback={null}>
+          <CandyPrintingsSection editionId={detail.id} collection={collection} />
+        </Suspense>
       )}
 
       {/* "Media Verified on IPFS" section removed 2026-07-11 — CID plumbing
@@ -1434,6 +1458,7 @@ async function EditionBottomSections({
   isPanini?: boolean
 }) {
   const isTopShot = collection === "nba-top-shot"
+  const isCandy = collection === "candy-mlb"
   // Each fetch degrades to its empty fallback on a THROW, not just on the
   // supabase-js `{ error }` shape. Under DB contention a heavy RPC (get_edition_
   // recent_sales especially) can reject the promise outright (gateway/statement
@@ -1464,7 +1489,7 @@ async function EditionBottomSections({
       ? fetchPackProvenance(detail.id, isAllDay).then((r) => r.data)
       : Promise.resolve(null)
     ).catch(() => null),
-    (isTopShot ? fetchTopOwners(detail.id) : Promise.resolve([] as TopOwnerRow[])).catch(() => [] as TopOwnerRow[]),
+    (isTopShot ? fetchTopOwners(detail.id) : isCandy ? fetchCandyTopOwners(detail.id) : Promise.resolve([] as TopOwnerRow[])).catch(() => [] as TopOwnerRow[]),
     (isPinnacle ? Promise.resolve([] as RelatedEdition[]) : fetchRelated(detail.id)).catch(() => [] as RelatedEdition[]),
     (isPanini && detail.external_id
       ? fetchPaniniEditionSerials(detail.external_id)
@@ -1745,7 +1770,7 @@ async function EditionBottomSections({
       )}
 
       {/* ── Top Owners (Top Shot current-season ownership index) ── */}
-      {isTopShot && topOwners.length > 0 && (
+      {(isTopShot || isCandy) && topOwners.length > 0 && (
         <Section title="Top Owners">
           <div className="rpc-mono" style={{ marginTop: -6, marginBottom: 10, fontSize: 11, color: "var(--rpc-text-muted)" }}>
             {/* `total_moments` is how many of this edition's moments RPC has
@@ -1755,9 +1780,11 @@ async function EditionBottomSections({
                 framing as PACK PROVENANCE on this page. */}
             Biggest holders of this edition — {fmtCount(topOwners[0].total_holders)} collectors hold{" "}
             {detail.circulation_count != null
-              ? <>{fmtCount(topOwners[0].total_moments)} of its {fmtCount(detail.circulation_count)} moments</>
-              : <>{fmtCount(topOwners[0].total_moments)} of its moments</>}{" "}
-            (indexed holdings, a lower bound; parent + child Dapper wallets combined).
+              ? <>{fmtCount(topOwners[0].total_moments)} of its {fmtCount(detail.circulation_count)} {isCandy ? "cards" : "moments"}</>
+              : <>{fmtCount(topOwners[0].total_moments)} of its {isCandy ? "cards" : "moments"}</>}{" "}
+            {isCandy
+              ? <>(every Candy card on chain, from the daily wallet census; Candy&rsquo;s own unsold stock and Magic Eden&rsquo;s listing escrow are left out — a listed card counts for its seller).</>
+              : <>(indexed holdings, a lower bound; parent + child Dapper wallets combined).</>}
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {topOwners.map((t, i) => (
@@ -1773,6 +1800,89 @@ async function EditionBottomSections({
         </Section>
       )}
     </>
+  )
+}
+
+// Candy MLB (Top Shot parity, 2026-10-26): Top Shot's "Parallel Printings" ladder, built from
+// Candy's shape (lib/candy/edition-printings.ts). A failed read or a one-printing player renders
+// nothing; a failed FMV read keeps the ladder and shows "no FMV" (unknown), never $0.
+async function CandyPrintingsSection({ editionId, collection }: { editionId: string; collection: string }) {
+  const { printings } = await fetchCandyPrintings(editionId).catch(() => ({ ok: false, printings: [] }))
+  if (printings.length < 2) return null
+  return (
+    <Section title="Parallel Printings">
+      <div className="rpc-mono" style={{ marginTop: -6, marginBottom: 10, fontSize: 11, color: "var(--rpc-text-muted)", lineHeight: 1.6 }}>
+        Same player, different printings — the /250 Base card and the /15 Rainbow colours are each their own edition with their own serials and market.
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))", gap: 10 }}>
+        {printings.map((s) => (
+          <Link
+            key={s.externalId}
+            href={editionHref(collection, s.externalId, s.id)}
+            className="rpc-card"
+            style={{ padding: 10, textDecoration: "none", color: "inherit", display: "block", border: s.isSelf ? "1px solid var(--rpc-red)" : "1px solid var(--rpc-border)" }}
+          >
+            <IpfsThumb src={proxyIpfsImageUrl(s.thumbnailUrl, 320)} alt={s.label} label={s.label} />
+            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 6, marginBottom: 4 }}>
+              <span style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 14, color: s.isSelf ? "var(--rpc-red-text)" : "var(--rpc-text-primary)", letterSpacing: "0.04em", lineHeight: 1.2 }}>{s.label}</span>
+              {s.isSelf && <span className="rpc-mono" style={{ fontSize: 9, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--rpc-red-text)" }}>viewing</span>}
+            </div>
+            <div className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-primary)" }}>
+              {s.fmvUsd != null ? fmtUsd(s.fmvUsd) : <span style={{ color: "var(--rpc-text-muted)" }}>no FMV</span>}
+            </div>
+            <div className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-secondary)", marginTop: 2 }}>
+              {s.circulation != null ? `/${fmtCount(s.circulation)} mint` : "mint —"}
+            </div>
+          </Link>
+        ))}
+      </div>
+    </Section>
+  )
+}
+
+// Candy MLB (Top Shot parity, 2026-10-26): Magic Eden has no per-EDITION page, only
+// a per-mint item page, so the edition-grain link is the cheapest listing the sweep
+// re-saw in the last 12 h — the copy a buyer would click through to. A failed read,
+// or no live listing, renders nothing: the CTA never links an unconfirmed listing.
+async function CandyFloorListingCta({ editionId, dbSlug, detail, fmvUsd }: { editionId: string; dbSlug: string; detail: EditionDetail; fmvUsd: number | null }) {
+  const { listing } = await fetchCandyFloorListing(editionId).catch(() => ({ listing: null, ok: false }))
+  if (!listing) return null
+  return (
+    <div style={{ marginTop: 14 }}>
+      <TrackedOutboundLink
+        href={listing.url}
+        payload={{
+          surface: "edition",
+          collection: dbSlug,
+          linkKind: "edition",
+          destination: "magic_eden_floor_listing",
+          editionKey: detail.external_id,
+          playerName: detail.player_name,
+          setName: detail.set_name,
+          tier: detail.tier,
+          fmv: fmvUsd,
+        }}
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 8,
+          padding: "12px 20px",
+          background: "transparent",
+          color: "var(--rpc-red-text)",
+          border: "1px solid var(--rpc-red)",
+          borderRadius: 8,
+          textDecoration: "none",
+          fontFamily: "var(--font-display)",
+          fontWeight: 800,
+          fontSize: 14,
+          letterSpacing: "0.1em",
+          textTransform: "uppercase",
+        }}
+      >
+        Cheapest listing on Magic Eden · {fmtUsd(listing.priceUsd)} ↗
+      </TrackedOutboundLink>
+    </div>
   )
 }
 

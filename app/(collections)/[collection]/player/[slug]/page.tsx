@@ -271,12 +271,24 @@ async function fetchTopCollectors(playerName: string, limit: number): Promise<{ 
 // Streamed independently (Suspense) off the rookie ownership index. The index is
 // rookie-scoped, so a non-rookie player returns zero rows and the whole section —
 // header included — renders nothing. Never blocks or fails the rest of the page.
-async function TopCollectorsSection({ playerName }: { playerName: string }) {
+// Candy MLB (Top Shot parity, 2026-10-26): keyed by players.id inside the Candy
+// collection, over Candy's daily full census (wallet_moments_cache) — exact, not an
+// index sample, so there is no coverage note. Treasury + listing escrow excluded.
+interface CandyCollector extends RookieCollector { total_holders: number }
+async function fetchCandyTopCollectors(playerId: string, limit: number): Promise<{ rows: CandyCollector[]; ok: boolean }> {
+  return sectionRowsResult<CandyCollector>("candy player top collectors", "get_candy_player_top_collectors", { p_player_id: playerId, p_limit: limit })
+}
+
+async function TopCollectorsSection({ playerName, candyPlayerId = null }: { playerName: string; candyPlayerId?: string | null }) {
+  const isCandy = candyPlayerId != null
   const [{ rows: collectors, ok }, coverage] = await Promise.all([
-    fetchTopCollectors(playerName, 10),
-    sectionRowResult<IndexCoverage>("player index coverage", "get_topshot_rookie_index_coverage", { p_player_name: playerName }),
+    isCandy ? fetchCandyTopCollectors(candyPlayerId, 10) : fetchTopCollectors(playerName, 10),
+    isCandy
+      ? Promise.resolve({ row: null as IndexCoverage | null, ok: true })
+      : sectionRowResult<IndexCoverage>("player index coverage", "get_topshot_rookie_index_coverage", { p_player_name: playerName }),
   ])
-  const coverageNote = indexCoverageNote(coverage.row, coverage.ok)
+  const coverageNote = isCandy ? null : indexCoverageNote(coverage.row, coverage.ok)
+  const candyHolders = isCandy ? ((collectors[0] as CandyCollector | undefined)?.total_holders ?? null) : null
   // ⚠ Rendering nothing is CORRECT for a genuine zero — the index is
   // rookie-scoped, so most players legitimately have none and an empty block
   // would be noise. It is only wrong when we could not look.
@@ -293,7 +305,9 @@ async function TopCollectorsSection({ playerName }: { playerName: string }) {
   return (
     <Section title="Top Collectors">
       <div className="rpc-mono" style={{ padding: "0 4px 8px", fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.06em" }}>
-        Based on the indexed on-chain ownership graph · ranked by estimated value of this player&apos;s moments held
+        {isCandy
+          ? <>Every Candy card on chain, from the daily wallet census{candyHolders != null ? <> · {fmtCount(candyHolders)} collectors hold this player</> : null} · ranked by FMV of this player&apos;s cards held · Candy&apos;s unsold stock and Magic Eden&apos;s listing escrow left out</>
+          : <>Based on the indexed on-chain ownership graph · ranked by estimated value of this player&apos;s moments held</>}
       </div>
       {coverageNote && (
         <div className="rpc-mono" style={{ padding: "0 4px 8px", fontSize: 11, color: "var(--rpc-text-secondary)" }}>
@@ -586,6 +600,12 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
       {collection === "nba-top-shot" && (
         <Suspense fallback={null}>
           <TopCollectorsSection playerName={detail.name} />
+        </Suspense>
+      )}
+      {/* Candy (2026-10-26): its own census read, keyed by THIS player's id in Candy. */}
+      {collection === "candy-mlb" && (
+        <Suspense fallback={null}>
+          <TopCollectorsSection playerName={detail.name} candyPlayerId={detail.id} />
         </Suspense>
       )}
 

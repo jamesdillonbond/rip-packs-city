@@ -414,8 +414,8 @@ interface WalletFmvPoint {
   moment_count: number;
 }
 
-function PortfolioValueCard(props: { wallet: string; label?: string }) {
-  const { wallet, label } = props;
+function PortfolioValueCard(props: { wallet: string; label?: string; collection: string }) {
+  const { wallet, label, collection } = props;
   const [points, setPoints] = useState<WalletFmvPoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -424,7 +424,8 @@ function PortfolioValueCard(props: { wallet: string; label?: string }) {
     if (!wallet) return;
     setLoading(true);
     setLoadFailed(false);
-    fetch("/api/profile/portfolio-history?wallet=" + encodeURIComponent(wallet) + "&days=30")
+    // ?collection= (2026-10-26): without it the history RPC defaulted to Top Shot on every collection.
+    fetch("/api/profile/portfolio-history?wallet=" + encodeURIComponent(wallet) + "&days=30&collection=" + encodeURIComponent(collection))
       .then(function(r) { return r.ok ? r.json() : null; })
       .then(function(data) {
         // ⚠ `data?.snapshots ?? []` collapsed a FAILED read into an empty
@@ -442,7 +443,7 @@ function PortfolioValueCard(props: { wallet: string; label?: string }) {
       })
       .catch(function() { setLoadFailed(true); })
       .finally(function() { setLoading(false); });
-  }, [wallet]);
+  }, [wallet, collection]);
 
   const daysWithValue = points.filter(function(p) { return p.total_fmv > 0; }).length;
   const hasEnoughHistory = daysWithValue >= 7;
@@ -908,7 +909,7 @@ export default function CollectionProfileClient({
 
       {/* ── Portfolio Value Time-Series ── */}
       {isOwner && ownerChartWallet && (
-        <PortfolioValueCard wallet={ownerChartWallet.addr} label={ownerChartWallet.label} />
+        <PortfolioValueCard wallet={ownerChartWallet.addr} label={ownerChartWallet.label} collection={collection} />
       )}
 
       {/* ── Live Sniper Deals ── */}

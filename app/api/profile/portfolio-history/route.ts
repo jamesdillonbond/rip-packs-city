@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { requireOwnedKey } from "@/lib/auth/owner-key-guard";
 import { apiErrorResponse } from "@/lib/api-error";
+import { getCollection } from "@/lib/collections";
 
 // GET is DELIBERATELY PUBLIC and stays unguarded: it backs the public
 // /profile/[username] sparkline and the per-collection profile pages, and
@@ -35,9 +36,24 @@ export async function GET(req: NextRequest) {
 
   // Wallet-based branch: derive daily totals from fmv_snapshots history
   if (wallet) {
+    // 2026-10-26 (Candy parity pass): the RPC's p_collection_id DEFAULTS TO TOP SHOT, and this
+    // route never passed one — so every non-Top-Shot collection profile's value chart priced the
+    // wallet's Top Shot holdings (a Candy base58 wallet: a flat $0, "no FMV history yet"). The
+    // per-collection profile now passes ?collection=<url slug>; an unknown slug is refused, never
+    // answered with Top Shot. An ABSENT param keeps the old default (the public /profile caller).
+    const collectionParam = req.nextUrl.searchParams.get("collection");
+    let collectionId: string | null = null;
+    if (collectionParam) {
+      const coll = getCollection(collectionParam);
+      if (!coll?.supabaseCollectionId) {
+        return NextResponse.json({ error: "unknown collection" }, { status: 400 });
+      }
+      collectionId = coll.supabaseCollectionId;
+    }
     const { data, error } = await (supabase as any).rpc("get_wallet_fmv_history", {
       p_wallet: wallet,
       p_days: days,
+      ...(collectionId ? { p_collection_id: collectionId } : {}),
     });
 
     if (error) {
