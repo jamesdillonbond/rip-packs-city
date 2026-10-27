@@ -140,23 +140,27 @@ export async function POST(req: NextRequest) {
       collectionSlug: CONFIG.slug,
       extra: { wallet, skip_cached: skipCached },
     })
-    const { rowsFound } = await runAllDayDetailsBackfill({
+    const { rowsFound, scanned } = await runAllDayDetailsBackfill({
       config: CONFIG,
       startedAtIso,
       startedMs,
       wallet,
       skipCached,
     })
-    try {
-      await (supabaseAdmin as any).rpc("record_wallet_backfill_scan", {
-        p_wallet: wallet,
-        p_collection_slug: CONFIG.slug,
-        p_found_count: rowsFound,
-      })
-    } catch (err) {
-      console.warn(
-        `[${CONFIG.pipelineName}] record_wallet_backfill_scan failed wallet=${wallet}: ${err instanceof Error ? err.message : String(err)}`
-      )
+    // A failed walk must not record a scan: it would stamp the wallet freshly verified with 0 found
+    // (BackfillRunResult.scanned, 2026-10-27) — and golazos-discover-buyers never re-selects a scanned wallet.
+    if (scanned) {
+      try {
+        await (supabaseAdmin as any).rpc("record_wallet_backfill_scan", {
+          p_wallet: wallet,
+          p_collection_slug: CONFIG.slug,
+          p_found_count: rowsFound,
+        })
+      } catch (err) {
+        console.warn(
+          `[${CONFIG.pipelineName}] record_wallet_backfill_scan failed wallet=${wallet}: ${err instanceof Error ? err.message : String(err)}`
+        )
+      }
     }
   })
 

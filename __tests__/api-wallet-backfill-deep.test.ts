@@ -381,7 +381,9 @@ describe("wallet-backfill — lock + error reclassification", () => {
     const log = walkLog(spy.rpcCalls)
     expect(log).toMatchObject({ p_ok: true, p_rows_found: 0 })
     expect(log?.p_extra).toMatchObject({ terminated_reason: "skipped_in_progress" })
-    expect(scanCall(spy.rpcCalls)).toMatchObject({ p_found_count: 0 })
+    // 2026-10-27: a skipped run walked nothing, so it records NO scan — "verified, found 0" would be a
+    // claim this run never measured (the run holding the lock records its own).
+    expect(scanCall(spy.rpcCalls)).toBeUndefined()
   })
 
   it("a claim refused by a saturated database no-ops with skipped_db_saturated (no walk, no release) — 2026-08-30", async () => {
@@ -441,6 +443,8 @@ describe("wallet-backfill — lock + error reclassification", () => {
     }
     expect(String((log?.p_extra as Record<string, unknown>).error_excerpt)).toContain("1106")
     expect(state.lockReleases).toEqual([`nba_top_shot:${WALLET}`])
+    // The wallet was never enumerated, so no scan is recorded (2026-10-27).
+    expect(scanCall(spy.rpcCalls)).toBeUndefined()
   })
 
   it("a no-collection-capability wallet reclassifies as ok:true with its own flag", async () => {
@@ -459,6 +463,8 @@ describe("wallet-backfill — lock + error reclassification", () => {
     for (const k of ["chunk_errors", "chunk_rows_lost", "rows_to_write"]) {
       expect(Object.keys(log?.p_extra as object)).toContain(k)
     }
+    // CONTROL: lacking the collection IS a measured answer — the scan records 0.
+    expect(scanCall(spy.rpcCalls)).toMatchObject({ p_found_count: 0 })
   })
 
   it("a generic walk error logs ok:false with the message and still releases the lock", async () => {
@@ -475,6 +481,9 @@ describe("wallet-backfill — lock + error reclassification", () => {
       expect(Object.keys(log?.p_extra as object)).toContain(k)
     }
     expect(state.lockReleases).toEqual([`nba_top_shot:${WALLET}`])
+    // ⚠ The 2026-10-27 defect: this failed walk recorded a scan, stamping the wallet freshly verified
+    // with 0 found. A failed read records NOTHING.
+    expect(scanCall(spy.rpcCalls)).toBeUndefined()
   })
 })
 

@@ -16,7 +16,7 @@ import { makeReq } from "./cron-req-helper"
 
 const st = vi.hoisted(() => ({
   cap: null as null | (() => Promise<void>),
-  result: { rowsFound: 12, complete: true, nextStartIndex: null as number | null },
+  result: { rowsFound: 12, complete: true, nextStartIndex: null as number | null, scanned: true },
   runArgs: [] as any[],
   scanCalls: [] as any[],
   scanThrows: false,
@@ -57,7 +57,7 @@ const req = (headers: Record<string, string> = {}, body: any = {}) =>
 beforeEach(() => {
   process.env.INGEST_SECRET_TOKEN = TOKEN
   st.cap = null
-  st.result = { rowsFound: 12, complete: true, nextStartIndex: null }
+  st.result = { rowsFound: 12, complete: true, nextStartIndex: null, scanned: true }
   st.runArgs = []
   st.scanCalls = []
   st.scanThrows = false
@@ -120,6 +120,14 @@ describe("POST /api/wallet-backfill-pinnacle — default fire-and-forget", () =>
     })
   })
 
+  it("a walk that did not scan (failed / lock held) records NO scan — never 'verified, found 0' (2026-10-27)", async () => {
+    st.result = { rowsFound: 0, complete: true, nextStartIndex: null, scanned: false }
+    await POST(ok())
+    await st.cap!()
+    expect(st.runArgs).toHaveLength(1)
+    expect(st.scanCalls).toHaveLength(0)
+  })
+
   it("swallows a record_wallet_backfill_scan failure inside after()", async () => {
     st.scanThrows = true
     await POST(ok())
@@ -163,10 +171,12 @@ describe("POST /api/wallet-backfill-pinnacle — ?sync=true checkpoint mode", ()
   })
 
   it("returns next_checkpoint as a string when the walk is incomplete", async () => {
-    st.result = { rowsFound: 100, complete: false, nextStartIndex: 1000 }
+    st.result = { rowsFound: 100, complete: false, nextStartIndex: 1000, scanned: false }
     const body = await (await POST(sync())).json()
     expect(body.complete).toBe(false)
     expect(body.next_checkpoint).toBe("1000")
+    // An unfinished pass is not a scan: only the final chunk may stamp the wallet verified.
+    expect(st.scanCalls).toHaveLength(0)
   })
 
   it("defaults max_duration_ms to 270000 and clamps to [30000, 540000]", async () => {

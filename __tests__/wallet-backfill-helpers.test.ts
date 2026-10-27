@@ -601,14 +601,14 @@ describe("runIdOnlyBackfill", () => {
   it("no-ops with skipped_in_progress when the lock is held", async () => {
     H.state.lockClaim = false
     const out = await runIdOnlyBackfill(baseArgs())
-    expect(out).toEqual({ rowsFound: 0 })
+    expect(out).toEqual({ rowsFound: 0, scanned: false })
     expect(lastLog().p_extra.terminated_reason).toBe("skipped_in_progress")
   })
 
   it("no-ops with skipped_db_saturated when the claim was refused by a saturated database (2026-08-30)", async () => {
     H.state.lockClaim = "db_saturated"
     const out = await runIdOnlyBackfill(baseArgs())
-    expect(out).toEqual({ rowsFound: 0 })
+    expect(out).toEqual({ rowsFound: 0, scanned: false })
     expect(lastLog().p_ok).toBe(true)
     expect(lastLog().p_extra.terminated_reason).toBe("skipped_db_saturated")
     // No chain walk and no write: the whole point is adding zero load.
@@ -619,7 +619,7 @@ describe("runIdOnlyBackfill", () => {
   it("logs no_more_moments for an empty wallet and stamps refresh", async () => {
     ;(fetch as any).mockResolvedValue(flowIdsResponse([]))
     const out = await runIdOnlyBackfill(baseArgs())
-    expect(out).toEqual({ rowsFound: 0 })
+    expect(out).toEqual({ rowsFound: 0, scanned: true })
     expect(lastLog().p_extra.on_chain_count).toBe(0)
     expect(H.state.rpcCalls.some((c: any) => c.name ==="refresh_seeded_wallet_stats")).toBe(true)
   })
@@ -709,7 +709,7 @@ describe("runIdOnlyBackfill", () => {
   it("classifies a storage-limit failure as ok with storage_limit_exceeded", async () => {
     ;(fetch as any).mockResolvedValue({ ok: false, status: 500, text: async () => "code 1106 max interaction with storage" })
     const out = await runIdOnlyBackfill(baseArgs())
-    expect(out).toEqual({ rowsFound: 0 })
+    expect(out).toEqual({ rowsFound: 0, scanned: false })
     expect(lastLog().p_ok).toBe(true)
     expect(lastLog().p_extra.terminated_reason).toBe("storage_limit_exceeded")
   })
@@ -717,14 +717,14 @@ describe("runIdOnlyBackfill", () => {
   it("classifies a fast 400 InvalidArgument as no_collection_capability", async () => {
     ;(fetch as any).mockResolvedValue({ ok: false, status: 400, text: async () => "code = InvalidArgument desc = failed to ex" })
     const out = await runIdOnlyBackfill(baseArgs())
-    expect(out).toEqual({ rowsFound: 0 })
+    expect(out).toEqual({ rowsFound: 0, scanned: true })
     expect(lastLog().p_extra.terminated_reason).toBe("no_collection_capability")
   })
 
   it("logs a hard error (ok=false) for an unclassified failure", async () => {
     ;(fetch as any).mockRejectedValue(new Error("totally unexpected"))
     const out = await runIdOnlyBackfill(baseArgs())
-    expect(out).toEqual({ rowsFound: 0 })
+    expect(out).toEqual({ rowsFound: 0, scanned: false })
     expect(lastLog().p_ok).toBe(false)
     expect(lastLog().p_extra.terminated_reason).toBe("error")
   })
@@ -735,21 +735,21 @@ describe("runAllDayDetailsBackfill", () => {
   it("no-ops (complete) with skipped_in_progress when the lock is held", async () => {
     H.state.lockClaim = false
     const out = await runAllDayDetailsBackfill(baseArgs())
-    expect(out).toEqual({ rowsFound: 0, complete: true, nextStartIndex: null })
+    expect(out).toEqual({ rowsFound: 0, complete: true, nextStartIndex: null, scanned: false })
     expect(lastLog().p_extra.terminated_reason).toBe("skipped_in_progress")
   })
 
   it("no-ops (complete) with skipped_db_saturated when the claim was refused by a saturated database", async () => {
     H.state.lockClaim = "db_saturated"
     const out = await runAllDayDetailsBackfill(baseArgs())
-    expect(out).toEqual({ rowsFound: 0, complete: true, nextStartIndex: null })
+    expect(out).toEqual({ rowsFound: 0, complete: true, nextStartIndex: null, scanned: false })
     expect(lastLog().p_extra.terminated_reason).toBe("skipped_db_saturated")
   })
 
   it("logs no_more_moments (complete) for a wallet with no triples", async () => {
     H.state.fclQuery = async () => []
     const out = await runAllDayDetailsBackfill(baseArgs())
-    expect(out).toEqual({ rowsFound: 0, complete: true, nextStartIndex: null })
+    expect(out).toEqual({ rowsFound: 0, complete: true, nextStartIndex: null, scanned: true })
     expect(lastLog().p_extra.mode).toBe("details_allday")
   })
 
@@ -769,7 +769,7 @@ describe("runAllDayDetailsBackfill", () => {
   it("flags a non-array fcl result as ok:false (never a silent empty)", async () => {
     H.state.fclQuery = async () => null // degraded resolve, NOT a real [] array
     const out = await runAllDayDetailsBackfill(baseArgs())
-    expect(out).toEqual({ rowsFound: 0, complete: false, nextStartIndex: null })
+    expect(out).toEqual({ rowsFound: 0, complete: false, nextStartIndex: null, scanned: false })
     const log = lastLog()
     expect(log.p_ok).toBe(false)
     expect(log.p_extra.terminated_reason).toBe("non_array_scan_result")
@@ -781,7 +781,7 @@ describe("runAllDayDetailsBackfill", () => {
     H.state.fclQuery = async () => []
     H.state.cachedCount = 1832 // wallet has cached wmc rows but scan returned 0
     const out = await runAllDayDetailsBackfill(baseArgs({ config: GOLAZOS_CFG }))
-    expect(out).toEqual({ rowsFound: 0, complete: false, nextStartIndex: null })
+    expect(out).toEqual({ rowsFound: 0, complete: false, nextStartIndex: null, scanned: false })
     const log = lastLog()
     expect(log.p_ok).toBe(false)
     expect(log.p_extra.terminated_reason).toBe("empty_scan_but_cached_holdings")
@@ -795,7 +795,7 @@ describe("runAllDayDetailsBackfill", () => {
     H.state.fclQuery = async () => []
     H.state.cachedCount = 0
     const out = await runAllDayDetailsBackfill(baseArgs({ config: GOLAZOS_CFG }))
-    expect(out).toEqual({ rowsFound: 0, complete: true, nextStartIndex: null })
+    expect(out).toEqual({ rowsFound: 0, complete: true, nextStartIndex: null, scanned: true })
     const log = lastLog()
     expect(log.p_ok).toBe(true)
     expect(log.p_extra.terminated_reason).toBe("no_more_moments")
@@ -807,7 +807,7 @@ describe("runAllDayDetailsBackfill", () => {
     H.state.fclQuery = async () => []
     H.state.cachedCount = 500
     const out = await runAllDayDetailsBackfill(baseArgs()) // CFG = allday, no flag
-    expect(out).toEqual({ rowsFound: 0, complete: true, nextStartIndex: null })
+    expect(out).toEqual({ rowsFound: 0, complete: true, nextStartIndex: null, scanned: true })
     expect(lastLog().p_ok).toBe(true)
     expect(lastLog().p_extra.terminated_reason).toBe("no_more_moments")
   })
@@ -816,7 +816,7 @@ describe("runAllDayDetailsBackfill", () => {
     H.state.fclQuery = async () => { throw new Error("computation exceeds limit (100000)") }
     ;(fetch as any).mockResolvedValue(flowIdsResponse([1, 2, 3])) // getIDs() fits: the details loop is the gap
     const out = await runAllDayDetailsBackfill(baseArgs({ config: GOLAZOS_CFG }))
-    expect(out).toEqual({ rowsFound: 0, complete: false, nextStartIndex: null })
+    expect(out).toEqual({ rowsFound: 0, complete: false, nextStartIndex: null, scanned: false })
     const log = lastLog()
     expect(log.p_ok).toBe(false)
     expect(log.p_extra.terminated_reason).toBe("computation_limit_no_paginated_path")
@@ -832,7 +832,7 @@ describe("runAllDayDetailsBackfill", () => {
     H.state.fclQuery = async () => { throw new Error("[Error Code: 1110] computation limit exceeded (used: 138344, limit: 100000)") }
     ;(fetch as any).mockResolvedValue({ ok: false, status: 400, text: async () => FLOW_1110_BODY })
     const out = await runAllDayDetailsBackfill(baseArgs({ config: GOLAZOS_CFG }))
-    expect(out).toEqual({ rowsFound: 0, complete: true, nextStartIndex: null })
+    expect(out).toEqual({ rowsFound: 0, complete: true, nextStartIndex: null, scanned: false })
     const log = lastLog()
     expect(log.p_ok).toBe(true)
     expect(log.p_extra.terminated_reason).toBe("unenumerable_getids_over_script_limit")
@@ -867,7 +867,7 @@ describe("runAllDayDetailsBackfill", () => {
   it("does NOT misroute a Golazos access-api 500 into the AllDay paginated path", async () => {
     H.state.fclQuery = async () => { throw new Error("error=internal server error path=/v1/scripts") }
     const out = await runAllDayDetailsBackfill(baseArgs({ config: GOLAZOS_CFG }))
-    expect(out).toEqual({ rowsFound: 0, complete: false, nextStartIndex: null })
+    expect(out).toEqual({ rowsFound: 0, complete: false, nextStartIndex: null, scanned: false })
     expect(lastLog().p_ok).toBe(false)
     expect(lastLog().p_extra.terminated_reason).toBe("access_api_500_no_paginated_path")
   })
@@ -897,7 +897,7 @@ describe("runAllDayDetailsBackfill", () => {
     H.state.upsertResult = { data: { written: 2 }, error: null }
     H.state.backfillResult = { data: 9, error: null }
     const out = await runAllDayDetailsBackfill(baseArgs())
-    expect(out).toEqual({ rowsFound: 3, complete: true, nextStartIndex: null })
+    expect(out).toEqual({ rowsFound: 3, complete: true, nextStartIndex: null, scanned: true })
     const log = lastLog()
     expect(log.p_extra.rows_to_write).toBe(2)
     expect(log.p_extra.post_pass_metadata_updated).toBe(9)
@@ -934,7 +934,7 @@ describe("runAllDayDetailsBackfill", () => {
   it("treats a flow_query_timeout as ok and complete", async () => {
     H.state.fclQuery = async () => { throw new Error("flow_query_timeout: GET_UNLOCKED_MOMENT_DETAILS exceeded 35000ms") }
     const out = await runAllDayDetailsBackfill(baseArgs())
-    expect(out).toEqual({ rowsFound: 0, complete: true, nextStartIndex: null })
+    expect(out).toEqual({ rowsFound: 0, complete: true, nextStartIndex: null, scanned: false })
     expect(lastLog().p_extra.terminated_reason).toBe("flow_query_timeout")
   })
 
@@ -985,7 +985,7 @@ describe("runAllDayDetailsBackfill", () => {
     const out = await runAllDayDetailsBackfill(baseArgs())
     expect(lastLog().p_ok).toBe(false)
     expect(lastLog().p_extra.terminated_reason).toBe("error")
-    expect(out).toEqual({ rowsFound: 0, complete: true, nextStartIndex: null })
+    expect(out).toEqual({ rowsFound: 0, complete: true, nextStartIndex: null, scanned: false })
   })
 
   // See the runIdOnlyBackfill chunk-failure tests — same silent-data-loss class,
@@ -1016,7 +1016,7 @@ describe("runPinnacleDetailsBackfill", () => {
   it("logs no_more_moments for an empty wallet", async () => {
     H.state.fclQuery = async () => []
     const out = await runPinnacleDetailsBackfill(pinArgs())
-    expect(out).toEqual({ rowsFound: 0, complete: true, nextStartIndex: null })
+    expect(out).toEqual({ rowsFound: 0, complete: true, nextStartIndex: null, scanned: true })
     expect(lastLog().p_extra.mode).toBe("details_pinnacle")
   })
 
@@ -1085,7 +1085,7 @@ describe("runPaginatedDetailsBackfill", () => {
   it("a getIDs() over the script limit is logged as unenumerable, not pagination_failed", async () => {
     ;(fetch as any).mockResolvedValue({ ok: false, status: 400, text: async () => FLOW_1110_BODY })
     const out = await runPaginatedDetailsBackfill(pagArgs())
-    expect(out).toEqual({ rowsFound: 0, complete: true, nextStartIndex: null })
+    expect(out).toEqual({ rowsFound: 0, complete: true, nextStartIndex: null, scanned: false })
     const log = lastLog()
     expect(log.p_extra.terminated_reason).toBe("unenumerable_getids_over_script_limit")
     expect(log.p_extra.flagged_unenumerable).toBe(true)
@@ -1104,7 +1104,7 @@ describe("runPaginatedDetailsBackfill", () => {
   it("logs no_more_moments when getIDs() returns empty", async () => {
     ;(fetch as any).mockResolvedValue(flowIdsResponse([]))
     const out = await runPaginatedDetailsBackfill(pagArgs())
-    expect(out).toEqual({ rowsFound: 0, complete: true, nextStartIndex: null })
+    expect(out).toEqual({ rowsFound: 0, complete: true, nextStartIndex: null, scanned: true })
     expect(lastLog().p_extra.terminated_reason).toBe("no_more_moments")
   })
 
@@ -1128,7 +1128,7 @@ describe("runPaginatedDetailsBackfill", () => {
     H.state.fclQuery = async () => [["500", "60", "1"], ["501", "61", "2"]]
     H.state.upsertResult = { data: { written: 2 }, error: null }
     const out = await runPaginatedDetailsBackfill(pagArgs({ skipCached: false }))
-    expect(out).toEqual({ rowsFound: 2, complete: true, nextStartIndex: null })
+    expect(out).toEqual({ rowsFound: 2, complete: true, nextStartIndex: null, scanned: true })
     const log = lastLog()
     expect(log.p_extra.pagination_chunks).toBe(1)
     expect(log.p_extra.pagination_chunk_errors).toBe(0)
@@ -1289,7 +1289,7 @@ describe("runPaginatedDetailsBackfill", () => {
   it("logs pagination_failed (ok=false) when the getIDs() fetch throws", async () => {
     ;(fetch as any).mockResolvedValue({ ok: false, status: 500, text: async () => "down" })
     const out = await runPaginatedDetailsBackfill(pagArgs())
-    expect(out).toEqual({ rowsFound: 0, complete: true, nextStartIndex: null })
+    expect(out).toEqual({ rowsFound: 0, complete: true, nextStartIndex: null, scanned: false })
     expect(lastLog().p_ok).toBe(false)
     expect(lastLog().p_extra.terminated_reason).toBe("pagination_failed")
   })

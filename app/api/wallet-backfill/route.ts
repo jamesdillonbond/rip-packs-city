@@ -235,7 +235,7 @@ async function runBackfill(
   startedMs: number,
   wallet: string,
   skipCached: boolean
-): Promise<{ rowsFound: number }> {
+): Promise<{ rowsFound: number; scanned: boolean }> {
   let totalFetched = 0
   let totalUpserted = 0
   let postPassUpdated = 0
@@ -294,7 +294,7 @@ async function runBackfill(
         ? `[wallet-backfill] ${terminatedReason} wallet=${wallet} — lock claim hit a saturated database; the next cohort cycle retries`
         : `[wallet-backfill] ${terminatedReason} wallet=${wallet} — concurrent run holds the lock`,
     )
-    return { rowsFound: 0 }
+    return { rowsFound: 0, scanned: false }
   }
 
   try {
@@ -337,7 +337,7 @@ async function runBackfill(
           elapsed_ms: Date.now() - startedMs,
         },
       })
-      return { rowsFound: 0 }
+      return { rowsFound: 0, scanned: !unseen.error }
     }
 
     // THE CACHE-SKIP PATH IS AN OWNERSHIP VERIFICATION, NOT A GAP.
@@ -532,7 +532,7 @@ async function runBackfill(
         elapsed_ms: Date.now() - startedMs,
       },
     })
-    return { rowsFound: onChainIds.length }
+    return { rowsFound: onChainIds.length, scanned: chunkTally.chunkErrors === 0 }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     const elapsedMs = Date.now() - startedMs
@@ -577,7 +577,7 @@ async function runBackfill(
         },
       })
       console.log(`[wallet-backfill] wallet_too_large wallet=${wallet} — flagged for future sharded scan`)
-      return { rowsFound: totalFetched }
+      return { rowsFound: totalFetched, scanned: false }
     }
     // Wallet has no /public/MomentCollection capability — uncommon for TopShot
     // (it would mean a Flow account that has never touched TopShot at all)
@@ -604,7 +604,7 @@ async function runBackfill(
         },
       })
       console.log(`[wallet-backfill] no_collection_capability wallet=${wallet} — wallet lacks TopShot collection capability`)
-      return { rowsFound: 0 }
+      return { rowsFound: 0, scanned: true }
     }
     terminatedReason = "error"
     await logRun({
@@ -626,7 +626,7 @@ async function runBackfill(
       },
     })
     console.error(`[wallet-backfill] error during backfill for ${wallet}: ${msg}`)
-    return { rowsFound: totalFetched }
+    return { rowsFound: totalFetched, scanned: false }
   } finally {
     await releasePipelineLock(lockKey)
   }
@@ -725,8 +725,10 @@ export async function POST(req: NextRequest) {
       collectionSlug: "nba_top_shot",
       extra: { wallet, skip_cached: skipCached, soft_deadline_ms: SOFT_DEADLINE_MS },
     })
-    const { rowsFound } = await runBackfill(startedAtIso, startedMs, wallet, skipCached)
-    await recordScan(wallet, rowsFound)
+    const { rowsFound, scanned } = await runBackfill(startedAtIso, startedMs, wallet, skipCached)
+    // A failed walk must not record a scan: it would stamp the wallet freshly verified
+    // (BackfillRunResult.scanned in lib/chains/flow/wallet-backfill-helpers.ts, 2026-10-27).
+    if (scanned) await recordScan(wallet, rowsFound)
   })
 
   return NextResponse.json(

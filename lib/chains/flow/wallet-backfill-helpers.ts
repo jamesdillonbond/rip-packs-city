@@ -223,6 +223,15 @@ export interface BackfillRunResult {
   rowsFound: number
   complete: boolean
   nextStartIndex: number | null
+  /**
+   * The wallet's holdings were fully read AND written this run (or the wallet provably lacks the
+   * collection) — the only outcome that may stamp `wallet_backfill_state` via record_wallet_backfill_scan.
+   * 2026-10-27: every route recorded a scan after EVERY run, so a failed walk (29 Flow 429s on 10-26)
+   * stamped `last_scanned_at = now()` and `last_found_count = 0` — read as "fully re-enumerated" by
+   * check_wmc_ownership_freshness, as "reconciled_empty" by reconcile_allow_list_prewarm, and as "scanned,
+   * never select again" by golazos-discover-buyers. A failed read must not record a scan.
+   */
+  scanned: boolean
 }
 
 // fcl.query (used for the AllDay/Pinnacle DETAILS calls below) has no
@@ -589,7 +598,7 @@ async function stampLastRefreshed(wallet: string, slug: string, changedRows?: nu
 // last_refreshed_per_collection. Per-moment metadata is intentionally
 // left null; out-of-band edition resolvers populate player/set/tier on
 // the editions table and reads JOIN at query time.
-export async function runIdOnlyBackfill(args: BackfillArgs): Promise<{ rowsFound: number }> {
+export async function runIdOnlyBackfill(args: BackfillArgs): Promise<{ rowsFound: number; scanned: boolean }> {
   const { config, startedAtIso, startedMs, wallet, skipCached, force } = args
   let totalUpserted = 0
   const chunkTally = newChunkTally()
@@ -619,7 +628,7 @@ export async function runIdOnlyBackfill(args: BackfillArgs): Promise<{ rowsFound
         ? `[${config.pipelineName}] ${terminatedReason} wallet=${wallet} — lock claim hit a saturated database; the next cohort cycle retries`
         : `[${config.pipelineName}] ${terminatedReason} wallet=${wallet} — concurrent run holds the lock`,
     )
-    return { rowsFound: 0 }
+    return { rowsFound: 0, scanned: false }
   }
 
   try {
@@ -656,7 +665,7 @@ export async function runIdOnlyBackfill(args: BackfillArgs): Promise<{ rowsFound
           elapsed_ms: Date.now() - startedMs,
         },
       })
-      return { rowsFound: 0 }
+      return { rowsFound: 0, scanned: !unseen.error }
     }
 
     const cachedIds = skipCached ? await loadCachedMomentIds(wallet, config.collectionUuid) : new Set<string>()
@@ -725,7 +734,7 @@ export async function runIdOnlyBackfill(args: BackfillArgs): Promise<{ rowsFound
         elapsed_ms: Date.now() - startedMs,
       },
     })
-    return { rowsFound: onChainIds.length }
+    return { rowsFound: onChainIds.length, scanned: chunkTally.chunkErrors === 0 }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     const elapsedMs = Date.now() - startedMs
@@ -746,7 +755,7 @@ export async function runIdOnlyBackfill(args: BackfillArgs): Promise<{ rowsFound
         },
       })
       console.log(`[${config.pipelineName}] wallet_too_large wallet=${wallet} — flagged for future sharded scan`)
-      return { rowsFound: 0 }
+      return { rowsFound: 0, scanned: false }
     }
     if (isNoCollectionCapabilityError(err, elapsedMs)) {
       await logRun({
@@ -765,7 +774,7 @@ export async function runIdOnlyBackfill(args: BackfillArgs): Promise<{ rowsFound
         },
       })
       console.log(`[${config.pipelineName}] no_collection_capability wallet=${wallet} — wallet lacks ${config.slug} collection capability`)
-      return { rowsFound: 0 }
+      return { rowsFound: 0, scanned: true }
     }
     await logRun({
       pipelineName: config.pipelineName,
@@ -780,7 +789,7 @@ export async function runIdOnlyBackfill(args: BackfillArgs): Promise<{ rowsFound
       },
     })
     console.error(`[${config.pipelineName}] error during backfill for ${wallet}: ${msg}`)
-    return { rowsFound: 0 }
+    return { rowsFound: 0, scanned: false }
   } finally {
     await releasePipelineLock(lockKey)
   }
@@ -892,7 +901,7 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<Back
         ? `[${config.pipelineName}] ${terminatedReason} wallet=${wallet} — lock claim hit a saturated database; the next cohort cycle retries`
         : `[${config.pipelineName}] ${terminatedReason} wallet=${wallet} — concurrent run holds the lock`,
     )
-    return { rowsFound: 0, complete: true, nextStartIndex: null }
+    return { rowsFound: 0, complete: true, nextStartIndex: null, scanned: false }
   }
 
   // Dapper studio-platform custody walk (AllDay only). Kicked off IN PARALLEL
@@ -933,7 +942,7 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<Back
         },
       })
       console.warn(`[${config.pipelineName}] non_array_scan_result wallet=${wallet} typeof=${typeof raw}`)
-      return { rowsFound: 0, complete: false, nextStartIndex: null }
+      return { rowsFound: 0, complete: false, nextStartIndex: null, scanned: false }
     }
     const onChainTriples: string[][] = raw as any
 
@@ -1001,7 +1010,7 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<Back
             `[${config.pipelineName}] empty_scan_but_cached_holdings wallet=${wallet} cached_rows=${cachedCount} — scan returned 0 for a wallet with cached holdings; not stamping as refreshed`,
           )
           // complete:false — the wallet still needs a successful scan.
-          return { rowsFound: 0, complete: false, nextStartIndex: null }
+          return { rowsFound: 0, complete: false, nextStartIndex: null, scanned: false }
         }
       }
       await stampLastRefreshed(wallet, config.slug, 0)
@@ -1018,7 +1027,7 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<Back
           ...studioExtra,
         },
       })
-      return { rowsFound: 0, complete: true, nextStartIndex: null }
+      return { rowsFound: 0, complete: true, nextStartIndex: null, scanned: true }
     }
 
     // Skip-cached must be ENRICHMENT-aware, not presence-only (2026-08-02).
@@ -1154,7 +1163,7 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<Back
         mode: detailsMode,
       },
     })
-    return { rowsFound: triples.length, complete: true, nextStartIndex: null }
+    return { rowsFound: triples.length, complete: true, nextStartIndex: null, scanned: chunkTally.chunkErrors === 0 }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     const elapsedMs = Date.now() - startedMs
@@ -1179,7 +1188,7 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<Back
           mode: detailsMode,
         },
       })
-      return { rowsFound: 0, complete: true, nextStartIndex: null }
+      return { rowsFound: 0, complete: true, nextStartIndex: null, scanned: false }
     }
     if (isFlowQueryTimeout(err)) {
       await logRun({
@@ -1196,7 +1205,7 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<Back
         },
       })
       console.log(`[${config.pipelineName}] flow_query_timeout wallet=${wallet} — freeing slot, retry next cycle`)
-      return { rowsFound: 0, complete: true, nextStartIndex: null }
+      return { rowsFound: 0, complete: true, nextStartIndex: null, scanned: false }
     }
     // Mega-wallet handlers — order matters. Check explicit Cadence 1110
     // first (rare on AllDay but cheap to detect), then the wider AllDay
@@ -1253,7 +1262,7 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<Back
             },
           })
           console.warn(`[${config.pipelineName}] unenumerable wallet=${wallet}: getIDs() exceeds the Flow script limit`)
-          return { rowsFound: 0, complete: true, nextStartIndex: null }
+          return { rowsFound: 0, complete: true, nextStartIndex: null, scanned: false }
         }
         await logRun({
           pipelineName: config.pipelineName,
@@ -1270,7 +1279,7 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<Back
           },
         })
         console.warn(`[${config.pipelineName}] computation_limit wallet=${wallet} — no paginated path for ${detailsMode}; not misrouting to AllDay scripts`)
-        return { rowsFound: 0, complete: false, nextStartIndex: null }
+        return { rowsFound: 0, complete: false, nextStartIndex: null, scanned: false }
       }
       console.log(`[${config.pipelineName}] computation_limit wallet=${wallet} — falling through to paginated path`)
       return await runPaginatedDetailsBackfill({
@@ -1300,7 +1309,7 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<Back
           },
         })
         console.warn(`[${config.pipelineName}] access_api_500 wallet=${wallet} — no paginated path for ${detailsMode}; not misrouting to AllDay scripts`)
-        return { rowsFound: 0, complete: false, nextStartIndex: null }
+        return { rowsFound: 0, complete: false, nextStartIndex: null, scanned: false }
       }
       console.log(`[${config.pipelineName}] access_api_500 wallet=${wallet} — falling through to paginated path`)
       return await runPaginatedDetailsBackfill({
@@ -1328,7 +1337,7 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<Back
           mode: detailsMode,
         },
       })
-      return { rowsFound: 0, complete: true, nextStartIndex: null }
+      return { rowsFound: 0, complete: true, nextStartIndex: null, scanned: true }
     }
     await logRun({
       pipelineName: config.pipelineName,
@@ -1343,7 +1352,7 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<Back
       },
     })
     console.error(`[${config.pipelineName}] error during details backfill for ${wallet}: ${msg}`)
-    return { rowsFound: 0, complete: true, nextStartIndex: null }
+    return { rowsFound: 0, complete: true, nextStartIndex: null, scanned: false }
   } finally {
     await releasePipelineLock(lockKey)
   }
@@ -1392,7 +1401,7 @@ export async function runPinnacleDetailsBackfill(args: BackfillArgs): Promise<Ba
         ? `[${config.pipelineName}] ${terminatedReason} wallet=${wallet} — lock claim hit a saturated database; the next cohort cycle retries`
         : `[${config.pipelineName}] ${terminatedReason} wallet=${wallet} — concurrent run holds the lock`,
     )
-    return { rowsFound: 0, complete: true, nextStartIndex: null }
+    return { rowsFound: 0, complete: true, nextStartIndex: null, scanned: false }
   }
 
   try {
@@ -1420,7 +1429,7 @@ export async function runPinnacleDetailsBackfill(args: BackfillArgs): Promise<Ba
           mode: "details_pinnacle",
         },
       })
-      return { rowsFound: 0, complete: true, nextStartIndex: null }
+      return { rowsFound: 0, complete: true, nextStartIndex: null, scanned: true }
     }
 
     // Enrichment-aware skip — same fix as runAllDayDetailsBackfill above
@@ -1527,7 +1536,7 @@ export async function runPinnacleDetailsBackfill(args: BackfillArgs): Promise<Ba
         mode: "details_pinnacle",
       },
     })
-    return { rowsFound: details.length, complete: true, nextStartIndex: null }
+    return { rowsFound: details.length, complete: true, nextStartIndex: null, scanned: chunkTally.chunkErrors === 0 }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     const elapsedMs = Date.now() - startedMs
@@ -1546,7 +1555,7 @@ export async function runPinnacleDetailsBackfill(args: BackfillArgs): Promise<Ba
           mode: "details_pinnacle",
         },
       })
-      return { rowsFound: 0, complete: true, nextStartIndex: null }
+      return { rowsFound: 0, complete: true, nextStartIndex: null, scanned: false }
     }
     if (isFlowQueryTimeout(err)) {
       await logRun({
@@ -1563,7 +1572,7 @@ export async function runPinnacleDetailsBackfill(args: BackfillArgs): Promise<Ba
         },
       })
       console.log(`[${config.pipelineName}] flow_query_timeout wallet=${wallet} — freeing slot, retry next cycle`)
-      return { rowsFound: 0, complete: true, nextStartIndex: null }
+      return { rowsFound: 0, complete: true, nextStartIndex: null, scanned: false }
     }
     if (isComputationLimitError(err)) {
       console.log(`[${config.pipelineName}] computation_limit wallet=${wallet} — falling through to paginated path`)
@@ -1600,7 +1609,7 @@ export async function runPinnacleDetailsBackfill(args: BackfillArgs): Promise<Ba
           mode: "details_pinnacle",
         },
       })
-      return { rowsFound: 0, complete: true, nextStartIndex: null }
+      return { rowsFound: 0, complete: true, nextStartIndex: null, scanned: true }
     }
     await logRun({
       pipelineName: config.pipelineName,
@@ -1615,7 +1624,7 @@ export async function runPinnacleDetailsBackfill(args: BackfillArgs): Promise<Ba
       },
     })
     console.error(`[${config.pipelineName}] error during details backfill for ${wallet}: ${msg}`)
-    return { rowsFound: 0, complete: true, nextStartIndex: null }
+    return { rowsFound: 0, complete: true, nextStartIndex: null, scanned: false }
   } finally {
     await releasePipelineLock(lockKey)
   }
@@ -1727,7 +1736,7 @@ export async function runPaginatedDetailsBackfill(args: PaginatedBackfillArgs): 
           mode: fullMode,
         },
       })
-      return { rowsFound: 0, complete: true, nextStartIndex: null }
+      return { rowsFound: 0, complete: true, nextStartIndex: null, scanned: true }
     }
 
     const cachedMap = skipCached
@@ -1870,7 +1879,7 @@ export async function runPaginatedDetailsBackfill(args: PaginatedBackfillArgs): 
             mode: fullMode,
           },
         })
-        return { rowsFound: onChainIds.length, complete: true, nextStartIndex: null }
+        return { rowsFound: onChainIds.length, complete: true, nextStartIndex: null, scanned: true }
       }
     }
 
@@ -2111,7 +2120,7 @@ export async function runPaginatedDetailsBackfill(args: PaginatedBackfillArgs): 
         mode: fullMode,
       },
     })
-    return { rowsFound: onChainIds.length, complete: isComplete, nextStartIndex }
+    return { rowsFound: onChainIds.length, complete: isComplete, nextStartIndex, scanned: isComplete && !allChunksFailed && chunkTally.chunkErrors === 0 }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     // ⛔ getIDs() ITSELF over the script limit: no script can enumerate this wallet, so pagination
@@ -2139,7 +2148,7 @@ export async function runPaginatedDetailsBackfill(args: PaginatedBackfillArgs): 
         },
       })
       console.warn(`[${config.pipelineName}] unenumerable wallet=${wallet}: getIDs() exceeds the Flow script limit`)
-      return { rowsFound: 0, complete: true, nextStartIndex: null }
+      return { rowsFound: 0, complete: true, nextStartIndex: null, scanned: false }
     }
     await logRun({
       pipelineName: config.pipelineName,
@@ -2172,7 +2181,7 @@ export async function runPaginatedDetailsBackfill(args: PaginatedBackfillArgs): 
       },
     })
     console.error(`[${config.pipelineName}] paginated backfill failed for ${wallet}: ${msg}`)
-    return { rowsFound: onChainIds.length, complete: true, nextStartIndex: null }
+    return { rowsFound: onChainIds.length, complete: true, nextStartIndex: null, scanned: false }
   }
 }
 
