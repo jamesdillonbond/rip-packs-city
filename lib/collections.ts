@@ -186,10 +186,18 @@ export const COLLECTIONS: Collection[] = [
     // No counts here (2026-09-28): this is present-tense page copy (a meta
     // description), and the 07-02 figures it quoted (2,272 renders / 168K sales)
     // had gone stale.
-    // No `news` either (2026-09-29): the one item was our own 07-02 coverage
+    // `news` was emptied 2026-09-29: the one item was our own 07-02 coverage
     // stats, not news, and its "168K+ sales" counted 25,793 studio-history
     // twins of on-chain sales since removed (#159). No item beats a false one.
+    // Refilled 2026-10-26 with dated RPC changes only (below).
     pitch: "Wallet analytics and marketplace intelligence for Disney Pinnacle — every pin priced by its own sales, live listings, character and franchise pages.",
+    // 2026-10-26: dated RPC changes, each in the ledger (the 09-29 rule above stands — no coverage
+    // stats dressed as news). Keep them true, not promotional.
+    news: [
+      { title: "Pin pages show live listings and pack pulls", date: "2026-10-26", summary: "Each pin page lists the cheapest live listings from RPC's latest marketplace sweep, linked to Disney Pinnacle, and the packs RPC has seen it pulled from.", url: "/disney-pinnacle/market" },
+      { title: "Pinnacle on the Top Sales board", date: "2026-10-26", summary: "Disney Pinnacle sales of $100 or more now appear on the cross-collection Top Sales board, with their own filter.", url: "/insights/top-sales" },
+      { title: "Busy pins priced from their latest sales", date: "2026-10-23", summary: "A pin that trades often is now priced from the median of its five most recent sales, which tracked realised prices more closely than the longer-window median.", url: "/legal/fmv-methodology" },
+    ],
   },
   {
     id: "laliga-golazos",

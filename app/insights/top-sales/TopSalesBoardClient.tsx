@@ -63,7 +63,7 @@ type ApiResponse = {
   rows: Row[]
 }
 
-type CollectionFilter = "all" | "nba_top_shot" | "nfl_all_day" | "candy_mlb" | "panini_blockchain"
+type CollectionFilter = "all" | "nba_top_shot" | "nfl_all_day" | "disney_pinnacle" | "candy_mlb" | "panini_blockchain"
 type WindowFilter = "7d" | "30d"
 type SortKey = "price" | "recent"
 
@@ -75,6 +75,9 @@ const COLLECTIONS: { val: CollectionFilter; label: string }[] = [
   { val: "all", label: "All" },
   { val: "nba_top_shot", label: "Top Shot" },
   { val: "nfl_all_day", label: "NFL All Day" },
+  // Disney Pinnacle (2026-10-26): from v_pinnacle_top_sales, merged server-side. Its
+  // rows link the pin page (/pinnacle/moment/<render_id>, carried in external_id).
+  { val: "disney_pinnacle", label: "Disney Pinnacle" },
   // Candy rows were already rendering under "All" — there was simply no way to
   // filter to them. Thin by design: Candy ran 7 sales over $100 in the trailing
   // 30 days on 2026-09-19, comparable to All Day's 2 in 7 days.
@@ -186,6 +189,9 @@ function primaryImg(r: Row): string | null {
 // Per-row drill-down: nft_id resolves to the exact serial that sold on the
 // /moment/<id> page; fall back to the edition page when nft_id is absent.
 function rowHref(r: Row): string {
+  // A Pinnacle pin's page is keyed on its render_id, not the sold NFT's id: /moment/<nft_id>
+  // is the Flow moment route the other collections share, and it cannot name a pin.
+  if (r.collection === "disney_pinnacle" && r.external_id) return `/pinnacle/moment/${encodeURIComponent(r.external_id)}`
   if (r.nft_id) return `/moment/${encodeURIComponent(r.nft_id)}`
   if (r.external_id) return `/${collectionSlug(r.collection)}/edition/${encodeURIComponent(r.external_id)}`
   return `/moment/${r.edition_id}`

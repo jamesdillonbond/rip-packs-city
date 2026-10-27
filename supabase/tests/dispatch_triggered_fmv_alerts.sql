@@ -8,7 +8,7 @@
 -- enqueued accounting, and the last_triggered 6h re-scan dedup.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20261015053922_audit_20261014_fmv_alerts_fire_on_transition_and_both_channels.sql);
+-- (supabase/migrations/20261027013447_audit_20261026_pinnacle_fmv_alerts.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts, and the
 -- md5 of pg_get_functiondef was confirmed byte-identical to LIVE prod on 2026-08-01
 -- (2b37a1f183501a84545f4c7b16745012).
@@ -26,6 +26,8 @@ CREATE TABLE live_ask_stub (collection_id uuid, edition_key text, ask numeric);
 CREATE FUNCTION public.edition_live_ask(p_collection_id uuid, p_edition_key text)
 RETURNS TABLE(ask numeric, source text) LANGUAGE sql STABLE AS
 $$ SELECT s.ask, 'stub'::text FROM live_ask_stub s WHERE s.collection_id = p_collection_id AND s.edition_key = p_edition_key $$;
+-- 2026-10-26: the Disney Pinnacle arm reads its pin's catalog row.
+CREATE TABLE pinnacle_catalog (render_id text, fmv_usd numeric, fmv_confidence text, floor_ask numeric, floor_ask_updated_at timestamptz);
 CREATE TABLE notification_channels (owner_key text, channel text, channel_user_id text, verified boolean);
 CREATE TABLE alert_deliveries (owner_key text, channel text, channel_user_id text, alert_kind text, subject_key text, dedup_bucket text, payload jsonb, status text DEFAULT 'pending', created_at timestamptz DEFAULT clock_timestamp(), UNIQUE(owner_key, channel, alert_kind, subject_key, dedup_bucket));
 
@@ -81,6 +83,23 @@ BEGIN
     v_ask := NULL;
     SELECT la.ask INTO v_ask
     FROM public.edition_live_ask(v_alert.collection_id, v_alert.edition_key) la;
+
+    -- 2026-10-26: Disney Pinnacle is priced per PIN in pinnacle_catalog (edition_key = render_id);
+    -- it has no `editions` / fmv_snapshots rows, so the two reads above always came back NULL and a
+    -- Pinnacle alert could never fire. Its FMV is the catalog's; its ask is the render floor while the
+    -- floor map is fresh (48 h on its own sweep stamp) and only when the pin has an FMV and the ask is
+    -- <= 3x it — edition_live_ask's rules. TS twin: lib/alerts/pinnacle-ask.ts.
+    IF v_alert.collection_id = '7dd9dd11-e8b6-45c4-ac99-71331f959714'::uuid THEN
+      v_fmv := NULL; v_conf := NULL; v_ask := NULL;
+      SELECT CASE WHEN pc.fmv_usd > 0 THEN pc.fmv_usd END,
+             pc.fmv_confidence::text,
+             CASE WHEN pc.fmv_usd > 0 AND pc.floor_ask > 0 AND pc.floor_ask <= pc.fmv_usd * 3
+                       AND pc.floor_ask_updated_at > now() - interval '48 hours'
+                  THEN pc.floor_ask END
+        INTO v_fmv, v_conf, v_ask
+        FROM public.pinnacle_catalog pc
+       WHERE pc.render_id = v_alert.edition_key;
+    END IF;
 
     v_triggered := CASE
       WHEN v_alert.alert_type = 'price_below'    AND v_ask IS NOT NULL AND v_ask <= v_alert.threshold THEN true
@@ -274,6 +293,30 @@ INSERT INTO fmv_alerts (owner_key, edition_key, player_name, set_name, alert_typ
   ('u1','ek2','Pb','Sb','price_below', 50,'both', 'a@x', NULL, '00000000-0000-0000-0000-00000000cccc', true);
 CREATE TEMP TABLE d8 AS SELECT dispatch_triggered_fmv_alerts() AS j;
 SELECT _assert_eq((SELECT string_agg(channel || '=' || channel_user_id, ',' ORDER BY channel) FROM alert_deliveries WHERE subject_key = '5'), 'email=a@x,telegram=tg1', 'a both-channel alert is delivered to telegram AND email');
+
+-- 2026-10-26: DISNEY PINNACLE. Priced from pinnacle_catalog by render_id (no editions row). P1 floor 30
+-- fresh, FMV 40 -> price_below 35 fires with ask 30 and FMV 40. P2 floor 30 but the floor map is 3 days
+-- old -> no ask, so price_below cannot fire (an FMV alert on the same pin still can). P3 floor 200 vs
+-- FMV 40 (> 3x) -> disconnected, no ask. CONTROL: an editions row with the SAME key in the Pinnacle
+-- collection is never read for FMV (the catalog wins).
+INSERT INTO pinnacle_catalog VALUES
+  ('P1', 40, 'HIGH', 30, now() - interval '2 hours'),
+  ('P2', 40, 'LOW', 30, now() - interval '3 days'),
+  ('P3', 40, 'MEDIUM', 200, now());
+INSERT INTO editions (id, external_id, collection_id) VALUES ('00000000-0000-0000-0000-0000000000f9','P1','7dd9dd11-e8b6-45c4-ac99-71331f959714');
+INSERT INTO fmv_snapshots (edition_id, fmv_usd, confidence, computed_at) VALUES ('00000000-0000-0000-0000-0000000000f9', 999, 'HIGH', now());
+INSERT INTO notification_channels (owner_key, channel, channel_user_id, verified) VALUES ('pu','email','p@x', true);
+INSERT INTO fmv_alerts (owner_key, edition_key, player_name, set_name, alert_type, threshold, channel, notification_email, last_triggered_at, collection_id, active) VALUES
+  ('pu','P1','Nemo','Genesis','price_below', 35,'email', NULL, NULL, '7dd9dd11-e8b6-45c4-ac99-71331f959714', true),
+  ('pu','P2','Dory','Genesis','price_below', 35,'email', NULL, NULL, '7dd9dd11-e8b6-45c4-ac99-71331f959714', true),
+  ('pu','P2','Dory','Genesis','fmv_below',   45,'email', NULL, NULL, '7dd9dd11-e8b6-45c4-ac99-71331f959714', true),
+  ('pu','P3','Bruce','Genesis','price_below', 250,'email', NULL, NULL, '7dd9dd11-e8b6-45c4-ac99-71331f959714', true);
+CREATE TEMP TABLE d9 AS SELECT dispatch_triggered_fmv_alerts() AS j;
+SELECT _assert_eq((SELECT payload->>'lowest_ask' FROM alert_deliveries WHERE owner_key='pu' AND payload->>'edition_key'='P1'), '30', 'a Pinnacle price alert fires on the fresh render floor');
+SELECT _assert_eq((SELECT payload->>'current_fmv' FROM alert_deliveries WHERE owner_key='pu' AND payload->>'edition_key'='P1'), '40', 'its FMV is the catalog''s, never a same-key editions row (999)');
+SELECT _assert_eq((SELECT count(*)::text FROM alert_deliveries WHERE owner_key='pu' AND payload->>'edition_key'='P2' AND payload->>'alert_type'='price_below'), '0', 'a stale floor map gives no ask, so a price alert cannot fire');
+SELECT _assert_eq((SELECT count(*)::text FROM alert_deliveries WHERE owner_key='pu' AND payload->>'edition_key'='P2' AND payload->>'alert_type'='fmv_below'), '1', 'an FMV alert on the same pin still fires');
+SELECT _assert_eq((SELECT count(*)::text FROM alert_deliveries WHERE owner_key='pu' AND payload->>'edition_key'='P3'), '0', 'an ask over 3x FMV is disconnected — no ask, no fire');
 
 SELECT '✓ dispatch_triggered_fmv_alerts invariants pass' AS result;
 ROLLBACK;

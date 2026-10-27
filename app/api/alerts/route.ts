@@ -21,6 +21,7 @@ import { apiErrorResponse } from "@/lib/api-error";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { requireUser } from "@/lib/auth/supabase-server";
 import { COLLECTION_UUID_BY_SLUG } from "@/lib/collections";
+import { pinnacleAlertAsk } from "@/lib/alerts/pinnacle-ask";
 import { resolveLiveAsks } from "@/lib/asks/edition-live-ask";
 
 const ALERT_TYPES = ["price_below", "fmv_below", "fmv_above", "discount_above"] as const;
@@ -33,6 +34,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const TS_COLLECTION = "95f28a17-224a-4025-96ad-adf8a4c63bfd";
 const KNOWN_COLLECTION_UUIDS = new Set(Object.values(COLLECTION_UUID_BY_SLUG).map((u) => u.toLowerCase()));
+const PINNACLE_COLLECTION = COLLECTION_UUID_BY_SLUG["disney-pinnacle"].toLowerCase();
 
 // ── Live market data for the preview ──────────────────────────────────────────
 // FMV legs (fmv_below/fmv_above) read the same latest-per-edition fmv_snapshots
@@ -57,10 +59,35 @@ async function fetchMarketData(
   if (!alerts.length) return { fmvByKey, askByKey, fmvFailed, askFailedFor };
 
   const key = (collectionId: string | null, ext: string) => `${collectionId ?? TS_COLLECTION}:${ext}`;
-  const editionKeys = [...new Set(alerts.map((a) => a.edition_key))];
+
+  // 2026-10-26: Disney Pinnacle is priced per PIN in pinnacle_catalog (render_id = edition_key);
+  // it has 0 rows in `editions`/fmv_snapshots, so the shared legs below would read every Pinnacle
+  // alert as "no FMV, no ask". Read its own row, and keep it out of the shared legs.
+  const pinKeys = [...new Set(alerts.filter((a) => (a.collection_id ?? "").toLowerCase() === PINNACLE_COLLECTION).map((a) => a.edition_key))];
+  if (pinKeys.length) {
+    const { data: pinRows, error: pinErr } = await supabase
+      .from("pinnacle_catalog")
+      .select("render_id, fmv_usd, floor_ask, floor_ask_updated_at")
+      .in("render_id", pinKeys);
+    if (pinErr) {
+      fmvFailed = true;
+      askFailedFor.add(PINNACLE_COLLECTION);
+    } else {
+      const now = Date.now();
+      for (const r of pinRows ?? []) {
+        const k = key(PINNACLE_COLLECTION, r.render_id);
+        if (r.fmv_usd != null && Number(r.fmv_usd) > 0) fmvByKey.set(k, Number(r.fmv_usd));
+        const ask = pinnacleAlertAsk(r, now);
+        if (ask != null) askByKey.set(k, ask);
+      }
+    }
+  }
+  const shared = alerts.filter((a) => (a.collection_id ?? "").toLowerCase() !== PINNACLE_COLLECTION);
+  if (!shared.length) return { fmvByKey, askByKey, fmvFailed, askFailedFor };
+  const editionKeys = [...new Set(shared.map((a) => a.edition_key))];
 
   // Resolve edition internal ids (scoped to the collections in play).
-  const collectionIds = [...new Set(alerts.map((a) => a.collection_id ?? TS_COLLECTION))];
+  const collectionIds = [...new Set(shared.map((a) => a.collection_id ?? TS_COLLECTION))];
   const { data: editionRows, error: editionErr } = await supabase
     .from("editions")
     .select("id, external_id, collection_id")
@@ -102,7 +129,7 @@ async function fetchMarketData(
   }
 
   for (const collectionId of collectionIds) {
-    const keysHere = [...new Set(alerts.filter((a) => (a.collection_id ?? TS_COLLECTION) === collectionId).map((a) => a.edition_key))];
+    const keysHere = [...new Set(shared.filter((a) => (a.collection_id ?? TS_COLLECTION) === collectionId).map((a) => a.edition_key))];
     try {
       const { asks, errors } = await resolveLiveAsks(supabase, collectionId, keysHere);
       if (errors.length) askFailedFor.add(collectionId);

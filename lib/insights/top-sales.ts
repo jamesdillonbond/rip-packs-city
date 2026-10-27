@@ -72,6 +72,22 @@ export const TOP_SALES_VALID_COLLECTIONS = new Set([
 
 export const PANINI_TOP_SALES_COLLECTION = "panini_blockchain"
 
+// disney_pinnacle (2026-10-26): it was always in TOP_SALES_VALID_COLLECTIONS, but its sales live in
+// pinnacle_sales, never in `sales`, so v_insights_top_sales held 0 Pinnacle rows and
+// `?collection=disney_pinnacle` answered "no sales" while 147 Pinnacle sales >= $100 sat in the 30-day
+// window. Its rows come from v_pinnacle_top_sales (service-role only, like Panini's), merged below.
+// external_id there is the pin's render_id, which is what its page is keyed on.
+export const PINNACLE_TOP_SALES_COLLECTION = "disney_pinnacle"
+
+/**
+ * Collections whose rows come from their OWN view rather than v_insights_top_sales. A collection
+ * listed here is never asked of the shared view (it holds none of its rows).
+ */
+const OWN_VIEW: Record<string, string> = {
+  [PANINI_TOP_SALES_COLLECTION]: "v_panini_top_sales",
+  [PINNACLE_TOP_SALES_COLLECTION]: "v_pinnacle_top_sales",
+}
+
 // moment_id intentionally omitted — it is NULL in the view (see header note).
 const SELECT_COLS =
   "sale_id, edition_id, external_id, collection, collection_id, player_name, set_name, team_name, tier, circulation_count, thumbnail_url, nft_id, serial_number, price_usd, sold_at, buyer_address, seller_address, marketplace"
@@ -123,16 +139,18 @@ export async function fetchTopSales(
   }
 
   const known = collection && TOP_SALES_VALID_COLLECTIONS.has(collection) ? collection : null
-  const wantFlow = known !== PANINI_TOP_SALES_COLLECTION
-  const wantPanini = known === null || known === PANINI_TOP_SALES_COLLECTION
-  const [flow, panini] = await Promise.all([
+  const wantFlow = known === null || !(known in OWN_VIEW)
+  const ownViews = Object.entries(OWN_VIEW).filter(([coll]) => known === null || known === coll)
+  const [flow, ...own] = await Promise.all([
     wantFlow ? build("v_insights_top_sales", known) : Promise.resolve({ data: [], error: null }),
-    wantPanini ? build("v_panini_top_sales", null) : Promise.resolve({ data: [], error: null }),
+    ...ownViews.map(([, view]) => build(view, null)),
   ])
-  // Either read failing fails the board: a merged list missing one source would
+  // Any read failing fails the board: a merged list missing one source would
   // publish "the top sales" with a collection silently absent.
   if (flow.error) throw new Error(flow.error.message)
-  if (panini.error) throw new Error(`v_panini_top_sales: ${panini.error.message}`)
+  own.forEach((r, i) => {
+    if (r.error) throw new Error(`${ownViews[i][1]}: ${r.error.message}`)
+  })
 
   const byOrder = (a: { price_usd: number | null; sold_at: string | null }, b: { price_usd: number | null; sold_at: string | null }) => {
     const t = (x: string | null) => (x ? Date.parse(x) : -Infinity)
@@ -140,8 +158,8 @@ export async function fetchTopSales(
     return (Number(b.price_usd ?? -Infinity) - Number(a.price_usd ?? -Infinity)) || t(b.sold_at) - t(a.sold_at)
   }
   const flowRaw = (flow.data ?? []) as Omit<TopSaleRow, "buyer_name" | "seller_name">[]
-  const paniniRaw = (panini.data ?? []) as Omit<TopSaleRow, "buyer_name" | "seller_name">[]
-  const raw = [...flowRaw, ...paniniRaw].sort(byOrder).slice(0, limit)
+  const ownRaw = own.flatMap((r) => (r.data ?? []) as Omit<TopSaleRow, "buyer_name" | "seller_name">[])
+  const raw = [...flowRaw, ...ownRaw].sort(byOrder).slice(0, limit)
 
   // Only chain addresses go to the resolver; a Panini username is already a name.
   const names = await resolveUsernames(

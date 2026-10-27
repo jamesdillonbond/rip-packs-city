@@ -30,6 +30,8 @@ import {
   explainPinnacleFmv,
   searchPinnacleByName,
   getPinnacleEditionListings,
+  pinnacleNotApplicable,
+  readPinnacleSetCompletionForConcierge,
 } from "@/lib/concierge/pinnacle-router";
 import {
   fetchUnifiedFmvDistribution,
@@ -2446,7 +2448,10 @@ async function executeToolInner(
         .gte("ev_snapshotted_at", evFreshCutoff)
         .order("value_ratio", { ascending: false })
         .limit(200);
-      if (toolInput.collectionId) query = query.eq("collection_slug", toolInput.collectionId);
+      // 2026-10-26: fall back to the PAGE's collection, as the Candy arm above does — on a Pinnacle
+      // page with no collectionId the ranking spanned every collection's packs.
+      const packColl = toolInput.collectionId ?? (isPinnacle(effectiveCollectionId) ? effectiveCollectionId : null);
+      if (packColl) query = query.eq("collection_slug", packColl);
       if (toolInput.tier) query = query.ilike("tier", `%${toolInput.tier}%`);
       const { data: packs, error: packErr } = await query;
       if (packErr) return JSON.stringify({ status: "error", message: safeApiError(packErr).error });
@@ -3413,6 +3418,9 @@ async function executeToolInner(
   }
 
   if (toolName === "get_special_serial_owners") {
+    if (isPinnacle(effectiveCollectionId)) {
+      return pinnacleNotApplicable("get_special_serial_owners", "The special-serial owner board covers Top Shot (and Candy) only; RPC does not track who holds each Disney Pinnacle #1 or perfect serial.", "For a pin's serial premium, call get_fmv or explain_fmv — the pin page shows its #1 / perfect-serial estimate.");
+    }
     // 2026-10-26: the board below is Top Shot's — on a Candy question it answered with Top Shot
     // rows (substitution). Candy has its own board (candy_special_serials_board).
     if (toolInput.collectionId === "candy-mlb" || (!toolInput.collectionId && effectiveCollectionId === "candy-mlb")) {
@@ -3895,6 +3903,9 @@ async function executeToolInner(
   }
 
   if (toolName === "search_serial_deals") {
+    if (isPinnacle(effectiveCollectionId)) {
+      return pinnacleNotApplicable("search_serial_deals", "The special-serial deal feed covers Top Shot only.", "For Disney Pinnacle deals use search_live_deals; for one pin's live asks use get_edition_listings.");
+    }
     // 2026-10-26: Top Shot-only feed; on a Candy question it answered with Top Shot listings.
     if (toolInput.collectionId === "candy-mlb" || (!toolInput.collectionId && effectiveCollectionId === "candy-mlb")) {
       return candyNotApplicable("search_serial_deals", "The special-serial deal feed covers Top Shot only.", "For Candy, call get_special_serial_owners (who holds each #1 / jersey / last serial) and get_edition_listings for an edition's live Magic Eden asks.");
@@ -4630,6 +4641,9 @@ async function executeToolInner(
 
   // ── Bulk-buy / sweep intelligence (Top Shot Quick Buy) ────────────────────
   if (toolName === "get_hot_floors") {
+    if (isPinnacle(effectiveCollectionId)) {
+      return pinnacleNotApplicable("get_hot_floors", "Hot Floors reads Top Shot's Quick-Buy floor sweeps; RPC has no sweep signal for Disney Pinnacle.", "get_top_sales and get_market_movers cover Pinnacle's recorded sales.");
+    }
     if (toolInput.collectionId === "candy-mlb" || (!toolInput.collectionId && effectiveCollectionId === "candy-mlb")) {
       return candyNotApplicable("get_hot_floors", "Hot Floors reads Top Shot's Quick-Buy sweeps; Candy trades on Magic Eden, which has no such path, and RPC has recorded no Candy sale since Oct 11.", "Say Candy has no sweep signal; get_top_sales covers its recorded sales.");
     }
@@ -4696,6 +4710,23 @@ async function executeToolInner(
       if (effectiveCollectionId === "panini-blockchain" && !/^0x[a-fA-F0-9]{16}$/.test(String(toolInput.walletAddress ?? "").trim())) {
         return await readPaniniSetCompletionForConcierge(supabase, base, { username: String(toolInput.walletAddress ?? ""), setName: toolInput.setName ?? null, limit: 5 });
       }
+      // 2026-10-26: Disney Pinnacle has 0 rows in Top Shot's `sets`, so this answered "No Top Shot set
+      // matches" (or the collector's TOP SHOT sets) on a Pinnacle question. Its own Set Tracker answers.
+      // A Dapper username resolves to the same Dapper wallet that holds the pins.
+      if (isPinnacle(effectiveCollectionId)) {
+        const pinIn = String(toolInput.walletAddress ?? "").trim();
+        let pinWallet = pinIn;
+        if (!/^0x[a-fA-F0-9]{16}$/.test(pinIn)) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const { data: pr } = await (supabase as any).rpc("resolve_topshot_username", { p_username: pinIn });
+          if (pr?.found === true && typeof pr.wallet_address === "string") {
+            pinWallet = pr.wallet_address.startsWith("0x") ? pr.wallet_address : `0x${pr.wallet_address}`;
+          } else {
+            return JSON.stringify({ status: "username_not_resolved", wallet: pinIn, message: "I don't have that Dapper username's wallet on file. Call check_wallet with it first and reuse the address it returns, or ask the user for the 0x address." });
+          }
+        }
+        return await readPinnacleSetCompletionForConcierge(base, pinWallet, { setName: toolInput.setName ?? null, limit: 5 });
+      }
       const tsUuid = COLLECTION_UUID_BY_SLUG["nba-top-shot"];
       const setName = String(toolInput.setName ?? "").trim();
       if (!setName) return JSON.stringify({ status: "error", message: "setName is required." });
@@ -4747,6 +4778,9 @@ async function executeToolInner(
   }
 
   if (toolName === "get_challenges") {
+    if (isPinnacle(effectiveCollectionId)) {
+      return pinnacleNotApplicable("get_challenges", "Challenges are a Top Shot feature; Disney Pinnacle has none in RPC.");
+    }
     if (effectiveCollectionId === "candy-mlb" || isSolanaAddress(String(toolInput.walletAddress ?? "").trim())) {
       return candyNotApplicable("get_challenges", "Challenges are a Top Shot feature; Candy MLB has none.");
     }
@@ -4845,6 +4879,9 @@ async function executeToolInner(
   }
 
   if (toolName === "get_rookies") {
+    if (isPinnacle(effectiveCollectionId)) {
+      return pinnacleNotApplicable("get_rookies", "The rookie index is Top Shot's (NBA rookies); Disney Pinnacle has characters, not players.", "For a character's pins, use search_catalog or get_market_cap with the character.");
+    }
     const params = new URLSearchParams();
     // 2026-10-22: the description used to suggest sort "momentum" / "value", which the
     // route 400s on; both params are enums now and the route still validates them.
@@ -4904,6 +4941,23 @@ async function executeToolInner(
       // tracker instead of resolving it as a Top Shot account (a different person's wallet).
       if (effectiveCollectionId === "panini-blockchain" && !/^0x[a-fA-F0-9]{16}$/.test(String(toolInput.walletAddress ?? "").trim())) {
         return await readPaniniSetCompletionForConcierge(supabase, base, { username: String(toolInput.walletAddress ?? ""), setName: null, limit: Number(toolInput.limit ?? 10) });
+      }
+      // 2026-10-26: Disney Pinnacle has 0 rows in Top Shot's `sets`, so this answered "No Top Shot set
+      // matches" (or the collector's TOP SHOT sets) on a Pinnacle question. Its own Set Tracker answers.
+      // A Dapper username resolves to the same Dapper wallet that holds the pins.
+      if (isPinnacle(effectiveCollectionId)) {
+        const pinIn = String(toolInput.walletAddress ?? "").trim();
+        let pinWallet = pinIn;
+        if (!/^0x[a-fA-F0-9]{16}$/.test(pinIn)) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const { data: pr } = await (supabase as any).rpc("resolve_topshot_username", { p_username: pinIn });
+          if (pr?.found === true && typeof pr.wallet_address === "string") {
+            pinWallet = pr.wallet_address.startsWith("0x") ? pr.wallet_address : `0x${pr.wallet_address}`;
+          } else {
+            return JSON.stringify({ status: "username_not_resolved", wallet: pinIn, message: "I don't have that Dapper username's wallet on file. Call check_wallet with it first and reuse the address it returns, or ask the user for the 0x address." });
+          }
+        }
+        return await readPinnacleSetCompletionForConcierge(base, pinWallet, { setName: null, limit: Number(toolInput.limit ?? 10) });
       }
       const inputAddr = String(toolInput.walletAddress ?? "").trim();
       let resolvedAddr = inputAddr;

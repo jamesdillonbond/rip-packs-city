@@ -30,12 +30,14 @@ import GlobalSiteHeader from "@/components/GlobalSiteHeader"
 import { PageContentAnchor } from "@/components/SkipToContent"
 import SiteFooter from "@/components/SiteFooter"
 import { CollectionTicker, CollectionBanner } from "@/components/collection-chrome"
-import { getCollection } from "@/lib/collections"
+import { getCollection, marketplaceMomentUrl } from "@/lib/collections"
+import TrackedOutboundLink from "@/components/TrackedOutboundLink"
+import WatchEditionButton from "@/components/alerts/WatchEditionButton"
 import SupportChatConnected from "@/components/SupportChatConnected"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
-import { load, decodeId, type LegacyData } from "@/lib/pinnacle/moment-detail"
+import { load, decodeId, PINNACLE_COLLECTION_ID, type LegacyData } from "@/lib/pinnacle/moment-detail"
 import { OG_INHERITED, TWITTER_INHERITED, breadcrumbJsonLd } from "@/lib/seo"
 import { productOrCreativeWork } from "@/lib/jsonld-product"
 import { usdSignFirst } from "@/lib/usd-format"
@@ -145,6 +147,23 @@ function fmtDate(iso: string | null | undefined): string {
   }
 }
 
+function fmtDateTime(iso: string | null | undefined): string {
+  if (!iso) return "—"
+  try {
+    // PT, the site's display zone (server renders in UTC). A sweep runs ~5×/day, so the hour matters.
+    return new Date(iso).toLocaleString("en-US", {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      timeZone: "America/Los_Angeles",
+      timeZoneName: "short",
+    })
+  } catch {
+    return "—"
+  }
+}
+
 export default async function PinnacleMomentPage({
   params,
 }: {
@@ -161,7 +180,12 @@ export default async function PinnacleMomentPage({
 
   if (data.kind === "legacy") return <PinnacleShell><LegacyDisambiguation data={data} /></PinnacleShell>
 
-  const { ed, sales, holders, copies, variant_avg_mint, scarcity_pct, siblings, fmvHistory, nameByAddr, serialLadder } = data
+  const { ed, sales, holders, copies, variant_avg_mint, scarcity_pct, siblings, fmvHistory, nameByAddr, serialLadder, listings, packPulls } = data
+  // The cheapest listing in the latest sweep, linked to Disney Pinnacle's own page for that pin.
+  const cheapest = listings && listings.rows.length > 0 ? listings.rows[0] : null
+  const cheapestUrl = cheapest ? marketplaceMomentUrl("disney-pinnacle", cheapest.nft_id) : null
+  const pctListed =
+    listings && ed.total_minted != null && ed.total_minted > 0 ? (100 * listings.total) / ed.total_minted : null
   const franchise = ed.franchises && ed.franchises.length > 0 ? ed.franchises[0] : null
   // set_name often already embeds the studio/franchise (e.g. "Walt Disney
   // Animation Studios • Disney Genesis"), so joining set · franchise · series
@@ -335,6 +359,18 @@ export default async function PinnacleMomentPage({
         </div>
       </section>
 
+      {/* Watch this pin (2026-10-26, Top Shot parity): the alert engine prices a Pinnacle alert from
+          this pin's catalog row (dispatch_triggered_fmv_alerts' Pinnacle arm, 20261027013447). */}
+      <section className="rpc-pm-detail" data-testid="pin-watch">
+        <WatchEditionButton
+          editionKey={ed.render_id}
+          collectionId={PINNACLE_COLLECTION_ID}
+          playerName={ed.character_name}
+          setName={ed.set_name}
+          label="Watch this pin"
+        />
+      </section>
+
       {serialLadder && serialLadder.length > 0 ? (
         <section className="rpc-pm-detail">
           <h2 className="rpc-pm-h2">Serial premium</h2>
@@ -394,6 +430,107 @@ export default async function PinnacleMomentPage({
         </section>
       ) : null}
 
+
+      {/* ── Listed now (2026-10-26, Top Shot parity) ───────────────────────────
+          The cheapest live listings of this pin from the latest COMPLETE catalog sweep
+          (pinnacle_live_listings, ~5×/day), each linked to Disney Pinnacle's own page for
+          that pin. ⚠ Three states: a failed read says so; a clean read with no rows says
+          nobody is listing it as of the sweep; never "no listings" out of an error. */}
+      <section className="rpc-pm-detail" data-testid="pin-listed-now">
+        <h2 className="rpc-pm-h2">Listed now</h2>
+        {listings == null ? (
+          <div className="rpc-pm-ladder-note">Live listings could not be loaded right now.</div>
+        ) : listings.rows.length === 0 ? (
+          <div className="rpc-pm-ladder-note">
+            No live listing of this pin in RPC&rsquo;s latest marketplace sweep{listings.seenAt ? ` (${fmtDateTime(listings.seenAt)})` : ""}.
+          </div>
+        ) : (
+          <>
+            <div className="rpc-pm-ladder-note">
+              {fmtInt(listings.total)} listed
+              {pctListed != null ? ` · ${pctListed < 0.1 ? "<0.1" : pctListed.toFixed(pctListed < 10 ? 1 : 0)}% of ${fmtInt(ed.total_minted)} minted` : ""}
+              {listings.seenAt ? ` · as of RPC's marketplace sweep ${fmtDateTime(listings.seenAt)}` : ""}.
+              {listings.total > listings.rows.length ? ` Cheapest ${listings.rows.length} shown.` : ""}
+            </div>
+            <div className="rpc-pm-sales">
+              <table className="rpc-pm-sales-table">
+                <thead>
+                  <tr>
+                    <th scope="col" className="rpc-pm-num">Price</th>
+                    <th scope="col" className="rpc-pm-num">Serial</th>
+                    <th scope="col">Listing</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {listings.rows.map((l) => {
+                    const url = marketplaceMomentUrl("disney-pinnacle", l.nft_id)
+                    return (
+                      <tr key={l.nft_id}>
+                        <td className="rpc-pm-num">{fmtUsd(l.price_usd)}</td>
+                        <td className="rpc-pm-num">{l.serial_number != null && l.serial_number > 0 ? `#${l.serial_number}` : "—"}</td>
+                        <td>
+                          {url ? (
+                            <TrackedOutboundLink
+                              href={url}
+                              className="rpc-pm-meta-link"
+                              payload={{
+                                surface: "pinnacle_pin",
+                                collection: "disney_pinnacle",
+                                linkKind: "listing",
+                                destination: "disney_pinnacle_listing",
+                                editionKey: ed.render_id,
+                                momentId: l.nft_id,
+                                playerName: ed.character_name,
+                                setName: ed.set_name,
+                                tier: ed.variant,
+                                serial: l.serial_number,
+                                askPrice: l.price_usd,
+                                fmv: fmv,
+                              }}
+                            >
+                              View on Disney Pinnacle ↗
+                            </TrackedOutboundLink>
+                          ) : (
+                            "—"
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+            {cheapest && cheapestUrl ? (
+              <div style={{ marginTop: 12 }}>
+                <TrackedOutboundLink
+                  href={cheapestUrl}
+                  className="rpc-pm-cta"
+                  payload={{
+                    surface: "pinnacle_pin",
+                    collection: "disney_pinnacle",
+                    linkKind: "listing",
+                    destination: "disney_pinnacle_floor_listing",
+                    editionKey: ed.render_id,
+                    momentId: cheapest.nft_id,
+                    playerName: ed.character_name,
+                    setName: ed.set_name,
+                    tier: ed.variant,
+                    serial: cheapest.serial_number,
+                    askPrice: cheapest.price_usd,
+                    fmv: fmv,
+                  }}
+                >
+                  Cheapest listing on Disney Pinnacle · {fmtUsd(cheapest.price_usd)} ↗
+                </TrackedOutboundLink>
+                <div className="rpc-pm-ladder-note" style={{ marginTop: 6, opacity: 0.7 }}>
+                  RPC is read-only. Prices are as of the sweep above — check the listing on Disney Pinnacle before buying.
+                </div>
+              </div>
+            ) : null}
+          </>
+        )}
+      </section>
+
       {/* Market cap (market_cap_current; streamed, renders nothing without a row). */}
       <Suspense fallback={null}>
         <MarketCapTile group="edition" collectionDbSlug="disney_pinnacle" match={ed.render_id} />
@@ -440,6 +577,48 @@ export default async function PinnacleMomentPage({
                   </div>
                   <div className="rpc-pm-disambig-stats">
                     <span className="rpc-pm-disambig-fmv">{fmtUsd(r.fmv_usd)}</span>
+                  </div>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+
+      {/* ── Found in these packs (2026-10-26, Top Shot parity) ─────────────────
+          mv_pinnacle_render_pack_pulls (every 3 h). A LOWER BOUND: ~19 % of pulls
+          cannot be named to a pin yet. A failed read says so; an empty clean read is
+          "no named pull", never "never in a pack". */}
+      {packPulls == null ? (
+        <section className="rpc-pm-detail" data-testid="pin-found-in-packs">
+          <h2 className="rpc-pm-h2">Found in these packs</h2>
+          <div className="rpc-pm-ladder-note">Pack pulls could not be loaded right now.</div>
+        </section>
+      ) : packPulls.length > 0 ? (
+        <section className="rpc-pm-detail" data-testid="pin-found-in-packs">
+          <h2 className="rpc-pm-h2">Found in these packs</h2>
+          <div className="rpc-pm-ladder-note">
+            Pack openings where RPC saw this pin pulled. Counts are a floor: RPC names about four in five
+            pulls to a pin, so the true numbers can be higher.
+          </div>
+          <div className="rpc-pm-disambig">
+            {packPulls.map((p) => (
+              <Link
+                key={p.dist_id}
+                href={`/disney-pinnacle/pack/dist/${encodeURIComponent(p.dist_id)}`}
+                prefetch={false}
+                className="rpc-pm-disambig-card"
+              >
+                <div className="rpc-pm-disambig-body">
+                  <div className="rpc-pm-disambig-name">{p.title ?? `Pack drop ${p.dist_id}`}</div>
+                  <div className="rpc-pm-disambig-sub">
+                    {p.first_opened_at ? `opened ${fmtDate(p.first_opened_at)}` : ""}
+                    {p.last_opened_at && p.first_opened_at && fmtDate(p.last_opened_at) !== fmtDate(p.first_opened_at) ? ` – ${fmtDate(p.last_opened_at)}` : ""}
+                  </div>
+                  <div className="rpc-pm-disambig-stats">
+                    <span className="rpc-pm-disambig-fmv">{fmtInt(p.pulls)}</span>
+                    <span>{p.pulls === 1 ? "pull seen" : "pulls seen"}</span>
                   </div>
                 </div>
               </Link>
@@ -623,6 +802,9 @@ const CSS = `
 .rpc-pm-disambig-sub { font-family: var(--font-mono); font-size: 11px; color: var(--rpc-text-muted); letter-spacing: 1px; margin: 2px 0 6px; }
 .rpc-pm-disambig-stats { display: flex; gap: 12px; font-family: var(--font-mono); font-size: 12px; color: var(--rpc-text-secondary); }
 .rpc-pm-disambig-fmv { color: var(--rpc-red-text); font-weight: 700; }
+
+.rpc-pm-cta { display: inline-block; font-family: var(--font-mono); font-size: 12px; letter-spacing: 1.5px; text-transform: uppercase; padding: 10px 14px; border: 1px solid var(--rpc-red-border); background: var(--rpc-red-bg); color: var(--rpc-red-text); border-radius: 2px; text-decoration: none; }
+.rpc-pm-cta:hover { border-color: var(--rpc-red); }
 
 .rpc-pm-footer { max-width: 1180px; margin: 0 auto; display: flex; flex-wrap: wrap; gap: 16px; justify-content: space-between; }
 .rpc-pm-back { font-family: var(--font-mono); font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-secondary); text-decoration: none; }

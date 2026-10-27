@@ -45,7 +45,6 @@ describe("editionHref", () => {
   // Shot edition sharing the key. Absent still defaults; unmapped gets no link.
   it("gives NO link for an unmapped collection, never another collection's edition", () => {
     expect(editionHref({ collection_id: "unknown-uuid", edition_key: "k" })).toBeNull()
-    expect(editionHref({ collection_id: "7dd9dd11-e8b6-45c4-ac99-71331f959714", edition_key: "k" })).toBeNull()
     expect(editionHref({ collection_id: "constructor", edition_key: "k" })).toBeNull()
   })
   it("an absent collection keeps the Top Shot default the route stores", () => {
@@ -57,7 +56,12 @@ describe("editionHref", () => {
   it("Panini alerts link to the shared edition page (watch offered there since 2026-10-19)", () => {
     expect(editionHref({ collection_id: "d1a0a7f5-609a-49f4-a1a7-4eaac55b020b", edition_key: "packcard-1_2_3_4" })).toBe("/panini-blockchain/edition/packcard-1_2_3_4")
   })
-  it("COLLECTION_URL_SLUG has no Pinnacle entry (watch button not offered there)", () => {
+  // RE-PINNED 2026-10-26 (premise changed): the watch button is offered on Pinnacle pin pages now,
+  // and a Pinnacle alert's key is a render_id whose page is /pinnacle/moment/<render_id>. It still
+  // has no COLLECTION_URL_SLUG entry: /disney-pinnacle/edition/<key> only 308s to the pin page.
+  it("a Pinnacle alert links its PIN page by render_id, not the shared edition route", () => {
+    expect(editionHref({ collection_id: "7dd9dd11-e8b6-45c4-ac99-71331f959714", edition_key: "OEV1-PXIC-BUZZ-S3" })).toBe("/pinnacle/moment/OEV1-PXIC-BUZZ-S3")
+    expect(editionHref({ collection_id: "7DD9DD11-E8B6-45C4-AC99-71331F959714", edition_key: "a b" })).toBe("/pinnacle/moment/a%20b")
     expect(COLLECTION_URL_SLUG["7dd9dd11-e8b6-45c4-ac99-71331f959714"]).toBeUndefined()
   })
   it("every slug matches the canonical registry (no duplicate-canonical drift)", () => {

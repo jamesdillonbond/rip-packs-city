@@ -7,10 +7,12 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // the view read (empty / error) and the buyer/seller @handle enrichment via a
 // mocked @/lib/flowty-username seam.
 
-// `query` answers v_insights_top_sales; `panini` answers v_panini_top_sales (2026-10-10).
-const state: { query: { data: any; error: any }; panini: { data: any; error: any }; calls: string[]; views: string[] } = {
+// `query` answers v_insights_top_sales; `panini` answers v_panini_top_sales (2026-10-10);
+// `pinnacle` answers v_pinnacle_top_sales (2026-10-26).
+const state: { query: { data: any; error: any }; panini: { data: any; error: any }; pinnacle: { data: any; error: any }; calls: string[]; views: string[] } = {
   query: { data: [], error: null },
   panini: { data: [], error: null },
+  pinnacle: { data: [], error: null },
   calls: [],
   views: [],
 }
@@ -25,7 +27,8 @@ vi.mock("@/lib/supabase", () => {
         return b
       }
     }
-    b.then = (resolve: any) => resolve(view === "v_panini_top_sales" ? state.panini : state.query)
+    b.then = (resolve: any) =>
+      resolve(view === "v_panini_top_sales" ? state.panini : view === "v_pinnacle_top_sales" ? state.pinnacle : state.query)
     return b
   }
   const client: any = { from: (view: string) => build(view) }
@@ -50,6 +53,7 @@ import {
 beforeEach(() => {
   state.query = { data: [], error: null }
   state.panini = { data: [], error: null }
+  state.pinnacle = { data: [], error: null }
   state.calls = []
   state.views = []
 })
@@ -180,7 +184,7 @@ describe("fetchTopSales — Panini merge (2026-10-10)", () => {
     state.query = { data: [flowRow], error: null }
     state.panini = { data: [paniniRow], error: null }
     const { rows } = await fetchTopSales({ window: "30d" })
-    expect(state.views.sort()).toEqual(["v_insights_top_sales", "v_panini_top_sales"])
+    expect(state.views.sort()).toEqual(["v_insights_top_sales", "v_panini_top_sales", "v_pinnacle_top_sales"])
     expect(rows.map((r) => r.sale_id)).toEqual(["p1", "f1"])
     expect(rows[0].buyer_name).toBe("EZGOLF")
     expect(rows[0].seller_name).toBe("Adlcards")
@@ -193,7 +197,7 @@ describe("fetchTopSales — Panini merge (2026-10-10)", () => {
     expect(state.views).toEqual(["v_panini_top_sales"])
   })
 
-  it("another collection does not read the Panini view", async () => {
+  it("another collection does not read the Panini (or Pinnacle) view", async () => {
     await fetchTopSales({ collection: "nba_top_shot" })
     expect(state.views).toEqual(["v_insights_top_sales"])
   })
@@ -209,5 +213,37 @@ describe("fetchTopSales — Panini merge (2026-10-10)", () => {
     state.panini = { data: [paniniRow], error: null }
     const { rows } = await fetchTopSales({ limit: 2 })
     expect(rows.map((r) => r.sale_id)).toEqual(["p1", "f1"])
+  })
+})
+
+describe("fetchTopSales — Disney Pinnacle merge (2026-10-26)", () => {
+  // Pinnacle sales live in pinnacle_sales, never in `sales`, so v_insights_top_sales held 0 Pinnacle
+  // rows and ?collection=disney_pinnacle answered an empty board while real $100+ sales existed.
+  const pinRow = { sale_id: "n1", collection: "disney_pinnacle", external_id: "GEN-PGEN-NEMO-S0", price_usd: 10990, sold_at: "2026-10-20T10:00:00Z", buyer_address: "0xbuyer", seller_address: "0xseller" }
+
+  it("collection=disney_pinnacle reads ONLY the Pinnacle view (the shared view holds none of its rows)", async () => {
+    state.pinnacle = { data: [pinRow], error: null }
+    const { rows } = await fetchTopSales({ collection: "disney_pinnacle" })
+    expect(state.views).toEqual(["v_pinnacle_top_sales"])
+    expect(rows.map((r) => r.sale_id)).toEqual(["n1"])
+  })
+
+  it("Pinnacle buyers are Flow addresses, so they ARE resolved to handles (unlike Panini usernames)", async () => {
+    state.pinnacle = { data: [pinRow], error: null }
+    const { rows } = await fetchTopSales({ collection: "disney_pinnacle" })
+    expect(rows[0].buyer_name).toBe("whale_al")
+    expect(rows[0].seller_name).toBe("0xsell…")
+  })
+
+  it("a failed Pinnacle read fails the board — never a list with Pinnacle silently missing", async () => {
+    state.pinnacle = { data: null, error: { message: "boom" } }
+    await expect(fetchTopSales({})).rejects.toThrow(/v_pinnacle_top_sales/)
+  })
+
+  it("collection=all merges the Pinnacle view in price order", async () => {
+    state.query = { data: [{ sale_id: "f1", collection: "nba_top_shot", price_usd: 500, sold_at: "2026-10-09T10:00:00Z" }], error: null }
+    state.pinnacle = { data: [pinRow], error: null }
+    const { rows } = await fetchTopSales({ window: "30d" })
+    expect(rows.map((r) => r.sale_id)).toEqual(["n1", "f1"])
   })
 })

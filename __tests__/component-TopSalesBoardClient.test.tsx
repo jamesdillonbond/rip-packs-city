@@ -170,6 +170,17 @@ describe("TopSalesBoardClient", () => {
     expect(container.textContent).toContain("MetaverseLuka")
   })
 
+  it("a Disney Pinnacle row links its PIN page by render_id, never /moment/<nft_id> (2026-10-26)", () => {
+    const pin: Row = {
+      ...nullRow, sale_id: "n1", external_id: "GEN-PGEN-NEMO-S0", nft_id: "1349621159", collection: "disney_pinnacle",
+      player_name: "Nemo", price_usd: 10990, marketplace: "disney_pinnacle",
+    }
+    const { container } = render(<TopSalesBoardClient initialRows={[pin]} initialFetchedAt="2026-10-26T23:00:00Z" />)
+    const hrefs = Array.from(container.querySelectorAll("a")).map((a) => a.getAttribute("href"))
+    expect(hrefs).toContain("/pinnacle/moment/GEN-PGEN-NEMO-S0")
+    expect(hrefs.some((h) => h === "/moment/1349621159")).toBe(false)
+  })
+
   it("says Panini's recent days are incomplete whenever Panini can be on the board — and not on a Flow-only filter", () => {
     const { container, getAllByRole } = render(<TopSalesBoardClient initialRows={[fullRow]} initialFetchedAt="2026-07-31T00:00:00Z" />)
     expect(container.querySelector('[data-testid="top-sales-panini-lag"]')).not.toBeNull()

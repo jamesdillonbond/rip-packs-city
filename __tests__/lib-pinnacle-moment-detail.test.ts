@@ -386,3 +386,72 @@ describe("load — bounded as a whole, and a hang is not a missing pin", () => {
     expect(res).toEqual({ data: null, ok: true })
   })
 })
+
+describe("load — Listed now + Found in these packs (2026-10-26, Top Shot parity)", () => {
+  afterEach(() => vi.restoreAllMocks())
+
+  it("a FAILED listings read is null — the page says it could not load, never 'no live listing'", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {})
+    const { db } = makeDb({
+      pinnacle_catalog: { data: CATALOG_ROW },
+      ...quietTail(),
+      pinnacle_live_listings: { error: { message: "canceling statement due to statement timeout" } },
+      mv_pinnacle_render_pack_pulls: { data: [] },
+    })
+    const r = await load(RENDER, db)
+    expect(r.ok).toBe(true)
+    expect(r.data?.kind === "render" && r.data.listings).toBeNull()
+  })
+
+  it("a CLEAN empty listings read is zero rows (a real 'nobody is selling'), distinct from a failure", async () => {
+    const { db } = makeDb({
+      pinnacle_catalog: { data: CATALOG_ROW },
+      ...quietTail(),
+      pinnacle_live_listings: { data: [], count: 0 },
+      mv_pinnacle_render_pack_pulls: { data: [] },
+    })
+    const r = await load(RENDER, db)
+    expect(r.data?.kind === "render" && r.data.listings).toEqual({ rows: [], total: 0, seenAt: null })
+  })
+
+  it("listings carry the exact total (not the 10 shown) and the sweep's own stamp", async () => {
+    const { db } = makeDb({
+      pinnacle_catalog: { data: CATALOG_ROW },
+      ...quietTail(),
+      pinnacle_live_listings: {
+        data: [{ nft_id: 158329677188272, serial_number: null, price_usd: "2", seen_at: "2026-10-26T21:37:47Z" }],
+        count: 34,
+      },
+      mv_pinnacle_render_pack_pulls: { data: [] },
+    })
+    const r = await load(RENDER, db)
+    const l = r.data?.kind === "render" ? r.data.listings : undefined
+    expect(l?.total).toBe(34)
+    expect(l?.seenAt).toBe("2026-10-26T21:37:47Z")
+    expect(l?.rows[0]).toEqual({ nft_id: "158329677188272", serial_number: null, price_usd: 2 })
+  })
+
+  it("a FAILED pack-pulls read is null, and a failed TITLE read keeps the pulls (decoration only)", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {})
+    const failed = makeDb({
+      pinnacle_catalog: { data: CATALOG_ROW },
+      ...quietTail(),
+      pinnacle_live_listings: { data: [], count: 0 },
+      mv_pinnacle_render_pack_pulls: { error: { message: "boom" } },
+    })
+    const r1 = await load(RENDER, failed.db)
+    expect(r1.data?.kind === "render" && r1.data.packPulls).toBeNull()
+
+    const titled = makeDb({
+      pinnacle_catalog: { data: CATALOG_ROW },
+      ...quietTail(),
+      pinnacle_live_listings: { data: [], count: 0 },
+      mv_pinnacle_render_pack_pulls: { data: [{ dist_id: "8891", pulls: 3, first_opened_at: "2026-10-09T16:40:00Z", last_opened_at: "2026-10-10T16:40:00Z" }] },
+      pack_distributions: { error: { message: "boom" } },
+    })
+    const r2 = await load(RENDER, titled.db)
+    expect(r2.data?.kind === "render" && r2.data.packPulls).toEqual([
+      { dist_id: "8891", title: null, pulls: 3, first_opened_at: "2026-10-09T16:40:00Z", last_opened_at: "2026-10-10T16:40:00Z" },
+    ])
+  })
+})

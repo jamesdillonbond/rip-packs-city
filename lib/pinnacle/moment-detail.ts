@@ -178,6 +178,29 @@ export function distinctHolders(res: { data?: unknown; count?: number | null }):
   return new Set(rows.map((r) => r.wallet_address).filter((w): w is string => !!w)).size
 }
 
+/**
+ * One live listing of this pin from the latest COMPLETE catalog floor sweep (pinnacle_live_listings,
+ * written ~5×/day, every listing Disney's Studio GraphQL returned). `nft_id` is the listed pin; Disney
+ * Pinnacle's own page for it is disneypinnacle.com/pin/<nft_id> (verified 2026-10-26 in a browser: a
+ * listed nft_id renders that pin with its Listings tab; a render_id renders "Page not found").
+ */
+export type ListingRow = { nft_id: string; serial_number: number | null; price_usd: number }
+
+/**
+ * ⚠ null = the read FAILED (the page says it could not load the listings) — never "no listings".
+ * `total` is the exact count of this pin's listings in the sweep; `seenAt` is the sweep's own stamp.
+ */
+export type ListingsData = { rows: ListingRow[]; total: number; seenAt: string | null }
+
+/** Pulls of this pin RPC has seen per pack distribution (mv_pinnacle_render_pack_pulls) — a lower bound. */
+export type PackPullRow = {
+  dist_id: string
+  title: string | null
+  pulls: number
+  first_opened_at: string | null
+  last_opened_at: string | null
+}
+
 export type RenderData = {
   kind: "render"
   ed: CatalogRow
@@ -205,6 +228,10 @@ export type RenderData = {
   // are worth, from the render-keyed Pinnacle serial-FMV model (overlay on the
   // flat render FMV). Null for un-numbered / unpriced renders.
   serialLadder: { label: string; note: string; estimate: number; mult: number }[] | null
+  /** null = read failed (see ListingsData). Added 2026-10-26 (Top Shot parity: "Listed Now"). */
+  listings: ListingsData | null
+  /** null = read failed; [] = RPC has seen no named pull of this pin from any pack. */
+  packPulls: PackPullRow[] | null
 }
 
 export type LegacyRender = {
@@ -391,9 +418,9 @@ export async function load(
   // would each be measured from the moment this line runs, which is already
   // several reads deep — the chain above must count against them.
   let salesRes: Row, holdersRes: Row, boardRes: Row, siblingsRes: Row
-  let fmvHistRes: Row, serialMultRes: Row
+  let fmvHistRes: Row, serialMultRes: Row, listingsRes: Row, packPullsRes: Row
   try {
-    ;[salesRes, holdersRes, boardRes, siblingsRes, fmvHistRes, serialMultRes] = await bounded<Row[]>(
+    ;[salesRes, holdersRes, boardRes, siblingsRes, fmvHistRes, serialMultRes, listingsRes, packPullsRes] = await bounded<Row[]>(
       Promise.all([
     supa
       .from("pinnacle_sales")
@@ -426,6 +453,23 @@ export async function load(
       .limit(400),
     // P4: global Pinnacle serial-premium bands (first/perfect/normal → multiplier; #1 + perfect only since 09-27).
       supa.from("pinnacle_serial_fmv_multipliers").select("band, multiplier, is_reliable"),
+    // 2026-10-26: the cheapest live listings of THIS pin (latest complete sweep), with the exact count.
+    // Ordered by price then nft_id so the page is deterministic between renders.
+    supa
+      .from("pinnacle_live_listings")
+      .select("nft_id, serial_number, price_usd, seen_at", { count: "exact" })
+      .eq("render_id", renderId)
+      .order("price_usd", { ascending: true })
+      .order("nft_id", { ascending: true })
+      .limit(10),
+    // 2026-10-26: which pack distributions this pin has come out of (refreshed every 3 h).
+    supa
+      .from("mv_pinnacle_render_pack_pulls")
+      .select("dist_id, pulls, first_opened_at, last_opened_at")
+      .eq("render_id", renderId)
+      .order("pulls", { ascending: false })
+      .order("dist_id", { ascending: true })
+      .limit(12),
       ]),
       "detail-bundle",
       deadline,
@@ -476,6 +520,51 @@ export async function load(
     }
   }
 
+  // Listings: an errored read is null (the page says so), a clean empty read is 0 rows.
+  const listings: ListingsData | null = listingsRes.error
+    ? null
+    : {
+        rows: ((listingsRes.data ?? []) as Row[]).map((r) => ({
+          nft_id: String(r.nft_id),
+          serial_number: r.serial_number != null ? Number(r.serial_number) : null,
+          price_usd: Number(r.price_usd),
+        })),
+        total: Number(listingsRes.count ?? (listingsRes.data ?? []).length),
+        seenAt: ((listingsRes.data ?? []) as Row[])[0]?.seen_at ?? null,
+      }
+
+  // Pack pulls, then their titles. The titles are DECORATION: a failed title read leaves the dist id.
+  let packPulls: PackPullRow[] | null = null
+  if (!packPullsRes.error) {
+    const pulls = (packPullsRes.data ?? []) as Row[]
+    const titleByDist: Record<string, string> = {}
+    if (pulls.length > 0) {
+      try {
+        const { data: dists } = await bounded<{ data: unknown }>(
+          supa
+            .from("pack_distributions")
+            .select("dist_id, title")
+            .eq("collection_id", PINNACLE_COLLECTION_ID)
+            .in("dist_id", pulls.map((p) => String(p.dist_id))),
+          "pack-titles",
+          deadline,
+        )
+        for (const d of (dists as { dist_id: string | number; title: string | null }[] | null) ?? []) {
+          if (d.title?.trim()) titleByDist[String(d.dist_id)] = d.title.trim()
+        }
+      } catch (e) {
+        console.log("[pinnacle/moment] pack_titles_bound", e instanceof Error ? e.message : e)
+      }
+    }
+    packPulls = pulls.map((p) => ({
+      dist_id: String(p.dist_id),
+      title: titleByDist[String(p.dist_id)] ?? null,
+      pulls: Number(p.pulls),
+      first_opened_at: p.first_opened_at ?? null,
+      last_opened_at: p.last_opened_at ?? null,
+    }))
+  }
+
   // P4: the serial-premium value ladder for numbered renders. The band math,
   // the multiplier map and the mint>=25 display guard all live in
   // lib/pinnacle/serial-fmv.ts — the ONE implementation, shared with the wallet
@@ -507,6 +596,8 @@ export async function load(
       fmvHistory: ((fmvHistRes.data ?? []) as PinnacleFmvPoint[]),
       nameByAddr,
       serialLadder,
+      listings,
+      packPulls,
     },
     ok: true,
   }

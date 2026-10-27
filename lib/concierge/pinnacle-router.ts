@@ -22,11 +22,29 @@
 
 import { retryEmptyWithAccentRegex } from "@/lib/search/accent-regex"
 import { PINNACLE_MARKETPLACE_URL } from "@/lib/pinnacle/pinnacleTypes"
+import { textIncludes } from "@/lib/filter-match"
 
 const PINNACLE_COLLECTION_ID = "disney-pinnacle"
 
 export function isPinnacle(collectionId: string | null | undefined): boolean {
   return collectionId === PINNACLE_COLLECTION_ID
+}
+
+/**
+ * The honest answer for a Top-Shot-only tool asked on a Disney Pinnacle page (2026-10-26).
+ *
+ * ⛔ Before this, seven tools (special-serial owners, serial deals, hot floors, set completion cost,
+ * cheapest sets, challenges, rookies) carried a Candy or Panini refusal but no Pinnacle one, so a
+ * Pinnacle question was answered with TOP SHOT rows — the substitution face of the honesty canon
+ * (CLAUDE.md): every helper satisfied, the subject swapped. Mirrors candyNotApplicable.
+ */
+export function pinnacleNotApplicable(tool: string, why: string, instead?: string): string {
+  return JSON.stringify({
+    status: "not_applicable",
+    collection: PINNACLE_COLLECTION_ID,
+    tool,
+    message: `${why}${instead ? ` ${instead}` : ""} Do not answer with Top Shot data on a Disney Pinnacle question. If the user explicitly asked about Top Shot, call this tool again with collectionId "nba-top-shot".`,
+  })
 }
 
 // Unified row shape returned to the model — match the keys used in the
@@ -522,5 +540,82 @@ export async function getPinnacleEditionListings(
       status: "error",
       message: err instanceof Error ? err.message : "pinnacle listings lookup failed",
     })
+  }
+}
+
+// ── Set completion (get_set_completion_cost / get_cheapest_sets_to_complete) ─
+// 2026-10-26: both tools read Top Shot's `sets` (Pinnacle has 0 rows there), so a Pinnacle question
+// answered "No Top Shot set matches" or ranked the collector's Top Shot sets. Pinnacle's own Set
+// Tracker backend (/api/pinnacle-set-progress, render-keyed, one slot per CHARACTER) answers instead.
+
+const num = (v: unknown): number | null => (v == null || v === "" || !Number.isFinite(Number(v)) ? null : Number(v))
+
+export async function readPinnacleSetCompletionForConcierge(
+  base: string,
+  wallet: string,
+  opts: { setName?: string | null; limit?: number } = {},
+  fetchImpl: typeof fetch = fetch,
+): Promise<string> {
+  const failed = JSON.stringify({ status: "error", message: "The Disney Pinnacle set read failed — say the check failed; never say this wallet has no set progress." })
+  try {
+    const res = await fetchImpl(`${base}/api/pinnacle-set-progress?wallet=${encodeURIComponent(wallet)}`, { signal: AbortSignal.timeout(20_000) })
+    if (!res.ok) return failed
+    const body = (await res.json()) as Record<string, unknown>
+    const all = Array.isArray(body.sets) ? (body.sets as Record<string, unknown>[]) : null
+    if (!all) return failed
+    const want = (opts.setName ?? "").trim()
+    // textIncludes, not toLowerCase().includes(): accent-insensitive like every other search box.
+    const matched = want ? all.filter((s) => textIncludes(String(s.setName ?? ""), want)) : all
+    if (want && matched.length === 0) {
+      return JSON.stringify({
+        status: "no_match",
+        collection: PINNACLE_COLLECTION_ID,
+        message: `No Disney Pinnacle set name contains "${opts.setName}". Pinnacle set names look like "Lucasfilm Ltd. • Star Wars Alphabet Vol.1" — call again without setName to list this wallet's sets.`,
+      })
+    }
+    const limit = Math.min(Math.max(Math.trunc(Number(opts.limit ?? 10)) || 10, 1), 25)
+    // Started sets first (closest to done), then the rest — the tool is asked "what should I finish".
+    const ranked = [...matched].sort((a, b) => {
+      const ao = Number(a.ownedCount ?? 0) > 0 ? 1 : 0
+      const bo = Number(b.ownedCount ?? 0) > 0 ? 1 : 0
+      if (ao !== bo) return bo - ao
+      return Number(b.completionPct ?? 0) - Number(a.completionPct ?? 0)
+    })
+    const piece = (p: Record<string, unknown>) => ({
+      character: p.playerName ?? null,
+      variant: p.tier ?? null,
+      ask_usd: num(p.lowestAsk),
+      fmv_usd: num(p.fmv),
+      pin_url: typeof p.topshotUrl === "string" ? `${base}${p.topshotUrl}` : null,
+    })
+    return JSON.stringify({
+      status: "ok",
+      collection: PINNACLE_COLLECTION_ID,
+      wallet,
+      sets_total: num(body.totalSets),
+      sets_complete: num(body.completeSets),
+      sets_in_progress: num(body.inProgressSets),
+      asks_as_of: body.asksAsOf ?? null,
+      sets: ranked.slice(0, limit).map((s) => ({
+        set: s.setName,
+        slots_total: num(s.totalEditions),
+        slots_owned: num(s.ownedCount),
+        slots_missing: num(s.missingCount),
+        completion_pct: num(s.completionPct),
+        missing_with_live_ask: num(s.listedCount),
+        cost_to_finish_usd: num(s.totalMissingCost),
+        every_missing_slot_priced: s.costConfidence === "high",
+        bottleneck: s.bottleneckPrice != null ? { character: s.bottleneckPlayerName ?? null, ask_usd: num(s.bottleneckPrice) } : null,
+        printings_owned: num(s.ownedPrintings),
+        printings_total: num(s.totalPrintings),
+        cheapest_missing: Array.isArray(s.missing) ? (s.missing as Record<string, unknown>[]).slice(0, 8).map(piece) : [],
+      })),
+      sets_tab_url: `${base}/disney-pinnacle/sets?wallet=${encodeURIComponent(wallet)}`,
+      how_to_read:
+        "A Disney Pinnacle set slot is a CHARACTER; its variants (Standard, Golden, Digital Display …) are extra printings — depth, not slots. cost_to_finish sums the cheapest live ask per missing character; when every_missing_slot_priced is false, some missing characters have no live ask, so the cost is a lower bound — say so. Quote the numbers; never call a set cheap or a good buy.",
+      note: "RPC is read-only — link the Sets tab; never offer to buy.",
+    })
+  } catch {
+    return failed
   }
 }

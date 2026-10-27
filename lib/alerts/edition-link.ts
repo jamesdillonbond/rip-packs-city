@@ -36,7 +36,14 @@ export const COLLECTION_URL_SLUG: Record<string, string> = {
   "d1a0a7f5-609a-49f4-a1a7-4eaac55b020b": "panini-blockchain",
 }
 
+// Disney Pinnacle (2026-10-26): its alert key is the pin's render_id and its page is
+// /pinnacle/moment/<render_id> — NOT /disney-pinnacle/edition/<key>, which only 308s there.
+const PINNACLE_COLLECTION_UUID = "7dd9dd11-e8b6-45c4-ac99-71331f959714"
+
 export function editionHref(a: { collection_id: string | null; edition_key: string }): string | null {
+  if (a.collection_id && a.collection_id.toLowerCase() === PINNACLE_COLLECTION_UUID) {
+    return `/pinnacle/moment/${encodeURIComponent(a.edition_key)}`
+  }
   const slug =
     a.collection_id == null || a.collection_id === ""
       ? "nba-top-shot"

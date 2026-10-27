@@ -434,3 +434,38 @@ describe("GET /api/alerts — a failed read is UNKNOWN, never \"not triggered\""
     expect(src).toMatch(/resolveLiveAsks\(/)
   })
 })
+
+describe("GET /api/alerts — Disney Pinnacle (2026-10-26)", () => {
+  const PIN = "7dd9dd11-e8b6-45c4-ac99-71331f959714"
+  it("prices a Pinnacle alert from its pin's catalog row, never from `editions`", async () => {
+    state.user = { id: "u1", email: "a@b.co" }
+    const fresh = new Date(Date.now() - 3_600_000).toISOString()
+    install({
+      fmv_alerts: {
+        data: [{ id: "p1", owner_key: "u1", edition_key: "OEV1-PXIC-BUZZ-S3", collection_id: PIN, alert_type: "price_below", threshold: 3 }],
+        error: null,
+      },
+      pinnacle_catalog: { data: [{ render_id: "OEV1-PXIC-BUZZ-S3", fmv_usd: 1, floor_ask: 2, floor_ask_updated_at: fresh }], error: null },
+      // A same-key editions row must never price it.
+      editions: { data: [{ id: "ed9", external_id: "OEV1-PXIC-BUZZ-S3", collection_id: PIN }], error: null },
+      fmv_current: { data: [{ edition_id: "ed9", fmv_usd: 999 }], error: null },
+    })
+    const body = await (await GET(getReq())).json()
+    expect(body[0].fmv).toBe(1)
+    expect(body[0].low_ask).toBe(2)
+    expect(body[0].currently_triggered).toBe(true)
+  })
+
+  it("a failed catalog read is UNKNOWN (null), never 'not triggered'", async () => {
+    state.user = { id: "u1", email: "a@b.co" }
+    install({
+      fmv_alerts: {
+        data: [{ id: "p1", owner_key: "u1", edition_key: "OEV1-PXIC-BUZZ-S3", collection_id: PIN, alert_type: "price_below", threshold: 3 }],
+        error: null,
+      },
+      pinnacle_catalog: { data: null, error: { message: "canceling statement due to statement timeout" } },
+    })
+    const body = await (await GET(getReq())).json()
+    expect(body[0].currently_triggered).toBeNull()
+  })
+})
