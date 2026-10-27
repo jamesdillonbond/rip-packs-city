@@ -76,6 +76,16 @@ export function deriveDualPrice(input: DualPriceInput): DualPriceDerived {
   return { legacy: false, primaryLive, secondaryLive, primaryAnchor, secondaryAnchor }
 }
 
+/**
+ * The legacy single-line "Pack price" KPI (EV cron has not populated the dual-price
+ * columns). A reward / box-content pack stores price 0 and no pack sells for exactly $0,
+ * so a price that is null OR ≤ 0 is "no price" — never "$0.00". 2026-10-26: Top Shot
+ * #3000 and Pinnacle #6383 read "PACK PRICE $0.00" beside "No retail price".
+ */
+export function legacyPackPriceIsKnown(fallbackPrice: number | null): fallbackPrice is number {
+  return fallbackPrice != null && Number.isFinite(fallbackPrice) && fallbackPrice > 0
+}
+
 // ── Top-Pulls edition-EV engine (fetchTopPulls' pure core) ──────────────────
 // The dist page fetches the top-50 pool rows, their editions, and per-edition
 // FMV, then computes each edition's contribution to one pack's gross EV. That

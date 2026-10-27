@@ -47,7 +47,7 @@ import {
   fmtCount,
   tsTileImg,
 } from "@/lib/pack-dist-format"
-import { sumPoolRemaining, orderedTiersWithSupply, pctOfPoolLabel, deriveDualPrice } from "@/lib/pack-dist-odds"
+import { sumPoolRemaining, orderedTiersWithSupply, pctOfPoolLabel, deriveDualPrice, legacyPackPriceIsKnown } from "@/lib/pack-dist-odds"
 import {
   detectHoldingPack,
   deriveSecondaryAskAnchor,
@@ -1436,6 +1436,10 @@ function DualPriceKpi({
   // Legacy fallback: when the EV cron hasn't populated the new columns,
   // render the single-line "Pack price" KPI as before.
   if (legacy) {
+    // 0 / null is "no price", not $0.00 (legacyPackPriceIsKnown, unit-tested in lib).
+    if (!legacyPackPriceIsKnown(fallbackPrice)) {
+      return <KpiCell label="Pack price" value="—" sub="No retail price" />
+    }
     return (
       <KpiCell
         label="Pack price"

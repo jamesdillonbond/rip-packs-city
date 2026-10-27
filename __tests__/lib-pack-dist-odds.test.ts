@@ -5,11 +5,25 @@ import {
   orderedTiersWithSupply,
   pctOfPoolLabel,
   deriveDualPrice,
+  legacyPackPriceIsKnown,
   computeTopPulls,
   type TopPullEdition,
   type TopPullFmvRow,
   type TopPullPoolRow,
 } from "@/lib/pack-dist-odds"
+
+describe("pack-dist-odds — legacyPackPriceIsKnown (2026-10-26)", () => {
+  it("a reward pack's stored 0 is NOT a price — the KPI reads \"—\", never \"$0.00\"", () => {
+    expect(legacyPackPriceIsKnown(0)).toBe(false)
+    expect(legacyPackPriceIsKnown(null)).toBe(false)
+    expect(legacyPackPriceIsKnown(-1)).toBe(false)
+    expect(legacyPackPriceIsKnown(Number.NaN)).toBe(false)
+  })
+  it("a real price is known, however small", () => {
+    expect(legacyPackPriceIsKnown(9)).toBe(true)
+    expect(legacyPackPriceIsKnown(0.5)).toBe(true)
+  })
+})
 
 describe("pack-dist-odds — sumPoolRemaining", () => {
   it("sums remaining across tiers, coercing non-numbers to 0", () => {
