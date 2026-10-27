@@ -3149,3 +3149,6 @@ function call. Measured on `recent_low_usd` over 61,372 rows: **27–36 ms inlin
 (its callers are SECURITY DEFINER with a pinned path, which is where the inlined body is planned).
 The curated list IS those comments: `select oid::regprocedure from pg_proc where obj_description(oid,'pg_proc') like 'search_path-exempt%'`.
 Measure before pinning any SQL helper that runs inside an aggregate.
+
+### ⚠ Two views sharing ONE body cost the body twice — and in parallel on a cold cache they time out together (2026-10-26)
+`panini_deal_board` is `panini_deal_board_all` filtered to one product, but the filter sits OUTSIDE a `MATERIALIZED` CTE, so it cannot push down: each read pays the whole body (~240k buffers; 0.8 s warm, 15–29 s cold). The hourly warm fired both reads together and both hit the 30 s `service_role` statement_timeout on cold pages (10-25 9:52 PM, 10-26 5:07 PM PT). Fix shipped in `lib/insights/panini-more-boards.ts`: read the all-product board first, then the filtered one, so the second finds the pages warm. Before parallelising reads, check whether they share a body. A matview (one compute per hour for all three readers, incl. `refresh_panini_public_deals`) is the next lever if the cost ever matters; not needed at Large.

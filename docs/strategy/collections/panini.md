@@ -75,6 +75,8 @@ Read from the registry (`lib/collections.ts` `pages` / switches), the shared `[c
 
 **Next parity candidates, in order:** (1) The rest of NFL / WNBA / MLB team coverage — the laptop walk now covers WNBA correctly and reaches ~5 teams a night (franchise-hubs.md); the map picks each walk up within the hour. (2) Floor movers + an ask chart, off the 10-25 ask lane — wait for ~2 weeks of points (from ~Nov 4) so a "7-day move" has a real base.
 
+**State at 10-26 evening (Cowork cloud, thread closed ~8 PM PT):** every row above that RPC has data for is built; the rest are honest gaps (pack provenance: Panini publishes none; Pack Sniper: 0 of 351 listed packs have a typical pull above their floor). Housekeeping the same evening: the retired `mv_panini_offer_spread_v1_unused` is dropped (`20261027000824`, dashboard SQL editor); the hourly warm now reads `panini_deal_board_all` and then `panini_deal_board` in sequence (fired together both hit the 30 s timeout cold, 10-25 9:52 PM and 10-26 5:07 PM PT; first sequenced warm 6:22 PM PT 200 + 600 rows, no error). The team walk cannot run more teams a night — the laptop's Panini Chrome has no free window (measured, franchise-hubs.md "walk capacity"); every roster team has one walk ~early November. Scheduled reads still to land: #202 (10-28), 1.4.0 (10-29), floor movers (11-04).
+
 ## Open issues
 
 - **#64 (fully closed 10-19):** all five rollups armed (readiness, market summary, analytics smoke, wallet stats by slug exclusion, search), the 7 flip blockers fixed, then `is_active = true` (Next 5).
