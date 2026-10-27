@@ -31,7 +31,7 @@ Read from the registry (`lib/collections.ts`), the shared `[collection]` routes 
 | Surface | Top Shot | Candy | Note |
 |---|---|---|---|
 | Overview · Market · Collection · Packs · Sets · Analytics tabs | ✓ | ✓ | registry `pages` |
-| Sniper tab | ✓ | ✗ by decision → now gated (new) | the tab rendered and the feed answered `deals: []` with no failure flag ("No deals match your filters"); `sniper/layout.tsx` now wraps `FeatureTabGate` like every other tab (UFC gets the same). Deals for Candy live on `/insights/deals` (empty by construction while FMV is capped at the confirmed ask) |
+| Sniper tab | ✓ | ✗ by decision | the edge already 307s `/candy-mlb/sniper` to Overview (proxy.ts); `sniper/layout.tsx` now also wraps `FeatureTabGate` like every other tab, as defense in depth (the client shell would otherwise render "No deals match your filters" from a feed with no Candy source). Deals for Candy live on `/insights/deals` (empty by construction while FMV is capped at the confirmed ask) |
 | Hot Floors | ✓ (Quick-Buy sweeps) | ✗ | no Quick Buy on Magic Eden and no sale since 10-11 — a board would be empty (#58) |
 | Challenges · Play · Badges · Fast Break | ✓ | ✗ | Top Shot product concepts |
 | Edition: FMV, chart, sales, alerts, market cap, special serials, related | ✓ | ✓ | |
