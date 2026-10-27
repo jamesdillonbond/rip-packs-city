@@ -7,7 +7,10 @@
 // component (page.tsx) fetches the default-view cohort stats + ranked rows
 // server-side and passes them in as `initial`, so the ranked table + the
 // per-player entity drill-down links render in the raw server HTML (crawlable)
-// instead of only after JS. This component layers on sort as progressive
+// instead of only after JS. Since 2026-10-26 a third class, `nfl-2025`, is the 2025
+// NFL rookie class on NFL All Day (not seeded — read live; its rows never render
+// under another class's tab while that read is in flight).
+// This component layers on sort as progressive
 // enhancement and only refetches when the user changes the sort — the default
 // (GMV-desc) view never refetches on mount.
 
@@ -51,7 +54,7 @@ export type Row = {
 }
 
 export type ApiResponse = {
-  meta: { fetched_at: string | null }
+  meta: { fetched_at: string | null; filters?: { class?: string } }
   cohort_stats: CohortStats
   rows: Row[]
   /** 2026 class from the server seed; null when that read failed, absent on an API refetch. */
@@ -59,7 +62,15 @@ export type ApiResponse = {
 }
 
 type SortKey = "gmv" | "lock" | "avg_price" | "sales" | "mint_one"
-type CohortClass = "2025" | "2026"
+type CohortClass = "2025" | "2026" | "nfl-2025"
+const CLASSES: readonly CohortClass[] = ["2025", "2026", "nfl-2025"]
+
+/** Where a class's players live: the collection slug for player links, its league and its tab label. */
+const CLASS_HOME: Record<CohortClass, { collection: string; league: string; tab: string; year: string; topShot: boolean }> = {
+  "2025": { collection: "nba-top-shot", league: "NBA", tab: "2025 class", year: "2025", topShot: true },
+  "2026": { collection: "nba-top-shot", league: "NBA", tab: "2026 class", year: "2026", topShot: true },
+  "nfl-2025": { collection: "nfl-all-day", league: "NFL", tab: "NFL 2025 class", year: "2025", topShot: false },
+}
 
 const CLASS_COPY: Record<CohortClass, { lede: string; tweet: string; cohort: string }> = {
   "2025": {
@@ -74,9 +85,16 @@ const CLASS_COPY: Record<CohortClass, { lede: string; tweet: string; cohort: str
     cohort:
       "any player with an edition in the Series 2026-27 Rookie Debut set, the set every rookie's first Moment enters. It is built from minted Moments, never from the draft, so it fills as Rookie Debut drops.",
   },
+  "nfl-2025": {
+    lede: "The 2025 NFL rookie class on NFL All Day as a cohort. 30-day GMV, lock-rate, average serial price, mint-#1 trophy presence.",
+    tweet: "The 2025 NFL rookie class on NFL All Day, ranked by 30d GMV + lock-rate.",
+    cohort:
+      "any player with a Rookie Mint edition in All Day's 2025 season series; each player's editions from that season on (an older namesake never joins). Sales exclude pack buybacks; lock and squeeze count only editions whose counts were read.",
+  },
 }
 
 function seedFor(initial: ApiResponse, cls: CohortClass): ApiResponse | null {
+  if (cls === "nfl-2025") return null
   if (cls === "2025") return initial
   if (!initial.class_2026) return null
   return { meta: initial.meta, cohort_stats: initial.class_2026.cohort_stats, rows: initial.class_2026.rows }
@@ -106,7 +124,10 @@ type Props = {
 }
 
 export default function RookiesBoardClient({ initial, initialDegraded = null }: Props) {
-  const [data, setData] = useState<ApiResponse | null>(initial)
+  // `heldClass` = which class `data` holds (the server seed is the 2025 class). The rows on
+  // screen must be the selected class's — never the previous tab's while a live read is in
+  // flight or after it failed.
+  const [data, setData] = useState<(ApiResponse & { heldClass?: CohortClass }) | null>(initial)
   // Seed provenance in STATE so a successful sort refetch clears it — otherwise
   // the empty state below keeps saying "couldn't be loaded" over a good read.
   const [degraded, setDegraded] = useState<DegradedSummary | null>(initialDegraded)
@@ -120,7 +141,7 @@ export default function RookiesBoardClient({ initial, initialDegraded = null }: 
   // the server cannot read the query); a tab click overrides it. A URL class
   // reaches the fetch effect below as a class change, so its 2026 rows come from
   // the server seed like a clicked tab's.
-  const urlClass = useRookieClassParam(["2025", "2026"]) as CohortClass | null
+  const urlClass = useRookieClassParam(CLASSES) as CohortClass | null
   const [pickedClass, setCls] = useState<CohortClass | null>(null)
   const cls: CohortClass = pickedClass ?? urlClass ?? "2025"
 
@@ -137,7 +158,7 @@ export default function RookiesBoardClient({ initial, initialDegraded = null }: 
     // whose seed read FAILED (class_2026 null) falls through to a live fetch.
     const seeded = sort === "gmv" ? seedFor(initial, cls) : null
     if (seeded) {
-      setData(seeded)
+      setData({ ...seeded, heldClass: cls })
       setDegraded(initialDegraded)
       setError(null)
       setLoading(false)
@@ -154,7 +175,7 @@ export default function RookiesBoardClient({ initial, initialDegraded = null }: 
         })
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
         const j = (await r.json()) as ApiResponse
-        setData(j)
+        setData({ ...j, heldClass: cls })
         setDegraded(null)
       } catch (e: unknown) {
         if ((e as { name?: string })?.name === "AbortError") return
@@ -174,8 +195,10 @@ export default function RookiesBoardClient({ initial, initialDegraded = null }: 
     return `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`
   }, [cls])
 
-  const rows = data?.rows ?? []
-  const cohort = data?.cohort_stats
+  const home = CLASS_HOME[cls]
+  const pending = (data?.heldClass ?? "2025") !== cls
+  const rows = pending ? [] : data?.rows ?? []
+  const cohort = pending ? null : data?.cohort_stats
 
   return (
     <main style={styles.page}>
@@ -183,7 +206,7 @@ export default function RookiesBoardClient({ initial, initialDegraded = null }: 
 
       <section className="rpc-rk-hero">
         <div className="rpc-rk-eyebrow">RPC Insights · Public</div>
-        <h1 className="rpc-rk-h1">{cls} NBA Rookie Index</h1>
+        <h1 className="rpc-rk-h1">{home.year} {home.league} Rookie Index</h1>
         <p className="rpc-rk-lede">{copy.lede}</p>
         {/*
           FRESHNESS IS NOT OPTIONAL ON A SNAPSHOT-CACHED BOARD. This page is served
@@ -202,7 +225,7 @@ export default function RookiesBoardClient({ initial, initialDegraded = null }: 
         */}
         <div className="rpc-rk-meta-row">
           <span>
-            Updated <FreshnessStamp iso={data?.meta?.fetched_at ?? null} />
+            Updated <FreshnessStamp iso={pending ? null : data?.meta?.fetched_at ?? null} />
           </span>
           <span className="rpc-rk-meta-sep">·</span>
           <span>No signup</span>
@@ -240,14 +263,14 @@ export default function RookiesBoardClient({ initial, initialDegraded = null }: 
 
       <section className="rpc-rk-controls" aria-label="Rookie class">
         <span className="rpc-rk-pill-label">CLASS</span>
-        {(["2025", "2026"] as const).map((c) => (
+        {CLASSES.map((c) => (
           <button
             key={c}
             className={`rpc-rk-pill ${cls === c ? "rpc-rk-pill-active" : ""}`}
             aria-pressed={cls === c}
             onClick={() => setCls(c)}
           >
-            {c} class
+            {CLASS_HOME[c].tab}
           </button>
         ))}
       </section>
@@ -274,7 +297,7 @@ export default function RookiesBoardClient({ initial, initialDegraded = null }: 
       <section className="rpc-rk-table-wrap" aria-label="Rookie index">
         {error ? (
           <div className="rpc-rk-state">Failed to load: {error}</div>
-        ) : loading ? (
+        ) : loading || pending ? (
           <div className="rpc-rk-state">Loading…</div>
         ) : rows.length === 0 ? (
           <div className="rpc-rk-state">{sectionEmptyCopy(!(degraded?.failed?.length), "Rookie index", "No rookies found.")}</div>
@@ -299,22 +322,25 @@ export default function RookiesBoardClient({ initial, initialDegraded = null }: 
                   <td>
                     <div className="rpc-rk-player-cell">
                       <Link
-                        href={`/nba-top-shot/player/${encodeURIComponent(slugifyPlayerName(r.player_name))}`}
+                        href={`/${home.collection}/player/${encodeURIComponent(slugifyPlayerName(r.player_name))}`}
                         className="rpc-rk-player-link"
-                        title={`${r.player_name} on NBA Top Shot`}
+                        title={`${r.player_name} on ${home.topShot ? "NBA Top Shot" : "NFL All Day"}`}
                       >
                         <span className="rpc-rk-player">{r.player_name}</span>
                       </Link>
-                      <Link
-                        href={`/insights/squeeze?player=${encodeURIComponent(r.player_name)}`}
-                        className="rpc-rk-trophy-link"
-                        title={`See ${r.player_name}'s editions on the squeeze board`}
-                      >
-                        squeeze →
-                      </Link>
+                      {/* /insights/squeeze is Top Shot only. */}
+                      {home.topShot ? (
+                        <Link
+                          href={`/insights/squeeze?player=${encodeURIComponent(r.player_name)}`}
+                          className="rpc-rk-trophy-link"
+                          title={`See ${r.player_name}'s editions on the squeeze board`}
+                        >
+                          squeeze →
+                        </Link>
+                      ) : null}
                       {Number(r.mint_one_eds_with_history ?? 0) > 0 ? (
                         <Link
-                          href={`/insights/first-mint?player=${encodeURIComponent(r.player_name)}`}
+                          href={`/insights/first-mint?${home.topShot ? "" : "collection=nfl-all-day&"}player=${encodeURIComponent(r.player_name)}`}
                           className="rpc-rk-trophy-link"
                           title={`See ${r.player_name}'s first-mint trophies`}
                         >
@@ -352,7 +378,7 @@ export default function RookiesBoardClient({ initial, initialDegraded = null }: 
           </p>
           <p>
             <strong>Lock %</strong> averages each edition&apos;s lock rate
-            (locked / circulation after burns), from Top Shot&apos;s own edition counts.{" "}
+            (locked / circulation after burns), from {home.topShot ? "Top Shot" : "All Day"}&apos;s own edition counts.{" "}
             <strong>Squeeze %</strong> = (locked + burned) / circulation
             summed across the player&apos;s editions. <strong>Top mint-1</strong>{" "}
             = highest USD sale of a serial #1 across the player&apos;s editions.

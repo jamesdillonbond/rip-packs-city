@@ -272,6 +272,17 @@ describe("concierge — market-pulse / rookies", () => {
     expect(url).toContain("class=2026")
     expect(url).toContain("sort=gmv")
   })
+  // 2026-10-26 (All Day ↔ Top Shot parity pass 5): an All Day rookie question reads the 2025 NFL class —
+  // never an NBA class, even when the model passes one.
+  it("get_rookies on NFL All Day reads class=nfl-2025, whatever class was passed", async () => {
+    const f = stubFetch([jsonRoute("/api/public/insights/rookies", { rows: [{ player_name: "Ashton Jeanty" }] })])
+    script("get_rookies", { collectionId: "nfl-all-day", class: "2026", sort: "gmv" })
+    await POST(post("nfl rookies"))
+    const url = f.calls.find((c) => c.url.includes("/rookies"))!.url
+    expect(url).toContain("class=nfl-2025")
+    expect(url).not.toContain("class=2026")
+    expect(url).toContain("sort=gmv")
+  })
 })
 
 describe("concierge — get_premiums enum dispatch", () => {
@@ -299,6 +310,22 @@ describe("concierge — get_ecosystem_stat + get_insight_board enum maps", () =>
     await POST(post("who's new"))
     expect(f.calls.some((c) => c.url.includes("/new-collectors"))).toBe(true)
     expect(toolResult()).toMatchObject({ status: "ok", count: 1 })
+  })
+  // 2026-10-26: first_mint / offer_spread are per-collection boards — All Day reads its own leg, any other named
+  // collection is refused rather than answered with Top Shot's rows.
+  it.each([["first_mint", "first-mint"], ["offer_spread", "offer-spread"]])("%s on NFL All Day reads ?collection=nfl-all-day", async (metric, path) => {
+    const f = stubFetch([jsonRoute(`/api/public/insights/${path}`, { rows: [{ x: 1 }] })])
+    script("get_ecosystem_stat", { metric, collectionId: "nfl-all-day" })
+    await POST(post("all day board"))
+    const url = f.calls.find((c) => c.url.includes(`/${path}`))!.url
+    expect(url).toContain("collection=nfl-all-day")
+  })
+  it.each(["first_mint", "offer_spread"])("%s on another collection is refused, never Top Shot's rows", async (metric) => {
+    const r = await drive("get_ecosystem_stat", { metric, collectionId: "laliga-golazos" })
+    expect(r).toMatchObject({ status: "unsupported_collection" })
+  })
+  it("a metric named like an Object.prototype key is an error, not a crash", async () => {
+    expect(await drive("get_ecosystem_stat", { metric: "constructor" })).toMatchObject({ status: "error" })
   })
   it("rejects an unknown ecosystem metric", async () => {
     expect(await drive("get_ecosystem_stat", { metric: "nope" })).toMatchObject({ status: "error" })

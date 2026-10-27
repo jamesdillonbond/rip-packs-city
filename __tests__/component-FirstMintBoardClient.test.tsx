@@ -149,6 +149,8 @@ describe("FirstMintBoardClient", () => {
       const { container } = render(<FirstMintBoardClient initial={initial} />)
       await waitFor(() => expect(container.textContent).toMatch(/Failed to load/))
       expect(container.textContent).not.toContain("Damian Lillard")
+      // Nor the Top Shot cohort KPIs (max 248×) under the All Day toggle.
+      expect(container.textContent).not.toContain("248.0×")
     })
 
     it("switching back to Top Shot drops the URL param", async () => {

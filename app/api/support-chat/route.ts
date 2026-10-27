@@ -730,11 +730,11 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "get_rookies",
-    description: "The Rookie Index — one row per Top Shot ROOKIE PLAYER (30-day GMV, sales, average price, lock rate, top mint-#1 sale) for ONE rookie class: class='2025' (default, last season's class) or class='2026' (this season's rookies; it fills as each rookie's first Moment mints in the Series 2026-27 Rookie Debut set, so it is small early in the season — say how many rookies it holds). Use for 'how's the rookie market', 'hot rookies right now', 'how are this year's rookies doing' (class 2026). Read-only board; report what the rows say.",
+    description: "The Rookie Index — one row per ROOKIE PLAYER (30-day GMV, sales, average price, lock rate, top mint-#1 sale) for ONE rookie class: on Top Shot class='2025' (default, last season's NBA class) or class='2026' (this season's NBA rookies; it fills as each rookie's first Moment mints in the Series 2026-27 Rookie Debut set, so it is small early in the season — say how many rookies it holds); on NFL All Day (collectionId 'nfl-all-day') the 2025 NFL class (players with a Rookie Mint edition in All Day's 2025 season) — the class is chosen for you there. Use for 'how's the rookie market', 'hot rookies right now', 'how are this year's rookies doing' (class 2026). Read-only board; report what the rows say.",
     input_schema: {
       type: "object" as const,
       properties: {
-        class: { type: "string", enum: ["2025", "2026"], description: "Which rookie class. Default 2025; use 2026 for this season's rookies." },
+        class: { type: "string", enum: ["2025", "2026"], description: "Which Top Shot rookie class. Default 2025; use 2026 for this season's rookies. Ignored on NFL All Day (its 2025 NFL class)." },
         sort: { type: "string", enum: ["gmv", "lock", "avg_price", "sales", "mint_one"], description: "Optional ordering: gmv (30-day GMV, the default), lock (lock rate), avg_price, sales (30-day count), mint_one (top #1-serial sale)." },
         limit: { type: "number", description: "Max rows, 1..100, default 25." },
       },
@@ -4918,13 +4918,13 @@ async function executeToolInner(
     if (isPinnacle(effectiveCollectionId)) {
       return pinnacleNotApplicable("get_rookies", "The rookie index is Top Shot's (NBA rookies); Disney Pinnacle has characters, not players.", "For a character's pins, use search_catalog or get_market_cap with the character.");
     }
-    if (isAllDaySlug(effectiveCollectionId)) {
-      return allDayNotApplicable("get_rookies", "The rookie index and rookie boards cover Top Shot's NBA rookie classes only.", "For an All Day rookie, get_badge_info with badge 'rookie' and the player lists their Rookie Year / Rookie Mint editions; get_player_editions prices them.");
-    }
     const params = new URLSearchParams();
+    // 2026-10-26: All Day's 2025 NFL class (class=nfl-2025, allday_2025_rookie_index) — never an NBA class
+    // under an All Day question, whatever class the model passed.
+    if (isAllDaySlug(effectiveCollectionId)) params.set("class", "nfl-2025");
     // 2026-10-22: the description used to suggest sort "momentum" / "value", which the
     // route 400s on; both params are enums now and the route still validates them.
-    if (toolInput.class) params.set("class", String(toolInput.class));
+    else if (toolInput.class) params.set("class", String(toolInput.class));
     if (toolInput.sort) params.set("sort", String(toolInput.sort));
     const limit = Math.min(Math.max(Math.trunc(Number(toolInput.limit ?? 25)) || 25, 1), 100);
     params.set("limit", String(limit));
@@ -4962,10 +4962,18 @@ async function executeToolInner(
       first_mint: "first-mint",
       cross_collection: "cross-collection",
     };
-    const path = metricMap[String(toolInput.metric ?? "")];
+    const path = ownLookup(metricMap, String(toolInput.metric ?? ""));
     if (!path) return JSON.stringify({ status: "error", message: "metric must be one of new_collectors, offer_spread, first_mint, cross_collection." });
     const limit = Math.min(Math.max(Math.trunc(Number(toolInput.limit ?? 20)) || 20, 1), 50);
-    return fetchPublicInsight(base, `/api/public/insights/${path}`, limit);
+    // 2026-10-26: first_mint and offer_spread are per-collection boards (Top Shot + NFL All Day). On an All Day
+    // question they read All Day's leg; on any other named collection they would be Top Shot's rows under its
+    // name (substitution), so refuse.
+    const perCollection = path === "first-mint" || path === "offer-spread";
+    const allDayLeg = perCollection && isAllDaySlug(effectiveCollectionId);
+    if (perCollection && !allDayLeg && effectiveCollectionId && effectiveCollectionId !== "nba-top-shot") {
+      return JSON.stringify({ status: "unsupported_collection", message: `RPC's ${path} board covers NBA Top Shot and NFL All Day only. Say so; do not quote Top Shot's numbers for this collection.` });
+    }
+    return fetchPublicInsight(base, `/api/public/insights/${path}${allDayLeg ? "?collection=nfl-all-day" : ""}`, limit);
   }
 
   if (toolName === "get_cheapest_sets_to_complete") {

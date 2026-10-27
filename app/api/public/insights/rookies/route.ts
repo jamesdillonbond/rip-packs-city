@@ -25,8 +25,12 @@
 // _cohort_stats — the same bodies over the Series 9 Rookie Debut set, so it grows
 // as that set mints). Any other value is a 400, never a silent 2025 answer.
 //
+// 2026-10-26: `class=nfl-2025` reads the 2025 NFL rookie class on NFL All Day (allday_2025_rookie_index /
+// _cohort_stats — same columns; cohort = players with a Rookie Mint edition in All Day series 9). A class is a
+// cohort, so All Day joins as one more class rather than a collection switch.
+//
 // Query params:
-//   class=2025|2026                default 2025
+//   class=2025|2026|nfl-2025       default 2025
 //   sort=gmv|lock|avg_price|sales  default gmv
 //   limit=<1..100>                 default 100
 //
@@ -36,9 +40,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { boardUnavailable } from "@/lib/insights/board-error";
 import { boundedRead } from "@/lib/api/bounded-read";
+import { ownLookup } from "@/lib/safe-lookup";
 
 const VALID_SORTS = new Set(["gmv", "lock", "avg_price", "sales", "mint_one"]);
-const VALID_CLASSES = new Set(["2025", "2026"]);
+// Each class names its views explicitly — never a template over the param.
+const CLASS_VIEWS = {
+  "2025": { index: "topshot_2025_rookie_index", stats: "topshot_2025_rookie_cohort_stats" },
+  "2026": { index: "topshot_2026_rookie_index", stats: "topshot_2026_rookie_cohort_stats" },
+  "nfl-2025": { index: "allday_2025_rookie_index", stats: "allday_2025_rookie_cohort_stats" },
+} as const;
+const VALID_CLASSES = new Set(Object.keys(CLASS_VIEWS));
 
 export async function GET(req: NextRequest) {
   const startedAt = Date.now();
@@ -54,8 +65,12 @@ export async function GET(req: NextRequest) {
       { status: 400 }
     );
   }
-  const indexView = `topshot_${cohortClass}_rookie_index`;
-  const statsView = `topshot_${cohortClass}_rookie_cohort_stats`;
+  const views = ownLookup(CLASS_VIEWS, cohortClass);
+  if (!views) {
+    return NextResponse.json({ error: `class must be one of ${[...VALID_CLASSES].join(",")}` }, { status: 400 });
+  }
+  const indexView = views.index;
+  const statsView = views.stats;
 
   if (!VALID_SORTS.has(sort)) {
     return NextResponse.json(

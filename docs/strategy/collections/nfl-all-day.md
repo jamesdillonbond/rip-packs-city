@@ -145,9 +145,11 @@ Read from a code sweep of every Top Shot-only branch (≈58 rows) and a DB check
 | Insights boards with an All Day leg | — | autographs, deals, top-sales, trophies, market-cap, market-pulse, cross-collection, pack-sniper, account-value, special-serial-owners, buyback + All Day's own scarcity / pack-market / pack-reality | |
 | Bid vs Floor (`/insights/offer-spread`) | ✓ | ✓ (new, pass 2) | All Day toggle (`?collection=nfl-all-day`) over `allday_offer_ask_spread`: 1,008 editions with a bid and a floor ≥ $5 (10-26); bid age unknown (not kept), so the longest-standing sort is Top Shot only |
 | First-Mint Trophies (`/insights/first-mint`) | ✓ | ✓ (new, pass 4) | All Day toggle (`?collection=nfl-all-day`) over `mv_allday_first_mint_trophies` (pg_cron 803, 30 min): #1 sales from `sales_market` (buybacks out), self-trades and excluded accounts out. 27 trophies, median 22× (10-26) |
-| Insights boards Top Shot only | squeeze, set-squeeze, rookie-board, rookies, serial / parallel premiums, underpriced-serials, set-completers, new-collectors, market index | ✗ | next by data on hand: rookies (Rookie Year / Rookie Mint badges) |
+| Rookie Index (`/insights/rookies`) | ✓ (2025 + 2026 NBA classes) | ✓ (new, pass 5) | an "NFL 2025 class" tab (`?class=nfl-2025`) over `allday_2025_rookie_index`: players with a Rookie Mint edition in series 9 (2025 season), their editions from that season on; 109 players, 30-day GMV $587 (10-26). Concierge `get_rookies` reads it on All Day |
+| Insights boards Top Shot only | squeeze, set-squeeze, rookie-board, serial / parallel premiums, underpriced-serials, set-completers, new-collectors, market index | ✗ | rookie-board is per-parallel (no All Day parallel grouping); squeeze needs a board view over `badge_editions` like the team arm |
 | Concierge: hot floors · special-serial owners · badges · set completion | ✓ | ✓ (new) | each read Top Shot on an All Day question (substitution) or said "Top Shot only" |
-| Concierge: edition sweep · serial deals · challenges · rookies | ✓ | not_applicable (new) | each answered with Top Shot data before |
+| Concierge: edition sweep · serial deals · challenges | ✓ | not_applicable (new) | each answered with Top Shot data before |
+| Concierge: rookies · first-mint / offer-spread stats | ✓ | ✓ (new, pass 5) | `get_rookies` reads the NFL 2025 class; `get_ecosystem_stat` first_mint / offer_spread pass `?collection=nfl-all-day` (and refuse any other non-Top Shot collection — they had answered with Top Shot's rows) |
 
 ## Decisions on record (do not re-litigate)
 

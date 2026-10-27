@@ -116,7 +116,8 @@ describe("route: each All Day arm returns before the Top Shot read", () => {
     ["get_edition_sweep", 'allDayNotApplicable("get_edition_sweep"', 'rpc("get_edition_sweep_signal"'],
     ["search_serial_deals", 'allDayNotApplicable("search_serial_deals"', "const player ="],
     ["get_challenges", 'allDayNotApplicable("get_challenges"', "try {"],
-    ["get_rookies", 'allDayNotApplicable("get_rookies"', "new URLSearchParams()"],
+    // 2026-10-26: All Day answers from its own 2025 NFL class (was not_applicable).
+    ["get_rookies", 'params.set("class", "nfl-2025")', 'else if (toolInput.class) params.set("class"'],
     ["get_set_completion_cost", "readAllDaySetCompletionForConcierge", 'COLLECTION_UUID_BY_SLUG["nba-top-shot"]'],
     ["get_cheapest_sets_to_complete", "readAllDaySetCompletionForConcierge", "try {"],
     ["get_badge_info", "readAllDayBadgesForConcierge", 'from("badge_taxonomy")'],
