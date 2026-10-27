@@ -48,16 +48,24 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { boardUnavailable } from "@/lib/insights/board-error";
-import { fetchOfferSpreadBoard } from "@/lib/insights/offer-spread-board";
+import { fetchOfferSpreadBoard, isOfferSpreadCollection, OFFER_SPREAD_TIERS, OFFER_SPREAD_VIEWS } from "@/lib/insights/offer-spread-board";
 
 import { boardRowMeta } from "@/lib/insights/board-meta"
-const VALID_TIERS = new Set(["COMMON", "RARE", "LEGENDARY", "FANDOM", "ULTIMATE"]);
+import { ownLookup } from "@/lib/safe-lookup"
 const VALID_SORTS = new Set(["par", "spread", "offer", "ask", "pct", "bidage"]);
 
 export async function GET(req: NextRequest) {
   const startedAt = Date.now();
   const sp = new URL(req.url).searchParams;
 
+  // 2026-10-26: collection=nba-top-shot (default when ABSENT) | nfl-all-day. An unknown value is refused,
+  // never answered with Top Shot rows (substitution).
+  const collectionParam = sp.get("collection");
+  if (collectionParam != null && !isOfferSpreadCollection(collectionParam)) {
+    return NextResponse.json({ error: "collection must be nba-top-shot or nfl-all-day" }, { status: 400 });
+  }
+  const collection = collectionParam ?? "nba-top-shot";
+  const VALID_TIERS = new Set(ownLookup(OFFER_SPREAD_TIERS, collection) ?? []);
   const tier = sp.get("tier")?.toUpperCase() ?? null;
   // min_ask floors out penny-floor ratio artifacts. Default 0 so player/set
   // drill-downs never empty (QA point 6); the page's board view passes 5.
@@ -82,7 +90,7 @@ export async function GET(req: NextRequest) {
   // so the crawlable board and this route cannot drift. This route keeps its
   // own failure policy (boardUnavailable).
   const { data, error, playerResolved } = await fetchOfferSpreadBoard(
-    { tier, set: setFilter, player: playerFilter, bidMeetsAsk, minAsk, sort, limit },
+    { collection, tier, set: setFilter, player: playerFilter, bidMeetsAsk, minAsk, sort, limit },
     supabase,
   );
   if (error) {
@@ -92,10 +100,11 @@ export async function GET(req: NextRequest) {
   const res = NextResponse.json({
     meta: {
       fetched_at: new Date().toISOString(),
-      source: "topshot_offer_ask_spread",
+      source: ownLookup(OFFER_SPREAD_VIEWS, collection) ?? null,
+      collection,
       ...boardRowMeta(data?.length ?? 0, limit),
       elapsed_ms: Date.now() - startedAt,
-      filters: { tier, min_ask: minAsk, bid_meets_ask: bidMeetsAsk, set: setFilter, player: playerFilter, sort, limit },
+      filters: { collection, tier, min_ask: minAsk, bid_meets_ask: bidMeetsAsk, set: setFilter, player: playerFilter, sort, limit },
       ...(playerResolved ? { player_resolved: playerResolved } : {}),
     },
     rows: data ?? [],

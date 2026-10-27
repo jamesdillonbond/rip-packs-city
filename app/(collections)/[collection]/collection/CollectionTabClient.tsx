@@ -916,8 +916,15 @@ function WalletMomentsBody() {
       // collection got a "CLOSE TO COMPLETING · Base Set" callout about its
       // TOP SHOT sets, linking to /nba-top-shot/sets — substitution, the face
       // where nothing fails.
-      if (collectionSlug === "nba-top-shot") {
-        fetch("/api/sets?wallet=" + encodeURIComponent(trimmed) + "&skipAsks=1")
+      // 2026-10-26 (All Day parity): All Day reads its OWN tracker. Its totalMissingCost is a sum of FMV,
+      // not asks, so PortfolioSummary shows All Day's callout without a dollar figure.
+      const setsUrl = collectionSlug === "nba-top-shot"
+        ? "/api/sets?wallet=" + encodeURIComponent(trimmed) + "&skipAsks=1"
+        : collectionSlug === "nfl-all-day"
+          ? "/api/allday-set-progress?wallet=" + encodeURIComponent(trimmed)
+          : null
+      if (setsUrl) {
+        fetch(setsUrl)
           .then(function(r) { return r.ok ? r.json() : null })
           .then(function(d) { if (d) setSetsData(d) })
           .catch(function() {})

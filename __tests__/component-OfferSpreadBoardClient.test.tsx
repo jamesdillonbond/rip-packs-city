@@ -76,3 +76,26 @@ describe("OfferSpreadBoardClient", () => {
     expect(getByText(/No editions with both a live bid and a floor ask match\./)).toBeTruthy()
   })
 })
+
+// 2026-10-26 (All Day parity): the All Day toggle refetches with collection=nfl-all-day, swaps the tier list,
+// links editions under /nfl-all-day, drops the undated-bid sort, and explains the unknown bid age honestly.
+import { fireEvent, waitFor } from "@testing-library/react"
+
+describe("OfferSpreadBoardClient — NFL All Day", () => {
+  it("the toggle refetches All Day and renders it under All Day", async () => {
+    const adRow: Row = { ...fullRow, external_id: "6112", name: "Saquon Barkley", player_name: "Saquon Barkley", tier: "UNCOMMON", best_offer_at: null }
+    const f = vi.fn((u: string) =>
+      Promise.resolve({ ok: true, json: async () => ({ rows: String(u).includes("collection=nfl-all-day") ? [adRow] : [], meta: { fetched_at: null, total_rows: 1, elapsed_ms: 1 } }) } as Response),
+    )
+    vi.stubGlobal("fetch", f)
+    const { getByTestId, getByText, queryByText, container } = render(<OfferSpreadBoardClient initialRows={[fullRow]} initialFetchedAt="2026-10-26T00:00:00Z" />)
+    expect(queryByText("UNCOMMON")).toBeNull()
+    fireEvent.click(getByTestId("os-collection-nfl-all-day"))
+    await waitFor(() => expect(container.querySelector('a[href="/nfl-all-day/edition/6112"]')).not.toBeNull())
+    expect(f.mock.calls.some(([u]) => String(u).includes("collection=nfl-all-day"))).toBe(true)
+    expect(getByText(/NFL All Day editions where/)).toBeTruthy()
+    expect(container.querySelector('option[value="bidage"]')).toBeNull()
+    expect(container.querySelector('[title^="All Day bids are indexed without the time"]')).not.toBeNull()
+    expect(container.textContent).not.toContain("/nba-top-shot/edition/6112")
+  })
+})

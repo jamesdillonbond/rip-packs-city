@@ -211,6 +211,15 @@ describe("PortfolioSummary", () => {
     expect(txt).toContain("·") // multi-set join separator
   })
 
+  it("All Day's callout links All Day's Sets tab and states no dollar figure (its figure is an FMV sum) — 2026-10-26", () => {
+    const nearCompleteSets = [{ setId: "s1", setName: "Gridiron", missingCount: 1, totalMissingCost: 12 }]
+    const { container } = render(<PortfolioSummary {...base} collectionSlug="nfl-all-day" nearCompleteSets={nearCompleteSets} />)
+    expect(container.textContent).toContain("Gridiron — 1 away")
+    expect(container.textContent).not.toContain("$12.00")
+    expect(container.querySelector('a[href="/nfl-all-day/sets"]')).not.toBeNull()
+    expect(container.querySelector('a[href="/nba-top-shot/sets"]')).toBeNull()
+  })
+
   it("does NOT render the Close-to-Completing callout before a search", () => {
     const nearCompleteSets = [{ setId: "s1", setName: "Base Set", missingCount: 3, totalMissingCost: 10 }]
     const { container } = render(

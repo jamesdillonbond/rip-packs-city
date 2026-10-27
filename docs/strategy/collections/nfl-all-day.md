@@ -130,19 +130,20 @@ Read from a code sweep of every Top Shot-only branch (≈58 rows) and a DB check
 | Edition: Offers tab | ✓ | ✓ (new) | was a false "No open offers" on every edition; `allday_open_offers` arm, bidder / bid time unknown → "—" |
 | Edition: "See who holds X's special serials" | ✓ | ✓ (new) | the board read no URL params, so the link opened unfiltered on Top Shot too — fixed for both |
 | Edition: Top Owners | ✓ (Dune index) | ✗ | wmc covers ~315 All Day wallets — a thin lower bound; needs an ownership walk before it can be shown honestly |
-| Edition: insight chips | ✓ | ✗ | next: `cross_collection_deals_board` + `allday_scarcity_board` arms |
+| Edition: insight chips | ✓ | ✓ (new, pass 2) | "N% scarcer than its set + tier" (`allday_scarcity_board`, family ≥ 3) and "Top bid N% of floor" (the page's own bid + floor) — each only when true for that edition |
 | Edition: parallel ladder · thin-parallel estimate | ✓ | ✗ | All Day editions are numeric ids with no `::sub` grouping |
 | Market Cap: issuer-held split | ✓ | ✗ | no All Day issuer / pack-inventory source |
 | Player: season stats | ✓ | ✓ | ESPN NFL |
 | Player: Top Collectors | ✓ (rookie index) | ✗ | same wmc coverage limit as Top Owners |
 | Team: Squeeze & Scarcity | ✓ | ✗ | `allday_scarcity_board` exists; a team arm is a next step |
 | Team: checklist "Contemporary" scope | ✓ | ✗ | needs an All Day season rule |
-| Collection tab: "close to completing" sets | ✓ | ✗ | `/api/allday-set-progress` exists — wire it next |
+| Collection tab: "close to completing" sets | ✓ | ✓ (new, pass 2) | reads `/api/allday-set-progress`; links All Day's Sets tab; no dollar figure (the tracker sums FMV, not asks) |
 | Sniper: BADGES ONLY + badged stat | ✓ | ✓ (new) | `get_allday_listing_badges`; the path built every deal `hasBadge=false` |
 | Sniper: Own / Lock chips · special-serial stat | ✓ | ✗ | the All Day path sets no `editionKey`; setting it routes `/api/edition-floor` without a collection — fix that route first |
 | Analytics: marketplace breakdown | ✓ | ✗ | a V1 / V2 storefront split is possible from `sales.source` |
 | Insights boards with an All Day leg | — | autographs, deals, top-sales, trophies, market-cap, market-pulse, cross-collection, pack-sniper, account-value, special-serial-owners, buyback + All Day's own scarcity / pack-market / pack-reality | |
-| Insights boards Top Shot only | squeeze, set-squeeze, rookie-board, rookies, first-mint, serial / parallel premiums, underpriced-serials, offer-spread, set-completers, new-collectors, market index | ✗ | candidates in order of data on hand: offer-spread (bids indexed), rookies (Rookie Year / Rookie Mint badges), first-mint |
+| Bid vs Floor (`/insights/offer-spread`) | ✓ | ✓ (new, pass 2) | All Day toggle (`?collection=nfl-all-day`) over `allday_offer_ask_spread`: 1,008 editions with a bid and a floor ≥ $5 (10-26); bid age unknown (not kept), so the longest-standing sort is Top Shot only |
+| Insights boards Top Shot only | squeeze, set-squeeze, rookie-board, rookies, first-mint, serial / parallel premiums, underpriced-serials, set-completers, new-collectors, market index | ✗ | next by data on hand: rookies (Rookie Year / Rookie Mint badges), first-mint |
 | Concierge: hot floors · special-serial owners · badges · set completion | ✓ | ✓ (new) | each read Top Shot on an All Day question (substitution) or said "Top Shot only" |
 | Concierge: edition sweep · serial deals · challenges · rookies | ✓ | not_applicable (new) | each answered with Top Shot data before |
 

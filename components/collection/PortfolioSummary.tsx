@@ -239,8 +239,9 @@ export default function PortfolioSummary(props: PortfolioSummaryProps) {
                 return (
                   <span key={s.setId ?? s.setName}>
                     {i > 0 && " · "}
-                    <a href={"/nba-top-shot/sets"} style={{ color: accentText("#a1a1aa"), textDecoration: "none" }}>
-                      {s.setName} — {s.missingCount} away{nearCompleteCostLabel(s)}
+                    <a href={"/" + collectionSlug + "/sets"} style={{ color: accentText("#a1a1aa"), textDecoration: "none" }}>
+                      {/* All Day's tracker sums FMV, not asks — no dollar figure rather than a cost it is not (2026-10-26). */}
+                      {s.setName} — {s.missingCount} away{collectionSlug === "nfl-all-day" ? "" : nearCompleteCostLabel(s)}
                     </a>
                   </span>
                 )

@@ -25,6 +25,7 @@ import {
 } from "@/lib/entity/edition-market-fetchers"
 import { fetchPackProvenance, fetchOwnerUsernames } from "@/lib/edition/fetchers"
 import { fetchCandyFloorListing } from "@/lib/candy/edition-floor-listing"
+import { fetchAllDayScarcityRow, allDayInsightChips } from "@/lib/allday/edition-insight-chips"
 import { fetchCandyPrintings } from "@/lib/candy/edition-printings"
 import { fetchCandyMarketHistory, fetchCandyScarcityRow } from "@/lib/candy/edition-market-history"
 import CandyMarketHistory from "@/components/entity/CandyMarketHistory"
@@ -1424,6 +1425,19 @@ export default async function EditionPage(
         </Suspense>
       )}
 
+      {/* NFL All Day (2026-10-26): chips only for facts true of THIS edition — scarcer than its family, and
+          its top bid as a share of the floor shown above (no extra read for that one). */}
+      {collection === "nfl-all-day" && detail.external_id && (
+        <Suspense fallback={null}>
+          <AllDayInsightChips
+            externalId={detail.external_id}
+            bid={highOffer?.highest_offer ?? null}
+            floor={highOffer?.low_ask ?? null}
+            playerName={detail.player_name ?? null}
+          />
+        </Suspense>
+      )}
+
       {/* ── FMV history chart ────────────────────────────────────────────── */}
       <Section title="FMV History">
         {/* confidence stripped from the server-rendered prop (2026-10-25): the chart never
@@ -1819,6 +1833,25 @@ async function EditionBottomSections({
         </Section>
       )}
     </>
+  )
+}
+
+// All Day edition → /insights/allday-scarcity and the All Day Bid vs Floor board. Renders nothing when the
+// edition earns no chip (lib/allday/edition-insight-chips.ts).
+async function AllDayInsightChips({ externalId, bid, floor, playerName }: { externalId: string; bid: number | null; floor: number | null; playerName: string | null }) {
+  const { row } = await fetchAllDayScarcityRow(externalId).catch(() => ({ row: null, ok: false }))
+  const chips = allDayInsightChips({ scarcity: row, bid, floor, playerName })
+  if (chips.length === 0) return null
+  return (
+    <Section title="Featured in Insights">
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+        {chips.map((c) => (
+          <Link key={c.key} href={c.href} className="rpc-mono" style={INSIGHT_CHIP_STYLE}>
+            {c.label}
+          </Link>
+        ))}
+      </div>
+    </Section>
   )
 }
 

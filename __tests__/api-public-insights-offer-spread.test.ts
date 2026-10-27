@@ -69,3 +69,31 @@ describe("GET /api/public/insights/offer-spread", () => {
     expect(body.retryable).toBe(false)
   })
 })
+
+// 2026-10-26 (All Day parity): the board reads allday_offer_ask_spread for collection=nfl-all-day. An unknown
+// collection is refused, never answered with Top Shot rows (substitution); an ABSENT param stays Top Shot.
+describe("GET /api/public/insights/offer-spread — collection", () => {
+  it("collection=nfl-all-day reads the All Day view, never Top Shot's", async () => {
+    tables.allday_offer_ask_spread = { data: [{ external_id: "6112", highest_offer: 300, low_ask: 260 }], error: null }
+    tables.topshot_offer_ask_spread = { data: [{ external_id: "1:2" }], error: null }
+    const body = await (await GET(req(`${base}?collection=nfl-all-day&tier=uncommon`))).json()
+    expect(body.rows.map((r: any) => r.external_id)).toEqual(["6112"])
+    expect(body.meta).toMatchObject({ source: "allday_offer_ask_spread", collection: "nfl-all-day" })
+    expect(body.meta.filters.tier).toBe("UNCOMMON")
+  })
+  it("tiers are per collection: FANDOM is not an All Day tier, UNCOMMON not a Top Shot one", async () => {
+    expect((await GET(req(`${base}?collection=nfl-all-day&tier=FANDOM`))).status).toBe(400)
+    expect((await GET(req(`${base}?tier=UNCOMMON`))).status).toBe(400)
+  })
+  it("an unknown collection is a 400, not Top Shot rows", async () => {
+    tables.topshot_offer_ask_spread = { data: [{ external_id: "1:2" }], error: null }
+    const res = await GET(req(`${base}?collection=candy-mlb`))
+    expect(res.status).toBe(400)
+    expect(JSON.stringify(await res.json())).not.toContain("1:2")
+  })
+  it("no collection param stays Top Shot", async () => {
+    tables.topshot_offer_ask_spread = { data: [{ external_id: "1:2" }], error: null }
+    const body = await (await GET(req(base))).json()
+    expect(body.meta.collection).toBe("nba-top-shot")
+  })
+})

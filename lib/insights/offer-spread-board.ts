@@ -17,12 +17,16 @@
 import { retryEmptyPlayerSearch, type PlayerResolved } from "@/lib/search/player-search-retry"
 import { getCollectionUuid } from "@/lib/collections"
 import { supabaseAdmin } from "@/lib/supabase"
+import { OFFER_SPREAD_VIEWS, type OfferSpreadCollection } from "@/lib/insights/offer-spread-collections"
+export { OFFER_SPREAD_VIEWS, OFFER_SPREAD_TIERS, isOfferSpreadCollection, type OfferSpreadCollection } from "@/lib/insights/offer-spread-collections"
 
 /** Columns both consumers select. Duplicating this list was the drift risk. */
 export const OFFER_SPREAD_COLS =
   "external_id, name, player_name, set_name, tier, circulation_count, highest_offer, low_ask, offer_pct_of_ask, par_distance, spread_usd, bid_meets_ask, updated_at, best_offer_at"
 
 export interface OfferSpreadBoardOptions {
+  /** Default nba-top-shot (the page's server-rendered view). */
+  collection?: OfferSpreadCollection
   tier?: string | null
   set?: string | null
   player?: string | null
@@ -47,7 +51,7 @@ export async function fetchOfferSpreadBoard(
   const first = await runFetchOfferSpreadBoard(opts, db)
   const out = await retryEmptyPlayerSearch({
     supabase: db,
-    collectionUuid: getCollectionUuid("nba-top-shot"),
+    collectionUuid: getCollectionUuid(opts.collection ?? "nba-top-shot"),
     typed: opts.player,
     first,
     run: (label) => runFetchOfferSpreadBoard({ ...opts, player: label }, db),
@@ -60,6 +64,7 @@ async function runFetchOfferSpreadBoard(
   db: Db,
 ): Promise<{ data: unknown[] | null; error: { message: string } | null }> {
   const {
+    collection = "nba-top-shot",
     tier = null,
     set = null,
     player = null,
@@ -69,7 +74,7 @@ async function runFetchOfferSpreadBoard(
     limit,
   } = opts
 
-  let q = db.from("topshot_offer_ask_spread").select(OFFER_SPREAD_COLS).gte("low_ask", minAsk)
+  let q = db.from(OFFER_SPREAD_VIEWS[collection]).select(OFFER_SPREAD_COLS).gte("low_ask", minAsk)
 
   if (tier) q = q.eq("tier", tier)
   if (bidMeetsAsk) q = q.eq("bid_meets_ask", true)

@@ -25,6 +25,7 @@ import {
 import { usdSignFirst } from "@/lib/usd-format"
 import { accentText } from "@/lib/accent-text"
 import PlayerResolvedNote from "@/components/filters/PlayerResolvedNote"
+import { OFFER_SPREAD_TIERS, isOfferSpreadCollection, type OfferSpreadCollection } from "@/lib/insights/offer-spread-collections"
 
 // The page seed and every refetch read at most this many rows.
 const OFFER_SPREAD_LIMIT = 200
@@ -54,7 +55,7 @@ type ApiResponse = {
   rows: Row[]
 }
 
-type TierFilter = "ALL" | "COMMON" | "RARE" | "LEGENDARY" | "FANDOM" | "ULTIMATE"
+type TierFilter = "ALL" | "COMMON" | "UNCOMMON" | "RARE" | "LEGENDARY" | "FANDOM" | "ULTIMATE"
 type SortKey = "par" | "spread" | "offer" | "ask" | "pct" | "bidage"
 
 function normalizeTier(t: string | null): string | null {
@@ -62,7 +63,11 @@ function normalizeTier(t: string | null): string | null {
   return t.replace(/^MOMENT_TIER_/, "")
 }
 
-const TIERS: TierFilter[] = ["ALL", "COMMON", "RARE", "LEGENDARY", "FANDOM", "ULTIMATE"]
+// 2026-10-26: the board carries NFL All Day too (allday_offer_ask_spread); its tiers differ.
+const COLLECTION_LABEL: Record<OfferSpreadCollection, string> = { "nba-top-shot": "Top Shot", "nfl-all-day": "NFL All Day" }
+const tiersFor = (c: OfferSpreadCollection): TierFilter[] => ["ALL", ...(OFFER_SPREAD_TIERS[c] as TierFilter[])]
+/** All Day keeps no bid time (allday_open_offers) — said so, never the Top Shot index caveat. */
+const ALLDAY_BID_AGE_TITLE = "All Day bids are indexed without the time they were made, so their age is unknown — not new."
 
 function fmtPct(n: number | null): string {
   if (n == null) return "—"
@@ -100,6 +105,8 @@ function tierColor(tier: string | null): string {
       return "var(--tier-rare)"
     case "FANDOM":
       return "var(--tier-fandom)"
+    case "UNCOMMON":
+      return "var(--tier-uncommon)"
     case "COMMON":
       return "var(--tier-common)"
     default:
@@ -158,6 +165,7 @@ export default function OfferSpreadBoardClient({
     return { stale, total: ages.length, oldest: Math.max(...ages) }
   }, [rows, nowMs])
 
+  const [collection, setCollection] = useState<OfferSpreadCollection>("nba-top-shot")
   const [tier, setTier] = useState<TierFilter>("ALL")
   const [bidMeetsOnly, setBidMeetsOnly] = useState(false)
   const [sort, setSort] = useState<SortKey>("par")
@@ -171,6 +179,8 @@ export default function OfferSpreadBoardClient({
       const url = new URL(window.location.href)
       const s = url.searchParams.get("set")
       const p = url.searchParams.get("player")
+      const c = url.searchParams.get("collection")
+      if (isOfferSpreadCollection(c)) setCollection(c)
       if (s) setSetFilter(s)
       if (p) setPlayerFilter(p)
     }
@@ -182,7 +192,7 @@ export default function OfferSpreadBoardClient({
   useEffect(() => {
     if (isFirstRun.current) {
       isFirstRun.current = false
-      if (sort === "par" && tier === "ALL" && !bidMeetsOnly && !setFilter && !playerFilter) {
+      if (collection === "nba-top-shot" && sort === "par" && tier === "ALL" && !bidMeetsOnly && !setFilter && !playerFilter) {
         return
       }
     }
@@ -194,6 +204,7 @@ export default function OfferSpreadBoardClient({
         const params = new URLSearchParams()
         params.set("limit", String(OFFER_SPREAD_LIMIT))
         params.set("sort", sort)
+        if (collection !== "nba-top-shot") params.set("collection", collection)
         // Board view hides penny-floor ratio noise with min_ask=5. On a
         // player/set drill-down drop to 0 so the reader sees every edition
         // with both sides, not just the >=$5 ones (QA point 6).
@@ -221,7 +232,20 @@ export default function OfferSpreadBoardClient({
     }
     run()
     return () => ctrl.abort()
-  }, [sort, tier, bidMeetsOnly, setFilter, playerFilter])
+  }, [collection, sort, tier, bidMeetsOnly, setFilter, playerFilter])
+
+  // Switching collection resets the tier (different vocabularies) and an undated-bid sort.
+  function pickCollection(c: OfferSpreadCollection) {
+    setCollection(c)
+    setTier("ALL")
+    if (c === "nfl-all-day" && sort === "bidage") setSort("par")
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href)
+      if (c === "nba-top-shot") url.searchParams.delete("collection")
+      else url.searchParams.set("collection", c)
+      window.history.replaceState({}, "", url.toString())
+    }
+  }
 
   // The seed's provenance: `degraded.failed` is the only signal that the rows
   // are missing because the READ failed, not because nothing matched.
@@ -279,7 +303,7 @@ export default function OfferSpreadBoardClient({
         <div className="rpc-os-eyebrow">RPC Insights · Public</div>
         <h1 className="rpc-os-h1">Bid vs Floor</h1>
         <p className="rpc-os-lede">
-          Top Shot editions where the highest standing <strong>offer</strong>{" "}
+          {COLLECTION_LABEL[collection]} editions where the highest standing <strong>offer</strong>{" "}
           meets or approaches the lowest <strong>ask</strong>. A bid at or
           above the floor can mean <em>instant liquidity</em> — or a stale /
           different-serial listing. We show the floor ask next to the bid so
@@ -340,8 +364,22 @@ export default function OfferSpreadBoardClient({
 
       {/* ── Filter row ────────────────────────────────────────────────── */}
       <section className="rpc-os-controls" aria-label="Filters">
+        <div className="rpc-os-pill-group" role="tablist" aria-label="Collection">
+          {(["nba-top-shot", "nfl-all-day"] as const).map((c) => (
+            <button
+              key={c}
+              role="tab"
+              aria-selected={collection === c}
+              data-testid={`os-collection-${c}`}
+              className={`rpc-os-pill ${collection === c ? "rpc-os-pill-active" : ""}`}
+              onClick={() => pickCollection(c)}
+            >
+              {COLLECTION_LABEL[c]}
+            </button>
+          ))}
+        </div>
         <div className="rpc-os-pill-group" role="tablist" aria-label="Tier">
-          {TIERS.map((t) => (
+          {tiersFor(collection).map((t) => (
             <button
               key={t}
               role="tab"
@@ -378,7 +416,7 @@ export default function OfferSpreadBoardClient({
             <option value="offer">Top bid (desc)</option>
             <option value="ask">Floor ask (desc)</option>
             <option value="pct">Bid % of floor (desc)</option>
-            <option value="bidage">Longest-standing bid</option>
+            {collection === "nba-top-shot" && <option value="bidage">Longest-standing bid</option>}
           </select>
         </label>
       </section>
@@ -433,7 +471,7 @@ export default function OfferSpreadBoardClient({
                   <tr key={r.external_id ?? `${r.player_name}-${r.set_name}`} className="rpc-os-row">
                     <td className="rpc-os-td-player">
                       {r.external_id ? (
-                        <Link href={`/nba-top-shot/edition/${encodeURIComponent(r.external_id)}`} className="rpc-os-edition-link">
+                        <Link href={`/${collection}/edition/${encodeURIComponent(r.external_id)}`} className="rpc-os-edition-link">
                           <div className="rpc-os-edition-name">{r.player_name ?? r.name ?? "—"}</div>
                           <div className="rpc-os-edition-set">{r.set_name ?? "—"}</div>
                         </Link>
@@ -458,7 +496,7 @@ export default function OfferSpreadBoardClient({
                         // as "none" — so say "unknown" and explain it on hover.
                         if (days === null) {
                           return (
-                            <span className="rpc-os-thin-caveat" title={BID_AGE_UNKNOWN_TITLE}>
+                            <span className="rpc-os-thin-caveat" title={collection === "nfl-all-day" ? ALLDAY_BID_AGE_TITLE : BID_AGE_UNKNOWN_TITLE}>
                               {BID_AGE_UNKNOWN_LABEL}
                             </span>
                           )
@@ -481,7 +519,7 @@ export default function OfferSpreadBoardClient({
                         // REPORTS, never concludes: not "sold", not "delisted" —
                         // only that we have not re-checked it since.
                         return (
-                          <span className="rpc-os-thin-caveat" title={askAgeTitle(age, askStampKind("nba_top_shot"))}>
+                          <span className="rpc-os-thin-caveat" title={askAgeTitle(age, askStampKind(collection))}>
                             ⚠ ask unconfirmed {fmtAskAge(age)}
                           </span>
                         )

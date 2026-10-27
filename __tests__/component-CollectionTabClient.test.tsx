@@ -1601,6 +1601,22 @@ describe("CollectionTabClient — offers, sets, packs and sharing", () => {
     }
   })
 
+  it("asks All Day's OWN set tracker on the All Day tab, never Top Shot's (2026-10-26)", async () => {
+    PARAMS.collection = "nfl-all-day"
+    try {
+      searchParams = new URLSearchParams("wallet=0xmine")
+      render(<CollectionTabClient />)
+      await waitFor(() => {
+        const urls = fetchMock.mock.calls.map((c) => String(c[0]))
+        expect(urls.some((u) => u.startsWith("/api/allday-set-progress?wallet="))).toBe(true)
+      })
+      const urls = fetchMock.mock.calls.map((c) => String(c[0]))
+      expect(urls.some((u) => u.startsWith("/api/sets?wallet="))).toBe(false)
+    } finally {
+      PARAMS.collection = "nba-top-shot"
+    }
+  })
+
   it("survives a failed sets or packs read — both are side panels, not the wallet", async () => {
     searchParams = new URLSearchParams("wallet=0xmine")
     fetchMock.mockImplementation(async (input: unknown) => {
