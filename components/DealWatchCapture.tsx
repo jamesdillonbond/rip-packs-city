@@ -103,17 +103,22 @@ export default function DealWatchCapture({ wallet }: { wallet: string }) {
           <div className="rpc-dw-done-title">Check your inbox ✉️</div>
           <div className="rpc-dw-done-sub">
             We sent a confirmation link to <strong>{email.trim().toLowerCase()}</strong>. Click it
-            and we&apos;ll email you when a moment in this collection drops below FMV.
+            and we&apos;ll email you when deal alerts launch.
           </div>
         </div>
       ) : (
         <>
           <div className="rpc-dw-copy">
-            <div className="rpc-dw-eyebrow">Deal watch</div>
-            <div className="rpc-dw-title">Email me when a moment here drops below FMV</div>
+            {/* #214 (2026-10-26, decided under Trevor's "do what you think makes sense"): this
+                box used to promise "we'll watch this collection and ping you on underpriced
+                moments", and nothing sends that email: email_subscribers.deal_alerts has no
+                sender, and both digests are off until Trevor's go. It is a WAITLIST until a
+                sender ships — the copy says what happens, and no more. */}
+            <div className="rpc-dw-eyebrow">Deal alerts · coming soon</div>
+            <div className="rpc-dw-title">Get deal alerts when they launch</div>
             <div className="rpc-dw-lede">
-              Free, no account needed. We&apos;ll watch this collection and ping you on
-              underpriced moments. Unsubscribe any time.
+              Email alerts for underpriced listings aren&apos;t live yet. Leave your email and
+              we&apos;ll let you know when they are. Free, no account needed. Unsubscribe any time.
             </div>
           </div>
           <form className="rpc-dw-form" onSubmit={handleSubmit}>
@@ -131,7 +136,7 @@ export default function DealWatchCapture({ wallet }: { wallet: string }) {
               aria-label="Email address"
             />
             <button type="submit" disabled={status === "sending"} className="rpc-dw-btn">
-              {status === "sending" ? "Sending…" : "Watch for deals →"}
+              {status === "sending" ? "Sending…" : "Notify me →"}
             </button>
             {status === "error" && error ? <div className="rpc-dw-err">{error}</div> : null}
           </form>

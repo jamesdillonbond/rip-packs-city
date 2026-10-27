@@ -47,6 +47,15 @@ function submit(container: HTMLElement) {
 }
 
 describe("DealWatchCapture — seen → engaged instrumentation", () => {
+  // #214 (2026-10-26): nothing sends a deal email yet, so the box must not promise one.
+  it("makes no claim that it is watching anything or will ping on deals today — it is a waitlist", () => {
+    const { container } = render(<DealWatchCapture wallet="0xW" />)
+    const text = container.textContent ?? ""
+    expect(text).not.toMatch(/we.ll watch|ping you|drops below FMV|Watch for deals/i)
+    expect(text).toMatch(/aren.t live yet/i)
+    expect(text).toMatch(/let you know when they are/i)
+  })
+
   it("logs deal-watch-shown only once it is actually in view, and only once", () => {
     render(<DealWatchCapture wallet="0xW" />)
     expect(trackMock).not.toHaveBeenCalled() // rendered below the fold is not "shown"
