@@ -4692,6 +4692,10 @@ async function executeToolInner(
     if (toolInput.collectionId === "candy-mlb" || (!toolInput.collectionId && effectiveCollectionId === "candy-mlb")) {
       return candyNotApplicable("get_edition_sweep", "The sweep signal reads Top Shot's Quick-Buy sales only.");
     }
+    // 2026-10-26: a Pinnacle page never answers with a Top Shot edition's sweep (substitution).
+    if (isPinnacle(effectiveCollectionId)) {
+      return pinnacleNotApplicable("get_edition_sweep", "The per-edition sweep signal reads Top Shot's Quick-Buy sales; Pinnacle sales record no Quick-Buy path.", "Call get_hot_floors on Disney Pinnacle: it lists the pins collectors are buying in bulk (3+ copies in a row) over the last 7 days.");
+    }
     if (isAllDaySlug(effectiveCollectionId)) {
       return allDayNotApplicable("get_edition_sweep", "The per-edition sweep signal reads Top Shot's Quick-Buy sales; All Day sales record no Quick-Buy path.", "Call get_hot_floors on All Day: it lists the editions collectors are buying in bulk (3+ copies in a row) over the last 7 days.");
     }

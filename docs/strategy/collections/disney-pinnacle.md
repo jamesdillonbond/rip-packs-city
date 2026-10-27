@@ -34,7 +34,7 @@ Read from the registry (`lib/collections.ts`), the shared `[collection]` routes,
 | Top Sales board | ✓ | ✓ (new) | `v_pinnacle_top_sales` merged server-side; was an accepted filter that always read 0 rows |
 | Concierge: top sales | ✓ | ✓ (new) | via the board |
 | Concierge: set completion (cost, cheapest sets) | ✓ | ✓ (new) | `/api/pinnacle-set-progress` (were Top Shot `sets`) |
-| Concierge: special-serial owners · serial deals · hot floors · challenges · rookies | ✓ | ✗ → not_applicable; hot floors ✓ (pass 3) | each answered with Top Shot rows on a Pinnacle page; `get_hot_floors` now reads `get_pinnacle_hot_floors` |
+| Concierge: special-serial owners · serial deals · hot floors · challenges · rookies | ✓ | ✗ → not_applicable; hot floors ✓ (pass 3) | each answered with Top Shot rows on a Pinnacle page; `get_hot_floors` now reads `get_pinnacle_hot_floors`; `get_edition_sweep` refuses too (pass 5) |
 | Concierge: pack value | ✓ | ✓ (fixed) | `compare_pack_value` now scopes to the page's collection |
 | Concierge: FMV, explain, deals, listings, search, wallet, breakdown, market cap, movers, price history | ✓ | ✓ | Pinnacle arms already present |
 

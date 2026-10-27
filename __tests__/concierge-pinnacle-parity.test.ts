@@ -76,12 +76,12 @@ const WALLET = "0x1234567890abcdef"
 
 describe("Top-Shot-only tools on a Disney Pinnacle page", () => {
   // get_hot_floors left this list 2026-10-26 (pass 3): Pinnacle has its own board now — pinned below.
-  for (const tool of ["get_special_serial_owners", "search_serial_deals", "get_challenges", "get_rookies"]) {
+  for (const tool of ["get_special_serial_owners", "search_serial_deals", "get_challenges", "get_rookies", "get_edition_sweep"]) {
     it(`${tool} → not_applicable, no Top Shot read`, async () => {
       const inst = makeInstrumentedSupabaseFixture({})
       A.sb = inst.fixture
       const fetchSpy = vi.spyOn(globalThis, "fetch")
-      script(tool, { walletAddress: WALLET })
+      script(tool, { walletAddress: WALLET, editionKey: "258:8912" })
       await POST(post("disney-pinnacle"))
       const r = toolResult()
       expect(r.status).toBe("not_applicable")
@@ -89,7 +89,7 @@ describe("Top-Shot-only tools on a Disney Pinnacle page", () => {
       expect(inst.rpcCalls.length).toBe(0)
       // No Top Shot board read (the rookie index, challenges, sweeps …) — an unrelated background
       // fetch from the route's own bookkeeping may still appear, so assert on the reads that matter.
-      expect(fetchSpy.mock.calls.map((c) => String(c[0])).filter((u) => /rookie|challenge|hot-floor|serial|special/i.test(u))).toEqual([])
+      expect(fetchSpy.mock.calls.map((c) => String(c[0])).filter((u) => /rookie|challenge|hot-floor|serial|special|sweep/i.test(u))).toEqual([])
       fetchSpy.mockRestore()
     })
   }
