@@ -17,6 +17,16 @@ import { stripComments } from "../scripts/lib/strip-comments.mjs"
 // Rule (ban at zero, tree walk): no non-client file under app/, components/ or
 // lib/ imports a non-function `export const` from a "use client" file. Shared
 // constants go in a plain module (components/skip-to-content-attr.ts).
+//
+// 2026-10-26 — the same stub, for a FUNCTION the server CALLS. A component
+// (PascalCase) crossing the boundary is the point of a client module; a
+// camelCase function is not rendered, it is called, and on the server the call
+// hits the stub and throws. app/special-serial-owners/page.tsx called
+// boardSeed() from SpecialSerialOwnersClient.tsx and the page 500'd for
+// signed-in visitors for ~50 min (moved to board-seed.ts in e37989a). The
+// first rule exempted every function initializer, so it could not see it.
+// Second rule: no non-client file imports a camelCase function (incl. hooks)
+// from a "use client" file. 54 client files export one; 0 imports today.
 
 const ROOTS = ["app", "components", "lib"]
 const FUNCTION_INIT = /^(\(|async\b|function\b|memo\(|forwardRef\(|React\.|dynamic\()/
@@ -48,8 +58,23 @@ export function clientValueExports(files: Record<string, string>): Record<string
   return out
 }
 
+/** client file -> its exported camelCase functions (called, not rendered — a server call hits the stub). */
+export function clientFunctionExports(files: Record<string, string>): Record<string, string[]> {
+  const out: Record<string, string[]> = {}
+  for (const [f, src] of Object.entries(files)) {
+    if (!isClient(src)) continue
+    const s = stripComments(src)
+    for (const m of s.matchAll(/^export (?:async )?function ([a-z][\w$]*)/gm)) (out[f] ??= []).push(m[1])
+    for (const m of s.matchAll(/^export const ([a-z][\w$]*)\s*(?::[^=\n]+)?=\s*(?:async\s*)?(?:\(|function\b)/gm)) (out[f] ??= []).push(m[1])
+  }
+  return out
+}
+
 export function violations(files: Record<string, string>): string[] {
-  const client = clientValueExports(files)
+  const values = clientValueExports(files)
+  const fns = clientFunctionExports(files)
+  const client: Record<string, string[]> = {}
+  for (const f of new Set([...Object.keys(values), ...Object.keys(fns)])) client[f] = [...(values[f] ?? []), ...(fns[f] ?? [])]
   const hits: string[] = []
   for (const [f, src] of Object.entries(files)) {
     if (isClient(src)) continue
@@ -86,6 +111,23 @@ describe("a server module never reads a value exported by a \"use client\" modul
       "components/Ok.tsx": `import L from "@/components/Link"\n`,
     }
     expect(violations(planted)).toEqual(["components/Server.tsx imports ATTR from components/Link.tsx"])
+  })
+
+  it("catches the 10-26 shape: a server page CALLING a client module's function (planted defect)", () => {
+    const planted = {
+      "app/board/BoardClient.tsx": `"use client"\nexport function boardSeed(x: string) { return x }\nexport const useThing = () => 1\nexport default function BoardClient() { return null }\nexport function Panel() { return null }\n`,
+      "app/board/page.tsx": `import BoardClient, { boardSeed, Panel } from "./BoardClient"\nexport default function Page() { const s = boardSeed("a"); return null }\n`,
+      "app/board/hook-user.tsx": `import { useThing } from "@/app/board/BoardClient"\n`,
+      "app/board/ok.tsx": `"use client"\nimport { boardSeed } from "./BoardClient"\n`,
+    }
+    expect(violations(planted).sort()).toEqual([
+      "app/board/hook-user.tsx imports useThing from app/board/BoardClient.tsx",
+      "app/board/page.tsx imports boardSeed from app/board/BoardClient.tsx",
+    ])
+  })
+
+  it("inspects a real population of client functions", () => {
+    expect(Object.keys(clientFunctionExports(files)).length).toBeGreaterThan(20)
   })
 
   it("no server module in the tree does it", () => {
