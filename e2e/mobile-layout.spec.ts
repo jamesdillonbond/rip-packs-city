@@ -48,6 +48,12 @@ const ROUTES = [
   // (f2c51ea37) and MEASURED clean on the deployed build in real Chromium at both
   // 390px and 320px before being pinned here — the order the register insisted on.
   "/insights/pack-reality",
+  // 2026-10-26: both widened a phone's layout viewport at 320px (All Day market 375px —
+  // the filter bar's Sort/view group did not wrap; team hub 332px — a minmax(280px)
+  // grid). Fixed in 3fbcdfda4 and measured clean on that deployed build at 320px with
+  // AND without mobile emulation before being pinned here.
+  "/nfl-all-day/market",
+  "/teams/nba/blazers",
 ]
 
 test.describe("mobile layout", () => {
@@ -368,7 +374,11 @@ test.describe("mobile layout (touch context)", () => {
 const NARROW = { width: 320, height: 568 }
 
 test.describe("mobile layout at 320px", () => {
-  test.use({ viewport: NARROW })
+  // isMobile + hasTouch (2026-10-26): with a plain viewport an oversized box only
+  // scrolls the page, but a phone WIDENS ITS LAYOUT VIEWPORT to fit it and renders the
+  // whole page zoomed out. Top Shot market did that (innerWidth 329) while this block,
+  // measuring a plain viewport, read it clean. scrollWidth - clientWidth sees both.
+  test.use({ viewport: NARROW, isMobile: true, hasTouch: true })
 
   for (const path of ROUTES) {
     test(`${path} does not scroll horizontally at ${NARROW.width}px`, async ({ page }) => {
