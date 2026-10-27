@@ -17,7 +17,7 @@ Read from the registry (`lib/collections.ts`), the shared `[collection]` routes,
 |---|---|---|---|
 | Overview · Market · Collection · Packs · Sniper · Sets · Analytics tabs | ✓ | ✓ | registry `pages` |
 | Overview news | ✓ | ✓ (new) | three dated RPC changes; emptied 09-29 because the old item was coverage stats |
-| Pack Sniper | ✓ | ✗ | RPC holds no Pinnacle pack listings or pack buys (`WALLET_PACK_HISTORY_COLLECTIONS` note: 0 purchases) |
+| Pack Sniper | ✓ | ✗ — no market exists (10-26) | Dapper's pack index, probed 10-26 ~10:30 PM PT: `searchPackNft` holds 908,302 Pinnacle PackNFTs (`A.edf9df96c92f4595.PackNFT.NFT`), 452,236 sealed, **0 listed**; the same listed-pack query returns 975 for All Day (control). Pinnacle packs are not resold, so there is nothing to snipe. Re-probe if Disney Pinnacle opens pack resale |
 | Hot Floors (sweeps) | ✓ | ✓ (10-26, pass 3) | `/disney-pinnacle/hot-floors` over `get_pinnacle_hot_floors` (`20261027040022`): one buyer, 3+ copies of one pin, no gap > 60 min, 7 d, on-chain `pinnacle_sales` (studio history, self-trades and `flowty_excluded_addresses` out). At ship: 50 of 61 swept pins shown, 14 sweepers (system accounts excluded), $735. Read path 30 ms / 1.8k buffers — no snapshot. Floor carries its sweep check; buyers counted, never named. Linked from the Sniper; concierge `get_hot_floors` answers from it |
 | Challenges · Play · Badges · Fast Break · teams | ✓ | ✗ by design | Top Shot / sports concepts; Pinnacle has characters and franchises (its player/team pages) |
 | Pin page: FMV, chart, sales, market cap, serial premium, printings ladder, details | ✓ | ✓ | |
@@ -29,12 +29,12 @@ Read from the registry (`lib/collections.ts`), the shared `[collection]` routes,
 | Character page: Top Collectors | ✓ (rookie index) | ✓ (new, pass 2) | same map, ranked by FMV held; always states its copy coverage (pre-2025-12 pins are not attributable) |
 | Analytics: Top Accumulators (buyer-side sweeps) | ✓ | ✓ (new, pass 2) | `get_pinnacle_top_accumulators` over `pinnacle_sales`; the route used to refuse Pinnacle because the shared RPC cannot see its sales |
 | Collection tab: "Close to completing" | ✓ | ✓ (new, pass 2) | `/api/pinnacle-set-progress`; unpriced slots make the cost a lower bound; link now goes to the collection's own Sets tab |
-| Pin page: Offers | ✓ | ✗ | RPC indexes no Pinnacle offers |
+| Pin page: Offers | ✓ | ✗ — none exist upstream (10-26) | Dapper OffersV2 `OfferAvailable` over the last ~300k blocks (~3 days, 1,200/1,200 chunks, 0 errors), probed 10-26 ~10:30 PM PT: 9,366 offers — Top Shot 5,003, MFL 3,985, All Day 378 (control) — **Pinnacle 0**; the 07-28 Golazos recon's 400k-block window had none either. Nothing to index. Re-probe (count `OffersV2.OfferAvailable` by `nftType` over Flow REST) before building an indexer |
 | Pin page: insight chips | ✓ | partial | footer links the scarcity board; no per-pin chip feed |
 | Top Sales board | ✓ | ✓ (new) | `v_pinnacle_top_sales` merged server-side; was an accepted filter that always read 0 rows |
 | Concierge: top sales | ✓ | ✓ (new) | via the board |
 | Concierge: set completion (cost, cheapest sets) | ✓ | ✓ (new) | `/api/pinnacle-set-progress` (were Top Shot `sets`) |
-| Concierge: special-serial owners · serial deals · hot floors · challenges · rookies | ✓ | ✗ → not_applicable (new) | each answered with Top Shot rows on a Pinnacle page |
+| Concierge: special-serial owners · serial deals · hot floors · challenges · rookies | ✓ | ✗ → not_applicable; hot floors ✓ (pass 3) | each answered with Top Shot rows on a Pinnacle page; `get_hot_floors` now reads `get_pinnacle_hot_floors` |
 | Concierge: pack value | ✓ | ✓ (fixed) | `compare_pack_value` now scopes to the page's collection |
 | Concierge: FMV, explain, deals, listings, search, wallet, breakdown, market cap, movers, price history | ✓ | ✓ | Pinnacle arms already present |
 
