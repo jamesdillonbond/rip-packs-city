@@ -45,3 +45,22 @@ describe("Sniper → Alerts prefill (2026-10-24)", () => {
     expect(sniperAlertHref({ collectionUuid: null })).toBeNull()
   })
 })
+
+describe("Sniper 'Alert me' on Disney Pinnacle carries the variant as a parallel (2026-10-27)", () => {
+  const PIN = "7dd9dd11-e8b6-45c4-ac99-71331f959714"
+  it("a variant tab never lands in tiers, uppercased", async () => {
+    const { sniperAlertHref, readAlertPrefill } = await import("@/lib/sniper/saved-filters")
+    const href = sniperAlertHref({ collectionUuid: PIN, tier: "Radiant Chrome", tierIsVariant: true })!
+    const pre = readAlertPrefill(href.slice(href.indexOf("?")))!
+    expect(pre.tier).toBeUndefined()
+    // dispatch_due_deal_alerts matches parallel_names case-insensitively against the Pinnacle variant.
+    expect(pre.parallel).toBe("Radiant Chrome")
+  })
+  it("CONTROL: a real tier tab (Top Shot) still travels uppercased in tiers", async () => {
+    const { sniperAlertHref, readAlertPrefill } = await import("@/lib/sniper/saved-filters")
+    const href = sniperAlertHref({ collectionUuid: "95f28a17-224a-4025-96ad-adf8a4c63bfd", tier: "rare" })!
+    const pre = readAlertPrefill(href.slice(href.indexOf("?")))!
+    expect(pre.tier).toBe("RARE")
+    expect(pre.parallel).toBeUndefined()
+  })
+})

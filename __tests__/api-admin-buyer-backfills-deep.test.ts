@@ -334,6 +334,33 @@ describe("POST /api/admin/backfill-topshot-buyers (forward lane)", () => {
     expect(runRow).toMatchObject({ ok: false, error: "select boom", rows_found: 0, rows_written: 0 })
   })
 
+  // 2026-10-27: a failure before the walk logged cursor_sold_at:null + wrapped:true, so the NEXT run restarted from
+  // the top of the window. It now logs the cursor it read, and no wrap.
+  it("a failed select keeps the cursor it read and claims no wrap", async () => {
+    const spy = install({
+      pipeline_runs: { data: { extra: { cursor_sold_at: "2026-07-01T00:00:00Z", cursor_id: "sX" } }, error: null },
+      sales: { data: null, error: { message: "select boom" } },
+    })
+    await tsRoute.POST(adminReq("https://t/api/admin/backfill-topshot-buyers", { authorization: "Bearer ingest-secret" }))
+    await runDeferred()
+    const runRow = (spy.writes.pipeline_runs ?? []).find((w) => w.method === "insert")!.rows[0]
+    expect(runRow.ok).toBe(false)
+    expect(runRow.extra).toMatchObject({ cursor_sold_at: "2026-07-01T00:00:00Z", cursor_id: "sX", wrapped: false })
+  })
+
+  it("a failed cursor read fails the run instead of restarting from the top", async () => {
+    const spy = install({
+      pipeline_runs: { data: null, error: { message: "runs read boom" } },
+      sales: { data: [], error: null },
+    })
+    await tsRoute.POST(adminReq("https://t/api/admin/backfill-topshot-buyers", { authorization: "Bearer ingest-secret" }))
+    await runDeferred()
+    const runRow = (spy.writes.pipeline_runs ?? []).find((w) => w.method === "insert")!.rows[0]
+    expect(runRow.ok).toBe(false)
+    expect(String(runRow.error)).toMatch(/cursor read failed/)
+    expect(runRow.extra).toMatchObject({ wrapped: false })
+  })
+
   // Exec-account fill (2026-10-10): a sale whose buyer another writer filled
   // first was never decoded for payer/proposer, because both buyer lanes select
   // buyer IS NULL. The phase fills ONLY payer/proposer on those rows.

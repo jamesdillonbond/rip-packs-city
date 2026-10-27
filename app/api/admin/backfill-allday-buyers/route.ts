@@ -231,7 +231,7 @@ async function handle(req: NextRequest) {
     let errMsg: string | null = null
 
     try {
-      const { data: lastRun } = await (supabaseAdmin as any)
+      const { data: lastRun, error: lastRunErr } = await (supabaseAdmin as any)
         .from("pipeline_runs")
         .select("extra")
         .eq("pipeline", cfg.pipeline)
@@ -247,6 +247,15 @@ async function handle(req: NextRequest) {
         (cursorBefore && lastRun?.extra && typeof lastRun.extra.cursor_id === "string"
           ? lastRun.extra.cursor_id
           : null) ?? null
+      // 2026-10-27: a failed cursor read fails the run (it used to restart from the top as if it had wrapped),
+      // and a run that fails before its walk ends logs the cursor it READ — never a wrap it did not make.
+      if (lastRunErr) {
+        ok = false
+        errMsg = `cursor read failed: ${lastRunErr.message}`
+        return
+      }
+      cursorAfter = cursorBefore
+      cursorAfterId = cursorBeforeId
 
       let q = (supabaseAdmin as any)
         .from("sales")
@@ -423,7 +432,7 @@ async function handle(req: NextRequest) {
             // of those, rows whose proposer/payer were written (the next cycle skips them)
             custodial_recorded: custodialRecorded,
             update_failed: updateFailed,
-            wrapped: cursorAfter === null,
+            wrapped: ok && cursorAfter === null,
             bailed_early: bailedEarly,
             duration_ms: Date.now() - startedAt,
           },

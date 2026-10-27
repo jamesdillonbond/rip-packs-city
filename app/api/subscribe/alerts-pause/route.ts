@@ -57,15 +57,28 @@ export async function POST(req: NextRequest) {
   if (!email || !verifyAlertEmailPauseToken(email, token)) {
     return page("This link isn't valid", `<p>You can manage alerts at <a href="/alerts">rippackscity.com/alerts</a>.</p>`, 400)
   }
+  // Two places an alert email's address lives, and BOTH must stop (2026-10-27): the verified email channel, and
+  // fmv_alerts.notification_email — dispatch_triggered_fmv_alerts falls back to that column when no verified
+  // email channel exists, so un-verifying the channel alone left FMV price alerts mailing the same address after
+  // this page said "paused". Clearing the fallback stops them; re-enabling email at /alerts verifies the channel,
+  // which the dispatcher reads first. Exact matches only (never ilike: an "_" in an address is a LIKE wildcard).
+  const addresses = Array.from(new Set([email, email.toLowerCase()]))
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error } = await (supabaseAdmin as any)
-    .from("notification_channels")
-    .update({ verified: false })
-    .eq("channel", "email")
-    .eq("channel_user_id", email)
+  const db = supabaseAdmin as any
+  const [ch, fmv] = await Promise.all([
+    db.from("notification_channels").update({ verified: false }).eq("channel", "email").in("channel_user_id", addresses).select("owner_key"),
+    db.from("fmv_alerts").update({ notification_email: null }).in("notification_email", addresses).select("id"),
+  ])
+  const error = ch.error ?? fmv.error
   if (error) {
     console.error(`[alerts-pause] update failed: ${error.message}`)
     return page("We couldn't pause them", `<p>Something went wrong on our side and nothing was changed. Please try again, or turn email off at <a href="/alerts">Alerts</a>.</p>`, 500)
+  }
+  // "Paused" only when something was actually switched off (or was already off — the link is idempotent, so a
+  // second click matching nothing new must not read as a failure). Nothing at all on file says exactly that.
+  const matched = (Array.isArray(ch.data) ? ch.data.length : 0) + (Array.isArray(fmv.data) ? fmv.data.length : 0)
+  if (matched === 0) {
+    return page("No alert emails on file", `<p>We have no alert emails set up for <strong>${esc(email)}</strong>, so there is nothing to pause. Manage alerts at <a href="/alerts">Alerts</a>.</p>`)
   }
   return page("Alert emails paused", `<p>We won't email alerts to <strong>${esc(email)}</strong>. Turn them back on any time from <a href="/alerts">Alerts</a>.</p>`)
 }

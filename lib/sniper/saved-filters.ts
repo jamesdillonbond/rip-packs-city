@@ -58,10 +58,17 @@ export function urlHasSniperFilters(u: { tier?: unknown; sort?: unknown; minDisc
 // The board's filters travel to /alerts as query params, which AlertsClient
 // reads once to prefill a NEW alert (nothing is saved until they press Save).
 
-export function sniperAlertHref(f: { collectionUuid: string | null; tier?: string; player?: string; team?: string; maxPrice?: number; minDiscount?: number }): string | null {
+// On Disney Pinnacle the Sniper's "tier" tab is a pin VARIANT ("Golden", "Radiant Chrome"). The deals view carries
+// it mixed-case and dispatch_due_deal_alerts matches `tiers` case-SENSITIVELY, so an uppercased "GOLDEN" in tiers
+// never fired (2026-10-27). A variant travels as `parallel` instead — the alert's parallel filter matches the
+// Pinnacle variant case-insensitively — and is never uppercased.
+export function sniperAlertHref(f: { collectionUuid: string | null; tier?: string; player?: string; team?: string; maxPrice?: number; minDiscount?: number; tierIsVariant?: boolean }): string | null {
   if (!f.collectionUuid) return null
   const q = new URLSearchParams({ from: "sniper", collection: f.collectionUuid })
-  if (f.tier && f.tier !== "all") q.set("tier", f.tier.toUpperCase())
+  if (f.tier && f.tier !== "all") {
+    if (f.tierIsVariant) q.set("parallel", f.tier.slice(0, 80))
+    else q.set("tier", f.tier.toUpperCase())
+  }
   if (f.player) q.set("player", f.player.slice(0, 80))
   if (f.team && f.team !== "all") q.set("team", f.team.slice(0, 80))
   if (f.maxPrice && f.maxPrice > 0) q.set("maxPrice", String(f.maxPrice))
@@ -69,7 +76,7 @@ export function sniperAlertHref(f: { collectionUuid: string | null; tier?: strin
   return `/alerts?${q.toString()}`
 }
 
-export type AlertPrefill = { collectionId: string; tier?: string; player?: string; team?: string; maxPrice?: string; minDiscount?: string }
+export type AlertPrefill = { collectionId: string; tier?: string; parallel?: string; player?: string; team?: string; maxPrice?: string; minDiscount?: string }
 
 /** Reads a /alerts?from=sniper… query; null unless it came from the Sniper with a collection. */
 export function readAlertPrefill(search: string): AlertPrefill | null {
@@ -81,6 +88,7 @@ export function readAlertPrefill(search: string): AlertPrefill | null {
   return {
     collectionId,
     tier: q.get("tier")?.toUpperCase() || undefined,
+    parallel: q.get("parallel")?.slice(0, 80) || undefined,
     player: q.get("player")?.slice(0, 80) || undefined,
     team: q.get("team")?.slice(0, 80) || undefined,
     maxPrice: num(q.get("maxPrice")),

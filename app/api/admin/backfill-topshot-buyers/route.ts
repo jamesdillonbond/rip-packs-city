@@ -192,7 +192,7 @@ export async function POST(req: NextRequest) {
       let errMsg: string | null = null
 
       try {
-        const { data: lastRun } = await (supabaseAdmin as any)
+        const { data: lastRun, error: lastRunErr } = await (supabaseAdmin as any)
           .from("pipeline_runs")
           .select("extra")
           .eq("pipeline", HIST_PIPELINE_NAME)
@@ -207,6 +207,15 @@ export async function POST(req: NextRequest) {
           (cursorBefore && lastRun?.extra && typeof lastRun.extra.cursor_id === "string"
             ? lastRun.extra.cursor_id
             : null) ?? null
+        // 2026-10-27: a failed cursor read fails the run (it used to restart from the top as if it had wrapped),
+        // and a run that fails before its walk ends logs the cursor it READ — never a wrap it did not make.
+        if (lastRunErr) {
+          ok = false
+          errMsg = `cursor read failed: ${lastRunErr.message}`
+          return
+        }
+        cursorAfter = cursorBefore
+        cursorAfterId = cursorBeforeId
 
         // ⚠ `payer_address IS NULL` IS LOAD-BEARING, AND IT IS THE FIX FOR A TREADMILL
         // THIS LANE RAN FOR DAYS (2026-09-02).
@@ -361,7 +370,7 @@ export async function POST(req: NextRequest) {
               // failed read rendered as a measured zero would say "nothing is
               // parked" when the truth is "we could not look".
               exhausted_in_window: exhaustedInWindow,
-              wrapped: cursorAfter === null,
+              wrapped: ok && cursorAfter === null,
               bailed_early: bailedEarly,
               duration_ms: Date.now() - startedAt,
             },
@@ -409,7 +418,7 @@ export async function POST(req: NextRequest) {
 
     try {
       // Resume cursor from the last run.
-      const { data: lastRun } = await (supabaseAdmin as any)
+      const { data: lastRun, error: lastRunErr } = await (supabaseAdmin as any)
         .from("pipeline_runs")
         .select("extra")
         .eq("pipeline", PIPELINE_NAME)
@@ -424,6 +433,15 @@ export async function POST(req: NextRequest) {
         (cursorBefore && lastRun?.extra && typeof lastRun.extra.cursor_id === "string"
           ? lastRun.extra.cursor_id
           : null) ?? null
+      // 2026-10-27: a failed cursor read fails the run (it used to restart from the top as if it had wrapped),
+      // and a run that fails before its walk ends logs the cursor it READ — never a wrap it did not make.
+      if (lastRunErr) {
+        ok = false
+        errMsg = `cursor read failed: ${lastRunErr.message}`
+        return
+      }
+      cursorAfter = cursorBefore
+      cursorAfterId = cursorBeforeId
 
       let q = (supabaseAdmin as any)
         .from("sales")
@@ -629,7 +647,7 @@ export async function POST(req: NextRequest) {
             exec_accounts_resolved: execResolved,
             sellers_filled: sellersFilled,
             decode_failed: decodeFailed,
-            wrapped: cursorAfter === null,
+            wrapped: ok && cursorAfter === null,
             bailed_early: bailedEarly,
             exec_fill_found: execFillFound,
             exec_fill_written: execFilled,

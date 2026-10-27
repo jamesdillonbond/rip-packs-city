@@ -195,6 +195,7 @@ export default function AlertsClient() {
       label: "Sniper alert",
       collection_ids: [pre.collectionId],
       tiers: pre.tier ? [pre.tier] : [],
+      parallel_names: pre.parallel ? [pre.parallel] : [],
       player_names: pre.player ?? "",
       team_names: pre.team ?? "",
       max_price: pre.maxPrice ?? "",

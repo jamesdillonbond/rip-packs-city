@@ -1059,7 +1059,7 @@ function SniperMomentsBody() {
           <SniperFilterBar
             alertHref={sniperAlertHref({
               collectionUuid: ownLookup(COLLECTION_UUID_BY_SLUG, collectionSlug) ?? null,
-              tier: tierTab, player: playerFilter, team: teamFilter, maxPrice, minDiscount,
+              tier: tierTab, tierIsVariant: isPinnacle, player: playerFilter, team: teamFilter, maxPrice, minDiscount,
             })}
             isMobile={isMobile}
             isPinnacle={isPinnacle}

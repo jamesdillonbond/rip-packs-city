@@ -1,5 +1,10 @@
 // app/api/subscribe/unsubscribe/route.ts
-// GET ?token=... — sets unsubscribed_at = now() and renders a confirmation page.
+// GET  ?token=... — a confirm page with ONE button; a GET changes nothing (2026-10-27). Mail scanners and link
+//        previews fetch every link in a message, so a GET that unsubscribed opted readers out who never clicked.
+//        Same shape as /api/subscribe/alerts-pause.
+// POST ?token=... — unsubscribes: the confirm page's form, and RFC 8058 one-click (Gmail / Yahoo POST
+//        "List-Unsubscribe=One-Click" and expect the opt-out with no further step). Says "unsubscribed" only when
+//        the token matched a subscriber.
 
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
@@ -13,33 +18,46 @@ function html(message: string): string {
   <body><div class="card"><h1>${message}</h1><p>Change it back any time on <a href="/dashboard/notifications" style="color:#fca5a5">Notifications</a> (sign in first).</p></div></body></html>`
 }
 
-async function unsubscribe(req: NextRequest) {
-  const token = req.nextUrl.searchParams.get("token")?.trim()
-  if (!token) {
-    return new NextResponse(html("Invalid unsubscribe link"), { status: 400, headers: { "Content-Type": "text/html" } })
-  }
-
-  try {
-    const { error } = await (supabaseAdmin as any)
-      .from("email_subscribers")
-      .update({ unsubscribed_at: new Date().toISOString(), updated_at: new Date().toISOString() })
-      .eq("verification_token", token)
-
-    if (error) {
-      return new NextResponse(html("Could not unsubscribe"), { status: 500, headers: { "Content-Type": "text/html" } })
-    }
-    return new NextResponse(html("You've been unsubscribed"), { status: 200, headers: { "Content-Type": "text/html" } })
-  } catch {
-    return new NextResponse(html("Could not unsubscribe"), { status: 500, headers: { "Content-Type": "text/html" } })
-  }
+function esc(v: string): string {
+  return v.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!)
 }
+
+const HTML = { "Content-Type": "text/html", "Cache-Control": "no-store", "X-Robots-Tag": "noindex" }
 
 export async function GET(req: NextRequest) {
-  return unsubscribe(req)
+  const token = req.nextUrl.searchParams.get("token")?.trim()
+  if (!token) {
+    return new NextResponse(html("Invalid unsubscribe link"), { status: 400, headers: HTML })
+  }
+  const action = `${req.nextUrl.pathname}?${req.nextUrl.searchParams.toString()}`
+  const page = html("Unsubscribe from RPC emails?").replace(
+    "<p>Change it back",
+    `<form method="post" action="${esc(action)}" style="margin:0 0 14px"><button type="submit" style="background:#e55a4c;color:#0a0a0a;border:0;border-radius:10px;padding:12px 22px;font-size:16px;font-weight:700;cursor:pointer;min-height:44px">Unsubscribe</button></form><p>Change it back`,
+  )
+  return new NextResponse(page, { status: 200, headers: HTML })
 }
 
-// RFC 8058 one-click (2026-10-24): Gmail / Yahoo POST "List-Unsubscribe=One-Click"
-// to the List-Unsubscribe URL and expect the opt-out with no further step.
 export async function POST(req: NextRequest) {
-  return unsubscribe(req)
+  const token = req.nextUrl.searchParams.get("token")?.trim()
+  if (!token) {
+    return new NextResponse(html("Invalid unsubscribe link"), { status: 400, headers: HTML })
+  }
+  try {
+    const now = new Date().toISOString()
+    const { data, error } = await (supabaseAdmin as any)
+      .from("email_subscribers")
+      .update({ unsubscribed_at: now, updated_at: now })
+      .eq("verification_token", token)
+      .select("id")
+    if (error) {
+      return new NextResponse(html("Could not unsubscribe"), { status: 500, headers: HTML })
+    }
+    // A token that matches no subscriber changed nothing — never tell the reader they are unsubscribed.
+    if (!Array.isArray(data) || data.length === 0) {
+      return new NextResponse(html("We don't recognise this link"), { status: 404, headers: HTML })
+    }
+    return new NextResponse(html("You've been unsubscribed"), { status: 200, headers: HTML })
+  } catch {
+    return new NextResponse(html("Could not unsubscribe"), { status: 500, headers: HTML })
+  }
 }
