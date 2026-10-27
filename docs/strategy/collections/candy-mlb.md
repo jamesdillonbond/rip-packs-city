@@ -31,6 +31,7 @@ Read from the registry (`lib/collections.ts`), the shared `[collection]` routes 
 | Surface | Top Shot | Candy | Note |
 |---|---|---|---|
 | Overview · Market · Collection · Packs · Sets · Analytics tabs | ✓ | ✓ | registry `pages` |
+| Analytics: Pack EV card | ✓ | ✓ (fixed, pass 3) | Read `analytics_packs_summary`, which holds no Candy row, so it said "Pack analytics not yet available" while `/candy-mlb/packs` showed a live model. Now reads `/api/candy-pack-market`: typical pull vs pack cost, chase-inclusive mean labelled as such, sealed floor |
 | Sniper tab | ✓ | ✗ by decision | the edge already 307s `/candy-mlb/sniper` to Overview (proxy.ts); `sniper/layout.tsx` now also wraps `FeatureTabGate` like every other tab, as defense in depth (the client shell would otherwise render "No deals match your filters" from a feed with no Candy source). Deals for Candy live on `/insights/deals` (empty by construction while FMV is capped at the confirmed ask) |
 | Hot Floors | ✓ (Quick-Buy sweeps) | ✗ | no Quick Buy on Magic Eden and no sale since 10-11 — a board would be empty (#58) |
 | Challenges · Play · Badges · Fast Break | ✓ | ✗ | Top Shot product concepts |
@@ -43,7 +44,8 @@ Read from the registry (`lib/collections.ts`), the shared `[collection]` routes 
 | Edition: market history | ✓ (ask over time) | ✓ (new, pass 2) | `candy_edition_market_daily`, daily 6:43 AM PDT, forward only from Oct 26: confirmed floor, listed copies, best bid; a day with a stale book has no row. The FMV chart is flat while #58 lasts — this records what still moves |
 | Moment page: best offer on the serial | ✓ | ✓ (new, pass 2) | `get_moment_best_offer` Candy serial arm; no edition-grain Candy "Best offer" (every Candy bid targets one token) |
 | Edition: Found in packs / pack provenance | ✓ | ✗ | `candy_packs` holds pack NFTs, not contents |
-| Edition: insight chips | ✓ | ✗ | Candy's boards are on `/insights/candy-mlb` |
+| Edition: insight chips | ✓ | ✓ (new, pass 3) | "Featured in Insights" links the Scarcity / Serials / Holders views of `/insights/candy-mlb` (new `?tab=` deep link, read after mount so the ISR render is unchanged); holder count from `mv_candy_scarcity_board`. The Bid-vs-Floor chip was NOT added: `candy_offer_spread_board` costs ~8k buffers per edition read, for a bid on 2 of 125 editions |
+| Display names for Candy wallets | @username | ✗ (measured, not built) | 10-26: SNS `favorite-domain` for all 428 collector wallets → 0 set; `/domains/<owner>` → ~1.5 % own any .sol (3 of the first 200). A domain the owner did not make primary is not their chosen name, so nothing to show |
 | Player: Top Collectors | ✓ (rookie index) | ✓ (new) | `get_candy_player_top_collectors` (census, ranked by FMV held) |
 | Player: Season Stats | ✓ | ✗ | no MLB stats feed / identity crosswalk |
 | Team: Squeeze & Scarcity | ✓ | ✗ | no locks/burns on Candy |

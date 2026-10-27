@@ -59,3 +59,27 @@ export async function fetchCandyMarketHistory(
     return { ok: false, rows: [] }
   }
 }
+
+// ── Scarcity row (the edition page's "Featured in Insights" chips) ──────────
+
+type ScarcityRows = Array<{ holders: unknown; circulating: unknown }>
+
+/** This edition's row of mv_candy_scarcity_board (the /insights/candy-mlb Scarcity view's source). */
+export async function fetchCandyScarcityRow(
+  externalId: string,
+  injected?: Db,
+): Promise<{ ok: boolean; row: { holders: number | null; circulating: number | null } | null }> {
+  const db: Db = injected ?? supabaseAdmin
+  try {
+    const { data, error } = await withQueryDeadline<ScarcityRows>(
+      db.from("mv_candy_scarcity_board").select("holders,circulating").eq("external_id", externalId).limit(1),
+      "edition/candy-scarcity-row",
+      apiReadTimeoutMs(),
+    )
+    if (error) return { ok: false, row: null }
+    const r = (data ?? [])[0]
+    return { ok: true, row: r ? { holders: num(r.holders), circulating: num(r.circulating) } : null }
+  } catch {
+    return { ok: false, row: null }
+  }
+}

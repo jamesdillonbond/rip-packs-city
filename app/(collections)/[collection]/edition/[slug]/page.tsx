@@ -26,7 +26,7 @@ import {
 import { fetchPackProvenance, fetchOwnerUsernames } from "@/lib/edition/fetchers"
 import { fetchCandyFloorListing } from "@/lib/candy/edition-floor-listing"
 import { fetchCandyPrintings } from "@/lib/candy/edition-printings"
-import { fetchCandyMarketHistory } from "@/lib/candy/edition-market-history"
+import { fetchCandyMarketHistory, fetchCandyScarcityRow } from "@/lib/candy/edition-market-history"
 import CandyMarketHistory from "@/components/entity/CandyMarketHistory"
 import { editionDescriptionText } from "@/lib/edition/description"
 import { lookupTopShotFossilRedirect } from "@/lib/edition/fossil-redirect"
@@ -1416,6 +1416,14 @@ export default async function EditionPage(
         </Section>
       )}
 
+      {/* Candy (2026-10-26): the entity → insights link direction Top Shot's chips give, pointed at
+          the views of /insights/candy-mlb (?tab= deep links). One cheap MV read. */}
+      {collection === "candy-mlb" && detail.external_id && (
+        <Suspense fallback={null}>
+          <CandyInsightChips externalId={detail.external_id} />
+        </Suspense>
+      )}
+
       {/* ── FMV history chart ────────────────────────────────────────────── */}
       <Section title="FMV History">
         {/* confidence stripped from the server-rendered prop (2026-10-25): the chart never
@@ -1810,6 +1818,29 @@ async function EditionBottomSections({
         </Section>
       )}
     </>
+  )
+}
+
+// Candy edition → /insights/candy-mlb views. The holder count comes from mv_candy_scarcity_board
+// (the board's own source); a failed or empty read renders the links without the number.
+async function CandyInsightChips({ externalId }: { externalId: string }) {
+  const { row } = await fetchCandyScarcityRow(externalId).catch(() => ({ row: null, ok: false }))
+  const holders = row?.holders ?? null
+  const circulating = row?.circulating ?? null
+  return (
+    <Section title="Featured in Insights">
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+        <Link href="/insights/candy-mlb?tab=scarcity" className="rpc-mono" style={INSIGHT_CHIP_STYLE}>
+          {holders != null && circulating != null ? `${fmtCount(holders)} collectors hold ${fmtCount(circulating)} copies` : "Scarcity"} →
+        </Link>
+        <Link href="/insights/candy-mlb?tab=serials" className="rpc-mono" style={INSIGHT_CHIP_STYLE}>
+          #1, jersey &amp; last serials →
+        </Link>
+        <Link href="/insights/candy-mlb?tab=holders" className="rpc-mono" style={INSIGHT_CHIP_STYLE}>
+          Biggest Candy collectors →
+        </Link>
+      </div>
+    </Section>
   )
 }
 

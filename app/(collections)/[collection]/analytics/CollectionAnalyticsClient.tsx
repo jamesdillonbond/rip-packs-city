@@ -24,6 +24,7 @@ import {
   computeAcquisitionBreakdown,
 } from "@/lib/analytics/shape"
 import { pickEmpty } from "@/lib/schonely"
+import { fetchJson } from "@/lib/analytics/fetch-json"
 import TopBuyers from "@/components/analytics/TopBuyers"
 import HeldTimeDistributionCard from "@/components/analytics/HeldTimeDistributionCard"
 import CostBasisCard from "@/components/analytics/CostBasisCard"
@@ -588,6 +589,75 @@ function OrderBookCard({ short }: { short: string }) {
               <div className="text-[color:var(--rpc-text-primary)]">{p90 != null ? fmt(p90) : "—"}</div>
             </div>
           </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+// Candy MLB (2026-10-26 parity pass 3): Candy's pack model lives in
+// candy_pack_ev_model behind /api/candy-pack-market — analytics_packs_summary
+// holds no Candy row, so the shared card used to tell a Candy visitor "Pack
+// analytics not yet available" while /candy-mlb/packs showed a live model.
+// Three states: failed read · read ok but no model · the model. The mean is
+// chase-inclusive and is labelled so; only the TYPICAL pull is compared to cost.
+type CandyPackEv = {
+  market?: { confirmedFloorUsd?: number | null } | null
+  ev?: { packCostUsd?: number | null; typicalPullUsd?: number | null; actualEvUsd?: number | null } | null
+}
+function CandyPackEvCard({ urlSlug }: { urlSlug: string }) {
+  const [data, setData] = useState<CandyPackEv | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [failed, setFailed] = useState(false)
+  useEffect(() => {
+    let cancelled = false
+    fetchJson<CandyPackEv>("/api/candy-pack-market").then((r) => {
+      if (cancelled) return
+      if (r.ok && r.json) setData(r.json)
+      else setFailed(true)
+      setLoading(false)
+    })
+    return () => { cancelled = true }
+  }, [])
+  const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null)
+  const cost = num(data?.ev?.packCostUsd)
+  const typical = num(data?.ev?.typicalPullUsd)
+  const mean = num(data?.ev?.actualEvUsd)
+  const sealed = num(data?.market?.confirmedFloorUsd)
+  const usd = (v: number | null) => (v == null ? "—" : `$${v.toFixed(2)}`)
+  return (
+    <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
+      <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]" style={{ fontFamily: "var(--font-display)" }}>
+        Pack EV
+      </div>
+      {loading ? (
+        <div className="mt-2 h-16 animate-pulse rounded bg-[var(--rpc-surface)]" />
+      ) : failed ? (
+        <div className="mt-2 text-sm text-[color:var(--rpc-text-muted)]">Couldn&apos;t load pack analytics.</div>
+      ) : cost == null || typical == null ? (
+        <div className="mt-2 text-sm text-[color:var(--rpc-text-muted)]">The pack model has no current estimate.</div>
+      ) : (
+        <>
+          <div className="mt-1 text-2xl font-black text-[color:var(--rpc-text-primary)]" style={{ fontFamily: "var(--font-mono)" }}>
+            {usd(typical)} <span className="text-[11px] text-[color:var(--rpc-text-muted)]">typical pull · {usd(cost)} pack</span>
+          </div>
+          <div className="mt-2 grid grid-cols-2 gap-2 text-[11px]" style={{ fontFamily: "var(--font-mono)" }}>
+            <div>
+              <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Mean (incl. chase)</div>
+              <div className="text-[color:var(--rpc-text-primary)]">{usd(mean)}</div>
+            </div>
+            <div>
+              <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Sealed floor</div>
+              <div className="text-[color:var(--rpc-text-primary)]">{usd(sealed)}</div>
+            </div>
+          </div>
+          <Link
+            href={`/${urlSlug}/packs`}
+            className="mt-2 inline-flex items-center gap-1 text-[11px] uppercase tracking-widest"
+            style={{ color: "var(--rpc-red-text)", fontFamily: "var(--font-display)" }}
+          >
+            View pack analytics <ArrowUpRight size={11} />
+          </Link>
         </>
       )}
     </div>
@@ -1202,7 +1272,7 @@ function AnalyticsInner() {
           {/* 2x2 grid of new cards */}
           <section className="mb-6 grid grid-cols-1 gap-3 md:grid-cols-2">
             <OrderBookCard short={short} />
-            <PackEvCard short={short} urlSlug={collection} />
+            {collection === "candy-mlb" ? <CandyPackEvCard urlSlug={collection} /> : <PackEvCard short={short} urlSlug={collection} />}
           </section>
 
           {/* Liquidity heatmap (full-width — needs the room for the 6-bucket mini-grid) */}

@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp";
 import DegradedDataNotice from "@/components/insights/DegradedDataNotice";
 import type { DegradedSummary } from "@/lib/insights/board-status";
@@ -406,6 +406,14 @@ export default function CandyBoardClient({
   fetchedAt: string | null;
 }) {
   const [tab, setTab] = useState("market");
+  // Deep link (2026-10-26): Candy edition pages link a specific view (`?tab=scarcity`). Read after mount
+  // so the ISR-cached server render stays identical for every URL (no hydration mismatch).
+  useEffect(() => {
+    try {
+      const want = new URLSearchParams(window.location.search).get("tab");
+      if (want && TABS.some((t) => t.k === want)) setTab(want);
+    } catch { /* no window / bad URL — keep the default view */ }
+  }, []);
 
   // Market tab local state.
   const [sortK, setSortK] = useState<keyof Row>("fmv_usd");
