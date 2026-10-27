@@ -619,3 +619,56 @@ export async function readPinnacleSetCompletionForConcierge(
     return failed
   }
 }
+
+// ── Hot floors (get_hot_floors on Disney Pinnacle, 2026-10-26) ─────────────
+// get_pinnacle_hot_floors: one collector taking 3+ copies of a PIN (render_id) with no gap over 60 min, over
+// on-chain pinnacle_sales. Pinnacle sales carry no Quick-Buy proposer, so this is not Top Shot's Quick-Buy
+// test, and the note says so. Replaces the pass-1 not_applicable (which was true until this board existed).
+export async function readPinnacleHotFloorsForConcierge(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  db: any,
+  base: string,
+  opts: { days: number; limit: number },
+): Promise<string> {
+  const days = Math.min(Math.max(Math.trunc(opts.days) || 7, 1), 30)
+  const limit = Math.min(Math.max(Math.trunc(opts.limit) || 15, 1), 40)
+  const failed = (why: string) =>
+    JSON.stringify({ status: "error", collection: PINNACLE_COLLECTION_ID, message: `Disney Pinnacle hot floors read failed: ${why} This says nothing about the market — never say no pins are being swept.` })
+  try {
+    const { data, error } = await db.rpc("get_pinnacle_hot_floors", { p_days: days })
+    if (error) return failed(error.message ?? "unknown error.")
+    const rows = data?.editions
+    if (!Array.isArray(rows)) return failed("unexpected shape.")
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const pins = rows.slice(0, limit).map((e: any) => {
+      const swept = num(e.swept_sales) ?? 0
+      const spend = num(e.swept_spend)
+      return {
+        pin: e.external_id,
+        character: e.player_name,
+        set: e.set_name,
+        variant: e.tier,
+        minted: num(e.circulation_count),
+        sweep_buyers: num(e.sweep_buyers),
+        swept_sales: swept,
+        avg_paid_usd: swept > 0 && spend != null ? Math.round((spend / swept) * 100) / 100 : null,
+        floor_ask_usd: num(e.floor_ask),
+        floor_ask_last_checked_at: e.floor_ask_verified_at ?? null,
+        fmv_usd: num(e.fmv_usd),
+        last_swept_at: e.last_swept_at ?? null,
+        pin_url: e.external_id ? `${base}/pinnacle/moment/${encodeURIComponent(String(e.external_id))}` : null,
+      }
+    })
+    return JSON.stringify({
+      status: "ok",
+      collection: PINNACLE_COLLECTION_ID,
+      window_days: days,
+      count: pins.length,
+      hot_floors: pins,
+      board_url: `${base}/${PINNACLE_COLLECTION_ID}/hot-floors`,
+      note: "Disney Pinnacle pins being swept: one collector buying 3+ copies with no gap over 60 minutes, ranked by distinct sweepers. Pinnacle sales record no Quick-Buy path, so this is not Top Shot's Quick-Buy measure — say 'bought in bulk', not 'Quick Buy'. Collectors are counted, never named. floor_ask_usd is null when no open listing was seen in the latest sweep; floor_ask_last_checked_at is that sweep's time.",
+    })
+  } catch (err) {
+    return failed(err instanceof Error ? err.message : String(err))
+  }
+}

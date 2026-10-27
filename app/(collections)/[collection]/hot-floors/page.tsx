@@ -14,6 +14,8 @@ import { fetchPaniniHotFloors, PANINI_HOT_FLOORS_DAYS } from "@/lib/hot-floors/p
 import PaniniHotFloors from "@/components/collection/PaniniHotFloors"
 import { fetchAllDayHotFloors, ALLDAY_HOT_FLOORS_DAYS } from "@/lib/hot-floors/allday"
 import AllDayHotFloors from "@/components/collection/AllDayHotFloors"
+import { fetchPinnacleHotFloors, PINNACLE_HOT_FLOORS_DAYS } from "@/lib/hot-floors/pinnacle"
+import PinnacleHotFloors from "@/components/collection/PinnacleHotFloors"
 import { proxyIpfsImageUrl } from "@/lib/ipfs-media"
 import { usdSignFirst } from "@/lib/usd-format"
 import { accentText } from "@/lib/accent-text"
@@ -65,6 +67,12 @@ export default async function HotFloorsPage(props: { params: Promise<{ collectio
   if (collectionId === "nfl-all-day") {
     const r = await fetchAllDayHotFloors()
     return <AllDayHotFloors collection={collectionId} editions={r.editions} ok={r.ok} days={ALLDAY_HOT_FLOORS_DAYS} newestSaleAt={r.newestSaleAt} computedAt={r.computedAt} />
+  }
+  // Disney Pinnacle (Top Shot parity, 2026-10-26): pins (render_id) where one collector took 3+ copies within
+  // 60-minute gaps over pinnacle_sales (get_pinnacle_hot_floors) — Pinnacle sales carry no Quick-Buy proposer.
+  if (collectionId === "disney-pinnacle") {
+    const r = await fetchPinnacleHotFloors()
+    return <PinnacleHotFloors editions={r.editions} ok={r.ok} days={PINNACLE_HOT_FLOORS_DAYS} newestSaleAt={r.newestSaleAt} />
   }
   // Every other collection: the Quick-Buy proposer account is Top Shot-specific.
   if (collectionId !== "nba-top-shot") {

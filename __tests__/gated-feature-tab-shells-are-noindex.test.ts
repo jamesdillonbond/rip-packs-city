@@ -24,7 +24,8 @@ describe("gatedTabRobots — derived over every published collection × every ta
     expect(shipped.length).toBeGreaterThan(5)
     // Two shells the review named by URL.
     expect(collectionHasPage("ufc", "market")).toBe(false)
-    expect(collectionHasPage("disney-pinnacle", "hot-floors")).toBe(false)
+    // disney-pinnacle shipped hot-floors 2026-10-26; laliga-golazos still lacks it.
+    expect(collectionHasPage("laliga-golazos", "hot-floors")).toBe(false)
   })
 
   it.each(cases)("%s/%s", (id, tab) => {

@@ -31,7 +31,7 @@ import {
   searchPinnacleByName,
   getPinnacleEditionListings,
   pinnacleNotApplicable,
-  readPinnacleSetCompletionForConcierge,
+  readPinnacleSetCompletionForConcierge, readPinnacleHotFloorsForConcierge,
 } from "@/lib/concierge/pinnacle-router";
 import {
   fetchUnifiedFmvDistribution,
@@ -657,12 +657,12 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "get_hot_floors",
-    description: "Top Shot 'hot floors' — the editions whose floor is being actively SWEPT (bought in bulk via Dapper Quick Buy) right now. Ranked by how many distinct buyers are sweeping each edition over the last few days, with the swept-sale count, the average price sweepers are paying, and the current floor ask + FMV. THE tool for 'what's being accumulated / swept right now', 'what commons are people bulk-buying', 'where's the sweep pressure'. NFL All Day too (collectionId nfl-all-day or an All Day page): there a sweep is one collector buying 3+ copies in a row (All Day records no Quick Buy), over 7 days by default.",
+    description: "Top Shot 'hot floors' — the editions whose floor is being actively SWEPT (bought in bulk via Dapper Quick Buy) right now. Ranked by how many distinct buyers are sweeping each edition over the last few days, with the swept-sale count, the average price sweepers are paying, and the current floor ask + FMV. THE tool for 'what's being accumulated / swept right now', 'what commons are people bulk-buying', 'where's the sweep pressure'. NFL All Day too (collectionId nfl-all-day or an All Day page): there a sweep is one collector buying 3+ copies in a row (All Day records no Quick Buy), over 7 days by default. Disney Pinnacle too (collectionId disney-pinnacle or a Pinnacle page): the same 3+-in-a-row rule over PINS, 7 days by default.",
     input_schema: {
       type: "object" as const,
       properties: {
-        collectionId: { type: "string", description: "Optional. nba-top-shot (default) or nfl-all-day." },
-        days: { type: "number", description: "Lookback window in days (Top Shot 1..7, default 3; All Day 1..30, default 7)." },
+        collectionId: { type: "string", description: "Optional. nba-top-shot (default), nfl-all-day or disney-pinnacle." },
+        days: { type: "number", description: "Lookback window in days (Top Shot 1..7, default 3; All Day and Pinnacle 1..30, default 7)." },
         limit: { type: "number", description: "Max editions, 1..40, default 15." },
       },
       required: [],
@@ -4655,8 +4655,10 @@ async function executeToolInner(
 
   // ── Bulk-buy / sweep intelligence (Top Shot Quick Buy) ────────────────────
   if (toolName === "get_hot_floors") {
+    // 2026-10-26 (pass 3): Pinnacle has its own board (get_pinnacle_hot_floors, collectors buying 3+ copies
+    // of a pin in a row). An explicit collectionId "nba-top-shot" still reads Top Shot's.
     if (isPinnacle(effectiveCollectionId)) {
-      return pinnacleNotApplicable("get_hot_floors", "Hot Floors reads Top Shot's Quick-Buy floor sweeps; RPC has no sweep signal for Disney Pinnacle.", "get_top_sales and get_market_movers cover Pinnacle's recorded sales.");
+      return readPinnacleHotFloorsForConcierge(supabase, base, { days: Number(toolInput.days ?? 7), limit: Number(toolInput.limit ?? 15) });
     }
     if (toolInput.collectionId === "candy-mlb" || (!toolInput.collectionId && effectiveCollectionId === "candy-mlb")) {
       return candyNotApplicable("get_hot_floors", "Hot Floors reads Top Shot's Quick-Buy sweeps; Candy trades on Magic Eden, which has no such path, and RPC has recorded no Candy sale since Oct 11.", "Say Candy has no sweep signal; get_top_sales covers its recorded sales.");

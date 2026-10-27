@@ -75,7 +75,8 @@ beforeEach(() => {
 const WALLET = "0x1234567890abcdef"
 
 describe("Top-Shot-only tools on a Disney Pinnacle page", () => {
-  for (const tool of ["get_special_serial_owners", "search_serial_deals", "get_hot_floors", "get_challenges", "get_rookies"]) {
+  // get_hot_floors left this list 2026-10-26 (pass 3): Pinnacle has its own board now — pinned below.
+  for (const tool of ["get_special_serial_owners", "search_serial_deals", "get_challenges", "get_rookies"]) {
     it(`${tool} → not_applicable, no Top Shot read`, async () => {
       const inst = makeInstrumentedSupabaseFixture({})
       A.sb = inst.fixture
@@ -100,6 +101,41 @@ describe("Top-Shot-only tools on a Disney Pinnacle page", () => {
     await POST(post("disney-pinnacle"))
     expect(toolResult().status).not.toBe("not_applicable")
     expect(inst.rpcCalls.some((c) => c.name === "get_topshot_hot_floors")).toBe(true)
+  })
+})
+
+describe("get_hot_floors on a Disney Pinnacle page reads Pinnacle's own sweep board (pass 3)", () => {
+  it("reads get_pinnacle_hot_floors — never Top Shot's Quick-Buy board — and links pin pages", async () => {
+    const inst = makeInstrumentedSupabaseFixture({
+      "rpc:get_pinnacle_hot_floors": { data: { days: 7, newest_sale_at: "2026-10-27T03:43:24Z", editions: [
+        { external_id: "OEV2-ALIN-CRIM-S3", player_name: "Crimson Coil", set_name: "20th Century Studios • Alien Vol.2", tier: "Silver Sparkle", circulation_count: 204, sweep_buyers: 4, swept_sales: 26, swept_spend: 26, last_swept_at: "2026-10-27T00:05:20Z", floor_ask: 2, floor_ask_verified_at: "2026-10-27T01:45:17Z", fmv_usd: 1 },
+      ] }, error: null },
+    })
+    A.sb = inst.fixture
+    script("get_hot_floors", {})
+    await POST(post("disney-pinnacle"))
+    const r = toolResult()
+    expect(r).toMatchObject({ status: "ok", collection: "disney-pinnacle", window_days: 7, count: 1 })
+    expect(r.hot_floors[0]).toMatchObject({ pin: "OEV2-ALIN-CRIM-S3", character: "Crimson Coil", sweep_buyers: 4, avg_paid_usd: 1 })
+    expect(r.hot_floors[0].pin_url).toMatch(/\/pinnacle\/moment\/OEV2-ALIN-CRIM-S3$/)
+    expect(r.board_url).toMatch(/\/disney-pinnacle\/hot-floors$/)
+    expect(inst.rpcCalls.map((c) => c.name)).toContain("get_pinnacle_hot_floors")
+    expect(inst.rpcCalls.some((c) => c.name === "get_topshot_hot_floors" || c.name === "get_allday_hot_floors")).toBe(false)
+    // Collectors are counted, never named.
+    expect(JSON.stringify(r)).not.toMatch(/buyer_address|0x[0-9a-f]{16}/)
+  })
+
+  it("a failed read says the check failed — never 'no pins are being swept'", async () => {
+    const inst = makeInstrumentedSupabaseFixture({
+      "rpc:get_pinnacle_hot_floors": { data: null, error: { message: "canceling statement due to statement timeout" } },
+    })
+    A.sb = inst.fixture
+    script("get_hot_floors", {})
+    await POST(post("disney-pinnacle"))
+    const r = toolResult()
+    expect(r.status).toBe("error")
+    expect(r.hot_floors).toBeUndefined()
+    expect(r.count).toBeUndefined()
   })
 })
 

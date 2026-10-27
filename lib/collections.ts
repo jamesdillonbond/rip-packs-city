@@ -178,7 +178,9 @@ export const COLLECTIONS: Collection[] = [
     // /api/pinnacle-set-progress (pinnacle_catalog's 169 set_render_ids joined
     // to wallet_moments_cache.render_id), not the editions/sets tables it has
     // zero rows in. It was the last per-collection gap on this tab.
-    pages: ["overview", "collection", "packs", "market", "sniper", "sets", "analytics"],
+    // `hot-floors` added 2026-10-26 (Top Shot parity): get_pinnacle_hot_floors over pinnacle_sales —
+    // a collector buying 3+ copies of a pin in a row (Pinnacle sales carry no Quick-Buy proposer).
+    pages: ["overview", "collection", "packs", "market", "sniper", "sets", "analytics", "hot-floors"],
     published: true,
     flowContractName: "Pinnacle",
     contractAddress: "0xedf9df96c92f4595",
@@ -197,6 +199,7 @@ export const COLLECTIONS: Collection[] = [
     // 2026-10-26: dated RPC changes, each in the ledger (the 09-29 rule above stands — no coverage
     // stats dressed as news). Keep them true, not promotional.
     news: [
+      { title: "Hot Floors for Disney Pinnacle", date: "2026-10-26", summary: "A new board lists the pins collectors are buying in bulk — three or more copies in a row — over the last seven days, with each pin's floor and when it was last checked.", url: "/disney-pinnacle/hot-floors" },
       { title: "Pin pages show live listings and pack pulls", date: "2026-10-26", summary: "Each pin page lists the cheapest live listings from RPC's latest marketplace sweep, linked to Disney Pinnacle, and the packs RPC has seen it pulled from.", url: "/disney-pinnacle/market" },
       { title: "Pinnacle on the Top Sales board", date: "2026-10-26", summary: "Disney Pinnacle sales of $100 or more now appear on the cross-collection Top Sales board, with their own filter.", url: "/insights/top-sales" },
       { title: "Busy pins priced from their latest sales", date: "2026-10-23", summary: "A pin that trades often is now priced from the median of its five most recent sales, which tracked realised prices more closely than the longer-window median.", url: "/legal/fmv-methodology" },
