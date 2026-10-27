@@ -40,6 +40,8 @@ Read from the registry (`lib/collections.ts`), the shared `[collection]` routes 
 | Edition: Top Owners | ✓ (Dune index, lower bound) | ✓ (new, exact) | `get_candy_edition_top_owners` over the daily full census (wmc = minted, 25,375); treasury + Magic Eden escrow excluded |
 | Edition: Parallel Printings ladder | ✓ (`::sub`) | ✓ (new) | Base /250 + Rainbow /15 colours = editions of one `player_id` (`lib/candy/edition-printings.ts`) |
 | Edition: outbound marketplace CTA | ✓ dapper.market | ✓ (new) | Magic Eden has no edition page — links the cheapest listing re-seen in 12 h |
+| Edition: market history | ✓ (ask over time) | ✓ (new, pass 2) | `candy_edition_market_daily`, daily 6:43 AM PDT, forward only from Oct 26: confirmed floor, listed copies, best bid; a day with a stale book has no row. The FMV chart is flat while #58 lasts — this records what still moves |
+| Moment page: best offer on the serial | ✓ | ✓ (new, pass 2) | `get_moment_best_offer` Candy serial arm; no edition-grain Candy "Best offer" (every Candy bid targets one token) |
 | Edition: Found in packs / pack provenance | ✓ | ✗ | `candy_packs` holds pack NFTs, not contents |
 | Edition: insight chips | ✓ | ✗ | Candy's boards are on `/insights/candy-mlb` |
 | Player: Top Collectors | ✓ (rookie index) | ✓ (new) | `get_candy_player_top_collectors` (census, ranked by FMV held) |
@@ -52,6 +54,8 @@ Read from the registry (`lib/collections.ts`), the shared `[collection]` routes 
 | Concierge: special-serial owners | ✓ | ✓ (new) | `candy_special_serials_board` (was Top Shot rows — substitution) |
 | Concierge: serial deals · hot floors · sweep | ✓ | ✗ → not_applicable (new) | each answered with Top Shot data on a Candy page |
 | Concierge: team checklist with a wallet | ✓ | ✓ (fixed) | a base58 wallet was dropped by a 0x regex |
+| Concierge: deal search (`search_live_deals` / `search_catalog_deals`) | ✓ | ✓ (new, pass 2) | `candy_market_board`: below-FMV asks when any, else `closest_to_fmv` (never called deals — FMV is capped at the confirmed ask) |
+| Concierge: collector report · challenges | ✓ | ✗ → not_applicable (new, pass 2) | were sent to the Top Shot username resolver ("share the 0x address") |
 
 ## Open issues
 
