@@ -68,4 +68,37 @@ describe("GET /api/public/insights/first-mint", () => {
     // the `|| 50` guard must yield the numeric default instead.
     expect((await res.json()).meta.filters.limit).toBe(50)
   })
+
+  // 2026-10-26 (All Day ↔ Top Shot parity, pass 4): ?collection=nfl-all-day reads All Day's own views; an unknown
+  // collection is refused — Top Shot's trophies under another collection's name would be substitution.
+  it("?collection=nfl-all-day reads the All Day views, never Top Shot's", async () => {
+    tables.topshot_first_mint_trophies = { data: [{ external_id: "8:133", player_name: "LeBron James" }], error: null }
+    tables.topshot_first_mint_trophy_stats = { data: [{ trophies_90d: 524 }], error: null }
+    tables.allday_first_mint_trophies = { data: [{ external_id: "445", player_name: "Richard Sherman", multiplier: 1589.4 }], error: null }
+    tables.allday_first_mint_trophy_stats = { data: [{ trophies_90d: 27 }], error: null }
+    const res = await GET(req(`${base}?collection=nfl-all-day`))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.meta.collection).toBe("nfl-all-day")
+    expect(body.meta.sources).toEqual(["allday_first_mint_trophy_stats", "allday_first_mint_trophies"])
+    expect(body.stats).toEqual({ trophies_90d: 27 })
+    expect(body.trophies.map((t: any) => t.player_name)).toEqual(["Richard Sherman"])
+    expect(JSON.stringify(body)).not.toContain("LeBron")
+  })
+
+  it("no collection param still means Top Shot", async () => {
+    const body = await (await GET(req(base))).json()
+    expect(body.meta.collection).toBe("nba-top-shot")
+  })
+
+  it("an unknown collection is a 400 with no rows and no other collection's name", async () => {
+    tables.topshot_first_mint_trophies = { data: [{ external_id: "8:133", player_name: "LeBron James" }], error: null }
+    for (const c of ["candy_mlb", "disney-pinnacle", "__proto__", ""]) {
+      const res = await GET(req(`${base}?collection=${encodeURIComponent(c)}`))
+      expect(res.status).toBe(400)
+      const text = JSON.stringify(await res.json())
+      expect(text).not.toContain("LeBron")
+      expect(text).not.toContain("trophies\"")
+    }
+  })
 })

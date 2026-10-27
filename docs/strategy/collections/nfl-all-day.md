@@ -144,7 +144,8 @@ Read from a code sweep of every Top Shot-only branch (≈58 rows) and a DB check
 | Analytics: marketplace breakdown | ✓ | ✓ (new, pass 3) | split by how the sale happened — listings · accepted offers · pack buybacks (`get_allday_daily_sale_kind_volume`); 30-day totals identical to the old one-row read (16,223 / $14,367.98) |
 | Insights boards with an All Day leg | — | autographs, deals, top-sales, trophies, market-cap, market-pulse, cross-collection, pack-sniper, account-value, special-serial-owners, buyback + All Day's own scarcity / pack-market / pack-reality | |
 | Bid vs Floor (`/insights/offer-spread`) | ✓ | ✓ (new, pass 2) | All Day toggle (`?collection=nfl-all-day`) over `allday_offer_ask_spread`: 1,008 editions with a bid and a floor ≥ $5 (10-26); bid age unknown (not kept), so the longest-standing sort is Top Shot only |
-| Insights boards Top Shot only | squeeze, set-squeeze, rookie-board, rookies, first-mint, serial / parallel premiums, underpriced-serials, set-completers, new-collectors, market index | ✗ | next by data on hand: rookies (Rookie Year / Rookie Mint badges), first-mint |
+| First-Mint Trophies (`/insights/first-mint`) | ✓ | ✓ (new, pass 4) | All Day toggle (`?collection=nfl-all-day`) over `mv_allday_first_mint_trophies` (pg_cron 803, 30 min): #1 sales from `sales_market` (buybacks out), self-trades and excluded accounts out. 27 trophies, median 22× (10-26) |
+| Insights boards Top Shot only | squeeze, set-squeeze, rookie-board, rookies, serial / parallel premiums, underpriced-serials, set-completers, new-collectors, market index | ✗ | next by data on hand: rookies (Rookie Year / Rookie Mint badges) |
 | Concierge: hot floors · special-serial owners · badges · set completion | ✓ | ✓ (new) | each read Top Shot on an All Day question (substitution) or said "Top Shot only" |
 | Concierge: edition sweep · serial deals · challenges · rookies | ✓ | not_applicable (new) | each answered with Top Shot data before |
 

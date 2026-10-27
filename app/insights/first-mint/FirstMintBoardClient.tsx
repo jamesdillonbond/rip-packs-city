@@ -18,6 +18,13 @@ import type { DegradedSummary } from "@/lib/insights/board-status"
 import { usdSignFirst } from "@/lib/usd-format"
 import { accentText } from "@/lib/accent-text"
 import PlayerResolvedNote from "@/components/filters/PlayerResolvedNote"
+import {
+  FIRST_MINT_COLLECTIONS,
+  FIRST_MINT_SOURCES,
+  FIRST_MINT_TIERS,
+  isFirstMintCollection,
+  type FirstMintCollection,
+} from "@/lib/insights/first-mint-collections"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -48,13 +55,14 @@ export type Trophy = {
 }
 
 export type ApiResponse = {
-  meta: { fetched_at: string; data_as_of?: string | null; player_resolved?: { from: string; to: string } }
+  meta: { fetched_at: string; data_as_of?: string | null; collection?: string; player_resolved?: { from: string; to: string } }
   stats: Stats
   trophies: Trophy[]
 }
 
 type MultBucket = "ALL" | "5X" | "10X" | "50X" | "100X"
-type TierFilter = "ALL" | "COMMON" | "RARE" | "LEGENDARY" | "FANDOM" | "ULTIMATE"
+// Per-collection vocabularies live in FIRST_MINT_TIERS (All Day has UNCOMMON, no FANDOM).
+type TierFilter = string
 
 function fmtInt(n: number | null | undefined): string {
   if (n == null) return "—"
@@ -85,6 +93,8 @@ function tierColor(tier: string | null): string {
       return "var(--tier-ultimate)"
     case "RARE":
       return "var(--tier-rare)"
+    case "UNCOMMON":
+      return "var(--tier-uncommon)"
     case "FANDOM":
       return "var(--tier-fandom)"
     case "COMMON":
@@ -113,12 +123,18 @@ export default function FirstMintBoardClient({ initial, initialDegraded = null }
   const [playerFilter, setPlayerFilter] = useState<string | null>(null)
   const [playerResolved, setPlayerResolved] = useState<{ from: string; to: string } | null>(null)
   const [setFilter, setSetFilter] = useState<string | null>(null)
+  // NFL All Day joined 2026-10-26 (Top Shot parity pass 4); the server seed is always Top Shot's default view.
+  const [collection, setCollection] = useState<FirstMintCollection>("nba-top-shot")
+  const label = FIRST_MINT_SOURCES[collection].label
+  const isTopShot = collection === "nba-top-shot"
 
   useEffect(() => {
     if (typeof window === "undefined") return
     const url = new URL(window.location.href)
     const p = url.searchParams.get("player")
     const s = url.searchParams.get("set")
+    const c = url.searchParams.get("collection")
+    if (isFirstMintCollection(c)) setCollection(c)
     if (p) setPlayerFilter(p)
     if (s) setSetFilter(s)
   }, [])
@@ -130,7 +146,7 @@ export default function FirstMintBoardClient({ initial, initialDegraded = null }
   useEffect(() => {
     if (isFirstRun.current) {
       isFirstRun.current = false
-      if (bucket === "ALL" && tier === "ALL" && !playerFilter && !setFilter) {
+      if (collection === "nba-top-shot" && bucket === "ALL" && tier === "ALL" && !playerFilter && !setFilter) {
         return
       }
     }
@@ -140,6 +156,7 @@ export default function FirstMintBoardClient({ initial, initialDegraded = null }
       setError(null)
       try {
         const params = new URLSearchParams({ limit: "100" })
+        if (collection !== "nba-top-shot") params.set("collection", collection)
         if (bucket === "5X") params.set("min_multiplier", "5")
         if (bucket === "10X") params.set("min_multiplier", "10")
         if (bucket === "50X") params.set("min_multiplier", "50")
@@ -164,16 +181,38 @@ export default function FirstMintBoardClient({ initial, initialDegraded = null }
     }
     run()
     return () => ctrl.abort()
-  }, [bucket, tier, playerFilter, setFilter])
+  }, [collection, bucket, tier, playerFilter, setFilter])
 
+  // Switching collection resets the tier (different vocabularies) and keeps the URL shareable.
+  function pickCollection(c: FirstMintCollection) {
+    setCollection(c)
+    setTier("ALL")
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href)
+      if (c === "nba-top-shot") url.searchParams.delete("collection")
+      else url.searchParams.set("collection", c)
+      window.history.replaceState({}, "", url.toString())
+    }
+  }
+
+  // The share text quotes THIS board's own median, never a remembered figure (and never Top Shot's on All Day).
+  const median = (data?.meta?.collection ?? "nba-top-shot") === collection ? data?.stats?.median_multiplier : null
   const tweetIntent = useMemo(() => {
-    const text = `The "first mint" trophy thesis is real and quantifiable.\n\nOn TS, serial #1 typically sells for 8-15× the average serial price. Outliers go up to 248×.\n\nLive tracker:`
-    const url = `${SITE_URL}/insights/first-mint`
+    const head = `The "first mint" trophy thesis is real and quantifiable.`
+    const body = median != null
+      ? `On ${label}, serial #1 has sold for a median ${Number(median).toFixed(1)}× its edition's average serial price over the last 90 days.`
+      : `Every ${label} serial #1 sale, against its edition's average serial price.`
+    const text = `${head}\n\n${body}\n\nLive tracker:`
+    const url = `${SITE_URL}/insights/first-mint${isTopShot ? "" : `?collection=${collection}`}`
     return `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`
-  }, [])
+  }, [median, label, isTopShot, collection])
 
-  const trophies = data?.trophies ?? []
-  const stats = data?.stats
+  // The rows on screen must be THIS collection's: the server seed is Top Shot's, so until the All Day read lands
+  // (or when it fails) nothing of Top Shot's renders under the All Day toggle. A seed without meta.collection is Top Shot's.
+  const shownCollection = data?.meta?.collection ?? "nba-top-shot"
+  const pending = shownCollection !== collection
+  const trophies = pending ? [] : data?.trophies ?? []
+  const stats = pending ? null : data?.stats
 
   return (
     <main style={styles.page}>
@@ -183,7 +222,7 @@ export default function FirstMintBoardClient({ initial, initialDegraded = null }
         <div className="rpc-fm-eyebrow">RPC Insights · Public</div>
         <h1 className="rpc-fm-h1">First-Mint Trophies</h1>
         <p className="rpc-fm-lede">
-          Every Top Shot serial #1 sale of the last 90 days, paired with the
+          Every {label} serial #1 sale of the last 90 days, paired with the
           average serial price for the same edition. Trophies aren&apos;t a
           vibe — they&apos;re math.
         </p>
@@ -205,7 +244,7 @@ export default function FirstMintBoardClient({ initial, initialDegraded = null }
         */}
         <div className="rpc-fm-meta-row">
           <span>
-            Updated <FreshnessStamp iso={data?.meta?.data_as_of ?? null} />
+            Updated <FreshnessStamp iso={pending ? null : data?.meta?.data_as_of ?? null} />
           </span>
           <span className="rpc-fm-meta-sep">·</span>
           <span>No signup</span>
@@ -287,6 +326,21 @@ export default function FirstMintBoardClient({ initial, initialDegraded = null }
       </section>
 
       <section className="rpc-fm-controls" aria-label="Filters">
+        <div className="rpc-fm-pill-group" role="tablist" aria-label="Collection">
+          {FIRST_MINT_COLLECTIONS.map((c) => (
+            <button
+              key={c}
+              role="tab"
+              aria-selected={collection === c}
+              data-testid={`fm-collection-${c}`}
+              className={`rpc-fm-pill ${collection === c ? "rpc-fm-pill-active" : ""}`}
+              onClick={() => pickCollection(c)}
+            >
+              {FIRST_MINT_SOURCES[c].label}
+            </button>
+          ))}
+        </div>
+
         <div className="rpc-fm-pill-group">
           <span className="rpc-fm-pill-label">MIN MULTIPLIER</span>
           {(["ALL", "5X", "10X", "50X", "100X"] as MultBucket[]).map((b) => (
@@ -302,7 +356,7 @@ export default function FirstMintBoardClient({ initial, initialDegraded = null }
 
         <div className="rpc-fm-pill-group">
           <span className="rpc-fm-pill-label">TIER</span>
-          {(["ALL", "COMMON", "RARE", "LEGENDARY", "FANDOM", "ULTIMATE"] as TierFilter[]).map((t) => (
+          {["ALL", ...FIRST_MINT_TIERS[collection]].map((t) => (
             <button
               key={t}
               className={`rpc-fm-pill ${tier === t ? "rpc-fm-pill-active" : ""}`}
@@ -322,25 +376,33 @@ export default function FirstMintBoardClient({ initial, initialDegraded = null }
       <section className="rpc-fm-table-wrap" aria-label="Trophy list">
         {error ? (
           <div className="rpc-fm-state">Failed to load: {error}</div>
-        ) : loading ? (
+        ) : loading || pending ? (
           <div className="rpc-fm-state">Loading…</div>
         ) : trophies.length === 0 ? (
           <div className="rpc-fm-state">
             {playerFilter ? (
               <>
                 No mint-#1 sales recorded for <strong>{playerFilter}</strong> in the last 90 days.
-                <br />
-                <Link href={`/insights/squeeze?player=${encodeURIComponent(playerFilter)}`} className="rpc-fm-empty-link">
-                  See {playerFilter}&apos;s editions on the squeeze board →
-                </Link>
+                {isTopShot ? (
+                  <>
+                    <br />
+                    <Link href={`/insights/squeeze?player=${encodeURIComponent(playerFilter)}`} className="rpc-fm-empty-link">
+                      See {playerFilter}&apos;s editions on the squeeze board →
+                    </Link>
+                  </>
+                ) : null}
               </>
             ) : setFilter ? (
               <>
                 No mint-#1 sales recorded for <strong>{setFilter}</strong> in the last 90 days.
-                <br />
-                <Link href={`/insights/squeeze?set=${encodeURIComponent(setFilter)}`} className="rpc-fm-empty-link">
-                  See {setFilter} on the squeeze board →
-                </Link>
+                {isTopShot ? (
+                  <>
+                    <br />
+                    <Link href={`/insights/squeeze?set=${encodeURIComponent(setFilter)}`} className="rpc-fm-empty-link">
+                      See {setFilter} on the squeeze board →
+                    </Link>
+                  </>
+                ) : null}
               </>
             ) : (
               "No trophies match."
@@ -365,13 +427,14 @@ export default function FirstMintBoardClient({ initial, initialDegraded = null }
                   <td className="rpc-fm-td-edition">
                     <div className="rpc-fm-edition-cell">
                       <Link
-                        href={r.external_id ? `/nba-top-shot/edition/${encodeURIComponent(r.external_id)}` : `/moment/${r.edition_id}`}
+                        href={r.external_id ? `/${collection}/edition/${encodeURIComponent(r.external_id)}` : `/moment/${r.edition_id}`}
                         className="rpc-fm-edition-link"
                       >
                         <div className="rpc-fm-edition-name">{r.player_name ?? "—"}</div>
                         <div className="rpc-fm-edition-set">{r.set_name ?? "—"}</div>
                       </Link>
-                      {r.player_name ? (
+                      {/* /insights/squeeze is Top Shot only — no link on an All Day row. */}
+                      {isTopShot && r.player_name ? (
                         <Link
                           href={`/insights/squeeze?player=${encodeURIComponent(r.player_name)}`}
                           className="rpc-fm-squeeze-link"
@@ -403,8 +466,11 @@ export default function FirstMintBoardClient({ initial, initialDegraded = null }
         <div className="rpc-fm-method">
           <h3 className="rpc-fm-h3">Methodology</h3>
           <p>
-            <strong>Trophy</strong> = a serial #1 sale of any Top Shot edition
+            <strong>Trophy</strong> = a serial #1 sale of any {label} edition
             in the last 90 days, with a USD price &gt; $0.
+            {isTopShot ? null : (
+              <> Pack buybacks, self-trades and the platform&apos;s own accounts are left out — they are not a collector&apos;s price.</>
+            )}
           </p>
           <p>
             <strong>Avg other serial price</strong> = average of all non-#1

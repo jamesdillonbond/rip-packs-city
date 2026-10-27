@@ -105,4 +105,63 @@ describe("FirstMintBoardClient", () => {
     fireEvent.click(clear)
     await waitFor(() => expect(container.textContent).not.toMatch(/FILTERED TO PLAYER/i))
   })
+
+  // 2026-10-26 (All Day ↔ Top Shot parity, pass 4).
+  describe("NFL All Day toggle", () => {
+    const adBody = {
+      meta: { fetched_at: "x", collection: "nfl-all-day", data_as_of: "2026-10-27T05:17:00Z" },
+      stats: { ...initial.stats, median_multiplier: 22, trophies_90d: 27 },
+      trophies: [trophy({ edition_id: "ad-1", external_id: "445", player_name: "Richard Sherman", tier: "COMMON", multiplier: 1589.4 })],
+    }
+
+    it("switching to All Day fetches ?collection=nfl-all-day and links All Day edition pages", async () => {
+      fetchFn.mockImplementation(async () => ({ ok: true, status: 200, json: async () => adBody }))
+      const { container, getByTestId } = render(<FirstMintBoardClient initial={initial} />)
+      fireEvent.click(getByTestId("fm-collection-nfl-all-day"))
+      await waitFor(() => expect(container.textContent).toContain("Richard Sherman"))
+      expect(String(fetchFn.mock.calls[0][0])).toContain("collection=nfl-all-day")
+      expect(container.textContent).not.toContain("Damian Lillard")
+      expect(container.querySelector('a[href="/nfl-all-day/edition/445"]')).toBeTruthy()
+      expect(container.querySelector('a[href^="/nba-top-shot/"]')).toBeNull()
+      // /insights/squeeze is Top Shot only — no squeeze link on an All Day row.
+      expect(container.querySelector('a[href^="/insights/squeeze"]')).toBeNull()
+      expect(container.textContent).toContain("Every NFL All Day serial #1 sale")
+      expect(container.textContent).toContain("UNCOMMON")
+      expect(container.textContent).not.toContain("FANDOM")
+      expect(window.location.search).toContain("collection=nfl-all-day")
+    })
+
+    it("a ?collection=nfl-all-day URL never shows the Top Shot seed under the All Day toggle", async () => {
+      window.history.replaceState({}, "", "/insights/first-mint?collection=nfl-all-day")
+      let release: () => void = () => {}
+      fetchFn.mockImplementation(() => new Promise((r) => { release = () => r({ ok: true, status: 200, json: async () => adBody }) }))
+      const { container } = render(<FirstMintBoardClient initial={initial} />)
+      await waitFor(() => expect(fetchFn).toHaveBeenCalled())
+      expect(container.textContent).not.toContain("Damian Lillard")
+      expect(container.textContent).not.toContain("248.0×")
+      release()
+      await waitFor(() => expect(container.textContent).toContain("Richard Sherman"))
+    })
+
+    it("a failed All Day read says so and shows no Top Shot rows", async () => {
+      window.history.replaceState({}, "", "/insights/first-mint?collection=nfl-all-day")
+      fetchFn.mockImplementation(async () => ({ ok: false, status: 500, json: async () => ({}) }))
+      const { container } = render(<FirstMintBoardClient initial={initial} />)
+      await waitFor(() => expect(container.textContent).toMatch(/Failed to load/))
+      expect(container.textContent).not.toContain("Damian Lillard")
+    })
+
+    it("switching back to Top Shot drops the URL param", async () => {
+      fetchFn.mockImplementation(async (u: unknown) => ({
+        ok: true, status: 200,
+        json: async () => (String(u).includes("nfl-all-day") ? adBody : { meta: { fetched_at: "x" }, stats: initial.stats, trophies: [trophy({ player_name: "Back On Top Shot" })] }),
+      }))
+      const { container, getByTestId } = render(<FirstMintBoardClient initial={initial} />)
+      fireEvent.click(getByTestId("fm-collection-nfl-all-day"))
+      await waitFor(() => expect(container.textContent).toContain("Richard Sherman"))
+      fireEvent.click(getByTestId("fm-collection-nba-top-shot"))
+      await waitFor(() => expect(container.textContent).toContain("Back On Top Shot"))
+      expect(window.location.search).not.toContain("collection")
+    })
+  })
 })

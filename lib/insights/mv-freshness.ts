@@ -42,6 +42,8 @@ export const MV_PIPELINE = {
   deals: "cross-collection-deals-mv",
   "panini-squeeze": "panini-squeeze-mv",
   "first-mint": "topshot-first-mint-mv",
+  // NFL All Day leg of /insights/first-mint (2026-10-26, refresh_allday_first_mint_trophies, pg_cron 803).
+  "allday-first-mint": "allday-first-mint-mv",
 } as const
 
 export type MvBoardKey = keyof typeof MV_PIPELINE

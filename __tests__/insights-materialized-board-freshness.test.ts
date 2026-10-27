@@ -96,6 +96,8 @@ describe("readMvAsOf", () => {
       deals: "cross-collection-deals-mv",
       "panini-squeeze": "panini-squeeze-mv",
       "first-mint": "topshot-first-mint-mv",
+      // refresh_allday_first_mint_trophies (audit_20261026_allday_first_mint_trophies)
+      "allday-first-mint": "allday-first-mint-mv",
     })
   })
 })

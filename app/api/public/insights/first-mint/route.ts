@@ -19,6 +19,10 @@
 //   Top dollar: Jokić Base Set Common #1 → $9,000 (188× the $47.73 avg)
 //
 // Query params:
+//   collection=nba-top-shot|nfl-all-day  default nba-top-shot. NFL All Day joined 2026-10-26 (Top Shot parity
+//                         pass 4: allday_first_mint_trophies / _stats over mv_allday_first_mint_trophies). Any
+//                         other value is refused with 400 — another collection's trophies under its name would be
+//                         substitution, not a fallback.
 //   limit=<1..200>        default 50, applies only to the trophies list
 //   min_multiplier=<n>    optional floor on multiplier (e.g. 10)
 //
@@ -31,10 +35,19 @@ import { boardUnavailable } from "@/lib/insights/board-error";
 import { boundedRead } from "@/lib/api/bounded-read";
 import { retryEmptyPlayerSearch } from "@/lib/search/player-search-retry";
 import { getCollectionUuid } from "@/lib/collections";
+import { ownLookup } from "@/lib/safe-lookup";
+import { FIRST_MINT_SOURCES, isFirstMintCollection } from "@/lib/insights/first-mint-collections";
 
 export async function GET(req: NextRequest) {
   const startedAt = Date.now();
   const url = new URL(req.url);
+  const collectionParam = url.searchParams.get("collection");
+  if (collectionParam != null && !isFirstMintCollection(collectionParam)) {
+    return NextResponse.json({ error: "unknown collection" }, { status: 400 });
+  }
+  const collection = collectionParam ?? "nba-top-shot";
+  const src = ownLookup(FIRST_MINT_SOURCES, collection);
+  if (!src) return NextResponse.json({ error: "unknown collection" }, { status: 400 });
   const limitRaw = Number(url.searchParams.get("limit") ?? "50");
   const limit = Math.max(1, Math.min(200, Number.isFinite(limitRaw) ? limitRaw : 50));
   const minMult = url.searchParams.get("min_multiplier")
@@ -52,7 +65,7 @@ export async function GET(req: NextRequest) {
   const buildTrophies = (player: string | null) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let q = (supabase as any)
-      .from("topshot_first_mint_trophies")
+      .from(src.trophies)
       .select(
         "edition_id, external_id, player_name, set_name, tier, circulation_count, mint_one_sold_at, mint_one_price_usd, avg_other_serial_price_usd, other_serial_sample_n, multiplier, transaction_hash"
       );
@@ -72,17 +85,17 @@ export async function GET(req: NextRequest) {
       q = q.ilike("set_name", `%${setFilter}%`);
     }
     q = q.order("multiplier", { ascending: false, nullsFirst: false }).limit(limit);
-    return boundedRead(q, "api/public/insights/first-mint/topshot_first_mint_trophies");
+    return boundedRead(q, `api/public/insights/first-mint/${src.trophies}`);
   };
 
   const [statsRes, trophiesRes] = await Promise.all([
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    boundedRead((supabase as any).from("topshot_first_mint_trophy_stats").select("*").limit(1), "api/public/insights/first-mint/topshot_first_mint_trophy_stats"),
+    boundedRead((supabase as any).from(src.stats).select("*").limit(1), `api/public/insights/first-mint/${src.stats}`),
     // #207: an accent-only miss ("doncic") is retried with the resolver's single
     // spelling and reported in meta.player_resolved (lib/search/player-search-retry).
     (async () => retryEmptyPlayerSearch({
       supabase,
-      collectionUuid: getCollectionUuid("nba-top-shot"),
+      collectionUuid: getCollectionUuid(collection),
       typed: playerFilter,
       first: await buildTrophies(playerFilter),
       run: (label) => buildTrophies(label),
@@ -102,8 +115,9 @@ export async function GET(req: NextRequest) {
       fetched_at: new Date().toISOString(),
       // ⚠ How old the ROWS are (this board reads a materialized view since 2026-08-22).
       // `fetched_at` is only when we answered. null = cannot tell, never now().
-      data_as_of: await readMvAsOf("first-mint"),
-      sources: ["topshot_first_mint_trophy_stats", "topshot_first_mint_trophies"],
+      data_as_of: await readMvAsOf(src.mv),
+      collection,
+      sources: [src.stats, src.trophies],
       elapsed_ms: elapsedMs,
       filters: { limit, min_multiplier: minMult, max_circulation: maxCirculation, tier, player: playerFilter, set: setFilter },
       ...(trophiesRes.playerResolved ? { player_resolved: trophiesRes.playerResolved } : {}),
