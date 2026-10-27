@@ -162,6 +162,7 @@ vi.mock("@/lib/chains/flow/cadence/pinnacle-wallet", () => ({
 import {
   resolveWalletInput,
   fetchOnChainIds,
+  FLOW_429_RETRIES,
   isFlowQueryTimeout,
   isStorageLimitError,
   isComputationLimitError,
@@ -444,6 +445,45 @@ describe("fetchOnChainIds", () => {
   it("throws on a non-2xx Flow script response", async () => {
     ;(fetch as any).mockResolvedValue({ ok: false, status: 500, text: async () => "boom" })
     await expect(fetchOnChainIds("main(){}", WALLET)).rejects.toThrow(/Flow script HTTP 500/)
+  })
+
+  // 2026-10-26. The access node's per-second limit (HTTP 429) is transient: retried, bounded.
+  it("retries a 429 and returns the ids from the attempt that succeeds", async () => {
+    vi.useFakeTimers()
+    try {
+      const limited = { ok: false, status: 429, headers: new Headers(), text: async () => '{"code":-32007,"message":"100/second request limit reached"}' }
+      ;(fetch as any).mockReset()
+      ;(fetch as any).mockResolvedValueOnce(limited).mockResolvedValueOnce(limited).mockResolvedValueOnce(flowIdsResponse([7, 8]))
+      const p = fetchOnChainIds("main(){}", WALLET)
+      await vi.runAllTimersAsync()
+      expect(await p).toEqual(["7", "8"])
+      expect((fetch as any).mock.calls.length).toBe(3)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("gives up after FLOW_429_RETRIES more attempts and throws the 429", async () => {
+    vi.useFakeTimers()
+    try {
+      const limited = { ok: false, status: 429, headers: new Headers({ "retry-after": "1" }), text: async () => "100/second request limit reached" }
+      ;(fetch as any).mockReset()
+      ;(fetch as any).mockResolvedValue(limited)
+      const p = fetchOnChainIds("main(){}", WALLET).catch((e) => e)
+      await vi.runAllTimersAsync()
+      const err = await p
+      expect(String(err.message)).toMatch(/Flow script HTTP 429/)
+      expect((fetch as any).mock.calls.length).toBe(FLOW_429_RETRIES + 1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("does not retry a non-429 failure", async () => {
+    ;(fetch as any).mockReset()
+    ;(fetch as any).mockResolvedValue({ ok: false, status: 500, text: async () => "boom" })
+    await expect(fetchOnChainIds("main(){}", WALLET)).rejects.toThrow(/Flow script HTTP 500/)
+    expect((fetch as any).mock.calls.length).toBe(1)
   })
 
   // 2026-09-29. Flow nests the cause behind two InvalidArgument wrappers; the body was cut at 200

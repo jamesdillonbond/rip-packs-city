@@ -260,17 +260,38 @@ export function isFlowQueryTimeout(err: unknown): boolean {
   return /flow_query_timeout/.test(msg)
 }
 
+// 2026-10-26: the public Flow access node answers HTTP 429 ("100/second request limit reached")
+// when the multicollection dispatcher fans several wallets out at once — 29 of 126 UFC ID walks
+// failed that way in one evening (4:36–5:17 PM PT) and were logged as hard failures. A 429 is
+// fast and says "come back shortly", so it is retried here, bounded: up to FLOW_429_RETRIES
+// more attempts, honouring Retry-After (capped) or 1 s / 2 s / 4 s. Any other status is not
+// retried. The last 429 still throws with its body, so a sustained limit stays visible.
+export const FLOW_429_RETRIES = 3
+const FLOW_429_MAX_BACKOFF_MS = 8_000
+
+function flow429BackoffMs(attempt: number, retryAfter: string | null): number {
+  const secs = retryAfter != null ? Number(retryAfter) : NaN
+  if (Number.isFinite(secs) && secs >= 0) return Math.min(secs * 1000, FLOW_429_MAX_BACKOFF_MS)
+  return Math.min(1000 * 2 ** attempt, FLOW_429_MAX_BACKOFF_MS)
+}
+
 export async function fetchOnChainIds(cadence: string, wallet: string): Promise<string[]> {
   const body = {
     script: btoa(cadence),
     arguments: [btoa(JSON.stringify({ type: "Address", value: wallet }))],
   }
-  const res = await fetch(`${FLOW_REST}?block_height=sealed`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(20_000),
-  })
+  let res: Response
+  for (let attempt = 0; ; attempt++) {
+    res = await fetch(`${FLOW_REST}?block_height=sealed`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(20_000),
+    })
+    if (res.status !== 429 || attempt >= FLOW_429_RETRIES) break
+    const wait = flow429BackoffMs(attempt, res.headers?.get?.("retry-after") ?? null)
+    await new Promise<void>((r) => setTimeout(r, wait))
+  }
   if (!res.ok) {
     // ⚠ Keep the WHOLE cause. Flow nests the reason (e.g. `[Error Code: 1110] computation limit
     // exceeded`) ~400 characters in, behind two layers of `rpc error: code = InvalidArgument`; a

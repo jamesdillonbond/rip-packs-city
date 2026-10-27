@@ -111,8 +111,21 @@ async function read<T>(q: PromiseLike<{ data: T[] | null; error: { message: stri
 export async function fetchPaniniMoreBoards(
   db: Db = supabaseAdmin,
 ): Promise<BoardLiveResult<Record<string, unknown>>> {
-  const [deals, dealsAll, packs, specials, players, coverage, specialCount, holders, holderCount, spread, spreadCount] = await Promise.all([
-    read(
+  // 2026-10-26: the two deal reads run ONE AFTER THE OTHER, the all-product board first.
+  // panini_deal_board IS panini_deal_board_all filtered to WC (one body), so each read pays the
+  // whole view: ~240k buffers, 0.8 s warm but 15–29 s cold. Fired together they raced each other
+  // for the same cold pages and both hit the 30 s service_role statement_timeout (10-25 9:52 PM
+  // and 10-26 5:07 PM PT, both boards at once). In sequence the second read finds the pages warm.
+  const dealsPair = (async () => {
+    const all = await read(
+      db.from("panini_deal_board_all").select(DEAL_ALL_COLS)
+        .order("deal_basis", { ascending: true })
+        .order("est_profit_usd", { ascending: false })
+        .order("sku", { ascending: true })
+        .limit(PANINI_ALL_DEALS_LIMIT),
+      "panini_deal_board_all",
+    )
+    const wc = await read(
       db.from("panini_deal_board").select(DEAL_COLS)
         // Sale-corroborated deals FIRST ('fmv_and_recent_sales' sorts before
         // 'fmv_only_no_recent_sales'), so the cap can only cut FMV-only rows.
@@ -123,15 +136,11 @@ export async function fetchPaniniMoreBoards(
         .order("sku", { ascending: true })
         .limit(PANINI_BOARD_LIMIT),
       "panini_deal_board",
-    ),
-    read(
-      db.from("panini_deal_board_all").select(DEAL_ALL_COLS)
-        .order("deal_basis", { ascending: true })
-        .order("est_profit_usd", { ascending: false })
-        .order("sku", { ascending: true })
-        .limit(PANINI_ALL_DEALS_LIMIT),
-      "panini_deal_board_all",
-    ),
+    )
+    return [wc, all] as const
+  })()
+  const [[deals, dealsAll], packs, specials, players, coverage, specialCount, holders, holderCount, spread, spreadCount] = await Promise.all([
+    dealsPair,
     // WC-only board: since 2026-09-28 panini_pack_ev_board also carries packs of products the model
     // does not price (NULL EV, ev_modeled=false). They belong on the Packs tab, which says "not
     // modeled"; here they would be EV rows with no EV. Filter on the view's own discriminator.

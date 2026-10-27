@@ -75,6 +75,34 @@ describe("fetchPaniniMoreBoards", () => {
   })
 
 
+  // 2026-10-26: both deal boards are the same view body; fired together they raced for the same cold
+  // pages and BOTH hit the 30 s statement timeout. The WC read must not START until the all-product
+  // read has finished.
+  it("starts the WC deal read only after the all-product deal read has finished", async () => {
+    const d = db() as any
+    const started: string[] = []
+    let release!: () => void
+    const gate = new Promise<void>((r) => { release = r })
+    const from0 = d.from.bind(d)
+    d.from = (table: string) => {
+      started.push(table)
+      const b = from0(table)
+      if (table === "panini_deal_board_all") {
+        const then0 = b.then
+        b.then = (resolve: any, reject: any) => gate.then(() => then0(resolve, reject))
+      }
+      return b
+    }
+    const p = fetchPaniniMoreBoards(d)
+    await new Promise((r) => setTimeout(r, 0))
+    expect(started).toContain("panini_deal_board_all")
+    expect(started).not.toContain("panini_deal_board")
+    release()
+    const r = await p
+    expect(started.indexOf("panini_deal_board")).toBeGreaterThan(started.indexOf("panini_deal_board_all"))
+    expect(r.ok).toBe(true)
+  })
+
   it("assembles all four boards + coverage and is cacheable when every read succeeds", async () => {
     const r = await fetchPaniniMoreBoards(db())
     expect(r.ok).toBe(true)
