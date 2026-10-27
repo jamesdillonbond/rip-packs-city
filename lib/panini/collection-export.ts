@@ -69,3 +69,12 @@ export function paniniExportRowsToCards(rows: PaniniExportRow[]): PaniniOwnerCar
     }
   })
 }
+
+/**
+ * 2026-10-27: per-page bound 20 s (was the 8 s page-render default). This is a download the collector
+ * asked for, not a page render: a cold first page measured ~1 s warm but crossed 8 s twice on 10-26
+ * (12:37 PM PT, the user's retry failing the same way). The whole export (app/api/panini-collection/export,
+ * maxDuration 60) still answers inside one deadline, so a slow walk is an honest retryable 503, never a kill.
+ */
+export const EXPORT_PAGE_TIMEOUT_MS = 20_000
+export const EXPORT_DEADLINE_MS = 50_000

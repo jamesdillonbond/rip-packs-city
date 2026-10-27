@@ -20,6 +20,7 @@ vi.mock("@/lib/supabase", () => ({
 }))
 
 import { GET } from "@/app/api/panini-collection/export/route"
+import { EXPORT_DEADLINE_MS, EXPORT_PAGE_TIMEOUT_MS } from "@/lib/panini/collection-export"
 
 const req = (qs: string) => ({ nextUrl: new URL("https://t/api/panini-collection/export" + qs) }) as any
 function row(i: number, over: Record<string, unknown> = {}) {
@@ -52,6 +53,25 @@ describe("GET /api/panini-collection/export", () => {
     const res = await GET(req("?username=spinotron"))
     expect(res.status).toBe(503)
     expect(res.headers.get("content-type")).not.toMatch(/text\/csv/)
+  })
+
+  it("all pages share ONE deadline under maxDuration: past it the export is a retryable 503, never partial (2026-10-27)", async () => {
+    const t0 = Date.now()
+    const now = vi.spyOn(Date, "now").mockReturnValue(t0)
+    state.pages = [pageOf(0, 1000), pageOf(1000, 1000), pageOf(2000, 5)]
+    // The first page "takes" the whole deadline.
+    const orig = state.pages[0]
+    state.pages[0] = { ...orig, get data() { now.mockReturnValue(t0 + EXPORT_DEADLINE_MS + 1); return (orig as Page).data } } as Page
+    const res = await GET(req("?username=spinotron"))
+    now.mockRestore()
+    expect(res.status).toBe(503)
+    expect(res.headers.get("content-type")).not.toMatch(/text\/csv/)
+    expect(calls).toHaveLength(1) // no further page was asked for
+  })
+
+  it("the per-page bound is wider than a page render's (a download the collector asked for)", () => {
+    expect(EXPORT_PAGE_TIMEOUT_MS).toBeGreaterThan(8_000)
+    expect(EXPORT_DEADLINE_MS).toBeLessThan(60_000) // inside maxDuration
   })
 
   it("a source that changes between pages (a walk landed) is refused, never a mixed file", async () => {

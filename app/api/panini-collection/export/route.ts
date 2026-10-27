@@ -17,15 +17,16 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { apiErrorResponse } from "@/lib/api-error"
-import { boundedRead } from "@/lib/api/bounded-read"
+import { boundedRead, RPC_READ_TIMEOUT_CODE } from "@/lib/api/bounded-read"
 import { normalizePaniniUsername } from "@/lib/profile/collector-identities"
 import { buildPaniniCollectionCsv } from "@/lib/panini/collection-view"
-import { PANINI_EXPORT_MAX_CARDS, paniniExportRowsToCards, type PaniniExportPage } from "@/lib/panini/collection-export"
+import { PANINI_EXPORT_MAX_CARDS, EXPORT_PAGE_TIMEOUT_MS, EXPORT_DEADLINE_MS, paniniExportRowsToCards, type PaniniExportPage } from "@/lib/panini/collection-export"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 60
 
 const PAGE = 1000
+
 
 export async function GET(req: NextRequest) {
   const raw = (req.nextUrl.searchParams.get("username") ?? "").trim()
@@ -42,9 +43,14 @@ export async function GET(req: NextRequest) {
     const cards: ReturnType<typeof paniniExportRowsToCards> = []
     let source: "profile" | "seen" | null = null
     let after: string | null = null
+    const deadline = Date.now() + EXPORT_DEADLINE_MS
     for (;;) {
-      // Each page is bounded: a hung read becomes the 503 below, not a request that runs to maxDuration.
-      const { data, error } = await boundedRead(db.rpc("panini_collection_export", { p_username: username, p_after_sku: after, p_limit: PAGE }), "panini-collection-export")
+      // Each page is bounded, and all pages share one deadline: a hung read becomes the 503 below, not a
+      // request that runs to maxDuration.
+      const budget = Math.min(EXPORT_PAGE_TIMEOUT_MS, deadline - Date.now())
+      const { data, error } = budget > 0
+        ? await boundedRead(db.rpc("panini_collection_export", { p_username: username, p_after_sku: after, p_limit: PAGE }), "panini-collection-export", budget)
+        : { data: null, error: { message: `[panini-collection-export] export exceeded ${EXPORT_DEADLINE_MS}ms`, code: RPC_READ_TIMEOUT_CODE } }
       if (error) return apiErrorResponse(error, "api/panini-collection/export", "This collection can't be exported right now.")
       const page = (Array.isArray(data) ? data[0] : data) as PaniniExportPage | null
       if (!page || !Array.isArray(page.rows) || (page.source !== "profile" && page.source !== "seen")) {
