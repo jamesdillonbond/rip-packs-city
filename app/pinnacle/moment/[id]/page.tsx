@@ -851,7 +851,7 @@ const CSS = `
 .rpc-pm-sales-table tr:last-child td { border-bottom: none; }
 .rpc-pm-num { text-align: right; }
 
-.rpc-pm-disambig { max-width: 1180px; margin: 0 auto 28px; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+.rpc-pm-disambig { max-width: 1180px; margin: 0 auto 28px; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr)); gap: 14px; }
 .rpc-pm-disambig-card { display: flex; gap: 14px; align-items: center; border: 1px solid var(--rpc-border-subtle); background: var(--rpc-surface-raised); padding: 12px 14px; border-radius: 2px; text-decoration: none; color: inherit; transition: border-color 100ms; }
 .rpc-pm-disambig-card:hover { border-color: var(--rpc-red); }
 .rpc-pm-disambig-self { border-color: var(--rpc-red); background: var(--rpc-red-bg); }

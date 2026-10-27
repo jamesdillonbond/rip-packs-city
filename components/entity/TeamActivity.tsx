@@ -78,7 +78,7 @@ export default function TeamActivity({ collectionUrlSlug, rows, ok = true }: { c
     : []
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 18 }}>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(280px, 100%), 1fr))", gap: 18 }}>
       <div>
         <div className="rpc-mono" style={{ fontSize: 10, letterSpacing: "0.16em", textTransform: "uppercase", color: "var(--rpc-text-muted)", marginBottom: 6 }}>Recent sales</div>
         {recent.map((r, i) => <Row key={`${r.route_slug}-${r.sold_at}-${i}`} collectionUrlSlug={collectionUrlSlug} r={r} showTime />)}

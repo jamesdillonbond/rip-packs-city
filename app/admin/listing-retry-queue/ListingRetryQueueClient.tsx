@@ -192,7 +192,7 @@ export default function ListingRetryQueueClient() {
       )}
 
       {data && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(280px, 100%), 1fr))", gap: 16 }}>
           {/* Total + oldest */}
           <Panel title="Queue">
             <Stat label="Total unresolved" value={data.total_unresolved.toLocaleString()} />

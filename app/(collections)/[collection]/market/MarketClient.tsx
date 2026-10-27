@@ -658,7 +658,10 @@ function MarketInner() {
             )
           })}
 
-          <div style={{ marginLeft: "auto", display: "flex", gap: 10, alignItems: "center" }}>
+          {/* flexWrap + minWidth 0: Sort + select + TABLE/GRID is ~297px wide and did not
+              wrap, so at 320px it widened the page by 10px (and a phone's layout viewport
+              to 375px) on every collection's market (2026-10-26 mobile sweep). */}
+          <div style={{ marginLeft: "auto", display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", minWidth: 0, maxWidth: "100%" }}>
             <span className="rpc-label">Sort</span>
             <select
               value={effectiveSort}

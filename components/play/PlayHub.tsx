@@ -81,7 +81,7 @@ export default function PlayHub({ collection, accent }: { collection: string; ac
         </p>
       </header>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 14 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(260px, 100%), 1fr))", gap: 14 }}>
         {features.map((f) => {
           const card = (
             <div

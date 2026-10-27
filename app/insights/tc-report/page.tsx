@@ -619,7 +619,7 @@ const CSS = `
 .rpc-tc-cc-fmv { font-family: var(--font-mono); font-size: 12px; color: var(--rpc-text-secondary); letter-spacing: 1px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--rpc-border-subtle); }
 .rpc-tc-cc-asof { color: var(--rpc-text-muted); letter-spacing: 0; text-transform: none; }
 
-.rpc-tc-cohort-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+.rpc-tc-cohort-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr)); gap: 12px; }
 .rpc-tc-cohort-card { border: 1px solid var(--rpc-border-subtle); background: var(--rpc-surface-raised); padding: 18px; border-radius: 2px; }
 .rpc-tc-cohort-label { font-family: var(--font-mono); font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-muted); margin-bottom: 6px; }
 .rpc-tc-cohort-val { font-family: var(--font-display); font-weight: 800; font-size: 32px; color: var(--rpc-red-text); letter-spacing: 0.5px; }

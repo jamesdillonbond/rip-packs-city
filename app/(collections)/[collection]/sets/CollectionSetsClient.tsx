@@ -423,7 +423,7 @@ export default function CollectionSetsClient({ collection }: { collection: strin
                 <div key={i} className="rpc-skeleton" style={{ width: 140, height: 64, borderRadius: 8 }} />
               ))}
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 16 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(280px, 100%), 1fr))", gap: 16 }}>
               {[1, 2, 3, 4, 5, 6].map((i) => (
                 <div key={i} style={{ background: colors.card, border: "1px solid " + colors.cardBorder, borderRadius: 10, padding: 20 }}>
                   <div className="rpc-skeleton" style={{ width: "60%", height: 18, marginBottom: 14, borderRadius: 4 }} />
@@ -544,7 +544,7 @@ export default function CollectionSetsClient({ collection }: { collection: strin
               <Pill label="NOT STARTED" active={filter === "not_started"} onClick={() => setFilter("not_started")} accent={accent} />
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 16 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(320px, 100%), 1fr))", gap: 16 }}>
               {displaySets.map((set) => (
                 <SetCard
                   key={set.setId}

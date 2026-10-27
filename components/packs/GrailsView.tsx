@@ -183,7 +183,7 @@ export default function GrailsView({ collection, accent }: Props) {
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 14 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(280px, 100%), 1fr))', gap: 14 }}>
         {displayRows.map((r) => (
           <GrailCard key={r.dist_id} row={r} accent={accent} collection={collection} />
         ))}
