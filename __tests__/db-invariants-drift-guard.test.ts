@@ -1426,7 +1426,8 @@ const PINS = [
   {
     fn: "get_moment_detail",
     test: "supabase/tests/get_moment_detail.sql",
-    migration: "supabase/migrations/20261025215633_audit_20261025_moment_detail_flags_buyback_purchases.sql",
+    // Re-pointed 2026-10-27: the price band reads sales_market (buybacks never enter it).
+    migration: "supabase/migrations/20261027173341_audit_20261027_review_1025_product_packs_all_set_ids_and_moment_band_market_sales.sql",
   },
   // ── 2026-07-29 batch 2: more high-traffic read RPCs ─────────────────────────
   {

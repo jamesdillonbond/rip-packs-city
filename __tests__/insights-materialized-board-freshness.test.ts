@@ -31,7 +31,7 @@ vi.mock("@/lib/supabase", () => {
   return { supabaseAdmin: admin, supabase: admin }
 })
 
-import { readMvAsOf, MV_PIPELINE } from "@/lib/insights/mv-freshness"
+import { readMvAsOf, readDealsAsOf, MV_PIPELINE } from "@/lib/insights/mv-freshness"
 import { stripComments } from "../scripts/lib/strip-comments.mjs"
 import { readdirSync } from "node:fs"
 import { join } from "node:path"
@@ -98,6 +98,8 @@ describe("readMvAsOf", () => {
       "first-mint": "topshot-first-mint-mv",
       // refresh_allday_first_mint_trophies (audit_20261026_allday_first_mint_trophies)
       "allday-first-mint": "allday-first-mint-mv",
+      // refresh_panini_public_deals (audit_20261025_panini_on_public_deals_board)
+      "panini-deals": "panini-public-deals",
     })
   })
 })
@@ -127,4 +129,33 @@ describe("no materialized board page fabricates a freshness stamp", () => {
       expect(src).not.toMatch(/\?\?\s*new Date\(\)/)
     })
   }
+})
+
+describe("readDealsAsOf — the Below FMV board is two MVs (2026-10-27)", () => {
+  // A db whose pipeline_runs answers per pipeline name.
+  const dbFor = (rows: Record<string, string | null>) => ({
+    from: () => {
+      let pipeline = ""
+      const q: any = {
+        select: () => q, order: () => q, limit: () => q,
+        eq: (col: string, v: unknown) => { if (col === "pipeline") pipeline = String(v); return q },
+        maybeSingle: async () => ({ data: rows[pipeline] ? { started_at: rows[pipeline] } : null, error: null }),
+      }
+      return q
+    },
+  })
+  const OLD = "2026-10-27T15:44:00.000Z", NEW = "2026-10-27T17:12:00.000Z"
+  it("an unfiltered board is as old as its OLDER leg", async () => {
+    expect(await readDealsAsOf(null, dbFor({ "cross-collection-deals-mv": NEW, "panini-public-deals": OLD }))).toBe(OLD)
+  })
+  it("a Panini-filtered board carries the Panini leg's time, never the other MV's", async () => {
+    expect(await readDealsAsOf("panini_blockchain", dbFor({ "cross-collection-deals-mv": NEW, "panini-public-deals": OLD }))).toBe(OLD)
+    expect(await readDealsAsOf("panini_blockchain", dbFor({ "cross-collection-deals-mv": NEW, "panini-public-deals": null }))).toBeNull()
+  })
+  it("a stalled Panini leg (no ok run in retention) makes the unfiltered stamp unknown, not the other leg's", async () => {
+    expect(await readDealsAsOf(null, dbFor({ "cross-collection-deals-mv": NEW, "panini-public-deals": null }))).toBeNull()
+  })
+  it("CONTROL: a board filtered to another collection reads only the main MV", async () => {
+    expect(await readDealsAsOf("nba_top_shot", dbFor({ "cross-collection-deals-mv": NEW, "panini-public-deals": null }))).toBe(NEW)
+  })
 })

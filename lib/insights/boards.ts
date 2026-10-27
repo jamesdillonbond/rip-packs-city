@@ -12,7 +12,7 @@
 // The `db` param defaults to supabaseAdmin but is injectable for unit tests.
 
 import { supabaseAdmin } from "@/lib/supabase"
-import { readMvAsOf } from "@/lib/insights/mv-freshness"
+import { readMvAsOf, readDealsAsOf } from "@/lib/insights/mv-freshness"
 import type { BoardLiveResult } from "@/lib/insights/board-cache"
 import { describeBoardFailures } from "@/lib/insights/board-cache"
 
@@ -37,7 +37,7 @@ export async function fetchDealsDefault(
   // Since 2026-08-22 this board reads a materialized view, so those are no longer the same
   // thing and only the second one answers "is this deal still live?". null = cannot tell,
   // NEVER now() — see lib/insights/mv-freshness.ts.
-  const dataAsOf = await readMvAsOf("deals", db as never)
+  const dataAsOf = await readDealsAsOf(null, db as never)  // both legs: the board shows every collection
   return {
     payload: { rows, fetched_at: new Date().toISOString(), data_as_of: dataAsOf },
     ok: !error,

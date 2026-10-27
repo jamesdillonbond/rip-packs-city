@@ -235,3 +235,15 @@ describe("fetchPaniniMoreBoards — Bid vs Floor (2026-10-25)", () => {
     expect((d.selects.mv_panini_offer_spread ?? []).join(",")).not.toMatch(/owner/)
   })
 })
+
+describe("fetchPaniniMoreBoards — Bid vs Floor 'more floors' claim follows the exact count (2026-10-27)", () => {
+  const full = Array.from({ length: PANINI_BOARD_LIMIT }, (_, i) => ({ external_id: `packcard-${i}`, ask_usd: 21, best_offer_usd: 19, offer_pct_of_ask: 90 }))
+  it("exactly PANINI_BOARD_LIMIT qualifying floors is NOT 'more'", async () => {
+    const r = await fetchPaniniMoreBoards(db({ mv_panini_offer_spread: { data: full, count: PANINI_BOARD_LIMIT } }))
+    expect(r.payload.offer_spread_capped).toBe(false)
+  })
+  it("CONTROL: a count above the page says 'more'", async () => {
+    const r = await fetchPaniniMoreBoards(db({ mv_panini_offer_spread: { data: full, count: PANINI_BOARD_LIMIT + 1 } }))
+    expect(r.payload.offer_spread_capped).toBe(true)
+  })
+})

@@ -217,7 +217,12 @@ export async function fetchPaniniProductPacks(
       db.from("panini_pack_state")
         .select("id,pack_type,floor_usd,avg_sale_usd,packs_total,packs_remaining,updated_at,product_name,pack_name:raw->>pack_name,page_url")
         .in("product_set_id", productSetIds)
-        .limit(50),
+        // 2026-10-27: every pack of the product, in a fixed order. A bare .limit(50) returned an arbitrary 50 of
+        // the 157 types under "2021 Panini Blockchain NFL Instant Entertainment", so the top PACKS_LIMIT by packs
+        // remaining (and the FOTL filter below) ran over a partial list. pack_state is ~360 rows in all.
+        .order("packs_remaining", { ascending: false, nullsFirst: false })
+        .order("id", { ascending: true })
+        .limit(1000),
       "panini/product-packs-board",
       apiReadTimeoutMs(),
     ).catch((err: unknown) => ({ data: null, error: err }))

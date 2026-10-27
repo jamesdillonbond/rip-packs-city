@@ -119,3 +119,27 @@ describe("fetchPaniniEditionOffers / Holders", () => {
     expect(await fetchPaniniEditionHolders("e", fakeDb({ mv_panini_holder_concentration: { data: [], error: null } }))).toEqual({ ok: true, holders: null })
   })
 })
+
+describe("fetchPaniniProductPacks reads the whole product in a fixed order (2026-10-27)", () => {
+  it("orders by packs remaining then id, and never caps below the product's pack count", async () => {
+    const { fetchPaniniProductPacks } = await import("@/lib/panini/edition-extras")
+    const calls: Array<[string, unknown[]]> = []
+    const db = {
+      from() {
+        const q: any = new Proxy({}, {
+          get(_t, prop) {
+            if (prop === "then") return (ok: (v: unknown) => unknown) => Promise.resolve({ data: [], error: null }).then(ok)
+            return (...args: unknown[]) => { calls.push([String(prop), args]); return q }
+          },
+        })
+        return q
+      },
+    }
+    await fetchPaniniProductPacks([1, 2], {}, db as never)
+    const orders = calls.filter(([m]) => m === "order").map(([, a]) => a[0])
+    expect(orders).toEqual(["packs_remaining", "id"])
+    const limit = calls.find(([m]) => m === "limit")?.[1][0] as number
+    // 157 pack types under one product name on 2026-10-27; the old .limit(50) cut it arbitrarily.
+    expect(limit).toBeGreaterThanOrEqual(1000)
+  })
+})

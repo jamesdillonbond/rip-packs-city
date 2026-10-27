@@ -63,7 +63,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
-import { readMvAsOf } from "@/lib/insights/mv-freshness";
+import { readDealsAsOf } from "@/lib/insights/mv-freshness";
 import { boardUnavailable } from "@/lib/insights/board-error";
 import { boundedRead } from "@/lib/api/bounded-read";
 import { retryEmptyPlayerSearch } from "@/lib/search/player-search-retry";
@@ -152,7 +152,8 @@ export async function GET(req: NextRequest) {
       fetched_at: new Date().toISOString(),
       // ⚠ How old the ROWS are (this board reads a materialized view since 2026-08-22).
       // `fetched_at` is only when we answered. null = cannot tell, never now().
-      data_as_of: await readMvAsOf("deals"),
+      // Two MVs feed this board (2026-10-27): the stamp is the leg(s) actually shown, older first.
+      data_as_of: await readDealsAsOf(collection),
       source: "cross_collection_deals_board",
       ...boardRowMeta(data?.length ?? 0, limit),
       elapsed_ms: Date.now() - startedAt,

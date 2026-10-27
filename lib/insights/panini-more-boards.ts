@@ -281,7 +281,9 @@ export async function fetchPaniniMoreBoards(
       holders_cornered: holderCount.cornered,
       offer_spread: spread.rows,
       offer_spread_error: spread.error !== null,
-      offer_spread_capped: (spread.rows?.length ?? 0) >= PANINI_BOARD_LIMIT,
+      // "More floors carry an offer" only when the exact count says so (2026-10-27); the row count alone reads
+      // exactly PANINI_BOARD_LIMIT qualifying floors as "more". Falls back to the row count only when the count failed.
+      offer_spread_capped: spreadCount.total != null ? spreadCount.total > (spread.rows?.length ?? 0) : (spread.rows?.length ?? 0) >= PANINI_BOARD_LIMIT,
       offer_spread_total: spreadCount.total,
       offer_spread_tight: spreadCount.tight,
       coverage: coverage.rows?.[0] ?? null,

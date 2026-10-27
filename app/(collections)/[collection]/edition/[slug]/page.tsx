@@ -5,6 +5,7 @@
 // + get_edition_in_packs server-side. Special serials read directly from
 // special_serial_holders for non-Pinnacle collections.
 
+import { recentLowUsd } from "@/lib/entity/recent-low"
 import { isTileVideoEnabled } from "@/lib/entity-editions-grid-format"
 import type { Metadata } from "next"
 import { normalizeAddress } from "@/lib/address"
@@ -810,6 +811,9 @@ export default async function EditionPage(
   // how old its last sale is — the fact, never the internal tier word.
   // The AGE is the evidence (> 30 d means no sale in the 30-day window), not the count:
   // Panini tracks no 30-day count at all, so a null there must never read as "no recent sale".
+  // The FMV sentence's "recent-sale low" is the tiles' Recent Low (#211, 2026-10-25): a floor above 3x FMV is an
+  // old ask carried forward, not a low the market clears at, so it is dropped here too (Pinnacle exempt, as on the tiles).
+  const sentenceRecentLow = collection === "disney-pinnacle" ? (fmv?.floor_price_usd ?? null) : recentLowUsd(fmv?.floor_price_usd, fmv?.fmv_usd)
   const showLastSaleAge = !isPanini && !askValue && !fmv?.sales_count_30d && daysSinceLastSale != null && daysSinceLastSale > 30
   // ⚠ WHEN DID WE LAST CONFIRM THAT ASK? The cell below rendered a bare number
   // with no age while its NEIGHBOUR — the best-offer cell, twenty lines down —
@@ -1003,7 +1007,7 @@ export default async function EditionPage(
         <p className="rpc-mono" style={{ margin: "12px 2px 2px", fontSize: 13, lineHeight: 1.65, color: "var(--rpc-text-secondary)" }}>
           <strong style={{ color: "var(--rpc-text-primary)", fontWeight: 700 }}>{editionTitle}{detail.set_name ? ` — ${detail.set_name}` : ""}{parallelLabel ? ` · ${parallelLabel}` : ""}</strong>{" "}
           is worth ~{fmtUsd(fmv?.fmv_usd ?? null)} (FMV) on {collectionDisplayName(collection)}
-          {askValue ? <>, with the lowest ask at {fmtUsd(askValue)}</> : fmv?.floor_price_usd ? <>, with a {showLastSaleAge ? "sale" : "recent-sale"} low of {fmtUsd(fmv?.floor_price_usd ?? null)}</> : null}
+          {askValue ? <>, with the lowest ask at {fmtUsd(askValue)}</> : sentenceRecentLow != null ? <>, with a {showLastSaleAge ? "sale" : "recent-sale"} low of {fmtUsd(sentenceRecentLow)}</> : null}
           {fmv?.sales_count_30d ? <> and {fmtCount(fmv?.sales_count_30d ?? null)} {fmv?.sales_count_30d === 1 ? "sale" : "sales"} in the last 30 days</> : null}
           {showLastSaleAge ? <>; its last sale was {daysSinceLastSale} {daysSinceLastSale === 1 ? "day" : "days"} ago</> : null}
           .{" "}

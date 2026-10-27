@@ -44,6 +44,9 @@ export const MV_PIPELINE = {
   "first-mint": "topshot-first-mint-mv",
   // NFL All Day leg of /insights/first-mint (2026-10-26, refresh_allday_first_mint_trophies, pg_cron 803).
   "allday-first-mint": "allday-first-mint-mv",
+  // Panini leg of the Below FMV board (2026-10-25, refresh_panini_public_deals, hourly at :44) — its own MV,
+  // UNIONed into cross_collection_deals_board beside mv_cross_collection_deals.
+  "panini-deals": "panini-public-deals",
 } as const
 
 export type MvBoardKey = keyof typeof MV_PIPELINE
@@ -73,4 +76,22 @@ export async function readMvAsOf(
   } catch {
     return null
   }
+}
+
+/**
+ * DATA-AS-OF for the Below FMV board (cross_collection_deals_board), which UNIONs TWO MVs refreshed on their own
+ * schedules: mv_cross_collection_deals (every other collection) and mv_panini_public_deals (2026-10-27 — the board
+ * stamped only the first, so a stalled Panini refresh still read "Updated 9 minutes ago" over Panini rows).
+ * A board filtered to one collection is as old as that collection's leg; an unfiltered board is as old as its OLDER
+ * leg. null when any leg it shows cannot be dated — never the other leg's time.
+ */
+export async function readDealsAsOf(
+  collection: string | null | undefined,
+  db: { from: (t: string) => any } = supabaseAdmin as any
+): Promise<string | null> {
+  const legs: MvBoardKey[] =
+    collection === "panini_blockchain" ? ["panini-deals"] : collection ? ["deals"] : ["deals", "panini-deals"]
+  const stamps = await Promise.all(legs.map((l) => readMvAsOf(l, db)))
+  if (stamps.some((s) => s == null)) return null
+  return (stamps as string[]).reduce((a, b) => (Date.parse(a) <= Date.parse(b) ? a : b))
 }

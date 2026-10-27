@@ -28,3 +28,14 @@ describe("recentLowUsd", () => {
     expect(Number(m![1])).toBe(RECENT_LOW_MAX_FMV_MULTIPLE)
   })
 })
+
+// 2026-10-27: the edition page's FMV sentence printed fmv.floor_price_usd raw ("with a recent-sale low of $57,000"
+// under a $1,700 FMV) after the tiles and the SQL totals stopped showing it. It reads the same bounded value now.
+describe("the edition page's FMV sentence uses the bounded recent low", () => {
+  const src = readFileSync(`${process.cwd()}/app/(collections)/[collection]/edition/[slug]/page.tsx`, "utf8")
+  it("never prints fmv.floor_price_usd as a 'low' directly", () => {
+    expect(src).not.toMatch(/low of \{fmtUsd\(fmv\?\.floor_price_usd/)
+    expect(src).toMatch(/low of \{fmtUsd\(sentenceRecentLow\)\}/)
+    expect(src).toMatch(/const sentenceRecentLow = [^\n]*recentLowUsd\(fmv\?\.floor_price_usd, fmv\?\.fmv_usd\)/)
+  })
+})

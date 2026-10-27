@@ -16,13 +16,14 @@
 --     back to wallet_moments_cache and last_sale falling back to an edition+serial
 --     match when there's no direct moment_id sale;
 --   * recent_sales labels a bare int:int Top Shot edition as the 'Standard' parallel;
+--   * price_band_30d counts market sales only — a buyback purchase never enters it (2026-10-27);
 --   * recent_sales.buyback is true exactly when the buyer is a buyback wallet OF THIS
 --     COLLECTION (the sales_market predicate) — 2026-10-25;
 --   * similar_editions surfaces same-player editions.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20261025215633_audit_20261025_moment_detail_flags_buyback_purchases.sql;
--- repointed 2026-10-25 for the buyback flag; 2026-10-19 from 20260726016000 when the legacy-key ask moved to the render floor);
+-- (supabase/migrations/20261027173341_audit_20261027_review_1025_product_packs_all_set_ids_and_moment_band_market_sales.sql;
+-- repointed 2026-10-27: the price band reads sales_market; 2026-10-25 for the buyback flag; 2026-10-19 from 20260726016000 when the legacy-key ask moved to the render floor);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -59,6 +60,12 @@ CREATE TABLE public.wallet_moments_cache (
   last_seen_at timestamptz);
 CREATE TABLE public.topshot_moment_subeditions (nft_id text, subedition_id int);
 CREATE TABLE public.buyback_wallets (collection_id uuid, wallet_address text, PRIMARY KEY (collection_id, wallet_address));
+-- sales_market as in prod: sales minus purchases by the collection's own buyback wallet. The fixture sales
+-- table has no collection_id, so this collection is read from the edition.
+CREATE VIEW public.sales_market AS
+  SELECT s.* FROM public.sales s
+   WHERE NOT EXISTS (SELECT 1 FROM public.buyback_wallets b JOIN public.editions e ON e.collection_id = b.collection_id
+                      WHERE e.id = s.edition_id AND b.wallet_address = s.buyer_address::text);
 
 -- resolve_moment_id is pinned separately; stub it via a fixture table.
 CREATE TABLE public._resolve (
@@ -221,8 +228,10 @@ BEGIN
   IF (v_fmv->>'confidence') IN ('LOW', 'MEDIUM')
      AND COALESCE((v_fmv->>'sales_count_30d')::int, 0) >= 10 THEN
     WITH raw AS (
+      -- 2026-10-27: sales_market, not sales — the gate above (sales_count_30d) and the "N market sales" line
+      -- count market sales only, so a buyback purchase must not widen the band or raise its n.
       SELECT s.price_usd::numeric AS p
-      FROM sales s
+      FROM sales_market s
       WHERE s.edition_id = v_resolved.edition_id
         AND s.sold_at >= now() - interval '30 days'
         AND s.price_usd IS NOT NULL
@@ -372,6 +381,7 @@ $function$;
 \set E   '''e1111111-1111-1111-1111-111111111111'''
 \set E2  '''e2222222-2222-2222-2222-222222222222'''
 \set E3  '''e3333333-3333-3333-3333-333333333333'''
+\set E5  '''e5555555-5555-5555-5555-555555555555'''
 \set ES  '''e9999999-9999-9999-9999-999999999999'''
 \set M   '''0aaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'''
 
@@ -404,6 +414,17 @@ SELECT :E3::uuid, NULL, 'nftG'||g, g, 40 + g, now()-interval '5 days', 'topshot'
 -- buyback wallet 'b1' must not flag Top Shot buyer 'b1'.
 INSERT INTO public.buyback_wallets VALUES (:TS::uuid, 'bx'), ('dee28451-5d62-409e-a1ad-a83f763ac070'::uuid, 'b1');
 
+-- E5 (2026-10-27): LOW, 5 market sales (40..44) + 1 purchase by Top Shot's buyback wallet 'bx' at 45 — inside
+-- the median x5 trim, so only the sales_market read keeps it out of the band (n=5; reading `sales` gives n=6).
+INSERT INTO public.editions (id, external_id, name, tier, series, player_name, team_name, set_name, circulation_count, thumbnail_url, video_url, collection_id, jersey_number, first_minted_at) VALUES
+  (:E5::uuid, '14:24', 'Buyback Moment', 'RARE', 4, 'Cee', 'Hornets', 'Base', 100, 'th5', 'v5', :TS::uuid, 1, now()-interval '60 days');
+INSERT INTO public.fmv_snapshots (edition_id, fmv_usd, floor_price_usd, asp_usd, confidence, sales_count_7d, sales_count_30d, days_since_sale, computed_at, algo_version) VALUES
+  (:E5::uuid, 42, 40, 41, 'LOW', 5, 10, 1, now(), 'v1.7.0');
+INSERT INTO public.sales (edition_id, moment_id, nft_id, serial_number, price_usd, sold_at, marketplace, buyer_address, seller_address)
+SELECT :E5::uuid, NULL, 'nftH'||g, g, 39 + g, now()-interval '5 days', 'topshot', 'c'||g, 'd'||g FROM generate_series(1,5) g;
+INSERT INTO public.sales (edition_id, moment_id, nft_id, serial_number, price_usd, sold_at, marketplace, buyer_address, seller_address) VALUES
+  (:E5::uuid, NULL, 'nftH9', 9, 45, now()-interval '5 days', 'topshot', 'bx', 'd9');
+
 -- moment M on edition E: owner NULL (fallback to wmc), no direct moment_id sale
 -- (last_sale falls back to the edition+serial=5 match = the 10000 row).
 INSERT INTO public.moments (id, collection_id, nft_id, serial_number, owner_address, is_listed, list_price, listed_at) VALUES
@@ -416,6 +437,7 @@ INSERT INTO public._resolve (p, kind, edition_id, collection_slug, collection_id
   ('MID',      'moment', :E::uuid,  'nba_top_shot', :TS::uuid, :M::uuid, NULL),
   ('MID2',     'edition',:E2::uuid, 'nba_top_shot', :TS::uuid, NULL,     NULL),
   ('MID3',     'edition',:E3::uuid, 'nba_top_shot', :TS::uuid, NULL,     NULL),
+  ('MID5',     'edition',:E5::uuid, 'nba_top_shot', :TS::uuid, NULL,     NULL),
   ('MID_NULL', 'moment', NULL,      'nba_top_shot', :TS::uuid, NULL,     NULL);
 
 -- ── 1. not_found: unresolved id, and resolved-with-null-edition ──────────────
@@ -436,6 +458,7 @@ SELECT _assert(public.get_moment_detail('MID') -> 'price_band_30d' IS NOT NULL A
 SELECT _assert_eq((public.get_moment_detail('MID') -> 'price_band_30d' ->> 'n'), '11', 'price_band trims the 10000 outlier (n=11)');
 -- CLOSED (confidence): HIGH conf -> NULL even with deep sales.
 SELECT _assert_eq((public.get_moment_detail('MID2') ->> 'price_band_30d'), NULL, 'HIGH confidence -> no price_band');
+SELECT _assert_eq((public.get_moment_detail('MID5') -> 'price_band_30d' ->> 'n'), '5', 'a buyback purchase never enters the price band (sales_market, 2026-10-27)');
 -- CLOSED (thin): LOW conf, sc30d=12, but only 3 real sales (<5 cleaned) -> NULL.
 SELECT _assert_eq((public.get_moment_detail('MID3') ->> 'price_band_30d'), NULL, 'thin real sales -> no price_band (inner count<5)');
 
