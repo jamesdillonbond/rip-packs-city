@@ -22,6 +22,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
   - Re-pinned `component-TopSalesBoardClient` (its premise changed: arweave art is resized, still never sent through the avatar proxy).
   - The Candy insights OG copy said "a days-old market"; the market has traded since 07-22, so it now reads "a young, thin market".
 - Full preflight was green.
+- **Verified live:** `?w=320` 7,478,539 → 38,150 B (WebP); the OG card for `munetaka-murakami-blue` now has art; edition-page `<img>`s point at the resizer. The first COLD request ran past the 20 s fetch timeout and failed open (302 to the original). Follow-up: the timeout is now 10 s, and I warmed the 125 editions × (320, 960, OG 640 png).
 - **Revert:** `git revert` the "feat(candy): arweave art resizer" commit (pages hotlink the originals again).
 
 ### 2026-10-26 · 🔧 SHIPPED (code + 2 migrations) — **All Day ↔ Top Shot parity, pass 3: Sniper Own/Lock + depth, Analytics sale-kind breakdown, Team Squeeze** (Cowork cloud, ~9:00–9:30 PM PT; Trevor: "keep going").
