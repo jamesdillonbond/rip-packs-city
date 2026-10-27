@@ -15,9 +15,13 @@
 //     ⚠ the older /apis/common/v3/search (batch 47) returns ACTIVE players only
 //     and no WNBA under sport=basketball — 64 Top Shot names came back empty.
 
-export const ESPN_SPORT = { nfl: "football", nba: "basketball" }
+export const ESPN_SPORT = { nfl: "football", nba: "basketball", mlb: "baseball" }
 /** The ESPN leagues an identity league may be keyed in (Top Shot mints WNBA moments). */
-export const ESPN_LEAGUES = { nfl: ["nfl"], nba: ["nba", "wnba"] }
+// mlb (2026-10-26): Candy MLB's 100 ICONs, measured from the cloud sandbox —
+// baseball/mlb/athletes/<id>/stats answers { filters:[{name:'category'}],
+// categories:[batting|pitching|…] } with calendar-year seasons, the same shape
+// parseEspnStats already reads (no seasontype filter → regular season, 2).
+export const ESPN_LEAGUES = { nfl: ["nfl"], nba: ["nba", "wnba"], mlb: ["mlb"] }
 /**
  * A search hit's league that is really another: ESPN files a player on a
  * G League roster under `nba-development` (Fultz on Raptors 905, Oladipo on

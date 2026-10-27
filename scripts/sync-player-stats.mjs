@@ -29,7 +29,7 @@ import { ESPN_LEAGUES, chunk, espnSearchUrl, espnStatsUrl, matchEspnSearch, pars
 
 const BASE_URL = (process.env.BASE_URL || "https://www.rippackscity.com").replace(/\/$/, "")
 const TOKEN = process.env.INGEST_SECRET_TOKEN
-const LEAGUES = (process.env.LEAGUES || "nfl,nba").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean)
+const LEAGUES = (process.env.LEAGUES || "nfl,nba,mlb").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean)
 const LIMIT = process.env.LIMIT ? Number(process.env.LIMIT) : 300
 // 150 → 400 (batch 58): a dispatched run resolved 150 and fetched 300 players in
 // 2.6 min (2026-09-25 6:31 PM PT), so 400 searches at 250 ms sit well inside
@@ -231,7 +231,9 @@ async function runLeague(league) {
     started_at: startedAt, hb_sent: false,
   }
   try {
-    if (league === "nba") await resolveEspnIds(league, stats)
+    // nfl ids arrive with the nflverse crosswalk; nba and mlb (Candy, 2026-10-26)
+    // identities are seeded from RPC's own rows and need the ESPN search
+    if (league === "nba" || league === "mlb") await resolveEspnIds(league, stats)
     await syncStats(league, stats)
   } catch (err) {
     // a route or targets failure: still log a terminal row saying so
@@ -248,7 +250,7 @@ async function runLeague(league) {
 
 let allOk = true
 for (const league of LEAGUES) {
-  if (league !== "nfl" && league !== "nba") {
+  if (league !== "nfl" && league !== "nba" && league !== "mlb") {
     console.error(`unknown league ${league}`)
     allOk = false
     continue

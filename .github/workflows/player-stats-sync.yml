@@ -24,9 +24,9 @@ on:
   workflow_dispatch:
     inputs:
       leagues:
-        description: "comma list: nfl,nba"
+        description: "comma list: nfl,nba,mlb"
         type: string
-        default: "nfl,nba"
+        default: "nfl,nba,mlb"
       limit:
         description: "players per league per run"
         type: string
@@ -51,7 +51,7 @@ jobs:
       - name: Sync player stats
         env:
           INGEST_SECRET_TOKEN: ${{ secrets.INGEST_SECRET_TOKEN }}
-          LEAGUES: ${{ github.event.inputs.leagues || 'nfl,nba' }}
+          LEAGUES: ${{ github.event.inputs.leagues || 'nfl,nba,mlb' }}
           LIMIT: ${{ github.event.inputs.limit || '300' }}
           DRY_RUN: ${{ github.event.inputs.dry_run == 'true' && '1' || '' }}
         run: node scripts/sync-player-stats.mjs

@@ -46,7 +46,15 @@ export interface SeasonStatsTable {
 const CATEGORY_ORDER: Record<string, string[]> = {
   nba: ["averages", "totals", "miscellaneous"],
   nfl: ["passing", "rushing", "receiving", "defensive", "defensiveInterceptions", "kicking", "punting", "returning", "scoring", "general"],
+  // Candy MLB (2026-10-26): ESPN files a hitter's per-season lines under "career-batting"
+  mlb: ["career-batting", "pitching", "advanced-batting", "expanded-batting", "expanded-pitching", "opponent-batting", "postseason-batting", "postseason-pitching"],
 }
+
+/**
+ * ESPN titles that misdescribe their rows: "Career Batting" holds one line PER
+ * SEASON (measured 2026-10-26, Ohtani / Judge), so the table is just "Batting".
+ */
+const CATEGORY_TITLE: Record<string, string> = { "career-batting": "Batting" }
 
 /** "kansas-city-chiefs" → "Kansas City Chiefs"; "49ers" stays "49ers"; "la-clippers" → "LA Clippers" (an initialism, never "La"). */
 const TEAM_SLUG_INITIALISMS = new Set(["la", "ny"])
@@ -137,7 +145,7 @@ export function buildSeasonStatsTables(result: SeasonStatsResult): SeasonStatsTa
       })
       return { season: r.season, seasonLabel: seasonLabel(result.espn_league || result.league, r.season), team, values }
     })
-    tables.push({ category: cat, title: head.display_name ?? cat, labels, seasons })
+    tables.push({ category: cat, title: CATEGORY_TITLE[cat] ?? head.display_name ?? cat, labels, seasons })
   }
   return tables
 }

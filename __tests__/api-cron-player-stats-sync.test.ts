@@ -68,7 +68,7 @@ describe("auth and validation", () => {
     expect(state.inserts).toEqual([])
   })
   it("400s an unknown league or phase", async () => {
-    expect((await GET(makeReq({ url: url + "?phase=targets&league=mlb", method: "GET", auth: AUTH }))).status).toBe(400)
+    expect((await GET(makeReq({ url: url + "?phase=targets&league=nhl", method: "GET", auth: AUTH }))).status).toBe(400)
     expect((await GET(makeReq({ url: url + "?phase=nope&league=nfl", method: "GET", auth: AUTH }))).status).toBe(400)
     expect((await POST(makeReq({ url, auth: AUTH, body: { league: "nfl" } }))).status).toBe(400)
     expect((await POST(makeReq({ url, auth: AUTH, badJson: true }))).status).toBe(400)
@@ -177,6 +177,15 @@ describe("POST final — ok is derived from the counts", () => {
     expect(t.p_rows_skipped).toBe(2)
     expect(t.p_collection_slug).toBe("nfl_all_day")
     expect(t.p_extra).toMatchObject({ league: "nfl", source: "espn", fetched_ok: 298, chunks: 8, chunks_ok: 8, event: "schedule" })
+  })
+
+  it("an mlb run (Candy MLB, 2026-10-26) is filed under candy_mlb — never under Top Shot", async () => {
+    const res = await POST(makeReq({ url, auth: AUTH, body: { final: true, league: "mlb", startedAt: "2026-10-27T02:00:00.000Z", stats: good } }))
+    expect(res.status).toBe(200)
+    const t = terminal()
+    expect(t.p_collection_slug).toBe("candy_mlb")
+    expect(t.p_collection_slug).not.toBe("nba_top_shot")
+    expect(t.p_extra).toMatchObject({ league: "mlb" })
   })
 
   it("a chunk that did not land, a failed fetch, a failed search and a deadline are each NAMED and make ok:false", async () => {

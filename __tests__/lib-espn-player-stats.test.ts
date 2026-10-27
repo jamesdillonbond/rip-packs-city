@@ -150,6 +150,15 @@ describe("matchEspnSearch — ESPN search v2 (batch 56: retired players and the 
     expect(m).toMatchObject({ espn_id: null, matched_by: "unresolved:none" })
     expect(m.candidates).toEqual([{ id: "2284648", league: "fiba", displayName: "Patty Mills", team: "Australia" }])
   })
+  it("mlb (2026-10-26): only an mlb hit counts — a same-name NHL / NFL player is never the Candy card's person; two MLB Will Smiths stay ambiguous", () => {
+    const hit = (id: string, league: string, team: string) => ({ type: "player", uid: `s:1~l:10~a:${id}`, displayName: "Will Smith", defaultLeagueSlug: league, subtitle: team })
+    const payload = (...c: unknown[]) => ({ results: [{ type: "player", contents: c }] })
+    expect(matchEspnSearch(payload(hit("5149155", "nhl", "San Jose Sharks"), hit("38309", "mlb", "Los Angeles Dodgers"), hit("5543", "nfl", "New England Patriots")), "mlb", "Will Smith"))
+      .toMatchObject({ espn_id: "38309", espn_league: "mlb", matched_by: "espn-search:name" })
+    expect(matchEspnSearch(payload(hit("38309", "mlb", "Los Angeles Dodgers"), hit("31549", "mlb", "Kansas City Royals")), "mlb", "Will Smith"))
+      .toMatchObject({ espn_id: null, matched_by: "unresolved:ambiguous:2" })
+  })
+
   it("pickProbedCandidate: exactly one candidate with seasons is the person; a phantom (0) loses; two real players stay ambiguous", () => {
     expect(pickProbedCandidate([
       { id: "4905397", espn_league: "nba", seasons: 0 }, { id: "4905397", espn_league: "wnba", seasons: 0 },
@@ -183,7 +192,10 @@ describe("helpers", () => {
     expect(espnStatsUrl("nba", "662", "nba")).toContain("/basketball/nba/athletes/662/")
     expect(() => espnStatsUrl("nfl", "1", "wnba")).toThrow(/not an ESPN league of nfl/)
     expect(espnSearchUrl("nba", "Jimmy Butler", 5)).toBe("https://site.web.api.espn.com/apis/search/v2?query=Jimmy+Butler&type=player&limit=5")
-    expect(() => espnStatsUrl("mlb", "1")).toThrow(/unknown league/)
+    // mlb joined 2026-10-26 (Candy MLB): baseball/mlb, and only mlb
+    expect(espnStatsUrl("mlb", "39832")).toBe("https://site.web.api.espn.com/apis/common/v3/sports/baseball/mlb/athletes/39832/stats")
+    expect(() => espnStatsUrl("mlb", "1", "nba")).toThrow(/not an ESPN league of mlb/)
+    expect(() => espnStatsUrl("nhl", "1")).toThrow(/unknown league/)
     expect(slugToQuery("stephen-curry")).toBe("stephen curry")
   })
   it("chunk", () => {

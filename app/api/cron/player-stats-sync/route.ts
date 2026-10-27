@@ -12,7 +12,7 @@ import { logTerminalRun } from "@/lib/pipeline/terminal-run"
 // every read and write, under the existing INGEST token — the Atlas pattern.
 //
 // Runner protocol:
-//   GET  ?phase=targets&league=nfl|nba&limit=N
+//   GET  ?phase=targets&league=nfl|nba|mlb&limit=N
 //        -> { targets:[{identity_id, espn_id, espn_league, display_name, stats_refreshed_at}] }
 //        (espn_league — nba | wnba | nfl — picks the stats path; batch 56)
 //        (writes the -heartbeat row: the runner's invocation is then knowable
@@ -45,7 +45,13 @@ export const dynamic = "force-dynamic"
 export const maxDuration = 60
 
 const PIPELINE = "player-stats-sync"
-const LEAGUES = new Set(["nfl", "nba"])
+// mlb (2026-10-26): Candy MLB's 100 players — identities seeded from the Candy
+// players rows (20261027014316); there is no MLB id feed, so only the ESPN search
+// + stats phases apply.
+const LEAGUES = new Set(["nfl", "nba", "mlb"])
+// The collection a league's terminal row is filed under. A missing league here
+// must not fall through to Top Shot (it did: mlb would have logged as nba_top_shot).
+const LEAGUE_COLLECTION: Record<string, string> = { nfl: "nfl_all_day", nba: "nba_top_shot", mlb: "candy_mlb" }
 
 function authed(req: NextRequest): boolean {
   const auth = req.headers.get("authorization")
@@ -82,7 +88,7 @@ export async function GET(req: NextRequest) {
   if (!authed(req)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   const phase = req.nextUrl.searchParams.get("phase")
   const league = leagueOf(req.nextUrl.searchParams.get("league"))
-  if (!league) return NextResponse.json({ error: "league must be nfl or nba" }, { status: 400 })
+  if (!league) return NextResponse.json({ error: "league must be nfl, nba or mlb" }, { status: 400 })
 
   const hb = req.nextUrl.searchParams.get("hb")
   const writeHb = hb === "1" || (hb == null && phase === "targets")
@@ -142,7 +148,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "bad json" }, { status: 400 })
   }
   const league = leagueOf(typeof body.league === "string" ? body.league : null)
-  if (!league) return NextResponse.json({ error: "league must be nfl or nba" }, { status: 400 })
+  if (!league) return NextResponse.json({ error: "league must be nfl, nba or mlb" }, { status: 400 })
 
   if (body.final === true) {
     const s = (body.stats ?? {}) as FinalStats
@@ -177,7 +183,7 @@ export async function POST(req: NextRequest) {
       rowsFound: targets,
       rowsWritten: chunks > 0 ? num(s.rows_upserted) : null,
       rowsSkipped: num(s.fetched_404),
-      collectionSlug: league === "nfl" ? "nfl_all_day" : "nba_top_shot",
+      collectionSlug: LEAGUE_COLLECTION[league],
       extra: {
         league,
         source: "espn",

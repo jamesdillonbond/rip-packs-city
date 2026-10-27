@@ -346,9 +346,9 @@ async function TopCollectorsSection({ playerName, candyPlayerId = null }: { play
 // Season stats from the ESPN feed, keyed through player_identities (batch 48,
 // 2026-09-25). Streamed independently. THREE states, none collapsed: a failed
 // read renders SectionUnavailable; a NULL (the feed cannot key this player —
-// no identity or no ESPN id, which is every collection but Top Shot and All
-// Day today) renders nothing; a keyed player with no rows yet says so.
-const SEASON_STATS_COLLECTIONS = new Set(["nfl_all_day", "nba_top_shot"])
+// no identity or no ESPN id) renders nothing; a keyed player with no rows yet
+// says so. Candy MLB joined 2026-10-26 (ESPN MLB, 20261027014316).
+const SEASON_STATS_COLLECTIONS = new Set(["nfl_all_day", "nba_top_shot", "candy_mlb"])
 
 async function SeasonStatsSection({ playerId, playerName, collectionSlug }: { playerId: string; playerName: string; collectionSlug: string }) {
   if (!SEASON_STATS_COLLECTIONS.has(collectionSlug)) return null

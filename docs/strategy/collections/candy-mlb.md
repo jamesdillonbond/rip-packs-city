@@ -47,7 +47,7 @@ Read from the registry (`lib/collections.ts`), the shared `[collection]` routes 
 | Edition: insight chips | ✓ | ✓ (new, pass 3) | "Featured in Insights" links the Scarcity / Serials / Holders views of `/insights/candy-mlb` (new `?tab=` deep link, read after mount so the ISR render is unchanged); holder count from `mv_candy_scarcity_board`. The Bid-vs-Floor chip was NOT added: `candy_offer_spread_board` costs ~8k buffers per edition read, for a bid on 2 of 125 editions |
 | Display names for Candy wallets | @username | ✗ (measured, not built) | 10-26: SNS `favorite-domain` for all 428 collector wallets → 0 set; `/domains/<owner>` → ~1.5 % own any .sol (3 of the first 200). A domain the owner did not make primary is not their chosen name, so nothing to show |
 | Player: Top Collectors | ✓ (rookie index) | ✓ (new) | `get_candy_player_top_collectors` (census, ranked by FMV held) |
-| Player: Season Stats | ✓ | ✗ | no MLB stats feed / identity crosswalk |
+| Player: Season Stats | ✓ | ✓ (new, pass 4) | ESPN MLB on the existing crosswalk: 100 `mlb` identities seeded from the Candy players rows, ESPN ids resolved 99/100 by the runner's unique-name rule + Will Smith hand-linked to the Dodgers id (`20261027014316`); the `player-stats-sync` runner now walks `mlb` every 6 h. Hitters' "Career Batting" is per-season and titled Batting |
 | Team: Squeeze & Scarcity | ✓ | ✗ | no locks/burns on Candy |
 | Profile: collection value by day | ✓ | ✓ (fixed) | `/api/profile/portfolio-history` never passed a collection and the RPC defaults to Top Shot — every non-Top-Shot owner chart priced Top Shot holdings; now `?collection=` |
 | Concierge: holdings breakdown · quirky serials | ✓ | ✓ (new) | Solana wallet / SNS name verbatim over the census (were `unsupported_chain`) |

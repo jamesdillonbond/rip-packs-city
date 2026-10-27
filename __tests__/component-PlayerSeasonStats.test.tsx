@@ -85,6 +85,24 @@ describe("buildSeasonStatsTables", () => {
     const broken: SeasonStatsResult = { ...nfl, rows: [{ ...nfl.rows[0], values: ["16"] }] }
     expect(buildSeasonStatsTables(broken)).toEqual([])
   })
+  it("mlb (Candy, 2026-10-26): batting first, ESPN's 'Career Batting' (one line PER SEASON) titled Batting, calendar-year seasons", () => {
+    const mlb: SeasonStatsResult = {
+      ...nfl, league: "mlb", espn_league: "mlb", espn_id: "39832", display_name: "Shohei Ohtani",
+      rows: [
+        { season: 2026, season_type: 2, category: "postseason-batting", display_name: "Postseason Batting", team_slug: "los-angeles-dodgers", is_total: false, labels: ["GP", "HR"], names: ["gamesPlayed", "homeRuns"], values: ["9", "4"] },
+        { season: 2026, season_type: 2, category: "advanced-batting", display_name: "Advanced Batting", team_slug: "los-angeles-dodgers", is_total: false, labels: ["WAR"], names: ["WARBR"], values: ["7.1"] },
+        { season: 2026, season_type: 2, category: "career-batting", display_name: "Career Batting", team_slug: "los-angeles-dodgers", is_total: false, labels: ["GP", "HR"], names: ["gamesPlayed", "homeRuns"], values: ["158", "52"] },
+        { season: 2025, season_type: 2, category: "career-batting", display_name: "Career Batting", team_slug: "los-angeles-dodgers", is_total: false, labels: ["GP", "HR"], names: ["gamesPlayed", "homeRuns"], values: ["158", "55"] },
+      ],
+    }
+    const tables = buildSeasonStatsTables(mlb)
+    expect(tables.map((t) => t.category)).toEqual(["career-batting", "advanced-batting", "postseason-batting"])
+    expect(tables[0].title).toBe("Batting")
+    expect(tables[0].title).not.toMatch(/career/i)
+    expect(tables[0].seasons.map((x) => x.seasonLabel)).toEqual(["2026", "2025"])
+    expect(tables[2].title).toBe("Postseason Batting")
+  })
+
   it("season labels: NBA is the two-year form, NFL the year; team slugs read as names", () => {
     expect(seasonLabel("nba", 2025)).toBe("2024-25")
     expect(seasonLabel("nfl", 2025)).toBe("2025")
