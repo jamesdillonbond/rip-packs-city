@@ -60,7 +60,7 @@ export default async function HotFloorsPage(props: { params: Promise<{ collectio
   // so a sweep is one buyer taking 3+ copies within 60-minute gaps (get_panini_hot_floors).
   if (collectionId === "panini-blockchain") {
     const r = await fetchPaniniHotFloors()
-    return <PaniniHotFloors collection={collectionId} editions={r.editions} ok={r.ok} days={PANINI_HOT_FLOORS_DAYS} newestSaleAt={r.newestSaleAt} />
+    return <PaniniHotFloors collection={collectionId} editions={r.editions} ok={r.ok} days={PANINI_HOT_FLOORS_DAYS} newestSaleAt={r.newestSaleAt} computedAt={r.computedAt} />
   }
   // NFL All Day (Top Shot parity, 2026-10-26): its sales carry no Quick-Buy proposer, so a sweep is one
   // collector taking 3+ copies within 60-minute gaps over sales_market (get_allday_hot_floors).
@@ -86,7 +86,7 @@ export default async function HotFloorsPage(props: { params: Promise<{ collectio
   // ⚠ The read lives in lib/ so it is BOUNDED and TESTABLE — see that module's
   // header. The `errored` distinction below is unchanged; what changed is that a
   // read which merely HANGS can now reach it.
-  const { editions, ok } = await fetchHotFloors()
+  const { editions, ok, computedAt } = await fetchHotFloors()
   const errored = !ok
 
   return (
@@ -99,6 +99,11 @@ export default async function HotFloorsPage(props: { params: Promise<{ collectio
           Editions whose floor is being actively <strong style={{ color: "var(--rpc-text-primary)" }}>swept</strong> — bought in bulk via Top Shot&rsquo;s Quick Buy over the last 3 days.
           Ranked by distinct sweepers. High sweep pressure on a common often precedes a floor move.
         </p>
+        {computedAt && (
+          <p data-testid="topshot-hot-floors-updated" style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-muted)", margin: "6px 0 0" }}>
+            Board updated {relTime(computedAt)}.
+          </p>
+        )}
       </header>
 
       {errored && (

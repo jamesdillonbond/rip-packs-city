@@ -26,12 +26,20 @@ import {
   CHALLENGE_FEED_STALE_DAYS,
 } from "@/lib/challenges/hub-fetchers"
 
+/**
+ * Hot Floors reads its snapshot table first (lib/hot-floors/snapshot.ts, 2026-10-27) and computes live only
+ * when no snapshot row exists — `from` here answers "no row yet", so these cases exercise the live read.
+ */
+const noSnapshot = () => {
+  const b: any = { select: () => b, eq: () => b, limit: () => Promise.resolve({ data: [], error: null }) }
+  return b
+}
 /** An rpc that resolves with `payload`. */
-const okDb = (payload: unknown) => ({ rpc: async () => ({ data: payload, error: null }) })
+const okDb = (payload: unknown) => ({ from: noSnapshot, rpc: async () => ({ data: payload, error: null }) })
 /** An rpc that returns a driver error. */
-const errDb = (message: string) => ({ rpc: async () => ({ data: null, error: { message } }) })
+const errDb = (message: string) => ({ from: noSnapshot, rpc: async () => ({ data: null, error: { message } }) })
 /** An rpc that never settles. */
-const hangDb = () => ({ rpc: () => new Promise(() => {}) })
+const hangDb = () => ({ from: noSnapshot, rpc: () => new Promise(() => {}) })
 
 beforeEach(() => {
   vi.spyOn(console, "error").mockImplementation(() => {})
@@ -52,7 +60,7 @@ describe("fetchHotFloors", () => {
   it("a driver error reports ok:false", async () => {
     const res = await fetchHotFloors(errDb("canceling statement due to statement timeout"), 500)
 
-    expect(res).toEqual({ editions: [], ok: false })
+    expect(res).toEqual({ editions: [], ok: false, computedAt: null })
   })
 
   it("CONTROL — genuinely no sweeps is still ok:true", async () => {
@@ -60,7 +68,7 @@ describe("fetchHotFloors", () => {
     // and the page is entitled to say so.
     const res = await fetchHotFloors(okDb({ editions: [] }), 500)
 
-    expect(res).toEqual({ editions: [], ok: true })
+    expect(res).toEqual({ editions: [], ok: true, computedAt: null })
   })
 
   it("CONTROL — a successful read returns its rows", async () => {
@@ -86,7 +94,52 @@ describe("fetchHotFloors", () => {
     // day — the cry-wolf outcome lib/insights/board-status.ts warns about.
     const res = await fetchHotFloors(okDb({}), 500)
 
-    expect(res).toEqual({ editions: [], ok: true })
+    expect(res).toEqual({ editions: [], ok: true, computedAt: null })
+  })
+})
+
+describe("fetchHotFloors — the snapshot (2026-10-27, #HF)", () => {
+  /** A db whose snapshot read answers `snap`; records every table/RPC it is asked for. */
+  const snapDb = (snap: unknown, calls: string[]) => ({
+    from: (t: string) => {
+      calls.push(`from:${t}`)
+      const b: any = { select: () => b, eq: (_c: string, v: string) => { calls.push(`eq:${v}`); return b }, limit: () => Promise.resolve(snap) }
+      return b
+    },
+    rpc: async (name: string) => {
+      calls.push(`rpc:${name}`)
+      return { data: { editions: [{ external_id: "live" }] }, error: null }
+    },
+  })
+
+  it("serves the Top Shot snapshot row and does NOT compute live", async () => {
+    const calls: string[] = []
+    const res = await fetchHotFloors(snapDb({ data: [{ payload: { editions: [{ external_id: "1:2" }] }, computed_at: "2026-10-27T14:13:00Z" }], error: null }, calls), 500)
+
+    expect(res).toEqual({ editions: [{ external_id: "1:2" }], ok: true, computedAt: "2026-10-27T14:13:00Z" })
+    expect(calls).toEqual(["from:hot_floors_snapshot", "eq:nba-top-shot"])
+  })
+
+  it("a FAILED snapshot read is a failed read — never a silent live computation", async () => {
+    const calls: string[] = []
+    const res = await fetchHotFloors(snapDb({ data: null, error: { message: "timeout" } }, calls), 500)
+
+    expect(res.ok).toBe(false)
+    expect(calls).not.toContain("rpc:get_topshot_hot_floors")
+  })
+
+  it("a snapshot whose `editions` is not an array is a failed read, not a quiet market", async () => {
+    const res = await fetchHotFloors(snapDb({ data: [{ payload: { editions: "nope" }, computed_at: "2026-10-27T14:13:00Z" }], error: null }, []), 500)
+
+    expect(res.ok).toBe(false)
+  })
+
+  it("no snapshot row yet → computes live", async () => {
+    const calls: string[] = []
+    const res = await fetchHotFloors(snapDb({ data: [], error: null }, calls), 500)
+
+    expect(calls).toContain("rpc:get_topshot_hot_floors")
+    expect(res).toEqual({ editions: [{ external_id: "live" }], ok: true, computedAt: null })
   })
 })
 

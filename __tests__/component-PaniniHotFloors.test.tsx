@@ -33,6 +33,13 @@ describe("PaniniHotFloors", () => {
     expect(c.querySelector('[data-testid="panini-hot-floors-empty"]')?.textContent).toContain("on record for the last 7 days")
     expect(c.querySelector('[data-testid="panini-hot-floors-lag"]')?.textContent).toContain("not complete")
   })
+  it("a snapshot board states its age; a live board makes no age claim", () => {
+    const at = new Date(Date.now() - 12 * 60_000).toISOString()
+    const snap = render(<PaniniHotFloors collection="panini-blockchain" editions={[]} ok days={7} newestSaleAt={null} computedAt={at} />).container
+    expect(snap.querySelector('[data-testid="panini-hot-floors-lag"]')?.textContent).toContain("Board updated 12 minutes ago")
+    const live = render(<PaniniHotFloors collection="panini-blockchain" editions={[]} ok days={7} newestSaleAt={null} />).container
+    expect(live.querySelector('[data-testid="panini-hot-floors-lag"]')?.textContent).not.toContain("Board updated")
+  })
   it("rows link the edition, show the average paid, and name no buyer", () => {
     const c = render(<PaniniHotFloors collection="panini-blockchain" editions={[E, { ...E, external_id: "x", swept_spend: null, floor_ask: null, last_swept_at: null, thumbnail_url: null, mint_cap: null, parallel: null, set_name: null, player_name: null }]} ok days={7} newestSaleAt={null} />).container
     expect(c.querySelector(`a[href="/panini-blockchain/edition/${E.external_id}"]`)).not.toBeNull()

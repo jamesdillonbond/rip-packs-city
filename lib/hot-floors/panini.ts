@@ -9,6 +9,7 @@
 import { supabaseAdmin } from "@/lib/supabase"
 import { withBoardBudget } from "@/lib/insights/board-page-fetch"
 import { HOT_FLOORS_TIMEOUT_MS } from "@/lib/hot-floors/fetchers"
+import { readHotFloorsSnapshot } from "@/lib/hot-floors/snapshot"
 
 /** Panini sales reach RPC 12–160 h after they happen, so Top Shot's 3-day window would read mostly empty. */
 export const PANINI_HOT_FLOORS_DAYS = 7
@@ -34,6 +35,8 @@ export interface PaniniHotFloorsResult {
   ok: boolean
   /** The newest sale on record (any edition) — how current "the last N days" really is. */
   newestSaleAt: string | null
+  /** When the board was computed (the 30-minute snapshot), or null for a live computation. */
+  computedAt: string | null
 }
 
 export async function fetchPaniniHotFloors(
@@ -41,7 +44,24 @@ export async function fetchPaniniHotFloors(
   db: any = supabaseAdmin,
   timeoutMs: number = HOT_FLOORS_TIMEOUT_MS,
 ): Promise<PaniniHotFloorsResult> {
-  const failed: PaniniHotFloorsResult = { editions: [], ok: false, newestSaleAt: null }
+  const failed: PaniniHotFloorsResult = { editions: [], ok: false, newestSaleAt: null, computedAt: null }
+  // 2026-10-27 (#HF): read the 30-minute snapshot (pg_cron panini-hot-floors-snapshot) — one primary-key row.
+  // Only when NO snapshot exists yet does the page compute live; a FAILED snapshot read is a failed read.
+  const snap = await readHotFloorsSnapshot(db, "panini-blockchain")
+  if (snap.state === "failed") return failed
+  if (snap.state === "row") {
+    const rows = snap.payload.editions
+    if (!Array.isArray(rows)) {
+      console.error("[panini-hot-floors] snapshot payload shape")
+      return failed
+    }
+    return {
+      editions: rows as PaniniHotEdition[],
+      ok: true,
+      newestSaleAt: typeof snap.payload.newest_sale_at === "string" ? snap.payload.newest_sale_at : null,
+      computedAt: snap.computedAt,
+    }
+  }
   try {
     const { data, error } = await withBoardBudget<{
       data: { editions?: unknown; newest_sale_at?: unknown } | null
@@ -60,6 +80,7 @@ export async function fetchPaniniHotFloors(
       editions: rows as PaniniHotEdition[],
       ok: true,
       newestSaleAt: typeof data?.newest_sale_at === "string" ? data.newest_sale_at : null,
+      computedAt: null,
     }
   } catch (e) {
     console.error("[panini-hot-floors] read bound:", e instanceof Error ? e.message : e)

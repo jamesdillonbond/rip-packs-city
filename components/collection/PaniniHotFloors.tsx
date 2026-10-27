@@ -26,12 +26,15 @@ export default function PaniniHotFloors({
   ok,
   days,
   newestSaleAt,
+  computedAt = null,
 }: {
   collection: string
   editions: PaniniHotEdition[]
   ok: boolean
   days: number
   newestSaleAt: string | null
+  /** When the board was computed (30-minute snapshot); null when computed live. */
+  computedAt?: string | null
 }) {
   return (
     <div style={{ padding: "8px 0 40px" }} data-testid="panini-hot-floors">
@@ -46,6 +49,7 @@ export default function PaniniHotFloors({
         <p data-testid="panini-hot-floors-lag" style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-muted)", margin: "6px 0 0", maxWidth: 720 }}>
           Panini sales reach RPC hours to days after they happen, so the newest days are not complete.
           {newestSaleAt ? ` Newest sale on record: ${relTime(newestSaleAt)}.` : ""}
+          {computedAt ? ` Board updated ${relTime(computedAt)}.` : ""}
         </p>
       </header>
 
