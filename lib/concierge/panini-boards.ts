@@ -33,6 +33,7 @@ import { textIncludes } from "@/lib/filter-match"
 import { resolvePlayerName, singleRetryLabel } from "@/lib/concierge/player-identity"
 import { COLLECTION_UUID_BY_SLUG } from "@/lib/collections"
 import { classifySerial } from "@/lib/serials/fun-patterns"
+import { isPaniniUsername } from "@/lib/address"
 import type { PaniniExportRow } from "@/lib/panini/collection-export"
 
 const PANINI_COLLECTION_UUID = COLLECTION_UUID_BY_SLUG["panini-blockchain"] ?? null
@@ -523,14 +524,18 @@ export async function paniniTeamEditionKeys(
     const t = picked.team
     // Paged at PostgREST's 1,000-row cap on a unique key, so a big franchise is never silently truncated
     // (the Lakers held 569 on 2026-10-25). Any failed page fails the whole lookup.
+    // The page cap (2026-10-27): a walk that reaches it without a short page is INCOMPLETE — an error,
+    // never a franchise silently cut at 20,000 keys.
     const keys = new Set<string>()
+    let complete = false
     for (let from = 0; from < 20_000; from += 1000) {
       const { data, error: kErr } = await db.from("panini_edition_team_keys").select("external_id")
         .contains("franchise_keys", [`${t.league}:${t.slug}`]).order("external_id", { ascending: true }).range(from, from + 999)
       if (kErr || !Array.isArray(data)) return { status: "error", team: t.team_name }
       for (const r of data as Record<string, unknown>[]) keys.add(String(r.external_id))
-      if (data.length < 1000) break
+      if (data.length < 1000) { complete = true; break }
     }
+    if (!complete) return { status: "error", team: t.team_name }
     if (keys.size === 0) return { status: "none_placed_yet", team: t.team_name }
     return { status: "ok", team: t.team_name, league: t.league, slug: t.slug, keys }
   } catch {
@@ -565,7 +570,7 @@ export async function readPaniniBreakdownForConcierge(db: Db, base: string, inpu
   const failed = (message: string) => JSON.stringify({ status: "error", message })
   try {
     const username = String(input.username ?? "").trim().replace(/^@/, "")
-    if (!/^[A-Za-z0-9._-]{2,32}$/.test(username)) {
+    if (!isPaniniUsername(username)) {
       return JSON.stringify({ status: "bad_username", message: "That doesn't look like a Panini username — ask the user to check it. A Panini collector is a Panini username, not a wallet." })
     }
     const groupBy = input.groupBy ? String(input.groupBy).toLowerCase() : null
@@ -621,6 +626,15 @@ export async function readPaniniBreakdownForConcierge(db: Db, base: string, inpu
       })
     }
     const ignored = [input.tier ? "tier" : null, input.badge ? "badge" : null].filter(Boolean)
+    // ⚠ A profile read is complete only when the LATEST walk completed (last_complete_at === last_walk_at) —
+    // the Collection tab's rule (components/collection/PaniniCollection.tsx). A non-null last_complete_at alone
+    // means SOME walk once completed; today's may be partial (2026-10-27: the note was dropped then).
+    const profileComplete = typeof d.last_complete_at === "string" && d.last_complete_at === d.last_walk_at
+    const partialNote = profileComplete
+      ? ""
+      : num(d.reported_total) !== null
+        ? `That read is PARTIAL — the profile reports ${num(d.reported_total)} cards; say the numbers cover the cards read so far.`
+        : "That read is PARTIAL (the profile's own total is unknown); say the numbers cover the cards read so far."
     const groups = Array.isArray(d.groups) ? (d.groups as Record<string, unknown>[]) : []
     const topCards = Array.isArray(d.top_cards) ? (d.top_cards as Record<string, unknown>[]) : []
     return JSON.stringify({
@@ -629,7 +643,7 @@ export async function readPaniniBreakdownForConcierge(db: Db, base: string, inpu
       collection: "panini-blockchain",
       source,
       source_note: source === "profile"
-        ? `From the collector's public Panini profile as RPC last read it (${typeof d.last_walk_at === "string" ? d.last_walk_at : "time unknown"}). ${d.last_complete_at ? "" : num(d.reported_total) !== null ? `That read is PARTIAL — the profile reports ${num(d.reported_total)} cards; say the numbers cover the cards read so far.` : ""}`.trim()
+        ? `From the collector's public Panini profile as RPC last read it (${typeof d.last_walk_at === "string" ? d.last_walk_at : "time unknown"}). ${partialNote}`.trim()
         : "From the cards RPC has SEEN under this username in the Panini products it walks — NOT the whole collection; say so.",
       total_cards: totalCards,
       filters: { player: input.player || null, set: input.set || null, sport: input.sport || null, team: teamName },
@@ -673,7 +687,7 @@ export async function readPaniniQuirkySerialsForConcierge(db: Db, base: string, 
   const failed = (message: string) => JSON.stringify({ status: "error", message })
   try {
     const username = String(typed ?? "").trim().replace(/^@/, "")
-    if (!/^[A-Za-z0-9._-]{2,32}$/.test(username)) {
+    if (!isPaniniUsername(username)) {
       return JSON.stringify({ status: "bad_username", message: "That doesn't look like a Panini username — ask the user to check it. A Panini collector is a Panini username, not a wallet." })
     }
     const rows: PaniniExportRow[] = []
@@ -685,7 +699,11 @@ export async function readPaniniQuirkySerialsForConcierge(db: Db, base: string, 
       const { data, error } = await db.rpc("panini_collection_export", { p_username: username, p_after_sku: after, p_limit: 1000 })
       const d = (Array.isArray(data) ? data[0] : data) as { source?: string; rows?: PaniniExportRow[] } | null
       if (error || !d || !Array.isArray(d.rows)) return failed("The Panini collection read failed — say the check failed; never say this collector has no quirky serials.")
-      source = source ?? (d.source ?? null)
+      // Each page reads whichever source is current (profile vs observed). A source that changes mid-scan
+      // stitches two different reads into one list — refuse, as the CSV export route does.
+      const pageSource = d.source ?? null
+      if (page > 0 && pageSource !== source) return failed("The Panini collection changed while it was being read — say the check could not complete and to try again; never present a partial scan.")
+      source = pageSource
       rows.push(...d.rows)
       if (d.rows.length < 1000) break
       after = String(d.rows[d.rows.length - 1].sku)
@@ -780,7 +798,7 @@ export async function readPaniniSetCompletionForConcierge(
   const failed = (message: string) => JSON.stringify({ status: "error", message })
   try {
     const username = String(input.username ?? "").trim().replace(/^@/, "")
-    if (!/^[A-Za-z0-9._-]{2,32}$/.test(username)) {
+    if (!isPaniniUsername(username)) {
       return JSON.stringify({ status: "bad_username", message: "That doesn't look like a Panini username — ask the user to check it. A Panini collector is a Panini username, not a wallet." })
     }
     const n = Math.min(Math.max(Math.trunc(Number(input.limit ?? 10)) || 10, 1), 25)

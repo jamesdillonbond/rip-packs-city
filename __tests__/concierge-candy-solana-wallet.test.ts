@@ -198,6 +198,17 @@ describe("Top Shot boards on a Candy page", () => {
     expect(r.rows[0].edition_url).toContain("/candy-mlb/edition/")
   })
 
+  it("the DB-vocabulary alias collectionId 'candy_mlb' is Candy too — never the Top Shot board (2026-10-27)", async () => {
+    const inst = makeInstrumentedSupabaseFixture({
+      candy_special_serials_board: { data: [{ external_id: "shohei-ohtani", player_name: "Shohei Ohtani", kind: "first_mint", serial_number: 1, owner: SOL, is_treasury: false, fmv_usd: 40 }], error: null },
+    })
+    A.sb = inst.fixture
+    script("get_special_serial_owners", { playerName: "Ohtani", collectionId: "candy_mlb" })
+    await POST(post("nba-top-shot"))
+    expect(inst.rpcCalls.some((c) => c.name === "get_special_serial_owners_board")).toBe(false)
+    expect(toolResult()).toMatchObject({ status: "ok", collection: "candy-mlb" })
+  })
+
   it("a Candy player name is never resolved against TOP SHOT's player table first (2026-10-27)", async () => {
     const inst = makeInstrumentedSupabaseFixture({
       candy_special_serials_board: { data: [], error: null },

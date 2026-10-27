@@ -275,6 +275,22 @@ describe("analyze_wallet_holdings on a Panini page answers over the Panini USERN
     expect((call?.args as any)?.p_sport).toBe("WNBA")
     expect(inst.rpcCalls.some((c) => c.name === "resolve_topshot_username" || c.name === "concierge_wallet_breakdown")).toBe(false)
   })
+  it("an OLDER complete walk does not make TODAY's partial read complete (2026-10-27)", async () => {
+    const inst = makeInstrumentedSupabaseFixture({ "rpc:panini_holdings_breakdown": { data: { ...BD, last_complete_at: "2026-10-19T09:00:00Z", reported_total: null }, error: null } })
+    A.sb = inst.fixture
+    A.state.script = [{ tools: [{ name: "analyze_wallet_holdings", input: { walletAddress: "Spinotron" } }] }, { text: "done" }]
+    A.state.cursor = 0
+    await POST(post())
+    expect(String(toolResult().source_note)).toMatch(/PARTIAL/)
+  })
+  it("CONTROL: the latest walk completed → no partial caveat", async () => {
+    const inst = makeInstrumentedSupabaseFixture({ "rpc:panini_holdings_breakdown": { data: { ...BD, last_complete_at: BD.last_walk_at }, error: null } })
+    A.sb = inst.fixture
+    A.state.script = [{ tools: [{ name: "analyze_wallet_holdings", input: { walletAddress: "Spinotron" } }] }, { text: "done" }]
+    A.state.cursor = 0
+    await POST(post())
+    expect(String(toolResult().source_note)).not.toMatch(/PARTIAL/)
+  })
   it("a team filter resolves to the franchise key and states that team counts are floors", async () => {
     const inst = makeInstrumentedSupabaseFixture({ ...teams, "rpc:panini_holdings_breakdown": { data: { ...BD, source: "seen", cards: 12, cards_not_on_a_team: 3 }, error: null } })
     A.sb = inst.fixture
@@ -389,5 +405,56 @@ describe("team tools on a Panini page answer from the Panini team map (2026-10-2
     const r = toolResult()
     expect(r.status).toBe("error")
     expect(String(r.message)).toMatch(/check failed/)
+  })
+})
+
+describe("readPaniniQuirkySerialsForConcierge refuses a scan whose source changed between pages (2026-10-27)", () => {
+  const page = (n: number, start: number) => Array.from({ length: n }, (_, i) => ({
+    sku: `s${String(start + i).padStart(6, "0")}`, edition_key: "k", player: "P", set: "Base", serial: 1, mint_cap: 99,
+    is_jersey_mint: false, catalogued: true,
+  }))
+  const db = (sources: string[]) => {
+    let call = 0
+    return { rpc: async () => {
+      const i = call++
+      return { data: { source: sources[i], rows: page(i < sources.length - 1 ? 1000 : 3, i * 1000) }, error: null }
+    } }
+  }
+  it("a profile page followed by an observed page fails the tool — two reads are never stitched into one scan", async () => {
+    const { readPaniniQuirkySerialsForConcierge } = await import("@/lib/concierge/panini-boards")
+    const r = JSON.parse(await readPaniniQuirkySerialsForConcierge(db(["profile", "observed"]) as never, "https://x", "joe", 10))
+    expect(r.status).toBe("error")
+    expect(String(r.message)).toMatch(/changed while it was being read/)
+  })
+  it("CONTROL: the same source on every page scans every page", async () => {
+    const { readPaniniQuirkySerialsForConcierge } = await import("@/lib/concierge/panini-boards")
+    const r = JSON.parse(await readPaniniQuirkySerialsForConcierge(db(["profile", "profile"]) as never, "https://x", "joe", 10))
+    expect(r.status).toBe("ok")
+    expect(r.cards_scanned).toBe(1003)
+  })
+})
+
+describe("paniniTeamEditionKeys never cuts a franchise at its page cap (2026-10-27)", () => {
+  const db = (pageLen: (from: number) => number) => ({
+    from: (table: string) => {
+      if (table === "teams_master") {
+        const q: any = { select: () => q, in: () => q, eq: () => q, limit: async () => ({ data: [{ league: "NBA", slug: "lakers", team_name: "Los Angeles Lakers" }], error: null }) }
+        return q
+      }
+      const q: any = { select: () => q, contains: () => q, order: () => q,
+        range: async (from: number) => ({ data: Array.from({ length: pageLen(from) }, (_, i) => ({ external_id: `k${from + i}` })), error: null }) }
+      return q
+    },
+  })
+  it("full pages all the way to the cap are an ERROR, not 20,000 keys presented as the whole team", async () => {
+    const { paniniTeamEditionKeys } = await import("@/lib/concierge/panini-boards")
+    const r = await paniniTeamEditionKeys(db(() => 1000) as never, "Lakers")
+    expect(r.status).toBe("error")
+  })
+  it("CONTROL: a short page ends the walk with every key", async () => {
+    const { paniniTeamEditionKeys } = await import("@/lib/concierge/panini-boards")
+    const r = await paniniTeamEditionKeys(db((from) => (from === 0 ? 1000 : 569)) as never, "Lakers")
+    expect(r.status).toBe("ok")
+    expect(r.status === "ok" && r.keys.size).toBe(1569)
   })
 })

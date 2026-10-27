@@ -1901,7 +1901,7 @@ async function executeTool(toolName: string, toolInput: any, ctx: ToolCtx): Prom
     // ⛔ 2026-10-27: on a Candy question the Top Shot-only tools answer from Candy's own data (or refuse), so
     // resolving the name against TOP SHOT's player table first could only substitute — a Top Shot namesake's
     // disambiguation prompt, or a Top Shot identity attached to a Candy answer. Each Candy arm reads the name raw.
-    const candyAsk = collectionId === "candy-mlb" && TOP_SHOT_ONLY_TOOLS.has(toolName);
+    const candyAsk = (fromDbSlug(collectionId ?? "") ?? collectionId) === "candy-mlb" && TOP_SHOT_ONLY_TOOLS.has(toolName);
     if (typed && !isPinnacle(collectionId) && !candyAsk) {
       // 2026-10-26: special-serial owners and badges answer All Day from All Day's own tables, so the
       // name resolves to the All Day PERSON there (search_serial_deals stays Top Shot-only).
@@ -1987,6 +1987,9 @@ async function executeToolInner(
   const rawCollectionId: string | undefined = toolInput.collectionId ?? ctx.collectionId ?? undefined;
   // The model sometimes passes the DB vocabulary ("nba_top_shot"); read it as the
   // registry slug it names rather than as an unknown collection.
+  // ⛔ 2026-10-27: collection arms test THIS, never the raw `toolInput.collectionId` — nine arms wrote
+  // `toolInput.collectionId === "candy-mlb" || (!toolInput.collectionId && effectiveCollectionId === …)`,
+  // which misses "candy_mlb" / "panini_blockchain" and sent that name down the TOP SHOT username path.
   const effectiveCollectionId: string | undefined = rawCollectionId
     ? (getCollectionUuid(rawCollectionId) ? rawCollectionId : (fromDbSlug(rawCollectionId) ?? rawCollectionId))
     : undefined;
@@ -2424,12 +2427,12 @@ async function executeToolInner(
     // 2026-10-19: Panini has no rows in pack_table_rows, so a Panini-scoped
     // ranking read empty — "no packs" out of a table that never held them
     // (a SUBSTITUTION-shaped absence). Answer from Panini's own pack plane.
-    if (toolInput.collectionId === "panini-blockchain") {
+    if (effectiveCollectionId === "panini-blockchain") {
       return readPaniniPackMarketForConcierge(base, Math.min(Math.max(1, Math.trunc(Number(toolInput.limit)) || 5), 15));
     }
     // 2026-10-26: Candy's one pack product lives on its own plane (candy_pack_market), not in
     // pack_table_rows — the Flow read answered "no buyable packs" for it.
-    if (toolInput.collectionId === "candy-mlb" || (!toolInput.collectionId && effectiveCollectionId === "candy-mlb")) {
+    if (effectiveCollectionId === "candy-mlb") {
       return readCandyPackMarketForConcierge(base);
     }
     try {
@@ -2869,7 +2872,7 @@ async function executeToolInner(
       // can hold no Panini card — and come back as "none found".
       // 2026-10-26: it now answers Panini over the USERNAME (panini_holdings_breakdown) — the
       // profile as last read, or the cards seen under the name — instead of refusing.
-      const requestedPanini = toolInput.collectionId === "panini-blockchain" || (!toolInput.collectionId && effectiveCollectionId === "panini-blockchain");
+      const requestedPanini = effectiveCollectionId === "panini-blockchain";
       if (requestedPanini) {
         return await readPaniniBreakdownForConcierge(supabase, base, {
           username: String(toolInput.walletAddress ?? ""),
@@ -2889,7 +2892,7 @@ async function executeToolInner(
       const isHex = /^0x[a-fA-F0-9]{16}$/.test(inputAddr);
       // 2026-10-26 (Candy parity): a Solana wallet (or an SNS name on a Candy page) is read over
       // Candy's full daily census — verbatim, never folded — instead of being refused.
-      const candyAskedHoldings = toolInput.collectionId === "candy-mlb" || (!toolInput.collectionId && effectiveCollectionId === "candy-mlb");
+      const candyAskedHoldings = effectiveCollectionId === "candy-mlb";
       if (isSolanaAddress(inputAddr) || (candyAskedHoldings && !isHex)) {
         const cw = await resolveCandyWallet(inputAddr);
         if (cw.kind === "error") return cw.payload;
@@ -3432,7 +3435,7 @@ async function executeToolInner(
     }
     // 2026-10-26: the board below is Top Shot's — on a Candy question it answered with Top Shot
     // rows (substitution). Candy has its own board (candy_special_serials_board).
-    if (toolInput.collectionId === "candy-mlb" || (!toolInput.collectionId && effectiveCollectionId === "candy-mlb")) {
+    if (effectiveCollectionId === "candy-mlb") {
       const holderIn = String(toolInput.holder ?? "").trim();
       let holderC: string | null = null;
       if (holderIn) {
@@ -3922,7 +3925,7 @@ async function executeToolInner(
       return pinnacleNotApplicable("search_serial_deals", "The special-serial deal feed covers Top Shot only.", "For Disney Pinnacle deals use search_live_deals; for one pin's live asks use get_edition_listings.");
     }
     // 2026-10-26: Top Shot-only feed; on a Candy question it answered with Top Shot listings.
-    if (toolInput.collectionId === "candy-mlb" || (!toolInput.collectionId && effectiveCollectionId === "candy-mlb")) {
+    if (effectiveCollectionId === "candy-mlb") {
       return candyNotApplicable("search_serial_deals", "The special-serial deal feed covers Top Shot only.", "For Candy, call get_special_serial_owners (who holds each #1 / jersey / last serial) and get_edition_listings for an edition's live Magic Eden asks.");
     }
     if (isAllDaySlug(effectiveCollectionId)) {
@@ -4664,7 +4667,7 @@ async function executeToolInner(
     if (isPinnacle(effectiveCollectionId)) {
       return readPinnacleHotFloorsForConcierge(supabase, base, { days: Number(toolInput.days ?? 7), limit: Number(toolInput.limit ?? 15) });
     }
-    if (toolInput.collectionId === "candy-mlb" || (!toolInput.collectionId && effectiveCollectionId === "candy-mlb")) {
+    if (effectiveCollectionId === "candy-mlb") {
       return candyNotApplicable("get_hot_floors", "Hot Floors reads Top Shot's Quick-Buy sweeps; Candy trades on Magic Eden, which has no such path, and RPC has recorded no Candy sale since Oct 11.", "Say Candy has no sweep signal; get_top_sales covers its recorded sales.");
     }
     // 2026-10-26: All Day has its own board (get_allday_hot_floors, collectors buying 3+ copies in a row).
@@ -4693,7 +4696,7 @@ async function executeToolInner(
   }
 
   if (toolName === "get_edition_sweep") {
-    if (toolInput.collectionId === "candy-mlb" || (!toolInput.collectionId && effectiveCollectionId === "candy-mlb")) {
+    if (effectiveCollectionId === "candy-mlb") {
       return candyNotApplicable("get_edition_sweep", "The sweep signal reads Top Shot's Quick-Buy sales only.");
     }
     // 2026-10-26: a Pinnacle page never answers with a Top Shot edition's sweep (substitution).
@@ -5342,7 +5345,7 @@ async function executeToolInner(
       // would resolve as a TOP SHOT username — another person's Flow wallet, which
       // can hold no Panini card — and come back as "none found".
       // 2026-10-26: it now scans a Panini USERNAME (the full-collection export pages) instead of refusing.
-      if (toolInput.collectionId === "panini-blockchain" || (!toolInput.collectionId && effectiveCollectionId === "panini-blockchain")) {
+      if (effectiveCollectionId === "panini-blockchain") {
         return await readPaniniQuirkySerialsForConcierge(supabase, base, String(toolInput.walletAddress ?? ""), Number(toolInput.limit ?? 20));
       }
       const inputAddr = String(toolInput.walletAddress ?? "").trim();
@@ -5355,7 +5358,7 @@ async function executeToolInner(
       // 2026-10-26 (Candy parity): a Solana wallet / SNS name scans the Candy census verbatim
       // (the scan below is collection-generic) instead of being refused.
       let candyQuirkWallet: string | null = null;
-      const candyAskedQuirks = toolInput.collectionId === "candy-mlb" || (!toolInput.collectionId && effectiveCollectionId === "candy-mlb");
+      const candyAskedQuirks = effectiveCollectionId === "candy-mlb";
       if (isSolanaAddress(inputAddr) || (candyAskedQuirks && !isHex)) {
         const cw = await resolveCandyWallet(inputAddr);
         if (cw.kind === "error") return cw.payload;

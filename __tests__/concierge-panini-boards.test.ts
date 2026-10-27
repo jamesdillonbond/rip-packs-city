@@ -211,7 +211,8 @@ describe("the concierge prompt never denies a tab the registry lists", () => {
     const j = ROUTE.indexOf('.from("pack_table_rows")', i)
     expect(i).toBeGreaterThan(0)
     const head = ROUTE.slice(i, j)
-    expect(head).toContain('toolInput.collectionId === "panini-blockchain"')
+    // Re-pinned 2026-10-27: the route resolves one effectiveCollectionId (the tool's collectionId, normalised, else the page's) — the pin is that a Panini scope reaches the Panini plane first.
+    expect(head).toContain('effectiveCollectionId === "panini-blockchain"')
     expect(head).toContain("readPaniniPackMarketForConcierge(")
   })
 })
