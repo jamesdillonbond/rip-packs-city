@@ -82,6 +82,10 @@
 //     Both pinned against the installed config rather than as literals.
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Candy MLB's card art: a bare `https://arweave.net/<43-char tx id>` (the same shape as
+// lib/ipfs-media.ts ARWEAVE_TX_RE — kept local because this module imports nothing; see the edge note
+// below). Rewritten to the resizer, which serves a 640 px PNG.
+const ARWEAVE_TX_RE = /^https:\/\/arweave\.net\/([A-Za-z0-9_-]{43})$/
 const IPFS_GATEWAY_RE =
   /^https?:\/\/(?:ipfs\.io|ipfs\.dapperlabs\.com|cloudflare-ipfs\.com)\/ipfs\/([A-Za-z0-9]+)/
 
@@ -199,6 +203,12 @@ export function ogImageTarget(raw: string): string | null {
 
   const m = url.match(IPFS_GATEWAY_RE)
   if (m) return `${BASE_URL}/api/public/ipfs-media/${m[1]}`
+
+  // 2026-10-26: Candy MLB art is a 3.9–7.5 MB arweave PNG, and the 4 MB cap below dropped every
+  // Rainbow edition's art (its card rendered with no picture). The resizer serves a 640 px PNG —
+  // PNG, because satori cannot decode WebP — and fails open to the original.
+  const ar = url.match(ARWEAVE_TX_RE)
+  if (ar) return `${BASE_URL}/api/public/arweave-thumb/${ar[1]}?w=640&f=png`
 
   return url.replace(RENDER_FORMAT_RE, "$1png")
 }

@@ -147,7 +147,10 @@ describe("TopSalesBoardClient", () => {
       <TopSalesBoardClient initialRows={[candyRow, fullRow]} initialFetchedAt="2026-07-31T00:00:00Z" />,
     )
     const srcs = Array.from(container.querySelectorAll("img")).map((i) => i.getAttribute("src") ?? "")
-    expect(srcs.some((s) => s.startsWith("https://arweave.net/"))).toBe(true)
+    // 2026-10-26 re-pin (premise changed): arweave art now goes through the same-origin RESIZER
+    // (/api/public/arweave-thumb — the originals are 3.9–7.5 MB), which follows arweave's 302 and fails
+    // open to the original. Still never the avatar proxy, which could not serve it.
+    expect(srcs.some((s) => s.startsWith("/api/public/arweave-thumb/-00lKHoPezMrmUSf8RxB1S_TYAiBf3TM1JAD34HJ13Y?w="))).toBe(true)
     expect(srcs.some((s) => s.startsWith("/api/public/avatar-media?src=https%3A%2F%2Farweave.net%2F"))).toBe(false)
     // CSP-allowed Top Shot art still hotlinks — the proxy is not applied blindly.
     expect(srcs.some((s) => s.startsWith("https://assets.nbatopshot.com/"))).toBe(true)

@@ -13,7 +13,8 @@
 
 import { IPFS_THUMB_WIDTHS } from "@/lib/ipfs-media"
 
-const IPFS_THUMB_RE = /^(\/api\/public\/ipfs-thumb\/[A-Za-z0-9]+)\?w=\d+$/
+// 2026-10-26: the arweave resizer (Candy MLB art) takes the same widths.
+const IPFS_THUMB_RE = /^(\/api\/public\/(?:ipfs-thumb\/[A-Za-z0-9]+|arweave-thumb\/[A-Za-z0-9_-]{43}))\?w=\d+$/
 const TOPSHOT_MEDIA_RE = /^(https:\/\/assets\.nbatopshot\.com\/media\/\d+\/image)\?width=\d+$/
 const TOPSHOT_WIDTHS = [320, 640, 1080] as const
 

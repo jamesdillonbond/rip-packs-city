@@ -172,7 +172,7 @@ export async function GET() {
           }}
         >
           Magic Eden shows you a listing. We show you fair market value, the best standing
-          offer, pack EV, and who actually holds the supply — an early read on a days-old market.
+          offer, pack EV, and who actually holds the supply — an early read on a young, thin market.
         </div>
 
         <div style={{ flex: 1, display: "flex" }} />

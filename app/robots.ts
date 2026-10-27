@@ -60,6 +60,7 @@ export default function robots(): MetadataRoute.Robots {
           '/api/og/',
           '/api/public/ipfs-media/',
           '/api/public/ipfs-thumb/',
+          '/api/public/arweave-thumb/',
           '/api/public/pinnacle-image/',
           '/api/public/team-logo',
           '/api/public/avatar-media',

@@ -176,6 +176,7 @@ const MEDIA_PROXY_PREFIXES = [
   "/api/public/pinnacle-image",
   "/api/public/ipfs-media",
   "/api/public/ipfs-thumb",
+  "/api/public/arweave-thumb",
   "/api/public/team-logo",
   "/api/public/avatar-media",
   "/api/badge-image",

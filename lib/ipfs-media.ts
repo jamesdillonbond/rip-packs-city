@@ -53,9 +53,16 @@ export function proxyIpfsImageUrl(
 ): string | null {
   if (!url) return null;
   const m = url.match(IPFS_GATEWAY_RE);
-  if (!m) return url;
-  return `/api/public/ipfs-thumb/${m[1]}?w=${width}`;
+  if (m) return `/api/public/ipfs-thumb/${m[1]}?w=${width}`;
+  // 2026-10-26: Candy MLB's card art is a full-size 3.9–7.5 MB PNG on arweave.net; the same resize,
+  // through /api/public/arweave-thumb (fails open to the original). Images only, as above.
+  const a = url.match(ARWEAVE_TX_RE);
+  if (a) return `/api/public/arweave-thumb/${a[1]}?w=${width}`;
+  return url;
 }
+
+/** A bare `https://arweave.net/<43-char tx id>` url (Candy MLB's card art); captures the id. */
+export const ARWEAVE_TX_RE = /^https:\/\/arweave\.net\/([A-Za-z0-9_-]{43})$/;
 
 // Absolute-URL variant for contexts that require a fully-qualified URL rather
 // than a same-origin path — notably JSON-LD structured data and OG/meta image
