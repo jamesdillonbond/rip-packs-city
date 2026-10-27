@@ -34,7 +34,7 @@ failure it documents.
 
 ## 2026-10-27 — 1 filing
 
-- [🟢 Daytime monitor (10-27 ~03:09Z, infra GREEN, dashboard objects OK) — hot-floors board reads exceed the 8s read-bound on TODAY's all-day/Panini Top Shot-parity deploy (allday-hot-floors + panini-hot-floors, both first-seen today on dpl_5gW6jqNC a33bf9e8); degrades to empty, count 1 each — LOW, recent-ship perf watch](2026-10-27T0309Z-daytime-monitor-hot-floors-read-bound-allday-panini-parity.md)
+- [✅ RESOLVED 10-27 ~7:45 AM PT (Claude Code cloud; `20261027140941` + `9f5cb7912`: Top Shot and Panini read a snapshot like All Day) — was: 🟢 Daytime monitor (10-27 ~03:09Z, infra GREEN, dashboard objects OK) — hot-floors board reads exceed the 8s read-bound on TODAY's all-day/Panini Top Shot-parity deploy (allday-hot-floors + panini-hot-floors, both first-seen today on dpl_5gW6jqNC a33bf9e8); degrades to empty, count 1 each — LOW, recent-ship perf watch](2026-10-27T0309Z-daytime-monitor-hot-floors-read-bound-allday-panini-parity.md)
 
 ## 2026-10-26 — 3 filings
 
