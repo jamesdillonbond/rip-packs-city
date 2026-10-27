@@ -209,3 +209,29 @@ describe("Top Shot boards on a Candy page", () => {
     })
   }
 })
+
+describe("Flow-only report tools on a Candy wallet", () => {
+  for (const tool of ["get_collector_report", "get_challenges"]) {
+    it(`${tool} → not_applicable, never a Top Shot username lookup`, async () => {
+      const inst = makeInstrumentedSupabaseFixture({})
+      A.sb = inst.fixture
+      script(tool, { walletAddress: SOL })
+      await POST(post("candy-mlb"))
+      expect(toolResult().status).toBe("not_applicable")
+      expect(inst.rpcCalls.some((c) => c.name === "resolve_topshot_username")).toBe(false)
+    })
+  }
+
+  it("search_live_deals on Candy reads Candy's board, never the Flow sniper feed", async () => {
+    const inst = makeInstrumentedSupabaseFixture({
+      candy_market_board: { data: [{ external_id: "a", player_name: "P", ask_usd: 8, fmv_usd: 10, discount_pct: 20, serial_number: 3 }], error: null },
+    })
+    A.sb = inst.fixture
+    const fetchSpy = vi.spyOn(globalThis, "fetch")
+    script("search_live_deals", {})
+    await POST(post("candy-mlb"))
+    expect(fetchSpy.mock.calls.some((c) => String(c[0]).includes("/api/sniper-feed"))).toBe(false)
+    fetchSpy.mockRestore()
+    expect(toolResult()).toMatchObject({ status: "ok", collection: "candy-mlb", kind: "below_fmv" })
+  })
+})

@@ -115,7 +115,7 @@ import {
 import { ALLOWED_ORIGINS } from "@/lib/allowed-origins";
 import { lookupUiField } from "@/lib/concierge/ui-field-dictionary";
 import { ownLookup } from "@/lib/safe-lookup";
-import { resolveCandyWallet, CANDY_NEEDS_SOLANA_WALLET, CANDY_COLLECTION_UUID, readCandySetCompletionForConcierge, readCandyPackMarketForConcierge, readCandySpecialSerialsForConcierge, candyNotApplicable } from "@/lib/concierge/candy-boards";
+import { resolveCandyWallet, CANDY_NEEDS_SOLANA_WALLET, CANDY_COLLECTION_UUID, readCandySetCompletionForConcierge, readCandyPackMarketForConcierge, readCandySpecialSerialsForConcierge, readCandyDealsForConcierge, candyNotApplicable } from "@/lib/concierge/candy-boards";
 import { readPaniniBreakdownForConcierge, readPaniniQuirkySerialsForConcierge, readPaniniSetCompletionForConcierge, readPaniniCollectionForConcierge, readPaniniDealsForConcierge, readPaniniPackMarketForConcierge, readPaniniPremiumsForConcierge, readPaniniTeamForConcierge } from "@/lib/concierge/panini-boards";
 import { fetchPaniniEditionAsk, fetchPaniniEditionSerials } from "@/lib/panini/edition-market";
 import { paniniEditionUrl } from "@/lib/panini/edition-url";
@@ -2180,6 +2180,11 @@ async function executeToolInner(
       // 2026-10-25: a `team` filter reads RPC's Panini team map inside the reader (the deal board has no team field).
       return readPaniniDealsForConcierge(base, { ...toolInput, player: toolInput.player ?? toolInput.playerName, teamQuery: toolInput.team, db: supabase });
     }
+    // 2026-10-26: Candy's listings are its own board — the sniper feed has no Candy source and
+    // cached_listings no Candy rows, so the path below answered "no deals" about a 1,400-ask book.
+    if (effectiveCollectionId === "candy-mlb" && !toolInput.team) {
+      return readCandyDealsForConcierge(supabase, base, { player: toolInput.player ?? toolInput.playerName ?? null, maxPrice: toolInput.maxPrice ?? null, tier: toolInput.tier ?? null, limit: toolInput.limit ?? null });
+    }
     // Per-source failure flags. A source that fails is NOT a source that found
     // nothing, and this tool has three of them — see the terminal exit.
     let liveFeedFailed = false;
@@ -2499,6 +2504,9 @@ async function executeToolInner(
     // floor table this tool's fallbacks could reach (2026-10-19).
     if (effectiveCollectionId === "panini-blockchain") {
       return readPaniniDealsForConcierge(base, { ...toolInput, player: toolInput.player ?? toolInput.playerName });
+    }
+    if (effectiveCollectionId === "candy-mlb") {
+      return readCandyDealsForConcierge(supabase, base, { player: toolInput.player ?? toolInput.playerName ?? null, maxPrice: toolInput.maxPrice ?? null, tier: toolInput.tier ?? null, limit: toolInput.limit ?? null });
     }
     if (isPinnacle(effectiveCollectionId)) {
       const pinnacleListings = await searchPinnacleDeals(supabase, toolInput, { source: "catalog" });
@@ -4739,6 +4747,9 @@ async function executeToolInner(
   }
 
   if (toolName === "get_challenges") {
+    if (effectiveCollectionId === "candy-mlb" || isSolanaAddress(String(toolInput.walletAddress ?? "").trim())) {
+      return candyNotApplicable("get_challenges", "Challenges are a Top Shot feature; Candy MLB has none.");
+    }
     try {
       // 2026-10-26: on a Panini page a typed name is a PANINI username; this tool would look it up as a
       // Top Shot / Flow account — a different person (the substitution face). A 0x Flow address still works.
@@ -4946,6 +4957,11 @@ async function executeToolInner(
   }
 
   if (toolName === "get_collector_report") {
+    // 2026-10-26: a Solana wallet (or any non-0x input on a Candy page) used to fall to the Top Shot
+    // username resolver and come back "share the 0x address" — a wrong prompt for a Candy collector.
+    if (isSolanaAddress(String(toolInput.walletAddress ?? "").trim()) || (effectiveCollectionId === "candy-mlb" && !/^0x[a-fA-F0-9]{16}$/.test(String(toolInput.walletAddress ?? "").trim()))) {
+      return candyNotApplicable("get_collector_report", "The collector report is built from Flow wallet data (Top Shot and the other Flow collections).", "For a Candy MLB collector use check_wallet (portfolio) and analyze_wallet_holdings (breakdown) with the Solana wallet.");
+    }
     try {
       // 2026-10-26: on a Panini page a typed name is a PANINI username. This Top Shot tool would resolve it
       // as a Top Shot account — a different person's wallet (the substitution face). A 0x Flow address
@@ -5598,7 +5614,7 @@ async function executeToolInner(
         return JSON.stringify({ status: "error", message: "Disney Pinnacle has characters, not players — use get_fmv with characterName, or get_edition_listings with characterName + setName." });
       }
       const uuid = ownLookup(COLLECTION_UUID_BY_SLUG, slug) ?? null;
-      if (!uuid) return JSON.stringify({ status: "error", message: `Unknown collection '${slug}'. Valid: nba-top-shot, nfl-all-day, laliga-golazos, ufc.` });
+      if (!uuid) return JSON.stringify({ status: "error", message: `Unknown collection '${slug}'. Valid: nba-top-shot, nfl-all-day, laliga-golazos, ufc, candy-mlb.` });
       // 2026-09-25 (batch 55): the name goes through the identity resolver
       // first, so an alias, the league's spelling, a dropped suffix or a
       // former name reaches the right row — and the answer carries the

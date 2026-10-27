@@ -26,6 +26,8 @@ import {
 import { fetchPackProvenance, fetchOwnerUsernames } from "@/lib/edition/fetchers"
 import { fetchCandyFloorListing } from "@/lib/candy/edition-floor-listing"
 import { fetchCandyPrintings } from "@/lib/candy/edition-printings"
+import { fetchCandyMarketHistory } from "@/lib/candy/edition-market-history"
+import CandyMarketHistory from "@/components/entity/CandyMarketHistory"
 import { editionDescriptionText } from "@/lib/edition/description"
 import { lookupTopShotFossilRedirect } from "@/lib/edition/fossil-redirect"
 import { lookupTopShotEditionAliasRedirect } from "@/lib/edition/alias-redirect"
@@ -1422,6 +1424,14 @@ export default async function EditionPage(
         <FmvHistoryChart collectionUrlSlug={collection} routeSlug={detail.route_slug ?? slug} initial={history.rows.map((r) => ({ ...r, confidence: null }))} initialFailed={!history.ok} salesTracked={!isPanini} />
       </Section>
 
+      {/* Candy (2026-10-26): no sale since Oct 11 (#58) keeps the FMV chart flat while asks and bids
+          move — this is the daily record of those moves (candy_edition_market_daily, forward only). */}
+      {collection === "candy-mlb" && (
+        <Suspense fallback={null}>
+          <CandyMarketHistorySection editionId={detail.id} />
+        </Suspense>
+      )}
+
       {/* ── Heavy bottom sections stream in (recent sales, parallels, packs,
              special serials + owner-username resolution) so they never hold up
              the hero + FMV strip above. ─────────────────────────────────── */}
@@ -1801,6 +1811,11 @@ async function EditionBottomSections({
       )}
     </>
   )
+}
+
+async function CandyMarketHistorySection({ editionId }: { editionId: string }) {
+  const { ok, rows } = await fetchCandyMarketHistory(editionId).catch(() => ({ ok: false, rows: [] }))
+  return <CandyMarketHistory ok={ok} rows={rows} />
 }
 
 // Candy MLB (Top Shot parity, 2026-10-26): Top Shot's "Parallel Printings" ladder, built from

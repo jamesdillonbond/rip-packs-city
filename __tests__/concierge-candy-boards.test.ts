@@ -10,6 +10,7 @@ import {
   readCandySetCompletionForConcierge,
   readCandyPackMarketForConcierge,
   readCandySpecialSerialsForConcierge,
+  readCandyDealsForConcierge,
 } from "@/lib/concierge/candy-boards"
 
 const SOL = "2srdg8i14ZCnmMVUZ4wVUJGkuiwSLnNTGaL1REFGtiZ3"
@@ -114,5 +115,31 @@ describe("readCandySpecialSerialsForConcierge", () => {
   })
   it("a failed read is an error, never 'none'", async () => {
     expect(JSON.parse(await readCandySpecialSerialsForConcierge(db(null, { message: "x" }).client, BASE, {})).status).toBe("error")
+  })
+})
+
+describe("readCandyDealsForConcierge", () => {
+  function db(rows: unknown[] | null, error: unknown = null) {
+    const q: Record<string, unknown> = {}
+    for (const m of ["select", "gte", "gt", "ilike", "lte", "eq", "order"]) q[m] = () => q
+    q.range = async () => ({ data: rows, error })
+    return { from: (t: string) => { expect(t).toBe("candy_market_board"); return q }, rpc: async () => ({ data: null, error: null }) }
+  }
+  const row = (ask: number, fmv: number, ext = "a") => ({ external_id: ext, player_name: "P", edition_name: "E", tier: "COMMON", circulation_count: 250, serial_number: 7, ask_usd: ask, fmv_usd: fmv, discount_pct: ((fmv - ask) / fmv) * 100, venue_url: null })
+
+  it("an ask under FMV is a deal", async () => {
+    const r = JSON.parse(await readCandyDealsForConcierge(db([row(8, 10), row(12, 10)]), BASE, {}))
+    expect(r).toMatchObject({ status: "ok", kind: "below_fmv" })
+    expect(r.deals).toHaveLength(1)
+    expect(r.deals[0].ask_vs_fmv_pct).toBe(-20)
+  })
+  it("no ask under FMV → closest_to_fmv, and NOTHING is called a deal", async () => {
+    const r = JSON.parse(await readCandyDealsForConcierge(db([row(15, 10, "b"), row(11, 10, "a")]), BASE, {}))
+    expect(r.kind).toBe("closest_to_fmv")
+    expect(r.deals).toEqual([])
+    expect(r.closest_to_fmv[0].ask_vs_fmv_pct).toBe(10)
+  })
+  it("a failed read is an error, never 'no deals'", async () => {
+    expect(JSON.parse(await readCandyDealsForConcierge(db(null, { message: "x" }), BASE, {})).status).toBe("error")
   })
 })

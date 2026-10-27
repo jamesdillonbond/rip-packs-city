@@ -264,3 +264,91 @@ export function candyNotApplicable(tool: string, why: string, instead?: string):
     message: `${why}${instead ? ` ${instead}` : ""} Do not answer with Top Shot data on a Candy question.`,
   })
 }
+
+// ── Deals (search_live_deals / search_catalog_deals on Candy) ───────────────
+// The Flow path called /api/sniper-feed (no Candy source → an empty board) and then
+// cached_listings (no Candy rows) and answered "no deals". Candy's deals are its own
+// board. Since 2026-09-25 a Candy FMV is capped at the cheapest confirmed ask, so a
+// listing BELOW FMV exists only briefly (between a new undercut and the next recalc):
+// `candy_deals_board` is usually empty BY CONSTRUCTION. So this answers with the
+// below-FMV rows when there are any, and otherwise with the cheapest confirmed asks
+// relative to FMV (`closest_to_fmv`) — labelled as such, never as deals.
+
+export const CANDY_ASK_CONFIRMED_HOURS = 12
+
+export async function readCandyDealsForConcierge(
+  db: Db,
+  base: string,
+  input: { player?: string | null; maxPrice?: number | null; tier?: string | null; limit?: number | null },
+): Promise<string> {
+  const failed = JSON.stringify({ status: "error", message: "The Candy listings read failed — say the check failed; never say there are no Candy deals or listings." })
+  try {
+    const n = Math.min(Math.max(Math.trunc(Number(input.limit ?? 5)) || 5, 1), 15)
+    const typedPlayer = input.player ? String(input.player).trim() : ""
+    // #207: the resolver's spelling when it names one Candy player.
+    const player = typedPlayer
+      ? (singleRetryLabel(await resolvePlayerName(db, CANDY_COLLECTION_UUID, typedPlayer).catch(() => null), typedPlayer) ?? typedPlayer)
+      : ""
+    const since = new Date(Date.now() - CANDY_ASK_CONFIRMED_HOURS * 3600_000).toISOString()
+    let q = db
+      .from("candy_market_board")
+      .select("external_id,player_name,edition_name,tier,circulation_count,serial_number,ask_usd,fmv_usd,discount_pct,last_seen_at,venue_url")
+      .gte("last_seen_at", since)
+      .gt("ask_usd", 0)
+    if (player) q = q.ilike("player_name", `%${player.replace(/[%_]/g, (c: string) => "\\" + c)}%`)
+    const maxPrice = Number(input.maxPrice)
+    if (Number.isFinite(maxPrice) && maxPrice > 0) q = q.lte("ask_usd", maxPrice)
+    const tier = input.tier ? String(input.tier).trim().toUpperCase() : ""
+    if (tier) q = q.eq("tier", tier)
+    const { data, error } = await q
+      .order("discount_pct", { ascending: false, nullsFirst: false })
+      .order("ask_usd", { ascending: true })
+      .order("token_mint", { ascending: true })
+      .range(0, 199)
+    if (error || !Array.isArray(data)) return failed
+    const rows = (data as Record<string, unknown>[]).map((r) => {
+      const ask = num(r.ask_usd)
+      const fmv = num(r.fmv_usd)
+      return {
+        player: r.player_name,
+        printing: r.edition_name,
+        serial: num(r.serial_number),
+        mint: num(r.circulation_count),
+        ask_usd: ask,
+        fmv_usd: fmv,
+        ask_vs_fmv_pct: ask != null && fmv != null && fmv > 0 ? Math.round(((ask - fmv) / fmv) * 1000) / 10 : null,
+        edition_url: typeof r.external_id === "string" ? `${base}/${CANDY_URL_SLUG}/edition/${encodeURIComponent(r.external_id)}` : null,
+        listing_url: typeof r.venue_url === "string" ? r.venue_url : null,
+      }
+    })
+    const below = rows.filter((r) => r.ask_vs_fmv_pct != null && r.ask_vs_fmv_pct < 0)
+    const scope = player ? ` for ${player}` : ""
+    if (below.length > 0) {
+      return JSON.stringify({
+        status: "ok",
+        collection: CANDY_URL_SLUG,
+        kind: "below_fmv",
+        deals: below.slice(0, n),
+        note: `Candy listings confirmed on Magic Eden in the last ${CANDY_ASK_CONFIRMED_HOURS} h asking under FMV${scope}. RPC is read-only — link the listing; never offer to buy.`,
+      })
+    }
+    if (rows.length === 0) {
+      return JSON.stringify({
+        status: "no_results",
+        collection: CANDY_URL_SLUG,
+        message: `No Candy listing${scope} confirmed on Magic Eden in the last ${CANDY_ASK_CONFIRMED_HOURS} h matches those filters. Say exactly that — it is about live listings, not about who owns the cards.`,
+      })
+    }
+    const closest = [...rows].sort((a, b) => (a.ask_vs_fmv_pct ?? 1e9) - (b.ask_vs_fmv_pct ?? 1e9)).slice(0, n)
+    return JSON.stringify({
+      status: "ok",
+      collection: CANDY_URL_SLUG,
+      kind: "closest_to_fmv",
+      deals: [],
+      closest_to_fmv: closest,
+      note: `No Candy listing${scope} is asking under FMV right now. That is the normal state: a Candy FMV is capped at the cheapest confirmed ask, so an under-FMV listing exists only until the next price update. closest_to_fmv are the confirmed asks nearest their FMV — do NOT call them deals or discounts. RPC is read-only.`,
+    })
+  } catch {
+    return failed
+  }
+}
