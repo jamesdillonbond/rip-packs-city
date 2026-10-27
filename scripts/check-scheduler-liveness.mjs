@@ -127,12 +127,19 @@ export function firingsPerDay(cron) {
 
 /**
  * How long a workflow may be silent before it is dead: `maxSilentHours` for a
- * schedule that fires at least daily, and one full PERIOD plus `maxSilentHours`
- * for a slower one (a weekly schedule is silent for 168 h by design).
+ * schedule that fires MORE than once a day, and one full PERIOD plus
+ * `maxSilentHours` for a daily or slower one (a weekly schedule is silent for
+ * 168 h by design).
+ *
+ * ⚠ Exactly-daily is on the PERIOD side (2026-10-26). With the bare 24 h bound a
+ * daily job's normal gap IS the bound, so any delivery delay alarmed:
+ * player-identities-sync.yml (10:17Z) was delivered 14:01–16:48Z for six days
+ * running, and the 10-26 15:13Z check read 24.8 h silent → red, with the day's
+ * run arriving 95 min later. The 24 h allowance was derived from HOURLY gaps.
  */
 export function silenceThresholdHours(perDay, maxSilentHours = MAX_SILENT_HOURS) {
   if (!(perDay > 0)) return maxSilentHours
-  return perDay >= 1 ? maxSilentHours : 24 / perDay + maxSilentHours
+  return perDay > 1 ? maxSilentHours : 24 / perDay + maxSilentHours
 }
 
 /**
@@ -327,7 +334,7 @@ export function renderReport(result, { maxSilentHours = MAX_SILENT_HOURS, window
   if (!result.dead.length && !result.configErrors.length) {
     lines.push(
       "",
-      `no workflow is silent beyond ${maxSilentHours}h. ` +
+      `no workflow is silent beyond its bound (${maxSilentHours}h sub-daily; one period + ${maxSilentHours}h daily or slower). ` +
         `⚠ That is NOT "the schedules are healthy" — the percentages above are the real cadence, ` +
         `and this check deliberately does not fail on them (see the header).`,
     )
@@ -373,7 +380,7 @@ async function main() {
     for (const d of result.dead) {
       console.error(
         `::error::${d.file} has not fired on schedule for ${d.silentHours ?? "ever"}h ` +
-          `(bound ${MAX_SILENT_HOURS}h). Its schedule is not running.`,
+          `(bound ${Number(silenceThresholdHours(d.expectedPerDay).toFixed(1))}h). Its schedule is not running.`,
       )
     }
   }

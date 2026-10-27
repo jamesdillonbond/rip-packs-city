@@ -42,7 +42,10 @@ describe("cron expansion", () => {
 
   it("gives a slower-than-daily schedule one full period plus the usual allowance", () => {
     expect(silenceThresholdHours(48)).toBe(MAX_SILENT_HOURS)
-    expect(silenceThresholdHours(1)).toBe(MAX_SILENT_HOURS)
+    expect(silenceThresholdHours(2)).toBe(MAX_SILENT_HOURS)
+    // Exactly-daily is a PERIOD case (2026-10-26): at a bare 24 h bound a daily job's normal
+    // gap is the bound, and a 95-minute-late delivery read as a dead scheduler.
+    expect(silenceThresholdHours(1)).toBe(24 + MAX_SILENT_HOURS)
     expect(silenceThresholdHours(1 / 7)).toBeCloseTo(168 + MAX_SILENT_HOURS)
   })
 
@@ -212,7 +215,7 @@ describe("the liveness decision", () => {
     expect(livenessExitCode(r)).toBe(2)
   })
 
-  it("a WEEKLY schedule is alive after 170 h of silence and dead after 200 h; a daily one is dead after 25 h", () => {
+  it("a WEEKLY schedule is alive after 170 h of silence and dead after 200 h; a DAILY one is alive at 25 h and 47 h and dead after 49 h", () => {
     const weekly = { path: "p", file: "w.yml", crons: ["23 14 * * 1"] }
     const daily = { path: "p", file: "d.yml", crons: ["40 6 * * *"] }
     const at = (h: number) =>
@@ -226,7 +229,11 @@ describe("the liveness decision", () => {
       })
     expect(at(170).dead.map((r) => r.file)).toEqual(["d.yml"])
     expect(at(200).dead.map((r) => r.file).sort()).toEqual(["d.yml", "w.yml"])
-    expect(at(25).dead.map((r) => r.file)).toEqual(["d.yml"])
+    // 2026-10-26: a daily job late by hours is NOT dead (its normal gap is the period);
+    // a daily job that missed a whole day AND its next slot still is.
+    expect(at(49).dead.map((r) => r.file)).toEqual(["d.yml"])
+    expect(at(47).dead).toEqual([])
+    expect(at(25).dead).toEqual([])
     expect(at(20).dead).toEqual([])
   })
 
