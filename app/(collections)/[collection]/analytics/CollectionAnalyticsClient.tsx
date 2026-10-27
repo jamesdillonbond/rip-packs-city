@@ -1292,10 +1292,9 @@ function AnalyticsInner() {
               that reason is not merely stale — it is INVERTED: Top Shot has the
               WORST coverage of any collection (95.2%), against nfl_all_day 99.8%,
               laliga_golazos 100% and candy_mlb 100% (1,549 sales / 95 buyers).
-              ⚠ Pinnacle stays out, and for a reason the route states and enforces:
-              its sales are in `pinnacle_sales`, which `get_top_accumulators` does
-              not read, so it would render 240 real buyers as "no accumulation". */}
-          {short !== "pinnacle" && dbSlug && (
+              Pinnacle joined 2026-10-26 through its own arm, get_pinnacle_top_accumulators
+              (pinnacle_sales); the route picks the arm by collection. */}
+          {dbSlug && (
             <div className="mb-6">
               <TopBuyers collection={dbSlug} />
             </div>

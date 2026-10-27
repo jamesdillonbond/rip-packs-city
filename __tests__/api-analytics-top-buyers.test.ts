@@ -15,14 +15,15 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // usernames (@/lib/flowty-username, mocked). Pins the happy enriched path with
 // a swept-edition join and the rpc-error 500.
 
-const rpc: { data: any; error: any; throws?: boolean } = { data: null, error: null }
+const rpc: { data: any; error: any; throws?: boolean; calls: string[] } = { data: null, error: null, calls: [] }
 const editions: { data: any } = { data: [] }
 
 vi.mock("@/lib/supabase", () => {
   const eb: any = { select: () => eb, in: async () => ({ data: editions.data }) }
   return {
     supabaseAdmin: {
-      rpc: async () => {
+      rpc: async (fn: string) => {
+        rpc.calls.push(fn)
         if (rpc.throws) throw new Error("connection reset")
         return { data: rpc.data, error: rpc.error }
       },
@@ -86,13 +87,24 @@ describe("GET /api/analytics/top-buyers — an unsupported collection is refused
     expect(body.collection).toBeUndefined()
   })
 
-  it("400s for disney_pinnacle, whose sales this RPC cannot see", async () => {
-    // Pinnacle's sales live in `pinnacle_sales`, which get_top_accumulators does
-    // not read. Returning [] would render as "no buyer-resolved accumulation"
-    // about a collection with 240 distinct buyers in 30d.
+  // RE-PINNED 2026-10-26 (premise changed): this used to 400 disney_pinnacle because
+  // get_top_accumulators cannot see pinnacle_sales. It now has its OWN arm,
+  // get_pinnacle_top_accumulators — the property kept is that Pinnacle is NEVER asked of the
+  // shared RPC (which would answer [] = "no accumulation" about a collection with real buyers).
+  it("serves disney_pinnacle from its own arm, never from get_top_accumulators", async () => {
+    rpc.data = []
+    rpc.calls = []
     const res = await GET(req("https://t/api/analytics/top-buyers?collection=disney_pinnacle"))
-    expect(res.status).toBe(400)
-    expect((await res.json()).error).toBe("unsupported_collection")
+    expect(res.status).toBe(200)
+    expect((await res.json()).collection).toBe("disney_pinnacle")
+    expect(rpc.calls).toEqual(["get_pinnacle_top_accumulators"])
+  })
+
+  it("names a Pinnacle buyer's swept pin from the catalog by render_id", async () => {
+    rpc.data = [{ rank: 1, buyer_address: "0xbuyer", buy_count: 16, spend_usd: 40, avg_price_usd: 2.5, distinct_editions: 1, top_edition_id: "OEV2-ALIN-CRIM-S4", top_edition_buys: 16 }]
+    editions.data = [{ render_id: "OEV2-ALIN-CRIM-S4", character_name: "Crimson ", set_name: "Alien Vol.1" }]
+    const body = await (await GET(req("https://t/api/analytics/top-buyers?collection=disney_pinnacle"))).json()
+    expect(body.rows[0]).toMatchObject({ username: "bob", top_edition_player: "Crimson", top_edition_set: "Alien Vol.1" })
   })
 
   it("candy_mlb, laliga_golazos and ufc_strike are all served", async () => {

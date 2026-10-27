@@ -59,7 +59,11 @@ const ALLOWED_COLLECTIONS = new Set([
   "laliga_golazos",
   "ufc_strike",
   "candy_mlb",
+  // 2026-10-26: served by its OWN arm, get_pinnacle_top_accumulators (pinnacle_sales; the pin's
+  // render_id is the "edition"), which is what the note above asked for.
+  "disney_pinnacle",
 ])
+const PINNACLE = "disney_pinnacle"
 
 function parseDays(raw: string | null): number {
   return parseInt(raw || "7", 10) === 30 ? 30 : 7
@@ -93,11 +97,14 @@ export async function GET(req: NextRequest) {
     const days = parseDays(url.searchParams.get("days"))
     const limit = parseLimit(url.searchParams.get("limit"))
 
-    const { data, error } = await rpcWithRetry<AccumulatorRow[]>(
-      supabaseAdmin,
-      "get_top_accumulators",
-      { p_collection_slug: collection, p_days: days, p_limit: limit }
-    )
+    const isPinnacle = collection === PINNACLE
+    const { data, error } = isPinnacle
+      ? await rpcWithRetry<AccumulatorRow[]>(supabaseAdmin, "get_pinnacle_top_accumulators", { p_days: days, p_limit: limit })
+      : await rpcWithRetry<AccumulatorRow[]>(
+          supabaseAdmin,
+          "get_top_accumulators",
+          { p_collection_slug: collection, p_days: days, p_limit: limit }
+        )
 
     if (error) {
       console.log("[analytics/top-buyers] rpc_error", error.message)
@@ -112,7 +119,17 @@ export async function GET(req: NextRequest) {
       new Set(rows.map((r) => r.top_edition_id).filter(Boolean))
     ) as string[]
     const edMap = new Map<string, { player: string | null; set: string | null }>()
-    if (edIds.length > 0) {
+    // Pinnacle's "edition" is the pin (render_id) → its catalog character + set. Decoration only:
+    // a failed name read leaves the "Sweeping" cell blank, never a different pin's name.
+    if (isPinnacle && edIds.length > 0) {
+      const { data: pins } = await supabaseAdmin
+        .from("pinnacle_catalog")
+        .select("render_id, character_name, set_name")
+        .in("render_id", edIds)
+      for (const p of (pins ?? []) as Array<{ render_id: string; character_name: string | null; set_name: string | null }>) {
+        edMap.set(p.render_id, { player: p.character_name?.trim() || null, set: p.set_name?.trim() || null })
+      }
+    } else if (edIds.length > 0) {
       const { data: eds } = await supabaseAdmin
         .from("editions")
         .select("id, player_name, set_name")

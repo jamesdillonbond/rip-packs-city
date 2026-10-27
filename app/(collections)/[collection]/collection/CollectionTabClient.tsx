@@ -48,6 +48,7 @@ import { computeFilteredSortedRows } from "@/lib/collection/filter-sort"
 import { resolveSeriesParam } from "@/lib/collection/series-param"
 import { ASK_STALE_HOURS, fmtAskAge } from "@/lib/market/ask-freshness"
 import { shareWalletCard } from "@/lib/share-link"
+import { loadPinnacleCalloutSets } from "@/lib/collection/pinnacle-sets-callout"
 import {
   buildPlayerOptions,
   buildSetOptions,
@@ -928,6 +929,11 @@ function WalletMomentsBody() {
           .then(function(r) { return r.ok ? r.json() : null })
           .then(function(d) { if (d) setSetsData(d) })
           .catch(function() {})
+      } else if (collectionSlug === "disney-pinnacle") {
+        // 2026-10-26 (Top Shot parity): Pinnacle's own Set Tracker backend (one slot per character).
+        // A missing slot with no live ask is UNPRICED, so the callout's cost is a lower bound there.
+        setSetsData(null)
+        void loadPinnacleCalloutSets(trimmed).then(setSetsData)
       } else {
         setSetsData(null)
       }

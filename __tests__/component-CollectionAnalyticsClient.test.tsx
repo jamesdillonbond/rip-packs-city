@@ -1115,6 +1115,9 @@ describe("CollectionAnalyticsClient — Top Accumulators gate", () => {
     ["nba-top-shot", "nba_top_shot"],
     ["candy-mlb", "candy_mlb"],
     ["nfl-all-day", "nfl_all_day"],
+    // RE-PINNED 2026-10-26: Pinnacle was the one exclusion (its sales are in pinnacle_sales); the
+    // route now serves it from get_pinnacle_top_accumulators, so the panel renders, scoped to it.
+    ["disney-pinnacle", "disney_pinnacle"],
   ]
 
   for (const [slug, dbSlug] of shows) {
@@ -1138,22 +1141,6 @@ describe("CollectionAnalyticsClient — Top Accumulators gate", () => {
     })
   }
 
-  it("does NOT render it for disney-pinnacle, whose sales the RPC cannot see", async () => {
-    PARAMS.collection = "disney-pinnacle"
-    try {
-      render(<CollectionAnalyticsClient />)
-      // Wait for the page to settle on something else before asserting absence,
-      // so this is not just a race against the first paint.
-      await waitFor(() => {
-        expect(fetchMock.mock.calls.length).toBeGreaterThan(0)
-      })
-      expect(screen.queryByText("Top Accumulators")).toBeNull()
-      const urls = fetchMock.mock.calls.map((c) => String(c[0]))
-      expect(urls.some((u) => u.includes("/api/analytics/top-buyers"))).toBe(false)
-    } finally {
-      PARAMS.collection = "nba-top-shot"
-    }
-  })
 })
 
 // ─── The Market-tab PANELS (2026-09-25) ──────────────────────────────────────

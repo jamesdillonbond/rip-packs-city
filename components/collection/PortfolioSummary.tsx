@@ -239,6 +239,8 @@ export default function PortfolioSummary(props: PortfolioSummaryProps) {
                 return (
                   <span key={s.setId ?? s.setName}>
                     {i > 0 && " · "}
+                    {/* The collection's own Sets tab (was hardcoded to Top Shot; All Day and Pinnacle feed
+                        this callout since 2026-10-26). */}
                     <a href={"/" + collectionSlug + "/sets"} style={{ color: accentText("#a1a1aa"), textDecoration: "none" }}>
                       {/* All Day's tracker sums FMV, not asks — no dollar figure rather than a cost it is not (2026-10-26). */}
                       {s.setName} — {s.missingCount} away{collectionSlug === "nfl-all-day" ? "" : nearCompleteCostLabel(s)}

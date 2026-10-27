@@ -201,6 +201,35 @@ export type PackPullRow = {
   last_opened_at: string | null
 }
 
+/**
+ * Current owners of this pin (get_pinnacle_pin_top_owners over mv_pinnacle_render_owners, every
+ * 3 h). Only mints since the spork floor (Dec 2025) can be attributed, so `seenCopies` over
+ * `totalMinted` is the coverage the page gates on; system accounts (custodian stock, NFTLocker) are
+ * counted in `seenCopies`/`systemCopies` but never listed.
+ */
+export type TopOwnersData = {
+  totalMinted: number | null
+  seenCopies: number
+  systemCopies: number
+  holders: number
+  owners: { wallet: string; username: string | null; copies: number }[]
+}
+
+/** The share of minted copies whose owner must be known before Top Owners is published as a list. */
+export const PIN_OWNERS_MIN_COVERAGE = 0.95
+
+/**
+ * PURE. Which Top Owners state a pin page renders. ⚠ "thin" is not "none": a pin minted before the
+ * Dec 2025 spork floor has no mint events to attribute, and listing the few owners RPC can see as
+ * if they were the top holders would be a partial list published as the whole.
+ */
+export function topOwnersState(d: TopOwnersData | null): "failed" | "thin" | "system_only" | "list" {
+  if (d == null) return "failed"
+  const coverage = d.totalMinted && d.totalMinted > 0 ? d.seenCopies / d.totalMinted : 0
+  if (coverage < PIN_OWNERS_MIN_COVERAGE) return "thin"
+  return d.owners.length === 0 ? "system_only" : "list"
+}
+
 export type RenderData = {
   kind: "render"
   ed: CatalogRow
@@ -232,6 +261,8 @@ export type RenderData = {
   listings: ListingsData | null
   /** null = read failed; [] = RPC has seen no named pull of this pin from any pack. */
   packPulls: PackPullRow[] | null
+  /** null = read failed (or the RPC returned nothing for a pin it should know). */
+  topOwners: TopOwnersData | null
 }
 
 export type LegacyRender = {
@@ -418,9 +449,9 @@ export async function load(
   // would each be measured from the moment this line runs, which is already
   // several reads deep — the chain above must count against them.
   let salesRes: Row, holdersRes: Row, boardRes: Row, siblingsRes: Row
-  let fmvHistRes: Row, serialMultRes: Row, listingsRes: Row, packPullsRes: Row
+  let fmvHistRes: Row, serialMultRes: Row, listingsRes: Row, packPullsRes: Row, ownersRes: Row
   try {
-    ;[salesRes, holdersRes, boardRes, siblingsRes, fmvHistRes, serialMultRes, listingsRes, packPullsRes] = await bounded<Row[]>(
+    ;[salesRes, holdersRes, boardRes, siblingsRes, fmvHistRes, serialMultRes, listingsRes, packPullsRes, ownersRes] = await bounded<Row[]>(
       Promise.all([
     supa
       .from("pinnacle_sales")
@@ -470,6 +501,8 @@ export async function load(
       .order("pulls", { ascending: false })
       .order("dist_id", { ascending: true })
       .limit(12),
+    // 2026-10-26 (pass 2): current owners of this pin (Top Shot's "Top Owners").
+    supa.rpc("get_pinnacle_pin_top_owners", { p_render_id: renderId, p_limit: 10 }),
       ]),
       "detail-bundle",
       deadline,
@@ -565,6 +598,24 @@ export async function load(
     }))
   }
 
+  const ownersRaw = ownersRes?.error ? null : (ownersRes?.data as Row | null)
+  const topOwners: TopOwnersData | null =
+    ownersRaw && typeof ownersRaw === "object"
+      ? {
+          totalMinted: ownersRaw.total_minted != null ? Number(ownersRaw.total_minted) : null,
+          seenCopies: Number(ownersRaw.seen_copies ?? 0),
+          systemCopies: Number(ownersRaw.system_copies ?? 0),
+          holders: Number(ownersRaw.holders ?? 0),
+          owners: Array.isArray(ownersRaw.owners)
+            ? (ownersRaw.owners as Row[]).map((o) => ({
+                wallet: String(o.wallet),
+                username: o.username ?? null,
+                copies: Number(o.copies),
+              }))
+            : [],
+        }
+      : null
+
   // P4: the serial-premium value ladder for numbered renders. The band math,
   // the multiplier map and the mint>=25 display guard all live in
   // lib/pinnacle/serial-fmv.ts — the ONE implementation, shared with the wallet
@@ -598,6 +649,7 @@ export async function load(
       serialLadder,
       listings,
       packPulls,
+      topOwners,
     },
     ok: true,
   }

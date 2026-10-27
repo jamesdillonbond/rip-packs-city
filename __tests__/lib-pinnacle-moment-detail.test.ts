@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
-import { load, isLegacyKey, decodeId } from "@/lib/pinnacle/moment-detail"
+import { load, isLegacyKey, decodeId, topOwnersState } from "@/lib/pinnacle/moment-detail"
 
 // The read behind /pinnacle/moment/[id] — the shareable Pinnacle pin URL.
 //
@@ -454,4 +454,46 @@ describe("load — Listed now + Found in these packs (2026-10-26, Top Shot parit
       { dist_id: "8891", title: null, pulls: 3, first_opened_at: "2026-10-09T16:40:00Z", last_opened_at: "2026-10-10T16:40:00Z" },
     ])
   })
+})
+
+describe("load — Top Owners (2026-10-26, Top Shot parity pass 2)", () => {
+  afterEach(() => vi.restoreAllMocks())
+  const tail = () => ({
+    pinnacle_catalog: { data: CATALOG_ROW },
+    ...quietTail(),
+    pinnacle_live_listings: { data: [], count: 0 },
+    mv_pinnacle_render_pack_pulls: { data: [] },
+  })
+
+  it("a FAILED owners read is null — the page says it could not load, never 'no owners'", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {})
+    const { db } = makeDb(tail(), { error: { message: "canceling statement due to statement timeout" } })
+    const r = await load(RENDER, db)
+    expect(r.ok).toBe(true)
+    expect(r.data?.kind === "render" && r.data.topOwners).toBeNull()
+  })
+
+  it("parses coverage and owners from the RPC's jsonb", async () => {
+    const { db } = makeDb(tail(), {
+      data: { total_minted: 329, seen_copies: 329, system_copies: 95, holders: 85, owners: [{ wallet: "0x6de091727cfecade", username: null, copies: 62 }] },
+    })
+    const r = await load(RENDER, db)
+    expect(r.data?.kind === "render" && r.data.topOwners).toEqual({
+      totalMinted: 329, seenCopies: 329, systemCopies: 95, holders: 85,
+      owners: [{ wallet: "0x6de091727cfecade", username: null, copies: 62 }],
+    })
+  })
+})
+
+describe("topOwnersState", () => {
+  const base = { totalMinted: 100, seenCopies: 100, systemCopies: 0, holders: 1, owners: [{ wallet: "0x1", username: null, copies: 3 }] }
+  it("failed read → failed", () => expect(topOwnersState(null)).toBe("failed"))
+  it("under 95 % of minted copies attributed → thin, never a list", () => {
+    expect(topOwnersState({ ...base, seenCopies: 94 })).toBe("thin")
+    expect(topOwnersState({ ...base, totalMinted: null })).toBe("thin")
+  })
+  it("full coverage, all copies with system accounts → system_only", () => {
+    expect(topOwnersState({ ...base, owners: [], holders: 0, systemCopies: 100 })).toBe("system_only")
+  })
+  it("full coverage with collectors → list", () => expect(topOwnersState({ ...base, seenCopies: 95 })).toBe("list"))
 })

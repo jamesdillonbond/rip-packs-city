@@ -343,6 +343,67 @@ async function TopCollectorsSection({ playerName, candyPlayerId = null }: { play
   )
 }
 
+// Disney Pinnacle character (2026-10-26, Top Shot parity pass 2): current owners of this
+// character's pins from mv_pinnacle_render_owners (mints since the Dec 2025 spork floor; owner =
+// latest sale buyer when newer than the owner map). Only part of an older character's pins can be
+// attributed, so the section always states how many copies it can see — never a "complete" list.
+interface PinnacleCharacterCollectors {
+  renders: number
+  total_minted: number | null
+  seen_copies: number
+  holders: number
+  collectors: { wallet: string; username: string | null; copies: number; pins: number; fmv_held_usd: number | null }[]
+}
+
+async function PinnacleTopCollectorsSection({ characterName }: { characterName: string }) {
+  const { row, ok } = await sectionRowResult<PinnacleCharacterCollectors>(
+    "pinnacle character top collectors",
+    "get_pinnacle_character_top_collectors",
+    { p_character: characterName, p_limit: 10 },
+  )
+  if (!ok) {
+    return (
+      <Section title="Top Collectors">
+        <div className="rpc-mono" style={{ padding: 12, color: "var(--rpc-text-muted)", fontSize: 12 }}>
+          {sectionEmptyCopy(false, "Top collectors", "")}
+        </div>
+      </Section>
+    )
+  }
+  // A genuine "nobody RPC can see" renders nothing, like the Top Shot rookie section.
+  if (!row || row.collectors.length === 0) return null
+  const minted = row.total_minted ?? 0
+  const share = minted > 0 ? row.seen_copies / minted : 0
+  return (
+    <Section title="Top Collectors">
+      <div className="rpc-mono" style={{ padding: "0 4px 8px", fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.06em" }}>
+        From RPC&apos;s on-chain owner map · ranked by FMV of this character&apos;s pins held · Disney Pinnacle&apos;s own accounts (unsold stock, locked pins) left out
+      </div>
+      <div className="rpc-mono" style={{ padding: "0 4px 8px", fontSize: 11, color: "var(--rpc-text-secondary)" }}>
+        {share >= 0.95
+          ? <>Covers {fmtCount(row.seen_copies)} of {fmtCount(minted)} copies · {fmtCount(row.holders)} collectors</>
+          : <>Covers {fmtCount(row.seen_copies)} of {fmtCount(minted)} copies ({Math.round(share * 100)}%) — pins minted before December 2025 are not attributed yet, so holders of older pins may rank higher than shown.</>}
+      </div>
+      <div className="rpc-scroll-x" {...scrollRegion("Top collectors")} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {row.collectors.map((c, i) => {
+          const shown = displayAddress(c.wallet) ?? c.wallet
+          const label = c.username ? `@${c.username}` : truncateAddressForDisplay(c.wallet)
+          return (
+            <Link key={c.wallet} href={`/disney-pinnacle/collection?wallet=${encodeURIComponent(shown)}`} rel="nofollow" className="rpc-card" style={{ textDecoration: "none", color: "inherit" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "minmax(38px, auto) 1fr minmax(90px, auto) minmax(110px, auto)", gap: 12, padding: "10px 12px", alignItems: "center", minWidth: 420 }}>
+                <span style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 15, color: i < 3 ? "var(--rpc-red-text)" : "var(--rpc-text-muted)" }}>#{i + 1}</span>
+                <span style={{ fontFamily: c.username ? "var(--font-display)" : "var(--font-mono)", fontWeight: c.username ? 700 : 400, fontSize: c.username ? 14 : 12, color: "var(--rpc-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
+                <span className="rpc-mono" style={{ fontSize: 12, color: "var(--rpc-text-secondary)", textAlign: "right" }}>{fmtCount(c.copies)} <span style={{ color: "var(--rpc-text-muted)" }}>held</span></span>
+                <span style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 16, color: "var(--rpc-text-primary)", textAlign: "right" }}>{fmtUsd(c.fmv_held_usd)}</span>
+              </div>
+            </Link>
+          )
+        })}
+      </div>
+    </Section>
+  )
+}
+
 // Season stats from the ESPN feed, keyed through player_identities (batch 48,
 // 2026-09-25). Streamed independently. THREE states, none collapsed: a failed
 // read renders SectionUnavailable; a NULL (the feed cannot key this player —
@@ -606,6 +667,13 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
       {collection === "candy-mlb" && (
         <Suspense fallback={null}>
           <TopCollectorsSection playerName={detail.name} candyPlayerId={detail.id} />
+        </Suspense>
+      )}
+
+      {/* Disney Pinnacle character (2026-10-26): its own owner map, keyed on the characters trait. */}
+      {collection === "disney-pinnacle" && isCharacter && (
+        <Suspense fallback={null}>
+          <PinnacleTopCollectorsSection characterName={detail.name} />
         </Suspense>
       )}
 

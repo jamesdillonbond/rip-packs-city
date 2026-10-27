@@ -37,7 +37,7 @@ import SupportChatConnected from "@/components/SupportChatConnected"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
-import { load, decodeId, PINNACLE_COLLECTION_ID, type LegacyData } from "@/lib/pinnacle/moment-detail"
+import { load, decodeId, PINNACLE_COLLECTION_ID, topOwnersState, type LegacyData, type TopOwnersData } from "@/lib/pinnacle/moment-detail"
 import { OG_INHERITED, TWITTER_INHERITED, breadcrumbJsonLd } from "@/lib/seo"
 import { productOrCreativeWork } from "@/lib/jsonld-product"
 import { usdSignFirst } from "@/lib/usd-format"
@@ -180,7 +180,7 @@ export default async function PinnacleMomentPage({
 
   if (data.kind === "legacy") return <PinnacleShell><LegacyDisambiguation data={data} /></PinnacleShell>
 
-  const { ed, sales, holders, copies, variant_avg_mint, scarcity_pct, siblings, fmvHistory, nameByAddr, serialLadder, listings, packPulls } = data
+  const { ed, sales, holders, copies, variant_avg_mint, scarcity_pct, siblings, fmvHistory, nameByAddr, serialLadder, listings, packPulls, topOwners } = data
   // The cheapest listing in the latest sweep, linked to Disney Pinnacle's own page for that pin.
   const cheapest = listings && listings.rows.length > 0 ? listings.rows[0] : null
   const cheapestUrl = cheapest ? marketplaceMomentUrl("disney-pinnacle", cheapest.nft_id) : null
@@ -531,6 +531,8 @@ export default async function PinnacleMomentPage({
         )}
       </section>
 
+      <TopOwnersSection data={topOwners} />
+
       {/* Market cap (market_cap_current; streamed, renders nothing without a row). */}
       <Suspense fallback={null}>
         <MarketCapTile group="edition" collectionDbSlug="disney_pinnacle" match={ed.render_id} />
@@ -651,6 +653,65 @@ export default async function PinnacleMomentPage({
       </section>
     </main>
     </PinnacleShell>
+  )
+}
+
+/**
+ * Top Owners (2026-10-26, Top Shot parity pass 2). Published as a list only when RPC can attribute
+ * >= 95 % of the pin's minted copies (mints since the Dec 2025 spork floor — older pins read
+ * "can't see"). Three states: failed read, not enough coverage, a list.
+ */
+function TopOwnersSection({ data }: { data: TopOwnersData | null }) {
+  const state = topOwnersState(data)
+  if (state === "failed" || data == null) {
+    return (
+      <section className="rpc-pm-detail" data-testid="pin-top-owners">
+        <h2 className="rpc-pm-h2">Top owners</h2>
+        <div className="rpc-pm-ladder-note">Owners could not be loaded right now.</div>
+      </section>
+    )
+  }
+  if (state !== "list") {
+    return (
+      <section className="rpc-pm-detail" data-testid="pin-top-owners">
+        <h2 className="rpc-pm-h2">Top owners</h2>
+        <div className="rpc-pm-ladder-note">
+          {state === "system_only"
+            ? "Every copy RPC can see is held by Disney Pinnacle's own accounts (unsold stock or locked pins)."
+            : `RPC can name the current owner of ${fmtInt(data.seenCopies)} of ${fmtInt(data.totalMinted)} copies of this pin — too few to rank owners. Pins minted before December 2025 are not covered yet.`}
+        </div>
+      </section>
+    )
+  }
+  return (
+    <section className="rpc-pm-detail" data-testid="pin-top-owners">
+      <h2 className="rpc-pm-h2">Top owners</h2>
+      <div className="rpc-pm-ladder-note">
+        {fmtInt(data.holders)} collectors hold this pin.
+        {data.systemCopies > 0 ? ` ${fmtInt(data.systemCopies)} copies sit with Disney Pinnacle's own accounts (unsold stock or locked pins) and are not ranked.` : ""}
+        {" "}From RPC&rsquo;s on-chain owner map, refreshed every 3 hours.
+      </div>
+      <div className="rpc-pm-sales">
+        <table className="rpc-pm-sales-table">
+          <thead>
+            <tr>
+              <th scope="col" className="rpc-pm-num">#</th>
+              <th scope="col">Collector</th>
+              <th scope="col" className="rpc-pm-num">Copies</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.owners.map((o, i) => (
+              <tr key={o.wallet}>
+                <td className="rpc-pm-num">{i + 1}</td>
+                <td><WalletLink address={o.wallet} name={o.username} collectionUrlSlug="disney-pinnacle" /></td>
+                <td className="rpc-pm-num">{fmtInt(o.copies)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
   )
 }
 
