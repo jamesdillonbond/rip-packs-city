@@ -5782,7 +5782,7 @@ async function executeToolInner(
         : {}),
       notes: [
         "Relations come from RPC's curated player_relations table (public record only). A namesake whose relation reads 'kinship NOT recorded' may or may not be related — say you don't know.",
-        "identity.stats_available means RPC's ESPN season-stats feed has lines for this player (Top Shot / All Day player pages show them); league_name is included only when it differs from the catalog spelling.",
+        "identity.stats_available means RPC's ESPN season-stats feed has lines for this player (Top Shot / All Day / Candy MLB player pages show them); league_name is included only when it differs from the catalog spelling.",
       ],
     });
   }
