@@ -1,4 +1,4 @@
-# Disney Pinnacle — collection roadmap (refreshed 2026-10-17, PT)
+# Disney Pinnacle — collection roadmap (refreshed 2026-10-17, PT; parity matrix 2026-10-26)
 > Dated snapshot; every number is a dated sample — re-derive before quoting. Canonical plan: [roadmap-2026-10-17.md](../roadmap-2026-10-17.md). Defects: [known-issues.md](../../reference/known-issues.md) (item text wins over this file).
 
 ## Where it stands
@@ -8,6 +8,32 @@
 - **What caps the share is sales volume, not code** (catalog read 6:00 PM PT): HIGH 261 · MEDIUM 675 · LOW 731 · **ASK_ONLY 1,063** · NO_DATA 100 · STALE 6. All 1,063 ASK_ONLY renders have **0 sales in 30 days**, and 726 of the 731 LOW renders have 1–4. Like All Day's M2, almost the whole non-HIGH/MED population sits behind a volume floor.
 - **Pipelines are healthy.** In the 24 h to 6:00 PM PT, every one of ~30 Pinnacle lanes ran `ok`. `pinnacle-fmv-recalc` ran 9× (last 3:37 PM PT). Sales: 179/24 h, 1,443/7 d. Live listings: 23,634. Pack opens: **91,471**, equal to Dapper's index (ledger 10-10). The last open was **10-09 9:40 AM PT**, so the zero-yield flags on `pinnacle-pack-openers` and `-metadata-backfill` are benign, a quiet drop calendar (overnight handoff 10-17).
 - **Holdings names.** 12 Pinnacle wallet-cache rows are nameless or "Unknown", down from 769 before #151. A daily self-heal now runs (jobid 727, D8, ledger 10-14).
+
+## Parity with Top Shot (matrix, 2026-10-26 evening PT)
+
+Read from the registry (`lib/collections.ts`), the shared `[collection]` routes, the Pinnacle pin page (`app/pinnacle/moment/[id]`, which is where `/disney-pinnacle/edition/<slug>` 308s), the concierge's 39 tools and the data behind each gap, 2026-10-26. "new" = shipped that evening (ledger 10-26, "Disney Pinnacle ↔ Top Shot parity").
+
+| Surface | Top Shot | Pinnacle | Note |
+|---|---|---|---|
+| Overview · Market · Collection · Packs · Sniper · Sets · Analytics tabs | ✓ | ✓ | registry `pages` |
+| Overview news | ✓ | ✓ (new) | three dated RPC changes; emptied 09-29 because the old item was coverage stats |
+| Pack Sniper | ✓ | ✗ | RPC holds no Pinnacle pack listings or pack buys (`WALLET_PACK_HISTORY_COLLECTIONS` note: 0 purchases) |
+| Hot Floors (sweeps) | ✓ | ✗ (candidate) | measured 10-26 ~7:40 PM PT with All Day's new rule (one buyer, 3+ copies of one pin, no gap > 60 min, 7 d, `pinnacle_sales`): 84 sweeps on 61 pins by 14 buyers, $735 total — mostly $1–2 Pixar pins. Buildable as `get_pinnacle_hot_floors` once the All Day hot-floors surface (another session, 10-26) settles the shared page; check the 14 buyers against `flowty_excluded_addresses` first. Concierge says not_applicable until then (new) |
+| Challenges · Play · Badges · Fast Break · teams | ✓ | ✗ by design | Top Shot / sports concepts; Pinnacle has characters and franchises (its player/team pages) |
+| Pin page: FMV, chart, sales, market cap, serial premium, printings ladder, details | ✓ | ✓ | |
+| Pin page: Listed Now + % listed | ✓ | ✓ (new) | `pinnacle_live_listings` (latest complete sweep, ~5×/day), exact count, sweep stamp; failed read says so |
+| Pin page: outbound marketplace CTA | ✓ dapper.market | ✓ (new) | per listing + "Cheapest listing on Disney Pinnacle" → `disneypinnacle.com/pin/<nft_id>` (verified in Chrome 10-26) |
+| Pin page: Found in these packs | ✓ | ✓ (new) | `mv_pinnacle_render_pack_pulls`, every 3 h; ~81 % of pulls named, so a lower bound (page says so) |
+| Pin page: Watch / price alerts | ✓ | ✓ (new) | the engine read `editions` + `fmv_snapshots` (no Pinnacle rows), so an alert could never fire; `dispatch_triggered_fmv_alerts` now has a Pinnacle arm (catalog FMV; floor ask ≤ 48 h old, ≤ 3× FMV), GET `/api/alerts` previews it (`lib/alerts/pinnacle-ask.ts`), alerts link the pin page |
+| Pin page: Top Owners | ✓ (Dune lower bound) | ✗ | the wallet cache holds 2.7 % of minted copies (tracked wallets only); `pinnacle_ownership_snapshots` is a latest-owner map keyed set-level for pre-spork mints — no honest per-pin owner ranking yet |
+| Pin page: Offers | ✓ | ✗ | RPC indexes no Pinnacle offers |
+| Pin page: insight chips | ✓ | partial | footer links the scarcity board; no per-pin chip feed |
+| Top Sales board | ✓ | ✓ (new) | `v_pinnacle_top_sales` merged server-side; was an accepted filter that always read 0 rows |
+| Concierge: top sales | ✓ | ✓ (new) | via the board |
+| Concierge: set completion (cost, cheapest sets) | ✓ | ✓ (new) | `/api/pinnacle-set-progress` (were Top Shot `sets`) |
+| Concierge: special-serial owners · serial deals · hot floors · challenges · rookies | ✓ | ✗ → not_applicable (new) | each answered with Top Shot rows on a Pinnacle page |
+| Concierge: pack value | ✓ | ✓ (fixed) | `compare_pack_value` now scopes to the page's collection |
+| Concierge: FMV, explain, deals, listings, search, wallet, breakdown, market cap, movers, price history | ✓ | ✓ | Pinnacle arms already present |
 
 ## Shipped recently (since mid-September)
 
@@ -30,6 +56,9 @@
 ## Next — prioritized
 
 **Now**
+- ↳ **10-26 ~6:45 PM PT (Cowork cloud), first post-ship read of #193, `pinnacle_fmv_sales_backtest('2026-10-24 00:00-07')`:** HIGH n 151 — published within ±25 % **73.5** vs naive last-5 **72.8**, WAPE **20.2 vs 22.0**: the gap that ran 7–10 points for two weeks is closed. MEDIUM level (68.6 vs 68.2; 23.7 vs 23.0); LOW and ASK_ONLY still beat naive. Weekly exit read ~10-30 as planned; a 2.5-day window is early.
+- ↳ **Pixar drop read 10-26 ~6:45 PM PT:** the 24 `OEV1-PXIC-*` renders first sold 10-19 9:12 AM → 10-21 7:56 AM PT. History since the first sale: under 3 days 24 renders LOW (+1 ASK_ONLY), 3–6 days 24 MEDIUM, **0 HIGH before day 7** (19 HIGH now, all ≥ 7 days). The young-render caps held. The drop was not sold in packs (3 Pinnacle pack opens since 10-12, all dist 8906 "Internal Test", priced 0.44 h after opening).
+- ↳ **Pull-chain cadence exemption re-checked 10-26:** `pipeline_runs_daily` shows 144 runs/day every day 10-10 → 10-24, so the arm's baseline window is fully post-change; the `cadence_exempt_lanes` row lapses 10-28 with nothing to hide.
 - ✅ **SHIPPED 2026-10-23 ~7:00 PM PT (Cowork cloud, `20261024015511`): the gate landed at HIGH n 500 (published 63.2 / WAPE 31.6 vs naive-5 70.0 / 22.4; MEDIUM level), the arm is live, 84 of 262 HIGH renders re-priced by the real writer. Weekly exit from ~10-30; falsifier → revert to `20261009205054`.** — (original item) **#193: price HIGH-eligible renders at the median of their last 5 sales** (the young-render rule, extended). *Why:* it beat the published HIGH in every price band over 45 d and since the 10-09 engine change. *Gate:* re-measure at ≥ 500 post-10-09 HIGH sales (~2 weeks); ship only if it still wins within-±25 % and WAPE without costing MEDIUM. ✅ **Instrument shipped 10-18 ~10:20 AM PT: `pinnacle_fmv_sales_backtest(p_since, p_until)`** (`20261018171928`; reproduces #193's HIGH row exactly). Gate read: `SELECT * FROM pinnacle_fmv_sales_backtest('2026-10-09 14:00-07')`. **First read 10-18 ~10:20 AM PT: HIGH n 247 of 500; naive-5 still wins (within ±25 % 75.3 vs 64.8; WAPE 20.8 vs 31.0); MEDIUM 73.4 vs 74.7.** **A dispersion gate is not the tier-order fix** (measured ~10:34 AM PT: last-5 beats published HIGH by 9–14 pts in both tight and dispersed renders; see #193).
   - ↳ **Read 10-18 ~2:19 PM PT (Claude Code cloud, `pinnacle_fmv_sales_backtest('2026-10-09 07:00+00')`):** HIGH **n 312 of the 500 gate** (all full-5). The gap holds: published WAPE **29.9 %** vs naive last-5 **20.6 %**, within ±25 % **65.4 %** vs **75.3 %**. MEDIUM is level (18.7 % vs 19.7 %); ASK_ONLY's published price beats naive5 (21.7 % vs 41.1 %). About 33 HIGH sales a day, so the gate arrives **~10-24**; do not ship before it.
   - ↳ **Read 10-20 ~6:35 PM PT (Claude Code cloud), same call `('2026-10-09 14:00-07')`: HIGH n 348 of 500** (all full-5); published within ±25 % **60.3** vs naive last-5 **68.1**, WAPE **33.2 vs 24.3** — the gap is WIDER than 10-19 (66.3/74.6, 29.8/20.7). MEDIUM level (69.1 vs 70.1, WAPE 23.3 = 23.3); ASK_ONLY beats naive (73.1 vs 55.9). Pace ~16 HIGH/day since 10-18 → the 500 gate lands **~10-30**. Not acted on (gate).
