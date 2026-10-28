@@ -41,7 +41,8 @@ export default function SniperStatsBar(props: {
         {!isPinnacle && stats.badge > 0 && (
           <span><span style={{ color: "var(--tier-legendary-text)", fontWeight: 600 }}>{stats.badge}</span> badged</span>
         )}
-        {!isAllDay && stats.special > 0 && (
+        {/* All Day joined 2026-10-27: its deals are listings with real serials (#1 / jersey / last mint). */}
+        {stats.special > 0 && (
           <span><span style={{ color: accentText("#c084fc"), fontWeight: 600 }}>{stats.special}</span> special serials</span>
         )}
         <span>avg <span style={{ color: "var(--rpc-text-primary)", fontWeight: 600 }}>{fmt(stats.avgDiscount, 1)}%</span> off</span>

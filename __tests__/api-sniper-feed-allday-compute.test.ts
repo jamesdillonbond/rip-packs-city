@@ -50,6 +50,9 @@ const st2 = vi.hoisted(() => ({
   /** Make the editions read IGNORE the cursor, i.e. hand back the same full page
    *  forever — the pathological case the loop's no-progress guard exists for. */
   ignoreCursor: false,
+  /** editions.jersey_number rows for the special-serial read (pass 8): answered only for an `.in(external_id, …)` read. */
+  jerseys: [] as Array<{ external_id: string; jersey_number: number | null }>,
+  jerseyError: null as null | { message: string },
 }))
 vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: {
@@ -57,8 +60,9 @@ vi.mock("@/lib/supabase", () => ({
       let cursor: string | null = null
       let inList: string[] | null = null
       let limit: number | null = null
+      let selected = ""
       const b: any = {
-        select: () => b, eq: () => b, order: () => b,
+        select: (cols?: string) => { selected = String(cols ?? ""); return b }, eq: () => b, order: () => b,
         in: (_col: string, list: string[]) => {
           inList = list
           return b
@@ -78,6 +82,11 @@ vi.mock("@/lib/supabase", () => ({
               data: want ? rows.filter((r) => want.includes(r.edition_id)) : rows,
               error: null,
             })
+          }
+          if (table === "editions" && selected.includes("jersey_number")) {
+            if (st2.jerseyError) return resolve({ data: null, error: st2.jerseyError })
+            const want = (inList ?? []) as string[]
+            return resolve({ data: st2.jerseys.filter((j) => want.includes(j.external_id)), error: null })
           }
           if (table === "editions") {
             if (st.editions.error) return resolve({ data: null, error: st.editions.error })
@@ -441,6 +450,64 @@ describe("GET /api/sniper-feed?collection=nfl-all-day — computeAllDaySniperFee
     expect(body.deals[0].hasBadge).toBe(false)
     expect(body.deals[0].editionKey).toBe("") // unmapped: the client renders ownership as unknown
     expect(body.sourcesFailed ?? []).not.toContain("allday-badges")
+  })
+
+  // 2026-10-27 (pass 8): All Day rows are LISTINGS with real serials, so #1 / jersey / last mint are flagged —
+  // display only (serialMult stays 1, the discount is untouched); a failed jersey read only loses jersey matches.
+  it("RPC-fallback flags #1, jersey and last-mint serials from the listing's serial", async () => {
+    gqlEdges = []
+    st2.jerseys = [{ external_id: "4273", jersey_number: 2 }, { external_id: "3674", jersey_number: 77 }]
+    rpc.mockImplementation(async (name: string) => {
+      if (name === "get_allday_sniper_deals") {
+        return { data: [
+          { flow_id: "a", moment_id: "ma", tier: "COMMON", confidence: "HIGH", player_name: "One", ask_price: 1, fmv_usd: 2, discount_pct: 50, listing_resource_id: "1", serial_number: 1, circulation_count: 500 },
+          { flow_id: "b", moment_id: "mb", tier: "COMMON", confidence: "HIGH", player_name: "Jersey", ask_price: 1, fmv_usd: 2, discount_pct: 50, listing_resource_id: "2", serial_number: 2, circulation_count: 500 },
+          { flow_id: "c", moment_id: "mc", tier: "COMMON", confidence: "HIGH", player_name: "Last", ask_price: 1, fmv_usd: 2, discount_pct: 50, listing_resource_id: "3", serial_number: 99, circulation_count: 99 },
+          { flow_id: "d", moment_id: "md", tier: "COMMON", confidence: "HIGH", player_name: "Plain", ask_price: 1, fmv_usd: 2, discount_pct: 50, listing_resource_id: "4", serial_number: 40, circulation_count: 500 },
+          { flow_id: "e", moment_id: "me", tier: "COMMON", confidence: "HIGH", player_name: "NoCirc", ask_price: 1, fmv_usd: 2, discount_pct: 50, listing_resource_id: "5", serial_number: 0, circulation_count: 0 },
+        ], error: null }
+      }
+      if (name === "get_allday_listing_badges") {
+        return { data: [
+          { listing_resource_id: 1, edition_key: "4273", badges: [] },
+          { listing_resource_id: 2, edition_key: "4273", badges: [] },
+          { listing_resource_id: 3, edition_key: "3674", badges: [] },
+          { listing_resource_id: 4, edition_key: "3674", badges: [] },
+        ], error: null }
+      }
+      return { data: [], error: null }
+    })
+    const body = await (await GET(get(ADQS))).json()
+    const by = (p: string) => body.deals.find((d: any) => d.playerName === p)
+    expect(by("One")).toMatchObject({ isSpecialSerial: true, serialSignal: "#1", isJersey: false })
+    expect(by("Jersey")).toMatchObject({ isSpecialSerial: true, serialSignal: "Jersey #2", isJersey: true })
+    expect(by("Last")).toMatchObject({ isSpecialSerial: true, serialSignal: "Last #99", isJersey: false })
+    expect(by("Plain")).toMatchObject({ isSpecialSerial: false, serialSignal: null })
+    expect(by("NoCirc")).toMatchObject({ isSpecialSerial: false })
+    // display only — never re-prices the deal
+    for (const d of body.deals) { expect(d.serialMult).toBe(1); expect(d.discount).toBe(50) }
+    st2.jerseys = []
+  })
+
+  it("a failed jersey read keeps #1 / last-mint flags and does not degrade the board", async () => {
+    gqlEdges = []
+    st2.jerseyError = { message: "timeout" }
+    rpc.mockImplementation(async (name: string) => {
+      if (name === "get_allday_sniper_deals") {
+        return { data: [
+          { flow_id: "a", moment_id: "ma", tier: "COMMON", confidence: "HIGH", player_name: "One", ask_price: 1, fmv_usd: 2, discount_pct: 50, listing_resource_id: "1", serial_number: 1, circulation_count: 500 },
+          { flow_id: "b", moment_id: "mb", tier: "COMMON", confidence: "HIGH", player_name: "Jersey", ask_price: 1, fmv_usd: 2, discount_pct: 50, listing_resource_id: "2", serial_number: 2, circulation_count: 500 },
+        ], error: null }
+      }
+      if (name === "get_allday_listing_badges") return { data: [{ listing_resource_id: 1, edition_key: "4273", badges: [] }, { listing_resource_id: 2, edition_key: "4273", badges: [] }], error: null }
+      return { data: [], error: null }
+    })
+    const body = await (await GET(get(ADQS))).json()
+    const by = (p: string) => body.deals.find((d: any) => d.playerName === p)
+    expect(by("One").serialSignal).toBe("#1")
+    expect(by("Jersey").isSpecialSerial).toBe(false)
+    expect(body.sourcesFailed ?? []).not.toContain("allday_edition_jerseys")
+    st2.jerseyError = null
   })
 
   it("RPC-fallback error → empty result", async () => {

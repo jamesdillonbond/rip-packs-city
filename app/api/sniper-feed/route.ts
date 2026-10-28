@@ -1775,6 +1775,39 @@ async function computeAllDaySniperFeed(opts: {
         }
       }
     }
+    // 2026-10-27 (All Day parity pass 8): special serials. These All Day rows are LISTINGS with real serials (Top
+    // Shot's board is edition-level, so its special-serial stat can never fire), so #1, jersey match and last mint
+    // are knowable here. Jersey comes from editions.jersey_number (Atlas playerNumber) for the keys the badge read
+    // mapped. Display only: serialMult stays 1 and the FMV / discount are untouched. An ENRICHMENT read like the
+    // badges: a failed jersey read leaves jersey matches unflagged (logged), #1 / last mint still apply.
+    const adKeys = Array.from(new Set(fallback.map((d) => d.editionKey).filter((k) => !!k))).slice(0, 500);
+    const jerseyByKey = new Map<string, number>();
+    if (adKeys.length > 0) {
+      const jr = await boundedRead(
+        (supabase as any).from("editions").select("external_id, jersey_number")
+          .eq("collection_id", ALLDAY_COLLECTION_ID).in("external_id", adKeys),
+        "allday_edition_jerseys",
+      );
+      if (jr.error) {
+        console.error(`[sniper-feed] allday edition jerseys error: ${jr.error.message}`);
+      } else {
+        for (const e of (jr.data ?? []) as Array<{ external_id: string; jersey_number: number | string | null }>) {
+          const n = Number(e.jersey_number);
+          if (Number.isFinite(n) && n > 0) jerseyByKey.set(String(e.external_id), n);
+        }
+      }
+    }
+    for (const d of fallback) {
+      if (!(d.serial > 0)) continue;
+      const jersey = d.editionKey ? jerseyByKey.get(d.editionKey) ?? null : null;
+      // circulation 0 = unknown: never call a serial the last mint of an unknown edition size.
+      const { signal, isSpecial } = serialMultiplier(d.serial, d.circulationCount > 1 ? d.circulationCount : -1, jersey);
+      if (isSpecial) {
+        d.isSpecialSerial = true;
+        d.serialSignal = signal;
+        d.isJersey = jersey !== null && d.serial === jersey;
+      }
+    }
     // Several franchise labels arrive as separately-ordered lists: re-sort the merge.
     const fallbackDeals = adTeams.length > 1 ? sortSniperDeals(fallback, opts.sortBy) : fallback;
     return {
