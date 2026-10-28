@@ -774,6 +774,7 @@ const TOOLS: Anthropic.Tool[] = [
       properties: {
         board: { type: "string", enum: ["squeeze", "set_squeeze", "set_completers", "trophies", "pinnacle_scarcity", "allday_scarcity", "topshot_pack_market", "allday_pack_market", "pack_reality", "allday_pack_reality", "market", "rookie_board", "panini_squeeze", "panini_pack_market", "panini_premiums", "candy_mlb", "pack_drops"], description: "Which public insight board to read. Required." },
         limit: { type: "number", description: "Max rows, 1..50, default 20." },
+        collectionId: { type: "string", description: "squeeze / set_squeeze only: 'nfl-all-day' for an NFL All Day question, 'nba-top-shot' (or omit) for Top Shot. Pass it whenever the question names All Day — the page alone often carries no collection. Any other collection has no squeeze board." },
       },
       required: ["board"],
     },
@@ -5175,7 +5176,14 @@ async function executeToolInner(
     if (!path) return JSON.stringify({ status: "error", message: "board must be one of: " + [...Object.keys(boardMap), "panini_pack_market", "panini_premiums"].join(", ") + "." });
     // 2026-10-27: the squeeze and set-squeeze boards have NFL All Day legs — an All Day question reads them,
     // never Top Shot's.
-    const squeezeLeg = (path === "squeeze" || path === "set-squeeze") && isAllDaySlug(effectiveCollectionId) ? "?collection=nfl-all-day" : "";
+    // 10-27 review: the leg comes from `collectionId` (now in the schema — /insights pages send no collection),
+    // and a collection with no squeeze board is refused, never answered with Top Shot's rows.
+    const isSqueeze = path === "squeeze" || path === "set-squeeze";
+    if (isSqueeze && effectiveCollectionId && !isAllDaySlug(effectiveCollectionId)
+        && getCollectionUuid(effectiveCollectionId) !== getCollectionUuid("nba-top-shot")) {
+      return JSON.stringify({ status: "unsupported_collection", message: "The squeeze boards exist for NBA Top Shot and NFL All Day only." });
+    }
+    const squeezeLeg = isSqueeze && isAllDaySlug(effectiveCollectionId) ? "?collection=nfl-all-day" : "";
     return fetchPublicInsight(base, `/api/public/insights/${path}${squeezeLeg}`, limit);
   }
 

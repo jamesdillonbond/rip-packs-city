@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 import { NextRequest } from "next/server"
+import { readFileSync } from "node:fs"
+import { join } from "node:path"
 import { makeInstrumentedSupabaseFixture, installFetchMock, jsonRoute, type FetchStub } from "./helpers/route-harness"
 import type { ScriptTurn } from "./helpers/anthropic-fixture"
 
@@ -342,6 +344,29 @@ describe("concierge — get_ecosystem_stat + get_insight_board enum maps", () =>
     script("get_insight_board", { board: "set_squeeze", collectionId: "nfl-all-day" })
     await POST(post("most squeezed all day sets"))
     expect(f.calls.find((c) => c.url.includes("/set-squeeze"))!.url).toContain("collection=nfl-all-day")
+  })
+  // 10-27 review: the tool's schema had no collectionId, so on an /insights page (no page collection) an
+  // All Day question could not reach All Day's leg; and a collection with no squeeze board got Top Shot's.
+  it("get_insight_board's schema offers collectionId (the only way an /insights page reaches All Day's leg)", async () => {
+    // TOOLS is not exported (a route file exports handlers only): read the tool's own schema block.
+    const src = readFileSync(join(process.cwd(), "app/api/support-chat/route.ts"), "utf8")
+    const start = src.indexOf('name: "get_insight_board"')
+    const block = src.slice(start, src.indexOf("required: [\"board\"]", start))
+    expect(start).toBeGreaterThan(0)
+    expect(block).toMatch(/properties: \{[\s\S]*\bcollectionId: \{ type: "string"/)
+  })
+  it("board=squeeze for a collection with no squeeze board is refused, never Top Shot's rows", async () => {
+    const f = stubFetch([jsonRoute("/api/public/insights/squeeze", { rows: [{ x: 1 }] })])
+    for (const collectionId of ["laliga-golazos", "candy_mlb"]) {
+      expect(await drive("get_insight_board", { board: "squeeze", collectionId })).toMatchObject({ status: "unsupported_collection" })
+    }
+    expect(f.calls.some((c) => c.url.includes("/squeeze"))).toBe(false)
+  })
+  it("board=squeeze with collectionId nba-top-shot reads Top Shot's board", async () => {
+    const f = stubFetch([jsonRoute("/api/public/insights/squeeze", { rows: [{ x: 1 }] })])
+    script("get_insight_board", { board: "squeeze", collectionId: "nba-top-shot" })
+    await POST(post("most squeezed top shot"))
+    expect(f.calls.find((c) => c.url.includes("/squeeze"))!.url).not.toContain("collection=")
   })
   it("board=squeeze with no collection stays Top Shot's", async () => {
     const f = stubFetch([jsonRoute("/api/public/insights/squeeze", { rows: [{ x: 1 }] })])
