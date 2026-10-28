@@ -12,6 +12,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-10-27 · 🔧 SHIPPED (code) — **every link to NFL All Day's squeeze board now opens its own page; a tree-walk guard bans the old `?collection=` toggle links** (Claude Code cloud, ~8:00–8:20 PM PT; follow-up to "All Day squeeze boards get their own pages").
+
+- **Verified live first** (`9ecee534b`, READY): `/insights/allday-squeeze` renders the All Day title, canonical `/insights/allday-squeeze`, og:image `/api/og/insights/allday-squeeze`, and 200 `/nfl-all-day/edition/` links (0 Top Shot) in the server HTML; `/insights/allday-set-squeeze` likewise (100 `/nfl-all-day/set/` links); the OG path returns a PNG; its feed returns All Day's top 3.
+- **Changed:** first-mint (3 links), rookies (1) and set-squeeze (1) built `/insights/squeeze?collection=nfl-all-day&…`, a URL whose metadata is Top Shot's. They now go through `squeezeBoardPath()` / `setSqueezeBoardPath()` in `lib/insights/squeeze-collections.ts`, which also replace the two clients' local path maps. New guard `squeeze-links-use-each-collections-own-board.test.ts` walks app/ + components/ (not app/api, which reads the param) with planted cases. Proven red on the old code: it listed all three files after its pattern was widened to reach the nested-template rookies shape the first version missed. Three tests re-pinned to the new paths, each still asserting no Top Shot board link.
+**Revert:** revert the commit found by message "links open All Day's own squeeze page".
+
 ### 2026-10-27 · 🔧 SHIPPED (code) — **NFL All Day's squeeze boards get their own pages: `/insights/allday-squeeze` and `/insights/allday-set-squeeze`, each with its own title, canonical, OG card and server-rendered All Day rows** (Claude Code cloud, ~6:30–7:55 PM PT; Trevor: "Do all you can and keep going"; closes the share-preview item recorded in the "concierge … squeeze board" entry, ~5:55–6:20 PM PT).
 
 - **Why:** All Day's legs lived only behind `?collection=nfl-all-day` on the Top Shot boards. That URL's metadata and OG card are Top Shot's, so an All Day share previewed Top Shot's title and top three. Its rows were client-only, so no crawler ever saw an All Day row.
