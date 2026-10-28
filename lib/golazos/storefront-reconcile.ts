@@ -410,6 +410,13 @@ export function clipScriptError(text: string): string {
 export const NFT_STOREFRONT_V2_ADDRESS = "0x4eb8a10cb9f87357"
 
 /**
+ * The Flow mainnet standard contracts our storefront and collection contracts import:
+ * NonFungibleToken / MetadataViews / ViewResolver, and FungibleToken / Burner /
+ * FungibleTokenMetadataViews. Loading ours loads these, so a load failure there is OURS too.
+ */
+export const STANDARD_CONTRACT_ADDRESSES = ["0x1d7e57aa55817448", "0xf233dcee88fe0abe"] as const
+
+/**
  * A seller whose storefront PUBLIC PATH points at a resource from a third-party program that Flow
  * can no longer load. Found 10-20: `0x1a21c240c0e4e27e` publishes a capability to
  * `0xeee6bdee2b2bdfc8.NFTStorefrontV2`, a copy never migrated to Cadence 1.0 (`pub contract`), so

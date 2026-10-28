@@ -415,6 +415,43 @@ describe("pinnacle-studio-sales-history-backfill — on-chain twins (#22)", () =
     expect(await res.json()).toMatchObject({ sales_inserted: 3, dupes_skipped: 1 })
   })
 
+  it("⛔ 10-20 review: the 30-day EARLY arm needs NO other sale of the nft between the two dates — a resale in between makes them two purchases", async () => {
+    fetchMock = installFetchMock([
+      studioStub([
+        histPage([
+          goodNode({ nft_id: "111", receiver_address: "abcabcabcabcabca", created_at: { block_time: "2026-01-01T00:00:00Z", transaction_hash: "0xa" } }),
+          goodNode({ nft_id: "222", receiver_address: "abcabcabcabcabca", created_at: { block_time: "2026-01-01T00:00:00Z", transaction_hash: "0xb" } }),
+        ]),
+      ]),
+    ])
+    const spy = install({
+      [PROGRESS_TABLE]: [
+        { data: [target()], error: null },
+        { data: null, error: null },
+        { data: null, error: null, count: 0 } as never,
+      ],
+      pinnacle_sales: [
+        { data: [], error: null },
+        {
+          data: [
+            // 111: the buyer sold it on 01-05 and bought it back on 01-09 at the old price → two purchases
+            { nft_id: "111", sale_price_usd: 7, sold_at: "2026-01-05T00:00:00Z", buyer_address: "0x1111222233334444" },
+            { nft_id: "111", sale_price_usd: 2.5, sold_at: "2026-01-09T00:00:00Z", buyer_address: "0xABCABCABCABCABCA" },
+            // 222 CONTROL: the same shape with nothing in between → still a twin
+            { nft_id: "222", sale_price_usd: 2.5, sold_at: "2026-01-09T00:00:00Z", buyer_address: "0xABCABCABCABCABCA" },
+          ],
+          error: null,
+        },
+        { data: null, error: null }, // insert ok
+      ],
+    })
+
+    const res = await POST(req())
+    const rows = (spy.writes.pinnacle_sales ?? []).flatMap((w) => w.rows)
+    expect(rows.map((r) => (r as { id: string }).id)).toEqual(["0xa_111"])
+    expect(await res.json()).toMatchObject({ sales_inserted: 1, dupes_skipped: 1 })
+  })
+
   it("⛔ a same-price resale to a DIFFERENT buyer inside the window is a real sale, not a twin", async () => {
     fetchMock = installFetchMock([
       studioStub([

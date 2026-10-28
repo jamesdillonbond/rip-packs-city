@@ -7,6 +7,7 @@ import { resolveScopedMoment } from "@/lib/moment/scoped-moment-href"
 
 const TS = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
 const AD = "dee28451-5d62-409e-a1ad-a83f763ac070"
+const LL = "06248cc4-b85f-47cd-af67-1855d14acd75"
 
 type Row = Record<string, unknown>
 function fakeDb(tables: Record<string, Row[]>, fail?: string) {
@@ -18,6 +19,7 @@ function fakeDb(tables: Record<string, Row[]>, fail?: string) {
         eq: (c: string, v: unknown) => (filters.push((r) => String(r[c]) === String(v)), q),
         neq: (c: string, v: unknown) => (filters.push((r) => String(r[c]) !== String(v)), q),
         not: (c: string) => (filters.push((r) => r[c] != null), q),
+        in: (c: string, vs: unknown[]) => (filters.push((r) => vs.map(String).includes(String(r[c]))), q),
         limit: async (n: number) =>
           t === fail ? { data: null, error: { message: "timeout" } } : { data: (tables[t] ?? []).filter((r) => filters.every((f) => f(r))).slice(0, n), error: null },
       }
@@ -72,5 +74,63 @@ describe("resolveScopedMoment — an nft_id is unique only within a collection",
     expect(await resolveScopedMoment(fakeDb({}), "nfl-all-day", "a1b2c3d4-0000-0000-0000-000000000000")).toBe(
       "/moment/a1b2c3d4-0000-0000-0000-000000000000",
     )
+  })
+
+  // 2026-10-27 review: resolve_moment_id also resolves an id from cached_listings_v2
+  // (collection via the EDITION) and the two Top Shot listing tables. An id only another
+  // collection had LISTED was not seen as a collision, so the unscoped forward rendered
+  // that collection's page.
+  it("an id only ANOTHER collection has listed is a collision, never forwarded unscoped", async () => {
+    const db = fakeDb({
+      moments: [],
+      wallet_moments_cache: [{ moment_id: "11", collection_id: AD, edition_key: "77" }],
+      sales: [],
+      cached_listings_v2: [{ flow_id: "11", edition_id: "e-ll" }],
+      editions: [{ id: "e-ll", collection_id: LL, external_id: "ll-1" }],
+    })
+    const r = await resolveScopedMoment(db, "nfl-all-day", "11")
+    expect(r).not.toBe("/moment/11")
+    expect(r).toBe("/nfl-all-day/edition/77")
+  })
+
+  it("an id only a Top Shot listing carries collides for another collection: 404, not Top Shot's moment", async () => {
+    for (const t of ["topshot_active_listings", "ts_listings"]) {
+      const db = fakeDb({
+        moments: [],
+        wallet_moments_cache: [],
+        sales: [],
+        topshot_active_listings: t === "topshot_active_listings" ? [{ nft_id: "12", edition_id: "e-ts" }] : [],
+        ts_listings: t === "ts_listings" ? [{ flow_id: "12" }] : [],
+      })
+      expect(await resolveScopedMoment(db, "nfl-all-day", "12")).toBeNull()
+      // ...and on Top Shot's own page the same id keeps its full serial page
+      expect(await resolveScopedMoment(db, "nba-top-shot", "12")).toBe("/moment/12")
+    }
+  })
+
+  it("this collection's OWN listing is not a collision, and resolves a colliding id with no wmc/sale row", async () => {
+    const own = fakeDb({
+      moments: [],
+      wallet_moments_cache: [],
+      sales: [],
+      cached_listings_v2: [{ flow_id: "13", edition_id: "e-ad" }],
+      editions: [{ id: "e-ad", collection_id: AD, external_id: "500" }],
+    })
+    expect(await resolveScopedMoment(own, "nfl-all-day", "13")).toBe("/moment/13")
+    const colliding = fakeDb({
+      moments: [{ id: "u-ts", nft_id: "14", collection_id: TS }],
+      wallet_moments_cache: [],
+      sales: [],
+      cached_listings_v2: [{ flow_id: "14", edition_id: "e-ad" }],
+      editions: [{ id: "e-ad", collection_id: AD, external_id: "500" }],
+    })
+    expect(await resolveScopedMoment(colliding, "nfl-all-day", "14")).toBe("/nfl-all-day/edition/500")
+  })
+
+  it("a failed listing read is 'unavailable', never a guess", async () => {
+    for (const t of ["cached_listings_v2", "topshot_active_listings", "ts_listings"]) {
+      const db = fakeDb({ moments: [], wallet_moments_cache: [], sales: [] }, t)
+      expect(await resolveScopedMoment(db, "nfl-all-day", "15")).toBe("unavailable")
+    }
   })
 })

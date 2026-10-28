@@ -27,6 +27,7 @@ import {
 } from "@/lib/pinnacle/serial-fmv"
 import type { PinnacleFmvPoint } from "@/components/pinnacle/PinnacleFmvChart"
 import { withBoardBudget } from "@/lib/insights/board-page-fetch"
+import { isStudioTwinOf, normFlowAddr } from "@/lib/pinnacle/studio-twin"
 
 /**
  * Wall-clock budget for the WHOLE of `load()`, shared across every read in it.
@@ -124,11 +125,11 @@ export type SaleRow = {
 }
 
 const STUDIO_HISTORY_SOURCE = "pinnacle_studio_history_v1"
-const normAddr = (a: string | null | undefined) => (a ?? "").toLowerCase().replace(/^0x/, "")
 
 /**
- * PURE. Drop a studio-history sale that an on-chain row already records: same NFT,
- * same price, same buyer. 2026-10-20 live sweep: /pinnacle/moment/LEV1-EP4S-REBE-S6
+ * PURE. Drop a studio-history sale that an on-chain row already records: same NFT and
+ * price, dated within ±2 days (buyers equal where both known), or up to 30 days EARLY with
+ * equal known buyers and no other sale of the NFT between. 2026-10-20 live sweep: /pinnacle/moment/LEV1-EP4S-REBE-S6
  * listed #62 $29 twice (Feb 25 studio, Mar 5 on-chain), #278 and #201 likewise. The
  * 09-28 cleanup (#159) removed twins a median 0.34 h apart; these are DAYS apart (the
  * studio feed's dates run early), ~5,033 pairs on 1,633 pins, all > 30 days old. The
@@ -136,17 +137,19 @@ const normAddr = (a: string | null | undefined) => (a ?? "").toLowerCase().repla
  * does not show one purchase as two. The on-chain row wins: it carries the seller.
  */
 export function dedupeStudioTwinSales<T extends SaleRow>(rows: T[]): T[] {
-  const onchain = new Set(
-    rows
-      .filter((r) => r.source !== STUDIO_HISTORY_SOURCE && r.nft_id)
-      .map((r) => `${r.nft_id}|${Number(r.sale_price_usd)}|${normAddr(r.buyer_address)}`),
-  )
-  return rows.filter(
-    (r) =>
-      r.source !== STUDIO_HISTORY_SOURCE ||
-      !r.nft_id ||
-      !onchain.has(`${r.nft_id}|${Number(r.sale_price_usd)}|${normAddr(r.buyer_address)}`),
-  )
+  // 10-20 review: matched at ANY distance (and two missing buyers as equal). Now the backfill's
+  // rule (lib/pinnacle/studio-twin.ts): ±2 days, or a studio row up to 30 days EARLY with equal
+  // known buyers and no other sale of the nft between the two dates.
+  const sale = (r: T) => ({ price: Number(r.sale_price_usd ?? NaN), ms: r.sold_at ? Date.parse(r.sold_at) : NaN, buyer: normFlowAddr(r.buyer_address) })
+  const byNft = new Map<string, T[]>()
+  for (const r of rows) if (r.nft_id) byNft.set(r.nft_id, [...(byNft.get(r.nft_id) ?? []), r])
+  return rows.filter((r) => {
+    if (r.source !== STUDIO_HISTORY_SOURCE || !r.nft_id) return true
+    const same = byNft.get(r.nft_id) ?? []
+    const others = same.map((o) => sale(o).ms)
+    const studio = sale(r)
+    return !same.some((o) => o.source !== STUDIO_HISTORY_SOURCE && isStudioTwinOf(studio, sale(o), others))
+  })
 }
 
 // A sibling printing of the SAME pin (same shape_render_id) — a different variant

@@ -32,6 +32,7 @@ import {
   clipScriptError,
   ForeignStorefrontProgramError,
   NFT_STOREFRONT_V2_ADDRESS,
+  STANDARD_CONTRACT_ADDRESSES,
   foreignProgramLoadFailure,
   parseStorefrontPage,
   planReconcile,
@@ -191,7 +192,9 @@ async function run(cfg: StorefrontCollection, startMs: number, startedAt: string
     const walked = new Map<string, StorefrontListing[]>()
     const walkErrors: string[] = []
     const foreignStorefronts: string[] = []
-    const ownPrograms = [NFT_STOREFRONT_V2_ADDRESS, cfg.contractAddress]
+    // Loading our storefront or collection contract also loads the standard contracts they import; a
+    // failure to load any of those is an outage, never a "foreign" seller (10-20 review).
+    const ownPrograms = [NFT_STOREFRONT_V2_ADDRESS, cfg.contractAddress, ...STANDARD_CONTRACT_ADDRESSES]
     let unwalked = 0
     let next = 0
     async function worker() {
@@ -318,6 +321,11 @@ async function run(cfg: StorefrontCollection, startMs: number, startedAt: string
     // path holds an unloadable third-party program is reported above, not here: no script can read it.
     const problems: string[] = []
     if (walkErrors.length > 0) problems.push(`${walkErrors.length} storefront walk(s) failed`)
+    // One unloadable third-party storefront is a seller's problem; EVERY seller tried being one is not.
+    const tried = sellers.length - unwalked
+    if (tried > 1 && foreignStorefronts.length === tried) {
+      problems.push(`every seller tried (${tried}) failed on a third-party program load — an outage, not ${tried} foreign storefronts`)
+    }
     if (unwalked > 0) problems.push(`${unwalked} seller(s) not walked (time budget)`)
     if (upsertErrors > 0) problems.push(`${upsertErrors} upsert(s) failed: ${firstUpsertError}`)
     if (closeErrors > 0) problems.push(`${closeErrors} close(s) failed: ${firstCloseError}`)

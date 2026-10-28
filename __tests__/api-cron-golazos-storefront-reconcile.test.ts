@@ -240,7 +240,17 @@ describe("/api/cron/golazos-storefront-reconcile — a run", () => {
   })
 
   it("CONTROL — our OWN storefront or collection contract failing to load is still a failed walk", async () => {
-    for (const program of ["4eb8a10cb9f87357.NFTStorefrontV2", "87ca73a41bb50ad5.Golazos"]) {
+    // 10-20 review: the standard contracts ours import are ours too (NonFungibleToken, MetadataViews,
+    // ViewResolver, FungibleToken, Burner) — a failure to load one is an outage, not a foreign seller.
+    for (const program of [
+      "4eb8a10cb9f87357.NFTStorefrontV2",
+      "87ca73a41bb50ad5.Golazos",
+      "1d7e57aa55817448.NonFungibleToken",
+      "1d7e57aa55817448.MetadataViews",
+      "1d7e57aa55817448.ViewResolver",
+      "f233dcee88fe0abe.FungibleToken",
+      "f233dcee88fe0abe.Burner",
+    ]) {
       state.logs.length = 0
       state.flow = () => ({ ok: false, status: 400, text: loadFailure(program) })
       await mod.GET(makeReq({ method: "GET", auth: "Bearer gz-cron" }))
@@ -249,6 +259,19 @@ describe("/api/cron/golazos-storefront-reconcile — a run", () => {
       expect(log.p_ok, program).toBe(false)
       expect(log.p_extra, program).toMatchObject({ sellers_walk_errors: 1, sellers_unreadable_foreign_storefront: 0 })
     }
+  })
+
+  it("EVERY seller tried failing on a third-party program load fails the run (an outage, not N foreign sellers)", async () => {
+    state.sellers = { data: [SELLER, "0x00000000000000aa"], error: null }
+    state.flow = () => ({ ok: false, status: 400, text: loadFailure("eee6bdee2b2bdfc8.NFTStorefrontV2") })
+    await mod.GET(makeReq({ method: "GET", auth: "Bearer gz-cron" }))
+    await runAfter()
+
+    expect(state.ops.filter((o) => o.op === "update" || o.op === "upsert")).toHaveLength(0)
+    const log = state.logs.at(-1)
+    expect(log.p_ok).toBe(false)
+    expect(log.p_error).toMatch(/every seller tried \(2\)/)
+    expect(log.p_extra).toMatchObject({ sellers_walk_errors: 0, sellers_unreadable_foreign_storefront: 2 })
   })
 
   it("a 429 from the shared Flow endpoint is retried, not recorded as a failed walk", async () => {

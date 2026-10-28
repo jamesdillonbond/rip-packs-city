@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { isStudioTwinOf, normFlowAddr } from "@/lib/pinnacle/studio-twin"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Disney Pinnacle sales-history backfill via the Dapper studio-platform GQL.
@@ -151,11 +152,7 @@ type RenderResult = {
 }
 
 /** A Flow address compared across feeds: lowercase, no 0x (the studio feed omits it). */
-function normBuyer(addr: string | null | undefined): string | null {
-  if (!addr) return null
-  const a = String(addr).trim().toLowerCase().replace(/^0x/, "")
-  return a === "" ? null : a
-}
+const normBuyer = normFlowAddr
 
 async function drainRender(
   renderId: string,
@@ -275,22 +272,20 @@ async function drainRender(
       twinsByNft.set(k, list)
     }
   }
-  const TWIN_WINDOW_MS = 2 * 86_400_000
-  // ⛔ The studio feed's date can run up to ~30 days EARLY (#200, 2026-10-20): 5,804 twins the
-  // ±2-day rule missed sat 2–30 days BEFORE their on-chain row — same nft, price and buyer, every
-  // pair one-to-one, no other sale of that nft between the two dates. So a studio row up to 30 days
-  // before a non-studio sale is that sale again — but ONLY when BOTH buyers are known and equal
-  // (a missing buyer cannot prove identity at that distance; inside ±2 days the old rule stands).
-  const EARLY_TWIN_WINDOW_MS = 30 * 86_400_000
+  // The twin rule (±2 days, or a studio row up to 30 days EARLY with equal known buyers and no
+  // other sale of the nft between) lives in lib/pinnacle/studio-twin.ts, shared with the pin page.
+  // "Other sales" = the non-studio sales read above plus this batch's own studio rows.
+  const studioMsByNft = new Map<string, number[]>()
+  for (const r of candidates.values()) {
+    if (r.nft_id == null) continue
+    studioMsByNft.set(r.nft_id, [...(studioMsByNft.get(r.nft_id) ?? []), Date.parse(r.sold_at)])
+  }
   const hasTwin = (row: PinSaleRow): boolean => {
-    const ms = Date.parse(row.sold_at)
     if (row.nft_id == null) return false
-    const buyer = normBuyer(row.buyer_address)
-    return (twinsByNft.get(row.nft_id) ?? []).some((t) => {
-      if (Math.abs(t.price - row.sale_price_usd) >= 1e-9) return false
-      if (Math.abs(t.ms - ms) <= TWIN_WINDOW_MS) return buyer == null || t.buyer == null || buyer === t.buyer
-      return buyer != null && t.buyer != null && buyer === t.buyer && t.ms > ms && t.ms - ms <= EARLY_TWIN_WINDOW_MS
-    })
+    const chainSales = twinsByNft.get(row.nft_id) ?? []
+    const others = [...chainSales.map((t) => t.ms), ...(studioMsByNft.get(row.nft_id) ?? [])]
+    const studio = { price: row.sale_price_usd, ms: Date.parse(row.sold_at), buyer: normBuyer(row.buyer_address) }
+    return chainSales.some((t) => isStudioTwinOf(studio, t, others))
   }
 
   const toInsert: PinSaleRow[] = []

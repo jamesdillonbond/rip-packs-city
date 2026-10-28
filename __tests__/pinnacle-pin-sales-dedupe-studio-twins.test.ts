@@ -34,4 +34,33 @@ describe("dedupeStudioTwinSales", () => {
     ])
     expect(out).toHaveLength(2)
   })
+
+  // 10-20 review: the page matched at ANY distance, and two missing buyers as equal. It now
+  // shares the backfill's rule (lib/pinnacle/studio-twin.ts).
+  it("keeps a studio row whose look-alike on-chain sale is months away, or that only 'matches' on two missing buyers", () => {
+    const out = dedupeStudioTwinSales([
+      row({ source: "pinnacle_studio_history_v1", nft_id: "5", buyer_address: "ab", sold_at: "2025-01-01" }),
+      row({ source: "on-chain", nft_id: "5", buyer_address: "0xab", sold_at: "2025-06-01" }),
+      row({ source: "pinnacle_studio_history_v1", nft_id: "6", buyer_address: null, sold_at: "2025-01-01" }),
+      row({ source: "on-chain", nft_id: "6", buyer_address: null, sold_at: "2025-01-20" }),
+    ])
+    expect(out).toHaveLength(4)
+  })
+
+  it("keeps a studio row when another sale of the nft falls between it and the on-chain look-alike", () => {
+    const out = dedupeStudioTwinSales([
+      row({ source: "pinnacle_studio_history_v1", nft_id: "7", buyer_address: "ab", sold_at: "2026-01-01" }),
+      row({ source: "on-chain", nft_id: "7", buyer_address: "0x99", sale_price_usd: 40, sold_at: "2026-01-05" }),
+      row({ source: "on-chain", nft_id: "7", buyer_address: "0xab", sold_at: "2026-01-09" }),
+    ])
+    expect(out).toHaveLength(3)
+  })
+
+  it("an undated row is never a twin (kept, never guessed)", () => {
+    const out = dedupeStudioTwinSales([
+      row({ source: "pinnacle_studio_history_v1", nft_id: "8", buyer_address: "ab", sold_at: null }),
+      row({ source: "on-chain", nft_id: "8", buyer_address: "0xab", sold_at: "2026-01-09" }),
+    ])
+    expect(out).toHaveLength(2)
+  })
 })
