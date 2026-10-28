@@ -246,7 +246,11 @@ BEGIN
           WHEN 4 THEN 2021 WHEN 5 THEN 2022 WHEN 6 THEN 2023 WHEN 7 THEN 2024
           WHEN 8 THEN 2025 WHEN 9 THEN 2026 ELSE NULL END) END)                  AS series_season,
         (CASE WHEN e.game_date IS NULL THEN NULL
-              WHEN EXTRACT(month FROM e.game_date) >= 8 THEN EXTRACT(year FROM e.game_date)::int
+              -- NFL All Day (2026-10-28): its season opens in MARCH — the draft (late April) and Rookie Debut / preseason
+              -- (July–August) belong to the season that follows; January–February (playoffs, Super Bowl) close the one
+              -- before. Top Shot's August cutoff put 2025's NFL Draft + Rookie Debut (136 editions) in season 2024.
+              WHEN EXTRACT(month FROM e.game_date) >= (CASE WHEN p_collection_id = 'dee28451-5d62-409e-a1ad-a83f763ac070'::uuid THEN 3 ELSE 8 END)
+                THEN EXTRACT(year FROM e.game_date)::int
               ELSE EXTRACT(year FROM e.game_date)::int - 1 END) AS play_season,
         fmv.fmv_usd,
         ask.live_ask                                       AS floor_usd,
@@ -542,7 +546,11 @@ BEGIN
           WHEN 4 THEN 2021 WHEN 5 THEN 2022 WHEN 6 THEN 2023 WHEN 7 THEN 2024
           WHEN 8 THEN 2025 WHEN 9 THEN 2026 ELSE NULL END) END) AS series_season,
         (CASE WHEN e.game_date IS NULL THEN NULL
-              WHEN EXTRACT(month FROM e.game_date) >= 8 THEN EXTRACT(year FROM e.game_date)::int
+              -- NFL All Day (2026-10-28): its season opens in MARCH — the draft (late April) and Rookie Debut / preseason
+              -- (July–August) belong to the season that follows; January–February (playoffs, Super Bowl) close the one
+              -- before. Top Shot's August cutoff put 2025's NFL Draft + Rookie Debut (136 editions) in season 2024.
+              WHEN EXTRACT(month FROM e.game_date) >= (CASE WHEN p_collection_id = 'dee28451-5d62-409e-a1ad-a83f763ac070'::uuid THEN 3 ELSE 8 END)
+                THEN EXTRACT(year FROM e.game_date)::int
               ELSE EXTRACT(year FROM e.game_date)::int - 1 END) AS play_season,
         fmv.fmv_usd,
         ask.live_ask AS floor_usd,

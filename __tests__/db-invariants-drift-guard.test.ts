@@ -450,13 +450,13 @@ const PINS = [
     fn: "get_team_checklist",
     test: "supabase/tests/get_team_checklist.sql",
     migration:
-      "supabase/migrations/20261028022241_audit_20261027_allday_team_checklist_contemporary.sql",
+      "supabase/migrations/20261028141531_audit_20261028_allday_play_season_opens_in_march.sql",
   },
   {
     fn: "get_team_checklist_progress",
     test: "supabase/tests/get_team_checklist.sql",
     migration:
-      "supabase/migrations/20261028022241_audit_20261027_allday_team_checklist_contemporary.sql",
+      "supabase/migrations/20261028141531_audit_20261028_allday_play_season_opens_in_march.sql",
   },
   {
     // Added 2026-09-26. The Pinnacle franchise grid and roster read
