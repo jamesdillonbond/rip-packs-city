@@ -261,6 +261,15 @@ const CARDS: Card[] = [
     available: true,
   },
   {
+    slug: "/insights/allday-market",
+    eyebrow: "Live",
+    title: "The RPC Index · NFL All Day",
+    blurb:
+      "NFL All Day's blended price is a commons number. We segment the market by tier and index each to 100 — what Legendary, Rare, and Uncommon moments are actually doing.",
+    cta: "Open All Day index",
+    available: true,
+  },
+  {
     slug: "/insights/market",
     eyebrow: "Live",
     title: "The RPC Index",

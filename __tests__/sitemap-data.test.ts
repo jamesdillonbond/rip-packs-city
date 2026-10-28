@@ -262,7 +262,9 @@ describe("segment 0 — static + insights + overviews + series + profiles", () =
     // (the section became anon-public).
     // 96 → 98 on 2026-10-27: /insights/allday-squeeze and /insights/allday-set-squeeze
     // (NFL All Day's squeeze boards get their own pages).
-    expect(s).toHaveLength(98)
+    // 98 → 99 on 2026-10-28: /insights/allday-market (The RPC Index for NFL All Day).
+    expect(s).toHaveLength(99)
+    expect(s.find((x) => x.url === `${BASE}/insights/allday-market`)).toBeTruthy()
     expect(s.find((x) => x.url === `${BASE}/insights/allday-squeeze`)).toBeTruthy()
     expect(s.find((x) => x.url === `${BASE}/insights/allday-set-squeeze`)).toBeTruthy()
     expect(s.find((x) => x.url === `${BASE}/insights/autographs`)).toBeTruthy()

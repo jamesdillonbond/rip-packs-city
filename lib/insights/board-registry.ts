@@ -150,6 +150,15 @@ export const INSIGHTS_BOARDS: readonly InsightsBoard[] = [
     publicApi: true,
   },
   {
+    slug: "allday-market",
+    kind: "dataset",
+    name: "The RPC Index · NFL All Day",
+    description:
+      "A tier-segmented daily market index for NFL All Day built from real secondary-market sales. Each tier (Legendary, Rare, Uncommon, Common) is normalized to 100 at the start of the window.",
+    // Its JSON is /api/public/insights/market?collection=nfl-all-day — a required param, so no default DataDownload.
+    publicApi: false,
+  },
+  {
     slug: "market-cap",
     kind: "dataset",
     name: "Market Cap — Flow digital collectibles",

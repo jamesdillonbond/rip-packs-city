@@ -5221,7 +5221,14 @@ async function executeToolInner(
         && getCollectionUuid(effectiveCollectionId) !== getCollectionUuid("nba-top-shot")) {
       return JSON.stringify({ status: "unsupported_collection", message: "The squeeze boards exist for NBA Top Shot and NFL All Day only." });
     }
-    const squeezeLeg = isSqueeze && isAllDaySlug(effectiveCollectionId) ? "?collection=nfl-all-day" : "";
+    // 2026-10-28: the RPC Index has an NFL All Day leg too; on any other named collection it would be Top Shot's
+    // market under that collection's name (substitution), so it is refused the same way.
+    const isMarket = path === "market";
+    if (isMarket && effectiveCollectionId && !isAllDaySlug(effectiveCollectionId)
+        && getCollectionUuid(effectiveCollectionId) !== getCollectionUuid("nba-top-shot")) {
+      return JSON.stringify({ status: "unsupported_collection", message: "The RPC Index (market board) exists for NBA Top Shot and NFL All Day only. Say so; do not quote Top Shot's market for this collection." });
+    }
+    const squeezeLeg = (isSqueeze || isMarket) && isAllDaySlug(effectiveCollectionId) ? "?collection=nfl-all-day" : "";
     return fetchPublicInsight(base, `/api/public/insights/${path}${squeezeLeg}`, limit);
   }
 

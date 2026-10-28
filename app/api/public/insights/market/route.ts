@@ -21,7 +21,11 @@
 // ULTIMATE | UNKNOWN), sales, volume_usd, median_px, avg_px, max_px.
 //
 // Query params:
-//   tier=COMMON|FANDOM|RARE|LEGENDARY|ULTIMATE|ALL   single-tier filter
+//   collection=nba-top-shot|nfl-all-day              default (ABSENT) nba-top-shot; ⛔ any other value is a 400
+//                                                    with no rows — never Top Shot's market under another name.
+//                                                    NFL All Day (2026-10-28) reads allday_market_index_daily and
+//                                                    has UNCOMMON, no FANDOM. Its board is /insights/allday-market.
+//   tier=<a tier of that collection>|ALL             single-tier filter
 //   days=<1..120>                                    trailing window, default 120
 //
 // Response:
@@ -37,77 +41,53 @@
 import { NextRequest, NextResponse } from "next/server";
 import { boardUnavailable } from "@/lib/insights/board-error";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
-import { fetchAllPaged } from "@/lib/supabase-paginate";
-import { withPagedBoardBudget } from "@/lib/insights/board-page-fetch";
+import { fetchMarketIndexRows } from "@/lib/insights/market-index-board";
+import { isMarketIndexCollection, marketIndexConfig, type MarketIndexCollection } from "@/lib/insights/market-index-collections";
 
 import { boardRowMetaComplete } from "@/lib/insights/board-meta"
-const VALID_TIERS = new Set([
-  "ALL",
-  "COMMON",
-  "FANDOM",
-  "RARE",
-  "LEGENDARY",
-  "ULTIMATE",
-  "UNKNOWN",
-]);
 
 export async function GET(req: NextRequest) {
   const startedAt = Date.now();
   const url = new URL(req.url);
   const sp = url.searchParams;
 
+  const rawCollection = sp.get("collection");
+  if (rawCollection != null && !isMarketIndexCollection(rawCollection)) {
+    return NextResponse.json({ error: "collection must be nba-top-shot or nfl-all-day" }, { status: 400 });
+  }
+  const collection: MarketIndexCollection = rawCollection ?? "nba-top-shot";
+  const cfg = marketIndexConfig(collection);
+
   const tier = sp.get("tier")?.toUpperCase() ?? null;
   const days = Math.max(1, Math.min(120, Number(sp.get("days")) || 120));
 
-  if (tier && !VALID_TIERS.has(tier)) {
+  if (tier && !cfg.validTiers.includes(tier)) {
     return NextResponse.json(
-      { error: `tier must be one of ${[...VALID_TIERS].join(",")}` },
+      { error: `tier must be one of ${cfg.validTiers.join(",")}` },
       { status: 400 }
     );
   }
 
-  // Trailing-window cutoff (inclusive). The view holds ~120 days, so the
-  // default returns everything; a smaller `days` trims it server-side.
-  const cutoff = new Date(Date.now() - days * 86_400_000)
-    .toISOString()
-    .slice(0, 10);
-
-  // PostgREST caps reads at 1,000 rows and silently CLAMPS a larger .limit(), so
-  // .limit(2000) was a false guarantee. It is not truncating yet (121 days x <=7
-  // tiers ~= 847 rows) but the sort is d ASCENDING, so the first overflow would
-  // drop the NEWEST days off a market-index chart while keeping stale history.
-  const { rows: data, error } = await withPagedBoardBudget(fetchAllPaged<any>(
-    (from, to) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      let q = (supabase as any)
-        .from("topshot_market_index_daily")
-        .select("d, tier, sales, volume_usd, median_px, avg_px, max_px")
-        .gte("d", cutoff)
-        .order("d", { ascending: true })
-        .order("tier", { ascending: true })
-        .range(from, to);
-      if (tier) q = q.eq("tier", tier);
-      return q;
-    },
-    { label: "public/insights/market" },
-  ), "market");
+  // Paged + bounded in lib/insights/market-index-board.ts (shared with both boards' server pages).
+  const { rows: data, error } = await fetchMarketIndexRows(supabase, { collection, days, tier, label: "public/insights/market" });
   if (error) {
     return boardUnavailable(error, "insights/market");
   }
 
   const elapsedMs = Date.now() - startedAt;
   console.log(
-    `[public/insights/market] returned=${data?.length ?? 0} tier=${tier ?? "*"} days=${days} elapsedMs=${elapsedMs}`
+    `[public/insights/market] collection=${collection} returned=${data?.length ?? 0} tier=${tier ?? "*"} days=${days} elapsedMs=${elapsedMs}`
   );
 
   const res = NextResponse.json({
     meta: {
       fetched_at: new Date().toISOString(),
-      source: "topshot_market_index_daily",
+      source: cfg.view,
+      collection,
       // Paged read (fetchAllPaged walks every row), so this really is a total.
       ...boardRowMetaComplete(data?.length ?? 0),
       elapsed_ms: elapsedMs,
-      filters: { tier, days },
+      filters: { collection, tier, days },
     },
     rows: data ?? [],
   });

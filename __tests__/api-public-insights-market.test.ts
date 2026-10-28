@@ -35,6 +35,31 @@ describe("GET /api/public/insights/market", () => {
     expect((await res.json()).error).toContain("tier must be one of")
   })
 
+  // 2026-10-28: NFL All Day's leg (its board is /insights/allday-market).
+  it("collection=nfl-all-day reads All Day's view and says so", async () => {
+    tables.topshot_market_index_daily = { data: [{ d: "2026-07-01", tier: "ALL", sales: 999 }], error: null }
+    tables.allday_market_index_daily = { data: [{ d: "2026-07-01", tier: "ALL", sales: 484 }], error: null }
+    const body = await (await GET(req(`${base}?collection=nfl-all-day`))).json()
+    expect(body.meta.source).toBe("allday_market_index_daily")
+    expect(body.meta.collection).toBe("nfl-all-day")
+    expect(body.rows).toEqual([{ d: "2026-07-01", tier: "ALL", sales: 484 }])
+  })
+
+  it("an unknown collection is a 400 with no rows — never Top Shot's market", async () => {
+    tables.topshot_market_index_daily = { data: [{ d: "2026-07-01", tier: "ALL", sales: 999 }], error: null }
+    const res = await GET(req(`${base}?collection=laliga-golazos`))
+    expect(res.status).toBe(400)
+    expect((await res.json()).rows).toBeUndefined()
+  })
+
+  it("the tier whitelist is the collection's own: UNCOMMON on All Day, not on Top Shot; FANDOM the reverse", async () => {
+    tables.allday_market_index_daily = { data: [], error: null }
+    expect((await GET(req(`${base}?collection=nfl-all-day&tier=UNCOMMON`))).status).toBe(200)
+    expect((await GET(req(`${base}?collection=nfl-all-day&tier=FANDOM`))).status).toBe(400)
+    expect((await GET(req(`${base}?tier=UNCOMMON`))).status).toBe(400)
+    expect((await GET(req(`${base}?tier=FANDOM`))).status).toBe(200)
+  })
+
   it("returns rows with echoed filters on the happy path", async () => {
     tables.topshot_market_index_daily = { data: [{ d: "2026-07-01", tier: "ALL", sales: 550, median_px: 0.9 }], error: null }
     const res = await GET(req(`${base}?tier=all&days=30`))

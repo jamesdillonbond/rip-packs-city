@@ -5,6 +5,10 @@
 // 30d change for Legendary / Rare / Fandom / Common) so the social preview is
 // data-rich rather than a logo + tagline. Falls back to a generic card if the
 // market API is empty.
+//
+// 2026-10-28: ?collection=nfl-all-day renders NFL All Day's card (served at /api/og/insights/allday-market for the
+// All Day board's own layout). ⛔ Any other ?collection= value reads nothing and renders the "couldn't read" card —
+// never Top Shot's numbers.
 
 import { ImageResponse } from "next/og"
 import { NextRequest } from "next/server"
@@ -12,6 +16,7 @@ import { boardEmptyCopy } from "@/lib/og/board-empty-copy"
 import { brandFonts, brandFamilies, ogCacheHeaders } from "@/lib/og/brand-fonts"
 import { ogFetch } from "@/lib/og/og-fetch"
 import { usdSignFirst } from "@/lib/usd-format"
+import { isMarketIndexCollection, marketIndexConfig, type MarketIndexCollection } from "@/lib/insights/market-index-collections"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -23,14 +28,6 @@ type Row = {
   volume_usd: number | string | null
 }
 
-const PLOT_TIERS = ["LEGENDARY", "RARE", "FANDOM", "COMMON"] as const
-const TIER_HEX: Record<string, string> = {
-  LEGENDARY: "#FFD700",
-  ULTIMATE: "#FF6B35",
-  RARE: "#818CF8",
-  FANDOM: "#34D399",
-  COMMON: "#94A3B8",
-}
 
 function num(v: number | string | null): number | null {
   if (v == null) return null
@@ -60,14 +57,25 @@ export async function GET(req: NextRequest) {
   const fonts = await brandFonts();
   const fam = brandFamilies(fonts);
 
+  const rawCollection = new URL(req.url).searchParams.get("collection")
+  const known = rawCollection == null || isMarketIndexCollection(rawCollection)
+  const collection: MarketIndexCollection = rawCollection != null && isMarketIndexCollection(rawCollection) ? rawCollection : "nba-top-shot"
+  const cfg = marketIndexConfig(collection)
+  // Four cards: the collection's plotted tiers without Ultimate (Top Shot plots it on the board, but it trades too
+  // rarely for a headline card).
+  const PLOT_TIERS = cfg.plotTiers.filter((t) => t !== "ULTIMATE")
+  const TIER_HEX = cfg.tierHex
+
   type Head = { tier: string; median: number | null; change: number | null }
   let heads: Head[] = []
   let vol7d = 0
   // Did the board READ succeed? Not 'were there rows' — see lib/og/board-empty-copy.ts.
   let fetched = false
   try {
+    if (!known) throw new Error("unknown collection")
     const origin = new URL(req.url).origin
-    const r = await ogFetch(`${origin}/api/public/insights/market?days=120`, { cache: "no-store" })
+    const leg = collection === "nfl-all-day" ? "&collection=nfl-all-day" : ""
+    const r = await ogFetch(`${origin}/api/public/insights/market?days=120${leg}`, { cache: "no-store" })
     if (r.ok) {
       fetched = true
       const j = await r.json()
@@ -148,7 +156,7 @@ export async function GET(req: NextRequest) {
             maxWidth: 1040,
           }}
         >
-          One blended floor hides everything. We segment Top Shot by tier — here&apos;s what each is actually doing.
+          One blended {collection === "nfl-all-day" ? "price" : "floor"} hides everything. We segment {cfg.label} by tier — here&apos;s what each is actually doing.
         </div>
 
         <div style={{ marginTop: 34, display: "flex", gap: 14 }}>
@@ -197,7 +205,7 @@ export async function GET(req: NextRequest) {
           }}
         >
           <div style={{ display: "flex" }}>Median secondary sale · tier-segmented</div>
-          <div style={{ display: "flex" }}>rippackscity.com/insights/market</div>
+          <div style={{ display: "flex" }}>{`rippackscity.com${cfg.path}`}</div>
         </div>
       </div>
     ),

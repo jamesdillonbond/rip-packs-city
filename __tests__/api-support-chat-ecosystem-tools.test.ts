@@ -362,6 +362,24 @@ describe("concierge — get_ecosystem_stat + get_insight_board enum maps", () =>
     }
     expect(f.calls.some((c) => c.url.includes("/squeeze"))).toBe(false)
   })
+  // 2026-10-28: the RPC Index (board=market) has an NFL All Day leg; another collection is refused.
+  it("board=market on NFL All Day reads ?collection=nfl-all-day", async () => {
+    const f = stubFetch([jsonRoute("/api/public/insights/market", { rows: [{ x: 1 }] })])
+    script("get_insight_board", { board: "market", collectionId: "nfl-all-day" })
+    await POST(post("how is the all day market doing"))
+    expect(f.calls.find((c) => c.url.includes("/insights/market"))!.url).toContain("collection=nfl-all-day")
+  })
+  it("board=market on a collection with no index is refused, never Top Shot's market", async () => {
+    const f = stubFetch([jsonRoute("/api/public/insights/market", { rows: [{ x: 1 }] })])
+    expect(await drive("get_insight_board", { board: "market", collectionId: "laliga-golazos" })).toMatchObject({ status: "unsupported_collection" })
+    expect(f.calls.some((c) => c.url.includes("/insights/market"))).toBe(false)
+  })
+  it("board=market with no collection stays Top Shot's", async () => {
+    const f = stubFetch([jsonRoute("/api/public/insights/market", { rows: [{ x: 1 }] })])
+    script("get_insight_board", { board: "market" })
+    await POST(post("how is the market doing"))
+    expect(f.calls.find((c) => c.url.includes("/insights/market"))!.url).not.toContain("collection=")
+  })
   it("board=squeeze with collectionId nba-top-shot reads Top Shot's board", async () => {
     const f = stubFetch([jsonRoute("/api/public/insights/squeeze", { rows: [{ x: 1 }] })])
     script("get_insight_board", { board: "squeeze", collectionId: "nba-top-shot" })

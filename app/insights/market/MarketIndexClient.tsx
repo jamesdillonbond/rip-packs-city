@@ -11,12 +11,17 @@
 // server-renders fully. The only client interactivity is the legend
 // show/hide toggle. There are no fetch-changing filters, so this component
 // never refetches; freshness is handled by the server page's revalidate.
+//
+// 2026-10-28: per collection — `collection` (nba-top-shot | nfl-all-day) picks the tiers, colours, copy and share
+// link from lib/insights/market-index-collections.ts. NFL All Day's board is its own page, /insights/allday-market.
+// Every All Day number in the copy is computed from the rows, never typed in.
 
 import { accentText } from "@/lib/accent-text"
 import { useMemo, useState } from "react"
 import Link from "next/link"
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
 import { usdSignFirst } from "@/lib/usd-format"
+import { marketIndexConfig, type MarketIndexCollection } from "@/lib/insights/market-index-collections"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -30,20 +35,10 @@ export type Row = {
   max_px: number | string | null
 }
 
-// Tiers we plot, in descending typical-value order. ALL is intentionally
-// excluded from the index lines (commons dominate it, so it isn't a
-// meaningful "index") — ALL feeds the volume bar only.
-const PLOT_TIERS = ["LEGENDARY", "RARE", "FANDOM", "COMMON", "ULTIMATE"] as const
-type PlotTier = (typeof PLOT_TIERS)[number]
-
-// Hardcoded hex — matches --tier-* tokens; SVG stroke can't use CSS vars.
-const TIER_HEX: Record<PlotTier, string> = {
-  LEGENDARY: "#FFD700",
-  ULTIMATE: "#FF6B35",
-  RARE: "#818CF8",
-  FANDOM: "#34D399",
-  COMMON: "#94A3B8",
-}
+// Tiers we plot come from the collection's config, in descending typical-value order. ALL is intentionally
+// excluded from the index lines (commons dominate it, so it isn't a meaningful "index") — ALL feeds the volume
+// bar only. Colours: hardcoded hex there too (an SVG stroke can't use CSS vars).
+type PlotTier = string
 
 function num(v: number | string | null): number | null {
   if (v == null) return null
@@ -59,6 +54,17 @@ function fmtUsd(n: number | null): string {
   if (v >= 1000) return `$${(v / 1000).toFixed(v >= 10000 ? 0 : 1)}k`
   if (v >= 10) return `$${v.toFixed(0)}`
   return `$${v.toFixed(2)}`
+}
+
+function fmtInt(n: number | null): string {
+  return n == null ? "—" : n.toLocaleString("en-US")
+}
+
+/** A tier's total sales over the rows' window (0 when it never traded). Only called after a successful read. */
+function tierSales(rows: Row[], tier: string): number {
+  let total = 0
+  for (const r of rows) if ((r.tier ?? "").toUpperCase() === tier) total += num(r.sales) ?? 0
+  return total
 }
 
 function fmtPctChange(n: number | null): string {
@@ -80,17 +86,30 @@ type Built = {
   // x spine: every date that has an ALL row (i.e. any sales that day), asc
   dates: string[]
   // per-tier normalized series (only days the tier actually traded)
-  series: Record<PlotTier, TierPoint[]>
+  series: Record<string, TierPoint[]>
   // per-tier headline: latest median, latest index, 30d % change
   headline: Record<
-    PlotTier,
+    string,
     { latestMedian: number | null; latestIndex: number | null; change30d: number | null }
   >
   // daily total GMV from the ALL row, aligned to `dates`
   volume: { d: string; v: number }[]
 }
 
-function buildSeries(rows: Row[]): Built {
+/** Share of the window's sales that were Commons — computed, so the copy never quotes a stale typed-in ratio. */
+function commonShare(rows: Row[]): number | null {
+  let all = 0
+  let common = 0
+  for (const r of rows) {
+    const n = num(r.sales) ?? 0
+    const t = (r.tier ?? "").toUpperCase()
+    if (t === "ALL") all += n
+    else if (t === "COMMON") common += n
+  }
+  return all > 0 ? common / all : null
+}
+
+function buildSeries(rows: Row[], plotTiers: readonly string[]): Built {
   const byTier: Record<string, Map<string, { median: number | null; volume: number | null }>> = {}
   for (const r of rows) {
     const t = (r.tier ?? "").toUpperCase()
@@ -110,7 +129,7 @@ function buildSeries(rows: Row[]): Built {
   }
   const xIndex = new Map(dates.map((d, i) => [d, i]))
 
-  const series = {} as Record<PlotTier, TierPoint[]>
+  const series = {} as Record<string, TierPoint[]>
   const headline = {} as Built["headline"]
 
   // The most recent date in range, used as the anchor for "30d change".
@@ -119,7 +138,7 @@ function buildSeries(rows: Row[]): Built {
     ? new Date(new Date(latestDate).getTime() - 30 * 86_400_000).toISOString().slice(0, 10)
     : null
 
-  for (const tier of PLOT_TIERS) {
+  for (const tier of plotTiers) {
     const m = byTier[tier]
     const pts: TierPoint[] = []
     if (m) {
@@ -167,9 +186,13 @@ function buildSeries(rows: Row[]): Built {
 function IndexChart({
   built,
   hidden,
+  plotTiers,
+  tierHex,
 }: {
   built: Built
   hidden: Set<PlotTier>
+  plotTiers: readonly string[]
+  tierHex: Record<string, string>
 }) {
   const W = 1000
   const H = 360
@@ -185,7 +208,7 @@ function IndexChart({
 
   // y domain from visible points; base 100 always in view.
   let maxIdx = 120
-  for (const tier of PLOT_TIERS) {
+  for (const tier of plotTiers) {
     if (hidden.has(tier)) continue
     for (const p of built.series[tier]) if (p.index > maxIdx) maxIdx = p.index
   }
@@ -261,9 +284,9 @@ function IndexChart({
       ))}
 
       {/* lines + dots */}
-      {PLOT_TIERS.filter((t) => !hidden.has(t)).map((tier) => {
+      {plotTiers.filter((t) => !hidden.has(t)).map((tier) => {
         const pts = built.series[tier]
-        const hex = TIER_HEX[tier]
+        const hex = tierHex[tier] ?? "#94A3B8"
         return (
           <g key={tier}>
             <path d={pathFor(tier)} fill="none" stroke={hex} strokeWidth={2.25} strokeLinejoin="round" strokeLinecap="round" />
@@ -326,9 +349,15 @@ type Props = {
    *  returning zero rows). An empty board must never imply "the market was
    *  quiet" when the truth is "we could not read it". */
   loadError?: string | null
+  /** Which collection's index this is — tiers, colours, copy and share link follow it. */
+  collection?: MarketIndexCollection
 }
 
-export default function MarketIndexClient({ initialRows, initialFetchedAt, loadError = null }: Props) {
+export default function MarketIndexClient({ initialRows, initialFetchedAt, loadError = null, collection = "nba-top-shot" }: Props) {
+  const cfg = marketIndexConfig(collection)
+  const isAllDay = collection === "nfl-all-day"
+  const PLOT_TIERS = cfg.plotTiers
+  const TIER_HEX = cfg.tierHex
   // The server provides the full trailing-120-day window; there are no
   // fetch-changing filters, so we never refetch — the chart is pure-function
   // derived from these rows and renders server-side.
@@ -336,7 +365,11 @@ export default function MarketIndexClient({ initialRows, initialFetchedAt, loadE
   const fetchedAt = initialFetchedAt
   const [hidden, setHidden] = useState<Set<PlotTier>>(new Set())
 
-  const built = useMemo(() => buildSeries(rows), [rows])
+  const built = useMemo(() => buildSeries(rows, marketIndexConfig(collection).plotTiers), [rows, collection])
+  const commonPct = useMemo(() => {
+    const share = commonShare(rows)
+    return share == null ? null : Math.round(share * 100)
+  }, [rows])
 
   // A read failure and a genuinely empty window look identical once the rows
   // array is empty — say which one it is.
@@ -354,10 +387,12 @@ export default function MarketIndexClient({ initialRows, initialFetchedAt, loadE
   }
 
   const tweetIntent = useMemo(() => {
-    const text = `Top Shot's "floor price" is a sub-$1 number dominated by commons.\n\nThe RPC Index segments the market by tier — what Legendary, Rare, and Fandom moments are actually doing:`
-    const url = `${SITE_URL}/insights/market`
+    const text = isAllDay
+      ? `NFL All Day's blended market price is dominated by commons.\n\nThe RPC Index segments it by tier — what Legendary, Rare, and Uncommon moments are actually doing:`
+      : `Top Shot's "floor price" is a sub-$1 number dominated by commons.\n\nThe RPC Index segments the market by tier — what Legendary, Rare, and Fandom moments are actually doing:`
+    const url = `${SITE_URL}${marketIndexConfig(collection).path}`
     return `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`
-  }, [])
+  }, [isAllDay, collection])
 
   // Cards in descending typical-value order, skipping tiers with no data.
   const cardTiers = PLOT_TIERS.filter((t) => built.headline[t]?.latestMedian != null)
@@ -368,15 +403,26 @@ export default function MarketIndexClient({ initialRows, initialFetchedAt, loadE
 
       <section className="rpc-mk-hero">
         <div className="rpc-mk-eyebrow">RPC Insights · Public</div>
-        <h1 className="rpc-mk-h1">The RPC Index</h1>
-        <p className="rpc-mk-lede">
-          Top Shot&apos;s market &ldquo;floor&rdquo; is a sub-$1 number because{" "}
-          <strong>commons dominate by volume</strong> — roughly 450 of every 550
-          daily sales. One blended price hides everything that matters. So we{" "}
-          <strong>segment by tier</strong> and index each one to 100 at the start
-          of the window: a normalized read of what Legendary, Rare, Fandom, and
-          Common moments are <em>actually</em> doing.
-        </p>
+        <h1 className="rpc-mk-h1">{isAllDay ? "The RPC Index · NFL All Day" : "The RPC Index"}</h1>
+        {isAllDay ? (
+          <p className="rpc-mk-lede">
+            NFL All Day&apos;s blended market price is set by{" "}
+            <strong>commons, which dominate by volume</strong>
+            {commonPct != null ? <> — {commonPct}% of the sales in this window</> : null}. One blended price hides
+            everything that matters. So we <strong>segment by tier</strong> and index each one to 100 at the start of
+            the window: a normalized read of what Legendary, Rare, Uncommon, and Common moments are{" "}
+            <em>actually</em> doing.
+          </p>
+        ) : (
+          <p className="rpc-mk-lede">
+            Top Shot&apos;s market &ldquo;floor&rdquo; is a sub-$1 number because{" "}
+            <strong>commons dominate by volume</strong> — roughly 450 of every 550
+            daily sales. One blended price hides everything that matters. So we{" "}
+            <strong>segment by tier</strong> and index each one to 100 at the start
+            of the window: a normalized read of what Legendary, Rare, Fandom, and
+            Common moments are <em>actually</em> doing.
+          </p>
+        )}
         <div className="rpc-mk-meta-row">
           <span className="rpc-mk-meta">
             Updated <FreshnessStamp iso={fetchedAt} />
@@ -385,6 +431,11 @@ export default function MarketIndexClient({ initialRows, initialFetchedAt, loadE
           <span className="rpc-mk-meta">Trailing 120 days</span>
           <span className="rpc-mk-meta-sep">·</span>
           <span className="rpc-mk-meta">No signup</span>
+          <span className="rpc-mk-meta-sep">·</span>
+          {/* Each collection's index is its own page; this links the other one. */}
+          <Link href={isAllDay ? "/insights/market" : "/insights/allday-market"} className="rpc-mk-meta" data-testid="mk-other-index">
+            {isAllDay ? "Top Shot index →" : "NFL All Day index →"}
+          </Link>
         </div>
       </section>
 
@@ -436,7 +487,7 @@ export default function MarketIndexClient({ initialRows, initialFetchedAt, loadE
         {built.dates.length === 0 ? (
           <div className="rpc-mk-state" role={loadError ? "alert" : undefined}>{emptyLabel}</div>
         ) : (
-          <IndexChart built={built} hidden={hidden} />
+          <IndexChart built={built} hidden={hidden} plotTiers={PLOT_TIERS} tierHex={TIER_HEX} />
         )}
       </section>
 
@@ -463,18 +514,37 @@ export default function MarketIndexClient({ initialRows, initialFetchedAt, loadE
             Legendary can share one chart and you read <em>momentum</em>, not
             dollars.
           </p>
-          <p>
-            Built from <strong>real secondary-market sales only</strong>{" "}
-            (price &gt; $0), rolled up daily. Thin tiers (Ultimate rarely
-            trades) appear as sparse points — we never zero-fill a day with no
-            sales, so the line simply connects the days that traded.
-          </p>
-          <p>
-            <strong>Why no single &ldquo;Top Shot price&rdquo;:</strong> the
-            all-market median is sub-$1 because commons swamp the count. Quoting
-            it would be as dishonest as a face-value 200× pack EV. Tiers are the
-            honest unit.
-          </p>
+          {isAllDay ? (
+            <>
+              <p>
+                Built from <strong>real secondary-market sales only</strong>{" "}
+                (price &gt; $0), rolled up daily. Legendary trades a few times a day and not every day, so its line
+                is sparse — we never zero-fill a day with no sales. <strong>Ultimate is not shown:</strong>{" "}
+                {loadError
+                  ? "it trades too rarely for an index."
+                  : <>it traded {fmtInt(tierSales(rows, "ULTIMATE"))} {tierSales(rows, "ULTIMATE") === 1 ? "time" : "times"} in this window, too few for an index.</>}
+              </p>
+              <p>
+                <strong>Why no single &ldquo;All Day price&rdquo;:</strong> commons swamp the count, so a blended
+                median says nothing about the tiers collectors actually trade up into. Tiers are the honest unit.
+              </p>
+            </>
+          ) : (
+            <>
+              <p>
+                Built from <strong>real secondary-market sales only</strong>{" "}
+                (price &gt; $0), rolled up daily. Thin tiers (Ultimate rarely
+                trades) appear as sparse points — we never zero-fill a day with no
+                sales, so the line simply connects the days that traded.
+              </p>
+              <p>
+                <strong>Why no single &ldquo;Top Shot price&rdquo;:</strong> the
+                all-market median is sub-$1 because commons swamp the count. Quoting
+                it would be as dishonest as a face-value 200× pack EV. Tiers are the
+                honest unit.
+              </p>
+            </>
+          )}
         </div>
 
         <div className="rpc-mk-share">

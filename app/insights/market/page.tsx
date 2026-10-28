@@ -11,57 +11,14 @@
 //
 // Metadata + JSON-LD live in layout.tsx (server-rendered).
 
-import { supabaseAdmin } from "@/lib/supabase"
-import { fetchAllPaged } from "@/lib/supabase-paginate"
-import { withPagedBoardBudget } from "@/lib/insights/board-page-fetch"
-import MarketIndexClient, { type Row } from "./MarketIndexClient"
+import { fetchMarketIndexPageRows } from "@/lib/insights/market-index-board"
+import MarketIndexClient from "./MarketIndexClient"
 
 // Match the API route's 15-minute edge cache (daily-granularity data).
 export const revalidate = 900
 
-async function fetchInitialRows(): Promise<{ rows: Row[]; loadError: string | null }> {
-  // Trailing 120-day cutoff (inclusive), same as the route default.
-  const cutoff = new Date(Date.now() - 120 * 86_400_000).toISOString().slice(0, 10)
-  // 686 rows today (121 days x <=7 tiers, ~847 ceiling) so .limit(2000) — silently
-  // clamped to 1,000 — is not truncating yet. It is still wrong to leave: the sort
-  // is d ASCENDING, so the first overflow would drop the NEWEST days off a market
-  // index chart while leaving stale history in place. Paged instead.
-  // ⚠ BOUNDED — this page is PRERENDERED, and an unbounded read here failed a
-  // PRODUCTION BUILD on 2026-08-15 (dpl_ARp2A4jk83FEpcs7FxBpbx6YMAJV:
-  // "Export encountered an error on /insights/market/page … exiting the build",
-  // after "Timed out acquiring connection from connection pool"). Next gives
-  // each page 60s to export and then kills the whole build — and a PAGED read
-  // is the worst shape for that, because it multiplies one slow round trip by
-  // the page count. Same class as BOARD_LIVE_TIMEOUT_MS on first-mint and
-  // SET_DETAIL_TIMEOUT_MS on /analytics/sets; the honest degraded path below
-  // already exists, it simply was not reachable from SLOW, only from BROKEN.
-  const { rows: data, error } = await withPagedBoardBudget(
-    fetchAllPaged<Row>(
-    (from, to) =>
-      (supabaseAdmin as any)
-        .from("topshot_market_index_daily")
-        .select("d, tier, sales, volume_usd, median_px, avg_px, max_px")
-        .gte("d", cutoff)
-        .order("d", { ascending: true })
-        .order("tier", { ascending: true })
-        .range(from, to),
-      { label: "insights/market" },
-    ),
-    "market",
-  )
-  if (error) {
-    // HONESTY: a failed read is NOT "no data". Returning [] here rendered
-    // "No market data in range." on a healthy market — exactly what the
-    // 2026-08-01 QA sweep saw while the backing view was timing out. Surface
-    // the failure so the board says it is broken instead of quietly lying.
-    console.error("[insights/market] initial fetch", error)
-    return { rows: [], loadError: error || "market index unavailable" }
-  }
-  return { rows: (data ?? []) as Row[], loadError: null }
-}
-
 export default async function MarketIndexPage() {
-  const { rows, loadError } = await fetchInitialRows()
+  const { rows, loadError } = await fetchMarketIndexPageRows("nba-top-shot")
   // ⚠ `initialFetchedAt` is NULL, not the render clock, when the read FAILED.
   // "Updated <now>" is a claim about the DATA's freshness built from OUR clock: on
   // a failed read it told the reader our numbers were current at the same moment
@@ -74,6 +31,7 @@ export default async function MarketIndexPage() {
       initialRows={rows}
       initialFetchedAt={!loadError ? new Date().toISOString() : null}
       loadError={loadError}
+      collection="nba-top-shot"
     />
   )
 }

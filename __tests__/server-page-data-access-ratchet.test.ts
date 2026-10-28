@@ -127,7 +127,9 @@ const APP_DIR = join(process.cwd(), "app")
 // ⚠ Lowered every time because THIS FILE'S own no-slack assertion demanded it,
 // never from a count carried over by hand — which is the check working exactly as
 // intended, and the reason it fell four times without anyone tracking it.
-const BUDGET = 3
+// 3 → 2 (2026-10-28): /insights/market's read moved to lib/insights/market-index-board.ts when NFL All Day's
+// index (/insights/allday-market) began sharing it — lowered in the same commit that earned it.
+const BUDGET = 2
 
 /**
  * ── THE WALK WAS BLIND TO EVERYTHING THAT IS NOT A `page.tsx` (widened 2026-08-17) ──
