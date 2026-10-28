@@ -1936,13 +1936,13 @@ const PINS = [
     fn: "get_active_challenges",
     test: "supabase/tests/get_active_challenges.sql",
     migration:
-      "supabase/migrations/20261021022635_audit_20261020_challenge_net_ev_one_pack_per_completion_for_atlas_quests.sql",
+      "supabase/migrations/20261028003726_audit_20261027_challenge_worth_it_never_on_a_partial_cost.sql",
   },
   {
     fn: "get_challenge_plan",
     test: "supabase/tests/get_challenge_plan.sql",
     migration:
-      "supabase/migrations/20261021022635_audit_20261020_challenge_net_ev_one_pack_per_completion_for_atlas_quests.sql",
+      "supabase/migrations/20261028003726_audit_20261027_challenge_worth_it_never_on_a_partial_cost.sql",
   },
   {
     fn: "refresh_challenge_costs",

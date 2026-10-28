@@ -10,7 +10,7 @@
 -- filled/cheapest slot ORDER, and the totals/netEv math.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20261021022635_audit_20261020_challenge_net_ev_one_pack_per_completion_for_atlas_quests.sql;
+-- (supabase/migrations/20261028003726_audit_20261027_challenge_worth_it_never_on_a_partial_cost.sql;
 -- re-pinned 2026-10-20 from 20260822 — the one-pack-per-completion arm for source='atlas_quest');
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts, and the
 -- md5 of pg_get_functiondef was confirmed byte-identical to LIVE prod on 2026-08-01
@@ -80,7 +80,12 @@ agg AS (
     count(*) AS total_slots,
     count(*) FILTER (WHERE filled) AS filled_slots,
     count(*) FILTER (WHERE eligible_count = 0) AS unresolved_slots,
-    SUM(cheapest_unowned_cost) FILTER (WHERE NOT filled)::numeric(12,2) AS cost_to_complete
+    -- 2026-10-27: an unresolved slot, or a needed slot with no price, makes the cost UNKNOWN (NULL) — never a
+    -- partial sum that netEv / worthIt then read as the whole cost ("WORTH IT" on a cost missing slots).
+    CASE WHEN count(*) FILTER (WHERE eligible_count = 0) > 0
+              OR count(*) FILTER (WHERE NOT filled AND eligible_count > 0 AND cheapest_unowned_cost IS NULL) > 0
+         THEN NULL
+         ELSE SUM(cheapest_unowned_cost) FILTER (WHERE NOT filled)::numeric(12,2) END AS cost_to_complete
   FROM slot_state
 )
 SELECT jsonb_build_object(
@@ -133,9 +138,12 @@ SELECT _assert_eq((get_challenge_plan('0xWALLET00000001','00000000-0000-0000-000
 SELECT _assert_eq((get_challenge_plan('0xWALLET00000001','00000000-0000-0000-0000-0000000c0001')->>'missingCount'), '2', 'missing 2 slots');
 SELECT _assert_eq((get_challenge_plan('0xWALLET00000001','00000000-0000-0000-0000-0000000c0001')->>'unresolvedSlots'), '1', 'slot3 has 0 eligible -> 1 unresolved');
 SELECT _assert_eq((get_challenge_plan('0xWALLET00000001','00000000-0000-0000-0000-0000000c0001')->>'completionPct'), '33.3', '1 of 3 filled');
-SELECT _assert((get_challenge_plan('0xWALLET00000001','00000000-0000-0000-0000-0000000c0001')->>'costToComplete')::numeric = 40, 'cost-to-complete = slot2 cheapest-unowned (40); slot3 NULL ignored');
-SELECT _assert((get_challenge_plan('0xWALLET00000001','00000000-0000-0000-0000-0000000c0001')->>'netEv')::numeric = 160, 'netEv = 100 * packsPerUser 2 - cost 40 = 160');
-SELECT _assert_eq((get_challenge_plan('0xWALLET00000001','00000000-0000-0000-0000-0000000c0001')->>'worthIt'), 'true', 'positive netEv -> worthIt');
+-- INVERTED 2026-10-27: these pinned the defect — "slot3 NULL ignored" summed only the resolved slots, so netEv /
+-- worthIt read a partial cost as the whole ("WORTH IT" on a cost missing slots). With an unresolved slot the cost,
+-- netEv and worthIt are now UNKNOWN. (The fully-resolved netEv-160 control lives in get_active_challenges.sql.)
+SELECT _assert_eq((get_challenge_plan('0xWALLET00000001','00000000-0000-0000-0000-0000000c0001')->>'costToComplete'), NULL, 'an unresolved slot makes cost-to-complete unknown, never the partial 40');
+SELECT _assert_eq((get_challenge_plan('0xWALLET00000001','00000000-0000-0000-0000-0000000c0001')->>'netEv'), NULL, 'netEv is unknown on a partial cost');
+SELECT _assert_eq((get_challenge_plan('0xWALLET00000001','00000000-0000-0000-0000-0000000c0001')->>'worthIt'), NULL, 'no WORTH IT verdict on a partial cost');
 
 -- ── WALLET MATCHING IS EXACT-OR-LOWERCASE, same rewrite as get_active_challenges ──
 -- Re-pinned 2026-08-22. This function drifted in the SAME pass as its sibling: the
@@ -153,9 +161,9 @@ SELECT _assert_eq((get_challenge_plan('0xWALLET00000001','00000000-0000-0000-000
 SELECT _assert_eq((get_challenge_plan('0xwallet00000001','00000000-0000-0000-0000-0000000c0001')->>'ownedCount'), '0',
   'a differently-cased form of the SAME stored wallet does NOT match — ownership is
    exact-or-lowercase, not case-insensitive');
-SELECT _assert((get_challenge_plan('0xwallet00000001','00000000-0000-0000-0000-0000000c0001')->>'costToComplete')::numeric = 70,
-  'and the miss shows up in the PRICE: every slot reads unowned, so cost-to-complete
-   is the full 30+40 rather than 40');
+-- Re-pinned 2026-10-27: CH1 has an unresolved slot, so its cost is now UNKNOWN; the miss is read on missingCount.
+SELECT _assert_eq((get_challenge_plan('0xwallet00000001','00000000-0000-0000-0000-0000000c0001')->>'missingCount'), '3',
+  'and the miss shows up in what is still NEEDED: every slot reads unowned (3 missing rather than 2)');
 SELECT _assert_eq((get_challenge_plan('0xWALLET00000001','00000000-0000-0000-0000-0000000c0001')->>'ownedCount'), '1',
   'while the exact stored form still matches — the control that keeps the two cases
    above from passing for the wrong reason');

@@ -8,7 +8,7 @@
 -- totals/completion math, and the netEv/worthIt formula.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20261021022635_audit_20261020_challenge_net_ev_one_pack_per_completion_for_atlas_quests.sql;
+-- (supabase/migrations/20261028003726_audit_20261027_challenge_worth_it_never_on_a_partial_cost.sql;
 -- re-pinned 2026-10-20 from 20260822 — the one-pack-per-completion arm for source='atlas_quest');
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts, and the
 -- md5 of pg_get_functiondef was confirmed byte-identical to LIVE prod on 2026-08-01
@@ -59,6 +59,9 @@ agg AS (
   SELECT s.challenge_id,
     count(*) AS resolved_slots,
     count(*) FILTER (WHERE s.owned) AS filled_slots,
+    -- 2026-10-27: a needed slot with no price drops out of SUM, so it is counted, and any such slot (or an
+    -- unresolved slot) makes the cost unknown rather than a partial sum presented as the whole.
+    count(*) FILTER (WHERE NOT s.owned AND s.slot_cost IS NULL) AS unpriced_slots,
     SUM(s.slot_cost) FILTER (WHERE NOT s.owned)::numeric(12,2) AS cost_to_complete
   FROM slot s GROUP BY s.challenge_id
 )
@@ -83,7 +86,10 @@ SELECT jsonb_build_object(
       'worthIt', CASE WHEN c.cached_reward_value IS NULL OR a.cost_to_complete IS NULL THEN NULL
                       ELSE (c.cached_reward_value * CASE WHEN c.source = 'atlas_quest' THEN 1 ELSE GREATEST(COALESCE(c.total_reward_allocation::numeric / NULLIF(c.completed_count,0), 1), 1) END - a.cost_to_complete) > 0 END)
       ORDER BY (c.cached_reward_value * CASE WHEN c.source = 'atlas_quest' THEN 1 ELSE GREATEST(COALESCE(c.total_reward_allocation::numeric / NULLIF(c.completed_count,0), 1), 1) END - a.cost_to_complete) DESC NULLS LAST, c.ends_at ASC NULLS LAST)
-    FROM ch c LEFT JOIN totals t ON t.challenge_id = c.id LEFT JOIN agg a ON a.challenge_id = c.id), '[]'::jsonb)
+    FROM ch c LEFT JOIN totals t ON t.challenge_id = c.id
+      LEFT JOIN LATERAL (SELECT a0.challenge_id, a0.resolved_slots, a0.filled_slots,
+                                CASE WHEN COALESCE(t.total_slots,0) - a0.resolved_slots > 0 OR a0.unpriced_slots > 0 THEN NULL ELSE a0.cost_to_complete END AS cost_to_complete
+                           FROM agg a0 WHERE a0.challenge_id = c.id) a ON true), '[]'::jsonb)
 )
 $function$;
 -- <<< END verbatim get_active_challenges <<<
@@ -170,6 +176,18 @@ INSERT INTO badge_editions (external_id, collection_id, low_ask) VALUES ('ekQ','
 SELECT _assert((get_active_challenges(NULL,'00000000-0000-0000-0000-00000000eeee')->'challenges'->0->>'packsPerUser')::numeric = 1, 'atlas_quest: packsPerUser is 1, not alloc/completed (340/85 = 4)');
 SELECT _assert((get_active_challenges(NULL,'00000000-0000-0000-0000-00000000eeee')->'challenges'->0->>'netEv')::numeric = -342.43, 'atlas_quest: netEv = one pack 129.00 - cost 471.43');
 SELECT _assert_eq((get_active_challenges(NULL,'00000000-0000-0000-0000-00000000eeee')->'challenges'->0->>'worthIt'), 'false', 'atlas_quest: the old multiplier''s false worthIt=true is gone');
+
+-- ── A PARTIAL COST IS NOT A COST (2026-10-27) ──────────────────────────────────────────────────────────────
+-- One priced slot ($10) and one UNRESOLVED slot (no edition mapped) against a $100 reward: the old body summed the
+-- resolved slot only and read netEv +90 / WORTH IT. Cost, netEv and worthIt are unknown until every slot is priced.
+INSERT INTO challenges (id, collection_id, status, ends_at, slug, name, challenge_type, total_reward_allocation, completed_count, cached_entry_floor, cached_reward_value, source) VALUES
+  ('00000000-0000-0000-0000-0000000c0010','00000000-0000-0000-0000-0000000ffff0','active', now()+interval '10 days','tsq-p','Quest P','set_locking', 1, 1, 10, 100.00, 'atlas_quest');
+INSERT INTO challenge_slots (challenge_id, slot_order) VALUES ('00000000-0000-0000-0000-0000000c0010',1),('00000000-0000-0000-0000-0000000c0010',2);
+INSERT INTO challenge_slot_editions (challenge_id, slot_order, external_id) VALUES ('00000000-0000-0000-0000-0000000c0010',1,'ekP');
+INSERT INTO badge_editions (external_id, collection_id, low_ask) VALUES ('ekP','00000000-0000-0000-0000-0000000ffff0',10);
+SELECT _assert_eq((get_active_challenges(NULL,'00000000-0000-0000-0000-0000000ffff0')->'challenges'->0->>'unresolvedSlots'), '1', 'partial: one unresolved slot');
+SELECT _assert_eq((get_active_challenges(NULL,'00000000-0000-0000-0000-0000000ffff0')->'challenges'->0->>'costToComplete'), NULL, 'partial: cost unknown, never the resolved slot alone');
+SELECT _assert_eq((get_active_challenges(NULL,'00000000-0000-0000-0000-0000000ffff0')->'challenges'->0->>'worthIt'), NULL, 'partial: no WORTH IT verdict');
 
 SELECT '✓ get_active_challenges invariants pass' AS result;
 ROLLBACK;
