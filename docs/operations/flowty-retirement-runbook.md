@@ -10,6 +10,8 @@ Roadmap item: [sniper-and-deals.md](../strategy/features/sniper-and-deals.md) No
 
 Read 10-18 ~9:15 AM PT: **ALIVE ×3.** All three lanes ran 72 of 72 ok in 24 h, `page_errors` max 0, ≥ 100 rows written per run.
 
+🔔 **Read 2026-10-28 ~7:25 AM PT (Claude Code cloud): DARK ×3.** Every tick on all three lanes since ~9:20 PM PT 10-27 fetched 0 (18 of 18 in the last 6 h, ~30 consecutive). Top Shot page 0 answers HTTP 500; All Day and Golazos log 20 page fetch errors each. It is independent of the Dapper outage that began ~9:30 AM PT 10-27: these lanes ran clean for 12 h into it, then fell off together. A web search found only Flowty's undated "suspension of services" post, which does not mention the API. **Decision:** the bar is met, but a 10-hour 500 can still be an outage, and step 2 deletes code. So the teardown runs at **24 h dark (~9:20 PM PT 10-28)**, after one more run of this query. Nothing priced depends on the lanes in the meantime: `fmv_from_cached_listings` is ≤ 2 h bound, and the frozen Flowty rows age out through the 48 h purge. Step 1's two cron-job.org disables need the console (Chrome), which a cloud session lacks. **Falsifier:** any tick with `total_fetched > 0` before then means it is not dark; abandon and record.
+
 ```sql
 with r as (select pipeline, started_at,
   coalesce((extra->>'total_fetched')::int,0) fetched,
