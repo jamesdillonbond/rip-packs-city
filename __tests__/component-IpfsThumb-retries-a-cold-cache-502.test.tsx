@@ -54,6 +54,16 @@ describe("IpfsThumb — one retry on a cold-cache 502, then an honest label", ()
     expect(screen.getByText("Halftone")).toBeTruthy()
   })
 
+  // 10-28 axe: over the tile's fixed rgba(0,0,0,0.3) the muted label read 3.89:1 in light mode (edition-page
+  // parallel cards while Dapper's image host was down). The label fills the tile on an opaque theme surface.
+  it("the fallback label sits on an opaque theme surface, never the translucent tile", () => {
+    render(<IpfsThumb src={null} alt="Holo MMXX" label="Holo MMXX" />)
+    const label = screen.getByText("Holo MMXX") as HTMLElement
+    expect(label.style.background).toBe("var(--rpc-surface)")
+    expect(label.style.width).toBe("100%")
+    expect(label.style.height).toBe("100%")
+  })
+
   it("an image that loads is left alone", () => {
     render(<IpfsThumb src={SRC} alt="Bubbled" label="Bubbled" />)
     const img = screen.getByAltText("Bubbled") as HTMLImageElement

@@ -69,8 +69,17 @@ export default function IpfsThumb({
           style={{ width: "100%", height: "100%", objectFit: "cover" }}
         />
       ) : (
+        // The label fills the tile on its own opaque, theme-aware surface: over the tile's fixed rgba(0,0,0,0.3) the
+        // muted token read 3.89:1 in light mode (axe, 10-28, while Dapper's image host was down).
         <span
           style={{
+            width: "100%",
+            height: "100%",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            boxSizing: "border-box",
+            background: "var(--rpc-surface)",
             color: "var(--rpc-text-muted)",
             fontFamily: "var(--font-mono)",
             fontSize: 10,
