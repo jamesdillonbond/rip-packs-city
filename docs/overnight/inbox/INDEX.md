@@ -1,4 +1,4 @@
-# Inbox index — 607 live filings
+# Inbox index — 608 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -32,7 +32,9 @@ failure it documents.
 
 ---
 
-## 2026-10-28 — 1 filing
+## 2026-10-28 — 2 filings
+
+- [🟢 Daytime monitor (10-28 ~18:06Z, infra GREEN, 16/16 dashboard objects OK, not a spell) — single isolated pg_cron "job startup timeout" cluster at the :06 minute (10 jobs, 18:00Z hour only; 0 in every other hour across 12h, 0 logic errors); transient bgworker-slot pile-up, likely amplified by Dapper-outage HTTP retries — SYMPTOM, quiet-window re-measure, LOW](2026-10-28T1810Z-daytime-monitor-pgcron-startup-timeout-06min-blip.md)
 
 - [🔴 Daytime monitor (10-28 ~03:12Z) ESCALATION of 2026-10-27T1809Z — all three Top Shot Atlas lanes STILL fully dark ~10h (since 17:03Z); upstream 502 persists (609/3h market lane, newest 03:12Z), NOT recovered; Top Shot market/edition/sale freshness ~10h stale (newest sale 16:54Z); the 18:09Z "verify recovery" is a NO — HIGH(freshness)/upstream](2026-10-28T0312Z-daytime-monitor-topshot-atlas-lanes-STILL-DARK-10h-502-escalation.md)
 
