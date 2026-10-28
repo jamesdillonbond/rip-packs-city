@@ -86,6 +86,8 @@ const PAGES: PageCheck[] = [
   { path: "/insights/allday-pack-market", name: "insights · all day pack market" },
   { path: "/insights/allday-pack-reality", name: "insights · all day pack reality" },
   { path: "/insights/allday-scarcity", name: "insights · all day scarcity" },
+  { path: "/insights/allday-squeeze", name: "insights · all day squeeze" },
+  { path: "/insights/allday-set-squeeze", name: "insights · all day set squeeze" },
   { path: "/insights/cross-collection", name: "insights · cross collection" },
   { path: "/insights/first-mint", name: "insights · first mint" },
   { path: "/insights/market-pulse", name: "insights · market pulse" },

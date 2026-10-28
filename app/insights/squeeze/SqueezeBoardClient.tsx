@@ -139,17 +139,32 @@ type Props = {
   initialFetchedAt: string | null
   /** Non-null only when the server-side default fetch FAILED (not when it was empty). */
   initialDegraded?: DegradedSummary | null
+  /**
+   * The collection `initialRows` were read for, on a page that IS one collection's board
+   * (/insights/allday-squeeze, 2026-10-27). Set: `?collection=` is ignored and the toggle
+   * navigates to the other board's own page. Unset (/insights/squeeze): the seed is Top
+   * Shot's and the toggle switches in place, as before.
+   */
+  initialCollection?: SqueezeCollection
+}
+
+/** Each collection's own board page — the toggle's target from a dedicated page, and the share URL. */
+const BOARD_PATH: Record<SqueezeCollection, string> = {
+  "nba-top-shot": "/insights/squeeze",
+  "nfl-all-day": "/insights/allday-squeeze",
 }
 
 export default function SqueezeBoardClient({
   initialRows,
   initialFetchedAt,
   initialDegraded = null,
+  initialCollection,
 }: Props) {
+  const seedCollection: SqueezeCollection = initialCollection ?? "nba-top-shot"
   const [rows, setRows] = useState<Row[]>(initialRows)
-  // Which collection `rows` were read for (the server seed is Top Shot's).
-  const [rowsCollection, setRowsCollection] = useState<SqueezeCollection>("nba-top-shot")
-  const [collection, setCollection] = useState<SqueezeCollection>("nba-top-shot")
+  // Which collection `rows` were read for (the server seed's).
+  const [rowsCollection, setRowsCollection] = useState<SqueezeCollection>(seedCollection)
+  const [collection, setCollection] = useState<SqueezeCollection>(seedCollection)
   const isTopShot = collection === "nba-top-shot"
   const label = SQUEEZE_LABEL[collection]
   // Held in state, not read straight from the prop, so a successful sort/drill-down
@@ -194,7 +209,8 @@ export default function SqueezeBoardClient({
       const s = url.searchParams.get("set")
       const p = url.searchParams.get("player")
       const c = url.searchParams.get("collection")
-      if (isSqueezeCollection(c)) setCollection(c)
+      // A dedicated board page is its collection; only /insights/squeeze reads the param.
+      if (!initialCollection && isSqueezeCollection(c)) setCollection(c)
       if (s) setSetFilter(s)
       if (p) setPlayerFilter(p)
       const t = url.searchParams.get("team")?.trim()
@@ -207,7 +223,7 @@ export default function SqueezeBoardClient({
       const mb = Number(url.searchParams.get("min_buyable"))
       if (Number.isFinite(mb) && mb > 0) setMinBuyable(mb)
     }
-  }, [])
+  },[initialCollection])
 
   // Rewards: a logged-in user viewing the squeeze board earns view_squeeze_board
   // (daily_cap 1, enforced server-side). This is a public surface: before
@@ -242,7 +258,7 @@ export default function SqueezeBoardClient({
   useEffect(() => {
     if (isFirstRun.current) {
       isFirstRun.current = false
-      if (collection === "nba-top-shot" && sort === "squeeze" && !setFilter && !playerFilter && !teamFilter && minCirculation == null && minBuyable == null) {
+      if (collection === seedCollection && sort === "squeeze" && !setFilter && !playerFilter && !teamFilter && minCirculation == null && minBuyable == null) {
         return
       }
     }
@@ -295,10 +311,15 @@ export default function SqueezeBoardClient({
     }
     run()
     return () => ctrl.abort()
-  }, [collection, sort, setFilter, playerFilter, tier, maxBuyable, maxCirculation, minCirculation, minBuyable, teamFilter])
+  }, [collection, seedCollection, sort, setFilter, playerFilter, tier, maxBuyable, maxCirculation, minCirculation, minBuyable, teamFilter])
 
   // Switching collection resets the tier (different vocabularies) and the census sort All Day lacks.
   function pickCollection(c: SqueezeCollection) {
+    // From a dedicated page, the other collection's board is its own page.
+    if (initialCollection && c !== initialCollection) {
+      if (typeof window !== "undefined") window.location.assign(BOARD_PATH[c])
+      return
+    }
     setCollection(c)
     setTier("ALL")
     if (c !== "nba-top-shot" && sort === "concentration") setSort("squeeze")
@@ -402,9 +423,11 @@ export default function SqueezeBoardClient({
 
   const tweetIntent = useMemo(() => {
     const text = `${label} displays circulation. We display effective supply.\n\nThe lock-rate squeeze board — what's actually buyable after locks + burns:`
-    const url = `${SITE_URL}/insights/squeeze${isTopShot ? "" : `?collection=${collection}`}`
+    // Each collection's own page: its metadata and OG card are that collection's (the
+    // ?collection= toggle URL previews with Top Shot's — 10-27 review).
+    const url = `${SITE_URL}${BOARD_PATH[collection]}`
     return `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`
-  }, [label, isTopShot, collection])
+  }, [label, collection])
 
   return (
     <main style={styles.page}>

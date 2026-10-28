@@ -77,6 +77,24 @@ export const INSIGHTS_BOARDS: readonly InsightsBoard[] = [
     publicApi: true,
   },
   {
+    slug: "allday-squeeze",
+    kind: "dataset",
+    name: "NFL All Day Lock-Rate Squeeze Board",
+    description:
+      "Ranks NFL All Day editions by effective supply (circulation minus locked minus burned). Refreshes hourly.",
+    // Its JSON is /api/public/insights/squeeze?collection=nfl-all-day — a required param, so no default DataDownload.
+    publicApi: false,
+  },
+  {
+    slug: "allday-set-squeeze",
+    kind: "dataset",
+    name: "NFL All Day Set Squeeze Leaderboard",
+    description:
+      "NFL All Day sets ranked by average lock + burn squeeze across their editions — the drill-down companion to the All Day squeeze board.",
+    // Its JSON is /api/public/insights/set-squeeze?collection=nfl-all-day — a required param, so no default DataDownload.
+    publicApi: false,
+  },
+  {
     slug: "autographs",
     kind: "dataset",
     name: "Autographed Moments",

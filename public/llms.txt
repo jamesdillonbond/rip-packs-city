@@ -40,6 +40,8 @@ Each board is a schema.org Dataset (or WebApplication for the wallet tools); mos
 - /insights/pack-drops — Pack Drops. Vaultopolis re-pack drops of real Top Shot moments scored against RPC FMV.
 - /insights/pinnacle-scarcity — Disney Pinnacle Scarcity Board. Editions ranked by how far below their variant family's average mint they sit.
 - /insights/allday-scarcity — NFL All Day Scarcity Board. Editions ranked by how far below their set and tier family's average mint they sit.
+- /insights/allday-squeeze — NFL All Day Lock-Rate Squeeze Board. Ranks NFL All Day editions by effective supply (circulation minus locked minus burned).
+- /insights/allday-set-squeeze — NFL All Day Set Squeeze Leaderboard. Sets ranked by average lock + burn squeeze across their editions.
 - /insights/tc-report — Top Collector Report. Full bag analytics for any Flow wallet — squeeze exposure, set completion, cross-collection footprint, rookie + WNBA coverage.
 - /insights/candy-mlb — Candy MLB ICONs. 2026 MLB Base Series ICONs (Candy Digital / Solana): secondary FMV, best offers, bid-ask spread, pack EV, holder concentration.
 - /insights/panini-squeeze — Panini WC Prizm Squeeze. Which 2026 Panini Prizm World Cup cards are still sealed — remaining supply, rip %, FMV and sealed-dollar exposure.

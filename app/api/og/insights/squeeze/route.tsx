@@ -1,7 +1,10 @@
 // app/api/og/insights/squeeze/route.tsx
 //
-// Open Graph card for /insights/squeeze. 1200x630 PNG rendered server-side
-// via next/og. Falls back to a generic card if the squeeze API is empty.
+// Open Graph card for /insights/squeeze and (`?collection=nfl-all-day`, 2026-10-27)
+// /insights/allday-squeeze. 1200x630 PNG rendered server-side via next/og. Falls
+// back to a generic card if the squeeze API is empty. The card names the
+// collection its rows were read for; any other `collection` value is Top Shot's
+// card, labelled Top Shot.
 //
 // Surfaces three live "headline" examples so the Twitter / iMessage / Slack
 // preview is data-rich rather than a logo + tagline — per the 2026-05-29
@@ -15,6 +18,8 @@ import { brandFonts, brandFamilies, ogCacheHeaders } from "@/lib/og/brand-fonts"
 import { fetchBoardCount, boardCountLabel, type BoardCount } from "@/lib/og/board-count"
 import { ogFetch } from "@/lib/og/og-fetch"
 import { FMV_ALGO_VERSION } from "@/lib/fmv-recalc-math"
+import { SQUEEZE_LABEL, isSqueezeCollection, type SqueezeCollection } from "@/lib/insights/squeeze-collections"
+import { ownLookup } from "@/lib/safe-lookup"
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
@@ -42,6 +47,8 @@ function tierColor(tier: string): string {
       return "#818CF8"
     case "FANDOM":
       return "#34D399"
+    case "UNCOMMON":
+      return "#60A5FA"
     case "COMMON":
       return "#94A3B8"
     default:
@@ -54,6 +61,11 @@ export async function GET(req: NextRequest) {
   // validates the bytes before satori sees them, so this cannot break the card.
   const fonts = await brandFonts();
   const fam = brandFamilies(fonts);
+  const requested = new URL(req.url).searchParams.get("collection")
+  const collection: SqueezeCollection = isSqueezeCollection(requested) ? requested : "nba-top-shot"
+  const leg = collection === "nba-top-shot" ? "" : `&collection=${collection}`
+  const label = ownLookup(SQUEEZE_LABEL, collection) ?? "Top Shot"
+  const pagePath = collection === "nba-top-shot" ? "/insights/squeeze" : "/insights/allday-squeeze"
 
   let rows: Row[] = []
   // Headline count: ONE request at the route's own max limit, reading the
@@ -64,10 +76,10 @@ export async function GET(req: NextRequest) {
   let fetched = false
   try {
     const origin = new URL(req.url).origin
-    count = await fetchBoardCount(origin, "/api/public/insights/squeeze?sort=squeeze", 200)
+    count = await fetchBoardCount(origin, `/api/public/insights/squeeze?sort=squeeze${leg}`, 200)
     // Pull a small page sorted by squeeze%. Cache the OG result for 5 min
     // (matches the API's own Cache-Control: s-maxage=300).
-    const r = await ogFetch(`${origin}/api/public/insights/squeeze?sort=squeeze&limit=3`, {
+    const r = await ogFetch(`${origin}/api/public/insights/squeeze?sort=squeeze&limit=3${leg}`, {
       cache: "no-store",
     })
     if (r.ok) {
@@ -139,7 +151,7 @@ export async function GET(req: NextRequest) {
             maxWidth: 1000,
           }}
         >
-          Top Shot displays circulation. We display effective supply — what&apos;s actually buyable after locks + burns.
+          {label} displays circulation. We display effective supply — what&apos;s actually buyable after locks + burns.
         </div>
 
         <div
@@ -224,7 +236,7 @@ export async function GET(req: NextRequest) {
           }}
         >
           <div style={{ display: "flex" }}>Hourly refresh · {FMV_ALGO_VERSION} FMV model</div>
-          <div style={{ display: "flex" }}>rippackscity.com/insights/squeeze</div>
+          <div style={{ display: "flex" }}>rippackscity.com{pagePath}</div>
         </div>
       </div>
     ),

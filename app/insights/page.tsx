@@ -243,6 +243,24 @@ const CARDS: Card[] = [
     available: true,
   },
   {
+    slug: "/insights/allday-squeeze",
+    eyebrow: "Live",
+    title: "NFL All Day Lock-Rate Squeeze Board",
+    blurb:
+      "All Day shows circulation. We show effective supply — every NFL All Day edition ranked by how much of its circulation is locked or burned, with the live low ask beside it.",
+    cta: "Open All Day squeeze",
+    available: true,
+  },
+  {
+    slug: "/insights/allday-set-squeeze",
+    eyebrow: "Live",
+    title: "NFL All Day Set Squeeze Leaderboard",
+    blurb:
+      "Every NFL All Day set ranked by average lock + burn across its editions — how scarce the whole set really is if you're trying to finish it.",
+    cta: "Open All Day set squeeze",
+    available: true,
+  },
+  {
     slug: "/insights/market",
     eyebrow: "Live",
     title: "The RPC Index",

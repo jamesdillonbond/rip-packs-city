@@ -10,6 +10,8 @@ import { brandFonts, brandFamilies, ogCacheHeaders } from "@/lib/og/brand-fonts"
 
 import { fetchBoardCount, boardCountLabel, type BoardCount } from "@/lib/og/board-count"
 import { ogFetch } from "@/lib/og/og-fetch"
+import { SQUEEZE_LABEL, isSqueezeCollection, type SqueezeCollection } from "@/lib/insights/squeeze-collections"
+import { ownLookup } from "@/lib/safe-lookup"
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
@@ -38,6 +40,8 @@ function tierColor(tier: string | null): string {
       return "#818CF8"
     case "FANDOM":
       return "#34D399"
+    case "UNCOMMON":
+      return "#60A5FA"
     case "COMMON":
       return "#94A3B8"
     default:
@@ -50,6 +54,13 @@ export async function GET(req: NextRequest) {
   // validates the bytes before satori sees them, so this cannot break the card.
   const fonts = await brandFonts();
   const fam = brandFamilies(fonts);
+  // `?collection=nfl-all-day` (2026-10-27) is /insights/allday-set-squeeze's card; any other value is
+  // Top Shot's card, labelled Top Shot.
+  const requested = new URL(req.url).searchParams.get("collection")
+  const collection: SqueezeCollection = isSqueezeCollection(requested) ? requested : "nba-top-shot"
+  const leg = collection === "nba-top-shot" ? "" : `&collection=${collection}`
+  const label = ownLookup(SQUEEZE_LABEL, collection) ?? "Top Shot"
+  const pagePath = collection === "nba-top-shot" ? "/insights/set-squeeze" : "/insights/allday-set-squeeze"
 
   let rows: Row[] = []
   // Headline count: ONE request at the route's own max limit, reading the
@@ -60,8 +71,8 @@ export async function GET(req: NextRequest) {
   let fetched = false
   try {
     const origin = new URL(req.url).origin
-    count = await fetchBoardCount(origin, "/api/public/insights/set-squeeze?sort=squeeze", 100)
-    const r = await ogFetch(`${origin}/api/public/insights/set-squeeze?sort=squeeze&limit=3`, {
+    count = await fetchBoardCount(origin, `/api/public/insights/set-squeeze?sort=squeeze${leg}`, 100)
+    const r = await ogFetch(`${origin}/api/public/insights/set-squeeze?sort=squeeze&limit=3${leg}`, {
       cache: "no-store",
     })
     if (r.ok) {
@@ -119,7 +130,7 @@ export async function GET(req: NextRequest) {
             maxWidth: 1000,
           }}
         >
-          Top Shot sets ranked by avg lock + burn across their editions. If you&apos;re completing a set, how scarce is the whole journey?
+          {label} sets ranked by avg lock + burn across their editions. If you&apos;re completing a set, how scarce is the whole journey?
         </div>
 
         <div style={{ marginTop: 34, display: "flex", flexDirection: "column", gap: 12 }}>
@@ -191,7 +202,7 @@ export async function GET(req: NextRequest) {
           }}
         >
           <div style={{ display: "flex" }}>Per-set scarcity · Min 5 covered editions</div>
-          <div style={{ display: "flex" }}>rippackscity.com/insights/set-squeeze</div>
+          <div style={{ display: "flex" }}>rippackscity.com{pagePath}</div>
         </div>
       </div>
     ),

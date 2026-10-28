@@ -55,6 +55,12 @@ type SortKey = "squeeze" | "buyable"
 type SeriesFilter = string
 // Per-collection vocabularies: SQUEEZE_TIERS (All Day has UNCOMMON, no FANDOM).
 type TierFilter = string
+/** Each collection's own set-squeeze page — the toggle's target from a dedicated page, and the share URL. */
+const SET_BOARD_PATH: Record<SqueezeCollection, string> = {
+  "nba-top-shot": "/insights/set-squeeze",
+  "nfl-all-day": "/insights/allday-set-squeeze",
+}
+
 /** Series pills per collection, newest first (All Day: the 2025 and 2024 seasons' series). */
 const SERIES_PILLS: Record<SqueezeCollection, readonly string[]> = {
   "nba-top-shot": ["8", "7", "6", "5"],
@@ -94,6 +100,13 @@ function tierColor(tier: string | null): string {
 type Props = {
   initialRows: Row[]
   initialFetchedAt: string | null
+  /**
+   * The collection `initialRows` were read for, on a page that IS one collection's board
+   * (/insights/allday-set-squeeze, 2026-10-27). Set: `?collection=` is ignored and the toggle
+   * navigates to the other board's own page. Unset (/insights/set-squeeze): the seed is Top
+   * Shot's and the toggle switches in place, as before.
+   */
+  initialCollection?: SqueezeCollection
   /** Non-null only when the server-side default fetch FAILED (not when it was empty). */
   initialDegraded?: DegradedSummary | null
 }
@@ -102,11 +115,13 @@ export default function SetSqueezeBoardClient({
   initialRows,
   initialFetchedAt,
   initialDegraded = null,
+  initialCollection,
 }: Props) {
+  const seedCollection: SqueezeCollection = initialCollection ?? "nba-top-shot"
   const [rows, setRows] = useState<Row[]>(initialRows)
-  // Which collection `rows` were read for (the server seed is Top Shot's).
-  const [rowsCollection, setRowsCollection] = useState<SqueezeCollection>("nba-top-shot")
-  const [collection, setCollection] = useState<SqueezeCollection>("nba-top-shot")
+  // Which collection `rows` were read for (the server seed's).
+  const [rowsCollection, setRowsCollection] = useState<SqueezeCollection>(seedCollection)
+  const [collection, setCollection] = useState<SqueezeCollection>(seedCollection)
   const isTopShot = collection === "nba-top-shot"
   const label = SQUEEZE_LABEL[collection]
   const seriesLabel = (n: number | string): string => seriesDisplay(Number(n), isTopShot ? "nba_top_shot" : "nfl_all_day")
@@ -126,11 +141,18 @@ export default function SetSqueezeBoardClient({
 
   useEffect(() => {
     if (typeof window === "undefined") return
+    // A dedicated board page is its collection; only /insights/set-squeeze reads the param.
+    if (initialCollection) return
     const c = new URL(window.location.href).searchParams.get("collection")
     if (isSqueezeCollection(c)) setCollection(c)
-  }, [])
+  }, [initialCollection])
 
   function pickCollection(c: SqueezeCollection) {
+    // From a dedicated page, the other collection's board is its own page.
+    if (initialCollection && c !== initialCollection) {
+      if (typeof window !== "undefined") window.location.assign(SET_BOARD_PATH[c])
+      return
+    }
     setCollection(c)
     setSeries("ALL")
     setTier("ALL")
@@ -148,7 +170,7 @@ export default function SetSqueezeBoardClient({
   useEffect(() => {
     if (isFirstRun.current) {
       isFirstRun.current = false
-      if (collection === "nba-top-shot" && sort === "squeeze" && series === "ALL" && tier === "ALL") return
+      if (collection === seedCollection && sort === "squeeze" && series === "ALL" && tier === "ALL") return
     }
     const ctrl = new AbortController()
     async function run() {
@@ -178,16 +200,17 @@ export default function SetSqueezeBoardClient({
     }
     run()
     return () => ctrl.abort()
-  }, [collection, sort, series, tier])
+  }, [collection, seedCollection, sort, series, tier])
 
   // The squeeze / first-mint boards' collection param for this board's collection ("" = Top Shot).
   const legQs = isTopShot ? "" : `collection=${collection}&`
 
   const tweetIntent = useMemo(() => {
     const text = `${label} sets ranked by lock + burn across editions. If you're completing this set, how scarce will it actually be?`
-    const url = `${SITE_URL}/insights/set-squeeze${isTopShot ? "" : `?collection=${collection}`}`
+    // Each collection's own page: its metadata and OG card are that collection's (10-27 review).
+    const url = `${SITE_URL}${SET_BOARD_PATH[collection]}`
     return `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`
-  }, [label, isTopShot, collection])
+  }, [label, collection])
 
   return (
     <main style={styles.page}>

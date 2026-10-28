@@ -241,6 +241,16 @@ describe("OG card adoption ratchet", () => {
   // The five entity cards import nothing themselves — they render through
   // lib/og/entity-card.tsx, which is branded and asserted below.
   const viaEntityCard = sources.filter((s) => s.src.includes("@/lib/og/entity-card"))
+  // A thin route that re-serves a SIBLING card (2026-10-27: /allday-squeeze → ../squeeze/route with the
+  // All Day leg) is branded iff the card it delegates to is — resolved and checked, never assumed.
+  const delegateTarget = (s: { f: string; src: string }) => {
+    const m = /from\s+"\.\.\/([a-z0-9-]+)\/route"/.exec(s.src)
+    return m ? sources.find((t) => t.f === path.join(path.dirname(path.dirname(s.f)), m[1], "route.tsx")) : undefined
+  }
+  const viaSharedCard = sources.filter((s) => {
+    const target = delegateTarget(s)
+    return target != null && branded.includes(target)
+  })
 
   /**
    * Does this source take the SHARED cache policy?
@@ -264,7 +274,7 @@ describe("OG card adoption ratchet", () => {
     // social card RPC emits either loads the fonts or delegates to something
     // that does — and a 44th route has to do one or the other to land.
     const uncovered = sources
-      .filter((s) => !branded.includes(s) && !viaEntityCard.includes(s))
+      .filter((s) => !branded.includes(s) && !viaEntityCard.includes(s) && !viaSharedCard.includes(s))
       // `process.cwd() + "/"` never matches on Windows (join yields
       // backslashes), so an offender would have been REPORTED as an absolute
       // path. Latent rather than failing — this list is empty today — but it is

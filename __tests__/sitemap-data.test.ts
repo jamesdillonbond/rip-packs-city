@@ -260,7 +260,11 @@ describe("segment 0 — static + insights + overviews + series + profiles", () =
     // 92 → 93 on 2026-10-24: /help (help, FAQ and contact).
     // 93 → 96 on 2026-10-25: /analytics, /analytics/api, /analytics/methodology
     // (the section became anon-public).
-    expect(s).toHaveLength(96)
+    // 96 → 98 on 2026-10-27: /insights/allday-squeeze and /insights/allday-set-squeeze
+    // (NFL All Day's squeeze boards get their own pages).
+    expect(s).toHaveLength(98)
+    expect(s.find((x) => x.url === `${BASE}/insights/allday-squeeze`)).toBeTruthy()
+    expect(s.find((x) => x.url === `${BASE}/insights/allday-set-squeeze`)).toBeTruthy()
     expect(s.find((x) => x.url === `${BASE}/insights/autographs`)).toBeTruthy()
     expect(s.find((x) => x.url === `${BASE}/sniper`)).toBeTruthy()
     expect(s.find((x) => x.url === `${BASE}/market`)).toBeTruthy()
