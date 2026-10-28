@@ -304,6 +304,10 @@ describe("EditionsGridPaginated", () => {
     fireEvent.error(img) // exhaust candidates
     expect(container.querySelector("img")).toBeNull()
     expect(container.textContent).toContain("No image")
+    // 10-28 axe: over the tile's fixed rgba(0,0,0,0.35) the muted label read 3.63:1 in light mode; the
+    // placeholder carries its own opaque, theme-aware surface.
+    const ph = [...container.querySelectorAll("div")].filter((d) => d.textContent === "No image").at(-1) as HTMLElement
+    expect(ph.style.background).toBe("var(--rpc-surface)")
   })
 
   it("does not arm hover-video for reduced-motion users", () => {

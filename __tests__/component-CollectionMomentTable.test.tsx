@@ -547,3 +547,29 @@ describe("CollectionMomentTable — rows render a page at a time", () => {
     expect(container.textContent).not.toContain("SHOWING")
   })
 })
+
+// 10-28 axe (surfaced while Dapper's image host was down): the moment-art fallback painted white initials on the
+// collection accent — 4.36:1 on Top Shot's #E03A2F, 2.2–4.0:1 on the others. It now takes the house pair from
+// lib/accent-text.ts: accentFill() under labelOn() (white on the deeper red fill; near-black on every other accent).
+describe("CollectionMomentTable — moment-art fallback reads on every collection accent", () => {
+  const fallbackFor = (accent: string) => {
+    const { container } = render(<CollectionMomentTable {...baseProps({ accent, filteredRows: [row({ momentId: "9" })], rowsCount: 1 })} />)
+    for (const img of container.querySelectorAll("td img")) fireEvent.error(img)
+    const el = (container.querySelector("[data-rpc-fallback]") ??
+      [...container.querySelectorAll("td a")].find((a) => a.textContent === "DL")) as HTMLElement | undefined
+    expect(el, "a fallback tile renders").toBeTruthy()
+    return el!
+  }
+
+  it("Top Shot red: white on the deeper --rpc-red-fill, never on #E03A2F itself", () => {
+    const el = fallbackFor("#E03A2F")
+    expect(el.style.background).toBe("var(--rpc-red-fill)")
+    expect(el.style.color).toMatch(/^(#fff|rgb\(255, 255, 255\))$/)
+  })
+
+  it("a light accent (Golazos green): near-black initials, the accent kept as the fill", () => {
+    const el = fallbackFor("#22C55E")
+    expect(el.style.color).toMatch(/^(#0B0B0D|rgb\(11, 11, 13\))$/i)
+    expect(el.style.background.toLowerCase()).toMatch(/#22c55e|rgb\(34, 197, 94\)/)
+  })
+})

@@ -63,7 +63,7 @@ import {
 } from "@/lib/collection-moment-cells"
 import { fmvBasis } from "@/lib/fmv-basis"
 import { trackOutboundClick } from "@/lib/track-click"
-import { accentText } from "@/lib/accent-text"
+import { accentFill, accentText, labelOn } from "@/lib/accent-text"
 
 // The one sanctioned per-value FMV honesty marker: plain-words "from asks" for
 // an ASK_ONLY FMV (0.9x a single seller's ask, never traded). Never the
@@ -327,7 +327,7 @@ export default function CollectionMomentTable(props: {
                         prefetch={false}
                         aria-label={row.playerName ?? "Open moment"}
                         className="relative shrink-0 self-stretch flex items-center justify-center border-r border-[color:var(--rpc-border)]"
-                        style={{ /* brand-exception: white initials on the collection accent */ width: 104, minHeight: 120, background: mThumb ? "var(--rpc-surface-raised)" : accent, color: "#fff", fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 22, letterSpacing: "0.04em" }}
+                        style={{ /* labelOn/accentFill: initials that read on every collection accent */ width: 104, minHeight: 120, background: mThumb ? "var(--rpc-surface-raised)" : accentFill(accent), color: labelOn(accent), fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 22, letterSpacing: "0.04em" }}
                         onClick={function(e) { e.stopPropagation() }}
                         data-rpc-mobile-thumb=""
                       >
@@ -340,7 +340,7 @@ export default function CollectionMomentTable(props: {
                             onError={function(e) {
                               const img = e.target as HTMLImageElement
                               img.style.display = "none"
-                              if (img.parentElement) img.parentElement.style.background = accent
+                              if (img.parentElement) img.parentElement.style.background = accentFill(accent)
                             }}
                           />
                         ) : null}
@@ -620,7 +620,7 @@ export default function CollectionMomentTable(props: {
                                       prefetch={false}
                                       aria-label={"Open " + (row.playerName ?? (isPinnacle ? "pin" : "moment")) + (isPinnacle ? " pin" : " moment")}
                                       className="rounded flex items-center justify-center cursor-pointer"
-                                      style={{ /* brand-exception: white on tier-accent fill */ width: 48, height: 64, background: accent, color: "#fff", fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 16, letterSpacing: "0.04em" }}
+                                      style={{ /* labelOn/accentFill: white on the brand red reads 4.36:1, on the other accents 2.2–4.0:1 */ width: 48, height: 64, background: accentFill(accent), color: labelOn(accent), fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 16, letterSpacing: "0.04em" }}
                                       onClick={function(e) { e.stopPropagation() }}
                                       title={row.playerName}
                                     >
@@ -646,8 +646,8 @@ export default function CollectionMomentTable(props: {
                                           if (parent && !parent.querySelector("[data-rpc-fallback]")) {
                                             const div = document.createElement("div")
                                             div.setAttribute("data-rpc-fallback", "1")
-                                            // brand-exception: white on tier-accent fill (img onError fallback)
-                                            div.style.cssText = "width:48px;height:64px;border-radius:4px;display:flex;align-items:center;justify-content:center;color:#fff;font-family:var(--font-display);font-weight:900;font-size:16px;letter-spacing:0.04em;background:" + accent
+                                            // img onError fallback: the label/fill pair that reads on every accent (lib/accent-text.ts)
+                                            div.style.cssText = "width:48px;height:64px;border-radius:4px;display:flex;align-items:center;justify-content:center;color:" + labelOn(accent) + ";font-family:var(--font-display);font-weight:900;font-size:16px;letter-spacing:0.04em;background:" + accentFill(accent)
                                             div.textContent = initials || "—"
                                             parent.appendChild(div)
                                           }

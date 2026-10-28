@@ -776,7 +776,9 @@ function TileMedia({
           style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
         />
       ) : (
-        <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 10 }}>No image</div>
+        // An opaque, theme-aware surface under the label: over the tile's fixed rgba(0,0,0,0.35) the muted token read
+        // 3.63:1 in light mode (axe, 10-28 — surfaced while Dapper's image host was down).
+        <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--rpc-surface)", color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 10 }}>No image</div>
       )}
       {canVideo && hover && (
         <video
