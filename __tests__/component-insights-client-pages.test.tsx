@@ -250,7 +250,8 @@ describe("TcReportPage (app/insights/tc-report/page.tsx)", () => {
         },
       ],
     }
-    vi.stubGlobal("fetch", mockFetchOnce({ report }))
+    // 2026-10-28: the API carries index_state; a report renders as a reading only when it is "indexed".
+    vi.stubGlobal("fetch", mockFetchOnce({ index_state: "indexed", report }))
     render(<TcReportPage />)
     fireEvent.change(screen.getByLabelText("Flow wallet address"), {
       target: { value: VALID_WALLET },

@@ -57,7 +57,8 @@ function squeeze(over: Record<string, unknown> = {}) {
 
 async function runReport(report: unknown) {
   // The page reads `j.report`, not the bare body.
-  vi.stubGlobal("fetch", jsonOnce({ report }))
+  // 2026-10-28: the API carries index_state; only "indexed" renders the report as a reading.
+  vi.stubGlobal("fetch", jsonOnce({ index_state: "indexed", report }))
   render(<TcReportPage />)
   fireEvent.change(screen.getByLabelText(/Flow wallet address/i), {
     target: { value: VALID_WALLET },

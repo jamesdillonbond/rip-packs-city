@@ -77,3 +77,34 @@ export async function readSqueezeCheck(db: any, wallet: string, collection: Sque
   const state: SqueezeIndexState = row.last_found_count === 0 && trusted ? "empty" : "not_indexed"
   return { rpc, error: null, summary: data ?? null, index_state: state, last_scanned_at: row.last_scanned_at }
 }
+
+export interface WalletScanState {
+  index_state: SqueezeIndexState
+  /** The newest scan on record for this wallet, any collection (null when never, or unread). */
+  last_scanned_at: string | null
+}
+
+/**
+ * The same three states for a WHOLE wallet (every collection) — the Top Collector Report's question, where a
+ * report built from zero cache rows would otherwise publish "0 rookie editions held" for a wallet we never read
+ * (2026-10-28). `hasAnyCachedMoments` comes from the caller's own read (the report's cross-collection rollup);
+ * this only runs when that read found none.
+ *   - "empty": every scan on record is trusted and found 0 — never "the wallet holds nothing", only "our scan found none"
+ *   - "not_indexed": no scan on record, or any scan that found moments / predates the scan-record fix
+ *   - "unknown": the state read failed
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function readWalletScanState(db: any, wallet: string, hasAnyCachedMoments: boolean, label: string): Promise<WalletScanState> {
+  if (hasAnyCachedMoments) return { index_state: "indexed", last_scanned_at: null }
+  const st = await boundedRead(
+    db.from("wallet_backfill_state").select("last_scanned_at, last_found_count").eq("wallet_address", wallet).limit(50),
+    `${label}/wallet_backfill_state`,
+  )
+  if (st.error) return { index_state: "unknown", last_scanned_at: null }
+  const rows = ((st.data ?? []) as Array<{ last_scanned_at: string | null; last_found_count: number | null }>).filter((r) => r.last_scanned_at)
+  if (rows.length === 0) return { index_state: "not_indexed", last_scanned_at: null }
+  const newest = rows.map((r) => r.last_scanned_at as string).sort().at(-1) ?? null
+  const trustedFrom = Date.parse(SCAN_RECORD_TRUSTED_FROM)
+  const allTrustedEmpty = rows.every((r) => r.last_found_count === 0 && Date.parse(r.last_scanned_at as string) >= trustedFrom)
+  return { index_state: allTrustedEmpty ? "empty" : "not_indexed", last_scanned_at: newest }
+}

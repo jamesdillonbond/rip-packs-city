@@ -9,8 +9,15 @@
 // acquisitions. Wraps the get_wallet_tc_report SECDEF RPC via the public
 // /api/public/insights/tc-report route. Same wallet-paste trust model as
 // squeeze-check.
+//
+// 2026-10-28 (All Day parity): an NFL All Day squeeze section beside Top Shot's (the API's `allday_squeeze`, the
+// same read /insights/squeeze-check makes), and ⛔ THREE STATES behind an empty report. A report built from zero
+// cache rows used to render as a reading — "— moments across — editions", "No rookie editions held", "0 of 17 WNBA
+// sets" — for a wallet we never scanned. The API's `index_state` now decides: not_indexed queues the wallet for
+// indexing (/api/public/queue-wallet) and re-checks; empty says what OUR SCAN found, never what the wallet holds;
+// unknown says we could not tell.
 
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { useOwnFlowWallet } from "@/lib/hooks/useOwnFlowWallet"
 import { slugifyName } from "@/lib/entity-labels"
@@ -36,8 +43,8 @@ type SqueezeTopRow = {
 type Squeeze = {
   wallet: string
   collection: string
-  total_moments: number
-  total_editions: number
+  total_moments: number | null
+  total_editions: number | null
   editions_with_badge_coverage: number
   buckets: Buckets
   top_squeezed: SqueezeTopRow[]
@@ -97,6 +104,19 @@ type Report = {
   cross_collection: CrossCollection[]
   recent_acquisitions: RecentAcquisition[]
 } | null
+type IndexState = "indexed" | "empty" | "not_indexed" | "unknown"
+type QueueState = "idle" | "queued" | "failed"
+type AlldayLeg = { index_state: IndexState | null; summary: Squeeze | null } | null
+
+const RECHECK_INTERVAL_MS = 15_000
+const RECHECK_MAX = 8 // ~2 minutes of indexing budget, then a manual "Check again"
+
+function fmtScanDate(iso: string | null): string | null {
+  if (!iso) return null
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return null
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "America/Los_Angeles" })
+}
 
 // Labels come from the registry (lib/collections) through the DB-slug bridge —
 // a hardcoded map beside a registry goes stale silently (Candy was missing
@@ -159,6 +179,8 @@ function tierColor(tier: string | null): string {
       return "var(--tier-rare)"
     case "FANDOM":
       return "var(--tier-fandom)"
+    case "UNCOMMON":
+      return "var(--tier-uncommon)"
     case "COMMON":
       return "var(--tier-common)"
     default:
@@ -169,30 +191,88 @@ function tierColor(tier: string | null): string {
 export default function TcReportPage() {
   const [wallet, setWallet] = useState("")
   const [report, setReport] = useState<Report>(null)
+  const [reportWallet, setReportWallet] = useState<string | null>(null)
+  const [indexState, setIndexState] = useState<IndexState>("unknown")
+  const [lastScannedAt, setLastScannedAt] = useState<string | null>(null)
+  const [allday, setAllday] = useState<AlldayLeg>(null)
+  const [alldayError, setAlldayError] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [queue, setQueue] = useState<QueueState>("idle")
+  const [rechecks, setRechecks] = useState(0)
+  const reqRef = useRef(0)
+  const queuedForRef = useRef<string | null>(null)
 
-  async function runCheck(rawWallet: string) {
+  // `quiet` = a background re-check: no spinner, and a failed re-check keeps what is already shown.
+  const runCheck = useCallback(async (rawWallet: string, quiet = false) => {
     const w = rawWallet.trim().toLowerCase()
     if (!/^0x[a-f0-9]{16}$/.test(w)) {
       setError("Wallet must look like a Flow address — 0x + 16 hex chars.")
       return
     }
-    setError(null)
-    setLoading(true)
+    const myReq = ++reqRef.current
+    if (!quiet) {
+      setError(null)
+      setLoading(true)
+    }
     try {
       const r = await fetch(`/api/public/insights/tc-report?wallet=${encodeURIComponent(w)}`, {
         cache: "no-store",
       })
       const j = await r.json()
       if (!r.ok) throw new Error(j?.error ?? `HTTP ${r.status}`)
-      setReport(j.report)
+      if (myReq !== reqRef.current) return
+      const st: IndexState =
+        j.index_state === "indexed" || j.index_state === "empty" || j.index_state === "not_indexed" ? j.index_state : "unknown"
+      setReport(j.report ?? null)
+      setReportWallet(w)
+      setIndexState(st)
+      setLastScannedAt(j.last_scanned_at ?? null)
+      setAllday(j.allday_squeeze ?? null)
+      setAlldayError(j.allday_squeeze_error === true)
     } catch (err: unknown) {
+      if (myReq !== reqRef.current || quiet) return
+      setReport(null)
+      setReportWallet(null)
       setError(err instanceof Error ? err.message : "Failed to load")
     } finally {
-      setLoading(false)
+      if (myReq === reqRef.current && !quiet) setLoading(false)
     }
-  }
+  }, [])
+
+  // A never-scanned wallet: start indexing it (once per wallet per page view), then re-check on a short budget.
+  useEffect(() => {
+    if (!reportWallet || indexState !== "not_indexed") return
+    if (queuedForRef.current === reportWallet) return
+    queuedForRef.current = reportWallet
+    setQueue("idle")
+    setRechecks(0)
+    fetch("/api/public/queue-wallet", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ wallet: reportWallet }),
+    })
+      .then(async (r) => {
+        // An unreadable body is "did not start", never a silent null a later check could read as queued.
+        let queued = false
+        try {
+          queued = r.ok && (await r.json())?.queued === true
+        } catch {
+          queued = false
+        }
+        setQueue(queued ? "queued" : "failed")
+      })
+      .catch(() => setQueue("failed"))
+  }, [reportWallet, indexState])
+
+  useEffect(() => {
+    if (!reportWallet || indexState !== "not_indexed" || queue !== "queued" || rechecks >= RECHECK_MAX) return
+    const t = setTimeout(() => {
+      setRechecks((n) => n + 1)
+      void runCheck(reportWallet, true)
+    }, RECHECK_INTERVAL_MS)
+    return () => clearTimeout(t)
+  }, [reportWallet, indexState, queue, rechecks, runCheck])
 
   // Auto-load when a wallet is pre-filled via ?wallet= URL param (same
   // pattern as squeeze-check).
@@ -208,15 +288,15 @@ export default function TcReportPage() {
     if (w && /^0x[a-f0-9]{16}$/i.test(w)) {
       autoRanRef.current = true
       setWallet(w)
-      runCheck(w)
+      void runCheck(w)
     }
-  }, [])
+  }, [runCheck])
   useEffect(() => {
     if (autoRanRef.current || own.loading || !own.wallet) return
     autoRanRef.current = true
     setWallet(own.wallet)
-    runCheck(own.wallet)
-  }, [own.loading, own.wallet])
+    void runCheck(own.wallet)
+  }, [own.loading, own.wallet, runCheck])
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
@@ -224,9 +304,7 @@ export default function TcReportPage() {
     await runCheck(wallet)
   }
 
-  const sq = report?.squeeze
-  const total = sq?.total_moments ?? 0
-  const b = sq?.buckets
+  const sq = report?.squeeze ?? null
   const cc = report?.cross_collection ?? []
   const topSets = report?.top_sets ?? []
   const rookies = report?.rookie_coverage
@@ -243,7 +321,7 @@ export default function TcReportPage() {
         <p className="rpc-tc-lede">
           Paste your Flow wallet. We pull squeeze exposure, set progress,
           cross-collection footprint, and rookie / WNBA cohort coverage in
-          one shot. Top Shot&apos;s profile page shows you what you own. This
+          one shot — squeeze for Top Shot and NFL All Day. Top Shot&apos;s profile page shows you what you own. This
           shows you what it means.
         </p>
       </section>
@@ -267,70 +345,58 @@ export default function TcReportPage() {
         {error ? <div className="rpc-tc-error">{error}</div> : null}
       </section>
 
-      {report ? (
+      {report && indexState === "not_indexed" ? (
+        <section className="rpc-tc-section" data-testid="tc-not-indexed">
+          <div className="rpc-tc-state">
+            We haven&apos;t indexed this wallet yet — this is not a reading of what it holds.{" "}
+            {queue === "queued"
+              ? rechecks >= RECHECK_MAX
+                ? "Indexing is still running. Check again in a few minutes."
+                : "Indexing has started; this re-checks itself every few seconds (usually 1–2 minutes)."
+              : queue === "failed"
+                ? "We couldn't start indexing just now. Try again shortly."
+                : "Starting indexing…"}
+          </div>
+          {queue !== "idle" && reportWallet ? (
+            <div className="rpc-tc-recheck">
+              <button
+                type="button"
+                className="rpc-tc-sample-btn"
+                data-testid="tc-recheck"
+                onClick={() => {
+                  setRechecks(0)
+                  void runCheck(reportWallet)
+                }}
+              >
+                Check again
+              </button>
+            </div>
+          ) : null}
+        </section>
+      ) : report && indexState === "empty" ? (
+        <section className="rpc-tc-section" data-testid="tc-empty">
+          <div className="rpc-tc-state">
+            Our last scan of this wallet{fmtScanDate(lastScannedAt) ? ` (${fmtScanDate(lastScannedAt)})` : ""} found no moments
+            in any collection we track.
+          </div>
+        </section>
+      ) : report && indexState === "unknown" ? (
+        <section className="rpc-tc-section" data-testid="tc-unknown">
+          <div className="rpc-tc-state">
+            We couldn&apos;t confirm whether this wallet is indexed — this says nothing about what it holds. Try again shortly.
+          </div>
+        </section>
+      ) : report ? (
         <>
-          {/* Squeeze section — mirrors squeeze-check */}
-          <section className="rpc-tc-section">
-            <h2 className="rpc-tc-h2">Squeeze Exposure</h2>
-            <div className="rpc-tc-bar-row" aria-label="Exposure buckets">
-              {b ? (
-                <>
-                  <BucketBar label="Liquid" sub="< 25% squeeze" value={b.liquid.moments} total={total} accent="success" />
-                  <BucketBar label="Moderate" sub="25–50%" value={b.moderate.moments} total={total} accent="warn-soft" />
-                  <BucketBar label="Squeezed" sub="50–75%" value={b.squeezed.moments} total={total} accent="warn" />
-                  <BucketBar label="Extreme" sub="≥ 75%" value={b.extreme.moments} total={total} accent="danger" />
-                </>
-              ) : null}
-            </div>
-            <div className="rpc-tc-summary-line">
-              <strong>{fmtInt(sq?.total_moments)}</strong> moments across{" "}
-              <strong>{fmtInt(sq?.total_editions)}</strong> editions.{" "}
-              {b ? (
-                <>
-                  Bag is {pct(b.liquid.moments, total)} liquid,{" "}
-                  {pct((b.squeezed.moments ?? 0) + (b.extreme.moments ?? 0), total)} in squeeze territory.
-                </>
-              ) : null}
-            </div>
-            {sq?.top_squeezed && sq.top_squeezed.length > 0 ? (
-              <div className="rpc-scroll-x" {...scrollRegion("Squeeze exposure")}>
-              <table className="rpc-tc-table">
-                <thead>
-                  <tr>
-                    <th scope="col">Edition</th>
-                    <th scope="col" className="rpc-tc-th-num">Tier</th>
-                    <th scope="col" className="rpc-tc-th-num">Held</th>
-                    <th scope="col" className="rpc-tc-th-num">Circ</th>
-                    <th scope="col" className="rpc-tc-th-num">Locked</th>
-                    <th scope="col" className="rpc-tc-th-num">Burned</th>
-                    <th scope="col" className="rpc-tc-th-num rpc-tc-th-emph">Squeeze</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sq.top_squeezed.slice(0, 10).map((r, i) => (
-                    <tr key={r.edition_key ?? `unkeyed-${i}`}>
-                      <td className="rpc-tc-td-ed">
-                        <div className="rpc-tc-ed-name">{r.player_name ?? "—"}</div>
-                        <div className="rpc-tc-ed-set">{r.set_name ?? "—"}</div>
-                      </td>
-                      <td className="rpc-tc-td-num">
-                        <span className="rpc-tc-tier" style={{ color: accentText(tierColor(r.tier)) }}>
-                          {r.tier ?? "—"}
-                        </span>
-                      </td>
-                      <td className="rpc-tc-td-num">{fmtInt(r.held)}</td>
-                      <td className="rpc-tc-td-num">{fmtInt(r.circulation)}</td>
-                      <td className="rpc-tc-td-num">{fmtInt(r.locked)}</td>
-                      <td className="rpc-tc-td-num">{fmtInt(r.burned)}</td>
-                      <td className="rpc-tc-td-num rpc-tc-td-emph">{fmtPct(r.squeeze_pct)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              </div>
-            ) : null}
-          </section>
-
+          <SqueezeBlock title="Squeeze Exposure · Top Shot" label="Top Shot" sq={sq} testId="tc-squeeze-topshot" />
+          {alldayError ? (
+            <section className="rpc-tc-section" data-testid="tc-squeeze-allday-error">
+              <h2 className="rpc-tc-h2">Squeeze Exposure · NFL All Day</h2>
+              <div className="rpc-tc-state">Couldn&apos;t load the NFL All Day squeeze just now — this says nothing about the wallet.</div>
+            </section>
+          ) : allday && allday.index_state === "indexed" ? (
+            <SqueezeBlock title="Squeeze Exposure · NFL All Day" label="NFL All Day" sq={allday.summary} testId="tc-squeeze-allday" />
+          ) : null}
           {/* Cross-collection footprint */}
           {cc.length > 0 ? (
             <section className="rpc-tc-section">
@@ -500,7 +566,7 @@ export default function TcReportPage() {
           <h3 className="rpc-tc-h3">Methodology</h3>
           <p>
             <strong>Squeeze %</strong> = (locked + burned) / circulation, per
-            edition. Buckets are moments-weighted. <strong>Completion %</strong>{" "}
+            edition, shown for Top Shot and NFL All Day. Buckets are moments-weighted. <strong>Completion %</strong>{" "}
             uses the canonical set catalog; sub-100% rolls into
             &quot;in progress&quot;. <strong>Recent acquisitions</strong> are
             sourced from our sales ingest — V1 Dapper buys from before the
@@ -522,6 +588,82 @@ export default function TcReportPage() {
         </div>
       </section>
     </main>
+  )
+}
+
+/** One collection's squeeze section. A summary with no moments renders a line saying so — never 0 % bars. */
+function SqueezeBlock({ title, label, sq, testId }: { title: string; label: string; sq: Squeeze | null; testId: string }) {
+  if (!sq || !(Number(sq.total_moments) > 0)) {
+    return (
+      <section className="rpc-tc-section" data-testid={testId}>
+        <h2 className="rpc-tc-h2">{title}</h2>
+        <div className="rpc-tc-summary-line">No {label} moments in our index for this wallet.</div>
+      </section>
+    )
+  }
+  const total = Number(sq.total_moments)
+  const b = sq.buckets
+  return (
+    <section className="rpc-tc-section" data-testid={testId}>
+      <h2 className="rpc-tc-h2">{title}</h2>
+      <div className="rpc-tc-bar-row" aria-label="Exposure buckets">
+        {b ? (
+          <>
+            <BucketBar label="Liquid" sub="< 25% squeeze" value={b.liquid.moments} total={total} accent="success" />
+            <BucketBar label="Moderate" sub="25–50%" value={b.moderate.moments} total={total} accent="warn-soft" />
+            <BucketBar label="Squeezed" sub="50–75%" value={b.squeezed.moments} total={total} accent="warn" />
+            <BucketBar label="Extreme" sub="≥ 75%" value={b.extreme.moments} total={total} accent="danger" />
+          </>
+        ) : null}
+      </div>
+      <div className="rpc-tc-summary-line">
+        <strong>{fmtInt(sq?.total_moments)}</strong> {label} moments across{" "}
+        <strong>{fmtInt(sq?.total_editions)}</strong> editions.{" "}
+        {b ? (
+          <>
+            Bag is {pct(b.liquid.moments, total)} liquid,{" "}
+            {pct((b.squeezed.moments ?? 0) + (b.extreme.moments ?? 0), total)} in squeeze territory.
+          </>
+        ) : null}
+      </div>
+      {sq?.top_squeezed && sq.top_squeezed.length > 0 ? (
+        <div className="rpc-scroll-x" {...scrollRegion("Top squeezed holdings")}>
+        <table className="rpc-tc-table">
+          <thead>
+            <tr>
+              <th scope="col">Edition</th>
+              <th scope="col" className="rpc-tc-th-num">Tier</th>
+              <th scope="col" className="rpc-tc-th-num">Held</th>
+              <th scope="col" className="rpc-tc-th-num">Circ</th>
+              <th scope="col" className="rpc-tc-th-num">Locked</th>
+              <th scope="col" className="rpc-tc-th-num">Burned</th>
+              <th scope="col" className="rpc-tc-th-num rpc-tc-th-emph">Squeeze</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sq.top_squeezed.slice(0, 10).map((r, i) => (
+              <tr key={r.edition_key ?? `unkeyed-${i}`}>
+                <td className="rpc-tc-td-ed">
+                  <div className="rpc-tc-ed-name">{r.player_name ?? "—"}</div>
+                  <div className="rpc-tc-ed-set">{r.set_name ?? "—"}</div>
+                </td>
+                <td className="rpc-tc-td-num">
+                  <span className="rpc-tc-tier" style={{ color: accentText(tierColor(r.tier)) }}>
+                    {r.tier ?? "—"}
+                  </span>
+                </td>
+                <td className="rpc-tc-td-num">{fmtInt(r.held)}</td>
+                <td className="rpc-tc-td-num">{fmtInt(r.circulation)}</td>
+                <td className="rpc-tc-td-num">{fmtInt(r.locked)}</td>
+                <td className="rpc-tc-td-num">{fmtInt(r.burned)}</td>
+                <td className="rpc-tc-td-num rpc-tc-td-emph">{fmtPct(r.squeeze_pct)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        </div>
+      ) : null}
+    </section>
   )
 }
 
@@ -628,6 +770,8 @@ const CSS = `
 
 .rpc-tc-empty { max-width: 1180px; margin: 0 auto; padding: 36px 0; text-align: center; }
 .rpc-tc-empty-text { font-family: var(--font-mono); font-size: 12px; letter-spacing: 1.5px; color: var(--rpc-text-muted); }
+.rpc-tc-state { padding: 28px; text-align: center; font-family: var(--font-mono); font-size: 13px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-muted); border: 1px solid var(--rpc-border-subtle); background: var(--rpc-surface); }
+.rpc-tc-recheck { margin-top: 12px; text-align: center; }
 .rpc-tc-sample-btn { font-family: var(--font-mono); font-size: 12px; letter-spacing: 1.5px; background: transparent; border: 1px solid var(--rpc-border); color: var(--rpc-red-text); padding: 6px 12px; border-radius: 2px; cursor: pointer; margin-left: 6px; }
 .rpc-tc-sample-btn:hover { border-color: var(--rpc-red); }
 

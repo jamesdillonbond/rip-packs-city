@@ -123,7 +123,7 @@ import { readPaniniBreakdownForConcierge, readPaniniQuirkySerialsForConcierge, r
 import { fetchPaniniEditionAsk, fetchPaniniEditionSerials } from "@/lib/panini/edition-market";
 import { paniniEditionUrl } from "@/lib/panini/edition-url";
 import { isSqueezeCollection, SQUEEZE_LABEL, type SqueezeCollection } from "@/lib/insights/squeeze-collections";
-import { readSqueezeCheck } from "@/lib/insights/squeeze-check";
+import { readSqueezeCheck, readWalletScanState } from "@/lib/insights/squeeze-check";
 
 const supabase: any = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -840,7 +840,7 @@ const TOOLS: Anthropic.Tool[] = [
   {
     name: "get_collector_report",
     description:
-      "The Top Collector Report for ONE wallet — a single composite read for 'give me the full picture of this collection': cross-collection rollup (moments + FMV), Top Shot squeeze exposure, 2025 rookie-cohort coverage, WNBA Series 7 coverage, the wallet's closest set completions, and its acquisitions over the last 90 days. Use it when a collector asks for an overview / report / rundown / 'how does my collection look' rather than one specific number — it is ONE call where check_wallet + check_wallet_squeeze + get_set_completion_cost would be three or four. Needs a Flow address (0x + 16 hex); a Top Shot username resolves only when we hold it on file, and when we do not the tool says so — then call check_wallet with the username and reuse the `wallet` address it returns. NEVER guess an address. ⚠ Scope is not uniform: the rollup is cross-collection but the squeeze, rookie-cohort and WNBA sections are TOP SHOT ONLY — say which is which rather than letting a Top Shot number read as a whole-portfolio one. Read-only; same report that backs the public /insights/tc-report page.",
+      "The Top Collector Report for ONE wallet — a single composite read for 'give me the full picture of this collection': cross-collection rollup (moments + FMV), Top Shot squeeze exposure plus an NFL All Day squeeze leg (allday_squeeze), 2025 rookie-cohort coverage, WNBA coverage (latest series with WNBA sets), the wallet's closest set completions, and its acquisitions over the last 90 days. Use it when a collector asks for an overview / report / rundown / 'how does my collection look' rather than one specific number — it is ONE call where check_wallet + check_wallet_squeeze + get_set_completion_cost would be three or four. Needs a Flow address (0x + 16 hex); a Top Shot username resolves only when we hold it on file, and when we do not the tool says so — then call check_wallet with the username and reuse the `wallet` address it returns. NEVER guess an address. ⚠ Scope is not uniform: the rollup is cross-collection but the squeeze, rookie-cohort and WNBA sections are TOP SHOT ONLY — say which is which rather than letting a Top Shot number read as a whole-portfolio one. Read-only; same report that backs the public /insights/tc-report page.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -5143,12 +5143,35 @@ async function executeToolInner(
           message: "No report for that wallet — it may not be indexed yet. Say that rather than reporting an empty collection.",
         });
       }
+      // 2026-10-28: the RPC returns an object for ANY wallet, so the branch above never fired and a never-scanned
+      // wallet reached the model as status ok with zeros ("0 rookies, 0 WNBA sets"). The same scan-state read as
+      // /insights/tc-report decides; the NFL All Day squeeze leg rides along (its failure fails only that leg).
+      const reportWallet = resolvedAddr.toLowerCase();
+      const rollupRows = Array.isArray(data?.cross_collection) ? data.cross_collection : [];
+      const hasAnyMoments = rollupRows.some((r: { moments?: unknown }) => Number(r?.moments) > 0);
+      const scan = await readWalletScanState(supabase, reportWallet, hasAnyMoments, "support-chat/get_collector_report");
+      if (scan.index_state === "not_indexed") {
+        return JSON.stringify({
+          status: "not_indexed",
+          wallet: resolvedAddr,
+          message: `We have not indexed this wallet yet, so there is no report — this says nothing about what it holds. Opening /insights/tc-report?wallet=${reportWallet} starts the scan (usually 1–2 minutes). Do not say the wallet is empty.`,
+        });
+      }
+      if (scan.index_state === "unknown") {
+        return JSON.stringify({ status: "state_unknown", wallet: resolvedAddr, message: "Couldn't confirm whether this wallet is indexed right now. Do not say the wallet is empty; suggest trying again shortly." });
+      }
+      if (scan.index_state === "empty") {
+        return JSON.stringify({ status: "empty", wallet: resolvedAddr, last_scanned_at: scan.last_scanned_at, message: "Our last scan of this wallet found no moments in any collection we track. Say what our scan found — not that the wallet holds nothing." });
+      }
+      const adLeg = await readSqueezeCheck(supabase, reportWallet, "nfl-all-day", "support-chat/get_collector_report");
       return JSON.stringify({
         status: "ok",
         wallet: resolvedAddr,
         scope_note:
-          "Rollup is cross-collection; squeeze exposure, the 2025 rookie cohort and WNBA Series 7 are TOP SHOT ONLY. State which is which.",
+          "Rollup is cross-collection; report.squeeze, the 2025 rookie cohort and the WNBA sets are TOP SHOT ONLY. allday_squeeze is the NFL All Day squeeze (null when the wallet has no All Day moments indexed). State which is which.",
         report: data,
+        allday_squeeze: adLeg.error ? null : adLeg.index_state === "indexed" ? adLeg.summary : null,
+        allday_squeeze_error: adLeg.error ? true : false,
       });
     } catch (err: any) {
       return JSON.stringify({ status: "error", message: safeApiError(err, "collector report failed").error });

@@ -162,6 +162,66 @@ describe("analyze_wallet_holdings", () => {
   })
 })
 
+describe("get_collector_report — index state + All Day leg (2026-10-28)", () => {
+  // The report RPC returns an object for ANY wallet, so a never-scanned wallet used to reach the model as ok + zeros.
+  const zero = { cross_collection: [], squeeze: { total_moments: null }, rookie_coverage: { owned_count: 0 } }
+
+  it("a never-scanned wallet is not_indexed — no report handed to the model", async () => {
+    install({ "rpc:get_wallet_tc_report": { data: zero, error: null }, wallet_backfill_state: { data: [], error: null } })
+    script("get_collector_report", { walletAddress: HEX })
+    await POST(post("report on my wallet"))
+    const r = toolResult()
+    expect(r.status).toBe("not_indexed")
+    expect(r.report).toBeUndefined()
+    expect(String(r.message)).toContain("Do not say the wallet is empty")
+  })
+
+  it("every trusted scan found 0 → empty (what our scan found), never a zeroed report", async () => {
+    install({
+      "rpc:get_wallet_tc_report": { data: zero, error: null },
+      wallet_backfill_state: { data: [{ last_scanned_at: "2026-10-28T09:00:00Z", last_found_count: 0 }], error: null },
+    })
+    script("get_collector_report", { walletAddress: HEX })
+    await POST(post("report on my wallet"))
+    const r = toolResult()
+    expect(r.status).toBe("empty")
+    expect(r.report).toBeUndefined()
+  })
+
+  it("a failed state read is state_unknown", async () => {
+    install({ "rpc:get_wallet_tc_report": { data: zero, error: null }, wallet_backfill_state: { data: null, error: { message: "boom" } } })
+    script("get_collector_report", { walletAddress: HEX })
+    await POST(post("report on my wallet"))
+    expect(toolResult()).toMatchObject({ status: "state_unknown" })
+  })
+
+  it("an indexed wallet gets the report plus the All Day squeeze leg", async () => {
+    install({
+      "rpc:get_wallet_tc_report": { data: { cross_collection: [{ slug: "nfl_all_day", moments: 4 }] }, error: null },
+      "rpc:get_allday_wallet_squeeze_exposure": { data: { total_moments: 4, collection: "nfl_all_day" }, error: null },
+    })
+    script("get_collector_report", { walletAddress: HEX })
+    await POST(post("report on my wallet"))
+    const r = toolResult()
+    expect(r.status).toBe("ok")
+    expect((r.allday_squeeze as Record<string, unknown>).total_moments).toBe(4)
+    expect(r.allday_squeeze_error).toBe(false)
+  })
+
+  it("a failed All Day leg leaves the report standing and says the leg failed", async () => {
+    install({
+      "rpc:get_wallet_tc_report": { data: { cross_collection: [{ slug: "nba_top_shot", moments: 4 }] }, error: null },
+      "rpc:get_allday_wallet_squeeze_exposure": { data: null, error: { message: "boom" } },
+    })
+    script("get_collector_report", { walletAddress: HEX })
+    await POST(post("report on my wallet"))
+    const r = toolResult()
+    expect(r.status).toBe("ok")
+    expect(r.allday_squeeze).toBeNull()
+    expect(r.allday_squeeze_error).toBe(true)
+  })
+})
+
 describe("check_wallet_squeeze", () => {
   // 2026-09-29: the route answers 200 {found:false} for an upstream failure too
   // (reason topshot_gql_error), and a timeout used to fall into the same branch —
