@@ -30,3 +30,7 @@ Upstream (TopShot origin) 502 — not an RPC regression and not revert-able. Eit
 or kick the home-machine Task Scheduler fallback lane (per ledger: home-machine egress is the standing
 workaround for the datacenter-egress Atlas failure class). Re-verify freshness recovers (newest market event /
 sale timestamps advance past 17:03Z) once a lane lands a 200. Do NOT re-walk/probe heavily while 502.
+
+
+## ✅ DISPOSITIONED 2026-10-27 ~9:00 PM PT (Cowork cloud) — upstream maintenance, nothing to fix on our side
+Measured: `https://nbatopshot.com/` and `https://nflallday.com/` both 307 to `maintenance.<site>/` ("Down for maintenance"), whose `status.json` reads `{"state": "maintenance"}`; `public-api.nbatopshot.com/graphql` answers 530. The last Top Shot sale on record is 9:29 AM PT and the last All Day sale 8:33 AM PT — the marketplaces themselves are closed, so the 502s are Dapper's origin, not an egress block. **The home-machine fallback suggested above would not help** (it routes around a Cloudflare challenge, not a closed platform). Users are told: `collection_config` marketplace status is `degraded` on Top Shot / All Day / Pinnacle / Golazos (`20261027192917`), `/api/marketplace-status` serves the maintenance note, and the banner renders on `/nba-top-shot` and `/nfl-all-day/sniper` at 390 px (Playwright, ~8:55 PM PT). `restore_dapper_maintenance_notice()` (pg_cron, every 10 min, active) lifts the notice once 2+ atlas-market-feed runs succeed in 20 min, backstop 12 AM PT 10-30. Re-verify only that freshness advances past 10:03 AM PT once Dapper returns.
