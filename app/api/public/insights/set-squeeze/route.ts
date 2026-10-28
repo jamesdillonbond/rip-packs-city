@@ -12,7 +12,9 @@
 // callout lives here.
 //
 // Query params:
-//   series=<int>           filter to a single series (5/6/7/8)
+//   collection=nba-top-shot|nfl-all-day   default nba-top-shot. NFL All Day joined 2026-10-27
+//                          (allday_set_squeeze_board); any other value is a 400 (no substitution).
+//   series=<int>           filter to a single series (5/6/7/8; All Day 1..10)
 //   set_tier=COMMON|RARE|LEGENDARY|FANDOM|ULTIMATE   filter tier
 //   sort=squeeze|buyable   default squeeze
 //   limit=<1..100>         default 50
@@ -22,24 +24,39 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { boardUnavailable } from "@/lib/insights/board-error";
-import { fetchSetSqueezeBoard } from "@/lib/insights/set-squeeze-board";
+import { fetchSetSqueezeBoard, SET_SQUEEZE_VIEWS } from "@/lib/insights/set-squeeze-board";
+import { isSqueezeCollection, SQUEEZE_TIERS } from "@/lib/insights/squeeze-collections";
+import { ownLookup } from "@/lib/safe-lookup";
 
 import { boardRowMeta } from "@/lib/insights/board-meta"
-const VALID_TIERS = new Set(["COMMON", "RARE", "LEGENDARY", "FANDOM", "ULTIMATE"]);
+// Tier vocabularies differ: All Day has UNCOMMON and no FANDOM.
+const VALID_TIERS = {
+  "nba-top-shot": new Set(SQUEEZE_TIERS["nba-top-shot"]),
+  "nfl-all-day": new Set(SQUEEZE_TIERS["nfl-all-day"]),
+};
 const VALID_SORTS = new Set(["squeeze", "buyable"]);
 
 export async function GET(req: NextRequest) {
   const startedAt = Date.now();
   const sp = new URL(req.url).searchParams;
 
+  const collectionParam = sp.get("collection");
+  if (collectionParam != null && !isSqueezeCollection(collectionParam)) {
+    return NextResponse.json({ error: "unknown collection" }, { status: 400 });
+  }
+  const collection = collectionParam ?? "nba-top-shot";
+  const tiers = ownLookup(VALID_TIERS, collection);
+  const view = ownLookup(SET_SQUEEZE_VIEWS, collection);
+  if (!tiers || !view) return NextResponse.json({ error: "unknown collection" }, { status: 400 });
+
   const series = sp.get("series") ? Number(sp.get("series")) : null;
   const setTier = sp.get("set_tier")?.toUpperCase() ?? null;
   const sort = sp.get("sort") ?? "squeeze";
   const limit = Math.max(1, Math.min(100, Number(sp.get("limit")) || 50));
 
-  if (setTier && !VALID_TIERS.has(setTier)) {
+  if (setTier && !tiers.has(setTier)) {
     return NextResponse.json(
-      { error: `set_tier must be one of ${[...VALID_TIERS].join(",")}` },
+      { error: `set_tier must be one of ${[...tiers].join(",")}` },
       { status: 400 }
     );
   }
@@ -57,7 +74,7 @@ export async function GET(req: NextRequest) {
   // so the crawlable board and this route cannot drift. This route keeps its
   // own failure policy (boardUnavailable).
   const { data, error } = await fetchSetSqueezeBoard(
-    { series, setTier, sort, limit },
+    { collection, series, setTier, sort, limit },
     supabase,
   );
   if (error) {
@@ -68,7 +85,8 @@ export async function GET(req: NextRequest) {
   const res = NextResponse.json({
     meta: {
       fetched_at: new Date().toISOString(),
-      source: "topshot_set_squeeze_board",
+      source: view,
+      collection,
       elapsed_ms: elapsedMs,
       ...boardRowMeta(data?.length ?? 0, limit),
       filters: { series, set_tier: setTier, sort, limit },

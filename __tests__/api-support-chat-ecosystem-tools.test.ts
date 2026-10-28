@@ -337,6 +337,12 @@ describe("concierge — get_ecosystem_stat + get_insight_board enum maps", () =>
     await POST(post("most squeezed all day"))
     expect(f.calls.find((c) => c.url.includes("/squeeze"))!.url).toContain("collection=nfl-all-day")
   })
+  it("board=set_squeeze on NFL All Day reads ?collection=nfl-all-day", async () => {
+    const f = stubFetch([jsonRoute("/api/public/insights/set-squeeze", { rows: [{ x: 1 }] })])
+    script("get_insight_board", { board: "set_squeeze", collectionId: "nfl-all-day" })
+    await POST(post("most squeezed all day sets"))
+    expect(f.calls.find((c) => c.url.includes("/set-squeeze"))!.url).toContain("collection=nfl-all-day")
+  })
   it("board=squeeze with no collection stays Top Shot's", async () => {
     const f = stubFetch([jsonRoute("/api/public/insights/squeeze", { rows: [{ x: 1 }] })])
     script("get_insight_board", { board: "squeeze" })

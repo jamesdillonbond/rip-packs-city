@@ -12,12 +12,21 @@
 // 50 (capped at 100) for a direct API caller.
 
 import { supabaseAdmin } from "@/lib/supabase"
+import type { SqueezeCollection } from "@/lib/insights/squeeze-collections"
+
+/** Each collection's set-level view (NFL All Day joined 2026-10-27: allday_set_squeeze_board). */
+export const SET_SQUEEZE_VIEWS: Record<SqueezeCollection, string> = {
+  "nba-top-shot": "topshot_set_squeeze_board",
+  "nfl-all-day": "allday_set_squeeze_board",
+}
 
 /** Columns both consumers select. Duplicating this list was the drift risk. */
 export const SET_SQUEEZE_COLS =
   "set_id, set_name, series, set_tier, editions_covered, avg_squeeze_pct, median_squeeze_pct, max_squeeze_pct, min_squeeze_pct, total_circ, total_locked, total_burned, total_buyable, avg_fmv_usd, fmv_covered_editions"
 
 export interface SetSqueezeBoardOptions {
+  /** Which collection's board. Default Top Shot. */
+  collection?: SqueezeCollection
   series?: number | null
   setTier?: string | null
   sort?: string
@@ -33,9 +42,9 @@ export async function fetchSetSqueezeBoard(
   opts: SetSqueezeBoardOptions,
   db: Db = supabaseAdmin,
 ): Promise<{ data: unknown[] | null; error: { message: string } | null }> {
-  const { series = null, setTier = null, sort = "squeeze", limit } = opts
+  const { collection = "nba-top-shot", series = null, setTier = null, sort = "squeeze", limit } = opts
 
-  let q = db.from("topshot_set_squeeze_board").select(SET_SQUEEZE_COLS)
+  let q = db.from(SET_SQUEEZE_VIEWS[collection]).select(SET_SQUEEZE_COLS)
 
   if (series != null) q = q.eq("series", series)
   if (setTier) q = q.eq("set_tier", setTier)

@@ -9,6 +9,11 @@
 // drill-down links render in the raw server HTML (crawlable) instead of only
 // after JS. This component layers on series/tier/sort filters as progressive
 // enhancement and only refetches when those change.
+//
+// 2026-10-27 (All Day ↔ Top Shot parity pass 7): a collection toggle
+// (`?collection=nfl-all-day`) reads allday_set_squeeze_board through the same
+// route. The server seed is Top Shot's, so the rows and stamp on screen are
+// gated on the collection they were READ for — never Top Shot's under All Day.
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import { seriesDisplay } from "@/lib/series-label"
@@ -19,6 +24,7 @@ import type { DegradedSummary } from "@/lib/insights/board-status"
 import { sectionEmptyCopy } from "@/lib/entity/section-empty-copy"
 import { slugifyName } from "@/lib/entity-labels"
 import { accentText } from "@/lib/accent-text"
+import { SQUEEZE_COLLECTIONS, SQUEEZE_LABEL, SQUEEZE_TIERS, isSqueezeCollection, type SqueezeCollection } from "@/lib/insights/squeeze-collections"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -46,8 +52,14 @@ type ApiResponse = {
 }
 
 type SortKey = "squeeze" | "buyable"
-type SeriesFilter = "ALL" | "5" | "6" | "7" | "8"
-type TierFilter = "ALL" | "COMMON" | "RARE" | "LEGENDARY" | "FANDOM" | "ULTIMATE"
+type SeriesFilter = string
+// Per-collection vocabularies: SQUEEZE_TIERS (All Day has UNCOMMON, no FANDOM).
+type TierFilter = string
+/** Series pills per collection, newest first (All Day: the 2025 and 2024 seasons' series). */
+const SERIES_PILLS: Record<SqueezeCollection, readonly string[]> = {
+  "nba-top-shot": ["8", "7", "6", "5"],
+  "nfl-all-day": ["10", "9", "8", "7"],
+}
 
 function fmtInt(n: number | null | undefined): string {
   if (n == null) return "—"
@@ -65,6 +77,8 @@ function tierColor(tier: string | null): string {
       return "var(--tier-ultimate)"
     case "RARE":
       return "var(--tier-rare)"
+    case "UNCOMMON":
+      return "var(--tier-uncommon)"
     case "FANDOM":
       return "var(--tier-fandom)"
     case "COMMON":
@@ -76,7 +90,6 @@ function tierColor(tier: string | null): string {
 // 2026-09-25: the pills and the row sub-labels read "S8 / S7 / S6 / S5" — the
 // raw on-chain number every other page has stopped showing. Labels come from
 // the site-wide Top Shot map (lib/series-label.ts), never a local copy.
-const seriesLabel = (n: number | string): string => seriesDisplay(Number(n), "nba_top_shot")
 
 type Props = {
   initialRows: Row[]
@@ -91,6 +104,14 @@ export default function SetSqueezeBoardClient({
   initialDegraded = null,
 }: Props) {
   const [rows, setRows] = useState<Row[]>(initialRows)
+  // Which collection `rows` were read for (the server seed is Top Shot's).
+  const [rowsCollection, setRowsCollection] = useState<SqueezeCollection>("nba-top-shot")
+  const [collection, setCollection] = useState<SqueezeCollection>("nba-top-shot")
+  const isTopShot = collection === "nba-top-shot"
+  const label = SQUEEZE_LABEL[collection]
+  const seriesLabel = (n: number | string): string => seriesDisplay(Number(n), isTopShot ? "nba_top_shot" : "nfl_all_day")
+  const pending = rowsCollection !== collection
+  const shownRows = pending ? [] : rows
   // Held in state, not read straight from the prop, so a successful filter/sort
   // refetch CLEARS it — the rows on screen are then complete.
   const [degraded, setDegraded] = useState<DegradedSummary | null>(initialDegraded)
@@ -103,13 +124,31 @@ export default function SetSqueezeBoardClient({
   const [series, setSeries] = useState<SeriesFilter>("ALL")
   const [tier, setTier] = useState<TierFilter>("ALL")
 
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    const c = new URL(window.location.href).searchParams.get("collection")
+    if (isSqueezeCollection(c)) setCollection(c)
+  }, [])
+
+  function pickCollection(c: SqueezeCollection) {
+    setCollection(c)
+    setSeries("ALL")
+    setTier("ALL")
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href)
+      if (c === "nba-top-shot") url.searchParams.delete("collection")
+      else url.searchParams.set("collection", c)
+      window.history.replaceState({}, "", url.toString())
+    }
+  }
+
   // Skip the very first fetch when params match the server-fetched default.
   const isFirstRun = useRef(true)
 
   useEffect(() => {
     if (isFirstRun.current) {
       isFirstRun.current = false
-      if (sort === "squeeze" && series === "ALL" && tier === "ALL") return
+      if (collection === "nba-top-shot" && sort === "squeeze" && series === "ALL" && tier === "ALL") return
     }
     const ctrl = new AbortController()
     async function run() {
@@ -117,6 +156,7 @@ export default function SetSqueezeBoardClient({
       setError(null)
       try {
         const params = new URLSearchParams({ sort, limit: "100" })
+        if (collection !== "nba-top-shot") params.set("collection", collection)
         if (series !== "ALL") params.set("series", series)
         if (tier !== "ALL") params.set("set_tier", tier)
         const r = await fetch(`/api/public/insights/set-squeeze?${params.toString()}`, {
@@ -126,6 +166,7 @@ export default function SetSqueezeBoardClient({
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
         const j = (await r.json()) as ApiResponse
         setRows(j.rows ?? [])
+        setRowsCollection(collection)
         setFetchedAt(j.meta?.fetched_at ?? null)
         setDegraded(null)
       } catch (e: unknown) {
@@ -137,13 +178,16 @@ export default function SetSqueezeBoardClient({
     }
     run()
     return () => ctrl.abort()
-  }, [sort, series, tier])
+  }, [collection, sort, series, tier])
+
+  // The squeeze / first-mint boards' collection param for this board's collection ("" = Top Shot).
+  const legQs = isTopShot ? "" : `collection=${collection}&`
 
   const tweetIntent = useMemo(() => {
-    const text = `Top Shot sets ranked by lock + burn across editions. If you're completing this set, how scarce will it actually be?`
-    const url = `${SITE_URL}/insights/set-squeeze`
+    const text = `${label} sets ranked by lock + burn across editions. If you're completing this set, how scarce will it actually be?`
+    const url = `${SITE_URL}/insights/set-squeeze${isTopShot ? "" : `?collection=${collection}`}`
     return `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`
-  }, [])
+  }, [label, isTopShot, collection])
 
   return (
     <main style={styles.page}>
@@ -153,14 +197,14 @@ export default function SetSqueezeBoardClient({
         <div className="rpc-ss-eyebrow">RPC Insights · Public · Drill-down</div>
         <h1 className="rpc-ss-h1">Set Squeeze Leaderboard</h1>
         <p className="rpc-ss-lede">
-          Companion to the <Link href="/insights/squeeze" className="rpc-ss-inline-link">squeeze board</Link>.
+          Companion to the <Link href={`/insights/squeeze${isTopShot ? "" : `?collection=${collection}`}`} className="rpc-ss-inline-link">squeeze board</Link>.
           Per-edition squeeze tells you which moments are tight. This view
           rolls up to whole sets — if you&apos;re completing a set, how
           scarce is the whole journey going to be?
         </p>
         <div className="rpc-ss-meta-row">
           <span className="rpc-ss-meta">
-            Updated <FreshnessStamp iso={fetchedAt} />
+            Updated <FreshnessStamp iso={pending ? null : fetchedAt} />
           </span>
           <span className="rpc-ss-meta-sep">·</span>
           <span className="rpc-ss-meta">Sets with ≥5 covered editions</span>
@@ -170,9 +214,24 @@ export default function SetSqueezeBoardClient({
       <DegradedDataNotice summary={degraded} />
 
       <section className="rpc-ss-controls">
+        <div className="rpc-ss-pill-group" role="tablist" aria-label="Collection">
+          {SQUEEZE_COLLECTIONS.map((c) => (
+            <button
+              key={c}
+              role="tab"
+              aria-selected={collection === c}
+              data-testid={`ss-collection-${c}`}
+              className={`rpc-ss-pill ${collection === c ? "rpc-ss-pill-active" : ""}`}
+              onClick={() => pickCollection(c)}
+            >
+              {SQUEEZE_LABEL[c]}
+            </button>
+          ))}
+        </div>
+
         <div className="rpc-ss-pill-group">
           <span className="rpc-ss-pill-label">SERIES</span>
-          {(["ALL", "8", "7", "6", "5"] as SeriesFilter[]).map((s) => (
+          {["ALL", ...SERIES_PILLS[collection]].map((s) => (
             <button
               key={s}
               className={`rpc-ss-pill ${series === s ? "rpc-ss-pill-active" : ""}`}
@@ -186,7 +245,7 @@ export default function SetSqueezeBoardClient({
 
         <div className="rpc-ss-pill-group">
           <span className="rpc-ss-pill-label">TIER</span>
-          {(["ALL", "COMMON", "RARE", "LEGENDARY", "FANDOM", "ULTIMATE"] as TierFilter[]).map((t) => (
+          {["ALL", ...SQUEEZE_TIERS[collection]].map((t) => (
             <button
               key={t}
               className={`rpc-ss-pill ${tier === t ? "rpc-ss-pill-active" : ""}`}
@@ -213,9 +272,9 @@ export default function SetSqueezeBoardClient({
       <section className="rpc-ss-table-wrap">
         {error ? (
           <div className="rpc-ss-state">Failed to load: {error}</div>
-        ) : loading ? (
+        ) : loading || pending ? (
           <div className="rpc-ss-state">Loading…</div>
-        ) : rows.length === 0 ? (
+        ) : shownRows.length === 0 ? (
           <div className="rpc-ss-state">{sectionEmptyCopy(!(degraded?.failed?.length), "Set squeeze", "No sets match those filters.")}</div>
         ) : (
           <table className="rpc-ss-table">
@@ -233,28 +292,28 @@ export default function SetSqueezeBoardClient({
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => (
+              {shownRows.map((r) => (
                 <tr key={r.set_id}>
                   <td className="rpc-ss-td-set">
                     {r.set_name ? (
                       <div className="rpc-ss-set-cell">
                         <Link
-                          href={`/nba-top-shot/set/${encodeURIComponent(slugifyName(r.set_name))}`}
+                          href={`/${collection}/set/${encodeURIComponent(slugifyName(r.set_name))}`}
                           className="rpc-ss-set-link"
-                          title={`${r.set_name} on NBA Top Shot`}
+                          title={`${r.set_name} on ${isTopShot ? "NBA Top Shot" : "NFL All Day"}`}
                         >
                           <div className="rpc-ss-set-name">{r.set_name}</div>
                           <div className="rpc-ss-set-sub">{r.series ? seriesLabel(r.series) : "—"}</div>
                         </Link>
                         <Link
-                          href={`/insights/squeeze?set=${encodeURIComponent(r.set_name)}`}
+                          href={`/insights/squeeze?${legQs}set=${encodeURIComponent(r.set_name)}`}
                           className="rpc-ss-trophy-link"
                           title={`Drill into ${r.set_name} on the squeeze board`}
                         >
                           squeeze →
                         </Link>
                         <Link
-                          href={`/insights/first-mint?set=${encodeURIComponent(r.set_name)}`}
+                          href={`/insights/first-mint?${legQs}set=${encodeURIComponent(r.set_name)}`}
                           className="rpc-ss-trophy-link"
                           title={`See first-mint trophies from ${r.set_name}`}
                         >
@@ -297,18 +356,19 @@ export default function SetSqueezeBoardClient({
             few very-squeezed editions and many low-squeezed editions reads
             honestly as a moderately-squeezed set, not a hot one. Sets with
             fewer than 5 covered editions are excluded so single-edition
-            outliers don&apos;t dominate. Numbers refresh hourly from
-            on-chain badge ingestion.
+            outliers don&apos;t dominate. {isTopShot
+              ? "Numbers refresh hourly from on-chain badge ingestion."
+              : "All Day's lock + burn counts refresh daily from its marketplace's edition data."}
           </p>
           <p>
             <strong>Why &quot;covered editions&quot; might be less than the set&apos;s
-            real edition count:</strong> some legacy TS sets aren&apos;t in
+            real edition count:</strong> some legacy {label} sets aren&apos;t in
             our badge data yet. The Avg figure is over the covered subset;
             Total Circ / Locked / Burned / Buyable are also subset sums. The
             ranking is honest within the subset.
           </p>
           {fetchedAt ? <div className="rpc-ss-fav">Tip: pair with{" "}
-            <Link href="/insights/squeeze" className="rpc-ss-inline-link">/insights/squeeze</Link>
+            <Link href={`/insights/squeeze${isTopShot ? "" : `?collection=${collection}`}`} className="rpc-ss-inline-link">/insights/squeeze</Link>
             {" "}to drill into the highest-squeeze editions inside a set you found here.
           </div> : null}
         </div>
