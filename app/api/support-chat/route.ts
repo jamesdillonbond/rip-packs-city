@@ -3077,7 +3077,7 @@ async function executeToolInner(
           status: "empty",
           ...who,
           last_scanned_at: read.last_scanned_at,
-          message: `We scanned this wallet and it held no ${colLabel} moments as of that scan.`,
+          message: `Our last scan of this wallet (last_scanned_at) found no ${colLabel} moments. Say that our scan found none — not that the wallet holds none: an empty scan and a failed collection read look the same.`,
         });
       }
       return JSON.stringify({ status: "ok", ...who, summary: read.summary });

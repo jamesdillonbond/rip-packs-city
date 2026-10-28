@@ -514,6 +514,33 @@ describe("GET /api/sniper-feed?collection=nfl-all-day — computeAllDaySniperFee
     st2.sales = []
   })
 
+  // 10-27 review: 21 All Day nft_ids carry two different serials in sales (nft 10509376: 523 and 14 on a /39
+  // edition) and the rows arrive unordered, so the winner was arbitrary — and "#523 / 39" could render.
+  it("sales that disagree on an NFT's serial, or name a serial above circulation, leave it unknown", async () => {
+    gqlEdges = []
+    st2.sales = [
+      { nft_id: "c1", serial_number: 523 }, { nft_id: "c1", serial_number: 14 },
+      { nft_id: "c2", serial_number: 1413 },
+      { nft_id: "c3", serial_number: 7 }, { nft_id: "c3", serial_number: 7 },
+    ]
+    rpc.mockImplementation(async (name: string) => {
+      if (name === "get_allday_sniper_deals") {
+        return { data: [
+          { flow_id: "c1", moment_id: "m1", tier: "COMMON", confidence: "HIGH", player_name: "Conflict", ask_price: 1, fmv_usd: 2, discount_pct: 50, listing_resource_id: "1", serial_number: null, circulation_count: 39 },
+          { flow_id: "c2", moment_id: "m2", tier: "COMMON", confidence: "HIGH", player_name: "TooBig", ask_price: 1, fmv_usd: 2, discount_pct: 50, listing_resource_id: "2", serial_number: null, circulation_count: 299 },
+          { flow_id: "c3", moment_id: "m3", tier: "COMMON", confidence: "HIGH", player_name: "Agree", ask_price: 1, fmv_usd: 2, discount_pct: 50, listing_resource_id: "3", serial_number: null, circulation_count: 299 },
+        ], error: null }
+      }
+      return { data: [], error: null }
+    })
+    const body = await (await GET(get(ADQS))).json()
+    const by = (p: string) => body.deals.find((d: any) => d.playerName === p)
+    expect(by("Conflict")).toMatchObject({ serial: 0, isSpecialSerial: false })
+    expect(by("TooBig")).toMatchObject({ serial: 0, isSpecialSerial: false })
+    expect(by("Agree")).toMatchObject({ serial: 7 })
+    st2.sales = []
+  })
+
   it("a failed jersey read keeps #1 / last-mint flags and does not degrade the board", async () => {
     gqlEdges = []
     st2.jerseyError = { message: "timeout" }

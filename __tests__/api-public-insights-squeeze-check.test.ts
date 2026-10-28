@@ -109,10 +109,24 @@ describe("GET /api/public/insights/squeeze-check", () => {
 
   it("a scanned wallet that found 0 moments is empty, with its scan time", async () => {
     state.data = { total_moments: null }
-    state.bfs = { data: { last_scanned_at: "2026-10-27T10:00:00Z", last_found_count: 0 }, error: null }
+    state.bfs = { data: { last_scanned_at: "2026-10-27T17:00:00Z", last_found_count: 0 }, error: null }
     const body = await (await GET(req(`${BASE}?wallet=${W}&collection=nfl-all-day`))).json()
     expect(body.index_state).toBe("empty")
-    expect(body.last_scanned_at).toBe("2026-10-27T10:00:00Z")
+    expect(body.last_scanned_at).toBe("2026-10-27T17:00:00Z")
+  })
+
+  // 10-27 review: before 70d288a20 (07:49 PT, 14:49:25Z) a FAILED walk was recorded as a scan that found 0, so
+  // an older found=0 row is not evidence the wallet is empty — 93 of 103 such All Day rows predated the fix.
+  it("a found=0 scan recorded before the scan-record fix is not_indexed (re-queued), never empty", async () => {
+    state.data = { total_moments: null }
+    for (const at of ["2026-10-27T10:00:00Z", "2026-08-18T12:00:00Z", "2026-10-27T14:49:24Z"]) {
+      state.bfs = { data: { last_scanned_at: at, last_found_count: 0 }, error: null }
+      const body = await (await GET(req(`${BASE}?wallet=${W}&collection=nfl-all-day`))).json()
+      expect(body.index_state, at).toBe("not_indexed")
+    }
+    // the boundary itself is trusted
+    state.bfs = { data: { last_scanned_at: "2026-10-27T14:49:25Z", last_found_count: 0 }, error: null }
+    expect((await (await GET(req(`${BASE}?wallet=${W}&collection=nfl-all-day`))).json()).index_state).toBe("empty")
   })
 
   it("a scan that found moments the cache lacks is not_indexed, not empty", async () => {

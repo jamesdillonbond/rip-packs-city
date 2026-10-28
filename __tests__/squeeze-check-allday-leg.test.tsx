@@ -153,7 +153,26 @@ describe("squeeze check — NFL All Day leg", () => {
     expect(screen.queryByText(/Indexing has started/)).toBeNull()
   })
 
-  it("a scanned-empty wallet says it was scanned and held none — not 'not indexed'", async () => {
+  // 10-27 review: the queue state was keyed on the wallet alone, so toggling collections inherited the other
+  // collection's "failed" (or out-of-rechecks "queued") state without trying.
+  it("toggling to the other collection queues that collection afresh — never inherits a failed queue", async () => {
+    let queueCalls = 0
+    routes = {
+      "/api/public/insights/squeeze-check": () => ({ body: { index_state: "not_indexed", summary: { total_moments: null } } }),
+      "/api/public/queue-wallet": () => (++queueCalls === 1 ? { status: 429, body: { queued: false } } : { body: { queued: true } }),
+    }
+    install()
+    render(<SqueezeCheckPage />)
+    await check()
+    await waitFor(() => expect(screen.getByText(/couldn't start indexing just now/)).toBeTruthy())
+    fireEvent.click(screen.getByTestId("sc-collection-nfl-all-day"))
+    await waitFor(() => expect(calls.filter((c) => c.startsWith("POST") && c.includes("/api/public/queue-wallet"))).toHaveLength(2))
+    await waitFor(() => expect(screen.queryByText(/couldn't start indexing just now/)).toBeNull())
+  })
+
+  // 10-27 review: an empty walk and a failed collection borrow both return [], so the copy states what OUR SCAN
+  // found, never what the wallet holds.
+  it("a scanned-empty wallet says our scan found none — not 'not indexed', and never that the wallet holds none", async () => {
     routes = {
       "/api/public/insights/squeeze-check": () => ({ body: { index_state: "empty", last_scanned_at: "2026-10-27T17:00:00Z", summary: { total_moments: null } } }),
     }
@@ -162,7 +181,8 @@ describe("squeeze check — NFL All Day leg", () => {
     fireEvent.click(screen.getByTestId("sc-collection-nfl-all-day"))
     await check()
     await waitFor(() => expect(screen.getByTestId("sc-empty")).toBeTruthy())
-    expect(screen.getByText(/held no NFL All Day moments/)).toBeTruthy()
+    expect(screen.getByTestId("sc-empty").textContent).toMatch(/found\s+no NFL All Day moments/)
+    expect(screen.queryByText(/held no/)).toBeNull()
     expect(screen.getByText(/Oct 27, 2026/)).toBeTruthy()
     expect(calls.some((c) => c.startsWith("POST /api/public/queue-wallet"))).toBe(false)
   })
@@ -177,6 +197,7 @@ describe("squeeze check — NFL All Day leg", () => {
     await waitFor(() => expect(screen.getByTestId("sc-unknown")).toBeTruthy())
     expect(screen.queryByTestId("sc-empty")).toBeNull()
     expect(screen.queryByText(/held no/)).toBeNull()
+    expect(screen.queryByText(/found\s+no/)).toBeNull()
     expect(screen.queryByText(/moments across/)).toBeNull()
   })
 })

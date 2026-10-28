@@ -145,11 +145,14 @@ export default function SqueezeCheckPage() {
     }
   }, [])
 
-  // A never-scanned wallet: start indexing it (once per wallet per page view), then re-check on a short budget.
+  // A never-scanned wallet: start indexing it (once per wallet AND collection per page view), then re-check on a
+  // short budget. Keyed on both (10-27 review): keyed on the wallet alone, a toggle inherited the other
+  // collection's "queued" (out of re-checks) or "failed" state without trying.
   useEffect(() => {
     if (!result || result.indexState !== "not_indexed") return
-    if (queuedForRef.current !== result.wallet) {
-      queuedForRef.current = result.wallet
+    const queueKey = `${result.wallet}|${result.collection}`
+    if (queuedForRef.current !== queueKey) {
+      queuedForRef.current = queueKey
       setQueue("idle")
       setRechecks(0)
       fetch("/api/public/queue-wallet", {
@@ -313,8 +316,8 @@ export default function SqueezeCheckPage() {
       ) : shown && shown.indexState === "empty" ? (
         <section className="rpc-sc-top" data-testid="sc-empty">
           <div className="rpc-sc-state">
-            We scanned this wallet{fmtScanDate(shown.lastScannedAt) ? ` on ${fmtScanDate(shown.lastScannedAt)}` : ""} and
-            it held no {label} moments. Collect on another collection? Switch with the toggle above.
+            Our last scan of this wallet{fmtScanDate(shown.lastScannedAt) ? ` (${fmtScanDate(shown.lastScannedAt)})` : ""} found
+            no {label} moments. Collect on another collection? Switch with the toggle above.
           </div>
         </section>
       ) : shown && shown.indexState === "unknown" ? (

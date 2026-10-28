@@ -1793,15 +1793,23 @@ async function computeAllDaySniperFeed(opts: {
       if (sr.error) {
         console.error(`[sniper-feed] allday serial-from-sales error: ${sr.error.message}`);
       } else {
-        const serialByNft = new Map<string, number>();
+        // 10-27 review: 21 All Day nft_ids carry two different serials in sales (e.g. 523 and 14 on a /39
+        // edition), and the rows arrive unordered — so an nft whose sales DISAGREE gets no serial, and a serial
+        // above the edition's circulation (impossible) is never shown.
+        const serialsByNft = new Map<string, Set<number>>();
         for (const r of (sr.data ?? []) as Array<{ nft_id: string | number | null; serial_number: number | string | null }>) {
           const n = Number(r.serial_number);
-          if (r.nft_id != null && Number.isFinite(n) && n > 0) serialByNft.set(String(r.nft_id), n);
+          if (r.nft_id == null || !Number.isInteger(n) || n <= 0) continue;
+          const k = String(r.nft_id);
+          serialsByNft.set(k, (serialsByNft.get(k) ?? new Set<number>()).add(n));
         }
         for (const d of fallback) {
           if (d.serial > 0) continue;
-          const n = serialByNft.get(String(d.flowId));
-          if (n) d.serial = n;
+          const candidates = serialsByNft.get(String(d.flowId));
+          if (!candidates || candidates.size !== 1) continue;
+          const [n] = candidates;
+          if (d.circulationCount > 0 && n > d.circulationCount) continue;
+          d.serial = n;
         }
       }
     }

@@ -9,7 +9,9 @@
 // Before this helper both surfaces rendered the second as the first ("0 moments" / "nothing cached"). The
 // discriminator is wallet_backfill_state, written by the per-collection backfill on every scan:
 //   - "indexed"      the RPC found moments
-//   - "empty"        a scan ran and found 0 moments in this collection (last_found_count = 0)
+//   - "empty"        a TRUSTED scan (at or after SCAN_RECORD_TRUSTED_FROM) found 0 moments in this collection.
+//                    Copy says what the SCAN found, never what the wallet holds: an empty walk and a failed
+//                    collection borrow both return [] (wallet-backfill-helpers.ts, empty-scan guard).
 //   - "not_indexed"  no scan on record (or a scan found moments the cache does not hold yet)
 //   - "unknown"      the state read failed — we say we could not tell, never "empty"
 //
@@ -23,6 +25,13 @@ export const SQUEEZE_CHECK_RPC: Record<SqueezeCollection, string> = {
   "nba-top-shot": "get_wallet_squeeze_exposure",
   "nfl-all-day": "get_allday_wallet_squeeze_exposure",
 }
+
+/**
+ * Before 70d288a20 (2026-10-27 07:49 PT) a FAILED walk was recorded as a scan that found 0 (29 Flow 429s on
+ * 10-26 alone), so an older found=0 row is not evidence of anything: it reads "not_indexed" and is re-queued.
+ * Measured at the change: 93 of 103 All Day and 11 of 14 Top Shot found=0 rows with no cached moments predate it.
+ */
+export const SCAN_RECORD_TRUSTED_FROM = "2026-10-27T14:49:25Z"
 
 export type SqueezeIndexState = "indexed" | "empty" | "not_indexed" | "unknown"
 
@@ -63,6 +72,8 @@ export async function readSqueezeCheck(db: any, wallet: string, collection: Sque
     return { rpc, error: null, summary: data ?? null, index_state: "not_indexed", last_scanned_at: null }
   }
   // A scan that FOUND moments the cache does not hold is not "holds nothing" — the cache is behind the scan.
-  const state: SqueezeIndexState = row.last_found_count === 0 ? "empty" : "not_indexed"
+  // A found=0 record from before the scan-record fix may be a failed walk: not "empty" either.
+  const trusted = Date.parse(row.last_scanned_at) >= Date.parse(SCAN_RECORD_TRUSTED_FROM)
+  const state: SqueezeIndexState = row.last_found_count === 0 && trusted ? "empty" : "not_indexed"
   return { rpc, error: null, summary: data ?? null, index_state: state, last_scanned_at: row.last_scanned_at }
 }
