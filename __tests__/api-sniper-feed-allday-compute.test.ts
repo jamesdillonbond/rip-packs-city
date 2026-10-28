@@ -53,6 +53,8 @@ const st2 = vi.hoisted(() => ({
   /** editions.jersey_number rows for the special-serial read (pass 8): answered only for an `.in(external_id, …)` read. */
   jerseys: [] as Array<{ external_id: string; jersey_number: number | null }>,
   jerseyError: null as null | { message: string },
+  /** sales (nft_id, serial_number) rows for the serial-from-sales read (pass 8b). */
+  sales: [] as Array<{ nft_id: string; serial_number: number | null }>,
 }))
 vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: {
@@ -82,6 +84,10 @@ vi.mock("@/lib/supabase", () => ({
               data: want ? rows.filter((r) => want.includes(r.edition_id)) : rows,
               error: null,
             })
+          }
+          if (table === "sales" && selected.includes("serial_number")) {
+            const want = (inList ?? []) as string[]
+            return resolve({ data: st2.sales.filter((r) => want.includes(r.nft_id)), error: null })
           }
           if (table === "editions" && selected.includes("jersey_number")) {
             if (st2.jerseyError) return resolve({ data: null, error: st2.jerseyError })
@@ -487,6 +493,25 @@ describe("GET /api/sniper-feed?collection=nfl-all-day — computeAllDaySniperFee
     // display only — never re-prices the deal
     for (const d of body.deals) { expect(d.serialMult).toBe(1); expect(d.discount).toBe(50) }
     st2.jerseys = []
+  })
+
+  it("a deal whose serial the wallet cache lacks takes it from a past sale of the same NFT — and is then flagged", async () => {
+    gqlEdges = []
+    st2.sales = [{ nft_id: "f1", serial_number: 1 }, { nft_id: "f1", serial_number: 1 }]
+    rpc.mockImplementation(async (name: string) => {
+      if (name === "get_allday_sniper_deals") {
+        return { data: [
+          { flow_id: "f1", moment_id: "m1", tier: "COMMON", confidence: "HIGH", player_name: "FromSales", ask_price: 1, fmv_usd: 2, discount_pct: 50, listing_resource_id: "1", serial_number: null, circulation_count: 500 },
+          { flow_id: "f2", moment_id: "m2", tier: "COMMON", confidence: "HIGH", player_name: "Unknown", ask_price: 1, fmv_usd: 2, discount_pct: 50, listing_resource_id: "2", serial_number: null, circulation_count: 500 },
+        ], error: null }
+      }
+      return { data: [], error: null }
+    })
+    const body = await (await GET(get(ADQS))).json()
+    const by = (p: string) => body.deals.find((d: any) => d.playerName === p)
+    expect(by("FromSales")).toMatchObject({ serial: 1, isSpecialSerial: true, serialSignal: "#1" })
+    expect(by("Unknown")).toMatchObject({ serial: 0, isSpecialSerial: false })
+    st2.sales = []
   })
 
   it("a failed jersey read keeps #1 / last-mint flags and does not degrade the board", async () => {

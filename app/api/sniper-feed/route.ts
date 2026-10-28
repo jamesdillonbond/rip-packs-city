@@ -1780,6 +1780,31 @@ async function computeAllDaySniperFeed(opts: {
     // are knowable here. Jersey comes from editions.jersey_number (Atlas playerNumber) for the keys the badge read
     // mapped. Display only: serialMult stays 1 and the FMV / discount are untouched. An ENRICHMENT read like the
     // badges: a failed jersey read leaves jersey matches unflagged (logged), #1 / last mint still apply.
+    // The RPC reads the serial from the wallet cache, which knows only cached sellers (155 of 188 deals had no
+    // serial, 10-27 ~7:10 PM PT). A moment's serial never changes, so any past sale of the same NFT names it.
+    // Enrichment like the badges: a failed read leaves the serial unknown (0), logged.
+    const noSerial = Array.from(new Set(fallback.filter((d) => !(d.serial > 0) && d.flowId).map((d) => String(d.flowId)))).slice(0, 300);
+    if (noSerial.length > 0) {
+      const sr = await boundedRead(
+        (supabase as any).from("sales").select("nft_id, serial_number")
+          .eq("collection_id", ALLDAY_COLLECTION_ID).in("nft_id", noSerial).limit(1000),
+        "allday_serial_from_sales",
+      );
+      if (sr.error) {
+        console.error(`[sniper-feed] allday serial-from-sales error: ${sr.error.message}`);
+      } else {
+        const serialByNft = new Map<string, number>();
+        for (const r of (sr.data ?? []) as Array<{ nft_id: string | number | null; serial_number: number | string | null }>) {
+          const n = Number(r.serial_number);
+          if (r.nft_id != null && Number.isFinite(n) && n > 0) serialByNft.set(String(r.nft_id), n);
+        }
+        for (const d of fallback) {
+          if (d.serial > 0) continue;
+          const n = serialByNft.get(String(d.flowId));
+          if (n) d.serial = n;
+        }
+      }
+    }
     const adKeys = Array.from(new Set(fallback.map((d) => d.editionKey).filter((k) => !!k))).slice(0, 500);
     const jerseyByKey = new Map<string, number>();
     if (adKeys.length > 0) {
