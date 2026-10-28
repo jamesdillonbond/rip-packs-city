@@ -18,7 +18,11 @@
 // page can render without auth.
 //
 // Query params:
-//   tier=COMMON|RARE|LEGENDARY|FANDOM|ULTIMATE        single tier filter
+//   collection=nba-top-shot|nfl-all-day              default nba-top-shot. NFL All Day joined 2026-10-27
+//                                                     (allday_squeeze_board). Any other value is a 400 —
+//                                                     Top Shot's board under another collection's name
+//                                                     would be substitution.
+//   tier=COMMON|RARE|LEGENDARY|FANDOM|ULTIMATE        single tier filter (All Day: COMMON|UNCOMMON|RARE|LEGENDARY|ULTIMATE)
 //   min_squeeze=<number>                              floor on squeeze_pct (default 50)
 //   max_buyable=<number>                              cap on effectively_buyable (e.g. 10 for trophy-tier)
 //   max_circulation=<number>                          cap on circulation (e.g. 100 for trophies)
@@ -44,16 +48,31 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { boardUnavailable } from "@/lib/insights/board-error";
-import { fetchSqueezeBoard, resolveSqueezeTeam } from "@/lib/insights/squeeze-board";
+import { fetchSqueezeBoard, isSqueezeCollection, resolveSqueezeTeam, SQUEEZE_SOURCES } from "@/lib/insights/squeeze-board";
+import { ownLookup } from "@/lib/safe-lookup";
+import { SQUEEZE_TIERS } from "@/lib/insights/squeeze-collections";
 
 import { boardRowMeta } from "@/lib/insights/board-meta"
-const VALID_TIERS = new Set(["COMMON", "RARE", "LEGENDARY", "FANDOM", "ULTIMATE"]);
+// Tier vocabularies differ: All Day has UNCOMMON and no FANDOM (lib/insights/squeeze-collections.ts).
+const VALID_TIERS = {
+  "nba-top-shot": new Set(SQUEEZE_TIERS["nba-top-shot"]),
+  "nfl-all-day": new Set(SQUEEZE_TIERS["nfl-all-day"]),
+};
 const VALID_SORTS = new Set(["squeeze", "circulation", "fmv", "buyable", "concentration"]);
 
 export async function GET(req: NextRequest) {
   const startedAt = Date.now();
   const url = new URL(req.url);
   const sp = url.searchParams;
+
+  const collectionParam = sp.get("collection");
+  if (collectionParam != null && !isSqueezeCollection(collectionParam)) {
+    return NextResponse.json({ error: "unknown collection" }, { status: 400 });
+  }
+  const collection = collectionParam ?? "nba-top-shot";
+  const tiers = ownLookup(VALID_TIERS, collection);
+  const source = ownLookup(SQUEEZE_SOURCES, collection);
+  if (!tiers || !source) return NextResponse.json({ error: "unknown collection" }, { status: 400 });
 
   const tier = sp.get("tier")?.toUpperCase() ?? null;
   const minSqueeze = Number(sp.get("min_squeeze") ?? "50");
@@ -73,9 +92,9 @@ export async function GET(req: NextRequest) {
   const sort = sp.get("sort") ?? "squeeze";
   const limit = Math.max(1, Math.min(200, Number(sp.get("limit")) || 50));
 
-  if (tier && !VALID_TIERS.has(tier)) {
+  if (tier && !tiers.has(tier)) {
     return NextResponse.json(
-      { error: `tier must be one of ${[...VALID_TIERS].join(",")}` },
+      { error: `tier must be one of ${[...tiers].join(",")}` },
       { status: 400 }
     );
   }
@@ -103,7 +122,7 @@ export async function GET(req: NextRequest) {
   let teamNames: string[] | null = null;
   let teamResolution: { status: string; current_name: string | null; labels: number } | null = null;
   if (teamFilter) {
-    const { data: tr, error: terr } = await resolveSqueezeTeam(teamFilter, supabase);
+    const { data: tr, error: terr } = await resolveSqueezeTeam(teamFilter, supabase, collection);
     if (terr || !tr) {
       return boardUnavailable(terr ?? { message: "team resolution returned nothing" }, "insights/squeeze");
     }
@@ -112,7 +131,7 @@ export async function GET(req: NextRequest) {
   }
 
   const { data, error, playerResolved } = await fetchSqueezeBoard(
-    { tier, set: setFilter, player: playerFilter, minSqueeze, maxBuyable, maxCirculation, minCirculation, minBuyable, teamNames, sort, limit },
+    { collection, tier, set: setFilter, player: playerFilter, minSqueeze, maxBuyable, maxCirculation, minCirculation, minBuyable, teamNames, sort, limit },
     supabase,
   );
   if (error) {
@@ -127,7 +146,8 @@ export async function GET(req: NextRequest) {
   const res = NextResponse.json({
     meta: {
       fetched_at: new Date().toISOString(),
-      source: "topshot_squeeze_board",
+      source: source.view,
+      collection,
       ...boardRowMeta(data?.length ?? 0, limit),
       elapsed_ms: elapsedMs,
       filters: {

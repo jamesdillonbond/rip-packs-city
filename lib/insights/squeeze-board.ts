@@ -17,6 +17,12 @@
 // which is the other half: `app/**/page.tsx` is measured by NEITHER coverage
 // gate, so the page's copy was untestable where the route's is not.
 //
+// 2026-10-27 (All Day ↔ Top Shot parity pass 6): `collection: "nfl-all-day"` reads
+// `allday_squeeze_board` — the same column contract over All Day's badge_editions
+// locked / burned (no owner census, so top5_share_pct / holders are NULL there).
+// The team resolver and the player-accent retry run against the SAME collection,
+// so an All Day question never resolves through Top Shot's names.
+//
 // ⚠ DEFAULTS ARE NOT SHARED, DELIBERATELY. The page pins `limit: 200` and
 // `minSqueeze: 50`; the route defaults to `limit: 50` for a direct API caller.
 // That looks like drift and is not — the client refetches with its own explicit
@@ -25,6 +31,7 @@
 import { retryEmptyPlayerSearch, type PlayerResolved } from "@/lib/search/player-search-retry"
 import { getCollectionUuid } from "@/lib/collections"
 import { supabaseAdmin } from "@/lib/supabase"
+import type { SqueezeCollection } from "@/lib/insights/squeeze-collections"
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = any
@@ -33,8 +40,15 @@ type Db = any
 export const SQUEEZE_COLS =
   "edition_id, external_id, player_name, set_name, tier, circulation, locked, burned, lock_pct, burn_pct, squeeze_pct, effectively_buyable, low_ask, low_ask_disconnected, fmv_usd, confidence, game_date, thumbnail_url, team_name, top5_share_pct, holders"
 
-/** Top Shot's collection row — the only collection this board serves. */
+/** Top Shot's collection row — the board's default collection. */
 export const SQUEEZE_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
+
+/** The collections this board serves, each with its own view and collection row. */
+export const SQUEEZE_SOURCES: Record<SqueezeCollection, { view: string; collectionId: string }> = {
+  "nba-top-shot": { view: "topshot_squeeze_board", collectionId: SQUEEZE_COLLECTION_ID },
+  "nfl-all-day": { view: "allday_squeeze_board", collectionId: "dee28451-5d62-409e-a1ad-a83f763ac070" },
+}
+export { isSqueezeCollection, type SqueezeCollection } from "@/lib/insights/squeeze-collections"
 
 export interface TeamResolution {
   /** "one" = a franchise; "many" = several matched (all their labels are used); "none" = no team label matched. */
@@ -59,8 +73,9 @@ export interface TeamResolution {
 export async function resolveSqueezeTeam(
   team: string,
   db: Db = supabaseAdmin,
+  collection: SqueezeCollection = "nba-top-shot",
 ): Promise<{ data: TeamResolution | null; error: { message: string } | null }> {
-  const { data, error } = await db.rpc("resolve_team_name", { p_collection_id: SQUEEZE_COLLECTION_ID, p_name: team })
+  const { data, error } = await db.rpc("resolve_team_name", { p_collection_id: SQUEEZE_SOURCES[collection].collectionId, p_name: team })
   if (error) return { data: null, error }
   // Shapes (measured 2026-10-03): status "one" carries `names[]` + `current_name`;
   // status "ambiguous" carries `franchises[]`, each with its own `names[]`;
@@ -82,6 +97,8 @@ export async function resolveSqueezeTeam(
 }
 
 export interface SqueezeBoardOptions {
+  /** Which collection's board. Default Top Shot. */
+  collection?: SqueezeCollection
   tier?: string | null
   set?: string | null
   player?: string | null
@@ -118,7 +135,7 @@ export async function fetchSqueezeBoard(
   const first = await runFetchSqueezeBoard(opts, db)
   const out = await retryEmptyPlayerSearch({
     supabase: db,
-    collectionUuid: getCollectionUuid("nba-top-shot"),
+    collectionUuid: getCollectionUuid(opts.collection ?? "nba-top-shot"),
     typed: opts.player,
     first,
     run: (label) => runFetchSqueezeBoard({ ...opts, player: label }, db),
@@ -131,6 +148,7 @@ async function runFetchSqueezeBoard(
   db: Db,
 ): Promise<{ data: unknown[] | null; error: { message: string } | null }> {
   const {
+    collection = "nba-top-shot",
     tier = null,
     set = null,
     player = null,
@@ -144,7 +162,7 @@ async function runFetchSqueezeBoard(
     limit,
   } = opts
 
-  let q = db.from("topshot_squeeze_board").select(SQUEEZE_COLS).gte("squeeze_pct", minSqueeze)
+  let q = db.from(SQUEEZE_SOURCES[collection].view).select(SQUEEZE_COLS).gte("squeeze_pct", minSqueeze)
 
   if (tier) q = q.eq("tier", tier.toUpperCase())
   if (set) q = q.ilike("set_name", `%${set}%`)

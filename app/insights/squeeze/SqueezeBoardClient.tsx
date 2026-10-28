@@ -12,6 +12,13 @@
 // refetches on mount.
 //
 // See app/insights/squeeze/page.tsx for the data source + server fetch.
+//
+// 2026-10-27 (All Day ↔ Top Shot parity pass 6): a collection toggle
+// (`?collection=nfl-all-day`) reads allday_squeeze_board through the same
+// route. The server seed is always Top Shot's, so the rows, KPIs and stamp on
+// screen are gated on the collection the rows were READ for — Top Shot's never
+// show under the All Day toggle, not while its read is in flight, not after it
+// fails. All Day has no owner census, so the Top-5 column and sort are hidden.
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
@@ -22,6 +29,7 @@ import { sectionUnavailableCopy } from "@/lib/entity/section-empty-copy"
 import { usdSignFirst } from "@/lib/usd-format"
 import { accentText } from "@/lib/accent-text"
 import PlayerResolvedNote from "@/components/filters/PlayerResolvedNote"
+import { SQUEEZE_COLLECTIONS, SQUEEZE_LABEL, SQUEEZE_TIERS, isSqueezeCollection, type SqueezeCollection } from "@/lib/insights/squeeze-collections"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -68,7 +76,8 @@ type ApiResponse = {
   rows: Row[]
 }
 
-type TierFilter = "ALL" | "COMMON" | "RARE" | "LEGENDARY" | "FANDOM" | "ULTIMATE"
+// Per-collection vocabularies: SQUEEZE_TIERS (All Day has UNCOMMON, no FANDOM).
+type TierFilter = string
 type SortKey = "squeeze" | "circulation" | "fmv" | "buyable" | "concentration"
 
 // Normalize the dirty tier vocabulary in the view. Some rows are tagged with
@@ -79,7 +88,6 @@ function normalizeTier(t: string | null): string | null {
   return t.replace(/^MOMENT_TIER_/, "")
 }
 
-const TIERS: TierFilter[] = ["ALL", "COMMON", "RARE", "LEGENDARY", "FANDOM", "ULTIMATE"]
 
 function fmtPct(n: number | null): string {
   if (n == null) return "—"
@@ -115,6 +123,8 @@ function tierColor(tier: string | null): string {
       return "var(--tier-ultimate)"
     case "RARE":
       return "var(--tier-rare)"
+    case "UNCOMMON":
+      return "var(--tier-uncommon)"
     case "FANDOM":
       return "var(--tier-fandom)"
     case "COMMON":
@@ -137,6 +147,11 @@ export default function SqueezeBoardClient({
   initialDegraded = null,
 }: Props) {
   const [rows, setRows] = useState<Row[]>(initialRows)
+  // Which collection `rows` were read for (the server seed is Top Shot's).
+  const [rowsCollection, setRowsCollection] = useState<SqueezeCollection>("nba-top-shot")
+  const [collection, setCollection] = useState<SqueezeCollection>("nba-top-shot")
+  const isTopShot = collection === "nba-top-shot"
+  const label = SQUEEZE_LABEL[collection]
   // Held in state, not read straight from the prop, so a successful sort/drill-down
   // refetch CLEARS it — the rows on screen are then complete and the notice would
   // be describing a failure the user is no longer looking at.
@@ -178,6 +193,8 @@ export default function SqueezeBoardClient({
       const url = new URL(window.location.href)
       const s = url.searchParams.get("set")
       const p = url.searchParams.get("player")
+      const c = url.searchParams.get("collection")
+      if (isSqueezeCollection(c)) setCollection(c)
       if (s) setSetFilter(s)
       if (p) setPlayerFilter(p)
       const t = url.searchParams.get("team")?.trim()
@@ -225,7 +242,7 @@ export default function SqueezeBoardClient({
   useEffect(() => {
     if (isFirstRun.current) {
       isFirstRun.current = false
-      if (sort === "squeeze" && !setFilter && !playerFilter && !teamFilter && minCirculation == null && minBuyable == null) {
+      if (collection === "nba-top-shot" && sort === "squeeze" && !setFilter && !playerFilter && !teamFilter && minCirculation == null && minBuyable == null) {
         return
       }
     }
@@ -237,6 +254,7 @@ export default function SqueezeBoardClient({
         const params = new URLSearchParams()
         params.set("limit", "200")
         params.set("sort", sort)
+        if (collection !== "nba-top-shot") params.set("collection", collection)
         // Default min_squeeze = 50 (the "squeeze board" framing). When the
         // user arrives via a player or set drill-down, drop the floor to 0
         // so they see ALL of that player/set's editions, not just the
@@ -263,6 +281,7 @@ export default function SqueezeBoardClient({
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
         const j = (await r.json()) as ApiResponse
         setRows(j.rows ?? [])
+        setRowsCollection(collection)
         setPlayerResolved(j.meta?.player_resolved ?? null)
         setFetchedAt(j.meta?.fetched_at ?? null)
         setTeamResolution(teamFilter ? (j.meta?.filters?.team_resolution ?? null) : null)
@@ -276,10 +295,27 @@ export default function SqueezeBoardClient({
     }
     run()
     return () => ctrl.abort()
-  }, [sort, setFilter, playerFilter, tier, maxBuyable, maxCirculation, minCirculation, minBuyable, teamFilter])
+  }, [collection, sort, setFilter, playerFilter, tier, maxBuyable, maxCirculation, minCirculation, minBuyable, teamFilter])
+
+  // Switching collection resets the tier (different vocabularies) and the census sort All Day lacks.
+  function pickCollection(c: SqueezeCollection) {
+    setCollection(c)
+    setTier("ALL")
+    if (c !== "nba-top-shot" && sort === "concentration") setSort("squeeze")
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href)
+      if (c === "nba-top-shot") url.searchParams.delete("collection")
+      else url.searchParams.set("collection", c)
+      window.history.replaceState({}, "", url.toString())
+    }
+  }
+
+  // The rows on screen must be THIS collection's — never the seed's under another toggle.
+  const pending = rowsCollection !== collection
+  const shownRows = useMemo(() => (pending ? [] : rows), [pending, rows])
 
   const filtered = useMemo(() => {
-    return rows.filter((r) => {
+    return shownRows.filter((r) => {
       if (tier !== "ALL" && normalizeTier(r.tier) !== tier) return false
       if (maxBuyable != null && (r.effectively_buyable ?? Infinity) > maxBuyable) return false
       if (maxCirculation != null && (r.circulation ?? Infinity) > maxCirculation) return false
@@ -287,7 +323,7 @@ export default function SqueezeBoardClient({
       if (minBuyable != null && (r.effectively_buyable ?? -Infinity) < minBuyable) return false
       return true
     })
-  }, [rows, tier, maxBuyable, maxCirculation, minCirculation, minBuyable])
+  }, [shownRows, tier, maxBuyable, maxCirculation, minCirculation, minBuyable])
 
   // Persist the new filters in the URL the way set/player already are, so a
   // filtered board is shareable and survives a reload.
@@ -356,19 +392,19 @@ export default function SqueezeBoardClient({
   const askDisconnect = useMemo(() => {
     let withAsk = 0
     let disconnected = 0
-    for (const r of rows) {
+    for (const r of shownRows) {
       if (r.low_ask == null) continue
       withAsk++
       if (r.low_ask_disconnected) disconnected++
     }
     return { withAsk, disconnected }
-  }, [rows])
+  }, [shownRows])
 
   const tweetIntent = useMemo(() => {
-    const text = `Top Shot displays circulation. We display effective supply.\n\nThe lock-rate squeeze board — what's actually buyable after locks + burns:`
-    const url = `${SITE_URL}/insights/squeeze`
+    const text = `${label} displays circulation. We display effective supply.\n\nThe lock-rate squeeze board — what's actually buyable after locks + burns:`
+    const url = `${SITE_URL}/insights/squeeze${isTopShot ? "" : `?collection=${collection}`}`
     return `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`
-  }, [])
+  }, [label, isTopShot, collection])
 
   return (
     <main style={styles.page}>
@@ -378,17 +414,17 @@ export default function SqueezeBoardClient({
         <div className="rpc-sq-eyebrow">RPC Insights · Public</div>
         <h1 className="rpc-sq-h1">The Lock-Rate Squeeze Board</h1>
         <p className="rpc-sq-lede">
-          Top Shot&apos;s marketplace shows you <em>circulation</em>. We show
+          {label}&apos;s marketplace shows you <em>circulation</em>. We show
           you <strong>effective supply</strong> — circulation minus the
-          moments locked in challenges and the moments already burned.
+          moments {isTopShot ? "locked in challenges" : "locked by their owners"} and the moments already burned.
           Editions with 50%+ squeeze are tighter than the listing page lets on.
         </p>
         <div className="rpc-sq-meta-row">
           <span className="rpc-sq-meta">
-            Updated <FreshnessStamp iso={fetchedAt} />
+            Updated <FreshnessStamp iso={pending ? null : fetchedAt} />
           </span>
           <span className="rpc-sq-meta-sep">·</span>
-          <span className="rpc-sq-meta">Refreshes hourly</span>
+          <span className="rpc-sq-meta">{isTopShot ? "Refreshes hourly" : "Lock + burn counts refresh daily"}</span>
           <span className="rpc-sq-meta-sep">·</span>
           <span className="rpc-sq-meta">No signup</span>
         </div>
@@ -448,8 +484,23 @@ export default function SqueezeBoardClient({
 
       {/* ── Filter row ────────────────────────────────────────────────── */}
       <section className="rpc-sq-controls" aria-label="Filters">
+        <div className="rpc-sq-pill-group" role="tablist" aria-label="Collection">
+          {SQUEEZE_COLLECTIONS.map((c) => (
+            <button
+              key={c}
+              role="tab"
+              aria-selected={collection === c}
+              data-testid={`sq-collection-${c}`}
+              className={`rpc-sq-pill ${collection === c ? "rpc-sq-pill-active" : ""}`}
+              onClick={() => pickCollection(c)}
+            >
+              {SQUEEZE_LABEL[c]}
+            </button>
+          ))}
+        </div>
+
         <div className="rpc-sq-pill-group" role="tablist" aria-label="Tier">
-          {TIERS.map((t) => (
+          {["ALL", ...SQUEEZE_TIERS[collection]].map((t) => (
             <button
               key={t}
               role="tab"
@@ -542,7 +593,7 @@ export default function SqueezeBoardClient({
           <input
             className="rpc-sq-team-input"
             type="search"
-            placeholder="e.g. Clippers"
+            placeholder={isTopShot ? "e.g. Clippers" : "e.g. Chiefs"}
             aria-label="Team name"
             value={teamInput}
             onChange={(e) => setTeamInput(e.target.value)}
@@ -573,7 +624,7 @@ export default function SqueezeBoardClient({
             <option value="buyable">Effectively buyable (asc)</option>
             <option value="circulation">Circulation (asc)</option>
             <option value="fmv">FMV (desc)</option>
-            <option value="concentration">Top-5 holder share (desc)</option>
+            {isTopShot ? <option value="concentration">Top-5 holder share (desc)</option> : null}
           </select>
         </label>
       </section>
@@ -584,7 +635,7 @@ export default function SqueezeBoardClient({
             ? `Team: ${teamResolution.current_name ?? teamFilter} — every label this franchise has minted under${teamResolution.labels > 1 ? ` (${teamResolution.labels} names, historic included)` : ""}.`
             : teamResolution.status === "many"
               ? `“${teamFilter}” matches several teams — showing all of them (${teamResolution.labels} labels). Type the full name to narrow.`
-              : `No Top Shot team matches “${teamFilter}” — nothing is substituted.`}
+              : `No ${label} team matches “${teamFilter}” — nothing is substituted.`}
         </div>
       ) : null}
 
@@ -592,19 +643,19 @@ export default function SqueezeBoardClient({
       <section className="rpc-sq-kpi-row" aria-label="Summary">
         <div className="rpc-sq-kpi">
           <div className="rpc-sq-kpi-label">Editions</div>
-          <div className="rpc-sq-kpi-value">{loading ? "—" : fmtInt(kpis.count)}</div>
+          <div className="rpc-sq-kpi-value">{loading || pending ? "—" : fmtInt(kpis.count)}</div>
         </div>
         <div className="rpc-sq-kpi">
           <div className="rpc-sq-kpi-label">Median squeeze</div>
-          <div className="rpc-sq-kpi-value">{loading ? "—" : fmtPct(kpis.medianSqueeze)}</div>
+          <div className="rpc-sq-kpi-value">{loading || pending ? "—" : fmtPct(kpis.medianSqueeze)}</div>
         </div>
         <div className="rpc-sq-kpi">
           <div className="rpc-sq-kpi-label">Median buyable</div>
-          <div className="rpc-sq-kpi-value">{loading ? "—" : fmtInt(kpis.medianBuyable == null ? null : Math.round(kpis.medianBuyable))}</div>
+          <div className="rpc-sq-kpi-value">{loading || pending ? "—" : fmtInt(kpis.medianBuyable == null ? null : Math.round(kpis.medianBuyable))}</div>
         </div>
         <div className="rpc-sq-kpi">
           <div className="rpc-sq-kpi-label">Total locked</div>
-          <div className="rpc-sq-kpi-value">{loading ? "—" : fmtInt(kpis.totalLocked)}</div>
+          <div className="rpc-sq-kpi-value">{loading || pending ? "—" : fmtInt(kpis.totalLocked)}</div>
         </div>
       </section>
 
@@ -612,7 +663,7 @@ export default function SqueezeBoardClient({
       <section className="rpc-sq-table-wrap" aria-label="Squeeze board">
         {error ? (
           <div className="rpc-sq-state">Failed to load: {error}</div>
-        ) : loading ? (
+        ) : loading || pending ? (
           <div className="rpc-sq-state">Loading…</div>
         ) : filtered.length === 0 ? (
           <div className="rpc-sq-state">
@@ -624,7 +675,7 @@ export default function SqueezeBoardClient({
             {(degraded?.failed?.length ?? 0) > 0
               ? sectionUnavailableCopy("Squeeze board")
               : teamFilter && teamResolution?.status === "none"
-                ? `No Top Shot team matches “${teamFilter}”.`
+                ? `No ${label} team matches “${teamFilter}”.`
                 : "No editions match those filters."}
           </div>
         ) : (
@@ -638,7 +689,9 @@ export default function SqueezeBoardClient({
                 <th scope="col" className="rpc-sq-th-num">Burned</th>
                 <th scope="col" className="rpc-sq-th-num rpc-sq-th-emph">Squeeze</th>
                 <th scope="col" className="rpc-sq-th-num rpc-sq-th-emph">Buyable</th>
-                <th scope="col" className="rpc-sq-th-num" title="Combined share of circulation held by the 5 largest collector wallets (on-chain owner census; unopened-pack and buyback accounts excluded). — = no complete census for this edition yet.">Top 5 hold</th>
+                {isTopShot ? (
+                  <th scope="col" className="rpc-sq-th-num" title="Combined share of circulation held by the 5 largest collector wallets (on-chain owner census; unopened-pack and buyback accounts excluded). — = no complete census for this edition yet.">Top 5 hold</th>
+                ) : null}
                 <th scope="col" className="rpc-sq-th-num">FMV</th>
                 <th scope="col" className="rpc-sq-th-num">Low ask</th>
               </tr>
@@ -648,7 +701,7 @@ export default function SqueezeBoardClient({
                 // Prefer the canonical edition page (corpus internal link);
                 // fall back to /moment/<uuid> when external_id is absent.
                 const href = r.external_id
-                  ? `/nba-top-shot/edition/${encodeURIComponent(r.external_id)}`
+                  ? `/${collection}/edition/${encodeURIComponent(r.external_id)}`
                   : `/moment/${r.edition_id}`
                 return (
                 <tr
@@ -682,6 +735,7 @@ export default function SqueezeBoardClient({
                   <td className="rpc-sq-td-num rpc-sq-td-emph">{fmtInt(r.effectively_buyable)}</td>
                   {/* Holder concentration (beta feedback 10256). A missing census is
                       UNKNOWN and reads as an em-dash with a reason — never as 0 %. */}
+                  {isTopShot ? (
                   <td className="rpc-sq-td-num" data-testid="top5-share">
                     {/* 2026-10-25: a complete census with 0 collector holders (every copy in
                         an unopened-pack / vault account; 35 editions at the time) read a bare
@@ -696,6 +750,7 @@ export default function SqueezeBoardClient({
                       <span className="rpc-sq-census-missing" title="No complete on-chain owner census for this edition yet — the share is unknown, not zero.">—</span>
                     )}
                   </td>
+                  ) : null}
                   <td className="rpc-sq-td-num">{fmtUsd(r.fmv_usd)}</td>
                   {/* A raw troll ask used to render here as if it were the
                       market: "2022-23 Season Rewind" LEGENDARY showed $5000k
@@ -735,12 +790,14 @@ export default function SqueezeBoardClient({
           </p>
           <p>
             <strong>Effectively buyable</strong> = circulation − locked −
-            burned. Lock + burn data refreshes hourly from on-chain badge
-            event ingestion. FMV from the RPC 1.7.0 sales-based
+            burned. {isTopShot
+              ? "Lock + burn data refreshes hourly from on-chain badge event ingestion."
+              : "All Day's lock + burn counts refresh daily from its marketplace's edition data; the low ask is the edition's lowest listing as last verified on chain."} FMV from the RPC 1.7.0 sales-based
             average-sales-price model (recency-weighted) with
             outlier filtering; <em>—</em> indicates too few recent sales
             to price the edition.
           </p>
+          {isTopShot ? (
           <p>
             <strong>Top 5 hold</strong> = the combined share of circulation held
             by the five largest <em>collector</em> wallets, from the on-chain
@@ -751,6 +808,7 @@ export default function SqueezeBoardClient({
             an em-dash means the census has not reached that edition yet, which
             is unknown, not 0%. Refreshed every 6 hours.
           </p>
+          ) : null}
           <p>
             <strong>Low ask</strong> is the lowest live listing. A listing more
             than <strong>10&times; this edition&rsquo;s FMV</strong> is shown as
@@ -771,7 +829,7 @@ export default function SqueezeBoardClient({
           <p>
             We start at 50% squeeze because below that, the marketplace UI
             is already close to honest. The interesting tail is the editions
-            where Top Shot says &ldquo;229 minted&rdquo; and only 12 of them
+            where {label} says &ldquo;229 minted&rdquo; and only 12 of them
             are actually purchasable.
           </p>
         </div>

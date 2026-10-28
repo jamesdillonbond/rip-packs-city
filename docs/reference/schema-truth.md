@@ -55,7 +55,8 @@ stopped being true, and only a live read could tell.
 
 **Enums re-read live the same minute — all four byte-identical to the table below, zero casing drift:**
 `fmv_confidence` = HIGH, MEDIUM, LOW, ASK_ONLY, SALES_ONLY, STALE, NO_DATA · `tier_type` = ULTIMATE,
-LEGENDARY, RARE, UNCOMMON, FANDOM, COMMON, CHAMPION, CHALLENGER, CONTENDER · `chain_type` = flow,
+LEGENDARY, EPIC, RARE, UNCOMMON, FANDOM, COMMON, CHAMPION, CHALLENGER, CONTENDER (EPIC added 10-20; this line
+re-read live 2026-10-27 ~4:55 PM PT and fixed — it had missed that change) · `chain_type` = flow,
 ethereum, polygon, solana, flow_evm · `edition_kind` = LE, CC.
 
 ⚠ **STILL NOT A FULL REGENERATION.** The column inventories, partition lists and RLS per-table detail

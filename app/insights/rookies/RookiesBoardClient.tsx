@@ -328,16 +328,14 @@ export default function RookiesBoardClient({ initial, initialDegraded = null }: 
                       >
                         <span className="rpc-rk-player">{r.player_name}</span>
                       </Link>
-                      {/* /insights/squeeze is Top Shot only. */}
-                      {home.topShot ? (
-                        <Link
-                          href={`/insights/squeeze?player=${encodeURIComponent(r.player_name)}`}
-                          className="rpc-rk-trophy-link"
-                          title={`See ${r.player_name}'s editions on the squeeze board`}
-                        >
-                          squeeze →
-                        </Link>
-                      ) : null}
+                      {/* The squeeze board has an All Day leg since 10-27 — link the class's own collection. */}
+                      <Link
+                        href={`/insights/squeeze?${home.topShot ? "" : `collection=${home.collection}&`}player=${encodeURIComponent(r.player_name)}`}
+                        className="rpc-rk-trophy-link"
+                        title={`See ${r.player_name}'s editions on the squeeze board`}
+                      >
+                        squeeze →
+                      </Link>
                       {Number(r.mint_one_eds_with_history ?? 0) > 0 ? (
                         <Link
                           href={`/insights/first-mint?${home.topShot ? "" : "collection=nfl-all-day&"}player=${encodeURIComponent(r.player_name)}`}

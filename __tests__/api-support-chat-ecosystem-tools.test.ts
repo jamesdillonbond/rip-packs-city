@@ -330,6 +330,19 @@ describe("concierge — get_ecosystem_stat + get_insight_board enum maps", () =>
   it("rejects an unknown ecosystem metric", async () => {
     expect(await drive("get_ecosystem_stat", { metric: "nope" })).toMatchObject({ status: "error" })
   })
+  // 2026-10-27: the squeeze board on an All Day question reads All Day's leg, never Top Shot's.
+  it("board=squeeze on NFL All Day reads ?collection=nfl-all-day", async () => {
+    const f = stubFetch([jsonRoute("/api/public/insights/squeeze", { rows: [{ x: 1 }] })])
+    script("get_insight_board", { board: "squeeze", collectionId: "nfl-all-day" })
+    await POST(post("most squeezed all day"))
+    expect(f.calls.find((c) => c.url.includes("/squeeze"))!.url).toContain("collection=nfl-all-day")
+  })
+  it("board=squeeze with no collection stays Top Shot's", async () => {
+    const f = stubFetch([jsonRoute("/api/public/insights/squeeze", { rows: [{ x: 1 }] })])
+    script("get_insight_board", { board: "squeeze" })
+    await POST(post("most squeezed"))
+    expect(f.calls.find((c) => c.url.includes("/squeeze"))!.url).not.toContain("collection=")
+  })
   it("maps a valid insight board enum to its path", async () => {
     const f = stubFetch([jsonRoute("/api/public/insights/set-completers", { rows: [{ s: 1 }] })])
     script("get_insight_board", { board: "set_completers" })

@@ -123,8 +123,11 @@ describe("FirstMintBoardClient", () => {
       expect(container.textContent).not.toContain("Damian Lillard")
       expect(container.querySelector('a[href="/nfl-all-day/edition/445"]')).toBeTruthy()
       expect(container.querySelector('a[href^="/nba-top-shot/"]')).toBeNull()
-      // /insights/squeeze is Top Shot only — no squeeze link on an All Day row.
-      expect(container.querySelector('a[href^="/insights/squeeze"]')).toBeNull()
+      // The squeeze board gained an All Day leg 10-27: an All Day row links it WITH the collection —
+      // never Top Shot's board under an All Day player.
+      const sq = [...container.querySelectorAll("a")].map((a) => a.getAttribute("href") ?? "").filter((h) => h.startsWith("/insights/squeeze"))
+      expect(sq.length).toBeGreaterThan(0)
+      expect(sq.every((h) => h.includes("collection=nfl-all-day"))).toBe(true)
       expect(container.textContent).toContain("Every NFL All Day serial #1 sale")
       expect(container.textContent).toContain("UNCOMMON")
       expect(container.textContent).not.toContain("FANDOM")
