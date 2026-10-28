@@ -16,6 +16,18 @@ export const SQUEEZE_LABEL: Record<SqueezeCollection, string> = {
   "nfl-all-day": "NFL All Day",
 }
 
+/**
+ * Each collection's own squeeze-board pages (2026-10-27: All Day's moved off the `?collection=` toggle onto
+ * /insights/allday-squeeze and /insights/allday-set-squeeze, which carry All Day's metadata and OG card).
+ * Every link to a collection's board goes through these, so none points at the Top Shot page's toggle URL.
+ */
+export function squeezeBoardPath(collection: string): string {
+  return collection === "nfl-all-day" ? "/insights/allday-squeeze" : "/insights/squeeze"
+}
+export function setSqueezeBoardPath(collection: string): string {
+  return collection === "nfl-all-day" ? "/insights/allday-set-squeeze" : "/insights/set-squeeze"
+}
+
 /** Tier vocabularies differ: All Day has UNCOMMON and no FANDOM. */
 export const SQUEEZE_TIERS: Record<SqueezeCollection, readonly string[]> = {
   "nba-top-shot": ["COMMON", "RARE", "LEGENDARY", "FANDOM", "ULTIMATE"],

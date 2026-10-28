@@ -89,9 +89,10 @@ describe("RookiesBoardClient NFL 2025 tab", () => {
     expect(container.textContent).not.toContain("Cooper Flagg")
     expect(container.querySelector('a[href="/nfl-all-day/player/ashton-jeanty"]')).toBeTruthy()
     expect(container.querySelector('a[href^="/nba-top-shot/"]')).toBeNull()
-    // The squeeze board's All Day leg (10-27): linked WITH the collection, never Top Shot's board.
-    const sq = [...container.querySelectorAll("a")].map((a) => a.getAttribute("href") ?? "").filter((h) => h.startsWith("/insights/squeeze"))
-    expect(sq).toEqual(["/insights/squeeze?collection=nfl-all-day&player=Ashton%20Jeanty"])
+    // The squeeze board's All Day leg (10-27): All Day's own board page (since the evening of 10-27), never
+    // Top Shot's board.
+    const sq = [...container.querySelectorAll("a")].map((a) => a.getAttribute("href") ?? "").filter((h) => /^\/insights\/(allday-)?squeeze\?/.test(h))
+    expect(sq).toEqual(["/insights/allday-squeeze?player=Ashton%20Jeanty"])
     const hrefs = [...container.querySelectorAll("a")].map((a) => a.getAttribute("href"))
     expect(hrefs).toContain("/insights/first-mint?collection=nfl-all-day&player=Ashton%20Jeanty")
     expect(container.textContent).toContain("All Day's own edition counts")

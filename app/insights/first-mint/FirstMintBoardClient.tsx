@@ -18,6 +18,7 @@ import type { DegradedSummary } from "@/lib/insights/board-status"
 import { usdSignFirst } from "@/lib/usd-format"
 import { accentText } from "@/lib/accent-text"
 import PlayerResolvedNote from "@/components/filters/PlayerResolvedNote"
+import { squeezeBoardPath } from "@/lib/insights/squeeze-collections"
 import {
   FIRST_MINT_COLLECTIONS,
   FIRST_MINT_SOURCES,
@@ -126,8 +127,6 @@ export default function FirstMintBoardClient({ initial, initialDegraded = null }
   // NFL All Day joined 2026-10-26 (Top Shot parity pass 4); the server seed is always Top Shot's default view.
   const [collection, setCollection] = useState<FirstMintCollection>("nba-top-shot")
   const label = FIRST_MINT_SOURCES[collection].label
-  // The squeeze board's collection param for this board's collection ("" = Top Shot, its default).
-  const squeezeQs = collection === "nba-top-shot" ? "" : `collection=${collection}&`
   const isTopShot = collection === "nba-top-shot"
 
   useEffect(() => {
@@ -386,7 +385,7 @@ export default function FirstMintBoardClient({ initial, initialDegraded = null }
               <>
                 No mint-#1 sales recorded for <strong>{playerFilter}</strong> in the last 90 days.
                 <br />
-                <Link href={`/insights/squeeze?${squeezeQs}player=${encodeURIComponent(playerFilter)}`} className="rpc-fm-empty-link">
+                <Link href={`${squeezeBoardPath(collection)}?player=${encodeURIComponent(playerFilter)}`} className="rpc-fm-empty-link">
                   See {playerFilter}&apos;s editions on the squeeze board →
                 </Link>
               </>
@@ -394,7 +393,7 @@ export default function FirstMintBoardClient({ initial, initialDegraded = null }
               <>
                 No mint-#1 sales recorded for <strong>{setFilter}</strong> in the last 90 days.
                 <br />
-                <Link href={`/insights/squeeze?${squeezeQs}set=${encodeURIComponent(setFilter)}`} className="rpc-fm-empty-link">
+                <Link href={`${squeezeBoardPath(collection)}?set=${encodeURIComponent(setFilter)}`} className="rpc-fm-empty-link">
                   See {setFilter} on the squeeze board →
                 </Link>
               </>
@@ -430,7 +429,7 @@ export default function FirstMintBoardClient({ initial, initialDegraded = null }
                       {/* The squeeze board has an All Day leg since 10-27 — link the row's own collection. */}
                       {r.player_name ? (
                         <Link
-                          href={`/insights/squeeze?${squeezeQs}player=${encodeURIComponent(r.player_name)}`}
+                          href={`${squeezeBoardPath(collection)}?player=${encodeURIComponent(r.player_name)}`}
                           className="rpc-fm-squeeze-link"
                           title={`See ${r.player_name}'s editions on the squeeze board`}
                         >

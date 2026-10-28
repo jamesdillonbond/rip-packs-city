@@ -68,7 +68,7 @@ describe("SetSqueezeBoardClient — NFL All Day toggle", () => {
     expect(container.textContent).not.toContain("Rookie Revelation")
     const hrefs = [...container.querySelectorAll("a")].map((a) => a.getAttribute("href") ?? "")
     expect(hrefs).toContain("/nfl-all-day/set/nfl-draft")
-    expect(hrefs).toContain("/insights/squeeze?collection=nfl-all-day&set=NFL%20Draft")
+    expect(hrefs).toContain("/insights/allday-squeeze?set=NFL%20Draft")
     expect(hrefs).toContain("/insights/first-mint?collection=nfl-all-day&set=NFL%20Draft")
     expect(hrefs.some((h) => h.startsWith("/nba-top-shot/"))).toBe(false)
     expect(container.textContent).toContain("UNCOMMON")

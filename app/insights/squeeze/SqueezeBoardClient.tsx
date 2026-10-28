@@ -29,7 +29,7 @@ import { sectionUnavailableCopy } from "@/lib/entity/section-empty-copy"
 import { usdSignFirst } from "@/lib/usd-format"
 import { accentText } from "@/lib/accent-text"
 import PlayerResolvedNote from "@/components/filters/PlayerResolvedNote"
-import { SQUEEZE_COLLECTIONS, SQUEEZE_LABEL, SQUEEZE_TIERS, isSqueezeCollection, type SqueezeCollection } from "@/lib/insights/squeeze-collections"
+import { SQUEEZE_COLLECTIONS, SQUEEZE_LABEL, SQUEEZE_TIERS, isSqueezeCollection, squeezeBoardPath, type SqueezeCollection } from "@/lib/insights/squeeze-collections"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -148,11 +148,6 @@ type Props = {
   initialCollection?: SqueezeCollection
 }
 
-/** Each collection's own board page — the toggle's target from a dedicated page, and the share URL. */
-const BOARD_PATH: Record<SqueezeCollection, string> = {
-  "nba-top-shot": "/insights/squeeze",
-  "nfl-all-day": "/insights/allday-squeeze",
-}
 
 export default function SqueezeBoardClient({
   initialRows,
@@ -317,7 +312,7 @@ export default function SqueezeBoardClient({
   function pickCollection(c: SqueezeCollection) {
     // From a dedicated page, the other collection's board is its own page.
     if (initialCollection && c !== initialCollection) {
-      if (typeof window !== "undefined") window.location.assign(BOARD_PATH[c])
+      if (typeof window !== "undefined") window.location.assign(squeezeBoardPath(c))
       return
     }
     setCollection(c)
@@ -425,7 +420,7 @@ export default function SqueezeBoardClient({
     const text = `${label} displays circulation. We display effective supply.\n\nThe lock-rate squeeze board — what's actually buyable after locks + burns:`
     // Each collection's own page: its metadata and OG card are that collection's (the
     // ?collection= toggle URL previews with Top Shot's — 10-27 review).
-    const url = `${SITE_URL}${BOARD_PATH[collection]}`
+    const url = `${SITE_URL}${squeezeBoardPath(collection)}`
     return `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`
   }, [label, collection])
 

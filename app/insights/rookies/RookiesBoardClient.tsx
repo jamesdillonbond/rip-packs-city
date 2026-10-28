@@ -24,6 +24,7 @@ import { slugifyPlayerName } from "@/lib/entity-labels"
 import { usdSignFirst } from "@/lib/usd-format"
 import { rookieBoardShareUrl } from "@/lib/rookie-class-link"
 import { useRookieClassParam } from "@/lib/use-rookie-class-param"
+import { squeezeBoardPath } from "@/lib/insights/squeeze-collections"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -330,7 +331,7 @@ export default function RookiesBoardClient({ initial, initialDegraded = null }: 
                       </Link>
                       {/* The squeeze board has an All Day leg since 10-27 — link the class's own collection. */}
                       <Link
-                        href={`/insights/squeeze?${home.topShot ? "" : `collection=${home.collection}&`}player=${encodeURIComponent(r.player_name)}`}
+                        href={`${squeezeBoardPath(home.collection)}?player=${encodeURIComponent(r.player_name)}`}
                         className="rpc-rk-trophy-link"
                         title={`See ${r.player_name}'s editions on the squeeze board`}
                       >

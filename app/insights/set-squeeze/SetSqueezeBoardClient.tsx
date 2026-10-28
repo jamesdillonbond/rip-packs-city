@@ -24,7 +24,7 @@ import type { DegradedSummary } from "@/lib/insights/board-status"
 import { sectionEmptyCopy } from "@/lib/entity/section-empty-copy"
 import { slugifyName } from "@/lib/entity-labels"
 import { accentText } from "@/lib/accent-text"
-import { SQUEEZE_COLLECTIONS, SQUEEZE_LABEL, SQUEEZE_TIERS, isSqueezeCollection, type SqueezeCollection } from "@/lib/insights/squeeze-collections"
+import { SQUEEZE_COLLECTIONS, SQUEEZE_LABEL, SQUEEZE_TIERS, isSqueezeCollection, type SqueezeCollection, setSqueezeBoardPath, squeezeBoardPath } from "@/lib/insights/squeeze-collections"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -55,12 +55,6 @@ type SortKey = "squeeze" | "buyable"
 type SeriesFilter = string
 // Per-collection vocabularies: SQUEEZE_TIERS (All Day has UNCOMMON, no FANDOM).
 type TierFilter = string
-/** Each collection's own set-squeeze page — the toggle's target from a dedicated page, and the share URL. */
-const SET_BOARD_PATH: Record<SqueezeCollection, string> = {
-  "nba-top-shot": "/insights/set-squeeze",
-  "nfl-all-day": "/insights/allday-set-squeeze",
-}
-
 /** Series pills per collection, newest first (All Day: the 2025 and 2024 seasons' series). */
 const SERIES_PILLS: Record<SqueezeCollection, readonly string[]> = {
   "nba-top-shot": ["8", "7", "6", "5"],
@@ -150,7 +144,7 @@ export default function SetSqueezeBoardClient({
   function pickCollection(c: SqueezeCollection) {
     // From a dedicated page, the other collection's board is its own page.
     if (initialCollection && c !== initialCollection) {
-      if (typeof window !== "undefined") window.location.assign(SET_BOARD_PATH[c])
+      if (typeof window !== "undefined") window.location.assign(setSqueezeBoardPath(c))
       return
     }
     setCollection(c)
@@ -208,7 +202,7 @@ export default function SetSqueezeBoardClient({
   const tweetIntent = useMemo(() => {
     const text = `${label} sets ranked by lock + burn across editions. If you're completing this set, how scarce will it actually be?`
     // Each collection's own page: its metadata and OG card are that collection's (10-27 review).
-    const url = `${SITE_URL}${SET_BOARD_PATH[collection]}`
+    const url = `${SITE_URL}${setSqueezeBoardPath(collection)}`
     return `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`
   }, [label, collection])
 
@@ -329,7 +323,7 @@ export default function SetSqueezeBoardClient({
                           <div className="rpc-ss-set-sub">{r.series ? seriesLabel(r.series) : "—"}</div>
                         </Link>
                         <Link
-                          href={`/insights/squeeze?${legQs}set=${encodeURIComponent(r.set_name)}`}
+                          href={`${squeezeBoardPath(collection)}?set=${encodeURIComponent(r.set_name)}`}
                           className="rpc-ss-trophy-link"
                           title={`Drill into ${r.set_name} on the squeeze board`}
                         >
