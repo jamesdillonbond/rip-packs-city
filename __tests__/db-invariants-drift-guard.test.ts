@@ -446,16 +446,17 @@ const PINS = [
     // carry high_offer_usd (10235) since 20261003182955.
     // Re-pointed 2026-10-10 (#184): the low_ask arm reads low_ask_confirmed_at.
     // Re-pointed 2026-10-18: series_season gains WHEN 9 THEN 2026 (Series 2026-27, tip-off 10-20).
+    // Re-pointed 2026-10-27: on NFL All Day series_season reads collection_series (Contemporary scope).
     fn: "get_team_checklist",
     test: "supabase/tests/get_team_checklist.sql",
     migration:
-      "supabase/migrations/20261018162955_audit_20261018_series_2026_27_season_and_label_in_db_functions.sql",
+      "supabase/migrations/20261028022241_audit_20261027_allday_team_checklist_contemporary.sql",
   },
   {
     fn: "get_team_checklist_progress",
     test: "supabase/tests/get_team_checklist.sql",
     migration:
-      "supabase/migrations/20261018162955_audit_20261018_series_2026_27_season_and_label_in_db_functions.sql",
+      "supabase/migrations/20261028022241_audit_20261027_allday_team_checklist_contemporary.sql",
   },
   {
     // Added 2026-09-26. The Pinnacle franchise grid and roster read

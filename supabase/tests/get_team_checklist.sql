@@ -23,6 +23,9 @@
 -- rows also carry high_offer_usd since
 -- supabase/migrations/20261003182955_audit_20261003_team_checklist_rows_carry_the_high_offer.sql
 -- (verbatim from that file).
+-- Both functions' DDL re-pinned 2026-10-27 to
+-- supabase/migrations/20261028022241_audit_20261027_allday_team_checklist_contemporary.sql (series_season reads
+-- collection_series on NFL All Day; every other collection keeps the Top Shot CASE).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -232,10 +235,16 @@ BEGIN
         e.video_url,
         e.team_name,
         e.play_type,
-        (CASE e.series
+        (CASE WHEN p_collection_id = 'dee28451-5d62-409e-a1ad-a83f763ac070'::uuid THEN
+          -- NFL All Day (2026-10-27): its own season map — collection_series pairs a season series with that
+          -- season's historical series, so a historical moment (old game_date) is never contemporary.
+          (SELECT NULLIF(regexp_replace(cs.season, '[^0-9]', '', 'g'), '')::int
+             FROM collection_series cs
+            WHERE cs.collection_id = p_collection_id AND cs.series_number = e.series)
+        ELSE (CASE e.series
           WHEN 0 THEN 2019 WHEN 1 THEN 2019 WHEN 2 THEN 2020 WHEN 3 THEN 2021
           WHEN 4 THEN 2021 WHEN 5 THEN 2022 WHEN 6 THEN 2023 WHEN 7 THEN 2024
-          WHEN 8 THEN 2025 WHEN 9 THEN 2026 ELSE NULL END)                  AS series_season,
+          WHEN 8 THEN 2025 WHEN 9 THEN 2026 ELSE NULL END) END)                  AS series_season,
         (CASE WHEN e.game_date IS NULL THEN NULL
               WHEN EXTRACT(month FROM e.game_date) >= 8 THEN EXTRACT(year FROM e.game_date)::int
               ELSE EXTRACT(year FROM e.game_date)::int - 1 END) AS play_season,
@@ -522,10 +531,16 @@ BEGIN
           WHEN 'UNCOMMON'   THEN 7 WHEN 'FANDOM'     THEN 8 WHEN 'COMMON'     THEN 9
           ELSE 99 END AS tier_rank,
         e.series AS series_num,
-        (CASE e.series
+        (CASE WHEN p_collection_id = 'dee28451-5d62-409e-a1ad-a83f763ac070'::uuid THEN
+          -- NFL All Day (2026-10-27): its own season map — collection_series pairs a season series with that
+          -- season's historical series, so a historical moment (old game_date) is never contemporary.
+          (SELECT NULLIF(regexp_replace(cs.season, '[^0-9]', '', 'g'), '')::int
+             FROM collection_series cs
+            WHERE cs.collection_id = p_collection_id AND cs.series_number = e.series)
+        ELSE (CASE e.series
           WHEN 0 THEN 2019 WHEN 1 THEN 2019 WHEN 2 THEN 2020 WHEN 3 THEN 2021
           WHEN 4 THEN 2021 WHEN 5 THEN 2022 WHEN 6 THEN 2023 WHEN 7 THEN 2024
-          WHEN 8 THEN 2025 WHEN 9 THEN 2026 ELSE NULL END) AS series_season,
+          WHEN 8 THEN 2025 WHEN 9 THEN 2026 ELSE NULL END) END) AS series_season,
         (CASE WHEN e.game_date IS NULL THEN NULL
               WHEN EXTRACT(month FROM e.game_date) >= 8 THEN EXTRACT(year FROM e.game_date)::int
               ELSE EXTRACT(year FROM e.game_date)::int - 1 END) AS play_season,

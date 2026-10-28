@@ -483,8 +483,9 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
   // ── Scope tabs ──────────────────────────────────────────────────────────────
   const scopeTabs: Array<{ key: Scope; label: string }> = [
     { key: "all_time", label: "All-Time" },
-    // Contemporary = play season == series season; a Top Shot concept only.
-    ...(isTopShot ? [{ key: "contemporary", label: "Contemporary" }] : []),
+    // Contemporary = play season == series season. Top Shot's season map lives in the RPC; NFL All Day's
+    // (2026-10-27) comes from collection_series (a season series + its historical series per season).
+    ...(isTopShot || collectionUrlSlug === "nfl-all-day" ? [{ key: "contemporary", label: "Contemporary" }] : []),
   ]
 
   const hasWallet = !!wallet

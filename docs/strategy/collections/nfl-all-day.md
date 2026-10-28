@@ -136,7 +136,7 @@ Read from a code sweep of every Top Shot-only branch (≈58 rows) and a DB check
 | Player: season stats | ✓ | ✓ | ESPN NFL |
 | Player: Top Collectors | ✓ (rookie index) | ✗ | same wmc coverage limit as Top Owners |
 | Team: Squeeze & Scarcity | ✓ | ✓ (new, pass 3) | `get_team_squeeze` All Day arm over `badge_editions` locked / burned (same Atlas ingest); an edition with an unread count is left out, never shown as 0 %; ask = the verified floor. 12 rows on the Chiefs (10-26) |
-| Team: checklist "Contemporary" scope | ✓ | ✗ | the season rule now exists — `collection_series.season` (pairs of series per season; Series 5 corrected to 2023 on 10-27) — but `get_team_checklist` / `_progress` hardcode Top Shot's series → season CASE; both are pinned by `supabase/tests/get_team_checklist.sql` (verbatim DDL) and need a joint re-pin |
+| Team: checklist "Contemporary" scope | ✓ | ✓ (new, pass 9) | `get_team_checklist` / `_progress` read All Day's season from `collection_series` (a season series + its historical series; Series 5 corrected to 2023 the same evening), so a historical moment is never contemporary. Chiefs: 256 all-time, 216 contemporary (10-27) |
 | Collection tab: "close to completing" sets | ✓ | ✓ (new, pass 2) | reads `/api/allday-set-progress`; links All Day's Sets tab; no dollar figure (the tracker sums FMV, not asks) |
 | Sniper: BADGES ONLY + badged stat | ✓ | ✓ (new) | `get_allday_listing_badges`; the path built every deal `hasBadge=false` |
 | Sniper: Own / Lock chips · expand-panel depth | ✓ | ✓ (new, pass 3) | the badge lookup now carries `edition_key`; a deal with no key reads "Own —", never "Not owned"; the expand panel reads `/api/best-asks` with the All Day collection (never `/api/edition-floor`, which takes no collection) |

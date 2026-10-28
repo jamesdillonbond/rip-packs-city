@@ -331,15 +331,31 @@ describe("TeamChecklist", () => {
     expect(container.querySelector('a[href*="owned-locked"] img')).toBeTruthy()
   })
 
-  it("non-Top-Shot collection: no Contemporary tab, 'Series N' chip labels", async () => {
+  // RE-PINNED 2026-10-27: NFL All Day gained the Contemporary scope (its season map is collection_series); the
+  // negative property is held by a collection with no season map (Golazos).
+  it("a collection with no season map: no Contemporary tab, 'Series N' chip labels", async () => {
     fetchMock = routeFetch({
       checklist: () => res(true, [{ ...tile, series_num: 3 }]),
       progress: () => res(true, anonProgress),
     })
     vi.stubGlobal("fetch", fetchMock)
-    const { getByText, queryByText } = render(<TeamChecklist collectionUrlSlug="nfl-all-day" teamSlug="cowboys" />)
+    const { getByText, queryByText } = render(<TeamChecklist collectionUrlSlug="laliga-golazos" teamSlug="real-madrid" />)
     await waitFor(() => expect(getByText("Series 3")).toBeTruthy())
-    expect(queryByText("Contemporary")).toBeNull() // Top Shot-only scope
+    expect(queryByText("Contemporary")).toBeNull()
+  })
+
+  it("NFL All Day: the Contemporary tab re-fetches with scope=contemporary", async () => {
+    const urls: string[] = []
+    fetchMock = vi.fn(async (u: string) => {
+      urls.push(String(u))
+      if (String(u).includes("progress")) return res(true, anonProgress)
+      return res(true, [{ ...tile, series_num: 9 }])
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const { getByText } = render(<TeamChecklist collectionUrlSlug="nfl-all-day" teamSlug="kansas-city-chiefs" />)
+    await waitFor(() => expect(getByText("Series 9")).toBeTruthy())
+    fireEvent.click(getByText("Contemporary"))
+    await waitFor(() => expect(urls.some((u) => u.includes("scope=contemporary"))).toBe(true))
   })
 
   // ── Honest failure ─────────────────────────────────────────────────────
