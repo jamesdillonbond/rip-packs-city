@@ -142,8 +142,11 @@ describe("SqueezeCheckPage (app/insights/squeeze-check/page.tsx)", () => {
     render(<SqueezeCheckPage />)
     await waitFor(() => expect(fetchMock).toHaveBeenCalled())
     await waitFor(() =>
-      expect(screen.getByText(/Nothing in your bag is over 0% squeezed/i)).toBeTruthy(),
+      // editions_with_badge_coverage = 0 → the page says no lock/burn data exists (2026-10-27), rather than the old
+      // "nothing is over 0% squeezed", which claimed a reading it never had.
+      expect(screen.getByText(/None of your editions has lock\/burn data yet/i)).toBeTruthy(),
     )
+    expect(screen.queryByText(/Nothing in your bag is over 0% squeezed/i)).toBeNull()
   })
 })
 

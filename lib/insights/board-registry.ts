@@ -290,7 +290,7 @@ export const INSIGHTS_BOARDS: readonly InsightsBoard[] = [
     kind: "tool",
     name: "What's Liquid In Your Bag?",
     description:
-      "Paste a Flow wallet and see how much of its Top Shot collection is actually liquid vs sitting in challenge-locked or burned editions.",
+      "Paste a Flow wallet and see how much of its Top Shot or NFL All Day collection is actually liquid vs sitting in challenge-locked or burned editions.",
     publicApi: false,
   },
   {

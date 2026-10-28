@@ -194,8 +194,11 @@ const ccInitial = {
   wallets: [
     // hasTs=true -> squeeze-check internal link
     { wallet_address: "0xabcdef0123456789", n_collections: 5, total_moments: 800, ts_moments: 400, allday_moments: 200, golazos_moments: 100, pinnacle_moments: 60, ufc_moments: 40, approx_fmv_usd: 90000 },
-    // hasTs=false (ts_moments 0) -> Flowscan external link; also a short (<=14) addr
-    { wallet_address: "0xshort", n_collections: 3, total_moments: 30, ts_moments: 0, allday_moments: 10, golazos_moments: 10, pinnacle_moments: 10, ufc_moments: 0, approx_fmv_usd: null },
+    // no Top Shot AND no All Day bag -> Flowscan external link; also a short (<=14) addr. (allday_moments was 10
+    // until 2026-10-27, when All Day joined the squeeze check — that wallet now links there; see the next row.)
+    { wallet_address: "0xshort", n_collections: 3, total_moments: 20, ts_moments: 0, allday_moments: 0, golazos_moments: 10, pinnacle_moments: 10, ufc_moments: 0, approx_fmv_usd: null },
+    // All Day-only bag -> the squeeze check's All Day leg
+    { wallet_address: "0xad00000000000001", n_collections: 2, total_moments: 15, ts_moments: 0, allday_moments: 12, golazos_moments: 3, pinnacle_moments: 0, ufc_moments: 0, approx_fmv_usd: null },
   ],
   ts_set_overlap: [
     { set_id: "s1", set_name: "Cosmic Overlap Set", cohort_holders: 300, moments_in_cohort: 1200 },
@@ -213,6 +216,11 @@ describe("CrossCollectionBoardClient — interaction coverage", () => {
     const flowscan = container.querySelector('a[href^="https://www.flowscan.io/account/"]') as HTMLAnchorElement
     expect(flowscan).toBeTruthy()
     expect(flowscan.getAttribute("target")).toBe("_blank")
+    expect(flowscan.getAttribute("href")).toContain("0xshort")
+    // All Day-only wallet -> squeeze check on its All Day leg; a TS wallet's link carries no collection param
+    const hrefs = [...container.querySelectorAll("a")].map((a) => a.getAttribute("href") ?? "")
+    expect(hrefs).toContain("/insights/squeeze-check?wallet=0xad00000000000001&collection=nfl-all-day")
+    expect(hrefs).toContain("/insights/squeeze-check?wallet=0xabcdef0123456789")
     // null overlap set_name renders the em-dash fallback
     expect(container.textContent).toContain("—")
   })

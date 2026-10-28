@@ -355,7 +355,7 @@ const CARDS: Card[] = [
     eyebrow: "Tool · Live",
     title: "What's Liquid In Your Bag?",
     blurb:
-      "Paste your Flow wallet, see how much of your Top Shot collection is actually liquid vs sitting in challenge-locked or burned editions. Personal, free, no signup.",
+      "Paste your Flow wallet, see how much of your Top Shot or NFL All Day collection is actually liquid vs sitting in challenge-locked or burned editions. Personal, free, no signup.",
     cta: "Check your wallet",
     available: true,
   },

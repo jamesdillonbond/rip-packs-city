@@ -804,8 +804,12 @@ describe("concierge tools — check_wallet_squeeze", () => {
     expect((r.summary as Record<string, unknown>).total_moments).toBe(120)
   })
 
-  it("returns empty (not an error) when the wallet has no cached moments", async () => {
-    install({ "rpc:get_wallet_squeeze_exposure": { data: { total_moments: 0 }, error: null } })
+  it("returns empty (not an error) when a scan found no moments for the wallet", async () => {
+    // 2026-10-27: "empty" now needs a scan on record (wallet_backfill_state); a never-scanned wallet is not_indexed.
+    install({
+      "rpc:get_wallet_squeeze_exposure": { data: { total_moments: 0 }, error: null },
+      wallet_backfill_state: { data: { last_scanned_at: "2026-10-27T17:00:00Z", last_found_count: 0 }, error: null },
+    })
     script("check_wallet_squeeze", { walletAddress: WALLET })
     await POST(post("squeeze for an empty wallet"))
     expect(toolResult()).toMatchObject({ status: "empty" })

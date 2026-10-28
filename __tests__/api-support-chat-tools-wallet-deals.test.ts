@@ -192,11 +192,61 @@ describe("check_wallet_squeeze", () => {
     expect(toolResult()).toMatchObject({ status: "username_not_resolved" })
   })
 
-  it("returns an honest empty (not an error) when no moments are cached for the wallet", async () => {
-    install({ "rpc:get_wallet_squeeze_exposure": { data: { total_moments: 0 }, error: null } })
+  // 2026-10-27: "no moments cached" is TWO answers. A scan that found none is "empty"; a wallet never scanned is
+  // "not_indexed" — and must never reach the model as an empty bag (wallet_backfill_state decides).
+  it("returns an honest empty (not an error) when a scan found no moments for the wallet", async () => {
+    install({
+      "rpc:get_wallet_squeeze_exposure": { data: { total_moments: 0 }, error: null },
+      wallet_backfill_state: { data: { last_scanned_at: "2026-10-27T17:00:00Z", last_found_count: 0 }, error: null },
+    })
     script("check_wallet_squeeze", { walletAddress: HEX })
     await POST(post("squeeze me"))
-    expect(toolResult()).toMatchObject({ status: "empty", wallet: HEX })
+    expect(toolResult()).toMatchObject({ status: "empty", wallet: HEX, collection: "nba-top-shot" })
+  })
+
+  it("a never-scanned wallet is not_indexed, never empty, and points at the page that starts the scan", async () => {
+    install({
+      "rpc:get_wallet_squeeze_exposure": { data: { total_moments: null }, error: null },
+      wallet_backfill_state: { data: null, error: null },
+    })
+    script("check_wallet_squeeze", { walletAddress: HEX })
+    await POST(post("squeeze me"))
+    const r = toolResult()
+    expect(r.status).toBe("not_indexed")
+    expect(r.status).not.toBe("empty")
+    expect(String(r.message)).toContain("/insights/squeeze-check?wallet=")
+    expect(String(r.message)).toContain("Do not say the wallet is empty")
+  })
+
+  it("a failed state read is state_unknown, never empty", async () => {
+    install({
+      "rpc:get_wallet_squeeze_exposure": { data: { total_moments: null }, error: null },
+      wallet_backfill_state: { data: null, error: { message: "boom" } },
+    })
+    script("check_wallet_squeeze", { walletAddress: HEX })
+    await POST(post("squeeze me"))
+    expect(toolResult()).toMatchObject({ status: "state_unknown" })
+  })
+
+  it("collection nfl-all-day reads the All Day bag", async () => {
+    install({
+      "rpc:get_allday_wallet_squeeze_exposure": { data: { total_moments: 7, collection: "nfl_all_day" }, error: null },
+      "rpc:get_wallet_squeeze_exposure": { data: { total_moments: 999, collection: "nba_top_shot" }, error: null },
+    })
+    script("check_wallet_squeeze", { walletAddress: HEX, collection: "nfl-all-day" })
+    await POST(post("squeeze my all day"))
+    const r = toolResult()
+    expect(r).toMatchObject({ status: "ok", collection: "nfl-all-day" })
+    expect((r.summary as Record<string, unknown>).total_moments).toBe(7)
+  })
+
+  it("an unknown collection is refused with no bag — never answered with Top Shot's", async () => {
+    install({ "rpc:get_wallet_squeeze_exposure": { data: { total_moments: 999 }, error: null } })
+    script("check_wallet_squeeze", { walletAddress: HEX, collection: "laliga-golazos" })
+    await POST(post("squeeze my golazos"))
+    const r = toolResult()
+    expect(r.status).toBe("unsupported_collection")
+    expect(r.summary).toBeUndefined()
   })
 
   it("returns the squeeze summary for a wallet with holdings", async () => {

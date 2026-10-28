@@ -122,6 +122,8 @@ import { resolveCandyWallet, CANDY_NEEDS_SOLANA_WALLET, CANDY_COLLECTION_UUID, r
 import { readPaniniBreakdownForConcierge, readPaniniQuirkySerialsForConcierge, readPaniniSetCompletionForConcierge, readPaniniCollectionForConcierge, readPaniniDealsForConcierge, readPaniniPackMarketForConcierge, readPaniniPremiumsForConcierge, readPaniniTeamForConcierge } from "@/lib/concierge/panini-boards";
 import { fetchPaniniEditionAsk, fetchPaniniEditionSerials } from "@/lib/panini/edition-market";
 import { paniniEditionUrl } from "@/lib/panini/edition-url";
+import { isSqueezeCollection, SQUEEZE_LABEL, type SqueezeCollection } from "@/lib/insights/squeeze-collections";
+import { readSqueezeCheck } from "@/lib/insights/squeeze-check";
 
 const supabase: any = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -498,11 +500,12 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "check_wallet_squeeze",
-    description: "Show the user how much of their Top Shot collection is actually liquid vs sitting in challenge-locked or burned editions. Returns bucketed exposure (liquid <25% / moderate 25-50% / squeezed 50-75% / extreme ≥75% by squeeze %, moments-weighted) WITH an FMV total per bucket (buckets.<name>.fmv_usd) plus a portfolio total_fmv_usd, and the top 10 most-squeezed editions they hold. THE tool for 'what's the FMV of my liquid/unlocked moments'. Use when the user asks 'how locked is my bag', 'what's my exposure', 'how much of my collection is liquid', 'what should I sell first', or pastes their wallet asking about scarcity. Accepts a Flow wallet address (0x + 16 hex) OR a Top Shot / Dapper SSO username (resolved via the same ladder as check_wallet). Top Shot only — AllDay / Pinnacle / Golazos / UFC moments are not counted.",
+    description: "Show the user how much of their Top Shot or NFL All Day collection is actually liquid vs sitting in challenge-locked or burned editions. Returns bucketed exposure (liquid <25% / moderate 25-50% / squeezed 50-75% / extreme ≥75% by squeeze %, moments-weighted) WITH an FMV total per bucket (buckets.<name>.fmv_usd) plus a portfolio total_fmv_usd, and the top 10 most-squeezed editions they hold. THE tool for 'what's the FMV of my liquid/unlocked moments'. Use when the user asks 'how locked is my bag', 'what's my exposure', 'how much of my collection is liquid', 'what should I sell first', or pastes their wallet asking about scarcity. Accepts a Flow wallet address (0x + 16 hex) OR a Top Shot / Dapper SSO username (resolved via the same ladder as check_wallet). Reads ONE collection per call: Top Shot (default) or NFL All Day (collection: \"nfl-all-day\"; the default on an All Day page) — Pinnacle / Golazos / UFC moments are not counted. status \"not_indexed\" means we have never scanned that wallet for that collection: say so and point to /insights/squeeze-check (it starts the scan) — NEVER say the wallet holds nothing. status \"empty\" means a scan found none. status \"state_unknown\" means we could not tell.",
     input_schema: {
       type: "object" as const,
       properties: {
         walletAddress: { type: "string", description: "Flow wallet address (0x + 16 hex) or Top Shot / Dapper username." },
+        collection: { type: "string", enum: ["nba-top-shot", "nfl-all-day"], description: "Which collection's bag to read. Omit to use the page's collection when it is NFL All Day, else Top Shot." },
       },
       required: ["walletAddress"],
     },
@@ -3044,28 +3047,40 @@ async function executeToolInner(
         }
       }
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: summary, error: rpcErr } = await (supabase as any).rpc("get_wallet_squeeze_exposure", {
-        p_wallet: resolvedAddr.toLowerCase(),
-      });
-      if (rpcErr) {
-        return JSON.stringify({ status: "error", message: safeApiError(rpcErr).error });
+      // 2026-10-27 (All Day parity pass 10): one collection per call, through the same helper as the public page, so
+      // both tell a never-scanned wallet ("not_indexed") from a scanned-empty one ("empty") — before, both read
+      // "no moments cached", which the model relayed as an empty bag. ⛔ An unknown collection is refused, never
+      // answered with Top Shot's bag.
+      const reqCol = toolInput.collection == null ? null : String(toolInput.collection);
+      if (reqCol != null && !isSqueezeCollection(reqCol)) {
+        return JSON.stringify({ status: "unsupported_collection", collection: reqCol, message: "check_wallet_squeeze reads Top Shot (nba-top-shot) or NFL All Day (nfl-all-day) only. Do not answer with another collection's bag." });
       }
-      if (!summary || (summary.total_moments ?? 0) === 0) {
+      const squeezeCol: SqueezeCollection = reqCol ?? (effectiveCollectionId === "nfl-all-day" ? "nfl-all-day" : "nba-top-shot");
+      const colLabel = SQUEEZE_LABEL[squeezeCol];
+      const read = await readSqueezeCheck(supabase, resolvedAddr.toLowerCase(), squeezeCol, "support-chat/check_wallet_squeeze");
+      if (read.error) {
+        return JSON.stringify({ status: "error", message: safeApiError(read.error).error });
+      }
+      const who = { wallet: resolvedAddr, username_input: isHex ? null : inputAddr, collection: squeezeCol };
+      if (read.index_state === "not_indexed") {
         return JSON.stringify({
-          status: "empty",
-          wallet: resolvedAddr,
-          username_input: isHex ? null : inputAddr,
-          message:
-            "I don't have any Top Shot moments cached for that wallet yet. Try again after a backfill or check the address.",
+          status: "not_indexed",
+          ...who,
+          message: `We have not indexed this wallet's ${colLabel} moments yet, so there is no squeeze reading — this says nothing about what it holds. Opening /insights/squeeze-check?wallet=${resolvedAddr.toLowerCase()}&collection=${squeezeCol} starts the scan (usually 1–2 minutes). Do not say the wallet is empty.`,
         });
       }
-      return JSON.stringify({
-        status: "ok",
-        wallet: resolvedAddr,
-        username_input: isHex ? null : inputAddr,
-        summary,
-      });
+      if (read.index_state === "unknown") {
+        return JSON.stringify({ status: "state_unknown", ...who, message: `Couldn't confirm whether this wallet's ${colLabel} moments are indexed right now. Do not say the wallet is empty; suggest trying again shortly.` });
+      }
+      if (read.index_state === "empty") {
+        return JSON.stringify({
+          status: "empty",
+          ...who,
+          last_scanned_at: read.last_scanned_at,
+          message: `We scanned this wallet and it held no ${colLabel} moments as of that scan.`,
+        });
+      }
+      return JSON.stringify({ status: "ok", ...who, summary: read.summary });
     } catch (err: unknown) {
       // 2026-10-03: the one tool that handed the model a raw error string
       // (Postgres / fetch internals); every other tool classifies.

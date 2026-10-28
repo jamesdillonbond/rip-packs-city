@@ -74,7 +74,7 @@ export async function GET() {
             maxWidth: 1000,
           }}
         >
-          Paste your Flow wallet. We&apos;ll show you how much of your Top Shot collection is actually liquid vs sitting in challenge-locked or burned editions.
+          Paste your Flow wallet. We&apos;ll show you how much of your Top Shot or NFL All Day collection is actually liquid vs sitting in challenge-locked or burned editions.
         </div>
 
         <div
@@ -140,7 +140,7 @@ export async function GET() {
             color: "rgba(255,255,255,0.55)",
           }}
         >
-          <div style={{ display: "flex" }}>Top Shot only · Personal scope</div>
+          <div style={{ display: "flex" }}>Top Shot + NFL All Day · Personal scope</div>
           <div style={{ display: "flex" }}>rippackscity.com/insights/squeeze-check</div>
         </div>
       </div>

@@ -4,15 +4,24 @@
 //
 // Public Wallet Squeeze Exposure tool — the "paste your wallet" demo from
 // the 2026-05-29 launch plan Week 2. Anyone can paste a Flow wallet address
-// and see how much of their TS collection is actually liquid vs locked /
+// and see how much of their collection is actually liquid vs locked /
 // burned. No signup. Trust model is identical to nbatopshot.com/profile/<addr>
 // (the user is naming the wallet themselves).
+//
+// NFL All Day joined 2026-10-27 (Top Shot parity pass 10): a collection toggle, `?collection=nfl-all-day`.
+//
+// ⛔ THREE STATES behind an empty answer (2026-10-27). The API's `index_state` tells a wallet we have never
+// scanned ("not_indexed") from one we scanned and found nothing in ("empty") from a state read that failed
+// ("unknown"). Before, all three rendered "— moments across — editions" over four 0% bars — a never-scanned
+// wallet published as an empty one. A bag renders ONLY when the read found moments; a never-scanned wallet
+// is queued for indexing (/api/public/queue-wallet, as /share does) and re-checked.
 
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { useOwnFlowWallet } from "@/lib/hooks/useOwnFlowWallet"
 import { accentText } from "@/lib/accent-text"
 import { scrollRegion } from "@/lib/a11y/scroll-region"
+import { SQUEEZE_COLLECTIONS, SQUEEZE_LABEL, isSqueezeCollection, type SqueezeCollection } from "@/lib/insights/squeeze-collections"
 
 type Bucket = { editions: number; moments: number }
 type Buckets = { liquid: Bucket; moderate: Bucket; squeezed: Bucket; extreme: Bucket }
@@ -30,13 +39,21 @@ type TopRow = {
 type Summary = {
   wallet: string
   collection: string
-  total_moments: number
-  total_editions: number
+  total_moments: number | null
+  total_editions: number | null
   editions_with_badge_coverage: number
   buckets: Buckets
   top_squeezed: TopRow[]
   computed_at: string
 } | null
+type IndexState = "indexed" | "empty" | "not_indexed" | "unknown"
+type QueueState = "idle" | "queued" | "failed"
+
+/** One loaded answer, tagged with the wallet + collection it was read FOR — a toggle never shows another's. */
+type Result = { wallet: string; collection: SqueezeCollection; summary: Summary; indexState: IndexState; lastScannedAt: string | null }
+
+const RECHECK_INTERVAL_MS = 15_000
+const RECHECK_MAX = 8 // ~2 minutes of indexing budget, then a manual "Check again"
 
 function fmtInt(n: number | null | undefined): string {
   if (n == null) return "—"
@@ -50,6 +67,12 @@ function fmtPct(n: number | null | undefined): string {
   if (n == null) return "—"
   return `${Number(n).toFixed(1)}%`
 }
+function fmtScanDate(iso: string | null): string | null {
+  if (!iso) return null
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return null
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "America/Los_Angeles" })
+}
 function tierColor(tier: string | null): string {
   switch (tier) {
     case "LEGENDARY":
@@ -60,6 +83,8 @@ function tierColor(tier: string | null): string {
       return "var(--tier-rare)"
     case "FANDOM":
       return "var(--tier-fandom)"
+    case "UNCOMMON":
+      return "var(--tier-uncommon)"
     case "COMMON":
       return "var(--tier-common)"
     default:
@@ -67,66 +92,145 @@ function tierColor(tier: string | null): string {
   }
 }
 
+/** A summary that found moments — the ONLY thing that renders as a bag. */
+function hasMoments(s: Summary): boolean {
+  return Number(s?.total_moments) > 0
+}
+
 export default function SqueezeCheckPage() {
   const [wallet, setWallet] = useState("")
-  const [summary, setSummary] = useState<Summary>(null)
+  const [collection, setCollection] = useState<SqueezeCollection>("nba-top-shot")
+  const [result, setResult] = useState<Result | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [queue, setQueue] = useState<QueueState>("idle")
+  const [rechecks, setRechecks] = useState(0)
+  const reqRef = useRef(0)
+  const queuedForRef = useRef<string | null>(null)
 
-  // Shared fetcher so the form submit AND the URL-param auto-load can
-  // reuse the same code path.
-  async function runCheck(rawWallet: string) {
+  // Shared fetcher so the form submit, the toggle, the re-check and the URL-param auto-load all reuse one path.
+  // `quiet` = a background re-check: no spinner, and a failed re-check keeps the answer already shown.
+  const runCheck = useCallback(async (rawWallet: string, col: SqueezeCollection, quiet = false) => {
     const w = rawWallet.trim().toLowerCase()
     if (!/^0x[a-f0-9]{16}$/.test(w)) {
       setError("Wallet must look like a Flow address — 0x + 16 hex chars.")
       return
     }
-    setError(null)
-    setLoading(true)
+    const myReq = ++reqRef.current
+    if (!quiet) {
+      setError(null)
+      setLoading(true)
+    }
     try {
-      const r = await fetch(`/api/public/insights/squeeze-check?wallet=${encodeURIComponent(w)}`, {
-        cache: "no-store",
-      })
+      const r = await fetch(
+        `/api/public/insights/squeeze-check?wallet=${encodeURIComponent(w)}&collection=${encodeURIComponent(col)}`,
+        { cache: "no-store" },
+      )
       const j = await r.json()
       if (!r.ok) throw new Error(j?.error ?? `HTTP ${r.status}`)
-      setSummary(j.summary)
+      if (myReq !== reqRef.current) return // a newer check (other wallet / collection) owns the screen
+      const summary: Summary = j.summary ?? null
+      const indexState: IndexState = hasMoments(summary)
+        ? "indexed"
+        : j.index_state === "empty" || j.index_state === "not_indexed"
+          ? j.index_state
+          : "unknown"
+      setResult({ wallet: w, collection: col, summary, indexState, lastScannedAt: j.last_scanned_at ?? null })
     } catch (err: unknown) {
+      if (myReq !== reqRef.current || quiet) return
+      setResult(null)
       setError(err instanceof Error ? err.message : "Failed to load")
     } finally {
-      setLoading(false)
+      if (myReq === reqRef.current && !quiet) setLoading(false)
     }
-  }
+  }, [])
+
+  // A never-scanned wallet: start indexing it (once per wallet per page view), then re-check on a short budget.
+  useEffect(() => {
+    if (!result || result.indexState !== "not_indexed") return
+    if (queuedForRef.current !== result.wallet) {
+      queuedForRef.current = result.wallet
+      setQueue("idle")
+      setRechecks(0)
+      fetch("/api/public/queue-wallet", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ wallet: result.wallet }),
+      })
+        .then(async (r) => {
+          // An unreadable body is "did not start", never a silent null that a later check could read as queued.
+          let queued = false
+          try {
+            queued = r.ok && (await r.json())?.queued === true
+          } catch {
+            queued = false
+          }
+          setQueue(queued ? "queued" : "failed")
+        })
+        .catch(() => setQueue("failed"))
+    }
+  }, [result])
+
+  useEffect(() => {
+    if (!result || result.indexState !== "not_indexed" || queue !== "queued" || rechecks >= RECHECK_MAX) return
+    const t = setTimeout(() => {
+      setRechecks((n) => n + 1)
+      void runCheck(result.wallet, result.collection, true)
+    }, RECHECK_INTERVAL_MS)
+    return () => clearTimeout(t)
+  }, [result, queue, rechecks, runCheck])
 
   // Auto-load when a wallet is pre-filled via ?wallet= URL param (used by
-  // drill-down links from /insights/cross-collection wallet rows).
+  // drill-down links from /insights/cross-collection wallet rows), on the
+  // ?collection= it names (absent → Top Shot).
   // Signed in with no ?wallet= → load the reader's OWN wallet instead of an
   // empty box asking them to paste it (2026-09-28). The box stays for checking
   // any other wallet. Runs once, after the session resolves.
   const own = useOwnFlowWallet()
   const autoRanRef = useRef(false)
+  const colRef = useRef<SqueezeCollection>("nba-top-shot")
   useEffect(() => {
     if (typeof window === "undefined") return
     const url = new URL(window.location.href)
+    const c = url.searchParams.get("collection")
+    if (isSqueezeCollection(c)) {
+      colRef.current = c
+      setCollection(c)
+    }
     const w = url.searchParams.get("wallet")
     if (w && /^0x[a-f0-9]{16}$/i.test(w)) {
       autoRanRef.current = true
       setWallet(w)
-      runCheck(w)
+      void runCheck(w, colRef.current)
     }
-  }, [])
+  }, [runCheck])
   useEffect(() => {
     if (autoRanRef.current || own.loading || !own.wallet) return
     autoRanRef.current = true
     setWallet(own.wallet)
-    runCheck(own.wallet)
-  }, [own.loading, own.wallet])
+    void runCheck(own.wallet, colRef.current)
+  }, [own.loading, own.wallet, runCheck])
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
     autoRanRef.current = true // a search typed before the session resolved wins
-    await runCheck(wallet)
+    await runCheck(wallet, collection)
   }
 
+  function pickCollection(c: SqueezeCollection) {
+    if (c === collection) return
+    colRef.current = c
+    setCollection(c)
+    // A shown answer belongs to the other collection — re-read the same wallet rather than show it under this label.
+    const w = result?.wallet ?? null
+    setResult(null)
+    if (w) void runCheck(w, c)
+  }
+
+  const label = SQUEEZE_LABEL[collection]
+  // Shown only when it was read for the collection on screen.
+  const shown = result && result.collection === collection ? result : null
+  const summary = shown && shown.indexState === "indexed" ? shown.summary : null
   const total = summary?.total_moments ?? 0
   const b = summary?.buckets
 
@@ -138,14 +242,28 @@ export default function SqueezeCheckPage() {
         <div className="rpc-sc-eyebrow">RPC Insights · Public</div>
         <h1 className="rpc-sc-h1">What&apos;s Liquid In Your Bag?</h1>
         <p className="rpc-sc-lede">
-          Paste your Flow wallet. We&apos;ll show you how much of your Top
-          Shot collection is actually liquid vs how much is sitting in
-          challenge-locked or burned editions. Top Shot&apos;s site doesn&apos;t
+          Paste your Flow wallet. We&apos;ll show you how much of your {label}{" "}
+          collection is actually liquid vs how much is sitting in
+          challenge-locked or burned editions. {label}&apos;s site doesn&apos;t
           do this. We do.
         </p>
       </section>
 
       <section className="rpc-sc-form-wrap">
+        <div className="rpc-sc-toggle" role="group" aria-label="Collection">
+          {SQUEEZE_COLLECTIONS.map((c) => (
+            <button
+              key={c}
+              type="button"
+              data-testid={`sc-collection-${c}`}
+              aria-pressed={c === collection}
+              className={`rpc-sc-toggle-btn${c === collection ? " rpc-sc-toggle-on" : ""}`}
+              onClick={() => pickCollection(c)}
+            >
+              {SQUEEZE_LABEL[c]}
+            </button>
+          ))}
+        </div>
         <form className="rpc-sc-form" onSubmit={submit}>
           <input
             className="rpc-sc-input"
@@ -164,7 +282,48 @@ export default function SqueezeCheckPage() {
         {error ? <div className="rpc-sc-error">{error}</div> : null}
       </section>
 
-      {summary ? (
+      {shown && shown.indexState === "not_indexed" ? (
+        <section className="rpc-sc-top" data-testid="sc-not-indexed">
+          <div className="rpc-sc-state">
+            We haven&apos;t indexed this wallet&apos;s {label} moments yet — this is not a reading of what it holds.{" "}
+            {queue === "queued"
+              ? rechecks >= RECHECK_MAX
+                ? "Indexing is still running. Check again in a few minutes."
+                : "Indexing has started; this re-checks itself every few seconds (usually 1–2 minutes)."
+              : queue === "failed"
+                ? "We couldn't start indexing just now. Try again shortly."
+                : "Starting indexing…"}
+          </div>
+          {queue !== "idle" ? (
+            <div className="rpc-sc-recheck">
+              <button
+                type="button"
+                className="rpc-sc-sample-btn"
+                data-testid="sc-recheck"
+                onClick={() => {
+                  setRechecks(0)
+                  void runCheck(shown.wallet, shown.collection)
+                }}
+              >
+                Check again
+              </button>
+            </div>
+          ) : null}
+        </section>
+      ) : shown && shown.indexState === "empty" ? (
+        <section className="rpc-sc-top" data-testid="sc-empty">
+          <div className="rpc-sc-state">
+            We scanned this wallet{fmtScanDate(shown.lastScannedAt) ? ` on ${fmtScanDate(shown.lastScannedAt)}` : ""} and
+            it held no {label} moments. Collect on another collection? Switch with the toggle above.
+          </div>
+        </section>
+      ) : shown && shown.indexState === "unknown" ? (
+        <section className="rpc-sc-top" data-testid="sc-unknown">
+          <div className="rpc-sc-state">
+            We couldn&apos;t confirm whether this wallet is indexed — this says nothing about what it holds. Try again shortly.
+          </div>
+        </section>
+      ) : summary ? (
         <>
           <section className="rpc-sc-bar-row" aria-label="Exposure buckets">
             {b ? (
@@ -179,7 +338,7 @@ export default function SqueezeCheckPage() {
 
           <section className="rpc-sc-summary">
             <div className="rpc-sc-summary-line">
-              <strong>{fmtInt(summary.total_moments)}</strong> moments across{" "}
+              <strong>{fmtInt(summary.total_moments)}</strong> {label} moments across{" "}
               <strong>{fmtInt(summary.total_editions)}</strong> editions.{" "}
               {summary.editions_with_badge_coverage > 0 ? (
                 <>
@@ -200,8 +359,9 @@ export default function SqueezeCheckPage() {
             <h2 className="rpc-sc-h2">Your top squeezed holdings</h2>
             {summary.top_squeezed.length === 0 ? (
               <div className="rpc-sc-state">
-                Nothing in your bag is over 0% squeezed. Either no badge coverage on your editions
-                yet, or you&apos;ve dodged every challenge so far.
+                {summary.editions_with_badge_coverage > 0
+                  ? "Nothing in your bag is over 0% squeezed — you've dodged every challenge so far."
+                  : "None of your editions has lock/burn data yet, so nothing can be ranked by squeeze."}
               </div>
             ) : (
               <div className="rpc-scroll-x" {...scrollRegion("Your top squeezed holdings")}>
@@ -242,7 +402,7 @@ export default function SqueezeCheckPage() {
             )}
           </section>
         </>
-      ) : (
+      ) : loading ? null : (
         <section className="rpc-sc-empty">
           <div className="rpc-sc-empty-text">
             Try one of these to see the shape:{" "}
@@ -268,8 +428,9 @@ export default function SqueezeCheckPage() {
             re-bucket.
           </p>
           <p>
-            <strong>What this misses:</strong> AllDay, Golazos, Pinnacle, and
-            UFC moments aren&apos;t in this view yet. Top Shot only for now.
+            <strong>What this misses:</strong> each check reads one collection
+            — Top Shot or NFL All Day. Golazos, Pinnacle, and UFC moments
+            aren&apos;t in this view yet.
           </p>
         </div>
         <div className="rpc-sc-side">
@@ -329,6 +490,11 @@ const CSS = `
 .rpc-sc-lede strong { color: var(--rpc-text-primary); }
 
 .rpc-sc-form-wrap { max-width: 1180px; margin: 0 auto 24px; }
+.rpc-sc-toggle { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.rpc-sc-toggle-btn { font-family: var(--font-mono); font-size: 11px; letter-spacing: 2px; text-transform: uppercase; background: transparent; border: 1px solid var(--rpc-border); color: var(--rpc-text-secondary); padding: 8px 14px; border-radius: 2px; cursor: pointer; }
+.rpc-sc-toggle-btn:hover { border-color: var(--rpc-red); }
+.rpc-sc-toggle-on { border-color: var(--rpc-red); color: var(--rpc-red-text); }
+.rpc-sc-recheck { margin-top: 12px; text-align: center; }
 .rpc-sc-form { display: flex; gap: 12px; flex-wrap: wrap; }
 .rpc-sc-input { flex: 1; min-width: 240px; font-family: var(--font-mono); font-size: 16px; letter-spacing: 0.5px; padding: 14px 16px; background: var(--rpc-surface); border: 1px solid var(--rpc-border); color: var(--rpc-text-primary); border-radius: 2px; }
 .rpc-sc-input:focus { outline: none; border-color: var(--rpc-red); }

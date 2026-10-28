@@ -293,17 +293,20 @@ export default function CrossCollectionBoardClient({ initial, initialFailed = fa
             <tbody>
               {wallets.map((w) => {
                 const hasTs = Number(w.ts_moments ?? 0) > 0
+                // NFL All Day joined the squeeze check 2026-10-27: an All Day-only bag links there on its own leg.
+                const hasAd = Number(w.allday_moments ?? 0) > 0
+                const squeezeable = hasTs || hasAd
                 // The cohort is mostly anonymous Flow wallets (no RPC profile
                 // bio), so the historical /profile/<hex> target 404'd. Route
                 // the primary wallet click to a destination that actually
                 // works: /insights/squeeze-check for wallets with a TS bag,
                 // Flowscan for the rest. Tail-anchor by Flow address so the
                 // chain reference always works.
-                const primaryHref = hasTs
-                  ? `/insights/squeeze-check?wallet=${encodeURIComponent(w.wallet_address)}`
+                const primaryHref = squeezeable
+                  ? `/insights/squeeze-check?wallet=${encodeURIComponent(w.wallet_address)}${hasTs ? "" : "&collection=nfl-all-day"}`
                   : `https://www.flowscan.io/account/${encodeURIComponent(w.wallet_address)}`
-                const primaryRel = hasTs ? undefined : "noopener noreferrer"
-                const primaryTarget = hasTs ? undefined : "_blank"
+                const primaryRel = squeezeable ? undefined : "noopener noreferrer"
+                const primaryTarget = squeezeable ? undefined : "_blank"
                 return (
                   <tr key={w.wallet_address}>
                     <td>
@@ -311,7 +314,7 @@ export default function CrossCollectionBoardClient({ initial, initialFailed = fa
                         href={primaryHref}
                         className="rpc-cc-wallet-link"
                         title={
-                          hasTs
+                          squeezeable
                             ? `See ${shortAddr(w.wallet_address)}'s squeeze exposure`
                             : `${w.wallet_address} on Flowscan`
                         }
