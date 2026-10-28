@@ -14,10 +14,17 @@ export function getAdminToken(): string {
   }
 }
 
+/**
+ * Persist an admin credential — ONLY a short-lived session (2026-10-27). toAdminSession hands back the MASTER
+ * token when the exchange fails (so sign-in never locks the operator out), and every page wrote that straight to
+ * localStorage, where any XSS on the origin could read it until a manual rotation. Now a non-session value is
+ * never stored: the stored key is cleared and the caller keeps the master in memory for that page only.
+ */
 export function setAdminToken(token: string): void {
   if (typeof window === "undefined") return;
   try {
-    localStorage.setItem(RPC_ADMIN_TOKEN_STORAGE, token);
+    if (isAdminSessionValue(token)) localStorage.setItem(RPC_ADMIN_TOKEN_STORAGE, token);
+    else localStorage.removeItem(RPC_ADMIN_TOKEN_STORAGE);
   } catch {}
 }
 
@@ -32,6 +39,11 @@ export function clearAdminToken(): void {
 // The pages store a 12-hour signed session (lib/admin-session.ts), never the
 // master RPC_ADMIN_TOKEN. Exchange happens once, at sign-in.
 export const ADMIN_SESSION_PREFIX_CLIENT = "rpcadm1.";
+
+/** True for a short-lived signed session — the only admin credential that may be persisted in the browser. */
+export function isAdminSessionValue(v: string | null | undefined): boolean {
+  return typeof v === "string" && v.startsWith(ADMIN_SESSION_PREFIX_CLIENT);
+}
 
 /**
  * Exchange the master token for a session. Resolves to the SESSION on success;
@@ -71,10 +83,7 @@ export async function upgradeStoredAdminToken(): Promise<void> {
     return;
   }
   if (!stored || stored.startsWith(ADMIN_SESSION_PREFIX_CLIENT)) return;
-  const session = await toAdminSession(stored);
-  if (session !== stored) {
-    try {
-      localStorage.setItem(RPC_ADMIN_TOKEN_STORAGE, session);
-    } catch {}
-  }
+  // A stored MASTER token is swapped for a session, or — if the exchange fails — removed (2026-10-27): the master
+  // must not sit in storage. The operator signs in again on that page.
+  setAdminToken(await toAdminSession(stored));
 }

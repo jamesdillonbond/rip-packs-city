@@ -140,7 +140,9 @@ describe("AdminAnalyticsClient — the token gate", () => {
     fireEvent.change(screen.getByPlaceholderText(/RPC_ADMIN_TOKEN/), { target: { value: "secret" } })
     fireEvent.click(screen.getByRole("button", { name: /sign in/i }))
     await waitFor(() => expect(document.body.textContent).toMatch(/Platform Analytics/))
-    expect(localStorage.getItem(TOKEN_KEY)).toBe("secret")
+    // Re-pinned 2026-10-27: this fetch stub answers the session exchange with no session, so the MASTER token is
+    // used for this page in memory and never persisted.
+    expect(localStorage.getItem(TOKEN_KEY)).toBeNull()
   })
 
   it("submits on Enter, not only on the button", async () => {
@@ -151,7 +153,9 @@ describe("AdminAnalyticsClient — the token gate", () => {
     const input = screen.getByPlaceholderText(/RPC_ADMIN_TOKEN/)
     fireEvent.change(input, { target: { value: "secret" } })
     fireEvent.keyDown(input, { key: "Enter" })
-    await waitFor(() => expect(localStorage.getItem(TOKEN_KEY)).toBe("secret"))
+    // Re-pinned 2026-10-27: signed in (dashboard renders) without persisting the master token.
+    await waitFor(() => expect(document.body.textContent).toMatch(/Platform Analytics/))
+    expect(localStorage.getItem(TOKEN_KEY)).toBeNull()
   })
 
   it("goes straight to the dashboard when a token is already cached", async () => {

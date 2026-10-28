@@ -210,7 +210,9 @@ describe("FlowtyAnalyticsClient — token gate", () => {
     fireEvent.change(await screen.findByPlaceholderText("RPC_ADMIN_TOKEN"), { target: { value: "good" } })
     fireEvent.click(screen.getByRole("button", { name: /sign in/i }))
     await screen.findByText("Sales Volume")
-    expect(window.localStorage.getItem("rpc_admin_token")).toBe("good")
+    // Re-pinned 2026-10-27: with no session from the exchange, the master token is used in memory and NEVER
+    // persisted (lib/admin-token.ts setAdminToken stores sessions only).
+    expect(window.localStorage.getItem("rpc_admin_token")).toBeNull()
   })
 
   it("submits on Enter", async () => {

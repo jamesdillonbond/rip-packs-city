@@ -2,10 +2,9 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 import { makeReq } from "./cron-req-helper"
 
 // Route integration test for /api/ingest/backfill (GET + POST → handleBackfill).
-// Auth is Bearer INGEST_SECRET_TOKEN but ONLY enforced when that env var is set
-// (`if (expectedToken && authHeader !== ...)`) — so we pin: 401 when the secret
-// is set + the header is wrong, the year-param 400 guard, and a mocked empty
-// happy path (topshotGraphql returns no transactions → rows_inserted 0).
+// Auth is Bearer INGEST_SECRET_TOKEN, and since 2026-10-27 it fails CLOSED: an unset secret is a 401 (it used to
+// skip auth). We pin: 401 with a wrong header, 401 with no secret configured, the year-param 400 guard, and a
+// mocked empty happy path (topshotGraphql returns no transactions → rows_inserted 0).
 
 const state = { gql: {} as any }
 
@@ -39,10 +38,15 @@ describe("/api/ingest/backfill", () => {
     expect((await res.json()).error).toBe("Unauthorized")
   })
 
+  it("401s when no INGEST_SECRET_TOKEN is configured at all (fails closed, 2026-10-27)", async () => {
+    const res = await GET(makeReq({ url: "https://t/api/ingest/backfill?year=2025", method: "GET" }))
+    expect(res.status).toBe(401)
+  })
+
   it("400s on an out-of-range year", async () => {
-    // No INGEST_SECRET_TOKEN env → auth is bypassed, so we reach the year guard.
+    vi.stubEnv("INGEST_SECRET_TOKEN", "secret")
     const res = await GET(
-      makeReq({ url: "https://t/api/ingest/backfill?year=2020", method: "GET" })
+      makeReq({ url: "https://t/api/ingest/backfill?year=2020", method: "GET", auth: "Bearer secret" })
     )
     expect(res.status).toBe(400)
     expect((await res.json()).error).toContain("Invalid year")
@@ -50,8 +54,9 @@ describe("/api/ingest/backfill", () => {
 
   it("returns ok with 0 rows when the GQL page has no transactions", async () => {
     state.gql = {} // parseTxs → []
+    vi.stubEnv("INGEST_SECRET_TOKEN", "secret")
     const res = await POST(
-      makeReq({ url: "https://t/api/ingest/backfill?year=2025", method: "POST", body: {} })
+      makeReq({ url: "https://t/api/ingest/backfill?year=2025", method: "POST", body: {}, auth: "Bearer secret" })
     )
     expect(res.status).toBe(200)
     const body = await res.json()

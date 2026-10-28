@@ -4,7 +4,7 @@ import { NextRequest } from "next/server"
 // Route integration test for POST /api/backfill (TopShot sales backfill).
 // The guard is `if (expectedToken && authHeader !== "Bearer TOKEN") 401`, read
 // at call time — so with the token SET a wrong/missing header is 401 before the
-// TopShot GQL walk. (When the env is unset the guard is intentionally skipped.)
+// TopShot GQL walk. (Since 2026-10-27 an unset env is a 401: the route fails closed.)
 //
 // Beyond the guards we drive the real POST body: the module builds one Supabase
 // client at import via createClient (mocked to a configurable chainable stub) and
@@ -294,14 +294,14 @@ describe("POST /api/backfill — early-exit + walk outcomes", () => {
     expect(body.totalThisRun).toBe(1)
   })
 
-  it("skips the auth guard entirely when the server token is unset (happy walk)", async () => {
+  // INVERTED 2026-10-27: this pinned the fail-open default — an unset server token skipped auth on a WRITE route.
+  it("an unset server token is a 401, never an open route (fails closed)", async () => {
     delete process.env.INGEST_SECRET_TOKEN
     cfg.state = { status: "running", total_ingested: 0, cursor: null }
     stubFetch([{ txs: [], rightCursor: null }])
-    const res = await POST(req()) // no auth header, but guard skipped
-    expect(res.status).toBe(200)
-    const body = await res.json()
-    expect(body.ok).toBe(true)
+    const res = await POST(req())
+    expect(res.status).toBe(401)
+    expect((await POST(req("Bearer anything"))).status).toBe(401)
   })
 })
 

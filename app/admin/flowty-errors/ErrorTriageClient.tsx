@@ -7,7 +7,7 @@
 // interactive fetches go through the three /api/admin/error-triage/* proxies
 // with Authorization: Bearer <token>.
 
-import { toAdminSession } from "@/lib/admin-token";
+import { isAdminSessionValue, toAdminSession } from "@/lib/admin-token";
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { fmtInt, timeAgo, fmtIso, truncSig, truncAddr, truncMid } from "@/lib/admin/flowty-errors-format";
 import { accentText } from "@/lib/accent-text"
@@ -240,8 +240,15 @@ function SignInGate() {
         setErr(`HTTP ${res.status}`);
         return;
       }
-      // Store a 12 h signed session, not the master token (R134 step 2).
-      setStoredToken(await toAdminSession(t));
+      // Store a 12 h signed session, not the master token (R134 step 2). This page persists it in a COOKIE for its
+      // server render, so a failed exchange (toAdminSession then returns the master) must store nothing: never the
+      // master token in a JS-readable cookie or localStorage (2026-10-27).
+      const session = await toAdminSession(t);
+      if (!isAdminSessionValue(session)) {
+        setErr("Couldn't start an admin session — try again.");
+        return;
+      }
+      setStoredToken(session);
       // Reload so the server component picks up the cookie and SSRs the dash.
       window.location.reload();
     } catch (e) {

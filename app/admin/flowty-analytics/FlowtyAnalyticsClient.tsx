@@ -15,7 +15,7 @@
 // Token is pasted into a password input on first visit and cached in
 // localStorage under "rpc_admin_token" — never read from a public env var.
 
-import { toAdminSession, upgradeStoredAdminToken } from "@/lib/admin-token";
+import { toAdminSession, upgradeStoredAdminToken, setAdminToken } from "@/lib/admin-token";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { fmtCurrency, fmtInt, fmtPct, truncAddr, pivot, pickSalesActor, getStr, getNum } from "@/lib/admin/flowty-analytics-format";
@@ -185,7 +185,7 @@ export default function FlowtyAnalyticsClient() {
         onSignedIn={(t) => {
           // Store a 12 h signed session, not the master token (R134 step 2).
           void toAdminSession(t).then((s) => {
-            if (typeof window !== "undefined") window.localStorage.setItem(TOKEN_KEY, s);
+            setAdminToken(s); // persists only a session, never the master (lib/admin-token.ts)
             setToken(s);
           });
         }}

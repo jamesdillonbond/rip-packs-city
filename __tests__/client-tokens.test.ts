@@ -33,11 +33,16 @@ describe("owner-key", () => {
 })
 
 describe("admin-token", () => {
-  it("defaults to empty, round-trips exactly, and clears", () => {
+  it("defaults to empty, round-trips a SESSION exactly, and clears", () => {
     expect(getAdminToken()).toBe("")
-    setAdminToken("Bearer-worthy-token-123")
-    expect(getAdminToken()).toBe("Bearer-worthy-token-123")
+    setAdminToken("rpcadm1.1900000000000.sig-123")
+    expect(getAdminToken()).toBe("rpcadm1.1900000000000.sig-123")
     clearAdminToken()
+    expect(getAdminToken()).toBe("")
+  })
+  it("never persists a non-session value (the master token) — and clears a stale one (2026-10-27)", () => {
+    setAdminToken("rpcadm1.1900000000000.sig-123")
+    setAdminToken("master-secret")
     expect(getAdminToken()).toBe("")
   })
 })

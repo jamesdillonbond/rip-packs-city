@@ -615,8 +615,9 @@ export async function POST(req: NextRequest) {
 
   // Auth — Bearer token
   const authHeader = req.headers.get("authorization")
-  const expectedToken = process.env.INGEST_SECRET_TOKEN
-  if (expectedToken && !bearerMatches(authHeader, "INGEST_SECRET_TOKEN")) {
+  // Fail closed (2026-10-27): an unset INGEST_SECRET_TOKEN used to skip auth entirely on this WRITE route.
+  // bearerMatches is false without a configured secret, so a missing env var is now a 401, never an open door.
+  if (!bearerMatches(authHeader, "INGEST_SECRET_TOKEN")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 

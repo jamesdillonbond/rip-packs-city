@@ -27,7 +27,9 @@ import ErrorTriageClient from "@/app/admin/flowty-errors/ErrorTriageClient"
 // stays the page's own.
 vi.mock("@/lib/admin-token", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/admin-token")>()),
-  toAdminSession: async (t: string) => t,
+  // 2026-10-27: returns a SESSION-shaped value (the page stores only sessions); "exchange-fails" models a failed
+  // exchange, where the real helper hands back the master token unchanged.
+  toAdminSession: async (t: string) => (t === "exchange-fails" ? t : `rpcadm1.${t}`),
   upgradeStoredAdminToken: async () => {},
 }))
 
@@ -105,20 +107,27 @@ describe("ErrorTriageClient — admin token storage", () => {
 
   it("persists the token to localStorage AND mirrors it to a cookie", async () => {
     submitToken("test-admin-token")
-    await waitFor(() => expect(window.localStorage.getItem("rpc_admin_token")).toBe("test-admin-token"))
+    await waitFor(() => expect(window.localStorage.getItem("rpc_admin_token")).toBe("rpcadm1.test-admin-token"))
     // The cookie is what the SERVER component reads on the next request; if
     // only localStorage were written, the admin would appear signed out on
     // every full page load.
-    expect(document.cookie).toContain("rpc_admin_token=test-admin-token")
+    expect(document.cookie).toContain("rpc_admin_token=rpcadm1.test-admin-token")
   })
 
   it("URL-encodes the token in the cookie", async () => {
     // An unencoded ';' or '=' would truncate the cookie value and silently
     // store a partial credential that never authenticates.
     submitToken("tok;with=specials")
-    await waitFor(() => expect(window.localStorage.getItem("rpc_admin_token")).toBe("tok;with=specials"))
-    expect(document.cookie).toContain(encodeURIComponent("tok;with=specials"))
+    await waitFor(() => expect(window.localStorage.getItem("rpc_admin_token")).toBe("rpcadm1.tok;with=specials"))
+    expect(document.cookie).toContain(encodeURIComponent("rpcadm1.tok;with=specials"))
     expect(document.cookie).not.toContain("tok;with=specials")
+  })
+
+  it("a failed session exchange stores NOTHING — never the master token in localStorage or a cookie (2026-10-27)", async () => {
+    submitToken("exchange-fails")
+    await waitFor(() => expect(document.body.textContent).toMatch(/Couldn't start an admin session/))
+    expect(window.localStorage.getItem("rpc_admin_token")).toBeNull()
+    expect(document.cookie).not.toContain("exchange-fails")
   })
 
   it("does not store an empty token", async () => {

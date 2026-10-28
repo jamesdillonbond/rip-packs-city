@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import { toAdminSession, upgradeStoredAdminToken } from "@/lib/admin-token"
+import { toAdminSession, upgradeStoredAdminToken, setAdminToken } from "@/lib/admin-token"
 
 // The admin token-gate + fetch shell, extracted 2026-08-16.
 //
@@ -175,7 +175,7 @@ export function useAdminResource<T>(url: string | null): AdminResource<T> {
     // Store a short-lived SESSION, never the master token (R134 step 2). If the
     // exchange fails, toAdminSession hands back the input so sign-in still works.
     void toAdminSession(t).then((stored) => {
-      localStorage.setItem(ADMIN_TOKEN_KEY, stored)
+      setAdminToken(stored) // persists only a session, never the master (lib/admin-token.ts)
       setToken(stored)
     })
   }, [tokenInput])

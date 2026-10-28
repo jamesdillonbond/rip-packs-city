@@ -57,7 +57,7 @@ describe("upgradeStoredAdminToken", () => {
     expect(localStorage.getItem(RPC_ADMIN_TOKEN_STORAGE)).toBe(SESSION)
   })
 
-  it("leaves storage alone when it already holds a session, holds nothing, or the exchange fails", async () => {
+  it("leaves storage alone when it already holds a session or nothing; REMOVES a master it cannot exchange", async () => {
     const f = stubFetch(200, { session: SESSION })
     await upgradeStoredAdminToken()
     expect(localStorage.getItem(RPC_ADMIN_TOKEN_STORAGE)).toBeNull()
@@ -67,6 +67,7 @@ describe("upgradeStoredAdminToken", () => {
     localStorage.setItem(RPC_ADMIN_TOKEN_STORAGE, "master")
     stubFetch(500, {})
     await upgradeStoredAdminToken()
-    expect(localStorage.getItem(RPC_ADMIN_TOKEN_STORAGE)).toBe("master")
+    // Re-pinned 2026-10-27: a master token must not sit in storage — the operator signs in again.
+    expect(localStorage.getItem(RPC_ADMIN_TOKEN_STORAGE)).toBeNull()
   })
 })

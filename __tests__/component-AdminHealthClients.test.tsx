@@ -138,7 +138,9 @@ describe.each(CASES)("$name — the token gate", ({ Cmp, payload }) => {
     // Trimmed: a pasted token routinely carries whitespace, and an untrimmed one 401s with
     // no hint as to why.
     expect((init.headers as Record<string, string>).Authorization).toBe("Bearer secret-token")
-    expect(localStorage.getItem(ADMIN_TOKEN_KEY)).toBe("secret-token")
+    // Re-pinned 2026-10-27: the stub answers the session exchange with no session, so the master token is used in
+    // memory for this page and never persisted.
+    expect(localStorage.getItem(ADMIN_TOKEN_KEY)).toBeNull()
   })
 
   it("ignores a blank submit rather than storing an empty credential", () => {

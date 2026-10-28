@@ -59,11 +59,12 @@ function install(fixtures: Parameters<typeof makeInstrumentedSupabaseFixture>[0]
   return spy
 }
 function r(url: string, method = "GET") {
-  return makeReq({ url, method }) as never
+  return makeReq({ url, method, auth: "Bearer deep-test-token" }) as never
 }
 
 beforeEach(() => {
-  delete process.env.INGEST_SECRET_TOKEN // bypass auth — the resolve/insert body is the target
+  // 2026-10-27: the route fails CLOSED without a configured secret; the body tests authenticate for real.
+  process.env.INGEST_SECRET_TOKEN = "deep-test-token"
   state.gql = () => feed([tx()])
 })
 

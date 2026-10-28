@@ -52,6 +52,8 @@ describe("useAdminResource stores a session, never the master token", () => {
     act(() => result.current.setTokenInput("master-secret"))
     act(() => result.current.submitToken())
     await waitFor(() => expect(result.current.token).toBe("master-secret"))
+    // …but the master token is NEVER persisted (2026-10-27): memory only, for this page.
+    expect(localStorage.getItem(ADMIN_TOKEN_KEY)).toBeNull()
   })
 })
 
@@ -62,9 +64,12 @@ describe("every writer of the admin token key goes through the session exchange"
     .filter((f) => /\.(ts|tsx)$/.test(f))
   const writers = files.filter((f) => WRITE.test(readFileSync(f, "utf8")))
 
+  // Re-pinned 2026-10-27: every page now writes through lib/admin-token.ts's setAdminToken, which persists a
+  // SESSION only (a failed exchange's master token is never stored), so the direct writers shrank to that file and
+  // the cookie-mirroring triage page.
   it("finds the writers (not vacuous)", () => {
-    expect(writers).toContain("lib/admin/use-admin-resource.ts")
     expect(writers).toContain("lib/admin-token.ts")
+    expect(readFileSync("lib/admin/use-admin-resource.ts", "utf8")).toMatch(/setAdminToken\(stored\)/)
   })
 
   it("each writer references toAdminSession / upgradeStoredAdminToken, or is lib/admin-token.ts itself", () => {

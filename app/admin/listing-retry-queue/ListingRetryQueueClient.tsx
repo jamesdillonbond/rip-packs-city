@@ -10,7 +10,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { accentText } from "@/lib/accent-text";
-import { toAdminSession, upgradeStoredAdminToken } from "@/lib/admin-token";
+import { toAdminSession, upgradeStoredAdminToken, setAdminToken } from "@/lib/admin-token";
 
 const TOKEN_KEY = "rpc_admin_token";
 
@@ -112,7 +112,7 @@ export default function ListingRetryQueueClient() {
     if (!tokenInput.trim()) return;
     // Store a 12 h signed session, not the master token (R134 step 2).
     void toAdminSession(tokenInput.trim()).then((s) => {
-      localStorage.setItem(TOKEN_KEY, s);
+      setAdminToken(s); // persists only a session, never the master (lib/admin-token.ts)
       setToken(s);
     });
     setTokenInput("");

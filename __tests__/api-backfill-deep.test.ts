@@ -54,7 +54,7 @@ function install(fixtures: Parameters<typeof makeInstrumentedSupabaseFixture>[0]
   return spy
 }
 function req(): NextRequest {
-  return new NextRequest("https://t/api/backfill", { method: "POST", headers: new Headers() })
+  return new NextRequest("https://t/api/backfill", { method: "POST", headers: new Headers({ authorization: "Bearer deep-test-token" }) })
 }
 
 let fetchMock: ReturnType<typeof installFetchMock> | null = null
@@ -63,7 +63,8 @@ afterEach(() => {
   fetchMock = null
 })
 beforeEach(() => {
-  delete process.env.INGEST_SECRET_TOKEN // token unset -> auth guard is skipped by design
+  // 2026-10-27: the route fails CLOSED without a configured secret, so the body tests authenticate for real.
+  process.env.INGEST_SECRET_TOKEN = "deep-test-token"
 })
 
 describe("backfill — cursor page loop + write contract", () => {

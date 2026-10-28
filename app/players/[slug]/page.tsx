@@ -78,11 +78,17 @@ export async function generateMetadata(props: { params: Promise<{ slug: string }
     return { title: { absolute: "Player Hub | Rip Packs City" }, robots: { index: false, follow: true } }
   }
   if (!hub) return NOT_FOUND_METADATA
-  const names = routableEntries(hub).map((r) => r.collection.displayName)
+  const routable = routableEntries(hub)
+  const names = routable.map((r) => r.collection.displayName)
+  // 2026-10-27: a name spanning sports is more than one athlete — the snippet must not present them as one person.
+  const sports = groupBySport(routable.map((r) => r.entry))
+  const description = sports.length > 1
+    ? `Digital collectibles of every athlete named ${hub.name} that Rip Packs City tracks, grouped by sport (${sports.map((g) => g.label).join(", ")}) — ${collectionsPhrase(names)}: editions and fair market value per collection.`
+    : `Every ${hub.name} digital collectible Rip Packs City tracks, gathered in one place — ${collectionsPhrase(names)}: editions and fair market value per collection.`
   return {
     ...playerHubMetadata({
       name: `${hub.name} Digital Collectibles`,
-      description: `Every ${hub.name} digital collectible Rip Packs City tracks, gathered in one place — ${collectionsPhrase(names)}: editions and fair market value per collection.`,
+      description,
       canonical: `${SITE}${playerHubPath(hub.canonical_slug)}`,
     }),
     robots: playerHubIsIndexable(hub) ? { index: true, follow: true } : { index: false, follow: true },
