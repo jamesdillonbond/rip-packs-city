@@ -1,4 +1,4 @@
--- STAGED, NOT APPLIED (2026-10-29 ~12:05 PM PT, Claude Code cloud). apply_migration raised a Supabase MCP approval
+-- STAGED, NOT APPLIED (2026-10-29 ~11:48 AM PT, Claude Code cloud). apply_migration raised a Supabase MCP approval
 -- prompt that never reached the client. To apply: approve it from a client that shows the prompt, or paste into the
 -- SQL editor; then commit as supabase/migrations/<version>_audit_20261029_reprice_drifted_high_value_rips.sql.
 --
