@@ -67,7 +67,7 @@ export async function GET(req: NextRequest) {
     let q = (supabase as any)
       .from(src.trophies)
       .select(
-        "edition_id, external_id, player_name, set_name, tier, circulation_count, mint_one_sold_at, mint_one_price_usd, avg_other_serial_price_usd, other_serial_sample_n, multiplier, transaction_hash"
+        "edition_id, external_id, player_name, set_name, tier, circulation_count, mint_one_sold_at, mint_one_price_usd, avg_other_serial_price_usd, other_serial_sample_n, multiplier, transaction_hash, subedition_name"
       );
     if (minMult != null && Number.isFinite(minMult)) {
       q = q.gte("multiplier", minMult);

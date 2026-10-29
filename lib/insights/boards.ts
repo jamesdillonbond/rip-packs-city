@@ -109,7 +109,7 @@ export async function fetchRookiesDefault(
 }
 
 const TROPHY_COLS =
-  "edition_id, external_id, player_name, set_name, tier, circulation_count, mint_one_sold_at, mint_one_price_usd, avg_other_serial_price_usd, other_serial_sample_n, multiplier"
+  "edition_id, external_id, player_name, set_name, tier, circulation_count, mint_one_sold_at, mint_one_price_usd, avg_other_serial_price_usd, other_serial_sample_n, multiplier, subedition_name"
 
 /** First-Mint Trophy Tracker default view: cohort stats + multiplier-ranked, top 100. */
 export async function fetchFirstMintDefault(

@@ -15,6 +15,7 @@ export const dynamic = "force-dynamic"
 type Trophy = {
   player_name: string | null
   set_name: string | null
+  subedition_name?: string | null
   tier: string | null
   mint_one_price_usd: number | null
   avg_other_serial_price_usd: number | null
@@ -131,7 +132,7 @@ export async function GET(req: NextRequest) {
                   >
                     <span style={{ textTransform: "uppercase" }}>{r.tier ?? "—"}</span>
                     <span>·</span>
-                    <span>{r.set_name ?? "—"}</span>
+                    <span>{r.subedition_name ? `${r.set_name ?? "—"} · ${r.subedition_name}` : (r.set_name ?? "—")}</span>
                   </div>
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>

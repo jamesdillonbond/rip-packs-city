@@ -53,6 +53,8 @@ export type Trophy = {
   avg_other_serial_price_usd: number | null
   other_serial_sample_n: number | null
   multiplier: number | null
+  /** A Top Shot parallel's name (e.g. "Rippled"); null for a standard print (2026-10-29). */
+  subedition_name?: string | null
 }
 
 export type ApiResponse = {
@@ -424,7 +426,11 @@ export default function FirstMintBoardClient({ initial, initialDegraded = null }
                         className="rpc-fm-edition-link"
                       >
                         <div className="rpc-fm-edition-name">{r.player_name ?? "—"}</div>
-                        <div className="rpc-fm-edition-set">{r.set_name ?? "—"}</div>
+                        <div className="rpc-fm-edition-set">
+                          {r.set_name ?? "—"}
+                          {/* A parallel is its own edition with its own #1; without its name two rows read as one. */}
+                          {r.subedition_name ? <span data-testid="fm-parallel"> · {r.subedition_name}</span> : null}
+                        </div>
                       </Link>
                       {/* The squeeze board has an All Day leg since 10-27 — link the row's own collection. */}
                       {r.player_name ? (

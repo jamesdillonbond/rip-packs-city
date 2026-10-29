@@ -58,6 +58,19 @@ describe("FirstMintBoardClient", () => {
     expect(fetchFn).not.toHaveBeenCalled()
   })
 
+  it("names a Top Shot parallel, so two same-set rows of one player read as two editions (10-29)", () => {
+    const data: ApiResponse = {
+      ...initial,
+      trophies: [
+        trophy({ edition_id: "p", external_id: "90:4049::4", player_name: "Peyton Watson", set_name: "Base Set", subedition_name: "Rippled", multiplier: 198.3 }),
+        trophy({ edition_id: "s", external_id: "218:8350", player_name: "Peyton Watson", set_name: "Base Set", subedition_name: null, multiplier: 94.1 }),
+      ],
+    }
+    const { container } = render(<FirstMintBoardClient initial={data} />)
+    const tags = [...container.querySelectorAll('[data-testid="fm-parallel"]')].map((e) => e.textContent)
+    expect(tags).toEqual([" · Rippled"])
+  })
+
   it("refetches with min_multiplier when a bucket pill is clicked", async () => {
     const { container } = render(<FirstMintBoardClient initial={initial} />)
     const pill = [...container.querySelectorAll("button")].find((b) => b.textContent?.includes("≥ 10X"))!
