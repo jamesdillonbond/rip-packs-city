@@ -299,6 +299,41 @@ describe("fmv-recalc deferred sweep — happy path", () => {
     expect(snaps[0].sales_count_7d).toBe(8)
   })
 
+  // 2026-10-29: the last sale's AGE is a fact for the same reason. HIGH 44:1501 published "6 days" over a sale 3.7 days
+  // old that the wash filter had dropped — days_since_sale took the post-filter set. The price still ignores the sweep.
+  it("days_since_sale is the newest market sale even when the wash filter dropped it from pricing", async () => {
+    const t0 = Date.now() - 1 * 24 * 60 * 60 * 1000
+    const at = (ms: number) => new Date(t0 + ms).toISOString()
+    const { inserted } = instrument({
+      pipeline_runs: { data: null, error: null },
+      "rpc:fmv_recalc_edition_page": { data: [{ edition_id: "ed-1" }], error: null },
+      sales_market: {
+        data: [
+          // the NEWEST trading is a 3-in-10-minutes sweep, 1 day ago …
+          { edition_id: "ed-1", collection_id: TOPSHOT, price_usd: 8, sold_at: at(0), serial_number: 310 },
+          { edition_id: "ed-1", collection_id: TOPSHOT, price_usd: 8, sold_at: at(60_000), serial_number: 320 },
+          { edition_id: "ed-1", collection_id: TOPSHOT, price_usd: 8, sold_at: at(120_000), serial_number: 330 },
+          // … over five spread-out sales 6–22 days old
+          sale(8, 300, 6), sale(8, 400, 9), sale(8, 500, 13), sale(8, 600, 17), sale(8, 700, 22),
+        ],
+        error: null,
+      },
+      editions: EDITION_META,
+      edition_offers: { data: [], error: null },
+      fmv_snapshots: { data: [], error: null },
+      ...QUIET_TAIL,
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    const snaps = inserted.fmv_snapshots ?? []
+    expect(snaps).toHaveLength(1)
+    expect(snaps[0].days_since_sale).toBe(1)
+    // the price's evidence is the post-filter set, whose newest sale is 6 days old
+    expect(snaps[0].basis_days_since_sale).toBe(6)
+  })
+
   // 2026-09-25: Candy's confirmed live ask joins the ask-CEILING (Trevor's
   // 2026-08-07 rule: base FMV <= cheapest current ask). Before, only Top Shot and
   // All Day fed it, so Munetaka Murakami Green published $584.48 MEDIUM against a

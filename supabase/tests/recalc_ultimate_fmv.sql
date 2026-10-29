@@ -35,8 +35,10 @@ CREATE TABLE public.editions (id uuid PRIMARY KEY, tier text);
 CREATE TABLE public.fmv_snapshots (
   edition_id uuid, collection_id uuid, collection text,
   fmv_usd numeric, floor_price_usd numeric, ask_proxy_fmv numeric,
-  confidence public.fmv_confidence, days_since_sale integer,
+  confidence public.fmv_confidence, days_since_sale integer, basis_days_since_sale integer,
   algo_version text, computed_at timestamptz);
+-- 2026-10-29: the edition's market sales (the published last-sale age reads them; the model's age is the basis).
+CREATE TABLE public.sales_market (edition_id uuid, sold_at timestamptz, price_usd numeric);
 CREATE TABLE public.pipeline_runs (
   pipeline text, started_at timestamptz, finished_at timestamptz,
   rows_found integer, rows_written integer, rows_skipped integer,
@@ -90,6 +92,10 @@ BEGIN
       r.lowest_non_special_ask      AS low_ask,
       r.confidence                  AS conf,
       r.days_since_sale             AS days,
+      -- 2026-10-29: the model ages from its last NON-special sale (its basis); the published
+      -- days_since_sale is the edition's last market sale, special serials included.
+      (SELECT round(EXTRACT(EPOCH FROM (v_ran - max(m.sold_at))) / 86400)::int
+         FROM sales_market m WHERE m.edition_id = e.id AND m.price_usd > 0) AS last_days,
       r.source                      AS src_kind
     FROM editions e
     LEFT JOIN LATERAL compute_ultimate_non_special_fmv(e.id) r ON true
@@ -99,13 +105,13 @@ BEGIN
     INSERT INTO fmv_snapshots (
       edition_id, collection_id, collection,
       fmv_usd, floor_price_usd, ask_proxy_fmv,
-      confidence, days_since_sale,
+      confidence, days_since_sale, basis_days_since_sale,
       algo_version, computed_at
     )
     SELECT
       s.ed_id, s.coll_id, s.coll_slug,
       s.fmv, s.low_ask, s.low_ask,
-      s.conf::fmv_confidence, s.days,
+      s.conf::fmv_confidence, COALESCE(s.last_days, s.days), s.days,
       'ultimate-v1', v_ran
     FROM src s
     WHERE s.fmv IS NOT NULL
@@ -120,13 +126,13 @@ BEGIN
     INSERT INTO fmv_snapshots (
       edition_id, collection_id, collection,
       fmv_usd, floor_price_usd, ask_proxy_fmv,
-      confidence, days_since_sale,
+      confidence, days_since_sale, basis_days_since_sale,
       algo_version, computed_at
     )
     SELECT
       s.ed_id, s.coll_id, s.coll_slug,
       NULL, NULL, NULL,
-      'NO_DATA'::fmv_confidence, s.days,
+      'NO_DATA'::fmv_confidence, COALESCE(s.last_days, s.days), s.days,
       'ultimate-v1', v_ran
     FROM src s
     WHERE s.fmv IS NULL
@@ -201,6 +207,10 @@ INSERT INTO public.fmv_snapshots (edition_id, collection_id, collection, fmv_usd
   (:edR1::uuid, :coll::uuid, 'nba_top_shot', 444, 444, 444, 'HIGH', 1, 'ultimate-v1', date_trunc('day', now())),        -- TODAY ultimate-v1 on NON-ultimate -> survives
   (:edU4::uuid, :coll::uuid, 'nba_top_shot', 2512.95, 4569, 4569, 'ASK_ONLY', NULL, 'ultimate-v1_haircut', now() - interval '2 days'); -- a priced ultimate-v1 row the model can no longer support
 
+-- edU1's newest market sale is a special serial 1 day ago; the model (non-special) says 2 days. edU3 has no sales.
+INSERT INTO public.sales_market (edition_id, sold_at, price_usd) VALUES
+  (:edU1::uuid, now() - interval '1 day', 5000), (:edU1::uuid, now() - interval '9 days', 900);
+
 SELECT * FROM public.recalc_ultimate_fmv() \gset run_
 
 -- ── 1. return tuple: 3 ULTIMATE editions, 2 inserted, 1 no_data, 1 ask_only, 1 sales_only ──
@@ -243,6 +253,14 @@ SELECT _assert_eq((SELECT extra->>'retired_no_data' FROM public.pipeline_runs WH
 SELECT _assert_eq(
   (SELECT confidence::text || '|' || coalesce(fmv_usd::text, 'null') FROM public.fmv_snapshots WHERE edition_id = :edU4::uuid ORDER BY computed_at DESC LIMIT 1),
   'NO_DATA|null', '⛔ edU4: its stale $2,512.95 is no longer the latest row');
+
+-- ── 9. 2026-10-29: days_since_sale is the LAST market sale (special serials included); the model's age is the basis ──
+SELECT _assert_eq(
+  (SELECT days_since_sale::text || '|' || basis_days_since_sale::text FROM public.fmv_snapshots WHERE edition_id = :edU1::uuid AND algo_version='ultimate-v1' AND computed_at >= date_trunc('day', now())),
+  '1|2', 'edU1: last sale 1 day ago (the special serial), basis 2 days (the model''s non-special sale)');
+SELECT _assert_eq(
+  (SELECT days_since_sale::text || '|' || basis_days_since_sale::text FROM public.fmv_snapshots WHERE edition_id = :edU3::uuid AND algo_version='ultimate-v1' AND computed_at >= date_trunc('day', now())),
+  '9|9', 'edU3: no market sale on record -> the model''s age stands for both');
 
 SELECT '✓ recalc_ultimate_fmv: all assertions passed' AS result;
 

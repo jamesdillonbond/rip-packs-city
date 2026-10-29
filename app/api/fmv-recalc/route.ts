@@ -536,6 +536,13 @@ export async function POST(req: NextRequest) {
     // mis-attributed sale, not this edition's) applies to it too. Confidence still gates on count30.
     const marketSerials30ByEdition = new Map<string, (number | null)[]>()
     for (const [id, d] of editionSalesMap) marketSerials30ByEdition.set(id, d.sales.map((x) => x.serial))
+    // 2026-10-29: the LAST SALE's time is a fact for the same reason — published as days_since_sale. Captured here,
+    // before the wash-trade filter, under the same mis-key guard below. 10-29 measured: HIGH 44:1501 published "6 days"
+    // over a $1.15 sale 3.7 days old that the wash filter had dropped (~50 latest rows a night, HIGH/MEDIUM/LOW).
+    const marketSoldAt30ByEdition = new Map<string, { serial: number | null; soldAt: Date }[]>()
+    for (const [id, d] of editionSalesMap) {
+      marketSoldAt30ByEdition.set(id, d.sales.map((x) => ({ serial: x.serial, soldAt: x.soldAt })))
+    }
 
     // ── Step 2-bis: page editions whose ONLY in-window sales are buy-backs ───
     // 2026-10-10 (known-issues #169 re-measure). The page selector reads `sales`
@@ -1063,6 +1070,11 @@ export async function POST(req: NextRequest) {
       if (circ == null || circ <= 0) continue
       marketSerials30ByEdition.set(edId, serials.filter((sn) => sn == null || sn <= circ))
     }
+    for (const [edId, rows] of marketSoldAt30ByEdition) {
+      const circ = editionMetaById.get(edId)?.circulationCount ?? null
+      if (circ == null || circ <= 0) continue
+      marketSoldAt30ByEdition.set(edId, rows.filter((r) => r.serial == null || r.serial <= circ))
+    }
 
     // ── Step 2a-quater: 90d window extension for thin editions ───────────────
     // Audit 2026-06-09: when an edition's 30d window rolls down to < 5 sales, a
@@ -1307,10 +1319,12 @@ export async function POST(req: NextRequest) {
       // published "last sale 51 days ago" and a zeroed count over a 6-day-old sale (133 latest rows, 10-28). It is now
       // the true market age (edEntry.sales: market sales after the mis-key guard, before cleaning); the cleaned age is
       // basis_days_since_sale, which the sniper's staleness penalty reads.
-      const marketLatestSoldAt = edEntry.sales.reduce(
-        (latest, s) => (s.soldAt > latest ? s.soldAt : latest),
-        latestSoldAt,
-      )
+      // …and the in-window market sales captured before the wash-trade filter (Step 2a drops clustered sales
+      // from edEntry.sales; a dropped sale is still the edition's last sale).
+      const marketLatestSoldAt = [
+        ...edEntry.sales.map((s) => s.soldAt),
+        ...(marketSoldAt30ByEdition.get(editionId) ?? []).map((r) => r.soldAt),
+      ].reduce((latest, t) => (t > latest ? t : latest), latestSoldAt)
       const daysSinceSale = Math.round(
         (now.getTime() - marketLatestSoldAt.getTime()) / (1000 * 60 * 60 * 24)
       )

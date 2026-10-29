@@ -6,7 +6,9 @@
 -- the read-only guarantee. The live-mode WRITE targets base-schema tables
 -- (fmv_calibration_caps) not reproduced here, so it is intentionally out of scope.
 -- DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260831151141_audit_20260831_thin_sales_guard_lateral_latest_instead_of_distinct_on_the_whole_history.sql);
+-- (supabase/migrations/20261029153057_audit_20261029_ultimate_and_thin_sales_guard_publish_the_last_sale_age.sql;
+-- before it, 20260831151141). ⚠ Re-pointed 2026-10-29: the live-mode INSERT now states the last market sale's age
+-- and the basis age (out of this dry-run test's scope, like the rest of the write); the cursor also reads basis_days_since_sale.
 -- ⚠ Re-pointed 2026-08-31: that migration replaced the driving cursor (a DISTINCT ON
 -- over the WHOLE partitioned fmv_snapshots history) with `FROM editions CROSS JOIN
 -- LATERAL (newest snapshot)`. The assertions below still EXERCISE the change rather
@@ -29,7 +31,7 @@ CREATE TABLE fmv_snapshots (
   top_shot_ask numeric, flowty_ask numeric, cross_market_ask numeric,
   sales_count_7d int, sales_count_30d int, confidence text, algo_version text,
   computed_at timestamptz DEFAULT now(), floor_price_usd numeric, listing_count int,
-  days_since_sale int, unique_buyers_30d int, offer_count int,
+  days_since_sale int, basis_days_since_sale int, unique_buyers_30d int, offer_count int,
   velocity_factor numeric, utility_factor numeric, loan_factor numeric);
 
 -- >>> BEGIN verbatim apply_fmv_thin_sales_guard (byte-identical to the migration) >>>
@@ -67,7 +69,7 @@ BEGIN
       fs.top_shot_ask, fs.flowty_ask, fs.cross_market_ask,
       fs.sales_count_7d, fs.sales_count_30d, fs.confidence,
       fs.algo_version, fs.computed_at, fs.floor_price_usd, fs.listing_count,
-      fs.days_since_sale, fs.unique_buyers_30d, fs.offer_count,
+      fs.days_since_sale, fs.basis_days_since_sale, fs.unique_buyers_30d, fs.offer_count,
       fs.velocity_factor, fs.utility_factor, fs.loan_factor,
       e.tier, e.set_name, e.external_id, c.slug AS collection_slug
     FROM editions e
@@ -165,7 +167,7 @@ BEGIN
         asp_usd, asp_without_outliers, ask_proxy_fmv, confidence,
         top_shot_ask, flowty_ask, cross_market_ask,
         sales_count_7d, sales_count_30d, unique_buyers_30d, offer_count, listing_count,
-        days_since_sale, velocity_factor, utility_factor, loan_factor,
+        days_since_sale, basis_days_since_sale, velocity_factor, utility_factor, loan_factor,
         algo_version, computed_at
       ) VALUES (
         rec.edition_id, rec.collection_id, v_cap, rec.floor_price_usd,
@@ -174,7 +176,14 @@ BEGIN
         COALESCE(v_fresh_ask, rec.top_shot_ask), rec.flowty_ask, rec.cross_market_ask,
         rec.sales_count_7d, rec.sales_count_30d, rec.unique_buyers_30d,
         rec.offer_count, rec.listing_count,
-        rec.days_since_sale, rec.velocity_factor, rec.utility_factor, rec.loan_factor,
+        -- 2026-10-29: a row dated NOW states NOW's facts. days_since_sale is the edition's LAST market sale (the
+        -- source row may be ultimate-v1's, which ages from its last NON-special sale); the source's own age,
+        -- advanced to now, is the price's basis age.
+        COALESCE((SELECT round(EXTRACT(EPOCH FROM (now() - max(m.sold_at))) / 86400)::int
+                    FROM sales_market m WHERE m.edition_id = rec.edition_id AND m.price_usd > 0),
+                 rec.days_since_sale + floor(EXTRACT(EPOCH FROM (now() - rec.computed_at)) / 86400)::int),
+        COALESCE(rec.basis_days_since_sale, rec.days_since_sale) + floor(EXTRACT(EPOCH FROM (now() - rec.computed_at)) / 86400)::int,
+        rec.velocity_factor, rec.utility_factor, rec.loan_factor,
         'thin-sales-guard-v3', NOW()
       );
 
