@@ -827,10 +827,42 @@ describe("panini-ingest — discovery evidence (2026-09-28)", () => {
       { set_id: 4100, sport: "Basketball", grid_items: 3, sample: { psku: "packcard-4100_1_1_1", athlete: "A'ja Wilson", team: "Las Vegas Aces", cardset: "Base Prizms Silver" } },
       { set_id: 4200, sport: "Football", grid_items: 1 },
     ] } }))
-    const up = st.registryUpserts.find((u) => u.table === "panini_products")!
-    const byId = Object.fromEntries(up.rows.map((r: any) => [r.set_id, r]))
+    const ups = st.registryUpserts.filter((u) => u.table === "panini_products")
+    const byId = Object.fromEntries(ups.flatMap((u) => u.rows).map((r: any) => [r.set_id, r]))
     expect(byId[4100].sample).toMatchObject({ team: "Las Vegas Aces" })
     expect("sample" in byId[4200]).toBe(false)
+  })
+
+  // 2026-10-29: a bulk upsert writes NULL for a key one row lacks and another row has
+  // (supabase-js defaultToNull), so "never writes one it was not sent" held per row object but
+  // not in the database. Every upsert batch is now one row shape.
+  it("upserts each row shape on its own, so an absent key is never sent as NULL", async () => {
+    await POST(makeReq({ url, auth: "Bearer ingest", body: { products: [
+      { set_id: 4100, sport: "Basketball", grid_items: 3, sample: { psku: "packcard-4100_1_1_1", athlete: "A'ja Wilson" } },
+      { set_id: 4200, sport: "Football", grid_items: 1 },
+      { set_id: 4300, sport: "?", grid_items: 2 },
+    ] } }))
+    const ups = st.registryUpserts.filter((u) => u.table === "panini_products")
+    expect(ups.flatMap((u) => u.rows)).toHaveLength(3)
+    for (const u of ups) {
+      const shapes = new Set(u.rows.map((r: any) => Object.keys(r).sort().join(",")))
+      expect(shapes.size).toBe(1)
+    }
+  })
+
+  // 2026-10-29: the runner tags a set sighted outside any sport grid as "?". Stored as a sport, it
+  // filed ten NFL products under "?" on Panini Premiums and dropped them from team keys.
+  it("⛔ never stores \"?\" (or a blank) as a product's sport; the stored sport stays as it was", async () => {
+    await POST(makeReq({ url, auth: "Bearer ingest", body: { products: [
+      { set_id: 4300, sport: "?", grid_items: 2 },
+      { set_id: 4400, sport: "  ", grid_items: 2 },
+      { set_id: 4500, sport: "Football", grid_items: 2 },
+    ] } }))
+    const rows = st.registryUpserts.filter((u) => u.table === "panini_products").flatMap((u) => u.rows)
+    const byId = Object.fromEntries(rows.map((r: any) => [r.set_id, r]))
+    expect("last_grid_sport" in byId[4300]).toBe(false)
+    expect("last_grid_sport" in byId[4400]).toBe(false)
+    expect(byId[4500].last_grid_sport).toBe("Football")
   })
 
   it("stamps a pack page's fired ops and pack-like evidence; an oversize blob is marked dropped, not truncated", async () => {

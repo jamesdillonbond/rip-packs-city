@@ -108,7 +108,7 @@ WAU); its *measurements* were superseded five times over. **For any number, scro
 
 ---
 
-## ⭐ HEADLINE METRIC — re-read live 2026-10-29 ~9:40 AM PT from `rpc_trust_health_history`, BY PT WEEK (supersedes the 10-22 block below)
+## ⭐ HEADLINE METRIC — re-read live 2026-10-29 ~8:58 AM PT from `rpc_trust_health_history`, BY PT WEEK (supersedes the 10-22 block below)
 
 Same instrument (six-hourly legs `<coll>_fmv_high_med_share_pct`, `value <> 999`, weekly mean, weeks start Monday PT). Wk 10-19 is now complete (28 legs); **wk 10-26 is partial: 13–14 legs, Monday → Thursday 10-29 morning.** Claude Code cloud, read-only.
 
@@ -180,7 +180,7 @@ Done 10-15 → 10-17 (Claude Code cloud, session_014vWuubmVKLyyyMQAwWzT2W; Trevo
 - ❓ **Needs Trevor:** how the 2026-27 Yearbook / Blue Chip / Squad Goals leaderboards are scored. RPC will not publish its own rank as Top Shot's. The board worth building is "cost to climb into the top N", and it needs the official scoring.
 - **Tracked since 2026-10-19:** `editions.autographed_at` (from Atlas `autographedAt`, swept daily by pg_cron `rpc-autograph-sweep`; 236 Top Shot + 226 All Day signed editions at the census). Partner-athlete status itself is still not stored: Atlas's `activePartnerAthlete` flag marks only 4 players and is not the signer list. Research: [autographs-topshot-allday-2026-10-19.md](../research/autographs-topshot-allday-2026-10-19.md). **Not tracked yet:** Constellations trade-ins burn older-season Rares that the index does not walk (Dune-era sets), so holder counts there lag.
 
-## ⭐ NEW 2026-10-29 — DEMAND RE-READ, WEEK OF 10-22..10-28 PT (by `scripts/demand-read.sql`, params 10-22 07:00 UTC → 10-29 07:00 UTC; Claude Code cloud, ~9:20 AM PT)
+## ⭐ NEW 2026-10-29 — DEMAND RE-READ, WEEK OF 10-22..10-28 PT (by `scripts/demand-read.sql`, params 10-22 07:00 UTC → 10-29 07:00 UTC; Claude Code cloud, ~8:32 AM PT)
 
 | PT week (Thu 07:00 UTC →) | 10-15..10-21 | **10-22..10-28** |
 |---|---:|---:|

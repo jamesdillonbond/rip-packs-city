@@ -222,16 +222,36 @@ async function upsertRegistry(products: any[], packPages: any[], nowIso: string)
     const items = Number.isFinite(+p?.grid_items) ? +p.grid_items : null;
     // One setId can appear under two sports' grids; keep the sighting with more items.
     if (prev && (prev.last_grid_items as number | null ?? -1) >= (items ?? -1)) continue;
-    const row: Record<string, unknown> = { set_id: sid, last_seen_at: nowIso, last_grid_items: items, last_grid_sport: typeof p?.sport === "string" ? p.sport.slice(0, 40) : null };
+    const row: Record<string, unknown> = { set_id: sid, last_seen_at: nowIso, last_grid_items: items };
+    // A sighting outside any sport's grid arrives as "?" (the runner's `currentSport ?? "?"`). That is
+    // not a sport: written as one, it stood on 10 NFL products (2026-10-29) and every reader of
+    // last_grid_sport filed their cards under "?" (Panini Premiums' sport chips) or dropped them
+    // (team keys filter on known sports). An unknown sighting leaves the stored sport as it was.
+    const sport = typeof p?.sport === "string" ? p.sport.trim() : "";
+    if (sport && sport !== "?") row.last_grid_sport = sport.slice(0, 40);
     // Identification evidence (panini_products.sample). Only a small plain object is kept; anything
     // else is dropped rather than stored, and an absent sample never erases the previous one.
     if (p?.sample && typeof p.sample === "object" && !Array.isArray(p.sample)) row.sample = boundedJson(p.sample, 2000);
     prodRows.set(sid, row);
   }
   if (prodRows.size) {
-    const { data, error } = await db.from("panini_products").upsert([...prodRows.values()], { onConflict: "set_id" }).select("set_id");
-    if (error) errors.push(`products: ${error.message}`);
-    else { written += data?.length ?? 0; extra.products = data?.length ?? 0; }
+    // One upsert per row SHAPE. A bulk upsert sends the union of every row's keys and writes NULL
+    // where a row lacks one (supabase-js `defaultToNull`), so a row without `sample` or
+    // `last_grid_sport` would erase the stored value whenever another row in the batch had it.
+    const byShape = new Map<string, Record<string, unknown>[]>();
+    for (const r of prodRows.values()) {
+      const shape = Object.keys(r).sort().join(",");
+      if (!byShape.has(shape)) byShape.set(shape, []);
+      byShape.get(shape)!.push(r);
+    }
+    let landed = 0;
+    for (const rows of byShape.values()) {
+      const { data, error } = await db.from("panini_products").upsert(rows, { onConflict: "set_id" }).select("set_id");
+      if (error) errors.push(`products: ${error.message}`);
+      else landed += data?.length ?? 0;
+    }
+    written += landed;
+    extra.products = landed;
   }
   extra.products_offered = prodRows.size;
 
