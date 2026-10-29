@@ -30,6 +30,7 @@ import type {
   NCCohortRow,
 } from "@/lib/new-collectors-board"
 import { usdSignFirst } from "@/lib/usd-format"
+import { shortSeriesLabel } from "@/lib/series-label"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -430,7 +431,7 @@ function GatewayList({
                 <Link href={href} className="rpc-nc-gateway-name">
                   {r.name || "—"}
                   {kind === "set" && r.series != null ? (
-                    <span className="rpc-nc-gateway-series">S{r.series}</span>
+                    <span className="rpc-nc-gateway-series">{shortSeriesLabel(r.series, "nba_top_shot")}</span>
                   ) : null}
                 </Link>
                 <span className="rpc-nc-gateway-buyers">{fmtInt(r.buyers)}</span>

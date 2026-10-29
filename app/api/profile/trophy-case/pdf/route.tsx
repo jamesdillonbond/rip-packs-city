@@ -59,6 +59,7 @@ import {
   glyphSvg,
 } from "@/lib/badges/glyphs";
 import { badgePlatform, specialSerialStyle } from "@/lib/badges/official-art";
+import { shortSeriesLabel } from "@/lib/series-label";
 
 // Special serials wear the platform's NATIVE colour (Trevor, 2026-09-30):
 // Top Shot blue, All Day purple, RPC gold where there is no platform badge.
@@ -799,7 +800,7 @@ export async function GET(req: NextRequest) {
     const name = truncate(dsp, ansi(s.player_name || "Moment").toUpperCase(), 14, cellW - pad * 2);
     page.drawText(name, { x: x + pad, y: y + 56, size: 14, font: dsp, color: white });
 
-    const setLine = [s.set_name, s.series != null ? `S${s.series}` : null].filter(Boolean).join(" · ");
+    const setLine = [s.set_name, s.series != null ? shortSeriesLabel(s.series, s.collection_slug) : null].filter(Boolean).join(" · ");
     if (setLine) {
       page.drawText(truncate(mno, ansi(setLine), 7.5, cellW - pad * 2), { x: x + pad, y: y + 45, size: 7.5, font: mno, color: gray });
     }

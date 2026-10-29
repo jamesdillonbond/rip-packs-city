@@ -1,3 +1,5 @@
+import { compactSeriesLabel } from "@/lib/share-card-view"
+
 // Top Shot series encoders. Top Shot stores series as a raw on-chain UInt32
 // where 0 = Series 1 (there is NO on-chain series 1 — see the CLAUDE.md series
 // map), so a naive `Series ${n}` mislabels every edition. Both the analytics
@@ -101,4 +103,16 @@ export function tileSeriesLabel(label: string | null | undefined, collectionSlug
   if (!t) return null
   if (!/^\d+$/.test(t)) return t
   return seriesDisplay(Number(t), collectionSlug)
+}
+
+/**
+ * A SHORT series tag for a dense row ("S3", "'25-26", "Sum '21"), decoded per collection
+ * (2026-10-29). Three surfaces printed `S${series}` from the raw on-chain number: the
+ * New Collectors gateway sets, the set-squeeze OG card and the trophy-case PDF. On Top
+ * Shot that turned on-chain 3 (Summer 2021) into "S3", which is the Series 3 label of
+ * on-chain 4, and the 2025-26 season into "S8". Top Shot decodes through SERIES_DISPLAY;
+ * any other collection keeps "S{n}".
+ */
+export function shortSeriesLabel(n: number, collectionSlug: string | null | undefined): string {
+  return compactSeriesLabel(seriesDisplay(n, collectionSlug))
 }

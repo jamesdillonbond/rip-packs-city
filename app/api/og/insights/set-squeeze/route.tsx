@@ -12,6 +12,7 @@ import { fetchBoardCount, boardCountLabel, type BoardCount } from "@/lib/og/boar
 import { ogFetch } from "@/lib/og/og-fetch"
 import { SQUEEZE_LABEL, isSqueezeCollection, type SqueezeCollection } from "@/lib/insights/squeeze-collections"
 import { ownLookup } from "@/lib/safe-lookup"
+import { shortSeriesLabel } from "@/lib/series-label"
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
@@ -165,7 +166,7 @@ export async function GET(req: NextRequest) {
                   >
                     <span style={{ color: tierColor(r.set_tier), textTransform: "uppercase" }}>{r.set_tier ?? "—"}</span>
                     <span>·</span>
-                    <span>S{r.series ?? "—"}</span>
+                    <span>{r.series == null ? "S—" : shortSeriesLabel(r.series, collection)}</span>
                     <span>·</span>
                     <span>{fmtInt(r.editions_covered)} eds</span>
                   </div>

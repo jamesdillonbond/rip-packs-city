@@ -12,6 +12,7 @@ import MomentMedia from "@/components/MomentMedia";
 import { trackOutboundClick } from "@/lib/track-click";
 import { MarketplaceStatusBanner } from "@/components/marketplace-status";
 import { accentText } from "@/lib/accent-text"
+import { shortSeriesLabel } from "@/lib/series-label"
 
 // ── Types (mirrors API response) ─────────────────────────────────────────────
 
@@ -920,7 +921,7 @@ function SetCard({
               border: "1px solid " + c.cardBorder, background: "var(--rpc-surface-raised)",
               flexShrink: 0,
             }}>
-              S{set.series}
+              {shortSeriesLabel(set.series, collectionSlug)}
             </span>
           )}
         </div>
