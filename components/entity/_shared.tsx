@@ -242,6 +242,8 @@ export function FmvBasis(props: {
   salesCount30d: number | null | undefined
   ask: number | null | undefined
   daysSinceSale?: number | null
+  /** The payload's `basis_capped` (#215): an ASK_ONLY price held to the edition's sales. */
+  capped?: boolean | null
 }) {
   const facts = fmvBasisText(props)
   const d = props.daysSinceSale
@@ -249,7 +251,7 @@ export function FmvBasis(props: {
   const text = facts ?? lastSale
   // Ask-derived disclosure: this FMV is a discount on one seller's asking price,
   // not a market price. Plain words only — never the confidence enum.
-  const basis = fmvBasis(props.confidence)
+  const basis = fmvBasis(props.confidence, props.capped)
   if (!text && !basis) return null
   return (
     <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.04em" }}>

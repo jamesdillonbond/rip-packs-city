@@ -116,6 +116,18 @@ describe("_shared formatters", () => {
   // string). The ASK-DERIVED disclosure lives in the COMPONENT — see the amended
   // note above fmvBasisText in _shared.tsx. Both directions pinned: an ASK_ONLY
   // price must say so, a sale-derived one must not.
+  // #215 (2026-10-29): /nfl-all-day/edition/5506 read "$114 · ask $8,000 · from asks" — $114 is the
+  // edition's sales (a _histcap row), and the marker's tooltip said it had none.
+  it("FmvBasis says 'capped at sales', never 'from asks', for a capped ask-only price", () => {
+    const capped = render(<FmvBasis confidence="ASK_ONLY" salesCount30d={0} ask={8000} capped />)
+    expect(capped.container.textContent).toContain("capped at sales")
+    expect(capped.container.textContent).not.toContain("from asks")
+    cleanup()
+    const uncapped = render(<FmvBasis confidence="ASK_ONLY" salesCount30d={0} ask={8000} capped={false} />)
+    expect(uncapped.container.textContent).toContain("from asks")
+    cleanup()
+  })
+
   it("FmvBasis appends the ask-derived marker only for ASK_ONLY", () => {
     const askOnly = render(<FmvBasis confidence="ASK_ONLY" salesCount30d={0} ask={500010} />)
     expect(askOnly.container.textContent).toContain("from asks")

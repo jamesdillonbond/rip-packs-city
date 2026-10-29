@@ -47,6 +47,23 @@ describe("fmvBasis", () => {
     }
   })
 
+  // #215 (2026-10-29): a capped ASK_ONLY price is the edition's sales, not the ask.
+  it("⛔ a capped ASK_ONLY price never wears 'from asks — no corroborating sales'", () => {
+    const b = fmvBasis("ASK_ONLY", true)!
+    expect(b.label).toBe("capped at sales")
+    expect(`${b.label} ${b.title}`).not.toMatch(/from asks|no corroborating sales/i)
+    for (const banned of ["HIGH", "MEDIUM", "LOW", "STALE", "ASK_ONLY", "NO_DATA", "confidence"]) {
+      expect(`${b.label} ${b.title}`, banned).not.toContain(banned)
+    }
+  })
+
+  it("the capped flag only matters on ASK_ONLY, and an absent flag keeps the ask marker", () => {
+    expect(fmvBasis("HIGH", true)).toBeNull()
+    expect(fmvBasis("ASK_ONLY", false)!.label).toBe("from asks")
+    expect(fmvBasis("ASK_ONLY", null)!.label).toBe("from asks")
+    expect(fmvBasis("ASK_ONLY")!.label).toBe("from asks")
+  })
+
   it("isAskDerivedFmv mirrors fmvBasis as a boolean", () => {
     expect(isAskDerivedFmv("ASK_ONLY")).toBe(true)
     expect(isAskDerivedFmv("HIGH")).toBe(false)

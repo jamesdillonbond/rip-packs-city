@@ -47,7 +47,9 @@ CREATE TABLE public.editions (id uuid PRIMARY KEY, collection_id uuid, set_id uu
 -- 2026-10-20 (20261021040431): the editions arm names the LINKED player row.
 CREATE TABLE public.players (id uuid PRIMARY KEY, name text);
 CREATE TABLE public.fmv_snapshots (edition_id uuid, collection_id uuid, confidence text, computed_at timestamptz,
-  fmv_usd numeric, floor_price_usd numeric, asp_usd numeric, sales_count_30d int, days_since_sale int, cross_market_ask numeric);
+  fmv_usd numeric, floor_price_usd numeric, asp_usd numeric, sales_count_30d int, days_since_sale int, cross_market_ask numeric,
+  algo_version text);
+-- 2026-10-29 (#215): the editions arm says whether an ask-only price was capped at the edition's sales.
 CREATE TABLE public.sales_2026 (id bigserial, collection_id uuid, price_usd numeric, sold_at timestamptz);
 CREATE TABLE public.sales_2025 (id bigserial, collection_id uuid, price_usd numeric, sold_at timestamptz);
 CREATE TABLE public.badge_editions (collection_id uuid, low_ask numeric);
@@ -418,7 +420,8 @@ BEGIN
           'computed_at',     fmv.computed_at,
           'sales_count_30d', fmv.sales_count_30d,
           'days_since_sale', fmv.days_since_sale,
-          'cross_market_ask',fmv.cross_market_ask
+          'cross_market_ask',fmv.cross_market_ask,
+          'basis_capped',    COALESCE(fmv.algo_version ~ '_(salescap|histcap)$', false)
         )
       END
     ) INTO result
@@ -426,7 +429,7 @@ BEGIN
     JOIN collections c ON c.id = e.collection_id
     LEFT JOIN LATERAL (
       SELECT fmv_usd, floor_price_usd, asp_usd AS wap_usd, confidence, computed_at,
-             sales_count_30d, days_since_sale, cross_market_ask
+             sales_count_30d, days_since_sale, cross_market_ask, algo_version
       FROM fmv_snapshots
       WHERE edition_id = e.id
       ORDER BY computed_at DESC
@@ -788,6 +791,19 @@ INSERT INTO public.collections (id, slug, name, is_active) VALUES ('c0ffee00-000
 SELECT _assert_eq((SELECT count(*)::text FROM jsonb_array_elements(public.get_platform_stats()->'per_collection') x WHERE x->>'slug' = 'panini_blockchain'), '0', 'platform: an active Panini has no per_collection row');
 SELECT _assert_eq(jsonb_array_length(public.get_platform_stats()->'per_collection')::text, '2', 'platform: the other two rows are unchanged');
 SELECT _assert_eq((public.get_platform_stats() ->> 'collection_count'), '3', 'platform: collection_count still counts Panini');
+
+-- ── 7. the editions arm says when an ask-only price was capped at sales (#215, 2026-10-29) ──
+-- A `_salescap` / `_histcap` row is still labelled ASK_ONLY, but its price is the edition's sales,
+-- not the ask; the page reads `basis_capped` to stop calling it "from asks".
+INSERT INTO public.fmv_snapshots (edition_id, collection_id, confidence, computed_at, fmv_usd, floor_price_usd, algo_version) VALUES
+  ('11111111-1111-1111-1111-111111111111', :ts::uuid, 'ASK_ONLY', now(), 3.00, 9.00, '1.8.3_salescap'),
+  ('22222222-2222-2222-2222-222222222222', :ts::uuid, 'ASK_ONLY', now(), 8.10, 9.00, 'cold-tail-1.0');
+SELECT _assert_eq((public.get_edition_detail(:ts::uuid, '5:145') -> 'fmv' ->> 'basis_capped'), 'true', 'editions arm: a _salescap row is basis_capped');
+SELECT _assert_eq((public.get_edition_detail(:ts::uuid, '5:146') -> 'fmv' ->> 'basis_capped'), 'false', 'editions arm: an uncapped ask-only row is not');
+UPDATE public.fmv_snapshots SET algo_version = 'cold-tail-1.0_histcap' WHERE edition_id = '22222222-2222-2222-2222-222222222222';
+SELECT _assert_eq((public.get_edition_detail(:ts::uuid, '5:146') -> 'fmv' ->> 'basis_capped'), 'true', 'editions arm: a _histcap row is basis_capped');
+UPDATE public.fmv_snapshots SET algo_version = NULL WHERE edition_id = '22222222-2222-2222-2222-222222222222';
+SELECT _assert_eq((public.get_edition_detail(:ts::uuid, '5:146') -> 'fmv' ->> 'basis_capped'), 'false', 'editions arm: a NULL algo_version is not capped (never NULL)');
 
 SELECT '✓ pinnacle readers on the pin catalog: all assertions passed' AS result;
 

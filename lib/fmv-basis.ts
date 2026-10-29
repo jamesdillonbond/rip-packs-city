@@ -42,20 +42,34 @@ const ASK_DERIVED: FmvBasisMarker = {
     "Derived from the lowest listed ask, not a completed sale. This edition has no corroborating sales, so the price is what one seller is asking - check recent sales before acting on it.",
 }
 
+// #215 (2026-10-29): an ASK_ONLY price can be CAPPED at the edition's own sales (#208's
+// `_salescap`, the 10-29 `_histcap`). The label stays ASK_ONLY by decision, but "from asks — no
+// corroborating sales" then states the opposite of the number: $114 on an $8,000 ask is the
+// edition's sales talking, not the seller. A surface that knows the row was capped (the
+// `basis_capped` flag) says so instead.
+const CAPPED_AT_SALES: FmvBasisMarker = {
+  label: "capped at sales",
+  title:
+    "The lowest listed ask is higher than this edition has sold for, so the price is held to its own sales rather than taken from the ask.",
+}
+
 /**
  * Marker for an FMV value, keyed off its `fmv_snapshots.confidence`
  * (or `panini_fmv_snapshots.confidence`) value.
  *
  * Returns a marker ONLY for ask-derived (`ASK_ONLY`) prices; `null` for every
  * other confidence -- including null/unknown, so a surface that has not fetched
- * confidence degrades to "no marker" rather than to a wrong claim.
+ * confidence degrades to "no marker" rather than to a wrong claim. `capped` (the
+ * payload's `basis_capped`) swaps "from asks" for "capped at sales"; a surface that
+ * does not carry the flag keeps the ask marker (#215 tracks those).
  */
-export function fmvBasis(confidence: string | null | undefined): FmvBasisMarker | null {
+export function fmvBasis(confidence: string | null | undefined, capped?: boolean | null): FmvBasisMarker | null {
   if (!confidence) return null
-  return String(confidence).trim().toUpperCase() === "ASK_ONLY" ? ASK_DERIVED : null
+  if (String(confidence).trim().toUpperCase() !== "ASK_ONLY") return null
+  return capped === true ? CAPPED_AT_SALES : ASK_DERIVED
 }
 
-/** True when this FMV is 0.9 x a single ask rather than a sale-derived price. */
+/** True when this FMV is ASK_ONLY (its floor field is an ask, not a sale) — capped or not. */
 export function isAskDerivedFmv(confidence: string | null | undefined): boolean {
   return fmvBasis(confidence) != null
 }

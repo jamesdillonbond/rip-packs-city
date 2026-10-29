@@ -149,6 +149,8 @@ interface EditionDetail {
     sales_count_30d: number | null
     days_since_sale: number | null
     cross_market_ask?: number | null
+    // #215 (2026-10-29): an ASK_ONLY price capped at the edition's own sales (editions arm only).
+    basis_capped?: boolean | null
     // PIN-FMV-REKEY Wave 2: per-render spread for Pinnacle set-level keys.
     fmv_min?: number | null
     fmv_max?: number | null
@@ -1036,6 +1038,7 @@ export default async function EditionPage(
                 salesCount30d={fmv?.sales_count_30d ?? null}
                 ask={askValue}
                 daysSinceSale={showLastSaleAge ? daysSinceLastSale : null}
+                capped={fmv?.basis_capped ?? null}
               />
               {/* 2026-10-14: "what does the confidence word mean", "does FMV
                   take special serials into account", "how do you handle stale

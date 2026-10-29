@@ -374,8 +374,9 @@ const PINS = [
     // Re-pointed 2026-10-19: a legacy key's live_ask reads the render floor.
     // Re-pointed 2026-10-20: the editions arm names the linked player row (player_page_name).
     // Re-pointed 2026-10-21: the editions arm carries play_category/play_type/game_date/subedition_name (SEO titles).
+    // Re-pointed 2026-10-29 (#215): the editions arm's fmv carries basis_capped.
     migration:
-      "supabase/migrations/20261021142334_audit_20261021_edition_detail_carries_play_and_parallel.sql",
+      "supabase/migrations/20261029164512_audit_20261029_edition_detail_says_when_an_ask_price_was_capped.sql",
   },
   {
     fn: "get_platform_stats",
