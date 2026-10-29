@@ -74,7 +74,7 @@ import { fetchPaniniEditionOffers, fetchPaniniEditionHolders, fetchPaniniEdition
 import ParallelTierSwitcher from "@/components/entity/ParallelTierSwitcher"
 import { MarketplaceStatusBanner } from "@/components/marketplace-status"
 import { isMarketClosed } from "@/lib/market-closed"
-import { fmvBasis } from "@/lib/fmv-basis"
+import { fmvBasis, isAskDerivedFmv } from "@/lib/fmv-basis"
 import { fetchEditionFmvEstimate, estimateBasisText, type EditionFmvEstimate } from "@/lib/fmv/edition-estimate"
 import WatchEditionButton from "@/components/alerts/WatchEditionButton"
 import TrackedOutboundLink from "@/components/TrackedOutboundLink"
@@ -814,6 +814,8 @@ export default async function EditionPage(
   // The FMV sentence's "recent-sale low" is the tiles' Recent Low (#211, 2026-10-25): a floor above 3x FMV is an
   // old ask carried forward, not a low the market clears at, so it is dropped here too (Pinnacle exempt, as on the tiles).
   const sentenceRecentLow = collection === "disney-pinnacle" ? (fmv?.floor_price_usd ?? null) : recentLowUsd(fmv?.floor_price_usd, fmv?.fmv_usd)
+  // 2026-10-28: an ask-derived FMV's floor is the ask it came from — the FMV sentence names it an ask, not a sale.
+  const floorIsTheAsk = isAskDerivedFmv(fmv?.confidence)
   const showLastSaleAge = !isPanini && !askValue && !fmv?.sales_count_30d && daysSinceLastSale != null && daysSinceLastSale > 30
   // ⚠ WHEN DID WE LAST CONFIRM THAT ASK? The cell below rendered a bare number
   // with no age while its NEIGHBOUR — the best-offer cell, twenty lines down —
@@ -1009,7 +1011,10 @@ export default async function EditionPage(
         <p className="rpc-mono" style={{ margin: "12px 2px 2px", fontSize: 13, lineHeight: 1.65, color: "var(--rpc-text-secondary)" }}>
           <strong style={{ color: "var(--rpc-text-primary)", fontWeight: 700 }}>{editionTitle}{detail.set_name ? ` — ${detail.set_name}` : ""}{parallelLabel ? ` · ${parallelLabel}` : ""}</strong>{" "}
           is worth ~{fmtUsd(fmv?.fmv_usd ?? null)} (FMV) on {collectionDisplayName(collection)}
-          {askValue ? <>, with the lowest ask at {fmtUsd(askValue)}</> : sentenceRecentLow != null ? <>, with a {showLastSaleAge ? "sale" : "recent-sale"} low of {fmtUsd(sentenceRecentLow)}</> : null}
+          {/* 2026-10-28: an ask-derived FMV's floor_price_usd IS the ask it came from (the engine writes the ask there), so it
+              is named an ask, never a sale: Toni Kukoc's Illustrated /4 read "a recent-sale low of $750" with no sale ever.
+              Otherwise the floor means "lowest recent sale or ask" (#143) — "low", as the tiles label it, not "sale low". */}
+          {askValue ? <>, with the lowest ask at {fmtUsd(askValue)}</> : sentenceRecentLow != null ? (floorIsTheAsk ? <>, from an ask of {fmtUsd(sentenceRecentLow)}</> : <>, with a {showLastSaleAge ? "" : "recent "}low of {fmtUsd(sentenceRecentLow)}</>) : null}
           {fmv?.sales_count_30d ? <> and {fmtCount(fmv?.sales_count_30d ?? null)} {fmv?.sales_count_30d === 1 ? "sale" : "sales"} in the last 30 days</> : null}
           {showLastSaleAge ? <>; its last sale was {daysSinceLastSale} {daysSinceLastSale === 1 ? "day" : "days"} ago</> : null}
           .{" "}

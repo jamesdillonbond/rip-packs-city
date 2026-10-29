@@ -38,4 +38,13 @@ describe("the edition page's FMV sentence uses the bounded recent low", () => {
     expect(src).toMatch(/low of \{fmtUsd\(sentenceRecentLow\)\}/)
     expect(src).toMatch(/const sentenceRecentLow = [^\n]*recentLowUsd\(fmv\?\.floor_price_usd, fmv\?\.fmv_usd\)/)
   })
+  // 2026-10-28: floor_price_usd means "lowest recent sale or ask" (#143), and on an ask-derived FMV it IS the ask —
+  // Toni Kukoc's Illustrated /4 read "a recent-sale low of $750" with no sale ever. The sentence names an ask an ask
+  // and calls the general case a "low" (the tiles' word), never a "sale low".
+  it("never calls the floor a SALE low, and names an ask-derived FMV's floor an ask", () => {
+    expect(src).not.toMatch(/"sale" : "recent-sale"/)
+    expect(src).not.toMatch(/sale"?\}? low of \{fmtUsd\(sentenceRecentLow\)\}/)
+    expect(src).toMatch(/const floorIsTheAsk = isAskDerivedFmv\(fmv\?\.confidence\)/)
+    expect(src).toMatch(/floorIsTheAsk \? <>, from an ask of \{fmtUsd\(sentenceRecentLow\)\}<\/>/)
+  })
 })
