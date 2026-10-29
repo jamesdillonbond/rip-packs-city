@@ -601,6 +601,24 @@ describe("CollectionOverviewClient — the three-way sales claim", () => {
     await waitFor(() => expect(document.body.textContent).toMatch(/Damian Lillard/))
     expect(document.body.textContent).not.toMatch(/OUTDATED/i)
   })
+
+  // 2026-10-29 sweep: the writers re-stamp UFC snapshots, so the newest write is minutes old
+  // and the box read "FMV Data Age: just now" over prices fixed at the 13 May 2026 close.
+  // ⚠ ASSERTED AS AN ABSENCE of the fresh-age claim, and the close date in its place.
+  it("states a closed market's close date, never a fresh write age", async () => {
+    mount(() => json(200, STATS({ fmv_age_minutes: 0 })), "ufc-strike")
+    await waitFor(() => expect(document.querySelector('[data-testid="closed-market-prices-as-of"]')).not.toBeNull())
+    expect(document.querySelector('[data-testid="closed-market-prices-as-of"]')!.textContent).toBe("13 May 2026")
+    // The Pipeline Status card (the fixture's top sales carry their own "just now" ages).
+    const card = document.querySelector('[data-testid="closed-market-prices-as-of"]')!.closest("section")!
+    expect(card.textContent).not.toMatch(/just now/i)
+    expect(card.textContent).not.toMatch(/FMV Data Age/)
+    expect(card.textContent).not.toMatch(/< 30 min/)
+    cleanup()
+    mount(() => json(200, STATS({ fmv_age_minutes: 0 })), "nba-top-shot")
+    await waitFor(() => expect(document.body.textContent).toMatch(/FMV Data Age/))
+    expect(document.querySelector('[data-testid="closed-market-prices-as-of"]')).toBeNull()
+  })
 })
 
 describe("CollectionOverviewClient — server-seeded first frame (review E2, 2026-10-13)", () => {

@@ -100,3 +100,26 @@ describe("RookieBoardClient series label", () => {
     expect(container.textContent).not.toMatch(/Series 8(?!\d)/)
   })
 })
+
+// 2026-10-29 sweep — Kon Knueppel's five Signature Series /1s are five different moments
+// (241:8449, 241:8054, …), but the board grouped by set name and printed them as one set with
+// "5 printings", each labelled "Standard". A printing is the same set:play under another
+// subedition; different plays are different blocks.
+describe("RookieBoardClient groups printings by moment, not by set name", () => {
+  const r = (external_id: string, parallel_id: number, parallel_name: string, fmv_usd: number) =>
+    normalizeRow({
+      player_name: "Kon Knueppel", rookie_class: "2025", set_name: "Signature Series", tier: "ULTIMATE",
+      parallel_id, parallel_name, external_id, circulation_count: 1, fmv_usd, has_full_economics: true, series_number: 8,
+    })
+
+  it("two plays in one set are two blocks; a parallel of a play joins that play's block", () => {
+    const rows = [r("241:8449", 0, "Standard", 900), r("241:8054", 0, "Standard", 800), r("241:8449::21", 21, "Galactic", 700)]
+    const { container } = render(<RookieBoardClient initialRows={rows} initialFetchedAt="2026-10-23T05:00:00Z" />)
+    const blocks = container.querySelectorAll(".rpc-rb-set")
+    expect(blocks).toHaveLength(2)
+    const subs = [...blocks].map((b) => b.querySelector(".rpc-rb-set-sub")!.textContent)
+    expect(subs.some((t) => /2 printings/.test(t!))).toBe(true)
+    expect(subs.some((t) => /1 printing(?!s)/.test(t!))).toBe(true)
+    expect(container.textContent).not.toMatch(/3 printings/)
+  })
+})

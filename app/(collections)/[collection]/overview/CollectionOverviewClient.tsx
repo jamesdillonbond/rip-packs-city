@@ -7,7 +7,7 @@ import { nameOrDash, fmtPrice, fmtAge, minutesSince, freshnessFromAge, EM_DASH }
 import InsiderSignalsPanel from "@/components/InsiderSignalsPanel"
 import { MarketplaceStatusBanner } from "@/components/marketplace-status"
 import { toolCardDesc } from "@/lib/collection/closed-market-chrome"
-import { closedMarket } from "@/lib/market-closed"
+import { closedMarket, formatClosedOn } from "@/lib/market-closed"
 import PaniniCoverageNote from "@/components/collection/PaniniCoverageNote"
 import { trackOutboundClick } from "@/lib/track-click"
 import type { PaniniCoverage } from "@/lib/panini/coverage"
@@ -324,6 +324,12 @@ export default function CollectionOverviewClient({
   // Disney Pinnacle's FMV recomputes twice a day — a 12-hourly cadence, not a fault.
   const twiceDailyFmv = collection === "disney-pinnacle"
   const freshness = freshnessFromAge(fmvAge, showLoading, frozenMarket, saleDrivenFmv ? "sale-driven" : twiceDailyFmv ? "twice-daily" : "continuous")
+  // 2026-10-29 sweep: /ufc-strike/overview read "FMV Data Age: just now" beside "ARCHIVED".
+  // The writers still re-stamp UFC snapshots (166 rows in 3 days), so the newest write is
+  // minutes old while every price is a closing value from 13 May 2026. On a closed market
+  // the box states the close date, never a write age (lib/market-closed.ts: "the snapshot
+  // timestamp itself lies").
+  const closed = closedMarket(collection)
 
   // ── Failed read vs empty result (deep-audit R1) ──────────────────────────
   // The KPI band above already distinguishes these correctly (D11), but the
@@ -625,8 +631,12 @@ export default function CollectionOverviewClient({
             {/* Panini (2026-10-14): fmv_age_minutes is the NEWEST price written — the walk reprices a
                 few editions every run, so it reads "just now" while the typical edition was checked
                 days ago (the KPI tile beside it). Labelled for what it is, with the typical age under it. */}
-            <div className="rpc-label" style={{ marginBottom: 4 }}>{isPanini ? "Newest Price Written" : "FMV Data Age"}</div>
-            {showLoading ? (
+            <div className="rpc-label" style={{ marginBottom: 4 }}>{closed ? "Prices As Of" : isPanini ? "Newest Price Written" : "FMV Data Age"}</div>
+            {closed ? (
+              <div className="rpc-heading" data-testid="closed-market-prices-as-of" style={{ fontSize: "var(--text-xl)", color: freshness.color }}>
+                {formatClosedOn(closed.closedOn)}
+              </div>
+            ) : showLoading ? (
               <div className="rpc-skeleton" style={{ width: "40%", height: 20 }} />
             ) : (
               <div className="rpc-heading" style={{ fontSize: "var(--text-xl)", color: freshness.color }}>
@@ -640,7 +650,7 @@ export default function CollectionOverviewClient({
             )}
           </div>
 
-          <div style={{ display: "flex", gap: 16, justifyContent: "center", marginTop: 14 }}>
+          {!closed && <div style={{ display: "flex", gap: 16, justifyContent: "center", marginTop: 14 }}>
             {[
               { tone: "#34D399", label: "< 30 min" },
               { tone: "#F59E0B", label: "30\u201360 min" },
@@ -651,7 +661,7 @@ export default function CollectionOverviewClient({
                 <span className="rpc-mono" style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-muted)" }}>{item.label}</span>
               </div>
             ))}
-          </div>
+          </div>}
         </section>
       </div>
 

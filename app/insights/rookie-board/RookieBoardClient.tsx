@@ -98,6 +98,11 @@ function editionHref(r: Row): string {
   return "#"
 }
 
+/** The moment a printing belongs to: its `set:play`, without the `::subedition` suffix. */
+function momentKey(r: Row): string {
+  return r.external_id ? r.external_id.split("::")[0] : `?${r.parallel_id ?? 0}`
+}
+
 function parallelSort(r: Row): number {
   const id = r.parallel_id ?? 0
   return PARALLEL_ORDER[id] ?? 99
@@ -142,7 +147,7 @@ function ParallelRow({ r }: { r: Row }) {
   )
 }
 
-type SetGroup = { setName: string; tier: string | null; series: number | null; rows: Row[]; topFmv: number }
+type SetGroup = { key: string; setName: string; tier: string | null; series: number | null; rows: Row[]; topFmv: number }
 type PlayerGroup = { player: string; sets: SetGroup[]; topFmv: number; editionCount: number }
 
 function PlayerCard({ g }: { g: PlayerGroup }) {
@@ -159,7 +164,7 @@ function PlayerCard({ g }: { g: PlayerGroup }) {
       {g.sets.map((s) => {
         const hero = s.rows[0]
         return (
-          <div className="rpc-rb-set" key={`${g.player}-${s.setName}`}>
+          <div className="rpc-rb-set" key={`${g.player}-${s.key}`}>
             <div className="rpc-rb-set-head">
               <div className="rpc-rb-set-art">
                 <EdImage r={hero} className="rpc-rb-img" />
@@ -293,20 +298,25 @@ export default function RookieBoardClient({ initialRows, initialFetchedAt, initi
     }
     const groups: PlayerGroup[] = []
     for (const [player, prows] of byPlayer) {
-      const bySet = new Map<string, Row[]>()
+      // One block per MOMENT, not per set name (2026-10-29): a printing is the same
+      // set:play under another subedition (`241:8449` vs `241:8449::21`). Keyed on set
+      // name alone, Kon Knueppel's five different Signature Series /1s read as
+      // "5 printings", each labelled "Standard".
+      const bySet = new Map<string, { setName: string; rows: Row[] }>()
       for (const r of prows) {
-        const s = r.set_name || "—"
-        if (!bySet.has(s)) bySet.set(s, [])
-        bySet.get(s)!.push(r)
+        const setName = r.set_name || "—"
+        const key = `${setName}|${momentKey(r)}`
+        if (!bySet.has(key)) bySet.set(key, { setName, rows: [] })
+        bySet.get(key)!.rows.push(r)
       }
       const sets: SetGroup[] = []
-      for (const [setName, srows] of bySet) {
+      for (const [key, { setName, rows: srows }] of bySet) {
         const sorted = [...srows].sort((a, b) => parallelSort(a) - parallelSort(b))
         const topFmv = srows.reduce((m, r) => Math.max(m, Number(r.fmv_usd ?? 0)), 0)
         // Standard FMV anchors the set's ranking; fall back to its top printing.
         const std = srows.find((r) => (r.parallel_id ?? 0) === 0)
         const anchor = Number(std?.fmv_usd ?? topFmv)
-        sets.push({ setName, tier: sorted[0]?.tier ?? null, series: sorted[0]?.series_number ?? null, rows: sorted, topFmv: anchor })
+        sets.push({ key, setName, tier: sorted[0]?.tier ?? null, series: sorted[0]?.series_number ?? null, rows: sorted, topFmv: anchor })
       }
       sets.sort((a, b) => b.topFmv - a.topFmv)
       const topFmv = prows.reduce((m, r) => Math.max(m, Number(r.fmv_usd ?? 0)), 0)
@@ -502,9 +512,12 @@ export default function RookieBoardClient({ initialRows, initialFetchedAt, initi
       {view === "board" ? (
         <section className="rpc-rb-board" aria-label="Rookie editions by parallel">
           <p className="rpc-rb-honesty">
-            <span className="rpc-rb-pdot" aria-hidden /> <strong>Parallel</strong> printings (Hexwave,
-            Jukebox, Galactic, Omega…) show FMV + mint count only. Ask, avg sale, top offer, burn and lock
-            are tracked on <strong>Standard</strong> editions — parallels read “—”, not $0.
+            {/* 2026-10-29: this said parallels "show FMV + mint count only … read —", true until badge
+                data went per-parallel (all 336 rookie parallels had their own by 10-22, header above),
+                while the rows beside it showed a Galactic's own ask, sale, offer and lock. */}
+            <span className="rpc-rb-pdot" aria-hidden /> Every printing, the <strong>Standard</strong> and
+            each <strong>parallel</strong> (Hexwave, Jukebox, Galactic, Omega…), carries its own FMV, ask,
+            avg sale, top offer, burn and lock. A printing with no data for one of them reads “—”, not $0.
           </p>
           {playerGroups.length === 0 ? (
             <div className="rpc-rb-state">
