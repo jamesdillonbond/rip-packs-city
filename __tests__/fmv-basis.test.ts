@@ -15,7 +15,7 @@
 // "improve" this helper is to start emitting the enum.
 
 import { describe, it, expect } from "vitest"
-import { fmvBasis, isAskDerivedFmv } from "@/lib/fmv-basis"
+import { fmvBasis, isAskDerivedFmv, isSalesCappedAlgo } from "@/lib/fmv-basis"
 
 describe("fmvBasis", () => {
   it("returns the ask-derived marker for ASK_ONLY, case- and whitespace-insensitively", () => {
@@ -62,6 +62,15 @@ describe("fmvBasis", () => {
     expect(fmvBasis("ASK_ONLY", false)!.label).toBe("from asks")
     expect(fmvBasis("ASK_ONLY", null)!.label).toBe("from asks")
     expect(fmvBasis("ASK_ONLY")!.label).toBe("from asks")
+  })
+
+  it("isSalesCappedAlgo reads the same suffixes as get_edition_detail's basis_capped", () => {
+    expect(isSalesCappedAlgo("1.8.3_salescap")).toBe(true)
+    expect(isSalesCappedAlgo("cold-tail-1.0_histcap")).toBe(true)
+    expect(isSalesCappedAlgo("1.8.3")).toBe(false)
+    expect(isSalesCappedAlgo("salescap_v2")).toBe(false)
+    expect(isSalesCappedAlgo(null)).toBe(false)
+    expect(isSalesCappedAlgo(undefined)).toBe(false)
   })
 
   it("isAskDerivedFmv mirrors fmvBasis as a boolean", () => {

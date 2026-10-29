@@ -52,7 +52,7 @@ import { summarizeDegraded, boardStatus } from "@/lib/insights/board-status"
 import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
 import { seriesDisplay } from "@/lib/series-label"
 import { isExhibitionTeamSlug } from "@/lib/team-denylist"
-import { fmvBasis } from "@/lib/fmv-basis"
+import { fmvBasis, isSalesCappedAlgo } from "@/lib/fmv-basis"
 import { momentSubject, notableTagLabel, specialSerialLabel } from "@/lib/moment-labels"
 import { isMarketClosed } from "@/lib/market-closed"
 import {
@@ -507,7 +507,10 @@ export default async function MomentPage(
   // range" rather than "no data". Never touches the FMV value or the gate.
   // Ask-derived marker for the hero FMV. Null for every sale-derived price, so
   // the common case renders exactly as before. See lib/fmv-basis.ts.
-  const askBasis = f?.fmv_usd != null ? fmvBasis(f.confidence) : null
+  // #215: a capped ASK_ONLY price is held to the edition's sales, so it says so (and the
+  // "no sales yet" suffix, false for a capped row, is dropped).
+  const askCapped = isSalesCappedAlgo(f?.algo_version)
+  const askBasis = f?.fmv_usd != null ? fmvBasis(f.confidence, askCapped) : null
 
   const band = detail.price_band_30d ?? null
   const showPriceBand = computeShowPriceBand(f, band)
@@ -910,7 +913,7 @@ export default async function MomentPage(
                 cursor: "help",
               }}
             >
-              {askBasis.label} · no sales yet
+              {askCapped ? askBasis.label : `${askBasis.label} · no sales yet`}
             </div>
           ) : null}
 

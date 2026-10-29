@@ -69,6 +69,15 @@ export function fmvBasis(confidence: string | null | undefined, capped?: boolean
   return capped === true ? CAPPED_AT_SALES : ASK_DERIVED
 }
 
+/**
+ * True when an FMV row's `algo_version` marks it CAPPED at the edition's own sales (#208's
+ * `_salescap`, the 10-29 `_histcap`). The SQL twin is `get_edition_detail`'s `basis_capped`
+ * (`algo_version ~ '_(salescap|histcap)$'`); null/unknown reads false (no claim).
+ */
+export function isSalesCappedAlgo(algoVersion: string | null | undefined): boolean {
+  return typeof algoVersion === "string" && /_(salescap|histcap)$/.test(algoVersion)
+}
+
 /** True when this FMV is ASK_ONLY (its floor field is an ask, not a sale) — capped or not. */
 export function isAskDerivedFmv(confidence: string | null | undefined): boolean {
   return fmvBasis(confidence) != null
