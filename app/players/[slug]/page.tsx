@@ -135,7 +135,7 @@ export default async function PlayerHubPage(props: { params: Promise<{ slug: str
               // eslint-disable-next-line @next/next/no-img-element
               <img src={portrait} alt={`${hub.name} portrait`} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
             ) : (
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 11 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", background: "var(--rpc-surface)", color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 11 }}>
                 No portrait
               </div>
             )}

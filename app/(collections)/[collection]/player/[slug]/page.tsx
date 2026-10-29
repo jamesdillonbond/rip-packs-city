@@ -551,7 +551,7 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
               // eslint-disable-next-line @next/next/no-img-element
               <img src={portrait} alt={`${detail.name} ${labels.portrait}`} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
             ) : (
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 11 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", background: "var(--rpc-surface)", color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 11 }}>
                 No {labels.portrait.toLowerCase()}
               </div>
             )}

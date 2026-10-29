@@ -70,7 +70,9 @@ export default function PackThumb({ src, alt }: { src: string | null; alt: strin
           style={{ width: "100%", height: "100%", objectFit: "cover" }}
         />
       ) : (
-        <span style={{ color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 10 }}>Pack</span>
+        // An opaque, theme-aware surface under the label: over the tile's fixed rgba(0,0,0,0.3) the muted token reads
+        // under 4.5:1 in light mode (the 10-28 axe finding on the same pattern in IpfsThumb / EditionsGridPaginated).
+        <span style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--rpc-surface)", color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 10 }}>Pack</span>
       )}
     </div>
   )

@@ -85,4 +85,10 @@ describe("PlayersGridPaginated image weight", () => {
       expect(i.getAttribute("height")).toBe("200")
     }
   })
+
+  // 10-28: the "No image" label sat on the tile's fixed rgba(0,0,0,0.35) — under 4.5:1 in light mode.
+  it("the No image placeholder sits on an opaque theme surface", () => {
+    const { getByText } = mount([tile({ headshot_url: null, portrait_thumbnail: null })])
+    expect((getByText("No image") as HTMLElement).style.background).toBe("var(--rpc-surface)")
+  })
 })

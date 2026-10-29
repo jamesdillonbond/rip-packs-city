@@ -1636,7 +1636,7 @@ function PackHeroStrip({ collection, editions }: { collection: string; editions:
                     style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
                   />
                 ) : (
-                  <span style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "rgba(255,255,255,0.5)" }}>No image</span>
+                  <span style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--rpc-surface)", fontFamily: "var(--font-mono)", fontSize: 9, color: "var(--rpc-text-muted)" }}>No image</span>
                 )}
               </div>
               <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 4, flexWrap: "wrap" }}>

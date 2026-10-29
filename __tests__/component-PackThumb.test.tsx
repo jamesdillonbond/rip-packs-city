@@ -30,4 +30,11 @@ describe("PackThumb", () => {
     expect(container.querySelector("img")).toBeNull()
     expect(container.textContent).toContain("Pack")
   })
+
+  // 10-28: over the tile's fixed rgba(0,0,0,0.3) the muted label read under 4.5:1 in light mode (the axe finding on
+  // the same pattern in IpfsThumb / EditionsGridPaginated). The placeholder carries its own opaque theme surface.
+  it("the placeholder label sits on an opaque theme surface", () => {
+    const { getByText } = render(<PackThumb src={null} alt="Base Pack" />)
+    expect((getByText("Pack") as HTMLElement).style.background).toBe("var(--rpc-surface)")
+  })
 })

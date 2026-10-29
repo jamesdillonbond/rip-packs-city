@@ -176,7 +176,7 @@ export default function PlayersGridPaginated({ collectionUrlSlug, fetchUrl, init
                   style={{ width: "100%", height: "100%", objectFit: "cover" }}
                 />
               ) : (
-                <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 10 }}>No image</div>
+                <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--rpc-surface)", color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 10 }}>No image</div>
               )}
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>

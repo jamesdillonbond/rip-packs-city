@@ -879,7 +879,7 @@ export default async function EditionPage(
               placeholder={
                 // Branded placeholder for artless editions (~54% TS thumbnail
                 // coverage) so the empty media box reads as intentional, not broken.
-                <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, background: "linear-gradient(135deg, rgba(224,58,47,0.08), rgba(0,0,0,0.45))" }}>
+                <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, background: "linear-gradient(135deg, rgba(224,58,47,0.08), transparent), var(--rpc-surface)" }}>
                   <div style={{ fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 28, letterSpacing: "0.08em", color: "var(--rpc-red-text)", opacity: 0.55 }}>RPC</div>
                   <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--rpc-text-muted)", textTransform: "uppercase", letterSpacing: "0.1em" }}>No preview</div>
                 </div>

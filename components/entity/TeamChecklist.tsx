@@ -863,7 +863,7 @@ function ChecklistCard({ collectionUrlSlug, e, hasWallet, eager }: { collectionU
             style={{ width: "100%", height: "100%", objectFit: "cover", display: "block", filter: dim ? "grayscale(0.35)" : undefined }}
           />
         ) : (
-          <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 10 }}>No image</div>
+          <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--rpc-surface)", color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 10 }}>No image</div>
         )}
         {/* ownership badge — tri-state (green=owned+locked, white=owned, gray=missing) */}
         {hasWallet && (

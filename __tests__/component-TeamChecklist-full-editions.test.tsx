@@ -57,6 +57,12 @@ describe("TeamChecklist full-editions toggle", () => {
     vi.stubGlobal("fetch", f)
     const { getByText, findByText, queryByText } = render(<TeamChecklist collectionUrlSlug="nba-top-shot" teamSlug="detroit-pistons" />)
     await waitFor(() => expect(getByText("380 editions")).toBeTruthy())
+    // 10-28: a tile with no thumbnail shows "No image" on an opaque theme surface, never on the tile's fixed
+    // rgba(0,0,0,0.35) (under 4.5:1 in light mode).
+    for (const el of document.querySelectorAll("div")) {
+      if (el.textContent === "No image" && el.children.length === 0) expect((el as HTMLElement).style.background).toBe("var(--rpc-surface)")
+    }
+    expect([...document.querySelectorAll("div")].some((el) => el.textContent === "No image" && el.children.length === 0)).toBe(true)
     fireEvent.click(await findByText("Full editions"))
     await waitFor(() => expect(getByText("213 editions")).toBeTruthy())
     expect(getByText("$4,100")).toBeTruthy()
