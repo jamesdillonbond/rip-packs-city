@@ -6,7 +6,7 @@
 -- the read-only guarantee. The live-mode WRITE targets base-schema tables
 -- (fmv_calibration_caps) not reproduced here, so it is intentionally out of scope.
 -- DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20261029153057_audit_20261029_ultimate_and_thin_sales_guard_publish_the_last_sale_age.sql;
+-- (supabase/migrations/20261029154358_audit_20261029_fmv_basis_age_never_younger_than_last_sale.sql;
 -- before it, 20260831151141). ⚠ Re-pointed 2026-10-29: the live-mode INSERT now states the last market sale's age
 -- and the basis age (out of this dry-run test's scope, like the rest of the write); the cursor also reads basis_days_since_sale.
 -- ⚠ Re-pointed 2026-08-31: that migration replaced the driving cursor (a DISTINCT ON
@@ -182,7 +182,13 @@ BEGIN
         COALESCE((SELECT round(EXTRACT(EPOCH FROM (now() - max(m.sold_at))) / 86400)::int
                     FROM sales_market m WHERE m.edition_id = rec.edition_id AND m.price_usd > 0),
                  rec.days_since_sale + floor(EXTRACT(EPOCH FROM (now() - rec.computed_at)) / 86400)::int),
-        COALESCE(rec.basis_days_since_sale, rec.days_since_sale) + floor(EXTRACT(EPOCH FROM (now() - rec.computed_at)) / 86400)::int,
+        -- never younger than the last sale (writers floor vs round their day counts; 10-29: 86 rows 1 day under);
+        -- NULL stays NULL (a price with no sale-based age has no basis age).
+        CASE WHEN COALESCE(rec.basis_days_since_sale, rec.days_since_sale) IS NULL THEN NULL
+             ELSE GREATEST(COALESCE(rec.basis_days_since_sale, rec.days_since_sale) + floor(EXTRACT(EPOCH FROM (now() - rec.computed_at)) / 86400)::int,
+                 COALESCE((SELECT round(EXTRACT(EPOCH FROM (now() - max(m.sold_at))) / 86400)::int
+                    FROM sales_market m WHERE m.edition_id = rec.edition_id AND m.price_usd > 0),
+                 rec.days_since_sale + floor(EXTRACT(EPOCH FROM (now() - rec.computed_at)) / 86400)::int)) END,
         rec.velocity_factor, rec.utility_factor, rec.loan_factor,
         'thin-sales-guard-v3', NOW()
       );

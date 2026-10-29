@@ -1062,7 +1062,7 @@ const PINS = [
     // prod (md5 fc5dfa269a88d16e8afc6edc831c75a6). The driving cursor is the
     // only body change, and total_examined still exercises it.
     // Re-pinned 2026-10-29: the live write states the last market sale's age and the basis age.
-    migration: "supabase/migrations/20261029153057_audit_20261029_ultimate_and_thin_sales_guard_publish_the_last_sale_age.sql",
+    migration: "supabase/migrations/20261029154358_audit_20261029_fmv_basis_age_never_younger_than_last_sale.sql",
   },
   {
     fn: "rpc_guard_block_destructive",
@@ -1304,7 +1304,7 @@ const PINS = [
     // Re-pinned 2026-10-03: run duration no longer wraps at 60 s (#147).
     // Re-pinned 2026-10-25: retires a priced row it can no longer support (NO_DATA).
     // Re-pinned 2026-10-29: days_since_sale is the last market sale; the model's age is basis_days_since_sale.
-    migration: "supabase/migrations/20261029153057_audit_20261029_ultimate_and_thin_sales_guard_publish_the_last_sale_age.sql",
+    migration: "supabase/migrations/20261029154358_audit_20261029_fmv_basis_age_never_younger_than_last_sale.sql",
   },
   {
     // 2026-10-19: the daily Atlas autograph sweep — writes editions.autographed_at on change

@@ -111,7 +111,7 @@ BEGIN
     SELECT
       s.ed_id, s.coll_id, s.coll_slug,
       s.fmv, s.low_ask, s.low_ask,
-      s.conf::fmv_confidence, COALESCE(s.last_days, s.days), s.days,
+      s.conf::fmv_confidence, COALESCE(s.last_days, s.days), CASE WHEN s.days IS NULL THEN NULL ELSE GREATEST(s.days, s.last_days) END,
       'ultimate-v1', v_ran
     FROM src s
     WHERE s.fmv IS NOT NULL
@@ -132,7 +132,7 @@ BEGIN
     SELECT
       s.ed_id, s.coll_id, s.coll_slug,
       NULL, NULL, NULL,
-      'NO_DATA'::fmv_confidence, COALESCE(s.last_days, s.days), s.days,
+      'NO_DATA'::fmv_confidence, COALESCE(s.last_days, s.days), CASE WHEN s.days IS NULL THEN NULL ELSE GREATEST(s.days, s.last_days) END,
       'ultimate-v1', v_ran
     FROM src s
     WHERE s.fmv IS NULL
@@ -209,7 +209,9 @@ INSERT INTO public.fmv_snapshots (edition_id, collection_id, collection, fmv_usd
 
 -- edU1's newest market sale is a special serial 1 day ago; the model (non-special) says 2 days. edU3 has no sales.
 INSERT INTO public.sales_market (edition_id, sold_at, price_usd) VALUES
-  (:edU1::uuid, now() - interval '1 day', 5000), (:edU1::uuid, now() - interval '9 days', 900);
+  (:edU1::uuid, now() - interval '1 day', 5000), (:edU1::uuid, now() - interval '9 days', 900),
+  -- edU3: one sale 9.6 days ago. The model (floor) says 9; the last-sale age rounds to 10, so the basis must clamp to 10.
+  (:edU3::uuid, now() - interval '9 days 14 hours 24 minutes', 500);
 
 SELECT * FROM public.recalc_ultimate_fmv() \gset run_
 
@@ -260,7 +262,7 @@ SELECT _assert_eq(
   '1|2', 'edU1: last sale 1 day ago (the special serial), basis 2 days (the model''s non-special sale)');
 SELECT _assert_eq(
   (SELECT days_since_sale::text || '|' || basis_days_since_sale::text FROM public.fmv_snapshots WHERE edition_id = :edU3::uuid AND algo_version='ultimate-v1' AND computed_at >= date_trunc('day', now())),
-  '9|9', 'edU3: no market sale on record -> the model''s age stands for both');
+  '10|10', 'edU3: the basis is never younger than the last sale (model 9 floor-counted vs a 9.6-day sale -> both 10)');
 
 SELECT '✓ recalc_ultimate_fmv: all assertions passed' AS result;
 
