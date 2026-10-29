@@ -1,4 +1,4 @@
-# Inbox index — 609 live filings
+# Inbox index — 610 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -32,9 +32,11 @@ failure it documents.
 
 ---
 
-## 2026-10-29 — 1 filing
+## 2026-10-29 — 2 filings
 
 - [🟢 Daytime monitor (10-29 ~00:16Z, infra GREEN, trust 39/39, 16/16 dashboard objects OK) — Dapper outage RECOVERED + maintenance notice correctly auto-lifted (marketplaces → healthy), but 2 TS listing lanes not yet resumed: topshot-listing-cache 0-success ~20h (page-0 HTTP 500), topshot-active-listings-ingest silent ~8h (<15h threshold) — confirm recovery, WATCH/LOW](2026-10-29T0015Z-daytime-monitor-topshot-listing-lanes-dark-after-dapper-notice-lifted.md)
+
+- [🟢 Daytime monitor (10-29 ~03:14Z, infra GREEN, trust 0 breaches, 16/16 dashboard objects OK) — follow-up to 00:15Z: topshot-listing-cache did NOT self-heal (still 0-success ~23h, page-0 HTTP 500, atlas healthy since 00:10Z = distinct break); TS asks actually FRESH via ts_listings; real stale ask-input surface is cached_listings_v2 AllDay/Golazos/Pinnacle ~35h (AllDay+Pinnacle known Dapper-maintenance; Golazos verify), invisible to the fmv_stale gate — WATCH/LOW](2026-10-29T0314Z-daytime-monitor-topshot-listing-cache-not-self-healing-and-ask-input-scope.md)
 
 ## 2026-10-28 — 2 filings
 
