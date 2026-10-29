@@ -22,6 +22,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
+import { setWithParallel } from "@/lib/edition-parallel"
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
 import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
 import type { DegradedSummary } from "@/lib/insights/board-status"
@@ -38,6 +39,8 @@ export type Row = {
   external_id: string | null
   player_name: string | null
   set_name: string | null
+  /** A Top Shot parallel's name; null for a standard print (2026-10-29). Absent on rows cached before it. */
+  subedition_name?: string | null
   tier: string | null
   circulation: number | null
   locked: number | null
@@ -737,7 +740,7 @@ export default function SqueezeBoardClient({
                           drop the duplicate set line when it'd just repeat it. */}
                       <div className="rpc-sq-edition-name">{r.player_name || r.set_name || "—"}</div>
                       {r.player_name && r.set_name ? (
-                        <div className="rpc-sq-edition-set">{r.set_name}</div>
+                        <div className="rpc-sq-edition-set">{setWithParallel(r.set_name, r.subedition_name)}</div>
                       ) : null}
                     </Link>
                   </td>

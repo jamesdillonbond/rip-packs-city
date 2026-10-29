@@ -30,6 +30,8 @@ export type TopSaleRow = {
   collection_id: string | null
   player_name: string | null
   set_name: string | null
+  /** A Top Shot parallel's name; null for a standard print (2026-10-29). Absent on rows cached before it. */
+  subedition_name?: string | null
   team_name: string | null
   tier: string | null
   circulation_count: number | null
@@ -90,7 +92,7 @@ const OWN_VIEW: Record<string, string> = {
 
 // moment_id intentionally omitted — it is NULL in the view (see header note).
 const SELECT_COLS =
-  "sale_id, edition_id, external_id, collection, collection_id, player_name, set_name, team_name, tier, circulation_count, thumbnail_url, nft_id, serial_number, price_usd, sold_at, buyer_address, seller_address, marketplace"
+  "sale_id, edition_id, external_id, collection, collection_id, player_name, set_name, team_name, tier, circulation_count, thumbnail_url, nft_id, serial_number, price_usd, sold_at, buyer_address, seller_address, marketplace, subedition_name"
 
 export function parseWindow(raw: string | null | undefined): TopSalesWindow {
   return raw === "30d" ? "30d" : "7d"

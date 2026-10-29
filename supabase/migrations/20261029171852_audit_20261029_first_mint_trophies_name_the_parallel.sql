@@ -1,4 +1,4 @@
--- audit_20261029_first_mint_trophies_name_the_parallel — 2026-10-29 ~10:45 AM PT (Claude Code cloud).
+-- audit_20261029_first_mint_trophies_name_the_parallel — 2026-10-29 10:18 AM PT applied (Claude Code cloud).
 --
 -- /insights/first-mint listed Top Shot parallels with only their set name: "Peyton Watson · Base
 -- Set" appeared twice on Aug 20 ($30 and $81.11, 94x and 198x). These are two editions:

@@ -25,6 +25,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
+import { setWithParallel } from "@/lib/edition-parallel"
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
 import type {
   UnderpricedRow as Row,
@@ -163,7 +164,7 @@ function HeroTile({ r }: { r: Row }) {
       <div className="rpc-us-hero-body">
         <div className="rpc-us-hero-disc">{fmtDiscount(r)} off</div>
         <div className="rpc-us-hero-name">{title}</div>
-        {r.set_name ? <div className="rpc-us-hero-set">{r.set_name}</div> : null}
+        {r.set_name ? <div className="rpc-us-hero-set">{setWithParallel(r.set_name, r.subedition_name)}</div> : null}
         <div className="rpc-us-hero-prices">
           <span className="rpc-us-prices-ask">{fmtMoney(r.ask_usd)}</span>
           <span className="rpc-us-arrow">vs</span>
@@ -189,7 +190,7 @@ function BoardRow({ r, rank }: { r: Row; rank: number }) {
       <Link href={href} className="rpc-us-row-main">
         <div className="rpc-us-row-name">{title}</div>
         <div className="rpc-us-row-sub">
-          {r.set_name ? <span>{r.set_name}</span> : null}
+          {r.set_name ? <span>{setWithParallel(r.set_name, r.subedition_name)}</span> : null}
           <span className="rpc-us-dot">·</span>
           <span>{serialLabel(r)}</span>
           <span className="rpc-us-dot">·</span>

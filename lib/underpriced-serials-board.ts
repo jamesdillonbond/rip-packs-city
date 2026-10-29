@@ -31,6 +31,8 @@ export type UnderpricedRow = {
   edition_key: string | null
   player_name: string | null
   set_name: string | null
+  /** A Top Shot parallel's name; null for a standard print (2026-10-29). */
+  subedition_name?: string | null
   tier: string | null
   circulation_count: number | null
   thumbnail_url: string | null
@@ -58,6 +60,7 @@ const COLS = [
   "edition_key",
   "player_name",
   "set_name",
+  "subedition_name",
   "tier",
   "circulation_count",
   "thumbnail_url",
@@ -114,6 +117,7 @@ function normalizeRow(raw: Record<string, unknown>): UnderpricedRow {
     edition_key: (raw.edition_key as string) ?? null,
     player_name: (raw.player_name as string) ?? null,
     set_name: (raw.set_name as string) ?? null,
+    subedition_name: (raw.subedition_name as string) ?? null,
     tier: (raw.tier as string) ?? null,
     circulation_count: num(raw.circulation_count),
     thumbnail_url: (raw.thumbnail_url as string) ?? null,

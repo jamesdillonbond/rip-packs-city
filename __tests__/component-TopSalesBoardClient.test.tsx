@@ -97,6 +97,15 @@ afterEach(() => {
 })
 
 describe("TopSalesBoardClient", () => {
+  it("names a Top Shot parallel on its set line, and leaves a standard print as the set (10-29)", () => {
+    const parallel: Row = { ...fullRow, sale_id: "p1", external_id: "90:4049::4", subedition_name: "Rippled" }
+    const { container } = render(<TopSalesBoardClient initialRows={[parallel, { ...fullRow, sale_id: "p2" }]} initialFetchedAt="2026-10-29T17:00:00Z" />)
+    const text = container.textContent ?? ""
+    expect(text).toContain("Base Set · Rippled")
+    expect(text.split("Base Set · Rippled").length - 1).toBeGreaterThanOrEqual(1)
+    expect(text).not.toContain("Base Set · null")
+  })
+
   it("renders the ranked list from initialRows (populated + null-heavy)", () => {
     const { container, getAllByText, getByText } = render(
       <TopSalesBoardClient initialRows={[fullRow, nullRow]} initialFetchedAt="2026-07-31T00:00:00Z" />,

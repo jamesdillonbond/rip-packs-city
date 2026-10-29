@@ -25,3 +25,16 @@ export function parallelLabelFromBadges(badges: readonly (string | null | undefi
   }
   return null
 }
+
+/**
+ * A board row's set line with its parallel named: "Base Set · Rippled" (2026-10-29). Top Shot
+ * parallels are their own editions with their own #1, serials and prices, and the boards listed
+ * them with the set name alone, so a Rippled /4000 read as the standard /4000 (first-mint: 254 of
+ * 519 rows; squeeze: 4,782 of 14,502). Null set + null parallel is null; a lone parallel stands alone.
+ */
+export function setWithParallel(setName: string | null | undefined, parallel: string | null | undefined): string | null {
+  const s = setName?.trim() || null
+  const p = parallel?.trim() || null
+  if (s && p) return `${s} · ${p}`
+  return s ?? p
+}

@@ -11,6 +11,7 @@
 // launch plan ("OG cards rendering" is a Week 1 success metric).
 
 import { ImageResponse } from "next/og"
+import { setWithParallel } from "@/lib/edition-parallel"
 import { NextRequest } from "next/server"
 import { boardEmptyCopy } from "@/lib/og/board-empty-copy"
 import { brandFonts, brandFamilies, ogCacheHeaders } from "@/lib/og/brand-fonts"
@@ -26,6 +27,7 @@ export const dynamic = "force-dynamic"
 type Row = {
   player_name: string | null
   set_name: string | null
+  subedition_name?: string | null
   tier: string | null
   circulation: number | null
   effectively_buyable: number | null
@@ -199,7 +201,7 @@ export async function GET(req: NextRequest) {
                     >
                       <span style={{ color: tierColor(tier), textTransform: "uppercase" }}>{tier}</span>
                       <span>·</span>
-                      <span>{r.set_name ?? "—"}</span>
+                      <span>{setWithParallel(r.set_name, r.subedition_name) ?? "—"}</span>
                     </div>
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>

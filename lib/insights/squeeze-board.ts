@@ -38,7 +38,7 @@ type Db = any
 
 /** Columns both consumers select. Duplicating this list was the drift risk. */
 export const SQUEEZE_COLS =
-  "edition_id, external_id, player_name, set_name, tier, circulation, locked, burned, lock_pct, burn_pct, squeeze_pct, effectively_buyable, low_ask, low_ask_disconnected, fmv_usd, confidence, game_date, thumbnail_url, team_name, top5_share_pct, holders"
+  "edition_id, external_id, player_name, set_name, tier, circulation, locked, burned, lock_pct, burn_pct, squeeze_pct, effectively_buyable, low_ask, low_ask_disconnected, fmv_usd, confidence, game_date, thumbnail_url, team_name, top5_share_pct, holders, subedition_name"
 
 /** Top Shot's collection row — the board's default collection. */
 export const SQUEEZE_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"

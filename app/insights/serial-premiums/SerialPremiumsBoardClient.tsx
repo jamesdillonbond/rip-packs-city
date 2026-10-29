@@ -25,6 +25,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
+import { setWithParallel } from "@/lib/edition-parallel"
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
 import type { SerialBoardRow as Row, HeadlineMode, SerialPremiumCollection } from "@/lib/serial-premiums-board"
 import { sectionEmptyCopy } from "@/lib/entity/section-empty-copy"
@@ -216,7 +217,7 @@ function HeroTile({ r, collection }: { r: Row; collection: SerialPremiumCollecti
       <div className="rpc-sp-hero-body">
         <div className="rpc-sp-hero-mult">{fmtMultiple(r.premium_multiple)}</div>
         <div className="rpc-sp-hero-name">{title}</div>
-        {r.set_name ? <div className="rpc-sp-hero-set">{r.set_name}</div> : null}
+        {r.set_name ? <div className="rpc-sp-hero-set">{setWithParallel(r.set_name, r.subedition_name)}</div> : null}
         <div className="rpc-sp-hero-prices">
           <span className="rpc-sp-prices-typical">{fmtMoney(r.edition_median_usd)}</span>
           <span className="rpc-sp-arrow">→</span>
@@ -243,7 +244,7 @@ function PremiumRow({ r, rank, collection }: { r: Row; rank: number; collection:
       <div className="rpc-sp-row-main">
         <div className="rpc-sp-row-name">{title}</div>
         <div className="rpc-sp-row-sub">
-          {r.set_name ? <span>{r.set_name}</span> : null}
+          {r.set_name ? <span>{setWithParallel(r.set_name, r.subedition_name)}</span> : null}
           <span className="rpc-sp-dot">·</span>
           <span>{serialLabel(r)}</span>
           {normalizeTier(r.tier) ? (

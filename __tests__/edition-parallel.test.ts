@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { parallelLabelFromBadges } from "@/lib/edition-parallel"
+import { parallelLabelFromBadges, setWithParallel } from "@/lib/edition-parallel"
 import { editionPageMetadata } from "@/lib/seo"
 
 // 2026-09-25 — a Candy MLB Rainbow parallel is its own edition (own mint, own
@@ -45,5 +45,22 @@ describe("editionPageMetadata — a parallel printing gets its own title", () =>
       return typeof m.title === "string" ? m.title : (m.title as { absolute?: string } | null)?.absolute ?? ""
     }
     expect(t("Rainbow (Blue)")).not.toBe(t("Rainbow (Green)"))
+  })
+})
+
+// 2026-10-29 — the insights boards listed a Top Shot parallel by its set alone, so a Rippled /4000
+// read as the standard /4000 (first-mint 254 of 519 rows, squeeze 4,782 of 14,502).
+describe("setWithParallel", () => {
+  it("names the parallel after the set", () => {
+    expect(setWithParallel("Base Set", "Rippled")).toBe("Base Set · Rippled")
+  })
+  it("a standard print is the set alone", () => {
+    expect(setWithParallel("Base Set", null)).toBe("Base Set")
+    expect(setWithParallel("Base Set", "  ")).toBe("Base Set")
+  })
+  it("a lone parallel stands alone; nothing is null", () => {
+    expect(setWithParallel(null, "Hexwave")).toBe("Hexwave")
+    expect(setWithParallel(null, undefined)).toBeNull()
+    expect(setWithParallel("", "")).toBeNull()
   })
 })

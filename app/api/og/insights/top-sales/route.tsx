@@ -6,6 +6,7 @@
 // tagline. Falls back to a generic card if the API is empty.
 
 import { ImageResponse } from "next/og"
+import { setWithParallel } from "@/lib/edition-parallel"
 import { NextRequest } from "next/server"
 import { boardEmptyCopy } from "@/lib/og/board-empty-copy"
 import { brandFonts, brandFamilies, ogCacheHeaders } from "@/lib/og/brand-fonts"
@@ -19,6 +20,7 @@ export const dynamic = "force-dynamic"
 type Row = {
   player_name: string | null
   set_name: string | null
+  subedition_name?: string | null
   tier: string | null
   price_usd: number | null
   buyer_name: string | null
@@ -153,7 +155,7 @@ export async function GET(req: NextRequest) {
                       {(r.tier ?? "").replace(/^MOMENT_TIER_/, "") || "—"}
                     </span>
                     <span>·</span>
-                    <span>{r.buyer_name ? `buyer ${r.buyer_name}` : (r.set_name ?? "")}</span>
+                    <span>{r.buyer_name ? `buyer ${r.buyer_name}` : (setWithParallel(r.set_name, r.subedition_name) ?? "")}</span>
                   </div>
                 </div>
                 <div style={{ display: "flex", fontSize: 32, fontWeight: 800, color: "#E03A2F" }}>

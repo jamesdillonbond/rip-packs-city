@@ -48,6 +48,8 @@ export type SerialBoardRow = {
   external_id: string | null
   player_name: string | null
   set_name: string | null
+  /** A Top Shot parallel's name; null for a standard print (2026-10-29). */
+  subedition_name?: string | null
   tier: string | null
   circulation_count: number | null
   thumbnail_url: string | null
@@ -108,6 +110,7 @@ const SHARED_COLS = [
   "premium_multiple",
   "edition_sales_180d",
   "is_conflated",
+  "subedition_name",
 ]
 
 export function selectCols(mode: HeadlineMode): string {
@@ -130,6 +133,7 @@ export function normalizeRow(mode: HeadlineMode, raw: Record<string, unknown>): 
     external_id: (raw.external_id as string) ?? null,
     player_name: (raw.player_name as string) ?? null,
     set_name: (raw.set_name as string) ?? null,
+    subedition_name: (raw.subedition_name as string) ?? null,
     tier: (raw.tier as string) ?? null,
     circulation_count: num(raw.circulation_count),
     thumbnail_url: (raw.thumbnail_url as string) ?? null,

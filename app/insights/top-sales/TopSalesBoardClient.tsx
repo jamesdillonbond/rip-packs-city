@@ -26,6 +26,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { sectionEmptyCopy } from "@/lib/entity/section-empty-copy"
 import Link from "next/link"
+import { setWithParallel } from "@/lib/edition-parallel"
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
 import { proxyIpfsImageUrl } from "@/lib/ipfs-media"
 import { avatarDisplayUrl } from "@/lib/media/avatar-proxy"
@@ -43,6 +44,8 @@ export type Row = {
   collection_id: string | null
   player_name: string | null
   set_name: string | null
+  /** A Top Shot parallel's name; null for a standard print (2026-10-29). */
+  subedition_name?: string | null
   team_name: string | null
   tier: string | null
   circulation_count: number | null
@@ -245,7 +248,7 @@ function HeroTile({ r, nowMs }: { r: Row; nowMs: number | null }) {
       <div className="rpc-ts-hero-body">
         <div className="rpc-ts-hero-price">{fmtPrice(r.price_usd)}</div>
         <div className="rpc-ts-hero-name">{title}</div>
-        {r.set_name ? <div className="rpc-ts-hero-set">{r.set_name}</div> : null}
+        {r.set_name ? <div className="rpc-ts-hero-set">{setWithParallel(r.set_name, r.subedition_name)}</div> : null}
         <div className="rpc-ts-hero-meta">
           <span style={{ color: accentText(tierColor(r.tier)) }}>{normalizeTier(r.tier) ?? "—"}</span>
           <span className="rpc-ts-dot">·</span>
@@ -309,7 +312,7 @@ function SaleRow({ r, rank, nowMs }: { r: Row; rank: number; nowMs: number | nul
               {r.set_name ? <span className="rpc-ts-dot">·</span> : null}
             </>
           ) : null}
-          {r.set_name ? <span>{r.set_name}</span> : null}
+          {r.set_name ? <span>{setWithParallel(r.set_name, r.subedition_name)}</span> : null}
           {sl ? (
             <>
               <span className="rpc-ts-dot">·</span>
