@@ -26,9 +26,11 @@
 // identically while collapsing repeat-crawl cost. `dynamicParams` stays on so
 // an unknown username still renders on demand.
 
-import { notFound } from "next/navigation"
+import { notFound, permanentRedirect } from "next/navigation"
 import ProfileClient from "./ProfileClient"
 import { getPublicProfile } from "@/lib/profile/public-profile"
+import { normalizeFlowAddressStrict } from "@/lib/address"
+import { marketWalletHref } from "@/lib/analytics/wallet-href"
 
 export const revalidate = 300
 export const dynamicParams = true
@@ -46,7 +48,20 @@ export default async function PublicProfilePage(props: {
   // unbounded, indexable URL space (the layout's `noindex` was the only thing
   // standing between that and the crawl). The trophy-case sibling page has
   // done this since it shipped; a 500/503 still seeds `initialFailed` below.
-  if (!result.ok && result.status === 404) notFound()
+  if (!result.ok && result.status === 404) {
+    // 2026-10-28: a Flow ADDRESS under /profile/ is a fossil of two since-fixed
+    // link builders (WalletLink before 09-06, the Special Serial Owners board
+    // before 10-20 — guard a-wallet-address-is-not-a-profile-handle). Google
+    // keeps re-crawling them: 46 /profile/0x… 404s in Search Console on 10-28,
+    // up from 37 on 10-20. A wallet HAS a public page — /share/<wallet>, the
+    // holdings card market contexts link — so the address 308s there instead of
+    // dead-ending. Only after the username lookup said 404, so a real handle that
+    // happens to look like an address still resolves to its profile; anything
+    // that is not a 0x + 16-hex Flow address stays an honest 404.
+    const addr = normalizeFlowAddressStrict(decodeURIComponent(username ?? ""))
+    if (addr) permanentRedirect(marketWalletHref(addr))
+    notFound()
+  }
   const data = result.ok ? result.data : null
 
   // 🚨 `initialFailed` IS THE PROVENANCE OF THE SEED, AND WITHOUT IT THE SEED

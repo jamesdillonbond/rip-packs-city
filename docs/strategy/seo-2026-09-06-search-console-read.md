@@ -134,3 +134,21 @@ All shipped to `main`, each with a ledger entry and revert path, each verified o
 - The `/profile/0x…` 404 referrer (URL Inspection).
 - Product snippets validation (offer-less Product → CreativeWork, started 10-20).
 - If CrUX data appears in Core Web Vitals: edition-page LCP is the number to watch.
+
+## 2026-10-28 read (Cowork via Trevor's Chrome, ~8:30 PM PT) — index data "Last update 10/22/26"
+
+The owed two-week re-read. Each figure is a dated sample.
+
+- **Index:** **49.4K indexed** (43.6K on 10-20, 31.8K on 10-03) · 47.6K not indexed (28.8K).
+- **Discovered – currently not indexed: 19,436** (3,032 on 10-21). The 1,000-row example sample is **847 Panini edition pages** + 38 Panini player + 20 Panini set pages — Google has found the ~40K-edition Panini catalog (5K → 40K between 09-28 and 10-19, all in sitemap shards 5–8) and not crawled it yet. Expected after a catalog expansion, not a defect, and not a prune signal (Panini editions are still the top click surface, below).
+- **Crawled – currently not indexed: 15,961** (13,785) — the same Panini sampling seen 10-20.
+- **Blocked by robots 4,333 · 404 394 · redirect 159 — validations FAILED and stay failed by design** (do not re-click; see 10-20). Alternate-canonical 6,397 · noindex 864 · dup-no-canonical 61 (validation Started) · Google-chose-canonical 17 · 5xx 18 (Started).
+- **404 composition (all 394):** 288 UUID-form `/nba-top-shot/edition/<set>:<play>` (latest crawl Oct 1; the 4,447-pair 308 map covers the unambiguous ones) · 42 stale `/_next/static` hashes · **46 `/profile/0x…`** (37 on 10-20; crawled as late as Oct 23) · 12 `/nfl-all-day/pack` (Jul) · small remainder. No live page builds `/profile/<address>` (guard `a-wallet-address-is-not-a-profile-handle`), so they are the 09-06 / 10-20 link-builder fossils being re-crawled. **FIXED this pass:** an address-shaped `/profile/0x<16 hex>` that is not a username now 308s to `/share/<wallet>` (the wallet's public holdings card) instead of 404ing — `app/profile/[username]/page.tsx`, tests in `profile-page-unknown-handle-is-a-404-not-a-failed-load.test.tsx` (planted defect proven red). Watch: the `/profile/0x…` 404 count should fall as Google re-crawls them.
+- **Sitemaps:** index Success, read Oct 27, **83,955 discovered**; all 9 children Success (read Oct 21–28). Live child counts the same evening summed **84,358** (0.5 % over Google's — normal growth since its reads). The 10-20 note's "104,777" does not reconcile with today's shards; it is not a 21K loss.
+- **Performance 28 d:** **60 clicks / 2.15K impressions / CTR 2.8 % / position 12.5** (10-20: 41 / 1.75K / 2.3 % / 12.4). Top pages by clicks: home (8) and **Panini edition pages (13 clicks across the 6 top-clicked)**. "premium chance hit" / "premiumchance": **no impressions** in 114 queries (still).
+- **Enhancements:** **Product snippets 0 invalid / 22 valid** (10-20: 5 invalid → the offer-less Product → CreativeWork fix is confirmed) · **Breadcrumbs 0 invalid / 124 valid**, "no issues in the last 90 days". The valid counts are Google's sample slice, not a markup defect (10-21).
+- **Videos (new report): 36,778 "Video isn't on a watch page" · 4 indexed.** By design — an edition page shows the moment's clip but is about the collectible, not a video watch page; the PAGE is indexed, only the video-results listing is skipped. No action.
+- **Crawl stats (90 d):** 143K requests, avg response **1.05 s** (1.17 s on 10-21). File types Other **44 %** (45 %) · HTML **34 %** (32 %) · JSON 13 % (14 %) — the direction the 10-21 robots `_rsc` / analytics block predicts, on ~1 week of post-change data inside a 90-day window. Falsifier date stays ~11-11. Responses 97 % 200.
+- **Not read:** the 35 unread Search Console messages — the panel does not render through the extension (screenshot capture times out on GSC, as on 10-20); they are also emailed to the owner, and every report they point to was read directly above.
+- **Still Trevor's, by decision:** external links (accuracy gate).
+
