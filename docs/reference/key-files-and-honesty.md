@@ -2502,7 +2502,7 @@ The client-error beacon logged `unhandledrejection: SyntaxError: failed to parse
 Moved here to pay for the "window over a change-only feed is not a census" rule (#149); nothing deleted.
 
 - ⭐ **A DEAD COUNTER IS NOT ONLY STALE — test it against a FLOOR you already hold:** observed on-chain opens refuted 42 tier + 775 opened counts (09-25). A floor NULLs a count, never replaces it (#74).
-- ⛔ **A SUPPRESSION IS A CLAIM — re-derive the source is still dead.** A hardcoded retirement DATE cannot notice its premise expired: 13 days of "retired" over a LIVE 60k-row feed, ratchet GREEN (it pins that the disclosure EXISTS, not that it is TRUE). Gate on its OWN age.
+- ⛔ **A SUPPRESSION IS A CLAIM — re-derive the source is still dead.** A hardcoded retirement DATE cannot notice its premise expired: 13 days of "retired" over a LIVE 60k-row feed, ratchet GREEN (it pins that the disclosure EXISTS, not that it is TRUE). Gate on its OWN age. ⭐ **The shape that works for a RECORDED fact (10-28, two instances): DOWNGRADE, don't EXCLUDE, and expire on the RECORD's re-verify age.** Candy's closed market (`silent_since_2026_10_11`) turned `candy_sales_stale_hours` into a 30-day re-verify clock plus a revival arm that pages on the first new sale; the Dapper outage (`marketplace.status = degraded`, re-verified ≤ 7 d) turns analytics-smoke sales freshness from FAIL into WARN — still visible, no page — and an unrefreshed record fails again. An exclusion LIST (the `v_low_volume_collections` array) has no age and no revival detector; prefer the record.
 
 ## A window over a change-only feed is not a census — nor are its aged-out rows (2026-09-26, #149)
 
