@@ -2797,3 +2797,10 @@ Failed · empty · unrenderable · value — and for an average there is one mor
 ## ⚠ An EARLY EXIT that logs nothing makes idle, dead and failing indistinguishable (2026-10-28, PT)
 
 `/api/pinnacle/resolve-buyers` returned on "no work" and on a failed claim without a `pipeline_runs` row. Through the Dapper outage (no Pinnacle sales, so nothing to claim) the cadence watchlist paged `last run > 1440 min`: an idle lane read as a dead one, and a broken claim would have read the same way. **Every exit of a logged lane leaves a run:** no work is `ok` with 0 rows and a marker (`extra.no_work`); a failed precondition is `ok:false` with its error. A test that pins "short-circuits before any log" pins the defect; invert it.
+
+## ⚠ A NAME is not an IDENTITY on a board row; a value priced ONCE from a first ask is a fabrication that ages (2026-10-29, PT)
+
+Two cases from one live sweep, both rendering every field "correctly":
+
+- **The parallel is part of the edition's name.** Six public Top Shot boards listed rows by `player · set` alone, so "Peyton Watson · Base Set" appeared twice on /insights/first-mint (a Rippled /4000 at 198× and the standard at 94×). Parallel rows were unnamed on every board: first-mint 254 of 519, squeeze 4,782 of 14,502. `editions.name` does not carry it. **Any row list keyed on EDITION must render `subedition_name`** (`setWithParallel()` in `lib/edition-parallel.ts`); the board views now carry the column (#216).
+- **A value written once from the latest FMV keeps the FMV of the moment it was written.** 19 Top Shot rips held $2,700 each, the FIRST price of a Hexwave /25: ASK_ONLY at 0.9 × a lone $3,000 listing, priced 37 minutes after it appeared, worth $13.49 three weeks later. They made a $6 pack the pack-reality board's top "sleeper" at 2864% of model. The column is contractually CURRENT FMV, but its re-price leg covers ~1/8 of its population (#217). **The tell is a mean propped up by many pulls sharing ONE value** (19 × $2,700); a real chase hit is one pull.
