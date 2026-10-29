@@ -3,6 +3,7 @@ import { NextRequest, NextResponse, after } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { redactSecrets } from "@/lib/redact-secrets";
 import { OPS_ALERT_EMAIL } from "@/lib/ops-alert";
+import { isMarketClosed } from "@/lib/market-closed";
 import { isSaturationError } from "@/lib/pipeline/saturation";
 import { escapeTelegramHtml, fitTelegramMessage, fitTelegramText } from "@/lib/telegram-message";
 import { summariseAlertDelivery } from "@/lib/sentinel/alert-delivery";
@@ -885,6 +886,7 @@ async function runSentinelWithin(clock: WallBudgetClock) {
       const byColl = new Map<
         string,
         {
+          key: string;
           display: string;
           loud: string;
           ceil: number;
@@ -895,6 +897,7 @@ async function runSentinelWithin(clock: WallBudgetClock) {
       for (const r of ingestRows || []) {
         const key = String(r.collection);
         const cur = byColl.get(key) || {
+          key,
           display: String(r.display_name ?? key),
           loud: String(r.loudness),
           ceil: Number(r.silence_hours),
@@ -920,7 +923,14 @@ async function runSentinelWithin(clock: WallBudgetClock) {
           st = c.loud === "critical" ? "critical" : "warn";
         if (st !== "ok") bump(st);
         const flag = st === "critical" ? "🚨" : st === "warn" ? "⚠️" : "";
-        const closed = c.loud === "off" ? " (market closed)" : "";
+        // "off" is a decision, not a closure: only a market in CLOSED_MARKETS reads
+        // "market closed" (the watch key is the DB slug; its dashed form is a URL alias).
+        const closed =
+          c.loud !== "off"
+            ? ""
+            : isMarketClosed(c.key.replace(/_/g, "-"))
+              ? " (market closed)"
+              : " (silent by decision)";
         const last = c.hrs == null ? "never" : `${c.hrs}h ago`;
         const breach = st !== "ok" ? ` >${c.ceil}h!` : "";
         return `${flag}${c.display} ${c.s24}/24h (last ${last}${breach})${closed}`;

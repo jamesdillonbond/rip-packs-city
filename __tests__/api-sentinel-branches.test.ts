@@ -341,6 +341,19 @@ describe("sentinel — sales-ingest health arms", () => {
     expect(chk(r, "Sales Ingest by Collection").status).toBe("warn")
   })
 
+  it("an off collection reads 'market closed' only when its market is in CLOSED_MARKETS", async () => {
+    const rows = [
+      ...ingestHealthy(),
+      { collection: "candy_mlb", display_name: "Candy MLB", marketplace: "(none)", source: "(none)", sales_24h: 0, coll_hours_since_last: 72, silence_hours: 12, loudness: "off" },
+    ]
+    const r = await run({ "rpc:sentinel_sales_ingest_health": { data: rows, error: null } as never })
+    const c = chk(r, "Sales Ingest by Collection")
+    expect(c.status).toBe("ok")
+    expect(String(c.detail)).toMatch(/UFC [^·]*\(market closed\)/)
+    expect(String(c.detail)).toMatch(/Candy MLB [^·]*\(silent by decision\)/)
+    expect(String(c.detail)).not.toMatch(/Candy MLB [^·]*\(market closed\)/)
+  })
+
   it("a silent source lane while its collection still flows warns the source lane", async () => {
     const rows = ingestHealthy().map((row) =>
       row.collection === "nba_top_shot" && row.source === "offer_fill" ? { ...row, sales_24h: 0 } : row)
