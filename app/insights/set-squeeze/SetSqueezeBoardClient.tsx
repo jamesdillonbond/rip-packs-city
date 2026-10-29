@@ -16,7 +16,7 @@
 // gated on the collection they were READ for — never Top Shot's under All Day.
 
 import { useEffect, useMemo, useRef, useState } from "react"
-import { seriesDisplay } from "@/lib/series-label"
+import { seriesDisplay, CURRENT_TOP_SHOT_SERIES } from "@/lib/series-label"
 import Link from "next/link"
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
 import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
@@ -55,9 +55,12 @@ type SortKey = "squeeze" | "buyable"
 type SeriesFilter = string
 // Per-collection vocabularies: SQUEEZE_TIERS (All Day has UNCOMMON, no FANDOM).
 type TierFilter = string
-/** Series pills per collection, newest first (All Day: the 2025 and 2024 seasons' series). */
+/** Series pills per collection, newest first (All Day: the 2025 and 2024 seasons' series).
+ *  Top Shot's run from the current season (the series map's highest entry) down to Series 4, so the
+ *  next season gets a pill when it is mapped (10-29: the list stopped at 2025-26 while 2026-27 sets
+ *  were on the board). */
 const SERIES_PILLS: Record<SqueezeCollection, readonly string[]> = {
-  "nba-top-shot": ["8", "7", "6", "5"],
+  "nba-top-shot": Array.from({ length: CURRENT_TOP_SHOT_SERIES - 4 }, (_, i) => String(CURRENT_TOP_SHOT_SERIES - i)),
   "nfl-all-day": ["10", "9", "8", "7"],
 }
 
@@ -320,7 +323,7 @@ export default function SetSqueezeBoardClient({
                           title={`${r.set_name} on ${isTopShot ? "NBA Top Shot" : "NFL All Day"}`}
                         >
                           <div className="rpc-ss-set-name">{r.set_name}</div>
-                          <div className="rpc-ss-set-sub">{r.series ? seriesLabel(r.series) : "—"}</div>
+                          <div className="rpc-ss-set-sub">{r.series != null ? seriesLabel(r.series) : "—"}</div>
                         </Link>
                         <Link
                           href={`${squeezeBoardPath(collection)}?set=${encodeURIComponent(r.set_name)}`}
@@ -340,7 +343,7 @@ export default function SetSqueezeBoardClient({
                     ) : (
                       <>
                         <div className="rpc-ss-set-name">—</div>
-                        <div className="rpc-ss-set-sub">{r.series ? seriesLabel(r.series) : "—"}</div>
+                        <div className="rpc-ss-set-sub">{r.series != null ? seriesLabel(r.series) : "—"}</div>
                       </>
                     )}
                   </td>

@@ -86,3 +86,20 @@ describe("SetSqueezeBoardClient — NFL All Day toggle", () => {
     expect(container.textContent).not.toContain("4,242")
   })
 })
+
+// 10-29: Top Shot's on-chain series 0 IS Series 1, and `r.series ? … : "—"` dropped it, so 23 Series 1
+// sets ("Got Game", "Eastern Conference Finals") read "—". The pill list also stopped at 2025-26.
+describe("SetSqueezeBoardClient — series labels", () => {
+  it("labels Top Shot series 0 as Series 1, never '—'", () => {
+    const rows = [row({ set_id: "gg", set_name: "Got Game", series: 0 })]
+    const { container } = render(<SetSqueezeBoardClient initialRows={rows as any} initialFetchedAt="2026-10-29T17:00:00Z" />)
+    const subs = [...container.querySelectorAll(".rpc-ss-set-sub")].map((e) => e.textContent)
+    expect(subs.length).toBeGreaterThan(0)
+    expect(subs.every((t) => t === "Series 1")).toBe(true)
+  })
+
+  it("offers a pill for the current Top Shot season", () => {
+    const { container } = render(<SetSqueezeBoardClient initialRows={seed as any} initialFetchedAt="2026-10-29T17:00:00Z" />)
+    expect(container.textContent).toContain("Series 2026-27")
+  })
+})
