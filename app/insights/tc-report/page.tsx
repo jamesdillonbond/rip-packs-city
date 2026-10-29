@@ -396,7 +396,20 @@ export default function TcReportPage() {
             </section>
           ) : allday && allday.index_state === "indexed" ? (
             <SqueezeBlock title="Squeeze Exposure · NFL All Day" label="NFL All Day" sq={allday.summary} testId="tc-squeeze-allday" />
-          ) : null}
+          ) : (
+            // 10-28 review: every other leg state used to render NOTHING — a failed state read ("unknown") looked
+            // exactly like a wallet with no All Day squeeze. Each state now says what we know, in squeeze-check's words.
+            <section className="rpc-tc-section" data-testid="tc-squeeze-allday-state">
+              <h2 className="rpc-tc-h2">Squeeze Exposure · NFL All Day</h2>
+              <div className="rpc-tc-state">
+                {allday?.index_state === "empty"
+                  ? "Our last scan found no NFL All Day moments in this wallet."
+                  : allday?.index_state === "not_indexed"
+                    ? "We haven't indexed this wallet's NFL All Day moments yet — this says nothing about what it holds."
+                    : "We couldn't confirm whether this wallet's NFL All Day moments are indexed — this says nothing about what it holds. Try again shortly."}
+              </div>
+            </section>
+          )}
           {/* Cross-collection footprint */}
           {cc.length > 0 ? (
             <section className="rpc-tc-section">

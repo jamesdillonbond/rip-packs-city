@@ -186,4 +186,24 @@ describe("Top Collector Report — NFL All Day squeeze", () => {
     expect(screen.getByText(/No Top Shot moments in our index for this wallet/)).toBeTruthy()
     expect(screen.queryByLabelText("Exposure buckets")).toBeNull()
   })
+
+  // 10-28 review: every non-indexed All Day leg state rendered NOTHING, so a failed state read looked like "no All
+  // Day squeeze". Each now says what we know; none renders bars.
+  it.each([
+    ["empty", /Our last scan found no NFL All Day moments/],
+    ["not_indexed", /haven't indexed this wallet's NFL All Day moments yet/],
+    ["unknown", /couldn't confirm whether this wallet's NFL All Day moments are indexed/],
+    [null, /couldn't confirm whether this wallet's NFL All Day moments are indexed/],
+  ])("an All Day leg in state %s says so in its own section, never a silent absence", async (state, copy) => {
+    routes = {
+      "/api/public/insights/tc-report": () => ({ body: { index_state: "indexed", report: indexedReport, allday_squeeze: state === null ? null : { index_state: state, summary: { total_moments: null } }, allday_squeeze_error: false } }),
+    }
+    install()
+    render(<TcReportPage />)
+    await run()
+    await waitFor(() => expect(screen.getByTestId("tc-squeeze-allday-state")).toBeTruthy())
+    expect(screen.getByTestId("tc-squeeze-allday-state").textContent).toMatch(copy as RegExp)
+    expect(screen.queryByTestId("tc-squeeze-allday")).toBeNull()
+    expect(screen.getByText("TS Star")).toBeTruthy()
+  })
 })
