@@ -12,6 +12,21 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-10-28 · 🔧 SHIPPED (code) — **Top Collector Report: the NFL All Day squeeze section says what we know in every state, instead of vanishing (a failed state read rendered as nothing)**; plus the review of the other session's 10-28 commits (Claude Code cloud, ~8:15–8:30 PM PT).
+
+- **Fixed** (`app/insights/tc-report/page.tsx`): for an indexed wallet whose All Day leg was `empty`, `not_indexed` or `unknown`, the section rendered nothing. `unknown` is a failed state read, so it looked exactly like "no All Day squeeze". Each state now gets its own line, in squeeze-check's words: "our last scan found none" / "not indexed yet — says nothing about what it holds" / "couldn't confirm — try again". Tests: 4 cases (`empty`, `not_indexed`, `unknown`, a null leg), all red on the old page; no bars render in any of them. Preflight 7/7.
+- **Review of `19a6a8fb4`, `2e9a3c165`, `f0d8ebe76`, `3f0a4836a`, `c7c150900`: nothing high.** Verified on live data:
+  - The per-collection Dapper notice lifts each collection on its own sales only. At 8:02 PM PT it would keep all three down (Top Shot 9 of the 48 sales it needs in 2 h; All Day and Pinnacle 0).
+  - `/insights/allday-market` is All Day end to end (seed, canonical, OG, share; no toggle; no `/insights/market?collection=` link). Its tier math is guarded (no 0/100 for an empty tier).
+  - Contemporary moved exactly 136 Series-9 editions in and none out; the even series stay 0.
+  - The serial-premium views join on `editions.id`, filter on All Day's collection_id, and are `security_invoker` with no anon SELECT.
+- **Recorded for the owning session, not changed:**
+  - (a) `allday_perfect_mint_premiums_board` uses `serial_number = circulation_count` as "last mint". 42 All Day editions have a sold serial above `circulation_count` (Achane /3,000, serial 25,482). None of the board's 18 rows is affected today, and no app code reads the view yet.
+  - (b) The `restore_dapper_maintenance_notice` run log counts lift attempts, not rows changed.
+  - (c) The backstop `2026-11-04 15:00 UTC` is 7 AM PST (DST ends 11-01), not 8 AM PT as commented.
+  - (d) The tc-report "not indexed" wording for 110 wallets whose scan found moments but whose cache is empty is true of our cache; left as is (squeeze-check's 10-27 call).
+**Revert:** revert the commit found by message "tc-report All Day squeeze says every state".
+
 ### 2026-10-28 · 🔧 SHIPPED (code) — **`pinnacle-resolve-buyers` records every run, so a quiet market reads as idle rather than silent and a failed claim reads as a failure** (Claude Code cloud, ~7:55–8:10 PM PT).
 
 - **Found:** the ops snapshot paged `pinnacle-resolve-buyers · Last run > 1440 min ago` (medium). Its last record was 10-27 9:44 AM PT, right after the last Pinnacle sale (9:28 AM; Pinnacle's market has not reopened since Dapper's maintenance). The route returned early on "no work" and on a failed claim without logging either. So an idle lane, a dead lane and a failing claim all read the same, as silence.
