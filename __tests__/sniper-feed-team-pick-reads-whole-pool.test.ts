@@ -89,7 +89,7 @@ const EDITIONS = [
 // "does not read the floors" controls therefore price every pool edition, so
 // their board is genuinely full rather than thin.
 function priceAll(eds: Array<{ id: string }>) {
-  fx.rpc.get_editions_latest_fmv_wide = {
+  fx.rpc.get_editions_latest_fmv_wide_v2 = {
     data: eds.map((e) => ({
       edition_id: e.id, fmv_usd: 100, wap_usd: 95, floor_price_usd: 80, confidence: "HIGH",
       days_since_sale: 2, sales_count_30d: 14, computed_at: "2026-09-28T00:00:00Z",
@@ -120,7 +120,7 @@ beforeEach(() => {
   fx.calls = []
   fx.rpcCalls = []
   fx.rpc = {
-    get_editions_latest_fmv_wide: {
+    get_editions_latest_fmv_wide_v2: {
       data: EDITIONS.map((e) => ({
         edition_id: e.id, fmv_usd: 100, wap_usd: 95, floor_price_usd: 80, confidence: "HIGH",
         days_since_sale: 2, sales_count_30d: 14, computed_at: "2026-09-28T00:00:00Z",

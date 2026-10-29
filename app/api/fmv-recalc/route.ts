@@ -1300,7 +1300,21 @@ export async function POST(req: NextRequest) {
       // rule measured exactly this class as "no recent sale".
       const usableRecent30 = sales.filter((s) => s.soldAt.getTime() >= Date.parse(windowStart)).length
       confidence = gateMediumToRecentSale(confidence, Math.min(count30, usableRecent30))
+      // 2026-10-28: TWO ages. `latestSoldAt` is the newest sale the PRICE rests on (the grail-spike-cleaned set); the
+      // edition's last market sale can be newer — a stripped spike (a #3 at $8.90 over a $1 cluster, a #1/5 at $150).
+      // days_since_sale is read everywhere as the LAST SALE's age (the edition page prints it; the moment page and the
+      // fmv_snapshots_zero_stale_sales_count trigger gate the 30-day count on it), so stamping it from the cleaned set
+      // published "last sale 51 days ago" and a zeroed count over a 6-day-old sale (133 latest rows, 10-28). It is now
+      // the true market age (edEntry.sales: market sales after the mis-key guard, before cleaning); the cleaned age is
+      // basis_days_since_sale, which the sniper's staleness penalty reads.
+      const marketLatestSoldAt = edEntry.sales.reduce(
+        (latest, s) => (s.soldAt > latest ? s.soldAt : latest),
+        latestSoldAt,
+      )
       const daysSinceSale = Math.round(
+        (now.getTime() - marketLatestSoldAt.getTime()) / (1000 * 60 * 60 * 24)
+      )
+      const basisDaysSinceSale = Math.round(
         (now.getTime() - latestSoldAt.getTime()) / (1000 * 60 * 60 * 24)
       )
 
@@ -1361,6 +1375,7 @@ export async function POST(req: NextRequest) {
         sales_count_7d: published30,
         sales_count_30d: published30,
         days_since_sale: daysSinceSale,
+        basis_days_since_sale: basisDaysSinceSale,
         algo_version: ALGO_VERSION,
       }))
     }
@@ -1810,8 +1825,14 @@ export async function POST(req: NextRequest) {
               // single-sale WAP from 2+ months ago is unreliable signal, not
               // healthy low-confidence pricing.
               confidence: histConfidence,
-              sales_count_7d: 0,
-              sales_count_30d: 0,
+              // 2026-10-28: a window count is published only where the sale's AGE proves it. This step never
+              // counts in-window sales, yet it wrote 0/0 for candidates whose last sale was 7–29 days old, so
+              // the edition page read "Sales (30d) 0" above its own listed sale (2–9 editions a day; e.g. Top
+              // Shot 274:9079::23, sold 10-13, published 10-28 as 0 in 30 days). 0 is a FACT once the newest
+              // sale is older than the window; inside it the count is unknown here → null (rendered unknown,
+              // and the stale guard leaves the label alone). The main sweep publishes the real count.
+              sales_count_7d: daysSinceSale >= 7 ? 0 : null,
+              sales_count_30d: daysSinceSale >= 30 ? 0 : null,
               days_since_sale: daysSinceSale,
               algo_version: ALGO_VERSION,
             })

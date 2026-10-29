@@ -827,9 +827,17 @@ describe("fmv-recalc 90d catch-up seed (offset 0)", () => {
     // Not vacuous: the price really is the old cluster, i.e. the spike was stripped.
     expect(Number(spike[0].fmv_usd)).toBeLessThan(40)
     expect(spike[0].confidence).toBe("LOW")
-    // CONTROL: an edition with usable recent sales keeps MEDIUM in the same run.
+    // 2026-10-28: TWO ages. The edition's last market sale (the stripped spike, 2 d) is days_since_sale — the
+    // edition page prints it and fmv_snapshots_zero_stale_sales_count zeroes the 30d count past 30 — while the
+    // age of the newest sale the PRICE rests on (35 d) is basis_days_since_sale (the sniper's staleness input).
+    // It used to publish 35 here, and the trigger then zeroed the real 1-sale count.
+    expect(spike[0].days_since_sale).toBe(2)
+    expect(spike[0].basis_days_since_sale).toBe(35)
+    expect(spike[0].sales_count_30d).toBe(1)
+    // CONTROL: an edition with usable recent sales keeps MEDIUM in the same run, and its two ages agree.
     const main = (inserted.fmv_snapshots ?? []).filter((r) => r.edition_id === "ed-main")
     expect(main[0]?.confidence).toBe("MEDIUM")
+    expect(main[0]?.days_since_sale).toBe(main[0]?.basis_days_since_sale)
   })
 
   it("enumerates BOTH Top Shot and All Day, seeding an All Day zero-30d edition off its 90d floor", async () => {
@@ -1094,6 +1102,30 @@ describe("fmv-recalc ASK-fallback + backfill steps", () => {
     const hist = (inserted.fmv_snapshots ?? []).filter((r) => r.edition_id === "ed-hist-ts")
     expect(hist).toHaveLength(1)
     expect(Number(hist[0].fmv_usd)).toBe(12.5)
+  })
+
+  // 2026-10-28: this step does not count in-window sales, so it may publish a zero only where the newest sale's
+  // AGE proves it — it wrote "0 sales in 30 days" on editions whose last sale was 7–29 days old.
+  it.each([
+    [3, null, null],
+    [20, 0, null],
+    [45, 0, 0],
+  ])("historical fallback, last sale %i days ago: sales_count_7d=%s, sales_count_30d=%s — never a 0 the window contradicts", async (days, c7, c30) => {
+    const { inserted } = instrument({
+      ...fallbackFixtures(QS({})),
+      "rpc:fmv_recalc_historical_candidates": {
+        data: [histCandidate({ edition_id: "ed-hist-age", collection_id: TOPSHOT, latest_sold_at: daysAgo(days as number) })],
+        error: null,
+      },
+    })
+    await POST(req())
+    await runDeferred()
+
+    const hist = (inserted.fmv_snapshots ?? []).filter((r) => r.edition_id === "ed-hist-age")
+    expect(hist).toHaveLength(1)
+    expect(hist[0].sales_count_7d).toBe(c7)
+    expect(hist[0].sales_count_30d).toBe(c30)
+    expect(hist[0].days_since_sale).toBe(days)
   })
 
   it("leaves a historical-fallback FMV uncapped (not dropped) when the floor read fails", async () => {

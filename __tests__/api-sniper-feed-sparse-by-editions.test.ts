@@ -82,7 +82,7 @@ function priceEditions(n: number, fmv: number) {
     error: null,
   }
   rpc.mockImplementation(async (name: string) =>
-    name === "get_editions_latest_fmv_wide"
+    name === "get_editions_latest_fmv_wide_v2"
       ? {
           data: Array.from({ length: n }, (_, e) => ({
             edition_id: `uuid-${e}`, fmv_usd: fmv, wap_usd: fmv, floor_price_usd: fmv, confidence: "HIGH",

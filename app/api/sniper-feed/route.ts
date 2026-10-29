@@ -110,6 +110,10 @@ interface FmvRow {
   floorPriceUsd: number | null;
   confidence: string;
   daysSinceSale: number | null;
+  // 2026-10-28: the age of the newest sale the FMV RESTS ON (fmv_snapshots.basis_days_since_sale). daysSinceSale is
+  // the edition's last market sale, which can be a recent special-serial sale the price excludes; the staleness
+  // penalty is about the price's evidence, so it reads this, falling back to daysSinceSale when unknown.
+  basisDaysSinceSale?: number | null;
   salesCount30d: number | null;
   packListingId: string | null;
   packName: string | null;
@@ -1048,8 +1052,8 @@ async function fetchFmvBatch(
   const FMV_CHUNK = 500;
   for (let i = 0; i < fmvEditionIds.length; i += FMV_CHUNK) {
     const { data, error } = await (supabase as any)
-      .rpc("get_editions_latest_fmv_wide", { p_edition_ids: fmvEditionIds.slice(i, i + FMV_CHUNK) });
-    if (error) throw new Error(`get_editions_latest_fmv_wide: ${error.message}`);
+      .rpc("get_editions_latest_fmv_wide_v2", { p_edition_ids: fmvEditionIds.slice(i, i + FMV_CHUNK) });
+    if (error) throw new Error(`get_editions_latest_fmv_wide_v2: ${error.message}`);
     if (data?.length) fmvRows.push(...data);
   }
 
@@ -1064,6 +1068,7 @@ async function fetchFmvBatch(
     edition_id: string; fmv_usd: number | null; wap_usd: number | null;
     floor_price_usd: number | null; confidence: string;
     days_since_sale: number | null; sales_count_30d: number | null;
+    basis_days_since_sale?: number | null;
   }[]) {
     if (seen.has(row.edition_id)) continue;
     seen.add(row.edition_id);
@@ -1082,6 +1087,7 @@ async function fetchFmvBatch(
       floorPriceUsd: row.floor_price_usd,
       confidence: (row.confidence ?? "low").toLowerCase(),
       daysSinceSale: row.days_since_sale,
+      basisDaysSinceSale: row.basis_days_since_sale ?? null,
       salesCount30d: row.sales_count_30d,
       packListingId: null,
       packName: null,
@@ -2451,7 +2457,7 @@ async function computeSniperFeed(opts: {
     // confidence editions where the lone sale is older than a month,
     // collapse FMV to the ask price so the deal renders at 0% discount
     // instead of a fake bargain.
-    adjustedFmv = applyFmvStalenessPenalty(adjustedFmv, askPrice, confidence, fmvRow.daysSinceSale, fmvRow.salesCount30d);
+    adjustedFmv = applyFmvStalenessPenalty(adjustedFmv, askPrice, confidence, fmvRow.basisDaysSinceSale ?? fmvRow.daysSinceSale, fmvRow.salesCount30d);
     if (askPrice >= adjustedFmv) continue;
     const discount = Math.round(((adjustedFmv - askPrice) / adjustedFmv) * 1000) / 10;
     const dealRating = adjustedFmv > 0 ? Math.max(0, Number((1 - askPrice / adjustedFmv).toFixed(4))) : 0;

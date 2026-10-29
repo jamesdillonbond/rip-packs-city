@@ -35,6 +35,19 @@ vi.mock("@/lib/fmv-display-guard", () => ({
   guardTopshotFmv: (fmv: number) => ({ fmv, clamped: false, thin: false }),
 }))
 
+// Pass-through spy (2026-10-28): records the age each deal's staleness penalty was given; the real function still runs.
+const stale = vi.hoisted(() => ({ calls: [] as unknown[][] }))
+vi.mock("@/lib/sniper/fmv-staleness", async (importOriginal) => {
+  const actual = await importOriginal<any>()
+  return {
+    ...actual,
+    applyFmvStalenessPenalty: (...args: unknown[]) => {
+      stale.calls.push(args)
+      return actual.applyFmvStalenessPenalty(...args)
+    },
+  }
+})
+
 const { GET } = await import("@/app/api/sniper-feed/route")
 const get = (qs = "") => new Request(`https://t/api/sniper-feed${qs}`)
 
@@ -141,7 +154,7 @@ function enrichedTables(over: Record<string, any> = {}) {
         },
       ],
     },
-    "rpc:get_editions_latest_fmv_wide": {
+    "rpc:get_editions_latest_fmv_wide_v2": {
       data: [
         {
           edition_id: "uuid-1-2",
@@ -209,6 +222,27 @@ describe("sniper-feed enrichment fan-out (populated lookups)", () => {
     expect(typeof d.isJersey).toBe("boolean")
   })
 
+  // 2026-10-28: fmv_snapshots carries two ages. The staleness penalty is about the PRICE's evidence, so it reads
+  // basis_days_since_sale (the newest sale the FMV rests on); the deal still DISPLAYS days_since_sale (the
+  // edition's last sale, which can be a recent special serial the price excludes). Unknown basis → the last-sale age.
+  it.each([
+    [{ basis_days_since_sale: 40 }, 40],
+    [{ basis_days_since_sale: null }, 2],
+    [{}, 2],
+  ])("the staleness penalty is given the FMV basis age (%j → %i), and the deal shows the last-sale age", async (over, expectedAge) => {
+    stale.calls = []
+    fx.tables = enrichedTables({
+      "rpc:get_editions_latest_fmv_wide_v2": {
+        data: [{ edition_id: "uuid-1-2", fmv_usd: 100, wap_usd: 95, floor_price_usd: 80, confidence: "LOW",
+                 days_since_sale: 2, sales_count_30d: 1, computed_at: "2026-07-16T00:00:00Z", ...over }],
+      },
+    })
+    const body = await (await GET(get("?collection=nba-top-shot"))).json()
+    expect(stale.calls.length, "no deal reached the penalty — the fixture no longer prices").toBeGreaterThan(0)
+    expect(stale.calls.every((c) => c[3] === expectedAge)).toBe(true)
+    expect(body.deals.every((d: { daysSinceSale: number }) => d.daysSinceSale === 2)).toBe(true)
+  })
+
   it("survives a badge_editions read error (badges degrade, deals still price)", async () => {
     fx.tables = enrichedTables({
       badge_editions: { data: null, error: { message: "badges down" } },
@@ -273,7 +307,7 @@ describe("sniper-feed enrichment fan-out (populated lookups)", () => {
   })
 
   it("returns an unpriced feed when editions resolve but no FMV snapshot exists", async () => {
-    fx.tables = enrichedTables({ "rpc:get_editions_latest_fmv_wide": { data: [] } })
+    fx.tables = enrichedTables({ "rpc:get_editions_latest_fmv_wide_v2": { data: [] } })
     const res = await GET(get("?collection=nba-top-shot"))
     expect(res.status).toBe(200)
     expect(Array.isArray((await res.json()).deals)).toBe(true)
@@ -300,7 +334,7 @@ describe("sniper-feed enrichment fan-out (populated lookups)", () => {
   // value for an edition that has none. A missing FMV must drop the row.
   it("NULL fmv_usd → row EXCLUDED, never repriced off the floor ask (ask_proxy)", async () => {
     fx.tables = enrichedTables({
-      "rpc:get_editions_latest_fmv_wide": {
+      "rpc:get_editions_latest_fmv_wide_v2": {
         data: [
           {
             edition_id: "uuid-1-2",
@@ -326,7 +360,7 @@ describe("sniper-feed enrichment fan-out (populated lookups)", () => {
   // still allowed to use the documented ask-proxy signal. Only NULL drops.
   it("a real near-zero fmv_usd still takes the documented ask_proxy path", async () => {
     fx.tables = enrichedTables({
-      "rpc:get_editions_latest_fmv_wide": {
+      "rpc:get_editions_latest_fmv_wide_v2": {
         data: [
           {
             edition_id: "uuid-1-2",
@@ -393,7 +427,7 @@ describe("sniper-feed prices Atlas-fed ts_listings through their on-chain ids", 
           { id: "uuid-1-2-17", external_id: "1:2::17", set_id_onchain: 1, play_id_onchain: 2, thumbnail_url: "https://img/1-2-17.png" },
         ],
       },
-      "rpc:get_editions_latest_fmv_wide": {
+      "rpc:get_editions_latest_fmv_wide_v2": {
         data: [
           { edition_id: "uuid-1-2", fmv_usd: 100, wap_usd: 95, floor_price_usd: 80, confidence: "HIGH", days_since_sale: 2, sales_count_30d: 14, computed_at: "2026-07-16T00:00:00Z" },
           { edition_id: "uuid-1-2-17", fmv_usd: 400, wap_usd: 380, floor_price_usd: 300, confidence: "HIGH", days_since_sale: 2, sales_count_30d: 9, computed_at: "2026-07-16T00:00:00Z" },
