@@ -184,7 +184,7 @@ describe("label helpers", () => {
 
 describe("fmvDisplay", () => {
   it("formats a positive fmv as $x.xx", () => {
-    expect(fmvDisplay(row({ fmv: 42 }))).toEqual({ text: "$42.00", muted: false, stale: false, askDerived: false })
+    expect(fmvDisplay(row({ fmv: 42 }))).toEqual({ text: "$42.00", muted: false, stale: false, askDerived: false, askCapped: false })
   })
 
   it("falls back to fmvUsd and marks stale confidence muted", () => {
@@ -193,6 +193,7 @@ describe("fmvDisplay", () => {
       muted: true,
       stale: true,
       askDerived: false,
+      askCapped: false,
     })
   })
 
@@ -202,12 +203,19 @@ describe("fmvDisplay", () => {
       muted: false,
       stale: false,
       askDerived: true,
+      askCapped: false,
     })
   })
 
+  it("#215: an ASK_ONLY fmv capped at its edition's sales is askCapped; the flag alone never is", () => {
+    expect(fmvDisplay(row({ fmv: 30, marketConfidence: "ask_only", fmvCapped: true })).askCapped).toBe(true)
+    expect(fmvDisplay(row({ fmv: 30, marketConfidence: "ask_only", fmvCapped: null })).askCapped).toBe(false)
+    expect(fmvDisplay(row({ fmv: 30, marketConfidence: "high", fmvCapped: true })).askCapped).toBe(false)
+  })
+
   it("renders em-dash for missing / zero fmv", () => {
-    expect(fmvDisplay(row({}))).toEqual({ text: "—", muted: true, stale: false, askDerived: false })
-    expect(fmvDisplay(row({ fmv: 0 }))).toEqual({ text: "—", muted: true, stale: false, askDerived: false })
+    expect(fmvDisplay(row({}))).toEqual({ text: "—", muted: true, stale: false, askDerived: false, askCapped: false })
+    expect(fmvDisplay(row({ fmv: 0 }))).toEqual({ text: "—", muted: true, stale: false, askDerived: false, askCapped: false })
   })
 })
 

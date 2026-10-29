@@ -72,12 +72,13 @@ import { accentFill, accentText, labelOn } from "@/lib/accent-text"
 // PLAIN — not greyed (`fmv.muted` is honoured only for the unpriced "—"), not
 // dotted-underlined, no "may be inaccurate" — and keeps only the factual
 // "No sales in 30+ days" tooltip.
-const ASK_BASIS = fmvBasis("ASK_ONLY")!
-function AskDerivedMark({ show }: { show: boolean }) {
+// #215: a row capped at its edition's sales reads "capped at sales" instead.
+function AskDerivedMark({ show, capped }: { show: boolean; capped?: boolean }) {
   if (!show) return null
+  const basis = fmvBasis("ASK_ONLY", capped)!
   return (
-    <div title={ASK_BASIS.title} className="text-[10px] text-[color:var(--rpc-text-muted)] font-mono">
-      {ASK_BASIS.label}
+    <div title={basis.title} className="text-[10px] text-[color:var(--rpc-text-muted)] font-mono">
+      {basis.label}
     </div>
   )
 }
@@ -431,7 +432,7 @@ export default function CollectionMomentTable(props: {
                       >
                         {fmv.text}
                       </span>
-                      <AskDerivedMark show={fmv.askDerived} />
+                      <AskDerivedMark show={fmv.askDerived} capped={fmv.askCapped} />
                       {row.serialFmv ? <SerialFmvBadge data={row.serialFmv} /> : null}
                       {row.priceBand30d ? <PriceBand30dBadge data={row.priceBand30d} /> : null}
                     </span>
@@ -511,7 +512,7 @@ export default function CollectionMomentTable(props: {
                             <div className="rpc-expand-field-label">FMV</div>
                             <div className="rpc-expand-field-value rpc-table-cell--mono">
                               {fmv.text} <ExplainButton context={`${row.playerName ?? ""} — ${row.setName ?? ""} (${row.editionKey ?? ""}) FMV ${fmv.text}`} question="How is this FMV calculated?" />
-                              <AskDerivedMark show={fmv.askDerived} />
+                              <AskDerivedMark show={fmv.askDerived} capped={fmv.askCapped} />
                             </div>
                           </div>
                           {/* Confidence field removed 2026-07-11 — build-time signal only. */}
@@ -773,7 +774,7 @@ export default function CollectionMomentTable(props: {
                         >
                           {fmv.text}
                         </div>
-                        <AskDerivedMark show={fmv.askDerived} />
+                        <AskDerivedMark show={fmv.askDerived} capped={fmv.askCapped} />
                         {row.serialFmv ? <div className="mt-0.5"><SerialFmvBadge data={row.serialFmv} /></div> : null}
                         {row.priceBand30d ? <div className="mt-0.5"><PriceBand30dBadge data={row.priceBand30d} /></div> : null}
                         {(function() {
@@ -1004,7 +1005,7 @@ export default function CollectionMomentTable(props: {
                                 </div>
                                 <div className="rpc-expand-field">
                                   <div className="rpc-expand-field-label">FMV</div>
-                                  <div className="rpc-expand-field-value rpc-table-cell--mono">{fmv.text}<AskDerivedMark show={fmv.askDerived} /></div>
+                                  <div className="rpc-expand-field-value rpc-table-cell--mono">{fmv.text}<AskDerivedMark show={fmv.askDerived} capped={fmv.askCapped} /></div>
                                 </div>
                                 <div className="rpc-expand-field">
                                   <div className="rpc-expand-field-label">FMV Method</div>

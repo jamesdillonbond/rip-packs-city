@@ -248,6 +248,23 @@ describe("POST /api/wallet-search — enrichment body", () => {
     expect(body.rows[0].marketConfidence).toBeNull()
   })
 
+  it("#215: a snapshot capped at its edition's sales carries fmvCapped; an uncapped one does not", async () => {
+    const snap = (algo_version: string) => ({
+      "rpc:get_editions_latest_fmv_wide": {
+        data: [{ edition_id: "uuid-ed-1", fmv_usd: 114, confidence: "ASK_ONLY", sales_count_30d: 0, computed_at: "2026-10-29T00:00:00Z", algo_version }],
+        error: null,
+      },
+    })
+    install(baseFixtures(snap("1.8.3_histcap")))
+    const capped = await (await POST(post({ input: WALLET }))).json()
+    expect(capped.rows[0].marketConfidence).toBe("ask_only")
+    expect(capped.rows[0].fmvCapped).toBe(true)
+
+    install(baseFixtures(snap("1.8.3")))
+    const plain = await (await POST(post({ input: WALLET }))).json()
+    expect(plain.rows[0].fmvCapped).toBe(false)
+  })
+
   it("keeps a >$10K snapshot when it is HIGH confidence with corroborating sales", async () => {
     install(
       baseFixtures({

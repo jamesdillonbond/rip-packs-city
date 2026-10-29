@@ -77,6 +77,8 @@ export type MomentRow = {
   marketSource?: "row" | "edition" | "row+edition" | "edition-sale" | "special-serial" | "none"
   fmvMethod?: "band" | "low-ask-only" | "best-offer-only" | "edition-last-sale" | "special-serial-premium" | "none"
   marketConfidence?: "high" | "medium" | "low" | "stale" | "ask_only" | "sales_only" | "no_data" | "none"
+  /** #215: the FMV row was capped at the edition's own sales (`_salescap`/`_histcap`); null = unknown. */
+  fmvCapped?: boolean | null
   scopeKey?: string
   rowLowAsk?: number | null
   rowBestOffer?: number | null

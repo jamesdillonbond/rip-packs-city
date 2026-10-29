@@ -17,6 +17,7 @@ import { awardPoints } from "@/lib/rewards"
 import { serverMomentToRow, type ServerMoment } from "@/lib/collection/server-moment"
 import { bucketAcquisitionCounts, acquisitionMethodLabel } from "@/lib/analytics/shape"
 import { ownLookup } from "@/lib/safe-lookup"
+import { isSalesCappedAlgo } from "@/lib/fmv-basis"
 import { bumpAnonRates } from "@/lib/abuse/anon-rate"
 
 type WalletRow = {
@@ -49,6 +50,7 @@ type WalletRow = {
   tssPoints?: number | null
   fmv?: number | null
   marketConfidence?: string | null
+  fmvCapped?: boolean | null
   fmvComputedAt?: string | null
   acquisitionMethod?: string | null
   buyPrice?: number | null
@@ -735,7 +737,7 @@ async function batchEnrichFmvAndAsks(rows: WalletRow[]): Promise<WalletRow[]> {
 
     // 6. Fetch FMV snapshots for resolved edition UUIDs
     const internalIds = [...new Set(extToId.values())]
-    const fmvMap = new Map<string, { fmv_usd: number; confidence: string; computed_at: string }>()
+    const fmvMap = new Map<string, { fmv_usd: number; confidence: string; computed_at: string; algo_version?: string | null }>()
 
     if (internalIds.length) {
       const fmvChunks: Promise<any>[] = []
@@ -766,7 +768,7 @@ async function batchEnrichFmvAndAsks(rows: WalletRow[]): Promise<WalletRow[]> {
     // confidence with sales_count_30d >= 3. Guards against known FMV pipeline
     // outliers (12 LaLiga + 11 AllDay editions currently emit $900K-$1M values
     // from low-data fallbacks).
-    const editionFmvMap = new Map<string, { fmv: number; confidence: string; computedAt: string }>()
+    const editionFmvMap = new Map<string, { fmv: number; confidence: string; computedAt: string; capped: boolean }>()
     for (const [extId, intId] of extToId) {
       const snap = fmvMap.get(intId)
       if (!snap) continue
@@ -779,6 +781,7 @@ async function batchEnrichFmvAndAsks(rows: WalletRow[]): Promise<WalletRow[]> {
         fmv: raw,
         confidence: (snap.confidence ?? "low").toLowerCase(),
         computedAt: snap.computed_at,
+        capped: isSalesCappedAlgo(snap.algo_version),
       })
     }
 
@@ -862,6 +865,7 @@ async function batchEnrichFmvAndAsks(rows: WalletRow[]): Promise<WalletRow[]> {
               fmv: raw,
               confidence: (snap.confidence ?? "low").toLowerCase(),
               computedAt: snap.computed_at,
+              capped: isSalesCappedAlgo(snap.algo_version),
             })
           }
         }
@@ -882,6 +886,7 @@ async function batchEnrichFmvAndAsks(rows: WalletRow[]): Promise<WalletRow[]> {
         ...row,
         fmv: fmvData?.fmv ?? null,
         marketConfidence: fmvData?.confidence ?? null,
+        fmvCapped: fmvData?.capped ?? null,
         fmvComputedAt: fmvData?.computedAt ?? null,
         // Use cached_listings ask if available; keep GQL ask as fallback
         lowAsk: cachedAsk ?? row.lowAsk ?? null,
