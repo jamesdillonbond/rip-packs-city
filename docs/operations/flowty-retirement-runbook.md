@@ -16,6 +16,8 @@ Read 10-18 ~9:15 AM PT: **ALIVE ×3.** All three lanes ran 72 of 72 ok in 24 h, 
 
 ↳ **Read 2026-10-28 ~8:10 PM PT (Claude Code cloud): Dapper is only PARTLY back.** Top Shot reopened: `atlas-market-feed` first ok again at 2:57 PM PT, and Top Shot sales flow (latest 7:32 PM PT). But **All Day, Pinnacle and Golazos show no on-chain market activity since the outage began.** Their lanes run (Pinnacle 144/144), but they write nothing: All Day's sales indexer scans thousands of blocks and sees only `A.0b2a3299cc857e29.TopShot.NFT` storefront events. The newest listings are All Day 9:05 AM PT and Golazos 6:01 AM PT on 10-27, and the newest sales All Day 7:56 AM PT and Pinnacle 9:28 AM PT. Another session re-applied the maintenance notice per collection (`20261029025944`, lifted by each collection's own sales). **The Flowty lanes are still DARK** (9 of 9 ticks each since 5:10 PM PT fetched 0). "Dapper is back" for this gate means **all of its markets**, not Top Shot alone. Flowty lists All Day and Golazos too, so the 24 h clock starts when All Day trades again.
 
+↳ **Read 2026-10-28 ~10:50 PM PT (Claude Code cloud): Pinnacle is trading again** (6 sales in the 2 h to 9:52 PM PT). **All Day (last sale 8:33 AM PT 10-27) and Golazos (2:22 PM PT 10-25) still show none.** The three Flowty lanes are still DARK (9 of 9 failed in the 3 h to ~10 PM PT). The gate is unchanged: the 24 h clock starts at All Day's first sale.
+
 ```sql
 with r as (select pipeline, started_at,
   coalesce((extra->>'total_fetched')::int,0) fetched,

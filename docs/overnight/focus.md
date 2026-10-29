@@ -4,6 +4,12 @@
 
 **Rewrite rule for whoever edits this next: a focus file STEERS the next night, it is not an archive.** If a section is describing something that shipped more than ~a week ago and is not still a live trap, move it to the ledger and delete it here. A stale steer is worse than no steer.
 
+## STEER — added 2026-10-28 ~10:55 PM PT (Claude Code cloud, session_014vX7Q6Cam1dR9kzm4npa2L, thread close) — ONE staged migration needs a DB write Claude could not get approved; two expected readings
+
+- **Staged, NOT applied:** `docs/proposals/cadence-bridge-chain-arrivals-STAGED-MIGRATION.sql`. Every write from that session (apply_migration ×4, execute_sql ×1) raised a Supabase MCP approval prompt that went unanswered within 60 s. It (1) bridges `chain-arrivals` in `cadence_exempt_lanes` to 11-05 (demand-gated since `20261023213517`; the arm's baseline median is clean from 11-04), (2) deletes the lapsed `pinnacle-pull-chain` bridge (lane clean), (3) clears the Cadence Collapse ack that expired 10-01 (its own falsifier is unmet). Apply through apply_migration (or the dashboard SQL editor with Trevor present, as #211 B2 was), commit under its version, delete the staged file. **After 11-04 drop part (1).** Until it lands, Pipeline Sentinel reads CRITICAL on Cadence Collapse for chain-arrivals; that is this, not a caller fault.
+- **Expected:** analytics-smoke logs `ok:false` every 30 min while All Day sales are stale, with `extra.telegram_suppressed: true` on all but one tick per 3 h (`72b96bb84`). `pinnacle-resolve-buyers` now logs no-work runs (`extra.no_work: true`), so its cadence ratio recovers on its own.
+- **A regression would look like:** analytics-smoke `telegram_sent: true` on consecutive ticks with the same failing set (the gate stopped suppressing), or `telegram_suppressed: true` with a failing set that never paged (the key is not the set).
+
 ## STEER — added 2026-10-28 ~7:25 AM PT (Cowork cloud) — #58 is CLOSED and NOT Trevor's; Candy's stale-sales breach is retired by design
 
 - **Do not carry "#58 OPENSEA_API_KEY — Trevor-only" any more.** #58 was settled 2026-10-25 by a Solana collection census: Candy secondary trading STOPPED on 10-11, it did not move venues, so no key is needed. The 10-19 steer (rolled to focus-archive-2026-H2.md on 10-28) ("do not raise breach_at or suppress it … the open question is #58") is superseded: the question is answered.
