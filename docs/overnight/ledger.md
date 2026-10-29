@@ -12,6 +12,28 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-10-28 · 🔧 SHIPPED (code + DB) — **FMV snapshots stop publishing a false "last sale" age and a zeroed 30-day count: two ages, two columns** (Cowork cloud, ~10:35–11:00 PM PT; Trevor: "Dig deeper"). Found while checking the new Animated editions' prices; it affects the whole estate.
+- **The engine defect:** `fmv-recalc`'s main loop stamped `days_since_sale` from the grail-spike-CLEANED pricing set. When an edition's only recent sale was a stripped spike, the column read the age of an older sale. Examples: a #3 at $8.90 over a $1 cluster, a #1/5 at $150, a #99/99 last mint.
+- **Who reads it as the last sale's age:**
+  - the edition page prints "last sale N days ago";
+  - the moment page hides the 30-day count by it;
+  - `fmv_snapshots_zero_stale_sales_count` zeroes `sales_count_30d` whenever it exceeds 30.
+- **Measured** over the latest snapshot per edition (3 days): 103 Top Shot + 30 All Day editions overstated their last-sale age by more than 2 days, and 28 published "no sale in 30 days" over a real one. None were HIGH or MEDIUM. Example: `250:8569::18` sold #3 for $8.90 on 10-22, then read LOW at $0.75, "52 days" and 0 sales for a week.
+- **The fix — two ages, two columns:**
+  - `days_since_sale` is now the age of the true last market sale (market sales after the mis-key guard, before cleaning).
+  - The new `fmv_snapshots.basis_days_since_sale` holds the age of the newest sale the PRICE rests on.
+  - The sniper's staleness penalty is about the price's evidence, so it reads the basis age, through a new `get_editions_latest_fmv_wide_v2` (v1 is unchanged for `/api/fmv`, wallet-search and cache-refresh), and falls back to `days_since_sale`. The sniper is exactly as conservative as before, and the deal still displays the true age.
+  - Writers that don't separate the two leave the basis NULL.
+- **The historical-fallback step had the same false zero.** It hardcoded `sales_count_7d/30d = 0` even when the last sale was 7–29 days old: 2–9 editions a day, including our 5 Animated editions (e.g. `274:9079::23`, sold 10-13, published 10-28 as "0 sales in 30 days"). It now writes 0 only once the sale's age proves it (≥ 7 days for the 7-day count, ≥ 30 for the 30-day count), and NULL otherwise. The stale guard leaves a NULL count's label alone.
+- **Migration** `20261029054916`: ADD COLUMN plus the v2 function. A DROP + CREATE of v1 was "cancelled" twice by the MCP's destructive-statement gate, so v2 is a new name. EXECUTE is service_role only (anon false, verified).
+- **Tests:**
+  - the 1.8.3 spike fixture now asserts days 2 / basis 35 / count 1, with a control where the two ages agree;
+  - the historical step has 3 age cases;
+  - the sniper has a pass-through spy on `applyFmvStalenessPenalty` (basis 40 → 40; NULL or absent → 2) and asserts the displayed age;
+  - each was red with its old line planted back.
+
+**Revert:** `git revert` the commit, then `DROP FUNCTION public.get_editions_latest_fmv_wide_v2(uuid[]); ALTER TABLE public.fmv_snapshots DROP COLUMN basis_days_since_sale;` (through the SQL editor; the MCP refuses DROP).
+
 ### 2026-10-28 · 📝 DOCS (no prod change) — **Cadence Collapse cleanup staged, not applied: every DB write raised a Supabase approval prompt that went unanswered; thread-close docs** (Claude Code cloud, ~10:15–10:55 PM PT; Trevor: "Apply what you can and just do it … update any relevant documentation"). `apply_migration` ×4 and `execute_sql` ×1 each timed out on the MCP approval prompt, so production is unchanged (live arm re-read after: original exemptions and the 10-01 ack still in place). The body is staged at `docs/proposals/cadence-bridge-chain-arrivals-STAGED-MIGRATION.sql`: a `chain-arrivals` bridge to 11-05 (demand-gated since `20261023213517`), the lapsed `pinnacle-pull-chain` bridge deleted, the expired Cadence Collapse ack cleared, with a backup table and assertions. Part (1) is moot after 11-04. Also: analytics-smoke debounce verified live (9:43 PM PT tick `telegram_suppressed: true`); focus.md steer, Flowty runbook read (Pinnacle trades again; All Day / Golazos still frozen; Flowty DARK), session log, and a cron-and-schedulers lesson (debounce a pager on the finding's identity). **Revert:** `git revert` the docs commit.
 
 ### 2026-10-28 · 🔧 SHIPPED (code + DB) — **Three stale copies of the Top Shot parallel list now read the chain's list, and none invents a "Parallel N" name** (Cowork cloud, ~10:20–10:45 PM PT; Trevor: "Dig deeper"). After the subedition fix I grepped for other copies of the name list. Three had gone stale and each fell back to a made-up name:
