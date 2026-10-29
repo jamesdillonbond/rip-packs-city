@@ -110,6 +110,29 @@ async function runInChunks<T, R>(items: T[], size: number, worker: (item: T) => 
   return out
 }
 
+/** One run record for an early exit (no work / failed claim); a failure to log is logged, never thrown. */
+async function logTerminal(startedAtIso: string, ok: boolean, error: string | null, extra: Record<string, unknown>) {
+  try {
+    // deno-lint-ignore no-explicit-any
+    const { error: logErr } = await (supabaseAdmin as any).rpc("log_pipeline_run", {
+      p_pipeline: PIPELINE_NAME,
+      p_started_at: startedAtIso,
+      p_rows_found: 0,
+      p_rows_written: 0,
+      p_rows_skipped: 0,
+      p_ok: ok,
+      p_error: error,
+      p_collection_slug: "disney_pinnacle",
+      p_cursor_before: null,
+      p_cursor_after: null,
+      p_extra: { ...extra, function_version: FUNCTION_VERSION },
+    })
+    if (logErr) console.log(`[${PIPELINE_NAME}] log_pipeline_run failed: ${logErr.message}`)
+  } catch (err) {
+    console.log(`[${PIPELINE_NAME}] log_pipeline_run threw: ${err instanceof Error ? err.message : String(err)}`)
+  }
+}
+
 export async function POST(req: NextRequest) {
   if (!isAuthorized(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
@@ -123,7 +146,12 @@ export async function POST(req: NextRequest) {
     "claim_pinnacle_resolver_batch",
     { p_limit: BATCH_LIMIT }
   )
+  // 10-28: neither early exit left a record, so a quiet Pinnacle market (no sales → nothing to claim) and a
+  // failing claim both read as SILENCE — the cadence watchlist paged "last run > 1440 min" through the Dapper
+  // outage while the lane ran fine. Each exit now logs: no work is an honest ok run with 0 rows, a failed
+  // claim an ok:false run with its error.
   if (claimErr) {
+    await logTerminal(startedAtIso, false, `claim_failed: ${claimErr.message}`, { claim_failed: true, elapsed_ms: Date.now() - startedMs })
     return NextResponse.json(
       { status: "error", reason: "claim_failed", error: claimErr.message },
       { status: 500 }
@@ -131,6 +159,7 @@ export async function POST(req: NextRequest) {
   }
   const rows = (claimed ?? []) as ClaimedRow[]
   if (rows.length === 0) {
+    await logTerminal(startedAtIso, true, null, { no_work: true, total_claimed: 0, elapsed_ms: Date.now() - startedMs })
     return NextResponse.json({ status: "no_work", elapsed_ms: Date.now() - startedMs })
   }
 

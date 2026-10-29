@@ -90,21 +90,28 @@ describe("pinnacle-resolve-buyers — auth + control", () => {
     expect(spy.rpcCalls).toHaveLength(0)
   })
 
-  it("no_work short-circuits before any fetch or log", async () => {
+  // 10-28 (inverted): neither early exit used to log, so a quiet market and a failing claim both read as
+  // SILENCE and the cadence watchlist paged "last run > 1440 min" through the Dapper outage. Each now leaves a run.
+  it("no_work fetches nothing and logs an honest ok run with 0 rows (alive, idle — not silent)", async () => {
     fetchMock = installFetchMock([])
     const spy = install({ "rpc:claim_pinnacle_resolver_batch": { data: [], error: null } })
     const res = await POST(req())
     expect(await res.json()).toMatchObject({ status: "no_work" })
     expect(fetchMock.calls).toHaveLength(0)
-    expect(spy.rpcCalls.some((c) => c.name === "log_pipeline_run")).toBe(false)
+    const log = spy.rpcCalls.find((c) => c.name === "log_pipeline_run")
+    expect(log).toBeTruthy()
+    expect(log!.args).toMatchObject({ p_pipeline: "pinnacle-resolve-buyers", p_ok: true, p_rows_written: 0, p_error: null })
+    expect((log!.args as any).p_extra).toMatchObject({ no_work: true, total_claimed: 0 })
   })
 
-  it("a claim error 500s claim_failed", async () => {
+  it("a claim error 500s claim_failed and logs an ok:false run carrying the error (never silence)", async () => {
     const spy = install({ "rpc:claim_pinnacle_resolver_batch": { data: null, error: { message: "claim boom" } } })
     const res = await POST(req(undefined, "?token=rb-cron"))
     expect(res.status).toBe(500)
     expect(await res.json()).toMatchObject({ status: "error", reason: "claim_failed", error: "claim boom" })
-    expect(spy.rpcCalls.some((c) => c.name === "log_pipeline_run")).toBe(false)
+    const log = spy.rpcCalls.find((c) => c.name === "log_pipeline_run")
+    expect(log!.args).toMatchObject({ p_ok: false })
+    expect(String((log!.args as any).p_error)).toContain("claim boom")
   })
 })
 
