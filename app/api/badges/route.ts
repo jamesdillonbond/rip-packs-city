@@ -226,15 +226,13 @@ export async function GET(req: NextRequest) {
       ]
       const badgeTitles: string[] = unifiedBadges.map(b => b.title)
 
-      const parallelNames: Record<number, string> = {
-        0: "Standard", 17: "Blockchain", 18: "Hardcourt", 19: "Hexwave", 20: "Jukebox",
-      }
-
       return {
         ...e,
         badges:           unifiedBadges,
         badge_titles:     badgeTitles,
-        parallel_display: parallelNames[e.parallel_id] ?? `Parallel ${e.parallel_id}`,
+        // 2026-10-28: the row's own parallel_name (Atlas's, written by the drain). A hardcoded 5-name map
+        // here rendered Galactic / Omega / Animated as "Parallel 21/22/23"; an unknown name is null, never invented.
+        parallel_display: e.parallel_id === 0 ? "Standard" : (e.parallel_name ?? null),
         price_gap:        e.low_ask != null && e.highest_offer != null
           ? e.low_ask - e.highest_offer : null,
         is_standard:      e.parallel_id === 0,

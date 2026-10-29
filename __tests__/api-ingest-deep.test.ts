@@ -393,6 +393,7 @@ describe("ingest — subedition (parallel) keying, flag-gated", () => {
     state.gqlResponse = gqlFeed([saleTx({})])
     const spy = install({
       topshot_moment_subeditions: { data: [{ nft_id: "555", subedition_id: 19 }], error: null },
+      topshot_subeditions: { data: [{ subedition_id: 19, name: "Hexwave" }, { subedition_id: 23, name: "Animated" }], error: null },
       editions: [
         { data: [{ external_id: "3:45::19" }], error: null }, // existing check
         { data: { id: "ed-par-1" }, error: null }, // per-tx upsert
@@ -416,6 +417,33 @@ describe("ingest — subedition (parallel) keying, flag-gated", () => {
 
     const sale = (spy.writes.sales ?? []).flatMap((w) => w.rows)
     expect(sale[0]).toMatchObject({ edition_id: "ed-par-1" })
+  })
+
+  // 2026-10-28: names come from topshot_subeditions (the chain's list). A parallel it does not name — or a failed
+  // read — writes NO subedition_name: the old hardcoded 1–22 map invented "Parallel 23", and this upsert would have
+  // written that over the real name of an existing Animated edition.
+  it.each([
+    ["an id the chain list does not name", { data: [{ subedition_id: 19, name: "Hexwave" }], error: null }],
+    ["a failed names read", { data: null, error: { message: "boom" } }],
+  ])("%s: the parallel upsert carries no subedition_name — never 'Parallel N'", async (_label, names) => {
+    process.env.TOPSHOT_SUBEDITION_KEYING = "1"
+    state.gqlResponse = gqlFeed([saleTx({})])
+    const spy = install({
+      topshot_moment_subeditions: { data: [{ nft_id: "555", subedition_id: 23 }], error: null },
+      topshot_subeditions: names,
+      editions: [
+        { data: [{ external_id: "3:45::23" }], error: null },
+        { data: { id: "ed-par-23" }, error: null },
+      ],
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    const row = spy.writes.editions?.find((w) => w.method === "upsert")?.rows[0] ?? {}
+    expect(row).toMatchObject({ external_id: "3:45::23", subedition_id: 23 })
+    expect("subedition_name" in row).toBe(false)
+    expect(JSON.stringify(spy.writes)).not.toMatch(/Parallel \d/)
   })
 
   it("flag OFF: the same nft stays on the base key even when the submap has a parallel row", async () => {

@@ -7,6 +7,7 @@ import { teamMomentSubject } from "@/lib/topshot-edition-name"
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 import { logTerminalRun } from "@/lib/pipeline/terminal-run"
 import { bearerMatches } from "@/lib/auth/bearer-secret"
+import { loadTopshotSubeditionNames, subeditionName, type SubeditionNames } from "@/lib/topshot-subeditions"
 
 // The pipeline_runs name. Stable and route-owned — NOT the workflow step label,
 // which can be renamed without anyone noticing the telemetry key moved. ⚠ It is
@@ -218,17 +219,12 @@ function buildEditionKey(tx: SaleTransaction, submapByNft?: Map<string, number>)
   return base
 }
 
-// On-chain TopShot.getAllSubeditions() id → display name. Used when ingest creates
-// a ::subID parallel edition so it carries a proper name (not NULL).
-function subeditionNameFor(id: number): string {
-  const names: Record<number, string> = {
-    1: "Explosion", 2: "Torn", 3: "Vortex", 4: "Rippled", 5: "Coded", 6: "Halftone",
-    7: "Bubbled", 8: "Diced", 9: "Bit", 10: "Vibe", 11: "Astra", 12: "Diamond",
-    13: "Voltage", 14: "Livewire", 15: "Championship", 16: "Club Collection",
-    17: "Blockchain", 18: "Hardcourt", 19: "Hexwave", 20: "Jukebox", 21: "Galactic", 22: "Omega",
-  }
-  return names[id] ?? `Parallel ${id}`
-}
+// On-chain TopShot.getAllSubeditions() id → display name, read per run from public.topshot_subeditions
+// (kept current from the chain). 2026-10-28: this was a hardcoded 1–22 list whose fallback invented
+// "Parallel 23" — and the edition upsert below writes subedition_name, so a sale of a new parallel would have
+// renamed its real edition. A name we do not know is now left OUT of the upsert (never invented, never
+// overwriting), and a failed read means no names are written this run.
+let subeditionNames: SubeditionNames | null = null
 
 // Batch-load the authoritative on-chain subedition id for a set of nft_ids
 // (only rows with subedition_id > 0 — Standard/0 is the base, no suffix). Powers
@@ -415,7 +411,10 @@ async function upsertEdition(
   const isSubKey = editionKey.includes("::")
   const subId = isSubKey ? parseInt(editionKey.split("::")[1], 10) || 0 : 0
   const subeditionFields = isSubKey
-    ? { subedition_id: subId, subedition_name: subeditionNameFor(subId) }
+    ? (() => {
+        const name = subeditionName(subeditionNames, subId)
+        return name ? { subedition_id: subId, subedition_name: name } : { subedition_id: subId }
+      })()
     : {}
 
   const { data, error } = await supabaseAdmin
@@ -691,6 +690,10 @@ export async function POST(req: NextRequest) {
     // Load on-chain subedition ids for this batch's nfts so buildEditionKey can
     // split parallels from the trusted map instead of the unreliable GQL
     // parallelID (Item 1). Empty when the flag is off → base-only keying.
+    const namesRead = await loadTopshotSubeditionNames()
+    subeditionNames = namesRead.ok ? namesRead.names : null
+    if (!namesRead.ok) console.error("[INGEST] topshot_subeditions read failed — parallel names left unwritten:", namesRead.error)
+
     const submapByNft = await loadSubeditionMap(
       transactions
         .map((t) => (t.moment?.flowId ? String(t.moment.flowId) : null))

@@ -129,14 +129,18 @@ describe("GET /api/badges — the play-tag allowlist", () => {
 })
 
 describe("GET /api/badges — derived row fields", () => {
-  it("maps known parallels by name and falls back to 'Parallel N' for the rest", async () => {
+  // 2026-10-28 (inverted): names come from the row's own parallel_name — a hardcoded 5-name map rendered
+  // Galactic / Omega / Animated as "Parallel 21/22/23". An unnamed parallel is null, never an invented name.
+  it("names each parallel from its own row, Standard for 0, and invents no 'Parallel N'", async () => {
     state.rows = [
-      { parallel_id: 0 }, { parallel_id: 17 }, { parallel_id: 19 }, { parallel_id: 99 },
+      { parallel_id: 0 }, { parallel_id: 17, parallel_name: "Blockchain" }, { parallel_id: 23, parallel_name: "Animated" },
+      { parallel_id: 99 },
     ]
     const body = await (await GET(req("?mode=all"))).json()
-    expect(body.editions.map((e: { parallel_display: string }) => e.parallel_display)).toEqual([
-      "Standard", "Blockchain", "Hexwave", "Parallel 99",
+    expect(body.editions.map((e: { parallel_display: string | null }) => e.parallel_display)).toEqual([
+      "Standard", "Blockchain", "Animated", null,
     ])
+    expect(JSON.stringify(body)).not.toMatch(/Parallel \d/)
     expect(body.editions[0].is_standard).toBe(true)
     expect(body.editions[1].is_standard).toBe(false)
   })
