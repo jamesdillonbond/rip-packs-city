@@ -12,6 +12,25 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-10-29 · 🔧 SHIPPED (DB) — **The on-chain subedition resolver works first-in-first-out; it had been starving the newest Moments** (Cowork cloud, ~2:36–3:00 PM PT; the scheduled check-in on the 10-28 Animated / Illustrated work).
+- **The check found the 1:32 PM resolver run had resolved its full 20,000 but none of the 155 Animated / Illustrated moments queued at 9:55 PM 10-28.**
+  - Cause: `get_topshot_subedition_targets()` picks `ORDER BY nft_id`, and `nft_id` is TEXT. So the order is lexicographic, and each day's "1…"–"3…" inflow fills the batch first.
+  - Measured after the run: all 10,000 still-pending rows had ids starting 4–8 (4,682 × "4…", 5,281 × "5…"). That is the NEWEST Moments, current series and new parallels included.
+  - The 20260904133105 queue-cap design had reasoned about numeric order.
+- **Fix (`20261029213925`):**
+  - `topshot_moment_subeditions.queued_at` (DEFAULT now(); a STABLE default is catalog-only, no rewrite).
+  - A partial index on `(queued_at, nft_id) WHERE subedition_id IS NULL`.
+  - The batch ordered by `(queued_at, nft_id)`. Inflow is ~25k/day against 20k resolved, so every id now waits ~1–2 days at worst.
+  - The old index stays; ACL unchanged.
+- **Data, through the resolver's own path:**
+  - Read `TopShot.getMomentsSubedition` for the 155 via Flow REST (the edge function's own Cadence script): 142 → 23 (Animated), 13 → 24 (Illustrated). Written with `apply_topshot_subeditions` (155 rows).
+  - Ran the drain route's split step `remap_topshot_split_resolved_subeditions(8000)` a day early: 401 sales, 273 holdings and 93 moments split (all resolved parallels, not only ours), 8 collisions skipped as designed.
+  - Verified on the 56 bases: 96 holdings and 36 sales now on `::23/::24`, 0 resolved-Animated rows left on a base key, and the 32 duplicate (edition, serial) pairs gone.
+  - Four 10-29 sales of Standard /149 editions not yet queued will be seeded and resolved in FIFO order.
+  - Base-edition 30-day counts fell where Animated sales left (e.g. `272:9034` 12 → 10, `274:9068` 14 → 11). The next sweep prices them from Standard sales only.
+
+**Revert:** restore `ORDER BY nft_id` in `get_topshot_subedition_targets` (the column and index are inert without it). The split is audited in `audit_20260704_subedition_split_remap`, as for every run of the drain.
+
 ### 2026-10-29 · 📏 VERIFIED (read-only) — **the 10-29 FMV caps and rip re-prices reached both pack-reality boards** (Claude Code cloud, 11:43 AM PT, after the 11:35 / 11:42 AM PT MV refreshes, both `succeeded`). All Day: "Wild Card Weekend: Premium Chance" realised mean **$89.74 → $9.75** (3,483 opens, median $3.52), the target of the morning's `_histcap` + 72-rip repair. Top Shot: "Arike's Record Night" realised/modeled **2864% → 167%** (mean $196 → $11.46, median $5.53 unchanged). Also live: first-mint and squeeze name parallels; the deals board serves the corrected All Day notice; the hub squeeze stat is 5,770. **Revert:** n/a.
 
 ### 2026-10-29 · 🔧 SHIPPED (code) — **Underpriced #1s stops calling its rows "live, buyable" while it captions the same listings as hours old** (Claude Code cloud, 11:23 AM PT). Found live: the lede said "Every row is a live, buyable deal" and the KPI said "Live deals", next to "Listings last refreshed 7h ago". The listing spine (`topshot-active-listings-ingest`) last ran at 3:13 AM PT: its runner is Trevor's home machine (dark since ~3–6 AM PT, with the Panini runner), and the GitHub backstop skips on its Atlas probe. All three now follow one test (`listingsStale`, the existing ≥ 4 h check on the hydration-safe clock): when stale, the lede says "listed at our last refresh … may have sold since — check the listing" and the KPI says "Deals". The /insights hub description no longer promises "live, buyable" unconditionally. Test: `component-UnderpricedSerialsBoardClient-hydration-safe` +1, on server renders; forcing `listingsStale` false (a planted defect) reds 4 cases. **Revert:** `git revert` the commit.
