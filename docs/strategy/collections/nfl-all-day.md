@@ -125,11 +125,11 @@ Read from a code sweep of every Top Shot-only branch (≈58 rows) and a DB check
 |---|---|---|---|
 | Overview · Market · Collection · Packs · Pack Sniper · Sniper · Sets · Analytics | ✓ | ✓ | registry `pages` |
 | Hot Floors | ✓ (Quick-Buy sweeps) | ✓ (new) | All Day sales carry no proposer, so a sweep = one collector, 3+ copies, no gap over 60 min, 7 days (`get_allday_hot_floors`). Linked from the Sniper (Top Shot's board had no inbound link) |
-| Challenges · Play · Fast Break · Road to the Ring | ✓ | ✗ | no All Day challenge ingest; concierge says so (new) |
+| Challenges · Play · Fast Break · Road to the Ring | ✓ | ✗ | no All Day challenge ingest; concierge says so. Probed 10-28 ~8:40 PM PT: Atlas `QuestService/GetQuestStatus {"product":"nfl"}` answers 200 with `quests: []` while Top Shot's identical call returns 18 — All Day runs no challenges on that service today. An ingest is Top Shot's `ingest_topshot_challenges_atlas_*` parameterised by product (`atlas_market_headers('nfl')` already exists) |
 | Edition: FMV, chart, sales, floor ask (dated by last check), % listed, best offer, special serials, pack provenance, market cap, badges | ✓ | ✓ | |
 | Edition: Offers tab | ✓ | ✓ (new) | was a false "No open offers" on every edition; `allday_open_offers` arm, bidder / bid time unknown → "—" |
 | Edition: "See who holds X's special serials" | ✓ | ✓ (new) | the board read no URL params, so the link opened unfiltered on Top Shot too — fixed for both |
-| Edition: Top Owners | ✓ (Dune index) | ✗ | wmc covers ~315 All Day wallets — a thin lower bound; needs an ownership walk before it can be shown honestly |
+| Edition: Top Owners | ✓ (Dune index) | ✗ | wmc covers ~315 All Day wallets — a thin lower bound; needs an ownership walk before it can be shown honestly. A Dune walk for All Day would share the free plan's datapoint cap, which Top Shot's walk already fills to ~88 % — not possible without spend (no spend pre-revenue) |
 | Edition: insight chips | ✓ | ✓ (new, pass 2) | "N% scarcer than its set + tier" (`allday_scarcity_board`, family ≥ 3) and "Top bid N% of floor" (the page's own bid + floor) — each only when true for that edition |
 | Edition: parallel ladder · thin-parallel estimate | ✓ | ✗ | All Day editions are numeric ids with no `::sub` grouping |
 | Market Cap: issuer-held split | ✓ | ✗ | no All Day issuer / pack-inventory source |

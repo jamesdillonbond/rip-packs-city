@@ -124,6 +124,7 @@ import { fetchPaniniEditionAsk, fetchPaniniEditionSerials } from "@/lib/panini/e
 import { paniniEditionUrl } from "@/lib/panini/edition-url";
 import { isSqueezeCollection, SQUEEZE_LABEL, type SqueezeCollection } from "@/lib/insights/squeeze-collections";
 import { readSqueezeCheck, readWalletScanState } from "@/lib/insights/squeeze-check";
+import { TROPHY_COLLECTIONS } from "@/lib/insights/trophy-collections";
 
 const supabase: any = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -771,7 +772,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "get_insight_board",
-    description: `Read any of RPC's other public insight boards by name — the shareable /insights/* surfaces not covered by a more specific tool. Use for board/ecosystem questions about supply, scarcity, set completion, trophies, or the pack market. board options: 'squeeze' (supply locked + burned, ecosystem-wide — Top Shot's, or NFL All Day's on an All Day question), 'set_squeeze' (set-level squeeze — Top Shot's, or NFL All Day's on an All Day question), 'set_completers' (wallets closest to completing sets), 'trophies' (#1 / first-mint trophy room — who holds the grails), 'pinnacle_scarcity' (Disney Pinnacle scarcity), 'allday_scarcity' (NFL All Day scarcity), 'topshot_pack_market' (Top Shot pack prices / market), 'allday_pack_market' (All Day pack market), 'pack_reality' (Top Shot pack REALIZED EV — what packs actually returned vs cost), 'allday_pack_reality' (All Day pack realized EV), 'market' (Top Shot daily market index), 'rookie_board' (the Top Shot rookie EDITION board — a different source from get_rookies' per-player rookie index, so use this one for per-edition rookie supply/burn questions), 'panini_squeeze' (Panini Prizm World Cup squeeze board), 'panini_pack_market' (EVERY Panini pack — WC, NBA, NFL, WNBA… — with its cost, typical pull, mean EV, the simulated median pack and P(pull ≥ cost), and a rip_verdict you MUST follow: never call a Panini pack +EV, profitable or worth ripping unless rip_verdict is 'typical_pack_beats_cost'), 'panini_premiums' (Panini numbered-parallel premiums over the base parallel, and #1 / perfect-mint serial sales over the edition median; Panini ALSO has collection tabs at ${PANINI_TAB_PATHS} — its index is listing-fed because Panini publishes no checklist, so call every Panini count a floor, never a census), 'candy_mlb' (the Candy MLB board; Candy MLB, on Solana, ALSO has collection tabs at ${CANDY_TAB_PATHS} — Candy Digital issues it and it trades secondary on Magic Eden and, since 2026-08-31, OpenSea (Solana), so point listing questions at those marketplaces, not at Candy Digital) and 'pack_drops' (upcoming / recent pack drops). Read-only; report the rows factually, no buy/sell calls, and any figure you cite must come from this tool call this turn.`,
+    description: `Read any of RPC's other public insight boards by name — the shareable /insights/* surfaces not covered by a more specific tool. Use for board/ecosystem questions about supply, scarcity, set completion, trophies, or the pack market. board options: 'squeeze' (supply locked + burned, ecosystem-wide — Top Shot's, or NFL All Day's on an All Day question), 'set_squeeze' (set-level squeeze — Top Shot's, or NFL All Day's on an All Day question), 'set_completers' (Top Shot wallets closest to completing sets — Top Shot only), 'trophies' (#1 / first-mint trophy room — who holds the grails; filtered to the question's collection when one is named), 'pinnacle_scarcity' (Disney Pinnacle scarcity), 'allday_scarcity' (NFL All Day scarcity), 'topshot_pack_market' (Top Shot pack prices / market), 'allday_pack_market' (All Day pack market), 'pack_reality' (Top Shot pack REALIZED EV — what packs actually returned vs cost), 'allday_pack_reality' (All Day pack realized EV), 'market' (daily tier-segmented market index — Top Shot's, or NFL All Day's on an All Day question), 'rookie_board' (the Top Shot rookie EDITION board — a different source from get_rookies' per-player rookie index, so use this one for per-edition rookie supply/burn questions), 'panini_squeeze' (Panini Prizm World Cup squeeze board), 'panini_pack_market' (EVERY Panini pack — WC, NBA, NFL, WNBA… — with its cost, typical pull, mean EV, the simulated median pack and P(pull ≥ cost), and a rip_verdict you MUST follow: never call a Panini pack +EV, profitable or worth ripping unless rip_verdict is 'typical_pack_beats_cost'), 'panini_premiums' (Panini numbered-parallel premiums over the base parallel, and #1 / perfect-mint serial sales over the edition median; Panini ALSO has collection tabs at ${PANINI_TAB_PATHS} — its index is listing-fed because Panini publishes no checklist, so call every Panini count a floor, never a census), 'candy_mlb' (the Candy MLB board; Candy MLB, on Solana, ALSO has collection tabs at ${CANDY_TAB_PATHS} — Candy Digital issues it and it trades secondary on Magic Eden and, since 2026-08-31, OpenSea (Solana), so point listing questions at those marketplaces, not at Candy Digital) and 'pack_drops' (upcoming / recent Vaultopolis re-pack drops of Top Shot moments — Top Shot only). Read-only; report the rows factually, no buy/sell calls, and any figure you cite must come from this tool call this turn.`,
     input_schema: {
       type: "object" as const,
       properties: {
@@ -5241,7 +5242,35 @@ async function executeToolInner(
         && getCollectionUuid(effectiveCollectionId) !== getCollectionUuid("nba-top-shot")) {
       return JSON.stringify({ status: "unsupported_collection", message: "The RPC Index (market board) exists for NBA Top Shot and NFL All Day only. Say so; do not quote Top Shot's market for this collection." });
     }
-    const squeezeLeg = (isSqueeze || isMarket) && isAllDaySlug(effectiveCollectionId) ? "?collection=nfl-all-day" : "";
+    // 2026-10-28: boards that are Top Shot's ALONE (their names do not all say so) are refused on any other named
+    // collection — on an All Day question set_completers / rookie_board / pack_reality answered with Top Shot rows
+    // under All Day's name. Where All Day has its own board, the refusal names it.
+    const TOPSHOT_ONLY_BOARDS: Record<string, string> = {
+      "set-completers": "",
+      "rookie-board": "",
+      "pack-drops": "",
+      "topshot-pack-market": "allday_pack_market",
+      "pack-reality": "allday_pack_reality",
+    };
+    if (Object.prototype.hasOwnProperty.call(TOPSHOT_ONLY_BOARDS, path) && effectiveCollectionId
+        && getCollectionUuid(effectiveCollectionId) !== getCollectionUuid("nba-top-shot")) {
+      const alt = isAllDaySlug(effectiveCollectionId) ? ownLookup(TOPSHOT_ONLY_BOARDS, path) : "";
+      return JSON.stringify({
+        status: "unsupported_collection",
+        message: `The ${path} board is NBA Top Shot's only. Say so; do not quote Top Shot's rows for this collection.${alt ? ` NFL All Day's own board is '${alt}'.` : ""}`,
+      });
+    }
+    // 2026-10-28: the trophy room covers every published collection with an optional filter; a named collection
+    // reads its own trophies (it used to get every collection's rows mixed), and one the room does not cover is refused.
+    let trophyLeg = "";
+    if (path === "trophies" && effectiveCollectionId) {
+      const db = toDbSlug(effectiveCollectionId);
+      if (!db || !TROPHY_COLLECTIONS.includes(db)) {
+        return JSON.stringify({ status: "unsupported_collection", message: "The trophy room covers RPC's published Flow collections only. Say so; do not quote another collection's trophies." });
+      }
+      trophyLeg = `?collection=${db}`;
+    }
+    const squeezeLeg = (isSqueeze || isMarket) && isAllDaySlug(effectiveCollectionId) ? "?collection=nfl-all-day" : trophyLeg;
     return fetchPublicInsight(base, `/api/public/insights/${path}${squeezeLeg}`, limit);
   }
 

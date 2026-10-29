@@ -380,6 +380,43 @@ describe("concierge — get_ecosystem_stat + get_insight_board enum maps", () =>
     await POST(post("how is the market doing"))
     expect(f.calls.find((c) => c.url.includes("/insights/market"))!.url).not.toContain("collection=")
   })
+  // 2026-10-28: Top Shot-only boards are refused on another named collection; trophies filter to it.
+  it.each([
+    ["set_completers", "/set-completers", ""],
+    ["rookie_board", "/rookie-board", ""],
+    ["pack_drops", "/pack-drops", ""],
+    ["pack_reality", "/pack-reality", "allday_pack_reality"],
+    ["topshot_pack_market", "/topshot-pack-market", "allday_pack_market"],
+  ])("board=%s on NFL All Day is refused, never Top Shot's rows", async (board, path, alt) => {
+    const f = stubFetch([jsonRoute(`/api/public/insights${path}`, { rows: [{ x: 1 }] })])
+    const r = await drive("get_insight_board", { board, collectionId: "nfl-all-day" })
+    expect(r).toMatchObject({ status: "unsupported_collection" })
+    if (alt) expect(String((r as { message?: string }).message)).toContain(alt)
+    expect(f.calls.some((c) => c.url.includes(`/api/public/insights${path}`))).toBe(false)
+  })
+  it("board=set_completers on Top Shot (or no collection) still reads the board", async () => {
+    const f = stubFetch([jsonRoute("/api/public/insights/set-completers", { rows: [{ x: 1 }] })])
+    for (const collectionId of ["nba-top-shot", undefined]) {
+      script("get_insight_board", collectionId ? { board: "set_completers", collectionId } : { board: "set_completers" })
+      await POST(post("set completers"))
+    }
+    expect(f.calls.filter((c) => c.url.includes("/set-completers"))).toHaveLength(2)
+  })
+  it("board=trophies on NFL All Day reads only All Day's trophies; with no collection, every collection's", async () => {
+    const f = stubFetch([jsonRoute("/api/public/insights/trophies", { rows: [{ x: 1 }] })])
+    script("get_insight_board", { board: "trophies", collectionId: "nfl-all-day" })
+    await POST(post("all day trophies"))
+    expect(f.calls.find((c) => c.url.includes("/trophies"))!.url).toContain("collection=nfl_all_day")
+    script("get_insight_board", { board: "trophies" })
+    await POST(post("trophies"))
+    expect(f.calls.filter((c) => c.url.includes("/trophies"))[1].url).not.toContain("collection=")
+  })
+  it("board=trophies on Candy MLB reads Candy's trophies (the room covers every published collection)", async () => {
+    const f = stubFetch([jsonRoute("/api/public/insights/trophies", { rows: [{ x: 1 }] })])
+    script("get_insight_board", { board: "trophies", collectionId: "candy-mlb" })
+    await POST(post("candy trophies"))
+    expect(f.calls.find((c) => c.url.includes("/trophies"))!.url).toContain("collection=candy_mlb")
+  })
   it("board=squeeze with collectionId nba-top-shot reads Top Shot's board", async () => {
     const f = stubFetch([jsonRoute("/api/public/insights/squeeze", { rows: [{ x: 1 }] })])
     script("get_insight_board", { board: "squeeze", collectionId: "nba-top-shot" })
