@@ -134,6 +134,19 @@ describe("UnderpricedSerialsBoardClient — hydration safety (React #418)", () =
     )
   })
 
+  it("10-29: a stale spine drops the 'live, buyable' claims; a fresh one keeps them", () => {
+    // The lede said "Every row is a live, buyable deal" and the KPI "Live deals" while the
+    // caption beside them read "Listings last refreshed 7h ago". All three follow one test.
+    const stale = stripMarkers(serverRenderAt(T1, STALE_ROWS, BAKED_AT_STALE))
+    expect(stale).toContain("Listings last refreshed 10h ago")
+    expect(stale).not.toContain("live, buyable deal")
+    expect(stale).not.toContain("Live deals")
+    expect(stale).toContain("may have sold since")
+    const fresh = stripMarkers(serverRenderAt(T2, FRESH_ROWS, BAKED_AT_FRESH))
+    expect(fresh).toContain("live, buyable deal")
+    expect(fresh).toContain("Live deals")
+  })
+
   it("still swaps to the LIVE clock after mount (the feature survives the fix)", async () => {
     // After hydration the board is supposed to track real time — the anchor is
     // only for the first render. render() flushes effects, so this observes the

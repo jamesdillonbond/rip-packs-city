@@ -364,7 +364,7 @@ const CARDS: Card[] = [
     eyebrow: "Live",
     title: "Underpriced #1s",
     blurb:
-      "Top Shot #1 mints and perfect mints (#N/N) listed right now for less than the serial is worth — ranked by discount vs the serial-FMV estimate. Every row a live, buyable deal with a direct listing link, not a historical sale.",
+      "Top Shot #1 mints and perfect mints (#N/N) listed right now for less than the serial is worth — ranked by discount vs the serial-FMV estimate. Every row is a listing with a direct link, not a historical sale; the board says when its listings are hours old.",
     cta: "Find underpriced #1s",
     available: true,
   },

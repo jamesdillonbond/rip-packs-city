@@ -398,6 +398,9 @@ export default function UnderpricedSerialsBoardClient({ initialRows, initialFetc
     if (nowMs == null) return null
     return (nowMs - maxTs) / 3_600_000
   }, [rows, nowMs])
+  // 10-29: the lede and the KPI said "live, buyable" while this same check captioned the listings
+  // as 7 h old. Both claims now follow the one staleness test.
+  const listingsStale = listingsAgeHours != null && listingsAgeHours >= 4
 
   const shareUrl = `${SITE_URL}/insights/underpriced-serials`
   const tweetIntent = useMemo(() => {
@@ -427,9 +430,20 @@ export default function UnderpricedSerialsBoardClient({ initialRows, initialFetc
         <p className="rpc-us-lede">
           The serials collectors chase — the <strong>#1 mint</strong> and the{" "}
           <strong>perfect mint</strong> (#N&nbsp;of&nbsp;N) — that are{" "}
-          <strong>listed right now</strong> for less than the serial is worth.
-          Ranked by discount versus the serial-FMV estimate. Every row is a live,
-          buyable deal — not a historical sale.
+          {listingsStale ? (
+            <>
+              <strong>listed at our last refresh</strong> for less than the serial is worth.
+              Ranked by discount versus the serial-FMV estimate. The listings are{" "}
+              {Math.round(listingsAgeHours ?? 0)}h old, so some may have sold since — check the
+              listing before you buy.
+            </>
+          ) : (
+            <>
+              <strong>listed right now</strong> for less than the serial is worth.
+              Ranked by discount versus the serial-FMV estimate. Every row is a live,
+              buyable deal — not a historical sale.
+            </>
+          )}
         </p>
         <div className="rpc-us-meta-row">
           <span className="rpc-us-meta">
@@ -439,7 +453,7 @@ export default function UnderpricedSerialsBoardClient({ initialRows, initialFetc
           <span className="rpc-us-meta">NBA Top Shot</span>
           <span className="rpc-us-meta-sep">·</span>
           <span className="rpc-us-meta">No signup</span>
-          {listingsAgeHours != null && listingsAgeHours >= 4 ? (
+          {listingsStale ? (
             <>
               <span className="rpc-us-meta-sep">·</span>
               <span className="rpc-us-meta rpc-us-stale">
@@ -452,7 +466,7 @@ export default function UnderpricedSerialsBoardClient({ initialRows, initialFetc
 
       <section className="rpc-us-kpi-row" aria-label="Summary">
         <div className="rpc-us-kpi">
-          <div className="rpc-us-kpi-label">Live deals</div>
+          <div className="rpc-us-kpi-label">{listingsStale ? "Deals" : "Live deals"}</div>
           <div className="rpc-us-kpi-value">{fmtInt(kpis.count)}</div>
         </div>
         <div className="rpc-us-kpi">
