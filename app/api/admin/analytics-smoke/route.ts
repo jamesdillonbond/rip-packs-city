@@ -15,6 +15,14 @@
 // check names + detail. Warn-only runs stay quiet — that's nightly noise the
 // dashboard surfaces, not a paging event.
 //
+// ⚠ DEBOUNCED 2026-10-28 by the SET of failing check names (ops_alert_should_send,
+// the same gate lib/ops-alert.ts uses). Before, a fail that persisted paged on
+// every 30-min tick: freshness_sales_per_collection stayed red through the Dapper
+// maintenance (All Day + Pinnacle sales genuinely stale) and sent 24 identical
+// pages in 11.5 h — an alarm that repeats like that gets muted, and then a NEW fail
+// is missed. A different failing set is a new key and pages at once; the same set
+// re-pages every ALERT_COOLDOWN_MINUTES. pipeline_runs still records every tick.
+//
 // Bearer auth via RPC_ADMIN_TOKEN, accepted as either an `Authorization:
 // Bearer …` header or a `?token=…` query param (lib/admin-auth.ts handles both).
 
@@ -92,6 +100,29 @@ function buildAlertText(env: SmokeEnvelope): string {
 // RECORDED as a failed send rather than thrown — the failure becomes visible
 // instead of silent, which is the entire point.
 const TELEGRAM_TIMEOUT_MS = 10_000;
+
+const ALERT_COOLDOWN_MINUTES = 180;
+
+/** Debounce key: the sorted names of the failing checks. */
+function smokeAlertKey(env: SmokeEnvelope): string {
+  const names = (env.results || []).filter((r) => r.severity === "fail").map((r) => r.name).sort();
+  return `analytics-smoke:${names.join(",")}`;
+}
+
+/** false only when the gate answers "within cooldown"; a gate error fails OPEN (a broken debounce must not silence a page). */
+async function alertAllowed(key: string): Promise<boolean> {
+  try {
+    const { data, error } = await (supabaseAdmin as any).rpc("ops_alert_should_send", {
+      p_key: key,
+      p_cooldown_minutes: ALERT_COOLDOWN_MINUTES,
+    });
+    if (error) console.error("[analytics-smoke dedup] gate failed, sending anyway:", error.message);
+    return error ? true : data !== false;
+  } catch (e) {
+    console.error("[analytics-smoke dedup] gate threw, sending anyway:", e instanceof Error ? e.message : e);
+    return true;
+  }
+}
 
 async function fireTelegram(text: string): Promise<boolean> {
   if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) return false;
@@ -195,8 +226,10 @@ async function runSmoke(startedAtIso: string, started: number): Promise<void> {
   }
 
   let telegramSent = false;
+  let telegramSuppressed = false;
   if (envelope.overall_severity === "fail") {
-    telegramSent = await fireTelegram(buildAlertText(envelope));
+    if (await alertAllowed(smokeAlertKey(envelope))) telegramSent = await fireTelegram(buildAlertText(envelope));
+    else telegramSuppressed = true;
   }
 
   await logRun(
@@ -207,7 +240,7 @@ async function runSmoke(startedAtIso: string, started: number): Promise<void> {
       : null,
     envelope,
     Date.now() - started,
-    { telegram_sent: telegramSent }
+    { telegram_sent: telegramSent, telegram_suppressed: telegramSuppressed }
   );
 }
 

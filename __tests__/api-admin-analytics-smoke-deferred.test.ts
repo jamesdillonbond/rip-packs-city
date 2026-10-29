@@ -23,11 +23,16 @@ const st = vi.hoisted(() => ({
   authed: true,
   saturated: false,
   smoke: { data: null as any, error: null as any },
+  gate: { data: null as any, error: null as any } as any,
 }))
 const rpc = vi.hoisted(() => vi.fn(async (name: string, _params?: any) => {
   if (name === "analytics_smoke_run") {
     if (st.smoke.error === "THROW") throw new Error("rpc exploded")
     return st.smoke
+  }
+  if (name === "ops_alert_should_send") {
+    if (st.gate === "THROW") throw new Error("gate exploded")
+    return st.gate
   }
   return { data: null, error: null } // log_pipeline_run
 }))
@@ -59,6 +64,7 @@ beforeEach(() => {
   st.authed = true
   st.saturated = false
   st.smoke = { data: envelope(), error: null }
+  st.gate = { data: true, error: null }
   rpc.mockClear()
   telegramOk = true
   installFetch()
@@ -154,5 +160,53 @@ describe("/api/admin/analytics-smoke — deferred body", () => {
     expect(p.p_ok).toBe(false)
     expect(p.p_error).toContain("smoke crashed")
     expect(p.p_extra.fatal).toBe(true)
+  })
+
+  // 10-28: a persisting fail paged on every 30-min tick (24 identical pages in 11.5 h through the Dapper maintenance).
+  describe("Telegram debounce by the set of failing checks", () => {
+    const failing = () => ({
+      data: envelope({ overall_severity: "fail", fail_count: 2, results: [
+        { name: "zeta_check", severity: "fail", ms: 1, detail: {} },
+        { name: "alpha_check", severity: "fail", ms: 1, detail: {} },
+        { name: "warn_only", severity: "warn", ms: 1, detail: {} },
+      ] }),
+      error: null,
+    })
+
+    it("asks the gate with the sorted failing names, warn checks excluded", async () => {
+      st.smoke = failing()
+      await drive()
+      const gate = rpc.mock.calls.find((c) => c[0] === "ops_alert_should_send")?.[1]
+      expect(gate.p_key).toBe("analytics-smoke:alpha_check,zeta_check")
+      expect(gate.p_cooldown_minutes).toBeGreaterThan(30)
+    })
+
+    it("within cooldown → no Telegram, the fail is still logged, and the run says it was suppressed", async () => {
+      st.smoke = failing()
+      st.gate = { data: false, error: null }
+      await drive()
+      const p = logParams()
+      expect((globalThis.fetch as any).mock.calls.length).toBe(0)
+      expect(p.p_ok).toBe(false)
+      expect(p.p_extra.telegram_sent).toBe(false)
+      expect(p.p_extra.telegram_suppressed).toBe(true)
+    })
+
+    it.each([
+      ["an error", { data: null, error: { message: "gate down" } }],
+      ["a throw", "THROW"],
+    ])("a gate that answers with %s fails OPEN — the page is sent", async (_label, gate) => {
+      st.smoke = failing()
+      st.gate = gate
+      await drive()
+      expect((globalThis.fetch as any).mock.calls.length).toBe(1)
+      expect(logParams().p_extra.telegram_sent).toBe(true)
+      expect(logParams().p_extra.telegram_suppressed).toBe(false)
+    })
+
+    it("an ok run never consults the gate", async () => {
+      await drive()
+      expect(rpc.mock.calls.some((c) => c[0] === "ops_alert_should_send")).toBe(false)
+    })
   })
 })
