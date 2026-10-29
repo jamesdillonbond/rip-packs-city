@@ -2043,10 +2043,11 @@ const PINS = [
   },
   {
     // Re-pinned 2026-10-23: the Golazos arm (the same cap, the same measured shape).
-    // Re-pinned 2026-10-29: the All Day _histcap arm (no sale in 180 d: capped at 3x the last-3 of any age).
+    // Re-pinned 2026-10-29: the All Day _histcap arm (no sale in 180 d: capped at 3x the last-3 of any age),
+    // then the same day its Top Shot extension (Top Shot's 180-day _salescap arm stays off).
     fn: "fmv_snapshots_cap_allday_ask_only_to_recent_sales",
     test: "supabase/tests/fmv_snapshots_cap_allday_ask_only_to_recent_sales.sql",
-    migration: "supabase/migrations/20261029163041_audit_20261029_allday_ask_only_histcap.sql",
+    migration: "supabase/migrations/20261029163623_audit_20261029_topshot_ask_only_histcap.sql",
   },
   {
   // 2026-10-23 (#209): a Top Shot / All Day STALE price is capped at the edition's LAST market sale.

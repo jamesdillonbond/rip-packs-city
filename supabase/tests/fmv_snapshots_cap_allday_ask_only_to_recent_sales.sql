@@ -8,7 +8,9 @@
 -- allday-listing-ask-v1), which is why it lives in the DB and not in each caller.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (20261029163041_audit_20261029_allday_ask_only_histcap, the 2026-10-29 _histcap arm: with no sale in
+-- (20261029163623_audit_20261029_topshot_ask_only_histcap: the _histcap arm covers Top Shot too, backtested
+-- the same way and never worse — older WAPE 62.2 -> 59.0, recent within +/-25 18.1 -> 19.4. Before it:
+-- 20261029163041_audit_20261029_allday_ask_only_histcap, the 2026-10-29 _histcap arm: with no sale in
 -- 180 days an All Day ASK_ONLY price is capped at 3x its last-3 sales of ANY age. Backtested 120 d,
 -- never worse in any cell, WAPE 191.8 -> 101.5 in the recent half. Before it: 20261023134231, the
 -- Golazos arm; Golazos read the same 1.80 / 20.0 shape on 70 sales and the cap 1.62 → 1.00 on the 25
@@ -38,10 +40,12 @@ DECLARE
   -- NFL All Day and LaLiga Golazos (collections.id). Scoped by measurement: the same cap is not a win on Top Shot.
   c_allday  constant uuid := 'dee28451-5d62-409e-a1ad-a83f763ac070';
   c_golazos constant uuid := '06248cc4-b85f-47cd-af67-1855d14acd75';
+  -- NBA Top Shot: in the _histcap arm only (2026-10-29); its _salescap arm stays off by measurement.
+  c_topshot constant uuid := '95f28a17-224a-4025-96ad-adf8a4c63bfd';
   v_med numeric;
   v_hist numeric;
 BEGIN
-  IF NEW.collection_id IN (c_allday, c_golazos)
+  IF NEW.collection_id IN (c_allday, c_golazos, c_topshot)
      AND NEW.confidence = 'ASK_ONLY'
      AND NEW.fmv_usd IS NOT NULL
      AND NEW.edition_id IS NOT NULL
@@ -58,10 +62,10 @@ BEGIN
          ORDER BY y.sold_at DESC
          LIMIT 3
       ) q;
-    IF v_med IS NOT NULL AND v_med > 0 AND NEW.fmv_usd > v_med THEN
+    IF NEW.collection_id IN (c_allday, c_golazos) AND v_med IS NOT NULL AND v_med > 0 AND NEW.fmv_usd > v_med THEN
       NEW.fmv_usd := round(v_med, 2);
       NEW.algo_version := COALESCE(NEW.algo_version, '') || '_salescap';
-    ELSIF v_med IS NULL AND NEW.collection_id = c_allday THEN
+    ELSIF v_med IS NULL AND NEW.collection_id IN (c_allday, c_topshot) THEN
       -- 2026-10-29: no sale in 180 days, but an older history bounds the ask at 3x its last-3 median.
       SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY q.price_usd)
         INTO v_hist
@@ -101,7 +105,9 @@ CREATE TRIGGER trg_cap_allday_ask_only BEFORE INSERT ON fmv_snapshots
 --   e7  Top Shot, three recent sales 2 / 3 / 4 — the control: out of scope
 --   e8  Golazos, three recent sales 2 / 3 / 4 — in scope since 2026-10-23
 --   e9  All Day, sales only OLDER than 180 days, at 5.00 — 3x that (15.00) is above the 8.10 ask
---   e10 Golazos, sales only OLDER than 180 days, at 1.00 — the _histcap arm is All Day only
+--   e10 Golazos, sales only OLDER than 180 days, at 1.00 — the _histcap arm is All Day + Top Shot only
+--   e11 Top Shot, sales only OLDER than 180 days, at 1.00 — in the _histcap arm since 2026-10-29
+--   e12 Top Shot (its REAL id — e7's is a placeholder), recent sales 2 / 3 / 4: _salescap stays off
 INSERT INTO sales_market VALUES
   ('e1000000-0000-0000-0000-000000000001', now() - interval '10 days',  2.00, 500),
   ('e1000000-0000-0000-0000-000000000001', now() - interval '20 days',  3.00, 501),
@@ -128,7 +134,12 @@ INSERT INTO sales_market VALUES
   ('e1000000-0000-0000-0000-000000000009', now() - interval '200 days', 5.00, 500),
   ('e1000000-0000-0000-0000-000000000009', now() - interval '210 days', 5.00, 501),
   ('e1000000-0000-0000-0000-000000000010', now() - interval '200 days', 1.00, 500),
-  ('e1000000-0000-0000-0000-000000000010', now() - interval '210 days', 1.00, 501);
+  ('e1000000-0000-0000-0000-000000000010', now() - interval '210 days', 1.00, 501),
+  ('e1000000-0000-0000-0000-000000000011', now() - interval '200 days', 1.00, 500),
+  ('e1000000-0000-0000-0000-000000000011', now() - interval '210 days', 1.00, 501),
+  ('e1000000-0000-0000-0000-000000000012', now() - interval '10 days',  2.00, 500),
+  ('e1000000-0000-0000-0000-000000000012', now() - interval '20 days',  3.00, 501),
+  ('e1000000-0000-0000-0000-000000000012', now() - interval '30 days',  4.00, 502);
 
 -- Every row is written the way the writers write it: ask × 0.90, ask kept beside it.
 INSERT INTO fmv_snapshots VALUES
@@ -142,6 +153,8 @@ INSERT INTO fmv_snapshots VALUES
   ('e1000000-0000-0000-0000-000000000008', '06248cc4-b85f-47cd-af67-1855d14acd75',  8.10, 'ASK_ONLY', 'golazos-listing-ask-v1', 8.10, 9.00),
   ('e1000000-0000-0000-0000-000000000009', 'dee28451-5d62-409e-a1ad-a83f763ac070',  8.10, 'ASK_ONLY', 'cold-tail-1.0', 8.10, 9.00),
   ('e1000000-0000-0000-0000-000000000010', '06248cc4-b85f-47cd-af67-1855d14acd75',  8.10, 'ASK_ONLY', 'golazos-listing-ask-v1', 8.10, 9.00),
+  ('e1000000-0000-0000-0000-000000000011', '95f28a17-224a-4025-96ad-adf8a4c63bfd',  8.10, 'ASK_ONLY', '1.8.3', 8.10, 9.00),
+  ('e1000000-0000-0000-0000-000000000012', '95f28a17-224a-4025-96ad-adf8a4c63bfd',  8.10, 'ASK_ONLY', '1.8.3', 8.10, 9.00),
   -- Golazos with a sales label: out of scope like All Day's
   ('e1000000-0000-0000-0000-000000000008', '06248cc4-b85f-47cd-af67-1855d14acd75',  8.10, 'LOW',      '1.8.3', 8.10, 9.00),
   -- All Day, same edition as e1 but a SALES label: the guard is for ASK_ONLY only
@@ -182,7 +195,15 @@ SELECT _assert_eq(
 SELECT _assert_eq(
   (SELECT fmv_usd::text || '|' || algo_version FROM fmv_snapshots
     WHERE edition_id = 'e1000000-0000-0000-0000-000000000010'),
-  '8.10|golazos-listing-ask-v1', 'the _histcap arm is All Day only: Golazos with only old sales keeps its ask');
+  '8.10|golazos-listing-ask-v1', 'the _histcap arm is All Day + Top Shot only: Golazos with only old sales keeps its ask');
+SELECT _assert_eq(
+  (SELECT fmv_usd::text || '|' || algo_version FROM fmv_snapshots
+    WHERE edition_id = 'e1000000-0000-0000-0000-000000000011'),
+  '3.00|1.8.3_histcap', 'a Top Shot ASK_ONLY price with only old sales is capped at 3x them (its 180-day _salescap arm stays off)');
+SELECT _assert_eq(
+  (SELECT fmv_usd::text || '|' || algo_version FROM fmv_snapshots
+    WHERE edition_id = 'e1000000-0000-0000-0000-000000000012'),
+  '8.10|1.8.3', 'a real Top Shot ASK_ONLY row with RECENT sales is not _salescap-ed (measured: not a win there)');
 SELECT _assert_eq(
   (SELECT fmv_usd::text || '|' || algo_version FROM fmv_snapshots
     WHERE edition_id = 'e1000000-0000-0000-0000-000000000004'),
@@ -229,7 +250,7 @@ SELECT _assert_eq(
   '1', 'a NULL fmv_usd is passed through unchanged');
 
 -- Nothing in the guard writes anywhere else: the sales table is read-only to it.
-SELECT _assert_eq((SELECT count(*)::text FROM sales_market), '26', 'the guard reads sales_market and never writes it');
+SELECT _assert_eq((SELECT count(*)::text FROM sales_market), '31', 'the guard reads sales_market and never writes it');
 
 SELECT '✓ fmv_snapshots_cap_allday_ask_only_to_recent_sales invariants pass' AS result;
 ROLLBACK;
