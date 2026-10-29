@@ -6,6 +6,34 @@ Each entry records what was checked + found so the next run has a baseline and d
 
 ---
 
+
+## 2026-10-28 — no new material ECOSYSTEM developments. No new marketplace / contract / execution venue / IPFS resolver. AllDay acct carries only the `AllDay` contract; Pinnacle acct only `PackNFT`+`Pinnacle`, no media/IPFS resolver. Venue detection CLEAN on the canonical `source='onchain'` rail (single pair proposer `0xead…`/payer `0x18eb…`, 2,176 sales/306 buyers/2d; scoped new-proposer/7d = `[]`; broad new-gas-payer/7d = `[]`). WNBA `resolver_misses` FLAT (canonical 09:49 = 80 on 10-27 & 10-28) → no refresh action. DB MCP responsive. dapper.market NOT live-crawled this run (web-only; no feature-change signal).
+
+Verdict: nothing clears the new-venue / competitive-threat escalation bar → **no Trevor notification**. No IPFS-refresh action (`resolver_misses` flat, no DROP). ~7-day gap since 10-21. Everything at baseline.
+
+**1. Ecosystem / web sweep**
+- **No new Flow marketplace / venue / contract / standard for RPC's collections.** Web passes surfaced only known/stale items: the 2021 NFL/Dapper launch coverage, the May-2026 NFL-pause/next-gen ("ALL NEW ALL DAY") story and its mirrors (decrypt 367926/368018, frontofficesports), and old Disney/LaLiga/UFC sports-media items unrelated to the on-chain collections. Nothing new dated Oct-2026; no new aggregator/tool/indexer.
+- **dapper.market NOT live-fetched this run** (web search only, no feature-change surfaced). Presumed still 3 leagues (NFL/NBA/LaLiga), no Pinnacle/UFC, no analytics tab per the 10-21 live crawl. RPC moat presumed intact.
+- **NFL All Day next-gen — STILL the May-2026 story, nothing new on-chain** (AllDay acct carries only `AllDay`). Reveal window remains open; elevated watch.
+
+**2. IPFS expansion tripwires**
+- (a) **No new AllDay/Pinnacle IPFS resolver.** AllDay acct `0xe4cf4bdc1751c65d` → only `AllDay`. Pinnacle acct `0xedf9df96c92f4595` → `PackNFT` + `Pinnacle`. Both REST sources truncate mid-base64 as always (tail resolver not 100% ruleable via REST, but no public announcement). HIGH-value find still absent.
+- (b) **WNBA `resolver_misses` FLAT — no refresh action.** Canonical 09:49 daily art cron = **80** on 10-27 AND 10-28 (unchanged since ~08-19); `:22`/`:23` wider-scope runs = 130–300 band (10-28 09:22 = 202, others 300). No DROP (no pinning event) → do NOT run `scripts/refresh-ipfs-catalog.mjs`.
+- (c) **Reference-app** `https://dapperlabs.github.io/dapperlabs-ipfs-reference-app/` — title "NBA Top Shot IPFS Reference", meta "Browse NBA Top Shot plays with IPFS asset information"; **zero** allday/pinnacle/ufc/golazos/wnba mentions. TS-only, no change. (No `_next/static/chunks` hashes visible this fetch; skipped, not over-invested.)
+
+**3. On-chain data-anomaly sweep (14d, read-only, `sales_2026` partition-direct)**
+- **Venue detection CLEAN.** Scoped `source='onchain'`: TS last 2d = single pair proposer `0xead892083b3e2c6c` / payer `0x18eb4ee6b3c026d2`, **2,176 sales / 306 buyers** (positive control fired → instrument has signal). Scoped new-proposer/7d = **`[]`**; broad new-gas-PAYER/7d (ALL TS sources) = **`[]`** → no new/rapidly-growing custodial signer → **no new execution venue.** (Reminder: always scope to `source='onchain'`; the `offer_fill` rail's proposers all share the same gas payer `0x18eb…` = same Dapper rail, not a venue.)
+- **Source mix normal — no new tag.** 14d: topshot `onchain` 25,237 / nflallday `onchain_dapper_v2` 4,741 / topshot `offer_fill` 4,348 / nflallday `offer_fill` 662 / laligagolazos `onchain_dapper_v2` 144 / nflallday `onchain_dapper_v1` 79 / topshot `atlas` 36. All known tags. (No `magic_eden`/`solana_das` rows in this window — Candy chain-two, out of scope, last_seen 10-12.)
+- **Volume.** TS daily 759–2,676 with the known one-day **10-20 bump to 4,858** (product-cadence noise, NO venue signature). **NFL All Day DOWN to 4,741/14d** (vs 6,041 on 10-21, 7,213 on 10-14) = post-kickoff secondary continuing to recede on the SAME `onchain_dapper_v2` rail, NOT a venue signal. **LaLiga Golazos 144/14d** (same `onchain_dapper_v2` rail; minor continued sign of life vs last week's 87/2d — not a new tag/venue). Pinnacle (separate `pinnacle_sales` table) not re-queried this run (no web/venue trigger).
+
+**4. Flowscan glance:** skipped (slow/client-rendered; web + DB + contract reads sufficient).
+
+**Baselines carried to next run:** dapper.market = **3 leagues (NFL/NBA/LaLiga), no Pinnacle/UFC, no analytics tab** (per 10-21 live crawl; web-only this run) · WNBA canonical 09:49 `resolver_misses` = **80** (FLAT; DROP→refresh, RISE→don't), `:22`/`:23` runs = 130–300 band · **TS venue detection MUST be scoped `source='onchain'`** → single pair `0xead…`/`0x18eb…`, 0 new proposers/7d, broad new-gas-payer/7d also `[]` · NFL All Day `onchain_dapper_v2` **4,741/14d (still receding: 7,213→6,041→4,741)** — organic, same rail; watch for a NEW AllDay contract on next-gen ship · Golazos `onchain_dapper_v2` ~144/14d (same rail) · Candy `magic_eden`/`solana_das` out of scope · AllDay acct only `AllDay`, Pinnacle acct only `PackNFT`+`Pinnacle` (no IPFS resolver) · reference-app TS-only · **NFL next-gen reveal window still OPEN — watch AllDay acct + any new Dapper NFL contract.** Open methodology note: REST `?expand=contracts` truncates on the AllDay/Pinnacle source — a tail resolver needs a names-only endpoint or live Flowscan to fully rule out.
+
+Sources: web (no new) — frontofficesports.com/article/nfl-and-dapper-labs-to-announce-nft-platform/ , decrypt.co/367926/nfl-all-day-stops-issuing-nfts-dapper-labs-future-plans-league ; NBA Top Shot IPFS reference — dapperlabs.github.io/dapperlabs-ipfs-reference-app/ . On-chain contract reads via rest-mainnet.onflow.org accounts e4cf4bdc1751c65d (AllDay) and edf9df96c92f4595 (Pinnacle). DB: Supabase bxcqstmqfzmuolpuynti (ACTIVE_HEALTHY).
+
+---
+
 ## 2026-10-21 — no new material ECOSYSTEM developments. No new marketplace / contract / execution venue / IPFS resolver. dapper.market LIVE-FETCHED (rendered): still exactly 3 leagues (NFL/NBA/LaLiga), no Pinnacle/UFC, no analytics/FMV tab — identical to 09-18→10-14. AllDay acct carries only the `AllDay` contract; Pinnacle acct only `PackNFT`+`Pinnacle`, no media/IPFS resolver. Venue detection CLEAN on the canonical `source='onchain'` rail (single pair proposer `0xead…`/payer `0x18eb…`, 6,080 sales/456 buyers/2d; scoped new-proposer/7d = `[]`). WNBA `resolver_misses` FLAT (canonical 09:49 = 80, both 10-20 & 10-21) → no refresh action. DB MCP responsive.
 
 Verdict: nothing clears the new-venue / competitive-threat escalation bar → **no Trevor notification**. No IPFS-refresh action (`resolver_misses` flat, no DROP). ~7-day gap since 10-14. Everything at baseline.
