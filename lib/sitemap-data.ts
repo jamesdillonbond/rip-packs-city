@@ -972,6 +972,7 @@ export const INSIGHT_ROUTES: readonly string[] = [
   'allday-squeeze',
   'allday-set-squeeze',
   'allday-market',
+  'allday-serial-premiums',
   'market',
   'offer-spread',
   'deals',

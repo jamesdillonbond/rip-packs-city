@@ -6,6 +6,10 @@
 // Falls back to a generic card if the API is empty. The hardcoded #E03A2F is
 // the documented universal Satori exception all insights OG routes share (Satori
 // can't resolve CSS vars).
+//
+// 2026-10-28: ?collection=nfl-all-day renders NFL All Day's card (served at /api/og/insights/allday-serial-premiums
+// for the All Day board's own layout). ⛔ Any other ?collection= value reads nothing — never Top Shot's premiums
+// under another name.
 
 import { ImageResponse } from "next/og"
 import { NextRequest } from "next/server"
@@ -16,6 +20,7 @@ import { fetchBoardCount, boardCountLabel, type BoardCount } from "@/lib/og/boar
 import { OgMark } from "@/lib/og/marks"
 import { ogFetch } from "@/lib/og/og-fetch"
 import { usdSignFirst } from "@/lib/usd-format"
+import { isSerialPremiumCollection } from "@/lib/serial-premiums-board"
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
@@ -70,11 +75,16 @@ export async function GET(req: NextRequest) {
   let count: BoardCount | null = null
   // Did the board READ succeed? Not 'were there rows' — see lib/og/board-empty-copy.ts.
   let fetched = false
+  const rawCollection = new URL(req.url).searchParams.get("collection")
+  const known = rawCollection == null || isSerialPremiumCollection(rawCollection)
+  const isAllDay = rawCollection === "nfl-all-day"
+  const leg = isAllDay ? "&collection=nfl-all-day" : ""
   try {
+    if (!known) throw new Error("unknown collection")
     const origin = new URL(req.url).origin
-    count = await fetchBoardCount(origin, "/api/public/insights/serial-premiums?window=90d&sort=premium", 100)
+    count = await fetchBoardCount(origin, `/api/public/insights/serial-premiums?window=90d&sort=premium${leg}`, 100)
     const r = await ogFetch(
-      `${origin}/api/public/insights/serial-premiums?window=90d&sort=premium&limit=3`,
+      `${origin}/api/public/insights/serial-premiums?window=90d&sort=premium&limit=3${leg}`,
       { cache: "no-store" }
     )
     if (r.ok) {
@@ -123,7 +133,7 @@ export async function GET(req: NextRequest) {
             maxWidth: 1000,
           }}
         >
-          What collectors actually paid for the #1 mint vs the edition&apos;s typical price.
+          What collectors actually paid for the #1 mint vs the edition&apos;s typical price{isAllDay ? " — NFL All Day" : known ? " — NBA Top Shot" : ""}.
         </div>
 
         <div style={{ marginTop: 26, display: "flex", flexDirection: "column", gap: 12 }}>
@@ -200,7 +210,7 @@ export async function GET(req: NextRequest) {
           }}
         >
           <div style={{ display: "flex" }}>Real sales · not estimates</div>
-          <div style={{ display: "flex" }}>rippackscity.com/insights/serial-premiums</div>
+          <div style={{ display: "flex" }}>{isAllDay ? "rippackscity.com/insights/allday-serial-premiums" : "rippackscity.com/insights/serial-premiums"}</div>
         </div>
       </div>
     ),

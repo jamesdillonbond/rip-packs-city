@@ -42,6 +42,7 @@ Each board is a schema.org Dataset (or WebApplication for the wallet tools); mos
 - /insights/allday-scarcity — NFL All Day Scarcity Board. Editions ranked by how far below their set and tier family's average mint they sit.
 - /insights/allday-squeeze — NFL All Day Lock-Rate Squeeze Board. Ranks NFL All Day editions by effective supply (circulation minus locked minus burned).
 - /insights/allday-set-squeeze — NFL All Day Set Squeeze Leaderboard. Sets ranked by average lock + burn squeeze across their editions.
+- /insights/allday-serial-premiums — NFL All Day Serial Premiums. What collectors actually paid for the #1 and perfect mint versus the edition's typical price, from real sales.
 - /insights/allday-market — The RPC Index for NFL All Day. A tier-segmented daily market index (Legendary, Rare, Uncommon, Common) from real secondary sales, each tier normalized to 100.
 - /insights/tc-report — Top Collector Report. Full bag analytics for any Flow wallet — squeeze exposure, set completion, cross-collection footprint, rookie + WNBA coverage.
 - /insights/candy-mlb — Candy MLB ICONs. 2026 MLB Base Series ICONs (Candy Digital / Solana): secondary FMV, best offers, bid-ask spread, pack EV, holder concentration.

@@ -17,6 +17,8 @@
 //     fails ONLY that section (`allday_squeeze_error: true`), never the report.
 //   - `index_state`: a report built from zero cache rows ("0 rookie editions held", "0 of 17 WNBA sets") is not a
 //     reading of a wallet we never scanned. indexed / empty (every trusted scan found 0) / not_indexed / unknown.
+//   - `allday_sections` (2026-10-28 evening): the report's "top sets in progress" and "recent acquisitions" over NFL
+//     All Day (get_wallet_allday_tc_sections). Its failure fails only those sections (`allday_sections_error`).
 //
 // Query params:
 //   wallet=<0x...>   required, Flow address
@@ -48,10 +50,12 @@ export async function GET(req: NextRequest) {
   }
 
   const label = "api/public/insights/tc-report";
-  const [reportRead, allday] = await Promise.all([
+  const [reportRead, allday, alldaySections] = await Promise.all([
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     boundedRead((supabase as any).rpc("get_wallet_tc_report", { p_wallet: wallet }), `${label}/get_wallet_tc_report`),
     readSqueezeCheck(supabase, wallet, "nfl-all-day", label),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    boundedRead((supabase as any).rpc("get_wallet_allday_tc_sections", { p_wallet: wallet }), `${label}/get_wallet_allday_tc_sections`),
   ]);
   const { data, error } = reportRead;
 
@@ -75,6 +79,8 @@ export async function GET(req: NextRequest) {
     report: data ?? null,
     allday_squeeze: allday.error ? null : { index_state: allday.index_state, summary: allday.summary ?? null },
     allday_squeeze_error: allday.error ? true : false,
+    allday_sections: alldaySections.error ? null : alldaySections.data ?? null,
+    allday_sections_error: alldaySections.error ? true : false,
   });
   res.headers.set("Cache-Control", "no-store");
   return res;

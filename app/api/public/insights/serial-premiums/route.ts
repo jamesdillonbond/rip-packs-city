@@ -28,32 +28,45 @@
 // Response: { meta: { fetched_at, source, headline, total_rows, elapsed_ms, filters }, rows: [...] }
 //   rows are normalized to headline_serial / headline_last_sale_usd / headline_sold_at.
 //
+// 2026-10-28: ?collection=nba-top-shot (default when ABSENT) | nfl-all-day. NFL All Day reads its own two views
+// (/insights/allday-serial-premiums); ⛔ any other value is a 400 with no rows — never Top Shot's premiums under
+// another collection's name. The tier whitelist is the collection's own (UNCOMMON on All Day, FANDOM on Top Shot).
+//
 // CACHE: 15-min s-maxage (the views are live; this bounds a viral OG-share spike).
 
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin as supabase } from "@/lib/supabase"
 import { boardUnavailable } from "@/lib/insights/board-error"
 import {
-  BOARDS,
+  boardTable,
   fetchSerialPremiums,
+  isSerialPremiumCollection,
   parseHeadlineMode,
+  serialPremiumTiers,
+  type SerialPremiumCollection,
   type SerialSortKey,
 } from "@/lib/serial-premiums-board"
 
 import { boardRowMeta } from "@/lib/insights/board-meta"
-const VALID_TIERS = new Set(["COMMON", "RARE", "FANDOM", "LEGENDARY", "ULTIMATE"])
 const WINDOW_DAYS: Record<string, number> = { "7d": 7, "30d": 30, "90d": 90 }
 
 export async function GET(req: NextRequest) {
   const startedAt = Date.now()
   const sp = new URL(req.url).searchParams
 
+  const rawCollection = sp.get("collection")
+  if (rawCollection != null && !isSerialPremiumCollection(rawCollection)) {
+    return NextResponse.json({ error: "collection must be nba-top-shot or nfl-all-day" }, { status: 400 })
+  }
+  const collection: SerialPremiumCollection = rawCollection ?? "nba-top-shot"
+  const VALID_TIERS = serialPremiumTiers(collection)
+
   const headline = parseHeadlineMode(sp.get("headline"))
 
   const tier = sp.get("tier")?.trim().toUpperCase() || null
-  if (tier && !VALID_TIERS.has(tier)) {
+  if (tier && !VALID_TIERS.includes(tier)) {
     return NextResponse.json(
-      { error: `tier must be one of ${[...VALID_TIERS].join(",")}` },
+      { error: `tier must be one of ${VALID_TIERS.join(",")}` },
       { status: 400 }
     )
   }
@@ -75,24 +88,25 @@ export async function GET(req: NextRequest) {
 
   let rows
   try {
-    rows = await fetchSerialPremiums(supabase, { mode: headline, tier, windowDays, minPremium, sort, limit })
+    rows = await fetchSerialPremiums(supabase, { mode: headline, collection, tier, windowDays, minPremium, sort, limit })
   } catch (e) {
     return boardUnavailable(e, "insights/serial-premiums")
   }
 
   const elapsedMs = Date.now() - startedAt
   console.log(
-    `[public/insights/serial-premiums] headline=${headline} returned=${rows.length} tier=${tier ?? "*"} window=${windowKey} min=${minPremium} sort=${sort} elapsedMs=${elapsedMs}`
+    `[public/insights/serial-premiums] collection=${collection} headline=${headline} returned=${rows.length} tier=${tier ?? "*"} window=${windowKey} min=${minPremium} sort=${sort} elapsedMs=${elapsedMs}`
   )
 
   const res = NextResponse.json({
     meta: {
       fetched_at: new Date().toISOString(),
-      source: BOARDS[headline].table,
+      source: boardTable(headline, collection),
+      collection,
       headline,
       ...boardRowMeta(rows.length, limit),
       elapsed_ms: elapsedMs,
-      filters: { headline, tier, window: windowKey, min_premium: minPremium, sort, limit },
+      filters: { collection, headline, tier, window: windowKey, min_premium: minPremium, sort, limit },
     },
     rows,
   })

@@ -87,7 +87,9 @@ type CrossCollection = {
   approx_fmv_usd: number | null
 }
 type RecentAcquisition = {
-  edition_id: string | null
+  edition_id?: string | null
+  /** All Day rows carry the edition's external id (→ /nfl-all-day/edition/<id>). */
+  external_id?: string | null
   player_name: string | null
   set_name: string | null
   tier: string | null
@@ -107,6 +109,8 @@ type Report = {
 type IndexState = "indexed" | "empty" | "not_indexed" | "unknown"
 type QueueState = "idle" | "queued" | "failed"
 type AlldayLeg = { index_state: IndexState | null; summary: Squeeze | null } | null
+type AlldaySections = { top_sets: TopSet[]; recent_acquisitions: RecentAcquisition[] } | null
+type ReportCollection = "nba-top-shot" | "nfl-all-day"
 
 const RECHECK_INTERVAL_MS = 15_000
 const RECHECK_MAX = 8 // ~2 minutes of indexing budget, then a manual "Check again"
@@ -196,6 +200,8 @@ export default function TcReportPage() {
   const [lastScannedAt, setLastScannedAt] = useState<string | null>(null)
   const [allday, setAllday] = useState<AlldayLeg>(null)
   const [alldayError, setAlldayError] = useState(false)
+  const [alldaySections, setAlldaySections] = useState<AlldaySections>(null)
+  const [alldaySectionsError, setAlldaySectionsError] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [queue, setQueue] = useState<QueueState>("idle")
@@ -230,6 +236,8 @@ export default function TcReportPage() {
       setLastScannedAt(j.last_scanned_at ?? null)
       setAllday(j.allday_squeeze ?? null)
       setAlldayError(j.allday_squeeze_error === true)
+      setAlldaySections(j.allday_sections ?? null)
+      setAlldaySectionsError(j.allday_sections_error === true)
     } catch (err: unknown) {
       if (myReq !== reqRef.current || quiet) return
       setReport(null)
@@ -435,45 +443,14 @@ export default function TcReportPage() {
           ) : null}
 
           {/* Top sets in progress */}
-          {topSets.length > 0 ? (
-            <section className="rpc-tc-section">
-              <h2 className="rpc-tc-h2">Top Sets In Progress</h2>
-              <div className="rpc-scroll-x" {...scrollRegion("Top sets in progress")}>
-              <table className="rpc-tc-table">
-                <thead>
-                  <tr>
-                    <th scope="col">Set</th>
-                    <th scope="col" className="rpc-tc-th-num">Owned</th>
-                    <th scope="col" className="rpc-tc-th-num">Total</th>
-                    <th scope="col" className="rpc-tc-th-num">Moments</th>
-                    <th scope="col" className="rpc-tc-th-num rpc-tc-th-emph">Completion</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {topSets.map((s) => (
-                    <tr key={`${s.set_name}::${s.series ?? "?"}`}>
-                      <td className="rpc-tc-td-ed">
-                        <Link
-                          href={`/nba-top-shot/set/${slugifyName(s.set_name)}`}
-                          className="rpc-tc-set-link"
-                          title={`Open ${s.set_name}${s.series_label ? ` (${s.series_label})` : ""} on NBA Top Shot`}
-                        >
-                          {s.set_name}
-                        </Link>
-                        {s.series_label ? (
-                          <div className="rpc-tc-ed-set">{s.series_label}</div>
-                        ) : null}
-                      </td>
-                      <td className="rpc-tc-td-num">{fmtInt(s.owned_eds)}</td>
-                      <td className="rpc-tc-td-num">{fmtInt(s.set_total_eds)}</td>
-                      <td className="rpc-tc-td-num">{fmtInt(s.total_moments_held)}</td>
-                      <td className="rpc-tc-td-num rpc-tc-td-emph">{fmtPct(s.completion_pct)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              </div>
+          {topSets.length > 0 ? <TopSetsBlock title="Top Sets In Progress" sets={topSets} collection="nba-top-shot" /> : null}
+          {alldaySectionsError ? (
+            <section className="rpc-tc-section" data-testid="tc-allday-sections-error">
+              <h2 className="rpc-tc-h2">NFL All Day · Sets &amp; Acquisitions</h2>
+              <div className="rpc-tc-state">Couldn&apos;t load the NFL All Day sets and acquisitions just now — this says nothing about the wallet.</div>
             </section>
+          ) : (alldaySections?.top_sets?.length ?? 0) > 0 ? (
+            <TopSetsBlock title="Top Sets In Progress · NFL All Day" sets={alldaySections!.top_sets} collection="nfl-all-day" />
           ) : null}
 
           {/* Cohort coverage (rookies + WNBA) */}
@@ -515,48 +492,9 @@ export default function TcReportPage() {
           ) : null}
 
           {/* Recent acquisitions */}
-          {acq.length > 0 ? (
-            <section className="rpc-tc-section">
-              <h2 className="rpc-tc-h2">Recent Acquisitions</h2>
-              <div className="rpc-scroll-x" {...scrollRegion("Recent acquisitions")}>
-              <table className="rpc-tc-table">
-                <thead>
-                  <tr>
-                    <th scope="col">Edition</th>
-                    <th scope="col" className="rpc-tc-th-num">Tier</th>
-                    <th scope="col" className="rpc-tc-th-num">Price</th>
-                    <th scope="col" className="rpc-tc-th-num">When</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {acq.map((a, i) => (
-                    <tr key={a.edition_id ?? i}>
-                      <td className="rpc-tc-td-ed">
-                        {a.edition_id ? (
-                          <Link href={`/moment/${a.edition_id}`} className="rpc-tc-set-link">
-                            <div className="rpc-tc-ed-name">{a.player_name ?? "—"}</div>
-                            <div className="rpc-tc-ed-set">{a.set_name ?? "—"}</div>
-                          </Link>
-                        ) : (
-                          <>
-                            <div className="rpc-tc-ed-name">{a.player_name ?? "—"}</div>
-                            <div className="rpc-tc-ed-set">{a.set_name ?? "—"}</div>
-                          </>
-                        )}
-                      </td>
-                      <td className="rpc-tc-td-num">
-                        <span className="rpc-tc-tier" style={{ color: accentText(tierColor(a.tier)) }}>
-                          {a.tier ?? "—"}
-                        </span>
-                      </td>
-                      <td className="rpc-tc-td-num">{fmtUsd(a.price_usd)}</td>
-                      <td className="rpc-tc-td-num">{fmtRelDate(a.sold_at)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              </div>
-            </section>
+          {acq.length > 0 ? <AcquisitionsBlock title="Recent Acquisitions" rows={acq} collection="nba-top-shot" /> : null}
+          {!alldaySectionsError && (alldaySections?.recent_acquisitions?.length ?? 0) > 0 ? (
+            <AcquisitionsBlock title="Recent Acquisitions · NFL All Day" rows={alldaySections!.recent_acquisitions} collection="nfl-all-day" />
           ) : null}
         </>
       ) : (
@@ -601,6 +539,105 @@ export default function TcReportPage() {
         </div>
       </section>
     </main>
+  )
+}
+
+/** A collection's top sets in progress. Links open that collection's set page. */
+function TopSetsBlock({ title, sets, collection }: { title: string; sets: TopSet[]; collection: ReportCollection }) {
+  const label = collection === "nfl-all-day" ? "NFL All Day" : "NBA Top Shot"
+  return (
+    <section className="rpc-tc-section" data-testid={`tc-top-sets-${collection}`}>
+      <h2 className="rpc-tc-h2">{title}</h2>
+      <div className="rpc-scroll-x" {...scrollRegion("Top sets in progress")}>
+      <table className="rpc-tc-table">
+        <thead>
+          <tr>
+            <th scope="col">Set</th>
+            <th scope="col" className="rpc-tc-th-num">Owned</th>
+            <th scope="col" className="rpc-tc-th-num">Total</th>
+            <th scope="col" className="rpc-tc-th-num">Moments</th>
+            <th scope="col" className="rpc-tc-th-num rpc-tc-th-emph">Completion</th>
+          </tr>
+        </thead>
+        <tbody>
+          {sets.map((s) => (
+            <tr key={`${s.set_name}::${s.series ?? "?"}`}>
+              <td className="rpc-tc-td-ed">
+                <Link
+                  href={`/${collection}/set/${slugifyName(s.set_name)}`}
+                  className="rpc-tc-set-link"
+                  title={`Open ${s.set_name}${s.series_label ? ` (${s.series_label})` : ""} on ${label}`}
+                >
+                  {s.set_name}
+                </Link>
+                {s.series_label ? (
+                  <div className="rpc-tc-ed-set">{s.series_label}</div>
+                ) : null}
+              </td>
+              <td className="rpc-tc-td-num">{fmtInt(s.owned_eds)}</td>
+              <td className="rpc-tc-td-num">{fmtInt(s.set_total_eds)}</td>
+              <td className="rpc-tc-td-num">{fmtInt(s.total_moments_held)}</td>
+              <td className="rpc-tc-td-num rpc-tc-td-emph">{fmtPct(s.completion_pct)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      </div>
+    </section>
+  )
+}
+
+/** A collection's recent acquisitions (sales TO this wallet, 90 days). */
+function AcquisitionsBlock({ title, rows, collection }: { title: string; rows: RecentAcquisition[]; collection: ReportCollection }) {
+  const href = (a: RecentAcquisition): string | null =>
+    collection === "nfl-all-day"
+      ? (a.external_id ? `/nfl-all-day/edition/${encodeURIComponent(a.external_id)}` : null)
+      : (a.edition_id ? `/moment/${a.edition_id}` : null)
+  return (
+    <section className="rpc-tc-section" data-testid={`tc-acquisitions-${collection}`}>
+      <h2 className="rpc-tc-h2">{title}</h2>
+      <div className="rpc-scroll-x" {...scrollRegion("Recent acquisitions")}>
+      <table className="rpc-tc-table">
+        <thead>
+          <tr>
+            <th scope="col">Edition</th>
+            <th scope="col" className="rpc-tc-th-num">Tier</th>
+            <th scope="col" className="rpc-tc-th-num">Price</th>
+            <th scope="col" className="rpc-tc-th-num">When</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((a, i) => {
+            const h = href(a)
+            return (
+              <tr key={`${a.edition_id ?? a.external_id ?? "x"}-${i}`}>
+                <td className="rpc-tc-td-ed">
+                  {h ? (
+                    <Link href={h} className="rpc-tc-set-link">
+                      <div className="rpc-tc-ed-name">{a.player_name ?? "—"}</div>
+                      <div className="rpc-tc-ed-set">{a.set_name ?? "—"}</div>
+                    </Link>
+                  ) : (
+                    <>
+                      <div className="rpc-tc-ed-name">{a.player_name ?? "—"}</div>
+                      <div className="rpc-tc-ed-set">{a.set_name ?? "—"}</div>
+                    </>
+                  )}
+                </td>
+                <td className="rpc-tc-td-num">
+                  <span className="rpc-tc-tier" style={{ color: accentText(tierColor(a.tier)) }}>
+                    {a.tier ?? "—"}
+                  </span>
+                </td>
+                <td className="rpc-tc-td-num">{fmtUsd(a.price_usd)}</td>
+                <td className="rpc-tc-td-num">{fmtRelDate(a.sold_at)}</td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+      </div>
+    </section>
   )
 }
 

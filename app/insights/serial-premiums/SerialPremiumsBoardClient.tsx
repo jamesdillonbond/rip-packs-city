@@ -18,11 +18,15 @@
 // image) dodges the Series-1 edition-thumbnail 404s; falls back to the edition
 // thumbnail_url. Drill-down: nft_id → the exact #1 serial on /moment/<id>;
 // external_id → the edition page.
+//
+// 2026-10-28: per collection. `collection="nfl-all-day"` (the /insights/allday-serial-premiums page) fetches
+// ?collection=nfl-all-day, shows All Day's tiers (Uncommon, no Fandom), uses the edition thumbnail (Top Shot's
+// media CDN does not serve All Day), links /nfl-all-day/moment|edition, and shares its own page.
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
-import type { SerialBoardRow as Row, HeadlineMode } from "@/lib/serial-premiums-board"
+import type { SerialBoardRow as Row, HeadlineMode, SerialPremiumCollection } from "@/lib/serial-premiums-board"
 import { sectionEmptyCopy } from "@/lib/entity/section-empty-copy"
 import { usdSignFirst } from "@/lib/usd-format"
 import { accentText } from "@/lib/accent-text"
@@ -36,7 +40,7 @@ type ApiResponse = {
   rows: Row[]
 }
 
-type TierFilter = "all" | "COMMON" | "RARE" | "FANDOM" | "LEGENDARY" | "ULTIMATE"
+type TierFilter = "all" | "COMMON" | "UNCOMMON" | "RARE" | "FANDOM" | "LEGENDARY" | "ULTIMATE"
 type WindowFilter = "30d" | "90d"
 type SortKey = "premium" | "headline_price" | "recent"
 
@@ -44,13 +48,30 @@ const HEADLINES: { val: HeadlineMode; label: string }[] = [
   { val: "no1", label: "#1 Mint" },
   { val: "perfect", label: "Perfect Mint" },
 ]
-const TIERS: { val: TierFilter; label: string }[] = [
-  { val: "all", label: "All" },
-  { val: "COMMON", label: "Common" },
-  { val: "FANDOM", label: "Fandom" },
-  { val: "RARE", label: "Rare" },
-  { val: "LEGENDARY", label: "Legendary" },
-]
+const TIERS_BY_COLLECTION: Record<SerialPremiumCollection, { val: TierFilter; label: string }[]> = {
+  "nba-top-shot": [
+    { val: "all", label: "All" },
+    { val: "COMMON", label: "Common" },
+    { val: "FANDOM", label: "Fandom" },
+    { val: "RARE", label: "Rare" },
+    { val: "LEGENDARY", label: "Legendary" },
+  ],
+  "nfl-all-day": [
+    { val: "all", label: "All" },
+    { val: "COMMON", label: "Common" },
+    { val: "UNCOMMON", label: "Uncommon" },
+    { val: "RARE", label: "Rare" },
+    { val: "LEGENDARY", label: "Legendary" },
+  ],
+}
+const PAGE_PATH: Record<SerialPremiumCollection, string> = {
+  "nba-top-shot": "/insights/serial-premiums",
+  "nfl-all-day": "/insights/allday-serial-premiums",
+}
+const COLLECTION_LABEL: Record<SerialPremiumCollection, string> = {
+  "nba-top-shot": "NBA Top Shot",
+  "nfl-all-day": "NFL All Day",
+}
 const WINDOWS: { val: WindowFilter; label: string }[] = [
   { val: "30d", label: "30 days" },
   { val: "90d", label: "90 days" },
@@ -99,6 +120,8 @@ function tierColor(tier: string | null): string {
       return "var(--tier-rare)"
     case "FANDOM":
       return "var(--tier-fandom)"
+    case "UNCOMMON":
+      return "var(--tier-uncommon)"
     case "COMMON":
       return "var(--tier-common)"
     default:
@@ -108,25 +131,30 @@ function tierColor(tier: string | null): string {
 
 // TS per-moment media CDN keyed on the #1's nft_id; fall back to the edition
 // thumbnail, then a gradient.
-function primaryImg(r: Row): string | null {
+function primaryImg(r: Row, collection: SerialPremiumCollection): string | null {
+  // Top Shot's media CDN serves Top Shot only; All Day uses the edition thumbnail.
+  if (collection === "nfl-all-day") return r.thumbnail_url || null
   if (r.nft_id) {
     return `https://assets.nbatopshot.com/media/${encodeURIComponent(r.nft_id)}/image?width=512`
   }
   return r.thumbnail_url || null
 }
 
-// Drill-down: the #1 serial's /moment page (nft_id is the on-chain id), else
-// the edition page. TS-only board, so the collection slug is constant.
-function momentHref(r: Row): string | null {
-  if (r.nft_id) return `/moment/${encodeURIComponent(r.nft_id)}`
+// Drill-down: the headline serial's moment page (nft_id is the on-chain id), else
+// the edition page. All Day's moment page is collection-scoped (a moment_id is unique
+// only within a collection).
+function momentHref(r: Row, collection: SerialPremiumCollection): string | null {
+  if (!r.nft_id) return null
+  return collection === "nfl-all-day"
+    ? `/nfl-all-day/moment/${encodeURIComponent(r.nft_id)}`
+    : `/moment/${encodeURIComponent(r.nft_id)}`
+}
+function editionHref(r: Row, collection: SerialPremiumCollection): string | null {
+  if (r.external_id) return `/${collection}/edition/${encodeURIComponent(r.external_id)}`
   return null
 }
-function editionHref(r: Row): string | null {
-  if (r.external_id) return `/nba-top-shot/edition/${encodeURIComponent(r.external_id)}`
-  return null
-}
-function rowHref(r: Row): string {
-  return momentHref(r) ?? editionHref(r) ?? "#"
+function rowHref(r: Row, collection: SerialPremiumCollection): string {
+  return momentHref(r, collection) ?? editionHref(r, collection) ?? "#"
 }
 
 // The headline serial: #1 on the #1 board, #N on the perfect board (N == circ).
@@ -151,8 +179,8 @@ function ParallelBadge({ className }: { className?: string }) {
   )
 }
 
-function PremiumImage({ r, className }: { r: Row; className: string }) {
-  const initial = primaryImg(r)
+function PremiumImage({ r, className, collection }: { r: Row; className: string; collection: SerialPremiumCollection }) {
+  const initial = primaryImg(r, collection)
   const [src, setSrc] = useState<string | null>(initial)
   const [triedThumb, setTriedThumb] = useState(false)
   const title = r.player_name || r.set_name || "Moment"
@@ -176,12 +204,12 @@ function PremiumImage({ r, className }: { r: Row; className: string }) {
   )
 }
 
-function HeroTile({ r }: { r: Row }) {
+function HeroTile({ r, collection }: { r: Row; collection: SerialPremiumCollection }) {
   const title = r.player_name || r.set_name || "—"
   return (
-    <Link href={rowHref(r)} className="rpc-sp-hero-tile">
+    <Link href={rowHref(r, collection)} className="rpc-sp-hero-tile">
       <div className="rpc-sp-hero-art">
-        <PremiumImage r={r} className="rpc-sp-img" />
+        <PremiumImage r={r} className="rpc-sp-img" collection={collection} />
         <span className="rpc-sp-hero-serial">{serialLabel(r)}</span>
         {r.is_conflated ? <ParallelBadge className="rpc-sp-hero-parallel" /> : null}
       </div>
@@ -204,13 +232,13 @@ function HeroTile({ r }: { r: Row }) {
   )
 }
 
-function PremiumRow({ r, rank }: { r: Row; rank: number }) {
+function PremiumRow({ r, rank, collection }: { r: Row; rank: number; collection: SerialPremiumCollection }) {
   const title = r.player_name || r.set_name || "—"
   return (
-    <Link href={rowHref(r)} className="rpc-sp-row">
+    <Link href={rowHref(r, collection)} className="rpc-sp-row">
       <div className="rpc-sp-rank">{rank}</div>
       <div className="rpc-sp-row-art">
-        <PremiumImage r={r} className="rpc-sp-img" />
+        <PremiumImage r={r} className="rpc-sp-img" collection={collection} />
       </div>
       <div className="rpc-sp-row-main">
         <div className="rpc-sp-row-name">{title}</div>
@@ -253,9 +281,13 @@ type Props = {
    * from a window in which nothing qualified.
    */
   initialFailed?: boolean
+  /** Which collection's board this is (absent = Top Shot). Each collection is its own page. */
+  collection?: SerialPremiumCollection
 }
 
-export default function SerialPremiumsBoardClient({ initialRows, initialFetchedAt, initialFailed = false }: Props) {
+export default function SerialPremiumsBoardClient({ initialRows, initialFetchedAt, initialFailed = false, collection = "nba-top-shot" }: Props) {
+  const isAllDay = collection === "nfl-all-day"
+  const TIERS = TIERS_BY_COLLECTION[collection]
   // Seed provenance only; cleared by a successful refresh. See the sibling boards.
   const [seedFailed, setSeedFailed] = useState(initialFailed)
   const [rows, setRows] = useState<Row[]>(initialRows)
@@ -313,6 +345,7 @@ export default function SerialPremiumsBoardClient({ initialRows, initialFetchedA
       try {
         const params = new URLSearchParams()
         params.set("limit", "100")
+        if (isAllDay) params.set("collection", "nfl-all-day")
         params.set("headline", headline)
         params.set("sort", sort)
         params.set("window", window)
@@ -335,7 +368,7 @@ export default function SerialPremiumsBoardClient({ initialRows, initialFetchedA
     }
     run()
     return () => ctrl.abort()
-  }, [headline, tier, window, sort])
+  }, [headline, tier, window, sort, isAllDay])
 
   const heroRows = useMemo(() => {
     // Marquee always leads with the most extreme premiums regardless of sort.
@@ -370,11 +403,11 @@ export default function SerialPremiumsBoardClient({ initialRows, initialFetchedA
     return { count: rows.length, top, topSale }
   }, [rows, seedFailed])
 
-  const shareUrl = `${SITE_URL}/insights/serial-premiums`
+  const shareUrl = `${SITE_URL}${PAGE_PATH[collection]}`
   const tweetIntent = useMemo(() => {
-    const text = `What collectors ACTUALLY paid for the #1 mint vs the edition's typical price on Top Shot.\n\nSerial Premiums:`
+    const text = `What collectors ACTUALLY paid for the #1 mint vs the edition's typical price on ${isAllDay ? "NFL All Day" : "Top Shot"}.\n\nSerial Premiums:`
     return `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(shareUrl)}`
-  }, [shareUrl])
+  }, [shareUrl, isAllDay])
   const copyUrl = myUserId ? `${shareUrl}?ref=${encodeURIComponent(myUserId)}` : shareUrl
 
   const [copied, setCopied] = useState(false)
@@ -394,7 +427,7 @@ export default function SerialPremiumsBoardClient({ initialRows, initialFetchedA
 
       <section className="rpc-sp-hero-head">
         <div className="rpc-sp-eyebrow">RPC Insights · Public</div>
-        <h1 className="rpc-sp-h1">Serial Premiums</h1>
+        <h1 className="rpc-sp-h1">{isAllDay ? "Serial Premiums · NFL All Day" : "Serial Premiums"}</h1>
         <p className="rpc-sp-lede">
           {isPerfect ? (
             <>
@@ -402,6 +435,12 @@ export default function SerialPremiumsBoardClient({ initialRows, initialFetchedA
               <strong>perfect mint</strong> (the last serial, #N&nbsp;of&nbsp;N)
               versus the edition&apos;s typical price — every row a real sale, not
               an estimate.
+            </>
+          ) : isAllDay ? (
+            <>
+              What collectors <strong>actually paid</strong> for the #1 mint
+              versus the edition&apos;s typical price — every row here is a real
+              sale, not an estimate.
             </>
           ) : (
             <>
@@ -420,9 +459,14 @@ export default function SerialPremiumsBoardClient({ initialRows, initialFetchedA
             Updated <FreshnessStamp iso={seedFailed ? null : fetchedAt} />
           </span>
           <span className="rpc-sp-meta-sep">·</span>
-          <span className="rpc-sp-meta">NBA Top Shot</span>
+          <span className="rpc-sp-meta">{COLLECTION_LABEL[collection]}</span>
           <span className="rpc-sp-meta-sep">·</span>
           <span className="rpc-sp-meta">No signup</span>
+          <span className="rpc-sp-meta-sep">·</span>
+          {/* Each collection's board is its own page; this links the other one. */}
+          <Link href={PAGE_PATH[isAllDay ? "nba-top-shot" : "nfl-all-day"]} className="rpc-sp-meta" data-testid="sp-other-board">
+            {isAllDay ? "Top Shot board →" : "NFL All Day board →"}
+          </Link>
         </div>
       </section>
 
@@ -446,7 +490,7 @@ export default function SerialPremiumsBoardClient({ initialRows, initialFetchedA
           <div className="rpc-sp-section-label">Featured · biggest {mintLabel} premiums</div>
           <div className="rpc-sp-hero-grid">
             {heroRows.map((r) => (
-              <HeroTile key={r.edition_id ?? r.external_id} r={r} />
+              <HeroTile key={r.edition_id ?? r.external_id} r={r} collection={collection} />
             ))}
           </div>
         </section>
@@ -533,7 +577,7 @@ export default function SerialPremiumsBoardClient({ initialRows, initialFetchedA
         ) : (
           <div className="rpc-sp-list">
             {rows.map((r, i) => (
-              <PremiumRow key={r.edition_id ?? r.external_id ?? i} r={r} rank={i + 1} />
+              <PremiumRow key={r.edition_id ?? r.external_id ?? i} r={r} rank={i + 1} collection={collection} />
             ))}
           </div>
         )}
@@ -543,10 +587,10 @@ export default function SerialPremiumsBoardClient({ initialRows, initialFetchedA
         <div className="rpc-sp-method">
           <h3 className="rpc-sp-h3">What this board is</h3>
           <p>
-            For every NBA Top Shot edition with a recent{" "}
+            For every {COLLECTION_LABEL[collection]} edition with a recent{" "}
             <strong>{isPerfect ? "perfect-mint sale" : "#1-serial sale"}</strong>,
             the multiple that {mintLabel} mint commanded over the edition&apos;s{" "}
-            <strong>typical price</strong> (the cleaned 180-day median). Ranked by
+            <strong>typical price</strong> (the {isAllDay ? "" : "cleaned "}180-day median{isAllDay ? ", from at least 15 sales — All Day commons trade near $0.20, so unlike Top Shot no sale is dropped for being small" : ""}). Ranked by
             that multiple. Toggle <strong>Mint</strong> to switch between the{" "}
             <strong>#1</strong> serial and the <strong>perfect</strong> mint (the
             last serial, #N&nbsp;of&nbsp;N).

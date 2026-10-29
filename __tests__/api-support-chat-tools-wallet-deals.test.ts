@@ -208,6 +208,32 @@ describe("get_collector_report — index state + All Day leg (2026-10-28)", () =
     expect(r.allday_squeeze_error).toBe(false)
   })
 
+  it("an indexed wallet's report carries NFL All Day's top sets and acquisitions", async () => {
+    install({
+      "rpc:get_wallet_tc_report": { data: { cross_collection: [{ slug: "nfl_all_day", moments: 4 }] }, error: null },
+      "rpc:get_wallet_allday_tc_sections": { data: { top_sets: [{ set_name: "Rookie Debut", owned_eds: 3 }], recent_acquisitions: [] }, error: null },
+    })
+    script("get_collector_report", { walletAddress: HEX })
+    await POST(post("report on my wallet"))
+    const r = toolResult()
+    expect(r.status).toBe("ok")
+    expect((r.allday_sections as any).top_sets[0].set_name).toBe("Rookie Debut")
+    expect(r.allday_sections_error).toBe(false)
+  })
+
+  it("a failed All Day sections read is null + flagged — never an empty list", async () => {
+    install({
+      "rpc:get_wallet_tc_report": { data: { cross_collection: [{ slug: "nfl_all_day", moments: 4 }] }, error: null },
+      "rpc:get_wallet_allday_tc_sections": { data: null, error: { message: "boom" } },
+    })
+    script("get_collector_report", { walletAddress: HEX })
+    await POST(post("report on my wallet"))
+    const r = toolResult()
+    expect(r.status).toBe("ok")
+    expect(r.allday_sections).toBeNull()
+    expect(r.allday_sections_error).toBe(true)
+  })
+
   it("a failed All Day leg leaves the report standing and says the leg failed", async () => {
     install({
       "rpc:get_wallet_tc_report": { data: { cross_collection: [{ slug: "nba_top_shot", moments: 4 }] }, error: null },

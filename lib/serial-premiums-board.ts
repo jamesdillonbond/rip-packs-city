@@ -11,8 +11,36 @@
 // page, and the OG card all read the same fields regardless of which board the
 // `headline` toggle selected. The #1 board exposes no serial column (it is always
 // 1); the perfect board carries perfect_serial (== circulation_count).
+//
+// 2026-10-28: NFL All Day joined (/insights/allday-serial-premiums). Its two views —
+// allday_serial_premiums_board / allday_perfect_mint_premiums_board — carry the SAME
+// columns, so only the table differs per collection (`boardTable`); the row shape,
+// select list and normaliser are shared. All Day's thresholds differ from Top Shot's
+// in the views themselves (see migration 20261029030012).
 
 export type HeadlineMode = "no1" | "perfect"
+
+export const SERIAL_PREMIUM_COLLECTIONS = ["nba-top-shot", "nfl-all-day"] as const
+export type SerialPremiumCollection = (typeof SERIAL_PREMIUM_COLLECTIONS)[number]
+export function isSerialPremiumCollection(v: string | null | undefined): v is SerialPremiumCollection {
+  return v === "nba-top-shot" || v === "nfl-all-day"
+}
+/** Each collection's tier vocabulary (the API's ?tier= whitelist). All Day has UNCOMMON, no FANDOM. */
+export const SERIAL_PREMIUM_TIERS: Record<SerialPremiumCollection, readonly string[]> = {
+  "nba-top-shot": ["COMMON", "RARE", "FANDOM", "LEGENDARY", "ULTIMATE"],
+  "nfl-all-day": ["COMMON", "UNCOMMON", "RARE", "LEGENDARY", "ULTIMATE"],
+}
+const ALLDAY_TABLES: Record<HeadlineMode, string> = {
+  no1: "allday_serial_premiums_board",
+  perfect: "allday_perfect_mint_premiums_board",
+}
+/** The view behind a (collection, mode) — the one place a collection picks a table. */
+export function boardTable(mode: HeadlineMode, collection: SerialPremiumCollection = "nba-top-shot"): string {
+  return collection === "nfl-all-day" ? ALLDAY_TABLES[mode] : BOARDS[mode].table
+}
+export function serialPremiumTiers(collection: SerialPremiumCollection): readonly string[] {
+  return SERIAL_PREMIUM_TIERS[collection]
+}
 export type SerialSortKey = "premium" | "headline_price" | "recent"
 
 export type SerialBoardRow = {
@@ -119,6 +147,8 @@ export function normalizeRow(mode: HeadlineMode, raw: Record<string, unknown>): 
 
 export type FetchOpts = {
   mode: HeadlineMode
+  /** Absent = Top Shot (the original board). */
+  collection?: SerialPremiumCollection
   tier?: string | null
   windowDays: number
   minPremium: number
@@ -133,7 +163,7 @@ export async function fetchSerialPremiums(supabase: any, opts: FetchOpts): Promi
   const sinceIso = new Date(Date.now() - opts.windowDays * 24 * 60 * 60 * 1000).toISOString()
 
   let q = supabase
-    .from(b.table)
+    .from(boardTable(opts.mode, opts.collection))
     .select(selectCols(opts.mode))
     .gte("premium_multiple", opts.minPremium)
     .gte(b.soldAtCol, sinceIso)

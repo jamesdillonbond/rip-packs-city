@@ -505,12 +505,27 @@ describe("concierge — get_premiums is scoped to the collection it names (2026-
     expect(JSON.stringify(r)).not.toMatch(/confidence/i)
     expect(f.calls.some((c) => c.url.includes("/parallel-premiums"))).toBe(false)
   })
+  // 2026-10-28: All Day now HAS a serial board, so the "no board" case moved to Golazos (re-pinned, not inverted).
   it("a collection with no premiums board is refused, never answered with Top Shot's rows", async () => {
+    const f = stubFetch([jsonRoute("/api/public/insights/serial-premiums", { rows: [{ x: 1 }] })])
+    script("get_premiums", { kind: "serial", collectionId: "laliga-golazos" })
+    await POST(post("golazos serial premiums"))
+    expect(toolResult()).toMatchObject({ status: "unsupported_collection" })
+    expect(f.calls.some((c) => c.url.includes("/serial-premiums"))).toBe(false)
+  })
+  it("NFL All Day serial premiums read All Day's own board", async () => {
     const f = stubFetch([jsonRoute("/api/public/insights/serial-premiums", { rows: [{ x: 1 }] })])
     script("get_premiums", { kind: "serial", collectionId: "nfl-all-day" })
     await POST(post("all day serial premiums"))
+    expect(toolResult()).toMatchObject({ status: "ok" })
+    expect(f.calls.find((c) => c.url.includes("/serial-premiums"))!.url).toContain("collection=nfl-all-day")
+  })
+  it("NFL All Day parallel premiums are refused — All Day has no parallels — never Top Shot's", async () => {
+    const f = stubFetch([jsonRoute("/api/public/insights/parallel-premiums", { rows: [{ x: 1 }] })])
+    script("get_premiums", { kind: "parallel", collectionId: "nfl-all-day" })
+    await POST(post("all day parallel premiums"))
     expect(toolResult()).toMatchObject({ status: "unsupported_collection" })
-    expect(f.calls.some((c) => c.url.includes("/serial-premiums"))).toBe(false)
+    expect(f.calls.some((c) => c.url.includes("/parallel-premiums"))).toBe(false)
   })
   it("CONTROL — Top Shot still reads the public board", async () => {
     const f = stubFetch([jsonRoute("/api/public/insights/serial-premiums", { rows: [{ x: 1 }] })])

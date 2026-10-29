@@ -270,6 +270,15 @@ const CARDS: Card[] = [
     available: true,
   },
   {
+    slug: "/insights/allday-serial-premiums",
+    eyebrow: "Live",
+    title: "NFL All Day Serial Premiums",
+    blurb:
+      "What NFL All Day collectors actually paid for the #1 and the perfect mint versus the edition's typical price. Every row a real on-chain sale, ranked by premium.",
+    cta: "Open All Day premiums",
+    available: true,
+  },
+  {
     slug: "/insights/market",
     eyebrow: "Live",
     title: "The RPC Index",

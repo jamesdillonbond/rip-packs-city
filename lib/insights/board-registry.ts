@@ -159,6 +159,15 @@ export const INSIGHTS_BOARDS: readonly InsightsBoard[] = [
     publicApi: false,
   },
   {
+    slug: "allday-serial-premiums",
+    kind: "dataset",
+    name: "NFL All Day Serial Premiums",
+    description:
+      "What NFL All Day collectors actually paid for the #1 mint and the perfect mint versus the edition's typical (180-day median) price — real sales, ranked by premium.",
+    // Its JSON is /api/public/insights/serial-premiums?collection=nfl-all-day — a required param, so no default DataDownload.
+    publicApi: false,
+  },
+  {
     slug: "market-cap",
     kind: "dataset",
     name: "Market Cap — Flow digital collectibles",

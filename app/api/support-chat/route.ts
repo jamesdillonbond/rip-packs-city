@@ -746,7 +746,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "get_premiums",
-    description: "How much PREMIUM scarcity carries on Top Shot (or on Panini, when collectionId is panini-blockchain or the page is Panini — then it reads Panini's own premiums boards): parallels (kind='parallel' — how much a parallel / subedition sells for over its base edition) or low serials (kind='serial' — how much #1 / low-serial mints carry over the edition floor). Use for 'do parallels carry a premium', 'how much is a low serial worth over floor', 'what's the serial premium'. Read-only board.",
+    description: "How much PREMIUM scarcity carries on Top Shot (or on Panini, when collectionId is panini-blockchain or the page is Panini — then it reads Panini's own premiums boards; on NFL All Day kind='serial' reads All Day's own #1 / perfect-mint board, and All Day has no parallels): parallels (kind='parallel' — how much a parallel / subedition sells for over its base edition) or low serials (kind='serial' — how much #1 / low-serial mints carry over the edition floor). Use for 'do parallels carry a premium', 'how much is a low serial worth over floor', 'what's the serial premium'. Read-only board.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -1258,7 +1258,7 @@ Relay each finding's \`why\` — "you have a palindrome" is unverifiable on its 
   const dynamic = `${collectionBlurb}${marketSection}${userSection}${pageSection}${fmvCoverage ?? ""}${requestTimeBlock()}
 
 ## Product surfaces you must know (current)
-- **Public /insights boards** (shareable, anon-public URLs — hand these out freely; they're the most shareable thing RPC has). /insights is the index. Highlights: /insights/top-sales (biggest recent sales + who bought/sold), /insights/deals (below-FMV asks), /insights/market-pulse (collection-level volume, sales and buyers by window), /insights/rookies and /insights/rookie-board, /insights/squeeze and /insights/set-squeeze (supply locked/burned), /insights/first-mint, /insights/serial-premiums and /insights/parallel-premiums, /insights/autographs (every signed Top Shot / All Day edition: lowest live ask, recent sales, the unsigned printing's price), /insights/underpriced-serials, /insights/offer-spread, /insights/new-collectors, /insights/cross-collection, /insights/pack-reality + /insights/topshot-pack-market + /insights/allday-pack-market, /insights/pinnacle-scarcity, /insights/set-completers, /insights/trophies, /insights/candy-mlb (Candy / Solana MLB), /insights/panini-squeeze and /insights/panini-premiums (Panini). If a question maps to one, link it.
+- **Public /insights boards** (shareable, anon-public URLs — hand these out freely; they're the most shareable thing RPC has). /insights is the index. Highlights: /insights/top-sales (biggest recent sales + who bought/sold), /insights/deals (below-FMV asks), /insights/market-pulse (collection-level volume, sales and buyers by window), /insights/rookies and /insights/rookie-board, /insights/squeeze and /insights/set-squeeze (supply locked/burned), /insights/first-mint, /insights/serial-premiums and /insights/parallel-premiums, /insights/autographs (every signed Top Shot / All Day edition: lowest live ask, recent sales, the unsigned printing's price), /insights/underpriced-serials, /insights/offer-spread, /insights/new-collectors, /insights/cross-collection, /insights/pack-reality + /insights/topshot-pack-market + /insights/allday-pack-market, /insights/pinnacle-scarcity, /insights/set-completers, /insights/trophies, /insights/candy-mlb (Candy / Solana MLB), /insights/panini-squeeze and /insights/panini-premiums (Panini). NFL All Day has its own pages — link these for an All Day question, never the Top Shot page: /insights/allday-squeeze, /insights/allday-set-squeeze, /insights/allday-market, /insights/allday-serial-premiums, /insights/allday-scarcity. If a question maps to one, link it.
 - **/analytics** (public since 2026-10-25, no sign-in): the cross-collection analytics section — /analytics/sales, /analytics/listings, /analytics/packs (pack EV vs ask), /analytics/fmv (FMV index, top movers), /analytics/pulse, /analytics/sets, /analytics/loans and /analytics/wallets (Flowty NFT-backed LOANS — borrowers, lenders, default rate; a wallet's loan profile is NOT its holdings, which are at /share/<wallet>), /analytics/api (the free read-only FMV API, no key, rate-limited per IP) and /analytics/methodology. Point 'is there an API', 'Flowty loan data' and 'how is X computed' here.
 - **Rewards / points**: NOT a live feature. RPC has no live Status, Credits, points, tiers, cosmetics shop or redemption today — never tell a user they earn, have, or will receive any of them, and never send anyone to /rewards (it 404s). If asked, say a rewards program isn't available right now.
 - **Wallet verification (listing challenge)** — the working path for Top Shot collectors: go to /dashboard. RPC picks one cheap Moment you own and asks you to list it at a unique ~100x / $10-floor price (it won't sell — the odd cents are just a uniqueness check), confirms the live listing. ⚠ **It needs a Top Shot wallet (a Flow 0x address holding Top Shot Moments) — there is NO verification path for a Solana / Candy MLB wallet, or for a wallet with no Top Shot Moments, today.** Never offer verification to those users; say it is Top Shot-only for now. **RPC never asks you to connect or sign a wallet to use the site** — there is no wallet sign-in for loading a collection, verifying, or anything else. The ONE exception is a giveaway claim page (/giveaways/<drop>): a winner may optionally tap "Claim with Flow Wallet" to choose whether their pack goes to that Flow Wallet or to an account it has linked (e.g. their Dapper account). Their wallet asks them to approve a sign-in (it proves the wallet is theirs; no transaction, no fee, nothing leaves their account), then RPC reads which accounts are linked. Typing a Top Shot username still works. Only Flow Wallet is offered there (not Dapper). To load a collection you paste a public identifier (a Dapper wallet address or a Top Shot username; for Candy MLB, a Solana wallet address) and RPC reads it view-only; the listing challenge is the only way to mark a wallet as verifiably yours. Never tell a user to look for a "Sign in with Dapper" / "connect wallet" button — none exists.
@@ -4964,8 +4964,14 @@ async function executeToolInner(
     // Panini question with Top Shot's premiums (a substitution); Panini has its own.
     // Any other named collection has no premiums board: refuse rather than answer
     // with Top Shot's rows under that collection's name.
-    if (effectiveCollectionId && effectiveCollectionId !== "nba-top-shot" && effectiveCollectionId !== "panini-blockchain") {
-      return JSON.stringify({ status: "unsupported_collection", message: "RPC's premium boards cover NBA Top Shot and Panini only. Say so; do not quote Top Shot's premiums for this collection." });
+    // 2026-10-28: NFL All Day has its own SERIAL premiums board (#1 + perfect mint); it has no parallels, so a
+    // parallel question on All Day is refused like any other collection without that board.
+    const allDayPremiums = isAllDaySlug(effectiveCollectionId);
+    if (allDayPremiums && kind === "parallel-premiums") {
+      return JSON.stringify({ status: "unsupported_collection", message: "NFL All Day editions have no parallels, so there is no parallel-premium board for All Day. Say so; do not quote Top Shot's parallel premiums. (All Day's serial premiums exist: kind='serial'.)" });
+    }
+    if (!allDayPremiums && effectiveCollectionId && effectiveCollectionId !== "nba-top-shot" && effectiveCollectionId !== "panini-blockchain") {
+      return JSON.stringify({ status: "unsupported_collection", message: "RPC's premium boards cover NBA Top Shot, NFL All Day (serial only) and Panini. Say so; do not quote Top Shot's premiums for this collection." });
     }
     if (effectiveCollectionId === "panini-blockchain") {
       const out = JSON.parse(await readPaniniPremiumsForConcierge(supabase, base, limit));
@@ -4975,7 +4981,8 @@ async function executeToolInner(
       }
       return JSON.stringify(out);
     }
-    return fetchPublicInsight(base, `/api/public/insights/${kind}`, limit);
+    // One fetch per branch (the tool-budget guard sums them): All Day's serial leg is a query param.
+    return fetchPublicInsight(base, `/api/public/insights/${kind}${allDayPremiums ? "?collection=nfl-all-day" : ""}`, limit);
   }
 
   if (toolName === "get_ecosystem_stat") {
@@ -5163,15 +5170,21 @@ async function executeToolInner(
       if (scan.index_state === "empty") {
         return JSON.stringify({ status: "empty", wallet: resolvedAddr, last_scanned_at: scan.last_scanned_at, message: "Our last scan of this wallet found no moments in any collection we track. Say what our scan found — not that the wallet holds nothing." });
       }
-      const adLeg = await readSqueezeCheck(supabase, reportWallet, "nfl-all-day", "support-chat/get_collector_report");
+      const [adLeg, adSections] = await Promise.all([
+        readSqueezeCheck(supabase, reportWallet, "nfl-all-day", "support-chat/get_collector_report"),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (supabase as any).rpc("get_wallet_allday_tc_sections", { p_wallet: reportWallet }) as Promise<{ data: any; error: unknown }>,
+      ]);
       return JSON.stringify({
         status: "ok",
         wallet: resolvedAddr,
         scope_note:
-          "Rollup is cross-collection; report.squeeze, the 2025 rookie cohort and the WNBA sets are TOP SHOT ONLY. allday_squeeze is the NFL All Day squeeze (null when the wallet has no All Day moments indexed). State which is which.",
+          "Rollup is cross-collection; report.squeeze, report.top_sets, report.recent_acquisitions, the 2025 rookie cohort and the WNBA sets are TOP SHOT ONLY. allday_squeeze is the NFL All Day squeeze (null when the wallet has no All Day moments indexed); allday_sections holds NFL All Day's top_sets and recent_acquisitions (null when that read failed — then say it could not be loaded, never that there are none). State which is which.",
         report: data,
         allday_squeeze: adLeg.error ? null : adLeg.index_state === "indexed" ? adLeg.summary : null,
         allday_squeeze_error: adLeg.error ? true : false,
+        allday_sections: adSections?.error ? null : adSections?.data ?? null,
+        allday_sections_error: adSections?.error ? true : false,
       });
     } catch (err: any) {
       return JSON.stringify({ status: "error", message: safeApiError(err, "collector report failed").error });

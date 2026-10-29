@@ -174,6 +174,44 @@ describe("Top Collector Report — NFL All Day squeeze", () => {
     expect(screen.getByText("TS Star")).toBeTruthy()
   })
 
+  it("NFL All Day top sets + acquisitions render beside Top Shot's, linking All Day pages", async () => {
+    routes = {
+      "/api/public/insights/tc-report": () => ({ body: {
+        index_state: "indexed",
+        report: { ...indexedReport, top_sets: [{ set_name: "Base Set", series: 4, series_label: "Series 4", owned_eds: 2, set_total_eds: 10, completion_pct: 20, total_moments_held: 3 }] },
+        allday_squeeze: null, allday_squeeze_error: false,
+        allday_sections: {
+          top_sets: [{ set_name: "Rookie Debut", series: 7, series_label: "Series 7", owned_eds: 105, set_total_eds: 105, completion_pct: 100, total_moments_held: 532 }],
+          recent_acquisitions: [{ sold_at: "2026-10-27T05:28:28Z", price_usd: 1, player_name: "Christian McCaffrey", set_name: "Base", tier: "COMMON", serial: 8719, external_id: "925" }],
+        },
+        allday_sections_error: false,
+      } }),
+    }
+    install()
+    render(<TcReportPage />)
+    await run()
+    await waitFor(() => expect(screen.getByTestId("tc-top-sets-nfl-all-day")).toBeTruthy())
+    const adSets = screen.getByTestId("tc-top-sets-nfl-all-day")
+    expect(adSets.textContent).toContain("Rookie Debut")
+    expect(adSets.querySelector("a")?.getAttribute("href")).toBe("/nfl-all-day/set/rookie-debut")
+    expect(screen.getByTestId("tc-top-sets-nba-top-shot").querySelector("a")?.getAttribute("href")).toBe("/nba-top-shot/set/base-set")
+    const adAcq = screen.getByTestId("tc-acquisitions-nfl-all-day")
+    expect(adAcq.textContent).toContain("Christian McCaffrey")
+    expect(adAcq.querySelector("a")?.getAttribute("href")).toBe("/nfl-all-day/edition/925")
+  })
+
+  it("a failed All Day sections read says so — never an empty All Day section", async () => {
+    routes = {
+      "/api/public/insights/tc-report": () => ({ body: { index_state: "indexed", report: indexedReport, allday_squeeze: null, allday_squeeze_error: false, allday_sections: null, allday_sections_error: true } }),
+    }
+    install()
+    render(<TcReportPage />)
+    await run()
+    await waitFor(() => expect(screen.getByTestId("tc-allday-sections-error")).toBeTruthy())
+    expect(screen.queryByTestId("tc-top-sets-nfl-all-day")).toBeNull()
+    expect(screen.queryByTestId("tc-acquisitions-nfl-all-day")).toBeNull()
+  })
+
   it("no All Day bag → no All Day section; a Top Shot leg with no moments says so instead of 0% bars", async () => {
     routes = {
       "/api/public/insights/tc-report": () => ({ body: { index_state: "indexed", report: { ...zeroReport, cross_collection: [{ slug: "nfl_all_day", moments: 3, editions: 3, approx_fmv_usd: 1 }] }, allday_squeeze: { index_state: "not_indexed", summary: { total_moments: null } }, allday_squeeze_error: false } }),

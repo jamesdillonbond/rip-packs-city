@@ -93,6 +93,21 @@ describe("GET /api/public/insights/tc-report", () => {
     expect(body.report.cross_collection).toHaveLength(1)
   })
 
+  it("carries NFL All Day's top sets + acquisitions; their failure fails only them", async () => {
+    state.rpcs.get_wallet_tc_report = { data: { cross_collection: [{ slug: "nfl_all_day", moments: 9 }] }, error: null }
+    state.rpcs.get_wallet_allday_tc_sections = { data: { top_sets: [{ set_name: "Base" }], recent_acquisitions: [] }, error: null }
+    let body = await (await GET(req(WALLET_URL))).json()
+    expect(body.allday_sections.top_sets[0].set_name).toBe("Base")
+    expect(body.allday_sections_error).toBe(false)
+    state.rpcs.get_wallet_allday_tc_sections = { data: null, error: { message: "boom" } }
+    const res = await GET(req(WALLET_URL))
+    expect(res.status).toBe(200)
+    body = await res.json()
+    expect(body.allday_sections).toBeNull()
+    expect(body.allday_sections_error).toBe(true)
+    expect(body.report.cross_collection).toHaveLength(1)
+  })
+
   it("an empty rollup with no scan on record is not_indexed, never empty", async () => {
     state.rpcs.get_wallet_tc_report = { data: { cross_collection: [] }, error: null }
     state.bfs = { data: [], error: null }
