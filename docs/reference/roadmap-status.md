@@ -108,6 +108,25 @@ WAU); its *measurements* were superseded five times over. **For any number, scro
 
 ---
 
+## ⭐ HEADLINE METRIC — re-read live 2026-10-29 ~9:40 AM PT from `rpc_trust_health_history`, BY PT WEEK (supersedes the 10-22 block below)
+
+Same instrument (six-hourly legs `<coll>_fmv_high_med_share_pct`, `value <> 999`, weekly mean, weeks start Monday PT). Wk 10-19 is now complete (28 legs); **wk 10-26 is partial: 13–14 legs, Monday → Thursday 10-29 morning.** Claude Code cloud, read-only.
+
+| collection | bar | wk 10-12 | wk 10-19 | wk 10-26 (partial) | spread wk 10-26 |
+|---|---|---:|---:|---:|---|
+| Top Shot (M1) | ≥ 50 % | 54.8 | **44.7** | **45.0** 🔴 by decision | 44.4–45.4 |
+| All Day (M2) | ≥ 30 % | 26.7 | **27.4** | **27.8** 🔴 | 27.3–28.1 |
+| Pinnacle (own leg, never average it) | — | 32.8 | 33.4 | 33.3 | 32.1–34.1 |
+| Candy MLB | — | 56.0 | 55.5 | 58.2 ⚠ relabel, frozen market | 56.0–60.0 |
+| Panini | — | 29.0 (18 legs) | 43.8 | 45.9 | 45.9–46.0 |
+| Golazos | — | 1.0 | 0.2 | 0.2 | — |
+| UFC | — | 0.0 | 0.0 | 0.0 (closed: honest) | — |
+
+- **Flat across the Dapper outage (10-27 → 10-29).** Top Shot holds at the level 1.8.2 predicted (44–45); All Day edges up 0.4 a week, still 2.2 under its bar. Neither moved through two days with All Day and Pinnacle markets closed: confidence is graded on the 30/90-day window, so a two-day stop does not show here. Expect it in the backtests instead (see #208's 10-29 read).
+- **Candy 58.2 is still the 10-11 relabel on a frozen market** (no sale since 10-11); the fall predicted for ~11-10 has not started.
+- **Panini 45.9, flat (0.1 spread over 13 legs)** since the 1.3.x re-grade finished. Separately, the residential runner went quiet at ~6 AM PT 10-29 (no `panini-ingest` tick after 13:00 UTC, collector walk last at 12:49 UTC); legs after that read a stalled input until the box is back.
+- Pricing-accuracy exits read the same morning (known-issues #208 / #209 / #210 / #213; ledger 10-29).
+
 ## ⭐ HEADLINE METRIC — re-read live 2026-10-22 ~9:30 PM PT from `rpc_trust_health_history`, BY PT WEEK (supersedes the 10-17 block below)
 
 Same instrument (six-hourly precompute legs, weekly mean; weeks start Monday). **Wk 10-19 is PARTIAL: 16 legs, Monday 10-19 → Thursday 10-22 ~6:50 PM PT.** Values are `value <> 999` legs only. Cowork cloud, read-only.
