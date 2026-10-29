@@ -161,6 +161,28 @@ Done 10-15 → 10-17 (Claude Code cloud, session_014vWuubmVKLyyyMQAwWzT2W; Trevo
 - ❓ **Needs Trevor:** how the 2026-27 Yearbook / Blue Chip / Squad Goals leaderboards are scored. RPC will not publish its own rank as Top Shot's. The board worth building is "cost to climb into the top N", and it needs the official scoring.
 - **Tracked since 2026-10-19:** `editions.autographed_at` (from Atlas `autographedAt`, swept daily by pg_cron `rpc-autograph-sweep`; 236 Top Shot + 226 All Day signed editions at the census). Partner-athlete status itself is still not stored: Atlas's `activePartnerAthlete` flag marks only 4 players and is not the signer list. Research: [autographs-topshot-allday-2026-10-19.md](../research/autographs-topshot-allday-2026-10-19.md). **Not tracked yet:** Constellations trade-ins burn older-season Rares that the index does not walk (Dune-era sets), so holder counts there lag.
 
+## ⭐ NEW 2026-10-29 — DEMAND RE-READ, WEEK OF 10-22..10-28 PT (by `scripts/demand-read.sql`, params 10-22 07:00 UTC → 10-29 07:00 UTC; Claude Code cloud, ~9:20 AM PT)
+
+| PT week (Thu 07:00 UTC →) | 10-15..10-21 | **10-22..10-28** |
+|---|---:|---:|
+| human browsers / visits | 66 / 110 | **63 / 98** |
+| external signed-in users | 7 | **2** |
+| signups (minus internal) | 2 | **0** |
+| visits by source (one-page) | direct 76 (52) · Google 23 (16) · ChatGPT 5 (2) · Bing 4 (4) · X 1 · other 1 | **direct 59 (37) · Google 25 (22) · ChatGPT 11 (5) · Bing 2 (0) · X 1 (1)** |
+| Google one-page share | 16 / 23 (70 %) | **22 / 25 (88 %)** |
+| wallet pastes (browsers) | 40 (7) | **38 (4)** |
+| share views, browser × page | 6 | **9** (17 raw page-view events — the reload loop is gone) |
+| sign-in clicks (`funnel_events`, human) | share_cta 1 · home_header 0 | **home_pricing 3 · home_header 1** · share_cta 0 |
+| email prompt shown (browsers) | 19 (9) | **15 (9)** |
+| `magic-link-requested` | 5 | **1** |
+
+**Read:**
+- **Flat acquisition, no activation this week.** Visits and browsers are level. Google landings are unchanged (25), but more of them saw one page (88 %, from ~70 %). ChatGPT doubled (5 → 11, small n). Signed-in users 7 → 2 and signups 2 → 0. Four sign-in clicks (3 from the home page's FREE block, `home_pricing`, which shows no price; 1 from the header) produced one magic-link request and no new account.
+- ⚠ **Confounded, so not a trend:** the Dapper outage began 10-27 (~9:30 AM PT; markets closed on All Day / Pinnacle, Top Shot back late 10-28). Two of the seven PT days had no live market to look at, and the most active user last week (sniper filters) had nothing to snipe. Read the next week before calling the signed-in drop real.
+- The share card's reload loop (fixed 10-22) is gone from the data: 9 browser × page share views from 17 raw events (last week 6 from 72).
+- The 10-22 falsifier ("activation, not acquisition, is the lever": more share-CTA clicks per share view with flat Google) got no support this week: 9 share views, 0 share-CTA clicks. n is tiny either way.
+- 🔜 **Next re-read: on/after 2026-11-05** (params 10-29 07:00 UTC → 11-05 08:00 UTC: PDT ends 11-01, so this week is 169 h long; the script header says to switch to 08:00 UTC after the November change).
+
 ## ⭐ NEW 2026-10-22 — DEMAND RE-READ, WEEK OF 10-15..10-21 PT (vs 10-08..10-14, both by `scripts/demand-read.sql`)
 
 **Method, now codified:** [`scripts/demand-read.sql`](../../scripts/demand-read.sql) — every definition is written in its header (human visit = a `sid` with a `vid` and a page-view, which discounts the unflagged headless fingerprint; source = the `ref` of the visit's first page-view; signed-in minus `user_activity.is_internal`). Both weeks below were run through it, so they compare like for like. ⚠ The 10-15 prose block further down was hand-counted and differs from the script on visits (~94 vs 88), Google (26 / 19 one-page vs 24 / 18) and pastes ("10" vs 27 events); **quote the script's row, never the prose.**
@@ -184,7 +206,7 @@ Done 10-15 → 10-17 (Claude Code cloud, session_014vWuubmVKLyyyMQAwWzT2W; Trevo
 - ⚠ **Two instrument corrections:** (1) `signin_click` lives in `funnel_events`, not `usage_events` — the 10-15 block's and the 10-22 night pass's "0 sign-in clicks" both read the wrong table (the baseline week actually had 2, from the home header); (2) share-view EVENTS are not share views while the reload loop existed — count browser × page.
 - **Acquisition is flat; activation moved.** Google is unchanged (24 → 23 visits, ~70 % see one page); direct rose 60 → 76 (mostly one-page); ChatGPT and Bing are small. Signed-in users 6 → 7 and signups 1 → 2. Falsifier for "activation, not acquisition, is the lever": if the next weeks show more share-CTA clicks per share view with flat Google, it holds; if signups stay at the level of new search landings, acquisition is the binding problem after all.
 - **Still not measured:** whether the magic-link sends become sessions (5 sent; 2 became new accounts this week, the others were returning users).
-- 🔜 **Next re-read: on/after 2026-10-29** with `scripts/demand-read.sql` (params 10-22 07:00 UTC → 10-29 07:00 UTC; PDT holds until 11-01).
+- 🔜 **Next re-read: on/after 2026-10-29** with `scripts/demand-read.sql` (params 10-22 07:00 UTC → 10-29 07:00 UTC; PDT holds until 11-01). ✅ Done 10-29 (block above).
 
 ## ⭐ NEW 2026-10-15 — DEMAND READ, WEEK OF 10-08..10-14 PT (baseline for the next one)
 
