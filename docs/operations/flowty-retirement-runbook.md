@@ -1,6 +1,6 @@
 # Flowty retirement — pre-staged runbook
 
-✅ **EXECUTED 2026-10-30 (Claude Code cloud, ~10:20 AM–noon PT) — see § Execution record at the end.** The status line below is the pre-staged text, kept as written.
+✅ **EXECUTED 2026-10-30 (Claude Code cloud, ~10:05–11:00 AM PT) — see § Execution record at the end.** The status line below is the pre-staged text, kept as written.
 
 **Status: PRE-STAGED, NOT EXECUTED.** Flowty (Trevor, 09-25) will turn its API off "soon". Nothing priced depends on it any more (roadmap-status.md, Prioritized next actions §1, re-verified 10-03). This file is the whole teardown, ready to run in one pass on the day the lanes prove it is dark. Inventory read **2026-10-18 ~9:15 AM PT** (Claude Code cloud). Every count below is a dated sample, so re-derive it before acting.
 
@@ -148,7 +148,7 @@ Other DB readers of v1 to check once: `analytics_listings_summary`, `get_relativ
 - **Step 4 — data.** Backed up then removed: `cached_listings` source='flowty' **319** rows (Top Shot 111, All Day 108, Golazos 100; newest 10-27 9:15 PM PT) → `audit_20261030_flowty_cached_listings_backup`, and the 8 open `cached_listings_v2` Flowty rows → `audit_20261030_flowty_cached_listings_v2_open_backup`.
   - The generic `listing_count` arms would have read a fabricated 0, so they were moved to v2 in the same pass (`20261030172307`). `get_platform_stats` reads All Day 108 → **4,500**, Golazos 100 → **496** editions with an open on-chain ask. `get_collection_stats` gives Golazos 100 → **496**.
   - `get_collection_stats`' generic sniper-deals arm (Golazos / UFC) still reads v1 and is now empty, because no Flowty rows remain.
-- **Step 5 — edge function.** `flowty-proxy` is a 410 tombstone in the repo, and its source is archived at `supabase/retired-functions/flowty-proxy/index.ts.txt`. The deploy goes through `edge-fn-deploy.yml` after the push. ⚠ **Left:** unset the Vercel env var `FLOWTY_PROXY_TOKEN` and the edge secret (harmless while unread).
+- **Step 5 — edge function.** `flowty-proxy` is a 410 tombstone in the repo, and its source is archived at `supabase/retired-functions/flowty-proxy/index.ts.txt`. Deployed via `edge-fn-deploy.yml` (v53, verify_jwt=false; a POST answers 410, checked 11:05 AM PT). ⚠ **Left:** unset the Vercel env var `FLOWTY_PROXY_TOKEN` and the edge secret (harmless while unread).
 - **Step 6** (drop the frozen `flowty_*` tables) is a product decision. Not done.
 
 **Falsifier (unchanged):** a `*-listing-cache` row in `pipeline_runs` after this push deploys, or an All Day / Golazos listings count of 0 on any surface.
