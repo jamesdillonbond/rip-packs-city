@@ -1,8 +1,8 @@
--- STAGED, NOT APPLIED (2026-10-29, Claude Code cloud, session_014vX7Q7qM7twrBUY9w4M9yP).
--- The apply_migration call raised a Supabase MCP approval prompt that never reached the client, so it
--- timed out. To apply: paste into the Supabase SQL editor (or approve it from an MCP client that shows
--- the prompt), then commit this file as supabase/migrations/<version>_audit_20261029_sentinel_candy_recorded_silence_is_not_an_ingest_alarm.sql
--- with the version from supabase_migrations.schema_migrations.
+-- audit_20261029_sentinel_candy_recorded_silence_is_not_an_ingest_alarm
+--
+-- APPLIED 2026-10-30 10:30 AM PT (Claude Code cloud, session_014vX7Q7qM7twrBUY9w4M9yP) as 20261030173023.
+-- Drafted 10-29 and staged in docs/proposals/ when that day's apply_migration call timed out on an
+-- approval prompt; the retry went through without one. Body unchanged from the staged draft.
 --
 -- WHY. Sentinel warns every hour, on two arms, about Candy MLB having no sales:
 --   * "Sales Ingest by Collection": ⚠️Candy MLB 0/24h (last ~423h ago >12h!)
