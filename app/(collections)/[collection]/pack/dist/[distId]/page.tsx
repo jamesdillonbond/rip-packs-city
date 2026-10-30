@@ -93,6 +93,9 @@ import { collectionHasDropPool } from "@/lib/packs/drop-pool"
 import { pickTierCounts, observedOpensFloorLabel } from "@/lib/pack-dist/tier-counts"
 import { summarizeDegraded, boardStatus } from "@/lib/insights/board-status"
 import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
+import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
+import { getPackBookFreshness, type BookFreshness } from "@/lib/packs/pack-deals"
+import { withBoardBudget } from "@/lib/insights/board-page-fetch"
 import { accentText } from "@/lib/accent-text"
 import { marketWalletHref } from "@/lib/analytics/wallet-href"
 import { jsonLdScript } from "@/lib/seo/json-ld-script"
@@ -458,10 +461,18 @@ export default async function PackDetailPage(
   // because React does not hydrate a dehydrated boundary's fallback). Both reads
   // are cheap and were MOVED off the streamed group, not added, so total DB work
   // per request is unchanged.
-  const [packContentsRes, exhaustedRes, pinnaclePinsRes] = await Promise.all([
+  const [packContentsRes, exhaustedRes, pinnaclePinsRes, book] = await Promise.all([
     fetchPackContents(coll.id, distId, PACK_CONTENTS_PAGE_SIZE, 0),
     fetchExhaustedCount(coll.id, distId),
     fetchPinnacleDistPins(collection, distId),
+    // #218: the verdict's ask comes from Dapper's pack index via pack_ask_state.
+    // When that index freezes, the ask is yesterday's and "+EV" is a claim about
+    // a listing that may have sold. Never throws; unchecked ⇒ frozen=false.
+    // Bounded: a slow read degrades to "unchecked" (no notice, badge kept as
+    // before #218) rather than holding the shell.
+    withBoardBudget(getPackBookFreshness(collection), "pack-book-freshness", 3000, "packs/").catch(
+      (): BookFreshness => ({ lastChangedAt: null, chainSalesSince: null, frozen: false }),
+    ),
   ])
   // `null` still means "the read failed" for PackContentsSection, which renders
   // its own explanatory copy; `[]` still means a genuinely unindexed pool.
@@ -501,6 +512,10 @@ export default async function PackDetailPage(
   // Verdict renders ONLY when there is a live secondary ask to compare against
   // (2026-07-07 reframe). No ask → Gross EV shows, but no net/ratio/positive-EV.
   const showPriceVerdict = !isRewardPack && !isHoldingPack && secondaryAskAnchor != null
+  // The ask anchoring that verdict is proven stale (#218) — keep the numbers,
+  // say how old they are, and drop the "+EV" badge (a buy signal on a listing
+  // that may be gone).
+  const askBookFrozen = showPriceVerdict && book.frozen
   // Prices fed to the KPI block; suppressed for holding packs so the card shows
   // "—" instead of a $999,999 sentinel.
   const displayLivePrice = isHoldingPack ? null : livePrice
@@ -894,7 +909,7 @@ export default async function PackDetailPage(
                   {slotsLabel}
                 </span>
               )}
-              {isPositive && grossEv !== null && showPriceVerdict && !evUnreliable && (
+              {isPositive && grossEv !== null && showPriceVerdict && !evUnreliable && !askBookFrozen && (
                 <span
                   style={{
                     display: "inline-block",
@@ -1037,6 +1052,25 @@ export default async function PackDetailPage(
         </div>
       </section>
 
+      {askBookFrozen && (
+        <p
+          role="status"
+          style={{
+            margin: 0,
+            padding: "10px 12px",
+            border: "1px solid var(--rpc-red)",
+            borderRadius: 6,
+            fontSize: 13,
+            lineHeight: 1.45,
+            color: "var(--rpc-text-primary)",
+          }}
+        >
+          <strong>The secondary ask below may be out of date.</strong> Dapper&apos;s pack listing feed
+          hasn&apos;t changed{book.lastChangedAt ? <> since <FreshnessStamp iso={book.lastChangedAt} /></> : null}
+          {book.chainSalesSince != null ? <>, while {book.chainSalesSince.toLocaleString("en-US")} packs have sold on chain</> : null}
+          . This pack may no longer be listed at that price — check the listing before you buy.
+        </p>
+      )}
       {/* ── Value still sealed (headline: EV vs pack price) ──────────────── */}
       {/* Vaultopolis-style one-liner: the expected pull value still inside an
           unopened pack (Gross EV) framed against the live pack price. Reuses the

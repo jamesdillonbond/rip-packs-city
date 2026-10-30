@@ -387,6 +387,40 @@ async function readBookFreshness(
       if (Number.isFinite(t) && t > lastMs) lastMs = t
     }
   }
+  return judgeBook(collection, lastMs, nowMs)
+}
+
+/**
+ * Book freshness for surfaces that do not hold the whole ask map — the pack
+ * DETAIL page anchors its EV verdict on the same pack_ask_state ask (via
+ * pack_table_rows), so a frozen book makes its "+EV" a claim about yesterday.
+ * Never throws: any failed read returns the "unchecked" state.
+ */
+export async function getPackBookFreshness(collection: string): Promise<BookFreshness> {
+  const unchecked: BookFreshness = { lastChangedAt: null, chainSalesSince: null, frozen: false }
+  if (!isSupportedPackCollection(collection)) return unchecked
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const res = await (supabaseAdmin as any)
+      .from("pack_ask_state")
+      .select("ask_changed_at")
+      .eq("collection_slug", collection)
+      .not("ask_changed_at", "is", null)
+      .order("ask_changed_at", { ascending: false })
+      .limit(1)
+    if (res?.error || !Array.isArray(res?.data)) return unchecked
+    const t = res.data[0]?.ask_changed_at ? Date.parse(res.data[0].ask_changed_at) : NaN
+    return await judgeBook(collection, Number.isFinite(t) ? t : 0, Date.now())
+  } catch {
+    return unchecked
+  }
+}
+
+async function judgeBook(
+  collection: PackCollectionSlug,
+  lastMs: number,
+  nowMs: number,
+): Promise<BookFreshness> {
   if (lastMs === 0) return { lastChangedAt: null, chainSalesSince: null, frozen: false }
   const lastChangedAt = new Date(lastMs).toISOString()
   if (nowMs - lastMs < BOOK_STALE_AFTER_MS) {

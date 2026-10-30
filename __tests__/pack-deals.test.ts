@@ -17,7 +17,10 @@ const state: {
   chainCount: number | null
   chainError: { message: string } | null
   chainReads: number
+  latestAskRows: any[] | null
+  latestAskError: { message: string } | null
 } = {
+  latestAskRows: null, latestAskError: null,
   listings: [], evRows: [], evError: null, askMap: null, askError: null,
   chainCount: null, chainError: null, chainReads: 0,
 }
@@ -39,11 +42,14 @@ vi.mock("@/lib/supabase", () => {
   // from("pack_purchases") is the chain witness for book freshness → count.
   const makeBuilder = (table: string): any => {
     const builder: any = {}
-    for (const m of ["select", "eq", "not", "gte", "gt", "lt", "limit"]) builder[m] = () => builder
+    for (const m of ["select", "eq", "not", "gte", "gt", "lt", "limit", "order"]) builder[m] = () => builder
     builder.then = (resolve: any) => {
       if (table === "pack_purchases") {
         state.chainReads += 1
         return resolve({ data: null, count: state.chainCount, error: state.chainError })
+      }
+      if (table === "pack_ask_state") {
+        return resolve({ data: state.latestAskRows, error: state.latestAskError })
       }
       return resolve({ data: state.evRows, error: state.evError })
     }
@@ -56,7 +62,7 @@ vi.mock("@/lib/supabase", () => {
   return { supabase: client, supabaseAdmin: client }
 })
 
-import { getPackDeals } from "@/lib/packs/pack-deals"
+import { getPackDeals, getPackBookFreshness } from "@/lib/packs/pack-deals"
 
 function listing(over: Partial<any> = {}): any {
   return {
@@ -91,6 +97,8 @@ function evRow(over: Partial<any> = {}): any {
 }
 
 beforeEach(() => {
+  state.latestAskRows = null
+  state.latestAskError = null
   state.chainCount = null
   state.chainError = null
   state.chainReads = 0
@@ -310,5 +318,40 @@ describe("getPackDeals — book freshness (#218: frozen Dapper pack index)", () 
     state.chainCount = 999
     const { book } = await getPackDeals("nba-top-shot")
     expect(book).toEqual({ lastChangedAt: null, chainSalesSince: null, frozen: false })
+  })
+})
+
+describe("getPackBookFreshness — the pack detail page's witness (#218)", () => {
+  const hoursAgo = (h: number) => new Date(Date.now() - h * 3600_000).toISOString()
+
+  it("flags frozen from the newest ask change + on-chain sales since", async () => {
+    state.latestAskRows = [{ ask_changed_at: hoursAgo(20) }]
+    state.chainCount = 431
+    const book = await getPackBookFreshness("nba-top-shot")
+    expect(book.frozen).toBe(true)
+    expect(book.chainSalesSince).toBe(431)
+  })
+
+  it("a recent change is current without consulting the chain", async () => {
+    state.latestAskRows = [{ ask_changed_at: hoursAgo(0.2) }]
+    state.chainCount = 999
+    const book = await getPackBookFreshness("nba-top-shot")
+    expect(book.frozen).toBe(false)
+    expect(state.chainReads).toBe(0)
+  })
+
+  it("a failed ask-state read is unchecked, never frozen", async () => {
+    state.latestAskError = { message: "timeout" }
+    state.chainCount = 999
+    expect(await getPackBookFreshness("nba-top-shot")).toEqual({
+      lastChangedAt: null, chainSalesSince: null, frozen: false,
+    })
+  })
+
+  it("an unsupported collection is unchecked without a read", async () => {
+    state.chainCount = 999
+    const book = await getPackBookFreshness("disney-pinnacle")
+    expect(book.frozen).toBe(false)
+    expect(state.chainReads).toBe(0)
   })
 })
