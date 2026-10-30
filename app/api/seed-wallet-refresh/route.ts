@@ -267,6 +267,15 @@ const LOW_PRIORITY_INTERVAL_HOURS = Number(
 )
 const LOW_PRIORITY_INTERVAL_MS =
   Math.max(0, LOW_PRIORITY_INTERVAL_HOURS) * 60 * 60 * 1000
+// ⛔ 2026-10-30: THE INTERVAL EQUALS TWO WAVE PERIODS, SO A STRICT `< 24h` MISSES ITS OWN WAVE.
+// A wave walks a wallet at T and the walk stamps a few minutes later; 24 h on, the next-but-one
+// wave sees an age of 23 h 5x min and skips it, and the wallet waits for T+36 h. Measured 10-30:
+// all 191 low-priority wallets were walked 10-29 5:46-6:31 AM PT and skipped by the 5:45-6:27 AM PT
+// waves 24 h later — a 36 h cycle, not the "~24h" above, and a Cadence Collapse page (the wave
+// family read 40 % of baseline). A wallet is due once it is within this tolerance of the interval.
+// Waves fire on exact cron-job.org minutes, so 2 h (< one 12 h wave) cannot let a wallet run twice
+// in one period.
+const LOW_PRIORITY_DUE_TOLERANCE_MS = 2 * 60 * 60 * 1000
 
 // ── THE WAVE CADENCE, IN ONE PLACE (2026-09-13) ──────────────────────────
 // How often a primary wave actually runs, in hours. Used by BOTH the cadence
@@ -877,7 +886,7 @@ export async function GET(req: NextRequest) {
         ) {
           // The WALK stamp (see lastWalkMs), never last_refreshed_at.
           const ageMs = nowMs - lastWalkMs(row)
-          if (Number.isFinite(ageMs) && ageMs >= 0 && ageMs < LOW_PRIORITY_INTERVAL_MS) {
+          if (Number.isFinite(ageMs) && ageMs >= 0 && ageMs < LOW_PRIORITY_INTERVAL_MS - LOW_PRIORITY_DUE_TOLERANCE_MS) {
             lowPrioritySkipped++
             return false
           }

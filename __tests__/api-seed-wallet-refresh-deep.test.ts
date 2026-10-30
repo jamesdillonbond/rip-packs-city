@@ -279,6 +279,28 @@ describe("seed-wallet-refresh — low-priority interval gate", () => {
     expect(wallets).toEqual(["0x2222222222222222", "0x3333333333333333"])
   })
 
+  // ⛔ 2026-10-30 — the interval is two 12 h waves, and a walk stamps minutes after its wave, so a
+  // strict `< 24h` skipped every low-priority wallet on the wave 24 h later (23h59m old) and walked it
+  // at 36 h. Within 2 h of the interval the wallet is due; well inside it, it is still gated.
+  it("a low-priority wallet walked 23h59m ago is due on this wave; one walked 20h ago is not", async () => {
+    const almostDay = new Date(Date.now() - (24 * 60 - 1) * 60 * 1000).toISOString()
+    const twentyHours = new Date(Date.now() - 20 * 60 * 60 * 1000).toISOString()
+    install({
+      seeded_wallets: {
+        data: [
+          seeded({ id: 1, username: "lowpri-due", wallet_address: "0x8888888888888888", priority: 5, last_refreshed_at: almostDay, last_refreshed_per_collection: { nba_top_shot: almostDay } }),
+          seeded({ id: 2, username: "lowpri-recent", wallet_address: "0x9999999999999999", priority: 5, last_refreshed_at: twentyHours, last_refreshed_per_collection: { nba_top_shot: twentyHours } }),
+        ],
+        error: null,
+      },
+    })
+
+    await GET(req())
+    await runDeferred()
+
+    expect(dispatchBodies(fetchMock!).map((b) => b.wallet)).toEqual(["0x8888888888888888"])
+  })
+
   // ⛔ 2026-09-28 — the starvation loop. The daily stats reconciler stamps
   // last_refreshed_at WITHOUT walking; read by this gate, that skipped the same
   // wallets on every wave and they went 5 days unwalked.
