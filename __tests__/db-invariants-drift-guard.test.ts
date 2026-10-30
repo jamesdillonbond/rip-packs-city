@@ -380,10 +380,10 @@ const PINS = [
   },
   {
     fn: "get_platform_stats",
-    // Re-pointed 2026-10-20: 20261019181549 spliced Panini out in place; this snapshot carries the body.
+    // Re-pointed 2026-10-30: listing_count reads the on-chain book (cached_listings_v2), not the Flowty v1 rows.
     test: "supabase/tests/pinnacle_readers_use_the_pin_catalog.sql",
     migration:
-      "supabase/migrations/20261020150000_audit_20261020_snapshot_panini_spliced_platform_stats_and_fmv_tier_pulse.sql",
+      "supabase/migrations/20261030172307_audit_20261030_listing_counts_read_the_onchain_book_not_flowty.sql",
   },
   {
     fn: "analytics_sets_summary",

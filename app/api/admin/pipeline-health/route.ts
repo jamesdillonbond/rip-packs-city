@@ -23,11 +23,9 @@ export const dynamic = "force-dynamic";
 const EXPECTED_INTERVAL_MIN: Record<string, number> = {
   // Listings — high cadence
   "ts-listing-ingest": 20,
-  "topshot-listing-cache": 20,
-  "topshot-listing-cache-v2": 20,
-  "allday-listing-cache": 20,
   "allday-listings-indexer": 20,
-  "golazos-listing-cache": 20,
+  // topshot-listing-cache(-v2), allday-listing-cache and golazos-listing-cache removed 2026-10-30:
+  // the Flowty API went dark 10-27 and the lanes were retired (docs/operations/flowty-retirement-runbook.md).
   // ufc-listing-cache and ufc-sales-indexer removed 2026-10-18: routes deleted with the
   // dead UFC route code (market closed May 2026; 0 runs), same rule as Pinnacle below.
   // pinnacle-listing-cache retired 2026-06-09 (Flowty teardown; cron-job.org

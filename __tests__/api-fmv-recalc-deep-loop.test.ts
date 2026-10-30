@@ -207,8 +207,7 @@ describe("fmv-recalc deferred sweep — happy path", () => {
     expect(purge?.args?.p_edition_ids).toEqual(["ed-1"])
     expect(purge?.args?.p_keep_ids).toEqual(["snap-new-0"])
 
-    // Chain continues to listing-cache.
-    expect(state.chained).toEqual([{ path: "/api/listing-cache", chain: false }])
+    expect(state.chained).toEqual([]) // the Flowty /api/listing-cache step was retired 2026-10-30: fmv-recalc chains nowhere
   })
 
   it("grail dampener: a $9,000 serial-#1 sale cannot own a common edition's FMV", async () => {
@@ -481,7 +480,7 @@ describe("fmv-recalc deferred sweep — every exit path logs (the 2026-05-25 inc
       p_cursor_after: null,
     })
     expect((log?.p_extra as Record<string, unknown>)?.sweep_wrapped).toBe(true)
-    expect(state.chained).toEqual([{ path: "/api/listing-cache", chain: false }])
+    expect(state.chained).toEqual([]) // the Flowty /api/listing-cache step was retired 2026-10-30: fmv-recalc chains nowhere
   })
 
   it("Step 1b all-chunks-failed logs ok=false as saturation-class instead of going dark", async () => {

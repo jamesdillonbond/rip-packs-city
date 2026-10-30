@@ -119,7 +119,6 @@ const INPUTS: Record<string, { query?: string; body?: unknown; method?: "GET" | 
   "scan-ufc-wallet": { body: { wallet: "0x0123456789abcdef" } },
   "backfill-pack-opens-api": { query: "collection=topshot" },
   "ingest-topshot-atlas-pool": { method: "GET", query: "mode=targets" },
-  "flowty-proxy": { body: { contractAddress: "0x0b2a3299cc857e29", contractName: "TopShot", payload: {} } },
 }
 
 export type AdmittedRun = {

@@ -1,51 +1,20 @@
-import "@supabase/functions-js/edge-runtime.d.ts";
+// flowty-proxy — RETIRED 2026-10-30. Answers 410 Gone, does no work.
+//
+// It forwarded Flowty collection-page requests for the three Flowty listing-cache lanes (Top Shot, All Day,
+// Golazos). The Flowty API went dark 2026-10-27 ~9:20 PM PT and stayed dark more than 24 h after Dapper's
+// markets reopened (All Day's first sale 10-28 11:12 PM PT), Trevor's gate for the teardown. The lanes and
+// their routes were deleted in the same push (docs/operations/flowty-retirement-runbook.md §3).
+//
+// The source it ran is archived at supabase/retired-functions/flowty-proxy/index.ts.txt — its header is the
+// revival recipe.
 
-// Lightweight Flowty proxy — forwards a single collection page request.
-// Called by Vercel API routes that are blocked by Flowty's IP restrictions.
-// Auth: Bearer ${FLOWTY_PROXY_TOKEN}
-
-const FLOWTY_PROXY_TOKEN = Deno.env.get("FLOWTY_PROXY_TOKEN")
-if (!FLOWTY_PROXY_TOKEN) {
-  throw new Error("FLOWTY_PROXY_TOKEN env var is required")
-}
-const FLOWTY_BASE = "https://api2.flowty.io/collection";
-const FLOWTY_HEADERS = {
-  "Content-Type": "application/json",
-  "Origin": "https://www.flowty.io",
-};
-
-Deno.serve(async (req) => {
-  const auth = req.headers.get("Authorization") ?? "";
-  if (auth !== `Bearer ${FLOWTY_PROXY_TOKEN}`) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { "Content-Type": "application/json" } });
-  }
-
-  let body: { contractAddress: string; contractName: string; payload: Record<string, unknown> };
-  try {
-    body = await req.json();
-  } catch {
-    return new Response(JSON.stringify({ error: "Invalid JSON" }), { status: 400, headers: { "Content-Type": "application/json" } });
-  }
-
-  const { contractAddress, contractName, payload } = body;
-  if (!contractAddress || !contractName) {
-    return new Response(JSON.stringify({ error: "contractAddress and contractName required" }), { status: 400, headers: { "Content-Type": "application/json" } });
-  }
-
-  try {
-    const upstream = await fetch(`${FLOWTY_BASE}/${contractAddress}/${contractName}`, {
-      method: "POST",
-      headers: FLOWTY_HEADERS,
-      body: JSON.stringify(payload ?? {}),
-      signal: AbortSignal.timeout(12000),
-    });
-
-    const data = await upstream.json();
-    return new Response(JSON.stringify(data), {
-      status: upstream.status,
-      headers: { "Content-Type": "application/json" },
-    });
-  } catch (err) {
-    return new Response(JSON.stringify({ error: String(err) }), { status: 502, headers: { "Content-Type": "application/json" } });
-  }
-});
+Deno.serve(() =>
+  new Response(
+    JSON.stringify({
+      error: "retired",
+      message: "flowty-proxy was retired on 2026-10-30 (Flowty API dark). See supabase/retired-functions/flowty-proxy/.",
+      retired_at: "2026-10-30",
+    }),
+    { status: 410, headers: { "Content-Type": "application/json" } },
+  )
+)

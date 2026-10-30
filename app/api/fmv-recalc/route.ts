@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
-import { fireNextPipelineStep } from "@/lib/pipeline-chain"
 import { applyAllFmvGuards, capFmvAtCheapestAsk } from "@/lib/fmv-phantom-guard"
 import { fetchCandyConfirmedFloors, mergeCeilingAsks } from "@/lib/fmv-candy-ceiling"
 import { computeConfidence, escalateConfidence, gateHighToRecentVolume, gateMediumToRecentSale, MIN_SALES_30D_MEDIUM } from "@/lib/fmv-confidence"
@@ -156,7 +155,7 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  const chain = req.nextUrl.searchParams.get("chain") === "true"
+  // ?chain=true once chained this route to /api/listing-cache (Flowty), retired 2026-10-30 with the Flowty API.
   const forceStale = req.nextUrl.searchParams.get("force_stale") === "true"
 
   const authHeader = req.headers.get("authorization")
@@ -375,7 +374,6 @@ export async function POST(req: NextRequest) {
           console.warn("[FMV-RECALC] sweep-wrap log failed:", err)
         }
       }
-      await fireNextPipelineStep("/api/listing-cache", chain)
       return
     }
 
@@ -499,7 +497,6 @@ export async function POST(req: NextRequest) {
       } catch (logErr) {
         console.warn("[FMV-RECALC] step1b-empty log failed:", logErr)
       }
-      await fireNextPipelineStep("/api/listing-cache", chain)
       return
     }
 
@@ -1192,6 +1189,8 @@ export async function POST(req: NextRequest) {
     // the table holds ~300 rows across THREE collections and is rewritten every 20 minutes by the
     // Vercel cron on `/api/topshot-listing-cache` (`15,35,55`), with live asks and `buy_url`s. It
     // is one of the freshest tables in the database, not a fossil.
+    // (2026-10-30: that Flowty-fed lane and its All Day / Golazos siblings were retired when the Flowty API
+    // went dark; the table keeps Top Shot's own `source='topshot'` rows.)
     //
     // Corrected because a future reader — this one nearly did — concludes from the old sentence
     // that the whole table is dead and reasons on from there. The scope of the claim is now
@@ -2891,7 +2890,6 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    await fireNextPipelineStep("/api/listing-cache", chain)
     console.log(
       `[FMV-RECALC] Summary — editionsProcessed=${editionIds.length} snapshotsUpdated=${snapshotsUpdated} washTradeFiltered=${washTradeEditionCount} backfill=${backfillCount} historicalFallback=${historicalBackfillCount} haircutRows=${haircutRowsTotal} haircutCollectionsRun=${haircutCollectionsRun} hasMore=${hasMore} nextOffset=${hasMore ? offset + limit : "null"} durationMs=${duration}`
     )

@@ -91,10 +91,6 @@
       "schedule": "58 */3 * * *"
     },
     {
-      "path": "/api/topshot-listing-cache",
-      "schedule": "15,35,55 * * * *"
-    },
-    {
       "path": "/api/cron/allow-list-reconcile",
       "schedule": "14 * * * *"
     },

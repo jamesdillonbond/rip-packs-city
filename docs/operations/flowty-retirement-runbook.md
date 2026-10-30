@@ -1,5 +1,7 @@
 # Flowty retirement — pre-staged runbook
 
+✅ **EXECUTED 2026-10-30 (Claude Code cloud, ~10:20 AM–noon PT) — see § Execution record at the end.** The status line below is the pre-staged text, kept as written.
+
 **Status: PRE-STAGED, NOT EXECUTED.** Flowty (Trevor, 09-25) will turn its API off "soon". Nothing priced depends on it any more (roadmap-status.md, Prioritized next actions §1, re-verified 10-03). This file is the whole teardown, ready to run in one pass on the day the lanes prove it is dark. Inventory read **2026-10-18 ~9:15 AM PT** (Claude Code cloud). Every count below is a dated sample, so re-derive it before acting.
 
 Roadmap item: [sniper-and-deals.md](../strategy/features/sniper-and-deals.md) Now 1.
@@ -134,3 +136,19 @@ Other DB readers of v1 to check once: `analytics_listings_summary`, `get_relativ
    - ↳ **Dead Flowty-era objects found 10-18 ~2:27 PM PT (Claude Code cloud; caller census: app, lib, scripts, GHA, `supabase/functions`, `cron.job`, `pg_proc` bodies, pgss).** `cart_eligible_listings` is a view over `cached_listings WHERE source = 'flowty'` (the removed cart's book); its only reader, `build_deal_alerts_for_subscriber`, has NO caller (the live alerts are `dispatch_due_deal_alerts` → `cross_collection_deals_board` / `edition_current_ask`, neither touching v1 or Flowty). `get_cross_collection_deals` (v1) is called only by `/api/cross-collection-deals`, which nothing in the app fetches, and by `send-digest`, which nothing schedules (digests blocked on C2); pgss shows 0 calls. All three can be dropped with step 2 or left; none affects a user on the day.
 
 **Exit:** none of the three lanes is scheduled; the watchlist reads them inactive; `cached_listings` holds 0 `source='flowty'` rows; every §2 reader renders All Day and Golazos from v2 (rendered DOM, not HTTP 200); `edge-fn-drift` is green. **Falsifier:** a `*-listing-cache` row in `pipeline_runs` after the day, or an All Day / Golazos listings count of 0 on any surface.
+
+## Execution record — 2026-10-30
+
+**Gate met.** All three lanes read DARK on the §0 query at 10:05 AM PT 10-30 (18 of 18 ticks in 6 h fetched 0, `max_fetched` 0 on each). Dapper is fully back: All Day's first sale after the outage was 10-28 11:12 PM PT, so the lanes have been dark about 35 h past it (Trevor's hold: "≥ 24 h after Dapper is back"). Every marketplace row in `v_collection_marketplace_status` reads healthy.
+
+- **Step 0** was already complete (10-18).
+- **Step 1 — schedulers.** The `vercel.json` cron for `/api/topshot-listing-cache` and `.github/workflows/topshot-listing-cache.yml` are removed. ⚠ **NOT DONE: the two cron-job.org jobs** ("RPC All Day Listing Cache", "RPC Golazos Listing Cache"). They need the console in Chrome, and Trevor's computer was not reachable from the session. They now call deleted routes (404) until someone disables them or cron-job.org auto-disables them for repeated failures. Disabling them in the console is the one step left.
+- **Step 2 — code.** Deleted `app/api/{topshot,allday,golazos}-listing-cache`, `app/api/listing-cache`, `app/api/golazos-sniper-feed`, `lib/pipeline/empty-book.ts` and their 10 route tests. `fmv-recalc` no longer chains anywhere (its 3 `/api/listing-cache` calls are gone, and `api-fmv-recalc-deep-loop` now pins `chained == []`). `pipeline-health` lost the four listing-cache rows. `FLOWTY_PROXY_TOKEN` is out of `ci.yml` and the harness. `ufc-pipeline` / `ufc-listing-cache` were already deleted 10-18.
+- **Step 3 — watchlist.** `topshot-listing-cache`, `allday-listing-cache` and `golazos-listing-cache` are `is_active=false` (`20261030172149`; `topshot-listing-cache-v2` was already inactive).
+- **Step 4 — data.** Backed up then removed: `cached_listings` source='flowty' **319** rows (Top Shot 111, All Day 108, Golazos 100; newest 10-27 9:15 PM PT) → `audit_20261030_flowty_cached_listings_backup`, and the 8 open `cached_listings_v2` Flowty rows → `audit_20261030_flowty_cached_listings_v2_open_backup`.
+  - The generic `listing_count` arms would have read a fabricated 0, so they were moved to v2 in the same pass (`20261030172307`). `get_platform_stats` reads All Day 108 → **4,500**, Golazos 100 → **496** editions with an open on-chain ask. `get_collection_stats` gives Golazos 100 → **496**.
+  - `get_collection_stats`' generic sniper-deals arm (Golazos / UFC) still reads v1 and is now empty, because no Flowty rows remain.
+- **Step 5 — edge function.** `flowty-proxy` is a 410 tombstone in the repo, and its source is archived at `supabase/retired-functions/flowty-proxy/index.ts.txt`. The deploy goes through `edge-fn-deploy.yml` after the push. ⚠ **Left:** unset the Vercel env var `FLOWTY_PROXY_TOKEN` and the edge secret (harmless while unread).
+- **Step 6** (drop the frozen `flowty_*` tables) is a product decision. Not done.
+
+**Falsifier (unchanged):** a `*-listing-cache` row in `pipeline_runs` after this push deploys, or an All Day / Golazos listings count of 0 on any surface.

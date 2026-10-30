@@ -54,6 +54,7 @@ CREATE TABLE public.sales_2026 (id bigserial, collection_id uuid, price_usd nume
 CREATE TABLE public.sales_2025 (id bigserial, collection_id uuid, price_usd numeric, sold_at timestamptz);
 CREATE TABLE public.badge_editions (collection_id uuid, low_ask numeric);
 CREATE TABLE public.cached_listings (collection_id uuid);
+CREATE TABLE public.cached_listings_v2 (collection_id uuid, edition_id uuid, completed_at timestamptz, price_usd numeric, expiry_at timestamptz);
 CREATE TABLE public.pinnacle_catalog (
   render_id text PRIMARY KEY, legacy_edition_key text, characters text[], character_name text,
   franchises text[], set_name text, variant text, series_name text, edition_type text,
@@ -551,7 +552,9 @@ BEGIN
                 WHERE collection_id = TOPSHOT_UUID AND low_ask IS NOT NULL AND low_ask > 0)
           WHEN c.id = PINNACLE_UUID
           THEN (SELECT COUNT(*)::int FROM pinnacle_catalog WHERE floor_ask IS NOT NULL)
-          ELSE (SELECT COUNT(*)::int FROM cached_listings WHERE collection_id = c.id)
+          ELSE (SELECT COUNT(DISTINCT cl.edition_id)::int FROM cached_listings_v2 cl
+                 WHERE cl.collection_id = c.id AND cl.completed_at IS NULL AND cl.edition_id IS NOT NULL
+                   AND cl.price_usd > 0 AND (cl.expiry_at IS NULL OR cl.expiry_at > now()))
         END,
       'fmv_age_minutes',
         CASE WHEN c.id = PINNACLE_UUID

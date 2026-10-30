@@ -20,8 +20,7 @@ const SUPPRESSED: Record<string, string> = {
   // Reads v1 for Top Shot (its own feed: 25k `source='topshot'` rows); All Day
   // and Golazos come from its `onchain` arm — pinned by EXCLUDES_INDEX_COLLECTIONS below.
   analytics_listings_summary: "Top Shot arm only; All Day + Golazos excluded from the v1 arm",
-  get_collection_stats: "listing_count is read by no rendered surface (runbook triage); moves with Flowty step 3",
-  get_platform_stats: "listing_count is read by no rendered surface (runbook triage); moves with Flowty step 3",
+  get_collection_stats: "its listing_count reads v2 since 20261030172307; only the generic (Golazos / UFC) sniper-deals arm reads v1, now empty of Flowty rows",
   fmv_from_cached_listings: "returns 0 for All Day and Golazos before reading (their ASK_ONLY lanes read v2)",
   update_badge_low_ask_from_cached_listings: "Top Shot badge low-ask aggregator; no All Day / Golazos rows in badge_editions",
   sync_cached_listings_from_atlas: "the Top Shot v1 WRITER (Atlas feed), not an All Day / Golazos reader",

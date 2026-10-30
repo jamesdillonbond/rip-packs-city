@@ -42,7 +42,7 @@ All Bearer-auth in headers (the 2026-06-07 hygiene pass removed all `?token=` UR
 | RPC Prune Pipeline Runs (daily) | /api/admin/prune-pipeline-runs | daily 06:00 UTC |
 | RPC Recalc Ultimate FMV | /api/admin/recalc-ultimate-fmv | daily 06:35 UTC |
 | ~~RPC V1-Dapper Recovery~~ | /api/admin/recover-v1-budget-exhausted | ⛔ **RETIRED 08-02 — the console row is INACTIVE (job 7818270)**; the route runs on the `vercel.json` cron `*/20 * * * *` instead. Was 43 */3 ⟨exec-derived⟩ |
-| RPC All Day Listing Cache | /api/allday-listing-cache | 14,34,54 |
+| ~~RPC All Day Listing Cache~~ | /api/allday-listing-cache | ⛔ **ROUTE DELETED 2026-10-30 (Flowty API dark; flowty-retirement-runbook.md). DISABLE this console row** — it now 404s. Was 14,34,54 |
 | RPC AllDay Listings Indexer | /api/allday-listings-indexer | 2,17,32,47 |
 | RPC AllDay Listings Retry | /api/allday-listings-retry | 8,23,38,53 |
 | RPC All Day Offers Indexer | /api/allday-offers-indexer | 7,27,47 |
@@ -80,7 +80,7 @@ All Bearer-auth in headers (the 2026-06-07 hygiene pass removed all `?token=` UR
 | RPC TopShot Deal Floor Serials | /api/cron/topshot-deal-floor-serials | ~~hourly :37~~ **INACTIVE 2026-08-30 16:4xZ** — dead host public-api.nbatopshot.com (530/1033 since 08-28); every tick resolved 0 of 10 editions on 10 fetch errors. Disabled in the console (Common tab → Enable job off); re-enable there when the host returns. The `topshot-deal-floor-serials` alert suppression (20260830155543) can then be dropped. |
 | ~~RPC UFC Enrichment Drain~~ (DISABLED 2026-10-18, 0 rows/30 d) | /api/cron/ufc-enrichment-drain | 7,37 |
 | RPC FMV Recalc Force Stale | /api/fmv-recalc?force_stale=true | 8,28,48 |
-| RPC Golazos Listing Cache | /api/golazos-listing-cache | 6,26,46 |
+| ~~RPC Golazos Listing Cache~~ | /api/golazos-listing-cache | ⛔ **ROUTE DELETED 2026-10-30 (Flowty API dark; flowty-retirement-runbook.md). DISABLE this console row** — it now 404s. Was 6,26,46 |
 | RPC Golazos Listings Indexer | /api/golazos-listings-indexer | 7,22,37,52 |
 | RPC Golazos Sales Indexer | /api/golazos-sales-indexer | 11,31,51 |
 | RPC Pinnacle Listings Indexer | /api/pinnacle-listings-indexer | 5,25,45 |
@@ -203,9 +203,9 @@ Grew 34 → 64 since 06-07. Highest-frequency: `pinnacle-mints-backfill` (2m), `
 
 | Workflow | Schedule | Notes |
 |---|---|---|
-| rpc-pipeline.yml | 5,25,45 | Steps (5, pinned by `EXPECTED_STEPS`): fmv-recalc, fmv-backfill, backfill-player-names, backfill, price-snapshots. ⛔ **The `ingest` step (POST `/api/ingest`) was RETIRED 2026-09-07** (#67 (3)): its host `public-api.nbatopshot.com` has answered 530 since ~08-28 and the Atlas lane (`sync_sales_from_atlas`, jobid 471) writes those sales now; the route file stays, the step and its gate slot are gone. ⚠ The listing-cache step was REMOVED 2026-06-25; this row claimed it as a GHA-only backstop until 2026-09-02. `/api/topshot-listing-cache` is single-trigger (Vercel cron 15,35,55). |
+| rpc-pipeline.yml | 5,25,45 | Steps (5, pinned by `EXPECTED_STEPS`): fmv-recalc, fmv-backfill, backfill-player-names, backfill, price-snapshots. ⛔ **The `ingest` step (POST `/api/ingest`) was RETIRED 2026-09-07** (#67 (3)): its host `public-api.nbatopshot.com` has answered 530 since ~08-28 and the Atlas lane (`sync_sales_from_atlas`, jobid 471) writes those sales now; the route file stays, the step and its gate slot are gone. ⚠ The listing-cache step was REMOVED 2026-06-25; this row claimed it as a GHA-only backstop until 2026-09-02. `/api/topshot-listing-cache` was single-trigger (Vercel cron 15,35,55) until the route was deleted 2026-10-30. |
 | pinnacle-owner-discovery.yml | 6,26,46 | |
-| topshot-listing-cache.yml | ~~15,35,55~~ **dispatch-only** | ⚠ **MOVED TO VERCEL CRON 2026-08-01, same minutes (15,35,55).** GHA fired only **10–13 runs/day against the 72/day** this schedule implies (measured from GHA run history 07-27→08-01, so not a DB/`after()` artifact) — ~83% silent tick loss on the feed behind `cached_listings` → `badge_editions.low_ask` → ASK-derived FMV. Its watchlist row (`max_silent_minutes` 360) could never see it: even at ~17% delivery it still fired about every 2h, so it never breached 6h. **A cadence watchlist keyed on SILENCE cannot detect partial tick loss.** rpc-pipeline.yml step #5 remains a real caller — do not remove it. |
+| ~~topshot-listing-cache.yml~~ | ⛔ **DELETED 2026-10-30** with its route and the `vercel.json` cron (Flowty API dark) |  ⚠ **MOVED TO VERCEL CRON 2026-08-01, same minutes (15,35,55).** GHA fired only **10–13 runs/day against the 72/day** this schedule implies (measured from GHA run history 07-27→08-01, so not a DB/`after()` artifact) — ~83% silent tick loss on the feed behind `cached_listings` → `badge_editions.low_ask` → ASK-derived FMV. Its watchlist row (`max_silent_minutes` 360) could never see it: even at ~17% delivery it still fired about every 2h, so it never breached 6h. **A cadence watchlist keyed on SILENCE cannot detect partial tick loss.** rpc-pipeline.yml step #5 remains a real caller — do not remove it. |
 | topshot-sales-history-backfill.yml | 7,22,37,52 | |
 | offer-fill-backfill.yml | 9,24,39,54 | |
 | allow-list-reconcile.yml | ~~hourly :14~~ **dispatch-only** | ⚠ **MOVED TO VERCEL CRON 2026-08-01, same minute (:14).** GHA delivered only ~9 of 24 daily ticks (~60% loss) and this pipeline had **no `pipeline_cadence_watchlist` row at all**, so the loss was entirely invisible; a row was added in the same change (`audit_20260801_watchlist_allow_list_reconcile`, 240m / info). |
