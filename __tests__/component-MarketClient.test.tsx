@@ -1427,3 +1427,23 @@ describe("MarketClient — the sort list is honest per collection", () => {
     }
   })
 })
+
+// #215 (2026-10-30) — a capped ASK_ONLY price is a SALES figure; the row must not
+// say "from asks" over it. `fmvCapped` comes from /api/market.
+describe("MarketClient — capped ASK_ONLY marker (#215)", () => {
+  it("a capped ASK_ONLY row reads 'capped at sales', not 'from asks'", async () => {
+    marketResponse = () => json(200, market({ listings: [LISTING({ confidence: "ASK_ONLY", fmvCapped: true })] }))
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    expect(document.body.textContent).toContain("capped at sales")
+    expect(document.body.textContent).not.toContain("from asks")
+  })
+
+  it("CONTROL: an uncapped (or unchecked) ASK_ONLY row keeps 'from asks'", async () => {
+    marketResponse = () => json(200, market({ listings: [LISTING({ confidence: "ASK_ONLY", fmvCapped: null })] }))
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    expect(document.body.textContent).toContain("from asks")
+    expect(document.body.textContent).not.toContain("capped at sales")
+  })
+})

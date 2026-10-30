@@ -135,6 +135,8 @@ type Listing = {
   discount: number | null
   lowConfidenceFmv?: boolean | null
   confidence: string | null
+  /** #215: the ASK_ONLY price is capped at the edition's sales. null = not checked. */
+  fmvCapped?: boolean | null
   source: string | null
   buyUrl: string | null
   thumbnailUrl: string | null
@@ -1009,7 +1011,7 @@ function ListingCard({ listing, accent, momentUrl, editionStats, showOwned, coll
         </div>
         <div className="rpc-mono" style={{ fontSize: 9, color: "var(--rpc-text-muted)", letterSpacing: "0.08em", textTransform: "uppercase", display: "flex", gap: 6, flexWrap: "wrap" }}>
           <span>FMV {fmtUsd(listing.fmv)}</span>
-          {(() => { const b = fmvBasis(listing.confidence); return b ? <span title={b.title}>· {b.label}</span> : null })()}
+          {(() => { const b = fmvBasis(listing.confidence, listing.fmvCapped === true); return b ? <span title={b.title}>· {b.label}</span> : null })()}
           {listing.listedCount != null && (
             <>
               <span>·</span>
@@ -1208,7 +1210,7 @@ function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColu
                 </td>
                 <td style={{ ...td, textAlign: "right", color: "var(--rpc-text-muted)" }}>
                   {fmtUsd(l.fmv)}
-                  {(() => { const b = fmvBasis(l.confidence); return b ? <div title={b.title} style={{ fontSize: 9, color: "var(--rpc-text-muted)" }}>{b.label}</div> : null })()}
+                  {(() => { const b = fmvBasis(l.confidence, l.fmvCapped === true); return b ? <div title={b.title} style={{ fontSize: 9, color: "var(--rpc-text-muted)" }}>{b.label}</div> : null })()}
                 </td>
                 <td style={{ ...td, textAlign: "right", color: accentText(discount.color), fontWeight: 700 }}>{discount.text}</td>
                 <td style={td}>
