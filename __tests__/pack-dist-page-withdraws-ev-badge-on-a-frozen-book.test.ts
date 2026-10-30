@@ -27,3 +27,12 @@ describe("pack detail page — frozen ask book (#218)", () => {
     expect(src).toMatch(/\{askBookFrozen && \([\s\S]{0,600}may be out of date/)
   })
 })
+
+describe("pack detail page — the anchor summary does not call a frozen ask live (#218)", () => {
+  it("branches on askBookFrozen before the 'live secondary ask' sentence", () => {
+    const i = src.indexOf("if (askBookFrozen) {")
+    const j = src.indexOf("Pack EV computed against the live secondary ask")
+    expect(i).toBeGreaterThan(-1)
+    expect(i).toBeLessThan(j)
+  })
+})

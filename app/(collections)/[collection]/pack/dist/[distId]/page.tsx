@@ -742,6 +742,11 @@ export default async function PackDetailPage(
     if (isRewardPack) return "No standalone retail price (a reward or box-content pack) — no price-based verdict."
     if (isHoldingPack) return null
     if (secondaryAskAnchor != null) {
+      // #218: under a proven book freeze the ask is the last one Dapper's index
+      // reported, not a live one — the notice above states its age.
+      if (askBookFrozen) {
+        return `Pack EV computed against the last secondary ask Dapper's feed reported [${fmtUsd(secondaryAskAnchor)}] — see the notice above; it may no longer be live.`
+      }
       return `Pack EV computed against the live secondary ask [${fmtUsd(secondaryAskAnchor)}] — what a sealed pack actually resells for, the only honest anchor for its value.`
     }
     // 2026-10-25: said "showing Gross EV … only" on dist 7528 beside a Gross EV of "—".
