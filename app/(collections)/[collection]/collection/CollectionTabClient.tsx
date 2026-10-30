@@ -521,7 +521,8 @@ function WalletMomentsBody() {
         if (!fmvData) return row
         // Only overwrite if row has no FMV or zero FMV
         if (row.fmv && row.fmv > 0) return row
-        return { ...row, fmv: fmvData.fmv, fmvComputedAt: fmvData.updatedAt, marketConfidence: fmvData.confidence as MomentRow["marketConfidence"] }
+        // fmvCapped described the replaced price (if any) — this one is unchecked.
+        return { ...row, fmv: fmvData.fmv, fmvComputedAt: fmvData.updatedAt, marketConfidence: fmvData.confidence as MomentRow["marketConfidence"], fmvCapped: null }
       })
     } catch {
       return rowsIn
@@ -1548,6 +1549,7 @@ function WalletMomentsBody() {
           listingPrice: view.selectedMoment.lowAsk ?? null,
           bestOffer: view.selectedMoment.bestOffer ?? view.selectedMoment.editionBestOffer ?? null,
           marketConfidence: view.selectedMoment.marketConfidence ?? null,
+          fmvCapped: view.selectedMoment.fmvCapped ?? null,
           badgeTitles: view.selectedMoment.badgeInfo?.badge_titles ?? [],
           officialBadges: (view.selectedMoment.officialBadges ?? []).map(function(b) { return BADGE_TYPE_TO_TITLE[b] ?? b }),
           imageUrlPrefix: null,

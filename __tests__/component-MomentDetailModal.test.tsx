@@ -79,6 +79,15 @@ describe("MomentDetailModal — ASK_ONLY 'from asks' honesty marker", () => {
     // The internal confidence vocabulary must never reach the DOM.
     expect(queryByText(/high/i)).toBeNull()
   })
+
+  // #215 (2026-10-30): a capped ASK_ONLY price is a SALES figure.
+  it("a capped ASK_ONLY FMV reads 'capped at sales', not 'from asks'", () => {
+    const { queryByText } = render(
+      <MomentDetailModal moment={moment({ marketConfidence: "ask_only", fmvCapped: true })} onClose={() => {}} />,
+    )
+    expect(queryByText("capped at sales")).toBeTruthy()
+    expect(queryByText("from asks")).toBeNull()
+  })
 })
 
 describe("MomentDetailModal — marketplace CTA rules", () => {
