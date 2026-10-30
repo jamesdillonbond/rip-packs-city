@@ -14,7 +14,13 @@ const state: {
   evError: { message: string } | null
   askMap: Record<string, any> | null
   askError: { message: string } | null
-} = { listings: [], evRows: [], evError: null, askMap: null, askError: null }
+  chainCount: number | null
+  chainError: { message: string } | null
+  chainReads: number
+} = {
+  listings: [], evRows: [], evError: null, askMap: null, askError: null,
+  chainCount: null, chainError: null, chainReads: 0,
+}
 
 vi.mock("@/lib/packs/live-pack-listings", () => ({
   isSupportedPackCollection: (s: string) => s === "nba-top-shot" || s === "nfl-all-day",
@@ -30,11 +36,21 @@ vi.mock("@/lib/pack-urls", () => ({
 vi.mock("@/lib/supabase", () => {
   // Thenable query builder: every chained filter returns the builder; awaiting it
   // resolves to the ev result. rpc() resolves to the ask-state map.
-  const builder: any = {}
-  for (const m of ["select", "eq", "not", "gte", "lt", "limit"]) builder[m] = () => builder
-  builder.then = (resolve: any) => resolve({ data: state.evRows, error: state.evError })
+  // from("pack_purchases") is the chain witness for book freshness → count.
+  const makeBuilder = (table: string): any => {
+    const builder: any = {}
+    for (const m of ["select", "eq", "not", "gte", "gt", "lt", "limit"]) builder[m] = () => builder
+    builder.then = (resolve: any) => {
+      if (table === "pack_purchases") {
+        state.chainReads += 1
+        return resolve({ data: null, count: state.chainCount, error: state.chainError })
+      }
+      return resolve({ data: state.evRows, error: state.evError })
+    }
+    return builder
+  }
   const client: any = {
-    from: () => builder,
+    from: (table: string) => makeBuilder(table),
     rpc: async () => ({ data: state.askMap, error: state.askError }),
   }
   return { supabase: client, supabaseAdmin: client }
@@ -75,6 +91,9 @@ function evRow(over: Partial<any> = {}): any {
 }
 
 beforeEach(() => {
+  state.chainCount = null
+  state.chainError = null
+  state.chainReads = 0
   state.listings = []
   state.evRows = []
   state.evError = null
@@ -240,5 +259,56 @@ describe("getPackDeals — limit", () => {
     expect(deals).toHaveLength(2)
     expect(stats.matched).toBe(5)
     expect(stats.returned).toBe(2)
+  })
+})
+
+describe("getPackDeals — book freshness (#218: frozen Dapper pack index)", () => {
+  const hoursAgo = (h: number) => new Date(Date.now() - h * 3600_000).toISOString()
+  const askRow = (changedAt: string) => ({
+    lowest_ask: 10, prev_ask: null, ask_first_seen_at: changedAt, ask_changed_at: changedAt,
+    low_ask_24h: null, low_ask_7d: null,
+  })
+
+  it("flags the book frozen when it has not changed for hours while the chain kept selling packs", async () => {
+    state.listings = [listing({ distId: "100" })]
+    state.evRows = [evRow({ dist_id: "100" })]
+    state.askMap = { "100": askRow(hoursAgo(20)), "200": askRow(hoursAgo(24)) }
+    state.chainCount = 428
+    const { book } = await getPackDeals("nba-top-shot")
+    expect(book.frozen).toBe(true)
+    expect(book.chainSalesSince).toBe(428)
+    expect(Date.parse(book.lastChangedAt!)).toBeCloseTo(Date.parse(hoursAgo(20)), -4)
+  })
+
+  it("does not call a quiet book frozen when the chain also sold almost nothing", async () => {
+    state.askMap = { "100": askRow(hoursAgo(20)) }
+    state.chainCount = 1
+    const { book } = await getPackDeals("nfl-all-day")
+    expect(book.frozen).toBe(false)
+    expect(book.chainSalesSince).toBe(1)
+  })
+
+  it("does not consult the chain while the book changed recently", async () => {
+    state.askMap = { "100": askRow(hoursAgo(0.5)) }
+    state.chainCount = 999
+    const { book } = await getPackDeals("nba-top-shot")
+    expect(book.frozen).toBe(false)
+    expect(book.chainSalesSince).toBeNull()
+    expect(state.chainReads).toBe(0)
+  })
+
+  it("never claims frozen when the chain witness read fails", async () => {
+    state.askMap = { "100": askRow(hoursAgo(20)) }
+    state.chainError = { message: "timeout" }
+    const { book } = await getPackDeals("nba-top-shot")
+    expect(book.frozen).toBe(false)
+    expect(book.chainSalesSince).toBeNull()
+  })
+
+  it("reports no book time (and no verdict) when the recency state is unavailable", async () => {
+    state.askError = { message: "rpc down" }
+    state.chainCount = 999
+    const { book } = await getPackDeals("nba-top-shot")
+    expect(book).toEqual({ lastChangedAt: null, chainSalesSince: null, frozen: false })
   })
 })

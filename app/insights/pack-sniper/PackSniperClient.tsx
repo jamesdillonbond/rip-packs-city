@@ -59,8 +59,15 @@ export type Deal = {
   atLow24h: boolean
 }
 
+// Mirrors lib/packs/pack-deals.ts BookFreshness (#218).
+type BookFreshness = {
+  lastChangedAt: string | null
+  chainSalesSince: number | null
+  frozen: boolean
+}
+
 type ApiResponse = {
-  meta: { fetched_at: string; collection: string; stats?: { returned: number } }
+  meta: { fetched_at: string; collection: string; stats?: { returned: number }; book?: BookFreshness }
   deals: Deal[]
 }
 
@@ -258,6 +265,8 @@ function PackThumbnailPreview({
 type Props = {
   initialDeals: Deal[]
   initialFetchedAt: string | null
+  /** Is the ask book current? Null when the seed failed or predates the field. */
+  initialBook?: BookFreshness | null
   lockedCollection?: Collection
   /**
    * The SERVER-SEEDED read failed. Without this the seed arrives as `[]` with
@@ -266,13 +275,18 @@ type Props = {
   initialFailed?: boolean
 }
 
-export default function PackSniperClient({ initialDeals, initialFetchedAt, lockedCollection, initialFailed }: Props) {
+export default function PackSniperClient({ initialDeals, initialFetchedAt, initialBook, lockedCollection, initialFailed }: Props) {
   const [collection, setCollection] = useState<Collection>(lockedCollection ?? "nba-top-shot")
   const [showHighVariance, setShowHighVariance] = useState(true)
   const [deals, setDeals] = useState<Deal[]>(initialDeals)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [fetchedAt, setFetchedAt] = useState<string | null>(initialFetchedAt)
+  // #218 — "Updated <now>" stamps OUR read, not the book's. When Dapper's pack
+  // index freezes, every read succeeds and returns yesterday's asks, packs that
+  // already sold included. The server proves a freeze against on-chain pack
+  // sales; when it does, the "Live asks" claim is withdrawn and said so.
+  const [book, setBook] = useState<BookFreshness | null>(initialBook ?? null)
   // ⚠ FIFTH HONESTY LAYER — a server-seeded prop. On a failed seed `deals` is
   // `[]`, `loading` is false and `error` is null (that one is only ever set by
   // this component's OWN fetch), so the empty branch below used to render "No
@@ -337,6 +351,7 @@ export default function PackSniperClient({ initialDeals, initialFetchedAt, locke
       if (myId !== reqIdRef.current) return
       setDeals(j.deals ?? [])
       setFetchedAt(j.meta?.fetched_at ?? null)
+      setBook(j.meta?.book ?? null)
       // Our own read answered, so the seed's failure is no longer what the
       // reader is looking at. Cleared here and NOT in the catch — a failed
       // refetch is reported by `error` and must not erase the seed's state.
@@ -424,6 +439,18 @@ export default function PackSniperClient({ initialDeals, initialFetchedAt, locke
     )}`
   }, [])
 
+  const bookFrozen = !seedFailed && !!book?.frozen
+  const staleBookNotice = bookFrozen ? (
+    <p className="rpc-ps-stale-book" role="status">
+      <strong>These asks may be out of date.</strong> Dapper&apos;s pack listing feed hasn&apos;t
+      changed{book?.lastChangedAt ? <> since <FreshnessStamp iso={book.lastChangedAt} /></> : null}
+      {book?.chainSalesSince != null ? (
+        <>, while {book.chainSalesSince.toLocaleString("en-US")} packs have sold on chain</>
+      ) : null}
+      . Some packs below may already be gone — check the listing before you buy.
+    </p>
+  ) : null
+
   return (
     <main style={lockedCollection ? styles.pageEmbedded : styles.page}>
       <style>{CSS}</style>
@@ -442,8 +469,9 @@ export default function PackSniperClient({ initialDeals, initialFetchedAt, locke
           <div className="rpc-ps-meta-row">
             <span className="rpc-ps-meta">Updated <FreshnessStamp iso={seedFailed ? null : fetchedAt} /></span>
             <span className="rpc-ps-meta-sep">·</span>
-            <span className="rpc-ps-meta">Live asks · auto-refresh</span>
+            <span className="rpc-ps-meta">{bookFrozen ? "Asks NOT live — feed stalled" : "Live asks · auto-refresh"}</span>
           </div>
+          {staleBookNotice}
         </section>
       ) : (
         <section className="rpc-ps-hero">
@@ -458,10 +486,11 @@ export default function PackSniperClient({ initialDeals, initialFetchedAt, locke
           <div className="rpc-ps-meta-row">
             <span className="rpc-ps-meta">Updated <FreshnessStamp iso={seedFailed ? null : fetchedAt} /></span>
             <span className="rpc-ps-meta-sep">·</span>
-            <span className="rpc-ps-meta">Live asks · auto-refresh</span>
+            <span className="rpc-ps-meta">{bookFrozen ? "Asks NOT live — feed stalled" : "Live asks · auto-refresh"}</span>
             <span className="rpc-ps-meta-sep">·</span>
             <span className="rpc-ps-meta">No signup</span>
           </div>
+          {staleBookNotice}
         </section>
       )}
 
@@ -913,6 +942,7 @@ const CSS = `
 .rpc-ps-lede em { color: var(--rpc-text-primary); font-style: normal; text-decoration: underline; text-decoration-color: var(--rpc-red-muted); text-underline-offset: 3px; }
 .rpc-ps-meta-row { font-family: var(--font-mono); font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-muted); }
 .rpc-ps-meta-sep { margin: 0 8px; color: var(--rpc-text-muted); }
+.rpc-ps-stale-book { margin: 12px 0 0; padding: 10px 12px; border: 1px solid var(--rpc-red); border-radius: 6px; font-size: 13px; line-height: 1.45; color: var(--rpc-text-primary); }
 
 .rpc-ps-controls { max-width: 1180px; margin: 0 auto 20px; display: flex; flex-wrap: wrap; gap: 14px 20px; align-items: flex-end; }
 .rpc-ps-pill-group { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }

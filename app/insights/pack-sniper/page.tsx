@@ -12,7 +12,7 @@
 // RANK, DON'T PRICE — see lib/packs/pack-deals.ts for the honesty rationale.
 // Metadata + JSON-LD live in layout.tsx.
 
-import { getPackDeals, type PackDeal } from "@/lib/packs/pack-deals"
+import { getPackDeals, type BookFreshness, type PackDeal } from "@/lib/packs/pack-deals"
 import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
 import { boardStatus, summarizeDegraded } from "@/lib/insights/board-status"
 import { withBoardBudget } from "@/lib/insights/board-page-fetch"
@@ -21,7 +21,7 @@ import PackSniperClient from "./PackSniperClient"
 // Live Dapper Studio fetch is memoized 2m; the API CDN-caches 5m. Match here.
 export const revalidate = 300
 
-async function fetchInitial(): Promise<{ deals: PackDeal[]; fetchedAt: string | null; ok: boolean }> {
+async function fetchInitial(): Promise<{ deals: PackDeal[]; book: BookFreshness | null; fetchedAt: string | null; ok: boolean }> {
   try {
     // Default crawlable view: Top Shot, MATCHING THE CLIENT DEFAULT.
     //
@@ -51,22 +51,22 @@ async function fetchInitial(): Promise<{ deals: PackDeal[]; fetchedAt: string | 
       getPackDeals("nba-top-shot", { limit: 200, includeHighVariance: true }),
       "pack-sniper",
     )
-    return { deals: res.deals, fetchedAt: new Date().toISOString(), ok: true }
+    return { deals: res.deals, book: res.book, fetchedAt: new Date().toISOString(), ok: true }
   } catch (e) {
     console.error("[insights/pack-sniper] initial fetch", e instanceof Error ? e.message : e)
     // ⚠ R95: NULL, never the render clock. Found by the structural arm in
     // __tests__/a-freshness-stamp-is-not-minted-from-a-failed-read.test.ts, which
     // the audit's own sweep had missed — the Sniper was the fourth instance.
-    return { deals: [], fetchedAt: null, ok: false }
+    return { deals: [], book: null, fetchedAt: null, ok: false }
   }
 }
 
 export default async function PackSniperPage() {
-  const { deals, fetchedAt, ok } = await fetchInitial()
+  const { deals, book, fetchedAt, ok } = await fetchInitial()
   return (
     <>
       <DegradedDataNotice summary={summarizeDegraded([boardStatus("Pack sniper", ok)])} />
-      <PackSniperClient initialDeals={deals} initialFetchedAt={ok ? fetchedAt : null} initialFailed={!ok} />
+      <PackSniperClient initialDeals={deals} initialBook={book} initialFetchedAt={ok ? fetchedAt : null} initialFailed={!ok} />
     </>
   )
 }

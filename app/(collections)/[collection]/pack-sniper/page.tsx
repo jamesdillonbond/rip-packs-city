@@ -13,7 +13,7 @@
 // `pages` arrays; any other slug notFound()s.
 
 import { notFound } from "next/navigation"
-import { getPackDeals, type PackDeal } from "@/lib/packs/pack-deals"
+import { getPackDeals, type BookFreshness, type PackDeal } from "@/lib/packs/pack-deals"
 import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
 import { boardStatus, summarizeDegraded } from "@/lib/insights/board-status"
 import { withBoardBudget } from "@/lib/insights/board-page-fetch"
@@ -57,6 +57,7 @@ export default async function CollectionPackSniperPage(
   //    logic, is what had been fixing its blast radius. The guard now walks the
   //    whole tree, so this page is inside it.
   let deals: PackDeal[] = []
+  let book: BookFreshness | null = null
   let ok = true
   try {
     const res = await withBoardBudget(
@@ -64,6 +65,7 @@ export default async function CollectionPackSniperPage(
       "pack-sniper",
     )
     deals = res.deals
+    book = res.book
   } catch (e) {
     console.error(
       "[collection/pack-sniper] initial fetch",
@@ -81,6 +83,7 @@ export default async function CollectionPackSniperPage(
       <PackSniperClient
         lockedCollection={collection as "nba-top-shot" | "nfl-all-day"}
         initialDeals={deals}
+        initialBook={book}
         initialFetchedAt={fetchedAt}
         initialFailed={!ok}
       />

@@ -61,6 +61,9 @@ export async function GET(req: NextRequest) {
         elapsed_ms: elapsedMs,
         filters: { limit, include_high_variance: includeHighVariance },
         stats: result.stats,
+        // #218: is the ask book itself current? frozen=true when Dapper's pack
+        // index stopped changing while the chain kept recording pack sales.
+        book: result.book,
       },
       deals: result.deals,
     })

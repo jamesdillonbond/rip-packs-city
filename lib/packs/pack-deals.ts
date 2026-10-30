@@ -34,6 +34,7 @@ import {
 } from "@/lib/packs/live-pack-listings"
 import { topshotPackUrl, dapperMarketPackUrl } from "@/lib/pack-urls"
 import { EV_SNAPSHOT_MAX_AGE_HOURS } from "@/lib/pack-dist-verdict"
+import { getCollectionUuid } from "@/lib/collections"
 
 export type PackDeal = {
   distId: string
@@ -79,9 +80,35 @@ export type PackDeal = {
   atLow24h: boolean
 }
 
+/**
+ * Is the ask BOOK itself current? (2026-10-30, #218.) Every ask on this board
+ * comes from Dapper Studio's pack index, diffed into pack_ask_state. When that
+ * index freezes, the board keeps rendering yesterday's book under "Live asks":
+ * nothing failed, the reads all return rows, and packs that SOLD hours ago are
+ * still offered as deals. The independent witness is the chain: pack_purchases
+ * (secondary_sale) keeps arriving from Flow events. If the book has not changed
+ * in BOOK_STALE_AFTER_MS while the chain recorded >= FROZEN_MIN_CHAIN_SALES
+ * secondary pack sales since, the book is frozen, not quiet.
+ *
+ * Three states: frozen=true (proven stale) · frozen=false with chainSalesSince
+ * set (checked, book is current or merely quiet) · chainSalesSince=null (not
+ * checked or the witness read failed; never claims either way).
+ */
+export type BookFreshness = {
+  /** Newest ask change / first-seen across the collection's book. Null when no recency state. */
+  lastChangedAt: string | null
+  /** Secondary pack sales on chain since lastChangedAt. Null when not checked or the read failed. */
+  chainSalesSince: number | null
+  frozen: boolean
+}
+
+export const BOOK_STALE_AFTER_MS = 2 * 60 * 60 * 1000
+export const FROZEN_MIN_CHAIN_SALES = 10
+
 export type PackDealsResult = {
   collection: PackCollectionSlug
   deals: PackDeal[]
+  book: BookFreshness
   stats: {
     liveListings: number
     gatedEvRows: number
@@ -331,9 +358,12 @@ export async function getPackDeals(
   })
   const returned = deals.slice(0, limit)
 
+  const book = await readBookFreshness(collection, askByDist, nowMs)
+
   return {
     collection,
     deals: returned,
+    book,
     stats: {
       liveListings: listings.length,
       gatedEvRows: evByDist.size,
@@ -342,5 +372,41 @@ export async function getPackDeals(
       highVariance: highVarianceCount,
       returned: returned.length,
     },
+  }
+}
+
+async function readBookFreshness(
+  collection: PackCollectionSlug,
+  askByDist: Map<string, AskStateRow>,
+  nowMs: number,
+): Promise<BookFreshness> {
+  let lastMs = 0
+  for (const row of askByDist.values()) {
+    for (const ts of [row.ask_changed_at, row.ask_first_seen_at]) {
+      const t = ts ? Date.parse(ts) : NaN
+      if (Number.isFinite(t) && t > lastMs) lastMs = t
+    }
+  }
+  if (lastMs === 0) return { lastChangedAt: null, chainSalesSince: null, frozen: false }
+  const lastChangedAt = new Date(lastMs).toISOString()
+  if (nowMs - lastMs < BOOK_STALE_AFTER_MS) {
+    return { lastChangedAt, chainSalesSince: null, frozen: false }
+  }
+  const collectionId = getCollectionUuid(collection)
+  if (!collectionId) return { lastChangedAt, chainSalesSince: null, frozen: false }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const res = await (supabaseAdmin as any)
+    .from("pack_purchases")
+    .select("id", { count: "exact", head: true })
+    .eq("collection_id", collectionId)
+    .eq("event_kind", "secondary_sale")
+    .gt("sealed_at", lastChangedAt)
+  if (res?.error || typeof res?.count !== "number") {
+    return { lastChangedAt, chainSalesSince: null, frozen: false }
+  }
+  return {
+    lastChangedAt,
+    chainSalesSince: res.count,
+    frozen: res.count >= FROZEN_MIN_CHAIN_SALES,
   }
 }

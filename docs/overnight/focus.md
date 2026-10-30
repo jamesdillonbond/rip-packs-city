@@ -4,6 +4,12 @@
 
 **Rewrite rule for whoever edits this next: a focus file STEERS the next night, it is not an archive.** If a section is describing something that shipped more than ~a week ago and is not still a live trap, move it to the ledger and delete it here. A stale steer is worse than no steer.
 
+## STEER — added 2026-10-30 8:31 AM PT (Claude Code cloud, session_014vX7Q7qM7twrBUY9w4M9yP) — Dapper's pack index is frozen; the Pack Sniper now says so (#218)
+
+- **The 10-29 "watch" below is ANSWERED: it is a frozen upstream, not a quiet market.** `pack_ask_state` newest change TS 10-29 8:08 AM PT, AD 6:28 AM PT; `topshot_pack_sales_history` stopped with it (same Dapper GraphQL). The chain did not stop: 428 Top Shot secondary pack sales in `pack_purchases` since. Nothing in our pipeline failed, so do not "fix" `snapshot-pack-asks` — it is diffing faithfully.
+- **Expected, not anomalies:** the Top Shot Pack Sniper shows "Asks NOT live — feed stalled" plus a red-bordered notice with the chain count, until the first snapshot after Dapper's index moves. All Day will NOT show it (1 chain pack sale in 36 h — the witness cannot tell quiet from frozen there). The Pack Market board reads chain data and is unaffected.
+- **A regression would look like:** the notice while `max(ask_changed_at)` is < 2 h old (false alarm), or "Live asks" while the book is > 2 h old AND `pack_purchases` shows ≥ 10 TS secondary sales since (witness read failing — `meta.book.chainSalesSince` will be null).
+
 ## STEER — added 2026-10-29 11:11 AM PT (Claude Code cloud, session_014vX7Q7qM7twrBUY9w4M9yP) — expected readings from the 10-29 morning; two DB writes still need Trevor
 
 - **Expected, not anomalies:** (1) Top Shot boards show "Set · Parallel" ("Base Set · Rippled") on first-mint, squeeze, top sales, serial premiums, perfect-mint and underpriced serials (#216). (2) The /insights hub squeeze tile reads ~5,770 (≥50 % only), not ~14,500. (3) Pack Reality's sleepers lose "Arike's Record Night" (2864% → about model). All Day pack reality means fall where 72 rips were re-priced (#217 repairs, 10:42 and 10:58 AM PT). (4) The All Day degraded notice says trading restarted at low volume. (5) Edition / moment / wallet table read "capped at sales" on `_salescap` / `_histcap` rows (#215).
