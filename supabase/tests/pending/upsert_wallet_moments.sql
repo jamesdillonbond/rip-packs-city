@@ -1,6 +1,8 @@
 -- ⏳ PENDING PIN — NOT YET LIVE. Parked here (not in supabase/tests/, which every
--- walker reads non-recursively) because migration 20261031150000 was written and
--- committed on 2026-10-31 but its apply was refused for the cloud session that
+-- walker reads non-recursively) because the migration (staged at
+-- docs/proposals/upsert-wallet-moments-league-team-label-or-STAGED-MIGRATION.sql,
+-- NOT in supabase/migrations/ — a committed-but-unapplied definer of a pinned function
+-- reds db-pin-points-at-the-newest-defining-migration) was written on 2026-10-31 but its apply was refused for the cloud session that
 -- wrote it (the MCP write confirmation auto-cancelled / auto-mode classifier
 -- denied the CREATE OR REPLACE — three attempts, 7:52–7:58 AM PT). The live
 -- function is still the 20260802000400 body and the pin in supabase/tests/ still
@@ -11,7 +13,7 @@
 -- file verbatim; rename the file to the recorded version if it differs):
 --   git mv supabase/tests/pending/upsert_wallet_moments.sql supabase/tests/upsert_wallet_moments.sql
 --   # __tests__/db-invariants-drift-guard.test.ts, the upsert_wallet_moments row:
---   #   migration: "supabase/migrations/20261031150000_audit_20261031_upsert_wallet_moments_league_team_label_or.sql"
+--   #   migration: "supabase/migrations/<recorded version>_audit_20261031_upsert_wallet_moments_league_team_label_or.sql"
 --   # then delete this banner (everything above the first "-- DB invariant:" line),
 --   # run the DB suite + `npx vitest run __tests__/db-invariants-drift-guard.test.ts`, commit.
 -- Verified 10-31 against a throwaway Postgres 16: passes; two planted defects
@@ -31,7 +33,7 @@
 -- are never touched.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20261031150000_audit_20261031_upsert_wallet_moments_league_team_label_or.sql);
+-- (docs/proposals/upsert-wallet-moments-league-team-label-or-STAGED-MIGRATION.sql (→ supabase/migrations/<version>_audit_20261031_upsert_wallet_moments_league_team_label_or.sql once applied));
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.

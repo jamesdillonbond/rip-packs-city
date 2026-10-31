@@ -1,4 +1,22 @@
 -- audit_20261031_upsert_wallet_moments_league_team_label_or
+-- anon-exec: unchanged (upsert_wallet_moments) — CREATE OR REPLACE keeps the existing ACL (anon/authenticated EXECUTE revoked by 20260502210000; service_role calls it).
+--
+-- ⏳ STAGED, NOT APPLIED (2026-10-31 ~8 AM PT, Cowork cloud). Every DB write
+-- route from that session was refused: `apply_migration` confirmation
+-- auto-cancelled ×3, `execute_sql` DDL denied by the auto-mode classifier, the
+-- dashboard SQL-editor route denied at navigate. It lives here, not in
+-- supabase/migrations/, because a committed migration that defines a pinned
+-- function but is not live would red `db-pin-points-at-the-newest-defining-migration`
+-- (and a pin ahead of prod would red `db-pin-staleness`). To land it:
+--   1. apply_migration, name audit_20261031_upsert_wallet_moments_league_team_label_or,
+--      body = this file verbatim (the UPDATE + post-flight are part of it; if the
+--      UPDATE alone is held, apply the function first and the UPDATE as its own
+--      migration — see the 10-23 lesson in db-write-paths memory);
+--   2. git mv this file to supabase/migrations/<recorded version>_audit_20261031_upsert_wallet_moments_league_team_label_or.sql;
+--   3. git mv supabase/tests/pending/upsert_wallet_moments.sql supabase/tests/upsert_wallet_moments.sql,
+--      drop its PENDING banner, repoint the upsert_wallet_moments row in
+--      __tests__/db-invariants-drift-guard.test.ts to that migration file;
+--   4. run the DB suite + the drift guard, commit, then #219 → ✅ in known-issues.
 --
 -- Known issue #219, the write side. `wallet_moments_cache.league` (the column the
 -- collection page's NBA / WNBA filter, the profile trophy picker and the
