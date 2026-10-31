@@ -36,6 +36,14 @@ vi.mock("@/lib/giveaways/topshot-holdings", () => ({ readTopShotHoldings: chain.
 vi.mock("@/lib/giveaways/linked-accounts", () => ({ discoverAccounts: chain.accounts }))
 vi.mock("@/lib/giveaways/claim-proof", async (orig) => ({ ...(await orig<typeof import("@/lib/giveaways/claim-proof")>()), verifyClaimProof: chain.proof }))
 vi.mock("@/lib/swap-test/plan", async (orig) => ({ ...(await orig<typeof import("@/lib/swap-test/plan")>()), planSwap: chain.planSwap, verifySwap: chain.verifySwap }))
+// The counterparty notices are fire-and-forget; here they are recorded, never sent.
+const notices = vi.hoisted(() => ({ sent: [] as Array<{ actor: string; notice: string; code: string }> }))
+vi.mock("@/lib/trade-room/notify", () => ({
+  notifyOtherSide: async (_db: unknown, loaded: { room: { code: string } }, actor: string, notice: string) => {
+    notices.sent.push({ actor, notice, code: loaded.room.code })
+    return { status: "sent", notice, to_user: "x" }
+  },
+}))
 
 import * as room from "@/app/api/trade-room/[code]/route"
 import * as rooms from "@/app/api/trade-room/route"
@@ -104,6 +112,7 @@ beforeEach(() => {
   mem.current = memorySupabase({ wallet_moments_cache: [wmc(WA.source, "1", 10, "HIGH"), wmc(WA.source, "2", 3, "LOW"), wmc(WB.source, "9", 5, "MEDIUM")], profile_bio: [] }, UNIQUES, DEFAULTS)
   chain.holdings.mockImplementation(async (_a: string, ids: string[]) => Object.fromEntries(ids.map((id) => [id, { held: true, locked: false }])))
   room.__resetProofRateLimit()
+  notices.sent.length = 0
 })
 afterEach(() => {
   vi.unstubAllEnvs()
@@ -207,6 +216,9 @@ describe("/api/trade-room — the routes", () => {
     }
     const accepted = (await (await as(ALICE, () => room.GET(get(`/api/trade-room/${code}`), ctx(code)))).json()) as { room: { state: string; execution: { open: boolean } } }
     expect(accepted.room.state).toBe("accepted")
+    // the other side was told at each step: Bob joined → Alice; Alice accepted → Bob's turn; Bob accepted → Alice, ready
+    await new Promise((r) => setTimeout(r, 0))
+    expect(notices.sent.map((n) => `${n.actor === ALICE.id ? "alice" : "bob"}:${n.notice}`)).toEqual(["bob:joined", "alice:accepted", "bob:ready"])
     expect(accepted.room.execution.open).toBe(false)
     // the simulation is a READ and runs regardless of the gate
     chain.planSwap.mockResolvedValueOnce({ a: { signer: WA.signer, source: WA.source, ids: ["1"], kind: "linked", ctl: "87" }, b: { signer: WB.signer, source: WB.source, ids: [], kind: "linked", ctl: "4" } })

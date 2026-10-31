@@ -206,6 +206,7 @@ function InviteLink({ code }: { code: string }) {
       >
         {copied ? "Copied" : "Copy invite link"}
       </button>
+      <span style={{ fontSize: 12, color: "var(--rpc-text-muted)" }}>You get an email when they join, accept or cancel.</span>
     </div>
   )
 }
@@ -521,7 +522,7 @@ function Accept({ room, side, busy, act }: { room: RoomView; side: SideView; bus
       <p style={{ fontSize: 13, margin: "0 0 8px" }}>{room.notice}</p>
       {side.accepted ? (
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <span style={{ fontSize: 13 }}>You accepted v{room.version}.{room.state === "accepted" ? " Both sides have." : " Waiting for the other side."}</span>
+          <span style={{ fontSize: 13 }}>You accepted v{room.version}.{room.state === "accepted" ? " Both sides have." : " Waiting for the other side — they get an email."}</span>
           {room.state !== "signing" ? (
             <button type="button" style={btn} disabled={busy !== null} onClick={() => act("unaccept", {})}>
               Withdraw

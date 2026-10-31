@@ -25,7 +25,7 @@
 // Three outcomes, never two: a check that fails names what failed; a chain that
 // could not be asked answers 503 + retryable, never "not held" or "not yours".
 
-import { NextRequest, NextResponse } from "next/server"
+import { NextRequest, NextResponse, after } from "next/server"
 import { apiErrorResponse } from "@/lib/api-error"
 import { requireUser } from "@/lib/auth/supabase-server"
 import { supabaseAdmin } from "@/lib/supabase"
@@ -53,12 +53,26 @@ import {
 import { checkPicks, EXECUTE_CLOSED_MESSAGE, executionOpen, planRoom, verifyRoom } from "@/lib/trade-room/execute"
 import { pickItems, readPicker } from "@/lib/trade-room/holdings"
 import { buildRoomView, cosignerOf, usernamesFor, type PendingRelay } from "@/lib/trade-room/view"
+import { notifyOtherSide, type TradeNotice } from "@/lib/trade-room/notify"
 
 export const dynamic = "force-dynamic"
 // a simulation makes several Flow script calls (20 s bound each)
 export const maxDuration = 60
 
 const NO_STORE = { "Cache-Control": "no-store" }
+
+// The other collector is emailed AFTER the response (fire-and-forget): a notice can
+// never fail or slow the action it follows, and a failed send is logged, not retried.
+function notifyLater(loaded: LoadedRoom, actorUserId: string, notice: TradeNotice) {
+  const run = () => notifyOtherSide(supabaseAdmin, loaded, actorUserId, notice)
+  try {
+    after(run)
+  } catch {
+    // outside a request scope (tests, a non-Next caller) `after` throws; the notice
+    // must never fail the action that already landed, so run it detached instead
+    void run()
+  }
+}
 const RELAY_TABLE = "trade_room_relay" as const
 const FLOW_ADDRESS = /^0x[0-9a-f]{16}$/
 
@@ -176,7 +190,9 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     let loaded = await loadRoom(supabaseAdmin, code)
     const action = String(body?.action ?? "")
     if (action === "join") {
+      const before = loaded.sides.length
       loaded = await joinRoom(supabaseAdmin, loaded, u.id)
+      if (loaded.sides.length > before) notifyLater(loaded, u.id, "joined")
       return json({ room: await view(loaded, u.id) })
     }
     const me = mySide(loaded, u.id)
@@ -213,15 +229,22 @@ export async function POST(req: NextRequest, ctx: Ctx) {
         loaded = await setItems(supabaseAdmin, loaded, me, items)
         return json({ room: await view(loaded, u.id) })
       }
-      case "accept":
+      case "accept": {
+        const alreadyMine = me.accepted_version === loaded.room.version
         loaded = await accept(supabaseAdmin, loaded, me, Number(body.version), body.notice_read === true)
+        // one notice per acceptance: "your turn" while the other side is behind, "ready" once both match
+        if (!alreadyMine) notifyLater(loaded, u.id, loaded.room.status === "accepted" ? "ready" : "accepted")
         return json({ room: await view(loaded, u.id) })
+      }
       case "unaccept":
         loaded = await unaccept(supabaseAdmin, loaded, me)
         return json({ room: await view(loaded, u.id) })
-      case "cancel":
+      case "cancel": {
+        const wasLive = loaded.room.status !== "cancelled" && loaded.room.status !== "sealed"
         loaded = await cancelRoom(supabaseAdmin, loaded, u.id, typeof body.reason === "string" ? body.reason : null)
+        if (wasLive) notifyLater(loaded, u.id, "cancelled")
         return json({ room: await view(loaded, u.id) })
+      }
       case "simulate":
         return json({ plan: await planRoom(loaded, me.side) })
       case "relay_post": {
@@ -252,7 +275,9 @@ export async function POST(req: NextRequest, ctx: Ctx) {
           // the seal is a fact the initiator saw; a failed read is reported as unverified, never as "not landed"
           landed = null
         }
+        const wasSealed = loaded.room.status === "sealed"
         loaded = await markSealed(supabaseAdmin, loaded, txId, landed)
+        if (!wasSealed) notifyLater(loaded, u.id, "sealed")
         return json({ room: await view(loaded, u.id), verified: landed != null })
       }
       case "verify": {
