@@ -2,11 +2,11 @@
 char limit. Content is VERBATIM; CLAUDE.md carries a one-line pointer to this file.
 Same rules apply: every number here is a dated sample - re-measure before quoting. -->
 
-## The one exception to "RPC is READ-ONLY" (Trevor, 2026-09-29)
+## The exceptions to "RPC is READ-ONLY" (Trevor, 2026-09-29; the trade room 2026-10-31)
 
-CLAUDE.md concierge rule #1 points here. **Admin-signed giveaway delivery** is the only surface where RPC builds a transaction:
+CLAUDE.md concierge rule #1 points here. **Admin-signed giveaway delivery** was the first surface where RPC builds a transaction; the user **trade room** (third exception, below) is the second:
 
-- **Who:** the giveaway ADMIN only, on `/admin/giveaways` (RPC_ADMIN_TOKEN). Users still have no wallet sign-in, no cart, no gifting, no trading anywhere, and the concierge must keep saying so.
+- **Who:** the giveaway ADMIN only, on `/admin/giveaways` (RPC_ADMIN_TOKEN). Users still have no wallet sign-in, no cart and no gifting; since 2026-10-31 they DO have the trade room (third exception below), and the concierge says exactly that.
 - **What:** "Deliver all" plans a batch (`lib/giveaways/deliver.ts`), SIMULATES it on mainnet as a script, and the admin's OWN Flow Wallet (a Hybrid Custody parent of their Dapper account) signs `DELIVER_BATCH_CADENCE` in the browser (`lib/giveaways/admin-wallet.ts`). RPC never holds a key, never signs, never custodies a moment.
 - **Guards:** `__tests__/no-client-wallet-connect.test.ts` pins `lib/giveaways/flow-wallet-connect.ts` as the ONE module that opens a wallet picker, and names its importers (`admin-wallet.ts`, `claim-wallet.ts`, `lib/swap-test/swap-wallet.ts`), each pinned to the page that uses it. The wallet CSP hosts are added only for `WALLET_DISCOVERY_PAGES` in `proxy.ts` (`/admin/giveaways`, `/giveaways`, `/admin/swap-test`): fcl-discovery, WalletConnect, the access node's WebSocket, and Flow Wallet's own API (`*.wallet.flow.com` pre-authz, `lilico.app` fee payer, and its logo in img-src). Every other path is asserted free of them (`__tests__/proxy-dispatch.test.ts`).
 
@@ -23,7 +23,16 @@ CLAUDE.md concierge rule #1 points here. **Admin-signed giveaway delivery** is t
 - **Who:** the ADMIN only, on `/admin/swap-test` (RPC_ADMIN_TOKEN), on Trevor's OWN two Flow Wallets. It is a test of whether two wallets can sign one swap transaction, not a trading feature. Users still have no trading anywhere, and the concierge must keep saying so.
 - **What:** `SWAP_CADENCE` (`lib/swap-test/swap-cadence.ts`): one transaction, two authorizers; side A's moments go to side B's account and B's to A's, or nothing moves. The server plans it and SIMULATES it on mainnet (`lib/swap-test/plan.ts`); wallet A signs in one session, wallet B in another, and B's signature crosses through `public.swap_test_relay` (service role only; accepts only `SWAP_CADENCE`). RPC never holds a key, a fee or a moment; no escrow.
 - **Guards:** `__tests__/no-client-wallet-connect.test.ts` allows `lib/swap-test/swap-wallet.ts`, imported only by `app/admin/swap-test/SwapTestClient.tsx`; `/admin/swap-test` joins `WALLET_DISCOVERY_PAGES` in `proxy.ts`.
-- **Do not turn it into a user feature** (a public page, trading between different people, offers, a fair-value hint) without Trevor saying so. Plan and open decisions: `docs/strategy/trading-revisit-2026-10-03.md`.
+- ~~Do not turn it into a user feature without Trevor saying so.~~ **Trevor said so on 2026-10-31** ("continue building out our trade features" → "User-to-user trade room (Recommended)"): the third exception below.
+
+### Third exception: the user TRADE ROOM (Trevor, 2026-10-31)
+
+- **Who:** two SIGNED-IN RPC users on `/trades/<code>` (the creator is side A; whoever opens the invite link becomes side B). Each proves a Flow Wallet with the same account proof the claim page uses (`lib/trade-room/trade-wallet.ts` → `connectFlowWalletWithProof`; `lib/giveaways/claim-proof.ts`), picks the account the Moments sit in (the wallet itself or a Dapper account it links, read on chain), picks up to 10 Moments to give (chain-checked: held AND unlocked, `checkPicks`), reads the withdrawal notice, and accepts the EXACT version of the proposal; any change bumps `trade_rooms.version` and clears both acceptances (`lib/trade-room/store.ts`).
+- **What:** once both accepted, the same two-authorizer `SWAP_CADENCE` as the admin swap test (shape A of `docs/strategy/trading-revisit-2026-10-03.md`: one transaction, no escrow, no custody, no fee), planned and SIMULATED on mainnet by `planSwap` (`lib/trade-room/execute.ts`), signed by the initiator's wallet with the other side's signature relayed through `public.trade_room_relay` (service role only; accepts only `SWAP_CADENCE`). Where each Moment landed is read back from the chain and stored on the room (`landed`).
+- ⛔ **The signing step is GATED:** `relay_post` refuses with `execute_closed` until `RPC_TRADE_ROOM_EXECUTE=1` is set in production — which happens only after the live two-wallet swap test (`/admin/swap-test`, Trevor's own wallets) has sealed once. Until then a trade can be built, chain-checked, simulated and accepted, but no user wallet is asked to sign. Pinned by `__tests__/no-client-wallet-connect.test.ts` and `__tests__/trade-room-route-and-execute.test.ts`.
+- **Fair-trade hint:** each side's total is the sum of RPC FMV over the Moments that carried a HIGH/MEDIUM price when added (`trade_room_items.fmv_usd`, NULL otherwise); a side with any unpriced Moment gets no verdict, only "N not priced", and the confidence tier never leaves the server (`lib/trade-room/valuation.ts`). Users are named by `profile_bio.username`, never by id.
+- **Guards:** `lib/trade-room/trade-wallet.ts` is the fourth importer of `flow-wallet-connect.ts` and the second of `swap-test/swap-wallet.ts`, each imported by exactly one page (`app/trades/[code]/TradeRoomClient.tsx`); `/trades` joins `WALLET_DISCOVERY_PAGES` in `proxy.ts` and `STATIC_TOP_LEVEL_SEGMENTS` (signed in only, noindex); the route publishes `TradeRoomError.copy`, never a driver message. Top Shot only for now (`trade_rooms.collection` CHECK); All Day / Golazos need their own holdings reader and Cadence imports (UFC's Flow market is closed; Pinnacle is blocked by Dapper's link filter).
+- **The concierge's line** (support-chat system prompt): RPC is read-only with ONE exception, the trade room — it may point a collector to `/trades` for a swap, never offer to move a Moment itself, and must say the signing step opens after RPC's live test. Keep the two in step.
 
 ## AI Concierge
 
@@ -131,7 +140,7 @@ Mitigation shipped 2026-08-15: the alert DM in `/api/cron/alerts-send` now tells
 
 ⚠ These are numbered 3–5 in CLAUDE.md's old inline list and are **not** duplicates of items 1–6 above — they are the honesty rules, and they generalize past the concierge.
 
-3. **RPC is READ-ONLY** — no cart, no gifting, no trading. Never offer an action the product lacks.
+3. **RPC is READ-ONLY** — no cart, no gifting; the only transactions are admin giveaway delivery and the user trade room (`/trades`, 2026-10-31, signing gated until the live swap test seals). Never offer an action the product lacks.
 4. **An errored tool is NOT an empty result** — `status:"error"` and `status:"no_results"` are distinct claims; their prompt rules must stay distinct.
 5. **A tool cannot observe its own health** — it can only report how old its data is. Never let copy reassure that a feed is fine.
 

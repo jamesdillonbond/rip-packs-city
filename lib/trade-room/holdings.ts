@@ -1,0 +1,127 @@
+// lib/trade-room/holdings.ts
+//
+// What a trade-room side can pick from: the Top Shot moments RPC has indexed for
+// the account its moments sit in (wallet_moments_cache, Top Shot rows only —
+// scoped by collection_id, see CLAUDE.md "a moment_id is unique only within a
+// collection"). This is the PICKER, not the truth: before a pick is saved the chain
+// is read for "held and unlocked" (lib/trade-room/execute.ts), and again before any
+// wallet signs. A wallet RPC has not indexed yet is reported as such (indexed:
+// false), never as "holds nothing".
+//
+// The FMV shown beside a moment is RPC's, and only when its confidence was HIGH or
+// MEDIUM; otherwise the moment is "not priced". The tier itself never leaves the
+// server (FMV confidence is internal, 2026-10-18).
+
+import type { SupabaseClient } from "@supabase/supabase-js"
+import { retryEmptyWithAccentRegex } from "@/lib/search/accent-regex"
+import type { NewItem } from "@/lib/trade-room/store"
+
+export const TOP_SHOT_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
+const CONFIDENT = new Set(["HIGH", "MEDIUM"])
+export const PICKER_LIMIT = 500
+
+export interface PickerRow extends NewItem {
+  /** RPC's last lock read for this moment (may be stale; the chain is re-read on save). */
+  locked_hint: boolean | null
+  /** True when fmv_usd is a confident price (the only case it is non-null). */
+  priced: boolean
+}
+
+export interface PickerResult {
+  /** False when RPC holds no rows for this account at all. */
+  indexed: boolean
+  rows: PickerRow[]
+  /** True when more than PICKER_LIMIT rows exist (the picker shows the first page). */
+  truncated: boolean
+}
+
+type WmcRow = {
+  moment_id: string
+  edition_key: string | null
+  serial_number: number | null
+  player_name: string | null
+  set_name: string | null
+  tier: string | null
+  series_number: number | null
+  image_url: string | null
+  fmv_usd: number | string | null
+  fmv_confidence: string | null
+  is_locked: boolean | null
+}
+
+export function toPickerRow(w: WmcRow): PickerRow {
+  const conf = String(w.fmv_confidence ?? "").toUpperCase()
+  const fmv = w.fmv_usd == null ? null : Number(w.fmv_usd)
+  const priced = CONFIDENT.has(conf) && fmv != null && Number.isFinite(fmv) && fmv >= 0
+  return {
+    moment_id: String(w.moment_id),
+    edition_key: w.edition_key ?? null,
+    serial_number: w.serial_number ?? null,
+    player_name: w.player_name ?? null,
+    set_name: w.set_name ?? null,
+    tier: w.tier ?? null,
+    series_number: w.series_number ?? null,
+    image_url: w.image_url ?? null,
+    fmv_usd: priced ? fmv : null,
+    locked_hint: typeof w.is_locked === "boolean" ? w.is_locked : null,
+    priced,
+  }
+}
+
+/**
+ * Indexed Top Shot moments of `source` (lowercased Flow address), optionally
+ * filtered by a player-name substring. Throws on a failed read.
+ */
+export async function readPicker(db: SupabaseClient, source: string, q: string | null = null): Promise<PickerResult> {
+  const COLS = "moment_id, edition_key, serial_number, player_name, set_name, tier, series_number, image_url, fmv_usd, fmv_confidence, is_locked"
+  const needle = (q ?? "").replace(/[%_\\]/g, "").trim()
+  // Rebuilt per run so the accent-blind retry can swap the ilike for an imatch (#207:
+  // "jokic" must find the wallet's "Jokić" Moments).
+  const build = (accentRegex: string | null) => {
+    let query = db
+      .from("wallet_moments_cache")
+      .select(COLS, { count: "exact" })
+      .eq("collection_id", TOP_SHOT_COLLECTION_ID)
+      .eq("wallet_address", source)
+    if (accentRegex) query = query.filter("player_name", "imatch", accentRegex)
+    else if (needle) query = query.ilike("player_name", `%${needle}%`)
+    return query.order("fmv_usd", { ascending: false, nullsFirst: false }).order("moment_id").limit(PICKER_LIMIT)
+  }
+  const first = await build(null)
+  const answered = await retryEmptyWithAccentRegex(needle, first, (rx) => build(rx))
+  const { data, error } = answered
+  const count = (answered as { count?: number | null }).count ?? first.count
+  if (error) throw new Error(`wallet_moments_cache read failed: ${error.message}`)
+  const rows = ((data ?? []) as WmcRow[]).map(toPickerRow)
+  let indexed = rows.length > 0
+  if (!indexed && needle) {
+    // the filter may simply match nothing: ask whether the wallet has ANY rows
+    const { count: any, error: anyError } = await db
+      .from("wallet_moments_cache")
+      .select("moment_id", { count: "exact", head: true })
+      .eq("collection_id", TOP_SHOT_COLLECTION_ID)
+      .eq("wallet_address", source)
+    if (anyError) throw new Error(`wallet_moments_cache count failed: ${anyError.message}`)
+    indexed = (any ?? 0) > 0
+  }
+  return { indexed, rows, truncated: typeof count === "number" && count > rows.length }
+}
+
+/** The subset of `rows` the user picked, as items to store (ids not in the picker are refused). */
+export function pickItems(rows: readonly PickerRow[], ids: readonly string[]): { items: NewItem[]; unknown: string[] } {
+  const byId = new Map(rows.map((r) => [r.moment_id, r]))
+  const items: NewItem[] = []
+  const unknown: string[] = []
+  for (const id of ids) {
+    const r = byId.get(id)
+    if (!r) {
+      unknown.push(id)
+      continue
+    }
+    const { locked_hint: _l, priced: _p, ...item } = r
+    void _l
+    void _p
+    items.push(item)
+  }
+  return { items, unknown }
+}

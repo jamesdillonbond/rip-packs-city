@@ -1234,6 +1234,48 @@ function ProfilePageInner() {
           </span>
         </Link>
 
+        {/* ── Trades front door ── user-to-user Top Shot trades (/trades, 2026-10-31).
+            Like Alerts it has no nav entry (the top nav is at its width limit), so
+            this card is how a signed-in collector finds it. */}
+        <Link
+          href="/trades"
+          className="rpc-section"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+            flexWrap: "wrap",
+            textDecoration: "none",
+            border: `1px solid var(--rpc-border)`,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+            <span style={{ fontSize: 22, lineHeight: 1 }} aria-hidden>🔁</span>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 14, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--rpc-text-primary)" }}>
+                Trade Moments
+              </div>
+              <div style={{ fontFamily: monoFont, fontSize: 11, color: "var(--rpc-text-muted)", marginTop: 2, lineHeight: 1.5 }}>
+                Swap Top Shot Moments with another collector. Both wallets sign one transaction; no custody, no fee.
+              </div>
+            </div>
+          </div>
+          <span
+            style={{
+              fontFamily: condensedFont,
+              fontWeight: 700,
+              fontSize: 11,
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              color: "var(--rpc-text-secondary)",
+              whiteSpace: "nowrap",
+            }}
+          >
+            Open trades →
+          </span>
+        </Link>
+
         {/* Trophy Case is the hero slot when trophies exist; render it again
             below the stats only when the hero card occupied the top slot, so
             users still get the 6-grid pin UI without scrolling past it. */}

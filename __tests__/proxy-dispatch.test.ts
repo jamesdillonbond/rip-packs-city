@@ -174,7 +174,12 @@ describe("proxy() — security headers", () => {
     const swap = (await proxy(req("/admin/swap-test"))).headers.get("Content-Security-Policy")!
     expect(swap).toContain("frame-src 'self' https://fcl-discovery.onflow.org")
     expect(swap).toMatch(/connect-src [^;]*wss:\/\/relay\.walletconnect\.org/)
-    for (const path of ["/", "/admin", "/admin/rewards", "/giveaways-evil", "/admin/giveaways-evil", "/admin/swap-test-evil", "/api/giveaways/fall-drop", "/api/admin/swap-test"]) {
+    // the user trade room (2026-10-31): connect with proof, and sign once execution opens
+    const trades = (await proxy(req("/trades/abcdefghij"))).headers.get("Content-Security-Policy")!
+    expect(trades).toContain("frame-src 'self' https://fcl-discovery.onflow.org")
+    expect(trades).toMatch(/connect-src [^;]*wss:\/\/relay\.walletconnect\.org/)
+    expect(trades).toMatch(/connect-src [^;]*wss:\/\/rest-mainnet\.onflow\.org/)
+    for (const path of ["/", "/admin", "/admin/rewards", "/giveaways-evil", "/admin/giveaways-evil", "/admin/swap-test-evil", "/trades-evil", "/api/giveaways/fall-drop", "/api/admin/swap-test", "/api/trade-room/abcdefghij"]) {
       const csp = (await proxy(req(path))).headers.get("Content-Security-Policy")!
       expect(csp, path).not.toContain("fcl-discovery")
       expect(csp, path).not.toContain("walletconnect")

@@ -95,6 +95,14 @@ export const INSIGHTS_BOARDS: readonly InsightsBoard[] = [
     publicApi: false,
   },
   {
+    slug: "trade-in",
+    kind: "dataset",
+    name: "Top Shot This Trade-In Finder",
+    description:
+      "Which NBA Top Shot editions count for the most in a Series 2026-27 Top Shot This trade-in (Top Shot's own average sale price, $10 per pack) versus what they cost at the lowest ask, and what a wallet's Moments add up to per player.",
+    publicApi: true,
+  },
+  {
     slug: "autographs",
     kind: "dataset",
     name: "Autographed Moments",

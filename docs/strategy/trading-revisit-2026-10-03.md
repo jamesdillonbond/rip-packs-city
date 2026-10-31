@@ -1,7 +1,7 @@
 # Trading, revisited after giveaways (2026-10-03)
 
 **Asked by:** Trevor, 2026-10-03: "Would it be worth revisiting a trading feature using Flow Wallet as we start to enable Pack giveaways which I feel like would have a similar infrastructure behind?" then "Do all that makes sense."
-**Status (updated 2026-10-04 at thread archive):** Decision memo, plus an **admin-only two-signer swap TEST** at `/admin/swap-test`, built 10-03/10-04 on Trevor's "Do it all". It is built and verified short of the live run, which awaits Trevor; **start at §9 HANDOFF**. No user-facing trading exists. The read-only rule (concierge rule 1) gained a second, admin-only exception (`docs/reference/concierge.md`). Roadmap-2026-08-03 §9.6 ("do not deploy the Trade Hub, even to testnet") still stands. Trading as a user feature is Trevor's call.
+**Status (updated 2026-10-31):** Trevor reopened trading as a user feature ("continue building out our trade features" → the trade room). `/trades` is built on shape A (§4) up to the signing step, which stays gated by `RPC_TRADE_ROOM_EXECUTE` until the §6 live run has sealed — see [features/trading.md](features/trading.md). ⓘ Earlier status follows. — **Status (updated 2026-10-04 at thread archive):** Decision memo, plus an **admin-only two-signer swap TEST** at `/admin/swap-test`, built 10-03/10-04 on Trevor's "Do it all". It is built and verified short of the live run, which awaits Trevor; **start at §9 HANDOFF**. No user-facing trading exists. The read-only rule (concierge rule 1) gained a second, admin-only exception (`docs/reference/concierge.md`). Roadmap-2026-08-03 §9.6 ("do not deploy the Trade Hub, even to testnet") still stands. Trading as a user feature is Trevor's call.
 **Times:** PT.
 
 ---

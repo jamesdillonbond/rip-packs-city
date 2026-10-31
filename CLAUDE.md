@@ -238,7 +238,7 @@ All 7 live in the DB-derived table in [schema-truth.md](docs/reference/schema-tr
 
 ## Concierge non-negotiable rules
 
-1. **RPC is READ-ONLY** — no cart, no gifting, no trading (except admin-signed giveaway delivery: concierge.md). **Never offer an action the product lacks.** This binds every surface, not just the concierge.
+1. **RPC is READ-ONLY** — no cart, no gifting; the only transactions: admin giveaway delivery + the no-custody user TRADE ROOM (`/trades`, 10-31; signing gated by `RPC_TRADE_ROOM_EXECUTE` until the live swap test seals: concierge.md). **Never offer an action the product lacks.**
 2. **A NAME is not a PERSON; a team label is not a FRANCHISE** (09-25): resolve via `resolve_player_name` / `resolve_team_name` (aliases, league spelling, renames, father/son, historic labels); a new father/son or rename goes in `player_relations`; the league's spelling is an ALIAS, never a rename.
 3. ⛔ **FMV CONFIDENCE IS INTERNAL — no tier on any page, OG card or concierge answer** (10-18; API field kept): key-files-and-honesty.md.
 
@@ -264,7 +264,7 @@ Flow CLI hot wallet `0x3aa11c84d776838f`. ⛔ **Signing MUST be ECDSA_secp256k1 
 
 ## Prioritized next actions
 
-**The canonical forward plan is [docs/strategy/roadmap-2026-10-17.md](docs/strategy/roadmap-2026-10-17.md)**; one roadmap per collection in `docs/strategy/collections/`, per feature in `features/`. Thesis (08-03, unchanged): **accuracy is the GATE, not a phase** — growth tactics stay removed until the data beats the sites collectors already use; headline metric is the share of prices at HIGH/MEDIUM confidence. Still binding: **intelligence-first**; Cart / Trade Hub / gifting removed (**read-only product**); **no paid tier shown or considered anywhere until 100 WAU** (09-25); no infra spend pre-revenue.
+**The canonical forward plan is [docs/strategy/roadmap-2026-10-17.md](docs/strategy/roadmap-2026-10-17.md)**; one roadmap per collection in `docs/strategy/collections/`, per feature in `features/`. Thesis (08-03): **accuracy is the GATE, not a phase** — growth tactics stay removed until the data beats the sites collectors already use; headline metric is the share of prices at HIGH/MEDIUM confidence. Still binding: **intelligence-first**; Cart / gifting removed (trading = the trade room, 10-31: features/trading.md); **no paid tier shown or considered anywhere until 100 WAU** (09-25); no infra spend pre-revenue.
 
 **Live numbers, open items, decisions:** [roadmap-status.md](docs/reference/roadmap-status.md) (dated samples). Register: [known-issues.md](docs/reference/known-issues.md).
 

@@ -981,6 +981,7 @@ export const INSIGHT_ROUTES: readonly string[] = [
   'serial-premiums',
   'parallel-premiums',
   'autographs',
+  'trade-in',
   'market-pulse',
   'new-collectors',
   'set-completers',

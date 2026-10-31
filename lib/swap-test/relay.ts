@@ -19,6 +19,8 @@ const FLOW_ADDRESS = /^0x[0-9a-f]{16}$/
 
 export interface RelayRow {
   id: string
+  /** Present on trade_room_relay rows only. */
+  room_id?: string
   cosigner: string
   signable: Record<string, unknown>
   signature: string | null
@@ -53,40 +55,61 @@ export function isExpired(createdAt: string, now: number): boolean {
 /** Relay rows are kept a day (for debugging a failed run), then removed. */
 export const RELAY_KEEP_MS = 24 * 60 * 60 * 1000
 
-export async function postSignable(db: SupabaseClient, cosigner: string, signable: unknown, now: number): Promise<string> {
+/**
+ * Which relay table a call uses. The admin swap test and the user trade rooms
+ * (lib/trade-room, 2026-10-31) carry the SAME transaction through the SAME code; a
+ * trade-room relay row also names its room, which the trade-room store checks.
+ */
+export type RelayTable = "swap_test_relay" | "trade_room_relay"
+
+export async function postSignable(
+  db: SupabaseClient,
+  cosigner: string,
+  signable: unknown,
+  now: number,
+  opts: { table?: RelayTable; extra?: Record<string, unknown> } = {},
+): Promise<string> {
+  const table = opts.table ?? "swap_test_relay"
   const s = checkSignable(cosigner, signable)
   // housekeeping: a row outlives its transaction by far; a failed cleanup is logged and never blocks a swap
-  const { error: cleanupError } = await db.from("swap_test_relay").delete().lt("created_at", new Date(now - RELAY_KEEP_MS).toISOString())
-  if (cleanupError) console.warn("[swap-test/relay] cleanup of old relay rows failed:", cleanupError.message)
-  const { data, error } = await db.from("swap_test_relay").insert({ cosigner, signable: s }).select("id").single()
+  const { error: cleanupError } = await db.from(table).delete().lt("created_at", new Date(now - RELAY_KEEP_MS).toISOString())
+  if (cleanupError) console.warn(`[swap-test/relay] cleanup of old ${table} rows failed:`, cleanupError.message)
+  const { data, error } = await db.from(table).insert({ ...(opts.extra ?? {}), cosigner, signable: s }).select("id").single()
   if (error) throw error
   const id = (data as { id?: unknown } | null)?.id
-  if (typeof id !== "string") throw new Error("swap_test_relay insert returned no id")
+  if (typeof id !== "string") throw new Error(`${table} insert returned no id`)
   return id
 }
 
-export async function getRelay(db: SupabaseClient, id: string, now: number): Promise<RelayRow> {
+export async function getRelay(db: SupabaseClient, id: string, now: number, table: RelayTable = "swap_test_relay"): Promise<RelayRow> {
   if (!UUID.test(id)) throw new SwapTestError("Not a relay id.", 400, "bad_relay")
   const { data, error } = await db
-    .from("swap_test_relay")
-    .select("id, cosigner, signable, signature, key_id, created_at, signed_at")
+    .from(table)
+    .select("id, cosigner, signable, signature, key_id, created_at, signed_at" + (table === "trade_room_relay" ? ", room_id" : ""))
     .eq("id", id)
     .maybeSingle()
   if (error) throw error
   if (!data) throw new SwapTestError("No such relay.", 404, "no_relay")
-  const row = data as RelayRow
+  const row = data as unknown as RelayRow
   if (isExpired(row.created_at, now)) throw new SwapTestError("This swap request expired; start a new one.", 410, "expired")
   return row
 }
 
-export async function postSignature(db: SupabaseClient, id: string, signature: unknown, keyId: unknown, now: number): Promise<void> {
+export async function postSignature(
+  db: SupabaseClient,
+  id: string,
+  signature: unknown,
+  keyId: unknown,
+  now: number,
+  table: RelayTable = "swap_test_relay",
+): Promise<void> {
   const sig = typeof signature === "string" ? signature.trim().toLowerCase().replace(/^0x/, "") : ""
   if (!/^[0-9a-f]{128}$/.test(sig)) throw new SwapTestError("The signature is not 64 bytes of hex.", 400, "bad_signature")
   const k = Number(keyId)
   if (!Number.isInteger(k) || k < 0) throw new SwapTestError("The key id is not a key index.", 400, "bad_key")
-  await getRelay(db, id, now)
+  await getRelay(db, id, now, table)
   const { data, error } = await db
-    .from("swap_test_relay")
+    .from(table)
     .update({ signature: sig, key_id: k, signed_at: new Date(now).toISOString() })
     .eq("id", id)
     .is("signature", null)

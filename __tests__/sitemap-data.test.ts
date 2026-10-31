@@ -264,7 +264,9 @@ describe("segment 0 — static + insights + overviews + series + profiles", () =
     // (NFL All Day's squeeze boards get their own pages).
     // 98 → 99 on 2026-10-28: /insights/allday-market (The RPC Index for NFL All Day).
     // 99 → 100 the same evening: /insights/allday-serial-premiums.
-    expect(s).toHaveLength(100)
+    // 100 → 101 on 2026-10-31: /insights/trade-in (Top Shot This trade-in finder).
+    expect(s).toHaveLength(101)
+    expect(s.find((x) => x.url === `${BASE}/insights/trade-in`)).toBeTruthy()
     expect(s.find((x) => x.url === `${BASE}/insights/allday-serial-premiums`)).toBeTruthy()
     expect(s.find((x) => x.url === `${BASE}/insights/allday-market`)).toBeTruthy()
     expect(s.find((x) => x.url === `${BASE}/insights/allday-squeeze`)).toBeTruthy()

@@ -1,8 +1,8 @@
 # Feature roadmaps — index (refreshed 2026-10-17, PT)
 > Each file below covers one feature area across every collection. They are dated snapshots, so re-derive any number before quoting it. Canonical plan: [roadmap-2026-10-17.md](../roadmap-2026-10-17.md). Per-collection detail: [collections/](../collections/). Defects: [known-issues.md](../../reference/known-issues.md).
 
-**Binding rules** (all six files):
-- read-only product: no cart, trade or gifting;
+**Binding rules** (all seven files):
+- read-only product: no cart or gifting; trading only as the no-custody trade room, signing gated until the live swap test seals ([trading.md](trading.md), 10-31);
 - **accuracy is the GATE**;
 - no paid tier until 100 WAU;
 - no infra spend before revenue;
@@ -15,6 +15,7 @@
 | [sniper-and-deals.md](sniper-and-deals.md) | 🟡 Outbound "View Listing" only. The Flowty API is still alive (72/72 runs per lane, 10-17). No priced column depends on it: All Day and Golazos asks come from Dapper storefronts, Top Shot's from Atlas, so only the teardown remains. Candy sales silent since 10-11. |
 | [wallet-and-portfolio.md](wallet-and-portfolio.md) | 🟢 Ownership index at 528,568 rows, walk-confirmed and Series-9 ready. The share card is the one proven acquisition path, but sign-in clicks are 10 → 0. Achievements NOT widened (10-17). |
 | [insights-and-seo.md](insights-and-seo.md) | 🟡 ~32 public boards with honest empty states. Sitemap at 9 children. #66 open: external links held by the gate. 🔜 Demand re-read 10-22 (night pass owns it: focus.md steer). Search Console re-read 10-28. |
+| [trading.md](trading.md) | 🟡 **10-31:** trade room built end to end, signing GATED by `RPC_TRADE_ROOM_EXECUTE` until the live swap test seals (Trevor's run); Top Shot This trade-in finder public at `/insights/trade-in` on Top Shot's own ASP. |
 | [concierge-and-alerts.md](concierge-and-alerts.md) | 🟡 Concierge correct but barely opened (R73, watch to ~10-28). Alerts are what users use: once per listing, on the transition. Digests flag-off, blocked on the C2 postal address (Trevor). |
 
 **Owed by a clock (refreshed 10-22 ~11 PM PT):**

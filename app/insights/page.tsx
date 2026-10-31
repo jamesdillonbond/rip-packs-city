@@ -342,6 +342,15 @@ const CARDS: Card[] = [
     available: true,
   },
   {
+    slug: "/insights/trade-in",
+    eyebrow: "Live",
+    title: "Top Shot This Trade-In Finder",
+    blurb:
+      "Top Shot's Series 2026-27 trade-in counts every $10 of a player's Moments at Top Shot's own average sale price as one Top Shot This pack. See which editions count for the most versus what they cost at the lowest ask, and what your own Moments add up to per player.",
+    cta: "Open trade-in finder",
+    available: true,
+  },
+  {
     slug: "/insights/autographs",
     eyebrow: "Live",
     title: "Autographed Moments",
