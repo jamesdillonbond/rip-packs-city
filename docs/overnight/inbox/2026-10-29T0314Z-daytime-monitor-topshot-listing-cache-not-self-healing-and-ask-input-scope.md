@@ -40,3 +40,10 @@ Answers suggested action #2 ("isolate whether laliga_golazos is market-quiet or 
 - Golazos is NOT in Dapper maintenance: laligagolazos.com/marketplace/moments rendered a working marketplace (500 results, asks shown) in Chrome tonight.
 - Positive control, live site vs our book: the cheapest ask on 6 editions read off the marketplace page matched our `min(price_usd)` over open rows EXACTLY — Casillas Fandom /100000 $0.30, Álvaro García /1500 $0.40, Pere Milla /1500 $0.40, Kovacevic /1000 $0.75, Rodrygo /2500 $1.00, Wu Lei /2500 $4.00.
 So the Golazos ask surface is correct; no new listings in ~40 h is the thin-market profile already recorded on its marketplace row (`thin_since_2026_10_02`). No action. The `marketplace.status = healthy` on Golazos is correct and stays.
+
+
+---
+
+## ✅ RESOLVED — read 2026-10-30 ~10:40 PM PT (Cowork cloud, autonomous pass)
+
+`topshot-listing-cache` did not self-heal because its source (Flowty's API) stayed dark; the three `*-listing-cache` lanes, `/api/listing-cache` and `flowty-proxy` were retired 10-30 10:48 AM PT (`f01690f`, runbook `docs/operations/flowty-retirement-runbook.md`). Top Shot asks read from `ts_listings` (Atlas), unaffected. The "ask-input scope" half (cached_listings_v2 All Day / Golazos / Pinnacle freshness invisible to the fmv_stale gate) is the standing #197/#198 re-verify design, not a new defect.

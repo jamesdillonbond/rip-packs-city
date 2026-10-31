@@ -20,3 +20,10 @@ Both share the Top Shot/Dapper listing endpoint, so this is almost certainly out
 2. If topshot-listing-cache stays 0-success while nba_top_shot shows healthy, weigh a listing-feeder staleness guard so "Listed" asks don't go stale behind a healthy marketplace banner.
 
 Risk: **LOW** — read-only watch; no shippable action proposed, recovery expected on the next ticks. No causal claim on the HTTP 500 beyond "same upstream family as the outage"; verify, don't conclude.
+
+
+---
+
+## ✅ RESOLVED — read 2026-10-30 ~10:40 PM PT (Cowork cloud, autonomous pass)
+
+Recovery held: `topshot-active-listings-ingest` resumed; `topshot-listing-cache` never did because Flowty stayed dark and was retired 10-30 (`f01690f`). The notice behaviour it praised (auto-lift) was then tightened by `20261029025944` to per-collection sales evidence. Nothing open.

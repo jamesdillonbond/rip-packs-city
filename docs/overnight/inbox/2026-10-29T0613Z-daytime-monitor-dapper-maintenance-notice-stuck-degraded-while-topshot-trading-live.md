@@ -53,3 +53,10 @@ is scoped primarily to Top Shot.
 
 Do NOT heavy-probe Dapper directly (proxy-only, and sense-only here). Re-verify next tick: if the notice has
 self-cleared, close this.
+
+
+---
+
+## ✅ RESOLVED — read 2026-10-30 ~10:40 PM PT (Cowork cloud, autonomous pass)
+
+The notice was not stuck: `20261029025944` (10-28 8:10 PM PT) had changed the lift rule from "the Atlas feed answers" to "each collection's OWN sales reach 25 % of its pre-outage 2-hour volume with ≥ 5 distinct buyers", so at 06:13Z Top Shot's 10 sales / 70 min from a handful of buyers were below that bar by design. The `dapper-maintenance-notice` lane's last run is 10-29 10:57 AM PT, and today every row reads `healthy` with no `marketplace_saved` key (`collection_config`), `v_collection_marketplace_status` healthy for TS / AD / Pinnacle / Golazos, and no `dapper-maintenance-notice-restore` job in `cron.job`. The "stuck" diagnosis read the 10-27 rule, not the 10-28 one — the register's "read the live alarm's own rule before fixing what it already covers". Nothing to do.
