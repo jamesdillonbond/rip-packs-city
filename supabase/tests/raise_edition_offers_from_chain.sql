@@ -46,10 +46,21 @@
 -- run returns 0 — and 0 is the healthy steady state here, not a failure. Do not
 -- add a monitor that alerts on a zero return.
 --
--- The function DDL below is VERBATIM from the committed snapshot migration
--- (supabase/migrations/20260816010000_audit_20260816_snapshot_thin_fmv_and_edition_offers_backstop.sql),
--- pulled from live prod via pg_get_functiondef on 2026-08-16
--- (md5 c3a32f8a0cb02b285dbe0ef7ea7087e5).
+-- ⚠ MARKETPLACE-HIDDEN BIDS (2026-10-31, #220). A chain offer that Top Shot's own
+-- index (Atlas) has WALKED PAST (topshot_atlas_edition_verified.verified_at >
+-- offer.created_at) and does NOT carry as an open offer (no open
+-- topshot_atlas_market_events row with that listing_resource_id) is a bid no
+-- collector can accept through the marketplace — Top Shot hides unfunded bids.
+-- It must NOT become the published top offer (Simmons Holo Icon 28:880 flip-
+-- flopped $180/$18 hourly between this backstop and the Atlas sync). An offer
+-- NEWER than the last walk is honoured (Atlas has not seen it yet); an edition
+-- Atlas never mapped or walked is honoured (the backstop's original purpose).
+-- Candidates are narrowed to offers that would actually raise the stored value
+-- BEFORE the probes run (12 of 22k on prod); the probes are LATERAL ... LIMIT 1.
+--
+-- The function DDL below is VERBATIM from the committed migration
+-- (supabase/migrations/20261031210439_audit_20261031_raise_edition_offers_skips_marketplace_hidden_bids.sql).
+-- Earlier body: 20260816010000 (md5 c3a32f8a0cb02b285dbe0ef7ea7087e5).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -67,7 +78,27 @@ CREATE TABLE public.offers (
   collection_id    uuid,
   status           text,
   offer_type       text,
-  offer_amount_usd numeric
+  offer_amount_usd numeric,
+  offer_id         text,
+  created_at       timestamptz DEFAULT now()
+);
+
+-- Top Shot's own index, as the marketplace-hidden test reads it.
+CREATE TABLE public.topshot_atlas_edition_map (
+  atlas_edition_id text,
+  external_id      text
+);
+CREATE TABLE public.topshot_atlas_edition_verified (
+  atlas_edition_id text PRIMARY KEY,
+  verified_at      timestamptz,
+  complete         boolean
+);
+CREATE TABLE public.topshot_atlas_market_events (
+  product             text,
+  atlas_edition_id    text,
+  kind                text,
+  completed           boolean,
+  listing_resource_id text
 );
 
 CREATE TABLE public.edition_offers (
@@ -78,7 +109,7 @@ CREATE TABLE public.edition_offers (
   UNIQUE (collection_id, external_id)
 );
 
--- >>> BEGIN verbatim raise_edition_offers_from_chain (byte-identical to the migration/prod) >>>
+-- >>> BEGIN verbatim raise_edition_offers_from_chain (keep byte-identical to the pin) >>>
 CREATE OR REPLACE FUNCTION public.raise_edition_offers_from_chain()
  RETURNS integer
  LANGUAGE plpgsql
@@ -89,15 +120,37 @@ AS $function$
 DECLARE
   v_n integer;
 BEGIN
-  WITH chain AS (
-    SELECT e.external_id::text AS external_id, max(o.offer_amount_usd) AS chain_edition_max
+  WITH cand AS MATERIALIZED (
+    -- Only offers that would RAISE the stored value can matter (the ON CONFLICT
+    -- guard below admits nothing else), so the marketplace-hidden test runs on a
+    -- dozen rows, not 22k. #220, 2026-10-31.
+    SELECT e.external_id::text AS external_id, o.offer_amount_usd, o.offer_id, o.created_at, m.atlas_edition_id
     FROM offers o
     JOIN editions e ON e.id = o.edition_id
+    LEFT JOIN edition_offers eo
+           ON eo.collection_id = '95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid AND eo.external_id = e.external_id::text
+    LEFT JOIN topshot_atlas_edition_map m ON m.external_id = e.external_id::text
     WHERE o.collection_id = '95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid
       AND o.status = 'open'
       AND o.offer_type NOT IN ('subedition','serial')
       AND o.offer_amount_usd > 0
-    GROUP BY e.external_id
+      AND o.offer_amount_usd > COALESCE(eo.highest_offer, 0)
+  ), chain AS (
+    -- A chain offer Top Shot's own index has walked past and does not carry is a
+    -- bid no collector can accept through the marketplace; it must not become the
+    -- published top offer. Unwalked-since-bid and unmapped editions are honoured.
+    SELECT c.external_id, max(c.offer_amount_usd) AS chain_edition_max
+    FROM cand c
+    LEFT JOIN LATERAL (SELECT 1 AS walked FROM topshot_atlas_edition_verified v
+                        WHERE v.atlas_edition_id = c.atlas_edition_id AND v.verified_at > c.created_at
+                        LIMIT 1) w ON true
+    LEFT JOIN LATERAL (SELECT 1 AS seen FROM topshot_atlas_market_events ev
+                        WHERE ev.product = 'nba' AND ev.atlas_edition_id = c.atlas_edition_id
+                          AND ev.kind = 'offer' AND NOT ev.completed
+                          AND ev.listing_resource_id = c.offer_id
+                        LIMIT 1) s ON w.walked IS NOT NULL
+    WHERE NOT (w.walked IS NOT NULL AND s.seen IS NULL)
+    GROUP BY c.external_id
   ), upserted AS (
     INSERT INTO edition_offers (collection_id, external_id, highest_offer, updated_at)
     SELECT '95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid, c.external_id, c.chain_edition_max, now()
@@ -235,6 +288,69 @@ SELECT _assert_eq(
   (SELECT highest_offer::text FROM public.edition_offers WHERE external_id = '100:1'),
   '120',
   'and it replaces the previous max'
+);
+
+-- ── Marketplace-hidden bids (#220) ──────────────────────────────────────────
+-- Top Shot's own index walked e6 AFTER both bids landed and carries only the
+-- $40 one: the $500 is a bid nobody can accept through the marketplace, and it
+-- must not be published. e7's bid is NEWER than its last walk (honoured). e8 is
+-- unmapped (honoured). e9's only bid shows in Atlas as COMPLETED, not open —
+-- hidden, no row at all.
+\set e6 '''bbbbbbbb-0000-0000-0000-000000000006'''
+\set e7 '''bbbbbbbb-0000-0000-0000-000000000007'''
+\set e8 '''bbbbbbbb-0000-0000-0000-000000000008'''
+\set e9 '''bbbbbbbb-0000-0000-0000-000000000009'''
+INSERT INTO public.editions (id, external_id, collection_id) VALUES
+  (:e6::uuid, '100:6', :TS::uuid),
+  (:e7::uuid, '100:7', :TS::uuid),
+  (:e8::uuid, '100:8', :TS::uuid),
+  (:e9::uuid, '100:9', :TS::uuid);
+INSERT INTO public.topshot_atlas_edition_map (atlas_edition_id, external_id) VALUES
+  ('A6', '100:6'), ('A7', '100:7'), ('A9', '100:9');
+INSERT INTO public.topshot_atlas_edition_verified (atlas_edition_id, verified_at, complete) VALUES
+  ('A6', now() - interval '1 hour', false),
+  ('A7', now() - interval '10 days', false),
+  ('A9', now() - interval '1 hour', true);
+INSERT INTO public.offers (edition_id, collection_id, status, offer_type, offer_amount_usd, offer_id, created_at) VALUES
+  (:e6::uuid, :TS::uuid, 'open', 'edition', 500, 'HIDDEN-500', now() - interval '10 days'),
+  (:e6::uuid, :TS::uuid, 'open', 'edition',  40, 'SEEN-40',    now() - interval '10 days'),
+  (:e7::uuid, :TS::uuid, 'open', 'edition', 300, 'NEWER-300',  now() - interval '1 hour'),
+  (:e8::uuid, :TS::uuid, 'open', 'edition',  90, 'UNMAPPED-90', now() - interval '10 days'),
+  (:e9::uuid, :TS::uuid, 'open', 'edition',  77, 'DONE-77',    now() - interval '10 days');
+INSERT INTO public.topshot_atlas_market_events (product, atlas_edition_id, kind, completed, listing_resource_id) VALUES
+  ('nba', 'A6', 'offer', false, 'SEEN-40'),
+  ('nba', 'A9', 'offer', true,  'DONE-77'),
+  -- a LISTING row with the hidden bid's id must not count as "seen" either
+  ('nba', 'A6', 'listing', false, 'HIDDEN-500');
+
+SELECT _assert_eq(
+  public.raise_edition_offers_from_chain()::text, '3',
+  'e6 (at the SEEN amount), e7 and e8 are written; e9 is not'
+);
+SELECT _assert_eq(
+  (SELECT highest_offer::text FROM public.edition_offers WHERE external_id = '100:6'),
+  '40',
+  'a bid Atlas walked past and does not carry is NOT published — the honoured max wins'
+);
+SELECT _assert_eq(
+  (SELECT highest_offer::text FROM public.edition_offers WHERE external_id = '100:7'),
+  '300',
+  'a bid newer than the last Atlas walk is honoured (Atlas has not seen it yet)'
+);
+SELECT _assert_eq(
+  (SELECT highest_offer::text FROM public.edition_offers WHERE external_id = '100:8'),
+  '90',
+  'an edition Atlas never mapped is honoured (the backstop''s original purpose)'
+);
+SELECT _assert_eq(
+  (SELECT count(*)::text FROM public.edition_offers WHERE external_id = '100:9'),
+  '0',
+  'a bid Atlas shows only as COMPLETED is hidden — no row'
+);
+-- The hidden bid stays hidden on a later tick too (idempotent, not first-run luck).
+SELECT _assert_eq(
+  public.raise_edition_offers_from_chain()::text, '0',
+  'nothing moves on the next tick'
 );
 
 ROLLBACK;

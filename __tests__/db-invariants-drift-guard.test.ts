@@ -2580,10 +2580,14 @@ const PINS = [
     // Also pins that serial/subedition offers are EXCLUDED: those are bids on one
     // specific serial, and folding one into the edition-level best offer
     // publishes a number nobody is bidding for the edition as a whole.
+    //
+    // 2026-10-31 (#220): also pins that a chain bid Top Shot's own index has walked
+    // past and does not carry (marketplace-hidden, unfunded most likely) is NOT
+    // published, while a bid newer than the last walk and an unmapped edition are.
     fn: "raise_edition_offers_from_chain",
     test: "supabase/tests/raise_edition_offers_from_chain.sql",
     migration:
-      "supabase/migrations/20260816010000_audit_20260816_snapshot_thin_fmv_and_edition_offers_backstop.sql",
+      "supabase/migrations/20261031210439_audit_20261031_raise_edition_offers_skips_marketplace_hidden_bids.sql",
   },
   {
     // pg_cron `41 5 * * *`. Backfills pinnacle_sales.edition_id from the render
