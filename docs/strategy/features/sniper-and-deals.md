@@ -23,7 +23,7 @@ Surfaces:
 | Candy MLB | Magic Eden; OpenSea indexers UNSCHEDULED until a key exists (#58) | ME silent since 10-12 |
 | UFC | market closed (`lib/market-closed.ts`); the banner covers the sniper | — |
 
-**The Flowty API is still alive on 10-17**, three weeks after Trevor's 09-25 "will turn off soon": 308 `cached_listings` rows are `source='flowty'`.
+✅ **EXECUTED 2026-10-30 — the Flowty API went dark 10-27 ~9:20 PM PT and the three listing-cache lanes, `/api/listing-cache`, `golazos-sniper-feed`, their schedulers, the Flowty rows and `flowty-proxy` (now a 410 tombstone) are retired; record: [flowty-retirement-runbook.md](../../operations/flowty-retirement-runbook.md) § Execution record.** **The Flowty API is still alive on 10-17**, three weeks after Trevor's 09-25 "will turn off soon": 308 `cached_listings` rows are `source='flowty'`.
 
 ## Shipped recently (since mid-September)
 
@@ -82,7 +82,7 @@ Surfaces:
 
 - **Outbound "View Listing" only.** No cart, no buy, no make-offer, no gifting. #1 Cart was deleted 08-01, as was #3 Trade Hub.
 - **Trading is NOT on this roadmap.** The 10-03 trading memo said "worth revisiting, do not build". The admin-only swap test is the second read-only exception, and turning trading into a user feature is Trevor's call alone. Do not propose it here.
-- **Do not delete the Flowty ingest early.** It is live production ingest until the API actually goes dark (07-07 re-scope, still true 10-17).
+- ✅ **EXECUTED 2026-10-30 — the Flowty API went dark 10-27 ~9:20 PM PT and the three listing-cache lanes, `/api/listing-cache`, `golazos-sniper-feed`, their schedulers, the Flowty rows and `flowty-proxy` (now a 410 tombstone) are retired; record: [flowty-retirement-runbook.md](../../operations/flowty-retirement-runbook.md) § Execution record.** **Do not delete the Flowty ingest early.** It is live production ingest until the API actually goes dark (07-07 re-scope, still true 10-17).
 - **The Deal-alert "zero_yield" lanes and the Lillard Archive filter stay** (declined 09-25).
 - **Deal alerts fire once per LISTING**, not once per day (10-14; verified 10-16).
 
