@@ -1118,7 +1118,11 @@ const CSS = `
   border-color: var(--rpc-red);
   color: var(--rpc-red-text);
 }
-.rpc-sq-sort { display: inline-flex; align-items: center; gap: 8px; }
+/* min-width: 0 on both — a <select>'s intrinsic width is its LONGEST option
+   ("Top-5 holder share (desc)" in mono + tracking ≈ 280px) and a flex item
+   never shrinks below that by default, so at 320 px the SORT control pushed
+   the layout viewport to 347 px (measured 10-31; every other board read 320). */
+.rpc-sq-sort { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; min-width: 0; }
 .rpc-sq-team { display: inline-flex; align-items: center; gap: 8px; }
 .rpc-sq-census-missing { color: var(--rpc-text-muted); cursor: help; }
 .rpc-sq-team-input {
@@ -1148,6 +1152,9 @@ const CSS = `
   padding: 7px 10px;
   border-radius: 2px;
   cursor: pointer;
+  min-width: 0;
+  max-width: 100%;
+  flex: 1 1 auto;
 }
 
 .rpc-sq-kpi-row {
