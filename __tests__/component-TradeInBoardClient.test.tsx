@@ -97,14 +97,19 @@ describe("TradeInBoardClient", () => {
     fireEvent.change(input, { target: { value: "0xbd94cade097e50ac" } })
     fireEvent.click(screen.getByText("Count my Moments"))
     await waitFor(() => expect(screen.getByText(/hasn't indexed any Top Shot Moments/)).toBeTruthy())
+    const fill = { player_name: "LeBron James", packs: 811, to_next_pack: 3.41, edition_id: "e2", external_id: "26:401", set_name: "Base Set", printing: "Standard", tier: "COMMON", series: 2, asp: 5.25, low_ask: 2.82, moments_needed: 1, cost: 2.82 }
     answers["/api/public/insights/trade-in?wallet=0x00000000000000aa"] = {
       status: 200,
       body: {
         players: [
-          { player_name: "LeBron James", moments: 92, moments_with_asp: 90, asp_total: 8116.59, packs: 811, to_next_pack: 3.41, total_players: 1332 },
-          { player_name: "Damian Lillard", moments: 382, moments_with_asp: 382, asp_total: 4171.29, packs: 417, to_next_pack: 8.71, total_players: 1332 },
+          { player_name: "LeBron James", moments: 92, moments_with_asp: 90, asp_total: 8116.59, packs: 811, to_next_pack: 3.41, total_players: 1332, fill },
+          { player_name: "Damian Lillard", moments: 382, moments_with_asp: 382, asp_total: 4171.29, packs: 417, to_next_pack: 8.71, total_players: 1332, fill: null },
         ],
-        meta: { wallet: "0x00000000000000aa", total_players: 1332 },
+        next_pack: [
+          { ...fill, player_name: "Jonathan Isaac", packs: 0, to_next_pack: 0.13, external_id: "218:8550", edition_id: "e9", asp: 0.21, low_ask: 0.18, cost: 0.18, series: 8 },
+          { ...fill, player_name: "Eric Gordon", packs: 0, to_next_pack: 0.34, external_id: "51:1947", edition_id: "e8", asp: 0.3, low_ask: 0.19, moments_needed: 2, cost: 0.38, series: 4 },
+        ],
+        meta: { wallet: "0x00000000000000aa", total_players: 1332, players_with_fill: 1300 },
       },
     }
     fireEvent.change(input, { target: { value: "0x00000000000000aa" } })
@@ -112,6 +117,16 @@ describe("TradeInBoardClient", () => {
     await waitFor(() => expect(screen.getByText(/1,228 packs across 1,332 players/)).toBeTruthy())
     expect(screen.getByText(/showing the 2 with the most ASP/)).toBeTruthy()
     expect(screen.getByText(/2 without an ASP/)).toBeTruthy()
+    // the per-player fill: LeBron's cheapest way to pack 812 links the edition; Lillard has no priced listing (never a $0 buy)
+    const lebronFill = screen.getByText("1 × $2.82").closest("a")!
+    expect(lebronFill.getAttribute("href")).toBe("/nba-top-shot/edition/26%3A401")
+    expect(screen.getByText("no priced listing right now")).toBeTruthy()
+    // the cheapest-next-packs list, cheapest first, with the whole-wallet gap count and the multi-Moment caveat
+    expect(screen.getByText("Cheapest next packs")).toBeTruthy()
+    expect(screen.getByText(/32 of 1,332 players have no priced listing/)).toBeTruthy()
+    expect(screen.getByText("2 × $0.19")).toBeTruthy()
+    expect(screen.getByText(/one at this ask is confirmed, the next may cost more/)).toBeTruthy()
+    expect(document.body.textContent).not.toMatch(/\$0\.00|FMV|HIGH|MEDIUM|LOW/)
     answers["/api/public/insights/trade-in?sort=cost&limit=200&player=Damian+Lillard"] = { status: 200, body: { rows: [row({ edition_id: "e3", player_name: "Damian Lillard" })], meta: {} } }
     window.scrollTo = vi.fn()
     fireEvent.click(screen.getByText("Damian Lillard", { selector: "button" }))
@@ -121,5 +136,19 @@ describe("TradeInBoardClient", () => {
     fireEvent.change(input, { target: { value: "0x00000000000000ab" } })
     fireEvent.click(screen.getByText("Count my Moments"))
     await waitFor(() => expect(screen.getByText(/Couldn't read that wallet just now/)).toBeTruthy())
+  })
+
+  // 2026-10-31 (afternoon): the player pages and the dashboard link in with ?player= / ?wallet=;
+  // each pre-runs its arm once on mount, with the server rows still underneath until it answers.
+  it("?player= in the URL runs the finder on mount; ?wallet= runs the wallet arm", async () => {
+    window.history.replaceState({}, "", "/insights/trade-in?player=Damian+Lillard&wallet=0x00000000000000aa")
+    answers["/api/public/insights/trade-in?sort=cost&limit=200&player=Damian+Lillard"] = { status: 200, body: { rows: [row({ edition_id: "e3", player_name: "Damian Lillard", set_name: "Metallic Gold LE" })], meta: {} } }
+    answers["/api/public/insights/trade-in?wallet=0x00000000000000aa"] = { status: 503, body: { error: "unavailable" } }
+    render(<TradeInBoardClient initialRows={[row()]} initialFetchedAt="2026-10-31T17:00:00Z" />)
+    await waitFor(() => expect(screen.getByText(/Showing Damian Lillard/)).toBeTruthy())
+    expect(screen.getByText(/Metallic Gold LE/)).toBeTruthy()
+    await waitFor(() => expect(screen.getByText(/Couldn't read that wallet just now/)).toBeTruthy())
+    expect((screen.getByLabelText("Top Shot wallet address") as HTMLInputElement).value).toBe("0x00000000000000aa")
+    window.history.replaceState({}, "", "/insights/trade-in")
   })
 })

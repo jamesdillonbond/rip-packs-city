@@ -13,9 +13,13 @@
 // what the trade-in counts. The ask is the lowest listing Top Shot reports: ONE
 // Moment at that price is confirmed, the next may cost more, and the copy says so.
 //
-// The `?wallet=` arm (get_topshot_trade_in_portfolio) sums the same ASP over a
-// wallet's indexed Top Shot Moments per player: whole packs earned, ASP to the next.
-// A Moment with no ASP is counted, never valued at $0.
+// The `?wallet=` arm (get_topshot_trade_in_wallet, one scan) sums the same ASP over
+// a wallet's indexed Top Shot Moments per player — whole packs earned, ASP to the
+// next — and, per player, the CHEAPEST NEXT PACK: the listed Moment(s) of that
+// player that close the gap at the least cost (ceil(gap ÷ ASP) × lowest ask). A
+// Moment with no ASP is counted, never valued at $0; a player with no priced
+// listing has no fill, never a $0 one. Players are keyed on the CATALOG name
+// (editions.player_name), the one the board and the player pages use.
 
 import { retryEmptyWithAccentRegex } from "@/lib/search/accent-regex"
 
@@ -45,6 +49,23 @@ export type TradeInRow = {
   asp_at: string | null
 }
 
+/** The cheapest listed way to reach a player's next pack: `moments_needed` of one edition at its lowest ask. */
+export type TradeInFill = {
+  player_name: string
+  packs: number
+  to_next_pack: number
+  edition_id: string
+  external_id: string
+  set_name: string | null
+  printing: string
+  tier: string | null
+  series: number | null
+  asp: number
+  low_ask: number
+  moments_needed: number
+  cost: number
+}
+
 export type TradeInPortfolioRow = {
   player_name: string
   moments: number
@@ -54,6 +75,18 @@ export type TradeInPortfolioRow = {
   to_next_pack: number
   /** Players in the whole wallet (the function returns the top `p_limit` by ASP). */
   total_players: number
+  /** This player's cheapest next pack; `null` = no listing with a Top Shot ASP right now. */
+  fill?: TradeInFill | null
+}
+
+export type TradeInWallet = {
+  wallet: string
+  total_players: number
+  players_with_fill: number
+  /** Most ASP first, capped at the function's limit. */
+  players: TradeInPortfolioRow[]
+  /** Cheapest next pack first, across every player in the wallet, capped at the same limit. */
+  next_pack: TradeInFill[]
 }
 
 const COLS = [
@@ -99,19 +132,49 @@ export function normalizeTradeInRow(raw: Record<string, unknown>): TradeInRow | 
   }
 }
 
-export function normalizePortfolioRow(raw: Record<string, unknown>): TradeInPortfolioRow | null {
+/** A fill the function could not have produced (no ask, no ASP, nothing to buy) is dropped, never rendered as $0. */
+export function normalizeFill(raw: unknown): TradeInFill | null {
+  if (!raw || typeof raw !== "object") return null
+  const r = raw as Record<string, unknown>
+  const player = str(r.player_name)
+  const asp = num(r.asp)
+  const lowAsk = num(r.low_ask)
+  const needed = num(r.moments_needed)
+  const cost = num(r.cost)
+  const externalId = str(r.external_id)
+  if (!player || !externalId || asp == null || lowAsk == null || needed == null || cost == null || asp <= 0 || lowAsk <= 0 || needed < 1) return null
+  return {
+    player_name: player,
+    packs: num(r.packs) ?? 0,
+    to_next_pack: num(r.to_next_pack) ?? ASP_PER_PACK_USD,
+    edition_id: String(r.edition_id ?? ""),
+    external_id: externalId,
+    set_name: str(r.set_name),
+    printing: str(r.printing) ?? "Standard",
+    tier: str(r.tier),
+    series: num(r.series),
+    asp,
+    low_ask: lowAsk,
+    moments_needed: needed,
+    cost,
+  }
+}
+
+export function normalizePortfolioRow(raw: Record<string, unknown>, totalPlayers?: number): TradeInPortfolioRow | null {
   const player = str(raw.player_name)
   const moments = num(raw.moments)
   if (!player || moments == null) return null
-  return {
+  const row: TradeInPortfolioRow = {
     player_name: player,
     moments,
     moments_with_asp: num(raw.moments_with_asp) ?? 0,
     asp_total: num(raw.asp_total) ?? 0,
     packs: num(raw.packs) ?? 0,
     to_next_pack: num(raw.to_next_pack) ?? ASP_PER_PACK_USD,
-    total_players: num(raw.total_players) ?? 0,
+    total_players: num(raw.total_players) ?? totalPlayers ?? 0,
   }
+  if ("fill" in raw) row.fill = normalizeFill(raw.fill)
+  return row
 }
 
 export function tradeInEditionHref(externalId: string): string {
@@ -178,4 +241,39 @@ export async function fetchTradeInPortfolio(
   if (error) return { data: null, error }
   const rows = Array.isArray(data) ? (data as Array<Record<string, unknown>>) : []
   return { data: rows.map(normalizePortfolioRow).filter((r): r is TradeInPortfolioRow => r !== null), error: null }
+}
+
+/**
+ * The wallet arm in ONE read: per-player totals (most ASP first) AND the cheapest
+ * next pack per player (cheapest first), with whole-wallet counts. jsonb, so
+ * PostgREST's 1,000-row clamp on set-returning RPCs cannot truncate it silently.
+ */
+export async function fetchTradeInWallet(
+  db: TradeInBoardClient,
+  wallet: string,
+  limit: number = PORTFOLIO_PLAYERS,
+): Promise<{ data: TradeInWallet | null; error: { message?: string } | null }> {
+  const { data, error } = await db.rpc("get_topshot_trade_in_wallet", { p_wallet: wallet, p_limit: limit })
+  if (error) return { data: null, error }
+  // A non-object answer is a failed read, never an empty wallet.
+  if (!data || typeof data !== "object" || Array.isArray(data)) return { data: null, error: { message: "unexpected wallet read shape" } }
+  const j = data as Record<string, unknown>
+  const totalPlayers = num(j.total_players)
+  if (totalPlayers == null) return { data: null, error: { message: "unexpected wallet read shape" } }
+  const players = (Array.isArray(j.players) ? (j.players as Array<Record<string, unknown>>) : [])
+    .map((r) => normalizePortfolioRow(r, totalPlayers))
+    .filter((r): r is TradeInPortfolioRow => r !== null)
+  const nextPack = (Array.isArray(j.next_pack) ? (j.next_pack as unknown[]) : [])
+    .map(normalizeFill)
+    .filter((r): r is TradeInFill => r !== null)
+  return {
+    data: {
+      wallet: str(j.wallet) ?? wallet,
+      total_players: totalPlayers,
+      players_with_fill: num(j.players_with_fill) ?? 0,
+      players,
+      next_pack: nextPack,
+    },
+    error: null,
+  }
 }

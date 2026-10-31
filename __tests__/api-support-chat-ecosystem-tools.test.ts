@@ -464,6 +464,63 @@ describe("concierge — get_ecosystem_stat + get_insight_board enum maps", () =>
   })
 })
 
+// 2026-10-31: Top Shot This trade-in math. The finder reads the public board (cost-first, player
+// scoped); a wallet reads the one-scan wallet arm and relays players + next_pack with the
+// whole-wallet counts; a wallet RPC never walked is not_indexed (never "holds nothing"); a
+// username resolves through the same ladder as check_wallet_squeeze; any other named
+// collection is refused, never answered with Top Shot's rows.
+describe("concierge — get_trade_in (2026-10-31)", () => {
+  it("with no wallet reads the finder cheapest-first, scoped to the player", async () => {
+    const f = stubFetch([jsonRoute("/api/public/insights/trade-in", { rows: [{ player_name: "Nikola Jokić", asp: 5.26, low_ask: 0.35, cost_per_pack: 0.7 }], meta: { asp_per_pack_usd: 10 } })])
+    const r = await drive("get_trade_in", { player: "jokic", limit: 5 })
+    const url = f.calls.find((c) => c.url.includes("/insights/trade-in"))!.url
+    expect(url).toContain("sort=cost")
+    expect(url).toContain("player=jokic")
+    expect(url).toContain("limit=5")
+    expect(r).toMatchObject({ status: "ok", count: 1 })
+  })
+  it("with a 0x wallet relays players, next_pack and the whole-wallet counts", async () => {
+    const fill = { player_name: "LeBron James", packs: 811, to_next_pack: 3.41, external_id: "26:401", set_name: "Base Set", asp: 5.25, low_ask: 2.82, moments_needed: 1, cost: 2.82 }
+    stubFetch([jsonRoute("/api/public/insights/trade-in", {
+      meta: { wallet: "0xbd94cade097e50ac", total_players: 1323, players_with_fill: 1322 },
+      players: [{ player_name: "LeBron James", moments: 92, moments_with_asp: 92, asp_total: 8116.59, packs: 811, to_next_pack: 3.41, fill }, { player_name: "Damian Lillard", moments: 382, moments_with_asp: 382, asp_total: 4171.29, packs: 417, to_next_pack: 8.71, fill: null }],
+      next_pack: [fill],
+    })])
+    const r = await drive("get_trade_in", { wallet: "0xBD94CADE097E50AC", limit: 1 })
+    expect(r).toMatchObject({ status: "ok", wallet: "0xBD94CADE097E50AC", total_players: 1323, players_with_fill: 1322, packs_total_shown: 1228 })
+    expect(r.players).toHaveLength(1)
+    expect(r.next_pack).toHaveLength(1)
+    expect(String(r.rule)).toContain("not RPC FMV")
+    expect(JSON.stringify(r)).not.toMatch(/"fmv|confidence/i)
+  })
+  it("a wallet RPC never walked is not_indexed, never 'holds nothing'", async () => {
+    stubFetch([jsonRoute("/api/public/insights/trade-in", { meta: { wallet: "0x00000000000000aa", total_players: 0 }, players: [], next_pack: [] })])
+    const r = await drive("get_trade_in", { wallet: "0x00000000000000aa" })
+    expect(r).toMatchObject({ status: "not_indexed" })
+    expect(String(r.message)).toContain("NOT that the wallet holds nothing")
+  })
+  it("a username resolves through the Top Shot username ladder before the read", async () => {
+    install({ "rpc:resolve_topshot_username": { data: { found: true, wallet_address: "bd94cade097e50ac" }, error: null } })
+    const f = stubFetch([jsonRoute("/api/public/insights/trade-in", { meta: { total_players: 1 }, players: [{ player_name: "X", moments: 1, packs: 0 }], next_pack: [] })])
+    const r = await drive("get_trade_in", { wallet: "ripcity" })
+    expect(f.calls.find((c) => c.url.includes("/insights/trade-in"))!.url).toContain("wallet=0xbd94cade097e50ac")
+    expect(r).toMatchObject({ status: "ok", wallet: "0xbd94cade097e50ac", username_input: "ripcity" })
+  })
+  it("on another collection is refused, never Top Shot's rows", async () => {
+    const r = await drive("get_trade_in", { player: "x" })
+    expect(r).toMatchObject({ status: "ok" }) // no collection: Top Shot's
+    script("get_trade_in", { player: "x" })
+    await POST(post("trade in", { collectionId: "nfl-all-day" }))
+    expect(toolResult()).toMatchObject({ status: "unsupported_collection" })
+  })
+  it("a failed read is an error, never an empty finder or wallet", async () => {
+    stubFetch([jsonRoute("/api/public/insights/trade-in", { error: "unavailable" }, { status: 503, ok: false })])
+    const r = await drive("get_trade_in", { wallet: "0x00000000000000aa" })
+    expect(r).toMatchObject({ status: "error" })
+    expect(r.players).toBeUndefined()
+  })
+})
+
 describe("concierge — fetchPublicInsight response shapes", () => {
   it("passes a non-row payload through under data", async () => {
     const r = await drive("get_market_movers", {}, [jsonRoute("/api/public/insights/market-pulse", { headline: "hot", stats: { n: 3 } })])

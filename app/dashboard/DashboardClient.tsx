@@ -1275,6 +1275,19 @@ function ProfilePageInner() {
             Open trades →
           </span>
         </Link>
+        {/* 2026-10-31: the public Top Shot This trade-in finder, pre-filled with the first saved
+            Flow wallet (the finder reads 0x addresses only; a Candy/base58 wallet gets no link). */}
+        {(() => {
+          const flow = wallets.find((w) => /^0x[0-9a-fA-F]{16}$/.test(String(w.wallet_addr ?? "")))?.wallet_addr ?? null
+          return flow ? (
+            <Link
+              href={`/insights/trade-in?wallet=${encodeURIComponent(flow)}`}
+              style={{ display: "inline-block", marginTop: -6, fontFamily: monoFont, fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--rpc-red-text)", textDecoration: "none" }}
+            >
+              What do my Moments count for in Top Shot This trade-ins? →
+            </Link>
+          ) : null
+        })()}
 
         {/* Trophy Case is the hero slot when trophies exist; render it again
             below the stats only when the hero card occupied the top slot, so

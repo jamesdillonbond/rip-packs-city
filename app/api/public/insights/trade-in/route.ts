@@ -15,9 +15,10 @@
 //   sort=cost|ratio|asp    default cost (cheapest pack first)
 //   limit=<1..500>         default 100
 //   wallet=0x…             INSTEAD of the board: the wallet's own trade-in value per
-//                          player (get_topshot_trade_in_portfolio, most ASP first)
+//                          player (most ASP first) AND its cheapest next pack per
+//                          player (cheapest first) — get_topshot_trade_in_wallet, one scan
 //
-// Response: { meta: {...}, rows: [...] } or, with wallet, { meta, players: [...] }.
+// Response: { meta: {...}, rows: [...] } or, with wallet, { meta, players: [...], next_pack: [...] }.
 // CACHE: 1-hour s-maxage on the board (Top Shot's figures refresh about daily);
 // the wallet arm is no-store (it is the caller's own holdings).
 
@@ -31,12 +32,12 @@ import {
   ASP_PER_PACK_USD,
   cleanPlayerFilter,
   fetchTradeInBoard,
-  fetchTradeInPortfolio,
+  fetchTradeInWallet,
   PORTFOLIO_PLAYERS,
   TRADE_IN_SORTS,
-  type TradeInPortfolioRow,
   type TradeInRow,
   type TradeInSort,
+  type TradeInWallet,
 } from "@/lib/insights/trade-in-board"
 
 export async function GET(req: NextRequest) {
@@ -50,24 +51,26 @@ export async function GET(req: NextRequest) {
     if (!wallet) return NextResponse.json({ error: "wallet must be a Flow 0x address", code: "bad_request" }, { status: 400 })
     let result
     try {
-      result = await boundedRead(fetchTradeInPortfolio(supabase as never, wallet), "insights/trade-in wallet", 8000)
+      result = await boundedRead(fetchTradeInWallet(supabase as never, wallet), "insights/trade-in wallet", 8000)
     } catch (e) {
       return boardUnavailable(e, "insights/trade-in wallet")
     }
     if (result.error || !result.data) return boardUnavailable(result.error, "insights/trade-in wallet")
-    const players = result.data as TradeInPortfolioRow[]
+    const w = result.data as TradeInWallet
     const res = NextResponse.json({
       meta: {
         fetched_at: new Date().toISOString(),
-        source: "get_topshot_trade_in_portfolio",
+        source: "get_topshot_trade_in_wallet",
         asp_per_pack_usd: ASP_PER_PACK_USD,
-        wallet,
-        shown: players.length,
-        total_players: players[0]?.total_players ?? players.length,
+        wallet: w.wallet,
+        shown: w.players.length,
+        total_players: w.total_players,
+        players_with_fill: w.players_with_fill,
         limit: PORTFOLIO_PLAYERS,
         elapsed_ms: Date.now() - startedAt,
       },
-      players,
+      players: w.players,
+      next_pack: w.next_pack,
     })
     res.headers.set("Cache-Control", "no-store")
     return res

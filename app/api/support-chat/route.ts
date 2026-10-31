@@ -792,6 +792,20 @@ const TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: "get_trade_in",
+    description:
+      "Top Shot This TRADE-IN math (Series 2026-27, NBA Top Shot ONLY). Top Shot counts every $10 of a PLAYER's Moments, at Top Shot's OWN average sale price (ASP), as one Top Shot This pack of that player. Two reads. (1) No wallet: the public finder — per edition, Top Shot's ASP, the lowest live ask, Moments per pack = ceil(10 ÷ ASP) and cost per pack at the ask, cheapest pack first; pass `player` to scope it ('what's the cheapest way to a Jokić pack'). (2) With `wallet` (a Flow 0x address or a Top Shot username): per player, the wallet's ASP total over the Moments RPC has indexed, whole packs, the ASP still needed for the next pack, and `next_pack` — the cheapest listed Moment(s) of that player that close the gap. Use for 'how many Top Shot This packs can I get', 'what do my Moments count for', 'cheapest way to another LeBron pack', 'is it worth buying X to trade in'. RULES: every figure is Top Shot's ASP or Top Shot's lowest ask, never RPC FMV — do not call a Moment 'worth' its ASP, it is what the trade-in COUNTS; one Moment at the lowest ask is confirmed, the next may cost more; status not_indexed means RPC has not walked that wallet — say so, NEVER 'holds nothing'; eligibility is Top Shot's call — tell the user to confirm in the Top Shot app. Read-only.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        wallet: { type: "string", description: "Flow wallet address (0x + 16 hex) or Top Shot username. Omit for the finder (per-edition board)." },
+        player: { type: "string", description: "Finder only: scope the board to one player's editions (ilike, accent-blind). Omit for every player." },
+        limit: { type: "number", description: "Max rows per list, 1..50, default 15." },
+      },
+      required: [],
+    },
+  },
+  {
     name: "search_catalog",
     description:
       "Find a moment, player, set, or team in RPC's catalog. Searches names (player / set / team / play type) AND the moment's written description, so a DISTINCTIVE phrase that appears in the prose — a college, a hometown, an opponent, an unusual detail — will find the moment. ⚠ It matches WORDS, not concepts: there is no stemming, so prose that says 'game-winning' is unreachable by 'game winner' and prose that says 'buzzer' is unreachable by 'buzzer beater'. A query of three or more words may miss ONE of them; a one- or two-word query must match every word. The reliable shape is a NAME plus a distinctive word ('lillard buzzer', 'lillard game-winning'). So a narrative miss usually means we did not use that exact word, not that the moment does not exist — suggest adding the player's name or the word the story would use. ⚠ Always READ the rows before presenting: a non-empty result is not a correct result, and if the hits all share one set name and don't match what the user described, say so rather than passing a set roster off as an answer. Also the right tool for 'do you have X', 'find me the ... moment', or when you need an edition's slug before calling get_price_history. Returns each hit's kind (player/set/team/edition), label, sublabel, collection, slug, and the site URL to link. CRITICAL — descriptive prose covers only PART of the catalog and the tool reports exactly how much in `coverage`/`coverage_note` (Top Shot only; every other collection is 0%). So a narrative query that returns nothing is AMBIGUOUS: it may mean we hold no description for that moment, NOT that the moment does not exist. You MUST say which when a narrative search comes back empty — never report it as 'that moment doesn't exist'. Read-only. Carries no prices: chain to get_fmv or get_price_history for value.",
@@ -1107,7 +1121,7 @@ RPC is in free, open beta — anyone can create a free account, no invite needed
 2. **Q&A**: answer how-things-work questions about FMV, badges, packs, sets, sniping, sign-in, wallets, collections.
 3. **Feedback intake**: capture bug reports, feature requests, confusion, and praise so the team can act on them. This is critical — the user is a beta tester whose feedback the team wants. Use log_bug / log_feature_request / log_feedback liberally (after clarifying — see below); that is how feedback reaches the team. Praise still counts — it signals what's working. Never name any individual behind RPC — refer to "the team" only.
 
-**Deal concierge & market intelligence are on-request only — never proactive.** You have search_live_deals / search_catalog_deals / search_serial_deals / get_edition_listings / get_fmv / get_special_serial_owners / check_wallet / check_wallet_squeeze / search_across_collections / get_collection_snapshot / explain_fmv / get_hot_floors / get_edition_sweep / get_set_completion_cost / get_top_sales / get_market_movers / get_rookies / get_premiums / get_ecosystem_stat / get_insight_board / search_catalog / get_price_history / find_quirky_serials. Use them ONLY when the user explicitly asks to shop, hunt deals, check FMV, look up a player's price, find/value a special serial, analyze a wallet, see their squeeze exposure (the "what's liquid in my bag" question), see what Top Shot editions are being swept / bulk-bought right now (get_hot_floors), check if a specific edition's floor is being swept (get_edition_sweep), price out completing a Top Shot set at floor (get_set_completion_cost) or rank which set is CHEAPEST to finish when they have not named one (get_cheapest_sets_to_complete), see which active Set/Crafting Challenges are worth completing (get_challenges — cost-to-complete vs reward value, netEv), see the biggest recent sales (get_top_sales), what's heating up or cooling (get_market_movers), how the rookie market looks (get_rookies), the premium parallels or low serials carry (get_premiums), ecosystem stats like new collectors and offer spreads (get_ecosystem_stat), pull the whole-collection Top Collector Report for a wallet (get_collector_report), look up what a badge means and how many editions carry it (get_badge_info), see every edition a player has with badges + FMV (get_player_editions), turn a typed name into the person — aliases, league spelling, name changes, namesakes and recorded parent/child relations (resolve_player_name), read a team's roster / squeeze / recent sales (get_team_intel), look up market cap — a collection, player, team, set, series or edition, or who is biggest by market cap (get_market_cap), or any other public insight board — squeeze / scarcity, set completion, the trophy room, pack market and pack-reality (get_insight_board). The welcome message mentions once that deals and FMV checks are available; after that, do not bring them up again unless the user asks. Never offer deals as a consolation prize, side-quest, or follow-up to a support flow.
+**Deal concierge & market intelligence are on-request only — never proactive.** You have search_live_deals / search_catalog_deals / search_serial_deals / get_edition_listings / get_fmv / get_special_serial_owners / check_wallet / check_wallet_squeeze / search_across_collections / get_collection_snapshot / explain_fmv / get_hot_floors / get_edition_sweep / get_set_completion_cost / get_top_sales / get_market_movers / get_rookies / get_premiums / get_ecosystem_stat / get_insight_board / get_trade_in / search_catalog / get_price_history / find_quirky_serials. Use them ONLY when the user explicitly asks to shop, hunt deals, check FMV, look up a player's price, find/value a special serial, analyze a wallet, see their squeeze exposure (the "what's liquid in my bag" question), see what Top Shot editions are being swept / bulk-bought right now (get_hot_floors), check if a specific edition's floor is being swept (get_edition_sweep), price out completing a Top Shot set at floor (get_set_completion_cost) or rank which set is CHEAPEST to finish when they have not named one (get_cheapest_sets_to_complete), see which active Set/Crafting Challenges are worth completing (get_challenges — cost-to-complete vs reward value, netEv), see the biggest recent sales (get_top_sales), what's heating up or cooling (get_market_movers), how the rookie market looks (get_rookies), the premium parallels or low serials carry (get_premiums), ecosystem stats like new collectors and offer spreads (get_ecosystem_stat), pull the whole-collection Top Collector Report for a wallet (get_collector_report), look up what a badge means and how many editions carry it (get_badge_info), see every edition a player has with badges + FMV (get_player_editions), turn a typed name into the person — aliases, league spelling, name changes, namesakes and recorded parent/child relations (resolve_player_name), read a team's roster / squeeze / recent sales (get_team_intel), look up market cap — a collection, player, team, set, series or edition, or who is biggest by market cap (get_market_cap), or any other public insight board — squeeze / scarcity, set completion, the trophy room, pack market and pack-reality (get_insight_board), or Top Shot This trade-in math — what a wallet's Moments count for in packs, or the cheapest way to a player's pack (get_trade_in). The welcome message mentions once that deals and FMV checks are available; after that, do not bring them up again unless the user asks. Never offer deals as a consolation prize, side-quest, or follow-up to a support flow.
 
 ## CRITICAL — Support flow integrity (hard rule, not a soft preference)
 Once a user enters a support, Q&A, confusion, bug-report, feature-request, or general-feedback flow, you MUST stay in that flow through resolution. You do NOT pivot to offering deals, FMV checks, movers, or "while we troubleshoot, want me to pull some deals?" mid-conversation. The pivot is acceptable ONLY if the user themselves explicitly asks to switch topics (e.g. "okay forget that, can you help me find a deal?" or "different question — what's a LeBron Rare worth?"). Until they do, your job is the current thread: ask clarifying questions, log feedback if appropriate, confirm capture, and ask if there's anything else they need. After logging a bug / feature request / feedback, your closing line is "Anything else?" — NOT "want me to pull some deals while we wait?" Violating this rule is the single most common failure mode of this bot; do not do it.
@@ -1226,6 +1240,7 @@ When the user asks about market STATE rather than one specific price, reach for 
 - **get_collector_report** — the composite per-wallet Top Collector Report (rollup, squeeze, rookie cohort, WNBA S7, closest set completions, 90-day acquisitions) in ONE call. Reach for it on "how does my collection look / give me the rundown", instead of chaining check_wallet + check_wallet_squeeze + set completion. ⚠ Its sections do not share a scope — the rollup is cross-collection, the squeeze and cohort sections are Top Shot only — so label them; and a username it cannot resolve means call check_wallet first, never invent an address.
 - **get_ecosystem_stat** — ecosystem boards by metric: new_collectors (newest active collectors), offer_spread (bid/ask spread), first_mint (first-mint scarcity), cross_collection (multi-collection overlap). For broad "state of the ecosystem" questions.
 - **get_insight_board** — reads any of the other shareable /insights boards by name: squeeze / set_squeeze (supply locked+burned), set_completers (closest to finishing sets), trophies (#1 / first-mint holders), pinnacle_scarcity, allday_scarcity, topshot_pack_market / allday_pack_market (pack prices), pack_reality / allday_pack_reality (what packs actually returned vs cost), market (Top Shot daily index), panini_pack_market (every Panini pack's cost vs typical pull, with a rip_verdict to follow) and panini_premiums (Panini parallel and serial premiums). For board/ecosystem questions the tools above don't cover.
+- **get_trade_in** — Top Shot This TRADE-IN math (Series 2026-27, Top Shot only): with no wallet, the public finder (per edition: Top Shot's own average sale price, the lowest ask, Moments per $10 pack and cost per pack, cheapest first; the player param scopes it); with a wallet or Top Shot username, what that collector's Moments count for per player — whole packs, the ASP still needed for the next, and next_pack, the cheapest listed Moment of that player that gets there. For "how many Top Shot This packs can I get", "cheapest way to another Jokić pack", "is it worth buying X to trade in". ⚠ Its figures are Top Shot's ASP and ask, NOT FMV — a Moment "counts for" its ASP, it is not "worth" it; one Moment at the lowest ask is confirmed, the next may cost more; status not_indexed means RPC has not walked the wallet, never that it holds nothing; eligibility is Top Shot's call, so say "confirm in the Top Shot app". The page is /insights/trade-in.
 
 ## Finding a moment (search_catalog) — what it can and CANNOT do
 **search_catalog** searches names (player / set / team / play type) and the moment's written description. Reach for it whenever the user asks you to find a moment/player/set/team, asks "do you have…", or when you need an edition's slug to pass to get_price_history. It returns a linkable URL for every hit.
@@ -5297,6 +5312,67 @@ async function executeToolInner(
     return fetchPublicInsight(base, `/api/public/insights/${path}${q ? `?${q}` : ""}`, limit);
   }
 
+  // ── Top Shot This trade-in (2026-10-31) ─────────────────────────────────────
+  // Reads the public /insights/trade-in route: the per-edition finder, or with a
+  // wallet the one-scan wallet read (players + next_pack). Top Shot's program is
+  // Top Shot's alone, so any other named collection is refused, never answered
+  // with Top Shot's rows. A username goes through the same ladder as
+  // check_wallet_squeeze; a wallet RPC never walked is "not_indexed", never empty.
+  if (toolName === "get_trade_in") {
+    const limit = Math.min(Math.max(Math.trunc(Number(toolInput.limit ?? 15)) || 15, 1), 50);
+    if (effectiveCollectionId && getCollectionUuid(effectiveCollectionId) !== getCollectionUuid("nba-top-shot")) {
+      return JSON.stringify({ status: "unsupported_collection", message: "Top Shot This trade-ins are NBA Top Shot's program only. Say so; do not quote Top Shot's rows for this collection." });
+    }
+    const walletIn = String(toolInput.wallet ?? "").trim();
+    if (!walletIn) {
+      const player = String(toolInput.player ?? "").trim().slice(0, 60);
+      const qs = new URLSearchParams({ sort: "cost", limit: String(limit) });
+      if (player) qs.set("player", player);
+      return fetchPublicInsight(base, `/api/public/insights/trade-in?${qs.toString()}`, limit);
+    }
+    if (isSolanaAddress(walletIn)) {
+      return JSON.stringify({ status: "unsupported_chain", chain: "solana", message: "Top Shot This trade-ins read Flow wallets only; a Candy MLB (Solana) wallet holds no Top Shot Moments. Do not say the wallet is empty." });
+    }
+    let resolvedAddr = walletIn;
+    if (!/^0x[a-fA-F0-9]{16}$/.test(walletIn)) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: rpcResult } = await (supabase as any).rpc("resolve_topshot_username", { p_username: walletIn });
+      if (rpcResult?.found === true && typeof rpcResult.wallet_address === "string") {
+        resolvedAddr = rpcResult.wallet_address.startsWith("0x") ? rpcResult.wallet_address : `0x${rpcResult.wallet_address}`;
+      } else {
+        const live = await resolveUsernameLive(base, walletIn);
+        if ("wallet" in live) resolvedAddr = live.wallet;
+        else if ("failed" in live) return JSON.stringify({ status: "username_lookup_failed", wallet: walletIn, message: USERNAME_LOOKUP_FAILED_COPY });
+        else return JSON.stringify({ status: "username_not_resolved", wallet: walletIn, message: "I don't have a wallet for that username on file. If you can share the wallet address (starts with 0x and 16 hex chars), I'll count its Moments." });
+      }
+    }
+    try {
+      const res = await fetch(`${base}/api/public/insights/trade-in?wallet=${encodeURIComponent(resolvedAddr)}`, { signal: AbortSignal.timeout(9000) });
+      if (!res.ok) return JSON.stringify({ status: "error", http_status: res.status, message: `trade-in read returned ${res.status}` });
+      const json = (await res.json()) as { error?: unknown; players?: unknown; next_pack?: unknown; meta?: { total_players?: number; players_with_fill?: number } } | null;
+      if (json?.error) return JSON.stringify({ status: "error", message: String(json.error) });
+      const players = Array.isArray(json?.players) ? (json.players as Array<{ packs?: number }>) : [];
+      const nextPack = Array.isArray(json?.next_pack) ? (json.next_pack as unknown[]) : [];
+      const who = { wallet: resolvedAddr, username_input: /^0x/.test(walletIn) ? null : walletIn };
+      if (players.length === 0) {
+        return JSON.stringify({ status: "not_indexed", ...who, message: "RPC has not indexed any Top Shot Moments for this wallet, so there is nothing to count yet — it is NOT that the wallet holds nothing. Adding the wallet on /dashboard queues the walk." });
+      }
+      return JSON.stringify({
+        status: "ok",
+        ...who,
+        rule: "Every $10 of a player's Moments at Top Shot's own average sale price = one Top Shot This pack of that player. Figures are Top Shot's ASP and Top Shot's lowest ask, not RPC FMV. Eligibility is decided in the Top Shot app.",
+        total_players: json?.meta?.total_players ?? players.length,
+        players_with_fill: json?.meta?.players_with_fill ?? null,
+        packs_total_shown: players.reduce((n, p) => n + (Number(p.packs) || 0), 0),
+        players: players.slice(0, limit),
+        next_pack: nextPack.slice(0, limit),
+        page: "/insights/trade-in?wallet=" + encodeURIComponent(resolvedAddr),
+      });
+    } catch (err) {
+      return JSON.stringify({ status: "error", message: safeApiError(err, "trade-in read failed").error });
+    }
+  }
+
   // ── Catalog search (names AND descriptive prose) ──────────────────────────
   // The only tool that reads the moment's prose at all. It matches WORDS, not
   // concepts — no stemming — so "the Lillard game winner" reaches the moment
@@ -7026,6 +7102,7 @@ export async function POST(req: NextRequest) {
               get_premiums: 10000,
               get_ecosystem_stat: 10000,
               get_insight_board: 10000,
+              get_trade_in: 20000, // username ladder (RPC + live resolve) then one 9 s fetch, in sequence
               // 2026-10-25, same class: each branch's own fetch abort outlasted the
               // 6 s default, so the abort was dead code and a 6-10 s answer read as a
               // generic timeout. On the WRITES this was a false claim: a send or a

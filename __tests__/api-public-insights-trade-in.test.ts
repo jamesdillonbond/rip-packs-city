@@ -5,9 +5,9 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // malformed wallet (never answers it with an empty portfolio), and maps a failed
 // read to the shared 503 envelope with no driver text.
 
-const state: { board: { data: any[] | null; error: any }; portfolio: { data: any[] | null; error: any }; throwErr: Error | null; lastOpts: any; lastWallet: any } = {
+const state: { board: { data: any[] | null; error: any }; portfolio: { data: any | null; error: any }; throwErr: Error | null; lastOpts: any; lastWallet: any } = {
   board: { data: [], error: null },
-  portfolio: { data: [], error: null },
+  portfolio: { data: { wallet: "0x", total_players: 0, players_with_fill: 0, players: [], next_pack: [] }, error: null },
   throwErr: null,
   lastOpts: null,
   lastWallet: null,
@@ -23,7 +23,7 @@ vi.mock("@/lib/insights/trade-in-board", async (orig) => {
       if (state.throwErr) throw state.throwErr
       return state.board
     },
-    fetchTradeInPortfolio: async (_db: any, wallet: string) => {
+    fetchTradeInWallet: async (_db: any, wallet: string) => {
       state.lastWallet = wallet
       if (state.throwErr) throw state.throwErr
       return state.portfolio
@@ -38,7 +38,7 @@ const base = "https://t/api/public/insights/trade-in"
 
 beforeEach(() => {
   state.board = { data: [], error: null }
-  state.portfolio = { data: [], error: null }
+  state.portfolio = { data: { wallet: "0x", total_players: 0, players_with_fill: 0, players: [], next_pack: [] }, error: null }
   state.throwErr = null
   state.lastOpts = null
   state.lastWallet = null
@@ -68,13 +68,24 @@ describe("GET /api/public/insights/trade-in", () => {
     const bad = await GET(req(`${base}?wallet=not-a-wallet`))
     expect(bad.status).toBe(400)
     expect(state.lastWallet).toBeNull()
-    state.portfolio = { data: [{ player_name: "LeBron James", moments: 92, moments_with_asp: 92, asp_total: 8116.59, packs: 811, to_next_pack: 3.41, total_players: 1332 }], error: null }
+    const fill = { player_name: "LeBron James", packs: 811, to_next_pack: 3.41, edition_id: "e2", external_id: "26:401", set_name: "Base Set", printing: "Standard", tier: "COMMON", series: 2, asp: 5.25, low_ask: 2.82, moments_needed: 1, cost: 2.82 }
+    state.portfolio = {
+      data: {
+        wallet: "0xbd94cade097e50ac",
+        total_players: 1323,
+        players_with_fill: 1322,
+        players: [{ player_name: "LeBron James", moments: 92, moments_with_asp: 92, asp_total: 8116.59, packs: 811, to_next_pack: 3.41, total_players: 1323, fill }],
+        next_pack: [fill],
+      },
+      error: null,
+    }
     const res = await GET(req(`${base}?wallet=0xBD94CADE097E50AC`))
     expect(res.status).toBe(200)
     expect(state.lastWallet).toBe("0xbd94cade097e50ac")
     const body = await res.json()
     expect(body.players).toHaveLength(1)
-    expect(body.meta).toMatchObject({ wallet: "0xbd94cade097e50ac", shown: 1, total_players: 1332 })
+    expect(body.next_pack).toHaveLength(1)
+    expect(body.meta).toMatchObject({ wallet: "0xbd94cade097e50ac", shown: 1, total_players: 1323, players_with_fill: 1322, source: "get_topshot_trade_in_wallet" })
     expect(res.headers.get("Cache-Control")).toBe("no-store")
   })
 

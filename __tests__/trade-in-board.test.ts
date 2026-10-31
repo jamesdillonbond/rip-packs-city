@@ -5,6 +5,8 @@ import {
   cleanPlayerFilter,
   fetchTradeInBoard,
   fetchTradeInPortfolio,
+  fetchTradeInWallet,
+  normalizeFill,
   normalizePortfolioRow,
   normalizeTradeInRow,
   tradeInEditionHref,
@@ -102,5 +104,47 @@ describe("trade-in board — reads", () => {
     const r = await fetchTradeInPortfolio(m.db as unknown as TradeInBoardClient, "0xbd94cade097e50ac")
     expect(r.error).toBeNull()
     expect(r.data?.[0]).toMatchObject({ packs: 811, total_players: 1332 })
+  })
+
+  // 2026-10-31 (afternoon): the one-scan wallet read — players + the cheapest next pack per
+  // player. A fill without a price is dropped (never a $0 buy); a non-object answer is a
+  // failed read, never an empty wallet; a player with no fill keeps `fill: null`.
+  it("normalizeFill drops a fill that has nothing priced to buy", () => {
+    const fill = { player_name: "LeBron James", packs: 811, to_next_pack: "3.41", edition_id: "e2", external_id: "26:401", set_name: "Base Set", printing: "Standard", tier: "COMMON", series: 2, asp: "5.25", low_ask: "2.82", moments_needed: 1, cost: "2.82" }
+    expect(normalizeFill(fill)).toMatchObject({ player_name: "LeBron James", low_ask: 2.82, moments_needed: 1, cost: 2.82, asp: 5.25 })
+    expect(normalizeFill({ ...fill, low_ask: null })).toBeNull()
+    expect(normalizeFill({ ...fill, asp: 0 })).toBeNull()
+    expect(normalizeFill({ ...fill, moments_needed: 0 })).toBeNull()
+    expect(normalizeFill(null)).toBeNull()
+  })
+
+  it("fetchTradeInWallet reads players, next_pack and the whole-wallet counts in one call; a bad shape is an error", async () => {
+    const m = memorySupabase({})
+    const fill = { player_name: "LeBron James", packs: 811, to_next_pack: 3.41, edition_id: "e2", external_id: "26:401", set_name: "Base Set", printing: "Standard", tier: "COMMON", series: 2, asp: 5.25, low_ask: 2.82, moments_needed: 1, cost: 2.82 }
+    m.rpcs.get_topshot_trade_in_wallet = (args) => ({
+      data: {
+        wallet: "0xbd94cade097e50ac",
+        total_players: 1323,
+        players_with_fill: 1322,
+        players: [
+          { player_name: "LeBron James", moments: 92, moments_with_asp: 92, asp_total: 8116.59, packs: 811, to_next_pack: 3.41, fill },
+          { player_name: "Unlisted Guy", moments: 3, moments_with_asp: 2, asp_total: 1.2, packs: 0, to_next_pack: 8.8, fill: null },
+        ],
+        next_pack: [{ ...fill, player_name: "Jonathan Isaac", packs: 0, to_next_pack: 0.13, asp: 0.21, low_ask: 0.18, cost: 0.18, external_id: "218:8550" }, { ...fill, low_ask: null, cost: null }],
+      },
+      error: args.p_limit === 200 && args.p_wallet === "0xbd94cade097e50ac" ? null : { message: "wrong args" },
+    })
+    const r = await fetchTradeInWallet(m.db as unknown as TradeInBoardClient, "0xbd94cade097e50ac")
+    expect(r.error).toBeNull()
+    expect(r.data).toMatchObject({ total_players: 1323, players_with_fill: 1322 })
+    expect(r.data?.players[0]).toMatchObject({ packs: 811, total_players: 1323, fill: { external_id: "26:401", cost: 2.82 } })
+    expect(r.data?.players[1].fill).toBeNull()
+    // the unpriced fill is dropped from next_pack, never rendered as a $0 buy
+    expect(r.data?.next_pack.map((f) => f.player_name)).toEqual(["Jonathan Isaac"])
+
+    m.rpcs.get_topshot_trade_in_wallet = () => ({ data: [], error: null })
+    const bad = await fetchTradeInWallet(m.db as unknown as TradeInBoardClient, "0xbd94cade097e50ac")
+    expect(bad.data).toBeNull()
+    expect(bad.error).not.toBeNull()
   })
 })

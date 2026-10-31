@@ -6,7 +6,9 @@
 // (cheapest pack first, every player) immediately for crawlers, then refetches
 // /api/public/insights/trade-in when the reader types a player or switches sort.
 // The second arm, "what do my Moments count for", takes a Flow address and reads
-// the wallet's per-player trade-in value from the same route (?wallet=).
+// the wallet's per-player trade-in value from the same route (?wallet=), with the
+// cheapest listed way to each player's NEXT pack. `?player=` / `?wallet=` in the
+// page URL pre-run either arm (the player pages and the dashboard link in).
 //
 // FACTS only: Top Shot's own average sale price (what its trade-in counts) and
 // Top Shot's lowest ask. No FMV and no confidence (lib/insights/trade-in-board.ts).
@@ -17,6 +19,7 @@ import Link from "next/link"
 import {
   ASP_PER_PACK_USD,
   tradeInEditionHref,
+  type TradeInFill,
   type TradeInPortfolioRow,
   type TradeInRow,
   type TradeInSort,
@@ -50,7 +53,10 @@ type PortfolioState =
   | { kind: "idle" }
   | { kind: "loading" }
   | { kind: "error" }
-  | { kind: "ok"; wallet: string; players: TradeInPortfolioRow[]; total: number }
+  | { kind: "ok"; wallet: string; players: TradeInPortfolioRow[]; total: number; withFill: number; nextPack: TradeInFill[] }
+
+/** How many of the cheapest next packs render before "show all". */
+const NEXT_PACK_FOLD = 25
 
 export default function TradeInBoardClient({
   initialRows,
@@ -73,6 +79,7 @@ export default function TradeInBoardClient({
   const ctrlRef = useRef<AbortController | null>(null)
   const [wallet, setWallet] = useState("")
   const [portfolio, setPortfolio] = useState<PortfolioState>({ kind: "idle" })
+  const [showAllNext, setShowAllNext] = useState(false)
 
   // Loads run from the handlers, not from an effect: the server rows already answer
   // the default view, and each action knows exactly which view it asked for.
@@ -119,18 +126,56 @@ export default function TradeInBoardClient({
     load("", sort)
   }
 
+  function readWallet(w: string) {
+    setPortfolio({ kind: "loading" })
+    setShowAllNext(false)
+    fetchJson<{ players?: TradeInPortfolioRow[]; next_pack?: TradeInFill[]; meta?: { wallet?: string; total_players?: number; players_with_fill?: number } }>(
+      `/api/public/insights/trade-in?wallet=${encodeURIComponent(w)}`,
+    ).then((res) => {
+      if (!res.ok || !Array.isArray(res.json?.players)) return setPortfolio({ kind: "error" })
+      setPortfolio({
+        kind: "ok",
+        wallet: res.json.meta?.wallet ?? w,
+        players: res.json.players,
+        total: res.json.meta?.total_players ?? res.json.players.length,
+        withFill: res.json.meta?.players_with_fill ?? 0,
+        nextPack: Array.isArray(res.json.next_pack) ? res.json.next_pack : [],
+      })
+    })
+  }
   function readPortfolio(e: React.FormEvent) {
     e.preventDefault()
     const w = wallet.trim()
     if (!w) return
-    setPortfolio({ kind: "loading" })
-    fetchJson<{ players?: TradeInPortfolioRow[]; meta?: { wallet?: string; total_players?: number } }>(
-      `/api/public/insights/trade-in?wallet=${encodeURIComponent(w)}`,
-    ).then((res) => {
-      if (!res.ok || !Array.isArray(res.json?.players)) return setPortfolio({ kind: "error" })
-      setPortfolio({ kind: "ok", wallet: res.json.meta?.wallet ?? w, players: res.json.players, total: res.json.meta?.total_players ?? res.json.players.length })
-    })
+    readWallet(w)
   }
+  function findPlayer(name: string) {
+    setPlayer(name)
+    setApplied(name)
+    load(name, sort)
+    window.scrollTo({ top: 0, behavior: "smooth" })
+  }
+
+  // A link can land with ?player= (the player pages) or ?wallet= (the dashboard):
+  // run that arm once on mount. The server rows stay underneath until it answers.
+  useEffect(() => {
+    const sp = new URLSearchParams(window.location.search)
+    const p = sp.get("player")?.trim() ?? ""
+    const w = sp.get("wallet")?.trim() ?? ""
+    const t = setTimeout(() => {
+      if (p) {
+        setPlayer(p)
+        setApplied(p)
+        load(p, "cost")
+      }
+      if (w) {
+        setWallet(w)
+        readWallet(w)
+      }
+    }, 0)
+    return () => clearTimeout(t)
+    // mount only: the URL is read once, by design
+  }, [])
 
   const sortBlurb = SORTS.find((s) => s.key === sort)?.blurb ?? ""
 
@@ -235,7 +280,7 @@ export default function TradeInBoardClient({
         <h2 style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 22, textTransform: "uppercase", margin: "0 0 6px" }}>What do my Moments count for?</h2>
         <p style={{ color: "var(--rpc-text-secondary)", fontSize: 14, maxWidth: 760, margin: "0 0 10px", lineHeight: 1.5 }}>
           Paste a Top Shot wallet address. Per player: Top Shot&apos;s average sale price summed over the Moments RPC has indexed for it, whole
-          packs at ${ASP_PER_PACK_USD} each, and how much more would reach the next one.
+          packs at ${ASP_PER_PACK_USD} each, how much more would reach the next one &mdash; and the cheapest listed Moment of that player that gets there.
         </p>
         <form onSubmit={readPortfolio} style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
           <input value={wallet} onChange={(e) => setWallet(e.target.value)} placeholder="0x…" aria-label="Top Shot wallet address" className="rpc-mono" style={input} />
@@ -265,13 +310,14 @@ export default function TradeInBoardClient({
                     <th scope="col" style={{ ...th, textAlign: "right" }}>ASP total</th>
                     <th scope="col" style={{ ...th, textAlign: "right" }}>Packs</th>
                     <th scope="col" style={{ ...th, textAlign: "right" }}>To next pack</th>
+                    <th scope="col" style={th}>Cheapest way there</th>
                   </tr>
                 </thead>
                 <tbody>
                   {portfolio.players.map((p) => (
                     <tr key={p.player_name} style={{ borderTop: "1px solid var(--rpc-border)" }}>
                       <td style={td}>
-                        <button type="button" onClick={() => { setPlayer(p.player_name); setApplied(p.player_name); load(p.player_name, sort); window.scrollTo({ top: 0, behavior: "smooth" }) }} style={{ ...linkBtn }}>
+                        <button type="button" onClick={() => findPlayer(p.player_name)} style={{ ...linkBtn }}>
                           {p.player_name}
                         </button>
                       </td>
@@ -282,10 +328,51 @@ export default function TradeInBoardClient({
                       <td style={{ ...td, textAlign: "right", color: "var(--rpc-text-primary)", fontWeight: 700 }}>{fmtUsd(p.asp_total)}</td>
                       <td style={{ ...td, textAlign: "right", color: "var(--rpc-red-text)", fontWeight: 800 }}>{p.packs}</td>
                       <td style={{ ...td, textAlign: "right", color: "var(--rpc-text-muted)" }}>{fmtUsd(p.to_next_pack)}</td>
+                      <td style={td}>{p.fill ? <FillCell fill={p.fill} /> : <span style={{ color: "var(--rpc-text-muted)" }}>no priced listing right now</span>}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+              {portfolio.nextPack.length > 0 ? (
+                <div style={{ marginTop: 24 }}>
+                  <h3 style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 18, textTransform: "uppercase", margin: "0 0 4px" }}>Cheapest next packs</h3>
+                  <p style={{ fontSize: 12, color: "var(--rpc-text-muted)", margin: "0 0 8px" }}>
+                    Across every player in this wallet, the next pack that costs the least to reach at today&apos;s lowest asks.{" "}
+                    {portfolio.withFill < portfolio.total ? `${(portfolio.total - portfolio.withFill).toLocaleString("en-US")} of ${portfolio.total.toLocaleString("en-US")} players have no priced listing right now.` : ""}
+                  </p>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "var(--font-mono)", fontSize: 12 }}>
+                    <thead>
+                      <tr style={{ textAlign: "left", color: "var(--rpc-text-muted)", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                        <th scope="col" style={th}>Player</th>
+                        <th scope="col" style={{ ...th, textAlign: "right" }}>Packs now</th>
+                        <th scope="col" style={{ ...th, textAlign: "right" }}>Short by</th>
+                        <th scope="col" style={th}>Buy</th>
+                        <th scope="col" style={{ ...th, textAlign: "right" }}>Cost</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(showAllNext ? portfolio.nextPack : portfolio.nextPack.slice(0, NEXT_PACK_FOLD)).map((f) => (
+                        <tr key={`${f.player_name}:${f.edition_id}`} style={{ borderTop: "1px solid var(--rpc-border)" }}>
+                          <td style={td}>
+                            <button type="button" onClick={() => findPlayer(f.player_name)} style={{ ...linkBtn }}>
+                              {f.player_name}
+                            </button>
+                          </td>
+                          <td style={{ ...td, textAlign: "right", color: "var(--rpc-text-secondary)" }}>{f.packs}</td>
+                          <td style={{ ...td, textAlign: "right", color: "var(--rpc-text-muted)" }}>{fmtUsd(f.to_next_pack)}</td>
+                          <td style={td}><FillCell fill={f} /></td>
+                          <td style={{ ...td, textAlign: "right", color: "var(--rpc-red-text)", fontWeight: 800 }}>{fmtUsd(f.cost)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {portfolio.nextPack.length > NEXT_PACK_FOLD && !showAllNext ? (
+                    <button type="button" onClick={() => setShowAllNext(true)} style={{ ...chipBtn(false), marginTop: 10 }}>
+                      Show all {portfolio.nextPack.length}
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           )
         ) : null}
@@ -301,6 +388,28 @@ export default function TradeInBoardClient({
           : "Updated — (the read did not complete, so there is no data time to show)."}
       </p>
     </main>
+  )
+}
+
+/** One fill: "2 × $0.35 · Base Set · Series 5 · common" linking to the edition. More than one Moment = the next may cost more. */
+function FillCell({ fill }: { fill: TradeInFill }) {
+  return (
+    <div>
+      <Link href={tradeInEditionHref(fill.external_id)} style={{ color: "var(--rpc-text-primary)", textDecoration: "none", fontWeight: 600 }}>
+        {fill.moments_needed} × {fmtUsd(fill.low_ask)}
+      </Link>
+      <span style={{ color: "var(--rpc-text-secondary)" }}>
+        {" "}
+        · {fill.set_name ?? "—"}
+        {fill.series != null ? ` · ${shortSeriesLabel(fill.series, "nba-top-shot")}` : ""}
+      </span>
+      <div style={{ fontSize: 10, color: fill.printing === "Standard" ? "var(--rpc-text-muted)" : "var(--rpc-red-text)" }}>
+        {fill.printing}
+        {fill.tier ? ` · ${fill.tier.toLowerCase()}` : ""}
+        {` · ASP ${fmtUsd(fill.asp)} each`}
+        {fill.moments_needed > 1 ? " · one at this ask is confirmed, the next may cost more" : ""}
+      </div>
+    </div>
   )
 }
 

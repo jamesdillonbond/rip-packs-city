@@ -600,6 +600,17 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
                 <PlayerHubLink slug={slug} name={detail.name} />
               </Suspense>
             )}
+            {/* 2026-10-31: Top Shot's Series 2026-27 trade-in counts every $10 of THIS player's
+                Moments at Top Shot's ASP as a Top Shot This pack — link the public finder,
+                pre-filtered to the catalog name (the finder keys on editions.player_name). */}
+            {collection === "nba-top-shot" && (
+              <Link
+                href={`/insights/trade-in?player=${encodeURIComponent(detail.name)}`}
+                style={{ display: "inline-block", marginTop: 8, fontFamily: "var(--font-mono)", fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--rpc-red-text)", textDecoration: "none" }}
+              >
+                Top Shot This trade-in: cheapest {detail.name} pack →
+              </Link>
+            )}
           </div>
         </div>
       </section>
