@@ -372,3 +372,61 @@ describe("sniper-feed default board carries team names and the league's teams", 
     expect(body.teamApplied).toBeNull()
   })
 })
+
+// #219 (2026-10-30): ?league=WNBA keeps a WNBA team's moment that sits in a MIXED
+// set (the set rule alone called it NBA), reading the WNBA labels from the same
+// registries the team pick uses; a failed label read falls back to the set rule.
+describe("sniper-feed ?league= decides by the team label first", () => {
+  const MYSTICS = "Washington Mystics"
+  const MIXED_EDS = [
+    { id: "uuid-11-12", external_id: "11:12", set_id_onchain: 11, play_id_onchain: 12, team_name: MYSTICS, thumbnail_url: null },
+    { id: "uuid-13-14", external_id: "13:14", set_id_onchain: 13, play_id_onchain: 14, team_name: "Denver Nuggets", thumbnail_url: null },
+  ]
+  const mixedPool = [
+    ...Array.from({ length: 14 }, (_, i) => ({ ...listing(i, 11, 12), set_name: "Fresh Gems", player_name: "Shakira Austin" })),
+    ...Array.from({ length: 14 }, (_, i) => ({ ...listing(i, 13, 14), set_name: "Fresh Gems", player_name: "Jamal Murray" })),
+  ]
+  function mixedResolve() {
+    return (table: string, _ops: Op[]) => {
+      if (table === "editions") return { data: MIXED_EDS, error: null }
+      if (table === "ts_listings") return { data: mixedPool, error: null }
+      return { data: [], error: null }
+    }
+  }
+  beforeEach(() => {
+    priceAll(MIXED_EDS)
+    fx.rpc.get_teams_for_league = (args: { p_league: string }) => ({
+      data: args.p_league === "WNBA" ? [{ team_name: MYSTICS, has_moments: true }] : [{ team_name: "Denver Nuggets", has_moments: true }],
+      error: null,
+    })
+    fx.rpc.league_team_abbr = (args: { p_league: string }) => ({
+      data: args.p_league === "wnba" ? [{ team_name: "Houston Comets", abbr: "HOU" }] : [{ team_name: "Seattle SuperSonics", abbr: "OKC" }],
+      error: null,
+    })
+  })
+
+  it("league=WNBA keeps the Mystics' Fresh Gems moment and drops the Nuggets' one", async () => {
+    fx.resolve = mixedResolve()
+    const body = await (await GET(get("?collection=nba-top-shot&league=WNBA"))).json()
+    expect(body.degraded).toBe(false)
+    expect(body.deals.length).toBeGreaterThan(0)
+    for (const d of body.deals) expect(d.teamName).toBe(MYSTICS)
+    expect(fx.rpcCalls.some((c) => c.name === "league_team_abbr" && c.args?.p_league === "wnba")).toBe(true)
+  })
+
+  it("league=NBA is the complement: the Nuggets' moment only", async () => {
+    fx.resolve = mixedResolve()
+    const body = await (await GET(get("?collection=nba-top-shot&league=NBA"))).json()
+    expect(body.deals.length).toBeGreaterThan(0)
+    for (const d of body.deals) expect(d.teamName).toBe("Denver Nuggets")
+  })
+
+  it("a failed WNBA label read falls back to the set rule (the pre-#219 behaviour), never a narrowed board", async () => {
+    fx.resolve = mixedResolve()
+    fx.rpc.league_team_abbr = { data: null, error: { message: "boom" } }
+    const body = await (await GET(get("?collection=nba-top-shot&league=NBA"))).json()
+    // Set rule alone: "Fresh Gems" reads NBA for both teams, so BOTH survive league=NBA.
+    const teams = new Set(body.deals.map((d: { teamName: string }) => d.teamName))
+    expect(teams).toEqual(new Set([MYSTICS, "Denver Nuggets"]))
+  })
+})

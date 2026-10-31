@@ -10,7 +10,7 @@ import { applySerialFmvEstimates } from "@/lib/sniper/serial-estimate";
 import { TOPSHOT_SERIES_LABELS, topShotSeriesLabel } from "@/lib/sniper/series-label";
 import { feeNetDeal } from "@/lib/marketplace-fees";
 import { applyFmvStalenessPenalty, fmvCannotAnchorDiscount } from "@/lib/sniper/fmv-staleness";
-import { leagueForSetName } from "@/lib/league";
+import { leagueForEdition } from "@/lib/league";
 import { loadTopshotFmvGuard, guardTopshotFmv } from "@/lib/fmv-display-guard";
 // Pure listing/badge helpers live in a tested lib module.
 import {
@@ -579,6 +579,26 @@ async function readTeamPoolRows(
     String(b.ingested_at ?? "").localeCompare(String(a.ingested_at ?? "")) ||
     String(a.listing_id).localeCompare(String(b.listing_id)));
   return { rows: rows.slice(0, TS_POOL_LIMIT), teamByPair, error: null };
+}
+
+// The WNBA team labels (current names from teams_master, historic / all-star
+// labels from league_team_abbr) for the league filter's team-first rule (#219).
+// Enrichment: a failed read returns an EMPTY set, which leagueForEdition treats
+// as "no label knowledge" and falls back to the set rule.
+async function fetchWnbaTeamLabels(supabase: SupabaseClient): Promise<Set<string>> {
+  const [abbr, master] = await Promise.all([
+    boundedRead((supabase as any).rpc("league_team_abbr", { p_league: "wnba" }), "team-labels-wnba"),
+    boundedRead((supabase as any).rpc("get_teams_for_league", { p_league: "WNBA" }), "team-labels-WNBA"),
+  ]);
+  const labels = new Set<string>();
+  for (const { data, error } of [abbr, master]) {
+    if (error) {
+      console.error("[sniper-feed] WNBA team labels unavailable (league filter falls back to the set rule):", error.message);
+      return new Set();
+    }
+    for (const r of (data ?? []) as Array<{ team_name?: string | null }>) if (r.team_name) labels.add(r.team_name);
+  }
+  return labels;
 }
 
 // Every current team of the collection's leagues (Top Shot: NBA + WNBA; All
@@ -2608,11 +2628,17 @@ async function computeSniperFeed(opts: {
     }
   }
 
-  // 9. League filter (NBA / WNBA) — Top Shot only.
+  // 9. League filter (NBA / WNBA) — Top Shot only. #219 (2026-10-30): the deal's
+  // TEAM label decides first (the WNBA labels come from the same registries the
+  // team pick reads — current names + historic), then the set rule; a WNBA
+  // moment in a mixed set (Fresh Gems, Level Up…) is no longer filed under NBA.
+  // A failed label read falls back to the set rule and says so in the log —
+  // the previous behaviour, never a narrowed board presented as the league.
   if (opts.league) {
     const before = allDeals.length;
-    allDeals = allDeals.filter((d) => leagueForSetName(d.setName) === opts.league);
-    console.log(`[sniper-feed] league=${opts.league} filtered ${before} → ${allDeals.length}`);
+    const wnbaLabels = await fetchWnbaTeamLabels(supabase);
+    allDeals = allDeals.filter((d) => leagueForEdition(d.setName, d.teamName, wnbaLabels) === opts.league);
+    console.log(`[sniper-feed] league=${opts.league} filtered ${before} → ${allDeals.length} (wnba labels ${wnbaLabels.size})`);
   }
 
   // 10. Sort
