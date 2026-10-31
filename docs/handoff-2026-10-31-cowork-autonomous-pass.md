@@ -4,7 +4,7 @@
 
 > ⚠ Every environment note in this file is specific to **this cloud session**. Trevor's machine and Claude Code push normally via Git Credential Manager. **Commit these files as usual.**
 
-**Verdict: GREEN · 4 shipped (2 DB + code, 1 code, 1 data write) · 1 closed (#217) · 1 opened + half-fixed (#219) · idle: none · oldest routed: Flowty console-row deletion (Trevor, 1 night).**
+**Verdict: GREEN · 4 shipped (2 DB + code, 1 code, 1 data write) + 8:10 AM PT: emails sent, Flowty console rows deleted · 1 closed (#217) · 1 opened + half-fixed (#219; the DB half is committed and one `apply_migration` from done) · idle: none.**
 
 ---
 
@@ -30,10 +30,10 @@ Docs: ledger (3 entries), session log, focus.md (three steers), routes-and-surfa
 - **#218 pack book:** still frozen (TS 10-29 8:08 AM PT, AD 6:28 AM PT); the "feed stalled" notice is correct.
 - **panini_deal_board cache-warm timeouts (carried watch):** 0 failed `panini-public-deals` runs in 72 h (24/24, 24/24, 19/19 per day). Stays a watch per the 10-27 ledger (pgss unreset since 08-12, so no mean is quoted).
 
-## Queued for Trevor / Claude Code
-1. **[P2, Trevor, 1 night] Send the shipped emails** — `/admin/feedback` → "Send the shipped emails" (five webz_80 rows, notes describe the live site; the deploy is READY, so any time).
-2. **[P3, Claude Code, 1 night] #219 other half** — `wallet_moments_cache.league` is written by `upsert_wallet_moments` (pinned RPC) from the set-name list; it needs the same team-label OR (SQL side: `league_team_abbr('wnba')` + `teams_master`) plus a one-off re-stamp of the ~110 mixed-set WNBA rows. Three-file change (pin + migration + drift-guard row).
-3. **[P3, Trevor, 2 nights] Flowty cron-job.org rows** — the two disabled entries (7485187, 7487343) can be deleted from the console (Delete is refused for a cloud session).
+## Queued for Trevor / Claude Code — UPDATED 8:10 AM PT (Trevor: "Do as much of this as you can yourself")
+1. ✅ **Shipped emails SENT** 7:43 AM PT from `/admin/feedback` in Trevor's Chrome — "Emailed 1 reader about 5 items"; `shipped_notified_at` set on all five rows.
+2. ✅ **Flowty cron-job.org rows DELETED** (7485187, 7487343) from each job's Actions menu in Trevor's Chrome; the `/jobs` list confirms.
+3. 🟠 **[P2, ONE `apply_migration`, any session whose MCP writes go through] #219 wmc half** — written, verified, **not applied**: `supabase/migrations/20261031150000_audit_20261031_upsert_wallet_moments_league_team_label_or.sql` (committed). Apply it verbatim (`apply_migration`, name `audit_20261031_upsert_wallet_moments_league_team_label_or`; rename the file if the recorded version differs), then `git mv supabase/tests/pending/upsert_wallet_moments.sql supabase/tests/upsert_wallet_moments.sql`, repoint the `upsert_wallet_moments` row in `__tests__/db-invariants-drift-guard.test.ts` to that migration, delete the pin's PENDING banner, run the DB suite + the drift guard, commit. This cloud session's writes were refused (confirmation auto-cancelled ×3; classifier denied the `execute_sql` DDL) — live prosrc is unchanged and still equals the committed pin. The re-stamp inside the migration fixes **719** rows (13 WNBA franchises), not ~110.
 4. **[P3, Claude Code, re-read 11-05] #213** — All Day ≤ 50 serial-cap scope, ship if it still wins both halves on ≥ 60 moved sales.
 5. **[watch, 11-03] Panini 1.4.0 next paired read** (`scripts/panini-fmv-paired-read.sql`, cutoff unchanged).
 
