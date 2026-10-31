@@ -412,27 +412,40 @@ test.describe("mobile layout at 320px", () => {
           }
           return false
         }
-        let widest: { tag: string; cls: string; right: number } | null = null
+        // 2026-10-31: a `position:fixed; left:0; right:0` bar (the mobile nav) only
+        // MIRRORS a widened viewport — it ends at 322px because something else
+        // forced innerWidth to 322, and naming it hides the culprit (one CI red
+        // named `nav.rpc-mobile-nav` while the nav was 4×80 = 320 wide). Skip
+        // such bars and list the three widest offenders, with text, so a red
+        // run names the element to fix.
+        const mirrorsViewport = (el: Element) => {
+          const s = getComputedStyle(el)
+          return (s.position === "fixed" || s.position === "sticky") && s.left === "0px" && s.right === "0px"
+        }
+        const offenders: { tag: string; cls: string; right: number; text: string }[] = []
         for (const el of Array.from(document.querySelectorAll("body *"))) {
           const b = el.getBoundingClientRect()
           if (b.width === 0 || b.height === 0) continue
           if (b.right <= vw + 1) continue
           if (contained(el)) continue
-          if (!widest || b.right > widest.right) {
-            widest = {
-              tag: el.tagName.toLowerCase(),
-              cls: String((el as HTMLElement).className || "").slice(0, 60),
-              right: Math.round(b.right),
-            }
-          }
+          if (mirrorsViewport(el)) continue
+          offenders.push({
+            tag: el.tagName.toLowerCase(),
+            cls: String((el as HTMLElement).className || "").slice(0, 60),
+            right: Math.round(b.right * 10) / 10,
+            text: (el.textContent || "").trim().replace(/\s+/g, " ").slice(0, 40),
+          })
         }
-        return { overflow: de.scrollWidth - de.clientWidth, widest }
+        offenders.sort((a, b) => b.right - a.right)
+        return { overflow: de.scrollWidth - de.clientWidth, innerWidth: window.innerWidth, widest: offenders.slice(0, 3) }
       }, NARROW.width)
 
       expect(
         overflow,
-        `${path} overflows by ${overflow}px at 320` +
-          (widest ? ` — widest uncontained box: <${widest.tag} class="${widest.cls}"> ends at ${widest.right}px` : ""),
+        `${path} overflows by ${overflow}px at 320 (innerWidth ${innerWidth})` +
+          (widest.length
+            ? ` — widest uncontained boxes: ${widest.map((w) => `<${w.tag} class="${w.cls}"> ends at ${w.right}px "${w.text}"`).join("; ")}`
+            : " — no uncontained element beyond the viewport (a bare scrollWidth excess)"),
       ).toBe(0)
     })
   }
