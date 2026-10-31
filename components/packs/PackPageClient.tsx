@@ -531,13 +531,16 @@ export default function PackPageClient({ collection, tiers, title, accent = 'var
             aria-label="Search packs"
             className="rounded-lg border border-[color:var(--rpc-border)] bg-[color:var(--rpc-surface-raised)] px-3 py-1.5 text-sm text-[color:var(--rpc-text-primary)] outline-none placeholder:text-[color:var(--rpc-text-muted)] flex-1 min-w-[200px]"
           />
-          <div className="flex items-center gap-2 ml-auto">
+          {/* min-w-0 / max-w-full on both: a <select>'s intrinsic width is its longest
+              option and a flex item never shrinks below it, so this row widened a 320px
+              phone's layout viewport to 335px (measured 10-31 on /nba-top-shot/packs). */}
+          <div className="flex items-center gap-2 ml-auto min-w-0 max-w-full">
             <span className="text-[10px] uppercase tracking-wide text-[color:var(--rpc-text-muted)]">Sort</span>
             <select
               value={sort}
               onChange={(e) => setSort(e.target.value as SortKey)}
               aria-label="Sort packs"
-              className="rounded-lg border border-[color:var(--rpc-border)] bg-[color:var(--rpc-surface-raised)] px-2 py-1.5 text-xs text-[color:var(--rpc-text-primary)] outline-none"
+              className="min-w-0 max-w-full rounded-lg border border-[color:var(--rpc-border)] bg-[color:var(--rpc-surface-raised)] px-2 py-1.5 text-xs text-[color:var(--rpc-text-primary)] outline-none"
             >
               {SORT_OPTIONS.map(({ key, label }) => (
                 <option key={key} value={key}>{label}</option>

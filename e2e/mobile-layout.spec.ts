@@ -61,6 +61,13 @@ const ROUTES = [
   // before being pinned here. The same rule was then applied to the nine sibling
   // boards that copy the sort control.
   "/insights/squeeze",
+  // 2026-10-31 (28bdf49): the same select rule on allday-scarcity (347) and
+  // pinnacle-scarcity (355); rookie-board's nowrap player meta (331); pack-drops'
+  // unwrapped odds table (322). Each measured 320/320 on that deployed build first.
+  "/insights/allday-scarcity",
+  "/insights/pinnacle-scarcity",
+  "/insights/rookie-board",
+  "/insights/pack-drops",
 ]
 
 test.describe("mobile layout", () => {
