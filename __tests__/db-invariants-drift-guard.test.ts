@@ -995,7 +995,16 @@ const PINS = [
     // plan inverted the join — seq-scanning editions and probing wmc per
     // edition, 73,414 buffers against 1,175 (register #113). The SQL is
     // character-identical apart from the parameters becoming $1/$2.
-    migration: "supabase/migrations/20260925165425_audit_20260925_snapshot_five_spliced_functions_so_their_pins_can_be_repointed.sql",
+    // Re-pointed 2026-10-31 (#219): the fill also writes `league` for Top Shot
+    // rows via topshot_league_for (603k NULLs since 05-09 — the writer that
+    // actually runs, not upsert_wallet_moments).
+    migration: "supabase/migrations/20261031191751_audit_20261031_wmc_metadata_fill_writes_league.sql",
+  },
+  {
+    // Added 2026-10-31 (#219): the ONE SQL home of the Top Shot NBA/WNBA rule.
+    fn: "topshot_league_for",
+    test: "supabase/tests/topshot_league_for.sql",
+    migration: "supabase/migrations/20261031191751_audit_20261031_wmc_metadata_fill_writes_league.sql",
   },
   {
     fn: "update_badge_low_ask_from_cached_listings",

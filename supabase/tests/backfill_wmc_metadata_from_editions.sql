@@ -28,6 +28,8 @@ CREATE TABLE public.editions (
   team_name         text,
   series            smallint   -- 2026-09-25: the body fills wmc.series_number from it
 );
+CREATE TABLE public.teams_master (team_name text, league text);
+INSERT INTO public.teams_master VALUES ('New York Liberty','WNBA'), ('Denver Nuggets','NBA');
 CREATE TABLE public.wallet_moments_cache (
   wallet_address text,
   collection_id  uuid,
@@ -37,8 +39,31 @@ CREATE TABLE public.wallet_moments_cache (
   set_name       text,
   mint_count     integer,
   team_name      text,
-  series_number  integer
+  series_number  integer,
+  league         text       -- 2026-10-31 (#219): the body fills it for Top Shot via topshot_league_for
 );
+
+-- Dependency of the body under test (its own rule is pinned in topshot_league_for.sql).
+-- >>> BEGIN verbatim topshot_league_for (keep byte-identical to the migration) >>>
+CREATE OR REPLACE FUNCTION public.topshot_league_for(p_set_name text, p_team_name text)
+ RETURNS text
+ LANGUAGE sql
+ STABLE
+AS $function$
+  SELECT CASE
+    WHEN p_set_name IS NULL THEN NULL
+    WHEN p_set_name ILIKE '%WNBA%'
+      OR p_set_name = ANY (ARRAY['Rise With Us','Rise With Us 2023','In Her Bag','In Their Bag','Shining Stars','Chasing the Trophy','For the Cup'])
+      THEN 'WNBA'
+    WHEN p_team_name IS NOT NULL AND (
+         p_team_name IN (SELECT tm.team_name FROM public.teams_master tm WHERE tm.league = 'WNBA')
+      OR p_team_name = ANY (ARRAY['San Antonio Stars','San Antonio Silver Stars','Utah Starzz','Detroit Shock','Tulsa Shock','Orlando Miracle','Houston Comets','Sacramento Monarchs','Charlotte Sting','Cleveland Rockers','Miami Sol','Team Wilson','Team Stewart']))
+      THEN 'WNBA'
+    ELSE 'NBA'
+  END
+$function$;
+-- <<< END verbatim topshot_league_for <<<
+
 
 -- >>> BEGIN verbatim backfill_wmc_metadata_from_editions (byte-identical to the migration/prod) >>>
 CREATE OR REPLACE FUNCTION public.backfill_wmc_metadata_from_editions(p_wallet_address text DEFAULT NULL::text, p_collection_id uuid DEFAULT NULL::uuid)
@@ -64,7 +89,13 @@ BEGIN
            mint_count  = COALESCE(wmc.mint_count,  e.circulation_count),
            team_name   = COALESCE(wmc.team_name,   e.team_name),
            -- 2026-09-24: series was the one column this fill skipped (940k NULLs).
-           series_number = COALESCE(wmc.series_number, e.series::int)
+           series_number = COALESCE(wmc.series_number, e.series::int),
+           -- 2026-10-31 (#219): league was the next one (603k Top Shot NULLs). Top
+           -- Shot only; the rule lives in topshot_league_for; NULL stays NULL
+           -- when the edition has no set (never fabricated).
+           league      = COALESCE(wmc.league,
+                           CASE WHEN wmc.collection_id = '95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid
+                                THEN public.topshot_league_for(e.set_name, e.team_name) END)
       FROM public.editions e
      WHERE e.collection_id = wmc.collection_id
        AND e.external_id   = wmc.edition_key
@@ -78,7 +109,9 @@ BEGIN
          (wmc.set_name    IS NULL AND e.set_name IS NOT NULL) OR
          (wmc.mint_count  IS NULL AND e.circulation_count IS NOT NULL) OR
          (wmc.team_name   IS NULL AND e.team_name IS NOT NULL) OR
-         (wmc.series_number IS NULL AND e.series IS NOT NULL)
+         (wmc.series_number IS NULL AND e.series IS NOT NULL) OR
+         (wmc.league IS NULL AND e.set_name IS NOT NULL
+            AND wmc.collection_id = '95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid)
        )
        AND ($1 IS NULL OR wmc.wallet_address = $1)
        AND ($2 IS NULL OR wmc.collection_id  = $2)
@@ -102,13 +135,16 @@ INSERT INTO public.editions (collection_id, external_id, tier, player_name, set_
   (:ts::uuid, 'E2', 'RARE',      NULL,         'Set B',  50, 'Team Y'),  -- no player → team fallback
   (:ts::uuid, 'E3', 'RARE',      'Someone',    'Set C',  20, NULL);      -- no team → cannot fill a NULL team_name
 
-INSERT INTO public.wallet_moments_cache (wallet_address, collection_id, edition_key, tier, player_name, set_name, mint_count, team_name) VALUES
-  ('0xW1', :ts::uuid, 'E1', NULL,      NULL,      NULL,   NULL, NULL),      -- all filled
-  ('0xW1', :ts::uuid, 'E1', 'EXISTING','Keep Me', NULL,   NULL, NULL),      -- keeps tier+player, fills rest
-  ('0xW1', :ts::uuid, 'E2', NULL,      NULL,      NULL,   NULL, NULL),      -- player falls back to team
-  ('0xW1', :ts::uuid, 'E1', 'X',       'Y',       'Z',    9,    'T'),       -- fully populated → skipped
-  ('0xW1', :ts::uuid, 'NOMATCH', NULL, NULL,      NULL,   NULL, NULL),      -- no edition → skipped
-  ('0xW2', :ts::uuid, 'E3', 'RARE',    'Someone', 'Set C', 20,   NULL);      -- only team_name NULL, edition has none → NOT rewritten (2026-08-30)
+-- 2026-10-31: league is a filled column now, so the rows whose property is "nothing
+-- left to fill" carry one explicitly — otherwise the league arm would (correctly)
+-- make them fillable and the assertions below would stop exercising their property.
+INSERT INTO public.wallet_moments_cache (wallet_address, collection_id, edition_key, tier, player_name, set_name, mint_count, team_name, league) VALUES
+  ('0xW1', :ts::uuid, 'E1', NULL,      NULL,      NULL,   NULL, NULL, NULL),      -- all filled (league too)
+  ('0xW1', :ts::uuid, 'E1', 'EXISTING','Keep Me', NULL,   NULL, NULL, 'NBA'),     -- keeps tier+player, fills rest
+  ('0xW1', :ts::uuid, 'E2', NULL,      NULL,      NULL,   NULL, NULL, 'NBA'),     -- player falls back to team
+  ('0xW1', :ts::uuid, 'E1', 'X',       'Y',       'Z',    9,    'T',  'NBA'),     -- fully populated → skipped
+  ('0xW1', :ts::uuid, 'NOMATCH', NULL, NULL,      NULL,   NULL, NULL, NULL),      -- no edition → skipped
+  ('0xW2', :ts::uuid, 'E3', 'RARE',    'Someone', 'Set C', 20,   NULL, 'NBA');     -- only team_name NULL, edition has none → NOT rewritten (2026-08-30)
 
 -- ── Count: three rows have a fillable NULL and a matching edition ────────────
 SELECT _assert_eq(public.backfill_wmc_metadata_from_editions()::text, '3',
@@ -127,8 +163,8 @@ SELECT _assert_eq((SELECT xmax::text FROM public.wallet_moments_cache WHERE wall
 -- Inserted AFTER the global call above so its count stays 3.
 INSERT INTO public.editions (collection_id, external_id, tier, player_name, set_name, circulation_count, team_name, series) VALUES
   (:ts::uuid, 'E4', 'COMMON', 'Four', 'Set D', 10, 'Team Z', 2);
-INSERT INTO public.wallet_moments_cache (wallet_address, collection_id, edition_key, tier, player_name, set_name, mint_count, team_name, series_number) VALUES
-  ('0xW3', :ts::uuid, 'E4', 'COMMON', 'Four', 'Set D', 10, 'Team Z', NULL);
+INSERT INTO public.wallet_moments_cache (wallet_address, collection_id, edition_key, tier, player_name, set_name, mint_count, team_name, series_number, league) VALUES
+  ('0xW3', :ts::uuid, 'E4', 'COMMON', 'Four', 'Set D', 10, 'Team Z', NULL, 'NBA');
 SELECT _assert_eq(public.backfill_wmc_metadata_from_editions('0xW3')::text, '1',
   'a row missing ONLY its series is fillable and counted');
 SELECT _assert_eq((SELECT series_number::text FROM public.wallet_moments_cache WHERE wallet_address='0xW3'), '2',
@@ -138,6 +174,8 @@ SELECT _assert_eq((SELECT series_number::text FROM public.wallet_moments_cache W
 SELECT _assert_eq((SELECT tier||'|'||player_name||'|'||set_name||'|'||mint_count::text||'|'||team_name
   FROM public.wallet_moments_cache WHERE edition_key='E1' AND player_name='Player One'),
   'LEGENDARY|Player One|Set A|100|Team X', 'all five fields denormalized from the edition');
+SELECT _assert_eq((SELECT league FROM public.wallet_moments_cache WHERE edition_key='E1' AND player_name='Player One'),
+  'NBA', '2026-10-31: and league, from the set/team rule (Set A / Team X → NBA)');
 
 -- ── Row 2: COALESCE preserves the existing tier + player, fills the rest ─────
 SELECT _assert_eq((SELECT tier||'|'||player_name||'|'||set_name FROM public.wallet_moments_cache
@@ -147,6 +185,37 @@ SELECT _assert_eq((SELECT tier||'|'||player_name||'|'||set_name FROM public.wall
 -- ── Row 3: player_name falls back to team when the edition has no player ─────
 SELECT _assert_eq((SELECT player_name FROM public.wallet_moments_cache WHERE edition_key='E2'),
   'Team Y', 'a team-only edition surfaces its team as the display name (fallback)');
+
+-- ── 2026-10-31 (#219): league was the next column the fill skipped (603k TS NULLs) ─
+-- Inserted AFTER the global call above so its count stays 3. A Liberty edition in a
+-- MIXED set (the team arm), an NBA edition, an All Day edition (league has no meaning
+-- there — must stay NULL and must NOT be counted), and a Top Shot edition with no set
+-- (nothing to derive from — NULL stays NULL, not counted).
+INSERT INTO public.editions (collection_id, external_id, tier, player_name, set_name, circulation_count, team_name, series) VALUES
+  (:ts::uuid, 'E5', 'RARE',   'Five',  'Vintage Vibes', 10, 'New York Liberty', 8),
+  (:ts::uuid, 'E6', 'COMMON', 'Six',   'Base Set',      10, 'Denver Nuggets',   8),
+  (:ad::uuid, 'E7', 'COMMON', 'Seven', 'Base Set',      10, 'Denver Broncos',   1),
+  (:ts::uuid, 'E8', 'COMMON', 'Eight', NULL,            10, 'New York Liberty', 8);
+INSERT INTO public.wallet_moments_cache (wallet_address, collection_id, edition_key, tier, player_name, set_name, mint_count, team_name, series_number, league) VALUES
+  ('0xW4', :ts::uuid, 'E5', 'RARE',   'Five',  'Vintage Vibes', 10, 'New York Liberty', 8, NULL),
+  ('0xW4', :ts::uuid, 'E6', 'COMMON', 'Six',   'Base Set',      10, 'Denver Nuggets',   8, NULL),
+  ('0xW4', :ts::uuid, 'E6', 'COMMON', 'Six',   'Base Set',      10, 'Denver Nuggets',   8, 'WNBA'),  -- a captured league is never overwritten
+  ('0xW4', :ad::uuid, 'E7', 'COMMON', 'Seven', 'Base Set',      10, 'Denver Broncos',   1, NULL),
+  ('0xW4', :ts::uuid, 'E8', 'COMMON', 'Eight', NULL,            10, 'New York Liberty', 8, NULL);
+SELECT _assert_eq(public.backfill_wmc_metadata_from_editions('0xW4')::text, '2',
+  'exactly the two Top Shot rows with a NULL league and an edition that has a set are fillable and counted');
+SELECT _assert_eq((SELECT league FROM public.wallet_moments_cache WHERE wallet_address='0xW4' AND edition_key='E5'),
+  'WNBA', 'a WNBA team label in a MIXED set → WNBA (the team arm, not the set name)');
+SELECT _assert_eq((SELECT string_agg(COALESCE(league,'<null>'), ',' ORDER BY league) FROM public.wallet_moments_cache WHERE wallet_address='0xW4' AND edition_key='E6'),
+  'NBA,WNBA', 'the NULL E6 row became NBA; the captured-WNBA E6 row is untouched');
+SELECT _assert_eq((SELECT count(*)::text FROM public.wallet_moments_cache WHERE wallet_address='0xW4' AND edition_key='E6' AND league='WNBA'),
+  '1', 'a captured league survives (COALESCE never overwrites)');
+SELECT _assert_eq((SELECT COALESCE(league,'<null>') FROM public.wallet_moments_cache WHERE wallet_address='0xW4' AND edition_key='E7'),
+  '<null>', 'an All Day row keeps league NULL — the rule is Top Shot only');
+SELECT _assert_eq((SELECT COALESCE(league,'<null>') FROM public.wallet_moments_cache WHERE wallet_address='0xW4' AND edition_key='E8'),
+  '<null>', 'a Top Shot edition with no set yields no league — never fabricated');
+SELECT _assert_eq(public.backfill_wmc_metadata_from_editions('0xW4')::text, '0',
+  'a second pass finds nothing left to fill (the All Day and no-set rows are not phantom counts)');
 
 SELECT '✓ backfill_wmc_metadata_from_editions invariants pass' AS result;
 ROLLBACK;
