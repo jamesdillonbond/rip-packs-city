@@ -715,7 +715,12 @@ export default function PackTable({
                   <AvailabilityBadge row={r} />
                 </div>
               </div>
-              <div className="text-right flex-shrink-0">
+              {/* flex-col: the chips below are inline-blocks and used to FLOW on one
+                  line, so a pack carrying "reality-adjusted" + "🔥 258/12" + "27 remain"
+                  made this block 183 px (209 px with CI's emoji font) and widened a
+                  320 px phone's layout viewport to 322 (E2E DOM Smoke, 2026-10-31).
+                  Stacked, the widest line is one chip. */}
+              <div className="text-right flex-shrink-0 flex flex-col items-end max-w-[55%]">
                 <div className={`text-xl font-black tabular-nums ${marginClass(r.evMarginPct, r.poolDepletionPct)}`}>{fmtPct(r.evMarginPct)}</div>
                 <div className="text-[10px] uppercase tracking-wide text-[color:var(--rpc-text-muted)]">EV margin</div>
                 {r.calibrationApplied && (
