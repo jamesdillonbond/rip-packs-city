@@ -20,7 +20,7 @@ import { NextRequest, NextResponse, after } from "next/server"
 import { getCurrentUser } from "@/lib/auth/supabase-server"
 import { anonTelemetryAllowed } from "@/lib/abuse/anon-rate"
 import { supabaseAdmin } from "@/lib/supabase"
-import { automatedReason } from "@/lib/telemetry/automated"
+import { automatedReason, automatedStackReason } from "@/lib/telemetry/automated"
 
 export const dynamic = "force-dynamic"
 
@@ -96,7 +96,8 @@ export async function POST(req: NextRequest) {
 
   let metadata = safeMetadata(body.metadata)
   const ua = typeof req.headers?.get === "function" ? req.headers.get("user-agent") : null
-  const automatedBy = automatedReason(ua) ?? (metadata?.webdriver === true ? "webdriver" : null)
+  const automatedBy =
+    automatedReason(ua) ?? (metadata?.webdriver === true ? "webdriver" : null) ?? automatedStackReason(metadata?.stack)
   if (metadata) { delete metadata.automated; delete metadata.automated_by }
   if (automatedBy) metadata = { ...(metadata ?? {}), automated: true, automated_by: automatedBy }
 

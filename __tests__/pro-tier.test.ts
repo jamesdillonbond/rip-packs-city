@@ -21,6 +21,7 @@ import {
   isProUser,
   checkFeatureQuota,
   recordFeatureUsage,
+  userQuotaKey,
 } from "@/lib/pro-tier"
 
 const WALLET = "0xbd94cade097e50ac"
@@ -130,3 +131,34 @@ describe("recordFeatureUsage", () => {
     warn.mockRestore()
   })
 })
+
+// 2026-10-31: a signed-in account with no wallet had no per-user concierge quota (every
+// account since open signup). It is keyed `user:<auth uuid>` — the key telemetry already writes.
+describe("user quota key", () => {
+  const UID = "32699860-fa10-485f-a859-45c67ac401fe"
+  it("builds user:<uuid> for a real auth id and refuses anything else", () => {
+    expect(userQuotaKey(UID)).toBe(`user:${UID}`)
+    expect(userQuotaKey(UID.toUpperCase())).toBe(`user:${UID}`)
+    for (const bad of [null, undefined, "", "jamesdillonbond", "0xbd94cade097e50ac", `${UID}x`]) expect(userQuotaKey(bad)).toBeNull()
+  })
+  it("checkFeatureQuota counts against the user key, not the anonymous sentinel", async () => {
+    const spy = vi.fn(async () => ({ data: { allowed: true, plan: "free", used_today: 3, daily_limit: 40, remaining: 37, reason: "within_quota" }, error: null }))
+    state.rpc = spy
+    const r = await checkFeatureQuota(`user:${UID}`, "concierge_messages")
+    expect(r.used_today).toBe(3)
+    expect(spy).toHaveBeenCalledWith("check_feature_quota", { p_wallet: `user:${UID}`, p_feature: "concierge_messages" })
+  })
+  it("recordFeatureUsage writes under the user key", async () => {
+    const spy = vi.fn(async () => ({ data: "id", error: null }))
+    state.rpc = spy
+    await recordFeatureUsage(`user:${UID}`, "concierge_messages")
+    expect(spy).toHaveBeenCalledWith("record_feature_usage", expect.objectContaining({ p_wallet: `user:${UID}` }))
+  })
+  it("CONTROL: a forged user key with a non-uuid tail still probes the anonymous sentinel", async () => {
+    const spy = vi.fn(async () => ({ data: { allowed: false, plan: "free", used_today: 0, daily_limit: 0, remaining: 0, reason: "x" }, error: null }))
+    state.rpc = spy
+    await checkFeatureQuota("user:jamesdillonbond", "concierge_messages")
+    expect(spy).toHaveBeenCalledWith("check_feature_quota", { p_wallet: "0x0000000000000000", p_feature: "concierge_messages" })
+  })
+})
+

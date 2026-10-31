@@ -345,6 +345,28 @@ describe("concierge — get_ecosystem_stat + get_insight_board enum maps", () =>
     await POST(post("most squeezed all day sets"))
     expect(f.calls.find((c) => c.url.includes("/set-squeeze"))!.url).toContain("collection=nfl-all-day")
   })
+  // 2026-10-31: webz_80 (10-27) asked for one player's most-squeezed editions above 10 circulation, then by top-5
+  // hold %; the tool could not pass the board's own filters, so the concierge said it could not filter by player.
+  it("board=squeeze forwards player, mint floor/cap, league and sort to the board route", async () => {
+    const f = stubFetch([jsonRoute("/api/public/insights/squeeze", { rows: [{ x: 1 }] })])
+    script("get_insight_board", { board: "squeeze", player: "Ausar Thompson", minCirculation: 11, maxCirculation: 500, minSqueeze: 0, league: "nba", sort: "concentration" })
+    await POST(post("ausar thompson squeeze"))
+    const u = new URL(f.calls.find((c) => c.url.includes("/squeeze"))!.url, "https://x")
+    expect(u.searchParams.get("player")).toBe("Ausar Thompson")
+    expect(u.searchParams.get("min_circulation")).toBe("11")
+    expect(u.searchParams.get("max_circulation")).toBe("500")
+    expect(u.searchParams.get("min_squeeze")).toBe("0")
+    expect(u.searchParams.get("league")).toBe("NBA")
+    expect(u.searchParams.get("sort")).toBe("concentration")
+  })
+  it("board=squeeze filters stay off other boards and ride beside the All Day leg", async () => {
+    const f = stubFetch([jsonRoute("/api/public/insights/squeeze", { rows: [{ x: 1 }] }), jsonRoute("/api/public/insights/trophies", { rows: [{ x: 1 }] })])
+    script("get_insight_board", { board: "squeeze", collectionId: "nfl-all-day", player: "Josh Allen" })
+    await POST(post("josh allen squeeze all day"))
+    const u = new URL(f.calls.find((c) => c.url.includes("/squeeze"))!.url, "https://x")
+    expect(u.searchParams.get("collection")).toBe("nfl-all-day")
+    expect(u.searchParams.get("player")).toBe("Josh Allen")
+  })
   // 10-27 review: the tool's schema had no collectionId, so on an /insights page (no page collection) an
   // All Day question could not reach All Day's leg; and a collection with no squeeze board got Top Shot's.
   it("get_insight_board's schema offers collectionId (the only way an /insights page reaches All Day's leg)", async () => {

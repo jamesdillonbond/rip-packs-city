@@ -39,10 +39,34 @@ export interface SearchResultWithSlug extends SearchResult {
 
 const NOT_HUBBED = new Set(["disney-pinnacle"])
 
+function nameKey(s: string): string {
+  return s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()
+}
+
+// 2026-10-31: All Day's team-level Moments carry the TEAM as `player_name`, so
+// "detroit" ranked a "Detroit Lions" PLAYER row above every team row and Enter
+// opened /players/detroit-lions → /nfl-all-day/player/detroit-lions. webz_80,
+// looking for the Pistons, landed there on 10-24. A player row whose name (or
+// collection+slug) is a TEAM row in the same results is that team, not a person:
+// drop it; the team row (whose hub carries those Moments) stays.
+function teamShadows(rows: SearchResultWithSlug[]): (r: SearchResultWithSlug) => boolean {
+  const names = new Set<string>()
+  const pairs = new Set<string>()
+  for (const r of rows) {
+    if (r.kind !== "team") continue
+    names.add(nameKey(r.label))
+    if (r.slug) pairs.add(`${r.collectionId}|${r.slug}`)
+  }
+  return (r) => r.kind === "player" && !NOT_HUBBED.has(r.collection) && (names.has(nameKey(r.label)) || pairs.has(`${r.collectionId}|${r.slug}`))
+}
+
 export function mergePlayerHubHits(rows: SearchResultWithSlug[]): SearchResult[] {
   const out: SearchResult[] = []
   const bySlug = new Map<string, SearchResult>()
-  for (const { slug, collectionId, ...r } of rows) {
+  const isTeamShadow = teamShadows(rows)
+  for (const row of rows) {
+    if (isTeamShadow(row)) continue
+    const { slug, collectionId, ...r } = row
     if (r.kind !== "player" || NOT_HUBBED.has(r.collection) || !slug) {
       out.push(r)
       continue

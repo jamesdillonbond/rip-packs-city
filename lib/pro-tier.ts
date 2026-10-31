@@ -17,6 +17,9 @@
 
 import { supabaseAdmin } from "@/lib/supabase"
 import { normalizeFlowAddressStrict } from "@/lib/address"
+import { USER_QUOTA_KEY_RE, userQuotaKey } from "@/lib/user-quota-key"
+
+export { userQuotaKey }
 
 export type UserPlan =
   | "free"
@@ -46,7 +49,12 @@ export interface QuotaResult {
 }
 
 // The `0x` is REQUIRED here, as it always was: lib/address.ts normalizeFlowAddressStrict.
-const normalizeWallet = normalizeFlowAddressStrict
+// 2026-10-31: a signed-in account with no wallet is keyed `user:<auth uuid>` (lib/user-quota-key.ts).
+// Without it every account since open signup (no allow_list wallet) had no per-user concierge quota.
+function normalizeWallet(v: string | null | undefined): string | null {
+  if (typeof v === "string" && USER_QUOTA_KEY_RE.test(v.trim())) return v.trim().toLowerCase()
+  return normalizeFlowAddressStrict(v)
+}
 
 export async function getUserPlan(walletAddress: string | null | undefined): Promise<UserPlan> {
   const wallet = normalizeWallet(walletAddress)

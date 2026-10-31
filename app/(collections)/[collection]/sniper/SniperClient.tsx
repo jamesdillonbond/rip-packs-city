@@ -74,6 +74,7 @@ import { sniperTierTabs } from "@/lib/collection-tiers";
 import { ownLookup } from "@/lib/safe-lookup";
 import { accentText, textSafeChip } from "@/lib/accent-text"
 import { useModalA11y } from "@/lib/hooks/useModalA11y"
+import SniperAlertNudge from "@/components/sniper/SniperAlertNudge"
 import { loadSniperFilters, saveSniperFilters, urlHasSniperFilters, sniperAlertHref } from "@/lib/sniper/saved-filters"
 
 // ─── Main page ────────────────────────────────────────────────────────────────
@@ -247,11 +248,14 @@ function SniperMomentsBody() {
   // "applied a filter" — 128 of 148 events on 10-31 were default-state mounts
   // from distinct sessions. A page load is a page-view, which is already tracked.
   const filterBeaconArmed = useRef(false);
+  // Real (post-mount) filter changes this tab — feeds the alert nudge (2026-10-31).
+  const [filterChanges, setFilterChanges] = useState(0);
   useEffect(() => {
     if (!filterBeaconArmed.current) {
       filterBeaconArmed.current = true;
       return;
     }
+    setFilterChanges((n) => n + 1);
     track("sniper-filter-applied", {
       tier: tierTab,
       sort: sortBy,
@@ -961,6 +965,11 @@ function SniperMomentsBody() {
     }
   }, [loading, data, error, feedDegraded, sourcesFailed, visibleDeals.length, collectionSlug, feedKey, ownerKey, tierTab, sortBy, minDiscount, maxPrice, serialFilter, badgeOnly, flowWalletOnly, search, showVerifiedOnly, ownedFilter, playerFilter]);
 
+  const sniperAlert = sniperAlertHref({
+    collectionUuid: ownLookup(COLLECTION_UUID_BY_SLUG, collectionSlug) ?? null,
+    tier: tierTab, tierIsVariant: isPinnacle, player: playerFilter, team: teamFilter, maxPrice, minDiscount,
+  });
+
   return (
     <div className="rpc-binder-bg" style={{ minHeight: "100vh", background: "var(--rpc-black)", color: "var(--rpc-text-primary)", overflowX: "hidden" }}>
       {/* ── Header ── */}
@@ -1065,11 +1074,10 @@ function SniperMomentsBody() {
             <MarketplaceStatusBanner collectionSlug={collectionSlug} />
           </div>
 
+          <SniperAlertNudge alertHref={sniperAlert} changes={filterChanges} />
+
           <SniperFilterBar
-            alertHref={sniperAlertHref({
-              collectionUuid: ownLookup(COLLECTION_UUID_BY_SLUG, collectionSlug) ?? null,
-              tier: tierTab, tierIsVariant: isPinnacle, player: playerFilter, team: teamFilter, maxPrice, minDiscount,
-            })}
+            alertHref={sniperAlert}
             isMobile={isMobile}
             isPinnacle={isPinnacle}
             isAllDay={isAllDay}

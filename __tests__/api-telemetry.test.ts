@@ -291,6 +291,20 @@ describe("POST /api/telemetry", () => {
       expect(state.insert.metadata.automated_by).toBe("webdriver")
     })
 
+    // 2026-10-31: 8 /insights/first-mint client_errors on 10-28 came from a driver with a spoofed
+    // browser UA; only the stack (`eval at evaluate (`, Puppeteer/Playwright page.evaluate) told.
+    it("tags a client_error whose stack runs through a driver's page.evaluate, even under a browser UA", async () => {
+      await post(req({ feature: "client_error", metadata: { path: "/insights/first-mint",
+        stack: "EvalError: Refused to evaluate a string as JavaScript\n    at eval (<anonymous>)\n    at predicate (eval at evaluate (:234:30), <anonymous>:11:37)" } }))
+      expect(state.insert.metadata.automated).toBe(true)
+      expect(state.insert.metadata.automated_by).toBe("page-evaluate")
+    })
+
+    it("CONTROL: an ordinary client_error stack from our bundle stays untagged", async () => {
+      await post(req({ feature: "client_error", metadata: { path: "/", stack: "TypeError: x is undefined\n    at Board (https://www.rippackscity.com/_next/static/chunks/app.js:1:200)" } }))
+      expect(state.insert.metadata.automated).toBeUndefined()
+    })
+
     it("a client cannot claim to be human: its own `automated` key is discarded", async () => {
       await post(req({ feature: "page-view", metadata: { automated: false, automated_by: "x" } }, false, "Lightpanda/1.0"))
       expect(state.insert.metadata).toEqual({ automated: true, automated_by: "lightpanda" })

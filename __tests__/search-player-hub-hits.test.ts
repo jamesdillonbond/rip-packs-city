@@ -79,3 +79,28 @@ describe("mergePlayerHubHits", () => {
     expect(out[0].editionCount).toBe(42)
   })
 })
+
+// 2026-10-31: All Day team-level Moments name the TEAM as the player. "detroit" ranked a
+// "Detroit Lions" PLAYER row first, so Enter opened a player page for a team (webz_80, 10-24).
+describe("mergePlayerHubHits — a team-named player row", () => {
+  const ALLDAY = "dee28451-5d62-409e-a1ad-a83f763ac070"
+  const lions = (kind: string) =>
+    row({ kind, label: "Detroit Lions", slug: "detroit-lions", collection: "nfl-all-day", collectionName: "NFL All Day", collectionId: ALLDAY, href: `/nfl-all-day/${kind}/detroit-lions` })
+
+  it("is dropped when the same results carry that team, so Enter never opens /players/<team>", () => {
+    const out = mergePlayerHubHits([lions("player"), lions("team"), row({ kind: "team", label: "Detroit Pistons", slug: "detroit-pistons" })])
+    expect(out.map((r) => r.kind)).toEqual(["team", "team"])
+    expect(out.some((r) => r.href.startsWith("/players/"))).toBe(false)
+  })
+  it("is dropped on a name match even when the team row sits in another collection", () => {
+    const out = mergePlayerHubHits([lions("player"), row({ kind: "team", label: "Detroit Lions", slug: "lions", collectionId: "other" })])
+    expect(out.some((r) => r.kind === "player")).toBe(false)
+  })
+  it("CONTROL: a real player row survives beside unrelated team rows", () => {
+    const out = mergePlayerHubHits([row({}), lions("team")])
+    expect(out[0]).toMatchObject({ kind: "player", href: "/players/damian-lillard" })
+  })
+  it("CONTROL: with no team row in the results the player row is kept (nothing to say it is a team)", () => {
+    expect(mergePlayerHubHits([lions("player")])[0].href).toBe("/players/detroit-lions")
+  })
+})

@@ -32,6 +32,33 @@ export function firstAlertState(
   return momentRows.length === 0 && subRows.length === 0 ? "show" : "hide"
 }
 
+// 2026-10-31: blaise_27 was shown this card 4 times across 2 days and never acted.
+// A card that repeats on every dashboard load turns into wallpaper. It now shows
+// on at most FIRST_ALERT_MAX_SHOWS loads per browser and has a "Not now".
+export const FIRST_ALERT_MAX_SHOWS = 3
+const SHOWS_KEY = "rpc_first_alert_shows"
+
+export function firstAlertCapped(shows: number): boolean {
+  return shows >= FIRST_ALERT_MAX_SHOWS
+}
+
+function readShows(): number {
+  try {
+    const n = Number(localStorage.getItem(SHOWS_KEY) ?? "0")
+    return Number.isFinite(n) && n > 0 ? n : 0
+  } catch {
+    return 0
+  }
+}
+
+function writeShows(n: number): void {
+  try {
+    localStorage.setItem(SHOWS_KEY, String(n))
+  } catch {
+    /* storage unavailable: the card simply is not capped in this browser */
+  }
+}
+
 export default function FirstAlertPrompt() {
   const [state, setState] = useState<FirstAlertState>("unknown")
 
@@ -42,7 +69,12 @@ export default function FirstAlertPrompt() {
       fetchJson<unknown>("/api/alerts/subscriptions", { cache: "no-store" }),
     ]).then(([moment, subs]) => {
       if (!active) return
-      const next = firstAlertState(moment, subs)
+      let next = firstAlertState(moment, subs)
+      if (next === "show") {
+        const shows = readShows()
+        if (firstAlertCapped(shows)) next = "hide"
+        else writeShows(shows + 1)
+      }
       setState(next)
       if (next === "show") track("first-alert-prompt-shown", { surface: "dashboard" })
     })
@@ -75,6 +107,18 @@ export default function FirstAlertPrompt() {
       >
         Create an alert →
       </Link>
+      <button
+        type="button"
+        className="rpc-chip"
+        aria-label="Hide the alert suggestion"
+        onClick={() => {
+          writeShows(FIRST_ALERT_MAX_SHOWS)
+          setState("hide")
+          track("first-alert-prompt-dismissed", { surface: "dashboard" })
+        }}
+      >
+        Not now
+      </button>
     </section>
   )
 }

@@ -28,3 +28,15 @@ export function automatedReason(ua: string | null | undefined): string | null {
   const m = AUTOMATED_UA.exec(ua)
   return m ? m[0].toLowerCase() : null
 }
+
+// 2026-10-31: a spoofed-UA headless driver still betrays itself when ITS injected
+// script throws — the stack frame reads `eval at evaluate (` (Puppeteer/Playwright
+// `page.evaluate`). 8 /insights/first-mint client_errors on 10-28 alternated an
+// iPhone and a Mac UA inside one minute, every stack through `evaluate`, all blocked
+// by our CSP (no unsafe-eval). Our bundle never calls eval, so this frame cannot
+// come from RPC code.
+const DRIVER_STACK = /\beval at evaluate \(/
+
+export function automatedStackReason(stack: unknown): string | null {
+  return typeof stack === "string" && DRIVER_STACK.test(stack) ? "page-evaluate" : null
+}

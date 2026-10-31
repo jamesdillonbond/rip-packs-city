@@ -40,6 +40,7 @@ import {
 } from "@/lib/concierge/fmv-distribution";
 import { fetchEditionFmvEstimate, estimateForModel } from "@/lib/fmv/edition-estimate";
 import { checkFeatureQuota, recordFeatureUsage } from "@/lib/pro-tier";
+import { userQuotaKey } from "@/lib/user-quota-key";
 import {
   GREETING_RE,
   classifyAnthropicError,
@@ -779,6 +780,13 @@ const TOOLS: Anthropic.Tool[] = [
         board: { type: "string", enum: ["squeeze", "set_squeeze", "set_completers", "trophies", "pinnacle_scarcity", "allday_scarcity", "topshot_pack_market", "allday_pack_market", "pack_reality", "allday_pack_reality", "market", "rookie_board", "panini_squeeze", "panini_pack_market", "panini_premiums", "candy_mlb", "pack_drops"], description: "Which public insight board to read. Required." },
         limit: { type: "number", description: "Max rows, 1..50, default 20." },
         collectionId: { type: "string", description: "squeeze / set_squeeze only: 'nfl-all-day' for an NFL All Day question, 'nba-top-shot' (or omit) for Top Shot. Pass it whenever the question names All Day — the page alone often carries no collection. Any other collection has no squeeze board." },
+        player: { type: "string", description: "squeeze only: one player's editions (the board's own typed player filter). ALWAYS pass it when the question names a player — without it the board returns the ecosystem's top rows and a player's editions are usually absent." },
+        team: { type: "string", description: "squeeze only: one team (resolved to the franchise, historic labels included)." },
+        minCirculation: { type: "number", description: "squeeze only: keep editions whose circulation (copies minted; the board's 'Min Mint') is at least this — e.g. 11 for 'more than 10'." },
+        maxCirculation: { type: "number", description: "squeeze only: keep editions whose circulation is at most this (the board's 'Trophy-Circ' cap)." },
+        minSqueeze: { type: "number", description: "squeeze only: minimum squeeze % (default 50). Pass 0 for a player's full list." },
+        league: { type: "string", description: "squeeze only, Top Shot: 'NBA' or 'WNBA'." },
+        sort: { type: "string", enum: ["squeeze", "circulation", "fmv", "buyable", "concentration"], description: "squeeze only: row order; 'concentration' = top-5 holder share (Top-5 hold %), descending." },
       },
       required: ["board"],
     },
@@ -5272,7 +5280,21 @@ async function executeToolInner(
       trophyLeg = `?collection=${db}`;
     }
     const squeezeLeg = (isSqueeze || isMarket) && isAllDaySlug(effectiveCollectionId) ? "?collection=nfl-all-day" : trophyLeg;
-    return fetchPublicInsight(base, `/api/public/insights/${path}${squeezeLeg}`, limit);
+    // 2026-10-31: the squeeze board's own filters (player, team, mint floor/cap, league, sort) were unreachable
+    // from here — webz_80 asked (10-27) for Ausar Thompson's top-5 hold % above 10 circulation and the concierge
+    // could only say its tool cannot filter by player. They pass through to the same public route the page uses.
+    const qs = new URLSearchParams(squeezeLeg ? squeezeLeg.slice(1) : "");
+    if (path === "squeeze") {
+      const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim().slice(0, 80) : null);
+      const num = (v: unknown) => (v == null || v === "" || !Number.isFinite(Number(v)) || Number(v) < 0 ? null : String(Math.trunc(Number(v))));
+      for (const [k, v] of [["player", str(toolInput.player)], ["team", str(toolInput.team)], ["league", str(toolInput.league)?.toUpperCase() ?? null],
+        ["sort", str(toolInput.sort)], ["min_circulation", num(toolInput.minCirculation)], ["max_circulation", num(toolInput.maxCirculation)],
+        ["min_squeeze", num(toolInput.minSqueeze)]] as const) {
+        if (v != null) qs.set(k, v);
+      }
+    }
+    const q = qs.toString();
+    return fetchPublicInsight(base, `/api/public/insights/${path}${q ? `?${q}` : ""}`, limit);
   }
 
   // ── Catalog search (names AND descriptive prose) ──────────────────────────
@@ -6597,7 +6619,11 @@ export async function POST(req: NextRequest) {
     // user; fail-OPEN on any error so a limiter hiccup never blocks a legitimate one.
     // State is durable in public.concierge_ip_rate (RLS-on, service_role-only);
     // bump_concierge_ip_rate() is SECURITY DEFINER + revoked from anon/authenticated.
-    if (!userWallet && !trustedBot) {
+    // 2026-10-31: a signed-in account with no wallet (every account since open signup)
+    // now has its own daily quota keyed `user:<uuid>` (lib/pro-tier.ts userQuotaKey), so
+    // it no longer shares the anonymous per-IP and global budgets with logged-out traffic.
+    const quotaKey = userWallet ?? userQuotaKey(identity.userId);
+    if (!quotaKey && !trustedBot) {
       const clientIp = (req.headers.get("x-forwarded-for") || "").split(",")[0].trim();
       if (clientIp) {
         try {
@@ -6651,8 +6677,8 @@ export async function POST(req: NextRequest) {
     // founding+admin unlimited. Anonymous users (no wallet) bypass the quota
     // and rely on the per-session rate limit above. Recording happens in
     // after() so failures don't block response delivery.
-    if (userWallet) {
-      const quota = await checkFeatureQuota(userWallet, "concierge_messages");
+    if (quotaKey) {
+      const quota = await checkFeatureQuota(quotaKey, "concierge_messages");
       if (!quota.allowed) {
         return NextResponse.json(
           {
@@ -6671,7 +6697,7 @@ export async function POST(req: NextRequest) {
       // Quota passed — record usage in the background so every return path
       // below (greeting, streaming, normal response, escalation) increments
       // the daily counter exactly once.
-      after(() => recordFeatureUsage(userWallet, "concierge_messages", { session_id: sessionId }));
+      after(() => recordFeatureUsage(quotaKey, "concierge_messages", { session_id: sessionId, ...(isSmokeTest ? { automated: true, automated_by: "concierge-smoke" } : {}) }));
     }
 
     if (GREETING_RE.test(message)) {
@@ -7198,7 +7224,8 @@ export async function POST(req: NextRequest) {
               wallet_address: userWallet ?? (userId ? `user:${userId}` : "anon"),
               user_id: userId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId) ? userId : null,
               feature_name: "concierge_prompt_cache",
-              metadata: { read: cacheRead, write: cacheWrite, iterations: iterationTraces.length, smoke: isSmokeTest },
+              // `automated` is what user_activity.is_automated reads (2026-10-31): smoke rows read as human until then.
+              metadata: { read: cacheRead, write: cacheWrite, iterations: iterationTraces.length, smoke: isSmokeTest, ...(isSmokeTest ? { automated: true, automated_by: "concierge-smoke" } : {}) },
             });
           } catch { /* telemetry must never break a reply */ }
         }

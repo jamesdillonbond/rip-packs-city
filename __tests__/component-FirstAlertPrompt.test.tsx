@@ -4,7 +4,7 @@
 // alerts. That claim is only true when BOTH alert reads answered and both were
 // empty — a failed read is "we don't know", never "none" (honesty canon).
 import { describe, it, expect, afterEach, vi } from "vitest"
-import { render, cleanup, waitFor } from "@testing-library/react"
+import { render, cleanup, waitFor, fireEvent } from "@testing-library/react"
 
 vi.mock("@/lib/telemetry/track", () => ({ track: vi.fn() }))
 
@@ -13,9 +13,12 @@ vi.mock("@/lib/analytics/fetch-json", () => ({
   fetchJson: (url: string) => Promise.resolve(responses[url.split("?")[0]]),
 }))
 
-import FirstAlertPrompt, { firstAlertState } from "@/components/alerts/FirstAlertPrompt"
+import FirstAlertPrompt, { firstAlertState, FIRST_ALERT_MAX_SHOWS } from "@/components/alerts/FirstAlertPrompt"
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  localStorage.clear()
+})
 
 const ok = (json: unknown) => ({ ok: true, json })
 const failed = { ok: false, json: null }
@@ -50,6 +53,33 @@ describe("FirstAlertPrompt", () => {
   it("renders nothing when the alerts read failed", async () => {
     responses["/api/alerts"] = failed
     responses["/api/alerts/subscriptions"] = ok({ subscriptions: [] })
+    const { container } = render(<FirstAlertPrompt />)
+    await new Promise((r) => setTimeout(r, 20))
+    expect(container.querySelector("[data-rpc-first-alert]")).toBeNull()
+  })
+
+  // 2026-10-31: blaise_27 saw the card 4 times in 2 days without acting — it became wallpaper.
+  it(`stops showing after ${FIRST_ALERT_MAX_SHOWS} dashboard loads in a browser`, async () => {
+    responses["/api/alerts"] = ok([])
+    responses["/api/alerts/subscriptions"] = ok({ subscriptions: [] })
+    for (let i = 0; i < FIRST_ALERT_MAX_SHOWS; i++) {
+      const { container } = render(<FirstAlertPrompt />)
+      await waitFor(() => expect(container.querySelector("[data-rpc-first-alert]")).toBeTruthy())
+      cleanup()
+    }
+    const { container } = render(<FirstAlertPrompt />)
+    await new Promise((r) => setTimeout(r, 20))
+    expect(container.querySelector("[data-rpc-first-alert]")).toBeNull()
+  })
+
+  it("'Not now' hides it now and on the next load", async () => {
+    responses["/api/alerts"] = ok([])
+    responses["/api/alerts/subscriptions"] = ok({ subscriptions: [] })
+    const first = render(<FirstAlertPrompt />)
+    await waitFor(() => expect(first.container.querySelector("[data-rpc-first-alert]")).toBeTruthy())
+    fireEvent.click(first.getByRole("button", { name: /hide the alert suggestion/i }))
+    expect(first.container.querySelector("[data-rpc-first-alert]")).toBeNull()
+    cleanup()
     const { container } = render(<FirstAlertPrompt />)
     await new Promise((r) => setTimeout(r, 20))
     expect(container.querySelector("[data-rpc-first-alert]")).toBeNull()

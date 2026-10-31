@@ -16,6 +16,8 @@ const A = vi.hoisted(() => ({
   createCalls: [] as Array<{ messages: Array<{ role: string; content: unknown }> }>,
   sb: null as unknown,
   authedEmail: null as string | null,
+  authedId: "user-1",
+  quotaKeys: [] as string[],
   quota: { allowed: true, plan: "pro", daily_limit: 200, used_today: 0 } as Record<string, unknown>,
 }))
 
@@ -28,13 +30,16 @@ vi.mock("@/lib/auth/supabase-server", () => ({
     auth: {
       getUser: async () =>
         A.authedEmail
-          ? { data: { user: { id: "user-1", email: A.authedEmail } }, error: null }
+          ? { data: { user: { id: A.authedId, email: A.authedEmail } }, error: null }
           : { data: { user: null }, error: null },
     },
   }),
 }))
 vi.mock("@/lib/pro-tier", () => ({
-  checkFeatureQuota: async () => A.quota,
+  checkFeatureQuota: async (key: string) => {
+    A.quotaKeys.push(key)
+    return A.quota
+  },
   recordFeatureUsage: async () => {},
 }))
 vi.mock("@supabase/supabase-js", () => ({
@@ -90,6 +95,8 @@ beforeEach(() => {
   install({})
   A.createCalls.length = 0
   A.authedEmail = null
+  A.authedId = "user-1"
+  A.quotaKeys.length = 0
   A.quota = { allowed: true, plan: "pro", daily_limit: 200, used_today: 0 }
 })
 afterEach(() => {
@@ -144,6 +151,20 @@ describe("concierge lifecycle — daily quota gate", () => {
     expect(body.upgrade_url).toBeUndefined()
     expect(JSON.stringify(body)).not.toMatch(/upgrade|pricing|\bpro\b|plan/i)
     // Gated before the model loop.
+    expect(A.createCalls.length).toBe(0)
+  })
+
+  // 2026-10-31: every account since open signup has no allow_list wallet, so signed-in users
+  // had NO per-user quota and shared the anonymous budgets. They are metered as user:<uuid>.
+  it("meters a signed-in account with no wallet under user:<auth id> and enforces its cap", async () => {
+    A.authedEmail = "new@example.com"
+    A.authedId = "32699860-fa10-485f-a859-45c67ac401fe"
+    install({ allow_list: { data: null, error: null } })
+    A.quota = { allowed: false, plan: "free", daily_limit: 40, used_today: 40 }
+    const res = await POST(post("what's the FMV of the Dame base"))
+    expect(res.status).toBe(429)
+    expect((await res.json()).error).toBe("daily_limit_reached")
+    expect(A.quotaKeys).toEqual(["user:32699860-fa10-485f-a859-45c67ac401fe"])
     expect(A.createCalls.length).toBe(0)
   })
 
