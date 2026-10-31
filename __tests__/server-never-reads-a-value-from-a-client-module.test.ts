@@ -1,6 +1,10 @@
 import { describe, it, expect } from "vitest"
 import { readdirSync, readFileSync } from "node:fs"
-import { dirname, join } from "node:path"
+// ⚠ posix, not node:path: on Windows `join` emits backslashes, so neither the
+// walked keys nor a resolved relative import ever matched a client file and the
+// ban passed vacuously on a Windows checkout (the planted test caught it 10-31).
+import { posix } from "node:path"
+const { dirname, join } = posix
 import { stripComments } from "../scripts/lib/strip-comments.mjs"
 
 // A module without "use client" that imports a NON-COMPONENT value (a string,

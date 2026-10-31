@@ -233,21 +233,70 @@ describe("wallet-search — request dispatch", () => {
 
 describe("wallet-search — league filter", () => {
   it("intersects the on-chain ids with the wmc league rows", async () => {
-    install(baseFixtures({ wallet_moments_cache: { data: [{ moment_id: "101" }], error: null } }))
+    install(
+      baseFixtures({
+        wallet_moments_cache: {
+          data: [{ moment_id: "101", league: "NBA" }, { moment_id: "102", league: "WNBA" }],
+          error: null,
+        },
+      }),
+    )
     const body = await (await POST(post({ input: WALLET, league: "NBA" }))).json()
     expect(body.summary.totalMoments).toBe(1)
     expect(body.rows.map((r: { momentId: string }) => r.momentId)).toEqual(["101"])
   })
 
+  // 2026-10-31: the walk read only `league = <pill>` rows, so an owned moment
+  // with NO classified wmc row (a never-walked wallet; this route caches only the
+  // page it served) was dropped, and a first search answered "0 NBA moments".
+  // Absence of a row is not membership of the other league.
+  it("does not answer 0 for a wallet whose owned moments have no classified wmc row", async () => {
+    install(baseFixtures({ wallet_moments_cache: { data: [], error: null } }))
+    const body = await (await POST(post({ input: WALLET, league: "NBA" }))).json()
+    expect(body.summary.totalMoments).not.toBe(0)
+    expect(body.summary.totalMoments).toBe(2) // unfiltered, like a read error
+  })
+
+  it("skips the filter when even ONE owned moment is unclassified (never a partial-filtered wallet)", async () => {
+    install(baseFixtures({ wallet_moments_cache: { data: [{ moment_id: "101", league: "WNBA" }], error: null } }))
+    const body = await (await POST(post({ input: WALLET, league: "NBA" }))).json()
+    expect(body.summary.totalMoments).toBe(2)
+  })
+
+  it("still filters to 0 when every owned moment is classified into the OTHER league — the control", async () => {
+    // Without this the two tests above would pass just as well if the filter
+    // had been switched off entirely.
+    install(
+      baseFixtures({
+        wallet_moments_cache: {
+          data: [{ moment_id: "101", league: "WNBA" }, { moment_id: "102", league: "WNBA" }],
+          error: null,
+        },
+      }),
+    )
+    const body = await (await POST(post({ input: WALLET, league: "NBA" }))).json()
+    expect(body.summary.totalMoments).toBe(0)
+  })
+
+  it("runs the metadata fill for the wallet after caching its rows, so they get a league", async () => {
+    const spy = install(baseFixtures({ "rpc:backfill_wmc_metadata_from_editions": { data: 2, error: null } }))
+    await POST(post({ input: WALLET }))
+    await flush()
+    await flush()
+    const calls = spy.rpcCalls.filter((c) => c.name === "backfill_wmc_metadata_from_editions")
+    expect(calls).toHaveLength(1)
+    expect(calls[0].args).toEqual({ p_wallet_address: WALLET, p_collection_id: TS_UUID })
+  })
+
   it("pages past the PostgREST 1000-row clamp instead of truncating the allowed set", async () => {
     // A full first page forces a second .range() window; without paging the
     // second page's moment would be filtered out of a wallet that owns it.
-    const page1 = Array.from({ length: 1000 }, (_, i) => ({ moment_id: String(900000 + i) }))
+    const page1 = Array.from({ length: 1000 }, (_, i) => ({ moment_id: String(900000 + i), league: "NBA" }))
     const spy = install(
       baseFixtures({
         wallet_moments_cache: [
           { data: page1, error: null },
-          { data: [{ moment_id: "102" }], error: null },
+          { data: [{ moment_id: "101", league: "WNBA" }, { moment_id: "102", league: "NBA" }], error: null },
           { data: [], error: null },
         ],
       }),

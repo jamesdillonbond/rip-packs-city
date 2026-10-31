@@ -1149,6 +1149,18 @@ async function upsertWalletMomentsCache(wallet: string, rows: WalletRow[]) {
       `[wallet-search] Cached ${written}/${resolvedRows.length + unresolvedRows.length} moments for ${resolvedAddress} (${resolvedRows.length} with edition_key)` +
         (failedChunks ? ` — ${failedChunks} chunk(s) failed: ${firstError}` : ""),
     )
+    // The same NULL-only post-pass every backfill walk runs. Without it a row
+    // this route inserts for a never-walked wallet carries no league / team /
+    // tier until some walk reaches that wallet (2026-10-31: one such row was
+    // the only NULL-league Top Shot row in wmc, an hour after the #219 backfill
+    // drained the other 603k).
+    if (written > 0) {
+      const { error: fillErr } = await (supabaseAdmin as any).rpc("backfill_wmc_metadata_from_editions", {
+        p_wallet_address: resolvedAddress,
+        p_collection_id: tsCollectionId,
+      })
+      if (fillErr) console.warn(`[wallet-search] metadata fill failed: ${fillErr.message}`)
+    }
   } catch (err) {
     console.warn("[wallet-search] Cache upsert failed:", err instanceof Error ? err.message : String(err))
   }
@@ -1477,10 +1489,20 @@ export async function POST(req: NextRequest) {
     // via `topshot_league_for`) — NOT by this route's upsert, which has only
     // written keys + serials since 2026-05 (#219: 603k rows sat NULL for five
     // months and this filter dropped every one of them under either pill). A
-    // row whose edition has no set_name stays NULL and is dropped from the
-    // filtered view (the "all" view always includes it). Skipped entirely when
-    // the wmc lookup errors so a transient DB blip doesn't show a false-empty
+    // row whose edition has no set_name stays NULL. Skipped entirely when the
+    // wmc lookup errors so a transient DB blip doesn't show a false-empty
     // wallet.
+    //
+    // ⛔ ABSENCE OF A LEAGUE ROW IS NOT "NOT IN THIS LEAGUE" (2026-10-31). The
+    // walk read only `league = <pill>` rows, so an owned moment with NO wmc row
+    // (a wallet no backfill has walked — this route caches only the page it
+    // served) or a NULL league was silently dropped: a first-time search of a
+    // never-walked wallet answered "0 NBA moments". The walk now reads every
+    // CLASSIFIED row (either league) and filters only when every owned id is
+    // classified; any unclassified owned id skips the filter (show all), the
+    // same policy as a read error. Measured that day: 1 of 1,623,615 Top Shot
+    // wmc rows had a NULL league, so the skip is reached only by genuinely
+    // unwalked wallets, not by the by-design NULLs.
     if (effectiveLeague) {
       try {
         const tsCollectionId = await getCollectionId()
@@ -1491,7 +1513,7 @@ export async function POST(req: NextRequest) {
           // drop the overflow from the `allowed` set and hide moments the user
           // actually owns. On any page error, abandon the filter entirely (show
           // all) so a transient DB blip never renders a false-empty wallet.
-          const allowed = new Set<string>()
+          const leagueById = new Map<string, string>()
           const PAGE = 1000
           let leagueErr: { message?: string } | null = null
           // ⚠ The 60,000 ceiling is a runaway guard, not a size: the largest Top
@@ -1502,22 +1524,30 @@ export async function POST(req: NextRequest) {
           for (let from = 0; from < 60000; from += PAGE) {
             const { data: leagueIds, error } = await (supabaseAdmin as any)
               .from("wallet_moments_cache")
-              .select("moment_id")
+              .select("moment_id, league")
               .eq("wallet_address", walletAddr)
               .eq("collection_id", tsCollectionId)
-              .eq("league", effectiveLeague)
+              .not("league", "is", null)
               .order("moment_id", { ascending: true })
               .range(from, from + PAGE - 1)
             if (error) { leagueErr = error; break }
-            const pageRows: Array<{ moment_id: unknown }> = Array.isArray(leagueIds) ? leagueIds : []
-            for (const r of pageRows) allowed.add(String(r.moment_id))
+            const pageRows: Array<{ moment_id: unknown; league: unknown }> = Array.isArray(leagueIds) ? leagueIds : []
+            for (const r of pageRows) {
+              if (typeof r.league === "string" && r.league) leagueById.set(String(r.moment_id), r.league)
+            }
             if (pageRows.length < PAGE) { leagueComplete = true; break }
           }
           if (!leagueErr && !leagueComplete) {
-            leagueErr = { message: `league set exceeded the ${allowed.size}-row read ceiling; filter skipped` }
+            leagueErr = { message: `league set exceeded the ${leagueById.size}-row read ceiling; filter skipped` }
           }
           if (!leagueErr) {
-            ids = ids.filter((id) => allowed.has(String(id)))
+            const unclassified = ids.filter((id) => !leagueById.has(String(id))).length
+            if (unclassified > 0) {
+              leagueErr = { message: `${unclassified}/${ids.length} owned moments have no classified wmc row; filter skipped` }
+            }
+          }
+          if (!leagueErr) {
+            ids = ids.filter((id) => leagueById.get(String(id)) === effectiveLeague)
           } else {
             console.warn("[wallet-search] league filter wmc lookup failed:", leagueErr.message)
           }
