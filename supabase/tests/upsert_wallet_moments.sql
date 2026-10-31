@@ -1,15 +1,18 @@
 -- DB invariant: public.upsert_wallet_moments(text,uuid,jsonb) — the wmc ownership
 -- writer a wallet-sync calls with a wallet's CURRENT moments. Pinned properties:
 -- the wallet address is lowercased; Top Shot moments are league-classified
--- (WNBA set-name / curated list → 'WNBA', else 'NBA'; non-Top-Shot → NULL); a
--- re-upsert of the same moment refreshes fmv but COALESCEs name/image/metadata
--- (never nulls them out); and — the subtle one — "sync = replace": after upserting
--- the payload it REAPS this wallet+collection's rows older than 5 minutes, so a
--- moment no longer held disappears while the payload's rows (stamped NOW) survive
--- and OTHER wallets are never touched.
+-- (the edition's TEAM label — teams_master WNBA + historic labels, resolved
+-- through `editions` by the payload's edition_key — OR a WNBA set-name / curated
+-- list → 'WNBA', else 'NBA'; an unknown edition falls back to the set rule;
+-- non-Top-Shot → NULL) — #219, 2026-10-31; a re-upsert of the same moment
+-- refreshes fmv but COALESCEs name/image/metadata (never nulls them out); and —
+-- the subtle one — "sync = replace": after upserting the payload it REAPS this
+-- wallet+collection's rows older than 5 minutes, so a moment no longer held
+-- disappears while the payload's rows (stamped NOW) survive and OTHER wallets
+-- are never touched.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260802000400_audit_20260802_snapshot_upsert_wallet_moments.sql);
+-- (supabase/migrations/20261031161800_audit_20261031_upsert_wallet_moments_league_team_label_or.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -40,6 +43,18 @@ CREATE TABLE wallet_moments_cache (
   UNIQUE (wallet_address, collection_id, moment_id)
 );
 
+-- The two tables the league rule reads (#219): the team registry and the
+-- edition the payload's edition_key points at.
+CREATE TABLE teams_master (team_name text, league text);
+INSERT INTO teams_master VALUES ('New York Liberty','WNBA'), ('Las Vegas Aces','WNBA'), ('Denver Nuggets','NBA');
+CREATE TABLE editions (external_id text, collection_id uuid, team_name text);
+INSERT INTO editions VALUES
+  ('ed_liberty_vv', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'New York Liberty'),   -- WNBA team in a MIXED set
+  ('ed_nuggets_vv', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'Denver Nuggets'),     -- NBA team in the same set
+  ('ed_comets',     '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'Houston Comets'),     -- historic label, not in teams_master
+  ('ed_liberty_vv', 'dee28451-5d62-409e-a1ad-a83f763ac070', 'New York Liberty'),   -- same key, OTHER collection (must not match)
+  ('ed_ad_only',    'dee28451-5d62-409e-a1ad-a83f763ac070', 'New York Liberty');   -- a WNBA label that exists ONLY in All Day
+
 -- >>> BEGIN verbatim upsert_wallet_moments (keep byte-identical to the migration) >>>
 CREATE OR REPLACE FUNCTION public.upsert_wallet_moments(p_wallet_address text, p_collection_id uuid, p_moments jsonb)
  RETURNS jsonb
@@ -51,6 +66,7 @@ DECLARE
   v_upserted INT := 0;
   v_moment JSONB;
   v_set_name text;
+  v_edition_key text;
   v_league text;
   v_topshot_id constant uuid := '95f28a17-224a-4025-96ad-adf8a4c63bfd';
   v_wnba_only_sets constant text[] := ARRAY[
@@ -62,14 +78,42 @@ DECLARE
     'Chasing the Trophy',
     'For the Cup'
   ];
+  -- WNBA team labels: the registry (teams_master, league = 'WNBA') plus the
+  -- historic / all-star labels Top Shot still prints on moments. Read once per
+  -- call, Top Shot only. Mirrors topshot_squeeze_board (20261031040755).
+  v_wnba_labels text[] := ARRAY[]::text[];
 BEGIN
+  IF p_collection_id = v_topshot_id THEN
+    SELECT COALESCE(array_agg(t.team_name), ARRAY[]::text[]) INTO v_wnba_labels
+    FROM (
+      SELECT team_name FROM teams_master WHERE league = 'WNBA'
+      UNION
+      SELECT unnest(ARRAY[
+        'San Antonio Stars','San Antonio Silver Stars','Utah Starzz','Detroit Shock',
+        'Tulsa Shock','Orlando Miracle','Houston Comets','Sacramento Monarchs',
+        'Charlotte Sting','Cleveland Rockers','Miami Sol','Team Wilson','Team Stewart'
+      ])
+    ) t;
+  END IF;
+
   FOR v_moment IN SELECT * FROM jsonb_array_elements(p_moments)
   LOOP
     v_set_name := v_moment->>'set_name';
+    v_edition_key := v_moment->>'edition_key';
 
     -- Compute league only for Top Shot; other collections leave it NULL.
+    -- The moment's TEAM label decides first (WNBA moments live in mixed sets
+    -- too — #219), then the set rule; an unknown edition falls back to the set
+    -- rule, so a Top Shot row is never NULL here.
     IF p_collection_id = v_topshot_id THEN
       IF v_set_name ILIKE '%WNBA%' OR v_set_name = ANY(v_wnba_only_sets) THEN
+        v_league := 'WNBA';
+      ELSIF v_edition_key IS NOT NULL AND EXISTS (
+        SELECT 1 FROM editions e
+        WHERE e.external_id = v_edition_key
+          AND e.collection_id = p_collection_id
+          AND e.team_name = ANY(v_wnba_labels)
+      ) THEN
         v_league := 'WNBA';
       ELSE
         v_league := 'NBA';
@@ -88,7 +132,7 @@ BEGIN
       lower(p_wallet_address),
       p_collection_id,
       v_moment->>'moment_id',
-      v_moment->>'edition_key',
+      v_edition_key,
       v_moment->>'edition_name',
       v_moment->>'player_name',
       v_moment->>'character_name',
@@ -175,21 +219,56 @@ SELECT _assert_eq((SELECT fmv_usd::text FROM wallet_moments_cache WHERE wallet_a
 SELECT _assert_eq((SELECT player_name FROM wallet_moments_cache WHERE wallet_address='0xabc' AND moment_id='m_keep'),
   'Keep Player', 'a NULL player_name in the payload does not clear the existing one');
 
--- ── league classification (Top Shot) ────────────────────────────────────────
+-- ── league classification (Top Shot): set rule ──────────────────────────────
 SELECT _assert_eq((SELECT league FROM wallet_moments_cache WHERE wallet_address='0xabc' AND moment_id='m_wnba'),
   'WNBA', 'WNBA set name → WNBA league');
 SELECT _assert_eq((SELECT league FROM wallet_moments_cache WHERE wallet_address='0xabc' AND moment_id='m_nba'),
   'NBA', 'regular Top Shot set → NBA league');
 
--- ── curated WNBA-only set name → WNBA, and non-Top-Shot → NULL league ───────
+-- ── league classification (Top Shot): the TEAM label decides in a MIXED set (#219) ─
+-- Four moments in "Vintage Vibes" (a set the set rule reads as NBA): a Liberty
+-- edition (registry WNBA), a Nuggets edition (NBA), a Comets edition (historic
+-- WNBA label, absent from teams_master) and an edition_key the editions table
+-- does not know. Also a payload row with NO edition_key at all.
 SELECT upsert_wallet_moments('0xabc', '95f28a17-224a-4025-96ad-adf8a4c63bfd', '[
   {"moment_id":"m_keep"},{"moment_id":"m_wnba"},{"moment_id":"m_nba"},
-  {"moment_id":"m_curated","set_name":"Rise With Us","fmv_usd":9}
+  {"moment_id":"m_curated","set_name":"Rise With Us","fmv_usd":9},
+  {"moment_id":"m_liberty","edition_key":"ed_liberty_vv","set_name":"Vintage Vibes","fmv_usd":40},
+  {"moment_id":"m_nuggets","edition_key":"ed_nuggets_vv","set_name":"Vintage Vibes","fmv_usd":40},
+  {"moment_id":"m_comets","edition_key":"ed_comets","set_name":"Vintage Vibes","fmv_usd":40},
+  {"moment_id":"m_unknown_ed","edition_key":"ed_nobody_knows","set_name":"Vintage Vibes","fmv_usd":40},
+  {"moment_id":"m_no_key","set_name":"Vintage Vibes","fmv_usd":40},
+  {"moment_id":"m_other_coll_key","edition_key":"ed_ad_only","set_name":"Vintage Vibes","fmv_usd":40}
 ]'::jsonb);
 SELECT _assert_eq((SELECT league FROM wallet_moments_cache WHERE wallet_address='0xabc' AND moment_id='m_curated'),
   'WNBA', 'curated WNBA-only set name → WNBA league');
+SELECT _assert_eq((SELECT league FROM wallet_moments_cache WHERE wallet_address='0xabc' AND moment_id='m_liberty'),
+  'WNBA', 'a WNBA team label in a mixed set → WNBA (the team decides, not the set)');
+SELECT _assert_eq((SELECT league FROM wallet_moments_cache WHERE wallet_address='0xabc' AND moment_id='m_nuggets'),
+  'NBA', 'an NBA team label in the same mixed set → NBA');
+SELECT _assert_eq((SELECT league FROM wallet_moments_cache WHERE wallet_address='0xabc' AND moment_id='m_comets'),
+  'WNBA', 'a historic WNBA label absent from teams_master → WNBA');
+SELECT _assert_eq((SELECT league FROM wallet_moments_cache WHERE wallet_address='0xabc' AND moment_id='m_unknown_ed'),
+  'NBA', 'an edition_key the editions table does not know falls back to the set rule');
+SELECT _assert_eq((SELECT league FROM wallet_moments_cache WHERE wallet_address='0xabc' AND moment_id='m_no_key'),
+  'NBA', 'no edition_key → the set rule, never NULL for Top Shot');
+SELECT _assert_eq((SELECT league FROM wallet_moments_cache WHERE wallet_address='0xabc' AND moment_id='m_other_coll_key'),
+  'NBA', 'the edition lookup is COLLECTION-scoped: a key known only to All Day does not decide a Top Shot row');
+
+-- ── a re-upsert RE-STAMPS league (the rule is recomputed every refresh) ─────
+UPDATE wallet_moments_cache SET league = 'NBA' WHERE wallet_address='0xabc' AND moment_id='m_liberty';
+SELECT upsert_wallet_moments('0xabc', '95f28a17-224a-4025-96ad-adf8a4c63bfd', '[
+  {"moment_id":"m_keep"},{"moment_id":"m_wnba"},{"moment_id":"m_nba"},{"moment_id":"m_curated"},
+  {"moment_id":"m_liberty","edition_key":"ed_liberty_vv","set_name":"Vintage Vibes"},
+  {"moment_id":"m_nuggets"},{"moment_id":"m_comets"},{"moment_id":"m_unknown_ed"},{"moment_id":"m_no_key"},{"moment_id":"m_other_coll_key"}
+]'::jsonb);
+SELECT _assert_eq((SELECT league FROM wallet_moments_cache WHERE wallet_address='0xabc' AND moment_id='m_liberty'),
+  'WNBA', 'a misfiled NBA row is corrected on its next sync');
+
+-- ── non-Top-Shot → NULL league, even when the edition_key matches a WNBA label in
+--    ANOTHER collection (the lookup is collection-scoped) ─────────────────────
 SELECT upsert_wallet_moments('0xdef', 'dee28451-5d62-409e-a1ad-a83f763ac070', '[
-  {"moment_id":"m_ad","set_name":"Base Set","fmv_usd":3}
+  {"moment_id":"m_ad","edition_key":"ed_liberty_vv","set_name":"Base Set","fmv_usd":3}
 ]'::jsonb);
 SELECT _assert_eq((SELECT league IS NULL FROM wallet_moments_cache WHERE wallet_address='0xdef' AND moment_id='m_ad')::text,
   'true', 'non-Top-Shot collection leaves league NULL');

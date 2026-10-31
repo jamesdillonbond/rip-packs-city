@@ -1,9 +1,22 @@
 import { describe, it, expect } from "vitest"
+import { readFileSync } from "node:fs"
+import path from "node:path"
 import { leagueForEdition, leagueForSetName, WNBA_ONLY_SETS } from "@/lib/league"
 
 // NBA/WNBA derivation from a set name. This list is mirrored in the
 // upsert_wallet_moments RPC (server-side league denorm); the sniper feed uses
 // THIS file, so drift makes the two disagree about the same moment. Pin it.
+
+describe("WNBA_ONLY_SETS mirrors the upsert_wallet_moments pin (2026-10-31: the claim was a comment for four months)", () => {
+  it("the pin's v_wnba_only_sets block holds exactly this set", () => {
+    const pin = readFileSync(path.join(process.cwd(), "supabase/tests/upsert_wallet_moments.sql"), "utf8")
+    const m = /v_wnba_only_sets constant text\[\] := ARRAY\[([\s\S]*?)\];/.exec(pin)
+    expect(m, "v_wnba_only_sets block not found in the pin").not.toBeNull()
+    const sql = [...m![1].matchAll(/'((?:[^']|'')*)'/g)].map((x) => x[1].replace(/''/g, "'"))
+    expect(sql.length).toBeGreaterThan(0)
+    expect(new Set(sql)).toEqual(new Set(WNBA_ONLY_SETS))
+  })
+})
 
 describe("leagueForSetName", () => {
   it("returns WNBA for any set whose name contains 'wnba' (case-insensitive)", () => {

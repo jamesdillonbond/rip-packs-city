@@ -2029,8 +2029,9 @@ const PINS = [
   {
     fn: "upsert_wallet_moments",
     test: "supabase/tests/upsert_wallet_moments.sql",
+    // Re-pointed 2026-10-31 (#219): league = the edition's TEAM label OR the set rule.
     migration:
-      "supabase/migrations/20260802000400_audit_20260802_snapshot_upsert_wallet_moments.sql",
+      "supabase/migrations/20261031161800_audit_20261031_upsert_wallet_moments_league_team_label_or.sql",
   },
   {
     fn: "save_fast_break_lineup",

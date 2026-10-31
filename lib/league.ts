@@ -6,6 +6,11 @@
 // also publish a Supabase migration that updates the RPC's set list. Drifting
 // the two will cause the sniper feed (which uses this file) and the wallet /
 // collection pages (which read the column) to disagree about the same moment.
+// ⚠ "Mirrored" is PINNED, not promised: __tests__/league.test.ts reads the
+// committed pin (supabase/tests/upsert_wallet_moments.sql) and asserts its
+// v_wnba_only_sets block equals this set. Since 20261031161800 (#219) the RPC
+// ALSO applies the team-label arm — the same OR as `leagueForEdition` below —
+// so the two agree on mixed-set WNBA moments too.
 
 export const WNBA_ONLY_SETS: ReadonlySet<string> = new Set([
   "Rise With Us",
