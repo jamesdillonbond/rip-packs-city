@@ -1,3 +1,9 @@
+-- ⛔ SUPERSEDED — DO NOT APPLY (re-read 2026-10-30 ~5:25 PM PT, Claude Code, local). The header below is
+-- false: this WAS applied (schema_migrations 20260617221746, then 20260629155809; repo pin
+-- 20260801231700_audit_20260801_snapshot_compute_serial_fmv_power_model.sql). serial_fmv_power_model and
+-- its weekly fit cron are live. The live serial_fmv_estimate has since been rewritten without this
+-- power_model path, so re-applying section 3 would REVERT later work. Kept as history only.
+
 -- ============================================================================
 -- STAGED — NOT APPLIED.  REVIEW-GATED.
 -- `serial_fmv_estimate` is live FMV / pricing route logic, on CLAUDE.md's
