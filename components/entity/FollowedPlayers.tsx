@@ -34,7 +34,12 @@ export default function FollowedPlayers({ players, ok }: { players: FollowedPlay
       ) : (
         <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
           {players.map((p) => (
-            <Link key={p.slug} href={playerHubPath(p.slug)} className="rpc-mono" style={pillLink}>
+            <Link
+              key={`${p.collection ?? ""}:${p.slug}`}
+              href={p.collection ? `/${p.collection}/player/${encodeURIComponent(p.slug)}` : playerHubPath(p.slug)}
+              className="rpc-mono"
+              style={pillLink}
+            >
               {p.name} →
             </Link>
           ))}

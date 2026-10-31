@@ -11,8 +11,13 @@ afterEach(cleanup)
 
 describe("FollowedPlayers", () => {
   it("lists followed players linking /players/<slug>", () => {
-    const { container } = render(<FollowedPlayers ok players={[{ slug: "nikola-jokic", name: "Nikola Jokić" }]} />)
+    const { container } = render(<FollowedPlayers ok players={[
+      { slug: "nikola-jokic", name: "Nikola Jokić", collection: null },
+      { slug: "stitch", name: "Stitch", collection: "disney-pinnacle" },
+    ]} />)
     expect(container.querySelector('a[href="/players/nikola-jokic"]')?.textContent).toContain("Nikola Jokić")
+    // a Pinnacle character (no cross-collection hub) links its collection page
+    expect(container.querySelector('a[href="/disney-pinnacle/player/stitch"]')?.textContent).toContain("Stitch")
   })
   it("a failed read says so and does not invite them to follow", () => {
     const { container } = render(<FollowedPlayers ok={false} players={[]} />)
@@ -33,6 +38,6 @@ describe("fetchFollowedPlayers", () => {
     expect(await fetchFollowedPlayers(session({ data: null, error: { message: "x" } }))).toEqual({ players: [], ok: false })
   })
   it("maps rows", async () => {
-    expect(await fetchFollowedPlayers(session({ data: [{ player_slug: "a-b", display_name: "A B" }], error: null }))).toEqual({ players: [{ slug: "a-b", name: "A B" }], ok: true })
+    expect(await fetchFollowedPlayers(session({ data: [{ player_slug: "a-b", display_name: "A B", collection_slug: "" }, { player_slug: "c", display_name: "C", collection_slug: "disney-pinnacle" }], error: null }))).toEqual({ players: [{ slug: "a-b", name: "A B", collection: null }, { slug: "c", name: "C", collection: "disney-pinnacle" }], ok: true })
   })
 })

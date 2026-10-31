@@ -595,11 +595,12 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
                     measures it. */}
               </div>
             )}
-            {/* 2026-10-31: follow a player (webz_80's request, feedback 11800) — keyed by the
-                cross-collection hub slug, so one follow covers every collection; listed on /my-teams. */}
-            {!isCharacter && parsePlayerHubSlug(slug) && (
+            {/* 2026-10-31: follow a player (webz_80's request, feedback 11800) — every collection.
+                A sports player follows the cross-collection hub (one follow, every collection);
+                a Pinnacle character (no hub) follows this page. Listed on /my-teams. */}
+            {parsePlayerHubSlug(slug) && (
               <div>
-                <PlayerFollowButton slug={parsePlayerHubSlug(slug)!} path={`/${collection}/player/${encodeURIComponent(slug)}`} name={detail.name} />
+                <PlayerFollowButton slug={parsePlayerHubSlug(slug)!} collection={collection} path={`/${collection}/player/${encodeURIComponent(slug)}`} name={detail.name} />
               </div>
             )}
             {/* 2026-10-22: the cross-collection player hub (/players/<slug>) — shown only

@@ -12,8 +12,11 @@
 import { useEffect, useState } from "react"
 
 interface Props {
-  /** the /players/<slug> hub slug */
+  /** the player's URL slug */
   slug: string
+  /** set on a collection's player page: lets a player the cross-collection hub does not
+   *  cover (Disney Pinnacle characters) be followed on that page (2026-10-31) */
+  collection?: string
   /** page path for the sign-in `next` param */
   path: string
   name: string
@@ -21,14 +24,15 @@ interface Props {
 
 type State = "loading" | "anon" | "following" | "not-following" | "unknown"
 
-export default function PlayerFollowButton({ slug, path, name }: Props) {
+export default function PlayerFollowButton({ slug, collection, path, name }: Props) {
+  const qs = new URLSearchParams(collection ? { slug, collection } : { slug }).toString()
   const [state, setState] = useState<State>("loading")
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
-    fetch(`/api/players/follow?${new URLSearchParams({ slug }).toString()}`, { cache: "no-store" })
+    fetch(`/api/players/follow?${qs}`, { cache: "no-store" })
       .then(async (r) => {
         if (!r.ok) { if (!cancelled) setState("unknown"); return }
         const j = (await r.json()) as { authed?: unknown; following?: unknown }
@@ -38,7 +42,7 @@ export default function PlayerFollowButton({ slug, path, name }: Props) {
       })
       .catch(() => { if (!cancelled) setState("unknown") })
     return () => { cancelled = true }
-  }, [slug])
+  }, [qs])
 
   async function setFollow(on: boolean) {
     if (busy) return
@@ -47,8 +51,8 @@ export default function PlayerFollowButton({ slug, path, name }: Props) {
     let ok = false
     try {
       const res = on
-        ? await fetch("/api/players/follow", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ slug }) })
-        : await fetch(`/api/players/follow?${new URLSearchParams({ slug }).toString()}`, { method: "DELETE" })
+        ? await fetch("/api/players/follow", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(collection ? { slug, collection } : { slug }) })
+        : await fetch(`/api/players/follow?${qs}`, { method: "DELETE" })
       if (res.status === 401) { ok = true; setState("anon"); return }
       if (res.status === 409) {
         setMessage("Follow limit reached")
