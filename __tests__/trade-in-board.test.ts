@@ -126,6 +126,7 @@ describe("trade-in board — reads", () => {
         wallet: "0xbd94cade097e50ac",
         total_players: 1323,
         players_with_fill: 1322,
+        packs_total: 6723,
         players: [
           { player_name: "LeBron James", moments: 92, moments_with_asp: 92, asp_total: 8116.59, packs: 811, to_next_pack: 3.41, fill },
           { player_name: "Unlisted Guy", moments: 3, moments_with_asp: 2, asp_total: 1.2, packs: 0, to_next_pack: 8.8, fill: null },
@@ -136,7 +137,7 @@ describe("trade-in board — reads", () => {
     })
     const r = await fetchTradeInWallet(m.db as unknown as TradeInBoardClient, "0xbd94cade097e50ac")
     expect(r.error).toBeNull()
-    expect(r.data).toMatchObject({ total_players: 1323, players_with_fill: 1322 })
+    expect(r.data).toMatchObject({ total_players: 1323, players_with_fill: 1322, packs_total: 6723 })
     expect(r.data?.players[0]).toMatchObject({ packs: 811, total_players: 1323, fill: { external_id: "26:401", cost: 2.82 } })
     expect(r.data?.players[1].fill).toBeNull()
     // the unpriced fill is dropped from next_pack, never rendered as a $0 buy

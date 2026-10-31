@@ -23,9 +23,12 @@
 -- 13,270 scattered heap blocks before (EXPLAIN 2026-10-31: 823 ms cold vs 5.1–10.4 s).
 -- The one Moment (of 15,668) with no catalog row at all has no name and is not counted.
 --
--- Applied under this name via apply_migration; the `fill` key on each players row was
--- added minutes later with execute_sql (CREATE OR REPLACE of the same body) — this file
--- IS the live body (verify: prosrc against the $$ block).
+-- Applied under this name via apply_migration; the `fill` key on each players row and the
+-- whole-wallet `packs_total` were added minutes later with execute_sql (CREATE OR REPLACE
+-- of the same body) — this file IS the live body (verify: prosrc against the $$ block).
+-- `packs_total` exists because the concierge summed the p_limit slice and read it out as
+-- the wallet's total beside the whole-wallet player count (5,941 "across 1,323 players"
+-- was the top 200's packs) — a count and a total must come from the same population.
 --
 -- SECURITY INVOKER: the caller's own read of anon-SELECT tables.
 -- Revert: DROP FUNCTION public.get_topshot_trade_in_wallet(text, int); and re-apply the
@@ -91,6 +94,8 @@ AS $$
     'wallet', lower(p_wallet),
     'total_players', (SELECT count(*) FROM gap),
     'players_with_fill', (SELECT count(*) FROM fills),
+    -- whole-wallet pack total (every player, not the p_limit slice): the headline figure
+    'packs_total', (SELECT coalesce(sum(packs), 0) FROM gap),
     'players', coalesce((SELECT j FROM players), '[]'::jsonb),
     'next_pack', coalesce((SELECT j FROM next_pack), '[]'::jsonb)
   );

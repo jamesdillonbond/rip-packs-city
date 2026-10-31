@@ -74,6 +74,7 @@ describe("GET /api/public/insights/trade-in", () => {
         wallet: "0xbd94cade097e50ac",
         total_players: 1323,
         players_with_fill: 1322,
+        packs_total: 6723,
         players: [{ player_name: "LeBron James", moments: 92, moments_with_asp: 92, asp_total: 8116.59, packs: 811, to_next_pack: 3.41, total_players: 1323, fill }],
         next_pack: [fill],
       },
@@ -85,7 +86,7 @@ describe("GET /api/public/insights/trade-in", () => {
     const body = await res.json()
     expect(body.players).toHaveLength(1)
     expect(body.next_pack).toHaveLength(1)
-    expect(body.meta).toMatchObject({ wallet: "0xbd94cade097e50ac", shown: 1, total_players: 1323, players_with_fill: 1322, source: "get_topshot_trade_in_wallet" })
+    expect(body.meta).toMatchObject({ wallet: "0xbd94cade097e50ac", shown: 1, total_players: 1323, players_with_fill: 1322, packs_total: 6723, source: "get_topshot_trade_in_wallet" })
     expect(res.headers.get("Cache-Control")).toBe("no-store")
   })
 

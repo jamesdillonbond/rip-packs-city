@@ -109,12 +109,13 @@ describe("TradeInBoardClient", () => {
           { ...fill, player_name: "Jonathan Isaac", packs: 0, to_next_pack: 0.13, external_id: "218:8550", edition_id: "e9", asp: 0.21, low_ask: 0.18, cost: 0.18, series: 8 },
           { ...fill, player_name: "Eric Gordon", packs: 0, to_next_pack: 0.34, external_id: "51:1947", edition_id: "e8", asp: 0.3, low_ask: 0.19, moments_needed: 2, cost: 0.38, series: 4 },
         ],
-        meta: { wallet: "0x00000000000000aa", total_players: 1332, players_with_fill: 1300 },
+        meta: { wallet: "0x00000000000000aa", total_players: 1332, players_with_fill: 1300, packs_total: 6723 },
       },
     }
     fireEvent.change(input, { target: { value: "0x00000000000000aa" } })
     fireEvent.click(screen.getByText("Count my Moments"))
-    await waitFor(() => expect(screen.getByText(/1,228 packs across 1,332 players/)).toBeTruthy())
+    // the headline is the WHOLE wallet's packs (meta.packs_total), not the sum of the rows shown
+    await waitFor(() => expect(screen.getByText(/6,723 packs across 1,332 players/)).toBeTruthy())
     expect(screen.getByText(/showing the 2 with the most ASP/)).toBeTruthy()
     expect(screen.getByText(/2 without an ASP/)).toBeTruthy()
     // the per-player fill: LeBron's cheapest way to pack 812 links the edition; Lillard has no priced listing (never a $0 buy)

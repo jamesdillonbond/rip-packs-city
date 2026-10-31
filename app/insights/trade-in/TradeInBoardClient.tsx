@@ -53,7 +53,7 @@ type PortfolioState =
   | { kind: "idle" }
   | { kind: "loading" }
   | { kind: "error" }
-  | { kind: "ok"; wallet: string; players: TradeInPortfolioRow[]; total: number; withFill: number; nextPack: TradeInFill[] }
+  | { kind: "ok"; wallet: string; players: TradeInPortfolioRow[]; total: number; withFill: number; packsTotal: number; nextPack: TradeInFill[] }
 
 /** How many of the cheapest next packs render before "show all". */
 const NEXT_PACK_FOLD = 25
@@ -129,7 +129,7 @@ export default function TradeInBoardClient({
   function readWallet(w: string) {
     setPortfolio({ kind: "loading" })
     setShowAllNext(false)
-    fetchJson<{ players?: TradeInPortfolioRow[]; next_pack?: TradeInFill[]; meta?: { wallet?: string; total_players?: number; players_with_fill?: number } }>(
+    fetchJson<{ players?: TradeInPortfolioRow[]; next_pack?: TradeInFill[]; meta?: { wallet?: string; total_players?: number; players_with_fill?: number; packs_total?: number } }>(
       `/api/public/insights/trade-in?wallet=${encodeURIComponent(w)}`,
     ).then((res) => {
       if (!res.ok || !Array.isArray(res.json?.players)) return setPortfolio({ kind: "error" })
@@ -139,6 +139,8 @@ export default function TradeInBoardClient({
         players: res.json.players,
         total: res.json.meta?.total_players ?? res.json.players.length,
         withFill: res.json.meta?.players_with_fill ?? 0,
+        // the whole wallet's packs; an answer without the key is summed over what it listed
+        packsTotal: res.json.meta?.packs_total ?? res.json.players.reduce((s, p) => s + p.packs, 0),
         nextPack: Array.isArray(res.json.next_pack) ? res.json.next_pack : [],
       })
     })
@@ -298,7 +300,7 @@ export default function TradeInBoardClient({
           ) : (
             <div style={{ overflowX: "auto" }}>
               <p style={{ fontSize: 12, color: "var(--rpc-text-muted)", margin: "0 0 8px" }}>
-                {portfolio.players.reduce((s, p) => s + p.packs, 0).toLocaleString("en-US")} packs across{" "}
+                {portfolio.packsTotal.toLocaleString("en-US")} packs across{" "}
                 {portfolio.total.toLocaleString("en-US")} players
                 {portfolio.total > portfolio.players.length ? ` (showing the ${portfolio.players.length} with the most ASP)` : ""}.
               </p>

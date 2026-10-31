@@ -66,6 +66,7 @@ export async function GET(req: NextRequest) {
         shown: w.players.length,
         total_players: w.total_players,
         players_with_fill: w.players_with_fill,
+        packs_total: w.packs_total,
         limit: PORTFOLIO_PLAYERS,
         elapsed_ms: Date.now() - startedAt,
       },

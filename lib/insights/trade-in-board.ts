@@ -83,6 +83,8 @@ export type TradeInWallet = {
   wallet: string
   total_players: number
   players_with_fill: number
+  /** Whole-wallet packs (every player), not the sum of the capped `players` slice. */
+  packs_total: number
   /** Most ASP first, capped at the function's limit. */
   players: TradeInPortfolioRow[]
   /** Cheapest next pack first, across every player in the wallet, capped at the same limit. */
@@ -271,6 +273,8 @@ export async function fetchTradeInWallet(
       wallet: str(j.wallet) ?? wallet,
       total_players: totalPlayers,
       players_with_fill: num(j.players_with_fill) ?? 0,
+      // an older function without the key is summed over the slice it returned, never a 0 beside a player count
+      packs_total: num(j.packs_total) ?? players.reduce((n, p) => n + p.packs, 0),
       players,
       next_pack: nextPack,
     },

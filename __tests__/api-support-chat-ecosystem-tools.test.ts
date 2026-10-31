@@ -482,12 +482,13 @@ describe("concierge — get_trade_in (2026-10-31)", () => {
   it("with a 0x wallet relays players, next_pack and the whole-wallet counts", async () => {
     const fill = { player_name: "LeBron James", packs: 811, to_next_pack: 3.41, external_id: "26:401", set_name: "Base Set", asp: 5.25, low_ask: 2.82, moments_needed: 1, cost: 2.82 }
     stubFetch([jsonRoute("/api/public/insights/trade-in", {
-      meta: { wallet: "0xbd94cade097e50ac", total_players: 1323, players_with_fill: 1322 },
+      meta: { wallet: "0xbd94cade097e50ac", total_players: 1323, players_with_fill: 1322, packs_total: 6723 },
       players: [{ player_name: "LeBron James", moments: 92, moments_with_asp: 92, asp_total: 8116.59, packs: 811, to_next_pack: 3.41, fill }, { player_name: "Damian Lillard", moments: 382, moments_with_asp: 382, asp_total: 4171.29, packs: 417, to_next_pack: 8.71, fill: null }],
       next_pack: [fill],
     })])
     const r = await drive("get_trade_in", { wallet: "0xBD94CADE097E50AC", limit: 1 })
-    expect(r).toMatchObject({ status: "ok", wallet: "0xBD94CADE097E50AC", total_players: 1323, players_with_fill: 1322, packs_total_shown: 1228 })
+    // packs_total is the WHOLE wallet's (every player); the listed slice's own sum is named for what it is
+    expect(r).toMatchObject({ status: "ok", wallet: "0xBD94CADE097E50AC", total_players: 1323, players_with_fill: 1322, packs_total: 6723, packs_in_listed_players: 811, players_listed: 1 })
     expect(r.players).toHaveLength(1)
     expect(r.next_pack).toHaveLength(1)
     expect(String(r.rule)).toContain("not RPC FMV")

@@ -794,7 +794,7 @@ const TOOLS: Anthropic.Tool[] = [
   {
     name: "get_trade_in",
     description:
-      "Top Shot This TRADE-IN math (Series 2026-27, NBA Top Shot ONLY). Top Shot counts every $10 of a PLAYER's Moments, at Top Shot's OWN average sale price (ASP), as one Top Shot This pack of that player. Two reads. (1) No wallet: the public finder — per edition, Top Shot's ASP, the lowest live ask, Moments per pack = ceil(10 ÷ ASP) and cost per pack at the ask, cheapest pack first; pass `player` to scope it ('what's the cheapest way to a Jokić pack'). (2) With `wallet` (a Flow 0x address or a Top Shot username): per player, the wallet's ASP total over the Moments RPC has indexed, whole packs, the ASP still needed for the next pack, and `next_pack` — the cheapest listed Moment(s) of that player that close the gap. Use for 'how many Top Shot This packs can I get', 'what do my Moments count for', 'cheapest way to another LeBron pack', 'is it worth buying X to trade in'. RULES: every figure is Top Shot's ASP or Top Shot's lowest ask, never RPC FMV — do not call a Moment 'worth' its ASP, it is what the trade-in COUNTS; one Moment at the lowest ask is confirmed, the next may cost more; status not_indexed means RPC has not walked that wallet — say so, NEVER 'holds nothing'; eligibility is Top Shot's call — tell the user to confirm in the Top Shot app. Read-only.",
+      "Top Shot This TRADE-IN math (Series 2026-27, NBA Top Shot ONLY). Top Shot counts every $10 of a PLAYER's Moments, at Top Shot's OWN average sale price (ASP), as one Top Shot This pack of that player. Two reads. (1) No wallet: the public finder — per edition, Top Shot's ASP, the lowest live ask, Moments per pack = ceil(10 ÷ ASP) and cost per pack at the ask, cheapest pack first; pass `player` to scope it ('what's the cheapest way to a Jokić pack'). (2) With `wallet` (a Flow 0x address or a Top Shot username): per player, the wallet's ASP total over the Moments RPC has indexed, whole packs, the ASP still needed for the next pack, and `next_pack` — the cheapest listed Moment(s) of that player that close the gap; `packs_total` is the WHOLE wallet's packs and `players` is only the top few by ASP (quote packs_total, never a sum of the rows you were shown). Use for 'how many Top Shot This packs can I get', 'what do my Moments count for', 'cheapest way to another LeBron pack', 'is it worth buying X to trade in'. RULES: every figure is Top Shot's ASP or Top Shot's lowest ask, never RPC FMV — do not call a Moment 'worth' its ASP, it is what the trade-in COUNTS; one Moment at the lowest ask is confirmed, the next may cost more; status not_indexed means RPC has not walked that wallet — say so, NEVER 'holds nothing'; eligibility is Top Shot's call — tell the user to confirm in the Top Shot app. Read-only.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -5349,7 +5349,7 @@ async function executeToolInner(
     try {
       const res = await fetch(`${base}/api/public/insights/trade-in?wallet=${encodeURIComponent(resolvedAddr)}`, { signal: AbortSignal.timeout(9000) });
       if (!res.ok) return JSON.stringify({ status: "error", http_status: res.status, message: `trade-in read returned ${res.status}` });
-      const json = (await res.json()) as { error?: unknown; players?: unknown; next_pack?: unknown; meta?: { total_players?: number; players_with_fill?: number } } | null;
+      const json = (await res.json()) as { error?: unknown; players?: unknown; next_pack?: unknown; meta?: { total_players?: number; players_with_fill?: number; packs_total?: number } } | null;
       if (json?.error) return JSON.stringify({ status: "error", message: String(json.error) });
       const players = Array.isArray(json?.players) ? (json.players as Array<{ packs?: number }>) : [];
       const nextPack = Array.isArray(json?.next_pack) ? (json.next_pack as unknown[]) : [];
@@ -5363,7 +5363,11 @@ async function executeToolInner(
         rule: "Every $10 of a player's Moments at Top Shot's own average sale price = one Top Shot This pack of that player. Figures are Top Shot's ASP and Top Shot's lowest ask, not RPC FMV. Eligibility is decided in the Top Shot app.",
         total_players: json?.meta?.total_players ?? players.length,
         players_with_fill: json?.meta?.players_with_fill ?? null,
-        packs_total_shown: players.reduce((n, p) => n + (Number(p.packs) || 0), 0),
+        // the WHOLE wallet's packs (every player). The first live answer summed the top-200
+        // slice and read it out beside the whole-wallet player count (5,941 vs 6,723 real).
+        packs_total: json?.meta?.packs_total ?? null,
+        packs_in_listed_players: players.slice(0, limit).reduce((n, p) => n + (Number(p.packs) || 0), 0),
+        players_listed: Math.min(players.length, limit),
         players: players.slice(0, limit),
         next_pack: nextPack.slice(0, limit),
         page: "/insights/trade-in?wallet=" + encodeURIComponent(resolvedAddr),
