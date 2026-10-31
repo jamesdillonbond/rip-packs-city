@@ -38,4 +38,10 @@ describe("PlayerFollowButton", () => {
     const post = f.mock.calls.find((c) => (c[1] as RequestInit | undefined)?.method === "POST")!
     expect(JSON.parse(String((post[1] as RequestInit).body))).toEqual({ slug: "nikola-jokic" })
   })
+  it("a Pinnacle character reads 'Follow character', never 'player' (2026-10-31)", async () => {
+    vi.stubGlobal("fetch", vi.fn(() => json(200, { authed: true, following: false })))
+    const { findByRole } = render(<PlayerFollowButton slug="goofy" collection="disney-pinnacle" path="/disney-pinnacle/player/goofy" name="Goofy" noun="character" />)
+    const btn = await findByRole("button")
+    expect(btn.textContent).toBe("☆ Follow character")
+  })
 })

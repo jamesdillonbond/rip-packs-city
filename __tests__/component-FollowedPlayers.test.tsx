@@ -18,15 +18,23 @@ describe("FollowedPlayers", () => {
     expect(container.querySelector('a[href="/players/nikola-jokic"]')?.textContent).toContain("Nikola Jokić")
     // a Pinnacle character (no cross-collection hub) links its collection page
     expect(container.querySelector('a[href="/disney-pinnacle/player/stitch"]')?.textContent).toContain("Stitch")
+    // 2026-10-31 (Trevor): Pinnacle follows are CHARACTERS, under their own heading
+    expect(container.textContent).toMatch(/Players you follow/)
+    expect(container.textContent).toMatch(/Characters you follow/)
   })
   it("a failed read says so and does not invite them to follow", () => {
     const { container } = render(<FollowedPlayers ok={false} players={[]} />)
     expect(container.textContent).toMatch(/couldn.t be loaded/i)
-    expect(container.textContent).not.toMatch(/Follow a player with/)
+    expect(container.textContent).not.toMatch(/Follow a player/)
   })
   it("none yet -> how to follow", () => {
     const { container } = render(<FollowedPlayers ok players={[]} />)
-    expect(container.textContent).toMatch(/Follow a player with/)
+    expect(container.textContent).toMatch(/Follow a player/)
+  })
+  it("only characters followed -> no 'Players you follow' heading", () => {
+    const { container } = render(<FollowedPlayers ok players={[{ slug: "goofy", name: "Goofy", collection: "disney-pinnacle" }]} />)
+    expect(container.textContent).toMatch(/Characters you follow/)
+    expect(container.textContent).not.toMatch(/Players you follow/)
   })
 })
 

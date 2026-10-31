@@ -20,11 +20,13 @@ interface Props {
   /** page path for the sign-in `next` param */
   path: string
   name: string
+  /** "player" | "character" — Disney Pinnacle calls them characters (lib/entity-labels) */
+  noun?: string
 }
 
 type State = "loading" | "anon" | "following" | "not-following" | "unknown"
 
-export default function PlayerFollowButton({ slug, collection, path, name }: Props) {
+export default function PlayerFollowButton({ slug, collection, path, name, noun = "player" }: Props) {
   const qs = new URLSearchParams(collection ? { slug, collection } : { slug }).toString()
   const [state, setState] = useState<State>("loading")
   const [busy, setBusy] = useState(false)
@@ -110,7 +112,7 @@ export default function PlayerFollowButton({ slug, collection, path, name }: Pro
         opacity: busy ? 0.6 : 1,
       }}
     >
-      {message ?? (following ? "★ Following" : "☆ Follow player")}
+      {message ?? (following ? "★ Following" : `☆ Follow ${noun}`)}
     </button>
   )
 }

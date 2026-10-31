@@ -600,7 +600,7 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
                 a Pinnacle character (no hub) follows this page. Listed on /my-teams. */}
             {parsePlayerHubSlug(slug) && (
               <div>
-                <PlayerFollowButton slug={parsePlayerHubSlug(slug)!} collection={collection} path={`/${collection}/player/${encodeURIComponent(slug)}`} name={detail.name} />
+                <PlayerFollowButton slug={parsePlayerHubSlug(slug)!} collection={collection} path={`/${collection}/player/${encodeURIComponent(slug)}`} name={detail.name} noun={labels.player.toLowerCase()} />
               </div>
             )}
             {/* 2026-10-22: the cross-collection player hub (/players/<slug>) — shown only
