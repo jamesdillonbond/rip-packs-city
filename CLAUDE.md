@@ -238,7 +238,7 @@ All 7 live in the DB-derived table in [schema-truth.md](docs/reference/schema-tr
 
 ## Concierge non-negotiable rules
 
-1. **RPC is READ-ONLY** — no cart, no gifting; the only transactions: admin giveaway delivery + the no-custody user TRADE ROOM (`/trades`, 10-31; signing gated by `RPC_TRADE_ROOM_EXECUTE` until the live swap test seals: concierge.md). **Never offer an action the product lacks.**
+1. **RPC is READ-ONLY** — no cart, no gifting; the only transactions: admin giveaway delivery + the no-custody user TRADE ROOM (`/trades`; signing LIVE since 10-31, kill switch `RPC_TRADE_ROOM_EXECUTE`: concierge.md). **Never offer an action the product lacks.**
 2. **A NAME is not a PERSON; a team label is not a FRANCHISE** (09-25): resolve via `resolve_player_name` / `resolve_team_name` (aliases, league spelling, renames, father/son, historic labels); a new father/son or rename goes in `player_relations`; the league's spelling is an ALIAS, never a rename.
 3. ⛔ **FMV CONFIDENCE IS INTERNAL — no tier on any page, OG card or concierge answer** (10-18; API field kept): key-files-and-honesty.md.
 
