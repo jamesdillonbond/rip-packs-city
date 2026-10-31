@@ -19,3 +19,19 @@ export function playerSegment(collectionUrlSlug: string): PlayerSegment {
 export function playerPagePath(collectionUrlSlug: string, slug: string): string {
   return `/${collectionUrlSlug}/${playerSegment(collectionUrlSlug)}/${encodeURIComponent(slug)}`
 }
+
+/**
+ * A "player" row whose subject IS its team (2026-10-31). All Day's team-level Moments
+ * (team defense, team celebrations) list the TEAM as the player, so
+ * /nfl-all-day/player/detroit-lions is a real page — but "Follow player" there would
+ * follow a team as a person. Callers send that follow to the team page instead.
+ * Measured 2026-10-31: 33 All Day rows (one per NFL franchise).
+ */
+export function isTeamSubject(collectionUrlSlug: string, d: { name?: string | null; team?: string | null; player_slug?: string | null; team_slug?: string | null }): boolean {
+  // ⛔ Never Pinnacle: a character's "team" is its FRANCHISE, and 15 characters share
+  // their franchise's name (Aladdin, Bambi, Dumbo…) — they are followable characters.
+  if (isPinnacleUrlSlug(collectionUrlSlug)) return false
+  const norm = (s: string | null | undefined) => (s ?? "").trim().toLowerCase()
+  if (norm(d.player_slug) && norm(d.player_slug) === norm(d.team_slug)) return true
+  return norm(d.name) !== "" && norm(d.name) === norm(d.team)
+}

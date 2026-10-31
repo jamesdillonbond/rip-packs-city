@@ -20,7 +20,7 @@ import { sectionEmptyCopy } from "@/lib/entity/section-empty-copy"
 import { playerPageMetadata, playerJsonLd, collectionDisplayName, NOT_FOUND_METADATA } from "@/lib/seo"
 import Breadcrumbs from "@/components/entity/Breadcrumbs"
 import PlayerFollowButton from "@/components/entity/PlayerFollowButton"
-import { playerPagePath } from "@/lib/player-route"
+import { playerPagePath, isTeamSubject } from "@/lib/player-route"
 import { parsePlayerHubSlug } from "@/lib/player-hub"
 import { getEntityLabels } from "@/lib/entity-labels"
 import { Section, SectionUnavailable, StatCell, RECENT_LOW_TOTAL_LABEL, fmvTotalSub, recentLowTotalSub, fmtCount, fmtUsd, relTime } from "@/components/entity/_shared"
@@ -599,9 +599,17 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
             {/* 2026-10-31: follow a player (webz_80's request, feedback 11800) — every collection.
                 A sports player follows the cross-collection hub (one follow, every collection);
                 a Pinnacle character (no hub) follows this page. Listed on /my-teams. */}
+            {/* A TEAM-subject row (All Day team Moments: "Detroit Lions" as the player)
+                follows on its team page, not as a person (isTeamSubject, 2026-10-31). */}
             {parsePlayerHubSlug(slug) && (
               <div>
-                <PlayerFollowButton slug={parsePlayerHubSlug(slug)!} collection={collection} path={playerPagePath(collection, slug)} name={detail.name} noun={labels.player.toLowerCase()} />
+                {isTeamSubject(collection, { name: detail.name, team: detail.team, team_slug: detail.team_slug, player_slug: slug }) && teamHref ? (
+                  <Link data-rpc-player-follow="team-subject" href={teamHref} className="rpc-tap44" style={{ display: "inline-flex", alignItems: "center", padding: "5px 12px", borderRadius: 6, fontFamily: "var(--font-mono)", fontSize: 11, letterSpacing: "0.06em", textDecoration: "none", border: "1px solid var(--rpc-border)", color: "var(--rpc-text-primary)" }}>
+                    ☆ Follow {detail.team} on the team page →
+                  </Link>
+                ) : (
+                  <PlayerFollowButton slug={parsePlayerHubSlug(slug)!} collection={collection} path={playerPagePath(collection, slug)} name={detail.name} noun={labels.player.toLowerCase()} />
+                )}
               </div>
             )}
             {/* 2026-10-22: the cross-collection player hub (/players/<slug>) — shown only
