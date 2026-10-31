@@ -403,7 +403,7 @@ test.describe("mobile layout at 320px", () => {
       await page.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => {})
       await page.waitForTimeout(1500)
 
-      const { overflow, widest } = await page.evaluate((vw) => {
+      const { overflow, widest, innerWidth } = await page.evaluate((vw) => {
         const de = document.documentElement
         const contained = (el: Element) => {
           for (let p = el.parentElement; p; p = p.parentElement) {
