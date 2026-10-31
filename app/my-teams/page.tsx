@@ -24,6 +24,8 @@ import {
   type TeamProgress,
 } from "@/lib/fan-teams/fetchers"
 import TeamLogo from "@/components/entity/TeamLogo"
+import { fetchFollowedPlayers } from "@/lib/fan-teams/followed-players"
+import FollowedPlayers from "@/components/entity/FollowedPlayers"
 import { isExhibitionTeamSlug } from "@/lib/team-denylist"
 import { franchiseHubPath } from "@/lib/franchise-hub"
 import { chainKindForDbChain, isValidAddressForChain } from "@/lib/address"
@@ -53,6 +55,7 @@ export default async function MyTeamsPage() {
   const session = await getSupabaseServer()
   const { teams, ok: teamsOk } = await fetchFanTeams(session)
   const { wallet, ok: walletOk } = await fetchBoundWallet(session, user.id)
+  const followed = await fetchFollowedPlayers(session)
 
   // ⚠ A FAILED read must not tell a collector they follow nothing. Zero teams
   // renders "Follow a team to build your hub" with two suggestions — right for
@@ -91,6 +94,7 @@ export default async function MyTeamsPage() {
             <Link href="/nba-top-shot/team/new-york-liberty" className="rpc-mono" style={pillLink}>New York Liberty →</Link>
           </div>
         </div>
+        <FollowedPlayers players={followed.players} ok={followed.ok} />
       </div>
     )
   }
@@ -155,6 +159,7 @@ export default async function MyTeamsPage() {
           </div>
         </section>
       ))}
+      <FollowedPlayers players={followed.players} ok={followed.ok} />
     </div>
   )
 }

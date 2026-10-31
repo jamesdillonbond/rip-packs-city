@@ -39,6 +39,7 @@ import {
 import { proxyIpfsImageUrl } from "@/lib/ipfs-media"
 import { Section, SectionUnavailable, StatCell, RECENT_LOW_TOTAL_LABEL, fmvTotalSub, fmtCount, fmtUsd } from "@/components/entity/_shared"
 import Breadcrumbs from "@/components/entity/Breadcrumbs"
+import PlayerFollowButton from "@/components/entity/PlayerFollowButton"
 import EditionsGridPaginated, { type EditionTile } from "@/components/entity/EditionsGridPaginated"
 
 export const revalidate = 600
@@ -147,6 +148,10 @@ export default async function PlayerHubPage(props: { params: Promise<{ slug: str
             <h1 style={{ margin: 0, fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 36, letterSpacing: "0.04em", color: "var(--rpc-text-primary)", lineHeight: 1.05, textTransform: "uppercase" }}>
               {hub.name}
             </h1>
+            {/* 2026-10-31: follow a player (webz_80's request, feedback 11800) — listed on /my-teams. */}
+            <div>
+              <PlayerFollowButton slug={hub.canonical_slug || hub.slug} path={playerHubPath(hub.canonical_slug || hub.slug)} name={hub.name} />
+            </div>
             <div className="rpc-mono" style={{ fontSize: 12, color: "var(--rpc-text-secondary)", letterSpacing: "0.06em" }}>
               {/* 2026-10-27: one total only when every collection is one athlete's sport — with more than one
                   athlete it summed two people ("20 editions across NBA Top Shot, NFL All Day and Panini" for a

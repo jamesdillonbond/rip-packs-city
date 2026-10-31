@@ -19,6 +19,8 @@ import { sectionRowResult, sectionRows, sectionRowsResult, structuralSection } f
 import { sectionEmptyCopy } from "@/lib/entity/section-empty-copy"
 import { playerPageMetadata, playerJsonLd, collectionDisplayName, NOT_FOUND_METADATA } from "@/lib/seo"
 import Breadcrumbs from "@/components/entity/Breadcrumbs"
+import PlayerFollowButton from "@/components/entity/PlayerFollowButton"
+import { parsePlayerHubSlug } from "@/lib/player-hub"
 import { getEntityLabels } from "@/lib/entity-labels"
 import { Section, SectionUnavailable, StatCell, RECENT_LOW_TOTAL_LABEL, fmvTotalSub, recentLowTotalSub, fmtCount, fmtUsd, relTime } from "@/components/entity/_shared"
 import EditionsGridPaginated, { type EditionTile } from "@/components/entity/EditionsGridPaginated"
@@ -591,6 +593,13 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
                     Day rows, so Marvin Harrison Sr., Gary Payton and Joey Porter Sr. read "active".
                     Panini already suppressed it for the same reason. Re-add only with a writer that
                     measures it. */}
+              </div>
+            )}
+            {/* 2026-10-31: follow a player (webz_80's request, feedback 11800) — keyed by the
+                cross-collection hub slug, so one follow covers every collection; listed on /my-teams. */}
+            {!isCharacter && parsePlayerHubSlug(slug) && (
+              <div>
+                <PlayerFollowButton slug={parsePlayerHubSlug(slug)!} path={`/${collection}/player/${encodeURIComponent(slug)}`} name={detail.name} />
               </div>
             )}
             {/* 2026-10-22: the cross-collection player hub (/players/<slug>) — shown only

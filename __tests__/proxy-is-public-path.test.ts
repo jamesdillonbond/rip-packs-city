@@ -123,6 +123,7 @@ const TABLE: Row[] = [
   ["/api/wallet-search", "GET", true, "exact path"],
   ["/api/wallet-search/extra", "GET", false, "wallet-search is exact-match only"],
   ["/api/teams/follow", "POST", true, "route self-enforces auth on write"],
+  ["/api/players/follow", "POST", true, "route self-enforces auth on write (2026-10-31)"],
   // ⚠ Both callers (SqueezeBoardClient, ShareProfileButtons) fire this anonymously
   // on PUBLIC surfaces and document that anon "just gets a 401". Until 2026-08-28
   // the proxy 307d the POST to /login, which 405s POST — the pinned 401 branch in

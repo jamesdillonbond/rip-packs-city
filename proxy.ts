@@ -589,6 +589,10 @@ export function isPublicPath(pathname: string, method: string): boolean {
   // login bounce; the route ITSELF enforces auth (getUser -> 401) on POST/DELETE
   // and writes through the user's RLS session, so this adds no anon write access.
   if (pathname === "/api/teams/follow") return true
+  // /api/players/follow (2026-10-31) — the player follow toggle; same shape and
+  // reasoning as /api/teams/follow: anon GET -> {authed:false}, POST/DELETE 401
+  // in the route, writes through the user's RLS session.
+  if (pathname === "/api/players/follow") return true
   // /api/rewards/track — the ONLY client-triggerable earn (fixed event string
   // mapped server-side to a daily-capped rule). Fired fire-and-forget from two
   // PUBLIC surfaces (the /insights/squeeze board on mount; the profile share
