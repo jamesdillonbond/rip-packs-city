@@ -85,6 +85,14 @@ const nextConfig: NextConfig = {
       // Bare tab first: the `/:rest*` rule below compiles an empty `rest` to a
       // TRAILING SLASH ("/disney-pinnacle/overview/"), which then needs a second
       // 308 to drop it. Matching the no-sub-path case here makes it one hop.
+      // 2026-10-31: /pinnacle/player/<slug> goes straight to the character page (one
+      // hop) instead of /disney-pinnacle/player/<slug> → a second 308. Must precede
+      // the /:rest+ rule below, which would otherwise match it first.
+      {
+        source: "/pinnacle/player/:slug",
+        destination: "/disney-pinnacle/character/:slug",
+        permanent: true,
+      },
       {
         source:
           "/pinnacle/:page(overview|collection|market|sniper|analytics|sets|packs|pack-sniper|challenges|hot-floors|play|badges)",

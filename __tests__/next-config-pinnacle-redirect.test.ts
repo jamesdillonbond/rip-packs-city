@@ -103,3 +103,22 @@ describe("next.config.ts /disney-pinnacle/edition → /pinnacle/moment", () => {
     expect(rules.some((r) => !r.has && pathToRegexp(r.source, []).test("/nba-top-shot/edition/98:3150"))).toBe(false)
   })
 })
+
+// 2026-10-31: Pinnacle player pages are CHARACTER pages. The legacy /pinnacle/player/<slug>
+// must land on /disney-pinnacle/character/<slug> in ONE hop — the general /pinnacle/:page/:rest+
+// rule would otherwise send it to /disney-pinnacle/player/<slug> and cost a second 308.
+describe("next.config.ts /pinnacle/player → /disney-pinnacle/character (one hop)", () => {
+  it("the FIRST matching unconditional rule goes straight to the character page", async () => {
+    const mod = await import("../next.config")
+    const cfg = (mod.default ?? mod) as { redirects: () => Promise<Array<{ source: string; destination: string; permanent: boolean; has?: unknown[] }>> }
+    const rules = (await cfg.redirects()).filter((r) => !r.has)
+    const first = rules.find((r) => pathToRegexp(r.source, []).test("/pinnacle/player/goofy"))
+    expect(first?.destination).toBe("/disney-pinnacle/character/:slug")
+    expect(first?.permanent).toBe(true)
+    // the destination is final: no unconditional rule re-matches it
+    expect(rules.filter((r) => pathToRegexp(r.source, []).test("/disney-pinnacle/character/goofy"))).toEqual([])
+    // CONTROL: other /pinnacle entity paths still take the general rule
+    const set = rules.find((r) => pathToRegexp(r.source, []).test("/pinnacle/set/some-set"))
+    expect(set?.destination).toBe("/disney-pinnacle/:page/:rest+")
+  })
+})
