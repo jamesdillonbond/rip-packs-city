@@ -42,7 +42,7 @@ failure it documents.
 
 ## 2026-10-28 — 2 filings
 
-- [🟢 Daytime monitor (10-28 ~18:06Z, infra GREEN, 16/16 dashboard objects OK, not a spell) — single isolated pg_cron "job startup timeout" cluster at the :06 minute (10 jobs, 18:00Z hour only; 0 in every other hour across 12h, 0 logic errors); transient bgworker-slot pile-up, likely amplified by Dapper-outage HTTP retries — SYMPTOM, quiet-window re-measure, LOW](2026-10-28T1810Z-daytime-monitor-pgcron-startup-timeout-06min-blip.md)
+- [✅ DISPOSITIONED 10-31 (re-measured: :06 is BELOW the median minute, 1,512 starts vs 1,800; the 10 timeouts were one minute on the Dapper-outage day; no stagger) · 🟢 Daytime monitor (10-28 ~18:06Z, infra GREEN, 16/16 dashboard objects OK, not a spell) — single isolated pg_cron "job startup timeout" cluster at the :06 minute (10 jobs, 18:00Z hour only; 0 in every other hour across 12h, 0 logic errors); transient bgworker-slot pile-up, likely amplified by Dapper-outage HTTP retries — SYMPTOM, quiet-window re-measure, LOW](2026-10-28T1810Z-daytime-monitor-pgcron-startup-timeout-06min-blip.md)
 
 - [🔴 Daytime monitor (10-28 ~03:12Z) ESCALATION of 2026-10-27T1809Z — all three Top Shot Atlas lanes STILL fully dark ~10h (since 17:03Z); upstream 502 persists (609/3h market lane, newest 03:12Z), NOT recovered; Top Shot market/edition/sale freshness ~10h stale (newest sale 16:54Z); the 18:09Z "verify recovery" is a NO — HIGH(freshness)/upstream](2026-10-28T0312Z-daytime-monitor-topshot-atlas-lanes-STILL-DARK-10h-502-escalation.md)
 
