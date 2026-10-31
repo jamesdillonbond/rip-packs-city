@@ -68,6 +68,9 @@ const ROUTES = [
   "/insights/pinnacle-scarcity",
   "/insights/rookie-board",
   "/insights/pack-drops",
+  // 2026-10-31 (313e0a8): the filter strip's Sort <select> (longest option) read 335px;
+  // min-w-0 on the row + select. Measured 320/320 on that deployed build first.
+  "/nba-top-shot/packs",
 ]
 
 test.describe("mobile layout", () => {
