@@ -395,7 +395,11 @@ const CSS = `
 .rpc-sso-pill { font-family: var(--font-mono); font-size: 12px; letter-spacing: 1.5px; text-transform: uppercase; padding: 7px 14px; border: 1px solid var(--rpc-border); background: transparent; color: var(--rpc-text-secondary); cursor: pointer; border-radius: 2px; transition: border-color 120ms, color 120ms, background 120ms; }
 .rpc-sso-pill:hover { border-color: var(--rpc-border-hover); color: var(--rpc-text-primary); }
 .rpc-sso-pill-active { background: var(--rpc-red-bg); border-color: var(--rpc-red); color: var(--rpc-red-text); }
-.rpc-sso-search, .rpc-sso-sort { display: inline-flex; align-items: center; gap: 8px; }
+.rpc-sso-search, .rpc-sso-sort { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; min-width: 0; }
+/* A <select>'s intrinsic width is its LONGEST option and a flex item never shrinks
+   below it, so a long sort label widened a phone's layout viewport past 320 px
+   (allday-scarcity 347, pinnacle-scarcity 355 — measured 10-31). min-width: 0 lets it shrink. */
+.rpc-sso-sort select { min-width: 0; max-width: 100%; flex: 1 1 auto; }
 .rpc-sso-input { font-family: var(--font-mono); font-size: 12px; background: transparent; border: 1px solid var(--rpc-border); color: var(--rpc-text-primary); padding: 7px 10px; border-radius: 2px; min-width: 160px; }
 .rpc-sso-select { font-family: var(--font-mono); font-size: 12px; letter-spacing: 1px; background: transparent; border: 1px solid var(--rpc-border); color: var(--rpc-text-primary); padding: 7px 10px; border-radius: 2px; cursor: pointer; }
 

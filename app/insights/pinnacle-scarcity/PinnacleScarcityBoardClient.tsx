@@ -335,7 +335,11 @@ const CSS = `
 .rpc-ps-pill-active { background: var(--rpc-red-bg); border-color: var(--rpc-red); color: var(--rpc-red-text); }
 .rpc-ps-check { display: inline-flex; align-items: center; gap: 8px; font-family: var(--font-mono); font-size: 12px; letter-spacing: 1px; color: var(--rpc-text-secondary); cursor: pointer; }
 .rpc-ps-check input { accent-color: var(--rpc-red); }
-.rpc-ps-sort { display: inline-flex; align-items: center; gap: 8px; }
+.rpc-ps-sort { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; min-width: 0; }
+/* A <select>'s intrinsic width is its LONGEST option and a flex item never shrinks
+   below it, so a long sort label widened a phone's layout viewport past 320 px
+   (allday-scarcity 347, pinnacle-scarcity 355 — measured 10-31). min-width: 0 lets it shrink. */
+.rpc-ps-sort select { min-width: 0; max-width: 100%; flex: 1 1 auto; }
 .rpc-ps-select { font-family: var(--font-mono); font-size: 12px; letter-spacing: 1px; background: transparent; border: 1px solid var(--rpc-border); color: var(--rpc-text-primary); padding: 7px 10px; border-radius: 2px; cursor: pointer; }
 
 .rpc-ps-table-wrap { max-width: 1180px; margin: 0 auto; border: 1px solid var(--rpc-border-subtle); background: var(--rpc-surface); overflow-x: auto; border-radius: 2px; }

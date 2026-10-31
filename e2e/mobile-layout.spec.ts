@@ -54,6 +54,13 @@ const ROUTES = [
   // AND without mobile emulation before being pinned here.
   "/nfl-all-day/market",
   "/teams/nba/blazers",
+  // 2026-10-31: widened a phone's layout viewport to 347px at 320px — the SORT
+  // <select>'s intrinsic width is its longest option and a flex item never shrinks
+  // below it (min-width:auto). Fixed in 0c44749 (min-width:0 on the label + select)
+  // and measured 320/320 on that deployed build (squeeze, allday-squeeze, ?league=WNBA)
+  // before being pinned here. The same rule was then applied to the nine sibling
+  // boards that copy the sort control.
+  "/insights/squeeze",
 ]
 
 test.describe("mobile layout", () => {

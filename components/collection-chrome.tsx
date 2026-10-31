@@ -101,7 +101,10 @@ export function CollectionTicker({ collection }: { collection: Collection }) {
           this pill was asserting a trading venue in brand red at the top of
           every tab. */}
       <div style={{ background: "var(--rpc-red-fill)", padding: "0 12px", fontSize: 9, fontFamily: "var(--font-mono)", letterSpacing: "0.15em", color: "#fff", height: "100%", display: "flex", alignItems: "center", flexShrink: 0, fontWeight: 700 }}>{statusLabel}</div>
-      <div style={{ overflow: "hidden", flex: 1 }}>
+      {/* minWidth: 0 — a flex item never shrinks below its nowrap track's min-content width
+          by default, so the whole ticker row widened a 320 px phone's layout viewport to
+          335 px on /nba-top-shot/packs (measured 10-31). */}
+      <div style={{ overflow: "hidden", flex: 1, minWidth: 0 }}>
         {/* 2026-10-24 (WCAG 2.2.2): pauses on hover / keyboard focus and stops
             under prefers-reduced-motion (.rpc-ticker-track in app/globals.css);
             the second copy exists only to make the loop seamless, so it is

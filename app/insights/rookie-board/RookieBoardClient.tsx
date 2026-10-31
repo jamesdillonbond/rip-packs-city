@@ -642,7 +642,9 @@ const CSS = `
 .rpc-rb-state { padding: 48px 32px; text-align: center; font-family: var(--font-mono); font-size: 13px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-muted); border: 1px solid var(--rpc-border-subtle); background: var(--rpc-surface); border-radius: 2px; }
 
 .rpc-rb-player { margin-bottom: 30px; }
-.rpc-rb-player-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding-bottom: 10px; margin-bottom: 12px; border-bottom: 1px solid var(--rpc-border-subtle); }
+.rpc-rb-player-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; padding-bottom: 10px; margin-bottom: 12px; border-bottom: 1px solid var(--rpc-border-subtle); }
+/* flex-wrap above: a long name beside this nowrap meta widened a 320 px phone's layout
+   viewport to 331 px (measured 10-31) — the meta drops under the name instead. */
 .rpc-rb-player-name { font-family: var(--font-display); font-weight: 800; font-size: 26px; letter-spacing: 0.5px; text-transform: uppercase; margin: 0; }
 .rpc-rb-player-meta { font-family: var(--font-mono); font-size: 11px; letter-spacing: 1px; text-transform: uppercase; color: var(--rpc-text-muted); display: flex; gap: 8px; white-space: nowrap; }
 

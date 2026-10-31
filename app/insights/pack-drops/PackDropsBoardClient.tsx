@@ -529,7 +529,9 @@ const CSS = `
 .rpc-pd-star { color: var(--rpc-warning-text); font-weight: 700; }
 .rpc-pd-parallel-inline { font-family: var(--font-mono); font-size: 10px; letter-spacing: 1px; text-transform: uppercase; color: var(--rpc-warning-text); }
 
-.rpc-pd-odds { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--rpc-border-subtle); }
+.rpc-pd-odds { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--rpc-border-subtle); overflow-x: auto; }
+/* overflow-x above: the odds table has no .rpc-pd-table-wrap, and at 320 px its
+   min-content (278 px inside 22 px card padding) widened the layout viewport to 322 (10-31). */
 .rpc-pd-sub { font-family: var(--font-mono); font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-muted); margin-bottom: 8px; }
 .rpc-pd-odds-table { max-width: 520px; }
 .rpc-pd-disclaimer { font-family: var(--font-body); font-size: 11.5px; line-height: 1.5; color: var(--rpc-text-muted); margin: 8px 0 0; }

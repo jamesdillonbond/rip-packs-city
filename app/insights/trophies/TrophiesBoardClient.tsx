@@ -582,7 +582,11 @@ const CSS = `
   border-color: var(--rpc-red);
   color: var(--rpc-red-text);
 }
-.rpc-tr-sort { display: inline-flex; align-items: center; gap: 8px; }
+.rpc-tr-sort { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; min-width: 0; }
+/* A <select>'s intrinsic width is its LONGEST option and a flex item never shrinks
+   below it, so a long sort label widened a phone's layout viewport past 320 px
+   (allday-scarcity 347, pinnacle-scarcity 355 — measured 10-31). min-width: 0 lets it shrink. */
+.rpc-tr-sort select { min-width: 0; max-width: 100%; flex: 1 1 auto; }
 .rpc-tr-select {
   font-family: var(--font-mono);
   font-size: 12px;
