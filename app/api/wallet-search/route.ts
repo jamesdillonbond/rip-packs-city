@@ -1222,6 +1222,45 @@ async function triggerGolazosBackfill(req: NextRequest, wallet: string): Promise
   }).catch(() => {})
 }
 
+// Fire-and-forget: queue the Top Shot on-chain walk for a wallet whose wmc rows
+// cover fewer moments than it owns (2026-10-31). This route caches only the page
+// it serves, so a never-walked wallet stayed at ~24 rows until some cohort walk
+// reached it — and the NBA/WNBA pills skip on any unclassified owned id, so for
+// that wallet the pill did nothing. /api/wallet-backfill walks only uncached ids
+// (skip_cached defaults on), one Cadence call each against the shared Flow REST
+// budget, hence caps tighter than Golazos': one dispatch per wallet per 24 h and
+// 30/h globally. An unreadable wmc count or counter dispatches NOTHING.
+async function triggerTopShotBackfill(req: NextRequest, wallet: string, ownedCount: number): Promise<void> {
+  const token = process.env.INGEST_SECRET_TOKEN
+  if (!token || ownedCount <= 0) return
+  let origin: string
+  try {
+    origin = new URL(req.url).origin
+  } catch {
+    return
+  }
+  const tsCollectionId = await getCollectionId()
+  if (!tsCollectionId) return
+  const { count, error } = await (supabaseAdmin as any)
+    .from("wallet_moments_cache")
+    .select("moment_id", { count: "exact", head: true })
+    .eq("wallet_address", wallet)
+    .eq("collection_id", tsCollectionId)
+  if (error || typeof count !== "number") return
+  if (count >= ownedCount) return
+  const verdict = await bumpAnonRates([
+    { bucket: "topshot_backfill:global", key: "*", limit: 30, windowSecs: 3600 },
+    { bucket: "topshot_backfill:wallet", key: wallet, limit: 1, windowSecs: 24 * 3600 },
+  ])
+  if (!verdict.allowed) return
+  await fetch(`${origin}/api/wallet-backfill`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ wallet }),
+    signal: AbortSignal.timeout(10_000),
+  }).catch(() => {})
+}
+
 export async function POST(req: NextRequest) {
   // topLevelStage is updated as the handler progresses through phases so the
   // top-level catch can pin the failure to a specific stage instead of
@@ -1473,6 +1512,19 @@ export async function POST(req: NextRequest) {
         } satisfies WalletSearchResponse,
         { status: 500 }
       )
+    }
+
+    // ids.length is read NOW: the league filter below narrows `ids`. Guarded:
+    // after() throws outside a request scope, and a fire-and-forget walk must
+    // never be able to fail the search it rides on.
+    if (!isAllDay) {
+      const ownedCount = ids.length
+      const wmcWallet = isWalletAddress(wallet) ? wallet : ensureFlowPrefix(wallet)
+      try {
+        after(() => triggerTopShotBackfill(req, wmcWallet, ownedCount))
+      } catch (err) {
+        console.warn("[wallet-search] backfill trigger not scheduled:", err instanceof Error ? err.message : String(err))
+      }
     }
 
     // Rewards: a logged-in user scouting a collector wallet earns scout_wallet

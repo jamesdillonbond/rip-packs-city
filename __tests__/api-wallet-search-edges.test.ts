@@ -288,6 +288,44 @@ describe("wallet-search — league filter", () => {
     expect(calls[0].args).toEqual({ p_wallet_address: WALLET, p_collection_id: TS_UUID })
   })
 
+  // 2026-10-31: a wallet whose wmc rows cover fewer moments than it owns (a
+  // search caches only its page) queues the Top Shot walk — capped, and never
+  // on an unreadable count.
+  describe("Top Shot backfill trigger", () => {
+    const dispatches = (f: ReturnType<typeof vi.fn>) =>
+      f.mock.calls.filter((c: unknown[]) => String(c[0]).endsWith("/api/wallet-backfill"))
+    const run = async (wmcCount: { count?: number | null; error?: unknown }) => {
+      process.env.INGEST_SECRET_TOKEN = "t"
+      const fetchSpy = vi.fn(async () => new Response("{}"))
+      vi.stubGlobal("fetch", fetchSpy)
+      try {
+        install(baseFixtures({ wallet_moments_cache: [{ data: null, error: null, ...wmcCount }, { data: [], error: null }] }))
+        await POST(post({ input: WALLET }))
+        for (let i = 0; i < 5; i++) await flush()
+        return { fetchSpy }
+      } finally {
+        vi.unstubAllGlobals()
+        delete process.env.INGEST_SECRET_TOKEN
+      }
+    }
+
+    it("dispatches the walk for a wallet the cache covers only partly", async () => {
+      const { fetchSpy } = await run({ count: 1 }) // owns 2
+      const d = dispatches(fetchSpy)
+      expect(d).toHaveLength(1)
+      expect(JSON.parse((d[0][1] as RequestInit).body as string)).toEqual({ wallet: WALLET })
+    })
+
+    it("control: a fully cached wallet dispatches nothing", async () => {
+      expect(dispatches((await run({ count: 2 })).fetchSpy)).toHaveLength(0)
+    })
+
+    it("an unreadable wmc count dispatches nothing (fail closed)", async () => {
+      expect(dispatches((await run({ error: { message: "timeout" } })).fetchSpy)).toHaveLength(0)
+      expect(dispatches((await run({ count: null })).fetchSpy)).toHaveLength(0)
+    })
+  })
+
   it("pages past the PostgREST 1000-row clamp instead of truncating the allowed set", async () => {
     // A full first page forces a second .range() window; without paging the
     // second page's moment would be filtered out of a wallet that owns it.
