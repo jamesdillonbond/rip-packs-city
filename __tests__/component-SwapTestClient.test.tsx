@@ -37,7 +37,7 @@ vi.mock("@/lib/admin-token", async (importOriginal) => ({
 const A = "0x3d0b274c80263484"
 const B = "0xd96dc67ae64ee202"
 const PLAN = {
-  a: { signer: A, source: "0xbd94cade097e50ac", ids: ["27289790"], kind: "linked", ctl: "87" },
+  a: { signer: A, source: "0xbd94cade097e50ac", ids: ["52908096"], kind: "linked", ctl: "87" },
   b: { signer: B, source: B, ids: [], kind: "own", ctl: "0" },
 }
 const SIGNABLE = {
@@ -45,7 +45,7 @@ const SIGNABLE = {
   args: [
     { type: "Address", value: "0xbd94cade097e50ac" },
     { type: "UInt64", value: "87" },
-    { type: "Array", value: [{ type: "UInt64", value: "27289790" }] },
+    { type: "Array", value: [{ type: "UInt64", value: "52908096" }] },
     { type: "Address", value: B },
     { type: "UInt64", value: "0" },
     { type: "Array", value: [] },
@@ -91,7 +91,8 @@ describe("SwapTestClient — initiator", () => {
   it("prefills the first run and cannot sign before a simulation passed", () => {
     render(<SwapTestClient />)
     expect((screen.getAllByDisplayValue(A)[0] as HTMLInputElement).value).toBe(A)
-    expect(screen.getByDisplayValue("27289790")).toBeTruthy()
+    // 2026-10-31: the first-run moment is one 0xbd94… still holds (27289790 left on 10-05)
+    expect(screen.getByDisplayValue("52908096")).toBeTruthy()
     expect((screen.getByRole("button", { name: /sign and send/i }) as HTMLButtonElement).disabled).toBe(true)
   })
 
@@ -108,7 +109,7 @@ describe("SwapTestClient — initiator", () => {
     const sent = body(f.mock.calls[0][1])
     expect(sent).toEqual({
       action: "plan",
-      a: { signer: A, source: "0xbd94cade097e50ac", ids: ["27289790"] },
+      a: { signer: A, source: "0xbd94cade097e50ac", ids: ["52908096"] },
       b: { signer: B, source: B, ids: [] },
     })
     expect((screen.getByRole("button", { name: /sign and send/i }) as HTMLButtonElement).disabled).toBe(true)
@@ -145,7 +146,7 @@ describe("SwapTestClient — initiator", () => {
       if (b.action === "relay_post") return json({ id: "r1" })
       if (b.action === "verify") {
         verified.push(b.plan)
-        return verifyReplies.length ? verifyReplies.shift()! : json({ landed: [{ id: "27289790", to: B, held: true }] })
+        return verifyReplies.length ? verifyReplies.shift()! : json({ landed: [{ id: "52908096", to: B, held: true }] })
       }
       return json({ relay: { ...RELAY, signature: "ab".repeat(64), key_id: 0 } })
     })
@@ -168,7 +169,7 @@ describe("SwapTestClient — initiator", () => {
     expect(wallet.send.mock.calls[0][0]).toEqual(PLAN)
     expect(f.mock.calls.some((c) => String(c[0]).includes("?relay=r1"))).toBe(true)
     // the seal is followed by a chain read of where each moment is now
-    expect(await screen.findByText(/27289790 is now in 0xd96dc67ae64ee202/)).toBeTruthy()
+    expect(await screen.findByText(/52908096 is now in 0xd96dc67ae64ee202/)).toBeTruthy()
     expect(verified).toEqual([PLAN])
   })
 
@@ -179,7 +180,7 @@ describe("SwapTestClient — initiator", () => {
       if (b.action === "relay_post") return json({ id: "r1" })
       if (b.action === "verify") {
         verified.push(b.plan)
-        return verifyReplies.length ? verifyReplies.shift()! : json({ landed: [{ id: "27289790", to: B, held: true }] })
+        return verifyReplies.length ? verifyReplies.shift()! : json({ landed: [{ id: "52908096", to: B, held: true }] })
       }
       return json({ relay: { ...RELAY, signature: "ab".repeat(64), key_id: 0 } })
     })
@@ -194,14 +195,14 @@ describe("SwapTestClient — initiator", () => {
     expect(await screen.findByText(/Couldn't confirm on chain/)).toBeTruthy()
     expect(screen.queryByText(/is NOT in/)).toBeNull()
     fireEvent.click(screen.getByRole("button", { name: /verify again/i }))
-    expect(await screen.findByText(/27289790 is now in/)).toBeTruthy()
+    expect(await screen.findByText(/52908096 is now in/)).toBeTruthy()
   })
 
   it("names a moment that did not land", async () => {
     sealingStub()
-    verifyReplies = [json({ landed: [{ id: "27289790", to: B, held: false }] })]
+    verifyReplies = [json({ landed: [{ id: "52908096", to: B, held: false }] })]
     await runToSeal()
-    expect(await screen.findByText(/27289790 is NOT in 0xd96dc67ae64ee202/)).toBeTruthy()
+    expect(await screen.findByText(/52908096 is NOT in 0xd96dc67ae64ee202/)).toBeTruthy()
   })
 
   it("a submitted swap whose seal can't be read says don't send again, and reads the chain", async () => {
@@ -216,7 +217,7 @@ describe("SwapTestClient — initiator", () => {
     fireEvent.click(screen.getByRole("button", { name: /sign and send/i }))
     expect(await screen.findByText(/Submitted as tx7.*Don't send again/)).toBeTruthy()
     expect(screen.getByRole("link", { name: "tx7" })).toBeTruthy()
-    expect(await screen.findByText(/27289790 is now in/)).toBeTruthy()
+    expect(await screen.findByText(/52908096 is now in/)).toBeTruthy()
     expect(screen.queryByText(/Sealed on chain/)).toBeNull()
     expect(verified).toHaveLength(1)
   })
@@ -245,10 +246,10 @@ describe("SwapTestClient — initiator", () => {
   it("sets up the swap back: same sides, each giving what it received", async () => {
     sealingStub()
     await runToSeal()
-    await screen.findByText(/27289790 is now in/)
+    await screen.findByText(/52908096 is now in/)
     fireEvent.click(screen.getByRole("button", { name: /set up the swap back/i }))
     const inputs = [...document.querySelectorAll("main input")].map((i) => (i as HTMLInputElement).value)
-    expect(inputs).toEqual([A, "0xbd94cade097e50ac", "", B, B, "27289790"])
+    expect(inputs).toEqual([A, "0xbd94cade097e50ac", "", B, B, "52908096"])
     expect(screen.getByText(/Swap-back filled in/)).toBeTruthy()
     expect((screen.getByRole("button", { name: /sign and send/i }) as HTMLButtonElement).disabled).toBe(true)
     expect(screen.queryByRole("link", { name: "tx9" })).toBeNull()
@@ -292,7 +293,7 @@ describe("SwapTestClient — initiator", () => {
     expect(await screen.findByText(/Popup closed/)).toBeTruthy()
     fireEvent.click(screen.getByRole("button", { name: /simulate on mainnet/i }))
     await screen.findByText(/every moment lands/)
-    fireEvent.change(screen.getByDisplayValue("27289790"), { target: { value: "1" } })
+    fireEvent.change(screen.getByDisplayValue("52908096"), { target: { value: "1" } })
     expect((screen.getByRole("button", { name: /sign and send/i }) as HTMLButtonElement).disabled).toBe(true)
   })
 })
@@ -304,7 +305,7 @@ describe("SwapTestClient — co-signer", () => {
     wallet.connect.mockResolvedValue(B)
     wallet.coSign.mockResolvedValue({ signature: "ab".repeat(64), keyId: 2 })
     render(<SwapTestClient />)
-    expect(await screen.findByText(/Side A gives 27289790 from 0xbd94cade097e50ac → to 0xd96dc67ae64ee202/)).toBeTruthy()
+    expect(await screen.findByText(/Side A gives 52908096 from 0xbd94cade097e50ac → to 0xd96dc67ae64ee202/)).toBeTruthy()
     expect(screen.getByText(/Side B gives nothing/)).toBeTruthy()
     expect((screen.getByRole("button", { name: /sign as side b/i }) as HTMLButtonElement).disabled).toBe(true)
     fireEvent.click(screen.getByRole("button", { name: /connect flow wallet \(side b\)/i }))

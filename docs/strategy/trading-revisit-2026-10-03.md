@@ -95,7 +95,7 @@ Steps:
 
 **Step 2 tooling shipped (~8:00 PM PT, after Trevor approved and switched the session out of Auto mode): `/admin/swap-test`.** How to run it:
 
-1. Open `/admin/swap-test` on the device with Flow Wallet `0x3d0b…` (side A). The first run is prefilled: A gives `27289790` from `0xbd94…`; B (`0xd96d…`) gives nothing and signs.
+1. Open `/admin/swap-test` on the device with Flow Wallet `0x3d0b…` (side A). The first run is prefilled: A gives `52908096` (Julie Allemand, WNBA Base Set #3241, ~$0.15; re-pointed 2026-10-31 because `27289790` left `0xbd94…` on 10-05) from `0xbd94…`; B gives nothing and signs.
 2. **Simulate on mainnet.** It must say every moment lands.
 3. **Connect Flow Wallet (side A)**, then **Sign and send**. A co-signer link appears.
 4. Open that link where Flow Wallet `0xd96d…` lives (another browser profile, or your phone). Enter the admin token, connect, check what it says side A and side B give, then **Sign as side B**.

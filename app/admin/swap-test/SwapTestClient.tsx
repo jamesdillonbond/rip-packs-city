@@ -45,14 +45,19 @@ const btn: React.CSSProperties = {
 }
 const label: React.CSSProperties = { fontSize: 11, color: "var(--rpc-text-muted)", textTransform: "uppercase" }
 
-// Trevor's first run (2026-10-03): his Flow Wallet 0x3d0b… gives one $0.25 moment from
-// his linked Dapper account. Side B is a SECOND Flow Wallet account he creates (with
-// the Top Shot collection enabled): his other linked parent 0xd96d… looks like an old
-// Blocto account (main key split 999 + 1) that he doesn't believe can sign (2026-10-04).
+// Trevor's first run: his Flow Wallet 0x3d0b… gives one low-value moment from his linked
+// Dapper account. Side B is a SECOND Flow Wallet account he creates (with the Top Shot
+// collection enabled): his other linked parent 0xd96d… looks like an old Blocto account
+// (main key split 999 + 1) that he doesn't believe can sign (2026-10-04).
+// 2026-10-31: the 10-03 prefill (27289790, Greg Brown III) LEFT 0xbd94… on 10-05 — wmc
+// reads it in another collector's wallet — so the simulation would have refused "not held".
+// Re-pointed at 52908096 (Julie Allemand, WNBA Base Set #3241, $0.15, unlocked at the
+// 10-25 lock check). The simulation re-checks the chain either way; a stale id is a
+// refusal, never a move.
 const FIRST_RUN = {
   aSigner: "0x3d0b274c80263484",
   aSource: "0xbd94cade097e50ac",
-  aIds: "27289790",
+  aIds: "52908096",
   bSigner: "",
   bSource: "",
   bIds: "",
