@@ -42,7 +42,7 @@ All Bearer-auth in headers (the 2026-06-07 hygiene pass removed all `?token=` UR
 | RPC Prune Pipeline Runs (daily) | /api/admin/prune-pipeline-runs | daily 06:00 UTC |
 | RPC Recalc Ultimate FMV | /api/admin/recalc-ultimate-fmv | daily 06:35 UTC |
 | ~~RPC V1-Dapper Recovery~~ | /api/admin/recover-v1-budget-exhausted | ⛔ **RETIRED 08-02 — the console row is INACTIVE (job 7818270)**; the route runs on the `vercel.json` cron `*/20 * * * *` instead. Was 43 */3 ⟨exec-derived⟩ |
-| ~~RPC All Day Listing Cache~~ | /api/allday-listing-cache | ⛔ **ROUTE DELETED 2026-10-30 (Flowty API dark; flowty-retirement-runbook.md). DISABLE this console row** — it now 404s. Was 14,34,54 |
+| ~~RPC All Day Listing Cache~~ | /api/allday-listing-cache | ⛔ **ROUTE DELETED 2026-10-30 (Flowty API dark; flowty-retirement-runbook.md). Console row DISABLED 2026-10-30 5:30 PM PT (Inactive on the jobs list).** Was 14,34,54 |
 | RPC AllDay Listings Indexer | /api/allday-listings-indexer | 2,17,32,47 |
 | RPC AllDay Listings Retry | /api/allday-listings-retry | 8,23,38,53 |
 | RPC All Day Offers Indexer | /api/allday-offers-indexer | 7,27,47 |
@@ -80,7 +80,7 @@ All Bearer-auth in headers (the 2026-06-07 hygiene pass removed all `?token=` UR
 | RPC TopShot Deal Floor Serials | /api/cron/topshot-deal-floor-serials | ~~hourly :37~~ **INACTIVE 2026-08-30 16:4xZ** — dead host public-api.nbatopshot.com (530/1033 since 08-28); every tick resolved 0 of 10 editions on 10 fetch errors. Disabled in the console (Common tab → Enable job off); re-enable there when the host returns. The `topshot-deal-floor-serials` alert suppression (20260830155543) can then be dropped. |
 | ~~RPC UFC Enrichment Drain~~ (DISABLED 2026-10-18, 0 rows/30 d) | /api/cron/ufc-enrichment-drain | 7,37 |
 | RPC FMV Recalc Force Stale | /api/fmv-recalc?force_stale=true | 8,28,48 |
-| ~~RPC Golazos Listing Cache~~ | /api/golazos-listing-cache | ⛔ **ROUTE DELETED 2026-10-30 (Flowty API dark; flowty-retirement-runbook.md). DISABLE this console row** — it now 404s. Was 6,26,46 |
+| ~~RPC Golazos Listing Cache~~ | /api/golazos-listing-cache | ⛔ **ROUTE DELETED 2026-10-30 (Flowty API dark; flowty-retirement-runbook.md). Console row DISABLED 2026-10-30 5:30 PM PT (Inactive on the jobs list).** Was 6,26,46 |
 | RPC Golazos Listings Indexer | /api/golazos-listings-indexer | 7,22,37,52 |
 | RPC Golazos Sales Indexer | /api/golazos-sales-indexer | 11,31,51 |
 | RPC Pinnacle Listings Indexer | /api/pinnacle-listings-indexer | 5,25,45 |
