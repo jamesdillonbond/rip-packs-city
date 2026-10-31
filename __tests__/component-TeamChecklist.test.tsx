@@ -107,6 +107,31 @@ describe("TeamChecklist", () => {
     }
   })
 
+  // 2026-10-30 (beta feedback 11691): the same component serves a PLAYER checklist.
+  // Every data URL carries entity=player; the team default sends no entity param at
+  // all, so no pre-10-30 caller changes shape.
+  it("entity=player sends entity=player on the checklist, progress AND full-editions reads; the team default sends none", async () => {
+    fetchMock = routeFetch({ checklist: () => res(true, [tile]), progress: () => res(true, anonProgress) })
+    vi.stubGlobal("fetch", fetchMock)
+    const { getByText } = render(<TeamChecklist collectionUrlSlug="nba-top-shot" teamSlug="nikola-jokic" entity="player" />)
+    await waitFor(() => expect(getByText("100 editions")).toBeTruthy())
+    // The collection-level parallels probe (`probe=1`) has no subject, so it carries no entity.
+    const urls = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.includes("/api/entity/team-checklist") && !u.includes("probe=1"))
+    expect(urls.length).toBeGreaterThanOrEqual(2)
+    for (const u of urls) {
+      const sp = new URL(u, "https://t").searchParams
+      expect(sp.get("entity")).toBe("player")
+      expect(sp.get("slug")).toBe("nikola-jokic")
+    }
+    cleanup()
+    fetchMock = routeFetch({ checklist: () => res(true, [tile]), progress: () => res(true, anonProgress) })
+    vi.stubGlobal("fetch", fetchMock)
+    const team = render(<TeamChecklist collectionUrlSlug="nba-top-shot" teamSlug="denver-nuggets" />)
+    await waitFor(() => expect(team.getByText("100 editions")).toBeTruthy())
+    const teamUrls = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.includes("/api/entity/team-checklist"))
+    for (const u of teamUrls) expect(new URL(u, "https://t").searchParams.has("entity")).toBe(false)
+  })
+
   it("shows the empty-scope state when the checklist is empty", async () => {
     fetchMock = routeFetch({ checklist: () => res(true, []), progress: () => res(true, { ...anonProgress, total: 0 }) })
     vi.stubGlobal("fetch", fetchMock)

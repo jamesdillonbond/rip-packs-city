@@ -30,6 +30,8 @@ import { editionRouteHref } from "@/lib/entity-href"
 import { fetchPaniniPlayerSales, type PaniniPlayerSale } from "@/lib/panini/player-sales"
 import { saleSerialLabel } from "@/lib/entity/sale-serial-label"
 import MarketCapTile from "@/components/entity/MarketCapTile"
+import TeamChecklist from "@/components/entity/TeamChecklist"
+import { getCollection } from "@/lib/collections"
 import { fetchPlayerHub, playerHubPath, routableEntries, groupBySport } from "@/lib/player-hub"
 import { indexCoverageNote, type IndexCoverage } from "@/lib/entity/index-coverage-note"
 import { scrollRegion } from "@/lib/a11y/scroll-region"
@@ -639,6 +641,18 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
         </Suspense>
       </Section>
       )}
+
+      {/* ── Player Checklist (beta feedback 11691, webz_80 2026-10-27; shipped 2026-10-30) ──
+          The team checklist's grid, header and "Full editions" view over ONE person's editions,
+          owned vs missing for a pasted wallet, with a cost to complete. Same component, same three
+          routes, `entity="player"` (get_player_checklist / _progress, 20261031044056). Offered where
+          the team checklist is (registry `teamPages`); a Pinnacle character or a Panini player has
+          no checklist here, so nothing half-built renders for them. */}
+      {!isCharacter && getCollection(collection)?.teamPages ? (
+        <Section title={`${detail.name} Checklist`}>
+          <TeamChecklist collectionUrlSlug={collection} teamSlug={slug} entity="player" />
+        </Section>
+      ) : null}
 
       {/* ── Editions grid ────────────────────────────────────────────────── */}
       <Section title="Editions">

@@ -12,6 +12,8 @@
 //     (lib allEditionTiles). The component reads it when a tier or ownership
 //     filter is on in "All moments" (webz, 2026-10-01): a filtered header is only
 //     correct over the whole list, never over the paged grid.
+//   …&entity=player → the same over ONE PLAYER's editions (beta feedback 11691, 2026-10-30;
+//     get_player_checklist / get_player_checklist_progress via lib/entity/checklist-entity.ts).
 //   GET /api/entity/team-checklist-full-editions?collection=<urlSlug>&probe=1
 //     → { has_parallels } — does this collection carry ANY parallel edition key?
 //       The component shows the toggle only when it does (derived from data,
@@ -34,6 +36,7 @@ import { apiErrorResponse } from "@/lib/api-error"
 import { boundedRead } from "@/lib/api/bounded-read"
 import { getCollection } from "@/lib/collections"
 import { parseChecklistWallet } from "@/lib/entity/checklist-wallet"
+import { checklistRpcs, parseChecklistEntity } from "@/lib/entity/checklist-entity"
 import {
   allEditionTiles,
   checklistHasParallels,
@@ -72,6 +75,9 @@ export async function GET(req: Request) {
 
   const teamSlug = url.searchParams.get("slug") ?? ""
   if (!teamSlug) return NextResponse.json({ error: "missing slug" }, { status: 400 })
+  const entity = parseChecklistEntity(url.searchParams.get("entity"))
+  if (!entity) return NextResponse.json({ error: "unknown entity" }, { status: 400 })
+  const rpcs = checklistRpcs(entity)
 
   const rawScope = url.searchParams.get("scope") ?? "all_time"
   const scope = SCOPE_RE.test(rawScope) ? rawScope : "all_time"
@@ -84,12 +90,12 @@ export async function GET(req: Request) {
 
   // The edition total the walk must reproduce, and the wallet_cached signal the
   // component's first-paste indexing flow keys on.
-  const { data: progData, error: progError } = await boundedRead(supa.rpc("get_team_checklist_progress", {
+  const { data: progData, error: progError } = await boundedRead(supa.rpc(rpcs.progress, {
     p_collection_id: coll.id,
-    p_team_slug: teamSlug,
+    [rpcs.slugArg]: teamSlug,
     p_scope: scope,
     p_wallet: wallet,
-  }), "api/entity/team-checklist-full-editions/get_team_checklist_progress")
+  }), `api/entity/team-checklist-full-editions/${rpcs.progress}`)
   if (progError) return apiErrorResponse(progError, "api/entity/team-checklist-full-editions")
   const prog = (progData ?? {}) as { total?: unknown; wallet_cached?: unknown }
   const expectedTotal = typeof prog.total === "number" ? prog.total : null
@@ -100,14 +106,14 @@ export async function GET(req: Request) {
   const byKey = new Map<string, ChecklistEditionRow>()
   let complete = false
   for (let page = 0; page < MAX_PAGES; page++) {
-    const { data, error } = await boundedRead(supa.rpc("get_team_checklist", {
+    const { data, error } = await boundedRead(supa.rpc(rpcs.rows, {
       p_collection_id: coll.id,
-      p_team_slug: teamSlug,
+      [rpcs.slugArg]: teamSlug,
       p_scope: scope,
       p_wallet: wallet,
       p_limit: PAGE,
       p_offset: page * PAGE,
-    }), "api/entity/team-checklist-full-editions/get_team_checklist")
+    }), `api/entity/team-checklist-full-editions/${rpcs.rows}`)
     // A failed page fails the request — grouping a partial list would publish
     // a play count and cost that no caller could tell from the real one.
     if (error) return apiErrorResponse(error, "api/entity/team-checklist-full-editions")

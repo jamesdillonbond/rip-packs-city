@@ -48,6 +48,7 @@
 // Brand tokens only (var(--rpc-*), var(--font-display)).
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import type { ChecklistEntity } from "@/lib/entity/checklist-entity"
 import Link from "next/link"
 import { EM_DASH, TierBadge, fmtCount, fmtUsd, tileSubject } from "./_shared"
 import type { EditionTile } from "./EditionsGridPaginated"
@@ -128,9 +129,16 @@ interface FullEditionsResponse {
 
 interface Props {
   collectionUrlSlug: string
+  /** The checklist's subject slug — a team slug, or a player slug when `entity="player"`. */
   teamSlug: string
   /** Optional explicit series list. When omitted the component derives it from its first all_time fetch. */
   seriesOptions?: number[]
+  /**
+   * The checklist's SUBJECT (beta feedback 11691, 2026-10-30): "team" (default, every pre-10-30
+   * caller) or "player" — one person's editions, owned vs missing, through the same three routes
+   * with `entity=player` (lib/entity/checklist-entity.ts picks the RPC pair server-side).
+   */
+  entity?: ChecklistEntity
 }
 
 const PAGE_SIZE = 24
@@ -146,7 +154,7 @@ function seriesChipLabel(collectionUrlSlug: string, n: number): string {
   return `Series ${n}`
 }
 
-export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptions: seriesProp }: Props) {
+export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptions: seriesProp, entity = "team" }: Props) {
   const isTopShot = collectionUrlSlug === "nba-top-shot"
   // Disney Pinnacle pins cannot be locked: no "N locked", no locked legend or state.
   const hasLocking = collectionHasLocking(collectionUrlSlug)
@@ -292,22 +300,25 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
       limit: String(PAGE_SIZE),
     })
     if (w) p.set("wallet", w)
+    if (entity !== "team") p.set("entity", entity)
     return `/api/entity/team-checklist?${p.toString()}`
-  }, [collectionUrlSlug, teamSlug])
+  }, [collectionUrlSlug, teamSlug, entity])
 
   const progressUrl = useCallback((s: Scope, w: string | null) => {
     const p = new URLSearchParams({ collection: collectionUrlSlug, slug: teamSlug, scope: s })
     if (w) p.set("wallet", w)
+    if (entity !== "team") p.set("entity", entity)
     return `/api/entity/team-checklist-progress?${p.toString()}`
-  }, [collectionUrlSlug, teamSlug])
+  }, [collectionUrlSlug, teamSlug, entity])
 
   const fullUrl = useCallback((s: Scope, w: string | null, m: ChecklistView) => {
     const p = new URLSearchParams({ collection: collectionUrlSlug, slug: teamSlug, scope: s })
     if (w) p.set("wallet", w)
+    if (entity !== "team") p.set("entity", entity)
     // "All moments" with a filter on: the complete list, ungrouped.
     if (m === "all") p.set("view", "all")
     return `/api/entity/team-checklist-full-editions?${p.toString()}`
-  }, [collectionUrlSlug, teamSlug])
+  }, [collectionUrlSlug, teamSlug, entity])
 
   const deriveSeries = useCallback((s: Scope, safe: ChecklistTile[]) => {
     // Derive series chips from the first all_time fetch (when not provided).
@@ -591,7 +602,7 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
                     dictionary (team-checklist.add-cost-badge / cost-to-complete). */}
                 <ExplainButton
                   question={'What do the "+ $" badges on the cards and the cost to complete mean?'}
-                  context={`Team checklist for ${teamSlug} (${collectionUrlSlug}); estimated cost to complete ${fmtUsd(header.cost_to_complete_usd)}${unpricedMissing > 0 ? `, ${unpricedMissing} unpriced editions not included` : ""}.`}
+                  context={`${entity === "player" ? "Player" : "Team"} checklist for ${teamSlug} (${collectionUrlSlug}); estimated cost to complete ${fmtUsd(header.cost_to_complete_usd)}${unpricedMissing > 0 ? `, ${unpricedMissing} unpriced editions not included` : ""}.`}
                 />
               </div>
               <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 24, color: "var(--rpc-text-primary)", lineHeight: 1.1 }}>

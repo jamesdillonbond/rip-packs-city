@@ -5,6 +5,8 @@
 // wallet_cached signal the component uses to decide whether to fire a backfill.
 //   GET /api/entity/team-checklist-progress?collection=<urlSlug>&slug=<teamSlug>
 //        &scope=<all_time|contemporary|series_N>&wallet=<0x.. | base58 on a Solana collection>
+//   …&entity=player → the PLAYER checklist header via get_player_checklist_progress
+//   (beta feedback 11691, 2026-10-30; lib/entity/checklist-entity.ts). Unknown entity → 400.
 //
 // Read-only. Anon-visible (proxy.ts opens GET /api/entity/*); the no-wallet
 // number is the public full-checklist acquisition cost.
@@ -16,6 +18,7 @@ import { apiErrorResponse } from "@/lib/api-error"
 import { boundedRead } from "@/lib/api/bounded-read"
 import { getCollection } from "@/lib/collections"
 import { parseChecklistWallet } from "@/lib/entity/checklist-wallet"
+import { checklistRpcs, parseChecklistEntity } from "@/lib/entity/checklist-entity"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -29,6 +32,9 @@ export async function GET(req: Request) {
   const coll = getCollectionByUrlSlug(collectionUrlSlug)
   if (!coll) return NextResponse.json({ error: "unknown collection" }, { status: 404 })
   if (!teamSlug) return NextResponse.json({ error: "missing slug" }, { status: 400 })
+  const entity = parseChecklistEntity(url.searchParams.get("entity"))
+  if (!entity) return NextResponse.json({ error: "unknown entity" }, { status: 400 })
+  const rpcs = checklistRpcs(entity)
 
   const rawScope = url.searchParams.get("scope") ?? "all_time"
   const scope = SCOPE_RE.test(rawScope) ? rawScope : "all_time"
@@ -40,12 +46,12 @@ export async function GET(req: Request) {
   const wallet = parsed.wallet
 
   const supa = supabaseAdmin as unknown as { rpc: (fn: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: { message: string } | null }> }
-  const { data, error } = await boundedRead(supa.rpc("get_team_checklist_progress", {
+  const { data, error } = await boundedRead(supa.rpc(rpcs.progress, {
     p_collection_id: coll.id,
-    p_team_slug: teamSlug,
+    [rpcs.slugArg]: teamSlug,
     p_scope: scope,
     p_wallet: wallet,
-  }), "api/entity/team-checklist-progress/get_team_checklist_progress")
+  }), `api/entity/team-checklist-progress/${rpcs.progress}`)
   if (error) return apiErrorResponse(error, "api/entity/team-checklist-progress")
   return NextResponse.json(data ?? {})
 }

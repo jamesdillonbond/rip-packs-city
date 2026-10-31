@@ -460,6 +460,20 @@ const PINS = [
       "supabase/migrations/20261028141531_audit_20261028_allday_play_season_opens_in_march.sql",
   },
   {
+    // Added 2026-10-30 (beta feedback 11691): the PLAYER checklist — the team
+    // checklist's generic arm over one person's editions (the get_player_editions
+    // person predicate). Pins the namesake exclusion, ownership + lock state,
+    // the live-ask-else-FMV cost rule, series scope and the empty shapes.
+    fn: "get_player_checklist",
+    test: "supabase/tests/get_player_checklist.sql",
+    migration: "supabase/migrations/20261031044056_audit_20261031_player_checklist.sql",
+  },
+  {
+    fn: "get_player_checklist_progress",
+    test: "supabase/tests/get_player_checklist.sql",
+    migration: "supabase/migrations/20261031044056_audit_20261031_player_checklist.sql",
+  },
+  {
     // Added 2026-09-26. The Pinnacle franchise grid and roster read
     // pinnacle_editions (one franchise + one character per set-level key, grid
     // limited to rows with a thumbnail): Star Wars listed 98 of 723 pins, three
