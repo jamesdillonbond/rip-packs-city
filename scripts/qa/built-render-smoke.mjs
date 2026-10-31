@@ -116,6 +116,9 @@ const PARAM_VALUES = {
   slug: "ci-render-probe",
   topic: "fmv",
   league: "nba",
+  // /trades/[code] (2026-10-31): ROOM_CODE is /^[a-z0-9]{10}$/ (lib/trade-room/store.ts);
+  // a format-valid code reaches the room read and renders its not-found state.
+  code: "cirender00",
 }
 
 // Per-ROUTE placeholders, where a route validates its param's FORMAT before it
