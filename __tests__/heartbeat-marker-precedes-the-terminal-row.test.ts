@@ -522,29 +522,5 @@ describe("cron/alerts-dispatch writes its marker first — through its OWN clien
 })
 
 // ── 2026-10-14 batch (ratchet 31 -> 27): the four *-listing-cache routes ─────
-// One shape: GET authorises, after(runListingCache), and runListingCache logs a
-// terminal row through the SHARED `@/lib/supabase` client. Every upstream fetch is
-// made to fail here, so each run takes its failure path — the marker must still be
-// first, and the terminal row must still be written after it.
-// (ufc-listing-cache dropped 2026-10-18: route deleted with the dead UFC route code.)
-for (const slug of ["topshot", "allday", "golazos"] as const) {
-  describe(`${slug}-listing-cache writes its marker first`, () => {
-    it("marker precedes the terminal row, carrying the collection slug", async () => {
-      const rec = recorder()
-      mockAfter()
-      // These read this at MODULE LOAD and throw without it (test value).
-      process.env.FLOWTY_PROXY_TOKEN = "test-proxy-token"
-      vi.doMock("@/lib/supabase", () => ({ supabaseAdmin: rec.db, getSupabaseAdmin: () => rec.db }))
-      vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("upstream down (test)") }))
-      const mod = await import(`@/app/api/${slug}-listing-cache/route`)
-
-      const res = await mod.GET(authedNext(`https://t/api/${slug}-listing-cache`, "GET") as never)
-      expect(res.status).toBe(200)
-      await runDeferred()
-
-      assertMarkerContract(rec, `${slug}-listing-cache`)
-      expect(rec.rows[0].collection_slug, "the marker should carry the lane's collection").toBeTruthy()
-      vi.unstubAllGlobals()
-    })
-  })
-}
+// Removed 2026-10-30: the Flowty listing-cache routes were deleted when the Flowty API went dark
+// (docs/operations/flowty-retirement-runbook.md). ufc-listing-cache went 2026-10-18.
