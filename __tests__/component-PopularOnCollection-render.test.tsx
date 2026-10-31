@@ -227,7 +227,7 @@ describe("PopularOnCollection — hub rows", () => {
     expect(fetchers.pinnacleHubs).toHaveBeenCalled()
     const h = hrefs(container!)
     expect(h).toContain("/disney-pinnacle/set/pixar-animation-studios-toy-story-vol-1")
-    expect(h).toContain("/disney-pinnacle/player/buzz-lightyear")
+    expect(h).toContain("/disney-pinnacle/character/buzz-lightyear")
     expect(h).toContain("/disney-pinnacle/team/star-wars")
     expect(h).toContain("/disney-pinnacle/series/2026")
     expect(container!.textContent).toContain("Characters")

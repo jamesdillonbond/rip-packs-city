@@ -12,6 +12,7 @@
 // PAGE_SIZE editions (kept below as the RPC-error fallback) undercounted
 // large series and dropped sets entirely outside the FMV top-100.
 
+import { playerPagePath } from "@/lib/player-route"
 import type { Metadata } from "next"
 import { seriesPageLabel } from "@/lib/series-label"
 import Link from "next/link"
@@ -386,7 +387,7 @@ export default async function SeriesPage(props: { params: Promise<{ collection: 
                     key={p.playerSlug}
                     // A team moment's subject is the franchise: /team/, never a /player/ page that
                     // 404s (/nba-top-shot/player/los-angeles-lakers, link crawl 2026-09-29).
-                    href={(p.teamName && momentSubjectHref(collection, p.playerName, p.teamName)) || `/${collection}/player/${encodeURIComponent(p.playerSlug)}`}
+                    href={(p.teamName && momentSubjectHref(collection, p.playerName, p.teamName)) || playerPagePath(collection, p.playerSlug)}
                     className="rpc-card"
                     style={{ padding: 12, textDecoration: "none", color: "inherit", display: "block" }}
                   >

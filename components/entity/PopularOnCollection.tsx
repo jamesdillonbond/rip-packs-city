@@ -71,7 +71,7 @@ export function distinctSlugLinks(
     if (!slug || seen.has(slug)) continue
     if (dropExhibition && isExhibitionTeamSlug(slug)) continue
     seen.add(slug)
-    out.push({ href: `/${collection}/${segment}/${encodeURIComponent(slug)}`, label: name })
+    out.push({ href: `/${collection}/${segment === "player" && collection === "disney-pinnacle" ? "character" : segment}/${encodeURIComponent(slug)}`, label: name })
     if (out.length >= cap) break
   }
   return out

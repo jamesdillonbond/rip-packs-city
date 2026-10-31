@@ -1,3 +1,4 @@
+import { playerPagePath } from "@/lib/player-route"
 import { editionRouteHref } from "@/lib/entity-href"
 import type { Metadata } from 'next'
 import { proxyIpfsUrlAbsolute } from './ipfs-media'
@@ -1206,7 +1207,7 @@ export function playerPageMetadata(
     isCharacter ? "Pin grid, top sale, and set breakdown." : isPanini ? "Card grid, live asks, and set breakdown." : "Edition grid, top sale, and set breakdown.",
   ].filter(Boolean) as string[]
   const description = descParts.join(" ")
-  const canonical = `${BASE_URL}/${collectionUrlSlug}/player/${encodeURIComponent(playerSlug)}`
+  const canonical = `${BASE_URL}${playerPagePath(collectionUrlSlug, playerSlug)}`
   const og = playerSlug
     ? `${BASE_URL}/api/og/player?collection=${collectionUrlSlug}&slug=${encodeURIComponent(playerSlug)}`
     : headshot
@@ -1473,7 +1474,7 @@ export function editionJsonLd(
 // Player → Person (+ BreadcrumbList).
 export function playerJsonLd(detail: Payload, collectionUrlSlug: string, slug: string): LdValue {
   const label = ownMeta(COLLECTION_DISPLAY_NAMES, collectionUrlSlug) ?? "Flow"
-  const url = `${BASE_URL}/${collectionUrlSlug}/player/${encodeURIComponent(slug)}`
+  const url = `${BASE_URL}${playerPagePath(collectionUrlSlug, slug)}`
   const name = s(detail, "name") ?? "Player"
   const headshot = s(detail, "headshot_url")
   const team = s(detail, "team")

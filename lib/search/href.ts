@@ -53,6 +53,8 @@ export function buildSearchHref(
     : undefined
   if (!segment) return null
   if (!collectionUrlSlug || !slug) return null
+  // Disney Pinnacle's player pages are CHARACTER pages (2026-10-31).
+  if (segment === "player" && collectionUrlSlug === "disney-pinnacle") return `/disney-pinnacle/character/${encodeURIComponent(slug)}`
 
   // Edition slugs contain ':' (and '::' for parallels), which is legal in a
   // path segment but must survive a round trip through the router, so encode.

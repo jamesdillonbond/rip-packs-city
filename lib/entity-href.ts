@@ -23,7 +23,7 @@ export function momentSubjectHref(
 ): string | null {
   if (!playerName) return null
   const teamMoment = isTeamMoment(playerName, teamName)
-  const kind = teamMoment ? "team" : "player"
+  const kind = teamMoment ? "team" : collectionUrlSlug === "disney-pinnacle" ? "character" : "player"
   // A team Moment links to its FRANCHISE page, keyed on team_name: All Day's "Denver" is /team/denver-broncos.
   const slug = teamMoment ? slugifyName((teamName as string).trim()) : slugifyPlayerName(playerName)
   return `/${collectionUrlSlug}/${kind}/${encodeURIComponent(slug)}`
@@ -129,7 +129,7 @@ export function pinnacleFranchiseName(name: string): string {
  * 2026-09-27), where every other collection's detail page links them.
  */
 export function pinnacleCharacterHref(name: string): string {
-  return `/disney-pinnacle/player/${encodeURIComponent(slugifyName(name.trim()))}`
+  return `/disney-pinnacle/character/${encodeURIComponent(slugifyName(name.trim()))}`
 }
 export function pinnacleFranchiseHref(name: string): string {
   return `/disney-pinnacle/team/${encodeURIComponent(slugifyName(pinnacleFranchiseName(name)))}`

@@ -40,6 +40,7 @@ import { proxyIpfsImageUrl } from "@/lib/ipfs-media"
 import { Section, SectionUnavailable, StatCell, RECENT_LOW_TOTAL_LABEL, fmvTotalSub, fmtCount, fmtUsd } from "@/components/entity/_shared"
 import Breadcrumbs from "@/components/entity/Breadcrumbs"
 import PlayerFollowButton from "@/components/entity/PlayerFollowButton"
+import { playerPagePath } from "@/lib/player-route"
 import EditionsGridPaginated, { type EditionTile } from "@/components/entity/EditionsGridPaginated"
 
 export const revalidate = 600
@@ -111,7 +112,7 @@ export default async function PlayerHubPage(props: { params: Promise<{ slug: str
   if (routable.length === 0) notFound()
   if (routable.length === 1) {
     const only = routable[0]
-    redirect(`/${only.collection.urlSlug}/player/${encodeURIComponent(only.entry.player_slug)}`)
+    redirect(playerPagePath(only.collection.urlSlug, only.entry.player_slug))
   }
 
   const panels = await fetchPlayerHubPanels(hub)
@@ -193,7 +194,7 @@ export default async function PlayerHubPage(props: { params: Promise<{ slug: str
 function CollectionPanel({ panel, hub, editions }: { panel: PlayerHubPanel; hub: PlayerHub; editions: { rows: unknown[]; ok: boolean } | null }) {
   const name = panel.collection.displayName
   const isPanini = panel.collection.dbSlug === "panini_blockchain"
-  const playerHref = `/${panel.collection.urlSlug}/player/${encodeURIComponent(panel.entry.player_slug)}`
+  const playerHref = playerPagePath(panel.collection.urlSlug, panel.entry.player_slug)
   // The collection's own spelling, when it differs ("Steph Curry" on Top Shot).
   const spelledAs = panel.entry.name && panel.entry.name !== hub.name ? panel.entry.name : null
 

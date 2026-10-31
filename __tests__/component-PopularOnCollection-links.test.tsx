@@ -72,7 +72,7 @@ describe("distinctSlugLinks", () => {
 
   it("keeps slugifyName for a Pinnacle character (its pages' slug)", () => {
     const out = distinctSlugLinks(["Stitch"], "disney-pinnacle", "player", 12)
-    expect(out[0].href).toBe("/disney-pinnacle/player/stitch")
+    expect(out[0].href).toBe("/disney-pinnacle/character/stitch")
   })
 })
 

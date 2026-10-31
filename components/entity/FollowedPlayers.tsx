@@ -4,6 +4,7 @@ import type { CSSProperties } from "react"
 import type { FollowedPlayer } from "@/lib/fan-teams/followed-players"
 import { playerHubPath } from "@/lib/player-hub-path"
 import { getEntityLabels } from "@/lib/entity-labels"
+import { playerPagePath } from "@/lib/player-route"
 
 const pillLink: CSSProperties = {
   display: "inline-block",
@@ -50,7 +51,7 @@ export default function FollowedPlayers({ players, ok }: { players: FollowedPlay
               {rows.map((p) => (
                 <Link
                   key={`${p.collection ?? ""}:${p.slug}`}
-                  href={p.collection ? `/${p.collection}/player/${encodeURIComponent(p.slug)}` : playerHubPath(p.slug)}
+                  href={p.collection ? playerPagePath(p.collection, p.slug) : playerHubPath(p.slug)}
                   className="rpc-mono"
                   style={pillLink}
                 >

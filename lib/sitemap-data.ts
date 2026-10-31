@@ -1218,7 +1218,7 @@ async function buildSitemapSegmentUncapped(id: number): Promise<MetadataRoute.Si
         if (name) touch(pinFranchises, slugifyName(name), ts)
       }
     }
-    const pinnacleHub = (m: Map<string, Date | null>, segment: 'set' | 'player' | 'team', priority: number): MetadataRoute.Sitemap =>
+    const pinnacleHub = (m: Map<string, Date | null>, segment: 'set' | 'character' | 'team', priority: number): MetadataRoute.Sitemap =>
       [...m].map(([slug, ts]) => ({
         url: `${BASE_URL}/disney-pinnacle/${segment}/${encodeURIComponent(slug)}`,
         lastModified: ts ?? undefined,
@@ -1230,7 +1230,7 @@ async function buildSitemapSegmentUncapped(id: number): Promise<MetadataRoute.Si
       ...packPages,
       ...pinnaclePinPages,
       ...pinnacleHub(pinSets, 'set', 0.6),
-      ...pinnacleHub(pinChars, 'player', 0.6),
+      ...pinnacleHub(pinChars, 'character', 0.6),
       ...pinnacleHub(pinFranchises, 'team', 0.55),
     ]
   }

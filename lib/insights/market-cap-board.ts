@@ -19,6 +19,7 @@
 // Every nullable numeric below stays null through `numOrNull`; nothing here
 // defaults a missing value to 0.
 
+import { playerPagePath } from "@/lib/player-route"
 import { getCollectionByDbSlug, getCollectionByUrlSlug } from "@/lib/collection-slug"
 import { editionHref, setEntityHref } from "@/lib/entity-href"
 import { slugifyName, slugifyPlayerName } from "@/lib/entity-labels"
@@ -186,7 +187,7 @@ export function rowHref(r: MarketCapRow, group: MarketCapGroup): string | null {
     case "edition":
       return r.edition_external_id ? editionHref(base, r.edition_external_id, r.edition_external_id) : null
     case "player":
-      return r.group_label ? `/${base}/player/${encodeURIComponent(slugifyPlayerName(r.group_label))}` : null
+      return r.group_label ? playerPagePath(base, slugifyPlayerName(r.group_label)) : null
     case "team":
       return r.group_label ? `/${base}/team/${encodeURIComponent(slugifyName(r.group_label))}` : null
     case "set":

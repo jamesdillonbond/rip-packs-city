@@ -72,7 +72,7 @@ describe("Pinnacle entity links from a pin page", () => {
     expect(pinnacleFranchiseHref("Mickey & Friends")).toBe("/disney-pinnacle/team/mickey-friends")
   })
   it("character from the Characters trait value", () => {
-    expect(pinnacleCharacterHref("Wicket W. Warrick")).toBe("/disney-pinnacle/player/wicket-w-warrick")
+    expect(pinnacleCharacterHref("Wicket W. Warrick")).toBe("/disney-pinnacle/character/wicket-w-warrick")
   })
   it("series by its name", () => {
     expect(pinnacleSeriesHref("2026")).toBe("/disney-pinnacle/series/2026")

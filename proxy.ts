@@ -205,6 +205,7 @@ const RATE_LIMITED_COLLECTION_PAGES = new Set([
   "collection",
   "edition",
   "player",
+  "character",
   "team",
   "set",
   "series",
@@ -887,7 +888,7 @@ export function isPublicPath(pathname: string, method: string): boolean {
   // data it wasn't already serving; it just stops the bounce.
   if (
     (method === "GET" || method === "HEAD") &&
-    /^\/[^/]+\/(?:edition|set|player|team|series|pack|moment|product)\//.test(pathname)
+    /^\/[^/]+\/(?:edition|set|player|character|team|series|pack|moment|product)\//.test(pathname)
   ) {
     return true
   }

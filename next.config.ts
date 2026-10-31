@@ -93,7 +93,7 @@ const nextConfig: NextConfig = {
       },
       {
         source:
-          "/pinnacle/:page(overview|collection|market|sniper|analytics|sets|packs|pack-sniper|challenges|hot-floors|play|badges|edition|set|series|player|team|pack|profile)/:rest+",
+          "/pinnacle/:page(overview|collection|market|sniper|analytics|sets|packs|pack-sniper|challenges|hot-floors|play|badges|edition|set|series|player|character|team|pack|profile)/:rest+",
         destination: "/disney-pinnacle/:page/:rest+",
         permanent: true,
       },
@@ -118,6 +118,15 @@ const nextConfig: NextConfig = {
       // redirects also run BEFORE the proxy.ts auth gate (verified live:
       // /pinnacle/overview 308s cleanly instead of bouncing to /login), so an
       // anonymous crawler gets one hop straight to the rendered page.
+      // 2026-10-31 (Trevor: Pinnacle assets are CHARACTERS): the character page lives at
+      // /disney-pinnacle/character/<slug> (app/(collections)/[collection]/character, the
+      // shared player page under Pinnacle's vocabulary). Every old /player/ URL — links we
+      // don't own, the sitemap Google already holds — 308s there before the page runs.
+      {
+        source: "/disney-pinnacle/player/:slug",
+        destination: "/disney-pinnacle/character/:slug",
+        permanent: true,
+      },
       {
         source: "/disney-pinnacle/moment/:id",
         destination: "/pinnacle/moment/:id",

@@ -851,13 +851,15 @@ describe("segment 4 — pack distributions + Pinnacle pins", () => {
     const s = await buildSitemapSegment(4)
     const urls = s.map((x) => x.url)
     expect(urls).toContain(`${BASE}/disney-pinnacle/set/lucasfilm-ltd-return-of-the-jedi-vol-1`)
-    expect(urls).toContain(`${BASE}/disney-pinnacle/player/ewok`)
-    expect(urls).toContain(`${BASE}/disney-pinnacle/player/wicket-w-warrick`)
+    expect(urls).toContain(`${BASE}/disney-pinnacle/character/ewok`)
+    expect(urls).toContain(`${BASE}/disney-pinnacle/character/wicket-w-warrick`)
+    // 2026-10-31: Pinnacle characters are listed at /character/ — never at the old /player/ URL, which 308s.
+    expect(urls.some((u) => u.includes('/disney-pinnacle/player/'))).toBe(false)
     expect(urls).toContain(`${BASE}/disney-pinnacle/team/star-wars`)
     expect(urls.some((u) => u.endsWith("/team/star-wars-"))).toBe(false)
     // One URL per entity, dated by its newest pin.
-    expect(urls.filter((u) => u.endsWith("/player/ewok"))).toHaveLength(1)
-    const ewok = s.find((x) => x.url.endsWith("/player/ewok"))!
+    expect(urls.filter((u) => u.endsWith("/character/ewok"))).toHaveLength(1)
+    const ewok = s.find((x) => x.url.endsWith("/character/ewok"))!
     expect((ewok.lastModified as Date).toISOString()).toBe("2026-07-01T00:00:00.000Z")
   })
 

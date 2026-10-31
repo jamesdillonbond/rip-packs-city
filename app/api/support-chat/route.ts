@@ -41,6 +41,7 @@ import {
 import { fetchEditionFmvEstimate, estimateForModel } from "@/lib/fmv/edition-estimate";
 import { checkFeatureQuota, recordFeatureUsage } from "@/lib/pro-tier";
 import { userQuotaKey } from "@/lib/user-quota-key";
+import { playerPagePath } from "@/lib/player-route";
 import {
   GREETING_RE,
   classifyAnthropicError,
@@ -1287,7 +1288,7 @@ Relay each finding's \`why\` — "you have a palindrome" is unverifiable on its 
 - **Rewards / points**: NOT a live feature. RPC has no live Status, Credits, points, tiers, cosmetics shop or redemption today — never tell a user they earn, have, or will receive any of them, and never send anyone to /rewards (it 404s). If asked, say a rewards program isn't available right now.
 - **Wallet verification (listing challenge)** — the working path for Top Shot collectors: go to /dashboard. RPC picks one cheap Moment you own and asks you to list it at a unique ~100x / $10-floor price (it won't sell — the odd cents are just a uniqueness check), confirms the live listing. ⚠ **It needs a Top Shot wallet (a Flow 0x address holding Top Shot Moments) — there is NO verification path for a Solana / Candy MLB wallet, or for a wallet with no Top Shot Moments, today.** Never offer verification to those users; say it is Top Shot-only for now. **RPC never asks you to connect or sign a wallet to use the site** — there is no wallet sign-in for loading a collection, verifying, or anything else. The ONE exception is a giveaway claim page (/giveaways/<drop>): a winner may optionally tap "Claim with Flow Wallet" to choose whether their pack goes to that Flow Wallet or to an account it has linked (e.g. their Dapper account). Their wallet asks them to approve a sign-in (it proves the wallet is theirs; no transaction, no fee, nothing leaves their account), then RPC reads which accounts are linked. Typing a Top Shot username still works. Only Flow Wallet is offered there (not Dapper). To load a collection you paste a public identifier (a Dapper wallet address or a Top Shot username; for Candy MLB, a Solana wallet address) and RPC reads it view-only; the listing challenge is the only way to mark a wallet as verifiably yours. Never tell a user to look for a "Sign in with Dapper" / "connect wallet" button — none exists.
 - **Team checklists** — every edition a franchise has minted in a collection, owned vs missing, cost to complete: /<collection>/team/<team-slug> (e.g. /nba-top-shot/team/detroit-pistons; Top Shot, All Day, Golazos and Candy MLB). How to get there WITHOUT a direct link: the **Teams** directory (/teams, linked from the "Team checklists" card on the Top Shot / All Day / Golazos / Candy MLB Overview) → pick the team → the "<Team> checklist" link at the top of each collection panel. Signed in, **My Teams** in the header (/my-teams) follows teams and shows each one's checklist progress, plus the players you follow. There is no "Teams" tab in a collection's tab row — give these paths instead of saying you don't know one.
-- **Player checklists** (added 2026-10-30, a collector's request) — the same checklist for ONE player: every edition that person has in a collection, owned vs missing for a pasted or signed-in wallet, cost to complete, the All moments / Full editions and All-Time / Contemporary toggles. It is the "<Player> Checklist" section on the player page: /<collection>/player/<player-slug> (e.g. /nba-top-shot/player/nikola-jokic), on Top Shot, All Day, Golazos and Candy MLB — not on Pinnacle (characters) or Panini. **Following a player** (added 2026-10-31, a collector's request): signed in, the "☆ Follow player" button under the player's name on /players/<slug> or /<collection>/player/<slug> follows them (up to 50); followed players are listed under "Players you follow" on My Teams (/my-teams). Every collection: a sports player's follow covers them in every collection (it links the player hub); a Disney Pinnacle character is followed from its own character page and links back there.
+- **Player checklists** (added 2026-10-30, a collector's request) — the same checklist for ONE player: every edition that person has in a collection, owned vs missing for a pasted or signed-in wallet, cost to complete, the All moments / Full editions and All-Time / Contemporary toggles. It is the "<Player> Checklist" section on the player page: /<collection>/player/<player-slug> (e.g. /nba-top-shot/player/nikola-jokic), on Top Shot, All Day, Golazos and Candy MLB — not on Pinnacle (characters) or Panini. **Following a player** (added 2026-10-31, a collector's request): signed in, the "☆ Follow player" button under the player's name on /players/<slug> or /<collection>/player/<slug> follows them (up to 50); followed players are listed under "Players you follow" on My Teams (/my-teams). Every collection: a sports player's follow covers them in every collection (it links the player hub); a Disney Pinnacle character is followed from its own character page (/disney-pinnacle/character/<slug> — Pinnacle's player pages are CHARACTER pages; the old /disney-pinnacle/player/<slug> URLs redirect there) and links back there.
 - **Play hub** (Top Shot /play): links Challenges (live). Fast Break and Road to the Ring are shown there as "Coming soon" — they are NOT available today (their pages redirect away), so never send anyone to /nba/fast-break, /nba-top-shot/fast-break or /nba-top-shot/road-to-the-ring, and never promise a date.
 - **API access — two different things, keep them apart.** (1) The public FMV API, documented at /analytics/api: free, read-only, NO key, rate-limited per IP — this is the answer to 'is there an API' / 'can I pull FMV prices'. (2) /dashboard/api-keys: signed-in users create keys for RPC's MCP server, which connects an AI agent (Claude Desktop, an Eliza agent…) to RPC's data — NOT a key for the FMV API. Never reveal or generate a key value yourself.
 - **Cost**: RPC is free — anyone can create an account with an email magic link, no invite and no waitlist (this must match the Posture section above). There is NO paid tier. Never mention Pro, pricing, plans, upgrades or a future paid tier; if asked about cost, say RPC is free.
@@ -5987,7 +5988,7 @@ async function executeToolInner(
         player: resolution.status === "one" ? resolution.player.name : (all[0]?.player_name ?? playerName),
         team: all[0]?.team_name ?? null,
         collectionId: slug,
-        player_url: `${base}/${slug}/player/${playerSlug}`,
+        player_url: `${base}${playerPagePath(slug, playerSlug)}`,
         player_identity: playerIdentity,
         total_editions: all.length,
         // ⚠ 200 is the RPC page: at exactly 200 the catalog may hold more.
@@ -6043,7 +6044,7 @@ async function executeToolInner(
       collectionId: slug,
       ...ctx,
       ...(resolution.status === "one"
-        ? { player_url: `${base}/${slug}/player/${resolution.player.slug}` }
+        ? { player_url: `${base}${playerPagePath(slug, resolution.player.slug)}` }
         : {}),
       notes: [
         "Relations come from RPC's curated player_relations table (public record only). A namesake whose relation reads 'kinship NOT recorded' may or may not be related — say you don't know.",
@@ -6265,7 +6266,7 @@ async function executeToolInner(
             edition_count: r.edition_count ?? null,
             fmv_total_usd: r.fmv_total_usd != null ? Number(r.fmv_total_usd) : null,
             total_circulation: r.total_circulation ?? null,
-            player_url: r.player_slug ? `${base}/${slug}/player/${r.player_slug}` : null,
+            player_url: r.player_slug ? `${base}${playerPagePath(slug, r.player_slug)}` : null,
           })),
           note: "fmv_total_usd sums the FMV of every edition RPC tracks for the player (one per edition, not per moment owned) — a catalog-breadth signal, not a price of any one moment. Chain get_player_editions for a player's editions with badges.",
         });

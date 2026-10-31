@@ -8,6 +8,7 @@
 // where the active flag isn't populated) it stays hidden and every player is
 // shown, so the roster never renders empty.
 
+import { playerPagePath } from "@/lib/player-route"
 import { useState } from "react"
 import Link from "next/link"
 import { EM_DASH, fmtCount, fmtUsd } from "./_shared"
@@ -147,7 +148,7 @@ export default function PlayersGridPaginated({ collectionUrlSlug, fetchUrl, init
         {display.map(p => (
           <Link
             key={p.player_slug}
-            href={`/${collectionUrlSlug}/player/${encodeURIComponent(p.player_slug)}`}
+            href={playerPagePath(collectionUrlSlug, p.player_slug)}
             className="rpc-card"
             style={{ padding: 10, textDecoration: "none", color: "inherit", display: "block" }}
           >
