@@ -29,6 +29,8 @@
 //   min_circulation=<number>                          floor on circulation (cuts 1/1s and Ultimates out of the top)
 //   min_buyable=<number>                              floor on effectively_buyable
 //   team=<text>                                       a team; resolved to its FRANCHISE's every label (historic names too)
+//   league=NBA|WNBA                                   Top Shot only (beta feedback 11682, 2026-10-30); a 400 on All Day,
+//                                                     whose rows are all NFL — never the whole board under a league heading
 //   set=<text>                                        ilike match on set_name
 //   player=<text>                                     ilike match on player_name
 //   sort=squeeze|circulation|fmv|buyable|concentration  default squeeze (concentration = top-5 holder share, census-less rows last)
@@ -50,7 +52,7 @@ import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { boardUnavailable } from "@/lib/insights/board-error";
 import { fetchSqueezeBoard, isSqueezeCollection, resolveSqueezeTeam, SQUEEZE_SOURCES } from "@/lib/insights/squeeze-board";
 import { ownLookup } from "@/lib/safe-lookup";
-import { SQUEEZE_TIERS } from "@/lib/insights/squeeze-collections";
+import { SQUEEZE_LEAGUES, SQUEEZE_TIERS } from "@/lib/insights/squeeze-collections";
 
 import { boardRowMeta } from "@/lib/insights/board-meta"
 // Tier vocabularies differ: All Day has UNCOMMON and no FANDOM (lib/insights/squeeze-collections.ts).
@@ -89,6 +91,8 @@ export async function GET(req: NextRequest) {
   const minBuyable = sp.get("min_buyable") ? Number(sp.get("min_buyable")) : null;
   // Team (beta feedback 10253): resolved to the FRANCHISE's labels below.
   const teamFilter = sp.get("team")?.trim() || null;
+  // League (beta feedback 11682): a column of the view, so it is a plain server-side filter.
+  const league = sp.get("league")?.trim().toUpperCase() || null;
   const sort = sp.get("sort") ?? "squeeze";
   const limit = Math.max(1, Math.min(200, Number(sp.get("limit")) || 50));
 
@@ -97,6 +101,15 @@ export async function GET(req: NextRequest) {
       { error: `tier must be one of ${[...tiers].join(",")}` },
       { status: 400 }
     );
+  }
+  if (league) {
+    const leagues = ownLookup(SQUEEZE_LEAGUES, collection) ?? [];
+    if (!leagues.includes(league)) {
+      return NextResponse.json(
+        { error: leagues.length ? `league must be one of ${leagues.join(",")}` : `${collection} has no league filter` },
+        { status: 400 },
+      );
+    }
   }
   if (!Number.isFinite(minSqueeze) || minSqueeze < 0) {
     return NextResponse.json({ error: "min_squeeze must be a non-negative number" }, { status: 400 });
@@ -131,7 +144,7 @@ export async function GET(req: NextRequest) {
   }
 
   const { data, error, playerResolved } = await fetchSqueezeBoard(
-    { collection, tier, set: setFilter, player: playerFilter, minSqueeze, maxBuyable, maxCirculation, minCirculation, minBuyable, teamNames, sort, limit },
+    { collection, tier, set: setFilter, player: playerFilter, minSqueeze, maxBuyable, maxCirculation, minCirculation, minBuyable, teamNames, league, sort, limit },
     supabase,
   );
   if (error) {
@@ -161,6 +174,7 @@ export async function GET(req: NextRequest) {
         player: playerFilter,
         team: teamFilter,
         team_resolution: teamResolution,
+        league,
         sort,
         limit,
       },

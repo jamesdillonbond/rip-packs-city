@@ -166,6 +166,18 @@ describe("fetchSqueezeBoard", () => {
     expect(SQUEEZE_COLS.split(",").map((c) => c.trim())).toContain("team_name")
   })
 
+  it("a league filter is an exact column match on the view, and absent by default (beta feedback 11682)", async () => {
+    const bare = recordingDb()
+    await fetchSqueezeBoard({ limit: 10 }, bare.db)
+    expect(bare.calls.filter((c) => c.fn === "eq").map((c) => c.args[0])).not.toContain("league")
+
+    const wnba = recordingDb()
+    await fetchSqueezeBoard({ limit: 10, league: "WNBA" }, wnba.db)
+    expect(wnba.calls.find((c) => c.fn === "eq")?.args).toEqual(["league", "WNBA"])
+    // the shared column list carries the column the filter reads (20261031040755 added it to BOTH sibling views)
+    expect(SQUEEZE_COLS.split(",").map((c) => c.trim())).toContain("league")
+  })
+
   it("sort=concentration puts editions WITHOUT a census last — unknown is not 0 (beta feedback 10256)", async () => {
     const { db, calls } = recordingDb()
     await fetchSqueezeBoard({ limit: 10, sort: "concentration" }, db)

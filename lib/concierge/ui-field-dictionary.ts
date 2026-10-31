@@ -46,6 +46,18 @@ export const UI_FIELD_DICTIONARY: readonly UiFieldEntry[] = [
     source: "components/entity/TeamChecklist.tsx + app/api/entity/team-checklist-full-editions/route.ts (view, scope)",
   },
   {
+    // 2026-10-30 (beta feedback 11691, webz_80 on the Nuggets page): "a player checklist might be a
+    // fun addition" alongside team checklists. Shipped as the team checklist component over one
+    // person's editions (get_player_checklist / _progress, migration 20261031044056).
+    id: "player-checklist",
+    surface: "player page \"<Player> Checklist\" section (/[collection]/player/[slug]; Top Shot, All Day, Golazos, Candy MLB)",
+    field: "Player checklist — owned vs missing editions of one player, cost to complete",
+    aliases: ["player checklist", "player check list", "checklist for a player", "every edition a player has", "collect them all for a player", "player set", "all of a player's moments", "favorite player checklist"],
+    meaning:
+      "Every edition ONE player has in a collection (the person, not a namesake — resolved the way the player page resolves them), scored owned vs missing for the pasted or signed-in wallet, with the same header as a team checklist: N editions, owned, completion %, estimated cost to complete (live ask when there is one within 3× FMV, else FMV), per-tier breakdown, All moments / Full editions and All-Time / Contemporary / series toggles. It sits on the player page under the stat strip. Not offered for Pinnacle characters or Panini players. There is no \"favorite player\" follow (My Teams follows teams only). Added 2026-10-30.",
+    source: "app/(collections)/[collection]/player/[slug]/page.tsx (TeamChecklist entity=\"player\") + supabase/migrations/20261031044056 (get_player_checklist, get_player_checklist_progress)",
+  },
+  {
     id: "squeeze.pct",
     surface: "team page \"Squeeze & Scarcity\" (/[collection]/team/[slug]), /insights/squeeze, /insights/set-squeeze, edition supply blocks",
     field: "Squeeze % and \"N / M\" buyable count",
@@ -70,11 +82,11 @@ export const UI_FIELD_DICTIONARY: readonly UiFieldEntry[] = [
   {
     id: "squeeze-board.filters",
     surface: "/insights/squeeze (Top Shot squeeze board)",
-    field: "Board filters: tier, MAX BUYABLE, TROPHY-CIRC, MIN MINT, MIN BUYABLE, TEAM, SORT; set and player drill-downs",
-    aliases: ["filter", "filters", "team filter", "player filter", "min circulation", "minimum circulation", "min mint", "min buyable", "max buyable", "trophy-circ", "1/1", "one of one", "sort", "squeeze board"],
+    field: "Board filters: tier, LEAGUE, MAX BUYABLE, MAX MINT (was TROPHY-CIRC), MIN MINT, MIN BUYABLE, TEAM, PLAYER, SORT; set drill-down",
+    aliases: ["filter", "filters", "team filter", "player filter", "league", "nba only", "wnba only", "wnba toggle", "min circulation", "minimum circulation", "min mint", "max mint", "min buyable", "max buyable", "trophy-circ", "trophy circ", "1/1", "one of one", "sort", "squeeze board"],
     meaning:
-      "The squeeze board filters by tier; MAX BUYABLE and MIN BUYABLE (effectively-buyable copies); TROPHY-CIRC (circulation ≤ 100 / 75 / 10) and MIN MINT (circulation ≥ 100 / 500 / 1K / 5K — the fix for 1/1s and Ultimates crowding the top); and TEAM, a typed box that resolves to the franchise and includes its historic names. SORT offers squeeze %, effectively buyable, circulation, FMV and Top-5 holder share. A PLAYER filter exists only as a drill-down: links from the rookies and first-mint boards open /insights/squeeze?player=<name> with a \"FILTERED TO PLAYER\" banner — there is no typed player box (a fair request to log). The TEAM, MIN MINT and MIN BUYABLE filters (and the set / player drill-downs) persist in the URL, so that view can be shared; the other pills reset on reload.",
-    source: "app/insights/squeeze/SqueezeBoardClient.tsx (rpc-sq-controls; teamFilter, minCirculation, minBuyable, playerFilter from ?player=)",
+      "The squeeze board filters by tier; LEAGUE (Top Shot only: ALL / NBA / WNBA — read from the edition's team and set, so WNBA moments inside a mixed set like Fresh Gems or Level Up still count as WNBA; added 2026-10-30); MAX BUYABLE and MIN BUYABLE (effectively-buyable copies); MAX MINT (circulation ≤ 100 / 75 / 10 — it was labelled TROPHY-CIRC until 2026-10-30; it caps the MINTED count, which locks and burns never reduce, and ≤ 100 is the band collectors call trophy circ) and MIN MINT (circulation ≥ 10 / 50 / 100 / 500 / 1K / 5K — the ≥ 10 and ≥ 50 floors were added 2026-10-30 so a Legendary view can drop 1/1s and low-mint parallels); TEAM, a typed box that resolves to the franchise and includes its historic names; and PLAYER, a typed box (added 2026-10-30) that filters to one player's editions with the squeeze floor dropped to 0 so every edition of theirs shows — the same path the rookies / first-mint drill-down links use (?player=<name>, \"FILTERED TO PLAYER\" banner). SORT offers squeeze %, effectively buyable, circulation, FMV and Top-5 holder share. TEAM, PLAYER, LEAGUE, MIN MINT and MIN BUYABLE (and the set drill-down) persist in the URL, so that view can be shared; the other pills reset on reload.",
+    source: "app/insights/squeeze/SqueezeBoardClient.tsx (rpc-sq-controls; league, teamFilter, playerFilter, minCirculation, minBuyable) + supabase/migrations/20261031040755 (league column)",
   },
   {
     id: "fmv",

@@ -93,6 +93,8 @@ function stubServerFiltering(all: ReturnType<typeof row>[]) {
     const minC = u.searchParams.get("min_circulation")
     const minB = u.searchParams.get("min_buyable")
     const team = u.searchParams.get("team")
+    const league = u.searchParams.get("league")
+    const player = u.searchParams.get("player")
     // The server resolves a typed team to the FRANCHISE's labels; this stub
     // plays that: "clippers" → both Clippers labels, anything else → none.
     const labels = team == null ? null : /clippers/i.test(team) ? ["LA Clippers", "Los Angeles Clippers"] : []
@@ -102,6 +104,8 @@ function stubServerFiltering(all: ReturnType<typeof row>[]) {
       (maxC == null || (r.circulation as number) <= Number(maxC)) &&
       (minC == null || (r.circulation as number) >= Number(minC)) &&
       (minB == null || (r.effectively_buyable as number) >= Number(minB)) &&
+      (league == null || String((r as { league?: string }).league) === league) &&
+      (player == null || String(r.player_name).toLowerCase().includes(player.toLowerCase())) &&
       (labels == null || labels.includes(String((r as { team_name?: string }).team_name))))
     const team_resolution = team == null ? null : labels!.length > 0 ? { status: "one", current_name: "LA Clippers", labels: labels!.length } : { status: "none", current_name: null, labels: 0 }
     return Promise.resolve({ ok: true, json: async () => ({ rows: out, meta: { fetched_at: FETCHED, total_rows: out.length, filters: { team, team_resolution } } }) } as Response)
@@ -239,6 +243,77 @@ describe("SqueezeBoardClient — filters are sent to the server", () => {
     fireEvent.submit(group(container, "Team"))
     await waitFor(() => expect(container.textContent).toMatch(/No Top Shot team matches “zzzz”/))
     expect(container.textContent).not.toMatch(/No editions match those filters/)
+  })
+
+  // 2026-10-30 (beta feedback 11682 / 11683 / 11684 / 11686, webz_80): a LEAGUE
+  // toggle, lower MIN MINT floors, a typed PLAYER box, and the circulation cap
+  // named for what it does.
+  it("LEAGUE pills send ?league= to the server, persist in the URL, and are absent on All Day", async () => {
+    const lgRows = rows.map((r, i) => ({ ...r, league: i === 1 ? "WNBA" : "NBA" }))
+    const fn = stubServerFiltering(lgRows)
+    const { container } = render(<SqueezeBoardClient initialRows={lgRows} initialFetchedAt={FETCHED} />)
+    fireEvent.click(within(group(container, "League")).getByText("WNBA"))
+    await waitFor(() => expect(container.textContent).not.toMatch(/Legend Guy/))
+    expect(squeezeCalls(fn).at(-1)?.searchParams.get("league")).toBe("WNBA")
+    expect(container.textContent).toMatch(/Ultimate Guy/)
+    expect(container.textContent).not.toMatch(/Common Guy/)
+    expect(window.location.search).toContain("league=WNBA")
+    fireEvent.click(within(group(container, "League")).getByText("ALL"))
+    await waitFor(() => expect(window.location.search).not.toContain("league="))
+    expect(squeezeCalls(fn).at(-1)?.searchParams.get("league")).toBeNull()
+    // All Day's rows are all NFL — no league pills there
+    fireEvent.click(container.querySelector('[data-testid="sq-collection-nfl-all-day"]') as HTMLElement)
+    await waitFor(() => expect(container.querySelector('[aria-label="League"]')).toBeNull())
+  })
+
+  it("reads ?league= from the URL on mount", async () => {
+    window.history.replaceState({}, "", "/insights/squeeze?league=wnba")
+    const lgRows = rows.map((r, i) => ({ ...r, league: i === 1 ? "WNBA" : "NBA" }))
+    const fn = stubServerFiltering(lgRows)
+    const { container } = render(<SqueezeBoardClient initialRows={lgRows} initialFetchedAt={FETCHED} />)
+    await waitFor(() => expect(squeezeCalls(fn).at(-1)?.searchParams.get("league")).toBe("WNBA"))
+    expect((within(group(container, "League")).getByText("WNBA") as HTMLElement).getAttribute("aria-selected")).toBe("true")
+  })
+
+  it("MIN MINT offers ≥ 10 and ≥ 50 under the old ≥ 100 floor", async () => {
+    const fn = stubServerFiltering(rows)
+    const { container } = render(<SqueezeBoardClient initialRows={rows} initialFetchedAt={FETCHED} />)
+    // ≥ 50 keeps Legend(circ 99) + Common(15000), drops the Ultimate (circ 8)
+    fireEvent.click(within(group(container, "Min circulation")).getByText("≥ 50"))
+    await waitFor(() => expect(container.textContent).not.toMatch(/Ultimate Guy/))
+    expect(squeezeCalls(fn).at(-1)?.searchParams.get("min_circulation")).toBe("50")
+    expect(container.textContent).toMatch(/Legend Guy/)
+    // ≥ 10 keeps the Legendary, still drops the 8-mint Ultimate
+    fireEvent.click(within(group(container, "Min circulation")).getByText("≥ 10"))
+    await waitFor(() => expect(squeezeCalls(fn).at(-1)?.searchParams.get("min_circulation")).toBe("10"))
+  })
+
+  it("a typed PLAYER goes to the server as ?player=, shows the drill-down chip, persists, and clears", async () => {
+    const fn = stubServerFiltering(rows)
+    const { container } = render(<SqueezeBoardClient initialRows={rows} initialFetchedAt={FETCHED} />)
+    const box = within(group(container, "Player")).getByLabelText("Player name") as HTMLInputElement
+    fireEvent.change(box, { target: { value: "legend" } })
+    fireEvent.submit(group(container, "Player"))
+    await waitFor(() => expect(squeezeCalls(fn).at(-1)?.searchParams.get("player")).toBe("legend"))
+    // a player view drops the 50 % floor so every one of their editions shows
+    expect(squeezeCalls(fn).at(-1)?.searchParams.get("min_squeeze")).toBe("0")
+    await waitFor(() => expect(container.textContent).not.toMatch(/Common Guy/))
+    expect(container.textContent).toMatch(/FILTERED TO PLAYER/)
+    expect(window.location.search).toContain("player=legend")
+    fireEvent.click(within(group(container, "Player")).getByText("Clear ✕"))
+    await waitFor(() => expect(window.location.search).not.toContain("player="))
+    expect(box.value).toBe("")
+    expect(container.textContent).not.toMatch(/FILTERED TO PLAYER/)
+  })
+
+  it("the circulation cap is named MAX MINT and explains that mint count is never reduced by locks or burns", () => {
+    stubServerFiltering(rows)
+    const { container } = render(<SqueezeBoardClient initialRows={rows} initialFetchedAt={FETCHED} />)
+    const cap = group(container, "Max circulation")
+    expect(cap.textContent).toMatch(/MAX MINT/)
+    expect(cap.textContent).not.toMatch(/TROPHY-CIRC/)
+    expect(cap.textContent).toMatch(/≤ 100 \(trophy circ\)/)
+    expect(container.textContent).toMatch(/the number minted, which locks and burns never reduce/)
   })
 
   it("filters by max circulation (trophy-scarce)", async () => {

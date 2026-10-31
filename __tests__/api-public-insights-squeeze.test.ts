@@ -119,6 +119,23 @@ describe("GET /api/public/insights/squeeze", () => {
     expect((await res.json()).error).not.toContain("canceling")
   })
 
+  // 2026-10-30 (beta feedback 11682, webz_80): the NBA / WNBA toggle. The view carries
+  // `league` (20261031040755), so it is an exact server-side filter like the tier.
+  it("passes ?league= to the query as an exact match and echoes it (Top Shot)", async () => {
+    const res = await GET(req(`${BASE}?league=wnba`))
+    expect(res.status).toBe(200)
+    expect(state.calls.find((c) => c.fn === "eq")?.args).toEqual(["league", "WNBA"])
+    expect((await res.json()).meta.filters.league).toBe("WNBA")
+  })
+
+  it("400s on an unknown league, and on ANY league for All Day (all its rows are NFL) — pre-DB, never the whole board", async () => {
+    expect((await GET(req(`${BASE}?league=MLS`))).status).toBe(400)
+    const ad = await GET(req(`${BASE}?collection=nfl-all-day&league=NBA`))
+    expect(ad.status).toBe(400)
+    expect((await ad.json()).error).toContain("no league filter")
+    expect(state.calls.filter((c) => c.fn === "select")).toHaveLength(0)
+  })
+
   it("500s on a query error", async () => {
     state.error = { message: "boom" }
     const res = await GET(req(BASE))

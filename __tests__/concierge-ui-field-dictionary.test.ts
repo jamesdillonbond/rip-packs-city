@@ -72,11 +72,31 @@ describe("ui field dictionary — squeeze board (2026-10-25 replay)", () => {
     expect(pct?.meaning).toMatch(/does NOT count stacking/)
     expect(pct?.meaning).toMatch(/Top 5 hold/)
   })
-  it("the filter question reaches the filters entry, which names TEAM and says the player box is drill-down only", () => {
+  // Re-pinned 2026-10-30: the PLAYER box shipped (beta feedback 11684), so the entry
+  // now names BOTH typed boxes instead of calling the player filter drill-down only.
+  it("the filter question reaches the filters entry, which names the TEAM and PLAYER boxes", () => {
     const hit = lookupUiField("can we have a player and team filter on the squeeze page as well?", "squeeze (insights)")[0]
     expect(hit?.id).toBe("squeeze-board.filters")
     expect(hit?.meaning).toMatch(/TEAM, a typed box/)
-    expect(hit?.meaning).toMatch(/no typed player box/)
+    expect(hit?.meaning).toMatch(/PLAYER, a typed box/)
+    expect(hit?.meaning).not.toMatch(/no typed player box/)
+  })
+  it("the NBA / WNBA toggle question reaches the filters entry, which names LEAGUE (webz_80, 2026-10-27)", () => {
+    const hit = lookupUiField("have a toggle to switch between nba and wnba so i can only see nba moments", "squeeze (insights)")[0]
+    expect(hit?.id).toBe("squeeze-board.filters")
+    expect(hit?.meaning).toMatch(/LEAGUE \(Top Shot only: ALL \/ NBA \/ WNBA/)
+  })
+  it("the trophy-circ question reaches the filters entry, which says MAX MINT caps the minted count, never reduced by burns", () => {
+    const hit = lookupUiField("what does trophy-circ mean, is it the original mint count before burns?", "squeeze (insights)")[0]
+    expect(hit?.id).toBe("squeeze-board.filters")
+    expect(hit?.meaning).toMatch(/MAX MINT/)
+    expect(hit?.meaning).toMatch(/locks and burns never reduce/)
+  })
+  it("the player-checklist ask (webz_80, 2026-10-27) reaches the shipped entry and names the player page", () => {
+    const hit = lookupUiField("in addition to team checklists, a player checklist might be a fun addition", "team (nba-top-shot)")[0]
+    expect(hit?.id).toBe("player-checklist")
+    expect(hit?.meaning).toMatch(/player page/)
+    expect(hit?.meaning).toMatch(/owned vs missing/)
   })
   it("the 1/1 crowding complaint reaches MIN MINT", () => {
     const hit = lookupUiField("everything at the top is ultimates and 1/1 rare parallels, maybe have a minimum circulation filter", "squeeze (insights)")[0]

@@ -38,8 +38,7 @@ type Db = any
 
 /** Columns both consumers select. Duplicating this list was the drift risk. */
 export const SQUEEZE_COLS =
-  "edition_id, external_id, player_name, set_name, tier, circulation, locked, burned, lock_pct, burn_pct, squeeze_pct, effectively_buyable, low_ask, low_ask_disconnected, fmv_usd, confidence, game_date, thumbnail_url, team_name, top5_share_pct, holders, subedition_name"
-
+  "edition_id, external_id, player_name, set_name, tier, circulation, locked, burned, lock_pct, burn_pct, squeeze_pct, effectively_buyable, low_ask, low_ask_disconnected, fmv_usd, confidence, game_date, thumbnail_url, team_name, top5_share_pct, holders, subedition_name, league"
 /** Top Shot's collection row — the board's default collection. */
 export const SQUEEZE_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
 
@@ -112,6 +111,8 @@ export interface SqueezeBoardOptions {
   minBuyable?: number | null
   /** team_name labels to keep (a franchise's every label — see resolveSqueezeTeam). An EMPTY list matches nothing. */
   teamNames?: string[] | null
+  /** League (beta feedback 11682): one of SQUEEZE_LEAGUES[collection] — NBA or WNBA on Top Shot. The view carries the column. */
+  league?: string | null
   sort?: string
   limit: number
 }
@@ -158,6 +159,7 @@ async function runFetchSqueezeBoard(
     minCirculation = null,
     minBuyable = null,
     teamNames = null,
+    league = null,
     sort = "squeeze",
     limit,
   } = opts
@@ -174,6 +176,9 @@ async function runFetchSqueezeBoard(
   // A resolved team with NO labels must match nothing — never fall through to
   // the unfiltered board (a filter that silently widens is the #146 shape).
   if (teamNames != null) q = q.in("team_name", teamNames)
+  // League is a column of the view (NBA / WNBA from the team label + set), so it
+  // filters server-side like every other pill — never over the 200 rows in hand.
+  if (league) q = q.eq("league", league)
 
   // ⚠ EVERY sort carries a SECONDARY ordering, and they are not decoration.
   // Without a tiebreak, rows equal on the primary key order arbitrarily, so the

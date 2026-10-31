@@ -28,6 +28,18 @@ export function setSqueezeBoardPath(collection: string): string {
   return collection === "nfl-all-day" ? "/insights/allday-set-squeeze" : "/insights/set-squeeze"
 }
 
+/**
+ * League vocabulary per collection (beta feedback 11682, webz_80, 2026-10-27; shipped 2026-10-30).
+ * Top Shot's view derives NBA / WNBA from the edition's team label and set (migration
+ * 20261031040755); All Day's `league` is the constant NFL, so the toggle is not offered there and
+ * the route refuses a league param it cannot honour rather than answering the whole board under a
+ * league heading (the substitution shape).
+ */
+export const SQUEEZE_LEAGUES: Record<SqueezeCollection, readonly string[]> = {
+  "nba-top-shot": ["NBA", "WNBA"],
+  "nfl-all-day": [],
+}
+
 /** Tier vocabularies differ: All Day has UNCOMMON and no FANDOM. */
 export const SQUEEZE_TIERS: Record<SqueezeCollection, readonly string[]> = {
   "nba-top-shot": ["COMMON", "RARE", "LEGENDARY", "FANDOM", "ULTIMATE"],

@@ -30,7 +30,7 @@ import { sectionUnavailableCopy } from "@/lib/entity/section-empty-copy"
 import { usdSignFirst } from "@/lib/usd-format"
 import { accentText } from "@/lib/accent-text"
 import PlayerResolvedNote from "@/components/filters/PlayerResolvedNote"
-import { SQUEEZE_COLLECTIONS, SQUEEZE_LABEL, SQUEEZE_TIERS, isSqueezeCollection, squeezeBoardPath, type SqueezeCollection } from "@/lib/insights/squeeze-collections"
+import { SQUEEZE_COLLECTIONS, SQUEEZE_LABEL, SQUEEZE_LEAGUES, SQUEEZE_TIERS, isSqueezeCollection, squeezeBoardPath, type SqueezeCollection } from "@/lib/insights/squeeze-collections"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -66,6 +66,8 @@ export type Row = {
   top5_share_pct?: number | null
   /** Distinct collector wallets holding the edition; NULL without a complete census. */
   holders?: number | null
+  /** Appended 2026-10-30 (beta feedback 11682): NBA / WNBA on Top Shot, NFL on All Day. Absent on rows cached before it. */
+  league?: string | null
 }
 
 type ApiResponse = {
@@ -152,6 +154,12 @@ type Props = {
 }
 
 
+/** Hover help for the circulation pills (beta feedback 11686): circulation is the minted count, never reduced by locks or burns. */
+const MAX_MINT_HELP =
+  "Caps the edition's circulation — the number minted, which locks and burns never reduce. ≤ 100 is the band collectors call trophy circ."
+const MIN_MINT_HELP =
+  "Floors the edition's circulation — the number minted — so 1/1s and low-mint parallels drop out of the ranking."
+
 export default function SqueezeBoardClient({
   initialRows,
   initialFetchedAt,
@@ -192,6 +200,14 @@ export default function SqueezeBoardClient({
   const [teamInput, setTeamInput] = useState("")
   const [teamFilter, setTeamFilter] = useState<string | null>(null)
   const [teamResolution, setTeamResolution] = useState<{ status: string; current_name: string | null; labels: number } | null>(null)
+  // Player (beta feedback 11684, 2026-10-30): a typed box feeding the same
+  // `playerFilter` the rookies / first-mint drill-downs set via ?player=, so one
+  // path serves both (server ilike + the #207 accent retry). `playerInput` is
+  // what the box shows; `playerFilter` is what was sent.
+  const [playerInput, setPlayerInput] = useState("")
+  // League (beta feedback 11682): NBA / WNBA on Top Shot, a column of the view.
+  // "ALL" sends nothing; All Day has no vocabulary, so the pills are not shown there.
+  const [league, setLeague] = useState<string>("ALL")
   const [sort, setSort] = useState<SortKey>("squeeze")
   // Pre-filter to a specific set or player when arriving from another
   // surface (set-squeeze / cross-collection / rookies / first-mint).
@@ -210,7 +226,14 @@ export default function SqueezeBoardClient({
       // A dedicated board page is its collection; only /insights/squeeze reads the param.
       if (!initialCollection && isSqueezeCollection(c)) setCollection(c)
       if (s) setSetFilter(s)
-      if (p) setPlayerFilter(p)
+      if (p) {
+        setPlayerFilter(p)
+        setPlayerInput(p)
+      }
+      const lg = url.searchParams.get("league")?.trim().toUpperCase()
+      // The collection this mount will show: a dedicated page's own, else the URL's, else Top Shot.
+      const mountCollection: SqueezeCollection = initialCollection ?? (isSqueezeCollection(c) ? c : "nba-top-shot")
+      if (lg && SQUEEZE_LEAGUES[mountCollection].includes(lg)) setLeague(lg)
       const t = url.searchParams.get("team")?.trim()
       if (t) {
         setTeamInput(t)
@@ -256,7 +279,7 @@ export default function SqueezeBoardClient({
   useEffect(() => {
     if (isFirstRun.current) {
       isFirstRun.current = false
-      if (collection === seedCollection && sort === "squeeze" && !setFilter && !playerFilter && !teamFilter && minCirculation == null && minBuyable == null) {
+      if (collection === seedCollection && sort === "squeeze" && !setFilter && !playerFilter && !teamFilter && league === "ALL" && minCirculation == null && minBuyable == null) {
         return
       }
     }
@@ -288,6 +311,7 @@ export default function SqueezeBoardClient({
         if (minCirculation != null) params.set("min_circulation", String(minCirculation))
         if (minBuyable != null) params.set("min_buyable", String(minBuyable))
         if (teamFilter) params.set("team", teamFilter)
+        if (league !== "ALL") params.set("league", league)
         const r = await fetch(`/api/public/insights/squeeze?${params.toString()}`, {
           signal: ctrl.signal,
           cache: "no-store",
@@ -309,7 +333,7 @@ export default function SqueezeBoardClient({
     }
     run()
     return () => ctrl.abort()
-  }, [collection, seedCollection, sort, setFilter, playerFilter, tier, maxBuyable, maxCirculation, minCirculation, minBuyable, teamFilter])
+  }, [collection, seedCollection, sort, setFilter, playerFilter, tier, maxBuyable, maxCirculation, minCirculation, minBuyable, teamFilter, league])
 
   // Switching collection resets the tier (different vocabularies) and the census sort All Day lacks.
   function pickCollection(c: SqueezeCollection) {
@@ -320,6 +344,7 @@ export default function SqueezeBoardClient({
     }
     setCollection(c)
     setTier("ALL")
+    setLeague("ALL")
     if (c !== "nba-top-shot" && sort === "concentration") setSort("squeeze")
     if (typeof window !== "undefined") {
       const url = new URL(window.location.href)
@@ -351,14 +376,21 @@ export default function SqueezeBoardClient({
     const url = new URL(window.location.href)
     const setOrDel = (k: string, v: string | null) => (v ? url.searchParams.set(k, v) : url.searchParams.delete(k))
     setOrDel("team", teamFilter)
+    setOrDel("player", playerFilter)
+    setOrDel("league", league === "ALL" ? null : league)
     setOrDel("min_circulation", minCirculation != null ? String(minCirculation) : null)
     setOrDel("min_buyable", minBuyable != null ? String(minBuyable) : null)
     if (url.toString() !== window.location.href) window.history.replaceState({}, "", url.toString())
-  }, [teamFilter, minCirculation, minBuyable])
+  }, [teamFilter, playerFilter, league, minCirculation, minBuyable])
 
   function applyTeam() {
     const t = teamInput.trim()
     setTeamFilter(t === "" ? null : t)
+  }
+
+  function applyPlayer() {
+    const p = playerInput.trim()
+    setPlayerFilter(p === "" ? null : p)
   }
 
   // "N of M" rows carrying a holder census — counted from the rows in hand,
@@ -489,6 +521,7 @@ export default function SqueezeBoardClient({
                 className="rpc-sq-active-clear"
                 onClick={() => {
                   setPlayerFilter(null)
+                  setPlayerInput("")
                   if (typeof window !== "undefined") {
                     const url = new URL(window.location.href)
                     url.searchParams.delete("player")
@@ -534,6 +567,24 @@ export default function SqueezeBoardClient({
           ))}
         </div>
 
+        {SQUEEZE_LEAGUES[collection].length > 0 ? (
+          <div className="rpc-sq-pill-group" role="tablist" aria-label="League">
+            <span className="rpc-sq-pill-label">LEAGUE</span>
+            {["ALL", ...SQUEEZE_LEAGUES[collection]].map((lg) => (
+              <button
+                key={lg}
+                role="tab"
+                aria-selected={league === lg}
+                data-testid={`sq-league-${lg}`}
+                className={`rpc-sq-pill ${league === lg ? "rpc-sq-pill-active" : ""}`}
+                onClick={() => setLeague(lg)}
+              >
+                {lg}
+              </button>
+            ))}
+          </div>
+        ) : null}
+
         <div className="rpc-sq-pill-group" aria-label="Max effectively buyable">
           <span className="rpc-sq-pill-label">MAX BUYABLE</span>
           {[null, 25, 10, 5].map((m) => (
@@ -547,16 +598,21 @@ export default function SqueezeBoardClient({
           ))}
         </div>
 
+        {/* Beta feedback 11686 (2026-10-27): "TROPHY-CIRC" read as a mystery — is it the
+            original mint before burns? It caps CIRCULATION, the minted count, which locks
+            and burns never reduce. Named for what it does; the ≤ 100 band is what Top Shot
+            collectors call trophy circ, so that word stays as the hint. */}
         <div className="rpc-sq-pill-group" aria-label="Max circulation">
-          <span className="rpc-sq-pill-label">TROPHY-CIRC</span>
+          <span className="rpc-sq-pill-label" title={MAX_MINT_HELP}>MAX MINT</span>
           {[
             { val: null, label: "Any" },
-            { val: 100, label: "≤ 100" },
+            { val: 100, label: "≤ 100 (trophy circ)" },
             { val: 75, label: "≤ 75 (Legendary)" },
             { val: 10, label: "≤ 10 (Ultimate)" },
           ].map((m) => (
             <button
               key={String(m.val)}
+              title={MAX_MINT_HELP}
               className={`rpc-sq-pill ${maxCirculation === m.val ? "rpc-sq-pill-active" : ""}`}
               onClick={() => setMaxCirculation(m.val)}
             >
@@ -566,9 +622,14 @@ export default function SqueezeBoardClient({
         </div>
 
         <div className="rpc-sq-pill-group" aria-label="Min circulation">
-          <span className="rpc-sq-pill-label">MIN MINT</span>
+          <span className="rpc-sq-pill-label" title={MIN_MINT_HELP}>MIN MINT</span>
           {[
             { val: null, label: "Any" },
+            // ≥ 10 and ≥ 50 (beta feedback 11683, 2026-10-27): ≥ 100 sits above the
+            // circulation of nearly every Legendary, so it could not cut the 1/1s and
+            // low-mint parallels out of a Legendary view.
+            { val: 10, label: "≥ 10" },
+            { val: 50, label: "≥ 50" },
             { val: 100, label: "≥ 100" },
             { val: 500, label: "≥ 500" },
             { val: 1000, label: "≥ 1K" },
@@ -627,6 +688,38 @@ export default function SqueezeBoardClient({
               onClick={() => {
                 setTeamInput("")
                 setTeamFilter(null)
+              }}
+            >
+              Clear ✕
+            </button>
+          ) : null}
+        </form>
+
+        <form
+          className="rpc-sq-team"
+          aria-label="Player"
+          onSubmit={(e) => {
+            e.preventDefault()
+            applyPlayer()
+          }}
+        >
+          <span className="rpc-sq-pill-label">PLAYER</span>
+          <input
+            className="rpc-sq-team-input"
+            type="search"
+            placeholder={isTopShot ? "e.g. Ausar Thompson" : "e.g. Mahomes"}
+            aria-label="Player name"
+            value={playerInput}
+            onChange={(e) => setPlayerInput(e.target.value)}
+            onBlur={applyPlayer}
+          />
+          {playerFilter ? (
+            <button
+              type="button"
+              className="rpc-sq-active-clear"
+              onClick={() => {
+                setPlayerInput("")
+                setPlayerFilter(null)
               }}
             >
               Clear ✕
@@ -813,10 +906,26 @@ export default function SqueezeBoardClient({
             <strong>Effectively buyable</strong> = circulation − locked −
             burned. {isTopShot
               ? "Lock + burn data refreshes hourly from on-chain badge event ingestion."
-              : "All Day's lock + burn counts refresh daily from its marketplace's edition data; the low ask is the edition's lowest listing as last verified on chain."} FMV from the RPC 1.7.0 sales-based
-            average-sales-price model (recency-weighted) with
-            outlier filtering; <em>—</em> indicates too few recent sales
-            to price the edition.
+              : "All Day's lock + burn counts refresh daily from its marketplace's edition data; the low ask is the edition's lowest listing as last verified on chain."} FMV is RPC&rsquo;s sales model
+            (the median of the edition&rsquo;s most recent typical sales, special
+            serials and grail spikes set aside); <em>—</em> indicates too few
+            recent sales to price the edition.
+          </p>
+          <p>
+            <strong>MAX MINT</strong> and <strong>MIN MINT</strong> cap and floor
+            <em> circulation</em> &mdash; the number minted, which locks and burns
+            never reduce (so &ldquo;&le; 100&rdquo; keeps every edition minted at
+            100 or fewer, however many are locked). &le; 100 is the band
+            collectors call <em>trophy circ</em>. The buyable caps and floors
+            use <em>effectively buyable</em> instead.
+            {isTopShot ? (
+              <>
+                {" "}
+                <strong>LEAGUE</strong> reads NBA or WNBA from the edition&rsquo;s
+                team and set, so WNBA moments in a mixed set (Fresh Gems, Level Up,
+                Road To Royalty&hellip;) still count as WNBA.
+              </>
+            ) : null}
           </p>
           {isTopShot ? (
           <p>
