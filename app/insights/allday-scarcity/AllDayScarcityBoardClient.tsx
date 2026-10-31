@@ -34,6 +34,8 @@ export type Row = {
   scarcity_vs_family_pct: number | null
   fmv_usd: number | null
   fmv_confidence: string | null
+  /** #215: the ASK_ONLY price is capped at the edition's sales. null = not checked. */
+  fmv_basis_capped?: boolean | null
   thumbnail_url: string | null
 }
 
@@ -236,9 +238,9 @@ export default function AllDayScarcityBoardClient({
                       marker only, never the confidence enum. (2026-08-01) */}
                   <td className="rpc-ads-td-num">
                     {fmtUsd(r.fmv_usd)}
-                    {r.fmv_usd != null && fmvBasis(r.fmv_confidence) ? (
-                      <span className="rpc-ads-basis" title={fmvBasis(r.fmv_confidence)!.title}>
-                        {fmvBasis(r.fmv_confidence)!.label}
+                    {r.fmv_usd != null && fmvBasis(r.fmv_confidence, r.fmv_basis_capped === true) ? (
+                      <span className="rpc-ads-basis" title={fmvBasis(r.fmv_confidence, r.fmv_basis_capped === true)!.title}>
+                        {fmvBasis(r.fmv_confidence, r.fmv_basis_capped === true)!.label}
                       </span>
                     ) : null}
                   </td>

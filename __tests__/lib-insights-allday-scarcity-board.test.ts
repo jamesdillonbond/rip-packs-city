@@ -187,3 +187,47 @@ describe("the page and the route now share one query", () => {
     }
   })
 })
+
+// #215 (2026-10-30) — a capped ASK_ONLY price is a SALES figure; the board's
+// "from asks" marker must not sit on it. The view exposes edition_id
+// (20261031002742) so the lib can read algo_version per ASK_ONLY row.
+describe("fetchAllDayScarcityBoard — fmv_basis_capped (#215)", () => {
+  function dbWith(rows: unknown[], wide: { data: unknown; error: unknown }) {
+    const q: Record<string, unknown> = {}
+    for (const fn of ["select", "gte", "gt", "eq", "ilike", "lte", "order"]) q[fn] = () => q
+    q.limit = () => Promise.resolve({ data: rows, error: null })
+    let rpcCalls = 0
+    const db = {
+      from: () => q,
+      rpc: (_name: string, _args: unknown) => { rpcCalls += 1; return Promise.resolve(wide) },
+    }
+    return { db, rpcCalls: () => rpcCalls }
+  }
+  const askOnly = { edition_id: "e1", external_id: "4214", fmv_usd: 217.5, fmv_confidence: "ASK_ONLY" }
+
+  it("flags a capped ASK_ONLY price", async () => {
+    const { db } = dbWith([askOnly], { data: [{ edition_id: "e1", fmv_usd: 217.5, algo_version: "1.8.3_histcap" }], error: null })
+    const { data } = await fetchAllDayScarcityBoard({ limit: 5 }, db)
+    expect((data as any[])[0].fmv_basis_capped).toBe(true)
+  })
+
+  it("never pairs a snapshot at a different price", async () => {
+    const { db } = dbWith([askOnly], { data: [{ edition_id: "e1", fmv_usd: 230, algo_version: "1.8.3_histcap" }], error: null })
+    const { data } = await fetchAllDayScarcityBoard({ limit: 5 }, db)
+    expect((data as any[])[0].fmv_basis_capped).toBeNull()
+  })
+
+  it("a failed snapshot read leaves the board up and the row unchecked", async () => {
+    const { db } = dbWith([askOnly], { data: null, error: { message: "timeout" } })
+    const res = await fetchAllDayScarcityBoard({ limit: 5 }, db)
+    expect(res.error).toBeNull()
+    expect((res.data as any[])[0].fmv_basis_capped).toBeNull()
+  })
+
+  it("does not read snapshots when no row is ASK_ONLY", async () => {
+    const { db, rpcCalls } = dbWith([{ ...askOnly, fmv_confidence: "HIGH" }], { data: [], error: null })
+    const { data } = await fetchAllDayScarcityBoard({ limit: 5 }, db)
+    expect(rpcCalls()).toBe(0)
+    expect((data as any[])[0].fmv_basis_capped).toBeNull()
+  })
+})

@@ -29,10 +29,11 @@
 // module owns the QUERY, not the policy.
 
 import { supabaseAdmin } from "@/lib/supabase"
+import { isSalesCappedAlgo } from "@/lib/fmv-basis"
 
 /** Columns both consumers select. Duplicating this list was the drift risk. */
 export const ALLDAY_SCARCITY_COLS =
-  "external_id, player_name, set_name, tier, team_name, series, mint_count, family_avg_mint, family_size, scarcity_vs_family_pct, fmv_usd, fmv_confidence, thumbnail_url"
+  "external_id, player_name, set_name, tier, team_name, series, mint_count, family_avg_mint, family_size, scarcity_vs_family_pct, fmv_usd, fmv_confidence, thumbnail_url, edition_id"
 
 export const ALLDAY_SCARCITY_SORTS = new Set(["scarcity", "mint", "fmv"])
 
@@ -85,5 +86,43 @@ export async function fetchAllDayScarcityBoard(
     q = q.order("fmv_usd", { ascending: false, nullsFirst: false })
   }
 
-  return q.limit(limit)
+  const res = await q.limit(limit)
+  if (res?.error || !Array.isArray(res?.data)) return res
+  return { data: await withCappedFlag(res.data, db), error: null }
+}
+
+/**
+ * #215 — mark which ASK_ONLY prices are CAPPED at the edition's sales
+ * (_salescap / _histcap). The view's FMV comes from edition_fmv_current, which
+ * carries no algo_version, so read the latest snapshot per ASK_ONLY edition and
+ * pair it ONLY when it is the same price as the row's. `fmv_basis_capped`:
+ * true / false when checked, null when not ASK_ONLY, unpaired, or the read
+ * failed (the board then shows its old marker). Never fails the board.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function withCappedFlag(rows: any[], db: Db): Promise<any[]> {
+  const askOnly = rows.filter(
+    (r) => r?.edition_id && r.fmv_usd != null && String(r.fmv_confidence ?? "").toUpperCase() === "ASK_ONLY",
+  )
+  const flag = new Map<string, boolean>()
+  if (askOnly.length > 0) {
+    try {
+      const { data, error } = await db.rpc("get_editions_latest_fmv_wide", {
+        p_edition_ids: askOnly.map((r) => r.edition_id),
+      })
+      if (!error && Array.isArray(data)) {
+        const rowFmv = new Map(askOnly.map((r) => [String(r.edition_id), Number(r.fmv_usd)]))
+        for (const snap of data) {
+          const id = String(snap.edition_id)
+          const f = rowFmv.get(id)
+          if (f == null || flag.has(id)) continue
+          if (Math.abs(Number(snap.fmv_usd) - f) > 0.005) continue
+          flag.set(id, isSalesCappedAlgo(snap.algo_version))
+        }
+      }
+    } catch {
+      // unchecked — fall through with an empty map
+    }
+  }
+  return rows.map((r) => ({ ...r, fmv_basis_capped: r?.edition_id ? (flag.get(String(r.edition_id)) ?? null) : null }))
 }
