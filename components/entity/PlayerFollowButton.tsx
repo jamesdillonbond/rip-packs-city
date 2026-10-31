@@ -93,6 +93,7 @@ export default function PlayerFollowButton({ slug, path, name }: Props) {
     <button
       type="button"
       data-rpc-player-follow={following ? "following" : "not-following"}
+      className="rpc-tap44"
       disabled={busy}
       aria-pressed={following}
       onClick={() => setFollow(!following)}
