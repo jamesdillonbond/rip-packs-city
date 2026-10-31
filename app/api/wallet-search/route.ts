@@ -1472,11 +1472,15 @@ export async function POST(req: NextRequest) {
     } catch { /* rewards must never break wallet-search */ }
 
     // League filter for Top Shot: intersect on-chain owned ids with wmc rows
-    // for this wallet+collection where league matches. wmc is upserted by this
-    // very route on every successful walk so coverage is high; if a moment is
-    // unindexed we drop it from the filtered view (the "all" view always
-    // includes it). Skipped entirely when the wmc lookup errors so a transient
-    // DB blip doesn't show a false-empty wallet.
+    // for this wallet+collection where league matches. ⚠ `league` is written by
+    // the METADATA FILL (`backfill_wmc_metadata_from_editions`, after each walk,
+    // via `topshot_league_for`) — NOT by this route's upsert, which has only
+    // written keys + serials since 2026-05 (#219: 603k rows sat NULL for five
+    // months and this filter dropped every one of them under either pill). A
+    // row whose edition has no set_name stays NULL and is dropped from the
+    // filtered view (the "all" view always includes it). Skipped entirely when
+    // the wmc lookup errors so a transient DB blip doesn't show a false-empty
+    // wallet.
     if (effectiveLeague) {
       try {
         const tsCollectionId = await getCollectionId()

@@ -52,6 +52,11 @@ Docs: ledger (3 entries), session log, focus.md (three steers), routes-and-surfa
 - **Inbox: the :06 pg_cron startup-timeout filing dispositioned** — re-measured in a quiet window, :06 is BELOW the median minute (1,512 starts vs 1,800); the 10 timeouts were one minute on the Dapper-outage day. No stagger.
 - `get_player_checklist` on prod: ~21–25 ms, ~2k buffers per call (22 calls). Fine.
 
+## 12:05–12:45 PM PT ("Keep going") — #219's dormant-writer twist
+- **The 9:18 apply fixed a function nothing calls.** The 12:08 PM reading held (WNBA-label→NBA count 0) but 4 fresh mixed-set WNBA rows carried `league NULL`: `upsert_wallet_moments` last wrote a Top Shot row 2026-05-08; the live writer (`upsert_wmc_batch` + `backfill_wmc_metadata_from_editions`) never filled league → **603,044 Top Shot wmc rows NULL** and `/api/wallet-search`'s NBA/WNBA pills silently dropped every one (a wallet synced since May lost 100 % of its newer Moments under either pill).
+- **Shipped `20261031191751`** (`topshot_league_for` + the fill writes league; pins + drift-guard rows; `f73b726`). Control: webz_80 NULL 1,442 → 0 (1,436 NBA / 6 WNBA), second call 0. Route comment corrected.
+- **Backfill of the 603k in flight:** ~177k by hand, the rest under pg_cron job **815** (10k/min, self-advancing cursor in `public._wmc_league_backfill_cursor`). ⚠ **Cleanup owed when `last_batch` = 0:** `select cron.unschedule(815); drop table public._wmc_league_backfill_cursor;` — this session does it if alive; otherwise the night pass (focus.md steer). Final count → ledger follow-up.
+
 ## Not done / declined
 - 5,756 `is_smoke_test` rows sit at `feedback_status='new'` in `beta_feedback_inbox` (the smoke suite's own probes since 08-01). The admin page filters them out; the view does not. Left alone — a status sweep over smoke rows buys nothing a reader sees.
 - No Panini / Candy FMV levers (their gates are dated 11-03 / sales resumption).
