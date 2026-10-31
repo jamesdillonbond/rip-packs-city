@@ -53,5 +53,36 @@
     "Flowty three-lane retirement -> re-verified complete (0 runs since 17:46Z 10-30).",
     "Stranded 10-30 local #217 first-run reprice ledger entry -> carried into origin (b062152ed)."
   ],
-  "housekeeping": "Genuine overnight, 0 production shipped, 0 reverted. Stranded-output sweep: carried one mount-only ledger entry (10-30 local #217 reprice 170 rips) into origin (b062152ed); flow-ecosystem-watch.md and metrics-latest.json mount == origin; no mount-only inbox; the only mount 10-30 handoff already in origin. Ledger: stranded entry spliced chronologically (between the 8:41 PM and 5:37 PM 10-30 entries), then this pass's green entry at the first ^### (both integrity checks 0; heading count rose by exactly 2). Session-log entry prepended to docs/sessions/2026-10.md. Inbox NOT touched (append-only). Lock release pending. Push via laptop-VM clone + .rpc-git-cred."
+  "housekeeping": "Genuine overnight, 0 production shipped, 0 reverted. Stranded-output sweep: carried one mount-only ledger entry (10-30 local #217 reprice 170 rips) into origin (b062152ed); flow-ecosystem-watch.md and metrics-latest.json mount == origin; no mount-only inbox; the only mount 10-30 handoff already in origin. Ledger: stranded entry spliced chronologically (between the 8:41 PM and 5:37 PM 10-30 entries), then this pass's green entry at the first ^### (both integrity checks 0; heading count rose by exactly 2). Session-log entry prepended to docs/sessions/2026-10.md. Inbox NOT touched (append-only). Lock release pending. Push via laptop-VM clone + .rpc-git-cred.",
+  "addendum_cowork_pass_2026_10_31": {
+    "generated_at_pt": "2026-10-31 ~5:00 AM PT (Cowork cloud, 10-hour autonomous pass from 8:57 PM PT 10-30; distinct from the scheduled overnight pass above)",
+    "shipped": 4,
+    "shipped_detail": [
+      "squeeze board LEAGUE/MIN MINT/PLAYER/MAX MINT (889e301, 20261031040755)",
+      "player checklists (29d39b4, 20261031044056)",
+      "#219 sniper league filter team-first (this pass's last push)",
+      "5 feedback rows set shipped (data write)"
+    ],
+    "closed": [
+      "#217 on its first 4:26 AM tick: ok, 11 rips of 6,402 candidates"
+    ],
+    "opened": [
+      "#219 set-name-only league rule misfiles 110 WNBA editions (sniper half fixed; wmc.league to Claude Code)"
+    ],
+    "db_size_mb_0416_pt": 42342,
+    "db_size_note": "The WATCH is a net._http_response sawtooth: 1,910 -> 604 MB between 9:54 PM and 4:16 AM PT; all other tables <= +19 MB in 6.4 h (~140 MB/day real growth).",
+    "fmv_backtest_7d": {
+      "nba_top_shot": {
+        "published": "15.0 / 65.8 / 0.995 (n 11,387)",
+        "last3": "15.0 / 65.7 / 1.000"
+      },
+      "nfl_all_day": {
+        "published": "20.0 / 60.1 / 1.059 (n 1,849)",
+        "last3": "20.0 / 57.9 / 1.000",
+        "ask_only": "79.5 / 30.5 / 1.795 (n 82)"
+      }
+    },
+    "seed_wallet_refresh_read": "5:45 PM PT 10-31 is the wave that tests c4ed59082 (walked 5:45 PM 10-30); 5:45 AM skipping ~47/cohort is correct",
+    "handoff": "docs/handoff-2026-10-31-cowork-autonomous-pass.md"
+  }
 }
