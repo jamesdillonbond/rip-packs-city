@@ -1,53 +1,54 @@
 {
-  "generated_at_pt": "2026-10-29 ~1:15 AM PT (overnight nightly, Cowork cloud, push via laptop-VM clone + .rpc-git-cred)",
-  "generated_at_utc": "2026-10-29T08:16Z",
-  "pass": "Overnight nightly. GREEN, 0 production shipped, 0 reverted, queue-only. One docs-only commit (stranded flow-ecosystem-watch carry, d300faa4d). The 06:13Z HIGH monitor filing (Dapper degraded notice stuck on Top Shot while trading live) resolved by design before the pass acted: restore_dapper_maintenance_notice lifted TS+Pinnacle once they crossed their 2h volume bars; only nfl_all_day still degraded (correct, self-lifts on volume or 11-04 backstop). pg_cron :06 startup-timeout cluster cleared post-outage. Flowty listing-cache lanes still dark, held by Trevor. Handoff: docs/handoff-2026-10-29-overnight-pass.md",
+  "generated_at_pt": "2026-10-30 ~5:25 PM PT (scheduled overnight pass, fired ~16h late; OFF-HOURS monitor-mode, Cowork cloud, push via laptop-VM clone + .rpc-git-cred)",
+  "generated_at_utc": "2026-10-31T00:25Z",
+  "pass": "Scheduled overnight pass. Trigger fired Sat 2026-10-31 00:19Z (scheduled Fri 08:01Z) = 5:19 PM PT Fri 10-30 = OFF-HOURS, so MONITOR-MODE: full review + health triage + post-ship watch, QUEUED rather than shipped, docs-only commits. Real time confirmed via DB now() (00:20Z) + app-stamped rows (sales 00:12Z, fmv 00:17Z) — no clock skew. GREEN. 0 production shipped, 0 reverted. Two docs commits: (1) stranded-output carry of a mount-only ledger entry for two locally-applied migrations (22212fa13); (2) this pass's ledger/handoff/metrics/session. Handoff: docs/handoff-2026-10-30-overnight-pass.md",
   "shipped": 0,
   "reverted": 0,
-  "idle": "routed-to-trevor (#58, cadence-bridge staged migration) + held-by-trevor (Flowty teardown) + routed-to-claude-code (panini_deal_board cache-warm timeout watch)",
-  "verdict": "GREEN . 0 shipped . queue-only . Dapper notice self-healed by design (TS+Pinnacle lifted, All Day correctly held). Security clean (snapshot + direct catalog). Trust breaches 0 (candy_sales_stale retired by the 10-28 re-verify-clock redesign). Vercel prod = origin HEAD READY, 0 ERROR. Post-ship watch on the 10-28 wave green. Stranded-output sweep carried the flow-ecosystem-watch 10-28 entry (d300faa4d).",
+  "idle": "off-hours (queued, not shipped) + held-by-trevor (#58 OPENSEA_API_KEY) + routed-to-claude-code (panini_deal_board cache-warm timeout watch). RESOLVED this pass: cadence-bridge staged migration and reprice-drifted staged migration both applied locally 10-30 (Trevor present); Flowty three-lane teardown verified COMPLETE.",
+  "verdict": "GREEN . 0 shipped . off-hours queue-only . Security clean (snapshot + would-not-ship). Trust breaches 0. Flowty retirement verified complete (lanes idle since ~17:4xZ 10-30; 3-day pooled alert self-clears ~11-02). Post-ship watch on the 10-29/10-30 #215/#216/#217/#218 wave GREEN (fmv_sanity 0; #218 witness correct). Vercel prod a771763ef READY; origin advanced to 1a3c736d mid-run (concurrent docs session), rebased. DB +1,052 MB vs 10-29 = WATCH.",
   "health": {
-    "security_invariants": "clean (invariants [], anon_write_holes [], rls_off_base [], secdef_anon []) via rpc_ops_snapshot.security + direct catalog re-check (pg_tables rowsecurity=false [] ; anon/authenticated write-grant-on-RLS-off []).",
-    "structural": "stalled [], backward_cursor_rewinds [], wmc_null [], function_search_path_drift [], procedure pins/txn-control [], cross_collection_mat_staleness [], suppression_*_drift []. sentinel_ts_uuid_editions_48h 0, ts_uuid_dupes_created_24h 0.",
+    "security_invariants": "clean (invariants [], anon_write_holes [], rls_off_base_tables [], secdef_anon_violations []) via rpc_ops_snapshot.security.",
+    "structural": "stalled_pipelines [panini-ingest-enum info only — Trevor's laptop residential script, dark since 10-29 11:00Z], backward_cursor_rewinds [], wmc_null_edition_key [], function_search_path_drift [], procedure pins/txn-control [], cross_collection_mat_staleness [], suppression_*_drift []. sentinel_ts_uuid_editions_48h 0, ts_uuid_dupes_created_24h 0.",
     "trust_health_breaches": 0,
-    "trust_health_note": "0 breaches. candy_sales_stale_hours 412.7 now < breach_at 1114.9 (retired by the 10-28 re-verify-clock redesign; re-verify candy_mlb row ~11-27). edition_integrity_flags 22 (250). unmapped_resolution_backlog_max 0. trust_precompute_max_age 5.29 ok. All FMV legs ok (topshot/allday/panini/pinnacle/candy/golazos fmv_stale_hours + pct_stale_30d all 0/ok, fmv_sanity_flags 0, pinnacle_fmv_impossible 0).",
-    "stalled_pipelines": "[]",
-    "dapper_notice": "Self-healed by design. restore_dapper_maintenance_notice thresholds: TS 48 / All Day 8 / Pinnacle 6 sales in 2h + 5 distinct buyers (25% of pre-outage 2h volume), backstop 2026-11-04 15:00Z. Live now: nba_top_shot + disney_pinnacle = healthy (lifted ~06:13-07:17Z once volume crossed); nfl_all_day still degraded (last tick 08:07Z sales_2h 5 buyers_2h 4 need 8, correctly not lifted). Restore cron still scheduled; only nfl_all_day retains marketplace_saved.",
-    "atlas_recovery": "Dapper outage RECOVERED. atlas-market-feed/atlas-editions-refresh/topshot-pack-supply-atlas live again (last successful drains 08:03-08:05Z, newest events 08:03Z). Their high 3-day failure_rates (53-60%) are pooled across the outage (R124), not a live problem.",
-    "flowty_lanes": "topshot/allday/golazos-listing-cache DARK (Flowty API lanes, flowty-retirement-runbook §0). Held by Trevor, retire-not-repair, until Dapper fully back + 24h. Nothing priced depends on them (TS reads ts_listings; AllDay/Golazos read on-chain cached_listings_v2).",
-    "pgcron_06_blip": "CLEARED. Hours 04-07Z 100% clean post-outage (0 non-succeeded / ~4500 ticks). The 10-28 :06 cluster was outage-retry bgworker contention, not N bugs.",
-    "pipeline_fails_24h": "topshot-pack-supply-atlas 873, atlas-market-feed 454, atlas-editions-refresh 418 (all Dapper-outage tail, upstream, recovering). allday/golazos/topshot-listing-cache 72 each (Flowty, held). Non-Flowty non-atlas all <=30: member-wallet-usernames-atlas 30, analytics-smoke 27 (recovery edge, now green), ingest-topshot-challenges 14, rest <=5. None stalled.",
+    "trust_health_note": "0 breaches, all 40 legs ok. candy_sales_stale_hours 453 < breach_at 1114.9 (re-verify clock; re-verify candy_mlb row ~11-27). edition_integrity_flags 22 (250). unmapped_resolution_backlog_max 0. trust_precompute_max_age 4.57 ok. All FMV legs (topshot/allday/panini/pinnacle/candy/golazos stale_hours + pct_stale_30d) ok; fmv_sanity_flags 0; pinnacle_fmv_impossible 0. panini_fmv_stale_hours 35.6 < 36 (close but ok — Panini runner on Trevor's machine).",
+    "stalled_pipelines": "[panini-ingest-enum] info — silent 2242 min (last run 10-29 11:00Z), caller is Trevor's laptop script (dark). Not a code fault.",
+    "flowty_retirement": "VERIFIED COMPLETE. The three *-listing-cache lanes (topshot/allday/golazos) last ran 17:34-17:46Z 10-30 and have 0 runs since (retirement chore f01690f21 deleted the routes/vercel-cron/dispatch workflow, flowty-proxy now a 410 tombstone). The 100%/3-calendar-day high pipeline_alerts rows are POOLED pre-retirement history (R124) and self-clear ~11-02. Residual (cosmetic, non-urgent): external cron-job.org entries, if still present, now hit the 410 tombstone and log no runs.",
+    "atlas_403s": "all info-level, freshness fine: market-feed last drain 00:21Z / newest event 00:19Z; editions 0/286 sets incomplete >6h; pack-supply last 200 00:22Z; usernames last 200 00:18Z; flow-rest moment-moved-400 designed (0.5%). None at escalation threshold.",
     "sentry": "dark (SDK removed #34). client_error beacon clean.",
-    "vercel_24h": "Prod serves dpl_ADSatXe63ik7yGs1jKj53UVKa5Mz @ 1b2fb7f56 (READY) = origin HEAD before tonight's docs carry. Last 6 prod 3 READY / 3 CANCELED (superseded docs-only) / 0 ERROR. 24h runtime errors 5 groups all chronic slow-board/IPFS timeouts (ipfs-media 10, pack_lifecycle 4, pack_realized_ev 1, panini market-cap tile 1, pack-sniper 1); none new, none deploy-traced to the 10-28 wave.",
-    "db_size_mb": 42133,
-    "db_size_note": "+36 vs 10-28 (42,097 -> 42,133). Normal churn. Large tier (since 09-20).",
-    "post_ship_watch": "GREEN. 0 autonomous ship on 10-28. The 10-28 Cowork/CC wave verified: analytics-smoke dedup+recorded-outage-warn (04:13Z paged -> 04:43Z suppressed -> green from 05:13Z); FMV basis-days/parallel-names/subeditions clean (editions nba +56, panini 40000->40116 so ingest-ceiling watch CLEARED). Nothing reverted."
+    "vercel_24h": "Prod serves dpl_4um9xyf3Wh4ZKEf83jUCJgfoRS53 @ a771763ef (READY) = origin HEAD at clone time. Origin advanced to 1a3c736d (docs-only weekly-FMV exit) mid-run; its deploy dpl_3Mj4 CANCELED (docs-only, expected). Last 8 prod: 5 READY / 3 CANCELED (docs/db-only superseded) / 0 ERROR. 24h runtime errors 4 groups all chronic: get_edition_detail 502 (cloudflare upstream) x2, collection-snapshot RPC_READ_TIMEOUT x1 (since 09-11), insights/panini-premiums 8s x1 (since 10-14), market-cap tile nba_top_shot 8s x1. None new, none deploy-traced to the wave.",
+    "db_size_mb": 43185,
+    "db_size_note": "+1,052 vs 10-29 (42,133 -> 43,185) over ~40h (~630 MB/day vs the ~36/day prior norm). WATCH, not an alarm: plausibly the 10-30 FMV-recompute wave + the atlas firehose re-reading from offset 0 each tick (topshot_atlas_market_events 1,505 MB) + sales ingest. No single runaway: top tables panini_card_serials 9,215 / wallet_moments_cache 3,074 / pack_rips 2,342 / sales_2026 2,065. Re-check next pass; if the slope holds, drill per-table deltas.",
+    "post_ship_watch": "GREEN. The 10-29/10-30 Claude Code wave (#215 capped-at-sales across edition/moment/wallet/market/modal; #216 parallel names on 6 TS boards; #217 re-price of 44 TS + 72 AD dead-ask rips; #218 Pack-Sniper/pack-detail frozen-book handling) shows no regression: fmv_sanity_flags 0, trust breaches 0, no new Vercel error group traces to it. #218 witness verified in DB: pack_ask_state nba-top-shot max ask_changed_at 10-29 15:08Z (age ~33h >> 2h), nfl-all-day ~35h -> 'feed stalled' notice is the correct reading, not a false alarm. NEW lane to watch tomorrow: rpc-reprice-drifted-high-value-rips (26 11 * * * = 4:26 AM PT, first run ~11:26Z 10-31; dry run was 170 rips / 89 TS + 81 AD) — confirm it re-prices a sane count and nothing over-corrects."
   },
   "fmv_high_med": {
-    "nba_top_shot": 6481,
-    "panini_blockchain": 18035,
-    "nfl_all_day": 1696,
-    "disney_pinnacle": 902,
-    "candy_mlb": 72,
+    "nba_top_shot": 6541,
+    "panini_blockchain": 18036,
+    "nfl_all_day": 1662,
+    "disney_pinnacle": 872,
+    "candy_mlb": 73,
     "laliga_golazos": 1,
     "ufc_strike": 0
   },
-  "fmv_high_med_note": "HIGH+MEDIUM from rpc_ops_snapshot fmv_by_collection (compute 10-29 05:35Z). nba HIGH 1332 + MED 5149. panini HIGH 17069 + MED 966. nfl HIGH 196 + MED 1500. pinnacle HIGH 232 + MED 670. candy HIGH 10 + MED 62. golazos MED 1. ufc 0.",
+  "fmv_high_med_note": "HIGH+MEDIUM from rpc_ops_snapshot fmv_by_collection (compute 10-30 13:35Z). nba HIGH 1276 + MED 5265. panini HIGH 17073 + MED 963. nfl HIGH 191 + MED 1471. pinnacle HIGH 239 + MED 633. candy HIGH 10 + MED 63. golazos MED 1 (no HIGH). ufc 0.",
   "editions_by_collection": {
-    "nba_top_shot": 14605,
-    "panini_blockchain": 40116,
+    "nba_top_shot": 14609,
+    "panini_blockchain": 40136,
     "nfl_all_day": 6190,
     "laliga_golazos": 575,
     "ufc_strike": 617,
     "candy_mlb": 125
   },
-  "editions_note": "panini_blockchain 40,116 by direct count (+116 vs 10-28's 40,000) -- NOT pinned, so the 10-28 ingest-ceiling watch is CLEARED. nba +56 (Animated/Illustrated catalogued 10-28). Others flat.",
-  "deltas_vs_prev": "db +36 MB (42,097 -> 42,133). FMV HIGH+MED: nba 6565->6481 (-84); panini 17,990->18,035 (+45); nfl 1,733->1,696 (-37); pinnacle 929->902 (-27); candy 75->72 (-3); golazos 1 flat; ufc 0 flat. editions: nba 14,549->14,605 (+56); panini 40,000->40,116 (+116); rest flat. trust breaches 1->0 (candy retired). unmapped backlog 8->0.",
+  "editions_note": "nba 14,605 -> 14,609 (+4). panini 40,116 -> 40,136 (+20). nfl/golazos/ufc/candy flat.",
+  "deltas_vs_prev": "db +1,052 MB (42,133 -> 43,185) WATCH. FMV HIGH+MED: nba 6481->6541 (+60); panini 18,035->18,036 (+1); nfl 1,696->1,662 (-34); pinnacle 902->872 (-30); candy 72->73 (+1); golazos 1 flat; ufc 0 flat. editions: nba +4, panini +20, rest flat. trust breaches 0->0. The nfl/pinnacle HIGH+MED dips track normal FMV churn (no stale/sanity flags); not investigated further.",
   "carried_queue": [
-    "#58 OPENSEA_API_KEY (P2, Trevor; candy_sales_stale now a re-verify clock, lower pressure) - secret, no sandbox lever.",
-    "cadence-bridge-chain-arrivals staged migration (Trevor/CC) - needs DB write that raised unanswered MCP approval prompts; chain-arrivals bridge to 11-05 + delete lapsed pinnacle-pull-chain bridge + clear expired 10-01 Cadence Collapse ack. Apply with Trevor present; part (1) moot after 11-04.",
-    "Flowty three-lane teardown (held by Trevor until Dapper fully back + 24h; retire-not-repair).",
-    "panini_deal_board / _all cache-warm statement-timeout (watch, Claude Code) - <=2/day, falls back to last good snapshot."
+    "#58 OPENSEA_API_KEY (P2, Trevor; candy_sales_stale is now a re-verify clock, low pressure) - secret, no sandbox lever.",
+    "panini_deal_board / _all cache-warm statement-timeout (watch, Claude Code) - <=2/day, falls back to last good snapshot.",
+    "Flowty cron-job.org entries cosmetic cleanup (non-urgent) - lanes retired in code; any remaining external schedulers now hit the 410 tombstone and log nothing. Trevor can delete them in the cron-job.org console at leisure."
   ],
-  "housekeeping": "0 production shipped, 0 reverted. Stranded-output sweep: carried the flow-ecosystem-watch 10-28 entry into origin (commit d300faa4d; mount was origin + 1 entry, 28 ins/0 del); ledger.md mount copy only BEHIND origin (nothing stranded there); metrics-latest.json mount == origin; all handoffs + docs/health present in origin. Tonight: green queue-only ledger entry spliced at first ^### (both integrity checks 0); session-log entry prepended to docs/sessions/2026-10.md; handoff written; metrics overwritten. Inbox NOT touched (append-only). Lock release pending. Push via laptop-VM clone + .rpc-git-cred."
+  "resolved_this_pass": [
+    "cadence-bridge-chain-arrivals staged migration -> applied 20261031000654 (audit_20261030_retire_lapsed_cadence_bridges) locally 10-30, Trevor present. expired_exemptions clean; no Cadence Collapse alert in snapshot.",
+    "reprice-drifted-high-value-rips staged migration -> applied 20261031000741; pg_cron rpc-reprice-drifted-high-value-rips active.",
+    "Flowty three-lane teardown -> verified complete (0 runs since 17:4xZ 10-30)."
+  ],
+  "housekeeping": "OFF-HOURS monitor-mode: 0 production shipped, 0 reverted. Stranded-output sweep: carried one mount-only ledger entry (two locally-applied migrations 20261031000654/000741) into origin (commit 22212fa13); metrics-latest.json and flow-ecosystem-watch.md mount == origin (nothing stranded); no 10-30/10-31 handoffs or inbox files on the mount (10-30 overnight pass did not run; this is the late-fired one). Ledger: stranded entry spliced after the weekly-FMV heading, then this pass's green monitor entry at the first ^### (both integrity checks 0; heading count rose by exactly 2). Session-log entry prepended to docs/sessions/2026-10.md. Inbox NOT touched (append-only). Lock release pending. Push via laptop-VM clone + .rpc-git-cred."
 }
