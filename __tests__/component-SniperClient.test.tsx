@@ -2150,3 +2150,34 @@ describe("SniperClient — All Day ownership + depth (2026-10-26)", () => {
     expect(document.querySelector('[data-testid="allday-depth-floor"]')).toBeNull()
   })
 })
+
+describe("SniperClient — the sniper-filter-applied beacon counts CHANGES, not page loads (2026-10-31)", () => {
+  // The effect over the filter state used to fire once on mount with the
+  // defaults, so every crawler / QA page load counted as a user applying a
+  // filter: 128 of 148 events on 10-31 were default-state mounts from distinct
+  // sessions. A page load is already a page-view.
+  it("emits nothing on mount, and one beacon when the Verified-FMV gate is toggled", async () => {
+    const { track } = await import("@/lib/telemetry/track")
+    const trackMock = track as unknown as ReturnType<typeof vi.fn>
+    trackMock.mockClear()
+    warm = {
+      data: feed({
+        deals: [deal({ confidence: "ASK_ONLY", discount: 0, adjustedFmv: 25, askPrice: 25 })],
+      }),
+      loading: false,
+      error: null,
+      refresh: vi.fn(),
+    }
+    render(<SniperClient />)
+    const btn = await screen.findByRole("button", { name: /SHOW ASK-PRICED LISTINGS/i })
+    const beaconsBeforeClick = trackMock.mock.calls.filter((c) => c[0] === "sniper-filter-applied")
+    expect(beaconsBeforeClick, "a page load is not a filter applied").toHaveLength(0)
+
+    fireEvent.click(btn)
+    await waitFor(() => {
+      const after = trackMock.mock.calls.filter((c) => c[0] === "sniper-filter-applied")
+      expect(after).toHaveLength(1)
+      expect(after[0][1]).toMatchObject({ verified_only: false })
+    })
+  })
+})

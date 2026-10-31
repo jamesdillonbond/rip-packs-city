@@ -242,7 +242,16 @@ function SniperMomentsBody() {
   // Telemetry: emit a `sniper-filter-applied` beacon any time the user-facing
   // filter set changes. The track() helper itself debounces, so a flurry of
   // input clicks coalesces into one beacon per ~350ms.
+  // ⚠ Skip the MOUNT run (2026-10-31): an effect over the filter state fires once
+  // with the defaults on every page load, so crawlers and QA sweeps counted as
+  // "applied a filter" — 128 of 148 events on 10-31 were default-state mounts
+  // from distinct sessions. A page load is a page-view, which is already tracked.
+  const filterBeaconArmed = useRef(false);
   useEffect(() => {
+    if (!filterBeaconArmed.current) {
+      filterBeaconArmed.current = true;
+      return;
+    }
     track("sniper-filter-applied", {
       tier: tierTab,
       sort: sortBy,
