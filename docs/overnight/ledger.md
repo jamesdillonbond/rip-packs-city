@@ -12,6 +12,23 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-10-30 · 🔧 SHIPPED (code + docs, thread close) — **#215 closed: every surface that can show a capped ASK_ONLY price says "capped at sales"; one shared rule in `lib/fmv-capped.ts`** (Claude Code cloud, 8:46 PM). New in this commit:
+- Top Shot Market rows: `moment_id` is `editions.external_id`, so 1.7 ms per 200 ids by index.
+- The Sniper modal: one post-pass on the handler's returned page, all collections.
+- The edition page's parallel-ladder cards: `withBoardBudget`, 3 s, never fails the page.
+- The /share wallet card: `/api/public/wallet-intel` adds `fmv_capped`.
+
+The Market edition-arm, Top Shot and scarcity-board copies of the lookup were folded into the same module, so there is ONE rule: pair a snapshot only at the row's own price, and treat a failed read as not checked. The Panini squeeze board needs none (0 capped Panini snapshots).
+
+Tests:
+- New `lib-fmv-capped` (7, incl. an edition-page wiring pin), `api-sniper-feed-capped-flag` (4), `api-public-wallet-intel-capped-flag` (2), `api-market-ask-only-capped-flag` +2.
+- Removing the price-equality guard in the shared module turns 4 suites red.
+- Full `npm run preflight` green: tsc, ci:guards, lint ratchet, 212 tree-walking guards, component coverage gate.
+
+Docs: #215 ✅ and #218's open note; a `key-files-and-honesty.md` lesson (frozen upstream needs an independent witness; a flag from a second read must be paired on its value); session log; focus steer for the 10-31 morning reads.
+
+**Revert:** revert this commit by message (code only; no DB change in it).
+
 ### 2026-10-30 · 🔧 FIXED (test) — **`main` CI was red from the Flowty retirement: one guard still imported the deleted listing-cache routes** (Claude Code cloud, ~9:05 PM PT). `__tests__/heartbeat-marker-precedes-the-terminal-row.test.ts` dynamically imported `@/app/api/${slug}-listing-cache/route` in a loop. Preflight's related-tests step cannot see a template-string import, so it passed locally, and CI shard 3/4 failed on `f01690f` (1 file, 3 tests; the other 499 files passed). The loop is removed with a note; the 8 test files that mention the deleted paths pass (172 tests). Lesson: after deleting a route, grep `__tests__` for its path SEGMENT, not just the import string. **Revert:** `git revert` this commit (it only restores the dead loop, which would fail again).
 
 ### 2026-10-30 · 🔧 SHIPPED (Vercel env + edge secret) — **The last Flowty credentials are removed; Panini pricing confirmed back** (Claude Code cloud via Claude in Chrome, ~8:35 PM PT; Trevor: "Keep going and do all you can"). The Vercel env var `FLOWTY_PROXY_TOKEN` (Production + Preview) and the Supabase edge secret of the same name are deleted (dashboard; nothing read either since the 10:48 AM retirement). `flowty-proxy` still answers 410. Panini: the laptop runner is back. The 6 PM PT full run repriced 427 editions by 8:28 PM PT; `fmv_snapshots` (bridged) is current to 8:23 PM PT; `detect_stalled_pipelines()` = `[]`. Docs: the Flowty "will turn off soon" lines in roadmap-status.md, known-issues.md, roadmap-2026-10-17.md and sniper-and-deals.md now point at the runbook's execution record. **Revert:** re-create the env var and the secret with a new Flowty token only if `flowty-proxy` is revived (runbook header).

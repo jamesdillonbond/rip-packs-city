@@ -75,6 +75,8 @@ import ParallelTierSwitcher from "@/components/entity/ParallelTierSwitcher"
 import { MarketplaceStatusBanner } from "@/components/marketplace-status"
 import { isMarketClosed } from "@/lib/market-closed"
 import { fmvBasis, isAskDerivedFmv } from "@/lib/fmv-basis"
+import { readCappedByExternalId } from "@/lib/fmv-capped"
+import { withBoardBudget } from "@/lib/insights/board-page-fetch"
 import { fetchEditionFmvEstimate, estimateBasisText, type EditionFmvEstimate } from "@/lib/fmv/edition-estimate"
 import WatchEditionButton from "@/components/alerts/WatchEditionButton"
 import TrackedOutboundLink from "@/components/TrackedOutboundLink"
@@ -643,6 +645,19 @@ export default async function EditionPage(
   // and whether a multi-printing ladder exists. Drives the hero chip + module.
   const currentSibling = subSiblings.find((s) => s.is_self) ?? null
   const hasParallelLadder = subSiblings.length >= 2
+  // #215: which ladder cards carry a CAPPED ask-only price ("capped at sales",
+  // not "from asks"). Bounded; a slow or failed read leaves every card unchecked.
+  const siblingCapped: Map<string, boolean> = hasParallelLadder
+    ? await withBoardBudget(
+        readCappedByExternalId(
+          coll.id,
+          subSiblings.map((s) => ({ key: s.external_id, fmv: s.fmv_usd, confidence: s.confidence })),
+        ),
+        "edition-sibling-capped",
+        3000,
+        "edition/",
+      ).catch(() => new Map<string, boolean>())
+    : new Map<string, boolean>()
 
   // Feature 1 — "% Listed" = open listings ÷ supply. Supply is per-printing
   // honest: on a ::subID parallel page use that printing's own circulation.
@@ -1358,7 +1373,7 @@ export default async function EditionPage(
                   </div>
                   <div className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-primary)" }}>
                     {s.fmv_usd != null ? fmtUsd(s.fmv_usd) : <span style={{ color: "var(--rpc-text-muted)" }}>no FMV</span>}
-                    {s.fmv_usd != null && (() => { const b = fmvBasis(s.confidence); return b ? <span title={b.title} style={{ color: "var(--rpc-text-muted)", marginLeft: 4 }}>{b.label}</span> : null })()}
+                    {s.fmv_usd != null && (() => { const b = fmvBasis(s.confidence, siblingCapped.get(s.external_id) === true); return b ? <span title={b.title} style={{ color: "var(--rpc-text-muted)", marginLeft: 4 }}>{b.label}</span> : null })()}
                   </div>
                   <div className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-secondary)", marginTop: 2 }}>
                     {s.circulation_count != null ? `/${fmtCount(s.circulation_count)} mint` : "mint —"}

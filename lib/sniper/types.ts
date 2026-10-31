@@ -27,6 +27,8 @@ export interface SniperDeal {
   discount: number;
   confidence: string;
   confidenceSource?: string;
+  /** #215: an ASK_ONLY price capped at the edition's sales (from /api/sniper-feed). null = not checked. */
+  fmvCapped?: boolean | null;
   hasBadge: boolean;
   badgeSlugs: string[];
   badgeLabels: string[];

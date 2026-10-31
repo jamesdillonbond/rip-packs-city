@@ -4,6 +4,11 @@
 
 **Rewrite rule for whoever edits this next: a focus file STEERS the next night, it is not an archive.** If a section is describing something that shipped more than ~a week ago and is not still a live trap, move it to the ledger and delete it here. A stale steer is worse than no steer.
 
+## STEER — added 2026-10-30 8:45 PM PT (Claude Code cloud, session_014vX7Q7qM7twrBUY9w4M9yP, thread close) — three readings for 10-31 morning; #215 closed
+
+- **Read first, 10-31:** (1) the 4:26 AM PT `reprice-drifted-rips` pipeline_runs row (first run of `20261031000741`): ok=true, candidates > 0. ok=false or 0 candidates = a broken lane, not a quiet one. (2) the 5:45 AM PT `seed-wallet-refresh` wave: low_priority_skipped ≈ 0 (the 36 h → 24 h fix, `c4ed59082`). Skips of ~48 per cohort again = the fix did not take. (3) `pack_ask_state` max(ask_changed_at): once Dapper's index moves, the Sniper and pack pages drop the "feed stalled" notice on their own.
+- **Expected, not anomalies:** "capped at sales" (not "from asks") on capped ASK_ONLY prices on the Market page, Sniper modal, scarcity board, edition parallel ladder and /share card (#215 closed). `allday_scarcity_board` has a new last column `edition_id` (`20261031002742`).
+
 ## STEER — added 2026-10-30 8:31 AM PT (Claude Code cloud, session_014vX7Q7qM7twrBUY9w4M9yP) — Dapper's pack index is frozen; the Pack Sniper now says so (#218)
 
 - **The 10-29 "watch" below is ANSWERED: it is a frozen upstream, not a quiet market.** `pack_ask_state` newest change TS 10-29 8:08 AM PT, AD 6:28 AM PT; `topshot_pack_sales_history` stopped with it (same Dapper GraphQL). The chain did not stop: 428 Top Shot secondary pack sales in `pack_purchases` since. Nothing in our pipeline failed, so do not "fix" `snapshot-pack-asks` — it is diffing faithfully.

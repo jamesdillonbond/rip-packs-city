@@ -41,7 +41,7 @@ import { loadTopshotFmvGuard, guardTopshotFmv, type FmvGuardMap } from "@/lib/fm
 import { apiErrorResponse } from "@/lib/api-error"
 import { readPaniniCoverage } from "@/lib/panini/coverage"
 import { boundedRead } from "@/lib/api/bounded-read"
-import { isSalesCappedAlgo } from "@/lib/fmv-basis"
+import { readCappedByEditionId, readCappedByExternalId } from "@/lib/fmv-capped"
 import { readCanonicalBadgeTitles, filterRowsByBadges } from "@/lib/market/canonical-badges"
 import { getCollectionUuid } from "@/lib/collections"
 import { normalizeAddress } from "@/lib/address"
@@ -454,7 +454,9 @@ async function fetchEditionMarketEditions(
     console.log(`[/api/market] ${arm.source} editions fetch err:`, error.message)
     throw new MarketModernReadFailed(`${arm.rpc}: ${error.message}`)
   }
-  const cappedByEdition = await readCappedAskOnlyFmv(data ?? [])
+  const cappedByEdition = await readCappedByEditionId(
+    (data ?? []).map((r: any) => ({ key: r.edition_id, fmv: r.fmv_usd, confidence: r.confidence })),
+  )
   return (data ?? []).map((r: any) => ({
     id: `${arm.source}-ed:${r.external_id ?? r.edition_id}`,
     flow_id: null,                 // edition-grain — no single moment / per-serial listing
@@ -495,48 +497,6 @@ async function fetchEditionMarketEditions(
   }))
 }
 
-/**
- * #215 — which ASK_ONLY prices in an edition-market window are CAPPED at sales.
- * The market RPCs do not return algo_version, so read the latest snapshot per
- * edition (get_editions_latest_fmv_wide, a per-id index probe) and pair it with
- * the row ONLY when it is the same price — the flag must describe the number on
- * the row, not a newer or older snapshot of it. A failed read returns an empty
- * map: every row stays "not checked" (null), the marker it had before.
- */
-async function readCappedAskOnlyFmv(rows: any[]): Promise<Map<string, boolean>> {
-  const out = new Map<string, boolean>()
-  const fmvById = new Map<string, number>()
-  for (const r of rows) {
-    if (!r?.edition_id || r.fmv_usd == null) continue
-    if (String(r.confidence ?? "").toUpperCase() !== "ASK_ONLY") continue
-    fmvById.set(String(r.edition_id), Number(r.fmv_usd))
-  }
-  const ids = [...fmvById.keys()]
-  const CHUNK = 500
-  try {
-    const results = await Promise.all(
-      Array.from({ length: Math.ceil(ids.length / CHUNK) }, (_, i) =>
-        boundedRead(
-          (supabaseAdmin as any).rpc("get_editions_latest_fmv_wide", { p_edition_ids: ids.slice(i * CHUNK, (i + 1) * CHUNK) }),
-          "api/market/get_editions_latest_fmv_wide",
-        ),
-      ),
-    )
-    for (const { data, error } of results as { data: any[] | null; error: unknown }[]) {
-      if (error) return new Map()
-      for (const snap of data ?? []) {
-        const id = String(snap.edition_id)
-        const rowFmv = fmvById.get(id)
-        if (rowFmv == null || out.has(id)) continue
-        if (Math.abs(Number(snap.fmv_usd) - rowFmv) > 0.005) continue
-        out.set(id, isSalesCappedAlgo(snap.algo_version))
-      }
-    }
-  } catch {
-    return new Map()
-  }
-  return out
-}
 
 /** The browse filters as RPC arguments, for the two arms served by an RPC
  *  (`get_topshot_sniper_deals_v3`, `get_allday_market_editions_v4`, migrations
@@ -1028,6 +988,12 @@ async function fetchModernListings(
     throw new MarketModernReadFailed(`${rpcName}: ${error.message}`)
   }
 
+  // #215: Top Shot rows carry their exact edition in moment_id (editions.external_id,
+  // parallels included) — lib/fmv-capped.ts resolves and flags the ASK_ONLY ones.
+  const tsCapped = await readCappedByExternalId(
+    collectionId,
+    (data ?? []).map((r: any) => ({ key: r.moment_id, fmv: r.fmv_usd, confidence: r.confidence })),
+  )
   // Reshape sniper RPC rows into the cached_listings field shape the rest of
   // the handler expects.
   return (data ?? []).map((r: any) => ({
@@ -1061,8 +1027,10 @@ async function fetchModernListings(
     listed_at: r.listed_at ?? null,
     cached_at: r.listed_at ?? null,
     collection_id: collectionId,
+    fmv_capped: r.moment_id ? (tsCapped.get(String(r.moment_id)) ?? null) : null,
   }))
 }
+
 
 const MARKET_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 

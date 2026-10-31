@@ -111,6 +111,8 @@ interface WalletIntelHighlight {
   is_trophy: boolean
   fmv_usd: number | null
   confidence: string | null
+  /** #215: ASK_ONLY price capped at the edition's sales. null/absent = not checked. */
+  fmv_capped?: boolean | null
   thumbnail_url: string | null
 }
 
@@ -455,7 +457,7 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
                           {/* Confidence tier removed 2026-07-11 — build-time signal only.
                               The ONE sanctioned per-value marker (plain-words "from asks"
                               for ASK_ONLY) is allowed, added 2026-08-01. */}
-                          {h.fmv_usd != null && (() => { const b = fmvBasis(h.confidence); return b ? <span title={b.title} style={{ fontSize: 10, color: "var(--rpc-text-muted, #888)", fontFamily: "var(--font-mono, monospace)" }}>{b.label}</span> : null })()}
+                          {h.fmv_usd != null && (() => { const b = fmvBasis(h.confidence, h.fmv_capped === true); return b ? <span title={b.title} style={{ fontSize: 10, color: "var(--rpc-text-muted, #888)", fontFamily: "var(--font-mono, monospace)" }}>{b.label}</span> : null })()}
                         </div>
                       </div>
                     </a>

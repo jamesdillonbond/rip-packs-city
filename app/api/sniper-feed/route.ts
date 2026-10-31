@@ -29,6 +29,7 @@ import { AUTOGRAPH_BADGE_SLUG, AUTOGRAPH_BADGE_TITLE, fetchTopShotAutographedKey
 import { textIncludes } from "@/lib/filter-match";
 import { CATALOG_PLAYER_COLLECTIONS, resolveCatalogPlayer } from "@/lib/market/catalog-player";
 import { getCollectionUuid } from "@/lib/collections";
+import { readCappedByExternalId } from "@/lib/fmv-capped";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -155,6 +156,8 @@ export interface SniperDeal {
   circulationCount: number;
   askPrice: number;
   baseFmv: number;
+  /** #215: an ASK_ONLY price capped at the edition's sales. null = not checked. Set once, on the returned page. */
+  fmvCapped?: boolean | null;
   adjustedFmv: number;
   aspUsd: number | null;
   daysSinceSale: number | null;
@@ -1394,6 +1397,16 @@ export async function GET(req: Request) {
     let finalDeals = filteredDeals;
     if (limit > 0 && finalDeals.length > limit) {
       finalDeals = finalDeals.slice(0, limit);
+    }
+
+    // #215: flag the capped ASK_ONLY prices on the RETURNED page only (one pass,
+    // every collection path), for the deal modal's "capped at sales" marker.
+    if (collectionUuid) {
+      const capped = await readCappedByExternalId(
+        collectionUuid,
+        finalDeals.map((d) => ({ key: d.editionKey, fmv: d.baseFmv, confidence: d.confidence })),
+      );
+      finalDeals = finalDeals.map((d) => ({ ...d, fmvCapped: capped.get(d.editionKey) ?? null }));
     }
 
     // Fee-net enrichment. Applied HERE — once, after slicing — rather than in

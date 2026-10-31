@@ -63,3 +63,42 @@ describe("GET /api/market — fmvCapped on ASK_ONLY edition rows (#215)", () => 
     expect(l[0].fmvCapped).toBeNull()
   })
 })
+
+// Top Shot rows: no edition_id on the sniper RPC rows, but moment_id IS the
+// edition's external_id — resolved to a UUID, then the same pairing.
+describe("GET /api/market — fmvCapped on Top Shot ASK_ONLY rows (#215)", () => {
+  const TS = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
+  const tsRow = {
+    flow_id: "F1", moment_id: "257:8869::17", player_name: "TS Capped", team_name: "T", set_name: "Base",
+    series_name: "1", tier: "RARE", subedition_name: null, serial_number: 5, circulation_count: 100,
+    ask_price: 50, fmv_usd: 20, discount_pct: null, confidence: "ASK_ONLY", buy_url: null,
+    thumbnail_url: null, listing_resource_id: "L1", source: "topshot", listed_at: "2026-10-01T00:00:00Z",
+  }
+  function installTs(editions: { data: unknown; error: unknown }, wide: { data: unknown; error: unknown }) {
+    state.sb = makeSupabaseFixture({
+      "rpc:get_topshot_sniper_deals_v3": { data: [tsRow], error: null },
+      "rpc:get_editions_latest_fmv_wide": wide,
+      editions,
+    } as never)
+  }
+  async function tsListings() {
+    const res = await GET(req(`https://t/api/market?collectionId=${TS}`))
+    expect(res.status).toBe(200)
+    return (await res.json()).listings as Array<{ playerName: string; fmvCapped: boolean | null }>
+  }
+
+  it("flags a capped Top Shot price via its external_id", async () => {
+    installTs(
+      { data: [{ id: "u1", external_id: "257:8869::17" }], error: null },
+      { data: [{ edition_id: "u1", fmv_usd: 20, algo_version: "ts-v9_histcap" }], error: null },
+    )
+    const l = (await tsListings()).find((x) => x.playerName === "TS Capped")
+    expect(l?.fmvCapped).toBe(true)
+  })
+
+  it("a failed edition-id read leaves the row unchecked", async () => {
+    installTs({ data: null, error: { message: "boom" } }, { data: [], error: null })
+    const l = (await tsListings()).find((x) => x.playerName === "TS Capped")
+    expect(l?.fmvCapped ?? null).toBeNull()
+  })
+})

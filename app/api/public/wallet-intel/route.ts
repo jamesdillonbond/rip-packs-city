@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { boundedRead } from "@/lib/api/bounded-read"
+import { readCappedByExternalId } from "@/lib/fmv-capped"
+
+const TOP_SHOT_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
 
 // Backs the wallet-intel overlay on the public /share/<wallet> card. Delegates
 // to get_wallet_intel_summary, a SECURITY DEFINER RPC granted to service_role
@@ -42,6 +45,16 @@ export async function GET(req: NextRequest) {
     }
 
     const intel = data && typeof data === "object" ? data : {}
+    // #215: mark highlights whose ASK_ONLY price is capped at sales, for the share
+    // card's "capped at sales" marker. Unchecked (no field) on any failure.
+    if (Array.isArray(intel.highlights) && intel.highlights.length > 0) {
+      const capped = await readCappedByExternalId(
+        TOP_SHOT_COLLECTION_ID,
+        intel.highlights.map((h: any) => ({ key: h?.external_id, fmv: h?.fmv_usd, confidence: h?.confidence })),
+        supabase,
+      )
+      intel.highlights = intel.highlights.map((h: any) => ({ ...h, fmv_capped: capped.get(String(h?.external_id)) ?? null }))
+    }
 
     return NextResponse.json(intel, {
       headers: {

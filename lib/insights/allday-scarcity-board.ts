@@ -29,7 +29,7 @@
 // module owns the QUERY, not the policy.
 
 import { supabaseAdmin } from "@/lib/supabase"
-import { isSalesCappedAlgo } from "@/lib/fmv-basis"
+import { readCappedByEditionId } from "@/lib/fmv-capped"
 
 /** Columns both consumers select. Duplicating this list was the drift risk. */
 export const ALLDAY_SCARCITY_COLS =
@@ -101,28 +101,9 @@ export async function fetchAllDayScarcityBoard(
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function withCappedFlag(rows: any[], db: Db): Promise<any[]> {
-  const askOnly = rows.filter(
-    (r) => r?.edition_id && r.fmv_usd != null && String(r.fmv_confidence ?? "").toUpperCase() === "ASK_ONLY",
+  const flag = await readCappedByEditionId(
+    rows.map((r) => ({ key: r?.edition_id, fmv: r?.fmv_usd, confidence: r?.fmv_confidence })),
+    db,
   )
-  const flag = new Map<string, boolean>()
-  if (askOnly.length > 0) {
-    try {
-      const { data, error } = await db.rpc("get_editions_latest_fmv_wide", {
-        p_edition_ids: askOnly.map((r) => r.edition_id),
-      })
-      if (!error && Array.isArray(data)) {
-        const rowFmv = new Map(askOnly.map((r) => [String(r.edition_id), Number(r.fmv_usd)]))
-        for (const snap of data) {
-          const id = String(snap.edition_id)
-          const f = rowFmv.get(id)
-          if (f == null || flag.has(id)) continue
-          if (Math.abs(Number(snap.fmv_usd) - f) > 0.005) continue
-          flag.set(id, isSalesCappedAlgo(snap.algo_version))
-        }
-      }
-    } catch {
-      // unchecked — fall through with an empty map
-    }
-  }
   return rows.map((r) => ({ ...r, fmv_basis_capped: r?.edition_id ? (flag.get(String(r.edition_id)) ?? null) : null }))
 }

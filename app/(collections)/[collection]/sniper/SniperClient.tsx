@@ -2155,6 +2155,7 @@ function SniperMomentsBody() {
           dealRating: selectedDeal.dealRating ?? (selectedDeal.discount > 0 ? Math.min(1, selectedDeal.discount / 50) : null),
           listingPrice: selectedDeal.askPrice,
           marketConfidence: selectedDeal.confidence ?? null,
+          fmvCapped: selectedDeal.fmvCapped ?? null,
           badgeTitles: selectedDeal.badgeLabels ?? [],
           officialBadges: [],
           imageUrlPrefix: null,
