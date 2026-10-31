@@ -60,6 +60,19 @@ Docs: ledger (3 entries), session log, focus.md (three steers), routes-and-surfa
 ## 1:50–2:10 PM PT ("keep going") — #220 closed
 - Atlas (Top Shot's own index) walked Simmons 28:880 at 1:56 AM today and carries only the $18 bid; the chain-live $180 has never been in Atlas, nor have 200 other chain-open bids. A bid Top Shot does not show cannot be accepted, so the published $180 was the false number. `raise_edition_offers_from_chain` now skips a chain bid Atlas walked past and does not carry (`20261031210439`, pin + guard, `cc48f5a`); `v_offer_sanity_flags` matches; trust leg 162 → **0**; raise → 11 real bid-ups.
 
+## THREAD CLOSE — 3:25 PM PT (Trevor: "work through anything still unresolved … then update documentation before I archive")
+**State at close:** pipeline alerts clean (info rows only, the three retired Flowty lanes suppressed to 11-03); every trust arm ok (`offer_edition_gap_max_usd` 0); inbox fully dispositioned; CI, Smoke and E2E DOM Smoke green on `main` (`fcfaa60`); nothing running on prod that needs cleanup (job 815 unscheduled, cursor table dropped).
+
+**Resolved in this thread (ledger has each with its revert):** shipped emails sent · Flowty cron-job.org rows deleted · #219 both halves (the 9:18 AM `upsert_wallet_moments` rule, then the writer that actually runs — `backfill_wmc_metadata_from_editions` + `topshot_league_for`, 603,044 → 0 NULL-league Top Shot rows; Trevor's session added the wallet-search read-side fix `5828f5d` on top) · sentinel drain (Flowty suppressions, #218 ack to 11-04, Panini WARN explained as the runner hole) · 320 px batch on eleven boards + the pack-card chip stack, with the E2E reporter now naming the culprit · `sniper-filter-applied` beacon no longer fires on mount · render-smoke placeholder for `/trades/[code]` · #220 (marketplace-hidden chain bids no longer published; trust leg 162 → 0).
+
+**Still open, none actionable from here — all carried in focus.md / the register:**
+- #218 Dapper pack index frozen since 10-29 (acked to 11-04; the Sniper and pack pages say so). Re-check `pack_ask_state max(ask_changed_at)`; the ack expires on its own.
+- Panini Ingest WARN (stalest edition ~220 h): aftermath of the 38-h laptop-runner hole; should clear by ~11-02 at 8–9k/day. If it keeps re-warning after the drain, that is a calibration call on Trevor's runner, not a defect here.
+- #219 exit reading for the night pass: zero new Top Shot wmc rows with `league IS NULL` (set-bearing edition) after the 5:45 PM wave — one post-fix row so far, filled, which is not a sample.
+- #213 (All Day ≤ 50 serial cap, re-read 11-05) and the Panini 1.4.0 paired read (11-03) — dated, untouched.
+
+**Durable lessons promoted this close** (verbatim in the reference docs, not only here): a pin proves the body, not the caller — read the table's freshest rows' writer first (cron-and-schedulers.md) · a 320 px sandbox reading is a hypothesis until CI's font stack renders the deployed build, and a fixed left/right bar only mirrors the viewport (testing-and-ci.md) · a scratch table in `public` is in the smoke's RLS population the moment it exists (testing-and-ci.md) · the MCP hold covers DROP as well as DELETE; backticks in a double-quoted `node -e` are command substitution (tooling-gotchas.md) · a chain bid Top Shot's own index walked past is not a top offer (trust-board-and-safety.md).
+
 ## Not done / declined
 - 5,756 `is_smoke_test` rows sit at `feedback_status='new'` in `beta_feedback_inbox` (the smoke suite's own probes since 08-01). The admin page filters them out; the view does not. Left alone — a status sweep over smoke rows buys nothing a reader sees.
 - No Panini / Candy FMV levers (their gates are dated 11-03 / sales resumption).
