@@ -146,7 +146,9 @@ export function sortKeyToServerSort(key: SortKey, dir: "asc" | "desc"): string {
   switch (key) {
     case "fmv": return dir === "asc" ? "fmv_asc" : "fmv_desc"
     case "serial": return "serial_asc"
-    case "acquired": return "recent"
+    // Both directions: the ↑/↓ on "Recent" used to send "recent" either way, so
+    // the arrow flipped while the grid did not (2026-10-31).
+    case "acquired": return dir === "asc" ? "recent_asc" : "recent"
     case "paid": return dir === "asc" ? "paid_asc" : "paid_desc"
     default: return dir === "asc" ? "fmv_asc" : "fmv_desc"
   }

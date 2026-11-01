@@ -44,7 +44,7 @@ import { buildCollectionCsv } from "@/lib/collection/export-csv"
 import { serverMomentToRow, type ServerMoment } from "@/lib/collection/server-moment"
 import { buildEditionBadgeMap, badgeInfoForRow } from "@/lib/collection/badge-match"
 import { computeCollectionTotals } from "@/lib/collection/totals"
-import { computeFilteredSortedRows } from "@/lib/collection/filter-sort"
+import { computeFilteredSortedRows, SERVER_SORTABLE_KEYS } from "@/lib/collection/filter-sort"
 import { resolveSeriesParam } from "@/lib/collection/series-param"
 import { ASK_STALE_HOURS, fmtAskAge } from "@/lib/market/ask-freshness"
 import { shareWalletCard } from "@/lib/share-link"
@@ -1157,8 +1157,9 @@ function WalletMomentsBody() {
     }
     dispatchView({ type: "SET_SORT", key: next, direction: newDir })
     // For server-sortable columns, re-fetch from page 1 with new sort
-    const serverSortable = ["fmv", "serial", "acquired"]
-    if (serverSortable.includes(next) && activeWallet) {
+    // ⚠ The SAME list filter-sort.ts skips its client re-sort for. A private copy
+    // here lacked "paid", so clicking Paid neither re-fetched nor re-sorted.
+    if (SERVER_SORTABLE_KEYS.includes(next) && activeWallet) {
       const newServerSort = sortKeyToServerSort(next, newDir)
       setServerSortBy(newServerSort)
       setRows([])

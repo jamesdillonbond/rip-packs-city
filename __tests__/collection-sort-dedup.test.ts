@@ -28,6 +28,7 @@ describe("sortKeyToServerSort", () => {
     expect(sortKeyToServerSort("serial", "asc")).toBe("serial_asc")
     expect(sortKeyToServerSort("serial", "desc")).toBe("serial_asc")
     expect(sortKeyToServerSort("acquired", "desc")).toBe("recent")
+    expect(sortKeyToServerSort("acquired", "asc")).toBe("recent_asc") // the ↑ arrow must reach the server
   })
   it("client-only keys fall back to fmv (direction-aware)", () => {
     for (const k of ["player", "series", "set", "parallel", "rarity", "bestOffer", "held", "badge"] as SortKey[]) {
@@ -67,5 +68,23 @@ describe("computeDuplicateEditionKeys", () => {
   })
   it("empty rows → empty set", () => {
     expect(computeDuplicateEditionKeys([]).size).toBe(0)
+  })
+})
+
+// 2026-10-31: toggleSort kept a PRIVATE copy of the server-sortable keys that
+// lacked "paid", while filter-sort.ts skipped its client sort for "paid" — so
+// clicking Paid was sorted by NOBODY. The click handler must use the shared list.
+describe("binder sort click handler shares the server-sortable list", () => {
+  it("re-fetches for every key the client sort skips", async () => {
+    const fs = await import("node:fs")
+    const path = await import("node:path")
+    const src = fs.readFileSync(
+      path.join(process.cwd(), "app/(collections)/[collection]/collection/CollectionTabClient.tsx"),
+      "utf8",
+    )
+    expect(src).toMatch(/SERVER_SORTABLE_KEYS\.includes\(next\)/)
+    expect(src).not.toMatch(/const serverSortable\s*=\s*\[/)
+    const { SERVER_SORTABLE_KEYS } = await import("@/lib/collection/filter-sort")
+    expect(SERVER_SORTABLE_KEYS).toEqual(expect.arrayContaining(["fmv", "serial", "acquired", "paid"]))
   })
 })

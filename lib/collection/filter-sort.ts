@@ -30,8 +30,10 @@ export interface FilterSortContext {
   batchEditionStats: Map<string, { owned: number; locked: number }>
 }
 
-// Columns the API already sorted — skip the client re-sort for these.
-const SERVER_SORTABLE_KEYS: SortKey[] = ["fmv", "serial", "acquired", "paid"]
+// Columns the API already sorted — skip the client re-sort for these. ALSO the
+// list CollectionTabClient.toggleSort re-fetches for: a key here that the click
+// handler does NOT re-fetch is sorted by NOBODY (Paid was, until 2026-10-31).
+export const SERVER_SORTABLE_KEYS: SortKey[] = ["fmv", "serial", "acquired", "paid"]
 
 export function computeFilteredSortedRows(
   rows: MomentRow[],

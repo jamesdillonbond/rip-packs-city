@@ -26,14 +26,15 @@ import { isSupportedAddress, isValidAddressForChain } from "@/lib/address"
  *   wallet  - Flow address (required)
  *   page    - page number (default 1)
  *   limit   - rows per page (default 50, max 200)
- *   sortBy  - fmv_desc | fmv_asc | serial_asc | price_asc | price_desc | recent (default fmv_desc)
+ *   sortBy  - fmv_desc | fmv_asc | serial_asc | price_asc | price_desc | recent | recent_asc | paid_desc | paid_asc (default fmv_desc)
+ *             recent/recent_asc order by the acquired date the grid displays
  *   player  - filter by player name (optional)
  *   series  - filter by series number (optional)
  *   tier    - filter by tier/rarity (optional)
  */
 
 const VALID_SORTS = new Set([
-  "fmv_desc", "fmv_asc", "serial_asc", "price_asc", "price_desc", "recent",
+  "fmv_desc", "fmv_asc", "serial_asc", "price_asc", "price_desc", "recent", "recent_asc",
   "paid_desc", "paid_asc",
 ])
 

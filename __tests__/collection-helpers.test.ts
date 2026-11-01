@@ -226,6 +226,7 @@ describe("sortKeyToServerSort — sort UI state → server sortBy param", () => 
     expect(sortKeyToServerSort("serial", "asc")).toBe("serial_asc")
     expect(sortKeyToServerSort("serial", "desc")).toBe("serial_asc") // serial is always ascending
     expect(sortKeyToServerSort("acquired", "desc")).toBe("recent")
+    expect(sortKeyToServerSort("acquired", "asc")).toBe("recent_asc") // the ↑ arrow must reach the server
     expect(sortKeyToServerSort("paid", "asc")).toBe("paid_asc")
     expect(sortKeyToServerSort("paid", "desc")).toBe("paid_desc")
   })

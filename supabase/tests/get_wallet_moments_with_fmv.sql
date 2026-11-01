@@ -4,7 +4,10 @@
 -- This pins the TopShot (edition-keyed `base_other`) path's crisp invariants:
 --   (a) LATEST-FMV-per-edition — the LATERAL takes the newest fmv_snapshots row
 --       with computed_at <= now() (a future-dated snapshot is ignored).
---   (b) the SORT ladder — fmv_desc / fmv_asc / serial_asc select the right key.
+--   (b) the SORT ladder — fmv_desc / fmv_asc / serial_asc select the right key;
+--       recent / recent_asc order by the ACQUIRED date the row DISPLAYS (the
+--       newest-created moment_acquisitions row), never wmc.last_seen_at (the
+--       scanner's refresh time — the 2026-10-31 binder "Recent does nothing" bug).
 --   (c) FILTER + total_count — filters (player/series/tier) apply, and total_count
 --       is the FILTERED count, independent of the LIMIT page.
 --   (d) price_band_30d GATE — the 30-day p10/p90 band is computed ONLY for a
@@ -23,7 +26,7 @@
 --
 -- serial_fmv_estimate is stubbed (separately pinned). The function DDL below is a
 -- VERBATIM copy of the committed migration
--- (supabase/migrations/20260913232000_audit_20260913_snapshot_get_wallet_moments_with_fmv_with_lock_provenance.sql
+-- (supabase/migrations/20261101041110_audit_20261031_binder_recent_sort_orders_by_the_acquired_date_it_shows.sql
 -- — LANGUAGE plpgsql + plan_cache_mode=force_custom_plan since 2026-08-30; the SQL body is
 -- byte-identical to the 20260806033000 version, wrapped in RETURN ( ... ));
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts.
@@ -55,7 +58,8 @@ CREATE TABLE public.pinnacle_catalog (
 );
 CREATE TABLE public.moment_acquisitions (
   nft_id text, wallet text, buy_price numeric, acquisition_method text, acquisition_confidence text,
-  source text, source_address text, acquired_date timestamptz, loan_principal numeric, created_at timestamptz
+  source text, source_address text, acquired_date timestamptz, loan_principal numeric, created_at timestamptz,
+  collection_id uuid
 );
 CREATE TABLE public.sales (edition_id uuid, price_usd numeric, sold_at timestamptz);
 
@@ -117,6 +121,16 @@ INSERT INTO public.editions (id, external_id, collection_id, tier, circulation_c
   ('e3333333-3333-3333-3333-333333333333', 'setC:playC', 'dee28451-5d62-409e-a1ad-a83f763ac070', 'RARE', 200, 'Cam Carter', 'Set C', 'Cam Carter — Set C', 1);
 INSERT INTO public.wallet_moments_cache (wallet_address, collection_id, moment_id, edition_key, serial_number, last_seen_at, is_locked) VALUES
   ('0xowner', 'dee28451-5d62-409e-a1ad-a83f763ac070', 'mC', 'setC:playC', 7, now() - interval '1 day', false);
+
+-- ── Recent-sort fixtures (2026-10-31) ──────────────────────────────────────
+-- last_seen_at says mA is "newer" (1 day vs 2 days) — the OLD sort key. The
+-- ACQUIRED dates say the opposite: mB 10 days ago, mA 300 days ago. mB also has
+-- an OLDER, superseded acquisition row (1,000 days) that the display ignores,
+-- so a sort reading the wrong row reds the recent_asc case.
+INSERT INTO public.moment_acquisitions (nft_id, wallet, collection_id, acquired_date, created_at) VALUES
+  ('mA', '0xowner', '95f28a17-224a-4025-96ad-adf8a4c63bfd', now() - interval '300 days', now() - interval '5 days'),
+  ('mB', '0xowner', '95f28a17-224a-4025-96ad-adf8a4c63bfd', now() - interval '1000 days', now() - interval '20 days'),
+  ('mB', '0xowner', '95f28a17-224a-4025-96ad-adf8a4c63bfd', now() - interval '10 days', now() - interval '4 days');
 
 -- >>> BEGIN verbatim get_wallet_moments_with_fmv (keep byte-identical to the migration) >>>
 CREATE OR REPLACE FUNCTION public.get_wallet_moments_with_fmv(p_wallet text, p_sort_by text DEFAULT 'fmv_desc'::text, p_limit integer DEFAULT 100, p_offset integer DEFAULT 0, p_player text DEFAULT NULL::text, p_series integer DEFAULT NULL::integer, p_tier text DEFAULT NULL::text, p_collection_id uuid DEFAULT '95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid)
@@ -226,14 +240,27 @@ BEGIN
   total AS (
     SELECT count(*) AS cnt FROM filtered
   ),
+  -- The acquisition row the DISPLAY uses (the enriched LATERAL below: newest
+  -- created_at per moment for this wallet), materialised ONLY for the Recent
+  -- sorts so they order by the same date the binder shows.
+  acq AS (
+    SELECT DISTINCT ON (ma3.nft_id) ma3.nft_id, ma3.acquired_date
+    FROM moment_acquisitions ma3
+    WHERE p_sort_by IN ('recent', 'recent_asc')
+      AND ma3.wallet = p_wallet
+      AND ma3.collection_id = p_collection_id
+    ORDER BY ma3.nft_id, ma3.created_at DESC
+  ),
   paged AS (
     SELECT f.*
     FROM filtered f
+    LEFT JOIN acq ON acq.nft_id = f.moment_id
     ORDER BY
       CASE WHEN p_sort_by IN ('fmv_desc', 'price_desc') THEN f.fmv_usd END DESC NULLS LAST,
       CASE WHEN p_sort_by IN ('fmv_asc', 'price_asc') THEN f.fmv_usd END ASC NULLS LAST,
       CASE WHEN p_sort_by = 'serial_asc' THEN f.serial_number END ASC NULLS LAST,
-      CASE WHEN p_sort_by = 'recent' THEN f.last_seen_at END DESC NULLS LAST,
+      CASE WHEN p_sort_by = 'recent' THEN COALESCE(acq.acquired_date, f.acquired_at_raw) END DESC NULLS LAST,
+      CASE WHEN p_sort_by = 'recent_asc' THEN COALESCE(acq.acquired_date, f.acquired_at_raw) END ASC NULLS LAST,
       CASE WHEN p_sort_by = 'paid_desc' THEN (
         SELECT ma2.buy_price FROM moment_acquisitions ma2
         WHERE ma2.nft_id = f.moment_id AND ma2.wallet = p_wallet
@@ -244,7 +271,7 @@ BEGIN
         WHERE ma2.nft_id = f.moment_id AND ma2.wallet = p_wallet
         ORDER BY ma2.created_at DESC LIMIT 1
       ) END ASC NULLS LAST,
-      CASE WHEN p_sort_by NOT IN ('fmv_desc','price_desc','fmv_asc','price_asc','serial_asc','recent','paid_desc','paid_asc') THEN f.fmv_usd END DESC NULLS LAST,
+      CASE WHEN p_sort_by NOT IN ('fmv_desc','price_desc','fmv_asc','price_asc','serial_asc','recent','recent_asc','paid_desc','paid_asc') THEN f.fmv_usd END DESC NULLS LAST,
       f.moment_id
     LIMIT p_limit OFFSET p_offset
   ),
@@ -417,6 +444,22 @@ SELECT _assert_eq(
   '1', 'All Day: series 1 is legitimate and survives untouched');
 SELECT public.get_wallet_moments_with_fmv('0xowner', 'fmv_desc', 100, 0, NULL, 1, NULL, 'dee28451-5d62-409e-a1ad-a83f763ac070') AS r10b \gset
 SELECT _assert_eq((:'r10b'::jsonb->>'total_count'), '1', 'All Day: the Series 1 filter still matches on 1');
+
+-- (11) SORT recent: newest ACQUISITION first (mB, 10 days) — NOT newest
+-- last_seen_at (mA). The pre-2026-10-31 body returned mA here.
+SELECT public.get_wallet_moments_with_fmv('0xowner', 'recent') AS rr \gset
+SELECT _assert_eq(
+  ((:'rr'::jsonb->'moments')->0->>'moment_id'), 'mB', 'recent puts the most recently ACQUIRED moment first, not the most recently scanned');
+-- ...and the order agrees with the acquired_at each row DISPLAYS.
+SELECT _assert_eq(
+  (((:'rr'::jsonb->'moments')->0->>'acquired_at')::timestamptz > ((:'rr'::jsonb->'moments')->1->>'acquired_at')::timestamptz)::text,
+  'true', 'recent order matches the displayed acquired_at');
+
+-- (12) SORT recent_asc: oldest acquisition first (mA, 300 days). Reading mB's
+-- superseded 1,000-day row instead would put mB first.
+SELECT public.get_wallet_moments_with_fmv('0xowner', 'recent_asc') AS rra \gset
+SELECT _assert_eq(
+  ((:'rra'::jsonb->'moments')->0->>'moment_id'), 'mA', 'recent_asc puts the oldest acquisition first, using the displayed row');
 
 SELECT '✓ get_wallet_moments_with_fmv invariants pass' AS result;
 ROLLBACK;
