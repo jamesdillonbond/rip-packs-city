@@ -3072,3 +3072,6 @@ To get #217's first production read early, a one-off `* * * * *` job (811) was s
 
 ### ⚠ A ONE-OFF BATCH that is IO-bound on a wallet-ordered index slows as the cache cools — hand it to pg_cron rather than babysitting 120 s statements (2026-10-31)
 Hand-driven 20–30k-row UPDATE batches went 19 s → 79 s as the walk left the warm region (the SELECT alone read ~3 heap blocks per NULL row: wallet-ordered index over a heap written in walk order). Past ~177k rows the remaining 378k went to a `* * * * *` pg_cron job at 10k rows a tick (3–59 s each, median ~9 s), freeing the session for the commit/docs work. ⚠ `EXPLAIN (ANALYZE)` on an UPDATE **executes it** — the "sizing" probe committed 5,004 rows (harmless here; a trap on anything you meant to dry-run).
+
+## The 4xx-arm wiring rule is enforced for ATLAS lanes only (2026-11-01, PT)
+`__tests__/atlas-pgnet-lanes-are-attributed-by-the-4xx-arm.test.ts` derives its population from migrations that name the Atlas host, so a pg_net lane to any OTHER host (Flow REST, Studio) is not checked. Both lanes added 10-31 missed the rule at first: the Atlas pack book was caught by the guard pre-push (`20261101024201`); the Flow REST lock-event lane was not, and was wired by hand (`20261101163057`). For a non-Atlas lane, wire `check_edge_fn_http_failures()` in the creating migration yourself.

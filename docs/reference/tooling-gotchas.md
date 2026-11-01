@@ -2406,3 +2406,9 @@ From this cloud session: `apply_migration` / `execute_sql` carrying a `DELETE` (
 
 ### ⚠ Backticks inside a double-quoted `node -e "…"` string are command substitution — three function names vanished from a ledger entry (2026-10-31)
 Same trap as `git commit -m` with backticks. Write the entry to a file and splice from the file, or use a heredoc with a quoted delimiter; after the splice, grep the entry for the names you expect to see.
+
+## Small traps hit on 2026-10-31/11-01 (PT)
+- **Postgres `encode(…, 'base64')` wraps at 76 characters.** A Flow REST script/argument built in SQL for `net.http_post` must strip it: `replace(encode(convert_to(x,'UTF8'),'base64'), E'\n', '')`. Decoding a Flow payload (`decode(e->>'payload','base64')`) is fine.
+- **`git checkout -- <file>` after `git add` restores the INDEX copy — your staged edit.** To drop a staged edit: `git reset -q HEAD <file> && git checkout HEAD -- <file>`.
+- **A ledger entry is ONE heading line.** Appending text to an existing entry is an in-place heading edit, which the pre-commit hook (and CI's ledger-guard) read as a deleted entry. Add a NEW `### ` entry for a follow-up.
+- **An md5-gated anchor-replace DO block is how to change a big pinned function without retyping it:** assert the live `md5(prosrc)` equals the base, assert each anchor occurs once, refuse unless `md5(result)` equals the md5 of the literal body committed in the migration file, then read `prosrc` back (`20261101032444`, `20261101040817`). The file still carries the literal body for the drift guard; its header states it was applied this way.
