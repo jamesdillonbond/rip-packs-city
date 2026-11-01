@@ -1,3 +1,50 @@
+-- audit_20261031_atlas_pack_market_book
+--
+-- 2026-10-31 ~8 PM PT (Claude Code cloud; Trevor: "fix whatever is causing these failures and
+-- alerts … figure it out"). Known-issue #218: Dapper Studio's pack index froze 10-29 ~8 AM PT —
+-- ALL of it, measured 10-31 via pg_net: `searchPackNftAggregation` (the ask book),
+-- `searchPackMarketplaceHistory` (newest row 10-29 7:50 AM PT, totalCount 601,856) and the
+-- per-pack `searchPackNft` (newest updated_at 10-29 8:02 AM PT). Top Shot's public GraphQL answers
+-- Cloudflare 530/1033 and the marketplace page is challenge-walled. So no Dapper pack source is live.
+--
+-- ATLAS IS. `atlas.v1.DistributionService/SearchDistributions` — already walked daily by
+-- topshot_pack_supply_tick for supply — carries per-dist market fields that tick discards:
+-- packLowAskCents, packNumListed, packLatestListedAt, packLastPurchasePriceCents. Live on 10-31:
+-- dist 8905 latest listing 3:54 PM PT, dist 8783 4:18 AM PT (Studio still said 10-29). It serves
+-- BOTH products ('nba' 5,347 dists / 54 pages, 'nfl' 3,211 / 33 pages). Unknown request fields
+-- are ignored; order is newest dist first, so a dist added mid-walk shifts later rows DOWN a
+-- position (a duplicate read, never a skip).
+--
+-- WHAT THIS ADDS (a new lane; topshot_pack_supply_tick is untouched):
+--   · atlas_pack_market            one row per (product, dist) with the market fields + the pass
+--                                  that last saw it.
+--   · atlas_pack_market_state      per-product walk state: the pass in progress, the pages it needs,
+--                                  and the LAST COMPLETE pass (readers gate on it).
+--   · atlas_pack_market_requests   one row per pg_net page request.
+--   · atlas_pack_market_tick()     pg_cron every minute: drain → mark a pass complete only when
+--                                  every page of it landed → dispatch ≤4 pages per product (≤4 in
+--                                  flight), a new pass every 15 min. A transient refusal (403/408/
+--                                  429/5xx/no response) is re-asked up to 3 attempts, the
+--                                  atlas_supply pattern; it holds while the Atlas market lane is
+--                                  being challenged (the topshot_pack_supply_tick rule).
+--   · atlas_pack_book(product)     the reader: rows seen in or after the last COMPLETE pass with a
+--                                  real ask, plus the evidence the app needs to choose a source:
+--                                  newest listing Atlas knows vs newest listing Studio's sales
+--                                  mirror knows (its block_time IS listing creation).
+-- A partial pass is never published as the book: with no complete pass the reader returns
+-- complete_at NULL and the app keeps the Studio book (whose frozen state the Sniper already says).
+--
+-- anon-exec: revoked (atlas_pack_market_ingest_page) — new internal fn; REVOKE FROM PUBLIC, anon, authenticated below.
+-- anon-exec: revoked (atlas_pack_market_request_page) — new internal fn; REVOKE FROM PUBLIC, anon, authenticated below.
+-- anon-exec: revoked (atlas_pack_market_tick) — new pg_cron fn; REVOKE FROM PUBLIC, anon, authenticated below.
+-- anon-exec: revoked (atlas_pack_book) — new reader for the service-role app; REVOKE FROM PUBLIC, anon, authenticated below.
+--
+-- REVERT: SELECT cron.unschedule('rpc-atlas-pack-market');
+--   DROP FUNCTION public.atlas_pack_book(text); DROP FUNCTION public.atlas_pack_market_tick();
+--   DROP FUNCTION public.atlas_pack_market_request_page(text, integer, integer, timestamptz);
+--   DROP FUNCTION public.atlas_pack_market_ingest_page(text, jsonb, timestamptz);
+--   DROP TABLE public.atlas_pack_market_requests, public.atlas_pack_market_state, public.atlas_pack_market;
+
 CREATE TABLE IF NOT EXISTS public.atlas_pack_market (
   product           text        NOT NULL CHECK (product IN ('nba', 'nfl')),
   dist_id           text        NOT NULL,

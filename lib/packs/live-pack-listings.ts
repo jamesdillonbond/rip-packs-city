@@ -200,7 +200,7 @@ export type PackListing = {
   liveFields?: { title: boolean; tier: boolean; image: boolean; slots: boolean }
 }
 
-function seriesLabelFromStartTime(startTime: string): string {
+export function seriesLabelFromStartTime(startTime: string): string {
   if (!startTime) return "Unknown"
   const d = new Date(startTime)
   if (isNaN(d.getTime())) return "Unknown"
@@ -232,7 +232,7 @@ function tierOrder(tier: string): number {
   return 4
 }
 
-function classifyPackType(
+export function classifyPackType(
   title: string | null | undefined,
   slots: number,
   retailPrice: number,
@@ -371,6 +371,13 @@ export async function fetchLivePackListings(
     },
   )
 
+  sortPackListings(listings)
+  listingsCache.set(cfg.cacheKey, { data: listings, expiresAt: Date.now() + CACHE_TTL_MS })
+  return { listings, cached: false }
+}
+
+/** The board order: single packs before bundles/boxes/cases, then tier, then lowest ask. In place. */
+export function sortPackListings(listings: PackListing[]): PackListing[] {
   listings.sort((a, b) => {
     // multi-pack products (bundles, boxes, cases) sort after single packs
     const aIsBundle = a.packType === "bundle" || a.packType === "box" || a.packType === "case" ? 1 : 0
@@ -380,7 +387,5 @@ export async function fetchLivePackListings(
     if (tierDiff !== 0) return tierDiff
     return (a.lowestAsk || 99999) - (b.lowestAsk || 99999)
   })
-
-  listingsCache.set(cfg.cacheKey, { data: listings, expiresAt: Date.now() + CACHE_TTL_MS })
-  return { listings, cached: false }
+  return listings
 }

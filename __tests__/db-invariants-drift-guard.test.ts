@@ -154,6 +154,30 @@ const PINS = [
     migration: "supabase/migrations/20261021041717_audit_20261020_market_cap_player_grain_groups_by_person.sql",
   },
   {
+    // Added 2026-10-31 (#218). Upserts a SearchDistributions page; a late page from an older pass cannot roll a newer observation back.
+    fn: "atlas_pack_market_ingest_page",
+    test: "supabase/tests/atlas_pack_market_tick.sql",
+    migration: "supabase/migrations/20261101022135_audit_20261031_atlas_pack_market_book.sql",
+  },
+  {
+    // Added 2026-10-31 (#218). The one pg_net page request + request row (dispatch and retry).
+    fn: "atlas_pack_market_request_page",
+    test: "supabase/tests/atlas_pack_market_tick.sql",
+    migration: "supabase/migrations/20261101022135_audit_20261031_atlas_pack_market_book.sql",
+  },
+  {
+    // Added 2026-10-31 (#218). Drain (403/5xx re-asked up to 3 attempts), a pass is complete only when every page landed, dispatch <=4 pages/product/min.
+    fn: "atlas_pack_market_tick",
+    test: "supabase/tests/atlas_pack_market_tick.sql",
+    migration: "supabase/migrations/20261101022135_audit_20261031_atlas_pack_market_book.sql",
+  },
+  {
+    // Added 2026-10-31 (#218). Publishes only a COMPLETE pass and only dists with a real ask; carries Studio vs Atlas newest listing.
+    fn: "atlas_pack_book",
+    test: "supabase/tests/atlas_pack_market_tick.sql",
+    migration: "supabase/migrations/20261101022135_audit_20261031_atlas_pack_market_book.sql",
+  },
+  {
     // Added 2026-10-09. The one pg_net page request + request row, shared by the
     // dispatcher and the drain's retry.
     fn: "atlas_supply_request_page",

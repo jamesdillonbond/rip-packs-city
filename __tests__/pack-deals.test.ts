@@ -317,7 +317,9 @@ describe("getPackDeals — book freshness (#218: frozen Dapper pack index)", () 
     state.askError = { message: "rpc down" }
     state.chainCount = 999
     const { book } = await getPackDeals("nba-top-shot")
-    expect(book).toEqual({ lastChangedAt: null, chainSalesSince: null, frozen: false })
+    // Re-pinned 2026-10-31 (#218): the book also names its source. With no Atlas book the
+    // source is Studio and asOf is null; the three-state freshness fields are unchanged.
+    expect(book).toEqual({ lastChangedAt: null, chainSalesSince: null, frozen: false, source: "studio", asOf: null })
   })
 })
 

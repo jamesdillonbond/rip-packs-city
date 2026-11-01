@@ -1323,6 +1323,33 @@ async function runSentinelWithin(clock: WallBudgetClock) {
       for (const lane of PS_LANES) checks.push({ name: lane.name, status, detail });
     };
 
+    // ⚠ UPSTREAM FREEZE ≠ OUR OUTAGE (2026-10-31, #218). The table above mirrors Dapper
+    // Studio's pack-sales index; on 10-29 that index stopped returning anything new while our
+    // walkers kept running clean (ok, partial=false, head_new=0 — caught up with a frozen
+    // source) and the CHAIN feed the product actually reads (`pack_purchases` secondary_sale:
+    // pack_market_sales_stats uses the mirror only before April) stayed current. The arm read
+    // WARN/CRITICAL for days on a condition nothing here can act on.
+    // So: mirror fresh → unchanged. Mirror stale AND our walker NOT clean → OUR failure, the
+    // original verdict (that is the 09-13 latch class this arm exists for). Mirror stale AND
+    // the walker clean → upstream behind: severity from the CHAIN feed, mirror age in the detail.
+    // A failed or absent feeds read falls back to the original (stricter) verdict, never to ok.
+    const { data: feeds, error: feedsErr } = await supabase.rpc("sentinel_pack_sales_feeds");
+    const feedFor = (key: string): { chainH: number; walkerClean: boolean; walkerAgeMin: number } | null => {
+      if (feedsErr || !feeds || typeof feeds !== "object") return null;
+      const f: any = (feeds as any)[key];
+      const chainMs = f?.chain_newest_sale_at ? Date.parse(f.chain_newest_sale_at) : NaN;
+      const w = f?.walker;
+      const wMs = w?.started_at ? Date.parse(w.started_at) : NaN;
+      if (!Number.isFinite(chainMs) || !Number.isFinite(wMs)) return null;
+      const walkerAgeMin = (now.getTime() - wMs) / 60_000;
+      return {
+        chainH: (now.getTime() - chainMs) / 3_600_000,
+        // Clean = its latest run completed against the source's head inside the last hour.
+        walkerClean: w.ok === true && w.partial === false && walkerAgeMin <= 60,
+        walkerAgeMin,
+      };
+    };
+
     if (psErr) {
       const sat = isSaturationError(psErr.message);
       pushAll(
@@ -1363,13 +1390,33 @@ async function runSentinelWithin(clock: WallBudgetClock) {
           }
           const status =
             age < lane.warn ? "ok" : age < lane.crit ? "warn" : "critical";
+          const feed = status === "ok" || latched ? null : feedFor(lane.key);
+          if (feed && feed.walkerClean) {
+            // Upstream behind, our lane healthy: judge the feed the product reads.
+            const chainStatus =
+              feed.chainH < lane.warn ? "ok" : feed.chainH < lane.crit ? "warn" : "critical";
+            checks.push({
+              name: lane.name,
+              status: chainStatus,
+              detail:
+                `Chain ${lane.key} pack sales (what the product reads): newest ${feed.chainH.toFixed(1)}h ago ` +
+                `(warn ${lane.warn}h / crit ${lane.crit}h) · Dapper's pack-sales index is BEHIND — its newest ` +
+                `${age.toFixed(1)}h ago, and our walker is caught up with it (last run ${feed.walkerAgeMin.toFixed(0)}min ago, clean) — ` +
+                `upstream, #218`,
+              value: `${feed.chainH.toFixed(1)}h`,
+            });
+            continue;
+          }
           checks.push({
             name: lane.name,
             status,
             detail:
               `Newest ${lane.key} pack sale: ${age.toFixed(1)}h ago ` +
               `(warn ${lane.warn}h / crit ${lane.crit}h)` +
-              (latched ? " — cursor was LATCHED and has just been reset" : ""),
+              (latched ? " — cursor was LATCHED and has just been reset" : "") +
+              (status !== "ok" && feed && !feed.walkerClean
+                ? ` — our walker is NOT clean (last run ${feed.walkerAgeMin.toFixed(0)}min ago)`
+                : ""),
             value: `${age.toFixed(1)}h`,
           });
         }

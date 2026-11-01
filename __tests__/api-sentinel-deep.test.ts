@@ -927,6 +927,60 @@ describe("POST /api/sentinel — full battery", () => {
       expect(c.detail).toContain("INCONCLUSIVE")
     })
 
+    // #218 (2026-10-31): Dapper's pack-sales index froze while our walkers ran clean and the
+    // CHAIN feed the product reads stayed current. Upstream freeze ≠ our outage.
+    describe("upstream freeze vs our outage (sentinel_pack_sales_feeds)", () => {
+      const hAgo = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString()
+      const feeds = (o: { tsChainH?: number; adChainH?: number; walkerOk?: boolean; partial?: boolean; walkerMin?: number } = {}) => {
+        const walker = {
+          started_at: minsAgo(o.walkerMin ?? 5), ok: o.walkerOk ?? true, partial: o.partial ?? false,
+          head_new: 0, newest_block_time: hAgo(59),
+        }
+        return {
+          data: {
+            topshot: { chain_newest_sale_at: hAgo(o.tsChainH ?? 0.2), walker },
+            allday: { chain_newest_sale_at: hAgo(o.adChainH ?? 15), walker },
+          },
+          error: null,
+        }
+      }
+      const frozen = (f: ReturnType<typeof feeds> | { data: null; error: unknown }) =>
+        ({ ...withPackSales(guardRow(59, 130)), "rpc:sentinel_pack_sales_feeds": f }) as ReturnType<typeof greenFixtures>
+
+      it("is OK on the 10-31 shape: mirror 59h/130h stale, walker clean, chain current", async () => {
+        install(frozen(feeds()))
+        stubFetch([sniperOk, telegramOk, resendOk])
+        const body = await (await POST(post())).json()
+        for (const n of ["Pack Sales Ingest (Top Shot)", "Pack Sales Ingest (All Day)"]) {
+          const c = check(body, n)
+          expect(c.status, n).toBe("ok")
+          expect(c.detail, n).toMatch(/Dapper's pack-sales index is BEHIND/)
+        }
+      })
+
+      it("still pages when the CHAIN feed goes quiet too (judged on the feed the product reads)", async () => {
+        install(frozen(feeds({ tsChainH: 30 })))
+        stubFetch([sniperOk, telegramOk, resendOk])
+        expect(check(await (await POST(post())).json(), "Pack Sales Ingest (Top Shot)").status).toBe("critical")
+      })
+
+      it("keeps the ORIGINAL verdict when our walker is not clean (the 09-13 latch class)", async () => {
+        for (const bad of [{ walkerOk: false }, { partial: true }, { walkerMin: 180 }]) {
+          install(frozen(feeds(bad)))
+          stubFetch([sniperOk, telegramOk, resendOk])
+          const c = check(await (await POST(post())).json(), "Pack Sales Ingest (Top Shot)")
+          expect(c.status, JSON.stringify(bad)).toBe("critical")
+          expect(c.detail, JSON.stringify(bad)).not.toMatch(/BEHIND/)
+        }
+      })
+
+      it("a failed feeds read falls back to the original verdict, never to ok", async () => {
+        install(frozen({ data: null, error: { message: "permission denied" } }))
+        stubFetch([sniperOk, telegramOk, resendOk])
+        expect(check(await (await POST(post())).json(), "Pack Sales Ingest (Top Shot)").status).toBe("critical")
+      })
+    })
+
     it("warns rather than pages when the query itself fails under saturation", async () => {
       install(withPackSales(null, { message: "canceling statement due to statement timeout" }))
       stubFetch([sniperOk, telegramOk, resendOk])

@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server"
 import { apiErrorResponse } from "@/lib/api-error"
 import {
-  fetchLivePackListings,
   isSupportedPackCollection,
   SUPPORTED_PACK_COLLECTIONS,
 } from "@/lib/packs/live-pack-listings"
+import { fetchPackBook } from "@/lib/packs/pack-book-source"
 
 // Live sealed-pack secondary listings from the Dapper Studio internal GraphQL
 // endpoint. The fetch + aggregation + 2-minute cache live in
@@ -28,11 +28,12 @@ export async function GET(req: Request) {
       )
     }
 
-    const { listings, cached } = await fetchLivePackListings(collection)
+    // #218 (2026-10-31): Studio or Atlas, whichever is live — lib/packs/pack-book-source.ts.
+    const { listings, cached, source, asOf } = await fetchPackBook(collection)
     if (cached) {
-      return NextResponse.json({ listings, cached: true, collection })
+      return NextResponse.json({ listings, cached: true, collection, source, asOf })
     }
-    return NextResponse.json({ listings, cached: false, totalPacks: listings.length, collection })
+    return NextResponse.json({ listings, cached: false, totalPacks: listings.length, collection, source, asOf })
   } catch (e) {
     // The thrown value here is UPSTREAM text, not ours: fetchLivePackListings
     // rethrows Dapper Studio's internal GraphQL error verbatim

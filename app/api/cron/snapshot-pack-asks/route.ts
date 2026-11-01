@@ -2,7 +2,8 @@ import { bearerMatches } from "@/lib/auth/bearer-secret"
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
-import { fetchLivePackListings, SNAPSHOT_PACK_COLLECTIONS } from "@/lib/packs/live-pack-listings"
+import { SNAPSHOT_PACK_COLLECTIONS } from "@/lib/packs/live-pack-listings"
+import { fetchPackBook } from "@/lib/packs/pack-book-source"
 
 // Snapshots the live sealed-pack lowest-ask per dist into public.pack_ask_state
 // so the Pack Sniper can show a real "just listed / price dropped" recency
@@ -51,7 +52,8 @@ async function run(request: NextRequest) {
       try {
         // force:true bypasses the 2-min in-lambda memo so each tick sees the
         // freshest upstream book (the public board's read path keeps the memo).
-        const { listings } = await fetchLivePackListings(collection, { force: true })
+        // #218 (2026-10-31): Studio, or Atlas while Studio's pack index is behind.
+        const { listings, source, reason } = await fetchPackBook(collection, { force: true })
         const payload = listings
           .filter((l) => l.lowestAsk > 0)
           .map((l) => ({
@@ -74,7 +76,7 @@ async function run(request: NextRequest) {
           const r = (data ?? {}) as {
             total_listed?: number; new?: number; changed?: number; dropped?: number
           }
-          perCollection[collection] = r
+          perCollection[collection] = { ...r, source, source_reason: reason }
           totalListed += Number(r.total_listed ?? 0)
           totalNew += Number(r.new ?? 0)
           totalChanged += Number(r.changed ?? 0)

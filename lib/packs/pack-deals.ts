@@ -28,10 +28,10 @@
 
 import { supabaseAdmin } from "@/lib/supabase"
 import {
-  fetchLivePackListings,
   isSupportedPackCollection,
   type PackCollectionSlug,
 } from "@/lib/packs/live-pack-listings"
+import { fetchPackBook, type PackBookSource } from "@/lib/packs/pack-book-source"
 import { topshotPackUrl, dapperMarketPackUrl } from "@/lib/pack-urls"
 import { EV_SNAPSHOT_MAX_AGE_HOURS } from "@/lib/pack-dist-verdict"
 import { getCollectionUuid } from "@/lib/collections"
@@ -100,6 +100,10 @@ export type BookFreshness = {
   /** Secondary pack sales on chain since lastChangedAt. Null when not checked or the read failed. */
   chainSalesSince: number | null
   frozen: boolean
+  /** Which index the asks came from (#218). Absent on surfaces that do not read the book itself. */
+  source?: PackBookSource
+  /** Atlas book: when its last complete walk finished. */
+  asOf?: string | null
 }
 
 export const BOOK_STALE_AFTER_MS = 2 * 60 * 60 * 1000
@@ -196,8 +200,9 @@ export async function getPackDeals(
   const evCutoff = new Date(Date.now() - EV_FRESH_HOURS * 3600 * 1000).toISOString()
 
   // Pull live listings + gated EV rows + recency state in parallel.
-  const [{ listings }, evRes, askRes] = await Promise.all([
-    fetchLivePackListings(collection),
+  const [{ listings, source: bookSource, asOf: bookAsOf }, evRes, askRes] = await Promise.all([
+    // #218: Studio, or Atlas while Studio's pack index is behind (lib/packs/pack-book-source.ts).
+    fetchPackBook(collection),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabaseAdmin as any)
       .from("pack_table_rows")
@@ -358,7 +363,7 @@ export async function getPackDeals(
   })
   const returned = deals.slice(0, limit)
 
-  const book = await readBookFreshness(collection, askByDist, nowMs)
+  const book = { ...(await readBookFreshness(collection, askByDist, nowMs)), source: bookSource, asOf: bookAsOf }
 
   return {
     collection,
