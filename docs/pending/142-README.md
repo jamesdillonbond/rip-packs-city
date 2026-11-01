@@ -1,4 +1,4 @@
-# #142 — one paste left: 164-row quarantine + drop the old read (NOT APPLIED)
+# #142 — one paste left: 164-row quarantine + drop the old read (NOT APPLIED) — tracked as known-issues #223
 
 Applied and live-verified 2026-11-01 (no confirmation prompt — only DROP/DELETE
 trigger Supabase's prompt, which never reaches the cloud session):
