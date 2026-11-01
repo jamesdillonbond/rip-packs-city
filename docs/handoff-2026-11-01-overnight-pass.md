@@ -34,7 +34,7 @@
 - FMV HIGH+MED: nba 6,573→6,581 (+8), panini 18,038→18,030 (−8), nfl 1,626→1,621 (−5), pinnacle 996→955 (−41), candy 73→71 (−2), golazos 1, ufc 0. Normal churn, 0 stale/sanity flags.
 - editions: panini 40,136 → 40,153 (+17, landed before the enum went silent); rest flat.
 
-## Findings (all QUEUE / watch — nothing shipped)
+## Findings — queued / watch (nothing shipped)
 
 ### 1. `panini-ingest-enum` silent ~16h — BENIGN (daytime inbox `2026-11-01T1545Z`)
 Silent since **2026-10-31 23:58Z (~16h)**, past its 738-min cadence-watchlist threshold and ~3.8× its 246-min seeded max gap. **Dispositioned benign:**

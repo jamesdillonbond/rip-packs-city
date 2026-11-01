@@ -2559,6 +2559,14 @@ const PINS = [
   // matched on (wallet, nft_id) only, so another collection's row answered —
   // 168 cost-basis rows priced from All Day / UFC sales, 443 duplicated CSV
   // moments, wrong Paid in wallet-search. One pin file, three functions.
+  // Added 2026-11-01 (#142): the sales_2026 trigger feeding topshot_insider_buybacks
+  // had no collection gate (sales_2026 holds every collection) and an unscoped
+  // cache lookup. Latent — 0 wrong rows in 3,255 — pinned so it stays closed.
+  {
+    fn: "tg_capture_topshot_insider_marketplace_buyback",
+    test: "supabase/tests/tg_capture_topshot_insider_marketplace_buyback.sql",
+    migration: "supabase/migrations/20261101160840_audit_20261101_topshot_insider_buyback_trigger_is_top_shot_scoped.sql",
+  },
   {
     fn: "get_wallet_acquisition_data_scoped",
     test: "supabase/tests/acquisition_reads_are_collection_scoped.sql",
