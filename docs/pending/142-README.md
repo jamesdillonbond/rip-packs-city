@@ -1,22 +1,22 @@
-# #142 DB half — PARKED, NOT APPLIED (2026-11-01)
+# #142 — one step left: the 168-row quarantine (NOT APPLIED)
 
-Prod does NOT have these changes yet. Supabase's `apply_migration` confirmation
-prompt (triggered by `DROP FUNCTION`) timed out three times from the cloud
-session, so Trevor is running the SQL by hand in the Supabase SQL editor.
+Applied and live-verified 2026-11-01 (no confirmation prompt — only DROP/DELETE
+trigger Supabase's prompt, which never reaches the cloud session):
+`20261101145804` (export_wallet_csv, backfill_cost_basis_from_ids,
+backfill_pinnacle_mint_acquisitions) and `20261101145940`
+(get_wallet_acquisition_data_scoped, which /api/wallet-search and /api/cost-basis
+now call).
 
-1. `142-1-functions-run-first.sql` — collection-scopes `get_wallet_acquisition_data`
-   (new optional `p_collection_id`), `export_wallet_csv` (443 duplicated moments),
-   `backfill_cost_basis_from_ids` (priced from other collections' sales),
-   `backfill_pinnacle_mint_acquisitions` (latent).
-2. `142-2-quarantine-run-second.sql` — moves the 168 `sales_backfill` rows priced
-   from an All Day / UFC sale ($1,678.51) into `moment_acquisitions_xcoll_quarantine`.
-   Restore statement is in its header.
+**Still to run, by hand in the Supabase SQL editor:**
+`142-quarantine-run-in-sql-editor.sql` — moves the 168 `sales_backfill` rows that
+were priced from an All Day / UFC sale ($1,678.51) into
+`moment_acquisitions_xcoll_quarantine`, in one statement. Restore statement in its
+header. It DELETEs, so `apply_migration` stops on the confirmation prompt.
 
-`142-acquisition-scope-db-half.patch` is the full repo change that ships AFTER both
-run: the two migration files under `supabase/migrations/`, two DB pins, drift-guard
-entries, and the two call sites (`/api/wallet-search`, `/api/cost-basis`) that pass
-`p_collection_id` — which 404s against the live function until step 1 runs.
+After it runs: a session checks the quarantine has 168 rows and no matching rows
+remain in moment_acquisitions, logs it in the ledger, and deletes this folder.
+(The SQL editor writes no schema_migrations row, so migration-parity has nothing
+to flag and no file is needed.)
 
-After both run: `git apply docs/pending/142-acquisition-scope-db-half.patch`, verify
-live prosrc = committed bodies (new md5s 37cdcb5f / cc5176bf / 4c626e4d / d33ecb74),
-quarantine count = 168, preflight, push, then delete this folder.
+Also left for a session that can answer a DROP prompt: drop the now-uncalled
+`get_wallet_acquisition_data(text, text[])`.
