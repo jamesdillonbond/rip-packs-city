@@ -35,6 +35,15 @@ export const IPFS_THUMB_WIDTHS = [160, 320, 640, 960] as const;
 export type IpfsThumbWidth = (typeof IPFS_THUMB_WIDTHS)[number];
 export const IPFS_THUMB_DEFAULT_WIDTH: IpfsThumbWidth = 640;
 
+// The durable mirror of resized IPFS art (Supabase Storage, public bucket, migration
+// 20261101163315_audit_20261101_ipfs_thumb_mirror_bucket). Object key: `<cid>/<width>.webp`.
+// ⚠ scripts/ipfs-thumb-mirror.mjs writes the SAME keys and cannot import this TS file, so it
+// spells them itself; __tests__/ipfs-thumb-mirror.test.ts pins the two spellings together.
+export const IPFS_THUMB_MIRROR_BUCKET = "ipfs-thumbs"
+export function ipfsThumbMirrorKey(cid: string, width: IpfsThumbWidth): string {
+  return `${cid}/${width}.webp`
+}
+
 /** The smallest allowed thumb width that covers `px` device pixels (the largest, if none does). */
 export function thumbWidthFor(px: number): IpfsThumbWidth {
   for (const w of IPFS_THUMB_WIDTHS) if (w >= px) return w;

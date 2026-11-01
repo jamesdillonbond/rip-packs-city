@@ -38,6 +38,18 @@ describe("proxyIpfsImageUrl / thumbWidthFor", () => {
 
 const fetchMock = vi.fn()
 vi.stubGlobal("fetch", fetchMock)
+
+// ⚠ RE-PINNED 2026-11-01: the route now reads the Supabase Storage mirror BEFORE the original, so
+// a single mockResolvedValue would answer the mirror read too. `origin(r)` answers the ORIGINAL
+// with r and the mirror with a miss (400, what Storage says for a missing object) / a write ok.
+const isMirror = (u: unknown) => String(u).includes("/storage/v1/object/")
+const originCalls = () => fetchMock.mock.calls.filter(([u]) => !isMirror(u))
+function origin(make: () => Response) {
+  fetchMock.mockImplementation(async (u: unknown, init?: RequestInit) => {
+    if (isMirror(u)) return init?.method === "POST" ? new Response("{}", { status: 200 }) : new Response(null, { status: 400 })
+    return make()
+  })
+}
 const { GET } = await import("@/app/api/public/ipfs-thumb/[cid]/route")
 
 const call = (cid: string, w?: string) =>
@@ -52,11 +64,11 @@ async function bigPng(): Promise<Buffer> {
 }
 
 describe("GET /api/public/ipfs-thumb/[cid]", () => {
-  beforeEach(() => fetchMock.mockReset())
+  beforeEach(() => { fetchMock.mockReset() })
 
   it("resizes the original to a WebP no wider than w, with an immutable cache", async () => {
     const png = await bigPng()
-    fetchMock.mockResolvedValue(new Response(new Uint8Array(png), { status: 200, headers: { "content-type": "image/png" } }))
+    origin(() => new Response(new Uint8Array(png), { status: 200, headers: { "content-type": "image/png" } }))
     const res = await call(CID, "320")
     expect(res.status).toBe(200)
     expect(res.headers.get("content-type")).toBe("image/webp")
@@ -67,18 +79,19 @@ describe("GET /api/public/ipfs-thumb/[cid]", () => {
     expect(meta.width).toBe(320)
     expect(out.byteLength).toBeLessThan(png.byteLength)
     // It fetched the ORIGINAL through our own edge proxy, not a gateway.
-    expect(String(fetchMock.mock.calls[0][0])).toBe(`https://www.rippackscity.com/api/public/ipfs-media/${CID}`)
+    expect(originCalls().length).toBe(1)
+    expect(String(originCalls()[0][0])).toBe(`https://www.rippackscity.com/api/public/ipfs-media/${CID}`)
   })
 
   it("never enlarges a small original", async () => {
     const small = await sharp({ create: { width: 100, height: 100, channels: 3, background: "#000" } }).png().toBuffer()
-    fetchMock.mockResolvedValue(new Response(new Uint8Array(small), { status: 200, headers: { "content-type": "image/png" } }))
+    origin(() => new Response(new Uint8Array(small), { status: 200, headers: { "content-type": "image/png" } }))
     const meta = await sharp(Buffer.from(await (await call(CID, "640")).arrayBuffer())).metadata()
     expect(meta.width).toBe(100)
   })
 
   it("fails OPEN to the original, uncached, when the upstream is not an image (a video CID)", async () => {
-    fetchMock.mockResolvedValue(new Response("x", { status: 200, headers: { "content-type": "video/mp4" } }))
+    origin(() => new Response("x", { status: 200, headers: { "content-type": "video/mp4" } }))
     const res = await call(CID, "320")
     expect(res.status).toBe(302)
     expect(res.headers.get("location")).toBe(`https://www.rippackscity.com/api/public/ipfs-media/${CID}`)
@@ -86,15 +99,19 @@ describe("GET /api/public/ipfs-thumb/[cid]", () => {
   })
 
   it("fails OPEN when the upstream errors or the bytes do not decode", async () => {
-    fetchMock.mockResolvedValue(new Response(null, { status: 502 }))
+    origin(() => new Response(null, { status: 502 }))
     expect((await call(CID, "320")).status).toBe(302)
-    fetchMock.mockResolvedValue(new Response("not a png", { status: 200, headers: { "content-type": "image/png" } }))
+    origin(() => new Response("not a png", { status: 200, headers: { "content-type": "image/png" } }))
     expect((await call(CID, "320")).status).toBe(302)
   })
 
   it("fails OPEN when the upstream fetch throws (a timeout)", async () => {
     let threw = 0
-    vi.stubGlobal("fetch", async () => { threw++; throw new Error("timeout") })
+    vi.stubGlobal("fetch", async (u: unknown) => {
+      if (isMirror(u)) return new Response(null, { status: 400 })
+      threw++
+      throw new Error("timeout")
+    })
     try {
       expect((await call(CID, "320")).status).toBe(302)
       expect(threw).toBe(1)

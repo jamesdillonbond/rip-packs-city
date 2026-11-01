@@ -1,0 +1,48 @@
+name: IPFS thumb mirror
+
+# Backfills the Supabase Storage mirror (bucket `ipfs-thumbs`) that /api/public/ipfs-thumb reads
+# BEFORE any IPFS gateway. UFC Strike art exists only on public IPFS, and on 2026-11-01 the public
+# gateways stopped answering inside a page request's budget (Pinata timeouts, ipfs.io 429s), so UFC
+# images rendered broken. This job downloads each missing CID with 60 s timeouts, sequential
+# gateway fallback and retries, resizes to every served width and uploads it. Whatever it wins is
+# permanent. Full story: scripts/ipfs-thumb-mirror.mjs.
+#
+# Daily, to pick up new UFC editions and retry any CID no gateway served last time. A red run names
+# the CIDs still missing; those render through the old gateway path (fail-open) until mirrored.
+
+on:
+  schedule:
+    - cron: '47 10 * * *'
+  workflow_dispatch:
+    inputs:
+      cid:
+        description: 'Mirror just this CID (optional)'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  mirror:
+    name: Mirror resized IPFS art
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Mirror
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          ONLY_CID: ${{ inputs.cid }}
+        run: |
+          if [ -n "${ONLY_CID:-}" ]; then
+            node scripts/ipfs-thumb-mirror.mjs --cid "$ONLY_CID"
+          else
+            node scripts/ipfs-thumb-mirror.mjs
+          fi
