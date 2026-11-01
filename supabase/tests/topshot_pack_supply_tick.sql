@@ -9,7 +9,8 @@
 --     its row count + remaining sum;
 --   · a failed summary moves next_due_at (30 min) and never the KNOW-stamp; a failed
 --     edition page drops the pass; a request with no response after 15 min fails;
---     the run is not ok when any request failed;
+--     the run is not ok when any request failed; a 403/408/429/5xx/no-response is re-asked
+--     by design and counted as CHALLENGED, never as a failed run (2026-10-31);
 --   · dispatch sends at most p_budget requests, edition pages before summaries, and
 --     NOTHING while the market lane's last 10 minutes are mostly 403s, counted over
 --     every drained market request (a tagged row is a success, not noise);
@@ -140,6 +141,7 @@ DECLARE
   v_n         integer;
   v_drained   integer := 0;
   v_failed    integer := 0;
+  v_challenged integer := 0;
   v_rows      integer := 0;
   v_sent      integer := 0;
   v_inflight  integer;
@@ -171,7 +173,17 @@ BEGIN
        OR (r.kind = 'list'     AND jsonb_typeof(v_body -> 'distributions') IS DISTINCT FROM 'array')
        OR (r.kind = 'summary'  AND jsonb_typeof(v_body -> 'remainingByTier') IS DISTINCT FROM 'object')
        OR (r.kind = 'editions' AND jsonb_typeof(v_body -> 'editions') IS DISTINCT FROM 'array') THEN
-      v_failed := v_failed + 1;
+      -- 2026-10-31: a Cloudflare challenge (403), a throttle (408/429), a 5xx or no response is
+      -- RE-ASKED by the branches below (list rewinds, summary due again in 30 min, edition pass
+      -- re-read), so it is CHALLENGED, not a failed run: 341 of 2,556 summaries 403'd in 24 h
+      -- and the lane read 21-29 % failed while every page was re-asked. A 200 with a bad body
+      -- or any other 4xx still fails the run. A lane that is challenged on EVERY request is
+      -- check_edge_fn_http_failures' pack-supply row (high after 2 h with no 200).
+      IF NOT r.has_resp OR r.status_code IS NULL OR r.status_code IN (403, 408, 429) OR r.status_code >= 500 THEN
+        v_challenged := v_challenged + 1;
+      ELSE
+        v_failed := v_failed + 1;
+      END IF;
       UPDATE public.topshot_atlas_pack_requests
          SET drained_at = clock_timestamp(), status_code = r.status_code,
              error = CASE WHEN NOT r.has_resp THEN 'no-response'
@@ -400,10 +412,10 @@ BEGIN
       v_failed = 0,
       CASE WHEN v_failed > 0 THEN v_failed || ' request(s) failed' END,
       'nba_top_shot', NULL, NULL,
-      jsonb_build_object('drained', v_drained, 'failed', v_failed, 'rows_written', v_rows,
+      jsonb_build_object('drained', v_drained, 'failed', v_failed, 'challenged', v_challenged, 'rows_written', v_rows,
                          'sent', v_sent, 'held_for_market_403', v_held, 'errors_sample', v_errors));
   END IF;
-  RETURN jsonb_build_object('drained', v_drained, 'failed', v_failed, 'rows_written', v_rows,
+  RETURN jsonb_build_object('drained', v_drained, 'failed', v_failed, 'challenged', v_challenged, 'rows_written', v_rows,
                             'sent', v_sent, 'held_for_market_403', v_held);
 END;
 $function$;
@@ -582,7 +594,7 @@ SELECT _assert_eq((SELECT string_agg(body ->> 'distributionId', ',' ORDER BY id)
 -- ── summaries ───────────────────────────────────────────────────────────────
 INSERT INTO net._http_response VALUES
   (9001, 200, NULL, '{"distributionId":"8617","unopenedCount":"2","remainingByTier":{"common":"5","rare":"1"},"originalCountsByTier":{"common":"1395","rare":"84"},"totalPackCount":"500","ownedCount":"2","unavailableCount":"0"}'),
-  (9002, 503, NULL, 'upstream exploded');
+  (9002, 400, NULL, 'bad request');
 SELECT _assert_eq((SELECT (r ->> 'drained') || '/' || (r ->> 'failed') FROM (SELECT topshot_pack_supply_tick(2) r) x), '2/1',
   'two summaries drained, one failed');
 SELECT _assert_eq((SELECT remaining_total || '/' || unopened_count || '/' || editions_next_offset || '/' || (summary_fetched_at IS NOT NULL)
@@ -767,6 +779,19 @@ SELECT _assert((SELECT bool_and(split_status = 'pending: distribution list incom
 UPDATE topshot_atlas_pack_state SET list_done_at = NULL;
 SELECT _assert_eq((SELECT split_status FROM get_topshot_issuer_held_split() WHERE tier IS NULL),
   'pending: distribution list incomplete or stale', 'no list ever completed: pending');
+
+-- ── a challenge is re-asked, not a failed run (2026-10-31) ─────────────────
+-- 341 of 2,556 summaries 403'd in 24 h and the lane read 21-29 % failed while the tick re-asked
+-- every one. A 403 is CHALLENGED; the run stays ok; the drop is still re-asked in 30 min.
+UPDATE topshot_atlas_pack_requests SET drained_at = coalesce(drained_at, now());
+INSERT INTO topshot_atlas_pack_requests (request_id, kind, dist_id) VALUES (9901, 'summary', '100');
+INSERT INTO net._http_response VALUES (9901, 403, NULL, '<!DOCTYPE html><title>Just a moment...</title>');
+SELECT _assert_eq((SELECT (r ->> 'failed') || '/' || (r ->> 'challenged') FROM (SELECT topshot_pack_supply_tick(0) r) x), '0/1',
+  'a 403 is challenged, not failed');
+SELECT _assert_eq((SELECT pipeline || '/' || ok FROM pipeline_log ORDER BY ctid DESC LIMIT 1), 'topshot-pack-supply-atlas/true',
+  'a tick whose only miss is a challenge IS ok');
+SELECT _assert((SELECT next_due_at > now() + interval '25 minutes' FROM topshot_atlas_dists WHERE dist_id = '100'),
+  'the challenged summary is still re-asked in 30 min');
 
 SELECT '✓ topshot_pack_supply_tick + issuer-held split readers: all assertions passed' AS result;
 

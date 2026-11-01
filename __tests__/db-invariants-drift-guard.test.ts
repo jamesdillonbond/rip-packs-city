@@ -106,7 +106,8 @@ const PINS = [
     // 2026-10-10: an unchanged summary carries its reconciled pass forward (40 h re-read);
     // the market-403 back-off counts every drained market request.
     // 2026-10-14: a new list pass keeps list_done_at; readers gate on its age.
-    migration: "supabase/migrations/20261015001336_audit_20261014_issuer_held_split_survives_the_daily_list_rewalk.sql",
+    // 2026-10-31: a 403/408/429/5xx/no-response is CHALLENGED (re-asked), not a failed run.
+    migration: "supabase/migrations/20261101032444_audit_20261031_pack_supply_tick_counts_a_challenge_as_reasked_not_failed.sql",
   },
   {
     // Added 2026-10-03. Per-edition issuer-held split (in sealed packs vs reserve):

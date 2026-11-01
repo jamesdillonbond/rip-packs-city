@@ -508,6 +508,9 @@ describe("concierge — get_trade_in (2026-10-31)", () => {
     expect(r).toMatchObject({ status: "ok", wallet: "0xbd94cade097e50ac", username_input: "ripcity" })
   })
   it("on another collection is refused, never Top Shot's rows", async () => {
+    // Stubbed (2026-10-31): unstubbed, this read went to the LIVE site — red in a sandbox with no
+    // egress, and a CI pass that depended on production answering.
+    stubFetch([jsonRoute("/api/public/insights/trade-in", { meta: { total_players: 1 }, players: [{ player_name: "X", moments: 1, packs: 0 }], next_pack: [] })])
     const r = await drive("get_trade_in", { player: "x" })
     expect(r).toMatchObject({ status: "ok" }) // no collection: Top Shot's
     script("get_trade_in", { player: "x" })
