@@ -129,10 +129,13 @@ export async function GET(req: NextRequest) {
       // "PACK PULL"/"MINTED" chip is gated on the value being present), so a failed
       // read here degrades a field without making a false claim. It was silent
       // though — logging is what was missing, not a status code.
-      const { data: acqData, error: acqErr } = await boundedRead((supabase as any).rpc("get_wallet_acquisition_data", {
+      const { data: acqData, error: acqErr } = await boundedRead((supabase as any).rpc("get_wallet_acquisition_data_scoped", {
         p_wallet: normalized,
         p_moment_ids: nftIds,
-      }), "api/cost-basis/get_wallet_acquisition_data")
+        // The SAME scope as the cost-basis read above; NULL (no ?collection) keeps
+        // the wallet-wide read. moment ids collide across collections, INCLUDING inside one wallet (#142; 41 rows / 11 wallets 2026-10-31)
+        p_collection_id: collectionId ?? null,
+      }), "api/cost-basis/get_wallet_acquisition_data_scoped")
       if (acqErr) console.error("[api/cost-basis] acquisition enrich:", acqErr.message)
       if (acqData) {
         const acqMap = new Map<string, string>()

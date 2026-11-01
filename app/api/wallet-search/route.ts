@@ -907,9 +907,12 @@ async function enrichWithAcquisitionData(rows: WalletRow[], wallet: string): Pro
     const momentIds = rows.map(r => r.momentId).filter(Boolean)
     if (!momentIds.length) return rows
 
-    const { data, error } = await (supabaseAdmin as any).rpc("get_wallet_acquisition_data", {
+    const { data, error } = await (supabaseAdmin as any).rpc("get_wallet_acquisition_data_scoped", {
       p_wallet: wallet,
       p_moment_ids: momentIds,
+      // Only the Top Shot path reaches here (Pinnacle/UFC/Golazos return earlier,
+      // All Day skips this call). moment ids collide across collections, INCLUDING inside one wallet (#142; 41 rows / 11 wallets 2026-10-31)
+      p_collection_id: TOPSHOT_COLLECTION_ID,
     })
 
     if (error || !data) return rows

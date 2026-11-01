@@ -138,7 +138,7 @@ function install() {
     wallet_moments_cache: { data: [], error: null },
     moment_acquisitions: { data: null, error: null },
     sales: { data: [], error: null },
-    "rpc:get_wallet_acquisition_data": { data: [], error: null },
+    "rpc:get_wallet_acquisition_data_scoped": { data: [], error: null },
     "rpc:get_acquisition_stats": { data: [], error: null },
   } as Fixtures)
   state.sb = spy.fixture

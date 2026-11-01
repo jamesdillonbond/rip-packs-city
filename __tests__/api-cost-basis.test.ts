@@ -7,7 +7,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // first-wins dedup, and the missing-0x normalization. Mocks
 // @supabase/supabase-js createClient (the route builds its own service client):
 // resolveCollectionId uses .from().select().eq().single(); the reads are
-// rpc("get_wallet_cost_basis") + rpc("get_wallet_acquisition_data").
+// rpc("get_wallet_cost_basis") + rpc("get_wallet_acquisition_data_scoped").
 
 const state: {
   costBasis: { data: any; error: any }
@@ -34,7 +34,7 @@ vi.mock("@supabase/supabase-js", () => {
       from: () => b,
       rpc: async (fn: string, params: any) => {
         state.rpcCalls.push({ fn, params })
-        if (fn === "get_wallet_acquisition_data") return state.acq
+        if (fn === "get_wallet_acquisition_data_scoped") return state.acq
         return state.costBasis
       },
     }),
@@ -179,8 +179,22 @@ describe("GET /api/cost-basis", () => {
     // a row whose moment_id had no acquisition row gets null, not undefined
     expect(body.acquisitions[2].acquisition_method).toBeNull()
     // enrichment RPC only receives the non-null nft_ids
-    const acqCall = state.rpcCalls.find((c) => c.fn === "get_wallet_acquisition_data")
+    const acqCall = state.rpcCalls.find((c) => c.fn === "get_wallet_acquisition_data_scoped")
     expect(acqCall?.params.p_moment_ids).toEqual(["n1", "n2"])
+    // no ?collection → the wallet-wide read, stated explicitly (NULL), not omitted
+    expect(acqCall?.params.p_collection_id).toBeNull()
+  })
+
+  // 2026-11-01 (#142): the enrichment read must carry the SAME collection scope as
+  // the cost-basis read. Matched on (wallet, nft_id) alone, an All Day moment took
+  // its Top Shot namesake's acquisition method (ids collide inside one wallet).
+  it("scopes the acquisition enrichment to the requested collection", async () => {
+    state.configRow = { collection_id: "col-allday" }
+    state.costBasis = { data: [{ nft_id: "n1", cost_usd: 10 }], error: null }
+    state.acq = { data: [], error: null }
+    await GET(req("https://t/api/cost-basis?wallet=0xabc0000000000000&collection=nfl-all-day"))
+    const acqCall = state.rpcCalls.find((c) => c.fn === "get_wallet_acquisition_data_scoped")
+    expect(acqCall?.params.p_collection_id).toBe("col-allday")
   })
 
   it("still returns rows when the acquisition enrichment yields nothing", async () => {

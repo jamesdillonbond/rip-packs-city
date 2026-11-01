@@ -136,7 +136,7 @@ function baseFixtures(overrides: Fixtures = {}): Fixtures {
       ],
       error: null,
     },
-    "rpc:get_wallet_acquisition_data": {
+    "rpc:get_wallet_acquisition_data_scoped": {
       data: [
         { moment_id: "101", acquisition_method: "marketplace", buy_price: 8.5, loan_principal: null },
       ],

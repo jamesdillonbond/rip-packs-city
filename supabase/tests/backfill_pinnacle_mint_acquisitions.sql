@@ -31,10 +31,14 @@
 -- rows. It counts rows the INSERT actually returned, so a row suppressed by
 -- ON CONFLICT is correctly excluded — the count is the honest one.
 --
--- The function DDL below is VERBATIM from the committed snapshot migration
--- (supabase/migrations/20260816003000_audit_20260816_snapshot_pinnacle_acquisition_backfills.sql),
--- pulled from live prod via pg_get_functiondef on 2026-08-16
--- (md5 551b9c90e4659c01514dddfe0673ffef).
+--   4. (2026-10-31) …but ONLY an acquisition IN PINNACLE. moment ids collide
+--      across collections (#142), so a Top Shot acquisition of the same nft_id
+--      is a different moment and must not suppress the Pin's mint (section 7).
+--
+-- The function DDL below is VERBATIM from the committed migration
+-- (supabase/migrations/20261101145804_audit_20261031_acquisition_writers_and_export_are_collection_scoped.sql),
+-- whose base was verified md5-identical to live prosrc (1ed9cd8f…) before the
+-- one-line collection scope was added.
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -93,6 +97,7 @@ BEGIN
      AND lower(wmc.wallet_address) = lower(m.to_wallet)
     WHERE NOT EXISTS (
       SELECT 1 FROM public.moment_acquisitions a WHERE a.nft_id = m.nft_id
+        AND a.collection_id = v_pin
     )
     LIMIT p_limit
   ),
@@ -228,6 +233,33 @@ DELETE FROM public.moment_acquisitions WHERE source = 'pinnacle_mints';
 SELECT _assert_eq(
   (public.backfill_pinnacle_mint_acquisitions(1) ->> 'inserted'), '1',
   'p_limit bounds one run'
+);
+
+-- ── 7. THE GATE IS PINNACLE-SCOPED (2026-10-31, #142) ───────────────────────
+-- n6 has an acquisition with the SAME nft_id in TOP SHOT — a different moment.
+-- The old nft_id-only gate suppressed n6's mint; the scoped gate must not.
+DELETE FROM public.moment_acquisitions WHERE source = 'pinnacle_mints';
+INSERT INTO public.pinnacle_mint_events (nft_id, to_wallet, minted_at, tx_hash) VALUES
+  ('n6', '0xFFFF', '2026-05-06T00:00:00Z', 'tx6');
+INSERT INTO public.wallet_moments_cache (moment_id, wallet_address, collection_id) VALUES
+  ('n6', '0xFFFF', :PIN::uuid);
+INSERT INTO public.moment_acquisitions
+  (nft_id, wallet, buy_price, acquired_date, acquired_type, acquisition_method,
+   acquisition_confidence, transaction_hash, source, collection_id)
+VALUES
+  ('n6', '0xFFFF', 7.00, '2026-06-02T00:00:00Z', 1, 'marketplace', 'verified',
+   'tx-ts-n6', 'some_top_shot_ingest', :OTHER::uuid);
+SELECT public.backfill_pinnacle_mint_acquisitions();
+SELECT _assert_eq(
+  (SELECT count(*)::text FROM public.moment_acquisitions WHERE nft_id = 'n6' AND source = 'pinnacle_mints'),
+  '1',
+  'a Top Shot acquisition sharing the nft_id does not suppress the Pin''s mint'
+);
+-- …while a PINNACLE acquisition still does (n3, unchanged above).
+SELECT _assert_eq(
+  (SELECT count(*)::text FROM public.moment_acquisitions WHERE nft_id = 'n3' AND source = 'pinnacle_mints'),
+  '0',
+  'a Pinnacle acquisition still gates the mint'
 );
 
 ROLLBACK;

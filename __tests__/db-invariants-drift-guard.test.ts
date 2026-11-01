@@ -2545,8 +2545,28 @@ const PINS = [
     // retroactively beneath a later marketplace purchase by a different wallet.
     fn: "backfill_pinnacle_mint_acquisitions",
     test: "supabase/tests/backfill_pinnacle_mint_acquisitions.sql",
+    // Re-pointed 2026-10-31: the NOT EXISTS gate is now Pinnacle-scoped (#142).
     migration:
-      "supabase/migrations/20260816003000_audit_20260816_snapshot_pinnacle_acquisition_backfills.sql",
+      "supabase/migrations/20261101145804_audit_20261031_acquisition_writers_and_export_are_collection_scoped.sql",
+  },
+  // Added 2026-10-31 (#142): three moment_acquisitions readers/writers that
+  // matched on (wallet, nft_id) only, so another collection's row answered —
+  // 168 cost-basis rows priced from All Day / UFC sales, 443 duplicated CSV
+  // moments, wrong Paid in wallet-search. One pin file, three functions.
+  {
+    fn: "get_wallet_acquisition_data_scoped",
+    test: "supabase/tests/acquisition_reads_are_collection_scoped.sql",
+    migration: "supabase/migrations/20261101145940_audit_20261031_get_wallet_acquisition_data_scoped.sql",
+  },
+  {
+    fn: "export_wallet_csv",
+    test: "supabase/tests/acquisition_reads_are_collection_scoped.sql",
+    migration: "supabase/migrations/20261101145804_audit_20261031_acquisition_writers_and_export_are_collection_scoped.sql",
+  },
+  {
+    fn: "backfill_cost_basis_from_ids",
+    test: "supabase/tests/acquisition_reads_are_collection_scoped.sql",
+    migration: "supabase/migrations/20261101145804_audit_20261031_acquisition_writers_and_export_are_collection_scoped.sql",
   },
   {
     // Added 2026-08-22 with the Pinnacle TRADE lane — the third Pinnacle
