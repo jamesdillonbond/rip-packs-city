@@ -167,6 +167,12 @@ const PINS = [
     migration: "supabase/migrations/20261101052029_audit_20261031_topshot_lock_events_lane.sql",
   },
   {
+    // Added 2026-11-01 (#222). The lock-check writer (cron + trade-room heal): a NULL reading keeps the flag and stamps; scoped by (wallet, collection, moment).
+    fn: "apply_lock_check_batch",
+    test: "supabase/tests/apply_lock_check_batch.sql",
+    migration: "supabase/migrations/20261101151627_audit_20261101_apply_lock_check_batch_null_keeps_flag.sql",
+  },
+  {
     // Added 2026-10-31 (#222). Drain (transients re-asked x3) -> sealed height -> <=6 ranges/tick, never past the known sealed height.
     fn: "topshot_lock_events_tick",
     test: "supabase/tests/topshot_lock_events_tick.sql",

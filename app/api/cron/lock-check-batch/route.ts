@@ -372,10 +372,15 @@ async function runBatch(startedAtIso: string): Promise<void> {
     wallet_address: string
     moment_id: string
     collection_id: string
-    is_locked: boolean
+    // null = the script returned no entry for this id (#222, 2026-11-01): the moment is
+    // not in the wallet's collection, so there is no lock reading. `!!locked[id]` wrote
+    // "checked: unlocked" for it. apply_lock_check_batch keeps the row's flag on null and
+    // still stamps it, so the stalest-first rotation moves past the row.
+    is_locked: boolean | null
   }> = []
   const groupErrors: Array<{ wallet: string; slug: string; error: string }> = []
   let walletsProcessed = 0
+  let absentFromChain = 0
 
   for (const [k, items] of groups.entries()) {
     if (Date.now() - started > SOFT_DEADLINE_MS) break
@@ -389,11 +394,13 @@ async function runBatch(startedAtIso: string): Promise<void> {
     try {
       const locked = await runCadenceLock(wallet, ids, script)
       for (const id of ids) {
+        const reading = Object.prototype.hasOwnProperty.call(locked, String(id)) ? locked[String(id)] : null
+        if (reading === null) absentFromChain += 1
         results.push({
           wallet_address: wallet,
           moment_id: id,
           collection_id: collectionId,
-          is_locked: !!locked[id],
+          is_locked: reading,
         })
       }
       walletsProcessed += 1
@@ -454,6 +461,8 @@ async function runBatch(startedAtIso: string): Promise<void> {
       group_errors: groupErrors.slice(0, 5),
       batch_read_errors: batchReadErrors,
       skipped_locked: skippedLocked,
+      // Rows whose moment the wallet no longer holds on chain (phantom wmc rows).
+      absent_from_chain: absentFromChain,
     },
   })
 

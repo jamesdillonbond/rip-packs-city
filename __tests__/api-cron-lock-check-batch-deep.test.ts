@@ -143,7 +143,30 @@ describe("lock-check-batch — happy path", () => {
 
     const log = terminalLog(spy.rpcCalls)
     expect(log).toMatchObject({ p_pipeline: "lock-check-batch", p_ok: true, p_rows_found: 2, p_rows_written: 2 })
-    expect(log.p_extra).toMatchObject({ wallets_processed: 1, wallets_grouped: 1 })
+    expect(log.p_extra).toMatchObject({ wallets_processed: 1, wallets_grouped: 1, absent_from_chain: 0 })
+  })
+
+  // #222 (2026-11-01): the script returns NO entry for a moment the wallet no longer
+  // holds. `!!locked[id]` turned that into a "checked: unlocked" write. It is now null
+  // (apply_lock_check_batch keeps the flag and stamps) and counted.
+  it("sends null — never false — for an id the chain returned no entry for, and counts it", async () => {
+    const spy = install({
+      "rpc:get_lock_check_batch": [
+        { data: [cand("nba_top_shot", "0xw1", "111", TS_UUID), cand("nba_top_shot", "0xw1", "333", TS_UUID)], error: null },
+        { data: [], error: null },
+      ],
+      "rpc:apply_lock_check_batch": { data: { updated: 2 }, error: null },
+    })
+    fetchMock = installFetchMock([flowRest([{ body: lockScriptResult({ "111": true }) }])])
+
+    await POST(req())
+    await runDeferred()
+
+    const apply = spy.rpcCalls.find((c) => c.name === "apply_lock_check_batch")?.args as any
+    const results = apply.p_results as Array<{ moment_id: string; is_locked: boolean | null }>
+    expect(results.find((r) => r.moment_id === "111")?.is_locked).toBe(true)
+    expect(results.find((r) => r.moment_id === "333")?.is_locked).toBeNull()
+    expect(terminalLog(spy.rpcCalls).p_extra).toMatchObject({ absent_from_chain: 1 })
   })
 
   it("counts unsupported-collection candidates without fabricating a lock result", async () => {
