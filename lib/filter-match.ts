@@ -80,6 +80,19 @@ export function highlightParts(label: string, query: string): Array<{ text: stri
 }
 
 /**
+ * One key per player across the spellings a denormalised name column carries
+ * (#221: wallet_moments_cache.player_name spells one player several ways — "Luka
+ * Doncic"/"Luka Dončić", "Demar"/"DeMar DeRozan", "O.G."/"OG Anunoby", "Jimmy Butler
+ * III"/"Jimmy Butler"). A MIRROR of Postgres `public._norm_player` (fold, lower, drop a
+ * trailing Jr/Sr/II/III/IV/V, drop non-alphanumerics), which get_wallet_moments_with_fmv
+ * filters on — so the dropdown, the client filter and the server agree on who is one
+ * player. It does NOT merge true aliases ("Rob"/"Robert"): that is the identity crosswalk.
+ */
+export function playerNameKey(name: string | null | undefined): string {
+  return foldForMatch(name ?? "").replace(/\s+(jr|sr|ii|iii|iv|v)\.?$/g, "").replace(/[^a-z0-9]/g, "")
+}
+
+/**
  * Accent- and case-blind substring test for a free-text search box: "doncic"
  * finds "Luka Dončić", "atletico" finds "Atlético". For plain ASCII it is exactly
  * `haystack.toLowerCase().includes(needle.toLowerCase())`.

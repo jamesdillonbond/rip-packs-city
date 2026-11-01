@@ -1346,7 +1346,7 @@ const PINS = [
     // param-blind on PG 17, so a 15k-moment wallet got the generic nested-loop plan:
     // 139,922 buffers -> 80,986). The SELECT body is byte-identical, wrapped in
     // RETURN ( ... ).
-    migration: "supabase/migrations/20261101051652_audit_20261031_binder_acquisition_reads_are_collection_scoped_and_paid_sort_reads_once.sql",
+    migration: "supabase/migrations/20261101163512_audit_20261101_wallet_moments_player_filter_folds_spelling.sql",
   },
   {
     fn: "upsert_topshot_marketplace_fmv",

@@ -26,7 +26,7 @@
 --
 -- serial_fmv_estimate is stubbed (separately pinned). The function DDL below is a
 -- VERBATIM copy of the committed migration
--- (supabase/migrations/20261101051652_audit_20261031_binder_acquisition_reads_are_collection_scoped_and_paid_sort_reads_once.sql
+-- (supabase/migrations/20261101163512_audit_20261101_wallet_moments_player_filter_folds_spelling.sql
 -- — LANGUAGE plpgsql + plan_cache_mode=force_custom_plan since 2026-08-30; the SQL body is
 -- byte-identical to the 20260806033000 version, wrapped in RETURN ( ... ));
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts.
@@ -34,6 +34,17 @@
 -- Runs inside a rolled-back transaction so it leaves no residue.
 
 BEGIN;
+
+CREATE SCHEMA IF NOT EXISTS extensions;
+CREATE EXTENSION IF NOT EXISTS unaccent WITH SCHEMA extensions;
+-- _norm_player, copied from supabase/tests/norm_player.sql (its own pin guards it); the player filter calls it (#221).
+CREATE OR REPLACE FUNCTION public._norm_player(p text) RETURNS text
+LANGUAGE sql IMMUTABLE SET search_path=public,extensions AS $$
+  SELECT regexp_replace(
+           regexp_replace(lower(extensions.unaccent(coalesce(p,''))),
+             '\s+(jr|sr|ii|iii|iv|v)\.?$', '', 'g'),
+           '[^a-z0-9]', '', 'g')
+$$;
 
 CREATE TABLE public.wallet_moments_cache (
   wallet_address text, collection_id uuid, moment_id text, edition_key text, render_id text,
@@ -240,7 +251,7 @@ BEGIN
   ),
   filtered AS (
     SELECT * FROM base
-    WHERE (p_player IS NULL OR lower(player_name) LIKE '%' || lower(p_player) || '%')
+    WHERE (p_player IS NULL OR _norm_player(player_name) LIKE '%' || _norm_player(p_player) || '%')
       AND (p_series IS NULL OR series_number = p_series)
       AND (p_tier IS NULL OR lower(tier) = lower(p_tier))
   ),
@@ -474,6 +485,25 @@ SELECT public.get_wallet_moments_with_fmv('0xowner', 'fmv_desc', 100, 0, NULL, N
 SELECT _assert_eq(
   (SELECT (m->>'buy_price') FROM jsonb_array_elements(:'r14'::jsonb->'moments') m WHERE m->>'moment_id'='mC'),
   NULL, 'an All Day moment never shows a Top Shot purchase that shares its moment_id');
+
+-- (15) PLAYER FILTER FOLDS SPELLING (#221, 2026-11-01). wmc spells one player several
+-- ways; the filter sends ONE spelling and must find all of them. A separate wallet so
+-- the counts above are untouched.
+INSERT INTO public.wallet_moments_cache (wallet_address, collection_id, moment_id, edition_key, serial_number, player_name, last_seen_at, is_locked) VALUES
+  ('0xfold', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'f1', 'setA:playA', 11, 'Luka Dončić',      now(), false),
+  ('0xfold', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'f2', 'setA:playA', 12, 'Luka Doncic',      now(), false),
+  ('0xfold', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'f3', 'setB:playB', 13, 'Jimmy Butler III', now(), false),
+  ('0xfold', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'f4', 'setB:playB', 14, 'O.G. Anunoby',     now(), false);
+SELECT public.get_wallet_moments_with_fmv('0xfold', 'fmv_desc', 100, 0, 'Luka Doncic') AS r15 gset
+SELECT _assert_eq((:'r15'::jsonb->>'total_count'), '2', '"Luka Doncic" finds the Dončić row too (accents folded)');
+SELECT public.get_wallet_moments_with_fmv('0xfold', 'fmv_desc', 100, 0, 'Luka Dončić') AS r15b gset
+SELECT _assert_eq((:'r15b'::jsonb->>'total_count'), '2', 'and the other way round');
+SELECT public.get_wallet_moments_with_fmv('0xfold', 'fmv_desc', 100, 0, 'Jimmy Butler') AS r15c gset
+SELECT _assert_eq((:'r15c'::jsonb->>'total_count'), '1', 'a generational suffix does not split a player');
+SELECT public.get_wallet_moments_with_fmv('0xfold', 'fmv_desc', 100, 0, 'OG Anunoby') AS r15d gset
+SELECT _assert_eq((:'r15d'::jsonb->>'total_count'), '1', 'punctuation does not split a player');
+SELECT public.get_wallet_moments_with_fmv('0xfold', 'fmv_desc', 100, 0, 'Bob Baller') AS r15e gset
+SELECT _assert_eq((:'r15e'::jsonb->>'total_count'), '0', 'control: a player the wallet does not hold still matches nothing');
 
 SELECT '✓ get_wallet_moments_with_fmv invariants pass' AS result;
 ROLLBACK;

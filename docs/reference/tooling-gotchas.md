@@ -2141,6 +2141,16 @@ the JS string literal (backslash-s in a JS string is just `s`). This is the same
 either (the empty per-host helper resets the chain, so it is never consulted). The fix is Trevor
 running `gh auth login -h github.com` (HTTPS, web browser). Done 2026-09-23 evening.
 
+⭐ **Recurred 2026-10-31 — and a session CAN drive the login itself** (its shell has no TTY, so a bare
+`gh auth login` cannot prompt). Run it in the BACKGROUND with every choice passed as a flag and stdin
+closed, read the one-time code from its log, and hand Trevor only the URL + code:
+`gh auth login --hostname github.com --git-protocol https --web --skip-ssh-key < /dev/null > gh-login.log 2>&1`
+→ the log prints `First copy your one-time code: XXXX-XXXX` + `https://github.com/login/device`; the process
+polls and exits 0 once Trevor approves. Then `gh auth setup-git` and `git push --dry-run origin main`.
+⚠ **The device flow grants `repo, read:org, gist` — NOT `workflow`**, so a push touching `.github/workflows/`
+is refused afterwards; add it the same way with `gh auth refresh -h github.com -s workflow < /dev/null`
+(a second code). Verify with `gh auth status` (scopes line), never by assuming.
+
 Until then, the Trevor-approved `.rpc-git-cred` store file at the repo root also works on this box:
 `git -c credential.helper= -c credential.https://github.com.helper= -c credential.helper="store --file=$PWD/.rpc-git-cred" push origin HEAD:refs/heads/main`.
 Pipe the output through a redacting `sed`, and never `cat` the file.

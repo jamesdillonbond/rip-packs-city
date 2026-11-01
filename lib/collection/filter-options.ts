@@ -10,14 +10,26 @@
 import type { MomentRow, CollectionSeriesEntry } from "@/lib/collection/types"
 import { seriesFilterLabel, getLocked } from "@/lib/collection/helpers"
 import { normalizeSetName, buildEditionScopeKey } from "@/lib/wallet-normalize"
+import { playerNameKey } from "@/lib/filter-match"
 
-// Distinct, sorted player names as filter options, "all" first.
+// Distinct, sorted player names as filter options, "all" first. One option per
+// PLAYER, not per spelling (#221): the cache spells one player several ways, and
+// "Luka Doncic" + "Luka Dončić" as two options each showed a fraction of the
+// player's Moments. Variants collapse on playerNameKey (the server filters on the
+// same key); the label is the spelling most rows carry, ties broken alphabetically.
 export function buildPlayerOptions(rows: MomentRow[]): string[] {
-  const s = new Set<string>()
+  const byKey = new Map<string, Map<string, number>>()
   rows.forEach((r) => {
-    if (r.playerName) s.add(r.playerName)
+    if (!r.playerName) return
+    const key = playerNameKey(r.playerName) || r.playerName
+    const spellings = byKey.get(key) ?? new Map<string, number>()
+    spellings.set(r.playerName, (spellings.get(r.playerName) ?? 0) + 1)
+    byKey.set(key, spellings)
   })
-  return ["all", ...Array.from(s).sort()]
+  const labels = Array.from(byKey.values()).map((spellings) =>
+    Array.from(spellings.entries()).sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))[0][0],
+  )
+  return ["all", ...labels.sort()]
 }
 
 // Distinct, sorted normalized set names as filter options, "all" first.

@@ -29,6 +29,28 @@ describe("buildPlayerOptions", () => {
     ]
     expect(buildPlayerOptions(rows)).toEqual(["all", "Anthony Davis", "Zion Williamson"])
   })
+  // #221: the cache spells one player several ways; each was its own option and
+  // showed a fraction of that player's Moments.
+  it("collapses spellings of one player into ONE option, labelled with the most common spelling", () => {
+    const rows = [
+      row({ playerName: "Luka Dončić" }),
+      row({ playerName: "Luka Dončić" }),
+      row({ playerName: "Luka Doncic" }),
+      row({ playerName: "Demar DeRozan" }),
+      row({ playerName: "DeMar DeRozan" }),
+      row({ playerName: "DeMar DeRozan" }),
+      row({ playerName: "Jimmy Butler III" }),
+      row({ playerName: "Jimmy Butler" }),
+      row({ playerName: "O.G. Anunoby" }),
+      row({ playerName: "OG Anunoby" }),
+    ]
+    const opts = buildPlayerOptions(rows)
+    expect(opts).toEqual(["all", "DeMar DeRozan", "Jimmy Butler", "Luka Dončić", "O.G. Anunoby"]) // a 1–1 tie breaks alphabetically
+  })
+  it("control: two different players are never merged", () => {
+    expect(buildPlayerOptions([row({ playerName: "Rob Dillingham" }), row({ playerName: "Robert Dillingham" })]))
+      .toEqual(["all", "Rob Dillingham", "Robert Dillingham"])
+  })
   it("returns just 'all' for no players", () => {
     expect(buildPlayerOptions([])).toEqual(["all"])
   })

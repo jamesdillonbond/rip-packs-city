@@ -9,6 +9,7 @@
 // API and are intentionally left untouched here.
 
 import { normalizeSetName, buildEditionScopeKey } from "@/lib/wallet-normalize"
+import { playerNameKey } from "@/lib/filter-match"
 import {
   seriesFilterLabel,
   getLocked,
@@ -43,7 +44,9 @@ export function computeFilteredSortedRows(
   const { collectionSeriesMap, duplicateEditions, batchEditionStats } = ctx
   const q = view.searchWithin.trim().toLowerCase()
   const filtered = rows.filter(function (r) {
-    if (view.playerFilter !== "all" && r.playerName !== view.playerFilter) return false
+    // One player across spellings (#221) — the same key the dropdown collapses on and
+    // the server filter matches with (_norm_player).
+    if (view.playerFilter !== "all" && (playerNameKey(r.playerName) || r.playerName) !== (playerNameKey(view.playerFilter) || view.playerFilter)) return false
     if (view.setFilter !== "all" && normalizeSetName(r.setName) !== view.setFilter) return false
     if (view.seriesFilter !== "all" && seriesFilterLabel(r.series, collectionSeriesMap) !== view.seriesFilter) return false
     if (view.rarityFilter !== "all" && r.tier !== view.rarityFilter) return false

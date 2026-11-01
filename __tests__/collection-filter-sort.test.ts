@@ -51,6 +51,17 @@ describe("computeFilteredSortedRows", () => {
     expect(out.map((r) => r.momentId)).toEqual(["b"])
   })
 
+  // #221: picking one spelling must keep every spelling of that player.
+  it("the player filter keeps every spelling of the chosen player, and only that player", () => {
+    const rows = [
+      row({ momentId: "a", playerName: "Luka Dončić" }),
+      row({ momentId: "b", playerName: "Luka Doncic" }),
+      row({ momentId: "c", playerName: "Luka Garza" }),
+    ]
+    const out = computeFilteredSortedRows(rows, view({ playerFilter: "Luka Dončić" }), ctx())
+    expect(out.map((r) => r.momentId).sort()).toEqual(["a", "b"])
+  })
+
   it("filters set by normalizeSetName, not the raw name", () => {
     const raw = "Base Set (Series 4)"
     const rows = [row({ momentId: "a", setName: raw }), row({ momentId: "b", setName: "Other" })]

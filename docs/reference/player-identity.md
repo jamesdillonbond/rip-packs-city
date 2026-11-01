@@ -53,3 +53,11 @@ Underneath: **`player_identities`** is the crosswalk — `league` (`nba` for Top
 ## A name equal to its team is not always a team (2026-10-31)
 
 All Day's team-level Moments carry the TEAM as the player (`players.name = players.team`, 33 rows). That made the Lions outrank the Pistons when webz_80 searched "detroit" (fixed: `teamShadows()` in `lib/search/player-hub-hits.ts` drops a player row that matches a team row) and would have offered "Follow player" for a franchise (fixed: `isTeamSubject()`, `lib/player-route.ts`). ⛔ The same predicate matches **15 Disney Pinnacle characters** whose franchise shares their name (Aladdin, Bambi, Dumbo…), so both helpers exempt Pinnacle. Count the predicate's population across EVERY collection before shipping a name-based test — that query is what caught it.
+
+## Spelling variants vs aliases — fold the first, crosswalk the second (2026-11-01)
+
+`wallet_moments_cache.player_name` (and other denormalised name copies) spell one player several ways (#221: 9,842 Top Shot / 2,286 All Day rows disagree with `editions`). Two different problems:
+
+- **Spelling variants** — accents (Dončić/Doncic), case (Demar/DeMar), punctuation (O.G./OG), a trailing generational suffix (Jimmy Butler III/Jimmy Butler). ONE normaliser handles all four: `public._norm_player` (pinned, `supabase/tests/norm_player.sql`) and its TypeScript mirror `playerNameKey` in `lib/filter-match.ts` (parity test replays the SQL pin's cases). Any name FILTER, facet or group-by over a denormalised copy keys on it — the collection player filter does since `20261101163512` (server) + `lib/collection/filter-options.ts` / `filter-sort.ts` (dropdown collapses variants, label = most common spelling).
+- **Aliases** — Rob/Robert Dillingham, nicknames, renames, father/son: NOT a normalisation problem. They belong in the crosswalk (`resolve_player_name`, `player_relations`; rule 2), and folding must never merge them (the dropdown test's control keeps Rob and Robert apart).
+- ⛔ **Do not blanket-copy `editions.player_name` over wmc** — accents are wrong in BOTH directions ("Aleksej Pokuševski" is right in wmc, stripped in `editions`). #221's upstream exit is still a canonical catalog spelling through the crosswalk, then a reconciler overwrite.
