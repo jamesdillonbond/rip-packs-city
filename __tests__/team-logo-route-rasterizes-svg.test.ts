@@ -18,7 +18,7 @@ const call = (league: string, id: string) =>
   GET(new NextRequest(`https://www.rippackscity.com/api/public/team-logo/${league}/${id}`), { params: Promise.resolve({ league, id }) })
 
 describe("GET /api/public/team-logo/[league]/[id]", () => {
-  beforeEach(() => fetchMock.mockReset())
+  beforeEach(() => { fetchMock.mockReset() })
 
   it("returns a 256x256 PNG rendered from the official SVG, immutably cached", async () => {
     fetchMock.mockResolvedValue(new Response(SVG, { status: 200, headers: { "content-type": "image/svg+xml" } }))

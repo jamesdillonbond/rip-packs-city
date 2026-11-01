@@ -3781,3 +3781,17 @@ The #219 one-off backfill parked its cursor in `public._wmc_league_backfill_curs
 ## Two CI lessons from the #218/#222 thread (2026-10-31, PT)
 - ⛔ **Run the FULL suite before pushing a route change, not the files you touched.** Adding one bounded-elsewhere `.rpc()` to a route that already degrades honestly raised `api-routes-that-degrade-honestly-also-bound-their-reads` to 43/42 and reddened `main` (`fef2d1027`; fixed with `.abortSignal(AbortSignal.timeout(…))` in `a392eceb8`). The targeted test files were all green. A commit interleaved from another session went red at its own tip for the same reason.
 - ⚠ **An unstubbed `fetch` in a test passes in CI only because production answered** — it is red in any sandbox without egress, and a CI pass that depends on prod being up. Stub every route the code under test calls (the `get_trade_in` "another collection" case, stubbed 10-31).
+
+## ⛔ A HOOK ARROW THAT RETURNS A MOCK MAKES VITEST CALL IT (2026-11-01, PT)
+
+vitest treats a FUNCTION returned from `beforeEach` / `beforeAll` as a cleanup hook and invokes it after
+the test. Every `mock.mockReset()` / `mockClear()` / `mockResolvedValue()` returns the MOCK, and a mock
+is a function — so `beforeEach(() => fetchMock.mockReset())` calls `fetchMock()` with NO arguments at
+teardown. It is invisible while the mock tolerates a no-arg call (it had spread to 6 files), and it
+fails confusingly the first time one does not: a URL-routing `mockImplementation` threw
+`unexpected fetch undefined` from `callCleanupHooks` and failed 5 correct tests in
+`ipfs-thumb-mirror.test.ts`. **Write the body in braces: `beforeEach(() => { m.mockReset() })`.**
+Guard (tree walk, ban at zero; planted-red on the 6 real sites before they were fixed):
+`__tests__/a-hook-arrow-never-returns-a-mock.test.ts`. ⚠ Its fixtures are ASSEMBLED
+(`"before" + "Each("`) — `stripComments` removes comments, not string literals, and the first draft
+flagged its own fixtures.

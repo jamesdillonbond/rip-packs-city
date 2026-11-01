@@ -24,7 +24,7 @@ delete process.env.ALERT_EMAIL
 
 const { sendOpsAlert } = await import("@/lib/ops-alert")
 
-beforeEach(() => rpcMock.mockReset().mockResolvedValue({ data: true, error: null }))
+beforeEach(() => { rpcMock.mockReset().mockResolvedValue({ data: true, error: null }) })
 afterEach(() => vi.unstubAllGlobals())
 
 describe("sendOpsAlert with no channels configured", () => {

@@ -1148,6 +1148,14 @@ SELECT net.http_get('https://www.rippackscity.com/api/public/ipfs-media/<cid>');
 
 That one line settled an item that had been parked as unanswerable: three fresh UFC CIDs came back **200 `immutable` (MISS) · 200 · 429 `public, max-age=0, must-revalidate`**, repeats **HIT** — refuting *"no edge caching"* and reproducing the reported header as a **failure path** in the same minute. **⭐ The generalisation: before writing "needs egress I do not have", ask whether the instrument you just used on someone else's host works on ours.**
 
+⭐ **2026-11-01 — two more no-egress instruments, both used to close #224:** (1) the Vercel MCP's
+`web_fetch_vercel_url` fetches `https://www.rippackscity.com/...` directly (it is a Vercel deployment) and
+returns status + headers — the quickest way to read a route's `x-*` diagnostic headers from a sandbox
+whose proxy refuses the domain; a binary body comes back mangled into text, so read the headers and the
+magic bytes only. (2) **Egress differs by RUNNER, not just by sandbox:** for the same UFC CIDs Vercel's
+egress got `pinata=abort_timeout ipfs.io=429` while a GitHub Actions runner fetched them through
+Pinata in seconds — a backfill that a page request cannot win can still be won from a workflow.
+
 ⚠ **THREE CAVEATS, each of which can make this probe lie:**
 1. ⛔ **`content` is a TEXT column, so a BINARY body is lossy.** A 1200×630 PNG stores as ~8 characters — `length(content)` is **not** the response size and cannot tell an art-bearing card from a blank one. Read `status_code` and `headers`; for bytes use something else.
 2. ⚠ **`headers->>'cache-control'` from OUR domain reads a bare `public`** — Vercel consumes the CDN directives (`s-maxage`, `stale-while-revalidate`) and does not echo them. **So a card's cache POLICY is not observable from outside**, and a probe designed around reading it back measures nothing.

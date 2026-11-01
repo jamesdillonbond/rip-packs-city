@@ -46,7 +46,7 @@ const bigPng = () =>
   sharp({ create: { width: 1600, height: 2000, channels: 4, background: { r: 200, g: 30, b: 40, alpha: 1 } } }).png().toBuffer()
 
 describe("GET /api/public/arweave-thumb/[id]", () => {
-  beforeEach(() => fetchMock.mockReset())
+  beforeEach(() => { fetchMock.mockReset() })
 
   it("resizes to a WebP no wider than w, with an immutable cache, fetched from arweave.net only", async () => {
     const png = await bigPng()

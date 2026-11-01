@@ -31,7 +31,7 @@ function stubFetch(perUrl: (url: string) => { ok: boolean }) {
   )
 }
 
-beforeEach(() => rpcMock.mockReset().mockResolvedValue({ data: true, error: null }))
+beforeEach(() => { rpcMock.mockReset().mockResolvedValue({ data: true, error: null }) })
 afterEach(() => vi.unstubAllGlobals())
 
 const base = { key: "test-alert", subject: "Health RED", text: "something broke" }

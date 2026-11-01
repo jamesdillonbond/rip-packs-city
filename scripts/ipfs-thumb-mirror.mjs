@@ -15,7 +15,13 @@
 // MUST match lib/ipfs-media.ts ipfsThumbMirrorKey — __tests__/ipfs-thumb-mirror.test.ts pins both.
 //
 // Env: NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY.
-// Flags: --cid <cid> (just one), --limit <n>, --dry-run (report what is missing; write nothing).
+// Flags: --cid <cid> (just one), --limit <n>, --dry-run (report what is missing; write nothing),
+//        --budget-min <n> (stop STARTING new CIDs after n minutes; default 330 — see BUDGET below).
+//
+// ⚠ BUDGET (2026-11-01, measured on the first full run): the CIDs a gateway serves go fast (~300 in
+// 15 min); the rest each burn up to 3 rounds x the two slow gateways' 60 s timeouts. A run killed by
+// the job's timeout-minutes prints NOTHING, so the summary naming what is still missing would be
+// lost. The script stops taking new work at the budget and reports instead.
 // Exit: 0 when every CID is mirrored at the end; 1 if any CID is still missing (named in the summary).
 
 import sharp from "sharp"
@@ -133,6 +139,8 @@ async function main() {
   const dryRun = args.includes("--dry-run")
   const onlyCid = flag("--cid")
   const limit = flag("--limit") ? Number(flag("--limit")) : Infinity
+  const budgetMs = (flag("--budget-min") ? Number(flag("--budget-min")) : 330) * 60_000
+  const deadline = Date.now() + budgetMs
   if (onlyCid && !CID_RE.test(onlyCid)) throw new Error(`not a CID: ${onlyCid}`)
 
   const e = env()
@@ -154,8 +162,10 @@ async function main() {
   const failed = []
   const gatewayWins = {}
   let next = 0
+  let outOfBudget = false
   async function worker() {
     while (next < queue.length) {
+      if (Date.now() > deadline) { outOfBudget = true; return }
       const { cid, missing } = queue[next++]
       const got = await download(cid, console.log)
       if (!got) { failed.push(cid); continue }
@@ -176,7 +186,7 @@ async function main() {
   await Promise.all(Array.from({ length: CONCURRENCY }, worker))
 
   const stillMissing = todo.length - mirrored
-  console.log(JSON.stringify({ inspected: all.length, needed: todo.length, attempted: queue.length, mirrored_cids: mirrored, objects_written: objects, failed_cids: failed.length, still_missing_cids: stillMissing, gateway_wins: gatewayWins, failed }, null, 1))
+  console.log(JSON.stringify({ inspected: all.length, needed: todo.length, queued: queue.length, attempted: next, mirrored_cids: mirrored, objects_written: objects, failed_cids: failed.length, out_of_budget: outOfBudget, not_attempted: queue.length - next, still_missing_cids: stillMissing, gateway_wins: gatewayWins, failed }, null, 1))
   return stillMissing > 0 ? 1 : 0
 }
 

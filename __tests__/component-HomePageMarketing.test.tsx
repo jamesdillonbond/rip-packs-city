@@ -21,7 +21,7 @@ vi.mock("@/components/RpcLogo", () => ({ default: () => <div data-testid="rpc-lo
 vi.mock("@/components/visual/PinwheelDivider", () => ({ default: () => <div data-testid="pinwheel" /> }))
 vi.mock("@/components/search/GlobalSearch", () => ({ default: () => <div data-testid="global-search" /> }))
 
-beforeEach(() => funnelMock.mockClear())
+beforeEach(() => { funnelMock.mockClear() })
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()

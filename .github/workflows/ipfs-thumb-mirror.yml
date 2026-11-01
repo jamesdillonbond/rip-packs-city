@@ -27,7 +27,9 @@ jobs:
   mirror:
     name: Mirror resized IPFS art
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    # Public repo: Actions minutes are free. The script stops starting new CIDs at 330 min
+    # (--budget-min) so it always prints its summary before this kill would land.
+    timeout-minutes: 350
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0

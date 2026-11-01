@@ -1935,6 +1935,16 @@ answered **200 · 200 · 429** within minutes of each other (measured from the d
 2026-09-13): all 518 of that collection's editions resolve through one public gateway, and a public
 gateway rate-limits.
 
+🚨 **2026-11-01 — AND THE SHORT CACHE IS NOT THE FIX FOR THE UPSTREAM, ONLY FOR THE CARD.** Seven weeks
+later every public gateway failed UFC at once (`dapperlabs=403 pinata=abort_timeout ipfs.io=429`, CID
+after CID; 4 more gateways probed from the DB host, none reliable), and the owner's own trophy case
+showed a broken UFC slab on the page AND an art-less share card. `ogCacheHeaders(degraded)` behaved
+exactly as designed — it kept the bad card short-lived — but a 60 s cache over an upstream that is
+down for hours just re-publishes the absence every minute. ⭐ **A CDN entry is regional and evictable;
+it is not a copy you own.** The fix was to stop depending on the gateway at render time: a Supabase
+Storage mirror that `/api/public/ipfs-thumb` reads first (cards via `&f=png`), filled by write-back and
+a daily backfill — known-issues **#224** (video, which was not mirrored: **#225**).
+
 ✅ **The helper: `ogCacheHeaders(degraded)` in `lib/og/brand-fonts.ts`.** A card that ASKED for art and
 got none is cached **60 s with no `stale-while-revalidate`** — ⛔ SWR's whole job is to keep serving
 the OLD body, which here is the defect.

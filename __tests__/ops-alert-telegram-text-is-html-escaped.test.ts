@@ -42,7 +42,7 @@ function captureFetch(): Sent[] {
 const telegramOf = (sent: Sent[]) => sent.find((s) => s.url.includes("api.telegram.org"))!
 const emailOf = (sent: Sent[]) => sent.find((s) => s.url.includes("api.resend.com"))!
 
-beforeEach(() => rpcMock.mockReset().mockResolvedValue({ data: true, error: null }))
+beforeEach(() => { rpcMock.mockReset().mockResolvedValue({ data: true, error: null }) })
 afterEach(() => vi.unstubAllGlobals())
 
 // The shape the smoke-test sender produced during the 2026-09-18 origin outage:
