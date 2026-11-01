@@ -1,4 +1,4 @@
--- Quarantine the 168 cost-basis rows priced from ANOTHER collection's sale
+-- Quarantine the 164 cost-basis rows priced from ANOTHER collection's sale
 -- (2026-10-31; the writer was fixed in the preceding migration).
 --
 -- backfill_cost_basis_from_ids looked the moment's last sale up in `sales` by
@@ -7,7 +7,13 @@
 -- purchase. Measured 2026-10-31: 168 of its 755 rows (source='sales_backfill')
 -- are tagged Top Shot while their transaction_hash + nft_id match ONLY a sale in
 -- another collection: 66 from All Day, 102 from UFC, $1,678.51 of spend that
--- never happened, across ~95 wallets. Every one feeds Paid / cost basis / P&L
+-- never happened, across ~95 wallets.
+--
+-- UPDATE 2026-11-01: 4 of the 168 were REAL All Day purchases by the same wallet
+-- (buyer_address = wallet, still held) and were re-tagged instead
+-- (20261101152422). The WHERE below no longer matches them, so this moves the
+-- remaining 164 ($1,673.51), verified live just before this file was written.
+-- Every one feeds Paid / cost basis / P&L
 -- and acquisition stats. Newest row 2026-08-26; nothing has written one since.
 --
 -- MOVED, NOT DELETED: each row is copied verbatim into
@@ -58,3 +64,10 @@ SELECT moved.*,
        now(),
        'sales_backfill priced from another collection''s sale (#142)'
   FROM moved;
+
+-- ── 2. Drop the superseded, uncalled get_wallet_acquisition_data(text, text[]) ──
+-- Replaced by get_wallet_acquisition_data_scoped (20261101145940), which both of
+-- its callers (/api/wallet-search, /api/cost-basis) use since d749e0711. Verified
+-- 2026-11-01: no repo code, DB function, view or pg_cron job references it; it is
+-- service_role-only, so nothing anonymous can be calling it.
+DROP FUNCTION IF EXISTS public.get_wallet_acquisition_data(text, text[]);
