@@ -19,6 +19,7 @@ import * as t from "@onflow/types"
 // Caller loops while done === false.
 
 const INGEST_TOKEN = process.env.INGEST_SECRET_TOKEN
+const TOPSHOT_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
 const TS_GQL = process.env.TS_PROXY_URL || "https://public-api.nbatopshot.com/graphql"
 const TS_PROXY_SECRET = process.env.TS_PROXY_SECRET || ""
 
@@ -169,6 +170,7 @@ export async function POST(req: NextRequest) {
     .from("moment_acquisitions")
     .select("nft_id")
     .eq("wallet", fullWallet)
+    .eq("collection_id", TOPSHOT_COLLECTION_ID) // moment ids collide across collections, INCLUDING inside one wallet (#142; 41 rows / 11 wallets 2026-10-31)
     .in("nft_id", chunk)
   // ⛔ A failed read is not "none covered": the rows below carry their own
   // `gql:<id>` hash, so the unique key cannot stop them landing beside a real
@@ -218,6 +220,8 @@ export async function POST(req: NextRequest) {
         seller_address: null,
         transaction_hash: "gql:" + flowId,
         source: "gql_backfill",
+        // Explicit, not the column default: this route reads TOP SHOT GraphQL.
+        collection_id: TOPSHOT_COLLECTION_ID,
       })
     }
 

@@ -7,6 +7,7 @@ const supabase: any = createClient(
 )
 
 const TOPSHOT_GQL = "https://public-api.nbatopshot.com/graphql"
+const TOPSHOT_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
 const GQL_HEADERS = {
   "Content-Type": "application/json",
   "User-Agent": "rip-packs-city/1.0",
@@ -97,6 +98,9 @@ export async function GET(req: NextRequest) {
     .from("wallet_moments_cache")
     .select("moment_id, edition_key")
     .eq("wallet_address", WALLET)
+    // This route asks TOP SHOT GraphQL for the tier, so it may only read and
+    // write Top Shot rows. moment ids collide across collections, INCLUDING inside one wallet (#142; 41 rows / 11 wallets 2026-10-31)
+    .eq("collection_id", TOPSHOT_COLLECTION_ID)
     .is("tier", null)
     .order("created_at", { ascending: true })
     // ⚠ UNIQUE TIEBREAKER (R47) — see the note in backfill-onchain-ids.
@@ -138,6 +142,7 @@ export async function GET(req: NextRequest) {
         .from("wallet_moments_cache")
         .update({ tier: r.tier, acquired_at: r.acquiredAt })
         .eq("wallet_address", WALLET)
+        .eq("collection_id", TOPSHOT_COLLECTION_ID) // moment ids collide across collections, INCLUDING inside one wallet (#142; 41 rows / 11 wallets 2026-10-31)
         .eq("moment_id", r.momentId)
     )
   )

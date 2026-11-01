@@ -201,6 +201,7 @@ export async function GET(req: NextRequest) {
                 })
                 .eq("nft_id", u.nftId)
                 .eq("wallet", wallet)
+                .eq("collection_id", TOPSHOT_COLLECTION_ID) // moment ids collide across collections, INCLUDING inside one wallet (#142; 41 rows / 11 wallets 2026-10-31)
                 .eq("acquisition_method", "unknown")
             )
           )

@@ -29,8 +29,17 @@ import { stripComments } from "../scripts/lib/strip-comments.mjs"
 // CI rather than pricing a wrong serial for four months.
 //
 // The rule: a chain from `.from("wallet_moments_cache")` that filters on
-// `moment_id` must also filter on `collection_id` or `wallet_address` (a
-// wallet is one chain, so its ids do not collide).
+// `moment_id` — or from `.from("moment_acquisitions")` that filters on
+// `nft_id` — must also filter on `collection_id`. Reads AND writes.
+//
+// ⛔ 2026-10-31 — THE OLD RULE ALSO ACCEPTED `wallet_address`, on the premise
+// "a wallet is one chain, so its ids do not collide". FALSE: one Flow wallet
+// holds Top Shot AND All Day (and UFC) moments, and their ids collide inside
+// it. Measured: 41 wallet_moments_cache rows in 11 wallets matched a
+// moment_acquisitions row from ANOTHER collection; the binder showed All Day
+// 10565124 as "Paid $65" — Top Shot 10565124's price — through exactly a
+// wallet-scoped join. The guard passed 9 wallet-only sites (5 of them writes)
+// that this rule now refuses; all 9 were fixed the same day.
 
 const ROOTS = ["app", "lib", "supabase/functions", "workers", "scripts"]
 
@@ -59,12 +68,18 @@ function walk(dir: string, out: string[] = []): string[] {
  * scope that belongs to something else, so the window is the smaller of
  * "next blank line" and "next `;`".
  */
+const KEYED_TABLES: Array<[table: string, idColumn: string]> = [
+  ["wallet_moments_cache", "moment_id"],
+  ["moment_acquisitions", "nft_id"],
+]
+
 export function findUnscopedMomentIdReads(roots: string[] = ROOTS): string[] {
   const hits: string[] = []
   for (const root of roots) {
     for (const file of walk(root)) {
       const src = stripComments(readFileSync(file, "utf8"))
-      const re = /\.from\(\s*["']wallet_moments_cache["']\s*\)/g
+      for (const [table, idColumn] of KEYED_TABLES) {
+      const re = new RegExp(`\\.from\\(\\s*["']${table}["']\\s*\\)`, "g")
       let m: RegExpExecArray | null
       while ((m = re.exec(src))) {
         const rest = src.slice(m.index)
@@ -72,10 +87,11 @@ export function findUnscopedMomentIdReads(roots: string[] = ROOTS): string[] {
         const blank = rest.search(/\n[ \t]*\n/)
         const ends = [semi, blank].filter((n) => n > 0)
         const chain = rest.slice(0, ends.length ? Math.min(...ends) : Math.min(rest.length, 1200))
-        const keyedOnMomentId = /\.(in|eq)\(\s*["']moment_id["']/.test(chain)
+        const keyedOnMomentId = new RegExp(`\\.(in|eq)\\(\\s*["']${idColumn}["']`).test(chain)
         if (!keyedOnMomentId) continue
-        const scoped = /\.eq\(\s*["'](collection_id|wallet_address)["']/.test(chain)
+        const scoped = /\.(eq|in)\(\s*["']collection_id["']/.test(chain)
         if (!scoped) hits.push(`${file}:${src.slice(0, m.index).split("\n").length}`)
+      }
       }
     }
   }
@@ -107,15 +123,24 @@ describe("wallet_moments_cache reads keyed on moment_id are scoped to a collecti
         join(dir, "app", "bad.ts"),
         `const { data } = await sb\n  .from("wallet_moments_cache")\n  .select("moment_id, edition_key, serial_number")\n  .in("moment_id", batch)\n\nconst other = 1;\n`,
       )
+      // INVERTED 2026-10-31: a WALLET-scoped id read was "good" here; it is the
+      // binder's "Paid $65" defect, so it is now a planted BAD case, for both tables.
+      writeFileSync(
+        join(dir, "app", "walletonly.ts"),
+        `const b = await sb.from("wallet_moments_cache").select("moment_id").eq("wallet_address", w).eq("moment_id", id).maybeSingle();\n` +
+          `const d = await sb.from("moment_acquisitions").update({ buy_price: 1 }).eq("wallet", w).eq("nft_id", id);\n`,
+      )
       writeFileSync(
         join(dir, "app", "good.ts"),
         `const a = await sb.from("wallet_moments_cache").select("moment_id").eq("collection_id", X).in("moment_id", batch);\n` +
-          `const b = await sb.from("wallet_moments_cache").select("moment_id").eq("wallet_address", w).eq("moment_id", id).maybeSingle();\n` +
-          `const c = await sb.from("wallet_moments_cache").select("moment_id").eq("wallet_address", w).limit(5);\n`,
+          `const c = await sb.from("wallet_moments_cache").select("moment_id").eq("wallet_address", w).limit(5);\n` +
+          `const e = await sb.from("moment_acquisitions").select("nft_id").eq("wallet", w).eq("collection_id", X).in("nft_id", ids);\n`,
       )
-      const hits = findUnscopedMomentIdReads([join(dir, "app")])
-      expect(hits).toHaveLength(1)
+      const hits = findUnscopedMomentIdReads([join(dir, "app")]).sort()
+      expect(hits).toHaveLength(3)
       expect(hits[0]).toMatch(/bad\.ts:2$/)
+      expect(hits[1]).toMatch(/walletonly\.ts:1$/)
+      expect(hits[2]).toMatch(/walletonly\.ts:2$/)
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }

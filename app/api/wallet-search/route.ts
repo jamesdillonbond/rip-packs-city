@@ -965,6 +965,7 @@ async function progressivelyClassify(rows: WalletRow[], wallet: string) {
         })
         .eq("nft_id", row.momentId)
         .eq("wallet", walletAddr)
+        .eq("collection_id", TOPSHOT_COLLECTION_ID) // moment ids collide across collections, INCLUDING inside one wallet (#142; 41 rows / 11 wallets 2026-10-31)
         .eq("acquisition_method", "unknown")
       if (!error) marketplaceCount++
     }
@@ -980,6 +981,7 @@ async function progressivelyClassify(rows: WalletRow[], wallet: string) {
         .update({ acquired_date: new Date(row.acquiredAt!).toISOString() })
         .eq("nft_id", row.momentId)
         .eq("wallet", walletAddr)
+        .eq("collection_id", TOPSHOT_COLLECTION_ID) // moment ids collide across collections, INCLUDING inside one wallet (#142; 41 rows / 11 wallets 2026-10-31)
         .is("acquired_date", null)
       if (!error) dateCount++
     }

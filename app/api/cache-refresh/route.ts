@@ -526,6 +526,7 @@ export async function GET(req: NextRequest) {
         .from("moment_acquisitions")
         .select("nft_id")
         .eq("wallet", wallet)
+        .eq("collection_id", collectionId) // moment ids collide across collections, INCLUDING inside one wallet (#142; 41 rows / 11 wallets 2026-10-31)
         .in("nft_id", chunk)
       if (existingErr) {
         console.log("[cache-refresh] acquisitions existence read failed, skipping fallback rows: " + existingErr.message)
@@ -652,6 +653,7 @@ export async function GET(req: NextRequest) {
           .from("wallet_moments_cache")
           .update(update)
           .eq("wallet_address", wallet)
+          .eq("collection_id", collectionId) // moment ids collide across collections, INCLUDING inside one wallet (#142; 41 rows / 11 wallets 2026-10-31)
           .eq("moment_id", id)
         if (!error) {
           enriched++
@@ -728,6 +730,7 @@ export async function GET(req: NextRequest) {
             .from("wallet_moments_cache")
             .update({ fmv_usd: fmv })
             .eq("wallet_address", wallet)
+            .eq("collection_id", collectionId) // moment ids collide across collections, INCLUDING inside one wallet (#142; 41 rows / 11 wallets 2026-10-31)
             .eq("moment_id", id)
           if (!error) fmvWritten++
         }
@@ -842,6 +845,7 @@ export async function GET(req: NextRequest) {
               .from("wallet_moments_cache")
               .update({ is_locked: g.locked, lock_checked_at: nowIso })
               .eq("wallet_address", wallet)
+              .eq("collection_id", collectionId) // moment ids collide across collections, INCLUDING inside one wallet (#142; 41 rows / 11 wallets 2026-10-31)
               .in("moment_id", g.ids)
             // Count what was WRITTEN, not what was intended. Incrementing before
             // the update (as this did) reported rows as locked even when the
