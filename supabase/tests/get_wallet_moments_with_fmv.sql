@@ -26,7 +26,7 @@
 --
 -- serial_fmv_estimate is stubbed (separately pinned). The function DDL below is a
 -- VERBATIM copy of the committed migration
--- (supabase/migrations/20261101041110_audit_20261031_binder_recent_sort_orders_by_the_acquired_date_it_shows.sql
+-- (supabase/migrations/20261101051652_audit_20261031_binder_acquisition_reads_are_collection_scoped_and_paid_sort_reads_once.sql
 -- — LANGUAGE plpgsql + plan_cache_mode=force_custom_plan since 2026-08-30; the SQL body is
 -- byte-identical to the 20260806033000 version, wrapped in RETURN ( ... ));
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts.
@@ -127,10 +127,17 @@ INSERT INTO public.wallet_moments_cache (wallet_address, collection_id, moment_i
 -- ACQUIRED dates say the opposite: mB 10 days ago, mA 300 days ago. mB also has
 -- an OLDER, superseded acquisition row (1,000 days) that the display ignores,
 -- so a sort reading the wrong row reds the recent_asc case.
-INSERT INTO public.moment_acquisitions (nft_id, wallet, collection_id, acquired_date, created_at) VALUES
-  ('mA', '0xowner', '95f28a17-224a-4025-96ad-adf8a4c63bfd', now() - interval '300 days', now() - interval '5 days'),
-  ('mB', '0xowner', '95f28a17-224a-4025-96ad-adf8a4c63bfd', now() - interval '1000 days', now() - interval '20 days'),
-  ('mB', '0xowner', '95f28a17-224a-4025-96ad-adf8a4c63bfd', now() - interval '10 days', now() - interval '4 days');
+-- buy_price: mA 5, mB 50 (newest row); mB superseded row 1 — Paid sorts must
+-- read the displayed row too.
+INSERT INTO public.moment_acquisitions (nft_id, wallet, collection_id, acquired_date, created_at, buy_price) VALUES
+  ('mA', '0xowner', '95f28a17-224a-4025-96ad-adf8a4c63bfd', now() - interval '300 days', now() - interval '5 days', 5),
+  ('mB', '0xowner', '95f28a17-224a-4025-96ad-adf8a4c63bfd', now() - interval '1000 days', now() - interval '20 days', 1),
+  ('mB', '0xowner', '95f28a17-224a-4025-96ad-adf8a4c63bfd', now() - interval '10 days', now() - interval '4 days', 50);
+-- ⛔ CROSS-COLLECTION COLLISION (#142): a TOP SHOT acquisition for nft_id 'mC'
+-- — the same id as the wallet's ALL DAY moment mC. The All Day binder must not
+-- show it (live 2026-10-31: 41 rows / 11 wallets did, e.g. "Paid $65").
+INSERT INTO public.moment_acquisitions (nft_id, wallet, collection_id, acquired_date, created_at, buy_price) VALUES
+  ('mC', '0xowner', '95f28a17-224a-4025-96ad-adf8a4c63bfd', now() - interval '1 day', now() - interval '1 day', 65);
 
 -- >>> BEGIN verbatim get_wallet_moments_with_fmv (keep byte-identical to the migration) >>>
 CREATE OR REPLACE FUNCTION public.get_wallet_moments_with_fmv(p_wallet text, p_sort_by text DEFAULT 'fmv_desc'::text, p_limit integer DEFAULT 100, p_offset integer DEFAULT 0, p_player text DEFAULT NULL::text, p_series integer DEFAULT NULL::integer, p_tier text DEFAULT NULL::text, p_collection_id uuid DEFAULT '95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid)
@@ -241,12 +248,12 @@ BEGIN
     SELECT count(*) AS cnt FROM filtered
   ),
   -- The acquisition row the DISPLAY uses (the enriched LATERAL below: newest
-  -- created_at per moment for this wallet), materialised ONLY for the Recent
-  -- sorts so they order by the same date the binder shows.
+  -- created_at per moment for this wallet AND collection), materialised ONLY
+  -- for the Recent and Paid sorts so they order by the values the binder shows.
   acq AS (
-    SELECT DISTINCT ON (ma3.nft_id) ma3.nft_id, ma3.acquired_date
+    SELECT DISTINCT ON (ma3.nft_id) ma3.nft_id, ma3.acquired_date, ma3.buy_price
     FROM moment_acquisitions ma3
-    WHERE p_sort_by IN ('recent', 'recent_asc')
+    WHERE p_sort_by IN ('recent', 'recent_asc', 'paid_desc', 'paid_asc')
       AND ma3.wallet = p_wallet
       AND ma3.collection_id = p_collection_id
     ORDER BY ma3.nft_id, ma3.created_at DESC
@@ -261,16 +268,8 @@ BEGIN
       CASE WHEN p_sort_by = 'serial_asc' THEN f.serial_number END ASC NULLS LAST,
       CASE WHEN p_sort_by = 'recent' THEN COALESCE(acq.acquired_date, f.acquired_at_raw) END DESC NULLS LAST,
       CASE WHEN p_sort_by = 'recent_asc' THEN COALESCE(acq.acquired_date, f.acquired_at_raw) END ASC NULLS LAST,
-      CASE WHEN p_sort_by = 'paid_desc' THEN (
-        SELECT ma2.buy_price FROM moment_acquisitions ma2
-        WHERE ma2.nft_id = f.moment_id AND ma2.wallet = p_wallet
-        ORDER BY ma2.created_at DESC LIMIT 1
-      ) END DESC NULLS LAST,
-      CASE WHEN p_sort_by = 'paid_asc' THEN (
-        SELECT ma2.buy_price FROM moment_acquisitions ma2
-        WHERE ma2.nft_id = f.moment_id AND ma2.wallet = p_wallet
-        ORDER BY ma2.created_at DESC LIMIT 1
-      ) END ASC NULLS LAST,
+      CASE WHEN p_sort_by = 'paid_desc' THEN acq.buy_price END DESC NULLS LAST,
+      CASE WHEN p_sort_by = 'paid_asc' THEN acq.buy_price END ASC NULLS LAST,
       CASE WHEN p_sort_by NOT IN ('fmv_desc','price_desc','fmv_asc','price_asc','serial_asc','recent','recent_asc','paid_desc','paid_asc') THEN f.fmv_usd END DESC NULLS LAST,
       f.moment_id
     LIMIT p_limit OFFSET p_offset
@@ -339,6 +338,7 @@ BEGIN
              ma2.source, ma2.source_address, ma2.acquired_date, ma2.loan_principal
       FROM moment_acquisitions ma2
       WHERE ma2.nft_id = p.moment_id AND ma2.wallet = p_wallet
+        AND ma2.collection_id = p_collection_id
       ORDER BY ma2.created_at DESC
       LIMIT 1
     ) ma ON true
@@ -460,6 +460,20 @@ SELECT _assert_eq(
 SELECT public.get_wallet_moments_with_fmv('0xowner', 'recent_asc') AS rra \gset
 SELECT _assert_eq(
   ((:'rra'::jsonb->'moments')->0->>'moment_id'), 'mA', 'recent_asc puts the oldest acquisition first, using the displayed row');
+
+-- (13) SORT paid_desc / paid_asc read the DISPLAYED row (mB 50, not its
+-- superseded 1).
+SELECT public.get_wallet_moments_with_fmv('0xowner', 'paid_desc') AS rpd \gset
+SELECT _assert_eq(((:'rpd'::jsonb->'moments')->0->>'moment_id'), 'mB', 'paid_desc puts the higher displayed price first');
+SELECT public.get_wallet_moments_with_fmv('0xowner', 'paid_asc') AS rpa \gset
+SELECT _assert_eq(((:'rpa'::jsonb->'moments')->0->>'moment_id'), 'mA', 'paid_asc uses the displayed price, not a superseded one');
+
+-- (14) COLLECTION SCOPE (#142): the All Day moment mC must not display the
+-- Top Shot acquisition that shares its id.
+SELECT public.get_wallet_moments_with_fmv('0xowner', 'fmv_desc', 100, 0, NULL, NULL, NULL, 'dee28451-5d62-409e-a1ad-a83f763ac070') AS r14 \gset
+SELECT _assert_eq(
+  (SELECT (m->>'buy_price') FROM jsonb_array_elements(:'r14'::jsonb->'moments') m WHERE m->>'moment_id'='mC'),
+  NULL, 'an All Day moment never shows a Top Shot purchase that shares its moment_id');
 
 SELECT '✓ get_wallet_moments_with_fmv invariants pass' AS result;
 ROLLBACK;
