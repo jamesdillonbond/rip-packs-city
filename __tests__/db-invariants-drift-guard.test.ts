@@ -155,6 +155,24 @@ const PINS = [
     migration: "supabase/migrations/20261021041717_audit_20261020_market_cap_player_grain_groups_by_person.sql",
   },
   {
+    // Added 2026-10-31 (#222). Last event per moment wins; never over a newer poll; Top Shot rows only.
+    fn: "topshot_lock_events_apply",
+    test: "supabase/tests/topshot_lock_events_tick.sql",
+    migration: "supabase/migrations/20261101052029_audit_20261031_topshot_lock_events_lane.sql",
+  },
+  {
+    // Added 2026-10-31 (#222). The one pg_net GET (sealed height / MomentLocked / MomentUnlocked range) + request row.
+    fn: "topshot_lock_events_request",
+    test: "supabase/tests/topshot_lock_events_tick.sql",
+    migration: "supabase/migrations/20261101052029_audit_20261031_topshot_lock_events_lane.sql",
+  },
+  {
+    // Added 2026-10-31 (#222). Drain (transients re-asked x3) -> sealed height -> <=6 ranges/tick, never past the known sealed height.
+    fn: "topshot_lock_events_tick",
+    test: "supabase/tests/topshot_lock_events_tick.sql",
+    migration: "supabase/migrations/20261101052029_audit_20261031_topshot_lock_events_lane.sql",
+  },
+  {
     // Added 2026-10-31 (#218). Upserts a SearchDistributions page; a late page from an older pass cannot roll a newer observation back.
     fn: "atlas_pack_market_ingest_page",
     test: "supabase/tests/atlas_pack_market_tick.sql",
