@@ -188,7 +188,6 @@ async function healLockCache(source: string, picker: PickerResult): Promise<void
     .filter((r) => r.held_live === true && typeof r.locked_hint === "boolean")
     .map((r) => ({ wallet_address: source, moment_id: r.moment_id, collection_id: TOP_SHOT_COLLECTION_ID, is_locked: r.locked_hint }))
   if (results.length === 0) return
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   // Bounded: a cache heal must never hold the function open (api-routes-that-degrade-honestly-also-bound-their-reads).
   const { error } = await (supabaseAdmin as any)
     .rpc("apply_lock_check_batch", { p_results: results })

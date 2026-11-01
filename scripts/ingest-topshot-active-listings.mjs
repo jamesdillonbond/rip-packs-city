@@ -466,7 +466,10 @@ async function main() {
 
   if (!DRY_RUN) {
     if (allBlocked) {
-      await postRoute({ final: true, deactivate: false, startedAt, ok: false, error: "egress_blocked", floor: FLOOR, stats });
+      // arm: the GitHub Actions run is the WAF-blocked BACKSTOP; its failure is logged under its own
+      // pipeline name so it never reads as the residential feeder failing (route attributes it).
+      await postRoute({ final: true, deactivate: false, startedAt, ok: false, error: "egress_blocked", floor: FLOOR, stats,
+        arm: process.env.GITHUB_ACTIONS === "true" ? "backstop" : "primary" });
       console.error(
         `[listings-ingest] ${stats.targets_skipped}/${targets.length} targets attempted, 0 succeeded — egress WAF-blocked; skipped deactivate`
       );

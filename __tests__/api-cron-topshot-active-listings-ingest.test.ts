@@ -178,6 +178,17 @@ describe("topshot-active-listings-ingest — GET failure + POST ingest", () => {
     expect(log.p_rows_skipped).toBe(12)
   })
 
+  // 2026-11-01: the WAF-blocked GitHub Actions backstop pooled its failures into the lane's failure_rate.
+  it("a FAILED backstop run logs under its own pipeline; a primary failure and a backstop success stay on the lane", async () => {
+    await mod.POST(post({ final: true, ok: false, error: "egress_blocked", arm: "backstop", stats: {} }))
+    expect(logRow().p_pipeline).toBe("topshot-active-listings-ingest-backstop")
+    expect(logRow().p_ok).toBe(false)
+    await mod.POST(post({ final: true, ok: false, error: "egress_blocked", arm: "primary", stats: {} }))
+    expect(logRow().p_pipeline).toBe("topshot-active-listings-ingest")
+    await mod.POST(post({ final: true, ok: true, arm: "backstop", stats: { rows_upserted: 3 } }))
+    expect(logRow().p_pipeline).toBe("topshot-active-listings-ingest")
+  })
+
   it("logs the runner's cumulative stats on a healthy terminal sweep", async () => {
     st.results.deactivate_stale_topshot_active_listings = { data: 3, error: null }
     await mod.POST(post({

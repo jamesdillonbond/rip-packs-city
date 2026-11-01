@@ -92,9 +92,15 @@ export async function POST(req: NextRequest) {
   if (body.final || body.deactivate) {
     // Sweep finished — log one pipeline_runs row with the runner's cumulative stats.
     const stats = (body.stats as Record<string, unknown>) ?? {};
+    // Attribute by MECHANISM (2026-11-01). The GitHub Actions backstop's runner IP is WAF-blocked by
+    // Atlas; its probe sometimes lets it through and the sweep then dies egress_blocked. Pooled under
+    // the lane's name, those runs read as the LANE failing (failure_rate 3/11 over 3 days, every one
+    // atlas_mode=curl) while the residential feeder was 100 % ok. A FAILED backstop run logs under its
+    // own name; a backstop that SUCCEEDS still fed the board and logs under the lane's.
+    const pipeline = body.arm === "backstop" && body.ok === false ? `${PIPELINE_NAME}-backstop` : PIPELINE_NAME;
     try {
       await supabaseAdmin.rpc("log_pipeline_run", {
-        p_pipeline: PIPELINE_NAME,
+        p_pipeline: pipeline,
         p_started_at: (body.startedAt as string) ?? new Date().toISOString(),
         p_rows_found: Number(stats.listings_found ?? 0),
         p_rows_written: Number(stats.rows_upserted ?? 0),
