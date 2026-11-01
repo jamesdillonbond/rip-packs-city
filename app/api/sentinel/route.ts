@@ -1072,8 +1072,9 @@ async function runSentinelWithin(clock: WallBudgetClock) {
   //   walk age       newest panini_editions.last_seen_at — thr("Panini Ingest") 14 h / 26 h.
   //                  Overnight sleep routinely skips the 10 PM/2 AM/6 AM ticks (a 14.4 h gap on
   //                  09-23), so 14 h is "a full night plus a tick"; 26 h is a lost day.
-  //   rotation tail  edition_age_max_h >= 168 warn / 336 crit — the stalest-first order (R112)
-  //                  stopped reaching the tail even though walks fire.
+  //   rotation tail  edition_age_max_h vs the measured rotation (editions ÷ edition_refreshed_24h)
+  //                  — the stalest-first order (R112) stopped reaching the tail even though walks
+  //                  fire. Absolute 168/336 h only when no 24 h count exists (see the leg below).
   //   serial paging  max serials captured for one edition in 26 h <= 30 while walks ran = the
   //                  runner is back to reading one 30-row page (warn only).
   //   sale feed      newest recorded sale >= 72 h warn / 168 h crit — nftSalesData stopped landing.
@@ -1105,7 +1106,28 @@ async function runSentinelWithin(clock: WallBudgetClock) {
       const walkCrit = thr("Panini Ingest", "crit_at", 26);
       const legs: Array<{ s: "ok" | "warn" | "critical"; why: string }> = [];
       legs.push({ s: walkH >= walkCrit ? "critical" : walkH >= walkWarn ? "warn" : "ok", why: `last walk ${walkH.toFixed(1)}h ago` });
-      legs.push({ s: tailH >= 336 ? "critical" : tailH >= 168 ? "warn" : "ok", why: `stalest edition ${tailH.toFixed(0)}h` });
+      // ⚠ ROTATION TAIL, RE-BASED 2026-10-31. A fixed 168 h bar stopped meaning "the tail is
+      // not being reached" once the 10-18 priced-first weighting slowed the unpriced catalogue
+      // BY DESIGN: 4,078 of 40,153 editions walked in 24 h is a ~236 h rotation, and the stalest
+      // edition sat at 225 h — on schedule — while this leg warned on every run from ~10-27.
+      // So the tail is now judged against the MEASURED rotation (editions ÷ walked-in-24h):
+      //   stall     tail > 1.5× rotation warn · > 2× rotation AND ≥ 336 h critical — the order
+      //             stopped reaching the tail, which is what this leg was written to catch.
+      //   capacity  rotation ≥ 336 h warn — the walk can no longer cover the catalogue in two
+      //             weeks; a slow-but-advancing rotation still says so, it just doesn't hide in
+      //             a permanent amber.
+      // No refreshed count (old function, or nothing walked in 24 h — the walk leg is already
+      // red then) ⇒ the original absolute 168/336 h bars. Never a fabricated divisor.
+      const editions = Number(data.editions);
+      const refreshed = Number(data.edition_refreshed_24h);
+      const rotationH = refreshed > 0 && editions > 0 ? (editions / refreshed) * 24 : null;
+      if (rotationH === null) {
+        legs.push({ s: tailH >= 336 ? "critical" : tailH >= 168 ? "warn" : "ok", why: `stalest edition ${tailH.toFixed(0)}h (no 24h walk count — absolute bars)` });
+      } else {
+        const stall = tailH > 2 * rotationH && tailH >= 336 ? "critical" : tailH > 1.5 * rotationH ? "warn" : "ok";
+        legs.push({ s: stall, why: `stalest edition ${tailH.toFixed(0)}h vs rotation ${rotationH.toFixed(0)}h (${refreshed}/24h of ${editions})${stall === "ok" ? "" : " — tail not being reached"}` });
+        if (rotationH >= 336) legs.push({ s: "warn", why: `rotation ${(rotationH / 24).toFixed(1)}d ≥ 14d — walk capacity below catalogue size` });
+      }
       if (walkH < 26) legs.push({ s: maxSerials <= 30 ? "warn" : "ok", why: `max serials/edition in 26h ${maxSerials}${maxSerials <= 30 ? " (serial paging regressed to one 30-row page)" : ""}` });
       legs.push(saleH === null
         ? { s: "warn", why: "no recorded sale at all" }

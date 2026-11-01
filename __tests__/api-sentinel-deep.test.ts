@@ -542,6 +542,39 @@ describe("POST /api/sentinel — full battery", () => {
       expect(check(await (await POST(post())).json(), "Panini Ingest").status).toBe("critical")
     })
 
+    // 2026-10-31: the tail is judged against the MEASURED rotation, not a fixed 168 h. The live
+    // reading that motivated it (225 h tail, 4,078 of 40,153 walked in 24 h ≈ 236 h rotation)
+    // warned on every run for days while the walk was reaching the tail on schedule.
+    it("does NOT warn on a tail that matches the measured rotation (the 10-31 live shape)", async () => {
+      install(panini({ edition_age_max_h: 225, editions: 40153, edition_refreshed_24h: 4078 }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), "Panini Ingest")
+      expect(c.status).toBe("ok")
+      expect(c.detail).toContain("rotation 236h")
+      expect(c.detail).not.toMatch(/tail not being reached/)
+    })
+
+    it("warns, then pages, when the tail falls behind the rotation (a real stall)", async () => {
+      install(panini({ edition_age_max_h: 400, editions: 40153, edition_refreshed_24h: 4078 }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      let c = check(await (await POST(post())).json(), "Panini Ingest")
+      expect(c.status).toBe("warn")
+      expect(c.detail).toMatch(/tail not being reached/)
+      install(panini({ edition_age_max_h: 500, editions: 40153, edition_refreshed_24h: 4078 }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      c = check(await (await POST(post())).json(), "Panini Ingest")
+      expect(c.status).toBe("critical")
+    })
+
+    it("names a too-slow rotation as a capacity warn even when the tail keeps pace", async () => {
+      install(panini({ edition_age_max_h: 450, editions: 40153, edition_refreshed_24h: 2000 }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), "Panini Ingest")
+      expect(c.status).toBe("warn")
+      expect(c.detail).toMatch(/walk capacity below catalogue size/)
+      expect(c.detail).not.toMatch(/tail not being reached/)
+    })
+
     it("a read error warns (never pages) and a missing walk stamp pages", async () => {
       install({ ...greenFixtures(), "rpc:sentinel_panini_health": { data: null, error: { message: "canceling statement due to statement timeout" } } })
       stubFetch([sniperOk, telegramOk, resendOk])
