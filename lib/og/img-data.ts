@@ -201,8 +201,13 @@ export function ogImageTarget(raw: string): string | null {
   if (url.startsWith("/") && !url.startsWith("//")) url = BASE_URL + url
   if (!/^https?:\/\//.test(url)) return null
 
+  // 2026-11-01: IPFS art goes through the RESIZER, as PNG (satori cannot decode WebP), because the
+  // resizer reads the durable mirror before any gateway — UFC art had stopped reaching the cards
+  // ("[og/trophy-case] art unavailable for 1/6") when every public gateway failed it. It fails open
+  // to the ipfs-media original exactly as the old target did. The `w=` param means
+  // ogOptimizedTarget skips the optimizer, which is right: the bytes are already card-sized.
   const m = url.match(IPFS_GATEWAY_RE)
-  if (m) return `${BASE_URL}/api/public/ipfs-media/${m[1]}`
+  if (m) return `${BASE_URL}/api/public/ipfs-thumb/${m[1]}?w=640&f=png`
 
   // 2026-10-26: Candy MLB art is a 3.9–7.5 MB arweave PNG, and the 4 MB cap below dropped every
   // Rainbow edition's art (its card rendered with no picture). The resizer serves a 640 px PNG —

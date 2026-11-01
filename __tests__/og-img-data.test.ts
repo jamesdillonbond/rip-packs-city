@@ -257,7 +257,8 @@ describe("ogImageTarget — the two url shapes that dropped whole collections", 
 
   it("still prefers the IPFS proxy over any format rewrite", () => {
     expect(ogImageTarget("https://ipfs.io/ipfs/QmABC?format=webp")).toBe(
-      "https://www.rippackscity.com/api/public/ipfs-media/QmABC",
+      // Re-pinned 2026-11-01: IPFS art goes through the resizer (mirror-first), as PNG for satori.
+      "https://www.rippackscity.com/api/public/ipfs-thumb/QmABC?w=640&f=png",
     )
   })
 })
@@ -267,7 +268,9 @@ describe("ogImageDataUri — IPFS gateway rewrite", () => {
     fetchMock.mockResolvedValue(res(PNG_BYTES, "image/png"))
     await ogImageDataUri("https://ipfs.dapperlabs.com/ipfs/QmABC123")
     const target = effectiveTarget(fetchMock.mock.calls[0][0])
-    expect(target).toBe("https://www.rippackscity.com/api/public/ipfs-media/QmABC123")
+    expect(target).toBe("https://www.rippackscity.com/api/public/ipfs-thumb/QmABC123?w=640&f=png")
+    // Card-sized already, so it is fetched DIRECTLY — the optimizer would pass WebP through untouched.
+    expect(String(fetchMock.mock.calls[0][0])).not.toContain("/_next/image")
   })
 
   it("leaves a non-IPFS url untouched", async () => {

@@ -1,6 +1,9 @@
 // app/api/public/ipfs-thumb/[cid]/route.ts
 //
-// A RESIZED image for an IPFS CID: GET /api/public/ipfs-thumb/<cid>?w=<width>
+// A RESIZED image for an IPFS CID: GET /api/public/ipfs-thumb/<cid>?w=<width>[&f=png]
+//
+// `f=png` exists for OG cards only (satori cannot decode WebP; same contract as arweave-thumb).
+// The MIRROR holds WebP only; a PNG ask is transcoded from it, so cards get the mirror too.
 //
 // WHY (known-issues #162, 2026-09-29). Every UFC Strike image is a full-size 3.7–4.4 MB PNG, and
 // pages render it with a plain <img>, so a phone downloaded megabytes per 60–120 px tile. The
@@ -71,11 +74,11 @@ function toOriginal(origin: string, cid: string): NextResponse {
   })
 }
 
-function webp(bytes: Uint8Array, tag: string): NextResponse {
+function image(bytes: Uint8Array, type: "image/webp" | "image/png", tag: string): NextResponse {
   return new NextResponse(bytes as Uint8Array<ArrayBuffer>, {
     status: 200,
     headers: {
-      "Content-Type": "image/webp",
+      "Content-Type": type,
       "Content-Length": String(bytes.byteLength),
       "Cache-Control": IMMUTABLE,
       "X-Ipfs-Thumb": tag,
@@ -144,9 +147,23 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ cid:
     return NextResponse.json({ error: `w must be one of ${IPFS_THUMB_WIDTHS.join(", ")}` }, { status: 400 })
   }
   const w = width as IpfsThumbWidth
+  const fParam = req.nextUrl.searchParams.get("f")
+  if (fParam !== null && fParam !== "png" && fParam !== "webp") {
+    return NextResponse.json({ error: "f must be png or webp" }, { status: 400 })
+  }
+  const asPng = fParam === "png"
+  const toPng = async (b: Uint8Array) => new Uint8Array(await sharp(b).png({ compressionLevel: 9 }).toBuffer())
 
   const mirrored = await readMirror(cid, w)
-  if (mirrored) return webp(mirrored, `${w}w; mirror`)
+  if (mirrored) {
+    if (!asPng) return image(mirrored, "image/webp", `${w}w; mirror`)
+    try {
+      return image(await toPng(mirrored), "image/png", `${w}w; mirror; png`)
+    } catch (err) {
+      // A mirror object that will not decode is not served; fall through to the gateway path.
+      console.warn(`[ipfs-thumb] mirror decode failed cid=${cid} w=${w} error=${err instanceof Error ? err.message.slice(0, 120) : String(err)}`)
+    }
+  }
 
   const origin = req.nextUrl.origin
   try {
@@ -171,7 +188,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ cid:
     )
 
     const kept = await writeMirror(cid, w, out)
-    return webp(out, `${w}w; ${input.byteLength}->${out.byteLength}; mirror-write=${kept ? "ok" : "failed"}`)
+    const tag = `${w}w; ${input.byteLength}->${out.byteLength}; mirror-write=${kept ? "ok" : "failed"}`
+    return asPng ? image(await toPng(out), "image/png", `${tag}; png`) : image(out, "image/webp", tag)
   } catch (err) {
     console.warn(`[ipfs-thumb] fallback cid=${cid} error=${err instanceof Error ? err.message.slice(0, 160) : String(err)}`)
     return toOriginal(origin, cid)

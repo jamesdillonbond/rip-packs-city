@@ -148,3 +148,38 @@ describe("the backfill script and the route agree", () => {
     expect(fs.readFileSync(path.join(dir, files[0]), "utf8")).toContain(`values ('${IPFS_THUMB_MIRROR_BUCKET}', '${IPFS_THUMB_MIRROR_BUCKET}', true`)
   })
 })
+
+describe("f=png (OG cards: satori cannot decode WebP)", () => {
+  beforeEach(() => { fetchMock.mockReset() })
+
+  it("transcodes a mirror hit to PNG and still touches no gateway", async () => {
+    const hit = await sharp(await png()).resize({ width: 640 }).webp().toBuffer()
+    routes({ [mirrorPublic(640)]: () => new Response(new Uint8Array(hit), { status: 200, headers: { "content-type": "image/webp" } }) })
+    const res = await GET(new NextRequest(`https://www.rippackscity.com/api/public/ipfs-thumb/${CID}?w=640&f=png`), { params: Promise.resolve({ cid: CID }) })
+    expect(res.status).toBe(200)
+    expect(res.headers.get("content-type")).toBe("image/png")
+    expect((await sharp(Buffer.from(await res.arrayBuffer())).metadata()).format).toBe("png")
+    expect(urls()).toEqual([mirrorPublic(640)])
+  })
+
+  it("on a miss serves PNG but writes WEBP to the mirror (the mirror holds one format)", async () => {
+    const original = await png()
+    let writtenType: string | null = null
+    let written: Uint8Array | null = null
+    routes({
+      [mirrorPublic(640)]: () => new Response(null, { status: 400 }),
+      [ORIGINAL]: () => new Response(new Uint8Array(original), { status: 200, headers: { "content-type": "image/png" } }),
+      [mirrorWrite(640)]: (init) => { writtenType = new Headers(init?.headers).get("content-type"); written = init?.body as Uint8Array; return new Response("{}", { status: 200 }) },
+    })
+    const res = await GET(new NextRequest(`https://www.rippackscity.com/api/public/ipfs-thumb/${CID}?w=640&f=png`), { params: Promise.resolve({ cid: CID }) })
+    expect(res.headers.get("content-type")).toBe("image/png")
+    expect(writtenType).toBe("image/webp")
+    expect((await sharp(Buffer.from(written!)).metadata()).format).toBe("webp")
+  })
+
+  it("refuses an unknown format without fetching", async () => {
+    const res = await GET(new NextRequest(`https://www.rippackscity.com/api/public/ipfs-thumb/${CID}?w=640&f=gif`), { params: Promise.resolve({ cid: CID }) })
+    expect(res.status).toBe(400)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+})
