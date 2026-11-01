@@ -2064,8 +2064,9 @@ const PINS = [
     fn: "upsert_wallet_moments",
     test: "supabase/tests/upsert_wallet_moments.sql",
     // Re-pointed 2026-10-31 (#219): league = the edition's TEAM label OR the set rule.
+    // Re-pointed 2026-10-31 (#222): a payload without is_locked keeps the row's lock flag.
     migration:
-      "supabase/migrations/20261031161800_audit_20261031_upsert_wallet_moments_league_team_label_or.sql",
+      "supabase/migrations/20261101040817_audit_20261031_upsert_wallet_moments_keeps_a_lock_flag_it_was_not_given.sql",
   },
   {
     fn: "save_fast_break_lineup",

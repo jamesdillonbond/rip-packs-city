@@ -412,20 +412,33 @@ function MySide({
                   ) : (
                     <>
                       <ul style={{ listStyle: "none", padding: 0, margin: 0, maxHeight: 320, overflow: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
-                        {picker.result.rows.map((r) => (
+                        {picker.result.rows.map((r) => {
+                          // #222: "live" = read from the chain just now; a live lock or a moment the
+                          // account no longer holds can't be traded, so it isn't pickable. A cached
+                          // hint is shown as such and stays pickable (the save re-reads the chain).
+                          const live = picker.result.lock_state === "live"
+                          const gone = live && r.held_live === false
+                          const blocked = live && (gone || r.locked_hint === true)
+                          return (
                           <li key={r.moment_id}>
-                            <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, cursor: "pointer" }}>
-                              <input type="checkbox" checked={picked.has(r.moment_id)} onChange={() => toggle(r.moment_id)} />
+                            <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, cursor: blocked ? "not-allowed" : "pointer", opacity: blocked && !picked.has(r.moment_id) ? 0.6 : 1 }}>
+                              <input type="checkbox" checked={picked.has(r.moment_id)} disabled={blocked && !picked.has(r.moment_id)} onChange={() => toggle(r.moment_id)} />
                               <span style={{ flex: 1 }}>
                                 {momentLine(r)}
-                                {r.locked_hint ? <span style={{ color: "var(--rpc-warning-text)" }}> · locked (last check)</span> : null}
+                                {gone ? (
+                                  <span style={{ color: "var(--rpc-warning-text)" }}> · no longer in this account</span>
+                                ) : r.locked_hint ? (
+                                  <span style={{ color: "var(--rpc-warning-text)" }}>{live ? " · locked on Top Shot" : " · locked (last check)"}</span>
+                                ) : null}
                               </span>
                               <span style={{ fontFamily: MONO, fontSize: 12, color: "var(--rpc-text-muted)" }}>{r.priced && r.fmv_usd != null ? fmtUsd(r.fmv_usd) : "not priced"}</span>
                             </label>
                           </li>
-                        ))}
+                          )
+                        })}
                       </ul>
                       {picker.result.truncated ? <p style={{ ...muted, fontSize: 12 }}>Showing the first {picker.result.rows.length}; filter by player to find others.</p> : null}
+                      {picker.result.lock_state === "cached" ? <p style={{ ...muted, fontSize: 12 }}>Couldn&apos;t read lock status from the chain just now, so locks shown are RPC&apos;s last check. Saving re-checks every pick on chain.</p> : null}
                     </>
                   )
                 ) : null}

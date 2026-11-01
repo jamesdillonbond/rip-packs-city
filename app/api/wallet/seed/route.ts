@@ -294,7 +294,8 @@ export async function POST(req: NextRequest) {
           serial_number: null,
           fmv_usd: fmvUsd,
           image_url: edition?.thumbnail_url ?? null,
-          is_locked: false,
+          // No is_locked (#222): this route never reads lock state, and a hardcoded false used to
+          // overwrite real locks through upsert_wallet_moments' ON CONFLICT.
           metadata: null,
         }
       })

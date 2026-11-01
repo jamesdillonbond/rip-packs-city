@@ -15,14 +15,18 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { retryEmptyWithAccentRegex } from "@/lib/search/accent-regex"
 import type { NewItem } from "@/lib/trade-room/store"
+import type { Holding } from "@/lib/giveaways/topshot-holdings"
 
 export const TOP_SHOT_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
 const CONFIDENT = new Set(["HIGH", "MEDIUM"])
 export const PICKER_LIMIT = 500
 
 export interface PickerRow extends NewItem {
-  /** RPC's last lock read for this moment (may be stale; the chain is re-read on save). */
+  /** Lock state: read from the chain just now when the result's lock_state is "live", else RPC's last
+   *  cached read (may be stale; the chain is re-read on save either way). */
   locked_hint: boolean | null
+  /** "live" results only: false when the chain says this account no longer holds the moment. */
+  held_live?: boolean
   /** True when fmv_usd is a confident price (the only case it is non-null). */
   priced: boolean
 }
@@ -33,6 +37,9 @@ export interface PickerResult {
   rows: PickerRow[]
   /** True when more than PICKER_LIMIT rows exist (the picker shows the first page). */
   truncated: boolean
+  /** "live": locked_hint/held_live were read from the chain for these rows; "cached": the chain read
+   *  failed or ran out of time, so locked_hint is RPC's last check (#222). Absent = not attempted. */
+  lock_state?: "live" | "cached"
 }
 
 type WmcRow = {
@@ -118,10 +125,48 @@ export function pickItems(rows: readonly PickerRow[], ids: readonly string[]): {
       unknown.push(id)
       continue
     }
-    const { locked_hint: _l, priced: _p, ...item } = r
+    const { locked_hint: _l, priced: _p, held_live: _h, ...item } = r
     void _l
     void _p
+    void _h
     items.push(item)
   }
   return { items, unknown }
+}
+
+/**
+ * #222 (2026-10-31): wmc's lock flag is a CACHE re-checked on a 7-day cycle, and a collector who
+ * locks Moments in bulk (121 of one wallet's 137 "unlocked" rows were locked at 8:53 AM PT that
+ * morning) is shown them as pickable until the save's chain check refuses every one. So the picker
+ * reads the chain for the rows it is about to show and says which it did:
+ *   · "live"   — locked_hint is the chain's answer now; held_live=false names a moment that left.
+ *   · "cached" — the read failed or ran out of budget; the rows keep RPC's last check, labelled.
+ * Never turns a failed read into "unlocked" or "not held".
+ */
+export async function withLiveLocks(
+  result: PickerResult,
+  source: string,
+  read: (a: string, ids: string[]) => Promise<Record<string, Holding>>,
+  budgetMs = 12_000,
+): Promise<PickerResult> {
+  if (result.rows.length === 0) return { ...result, lock_state: "live" }
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    const holdings = await Promise.race([
+      read(source, result.rows.map((r) => r.moment_id)),
+      new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("lock read budget")), budgetMs) }),
+    ])
+    return {
+      ...result,
+      lock_state: "live",
+      rows: result.rows.map((r) => {
+        const h = holdings[r.moment_id]
+        return h?.held ? { ...r, locked_hint: h.locked === true, held_live: true } : { ...r, held_live: false }
+      }),
+    }
+  } catch {
+    return { ...result, lock_state: "cached" }
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
 }

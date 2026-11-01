@@ -136,6 +136,9 @@ describe("POST /api/wallet/seed", () => {
     // The upsert got the enriched moment with fmv + tier from the join.
     const upsert = rpc.mock.calls.find((c) => c[0] === "upsert_wallet_moments")
     expect(upsert?.[1].p_moments[0]).toMatchObject({ moment_id: "m1", edition_key: "m1", tier: "RARE", fmv_usd: 5, player_name: "LeBron" })
+    // #222 (2026-10-31): this route never reads lock state, so it must not send one — a hardcoded
+    // false overwrote real locks through upsert_wallet_moments' ON CONFLICT.
+    expect(upsert?.[1].p_moments[0]).not.toHaveProperty("is_locked")
   })
 
   it("Pinnacle uses the pinnacle enrich branch (character_name, null fmv)", async () => {

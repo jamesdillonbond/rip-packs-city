@@ -49,7 +49,7 @@ import * as room from "@/app/api/trade-room/[code]/route"
 import * as rooms from "@/app/api/trade-room/route"
 import { checkPicks, executionOpen, EXECUTE_CLOSED_MESSAGE, planRoom } from "@/lib/trade-room/execute"
 import { TradeRoomError, type LoadedRoom } from "@/lib/trade-room/store"
-import { TOP_SHOT_COLLECTION_ID, pickItems, readPicker, toPickerRow } from "@/lib/trade-room/holdings"
+import { TOP_SHOT_COLLECTION_ID, pickItems, readPicker, toPickerRow, withLiveLocks } from "@/lib/trade-room/holdings"
 
 const UNIQUES = { trade_rooms: [["code"]], trade_room_sides: [["room_id", "side"], ["room_id", "user_id"]], trade_room_items: [["room_id", "moment_id"]] }
 const DEFAULTS = {
@@ -176,6 +176,30 @@ describe("trade-room/holdings — the picker", () => {
     expect(picked.items.map((i) => i.moment_id)).toEqual(["2"])
     expect(picked.unknown).toEqual(["77"])
     expect(Object.keys(picked.items[0])).not.toContain("priced")
+  })
+})
+
+// #222 (2026-10-31): 121 of one wallet's 137 cached "unlocked" rows had been locked that morning.
+describe("trade-room/holdings — live lock overlay", () => {
+  const base = { indexed: true, truncated: false, rows: [toPickerRow(wmc("w", "1", 10, "HIGH")), toPickerRow(wmc("w", "2", 5, "HIGH")), toPickerRow(wmc("w", "3", 5, "HIGH"))] }
+  it("replaces the cached flag with the chain's answer and names a moment that left", async () => {
+    const read = vi.fn(async () => ({ "1": { held: true, locked: true }, "2": { held: true, locked: false }, "3": { held: false, locked: null } }))
+    const r = await withLiveLocks(base, "0x00000000000000aa", read)
+    expect(r.lock_state).toBe("live")
+    expect(r.rows.map((x) => [x.moment_id, x.locked_hint, x.held_live])).toEqual([["1", true, true], ["2", false, true], ["3", base.rows[2].locked_hint, false]])
+    expect(read).toHaveBeenCalledWith("0x00000000000000aa", ["1", "2", "3"])
+  })
+  it("a failed or slow chain read keeps the cached hint and SAYS so — never 'unlocked'", async () => {
+    const failed = await withLiveLocks(base, "0x00000000000000aa", async () => { throw new Error("Flow script HTTP 503") })
+    expect(failed.lock_state).toBe("cached")
+    expect(failed.rows).toEqual(base.rows)
+    const slow = await withLiveLocks(base, "0x00000000000000aa", () => new Promise(() => {}), 5)
+    expect(slow.lock_state).toBe("cached")
+  })
+  it("pickItems never stores the live-read fields", () => {
+    const picked = pickItems([{ ...base.rows[0], held_live: true }], ["1"])
+    expect(Object.keys(picked.items[0])).not.toContain("held_live")
+    expect(Object.keys(picked.items[0])).not.toContain("locked_hint")
   })
 })
 

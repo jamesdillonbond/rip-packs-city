@@ -636,7 +636,14 @@ export async function GET(req: NextRequest) {
           set_name: meta.setName || null,
           edition_key: editionKey || null,
           serial_number: meta.serial ? parseInt(meta.serial, 10) : null,
-          is_locked: isLocked,
+        }
+        // #222 (2026-10-31): a GQL MISS is not "unlocked". This used to write is_locked=false for
+        // every moment whose Top Shot GraphQL read failed (Cloudflare 530 all of 10-31), with no
+        // lock_checked_at — a fabricated value the trade-room picker then showed as pickable.
+        // Write the flag only from an answer, and stamp it, exactly as Step 7 below does.
+        if (gql != null) {
+          update.is_locked = isLocked
+          update.lock_checked_at = new Date().toISOString()
         }
         if (seriesNum !== null && !isNaN(seriesNum)) update.series_number = seriesNum
         if (meta.tier || gql?.tier) update.tier = meta.tier || gql?.tier

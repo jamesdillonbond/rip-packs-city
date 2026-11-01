@@ -156,7 +156,11 @@ BEGIN
       player_name = COALESCE(EXCLUDED.player_name, wallet_moments_cache.player_name),
       character_name = COALESCE(EXCLUDED.character_name, wallet_moments_cache.character_name),
       image_url = COALESCE(EXCLUDED.image_url, wallet_moments_cache.image_url),
-      is_locked = EXCLUDED.is_locked,
+      -- 2026-10-31 (#222): the lock flag changes only when the payload CARRIES one. The wallet-save
+      -- seed sent is_locked:false for every moment without reading the chain, and this line copied
+      -- it over real locks while lock_checked_at kept its old stamp — a "checked" false nobody read.
+      is_locked = CASE WHEN jsonb_typeof(v_moment -> 'is_locked') = 'boolean'
+                       THEN EXCLUDED.is_locked ELSE wallet_moments_cache.is_locked END,
       last_seen_at = NOW(),
       metadata = COALESCE(EXCLUDED.metadata, wallet_moments_cache.metadata),
       -- League is recomputed every refresh — corrects any stale rows when curated list expands
@@ -272,6 +276,15 @@ SELECT upsert_wallet_moments('0xdef', 'dee28451-5d62-409e-a1ad-a83f763ac070', '[
 ]'::jsonb);
 SELECT _assert_eq((SELECT league IS NULL FROM wallet_moments_cache WHERE wallet_address='0xdef' AND moment_id='m_ad')::text,
   'true', 'non-Top-Shot collection leaves league NULL');
+
+-- ── #222 (2026-10-31): a payload WITHOUT is_locked keeps the row's flag; an explicit one writes ──
+UPDATE wallet_moments_cache SET is_locked = true WHERE wallet_address='0xabc' AND moment_id='m_keep';
+SELECT upsert_wallet_moments('0xabc', '95f28a17-224a-4025-96ad-adf8a4c63bfd', '[{"moment_id":"m_keep"}]'::jsonb);
+SELECT _assert_eq((SELECT is_locked::text FROM wallet_moments_cache WHERE wallet_address='0xabc' AND moment_id='m_keep'),
+  'true', 'a payload with no is_locked never overwrites a real lock (the wallet-save seed sent false read from nowhere)');
+SELECT upsert_wallet_moments('0xabc', '95f28a17-224a-4025-96ad-adf8a4c63bfd', '[{"moment_id":"m_keep","is_locked":false}]'::jsonb);
+SELECT _assert_eq((SELECT is_locked::text FROM wallet_moments_cache WHERE wallet_address='0xabc' AND moment_id='m_keep'),
+  'false', 'an explicit boolean still writes');
 
 SELECT '✓ upsert_wallet_moments invariants pass' AS result;
 ROLLBACK;

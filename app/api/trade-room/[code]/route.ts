@@ -51,7 +51,8 @@ import {
   type SideRow,
 } from "@/lib/trade-room/store"
 import { checkPicks, EXECUTE_CLOSED_MESSAGE, executionOpen, planRoom, verifyRoom } from "@/lib/trade-room/execute"
-import { pickItems, readPicker } from "@/lib/trade-room/holdings"
+import { pickItems, readPicker, withLiveLocks, TOP_SHOT_COLLECTION_ID, type PickerResult } from "@/lib/trade-room/holdings"
+import { readTopShotHoldings } from "@/lib/giveaways/topshot-holdings"
 import { buildRoomView, cosignerOf, usernamesFor, type PendingRelay } from "@/lib/trade-room/view"
 import { notifyOtherSide, type TradeNotice } from "@/lib/trade-room/notify"
 
@@ -165,7 +166,11 @@ export async function GET(req: NextRequest, ctx: Ctx) {
     if (sp.has("picker")) {
       const side = mySide(loaded, u.id)
       if (!side.source) throw new TradeRoomError("Connect and prove your Flow Wallet first.", 409, "no_wallet")
-      return json({ picker: await readPicker(supabaseAdmin, side.source, sp.get("q")) })
+      // #222: lock state for the rows shown is read from the CHAIN now (cached hint on failure),
+      // and a live read heals wmc's flag for those rows in the background.
+      const picker = await withLiveLocks(await readPicker(supabaseAdmin, side.source, sp.get("q")), side.source, readTopShotHoldings)
+      if (picker.lock_state === "live") after(() => healLockCache(side.source as string, picker))
+      return json({ picker })
     }
     // a stranger may look at an open room (that is how they join); a finished or full
     // room they are not part of is not theirs to read
@@ -174,6 +179,18 @@ export async function GET(req: NextRequest, ctx: Ctx) {
   } catch (e) {
     return failure(e, "GET")
   }
+}
+
+/** Write a LIVE picker lock read back to wmc through the lock-check lane's own writer (stamps
+ *  lock_checked_at). Best-effort: a failure leaves the cache as it was and is logged, never thrown. */
+async function healLockCache(source: string, picker: PickerResult): Promise<void> {
+  const results = picker.rows
+    .filter((r) => r.held_live === true && typeof r.locked_hint === "boolean")
+    .map((r) => ({ wallet_address: source, moment_id: r.moment_id, collection_id: TOP_SHOT_COLLECTION_ID, is_locked: r.locked_hint }))
+  if (results.length === 0) return
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabaseAdmin as any).rpc("apply_lock_check_batch", { p_results: results })
+  if (error) console.error(`[trade-room] lock cache heal failed for ${results.length} row(s): ${error.message}`)
 }
 
 export async function POST(req: NextRequest, ctx: Ctx) {

@@ -304,7 +304,8 @@ describe("cache-refresh — TopShot GQL enrichment degradation", () => {
       editions: { data: [], error: null },
     })
     expect((await (await GET(req(`?wallet=${WALLET}`))).json()).enriched).toBe(1)
-    expect(lockedFlag(spy)).toBe(false)
+    // Inverted 2026-10-31 (#222): a GQL miss writes NO lock flag — it used to write a fabricated `false`.
+    expect(lockedFlag(spy)).toBeUndefined()
   })
 
   it("treats a 200 with an empty getMintedMoment as no overlay", async () => {
@@ -317,7 +318,8 @@ describe("cache-refresh — TopShot GQL enrichment degradation", () => {
       editions: { data: [], error: null },
     })
     expect((await (await GET(req(`?wallet=${WALLET}`))).json()).enriched).toBe(1)
-    expect(lockedFlag(spy)).toBe(false)
+    // Inverted 2026-10-31 (#222): a GQL miss writes NO lock flag — it used to write a fabricated `false`.
+    expect(lockedFlag(spy)).toBeUndefined()
   })
 
   it("treats a thrown fetch as no overlay", async () => {
@@ -328,6 +330,23 @@ describe("cache-refresh — TopShot GQL enrichment degradation", () => {
       editions: { data: [], error: null },
     })
     expect((await (await GET(req(`?wallet=${WALLET}`))).json()).enriched).toBe(1)
-    expect(lockedFlag(spy)).toBe(false)
+    // Inverted 2026-10-31 (#222): a GQL miss writes NO lock flag — it used to write a fabricated `false`.
+    expect(lockedFlag(spy)).toBeUndefined()
+  })
+
+  // Positive control for the three above (#222): an ANSWER still writes the flag, and stamps it.
+  it("writes a GQL-answered lock flag with a lock_checked_at stamp", async () => {
+    fetchMock = installFetchMock([
+      jsonRoute("public-api.nbatopshot.com", { data: { getMintedMoment: { data: { flowId: "301", tier: "COMMON", isLocked: true } } } }),
+    ])
+    const spy = install({
+      wallet_moments_cache: wmcNew,
+      moment_acquisitions: { data: [], error: null },
+      editions: { data: [], error: null },
+    })
+    expect((await (await GET(req(`?wallet=${WALLET}`))).json()).enriched).toBe(1)
+    expect(lockedFlag(spy)).toBe(true)
+    const row = (spy.writes.wallet_moments_cache ?? []).filter((w) => w.method === "update").flatMap((w) => w.rows).find((r) => "edition_key" in r)
+    expect(typeof row?.lock_checked_at).toBe("string")
   })
 })
