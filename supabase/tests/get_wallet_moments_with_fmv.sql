@@ -494,15 +494,15 @@ INSERT INTO public.wallet_moments_cache (wallet_address, collection_id, moment_i
   ('0xfold', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'f2', 'setA:playA', 12, 'Luka Doncic',      now(), false),
   ('0xfold', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'f3', 'setB:playB', 13, 'Jimmy Butler III', now(), false),
   ('0xfold', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'f4', 'setB:playB', 14, 'O.G. Anunoby',     now(), false);
-SELECT public.get_wallet_moments_with_fmv('0xfold', 'fmv_desc', 100, 0, 'Luka Doncic') AS r15 gset
+SELECT public.get_wallet_moments_with_fmv('0xfold', 'fmv_desc', 100, 0, 'Luka Doncic') AS r15 \gset
 SELECT _assert_eq((:'r15'::jsonb->>'total_count'), '2', '"Luka Doncic" finds the Dončić row too (accents folded)');
-SELECT public.get_wallet_moments_with_fmv('0xfold', 'fmv_desc', 100, 0, 'Luka Dončić') AS r15b gset
+SELECT public.get_wallet_moments_with_fmv('0xfold', 'fmv_desc', 100, 0, 'Luka Dončić') AS r15b \gset
 SELECT _assert_eq((:'r15b'::jsonb->>'total_count'), '2', 'and the other way round');
-SELECT public.get_wallet_moments_with_fmv('0xfold', 'fmv_desc', 100, 0, 'Jimmy Butler') AS r15c gset
+SELECT public.get_wallet_moments_with_fmv('0xfold', 'fmv_desc', 100, 0, 'Jimmy Butler') AS r15c \gset
 SELECT _assert_eq((:'r15c'::jsonb->>'total_count'), '1', 'a generational suffix does not split a player');
-SELECT public.get_wallet_moments_with_fmv('0xfold', 'fmv_desc', 100, 0, 'OG Anunoby') AS r15d gset
+SELECT public.get_wallet_moments_with_fmv('0xfold', 'fmv_desc', 100, 0, 'OG Anunoby') AS r15d \gset
 SELECT _assert_eq((:'r15d'::jsonb->>'total_count'), '1', 'punctuation does not split a player');
-SELECT public.get_wallet_moments_with_fmv('0xfold', 'fmv_desc', 100, 0, 'Bob Baller') AS r15e gset
+SELECT public.get_wallet_moments_with_fmv('0xfold', 'fmv_desc', 100, 0, 'Bob Baller') AS r15e \gset
 SELECT _assert_eq((:'r15e'::jsonb->>'total_count'), '0', 'control: a player the wallet does not hold still matches nothing');
 
 SELECT '✓ get_wallet_moments_with_fmv invariants pass' AS result;
