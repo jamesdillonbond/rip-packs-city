@@ -66,3 +66,11 @@ REVOKE ALL ON FUNCTION public.prune_trade_block(int, int) FROM PUBLIC, anon, aut
 GRANT EXECUTE ON FUNCTION public.prune_trade_block(int, int) TO service_role;
 
 SELECT cron.schedule('rpc-prune-trade-block', '57 4 * * *', $cmd$SELECT public.prune_trade_block(60, 30)$cmd$);
+
+-- Records the migration and reads it back in the same paste (added 2026-11-02 ~12:20 PM PT).
+-- Commit this file afterwards as supabase/migrations/20261102201500_audit_20261102_prune_trade_block.sql.
+INSERT INTO supabase_migrations.schema_migrations(version,name,statements) VALUES ('20261102201500','audit_20261102_prune_trade_block',ARRAY[]::text[]) ON CONFLICT (version) DO NOTHING;
+SELECT (select count(*) from pg_proc where proname='prune_trade_block') fn,
+       (select schedule from cron.job where jobname='rpc-prune-trade-block') job,
+       (select count(*) from supabase_migrations.schema_migrations where version='20261102201500') mig,
+       public.prune_trade_block(60,30) first_run;
