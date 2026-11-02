@@ -56,8 +56,8 @@ import {
   type SideRow,
 } from "@/lib/trade-room/store"
 import { checkReceivable, checkRoomPicks, EXECUTE_CLOSED_MESSAGE, executionOpen, planRoom, verifyRoom } from "@/lib/trade-room/execute"
-import { pickItems, readPickedRows, readPicker, withLiveLocks, TOP_SHOT_COLLECTION_ID, type PickerResult } from "@/lib/trade-room/holdings"
-import { holdingsReader, type Pick } from "@/lib/trade-room/multi-plan"
+import { pickItems, readChainPicker, readPickedRows, readPicker, withLiveLocks, TOP_SHOT_COLLECTION_ID, type PickerResult } from "@/lib/trade-room/holdings"
+import { holdingsReader, idsReader, type Pick } from "@/lib/trade-room/multi-plan"
 import { MULTI_SWAP_CADENCE, swapCollection, swapCollectionByDbSlug, SWAP_COLLECTIONS, type SwapSlug } from "@/lib/trade-room/multi-swap-cadence"
 import { SWAP_CADENCE } from "@/lib/swap-test/swap-cadence"
 import type { NewItem } from "@/lib/trade-room/store"
@@ -205,8 +205,19 @@ export async function GET(req: NextRequest, ctx: Ctx) {
       if (!swapCollection(slug)) throw new TradeRoomError("That collection can't be traded here.", 400, "bad_collection")
       // #222: lock state for the rows shown is read from the CHAIN now (cached hint on failure),
       // and a live Top Shot read heals wmc's flag for those rows in the background.
-      const picker = await withLiveLocks(await readPicker(supabaseAdmin, side.source, sp.get("q"), slug as SwapSlug), side.source, holdingsReader(slug as SwapSlug))
-      if (picker.lock_state === "live" && slug === "nba-top-shot") after(() => healLockCache(side.source as string, picker))
+      if (slug !== "nba-top-shot") {
+        // All Day / Golazos / UFC: start from what the CHAIN says the account holds (RPC's index
+        // can list Moments long gone); a failed chain read falls back to RPC's index, labelled cached
+        const other = slug as Exclude<SwapSlug, "nba-top-shot">
+        try {
+          return json({ picker: await readChainPicker(supabaseAdmin, side.source, sp.get("q"), other, idsReader(other)) })
+        } catch (e) {
+          console.error(`[trade-room] chain picker failed (${other}): ${e instanceof Error ? e.message : String(e)}`)
+          return json({ picker: { ...(await readPicker(supabaseAdmin, side.source, sp.get("q"), other)), lock_state: "cached" } })
+        }
+      }
+      const picker = await withLiveLocks(await readPicker(supabaseAdmin, side.source, sp.get("q"), "nba-top-shot"), side.source, holdingsReader("nba-top-shot"))
+      if (picker.lock_state === "live") after(() => healLockCache(side.source as string, picker))
       return json({ picker })
     }
     // a stranger may look at an open room (that is how they join); a finished or full

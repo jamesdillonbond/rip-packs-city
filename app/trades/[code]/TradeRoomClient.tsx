@@ -439,8 +439,14 @@ function MySide({
                     <p style={muted}>
                       RPC hasn&apos;t indexed that account yet. Add it on your <Link href="/dashboard">dashboard</Link> first, then come back.
                     </p>
+                  ) : picker.result.no_collection ? (
+                    <p style={muted}>This account has no {SWAP_COLLECTIONS.find((c) => c.slug === coll)?.label ?? ""} collection on chain, so it has nothing of that kind to give.</p>
                   ) : picker.result.rows.length === 0 ? (
-                    <p style={muted}>{q.trim() ? "No Moments match that filter." : `RPC has no ${SWAP_COLLECTIONS.find((c) => c.slug === coll)?.label ?? ""} Moments indexed for this account.`}</p>
+                    <>
+                      <p style={muted}>{q.trim() ? "No Moments match that filter." : `No ${SWAP_COLLECTIONS.find((c) => c.slug === coll)?.label ?? ""} Moments in this account can be traded right now.`}</p>
+                      {!q.trim() && picker.result.not_in_collection ? <p style={{ ...muted, fontSize: 12 }}>{picker.result.not_in_collection} that RPC lists for it {picker.result.not_in_collection === 1 ? "isn't" : "aren't"} in its on-chain collection (locked, or held by Dapper).</p> : null}
+                      {!q.trim() && picker.result.unindexed_held ? <p style={{ ...muted, fontSize: 12 }}>{picker.result.unindexed_held} in this account RPC hasn&apos;t indexed yet.</p> : null}
+                    </>
                   ) : (
                     <>
                       <ul style={{ listStyle: "none", padding: 0, margin: 0, maxHeight: 320, overflow: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
@@ -471,6 +477,8 @@ function MySide({
                         })}
                       </ul>
                       {picker.result.truncated ? <p style={{ ...muted, fontSize: 12 }}>Showing the first {picker.result.rows.length}; filter by player to find others.</p> : null}
+                      {picker.result.unindexed_held ? <p style={{ ...muted, fontSize: 12 }}>{picker.result.unindexed_held} more in this account RPC hasn&apos;t indexed yet, so they can&apos;t be picked until it has.</p> : null}
+                      {picker.result.not_in_collection ? <p style={{ ...muted, fontSize: 12 }}>{picker.result.not_in_collection} Moment{picker.result.not_in_collection === 1 ? "" : "s"} RPC lists for this account {picker.result.not_in_collection === 1 ? "isn't" : "aren't"} in its on-chain collection right now (locked, or held by Dapper), so {picker.result.not_in_collection === 1 ? "it" : "they"} can&apos;t be traded.</p> : null}
                       {picker.result.lock_state === "cached" ? <p style={{ ...muted, fontSize: 12 }}>Couldn&apos;t read lock status from the chain just now, so locks shown are RPC&apos;s last check. Saving re-checks every pick on chain.</p> : null}
                     </>
                   )

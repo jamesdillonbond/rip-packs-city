@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { NextRequest } from "next/server"
 import { memorySupabase, type MemoryDb } from "./helpers/memory-supabase"
 import { SWAP_CADENCE } from "@/lib/swap-test/swap-cadence"
-import { CAN_RECEIVE_SCRIPT } from "@/lib/trade-room/multi-swap-cadence"
+import { CAN_RECEIVE_SCRIPT, SWAP_COLLECTIONS } from "@/lib/trade-room/multi-swap-cadence"
 import { SwapTestError } from "@/lib/swap-test/plan"
 
 // The two properties that matter most on the chain half of a trade room:
@@ -116,13 +116,23 @@ async function twoSided(): Promise<string> {
 
 /** The chain's default answers: every account can receive every collection; a held script holds what it is asked. */
 const receives = vi.hoisted(() => ({ byAddress: {} as Record<string, boolean[]> }))
+/** On-chain collection ids per `${address}|${collection_id}`; unset = whatever wmc holds for it (null = no collection). */
+const onChain = vi.hoisted(() => ({ ids: {} as Record<string, string[] | null> }))
 async function defaultRun(script: string, args: Array<{ value: unknown }>) {
+  if (script.includes("getIDs()")) {
+    const address = String(args[0].value)
+    const col = SWAP_COLLECTIONS.find((c) => script.includes(c.public))!
+    const key = `${address}|${col.collectionId}`
+    const ids = key in onChain.ids ? onChain.ids[key] : (mem.current.tables.wallet_moments_cache ?? []).filter((r) => r.wallet_address === address && r.collection_id === col.collectionId).map((r) => String(r.moment_id))
+    return { type: "Optional", value: ids === null ? null : { type: "Array", value: ids.map((v) => ({ type: "UInt64", value: v })) } }
+  }
   if (script === CAN_RECEIVE_SCRIPT) return { type: "Array", value: (receives.byAddress[String(args[0].value)] ?? [true, true, true, true]).map((v) => ({ type: "Bool", value: v })) }
   return { type: "Array", value: (args[1].value as Array<{ value: string }>).map((x) => ({ type: "UInt64", value: x.value })) }
 }
 
 beforeEach(() => {
   receives.byAddress = {}
+  onChain.ids = {}
   mem.current = memorySupabase({ wallet_moments_cache: [wmc(WA.source, "1", 10, "HIGH"), wmc(WA.source, "2", 3, "LOW"), wmc(WB.source, "9", 5, "MEDIUM")], profile_bio: [] }, UNIQUES, DEFAULTS)
   chain.holdings.mockImplementation(async (_a: string, ids: string[]) => Object.fromEntries(ids.map((id) => [id, { held: true, locked: false }])))
   chain.run.mockImplementation(defaultRun)
@@ -377,6 +387,35 @@ describe("/api/trade-room — the routes", () => {
     expect(r.status).toBe(409)
     expect(await r.json()).toMatchObject({ code: "cannot_receive" })
     expect(mem.current.tables.trade_room_sides.find((x) => x.side === "b")?.source).toBe(WB.source)
+  })
+
+  it("the All Day picker shows what is in the ON-CHAIN collection, and COUNTS what RPC lists that is not (locked / studio-held)", async () => {
+    // RPC lists three All Day Moments for Alice's account; only one is in its on-chain collection
+    for (const id of ["21", "22", "23"]) mem.current.tables.wallet_moments_cache.push({ ...wmc(WA.source, id, 7, "HIGH"), collection_id: AD_COLLECTION_ID, player_name: `AD ${id}` })
+    const code = await twoSided()
+    onChain.ids[`${WA.source}|${AD_COLLECTION_ID}`] = ["22", "99"] // 99: held, but RPC hasn't indexed it
+    const r = await as(ALICE, () => room.GET(get(`/api/trade-room/${code}?picker=1&collection=nfl-all-day`), ctx(code)))
+    const p = ((await r.json()) as { picker: { rows: Array<{ moment_id: string }>; not_in_collection: number; unindexed_held: number; lock_state: string } }).picker
+    expect(p.rows.map((x) => x.moment_id)).toEqual(["22"])
+    expect(p).toMatchObject({ not_in_collection: 2, unindexed_held: 1, lock_state: "live" })
+    // an account with no All Day collection says so — never "holds nothing"
+    onChain.ids[`${WA.source}|${AD_COLLECTION_ID}`] = null
+    const none = (await (await as(ALICE, () => room.GET(get(`/api/trade-room/${code}?picker=1&collection=nfl-all-day`), ctx(code)))).json()) as { picker: { no_collection: boolean; rows: unknown[] } }
+    expect(none.picker).toMatchObject({ no_collection: true, rows: [] })
+  })
+
+  it("a failed chain read on the All Day picker falls back to RPC's list, labelled cached — never an empty picker", async () => {
+    mem.current.tables.wallet_moments_cache.push({ ...wmc(WA.source, "21", 7, "HIGH"), collection_id: AD_COLLECTION_ID, player_name: "AD 21" })
+    const code = await twoSided()
+    chain.run.mockImplementation(async (script: string, args: Array<{ value: unknown }>) => {
+      if (script.includes("getIDs()")) throw new Error("Flow script HTTP 503")
+      return defaultRun(script, args)
+    })
+    const r = await as(ALICE, () => room.GET(get(`/api/trade-room/${code}?picker=1&collection=nfl-all-day`), ctx(code)))
+    expect(r.status).toBe(200)
+    const p = ((await r.json()) as { picker: { rows: Array<{ moment_id: string }>; lock_state: string } }).picker
+    expect(p.lock_state).toBe("cached")
+    expect(p.rows.map((x) => x.moment_id)).toEqual(["21"])
   })
 
   it("an unknown collection is refused — on the picker and on save — never answered with Top Shot", async () => {

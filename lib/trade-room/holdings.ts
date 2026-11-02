@@ -41,6 +41,14 @@ export interface PickerResult {
   /** "live": locked_hint/held_live were read from the chain for these rows; "cached": the chain read
    *  failed or ran out of time, so locked_hint is RPC's last check (#222). Absent = not attempted. */
   lock_state?: "live" | "cached"
+  /** Chain-driven pickers (All Day / Golazos / UFC): how many Moments the chain says the account
+   *  holds that RPC has not indexed yet (they can't be picked until it has). Absent = not measured. */
+  unindexed_held?: number
+  /** Chain-driven pickers: the account has no collection of this kind at all. */
+  no_collection?: boolean
+  /** Chain-driven pickers: Moments RPC lists for this account that are NOT in its on-chain
+   *  collection right now (locked, held by Dapper's studio, or moved) — they can't be traded. */
+  not_in_collection?: number
 }
 
 type WmcRow = {
@@ -117,6 +125,66 @@ export async function readPicker(db: SupabaseClient, source: string, q: string |
     indexed = (any ?? 0) > 0
   }
   return { indexed, rows, truncated: typeof count === "number" && count > rows.length }
+}
+
+const ID_CHUNK = 200
+
+/**
+ * The All Day / Golazos / UFC picker, driven by the CHAIN (2026-11-02): the ids in the account's
+ * on-chain collection now (`idsScript`) — exactly what the swap can withdraw — named and priced
+ * from RPC's index. RPC's holdings also count Moments that are locked or studio-held (known issue
+ * #191: 3,723 All Day rows for an account whose collection held 40), so a wmc-first picker would
+ * offer Moments no transaction can move and push the movable ones past its first page; those are
+ * COUNTED here (`not_in_collection`), never silently dropped. Rows are "live" (held now; neither collection locks).
+ * Held ids RPC has not indexed are COUNTED (`unindexed_held`), never silently dropped. A failed
+ * chain read THROWS (the caller falls back to the cached picker and says so).
+ */
+export async function readChainPicker(
+  db: SupabaseClient,
+  source: string,
+  q: string | null,
+  slug: Exclude<SwapSlug, "nba-top-shot">,
+  readIds: (address: string) => Promise<string[] | null>,
+): Promise<PickerResult> {
+  const col = swapCollection(slug)
+  if (!col) throw new Error(`not a tradeable collection: ${slug}`)
+  const held = await readIds(source)
+  if (held === null) return { indexed: true, rows: [], truncated: false, lock_state: "live", no_collection: true, unindexed_held: 0 }
+  const needle = (q ?? "").replace(/[%_\\]/g, "").trim().toLowerCase()
+  const COLS = "moment_id, edition_key, serial_number, player_name, set_name, tier, series_number, image_url, fmv_usd, fmv_confidence, is_locked"
+  const found: WmcRow[] = []
+  for (let i = 0; i < held.length; i += ID_CHUNK) {
+    const chunk = held.slice(i, i + ID_CHUNK)
+    const { data, error } = await db
+      .from("wallet_moments_cache")
+      .select(COLS)
+      .eq("collection_id", col.collectionId)
+      .eq("wallet_address", source)
+      .in("moment_id", chunk)
+      .limit(chunk.length)
+    if (error) throw new Error(`wallet_moments_cache read failed: ${error.message}`)
+    found.push(...((data ?? []) as WmcRow[]))
+  }
+  const fold = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
+  const all = found
+    .map((w) => toPickerRow(w, col.dbSlug))
+    .map((r) => ({ ...r, locked_hint: false, held_live: true }))
+  const matched = needle ? all.filter((r) => fold(r.player_name ?? "").includes(fold(needle))) : all
+  const { count: listed, error: countError } = await db
+    .from("wallet_moments_cache")
+    .select("moment_id", { count: "exact", head: true })
+    .eq("collection_id", col.collectionId)
+    .eq("wallet_address", source)
+  if (countError) throw new Error(`wallet_moments_cache count failed: ${countError.message}`)
+  matched.sort((a, b) => (b.fmv_usd ?? -1) - (a.fmv_usd ?? -1) || a.moment_id.localeCompare(b.moment_id))
+  return {
+    indexed: true,
+    rows: matched.slice(0, PICKER_LIMIT),
+    truncated: matched.length > PICKER_LIMIT,
+    lock_state: "live",
+    unindexed_held: held.length - found.length,
+    not_in_collection: typeof listed === "number" ? Math.max(0, listed - found.length) : undefined,
+  }
 }
 
 /**

@@ -26,6 +26,7 @@ import {
   SWAP_COLLECTIONS,
   controllersScript,
   heldScript,
+  idsScript,
   swapCollection,
   type SwapSlug,
 } from "@/lib/trade-room/multi-swap-cadence"
@@ -132,6 +133,16 @@ export async function readCollectionHoldings(
 export function holdingsReader(collection: SwapSlug): (address: string, ids: string[]) => Promise<Record<string, Holding>> {
   return (address, ids) =>
     readCollectionHoldings(collection, address, ids, { run: runFlowScript, keys: async () => [], readTopShot: readTopShotHoldings })
+}
+
+/** Every id an account holds of one collection, or null when it has no such collection. Throws on a failed read. */
+export function idsReader(collection: Exclude<SwapSlug, "nba-top-shot">, run: typeof runFlowScript = runFlowScript): (address: string) => Promise<string[] | null> {
+  return async (address) => {
+    const v = await run(idsScript(collection), [addr(address)])
+    if (v?.type !== "Optional") throw new SwapTestError("The holdings read returned an unexpected shape.", 502, "flow_shape")
+    if (v.value == null) return null
+    return stringArray(v.value as CdcValue, "holdings read")
+  }
 }
 
 function byCollection(picks: Pick[]): string[][] {

@@ -201,6 +201,30 @@ describe("TradeRoomClient — wallet, picks", () => {
     expect(new Set(sent.map((p) => p.collection))).toEqual(new Set(["nba-top-shot"]))
   })
 
+  it("the collection tabs read that collection; a missing collection and untradeable Moments are SAID, never 'nothing'", async () => {
+    await mount(view())
+    gets[`${API}?picker=1&collection=nba-top-shot&q=`] = { status: 200, body: { picker: { indexed: true, rows: [item("1", 10)], truncated: false, lock_state: "live" } } }
+    fireEvent.click(screen.getByText("Change picks"))
+    await waitFor(() => expect(screen.getByText(/Save 1 pick/)).toBeTruthy())
+    gets[`${API}?picker=1&collection=nfl-all-day&q=`] = { status: 200, body: { picker: { indexed: true, rows: [], truncated: false, lock_state: "live", no_collection: true } } }
+    fireEvent.click(screen.getByRole("tab", { name: "NFL All Day" }))
+    await waitFor(() => expect(screen.getByText(/has no NFL All Day collection on chain/)).toBeTruthy())
+    gets[`${API}?picker=1&collection=ufc&q=`] = {
+      status: 200,
+      body: { picker: { indexed: true, rows: [{ ...item("7", 3, "ufc_strike"), locked_hint: false, held_live: true }], truncated: false, lock_state: "live", not_in_collection: 12, unindexed_held: 2 } },
+    }
+    fireEvent.click(screen.getByRole("tab", { name: "UFC Strike" }))
+    await waitFor(() => expect(screen.getByText(/12 Moments RPC lists for this account aren't in its on-chain collection/)).toBeTruthy())
+    expect(screen.getByText(/2 more in this account RPC hasn't indexed yet/)).toBeTruthy()
+    // a UFC pick is saved under its own collection, beside the Top Shot one already picked
+    fireEvent.click(screen.getAllByRole("checkbox")[0])
+    posts.items = { status: 200, body: { room: view() } }
+    fireEvent.click(screen.getByText(/Save 2 picks/))
+    await waitFor(() => expect(calls.some((c) => c.body?.action === "items")).toBe(true))
+    const sent = calls.find((c) => c.body?.action === "items")?.body?.picks as Array<{ collection: string; id: string }>
+    expect(sent).toEqual(expect.arrayContaining([{ collection: "nba-top-shot", id: "1" }, { collection: "ufc", id: "7" }]))
+  })
+
   it("a chain outage on save is the route's copy, not 'not held'", async () => {
     await mount(view())
     gets[`${API}?picker=1&collection=nba-top-shot&q=`] = { status: 200, body: { picker: { indexed: true, rows: [item("1", 10)], truncated: false } } }

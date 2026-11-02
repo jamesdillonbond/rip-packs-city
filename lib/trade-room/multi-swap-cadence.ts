@@ -270,6 +270,27 @@ access(all) fun main(addr: Address): [Bool] {
 `
 
 /**
+ * Every id `addr` holds of one collection (its public collection's getIDs), or nil when the
+ * account has no such collection — i.e. exactly what a swap can withdraw. The picker for All
+ * Day / Golazos / UFC starts from THIS, not from RPC's index: on 2026-11-02 RPC listed 3,723
+ * All Day Moments for an account whose on-chain collection held 40, because RPC's holdings
+ * also count Moments that are LOCKED (All Day's locker) or held by Dapper's studio (known
+ * issue #191) — owned, but not in the collection, so not tradeable.
+ */
+export function idsScript(slug: Exclude<SwapSlug, "nba-top-shot">): string {
+  const c = swapCollection(slug)!
+  return `import NonFungibleToken from 0x1d7e57aa55817448
+
+access(all) fun main(addr: Address): [UInt64]? {
+    if let col = getAccount(addr).capabilities.borrow<&{NonFungibleToken.CollectionPublic}>(${c.public}) {
+        return col.getIDs()
+    }
+    return nil
+}
+`
+}
+
+/**
  * Held-ness of All Day / Golazos / UFC Strike ids at an address (no locking exists for any of them). Returns the
  * ids it holds; ids it does not hold are absent.
  */
