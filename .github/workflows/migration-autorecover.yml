@@ -155,6 +155,15 @@ jobs:
             echo "::error::A recovered file does not match the md5 prod computes over the same statements. NOTHING was committed — a byte-inexact record is worse than a missing one. See the job log."
             exit 1
           fi
+          UNREC=0
+          if [ "$RC" -eq 4 ]; then
+            # Every recoverable row was written and md5-verified; >=1 row stores NULL
+            # statements. Commit the good ones; the last step fails the run on UNREC.
+            echo "::warning::A migration in prod stores NULL statements and cannot be recovered from prod — it needs a hand commit. Recoverable ones proceed."
+            UNREC=1
+            RC=0
+          fi
+          echo "unrecoverable=$UNREC" >> "$GITHUB_OUTPUT"
           if [ "$RC" -ne 0 ]; then
             echo "::error::db:migrations:recover could not RUN (config or query error). A check that cannot answer is not a pass."
             exit "$RC"
@@ -301,3 +310,9 @@ jobs:
           # The claim this job makes is "prod is described by the repo again".
           # Verify the FIX, not the diagnosis: re-run the independent checker.
           npm run db:migrations:check
+
+      - name: Fail on a migration prod cannot describe (NULL statements)
+        if: always() && steps.recover.outputs.unrecoverable == '1'
+        run: |
+          echo "::error::A migration applied to prod stores NULL statements in schema_migrations, so it cannot be recovered byte-exactly. Commit the SQL that was actually run under supabase/migrations/<version>_<name>.sql by hand (see the recover step's log for the name)."
+          exit 1

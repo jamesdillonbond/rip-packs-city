@@ -38,7 +38,8 @@
  *   NEXT_PUBLIC_SUPABASE_URL=… SUPABASE_SERVICE_ROLE_KEY=… \
  *     node scripts/recover-fileless-migrations.mjs [--window 3] [--dry-run]
  *
- * Exit: 0 wrote cleanly (or nothing to do) · 1 an md5 mismatch · 2 could not run.
+ * Exit: 0 wrote cleanly (or nothing to do) · 1 an md5 mismatch · 2 could not run ·
+ *       4 wrote every recoverable row, but ≥1 row stores NULL statements (not recoverable).
  * It never commits. Review the diff, then `git add supabase/migrations`.
  */
 import { readdirSync, writeFileSync, readFileSync } from 'node:fs'
@@ -108,9 +109,19 @@ async function main() {
 
   console.log(`${missing.length} applied migration(s) with no file, window ${WINDOW_DAYS}d:\n`)
   let bad = 0
+  // A row whose `statements` is NULL (an apply through the SQL editor that only
+  // INSERTed the schema_migrations row) has no bytes to recover. Writing '' would
+  // be a fabricated record, and failing the whole run on it (the 11-02 17:16Z run)
+  // also blocked every RECOVERABLE row beside it. Skip it, name it, exit 4.
+  const unrecoverable = []
   for (const r of missing) {
     const file = `${r.version}_${r.name}.sql`
     const path = resolve(dir, file)
+    if (r.sql == null || r.md5 == null) {
+      unrecoverable.push(file)
+      console.log(`  NULL ${file}  (prod stores no statements — commit it by hand)`)
+      continue
+    }
     if (DRY) {
       console.log(`  [dry-run] ${file}  (${(r.sql ?? '').length} bytes)`)
       continue
@@ -126,6 +137,7 @@ async function main() {
 
   if (DRY) {
     console.log('\nDry run — nothing written.')
+    if (unrecoverable.length > 0) process.exitCode = 4
     return
   }
   if (bad > 0) {
@@ -136,10 +148,18 @@ async function main() {
     process.exitCode = 1
     return
   }
+  const written = missing.length - unrecoverable.length
   console.log(
-    `\nWrote ${missing.length} file(s), all md5-verified against prod.\n` +
+    `\nWrote ${written} file(s), all md5-verified against prod.\n` +
       `Review the diff, then: git add ${MIGRATIONS_DIR} && git commit`
   )
+  if (unrecoverable.length > 0) {
+    console.error(
+      `\n${unrecoverable.length} migration(s) have NULL statements in prod and cannot be ` +
+        `recovered from it: ${unrecoverable.join(', ')}. Commit the SQL that was run, by hand.`
+    )
+    process.exitCode = 4
+  }
 }
 
 main().catch((e) => {
