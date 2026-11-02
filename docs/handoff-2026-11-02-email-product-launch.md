@@ -5,7 +5,7 @@ Source analysis: `claude/build-brief-2026-11-01-unlock-anon-return-loop.md` (pro
 
 **Claude Code's direct file inspection wins over this doc on any disagreement — adapt to the actual file shape.** Paths below were grepped live and exist, but line numbers drift.
 
-## Status — 2026-11-02 ~9:20 AM PT (Cowork cloud)
+## Status — 2026-11-02 ~8:50 AM PT (Cowork cloud)
 
 - **Stage A — SHIPPED** (`15ed629f2`, verified live): A1 the confirm link renders its own public page (`/api/subscribe/verify`, no `/dashboard` redirect; says "confirmed" only on a matched token — an unknown token now reads "We don't recognise this link", 404); A2 `DealWatchCapture` on the wallet collection tab (`surface="collection"`); A3 on the `/insights/tc-report` result (`surface="tc-report"`). Both rendered at 390 px in production with no horizontal scroll.
 - **B2 — CHECKED: deal alerts to `email_subscribers` have NO sender.** `email_subscribers.deal_alerts` is written by `/api/subscribe` and `/api/email/subscribe` and read only by admin analytics; the deal-alert engine (`dispatch_due_deal_alerts` / `alerts-dispatch`) serves the signed-in `alert_subscriptions` path. So at the Stage B flip, launch **digest-only**: flip `InsightsEmailCapture` to live weekly-digest copy, and leave `DealWatchCapture` on its "coming soon" deal-alert copy (its submit already sets `digestWeekly: true`, so those signups get the digest).
