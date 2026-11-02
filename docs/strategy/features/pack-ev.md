@@ -41,6 +41,8 @@ Three values must never be labelled as one another (packs.md 09-26): the EV of w
 
 - **11-02 ~8:45 AM PT:** pack-chase ALERTS — watch a Top Shot dist/tier and get email/Telegram/Discord when its density reaches N× launch (`pack_chase_watches`, alerts-dispatch leg, /alerts panel). Edge-triggered, once per watch per PT day at most.
 
+- **11-02 ~11:30 AM PT:** ⚠ **the Atlas tier-count floor was comparing ALL-TIME opens against a snapshot up to ~2 days old**, dropping the tier bars / odds / chase data of every Top Shot pack still being opened (21 of 32 drops were that lag). Now judged as of the snapshot's own stamp (`lib/pack-dist/observed-as-of.ts`), the same rule as the DB-side `observed_by_tier`. 11 payloads remain genuinely contradicted (~1 % fewer opens than we watched, at their own stamp) and stay hidden — whether to tolerate a small lag there is a Trevor call, not changed.
+
 ## Cross-collection parity (2026-10-19 ~7:30 PM PT, Claude Code cloud)
 
 Shipped this pass (ledger 10-19):
