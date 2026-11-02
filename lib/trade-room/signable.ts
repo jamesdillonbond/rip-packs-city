@@ -12,7 +12,6 @@ import { MULTI_SWAP_CADENCE, SWAP_COLLECTIONS } from "@/lib/trade-room/multi-swa
 
 type Arg = { type?: string; value?: unknown }
 
-const SHORT: Record<string, string> = { "nba-top-shot": "Top Shot", "nfl-all-day": "All Day", "laliga-golazos": "Golazos" }
 
 function nested(a: Arg | undefined): string[][] | null {
   if (a?.type !== "Array" || !Array.isArray(a.value) || a.value.length !== SWAP_COLLECTIONS.length) return null
@@ -28,7 +27,7 @@ function nested(a: Arg | undefined): string[][] | null {
 
 /** Collection-labelled ids, e.g. "All Day 6605811". */
 function labelled(lists: string[][]): string[] {
-  return lists.flatMap((ids, i) => ids.map((id) => `${SHORT[SWAP_COLLECTIONS[i].slug]} ${id}`))
+  return lists.flatMap((ids, i) => ids.map((id) => `${SWAP_COLLECTIONS[i].short} ${id}`))
 }
 
 export function describeRoomSignable(signable: unknown): SignableSummary {

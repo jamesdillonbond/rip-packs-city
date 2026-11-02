@@ -1,8 +1,8 @@
 // lib/trade-room/holdings.ts
 //
 // What a trade-room side can pick from: the moments RPC has indexed for the account
-// its moments sit in, ONE collection at a time (NBA Top Shot, NFL All Day or LaLiga
-// Golazos since 2026-11-02; wallet_moments_cache scoped by collection_id, see CLAUDE.md
+// its moments sit in, ONE collection at a time (NBA Top Shot, NFL All Day, LaLiga
+// Golazos or UFC Strike since 2026-11-02; wallet_moments_cache scoped by collection_id, see CLAUDE.md
 // "a moment_id is unique only within a collection"). This is the PICKER, not the truth: before a pick is saved the chain
 // is read for "held and unlocked" (lib/trade-room/execute.ts), and again before any
 // wallet signs. A wallet RPC has not indexed yet is reported as such (indexed:

@@ -5,7 +5,7 @@
 // sealed twice on mainnet 2026-10-31): ONE transaction, TWO authorizers, all or nothing —
 // side A's moments go to side B's account and B's to A's. No escrow, no custody, no fee.
 //
-// What is new: each side gives moments from up to three collections at once. The
+// What is new: each side gives moments from several collections at once (Top Shot, All Day, Golazos and, since the same afternoon, UFC Strike). The
 // collection list is FIXED (SWAP_COLLECTIONS, in this order), so there is exactly ONE
 // multi-collection transaction text for every trade, and a wallet co-signs only that text.
 // Per side the arguments are one controller id and one id list PER COLLECTION, positional:
@@ -29,13 +29,15 @@
 
 export interface SwapCollection {
   /** RPC's collection slug (lib/trade-block/rules.ts). */
-  slug: "nba-top-shot" | "nfl-all-day" | "laliga-golazos"
+  slug: "nba-top-shot" | "nfl-all-day" | "laliga-golazos" | "ufc"
   /** collections.slug (long form) — trade_room_items.collection / trade_rooms.collection. */
-  dbSlug: "nba_top_shot" | "nfl_all_day" | "laliga_golazos"
+  dbSlug: "nba_top_shot" | "nfl_all_day" | "laliga_golazos" | "ufc_strike"
   /** collections.id — wallet_moments_cache is scoped by it (moment ids collide across collections). */
   collectionId: string
   label: string
-  contract: "TopShot" | "AllDay" | "Golazos"
+  /** Short name for lists ("All Day 6605811"). */
+  short: string
+  contract: "TopShot" | "AllDay" | "Golazos" | "UFC_NFT"
   address: string
   storage: string
   public: string
@@ -47,6 +49,7 @@ export const SWAP_COLLECTIONS: readonly SwapCollection[] = [
     dbSlug: "nba_top_shot",
     collectionId: "95f28a17-224a-4025-96ad-adf8a4c63bfd",
     label: "NBA Top Shot",
+    short: "Top Shot",
     contract: "TopShot",
     address: "0x0b2a3299cc857e29",
     storage: "/storage/MomentCollection",
@@ -57,6 +60,7 @@ export const SWAP_COLLECTIONS: readonly SwapCollection[] = [
     dbSlug: "nfl_all_day",
     collectionId: "dee28451-5d62-409e-a1ad-a83f763ac070",
     label: "NFL All Day",
+    short: "All Day",
     contract: "AllDay",
     address: "0xe4cf4bdc1751c65d",
     storage: "/storage/AllDayNFTCollection",
@@ -67,10 +71,27 @@ export const SWAP_COLLECTIONS: readonly SwapCollection[] = [
     dbSlug: "laliga_golazos",
     collectionId: "06248cc4-b85f-47cd-af67-1855d14acd75",
     label: "LaLiga Golazos",
+    short: "Golazos",
     contract: "Golazos",
     address: "0x87ca73a41bb50ad5",
     storage: "/storage/GolazosNFTCollection",
     public: "/public/GolazosNFTCollection",
+  },
+  // 2026-11-02 (Trevor: "Yes do it"): UFC Strike. Deployed UFC_NFT at 0x329feb3ab062d289 read
+  // via Flow REST: /storage/UFC_NFTCollection, /public/UFC_NFTCollection, a plain
+  // `access(NonFungibleToken.Withdraw) fun withdraw` (no locking, no maturity); Dapper's
+  // filter exposes its withdraw capability to a Flow Wallet parent (probed on two linked
+  // accounts). Its Flow MARKET is closed — transfers are not.
+  {
+    slug: "ufc",
+    dbSlug: "ufc_strike",
+    collectionId: "9b4824a8-736d-4a96-b450-8dcc0c46b023",
+    label: "UFC Strike",
+    short: "UFC",
+    contract: "UFC_NFT",
+    address: "0x329feb3ab062d289",
+    storage: "/storage/UFC_NFTCollection",
+    public: "/public/UFC_NFTCollection",
   },
 ] as const
 
@@ -249,10 +270,10 @@ access(all) fun main(addr: Address): [Bool] {
 `
 
 /**
- * Held-ness of All Day / Golazos ids at an address (no locking exists for either). Returns the
+ * Held-ness of All Day / Golazos / UFC Strike ids at an address (no locking exists for any of them). Returns the
  * ids it holds; ids it does not hold are absent.
  */
-export function heldScript(slug: "nfl-all-day" | "laliga-golazos"): string {
+export function heldScript(slug: Exclude<SwapSlug, "nba-top-shot">): string {
   const c = swapCollection(slug)!
   return `import NonFungibleToken from 0x1d7e57aa55817448
 import ${c.contract} from ${c.address}

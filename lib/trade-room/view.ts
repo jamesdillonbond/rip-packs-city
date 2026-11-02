@@ -13,7 +13,7 @@ import { otherSide, roomState, type ItemRow, type LoadedRoom, type RoomState, ty
 import { valueTrade, WITHDRAWAL_NOTICE, type TradeValuation } from "@/lib/trade-room/valuation"
 
 export interface ItemView {
-  /** collections.slug (nba_top_shot / nfl_all_day / laliga_golazos). */
+  /** collections.slug (nba_top_shot / nfl_all_day / laliga_golazos / ufc_strike). */
   collection: string
   moment_id: string
   edition_key: string | null

@@ -1,7 +1,8 @@
 // lib/trade-room/multi-plan.ts
 //
 // Plans a trade room swap that holds moments from MORE THAN Top Shot (2026-11-02): NBA Top
-// Shot, NFL All Day and LaLiga Golazos in one transaction (lib/trade-room/multi-swap-cadence.ts).
+// Shot, NFL All Day, LaLiga Golazos and UFC Strike in one transaction
+// (lib/trade-room/multi-swap-cadence.ts).
 // Server-only; RPC signs nothing. Same contract as the Top Shot planner it extends
 // (lib/swap-test/plan.ts): a plan is returned only after the WHOLE swap was simulated against
 // live mainnet state, so the two wallets are only ever asked to sign a transaction that just
@@ -9,7 +10,7 @@
 //
 // What this adds over the Top Shot planner, each checked BEFORE the simulation so the user
 // reads which moment / which account / which collection, not a Cadence panic:
-//   · held (and, for Top Shot, unlocked) per collection — All Day and Golazos have no locking;
+//   · held (and, for Top Shot, unlocked) per collection — All Day, Golazos and UFC have no locking;
 //   · the RECEIVING account has that collection (a Dapper account that never held All Day has
 //     no All Day collection, and nothing in this transaction can create one in it);
 //   · a linked (Dapper) source exposes a withdraw capability FOR THAT COLLECTION to the
@@ -122,7 +123,7 @@ export async function readCollectionHoldings(
   const out: Record<string, Holding> = {}
   for (const id of ids) out[id] = { held: false, locked: null }
   const held = stringArray(await deps.run(heldScript(collection), [addr(address), arrayOf(ids.map(u64))]), "holdings read")
-  // All Day and Golazos have no locking contract: a held moment is unlocked
+  // All Day, Golazos and UFC have no locking contract: a held moment is unlocked
   for (const id of held) if (id in out) out[id] = { held: true, locked: false }
   return out
 }

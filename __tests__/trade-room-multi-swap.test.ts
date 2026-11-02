@@ -33,6 +33,7 @@ describe("the Cadence", () => {
       "TopShot@0x0b2a3299cc857e29:/storage/MomentCollection:/public/MomentCollection",
       "AllDay@0xe4cf4bdc1751c65d:/storage/AllDayNFTCollection:/public/AllDayNFTCollection",
       "Golazos@0x87ca73a41bb50ad5:/storage/GolazosNFTCollection:/public/GolazosNFTCollection",
+      "UFC_NFT@0x329feb3ab062d289:/storage/UFC_NFTCollection:/public/UFC_NFTCollection",
     ])
     for (const c of SWAP_COLLECTIONS) {
       expect(MULTI_SWAP_CADENCE).toContain(`import ${c.contract} from ${c.address}`)
@@ -81,7 +82,7 @@ function fake(c: Chain): { deps: MultiDeps; scripts: string[] } {
     if (c.fail && c.fail.test(script)) throw new Error("Flow script HTTP 503")
     const a0 = String(args[0]?.value)
     if (script === MULTI_SWAP_SIMULATION_SCRIPT) return arr(c.simulate(args), "Bool")
-    if (script === CAN_RECEIVE_SCRIPT) return arr(c.receive[a0] ?? [false, false, false], "Bool")
+    if (script === CAN_RECEIVE_SCRIPT) return arr(c.receive[a0] ?? [false, false, false, false], "Bool")
     const ctl = script.match(/forPath: (\S+)\)/)
     if (ctl) return arr(c.ctls[String(args[1]?.value)]?.[ctl[1]] ?? [], "UInt64")
     const coll = SWAP_COLLECTIONS.find((x) => x.slug !== "nba-top-shot" && script === heldScript(x.slug as "nfl-all-day" | "laliga-golazos"))
@@ -108,13 +109,13 @@ const allLand = (args: CdcArg[]) => {
 function happy(over: Partial<Chain> = {}): Chain {
   return {
     held: {
-      [A.source]: { "nba-top-shot": ["11"], "nfl-all-day": ["6605811"], "laliga-golazos": ["912916418"] },
-      [B.source]: { "laliga-golazos": ["913081470"] },
+      [A.source]: { "nba-top-shot": ["11"], "nfl-all-day": ["6605811"], "laliga-golazos": ["912916418"], ufc: ["411978"] },
+      [B.source]: { "laliga-golazos": ["913081470"], ufc: ["118675"] },
     },
-    receive: { [A.source]: [true, true, true], [B.source]: [true, true, true] },
+    receive: { [A.source]: [true, true, true, true], [B.source]: [true, true, true, true] },
     ctls: {
-      [A.source]: { "/storage/MomentCollection": ["87"], "/storage/AllDayNFTCollection": ["81"], "/storage/GolazosNFTCollection": ["57"] },
-      [B.source]: { "/storage/GolazosNFTCollection": ["91"] },
+      [A.source]: { "/storage/MomentCollection": ["87"], "/storage/AllDayNFTCollection": ["81"], "/storage/GolazosNFTCollection": ["57"], "/storage/UFC_NFTCollection": ["26"] },
+      [B.source]: { "/storage/GolazosNFTCollection": ["91"], "/storage/UFC_NFTCollection": ["43"] },
     },
     simulate: allLand,
     ...over,
@@ -127,21 +128,22 @@ const sideA: MultiSideInput = {
     { collection: "nba-top-shot", id: "11" },
     { collection: "nfl-all-day", id: "6605811" },
     { collection: "laliga-golazos", id: "912916418" },
+    { collection: "ufc", id: "411978" },
   ],
 }
-const sideB: MultiSideInput = { ...B, picks: [{ collection: "laliga-golazos", id: "913081470" }] }
+const sideB: MultiSideInput = { ...B, picks: [{ collection: "laliga-golazos", id: "913081470" }, { collection: "ufc", id: "118675" }] }
 
 describe("planMultiSwap", () => {
   it("plans all three collections from a linked Dapper account, one controller per collection given", async () => {
     const { deps } = fake(happy())
     const plan = await planMultiSwap(sideA, sideB, deps)
     expect(plan.kind).toBe("multi")
-    expect(plan.a).toMatchObject({ kind: "linked", ctls: ["87", "81", "57"], ids: [["11"], ["6605811"], ["912916418"]] })
-    expect(plan.b).toMatchObject({ kind: "linked", ctls: ["0", "0", "91"], ids: [[], [], ["913081470"]] })
+    expect(plan.a).toMatchObject({ kind: "linked", ctls: ["87", "81", "57", "26"], ids: [["11"], ["6605811"], ["912916418"], ["411978"]] })
+    expect(plan.b).toMatchObject({ kind: "linked", ctls: ["0", "0", "91", "43"], ids: [[], [], ["913081470"], ["118675"]] })
   })
 
   it("an account with no All Day collection cannot RECEIVE one: refused before the simulation, naming it", async () => {
-    const { deps, scripts } = fake(happy({ receive: { [A.source]: [true, true, true], [B.source]: [true, false, true] } }))
+    const { deps, scripts } = fake(happy({ receive: { [A.source]: [true, true, true, true], [B.source]: [true, false, true, true] } }))
     await expect(planMultiSwap(sideA, sideB, deps)).rejects.toMatchObject({ code: "cannot_receive", status: 409 })
     await expect(planMultiSwap(sideA, sideB, deps)).rejects.toThrow(/0xa3d67b29e104e701 has no NFL All Day collection/)
     expect(scripts).not.toContain(MULTI_SWAP_SIMULATION_SCRIPT)
@@ -182,10 +184,17 @@ describe("planMultiSwap", () => {
   })
 
   it("verify reads where each moment is now, per collection; a failed read throws instead of 'not landed'", async () => {
-    const after = fake(happy({ held: { [B.source]: { "nba-top-shot": ["11"], "nfl-all-day": ["6605811"], "laliga-golazos": ["912916418"] }, [A.source]: {} } }))
+    const after = fake(happy({ held: { [B.source]: { "nba-top-shot": ["11"], "nfl-all-day": ["6605811"], "laliga-golazos": ["912916418"], ufc: ["411978"] }, [A.source]: { ufc: ["118675"] } } }))
     const landed = await verifyMultiSwap(sideA, sideB, after.deps)
-    expect(landed.map((l) => `${l.collection}:${l.id}:${l.held}`)).toEqual(["nba-top-shot:11:true", "nfl-all-day:6605811:true", "laliga-golazos:912916418:true", "laliga-golazos:913081470:false"])
-    const down = fake(happy({ fail: /import Golazos/ }))
+    expect(landed.map((l) => `${l.collection}:${l.id}:${l.held}`)).toEqual([
+      "nba-top-shot:11:true",
+      "nfl-all-day:6605811:true",
+      "laliga-golazos:912916418:true",
+      "ufc:411978:true",
+      "laliga-golazos:913081470:false",
+      "ufc:118675:true",
+    ])
+    const down = fake(happy({ fail: /import UFC_NFT/ }))
     await expect(verifyMultiSwap(sideA, sideB, down.deps)).rejects.toMatchObject({ status: 502 })
   })
 })
@@ -193,25 +202,25 @@ describe("planMultiSwap", () => {
 describe("what the co-signer reads, and what may be relayed", () => {
   const multiArgs = (idsA: string[][], idsB: string[][]) => [
     { type: "Address", value: A.source },
-    { type: "Array", value: ["87", "81", "57"].map((v) => ({ type: "UInt64", value: v })) },
+    { type: "Array", value: ["87", "81", "57", "26"].map((v) => ({ type: "UInt64", value: v })) },
     { type: "Array", value: idsA.map((l) => ({ type: "Array", value: l.map((v) => ({ type: "UInt64", value: v })) })) },
     { type: "Address", value: B.source },
-    { type: "Array", value: ["0", "0", "91"].map((v) => ({ type: "UInt64", value: v })) },
+    { type: "Array", value: ["0", "0", "91", "43"].map((v) => ({ type: "UInt64", value: v })) },
     { type: "Array", value: idsB.map((l) => ({ type: "Array", value: l.map((v) => ({ type: "UInt64", value: v })) })) },
   ]
 
   it("decodes the multi swap from its own arguments, labelled by collection", () => {
-    const d = describeRoomSignable({ cadence: MULTI_SWAP_CADENCE, args: multiArgs([["11"], ["6605811"], []], [[], [], ["913081470"]]) })
-    expect(d).toEqual({ ok: true, sourceA: A.source, idsA: ["Top Shot 11", "All Day 6605811"], sourceB: B.source, idsB: ["Golazos 913081470"] })
+    const d = describeRoomSignable({ cadence: MULTI_SWAP_CADENCE, args: multiArgs([["11"], ["6605811"], [], []], [[], [], ["913081470"], ["118675"]]) })
+    expect(d).toEqual({ ok: true, sourceA: A.source, idsA: ["Top Shot 11", "All Day 6605811"], sourceB: B.source, idsB: ["Golazos 913081470", "UFC 118675"] })
   })
 
   it("anything else — another text, or arguments that don't decode — is not signable", () => {
     expect(describeRoomSignable({ cadence: "transaction { execute {} }", args: [] })).toMatchObject({ ok: false })
     // ⛔ a foreign transaction carrying perfectly shaped swap arguments is still not ours
-    const shaped = multiArgs([["11"], [], []], [[], [], []])
+    const shaped = multiArgs([["11"], [], [], []], [[], [], [], []])
     expect(describeRoomSignable({ cadence: MULTI_SWAP_CADENCE.replace("0xe4cf4bdc1751c65d", "0x0000000000000001"), args: shaped })).toMatchObject({ ok: false })
     expect(describeRoomSignable({ cadence: "transaction(a: Address) { execute {} }", args: shaped })).toMatchObject({ ok: false })
-    expect(describeRoomSignable({ cadence: MULTI_SWAP_CADENCE, args: multiArgs([["11"], ["x"], []], [[], [], []]) })).toMatchObject({ ok: false })
+    expect(describeRoomSignable({ cadence: MULTI_SWAP_CADENCE, args: multiArgs([["11"], ["x"], [], []], [[], [], [], []]) })).toMatchObject({ ok: false })
     // a list per collection — two lists is not this transaction's shape
     expect(describeRoomSignable({ cadence: MULTI_SWAP_CADENCE, args: multiArgs([["11"], []], [[], []]) })).toMatchObject({ ok: false })
   })

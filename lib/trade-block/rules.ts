@@ -39,7 +39,7 @@ export const BLOCK_COLLECTIONS: readonly BlockCollection[] = [
   { id: "dee28451-5d62-409e-a1ad-a83f763ac070", slug: "nfl-all-day", label: "NFL All Day", asset: "Moment", person: "player", offerable: true, signable: true },
   { id: "06248cc4-b85f-47cd-af67-1855d14acd75", slug: "laliga-golazos", label: "LaLiga Golazos", asset: "Moment", person: "player", offerable: true, signable: true },
   { id: "7dd9dd11-e8b6-45c4-ac99-71331f959714", slug: "disney-pinnacle", label: "Disney Pinnacle", asset: "pin", person: "character", offerable: true, signable: false },
-  { id: "9b4824a8-736d-4a96-b450-8dcc0c46b023", slug: "ufc", label: "UFC Strike", asset: "Moment", person: "fighter", offerable: true, signable: false },
+  { id: "9b4824a8-736d-4a96-b450-8dcc0c46b023", slug: "ufc", label: "UFC Strike", asset: "Moment", person: "fighter", offerable: true, signable: true },
   { id: "209ade70-32c5-4470-bc7c-4793d660f713", slug: "candy-mlb", label: "MLB ICONs", asset: "ICON", person: "player", offerable: false, signable: false },
   { id: "d1a0a7f5-609a-49f4-a1a7-4eaac55b020b", slug: "panini-blockchain", label: "Panini", asset: "card", person: "player", offerable: false, signable: false },
 ]
@@ -92,7 +92,9 @@ export function checkNote(raw: unknown): NoteCheck {
 /**
  * Signing eligibility: an accepted proposal may open a trade room only when EVERY
  * moment on both sides is in a collection the room can sign: NBA Top Shot, and since
- * 2026-11-02 NFL All Day and LaLiga Golazos (lib/trade-room/multi-swap-cadence.ts), in any mix.
+ * 2026-11-02 NFL All Day, LaLiga Golazos and UFC Strike (lib/trade-room/multi-swap-cadence.ts),
+ * in any mix. Disney Pinnacle stays agreement-only: Dapper's filter hides its withdraw
+ * capability from a Flow Wallet parent (probed 2026-11-02), and so it does for every pack.
  * Returns the labels of the collections that block it, empty when it can open.
  */
 export function unsignableCollections(collectionIds: readonly string[]): string[] {

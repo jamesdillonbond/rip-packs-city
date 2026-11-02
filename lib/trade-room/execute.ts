@@ -1,7 +1,7 @@
 // lib/trade-room/execute.ts
 //
 // The CHAIN half of a trade room, built on the admin swap test (lib/swap-test) — and, for
-// rooms holding NFL All Day / LaLiga Golazos (2026-11-02), lib/trade-room/multi-plan.ts:
+// rooms holding NFL All Day / LaLiga Golazos / UFC Strike (2026-11-02), lib/trade-room/multi-plan.ts:
 // the same simulate-then-sign plan, the same two-authorizer transaction, the same
 // co-signer relay — with the room's two sides as the two signers. RPC never holds a
 // key, a moment or a fee.
@@ -16,7 +16,7 @@ import { readTopShotHoldings, type Holding } from "@/lib/giveaways/topshot-holdi
 import { planSwap, SwapTestError, verifySwap, type LandedMoment, type PlanDeps, type SwapPlan } from "@/lib/swap-test/plan"
 import { TradeRoomError, otherSide, type LoadedRoom, type Side, type SideRow } from "@/lib/trade-room/store"
 import { planMultiSwap, readCollectionHoldings, verifyMultiSwap, type LandedPick, type MultiDeps, type MultiPlan, type MultiSideInput, type Pick } from "@/lib/trade-room/multi-plan"
-import { swapCollectionByDbSlug } from "@/lib/trade-room/multi-swap-cadence"
+import { swapCollection, swapCollectionByDbSlug } from "@/lib/trade-room/multi-swap-cadence"
 import { runFlowScript } from "@/lib/giveaways/flow-script"
 
 export const EXECUTE_FLAG = "RPC_TRADE_ROOM_EXECUTE"
@@ -72,7 +72,7 @@ export async function checkRoomPicks(source: string, picks: readonly Pick[], dep
     } catch (e) {
       throw chainUnavailable(e)
     }
-    const label = collection === "nba-top-shot" ? "Top Shot" : collection === "nfl-all-day" ? "All Day" : "Golazos"
+    const label = swapCollection(collection)?.short ?? collection
     const missing = ids.filter((id) => !holdings[id]?.held)
     if (missing.length) throw new TradeRoomError(`${source} doesn't hold ${label} ${missing.join(", ")} right now.`, 409, "not_held")
     const locked = ids.filter((id) => holdings[id]?.locked !== false)
@@ -121,7 +121,7 @@ export async function planRoom(loaded: LoadedRoom, initiator: Side, deps: PlanDe
   if (!a?.signer || !a.source || !b?.signer || !b.source) throw new TradeRoomError("Both sides need a proven Flow Wallet.", 409, "no_wallet")
   try {
     // an all-Top-Shot room signs the original swap (sealed twice on mainnet 2026-10-31);
-    // anything with All Day / Golazos signs the multi-collection swap
+    // anything with All Day / Golazos / UFC signs the multi-collection swap
     if (!isTopShotOnly(loaded)) return await planMultiSwap(multiInput(loaded, a), multiInput(loaded, b), multiDeps)
     return await planSwap(sideInput(loaded, a), sideInput(loaded, b), deps)
   } catch (e) {

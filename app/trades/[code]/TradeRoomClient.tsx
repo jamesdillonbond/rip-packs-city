@@ -6,7 +6,7 @@
 //   1. join (a stranger with the link becomes side B);
 //   2. prove a Flow Wallet (FCL account proof at connect) and pick the account the
 //      Moments sit in — the wallet itself, or a Dapper account it links;
-//   3. pick Moments to give — NBA Top Shot, NFL All Day and LaLiga Golazos, in any mix
+//   3. pick Moments to give — NBA Top Shot, NFL All Day, LaLiga Golazos and UFC Strike, in any mix
 //      (2026-11-02) — chain-checked on save: held, and for Top Shot unlocked;
 //   4. read the notice and accept the proposal AS SEEN (any change resets both);
 //   5. once both accepted: simulate on mainnet, then the initiator's wallet signs and
@@ -47,7 +47,7 @@ const LIVE = new Set(["open", "building", "accepted", "signing"])
 
 /** A pick's identity: moment ids are unique only within a collection. */
 const keyOf = (i: { collection: string; moment_id: string }) => `${i.collection}:${i.moment_id}`
-const SHORT_LABEL: Record<string, string> = { nba_top_shot: "Top Shot", nfl_all_day: "All Day", laliga_golazos: "Golazos" }
+const SHORT_LABEL: Record<string, string> = Object.fromEntries(SWAP_COLLECTIONS.map((c) => [c.dbSlug, c.short]))
 const POLL_MS = 5_000
 
 export default function TradeRoomClient({ code }: { code: string }) {
@@ -277,7 +277,7 @@ function MySide({
         setProof(signed)
         setAccounts(list)
         // one account: no need to ask. With several the user picks where the Moments they'll
-        // give sit (any of Top Shot / All Day / Golazos may live in either)
+        // give sit (any of Top Shot / All Day / Golazos / UFC may live in either)
         if (list.length === 1) await act("wallet", { proof: signed, source: list[0].address }, () => setAccounts(null))
       }
     } catch (e) {
@@ -654,7 +654,7 @@ function Execute({
           waitForSignature: (id: string) => waitForRelaySignature((rid) => call(`${api}?relay=${encodeURIComponent(rid)}`), id),
           onRelay: () => setMsg("Waiting for the other side to sign on their device (about 9 minutes at most)…"),
       }
-      // an all-Top-Shot room signs the original swap; any All Day / Golazos signs the multi-collection one
+      // an all-Top-Shot room signs the original swap; any All Day / Golazos / UFC signs the multi-collection one
       const { txId } = "kind" in plan && plan.kind === "multi" ? await w.sendMultiSwap(plan, io, { onSlow: setHint }) : await w.sendSwap(plan as SwapPlan, io, { onSlow: setHint })
       setMsg("Sealed on chain. Recording it…")
       await act("sealed", { tx_id: txId })
@@ -772,7 +772,7 @@ function Sealed({ room, busy, act }: { room: RoomView; busy: string | null; act:
         <ul style={{ fontSize: 13, fontFamily: MONO, paddingLeft: 18, margin: "0 0 8px" }}>
           {landed.map((m) => (
             <li key={`${m.collection ?? "nba-top-shot"}:${m.id}`} style={{ color: m.held ? undefined : "var(--rpc-danger-text)" }}>
-              {m.collection && m.collection !== "nba-top-shot" ? `${m.collection === "nfl-all-day" ? "All Day" : "Golazos"} ` : ""}
+              {m.collection && m.collection !== "nba-top-shot" ? `${SWAP_COLLECTIONS.find((c) => c.slug === m.collection)?.short ?? m.collection} ` : ""}
               {m.id} {m.held ? "is now in" : "is NOT in"} {shortAddr(m.to)}
             </li>
           ))}

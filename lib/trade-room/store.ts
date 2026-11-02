@@ -1,7 +1,7 @@
 // lib/trade-room/store.ts
 //
 // Trade rooms (migration 20261031174000; multi-collection 20261102205817): the PROPOSAL
-// half of a user-to-user trade of NBA Top Shot, NFL All Day and LaLiga Golazos Moments. Two signed-in RPC users meet in a room, each proves a Flow Wallet,
+// half of a user-to-user trade of NBA Top Shot, NFL All Day, LaLiga Golazos and UFC Strike Moments. Two signed-in RPC users meet in a room, each proves a Flow Wallet,
 // picks the moments they give, and accepts the exact version of the proposal they
 // are looking at. Any change to either side bumps the version and clears both
 // acceptances, so nobody can be held to a proposal that changed under them.
@@ -79,8 +79,8 @@ export interface SideRow {
 }
 
 /** collections.slug of a room item (lib/trade-room/multi-swap-cadence.ts SWAP_COLLECTIONS). */
-export type ItemCollection = "nba_top_shot" | "nfl_all_day" | "laliga_golazos"
-export const ITEM_COLLECTIONS: ReadonlySet<string> = new Set(["nba_top_shot", "nfl_all_day", "laliga_golazos"])
+export type ItemCollection = "nba_top_shot" | "nfl_all_day" | "laliga_golazos" | "ufc_strike"
+export const ITEM_COLLECTIONS: ReadonlySet<string> = new Set(["nba_top_shot", "nfl_all_day", "laliga_golazos", "ufc_strike"])
 
 export interface ItemRow {
   room_id: string
