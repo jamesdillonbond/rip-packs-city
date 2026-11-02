@@ -450,3 +450,71 @@ test.describe("mobile layout at 320px", () => {
     })
   }
 })
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 2026-11-02: the packs board's "Chase left" view and the pack page's chase
+// alert form. Both are CLIENT state behind a click, so the route loops above
+// (which measure the default render) never see them. Each case opens the view,
+// opens one "Alert me" form, and measures with that form open — the widest the
+// surface gets. Positive controls: the view must have rendered its cards (or an
+// honest empty/failed state), so a toggle that stops existing fails instead of
+// measuring the default board and passing.
+// ─────────────────────────────────────────────────────────────────────────────
+async function measureOverflow(page: import("playwright/test").Page, vw: number) {
+  return page.evaluate((w) => {
+    const de = document.documentElement
+    const contained = (el: Element) => {
+      for (let p = el.parentElement; p; p = p.parentElement) {
+        const ox = getComputedStyle(p).overflowX
+        if (ox === "auto" || ox === "scroll" || ox === "hidden" || ox === "clip") return true
+      }
+      return false
+    }
+    const mirrorsViewport = (el: Element) => {
+      const s = getComputedStyle(el)
+      return (s.position === "fixed" || s.position === "sticky") && s.left === "0px" && s.right === "0px"
+    }
+    const offenders: string[] = []
+    for (const el of Array.from(document.querySelectorAll("body *"))) {
+      const b = el.getBoundingClientRect()
+      if (b.width === 0 || b.height === 0 || b.right <= w + 1) continue
+      if (contained(el) || mirrorsViewport(el)) continue
+      offenders.push(`<${el.tagName.toLowerCase()} class="${String((el as HTMLElement).className || "").slice(0, 50)}"> ends at ${Math.round(b.right)}px "${(el.textContent || "").trim().replace(/\s+/g, " ").slice(0, 30)}"`)
+    }
+    return { overflow: de.scrollWidth - de.clientWidth, offenders: offenders.slice(0, 3) }
+  }, vw)
+}
+
+for (const vp of [PHONE, NARROW]) {
+  test.describe(`pack chase surfaces at ${vp.width}px`, () => {
+    test.use({ viewport: vp, isMobile: true, hasTouch: true })
+
+    test(`Chase left view with an Alert me form open does not scroll horizontally at ${vp.width}px`, async ({ page }) => {
+      await page.goto("/nba-top-shot/packs", { waitUntil: "domcontentloaded" })
+      await page.getByRole("button", { name: "Chase left" }).click()
+      // Cards, or the view's own empty / failed state — never the default board.
+      await expect(page.getByText(/per 100 sealed packs|still holds a|Couldn't load the live pack counts/).first()).toBeVisible({ timeout: 20000 })
+      const alertMe = page.getByRole("button", { name: /Alert me/ }).first()
+      if (await alertMe.count()) {
+        await alertMe.click()
+        await expect(page.getByLabel("Alert threshold vs launch")).toBeVisible()
+      }
+      await page.waitForTimeout(500)
+      const { overflow, offenders } = await measureOverflow(page, vp.width)
+      expect(overflow, `Chase left overflows by ${overflow}px at ${vp.width}: ${offenders.join("; ")}`).toBe(0)
+    })
+
+    test(`a Top Shot pack page with its chase Alert me form open does not scroll horizontally at ${vp.width}px`, async ({ page }) => {
+      await page.goto("/nba-top-shot/pack/dist/8905", { waitUntil: "domcontentloaded" })
+      await expect(page.getByText("Packs Content Remaining").first()).toBeVisible({ timeout: 20000 })
+      const alertMe = page.getByRole("button", { name: /Alert me/ }).first()
+      if (await alertMe.count()) {
+        await alertMe.click()
+        await expect(page.getByLabel("Alert threshold vs launch")).toBeVisible()
+      }
+      await page.waitForTimeout(500)
+      const { overflow, offenders } = await measureOverflow(page, vp.width)
+      expect(overflow, `pack page overflows by ${overflow}px at ${vp.width}: ${offenders.join("; ")}`).toBe(0)
+    })
+  })
+}
