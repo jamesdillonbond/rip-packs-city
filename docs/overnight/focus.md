@@ -4,6 +4,14 @@
 
 **Rewrite rule for whoever edits this next: a focus file STEERS the next night, it is not an archive.** If a section is describing something that shipped more than ~a week ago and is not still a live trap, move it to the ledger and delete it here. A stale steer is worse than no steer.
 
+## STEER — added 2026-11-02 ~2:45 PM PT (Claude Code cloud, autonomous session) — expected readings from today's #227 / #221 / writer fixes
+
+- **#227 prune (`20261102214905`):** the next `weekly-wmc-prune` (Sun 11-08 2:20 AM PT) should delete FEWER rows than 11-01's 3,790 — collectors' saved wallets are now exempt (11-02 sizing: 10,775 rows on 9 saved wallets would otherwise have gone). **A regression would look like:** a saved wallet's Top Shot wmc count dropping > 50 % on Sunday and coming back after its next walk (the hold in `snapshot_all_user_portfolios` would then log `held_partial` > 0 on Sunday night).
+- **#227 ULTIMATE source fix (`20261102210500`, other session) — first run tonight 10:45 PM PT:** expect 0 `ultimate-v1` → `thin-sales-guard-v3` reversals > 20 % in the 10:45–11:00 PM PT window and edition `260:8827` at the ask (~$675–720), not $3,333. A self check-in is scheduled at 11:20 PM PT to read it and record the result on #227.
+- **#221:** `resolve_player_name(<Top Shot>, 'Kenyon Martin Jr.')` → KJ Martin (`matched_via: alias`, father as namesake). Placeholder wmc names (`Unknown Play`, blank) = 0. **A regression would look like:** either count > 0 with `created_at` after 11-02.
+- **Writers:** `/api/wallet/seed` no longer writes wmc (it dispatches the multicollection walker; response carries `dispatch`), and `/api/wallet-search` writes degraded rows insert-only. Neither changes a pipeline_runs lane.
+- **Migration auto-recover:** a prod `schema_migrations` row with NULL `statements` (SQL-editor applies) now exits 4: the run commits every recoverable file and then FAILS naming the NULL row — read the step log, the fix is a hand commit, not a re-run.
+
 ## STEER — added 2026-11-01 ~8:10 AM PT (Claude Code local, Trevor's laptop) — two readings
 
 - **Inbox `2026-11-01T1545Z` (`panini-ingest-enum` silent ~947 min) — RESOLVED, no action:** the runner is the laptop task `RPC Panini Ingest` (every 2 h, WakeToRun). Every laptop task last ran in one 7:17:17 AM PT wake burst, so the box was off/asleep from ~5 PM 10-31; `panini-ingest-enum` resumed at **7:59 AM PT** (ok, 139 rows). The 738-min threshold fired correctly at `info` — do not recalibrate it for laptop downtime. **A real stall would look like:** the laptop awake (other RPC tasks running) and still no enum row for >12 h.
