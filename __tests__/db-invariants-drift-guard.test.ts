@@ -2048,7 +2048,8 @@ const PINS = [
     fn: "compute_ultimate_non_special_fmv",
     test: "supabase/tests/compute_ultimate_non_special_fmv.sql",
     // Re-pinned 2026-10-25: the ask is the edition's own (moment_id = external_id), not the player/set's.
-    migration: "supabase/migrations/20261026025000_audit_20261025_ultimate_fmv_reads_the_editions_own_ask_and_retires_an_unsupported_price.sql",
+    // Re-pinned 2026-11-02 (#227): no cached ask -> badge_editions.low_ask (the thin-sales guard's source).
+    migration: "supabase/migrations/20261102210500_audit_20261102_ultimate_fmv_falls_back_to_the_guard_ask.sql",
   },
   {
     fn: "compute_serial_fmv_power_model",

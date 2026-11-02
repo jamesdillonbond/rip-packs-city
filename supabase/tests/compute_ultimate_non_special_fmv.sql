@@ -45,6 +45,9 @@ CREATE TABLE cached_listings (
   ask_price numeric, serial_number integer, moment_id text
 );
 
+-- 2026-11-02 (#227): the fallback ask source (badge_editions.low_ask, the thin-sales guard's source).
+CREATE TABLE badge_editions (external_id text, collection_id uuid, low_ask numeric);
+
 -- Stub the special-serials helper: serial 1 is "special" for every edition.
 CREATE FUNCTION get_ultimate_special_serials(p_edition_id uuid)
   RETURNS integer[] LANGUAGE sql AS $$ SELECT ARRAY[1]::integer[] $$;
@@ -117,6 +120,19 @@ BEGIN
       AND cl.moment_id = v_external_id
       AND cl.ask_price > 0
       AND (v_skip OR NOT (cl.serial_number = ANY(v_specials)));
+  END IF;
+
+  -- 2026-11-02 (#227): when the edition's own cached_listings show no ask, fall back to
+  -- badge_editions.low_ask — the source apply_fmv_thin_sales_guard reads three minutes later.
+  -- Without it this writer published the last sale (e.g. a 1/1's $3,333 from August) every
+  -- night the listing cache flickered, and the guard reversed it to the ask: 14 editions,
+  -- 87 reversals in 7 days, avg 2.7x, readable in the window. badge low_ask has no serial,
+  -- so a special serial's ask can stand in; LEAST(sale, ask) below and the guard both accept that.
+  IF v_low_ask IS NULL AND v_external_id IS NOT NULL THEN
+    SELECT MIN(b.low_ask) INTO v_low_ask
+    FROM badge_editions b
+    WHERE b.external_id = v_external_id AND b.collection_id = v_collection_id
+      AND b.low_ask > 0 AND b.low_ask <= 10000;
   END IF;
 
   IF v_last_sale IS NOT NULL AND v_low_ask IS NOT NULL THEN
@@ -214,6 +230,17 @@ SELECT _assert_eq((SELECT count(*)::text FROM compute_ultimate_non_special_fmv('
 -- 6) E6: circ=1 -> filter_skipped, so even the flagged serial-1 sale counts.
 SELECT _assert_eq((SELECT filter_skipped::text FROM compute_ultimate_non_special_fmv('66666666-6666-6666-6666-666666666666')), 'true', 'E6 circ 1 -> filter skipped');
 SELECT _assert_eq((SELECT last_non_special_sale_price::text FROM compute_ultimate_non_special_fmv('66666666-6666-6666-6666-666666666666')), '9999', 'E6 the special serial-1 sale is NOT excluded when filter is skipped');
+
+-- 8) #227 (2026-11-02): no cached_listings ask -> the badge_editions ask is used, so the writer never
+--    publishes a stale sale the guard reverses minutes later. E6 (1/1, only sale 9999, unlisted in the
+--    cache) now prices at LEAST(sale, badge ask); an ask above the guard's 10000 bound is ignored;
+--    a cached_listings ask still wins over the badge one (E1 unchanged at 100 above).
+INSERT INTO badge_editions VALUES ('k-66666666', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 20000);
+SELECT _assert_eq((SELECT source||'|'||fmv_usd::text FROM compute_ultimate_non_special_fmv('66666666-6666-6666-6666-666666666666')), 'sale_only|9999', '#227 a badge ask above 10000 is ignored');
+INSERT INTO badge_editions VALUES ('k-66666666', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 750);
+SELECT _assert_eq((SELECT source||'|'||confidence||'|'||fmv_usd::text FROM compute_ultimate_non_special_fmv('66666666-6666-6666-6666-666666666666')), 'min_sale_ask|LOW|750', '⛔ #227 an unlisted-in-cache edition with a badge ask never publishes the stale sale');
+INSERT INTO badge_editions VALUES ('k-11111111', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 50);
+SELECT _assert_eq((SELECT lowest_non_special_ask::text FROM compute_ultimate_non_special_fmv('11111111-1111-1111-1111-111111111111')), '200', '#227 the edition''s own cached ask still wins over the badge ask');
 
 SELECT '✓ compute_ultimate_non_special_fmv invariants pass' AS result;
 -- 7) #169: an issuer BUY-BACK is not a market sale. A newer sale to a registered buy-back wallet of
