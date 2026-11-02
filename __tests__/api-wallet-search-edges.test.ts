@@ -525,3 +525,51 @@ describe("wallet-search — cost-basis tails", () => {
     expect(errBody.acquisitionStats).toBeNull()
   })
 })
+
+// 2026-11-02: a degraded read must never overwrite a cached moment.
+describe("wallet-search cache write — degraded reads are not persisted over cached values", () => {
+  const wmcUpserts = (spy: ReturnType<typeof install>) =>
+    (spy.writes.wallet_moments_cache ?? []).filter((w) => w.method === "upsert")
+
+  it("a moment whose enrichment FAILED is written insert-only even with a recovered set:play key", async () => {
+    state.ownedIds = [101]
+    state.metadataById = {} // the Flow metadata leg throws → the degraded fallback row
+    state.gqlById = { "101": momentGql("flow-101", "5") } // GraphQL still yields setID/playID
+    const spy = install(baseFixtures())
+
+    await POST(post({ input: WALLET }))
+    await flush()
+
+    const ups = wmcUpserts(spy)
+    const merge = ups.filter((w) => !w.options?.ignoreDuplicates).flatMap((w) => w.rows)
+    const insertOnly = ups.filter((w) => w.options?.ignoreDuplicates === true).flatMap((w) => w.rows)
+    expect(merge.some((r) => String(r.moment_id) === "101")).toBe(false)
+    const row = insertOnly.find((r) => String(r.moment_id) === "101")
+    expect(row).toBeDefined()
+    // the display sentinels are never stored as names
+    expect(row!.set_name).toBeNull()
+    expect(row!.player_name).toBeNull()
+  })
+
+  it("when the FMV read FAILS, the merge write leaves fmv_usd out instead of writing NULL", async () => {
+    const spy = install(
+      baseFixtures({ "rpc:get_editions_latest_fmv_wide": { data: null, error: { message: "fmv down" } } }),
+    )
+
+    await POST(post({ input: WALLET }))
+    await flush()
+
+    const merge = wmcUpserts(spy).filter((w) => !w.options?.ignoreDuplicates).flatMap((w) => w.rows)
+    expect(merge.length).toBeGreaterThan(0)
+    expect(merge.every((r) => !("fmv_usd" in r))).toBe(true)
+  })
+
+  it("no-change control: a healthy FMV read still writes fmv_usd on the merge rows", async () => {
+    const spy = install(baseFixtures())
+    await POST(post({ input: WALLET }))
+    await flush()
+    const merge = wmcUpserts(spy).filter((w) => !w.options?.ignoreDuplicates).flatMap((w) => w.rows)
+    expect(merge.length).toBeGreaterThan(0)
+    expect(merge.every((r) => "fmv_usd" in r)).toBe(true)
+  })
+})

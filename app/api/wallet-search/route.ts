@@ -66,6 +66,12 @@ type WalletRow = {
    */
   enrichFailed?: boolean
   /**
+   * True when the FMV READ for this request failed (an RPC chunk errored or the
+   * enrichment threw), so `fmv` is UNKNOWN, not "no FMV". The cache write must
+   * not persist that null over a cached value (2026-11-02).
+   */
+  fmvReadFailed?: boolean
+  /**
    * True when `isLocked` on this row came from a source that RECORDS having
    * checked (today: `wallet_moments_cache.lock_checked_at IS NOT NULL`), so
    * it is a reading rather than a default. Needed because `enrichFailed`
@@ -738,6 +744,9 @@ async function batchEnrichFmvAndAsks(rows: WalletRow[]): Promise<WalletRow[]> {
     // 6. Fetch FMV snapshots for resolved edition UUIDs
     const internalIds = [...new Set(extToId.values())]
     const fmvMap = new Map<string, { fmv_usd: number; confidence: string; computed_at: string; algo_version?: string | null }>()
+    // A chunk that errors used to be dropped by `{ data }` destructuring, so its
+    // editions read as "no FMV" and the cache write nulled their cached value.
+    let fmvReadError = false
 
     if (internalIds.length) {
       const fmvChunks: Promise<any>[] = []
@@ -755,7 +764,8 @@ async function batchEnrichFmvAndAsks(rows: WalletRow[]): Promise<WalletRow[]> {
         )
       }
       const fmvResults = await Promise.all(fmvChunks)
-      for (const { data } of fmvResults) {
+      for (const { data, error } of fmvResults) {
+        if (error) fmvReadError = true
         for (const row of (data ?? [])) {
           // Keep only the most recent snapshot per edition
           if (!fmvMap.has(row.edition_id)) fmvMap.set(row.edition_id, row)
@@ -840,7 +850,8 @@ async function batchEnrichFmvAndAsks(rows: WalletRow[]): Promise<WalletRow[]> {
               )
             }
             const newFmvResults = await Promise.all(newFmvChunks)
-            for (const { data } of newFmvResults) {
+            for (const { data, error } of newFmvResults) {
+              if (error) fmvReadError = true
               for (const row of (data ?? [])) {
                 if (!fmvMap.has(row.edition_id)) fmvMap.set(row.edition_id, row)
               }
@@ -885,6 +896,7 @@ async function batchEnrichFmvAndAsks(rows: WalletRow[]): Promise<WalletRow[]> {
       return {
         ...row,
         fmv: fmvData?.fmv ?? null,
+        ...(fmvReadError ? { fmvReadFailed: true } : {}),
         marketConfidence: fmvData?.confidence ?? null,
         fmvCapped: fmvData?.capped ?? null,
         fmvComputedAt: fmvData?.computedAt ?? null,
@@ -897,7 +909,7 @@ async function batchEnrichFmvAndAsks(rows: WalletRow[]): Promise<WalletRow[]> {
     return enrichedRows
   } catch (err) {
     console.warn("[wallet-search] FMV/ask enrichment failed:", err instanceof Error ? err.message : String(err))
-    return rows
+    return rows.map((r) => ({ ...r, fmvReadFailed: true }))
   }
 }
 
@@ -1042,7 +1054,9 @@ async function upsertWalletMomentsCache(wallet: string, rows: WalletRow[]) {
       // editions carried it on 2026-09-03 (known-issues #18). NULL is the honest
       // store value; the self-heal can fill it later.
       player_name: r.playerName && r.playerName !== "Unknown (error loading)" ? r.playerName : null,
-      set_name: r.setName ?? null,
+      // Same rule as the player sentinel: "Unknown Set" is the degraded row's
+      // display label, never a stored set name.
+      set_name: r.setName && r.setName !== "Unknown Set" ? r.setName : null,
       // ⚠ Not `Number(r.series) || null`: Top Shot's on-chain Series 1 is 0,
       // and `0 || null` wrote NULL for every Series 1 moment (2026-09-24).
       series_number: r.series != null && r.series !== "" && Number.isFinite(Number(r.series)) ? Number(r.series) : null,
@@ -1122,12 +1136,21 @@ async function upsertWalletMomentsCache(wallet: string, rows: WalletRow[]) {
 
     // Split rows by edition_key availability so that rows that failed to
     // resolve edition_key don't clobber previously-cached edition_key values.
+    // A row whose per-moment enrichment FAILED is degraded even when a set:play
+    // key was recovered from the fallback (2026-11-02): its acquired_at,
+    // thumbnail, names and series are unread, so it goes to the insert-only set
+    // below, keeping its key for a never-cached moment.
     const resolvedRows = rows
-      .filter(r => r.momentId && r.editionKey)
+      .filter(r => r.momentId && r.editionKey && !r.enrichFailed)
       .map(r => ({ ...baseRow(r), edition_key: resolveEditionKey(r.editionKey) }))
     const unresolvedRows = rows
-      .filter(r => r.momentId && !r.editionKey)
-      .map(r => baseRow(r))
+      .filter(r => r.momentId && (!r.editionKey || r.enrichFailed))
+      .map(r => (r.editionKey ? { ...baseRow(r), edition_key: resolveEditionKey(r.editionKey) } : baseRow(r)))
+    // When the FMV read failed, fmv_usd is unknown on every row: leave the
+    // column out of the merge write so a cached value survives.
+    if (rows.some(r => r.fmvReadFailed)) {
+      for (const row of resolvedRows) delete (row as { fmv_usd?: number | null }).fmv_usd
+    }
 
     // Best-effort fill (the backfill walks are authoritative), but the log line
     // is the only record it leaves, so it counts rows WRITTEN, not rows offered
