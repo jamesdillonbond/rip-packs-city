@@ -121,3 +121,23 @@ describe("helpers", () => {
     expect(fmtPer100(5.6)).not.toContain("%")
   })
 })
+
+import { tierDensity } from "@/lib/packs/chase-odds"
+
+describe("tierDensity (pack page tier bars)", () => {
+  it("computes now vs launch from one payload", () => {
+    const d = tierDensity(1, 3, 18, 719)!
+    expect(d.per100Now).toBeCloseTo(100 / 18, 6)
+    expect(d.vsLaunch).toBeCloseTo((100 / 18) / (300 / 719), 6)
+  })
+  it("a sold-out tier reads 0 now, not null", () => {
+    expect(tierDensity(0, 3, 18, 719)).toMatchObject({ per100Now: 0, vsLaunch: 0 })
+  })
+  it("refuses missing, non-positive or inconsistent counts", () => {
+    expect(tierDensity(1, 3, null, 719)).toBeNull()
+    expect(tierDensity(1, 3, 0, 719)).toBeNull()
+    expect(tierDensity(1, 0, 18, 719)).toBeNull()
+    expect(tierDensity(4, 3, 18, 719)).toBeNull()
+    expect(tierDensity(1, 3, 800, 719)).toBeNull()
+  })
+})

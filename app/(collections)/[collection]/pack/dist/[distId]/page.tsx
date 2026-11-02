@@ -91,6 +91,7 @@ import { withAsOf, depletionTileAsOf, packsRemainingTileAsOf } from "@/lib/pack-
 import { unsoldAtCloseLabel } from "@/lib/pack-dist/unsold-at-close"
 import { collectionHasDropPool } from "@/lib/packs/drop-pool"
 import { pickTierCounts, observedOpensFloorLabel } from "@/lib/pack-dist/tier-counts"
+import { fmtPer100, fmtVsLaunch, tierDensity } from "@/lib/packs/chase-odds"
 import { summarizeDegraded, boardStatus } from "@/lib/insights/board-status"
 import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
@@ -1330,6 +1331,10 @@ export default async function PackDetailPage(
         updatedAt={tierCountsUpdatedAt}
         hasDropPool={hasDropPool}
         tierAccent={tierAccent}
+        // The tier maps' OWN pack counts (same payload, same stamp) — never the
+        // ring's effective* figures, which may come from another counter.
+        tierUnopened={isRewardPack ? null : metaTotalUnopened}
+        tierTotalPacks={isRewardPack ? null : metaTotalPackCount}
       />
 
       {/* ── Pull odds by tier (PACKVIZ 2b) ───────────────────────────────── */}
@@ -1877,6 +1882,8 @@ function PacksContentRemaining({
   updatedAt,
   hasDropPool,
   tierAccent,
+  tierUnopened = null,
+  tierTotalPacks = null,
 }: {
   unopened: number | null
   totalMinted: number | null
@@ -1885,6 +1892,8 @@ function PacksContentRemaining({
   updatedAt: string | null
   hasDropPool: boolean
   tierAccent: string
+  tierUnopened?: number | null
+  tierTotalPacks?: number | null
 }) {
   if (!hasDropPool) return null
   const hasRing = totalMinted != null && totalMinted > 0 && unopened != null
@@ -1994,6 +2003,20 @@ function PacksContentRemaining({
                   <div style={{ height: 8, borderRadius: 4, background: "var(--rpc-surface-hover)", overflow: "hidden" }}>
                     <div style={{ width: `${pct}%`, height: "100%", background: chip.color, borderRadius: 4 }} />
                   </div>
+                  {(() => {
+                    // Density today vs launch (lib/packs/chase-odds.ts): an average
+                    // per 100 sealed packs, never a per-pack chance. Only for the
+                    // scarce tiers, where "is it richer than launch" is the question.
+                    if (t !== "legendary" && t !== "ultimate" && t !== "rare") return null
+                    const d = tierDensity(remaining, original, tierUnopened, tierTotalPacks)
+                    if (!d) return null
+                    return (
+                      <div style={{ marginTop: 3, fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--rpc-text-muted)" }}>
+                        {fmtPer100(d.per100Now)} per 100 sealed packs · launch {fmtPer100(d.per100Launch)}
+                        {d.per100Now > 0 ? ` · ${fmtVsLaunch(d.vsLaunch)}` : ""}
+                      </div>
+                    )
+                  })()}
                 </div>
               )
             })}

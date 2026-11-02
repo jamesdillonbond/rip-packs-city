@@ -176,6 +176,7 @@ export function buildChaseRows(
 /** "5.6", "0.42", "120" — enough precision to compare, never false precision. */
 export function fmtPer100(v: number): string {
   if (!Number.isFinite(v)) return "—"
+  if (v === 0) return "0"
   if (v >= 10) return v.toFixed(0)
   if (v >= 1) return v.toFixed(1)
   return v.toFixed(2)
@@ -186,4 +187,25 @@ export function fmtVsLaunch(v: number | null): string {
   if (v == null || !Number.isFinite(v)) return "—"
   if (v >= 0.9 && v <= 1.1) return "≈ launch rate"
   return `${v >= 10 ? v.toFixed(0) : v.toFixed(1)}× launch rate`
+}
+
+/**
+ * One tier's density today vs at launch, for the pack page's tier bars. All four
+ * inputs MUST come from one payload (one source, one stamp — pickTierCounts);
+ * null whenever any is missing, non-positive, or inconsistent, so the caller
+ * renders nothing rather than a ratio over mixed or absent counts.
+ */
+export function tierDensity(
+  remaining: number | null | undefined,
+  original: number | null | undefined,
+  unopened: number | null | undefined,
+  totalPacks: number | null | undefined,
+): { per100Now: number; per100Launch: number; vsLaunch: number } | null {
+  const ok = (v: number | null | undefined): v is number => typeof v === "number" && Number.isFinite(v)
+  if (!ok(remaining) || !ok(original) || !ok(unopened) || !ok(totalPacks)) return null
+  if (remaining < 0 || original <= 0 || unopened <= 0 || totalPacks <= 0) return null
+  if (remaining > original || unopened > totalPacks) return null
+  const per100Now = (100 * remaining) / unopened
+  const per100Launch = (100 * original) / totalPacks
+  return { per100Now, per100Launch, vsLaunch: per100Now / per100Launch }
 }
