@@ -549,6 +549,12 @@ export default function FastBreakClient({
         </div>
         {uses.loading && !uses.data ? (
           <UsesSkeleton />
+        ) : uses.error != null && !uses.data && useRows.length === 0 ? (
+          // 2026-11-02: a failed read used to say "No lineups saved yet" and invite a re-save.
+          <div style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--rpc-danger-text)", lineHeight: 1.6 }}>
+            Your run progress couldn&apos;t be loaded — that is our side; saved lineups are not lost.{" "}
+            <button onClick={uses.refresh} className="rpc-btn-ghost" style={{ marginLeft: 8 }}>Retry</button>
+          </div>
         ) : useRows.length === 0 ? (
           <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-secondary)", lineHeight: 1.6 }}>
             No lineups saved yet. Save tonight&apos;s lineup to start the run.

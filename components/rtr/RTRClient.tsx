@@ -132,7 +132,9 @@ function TonightsPickSection() {
   )
 
   const top: LivePick | null = picks.data?.picks?.[0] ?? null
-  const isEmpty = !picks.loading && !top
+  // 2026-11-02: a FAILED read is not "no odds" — it gets its own branch below.
+  const failed = !picks.loading && !picks.data && picks.error != null
+  const isEmpty = !picks.loading && !top && !failed
   const noFreshNote = picks.data?.message === "no_fresh_odds" ? picks.data?.note ?? null : null
 
   return (
@@ -140,6 +142,11 @@ function TonightsPickSection() {
       <div style={SECTION_HEADER}>Tonight&apos;s Pick</div>
       {picks.loading && !picks.data ? (
         <div style={{ height: 60, background: "rgba(255,255,255,0.04)", borderRadius: "var(--radius-md)" }} />
+      ) : failed ? (
+        <div style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--rpc-danger-text)", lineHeight: 1.6 }}>
+          Tonight&apos;s pick couldn&apos;t be loaded — that is our side, not a quiet slate.{" "}
+          <button onClick={picks.refresh} className="rpc-btn-ghost" style={{ marginLeft: 8 }}>Retry</button>
+        </div>
       ) : isEmpty ? (
         <div
           style={{
@@ -337,6 +344,12 @@ function TierProgressSection({ walletAddr: _walletAddr }: { walletAddr: string }
 
       {state.loading && !state.data ? (
         <div style={{ height: 96, background: "rgba(255,255,255,0.04)", borderRadius: "var(--radius-md)" }} />
+      ) : state.error != null && !current ? (
+        // 2026-11-02: a failed read used to render the lowest tier at "0 pts" — a claim about the user's run.
+        <div style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--rpc-danger-text)", lineHeight: 1.6 }}>
+          Your tier progress couldn&apos;t be loaded — that is our side; your points are not zero.{" "}
+          <button onClick={state.refresh} className="rpc-btn-ghost" style={{ marginLeft: 8 }}>Retry</button>
+        </div>
       ) : (
         <>
           <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
@@ -526,6 +539,12 @@ function LockRoiSection({ walletAddr }: { walletAddr: string }) {
           {Array.from({ length: 5 }).map((_, i) => (
             <div key={i} style={{ height: 32, background: "rgba(255,255,255,0.05)", borderRadius: 4 }} />
           ))}
+        </div>
+      ) : data.error != null && !data.data ? (
+        // 2026-11-02: a failed read used to say the WALLET had no usable moments and send the user to re-run a search.
+        <div style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--rpc-danger-text)", lineHeight: 1.6 }}>
+          Lock ROI couldn&apos;t be loaded — that is our side, not your wallet.{" "}
+          <button onClick={data.refresh} className="rpc-btn-ghost" style={{ marginLeft: 8 }}>Retry</button>
         </div>
       ) : sorted.length === 0 ? (
         <div style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--rpc-text-secondary)" }}>
