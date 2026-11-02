@@ -78,7 +78,9 @@ Trevor, 2026-11-02 (PT): "a Trade Block or Trade Post, where users can put up as
 
 Edition pages too (~11:45 AM PT): "N open Trade Block listings offer or want this edition" (`?edition=<catalog key>` on the public route, which refuses an edition without its collection — keys collide across collections; `/trades/block?collection=&edition=` deep links with a "Show all" reset). The browse filter's candidate read now PAGES the lines past PostgREST's 1,000-row clamp (bounded at 10 pages, then a 503 — never a partial set) and reads the listings in id chunks.
 
-**Next (not built):** the prune for old closed/expired listings and old notice claims is WRITTEN but not applied — `docs/pending/trade-block-prune-run-in-sql-editor.sql` (the MCP holds a body carrying DELETE; run it in the SQL editor, then commit it as a migration); All Day / Golazos signing once their swap paths are proven.
+**Housekeeping (shipped 11-02 ~12:16 PM PT):** `prune_trade_block(60, 30)` on pg_cron `rpc-prune-trade-block` (04:57 UTC daily) deletes listings closed or expired > 60 d (items/proposals cascade) unless a proposal on them was accepted, and match-notice claims > 30 d; proven accounts untouched (migration `20261102201500`, applied through the dashboard SQL editor).
+
+**Next (not built):** All Day / Golazos signing once their swap paths are proven.
 
 ## Open — in order
 
