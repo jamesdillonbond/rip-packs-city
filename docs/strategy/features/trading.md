@@ -74,7 +74,9 @@ Trevor, 2026-11-02 (PT): "a Trade Block or Trade Post, where users can put up as
 - **Concierge** — `get_trade_block` reads the public block (player/character/set, collection); it cannot post or propose and says so.
 - Hardening found on the way: the items read behind every list was ONE `.in()` that PostgREST would clamp at 1,000 rows once enough listings existed (silently dropping lines) — now chunked at 40 listings (≤ 800 rows) per read.
 
-**Next (not built):** "N on the block / N wanted" on player and edition pages; the prune for old closed/expired listings and old notice claims is WRITTEN but not applied — `docs/pending/trade-block-prune-run-in-sql-editor.sql` (the MCP holds a body carrying DELETE; run it in the SQL editor, then commit it as a migration); All Day / Golazos signing once their swap paths are proven; the browse filter's 1,000-line candidate read (fine at today's volume) should page once the block is large.
+**v3 (2026-11-02, ~11:15 AM PT):** every player / character page (the shared `[collection]/player/[slug]` page, so Pinnacle's `/character/` too) shows "N open Trade Block listings mention <name> →" from a client read of the public block — decorative, rendered only on a successful read that found ≥ 1 listing (`components/entity/OnTheBlockLink.tsx`); `/trades/block?collection=&q=` deep links start filtered.
+
+**Next (not built):** the same module on edition pages; the prune for old closed/expired listings and old notice claims is WRITTEN but not applied — `docs/pending/trade-block-prune-run-in-sql-editor.sql` (the MCP holds a body carrying DELETE; run it in the SQL editor, then commit it as a migration); All Day / Golazos signing once their swap paths are proven; the browse filter's 1,000-line candidate read (fine at today's volume) should page once the block is large.
 
 ## Open — in order
 

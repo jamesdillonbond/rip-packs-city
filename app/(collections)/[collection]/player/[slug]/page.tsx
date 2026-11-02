@@ -33,6 +33,7 @@ import { editionRouteHref } from "@/lib/entity-href"
 import { fetchPaniniPlayerSales, type PaniniPlayerSale } from "@/lib/panini/player-sales"
 import { saleSerialLabel } from "@/lib/entity/sale-serial-label"
 import MarketCapTile from "@/components/entity/MarketCapTile"
+import OnTheBlockLink from "@/components/entity/OnTheBlockLink"
 import TeamChecklist from "@/components/entity/TeamChecklist"
 import { getCollection } from "@/lib/collections"
 import { fetchPlayerHub, playerHubPath, routableEntries, groupBySport } from "@/lib/player-hub"
@@ -630,6 +631,9 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
                 Top Shot This trade-in: cheapest {detail.name} pack →
               </Link>
             )}
+            {/* 2026-11-02: the Trade Block — decorative, client-side; renders only when a
+                successful read finds open listings naming this player / character. */}
+            <OnTheBlockLink collection={collection} name={detail.name} />
           </div>
         </div>
       </section>

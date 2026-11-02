@@ -43,8 +43,17 @@ export default function BlockBrowseClient() {
 
   useEffect(() => {
     let live = true
-    void call(url("", "", null)).then((r) => {
+    // a deep link (/trades/block?collection=…&q=…, e.g. from a player page) starts filtered;
+    // an unknown collection is passed through and refused by the route, never dropped silently
+    const sp = new URLSearchParams(window.location.search)
+    const initial = { collection: sp.get("collection") ?? "", q: (sp.get("q") ?? "").slice(0, 80) }
+    void call(url(initial.collection, initial.q, null)).then((r) => {
       if (!live) return
+      if (initial.collection || initial.q) {
+        setCollection(initial.collection)
+        setQ(initial.q)
+        setApplied(initial)
+      }
       if (!r.ok || !Array.isArray(r.body?.listings)) return setLoad({ kind: "error", error: r.ok ? "The response had no listings in it." : errorOf(r) })
       setLoad({ kind: "ok", listings: r.body.listings as ListingView[], next: typeof r.body.next_before === "string" ? r.body.next_before : null, more: false })
     })
