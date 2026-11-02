@@ -39,6 +39,8 @@ Three values must never be labelled as one another (packs.md 09-26): the EV of w
 
 - **11-02 ~6:30 AM PT:** the concierge answers chase questions (`get_pack_chase`, same route, density-not-% rule in the tool result).
 
+- **11-02 ~8:45 AM PT:** pack-chase ALERTS — watch a Top Shot dist/tier and get email/Telegram/Discord when its density reaches N× launch (`pack_chase_watches`, alerts-dispatch leg, /alerts panel). Edge-triggered, once per watch per PT day at most.
+
 ## Cross-collection parity (2026-10-19 ~7:30 PM PT, Claude Code cloud)
 
 Shipped this pass (ledger 10-19):
@@ -100,7 +102,7 @@ Still open, with the reason each one waits:
    - (original item) **Pinnacle and All Day remaining-pool freshness.** Put a dated "as of" on every pool surface, as Top Shot now has. Falsifier: any pool rendered without its source age.
 
 **Later**
-5. **Rookie Debut (2026-11-11) packs.** The rookie class must be rebuilt from Series 9 sets before the rookie-pack boards use it. Do not seed it from the draft (roadmap-status 10-17).
+5. **Rookie Debut (2026-11-11) packs.** ✅ Re-read 11-02: the 2026 class already self-fills from Series 9 `Rookie Debut` (roadmap-status); new Rookie Debut dists reach the board, Chase left and pack-chase alerts through the Atlas lane with no change. Owed: the 11-11 verify (scheduled 6:17 PM PT). Do not seed the class from the draft.
 6. **Giveaway contract**, only if Trevor gives the §9 go-ahead (audit → deploy account → deploy). Nothing user-facing is blocked meanwhile.
 
 ## Decisions on record (do not re-litigate)
