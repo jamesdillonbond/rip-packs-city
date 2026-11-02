@@ -92,6 +92,7 @@ import { unsoldAtCloseLabel } from "@/lib/pack-dist/unsold-at-close"
 import { collectionHasDropPool } from "@/lib/packs/drop-pool"
 import { pickTierCounts, observedOpensFloorLabel } from "@/lib/pack-dist/tier-counts"
 import { fmtPer100, fmtVsLaunch, tierDensity } from "@/lib/packs/chase-odds"
+import WatchChaseButton from "@/components/packs/WatchChaseButton"
 import { summarizeDegraded, boardStatus } from "@/lib/insights/board-status"
 import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
@@ -1335,6 +1336,9 @@ export default async function PackDetailPage(
         // ring's effective* figures, which may come from another counter.
         tierUnopened={isRewardPack ? null : metaTotalUnopened}
         tierTotalPacks={isRewardPack ? null : metaTotalPackCount}
+        // Pack-chase alerts exist only for Top Shot (Atlas per-tier counts); the
+        // route refuses a dist with no live counts, so no other gate is needed.
+        chaseWatchDistId={collection === "nba-top-shot" && !isRewardPack ? distId : null}
       />
 
       {/* ── Pull odds by tier (PACKVIZ 2b) ───────────────────────────────── */}
@@ -1884,6 +1888,7 @@ function PacksContentRemaining({
   tierAccent,
   tierUnopened = null,
   tierTotalPacks = null,
+  chaseWatchDistId = null,
 }: {
   unopened: number | null
   totalMinted: number | null
@@ -1894,6 +1899,7 @@ function PacksContentRemaining({
   tierAccent: string
   tierUnopened?: number | null
   tierTotalPacks?: number | null
+  chaseWatchDistId?: string | null
 }) {
   if (!hasDropPool) return null
   const hasRing = totalMinted != null && totalMinted > 0 && unopened != null
@@ -2014,6 +2020,9 @@ function PacksContentRemaining({
                       <div style={{ marginTop: 3, fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--rpc-text-muted)" }}>
                         {fmtPer100(d.per100Now)} per 100 sealed packs · launch {fmtPer100(d.per100Launch)}
                         {d.per100Now > 0 ? ` · ${fmtVsLaunch(d.vsLaunch)}` : ""}
+                        {chaseWatchDistId && (
+                          <WatchChaseButton distId={chaseWatchDistId} tier={t} tierLabel={t.charAt(0).toUpperCase() + t.slice(1)} />
+                        )}
                       </div>
                     )
                   })()}
