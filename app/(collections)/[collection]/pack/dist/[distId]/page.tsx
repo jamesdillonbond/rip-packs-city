@@ -2020,7 +2020,8 @@ function PacksContentRemaining({
                       <div style={{ marginTop: 3, fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--rpc-text-muted)" }}>
                         {fmtPer100(d.per100Now)} per 100 sealed packs · launch {fmtPer100(d.per100Launch)}
                         {d.per100Now > 0 ? ` · ${fmtVsLaunch(d.vsLaunch)}` : ""}
-                        {chaseWatchDistId && (
+                        {/* A sold-out tier never refills (remaining only falls), so a watch on it could never fire. */}
+                        {chaseWatchDistId && remaining > 0 && (
                           <WatchChaseButton distId={chaseWatchDistId} tier={t} tierLabel={t.charAt(0).toUpperCase() + t.slice(1)} />
                         )}
                       </div>
