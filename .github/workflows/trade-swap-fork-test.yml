@@ -1,0 +1,96 @@
+name: Trade swap fork test (execute the real transactions on a mainnet fork)
+
+# 2026-11-02 (Trevor: "Keep going"). The trade room's swap TRANSACTIONS had been
+# simulated (a script built from the same fragments) and type-checked against the
+# deployed contracts (cadence-swap-lint.yml) — but never EXECUTED as transactions
+# before a real one is signed. This runs them on a local Flow emulator FORKED from
+# mainnet: it reads mainnet state lazily and keeps every write local, so nothing ever
+# reaches mainnet. `--skip-tx-validation` lets the two real accounts authorize without
+# their keys. scripts/cadence/fork-swap-test.ts plans each case with the production
+# planner, submits the real transaction, and checks it SEALED with no error, that every
+# Moment landed in the other side's account (read from the fork), and the computation used.
+#
+# ON DEMAND ONLY. It reads two real collectors' current holdings (Trevor's and his
+# wife's, the 10-31 live-test wallets, unless overridden), which change; a schedule would
+# turn ordinary trading into red runs. Run it before shipping a change to the swap texts
+# and before the first real trade of a new collection.
+#
+# ⚠ The fork needs raw gRPC to an access node (port 9000). A GitHub runner has it; a
+# cloud sandbox behind an HTTP proxy does not (HTTP/2 framing fails), which is why this
+# lives here.
+
+on:
+  workflow_dispatch:
+    inputs:
+      side_a:
+        description: 'Side A "signer:source" (Flow Wallet : account its Moments sit in)'
+        required: false
+        default: "0x3d0b274c80263484:0xbd94cade097e50ac"
+      side_b:
+        description: 'Side B "signer:source"'
+        required: false
+        default: "0x68c1fb83ba8e634a:0xa3d67b29e104e701"
+
+permissions:
+  contents: read
+
+jobs:
+  fork-test:
+    name: Execute the swap transactions on a mainnet fork
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      FLOW_CLI_VERSION: v2.19.0
+      FLOW_CLI_SHA256: 6d9cf90011b91cceaa193b7e864be991f343066babd3c4c5f67c4fa0f7813d88
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - name: Install the Flow CLI (pinned version + checksum)
+        run: |
+          set -euo pipefail
+          url="https://github.com/onflow/flow-cli/releases/download/${FLOW_CLI_VERSION}/flow-cli-${FLOW_CLI_VERSION}-linux-amd64.tar.gz"
+          curl -fsSL -o flow.tgz "$url"
+          echo "${FLOW_CLI_SHA256}  flow.tgz" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/flow"
+          tar xzf flow.tgz -C "$RUNNER_TEMP/flow"
+          echo "FLOW_CLI=$RUNNER_TEMP/flow/flow-cli" >> "$GITHUB_ENV"
+      - name: Start the mainnet-fork emulator
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/fork" && cd "$RUNNER_TEMP/fork"
+          # a throwaway service key for the emulator itself (never a real account's)
+          key=$("$FLOW_CLI" keys generate -o json | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).private))')
+          node -e '
+            const fs = require("fs")
+            fs.writeFileSync("flow.json", JSON.stringify({
+              networks: { emulator: "127.0.0.1:3569", mainnet: "access.mainnet.nodes.onflow.org:9000" },
+              accounts: { "emulator-account": { address: "f8d6e0586b0a20c7", key: process.argv[1] } },
+              contracts: {}, deployments: {},
+            }, null, 2))' "$key"
+          nohup "$FLOW_CLI" emulator --fork mainnet --skip-tx-validation --computation-reporting -f flow.json > emulator.log 2>&1 &
+          for i in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:8888/v1/blocks?height=sealed > /dev/null 2>&1; then echo "fork up after ${i}s"; exit 0; fi
+            sleep 1
+          done
+          echo "the fork did not come up:"; tail -40 emulator.log; exit 1
+      - name: Execute the swaps on the fork
+        env:
+          EMULATOR_REST: http://127.0.0.1:8888/v1
+          SIDE_A: ${{ inputs.side_a }}
+          SIDE_B: ${{ inputs.side_b }}
+        run: |
+          set -euo pipefail
+          npx --yes tsx@4.20.6 scripts/cadence/fork-swap-test.ts | tee fork.out
+          {
+            echo "### Trade swaps executed on a mainnet fork"
+            echo '```'
+            cat fork.out
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Emulator log (on failure)
+        if: failure()
+        run: tail -80 "$RUNNER_TEMP/fork/emulator.log" || true
