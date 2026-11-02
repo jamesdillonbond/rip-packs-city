@@ -91,10 +91,16 @@ async function buildEmail(origin: string, sub: Subscriber, market: MarketBlocks)
     ? `${origin}/api/subscribe/unsubscribe?token=${sub.verification_token}`
     : `${origin}/profile`
 
+  // 2026-11-02: total_pnl is summed only over moments with a KNOWN purchase price, and the cross-collection
+  // total starts at 0 — so a holder with no known cost was mailed "P&L: +$0.00", and partial coverage read as
+  // a whole-portfolio P&L. Print it only when some cost basis is known, and say what it covers.
+  const showPnl = portfolio?.total_pnl != null && Number(portfolio?.total_cost_basis) > 0
+  const pnlText = showPnl ? `${portfolio.total_pnl >= 0 ? "+" : ""}${fmtUsd(portfolio.total_pnl)} on moments with a known purchase price` : null
+
   const portfolioBlock = portfolio && portfolio.collections?.length
     ? `<h3 style="margin-top:24px">Your Portfolio</h3>
        <p><strong>Total FMV:</strong> ${fmtUsd(portfolio.total_fmv)} across ${portfolio.collection_count ?? portfolio.collections.length} collections (${portfolio.total_moments ?? 0} moments)</p>
-       ${portfolio.total_pnl != null ? `<p><strong>P&L:</strong> ${portfolio.total_pnl >= 0 ? "+" : ""}${fmtUsd(portfolio.total_pnl)}</p>` : ""}`
+       ${pnlText ? `<p><strong>P&L:</strong> ${pnlText}</p>` : ""}`
     : ""
 
   const dealRows: any[] = Array.isArray(deals?.deals) ? deals.deals : []
@@ -132,7 +138,7 @@ async function buildEmail(origin: string, sub: Subscriber, market: MarketBlocks)
   const lines: string[] = ["Rip Packs City — Weekly Digest", ""]
   if (portfolio && portfolio.collections?.length) {
     lines.push("YOUR PORTFOLIO", `Total FMV: ${fmtUsd(portfolio.total_fmv)} across ${portfolio.collection_count ?? portfolio.collections.length} collections (${portfolio.total_moments ?? 0} moments)`)
-    if (portfolio.total_pnl != null) lines.push(`P&L: ${portfolio.total_pnl >= 0 ? "+" : ""}${fmtUsd(portfolio.total_pnl)}`)
+    if (pnlText) lines.push(`P&L: ${pnlText}`)
     lines.push("")
   }
   if (dealRows.length) {

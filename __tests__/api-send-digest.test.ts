@@ -106,6 +106,31 @@ describe("GET /api/send-digest", () => {
     expect(body.html).toContain("PO Box 123, Portland, OR 97201")
   })
 
+  // 2026-11-02: total_pnl covers only moments with a KNOWN purchase price and starts at 0, so a holder with no
+  // known cost was mailed "P&L: +$0.00". Assert the ABSENCE of that claim, and the scoped label when it shows.
+  it("prints NO P&L line when no cost basis is known (never a fabricated +$0.00)", async () => {
+    seedOneSubscriber()
+    state.rpc.get_cross_collection_portfolio = { data: { total_fmv: 1234, collection_count: 2, total_moments: 9, total_pnl: 0, total_cost_basis: 0, collections: [{}, {}] }, error: null }
+    process.env.RESEND_API_KEY = "re_test"
+    const fetchMock = vi.fn(async () => ({ ok: true }) as any)
+    vi.stubGlobal("fetch", fetchMock)
+    await GET(req(`Bearer ${TOKEN}`))
+    const body = JSON.parse(String((fetchMock.mock.calls[0] as any[])[1].body))
+    expect(body.html).not.toContain("P&L")
+    expect(body.text).not.toContain("P&L")
+  })
+
+  it("prints P&L scoped to moments with a known purchase price when cost basis exists", async () => {
+    seedOneSubscriber()
+    state.rpc.get_cross_collection_portfolio = { data: { total_fmv: 1234, collection_count: 2, total_moments: 9, total_pnl: 50, total_cost_basis: 400, collections: [{}, {}] }, error: null }
+    process.env.RESEND_API_KEY = "re_test"
+    const fetchMock = vi.fn(async () => ({ ok: true }) as any)
+    vi.stubGlobal("fetch", fetchMock)
+    await GET(req(`Bearer ${TOKEN}`))
+    const body = JSON.parse(String((fetchMock.mock.calls[0] as any[])[1].body))
+    expect(body.html).toContain("+$50.00 on moments with a known purchase price")
+  })
+
   it("returns a zeroed summary when there are no subscribers", async () => {
     state.result = { data: [], error: null }
     const res = await GET(req(`Bearer ${TOKEN}`))
