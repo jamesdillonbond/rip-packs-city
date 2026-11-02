@@ -1,3 +1,7 @@
+-- APPLIED 2026-11-02 ~8:45 AM PT via the dashboard SQL editor (Cowork cloud, Chrome; Trevor: "Take care of these").
+-- Verbatim copy of docs/pending/142-quarantine-run-in-sql-editor.sql (moved here). Verified after: falsifier 0,
+-- quarantine 164 rows / $1,673.51, get_wallet_acquisition_data(text, text[]) gone, RLS on, anon SELECT false.
+
 -- Quarantine the 164 cost-basis rows priced from ANOTHER collection's sale
 -- (2026-10-31; the writer was fixed in the preceding migration).
 --
