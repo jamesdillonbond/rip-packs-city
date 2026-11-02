@@ -525,6 +525,45 @@ describe("concierge — get_trade_in (2026-10-31)", () => {
   })
 })
 
+// 2026-11-02: Top Shot "Chase left". Relays /api/packs/chase with densities rounded and a
+// rule that forbids quoting them as a %; another collection is refused (never Top Shot's
+// packs); a failed read is an error, never "no chase left"; an ok-empty read says so.
+describe("concierge — get_pack_chase (2026-11-02)", () => {
+  const row = { distId: "5727", title: "Rookie Revelation: Chance Hit", tier: "legendary", remaining: 1, original: 18, unopened: 30, totalPacks: 9998, per100Now: 3.3333333, per100Launch: 0.18003600720144028, vsLaunch: 18.514814814814816, buyable: true, asOf: "2026-11-01T12:48:00Z" }
+  it("reads the chase route buyable-only by default and relays rounded densities", async () => {
+    const f = stubFetch([jsonRoute("/api/packs/chase", { rows: [row], total: 201 })])
+    const r = await drive("get_pack_chase", { tier: "legendary", limit: 3 })
+    const url = f.calls.find((c) => c.url.includes("/api/packs/chase"))!.url
+    expect(url).toContain("collection=nba-top-shot")
+    expect(url).toContain("buyableOnly=true")
+    expect(url).toContain("sort=vsLaunch")
+    expect(url).toContain("limit=3")
+    expect(r).toMatchObject({ status: "ok", total_matching: 201, count: 1 })
+    expect((r.rows as unknown[])[0]).toMatchObject({ per100_now: 3.33, vs_launch: 18.5, page: "/nba-top-shot/pack/dist/5727" })
+    expect(String(r.rule)).toContain("not a per-pack chance")
+  })
+  it("buyableOnly false drops the filter", async () => {
+    const f = stubFetch([jsonRoute("/api/packs/chase", { rows: [], total: 0 })])
+    const r = await drive("get_pack_chase", { buyableOnly: false, tier: "ultimate" })
+    expect(f.calls.find((c) => c.url.includes("/api/packs/chase"))!.url).not.toContain("buyableOnly")
+    expect(r).toMatchObject({ status: "ok", count: 0 })
+    expect(String(r.message)).toContain("No sealed Top Shot pack still holds a ultimate")
+  })
+  it("a failed read is an error, never 'no chase left'", async () => {
+    stubFetch([jsonRoute("/api/packs/chase", { error: "unavailable" }, { status: 503, ok: false })])
+    const r = await drive("get_pack_chase", {})
+    expect(r).toMatchObject({ status: "error" })
+    expect(r.rows).toBeUndefined()
+    expect(JSON.stringify(r)).not.toMatch(/No (buyable|sealed)/)
+  })
+  it("on another collection is refused, never Top Shot's packs", async () => {
+    stubFetch([jsonRoute("/api/packs/chase", { rows: [row], total: 1 })])
+    script("get_pack_chase", {})
+    await POST(post("which packs still have legendaries", { collectionId: "nfl-all-day" }))
+    expect(toolResult()).toMatchObject({ status: "unsupported_collection" })
+  })
+})
+
 describe("concierge — fetchPublicInsight response shapes", () => {
   it("passes a non-row payload through under data", async () => {
     const r = await drive("get_market_movers", {}, [jsonRoute("/api/public/insights/market-pulse", { headline: "hot", stats: { n: 3 } })])
