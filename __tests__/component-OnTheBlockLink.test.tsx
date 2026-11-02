@@ -80,7 +80,29 @@ describe("OnTheBlockLink", () => {
   })
 })
 
+describe("OnTheBlockLink — edition form", () => {
+  it("asks for the edition, says 'offer or want this edition', and links the edition filter", async () => {
+    fetchReturning(200, { listings: [{}], next_before: null })
+    render(<OnTheBlockLink collection="nba-top-shot" name="Victor Wembanyama" edition="73:2619" />)
+    await waitFor(() => expect(screen.getByText(/1 open Trade Block listing offers or wants this edition/)).toBeTruthy())
+    expect(calls[0]).toContain("edition=73%3A2619")
+    expect(calls[0]).not.toContain("q=")
+    expect(screen.getByRole("link").getAttribute("href")).toBe("/trades/block?collection=nba-top-shot&edition=73%3A2619")
+  })
+})
+
 describe("the browse page honours a deep link", () => {
+  it("an edition deep link filters by it, and 'Show all' clears it", async () => {
+    window.history.replaceState(null, "", "/trades/block?collection=nba-top-shot&edition=73%3A2619")
+    fetchReturning(200, { listings: [], next_before: null })
+    render(<BlockBrowseClient />)
+    await waitFor(() => expect(screen.getByText(/one edition/)).toBeTruthy())
+    expect(calls[0]).toContain("edition=73%3A2619")
+    screen.getByText("Show all").click()
+    await waitFor(() => expect(calls.length).toBe(2))
+    expect(calls[1]).not.toContain("edition=")
+  })
+
   it("starts filtered by ?collection= and ?q=", async () => {
     window.history.replaceState(null, "", "/trades/block?collection=nfl-all-day&q=Josh%20Allen")
     fetchReturning(200, { listings: [], next_before: null })

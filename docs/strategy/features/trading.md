@@ -76,7 +76,9 @@ Trevor, 2026-11-02 (PT): "a Trade Block or Trade Post, where users can put up as
 
 **v3 (2026-11-02, ~11:15 AM PT):** every player / character page (the shared `[collection]/player/[slug]` page, so Pinnacle's `/character/` too) shows "N open Trade Block listings mention <name> →" from a client read of the public block — decorative, rendered only on a successful read that found ≥ 1 listing (`components/entity/OnTheBlockLink.tsx`); `/trades/block?collection=&q=` deep links start filtered.
 
-**Next (not built):** the same module on edition pages; the prune for old closed/expired listings and old notice claims is WRITTEN but not applied — `docs/pending/trade-block-prune-run-in-sql-editor.sql` (the MCP holds a body carrying DELETE; run it in the SQL editor, then commit it as a migration); All Day / Golazos signing once their swap paths are proven; the browse filter's 1,000-line candidate read (fine at today's volume) should page once the block is large.
+Edition pages too (~11:45 AM PT): "N open Trade Block listings offer or want this edition" (`?edition=<catalog key>` on the public route, which refuses an edition without its collection — keys collide across collections; `/trades/block?collection=&edition=` deep links with a "Show all" reset). The browse filter's candidate read now PAGES the lines past PostgREST's 1,000-row clamp (bounded at 10 pages, then a 503 — never a partial set) and reads the listings in id chunks.
+
+**Next (not built):** the prune for old closed/expired listings and old notice claims is WRITTEN but not applied — `docs/pending/trade-block-prune-run-in-sql-editor.sql` (the MCP holds a body carrying DELETE; run it in the SQL editor, then commit it as a migration); All Day / Golazos signing once their swap paths are proven.
 
 ## Open — in order
 

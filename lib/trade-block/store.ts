@@ -467,35 +467,64 @@ export async function closeListing(db: SupabaseClient, userId: string, code: str
 export interface ListFilter {
   collectionId?: string | null
   q?: string | null
+  /** One edition (its catalog key): listings offering a copy of it or wanting it. */
+  editionKey?: string | null
   limit?: number
   /** created_at cursor: listings older than this. */
   before?: string | null
 }
 
+/** Pages of 1,000 the filter's candidate read may take before it refuses (never a partial set). */
+export const FILTER_MAX_PAGES = 10
+
 /** Open, unexpired listings, newest first, with their lines. */
 export async function listOpenListings(db: SupabaseClient, f: ListFilter = {}, now: number = Date.now()): Promise<{ listings: LoadedListing[]; next_before: string | null }> {
   const limit = Math.min(Math.max(f.limit ?? 24, 1), 48)
   const needle = (f.q ?? "").replace(/[%_\\,()]/g, "").trim()
+  const edition = (f.editionKey ?? "").trim()
   let ids: string[] | null = null
-  if (f.collectionId || needle) {
-    let iq = db.from("trade_block_items").select("listing_id").limit(1000)
-    if (f.collectionId) iq = iq.eq("collection_id", f.collectionId)
-    if (needle) iq = iq.or(`player_name.ilike.%${needle}%,set_name.ilike.%${needle}%`)
-    const { data, error } = await iq
-    if (error) fail(error, "trade_block_items filter")
-    ids = [...new Set(((data ?? []) as Array<{ listing_id: string }>).map((r) => r.listing_id))]
+  if (f.collectionId || needle || edition) {
+    // The candidate listings come from their LINES. PostgREST clamps a read at 1,000 rows, so
+    // the read is PAGED on the lines' primary key; a filter that would need more than
+    // FILTER_MAX_PAGES pages throws (503) rather than answer from a partial set.
+    const found = new Set<string>()
+    for (let page = 0; ; page++) {
+      if (page >= FILTER_MAX_PAGES) throw new Error("trade_block_items filter: candidate set exceeds the paging bound")
+      let iq = db.from("trade_block_items").select("listing_id, role, pos")
+      if (f.collectionId) iq = iq.eq("collection_id", f.collectionId)
+      if (edition) iq = iq.eq("edition_key", edition)
+      if (needle) iq = iq.or(`player_name.ilike.%${needle}%,set_name.ilike.%${needle}%`)
+      const { data, error } = await iq.order("listing_id").order("role").order("pos").range(page * 1000, page * 1000 + 999)
+      if (error) fail(error, "trade_block_items filter")
+      const rows = (data ?? []) as Array<{ listing_id: string }>
+      for (const r of rows) found.add(r.listing_id)
+      if (rows.length < 1000) break
+    }
+    ids = [...found]
     if (ids.length === 0) return { listings: [], next_before: null }
   }
-  let lq = db
-    .from("trade_block_listings")
-    .select(LISTING_COLS)
-    .eq("status", "open")
-    .gt("expires_at", new Date(now).toISOString())
-  if (ids) lq = lq.in("id", ids)
-  if (f.before) lq = lq.lt("created_at", f.before)
-  const { data, error } = await lq.order("created_at", { ascending: false }).order("id").limit(limit + 1)
-  if (error) fail(error, "trade_block_listings list")
-  const rows = (data ?? []) as ListingRow[]
+  // a large candidate set is read in id chunks (a URL carries only so many ids), each the
+  // newest `limit + 1`, then merged — the newest overall are among the newest of each chunk
+  const chunks: Array<string[] | null> = ids ? [] : [null]
+  if (ids) for (let i = 0; i < ids.length; i += 200) chunks.push(ids.slice(i, i + 200))
+  const reads = await Promise.all(
+    chunks.map((chunk) => {
+      let lq = db
+        .from("trade_block_listings")
+        .select(LISTING_COLS)
+        .eq("status", "open")
+        .gt("expires_at", new Date(now).toISOString())
+      if (chunk) lq = lq.in("id", chunk)
+      if (f.before) lq = lq.lt("created_at", f.before)
+      return lq.order("created_at", { ascending: false }).order("id").limit(limit + 1)
+    }),
+  )
+  const merged: ListingRow[] = []
+  for (const { data, error } of reads) {
+    if (error) fail(error, "trade_block_listings list")
+    merged.push(...((data ?? []) as ListingRow[]))
+  }
+  const rows = merged.sort((a, b) => b.created_at.localeCompare(a.created_at) || a.id.localeCompare(b.id)).slice(0, limit + 1)
   const page = rows.slice(0, limit)
   const items = await itemsFor(db, page.map((l) => l.id))
   return {

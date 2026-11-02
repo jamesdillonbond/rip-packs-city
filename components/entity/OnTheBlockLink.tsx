@@ -12,18 +12,23 @@ import { useEffect, useState } from "react"
 import Link from "next/link"
 import { collectionBySlug } from "@/lib/trade-block/rules"
 
-export function onTheBlockHref(collection: string, name: string): string {
-  return `/trades/block?collection=${encodeURIComponent(collection)}&q=${encodeURIComponent(name)}`
+export function onTheBlockHref(collection: string, name: string, edition?: string | null): string {
+  const base = `/trades/block?collection=${encodeURIComponent(collection)}`
+  return edition ? `${base}&edition=${encodeURIComponent(edition)}` : `${base}&q=${encodeURIComponent(name)}`
 }
 
-export default function OnTheBlockLink({ collection, name }: { collection: string; name: string }) {
+/**
+ * `edition` (a catalog key) scopes it to listings that offer a copy of that edition or want
+ * it — the edition page's form; without it, any listing naming the player / character.
+ */
+export default function OnTheBlockLink({ collection, name, edition = null }: { collection: string; name: string; edition?: string | null }) {
   const [count, setCount] = useState<{ n: number; more: boolean } | null>(null)
-  const supported = collectionBySlug(collection) !== null && name.trim().length >= 2
+  const supported = collectionBySlug(collection) !== null && (edition ? edition.length <= 120 : name.trim().length >= 2)
 
   useEffect(() => {
     if (!supported) return
     let live = true
-    const qs = new URLSearchParams({ collection, q: name.trim() })
+    const qs = new URLSearchParams(edition ? { collection, edition } : { collection, q: name.trim() })
     fetch(`/api/public/trade-block?${qs.toString()}`, { cache: "no-store" })
       .then(async (r) => {
         if (!r.ok) return null
@@ -37,16 +42,18 @@ export default function OnTheBlockLink({ collection, name }: { collection: strin
     return () => {
       live = false
     }
-  }, [collection, name, supported])
+  }, [collection, name, edition, supported])
 
   if (!count) return null
   const one = count.n === 1 && !count.more
-  const label = `${count.n}${count.more ? "+" : ""} open Trade Block listing${one ? "" : "s"} mention${one ? "s" : ""} ${name}`
+  const label = edition
+    ? `${count.n}${count.more ? "+" : ""} open Trade Block listing${one ? "" : "s"} offer${one ? "s" : ""} or want${one ? "s" : ""} this edition`
+    : `${count.n}${count.more ? "+" : ""} open Trade Block listing${one ? "" : "s"} mention${one ? "s" : ""} ${name}`
   return (
     <Link
-      href={onTheBlockHref(collection, name)}
+      href={onTheBlockHref(collection, name, edition)}
       data-rpc-on-the-block
-      style={{ display: "inline-block", marginTop: 8, marginLeft: 12, fontFamily: "var(--font-mono)", fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--rpc-red-text)", textDecoration: "none" }}
+      style={{ display: "inline-block", marginTop: edition ? 0 : 8, marginLeft: edition ? 0 : 12, fontFamily: "var(--font-mono)", fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--rpc-red-text)", textDecoration: "none" }}
     >
       {label} →
     </Link>

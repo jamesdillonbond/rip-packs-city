@@ -17,10 +17,11 @@ type Load =
   | { kind: "error"; error: string }
   | { kind: "ok"; listings: ListingView[]; next: string | null; more: boolean }
 
-function url(collection: string, q: string, before: string | null): string {
+function url(collection: string, q: string, before: string | null, edition: string | null = null): string {
   const sp = new URLSearchParams()
   if (collection) sp.set("collection", collection)
   if (q.trim()) sp.set("q", q.trim())
+  if (edition) sp.set("edition", edition)
   if (before) sp.set("before", before)
   const s = sp.toString()
   return `/api/public/trade-block${s ? `?${s}` : ""}`
@@ -29,7 +30,7 @@ function url(collection: string, q: string, before: string | null): string {
 export default function BlockBrowseClient() {
   const [collection, setCollection] = useState("")
   const [q, setQ] = useState("")
-  const [applied, setApplied] = useState({ collection: "", q: "" })
+  const [applied, setApplied] = useState<{ collection: string; q: string; edition?: string | null }>({ collection: "", q: "" })
   const [load, setLoad] = useState<Load>({ kind: "loading" })
   const [moreError, setMoreError] = useState<string | null>(null)
 
@@ -46,10 +47,10 @@ export default function BlockBrowseClient() {
     // a deep link (/trades/block?collection=…&q=…, e.g. from a player page) starts filtered;
     // an unknown collection is passed through and refused by the route, never dropped silently
     const sp = new URLSearchParams(window.location.search)
-    const initial = { collection: sp.get("collection") ?? "", q: (sp.get("q") ?? "").slice(0, 80) }
-    void call(url(initial.collection, initial.q, null)).then((r) => {
+    const initial = { collection: sp.get("collection") ?? "", q: (sp.get("q") ?? "").slice(0, 80), edition: (sp.get("edition") ?? "").slice(0, 120) || null }
+    void call(url(initial.collection, initial.q, null, initial.edition)).then((r) => {
       if (!live) return
-      if (initial.collection || initial.q) {
+      if (initial.collection || initial.q || initial.edition) {
         setCollection(initial.collection)
         setQ(initial.q)
         setApplied(initial)
@@ -73,7 +74,7 @@ export default function BlockBrowseClient() {
     if (load.kind !== "ok" || !load.next) return
     setMoreError(null)
     setLoad({ ...load, more: true })
-    const r = await call(url(applied.collection, applied.q, load.next))
+    const r = await call(url(applied.collection, applied.q, load.next, applied.edition ?? null))
     if (!r.ok || !Array.isArray(r.body?.listings)) {
       setMoreError(r.ok ? "The response had no listings in it." : errorOf(r))
       return setLoad({ ...load, more: false })
@@ -86,7 +87,7 @@ export default function BlockBrowseClient() {
     })
   }
 
-  const filtered = applied.collection !== "" || applied.q.trim() !== ""
+  const filtered = applied.collection !== "" || applied.q.trim() !== "" || !!applied.edition
 
   return (
     <main id="content" style={{ maxWidth: 900, margin: "0 auto", padding: "24px 16px 80px", display: "flex", flexDirection: "column", gap: 16 }}>
@@ -132,6 +133,14 @@ export default function BlockBrowseClient() {
         </button>
       </form>
 
+      {applied.edition ? (
+        <p style={{ ...muted, margin: 0 }}>
+          Showing listings that offer or want one edition.{" "}
+          <button type="button" style={{ ...btn, padding: "1px 8px", fontSize: 11 }} onClick={() => apply()}>
+            Show all
+          </button>
+        </p>
+      ) : null}
       {load.kind === "loading" ? (
         <p style={muted}>Loading the Trade Block…</p>
       ) : load.kind === "error" ? (

@@ -4,7 +4,7 @@
 // unexpired listings, newest first: username, what they'd trade, what they want, RPC FMV
 // only where confident — never a wallet address, never a confidence tier.
 //
-//   GET ?collection=<slug>&q=<player|set>&before=<created_at cursor>
+//   GET ?collection=<slug>&q=<player|set>&edition=<catalog key>&before=<created_at cursor>
 //     -> { listings: ListingView[], next_before: string | null }
 //
 // A failed read answers through boardUnavailable (503 + retryable copy), never as an
@@ -27,11 +27,14 @@ export async function GET(req: NextRequest) {
   const c = slug ? collectionBySlug(slug) : null
   // SUBSTITUTION guard: an unknown collection is refused, never answered with every listing
   if (slug && !c) return NextResponse.json({ error: "Unknown collection.", code: "bad_collection" }, { status: 400 })
+  const edition = sp.get("edition")
+  // an edition key means nothing without its collection (keys collide across collections)
+  if (edition && (!c || edition.length > 120)) return NextResponse.json({ error: "An edition filter needs its collection.", code: "bad_edition" }, { status: 400 })
   const before = sp.get("before")
   if (before && !Number.isFinite(Date.parse(before))) return NextResponse.json({ error: "Bad cursor.", code: "bad_cursor" }, { status: 400 })
   try {
     const now = Date.now()
-    const page = await listOpenListings(supabaseAdmin, { collectionId: c?.id ?? null, q: sp.get("q"), before }, now)
+    const page = await listOpenListings(supabaseAdmin, { collectionId: c?.id ?? null, q: sp.get("q"), editionKey: edition, before }, now)
     const names = await usernamesFor(supabaseAdmin, page.listings.map((l) => l.listing.user_id))
     let viewer: string | null = null
     try {

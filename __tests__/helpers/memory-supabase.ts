@@ -2,7 +2,7 @@
 //
 // An in-memory stand-in for the supabase-js query builder, good enough to run a
 // small state machine (lib/trade-room/store.ts) end to end: insert / upsert /
-// select / update / delete with eq / neq / in / is / not-in / not-is / gt / lt / or / order / limit /
+// select / update / delete with eq / neq / in / is / not-in / not-is / gt / lt / or / order / limit / range /
 // maybeSingle / single / count. UNIQUE and FK constraints are NOT enforced except
 // where a test declares `uniques`, which raise code 23505 like Postgres. It is a
 // test double, not Postgres: use it to prove ORDER and OUTCOME, not SQL semantics.
@@ -51,6 +51,7 @@ export function memorySupabase(seed: Record<string, Row[]> = {}, uniques: Record
     let upsertOn: string[] = []
     const orderBy: Array<{ col: string; asc: boolean; nullsFirst: boolean }> = []
     let lim: number | null = null
+    let offset = 0
     let single: "maybe" | "one" | null = null
     let wantCount = false
     let head = false
@@ -106,6 +107,7 @@ export function memorySupabase(seed: Record<string, Row[]> = {}, uniques: Record
         return b
       },
       limit: (n: number) => ((lim = n), b),
+      range: (from: number, to: number) => ((offset = from), (lim = to - from + 1), b),
       maybeSingle: () => ((single = "maybe"), b),
       single: () => ((single = "one"), b),
       then: (res: (r: unknown) => unknown, rej?: (e: unknown) => unknown) => Promise.resolve().then(run).then(res, rej),
@@ -169,7 +171,7 @@ export function memorySupabase(seed: Record<string, Row[]> = {}, uniques: Record
         })
       }
       const total = hit.length
-      if (lim != null) hit = hit.slice(0, lim)
+      if (lim != null || offset) hit = hit.slice(offset, lim != null ? offset + lim : undefined)
       const r = finish(hit)
       if (wantCount) r.count = total
       if (head) r.data = null

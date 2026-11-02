@@ -210,6 +210,38 @@ describe("public reads", () => {
   })
 })
 
+describe("public filters — edition and paging (v3)", () => {
+  it("an edition filter finds listings offering a copy or wanting it, and needs its collection", async () => {
+    await prove(ALICE, WA)
+    // Alice offers moment 1 (edition 1:2) and wants the LeBron edition 73:2619
+    await postListing({ offers: [{ collection_id: TS, moment_id: "1" }], wants: [{ kind: "edition", collection_id: TS, edition_key: "73:2619" }] })
+    const offered = (await (await publicList.GET(get("/api/public/trade-block?collection=nba-top-shot&edition=1:2"))).json()) as { listings: unknown[] }
+    const wanted = (await (await publicList.GET(get("/api/public/trade-block?collection=nba-top-shot&edition=73:2619"))).json()) as { listings: unknown[] }
+    const other = (await (await publicList.GET(get("/api/public/trade-block?collection=nba-top-shot&edition=9:9"))).json()) as { listings: unknown[] }
+    expect([offered.listings.length, wanted.listings.length, other.listings.length]).toEqual([1, 1, 0])
+    // keys collide across collections, so an edition without its collection is refused
+    expect((await publicList.GET(get("/api/public/trade-block?edition=1:2"))).status).toBe(400)
+  })
+
+  it("the candidate read pages past 1,000 lines instead of answering from a partial set", async () => {
+    // 1,050 lines naming "Wemby" across 105 closed listings, then one OPEN listing whose
+    // line sorts last — a single clamped read would never have seen it
+    const items: Record<string, unknown>[] = []
+    const listings: Record<string, unknown>[] = []
+    for (let i = 0; i < 105; i++) {
+      const id = `a${String(i).padStart(4, "0")}`
+      listings.push({ id, code: `c${String(i).padStart(9, "0")}`, user_id: ALICE.id, status: "closed", closed_reason: "owner", closed_at: "2026-11-01T00:00:00Z", open_to_offers: true, note: null, expires_at: "2099-01-01T00:00:00Z", created_at: "2026-11-01T00:00:00Z", updated_at: "2026-11-01T00:00:00Z" })
+      for (let pos = 0; pos < 10; pos++) items.push({ listing_id: id, role: "offer", pos, collection_id: TS, kind: "moment", moment_id: String(i * 10 + pos), source: WA.source, edition_key: "1:2", player_name: "Wemby", set_name: null, tier: null, series_number: null, serial_number: null, image_url: null, fmv_usd: null })
+    }
+    listings.push({ id: "zzzz", code: "zzzzzzzzzz", user_id: ALICE.id, status: "open", closed_reason: null, closed_at: null, open_to_offers: true, note: null, expires_at: "2099-01-01T00:00:00Z", created_at: "2026-11-02T00:00:00Z", updated_at: "2026-11-02T00:00:00Z" })
+    items.push({ listing_id: "zzzz", role: "offer", pos: 0, collection_id: TS, kind: "moment", moment_id: "99999", source: WA.source, edition_key: "1:2", player_name: "Wemby", set_name: null, tier: null, series_number: null, serial_number: null, image_url: null, fmv_usd: null })
+    mem.current.tables.trade_block_listings = listings
+    mem.current.tables.trade_block_items = items
+    const r = (await (await publicList.GET(get("/api/public/trade-block?q=wemby"))).json()) as { listings: Array<{ code: string }> }
+    expect(r.listings.map((l) => l.code)).toEqual(["zzzzzzzzzz"])
+  })
+})
+
 describe("proposals and the seam with the trade room", () => {
   async function listingByAlice(offers: Array<{ collection_id: string; moment_id: string }>) {
     await prove(ALICE, WA)

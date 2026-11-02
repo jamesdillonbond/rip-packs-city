@@ -81,6 +81,7 @@ import { fetchEditionFmvEstimate, estimateBasisText, type EditionFmvEstimate } f
 import WatchEditionButton from "@/components/alerts/WatchEditionButton"
 import TrackedOutboundLink from "@/components/TrackedOutboundLink"
 import { dapperMarketEditionUrl } from "@/lib/collections"
+import OnTheBlockLink from "@/components/entity/OnTheBlockLink"
 import { fetchPaniniEditionSetSlug, type PaniniEditionSetSlug } from "@/lib/panini/edition-set-slug"
 import { fetchPrintingAskChangedAt, isParallelExternalId, PRINTING_ASK_STAMP_KIND, type PrintingAskStamp } from "@/lib/market/printing-ask-stamp"
 import {
@@ -920,6 +921,10 @@ export default async function EditionPage(
                 ) : detail.set_name}
               </div>
             )}
+
+            {/* 2026-11-02: the Trade Block — listings offering a copy of this edition or wanting
+                it. Decorative, client-side; renders only on a successful read with ≥ 1 listing. */}
+            <OnTheBlockLink collection={collection} name={detail.player_name ?? detail.name ?? ""} edition={detail.external_id ?? detail.id} />
 
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
               <TierBadge tier={detail.tier} />
