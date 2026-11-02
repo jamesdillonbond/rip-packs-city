@@ -504,17 +504,43 @@ export async function listOpenListings(db: SupabaseClient, f: ListFilter = {}, n
   }
 }
 
-async function itemsFor(db: SupabaseClient, listingIds: string[]): Promise<Map<string, ItemRow[]>> {
+export async function itemsFor(db: SupabaseClient, listingIds: string[]): Promise<Map<string, ItemRow[]>> {
   const out = new Map<string, ItemRow[]>()
   if (listingIds.length === 0) return out
-  const { data, error } = await db.from("trade_block_items").select(ITEM_COLS).in("listing_id", listingIds).order("role").order("pos")
-  if (error) fail(error, "trade_block_items list")
-  for (const r of (data ?? []) as ItemRow[]) {
-    const list = out.get(r.listing_id) ?? []
-    list.push(numify(r))
-    out.set(r.listing_id, list)
+  // PostgREST clamps a read at 1,000 rows. A listing has at most 2 × MAX_LINES_PER_SIDE
+  // lines, so a chunk of 40 listings (≤ 800 lines) can never be clamped — a silently
+  // truncated read here would drop a listing's lines, not fail.
+  const CHUNK = Math.floor(1000 / (2 * MAX_LINES_PER_SIDE)) - 10
+  const chunks: string[][] = []
+  for (let i = 0; i < listingIds.length; i += CHUNK) chunks.push(listingIds.slice(i, i + CHUNK))
+  const reads = await Promise.all(chunks.map((ids) => db.from("trade_block_items").select(ITEM_COLS).in("listing_id", ids).order("listing_id").order("role").order("pos")))
+  for (const { data, error } of reads) {
+    if (error) fail(error, "trade_block_items list")
+    for (const r of (data ?? []) as ItemRow[]) {
+      const list = out.get(r.listing_id) ?? []
+      list.push(numify(r))
+      out.set(r.listing_id, list)
+    }
   }
   return out
+}
+
+/** Every open, unexpired listing (newest first, bounded) with its lines — the matcher's population. */
+export const MATCH_POPULATION_LIMIT = 300
+export async function allOpenListings(db: SupabaseClient, now: number = Date.now()): Promise<{ listings: LoadedListing[]; complete: boolean }> {
+  const { data, error } = await db
+    .from("trade_block_listings")
+    .select(LISTING_COLS)
+    .eq("status", "open")
+    .gt("expires_at", new Date(now).toISOString())
+    .order("created_at", { ascending: false })
+    .order("id")
+    .limit(MATCH_POPULATION_LIMIT + 1)
+  if (error) fail(error, "trade_block_listings open (match)")
+  const rows = (data ?? []) as ListingRow[]
+  const page = rows.slice(0, MATCH_POPULATION_LIMIT)
+  const items = await itemsFor(db, page.map((l) => l.id))
+  return { listings: page.map((listing) => ({ listing, items: items.get(listing.id) ?? [] })), complete: rows.length <= MATCH_POPULATION_LIMIT }
 }
 
 export async function listingsOf(db: SupabaseClient, userId: string): Promise<LoadedListing[]> {
@@ -766,4 +792,36 @@ export async function listingsByIds(db: SupabaseClient, ids: readonly string[]):
   if (error) fail(error, "trade_block_listings by ids")
   for (const r of (data ?? []) as ListingRow[]) out.set(r.id, r)
   return out
+}
+
+/**
+ * The accepted proposal a trade room was opened from, shaped for the room: the LISTER is
+ * side A (they accepted, which created the room) and gives the proposal's "get" lines; the
+ * PROPOSER is side B and gives its "give" lines. Null when the room did not come from the
+ * block. Throws on a failed read.
+ */
+export async function proposalForRoom(
+  db: SupabaseClient,
+  roomCode: string,
+): Promise<{ listing_code: string | null; a_gives: AgreedLine[]; b_gives: AgreedLine[] } | null> {
+  if (!CODE_RE.test(roomCode)) return null
+  const { data, error } = await db.from("trade_block_proposals").select(PROPOSAL_COLS).eq("room_code", roomCode).limit(1)
+  if (error) fail(error, "trade_block_proposals by room")
+  const p = ((data ?? []) as ProposalRow[])[0]
+  if (!p) return null
+  const loaded = await loadProposal(db, p.code)
+  const listing = await listingById(db, p.listing_id)
+  const line = (i: ProposalItemRow): AgreedLine => ({ moment_id: i.moment_id, player_name: i.player_name, set_name: i.set_name, serial_number: i.serial_number })
+  return {
+    listing_code: listing?.code ?? null,
+    a_gives: loaded.items.filter((i) => i.role === "get").map(line),
+    b_gives: loaded.items.filter((i) => i.role === "give").map(line),
+  }
+}
+
+export interface AgreedLine {
+  moment_id: string
+  player_name: string | null
+  set_name: string | null
+  serial_number: number | null
 }

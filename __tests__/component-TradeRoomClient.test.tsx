@@ -77,6 +77,7 @@ function view(o: Partial<Record<string, unknown>> = {}) {
     notice: WITHDRAWAL_NOTICE,
     execution: { open: false, message: "The on-chain step isn't open yet: trades are saved and accepted here, and signing opens once RPC's live two-wallet test has sealed. Nothing has moved." },
     relay: null,
+    from_block: null,
     ...o,
   }
 }
@@ -340,5 +341,28 @@ describe("TradeRoomClient — finished rooms", () => {
     posts.cancel = { status: 200, body: { room: view({ state: "cancelled", cancelled_by_me: true }) } }
     fireEvent.click(screen.getByText("Cancel this trade"))
     await waitFor(() => expect(screen.getByText(/Cancelled by you/)).toBeTruthy())
+  })
+})
+
+describe("TradeRoomClient — the Trade Block guide", () => {
+  it("a room opened from a proposal shows what each side agreed, as a guide", async () => {
+    await mount(
+      view({
+        from_block: {
+          listing_code: "abcdefghij",
+          a_gives: [{ moment_id: "1", player_name: "Victor Wembanyama", set_name: "Base", serial_number: 42 }],
+          b_gives: [],
+        },
+      }),
+    )
+    expect(screen.getByText("Agreed on the Trade Block")).toBeTruthy()
+    expect(screen.getByText(/Victor Wembanyama · Base · #42/)).toBeTruthy()
+    expect(screen.getByText(/gives: nothing/)).toBeTruthy()
+    expect(screen.getByText("The listing").getAttribute("href")).toBe("/trades/block/abcdefghij")
+  })
+
+  it("no guide without a proposal", async () => {
+    await mount(view())
+    expect(screen.queryByText("Agreed on the Trade Block")).toBeNull()
   })
 })

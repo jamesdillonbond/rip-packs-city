@@ -69,6 +69,23 @@ export interface RoomView {
   execution: { open: boolean; message: string | null }
   /** A relay waiting for THIS viewer's wallet to co-sign, when one is pending. */
   relay: PendingRelay | null
+  /** The Trade Block proposal this room was opened from (2026-11-02), when there is one:
+   *  what each side agreed to give there, as a guide for the picks. Never a pick itself —
+   *  the room's own picks and chain checks decide what moves. */
+  from_block: FromBlock | null
+}
+
+export interface AgreedItem {
+  moment_id: string
+  player_name: string | null
+  set_name: string | null
+  serial_number: number | null
+}
+
+export interface FromBlock {
+  listing_code: string | null
+  a_gives: AgreedItem[]
+  b_gives: AgreedItem[]
 }
 
 export function itemView(i: ItemRow): ItemView {
@@ -118,6 +135,7 @@ function sideView(loaded: LoadedRoom, s: SideRow, viewerId: string, names: Map<s
 export interface BuildViewOpts {
   now?: number
   relay?: PendingRelay | null
+  fromBlock?: FromBlock | null
   env?: Record<string, string | undefined>
 }
 
@@ -158,6 +176,7 @@ export function buildRoomView(loaded: LoadedRoom, viewerId: string, names: Map<s
     notice: WITHDRAWAL_NOTICE,
     execution: { open, message: open ? null : EXECUTE_CLOSED_MESSAGE },
     relay: opts.relay ?? null,
+    from_block: opts.fromBlock ?? null,
   }
 }
 

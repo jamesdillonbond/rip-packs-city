@@ -87,7 +87,8 @@ const W = [{ source: "0xbd94cade097e50ac", signer: "0x3d0b274c80263484", proven_
 const mine = (o: Record<string, unknown> = {}) => ({ wallets: W, listings: [listing()], proposals: { received: [proposal()], sent: [proposal({ code: "ssssssssss", direction: "sent", counterparty: "sdb" })] }, ...o })
 
 beforeEach(() => {
-  answers = {}
+  // the matches panel on My Trade Block (v2) reads its own endpoint; default: nothing fits
+  answers = { "GET /api/trade-block?matches=1": { status: 200, body: { proven: true, my_wants: 0, complete: true, matches: [] } } }
   installFetch()
   wallet.connect.mockReset()
 })
@@ -256,5 +257,53 @@ describe("Listing page — the other paths", () => {
     fireEvent.change(screen.getByPlaceholderText("Filter by player, character or set"), { target: { value: "brun" } })
     fireEvent.click(screen.getByText("Send proposal"))
     await waitFor(() => expect(screen.getByText(/already have a pending proposal/)).toBeTruthy())
+  })
+})
+
+describe("My Trade Block — matches", () => {
+  const holding = line({ moment_id: "9", player_name: "Anthony Edwards" })
+  it("lists matches, two-way first, with what fits on each side", async () => {
+    answers["GET /api/trade-block"] = { status: 200, body: mine({ listings: [], proposals: { sent: [], received: [] } }) }
+    answers["GET /api/trade-block?matches=1"] = {
+      status: 200,
+      body: {
+        proven: true,
+        my_wants: 1,
+        complete: false,
+        matches: [
+          { listing: listing({ is_mine: false, username: "sdb", code: "mmmmmmmmmm" }), you_hold: [holding], they_offer: [line()], two_way: true },
+          { listing: listing({ is_mine: false, username: "zz", code: "nnnnnnnnnn" }), you_hold: [holding], they_offer: [], two_way: false },
+        ],
+      },
+    }
+    render(<BlockMineClient />)
+    await waitFor(() => expect(screen.getByText("Two-way")).toBeTruthy())
+    expect(screen.getAllByText("They want — you hold")).toHaveLength(2)
+    expect(screen.getAllByText("They offer — you want")).toHaveLength(1)
+    expect(screen.getAllByText(/See the listing & propose/)[0].closest("a")?.getAttribute("href")).toBe("/trades/block/mmmmmmmmmm")
+    expect(screen.getByText(/newest 300 open listings/)).toBeTruthy()
+  })
+
+  it.each([
+    [{ proven: false, my_wants: 0 }, /Prove an account and post a listing/],
+    [{ proven: false, my_wants: 2 }, /Prove an account to also see/],
+    [{ proven: true, my_wants: 0 }, /Add wants to a listing/],
+    [{ proven: true, my_wants: 2 }, /nobody wants what you hold, and nobody offers/],
+  ])("an empty result explains itself by state %j", async (state, copy) => {
+    answers["GET /api/trade-block"] = { status: 200, body: mine({ listings: [], proposals: { sent: [], received: [] } }) }
+    answers["GET /api/trade-block?matches=1"] = { status: 200, body: { ...state, complete: true, matches: [] } }
+    render(<BlockMineClient />)
+    await waitFor(() => expect(screen.getByText(copy)).toBeTruthy())
+  })
+
+  it("a failed matches read says so with Retry, never 'nothing fits'", async () => {
+    answers["GET /api/trade-block"] = { status: 200, body: mine({ listings: [], proposals: { sent: [], received: [] } }) }
+    let n = 0
+    answers["GET /api/trade-block?matches=1"] = () => (++n === 1 ? { status: 503, body: { error: "down" } } : { status: 200, body: { proven: true, my_wants: 1, complete: true, matches: [] } })
+    render(<BlockMineClient />)
+    await waitFor(() => expect(screen.getByText(/Couldn't look for matches: down/)).toBeTruthy())
+    expect(screen.queryByText(/nobody wants/)).toBeNull()
+    fireEvent.click(screen.getAllByText("Retry")[0])
+    await waitFor(() => expect(screen.getByText(/nobody wants what you hold/)).toBeTruthy())
   })
 })

@@ -71,7 +71,8 @@ const listing = (o: Record<string, unknown> = {}) => ({
 })
 
 beforeEach(() => {
-  answers = {}
+  // the matches panel on My Trade Block (v2) reads its own endpoint; default: nothing fits
+  answers = { "GET /api/trade-block?matches=1": { status: 200, body: { proven: true, my_wants: 0, complete: true, matches: [] } } }
   installFetch()
   wallet.connect.mockReset()
 })

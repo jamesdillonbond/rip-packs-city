@@ -129,6 +129,8 @@ export default function TradeRoomClient({ code }: { code: string }) {
         ) : null}
       </section>
 
+      {room.from_block && room.state !== "sealed" ? <FromBlockPanel room={room} /> : null}
+
       {room.state === "cancelled" ? (
         <p style={muted}>
           Cancelled{room.cancelled_by_me ? " by you" : ""}
@@ -750,6 +752,39 @@ function Sealed({ room, busy, act }: { room: RoomView; busy: string | null; act:
       <button type="button" style={btn} disabled={busy !== null} onClick={() => act("verify", {})}>
         Check the chain again
       </button>
+    </section>
+  )
+}
+
+function agreedLine(i: { moment_id: string; player_name: string | null; set_name: string | null; serial_number: number | null }): string {
+  return [i.player_name ?? `Moment ${i.moment_id}`, i.set_name, i.serial_number != null ? `#${i.serial_number}` : null].filter(Boolean).join(" · ")
+}
+
+/** The Trade Block proposal this room came from: a guide for the picks, never a pick. */
+function FromBlockPanel({ room }: { room: RoomView }) {
+  const fb = room.from_block
+  if (!fb) return null
+  const rows: Array<[string, typeof fb.a_gives]> = [
+    [room.a.username, fb.a_gives],
+    [room.b?.username ?? "The other side", fb.b_gives],
+  ]
+  return (
+    <section style={card}>
+      <div style={label}>Agreed on the Trade Block</div>
+      {rows.map(([who, items]) => (
+        <p key={who} style={{ fontSize: 13, margin: "6px 0 0" }}>
+          <strong>{who}</strong> gives: {items.length ? items.map(agreedLine).join("; ") : "nothing"}
+        </p>
+      ))}
+      <p style={{ ...muted, fontSize: 12, margin: "6px 0 0" }}>
+        Pick these same Moments below. Only what both of you pick and accept here moves — the room re-checks each one on chain.
+        {fb.listing_code ? (
+          <>
+            {" "}
+            <Link href={`/trades/block/${fb.listing_code}`}>The listing</Link>
+          </>
+        ) : null}
+      </p>
     </section>
   )
 }

@@ -55,6 +55,7 @@ import { pickItems, readPicker, withLiveLocks, TOP_SHOT_COLLECTION_ID, type Pick
 import { readTopShotHoldings } from "@/lib/giveaways/topshot-holdings"
 import { buildRoomView, cosignerOf, usernamesFor, type PendingRelay } from "@/lib/trade-room/view"
 import { notifyOtherSide, type TradeNotice } from "@/lib/trade-room/notify"
+import { proposalForRoom } from "@/lib/trade-block/store"
 
 export const dynamic = "force-dynamic"
 // a simulation makes several Flow script calls (20 s bound each)
@@ -137,8 +138,17 @@ async function pendingRelayFor(loaded: LoadedRoom, me: SideRow | null): Promise<
 
 async function view(loaded: LoadedRoom, userId: string) {
   const me = sideOf(loaded, userId)
-  const [names, relay] = await Promise.all([usernamesFor(supabaseAdmin, loaded.sides.map((s) => s.user_id)), pendingRelayFor(loaded, me)])
-  return buildRoomView(loaded, userId, names, { relay })
+  const [names, relay, fromBlock] = await Promise.all([
+    usernamesFor(supabaseAdmin, loaded.sides.map((s) => s.user_id)),
+    pendingRelayFor(loaded, me),
+    // the Trade Block proposal this room came from, as a guide; a failed read only drops
+    // the guide (it is never a pick), so it must not fail the room
+    proposalForRoom(supabaseAdmin, loaded.room.code).catch((e) => {
+      console.error(`[trade-room] from-block read failed: ${e instanceof Error ? e.message : String(e)}`)
+      return null
+    }),
+  ])
+  return buildRoomView(loaded, userId, names, { relay, fromBlock })
 }
 
 function mySide(loaded: LoadedRoom, userId: string): SideRow {

@@ -6,6 +6,7 @@
 //   GET                         -> { wallets, listings, proposals: { sent, received } }   the caller's block
 //   GET ?nonce=1                -> { nonce, issuedAt }                                    for a Flow Wallet account proof
 //   GET ?holdings=1&collection=&q= -> { holdings }                                       assets in the caller's proven accounts
+//   GET ?matches=1              -> { proven, my_wants, complete, matches }                listings that want what you hold / offer what you want
 //   POST { action, ... }:
 //     wallet   { proof, source? }        -> prove a Flow Wallet; list its accounts; with `source`, save it
 //     create   { offers, wants, note, open_to_offers } -> post a listing
@@ -43,7 +44,9 @@ import {
   TradeBlockError,
   withdraw,
 } from "@/lib/trade-block/store"
-import { listingView, proposalView } from "@/lib/trade-block/view"
+import { lineView, listingView, proposalView } from "@/lib/trade-block/view"
+import { findMatches } from "@/lib/trade-block/match"
+import { notifyMatchesForListing } from "@/lib/trade-block/match-notify"
 import { notifyBlock, type BlockNotice } from "@/lib/trade-block/notify"
 
 export const dynamic = "force-dynamic"
@@ -136,6 +139,23 @@ export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams
   try {
     if (sp.has("nonce")) return json(issueClaimNonce(u.id))
+    if (sp.has("matches")) {
+      const now = Date.now()
+      const m = await findMatches(supabaseAdmin, u.id, now)
+      const names = await usernamesFor(supabaseAdmin, m.matches.map((x) => x.listing.listing.user_id))
+      return json({
+        proven: m.proven,
+        my_wants: m.my_wants,
+        complete: m.complete,
+        matches: m.matches.map((x) => ({
+          listing: listingView(x.listing, names, u.id, now),
+          // the caller's OWN assets; lineView drops the account address
+          you_hold: x.you_hold.map((h) => lineView({ ...h, kind: "moment" }, undefined)),
+          they_offer: x.they_offer.map((i) => lineView(i, undefined)),
+          two_way: x.two_way,
+        })),
+      })
+    }
     if (sp.has("holdings")) {
       const accounts = await provenAccounts(supabaseAdmin, u.id)
       if (accounts.length === 0) return json({ holdings: { indexed: false, proven: false, rows: [], truncated: false } })
@@ -179,6 +199,12 @@ export async function POST(req: NextRequest) {
       }
       case "create": {
         const loaded = await createListing(supabaseAdmin, u.id, body)
+        // other block members who hold what this listing wants hear about it (≤ 1/day each)
+        try {
+          after(() => notifyMatchesForListing(supabaseAdmin, loaded))
+        } catch {
+          void notifyMatchesForListing(supabaseAdmin, loaded)
+        }
         const names = await usernamesFor(supabaseAdmin, [u.id])
         return json({ listing: listingView(loaded, names, u.id, Date.now(), null) }, 201)
       }

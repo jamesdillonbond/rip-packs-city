@@ -3,7 +3,8 @@
 // Trade Block notices (2026-11-02). The block is asynchronous — the collector a proposal
 // is FOR is rarely on the page — so three moments email the other person, once each,
 // fire-and-forget from the route (`after()`): a PROPOSAL arrived on your listing; your
-// proposal was ACCEPTED (with the trade room link when one opened); it was DECLINED.
+// proposal was ACCEPTED (with the trade room link when one opened); it was DECLINED; and
+// a new listing MATCHES something in an account you proved (at most one a day).
 //
 // Same rules as the trade room's notices (lib/trade-room/notify.ts):
 //   • no wallet address, no asset list, no price/FMV/confidence — username + link only;
@@ -15,7 +16,7 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 import { sendViaResend, WELCOME_FROM_ADDRESS, type SendEmailArgs, type SendResult } from "@/lib/welcome/send-account-welcome"
 import { usernamesFor } from "@/lib/trade-room/view"
 
-export type BlockNotice = "proposal" | "accepted" | "declined"
+export type BlockNotice = "proposal" | "accepted" | "declined" | "match"
 
 const SITE_URL = "https://www.rippackscity.com"
 const ACCENT = "#e55a4c" // email red — mail clients have no CSS custom properties (hardcoded on purpose)
@@ -32,7 +33,7 @@ function esc(s: string): string {
 /** Subject + body for one notice. Pure; no I/O. */
 export function buildBlockNoticeEmail(
   notice: BlockNotice,
-  opts: { other: string; roomCode?: string | null },
+  opts: { other: string; roomCode?: string | null; listingCode?: string | null },
 ): { subject: string; html: string; text: string } {
   const other = opts.other.trim() || "A collector"
   let subject: string
@@ -59,6 +60,13 @@ export function buildBlockNoticeEmail(
         cta = "See the proposal"
       }
       break
+    case "match":
+      subject = `${other} is looking for something you hold`
+      headline = "A listing fits."
+      body = `${other} just posted a Trade Block listing that asks for something in an account you've proved on RPC. See what they'd trade for it — and propose, if it suits you.`
+      cta = "See the listing"
+      link = opts.listingCode ? `${SITE_URL}/trades/block/${encodeURIComponent(opts.listingCode)}` : `${SITE_URL}/trades/block/mine`
+      break
     case "declined":
       subject = `${other} declined your trade proposal`
       headline = "Declined."
@@ -75,7 +83,7 @@ export function buildBlockNoticeEmail(
 <tr><td style="padding:0 28px 8px;font-size:24px;font-weight:800;color:${TEXT};">${esc(headline)}</td></tr>
 <tr><td style="padding:0 28px 20px;font-size:15px;line-height:1.55;color:${TEXT_MUTED};">${esc(body)}</td></tr>
 <tr><td style="padding:0 28px 28px;"><a href="${esc(link)}" style="display:inline-block;padding:12px 18px;background:${ACCENT};color:#ffffff;text-decoration:none;font-weight:700;border-radius:6px;font-size:14px;">${esc(cta)} →</a></td></tr>
-<tr><td style="padding:0 28px 24px;font-size:12px;line-height:1.5;color:${TEXT_MUTED};">You get this because of a trade proposal on the RPC Trade Block. ${esc(SITE_URL)}</td></tr>
+<tr><td style="padding:0 28px 24px;font-size:12px;line-height:1.5;color:${TEXT_MUTED};">${notice === "match" ? "You get this because you proved an account on the RPC Trade Block. At most one of these a day." : "You get this because of a trade proposal on the RPC Trade Block."} ${esc(SITE_URL)}</td></tr>
 </table></td></tr></table></body></html>`
   return { subject, html, text }
 }
@@ -104,7 +112,7 @@ export async function notifyBlock(
   toUserId: string,
   actorUserId: string,
   notice: BlockNotice,
-  opts: { roomCode?: string | null } = {},
+  opts: { roomCode?: string | null; listingCode?: string | null } = {},
   deps: BlockNotifyDeps = {},
 ): Promise<BlockNotifyOutcome> {
   const log = deps.log ?? ((line: string) => console.log(line))
@@ -127,7 +135,7 @@ export async function notifyBlock(
       log(`[trade-block/notify] notice=${notice} skipped: ${e instanceof Error ? e.message : String(e)}`)
       return { status: "skipped", reason: "no_names" }
     }
-    const mail = buildBlockNoticeEmail(notice, { other: names.get(actorUserId) ?? "A collector", roomCode: opts.roomCode })
+    const mail = buildBlockNoticeEmail(notice, { other: names.get(actorUserId) ?? "A collector", roomCode: opts.roomCode, listingCode: opts.listingCode })
     const res = await send({ from: WELCOME_FROM_ADDRESS, to: email, ...mail })
     if (!res.ok) {
       log(`[trade-block/notify] notice=${notice} send failed: ${res.error}`)

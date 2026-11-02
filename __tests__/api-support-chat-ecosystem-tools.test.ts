@@ -564,6 +564,47 @@ describe("concierge — get_pack_chase (2026-11-02)", () => {
   })
 })
 
+// 2026-11-02: the Trade Block. Relays /api/public/trade-block (usernames + lines, never a
+// wallet), FMV only where priced; a failed read is an error, never "nobody is trading";
+// an ok-empty read says no listing matches.
+describe("concierge — get_trade_block (2026-11-02)", () => {
+  const listing = {
+    code: "abcdefghij",
+    username: "webz_80",
+    note: null,
+    open_to_offers: true,
+    created_at: "2026-11-02T16:00:00Z",
+    offers: [{ collection: "NBA Top Shot", kind: "moment", player_name: "Victor Wembanyama", set_name: "Base", tier: "COMMON", serial_number: 42, fmv_usd: 40, priced: true }, { collection: "NBA Top Shot", kind: "moment", player_name: "Stephon Castle", set_name: "Base", tier: "COMMON", serial_number: 7, fmv_usd: null, priced: false }],
+    wants: [{ collection: "NFL All Day", kind: "player", player_name: "Josh Allen", set_name: null, tier: null, serial_number: null, fmv_usd: null, priced: false }],
+    value: { priced_total_usd: 40, unpriced: 1 },
+  }
+  it("passes the search through and relays listings with their page, never $0 for unpriced", async () => {
+    const f = stubFetch([jsonRoute("/api/public/trade-block", { listings: [listing], next_before: null })])
+    const r = await drive("get_trade_block", { q: "wembanyama", collection: "nba-top-shot", limit: 3 })
+    const url = f.calls.find((c) => c.url.includes("/api/public/trade-block"))!.url
+    expect(url).toContain("q=wembanyama")
+    expect(url).toContain("collection=nba-top-shot")
+    expect(r).toMatchObject({ status: "ok", count: 1 })
+    const l = (r.listings as Array<{ by: string; page: string; offers: Array<{ fmv_usd: number | null }>; offered_not_priced: number }>)[0]
+    expect(l).toMatchObject({ by: "webz_80", page: "/trades/block/abcdefghij", offered_not_priced: 1 })
+    expect(l.offers.map((o) => o.fmv_usd)).toEqual([40, null])
+    expect(String(r.rule)).toContain("no cash")
+    expect(JSON.stringify(r)).not.toMatch(/0x[0-9a-f]{16}/)
+  })
+  it("an empty search says no listing matches, not that nobody trades", async () => {
+    stubFetch([jsonRoute("/api/public/trade-block", { listings: [], next_before: null })])
+    const r = await drive("get_trade_block", { q: "nobody" })
+    expect(r).toMatchObject({ status: "ok", count: 0 })
+    expect(String(r.message)).toContain("does not mean nobody would trade")
+  })
+  it("a failed read is an error, never 'no listings'", async () => {
+    stubFetch([jsonRoute("/api/public/trade-block", { error: "unavailable" }, { status: 503, ok: false })])
+    const r = await drive("get_trade_block", {})
+    expect(r).toMatchObject({ status: "error", http_status: 503 })
+    expect(r.listings).toBeUndefined()
+  })
+})
+
 describe("concierge — fetchPublicInsight response shapes", () => {
   it("passes a non-row payload through under data", async () => {
     const r = await drive("get_market_movers", {}, [jsonRoute("/api/public/insights/market-pulse", { headline: "hot", stats: { n: 3 } })])

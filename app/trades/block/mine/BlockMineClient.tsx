@@ -16,7 +16,7 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { errorText } from "@/lib/giveaways/view-format"
 import type { Holding } from "@/lib/trade-block/store"
-import type { ListingView, ProposalView } from "@/lib/trade-block/view"
+import type { LineView, ListingView, ProposalView } from "@/lib/trade-block/view"
 import { lineView, valueLine } from "@/lib/trade-block/view"
 import { BLOCK_COLLECTIONS, MAX_LINES_PER_SIDE, NOTE_MAX } from "@/lib/trade-block/rules"
 import { Line, LineList, ListingCard, ptDate } from "../block-ui"
@@ -96,6 +96,7 @@ export default function BlockMineClient() {
         <>
           <Wallets wallets={load.mine.wallets} onUpdate={update} />
           {load.mine.wallets.length > 0 ? <Composer onPosted={() => void read()} setMsg={setMsg} /> : null}
+          <Matches />
           <Proposals title="Proposals on your listings" list={load.mine.proposals.received} onUpdate={update} setMsg={setMsg} />
           <Listings listings={load.mine.listings} onUpdate={update} />
           <Proposals title="Proposals you sent" list={load.mine.proposals.sent} onUpdate={update} setMsg={setMsg} />
@@ -454,6 +455,95 @@ function WantsEditor({ wants, setWants, setErr }: { wants: Want[]; setWants: (w:
         </form>
       )}
     </div>
+  )
+}
+
+// ── 2b · matches ─────────────────────────────────────────────────────────────
+
+type MatchView = { listing: ListingView; you_hold: LineView[]; they_offer: LineView[]; two_way: boolean }
+type MatchLoad =
+  | { kind: "loading" }
+  | { kind: "error"; error: string }
+  | { kind: "ok"; proven: boolean; my_wants: number; complete: boolean; matches: MatchView[] }
+
+async function fetchMatches(): Promise<MatchLoad> {
+  const r = await call("/api/trade-block?matches=1")
+  const b = r.body as { proven?: boolean; my_wants?: number; complete?: boolean; matches?: MatchView[] } | null
+  if (!r.ok || !b || !Array.isArray(b.matches)) return { kind: "error", error: r.ok ? "The response had no matches in it." : errorOf(r) }
+  return { kind: "ok", proven: b.proven === true, my_wants: b.my_wants ?? 0, complete: b.complete !== false, matches: b.matches }
+}
+
+function Matches() {
+  const [load, setLoad] = useState<MatchLoad>({ kind: "loading" })
+  const read = useCallback(async () => {
+    setLoad({ kind: "loading" })
+    setLoad(await fetchMatches())
+  }, [])
+  useEffect(() => {
+    let live = true
+    void fetchMatches().then((l) => {
+      if (live) setLoad(l)
+    })
+    return () => {
+      live = false
+    }
+  }, [])
+
+  return (
+    <section style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <h2 style={{ fontFamily: DISPLAY, textTransform: "uppercase", fontSize: 16, margin: 0 }}>Matches for you</h2>
+      {load.kind === "loading" ? (
+        <p style={{ ...muted, margin: 0 }}>Looking for listings that fit…</p>
+      ) : load.kind === "error" ? (
+        <p style={{ color: "var(--rpc-danger-text)", fontSize: 13, margin: 0 }}>
+          Couldn&apos;t look for matches: {load.error}{" "}
+          <button type="button" style={btn} onClick={() => void read()}>
+            Retry
+          </button>
+        </p>
+      ) : load.matches.length === 0 ? (
+        <p style={{ ...muted, margin: 0 }}>
+          {!load.proven && load.my_wants === 0
+            ? "Prove an account and post a listing with what you want — then listings that fit show up here."
+            : !load.proven
+              ? "No open listing offers what your listings want yet. Prove an account to also see listings that want what you hold."
+              : load.my_wants === 0
+                ? "No open listing wants what's in your proven accounts yet. Add wants to a listing to also see who offers them."
+                : "No open listing fits yet — nobody wants what you hold, and nobody offers what you want."}
+        </p>
+      ) : (
+        <>
+          {load.matches.map((m) => (
+            <div key={m.listing.code} style={card}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", alignItems: "baseline" }}>
+                <div style={{ fontFamily: DISPLAY, textTransform: "uppercase", fontSize: 15 }}>
+                  {m.listing.username}
+                  {m.two_way ? <span style={{ marginLeft: 8, fontSize: 11, padding: "2px 6px", borderRadius: 4, background: "var(--rpc-red-fill)", color: "#fff" }}>Two-way</span> : null}
+                </div>
+                <Link href={`/trades/block/${m.listing.code}`} style={{ fontSize: 13 }}>
+                  See the listing &amp; propose →
+                </Link>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 12, marginTop: 8 }}>
+                {m.you_hold.length ? (
+                  <div>
+                    <div style={label}>They want — you hold</div>
+                    <LineList lines={m.you_hold} empty="" />
+                  </div>
+                ) : null}
+                {m.they_offer.length ? (
+                  <div>
+                    <div style={label}>They offer — you want</div>
+                    <LineList lines={m.they_offer} empty="" />
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          ))}
+          {!load.complete ? <p style={{ ...muted, fontSize: 12, margin: 0 }}>Checked the newest 300 open listings; older ones weren&apos;t scanned.</p> : null}
+        </>
+      )}
+    </section>
   )
 }
 

@@ -67,7 +67,14 @@ Trevor, 2026-11-02 (PT): "a Trade Block or Trade Post, where users can put up as
 - `/trades/block/mine` — signed in: prove an account, post a listing (pick offers from holdings across collections, add wants by edition search or player name), close listings, decide on proposals, open the room.
 - Routes: `/api/public/trade-block` (list), `/api/public/trade-block/[code]` (one), `/api/trade-block` (signed-in: state + every mutation by `action`).
 
-**Next (v2+, not built):** a matcher ("3 collectors want something you hold"; two-way matches) with email alerts; a concierge tool; "N on the block / N wanted" on player and edition pages; room pre-fill from the accepted proposal; chain-checked holdings readers for All Day / Golazos as their swap paths land.
+**v2 (shipped 2026-11-02, same day — Trevor: "Keep going"):**
+- **Matcher** — `lib/trade-block/match.ts`, `GET /api/trade-block?matches=1`, the "Matches for you" panel on `/trades/block/mine`: open listings (newest 300; `complete:false` says when more exist) whose WANTS an asset in the caller's PROVEN accounts satisfies, and whose OFFERS the caller's own listings want; both = a **two-way** match, ranked first. One collection at a time; an edition want matches its catalog key, a player / character want an accent- and case-blind name (Pinnacle reads `character_name`). Each empty state names WHY (no proven account / no wants / nothing fits); a failed read is a Retry banner.
+- **Match emails** — `lib/trade-block/match-notify.ts`: when a listing with wants is posted, every OTHER collector who proved an account on the block and holds a satisfying asset gets "X is looking for something you hold" — at most one a Pacific day (`trade_block_match_notices`, migration `20261102181928`, claimed BEFORE the send), ≤ 50 recipients per listing, username + link only. Proving an account on the block is the opt-in.
+- **Room guide** — a trade room opened from an accepted proposal shows "Agreed on the Trade Block" (lister = side A gives the listed assets, proposer = side B gives theirs) as a guide for the picks; never a pick itself, and a failed read only drops the guide.
+- **Concierge** — `get_trade_block` reads the public block (player/character/set, collection); it cannot post or propose and says so.
+- Hardening found on the way: the items read behind every list was ONE `.in()` that PostgREST would clamp at 1,000 rows once enough listings existed (silently dropping lines) — now chunked at 40 listings (≤ 800 rows) per read.
+
+**Next (not built):** "N on the block / N wanted" on player and edition pages; the prune for old closed/expired listings and old notice claims is WRITTEN but not applied — `docs/pending/trade-block-prune-run-in-sql-editor.sql` (the MCP holds a body carrying DELETE; run it in the SQL editor, then commit it as a migration); All Day / Golazos signing once their swap paths are proven; the browse filter's 1,000-line candidate read (fine at today's volume) should page once the block is large.
 
 ## Open — in order
 
