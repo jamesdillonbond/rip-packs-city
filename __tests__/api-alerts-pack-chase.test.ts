@@ -81,7 +81,7 @@ describe("/api/alerts/pack-chase", () => {
 
   it("an ok read returns the current reading", async () => {
     h.s.tables["pack_chase_watches"] = { data: [{ id: "w1", dist_id: "8903", tier: "legendary", min_vs_launch: 2 }], error: null }
-    h.s.tables["topshot_atlas_dists"] = { data: [{ dist_id: "8903", summary_fetched_at: fresh(), unopened_count: 18, total_pack_count: 719, remaining_by_tier: { legendary: "1" }, original_by_tier: { legendary: "3" } }], error: null }
+    h.s.tables["topshot_atlas_dists"] = { data: [{ dist_id: "8903", summary_fetched_at: fresh(), unopened_count: 18, total_pack_count: 719, remaining_by_tier: { legendary: "1", common: "53" }, original_by_tier: { legendary: "3", common: "2154" } }], error: null }
     h.s.tables["pack_table_rows"] = { data: [{ dist_id: "8903", observed_packs_opened: 600 }], error: null }
     const body = await (await GET()).json()
     expect(body.readings_ok).toBe(true)

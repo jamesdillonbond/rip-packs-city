@@ -10,7 +10,8 @@ const NOW = Date.parse("2026-11-02T16:00:00Z")
 const atlas = (over: Record<string, unknown> = {}) => ({
   dist_id: "8903", title: "Rookie Year Royalty Pack", summary_fetched_at: "2026-11-02T10:00:00Z",
   unopened_count: 18, total_pack_count: 719,
-  remaining_by_tier: { legendary: "1" }, original_by_tier: { legendary: "3" }, ...over,
+  // every tier, as Dapper sends it (3 moments/pack now and at launch: self-consistent)
+  remaining_by_tier: { legendary: "1", common: "53" }, original_by_tier: { legendary: "3", common: "2154" }, ...over,
 })
 
 describe("decideChaseWatch", () => {
@@ -35,7 +36,7 @@ describe("readingFor", () => {
     expect(readingFor(undefined, 0, "legendary", NOW)).toBeNull()
   })
   it("a sold-out tier is a valid reading of 0 (so a fired watch can re-arm)", () => {
-    const r = readingFor(atlas({ remaining_by_tier: { legendary: "0" } }), 0, "legendary", NOW)!
+    const r = readingFor(atlas({ remaining_by_tier: { legendary: "0", common: "54" } }), 0, "legendary", NOW)!
     expect(r.remaining).toBe(0)
     expect(decideChaseWatch({ armed: false, min_vs_launch: 2 }, r)).toBe("rearm")
   })

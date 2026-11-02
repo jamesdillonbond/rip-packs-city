@@ -17,11 +17,16 @@
 // dropped — that is a genuine contradiction, not lag.
 //
 // pack_rips.sealed_at is the OPEN time (the column name predates the meaning).
-// Cost: index-only on idx_pack_rips_dist_agg_v4, ~150 buffers / 2 ms for a 900-open dist.
+//
+// ⚠ CONFIRMED OPENS ONLY (2026-11-02, topshot_confirmed_opens_as_of). A rip whose drop
+// Dapper's own index did NOT confirm got its dist from the pool-vote INFERENCE, and on
+// 11-02 595 AJ Dybantsa Tip-Off (8911) rips sat under other drops that way — enough to
+// "refute" Dapper's correct counts on 8 drops (identity-confirmed opens equalled Atlas's
+// opened count exactly on every one). A guess must never overrule a primary source, so the
+// floor counts only opens whose identity row names the same dist. Fewer opens = a lower
+// floor = still a valid lower bound. Migration 20261102201245.
 
 import { boundedRead } from "@/lib/api/bounded-read"
-
-const TOP_SHOT = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = any
@@ -29,16 +34,13 @@ type Db = any
 /** Opens observed for a Top Shot dist with sealed_at <= stamp, or null when unknown. */
 export async function observedOpensAsOf(db: Db, distId: string, stampIso: string | null | undefined): Promise<number | null> {
   if (typeof stampIso !== "string" || !Number.isFinite(Date.parse(stampIso))) return null
-  const { count, error } = await boundedRead(
-    db.from("pack_rips")
-      .select("id", { count: "exact", head: true })
-      .eq("collection_id", TOP_SHOT)
-      .eq("dist_id", distId)
-      .lte("sealed_at", stampIso),
+  const { data, error } = await boundedRead(
+    db.rpc("topshot_confirmed_opens_as_of", { p_dist_id: distId, p_at: stampIso }),
     "pack-dist/observed-as-of",
   )
-  if (error || typeof count !== "number") return null
-  return count
+  const n = Array.isArray(data) ? data[0] : data
+  if (error || typeof n !== "number" || !Number.isFinite(n)) return null
+  return n
 }
 
 export interface AtlasFloorRow {

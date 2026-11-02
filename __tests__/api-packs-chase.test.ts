@@ -47,14 +47,17 @@ const req = (url: string) => ({ url }) as any
 const fresh = () => new Date(Date.now() - 3600_000).toISOString()
 
 function atlasRow(id: string, over: Record<string, unknown> = {}) {
+  // Every tier, as Dapper sends it: a Common tier keeps the payload self-consistent
+  // (3 moments per pack now and at launch) whatever unopened count a case overrides.
+  const unopened = Number((over as { unopened_count?: number }).unopened_count ?? 10)
   return {
     dist_id: id,
     title: `Pack ${id}`,
     summary_fetched_at: fresh(),
     unopened_count: 10,
     total_pack_count: 100,
-    remaining_by_tier: { legendary: "1" },
-    original_by_tier: { legendary: "2" },
+    remaining_by_tier: { legendary: "1", common: String(3 * unopened - 1) },
+    original_by_tier: { legendary: "2", common: "298" },
     ...over,
   }
 }

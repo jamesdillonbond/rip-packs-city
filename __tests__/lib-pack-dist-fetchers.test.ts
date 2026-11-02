@@ -665,15 +665,15 @@ describe("fetchTopshotAtlasDistCounts", () => {
     const row = { summary_fetched_at: "2026-10-14T09:54:00Z", unopened_count: 134, total_pack_count: 22068, remaining_by_tier: { rare: "43" }, original_by_tier: { rare: "5275" } }
     // 2026-11-02: plus the opens observed up to the row's OWN stamp — the floor the
     // page judges the payload by (an all-time count refuted every pack still opening).
-    const { db, calls } = makeDb({ topshot_atlas_dists: { data: row, error: null }, pack_rips: { data: null, error: null, count: 21934 } as any })
+    const { db, calls } = makeDb({ topshot_atlas_dists: { data: row, error: null }, "rpc:topshot_confirmed_opens_as_of": { data: 21934, error: null } })
     const res = await fetchTopshotAtlasDistCounts("nba-top-shot", "5048", db)
     expect(res).toEqual({ data: { ...row, observed_as_of: 21934 }, ok: true })
-    expect(calls).toEqual(["topshot_atlas_dists", "pack_rips"])
+    expect(calls).toEqual(["topshot_atlas_dists", "rpc:topshot_confirmed_opens_as_of"])
   })
 
   it("a failed as-of count leaves observed_as_of null (the page falls back to the all-time floor)", async () => {
     const row = { summary_fetched_at: "2026-10-14T09:54:00Z", unopened_count: 134, total_pack_count: 22068, remaining_by_tier: {}, original_by_tier: {} }
-    const { db } = makeDb({ topshot_atlas_dists: { data: row, error: null }, pack_rips: { data: null, error: DB_ERR } })
+    const { db } = makeDb({ topshot_atlas_dists: { data: row, error: null }, "rpc:topshot_confirmed_opens_as_of": { data: null, error: DB_ERR } })
     expect(await fetchTopshotAtlasDistCounts("nba-top-shot", "5048", db)).toEqual({ data: { ...row, observed_as_of: null }, ok: true })
   })
 

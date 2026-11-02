@@ -3036,10 +3036,13 @@ const PINS = [
     // ⚠ Re-pointed 2026-10-16 to 20261016162203: allday_repair and unpriced_retry read
     // their eligibility once as sets (4.28 M -> 453 k buffers through the function).
     // Restates plan_cache_mode, which 20261004173500 set by ALTER.
+    // ⚠ Re-pointed 2026-11-02 to 20261102201245: the dist vote fills only on a UNIQUE full
+    // match (property 9) — the lowest-id tie-break filed 595 AJ Dybantsa Tip-Off (8911) rips
+    // under older drops that shared its editions.
     fn: "backfill_pack_rip_metadata",
     test: "supabase/tests/backfill_pack_rip_metadata.sql",
     migration:
-      "supabase/migrations/20261016162203_audit_20261016_rip_metadata_eligibility_read_once_as_sets.sql",
+      "supabase/migrations/20261102201245_audit_20261102_8911_rekey_and_unique_pool_vote.sql",
   },
   {
     // pg_cron `40 9 * * *`. Sets players.team from the catalogue.

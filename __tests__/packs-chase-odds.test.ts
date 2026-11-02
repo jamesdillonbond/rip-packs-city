@@ -72,7 +72,7 @@ describe("buildChaseRows", () => {
   })
 
   it("drops internally inconsistent tier counts (more left than launched)", () => {
-    const res = buildChaseRows([atlas({ remaining_by_tier: { legendary: "4" } })], new Map(), opts)
+    const res = buildChaseRows([atlas({ remaining_by_tier: { legendary: "4", rare: "0", common: "53" } })], new Map(), opts)
     expect(res.rows).toHaveLength(0)
   })
 
@@ -89,8 +89,8 @@ describe("buildChaseRows", () => {
   })
 
   it("sorts by the chosen key", () => {
-    const big = atlas({ dist_id: "8908", title: "Keaton Wagler Tip-Off Pack", unopened_count: 1079, total_pack_count: 1500, remaining_by_tier: { legendary: "1" }, original_by_tier: { legendary: "4" } })
-    const many = atlas({ dist_id: "9000", unopened_count: 500, total_pack_count: 1000, remaining_by_tier: { legendary: "5" }, original_by_tier: { legendary: "5" } })
+    const big = atlas({ dist_id: "8908", title: "Keaton Wagler Tip-Off Pack", unopened_count: 1079, total_pack_count: 1500, remaining_by_tier: { legendary: "1", common: "3236" }, original_by_tier: { legendary: "4", common: "4496" } })
+    const many = atlas({ dist_id: "9000", unopened_count: 500, total_pack_count: 1000, remaining_by_tier: { legendary: "5", common: "1495" }, original_by_tier: { legendary: "5", common: "2995" } })
     const m = new Map<string, PackMetaInput>()
     const byNow = buildChaseRows([big, many, atlas()], m, opts).rows.map((r) => r.distId)
     expect(byNow).toEqual(["8903", "9000", "8908"])

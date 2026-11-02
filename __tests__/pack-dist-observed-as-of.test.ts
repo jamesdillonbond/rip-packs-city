@@ -10,20 +10,11 @@ import { atlasTierCounts } from "@/lib/pack-dist/tier-counts"
 function fakeDb(counts: Record<string, number | "err">) {
   const calls: Array<{ dist: string; lte: string }> = []
   const db = {
-    from: (t: string) => {
-      expect(t).toBe("pack_rips")
-      const q: any = { dist: "", lte: "" }
-      const b: any = {
-        select: () => b,
-        eq: (k: string, v: string) => { if (k === "dist_id") q.dist = v; return b },
-        lte: (_k: string, v: string) => { q.lte = v; return b },
-        then: (resolve: any) => {
-          calls.push({ dist: q.dist, lte: q.lte })
-          const c = counts[q.dist]
-          return resolve(c === "err" ? { count: null, error: { message: "boom" } } : { count: c, error: null })
-        },
-      }
-      return b
+    rpc: (name: string, args: { p_dist_id: string; p_at: string }) => {
+      expect(name).toBe("topshot_confirmed_opens_as_of")
+      calls.push({ dist: args.p_dist_id, lte: args.p_at })
+      const c = counts[args.p_dist_id]
+      return Promise.resolve(c === "err" ? { data: null, error: { message: "boom" } } : { data: c, error: null })
     },
   }
   return { db, calls }
@@ -39,7 +30,7 @@ describe("asOfObservedFloors", () => {
     expect(out.get("lag")).toBe(700)
     expect(out.get("lie")).toBe(924)
     // and the floor then admits the lag row, still refutes the genuine one
-    const payload = (r: any) => ({ ...r, remaining_by_tier: { legendary: 1 }, original_by_tier: { legendary: 3 } })
+    const payload = (r: any) => ({ ...r, remaining_by_tier: { legendary: 1, common: 3 * r.unopened_count - 1 }, original_by_tier: { legendary: 3, common: 3 * r.total_pack_count - 3 } })
     expect(atlasTierCounts(payload(row("lag", 719, 18)), out.get("lag"))).not.toBeNull()
     expect(atlasTierCounts(payload(row("lie", 1500, 585)), out.get("lie"))).toBeNull()
   })

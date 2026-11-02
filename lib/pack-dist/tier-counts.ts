@@ -128,6 +128,7 @@ export function atlasTierCounts(
   if (!remainingByTier || !originalByTier) return null
   const observed = finiteNum(observedPacksOpened) ?? 0
   if (total - unopened < observed) return null
+  if (!isSelfConsistent(remainingByTier, originalByTier, unopened, total)) return null
   return {
     updatedAt: atlas.summary_fetched_at,
     totalUnopened: unopened,
@@ -135,6 +136,32 @@ export function atlasTierCounts(
     remainingByTier,
     originalByTier,
   }
+}
+
+/**
+ * Dapper's payload must agree WITH ITSELF: moments remaining per unopened pack ≈
+ * moments per pack at launch. WHY (2026-11-02): on the Origins box family the
+ * response mixes two bases — `unopened_count` against total_supply, the tier maps
+ * and total_pack_count against another (6409: 81,300 original moments = 16,260 × 5,
+ * remaining 5,815 ≈ 1,163 packs, yet unopened 2,404). Measured over 3,514 live
+ * payloads: 233 deviate < 20 % (variable-slot packs, rounding), 14 deviate > 20 %
+ * — nearly all the Origins box family. 30 % separates the two populations.
+ */
+export const SELF_CONSISTENCY_TOLERANCE = 0.3
+
+export function isSelfConsistent(
+  remainingByTier: Record<string, number>,
+  originalByTier: Record<string, number>,
+  unopened: number,
+  total: number,
+): boolean {
+  if (unopened <= 0 || total <= 0) return true
+  const sumRem = Object.values(remainingByTier).reduce((a, b) => a + b, 0)
+  const sumOrig = Object.values(originalByTier).reduce((a, b) => a + b, 0)
+  if (sumOrig <= 0) return true
+  const perPackNow = sumRem / unopened
+  const perPackLaunch = sumOrig / total
+  return Math.abs(perPackNow / perPackLaunch - 1) <= SELF_CONSISTENCY_TOLERANCE
 }
 
 /**

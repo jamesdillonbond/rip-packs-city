@@ -128,7 +128,8 @@
 -- and concludes it is vacuous.
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20261016162203_audit_20261016_rip_metadata_eligibility_read_once_as_sets.sql),
+-- (supabase/migrations/20261102201245_audit_20261102_8911_rekey_and_unique_pool_vote.sql; before it 20261016162203,
+-- whose description follows),
 -- itself byte-identical to production: prosrc md5 89c4d224259048322b652d0f76ace7e7,
 -- length 14274, read back after the apply on 2026-10-16. That body's allday_repair and
 -- unpriced_retry legs build their eligibility as sets; the three mutations that flip each
@@ -358,11 +359,16 @@ BEGIN
     JOIN rip_counts rc ON rc.rip_id = v.rip_id
     WHERE v.matched = rc.n_ed
   ),
+  -- ⚠ A UNIQUE FULL MATCH ONLY (2026-11-02). The vote used to take the LOWEST dist_id among
+  -- every pool that contained all pulled editions, so a pack whose real drop had no pool
+  -- yet was filed under whichever older drop happened to share its editions: the 8911 AJ
+  -- Dybantsa Tip-Off (absent from Dapper's frozen pack index, no pool) put 436 rips into
+  -- 8552, 82 into 8447, 37 into 8545 and 36 into its sibling Tip-Offs. Ambiguous = unknown.
   best_dist AS (
-    SELECT DISTINCT ON (fm.rip_id) fm.rip_id, fm.dist_id
+    SELECT fm.rip_id, min(fm.dist_id) AS dist_id
     FROM full_matches fm
-    JOIN candidates c ON c.id = fm.rip_id
-    ORDER BY fm.rip_id, (fm.dist_id = c.cur_dist) DESC, fm.dist_id
+    GROUP BY fm.rip_id
+    HAVING count(*) = 1
   ),
   -- ⚠ ALL-OR-NOTHING, AND WHOLE-PACK -- the property
   -- rollup_allday_rip_pull_value has been pinned on since 2026-09-12 and this
@@ -754,6 +760,45 @@ SELECT _assert_eq(
   (SELECT coalesce(dist_id, 'NULL') FROM public.pack_rips WHERE pack_nft_id = 'P-DIST-FILL'),
   'D-VOTE',
   'and a NULL dist_id is still filled by a full-match vote'
+);
+
+-- ── Property 9: THE VOTE FILLS ONLY ON A UNIQUE FULL MATCH (2026-11-02) ────
+-- The pre-11-02 body took the LOWEST dist_id among every pool that contained all
+-- pulled editions. The AJ Dybantsa Tip-Off (8911: no pool, absent from Dapper's
+-- frozen index) shares editions with older drops, so its rips were filed under
+-- 8552 / 8447 / 8545 / the sibling Tip-Offs (595 rips). P-DIST-AMBIG is that
+-- shape (two pools each contain the pull): it must stay NULL. P-DIST-UNIQ is the
+-- no-change control: one pool contains it, and it is filled.
+DELETE FROM public.pack_rips;
+DELETE FROM public.moment_acquisitions;
+DELETE FROM public.pack_drop_pool;
+
+INSERT INTO public.pack_drop_pool (collection_id, edition_id, dist_id) VALUES
+  (:TS::uuid, :E1::uuid, 'D-OLD-A'),
+  (:TS::uuid, :E1::uuid, 'D-OLD-B'),
+  (:TS::uuid, :E2::uuid, 'D-ONLY');
+
+INSERT INTO public.pack_rips
+  (id, collection_id, pack_nft_id, dist_id, pull_value_usd, moments_pulled, sealed_at, metadata_updated_at) VALUES
+  ('ddddddd2-0000-0000-0000-000000000001'::uuid, :TS::uuid, 'P-DIST-AMBIG', NULL, NULL, 1, '2026-06-01T00:00:00Z', '2026-01-01T00:00:00Z'),
+  ('ddddddd2-0000-0000-0000-000000000002'::uuid, :TS::uuid, 'P-DIST-UNIQ',  NULL, NULL, 1, '2026-06-01T00:00:00Z', '2026-01-01T00:00:00Z');
+
+INSERT INTO public.moment_acquisitions (source_pack_rip_id, nft_id) VALUES
+  ('ddddddd2-0000-0000-0000-000000000001'::uuid, 'm1'),
+  ('ddddddd2-0000-0000-0000-000000000002'::uuid, 'm2');
+
+SELECT public.backfill_pack_rip_metadata(5000);
+
+SELECT _assert_eq(
+  (SELECT coalesce(dist_id, 'NULL') FROM public.pack_rips WHERE pack_nft_id = 'P-DIST-AMBIG'),
+  'NULL',
+  'an AMBIGUOUS vote (two pools fully contain the pulls) leaves the dist unknown -- never the lowest id'
+);
+
+SELECT _assert_eq(
+  (SELECT coalesce(dist_id, 'NULL') FROM public.pack_rips WHERE pack_nft_id = 'P-DIST-UNIQ'),
+  'D-ONLY',
+  'and a UNIQUE full match still fills the dist'
 );
 
 -- ── The negative-LIMIT guard (20260920204628). Every other share has a
