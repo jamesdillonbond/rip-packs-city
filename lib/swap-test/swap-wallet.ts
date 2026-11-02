@@ -24,6 +24,8 @@ import * as fcl from "@onflow/fcl"
 import { initFcl } from "@/lib/chains/flow/flow"
 import { SWAP_CADENCE, SWAP_GAS_LIMIT } from "@/lib/swap-test/swap-cadence"
 import type { SwapPlan } from "@/lib/swap-test/plan"
+import { MULTI_SWAP_CADENCE, MULTI_SWAP_GAS_LIMIT } from "@/lib/trade-room/multi-swap-cadence"
+import type { MultiPlan } from "@/lib/trade-room/multi-plan"
 import { errorText } from "@/lib/giveaways/view-format"
 import {
   SealUnconfirmedError,
@@ -120,10 +122,65 @@ function within<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
  * A — minutes spent waiting on the co-signer are expected, not a stall.
  */
 export async function sendSwap(plan: SwapPlan, io: RelayIO, opts: SendSwapOpts = {}): Promise<{ txId: string }> {
+  return submitTwoSigner(
+    {
+      cadence: SWAP_CADENCE,
+      limit: SWAP_GAS_LIMIT,
+      signerA: plan.a.signer,
+      signerB: plan.b.signer,
+      args: (arg, t) => [
+        arg(plan.a.source, t.Address),
+        arg(plan.a.ctl, t.UInt64),
+        arg(plan.a.ids, t.Array(t.UInt64)),
+        arg(plan.b.source, t.Address),
+        arg(plan.b.ctl, t.UInt64),
+        arg(plan.b.ids, t.Array(t.UInt64)),
+      ],
+    },
+    io,
+    opts,
+  )
+}
+
+/**
+ * The trade room's multi-collection swap (NBA Top Shot + NFL All Day + LaLiga Golazos,
+ * lib/trade-room/multi-swap-cadence.ts, 2026-11-02): the same two-signer flow as sendSwap,
+ * the multi-collection transaction text, the planner's per-collection arguments.
+ */
+export async function sendMultiSwap(plan: MultiPlan, io: RelayIO, opts: SendSwapOpts = {}): Promise<{ txId: string }> {
+  return submitTwoSigner(
+    {
+      cadence: MULTI_SWAP_CADENCE,
+      limit: MULTI_SWAP_GAS_LIMIT,
+      signerA: plan.a.signer,
+      signerB: plan.b.signer,
+      args: (arg, t) => [
+        arg(plan.a.source, t.Address),
+        arg(plan.a.ctls, t.Array(t.UInt64)),
+        arg(plan.a.ids, t.Array(t.Array(t.UInt64))),
+        arg(plan.b.source, t.Address),
+        arg(plan.b.ctls, t.Array(t.UInt64)),
+        arg(plan.b.ids, t.Array(t.Array(t.UInt64))),
+      ],
+    },
+    io,
+    opts,
+  )
+}
+
+interface TwoSignerTx {
+  cadence: string
+  limit: number
+  signerA: string
+  signerB: string
+  args: (arg: typeof fcl.arg, t: typeof fcl.t) => unknown[]
+}
+
+async function submitTwoSigner(tx: TwoSignerTx, io: RelayIO, opts: SendSwapOpts): Promise<{ txId: string }> {
   initFcl()
   const user = (await fcl.currentUser.snapshot()) as { addr?: string | null }
-  if (sansPrefix(user?.addr ?? "") !== sansPrefix(plan.a.signer)) {
-    throw new Error(`Connect side A's wallet (${plan.a.signer}) first; this session is connected to ${user?.addr ?? "nothing"}.`)
+  if (sansPrefix(user?.addr ?? "") !== sansPrefix(tx.signerA)) {
+    throw new Error(`Connect side A's wallet (${tx.signerA}) first; this session is connected to ${user?.addr ?? "nothing"}.`)
   }
   const trace = startNetworkTrace()
   let onCosigner = false
@@ -156,18 +213,11 @@ export async function sendSwap(plan: SwapPlan, io: RelayIO, opts: SendSwapOpts =
   let txId: string
   try {
     txId = await fcl.mutate({
-      cadence: SWAP_CADENCE,
-      args: (arg: typeof fcl.arg, t: typeof fcl.t) => [
-        arg(plan.a.source, t.Address),
-        arg(plan.a.ctl, t.UInt64),
-        arg(plan.a.ids, t.Array(t.UInt64)),
-        arg(plan.b.source, t.Address),
-        arg(plan.b.ctl, t.UInt64),
-        arg(plan.b.ids, t.Array(t.UInt64)),
-      ],
+      cadence: tx.cadence,
+      args: tx.args as any,
       // order matters: prepare(a, b) — wallet A first, the relayed wallet B second
-      authorizations: [fcl.currentUser.authorization, relayedAuthorizer(plan.b.signer, relay)] as any,
-      limit: SWAP_GAS_LIMIT,
+      authorizations: [fcl.currentUser.authorization, relayedAuthorizer(tx.signerB, relay)] as any,
+      limit: tx.limit,
     })
   } catch (e) {
     // "Load failed" alone names no request; say which one died (or was blocked)
@@ -206,10 +256,16 @@ export function readComposite(out: any, fallbackKeyId: unknown): RelayedSignatur
   return { signature, keyId }
 }
 
-/** Co-signer: wallet B must be connected. Signs the relayed signable as an authorizer. */
-export async function coSign(signable: any, cosigner: string): Promise<RelayedSignature> {
+/** The transactions a trade room may ask a co-signer to sign (the admin test passes SWAP_CADENCE only). */
+export const TRADE_ROOM_CADENCES: readonly string[] = [SWAP_CADENCE, MULTI_SWAP_CADENCE]
+
+/**
+ * Co-signer: wallet B must be connected. Signs the relayed signable as an authorizer — only if
+ * its Cadence is one of `allowed` (default: the swap-test transaction alone).
+ */
+export async function coSign(signable: any, cosigner: string, allowed: readonly string[] = [SWAP_CADENCE]): Promise<RelayedSignature> {
   initFcl()
-  if (signable?.cadence !== SWAP_CADENCE) throw new Error("This request is not the swap-test transaction; refusing to sign.")
+  if (!allowed.includes(signable?.cadence)) throw new Error("This request is not a swap transaction RPC built; refusing to sign.")
   const want = sansPrefix(cosigner)
   const user = (await fcl.currentUser.snapshot()) as { addr?: string | null }
   if (sansPrefix(user?.addr ?? "") !== want) {

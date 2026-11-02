@@ -16,7 +16,9 @@ const wallet = vi.hoisted(() => ({
   connectTradeWallet: vi.fn(),
   disconnectTradeWallet: vi.fn(async () => undefined),
   sendSwap: vi.fn(),
+  sendMultiSwap: vi.fn(),
   coSign: vi.fn(),
+  TRADE_ROOM_CADENCES: ["swap", "multi"],
   SealUnconfirmedError: class SealUnconfirmedError extends Error {
     constructor(readonly txId: string, readonly readError: string) {
       super(`unconfirmed ${txId}`)
@@ -53,7 +55,7 @@ function installFetch() {
   }) as typeof fetch
 }
 
-const item = (id: string, fmv: number | null) => ({ moment_id: id, edition_key: "1:2", serial_number: Number(id), player_name: `Player ${id}`, set_name: "Set", tier: "COMMON", series_number: 8, image_url: null, fmv_usd: fmv, priced: fmv != null })
+const item = (id: string, fmv: number | null, collection = "nba_top_shot") => ({ collection, moment_id: id, edition_key: "1:2", serial_number: Number(id), player_name: `Player ${id}`, set_name: "Set", tier: "COMMON", series_number: 8, image_url: null, fmv_usd: fmv, priced: fmv != null })
 
 function view(o: Partial<Record<string, unknown>> = {}) {
   return {
@@ -150,9 +152,12 @@ describe("TradeRoomClient — wallet, picks", () => {
     posts.wallet = (body) => (body.source ? { status: 200, body: { room: view(), signer: WA.signer, accounts } } : { status: 200, body: { signer: WA.signer, accounts } })
     fireEvent.click(screen.getByText("Connect Flow Wallet"))
     await waitFor(() => expect(screen.getByText(/Which account holds the Moments/)).toBeTruthy())
-    // the account with no Top Shot collection cannot be chosen
-    const dead = screen.getByText(/Creator Hub/).closest("button") as HTMLButtonElement
-    expect(dead.disabled).toBe(true)
+    // 2026-11-02: an account with no Top Shot collection may still hold All Day / Golazos, so it
+    // can be chosen; what it can give or receive is checked per collection before anyone signs.
+    // It is never labelled as holding Top Shot Moments it doesn't have.
+    const other = screen.getByText(/Creator Hub/).closest("button") as HTMLButtonElement
+    expect(other.disabled).toBe(false)
+    expect(other.textContent).not.toMatch(/Top Shot Moments/)
     fireEvent.click(screen.getByText(/Dapper Wallet/))
     await waitFor(() => expect(screen.queryByText(/Which account holds/)).toBeNull())
     const chosen = calls.find((c) => c.body?.action === "wallet" && c.body?.source)
@@ -175,11 +180,11 @@ describe("TradeRoomClient — wallet, picks", () => {
 
   it("the picker: unindexed reads as unindexed, picks toggle up to the cap, and Save sends the ids", async () => {
     await mount(view())
-    gets[`${API}?picker=1&q=`] = { status: 200, body: { picker: { indexed: false, rows: [], truncated: false } } }
+    gets[`${API}?picker=1&collection=nba-top-shot&q=`] = { status: 200, body: { picker: { indexed: false, rows: [], truncated: false } } }
     fireEvent.click(screen.getByText("Change picks"))
     await waitFor(() => expect(screen.getByText(/hasn't indexed that account yet/)).toBeTruthy())
     const rows = Array.from({ length: 12 }, (_, i) => ({ ...item(String(i + 1), i % 2 ? null : 5), locked_hint: i === 11, priced: i % 2 === 0 }))
-    gets[`${API}?picker=1&q=jokic`] = { status: 200, body: { picker: { indexed: true, rows, truncated: true } } }
+    gets[`${API}?picker=1&collection=nba-top-shot&q=jokic`] = { status: 200, body: { picker: { indexed: true, rows, truncated: true } } }
     fireEvent.change(screen.getByLabelText("Filter by player"), { target: { value: "jokic" } })
     fireEvent.click(screen.getByText("Filter"))
     await waitFor(() => expect(screen.getByText(/Showing the first 12/)).toBeTruthy())
@@ -188,15 +193,17 @@ describe("TradeRoomClient — wallet, picks", () => {
     // moment 1 is already saved (checked); tick 10 more, the 11th is refused at the cap
     for (let i = 1; i <= 10; i++) fireEvent.click(boxes[i])
     expect(screen.getByText(/At most 10 Moments per side/)).toBeTruthy()
-    posts.items = (body) => ({ status: 200, body: { room: view({ a: { ...view().a, items: (body.ids as string[]).map((id) => item(id, 5)) } }) } })
+    posts.items = (body) => ({ status: 200, body: { room: view({ a: { ...view().a, items: (body.picks as Array<{ id: string }>).map((p) => item(p.id, 5)) } }) } })
     fireEvent.click(screen.getByText(/Save 10 picks/))
     await waitFor(() => expect(screen.getByText(/Picks saved and checked on chain/)).toBeTruthy())
-    expect(calls.find((c) => c.body?.action === "items")?.body?.ids).toHaveLength(10)
+    const sent = calls.find((c) => c.body?.action === "items")?.body?.picks as Array<{ collection: string; id: string }>
+    expect(sent).toHaveLength(10)
+    expect(new Set(sent.map((p) => p.collection))).toEqual(new Set(["nba-top-shot"]))
   })
 
   it("a chain outage on save is the route's copy, not 'not held'", async () => {
     await mount(view())
-    gets[`${API}?picker=1&q=`] = { status: 200, body: { picker: { indexed: true, rows: [item("1", 10)], truncated: false } } }
+    gets[`${API}?picker=1&collection=nba-top-shot&q=`] = { status: 200, body: { picker: { indexed: true, rows: [item("1", 10)], truncated: false } } }
     fireEvent.click(screen.getByText("Change picks"))
     await waitFor(() => expect(screen.getByText(/Save 1 pick/)).toBeTruthy())
     posts.items = { status: 503, body: { error: "We couldn't reach the Flow blockchain to check those Moments (HTTP 503). Try again in a minute.", code: "upstream_unavailable", retryable: true } }

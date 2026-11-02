@@ -19,6 +19,8 @@ const chain = vi.hoisted(() => ({
   proof: vi.fn(),
   planSwap: vi.fn(),
   verifySwap: vi.fn(),
+  // every non-Top-Shot chain read (All Day / Golazos held scripts) goes through runFlowScript
+  run: vi.fn(),
 }))
 
 vi.mock("@/lib/supabase", () => ({
@@ -32,7 +34,8 @@ vi.mock("@/lib/auth/supabase-server", () => ({
     return session.user
   },
 }))
-vi.mock("@/lib/giveaways/topshot-holdings", () => ({ readTopShotHoldings: chain.holdings }))
+vi.mock("@/lib/giveaways/topshot-holdings", async (orig) => ({ ...(await orig<typeof import("@/lib/giveaways/topshot-holdings")>()), readTopShotHoldings: chain.holdings }))
+vi.mock("@/lib/giveaways/flow-script", async (orig) => ({ ...(await orig<typeof import("@/lib/giveaways/flow-script")>()), runFlowScript: chain.run }))
 vi.mock("@/lib/giveaways/linked-accounts", () => ({ discoverAccounts: chain.accounts }))
 vi.mock("@/lib/giveaways/claim-proof", async (orig) => ({ ...(await orig<typeof import("@/lib/giveaways/claim-proof")>()), verifyClaimProof: chain.proof }))
 vi.mock("@/lib/swap-test/plan", async (orig) => ({ ...(await orig<typeof import("@/lib/swap-test/plan")>()), planSwap: chain.planSwap, verifySwap: chain.verifySwap }))
@@ -51,7 +54,9 @@ import { checkPicks, executionOpen, EXECUTE_CLOSED_MESSAGE, planRoom } from "@/l
 import { TradeRoomError, type LoadedRoom } from "@/lib/trade-room/store"
 import { TOP_SHOT_COLLECTION_ID, pickItems, readPicker, toPickerRow, withLiveLocks } from "@/lib/trade-room/holdings"
 
-const UNIQUES = { trade_rooms: [["code"]], trade_room_sides: [["room_id", "side"], ["room_id", "user_id"]], trade_room_items: [["room_id", "moment_id"]] }
+// 20261102205817: a moment id is unique only within a collection, so every item key includes it
+const UNIQUES = { trade_rooms: [["code"]], trade_room_sides: [["room_id", "side"], ["room_id", "user_id"]], trade_room_items: [["room_id", "side", "collection", "moment_id"], ["room_id", "collection", "moment_id"]] }
+const AD_COLLECTION_ID = "dee28451-5d62-409e-a1ad-a83f763ac070"
 const DEFAULTS = {
   trade_rooms: { status: "open", version: 1, collection: "nba_top_shot", tx_id: null, landed: null, sealed_at: null, cancelled_by: null, cancel_reason: null },
   trade_room_sides: { signer: null, source: null, proven_at: null, accepted_version: null, notice_read_at: null },
@@ -290,6 +295,62 @@ describe("/api/trade-room — the routes", () => {
     for (let i = 0; i < 12; i++) await as(ALICE, () => room.POST(post(`/api/trade-room/${code}`, { action: "wallet", proof: {} }), ctx(code)))
     const limited = await as(ALICE, () => room.POST(post(`/api/trade-room/${code}`, { action: "wallet", proof: {} }), ctx(code)))
     expect(limited.status).toBe(429)
+  })
+
+  it("All Day and Top Shot picks with the SAME moment id are two moments, each read and stored under its own collection", async () => {
+    // Alice's account holds Top Shot #1 (seeded) and All Day #1 — the same id in another collection
+    mem.current.tables.wallet_moments_cache.push({ ...wmc(WA.source, "1", 7, "HIGH"), collection_id: AD_COLLECTION_ID, player_name: "Josh Allen" })
+    const code = await twoSided()
+    // the All Day held script answers "held" for the ids it is asked about
+    chain.run.mockImplementation(async (_script: string, args: Array<{ value: unknown }>) => ({ type: "Array", value: (args[1].value as Array<{ value: string }>).map((x) => ({ type: "UInt64", value: x.value })) }))
+    const r = await as(ALICE, () => room.POST(post(`/api/trade-room/${code}`, { action: "items", picks: [{ collection: "nba-top-shot", id: "1" }, { collection: "nfl-all-day", id: "1" }] }), ctx(code)))
+    expect(r.status).toBe(200)
+    const v = (await r.json()) as { room: { collection: string; a: { items: Array<{ collection: string; moment_id: string; player_name: string }> } } }
+    expect(v.room.a.items.map((i) => `${i.collection}:${i.moment_id}:${i.player_name}`).sort()).toEqual(["nba_top_shot:1:Player 1", "nfl_all_day:1:Josh Allen"])
+    expect(v.room.collection).toBe("mixed")
+    // the Top Shot read saw only the Top Shot id; the All Day read went through the chain script
+    expect(chain.holdings).toHaveBeenLastCalledWith(WA.source, ["1"])
+    expect(chain.run).toHaveBeenCalledTimes(1)
+    expect(String(chain.run.mock.calls[0][0])).toContain("import AllDay from 0xe4cf4bdc1751c65d")
+  })
+
+  it("an All Day pick the chain says is gone is named; a failed All Day read is a 503, never 'not held'", async () => {
+    mem.current.tables.wallet_moments_cache.push({ ...wmc(WA.source, "5", 7, "HIGH"), collection_id: AD_COLLECTION_ID })
+    const code = await twoSided()
+    chain.run.mockResolvedValueOnce({ type: "Array", value: [] })
+    const gone = await as(ALICE, () => room.POST(post(`/api/trade-room/${code}`, { action: "items", picks: [{ collection: "nfl-all-day", id: "5" }] }), ctx(code)))
+    expect(gone.status).toBe(409)
+    expect(await gone.json()).toMatchObject({ code: "not_held" })
+    chain.run.mockRejectedValueOnce(new Error("Flow script HTTP 503"))
+    const down = await as(ALICE, () => room.POST(post(`/api/trade-room/${code}`, { action: "items", picks: [{ collection: "nfl-all-day", id: "5" }] }), ctx(code)))
+    expect(down.status).toBe(503)
+    const body = (await down.json()) as { code: string; error: string }
+    expect(body.code).toBe("upstream_unavailable")
+    expect(body.error).not.toMatch(/doesn't hold/)
+    expect(mem.current.tables.trade_room_items ?? []).toEqual([])
+  })
+
+  it("an unknown collection is refused — on the picker and on save — never answered with Top Shot", async () => {
+    const code = await twoSided()
+    const picker = await as(ALICE, () => room.GET(get(`/api/trade-room/${code}?picker=1&collection=candy_mlb`), ctx(code)))
+    expect(picker.status).toBe(400)
+    const body = JSON.stringify(await picker.json())
+    expect(body).not.toMatch(/Player 1/)
+    const save = await as(ALICE, () => room.POST(post(`/api/trade-room/${code}`, { action: "items", picks: [{ collection: "disney-pinnacle", id: "1" }] }), ctx(code)))
+    expect(save.status).toBe(400)
+    expect(await save.json()).toMatchObject({ code: "bad_collection" })
+  })
+
+  it("the picker reads the collection asked for, scoped by its collection_id", async () => {
+    mem.current.tables.wallet_moments_cache.push({ ...wmc(WA.source, "1", 7, "HIGH"), collection_id: AD_COLLECTION_ID, player_name: "Josh Allen" })
+    const code = await twoSided()
+    chain.run.mockImplementation(async (_script: string, args: Array<{ value: unknown }>) => ({ type: "Array", value: (args[1].value as Array<{ value: string }>).map((x) => ({ type: "UInt64", value: x.value })) }))
+    const r = await as(ALICE, () => room.GET(get(`/api/trade-room/${code}?picker=1&collection=nfl-all-day`), ctx(code)))
+    expect(r.status).toBe(200)
+    const p = (await r.json()) as { picker: { rows: Array<{ collection: string; player_name: string; locked_hint: boolean | null; held_live?: boolean }>; lock_state: string } }
+    expect(p.picker.rows.map((x) => `${x.collection}:${x.player_name}`)).toEqual(["nfl_all_day:Josh Allen"])
+    expect(p.picker.lock_state).toBe("live")
+    expect(p.picker.rows[0]).toMatchObject({ held_live: true, locked_hint: false })
   })
 
   it("TradeRoomError keeps its status and code through the route", async () => {

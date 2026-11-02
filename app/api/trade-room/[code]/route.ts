@@ -1,17 +1,21 @@
 // app/api/trade-room/[code]/route.ts
 //
-// One trade room (Trevor, 2026-10-31: user-to-user Top Shot trades, two signatures
+// One trade room (Trevor, 2026-10-31: user-to-user trades — Top Shot, and since 2026-11-02
+// All Day and Golazos in the same room — two signatures
 // on one transaction, no custody). Signed in only; every mutation is scoped to the
 // caller's OWN side. RPC never holds a key, a moment or a fee.
 //
 //   GET                        -> { room: RoomView }   (a room the caller may join is visible to them)
 //   GET ?relay=<id>            -> { relay }            the initiator polling for the co-signature
-//   GET ?picker=1&q=<player>   -> { picker }           the caller's source account's indexed moments
+//   GET ?picker=1&q=<player>&collection=<slug>
+//                              -> { picker }           the caller's source account's indexed moments of ONE
+//                                                      collection (nba-top-shot default, nfl-all-day, laliga-golazos)
 //   GET ?nonce=1               -> { nonce, issuedAt }  for Flow Wallet's account proof
 //   POST { action, ... }:
 //     join                                 -> the caller becomes side B
 //     wallet   { proof, source? }          -> prove a Flow Wallet; list its accounts; with `source`, save both
-//     items    { ids }                     -> this side gives these moments (chain-checked: held + unlocked)
+//     items    { picks: [{collection, id}] } -> this side gives these moments (chain-checked: held + unlocked);
+//              { ids }                     -> the same, all Top Shot (the original shape)
 //     accept   { version, notice_read }    -> accept the proposal as seen
 //     unaccept                             -> withdraw an acceptance
 //     cancel   { reason? }                 -> either side, any time before the seal
@@ -50,9 +54,12 @@ import {
   type LoadedRoom,
   type SideRow,
 } from "@/lib/trade-room/store"
-import { checkPicks, EXECUTE_CLOSED_MESSAGE, executionOpen, planRoom, verifyRoom } from "@/lib/trade-room/execute"
-import { pickItems, readPicker, withLiveLocks, TOP_SHOT_COLLECTION_ID, type PickerResult } from "@/lib/trade-room/holdings"
-import { readTopShotHoldings } from "@/lib/giveaways/topshot-holdings"
+import { checkRoomPicks, EXECUTE_CLOSED_MESSAGE, executionOpen, planRoom, verifyRoom } from "@/lib/trade-room/execute"
+import { pickItems, readPickedRows, readPicker, withLiveLocks, TOP_SHOT_COLLECTION_ID, type PickerResult } from "@/lib/trade-room/holdings"
+import { holdingsReader, type Pick } from "@/lib/trade-room/multi-plan"
+import { MULTI_SWAP_CADENCE, swapCollection, SWAP_COLLECTIONS, type SwapSlug } from "@/lib/trade-room/multi-swap-cadence"
+import { SWAP_CADENCE } from "@/lib/swap-test/swap-cadence"
+import type { NewItem } from "@/lib/trade-room/store"
 import { buildRoomView, cosignerOf, usernamesFor, type PendingRelay } from "@/lib/trade-room/view"
 import { notifyOtherSide, type TradeNotice } from "@/lib/trade-room/notify"
 import { proposalForRoom } from "@/lib/trade-block/store"
@@ -76,6 +83,8 @@ function notifyLater(loaded: LoadedRoom, actorUserId: string, notice: TradeNotic
   }
 }
 const RELAY_TABLE = "trade_room_relay" as const
+// the only two transactions a trade room may ask a wallet to co-sign
+const TRADE_ROOM_CADENCES = [SWAP_CADENCE, MULTI_SWAP_CADENCE] as const
 const FLOW_ADDRESS = /^0x[0-9a-f]{16}$/
 
 type Ctx = { params: Promise<{ code: string }> }
@@ -151,6 +160,20 @@ async function view(loaded: LoadedRoom, userId: string) {
   return buildRoomView(loaded, userId, names, { relay, fromBlock })
 }
 
+/** `picks: [{collection, id}]`, or the original all-Top-Shot `ids: [...]`. Refuses an unknown collection. */
+function readPicks(body: Record<string, unknown>): Pick[] {
+  if (Array.isArray(body.picks)) {
+    return body.picks.map((p) => {
+      const r = (p ?? {}) as Record<string, unknown>
+      const c = swapCollection(String(r.collection ?? ""))
+      if (!c) throw new TradeRoomError("That collection can't be traded here.", 400, "bad_collection")
+      return { collection: c.slug, id: String(r.id ?? "").trim() }
+    })
+  }
+  const ids = Array.isArray(body.ids) ? body.ids.map((x) => String(x).trim()).filter(Boolean) : []
+  return ids.map((id) => ({ collection: "nba-top-shot" as const, id }))
+}
+
 function mySide(loaded: LoadedRoom, userId: string): SideRow {
   const me = sideOf(loaded, userId)
   if (!me) throw new TradeRoomError("You're not in this trade.", 403, "not_in_room")
@@ -176,10 +199,13 @@ export async function GET(req: NextRequest, ctx: Ctx) {
     if (sp.has("picker")) {
       const side = mySide(loaded, u.id)
       if (!side.source) throw new TradeRoomError("Connect and prove your Flow Wallet first.", 409, "no_wallet")
+      const slug = sp.get("collection") ?? "nba-top-shot"
+      // an unknown collection is refused, never answered with Top Shot's moments
+      if (!swapCollection(slug)) throw new TradeRoomError("That collection can't be traded here.", 400, "bad_collection")
       // #222: lock state for the rows shown is read from the CHAIN now (cached hint on failure),
-      // and a live read heals wmc's flag for those rows in the background.
-      const picker = await withLiveLocks(await readPicker(supabaseAdmin, side.source, sp.get("q")), side.source, readTopShotHoldings)
-      if (picker.lock_state === "live") after(() => healLockCache(side.source as string, picker))
+      // and a live Top Shot read heals wmc's flag for those rows in the background.
+      const picker = await withLiveLocks(await readPicker(supabaseAdmin, side.source, sp.get("q"), slug as SwapSlug), side.source, holdingsReader(slug as SwapSlug))
+      if (picker.lock_state === "live" && slug === "nba-top-shot") after(() => healLockCache(side.source as string, picker))
       return json({ picker })
     }
     // a stranger may look at an open room (that is how they join); a finished or full
@@ -242,19 +268,24 @@ export async function POST(req: NextRequest, ctx: Ctx) {
         if (!FLOW_ADDRESS.test(source) || !accounts.some((a) => a.address === source)) {
           throw new TradeRoomError("Pick an account this wallet owns or links.", 400, "bad_source")
         }
-        if (!accounts.some((a) => a.address === source && a.topshot_count != null)) {
-          throw new TradeRoomError("That account has no Top Shot collection, so it can't give or receive Moments.", 409, "no_collection")
-        }
+        // which collections the account can give or receive is checked per collection before
+        // anyone signs (lib/trade-room/multi-plan.ts) — Top Shot, All Day and Golazos alike
         loaded = await setWallet(supabaseAdmin, loaded, me, out.address, source)
         return json({ room: await view(loaded, u.id), signer: out.address, accounts })
       }
       case "items": {
         if (!me.source) throw new TradeRoomError("Connect and prove your Flow Wallet before picking Moments.", 409, "no_wallet")
-        const ids = Array.isArray(body.ids) ? body.ids.map((x) => String(x).trim()).filter(Boolean) : []
-        const picker = await readPicker(supabaseAdmin, me.source)
-        const { items, unknown } = pickItems(picker.rows, ids)
-        if (unknown.length) throw new TradeRoomError(`RPC hasn't indexed ${unknown.join(", ")} for that account yet.`, 409, "not_indexed")
-        await checkPicks(me.source, ids)
+        const picks = readPicks(body)
+        const items: NewItem[] = []
+        for (const c of SWAP_COLLECTIONS) {
+          const ids = picks.filter((p) => p.collection === c.slug).map((p) => p.id)
+          if (!ids.length) continue
+          const rows = await readPickedRows(supabaseAdmin, me.source, c.slug, ids)
+          const { items: got, unknown } = pickItems(rows, ids)
+          if (unknown.length) throw new TradeRoomError(`RPC hasn't indexed ${c.label} ${unknown.join(", ")} for that account yet.`, 409, "not_indexed")
+          items.push(...got)
+        }
+        await checkRoomPicks(me.source, picks)
         loaded = await setItems(supabaseAdmin, loaded, me, items)
         return json({ room: await view(loaded, u.id) })
       }
@@ -282,7 +313,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
         const other = cosignerOf(loaded, me.side)
         if (!other?.signer || other.signer !== cosigner) throw new TradeRoomError("The co-signer must be the other side's proven wallet.", 400, "wrong_cosigner")
         await markSigning(supabaseAdmin, loaded)
-        const id = await postSignable(supabaseAdmin, cosigner, body.signable, Date.now(), { table: RELAY_TABLE, extra: { room_id: loaded.room.id } })
+        const id = await postSignable(supabaseAdmin, cosigner, body.signable, Date.now(), { table: RELAY_TABLE, extra: { room_id: loaded.room.id }, allowed: TRADE_ROOM_CADENCES })
         return json({ id })
       }
       case "relay_sign": {

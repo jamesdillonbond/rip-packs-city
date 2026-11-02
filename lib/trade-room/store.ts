@@ -1,7 +1,7 @@
 // lib/trade-room/store.ts
 //
-// Trade rooms (migration 20261031174000): the PROPOSAL half of a user-to-user Top
-// Shot trade. Two signed-in RPC users meet in a room, each proves a Flow Wallet,
+// Trade rooms (migration 20261031174000; multi-collection 20261102205817): the PROPOSAL
+// half of a user-to-user trade of NBA Top Shot, NFL All Day and LaLiga Golazos Moments. Two signed-in RPC users meet in a room, each proves a Flow Wallet,
 // picks the moments they give, and accepts the exact version of the proposal they
 // are looking at. Any change to either side bumps the version and clears both
 // acceptances, so nobody can be held to a proposal that changed under them.
@@ -78,9 +78,15 @@ export interface SideRow {
   updated_at: string
 }
 
+/** collections.slug of a room item (lib/trade-room/multi-swap-cadence.ts SWAP_COLLECTIONS). */
+export type ItemCollection = "nba_top_shot" | "nfl_all_day" | "laliga_golazos"
+export const ITEM_COLLECTIONS: ReadonlySet<string> = new Set(["nba_top_shot", "nfl_all_day", "laliga_golazos"])
+
 export interface ItemRow {
   room_id: string
   side: Side
+  /** Moment ids are unique only WITHIN a collection; every key includes this. */
+  collection: ItemCollection
   moment_id: string
   edition_key: string | null
   serial_number: number | null
@@ -105,7 +111,7 @@ export const MOMENT_ID = /^[0-9]{1,20}$/
 export { MAX_ITEMS_PER_SIDE }
 const ROOM_COLS = "id, code, created_by, collection, status, version, tx_id, landed, sealed_at, cancelled_by, cancel_reason, expires_at, created_at, updated_at"
 const SIDE_COLS = "room_id, side, user_id, signer, source, proven_at, accepted_version, notice_read_at, updated_at"
-const ITEM_COLS = "room_id, side, moment_id, edition_key, serial_number, player_name, set_name, tier, series_number, image_url, fmv_usd, added_at"
+const ITEM_COLS = "room_id, side, collection, moment_id, edition_key, serial_number, player_name, set_name, tier, series_number, image_url, fmv_usd, added_at"
 
 const ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789"
 
@@ -263,30 +269,52 @@ export async function setWallet(
 
 export type NewItem = Omit<ItemRow, "room_id" | "side" | "added_at">
 
+const itemKey = (i: { collection: string; moment_id: string }) => `${i.collection}:${i.moment_id}`
+
+/** trade_rooms.collection for a set of items: the one collection they share, or "mixed". */
+export function roomCollection(items: ReadonlyArray<{ collection: string }>): string {
+  const set = new Set(items.map((i) => i.collection))
+  if (set.size === 0) return "nba_top_shot"
+  return set.size === 1 ? [...set][0] : "mixed"
+}
+
 /** Replaces this side's picks wholesale (the chain check happens before this is called). */
 export async function setItems(db: SupabaseClient, loaded: LoadedRoom, side: SideRow, items: NewItem[], now: number = Date.now()): Promise<LoadedRoom> {
   requireEditable(loaded, now)
   if (!side.signer || !side.source) throw new TradeRoomError("Connect and prove your Flow Wallet before picking Moments.", 409, "no_wallet")
   if (items.length > MAX_ITEMS_PER_SIDE) throw new TradeRoomError(`At most ${MAX_ITEMS_PER_SIDE} Moments per side.`, 400, "too_many")
-  const ids = items.map((i) => i.moment_id)
-  if (ids.some((id) => !MOMENT_ID.test(id))) throw new TradeRoomError("A moment id is not a number.", 400, "bad_id")
-  if (new Set(ids).size !== ids.length) throw new TradeRoomError("A Moment is listed twice.", 400, "duplicate_id")
-  const theirs = new Set(loaded.items.filter((i) => i.side !== side.side).map((i) => i.moment_id))
-  if (ids.some((id) => theirs.has(id))) throw new TradeRoomError("That Moment is already on the other side.", 409, "on_other_side")
+  if (items.some((i) => !ITEM_COLLECTIONS.has(i.collection))) throw new TradeRoomError("That collection can't be traded here.", 400, "bad_collection")
+  if (items.some((i) => !MOMENT_ID.test(i.moment_id))) throw new TradeRoomError("A moment id is not a number.", 400, "bad_id")
+  const keys = items.map(itemKey)
+  if (new Set(keys).size !== keys.length) throw new TradeRoomError("A Moment is listed twice.", 400, "duplicate_id")
+  const theirs = new Set(loaded.items.filter((i) => i.side !== side.side).map(itemKey))
+  if (keys.some((k) => theirs.has(k))) throw new TradeRoomError("That Moment is already on the other side.", 409, "on_other_side")
   // order matters: write the new set first, then remove what is not in it, so a failure
   // between the two never leaves the side empty by accident
   if (items.length) {
     const { error } = await db
       .from("trade_room_items")
-      .upsert(items.map((i) => ({ ...i, room_id: loaded.room.id, side: side.side })), { onConflict: "room_id,side,moment_id" })
+      .upsert(items.map((i) => ({ ...i, room_id: loaded.room.id, side: side.side })), { onConflict: "room_id,side,collection,moment_id" })
     if (error) fail(error, "trade_room_items upsert")
   }
-  let del = db.from("trade_room_items").delete().eq("room_id", loaded.room.id).eq("side", side.side)
-  if (ids.length) del = del.not("moment_id", "in", `(${ids.map((id) => `"${id}"`).join(",")})`)
-  const { error: delError } = await del
-  if (delError) fail(delError, "trade_room_items prune")
+  // prune per collection (a moment id means nothing without its collection)
+  for (const c of ITEM_COLLECTIONS) {
+    const keep = items.filter((i) => i.collection === c).map((i) => i.moment_id)
+    let del = db.from("trade_room_items").delete().eq("room_id", loaded.room.id).eq("side", side.side).eq("collection", c)
+    if (keep.length) del = del.not("moment_id", "in", `(${keep.map((id) => `"${id}"`).join(",")})`)
+    const { error: delError } = await del
+    if (delError) fail(delError, "trade_room_items prune")
+  }
   await touch(db, loaded)
-  return loadRoom(db, loaded.room.code)
+  const next = await loadRoom(db, loaded.room.code)
+  // keep trade_rooms.collection in step with what the room now holds
+  const collection = roomCollection(next.items)
+  if (collection !== next.room.collection) {
+    const { error: colError } = await db.from("trade_rooms").update({ collection }).eq("id", next.room.id)
+    if (colError) fail(colError, "trade_rooms collection")
+    next.room = { ...next.room, collection }
+  }
+  return next
 }
 
 /**

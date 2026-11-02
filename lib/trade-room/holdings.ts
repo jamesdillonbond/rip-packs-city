@@ -1,9 +1,9 @@
 // lib/trade-room/holdings.ts
 //
-// What a trade-room side can pick from: the Top Shot moments RPC has indexed for
-// the account its moments sit in (wallet_moments_cache, Top Shot rows only —
-// scoped by collection_id, see CLAUDE.md "a moment_id is unique only within a
-// collection"). This is the PICKER, not the truth: before a pick is saved the chain
+// What a trade-room side can pick from: the moments RPC has indexed for the account
+// its moments sit in, ONE collection at a time (NBA Top Shot, NFL All Day or LaLiga
+// Golazos since 2026-11-02; wallet_moments_cache scoped by collection_id, see CLAUDE.md
+// "a moment_id is unique only within a collection"). This is the PICKER, not the truth: before a pick is saved the chain
 // is read for "held and unlocked" (lib/trade-room/execute.ts), and again before any
 // wallet signs. A wallet RPC has not indexed yet is reported as such (indexed:
 // false), never as "holds nothing".
@@ -14,7 +14,8 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { retryEmptyWithAccentRegex } from "@/lib/search/accent-regex"
-import type { NewItem } from "@/lib/trade-room/store"
+import type { ItemCollection, NewItem } from "@/lib/trade-room/store"
+import { swapCollection, type SwapSlug } from "@/lib/trade-room/multi-swap-cadence"
 import type { Holding } from "@/lib/giveaways/topshot-holdings"
 
 export const TOP_SHOT_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
@@ -56,11 +57,12 @@ type WmcRow = {
   is_locked: boolean | null
 }
 
-export function toPickerRow(w: WmcRow): PickerRow {
+export function toPickerRow(w: WmcRow, collection: ItemCollection = "nba_top_shot"): PickerRow {
   const conf = String(w.fmv_confidence ?? "").toUpperCase()
   const fmv = w.fmv_usd == null ? null : Number(w.fmv_usd)
   const priced = CONFIDENT.has(conf) && fmv != null && Number.isFinite(fmv) && fmv >= 0
   return {
+    collection,
     moment_id: String(w.moment_id),
     edition_key: w.edition_key ?? null,
     serial_number: w.serial_number ?? null,
@@ -79,7 +81,10 @@ export function toPickerRow(w: WmcRow): PickerRow {
  * Indexed Top Shot moments of `source` (lowercased Flow address), optionally
  * filtered by a player-name substring. Throws on a failed read.
  */
-export async function readPicker(db: SupabaseClient, source: string, q: string | null = null): Promise<PickerResult> {
+export async function readPicker(db: SupabaseClient, source: string, q: string | null = null, slug: SwapSlug = "nba-top-shot"): Promise<PickerResult> {
+  const col = swapCollection(slug)
+  if (!col) throw new Error(`not a tradeable collection: ${slug}`)
+  const collectionId = col.collectionId
   const COLS = "moment_id, edition_key, serial_number, player_name, set_name, tier, series_number, image_url, fmv_usd, fmv_confidence, is_locked"
   const needle = (q ?? "").replace(/[%_\\]/g, "").trim()
   // Rebuilt per run so the accent-blind retry can swap the ilike for an imatch (#207:
@@ -88,7 +93,7 @@ export async function readPicker(db: SupabaseClient, source: string, q: string |
     let query = db
       .from("wallet_moments_cache")
       .select(COLS, { count: "exact" })
-      .eq("collection_id", TOP_SHOT_COLLECTION_ID)
+      .eq("collection_id", collectionId)
       .eq("wallet_address", source)
     if (accentRegex) query = query.filter("player_name", "imatch", accentRegex)
     else if (needle) query = query.ilike("player_name", `%${needle}%`)
@@ -99,19 +104,39 @@ export async function readPicker(db: SupabaseClient, source: string, q: string |
   const { data, error } = answered
   const count = (answered as { count?: number | null }).count ?? first.count
   if (error) throw new Error(`wallet_moments_cache read failed: ${error.message}`)
-  const rows = ((data ?? []) as WmcRow[]).map(toPickerRow)
+  const rows = ((data ?? []) as WmcRow[]).map((w) => toPickerRow(w, col.dbSlug))
   let indexed = rows.length > 0
   if (!indexed && needle) {
     // the filter may simply match nothing: ask whether the wallet has ANY rows
     const { count: any, error: anyError } = await db
       .from("wallet_moments_cache")
       .select("moment_id", { count: "exact", head: true })
-      .eq("collection_id", TOP_SHOT_COLLECTION_ID)
+      .eq("collection_id", collectionId)
       .eq("wallet_address", source)
     if (anyError) throw new Error(`wallet_moments_cache count failed: ${anyError.message}`)
     indexed = (any ?? 0) > 0
   }
   return { indexed, rows, truncated: typeof count === "number" && count > rows.length }
+}
+
+/**
+ * The picker rows for exactly these ids of one collection at `source` (the SAVE path: a pick
+ * need not be in the picker's first page). Throws on a failed read; ids RPC has not indexed
+ * are simply absent.
+ */
+export async function readPickedRows(db: SupabaseClient, source: string, slug: SwapSlug, ids: readonly string[]): Promise<PickerRow[]> {
+  const col = swapCollection(slug)
+  if (!col) throw new Error(`not a tradeable collection: ${slug}`)
+  if (ids.length === 0) return []
+  const { data, error } = await db
+    .from("wallet_moments_cache")
+    .select("moment_id, edition_key, serial_number, player_name, set_name, tier, series_number, image_url, fmv_usd, fmv_confidence, is_locked")
+    .eq("collection_id", col.collectionId)
+    .eq("wallet_address", source)
+    .in("moment_id", [...ids])
+    .limit(ids.length)
+  if (error) throw new Error(`wallet_moments_cache read failed: ${error.message}`)
+  return ((data ?? []) as WmcRow[]).map((w) => toPickerRow(w, col.dbSlug))
 }
 
 /** The subset of `rows` the user picked, as items to store (ids not in the picker are refused). */

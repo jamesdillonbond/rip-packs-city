@@ -4,9 +4,10 @@
 //
 // My Trade Block (signed in): prove the accounts your assets sit in, post a listing (what
 // you'd trade from those accounts, what you want back), close listings, and answer the
-// proposals on them. Accepting a proposal whose every asset is NBA Top Shot opens a trade
-// room for the two of you; anything else reads "agreed — signing on RPC is Top Shot only
-// for now", and nothing is offered that the product cannot do.
+// proposals on them. Accepting a proposal whose every asset is NBA Top Shot, NFL All Day or
+// LaLiga Golazos (any mix, since 2026-11-02) opens a trade room for the two of you; anything
+// else reads "agreed — signing on RPC covers …", and nothing is offered that the product
+// cannot do.
 //
 // The Flow Wallet here signs an account PROOF only (a sign-in, no fee) — the Trade Block's
 // one wallet use (Trevor, 2026-11-02; pinned in __tests__/no-client-wallet-connect.test.ts).
@@ -649,7 +650,7 @@ function Proposals({ title, list, onUpdate, setMsg }: { title: string; list: Pro
                   </p>
                 ) : (
                   <p style={{ ...muted, fontSize: 13, margin: "8px 0 0" }}>
-                    Agreed. Signing on RPC is NBA Top Shot only for now{p.unsignable.length ? ` — ${p.unsignable.join(", ")} ${p.unsignable.length === 1 ? "isn't" : "aren't"} supported yet` : ""}, so nothing moves from here.
+                    Agreed. Signing on RPC covers NBA Top Shot, NFL All Day and LaLiga Golazos{p.unsignable.length ? ` — ${p.unsignable.join(", ")} ${p.unsignable.length === 1 ? "isn't" : "aren't"} supported yet` : ""}, so nothing moves from here.
                   </p>
                 )
               ) : null}
@@ -668,7 +669,7 @@ function Proposals({ title, list, onUpdate, setMsg }: { title: string; list: Pro
                           {p.unsignable.join(", ")} can&apos;t be signed on RPC yet — accepting records the agreement only.
                         </span>
                       ) : (
-                        <span style={{ ...muted, fontSize: 12, alignSelf: "center" }}>All NBA Top Shot — accepting opens a trade room for the two of you.</span>
+                        <span style={{ ...muted, fontSize: 12, alignSelf: "center" }}>All Top Shot, All Day or Golazos — accepting opens a trade room for the two of you.</span>
                       )}
                     </>
                   ) : (

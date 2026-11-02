@@ -42,6 +42,7 @@ const WA = { signer: "0x3d0b274c80263484", source: "0xbd94cade097e50ac" }
 const WB = { signer: "0x00000000000000bb", source: "0x00000000000000bc" }
 
 const item = (id: string, fmv: number | null = null): NewItem => ({
+  collection: "nba_top_shot",
   moment_id: id,
   edition_key: "1:2",
   serial_number: Number(id),

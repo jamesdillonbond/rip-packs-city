@@ -1,6 +1,7 @@
 // lib/trade-room/execute.ts
 //
-// The CHAIN half of a trade room, built on the admin swap test (lib/swap-test):
+// The CHAIN half of a trade room, built on the admin swap test (lib/swap-test) — and, for
+// rooms holding NFL All Day / LaLiga Golazos (2026-11-02), lib/trade-room/multi-plan.ts:
 // the same simulate-then-sign plan, the same two-authorizer transaction, the same
 // co-signer relay — with the room's two sides as the two signers. RPC never holds a
 // key, a moment or a fee.
@@ -14,6 +15,9 @@
 import { readTopShotHoldings, type Holding } from "@/lib/giveaways/topshot-holdings"
 import { planSwap, SwapTestError, verifySwap, type LandedMoment, type PlanDeps, type SwapPlan } from "@/lib/swap-test/plan"
 import { TradeRoomError, otherSide, type LoadedRoom, type Side, type SideRow } from "@/lib/trade-room/store"
+import { planMultiSwap, readCollectionHoldings, verifyMultiSwap, type LandedPick, type MultiDeps, type MultiPlan, type MultiSideInput, type Pick } from "@/lib/trade-room/multi-plan"
+import { swapCollectionByDbSlug } from "@/lib/trade-room/multi-swap-cadence"
+import { runFlowScript } from "@/lib/giveaways/flow-script"
 
 export const EXECUTE_FLAG = "RPC_TRADE_ROOM_EXECUTE"
 
@@ -48,6 +52,53 @@ export async function checkPicks(source: string, ids: readonly string[], read: (
   if (locked.length) throw new TradeRoomError(`Locked on Top Shot (unlock first): ${locked.join(", ")}.`, 409, "locked")
 }
 
+/**
+ * Multi-collection picks (2026-11-02): every pick must be held by `source` (and, for Top Shot,
+ * unlocked), read from the chain now, per collection. A failed read throws the 503 above.
+ */
+export async function checkRoomPicks(source: string, picks: readonly Pick[], deps: MultiDeps = {}): Promise<void> {
+  if (picks.length === 0) return
+  const d: Required<MultiDeps> = {
+    run: deps.run ?? runFlowScript,
+    keys: deps.keys ?? (async () => [1000]),
+    readTopShot: deps.readTopShot ?? readTopShotHoldings,
+  }
+  const groups = new Map<Pick["collection"], string[]>()
+  for (const p of picks) groups.set(p.collection, [...(groups.get(p.collection) ?? []), p.id])
+  for (const [collection, ids] of groups) {
+    let holdings: Record<string, Holding>
+    try {
+      holdings = await readCollectionHoldings(collection, source, ids, d)
+    } catch (e) {
+      throw chainUnavailable(e)
+    }
+    const label = collection === "nba-top-shot" ? "Top Shot" : collection === "nfl-all-day" ? "All Day" : "Golazos"
+    const missing = ids.filter((id) => !holdings[id]?.held)
+    if (missing.length) throw new TradeRoomError(`${source} doesn't hold ${label} ${missing.join(", ")} right now.`, 409, "not_held")
+    const locked = ids.filter((id) => holdings[id]?.locked !== false)
+    if (locked.length) throw new TradeRoomError(`Locked on ${label} (unlock first): ${locked.join(", ")}.`, 409, "locked")
+  }
+}
+
+/** True when every item in the room is Top Shot: the room signs the ORIGINAL proven swap text. */
+export function isTopShotOnly(loaded: LoadedRoom): boolean {
+  return loaded.items.every((i) => (i.collection ?? "nba_top_shot") === "nba_top_shot")
+}
+
+function multiInput(loaded: LoadedRoom, side: SideRow): MultiSideInput {
+  return {
+    signer: side.signer as string,
+    source: side.source as string,
+    picks: loaded.items
+      .filter((i) => i.side === side.side)
+      .map((i) => {
+        const c = swapCollectionByDbSlug(i.collection ?? "nba_top_shot")
+        if (!c) throw new TradeRoomError("That collection can't be traded here.", 400, "bad_collection")
+        return { collection: c.slug, id: i.moment_id }
+      }),
+  }
+}
+
 function sideInput(loaded: LoadedRoom, side: SideRow) {
   return {
     signer: side.signer,
@@ -61,7 +112,7 @@ function sideInput(loaded: LoadedRoom, side: SideRow) {
  * co-signs). Simulated on mainnet by planSwap — a plan comes back only when every
  * moment lands. Requires both sides proven and the room accepted or signing.
  */
-export async function planRoom(loaded: LoadedRoom, initiator: Side, deps: PlanDeps = {}): Promise<SwapPlan> {
+export async function planRoom(loaded: LoadedRoom, initiator: Side, deps: PlanDeps = {}, multiDeps: MultiDeps = {}): Promise<SwapPlan | MultiPlan> {
   if (loaded.room.status !== "accepted" && loaded.room.status !== "signing") {
     throw new TradeRoomError("Both sides must accept the trade before it can be simulated.", 409, "not_accepted")
   }
@@ -69,6 +120,9 @@ export async function planRoom(loaded: LoadedRoom, initiator: Side, deps: PlanDe
   const b = loaded.sides.find((s) => s.side === otherSide(initiator))
   if (!a?.signer || !a.source || !b?.signer || !b.source) throw new TradeRoomError("Both sides need a proven Flow Wallet.", 409, "no_wallet")
   try {
+    // an all-Top-Shot room signs the original swap (sealed twice on mainnet 2026-10-31);
+    // anything with All Day / Golazos signs the multi-collection swap
+    if (!isTopShotOnly(loaded)) return await planMultiSwap(multiInput(loaded, a), multiInput(loaded, b), multiDeps)
     return await planSwap(sideInput(loaded, a), sideInput(loaded, b), deps)
   } catch (e) {
     if (e instanceof SwapTestError) throw new TradeRoomError(e.message, e.status, e.code)
@@ -77,11 +131,12 @@ export async function planRoom(loaded: LoadedRoom, initiator: Side, deps: PlanDe
 }
 
 /** After a seal: where each moment is now, read from the chain (a failed read throws). */
-export async function verifyRoom(loaded: LoadedRoom, deps: Pick<PlanDeps, "read"> = {}): Promise<LandedMoment[]> {
+export async function verifyRoom(loaded: LoadedRoom, deps: { read?: PlanDeps["read"] } = {}, multiDeps: MultiDeps = {}): Promise<Array<LandedMoment | LandedPick>> {
   const a = loaded.sides.find((s) => s.side === "a")
   const b = loaded.sides.find((s) => s.side === "b")
   if (!a?.signer || !a.source || !b?.signer || !b.source) throw new TradeRoomError("Both sides need a proven Flow Wallet.", 409, "no_wallet")
   try {
+    if (!isTopShotOnly(loaded)) return await verifyMultiSwap(multiInput(loaded, a), multiInput(loaded, b), multiDeps)
     return await verifySwap({ a: sideInput(loaded, a), b: sideInput(loaded, b) }, deps)
   } catch (e) {
     if (e instanceof SwapTestError) throw new TradeRoomError(e.message, e.status, e.code)

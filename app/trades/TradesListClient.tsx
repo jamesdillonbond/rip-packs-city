@@ -65,7 +65,7 @@ export default function TradesListClient() {
       <div>
         <h1 style={{ fontFamily: DISPLAY, textTransform: "uppercase", margin: "0 0 4px", fontSize: 28 }}>Trades</h1>
         <p style={{ ...muted, margin: 0, fontSize: 14 }}>
-          Swap NBA Top Shot Moments with another collector. Both Flow Wallets sign one transaction, so either every Moment moves or nothing does. RPC never holds a Moment or a key, and charges no fee.
+          Swap NBA Top Shot, NFL All Day and LaLiga Golazos Moments with another collector — in any mix. Both Flow Wallets sign one transaction, so either every Moment moves or nothing does. RPC never holds a Moment or a key, and charges no fee.
         </p>
         <p style={{ margin: "6px 0 0", fontSize: 14 }}>
           Looking for someone to trade with? <Link href="/trades/block">Browse the Trade Block</Link> or <Link href="/trades/block/mine">post what you&apos;d trade</Link>.

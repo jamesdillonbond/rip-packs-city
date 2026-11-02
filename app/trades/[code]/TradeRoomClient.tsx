@@ -6,7 +6,8 @@
 //   1. join (a stranger with the link becomes side B);
 //   2. prove a Flow Wallet (FCL account proof at connect) and pick the account the
 //      Moments sit in — the wallet itself, or a Dapper account it links;
-//   3. pick Moments to give (chain-checked on save: held and unlocked);
+//   3. pick Moments to give — NBA Top Shot, NFL All Day and LaLiga Golazos, in any mix
+//      (2026-11-02) — chain-checked on save: held, and for Top Shot unlocked;
 //   4. read the notice and accept the proposal AS SEEN (any change resets both);
 //   5. once both accepted: simulate on mainnet, then the initiator's wallet signs and
 //      the other side's wallet co-signs through the relay — ⛔ that last step is gated
@@ -19,7 +20,10 @@ import Link from "next/link"
 import { errorText } from "@/lib/giveaways/view-format"
 import type { PickerResult } from "@/lib/trade-room/holdings"
 import type { SwapPlan } from "@/lib/swap-test/plan"
-import { describeSignable, waitForRelaySignature } from "@/lib/swap-test/view"
+import type { MultiPlan } from "@/lib/trade-room/multi-plan"
+import { waitForRelaySignature } from "@/lib/swap-test/view"
+import { describeRoomSignable } from "@/lib/trade-room/signable"
+import { SWAP_COLLECTIONS, swapCollectionByDbSlug, type SwapSlug } from "@/lib/trade-room/multi-swap-cadence"
 import type { ItemView, RoomView, SideView } from "@/lib/trade-room/view"
 import { MAX_ITEMS_PER_SIDE } from "@/lib/trade-room/valuation"
 import { btn, btnPrimary, call, card, DISPLAY, errorOf, fmtUsd, label, MONO, muted, shortAddr, stateLabel, type Called } from "../trade-ui"
@@ -40,6 +44,10 @@ async function fetchRoom(api: string): Promise<Load> {
 const loadWallet = () => import("@/lib/trade-room/trade-wallet")
 
 const LIVE = new Set(["open", "building", "accepted", "signing"])
+
+/** A pick's identity: moment ids are unique only within a collection. */
+const keyOf = (i: { collection: string; moment_id: string }) => `${i.collection}:${i.moment_id}`
+const SHORT_LABEL: Record<string, string> = { nba_top_shot: "Top Shot", nfl_all_day: "All Day", laliga_golazos: "Golazos" }
 const POLL_MS = 5_000
 
 export default function TradeRoomClient({ code }: { code: string }) {
@@ -239,16 +247,17 @@ function MySide({
   const [connecting, setConnecting] = useState(false)
   const [picker, setPicker] = useState<{ kind: "idle" } | { kind: "loading" } | { kind: "error"; error: string } | { kind: "ok"; result: PickerResult }>({ kind: "idle" })
   const [q, setQ] = useState("")
-  const [picked, setPicked] = useState<Set<string>>(new Set(side.items.map((i) => i.moment_id)))
+  const [picked, setPicked] = useState<Set<string>>(new Set(side.items.map(keyOf)))
   const [showPicker, setShowPicker] = useState(false)
-  const savedIds = useRef(side.items.map((i) => i.moment_id).join(","))
+  const [coll, setColl] = useState<SwapSlug>("nba-top-shot")
+  const savedIds = useRef(side.items.map(keyOf).join(","))
 
   // the saved picks changed under us (a source change cleared them): resync
   useEffect(() => {
-    const now = side.items.map((i) => i.moment_id).join(",")
+    const now = side.items.map(keyOf).join(",")
     if (now !== savedIds.current) {
       savedIds.current = now
-      setPicked(new Set(side.items.map((i) => i.moment_id)))
+      setPicked(new Set(side.items.map(keyOf)))
     }
   }, [side.items])
 
@@ -267,9 +276,9 @@ function MySide({
         const list = r.body.accounts as Account[]
         setProof(signed)
         setAccounts(list)
-        // one usable account: no need to ask
-        const usable = list.filter((a) => a.topshot_count != null)
-        if (usable.length === 1) await act("wallet", { proof: signed, source: usable[0].address }, () => setAccounts(null))
+        // one account: no need to ask. With several the user picks where the Moments they'll
+        // give sit (any of Top Shot / All Day / Golazos may live in either)
+        if (list.length === 1) await act("wallet", { proof: signed, source: list[0].address }, () => setAccounts(null))
       }
     } catch (e) {
       setErr(`Flow Wallet: ${errorText(e)}`)
@@ -284,9 +293,9 @@ function MySide({
   }
 
   const openPicker = useCallback(
-    async (query: string) => {
+    async (query: string, collection: SwapSlug) => {
       setPicker({ kind: "loading" })
-      const r = await call(`${api}?picker=1&q=${encodeURIComponent(query)}`)
+      const r = await call(`${api}?picker=1&collection=${encodeURIComponent(collection)}&q=${encodeURIComponent(query)}`)
       if (!r.ok || !r.body?.picker) setPicker({ kind: "error", error: errorOf(r) })
       else setPicker({ kind: "ok", result: r.body.picker as PickerResult })
     },
@@ -302,9 +311,13 @@ function MySide({
   }
 
   const save = async () => {
-    await act("items", { ids: [...picked] }, () => {
+    const picks = [...picked].map((k) => {
+      const [db, id] = k.split(":")
+      return { collection: swapCollectionByDbSlug(db)?.slug ?? db, id }
+    })
+    await act("items", { picks }, () => {
       setShowPicker(false)
-      setMsg("Picks saved and checked on chain: held and unlocked.")
+      setMsg("Picks saved and checked on chain: held, and Top Shot ones unlocked.")
     })
   }
 
@@ -345,12 +358,12 @@ function MySide({
               <button
                 key={a.address}
                 type="button"
-                style={{ ...btn, textAlign: "left", opacity: a.topshot_count == null ? 0.6 : 1 }}
-                disabled={busy !== null || a.topshot_count == null}
+                style={{ ...btn, textAlign: "left" }}
+                disabled={busy !== null}
                 onClick={() => choose(a.address)}
               >
-                {a.name ?? (a.role === "flow_wallet" ? "Flow Wallet" : a.dapper ? "Dapper account" : "Linked account")} · {shortAddr(a.address)} ·{" "}
-                {a.topshot_count == null ? "no Top Shot collection" : `${a.topshot_count} Moments`}
+                {a.name ?? (a.role === "flow_wallet" ? "Flow Wallet" : a.dapper ? "Dapper account" : "Linked account")} · {shortAddr(a.address)}
+                {a.topshot_count != null ? ` · ${a.topshot_count} Top Shot Moments` : ""}
               </button>
             ))}
           </div>
@@ -370,17 +383,34 @@ function MySide({
                 disabled={busy !== null}
                 onClick={() => {
                   setShowPicker(true)
-                  void openPicker(q)
+                  void openPicker(q, coll)
                 }}
               >
                 {side.items.length ? "Change picks" : "Pick Moments"}
               </button>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <div role="tablist" aria-label="Collection" style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  {SWAP_COLLECTIONS.map((c) => (
+                    <button
+                      key={c.slug}
+                      type="button"
+                      role="tab"
+                      aria-selected={coll === c.slug}
+                      style={{ ...btn, padding: "4px 10px", fontSize: 12, ...(coll === c.slug ? { borderColor: "var(--rpc-red-text)", color: "var(--rpc-red-text)" } : {}) }}
+                      onClick={() => {
+                        setColl(c.slug)
+                        void openPicker(q, c.slug)
+                      }}
+                    >
+                      {c.label}
+                    </button>
+                  ))}
+                </div>
                 <form
                   onSubmit={(e) => {
                     e.preventDefault()
-                    void openPicker(q)
+                    void openPicker(q, coll)
                   }}
                   style={{ display: "flex", gap: 6 }}
                 >
@@ -400,7 +430,7 @@ function MySide({
                 ) : picker.kind === "error" ? (
                   <p style={{ color: "var(--rpc-danger-text)", fontSize: 13 }}>
                     Couldn&apos;t read your Moments: {picker.error}{" "}
-                    <button type="button" style={{ ...btn, padding: "2px 8px", fontSize: 11 }} onClick={() => openPicker(q)}>
+                    <button type="button" style={{ ...btn, padding: "2px 8px", fontSize: 11 }} onClick={() => openPicker(q, coll)}>
                       Retry
                     </button>
                   </p>
@@ -410,7 +440,7 @@ function MySide({
                       RPC hasn&apos;t indexed that account yet. Add it on your <Link href="/dashboard">dashboard</Link> first, then come back.
                     </p>
                   ) : picker.result.rows.length === 0 ? (
-                    <p style={muted}>No Moments match that filter.</p>
+                    <p style={muted}>{q.trim() ? "No Moments match that filter." : `RPC has no ${SWAP_COLLECTIONS.find((c) => c.slug === coll)?.label ?? ""} Moments indexed for this account.`}</p>
                   ) : (
                     <>
                       <ul style={{ listStyle: "none", padding: 0, margin: 0, maxHeight: 320, overflow: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
@@ -421,16 +451,17 @@ function MySide({
                           const live = picker.result.lock_state === "live"
                           const gone = live && r.held_live === false
                           const blocked = live && (gone || r.locked_hint === true)
+                          const k = keyOf(r)
                           return (
-                          <li key={r.moment_id}>
-                            <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, cursor: blocked ? "not-allowed" : "pointer", opacity: blocked && !picked.has(r.moment_id) ? 0.6 : 1 }}>
-                              <input type="checkbox" checked={picked.has(r.moment_id)} disabled={blocked && !picked.has(r.moment_id)} onChange={() => toggle(r.moment_id)} />
+                          <li key={k}>
+                            <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, cursor: blocked ? "not-allowed" : "pointer", opacity: blocked && !picked.has(k) ? 0.6 : 1 }}>
+                              <input type="checkbox" checked={picked.has(k)} disabled={blocked && !picked.has(k)} onChange={() => toggle(k)} />
                               <span style={{ flex: 1 }}>
                                 {momentLine(r)}
                                 {gone ? (
                                   <span style={{ color: "var(--rpc-warning-text)" }}> · no longer in this account</span>
                                 ) : r.locked_hint ? (
-                                  <span style={{ color: "var(--rpc-warning-text)" }}>{live ? " · locked on Top Shot" : " · locked (last check)"}</span>
+                                  <span style={{ color: "var(--rpc-warning-text)" }}>{live ? ` · locked on ${SHORT_LABEL[r.collection] ?? "chain"}` : " · locked (last check)"}</span>
                                 ) : null}
                               </span>
                               <span style={{ fontFamily: MONO, fontSize: 12, color: "var(--rpc-text-muted)" }}>{r.priced && r.fmv_usd != null ? fmtUsd(r.fmv_usd) : "not priced"}</span>
@@ -488,8 +519,9 @@ function TheirSide({ side, room }: { side: SideView | null; room: RoomView }) {
   )
 }
 
-function momentLine(i: Pick<ItemView, "player_name" | "set_name" | "serial_number" | "tier" | "series_number" | "moment_id">): string {
-  const who = i.player_name ?? `Moment ${i.moment_id}`
+function momentLine(i: Pick<ItemView, "player_name" | "set_name" | "serial_number" | "tier" | "series_number" | "moment_id"> & { collection?: string }): string {
+  const tag = i.collection && i.collection !== "nba_top_shot" ? `${SHORT_LABEL[i.collection] ?? i.collection} · ` : ""
+  const who = tag + (i.player_name ?? `Moment ${i.moment_id}`)
   const set = i.set_name ? ` · ${i.set_name}` : ""
   const serial = i.serial_number != null ? ` #${i.serial_number}` : ""
   const tier = i.tier ? ` · ${String(i.tier).toLowerCase()}` : ""
@@ -501,7 +533,7 @@ function ItemList({ items, empty }: { items: ItemView[]; empty: string }) {
   return (
     <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: 4 }}>
       {items.map((i) => (
-        <li key={i.moment_id} style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 13 }}>
+        <li key={keyOf(i)} style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 13 }}>
           <span>{momentLine(i)}</span>
           <span style={{ fontFamily: MONO, fontSize: 12, color: "var(--rpc-text-muted)", whiteSpace: "nowrap" }}>{i.priced && i.fmv_usd != null ? fmtUsd(i.fmv_usd) : "not priced"}</span>
         </li>
@@ -580,7 +612,7 @@ function Execute({
   setMsg: (s: string | null) => void
   reload: () => Promise<void>
 }) {
-  const [plan, setPlan] = useState<SwapPlan | null>(null)
+  const [plan, setPlan] = useState<SwapPlan | MultiPlan | null>(null)
   const [wallet, setWallet] = useState<string | null>(null)
   const [hint, setHint] = useState<string | null>(null)
   const [cosigned, setCosigned] = useState(false)
@@ -589,7 +621,7 @@ function Execute({
   const simulate = async () => {
     setPlan(null)
     await act("simulate", {}, (r) => {
-      setPlan(r.body?.plan as SwapPlan)
+      setPlan(r.body?.plan as SwapPlan | MultiPlan)
       setMsg("Simulated on mainnet: every Moment lands. Nothing has moved.")
     })
   }
@@ -613,19 +645,17 @@ function Execute({
     setMsg("Waiting for your wallet, then the other side's…")
     try {
       const w = await loadWallet()
-      const { txId } = await w.sendSwap(
-        plan,
-        {
-          post: async (cosigner, signable) => {
+      const io = {
+          post: async (cosigner: string, signable: Record<string, unknown>) => {
             const r = await call(api, { method: "POST", body: JSON.stringify({ action: "relay_post", cosigner, signable }) })
             if (!r.ok || typeof r.body?.id !== "string") throw new Error(errorOf(r))
             return r.body.id
           },
-          waitForSignature: (id) => waitForRelaySignature((rid) => call(`${api}?relay=${encodeURIComponent(rid)}`), id),
+          waitForSignature: (id: string) => waitForRelaySignature((rid) => call(`${api}?relay=${encodeURIComponent(rid)}`), id),
           onRelay: () => setMsg("Waiting for the other side to sign on their device (about 9 minutes at most)…"),
-        },
-        { onSlow: setHint },
-      )
+      }
+      // an all-Top-Shot room signs the original swap; any All Day / Golazos signs the multi-collection one
+      const { txId } = "kind" in plan && plan.kind === "multi" ? await w.sendMultiSwap(plan, io, { onSlow: setHint }) : await w.sendSwap(plan as SwapPlan, io, { onSlow: setHint })
       setMsg("Sealed on chain. Recording it…")
       await act("sealed", { tx_id: txId })
     } catch (e) {
@@ -653,7 +683,7 @@ function Execute({
     setErr(null)
     try {
       const w = await loadWallet()
-      const { signature, keyId } = await w.coSign(relay.signable, relay.cosigner)
+      const { signature, keyId } = await w.coSign(relay.signable, relay.cosigner, w.TRADE_ROOM_CADENCES)
       const r = await call(api, { method: "POST", body: JSON.stringify({ action: "relay_sign", id: relay.id, signature, key_id: keyId }) })
       if (!r.ok) throw new Error(errorOf(r))
       setCosigned(true)
@@ -665,7 +695,7 @@ function Execute({
     }
   }
 
-  const d = relay ? describeSignable(relay.signable) : null
+  const d = relay ? describeRoomSignable(relay.signable) : null
   return (
     <section style={card}>
       <h2 style={{ fontFamily: DISPLAY, textTransform: "uppercase", fontSize: 16, margin: "0 0 6px" }}>Sign</h2>
@@ -726,7 +756,7 @@ function Execute({
 }
 
 function Sealed({ room, busy, act }: { room: RoomView; busy: string | null; act: Act }) {
-  const landed = Array.isArray(room.landed) ? (room.landed as Array<{ id: string; to: string; held: boolean }>) : null
+  const landed = Array.isArray(room.landed) ? (room.landed as Array<{ id: string; to: string; held: boolean; collection?: string }>) : null
   return (
     <section style={card}>
       <h2 style={{ fontFamily: DISPLAY, textTransform: "uppercase", fontSize: 16, margin: "0 0 6px" }}>Sealed on chain</h2>
@@ -741,7 +771,8 @@ function Sealed({ room, busy, act }: { room: RoomView; busy: string | null; act:
       {landed ? (
         <ul style={{ fontSize: 13, fontFamily: MONO, paddingLeft: 18, margin: "0 0 8px" }}>
           {landed.map((m) => (
-            <li key={m.id} style={{ color: m.held ? undefined : "var(--rpc-danger-text)" }}>
+            <li key={`${m.collection ?? "nba-top-shot"}:${m.id}`} style={{ color: m.held ? undefined : "var(--rpc-danger-text)" }}>
+              {m.collection && m.collection !== "nba-top-shot" ? `${m.collection === "nfl-all-day" ? "All Day" : "Golazos"} ` : ""}
               {m.id} {m.held ? "is now in" : "is NOT in"} {shortAddr(m.to)}
             </li>
           ))}

@@ -20,4 +20,4 @@ export {
   type AccountProof,
 } from "@/lib/giveaways/flow-wallet-connect"
 
-export { coSign, sendSwap, SealUnconfirmedError } from "@/lib/swap-test/swap-wallet"
+export { coSign, sendMultiSwap, sendSwap, SealUnconfirmedError, TRADE_ROOM_CADENCES } from "@/lib/swap-test/swap-wallet"

@@ -43,6 +43,7 @@ import * as publicOne from "@/app/api/public/trade-block/[code]/route"
 
 const TS = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
 const AD = "dee28451-5d62-409e-a1ad-a83f763ac070"
+const PIN = "7dd9dd11-e8b6-45c4-ac99-71331f959714"
 const ALICE = { id: "aaaaaaaa-0000-4000-8000-000000000001" }
 const BOB = { id: "bbbbbbbb-0000-4000-8000-000000000002" }
 const WA = { signer: "0x3d0b274c80263484", source: "0xbd94cade097e50ac" }
@@ -100,6 +101,7 @@ beforeEach(() => {
         wmc(WA.source, AD, "1", "Brock Purdy", 9, "MEDIUM"),
         wmc(WB.source, TS, "9", "Anthony Edwards", 30, "MEDIUM"),
         wmc(WB.source, AD, "7", "Josh Allen", 12, "HIGH"),
+        wmc(WB.source, PIN, "5", "Stitch", null, null),
       ],
       profile_bio: [
         { user_id: ALICE.id, username: "webz_80" },
@@ -272,16 +274,28 @@ describe("proposals and the seam with the trade room", () => {
     expect(notices.sent.at(-1)).toMatchObject({ to: BOB.id, notice: "accepted", room: out.room_code })
   })
 
-  it("a proposal with any other collection, accepted, opens no room and says which", async () => {
+  it("a proposal with a collection the room cannot sign (Pinnacle), accepted, opens no room and says which", async () => {
+    const code = await listingByAlice([{ collection_id: TS, moment_id: "1" }])
+    await prove(BOB, WB)
+    const p = await as(BOB, () => signedIn.POST(post({ action: "propose", code, give: [{ collection_id: PIN, moment_id: "5" }], get: [{ collection_id: TS, moment_id: "1" }] })))
+    const proposal = ((await p.json()) as { proposal: { code: string } }).proposal
+    const d = await as(ALICE, () => signedIn.POST(post({ action: "decide", proposal: proposal.code, accept: true })))
+    const out = (await d.json()) as { room_code: string | null; unsignable: string[] }
+    expect(out.room_code).toBeNull()
+    expect(out.unsignable).toEqual(["Disney Pinnacle"])
+    expect(mem.current.tables.trade_rooms ?? []).toHaveLength(0)
+  })
+
+  it("a mixed Top Shot / All Day proposal, accepted, opens a room (2026-11-02: All Day and Golazos sign too)", async () => {
     const code = await listingByAlice([{ collection_id: TS, moment_id: "1" }])
     await prove(BOB, WB)
     const p = await as(BOB, () => signedIn.POST(post({ action: "propose", code, give: [{ collection_id: AD, moment_id: "7" }], get: [{ collection_id: TS, moment_id: "1" }] })))
     const proposal = ((await p.json()) as { proposal: { code: string } }).proposal
     const d = await as(ALICE, () => signedIn.POST(post({ action: "decide", proposal: proposal.code, accept: true })))
     const out = (await d.json()) as { room_code: string | null; unsignable: string[] }
-    expect(out.room_code).toBeNull()
-    expect(out.unsignable).toEqual(["NFL All Day"])
-    expect(mem.current.tables.trade_rooms ?? []).toHaveLength(0)
+    expect(out.unsignable).toEqual([])
+    expect(out.room_code).toMatch(/^[a-z0-9]{10}$/)
+    expect(mem.current.tables.trade_rooms ?? []).toHaveLength(1)
   })
 
   it("you cannot propose on your own listing, ask for what it does not offer, or give what you have not proved", async () => {

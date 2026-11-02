@@ -754,7 +754,7 @@ export async function proposalsFor(db: SupabaseClient, userId: string, myListing
 
 export interface DecideOutcome {
   proposal: LoadedProposal
-  /** The trade room opened for an all-Top-Shot proposal; null otherwise. */
+  /** The trade room opened for a proposal the room can sign (Top Shot / All Day / Golazos); null otherwise. */
   room_code: string | null
   /** Collections that keep this trade off the signing path (empty when a room opened). */
   unsignable: string[]

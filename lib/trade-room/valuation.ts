@@ -93,4 +93,4 @@ export function valueTrade(a: readonly ValuedItem[], b: readonly ValuedItem[]): 
 
 /** Shown before anyone accepts; the cost of withdrawing from a Dapper account. */
 export const WITHDRAWAL_NOTICE =
-  "A Moment that leaves a Dapper account stops counting toward that account's Top Shot Score, sets and challenges. Both sides sign one transaction: either every Moment moves, or nothing does. RPC never holds a Moment or a key, charges no fee, and cannot reverse a sealed trade."
+  "A Moment that leaves a Dapper account stops counting toward that account's score, sets and challenges on Top Shot, All Day or Golazos. Both sides sign one transaction: either every Moment moves, or nothing does. RPC never holds a Moment or a key, charges no fee, and cannot reverse a sealed trade."

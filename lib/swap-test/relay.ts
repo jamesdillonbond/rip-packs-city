@@ -31,15 +31,18 @@ export interface RelayRow {
 
 const sansPrefix = (a: string) => a.toLowerCase().replace(/^0x/, "")
 
-/** Refuses anything that isn't wallet B's signable for the swap-test transaction. */
-export function checkSignable(cosigner: string, signable: unknown): Record<string, unknown> {
+/**
+ * Refuses anything that isn't wallet B's signable for one of the `allowed` swap transactions
+ * (the admin swap test: SWAP_CADENCE only; trade rooms also allow the multi-collection swap).
+ */
+export function checkSignable(cosigner: string, signable: unknown, allowed: readonly string[] = [SWAP_CADENCE]): Record<string, unknown> {
   if (!FLOW_ADDRESS.test(cosigner)) throw new SwapTestError("The co-signer is not a Flow 0x address.", 400, "bad_cosigner")
   if (!signable || typeof signable !== "object" || Array.isArray(signable)) {
     throw new SwapTestError("The signable is missing.", 400, "bad_signable")
   }
   const s = signable as Record<string, unknown>
   if (JSON.stringify(s).length > MAX_SIGNABLE_CHARS) throw new SwapTestError("The signable is too large.", 413, "too_large")
-  if (s.cadence !== SWAP_CADENCE) throw new SwapTestError("Only the swap-test transaction can be relayed.", 400, "wrong_cadence")
+  if (typeof s.cadence !== "string" || !allowed.includes(s.cadence)) throw new SwapTestError("Only the swap-test transaction can be relayed.", 400, "wrong_cadence")
   if (typeof s.message !== "string" || !/^[0-9a-f]+$/.test(s.message)) throw new SwapTestError("The signable has no payload message.", 400, "bad_signable")
   if (typeof s.addr !== "string" || sansPrefix(s.addr) !== sansPrefix(cosigner)) {
     throw new SwapTestError("The signable is not addressed to the co-signer.", 400, "wrong_signer")
@@ -67,10 +70,10 @@ export async function postSignable(
   cosigner: string,
   signable: unknown,
   now: number,
-  opts: { table?: RelayTable; extra?: Record<string, unknown> } = {},
+  opts: { table?: RelayTable; extra?: Record<string, unknown>; allowed?: readonly string[] } = {},
 ): Promise<string> {
   const table = opts.table ?? "swap_test_relay"
-  const s = checkSignable(cosigner, signable)
+  const s = checkSignable(cosigner, signable, opts.allowed)
   // housekeeping: a row outlives its transaction by far; a failed cleanup is logged and never blocks a swap
   const { error: cleanupError } = await db.from(table).delete().lt("created_at", new Date(now - RELAY_KEEP_MS).toISOString())
   if (cleanupError) console.warn(`[swap-test/relay] cleanup of old ${table} rows failed:`, cleanupError.message)

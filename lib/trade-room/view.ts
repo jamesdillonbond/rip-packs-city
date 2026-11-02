@@ -13,6 +13,8 @@ import { otherSide, roomState, type ItemRow, type LoadedRoom, type RoomState, ty
 import { valueTrade, WITHDRAWAL_NOTICE, type TradeValuation } from "@/lib/trade-room/valuation"
 
 export interface ItemView {
+  /** collections.slug (nba_top_shot / nfl_all_day / laliga_golazos). */
+  collection: string
   moment_id: string
   edition_key: string | null
   serial_number: number | null
@@ -91,6 +93,7 @@ export interface FromBlock {
 export function itemView(i: ItemRow): ItemView {
   const priced = typeof i.fmv_usd === "number" && Number.isFinite(i.fmv_usd)
   return {
+    collection: i.collection ?? "nba_top_shot",
     moment_id: i.moment_id,
     edition_key: i.edition_key,
     serial_number: i.serial_number,

@@ -17,7 +17,7 @@ function loaded(sides: Array<{ side: "a" | "b"; user_id: string }>): LoadedRoom 
   return {
     room: { id: "r1", code: "abcde12345", created_by: ALICE, collection: "nba-top-shot", status: "building", version: 3, tx_id: null, landed: null, sealed_at: null, cancelled_by: null, cancel_reason: null, expires_at: "2026-11-07T00:00:00Z", created_at: "2026-10-31T00:00:00Z", updated_at: "2026-10-31T00:00:00Z" },
     sides: sides.map((s) => ({ room_id: "r1", side: s.side, user_id: s.user_id, signer: "0x00000000000000aa", source: "0x00000000000000ab", proven_at: null, accepted_version: null, notice_read_at: null, updated_at: "2026-10-31T00:00:00Z" })),
-    items: [{ room_id: "r1", side: "a", moment_id: "1", edition_key: "1:2", serial_number: 1, player_name: "LeBron James", set_name: "Set", tier: "COMMON", series_number: 8, image_url: null, fmv_usd: 123.45, added_at: "2026-10-31T00:00:00Z" }],
+    items: [{ room_id: "r1", side: "a", collection: "nba_top_shot", moment_id: "1", edition_key: "1:2", serial_number: 1, player_name: "LeBron James", set_name: "Set", tier: "COMMON", series_number: 8, image_url: null, fmv_usd: 123.45, added_at: "2026-10-31T00:00:00Z" }],
   }
 }
 

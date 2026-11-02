@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import { BLOCK_COLLECTIONS, checkNote, collectionBySlug, listingState, unsignableCollections } from "@/lib/trade-block/rules"
 import { lineView, listingView, proposalView, valueLine } from "@/lib/trade-block/view"
 import { buildBlockNoticeEmail } from "@/lib/trade-block/notify"
+import { SWAP_COLLECTIONS } from "@/lib/trade-room/multi-swap-cadence"
 import type { ItemRow, LoadedListing, LoadedProposal } from "@/lib/trade-block/store"
 
 // The Trade Block (Trevor, 2026-11-02; docs/strategy/features/trading.md §3). These pin the
@@ -86,14 +87,16 @@ describe("no cash, no off-platform contact (checkNote)", () => {
 })
 
 describe("signing eligibility (the seam with the trade room)", () => {
-  it("only an all-Top-Shot trade may open a room", () => {
+  it("only a trade the room can sign (Top Shot / All Day / Golazos, any mix) may open a room", () => {
     expect(unsignableCollections([TS, TS])).toEqual([])
-    expect(unsignableCollections([TS, AD])).toEqual(["NFL All Day"])
+    expect(unsignableCollections([TS, AD])).toEqual([])
+    expect(unsignableCollections([TS, PIN])).toEqual(["Disney Pinnacle"])
     expect(unsignableCollections([PIN])).toEqual(["Disney Pinnacle"])
   })
 
-  it("exactly one collection is signable, and it is Top Shot", () => {
-    expect(BLOCK_COLLECTIONS.filter((c) => c.signable).map((c) => c.slug)).toEqual(["nba-top-shot"])
+  it("the signable set is exactly the collections the swap Cadence moves", () => {
+    expect(BLOCK_COLLECTIONS.filter((c) => c.signable).map((c) => c.slug)).toEqual(SWAP_COLLECTIONS.map((c) => c.slug))
+    expect(BLOCK_COLLECTIONS.filter((c) => c.signable).map((c) => c.id)).toEqual(SWAP_COLLECTIONS.map((c) => c.collectionId))
   })
 
   it("chains without a proof path can be wanted but not offered", () => {
@@ -131,11 +134,11 @@ describe("the public view never carries a wallet address", () => {
   it("the proposal view drops it too", () => {
     const p: LoadedProposal = {
       proposal: { id: "P", code: "zzzzz00000", listing_id: "L", user_id: "u2", status: "pending", note: null, room_code: null, created_at: "", updated_at: "", decided_at: null },
-      items: [{ proposal_id: "P", role: "give", pos: 0, collection_id: AD, moment_id: "9", source: ADDR, edition_key: "4790", player_name: "A", set_name: null, tier: null, series_number: null, serial_number: null, image_url: null, fmv_usd: null }],
+      items: [{ proposal_id: "P", role: "give", pos: 0, collection_id: PIN, moment_id: "9", source: ADDR, edition_key: "4790", player_name: "A", set_name: null, tier: null, series_number: null, serial_number: null, image_url: null, fmv_usd: null }],
     }
     const v = proposalView(p, { direction: "received", counterparty: "ThunderHour", listingCode: "abcde12345" })
     expect(JSON.stringify(v)).not.toMatch(/0x[0-9a-f]{16}|"source"/i)
-    expect(v.unsignable).toEqual(["NFL All Day"])
+    expect(v.unsignable).toEqual(["Disney Pinnacle"])
   })
 })
 
