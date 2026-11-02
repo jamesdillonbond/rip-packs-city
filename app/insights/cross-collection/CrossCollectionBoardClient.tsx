@@ -130,12 +130,15 @@ export default function CrossCollectionBoardClient({ initial, initialFailed = fa
   const [sort, setSort] = useState<SortKey>("moments")
 
   // Skip the very first fetch when params match the server-fetched default.
+  // #33 (2026-11-02): ISR can serve a cached FAILED regeneration for the whole revalidate window. A board
+  // whose server seed failed must refetch on mount instead of trusting it as the default view.
+  const seedFailedOnArrival = useRef(Boolean(initialFailed))
   const isFirstRun = useRef(true)
 
   useEffect(() => {
     if (isFirstRun.current) {
       isFirstRun.current = false
-      if (sort === "moments") return
+      if (seedFailedOnArrival.current) { /* refetch: the seed failed */ } else if (sort === "moments") return
     }
     const ctrl = new AbortController()
     async function run() {

@@ -274,12 +274,15 @@ export default function SqueezeBoardClient({
   // Skip the very first fetch when the params match the server-fetched default
   // view (sort=squeeze, no set/player drill-down) — the server already gave us
   // those rows. Any sort change or drill-down arrival refetches normally.
+  // #33 (2026-11-02): ISR can serve a cached FAILED regeneration for the whole revalidate window. A board
+  // whose server seed failed must refetch on mount instead of trusting it as the default view.
+  const seedFailedOnArrival = useRef((initialDegraded?.failed?.length ?? 0) > 0)
   const isFirstRun = useRef(true)
 
   useEffect(() => {
     if (isFirstRun.current) {
       isFirstRun.current = false
-      if (collection === seedCollection && sort === "squeeze" && !setFilter && !playerFilter && !teamFilter && league === "ALL" && minCirculation == null && minBuyable == null) {
+      if (seedFailedOnArrival.current) { /* refetch: the seed failed */ } else if (collection === seedCollection && sort === "squeeze" && !setFilter && !playerFilter && !teamFilter && league === "ALL" && minCirculation == null && minBuyable == null) {
         return
       }
     }

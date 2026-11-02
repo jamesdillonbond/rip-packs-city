@@ -148,12 +148,15 @@ export default function RookiesBoardClient({ initial, initialDegraded = null }: 
 
   // Skip the very first fetch when params match the server-fetched default
   // (sort=gmv) — the server already provided those rows.
+  // #33 (2026-11-02): ISR can serve a cached FAILED regeneration for the whole revalidate window. A board
+  // whose server seed failed must refetch on mount instead of trusting it as the default view.
+  const seedFailedOnArrival = useRef((initialDegraded?.failed?.length ?? 0) > 0)
   const isFirstRun = useRef(true)
 
   useEffect(() => {
     if (isFirstRun.current) {
       isFirstRun.current = false
-      if (sort === "gmv" && cls === "2025") return
+      if (seedFailedOnArrival.current) { /* refetch: the seed failed */ } else if (sort === "gmv" && cls === "2025") return
     }
     // The default sort of either class is in the server seed — no refetch. A class
     // whose seed read FAILED (class_2026 null) falls through to a live fetch.

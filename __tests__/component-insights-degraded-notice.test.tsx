@@ -81,6 +81,9 @@ describe("public /insights boards — honest degradation", () => {
     const B = Board as any
 
     it(`${name} renders the Partial data notice when the server fetch FAILED`, async () => {
+      // RE-PINNED 2026-11-02 (#33): a failed seed is now REFETCHED on mount (ISR may be serving a cached failed
+      // regeneration). The notice must persist while that refetch fails too, so the refetch here fails.
+      vi.stubGlobal("fetch", vi.fn(() => Promise.resolve({ ok: false, status: 503, json: async () => ({ error: "unavailable" }) } as Response)))
       render(<B initialRows={[]} initialFetchedAt={FETCHED} initialDegraded={FAILED} />)
       await waitFor(() => {
         expect(screen.getByText("Partial data")).toBeTruthy()
@@ -88,6 +91,16 @@ describe("public /insights boards — honest degradation", () => {
       expect(
         screen.getByText(/could not be loaded/i).textContent,
       ).toContain("not an empty result")
+    })
+
+    it(`${name} REFETCHES on mount when the server seed failed (#33)`, async () => {
+      const f = vi.fn(() => Promise.resolve({ ok: true, json: async () => ({ rows: [], meta: { fetched_at: FETCHED, total_rows: 0 } }) } as Response))
+      vi.stubGlobal("fetch", f)
+      render(<B initialRows={[]} initialFetchedAt={FETCHED} initialDegraded={FAILED} />)
+      await waitFor(() => {
+        const urls = f.mock.calls.map((c) => String((c as unknown[])[0]))
+        expect(urls.some((u) => u.includes("/api/"))).toBe(true)
+      })
     })
 
     it(`${name} renders NO notice when a healthy fetch returned zero rows`, async () => {

@@ -325,11 +325,14 @@ export default function UnderpricedSerialsBoardClient({ initialRows, initialFetc
 
   // Skip the first fetch when params match the server-fetched default view
   // (all / all / all / discount). Any change refetches normally.
+  // #33 (2026-11-02): ISR can serve a cached FAILED regeneration for the whole revalidate window. A board
+  // whose server seed failed must refetch on mount instead of trusting it as the default view.
+  const seedFailedOnArrival = useRef(Boolean(initialFailed))
   const isFirstRun = useRef(true)
   useEffect(() => {
     if (isFirstRun.current) {
       isFirstRun.current = false
-      if (headline === "all" && tier === "all" && quality === "all" && sort === "discount") return
+      if (seedFailedOnArrival.current) { /* refetch: the seed failed */ } else if (headline === "all" && tier === "all" && quality === "all" && sort === "discount") return
     }
     const ctrl = new AbortController()
     async function run() {

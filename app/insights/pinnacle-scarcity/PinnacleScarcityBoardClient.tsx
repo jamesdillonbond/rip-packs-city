@@ -88,12 +88,15 @@ export default function PinnacleScarcityBoardClient({
   const [chasersOnly, setChasersOnly] = useState(false)
 
   // Skip the very first fetch when params match the server-fetched default.
+  // #33 (2026-11-02): ISR can serve a cached FAILED regeneration for the whole revalidate window. A board
+  // whose server seed failed must refetch on mount instead of trusting it as the default view.
+  const seedFailedOnArrival = useRef((initialDegraded?.failed?.length ?? 0) > 0)
   const isFirstRun = useRef(true)
 
   useEffect(() => {
     if (isFirstRun.current) {
       isFirstRun.current = false
-      if (sort === "scarcity" && franchise === "ALL" && !chasersOnly) return
+      if (seedFailedOnArrival.current) { /* refetch: the seed failed */ } else if (sort === "scarcity" && franchise === "ALL" && !chasersOnly) return
     }
     const ctrl = new AbortController()
     async function run() {

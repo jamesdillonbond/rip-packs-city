@@ -89,12 +89,15 @@ export default function AllDayScarcityBoardClient({
   const [tier, setTier] = useState<TierFilter>("ALL")
 
   // Skip the very first fetch when params match the server-fetched default.
+  // #33 (2026-11-02): ISR can serve a cached FAILED regeneration for the whole revalidate window. A board
+  // whose server seed failed must refetch on mount instead of trusting it as the default view.
+  const seedFailedOnArrival = useRef((initialDegraded?.failed?.length ?? 0) > 0)
   const isFirstRun = useRef(true)
 
   useEffect(() => {
     if (isFirstRun.current) {
       isFirstRun.current = false
-      if (sort === "scarcity" && tier === "ALL") return
+      if (seedFailedOnArrival.current) { /* refetch: the seed failed */ } else if (sort === "scarcity" && tier === "ALL") return
     }
     const ctrl = new AbortController()
     async function run() {

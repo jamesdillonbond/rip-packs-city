@@ -366,11 +366,14 @@ export default function PackSniperClient({ initialDeals, initialFetchedAt, initi
 
   // Refetch on collection / high-variance change, skipping the server-rendered
   // default (locked collection if set, else Top Shot; high-variance hidden).
+  // #33 (2026-11-02): ISR can serve a cached FAILED regeneration for the whole revalidate window. A board
+  // whose server seed failed must refetch on mount instead of trusting it as the default view.
+  const seedFailedOnArrival = useRef(Boolean(initialFailed))
   const isFirstRun = useRef(true)
   useEffect(() => {
     if (isFirstRun.current) {
       isFirstRun.current = false
-      if (collection === (lockedCollection ?? "nba-top-shot") && !showHighVariance) return
+      if (seedFailedOnArrival.current) { /* refetch: the seed failed */ } else if (collection === (lockedCollection ?? "nba-top-shot") && !showHighVariance) return
     }
     fetchDeals()
     // eslint-disable-next-line react-hooks/exhaustive-deps
