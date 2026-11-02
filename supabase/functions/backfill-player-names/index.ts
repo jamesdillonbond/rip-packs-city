@@ -86,11 +86,18 @@ Deno.serve(async (req: Request) => {
     const [setId, playId] = row.edition_key.split(':');
     
     // Check if already in badge_editions
-    const { data: existing } = await supabase
+    const { data: existing, error: existingError } = await supabase
       .from('badge_editions')
       .select('id')
       .like('id', `${setId}+${playId}+%`)
       .limit(1);
+
+    // 2026-11-02: a FAILED existence read is not "absent". Falling through used to
+    // upsert a stub (circulation_count/low_ask NULL, series 0) over the real row.
+    if (existingError) {
+      errors++;
+      continue;
+    }
 
     if (existing && existing.length > 0) {
       skipped++;
@@ -119,7 +126,8 @@ Deno.serve(async (req: Request) => {
         low_ask: null,
         flow_retired: false,
         play_tags: null,
-      }, { onConflict: 'id' });
+      // Insert-only: this writes a STUB; it must never overwrite a real badge row.
+      }, { onConflict: 'id', ignoreDuplicates: true });
 
     if (!insertError) {
       inserted++;
