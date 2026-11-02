@@ -5,6 +5,12 @@ Source analysis: `claude/build-brief-2026-11-01-unlock-anon-return-loop.md` (pro
 
 **Claude Code's direct file inspection wins over this doc on any disagreement — adapt to the actual file shape.** Paths below were grepped live and exist, but line numbers drift.
 
+## Status — 2026-11-02 ~9:20 AM PT (Cowork cloud)
+
+- **Stage A — SHIPPED** (`15ed629f2`, verified live): A1 the confirm link renders its own public page (`/api/subscribe/verify`, no `/dashboard` redirect; says "confirmed" only on a matched token — an unknown token now reads "We don't recognise this link", 404); A2 `DealWatchCapture` on the wallet collection tab (`surface="collection"`); A3 on the `/insights/tc-report` result (`surface="tc-report"`). Both rendered at 390 px in production with no horizontal scroll.
+- **B2 — CHECKED: deal alerts to `email_subscribers` have NO sender.** `email_subscribers.deal_alerts` is written by `/api/subscribe` and `/api/email/subscribe` and read only by admin analytics; the deal-alert engine (`dispatch_due_deal_alerts` / `alerts-dispatch`) serves the signed-in `alert_subscriptions` path. So at the Stage B flip, launch **digest-only**: flip `InsightsEmailCapture` to live weekly-digest copy, and leave `DealWatchCapture` on its "coming soon" deal-alert copy (its submit already sets `digestWeekly: true`, so those signups get the digest).
+- **Still blocked on Trevor:** `RPC_SENDER_POSTAL_ADDRESS` (a real mailing address or PO box — CAN-SPAM) and the go. Then: dry-runs (section below), Vercel flags, B1 copy, one controlled live send.
+
 ## Context
 
 The email product (weekly digest, portfolio digest, deal alerts) is **already built and hardened** and deliberately **dark behind feature flags**. The anon capture path `app/api/subscribe` is live, rate-limited, double-opt-in. The two capture widgets are intentional WAITLISTS ("launching soon"/"coming soon") because the senders are flag-disabled "until Trevor's go." `email_subscribers` = 1 as a result. This handoff makes the product real and places the capture where intent concentrates. Nothing here was shipped by Cowork.
