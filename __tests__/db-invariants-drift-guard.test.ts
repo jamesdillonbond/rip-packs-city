@@ -1595,7 +1595,7 @@ const PINS = [
     // unrelated, name change), aliases, crosswalk identity; ambiguity declared.
     fn: "resolve_player_name",
     test: "supabase/tests/resolve_player_name.sql",
-    migration: "supabase/migrations/20260926011020_audit_20260925_player_relations_and_resolve_player_name_for_the_concierge.sql",
+    migration: "supabase/migrations/20261102215531_audit_20261102_resolve_player_name_alias_slug_trailing_dash.sql",
   },
   {
     // Added 2026-09-25 (batch 55). resolve_player_name's per-player summary

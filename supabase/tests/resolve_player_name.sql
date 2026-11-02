@@ -10,7 +10,8 @@
 -- unknown name is 'none'.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260926011020_audit_20260925_player_relations_and_resolve_player_name_for_the_concierge.sql);
+-- (supabase/migrations/20260926011020_audit_20260925_player_relations_and_resolve_player_name_for_the_concierge.sql
+-- for _player_identity_summary; supabase/migrations/20261102215531_audit_20261102_resolve_player_name_alias_slug_trailing_dash.sql for resolve_player_name);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -156,7 +157,7 @@ BEGIN
    WHERE p.collection_id = p_collection_id
      AND (s.slug = v_slug OR regexp_replace(s.slug, '-(jr|sr|ii|iii|iv|v)$', '') = v_base
           OR s.slug LIKE '%' || v_slug || '%'
-          OR p.id IN (SELECT a.player_id FROM public.player_name_aliases a WHERE a.collection_id = p_collection_id AND a.alias_slug = v_slug)
+          OR p.id IN (SELECT a.player_id FROM public.player_name_aliases a WHERE a.collection_id = p_collection_id AND trim(both '-' from a.alias_slug) = v_slug)
           OR p.id IN (SELECT i.player_id FROM public.player_identities i WHERE i.collection_id = p_collection_id AND trim(both '-' from i.name_slug) = v_slug AND i.player_id IS NOT NULL)
           OR p.id IN (SELECT r.player_id FROM public.player_relations r WHERE r.collection_id = p_collection_id AND r.relation = 'name_change'
                         AND regexp_replace(lower(trim(extensions.unaccent(r.name))), '[^a-z0-9]+', '-', 'g') = v_slug));
@@ -166,14 +167,14 @@ BEGIN
     FROM (
       SELECT t.player_id FROM jsonb_to_recordset(v_rows) AS t(player_id uuid, name text, slug text, base text) WHERE t.slug = v_slug
       UNION
-      SELECT a.player_id FROM public.player_name_aliases a WHERE a.collection_id = p_collection_id AND a.alias_slug = v_slug
+      SELECT a.player_id FROM public.player_name_aliases a WHERE a.collection_id = p_collection_id AND trim(both '-' from a.alias_slug) = v_slug
       UNION
       SELECT i.player_id FROM public.player_identities i WHERE i.collection_id = p_collection_id AND trim(both '-' from i.name_slug) = v_slug AND i.player_id IS NOT NULL
     ) x;
   IF v_ids IS NOT NULL AND array_length(v_ids, 1) = 1 THEN
     v_id := v_ids[1];
     SELECT CASE WHEN EXISTS (SELECT 1 FROM jsonb_to_recordset(v_rows) AS t(player_id uuid, name text, slug text, base text) WHERE t.player_id = v_id AND t.slug = v_slug) THEN 'exact'
-                WHEN EXISTS (SELECT 1 FROM public.player_name_aliases a WHERE a.collection_id = p_collection_id AND a.alias_slug = v_slug AND a.player_id = v_id) THEN 'alias'
+                WHEN EXISTS (SELECT 1 FROM public.player_name_aliases a WHERE a.collection_id = p_collection_id AND trim(both '-' from a.alias_slug) = v_slug AND a.player_id = v_id) THEN 'alias'
                 ELSE 'league_spelling' END INTO v_via;
   ELSIF v_ids IS NOT NULL AND array_length(v_ids, 1) > 1 THEN
     v_via := 'conflict';
@@ -274,7 +275,11 @@ INSERT INTO players (id, collection_id, name, team) VALUES
   ('a0000000-0000-0000-0000-000000000010', 'dee28451-5d62-409e-a1ad-a83f763ac070', 'Keenan Allen',        'Los Angeles Chargers'),
   ('a0000000-0000-0000-0000-000000000011', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'Damian Lillard',      'Portland Trail Blazers'),
   ('a0000000-0000-0000-0000-000000000012', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'Gary Payton',         'Seattle SuperSonics'),
-  ('a0000000-0000-0000-0000-000000000013', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'Gary Payton II',      'Golden State Warriors');
+  ('a0000000-0000-0000-0000-000000000013', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'Gary Payton II',      'Golden State Warriors'),
+  -- #221 (2026-11-02): the son is stored under his nickname; his legal name is an
+  -- alias in SITE-slug form (trailing dash), and the father owns the base name.
+  ('a0000000-0000-0000-0000-000000000014', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'Kenyon Martin',       'Denver Nuggets'),
+  ('a0000000-0000-0000-0000-000000000015', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'KJ Martin',           'Houston Rockets');
 INSERT INTO editions (player_id, player_name) SELECT 'a0000000-0000-0000-0000-000000000001', 'Marvin Harrison Jr.' FROM generate_series(1, 11);
 INSERT INTO editions (player_id, player_name) SELECT 'a0000000-0000-0000-0000-000000000002', 'Marvin Harrison' FROM generate_series(1, 5);
 INSERT INTO editions (player_id, player_name) VALUES ('a0000000-0000-0000-0000-000000000003', 'Josh Allen'), ('a0000000-0000-0000-0000-000000000004', 'Josh Allen'), ('a0000000-0000-0000-0000-000000000011', 'Damian Lillard');
@@ -283,7 +288,8 @@ INSERT INTO editions (player_id, player_name) SELECT 'a0000000-0000-0000-0000-00
 INSERT INTO editions (player_id, player_name) SELECT 'a0000000-0000-0000-0000-000000000005', 'Joseph Flacco' FROM generate_series(1, 4);
 INSERT INTO player_name_aliases VALUES
   ('dee28451-5d62-409e-a1ad-a83f763ac070', 'joseph-flacco', 'a0000000-0000-0000-0000-000000000005', 'batch 51: first-name variant of Joe Flacco'),
-  ('dee28451-5d62-409e-a1ad-a83f763ac070', 'mike-vick',     'a0000000-0000-0000-0000-000000000006', 'batch 51: league spelling of Michael Vick');
+  ('dee28451-5d62-409e-a1ad-a83f763ac070', 'mike-vick',     'a0000000-0000-0000-0000-000000000006', 'batch 51: league spelling of Michael Vick'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'kenyon-martin-jr-', 'a0000000-0000-0000-0000-000000000015', 'site slug of Kenyon Martin Jr. (trailing dash)');
 INSERT INTO player_identities (league, league_player_id, collection_id, player_id, name_slug, display_name, espn_id, position, status, latest_team, rookie_season, last_season, matched_by) VALUES
   ('nfl', '00-0039849', 'dee28451-5d62-409e-a1ad-a83f763ac070', 'a0000000-0000-0000-0000-000000000001', 'marvin-harrison-jr-', 'Marvin Harrison Jr.', '4432708', 'WR', 'ACT', 'ARI', 2024, 2026, 'name'),
   ('nfl', '00-0007024', 'dee28451-5d62-409e-a1ad-a83f763ac070', 'a0000000-0000-0000-0000-000000000002', 'marvin-harrison',     'Marvin Harrison',     '939',     'WR', 'RET', 'IND', 1996, 2008, 'name'),
@@ -399,6 +405,15 @@ BEGIN
   PERFORM _assert_eq(r->>'status', 'none', 'blank: none');
   r := resolve_player_name(ad, 'Lillard');
   PERFORM _assert_eq(r->>'status', 'none', 'a Top Shot name is not found on All Day');
+
+  -- #221 (2026-11-02): an alias stored in site-slug form (trailing dash) still matches.
+  -- Before the fix the alias arm missed and the suffix-drop arm named the FATHER.
+  r := resolve_player_name(ts, 'Kenyon Martin Jr.');
+  PERFORM _assert_eq(r->>'status', 'one', 'Kenyon Martin Jr.: one');
+  PERFORM _assert_eq(r->'player'->>'name', 'KJ Martin', 'Kenyon Martin Jr. is the son (alias kenyon-martin-jr-), never the father');
+  PERFORM _assert_eq(r->>'matched_via', 'alias', 'via the alias');
+  r := resolve_player_name(ts, 'Kenyon Martin');
+  PERFORM _assert_eq(r->'player'->>'name', 'Kenyon Martin', 'the unsuffixed name is still the father');
 END $$;
 
 ROLLBACK;
