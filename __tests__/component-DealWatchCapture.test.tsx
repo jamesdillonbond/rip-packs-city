@@ -84,6 +84,22 @@ describe("DealWatchCapture — seen → engaged instrumentation", () => {
 })
 
 describe("DealWatchCapture", () => {
+  // 2026-11-02: also mounted on /insights/tc-report and the wallet collection tab — every
+  // event must carry the page it sat on, or the three captures read as one /share capture.
+  it("attributes every event to the surface it was mounted on", async () => {
+    fetchMock.mockReturnValueOnce(okJson({ success: true }))
+    const { container, getByLabelText, getByText } = render(<DealWatchCapture wallet="0xW" surface="tc-report" />)
+    io.cb!([{ isIntersecting: true }])
+    fireEvent.focus(getByLabelText("Email address"))
+    fireEvent.change(getByLabelText("Email address"), { target: { value: "a@b.co" } })
+    submit(container)
+    await waitFor(() => expect(getByText("Check your inbox ✉️")).toBeTruthy())
+    expect(trackMock).toHaveBeenCalledWith("deal-watch-shown", { surface: "tc-report" })
+    expect(trackMock).toHaveBeenCalledWith("deal-watch-focus", { surface: "tc-report" })
+    expect(funnelMock).toHaveBeenCalledWith(expect.objectContaining({ surface: "tc-report" }))
+    expect(JSON.stringify([trackMock.mock.calls, funnelMock.mock.calls])).not.toContain('"share"')
+  })
+
   it("rejects an email with no @ locally and does NOT hit the network", async () => {
     const { container, getByLabelText, getByText } = render(<DealWatchCapture wallet="0xW" />)
     fireEvent.change(getByLabelText("Email address"), { target: { value: "notanemail" } })

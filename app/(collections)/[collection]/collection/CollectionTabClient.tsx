@@ -29,6 +29,7 @@ import AutoSearchReader from "@/components/collection/AutoSearchReader"
 import PortfolioSummary from "@/components/collection/PortfolioSummary"
 import SaveWalletToProfileButton from "@/components/collection/SaveWalletToProfileButton"
 import CollectionRecentSales from "@/components/collection/CollectionRecentSales"
+import DealWatchCapture from "@/components/DealWatchCapture"
 import { useMobile } from "@/components/collection/use-mobile"
 import {
   type MomentRow,
@@ -1533,6 +1534,13 @@ function WalletMomentsBody() {
           <div className="mt-4 text-center text-xs text-[color:var(--rpc-text-muted)]">
             All {paginatedTotal} {collectionSlug === "disney-pinnacle" ? "pins" : "moments"} loaded
           </div>
+        ) : null}
+
+        {/* Value-moment email capture (2026-11-02) — the #1 outbound-click surface (172 of
+            222 buy-link clicks in 30 days, per the 11-01 monthly review) carried no capture. Shown once a
+            searched wallet's moments have rendered; same waitlist copy as /share (#214). */}
+        {hasSearched && activeWallet && rows.length > 0 ? (
+          <DealWatchCapture wallet={activeWallet} surface="collection" />
         ) : null}
 
         {/* Recent Sales */}

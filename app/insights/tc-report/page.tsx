@@ -26,6 +26,7 @@ import { closedMarket, formatClosedOn } from "@/lib/market-closed"
 import { usdSignFirst } from "@/lib/usd-format"
 import { accentText } from "@/lib/accent-text"
 import { scrollRegion } from "@/lib/a11y/scroll-region"
+import DealWatchCapture from "@/components/DealWatchCapture"
 
 type Bucket = { editions: number; moments: number }
 type Buckets = { liquid: Bucket; moderate: Bucket; squeezed: Bucket; extreme: Bucket }
@@ -441,6 +442,10 @@ export default function TcReportPage() {
               </div>
             </section>
           ) : null}
+
+          {/* Value-moment email capture (2026-11-02) — the share page has carried this since 10-03, but
+              WalletSearch routes half its pastes here and this result had none. Same waitlist copy (#214). */}
+          {reportWallet ? <DealWatchCapture wallet={reportWallet} surface="tc-report" /> : null}
 
           {/* Top sets in progress */}
           {topSets.length > 0 ? <TopSetsBlock title="Top Sets In Progress" sets={topSets} collection="nba-top-shot" /> : null}

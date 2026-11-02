@@ -22,7 +22,10 @@ import { track } from "@/lib/telemetry/track"
 
 type Status = "idle" | "sending" | "sent" | "error"
 
-export default function DealWatchCapture({ wallet }: { wallet: string }) {
+// `surface` attributes the capture to the page it sat on (2026-11-02: also mounted on
+// /insights/tc-report, the other wallet-paste destination). Defaults to "share" so the
+// share page's events keep their historical label.
+export default function DealWatchCapture({ wallet, surface = "share" }: { wallet: string; surface?: string }) {
   const [email, setEmail] = useState("")
   const [status, setStatus] = useState<Status>("idle")
   const [error, setError] = useState("")
@@ -39,7 +42,7 @@ export default function DealWatchCapture({ wallet }: { wallet: string }) {
         if (fired) return
         if (entries.some((e) => e.isIntersecting)) {
           fired = true
-          track("deal-watch-shown", { surface: "share" })
+          track("deal-watch-shown", { surface })
           io.disconnect()
         }
       },
@@ -47,12 +50,12 @@ export default function DealWatchCapture({ wallet }: { wallet: string }) {
     )
     io.observe(el)
     return () => io.disconnect()
-  }, [])
+  }, [surface])
 
   function handleFocus() {
     if (focusedRef.current) return
     focusedRef.current = true
-    track("deal-watch-focus", { surface: "share" })
+    track("deal-watch-focus", { surface })
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -82,7 +85,7 @@ export default function DealWatchCapture({ wallet }: { wallet: string }) {
         trackFunnelEvent({
           eventType: "email_capture_submitted",
           walletAddress: wallet,
-          surface: "share",
+          surface,
         })
         setStatus("sent")
         return
