@@ -2386,11 +2386,12 @@ const PINS = [
     // store. The 14-day bound appears TWICE and the copy inside the per-wallet
     // DELETE is load-bearing: without it, a wallet that qualifies on one stale
     // row loses its ENTIRE cache including moments seen minutes ago. Also pins
-    // the seeded exemption in BOTH directions (active exempt, inactive not).
+    // the seeded exemption in BOTH directions (active exempt, inactive not),
+    // and (#227) a collector's saved wallet is exempt.
     fn: "prune_stale_wmc",
     test: "supabase/tests/prune_stale_wmc.sql",
     migration:
-      "supabase/migrations/20261004030511_audit_20261003_run_durations_no_longer_wrap_at_60_seconds.sql",
+      "supabase/migrations/20261102214905_audit_20261102_prune_stale_wmc_spares_saved_wallets.sql",
   },
   // ── Added 2026-08-15: scheduled writers that already had a matching
   // committed migration, so they needed only a test. Worth checking for before

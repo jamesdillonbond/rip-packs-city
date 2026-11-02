@@ -9,14 +9,17 @@
 --   2. an ACTIVE seeded wallet is never pruned, however stale — these back the
 --      public leaderboards and analytics;
 --   3. an INACTIVE seeded wallet is NOT exempt, so the exemption cannot be
---      widened to "is it in seeded_wallets" without changing behaviour.
+--      widened to "is it in seeded_wallets" without changing behaviour;
+--   4. a collector's SAVED wallet is never pruned (#227, 2026-11-02): a
+--      skip-cached walk does not refresh last_seen_at, so the prune deleted
+--      moments the collector still held and the portfolio snapshot summed the hole.
 --
 -- The per-wallet LOOP is also a correctness requirement rather than a style
 -- choice: a single set-based DELETE spanning >3 distinct wallets is blocked at
 -- runtime by rpc_guard_block_destructive on this table.
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20260815203700_audit_20260815_snapshot_prune_stale_wmc.sql),
+-- (supabase/migrations/20261102214905_audit_20261102_prune_stale_wmc_spares_saved_wallets.sql),
 -- whose body was verified byte-identical to live prod via prosrc md5 on
 -- 2026-08-15. __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
@@ -34,6 +37,11 @@ CREATE TABLE public.wallet_moments_cache (
 CREATE TABLE public.seeded_wallets (
   wallet_address text,
   is_active      boolean
+);
+
+CREATE TABLE public.saved_wallets (
+  user_id     uuid,
+  wallet_addr text
 );
 
 -- The real function calls log_pipeline_run(); stub it so the test stays
@@ -86,6 +94,15 @@ BEGIN
         WHERE sw.wallet_address = w.wallet_address
           AND sw.is_active = true
       )
+      -- 2026-11-02 (#227): a collector's SAVED wallet is never pruned either. A
+      -- skip-cached walk does not refresh last_seen_at on rows it already holds,
+      -- so 14 days after a moment was first cached this sweep deleted it while it
+      -- was still held, and the portfolio snapshot read the hole (356 of 3,164).
+      -- Sold moments on a saved wallet are retired by the walk's delete-not-seen.
+      AND NOT EXISTS (
+        SELECT 1 FROM saved_wallets sv
+        WHERE sv.wallet_addr = w.wallet_address
+      )
   LOOP
     DELETE FROM public.wallet_moments_cache
     WHERE wallet_address = v_wallet
@@ -121,6 +138,9 @@ INSERT INTO public.seeded_wallets (wallet_address, is_active) VALUES
   ('0xSEEDED_ACTIVE',   true),
   ('0xSEEDED_INACTIVE', false);
 
+INSERT INTO public.saved_wallets (user_id, wallet_addr) VALUES
+  ('00000000-0000-0000-0000-000000000001', '0xsaved');
+
 INSERT INTO public.wallet_moments_cache (wallet_address, moment_id, last_seen_at) VALUES
   -- ⚠ THE CASE THE INNER 14-DAY BOUND EXISTS FOR: one stale row makes this
   -- wallet a candidate, but its two FRESH rows must survive the delete.
@@ -135,12 +155,19 @@ INSERT INTO public.wallet_moments_cache (wallet_address, moment_id, last_seen_at
   -- Stale but ACTIVE seeded → exempt.
   ('0xSEEDED_ACTIVE',   'm7', now() - interval '200 days'),
   -- Stale and INACTIVE seeded → NOT exempt.
-  ('0xSEEDED_INACTIVE', 'm8', now() - interval '200 days');
+  ('0xSEEDED_INACTIVE', 'm8', now() - interval '200 days'),
+  -- Stale but a collector's SAVED wallet → exempt (#227).
+  ('0xsaved',           'm9', now() - interval '30 days');
 
 SELECT _assert_eq((public.prune_stale_wmc() ->> 'stale_cache_deleted'), '4',
   'deletes only the stale rows: 1 from MIXED, 2 from COLD, 1 from the INACTIVE seed');
-SELECT _assert_eq((SELECT count(*)::text FROM public.wallet_moments_cache), '4',
-  'four rows survive');
+SELECT _assert_eq((SELECT count(*)::text FROM public.wallet_moments_cache), '5',
+  'five rows survive');
+
+-- ── The saved-wallet exemption (#227) ──────────────────────────────────────
+SELECT _assert(
+  EXISTS (SELECT 1 FROM public.wallet_moments_cache WHERE wallet_address='0xsaved'),
+  'a collector''s SAVED wallet is never pruned: a skip-cached walk leaves last_seen_at stale on moments still held');
 
 -- ── The inner bound: a candidate wallet keeps its FRESH rows ───────────────
 -- Removing the second `last_seen_at < …` predicate would delete all three MIXED
