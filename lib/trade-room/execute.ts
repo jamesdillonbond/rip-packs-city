@@ -15,8 +15,8 @@
 import { readTopShotHoldings, type Holding } from "@/lib/giveaways/topshot-holdings"
 import { planSwap, SwapTestError, verifySwap, type LandedMoment, type PlanDeps, type SwapPlan } from "@/lib/swap-test/plan"
 import { TradeRoomError, otherSide, type LoadedRoom, type Side, type SideRow } from "@/lib/trade-room/store"
-import { planMultiSwap, readCollectionHoldings, verifyMultiSwap, type LandedPick, type MultiDeps, type MultiPlan, type MultiSideInput, type Pick } from "@/lib/trade-room/multi-plan"
-import { swapCollection, swapCollectionByDbSlug } from "@/lib/trade-room/multi-swap-cadence"
+import { planMultiSwap, readCanReceive, readCollectionHoldings, verifyMultiSwap, type LandedPick, type MultiDeps, type MultiPlan, type MultiSideInput, type Pick } from "@/lib/trade-room/multi-plan"
+import { SWAP_COLLECTIONS, swapCollection, swapCollectionByDbSlug } from "@/lib/trade-room/multi-swap-cadence"
 import { runFlowScript } from "@/lib/giveaways/flow-script"
 
 export const EXECUTE_FLAG = "RPC_TRADE_ROOM_EXECUTE"
@@ -77,6 +77,32 @@ export async function checkRoomPicks(source: string, picks: readonly Pick[], dep
     if (missing.length) throw new TradeRoomError(`${source} doesn't hold ${label} ${missing.join(", ")} right now.`, 409, "not_held")
     const locked = ids.filter((id) => holdings[id]?.locked !== false)
     if (locked.length) throw new TradeRoomError(`Locked on ${label} (unlock first): ${locked.join(", ")}.`, 409, "locked")
+  }
+}
+
+/**
+ * The other side's account must be able to RECEIVE each collection these picks come from — a
+ * Dapper account that never held All Day has no All Day collection, and nothing in the swap can
+ * create one (found by the 2026-11-02 mainnet probe). Checked when the picks are SAVED, so the
+ * collector reads it then, not after both sides accepted and the simulation failed. A failed
+ * read is the 503 above, never "can't receive". The planner checks it again before signing.
+ */
+export async function checkReceivable(otherSource: string, picks: readonly Pick[], deps: MultiDeps = {}): Promise<void> {
+  const wanted = SWAP_COLLECTIONS.filter((c) => picks.some((p) => p.collection === c.slug))
+  if (wanted.length === 0) return
+  let receive: boolean[]
+  try {
+    receive = await readCanReceive(otherSource, deps.run ?? runFlowScript)
+  } catch (e) {
+    throw chainUnavailable(e)
+  }
+  const cannot = wanted.filter((c) => !receive[SWAP_COLLECTIONS.indexOf(c)])
+  if (cannot.length) {
+    throw new TradeRoomError(
+      `${otherSource} has no ${cannot.map((c) => c.label).join(" or ")} collection, so it can't receive ${cannot.length === 1 ? "that" : "those"} Moments. Pick from another collection, or use an account that holds ${cannot[0].label}.`,
+      409,
+      "cannot_receive",
+    )
   }
 }
 

@@ -14,7 +14,8 @@
 //   POST { action, ... }:
 //     join                                 -> the caller becomes side B
 //     wallet   { proof, source? }          -> prove a Flow Wallet; list its accounts; with `source`, save both
-//     items    { picks: [{collection, id}] } -> this side gives these moments (chain-checked: held + unlocked);
+//     items    { picks: [{collection, id}] } -> this side gives these moments (chain-checked: held + unlocked,
+//                                          and the other side's account can receive each collection);
 //              { ids }                     -> the same, all Top Shot (the original shape)
 //     accept   { version, notice_read }    -> accept the proposal as seen
 //     unaccept                             -> withdraw an acceptance
@@ -54,10 +55,10 @@ import {
   type LoadedRoom,
   type SideRow,
 } from "@/lib/trade-room/store"
-import { checkRoomPicks, EXECUTE_CLOSED_MESSAGE, executionOpen, planRoom, verifyRoom } from "@/lib/trade-room/execute"
+import { checkReceivable, checkRoomPicks, EXECUTE_CLOSED_MESSAGE, executionOpen, planRoom, verifyRoom } from "@/lib/trade-room/execute"
 import { pickItems, readPickedRows, readPicker, withLiveLocks, TOP_SHOT_COLLECTION_ID, type PickerResult } from "@/lib/trade-room/holdings"
 import { holdingsReader, type Pick } from "@/lib/trade-room/multi-plan"
-import { MULTI_SWAP_CADENCE, swapCollection, SWAP_COLLECTIONS, type SwapSlug } from "@/lib/trade-room/multi-swap-cadence"
+import { MULTI_SWAP_CADENCE, swapCollection, swapCollectionByDbSlug, SWAP_COLLECTIONS, type SwapSlug } from "@/lib/trade-room/multi-swap-cadence"
 import { SWAP_CADENCE } from "@/lib/swap-test/swap-cadence"
 import type { NewItem } from "@/lib/trade-room/store"
 import { buildRoomView, cosignerOf, usernamesFor, type PendingRelay } from "@/lib/trade-room/view"
@@ -270,6 +271,11 @@ export async function POST(req: NextRequest, ctx: Ctx) {
         }
         // which collections the account can give or receive is checked per collection before
         // anyone signs (lib/trade-room/multi-plan.ts) — Top Shot, All Day and Golazos alike
+        // the account this side will RECEIVE into must hold every collection the other side gives
+        const theirPicks: Pick[] = loaded.items
+          .filter((i) => i.side !== me.side)
+          .map((i) => ({ collection: (swapCollectionByDbSlug(i.collection ?? "nba_top_shot")?.slug ?? "nba-top-shot") as Pick["collection"], id: i.moment_id }))
+        if (theirPicks.length) await checkReceivable(source, theirPicks)
         loaded = await setWallet(supabaseAdmin, loaded, me, out.address, source)
         return json({ room: await view(loaded, u.id), signer: out.address, accounts })
       }
@@ -286,6 +292,9 @@ export async function POST(req: NextRequest, ctx: Ctx) {
           items.push(...got)
         }
         await checkRoomPicks(me.source, picks)
+        // the other side must be able to receive what is picked (re-checked by the planner)
+        const other = loaded.sides.find((s) => s.side !== me.side)
+        if (other?.source) await checkReceivable(other.source, picks)
         loaded = await setItems(supabaseAdmin, loaded, me, items)
         return json({ room: await view(loaded, u.id) })
       }

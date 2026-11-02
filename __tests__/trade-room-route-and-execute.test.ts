@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { NextRequest } from "next/server"
 import { memorySupabase, type MemoryDb } from "./helpers/memory-supabase"
 import { SWAP_CADENCE } from "@/lib/swap-test/swap-cadence"
+import { CAN_RECEIVE_SCRIPT } from "@/lib/trade-room/multi-swap-cadence"
 import { SwapTestError } from "@/lib/swap-test/plan"
 
 // The two properties that matter most on the chain half of a trade room:
@@ -113,9 +114,18 @@ async function twoSided(): Promise<string> {
   return code
 }
 
+/** The chain's default answers: every account can receive every collection; a held script holds what it is asked. */
+const receives = vi.hoisted(() => ({ byAddress: {} as Record<string, boolean[]> }))
+async function defaultRun(script: string, args: Array<{ value: unknown }>) {
+  if (script === CAN_RECEIVE_SCRIPT) return { type: "Array", value: (receives.byAddress[String(args[0].value)] ?? [true, true, true, true]).map((v) => ({ type: "Bool", value: v })) }
+  return { type: "Array", value: (args[1].value as Array<{ value: string }>).map((x) => ({ type: "UInt64", value: x.value })) }
+}
+
 beforeEach(() => {
+  receives.byAddress = {}
   mem.current = memorySupabase({ wallet_moments_cache: [wmc(WA.source, "1", 10, "HIGH"), wmc(WA.source, "2", 3, "LOW"), wmc(WB.source, "9", 5, "MEDIUM")], profile_bio: [] }, UNIQUES, DEFAULTS)
   chain.holdings.mockImplementation(async (_a: string, ids: string[]) => Object.fromEntries(ids.map((id) => [id, { held: true, locked: false }])))
+  chain.run.mockImplementation(defaultRun)
   room.__resetProofRateLimit()
   notices.sent.length = 0
 })
@@ -301,8 +311,6 @@ describe("/api/trade-room — the routes", () => {
     // Alice's account holds Top Shot #1 (seeded) and All Day #1 — the same id in another collection
     mem.current.tables.wallet_moments_cache.push({ ...wmc(WA.source, "1", 7, "HIGH"), collection_id: AD_COLLECTION_ID, player_name: "Josh Allen" })
     const code = await twoSided()
-    // the All Day held script answers "held" for the ids it is asked about
-    chain.run.mockImplementation(async (_script: string, args: Array<{ value: unknown }>) => ({ type: "Array", value: (args[1].value as Array<{ value: string }>).map((x) => ({ type: "UInt64", value: x.value })) }))
     const r = await as(ALICE, () => room.POST(post(`/api/trade-room/${code}`, { action: "items", picks: [{ collection: "nba-top-shot", id: "1" }, { collection: "nfl-all-day", id: "1" }] }), ctx(code)))
     expect(r.status).toBe(200)
     const v = (await r.json()) as { room: { collection: string; a: { items: Array<{ collection: string; moment_id: string; player_name: string }> } } }
@@ -310,8 +318,9 @@ describe("/api/trade-room — the routes", () => {
     expect(v.room.collection).toBe("mixed")
     // the Top Shot read saw only the Top Shot id; the All Day read went through the chain script
     expect(chain.holdings).toHaveBeenLastCalledWith(WA.source, ["1"])
-    expect(chain.run).toHaveBeenCalledTimes(1)
-    expect(String(chain.run.mock.calls[0][0])).toContain("import AllDay from 0xe4cf4bdc1751c65d")
+    expect(chain.run.mock.calls.filter((c) => String(c[0]).includes("import AllDay from 0xe4cf4bdc1751c65d"))).toHaveLength(1)
+    // and the other side's account was asked whether it can receive what was picked
+    expect(chain.run.mock.calls.filter((c) => c[0] === CAN_RECEIVE_SCRIPT).map((c) => (c[1] as Array<{ value: string }>)[0].value)).toEqual([WB.source])
   })
 
   it("an All Day pick the chain says is gone is named; a failed All Day read is a 503, never 'not held'", async () => {
@@ -330,6 +339,46 @@ describe("/api/trade-room — the routes", () => {
     expect(mem.current.tables.trade_room_items ?? []).toEqual([])
   })
 
+  it("a pick the other side's account cannot RECEIVE is refused on save, naming the collection; a failed check is a 503", async () => {
+    mem.current.tables.wallet_moments_cache.push({ ...wmc(WA.source, "5", 7, "HIGH"), collection_id: AD_COLLECTION_ID })
+    const code = await twoSided()
+    receives.byAddress[WB.source] = [true, false, true, true]
+    const no = await as(ALICE, () => room.POST(post(`/api/trade-room/${code}`, { action: "items", picks: [{ collection: "nfl-all-day", id: "5" }] }), ctx(code)))
+    expect(no.status).toBe(409)
+    const body = (await no.json()) as { code: string; error: string }
+    expect(body.code).toBe("cannot_receive")
+    expect(body.error).toMatch(/0x00000000000000bc has no NFL All Day collection/)
+    expect(mem.current.tables.trade_room_items ?? []).toEqual([])
+    // a Top Shot pick to the same account is fine
+    expect((await as(ALICE, () => room.POST(post(`/api/trade-room/${code}`, { action: "items", picks: [{ collection: "nba-top-shot", id: "1" }] }), ctx(code)))).status).toBe(200)
+    // the receiver check could not be read: 503, never "can't receive"
+    chain.run.mockImplementation(async (script: string, args: Array<{ value: unknown }>) => {
+      if (script === CAN_RECEIVE_SCRIPT) throw new Error("Flow script HTTP 503")
+      return defaultRun(script, args)
+    })
+    const down = await as(ALICE, () => room.POST(post(`/api/trade-room/${code}`, { action: "items", picks: [{ collection: "nfl-all-day", id: "5" }] }), ctx(code)))
+    expect(down.status).toBe(503)
+    expect(((await down.json()) as { error: string }).error).not.toMatch(/can't receive/)
+  })
+
+  it("switching to an account that can't receive what the other side already picked is refused, naming it", async () => {
+    mem.current.tables.wallet_moments_cache.push({ ...wmc(WA.source, "5", 7, "HIGH"), collection_id: AD_COLLECTION_ID })
+    const code = await twoSided()
+    expect((await as(ALICE, () => room.POST(post(`/api/trade-room/${code}`, { action: "items", picks: [{ collection: "nfl-all-day", id: "5" }] }), ctx(code)))).status).toBe(200)
+    const bobOther = "0x00000000000000bd"
+    receives.byAddress[bobOther] = [true, false, true, true]
+    chain.proof.mockResolvedValueOnce({ ok: true, address: WB.signer })
+    chain.accounts.mockResolvedValueOnce([
+      { address: WB.signer, role: "flow_wallet", name: null, dapper: false, topshot_count: 0 },
+      { address: WB.source, role: "linked", name: "Dapper Wallet", dapper: true, topshot_count: 10 },
+      { address: bobOther, role: "linked", name: "Other", dapper: true, topshot_count: 3 },
+    ])
+    const r = await as(BOB, () => room.POST(post(`/api/trade-room/${code}`, { action: "wallet", proof: { x: 1 }, source: bobOther }), ctx(code)))
+    expect(r.status).toBe(409)
+    expect(await r.json()).toMatchObject({ code: "cannot_receive" })
+    expect(mem.current.tables.trade_room_sides.find((x) => x.side === "b")?.source).toBe(WB.source)
+  })
+
   it("an unknown collection is refused — on the picker and on save — never answered with Top Shot", async () => {
     const code = await twoSided()
     const picker = await as(ALICE, () => room.GET(get(`/api/trade-room/${code}?picker=1&collection=candy_mlb`), ctx(code)))
@@ -344,7 +393,6 @@ describe("/api/trade-room — the routes", () => {
   it("the picker reads the collection asked for, scoped by its collection_id", async () => {
     mem.current.tables.wallet_moments_cache.push({ ...wmc(WA.source, "1", 7, "HIGH"), collection_id: AD_COLLECTION_ID, player_name: "Josh Allen" })
     const code = await twoSided()
-    chain.run.mockImplementation(async (_script: string, args: Array<{ value: unknown }>) => ({ type: "Array", value: (args[1].value as Array<{ value: string }>).map((x) => ({ type: "UInt64", value: x.value })) }))
     const r = await as(ALICE, () => room.GET(get(`/api/trade-room/${code}?picker=1&collection=nfl-all-day`), ctx(code)))
     expect(r.status).toBe(200)
     const p = (await r.json()) as { picker: { rows: Array<{ collection: string; player_name: string; locked_hint: boolean | null; held_live?: boolean }>; lock_state: string } }
