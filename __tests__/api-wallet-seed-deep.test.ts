@@ -1,103 +1,43 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 
-// Deep drive of POST /api/wallet/seed (the sibling test only pins auth). This
-// route walks the 5 Flow collections, fetches on-chain moment IDs via the Flow
-// REST script API, enriches them (standard editions vs the Pinnacle path), builds
-// the upsert payload, and calls upsert_wallet_moments — with PER-COLLECTION error
-// isolation. The legs pinned here: auth + body validation (bad JSON / missing
-// walletAddress), the empty-collection short-circuit, the standard vs Pinnacle
-// enrich branch, upsert {error} → per-collection rpc_error status, a Flow-fetch
-// throw isolated to one collection's `error:` status while the others still
-// process, and the fmv/edition join shaping.
+// Deep drive of POST /api/wallet/seed (the sibling test pins auth).
+//
+// ⛔ INVERTED 2026-11-02. This file used to pin the route's own writer: it
+// mocked an `editions` row whose external_id was the MOMENT id ("m1") and
+// asserted the upsert carried that edition — the premise was the defect (an
+// edition's external_id is a `set:play` key, so production matched nothing and
+// wrote fmv_usd: null over every cached moment, then deleted custodied All Day
+// moments through the full-set writer). The route now delegates to
+// /api/wallet-backfill-multicollection. What is pinned here is the ABSENCE of the
+// old writes and the honesty of the hand-off report.
 
-const st = vi.hoisted(() => ({
-  editions: { data: [] as any[] } as any,
-  fmv: { data: [] as any[] } as any,
-  pinnacleEditions: { data: [] as any[] } as any,
-  upsertErrorForCollection: null as string | null,
-}))
-
-const rpc = vi.hoisted(() => vi.fn(async (name: string, params?: any) => {
-  if (name === "upsert_wallet_moments") {
-    if (st.upsertErrorForCollection && params.p_collection_id === st.upsertErrorForCollection) {
-      return { error: { message: "upsert boom" } }
-    }
-    return { error: null }
-  }
-  return { data: null, error: null }
-}))
+const rpc = vi.hoisted(() => vi.fn(async () => ({ data: null, error: null })))
+const from = vi.hoisted(() => vi.fn())
 
 vi.mock("@/lib/supabase", () => ({
-  supabaseAdmin: {
-    from(table: string) {
-      const b: any = {
-        select: () => b, eq: () => b, in: () => b, order: () => b,
-        then: (resolve: any) => {
-          if (table === "editions") return resolve(st.editions)
-          // fmv_current, not raw fmv_snapshots: enrichStandard moved to the
-          // DISTINCT-ON latest-per-edition view (2026-07-31) so the read can
-          // no longer overflow PostgREST's 1000-row cap.
-          if (table === "fmv_current") return resolve(st.fmv)
-          if (table === "pinnacle_editions") return resolve(st.pinnacleEditions)
-          return resolve({ data: [] })
-        },
-      }
-      return b
-    },
-    rpc: (...a: any[]) => rpc(...(a as [string, any?])),
-  },
+  supabaseAdmin: { rpc: (...a: any[]) => rpc(...(a as [])), from: (...a: any[]) => from(...(a as [])) },
 }))
 
 import { POST } from "@/app/api/wallet/seed/route"
 
-const UFC_COLLECTION_ID = "9b4824a8-736d-4a96-b450-8dcc0c46b023"
-
-// Flow REST fetch fixture: route by the collection's public-path substring in the
-// (base64-encoded) cadence script. `idsBySlug[slug] === null` → HTTP error (throw).
-const idsBySlug: Record<string, string[] | null> = {}
-function pathSlug(cadence: string): string {
-  if (cadence.includes("MomentCollection")) return "topshot"
-  if (cadence.includes("AllDayNFTCollection")) return "allday"
-  if (cadence.includes("PinnacleCollection")) return "pinnacle"
-  if (cadence.includes("GolazoNFTCollection")) return "golazos"
-  if (cadence.includes("UFC_NFTCollection")) return "ufc"
-  return "?"
-}
-function installFetch() {
-  vi.stubGlobal("fetch", vi.fn(async (_u: string, init: any) => {
-    const cadence = atob(JSON.parse(init.body).script)
-    const slug = pathSlug(cadence)
-    const ids = slug in idsBySlug ? idsBySlug[slug] : [] // preserve an explicit null sentinel
-    if (ids === null) return { ok: false, status: 500, text: async () => "flow err" }
-    const inner = JSON.stringify({ type: "Array", value: ids.map((id) => ({ type: "UInt64", value: id })) })
-    return { ok: true, text: async () => `"${btoa(inner)}"` }
-  }))
-}
-
 const req = (opts: { token?: string; body?: any; badJson?: boolean }) =>
   ({
+    url: "https://example.test/api/wallet/seed",
     headers: new Headers(opts.token ? { "x-ingest-token": opts.token } : {}),
     json: async () => { if (opts.badJson) throw new Error("bad"); return opts.body ?? {} },
   }) as any
 
+let fetchMock: ReturnType<typeof vi.fn>
 beforeEach(() => {
   process.env.INGEST_SECRET_TOKEN = "tok"
   rpc.mockClear()
-  st.editions = { data: [] }
-  st.fmv = { data: [] }
-  st.pinnacleEditions = { data: [] }
-  st.upsertErrorForCollection = null
-  for (const k of Object.keys(idsBySlug)) delete idsBySlug[k]
-  installFetch()
+  from.mockClear()
+  fetchMock = vi.fn(async () => ({ ok: true, status: 200, text: async () => "{}" }))
+  vi.stubGlobal("fetch", fetchMock)
 })
 afterEach(() => vi.unstubAllGlobals())
 
-async function seed() {
-  const res = await POST(req({ token: "tok", body: { walletAddress: "0xBD94cade097e50AC", ownerKey: "ok1" } }))
-  expect(res.status).toBe(200)
-  return (await res.json()).results as Array<{ collection: string; count: number; status: string }>
-}
-const statusOf = (results: any[], slug: string) => results.find((r) => r.collection === slug)?.status
+const seedBody = { walletAddress: "0xBD94cade097e50AC", ownerKey: "ok1" }
 
 describe("POST /api/wallet/seed", () => {
   it("401 without the x-ingest-token", async () => {
@@ -115,90 +55,71 @@ describe("POST /api/wallet/seed", () => {
     expect((await POST(req({ token: "tok", body: { walletAddress: "" } }))).status).toBe(400)
   })
 
-  it("empty collections short-circuit to status 'empty'", async () => {
-    // all slugs default to [] → every collection empty
-    const results = await seed()
-    expect(results).toHaveLength(5)
-    expect(results.every((r) => r.status === "empty")).toBe(true)
-  })
-
-  it("standard enrich + upsert ok; wallet is lowercased; ownerKey echoed", async () => {
-    idsBySlug.topshot = ["m1"]
-    st.editions = { data: [{ id: "E1", external_id: "m1", player_name: "LeBron", set_name: "S", tier: "RARE", thumbnail_url: "t" }] }
-    st.fmv = { data: [{ edition_id: "E1", fmv_usd: 5, computed_at: "2026-01-01" }] }
-
-    const res = await POST(req({ token: "tok", body: { walletAddress: "0xBD94cade097e50AC", ownerKey: "ok1" } }))
+  it("hands the wallet to the multicollection walker (lowercased, skip_cached) and reports dispatch=sent", async () => {
+    const res = await POST(req({ token: "tok", body: seedBody }))
+    expect(res.status).toBe(202)
     const json = await res.json()
-    expect(json.walletAddress).toBe("0xbd94cade097e50ac") // trimmed + lowercased (hex no-change arm)
-    expect(json.ownerKey).toBe("ok1")
-    expect(statusOf(json.results, "nba-top-shot")).toBe("ok")
-
-    // The upsert got the enriched moment with fmv + tier from the join.
-    const upsert = rpc.mock.calls.find((c) => c[0] === "upsert_wallet_moments")
-    expect(upsert?.[1].p_moments[0]).toMatchObject({ moment_id: "m1", edition_key: "m1", tier: "RARE", fmv_usd: 5, player_name: "LeBron" })
-    // #222 (2026-10-31): this route never reads lock state, so it must not send one — a hardcoded
-    // false overwrote real locks through upsert_wallet_moments' ON CONFLICT.
-    expect(upsert?.[1].p_moments[0]).not.toHaveProperty("is_locked")
+    expect(json).toMatchObject({ ok: true, dispatch: "sent", walletAddress: "0xbd94cade097e50ac", ownerKey: "ok1" })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [url, init] = fetchMock.mock.calls[0] as [string, any]
+    expect(url).toBe("https://example.test/api/wallet-backfill-multicollection")
+    expect(init.headers.Authorization).toBe("Bearer tok")
+    expect(JSON.parse(init.body)).toEqual({ wallet: "0xbd94cade097e50ac", skip_cached: true })
   })
 
-  it("Pinnacle uses the pinnacle enrich branch (character_name, null fmv)", async () => {
-    idsBySlug.pinnacle = ["p1"]
-    st.pinnacleEditions = { data: [{ id: "P1", external_id: "p1", character_name: "Mickey", set_name: "D23", variant_type: "Standard", thumbnail_url: "t" }] }
-
-    const results = await seed()
-    expect(statusOf(results, "disney-pinnacle")).toBe("ok")
-    const upsert = rpc.mock.calls.find((c) => c[0] === "upsert_wallet_moments")
-    expect(upsert?.[1].p_moments[0]).toMatchObject({ character_name: "Mickey", tier: "Standard", fmv_usd: null })
+  it("THE DEFECT IS ABSENT: no upsert_wallet_moments, no editions-by-moment-id lookup, no Flow script of its own", async () => {
+    await POST(req({ token: "tok", body: seedBody }))
+    expect(rpc).not.toHaveBeenCalled()
+    expect(from).not.toHaveBeenCalled()
+    const urls = fetchMock.mock.calls.map((c) => String(c[0]))
+    expect(urls.some((u) => u.includes("onflow.org"))).toBe(false)
   })
 
-  it("upsert { error } → per-collection rpc_error status", async () => {
-    idsBySlug.ufc = ["u1"]
-    st.upsertErrorForCollection = UFC_COLLECTION_ID
-    const results = await seed()
-    expect(statusOf(results, "ufc-strike")).toContain("rpc_error: upsert boom")
+  it("a walker non-2xx is a FAILED hand-off, not ok", async () => {
+    fetchMock.mockResolvedValueOnce({ ok: false, status: 503, text: async () => "" })
+    const res = await POST(req({ token: "tok", body: seedBody }))
+    expect(res.status).toBe(502)
+    const json = await res.json()
+    expect(json.ok).toBe(false)
+    expect(json.dispatch).toBe("failed")
+    expect(json.error).toContain("503")
   })
 
-  it("a Flow-fetch throw is isolated to that collection's 'error:' status; others still process", async () => {
-    idsBySlug.golazos = null // → HTTP 500 → fetchIds throws
-    idsBySlug.topshot = ["m1"]
-    st.editions = { data: [{ id: "E1", external_id: "m1", player_name: "P", set_name: "S", tier: "COMMON", thumbnail_url: null }] }
+  it("a network error is a FAILED hand-off", async () => {
+    fetchMock.mockRejectedValueOnce(new Error("ECONNREFUSED"))
+    const json = await (await POST(req({ token: "tok", body: seedBody }))).json()
+    expect(json).toMatchObject({ ok: false, dispatch: "failed" })
+  })
 
-    const results = await seed()
-    expect(statusOf(results, "laliga-golazos")).toContain("error:")
-    expect(statusOf(results, "nba-top-shot")).toBe("ok") // isolation held
+  it("our bounded wait expiring is reported as sent_unconfirmed, never as a completed walk", async () => {
+    const e = new Error("timed out")
+    e.name = "TimeoutError"
+    fetchMock.mockRejectedValueOnce(e)
+    const json = await (await POST(req({ token: "tok", body: seedBody }))).json()
+    expect(json).toMatchObject({ ok: true, dispatch: "sent_unconfirmed" })
+    expect(json.results).toBeUndefined()
   })
 })
 
 // ── The seeder is Cadence-only and says so (2026-09-20) ────────────────────
-//
-// Before this gate a non-Flow wallet still RAN the four Cadence scripts, failed
-// all four, and came back `ok: true` with a row per collection — counts of 0
-// that read as a measured empty wallet. CLAUDE.md names that shape: a sweep
-// whose `ok` means it COMPLETED, not that its lanes worked.
 describe("POST /api/wallet/seed — an unsupported chain is not an empty wallet", () => {
   const CANDY = "12J1uhKQcBYauomKvXDP2MA6msT3k8wx8oHHhV8gENAK"
 
-  it("400s a base58 wallet with a typed reason instead of rows of zeros", async () => {
+  it("400s a base58 wallet with a typed reason, dispatching nothing", async () => {
     const res = await POST(req({ token: "tok", body: { walletAddress: CANDY, ownerKey: "ok1" } }))
     expect(res.status).toBe(400)
     const json = await res.json()
     expect(json.ok).toBe(false)
     expect(json.error).toBe("unsupported_chain_for_seeder")
     expect(json.chain).toBe("solana")
-    // THE ASSERTION IS THE ABSENCE OF THE FALSE CLAIM: no results array at all,
-    // so nothing downstream can read a zero out of this.
     expect(json.results).toBeUndefined()
-    // And the address comes back with its case intact, not folded.
     expect(json.walletAddress).toBe(CANDY)
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it("hex no-change arm: a real Flow address still walks every collection", async () => {
-    const res = await POST(
-      req({ token: "tok", body: { walletAddress: "0xBD94cade097e50AC", ownerKey: "ok1" } }),
-    )
-    expect(res.status).toBe(200)
-    const json = await res.json()
-    expect(Array.isArray(json.results)).toBe(true)
-    expect(json.results.length).toBeGreaterThan(0)
+  it("hex no-change arm: a real Flow address is still handed off", async () => {
+    const res = await POST(req({ token: "tok", body: seedBody }))
+    expect(res.status).toBe(202)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 })

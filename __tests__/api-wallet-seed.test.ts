@@ -3,9 +3,8 @@ import { POST } from "@/app/api/wallet/seed/route"
 
 // wallet/seed is bearer-gated via x-ingest-token (INGEST_SECRET_TOKEN,
 // call-time). No/blank token → 401 fail-closed before any seed work. Success
-// path: a valid token + walletAddress walks 5 collections' getIDs scripts; we
-// stub global fetch to return an empty Flow-REST id list so every collection
-// resolves "empty" without any DB write, and assert the 200 accept envelope.
+// path (2026-11-02): a valid token + walletAddress is handed to
+// /api/wallet-backfill-multicollection; we stub fetch and assert the 202 envelope.
 
 const saved = process.env.INGEST_SECRET_TOKEN
 const TOKEN = "seed-ingest-token"
@@ -38,21 +37,15 @@ describe("POST /api/wallet/seed", () => {
     expect(res.status).toBe(400)
   })
 
-  it("200s and reports per-collection results (all empty) with the correct token", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => ({
-        ok: true,
-        text: async () => btoa(JSON.stringify({ value: [] })),
-      })),
-    )
+  it("202s and hands the wallet to the walker with the correct token (no per-collection rows of its own)", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, status: 200, text: async () => "{}" })))
     const res = await POST(req({ token: TOKEN, body: { walletAddress: "0xBD94cade097e50AC", ownerKey: "trevor" } }))
-    expect(res.status).toBe(200)
+    expect(res.status).toBe(202)
     const body = await res.json()
     expect(body.ok).toBe(true)
+    expect(body.dispatch).toBe("sent")
     expect(body.walletAddress).toBe("0xbd94cade097e50ac") // lowercased server-side
     expect(body.ownerKey).toBe("trevor")
-    expect(body.results).toHaveLength(5)
-    expect(body.results.every((r: any) => r.status === "empty")).toBe(true)
+    expect(body.results).toBeUndefined()
   })
 })
