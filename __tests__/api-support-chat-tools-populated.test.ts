@@ -925,3 +925,44 @@ describe("concierge tools — manage_deal_subscriptions", () => {
     expect(String(toolResult().message)).toContain("Unknown team")
   })
 })
+
+// 2026-11-02 — SUBSTITUTION: a conversation on another collection (Golazos, UFC, Panini, a bogus slug)
+// fell through a binary Top-Shot-or-All-Day ternary and was answered with Top Shot's rows/bag.
+describe("concierge tools — no Top Shot substitution for an uncovered collection", () => {
+  const boardRow = {
+    player_name: "Dame", set_name: "Base Set", tier: "RARE", serial: 1, circulation_count: 1000,
+    tag: "#1", holder_address: "0xbd94cade097e50ac", edition_fmv: 250, edition_key: "1:2",
+  }
+
+  for (const col of ["laliga-golazos", "ufc-strike", "panini-blockchain", "not-a-collection"]) {
+    it(`get_special_serial_owners refuses ${col} (no Top Shot owners, no Top Shot links)`, async () => {
+      install({ "rpc:get_special_serial_owners_board": { data: [boardRow], error: null } })
+      script("get_special_serial_owners", { tag: "#1", collectionId: col })
+      await POST(post("who owns the #1s"))
+      const r = toolResult()
+      expect(r.status).toBe("unsupported_collection")
+      expect(r.rows).toBeUndefined()
+      expect(JSON.stringify(r)).not.toContain("/nba-top-shot/")
+    })
+  }
+
+  it("no-change controls: Top Shot and All Day still answer", async () => {
+    for (const col of ["nba-top-shot", "nfl-all-day"]) {
+      install({ "rpc:get_special_serial_owners_board": { data: [boardRow], error: null } })
+      script("get_special_serial_owners", { tag: "#1", collectionId: col })
+      await POST(post("who owns the #1s"))
+      expect(toolResult().status).toBe("ok")
+    }
+  })
+
+  it("check_wallet_squeeze refuses a Golazos conversation instead of returning the Top Shot bag", async () => {
+    install({
+      "rpc:get_wallet_squeeze_exposure": { data: { total_moments: 120, squeezed_moments: 30, buckets: [] }, error: null },
+    })
+    script("check_wallet_squeeze", { walletAddress: WALLET, collectionId: "laliga-golazos" })
+    await POST(post("how squeezed is my wallet"))
+    const r = toolResult()
+    expect(r.status).toBe("unsupported_collection")
+    expect(r.summary).toBeUndefined()
+  })
+})

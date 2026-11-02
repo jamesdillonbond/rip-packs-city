@@ -3112,7 +3112,12 @@ async function executeToolInner(
       if (reqCol != null && !isSqueezeCollection(reqCol)) {
         return JSON.stringify({ status: "unsupported_collection", collection: reqCol, message: "check_wallet_squeeze reads Top Shot (nba-top-shot) or NFL All Day (nfl-all-day) only. Do not answer with another collection's bag." });
       }
-      const squeezeCol: SqueezeCollection = reqCol ?? (effectiveCollectionId === "nfl-all-day" ? "nfl-all-day" : "nba-top-shot");
+      // ⛔ 2026-11-02: the conversation's collection is a request too. A Golazos / UFC / Panini (or bogus) context
+      // used to fall back to Top Shot's bag when the tool input named none; refuse it like an explicit one.
+      if (reqCol == null && effectiveCollectionId && effectiveCollectionId !== "nba-top-shot" && !isAllDaySlug(effectiveCollectionId)) {
+        return JSON.stringify({ status: "unsupported_collection", collection: effectiveCollectionId, message: "check_wallet_squeeze reads Top Shot (nba-top-shot) or NFL All Day (nfl-all-day) only. Do not answer with another collection's bag." });
+      }
+      const squeezeCol: SqueezeCollection = reqCol ?? (isAllDaySlug(effectiveCollectionId) ? "nfl-all-day" : "nba-top-shot");
       const colLabel = SQUEEZE_LABEL[squeezeCol];
       const read = await readSqueezeCheck(supabase, resolvedAddr.toLowerCase(), squeezeCol, "support-chat/check_wallet_squeeze");
       if (read.error) {
@@ -3526,6 +3531,15 @@ async function executeToolInner(
     }
     // 2026-10-26: the board takes p_collection (default nba-top-shot); on an All Day question this answered
     // with Top Shot rows. All Day reads its own rows, keyed and linked under All Day.
+    // ⛔ 2026-11-02: any OTHER named collection (Golazos, UFC, Panini, a bogus slug) used to fall through the
+    // ternary below and be answered with Top Shot's owners (substitution). An ABSENT collection still defaults.
+    if (effectiveCollectionId && effectiveCollectionId !== "nba-top-shot" && !isAllDaySlug(effectiveCollectionId)) {
+      return JSON.stringify({
+        status: "unsupported_collection",
+        collection: effectiveCollectionId,
+        message: "The special-serial owner board covers Top Shot, NFL All Day and Candy MLB only. Do not answer with another collection's owners.",
+      });
+    }
     const ssoAllDay = isAllDaySlug(effectiveCollectionId);
     const ssoSlug = ssoAllDay ? "nfl-all-day" : "nba-top-shot";
     const ssoUuid = ownLookup(COLLECTION_UUID_BY_SLUG, ssoSlug) ?? COLLECTION_UUID_BY_SLUG["nba-top-shot"];
