@@ -91,6 +91,9 @@ jobs:
             cat fork.out
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+      - name: Computation report (raw, first 3 kB)
+        if: always()
+        run: curl -fsS http://127.0.0.1:8080/emulator/computationReport | head -c 3000 || echo "no computation report endpoint"
       - name: Emulator log (on failure)
         if: failure()
         run: tail -80 "$RUNNER_TEMP/fork/emulator.log" || true

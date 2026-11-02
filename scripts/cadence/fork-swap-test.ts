@@ -28,6 +28,22 @@ import { idsReader, multiSwapArgs, planMultiSwap, readCanReceive, readCollection
 import { MULTI_SWAP_CADENCE, MULTI_SWAP_GAS_LIMIT, SWAP_COLLECTIONS, type SwapSlug } from "../../lib/trade-room/multi-swap-cadence"
 
 const EMU = (process.env.EMULATOR_REST || "http://127.0.0.1:8888/v1").replace(/\/$/, "")
+// The emulator's REST API reports computation_used as 0; `--computation-reporting` keeps the
+// real figure on the ADMIN API (default port 8080), keyed by transaction id.
+const ADMIN = (process.env.EMULATOR_ADMIN || "http://127.0.0.1:8080").replace(/\/$/, "")
+
+/** The computation a transaction used, from the emulator's computation report; null when it is not there. */
+async function computationOf(txId: string): Promise<number | null> {
+  try {
+    const res = await fetch(`${ADMIN}/emulator/computationReport`)
+    if (!res.ok) return null
+    const report = (await res.json()) as { transactions?: Record<string, { computation?: number }> }
+    const hit = report.transactions?.[txId]
+    return typeof hit?.computation === "number" ? hit.computation : null
+  } catch {
+    return null
+  }
+}
 const side = (env: string | undefined, dflt: string) => {
   const [signer, source] = (env || dflt).split(":")
   return { signer, source }
@@ -69,7 +85,10 @@ async function send(cadence: string, args: CdcArg[], gas: number): Promise<{ id:
   const sent = await emu<{ id: string }>("/transactions", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
   for (let i = 0; i < 120; i++) {
     const r = await emu<{ status: string; error_message: string; computation_used: string; events: unknown[] }>(`/transaction_results/${sent.id}`)
-    if (r.status === "Sealed" || r.status === "Expired") return { id: sent.id, status: r.status, error: r.error_message, computation: Number(r.computation_used), events: r.events.length }
+    if (r.status === "Sealed" || r.status === "Expired") {
+      const fromReport = await computationOf(sent.id)
+      return { id: sent.id, status: r.status, error: r.error_message, computation: fromReport ?? Number(r.computation_used), events: r.events.length }
+    }
     await new Promise((res) => setTimeout(res, 1000))
   }
   throw new Error(`transaction ${sent.id} did not seal on the fork within 120 s`)
@@ -135,7 +154,8 @@ async function main() {
   const plan = await planMultiSwap({ ...A, picks: picksA }, { ...B, picks: picksB })
   console.log(`planned (mainnet simulation passed): A ctls ${plan.a.ctls.join("/")}, B ctls ${plan.b.ctls.join("/")}`)
   const r1 = await send(MULTI_SWAP_CADENCE, multiSwapArgs(plan), MULTI_SWAP_GAS_LIMIT)
-  console.log(`multi swap tx ${r1.id}: ${r1.status}; computation ${r1.computation} of ${MULTI_SWAP_GAS_LIMIT}; ${r1.events} events${r1.error ? `; error: ${r1.error}` : ""}`)
+  console.log(`multi swap tx ${r1.id}: ${r1.status}; computation ${r1.computation || "not reported"} of ${MULTI_SWAP_GAS_LIMIT}; ${r1.events} events${r1.error ? `; error: ${r1.error}` : ""}`)
+  if (r1.computation > 0) check(r1.computation <= MULTI_SWAP_GAS_LIMIT * 0.8, `the multi swap used ${r1.computation} computation — within 80 % of the ${MULTI_SWAP_GAS_LIMIT} limit`)
   check(r1.status === "Sealed" && !r1.error, `the multi-collection transaction (${picksA.length} + ${picksB.length} Moments) sealed with no error`)
   const deps = { run: runOnFork, keys: async () => [1000], readTopShot: (a: string, ids: string[]) => readOnForkTopShot(a, ids) }
   for (const [picks, to] of [[picksA, B.source], [picksB, A.source]] as const) {
@@ -156,7 +176,7 @@ async function main() {
   } else {
     const plan2 = await planSwap({ signer: A.signer, source: A.source, ids: [] }, { signer: B.signer, source: B.source, ids: [tsId] })
     const r2 = await send(SWAP_CADENCE, swapArgs(plan2), SWAP_GAS_LIMIT)
-    console.log(`Top Shot swap tx ${r2.id}: ${r2.status}; computation ${r2.computation} of ${SWAP_GAS_LIMIT}${r2.error ? `; error: ${r2.error}` : ""}`)
+    console.log(`Top Shot swap tx ${r2.id}: ${r2.status}; computation ${r2.computation || "not reported"} of ${SWAP_GAS_LIMIT}${r2.error ? `; error: ${r2.error}` : ""}`)
     check(r2.status === "Sealed" && !r2.error, "the all-Top-Shot transaction sealed with no error")
     const h = await readOnForkTopShot(A.source, [tsId])
     check(h[tsId]?.held === true, `Top Shot ${tsId} landed in ${A.source}`)
