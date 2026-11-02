@@ -235,3 +235,15 @@ describe("InsiderSignals", () => {
     expect(txt).toContain("Open")          // source_url present -> Open link
   })
 })
+
+describe("InsiderSignals — a failed leg is not 'none' (2026-11-02)", () => {
+  it("renders 'couldn't be loaded' for the failed column, never 'No active alerts.'", async () => {
+    fetchMock.mockReturnValue(mockResp({ has_data: true, failed: ["alerts"], alerts: [], buybacks: [], announcements: [] }))
+    const { container } = render(<InsiderSignals />)
+    await waitFor(() => expect(container.textContent).toMatch(/Alerts couldn.t be loaded/))
+    expect(container.textContent).not.toMatch(/No active alerts/)
+    // the columns that DID load keep their honest empty copy
+    expect(container.textContent).toMatch(/No recent announcements/)
+  })
+})
+

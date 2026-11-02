@@ -796,6 +796,8 @@ export interface ExternalAnnouncementRow {
 }
 
 export interface InsiderSignalsResponse {
+  /** Legs whose READ failed (2026-11-02). An empty array in a failed leg is "unknown", not "none". */
+  failed?: Array<"alerts" | "buybacks" | "announcements">
   has_data: boolean
   alerts: InsiderAlertRow[]
   buybacks: InsiderBuybackRow[]

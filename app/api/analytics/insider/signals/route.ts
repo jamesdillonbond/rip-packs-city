@@ -138,8 +138,18 @@ export async function GET() {
       .slice(0, 5)
     const announcements: ExternalAnnouncementRow[] = (announcementsRes.data ?? []) as ExternalAnnouncementRow[]
 
+    // 2026-11-02: a failed leg used to reach the panel as an empty list and render "No active alerts." —
+    // a claim about the market made from a failed read. Name the failed legs; the panel says so per column.
+    const failed: NonNullable<InsiderSignalsResponse["failed"]> = []
+    if (alertsRes.error) failed.push("alerts")
+    if (buybacksRes.error) failed.push("buybacks")
+    if (announcementsRes.error) failed.push("announcements")
+
     const payload: InsiderSignalsResponse = {
-      has_data: alerts.length + buybacks.length + announcements.length > 0,
+      // Every leg failed → hide the panel (it claims nothing). A PARTIAL failure shows the panel so the failed
+      // column can say so instead of reading as "none" beside the columns that did load.
+      has_data: alerts.length + buybacks.length + announcements.length > 0 || (failed.length > 0 && failed.length < 3),
+      failed,
       alerts,
       buybacks,
       announcements,

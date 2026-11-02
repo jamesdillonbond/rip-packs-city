@@ -176,6 +176,16 @@ describe("GET /api/analytics/insider/signals — degradation", () => {
     const body = await res.json()
     expect(body.has_data).toBe(false)
     expect(body.alerts).toEqual([])
+    expect(body.failed).toEqual(["alerts", "buybacks", "announcements"])
+  })
+
+  it("a PARTIAL failure names the failed leg and shows the panel (2026-11-02)", async () => {
+    tables.topshot_insider_alerts = { data: null, error: { message: "alerts down" } }
+    tables.topshot_insider_buybacks = { data: [], error: null }
+    tables.external_announcements = { data: [], error: null }
+    const body = await (await GET()).json()
+    expect(body.failed).toEqual(["alerts"])
+    expect(body.has_data).toBe(true)
   })
 
   it("sets the shared s-maxage cache header", async () => {

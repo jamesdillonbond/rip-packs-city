@@ -8,6 +8,7 @@
 import { useEffect, useState } from "react"
 import { ShieldAlert, ExternalLink } from "lucide-react"
 import type { InsiderSignalsResponse } from "@/lib/analytics-types"
+import { sectionUnavailableCopy } from "@/lib/entity/section-empty-copy"
 
 function fmtUsd(n: number | null): string {
   if (n == null || !Number.isFinite(n) || n <= 0) return "—"
@@ -52,6 +53,10 @@ export default function InsiderSignals() {
   if (!resp || !resp.has_data) return null
 
   const { alerts, buybacks, announcements } = resp
+  const failed = new Set(resp.failed ?? [])
+  const unavailable = (noun: string) => (
+    <p className="text-[12px] text-[color:var(--rpc-text-muted)]">{sectionUnavailableCopy(noun)}</p>
+  )
 
   // Only show buybacks that resolved to a real moment name. The route already
   // applies the moment-id name fallback and filters unresolved rows; this is a
@@ -89,7 +94,7 @@ export default function InsiderSignals() {
           <h3 className="mb-2 text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] font-semibold">
             Alerts
           </h3>
-          {alerts.length === 0 ? (
+          {failed.has("alerts") ? unavailable("Alerts") : alerts.length === 0 ? (
             <p className="text-[12px] text-[color:var(--rpc-text-muted)]">No active alerts.</p>
           ) : (
             <ul className="space-y-2">
@@ -120,7 +125,7 @@ export default function InsiderSignals() {
           <h3 className="mb-2 text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] font-semibold">
             Recent Buybacks
           </h3>
-          {visibleBuybacks.length === 0 ? (
+          {failed.has("buybacks") ? unavailable("Buybacks") : visibleBuybacks.length === 0 ? (
             <p className="text-[12px] text-[color:var(--rpc-text-muted)]">
               {unnamedBuybacks > 0
                 ? `${unnamedBuybacks} recent buyback${unnamedBuybacks === 1 ? "" : "s"} not yet matched to a moment.`
@@ -160,7 +165,7 @@ export default function InsiderSignals() {
           <h3 className="mb-2 text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] font-semibold">
             External Announcements
           </h3>
-          {announcements.length === 0 ? (
+          {failed.has("announcements") ? unavailable("Announcements") : announcements.length === 0 ? (
             <p className="text-[12px] text-[color:var(--rpc-text-muted)]">No recent announcements.</p>
           ) : (
             <ul className="space-y-2">
