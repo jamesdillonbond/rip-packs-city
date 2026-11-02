@@ -14,6 +14,7 @@ const state = {
   marketPulse: [] as any[],
   pulseError: null as any,
   movers: [] as any[],
+  moversError: null as any,
   /** Every table the route actually read, in order. */
   tablesRead: [] as string[],
 }
@@ -37,7 +38,7 @@ vi.mock("@/lib/supabase", () => {
     from: (t: string) => builder(t),
     rpc: async (name: string) => {
       if (name === "get_market_pulse_all") return { data: state.pulseError ? null : state.marketPulse, error: state.pulseError }
-      if (name === "get_fmv_movers") return { data: state.movers, error: null }
+      if (name === "get_fmv_movers") return { data: state.moversError ? null : state.movers, error: state.moversError ?? null }
       return { data: null, error: null }
     },
   }
@@ -54,15 +55,27 @@ beforeEach(() => {
   state.marketPulse = []
   state.pulseError = null
   state.movers = []
+  state.moversError = null
   state.tablesRead = []
 })
 
 describe("GET /api/overview-stats", () => {
-  it("returns 200 zeros for an unknown collection (DB untouched)", async () => {
+  // INVERTED 2026-11-02: this used to pin "200 zeros" — a measured empty for a collection that does
+  // not exist. The promise now is the ABSENCE of any number for an unknown subject.
+  it("refuses an unknown collection with 404 and no numbers (DB untouched)", async () => {
     const res = await GET(req("https://t/api/overview-stats?collection=not-a-real-collection"))
-    expect(res.status).toBe(200)
+    expect(res.status).toBe(404)
     const body = await res.json()
-    expect(body).toEqual({ totalEditions: 0, highConfCount: 0, volume24h: 0, movers: [] })
+    expect(body).toEqual({ error: "unknown_collection" })
+    expect(state.tablesRead).toEqual([])
+  })
+
+  it("a movers RPC error is unknown (null), not 'no movers' (2026-11-02)", async () => {
+    state.editionsCount = 10
+    state.moversError = { message: "movers down" }
+    const body = await (await GET(req("https://t/api/overview-stats?collection=nba-top-shot"))).json()
+    expect(body.movers).toBeNull()
+    expect(body.totalEditions).toBe(10)
   })
 
   it("returns totals, HIGH count, 24h volume and movers for a standard collection", async () => {

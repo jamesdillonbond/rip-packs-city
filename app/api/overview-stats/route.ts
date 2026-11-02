@@ -168,11 +168,10 @@ export async function GET(req: NextRequest) {
     const collectionId = getCollectionUuid(slug)
     const dbSlug = toDbSlug(slug)
 
+    // ⛔ 2026-11-02: an unknown collection was answered 200 with 0 editions / $0 volume — a measured
+    // empty for a subject that does not exist. Refuse it: no numbers, no subject. (An ABSENT param defaults.)
     if (!collectionId) {
-      return NextResponse.json(
-        { totalEditions: 0, highConfCount: 0, volume24h: 0, movers: [] },
-        { status: 200 }
-      )
+      return NextResponse.json({ error: "unknown_collection" }, { status: 404 })
     }
 
     const isPinnacle = slug === "disney-pinnacle"
@@ -195,11 +194,15 @@ export async function GET(req: NextRequest) {
       }),
     ])
 
-    const stats = statsSettled.status === "fulfilled" ? statsSettled.value : { totalEditions: 0, highConfCount: 0 }
+    // 2026-11-02: a rejected stats leg is unknown, not 0 (api-count-reads-are-null-not-zero).
+    const stats: { totalEditions: number | null; highConfCount: number | null } =
+      statsSettled.status === "fulfilled" ? statsSettled.value : { totalEditions: null, highConfCount: null }
     // ⚠ A REJECTED read is not a zero either — it is the same non-answer as the
     // four inside getVolume24hFromPulse, and it must not become $0 here.
     const volume24h = volumeSettled.status === "fulfilled" ? volumeSettled.value : null
-    const movers = moversSettled.status === "fulfilled" ? (moversSettled.value.data ?? []) : []
+    // A fulfilled promise can still carry a PostgREST error: that is "unknown", not "no movers".
+    const movers =
+      moversSettled.status === "fulfilled" && !moversSettled.value?.error ? (moversSettled.value.data ?? []) : null
 
     return NextResponse.json(
       {

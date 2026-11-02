@@ -13,9 +13,10 @@ const { GET } = await import("@/app/api/overview-stats/route")
 const get = (qs: string) => new NextRequest(`https://t/api/overview-stats${qs}`)
 
 describe("GET /api/overview-stats — integration", () => {
-  it("200s for an unknown collection (stable empty stats)", async () => {
+  // INVERTED 2026-11-02: an unknown collection is refused, never answered with "empty stats".
+  it("404s an unknown collection (no fabricated empty stats)", async () => {
     const res = await GET(get("?collection=not-real"))
-    expect(res.status).toBe(200)
+    expect(res.status).toBe(404)
   })
 
   it("drives the standard (Top Shot) stats path to a stable 200", async () => {
