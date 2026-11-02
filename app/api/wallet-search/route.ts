@@ -1136,9 +1136,36 @@ async function upsertWalletMomentsCache(wallet: string, rows: WalletRow[]) {
     let written = 0
     let failedChunks = 0
     let firstError: string | null = null
-    for (const set of [resolvedRows, unresolvedRows]) {
+    // ⛔ A DEGRADED ROW IS INSERT-ONLY (2026-11-02). An unresolved row is one
+    // whose enrichment FAILED (no edition key), so its fmv_usd / player_name /
+    // tier / set_name / image_url are NULL because we could not read them, not
+    // because they are unknown. A PostgREST upsert overwrites every column it is
+    // given, so writing it with merge semantics nulled the good cached values of
+    // that moment — the same shape fixed for this route's editions seed on
+    // 09-25 (wallet-search-edition-seed-is-insert-only). ignoreDuplicates lets a
+    // never-cached moment still get a bare row (the metadata fill and the walks
+    // complete it) and leaves a cached one untouched. Its count is the rows the
+    // insert RETURNED, not the rows offered.
+    const writeSets: Array<{ rows: Array<ReturnType<typeof baseRow>>; insertOnly: boolean }> = [
+      { rows: resolvedRows, insertOnly: false },
+      { rows: unresolvedRows, insertOnly: true },
+    ]
+    for (const { rows: set, insertOnly } of writeSets) {
       for (let i = 0; i < set.length; i += CHUNK) {
         const chunk = set.slice(i, i + CHUNK)
+        if (insertOnly) {
+          const { data, error } = await (supabaseAdmin as any)
+            .from("wallet_moments_cache")
+            .upsert(chunk, { onConflict: "wallet_address,collection_id,moment_id", ignoreDuplicates: true })
+            .select("moment_id")
+          if (error) {
+            failedChunks++
+            firstError ??= error.message
+          } else {
+            written += Array.isArray(data) ? data.length : 0
+          }
+          continue
+        }
         const { error } = await (supabaseAdmin as any)
           .from("wallet_moments_cache")
           .upsert(chunk, { onConflict: "wallet_address,collection_id,moment_id" })

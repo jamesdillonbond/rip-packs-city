@@ -38,3 +38,23 @@ describe("wallet-search edition seed never overwrites an existing edition", () =
     expect(calls.every((c) => /true$/.test(c))).toBe(true)
   })
 })
+
+// 2026-11-02: the SAME shape on the wallet_moments_cache write. A row whose
+// enrichment failed (no edition key) carries NULL fmv / name / tier / set /
+// image because they could not be READ; upserted with merge semantics it nulled
+// a cached moment's good values. Degraded rows are insert-only; resolved rows
+// keep merge semantics (they carry what was read).
+describe("wallet-search wmc cache write never clobbers a cached moment with a degraded row", () => {
+  const SRC_ALL = SRC
+
+  it("the degraded (unresolved) set is written with ignoreDuplicates:true", () => {
+    expect(SRC_ALL).toMatch(/\{\s*rows:\s*unresolvedRows,\s*insertOnly:\s*true\s*\}/)
+    expect(SRC_ALL).toMatch(
+      /if \(insertOnly\)[\s\S]{0,200}\.from\("wallet_moments_cache"\)\s*\.upsert\(chunk,\s*\{[^}]*ignoreDuplicates:\s*true/,
+    )
+  })
+
+  it("the resolved set is the only merge write (the subject still exists)", () => {
+    expect(SRC_ALL).toMatch(/\{\s*rows:\s*resolvedRows,\s*insertOnly:\s*false\s*\}/)
+  })
+})
