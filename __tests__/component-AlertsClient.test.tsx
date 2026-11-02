@@ -83,6 +83,7 @@ function mount(opts: {
     if (url.includes("/api/alerts/channels")) return (opts.channels ?? (() => json(200, CHANNELS)))()
     if (url.includes("/api/alerts/subscriptions")) return (opts.subs ?? (() => json(200, { subscriptions: [SUB()] })))()
     if (url.includes("/api/alerts/suggest")) return json(200, { suggestions: [] })
+    if (url.includes("/api/alerts/pack-chase")) return json(200, { watches: [], readings_ok: true }) // 2026-11-02 panel
     if (url.includes("/api/alerts")) return (opts.fmv ?? (() => json(200, [FMV()])))()
     return json(200, {})
   })
@@ -181,6 +182,7 @@ describe("AlertsClient — the three legs fail independently", () => {
       }
       if (url.includes("/api/alerts/subscriptions")) return json(200, { subscriptions: [] })
       if (url.includes("/api/alerts/suggest")) return json(200, { suggestions: [] })
+      if (url.includes("/api/alerts/pack-chase")) return json(200, { watches: [], readings_ok: true }) // 2026-11-02 panel
       if (url.includes("/api/alerts")) return json(200, [])
       return json(200, {})
     })
@@ -450,6 +452,7 @@ describe("AlertsClient — the subscription form", () => {
       if (url.includes("/api/alerts/channels")) return json(200, CHANNELS)
       if (url.includes("/api/alerts/subscriptions")) return json(200, { subscriptions: [] })
       if (url.includes("/api/alerts/suggest")) return json(200, { suggestions: [] })
+      if (url.includes("/api/alerts/pack-chase")) return json(200, { watches: [], readings_ok: true }) // 2026-11-02 panel
       if (url.includes("/api/alerts")) return json(200, [])
       return json(200, {})
     })
@@ -679,6 +682,7 @@ describe("AlertsClient — the subscription form", () => {
       if (url.includes("/api/alerts/suggest")) return json(200, { suggestions: ["Damian Lillard", "Dame Time"] })
       if (url.includes("/api/alerts/channels")) return json(200, CHANNELS)
       if (url.includes("/api/alerts/subscriptions")) return json(200, { subscriptions: [] })
+      if (url.includes("/api/alerts/pack-chase")) return json(200, { watches: [], readings_ok: true }) // 2026-11-02 panel
       if (url.includes("/api/alerts")) return json(200, [])
       return json(200, {})
     })
@@ -714,6 +718,7 @@ describe("AlertsClient — the subscription form", () => {
       if (url.includes("/api/alerts/suggest")) return json(500, {}, false)
       if (url.includes("/api/alerts/channels")) return json(200, CHANNELS)
       if (url.includes("/api/alerts/subscriptions")) return json(200, { subscriptions: [] })
+      if (url.includes("/api/alerts/pack-chase")) return json(200, { watches: [], readings_ok: true }) // 2026-11-02 panel
       if (url.includes("/api/alerts")) return json(200, [])
       return json(200, {})
     })

@@ -17,7 +17,8 @@ import { bearerMatches } from "@/lib/auth/bearer-secret"
 import { NextRequest, NextResponse, after } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat";
-import { dispatchDueDealAlerts, dispatchTriggeredFmvAlerts } from "@/lib/alerts";
+import { dispatchDueDealAlerts, dispatchTriggeredFmvAlerts, getOwnerChannelTargets } from "@/lib/alerts";
+import { runPackChaseDispatch, type PackChaseRunResult } from "@/lib/packs/chase-alerts";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -75,6 +76,8 @@ async function run(req: NextRequest) {
     let enqueuedFmv = 0;
     // FMV verdict keys, present only when the RPC answered (same rule as dealVerdict).
     let fmvVerdict: Record<string, number> | null = null;
+    // Pack-chase leg (2026-11-02). Null until it ran — an absent leg is not zeros.
+    let chase: PackChaseRunResult | null = null;
     // How many candidate rows the freshness gate held back this tick, and how
     // many were in each pool to begin with. Null until a successful deal
     // dispatch reports them — an absent count must not read as a measured zero
@@ -128,14 +131,27 @@ async function run(req: NextRequest) {
       errMsg = `${errMsg ? errMsg + "; " : ""}fmv threw: ${e instanceof Error ? e.message : String(e)}`;
     }
 
+    // Pack-chase watches (lib/packs/chase-alerts.ts): edge-triggered, enqueue-then-disarm.
+    try {
+      chase = await runPackChaseDispatch(supabaseAdmin, (owner) => getOwnerChannelTargets(owner));
+      if (chase.enqueue_error || chase.state_error) {
+        ok = false;
+        errMsg = `${errMsg ? errMsg + "; " : ""}chase: ${chase.enqueue_error ?? chase.state_error}`;
+      }
+    } catch (e) {
+      ok = false;
+      errMsg = `${errMsg ? errMsg + "; " : ""}chase threw: ${e instanceof Error ? e.message : String(e)}`;
+    }
+    const enqueuedChase = chase?.deliveries_written ?? 0;
+
     try {
       // supabase-js RESOLVES with { error } rather than throwing, so an
       // un-destructured await dropped a failed log write without a trace.
       const { error: logError } = await supabaseAdmin.rpc("log_pipeline_run", {
         p_pipeline: PIPELINE_NAME,
         p_started_at: startedAt,
-        p_rows_found: enqueuedDeal + enqueuedFmv,
-        p_rows_written: enqueuedDeal + enqueuedFmv,
+        p_rows_found: enqueuedDeal + enqueuedFmv + enqueuedChase,
+        p_rows_written: enqueuedDeal + enqueuedFmv + enqueuedChase,
         p_rows_skipped: 0,
         p_ok: ok,
         p_error: errMsg,
@@ -146,6 +162,16 @@ async function run(req: NextRequest) {
           // zeroes that read as "nothing was suppressed".
           ...(dealVerdict ?? {}),
           ...(fmvVerdict ?? {}),
+          ...(chase
+            ? {
+                chase_watches_scanned: chase.watches_scanned,
+                chase_fired: chase.fired,
+                chase_rearmed: chase.rearmed,
+                chase_unknown: chase.unknown,
+                chase_no_channel: chase.no_channel,
+                enqueued_chase: chase.deliveries_written,
+              }
+            : {}),
           duration_ms: Date.now() - startedMs,
         },
       });

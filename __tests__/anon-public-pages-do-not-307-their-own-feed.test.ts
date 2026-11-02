@@ -52,6 +52,9 @@ describe("anon-public pages can reach the APIs they actually call", () => {
   it("still gates session-scoped APIs, and the widened reads are GET-only", () => {
     expect(isPublicPath("/api/cost-basis", "GET")).toBe(false)
     expect(isPublicPath("/api/saved-wallets", "GET")).toBe(false)
+    // 2026-11-02: pack-chase watches are per-account; the chase FEED is public, the WATCHES are not.
+    expect(isPublicPath("/api/alerts/pack-chase", "GET")).toBe(false)
+    expect(isPublicPath("/api/alerts/pack-chase", "POST")).toBe(false)
     expect(isPublicPath("/api/pack-listings", "POST")).toBe(false)
     expect(isPublicPath("/api/pinnacle-sniper-feed", "POST")).toBe(false)
     expect(isPublicPath("/api/moment-thumbnail", "POST")).toBe(false)

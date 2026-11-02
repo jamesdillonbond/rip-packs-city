@@ -10,6 +10,8 @@ import type { Delivery, DealPayload, FmvPayload } from "@/lib/alerts";
 import { marketplaceMomentUrl } from "@/lib/collections";
 import { askAgeHours, askStampKind, fmtAskAge, isAskStale } from "@/lib/market/ask-freshness";
 import { usdSignFirst } from "@/lib/usd-format"
+import { fmtPer100, fmtVsLaunch } from "@/lib/packs/chase-odds"
+import type { PackChasePayload } from "@/lib/packs/chase-alerts"
 
 const SITE = "https://www.rippackscity.com";
 
@@ -18,6 +20,20 @@ function isDeal(d: Delivery): d is Delivery & { payload: DealPayload } {
 }
 function isFmv(d: Delivery): d is Delivery & { payload: FmvPayload } {
   return d.alert_kind === "fmv";
+}
+// Pack-chase watch fired (lib/packs/chase-alerts.ts). 'pack_digest' is the outbox kind.
+function isPackChase(d: Delivery): d is Delivery & { payload: PackChasePayload } {
+  return d.alert_kind === "pack_digest" && typeof (d.payload as { dist_id?: unknown })?.dist_id === "string";
+}
+function tierWord(t: string): string {
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}
+/** "1 Legendary left in 18 sealed packs — 5.6 per 100 (launch 0.42, 13× launch rate)". A density, never a %. */
+export function packChaseLine(p: PackChasePayload): string {
+  return `${p.remaining.toLocaleString("en-US")} ${tierWord(p.tier)} left in ${p.unopened.toLocaleString("en-US")} sealed packs — ${fmtPer100(p.per100_now)} per 100 (launch ${fmtPer100(p.per100_launch)}, ${fmtVsLaunch(p.vs_launch)})`;
+}
+function packChaseUrl(p: PackChasePayload): string {
+  return `${SITE}/nba-top-shot/pack/dist/${encodeURIComponent(p.dist_id)}`;
 }
 
 function money(n: number | null | undefined): string {
@@ -236,6 +252,16 @@ export function buildTelegramMessage(deliveries: Delivery[], now: Date = new Dat
     }
   }
 
+  const chases = deliveries.filter(isPackChase);
+  if (chases.length) {
+    if (lines.length) lines.push("");
+    lines.push(`📦 <b>${chases.length} pack chase alert${chases.length === 1 ? "" : "s"}</b>`);
+    for (const d of chases.slice(0, 20)) {
+      const p = d.payload;
+      lines.push(`\n<a href="${packChaseUrl(p)}">${esc(p.title)}</a>\n${esc(packChaseLine(p))}`);
+    }
+  }
+
   lines.push(`\n\nManage: ${SITE}/alerts`);
   return lines.join("\n");
 }
@@ -291,6 +317,15 @@ export function buildDiscordEmbeds(deliveries: Delivery[], now: Date = new Date(
         ],
         footer: { text: "Rip Packs City · /alerts to manage" },
       });
+    } else if (isPackChase(d)) {
+      const p = d.payload;
+      embeds.push({
+        title: p.title,
+        url: packChaseUrl(p),
+        description: packChaseLine(p),
+        color: RPC_RED,
+        footer: { text: "Rip Packs City · /alerts to manage" },
+      });
     }
   }
   return embeds;
@@ -305,10 +340,13 @@ export function buildEmailMessage(deliveries: Delivery[], now: Date = new Date()
 } {
   const deals = deliveries.filter(isDeal);
   const fmvs = deliveries.filter(isFmv);
-  const total = deals.length + fmvs.length;
+  const chases = deliveries.filter(isPackChase);
+  const total = deals.length + fmvs.length + chases.length;
 
   const subject =
-    deals.length && !fmvs.length
+    chases.length && !deals.length && !fmvs.length
+      ? `${chases.length} pack chase alert${chases.length === 1 ? "" : "s"} from Rip Packs City`
+      : deals.length && !fmvs.length && !chases.length
       ? `${deals.length} new deal${deals.length === 1 ? "" : "s"} match your Rip Packs City alert`
       : `${total} Rip Packs City alert${total === 1 ? "" : "s"}`;
 
@@ -361,6 +399,19 @@ export function buildEmailMessage(deliveries: Delivery[], now: Date = new Date()
     })
     .join("");
 
+  const chaseRows = chases
+    .map((d) => {
+      const p = d.payload;
+      return `
+        <tr>
+          <td style="padding:12px 0;border-bottom:1px solid #27272a;">
+            <a href="${packChaseUrl(p)}" style="color:#fafafa;font-weight:700;text-decoration:none;font-size:15px;">${esc(p.title)}</a>
+            <div style="color:rgba(255,255,255,0.5);font-size:12px;margin-top:2px;">${esc(packChaseLine(p))}</div>
+          </td>
+        </tr>`;
+    })
+    .join("");
+
   const html = `<!doctype html><html><head><meta name="color-scheme" content="dark"><meta name="supported-color-schemes" content="dark"></head><body style="margin:0;background:#0a0a0a;color:#fafafa;font-family:-apple-system,Segoe UI,Roboto,sans-serif;">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:32px 16px;">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#18181b;border:1px solid #27272a;border-radius:14px;">
@@ -370,6 +421,7 @@ export function buildEmailMessage(deliveries: Delivery[], now: Date = new Date()
         </td></tr>
         <tr><td style="padding:8px 28px 24px 28px;">
           ${deals.length ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0">${dealRows}</table>` : ""}
+          ${chases.length ? `<div style="margin-top:16px;font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:rgba(255,255,255,0.5);font-weight:700;">Pack chase</div><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${chaseRows}</table>` : ""}
           ${fmvs.length ? `<div style="margin-top:16px;font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:rgba(255,255,255,0.5);font-weight:700;">FMV alerts</div><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${fmvRows}</table>` : ""}
           <p style="margin:22px 0 0 0;text-align:center;">
             <a href="${SITE}/alerts" style="color:rgba(255,255,255,0.55);font-size:12px;text-decoration:underline;">Manage your alerts</a>
@@ -398,6 +450,11 @@ export function buildEmailMessage(deliveries: Delivery[], now: Date = new Date()
   for (const d of fmvs) {
     const p = d.payload;
     textLines.push(`• ${p.player_name || p.edition_key} — ask ${money(p.lowest_ask)} / FMV ${money(p.current_fmv)}`);
+  }
+  for (const d of chases) {
+    const p = d.payload;
+    textLines.push(`• ${p.title} — ${packChaseLine(p)}`);
+    textLines.push(`  Details: ${packChaseUrl(p)}`);
   }
   textLines.push("", `Manage: ${SITE}/alerts`);
   if (opts.pauseUrl) textLines.push(`Pause alert emails: ${opts.pauseUrl}`);

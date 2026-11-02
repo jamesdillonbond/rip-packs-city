@@ -26,7 +26,14 @@ const fmvMock = vi.hoisted(() => vi.fn())
 vi.mock("@/lib/alerts", () => ({
   dispatchDueDealAlerts: dealMock,
   dispatchTriggeredFmvAlerts: fmvMock,
+  getOwnerChannelTargets: async () => [],
 }))
+
+// 2026-11-02: the pack-chase leg (lib/packs/chase-alerts.ts). Stubbed to a quiet
+// pass by default so the deal/fmv cases above keep measuring only their legs.
+const QUIET_CHASE = { watches_scanned: 0, fired: 0, rearmed: 0, unknown: 0, no_channel: 0, deliveries_written: 0, enqueue_error: null, state_error: null }
+const chaseMock = vi.hoisted(() => vi.fn())
+vi.mock("@/lib/packs/chase-alerts", () => ({ runPackChaseDispatch: chaseMock }))
 
 const rpcMock = vi.hoisted(() =>
   // Rest params + `any` payload: a zero-arg vi.fn infers an empty tuple, which
@@ -47,6 +54,8 @@ beforeEach(() => {
   capturedAfter = null
   dealMock.mockReset()
   fmvMock.mockReset()
+  chaseMock.mockReset()
+  chaseMock.mockResolvedValue(QUIET_CHASE)
   rpcMock.mockReset()
   rpcMock.mockResolvedValue({ data: null, error: null })
 })
@@ -242,5 +251,34 @@ describe("/api/cron/alerts-dispatch — deferred dispatch body", () => {
     expect(res.status).toBe(202)
     // The callback must resolve despite the logging RPC throwing (caught + console.log'd).
     await expect(capturedAfter!()).resolves.toBeUndefined()
+  })
+
+  it("the chase leg's written deliveries count toward rows and its verdict reaches the run row", async () => {
+    dealMock.mockResolvedValue({ enqueued: 1 })
+    fmvMock.mockResolvedValue({ enqueued: 0 })
+    chaseMock.mockResolvedValue({ ...QUIET_CHASE, watches_scanned: 4, fired: 1, rearmed: 1, unknown: 1, no_channel: 1, deliveries_written: 2 })
+    const p = await drive()
+    expect(p.p_ok).toBe(true)
+    expect(p.p_rows_written).toBe(3)
+    expect(p.p_extra).toMatchObject({ chase_watches_scanned: 4, chase_fired: 1, chase_rearmed: 1, chase_unknown: 1, chase_no_channel: 1, enqueued_chase: 2 })
+  })
+
+  it("a chase enqueue error fails the run, named", async () => {
+    dealMock.mockResolvedValue({ enqueued: 0 })
+    fmvMock.mockResolvedValue({ enqueued: 0 })
+    chaseMock.mockResolvedValue({ ...QUIET_CHASE, enqueue_error: "insert failed" })
+    const p = await drive()
+    expect(p.p_ok).toBe(false)
+    expect(p.p_error).toBe("chase: insert failed")
+  })
+
+  it("a chase leg that throws fails the run and carries no chase keys", async () => {
+    dealMock.mockResolvedValue({ enqueued: 0 })
+    fmvMock.mockResolvedValue({ enqueued: 0 })
+    chaseMock.mockRejectedValue(new Error("pack_chase_watches: boom"))
+    const p = await drive()
+    expect(p.p_ok).toBe(false)
+    expect(p.p_error).toBe("chase threw: pack_chase_watches: boom")
+    expect(p.p_extra).not.toHaveProperty("chase_watches_scanned")
   })
 })

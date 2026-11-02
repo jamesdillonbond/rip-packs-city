@@ -19,6 +19,7 @@ import { tierColor } from '@/lib/grail-format'
 import { relTimeShort } from '@/lib/pack-dist-format'
 import { proxyIpfsImageUrl } from '@/lib/ipfs-media'
 import PackThumb from './PackThumb'
+import WatchChaseButton from './WatchChaseButton'
 import {
   fmtPer100,
   fmtVsLaunch,
@@ -194,6 +195,7 @@ function ChaseCard({ row, rank, collection, tierLabel }: { row: ChaseRow; rank: 
           {age ? ` · as of ${age}` : ''}
           {row.buyable ? ' · buyable' : ''}
         </div>
+        <WatchChaseButton distId={row.distId} tier={row.tier} tierLabel={tierLabel} />
       </div>
     </li>
   )

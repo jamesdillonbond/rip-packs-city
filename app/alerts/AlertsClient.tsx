@@ -8,6 +8,7 @@
 //
 // NOT in proxy.ts isPublicPath() by design — it must require login.
 
+import PackChaseWatches from "@/components/alerts/PackChaseWatches";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { readAlertPrefill } from "@/lib/sniper/saved-filters";
@@ -696,6 +697,9 @@ export default function AlertsClient() {
             </div>
           )}
         </section>
+
+        {/* ── Pack chase watches (Top Shot, 2026-11-02) ─────────────────── */}
+        <PackChaseWatches />
       </main>
       <SupportChatConnected />
     </div>

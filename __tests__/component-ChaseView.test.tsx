@@ -54,3 +54,26 @@ describe("ChaseView", () => {
     expect(screen.queryByRole("alert")).toBeNull()
   })
 })
+
+describe("ChaseView controls", () => {
+  it("tier, sort and buyable toggles change the request; Try again re-reads", async () => {
+    const urls: string[] = []
+    let fail = true
+    vi.stubGlobal("fetch", vi.fn(async (u: string) => {
+      urls.push(u)
+      if (fail) { fail = false; return new Response("{}", { status: 500 }) }
+      return new Response(JSON.stringify({ rows: [], total: 0, refuted: 0 }), { status: 200 })
+    }))
+    render(<ChaseView collection="nba-top-shot" accent="var(--rpc-red)" />)
+    await waitFor(() => screen.getByText("Try again"))
+    screen.getByText("Try again").click()
+    await waitFor(() => expect(urls.length).toBe(2))
+    screen.getByText("Rare").click()
+    await waitFor(() => expect(urls.at(-1)).toContain("tier=rare"))
+    screen.getByText("Most left").click()
+    await waitFor(() => expect(urls.at(-1)).toContain("sort=remaining"))
+    screen.getByText("Buyable only").click()
+    await waitFor(() => expect(urls.at(-1)).not.toContain("buyableOnly"))
+    await waitFor(() => expect(document.body.textContent).toMatch(/No sealed pack still holds a Rare/))
+  })
+})
