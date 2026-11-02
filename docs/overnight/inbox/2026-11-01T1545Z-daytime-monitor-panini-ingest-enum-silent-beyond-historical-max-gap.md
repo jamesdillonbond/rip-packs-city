@@ -15,3 +15,5 @@ LOW. This is a conditional/event-driven enum ingest (new Panini sets / parallels
 
 ## Suggested action (night pass)
 Confirm which of the two it is: (1) check whether the Panini enum source actually has uningested new rows vs. is genuinely empty, and (2) if genuinely empty, consider whether the 738-min `max_silent_minutes` for `panini-ingest-enum` in `pipeline_cadence_watchlist` is still well-calibrated for its real (longer, weekend-sensitive) cadence, or should be relaxed/annotated so this stops surfacing as a near-threshold info row. No action if the enum feed is simply quiet. Do NOT kick the pipeline without confirming there is work for it.
+
+**Disposition — 11-02 ~2:25 PM PT (Claude Code cloud): RESOLVED, no action** — recorded in focus.md (STEER 11-01 ~8:10 AM PT): laptop runner asleep; `panini-ingest-enum` resumed 7:59 AM PT 11-01, and the 11-02 overnight pass read `stalled_pipelines` [] and `panini_fmv_stale_hours` 0. Threshold left as is by decision.
