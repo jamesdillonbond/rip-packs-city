@@ -44,7 +44,7 @@
     "preflight": "node scripts/preflight.mjs",
     "hooks:install": "git config core.hooksPath .githooks",
     "ops:ready-queue": "node scripts/report-ready-queue.mjs",
-    "cadence:lint-swaps": "tsx scripts/cadence/lint-trade-swaps.ts"
+    "cadence:lint-swaps": "npx --yes tsx@4.20.6 scripts/cadence/lint-trade-swaps.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.131.0",
