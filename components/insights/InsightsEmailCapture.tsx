@@ -54,24 +54,25 @@ export default function InsightsEmailCapture() {
             <div className="rpc-ins-capture-done-title">Check your inbox ✉️</div>
             <div className="rpc-ins-capture-done-sub">
               We sent a confirmation link to <strong>{email.trim().toLowerCase()}</strong>. Click it
-              and you&apos;re on the list for the weekly digest when it launches.
+              and you&apos;re on the list — the digest goes out every Monday.
             </div>
           </div>
         ) : (
           <>
             <div className="rpc-ins-capture-copy">
-              {/* 2026-10-11 — the weekly digest is NOT sending yet (the sender
-                  is on no schedule and the cron is flag-disabled). Until it
-                  launches, this copy promises a place on the list, not an
-                  inbox cadence nobody delivers. */}
-              <div className="rpc-ins-capture-eyebrow">Weekly digest — launching soon</div>
+              {/* 2026-11-02 (Stage B) — the digest is LIVE: /api/send-digest on a Monday
+                  Vercel cron, SEND_DIGEST_ENABLED + the CAN-SPAM postal address set. This
+                  copy describes what that email actually contains (app/api/send-digest
+                  buildEmail: deals below FMV + the 24-hour market pulse) — it promised
+                  squeeze movers / +EV packs / rookie cohorts before, none of which it sends.
+                  If the sender is ever switched off, put the waitlist copy back first. */}
+              <div className="rpc-ins-capture-eyebrow">Weekly digest · every Monday</div>
               <h2 className="rpc-ins-capture-title">
                 The numbers, in your inbox.
               </h2>
               <p className="rpc-ins-capture-lede">
-                Squeeze movers, fresh +EV packs, and rookie-cohort shifts — once a week, once it
-                launches. Sign up now and you&apos;re first on the list. Free, no account needed.
-                Unsubscribe any time.
+                The week&apos;s best listings below fair value and a 24-hour read on every
+                collection&apos;s market — once a week. Free, no account needed. Unsubscribe any time.
               </p>
             </div>
             <form className="rpc-ins-capture-form" onSubmit={handleSubmit}>

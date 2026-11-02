@@ -106,7 +106,7 @@ export default function DealWatchCapture({ wallet, surface = "share" }: { wallet
           <div className="rpc-dw-done-title">Check your inbox ✉️</div>
           <div className="rpc-dw-done-sub">
             We sent a confirmation link to <strong>{email.trim().toLowerCase()}</strong>. Click it
-            and we&apos;ll email you when deal alerts launch.
+            and we&apos;ll email you when deal alerts launch — plus the weekly digest every Monday.
           </div>
         </div>
       ) : (
@@ -116,12 +116,16 @@ export default function DealWatchCapture({ wallet, surface = "share" }: { wallet
                 box used to promise "we'll watch this collection and ping you on underpriced
                 moments", and nothing sends that email: email_subscribers.deal_alerts has no
                 sender, and both digests are off until Trevor's go. It is a WAITLIST until a
-                sender ships — the copy says what happens, and no more. */}
+                sender ships — the copy says what happens, and no more. 2026-11-02 (Stage B): the
+                submit sets digestWeekly, and the digest is now LIVE, so the copy says these
+                signups get it — never mail someone a product the box did not name. */}
             <div className="rpc-dw-eyebrow">Deal alerts · coming soon</div>
             <div className="rpc-dw-title">Get deal alerts when they launch</div>
             <div className="rpc-dw-lede">
               Email alerts for underpriced listings aren&apos;t live yet. Leave your email and
-              we&apos;ll let you know when they are. Free, no account needed. Unsubscribe any time.
+              we&apos;ll let you know when they are — meanwhile you&apos;ll get the weekly digest
+              every Monday: the best listings below fair value. Free, no account needed.
+              Unsubscribe any time.
             </div>
           </div>
           <form className="rpc-dw-form" onSubmit={handleSubmit}>

@@ -7,13 +7,16 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 // list so no Resend fetch is made → {subscribers:0, sent:0, errors:0}. Error on
 // the subscriber query → 500.
 
-const state: { result: any; rpc: Record<string, any>; rpcCalls: Array<{ name: string; args: any }> } = { result: { data: [], error: null }, rpc: {}, rpcCalls: [] }
+const state: { result: any; rpc: Record<string, any>; rpcCalls: Array<{ name: string; args: any }>; dedup: any; inserts: any[] } = { result: { data: [], error: null }, rpc: {}, rpcCalls: [], dedup: { data: null, error: null }, inserts: [] }
 
 vi.mock("@/lib/supabase", () => {
   const b: any = {
     select: () => b,
     eq: () => b,
     is: () => b,
+    // alert_deliveries: the per-week dedup read and the post-send record.
+    maybeSingle: async () => state.dedup,
+    insert: async (row: any) => { state.inserts.push(row); return { error: null } },
     then: (resolve: any) => resolve(state.result),
   }
   const admin: any = {
@@ -28,8 +31,7 @@ process.env.INGEST_SECRET_TOKEN = TOKEN
 
 const { GET } = await import("@/app/api/send-digest/route")
 
-function req(auth?: string) {
-  const url = "https://t/api/send-digest"
+function req(auth?: string, url = "https://t/api/send-digest") {
   return { headers: new Headers(auth ? { authorization: auth } : {}), url } as any
 }
 
@@ -40,6 +42,8 @@ beforeEach(() => {
   process.env.RPC_SENDER_POSTAL_ADDRESS = "PO Box 123, Portland, OR 97201"
   state.result = { data: [], error: null }
   state.rpc = {}
+  state.dedup = { data: null, error: null }
+  state.inserts = []
 })
 afterEach(() => {
   process.env.INGEST_SECRET_TOKEN = TOKEN
@@ -107,7 +111,7 @@ describe("GET /api/send-digest", () => {
     const res = await GET(req(`Bearer ${TOKEN}`))
     expect(res.status).toBe(200)
     const body = await res.json()
-    expect(body).toEqual({ subscribers: 0, sent: 0, errors: 0 , market_reads_failed: [] })
+    expect(body).toEqual({ subscribers: 0, sent: 0, errors: 0, already_sent_this_week: 0, market_reads_failed: [] })
   })
 
   it("500s on a subscriber-query error", async () => {
@@ -124,7 +128,7 @@ describe("GET /api/send-digest", () => {
     vi.stubGlobal("fetch", fetchSpy as any)
     const res = await GET(req(`Bearer ${TOKEN}`))
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ subscribers: 1, sent: 1, errors: 0 , market_reads_failed: [] })
+    expect(await res.json()).toEqual({ subscribers: 1, sent: 1, errors: 0, already_sent_this_week: 0, market_reads_failed: [] })
     // the Resend call carried the composed HTML
     const firstCall = fetchSpy.mock.calls[0] as any[]
     const callBody = JSON.parse(firstCall[1].body)
@@ -139,7 +143,7 @@ describe("GET /api/send-digest", () => {
     const fetchSpy = vi.fn()
     vi.stubGlobal("fetch", fetchSpy as any)
     const res = await GET(req(`Bearer ${TOKEN}`))
-    expect(await res.json()).toEqual({ subscribers: 1, sent: 0, errors: 1 , market_reads_failed: [] })
+    expect(await res.json()).toEqual({ subscribers: 1, sent: 0, errors: 1, already_sent_this_week: 0, market_reads_failed: [] })
     expect(fetchSpy).not.toHaveBeenCalled()
   })
 
@@ -148,7 +152,7 @@ describe("GET /api/send-digest", () => {
     process.env.RESEND_API_KEY = "re_test"
     vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 422, text: async () => "bad" })) as any)
     const res = await GET(req(`Bearer ${TOKEN}`))
-    expect(await res.json()).toEqual({ subscribers: 1, sent: 0, errors: 1 , market_reads_failed: [] })
+    expect(await res.json()).toEqual({ subscribers: 1, sent: 0, errors: 1, already_sent_this_week: 0, market_reads_failed: [] })
   })
 
   it("counts an error when the Resend fetch throws", async () => {
@@ -156,7 +160,7 @@ describe("GET /api/send-digest", () => {
     process.env.RESEND_API_KEY = "re_test"
     vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("network") }) as any)
     const res = await GET(req(`Bearer ${TOKEN}`))
-    expect(await res.json()).toEqual({ subscribers: 1, sent: 0, errors: 1 , market_reads_failed: [] })
+    expect(await res.json()).toEqual({ subscribers: 1, sent: 0, errors: 1, already_sent_this_week: 0, market_reads_failed: [] })
   })
 
   it("handles a subscriber with no wallet (skips the portfolio RPC) and still sends", async () => {
@@ -166,7 +170,7 @@ describe("GET /api/send-digest", () => {
     process.env.RESEND_API_KEY = "re_test"
     vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, status: 200, text: async () => "ok" })) as any)
     const res = await GET(req(`Bearer ${TOKEN}`))
-    expect(await res.json()).toEqual({ subscribers: 1, sent: 1, errors: 0 , market_reads_failed: [] })
+    expect(await res.json()).toEqual({ subscribers: 1, sent: 1, errors: 0, already_sent_this_week: 0, market_reads_failed: [] })
   })
 })
 
@@ -297,5 +301,69 @@ describe("GET /api/send-digest — a failed read never ships as an emptier email
     const body = JSON.parse(String((fetchMock.mock.calls[0] as any[])[1].body))
     expect(body.headers).toBeUndefined()
     expect(body.text).toContain("Unsubscribe:")
+  })
+
+  // 2026-11-02 (Stage B): a Vercel cron can re-fire, and an operator may run it by hand.
+  it("never mails a subscriber twice in one week", async () => {
+    seedOneSubscriber()
+    state.dedup = { data: { id: 1 }, error: null }
+    process.env.RESEND_API_KEY = "re_test"
+    const fetchMock = vi.fn(async () => ({ ok: true }) as any)
+    vi.stubGlobal("fetch", fetchMock)
+    const body = await (await GET(req(`Bearer ${TOKEN}`))).json()
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(body.sent).toBe(0)
+    expect(body.already_sent_this_week).toBe(1)
+  })
+
+  it("an unreadable dedup row refuses the send (fails closed)", async () => {
+    seedOneSubscriber()
+    state.dedup = { data: null, error: { message: "db" } }
+    process.env.RESEND_API_KEY = "re_test"
+    const fetchMock = vi.fn(async () => ({ ok: true }) as any)
+    vi.stubGlobal("fetch", fetchMock)
+    const body = await (await GET(req(`Bearer ${TOKEN}`))).json()
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(body.errors).toBe(1)
+  })
+
+  it("records a sent row for the week after a successful send", async () => {
+    seedOneSubscriber()
+    process.env.RESEND_API_KEY = "re_test"
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true }) as any))
+    await GET(req(`Bearer ${TOKEN}`))
+    expect(state.inserts).toHaveLength(1)
+    expect(state.inserts[0]).toMatchObject({ owner_key: "a@b.com", status: "sent", alert_kind: "weekly_digest" })
+  })
+
+  it("a dry run sends nothing, even with its flag off, and returns no addresses", async () => {
+    delete process.env.SEND_DIGEST_ENABLED
+    seedOneSubscriber()
+    process.env.RESEND_API_KEY = "re_test"
+    const fetchMock = vi.fn()
+    vi.stubGlobal("fetch", fetchMock)
+    const res = await GET(req(`Bearer ${TOKEN}`, "https://t/api/send-digest?dry=1"))
+    const text = await res.text()
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(text).not.toContain("a@b.com")
+    expect(JSON.parse(text)).toMatchObject({ dry: true, blocked: "flag_off", subscribers: 1, would_send: 1 })
+  })
+
+  it("accepts the Vercel cron secret", async () => {
+    process.env.CRON_SECRET = "cron-s"
+    const res = await GET(req("Bearer cron-s"))
+    expect(res.status).toBe(200)
+    delete process.env.CRON_SECRET
+  })
+
+  it("links point at the public site, not the host the request arrived on", async () => {
+    seedOneSubscriber()
+    process.env.RESEND_API_KEY = "re_test"
+    const fetchMock = vi.fn(async () => ({ ok: true }) as any)
+    vi.stubGlobal("fetch", fetchMock)
+    await GET(req(`Bearer ${TOKEN}`, "https://rpc-abc123.vercel.app/api/send-digest"))
+    const body = JSON.parse(String((fetchMock.mock.calls[0] as any[])[1].body))
+    expect(body.html).not.toContain("vercel.app")
+    expect(body.html).toContain("/api/subscribe/unsubscribe?token=vt1")
   })
 })

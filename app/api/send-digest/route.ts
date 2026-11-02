@@ -1,5 +1,5 @@
 // app/api/send-digest/route.ts
-// Weekly digest sender. Bearer-protected with INGEST_SECRET_TOKEN.
+// Weekly digest sender. Bearer-protected with INGEST_SECRET_TOKEN or CRON_SECRET (Vercel cron, Mondays).
 // DISABLED BY DEFAULT: sends nothing unless SEND_DIGEST_ENABLED === "1" and the
 // CAN-SPAM postal address (RPC_SENDER_POSTAL_ADDRESS) is set.
 // Pulls verified subscribers with digest_weekly=true, composes a personalized
@@ -12,8 +12,8 @@ import { supabaseAdmin } from "@/lib/supabase"
 import { usdSignFirst } from "@/lib/usd-format"
 import { commercialSendBlockedReason, commercialSenderLine } from "@/lib/emails/sender-identity"
 import { bearerMatches } from "@/lib/auth/bearer-secret"
+import { alreadySentEmail } from "@/lib/email/recipient-guards"
 
-const TOKEN = process.env.INGEST_SECRET_TOKEN ?? ""
 const FROM = "rpc-digest@rippackscity.com"
 
 function fmtUsd(n: number | null | undefined): string {
@@ -146,22 +146,53 @@ async function buildEmail(origin: string, sub: Subscriber, market: MarketBlocks)
   return { subject: "RPC Weekly Digest", html, text: lines.join("\n"), unsubUrl: sub.verification_token ? unsubUrl : null }
 }
 
+// Monday (UTC) of the week a run falls in — the dedup bucket, so a second call
+// in the same week (a re-fired cron, a manual run) never mails anyone twice.
+function weekBucket(d: Date): string {
+  const day = d.getUTCDay()
+  const diff = day === 0 ? -6 : 1 - day
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + diff)).toISOString().slice(0, 10)
+}
+
+const PIPELINE_NAME = "send-digest"
+const SUBJECT_KEY = "subscriber_digest"
+// 2026-11-02: links used `new URL(req.url).origin`, which under a Vercel cron can be a
+// *.vercel.app deployment host — every unsubscribe link would then point at a URL
+// that changes per deploy. The public site origin is stable.
+const ORIGIN = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
+
+async function logRun(startedAt: string, found: number, sent: number, skipped: number, ok: boolean, err: string | null, extra: Record<string, unknown>) {
+  try {
+    await (supabaseAdmin as any).rpc("log_pipeline_run", {
+      p_pipeline: PIPELINE_NAME, p_started_at: startedAt, p_rows_found: found, p_rows_written: sent,
+      p_rows_skipped: skipped, p_ok: ok, p_error: err, p_extra: extra,
+    })
+  } catch { /* non-fatal */ }
+}
+
 export async function GET(req: NextRequest) {
   const auth = req.headers.get("authorization") ?? ""
-  if (!TOKEN || !bearerMatches(auth, "INGEST_SECRET_TOKEN")) {
+  // 2026-11-02: CRON_SECRET too — the only credential a Vercel cron can send (vercel.json).
+  if (!bearerMatches(auth, "INGEST_SECRET_TOKEN", "CRON_SECRET")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
+
+  const dry = new URL(req.url).searchParams.get("dry") === "1"
+  const startedAt = new Date().toISOString()
+  const bucket = weekBucket(new Date())
 
   // 2026-10-18: this route had NO enable flag — anything holding the bearer
   // token mailed every verified subscriber a commercial digest with no postal
   // address in it (CAN-SPAM, C2). It is off unless SEND_DIGEST_ENABLED === "1"
   // AND RPC_SENDER_POSTAL_ADDRESS is set; both are checked before any read.
+  // A dry run (?dry=1) reports COUNTS only — never addresses — and sends nothing.
   const blocked = commercialSendBlockedReason(process.env.SEND_DIGEST_ENABLED === "1")
-  if (blocked) {
+  if (blocked && !dry) {
+    await logRun(startedAt, 0, 0, 0, true, null, { skipped: blocked })
     return NextResponse.json({ sent: 0, skipped: blocked }, { status: 202 })
   }
 
-  const origin = new URL(req.url).origin
+  const origin = ORIGIN
 
   const { data: subs, error } = await (supabaseAdmin as any)
     .from("email_subscribers")
@@ -171,25 +202,45 @@ export async function GET(req: NextRequest) {
     .is("unsubscribed_at", null)
 
   if (error) {
+    await logRun(startedAt, 0, 0, 0, false, `subscriber_read: ${error.message}`, { bucket })
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
   const subscribers: Subscriber[] = subs ?? []
   let sent = 0
   let errors = 0
+  let already = 0
 
   const { market, failed: marketFailed } = await readMarket()
   // Either market read failing aborts: a digest silently missing a block is the
   // omission this guard exists to stop, and the next weekly run retries it.
   if (marketFailed.length > 0) {
+    await logRun(startedAt, subscribers.length, 0, subscribers.length, false, `market_reads_failed: ${marketFailed.join(",")}`, { bucket })
     return NextResponse.json(
       { error: "market_reads_failed", failed: marketFailed, subscribers: subscribers.length, sent: 0 },
       { status: 503 },
     )
   }
 
+  if (dry) {
+    let wouldSend = 0
+    for (const sub of subscribers) {
+      const prior = await alreadySentEmail({ ownerKey: sub.email.toLowerCase(), alertKind: "weekly_digest", subjectKey: SUBJECT_KEY, bucket })
+      if (prior === null) errors += 1
+      else if (prior) already += 1
+      else wouldSend += 1
+    }
+    return NextResponse.json({ dry: true, blocked, bucket, subscribers: subscribers.length, would_send: wouldSend, already_sent_this_week: already, guard_errors: errors, deals: Array.isArray(market.deals?.deals) ? market.deals.deals.length : 0, pulse_rows: pulseRows(market.pulse).length })
+  }
+
   for (const sub of subscribers) {
     try {
+      const ownerKey = sub.email.toLowerCase()
+      // Fails closed: an unreadable dedup row means "do not send" (retried next run).
+      const prior = await alreadySentEmail({ ownerKey, alertKind: "weekly_digest", subjectKey: SUBJECT_KEY, bucket })
+      if (prior === null) { errors += 1; continue }
+      if (prior) { already += 1; continue }
+
       const composed = await buildEmail(origin, sub, market)
       if (!composed) { errors += 1; continue }
       if (!process.env.RESEND_API_KEY) { errors += 1; continue }
@@ -215,12 +266,19 @@ export async function GET(req: NextRequest) {
         }),
         signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
       })
-      if (r.ok) sent += 1
-      else errors += 1
+      if (!r.ok) { errors += 1; continue }
+      sent += 1
+      // Record AFTER the send. A failed record is logged, not fatal: the mail went out.
+      const { error: recErr } = await (supabaseAdmin as any).from("alert_deliveries").insert({
+        owner_key: ownerKey, channel: "email", channel_user_id: ownerKey, alert_kind: "weekly_digest",
+        subject_key: SUBJECT_KEY, dedup_bucket: bucket, payload: {}, status: "sent", sent_at: new Date().toISOString(),
+      })
+      if (recErr) console.log(`[${PIPELINE_NAME}] delivery record err ${ownerKey.slice(-8)}: ${recErr.message}`)
     } catch {
       errors += 1
     }
   }
 
-  return NextResponse.json({ subscribers: subscribers.length, sent, errors, market_reads_failed: marketFailed })
+  await logRun(startedAt, subscribers.length, sent, already + errors, errors === 0, errors ? `${errors} not sent` : null, { bucket, sent, already_sent_this_week: already, errors })
+  return NextResponse.json({ subscribers: subscribers.length, sent, errors, already_sent_this_week: already, market_reads_failed: marketFailed })
 }

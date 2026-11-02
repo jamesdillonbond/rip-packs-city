@@ -3,6 +3,10 @@
   "regions": ["pdx1"],
   "crons": [
     {
+      "path": "/api/send-digest",
+      "schedule": "23 16 * * 1"
+    },
+    {
       "path": "/api/cron/pinnacle-trades-indexer",
       "schedule": "*/10 * * * *"
     },
