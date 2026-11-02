@@ -63,7 +63,7 @@ function makeDb(fixtures: Record<string, Payload>) {
   }
   const thenable = (key: string) => {
     const b: Record<string, unknown> = {}
-    for (const m of ["select", "eq", "gt", "order", "limit", "in"]) {
+    for (const m of ["select", "eq", "gt", "lte", "order", "limit", "in"]) {
       b[m] = () => b
     }
     b.maybeSingle = async () => get(key)
@@ -663,10 +663,18 @@ describe("fetchPinnacleDropEv", () => {
 describe("fetchTopshotAtlasDistCounts", () => {
   it("Top Shot: reads topshot_atlas_dists and returns the row", async () => {
     const row = { summary_fetched_at: "2026-10-14T09:54:00Z", unopened_count: 134, total_pack_count: 22068, remaining_by_tier: { rare: "43" }, original_by_tier: { rare: "5275" } }
-    const { db, calls } = makeDb({ topshot_atlas_dists: { data: row, error: null } })
+    // 2026-11-02: plus the opens observed up to the row's OWN stamp — the floor the
+    // page judges the payload by (an all-time count refuted every pack still opening).
+    const { db, calls } = makeDb({ topshot_atlas_dists: { data: row, error: null }, pack_rips: { data: null, error: null, count: 21934 } as any })
     const res = await fetchTopshotAtlasDistCounts("nba-top-shot", "5048", db)
-    expect(res).toEqual({ data: row, ok: true })
-    expect(calls).toEqual(["topshot_atlas_dists"])
+    expect(res).toEqual({ data: { ...row, observed_as_of: 21934 }, ok: true })
+    expect(calls).toEqual(["topshot_atlas_dists", "pack_rips"])
+  })
+
+  it("a failed as-of count leaves observed_as_of null (the page falls back to the all-time floor)", async () => {
+    const row = { summary_fetched_at: "2026-10-14T09:54:00Z", unopened_count: 134, total_pack_count: 22068, remaining_by_tier: {}, original_by_tier: {} }
+    const { db } = makeDb({ topshot_atlas_dists: { data: row, error: null }, pack_rips: { data: null, error: DB_ERR } })
+    expect(await fetchTopshotAtlasDistCounts("nba-top-shot", "5048", db)).toEqual({ data: { ...row, observed_as_of: null }, ok: true })
   })
 
   it("does not apply to other collections: ok:true, null, no read", async () => {

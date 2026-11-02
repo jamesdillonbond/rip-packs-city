@@ -505,8 +505,19 @@ for (const vp of [PHONE, NARROW]) {
     })
 
     test(`a Top Shot pack page with its chase Alert me form open does not scroll horizontally at ${vp.width}px`, async ({ page }) => {
-      await page.goto("/nba-top-shot/pack/dist/8905", { waitUntil: "domcontentloaded" })
-      await expect(page.getByText("Packs Content Remaining").first()).toBeVisible({ timeout: 20000 })
+      // Reach a pack page through the first Chase left card: that dist passed the
+      // same tier-count floor the pack page applies, so its tier panel renders.
+      // (A hardcoded dist fails the day Dapper's counts for it are refuted — the
+      // first run of this case did exactly that on 8905, 11-02.)
+      await page.goto("/nba-top-shot/packs", { waitUntil: "domcontentloaded" })
+      await page.getByRole("button", { name: "Chase left" }).click()
+      const firstCard = page.locator("ol li a[href*='/nba-top-shot/pack/dist/']").first()
+      await expect(firstCard).toBeVisible({ timeout: 20000 })
+      await firstCard.click()
+      await page.waitForURL(/\/nba-top-shot\/pack\/dist\//)
+      // The pack page itself must have rendered (its title); the tier panel also
+      // needs an indexed drop pool, which older dists lack, so it is not required.
+      await expect(page.locator("h1").first()).toBeVisible({ timeout: 20000 })
       const alertMe = page.getByRole("button", { name: /Alert me/ }).first()
       if (await alertMe.count()) {
         await alertMe.click()

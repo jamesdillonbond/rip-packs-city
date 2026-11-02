@@ -21,6 +21,7 @@ import { supabaseAdmin as supabase } from "@/lib/supabase"
 import { requireUser } from "@/lib/auth/supabase-server"
 import { CHASE_TIERS, type ChaseTier } from "@/lib/packs/chase-odds"
 import { readingFor, type ChaseReading } from "@/lib/packs/chase-alerts"
+import { asOfObservedFloors } from "@/lib/pack-dist/observed-as-of"
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const sb: any = supabase
@@ -56,7 +57,9 @@ export async function GET() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const atlasById = new Map<string, any>((readingsOk ? atlas ?? [] : []).map((a: any) => [a.dist_id, a]))
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const obsById = new Map<string, any>((readingsOk ? meta ?? [] : []).map((m: any) => [m.dist_id, m.observed_packs_opened]))
+  const obsAll = new Map<string, any>((readingsOk ? meta ?? [] : []).map((m: any) => [m.dist_id, m.observed_packs_opened]))
+  // Floor as of each payload's stamp (lib/pack-dist/observed-as-of.ts).
+  const obsById = readingsOk ? await asOfObservedFloors(sb, [...atlasById.values()], obsAll) : obsAll
   const now = Date.now()
   const out = list.map((w) => {
     const reading: ChaseReading | null = readingsOk ? readingFor(atlasById.get(w.dist_id), obsById.get(w.dist_id), w.tier, now) : null

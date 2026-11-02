@@ -19,6 +19,7 @@
 
 import { atlasTierCounts, type AtlasDistCountsInput } from "@/lib/pack-dist/tier-counts"
 import { CHASE_MAX_AGE_DAYS, tierDensity, type ChaseTier } from "@/lib/packs/chase-odds"
+import { asOfObservedFloors } from "@/lib/pack-dist/observed-as-of"
 
 export interface ChaseWatch {
   id: string
@@ -148,8 +149,10 @@ export async function runPackChaseDispatch(
   }
   const atlasById = new Map<string, AtlasDistCountsInput & { title?: string | null }>()
   for (const a of atlasRows ?? []) atlasById.set(a.dist_id, a)
-  const observedById = new Map<string, number | string | null>()
-  for (const m of metaRows ?? []) observedById.set(m.dist_id, m.observed_packs_opened)
+  const observedAll = new Map<string, number | string | null>()
+  for (const m of metaRows ?? []) observedAll.set(m.dist_id, m.observed_packs_opened)
+  // Floor as of each payload's stamp (lib/pack-dist/observed-as-of.ts).
+  const observedById = await asOfObservedFloors(db, [...atlasById.entries()].map(([dist_id, a]) => ({ ...a, dist_id })), observedAll)
 
   const day = ptDay(nowMs)
   for (const w of list) {

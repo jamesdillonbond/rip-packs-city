@@ -24,6 +24,7 @@ import { supabaseAdmin } from "@/lib/supabase"
 import { COLLECTION_UUID_BY_SLUG } from "@/lib/collections"
 import { EV_SNAPSHOT_MAX_AGE_HOURS } from "@/lib/pack-dist-verdict"
 import { ownLookup } from "@/lib/safe-lookup"
+import { asOfObservedFloors } from "@/lib/pack-dist/observed-as-of"
 import {
   buildChaseRows,
   parseChaseSort,
@@ -118,8 +119,11 @@ export async function GET(req: NextRequest) {
       )
     }
 
+    // Floor = opens observed up to each payload's own stamp, re-read only where
+    // the all-time count refutes it (lib/pack-dist/observed-as-of.ts).
+    const floors = await asOfObservedFloors(sb, atlas, new Map(meta.map((m) => [m.dist_id, m.observed_packs_opened])))
     const metaById = new Map<string, PackMetaInput>()
-    for (const m of meta) metaById.set(m.dist_id, m)
+    for (const m of meta) metaById.set(m.dist_id, { ...m, observed_packs_opened: floors.get(m.dist_id) ?? m.observed_packs_opened })
 
     const built = buildChaseRows(atlas, metaById, {
       tier,

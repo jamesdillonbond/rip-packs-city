@@ -41,6 +41,7 @@
 // `db` is injectable (defaults to supabaseAdmin) so every branch is testable
 // without a database — the same shape `lib/insights/candy-board.ts` uses.
 
+import { observedOpensAsOf } from "@/lib/pack-dist/observed-as-of"
 import { supabaseAdmin } from "@/lib/supabase"
 import { getCollection } from "@/lib/collections"
 import { collectionHasDropPool } from "@/lib/packs/drop-pool"
@@ -719,6 +720,12 @@ export interface TopshotAtlasDistCountsRow {
   total_pack_count: number | string | null
   remaining_by_tier: unknown
   original_by_tier: unknown
+  /**
+   * Opens observed on chain up to summary_fetched_at — the floor this payload is
+   * judged against (lib/pack-dist/observed-as-of.ts). null when unknown; callers
+   * then fall back to the all-time count, which can only refute more.
+   */
+  observed_as_of?: number | null
 }
 
 /**
@@ -744,7 +751,9 @@ export async function fetchTopshotAtlasDistCounts(
     console.error("[pack-detail] atlas_dist_counts error", error.message)
     return { data: null, ok: false }
   }
-  return { data: (data as TopshotAtlasDistCountsRow | null) ?? null, ok: true }
+  const row = (data as TopshotAtlasDistCountsRow | null) ?? null
+  if (!row) return { data: null, ok: true }
+  return { data: { ...row, observed_as_of: await observedOpensAsOf(db, distId, row.summary_fetched_at) }, ok: true }
 }
 
 const PACK_MARKET_VIEW: Record<string, string> = {

@@ -567,7 +567,11 @@ export default async function PackDetailPage(
   // (newest 2026-08-28). Either is dropped whole when our observed on-chain
   // opens contradict it (v20: pack_table_rows.tier_counts_contradicted).
   const tierCountsContradicted = merged.tier_counts_contradicted === true
-  const tierCounts = pickTierCounts(distMetadata, tierCountsContradicted, atlasCountsRes.data, merged.observed_packs_opened)
+  // The Atlas floor is opens observed UP TO the payload's own stamp
+  // (lib/pack-dist/observed-as-of.ts): an all-time count refuted every pack
+  // still being opened (21 of 32 drops on 11-02 were that lag, not contradiction).
+  const atlasFloor = atlasCountsRes.data?.observed_as_of ?? merged.observed_packs_opened
+  const tierCounts = pickTierCounts(distMetadata, tierCountsContradicted, atlasCountsRes.data, atlasFloor)
   const tierCountsUpdatedAt = tierCounts.updatedAt
   const metaTotalUnopened = num((tierCounts.totalUnopened as string | number | null | undefined) ?? null)
   const metaTotalPackCount = num((tierCounts.totalPackCount as string | number | null | undefined) ?? null)
