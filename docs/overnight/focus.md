@@ -10,6 +10,7 @@
 - **#227 ULTIMATE source fix (`20261102210500`, other session) — first run tonight 10:45 PM PT:** expect 0 `ultimate-v1` → `thin-sales-guard-v3` reversals > 20 % in the 10:45–11:00 PM PT window and edition `260:8827` at the ask (~$675–720), not $3,333. A self check-in is scheduled at 11:20 PM PT to read it and record the result on #227.
 - **#221:** `resolve_player_name(<Top Shot>, 'Kenyon Martin Jr.')` → KJ Martin (`matched_via: alias`, father as namesake). Placeholder wmc names (`Unknown Play`, blank) = 0. **A regression would look like:** either count > 0 with `created_at` after 11-02.
 - **Writers:** `/api/wallet/seed` no longer writes wmc (it dispatches the multicollection walker; response carries `dispatch`), and `/api/wallet-search` writes degraded rows insert-only. Neither changes a pipeline_runs lane.
+- **`pipeline_alerts` `edge_fn_http_error` "4 … HTTP 400 … NOT attributable" (~2–4 PM PT 11-02) is THIS session's Flow REST probes** (pg_net `net._http_response` ids 2134408, 2134426, 2134427, 2134465 — deliberate computation-limit / type-error probes for #138 and the Series 9 sync read). It ages out of the 2 h window by ~4:05 PM PT; nothing to chase.
 - **Migration auto-recover:** a prod `schema_migrations` row with NULL `statements` (SQL-editor applies) now exits 4: the run commits every recoverable file and then FAILS naming the NULL row — read the step log, the fix is a hand commit, not a re-run.
 
 ## STEER — added 2026-11-01 ~8:10 AM PT (Claude Code local, Trevor's laptop) — two readings
