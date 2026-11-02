@@ -1237,6 +1237,15 @@ export function isPublicPath(pathname: string, method: string): boolean {
     // public catalog data — the same class as /api/market. Replaced the same-day
     // /api/market/teams, which anon visitors got 307'd to /login on.
     "/api/market/filter-options",
+    // 2026-11-01: the packs board's two view-mode reads. PUBLIC_READ_APIS is an
+    // EXACT-path set, so "/api/packs" above never covered its subpaths: an anon
+    // visitor on the (public) /<collection>/packs page who clicked "Grails" got
+    // 307 → login HTML, and the new Top Shot "Chase left" view would have too.
+    // Both handlers verified GET-only, service-role reads of public pack data
+    // (pack_grail_metrics_mv / pack_table_rows / topshot_atlas_dists), no
+    // session, no write path.
+    "/api/packs/grails",
+    "/api/packs/chase",
   ])
   if ((method === "GET" || method === "HEAD") && PUBLIC_READ_APIS.has(pathname)) {
     return true

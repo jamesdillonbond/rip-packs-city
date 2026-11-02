@@ -4,6 +4,7 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import PackTable, { type PackRow, type SortKey as TableSortKey } from './PackTable'
 import GrailsView from './GrailsView'
+import ChaseView from './ChaseView'
 import { collectionHasDropPool } from '@/lib/packs/drop-pool'
 import { useWarmCache } from '@/lib/warmup/WarmupContext'
 import { topshotPackUrl, dapperMarketPackUrl } from '@/lib/pack-urls'
@@ -303,7 +304,7 @@ export default function PackPageClient({ collection, tiers, title, accent = 'var
   // pack_grail_metrics_mv for chase-led card rendering. State lives at the
   // top of the component so the standard-view filters stay mounted (and
   // thus don't reset) when the user toggles between modes.
-  const [viewMode, setViewMode] = useState<'standard' | 'grails'>('standard')
+  const [viewMode, setViewMode] = useState<'standard' | 'grails' | 'chase'>('standard')
   const [sort, setSort] = useState<SortKey>('display_price_asc')
   const [tier, setTier] = useState<string>('all')
   const [search, setSearch] = useState('')
@@ -488,7 +489,7 @@ export default function PackPageClient({ collection, tiers, title, accent = 'var
         </div>
         {/* View-mode toggle. Grails mode reads pack_grail_metrics_mv via
             /api/packs/grails and ignores the standard-view filters. */}
-        <div className="flex items-center gap-1 rounded-lg border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-0.5">
+        <div className="flex flex-wrap items-center gap-1 rounded-lg border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-0.5">
           {/* active button: label colour from labelOn() on accentFill() (2026-10-24 — white on Golazos' accent read 2.27:1) */}
           <button
             onClick={() => setViewMode('standard')}
@@ -509,6 +510,17 @@ export default function PackPageClient({ collection, tiers, title, accent = 'var
           >
             Grails
           </button>}
+          {/* Chase left reads Dapper's live per-tier remaining counts (Atlas lane,
+              topshot_atlas_dists) — Top Shot only; /api/packs/chase refuses any
+              other collection rather than answer with Top Shot's dists (2026-11-01). */}
+          {collection === 'nba-top-shot' && <button
+            onClick={() => setViewMode('chase')}
+            className={'rounded-md px-3 py-1 text-xs font-semibold uppercase tracking-wide transition ' + (viewMode === 'chase' ? '' : 'text-[color:var(--rpc-text-secondary)] hover:text-[color:var(--rpc-text-primary)]')}
+            style={viewMode === 'chase' ? { backgroundColor: accentFill(accent), color: labelOn(accent) } : undefined}
+            title="Where each drop's Legendary, Ultimate and Rare moments are still sealed, vs launch"
+          >
+            Chase left
+          </button>}
         </div>
       </div>
 
@@ -516,6 +528,10 @@ export default function PackPageClient({ collection, tiers, title, accent = 'var
         <Suspense fallback={null}>
           <GrailsView collection={collection} accent={accent} />
         </Suspense>
+      )}
+
+      {viewMode === 'chase' && collection === 'nba-top-shot' && (
+        <ChaseView collection={collection} accent={accent} />
       )}
 
       {viewMode === 'standard' && (

@@ -33,6 +33,11 @@ describe("anon-public pages can reach the APIs they actually call", () => {
     // /<collection>/packs/simulator/<distId>; signed out, that was 307 → /login.
     ["/nba-top-shot/packs/simulator/1427", ["/api/pack-simulator"]],
     ["/nfl-all-day/packs/simulator/1", ["/api/pack-simulator"]],
+    // 2026-11-01, sixth instance: the packs board's view modes. "/api/packs" on the exact-path
+    // allowlist never covered "/api/packs/grails", so a signed-out "Grails" click got login HTML;
+    // the Top Shot "Chase left" view (/api/packs/chase) shipped with the same caller.
+    ["/nba-top-shot/packs", ["/api/packs", "/api/packs/grails", "/api/packs/chase"]],
+    ["/nfl-all-day/packs", ["/api/packs/grails"]],
   ]
 
   it.each(PAGE_TO_APIS)("%s is anon-public and so are its feeds", (page, apis) => {
@@ -51,6 +56,8 @@ describe("anon-public pages can reach the APIs they actually call", () => {
     expect(isPublicPath("/api/pinnacle-sniper-feed", "POST")).toBe(false)
     expect(isPublicPath("/api/moment-thumbnail", "POST")).toBe(false)
     expect(isPublicPath("/api/pack-simulator", "POST")).toBe(false)
+    expect(isPublicPath("/api/packs/grails", "POST")).toBe(false)
+    expect(isPublicPath("/api/packs/chase", "POST")).toBe(false)
     expect(isPublicPath("/nba-top-shot/packs/simulator/1427", "POST")).toBe(false)
     // exactly one segment after /simulator/, and only the five published Flow slugs
     expect(isPublicPath("/nba-top-shot/packs/simulator/1427/x", "GET")).toBe(false)
