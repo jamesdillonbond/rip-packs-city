@@ -1,0 +1,52 @@
+-- audit_20261102_drop_uncalled_unscoped_acquisition_batch_readers
+--
+-- #223 residue ("drop them rather than fix them"). Both functions join
+-- wallet_moments_cache to moment_acquisitions on (moment_id, wallet) with NO
+-- collection_id — the #142/#223 defect class (a moment_id is unique only within a
+-- collection, even inside one wallet). Neither has a caller. Re-verified
+-- 2026-11-02 ~9:30 AM PT immediately before writing this file:
+--   repo grep (app, lib, workers, supabase/functions, scripts, .github, tests): 0
+--   other pg_proc bodies: 0 · cron.job commands: 0 · views: 0 · pg_stat_statements calls: 0
+--   EXECUTE: service_role only (nothing anonymous or signed-in can call them).
+-- classify_acquisition (the third name in #223's residue) is NOT dropped: it is
+-- pinned (supabase/tests/classify_acquisition.sql + the drift guard) and named in
+-- get_pipeline_alerts_core.
+--
+-- REVERT: re-create from the definitions below (captured with pg_get_functiondef
+-- just before the drop), then
+--   REVOKE ALL ON FUNCTION <fn>(<args>) FROM PUBLIC, anon, authenticated;
+--   GRANT EXECUTE ON FUNCTION <fn>(<args>) TO service_role;
+--
+-- CREATE OR REPLACE FUNCTION public.acq_get_inferred_batch(p_wallet text DEFAULT '0xbd94cade097e50ac'::text, p_collection_id uuid DEFAULT '95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid, p_limit integer DEFAULT 50, p_offset integer DEFAULT 0)
+--  RETURNS json LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO 'public'
+-- AS $function$
+--   SELECT json_build_object(
+--     'total_inferred', (SELECT count(*) FROM moment_acquisitions WHERE wallet = p_wallet AND collection_id = p_collection_id AND acquisition_confidence = 'inferred_no_signal'),
+--     'batch_size', p_limit, 'offset', p_offset,
+--     'acquisitions', COALESCE((SELECT json_agg(row_to_json(sub)) FROM (
+--         SELECT ma.id, ma.nft_id, ma.wallet, ma.transaction_hash, ma.acquired_date,
+--                ma.acquisition_method AS current_method, ma.acquisition_confidence AS current_confidence,
+--                wmc.player_name, wmc.set_name, wmc.tier, wmc.serial_number
+--         FROM moment_acquisitions ma
+--         LEFT JOIN wallet_moments_cache wmc ON wmc.moment_id = ma.nft_id AND wmc.wallet_address = ma.wallet
+--         WHERE ma.wallet = p_wallet AND ma.collection_id = p_collection_id AND ma.acquisition_confidence = 'inferred_no_signal'
+--           AND ma.transaction_hash IS NOT NULL AND ma.transaction_hash != ''
+--         ORDER BY ma.acquired_date ASC LIMIT p_limit OFFSET p_offset) sub), '[]'::json));
+-- $function$;
+--
+-- CREATE OR REPLACE FUNCTION public.get_unknown_acquisitions_batch(p_wallet text DEFAULT '0xbd94cade097e50ac'::text, p_limit integer DEFAULT 50, p_offset integer DEFAULT 0)
+--  RETURNS json LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO 'public'
+-- AS $function$
+--   SELECT json_build_object(
+--     'total_unknown', (SELECT count(*) FROM moment_acquisitions WHERE wallet = p_wallet AND acquisition_method = 'unknown' AND acquisition_confidence = 'checked_no_flowty'),
+--     'batch_size', p_limit, 'offset', p_offset,
+--     'moments', COALESCE((SELECT json_agg(row_to_json(sub)) FROM (
+--         SELECT ma.nft_id, ma.wallet, ma.acquired_date, ma.source, wmc.moment_id, wmc.player_name, wmc.set_name, wmc.tier, wmc.serial_number
+--         FROM moment_acquisitions ma
+--         LEFT JOIN wallet_moments_cache wmc ON wmc.moment_id = ma.nft_id AND wmc.wallet_address = ma.wallet
+--         WHERE ma.wallet = p_wallet AND ma.acquisition_method = 'unknown' AND ma.acquisition_confidence = 'checked_no_flowty'
+--         ORDER BY ma.acquired_date ASC NULLS LAST LIMIT p_limit OFFSET p_offset) sub), '[]'::json));
+-- $function$;
+
+DROP FUNCTION IF EXISTS public.acq_get_inferred_batch(text, uuid, integer, integer);
+DROP FUNCTION IF EXISTS public.get_unknown_acquisitions_batch(text, integer, integer);
