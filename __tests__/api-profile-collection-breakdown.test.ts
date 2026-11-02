@@ -111,6 +111,19 @@ describe("GET /api/profile/collection-breakdown", () => {
     expect((await res.json()).collections).toBeUndefined()
   })
 
+  it("does not relabel a CLOSED market as live when the collections lookup errors (2026-11-02)", async () => {
+    state.bio = { data: { user_id: "u1" }, error: null }
+    state.savedWallets = { data: [{ wallet_addr: "0xa" }], error: null }
+    state.breakdown = {
+      "0xa": { data: [{ collection_id: "c9", collection_name: "UFC Strike", moment_count: 4, total_fmv: 12 }], error: null },
+    }
+    state.cols = { data: null, error: { message: "collections down", code: "500" } }
+    const res = await GET(req("https://t/api/profile/collection-breakdown?ownerKey=trevor"))
+    expect(res.status).toBeGreaterThanOrEqual(500)
+    // the ABSENCE of the false claim: no rows that would render without their market-closed note
+    expect((await res.json()).collections).toBeUndefined()
+  })
+
   it("merges per-wallet breakdowns (deduped per distinct address), color-codes, and sorts by fmv", async () => {
     state.bio = { data: { user_id: "u1" }, error: null }
     // wallet "0xa" appears twice (two collection rows), "0xb" once → 2 distinct addrs

@@ -220,10 +220,13 @@ export async function GET(req: NextRequest) {
     // of a dollar figure. Absent (older column shape / test fixtures) → null.
     const closedMap = new Map<string, string | null>()
     if (ids.length > 0) {
-      const { data: cols } = await boundedRead((supabase as any)
+      const { data: cols, error: colsErr } = await boundedRead((supabase as any)
         .from("collections")
         .select("id, slug, market_closed_at")
         .in("id", ids), "api/profile/collection-breakdown/collections")
+      // 2026-11-02: an ignored error here left closedMap empty, so a CLOSED market (UFC) went back to a live
+      // dollar figure — the 09-04 defect, re-created by a failed read. Fail the request instead (catch below).
+      if (colsErr) throw colsErr
       for (const c of (cols ?? []) as Array<{ id: string; slug: string; market_closed_at?: string | null }>) {
         if (c.id && c.slug) slugMap.set(c.id, c.slug)
         if (c.id) closedMap.set(c.id, c.market_closed_at ?? null)
