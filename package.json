@@ -43,7 +43,8 @@
     "ci:guards": "node scripts/run-ci-guards.mjs",
     "preflight": "node scripts/preflight.mjs",
     "hooks:install": "git config core.hooksPath .githooks",
-    "ops:ready-queue": "node scripts/report-ready-queue.mjs"
+    "ops:ready-queue": "node scripts/report-ready-queue.mjs",
+    "cadence:lint-swaps": "tsx scripts/cadence/lint-trade-swaps.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.131.0",
