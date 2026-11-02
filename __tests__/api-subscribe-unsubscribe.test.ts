@@ -60,3 +60,13 @@ describe("POST /api/subscribe/unsubscribe (button + RFC 8058 one-click)", () => 
     expect(res.status).toBe(500)
   })
 })
+
+describe("the unsubscribe page never claims an unsubscribe in its title it has not made (2026-11-02)", () => {
+  it("the GET confirm page's <title> is its question, not 'Unsubscribed'", async () => {
+    const res = await GET(req("https://t/api/subscribe/unsubscribe?token=abc"))
+    const body = await res.text()
+    const title = (body.match(/<title>([^<]*)<\/title>/) ?? [])[1] ?? ""
+    expect(title).toContain("Unsubscribe from RPC emails?")
+    expect(title).not.toMatch(/^Unsubscribed/)
+  })
+})

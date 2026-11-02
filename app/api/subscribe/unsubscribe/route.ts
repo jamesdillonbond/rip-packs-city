@@ -9,8 +9,10 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 
+// The tab title is the heading (2026-11-02): it said "Unsubscribed" on the confirm page and the
+// error pages too — a claim the page body did not make.
 function html(message: string): string {
-  return `<!doctype html><html><head><meta charset="utf-8"><title>Unsubscribed</title>
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(message)} · Rip Packs City</title>
   <style>body{background:#080808;color:#fff;font-family:'Share Tech Mono',monospace;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}
   .card{padding:32px;border:1px solid rgba(224,58,47,0.3);border-radius:10px;text-align:center;max-width:420px}
   h1{font-family:'Barlow Condensed',sans-serif;letter-spacing:.05em;color:#E03A2F;margin:0 0 12px}
