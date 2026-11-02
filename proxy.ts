@@ -543,6 +543,11 @@ export function isPublicPath(pathname: string, method: string): boolean {
   // Drafts are 404 in the route; the admin surface is /api/admin/giveaways.
   if (pathname.startsWith("/giveaways/")) return true
   if (pathname.startsWith("/api/giveaways/")) return true
+  // /trades/block + /trades/block/<code> — the Trade Block's browse and listing pages
+  // (Trevor, 2026-11-02: "Browsing can be public"). EXACT shapes: /trades itself, the trade
+  // rooms (/trades/<code>) and /trades/block/mine stay signed-in. Their data comes from
+  // /api/public/trade-block (public above); every action is /api/trade-block (signed in).
+  if (pathname === "/trades/block" || /^\/trades\/block\/[a-z0-9]{10}$/.test(pathname)) return true
   // /blog + subpaths — force-static long-form marketing content built for SEO.
   // Linked from the public TopNav, so anon clicks must not bounce to /login.
   // Read-only static; sitemap lists the index + posts. (2026-06-08)

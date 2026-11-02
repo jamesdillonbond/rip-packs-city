@@ -51,6 +51,9 @@ const clientFiles = FILES.filter((f) => /^\s*["']use client["']/m.test(f.src))
 //     (Trevor, 2026-10-31: "continue building out our trade features" →
 //     "User-to-user trade room"). The signing step stays behind
 //     RPC_TRADE_ROOM_EXECUTE until that live test has sealed.
+//   * a TRADE BLOCK user on /trades/block/mine connects Flow Wallet WITH the account
+//     proof to prove which account their listed assets sit in — CONNECT ONLY, it
+//     never signs (Trevor, 2026-11-02: the Trade Block, "Yes proceed with all").
 // The wallet picker itself lives in exactly one module; each caller is imported
 // by exactly one page. Everywhere else, still no wallet sign-in.
 const CONNECT_MODULE = "lib/giveaways/flow-wallet-connect.ts"
@@ -60,6 +63,10 @@ const CLAIM_WALLET_IMPORTER = "app/giveaways/[slug]/GiveawayClient.tsx"
 const SWAP_WALLET_IMPORTER = "app/admin/swap-test/SwapTestClient.tsx"
 const TRADE_WALLET_MODULE = "lib/trade-room/trade-wallet.ts"
 const TRADE_WALLET_IMPORTER = "app/trades/[code]/TradeRoomClient.tsx"
+// Trevor, 2026-11-02 ("Yes proceed with all" on the Trade Block): /trades/block/mine proves
+// the account a collector's assets sit in with the SAME account-proof connect — CONNECT
+// ONLY, it never signs (pinned below).
+const BLOCK_WALLET_IMPORTER = "app/trades/block/mine/BlockMineClient.tsx"
 const notTheException = (f: { path: string }) => f.path !== CONNECT_MODULE
 /** Static `from "x"` or dynamic `import("x")` of a module specifier. */
 const imports = (src: string, spec: string) => new RegExp(`(from\\s+|import\\(\\s*)["']${spec.replace(/[/.]/g, (c) => "\\" + c)}["']`).test(src)
@@ -121,9 +128,14 @@ describe("no wallet sign-in anywhere (Trevor, 2026-08-08)", () => {
     expect(SWAP_WALLET_IMPORTER.startsWith("app/admin/")).toBe(true)
   })
 
-  it("the trade-room wallet module is imported only by the trade room page, and its signing step is gated", () => {
-    const importers = FILES.filter((f) => imports(f.src, "@/lib/trade-room/trade-wallet")).map((f) => f.path)
-    expect(importers).toEqual([TRADE_WALLET_IMPORTER])
+  it("the trade-room wallet module is imported only by the trade room page and the Trade Block's proof page, and its signing step is gated", () => {
+    const importers = FILES.filter((f) => imports(f.src, "@/lib/trade-room/trade-wallet")).map((f) => f.path).sort()
+    expect(importers).toEqual([BLOCK_WALLET_IMPORTER, TRADE_WALLET_IMPORTER].sort())
+    // the Trade Block page proves an account and never signs: no swap call, no relay
+    const block = FILES.find((f) => f.path === BLOCK_WALLET_IMPORTER)
+    expect(block, "the Trade Block proof page is missing").toBeTruthy()
+    expect(block!.src).toMatch(/connectTradeWalletWithProof/)
+    expect(block!.src).not.toMatch(/\bsendSwap\b|\bcoSign\b|relay_post|\bmutate\b/)
     // the page asks a wallet to sign only through the room route's relay_post, which
     // refuses until RPC_TRADE_ROOM_EXECUTE is set (lib/trade-room/execute.ts)
     const route = FILES.find((f) => f.path === "app/api/trade-room/[code]/route.ts")

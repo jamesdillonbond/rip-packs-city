@@ -35,12 +35,46 @@ Top Shot's Series 2026-27 program counts every $10 of a player's Moments, at **T
 - Concierge tool `get_trade_in` (afternoon): the finder (player-scoped, cheapest first) or the wallet read (username ladder, `not_indexed` never "holds nothing"); refused on any other named collection; its copy says ASP ≠ FMV, "counts for" not "worth", confirm eligibility in the Top Shot app.
 - **Copy rules:** no FMV and no confidence on the board; the ask is "one Moment at that price confirmed, the next may cost more"; "confirm eligibility in the Top Shot app".
 
+### 3. The Trade Block (`/trades/block`) — opened 2026-11-02
+
+Trevor, 2026-11-02 (PT): "a Trade Block or Trade Post, where users can put up assets that they'd like to trade, maybe even also mention what they're looking for in return", while the swap mechanism keeps moving in its own thread. His three decisions the same morning: **browsing is public**; **a trade can span collections and carry several items**; **no cash, at this time**. This supersedes the "no public wants list" line under *Open → Discovery* below — that was a default awaiting his call, and he has made it.
+
+**The split.** The block is the DISCOVERY layer; the trade room is the EXECUTION layer. A listing never moves an asset. An accepted proposal hands off to a trade room, and only the room's chain checks and signatures move anything. The block is not gated on the room widening to more collections, and the room widens collection by collection without any block change.
+
+**Data model** (migration `20261102162558_audit_20261102_trade_block`; every table service-role only, RLS on, no policies, like the room tables):
+
+| table | what a row is |
+|---|---|
+| `trade_block_wallets` | a Dapper/Flow account a user PROVED (FCL account proof, `lib/giveaways/claim-proof.ts`) — `(user_id, signer, source)`. Proof is the only ownership evidence; `saved_wallets.verified_at` is not used (listing-challenge verification lost its source, #59). |
+| `trade_block_listings` | one post: `code` (10 base-36, the URL), `user_id`, `note` (≤ 280, filtered), `open_to_offers`, `status` open/closed, `expires_at` (30 d), `closed_reason`. Expired is derived on read, never stored. |
+| `trade_block_items` | a line of a listing: `role` offer/want · `collection_id` · `kind` moment (a held asset, with its `source` account and a display snapshot) / edition (`edition_key`) / player (catalog name; Pinnacle says *character*). |
+| `trade_block_proposals` | a signed-in collector's offer on a listing: `code`, `listing_id`, `proposer_id`, `status` pending/accepted/declined/withdrawn, `note` (filtered), `room_code` once a room is opened. |
+| `trade_block_proposal_items` | `role` give (from the proposer's proven accounts) / get (a moment line of the listing). |
+
+**Rules built in.**
+- **Ownership:** an offered asset must sit in an account the poster proved, and in RPC's index of that account (`wallet_moments_cache`, scoped by `collection_id`). That index is a CACHE: the page says "in this account as of RPC's last read", re-checks at view time, and shows a line that has left the index as "may have moved" — never hides it silently and never claims it is gone. Top Shot lines are chain-checked again by the room before anything signs.
+- **Collections:** the Flow collections a proven Dapper account can hold — Top Shot, All Day, Golazos, Pinnacle, UFC. Panini (Ethereum) and Candy (Solana) have no proof path yet, so they can be WANTED (by edition or player) but not OFFERED.
+- **Wallets never leave the server.** Public reads carry username, items and FMV only — no `source`, no `signer`.
+- **No cash.** No price field anywhere. Notes are refused (not stripped) when they carry a URL, an email, a payment rail (PayPal, Venmo, Cash App, Zelle, crypto tickers), a money amount, or an off-platform contact handle (Discord, Telegram, WhatsApp, @handles) — off-platform payment is the trading-scam route.
+- **Fair-trade hint:** RPC FMV summed per side over HIGH/MEDIUM-priced lines only; "N not priced" otherwise; never a confidence tier; never $0 for unknown.
+- **Signing eligibility:** an accepted proposal opens a trade room **only when every moment on both sides is NBA Top Shot** (the only collection the swap has proven). Otherwise it reads "agreed — signing on RPC is Top Shot only for now; All Day / Golazos / … are next", and nothing is offered that the product lacks.
+- **Limits:** 10 lines per side, 20 open listings and 30 pending proposals per user, 30-day listing expiry, one pending proposal per (listing, proposer).
+- **Email:** new proposal → lister; accepted / declined → proposer; same sender, opt-out fail-closed, username only, no items or prices (the room's `notify.ts` rules).
+
+**Surfaces (v1).**
+- `/trades/block` — public browse (anon-readable at the proxy), filter by collection and player/character; newest first.
+- `/trades/block/<code>` — public listing page; a signed-in viewer can propose (pick what to give from their proven accounts, which offered moments they want, a note). Always `noindex` (listings live ≤ 30 days and close on a trade); `/trades/block` is the indexed surface.
+- `/trades/block/mine` — signed in: prove an account, post a listing (pick offers from holdings across collections, add wants by edition search or player name), close listings, decide on proposals, open the room.
+- Routes: `/api/public/trade-block` (list), `/api/public/trade-block/[code]` (one), `/api/trade-block` (signed-in: state + every mutation by `action`).
+
+**Next (v2+, not built):** a matcher ("3 collectors want something you hold"; two-way matches) with email alerts; a concierge tool; "N on the block / N wanted" on player and edition pages; room pre-fill from the accepted proposal; chain-checked holdings readers for All Day / Golazos as their swap paths land.
+
 ## Open — in order
 
 1. ~~**The live swap test**~~ — **DONE 2026-10-31 (3:41–3:52 PM PT):** Flow Wallet signs as a non-paying authorizer across two devices; run 1 (`c48f280a…`) and the two-way run 2 (`3e1c0976…`) both sealed with chain-verified landings. `RPC_TRADE_ROOM_EXECUTE=1` is set (env id `TXIQkpES5NH7czBk`). **Next: a first real trade through `/trades`** — two RPC accounts (Trevor + his wife's), the same two wallets. Lessons from the test, now binding for the room: the picker must not trust `wallet_moments_cache.is_locked` (known issue #222 — 121 of 137 "unlocked" rows were locked on chain; the save's chain check caught every one, but the picker showed them) and a LISTED Moment (TopShotMarketV3 sale collection) is still in the collection, so the picker should read the sale collection too.
 2. ~~**Expiry and housekeeping**~~ — shipped 10-31 afternoon: `prune_trade_rooms(30, 7)` on pg_cron `rpc-prune-trade-rooms` (jobid 814, 04:53 UTC daily) deletes rooms cancelled > 30 d and never-sealed rooms whose `expires_at` passed > 30 d (sides/items/relay cascade) and relay rows > 7 d; **sealed rooms are kept** as trade history (migration `20261031194500`, applied through the dashboard SQL editor — the MCP holds a body carrying DELETEs).
 3. **Collections:** Top Shot only (`trade_rooms.collection` CHECK). All Day / Golazos need a holdings reader per collection and their own `SWAP_CADENCE` imports; Pinnacle is blocked by Dapper's link filter; UFC's Flow market is closed.
-4. **Discovery:** no matcher, no public "wants" list — the room is invite-only on purpose until the accuracy gate and the 100-WAU rule allow promotion (memo §5). A dashboard card is the only front door.
+4. **Discovery:** ~~no matcher, no public "wants" list~~ — superseded 2026-11-02 by Trevor's Trade Block decision (section 3 above): public browse, multi-collection bundles, no cash. Still not done: the matcher and promotion (the accuracy gate and the 100-WAU rule still bind any promotion).
 5. **Trade-in tools, next:** ~~the cheapest next pack per player~~ (shipped 10-31 afternoon, see above); ~~player pages linking into the finder~~ (shipped); a "cheapest path to N packs" planner for a player you do NOT hold yet is the board's cost-first sort (N × the row); refresh the ASP read if Top Shot's figure proves to lag its own trade-in screen (compare on a real trade-in); add `/insights/trade-in` to the `rpc-insights-health` artifact's surface list from a desktop session (a remote artifact update clears its tool grant).
 
 ## Decided (do not re-propose)

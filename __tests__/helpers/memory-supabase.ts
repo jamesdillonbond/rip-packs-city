@@ -2,7 +2,7 @@
 //
 // An in-memory stand-in for the supabase-js query builder, good enough to run a
 // small state machine (lib/trade-room/store.ts) end to end: insert / upsert /
-// select / update / delete with eq / neq / in / is / not-in / order / limit /
+// select / update / delete with eq / neq / in / is / not-in / not-is / gt / lt / or / order / limit /
 // maybeSingle / single / count. UNIQUE and FK constraints are NOT enforced except
 // where a test declares `uniques`, which raise code 23505 like Postgres. It is a
 // test double, not Postgres: use it to prove ORDER and OUTCOME, not SQL semantics.
@@ -74,9 +74,22 @@ export function memorySupabase(seed: Record<string, Row[]> = {}, uniques: Record
       in: (k: string, v: unknown[]) => chain((r) => v.includes(r[k])),
       is: (k: string, v: unknown) => chain((r) => r[k] === v || (v === null && r[k] == null)),
       lt: (k: string, v: string) => chain((r) => String(r[k]) < v),
-      not: (k: string, operator: string, v: string) => {
+      gt: (k: string, v: string) => chain((r) => r[k] != null && String(r[k]) > v),
+      // PostgREST `or`, the subset the trade block uses: comma-separated `col.ilike.%x%` / `col.eq.v`
+      or: (expr: string) => {
+        const parts = expr.split(",").map((p) => {
+          const [col, operator, ...rest] = p.split(".")
+          const v = rest.join(".")
+          if (operator === "ilike") return (r: Row) => String(r[col] ?? "").toLowerCase().includes(v.replace(/%/g, "").toLowerCase())
+          if (operator === "eq") return (r: Row) => String(r[col]) === v
+          throw new Error(`memory db: or.${operator} unsupported`)
+        })
+        return chain((r) => parts.some((f) => f(r)))
+      },
+      not: (k: string, operator: string, v: string | null) => {
+        if (operator === "is") return chain((r) => (v === null || v === "null" ? r[k] != null : r[k] !== v))
         if (operator !== "in") throw new Error(`memory db: not.${operator} unsupported`)
-        const list = v.replace(/^\(|\)$/g, "").split(",").map((s) => s.trim().replace(/^"|"$/g, ""))
+        const list = String(v).replace(/^\(|\)$/g, "").split(",").map((s) => s.trim().replace(/^"|"$/g, ""))
         return chain((r) => !list.includes(String(r[k])))
       },
       filter: (k: string, operator: string, v: string) => {
