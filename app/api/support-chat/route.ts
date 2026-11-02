@@ -6919,6 +6919,25 @@ export async function POST(req: NextRequest) {
           { status: 429 }
         );
       }
+      // ⛔ 2026-11-02: the quota RPC failing OPEN was decided for "known-good wallets", but since open signup
+      // (10-31) every signed-in account is keyed (`user:<uuid>`) and skips the global anonymous budget above —
+      // so a quota outage meant UNCAPPED paid model calls for any account. Keep failing open (do not wedge the
+      // product), but under a durable cross-lambda ceiling that itself fails CLOSED, like the anonymous one.
+      if (quota.reason === "rpc_error_failopen") {
+        const keyedBudget = await bumpAnonRate({ bucket: "concierge:keyed_quota_failopen", key: "*", limit: 600, windowSecs: 3600 });
+        if (!keyedBudget.allowed) {
+          return NextResponse.json(
+            {
+              response: keyedBudget.failed
+                ? "The assistant is unavailable right now. Please try again in a few minutes."
+                : "The assistant is very busy right now. Please try again in a few minutes.",
+              escalated: false,
+              category: "rate_limit",
+            },
+            { status: keyedBudget.failed ? 503 : 429 },
+          );
+        }
+      }
       // Quota passed — record usage in the background so every return path
       // below (greeting, streaming, normal response, escalation) increments
       // the daily counter exactly once.
