@@ -37,6 +37,8 @@ Three values must never be labelled as one another (packs.md 09-26): the EV of w
 
 - **11-01 ~10:15–11:15 PM PT (Claude Code cloud): "Chase left" view on the Top Shot packs board** (third toggle beside Standard / Grails; `/api/packs/chase`, `lib/packs/chase-odds.ts`, `components/packs/ChaseView.tsx`). For each dist with packs still sealed: how many Legendary / Ultimate / Rare moments remain inside, as an average per 100 sealed packs, against the same drop at launch. Source: Dapper's live per-tier counts (Atlas, `topshot_atlas_dists`), validated by the pack page's own floor (`atlasTierCounts`: a payload claiming fewer opens than we watched on chain is dropped) and dropped at > 7 days old; every row carries its as-of. Default sort "richest vs launch": the "per pack now" ranking is headed by guaranteed-Legendary packs (2 per pack by design), true and uninformative. Read live 11-01: Rookie Revelation: Chance Hit (dist 5727) has 1 Legendary left in 30 sealed packs, 18.5× its launch rate; Rookie Year Royalty (8903) 1 in 18, 13×. It is a density, not a chance — never rendered as a %. Top Shot only: the route refuses any other collection with no rows. Same pass: `/api/packs/grails` was never anon-public (`PUBLIC_READ_APIS` is exact-path; `/api/packs` did not cover subpaths), so a signed-out "Grails" click got login HTML — both routes added, pinned in `anon-public-pages-do-not-307-their-own-feed`.
 
+- **11-02 ~6:30 AM PT:** the concierge answers chase questions (`get_pack_chase`, same route, density-not-% rule in the tool result).
+
 ## Cross-collection parity (2026-10-19 ~7:30 PM PT, Claude Code cloud)
 
 Shipped this pass (ledger 10-19):
