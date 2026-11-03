@@ -1,13 +1,23 @@
-// 2026-11-03 — pins 9dcf8ae (Cowork), which shipped without a test. bfe6467's sales-tab wait ended
-// on ANY nftSalesData response; measured from panini-ops-capture.jsonl, every empty (data:null)
-// TOP answer was a STALE request for ANOTHER card (797 of 2,468 exchanges, 0 of them carrying
-// data), so the wait ended early and the card's real read was dropped (noon walk: 262 sale
-// records per 140 cards vs ~895 before). Only an answer for the walked card may end the wait.
+// 2026-11-03 — pins the runner's sales-tab wait. History, all the same day:
+//  * bfe6467 (Cowork) ended the wait on ANY nftSalesData response — a response for another card
+//    ended it early (noon walk: 262 sale records per 140 cards vs ~895 before).
+//  * 9dcf8ae (Cowork) counted only THIS card's answers, read the other-card answers as a STALE
+//    request the SPA fires, and RE-CLICKED the tab on a stale-only answer, skipping RECENT.
+//  * ~3:30 PM PT, read from the 2 PM run's ops capture (112 cards): the "stale" answer is the
+//    PREVIOUS card's own TOP request, unanswered when the walk left it (body read fails, stamped with
+//    the new page's URL at t=0, before that page's own ops). 85 of 112 cards had only that. TOP is
+//    slow / never answers; RECENT answers ~0.7 s after TOP when TOP answers. The re-clicks fired
+//    more slow TOP reads and skipped RECENT: 1.2 records/card, 19 min per 50 cards.
+// So: only this card's answer counts; an other-card answer is LATE; the walk switches to RECENT as
+// soon as the tab has FIRED this card's request, and TOP gets a bounded grace — never a re-click.
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 
 const src = readFileSync(join(process.cwd(), "scripts/ingest-panini-runner.mjs"), "utf8")
+const tabFn = src.slice(src.indexOf("async function openSalesHistory("), src.indexOf("async function openRecentSales("))
+const recentFn = src.slice(src.indexOf("async function openRecentSales("), src.indexOf("// SERIAL PAGING"))
+const walk = src.slice(src.indexOf("for (const psku of pskus) {"))
 
 // The live request shape (GraphQL string; quotes escaped inside the JSON body).
 const REAL = JSON.stringify({
@@ -29,23 +39,49 @@ describe("the runner's request-psku reader works on the live request shape", () 
   })
 })
 
-describe("only THIS card's answer ends the sales-tab wait", () => {
-  it("a response for another card is tallied as stale, never as this card's", () => {
-    expect(src).toMatch(/if \(currentWalkPsku && rq && rq !== currentWalkPsku\) staleSalesResponses\+\+; else salesResponses\+\+;/)
+describe("only THIS card's answer counts", () => {
+  it("a response for another card is tallied as LATE, never as this card's", () => {
+    expect(src).toMatch(/if \(currentWalkPsku && rq && rq !== currentWalkPsku\) lateSalesResponses\+\+;/)
     // The ungated increment (bfe6467) must not come back.
     expect(src).not.toMatch(/if \(opNameOf\(resp\) === "nftSalesData"\) salesResponses\+\+;/)
+    expect(src).toContain("late_responses=${lateSalesResponses}")
   })
-  it("the walked card is set before its page is loaded", () => {
-    const loop = src.slice(src.indexOf("for (const psku of pskus) {"))
-    const set = loop.indexOf("currentWalkPsku = psku;")
+  it("the walked card — and its per-card counters — are set before its page is loaded", () => {
+    const set = walk.indexOf("currentWalkPsku = psku;")
+    const reset = walk.indexOf("cardSales = { reqTop: 0, reqRecent: 0, respTop: 0, respRecent: 0 };")
     expect(set).toBeGreaterThan(-1)
-    expect(set).toBeLessThan(loop.indexOf("page.goto("))
+    expect(reset).toBeGreaterThan(-1)
+    expect(set).toBeLessThan(walk.indexOf("page.goto("))
+    expect(reset).toBeLessThan(walk.indexOf("page.goto("))
   })
-  it("a stale-only answer re-clicks the tab instead of reporting the card empty", () => {
-    const fn = src.slice(src.indexOf("async function openSalesHistory("), src.indexOf("async function openRecentSales("))
-    expect(fn).toMatch(/if \(staleSalesResponses > beforeStale\) \{/)
-    expect(fn).toMatch(/await el\.click\(/)
-    expect(fn).toContain('return "stale"')
-    expect(src).toContain("stale_responses=${staleSalesResponses}")
+  it("requests are counted from the request event, so a slow TOP is seen as FIRED before it answers", () => {
+    expect(src).toMatch(/pg\.on\("request", onSalesRequest\)/)
+  })
+})
+
+describe("a slow TOP never costs the card its RECENT read (inverted from 9dcf8ae's re-click)", () => {
+  it("the tab step ends when this card's request FIRES, not when TOP answers, and never re-clicks", () => {
+    expect(tabFn).toMatch(/cardSales\.reqTop \+ cardSales\.reqRecent > firedBefore/)
+    expect(tabFn).not.toContain('return "stale"')
+    // exactly one click per locator shape — the re-click loop must not come back
+    expect(tabFn.match(/\.click\(/g)?.length).toBe(1)
+    expect(tabFn).not.toMatch(/sales\.length === before/)
+  })
+  it("RECENT is read on every card whose tab fired, before TOP's grace is spent", () => {
+    const opened = walk.indexOf("const clickedAt = await openSalesHistory();")
+    const recent = walk.indexOf("await openRecentSales()", opened)
+    const grace = walk.indexOf("clickedAt + TOP_WAIT_MS", opened)
+    expect(opened).toBeGreaterThan(-1)
+    expect(recent).toBeGreaterThan(opened)
+    expect(grace).toBeGreaterThan(recent)
+    expect(walk).not.toContain('tab === "stale"')
+  })
+  it("the RECENT wait ends on the RECENT answer only — a late TOP landing meanwhile cannot end it", () => {
+    expect(recentFn).toMatch(/while \(Date\.now\(\) < deadline && cardSales\.respRecent === beforeResp\)/)
+    expect(recentFn).not.toMatch(/sales\.length === before/)
+  })
+  it("TOP's grace is bounded and tunable", () => {
+    expect(src).toMatch(/const TOP_WAIT_MS = Number\(process\.env\.PANINI_SALES_TOP_WAIT_MS \|\| \d+\)/)
+    expect(src).toContain("top_answered=${topAnswered} top_unanswered=${topUnanswered}")
   })
 })
