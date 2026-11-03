@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse, after } from "next/server"
+import { omitUnread } from "@/lib/db/omit-unread"
 import { createClient } from "@supabase/supabase-js"
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 
@@ -636,6 +637,8 @@ async function runBackfill(started: number, startedAtIso: string): Promise<NextR
   // fixed wmc but not the map (the exact disagreement this job repairs) was
   // published as resolved on an ok:true run.
   let writeErrors = 0
+  // Catalog jobs skipped because the metadata named no character or set.
+  let catalogSkippedUnnamed = 0
   const writeErrorSamples: Array<{ lane: string; error: string }> = []
   const noteWriteError = (lane: string, err: { message?: string } | null | undefined) => {
     if (!err) return
@@ -766,35 +769,49 @@ async function runBackfill(started: number, startedAtIso: string): Promise<NextR
         } else if (job.kind === "catalog_upsert") {
           // Need the core key components to form a valid composite row.
           if (!info.royaltyCode || !info.variant) continue
+          // ⛔ No invented names (2026-11-03): character_name and set_name are NOT
+          // NULL with no default, and this used to send "Unknown" for a missing
+          // trait — creating a fake row, or OVERWRITING a real name on conflict
+          // (148 set_name='Unknown' rows, all April 2026, carry that shape). A job whose
+          // metadata lacks either is skipped and counted; an existing row keeps
+          // what it has. franchise / edition_type are omitted when unread, so a
+          // conflict-update keeps the stored value.
+          const characterName = info.characterName?.trim() || null
+          const setName = info.setName?.trim() || null
+          if (!characterName || !setName) {
+            catalogSkippedUnnamed++
+            continue
+          }
           // NOTE: thumbnail_url is intentionally omitted — never written here.
           // On INSERT it keeps the NULL default; on UPDATE (stub repair) the
           // existing value is preserved (supabase-js upsert only sets supplied
           // columns). Images are a documented dead-end (see header).
+          const catalogRow = omitUnread(
+            {
+              id: authoritativeKey,
+              edition_key: authoritativeKey,
+              character_name: characterName,
+              franchise: info.franchise?.trim() || null,
+              set_name: setName,
+              royalty_code: info.royaltyCode,
+              variant_type: info.variant,
+              edition_type: info.editionType?.trim() || null,
+              printing: info.printing,
+              mint_count: info.numberMinted,
+              is_serialized: info.isLimited,
+              is_chaser: info.isChaser,
+              updated_at: new Date().toISOString(),
+            },
+            ["franchise", "edition_type"],
+          )
           const { error } = await supabaseAdmin
             .from("pinnacle_editions")
-            .upsert(
-              {
-                id: authoritativeKey,
-                edition_key: authoritativeKey,
-                character_name: info.characterName || "Unknown",
-                franchise: info.franchise || "Unknown",
-                set_name: (info.setName || "Unknown").trim(),
-                royalty_code: info.royaltyCode,
-                variant_type: info.variant,
-                edition_type: info.editionType || "Unknown",
-                printing: info.printing,
-                mint_count: info.numberMinted,
-                is_serialized: info.isLimited,
-                is_chaser: info.isChaser,
-                updated_at: new Date().toISOString(),
-              },
-              { onConflict: "id" },
-            )
+            .upsert(catalogRow as any, { onConflict: "id" })
           noteWriteError(job.kind, error)
           if (!error) {
             corrections.catalog_upserted.push({
               edition_key: authoritativeKey,
-              character_name: info.characterName || "Unknown",
+              character_name: characterName,
               mint_count: info.numberMinted,
               created_or_repaired: authoritativeKey === job.wmc_edition_key ? "match" : "remapped",
             })
@@ -843,6 +860,7 @@ async function runBackfill(started: number, startedAtIso: string): Promise<NextR
       edition_keys_resolved: corrections.edition_keys_resolved.length,
       disagreements_corrected: corrections.disagreements_corrected.length,
       catalog_upserted: corrections.catalog_upserted.length,
+      catalog_skipped_unnamed: catalogSkippedUnnamed,
       serials_filled: corrections.serials_filled.length,
       q1_skipped_no_sample: q1Skipped.length,
       // Discovery telemetry: the POPULATION next to the capped list, so a reader

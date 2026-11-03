@@ -368,7 +368,12 @@ describe("pinnacle-metadata-backfill — Q3 disagreements", () => {
 })
 
 describe("pinnacle-metadata-backfill — Q4 catalog create/repair", () => {
-  it("upserts from chain text with Unknown/trim fallbacks and never writes thumbnail_url", async () => {
+  // INVERTED 2026-11-03: this case used to assert the defect — an empty on-chain
+  // trait written as an explicit "Unknown" (character, franchise, edition_type),
+  // which invented a row or overwrote a real name on conflict. Now: a blank
+  // franchise / edition_type is OMITTED (the stored value survives), and a pin
+  // with no character or set name is SKIPPED and counted, never invented.
+  it("never invents 'Unknown': omits unread traits, skips a nameless pin, trims, never writes thumbnail_url", async () => {
     // Skip-already-complete, per-key dedupe and the integer-key filter moved into
     // `pinnacle_metadata_discovery` — they are asserted against the live catalog
     // there, not re-simulated here. What stays the route's to get right is the
@@ -379,8 +384,9 @@ describe("pinnacle-metadata-backfill — Q4 catalog create/repair", () => {
         q4: [
           { edition_key: "RC:Std:8", wallet_address: "0xw1", moment_id: "8" }, // stub -> repair
           { edition_key: "RC:Old:7", wallet_address: "0xw1", moment_id: "7" }, // chain says otherwise
+          { edition_key: "RC:Std:9", wallet_address: "0xw1", moment_id: "9" }, // no character name
         ],
-        q4_targets_total: 2,
+        q4_targets_total: 3,
       }),
     })
     fetchMock = installFetchMock([
@@ -393,21 +399,24 @@ describe("pinnacle-metadata-backfill — Q4 catalog create/repair", () => {
             numberMinted: 250,
             isLimited: true,
             isChaser: true,
-            characterName: "",
+            characterName: " Stitch ",
             franchise: "",
             setName: "  Series 2  ",
             editionType: "",
           },
           // The on-chain key differs from the wmc key -> tagged "remapped".
-          "7": { royaltyCode: "RC", variant: "New", printing: 7 },
+          "7": { royaltyCode: "RC", variant: "New", printing: 7, characterName: "Dory", setName: "Pixar • Reef" },
+          // Valid key components but no character -> skipped, never "Unknown".
+          "9": { royaltyCode: "RC", variant: "Std", printing: 9, characterName: "", setName: "Series 2" },
         }),
       ]),
     ])
 
     const body = await (await GET(req())).json()
     expect(body.ok).toBe(true)
-    expect(logExtra(spy).extra.q4_eligible).toBe(2)
+    expect(logExtra(spy).extra.q4_eligible).toBe(3)
     expect(body.catalog_upserted).toBe(2)
+    expect(logExtra(spy).extra.catalog_skipped_unnamed).toBe(1)
 
     const rows = (spy.writes.pinnacle_editions ?? [])
       .filter((w) => w.method === "upsert")
@@ -415,10 +424,8 @@ describe("pinnacle-metadata-backfill — Q4 catalog create/repair", () => {
     const repaired = rows.find((r) => r.id === "RC:Std:8")!
     expect(repaired).toMatchObject({
       edition_key: "RC:Std:8",
-      character_name: "Unknown", // empty on-chain string -> explicit Unknown
-      franchise: "Unknown",
+      character_name: "Stitch", // trimmed
       set_name: "Series 2", // trimmed
-      edition_type: "Unknown",
       royalty_code: "RC",
       variant_type: "Std",
       printing: 8,
@@ -426,6 +433,12 @@ describe("pinnacle-metadata-backfill — Q4 catalog create/repair", () => {
       is_serialized: true,
       is_chaser: true,
     })
+    // Unread traits are ABSENT from the payload, so a conflict keeps the stored value.
+    expect("franchise" in repaired).toBe(false)
+    expect("edition_type" in repaired).toBe(false)
+    // The absence of the false claim: no row anywhere carries an invented name.
+    for (const r of rows) for (const v of Object.values(r)) expect(v).not.toBe("Unknown")
+    expect(rows.some((r) => String(r.id).startsWith("RC:Std:9"))).toBe(false)
     // Images are a documented dead-end — the writer must not invent one.
     expect("thumbnail_url" in repaired).toBe(false)
 
