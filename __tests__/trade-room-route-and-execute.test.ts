@@ -418,6 +418,26 @@ describe("/api/trade-room — the routes", () => {
     expect(p.rows.map((x) => x.moment_id)).toEqual(["21"])
   })
 
+  it("?receive=1 says, per proven side, which collections its account can receive; a failed read is a 503", async () => {
+    const code = await twoSided()
+    receives.byAddress[WB.source] = [true, false, true, true]
+    const r = await as(ALICE, () => room.GET(get(`/api/trade-room/${code}?receive=1`), ctx(code)))
+    expect(r.status).toBe(200)
+    expect(((await r.json()) as { receive: unknown }).receive).toEqual({
+      a: { "nba-top-shot": true, "nfl-all-day": true, "laliga-golazos": true, ufc: true },
+      b: { "nba-top-shot": true, "nfl-all-day": false, "laliga-golazos": true, ufc: true },
+    })
+    // only the two sides may ask
+    expect((await as({ id: "cccccccc-0000-4000-8000-000000000003" }, () => room.GET(get(`/api/trade-room/${code}?receive=1`), ctx(code)))).status).toBe(403)
+    chain.run.mockImplementation(async (script: string, args: Array<{ value: unknown }>) => {
+      if (script === CAN_RECEIVE_SCRIPT) throw new Error("Flow script HTTP 503")
+      return defaultRun(script, args)
+    })
+    const down = await as(ALICE, () => room.GET(get(`/api/trade-room/${code}?receive=1`), ctx(code)))
+    expect(down.status).toBe(503)
+    expect(JSON.stringify(await down.json())).not.toMatch(/false/)
+  })
+
   it("an unknown collection is refused — on the picker and on save — never answered with Top Shot", async () => {
     const code = await twoSided()
     const picker = await as(ALICE, () => room.GET(get(`/api/trade-room/${code}?picker=1&collection=candy_mlb`), ctx(code)))

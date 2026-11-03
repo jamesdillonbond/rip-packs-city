@@ -375,6 +375,27 @@ describe("TradeRoomClient — finished rooms", () => {
   })
 })
 
+describe("TradeRoomClient — what each account can receive (2026-11-03)", () => {
+  it("shows each side's collections, and says a missing one is set up on Dapper's side", async () => {
+    gets[`${API}?receive=1`] = {
+      status: 200,
+      body: { receive: { a: { "nba-top-shot": true, "nfl-all-day": true, "laliga-golazos": true, ufc: true }, b: { "nba-top-shot": true, "nfl-all-day": false, "laliga-golazos": true, ufc: true } } },
+    }
+    await mount(view())
+    await waitFor(() => expect(document.querySelectorAll("[data-rpc-can-receive]").length).toBe(2))
+    expect(screen.getByText(/Their account has no NFL All Day collection yet/)).toBeTruthy()
+    expect(screen.getByText(/set up on Dapper's side/)).toBeTruthy()
+    expect(screen.queryByText(/Your account has no/)).toBeNull()
+  })
+
+  it("a failed check says it couldn't check — never a row of ✗", async () => {
+    gets[`${API}?receive=1`] = { status: 503, body: { error: "We couldn't reach the Flow blockchain.", code: "upstream_unavailable" } }
+    await mount(view())
+    await waitFor(() => expect(screen.getAllByText(/Couldn't check which collections this account can receive/).length).toBeGreaterThan(0))
+    expect(document.body.textContent).not.toMatch(/✗/)
+  })
+})
+
 describe("TradeRoomClient — the Trade Block guide", () => {
   it("a room opened from a proposal shows what each side agreed, as a guide", async () => {
     await mount(

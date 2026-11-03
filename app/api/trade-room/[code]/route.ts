@@ -11,6 +11,7 @@
 //                              -> { picker }           the caller's source account's indexed moments of ONE
 //                                                      collection (nba-top-shot default, nfl-all-day, laliga-golazos)
 //   GET ?nonce=1               -> { nonce, issuedAt }  for Flow Wallet's account proof
+//   GET ?receive=1             -> { receive: {a, b} }  per proven side: which collections its account can receive
 //   POST { action, ... }:
 //     join                                 -> the caller becomes side B
 //     wallet   { proof, source? }          -> prove a Flow Wallet; list its accounts; with `source`, save both
@@ -34,7 +35,7 @@ import { NextRequest, NextResponse, after } from "next/server"
 import { apiErrorResponse } from "@/lib/api-error"
 import { requireUser } from "@/lib/auth/supabase-server"
 import { supabaseAdmin } from "@/lib/supabase"
-import { FlowScriptError } from "@/lib/giveaways/flow-script"
+import { FlowScriptError, runFlowScript } from "@/lib/giveaways/flow-script"
 import { discoverAccounts } from "@/lib/giveaways/linked-accounts"
 import { issueClaimNonce, verifyClaimProof, type ClaimProofInput } from "@/lib/giveaways/claim-proof"
 import { getRelay, postSignable, postSignature } from "@/lib/swap-test/relay"
@@ -55,9 +56,9 @@ import {
   type LoadedRoom,
   type SideRow,
 } from "@/lib/trade-room/store"
-import { checkReceivable, checkRoomPicks, EXECUTE_CLOSED_MESSAGE, executionOpen, planRoom, verifyRoom } from "@/lib/trade-room/execute"
+import { chainUnavailable, checkReceivable, checkRoomPicks, EXECUTE_CLOSED_MESSAGE, executionOpen, planRoom, verifyRoom } from "@/lib/trade-room/execute"
 import { pickItems, readChainPicker, readPickedRows, readPicker, withLiveLocks, TOP_SHOT_COLLECTION_ID, type PickerResult } from "@/lib/trade-room/holdings"
-import { holdingsReader, idsReader, type Pick } from "@/lib/trade-room/multi-plan"
+import { holdingsReader, idsReader, readCanReceive, type Pick } from "@/lib/trade-room/multi-plan"
 import { MULTI_SWAP_CADENCE, swapCollection, swapCollectionByDbSlug, SWAP_COLLECTIONS, type SwapSlug } from "@/lib/trade-room/multi-swap-cadence"
 import { SWAP_CADENCE } from "@/lib/swap-test/swap-cadence"
 import type { NewItem } from "@/lib/trade-room/store"
@@ -196,6 +197,24 @@ export async function GET(req: NextRequest, ctx: Ctx) {
       const relay = await getRelay(supabaseAdmin, relayId, Date.now(), RELAY_TABLE)
       if (relay.room_id !== loaded.room.id) throw new TradeRoomError("No such relay.", 404, "no_relay")
       return json({ relay })
+    }
+    if (sp.has("receive")) {
+      // which collections each side's account can RECEIVE (2026-11-03, Trevor: "We should have a
+      // way to check if the wallet is able to receive"), read from the chain now. A side with no
+      // proven account is null; a failed read is the 503 below, never "can't receive".
+      mySide(loaded, u.id)
+      const out: Record<"a" | "b", Record<string, boolean> | null> = { a: null, b: null }
+      for (const s of loaded.sides) {
+        if (!s.source) continue
+        let r: boolean[]
+        try {
+          r = await readCanReceive(s.source, runFlowScript)
+        } catch (e) {
+          throw chainUnavailable(e)
+        }
+        out[s.side] = Object.fromEntries(SWAP_COLLECTIONS.map((c, i) => [c.slug, r[i] === true]))
+      }
+      return json({ receive: out })
     }
     if (sp.has("picker")) {
       const side = mySide(loaded, u.id)

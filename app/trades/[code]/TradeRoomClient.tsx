@@ -59,6 +59,24 @@ export default function TradeRoomClient({ code }: { code: string }) {
 
   const read = useCallback(() => fetchRoom(api).then(setLoad), [api])
 
+  // Which collections each side's account can RECEIVE, read from the chain (2026-11-03). Re-read
+  // whenever a side's account changes; a failed read says so, never "can't receive".
+  const [receive, setReceive] = useState<{ kind: "idle" } | { kind: "ok"; by: Record<"a" | "b", Record<string, boolean> | null> } | { kind: "error" }>({ kind: "idle" })
+  const sourcesKey = load.kind === "ok" ? `${load.room.a.source ?? ""}|${load.room.b?.source ?? ""}` : ""
+  const inRoom = load.kind === "ok" && load.room.me !== null
+  useEffect(() => {
+    if (!inRoom || sourcesKey === "|") return
+    let live = true
+    void call(`${api}?receive=1`).then((r) => {
+      if (!live) return
+      if (r.ok && r.body?.receive) setReceive({ kind: "ok", by: r.body.receive as Record<"a" | "b", Record<string, boolean> | null> })
+      else setReceive({ kind: "error" })
+    })
+    return () => {
+      live = false
+    }
+  }, [api, sourcesKey, inRoom])
+
   useEffect(() => {
     let live = true
     void fetchRoom(api).then((l) => {
@@ -114,6 +132,7 @@ export default function TradeRoomClient({ code }: { code: string }) {
 
   const room = load.room
   const me = room.me
+  const receiveFor = (side: SideView | null) => (side && receive.kind === "ok" ? receive.by[side.side] : null)
   const mine = me ? (me.side === "a" ? room.a : room.b) : null
   const theirs = me ? (me.side === "a" ? room.b : room.a) : room.a
   const live = LIVE.has(room.state)
@@ -150,9 +169,9 @@ export default function TradeRoomClient({ code }: { code: string }) {
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(300px, 100%), 1fr))", gap: 16 }}>
         {mine ? (
-          <MySide room={room} side={mine} api={api} editable={editable} busy={busy} act={act} setErr={setErr} setMsg={setMsg} />
+          <MySide room={room} side={mine} api={api} editable={editable} busy={busy} act={act} setErr={setErr} setMsg={setMsg} receive={receiveFor(mine)} receiveFailed={receive.kind === "error"} />
         ) : null}
-        <TheirSide side={theirs} room={room} />
+        <TheirSide side={theirs} room={room} receive={receiveFor(theirs)} receiveFailed={receive.kind === "error"} />
       </div>
 
       <FairTrade room={room} />
@@ -232,6 +251,8 @@ function MySide({
   act,
   setErr,
   setMsg,
+  receive,
+  receiveFailed,
 }: {
   room: RoomView
   side: SideView
@@ -241,6 +262,8 @@ function MySide({
   act: Act
   setErr: (s: string | null) => void
   setMsg: (s: string | null) => void
+  receive: Record<string, boolean> | null
+  receiveFailed: boolean
 }) {
   const [accounts, setAccounts] = useState<Account[] | null>(null)
   const [proof, setProof] = useState<Proof | null>(null)
@@ -333,6 +356,7 @@ function MySide({
         {side.proven ? (
           <div style={{ fontFamily: MONO, fontSize: 12 }}>
             {shortAddr(side.signer)} signs · Moments from {shortAddr(side.source)}
+            <CanReceive receive={receive} failed={receiveFailed} mine />
             {editable ? (
               <button type="button" style={{ ...btn, marginLeft: 8, padding: "2px 8px", fontSize: 11 }} disabled={connecting || busy !== null} onClick={connect}>
                 Change
@@ -501,7 +525,28 @@ function MySide({
   )
 }
 
-function TheirSide({ side, room }: { side: SideView | null; room: RoomView }) {
+/**
+ * Which collections an account can receive (2026-11-03). A Dapper account that never held a
+ * collection has none, and nothing RPC can sign creates it (Dapper's account linking gives a Flow
+ * Wallet withdraw capabilities only) — so the line says where it is set up: on Dapper's side.
+ */
+function CanReceive({ receive, failed, mine = false }: { receive: Record<string, boolean> | null; failed: boolean; mine?: boolean }) {
+  if (failed) return <div style={{ ...muted, fontSize: 12, marginTop: 4 }}>Couldn&apos;t check which collections this account can receive just now.</div>
+  if (!receive) return null
+  const missing = SWAP_COLLECTIONS.filter((c) => receive[c.slug] === false)
+  return (
+    <div style={{ fontSize: 12, marginTop: 4, color: "var(--rpc-text-muted)" }} data-rpc-can-receive>
+      Can receive: {SWAP_COLLECTIONS.map((c) => `${c.short} ${receive[c.slug] ? "✓" : "✗"}`).join(" · ")}
+      {missing.length ? (
+        <div style={{ marginTop: 2 }}>
+          {mine ? "Your" : "Their"} account has no {missing.map((c) => c.label).join(" or ")} collection yet, so {missing.length === 1 ? "that" : "those"} can&apos;t be traded {mine ? "to you" : "to them"}. It&apos;s set up on Dapper&apos;s side (the account gets one when it holds a Moment of that collection); RPC can&apos;t create it.
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function TheirSide({ side, room, receive, receiveFailed }: { side: SideView | null; room: RoomView; receive: Record<string, boolean> | null; receiveFailed: boolean }) {
   return (
     <section style={card}>
       <h2 style={{ fontFamily: DISPLAY, textTransform: "uppercase", fontSize: 16, margin: "0 0 8px" }}>
@@ -519,6 +564,7 @@ function TheirSide({ side, room }: { side: SideView | null; room: RoomView }) {
         <>
           <div style={{ ...muted, fontFamily: MONO, fontSize: 12, marginBottom: 8 }}>
             {side.proven ? `${shortAddr(side.signer)} signs · Moments from ${shortAddr(side.source)}` : "wallet not proven yet"} · {side.accepted ? `accepted v${room.version}` : "not accepted"}
+            {side.proven ? <CanReceive receive={receive} failed={receiveFailed} mine={side.is_me} /> : null}
           </div>
           <ItemList items={side.items} empty="Nothing yet." />
         </>
