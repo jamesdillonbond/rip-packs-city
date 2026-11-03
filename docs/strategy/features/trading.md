@@ -95,6 +95,8 @@ Edition pages too (~11:45 AM PT): "N open Trade Block listings offer or want thi
 
 ## Decided (do not re-propose)
 
+- **NFT assets stay in the Dapper account; no "receive into Flow Wallet" option (Trevor, 2026-11-03 ~8:43 AM PT: "Let's just assume we keep all nft assets in dapper wallet. As long as dapper wallet can receive all supported collections, we're good").** The trade cannot create a collection in a Dapper account (the HybridCustody link gives the Flow Wallet withdraw capabilities only), so an account that never held a collection cannot receive it; the room refuses such a pick at save time by name (`checkReceivable`), and the owner sets the collection up on Dapper's side (owning any Moment of it there certainly does). A transaction that initialises a collection in the signing Flow Wallet was considered and declined.
+
 - **No escrow contract deployment** (`RPCTradeEscrow` stays undeployed; memo §9.6 of roadmap-2026-08-03 still binds).
 - **No fee, no promotion** until the roadmap's accuracy gate and the 100-WAU rule allow it.
 - **No wallet sign-in for anything else:** the trade room's connect is the fourth and last importer of `flow-wallet-connect.ts` unless Trevor names another.
