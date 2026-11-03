@@ -65,6 +65,24 @@ const PINS = [
     migration: "supabase/migrations/20261009211308_audit_20261009_173b_checkpoint_verified_rows_follow_their_edition.sql",
   },
   {
+    // Added 2026-11-02 (#226). The repoint block shared by the Atlas and checkpoint reconcile lanes.
+    fn: "_apply_topshot_reconcile_run",
+    test: "supabase/tests/reconcile_topshot_map_with_checkpoint.sql",
+    migration: "supabase/migrations/20261103020800_audit_20261102_226_topshot_map_reconciles_with_chain_mint_records.sql",
+  },
+  {
+    // Added 2026-11-02 (#226). Chain mint record -> Top Shot map repoint behind a cursor that never passes the newest record.
+    fn: "reconcile_topshot_map_with_checkpoint",
+    test: "supabase/tests/reconcile_topshot_map_with_checkpoint.sql",
+    migration: "supabase/migrations/20261103022000_audit_20261102_226_checkpoint_reconcile_slice_stops_at_the_frontier.sql",
+  },
+  {
+    // Added 2026-11-02 (#226). Second copy of the spork-agreement helper, used by the checkpoint reconcile test.
+    fn: "topshot_checkpoint_base",
+    test: "supabase/tests/reconcile_topshot_map_with_checkpoint.sql",
+    migration: "supabase/migrations/20261009203911_audit_20261009_topshot_subedition_base_follows_the_checkpoint.sql",
+  },
+  {
     // Added 2026-10-09 (#173). The chain set:play for a Top Shot nft, only when every checkpoint spork agrees.
     fn: "topshot_checkpoint_base",
     test: "supabase/tests/topshot_subedition_base_from_checkpoint.sql",
