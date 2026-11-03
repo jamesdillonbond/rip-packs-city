@@ -139,7 +139,14 @@ describe("the hooks are wired", () => {
       ["pre-push", "scripts/preflight.mjs --quick"],
     ]) {
       const f = join(ROOT, ".githooks", hook)
-      expect(statSync(f).mode & 0o111, `${hook} must be executable`).not.toBe(0)
+      // The COMMITTED mode is what every clone gets, so read it from git's index —
+      // on Windows the working-tree stat has no exec bit at all, and this arm
+      // failed every local preflight there while proving nothing (11-03).
+      const staged = execFileSync("git", ["ls-files", "-s", "--", `.githooks/${hook}`], { cwd: ROOT, encoding: "utf8" })
+      expect(staged.split(/\s+/)[0], `${hook} must be committed executable (100755)`).toBe("100755")
+      // On a POSIX checkout the working copy must ALSO carry the bit (a chmod
+      // after checkout would otherwise go unseen).
+      if (process.platform !== "win32") expect(statSync(f).mode & 0o111, `${hook} must be executable`).not.toBe(0)
       expect(readFileSync(f, "utf8")).toContain(script)
     }
   })
