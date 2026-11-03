@@ -6,7 +6,7 @@ import { adminReq } from "./helpers/admin-req"
 // are the retention-email's correctness contracts, and the after() body is the
 // exact silent-run shape the 06-10/06-11 dark-run incidents came from (route
 // answers 202, cron entry stays enabled, the work fails invisibly). Pinned:
-//   - a transient send failure is RETRY-SAFE: skipped, NO alert_deliveries row
+//   - a transient send failure is RETRY-SAFE: skipped, its alert_deliveries claim RELEASED
 //     written (so a later run this week retries), pipeline stays ok=true, and
 //     the error string still surfaces in the log;
 //   - loadMovers throwing inside after() → ok=false with a "threw:" error;
@@ -14,7 +14,7 @@ import { adminReq } from "./helpers/admin-req"
 //   - already-sent (dedup) + within-run duplicate email both skip without sending;
 //   - an ensured-opt-out (digest_weekly=false) skips;
 //   - a new subscriber gets a token inserted then sent;
-//   - an alert_deliveries insert unique-violation is tolerated (email went out);
+//   - the delivery row is CLAIMED before the send (held / error → no send); a mark-sent error is tolerated;
 //   - the dry-run already-sent + error(500) legs.
 
 const h = vi.hoisted(() => ({
@@ -25,7 +25,12 @@ const h = vi.hoisted(() => ({
     alertSentQueue: [] as any[], // maybeSingle results for alert_deliveries (alreadySent), in order
     emailInsertErr: null as any,
     alertInsertErr: null as any,
+    // 2026-11-02 claim-before-send: the claim upsert's returned rows / error.
+    claimRows: undefined as any,
+    claimErr: null as any,
+    markErr: null as any,
   },
+  ops: [] as string[],
   rpcCalls: [] as any[],
   afterFns: [] as Array<() => any>,
 }))
@@ -45,6 +50,7 @@ vi.mock("@/lib/supabase", () => {
     b.insert = () => { op = "insert"; return b }
     b.update = () => { op = "update"; return b }
     b.upsert = () => { op = "upsert"; return b }
+    b.delete = () => { op = "delete"; return b }
     const sel = async () => {
       if (table === "email_subscribers") return { data: shift(h.cfg.emailSubQueue), error: null }
       if (table === "alert_deliveries") return { data: shift(h.cfg.alertSentQueue), error: null }
@@ -53,6 +59,10 @@ vi.mock("@/lib/supabase", () => {
     b.maybeSingle = sel
     b.single = sel
     b.then = (resolve: any) => {
+      h.ops.push(`${table}:${op}`)
+      if (table === "alert_deliveries" && op === "upsert")
+        return resolve({ data: h.cfg.claimErr ? null : (h.cfg.claimRows ?? [{ id: "claim-1" }]), error: h.cfg.claimErr })
+      if (table === "alert_deliveries" && op === "update") return resolve({ data: null, error: h.cfg.markErr })
       let error = null
       if (op === "insert" && table === "email_subscribers") error = h.cfg.emailInsertErr ?? null
       if (op === "insert" && table === "alert_deliveries") error = h.cfg.alertInsertErr ?? null
@@ -91,7 +101,8 @@ const digestLog = () => h.rpcCalls.find((c) => c.name === "log_pipeline_run")?.a
 
 let fetchMock: ReturnType<typeof vi.fn>
 beforeEach(() => {
-  h.cfg = { movers: [], moversError: null, emailSubQueue: [], alertSentQueue: [], emailInsertErr: null, alertInsertErr: null }
+  h.cfg = { movers: [], moversError: null, emailSubQueue: [], alertSentQueue: [], emailInsertErr: null, alertInsertErr: null, claimRows: undefined, claimErr: null, markErr: null }
+  h.ops = []
   h.rpcCalls = []
   h.afterFns = []
   process.env.INGEST_SECRET_TOKEN = TOKEN
@@ -107,7 +118,7 @@ afterEach(() => {
 })
 
 describe("weekly-digest — after() send failure is retry-safe", () => {
-  it("a Resend non-ok response skips the recipient, writes NO delivery row, keeps ok=true, surfaces the error", async () => {
+  it("a Resend non-ok response skips the recipient, RELEASES its claim, keeps ok=true, surfaces the error", async () => {
     h.cfg.movers = [mover()]
     h.cfg.emailSubQueue = [withToken]
     h.cfg.alertSentQueue = [null] // not already sent
@@ -123,6 +134,9 @@ describe("weekly-digest — after() send failure is retry-safe", () => {
     expect(log.p_ok).toBe(true) // NOT a hard failure — a later run retries
     expect(String(log.p_error)).toContain("send")
     expect(String(log.p_error)).toContain("500")
+    // claim-before-send (2026-11-02): the claim is released so a later run retries
+    expect(h.ops).toContain("alert_deliveries:delete")
+    expect(h.ops).not.toContain("alert_deliveries:update")
   })
 
   it("a missing RESEND_API_KEY degrades to a per-send failure, not a crash", async () => {
@@ -200,16 +214,54 @@ describe("weekly-digest — after() control flow", () => {
     expect(log.p_ok).toBe(true)
   })
 
-  it("tolerates an alert_deliveries insert unique-violation (email went out, pipeline stays ok)", async () => {
+  // ⛔ CLAIM BEFORE SEND (2026-11-02): re-pinned from "tolerates an insert
+  // unique-violation after the send" — the record is now a claim written FIRST.
+  it("claims the week's row BEFORE sending, then marks it sent", async () => {
     h.cfg.movers = [mover()]
     h.cfg.emailSubQueue = [withToken]
     h.cfg.alertSentQueue = [null]
-    h.cfg.alertInsertErr = { message: "duplicate key value violates unique constraint" }
+    let opsAtSend: string[] = []
+    fetchMock.mockImplementationOnce(async () => { opsAtSend = [...h.ops]; return { ok: true, status: 200, text: async () => "" } as any })
+    await call(await load())
+    await h.afterFns[0]()
+    expect(opsAtSend).toContain("alert_deliveries:upsert")
+    expect(h.ops).not.toContain("alert_deliveries:insert")
+    expect(h.ops).toContain("alert_deliveries:update")
+    expect(digestLog().p_rows_written).toBe(1)
+  })
+
+  it("a claim another run holds (no row back) sends NOTHING", async () => {
+    h.cfg.movers = [mover()]
+    h.cfg.emailSubQueue = [withToken]
+    h.cfg.alertSentQueue = [null]
+    h.cfg.claimRows = []
+    await call(await load())
+    await h.afterFns[0]()
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(digestLog().p_rows_written).toBe(0)
+  })
+
+  it("a claim write error sends NOTHING (fails closed) and surfaces the error", async () => {
+    h.cfg.movers = [mover()]
+    h.cfg.emailSubQueue = [withToken]
+    h.cfg.alertSentQueue = [null]
+    h.cfg.claimErr = { message: "claim boom" }
+    await call(await load())
+    await h.afterFns[0]()
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(String(digestLog().p_error)).toContain("claim boom")
+  })
+
+  it("a mark-sent error is tolerated (email went out, pipeline stays ok)", async () => {
+    h.cfg.movers = [mover()]
+    h.cfg.emailSubQueue = [withToken]
+    h.cfg.alertSentQueue = [null]
+    h.cfg.markErr = { message: "mark boom" }
     await call(await load())
     await h.afterFns[0]()
     expect(fetchMock).toHaveBeenCalledTimes(1)
     const log = digestLog()
-    expect(log.p_rows_written).toBe(1) // counted sent despite the delivery-record failure
+    expect(log.p_rows_written).toBe(1)
     expect(log.p_ok).toBe(true)
   })
 })

@@ -20,16 +20,16 @@
 //     email_subscribers row per recipient (reusing verification_token as the
 //     unsubscribe token) and skip anyone with unsubscribed_at set.
 //   • Idempotency via alert_deliveries' UNIQUE (owner_key, channel, alert_kind,
-//     subject_key, dedup_bucket): we pre-check for a sent row this week and
-//     write the record with status='sent' AFTER the send. status='sent' (never
-//     'pending') means the generic alerts-send sender — which only claims
+//     subject_key, dedup_bucket): we pre-check for a sent row this week, then
+//     CLAIM the row (status='sending', insert-only) BEFORE the send and mark it
+//     'sent' after (claimEmailDelivery, 2026-11-02). Never 'pending', so the generic alerts-send sender — which only claims
 //     'pending' rows — never touches these.
 //
 // Auth: Bearer ${INGEST_SECRET_TOKEN} or ${CRON_SECRET}. Method: POST or GET.
 
 import { bearerMatches } from "@/lib/auth/bearer-secret"
 import { NextRequest, NextResponse, after } from "next/server";
-import { alreadySentEmail, ensureUnsubToken } from "@/lib/email/recipient-guards";
+import { alreadySentEmail, claimEmailDelivery, ensureUnsubToken } from "@/lib/email/recipient-guards";
 import { supabaseAdmin } from "@/lib/supabase";
 import { commercialSendBlockedReason, commercialSenderLine } from "@/lib/emails/sender-identity";
 
@@ -153,8 +153,8 @@ function buildEmail(m: Mover, unsubscribeUrl: string): { subject: string; html: 
 // that normally answers in ~1.5s.
 //
 // ⚠ An abort THROWS, which is the shape this caller wants: the send is already
-// wrapped per-recipient in try/catch, counted as a failed delivery, and NO
-// alert_deliveries row is written — so a later run retries that recipient while
+// wrapped per-recipient in try/catch, counted as a failed delivery, and its
+// alert_deliveries claim is RELEASED — so a later run retries that recipient while
 // the rest of the batch continues, instead of one stuck recipient silently
 // costing every remaining recipient their email.
 const SEND_TIMEOUT_MS = 10_000;
@@ -318,38 +318,33 @@ async function run(req: NextRequest) {
         const unsubscribeUrl = `${ORIGIN}/api/subscribe/unsubscribe?token=${tok.token}`;
         const { subject, html, text } = buildEmail(m, unsubscribeUrl);
 
+        // ⛔ CLAIM BEFORE SEND (2026-11-02): the delivery row used to be written AFTER
+        // the send with a failed insert only logged, so overlapping runs — or any run
+        // after a failed record — mailed the recipient again. Claim first (insert-only
+        // on the unique key); held = another run owns it; a claim error fails closed.
+        const claim = await claimEmailDelivery({
+          ownerKey: m.user_id, channelUserId: email, alertKind: "weekly_digest", subjectKey: SUBJECT_KEY, bucket: bucket,
+          payload: { latest_fmv: m.latest_fmv, delta_usd: m.delta_usd, delta_pct: m.delta_pct, moment_count: m.moment_count, latest_date: m.latest_date },
+          log: (msg) => console.log(`[${PIPELINE_NAME}] ${msg}`),
+        });
+        if (claim.state === "held") { skipped++; continue; }
+        if (claim.state === "error") {
+          skipped++;
+          guardErrors++;
+          errMsg = `${errMsg ? errMsg + "; " : ""}guard ${email.slice(-8)}: ${claim.error}`;
+          continue;
+        }
+
         try {
           await sendEmail(email, subject, html, text, unsubscribeUrl);
         } catch (e) {
-          // Transient send failure: count it, write NO alert_deliveries row, so a
-          // later run this week retries the recipient.
+          // Transient send failure: RELEASE the claim, so a later run retries the recipient.
+          await claim.release();
           skipped++;
           errMsg = `${errMsg ? errMsg + "; " : ""}send ${email.slice(-8)}: ${e instanceof Error ? e.message : String(e)}`;
           continue;
         }
-
-        const { error: insErr } = await (supabaseAdmin as any).from("alert_deliveries").insert({
-          owner_key: m.user_id,
-          channel: "email",
-          channel_user_id: email,
-          alert_kind: "weekly_digest",
-          subject_key: SUBJECT_KEY,
-          dedup_bucket: bucket,
-          payload: {
-            latest_fmv: m.latest_fmv,
-            delta_usd: m.delta_usd,
-            delta_pct: m.delta_pct,
-            moment_count: m.moment_count,
-            latest_date: m.latest_date,
-          },
-          status: "sent",
-          sent_at: new Date().toISOString(),
-        });
-        // A unique-violation here means a concurrent run already recorded this
-        // bucket — the email went out either way; just don't fail the pipeline.
-        if (insErr) {
-          console.log(`[${PIPELINE_NAME}] delivery record err ${email.slice(-8)}: ${insErr.message}`);
-        }
+        await claim.markSent();
         sent++;
       }
     } catch (e) {

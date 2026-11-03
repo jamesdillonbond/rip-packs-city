@@ -23,8 +23,9 @@
 //   * Idempotency via alert_deliveries' UNIQUE (owner_key, channel, alert_kind,
 //     subject_key, dedup_bucket): owner_key = the lowercased email (cold signups
 //     have no auth uid yet), dedup_bucket = the stage (nudge1 / nudge2), so each
-//     stage fires at most once per email. We write status='sent' AFTER the send;
-//     status='sent' (never 'pending') keeps the generic alerts-send sender —
+//     stage fires at most once per email. We CLAIM the row (status='sending',
+//     insert-only) BEFORE the send and mark it 'sent' after (claimEmailDelivery,
+//     2026-11-02); never 'pending', which keeps the generic alerts-send sender —
 //     which only claims 'pending' rows — from ever touching these.
 //
 // Auth: Bearer ${INGEST_SECRET_TOKEN} or ${CRON_SECRET}. Method: POST or GET.
@@ -32,7 +33,7 @@
 import { bearerMatches } from "@/lib/auth/bearer-secret"
 import { commercialSendBlockedReason } from "@/lib/emails/sender-identity";
 import { NextRequest, NextResponse, after } from "next/server";
-import { alreadySentEmail, ensureUnsubToken } from "@/lib/email/recipient-guards";
+import { alreadySentEmail, claimEmailDelivery, ensureUnsubToken } from "@/lib/email/recipient-guards";
 import { supabaseAdmin } from "@/lib/supabase";
 import {
   buildSignupReminderSubject,
@@ -109,8 +110,8 @@ async function alreadySent(ownerKey: string, stage: string): Promise<boolean | n
 // that normally answers in ~1.5s.
 //
 // ⚠ An abort THROWS, which is the shape this caller wants: the send is already
-// wrapped per-recipient in try/catch, counted as a failed delivery, and NO
-// alert_deliveries row is written — so a later run retries that recipient while
+// wrapped per-recipient in try/catch, counted as a failed delivery, and its
+// alert_deliveries claim is RELEASED — so a later run retries that recipient while
 // the rest of the batch continues, instead of one stuck recipient silently
 // costing every remaining recipient their email.
 const SEND_TIMEOUT_MS = 10_000;
@@ -269,35 +270,33 @@ async function run(req: NextRequest) {
         const html = buildSignupReminderHtml(opts);
         const text = buildSignupReminderText(opts);
 
+        // ⛔ CLAIM BEFORE SEND (2026-11-02): the delivery row used to be written AFTER
+        // the send with a failed insert only logged, so overlapping runs — or any run
+        // after a failed record — mailed the recipient again. Claim first (insert-only
+        // on the unique key); held = another run owns it; a claim error fails closed.
+        const claim = await claimEmailDelivery({
+          ownerKey: email, channelUserId: email, alertKind: ALERT_KIND, subjectKey: SUBJECT_KEY, bucket: stage,
+          payload: { stage, wallet_addr: r.wallet_addr, approved_at: r.approved_at, hours_since_approved: r.hours_since_approved },
+          log: (msg) => console.log(`[${PIPELINE_NAME}] ${msg}`),
+        });
+        if (claim.state === "held") { skipped++; continue; }
+        if (claim.state === "error") {
+          skipped++;
+          guardErrors++;
+          errMsg = `${errMsg ? errMsg + "; " : ""}guard ${email.slice(-8)}: ${claim.error}`;
+          continue;
+        }
+
         try {
           await sendEmail(email, subject, html, text);
         } catch (e) {
-          // Transient send failure: count it, write NO alert_deliveries row, so a
-          // later run retries the recipient.
+          // Transient send failure: RELEASE the claim, so a later run retries the recipient.
+          await claim.release();
           skipped++;
           errMsg = `${errMsg ? errMsg + "; " : ""}send ${email.slice(-8)}: ${e instanceof Error ? e.message : String(e)}`;
           continue;
         }
-
-        const { error: insErr } = await (supabaseAdmin as any).from("alert_deliveries").insert({
-          owner_key: email,
-          channel: "email",
-          channel_user_id: email,
-          alert_kind: ALERT_KIND,
-          subject_key: SUBJECT_KEY,
-          dedup_bucket: stage,
-          payload: {
-            stage,
-            wallet_addr: r.wallet_addr,
-            approved_at: r.approved_at,
-            hours_since_approved: r.hours_since_approved,
-          },
-          status: "sent",
-          sent_at: new Date().toISOString(),
-        });
-        if (insErr) {
-          console.log(`[${PIPELINE_NAME}] delivery record err ${email.slice(-8)}: ${insErr.message}`);
-        }
+        await claim.markSent();
         sent++;
       }
     } catch (e) {

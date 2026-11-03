@@ -31,10 +31,15 @@ vi.mock("@/lib/supabase", () => {
           ? { data: h.state.alertDup, error: null }
           : { data: null, error: null }
     const b: any = {}
-    for (const m of ["select", "insert", "update", "upsert", "eq", "neq", "order", "limit", "not"]) b[m] = () => b
+    let op = "read"
+    for (const m of ["select", "insert", "update", "eq", "neq", "order", "limit", "not"]) b[m] = () => b
+    // 2026-11-02 claim-before-send: the alert_deliveries claim upsert returns its new row.
+    b.upsert = () => { op = "upsert"; return b }
+    b.delete = () => { op = "delete"; return b }
     b.maybeSingle = async () => result
     b.single = async () => result
-    b.then = (resolve: any) => resolve(result) // awaiting the chain (insert/update) resolves here
+    b.then = (resolve: any) =>
+      resolve(table === "alert_deliveries" && op === "upsert" ? { data: [{ id: "claim-1" }], error: null } : result) // awaiting the chain (insert/update) resolves here
     return b
   }
   const supabaseAdmin: any = {

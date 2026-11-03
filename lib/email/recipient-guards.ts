@@ -129,3 +129,71 @@ export async function alreadySentEmail(args: {
   if (error) return null
   return !!data
 }
+
+/**
+ * Claim this recipient + bucket BEFORE sending (2026-11-02). Reading "already
+ * sent?" and writing the record AFTER the send leaves a window: two overlapping
+ * runs both pass the read, and a record write that fails lets every later run
+ * pass it again. The claim closes it by ORDER: an insert-only write on
+ * alert_deliveries' UNIQUE (owner_key, channel, alert_kind, subject_key,
+ * dedup_bucket) with status 'sending' — which the generic sender never touches,
+ * since claim_pending_deliveries takes only 'pending'.
+ *
+ *  - `claimed`: this run holds the row; call `markSent()` after a successful
+ *    send and `release()` after a failed one (so a later run may retry).
+ *  - `held`: another run (or an earlier send) owns it — do NOT send.
+ *  - `error`: the claim could not be written — do NOT send (fails closed).
+ *
+ * A crash between claim and send leaves the row 'sending': that recipient is
+ * skipped for the bucket rather than mailed twice.
+ */
+export type EmailClaim =
+  | { state: "claimed"; markSent: () => Promise<void>; release: () => Promise<void> }
+  | { state: "held" }
+  | { state: "error"; error: string }
+
+export async function claimEmailDelivery(args: {
+  ownerKey: string
+  alertKind: string
+  subjectKey: string
+  bucket: string
+  /** Defaults to ownerKey (email-keyed senders); weekly-digest keys owner by user id. */
+  channelUserId?: string
+  payload?: Record<string, unknown>
+  log?: (msg: string) => void
+}): Promise<EmailClaim> {
+  const sb = supabaseAdmin as any
+  const { data, error } = await sb
+    .from("alert_deliveries")
+    .upsert(
+      {
+        owner_key: args.ownerKey,
+        channel: "email",
+        channel_user_id: args.channelUserId ?? args.ownerKey,
+        alert_kind: args.alertKind,
+        subject_key: args.subjectKey,
+        dedup_bucket: args.bucket,
+        payload: args.payload ?? {},
+        status: "sending",
+      },
+      { onConflict: "owner_key,channel,alert_kind,subject_key,dedup_bucket", ignoreDuplicates: true },
+    )
+    .select("id")
+  if (error) return { state: "error", error: `claim: ${error.message}` }
+  const id = Array.isArray(data) && data[0]?.id != null ? String(data[0].id) : null
+  if (!id) return { state: "held" }
+  const log = args.log ?? ((m: string) => console.log(m))
+  const tail = args.ownerKey.slice(-8)
+  return {
+    state: "claimed",
+    // A failed mark leaves the row 'sending', which still blocks a resend.
+    markSent: async () => {
+      const { error: e } = await sb.from("alert_deliveries").update({ status: "sent", sent_at: new Date().toISOString() }).eq("id", id)
+      if (e) log(`claim mark-sent err ${tail}: ${e.message}`)
+    },
+    release: async () => {
+      const { error: e } = await sb.from("alert_deliveries").delete().eq("id", id)
+      if (e) log(`claim release err ${tail}: ${e.message}`)
+    },
+  }
+}

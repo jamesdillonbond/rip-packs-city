@@ -76,6 +76,9 @@ beforeEach(() => {
     "rpc:log_pipeline_run": { data: null, error: null },
     email_subscribers: { data: null, error: null },
     alert_deliveries: { data: null, error: null },
+    // 2026-11-02 claim-before-send: the claim upsert returns the new row's id.
+    "alert_deliveries:upsert": { data: [{ id: "claim-1" }], error: null },
+    __ops: [] as string[],
   }
 })
 
@@ -347,16 +350,59 @@ describe("/api/cron/signup-reminder", () => {
     })
   })
 
-  it("enabled: a delivery-record insert error is logged, not fatal (still sends)", async () => {
+  // ⛔ CLAIM BEFORE SEND (2026-11-02). The delivery row used to be inserted AFTER the
+  // send, a failed insert only logged — so overlapping runs, or any run after a lost
+  // record, mailed the same stage twice. Re-pinned: the claim precedes the send.
+  it("enabled: claims the stage row BEFORE sending, then marks it sent", async () => {
     process.env.SIGNUP_REMINDER_ENABLED = "1"
-    // dedup read → nothing sent yet; the delivery-record insert → fails
-    h.fixtures.alert_deliveries = [
-      { data: null, error: null },
-      { data: null, error: { message: "delivery ins boom" } },
-    ]
+    const ops = h.fixtures.__ops as string[]
+    let opsAtSend: string[] = []
+    const fetchMock = vi.fn(async () => { opsAtSend = [...ops]; return { ok: true, status: 200, text: async () => "{}" } as any })
+    vi.stubGlobal("fetch", fetchMock)
+    await POST(makeReq({ auth: `Bearer ${TOKEN}` }))
+    await h.afterFns[0]()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(opsAtSend).toContain("alert_deliveries:upsert")
+    expect(opsAtSend).not.toContain("alert_deliveries:insert")
+    expect(ops).toContain("alert_deliveries:update")
+    expect(ops).not.toContain("alert_deliveries:delete")
+  })
+
+  it("enabled: a claim another run holds (no row back) sends NOTHING", async () => {
+    process.env.SIGNUP_REMINDER_ENABLED = "1"
+    h.fixtures["alert_deliveries:upsert"] = { data: [], error: null }
     const fetchMock = vi.fn(async () => ({ ok: true, status: 200, text: async () => "{}" }) as any)
     vi.stubGlobal("fetch", fetchMock)
+    await POST(makeReq({ auth: `Bearer ${TOKEN}` }))
+    await h.afterFns[0]()
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
 
+  it("enabled: a claim write error sends NOTHING (fails closed)", async () => {
+    process.env.SIGNUP_REMINDER_ENABLED = "1"
+    h.fixtures["alert_deliveries:upsert"] = { data: null, error: { message: "claim boom" } }
+    const fetchMock = vi.fn(async () => ({ ok: true, status: 200, text: async () => "{}" }) as any)
+    vi.stubGlobal("fetch", fetchMock)
+    await POST(makeReq({ auth: `Bearer ${TOKEN}` }))
+    await h.afterFns[0]()
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it("enabled: a failed send RELEASES the claim so a later run can retry", async () => {
+    process.env.SIGNUP_REMINDER_ENABLED = "1"
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 500, text: async () => "boom" }) as any))
+    await POST(makeReq({ auth: `Bearer ${TOKEN}` }))
+    await h.afterFns[0]()
+    const ops = h.fixtures.__ops as string[]
+    expect(ops).toContain("alert_deliveries:delete")
+    expect(ops).not.toContain("alert_deliveries:update")
+  })
+
+  it("enabled: a mark-sent error is logged, not fatal (the email went out)", async () => {
+    process.env.SIGNUP_REMINDER_ENABLED = "1"
+    h.fixtures["alert_deliveries:update"] = { data: null, error: { message: "mark boom" } }
+    const fetchMock = vi.fn(async () => ({ ok: true, status: 200, text: async () => "{}" }) as any)
+    vi.stubGlobal("fetch", fetchMock)
     await POST(makeReq({ auth: `Bearer ${TOKEN}` }))
     await expect(h.afterFns[0]()).resolves.toBeUndefined()
     expect(fetchMock).toHaveBeenCalledTimes(1)

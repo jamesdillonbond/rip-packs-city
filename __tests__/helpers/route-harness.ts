@@ -154,8 +154,15 @@ export function makeSupabaseFixture(
     }
     return f ?? { data: [], error: null }
   }
+  // Op-keyed fixtures (2026-11-02): a `${table}:${op}` key (op = insert / update /
+  // upsert / delete) answers that WRITE on the table, so a claim upsert and a dedup
+  // read on the same table can return different shapes. Absent, the table key
+  // answers as before. An `__ops` array in the fixtures, if present, records each
+  // terminal call as `${table}:${op}` (op "read" for a select-only chain).
+  const ops = (fixtures as Record<string, unknown>).__ops as string[] | undefined
   const makeBuilder = (table: string) => {
     const b: Record<string, unknown> = {}
+    let op = "read"
     const chain =
       (..._args: unknown[]) =>
       () =>
@@ -168,15 +175,23 @@ export function makeSupabaseFixture(
     ]) {
       b[m] = chain()
     }
-    b.single = async () => payload(table)
-    b.maybeSingle = async () => payload(table)
+    for (const w of ["insert", "update", "upsert", "delete"]) {
+      b[w] = () => { op = w; return b }
+    }
+    const answer = () => {
+      ops?.push(`${table}:${op}`)
+      const k = `${table}:${op}`
+      return op !== "read" && k in fixtures ? payload(k) : payload(table)
+    }
+    b.single = async () => answer()
+    b.maybeSingle = async () => answer()
     // Proper thenable: `.then` returns a real Promise so both `await builder` AND
     // `builder.then(cb).catch(cb)` (supabase-js supports the latter) work. Returning
     // the raw value here would break any `.then().catch()` chain in the route.
     b.then = (onF?: (v: unknown) => unknown, onR?: (e: unknown) => unknown) =>
-      Promise.resolve(payload(table)).then(onF, onR)
-    b.catch = (onR?: (e: unknown) => unknown) => Promise.resolve(payload(table)).catch(onR)
-    b.finally = (cb?: () => void) => Promise.resolve(payload(table)).finally(cb)
+      Promise.resolve(answer()).then(onF, onR)
+    b.catch = (onR?: (e: unknown) => unknown) => Promise.resolve(answer()).catch(onR)
+    b.finally = (cb?: () => void) => Promise.resolve(answer()).finally(cb)
     return b
   }
   return {

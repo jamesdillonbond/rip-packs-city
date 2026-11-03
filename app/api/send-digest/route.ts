@@ -12,7 +12,7 @@ import { supabaseAdmin } from "@/lib/supabase"
 import { usdSignFirst } from "@/lib/usd-format"
 import { commercialSendBlockedReason, commercialSenderLine } from "@/lib/emails/sender-identity"
 import { bearerMatches } from "@/lib/auth/bearer-secret"
-import { alreadySentEmail } from "@/lib/email/recipient-guards"
+import { alreadySentEmail, claimEmailDelivery } from "@/lib/email/recipient-guards"
 
 const FROM = "rpc-digest@rippackscity.com"
 
@@ -257,21 +257,13 @@ export async function GET(req: NextRequest) {
       // on its unique key; no row back means another run holds it. `sending` is never drained by alerts-send
       // (claim_pending_deliveries takes only `pending`). A failed send releases the claim so a retry can send;
       // a crash mid-send leaves it held — the safe direction (no duplicate).
-      const { data: claimRows, error: claimErr } = await (supabaseAdmin as any)
-        .from("alert_deliveries")
-        .upsert(
-          { owner_key: ownerKey, channel: "email", channel_user_id: ownerKey, alert_kind: "weekly_digest",
-            subject_key: SUBJECT_KEY, dedup_bucket: bucket, payload: {}, status: "sending" },
-          { onConflict: "owner_key,channel,alert_kind,subject_key,dedup_bucket", ignoreDuplicates: true },
-        )
-        .select("id")
-      if (claimErr) { errors += 1; continue }
-      const claimId = Array.isArray(claimRows) && claimRows[0]?.id ? String(claimRows[0].id) : null
-      if (!claimId) { already += 1; continue }
-      const release = async () => {
-        const { error: relErr } = await (supabaseAdmin as any).from("alert_deliveries").delete().eq("id", claimId)
-        if (relErr) console.log(`[${PIPELINE_NAME}] claim release err ${ownerKey.slice(-8)}: ${relErr.message}`)
-      }
+      const claim = await claimEmailDelivery({
+        ownerKey, alertKind: "weekly_digest", subjectKey: SUBJECT_KEY, bucket,
+        log: (m) => console.log(`[${PIPELINE_NAME}] ${m}`),
+      })
+      if (claim.state === "error") { errors += 1; continue }
+      if (claim.state === "held") { already += 1; continue }
+      const release = claim.release
 
       const r = await fetch("https://api.resend.com/emails", {
         method: "POST",
@@ -296,12 +288,8 @@ export async function GET(req: NextRequest) {
       }).catch(async (e) => { await release(); throw e })
       if (!r.ok) { await release(); errors += 1; continue }
       sent += 1
-      // Mark the claim sent. A failed update leaves it `sending`, which still blocks a resend this week.
-      const { error: recErr } = await (supabaseAdmin as any)
-        .from("alert_deliveries")
-        .update({ status: "sent", sent_at: new Date().toISOString() })
-        .eq("id", claimId)
-      if (recErr) console.log(`[${PIPELINE_NAME}] delivery record err ${ownerKey.slice(-8)}: ${recErr.message}`)
+      // A failed mark leaves the claim `sending`, which still blocks a resend this week.
+      await claim.markSent()
     } catch {
       errors += 1
     }
