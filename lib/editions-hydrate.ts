@@ -679,14 +679,23 @@ function normalizeAllDayTier(raw: string | null | undefined): string | null {
   return null
 }
 
-async function fetchAllDayMap(): Promise<Map<string, AllDayEditionMeta>> {
-  if (alldayCachePromise) return alldayCachePromise
-  alldayCachePromise = (async () => {
+// ⛔ 2026-11-02: the walk was memoized UNCONDITIONALLY for the life of the process —
+// a page error (`break`) cached a PARTIAL map, and a thrown fetch (timeout / network)
+// cached a REJECTED promise, so every later call in a warm instance either missed the
+// editions past the failed page or threw, until a cold start. And the 50-page cap
+// (5,000 editions) sat below the catalog it walks (6,190 All Day editions in
+// `editions`, 11-02), so a cap-ended walk was partial too. Now only a walk that reached
+// the catalog's end (`hasNextPage` false) is memoized; anything else is returned to
+// THIS caller (who sends unresolved ids to its fallback, as before) and retried next call.
+const ALLDAY_MAX_PAGES = 150
+
+async function walkAllDayCatalog(): Promise<{ map: Map<string, AllDayEditionMeta>; complete: boolean }> {
     const map = new Map<string, AllDayEditionMeta>()
     const url = alldayUrl()
     const headers = alldayHeaders()
     let after: string | null = null
-    for (let page = 0; page < 50; page++) {
+    let complete = false
+    for (let page = 0; page < ALLDAY_MAX_PAGES; page++) {
       const res = await fetch(url, {
         method: "POST",
         headers,
@@ -730,13 +739,27 @@ async function fetchAllDayMap(): Promise<Map<string, AllDayEditionMeta>> {
         if (composite) map.set(composite, { ...meta, external_id: composite })
         if (gqlId) map.set(String(gqlId), { ...meta, external_id: String(gqlId) })
       }
-      if (!conn?.pageInfo?.hasNextPage) break
+      if (!conn?.pageInfo?.hasNextPage) { complete = true; break }
       after = conn.pageInfo.endCursor ?? null
       if (!after) break
     }
-    return map
-  })()
-  return alldayCachePromise
+    return { map, complete }
+}
+
+async function fetchAllDayMap(): Promise<Map<string, AllDayEditionMeta>> {
+  if (alldayCachePromise) return alldayCachePromise
+  const walk = walkAllDayCatalog().then(
+    ({ map, complete }) => {
+      if (!complete && alldayCachePromise === walk) alldayCachePromise = null
+      return map
+    },
+    (e) => {
+      if (alldayCachePromise === walk) alldayCachePromise = null
+      throw e
+    },
+  )
+  alldayCachePromise = walk
+  return walk
 }
 
 export function resetAllDayCache(): void {
