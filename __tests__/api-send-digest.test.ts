@@ -7,7 +7,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 // list so no Resend fetch is made → {subscribers:0, sent:0, errors:0}. Error on
 // the subscriber query → 500.
 
-const state: { result: any; rpc: Record<string, any>; rpcCalls: Array<{ name: string; args: any }>; dedup: any; inserts: any[] } = { result: { data: [], error: null }, rpc: {}, rpcCalls: [], dedup: { data: null, error: null }, inserts: [] }
+const state: { result: any; rpc: Record<string, any>; rpcCalls: Array<{ name: string; args: any }>; dedup: any; inserts: any[]; claims: any[]; claim: any; updates: any[]; deletes: number } = { result: { data: [], error: null }, rpc: {}, rpcCalls: [], dedup: { data: null, error: null }, inserts: [], claims: [], claim: null, updates: [], deletes: 0 }
 
 vi.mock("@/lib/supabase", () => {
   const b: any = {
@@ -17,6 +17,11 @@ vi.mock("@/lib/supabase", () => {
     // alert_deliveries: the per-week dedup read and the post-send record.
     maybeSingle: async () => state.dedup,
     insert: async (row: any) => { state.inserts.push(row); return { error: null } },
+    // 2026-11-02 claim-before-send: the week's row is claimed (insert-only on the
+    // unique key) BEFORE Resend, marked sent after, released if the send fails.
+    upsert: (row: any) => { state.claims.push(row); return { select: async () => state.claim ?? { data: [{ id: "claim-1" }], error: null } } },
+    update: (row: any) => { state.updates.push(row); return { eq: async () => ({ error: null }) } },
+    delete: () => ({ eq: async () => { state.deletes += 1; return { error: null } } }),
     then: (resolve: any) => resolve(state.result),
   }
   const admin: any = {
@@ -44,6 +49,10 @@ beforeEach(() => {
   state.rpc = {}
   state.dedup = { data: null, error: null }
   state.inserts = []
+  state.claims = []
+  state.claim = null
+  state.updates = []
+  state.deletes = 0
 })
 afterEach(() => {
   process.env.INGEST_SECRET_TOKEN = TOKEN
@@ -352,13 +361,49 @@ describe("GET /api/send-digest — a failed read never ships as an emptier email
     expect(body.errors).toBe(1)
   })
 
-  it("records a sent row for the week after a successful send", async () => {
+  it("claims the week's row BEFORE sending, then marks it sent", async () => {
     seedOneSubscriber()
     process.env.RESEND_API_KEY = "re_test"
-    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true }) as any))
+    let claimsAtSend = -1
+    vi.stubGlobal("fetch", vi.fn(async () => { claimsAtSend = state.claims.length; return { ok: true } as any }))
     await GET(req(`Bearer ${TOKEN}`))
-    expect(state.inserts).toHaveLength(1)
-    expect(state.inserts[0]).toMatchObject({ owner_key: "a@b.com", status: "sent", alert_kind: "weekly_digest" })
+    expect(claimsAtSend).toBe(1)
+    expect(state.claims[0]).toMatchObject({ owner_key: "a@b.com", status: "sending", alert_kind: "weekly_digest" })
+    expect(state.updates).toEqual([expect.objectContaining({ status: "sent" })])
+    expect(state.deletes).toBe(0)
+  })
+
+  it("a claim another run already holds (no row returned) sends nothing", async () => {
+    seedOneSubscriber()
+    state.claim = { data: [], error: null }
+    process.env.RESEND_API_KEY = "re_test"
+    const fetchMock = vi.fn(async () => ({ ok: true }) as any)
+    vi.stubGlobal("fetch", fetchMock)
+    const body = await (await GET(req(`Bearer ${TOKEN}`))).json()
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(body.sent).toBe(0)
+    expect(body.already_sent_this_week).toBe(1)
+  })
+
+  it("an errored claim refuses the send (fails closed)", async () => {
+    seedOneSubscriber()
+    state.claim = { data: null, error: { message: "db" } }
+    process.env.RESEND_API_KEY = "re_test"
+    const fetchMock = vi.fn(async () => ({ ok: true }) as any)
+    vi.stubGlobal("fetch", fetchMock)
+    const body = await (await GET(req(`Bearer ${TOKEN}`))).json()
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(body.errors).toBe(1)
+  })
+
+  it("a failed send RELEASES the claim so next week's rerun can retry", async () => {
+    seedOneSubscriber()
+    process.env.RESEND_API_KEY = "re_test"
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 500 }) as any))
+    const body = await (await GET(req(`Bearer ${TOKEN}`))).json()
+    expect(body.sent).toBe(0)
+    expect(state.deletes).toBe(1)
+    expect(state.updates).toEqual([])
   })
 
   it("a dry run sends nothing, even with its flag off, and returns no addresses", async () => {

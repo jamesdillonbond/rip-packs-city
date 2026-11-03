@@ -251,6 +251,28 @@ export async function GET(req: NextRequest) {
       if (!composed) { errors += 1; continue }
       if (!process.env.RESEND_API_KEY) { errors += 1; continue }
 
+      // ⛔ CLAIM BEFORE SEND (2026-11-02). The week's delivery row used to be written AFTER the send, with a
+      // failed insert only logged — so any rerun that week (a retry, a manual trigger) mailed the subscriber
+      // again. Close the window by ORDER: claim the (owner, channel, kind, subject, week) row first, insert-only
+      // on its unique key; no row back means another run holds it. `sending` is never drained by alerts-send
+      // (claim_pending_deliveries takes only `pending`). A failed send releases the claim so a retry can send;
+      // a crash mid-send leaves it held — the safe direction (no duplicate).
+      const { data: claimRows, error: claimErr } = await (supabaseAdmin as any)
+        .from("alert_deliveries")
+        .upsert(
+          { owner_key: ownerKey, channel: "email", channel_user_id: ownerKey, alert_kind: "weekly_digest",
+            subject_key: SUBJECT_KEY, dedup_bucket: bucket, payload: {}, status: "sending" },
+          { onConflict: "owner_key,channel,alert_kind,subject_key,dedup_bucket", ignoreDuplicates: true },
+        )
+        .select("id")
+      if (claimErr) { errors += 1; continue }
+      const claimId = Array.isArray(claimRows) && claimRows[0]?.id ? String(claimRows[0].id) : null
+      if (!claimId) { already += 1; continue }
+      const release = async () => {
+        const { error: relErr } = await (supabaseAdmin as any).from("alert_deliveries").delete().eq("id", claimId)
+        if (relErr) console.log(`[${PIPELINE_NAME}] claim release err ${ownerKey.slice(-8)}: ${relErr.message}`)
+      }
+
       const r = await fetch("https://api.resend.com/emails", {
         method: "POST",
         headers: {
@@ -271,14 +293,14 @@ export async function GET(req: NextRequest) {
             : {}),
         }),
         signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
-      })
-      if (!r.ok) { errors += 1; continue }
+      }).catch(async (e) => { await release(); throw e })
+      if (!r.ok) { await release(); errors += 1; continue }
       sent += 1
-      // Record AFTER the send. A failed record is logged, not fatal: the mail went out.
-      const { error: recErr } = await (supabaseAdmin as any).from("alert_deliveries").insert({
-        owner_key: ownerKey, channel: "email", channel_user_id: ownerKey, alert_kind: "weekly_digest",
-        subject_key: SUBJECT_KEY, dedup_bucket: bucket, payload: {}, status: "sent", sent_at: new Date().toISOString(),
-      })
+      // Mark the claim sent. A failed update leaves it `sending`, which still blocks a resend this week.
+      const { error: recErr } = await (supabaseAdmin as any)
+        .from("alert_deliveries")
+        .update({ status: "sent", sent_at: new Date().toISOString() })
+        .eq("id", claimId)
       if (recErr) console.log(`[${PIPELINE_NAME}] delivery record err ${ownerKey.slice(-8)}: ${recErr.message}`)
     } catch {
       errors += 1
