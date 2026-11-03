@@ -277,6 +277,15 @@ async function main() {
   // nothing), and then SKIPPED the recent list. That is the per-card cost rise in panini-run.log:
   // ~6 s/card when tabs open, 13-25 s/card on the walks where tab_missed dominates.
   let salesResponses = 0, salesTabEmpty = 0;
+  // ⚠ CORRECTION (same day, ~12:50 PM PT, read from the noon run's ops capture): the "empty" TOP reads
+  // are not Panini refusing — 780 of 790 are a STALE request the SPA fires for the PREVIOUS card's psku
+  // (request `psku=` ≠ the page's psku) when the tab opens. On 531 of 1,402 pages that stale read is the
+  // only one; on 253 the real read for this card follows, median 6.5 s later — in the old ladder that
+  // was the 2nd/3rd locator RE-CLICKING the already-open tab. Counting every nftSalesData response (the
+  // first version of this fix) made the wait end on the stale one and drop those 253 real reads. So:
+  // count only responses whose request names THIS card, and on a stale-only answer re-click the tab.
+  let currentWalkPsku = null, staleSalesResponses = 0, salesTabStale = 0;
+  const saleReqPsku = (resp) => { const m = (resp.request().postData() || "").match(/psku=([\w-]+)/); return m ? m[1] : null; };
   // Which list each sale record came from (2026-09-28): the ingest keeps every record in
   // panini_sales, and only RECENT-list records move an edition's coverage. untagged > 0 means the
   // request's list field was not recognised (scripts/panini-sales-list.mjs).
@@ -419,7 +428,10 @@ async function main() {
     if (!resp.url().includes("/onepanini")) return;
     let j = null; try { j = JSON.parse(await resp.text()); } catch {}
     captureOp(resp, j); // non-200s (e.g. the 426 wall) are informative — captured too
-    if (opNameOf(resp) === "nftSalesData") salesResponses++;
+    if (opNameOf(resp) === "nftSalesData") {
+      const rq = saleReqPsku(resp);
+      if (currentWalkPsku && rq && rq !== currentWalkPsku) staleSalesResponses++; else salesResponses++;
+    }
     if (resp.status() !== 200 || !j) return;
     const d = j?.data; if (!d) return;
     opCount++; for (const k in d) dataKeys.add(k);
@@ -534,12 +546,14 @@ async function main() {
   // quietly — this must never break a walk that is otherwise capturing editions + serials, and a
   // silent failure is visible in the salesTabMissed counter rather than as a stall.
   const SALES_HISTORY = process.env.PANINI_SALES_HISTORY !== "0";
-  // Returns "records" (sales arrived), "empty" (Panini ANSWERED with no records — the tab is open,
-  // so no other locator can do better), or false (no answer at all — try the next shape).
+  // Returns "records" (sales arrived for THIS card), "empty" (Panini answered for THIS card with no
+  // records), "stale" (the tab opened but only a previous-card read fired, even after re-clicks), or
+  // false (no answer at all — try the next shape).
   async function openSalesHistory() {
     if (!SALES_HISTORY) return false;
     const before = sales.length;
     const beforeResp = salesResponses;
+    const beforeStale = staleSalesResponses;
     const candidates = [
       () => page.getByRole("tab", { name: /sales\s*history/i }).first(),
       () => page.getByRole("button", { name: /sales\s*history/i }).first(),
@@ -555,6 +569,18 @@ async function main() {
         while (Date.now() < deadline && sales.length === before && salesResponses === beforeResp) await wait(150);
         if (sales.length > before) return "records";
         if (salesResponses > beforeResp) return "empty";
+        if (staleSalesResponses > beforeStale) {
+          // The tab is open on the previous card's data. Re-clicking it fires the real read (measured:
+          // the real read followed a stale one on 253 pages, median 6.5 s, i.e. one re-click later).
+          for (let r = 0; r < 2; r++) {
+            try { await el.click({ timeout: 2500 }); } catch { break; }
+            const d2 = Date.now() + 4000;
+            while (Date.now() < d2 && sales.length === before && salesResponses === beforeResp) await wait(150);
+            if (sales.length > before) return "records";
+            if (salesResponses > beforeResp) return "empty";
+          }
+          return "stale";
+        }
       } catch { /* locator absent / not clickable — try the next shape */ }
     }
     return false;
@@ -930,6 +956,7 @@ async function main() {
       break;
     }
     watchdog.mark("walk", `${walked}/${pskus.length}`);
+    currentWalkPsku = psku;
     const before = cards.length + serials.length;
     let got = false;
     for (let attempt = 0; attempt < 2 && !got; attempt++) {
@@ -951,7 +978,8 @@ async function main() {
     // moves last_sale_at, and it came back non-empty on ~97 % of reads while TOP was failing.
     if (got) {
       const tab = await openSalesHistory();
-      if (tab) { if (tab === "records") salesPages++; else salesTabEmpty++; if (await openRecentSales()) recentPages++; else recentMissed++; }
+      if (tab === "stale") salesTabStale++;
+      else if (tab) { if (tab === "records") salesPages++; else salesTabEmpty++; if (await openRecentSales()) recentPages++; else recentMissed++; }
       else salesTabMissed++;
     }
     walked++; if (got) captured++; else missed++;
@@ -964,7 +992,7 @@ async function main() {
   // locator ladder never matched and the tab label needs re-reading — not a data finding.
   console.log(`[panini-runner] recent sales: opened=${recentPages} missed=${recentMissed}${SALES_RECENT ? "" : " (DISABLED via PANINI_SALES_RECENT=0)"}`);
   console.log(`[panini-runner] serial paging: cards_paged=${serialPagedCards} extra_pages=${serialExtraPages} stops=${JSON.stringify(serialStops)}${SERIAL_PAGES_MAX > 0 ? "" : " (DISABLED via PANINI_SERIAL_PAGES=0)"}`);
-  console.log(`[panini-runner] sales capture: tab_opened=${salesPages} tab_empty=${salesTabEmpty} tab_missed=${salesTabMissed} responses=${salesResponses} records=${salesRecords} top=${salesByList.top} recent=${salesByList.recent} untagged=${salesByList.untagged}${SALES_HISTORY ? "" : " (DISABLED via PANINI_SALES_HISTORY=0)"}`);
+  console.log(`[panini-runner] sales capture: tab_opened=${salesPages} tab_empty=${salesTabEmpty} tab_stale=${salesTabStale} tab_missed=${salesTabMissed} responses=${salesResponses} stale_responses=${staleSalesResponses} records=${salesRecords} top=${salesByList.top} recent=${salesByList.recent} untagged=${salesByList.untagged}${SALES_HISTORY ? "" : " (DISABLED via PANINI_SALES_HISTORY=0)"}`);
   await post({ cards, packs, serials, sales });
   clearInterval(watchTimer);
   if (CDP) { await browser.close().catch(() => {}); } // disconnects; leaves your Chrome open
