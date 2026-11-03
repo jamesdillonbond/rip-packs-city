@@ -2035,7 +2035,7 @@ From the **Ledger** section: 🚨 **`git revert <sha>` paths recorded BEFORE 202
 
 From **Timestamps**: ⚠ Git Bash lies BOTH ways and the **web sandbox is PDT, not UTC**, so "subtract 7h from `date -u`" lands a day early.
 
-⚠ **An ESTIMATED time is the fifth source of a wrong label (2026-10-14).** One cloud session wrote `~6:40` / `~6:55` / `~7:10 PM PT` into the ledger for commits whose own clock read 6:15 / 6:30 / 6:39; it drifted 25–35 min ahead over an hour of work, with no zone involved. Read `date` (or `TZ=America/Los_Angeles git log --date=format-local:%H:%M`) at the moment you write a label; never carry a running estimate forward.
+⚠ **An ESTIMATED time is the fifth source of a wrong label (2026-10-14).** One cloud session wrote `~6:40` / `~6:55` / `~7:10 PM PT` into the ledger for commits whose own clock read 6:15 / 6:30 / 6:39; it drifted 25–35 min ahead over an hour of work, with no zone involved. Read `date` (or `TZ=America/Los_Angeles git log --date=format-local:%H:%M`) at the moment you write a label; never carry a running estimate forward. 🔁 **RECURRED 2026-11-02 at a new scale: one cloud session's labels drifted up to 3 h 15 m LATE across 18 ledger entries over 2.5 h** ("~6:50–7:10 PM PT" for a 3:57 PM commit) — caught only when a fresh `date` read 4:05 PM. The drift compounds: each estimate was anchored on the previous LABEL, not the clock. The same-turn `date` read in the ledger step is the defence; a long autonomous session must run it every entry.
 
 ---
 
