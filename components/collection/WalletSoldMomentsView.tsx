@@ -98,7 +98,9 @@ export default function WalletSoldMomentsView({ collection }: { collection: stri
         return
       }
       const json = await res.json().catch(() => null)
-      if (!res.ok) {
+      // A 200 whose body did not parse is a FAILED read, not an empty history —
+      // it used to render "No moments sold from this wallet" and $0.00 (2026-11-02).
+      if (!res.ok || json == null) {
         setError(json?.error ?? "Failed to load sold moments")
         setData(null)
         return

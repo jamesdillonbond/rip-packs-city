@@ -372,6 +372,8 @@ export default function FmvDashboard() {
   // absent `rows` became [] — a failure rendered as a market finding.
   const [moversFailed, setMoversFailed] = useState(false)
   const [tierFailed, setTierFailed] = useState(false)
+  // 2026-11-02: a failed health read rendered "No pipeline data available."
+  const [healthFailed, setHealthFailed] = useState(false)
 
   const collectionsQs = useMemo(
     () => buildCollectionsQs(activeCollections),
@@ -385,9 +387,10 @@ export default function FmvDashboard() {
     fetchJson<FmvPipelineHealthResponse>("/api/analytics/fmv/health")
       .then((res) => {
         if (cancelled) return
-        if (res.ok) setHealth(res.json)
+        if (res.ok) { setHealth(res.json); setHealthFailed(false) }
+        else setHealthFailed(true)
       })
-      .catch(() => {})
+      .catch(() => { if (!cancelled) setHealthFailed(true) })
       .finally(() => {
         if (!cancelled) setHealthLoading(false)
       })
@@ -529,7 +532,7 @@ export default function FmvDashboard() {
           </div>
         ) : healthEntries.length === 0 ? (
           <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-8 text-center text-sm text-[color:var(--rpc-text-muted)]">
-            No pipeline data available.
+            {healthFailed ? "Couldn't load pipeline health right now." : "No pipeline data available."}
           </div>
         ) : (
           <div className="grid gap-4 md:grid-cols-2">

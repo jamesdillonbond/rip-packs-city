@@ -230,6 +230,11 @@ export default function WalletSearch({
         return
       }
       const data = await res.json().catch(() => null)
+      // A 200 whose body did not parse says nothing about the username (2026-11-02).
+      if (data == null) {
+        setError("Couldn't search just now — this says nothing about that wallet. Try again shortly.")
+        return
+      }
       const addr: string | undefined = data?.walletAddress
       if (addr && (FLOW_ADDRESS.test(addr) || isSupportedAddress(addr))) {
         go(addr)

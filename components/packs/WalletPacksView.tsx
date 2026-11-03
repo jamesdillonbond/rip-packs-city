@@ -205,7 +205,8 @@ export default function WalletPacksView({ collection }: { collection: string }) 
       const sumJson = await sumRes.json().catch(() => null)
       const histJson = await histRes.json().catch(() => null)
       if (myReq !== reqIdRef.current) return // superseded during body parse
-      if (!histRes.ok) {
+      // A 200 whose body did not parse is a FAILED read, not "no pack sales" (2026-11-02).
+      if (!histRes.ok || histJson == null) {
         setError(histJson?.error ?? "Failed to load pack history")
         setHistory(null)
       } else {
