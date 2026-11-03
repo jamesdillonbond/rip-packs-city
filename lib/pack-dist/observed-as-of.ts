@@ -25,6 +25,11 @@
 // opened count exactly on every one). A guess must never overrule a primary source, so the
 // floor counts only opens whose identity row names the same dist. Fewer opens = a lower
 // floor = still a valid lower bound. Migration 20261102201245.
+//
+// ⚠ AND THE CHAIN (2026-11-02, 20261103022129). Dapper's index froze ~10-29 (#218), so a drop minted
+// after it (8911) has no identity rows and its floor read 0 — no check at all. An open now also counts
+// when the on-chain Minted event names the same drop (pack_nft_mints.dist_id): a second PRIMARY source,
+// never a guess. 8911 went 0 -> 701 against Atlas's 702 opened; no other floor moved.
 
 import { boundedRead } from "@/lib/api/bounded-read"
 
