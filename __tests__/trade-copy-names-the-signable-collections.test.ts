@@ -29,6 +29,7 @@ const SURFACES: Array<[string, string, string, string | null, (c: (typeof SWAP_C
   ["/trades", "app/trades/TradesListClient.tsx", "Swap NBA Top Shot", null, (c) => c.label],
   ["/trades metadata", "app/trades/layout.tsx", "Trade NBA Top Shot", null, (c) => c.label],
   ["the help page", "app/help/page.tsx", "Can I trade Moments", "q:", (c) => c.label],
+  ["the Trade Block browse page", "app/trades/block/BlockBrowseClient.tsx", "What collectors would trade", "</p>", (c) => c.label],
   ["the dashboard Trades card", "app/dashboard/DashboardClient.tsx", "Trade Moments", "</Link>", (c) => c.short],
 ]
 

@@ -40,6 +40,7 @@ vi.mock("@/lib/trade-block/notify", () => ({
 import * as signedIn from "@/app/api/trade-block/route"
 import * as publicList from "@/app/api/public/trade-block/route"
 import * as publicOne from "@/app/api/public/trade-block/[code]/route"
+import { proposalForRoom } from "@/lib/trade-block/store"
 
 const TS = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
 const AD = "dee28451-5d62-409e-a1ad-a83f763ac070"
@@ -296,6 +297,10 @@ describe("proposals and the seam with the trade room", () => {
     expect(out.unsignable).toEqual([])
     expect(out.room_code).toMatch(/^[a-z0-9]{10}$/)
     expect(mem.current.tables.trade_rooms ?? []).toHaveLength(1)
+    // the room's guide names each agreed Moment's collection (ids collide across collections)
+    const guide = await proposalForRoom(mem.current.db, out.room_code as string)
+    expect(guide?.a_gives.map((l) => `${l.collection}:${l.moment_id}`)).toEqual(["Top Shot:1"])
+    expect(guide?.b_gives.map((l) => `${l.collection}:${l.moment_id}`)).toEqual(["All Day:7"])
   })
 
   it("you cannot propose on your own listing, ask for what it does not offer, or give what you have not proved", async () => {

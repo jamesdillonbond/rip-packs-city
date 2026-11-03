@@ -78,6 +78,8 @@ export interface RoomView {
 }
 
 export interface AgreedItem {
+  /** The collection's short name ("All Day"), or null when unknown. */
+  collection: string | null
   moment_id: string
   player_name: string | null
   set_name: string | null

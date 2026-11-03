@@ -95,8 +95,8 @@ export default function BlockBrowseClient() {
         <div style={{ minWidth: 0, flex: "1 1 320px" }}>
           <h1 style={{ fontFamily: DISPLAY, textTransform: "uppercase", margin: "0 0 4px", fontSize: 28 }}>Trade Block</h1>
           <p style={{ ...muted, margin: 0, fontSize: 14 }}>
-            What collectors would trade, and what they want back. Asset for asset — no cash. When both sides are NBA Top Shot, an accepted proposal opens a
-            trade room where both wallets sign one transaction.
+            What collectors would trade, and what they want back. Asset for asset — no cash. When every asset is NBA Top Shot, NFL All Day, LaLiga Golazos
+            or UFC Strike, an accepted proposal opens a trade room where both wallets sign one transaction.
           </p>
         </div>
         <Link href="/trades/block/mine" style={{ ...btnPrimary, textDecoration: "none", display: "inline-block" }}>

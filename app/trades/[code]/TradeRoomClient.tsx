@@ -795,8 +795,8 @@ function Sealed({ room, busy, act }: { room: RoomView; busy: string | null; act:
   )
 }
 
-function agreedLine(i: { moment_id: string; player_name: string | null; set_name: string | null; serial_number: number | null }): string {
-  return [i.player_name ?? `Moment ${i.moment_id}`, i.set_name, i.serial_number != null ? `#${i.serial_number}` : null].filter(Boolean).join(" · ")
+function agreedLine(i: { collection?: string | null; moment_id: string; player_name: string | null; set_name: string | null; serial_number: number | null }): string {
+  return [i.collection ?? null, i.player_name ?? `Moment ${i.moment_id}`, i.set_name, i.serial_number != null ? `#${i.serial_number}` : null].filter(Boolean).join(" · ")
 }
 
 /** The Trade Block proposal this room came from: a guide for the picks, never a pick. */

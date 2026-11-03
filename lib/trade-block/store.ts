@@ -31,6 +31,7 @@ import {
   OFFERABLE_COLLECTION_IDS,
   unsignableCollections,
 } from "@/lib/trade-block/rules"
+import { swapCollectionById } from "@/lib/trade-room/multi-swap-cadence"
 
 /** A refusal with copy written for the user (routes publish `.copy`, never a driver message). */
 export class TradeBlockError extends Error {
@@ -840,7 +841,13 @@ export async function proposalForRoom(
   if (!p) return null
   const loaded = await loadProposal(db, p.code)
   const listing = await listingById(db, p.listing_id)
-  const line = (i: ProposalItemRow): AgreedLine => ({ moment_id: i.moment_id, player_name: i.player_name, set_name: i.set_name, serial_number: i.serial_number })
+  const line = (i: ProposalItemRow): AgreedLine => ({
+    collection: swapCollectionById(i.collection_id)?.short ?? collectionById(i.collection_id)?.label ?? null,
+    moment_id: i.moment_id,
+    player_name: i.player_name,
+    set_name: i.set_name,
+    serial_number: i.serial_number,
+  })
   return {
     listing_code: listing?.code ?? null,
     a_gives: loaded.items.filter((i) => i.role === "get").map(line),
@@ -849,6 +856,9 @@ export async function proposalForRoom(
 }
 
 export interface AgreedLine {
+  /** The collection's short name ("All Day") — moment ids collide across collections, so the
+   *  guide must say which. Null for a collection the block does not know. */
+  collection: string | null
   moment_id: string
   player_name: string | null
   set_name: string | null

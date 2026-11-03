@@ -381,15 +381,22 @@ describe("TradeRoomClient — the Trade Block guide", () => {
       view({
         from_block: {
           listing_code: "abcdefghij",
-          a_gives: [{ moment_id: "1", player_name: "Victor Wembanyama", set_name: "Base", serial_number: 42 }],
-          b_gives: [],
+          a_gives: [{ collection: "Top Shot", moment_id: "1", player_name: "Victor Wembanyama", set_name: "Base", serial_number: 42 }],
+          b_gives: [{ collection: "UFC", moment_id: "1", player_name: "Alex Pereira", set_name: null, serial_number: 7 }],
         },
       }),
     )
     expect(screen.getByText("Agreed on the Trade Block")).toBeTruthy()
-    expect(screen.getByText(/Victor Wembanyama · Base · #42/)).toBeTruthy()
-    expect(screen.getByText(/gives: nothing/)).toBeTruthy()
+    expect(screen.getByText(/Top Shot · Victor Wembanyama · Base · #42/)).toBeTruthy()
+    // the same moment id in another collection is a different Moment, and the guide says which
+    expect(screen.getByText(/UFC · Alex Pereira · #7/)).toBeTruthy()
     expect(screen.getByText("The listing").getAttribute("href")).toBe("/trades/block/abcdefghij")
+  })
+
+  it("a side that gives nothing says so", async () => {
+    await mount(view({ from_block: { listing_code: null, a_gives: [], b_gives: [{ collection: "All Day", moment_id: "9", player_name: "Josh Allen", set_name: null, serial_number: 3 }] } }))
+    expect(screen.getByText(/gives: nothing/)).toBeTruthy()
+    expect(screen.getByText(/All Day · Josh Allen · #3/)).toBeTruthy()
   })
 
   it("no guide without a proposal", async () => {
