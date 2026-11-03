@@ -25,3 +25,14 @@ F. Laptop reliability: confirm panini-keep-awake.ps1 and the power plan; a secon
 
 ## Success test
 Query 4/4b: pct_of_baseline > 55 and old_max_age_h falling toward < 168 within ~2 weeks; expect ~6-7k editions/day after B+C.
+
+## Disposition — 2026-11-03 ~8:00 AM PT (Claude Code cloud): fix D is NOT needed; this is throughput only
+
+Re-derived live before acting on the "optional code" fix:
+- **Aged priority already exists and is working.** `app/api/cron/panini-ingest/route.ts` serves editions not walked for 5 d in `priority_pskus` (`PANINI_AGED_PRIORITY_DAYS`, cap 300/run) and puts ≥ 6 d ones BEFORE the held/aged interleave (`PANINI_AGED_CRITICAL_DAYS`, 10-10). Fix D as written would duplicate it.
+- **The live age histogram shows stalest-first draining the oldest day first:** `panini_editions.last_seen_at` by PT day — 10-23 880 · 10-24 4,126 · 10-25 4,424 · 10-26 3,693 · 10-27 7,640 · 10-28 6,105 · 10-29 1,517 · 10-30 970 · 10-31 3,108 · 11-01 1,832 · 11-02 3,925 · 11-03 (to 8 AM) 1,936. The 10-23 bucket is the remnant of a ~4k day (the walk is eating it); no older day survives. "0 old editions walked in 24 h" does not match this — 4,493 editions were walked in 24 h and the oldest buckets are the ones shrinking.
+- **Scope is not the cause:** all 40,156 editions belong to `walk_cards = true` products.
+- **The arithmetic:** holding the whole catalogue under 7 d needs ≥ 40,156 ÷ 7 ≈ **5,740 editions/day**; recent days did 970–3,925. Whatever the walk order, `> 7 d` grows while throughput is below that line. So the levers are **B (`PANINI_SERIAL_PAGES`) and C (walk/run budget) in the laptop's Task Scheduler environment, plus F (keep-awake)** — Trevor's machine, not the repo. **A (`panini-run.log`) still decides between B and C.**
+- **E (check spec)** stands: with throughput under 5.7k/day, `old_older_7d >= 5` fires daily by construction.
+
+No repo change. Status: **QUEUED for Trevor (laptop env)**, code side closed.
