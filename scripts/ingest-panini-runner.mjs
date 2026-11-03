@@ -269,6 +269,14 @@ async function main() {
   const nationByPsku = {}; // psku -> country (only the grid list carries team; per-card API does not)
   let opCount = 0; const dataKeys = new Set();
   let salesRecords = 0, salesPages = 0, salesTabMissed = 0;
+  // nftSalesData RESPONSES seen, counted BEFORE the data guard (2026-11-03). Since ~10-24 Panini
+  // answers ~60 % of TOP-SALES reads with HTTP 200 and `data: null` — on editions that DO have
+  // sales (sampled: 10/10 of the empty pskus hold 4-40 sales in panini_sales). The tab-open wait
+  // keyed only on records arriving, so every such card burned the full 5 s deadline on the first
+  // locator, then a second 5 s on the third (it matches the same, already-open tab and fires
+  // nothing), and then SKIPPED the recent list. That is the per-card cost rise in panini-run.log:
+  // ~6 s/card when tabs open, 13-25 s/card on the walks where tab_missed dominates.
+  let salesResponses = 0, salesTabEmpty = 0;
   // Which list each sale record came from (2026-09-28): the ingest keeps every record in
   // panini_sales, and only RECENT-list records move an edition's coverage. untagged > 0 means the
   // request's list field was not recognised (scripts/panini-sales-list.mjs).
@@ -411,6 +419,7 @@ async function main() {
     if (!resp.url().includes("/onepanini")) return;
     let j = null; try { j = JSON.parse(await resp.text()); } catch {}
     captureOp(resp, j); // non-200s (e.g. the 426 wall) are informative — captured too
+    if (opNameOf(resp) === "nftSalesData") salesResponses++;
     if (resp.status() !== 200 || !j) return;
     const d = j?.data; if (!d) return;
     opCount++; for (const k in d) dataKeys.add(k);
@@ -525,9 +534,12 @@ async function main() {
   // quietly — this must never break a walk that is otherwise capturing editions + serials, and a
   // silent failure is visible in the salesTabMissed counter rather than as a stall.
   const SALES_HISTORY = process.env.PANINI_SALES_HISTORY !== "0";
+  // Returns "records" (sales arrived), "empty" (Panini ANSWERED with no records — the tab is open,
+  // so no other locator can do better), or false (no answer at all — try the next shape).
   async function openSalesHistory() {
     if (!SALES_HISTORY) return false;
     const before = sales.length;
+    const beforeResp = salesResponses;
     const candidates = [
       () => page.getByRole("tab", { name: /sales\s*history/i }).first(),
       () => page.getByRole("button", { name: /sales\s*history/i }).first(),
@@ -540,8 +552,9 @@ async function main() {
         await el.waitFor({ state: "visible", timeout: 1200 });
         await el.click({ timeout: 2500 });
         const deadline = Date.now() + 5000;
-        while (Date.now() < deadline && sales.length === before) await wait(150);
-        if (sales.length > before) return true;
+        while (Date.now() < deadline && sales.length === before && salesResponses === beforeResp) await wait(150);
+        if (sales.length > before) return "records";
+        if (salesResponses > beforeResp) return "empty";
       } catch { /* locator absent / not clickable — try the next shape */ }
     }
     return false;
@@ -561,6 +574,7 @@ async function main() {
   async function openRecentSales() {
     if (!SALES_RECENT) return false;
     const before = sales.length;
+    const beforeResp = salesResponses;
     try {
       // DOM click, not a Playwright pointer click: measured 2026-09-24 10 AM PT walk, the pointer
       // path fired the RECENT request on 3 of ~300 cards (it dies on actionability/hit-testing in
@@ -570,7 +584,7 @@ async function main() {
       await wait(400);
       await page.locator("a.dropdown-item").filter({ hasText: /^\s*recent\s*sales\s*$/i }).first().evaluate((el) => el.click(), undefined, { timeout: 2500 });
       const deadline = Date.now() + 5000;
-      while (Date.now() < deadline && sales.length === before) await wait(150);
+      while (Date.now() < deadline && sales.length === before && salesResponses === beforeResp) await wait(150);
       return sales.length > before;
     } catch { return false; }
   }
@@ -933,8 +947,11 @@ async function main() {
     // Serial pages 2..N first (the SALES HISTORY click may swap the panel), then realized sales —
     // both only worth doing on a page that actually rendered this card's data.
     if (got) await loadAllSerialPages();
+    // An EMPTY top-sales answer still opened the tab: read RECENT anyway — it is the list that
+    // moves last_sale_at, and it came back non-empty on ~97 % of reads while TOP was failing.
     if (got) {
-      if (await openSalesHistory()) { salesPages++; if (await openRecentSales()) recentPages++; else recentMissed++; }
+      const tab = await openSalesHistory();
+      if (tab) { if (tab === "records") salesPages++; else salesTabEmpty++; if (await openRecentSales()) recentPages++; else recentMissed++; }
       else salesTabMissed++;
     }
     walked++; if (got) captured++; else missed++;
@@ -947,7 +964,7 @@ async function main() {
   // locator ladder never matched and the tab label needs re-reading — not a data finding.
   console.log(`[panini-runner] recent sales: opened=${recentPages} missed=${recentMissed}${SALES_RECENT ? "" : " (DISABLED via PANINI_SALES_RECENT=0)"}`);
   console.log(`[panini-runner] serial paging: cards_paged=${serialPagedCards} extra_pages=${serialExtraPages} stops=${JSON.stringify(serialStops)}${SERIAL_PAGES_MAX > 0 ? "" : " (DISABLED via PANINI_SERIAL_PAGES=0)"}`);
-  console.log(`[panini-runner] sales capture: tab_opened=${salesPages} tab_missed=${salesTabMissed} records=${salesRecords} top=${salesByList.top} recent=${salesByList.recent} untagged=${salesByList.untagged}${SALES_HISTORY ? "" : " (DISABLED via PANINI_SALES_HISTORY=0)"}`);
+  console.log(`[panini-runner] sales capture: tab_opened=${salesPages} tab_empty=${salesTabEmpty} tab_missed=${salesTabMissed} responses=${salesResponses} records=${salesRecords} top=${salesByList.top} recent=${salesByList.recent} untagged=${salesByList.untagged}${SALES_HISTORY ? "" : " (DISABLED via PANINI_SALES_HISTORY=0)"}`);
   await post({ cards, packs, serials, sales });
   clearInterval(watchTimer);
   if (CDP) { await browser.close().catch(() => {}); } // disconnects; leaves your Chrome open
