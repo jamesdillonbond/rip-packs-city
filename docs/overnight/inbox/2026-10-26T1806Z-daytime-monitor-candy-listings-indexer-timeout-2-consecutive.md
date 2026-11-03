@@ -43,3 +43,8 @@ frozen-book context — confirm it hasn't self-cleared on the next tick first.
 
 **Source:** `rpc_ops_snapshot().pipeline_alerts`; `pipeline_runs` (candy-listings-indexer,
 candy-sales-indexer). Not on the Declined list; no open ledger/inbox item covers it today.
+
+
+## Disposition — 2026-11-02 ~6:05 PM PT (Claude Code cloud): SELF-HEALED, no change
+
+The question both filings left was whether the Candy-upstream timeout cluster persisted. It did not: `pipeline_runs` for `candy-listings-indexer` 10-31 → 11-02 (the table's ~3-day retention) shows 23 of 24 runs `ok`, each writing the usual 1,390 rows; one isolated failure on 11-02. No timeout bump or retry change is warranted on this evidence.
