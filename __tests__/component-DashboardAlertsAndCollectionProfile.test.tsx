@@ -906,6 +906,23 @@ describe("CollectionProfileClient", () => {
     await waitFor(() => expect(document.body.textContent).toMatch(/EDIT BIO/))
   })
 
+  // ⛔ 2026-11-02: the editor saves avatar_url AND tagline. Opened after a FAILED
+  // profile read it started empty, so the first save nulled the owner's real avatar
+  // and tagline. No editor until the read succeeded.
+  it("a FAILED profile read never offers the bio editor to the owner", async () => {
+    localStorage.setItem("rpc_owner_key", "trevor")
+    const f = mount({ trophies: () => json(503, { error: "down" }) })
+    await waitFor(() => expect(f.mock.calls.some((c) => String(c[0]).includes("/api/public/profile/"))).toBe(true))
+    await waitFor(() => expect(document.body.textContent).toMatch(/couldn|unavailable|try again/i))
+    expect(document.body.textContent).not.toMatch(/EDIT BIO/)
+  })
+
+  it("no-change control: a read that succeeds with NO bio yet still offers the editor", async () => {
+    localStorage.setItem("rpc_owner_key", "trevor")
+    mount({ bio: () => json(200, { bio: null }) })
+    await waitFor(() => expect(document.body.textContent).toMatch(/EDIT BIO/))
+  })
+
   it("opens the bio editor and saves", async () => {
     localStorage.setItem("rpc_owner_key", "trevor")
     const f = mount({ bio: () => json(200, { bio: { display_name: "Trevor", tagline: "Blazers" } }) })

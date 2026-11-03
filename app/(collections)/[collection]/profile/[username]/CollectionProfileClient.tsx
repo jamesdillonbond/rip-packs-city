@@ -570,10 +570,16 @@ export default function CollectionProfileClient({
   const [isOwner, setIsOwner] = useState(false);
   // Per LEG, not one flag: these endpoints fail independently, and a single flag
   // would blank the trophy case whenever the sniper feed hiccuped. Same shape as
-  // /alerts. Only the legs that back a CLAIM need one — `bio` is already safe,
+  // /alerts. Only the legs that back a CLAIM need one — `bio`'s DISPLAY is safe
+  // (its EDITOR is not: see bioReadOk below),
   // and every wallets-derived STAT is gated on `> 0` (an em-dash, never a
   // manufactured $0); the wallet COUNT is not, so it has `walletsLoaded` below.
   const [failed, setFailed] = useState({ trophies: false, sniper: false });
+  // ⛔ 2026-11-02: the owner's BIO EDITOR saves both avatar_url and tagline, so it
+  // may only open on a bio READ THAT SUCCEEDED. It used to render whatever the
+  // read did; after a failed read it started empty and the first save nulled the
+  // owner's real avatar and tagline. "Read ok, no bio yet" still opens it empty.
+  const [bioReadOk, setBioReadOk] = useState(false);
 
   // Check if the current user owns this profile
   useEffect(function() {
@@ -607,6 +613,7 @@ export default function CollectionProfileClient({
     setLoading(true);
     // Cleared per run, or a recovered profile stays stuck on the failure copy.
     setFailed(function(f) { return { ...f, trophies: false }; });
+    setBioReadOk(false);
 
     const enc = encodeURIComponent(username);
 
@@ -635,6 +642,7 @@ export default function CollectionProfileClient({
         });
         setTrophies(slots);
         if (data.bio) setBio(data.bio);
+        setBioReadOk(true);
         if (Array.isArray(data.wallets)) {
           // Scoped to THIS page's collection: the payload carries one row per
           // (wallet, collection), so an unscoped sum put all five collections'
@@ -790,7 +798,7 @@ export default function CollectionProfileClient({
         )}
 
         {/* Bio editor — only visible to profile owner */}
-        {isOwner && (
+        {isOwner && bioReadOk && (
           <BioEditor bio={bio} ownerKey={username} onSaved={setBio} />
         )}
       </div>
