@@ -22,7 +22,7 @@ should point here for these facts rather than duplicating them, because they dri
 | active `cron.job` rows | 133 | **221** | |
 | `editions` columns | 36 | **36** | unchanged |
 | `sales` partitions | 2020–2027 | **2020–2027** | unchanged; `fmv_snapshots` = 2025, 2026, 2027 |
-| `public.collections` | 7 (6 active) | **7 (6 active)** | only `panini_blockchain` inactive; table below matches |
+| `public.collections` | 7 (6 active) | **7 (6 active)** | only `panini_blockchain` inactive at this regen — ⚠ **stale since 2026-10-19: all 7 active** (re-read 2026-11-03; table below corrected) |
 | tables with `rowsecurity = false` | 0 | **0** | invariant HOLDS |
 | `check_public_security_invariants()` | 0 rows | **0 rows** | clean |
 | `check_anon_write_surface()` | 0 rows | **0 rows** | clean |
@@ -196,7 +196,7 @@ conflation is exactly what this file's header warns about.
 honesty rule, exactly as this file's header prescribes) — **so this table is now the only in-repo copy
 a session will read, and a stale stamp here is a silent failure rather than a redundant one.**
 Re-verified against live `public.collections` 2026-08-24: **all 7 ids, chains and `is_active` flags
-identical to the table below — zero drift.**
+identical to the table below — zero drift.** ⚠ **Re-read 2026-11-03 (Cowork, live `SELECT … FROM public.collections`): ids, slugs and chains identical; `panini_blockchain.is_active` is `true` (flipped 2026-10-19, `20261019181627`, #64) — the row below is corrected; all 7 rows are active.**
 
 7 rows. The 5 published Flow collections' UUIDs:
 
@@ -208,7 +208,7 @@ identical to the table below — zero drift.**
 | `disney_pinnacle` | `7dd9dd11-e8b6-45c4-ac99-71331f959714` | flow | true |
 | `ufc_strike` | `9b4824a8-736d-4a96-b450-8dcc0c46b023` | flow | true |
 | `candy_mlb` | `209ade70-32c5-4470-bc7c-4793d660f713` | **solana** | **true** (live re-read 2026-10-09; flipped 2026-09-06, #63) |
-| `panini_blockchain` | `d1a0a7f5-609a-49f4-a1a7-4eaac55b020b` | **ethereum** | **false** |
+| `panini_blockchain` | `d1a0a7f5-609a-49f4-a1a7-4eaac55b020b` | **ethereum** | **true** (live re-read 2026-11-03; flipped 2026-10-19, #64) |
 
 - The `collections` table now carries non-Flow rows (`candy_mlb`, `panini_blockchain`).
   CLAUDE.md's "All 5 published collections currently `chain='flow'`" is still true for the
