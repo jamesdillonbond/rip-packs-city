@@ -4,6 +4,11 @@
 
 **Rewrite rule for whoever edits this next: a focus file STEERS the next night, it is not an archive.** If a section is describing something that shipped more than ~a week ago and is not still a live trap, move it to the ledger and delete it here. A stale steer is worse than no steer.
 
+## STEER — added 2026-11-03 ~8:55 AM PT (Cowork cloud) — main's history was rewritten for today's 6 commits (privacy purge)
+
+- **If your clone's `main` contains `7911619` (or any of `557f4cc d5ae01a d25b79f 0cdf84c 6d51ed4`), it predates the rewrite. Do NOT push it** — it would put four signups' email addresses back on GitHub. Recover: `git fetch origin && git rebase --onto origin/main 6d51ed4 main` (keeps your local commits), or `git reset --hard origin/main` when you have none. Details + the old→new SHA map: ledger 2026-11-03 "GIT HISTORY REWRITTEN".
+- **Never put an email address, wallet owner's real name or other personal identifier in a repo file** — the repo is public. Name users by username (the credential-literal guard catches emails; it does not catch names).
+
 ## STEER — added 2026-11-02 ~2:45 PM PT (Claude Code cloud, autonomous session) — expected readings from today's #227 / #221 / writer fixes
 
 - **#227 prune (`20261102214905`):** the next `weekly-wmc-prune` (Sun 11-08 2:20 AM PT) should delete FEWER rows than 11-01's 3,790 — collectors' saved wallets are now exempt (11-02 sizing: 10,775 rows on 9 saved wallets would otherwise have gone). **A regression would look like:** a saved wallet's Top Shot wmc count dropping > 50 % on Sunday and coming back after its next walk (the hold in `snapshot_all_user_portfolios` would then log `held_partial` > 0 on Sunday night).
