@@ -494,3 +494,53 @@ describe("ingest — guards", () => {
     expect(spy.writes.moments ?? []).toHaveLength(0)
   })
 })
+
+// known-issues "Merge upserts fed by a degraded read", (a), fixed 2026-11-03:
+// a value the route could not READ must be ABSENT from the merge upsert, so
+// ON CONFLICT DO UPDATE keeps the stored one — never sent as NULL, never invented.
+describe("ingest — an unread value is omitted from the merge upsert, never NULL or invented", () => {
+  it("a failed player resolve / set upsert and a missing date leave player_id, set_id, game_date OUT of the edition row", async () => {
+    const tx = saleTx({})
+    ;(tx.moment.play.stats as { dateOfMoment: string | null }).dateOfMoment = null
+    state.gqlResponse = gqlFeed([tx])
+    const spy = install({
+      "rpc:upsert_player_canonical": { data: null, error: { message: "resolver down" } },
+      sets: { data: null, error: { message: "sets write failed" } },
+      editions: [
+        { data: [{ external_id: "3:45" }], error: null },
+        { data: { id: "ed-db-1" }, error: null },
+      ],
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    const row = spy.writes.editions?.find((w) => w.method === "upsert")?.rows[0] ?? {}
+    expect(row.external_id).toBe("3:45")
+    for (const k of ["player_id", "set_id", "game_date"]) expect(k in row, `${k} must be omitted`).toBe(false)
+    // read values still written
+    expect(row).toMatchObject({ set_id_onchain: 3, play_id_onchain: 45, jersey_number: 0 })
+  })
+
+  it("a set with no flowName is never written as 'Unknown Set' — the name is left out", async () => {
+    const tx = saleTx({})
+    ;(tx.moment.set as { flowName: string | null }).flowName = null
+    state.gqlResponse = gqlFeed([tx])
+    const spy = install({
+      editions: [
+        { data: [{ external_id: "3:45" }], error: null },
+        { data: { id: "ed-db-1" }, error: null },
+      ],
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    const setRows = (spy.writes.sets ?? []).filter((w) => w.method === "upsert").flatMap((w) => w.rows)
+    expect(setRows.length).toBeGreaterThan(0)
+    for (const r of setRows) {
+      expect(r.name).not.toBe("Unknown Set")
+      expect("name" in r).toBe(false)
+    }
+  })
+})

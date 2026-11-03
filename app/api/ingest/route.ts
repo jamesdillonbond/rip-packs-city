@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse, after } from "next/server"
+import { omitUnread } from "@/lib/db/omit-unread"
 import { topshotGraphql } from "@/lib/chains/flow/topshot"
 import { supabaseAdmin } from "@/lib/supabase"
 import { fireNextPipelineStep } from "@/lib/pipeline-chain"
@@ -354,18 +355,22 @@ async function upsertSet(
 ): Promise<string | null> {
   if (!set?.id) return null
 
+  // No invented "Unknown Set": an unread name is omitted, so an existing set
+  // keeps its real name; a NEW set with no name fails its insert (name is
+  // required) and the edition is written without a set_id — absent, not fake.
+  const setRow = omitUnread(
+    {
+      external_id: set.id,
+      collection_id: collectionId,
+      name: set.flowName?.trim() || null,
+      series: toNum(set.flowSeriesNumber),
+      tier: tier as "COMMON" | "RARE" | "LEGENDARY" | "ULTIMATE" | "FANDOM",
+    },
+    ["name", "series"]
+  )
   const { data, error } = await supabaseAdmin
     .from("sets")
-    .upsert(
-      {
-        external_id: set.id,
-        collection_id: collectionId,
-        name: set.flowName ?? "Unknown Set",
-        series: toNum(set.flowSeriesNumber),
-        tier: tier as "COMMON" | "RARE" | "LEGENDARY" | "ULTIMATE" | "FANDOM",
-      },
-      { onConflict: "external_id,collection_id", ignoreDuplicates: false }
-    )
+    .upsert(setRow as any, { onConflict: "external_id,collection_id", ignoreDuplicates: false })
     .select("id")
     .single()
 
@@ -417,9 +422,7 @@ async function upsertEdition(
       })()
     : {}
 
-  const { data, error } = await supabaseAdmin
-    .from("editions")
-    .upsert(
+  const editionRow = omitUnread(
       {
         external_id: editionKey,
         collection_id: collectionId,
@@ -453,8 +456,21 @@ async function upsertEdition(
           ? moment.play.stats.dateOfMoment.split("T")[0]
           : null,
       },
-      { onConflict: "external_id,collection_id", ignoreDuplicates: false }
+      [
+        "player_id",
+        "set_id",
+        "series",
+        "circulation_count",
+        "set_id_onchain",
+        "play_id_onchain",
+        "play_category",
+        "jersey_number",
+        "game_date",
+      ]
     )
+  const { data, error } = await supabaseAdmin
+    .from("editions")
+    .upsert(editionRow as any, { onConflict: "external_id,collection_id", ignoreDuplicates: false })
     .select("id")
     .single()
 
