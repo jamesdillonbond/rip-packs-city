@@ -36,3 +36,11 @@ Re-derived live before acting on the "optional code" fix:
 - **E (check spec)** stands: with throughput under 5.7k/day, `old_older_7d >= 5` fires daily by construction.
 
 No repo change. Status: **QUEUED for Trevor (laptop env)**, code side closed.
+
+---
+
+## 🔎 2026-11-03 ~9:15–9:40 AM PT (Cowork cloud + laptop) — evidence A read; the unproven cause found and fixed
+
+`panini-run.log` (511 walks) answers item A: per-card time tracks **`tab_missed`**, not serial paging. ~6 s/card on walks where the sales tab opened (10-21..10-27), 13–25 s/card where `tab_missed` dominated (most walks since 10-28). The ops capture (11-03 11:00–17:00Z) shows why: 696 of 1,440 TOP-SALES reads came back HTTP 200 with `data: null` — on editions that do have sales (10/10 sampled hold 4–40 `panini_sales` rows) — while RECENT reads were empty only 6 of 727. The runner waited for RECORDS, so each such card spent ~5 s + a second ~5 s on the third locator, then skipped RECENT.
+
+Fixed in `bfe6467` (wait ends on a RESPONSE; an empty TOP answer still reads RECENT; log adds `tab_empty=` / `responses=`), copied in place to the laptop (sha256 `c34b1909…`). Levers B and C were NOT applied — re-judge them after the fix's first day. Verification of the 10:00 AM PT run is scheduled for 11:55 AM PT.
