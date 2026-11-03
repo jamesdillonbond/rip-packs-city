@@ -9,12 +9,20 @@
 # HOW: calls SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED) and holds it while the
 # -Flag file exists. The launcher .bat creates the flag before its work and deletes it on every exit
 # path. -MaxMinutes bounds the hold if the launcher is killed (task time limit) and never deletes it.
-# Only SYSTEM_REQUIRED: the display may still turn off. The request dies with this process.
+# The request dies with this process.
+#
+# 2026-11-03: SYSTEM_REQUIRED alone was NOT enough. The box slept ~7 min during the 10:00 AM PT run's
+# enumeration (runner log: WATCHDOG slept … clock jumped 7m; CDP reconnect timed out, rc=1), the 4th
+# such sleep in panini-run.log, with this script holding its request. On a Modern Standby laptop the
+# system can enter standby once the DISPLAY times out whatever ES_SYSTEM_REQUIRED says, so the hold
+# now also sets ES_DISPLAY_REQUIRED: the screen stays on for the run (Trevor chose this 11-03). A
+# closed lid still sleeps the box — nothing here can prevent that. Opt out: -AllowDisplayOff.
 #
 # Check it while a run is going: powercfg /requests  (lists powershell.exe under SYSTEM).
 param(
   [Parameter(Mandatory = $true)][string]$Flag,
-  [int]$MaxMinutes = 130
+  [int]$MaxMinutes = 130,
+  [switch]$AllowDisplayOff
 )
 
 Add-Type -Namespace RpcPanini -Name Power -MemberDefinition @'
@@ -24,9 +32,12 @@ public static extern uint SetThreadExecutionState(uint esFlags);
 
 $ES_CONTINUOUS = [uint32]2147483648
 $ES_SYSTEM_REQUIRED = [uint32]1
+$ES_DISPLAY_REQUIRED = [uint32]2
+$hold = $ES_CONTINUOUS -bor $ES_SYSTEM_REQUIRED
+if (-not $AllowDisplayOff) { $hold = $hold -bor $ES_DISPLAY_REQUIRED }
 $deadline = (Get-Date).AddMinutes($MaxMinutes)
 
-$prev = [RpcPanini.Power]::SetThreadExecutionState($ES_CONTINUOUS -bor $ES_SYSTEM_REQUIRED)
+$prev = [RpcPanini.Power]::SetThreadExecutionState($hold)
 if ($prev -eq 0) { Write-Error "SetThreadExecutionState failed"; exit 1 }
 
 while ((Test-Path -LiteralPath $Flag) -and ((Get-Date) -lt $deadline)) {
