@@ -5,6 +5,8 @@
 
 > Claude Code's direct file inspection wins over this doc and over `project_knowledge_search` on any disagreement — adapt to the actual file shape.
 
+> ✅ **SHIPPED 2026-11-03 ~7:25 AM PT (Claude Code cloud)** — Item 1 done as specified: the address branch reverse-resolves from `wallet_usernames` (bounded, fail-soft), tests in `__tests__/api-profile-resolve-and-associate-handle.test.ts`. Ledger 11-03.
+
 ## Context
 
 Surfaced by the daily onboarding-funnel watch while answering "what is their username?" for a new organic signup (email redacted — public repo).

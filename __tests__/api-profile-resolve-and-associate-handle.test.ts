@@ -28,6 +28,9 @@ const state: {
   bioReadErr: any
   bioWriteErr: any
   upserts: any[]
+  wuRows: any[]
+  wuErr: any
+  savedUpdates: any[]
 } = {
   user: { id: "u-1" },
   resolved: { walletAddress: "0x1111111111111111", username: "Rigged", dapperId: null },
@@ -35,6 +38,9 @@ const state: {
   bioReadErr: null,
   bioWriteErr: null,
   upserts: [],
+  wuRows: [],
+  wuErr: null,
+  savedUpdates: [],
 }
 
 vi.mock("@/lib/supabase", () => {
@@ -43,7 +49,10 @@ vi.mock("@/lib/supabase", () => {
       select: () => b,
       eq: () => b,
       in: () => b,
-      update: () => b,
+      update: (payload: any) => {
+        if (table === "saved_wallets") state.savedUpdates.push(payload)
+        return b
+      },
       limit: () => b,
       maybeSingle: async () => ({ data: state.bioRow, error: state.bioReadErr }),
       upsert: (payload: any) => {
@@ -53,7 +62,10 @@ vi.mock("@/lib/supabase", () => {
         }
         return b
       },
-      then: (resolve: any) => resolve({ data: [], error: null }),
+      then: (resolve: any) =>
+        table === "wallet_usernames"
+          ? resolve({ data: state.wuErr ? null : state.wuRows, error: state.wuErr })
+          : resolve({ data: [], error: null }),
     }
     return b
   }
@@ -87,6 +99,9 @@ beforeEach(() => {
   state.bioReadErr = null
   state.bioWriteErr = null
   state.upserts = []
+  state.wuRows = []
+  state.wuErr = null
+  state.savedUpdates = []
   vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, status: 200, json: async () => ({}) })))
 })
 afterEach(() => vi.unstubAllGlobals())
@@ -112,9 +127,11 @@ describe("handle defaults to the Dapper/Top Shot username", () => {
     expect(state.upserts).toHaveLength(0)
   })
 
-  it("does not claim anything on the wallet-ADDRESS path", async () => {
-    // No Dapper name is resolved there, so there is nothing to derive from —
+  it("does not claim anything on the wallet-ADDRESS path when no handle is known for it", async () => {
+    // Re-pinned 2026-11-03: the address path now reverse-resolves from
+    // wallet_usernames. With no entry there is still nothing to derive from —
     // and inventing a handle out of a hex address would be worse than none.
+    state.wuRows = []
     const body = await (await POST(req({ address: "0x2222222222222222" }))).json()
     expect(body.profileHandleClaimed).toBe(false)
     expect(body.profileHandle).toBeNull()
@@ -159,5 +176,40 @@ describe("handle defaults to the Dapper/Top Shot username", () => {
     const body = await (await POST(req({ username: "edit" }))).json()
     expect(body.profileHandleClaimed).toBe(false)
     expect(state.upserts).toHaveLength(0)
+  })
+})
+
+describe("the wallet-ADDRESS path reverse-resolves the username we already hold (2026-11-03)", () => {
+  // Was `username = null` outright: 4 of 4 open-door address signups by 11-02
+  // got saved_wallets.username null on every row and no public profile, though
+  // every one of their handles was in wallet_usernames.
+  it("writes the known username onto the saved rows and claims the handle", async () => {
+    state.wuRows = [{ username: "ReddieMiller31" }]
+    const res = await POST(req({ address: "0x2222222222222222" }))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(state.savedUpdates).toContainEqual({ username: "ReddieMiller31" })
+    expect(body.profileHandleClaimed).toBe(true)
+    expect(body.profileHandle).toBe("reddiemiller31")
+    expect(state.upserts[0]).toMatchObject({ user_id: "u-1", username: "reddiemiller31" })
+  })
+
+  it("a FAILED wallet_usernames read still saves the wallet, with no username and no claim", async () => {
+    state.wuErr = { code: "57014", message: "statement timeout" }
+    const res = await POST(req({ address: "0x2222222222222222" }))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.walletAddress).toBe("0x2222222222222222")
+    expect(body.associatedCollections.length).toBeGreaterThan(0)
+    expect(state.savedUpdates).toHaveLength(0)
+    expect(body.profileHandleClaimed).toBe(false)
+    expect(state.upserts).toHaveLength(0)
+  })
+
+  it("a blank cached username is treated as unknown", async () => {
+    state.wuRows = [{ username: "   " }]
+    const body = await (await POST(req({ address: "0x2222222222222222" }))).json()
+    expect(state.savedUpdates).toHaveLength(0)
+    expect(body.profileHandleClaimed).toBe(false)
   })
 })

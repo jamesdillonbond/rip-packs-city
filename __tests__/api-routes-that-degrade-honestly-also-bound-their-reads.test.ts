@@ -205,8 +205,10 @@ const UNBOUNDED = POPULATION.filter((r) => !r.bounded)
  * exclusion set silently.
  *
  * 2026-10-10: 43 -> 42 — app/api/cron/topshot-deal-floor-serials deleted (#65).
+ * 2026-11-03: 42 -> 41 — app/api/profile/resolve-and-associate now bounds its
+ *   wallet_usernames reverse-resolve (address-path username fix).
  */
-const BUDGET = 42
+const BUDGET = 41
 
 describe("an API route that degrades honestly also bounds the read it degrades on", () => {
   it("is not vacuous — and the check is SATISFIABLE AT A POPULATION OF ZERO", () => {

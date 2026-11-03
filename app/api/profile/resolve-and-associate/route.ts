@@ -29,6 +29,7 @@
 
 import { NextRequest, NextResponse, after } from "next/server";
 import { apiErrorResponse } from "@/lib/api-error";
+import { boundedRead } from "@/lib/api/bounded-read";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth/supabase-server";
 import { resolveTopShotUsernameCacheAware } from "@/lib/chains/flow/topshot-username-resolve";
@@ -61,6 +62,34 @@ function siteUrl() {
     process.env.NEXT_PUBLIC_SITE_URL ||
     (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "https://www.rippackscity.com")
   );
+}
+
+/**
+ * The Top Shot username we already hold for a wallet (wallet_usernames stores the
+ * address with or without 0x), or null. Never throws: any failure is null, so the
+ * address path behaves exactly as it did before this lookup existed.
+ */
+async function knownUsernameForAddress(walletAddress: string): Promise<string | null> {
+  try {
+    const bare = walletAddress.replace(/^0x/, "");
+    const { data, error } = await boundedRead(
+      (supabase as any)
+        .from("wallet_usernames")
+        .select("username")
+        .in("wallet_addr", [walletAddress, bare])
+        .limit(1),
+      "api/profile/resolve-and-associate/wallet_usernames",
+    );
+    if (error) {
+      console.warn("[resolve-and-associate] wallet_usernames read failed:", error.message ?? error);
+      return null;
+    }
+    const name = (Array.isArray(data) ? data[0] : null)?.username;
+    return typeof name === "string" && name.trim() ? name.trim() : null;
+  } catch (err) {
+    console.warn("[resolve-and-associate] wallet_usernames read threw:", err instanceof Error ? err.message : String(err));
+    return null;
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -107,7 +136,14 @@ export async function POST(req: NextRequest) {
       );
     }
     walletAddress = normalizeAddress(rawAddress);
-    username = null;
+    // ⚠ REVERSE-RESOLVE, do not hard-null (2026-11-03). This was `username = null`,
+    // so every collector who pasted an ADDRESS got saved_wallets.username null on
+    // all 5 rows AND no public handle (the claim below is gated on it) — 4 of 4
+    // open-door address signups by 11-02, every one of whose handles was already
+    // in wallet_usernames. Cache only (never the live GQL: it is the reason that
+    // cache exists), and FAIL SOFT — a miss or a failed read stays null, exactly
+    // as before, and never blocks the save.
+    username = await knownUsernameForAddress(walletAddress);
   } else {
     if (!rawUsername) {
       return NextResponse.json({ error: "username or address required" }, { status: 400 });
