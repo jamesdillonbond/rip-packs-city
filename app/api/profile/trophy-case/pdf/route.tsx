@@ -383,13 +383,22 @@ function loadBrandFonts() {
         mono: asFont(await fetchBytes(`${BASE_URL}/fonts/ShareTechMono-Regular.ttf`)),
       };
     })();
+    // 2026-11-02: never memoize a failed load (it pinned the standard face on every
+    // PDF this warm instance rendered); success stays memoized.
+    const p = fontsPromise;
+    void p.then((v) => { if ((!v.display || !v.mono) && fontsPromise === p) fontsPromise = null; }, () => { if (fontsPromise === p) fontsPromise = null; });
   }
   return fontsPromise;
 }
 
 let logoPromise: Promise<Buffer | null> | null = null;
 function loadLogo() {
-  if (!logoPromise) logoPromise = fetchBytes(`${BASE_URL}/rip-packs-city-logo.png`);
+  if (!logoPromise) {
+    const p = fetchBytes(`${BASE_URL}/rip-packs-city-logo.png`);
+    logoPromise = p;
+    // Never memoize a failed fetch (2026-11-02): a null logo is retried next render.
+    void p.then((v) => { if (v == null && logoPromise === p) logoPromise = null; }, () => { if (logoPromise === p) logoPromise = null; });
+  }
   return logoPromise;
 }
 

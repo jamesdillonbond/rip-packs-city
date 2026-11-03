@@ -159,6 +159,18 @@ describe("brandFonts", () => {
     expect((globalThis.fetch as any).mock.calls.length).toBe(calls)
   })
 
+  // 2026-11-02: a FAILED load used to be memoized too, pinning the fallback face on
+  // every card a warm instance rendered until a cold start.
+  it("does NOT memoize a failure: the next call retries and gets the fonts", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 503 }) as never))
+    const { brandFonts } = await freshModule()
+    await expect(brandFonts()).resolves.toBeUndefined()
+    await Promise.resolve()
+    stubFetch("font")
+    const fonts = await brandFonts()
+    expect(fonts).toHaveLength(2)
+  })
+
   it("brandFamilies falls back to a generic face rather than a missing one", async () => {
     const { brandFamilies, DISPLAY_FONT, MONO_FONT } = await freshModule()
     expect(brandFamilies(undefined)).toEqual({ display: "sans-serif", mono: "sans-serif" })

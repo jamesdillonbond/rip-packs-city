@@ -183,6 +183,11 @@ function loadBrandFontBytes(): Promise<ArrayBuffer[] | null> {
         return null;
       }
     })();
+    // 2026-11-02: a FAILED load is not memoized — it used to pin the fallback face
+    // on every card this warm instance rendered (under the long cache headers),
+    // until a cold start. Success stays memoized; the next call retries a failure.
+    const p = fontsPromise;
+    void p.then((v) => { if (v == null && fontsPromise === p) fontsPromise = null; });
   }
   return fontsPromise;
 }
