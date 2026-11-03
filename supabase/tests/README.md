@@ -151,7 +151,7 @@ with no committed migration (see "Pinning an MCP-applied function" below):
 `resolve_canonical_owner` (canonical parent-owner resolution), `get_linked_parents`
 + `get_linked_children` (account-linking reads), `get_wallet_total_fmv` (the wallet
 total-value 3-tier FMV coalesce incl. the int-edition sibling-FMV fallback),
-`classify_acquisition` (the fill-only-`unknown` honesty gate), `raise_impossible_parallel_circ`
+`raise_impossible_parallel_circ`
 (the monotonic, `::`-scoped, audited TS parallel-circulation self-heal),
 `resolve_wallet_challenge_match` (the listing-challenge credit-award flow — guard
 ordering + referral-abuse gates, `award_points` stubbed), `award_points` (the

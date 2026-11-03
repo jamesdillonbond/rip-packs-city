@@ -1,12 +1,8 @@
--- PENDING — run as ONE paste in the Supabase dashboard SQL editor (project bxcqstmqfzmuolpuynti).
--- Why pending: apply_migration's destructive-DDL confirmation prompt never reaches a cloud session
--- (11-02 ~6:45 PM PT: the call timed out on the server's unanswered question; nothing applied, read back).
--- After it runs: move this file's body (minus the last two statements) to
---   supabase/migrations/20261103030000_audit_20261102_drop_uncalled_classify_acquisition.sql
--- and delete supabase/tests/classify_acquisition.sql + its entry in __tests__/db-invariants-drift-guard.test.ts
--- + its mention in supabase/tests/README.md, in the same commit.
---
 -- audit_20261102_drop_uncalled_classify_acquisition
+--
+-- APPLIED 2026-11-03 (PT) via the dashboard SQL editor (the parked paste — its version, not an apply_migration stamp) from docs/pending/drop-classify-acquisition-run-in-sql-editor.sql
+-- (apply_migration's destructive prompt timed out from the cloud session twice). Version 20261103030000
+-- recorded with this exact DROP as its statement; read back: function gone, migration row present.
 --
 -- #223 residue, last name ("drop them rather than fix them"): classify_acquisition
 -- UPDATEs moment_acquisitions by (nft_id, wallet) with NO collection_id — the
@@ -53,8 +49,3 @@
 --   (and restore supabase/tests/classify_acquisition.sql + its drift-guard entry from git)
 
 DROP FUNCTION IF EXISTS public.classify_acquisition(text, text, text, text, numeric);
-
--- Records the migration and reads it back in the same paste.
-INSERT INTO supabase_migrations.schema_migrations(version,name,statements) VALUES ('20261103030000','audit_20261102_drop_uncalled_classify_acquisition',ARRAY['DROP FUNCTION IF EXISTS public.classify_acquisition(text, text, text, text, numeric);']) ON CONFLICT (version) DO NOTHING;
-SELECT (select count(*) from pg_proc where proname='classify_acquisition') fn_left_expect_0,
-       (select count(*) from supabase_migrations.schema_migrations where version='20261103030000') mig_expect_1;

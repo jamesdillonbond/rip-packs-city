@@ -1912,11 +1912,6 @@ const PINS = [
       "supabase/migrations/20260705223000_audit_20260705_collision_knot_resolver_orchestrator_step.sql",
   },
   {
-    fn: "classify_acquisition",
-    test: "supabase/tests/classify_acquisition.sql",
-    migration: "supabase/migrations/20260801160100_audit_20260801_snapshot_classify_acquisition.sql",
-  },
-  {
     fn: "raise_impossible_parallel_circ",
     test: "supabase/tests/raise_impossible_parallel_circ.sql",
     // Re-pointed 2026-09-11 (#82): the function now audits ONLY raises that survived
