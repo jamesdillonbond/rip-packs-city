@@ -41,11 +41,20 @@ describe("only THIS card's answer ends the sales-tab wait", () => {
     expect(set).toBeGreaterThan(-1)
     expect(set).toBeLessThan(loop.indexOf("page.goto("))
   })
-  it("a stale-only answer re-clicks the tab instead of reporting the card empty", () => {
+  // Re-pinned 2026-11-03 ~3:35 PM PT (Cowork): the re-click this test first pinned was MEASURED on the
+  // 2:00 PM run — it fired no new read on 79 of 82 stale pages and cost ~8 s/card. The PROPERTY kept:
+  // a stale-only answer is never reported as this card being empty; the ladder keeps waiting (its
+  // later shapes catch the late real read, median 6.5 s after the stale one), and "stale" is the
+  // outcome only after every shape.
+  it("a stale-only answer falls through to the next shape and is reported stale only at the end, without a re-click", () => {
     const fn = src.slice(src.indexOf("async function openSalesHistory("), src.indexOf("async function openRecentSales("))
-    expect(fn).toMatch(/if \(staleSalesResponses > beforeStale\) \{/)
-    expect(fn).toMatch(/await el\.click\(/)
-    expect(fn).toContain('return "stale"')
+    const loopEnd = fn.indexOf("if (staleSalesResponses > beforeStale) return \"stale\";")
+    expect(loopEnd).toBeGreaterThan(-1)
+    // "stale" is decided after the locator loop, not inside it.
+    expect(fn.slice(0, loopEnd)).not.toContain('return "stale"')
+    expect(fn.slice(0, loopEnd)).toMatch(/for \(const mk of candidates\)/)
+    // Exactly one click per shape — no re-click of an already-open tab.
+    expect(fn.match(/el\.click\(/g)?.length).toBe(1)
     expect(src).toContain("stale_responses=${staleSalesResponses}")
   })
 })
