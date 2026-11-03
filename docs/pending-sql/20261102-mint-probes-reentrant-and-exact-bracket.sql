@@ -1,3 +1,8 @@
+-- ⚠ STATUS 2026-11-02 ~6:10 PM PT: the EXACT-bracket half (hi >= lo) is APPLIED as 20261103021038
+-- (without the DROP TABLE lines, which made apply_migration hold for confirmation twice). What is still
+-- parked here is ONLY the two-calls-in-one-transaction guard (42P07). pg_cron is unaffected; apply this
+-- whole file only if a caller ever needs two calls in one transaction. Body below already includes hi >= lo.
+--
 -- audit_20261102_mint_probes_temp_tables_reentrant — 2026-11-02 (Claude Code cloud).
 --
 -- enqueue_mint_probes_for_unindexed_packs (applied minutes earlier) raised 42P07 "relation _tgt already
