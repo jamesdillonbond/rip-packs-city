@@ -569,13 +569,20 @@ async function main() {
         while (Date.now() < deadline && sales.length === before && salesResponses === beforeResp) await wait(150);
         if (sales.length > before) return "records";
         if (salesResponses > beforeResp) return "empty";
-        // A stale (previous-card) read alone is NOT an answer: fall through to the next shape, whose
-        // wait is what catches the real read when it comes late (median 6.5 s, p90 11.8 s after the
-        // stale one on 11-03). ⛔ A re-click of the open tab was tried (9dcf8ae, 2:00 PM PT run): it
-        // fired NOTHING on 79 of 82 stale pages and cost ~8 s/card — do not reintroduce it.
+        if (staleSalesResponses > beforeStale) {
+          // The tab is open on the previous card's data. Re-clicking it fires the real read (measured:
+          // the real read followed a stale one on 253 pages, median 6.5 s, i.e. one re-click later).
+          for (let r = 0; r < 2; r++) {
+            try { await el.click({ timeout: 2500 }); } catch { break; }
+            const d2 = Date.now() + 4000;
+            while (Date.now() < d2 && sales.length === before && salesResponses === beforeResp) await wait(150);
+            if (sales.length > before) return "records";
+            if (salesResponses > beforeResp) return "empty";
+          }
+          return "stale";
+        }
       } catch { /* locator absent / not clickable — try the next shape */ }
     }
-    if (staleSalesResponses > beforeStale) return "stale";
     return false;
   }
 
