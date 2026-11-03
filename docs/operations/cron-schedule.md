@@ -95,7 +95,8 @@ All Bearer-auth in headers (the 2026-06-07 hygiene pass removed all `?token=` UR
 | RPC Top Shot Offers Indexer | /api/topshot-offers-indexer | 12,32,52 |
 | RPC wmc-fmv-populate | /api/wmc-fmv-populate?limit=5000 | 3,8,13,…,58 (every 5m) |
 | RPC Smoke Concierge Daily | /api/smoke-test?concierge=1 | daily 09:08 UTC ⟨exec-derived⟩ — NEW (~17s runtime; concierge API cost) |
-| RPC Weekly Digest | /api/send-digest | weekly Mon 16:00 UTC |
+| RPC Weekly Digest | /api/send-digest | Vercel cron (vercel.json) Mon 16:23 UTC = 8:23 AM PST — live since 2026-11-02 (Stage B); per-week dedup via alert_deliveries |
+| RPC Weekly Portfolio Email | /api/cron/weekly-digest | Vercel cron (vercel.json) Mon 16:33 UTC = 8:33 AM PST — live since 2026-11-03 (#227 gate met); movers ≥ 5 % over 7 d, like-for-like snapshots |
 | RPC Weekly Support Report | /api/support-report?days=7&format=html | weekly Mon 14:00 UTC |
 
 > **⚠ 2026-08-30: forced (backstop, `?force=1`) waves now skip any wallet walked within `SEED_REFRESH_BACKSTOP_FRESH_HOURS` (default 12 h — ⚠ THIS DOC SAID 3 h UNTIL 2026-09-20 AND HAD BEEN WRONG SINCE 09-13; the code now derives it from `WAVE_CADENCE_HOURS` so the two cannot drift apart again, which is exactly what they had done) by its per-collection stamp.** The GHA backstop drifts hours late and landed at 13:58Z on top of the finished 12/13Z primary wave, re-dispatching 120 wallets; with the gate it dispatches only what a dead cohort left stale. `complete` rows carry `backstop_fresh_skipped`.

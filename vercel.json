@@ -7,6 +7,10 @@
       "schedule": "23 16 * * 1"
     },
     {
+      "path": "/api/cron/weekly-digest",
+      "schedule": "33 16 * * 1"
+    },
+    {
       "path": "/api/cron/pinnacle-trades-indexer",
       "schedule": "*/10 * * * *"
     },
