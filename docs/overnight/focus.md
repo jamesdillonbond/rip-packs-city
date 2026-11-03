@@ -4,6 +4,11 @@
 
 **Rewrite rule for whoever edits this next: a focus file STEERS the next night, it is not an archive.** If a section is describing something that shipped more than ~a week ago and is not still a live trap, move it to the ledger and delete it here. A stale steer is worse than no steer.
 
+## STEER — added 2026-11-03 ~9:30 AM PT (Claude Code cloud) — #226 mint walk: confirm the schedule fires
+
+- **`mint-event-walk-forward.yml` has never run from its schedule** (11-03 4:37 AM PT slot produced no run; re-dispatched 9:12 AM PT, run `41681990018`). On 11-04/05, list its runs: one with `event=schedule` should exist. If not, dispatch again and touch the workflow file in a commit. Its job: keep `checkpoint_nft_meta` at the chain head so `rpc-topshot-map-checkpoint-reconcile` has chain truth for new Top Shot mints.
+- **Expected #226 readings:** `still_disagree` over spork 128 = 0 (1,337,506 / 0 on 11-03); the 597,775 old-range rows without a mint record are NOT a regression (the 10-03 walk never covered them).
+
 ## STEER — added 2026-11-03 ~8:55 AM PT (Cowork cloud) — main's history was rewritten for today's 6 commits (privacy purge)
 
 - **If your clone's `main` contains `7911619` (or any of `557f4cc d5ae01a d25b79f 0cdf84c 6d51ed4`), it predates the rewrite. Do NOT push it** — it would put four signups' email addresses back on GitHub. Recover: `git fetch origin && git rebase --onto origin/main 6d51ed4 main` (keeps your local commits), or `git reset --hard origin/main` when you have none. Details + the old→new SHA map: ledger 2026-11-03 "GIT HISTORY REWRITTEN".
