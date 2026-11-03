@@ -12,11 +12,11 @@
 # The request dies with this process.
 #
 # 2026-11-03: SYSTEM_REQUIRED alone was NOT enough. The box slept ~7 min during the 10:00 AM PT run's
-# enumeration (runner log: WATCHDOG slept … clock jumped 7m; CDP reconnect timed out, rc=1), the 4th
+# enumeration (runner log: WATCHDOG slept ... clock jumped 7m; CDP reconnect timed out, rc=1), the 4th
 # such sleep in panini-run.log, with this script holding its request. On a Modern Standby laptop the
 # system can enter standby once the DISPLAY times out whatever ES_SYSTEM_REQUIRED says, so the hold
 # now also sets ES_DISPLAY_REQUIRED: the screen stays on for the run (Trevor chose this 11-03). A
-# closed lid still sleeps the box — nothing here can prevent that. Opt out: -AllowDisplayOff.
+# closed lid still sleeps the box - nothing here can prevent that. Opt out: -AllowDisplayOff.
 #
 # Check it while a run is going: powercfg /requests  (lists powershell.exe under SYSTEM).
 param(
