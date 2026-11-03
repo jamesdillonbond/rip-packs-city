@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse, after } from "next/server"
+import { buildEditionOfferRows, upsertBatchesByShape } from "@/lib/offers/edition-offer-rows"
 import { topshotGraphql } from "@/lib/chains/flow/topshot"
 import { supabaseAdmin } from "@/lib/supabase"
 import { fetchTopShotEditionAliases, canonicalTopShotExternalId, type TopShotEditionAliasMap } from "@/lib/topshot/edition-aliases"
@@ -396,22 +397,13 @@ export async function POST(req: NextRequest) {
 
   // Upsert only rows that carry at least one of offer/ask (a row with both null
   // tells the reader nothing the absence of a row wouldn't).
-  const rows = Array.from(acc.entries())
-    .filter(([, v]) => v.offer != null || v.ask != null)
-    .map(([external_id, v]) => ({
-      collection_id: COLLECTION_ID,
-      external_id,
-      highest_offer: v.offer,
-      low_ask: v.ask,
-      set_uuid: v.setUuid,
-      play_uuid: v.playUuid,
-      updated_at: new Date().toISOString(),
-    }))
+  const rows = buildEditionOfferRows(acc, COLLECTION_ID, new Date().toISOString())
 
   let upserted = 0
   let upsertErrors = 0
-  for (let i = 0; i < rows.length; i += UPSERT_BATCH) {
-    const batch = rows.slice(i, i + UPSERT_BATCH)
+  let i = -1
+  for (const batch of upsertBatchesByShape(rows, UPSERT_BATCH)) {
+    i++
     const { error } = await (supabaseAdmin as any)
       .from("edition_offers")
       .upsert(batch, { onConflict: "collection_id,external_id" })

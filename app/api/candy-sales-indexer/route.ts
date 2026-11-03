@@ -311,9 +311,9 @@ async function handleIndex(req: NextRequest) {
       ): Promise<{ row: Record<string, unknown> } | { skip: string }> {
         if (price == null || price <= 0) return { skip: "no_price" }
         // Price this sale on the SOL/USD rate that prevailed on its OWN trade day
-        // (falls back to the tick's spot rate for same-day sales or if the history
-        // lookup is unavailable — never worse than spot), so the drain's
-        // re-attempts of days-old parked sales are priced honestly.
+        // (spot only for a same-day or <24 h-old sale). A days-old sale whose
+        // historical close is unavailable gets null → "no_sol_rate" → parked and
+        // retried, never priced at a different week's spot (solUsdOnWithBasis).
         const saleRate = await solUsdOn(tMs)
         if (saleRate == null) return { skip: "no_sol_rate" }
         // Every downstream consumer reads price_usd, which is price*rate ROUNDED to

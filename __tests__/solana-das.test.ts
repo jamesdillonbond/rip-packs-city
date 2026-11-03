@@ -296,14 +296,55 @@ describe("solUsdOn (per-sale-day historical rate)", () => {
     expect(fetchMock.mock.calls.length).toBe(after)
   })
 
-  it("negative-caches a failed history day and falls back to spot (one history attempt)", async () => {
+  // INVERTED 2026-11-03 (known-issues "solUsdOn"): this case used to assert the
+  // defect — a days-old sale priced at TODAY's spot (152.5) when history failed.
+  it("refuses to price a DAYS-OLD sale at today's spot when history fails (null → the caller parks it)", async () => {
     const das = await load()
     fetchMock.mockImplementation(routeByUrl(false))
-    expect(await das.solUsdOn(PAST_MS)).toBe(152.5) // spot fallback
-    const histCalls = () => fetchMock.mock.calls.filter((c) => String(c[0]).includes("/coins/solana/history")).length
-    expect(histCalls()).toBe(1)
-    // Second call same day: served from the negative cache → spot, no new history hit.
-    expect(await das.solUsdOn(PAST_MS)).toBe(152.5)
-    expect(histCalls()).toBe(1)
+    expect(await das.solUsdOn(PAST_MS)).toBeNull()
+    expect(await das.solUsdOnWithBasis(PAST_MS)).toBeNull()
+    // The absence of the false claim: no call returned the spot figure.
+    expect(await das.solUsdOn(PAST_MS)).not.toBe(152.5)
+  })
+
+  it("negative-caches a failed history day for a window, not forever (one attempt per window)", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] })
+    try {
+      vi.setSystemTime(Date.UTC(2026, 10, 3, 18, 0, 0))
+      const das = await load()
+      fetchMock.mockImplementation(routeByUrl(false))
+      const histCalls = () => fetchMock.mock.calls.filter((c) => String(c[0]).includes("/coins/solana/history")).length
+      expect(await das.solUsdOn(PAST_MS)).toBeNull()
+      expect(await das.solUsdOn(PAST_MS)).toBeNull()
+      expect(histCalls()).toBe(1) // second call inside the window: no new hit
+      vi.setSystemTime(Date.UTC(2026, 10, 3, 18, 16, 0)) // past the 15-min window
+      fetchMock.mockImplementation(routeByUrl(true))
+      expect(await das.solUsdOnWithBasis(PAST_MS)).toEqual({ rate: 40, basis: "historical" })
+      expect(histCalls()).toBe(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("falls back to spot for a RECENT past-day sale (<24 h old) when history fails, and says so", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] })
+    try {
+      vi.setSystemTime(Date.UTC(2026, 10, 3, 2, 0, 0)) // 02:00Z
+      const das = await load()
+      fetchMock.mockImplementation(routeByUrl(false))
+      const yesterdayLate = Date.UTC(2026, 10, 2, 22, 0, 0) // 4 h old, previous UTC day
+      expect(await das.solUsdOnWithBasis(yesterdayLate)).toEqual({ rate: 152.5, basis: "spot" })
+      const thirtyHoursOld = Date.UTC(2026, 10, 1, 20, 0, 0)
+      expect(await das.solUsdOnWithBasis(thirtyHoursOld)).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("labels the basis: historical for a past day, spot for today", async () => {
+    const das = await load()
+    fetchMock.mockImplementation(routeByUrl())
+    expect(await das.solUsdOnWithBasis(PAST_MS)).toEqual({ rate: 40, basis: "historical" })
+    expect(await das.solUsdOnWithBasis(Date.now())).toEqual({ rate: 152.5, basis: "spot" })
   })
 })
