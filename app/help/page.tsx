@@ -100,6 +100,19 @@ const FAQS: Faq[] = [
     ),
   },
   {
+    q: "Can I trade Moments with another collector?",
+    a: (
+      <>
+        Yes — swaps only, no cash. Find someone on the <Link href="/trades/block" style={LINK}>Trade Block</Link>, then
+        trade in a room on <Link href="/trades" style={LINK}>Trades</Link>: NBA Top Shot, NFL All Day, LaLiga Golazos and
+        UFC Strike Moments, in any mix. Each of you connects a Flow Wallet (it can trade Moments in a Dapper account linked
+        to it), you both accept the exact trade, and both wallets sign one transaction, so either every Moment moves or
+        nothing does. RPC never holds a Moment and charges no fee. Disney Pinnacle pins and packs can&apos;t be traded this
+        way: Dapper&apos;s account linking doesn&apos;t let a wallet move them out of a Dapper account.
+      </>
+    ),
+  },
+  {
     q: "How do I delete my account or my data?",
     a: (
       <>

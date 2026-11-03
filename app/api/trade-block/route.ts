@@ -12,7 +12,7 @@
 //     create   { offers, wants, note, open_to_offers } -> post a listing
 //     close    { code }                  -> close the caller's listing (pending proposals are declined)
 //     propose  { code, give, get, note } -> propose a trade on someone's listing
-//     decide   { proposal, accept }      -> the lister accepts (opens a trade room when all Top Shot) or declines
+//     decide   { proposal, accept }      -> the lister accepts (opens a trade room when every asset is Top Shot / All Day / Golazos / UFC) or declines
 //     withdraw { proposal }              -> the proposer withdraws
 //
 // Three outcomes, never two: a refusal names what failed; a read or chain call that could

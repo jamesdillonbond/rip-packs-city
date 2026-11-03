@@ -11,7 +11,7 @@
 //   4. read the notice and accept the proposal AS SEEN (any change resets both);
 //   5. once both accepted: simulate on mainnet, then the initiator's wallet signs and
 //      the other side's wallet co-signs through the relay — ⛔ that last step is gated
-//      until RPC's live two-wallet test has sealed (execution.open).
+//      by RPC_TRADE_ROOM_EXECUTE (execution.open; open since 2026-10-31 — the kill switch).
 // Every empty state is gated on a successful read; a failed read is a banner with
 // Retry, never "no Moments" or "not held". RPC never holds a Moment or a key.
 

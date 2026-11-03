@@ -274,7 +274,7 @@ describe("trade-room/view — what a viewer sees", () => {
     expect(JSON.stringify(view)).not.toContain(ALICE)
     // the on-chain step is closed until the env says otherwise
     expect(view.execution.open).toBe(false)
-    expect(view.execution.message).toMatch(/isn't open yet/)
+    expect(view.execution.message).toMatch(/Signing is paused on RPC right now/)
     expect(buildRoomView(room, BOB, names, { env: { RPC_TRADE_ROOM_EXECUTE: "1" } }).execution).toEqual({ open: true, message: null })
   })
 

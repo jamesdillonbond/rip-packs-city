@@ -27,7 +27,7 @@ export function executionOpen(env: Record<string, string | undefined> = process.
 }
 
 export const EXECUTE_CLOSED_MESSAGE =
-  "The on-chain step isn't open yet: trades are saved and accepted here, and signing opens once RPC's live two-wallet test has sealed. Nothing has moved."
+  "Signing is paused on RPC right now: trades can still be built and accepted here, but no wallet is asked to sign. Nothing has moved."
 
 /** A chain read that could not complete: never "not held", never "locked". */
 export function chainUnavailable(e: unknown): TradeRoomError {

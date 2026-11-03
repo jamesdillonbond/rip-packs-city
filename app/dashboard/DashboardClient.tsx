@@ -1234,7 +1234,7 @@ function ProfilePageInner() {
           </span>
         </Link>
 
-        {/* ── Trades front door ── user-to-user Top Shot trades (/trades, 2026-10-31).
+        {/* ── Trades front door ── user-to-user trades (/trades, 2026-10-31; All Day, Golazos, UFC 2026-11-02).
             Like Alerts it has no nav entry (the top nav is at its width limit), so
             this card is how a signed-in collector finds it. */}
         <Link
@@ -1257,7 +1257,7 @@ function ProfilePageInner() {
                 Trade Moments
               </div>
               <div style={{ fontFamily: monoFont, fontSize: 11, color: "var(--rpc-text-muted)", marginTop: 2, lineHeight: 1.5 }}>
-                Swap Top Shot Moments with another collector. Both wallets sign one transaction; no custody, no fee.
+                Swap Top Shot, All Day, Golazos and UFC Moments with another collector. Both wallets sign one transaction; no custody, no fee.
               </div>
             </div>
           </div>

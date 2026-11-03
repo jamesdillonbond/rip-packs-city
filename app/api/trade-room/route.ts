@@ -1,6 +1,6 @@
 // app/api/trade-room/route.ts
 //
-// Trade rooms, the collection: user-to-user Top Shot trades (Trevor, 2026-10-31;
+// Trade rooms, the collection: user-to-user trades — Top Shot, and since 2026-11-02 All Day / Golazos / UFC (Trevor, 2026-10-31;
 // docs/strategy/trading-revisit-2026-10-03.md shape A). Signed in only — proxy.ts
 // sends anon callers to /login and requireUser answers 401 regardless.
 //

@@ -77,7 +77,7 @@ function view(o: Partial<Record<string, unknown>> = {}) {
     b: { side: "b", username: "ThunderHour", is_me: false, signer: WB.signer, source: WB.source, proven: true, accepted: false, items: [item("9", null)] },
     valuation: { a: { count: 1, priced: 1, unpriced: 0, priced_total_usd: 10, complete: true }, b: { count: 1, priced: 0, unpriced: 1, priced_total_usd: null, complete: false }, difference_usd: null, summary: "1 Moment not priced (not enough sales), so there is no fair-value verdict." },
     notice: WITHDRAWAL_NOTICE,
-    execution: { open: false, message: "The on-chain step isn't open yet: trades are saved and accepted here, and signing opens once RPC's live two-wallet test has sealed. Nothing has moved." },
+    execution: { open: false, message: "Signing is paused on RPC right now: trades can still be built and accepted here, but no wallet is asked to sign. Nothing has moved." },
     relay: null,
     from_block: null,
     ...o,
@@ -264,7 +264,7 @@ describe("TradeRoomClient — accept, simulate, the gated sign step", () => {
     await waitFor(() => expect(screen.getByText("Reconnect Flow Wallet")).toBeTruthy())
     const sign = screen.getByText("Sign and send") as HTMLButtonElement
     expect(sign.disabled).toBe(true)
-    expect(screen.getByText(/isn't open yet/)).toBeTruthy()
+    expect(screen.getByText(/Signing is paused on RPC right now/)).toBeTruthy()
     expect(wallet.sendSwap).not.toHaveBeenCalled()
   })
 
