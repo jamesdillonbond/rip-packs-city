@@ -1,4 +1,4 @@
-# Inbox index — 615 live filings
+# Inbox index — 616 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -36,9 +36,10 @@ failure it documents.
 
 - [net._http_response at 2,591 MB exceeds its documented ~1,910 MB sawtooth peak — re-measure prune cadence (SYMPTOM, not a leak claim)](2026-11-03T0705Z-daytime-monitor-net-http-response-above-documented-sawtooth-peak.md)
 
-## 2026-11-02 — 2 filings
+## 2026-11-02 — 3 filings
 
 - [Artifact-validation roster (#114) lists 11 dashboards but 16 ported sources exist in docs/cowork-skills/ — all 16 validate clean](2026-11-02T0713Z-daytime-monitor-artifact-validation-roster-drift-11-vs-16.md)
+- [Panini ingest throughput down + old catalogue starving — read-only diagnosis (laptop runner firing but doing too little per walk; 14,576 editions un-repriced 7+ days), needs Claude Code/Trevor](2026-11-02T1900Z-panini-ingest-throughput-down-old-catalogue-starving.md)
 - [GitHub Actions delivered no schedule-tagged tick in ~9h (since 09:58Z); gha-schedule-watchdog red since 16:08Z, 0 cadence lanes breaching — no data loss yet](2026-11-02T1908Z-daytime-monitor-gha-schedule-tick-stall.md)
 
 ## 2026-11-01 — 1 filing
