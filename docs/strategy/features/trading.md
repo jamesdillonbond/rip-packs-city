@@ -83,7 +83,11 @@ Edition pages too (~11:45 AM PT): "N open Trade Block listings offer or want thi
 
 **Housekeeping (shipped 11-02 ~12:16 PM PT):** `prune_trade_block(60, 30)` on pg_cron `rpc-prune-trade-block` (04:57 UTC daily) deletes listings closed or expired > 60 d (items/proposals cascade) unless a proposal on them was accepted, and match-notice claims > 30 d; proven accounts untouched (migration `20261102201500`, applied through the dashboard SQL editor).
 
-**Next (not built):** the first real SEALED multi-collection trade (the live test of `MULTI_SWAP_CADENCE`). Pinnacle pins and all packs stay unsignable from Dapper accounts (Dapper's filter, probed 11-02).
+**Open, in order (11-03 thread close):**
+1. **The first real SEALED multi-collection trade** (Trevor ↔ his wife's accounts; the live test of `MULTI_SWAP_CADENCE`). The fork run says it goes through. Her Dapper `0xa3d6…` receives Top Shot / Golazos / UFC, not All Day (no collection; set up on Dapper's side only).
+2. **Listed Moments:** a Moment listed for sale is still in the collection and can be swapped; its listing then cannot fill. No asset risk; a picker hint ("listed — the listing stops working after the trade") is unbuilt. Trevor's and his wife's accounts showed no open listings in `cached_listings_v2` on 11-02.
+3. **Setting up a collection in a Dapper account from RPC** would need a Dapper-co-signed (allowlisted) setup transaction — a request to Dapper, Trevor's call; not code RPC can ship.
+4. Pinnacle pins and every pack contract stay unsignable from Dapper accounts (Dapper's filter, probed 11-02) — reference: [apis-and-cadence.md](../../reference/apis-and-cadence.md) "Trade swaps across collections".
 
 ## Open — in order
 
