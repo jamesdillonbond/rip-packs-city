@@ -15,6 +15,8 @@ import path from "node:path"
 const PATTERN = /(player_?[nN]ame|playerName|fullName)\s*(\?\?|\|\|)\s*["'`]Unknown( [pP]layer)?["'`]/
 // The same shape for a SET name, on rendered .tsx only (lib/collection/server-moment.ts' "Unknown Set" is a
 // sentinel the wallet-search cache write strips by exact match — changing it there is a separate change).
+// 2026-11-03: and the literal "Unknown moment" as a rendered subject (RecentWhaleTrades, InsiderSignals).
+const MOMENT_LITERAL = /["'`]Unknown moment["'`]/
 const SET_PATTERN = /(set_?[nN]ame|setName)\s*(\?\?|\|\|)\s*["'`]Unknown( [sS]et)?["'`]/
 
 function walk(dir: string, out: string[]) {
@@ -34,6 +36,7 @@ describe("no rendered Moment subject falls back to the word 'Unknown'", () => {
     expect(PATTERN.test(`{m.player_name ?? "Unknown player"}`)).toBe(true)
     expect(PATTERN.test(`{m.fullName ?? "Unknown player"}`)).toBe(true)
     expect(SET_PATTERN.test(`· {e.set_name ?? "Unknown set"}`)).toBe(true)
+    expect(MOMENT_LITERAL.test(`{r.player_name ?? (r.set_name ? "x" : "Unknown moment")}`)).toBe(true)
     expect(SET_PATTERN.test(`{e.set_name ? \`· \${e.set_name}\` : null}`)).toBe(false)
   })
 
@@ -47,7 +50,7 @@ describe("no rendered Moment subject falls back to the word 'Unknown'", () => {
     for (const f of files) {
       fs.readFileSync(f, "utf8").split("\n").forEach((line, i) => {
         if (line.trimStart().startsWith("//") || line.trimStart().startsWith("*")) return
-        if (PATTERN.test(line) || (f.endsWith(".tsx") && SET_PATTERN.test(line))) hits.push(`${path.relative(process.cwd(), f)}:${i + 1}`)
+        if (PATTERN.test(line) || (f.endsWith(".tsx") && (SET_PATTERN.test(line) || MOMENT_LITERAL.test(line)))) hits.push(`${path.relative(process.cwd(), f)}:${i + 1}`)
       })
     }
     expect(hits, "use momentSubjectName(player, team, set) from lib/entity-href").toEqual([])

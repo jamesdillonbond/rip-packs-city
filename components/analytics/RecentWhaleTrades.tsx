@@ -102,7 +102,7 @@ export default function RecentWhaleTrades() {
                         <span className="truncate text-sm text-[color:var(--rpc-text-primary)] font-medium">
                           {/* 2026-09-24: a TEAM moment has no player — name it by its set
                               (how the catalogue names team moments) rather than "Unknown". */}
-                          {r.player_name ?? (r.set_name ? `${r.set_name} (team moment)` : "Unknown moment")}
+                          {r.player_name ?? (r.set_name ? `${r.set_name} (team moment)` : "—")}
                         </span>
                         {tier ? (
                           <span

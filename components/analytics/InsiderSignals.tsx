@@ -138,7 +138,7 @@ export default function InsiderSignals() {
                 <li key={b.id} className="rounded border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-2.5">
                   <div className="text-sm font-semibold text-[color:var(--rpc-text-primary)]">Insider buyback detected</div>
                   <div className="mt-1 truncate text-[11px] text-[color:var(--rpc-text-secondary)]">
-                    {b.player_name ?? "Unknown moment"}
+                    {b.player_name ?? "—"}
                     {b.set_name ? <span className="text-[color:var(--rpc-text-muted)]"> · {b.set_name}</span> : null}
                     {b.serial_number ? <span className="text-[color:var(--rpc-text-muted)]"> · #{b.serial_number}</span> : null}
                   </div>

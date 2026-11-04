@@ -40,7 +40,7 @@ const rows = [
     transaction_hash: "0xhash2",
     edition_id: "e2",
     collection: "ufc",
-    player_name: null, // → "Unknown moment"
+    player_name: null, // → "—" (no player, no set: an honest dash, never "Unknown moment")
     set_name: null, // → "—"
     tier: null,
     serial_number: null,
@@ -59,11 +59,12 @@ describe("RecentWhaleTrades", () => {
 
   it("renders the ranked list with money banding, labels, and null fallbacks", async () => {
     fetchMock.mockReturnValueOnce(okJson({ rows }))
-    const { getByText } = render(<RecentWhaleTrades />)
+    const { getByText, queryAllByText } = render(<RecentWhaleTrades />)
     await waitFor(() => expect(getByText("LeBron James")).toBeTruthy())
     expect(getByText("$1.50M")).toBeTruthy()
     expect(getByText("$4.2k")).toBeTruthy()
-    expect(getByText("Unknown moment")).toBeTruthy() // null player fallback
+    // ⚠ INVERTED 2026-11-03: a row with no player and no set reads an honest dash, not "Unknown moment"
+    expect(queryAllByText(/Unknown moment/).length).toBe(0)
     expect(getByText("LEGENDARY")).toBeTruthy() // tier chip
     // collection label mapping (topshot → Top Shot) appears in the subtitle
     expect(getByText(/Top Shot/)).toBeTruthy()
