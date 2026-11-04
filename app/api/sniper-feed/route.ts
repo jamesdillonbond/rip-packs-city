@@ -763,8 +763,11 @@ async function resolveEditionKeys(
   // Build unique (player, set, series) tuples from ts_listings
   const tuples = new Map<string, string[]>();
   for (const r of rows) {
-    if (!r.player_name || !r.set_name) continue;
-    const key = `${r.player_name.toLowerCase()}|${r.set_name.toLowerCase()}|${r.series_number ?? 0}`;
+    // 2026-11-03: a row with NO series cannot be name-matched. `series_number ?? 0` keyed it as Top Shot's
+    // real series 0 ("Series 1"), so a keyless listing could be priced against Series 1's same-named
+    // edition — a cross-series misattribution. Unresolved is honest: the row has no FMV basis and drops.
+    if (!r.player_name || !r.set_name || r.series_number == null) continue;
+    const key = `${r.player_name.toLowerCase()}|${r.set_name.toLowerCase()}|${r.series_number}`;
     const existing = tuples.get(key);
     if (existing) existing.push(r.flow_id);
     else tuples.set(key, [r.flow_id]);

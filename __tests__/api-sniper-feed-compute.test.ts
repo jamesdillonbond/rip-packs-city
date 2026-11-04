@@ -431,6 +431,33 @@ describe("sniper-feed prices Atlas-fed ts_listings through their on-chain ids", 
     expect(body.deals[0].aspUsd).toBe(95)
   })
 
+  // 2026-11-03: the NAME fallback (rows with no set_id/play_id) keyed a NULL series as 0 — Top Shot's real
+  // "Series 1" — and could price a keyless listing against Series 1's same-named edition.
+  it.each([
+    [null, false],
+    [0, true],
+  ])("a keyless row with series %s %s matched by name to a series-0 edition", async (series, matched) => {
+    fx.tables = enrichedTables({
+      ts_listings: {
+        data: Array.from({ length: 26 }, (_, i) =>
+          tsListing({ listing_id: `K${i}`, flow_id: `KF${i}`, set_id: null, play_id: null, series_number: series,
+                      serial_number: i + 10, price_usd: 10 + i }),
+        ),
+      },
+      "rpc:get_editions_for_sniper": {
+        data: [{ name: "Stephen Curry \u2014 Base Set", series: 0, external_id: "1:2" }],
+      },
+    })
+    const body = await (await GET(get("?collection=nba-top-shot"))).json()
+    const mine = body.deals.filter((d: any) => String(d.flowId).startsWith("KF"))
+    if (matched) {
+      expect(mine.length).toBeGreaterThan(0)
+      expect(mine.every((d: any) => d.editionKey === "1:2")).toBe(true)
+    } else {
+      expect(mine.length).toBe(0)
+    }
+  })
+
   it("keys a parallel printing to its ::subedition edition, never the base", async () => {
     fx.tables = enrichedTables({
       ts_listings: {
