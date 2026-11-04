@@ -22,3 +22,10 @@
 - Pinnacle `set_name='Unknown'`: 111 of 148 recovered (`20261104043706`); 37 have no source.
 - "Unknown (error loading)" player retired (`20261104045324`) and the minter refuses placeholders (`20261104050155`).
 - Site search / Sets tab / analytics panels / giveaway / Buyback / Fast Break never print "Unknown" as a subject (ratchet widened).
+
+## ✅ Reads taken 2026-11-03 ~10:55 PM PT (Cowork cloud, Supabase MCP `execute_sql` reads + Vercel runtime errors)
+
+1. **Sniper NULL series — the fix was PREVENTIVE.** `ts_listings`: 41,109 rows, `series_number IS NULL` **0**, NULL series with no `set_id`/`play_id` **0**. No live listing was mislabelled "Series 1" or exposed to the name-fallback misattribution today.
+2. **Index swap — NOT run** (destructive; it raised the MCP approval prompt for the Claude Code session, and Trevor's Chrome was unresponsive tonight, so it stays his click). Fresh read strengthens the case: both valid; old `idx_wmc_wallet_coll_ek_fmv_tier` **342 MB**, `idx_scan` 105.8M lifetime; superset `idx_wmc_wallet_coll_ek_snap_cover` **259 MB**, `idx_scan` 249k. The superset is smaller than the old index (bloat), so the swap frees ~342 MB and one index maintenance per wmc write.
+3. **#228 watch — not tripped.** Vercel runtime errors (12 h): `/api/collection-snapshot` `RPC_READ_TIMEOUT` last seen **5:53 PM PT 11-03**, before `20261104042335` (8:23 PM PT). Nothing since.
+4. **Writer-side `?? 0` — no measured incidence.** `sales` has `trg_sales_coerce_zero_serial_to_null`, so a written serial 0 lands as NULL: 90 d serial = 0 → **0** in every collection (NULL: TS 174, AD 1, GZ 6). `price_usd = 0`: **0** in 90 d, **3** all-time in `sales`; `pinnacle_sales.sale_price_usd = 0`: **0** all-time (column NOT NULL; `serial_number` nullable, 20,899 of 24,272 NULL in 90 d). So 0 is already not persisted as a serial, and a 0 price has not been written in 90 days. Changing the writers is hygiene, not a live defect; leave them unless a reader that lacks `> 0` is found averaging the 3 historical rows.
