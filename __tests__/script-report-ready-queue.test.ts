@@ -118,6 +118,7 @@ describe("report-ready-queue — drifted handoffs and re-carried items", () => {
       "## Needs your decision / QUEUED",
       "## 5. Needs Trevor / queued",
       "## Queued / needs Trevor (carried forward, unchanged)",
+      "## Needs your decision (QUEUE)",
     ]) expect(findQueueSection(["# x", h]), h).toBe(1)
     expect(findQueueSection(["## Previous night pass — both queued items now RESOLVED"])).toBe(-1)
   })

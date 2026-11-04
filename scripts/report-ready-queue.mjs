@@ -47,9 +47,12 @@ export const STALE_NIGHTS = 3
  * reports items RESOLVED or "closed" ("## Verified closed this pass (dropped
  * from carry)", 10-13) is excluded.
  */
+// 2026-11-04: bare `queue` (but not a "QUEUE-ONLY" mode heading) — the 11-04 pass wrote "## Needs your decision (QUEUE)", which the
+// `queued` arm missed, so the session-start hook printed "no queue section found" and the
+// every-handoff guard went red on main.
 export function findQueueSection(lines) {
   return lines.findIndex(
-    (l) => /^## /.test(l) && /\b(queued|carried)\b/i.test(l) && !/\b(RESOLVED|closed)\b/i.test(l),
+    (l) => /^## /.test(l) && /\b(queued|queue(?!-only)|carried)\b/i.test(l) && !/\b(RESOLVED|closed)\b/i.test(l),
   )
 }
 
