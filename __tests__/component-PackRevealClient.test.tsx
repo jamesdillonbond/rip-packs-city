@@ -114,7 +114,9 @@ describe("PackRevealClient", () => {
   it("a card with no art or name still renders honestly", () => {
     renderReveal([{ moment_id: "not-numeric", player_name: null, set_name: null, tier: null, serial_number: null, fmv_usd: null }])
     fireEvent.click(screen.getByRole("button", { name: "Open pack" }))
-    expect(screen.getByText("Unknown player")).toBeTruthy()
+    // ⚠ INVERTED 2026-11-03: "Unknown player" read as a fact about the Moment; a nameless card now names
+    // the set, else an honest dash (momentSubjectName), and the word "Unknown" never appears.
+    expect(screen.queryByText(/Unknown/i)).toBeNull()
     expect(screen.queryByRole("img")).toBeNull()
     expect(revealedNames()[0]).toContain("—")
   })

@@ -71,7 +71,8 @@ describe("GiveawayClient — load states", () => {
     // an unpriced moment and absent pack values are dashes, never $0
     expect(screen.getAllByText("—").length).toBeGreaterThan(0)
     expect(screen.queryByText("$0.00")).toBeNull()
-    expect(screen.getByText("Unknown player")).toBeTruthy()
+    // ⚠ INVERTED 2026-11-03: a nameless moment names its set, else a dash — never the word "Unknown".
+    expect(screen.queryByText(/Unknown player/i)).toBeNull()
   })
 
   it("a 404 is 'not found' — a different message from a failed read", async () => {

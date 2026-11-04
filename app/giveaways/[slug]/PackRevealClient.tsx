@@ -15,6 +15,7 @@
 import { useState, type ReactNode } from "react"
 import { chaseMomentId, openedKey, revealOrder, topShotMomentImage } from "@/lib/giveaways/reveal"
 import { usd } from "@/lib/giveaways/view-format"
+import { momentSubjectName } from "@/lib/entity-href"
 
 export interface RevealCard {
   moment_id: string
@@ -147,7 +148,7 @@ function RevealedCard({ m, isChase }: { m: RevealCard; isChase: boolean }) {
           style={{ width: "100%", height: "auto", aspectRatio: "1 / 1", objectFit: "cover", borderRadius: 6, background: "var(--rpc-surface)" }}
         />
       ) : null}
-      <div style={{ fontFamily: DISPLAY, fontSize: 16, textTransform: "uppercase", marginTop: 8 }}>{m.player_name ?? "Unknown player"}</div>
+      <div style={{ fontFamily: DISPLAY, fontSize: 16, textTransform: "uppercase", marginTop: 8 }}>{momentSubjectName(m.player_name, null, m.set_name)}</div>
       <div style={{ fontSize: 12, color: "var(--rpc-text-secondary)" }}>{m.set_name ?? "—"}</div>
       <div style={{ fontFamily: MONO, fontSize: 12, marginTop: 4, color: "var(--rpc-text-secondary)" }}>
         {(m.tier ?? "").toUpperCase()}

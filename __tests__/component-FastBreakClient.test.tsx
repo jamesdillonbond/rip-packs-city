@@ -233,8 +233,9 @@ describe("FastBreakClient", () => {
     expect(screen.getByText("Nikola Jokic")).toBeTruthy()
     expect(screen.getByText(/Buy on Sniper/i)).toBeTruthy()
     expect(screen.getByText("Not currently listed")).toBeTruthy()
-    // Null-name missing player falls back to "Unknown player".
-    expect(screen.getByText("Unknown player")).toBeTruthy()
+    // ⚠ INVERTED 2026-11-03: a null-name missing player renders an honest dash, never "Unknown player".
+    expect(screen.queryByText(/Unknown player/i)).toBeNull()
+    expect(screen.getAllByText("—").length).toBeGreaterThan(0)
   })
 
   it("distinguishes 'we looked and found none' from 'we could not look'", () => {

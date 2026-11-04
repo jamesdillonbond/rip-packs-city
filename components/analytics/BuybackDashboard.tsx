@@ -41,6 +41,7 @@ import {
   type BuybackPayload,
   type BuybackPeriod,
 } from "@/lib/analytics/buyback"
+import { momentSubjectName } from "@/lib/entity-href"
 
 const PERIODS: BuybackPeriod[] = ["week", "month", "year", "all"]
 
@@ -367,10 +368,10 @@ export default function BuybackDashboard() {
                     className="flex items-baseline justify-between gap-3 text-sm"
                   >
                     <span style={{ color: "var(--rpc-text-primary)" }}>
-                      {e.player_name ?? "Unknown player"}
+                      {momentSubjectName(e.player_name, null, e.set_name)}
                       <span style={{ color: "var(--rpc-text-muted)" }}>
                         {" "}
-                        · {e.set_name ?? "Unknown set"}
+                        {e.set_name ? `· ${e.set_name}` : null}
                         {e.tier ? ` · ${e.tier}` : ""}
                       </span>
                     </span>
@@ -457,10 +458,10 @@ export default function BuybackDashboard() {
                     className="flex items-baseline justify-between gap-3 text-sm"
                   >
                     <span style={{ color: "var(--rpc-text-primary)" }}>
-                      {e.player_name ?? "Unknown player"}
+                      {momentSubjectName(e.player_name, null, e.set_name)}
                       <span style={{ color: "var(--rpc-text-muted)" }}>
                         {" "}
-                        · {e.set_name ?? "Unknown set"}
+                        {e.set_name ? `· ${e.set_name}` : null}
                         {e.tier ? ` · ${e.tier}` : ""}
                       </span>
                     </span>

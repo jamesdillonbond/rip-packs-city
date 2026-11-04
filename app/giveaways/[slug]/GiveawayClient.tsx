@@ -10,6 +10,7 @@ import Link from "next/link"
 import type { PublicDropView } from "@/lib/giveaways/store"
 import { accountKind, deliveryLabel, errorText, ptTime, statusLabel, usd, verifyCommand } from "@/lib/giveaways/view-format"
 import PackRevealClient from "./PackRevealClient"
+import { momentSubjectName } from "@/lib/entity-href"
 
 type View = PublicDropView & { signed_in: boolean }
 type ClaimAccount = { address: string; role: "flow_wallet" | "linked"; name?: string | null; dapper?: boolean; can_receive: boolean }
@@ -453,7 +454,7 @@ function Stat({ label, value }: { label: string; value: string }) {
 function MomentLine({ m }: { m: { player_name: string | null; set_name: string | null; tier: string | null; serial_number: number | null; fmv_usd: number | null } }) {
   return (
     <>
-      <div style={{ fontFamily: DISPLAY, fontSize: 16, textTransform: "uppercase" }}>{m.player_name ?? "Unknown player"}</div>
+      <div style={{ fontFamily: DISPLAY, fontSize: 16, textTransform: "uppercase" }}>{momentSubjectName(m.player_name, null, m.set_name)}</div>
       <div style={{ fontSize: 12, color: "var(--rpc-text-secondary)" }}>{m.set_name ?? "—"}</div>
       <div style={{ fontFamily: MONO, fontSize: 12, marginTop: 4, color: "var(--rpc-text-secondary)" }}>
         {(m.tier ?? "").toUpperCase()}

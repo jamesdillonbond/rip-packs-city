@@ -510,7 +510,7 @@ export default function FastBreakClient({
               >
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 14, letterSpacing: "0.04em", color: "var(--rpc-text-primary)" }}>
-                    {m.fullName ?? "Unknown player"} <span style={{ color: "var(--rpc-text-muted)", fontWeight: 500 }}>· {m.teamAbbr ?? "—"}</span>
+                    {m.fullName ?? "—"} <span style={{ color: "var(--rpc-text-muted)", fontWeight: 500 }}>· {m.teamAbbr ?? "—"}</span>
                   </div>
                   <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, letterSpacing: "0.1em", color: "var(--rpc-text-secondary)", marginTop: 2 }}>
                     {m.projFp != null ? `${m.projFp.toFixed(1)} FP projected` : "no projection"} · you don&apos;t have remaining uses on this player tonight
