@@ -39,6 +39,10 @@ Tue `rpc-data-quality-sweep` · Thu `rpc-surface-qa` (owns artifact freshness + 
 
 Strategy + product decisions: `CLAUDE.md` (top sections + Recent sessions) and `docs/strategy/`. Operational incidents + fixes: `docs/audits/` and the dated handoffs. Current gates at a glance: the ledger's Queued section. Standing rules that bite: intelligence-first (no cart/live-buy) · no paywall until 50+ WAU · no promo until Trevor says · never auto-price zero-sale editions · FMV writer logic changes always get review.
 
+## Security incident
+
+`docs/operations/security-incident-runbook.md` — detect → contain (FREEZE, trade-room kill switch, WAF challenge, rotate at the provider) → assess → notify (Oregon 45 d / California 30 d / AG > 250 OR residents) → recover. Posture: `docs/audits/2026-11-04-ciso-security-audit.md` §6.
+
 ## Operator quarterly checklist (Trevor, ~10 min)
 
 Supabase dashboard: confirm backups/PITR healthy + restore point exists · registrar: domain renewal date · Vercel: spend within plan · Stripe: still dormant while pre-launch · rotate any proxy secret older than ~6 months (three independent rotation surfaces — see CLAUDE.md "Worker auth surfaces").
