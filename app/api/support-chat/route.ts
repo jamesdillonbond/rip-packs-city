@@ -3386,9 +3386,12 @@ async function executeToolInner(
       if (effectiveCollectionId === "panini-blockchain" && toolInput.walletAddress && !/^0x[a-fA-F0-9]{16}$/.test(String(toolInput.walletAddress).trim())) {
         return JSON.stringify({ status: "unsupported_collection", message: "The shareable snapshot reads a Flow wallet. A Panini username is not a Top Shot account or any Flow wallet — do not look it up as one. For a Panini collector call check_wallet with the username and link their Panini Collection tab." });
       }
+      // #228 (2026-11-04): the route now waits up to 20 s for a cache-cold whale read (2ac1514), so a
+      // 10 s abort here turned a slow success into "error" for exactly the wallets that need the wait.
+      // 22 s outlasts the route's own 20 s budget, so the route's honest 503 arrives first if it fires.
       const res = await fetch(
         `${base}/api/collection-snapshot?wallet=${encodeURIComponent(toolInput.walletAddress)}`,
-        { signal: AbortSignal.timeout(10000) }
+        { signal: AbortSignal.timeout(22000) }
       );
       if (!res.ok) throw new Error(`Snapshot returned ${res.status}`);
       const data = await res.json();
@@ -7277,7 +7280,7 @@ export async function POST(req: NextRequest) {
               // 6 s default, so the abort was dead code and a 6-10 s answer read as a
               // generic timeout. On the WRITES this was a false claim: a send or a
               // save that landed at 7 s was reported to the reader as "timed out".
-              get_collection_snapshot: 11000, // 10 s
+              get_collection_snapshot: 23000, // 22 s (the route waits up to 20 s on a cold whale, #228)
               get_edition_listings: 10000, // 9 s
               search_catalog: 10000, // 9 s
               get_price_history: 10000, // 9 s
