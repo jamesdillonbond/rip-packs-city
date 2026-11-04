@@ -132,6 +132,7 @@ describe("PaniniBoardsTabs — Floor movers · 7 days (2026-11-04)", () => {
     expect(t).toContain("top 1 of 382")
     expect(t).toContain("left the board")
     expect(t).toContain("Asks under $5")
+    expect(t).toContain("one high ask is all that is left")
     expect(c.querySelector('a[href="/panini-blockchain/edition/packcard-r"]')).not.toBeNull()
     expect(t).not.toMatch(/missed a day/)
     expect(t).not.toMatch(/\b(HIGH|MEDIUM|LOW|ASK_ONLY)\b/)

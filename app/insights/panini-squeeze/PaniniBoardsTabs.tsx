@@ -514,6 +514,7 @@ export default function PaniniBoardsTabs({
                   The lowest ask RPC confirmed on Panini&rsquo;s marketplace on {then} against {now}, biggest moves first. Asks under ${MOVERS_MIN_ASK} on
                   either day are left out, and so are editions that <b>left the board</b> — no copy re-read in 7 days is not a sale, so it is not a move.
                   A rise is also left out when a copy at or under the old floor is still marked listed but has not been re-read: that floor aged out, the market did not move.
+                  A big rise usually means the cheaper copies sold or were pulled and one high ask is all that is left, so read it with the Listed count beside it.
                   {any?.computed_at ? ` Updated ${ptDate(any.computed_at)}.` : ""}
                 </Note>
                 {incomplete ? (
