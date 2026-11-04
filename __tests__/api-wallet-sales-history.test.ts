@@ -7,14 +7,19 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // limit clamping, buy-side attribution, the TopShot "only sells" note, the
 // editions-as-array shape, and both the sales-error and pinnacle-error 500s.
 
-const state: { rows: any; gql: any; orArgs: string[] } = { rows: { data: [], error: null }, gql: {}, orArgs: [] }
+const state: { rows: any; pins: any; pinIn: string[][]; gql: any; orArgs: string[] } = { rows: { data: [], error: null }, pins: { data: [], error: null }, pinIn: [], gql: {}, orArgs: [] }
 
 vi.mock("@/lib/supabase", () => {
   const b: any = {
     select: () => b, eq: () => b, or: (f: string) => { state.orArgs.push(f); return b }, order: () => b, limit: () => b,
     then: (resolve: any) => resolve(state.rows),
   }
-  return { supabaseAdmin: { from: () => b } }
+  // pinnacle_catalog is read separately (by render_id) — its own answer.
+  const pc: any = {
+    select: () => pc, in: (_c: string, ids: string[]) => { state.pinIn.push(ids); return pc },
+    then: (resolve: any) => resolve(state.pins),
+  }
+  return { supabaseAdmin: { from: (t: string) => (t === "pinnacle_catalog" ? pc : b) } }
 })
 vi.mock("@/lib/chains/flow/topshot", () => ({ topshotGraphql: async () => state.gql }))
 // 2026-09-29: the route resolves usernames through the shared ladder
@@ -37,6 +42,8 @@ const req = (u: string) => ({ nextUrl: new URL(u) }) as any
 
 beforeEach(() => {
   state.rows = { data: [], error: null }
+  state.pins = { data: [], error: null }
+  state.pinIn = []
   state.gql = {}
   state.orArgs = []
 })
@@ -143,27 +150,53 @@ describe("GET /api/wallet-sales-history — sales (uuid) path", () => {
 })
 
 describe("GET /api/wallet-sales-history — Pinnacle (text id) path", () => {
-  it("maps a pinnacle_sales row through the joined edition", async () => {
-    state.rows = {
-      data: [
-        {
-          sale_price_usd: 88,
-          sold_at: "2026-07-04T00:00:00Z",
-          source: "pinnacle-direct",
-          serial_number: 12,
-          buyer_address: "0xbd94cade097e50ac",
-          seller_address: "0x3333333333333333",
-          pinnacle_editions: { character_name: "Mickey", set_name: "Origins", edition_type: "Chaser" },
-        },
-      ],
-      error: null,
-    }
-    const body = await (await GET(req("https://t/api/wallet-sales-history?wallet=0xbd94cade097e50ac&collection=disney-pinnacle"))).json()
-    expect(body.rows[0].player_name).toBe("Mickey")
-    expect(body.rows[0].tier).toBe("Chaser")
+  // INVERTED 2026-11-03. This case used to assert the name came from the joined pinnacle_editions
+  // row — which is SET-LEVEL (one character per key), so every pin in a key wore that one name
+  // (live: 19,419 of 24,170 Pinnacle sales in 90 d; a Grogu sale read "Luke Skywalker"). The PIN
+  // is the pinnacle_catalog row its render_id names.
+  const sale = (over: Record<string, unknown> = {}) => ({
+    sale_price_usd: 88,
+    sold_at: "2026-07-04T00:00:00Z",
+    source: "pinnacle-direct",
+    serial_number: 12,
+    buyer_address: "0xbd94cade097e50ac",
+    seller_address: "0x3333333333333333",
+    render_id: "OEV1-D23-GROG-S1",
+    pinnacle_editions: { set_name: "Disney • D23 2026 Vol.1", edition_type: "Open Event Edition" },
+    ...over,
+  })
+  const url = "https://t/api/wallet-sales-history?wallet=0xbd94cade097e50ac&collection=disney-pinnacle"
+
+  it("names a sale from the PIN its render_id names, never the set-level edition's character", async () => {
+    // The set-level row's one character must not reach the response even if the embed carries it.
+    state.rows = { data: [sale({ pinnacle_editions: { character_name: "Luke Skywalker", set_name: "Disney • D23 2026 Vol.1", edition_type: "Open Event Edition" } })], error: null }
+    state.pins = { data: [{ render_id: "OEV1-D23-GROG-S1", character_name: "Grogu", set_name: "Disney • D23 2026 Vol.1", edition_type: "Open Event Edition" }], error: null }
+    const body = await (await GET(req(url))).json()
+    expect(state.pinIn).toEqual([["OEV1-D23-GROG-S1"]])
+    expect(body.rows[0].player_name).toBe("Grogu")
+    expect(JSON.stringify(body)).not.toContain("Luke Skywalker")
+    expect(body.rows[0].set_name).toBe("Disney • D23 2026 Vol.1")
+    expect(body.rows[0].tier).toBe("Open Event Edition")
     expect(body.rows[0].price_usd).toBe(88)
     expect(body.rows[0].side).toBe("buy")
     expect(body.note).toBeUndefined() // Pinnacle never gets the TopShot note
+  })
+
+  it("a sale with no render_id (or no catalog row) has NO character name — set/tier still from its key", async () => {
+    state.rows = { data: [sale({ render_id: null, pinnacle_editions: { character_name: "Luke Skywalker", set_name: "Disney • D23 2026 Vol.1", edition_type: "Open Event Edition" } })], error: null }
+    const body = await (await GET(req(url))).json()
+    expect(state.pinIn).toEqual([]) // nothing to look up
+    expect(body.rows[0].player_name).toBeNull()
+    expect(JSON.stringify(body)).not.toContain("Luke Skywalker")
+    expect(body.rows[0].set_name).toBe("Disney • D23 2026 Vol.1")
+    expect(body.rows[0].tier).toBe("Open Event Edition")
+  })
+
+  it("a failed catalog read fails the request (5xx), never nameless rows", async () => {
+    state.rows = { data: [sale()], error: null }
+    state.pins = { data: null, error: { message: "catalog down" } }
+    const res = await GET(req(url))
+    expect(res.status).toBeGreaterThanOrEqual(500)
   })
 
   it("pinnacle error → 500", async () => {

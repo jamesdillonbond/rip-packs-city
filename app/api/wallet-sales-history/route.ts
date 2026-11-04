@@ -7,7 +7,7 @@
 // common case for a TopShot wallet is "only sells visible". We surface a `note`
 // flag on the response so the UI can explain the asymmetry.
 //
-// Pinnacle uses pinnacle_sales joined to pinnacle_editions (text IDs, not UUIDs).
+// Pinnacle uses pinnacle_sales (text IDs, not UUIDs), named from pinnacle_catalog by render_id.
 
 import { NextRequest, NextResponse } from "next/server"
 import {apiErrorResponse, isUnresolvedIdentifierError, unresolvedIdentifierResponse} from "@/lib/api-error";
@@ -72,21 +72,38 @@ export async function GET(req: NextRequest) {
     let rows: SaleRow[] = []
 
     if (collectionUuid === PINNACLE_UUID) {
-      // Pinnacle path — pinnacle_sales joined to pinnacle_editions (text IDs).
+      // Pinnacle path — pinnacle_sales (text IDs). ⛔ The PIN is a pinnacle_catalog row keyed by
+      // render_id; pinnacle_editions is SET-LEVEL (one character per key), so naming a sale from it
+      // printed the key's one character for every pin in it — measured 2026-11-03: 19,419 of 24,170
+      // Pinnacle sales in 90 d (a Grogu sale shown as "Luke Skywalker", Tinker Bell as "Snow White").
+      // The name comes from the catalog only; the set-level row still supplies set and tier, which
+      // ARE key-level facts. A sale with no render_id gets NO character name, never the key's.
       const { data, error } = await boundedRead((supabaseAdmin as any)
         .from("pinnacle_sales")
-        .select("sale_price_usd, sold_at, source, serial_number, buyer_address, seller_address, edition_id, pinnacle_editions:edition_id(character_name, set_name, edition_type)")
+        .select("sale_price_usd, sold_at, source, serial_number, buyer_address, seller_address, edition_id, render_id, pinnacle_editions:edition_id(set_name, edition_type)")
         .or(`buyer_address.eq.${wallet},seller_address.eq.${wallet}`)
         .order("sold_at", { ascending: false })
         .limit(limit), "api/wallet-sales-history/pinnacle_sales")
       if (error) throw new Error(error.message)
+      const renderIds = [...new Set((data ?? []).map((r: any) => r.render_id).filter((v: unknown): v is string => typeof v === "string" && v !== ""))]
+      const pinByRender = new Map<string, { character_name: string | null; set_name: string | null; edition_type: string | null }>()
+      if (renderIds.length) {
+        const { data: pins, error: pinErr } = await boundedRead((supabaseAdmin as any)
+          .from("pinnacle_catalog")
+          .select("render_id, character_name, set_name, edition_type")
+          .in("render_id", renderIds), "api/wallet-sales-history/pinnacle_catalog")
+        // A failed name read fails the request — never a list of nameless or mis-named rows.
+        if (pinErr) throw new Error(pinErr.message)
+        for (const p of pins ?? []) pinByRender.set(p.render_id, p)
+      }
       rows = (data ?? []).map((r: any) => {
         const edition = Array.isArray(r.pinnacle_editions) ? r.pinnacle_editions[0] : r.pinnacle_editions
+        const pin = r.render_id ? pinByRender.get(r.render_id) : undefined
         const isBuyer = normalizeAddress(r.buyer_address ?? "") === walletKey
         return {
-          player_name: edition?.character_name ?? null,
-          set_name: edition?.set_name ?? null,
-          tier: edition?.edition_type ?? null,
+          player_name: pin?.character_name ?? null,
+          set_name: pin?.set_name ?? edition?.set_name ?? null,
+          tier: pin?.edition_type ?? edition?.edition_type ?? null,
           serial_number: r.serial_number ?? null,
           price_usd: Number(r.sale_price_usd) || 0,
           marketplace: r.source ?? null,
