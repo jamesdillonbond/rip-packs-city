@@ -171,7 +171,7 @@ describe("/api/admin/backfill-topshot-catalog", () => {
     ])
 
     const res = await tsCatalog.GET(
-      adminReq("https://t/api/admin/backfill-topshot-catalog?token=admin-token"),
+      adminReq("https://t/api/admin/backfill-topshot-catalog", { authorization: "Bearer admin-token" }),
     )
     expect(res.status).toBe(200)
     const body = await res.json()
@@ -266,7 +266,7 @@ describe("/api/admin/backfill-topshot-catalog", () => {
     fetchMock = installFetchMock([gqlRoute("SearchEditionBackfill", tsPage([], null))])
 
     const res = await tsCatalog.GET(
-      adminReq("https://t/api/admin/backfill-topshot-catalog?token=admin-token"),
+      adminReq("https://t/api/admin/backfill-topshot-catalog", { authorization: "Bearer admin-token" }),
     )
     const body = await res.json()
     expect(body).toMatchObject({ ok: true, sets_processed: 1, editions_upserted: 0, sets_with_cover_set: 0 })
@@ -295,7 +295,7 @@ describe("/api/admin/backfill-topshot-catalog", () => {
     fetchMock = installFetchMock([gqlRoute("SearchEditionBackfill", tsPage([KD_EDITION], null))])
 
     const res = await tsCatalog.GET(
-      adminReq("https://t/api/admin/backfill-topshot-catalog?token=admin-token&limitSets=1"),
+      adminReq("https://t/api/admin/backfill-topshot-catalog?limitSets=1", { authorization: "Bearer admin-token" }),
     )
     const body = await res.json()
     expect(body).toMatchObject({
@@ -326,7 +326,7 @@ describe("/api/admin/backfill-topshot-catalog", () => {
     fetchMock = installFetchMock([gqlRoute("SearchEditionBackfill", tsPage([KD_EDITION], null))])
 
     const res = await tsCatalog.GET(
-      adminReq("https://t/api/admin/backfill-topshot-catalog?token=admin-token"),
+      adminReq("https://t/api/admin/backfill-topshot-catalog", { authorization: "Bearer admin-token" }),
     )
     const body = await res.json()
     expect(body).toMatchObject({ ok: false, editions_upserted: 0, errors_count: 1 })
@@ -355,7 +355,7 @@ describe("/api/admin/backfill-topshot-catalog", () => {
     fetchMock = installFetchMock([gqlRoute("SearchEditionBackfill", tsPage([KD_EDITION], null))])
 
     const res = await tsCatalog.GET(
-      adminReq("https://t/api/admin/backfill-topshot-catalog?token=admin-token&forceRefresh=stale_thumbnails&limitSets=1"),
+      adminReq("https://t/api/admin/backfill-topshot-catalog?forceRefresh=stale_thumbnails&limitSets=1", { authorization: "Bearer admin-token" }),
     )
     const body = await res.json()
     expect(body).toMatchObject({ mode: "stale_thumbnails", sets_processed: 1, last_set_id: "s2" })
@@ -367,14 +367,14 @@ describe("/api/admin/backfill-topshot-catalog", () => {
   it("stale_thumbnails mode 500s when the ranking RPC fails and short-circuits when nothing is stale", async () => {
     install({ "rpc:topshot_sets_with_stale_thumbnails": { data: null, error: { message: "rpc boom" } } })
     const err = await tsCatalog.GET(
-      adminReq("https://t/api/admin/backfill-topshot-catalog?token=admin-token&forceRefresh=stale_thumbnails"),
+      adminReq("https://t/api/admin/backfill-topshot-catalog?forceRefresh=stale_thumbnails", { authorization: "Bearer admin-token" }),
     )
     expect(err.status).toBe(500)
     expect((await err.json()).error).toBe("rpc boom")
 
     install({ "rpc:topshot_sets_with_stale_thumbnails": { data: [], error: null } })
     const empty = await tsCatalog.GET(
-      adminReq("https://t/api/admin/backfill-topshot-catalog?token=admin-token&forceRefresh=stale_thumbnails"),
+      adminReq("https://t/api/admin/backfill-topshot-catalog?forceRefresh=stale_thumbnails", { authorization: "Bearer admin-token" }),
     )
     expect(await empty.json()).toMatchObject({
       ok: true, sets_processed: 0, terminated_reason: "no_stale_thumbnails",
@@ -430,7 +430,7 @@ describe("/api/admin/backfill-topshot-catalog", () => {
     fetchMock = installFetchMock([gqlRoute("SearchEditionBackfill", tsPage(editions, null))])
 
     const res = await tsCatalog.GET(
-      adminReq("https://t/api/admin/backfill-topshot-catalog?token=admin-token"),
+      adminReq("https://t/api/admin/backfill-topshot-catalog", { authorization: "Bearer admin-token" }),
     )
     expect(res.status).toBe(200)
     const rows = (spy.writes.editions ?? []).filter((w) => w.method === "upsert").flatMap((w) => w.rows)
@@ -480,7 +480,7 @@ describe("/api/admin/backfill-topshot-catalog", () => {
     ])
 
     const res = await tsCatalog.GET(
-      adminReq("https://t/api/admin/backfill-topshot-catalog?token=admin-token"),
+      adminReq("https://t/api/admin/backfill-topshot-catalog", { authorization: "Bearer admin-token" }),
     )
     const body = await res.json()
     // All three sets FAULTED. This used to assert ok:true — a test pinning the
@@ -529,7 +529,7 @@ describe("/api/admin/backfill-topshot-catalog", () => {
     ])
 
     const res = await tsCatalog.GET(
-      adminReq("https://t/api/admin/backfill-topshot-catalog?token=admin-token"),
+      adminReq("https://t/api/admin/backfill-topshot-catalog", { authorization: "Bearer admin-token" }),
     )
     expect(res.status).toBe(200)
 
@@ -578,7 +578,7 @@ describe("/api/admin/backfill-topshot-catalog", () => {
     ])
 
     const res = await tsCatalog.GET(
-      adminReq("https://t/api/admin/backfill-topshot-catalog?token=admin-token"),
+      adminReq("https://t/api/admin/backfill-topshot-catalog", { authorization: "Bearer admin-token" }),
     )
     const body = await res.json()
     expect(body).toMatchObject({
@@ -594,7 +594,7 @@ describe("/api/admin/backfill-topshot-catalog", () => {
   it("500s when the natural-mode sets read errors", async () => {
     install({ sets: { data: null, error: { message: "sets boom" } } })
     const res = await tsCatalog.GET(
-      adminReq("https://t/api/admin/backfill-topshot-catalog?token=admin-token"),
+      adminReq("https://t/api/admin/backfill-topshot-catalog", { authorization: "Bearer admin-token" }),
     )
     expect(res.status).toBe(500)
     expect((await res.json()).error).toBe("sets boom")
@@ -606,7 +606,7 @@ describe("/api/admin/backfill-topshot-catalog", () => {
       sets: { data: null, error: { message: "in boom" } },
     })
     const res = await tsCatalog.GET(
-      adminReq("https://t/api/admin/backfill-topshot-catalog?token=admin-token&forceRefresh=stale_thumbnails"),
+      adminReq("https://t/api/admin/backfill-topshot-catalog?forceRefresh=stale_thumbnails", { authorization: "Bearer admin-token" }),
     )
     expect(res.status).toBe(500)
     expect((await res.json()).error).toBe("in boom")
@@ -630,7 +630,7 @@ describe("/api/admin/backfill-topshot-catalog", () => {
     fetchMock = installFetchMock([gqlRoute("SearchEditionBackfill", tsPage([KD_EDITION], null))])
 
     const res = await tsCatalog.GET(
-      adminReq("https://t/api/admin/backfill-topshot-catalog?token=admin-token&startAfter=s1&limitSets=1"),
+      adminReq("https://t/api/admin/backfill-topshot-catalog?startAfter=s1&limitSets=1", { authorization: "Bearer admin-token" }),
     )
     const body = await res.json()
     // s1 sliced out → the first walked set is s2.
@@ -664,7 +664,7 @@ describe("/api/admin/backfill-topshot-catalog", () => {
     ])
 
     const res = await tsCatalog.GET(
-      adminReq("https://t/api/admin/backfill-topshot-catalog?token=admin-token"),
+      adminReq("https://t/api/admin/backfill-topshot-catalog", { authorization: "Bearer admin-token" }),
     )
     const body = await res.json()
     expect(body).toMatchObject({ ok: true, sets_processed: 1, gql_calls: 3 })

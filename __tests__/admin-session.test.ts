@@ -80,9 +80,10 @@ describe("where the admin token is accepted, a session is accepted — header fo
     expect(bearerMatches(`Bearer ${session}`, "CRON_SECRET")).toBe(false)
   })
 
-  it("the master token still works everywhere it did (scripts, cron-job.org)", () => {
+  it("the master token still works in the header form, and NOT as ?token= (URL form retired, R133 2026-11-04)", () => {
     expect(bearerMatches(`Bearer ${MASTER}`, "RPC_ADMIN_TOKEN")).toBe(true)
-    expect(verifyAdminRequest(req(`https://t/api/admin/x?token=${MASTER}`))).toBe(true)
+    expect(verifyAdminRequest(req("https://t/api/admin/x", { headers: { authorization: `Bearer ${MASTER}` } }))).toBe(true)
+    expect(verifyAdminRequest(req(`https://t/api/admin/x?token=${MASTER}`))).toBe(false)
   })
 
   it("isAdminCredential (the flowty-errors cookie) takes master or session, fails closed when unset", () => {

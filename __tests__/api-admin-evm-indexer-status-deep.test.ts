@@ -39,8 +39,11 @@ describe("GET /api/admin/evm-indexer-status", () => {
   it("401 without a token", async () => {
     expect((await GET(get({ auth: "Bearer nope" }))).status).toBe(401)
   })
-  it("accepts the token via ?token=", async () => {
-    expect((await GET(get({ token: "adm" }))).status).toBe(200)
+  it("REJECTS the token via ?token= — the URL form is retired (R133, 2026-11-04)", async () => {
+    expect((await GET(get({ token: "adm" }))).status).toBe(401)
+  })
+  it("accepts the token via the Bearer header", async () => {
+    expect((await GET(get({ auth: "Bearer adm" }))).status).toBe(200)
   })
   it("contracts read error → 500", async () => {
     st.contracts = { data: null, error: { message: "reg down" } }

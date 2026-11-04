@@ -11,7 +11,7 @@ import { NextRequest } from "next/server"
 // But the request-handling flow that CONSUMES those decisions — the actual
 // security wall Next.js runs on every request — was itself undriven:
 //   1. CORS preflight (OPTIONS) on the public-CORS API paths,
-//   2. the INGEST_SECRET_TOKEN / CRON_SECRET bypass (header AND ?token= forms),
+//   2. the INGEST_SECRET_TOKEN / CRON_SECRET bypass (header form ONLY — the ?token= form was retired 2026-11-04, R133),
 //   3. the per-IP 429 rate limiters (API + expensive-page),
 //   4. the public-path passthrough (must NOT touch Supabase),
 //   5. the unauthenticated → /login?next= redirect,
@@ -227,10 +227,11 @@ describe("proxy() — bypass token short-circuit", () => {
     expect(res.headers.get("X-Frame-Options")).toBe("DENY")
   })
 
-  it("passes through on a matching ?token= CRON_SECRET query param", async () => {
-    const res = await proxy(req("/api/fmv-recalc?token=cron-secret", { method: "POST" }))
-    expect(res.headers.get("location")).toBeNull()
-    expect(res.headers.get("X-Frame-Options")).toBe("DENY")
+  it("does NOT bypass on a matching ?token= CRON_SECRET query param (URL form retired, R133 2026-11-04)", async () => {
+    st.user = null
+    const res = await proxy(req("/dashboard?token=cron-secret"))
+    expect(res.status).toBe(307)
+    expect(res.headers.get("location")).toContain("/login")
   })
 
   it("does NOT bypass on a wrong token — a gated path still redirects to /login", async () => {
@@ -261,7 +262,7 @@ describe("proxy() — rate limiting", () => {
     const ip = "203.0.113.10"
     let last: Response | null = null
     for (let i = 0; i < 65; i++) {
-      last = await proxy(req("/api/cron/anything?token=cron-secret", { ip }))
+      last = await proxy(req("/api/cron/anything", { ip, headers: { authorization: "Bearer cron-secret" } }))
     }
     // bypass-token path returns passthrough, never 429
     expect(last!.status).not.toBe(429)

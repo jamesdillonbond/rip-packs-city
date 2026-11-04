@@ -3,7 +3,7 @@ import { NextRequest } from "next/server"
 import { verifyAdminRequest } from "@/lib/admin-auth"
 
 // Deny-by-default admin bearer check. A missing RPC_ADMIN_TOKEN must reject
-// everything (fail-closed); a correct Bearer header OR ?token= query passes.
+// everything (fail-closed); a correct Bearer header passes; the ?token= query form is REJECTED (retired 2026-11-04, R133).
 
 const TOKEN = "s3cret-admin-token"
 
@@ -33,8 +33,8 @@ describe("verifyAdminRequest", () => {
     it("accepts a correct Bearer header", () => {
       expect(verifyAdminRequest(req({ auth: `Bearer ${TOKEN}` }))).toBe(true)
     })
-    it("accepts a correct ?token= query (cron-job.org path)", () => {
-      expect(verifyAdminRequest(req({ token: TOKEN }))).toBe(true)
+    it("REJECTS a correct ?token= query — the URL form is retired (R133, 2026-11-04)", () => {
+      expect(verifyAdminRequest(req({ token: TOKEN }))).toBe(false)
     })
     it("rejects a wrong or missing token", () => {
       expect(verifyAdminRequest(req({ auth: "Bearer nope" }))).toBe(false)

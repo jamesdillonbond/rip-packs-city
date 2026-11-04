@@ -349,19 +349,13 @@ function hasValidBypassToken(request: NextRequest): boolean {
   if (authHeader.startsWith("Bearer ")) {
     if (tokenMatches(authHeader.slice(7))) return true
   }
-  // Query-param form
-  const queryToken = request.nextUrl.searchParams.get("token") || ""
-  if (queryToken) {
-    // R133 (security audit 2026-10-25): the ops doc says every cron-job.org
-    // job moved to header auth on 2026-06-07, so this arm should have no
-    // callers left. Log the PATH and the outcome (never the token) for a week.
-    // `ok=false` lines are scanners or typos — they are also the instrument's
-    // POSITIVE CONTROL (anyone can produce one), so zero `ok=true` lines next to
-    // some `ok=false` lines proves the arm is unused, not that logging is dark.
-    const ok = tokenMatches(queryToken)
-    console.warn(`[proxy] query-token presented ok=${ok}: ${request.method} ${request.nextUrl.pathname}`)
-    if (ok) return true
-  }
+  // R133 (security audit 2026-10-25) — the `?token=` query-param form is
+  // RETIRED (2026-11-04). It logged `[proxy] query-token presented ok=<bool>`
+  // from 2026-10-25 1:18 PM PT; Vercel runtime logs 10-25 → 11-04 held ZERO
+  // `ok=true` lines beside live `ok=false` lines (the positive control), and
+  // the caller enumeration (repo, pg_cron, vercel.json, cron-job.org on
+  // headers since 06-07) found none. A secret in a URL lands in access logs,
+  // browser history and Referer headers; only the header form is accepted.
   return false
 }
 
