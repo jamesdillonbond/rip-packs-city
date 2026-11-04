@@ -1,4 +1,8 @@
 -- STAGED, NOT APPLIED — needs a human to approve a destructive statement (2026-11-03 ~6:30 PM PT).
+-- 2026-11-04 ~7:20 AM PT: a THIRD attempt (Claude Code cloud, Trevor present) raised the MCP prompt and timed out
+--   unanswered at 60 s. Pre-check just before it: both valid; old 346 MB (idx_scan 105.8M lifetime), cover 284 MB.
+--   The DROP most likely did NOT run (an unanswered prompt does not execute) — RE-RUN the step-1 pre-check first.
+--   The MCP path has now failed three times on this prompt; the dashboard SQL editor is the reliable route.
 --
 -- Context: known-issues #228; migration 20261104013841_audit_20261103_collection_snapshot_aggregates_from_the_index.
 -- idx_wmc_wallet_coll_ek_snap_cover (built 11-03, 189 MB, valid) is a strict SUPERSET of
