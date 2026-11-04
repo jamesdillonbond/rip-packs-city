@@ -4,6 +4,14 @@
 
 **Rewrite rule for whoever edits this next: a focus file STEERS the next night, it is not an archive.** If a section is describing something that shipped more than ~a week ago and is not still a live trap, move it to the ledger and delete it here. A stale steer is worse than no steer.
 
+## STEER — added 2026-11-04 7:22 AM PT (Claude Code local, Trevor's laptop) — HANDED TO COWORK: run the staged wmc index swap; confirm the 11-04 mint-walk run
+
+- **Trevor approved the swap (11-04 ~7:15 AM PT: "Yes do it", then "Hand that off to cowork").** Run `docs/proposals/wmc-snapshot-cover-index-swap-STAGED.sql` exactly as the file says: each statement in its OWN `execute_sql` call (`CONCURRENTLY` cannot run in a transaction block; no `SET` prefix), the RENAME immediately after the DROP. Why the order matters: `rpc-weekly-wmc-reindex-6` and `run_wmc_reindex_verify()` are the only objects naming either index (prosrc + `cron.job.command` grep, 11-04), and both use the OLD name, which the rename hands to the superset.
+- **Pre-read 11-04 7:15 AM PT:** both valid; old `idx_wmc_wallet_coll_ek_fmv_tier` 346 MB, `idx_scan` 105,825,151 (unchanged since 11-03 evening, so unused); superset `idx_wmc_wallet_coll_ek_snap_cover` 284 MB, `idx_scan` 638k. Re-stat both before the DROP.
+- **Why Claude Code did not run it:** the claude.ai Supabase connector returned `{"status":"declined"}` on the DROP twice with no prompt shown to Trevor, even after he moved approval to manual. If Cowork's connector declines too, do NOT route around it through another tool; leave this steer open and say so in the handoff.
+- **After:** post-check `pg_get_indexdef('public.idx_wmc_wallet_coll_ek_fmv_tier'::regclass)` shows `INCLUDE (fmv_usd, tier, series_number, mint_count)`; record a no-op migration (`SELECT 1;`, the staged file's text as its header, file named for the version `apply_migration` stamps); delete the staged file; ledger entry; mark this steer ANSWERED.
+- **Also:** list `mint-event-walk-forward.yml` runs. The 11-04 4:37 AM PT slot had not fired by 7:22 AM PT (yesterday's fired ~7 h late). Expect an `event=schedule` run by ~noon PT that loads the 2 Top Shot ids above `checkpoint_nft_meta` max `nft_id` 53,028,499 (first seen 11-04 ~5:13 AM PT). If no scheduled run exists by 11-05, dispatch it and touch the workflow file.
+
 ## STEER — added 2026-11-03 ~9:30 AM PT (Claude Code cloud) — #226 mint walk: confirm the schedule fires
 
 - ✅ **ANSWERED 11-03 ~5:55 PM PT (Claude Code cloud, GitHub Actions run list): it HAS now run from its schedule** — run #3, `event=schedule`, started 11-03 11:45 AM PT, success in ~1 min (the two earlier runs were dispatches). It fired ~7 h after its slot, the documented GHA schedule throttling, not a broken trigger. Nothing to dispatch. Original steer follows.
