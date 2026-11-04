@@ -29,6 +29,7 @@ function db(over: Record<string, Res> = {}) {
     panini_coverage_summary: { data: [{ total_editions: 5094, pct_trustworthy: 35.1 }] },
     mv_panini_holder_concentration: { data: [{ external_id: "packcard-1", top1_share: 0.4, top3_share: 0.6 }], count: 7 },
     mv_panini_offer_spread: { data: [{ external_id: "packcard-2", ask_usd: 21, best_offer_usd: 19, offer_pct_of_ask: 90.5 }], count: 4575 },
+    mv_panini_floor_movers: { data: [{ external_id: "packcard-3", direction: "rise", change_pct: 12.5 }], count: 382 },
     ...over,
   }
   return {
@@ -37,8 +38,9 @@ function db(over: Record<string, Res> = {}) {
     orders,
     from(table: string) {
       const b: any = {
-        select: (cols: string) => {
+        select: (cols: string, opts?: { head?: boolean }) => {
           ;(selects[table] ??= []).push(cols)
+          if (opts?.head && base[`${table}:head`]) b.key = `${table}:head`
           return b
         },
         eq: (col: string, v: unknown) => {
@@ -58,7 +60,7 @@ function db(over: Record<string, Res> = {}) {
           return b
         },
         limit: () => b,
-        then: (resolve: any) => resolve({ data: null, error: null, count: null, ...base[table] }),
+        then: (resolve: any) => resolve({ data: null, error: null, count: null, ...base[b.key ?? table] }),
       }
       return b
     },
@@ -245,5 +247,47 @@ describe("fetchPaniniMoreBoards — Bid vs Floor 'more floors' claim follows the
   it("CONTROL: a count above the page says 'more'", async () => {
     const r = await fetchPaniniMoreBoards(db({ mv_panini_offer_spread: { data: full, count: PANINI_BOARD_LIMIT + 1 } }))
     expect(r.payload.offer_spread_capped).toBe(true)
+  })
+})
+
+describe("fetchPaniniMoreBoards — Floor movers · 7 days (2026-11-04)", () => {
+  const rows = [{ external_id: "packcard-9", direction: "rise", ask_then_usd: 10, ask_now_usd: 15, change_pct: 50, window_complete: true }]
+  it("reads rises biggest-first and falls biggest-first from the daily MV, each capped, with exact totals", async () => {
+    const d = db({ mv_panini_floor_movers: { data: rows, count: 382 } }) as any
+    const r = await fetchPaniniMoreBoards(d)
+    expect(r.ok).toBe(true)
+    expect(d.eqs.mv_panini_floor_movers).toEqual(expect.arrayContaining(["direction=rise", "direction=fall"]))
+    expect(d.orders.mv_panini_floor_movers?.[0]).toBe("change_pct")
+    expect(r.payload.floor_rises).toHaveLength(1)
+    expect(r.payload.floor_falls).toHaveLength(1)
+    expect(r.payload.floor_movers_error).toBe(false)
+    expect(r.payload.floor_rises_total).toBe(382)
+    expect(r.payload.floor_falls_total).toBe(382)
+  })
+  it("a failed movers read is flagged — both lists null, never an empty board — and the payload is not cached", async () => {
+    const r = await fetchPaniniMoreBoards(db({ mv_panini_floor_movers: { data: null, error: { message: "has not been populated" } } }))
+    expect(r.payload.floor_rises).toBeNull()
+    expect(r.payload.floor_falls).toBeNull()
+    expect(r.payload.floor_movers_error).toBe(true)
+    expect(r.ok).toBe(false)
+  })
+  it("a failed LIST read alone (counts fine) still keeps the payload out of the cache", async () => {
+    const r = await fetchPaniniMoreBoards(db({
+      mv_panini_floor_movers: { data: null, error: { message: "boom" } },
+      "mv_panini_floor_movers:head": { data: null, error: null, count: 382 },
+    }))
+    expect(r.payload.floor_movers_error).toBe(true)
+    expect(r.ok).toBe(false)
+  })
+  it("an ok empty read is two empty lists, not a failure", async () => {
+    const r = await fetchPaniniMoreBoards(db({ mv_panini_floor_movers: { data: [], count: 0 } }))
+    expect(r.payload.floor_rises).toEqual([])
+    expect(r.payload.floor_movers_error).toBe(false)
+    expect(r.ok).toBe(true)
+  })
+  it("selects no owner column", async () => {
+    const d = db({ mv_panini_floor_movers: { data: rows, count: 1 } }) as any
+    await fetchPaniniMoreBoards(d)
+    expect((d.selects.mv_panini_floor_movers ?? []).join(",")).not.toMatch(/owner/)
   })
 })

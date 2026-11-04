@@ -110,3 +110,51 @@ describe("PaniniBoardsTabs — Bid vs Floor (2026-10-25)", () => {
     expect(container.textContent).not.toMatch(/\b(HIGH|MEDIUM|LOW|ASK_ONLY)\b/);
   });
 });
+
+describe("PaniniBoardsTabs — Floor movers · 7 days (2026-11-04)", () => {
+  const mk = (id: string, dir: "rise" | "fall", then: number, now: number, pct: number, complete = true) => ({
+    external_id: id, player_name: `P ${id}`, set_name: "Base Prizms", parallel: "Gold", mint_cap: 10, product_name: "2024-25 Panini NFT Prizm Basketball", sport: "Basketball",
+    ask_then_usd: then, ask_now_usd: now, listed_now: 3, change_usd: now - then, change_pct: pct, direction: dir,
+    day_then: "2026-10-28", day_now: "2026-11-04", window_complete: complete, computed_at: "2026-11-04T12:11:00Z",
+  })
+  const open = (data: PaniniBoardsPayload) => {
+    const r = render(<PaniniBoardsTabs data={data} degraded={null} />)
+    fireEvent.click(r.getByText("Floor movers · 7 days"))
+    return r.container
+  }
+  it("shows rises and falls with ask then vs now, links the edition, and says what is left out", () => {
+    const c = open({ ...base, floor_rises: [mk("packcard-r", "rise", 10, 15, 50)], floor_falls: [mk("packcard-f", "fall", 20, 16, -20)], floor_movers_error: false, floor_rises_total: 382, floor_falls_total: 1006 })
+    const t = c.textContent!
+    expect(t).toContain("Ask Oct 28")
+    expect(t).toContain("Ask Nov 4")
+    expect(t).toContain("+50.0%")
+    expect(t).toContain("-20.0%")
+    expect(t).toContain("top 1 of 382")
+    expect(t).toContain("left the board")
+    expect(t).toContain("Asks under $5")
+    expect(c.querySelector('a[href="/panini-blockchain/edition/packcard-r"]')).not.toBeNull()
+    expect(t).not.toMatch(/missed a day/)
+    expect(t).not.toMatch(/\b(HIGH|MEDIUM|LOW|ASK_ONLY)\b/)
+  })
+  it("a failed read says it failed — never 'no edition moved'", () => {
+    const t = open({ ...base, floor_rises: null, floor_falls: null, floor_movers_error: true }).textContent!
+    expect(t).toContain("couldn't load")
+    expect(t).not.toMatch(/has moved over the last 7 days/)
+    expect(t).not.toMatch(/Rises/)
+  })
+  it("a payload predating the lane (no movers fields) reads as a failed read, not as no moves", () => {
+    const t = open(base).textContent!
+    expect(t).toContain("couldn't load")
+    expect(t).not.toMatch(/has moved over the last 7 days/)
+  })
+  it("an ok empty read says nothing moved", () => {
+    const t = open({ ...base, floor_rises: [], floor_falls: [], floor_movers_error: false }).textContent!
+    expect(t).toContain("has moved over the last 7 days")
+    expect(t).not.toContain("couldn't load")
+  })
+  it("a window with a missed lane day says so", () => {
+    const t = open({ ...base, floor_rises: [mk("packcard-r", "rise", 10, 15, 50, false)], floor_falls: [], floor_movers_error: false }).textContent!
+    expect(t).toMatch(/missed a day of ask readings/)
+    expect(t).toContain("No floor fell")
+  })
+})

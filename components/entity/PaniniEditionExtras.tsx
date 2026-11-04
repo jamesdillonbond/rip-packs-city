@@ -215,6 +215,61 @@ export function fmtDay(day: string): string {
   return `${MONTHS[Number(m[2]) - 1] ?? m[2]} ${Number(m[3])}, ${m[1]}`
 }
 
+/** The chart draws only once there are this many recorded asks; below it the table alone tells it better. */
+export const PANINI_ASK_CHART_MIN_POINTS = 3
+
+function dayNum(day: string): number {
+  const t = Date.parse(`${day}T00:00:00Z`)
+  return Number.isNaN(t) ? NaN : t / 86_400_000
+}
+
+/**
+ * A step chart of the recorded asks (2026-11-04): each ask holds until the next change; a day with no
+ * confirmed ask BREAKS the line (the edition left the board — never drawn as $0 or as a held price).
+ * Pure SVG from props — no wall clock, no client JS. Returns null under PANINI_ASK_CHART_MIN_POINTS asks.
+ */
+export function PaniniAskChart({ rows }: { rows: PaniniAskChange[] }) {
+  const asc = [...rows].filter((r) => Number.isFinite(dayNum(r.day))).sort((a, b) => dayNum(a.day) - dayNum(b.day))
+  const priced = asc.filter((r) => r.lowAskUsd != null) as { day: string; lowAskUsd: number }[]
+  if (priced.length < PANINI_ASK_CHART_MIN_POINTS) return null
+  const W = 600, H = 140, PL = 8, PR = 8, PT = 12, PB = 22
+  const x0 = dayNum(asc[0].day), x1 = dayNum(asc[asc.length - 1].day)
+  const lo = Math.min(...priced.map((r) => r.lowAskUsd)), hi = Math.max(...priced.map((r) => r.lowAskUsd))
+  const x = (day: string) => PL + (x1 === x0 ? 0.5 : (dayNum(day) - x0) / (x1 - x0)) * (W - PL - PR)
+  const y = (v: number) => PT + (hi === lo ? 0.5 : 1 - (v - lo) / (hi - lo)) * (H - PT - PB)
+  const segs: string[] = []
+  for (let i = 0; i < asc.length - 1; i++) {
+    const a = asc[i], b = asc[i + 1]
+    if (a.lowAskUsd == null) continue
+    let d = `M${x(a.day).toFixed(1)},${y(a.lowAskUsd).toFixed(1)} H${x(b.day).toFixed(1)}`
+    if (b.lowAskUsd != null) d += ` V${y(b.lowAskUsd).toFixed(1)}`
+    segs.push(d)
+  }
+  const first = priced[0], last = priced[priced.length - 1]
+  const label = `Lowest confirmed ask, ${fmtDay(asc[0].day)} to ${fmtDay(asc[asc.length - 1].day)}: from ${fmtUsd(first.lowAskUsd)} to ${fmtUsd(last.lowAskUsd)}, low ${fmtUsd(lo)}, high ${fmtUsd(hi)}.`
+  return (
+    <figure data-testid="panini-ask-chart" style={{ margin: "0 0 12px" }}>
+      <svg role="img" aria-label={label} viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: "block", maxWidth: W, height: "auto" }}>
+        <line x1={PL} x2={W - PR} y1={H - PB} y2={H - PB} stroke="var(--rpc-border)" strokeWidth={1} />
+        {segs.map((d, i) => (
+          <path key={i} d={d} fill="none" stroke="var(--rpc-red)" strokeWidth={2} />
+        ))}
+        {priced.map((r) => (
+          <circle key={r.day} cx={x(r.day)} cy={y(r.lowAskUsd)} r={3} fill="var(--rpc-red)" />
+        ))}
+        {asc.filter((r) => r.lowAskUsd == null).map((r) => (
+          <circle key={`gap-${r.day}`} cx={x(r.day)} cy={H - PB} r={3} fill="none" stroke="var(--rpc-text-muted)" strokeWidth={1.5} />
+        ))}
+        <text x={PL} y={H - 6} fontSize={10} fill="var(--rpc-text-muted)" fontFamily="var(--font-mono)">{fmtDay(asc[0].day)}</text>
+        <text x={W - PR} y={H - 6} fontSize={10} fill="var(--rpc-text-muted)" fontFamily="var(--font-mono)" textAnchor="end">{fmtDay(asc[asc.length - 1].day)}</text>
+      </svg>
+      <figcaption className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)", marginTop: 4 }}>
+        Low {fmtUsd(lo)} · high {fmtUsd(hi)}. Each ask holds until the next change; an open circle is a day with no confirmed ask.
+      </figcaption>
+    </figure>
+  )
+}
+
 /**
  * Ask history (≈ Top Shot's ask-over-time). One row per day the lowest confirmed ask CHANGED,
  * newest first, with the move against the previous recorded ask. A null ask reads "no confirmed
@@ -232,6 +287,8 @@ export function PaniniAskHistorySection({ rows }: { rows: PaniniAskChange[] | nu
       ) : rows.length === 0 ? (
         <Note testId="panini-ask-history-empty">{`RPC hasn't recorded a confirmed ask for this edition since ${since}.`}</Note>
       ) : (
+        <>
+        <PaniniAskChart rows={rows} />
         <div className="rpc-scroll-x" {...scrollRegion("Ask history for this edition")}>
           <table data-testid="panini-ask-history" style={{ borderCollapse: "collapse", width: "100%", minWidth: 360 }}>
             <thead>
@@ -261,6 +318,7 @@ export function PaniniAskHistorySection({ rows }: { rows: PaniniAskChange[] | nu
             </tbody>
           </table>
         </div>
+        </>
       )}
     </Section>
   )

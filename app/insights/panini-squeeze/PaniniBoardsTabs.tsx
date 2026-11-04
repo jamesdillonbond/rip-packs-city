@@ -121,6 +121,25 @@ export interface SpreadRow {
   fmv_usd: Num;
   computed_at: string | null;
 }
+export interface MoverRow {
+  external_id: string;
+  player_name: string | null;
+  set_name: string | null;
+  parallel: string | null;
+  mint_cap: Num;
+  product_name: string | null;
+  sport: string | null;
+  ask_then_usd: Num;
+  ask_now_usd: Num;
+  listed_now: Num;
+  change_usd: Num;
+  change_pct: Num;
+  direction: string | null;
+  day_then: string | null;
+  day_now: string | null;
+  window_complete: boolean | null;
+  computed_at: string | null;
+}
 export interface PaniniBoardsPayload {
   deals?: DealRow[] | null;
   deals_error?: boolean;
@@ -145,10 +164,15 @@ export interface PaniniBoardsPayload {
   offer_spread_capped?: boolean;
   offer_spread_total?: Num;
   offer_spread_tight?: Num;
+  floor_rises?: MoverRow[] | null;
+  floor_falls?: MoverRow[] | null;
+  floor_movers_error?: boolean;
+  floor_rises_total?: Num;
+  floor_falls_total?: Num;
   coverage?: { total_editions?: Num; pct_trustworthy?: Num } | null;
 }
 
-type Tab = "deals" | "packs" | "specials" | "players" | "holders" | "spread";
+type Tab = "deals" | "packs" | "specials" | "players" | "holders" | "spread" | "movers";
 const TABS: { k: Tab; label: string }[] = [
   { k: "deals", label: "Deals" },
   { k: "packs", label: "Pack EV" },
@@ -156,7 +180,23 @@ const TABS: { k: Tab; label: string }[] = [
   { k: "players", label: "Players" },
   { k: "holders", label: "Holders" },
   { k: "spread", label: "Bid vs Floor" },
+  { k: "movers", label: "Floor movers · 7 days" },
 ];
+
+// Mirrors FLOOR_MOVERS_MIN_ASK in lib/insights/panini-more-boards.ts (server module).
+const MOVERS_MIN_ASK = 5;
+
+/** "2026-10-28" → "Oct 28" — a calendar day, never through a timezone. */
+function calDay(day: string | null | undefined): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day ?? "");
+  if (!m) return "—";
+  return `${["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][Number(m[2]) - 1]} ${Number(m[3])}`;
+}
+function signedPct(n: Num): string {
+  if (n === null || n === undefined || !Number.isFinite(Number(n))) return "—";
+  const v = Number(n);
+  return `${v > 0 ? "+" : ""}${v.toFixed(1)}%`;
+}
 
 // Mirror OFFER_SPREAD_MIN_ASK / OFFER_SPREAD_TIGHT_PCT in lib/insights/panini-more-boards.ts (server module).
 const SPREAD_MIN_ASK = 5;
@@ -428,6 +468,64 @@ export default function PaniniBoardsTabs({
             </Table>
             {data.offer_spread_capped ? <Note>Showing the {int(data.offer_spread.length)} tightest; more floors carry an offer.</Note> : null}
           </>
+        )
+      ) : tab === "movers" ? (
+        data.floor_movers_error || !data.floor_rises || !data.floor_falls ? (
+          <Failed what="Floor movers" />
+        ) : data.floor_rises.length === 0 && data.floor_falls.length === 0 ? (
+          <Note>No edition&apos;s lowest confirmed ask of ${MOVERS_MIN_ASK} or more has moved over the last 7 days.</Note>
+        ) : (
+          (() => {
+            const any = data.floor_rises[0] ?? data.floor_falls[0];
+            const then = calDay(any?.day_then);
+            const now = calDay(any?.day_now);
+            const incomplete = [...data.floor_rises, ...data.floor_falls].some((r) => r.window_complete === false);
+            const table = (rows: MoverRow[], label: string, total: Num | undefined) =>
+              rows.length === 0 ? (
+                <Note>No floor {label === "Rises" ? "rose" : "fell"} over these 7 days.</Note>
+              ) : (
+                <>
+                  <h3 style={{ fontFamily: display, fontWeight: 800, fontSize: 15, letterSpacing: "0.05em", textTransform: "uppercase", color: "var(--rpc-text-primary)", margin: "14px 0 4px" }}>
+                    {label}
+                    {total != null ? <span style={{ fontFamily: mono, fontSize: 11, fontWeight: 400, color: "var(--rpc-text-muted)" }}>{total > rows.length ? ` · top ${int(rows.length)} of ${int(total)}` : ` · ${int(total)}`}</span> : null}
+                  </h3>
+                  <Table head={["Player", "Set · Parallel", `Ask ${then}`, `Ask ${now}`, "Change", "Listed", "Product"]}>
+                    {rows.map((r) => (
+                      <tr key={r.external_id}>
+                        <td style={td}>
+                          <Link href={`/panini-blockchain/edition/${encodeURIComponent(r.external_id)}`} style={{ color: "var(--rpc-text-primary)", textDecoration: "none" }}>
+                            {r.player_name ?? "—"}
+                          </Link>
+                        </td>
+                        <td style={td}>{setLabel(r)}{r.mint_cap != null ? ` /${r.mint_cap}` : ""}</td>
+                        <td style={td}>{usd(r.ask_then_usd)}</td>
+                        <td style={td}>{usd(r.ask_now_usd)}</td>
+                        <td style={{ ...td, color: Number(r.change_pct) > 0 ? "var(--rpc-success-text)" : "var(--rpc-red-text)" }}>{signedPct(r.change_pct)}</td>
+                        <td style={td}>{int(r.listed_now)}</td>
+                        <td style={td}>{r.product_name ?? "—"}</td>
+                      </tr>
+                    ))}
+                  </Table>
+                </>
+              );
+            return (
+              <>
+                <Note>
+                  The lowest ask RPC confirmed on Panini&rsquo;s marketplace on {then} against {now}, biggest moves first. Asks under ${MOVERS_MIN_ASK} on
+                  either day are left out, and so are editions that <b>left the board</b> — no copy re-read in 7 days is not a sale, so it is not a move.
+                  A rise is also left out when a copy at or under the old floor is still marked listed but has not been re-read: that floor aged out, the market did not move.
+                  {any?.computed_at ? ` Updated ${ptDate(any.computed_at)}.` : ""}
+                </Note>
+                {incomplete ? (
+                  <Note>
+                    <b>RPC missed a day of ask readings inside this window</b>, so a move shown here may have happened outside it.
+                  </Note>
+                ) : null}
+                {table(data.floor_rises, "Rises", data.floor_rises_total)}
+                {table(data.floor_falls, "Falls", data.floor_falls_total)}
+              </>
+            );
+          })()
         )
       ) : tab === "holders" ? (
         data.holders_error || !data.holders ? (

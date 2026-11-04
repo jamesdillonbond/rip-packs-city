@@ -88,6 +88,18 @@ const OFFER_SPREAD_COLS =
   "external_id,player_name,set_name,parallel,mint_cap,product_name,sport,floor_serial,ask_usd,best_offer_usd," +
   "offers_on_copy,offer_pct_of_ask,spread_usd,seen_at,fmv_usd,computed_at"
 
+// ── FLOOR MOVERS · 7 DAYS (2026-11-04, Top Shot floor-movers parity) ─────────
+// mv_panini_floor_movers (audit_20261104_panini_floor_movers, daily 12:11 UTC, 10 min after the ask lane): per
+// edition, the lowest confirmed ask on the newest lane day vs 7 days earlier, both $5+ and different. Editions
+// that LEFT the board (no ask re-read in 7 days) are not moves and are excluded; so is a rise where a copy at or
+// under the old floor is still marked listed but was not re-read (an age-out, not the market). window_complete
+// is false when the lane missed a day inside the window — the tab says so rather than presenting the move.
+export const FLOOR_MOVERS_MIN_ASK = 5
+export const FLOOR_MOVERS_LIMIT = 50
+const FLOOR_MOVER_COLS =
+  "external_id,player_name,set_name,parallel,mint_cap,product_name,sport,ask_then_usd,ask_now_usd,listed_now," +
+  "change_usd,change_pct,direction,day_then,day_now,window_complete,computed_at"
+
 interface Read<T> {
   rows: T[] | null
   error: string | null
@@ -139,7 +151,7 @@ export async function fetchPaniniMoreBoards(
     )
     return [wc, all] as const
   })()
-  const [[deals, dealsAll], packs, specials, players, coverage, specialCount, holders, holderCount, spread, spreadCount] = await Promise.all([
+  const [[deals, dealsAll], packs, specials, players, coverage, specialCount, holders, holderCount, spread, spreadCount, rises, falls, moverCount] = await Promise.all([
     dealsPair,
     // WC-only board: since 2026-09-28 panini_pack_ev_board also carries packs of products the model
     // does not price (NULL EV, ev_modeled=false). They belong on the Packs tab, which says "not
@@ -240,6 +252,36 @@ export async function fetchPaniniMoreBoards(
         return { total: null, tight: null, error: err instanceof Error ? err.message : String(err) }
       }
     })(),
+    // Floor movers: biggest rises first, biggest falls first, each its own capped list.
+    read(
+      db.from("mv_panini_floor_movers").select(FLOOR_MOVER_COLS)
+        .eq("direction", "rise")
+        .order("change_pct", { ascending: false })
+        .order("external_id", { ascending: true })
+        .limit(FLOOR_MOVERS_LIMIT),
+      "mv_panini_floor_movers (rises)",
+    ),
+    read(
+      db.from("mv_panini_floor_movers").select(FLOOR_MOVER_COLS)
+        .eq("direction", "fall")
+        .order("change_pct", { ascending: true })
+        .order("external_id", { ascending: true })
+        .limit(FLOOR_MOVERS_LIMIT),
+      "mv_panini_floor_movers (falls)",
+    ),
+    // How many rose / fell in all, so "top 50" never reads as "all of them".
+    (async (): Promise<{ rises: number | null; falls: number | null; error: string | null }> => {
+      try {
+        const base = () => db.from("mv_panini_floor_movers").select("external_id", { count: "exact", head: true })
+        const [r, f] = await Promise.all([base().eq("direction", "rise"), base().eq("direction", "fall")])
+        if (r.error || f.error || r.count == null || f.count == null) {
+          return { rises: null, falls: null, error: (r.error ?? f.error)?.message ?? "count unavailable" }
+        }
+        return { rises: r.count, falls: f.count, error: null }
+      } catch (err) {
+        return { rises: null, falls: null, error: err instanceof Error ? err.message : String(err) }
+      }
+    })(),
   ])
 
   const statuses: BoardStatus[] = [
@@ -250,11 +292,13 @@ export async function fetchPaniniMoreBoards(
     { label: "Players", ok: players.error === null, partial: false },
     { label: "Holders", ok: holders.error === null, partial: false },
     { label: "Bid vs Floor", ok: spread.error === null, partial: false },
+    { label: "Floor movers", ok: rises.error === null && falls.error === null, partial: false },
   ]
-  const errors = [deals, dealsAll, packs, specials, players, coverage, holders, spread].map((r) => r.error).filter(Boolean) as string[]
+  const errors = [deals, dealsAll, packs, specials, players, coverage, holders, spread, rises, falls].map((r) => r.error).filter(Boolean) as string[]
   if (specialCount.error) errors.push(`special serial counts: ${specialCount.error}`)
   if (holderCount.error) errors.push(`holder counts: ${holderCount.error}`)
   if (spreadCount.error) errors.push(`bid vs floor counts: ${spreadCount.error}`)
+  if (moverCount.error) errors.push(`floor mover counts: ${moverCount.error}`)
 
   return {
     payload: {
@@ -286,6 +330,12 @@ export async function fetchPaniniMoreBoards(
       offer_spread_capped: spreadCount.total != null ? spreadCount.total > (spread.rows?.length ?? 0) : (spread.rows?.length ?? 0) >= PANINI_BOARD_LIMIT,
       offer_spread_total: spreadCount.total,
       offer_spread_tight: spreadCount.tight,
+      // One flag for both lists: a tab showing rises with its falls missing would be a half-board.
+      floor_rises: rises.error === null && falls.error === null ? rises.rows : null,
+      floor_falls: rises.error === null && falls.error === null ? falls.rows : null,
+      floor_movers_error: rises.error !== null || falls.error !== null,
+      floor_rises_total: moverCount.rises,
+      floor_falls_total: moverCount.falls,
       coverage: coverage.rows?.[0] ?? null,
       degraded: summarizeDegraded(statuses),
       fetchedAt: new Date().toISOString(),

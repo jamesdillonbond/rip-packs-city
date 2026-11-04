@@ -3460,8 +3460,10 @@ describe("the extractor itself handles both object kinds", () => {
     const registered = new Set(PINS.map((p) => p.test.replace(/^supabase\/tests\//, "")))
     const unregistered = withVerbatim.filter((f) => !registered.has(f))
 
+    // A MATERIALIZED view has no $tag$ body either (2026-11-04: mv_panini_floor_movers). Its pin is not
+    // unguarded — __tests__/panini-floor-movers-pin-matches-migration.test.ts diffs the view body itself.
     const isViewPin = (f: string) =>
-      /CREATE OR REPLACE VIEW|DROP VIEW IF EXISTS/.test(readFileSync(path.join(dir, f), "utf8"))
+      /CREATE OR REPLACE VIEW|DROP VIEW IF EXISTS|CREATE MATERIALIZED VIEW/.test(readFileSync(path.join(dir, f), "utf8"))
     const viewPins = unregistered.filter(isViewPin)
     const realMisses = unregistered.filter((f) => !isViewPin(f))
 
