@@ -886,6 +886,23 @@ describe("CollectionProfileClient", () => {
     expect(document.body.textContent).toContain("MOMENTS40")
   })
 
+  // 2026-11-03: a wallet whose stats are not cached yet added 0 to the sums, so a partial sum was
+  // presented as the total. With one unread wallet the headline reads as a floor ("≥").
+  it("a wallet with unread cached stats makes the totals read as a floor, never a full total", async () => {
+    mount({ wallets: () => json(200, { wallets: [WALLET(), WALLET({ wallet_addr: "0xsecond", cached_fmv: null, cached_moment_count: null })] }) })
+    await waitFor(() => expect(document.body.textContent).toMatch(/Damian Lillard/))
+    await waitFor(() => expect(document.body.textContent).toContain("MOMENTS\u2265 34"))
+    expect(document.body.textContent).toContain("\u2265 $1.2K")
+    // the unread wallet's own row never says "0 MOMENTS"
+    expect(document.body.textContent).not.toMatch(/(^|[^0-9])0 MOMENTS/)
+  })
+
+  it("CONTROL: when every wallet is read, the totals carry no floor marker", async () => {
+    mount({ wallets: () => json(200, { wallets: [WALLET(), WALLET({ wallet_addr: "0xsecond", cached_fmv: 300, cached_moment_count: 6 })] }) })
+    await waitFor(() => expect(document.body.textContent).toContain("MOMENTS40"))
+    expect(document.body.textContent).not.toContain("\u2265")
+  })
+
   it("renders a bio when one loaded", async () => {
     mount()
     await waitFor(() => expect(document.body.textContent).toMatch(/Trevor/))

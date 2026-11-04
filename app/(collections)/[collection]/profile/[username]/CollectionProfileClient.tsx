@@ -19,6 +19,7 @@ import { momentSubjectName } from "@/lib/entity-href"
 import { trackOutboundClick } from "@/lib/track-click";
 import { onChainMomentId } from "@/lib/sniper/helpers";
 import { accentText } from "@/lib/accent-text"
+import { formatCount } from "@/lib/format"
 
 // ── Types ─────────────────────────────────────────────────────────
 interface TrophyMoment {
@@ -706,6 +707,10 @@ export default function CollectionProfileClient({
   const filledCount = trophies.filter(Boolean).length;
   const totalFmv = wallets.reduce(function(sum, w) { return sum + (w.cached_fmv ?? 0); }, 0);
   const totalMoments = wallets.reduce(function(sum, w) { return sum + (w.cached_moment_count ?? 0); }, 0);
+  // 2026-11-03: a wallet whose stats are not cached yet adds nothing to the sums above, so the
+  // headline is a FLOOR when any is unread — say "at least", never present a partial sum as the total.
+  const fmvPartial = wallets.some(function(w) { return w.cached_fmv == null; });
+  const momentsPartial = wallets.some(function(w) { return w.cached_moment_count == null; });
   const totalBadges = wallets.reduce(function(sum, w) { return sum + (w.cached_badges?.length ?? 0); }, 0);
   const rpcScore = wallets.length > 0 ? wallets[0]?.cached_rpc_score ?? null : null;
 
@@ -816,7 +821,7 @@ export default function CollectionProfileClient({
         <div style={{ ...cardStyle, textAlign: "center" }}>
           <div style={labelStyle}>PORTFOLIO FMV</div>
           <div style={{ fontFamily: condensedFont, fontWeight: 900, fontSize: 24, color: "var(--rpc-text-primary)", lineHeight: 1, margin: "8px 0 4px" }}>
-            {totalFmv > 0 ? fmtDollars(totalFmv) : "\u2014"}
+            {totalFmv > 0 ? `${fmvPartial ? "\u2265 " : ""}${fmtDollars(totalFmv)}` : "\u2014"}
           </div>
           {sparkData.length >= 2 && (
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, marginTop: 4 }}>
@@ -832,7 +837,7 @@ export default function CollectionProfileClient({
         <div style={{ ...cardStyle, textAlign: "center" }}>
           <div style={labelStyle}>MOMENTS</div>
           <div style={{ fontFamily: condensedFont, fontWeight: 900, fontSize: 24, color: "var(--rpc-text-primary)", lineHeight: 1, margin: "8px 0 4px" }}>
-            {totalMoments > 0 ? totalMoments.toLocaleString() : "\u2014"}
+            {totalMoments > 0 ? `${momentsPartial ? "\u2265 " : ""}${totalMoments.toLocaleString("en-US")}` : "\u2014"}
           </div>
           <div style={{ fontSize: 8, fontFamily: monoFont, color: "var(--rpc-text-muted)", letterSpacing: "0.1em" }}>
             {walletsLoaded && walletCount != null ? `${walletCount} WALLET${walletCount !== 1 ? "S" : ""}` : "\u2014 WALLETS"}
@@ -896,7 +901,7 @@ export default function CollectionProfileClient({
                   {w.cached_fmv != null && (
                     <div style={{ textAlign: "right" }}>
                       <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 14, color: "var(--rpc-text-primary)" }}>{fmtDollars(w.cached_fmv)}</div>
-                      <div style={{ fontSize: 8, fontFamily: monoFont, color: "var(--rpc-text-muted)" }}>{w.cached_moment_count ?? 0} MOMENTS</div>
+                      <div style={{ fontSize: 8, fontFamily: monoFont, color: "var(--rpc-text-muted)" }}>{formatCount(w.cached_moment_count)} MOMENTS</div>
                     </div>
                   )}
                   {(w.username || w.wallet_addr) && (
