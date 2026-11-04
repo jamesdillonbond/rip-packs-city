@@ -1,4 +1,4 @@
-import { playerPagePath } from "@/lib/player-route"
+import { playerPagePath, isTeamSubject } from "@/lib/player-route"
 import { editionRouteHref } from "@/lib/entity-href"
 import type { Metadata } from 'next'
 import { proxyIpfsUrlAbsolute } from './ipfs-media'
@@ -1188,9 +1188,11 @@ export function playerPageMetadata(
 ): Metadata {
   const collectionLabel = ownMeta(COLLECTION_DISPLAY_NAMES, collectionUrlSlug) ?? "Flow"
   const isCharacter = payload["is_character"] === true
-  const noun = isCharacter ? "Character" : "Player"
   const name = s(payload, "name") ?? "Player"
   const team = s(payload, "team")
+  // A TEAM Moment row ("Detroit Lions" as the player) is a team: never "(Player)", and no "Team: <itself>." (2026-11-04).
+  const teamSubject = isTeamSubject(collectionUrlSlug, { name, team, team_slug: s(payload, "team_slug"), player_slug: playerSlug })
+  const noun = isCharacter ? "Character" : teamSubject ? "Team" : "Player"
   const editionCount = n(payload, "edition_count")
   const fmvTotal = n(payload, "fmv_total_usd")
   const headshot = s(payload, "headshot_url")
@@ -1200,7 +1202,7 @@ export function playerPageMetadata(
   const title = `${name} — ${isCharacter ? "Pins" : isPanini ? "Cards" : "Moments"} & Market Value | ${collectionLabel} | Rip Packs City`
   const descParts = [
     `${name} (${noun}) on ${collectionLabel}.`,
-    team ? `${teamLabel}: ${team}.` : null,
+    team && !teamSubject ? `${teamLabel}: ${team}.` : null,
     // A Pinnacle character page counts PINS (the render catalog, 2026-09-26).
     editionCount ? `${isCharacter ? countNoun(editionCount, "pin", "pins") : countNoun(editionCount, "edition", "editions")}.` : null,
     fmvTotal ? `Portfolio FMV ${fmtUsd(fmvTotal)}${fmvClosedQualifier(collectionUrlSlug)}.` : null,
@@ -1478,9 +1480,11 @@ export function playerJsonLd(detail: Payload, collectionUrlSlug: string, slug: s
   const name = s(detail, "name") ?? "Player"
   const headshot = s(detail, "headshot_url")
   const team = s(detail, "team")
-  const person: LdValue = { "@type": "Person", "@id": url, url, name }
+  // A TEAM Moment row is a SportsTeam, not a Person affiliated with itself (2026-11-04).
+  const teamSubject = isTeamSubject(collectionUrlSlug, { name, team, team_slug: s(detail, "team_slug"), player_slug: slug })
+  const person: LdValue = { "@type": teamSubject ? "SportsTeam" : "Person", "@id": url, url, name }
   if (headshot) person.image = headshot
-  if (team) person.affiliation = { "@type": "SportsTeam", name: team }
+  if (team && !teamSubject) person.affiliation = { "@type": "SportsTeam", name: team }
   return {
     "@context": "https://schema.org",
     "@graph": [

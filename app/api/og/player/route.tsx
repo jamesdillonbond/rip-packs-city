@@ -19,6 +19,7 @@ import { renderEntityOg } from "@/lib/og/entity-card"
 import { ogImageDataUriFirst } from "@/lib/og/img-data"
 import { boundedRead } from "@/lib/api/bounded-read"
 import { OG_FETCH_TIMEOUT_MS } from "@/lib/og/og-fetch"
+import { isTeamSubject } from "@/lib/player-route"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -63,6 +64,8 @@ export async function GET(req: NextRequest) {
   if (!detail) return renderEntityOg({ eyebrow: label.toUpperCase(), title: "Player", images: [], accent, readFailed })
 
   const isCharacter = detail.is_character === true
+  // An All Day / Top Shot TEAM Moment row ("Detroit Lions" as the player) is a team, not a person (2026-11-04).
+  const teamSubject = isTeamSubject(collection, { name: detail.name, team: detail.team, team_slug: detail.team_slug, player_slug: slug })
   // The headshot first when there ever is one, then editions in FMV order.
   // Already a data URI by the time it reaches the card, which renderEntityOg
   // passes through untouched — so the single-hero layout is preserved rather
@@ -71,9 +74,9 @@ export async function GET(req: NextRequest) {
   const portrait = await ogImageDataUriFirst(candidates)
   const editions = detail.edition_count != null ? Number(detail.edition_count) : null
   return renderEntityOg({
-    eyebrow: `${label.toUpperCase()} · ${isCharacter ? "CHARACTER" : "PLAYER"}`,
+    eyebrow: `${label.toUpperCase()} · ${isCharacter ? "CHARACTER" : teamSubject ? "TEAM" : "PLAYER"}`,
     title: detail.name ?? "Player",
-    subtitle: detail.team ?? null,
+    subtitle: teamSubject ? null : (detail.team ?? null),
     accent,
     images: portrait ? [portrait] : [],
     // ⚠ THE CARD CANNOT SEE THIS FOR ITSELF. Resolving the candidates here is

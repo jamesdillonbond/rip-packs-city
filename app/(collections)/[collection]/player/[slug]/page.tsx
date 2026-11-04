@@ -534,6 +534,9 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
   // would be `[]` and the Sets section would silently vanish from a player who
   // has plenty. `editionsOk` is what keeps the two apart.
   const setCards = editionsOk ? buildPlayerSetCards(editions) : []
+  // An All Day / Top Shot TEAM Moment row ("Detroit Lions" as the player) is a team, not a person:
+  // its eyebrow reads the team noun, never "Player" (2026-11-04; 80 such pages across TS + AD).
+  const teamSubject = isTeamSubject(collection, { name: detail.name, team: detail.team, team_slug: detail.team_slug, player_slug: slug })
 
   return (
     <div>
@@ -564,7 +567,7 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
           </div>
 
           <div style={{ display: "flex", flexDirection: "column", gap: 10, minWidth: 0 }}>
-            <div className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.18em", textTransform: "uppercase" }}>{labels.player}</div>
+            <div className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.18em", textTransform: "uppercase" }}>{teamSubject ? labels.team : labels.player}</div>
             <h1 style={{ margin: 0, fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 36, letterSpacing: "0.04em", color: "var(--rpc-text-primary)", lineHeight: 1.05, textTransform: "uppercase" }}>
               {detail.name}
             </h1>
@@ -604,7 +607,7 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
                 follows on its team page, not as a person (isTeamSubject, 2026-10-31). */}
             {parsePlayerHubSlug(slug) && (
               <div>
-                {isTeamSubject(collection, { name: detail.name, team: detail.team, team_slug: detail.team_slug, player_slug: slug }) && teamHref ? (
+                {teamSubject && teamHref ? (
                   <Link data-rpc-player-follow="team-subject" href={teamHref} className="rpc-tap44" style={{ display: "inline-flex", alignItems: "center", padding: "5px 12px", borderRadius: 6, fontFamily: "var(--font-mono)", fontSize: 11, letterSpacing: "0.06em", textDecoration: "none", border: "1px solid var(--rpc-border)", color: "var(--rpc-text-primary)" }}>
                     ☆ Follow {detail.team} on the team page →
                   </Link>
