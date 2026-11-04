@@ -8,7 +8,7 @@
 import { ImageResponse } from "next/og";
 import { NextRequest } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
-import { brandFonts, brandFamilies, OG_CACHE_HEADERS } from "@/lib/og/brand-fonts";
+import { brandFonts, brandFamilies, ogCacheHeaders } from "@/lib/og/brand-fonts";
 import { boundedRead } from "@/lib/api/bounded-read";
 import { OG_FETCH_TIMEOUT_MS } from "@/lib/og/og-fetch";
 
@@ -161,6 +161,8 @@ export async function GET(_req: NextRequest) {
         <div style={{ display: "flex", position: "absolute", bottom: 0, left: 0, height: 8, width: "100%", background: RED }} />
       </div>
     ),
-    { width: 1200, height: 630, ...(fonts ? { fonts } : {}), headers: OG_CACHE_HEADERS }
+    // A card whose read FAILED is cached for a minute, not an hour + a day of SWR (2026-11-04,
+    // lib/og/brand-fonts.ts ogCacheHeaders): editions stays 0 unless the walk covered the whole board.
+    { width: 1200, height: 630, ...(fonts ? { fonts } : {}), headers: ogCacheHeaders(editions === 0) }
   );
 }

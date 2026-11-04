@@ -14,7 +14,7 @@
  */
 import { ImageResponse } from "next/og"
 import { NextRequest } from "next/server"
-import { brandFonts, brandFamilies, OG_CACHE_HEADERS } from "@/lib/og/brand-fonts"
+import { brandFonts, brandFamilies, ogCacheHeaders } from "@/lib/og/brand-fonts"
 import { ogFetch } from "@/lib/og/og-fetch"
 import { shareHeadline } from "@/lib/share-card-view"
 
@@ -169,6 +169,9 @@ export async function GET(req: NextRequest) {
         </div>
       </div>
     ),
-    { width: 1200, height: 630, ...(fonts ? { fonts } : {}), headers: OG_CACHE_HEADERS }
+    // A card whose read FAILED is cached for a minute, not an hour + a day of SWR (2026-11-04,
+    // lib/og/brand-fonts.ts ogCacheHeaders): a cache-cold whale's snapshot can outrun the 10 s read (#228), and the figure-less card it got
+    // then sat at the CDN for up to 25 h while the data was warm a minute later.
+    { width: 1200, height: 630, ...(fonts ? { fonts } : {}), headers: ogCacheHeaders(!fetched) }
   )
 }

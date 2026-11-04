@@ -506,3 +506,30 @@ describe("/api/og/profile — every pinned Moment shows what it has earned", () 
     expect(ogText(capture.c!.element())).toContain("TROPHY CASE")
   })
 })
+
+// 2026-11-04 (#228 follow-through): the withheld card is CORRECT for the moment it renders, but it
+// shipped with the card-wide `s-maxage=3600, stale-while-revalidate=86400`, so a cache-cold whale's
+// snapshot that outran the 10 s read left a figure-less preview at the CDN for up to 25 h while the
+// data was warm a minute later. A failed read now gets the degraded (60 s, no SWR) policy.
+describe("/api/og/share — the cache reflects whether the snapshot read succeeded", () => {
+  const cc = () => (capture.c!.options()?.headers as Record<string, string> | undefined)?.["Cache-Control"]
+
+  it.each([
+    ["a non-2xx snapshot", "notok" as const],
+    ["a thrown fetch", "throws" as const],
+  ])("⭐ %s → cached for a minute, with no stale-while-revalidate", async (_label, mode) => {
+    mockSnapshot(mode)
+    await renderShare()
+    expect(cc()).toMatch(/s-maxage=60\b/)
+    expect(cc()).not.toContain("stale-while-revalidate")
+  })
+
+  it.each([
+    ["a resolved snapshot", "rows" as const],
+    ["a genuinely empty wallet (a successful read)", "empty" as const],
+  ])("NO-CHANGE CONTROL: %s keeps the long cache", async (_label, mode) => {
+    mockSnapshot(mode)
+    await renderShare()
+    expect(cc()).toContain("stale-while-revalidate")
+  })
+})
