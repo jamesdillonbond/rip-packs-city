@@ -1,55 +1,56 @@
 {
-  "generated_at_pt": "2026-11-03 ~1:03 AM PT (scheduled overnight pass, genuine overnight; Cowork cloud, laptop-VM clone + .rpc-git-cred)",
-  "generated_at_utc": "2026-11-03T09:07Z",
-  "pass": "GENUINE OVERNIGHT. Fired 09:03Z = 1:03 AM PT, inside 00:00-06:00 -> normal shipping allowed. Clock no-skew (shell date -u 09:03:09Z == DB now() 09:03:19Z == newest sales.ingested_at 09:03:08Z). Push AVAILABLE (dry-run authenticated). Not frozen. 0 production shipped, 0 reverted. Two docs commits: stranded sweep 79116199b + handoff/ledger/metrics/session. Handoff: docs/handoff-2026-11-03-overnight-pass.md",
+  "generated_at_pt": "2026-11-04 ~1:05 AM PT (scheduled overnight pass, genuine overnight; Cowork cloud, laptop-VM clone + .rpc-git-cred)",
+  "generated_at_utc": "2026-11-04T09:05Z",
+  "pass": "GENUINE OVERNIGHT. Fired 09:03Z = 1:03 AM PT, inside 00:00-06:00 -> normal shipping allowed. Clock no-skew (shell date -u 09:02:53Z ~= DB now() 09:05:15Z ~= newest sales.ingested_at 09:03:09Z). Push AVAILABLE (dry-run authenticated). Not frozen. 0 production shipped, 0 reverted. One docs commit (handoff/ledger/metrics/session). Handoff: docs/handoff-2026-11-04-overnight-pass.md",
   "shipped": 0,
   "reverted": 0,
-  "idle": "Nothing both low-risk and completable this pass. Three inbox filings since last pass: GHA stall + net._http_response both already dispositioned by Claude Code (self-healed / TOAST high-water, not a leak); panini-ingest-throughput was mount-only (carried into origin, QUEUED - laptop Task-Scheduler + possible ingest route-logic = Claude Code/Trevor). No shippable health finding; no dashboard flagged broken.",
-  "verdict": "GREEN. 0 shipped. Security clean (invariants/anon_write_holes/rls_off_base/secdef_anon all []). Trust 0 breaches / 40 legs ok. 0 stalled pipelines. pg_cron []. Post-ship #219/#222/#217/pack-mint-probes GREEN. Vercel last READY 899c6c6fa (=current runtime; 4 newer commits docs-only CANCELED), only chronic graceful-degradation error groups + one 01:03 player-hub bound-exceeded burst. db +366 MB (within band). net._http_response 2772 (down from 2845, within sawtooth). Pinnacle HIGH+MED slide stabilised (909->904).",
+  "idle": "Nothing both low-risk and completable this pass. Two new inbox filings since last pass (#228 timeout recurrence 2026-11-04T0410Z + measurements-owed 2026-11-04T0611Z), BOTH already fully dispositioned by the 11-03 evening Claude Code session. The one notable finding (#228 cold-whale timeout recurring from real users) has no SQL lever left; its documented next step is a CDN warm of top wallets = route/edge work (OFF-LIMITS) -> QUEUED, do not revert. No dashboard flagged broken.",
+  "verdict": "GREEN. 0 shipped. Security clean (invariants/anon_write_holes/rls_off_base/secdef_anon all []). Trust 0 breaches / 40 legs ok. 0 stalled pipelines. pipeline_alerts 4 info (Atlas upstream-403 Cloudflare, every last-200 fresh 09:05Z). gha-schedule-watchdog delivering (last 8 ok, cadence_breach 0). Vercel READY on tip 16dce1389 (= current runtime; ~10 newer docs-only commits CANCELED), only chronic graceful-degradation error groups + the #228 cold-whale timeout. #228 RPC_READ_TIMEOUT recurred from a real www caller 2026-11-04T08:32:27Z (12:32 AM PT) -- honest 503, do NOT revert, next lever CDN warm. db +548 MB (within band, net._http_response sawtooth). FMV HIGH+MED up across TS/panini/nfl/pinnacle.",
   "health": {
     "security_invariants": "clean (invariants [], anon_write_holes [], rls_off_base_tables [], secdef_anon_violations []) via rpc_ops_snapshot.security.",
-    "structural": "stalled_pipelines []. backward_cursor_rewinds [], wmc_null_edition_key [], function_search_path_drift [], procedure pins/txn-control [], cross_collection_mat_staleness [], suppression_*_drift []. sentinel_ts_uuid_editions_48h 0, ts_uuid_dupes_created_24h 0. check_pgcron_recent_failures() [].",
+    "structural": "stalled_pipelines []. wmc_null_edition_key [], backward_cursor_rewinds [], function_search_path_drift [], procedure pins/txn-control [], cross_collection_mat_staleness [], suppression_*_drift []. sentinel_ts_uuid_editions_48h 0, ts_uuid_dupes_created_24h 0.",
     "trust_health_breaches": 0,
-    "trust_health_note": "0 breaches, all 40 legs ok. candy_sales_stale_hours 533.8 (<1114.9, re-verify candy_mlb ~11-27). edition_integrity_flags 22 (<250). panini_fmv_stale_hours 0 (<36). panini_coverage_pct_drop 5.4 (<15). fmv_sanity_flags 0. trust_precompute_max_age 5.33 (<13).",
+    "trust_health_note": "0 breaches, all 40 legs ok. candy_sales_stale_hours 557.7 (<1114.9, re-verify candy_mlb ~11-27). edition_integrity_flags 22 (<250). panini_fmv_stale_hours 0 (<36). panini_coverage_pct_drop 5.9 (<15). fmv_sanity_flags 0. trust_precompute_max_age 5.29 (<13).",
     "stalled_pipelines": "[] (none).",
-    "pipeline_fails_24h": "all low, upstream 0: atlas-pack-market 10, topshot-pack-supply-atlas 7 (designed 404/403), gha-schedule-watchdog 7 (self-healed 16:08->11:38 11-02), pack-nft-identity 4, others <=3. pack-mint-probes 360/360 ok (12 fails last night were an 11-01 DNS blip). pipeline_alerts 2 rows, both info/designed (flow-rest-moment-moved-400, atlas-pack-supply-upstream-404), freshness good.",
+    "pipeline_fails_24h": "all upstream 0 (designed): atlas-pack-market 19, atlas-market-feed 7, topshot-pack-supply-atlas 6, gha-schedule-watchdog 6 (self-healed: last 8 runs ok, verdict delivering, cadence_breach 0), member-wallet-usernames-atlas 2, others <=1. pipeline_alerts 4 info (Atlas editions/market/pack-supply/pack-book upstream-403, Cloudflare ~5-15% base rate, last-200 09:05Z, none at escalation).",
     "sentry": "dark (SDK removed #34). client_error beacon clean.",
-    "vercel": "prod last READY dpl_Ct1yCXeKpPTpHGfHnH7GD4YR55rj on 899c6c6fa (= current runtime). 4 newer commits (a48c9f5f2/1b27a40aa/341be6443/d38934933) CANCELED = docs-only rapid-succession supersession. 24h runtime errors all chronic/graceful (set-activity timeout->empty 09-26; wallet-search Flow computation-limit on one oversized collection 09-14; pack-detail/market-pulse/pack-sniper read-exceeded 08-23/08-16) + a single-minute 01:03 player-hub bound-exceeded burst (~10 hubs, count=1 each, soft non-crashing). NO new crash group.",
-    "db_size_mb": 44715,
-    "db_size_note": "+366 vs last night (44,349 -> 44,715). Within +/-1.3 GB band; no public table >200 MB between passes. Top: panini_card_serials 9,295 (steady Panini growth), wmc 2,857, net._http_response 2,772 (DOWN from 2,845; within documented sawtooth, TOAST high-water per Claude Code d38934933), pack_rips 2,355, sales_2026 2,077.",
-    "post_ship_watch": "GREEN. #219 null_league_classified 0. #222 lock-check-batch all ok, extra.absent_from_chain 0-2 (small), is_locked preserved (skipped_locked 0). #217 reprice-drifted-rips last daily run 11-02 11:26Z ok, next ~4:26 AM PT. pack-mint-probes exact-bracket fix (c692e6b18) 360/360 ok. send-digest idle until Mon 11-09."
+    "vercel": "prod last READY dpl_GguSfdrjt61dhwCQpfvT5UKs8MFi on 16dce1389 (= current runtime; clone HEAD = origin/main). ~10 newer commits CANCELED = docs-only rapid-succession supersession. 24h runtime errors: 3 groups -- #228 collection-snapshot RPC_READ_TIMEOUT (count 9, last 08:32:27Z 11-04, honest 503), ipfs-media body timeout (count 5, last 11-03 21:51Z, chronic), pack-detail allday_pack_lifecycle (count 1, last 11-04 03:53Z, chronic). NO new crash group.",
+    "db_size_mb": 45263,
+    "db_size_note": "+548 vs last night (44,715 -> 45,263). Within +/-1.3 GB band; no public table >200 MB between passes (net._http_response sawtooth).",
+    "post_ship_watch": "#228 cold-whale timeout RECURRED from a real user (last 08:32:27Z 11-04 = www.rippackscity.com) after the 8:30 PM PT 11-03 falsifier restart -- honest 503, not a regression; SQL reductions 20261104013841 + 20261104042335 correct; next lever CDN warm (route/edge, OFF-LIMITS) -> QUEUED, do NOT revert. All other 11-03 ships show no regression signal (fmv_sanity_flags 0, edition_integrity_flags 22, 0 new trust breaches, tip READY). Panini throughput restored 11-03 (fresh-tab runner); FMV fresh (newest 08:46Z), coverage drop 5.9%."
   },
   "fmv_high_med": {
-    "nba_top_shot": 6604,
-    "panini_blockchain": 18001,
-    "nfl_all_day": 1645,
-    "disney_pinnacle": 904,
-    "candy_mlb": 68,
+    "nba_top_shot": 6663,
+    "panini_blockchain": 18027,
+    "nfl_all_day": 1672,
+    "disney_pinnacle": 925,
+    "candy_mlb": 63,
     "laliga_golazos": 1,
     "ufc_strike": 0
   },
-  "fmv_high_med_note": "HIGH+MEDIUM from rpc_ops_snapshot fmv_by_collection (compute 05:35Z). nba HIGH 1173 + MED 5431. panini HIGH 17082 + MED 919. nfl HIGH 172 + MED 1473. pinnacle HIGH 233 + MED 671. candy HIGH 10 + MED 58. golazos MED 1 (no HIGH). ufc 0 (STALE 573 / NO_DATA 44).",
+  "fmv_high_med_note": "HIGH+MEDIUM from rpc_ops_snapshot fmv_by_collection (compute 05:35Z). nba HIGH 1158 + MED 5505. panini HIGH 17124 + MED 903. nfl HIGH 187 + MED 1485. pinnacle HIGH 240 + MED 685. candy HIGH 10 + MED 53. golazos MED 1 (no HIGH). ufc 0 (STALE 573 / NO_DATA 44).",
   "editions_by_collection": {
-    "nba_top_shot": 14600,
-    "panini_blockchain": 40156,
+    "nba_top_shot": 14682,
+    "panini_blockchain": 40217,
     "nfl_all_day": 6190,
     "laliga_golazos": 575,
     "ufc_strike": 617,
     "candy_mlb": 125
   },
-  "editions_note": "~flat vs last night (panini 40,156 +3 / nba 14,600 -9 / nfl 6,190 / golazos 575 / ufc 617 / candy 125).",
-  "deltas_vs_prev": "db +366 MB (44,349 -> 44,715), within band; net._http_response 2,845 -> 2,772 (down, within sawtooth). FMV HIGH+MED: nba 6,578->6,604 (+26); panini 18,022->18,001 (-21); nfl 1,628->1,645 (+17); pinnacle 909->904 (-5, slide stabilised); candy 68 flat; golazos 1 flat; ufc 0 flat. editions ~flat. trust breaches 0->0. Normal churn (0 stale/sanity flags).",
+  "editions_note": "panini 40,217 (+61) / nba 14,682 (+82) / nfl 6,190 / golazos 575 / ufc 617 / candy 125 (last four flat).",
+  "deltas_vs_prev": "db +548 MB (44,715 -> 45,263), within band; FMV HIGH+MED: nba 6,604->6,663 (+59); panini 18,001->18,027 (+26); nfl 1,645->1,672 (+27); pinnacle 904->925 (+21, recovered); candy 68->63 (-5); golazos 1 flat; ufc 0 flat. editions ~flat. trust breaches 0->0. Normal churn (0 stale/sanity flags).",
   "carried_queue": [
-    "panini-ingest-throughput down + old catalogue starving (NEW, inbox 2026-11-02T1900Z carried into origin) - laptop Task-Scheduler env (PANINI_SERIAL_PAGES/walk budget) + optional ingest route-logic walk-order change (OFF-LIMITS); Claude Code/Trevor. 14,576 editions un-repriced 7+ days.",
-    "saved_wallets username root-cause code fix (handoff 2026-11-02-saved-wallets-username-address-path carried into origin) - resolve-and-associate address branch hard-nulls username; Claude Code. 21 existing null rows already backfilled.",
-    "panini-ingest-enum max_silent_minutes (738) recalibration - OPTIONAL, low value (Trevor/Claude Code).",
-    "#58 OPENSEA_API_KEY (P2, Trevor; candy re-verify clock ~11-27) - secret, no sandbox lever.",
-    "topshot-active-listings-ingest egress_blocked (low/medium) - backstop fix shipped 11-01; ages out; monitor."
+    "#228 /api/collection-snapshot cold-whale RPC_READ_TIMEOUT recurring from REAL users on consecutive days (11-03 5:53 PM PT, 11-04 12:32 AM PT) after two SQL reductions -- honest 503 on ~63k+-moment cache-cold wallets, ~1/day. SQL lever exhausted; next lever is a CDN warm of top wallets (#228 lever b) = route/edge, OFF-LIMITS. Trevor/Claude Code, or accept ~1 honest-503/day.",
+    "staged destructive index swap docs/proposals/wmc-snapshot-cover-index-swap-STAGED.sql (drop 342 MB subset, rename 259 MB cover) -- pure hygiene now (planner always picks cover); raised MCP destructive prompt x2 unanswered; Trevor's click.",
+    "panini-ingest old-catalogue backlog drain (night 3) -- throughput restored 11-03, FMV fresh, coverage 5.9% ok; drain = laptop Task-Scheduler env + ingest route-logic (OFF-LIMITS); Claude Code/Trevor.",
+    "saved_wallets username root-cause code fix (handoff 2026-11-02-saved-wallets-username-address-path) -- resolve-and-associate address branch hard-nulls username; 21 null rows already backfilled; Claude Code.",
+    "#58 OPENSEA_API_KEY (P2, Trevor; candy re-verify ~11-27) - secret, no sandbox lever.",
+    "panini-ingest-enum max_silent_minutes (738) recalibration - OPTIONAL, low value.",
+    "topshot-active-listings-ingest egress_blocked - backstop shipped 11-01; ages out; monitor."
   ],
   "resolved_this_pass": [
-    "stranded-output sweep: 2 mount-only files (panini-throughput inbox + saved-wallets handoff) carried into origin (79116199b).",
-    "GHA schedule-tick stall (inbox 11-02T1908Z) -> already self-healed/dispositioned by Claude Code; confirmed.",
-    "net._http_response sawtooth (inbox 11-03T0705Z) -> already dispositioned by Claude Code (TOAST high-water); confirmed 2772 MB (down)."
+    "inbox 2026-11-04T0410Z (#228 timeout recurred) -> already dispositioned by the 11-03 evening session (re-measured, attributed, STALE-only reduction shipped); confirmed + carried the fresh real-user recurrence to the queue.",
+    "inbox 2026-11-04T0611Z (measurements owed) -> all four reads already taken 11-03 ~10:55 PM PT; only residual actionable (destructive index swap) stays Trevor's click."
   ],
-  "housekeeping": "Genuine overnight, normal shipping allowed, 0 production shipped. origin/main = d38934933 at start; advanced only by my own stranded-sweep push. Inbox NOT edited beyond the stranded-file carry + its INDEX line (append-only honored). Ledger: green entry spliced at first ^### . Session entry prepended to docs/sessions/2026-11.md. Lock release pending. Push via laptop-VM clone + .rpc-git-cred."
+  "housekeeping": "Genuine overnight, normal shipping allowed, 0 production shipped. origin/main = 16dce1389 at start and unchanged through the pass. Inbox NOT edited (append-only honored; dispositions in handoff). Ledger: green entry spliced at first ^### (heading count 1482->1483; swallowed/future-dated guards both 0). Session entry prepended to docs/sessions/2026-11.md. Lock release pending. Push via laptop-VM clone + .rpc-git-cred."
 }
