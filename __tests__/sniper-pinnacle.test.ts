@@ -132,6 +132,25 @@ describe("computePinnacleSniperFeed — the live-listing source", () => {
   })
 })
 
+// 2026-11-04: a listing with no character name / no franchise rendered "Unknown" as its title
+// and "· Unknown" as its franchise. Neither is a fact about the pin.
+describe("computePinnacleSniperFeed — a missing name or franchise is never 'Unknown'", () => {
+  it("a nameless pin is titled by its set; a missing franchise is empty (hidden); a named one survives (control)", async () => {
+    const bare = { ...row({ nft_id: "n9", render_id: "R-9" }), character_name: null, franchises: null }
+    state.rows = [bare, row({ nft_id: "n8", render_id: "R-8" })]
+    const res = await computePinnacleSniperFeed()
+    const byId = new Map(res.deals.map((d: any) => [d.flowId, d]))
+    const b: any = byId.get("n9")
+    expect(b).toBeDefined()
+    expect(b.playerName).toBe("Lucasfilm Ltd. • Mandalorian Vol.1")
+    expect(b.teamName).toBe("")
+    expect(JSON.stringify(b)).not.toMatch(/"Unknown"/)
+    const c: any = byId.get("n8")
+    expect(c.playerName).toBe("Grogu")
+    expect(c.teamName).toBe("Star Wars")
+  })
+})
+
 describe("computePinnacleSniperFeed — each listing priced and linked as its own render", () => {
   it("prices against the row's own FMV and keeps only >= 5% discounts", async () => {
     state.rows = [

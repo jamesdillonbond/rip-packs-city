@@ -13,6 +13,7 @@ import { pinnacleSerialFmv, pinnacleSerialFmvData, toMultiplierMap } from "@/lib
 import { isSerialisedEditionType } from "@/lib/pinnacle/serialisation"
 import { applyFmvStalenessPenalty, fmvCannotAnchorDiscount } from "@/lib/sniper/fmv-staleness"
 import { textIncludes } from "@/lib/filter-match"
+import { momentSubjectName } from "@/lib/entity-href"
 
 /** Pinnacle LOW = at most one sale in 30 days: too thin to anchor a discount. */
 export function pinnacleLowIsThin(confidence: string | null | undefined): boolean {
@@ -121,8 +122,11 @@ async function loadLiveDeals(nowMs: number): Promise<{ deals: PinnacleSniperDeal
       flowId: r.nft_id,
       nftId: r.nft_id,
       editionKey: r.legacy_edition_key ?? r.render_id,
-      characterName: r.character_name ?? "Unknown",
-      franchise: r.franchises?.[0] ?? "Unknown",
+      // 2026-11-04: "" not "Unknown" — the row printed "· Unknown" as a franchise and a nameless
+      // pin titled itself "Unknown". The renderers hide an empty franchise; the title falls back
+      // to the set (momentSubjectName below).
+      characterName: r.character_name?.trim() || "",
+      franchise: r.franchises?.[0]?.trim() || "",
       studio,
       setName,
       seriesYear: Number.isFinite(seriesYear) ? seriesYear : null,
@@ -282,7 +286,7 @@ export async function computePinnacleSniperFeed(opts: PinnacleSniperOpts = {}): 
     intEditionKey: null,
     // The pin's own name ("Just Keep Swimming"), as the catalog and the per-pin
     // page call it; the Characters trait ("Dory") is the fallback.
-    playerName: d.pinName || d.characterName,
+    playerName: momentSubjectName(d.pinName || d.characterName, null, d.setName),
     teamName: d.franchise,
     studio: d.studio,
     isChaser: d.isChaser === true,
