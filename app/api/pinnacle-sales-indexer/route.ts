@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { newRowInsertFailureTally, recordRowInsertFailure, rowInsertFailureExtra } from "@/lib/pipeline/row-insert-failures"
 import { supabaseAdmin } from "@/lib/supabase"
 import { fireNextPipelineStep } from "@/lib/pipeline-chain"
+import { tokenMatches } from "@/lib/auth/bearer-secret"
 
 // ── On-chain Disney Pinnacle sales indexer ───────────────────────────────────
 // Scans NFTStorefrontV2.ListingCompleted, filters to Pinnacle NFT purchases,
@@ -149,7 +150,7 @@ async function runIndexer(req: NextRequest) {
   const auth = req.headers.get("authorization") ?? ""
   const bearer = auth.replace(/^Bearer\s+/i, "")
   const urlToken = req.nextUrl.searchParams.get("token") ?? ""
-  if (!TOKEN || (bearer !== TOKEN && urlToken !== TOKEN)) return unauthorized()
+  if (!TOKEN || (!tokenMatches(bearer, "INGEST_SECRET_TOKEN") && !tokenMatches(urlToken, "INGEST_SECRET_TOKEN"))) return unauthorized()
 
   const rangeParam = Number(req.nextUrl.searchParams.get("range") ?? MAX_SCAN_RANGE)
   const maxRange = Math.min(Math.max(rangeParam || MAX_SCAN_RANGE, CHUNK_SIZE), MAX_SCAN_RANGE)

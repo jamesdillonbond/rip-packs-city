@@ -41,6 +41,7 @@
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
+import { tokenMatches } from "@/lib/auth/bearer-secret"
 
 export const maxDuration = 300
 export const dynamic = "force-dynamic"
@@ -211,7 +212,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
   const auth = req.headers.get("authorization") ?? ""
   const bearer = auth.replace(/^Bearer\s+/i, "")
   const urlToken = req.nextUrl.searchParams.get("token") ?? ""
-  if (!TOKEN || (bearer !== TOKEN && urlToken !== TOKEN)) return unauthorized()
+  if (!TOKEN || (!tokenMatches(bearer, "INGEST_SECRET_TOKEN") && !tokenMatches(urlToken, "INGEST_SECRET_TOKEN"))) return unauthorized()
 
   // CRON-30S: this cursor-paginated sweep runs up to ~255s — far past
   // cron-job.org's 30s client cap, so every tick was marked "Failed (timeout)"

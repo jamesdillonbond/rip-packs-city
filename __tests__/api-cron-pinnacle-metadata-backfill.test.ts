@@ -67,6 +67,11 @@ describe("GET /api/cron/pinnacle-metadata-backfill", () => {
 
 describe("GET /api/cron/pinnacle-metadata-backfill — success path (empty queues, no fan-out)", () => {
   const TOKEN = "pinnacle-metadata-token"
+  // Since 2026-11-04 the route reads the secret at CALL time (tokenMatches, by env name), not at
+  // module load, so the top-level beforeEach's reset must be re-applied before each case here.
+  beforeEach(() => {
+    process.env.INGEST_SECRET_TOKEN = TOKEN
+  })
   let GET2: (req: any) => Promise<Response>
   beforeAll(async () => {
     vi.resetModules()

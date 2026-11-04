@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
+import { tokenMatches } from "@/lib/auth/bearer-secret"
 
 // Hourly Pinnacle wmc FMV populator.
 //
@@ -28,7 +29,7 @@ const LIMIT_PER_RUN = 10000
 export async function POST(req: NextRequest) {
   const auth = req.headers.get("authorization") ?? ""
   const bearer = auth.startsWith("Bearer ") ? auth.slice(7) : ""
-  if (!TOKEN || bearer !== TOKEN) {
+  if (!TOKEN || !tokenMatches(bearer, "INGEST_SECRET_TOKEN")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 

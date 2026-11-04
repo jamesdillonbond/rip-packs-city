@@ -1,6 +1,7 @@
 import { parseGameDate } from "@/lib/game-date"
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { tokenMatches } from "@/lib/auth/bearer-secret"
 
 // ── All Day Edition Seed Route ───────────────────────────────────────────────
 //
@@ -164,7 +165,7 @@ export async function POST(req: NextRequest) {
 
   const auth = req.headers.get("authorization")
   const token = auth?.replace("Bearer ", "") ?? ""
-  if (token !== expected) {
+  if (!tokenMatches(token, "INGEST_SECRET_TOKEN")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 

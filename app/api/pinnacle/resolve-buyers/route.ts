@@ -10,6 +10,7 @@
 
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { tokenMatches } from "@/lib/auth/bearer-secret"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 30
@@ -41,11 +42,10 @@ function isAuthorized(req: NextRequest): boolean {
   const authHeader = req.headers.get("authorization") ?? ""
   const bearer = authHeader.replace(/^Bearer\s+/i, "")
   const queryToken = req.nextUrl.searchParams.get("token") ?? ""
-  const ingest = process.env.INGEST_SECRET_TOKEN ?? ""
-  const cron = process.env.CRON_SECRET ?? ""
+  // INGEST_SECRET_TOKEN / CRON_SECRET are read by name inside tokenMatches (constant-time, fail-closed).
   const candidates = [bearer, queryToken].filter(Boolean)
   if (!candidates.length) return false
-  return candidates.some((tok) => (ingest && tok === ingest) || (cron && tok === cron))
+  return candidates.some((tok) => tokenMatches(tok, "INGEST_SECRET_TOKEN", "CRON_SECRET"))
 }
 
 async function processOne(row: ClaimedRow): Promise<Outcome> {

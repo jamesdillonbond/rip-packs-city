@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { normalizeAddress, isCadenceAddress, detectAddressChain } from "@/lib/address"
+import { tokenMatches } from "@/lib/auth/bearer-secret"
 
 export const maxDuration = 60
 
@@ -43,7 +44,7 @@ const DISPATCH_TIMEOUT_MS = 45_000
 export async function POST(req: NextRequest) {
   const token = req.headers.get("x-ingest-token") ?? ""
   const expected = process.env.INGEST_SECRET_TOKEN ?? ""
-  if (!expected || token !== expected) {
+  if (!expected || !tokenMatches(token, "INGEST_SECRET_TOKEN")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 

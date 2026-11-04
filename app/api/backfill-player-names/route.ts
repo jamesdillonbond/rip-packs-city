@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { logTerminalRun } from "@/lib/pipeline/terminal-run"
+import { tokenMatches } from "@/lib/auth/bearer-secret"
 
 // Explicit Vercel Function budget (GHA-triggered; some use after() fire-and-forget).
 export const maxDuration = 300;
@@ -27,7 +28,7 @@ export async function POST(req: NextRequest) {
   // Verify ingest token
   const auth = req.headers.get("authorization") ?? ""
   const token = auth.replace(/^Bearer\s+/i, "")
-  if (!token || token !== ingestToken) {
+  if (!token || !tokenMatches(token, "INGEST_SECRET_TOKEN")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 

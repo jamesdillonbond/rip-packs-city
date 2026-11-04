@@ -61,6 +61,11 @@ describe("POST /api/cron/allday-sales-history-backfill", () => {
 
 describe("POST /api/cron/allday-sales-history-backfill — secret configured (success path)", () => {
   const TOKEN = "allday-history-ingest-token"
+  // Since 2026-11-04 the route reads the secret at CALL time (tokenMatches, by env name), not at
+  // module load, so the top-level beforeEach's reset must be re-applied before each case here.
+  beforeEach(() => {
+    process.env.INGEST_SECRET_TOKEN = TOKEN
+  })
   let POST2: (req: any) => Promise<Response>
   let GET2: (req: any) => Promise<Response>
   const realFetch = globalThis.fetch

@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase"
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 import { COLLECTION_UUID_BY_SLUG, COLLECTIONS } from "@/lib/collections"
 import { ownLookup } from "@/lib/safe-lookup"
+import { tokenMatches } from "@/lib/auth/bearer-secret"
 
 // ── wallet_moments_cache FMV + image populate ────────────────────────────────
 //
@@ -191,9 +192,9 @@ async function runOne(
 function authorize(req: NextRequest): boolean {
   if (!TOKEN) return false
   const urlToken = req.nextUrl.searchParams.get("token") ?? ""
-  if (urlToken === TOKEN) return true
+  if (tokenMatches(urlToken, "INGEST_SECRET_TOKEN")) return true
   const auth = req.headers.get("authorization") ?? ""
-  if (auth.startsWith("Bearer ") && auth.slice(7) === TOKEN) return true
+  if (auth.startsWith("Bearer ") && tokenMatches(auth.slice(7), "INGEST_SECRET_TOKEN")) return true
   return false
 }
 

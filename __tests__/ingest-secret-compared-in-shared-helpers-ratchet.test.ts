@@ -9,10 +9,11 @@ import { readFileSync } from "node:fs"
 // R134 (2026-10-25) moved every RPC_ADMIN_TOKEN compare into lib/auth/bearer-secret.ts
 // (constant-time, by env NAME). The two cron/ingest secrets were not swept: on
 // 2026-11-04, 41 tracked files under app/ and lib/ still compared one of them with
-// `===` / `!==` on their own. Thirteen were converted that day; the rest sit behind the
-// proxy wall (a caller needs the same secret to reach them) and a timing oracle through
-// Vercel is impractical, so they are a RATCHET, not a ban at zero: the count may only
-// FALL. Convert a route to `bearerMatches` / `tokenMatches` and lower CEILING.
+// `===` / `!==` on their own. Thirteen were converted that morning and the remaining 24
+// at ~10:40 AM PT the same day, so this is now a BAN AT ZERO in ratchet clothing: a new
+// route that compares either secret itself fails here. Use `bearerMatches` (full header)
+// or `tokenMatches` (bare token) from lib/auth/bearer-secret.ts — both constant-time and
+// fail-closed when the env var is unset.
 //
 // Scope: a file that READS one of the env vars and ALSO contains a local `===`/`!==`
 // compare between two auth-shaped identifiers (expected/secret/token/bearer/qp/...).
@@ -23,8 +24,8 @@ const READS = /process\.env\.(INGEST_SECRET_TOKEN|CRON_SECRET)\b/
 const LOCAL_COMPARE =
   /process\.env\.(INGEST_SECRET_TOKEN|CRON_SECRET)\s*(===|!==)|(===|!==)\s*process\.env\.(INGEST_SECRET_TOKEN|CRON_SECRET)|\b(expected|secret|TOKEN|CRON|token|ingest|cron|tok|bearer|qp|urlToken|queryToken|provided)\w*\s*(===|!==)\s*(expected|secret|TOKEN|CRON|token|ingest|cron|tok|cronSecret|ingestToken)\b/
 
-/** 2026-11-04 ~9:30 AM PT: 41 before the sweep, 37 after (13 sites converted, some files held several). Lower it; never raise it. */
-const CEILING = 37
+/** 2026-11-04: 41 before the sweep, 37 at ~9:30 AM PT, 0 at ~10:40 AM PT. Never raise it. */
+const CEILING = 0
 
 function tracked(): string[] {
   return execFileSync("git", ["ls-files", "-z", "--", "app", "lib", "components"], { encoding: "utf8" })

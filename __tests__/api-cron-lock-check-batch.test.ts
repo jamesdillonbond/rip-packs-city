@@ -56,6 +56,11 @@ describe("POST /api/cron/lock-check-batch — auth guards", () => {
 
 describe("POST /api/cron/lock-check-batch — success path (immediate 202 ack)", () => {
   const TOKEN = "lock-check-ingest-token"
+  // Since 2026-11-04 the route reads the secret at CALL time (tokenMatches, by env name), not at
+  // module load, so the top-level beforeEach's reset must be re-applied before each case here.
+  beforeEach(() => {
+    process.env.INGEST_SECRET_TOKEN = TOKEN
+  })
   const url = "https://t/api/cron/lock-check-batch"
   const savedIngest = process.env.INGEST_SECRET_TOKEN
   let SPOST: (req: any) => Promise<Response>

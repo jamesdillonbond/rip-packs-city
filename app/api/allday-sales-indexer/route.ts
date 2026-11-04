@@ -1,4 +1,5 @@
 import { parseGameDate } from "@/lib/game-date"
+import { tokenMatches } from "@/lib/auth/bearer-secret"
 import { NextRequest, NextResponse, after } from "next/server"
 import { newRowInsertFailureTally, recordRowInsertFailure, rowInsertFailureExtra } from "@/lib/pipeline/row-insert-failures"
 import { supabaseAdmin } from "@/lib/supabase"
@@ -412,7 +413,7 @@ export async function POST(req: NextRequest) {
   const auth = req.headers.get("authorization") ?? ""
   const bearer = auth.replace(/^Bearer\s+/i, "")
   const urlToken = req.nextUrl.searchParams.get("token") ?? ""
-  if (!TOKEN || (bearer !== TOKEN && urlToken !== TOKEN)) return unauthorized()
+  if (!TOKEN || (!tokenMatches(bearer, "INGEST_SECRET_TOKEN") && !tokenMatches(urlToken, "INGEST_SECRET_TOKEN"))) return unauthorized()
 
   const chain = req.nextUrl.searchParams.get("chain") === "true"
   const rangeParam = Number(req.nextUrl.searchParams.get("range") ?? DEFAULT_SCAN_RANGE)
@@ -1270,3 +1271,4 @@ interface HydratedHit {
 export async function GET(req: NextRequest) {
   return POST(req)
 }
+

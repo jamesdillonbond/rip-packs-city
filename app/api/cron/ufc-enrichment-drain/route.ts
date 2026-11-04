@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse, after } from "next/server"
+import { tokenMatches } from "@/lib/auth/bearer-secret"
 import { supabaseAdmin } from "@/lib/supabase"
 import { COLLECTION_UUID_BY_SLUG } from "@/lib/collections"
 
@@ -175,7 +176,7 @@ interface NullRow {
 export async function POST(req: NextRequest) {
   const auth = req.headers.get("authorization") ?? ""
   const bearer = auth.startsWith("Bearer ") ? auth.slice(7) : ""
-  if (!TOKEN || bearer !== TOKEN) {
+  if (!TOKEN || !tokenMatches(bearer, "INGEST_SECRET_TOKEN")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
@@ -389,3 +390,4 @@ async function logRun(
     // best-effort — never let logging failure crash the drain
   }
 }
+

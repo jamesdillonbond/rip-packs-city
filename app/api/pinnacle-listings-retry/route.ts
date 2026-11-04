@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse, after } from "next/server"
+import { tokenMatches } from "@/lib/auth/bearer-secret"
 import { supabaseAdmin } from "@/lib/supabase"
 
 // ── Pinnacle listing-resolution retry cron ──────────────────────────────────
@@ -202,7 +203,7 @@ export async function POST(req: NextRequest) {
   const auth = req.headers.get("authorization") ?? ""
   const bearer = auth.replace(/^Bearer\s+/i, "")
   const urlToken = req.nextUrl.searchParams.get("token") ?? ""
-  if (!TOKEN || (bearer !== TOKEN && urlToken !== TOKEN)) return unauthorized()
+  if (!TOKEN || (!tokenMatches(bearer, "INGEST_SECRET_TOKEN") && !tokenMatches(urlToken, "INGEST_SECRET_TOKEN"))) return unauthorized()
 
   const startedAt = new Date().toISOString()
   const start = Date.now()

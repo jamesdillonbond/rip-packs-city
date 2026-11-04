@@ -225,4 +225,7 @@ id_rsa
 id_rsa.*
 id_ed25519
 id_ed25519.*
-.npmrc
+# .npmrc IS tracked since 2026-11-04 (ignore-scripts + min-release-age — CISO pass).
+# It must never carry an _authToken: __tests__/npmrc-carries-no-credential.test.ts
+# allow-lists its keys, and GitHub push protection catches an npm_ token anyway.
+!.npmrc

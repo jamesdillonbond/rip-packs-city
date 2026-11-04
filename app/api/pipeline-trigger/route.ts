@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse, after } from "next/server"
+import { tokenMatches } from "@/lib/auth/bearer-secret"
 
 const TOKEN = process.env.INGEST_SECRET_TOKEN ?? ""
 
 function authorized(req: NextRequest): boolean {
   if (!TOKEN) return false
   const auth = req.headers.get("authorization") ?? ""
-  if (auth.startsWith("Bearer ") && auth.slice(7) === TOKEN) return true
+  if (auth.startsWith("Bearer ") && tokenMatches(auth.slice(7), "INGEST_SECRET_TOKEN")) return true
   const qp = req.nextUrl.searchParams.get("token") ?? ""
-  return qp === TOKEN
+  return tokenMatches(qp, "INGEST_SECRET_TOKEN")
 }
 
 export async function GET(req: NextRequest) {

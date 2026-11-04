@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse, after } from "next/server"
+import { tokenMatches } from "@/lib/auth/bearer-secret"
 import { supabaseAdmin } from "@/lib/supabase"
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 import { ownLookup } from "@/lib/safe-lookup"
@@ -231,7 +232,7 @@ async function runCadenceLock(
 export async function POST(req: NextRequest) {
   const auth = req.headers.get("authorization") ?? ""
   const bearer = auth.startsWith("Bearer ") ? auth.slice(7) : ""
-  if (!TOKEN || bearer !== TOKEN) {
+  if (!TOKEN || !tokenMatches(bearer, "INGEST_SECRET_TOKEN")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
@@ -470,3 +471,4 @@ async function runBatch(startedAtIso: string): Promise<void> {
     `[lock-check-batch] done ok=${!writeError && groupErrors.length === 0 && batchReadErrors.length === 0} found=${candidates.length} written=${inserted} wallets=${walletsProcessed} ms=${Date.now() - started}`
   )
 }
+

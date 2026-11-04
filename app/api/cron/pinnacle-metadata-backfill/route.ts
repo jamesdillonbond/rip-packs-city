@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse, after } from "next/server"
+import { tokenMatches } from "@/lib/auth/bearer-secret"
 import { omitUnread } from "@/lib/db/omit-unread"
 import { createClient } from "@supabase/supabase-js"
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
@@ -395,7 +396,7 @@ export async function GET(req: NextRequest) {
   const auth = req.headers.get("authorization") ?? ""
   const bearer = auth.startsWith("Bearer ") ? auth.slice(7) : ""
   const tokenQuery = req.nextUrl.searchParams.get("token") ?? ""
-  if (!TOKEN || (bearer !== TOKEN && tokenQuery !== TOKEN)) {
+  if (!TOKEN || (!tokenMatches(bearer, "INGEST_SECRET_TOKEN") && !tokenMatches(tokenQuery, "INGEST_SECRET_TOKEN"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 

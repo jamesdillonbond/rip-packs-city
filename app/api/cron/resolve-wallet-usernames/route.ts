@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { tokenMatches } from "@/lib/auth/bearer-secret"
 
 // POST /api/cron/resolve-wallet-usernames — Bearer $INGEST_SECRET_TOKEN (or ?token=)
 //
@@ -97,7 +98,7 @@ export async function POST(req: NextRequest) {
   const auth = req.headers.get("authorization") ?? ""
   const bearer = auth.replace(/^Bearer\s+/i, "")
   const urlToken = req.nextUrl.searchParams.get("token") ?? ""
-  if (!TOKEN || (bearer !== TOKEN && urlToken !== TOKEN)) {
+  if (!TOKEN || (!tokenMatches(bearer, "INGEST_SECRET_TOKEN") && !tokenMatches(urlToken, "INGEST_SECRET_TOKEN"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 

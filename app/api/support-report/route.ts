@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from "next/server";
 /* ------------------------------------------------------------------ */
 
 import { createClient } from "@supabase/supabase-js";
+import { tokenMatches } from "@/lib/auth/bearer-secret"
 const supabase: any = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -20,7 +21,7 @@ export async function GET(req: NextRequest) {
     req.nextUrl.searchParams.get("token") ||
     req.headers.get("x-ingest-token");
 
-  if (!expected || token !== expected) {
+  if (!expected || !tokenMatches(token, "INGEST_SECRET_TOKEN")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

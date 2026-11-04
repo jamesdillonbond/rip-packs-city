@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { isStudioTwinOf, normFlowAddr } from "@/lib/pinnacle/studio-twin"
+import { tokenMatches } from "@/lib/auth/bearer-secret"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Disney Pinnacle sales-history backfill via the Dapper studio-platform GQL.
@@ -354,8 +355,8 @@ async function run(req: NextRequest): Promise<NextResponse> {
   const TOKEN = process.env.INGEST_SECRET_TOKEN ?? ""
   const CRON = process.env.CRON_SECRET ?? ""
   const authedOk =
-    (TOKEN.length > 0 && (bearer === TOKEN || urlToken === TOKEN)) ||
-    (CRON.length > 0 && (bearer === CRON || urlToken === CRON))
+    (TOKEN.length > 0 && (tokenMatches(bearer, "INGEST_SECRET_TOKEN") || tokenMatches(urlToken, "INGEST_SECRET_TOKEN"))) ||
+    (CRON.length > 0 && (tokenMatches(bearer, "CRON_SECRET") || tokenMatches(urlToken, "CRON_SECRET")))
   if (!authedOk) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
   const startedAt = new Date().toISOString()

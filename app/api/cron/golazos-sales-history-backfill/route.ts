@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { tokenMatches } from "@/lib/auth/bearer-secret"
 import { supabaseAdmin } from "@/lib/supabase"
 import { dropAlreadyRecorded } from "@/lib/ingest/already-recorded"
 import { decodeV1SaleTx } from "@/lib/chains/flow/dapper-v1-tx-decode"
@@ -401,8 +402,8 @@ async function run(req: NextRequest): Promise<NextResponse> {
   const urlToken = req.nextUrl.searchParams.get("token") ?? ""
   const CRON = process.env.CRON_SECRET ?? ""
   const authedOk =
-    (TOKEN.length > 0 && (bearer === TOKEN || urlToken === TOKEN)) ||
-    (CRON.length > 0 && (bearer === CRON || urlToken === CRON))
+    (TOKEN.length > 0 && (tokenMatches(bearer, "INGEST_SECRET_TOKEN") || tokenMatches(urlToken, "INGEST_SECRET_TOKEN"))) ||
+    (CRON.length > 0 && (tokenMatches(bearer, "CRON_SECRET") || tokenMatches(urlToken, "CRON_SECRET")))
   if (!authedOk) return unauthorized()
 
   const startedAt = new Date().toISOString()

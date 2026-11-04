@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { parseOfferCompletedFill, buildOfferFillSales, insertOfferFillSales, type OfferFillEvent } from "@/lib/chains/flow/topshot-offer-fill"
 import { unwrapCdc, parseOfferAvailable as parseAvailable, resolveOfferTargets, type AvailOffer } from "@/lib/chains/flow/topshot-offer-available"
+import { tokenMatches } from "@/lib/auth/bearer-secret"
 
 // ── On-chain Top Shot offers indexer ─────────────────────────────────────────
 //
@@ -116,7 +117,7 @@ export async function POST(req: NextRequest) {
   const auth = req.headers.get("authorization") ?? ""
   const bearer = auth.replace(/^Bearer\s+/i, "")
   const urlToken = req.nextUrl.searchParams.get("token") ?? ""
-  if (!TOKEN || (bearer !== TOKEN && urlToken !== TOKEN)) return unauthorized()
+  if (!TOKEN || (!tokenMatches(bearer, "INGEST_SECRET_TOKEN") && !tokenMatches(urlToken, "INGEST_SECRET_TOKEN"))) return unauthorized()
 
   const startTime = Date.now()
   const rangeParam = Number(req.nextUrl.searchParams.get("range") ?? PER_TICK_RANGE)

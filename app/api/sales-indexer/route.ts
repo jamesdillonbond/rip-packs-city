@@ -7,6 +7,7 @@ import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 import { fireNextPipelineStep } from "@/lib/pipeline-chain"
 import { decodeTopShotSaleTx } from "@/lib/chains/flow/dapper-v1-tx-decode"
 import crypto from "crypto"
+import { tokenMatches } from "@/lib/auth/bearer-secret"
 
 // The chain scan + ingest runs in after() so cron-job.org gets a fast 202
 // instead of timing out on the synchronous ~24-33s body. Vercel keeps the
@@ -145,7 +146,7 @@ export async function POST(req: NextRequest) {
   const auth = req.headers.get("authorization") ?? ""
   const bearer = auth.replace(/^Bearer\s+/i, "")
   const urlToken = req.nextUrl.searchParams.get("token") ?? ""
-  if (!TOKEN || (bearer !== TOKEN && urlToken !== TOKEN)) return unauthorized()
+  if (!TOKEN || (!tokenMatches(bearer, "INGEST_SECRET_TOKEN") && !tokenMatches(urlToken, "INGEST_SECRET_TOKEN"))) return unauthorized()
 
   // Fire-and-forget: schedule the scan + ingest, return 202 immediately so
   // cron-job.org reports Success instead of a cosmetic timeout. The route is

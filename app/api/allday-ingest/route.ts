@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { tokenMatches } from "@/lib/auth/bearer-secret"
 
 // Explicit Vercel Function budget (GHA-triggered; some use after() fire-and-forget).
 export const maxDuration = 300;
@@ -21,7 +22,7 @@ function checkAuth(req: NextRequest): boolean {
   if (!token) return false
   const bearer = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "")
   const urlToken = req.nextUrl.searchParams.get("token") ?? ""
-  return bearer === token || urlToken === token
+  return tokenMatches(bearer, "INGEST_SECRET_TOKEN") || tokenMatches(urlToken, "INGEST_SECRET_TOKEN")
 }
 
 export async function POST(req: NextRequest) {
