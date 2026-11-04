@@ -129,6 +129,28 @@ describe("GET /api/send-digest", () => {
     expect(body.text).not.toContain("P&L")
   })
 
+  // 2026-11-03: `total_moments ?? 0` printed "(0 moments)" beside a real FMV total when the count was unread.
+  it("omits the moment count when it was not read — never '(0 moments)' — and formats a read one", async () => {
+    seedOneSubscriber()
+    state.rpc.get_cross_collection_portfolio = { data: { total_fmv: 1234, collection_count: 2, total_moments: null, collections: [{}, {}] }, error: null }
+    process.env.RESEND_API_KEY = "re_test"
+    let fetchMock = vi.fn(async () => ({ ok: true }) as any)
+    vi.stubGlobal("fetch", fetchMock)
+    await GET(req(`Bearer ${TOKEN}`))
+    let body = JSON.parse(String((fetchMock.mock.calls[0] as any[])[1].body))
+    expect(body.html).toContain("across 2 collections")
+    expect(body.html).not.toMatch(/\(0 moments\)/)
+    expect(body.text).not.toMatch(/\(0 moments\)/)
+
+    seedOneSubscriber()
+    state.rpc.get_cross_collection_portfolio = { data: { total_fmv: 1234, collection_count: 2, total_moments: 12345, collections: [{}, {}] }, error: null }
+    fetchMock = vi.fn(async () => ({ ok: true }) as any)
+    vi.stubGlobal("fetch", fetchMock)
+    await GET(req(`Bearer ${TOKEN}`))
+    body = JSON.parse(String((fetchMock.mock.calls[0] as any[])[1].body))
+    expect(body.text).toContain("(12,345 moments)")
+  })
+
   it("prints P&L scoped to moments with a known purchase price when cost basis exists", async () => {
     seedOneSubscriber()
     state.rpc.get_cross_collection_portfolio = { data: { total_fmv: 1234, collection_count: 2, total_moments: 9, total_pnl: 50, total_cost_basis: 400, collections: [{}, {}] }, error: null }

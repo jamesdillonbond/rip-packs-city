@@ -23,6 +23,11 @@ function fmtUsd(n: number | null | undefined): string {
   return "$" + Number(n).toFixed(2)
 }
 
+// " (1,234 moments)", or nothing when the count was not read — never "(0 moments)" (2026-11-03).
+function momentsSuffix(n: unknown): string {
+  return typeof n === "number" && Number.isFinite(n) ? ` (${n.toLocaleString("en-US")} moments)` : ""
+}
+
 // Database text (player / set / collection names) goes into HTML — escape it.
 function esc(v: unknown): string {
   return String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] as string)
@@ -99,7 +104,7 @@ async function buildEmail(origin: string, sub: Subscriber, market: MarketBlocks)
 
   const portfolioBlock = portfolio && portfolio.collections?.length
     ? `<h3 style="margin-top:24px">Your Portfolio</h3>
-       <p><strong>Total FMV:</strong> ${fmtUsd(portfolio.total_fmv)} across ${portfolio.collection_count ?? portfolio.collections.length} collections (${portfolio.total_moments ?? 0} moments)</p>
+       <p><strong>Total FMV:</strong> ${fmtUsd(portfolio.total_fmv)} across ${portfolio.collection_count ?? portfolio.collections.length} collections${momentsSuffix(portfolio.total_moments)}</p>
        ${pnlText ? `<p><strong>P&L:</strong> ${pnlText}</p>` : ""}`
     : ""
 
@@ -137,7 +142,7 @@ async function buildEmail(origin: string, sub: Subscriber, market: MarketBlocks)
   // and is unreadable in text-only clients.
   const lines: string[] = ["Rip Packs City — Weekly Digest", ""]
   if (portfolio && portfolio.collections?.length) {
-    lines.push("YOUR PORTFOLIO", `Total FMV: ${fmtUsd(portfolio.total_fmv)} across ${portfolio.collection_count ?? portfolio.collections.length} collections (${portfolio.total_moments ?? 0} moments)`)
+    lines.push("YOUR PORTFOLIO", `Total FMV: ${fmtUsd(portfolio.total_fmv)} across ${portfolio.collection_count ?? portfolio.collections.length} collections${momentsSuffix(portfolio.total_moments)}`)
     if (pnlText) lines.push(`P&L: ${pnlText}`)
     lines.push("")
   }
