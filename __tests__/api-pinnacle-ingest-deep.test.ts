@@ -76,11 +76,28 @@ describe("POST /api/pinnacle-ingest — ingest", () => {
     expect((await POST(post("?token=nope") as any)).status).toBe(401)
   })
 
+  // 2026-11-03: a pin with no character name was upserted as character "Unknown" (and studio "Unknown").
+  it("skips and counts a pin with no character name — never upserts an invented 'Unknown'", async () => {
+    st.batch = [
+      nft({ id: "n1", nftView: { traits: { traits: [{ editionKey: "ekA", royaltyCode: "rc1", characterName: "Mickey" }] } } }),
+      nft({ id: "n2", editionKey: "ekB", nftView: { traits: { traits: [{ editionKey: "ekB", royaltyCode: "rc2" }] } } }),
+    ]
+    const body = await (await POST(post() as any)).json()
+    const upserts = rpc.mock.calls.filter((c) => c[0] === "upsert_pinnacle_edition")
+    expect(upserts).toHaveLength(1)
+    expect(upserts[0][1]).toMatchObject({ p_edition_key: "ekA", p_character_name: "Mickey", p_studio: null })
+    // franchise keeps its NOT NULL fallback by decision (20261103190350); character and studio are never invented
+    expect(upserts.map((c) => c[1].p_character_name)).not.toContain("Unknown")
+    expect(upserts.map((c) => c[1].p_studio)).not.toContain("Unknown")
+    expect(body.editionsSkippedUnnamed).toBe(1)
+  })
+
   it("dedups editions, skips no-key rows, tallies upsert errors", async () => {
     st.batch = [
-      nft({ id: "a", nftView: { traits: { traits: [{ editionKey: "ek1", royaltyCode: "rc" }] } } }),
-      nft({ id: "b", nftView: { traits: { traits: [{ editionKey: "ek1", royaltyCode: "rc" }] } } }), // dup → deduped
-      nft({ id: "c", nftView: { traits: { traits: [{ editionKey: "ek2", royaltyCode: "rc" }] } } }),
+      // re-pinned 2026-11-03: each named (a pin with no character is now skipped and counted)
+      nft({ id: "a", nftView: { traits: { traits: [{ editionKey: "ek1", royaltyCode: "rc", characterName: "Mickey" }] } } }),
+      nft({ id: "b", nftView: { traits: { traits: [{ editionKey: "ek1", royaltyCode: "rc", characterName: "Mickey" }] } } }), // dup → deduped
+      nft({ id: "c", nftView: { traits: { traits: [{ editionKey: "ek2", royaltyCode: "rc", characterName: "Goofy" }] } } }),
       nft({ id: "d", nftView: { traits: { traits: [{ editionKey: null, royaltyCode: "rc" }] } } }), // no key → skipped
     ]
     rpc.mockImplementation(async (name: string, params?: any) => {
@@ -100,7 +117,7 @@ describe("POST /api/pinnacle-ingest — ingest", () => {
   it("never writes the contract's placeholder as a thumbnail (it would overwrite real art)", async () => {
     st.batch = [
       nft({ id: "a", card: { max: "1", images: [{ url: "https://assets.disneypinnacle.com/on-chain/pinnacle.jpg" }] } }),
-      nft({ id: "b", nftView: { traits: { traits: [{ editionKey: "ek2", royaltyCode: "rc" }] } }, card: { max: "1", images: [{ url: "https://real.example/art.png" }] } }),
+      nft({ id: "b", nftView: { traits: { traits: [{ editionKey: "ek2", royaltyCode: "rc", characterName: "Goofy" }] } }, card: { max: "1", images: [{ url: "https://real.example/art.png" }] } }),
     ]
     const sent: Record<string, unknown> = {}
     rpc.mockImplementation(async (name: string, params?: any) => {

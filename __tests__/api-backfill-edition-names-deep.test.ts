@@ -110,6 +110,27 @@ describe("backfill-edition-names — on-chain metadata fill", () => {
     })
   })
 
+  // 2026-11-03: an unread set name used to produce "Damian Lillard — Unknown Set" in editions.name.
+  it("never builds a name with an invented set: an unread set name leaves `name` unwritten", async () => {
+    state.fcl = (cadence: string) => (cadence.includes("getSetName") ? "" : fullMetaFcl(cadence))
+    const spy = install({
+      editions: [
+        { data: [{ id: "e9", external_id: "93:46", name: null, tier: null, series: null }], error: null },
+        { error: null },
+        { count: 0, error: null } as never,
+      ],
+      "rpc:execute_sql": { data: [], error: null },
+    })
+    const res = await POST(req())
+    expect(res.status).toBe(200)
+    const upd = (spy.writes.editions ?? []).find((w) => w.method === "update")
+    expect(upd?.rows[0]).toBeDefined()
+    expect(upd?.rows[0]).not.toHaveProperty("name")
+    expect(JSON.stringify(spy.writes)).not.toContain("Unknown Set")
+    // the other read fields are still written
+    expect(upd?.rows[0]).toMatchObject({ tier: "RARE", play_type: "Handles" })
+  })
+
   it("counts an edition with no updatable metadata as failed and never writes it", async () => {
     state.fcl = (cadence: string) => {
       if (cadence.includes("getNumMomentsInEdition")) return 0

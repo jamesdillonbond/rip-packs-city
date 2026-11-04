@@ -57,6 +57,9 @@ export async function POST(req: NextRequest) {
 
     let editionsUpserted = 0
     let editionErrors = 0
+    // 2026-11-03: a pin whose traits name no character is skipped and counted, never upserted as
+    // "Unknown" (the same rule pinnacle-metadata-backfill took this morning, 20261103190350).
+    let editionsSkippedUnnamed = 0
     let mapErrors = 0
     const seenEditions = new Set<string>()
 
@@ -83,13 +86,21 @@ export async function POST(req: NextRequest) {
       if (seenEditions.has(editionData.editionKey)) continue
       seenEditions.add(editionData.editionKey)
 
+      const characterName = typeof editionData.characterName === "string" ? editionData.characterName.trim() : ""
+      if (!characterName) {
+        editionsSkippedUnnamed++
+        continue
+      }
+
       const mintCount = nft.card.max ? parseInt(nft.card.max, 10) : null
 
       const { error } = await (supabaseAdmin as any).rpc("upsert_pinnacle_edition", {
         p_edition_key: editionData.editionKey,
-        p_character_name: editionData.characterName ?? "Unknown",
+        p_character_name: characterName,
         p_franchise: editionData.franchise ?? "Unknown",
-        p_studio: editionData.studio ?? "Unknown",
+        // NULL, not "Unknown": the column default was dropped 11-03 and the RPC keeps a stored value
+        // over a NULL on conflict (its COALESCE(EXCLUDED, …) — see the thumbnail note below).
+        p_studio: editionData.studio ?? null,
         p_set_name: editionData.setName ?? "",
         p_royalty_code: editionData.royaltyCode,
         p_series_year: editionData.seriesYear ?? null,
@@ -178,6 +189,7 @@ export async function POST(req: NextRequest) {
       done,
       editionsUpserted,
       editionErrors,
+      editionsSkippedUnnamed,
       mapErrors,
       salesInserted,
       recalcRan: recalc,

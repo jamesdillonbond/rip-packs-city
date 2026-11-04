@@ -145,8 +145,10 @@ export async function POST(req: NextRequest) {
           // Build update payload — preserve existing name/tier/series if already set
           const update: Record<string, any> = {}
 
-          if (!e.name && playerName) {
-            update.name = playerName + " — " + (setInfo.name || "Unknown Set")
+          // 2026-11-03: only when the set name was READ. "<player> — Unknown Set" stored an invented
+          // set into editions.name; an unread set leaves the name NULL for a later fill instead.
+          if (!e.name && playerName && setInfo.name) {
+            update.name = playerName + " — " + setInfo.name
           }
           if (e.tier == null) {
             const tier = formatTier(playMeta)
