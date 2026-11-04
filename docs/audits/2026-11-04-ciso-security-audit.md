@@ -60,6 +60,9 @@ Auth wall, with negative controls: `/dashboard`, `/trades`, `/api/trades`, `/api
 
 ## 5. Trevor's list (each ≤ 2 clicks; in priority order)
 
+> **Status as of 11:30 AM PT, same day** (details in known-issues #229): 1 — deny rule ✅ published; the two rate-limit rules still yours (dashboard refused them from a session; spend). 2 — Dependabot ✅ on (#231 resolved after the vitest/vite bump); branch protection drafted, needs your passkey at Create (block force-push + deletion only; the repo-settings API is proxy-refused for sessions, re-tested 11:30 AM). 3 — ✅ applied (`20261104173011`). 4 — leaked-password protection ✅ on, CAPTCHA left off on purpose; **MFA per provider still yours to confirm**. 5 — ✅ arms deleted (`79a329c`). 6 — rotation still yours. The original list follows unchanged.
+
+
 1. **Vercel → Firewall → Rules → Review Changes → Publish.** A "Block sensitive paths" deny rule (`/.env`, `/.git`, `/wp-admin`, `/wp-login.php`, `/xmlrpc.php`, `/phpmyadmin`, `/cgi-bin`, `/.aws`) is drafted and unpublished; free. Then, if you accept **$0.50 per 1M allowed requests**: add two rate-limit rules — `/api/*` without an `Authorization` header, excluding `/api/cron` and `/api/ingest`: **300 / 60 s per IP**; non-API, non-asset page paths: **240 / 60 s per IP**. These are what the in-process limiter cannot do. (The config API returned 404 until a first publish exists, and the dashboard renderer froze the Chrome tab three times, so I could not finish it from here.)
 2. **GitHub → Settings → Code security:** turn on **Dependabot alerts** (a `dependabot.yml` exists but alerts are off; the session proxy refuses repo-settings writes). **Branches:** protect `main` with "require status checks" at minimum — today anyone with push can land without CI.
 3. **Apply `supabase/migrations/20261104174500_audit_20261104_profile_bio_username_shape_and_ci_unique.sql`** (dashboard SQL editor; 0 rows would fail it).
