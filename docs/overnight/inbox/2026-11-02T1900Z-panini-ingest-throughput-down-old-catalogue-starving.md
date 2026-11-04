@@ -66,3 +66,17 @@ Fixed in `bfe6467` (wait ends on a RESPONSE; an empty TOP answer still reads REC
 **~9:50 PM PT:** the 8:00 PM walk-only run finished: `walk done 1153/40197 in 105m`; `tab_opened=1004 tab_empty=108 tab_missed=20 top_unanswered=0 late_responses=1 records=23463`; `recent sales: opened=1112 missed=0`. At ~1,100 cards per walk-only run (about half of the 12 daily runs) plus ~500 per full run, the rate is roughly 9–10k editions/day, against the ≥ 5,740/day the 7-day line needs. The daily 11 AM PT Panini freshness check's `old_older_7d` / oldest-age reading is the exit signal; once it falls under the 10-26 boundary level (~1.5k, oldest < 172 h), mark this filing RESOLVED. Levers B and C (serial pages, walk budget) are no longer needed.
 
 **CLOSED (Claude Code local, 7:25 AM PT 11-04):** the rate held on six more runs (8 PM 11-03 through 6 AM 11-04): ~650-700 cards per 105-min walk budget, ~25-38 sale records/card, 4,325 editions walked in 12 h. The old-catalogue drain needs no env change: 18,580 of 40,249 editions older than 7 d, ~2.2 days to clear at ~8.5k/day. The 4 AM run is ~1.5x slower because the Team Walk (3:35-5:24 AM) shares the Chrome; both take ~1 h 50 min, so there is no free slot, and the cost is accepted. Archive at will.
+
+**REOPENED as a watch (Cowork cloud, 11-04 ~9:20 AM PT): the old-catalogue backlog is still GROWING, and the 11-04 7:25 AM "~2.2 days to clear" read left out the inflow.** Read on `panini_fmv_snapshots` (Query 6b re-run as of now and of 1/2/3 days ago):
+
+| as of | editions with price older than 7 d | oldest price |
+|---|---|---|
+| 11-01 ~9 AM PT | 12,550 | 241.5 h |
+| 11-02 | 14,411 | 249.8 h |
+| 11-03 | 15,212 | 254.8 h |
+| 11-04 ~9 AM PT | **18,624** | **262.3 h** (10.9 d) |
+
+- The walk IS stalest-first and every walked card is priced: 6,105 editions walked in the last 24 h, 6,105 priced, 0 walked-but-unpriced. Their previous prices were 7–11 days old (2,436 at 7 d, 310 at 8 d, 621 at 10 d, 2,649 at 11 d; 93 new).
+- **The binding number is the catalogue size, not the walk.** 40,249 editions ÷ 7 days = **5,750 walks/day just to hold every price under 7 days**. The measured 24 h rate is 6,105/day (not 8.5k: that was a 12-h sample), a ~6 % margin. At that margin the backlog shrinks by a few hundred a day at best, so `old_older_7d ≥ 5` stays true for weeks. Dividing the backlog by the walk rate ("18,580 ÷ 8.5k = 2.2 days") ignores the ~5.75k editions that cross the 7-day line every day.
+- Consequence for the 11 AM PT check (`trig_01K68ddYeWqUumNN2RavC4ht`): Escalation 5 firing daily is TRUE, not a false alarm, so item E (gate on age only, > 216 h) would ALSO fire (oldest 262 h). Left unedited.
+- **Exit signal:** `old_older_7d` falls day over day for 3 consecutive days AND the oldest price drops under 216 h. **The lever, if wanted:** walk throughput above ~7k/day (e.g. the 4 AM run's Team Walk overlap, the 105-min budget), or a longer staleness bar for editions with no sale in 90 d. That is runner / laptop work (Claude Code or Trevor), not SQL.
