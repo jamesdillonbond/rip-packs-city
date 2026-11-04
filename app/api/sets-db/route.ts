@@ -9,6 +9,7 @@ import { supabaseAdmin } from "@/lib/supabase"
 import { classifySetTier } from "@/lib/set-completion-tier"
 import { safeApiError, statusForSafeError } from "@/lib/api-error"
 import { ownLookup } from "@/lib/safe-lookup"
+import { momentSubjectName } from "@/lib/entity-href"
 
 // 🚨 `disney-pinnacle` was REMOVED 2026-09-20 and must not come back. This route
 // joins `editions` + `sets` on `collection_id`, and Pinnacle has **0 rows in
@@ -28,6 +29,8 @@ type EditionRow = {
   id: string
   set_id: string | null
   set_name: string | null
+  team_name?: string | null
+  play_type?: string | null
   player_name: string | null
   tier: string | null
   thumbnail_url: string | null
@@ -77,7 +80,7 @@ export async function GET(req: NextRequest) {
     const editions: EditionRow[] = await fetchAllPaged<EditionRow>((from, to) =>
       (supabaseAdmin as any)
         .from("editions")
-        .select("id, set_id, set_name, player_name, tier, thumbnail_url, external_id")
+        .select("id, set_id, set_name, player_name, team_name, play_type, tier, thumbnail_url, external_id")
         .eq("collection_id", collectionId)
         .not("set_id", "is", null)
         .order("id", { ascending: true })
@@ -131,7 +134,9 @@ export async function GET(req: NextRequest) {
       list.push({
         editionId: ed.id,
         momentId: o.moment_id,
-        playerName: ed.player_name ?? "Unknown",
+        // 2026-11-03: the subject we actually READ — player, else team, else the play type / set — never the
+        // word "Unknown" (All Day's 36 "NFL Draft · Draft Pick" redemption editions carry no player by design).
+        playerName: momentSubjectName(ed.player_name, ed.team_name, ed.play_type ?? ed.set_name),
         tier: (ed.tier ?? "COMMON").toUpperCase(),
         serial: o.serial_number,
         thumb: ed.thumbnail_url,

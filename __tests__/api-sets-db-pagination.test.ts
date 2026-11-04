@@ -156,10 +156,13 @@ describe("GET /api/sets-db — ownership aggregation", () => {
     expect(s1.missingCount).toBe(3)
     expect(s1.completionPct).toBe(40)
     expect(s1.tradeableCompletionPct).toBe(20)
-    // e0's null tier/player_name take the COMMON / Unknown fallbacks in owned[]
+    // e0's null tier takes the COMMON fallback; its null player_name takes the set name (2026-11-03)
     const ownedE0 = s1.owned.find((o: any) => o.playId === "e0")
     expect(ownedE0.tier).toBe("COMMON")
-    expect(ownedE0.playerName).toBe("Unknown")
+    // ⚠ INVERTED 2026-11-03: a nameless edition is labelled by what we READ (team, else play type, else set) —
+    // here the set — never the word "Unknown" (momentSubjectName).
+    expect(ownedE0.playerName).not.toBe("Unknown")
+    expect(ownedE0.playerName).toBe("Ignored")
     // missing[] uses the em-dash / COMMON fallbacks for its rows
     expect(s1.missing.every((m: any) => typeof m.playerName === "string")).toBe(true)
   })
