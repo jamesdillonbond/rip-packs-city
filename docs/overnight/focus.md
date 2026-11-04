@@ -4,6 +4,13 @@
 
 **Rewrite rule for whoever edits this next: a focus file STEERS the next night, it is not an archive.** If a section is describing something that shipped more than ~a week ago and is not still a live trap, move it to the ledger and delete it here. A stale steer is worse than no steer.
 
+## STEER — added 2026-11-04 3:28 PM PT (Claude Code cloud) — HANDED TO COWORK: run the staged delete of 4,361 fake Top Shot sales
+
+- **Run `docs/proposals/atlas-backfill-cancelled-listing-sales-delete-STAGED.sql` as ONE statement batch** (dashboard SQL editor in Trevor's Chrome, or `apply_migration`). It is one DO block + one `DROP FUNCTION`; it RAISEs and rolls back unless exactly 4,361 rows go. The claude.ai Supabase connector timed out on its destructive confirmation twice (~2:50 and ~3:27 PM PT) with no prompt reaching Trevor — the same shape as the 11-04 index swap. If Cowork's connector declines too, do NOT route around it; leave this steer open.
+- **What it is:** cancelled Top Shot LISTINGS that the 09-09 Atlas recovery wrote into `sales` (ledger 11-04 "4,361 Top Shot sales are cancelled LISTINGS"). Backup already applied: `audit_20261104_atlas_backfill_cancelled_listing_sales` (`20261104224945`, 4,361 rows).
+- **Pre-check:** `select count(*) from sales s join public.audit_20261104_atlas_backfill_cancelled_listing_sales b on b.id = s.id` = 4,361.
+- **After:** the same count = 0; `backfill_topshot_sales_from_atlas_events` absent from `pg_proc`; record the migration file named for its version (SQL-editor path: insert the `schema_migrations` row by hand, as `20261102191500` did); delete the staged file; ledger; mark this steer ANSWERED. Spot check `/nba-top-shot/edition/241:8054` Activity: the three @edgede rows gone.
+
 ## STEER — added 2026-11-04 2:27 PM PT (Claude Code cloud) — refresh-conflated-editions missed its 7:17 AM PT tick; read the 11-05 tick
 
 - **What fired:** `cron_silent` (medium) on `refresh-conflated-editions` — last run AND heartbeat 11-03 7:17 AM PT, nothing for the 11-04 7:17 AM PT slot (classification `not_invoked`: no heartbeat, so the request never reached the work, or was refused before it). Every other cron-job.org lane fired through the morning (sentinel, sales indexers), so cron-job.org itself was up; the miss is this one entry or this one request. Not today's auth changes: R133 (`79a329cdf`, 9:48 AM) and R150 (10:45 AM) shipped after the slot.
