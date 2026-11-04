@@ -14,7 +14,8 @@
 --     (accent-folded players with a plain-spelling ALIAS, team FRANCHISES, sets
 --     across series), aliases never count toward a rank, a second identical run
 --     changes nothing, and an EMPTY stage refuses to wipe the table;
---   · the 7-day figure comes from market_cap_daily and is NULL without history.
+--   · the 7-day figure comes from market_cap_daily and is NULL without history, or when that
+--     day knew supply on a different set of editions (> 2 % apart; 2026-11-04).
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
 -- (supabase/migrations/20261003213500_audit_20261003_market_cap_current_daily_history_and_four_more_supply_sources.sql);
@@ -351,7 +352,11 @@ BEGIN
          round(a.s_mcap, 2),
          CASE WHEN a.n_capped > 0 THEN round(coalesce(a.s_mcap_hm, 0), 2) END,
          round(a.s_mcap_minted, 2),
-         d.mcap_usd
+         -- 2026-11-04: a 7-day baseline counts only when it covered the same editions (supply known on
+         -- within 2 % of today's count). Candy MLB's 10-28 row knew 9 of 125 and printed "+550.4 %".
+         CASE WHEN a.n_known > 0
+               AND abs(d.editions_supply_known - a.n_known) <= 0.02 * a.n_known
+              THEN d.mcap_usd END
   FROM agg a
   LEFT JOIN market_cap_daily d
     ON p_group = 'collection' AND d.snapshot_date = v_day7 AND d.collection_slug = a.coll
@@ -590,7 +595,11 @@ BEGIN
   SELECT m.collection_slug, m.group_label, m.editions, m.editions_supply_known, m.editions_priced,
          m.minted, m.burned, m.issuer_held, m.collector_held,
          m.mcap_usd, m.mcap_high_conf_usd, m.mcap_minted_usd, m.mcap_rank, m.groups_ranked,
-         d.mcap_usd, st.refreshed_at
+         -- 2026-11-04: comparable baseline only (supply known on within 2 % of today's editions).
+         CASE WHEN m.editions_supply_known > 0
+               AND abs(d.editions_supply_known - m.editions_supply_known) <= 0.02 * m.editions_supply_known
+              THEN d.mcap_usd END,
+         st.refreshed_at
   FROM market_cap_current m
   LEFT JOIN market_cap_daily d
     ON d.snapshot_date = v_day7 AND d.collection_slug = m.collection_slug
@@ -763,6 +772,28 @@ DELETE FROM public.editions WHERE external_id = '1:3';
 SELECT _assert((SELECT (r->>'deleted')::int > 0 FROM (SELECT refresh_market_cap_current() r) x), 'the refresh reports retired rows');
 SELECT _assert(NOT EXISTS (SELECT 1 FROM market_cap_current WHERE grain = 'edition' AND match_key = '1:3'),
   'a vanished edition''s row is retired');
+
+-- ── 2026-11-04: the 7-day figure compares like with like ─────────────────
+-- Candy MLB's overview read "+550.4 %": its 10-28 daily row knew supply for 9 of 125 editions. A baseline
+-- counts only when its editions_supply_known is within 2 % of today's; otherwise NULL ("no comparable figure").
+-- Board, collection grain: today Top Shot knows supply on 3 of 5 editions.
+INSERT INTO public.market_cap_daily VALUES
+  ((now() AT TIME ZONE 'America/Los_Angeles')::date - 7, 'nba_top_shot', 'collection', 'nba_top_shot', 'nba_top_shot', 5, 1, 10, 20.00, 20.00, now());
+SELECT _assert((SELECT mcap_usd_7d_ago IS NULL FROM get_market_cap_board('collection', 'nba_top_shot')),
+  'a 7-day baseline that knew supply on 1 of today''s 3 editions is NOT comparable → NULL, never "+800 %"');
+UPDATE public.market_cap_daily SET editions_supply_known = 3, mcap_usd = 150.00
+ WHERE grain = 'collection' AND group_key = 'nba_top_shot' AND snapshot_date = (now() AT TIME ZONE 'America/Los_Angeles')::date - 7;
+SELECT _assert_eq((SELECT mcap_usd_7d_ago::text FROM get_market_cap_board('collection', 'nba_top_shot')), '150.00',
+  'a baseline with the same coverage is the 7-day figure');
+-- Entity tile: alice's baseline (above) matches; a baseline with one more known edition does not.
+UPDATE public.market_cap_daily SET editions_supply_known = editions_supply_known + 1
+ WHERE grain = 'player' AND group_key = 'alice' AND snapshot_date = (now() AT TIME ZONE 'America/Los_Angeles')::date - 7;
+SELECT _assert((SELECT mcap_usd_7d_ago IS NULL FROM get_market_cap_entity('player', 'nba_top_shot', 'alice')),
+  'entity tile: a baseline that knew a different number of editions is NULL');
+UPDATE public.market_cap_daily SET editions_supply_known = editions_supply_known - 1
+ WHERE grain = 'player' AND group_key = 'alice' AND snapshot_date = (now() AT TIME ZONE 'America/Los_Angeles')::date - 7;
+SELECT _assert_eq((SELECT mcap_usd_7d_ago::text FROM get_market_cap_entity('player', 'nba_top_shot', 'alice')), '100.00',
+  'entity tile: restoring the same coverage restores the 7-day figure');
 
 -- An EMPTY stage (every source read failed) must refuse, leaving the table intact.
 DELETE FROM public.editions; DELETE FROM public.pinnacle_catalog;

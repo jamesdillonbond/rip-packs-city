@@ -147,7 +147,8 @@ const PINS = [
     // an unknown collection → zero rows, and known caps ranking ahead of unknown.
     fn: "get_market_cap_board",
     test: "supabase/tests/get_market_cap_board.sql",
-    migration: "supabase/migrations/20261003213500_audit_20261003_market_cap_current_daily_history_and_four_more_supply_sources.sql",
+    // Re-pointed 2026-11-04: the 7-day baseline must cover the same editions (within 2 %).
+    migration: "supabase/migrations/20261104235053_audit_20261104_market_cap_7d_change_needs_a_comparable_baseline.sql",
   },
   {
     // Added 2026-10-03. The ONE per-edition supply x FMV row set the board, the
@@ -161,7 +162,8 @@ const PINS = [
     // tile: matched by each page's own slug rule; no match → zero rows, never $0.
     fn: "get_market_cap_entity",
     test: "supabase/tests/get_market_cap_board.sql",
-    migration: "supabase/migrations/20261003221539_audit_20261003_market_cap_series_and_pinnacle_character_franchise_tiles.sql",
+    // Re-pointed 2026-11-04: the 7-day baseline must cover the same editions (within 2 %).
+    migration: "supabase/migrations/20261104235053_audit_20261104_market_cap_7d_change_needs_a_comparable_baseline.sql",
   },
   {
     // Added 2026-10-03. Recomputes market_cap_current (entity tiles) + the PT-dated
