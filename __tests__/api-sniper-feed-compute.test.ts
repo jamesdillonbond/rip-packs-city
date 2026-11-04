@@ -243,6 +243,23 @@ describe("sniper-feed enrichment fan-out (populated lookups)", () => {
     expect(body.deals.every((d: { daysSinceSale: number }) => d.daysSinceSale === 2)).toBe(true)
   })
 
+  // 2026-11-03: `series_number ?? 0` made an unknown series Top Shot's REAL series 0 ("Series 1"), defeating
+  // seriesName's own `sn != null` guard. Unknown must read as no label; a known series keeps its label (control).
+  it("a listing with no series_number gets no series label — never 'Series 1' by default", async () => {
+    const base = enrichedTables()
+    const rows = (base as any).ts_listings.data as any[]
+    rows.forEach((r: any, i: number) => { r.series_number = i % 2 === 0 ? null : 4 })
+    fx.tables = base
+    const body = await (await GET(get("?collection=nba-top-shot"))).json()
+    const byFlow = new Map(body.deals.map((d: any) => [d.flowId, d]))
+    const unknown = rows.filter((r: any) => r.series_number == null).map((r: any) => byFlow.get(r.flow_id)).filter(Boolean)
+    const known = rows.filter((r: any) => r.series_number === 4).map((r: any) => byFlow.get(r.flow_id)).filter(Boolean)
+    expect(unknown.length, "no unknown-series deal priced — the fixture no longer exercises the arm").toBeGreaterThan(0)
+    expect(unknown.every((d: any) => d.seriesName === "")).toBe(true)
+    expect(known.length).toBeGreaterThan(0)
+    expect(known.every((d: any) => d.seriesName !== "")).toBe(true)
+  })
+
   it("survives a badge_editions read error (badges degrade, deals still price)", async () => {
     fx.tables = enrichedTables({
       badge_editions: { data: null, error: { message: "badges down" } },

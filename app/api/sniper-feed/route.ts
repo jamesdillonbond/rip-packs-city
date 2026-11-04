@@ -727,7 +727,9 @@ async function fetchTopShotPool(
         playerName: r.player_name ?? undefined,
         setName: r.set_name ?? undefined,
         momentTier: r.moment_tier ?? "COMMON",
-        setSeriesNumber: r.series_number ?? 0,
+        // 2026-11-03: undefined, NOT 0, when the row has no series. 0 is a real Top Shot series ("Series 1"),
+        // so `?? 0` defeated seriesName's own `sn != null` guard and labelled an unknown series "Series 1".
+        setSeriesNumber: r.series_number ?? undefined,
         isLocked: r.is_locked ?? false,
         listingOrderID: r.listing_id,
         setPlay: { setID, playID, parallelID },
