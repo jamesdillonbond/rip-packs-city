@@ -104,6 +104,21 @@ describe("GET /api/wallet-sales-history — sales (uuid) path", () => {
     expect(body.rows[0].side).toBe("sell")
   })
 
+  // 2026-11-03: `Number(r.price_usd) || 0` turned a sale with no recorded price into a $0 sale — and
+  // `Number(null)` is 0, so the old code could not even tell "no price" from "free". A real price survives.
+  it("a sale with no recorded price is null, never a $0 sale; a real price survives (control)", async () => {
+    state.rows = {
+      data: [
+        { price_usd: null, sold_at: "2026-07-02T00:00:00Z", marketplace: "flowty", serial_number: 6, buyer_address: "0x0000000000000000", seller_address: "0xbd94cade097e50ac", editions: { player_name: "Ja Morant", set_name: "Base Set", tier: "COMMON" } },
+        { price_usd: "17.5", sold_at: "2026-07-01T00:00:00Z", marketplace: "flowty", serial_number: 5, buyer_address: "0x0000000000000000", seller_address: "0xbd94cade097e50ac", editions: { player_name: "Ja Morant", set_name: "Base Set", tier: "COMMON" } },
+      ],
+      error: null,
+    }
+    const body = await (await GET(req("https://t/api/wallet-sales-history?wallet=0xbd94cade097e50ac&collection=nba-top-shot"))).json()
+    expect(body.rows[0].price_usd).toBeNull()
+    expect(body.rows[1].price_usd).toBe(17.5)
+  })
+
   it("attributes a buy when buyer == wallet, and tolerates editions-as-array", async () => {
     state.rows = {
       data: [

@@ -62,7 +62,7 @@ export default function SalesHistoryCard({ wallet, urlSlug }: { wallet: string; 
                 <td className="py-1.5 pr-2 text-[color:var(--rpc-text-primary)]">{s.player_name ?? "—"}</td>
                 <td className="py-1.5 pr-2 text-[color:var(--rpc-text-secondary)]">{s.set_name ?? "—"}</td>
                 <td className="py-1.5 pr-2 text-[color:var(--rpc-text-secondary)]">{s.serial_number ? `#${s.serial_number}` : "—"}</td>
-                <td className="py-1.5 pr-2 text-right text-[color:var(--rpc-text-primary)]">{fmt(Number(s.price_usd) || 0)}</td>
+                <td className="py-1.5 pr-2 text-right text-[color:var(--rpc-text-primary)]">{s.price_usd == null ? "—" : fmt(Number(s.price_usd))}</td>
                 <td className="py-1.5 pr-2 text-[color:var(--rpc-text-secondary)]">{s.marketplace ?? "—"}</td>
                 <td className="py-1.5 text-right text-[color:var(--rpc-text-muted)]">{s.sold_at ? relativeDate(s.sold_at) : "—"}</td>
               </tr>

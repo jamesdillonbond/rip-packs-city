@@ -46,10 +46,18 @@ type SaleRow = {
   set_name: string | null
   tier: string | null
   serial_number: number | null
-  price_usd: number
+  // null = the sale carries no price we could read — never a $0 sale (2026-11-03)
+  price_usd: number | null
   marketplace: string | null
   sold_at: string
   side: "buy" | "sell"
+}
+
+/** A sale price, or null when none was read. `Number(null)` is 0, so the null check comes first. */
+function priceOrNull(v: unknown): number | null {
+  if (v === null || v === undefined || v === "") return null
+  const n = Number(v)
+  return Number.isFinite(n) ? n : null
 }
 
 export async function GET(req: NextRequest) {
@@ -105,7 +113,7 @@ export async function GET(req: NextRequest) {
           set_name: pin?.set_name ?? edition?.set_name ?? null,
           tier: pin?.edition_type ?? edition?.edition_type ?? null,
           serial_number: r.serial_number ?? null,
-          price_usd: Number(r.sale_price_usd) || 0,
+          price_usd: priceOrNull(r.sale_price_usd),
           marketplace: r.source ?? null,
           sold_at: r.sold_at,
           side: isBuyer ? "buy" : "sell",
@@ -129,7 +137,7 @@ export async function GET(req: NextRequest) {
           set_name: edition?.set_name ?? null,
           tier: edition?.tier ?? null,
           serial_number: r.serial_number ?? null,
-          price_usd: Number(r.price_usd) || 0,
+          price_usd: priceOrNull(r.price_usd),
           marketplace: r.marketplace ?? null,
           sold_at: r.sold_at,
           side: isBuyer ? "buy" : "sell",

@@ -43,6 +43,17 @@ describe("SalesHistoryCard", () => {
     expect(fetchMock.mock.calls[0][0]).toContain("collection=nba-top-shot")
   })
 
+  // 2026-11-03: the route now sends price_usd null for a sale with no recorded price; the card must
+  // print a dash for it, never "$0.00" (it used to coerce `Number(x) || 0`).
+  it("a sale with no recorded price renders a dash, not $0.00", async () => {
+    fetchMock.mockReturnValueOnce(
+      okJson({ rows: [{ side: "sell", player_name: "Ja Morant", set_name: "Base", serial_number: 3, price_usd: null, marketplace: "topshot", sold_at: "2026-04-01T00:00:00Z" }] }),
+    )
+    const { getByText, queryByText } = render(<SalesHistoryCard wallet="0xW" urlSlug="nba-top-shot" />)
+    await waitFor(() => expect(getByText("Ja Morant")).toBeTruthy())
+    expect(queryByText("$0.00")).toBeNull()
+  })
+
   it("heads the name column Character on Pinnacle", async () => {
     fetchMock.mockReturnValueOnce(
       okJson({ rows: [{ side: "buy", player_name: "Grogu", set_name: "D23", serial_number: null, price_usd: 3, marketplace: "pinnacle", sold_at: "2026-09-01T00:00:00Z" }] }),
