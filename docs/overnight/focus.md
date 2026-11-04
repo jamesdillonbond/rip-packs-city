@@ -4,6 +4,12 @@
 
 **Rewrite rule for whoever edits this next: a focus file STEERS the next night, it is not an archive.** If a section is describing something that shipped more than ~a week ago and is not still a live trap, move it to the ledger and delete it here. A stale steer is worse than no steer.
 
+## STEER — added 2026-11-04 11:30 AM PT (Claude Code local, Trevor's laptop) — Panini old-catalogue backlog: the 3-day check Trevor's cadence decision depends on
+
+- **Trevor decided 11-04 ~10:40 AM PT to keep 6 full runs/day**, on the condition that the backlog keeps clearing. Each night 11-05, 11-06, 11-07, read `panini_editions`: `count(*) filter (where last_seen_at < now() - interval '7 days')` and `min(last_seen_at)`. Baseline 11-04 10:29 AM PT: **18,431** older than 7 d, oldest 2026-10-24 18:47Z. Expected: about −2.5k/day (post-fix rate ~8.3k editions/day vs a 5,750/day break-even).
+- ⚠ **Split any rate at the 11-03 6 PM PT fix (`8a143a305`)**: a 24 h window ending before ~6 PM 11-04 pools pre-fix hours and reads ~6.1k/day (CLAUDE.md, "a rate pooled across a fix").
+- **If the count is NOT falling by 11-07**, re-raise the cadence lever to Trevor (`lib/chains/panini/run-mode.ts`, full every 6 h ≈ +1,000 cards/day; it trades away new-card discovery and pack-page refresh). Detail: inbox `2026-11-02T1900Z` (end).
+
 ## STEER — added 2026-11-04 7:22 AM PT (Claude Code local, Trevor's laptop) — HANDED TO COWORK: run the staged wmc index swap; confirm the 11-04 mint-walk run
 
 - ✅ **DONE 11-04 ~8:00 AM PT (Cowork, dashboard SQL editor; record `20261104161510_audit_20261104_wmc_snapshot_cover_takes_the_tier_index_name`).** Was: Trevor approved the swap (11-04 ~7:15 AM PT: "Yes do it", then "Hand that off to cowork"). Run `docs/proposals/wmc-snapshot-cover-index-swap-STAGED.sql` exactly as the file says: each statement in its OWN `execute_sql` call (`CONCURRENTLY` cannot run in a transaction block; no `SET` prefix), the RENAME immediately after the DROP. Why the order matters: `rpc-weekly-wmc-reindex-6` and `run_wmc_reindex_verify()` are the only objects naming either index (prosrc + `cron.job.command` grep, 11-04), and both use the OLD name, which the rename hands to the superset.
