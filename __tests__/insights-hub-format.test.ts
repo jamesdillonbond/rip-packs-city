@@ -44,6 +44,14 @@ describe("insights-hub-format · liveStat", () => {
     expect(liveStat("/insights/pinnacle-scarcity", S)).toBe("777 editions ranked")
   })
 
+  it("puts thousands separators on the four counts that printed raw (2026-11-03: \"2893 editions ranked\")", () => {
+    const big = { ...S, rookieCount: 1200, crossCohort: 3050, setSqueezeSets: 4200, pinnacleEditions: 2893 }
+    expect(liveStat("/insights/rookies", big)).toMatch(/· 1,200 rookies$/)
+    expect(liveStat("/insights/cross-collection", big)).toBe("3,050 wallets hold 3+ collections")
+    expect(liveStat("/insights/set-squeeze", big)).toBe("4,200 sets ranked")
+    expect(liveStat("/insights/pinnacle-scarcity", big)).toBe("2,893 editions ranked")
+  })
+
   it("returns null for a card with no live stat (and for a null slug)", () => {
     expect(liveStat("/insights/account-value", S)).toBeNull()
     expect(liveStat("/insights/unknown-board", S)).toBeNull()

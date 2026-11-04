@@ -21,6 +21,17 @@ export function formatCount(value: number | null | undefined): string {
   return Number(value).toLocaleString("en-US")
 }
 
+/**
+ * A count read from an untyped payload: a finite number, or null when the field is absent or
+ * unparseable. Never a stand-in 0 — `Number(x ?? 0)` turns a missing count into "0 squeezed",
+ * a claim (2026-11-03, /share/[wallet]). Pair with formatCount, which renders null as "—".
+ */
+export function countOrNull(v: unknown): number | null {
+  if (v === null || v === undefined || v === "") return null
+  const n = Number(v)
+  return Number.isFinite(n) ? n : null
+}
+
 // ── Enum / slug → display label ─────────────────────────────────────────────
 //
 // Raw snake_case metadata (pack_type, tier, edition_kind, event_kind …) leaks

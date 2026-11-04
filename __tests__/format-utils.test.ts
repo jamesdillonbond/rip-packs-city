@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { formatCurrency, formatCount, humanizeLabel, dedupeLabelParts, metaField, joinMetaParts } from "@/lib/format"
+import { formatCurrency, formatCount, countOrNull, humanizeLabel, dedupeLabelParts, metaField, joinMetaParts } from "@/lib/format"
 import { borderCosmetic, bannerCosmetic } from "@/lib/cosmetics"
 
 // Small shared utilities: money/count formatting, market scope key, edition
@@ -133,5 +133,20 @@ describe("joinMetaParts", () => {
   })
   it("keeps input order and does NOT dedupe (that is dedupeLabelParts' job)", () => {
     expect(joinMetaParts(["Gold", "Gold"], " · ")).toBe("Gold · Gold")
+  })
+})
+
+describe("countOrNull — a missing count is null, never a stand-in 0 (2026-11-03)", () => {
+  it("keeps real numbers, including a real 0, and numeric strings", () => {
+    expect(countOrNull(0)).toBe(0)
+    expect(countOrNull(7646)).toBe(7646)
+    expect(countOrNull("10328")).toBe(10328)
+  })
+  it("returns null for absent or unparseable values — not 0", () => {
+    for (const v of [null, undefined, "", "abc", NaN, Infinity, {}]) expect(countOrNull(v)).toBeNull()
+  })
+  it("pairs with formatCount: a missing count renders as an em dash, not '0'", () => {
+    expect(formatCount(countOrNull(undefined))).toBe("—")
+    expect(formatCount(countOrNull(10328))).toBe("10,328")
   })
 })

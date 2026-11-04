@@ -1,4 +1,5 @@
 import Link from "next/link"
+import { countOrNull, formatCount } from "@/lib/format"
 import type { Metadata } from "next"
 import ShareButton from "./ShareButton"
 import SaveToCollectionCTA from "./SaveToCollectionCTA"
@@ -118,11 +119,12 @@ interface WalletIntelHighlight {
 
 interface WalletIntel {
   wallet: string
-  ts_moments: number
-  ts_fmv: number
-  squeezed_count: number
-  rookie_count: number
-  trophy_count: number
+  // null = the API did not return the count. Never coerced to 0: "0 squeezed" is a claim.
+  ts_moments: number | null
+  ts_fmv: number | null
+  squeezed_count: number | null
+  rookie_count: number | null
+  trophy_count: number | null
   highlights: WalletIntelHighlight[]
 }
 
@@ -136,11 +138,11 @@ async function fetchWalletIntel(wallet: string): Promise<WalletIntel | null> {
     if (!data || typeof data !== "object" || data.error) return null
     return {
       wallet: data.wallet ?? wallet,
-      ts_moments: Number(data.ts_moments ?? 0),
-      ts_fmv: Number(data.ts_fmv ?? 0),
-      squeezed_count: Number(data.squeezed_count ?? 0),
-      rookie_count: Number(data.rookie_count ?? 0),
-      trophy_count: Number(data.trophy_count ?? 0),
+      ts_moments: countOrNull(data.ts_moments),
+      ts_fmv: countOrNull(data.ts_fmv),
+      squeezed_count: countOrNull(data.squeezed_count),
+      rookie_count: countOrNull(data.rookie_count),
+      trophy_count: countOrNull(data.trophy_count),
       highlights: Array.isArray(data.highlights) ? data.highlights : [],
     }
   } catch {
@@ -312,7 +314,7 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
             )
           })()}
           <div style={{ fontSize: 16, color: "var(--rpc-text-secondary)", marginTop: 8 }}>
-            {data.totalMoments} moments &middot; {data.badgeCount} badges
+            {formatCount(data.totalMoments)} moments &middot; {formatCount(data.badgeCount)} badges
           </div>
           {(() => {
             const note = closedMarketNote(data.perCollection)
@@ -354,7 +356,7 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
             doesn't surface. TS-scoped, so framed explicitly as Top Shot (the
             rest of this card is cross-collection). Hidden entirely when the
             wallet holds no TS moments — never render "0 rookies". */}
-        {intel && intel.ts_moments > 0 ? (
+        {intel && intel.ts_moments != null && intel.ts_moments > 0 ? (
           <div style={{ marginBottom: 32 }}>
             <div style={{ fontSize: 14, letterSpacing: "0.15em", color: "var(--rpc-text-secondary)", marginBottom: 12, textTransform: "uppercase" }}>
               Your Top Shot Intelligence
@@ -370,13 +372,13 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
               }}
             >
               <span style={{ padding: "8px 14px", border: "1px solid var(--rpc-border)", borderRadius: 999, background: "var(--rpc-surface)", color: "var(--rpc-text-secondary)" }}>
-                <strong style={{ color: "var(--rpc-red-text)" }}>{intel.rookie_count}</strong> rookies
+                <strong style={{ color: "var(--rpc-red-text)" }}>{formatCount(intel.rookie_count)}</strong> rookies
               </span>
               <span style={{ padding: "8px 14px", border: "1px solid var(--rpc-border)", borderRadius: 999, background: "var(--rpc-surface)", color: "var(--rpc-text-secondary)" }}>
-                <strong style={{ color: "var(--rpc-red-text)" }}>{intel.squeezed_count}</strong> squeezed
+                <strong style={{ color: "var(--rpc-red-text)" }}>{formatCount(intel.squeezed_count)}</strong> squeezed
               </span>
               <span style={{ padding: "8px 14px", border: "1px solid var(--rpc-border)", borderRadius: 999, background: "var(--rpc-surface)", color: "var(--rpc-text-secondary)" }}>
-                <strong style={{ color: "var(--rpc-red-text)" }}>{intel.trophy_count}</strong> trophies
+                <strong style={{ color: "var(--rpc-red-text)" }}>{formatCount(intel.trophy_count)}</strong> trophies
               </span>
               <span style={{ padding: "8px 14px", borderRadius: 999, color: "var(--rpc-text-muted)", alignSelf: "center" }}>
                 across {(function () {
@@ -387,7 +389,7 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
                   const ts = (data.perCollection ?? []).find(
                     (c) => /top.?shot/i.test(c.slug) || /top\s*shot/i.test(c.name)
                   )
-                  return (ts ? ts.moments : intel.ts_moments).toLocaleString("en-US")
+                  return formatCount(ts ? ts.moments : intel.ts_moments)
                 })()} Top Shot moments
               </span>
             </div>

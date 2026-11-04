@@ -42,15 +42,15 @@ export function liveStat(slug: string | null, s: HubInsightStats): string | null
         ? `${s.packZeroPct}% of rips pull $0 · ${s.packRips60d.toLocaleString()} rips/60d`
         : `${s.packRips60d.toLocaleString()} rips audited/60d`
     case "/insights/rookies":
-      return `${fmtUsd(s.rookieGmv30d)} GMV/30d · ${s.rookieCount} rookies`
+      return `${fmtUsd(s.rookieGmv30d)} GMV/30d · ${s.rookieCount.toLocaleString()} rookies`
     case "/insights/first-mint":
       return `avg ${s.firstMintAvg}× · max ${s.firstMintMax}×`
     case "/insights/cross-collection":
-      return `${s.crossCohort} wallets hold 3+ collections`
+      return `${s.crossCohort.toLocaleString()} wallets hold 3+ collections`
     case "/insights/set-squeeze":
-      return `${s.setSqueezeSets} sets ranked`
+      return `${s.setSqueezeSets.toLocaleString()} sets ranked`
     case "/insights/pinnacle-scarcity":
-      return `${s.pinnacleEditions} editions ranked`
+      return `${s.pinnacleEditions.toLocaleString()} editions ranked`
     default:
       return null
   }
