@@ -171,7 +171,7 @@ function DailyBars({ daily }: { daily: PaniniDay[] }) {
         const done = isCompleteDay(d)
         const tip = done
           ? `${dayLabel(d.day)}: ${int(d.sales)} sales · ${usd(d.volume_usd)} · median ${usd(d.median_usd)}`
-          : `${dayLabel(d.day)}: not complete — ${d.covered_pct ?? 0}% of traded editions fully on record`
+          : `${dayLabel(d.day)}: not complete — ${d.covered_pct != null ? `${d.covered_pct}% of traded editions fully on record` : "coverage not measured"}`
         return (
           <div key={d.day} role="img" title={tip} aria-label={tip} data-complete={done ? "true" : "false"} style={{ flex: "1 1 0", minWidth: 4, height: "100%", display: "flex", alignItems: "flex-end" }}>
             {done ? (
@@ -262,7 +262,7 @@ export default function PaniniAnalytics({
                 <td style={td}>{done ? int(d.sales) : `≥ ${int(d.sales)}`}</td>
                 <td style={td}>{done ? usd(d.volume_usd) : `≥ ${usd(d.volume_usd)}`}</td>
                 <td style={td}>{usd(d.median_usd)}</td>
-                <td style={td}>{done ? "complete" : `${d.covered_pct ?? 0}% of editions`}</td>
+                <td style={td}>{done ? "complete" : d.covered_pct != null ? `${d.covered_pct}% of editions` : "not measured"}</td>
               </tr>
             )
           })}

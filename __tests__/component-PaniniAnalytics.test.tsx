@@ -86,6 +86,16 @@ describe("PaniniAnalytics", () => {
     expect(c.querySelector("[data-complete]")).toBeNull()
   })
 
+  // 2026-11-03: an unmeasured coverage printed "0% of traded editions fully on record" — a claim.
+  it("a day whose coverage was not measured says so — never '0% … on record'", () => {
+    const d = payload()
+    d.daily[2].covered_pct = null as any
+    const c = render(<PaniniAnalytics data={d} />).container
+    const text = (c.textContent ?? "") + Array.from(c.querySelectorAll("[title]")).map((e) => e.getAttribute("title")).join(" ")
+    expect(text).not.toMatch(/\b0% of (traded )?editions/)
+    expect(text).toMatch(/not measured/)
+  })
+
   it("a failed read says couldn't load — never zeros", () => {
     const c = render(<PaniniAnalytics data={null} />).container
     expect(c.querySelector('[role="alert"]')).not.toBeNull()
