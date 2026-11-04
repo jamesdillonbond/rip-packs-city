@@ -160,6 +160,34 @@ describe("concierge tools — check_wallet indexed-cache success path", () => {
     expect((cd.top_moments as Array<Record<string, unknown>>)[0]).toMatchObject({ player: "Dame", serial: 1 })
   })
 
+  // 2026-11-04: get_wallet_collection_snapshot COALESCEs an unpriced rarest Moment's FMV to 0.
+  it("an unpriced rarest holding reaches the model as fmv null, never $0; a priced one survives (control)", async () => {
+    install({
+      "rpc:get_wallet_collection_snapshot": {
+        data: { totalMoments: 3, totalFmv: 60, perCollection: [], topMoments: [], rarest: { playerName: "Minnesota Vikings", serial: 1, mintCount: 1, fmv: 0 } },
+        error: null,
+      },
+      "rpc:get_wallet_best_offer_total": { data: 0, error: null },
+    })
+    script("check_wallet", { walletAddress: WALLET })
+    await POST(post("what's my rarest?"))
+    const r = toolResult()
+    expect((r.rarest as Record<string, unknown>).fmv).toBeNull()
+    expect((r.rarest as Record<string, unknown>).playerName).toBe("Minnesota Vikings")
+
+    A.createCalls.length = 0
+    install({
+      "rpc:get_wallet_collection_snapshot": {
+        data: { totalMoments: 3, totalFmv: 60, perCollection: [], topMoments: [], rarest: { playerName: "Dame", serial: 1, mintCount: 1, fmv: 412.5 } },
+        error: null,
+      },
+      "rpc:get_wallet_best_offer_total": { data: 0, error: null },
+    })
+    script("check_wallet", { walletAddress: WALLET })
+    await POST(post("what's my rarest?"))
+    expect((toolResult().rarest as Record<string, unknown>).fmv).toBe(412.5)
+  })
+
   it("omits the best-offer total when it is zero (never surfaces a $0 bid)", async () => {
     install({
       "rpc:get_wallet_collection_snapshot": {

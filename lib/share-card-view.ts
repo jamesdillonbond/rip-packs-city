@@ -166,3 +166,16 @@ export function shareCollectionFmvLabel(fmv: number | null | undefined, _moments
   if (v < 10) return `$${v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
   return `$${v.toLocaleString("en-US", { maximumFractionDigits: 0 })}`
 }
+
+/**
+ * One Moment's FMV on the share card (the "Rarest Moment" tile), 2026-11-04.
+ * get_wallet_collection_snapshot builds `rarest.fmv` as `round(COALESCE(fmv_usd, 0), 2)`, so an
+ * UNPRICED Moment arrives as 0 and rendered "$0.00 FMV" — measured live on the largest wallet,
+ * whose rarest is an unpriced 1-of-1 Legendary. No priced row is $0 (see shareCollectionFmvLabel),
+ * so a value at or below zero, or a missing one, is "not priced", never a dollar figure.
+ */
+export function shareMomentFmvLabel(fmv: number | null | undefined): string {
+  const v = Number(fmv)
+  if (fmv == null || !Number.isFinite(v) || v <= 0) return "not priced"
+  return `$${v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}

@@ -11,7 +11,7 @@ import FunnelTracker from "@/components/FunnelTracker"
 import { proxyIpfsImageUrl } from "@/lib/ipfs-media"
 import { formatClosedOn } from "@/lib/market-closed"
 import { fmvBasis } from "@/lib/fmv-basis"
-import { buildSeriesBarsFrom, compactSeriesLabel, closedMarketNote, shareHeadline, fullCollectionHref, shareCollectionFmvLabel } from "@/lib/share-card-view"
+import { buildSeriesBarsFrom, compactSeriesLabel, closedMarketNote, shareHeadline, fullCollectionHref, shareCollectionFmvLabel, shareMomentFmvLabel } from "@/lib/share-card-view"
 import { OG_INHERITED } from "@/lib/seo"
 import { normalizeAddress } from "@/lib/address"
 import { momentSubjectName } from "@/lib/entity-href"
@@ -59,6 +59,7 @@ interface SnapshotData {
     tier: string | null
     serial: number | null
     mintCount: number | null
+    // 0 when unpriced (the RPC COALESCEs) — render through shareMomentFmvLabel, never as dollars.
     fmv: number
     thumbnailUrl: string | null
   } | null
@@ -581,7 +582,7 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
                 </div>
               </div>
               <div style={{ textAlign: "right" }}>
-                <div style={{ fontSize: 20, fontWeight: 800, color: "var(--rpc-red-text)", fontFamily: "monospace" }}>${data.rarest.fmv.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                <div style={{ fontSize: 20, fontWeight: 800, color: "var(--rpc-red-text)", fontFamily: "monospace" }}>{shareMomentFmvLabel(data.rarest.fmv)}</div>
                 <div style={{ fontSize: 11, color: "var(--rpc-text-secondary)" }}>FMV</div>
               </div>
             </div>

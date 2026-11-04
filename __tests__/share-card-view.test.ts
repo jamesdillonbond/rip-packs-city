@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { buildSeriesBars, buildSeriesBarsFrom, compactSeriesLabel, closedMarketNote, shareHeadline, fullCollectionHref } from "@/lib/share-card-view"
+import { buildSeriesBars, buildSeriesBarsFrom, compactSeriesLabel, closedMarketNote, shareHeadline, fullCollectionHref, shareMomentFmvLabel } from "@/lib/share-card-view"
 
 describe("share-card-view · buildSeriesBars", () => {
   it("sorts series labels and returns the max for bar scaling", () => {
@@ -239,5 +239,20 @@ describe("collectionHasWalletTab (2026-09-27)", () => {
     expect(getCollection("panini-blockchain")?.pages).toContain("collection")
     expect(collectionHasWalletTab(getCollection("panini-blockchain"))).toBe(false)
     expect(collectionHasWalletTab(null)).toBe(false)
+  })
+})
+
+// 2026-11-04: the share page's Rarest Moment tile printed "$0.00 FMV" for an unpriced 1-of-1
+// Legendary (the RPC COALESCEs a missing FMV to 0) on the largest wallet, live.
+describe("shareMomentFmvLabel", () => {
+  it("an unpriced Moment (0, null, undefined, NaN, negative) is 'not priced', never $0.00", () => {
+    for (const v of [0, null, undefined, Number.NaN, -1]) {
+      expect(shareMomentFmvLabel(v as number | null | undefined)).toBe("not priced")
+      expect(shareMomentFmvLabel(v as number | null | undefined)).not.toContain("$")
+    }
+  })
+  it("a priced Moment keeps cents (control)", () => {
+    expect(shareMomentFmvLabel(1833.15)).toBe("$1,833.15")
+    expect(shareMomentFmvLabel(0.38)).toBe("$0.38")
   })
 })

@@ -2861,7 +2861,11 @@ async function executeToolInner(
           total_fmv_all_collections: snap.totalFmv,
           per_collection: perCollection,
           top_moments_overall: snap.topMoments ?? [],
-          rarest: snap.rarest ?? null,
+          // 2026-11-04: the RPC COALESCEs an unpriced Moment's FMV to 0 — the rarest holding of the
+          // largest wallet is an unpriced 1-of-1 — so a non-positive fmv is null here, never "$0".
+          rarest: snap.rarest
+            ? { ...snap.rarest, fmv: Number(snap.rarest.fmv) > 0 ? Number(snap.rarest.fmv) : null }
+            : null,
           badge_count: snap.badgeCount ?? null,
           ...(collectionDetail ? { collection_detail: collectionDetail } : {}),
           ...(standingBestOfferTotalUsd != null ? { standing_best_offer_total_usd: standingBestOfferTotalUsd } : {}),
