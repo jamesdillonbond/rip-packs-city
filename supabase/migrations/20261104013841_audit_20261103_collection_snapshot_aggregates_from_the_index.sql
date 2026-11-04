@@ -1,6 +1,6 @@
 -- audit_20261103_collection_snapshot_aggregates_from_the_index (known-issues #228)
 --
--- 2026-11-03 ~5:30–6:30 PM PT (Claude Code cloud; Trevor: "work autonomously … fix any issues you encounter").
+-- 2026-11-03 ~5:25–5:45 PM PT (Claude Code cloud; Trevor: "work autonomously … fix any issues you encounter").
 --
 -- WHAT WAS WRONG. /api/collection-snapshot timed out (RPC_READ_TIMEOUT, 8 s) for the largest wallets whenever
 -- their rows were cache-cold: Vercel error group 7 hits / 5 users since 09-11, last 11-03 3:40 PM PT. The
@@ -18,7 +18,7 @@
 -- Display rows are fetched through two arms (edition_key = k / both NULL) rather than one OR: the OR dropped
 -- collection_id from the index condition and probed the wallet's whole index range per key (measured).
 --
--- MEASURED (same instrument, EXPLAIN ANALYZE BUFFERS, the 70,280-row wallet, 11-03 ~6:15 PM PT):
+-- MEASURED (same instrument, EXPLAIN ANALYZE BUFFERS, the 70,280-row wallet, 11-03 ~5:35 PM PT):
 --   live body  75,236 buffers + 14,770 temp blocks, 762 ms (warm)
 --   new body   44,933 buffers,     0 temp blocks, 470 ms; `w` = Index Only Scan on the new cover,
 --              Heap Fetches 14,259 (pages the 10-min FMV refresh had just dirtied; 0 and 3,522 on two
@@ -29,7 +29,7 @@
 -- which moment is shown among EQUAL-FMV ties — the old ORDER BY was equally arbitrary there.
 -- NULL edition_key: 1 wmc row estate-wide (no fmv, no mint) — handled anyway by the IS NULL arm.
 --
--- INDEX (executed 11-03 ~6:05 PM PT via execute_sql, finished inside the client's 60 s; indisvalid=true, 189 MB):
+-- INDEX (executed 11-03 ~5:33 PM PT via execute_sql, finished inside the client's 60 s; indisvalid=true, 189 MB):
 --   CREATE INDEX CONCURRENTLY idx_wmc_wallet_coll_ek_snap_cover ON public.wallet_moments_cache
 --     USING btree (wallet_address, collection_id, edition_key) INCLUDE (fmv_usd, tier, series_number, mint_count);
 -- It is a strict SUPERSET of idx_wmc_wallet_coll_ek_fmv_tier (same keys, INCLUDE (fmv_usd, tier)), which reads
@@ -41,7 +41,7 @@
 --
 -- anon-exec: unchanged (get_wallet_collection_snapshot) — CREATE OR REPLACE of an existing fn, same signature; ACL preserved (postgres + service_role only).
 --
--- Base verified 11-03 ~5:40 PM PT: live prosrc read via pg_proc and compared with the body of
+-- Base verified 11-03 ~5:27 PM PT: live prosrc read via pg_proc and compared with the body of
 -- 20261027032833_audit_20261026_collection_card_counts_candy_designations.sql (the newest migration defining it);
 -- the new body was built from that file's verbatim block (the DB-invariant pin's copy).
 --

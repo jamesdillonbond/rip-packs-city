@@ -6,7 +6,7 @@
 
 ## STEER — added 2026-11-03 ~9:30 AM PT (Claude Code cloud) — #226 mint walk: confirm the schedule fires
 
-- ✅ **ANSWERED 11-03 ~7:15 PM PT (Claude Code cloud, GitHub Actions run list): it HAS now run from its schedule** — run #3, `event=schedule`, started 11-03 11:45 AM PT, success in ~1 min (the two earlier runs were dispatches). It fired ~7 h after its slot, the documented GHA schedule throttling, not a broken trigger. Nothing to dispatch. Original steer follows.
+- ✅ **ANSWERED 11-03 ~5:55 PM PT (Claude Code cloud, GitHub Actions run list): it HAS now run from its schedule** — run #3, `event=schedule`, started 11-03 11:45 AM PT, success in ~1 min (the two earlier runs were dispatches). It fired ~7 h after its slot, the documented GHA schedule throttling, not a broken trigger. Nothing to dispatch. Original steer follows.
 - **`mint-event-walk-forward.yml` has never run from its schedule** (11-03 4:37 AM PT slot produced no run; re-dispatched 9:12 AM PT, run `41681990018`). On 11-04/05, list its runs: one with `event=schedule` should exist. If not, dispatch again and touch the workflow file in a commit. Its job: keep `checkpoint_nft_meta` at the chain head so `rpc-topshot-map-checkpoint-reconcile` has chain truth for new Top Shot mints.
 - **Expected #226 readings:** `still_disagree` over spork 128 = 0 (1,337,506 / 0 on 11-03); the 597,775 old-range rows without a mint record are NOT a regression (the 10-03 walk never covered them).
 
