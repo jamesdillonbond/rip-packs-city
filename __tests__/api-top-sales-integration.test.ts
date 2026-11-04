@@ -4,8 +4,9 @@ import { makeSupabaseFixture } from "./helpers/route-harness"
 
 // Route-integration test for GET /api/top-sales driving the real body: unknown
 // collection short-circuit, the get_top_sales RPC path (row normalization +
-// tier upper-casing), the RPC-error 500, and the Pinnacle direct-table path with
-// its nested pinnacle_editions join. supabaseAdmin is a singleton bound to
+// tier upper-casing), the RPC-error 500, and the Pinnacle direct-table path (names
+// from pinnacle_catalog by render_id; the set-level pinnacle_editions join is a fallback
+// for set/tier only). supabaseAdmin is a singleton bound to
 // fx.tables, so mutate the object in place.
 
 const fx = vi.hoisted(() => ({ tables: {} as Record<string, { data?: unknown; error?: unknown }> }))
@@ -56,22 +57,49 @@ describe("GET /api/top-sales — integration", () => {
     expect((await res.json()).sales).toBeNull()
   })
 
-  it("resolves Pinnacle sales from pinnacle_sales with the nested edition join", async () => {
+  it("names a Pinnacle sale from the CATALOG pin (render_id), never the set-level key's character", async () => {
+    // ⛔ 2026-11-03: pinnacle_editions is SET-LEVEL — one character per key — so its character_name
+    // mis-named every other pin in the key. The fixture still offers a key-level character_name;
+    // the route must not print it.
     Object.assign(fx.tables, {
       pinnacle_sales: {
         data: [
           {
             sale_price_usd: "80",
             serial_number: "3",
-            pinnacle_editions: { character_name: "Mickey", set_name: "S1", variant_type: "chaser" },
+            render_id: "r-grogu",
+            pinnacle_editions: { character_name: "Luke Skywalker", set_name: "KeySet", variant_type: "chaser" },
+          },
+          {
+            sale_price_usd: "60",
+            serial_number: "4",
+            render_id: null,
+            pinnacle_editions: { character_name: "Luke Skywalker", set_name: "KeySet", variant_type: "standard" },
           },
         ],
+      },
+      pinnacle_catalog: {
+        data: [{ render_id: "r-grogu", character_name: "Grogu", set_name: "PinSet", variant: "Golden", total_minted: 250 }],
       },
     })
     const res = await GET(get("?collection=disney-pinnacle"))
     expect(res.status).toBe(200)
     const body = await res.json()
-    expect(body.sales[0]).toMatchObject({ playerName: "Mickey", setName: "S1", tier: "CHASER", price: 80 })
+    expect(body.sales[0]).toMatchObject({ playerName: "Grogu", setName: "PinSet", tier: "GOLDEN", circulationCount: 250, price: 80 })
+    // No render_id: no character name at all (not the key's), set/tier from the key row.
+    expect(body.sales[1]).toMatchObject({ playerName: null, setName: "KeySet", tier: "STANDARD", circulationCount: null })
+    expect(JSON.stringify(body)).not.toContain("Luke Skywalker")
+  })
+
+  it("Pinnacle: a failed catalog (name) read is a 500, not mis-named or nameless rows", async () => {
+    Object.assign(fx.tables, {
+      pinnacle_sales: { data: [{ sale_price_usd: "80", serial_number: "3", render_id: "r-1", pinnacle_editions: null }] },
+      pinnacle_catalog: { error: { message: "catalog boom" } },
+    })
+    const res = await GET(get("?collection=disney-pinnacle"))
+    expect(res.status).toBe(500)
+    expect((await res.json()).sales).toBeNull()
+    expect(res.headers.get("cache-control")).toMatch(/no-store/)
   })
 
   it("clamps limit into [1,25] and defaults a non-numeric limit to 5", async () => {

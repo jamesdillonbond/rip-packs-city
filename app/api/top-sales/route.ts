@@ -75,11 +75,16 @@ async function pinnacleTopSales(
   limit: number,
   since: string
 ): Promise<{ ok: true; rows: TopSaleRow[] } | { ok: false; detail: string }> {
+  // ⛔ 2026-11-03: the PIN is a pinnacle_catalog row keyed by render_id; pinnacle_editions is
+  // SET-LEVEL (one character per key), so naming a sale from its character_name printed the key's
+  // one character for every pin in it (a Grogu sale shown as "Luke Skywalker"). Same defect, same
+  // fix as /api/wallet-sales-history and analytics_sales_top_moves the same day. The name comes
+  // from the catalog only; the key row still supplies set and tier as fallbacks (key-level facts).
   const { data, error } = await (supabaseAdmin as any)
     .from("pinnacle_sales")
     .select(
-      "sale_price_usd, serial_number, edition_id, sold_at, " +
-        "pinnacle_editions(character_name, set_name, variant_type)"
+      "sale_price_usd, serial_number, edition_id, render_id, sold_at, " +
+        "pinnacle_editions(set_name, variant_type)"
     )
     .gte("sold_at", since)
     .order("sale_price_usd", { ascending: false })
@@ -91,18 +96,38 @@ async function pinnacleTopSales(
   // rather than waiting for it to reach a response. It flagged this line.
   if (error) return { ok: false, detail: errorLogDetail(error) }
 
+  const sales = (data ?? []) as any[]
+  const renderIds = [
+    ...new Set(sales.map((r) => r.render_id).filter((v): v is string => typeof v === "string" && v !== "")),
+  ]
+  const pinByRender = new Map<string, { character_name?: string | null; set_name?: string | null; variant?: string | null; total_minted?: number | string | null }>()
+  if (renderIds.length) {
+    const { data: pins, error: pinErr } = await (supabaseAdmin as any)
+      .from("pinnacle_catalog")
+      .select("render_id, character_name, set_name, variant, total_minted")
+      .in("render_id", renderIds)
+    // A failed name read fails the request — never a list of nameless or mis-named rows.
+    if (pinErr) return { ok: false, detail: errorLogDetail(pinErr) }
+    for (const p of (pins ?? []) as any[]) pinByRender.set(p.render_id, p)
+  }
+
   return {
     ok: true,
-    rows: ((data ?? []) as any[]).map((r) => ({
-      playerName: str(r.pinnacle_editions?.character_name),
-      setName: str(r.pinnacle_editions?.set_name),
-      tier: str(r.pinnacle_editions?.variant_type)?.toUpperCase() ?? null,
-      serialNumber: num(r.serial_number),
-      // Pinnacle supply is not carried on pinnacle_sales and is not joined
-      // here. It was previously hardcoded to 0; null is the honest value.
-      circulationCount: null,
-      price: num(r.sale_price_usd),
-    })),
+    rows: sales.map((r) => {
+      const edition = Array.isArray(r.pinnacle_editions) ? r.pinnacle_editions[0] : r.pinnacle_editions
+      const pin = typeof r.render_id === "string" ? pinByRender.get(r.render_id) : undefined
+      return {
+        // No render_id (or no catalog row) -> NO character name, never the key's one character.
+        playerName: str(pin?.character_name),
+        setName: str(pin?.set_name) ?? str(edition?.set_name),
+        tier: (str(pin?.variant) ?? str(edition?.variant_type))?.toUpperCase() ?? null,
+        serialNumber: num(r.serial_number),
+        // The pin's minted supply from the catalog (v_pinnacle_top_sales reads the same column);
+        // null when the pin is unknown — never a stand-in 0.
+        circulationCount: num(pin?.total_minted),
+        price: num(r.sale_price_usd),
+      }
+    }),
   }
 }
 
