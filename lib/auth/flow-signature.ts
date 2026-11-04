@@ -107,9 +107,20 @@ function constantTimeEquals(a: string, b: string): boolean {
   return nodeTimingSafeEqual(ab, bb)
 }
 
-/** The nonce for one address at one issue time. Recomputable => stateless. */
-export function nonceFor(address: string, issuedAt: string): string {
-  return hmac(signingSecret(), `rpc-wallet-challenge:${address}:${issuedAt}`).slice(0, 32)
+/**
+ * The nonce for one address at one issue time — and, since 2026-11-04 (CISO pass,
+ * API finding 2), for ONE RPC ACCOUNT when `account` is given. Recomputable => stateless.
+ *
+ * Without the account in the HMAC, a challenge issued to attacker-account X for the
+ * victim's wallet was indistinguishable from one issued to the victim: whoever got the
+ * victim to sign it (a phishing "verify on rippackscity" prompt) could post the
+ * signature from X and become the wallet's VERIFIED saver, which requireOwnedKey ranks
+ * above the first saver. With the account inside the nonce, a signature only verifies
+ * for the account the challenge was issued to.
+ */
+export function nonceFor(address: string, issuedAt: string, account?: string | null): string {
+  const scope = account ? `:account:${account}` : ""
+  return hmac(signingSecret(), `rpc-wallet-challenge:${address}:${issuedAt}${scope}`).slice(0, 32)
 }
 
 /**
@@ -121,10 +132,13 @@ export function nonceFor(address: string, issuedAt: string): string {
  * this server can derive) is what ties a signature to one issue for one
  * address, so the message never needs to carry the host.
  */
-export function signInMessage(c: { address: string; issuedAt: string; nonce: string }): string {
+export function signInMessage(c: { address: string; issuedAt: string; nonce: string; account?: string | null }): string {
   return [
     `wallet: ${c.address}`,
     "site: rippackscity.com",
+    // the account line names WHICH RPC account this proof is for, so a user asked to
+    // sign a challenge issued to someone else's account can see it is not theirs
+    ...(c.account ? [`account: ${c.account}`] : []),
     `date: ${c.issuedAt}`,
     `code: ${c.nonce}`,
   ].join("\n")
@@ -135,12 +149,12 @@ export function toHex(s: string): string {
   return Buffer.from(s, "utf8").toString("hex")
 }
 
-export function makeChallenge(rawAddress: unknown, now: Date = new Date()): FlowChallenge | null {
+export function makeChallenge(rawAddress: unknown, now: Date = new Date(), account?: string | null): FlowChallenge | null {
   const address = normalizeFlowAddress(rawAddress)
   if (!address) return null
   const issuedAt = now.toISOString()
-  const nonce = nonceFor(address, issuedAt)
-  const message = signInMessage({ address, issuedAt, nonce })
+  const nonce = nonceFor(address, issuedAt, account)
+  const message = signInMessage({ address, issuedAt, nonce, account })
   return { address, issuedAt, nonce, message, messageHex: toHex(message) }
 }
 
@@ -254,7 +268,7 @@ export type VerifyOutcome =
  */
 export async function verifyWalletSignature(
   body: { address?: unknown; issuedAt?: unknown; nonce?: unknown; signatures?: FlowSignature[] },
-  opts: { restBase?: string; fetchImpl?: typeof fetch; now?: number } = {}
+  opts: { restBase?: string; fetchImpl?: typeof fetch; now?: number; account?: string | null } = {}
 ): Promise<VerifyOutcome> {
   const address = normalizeFlowAddress(body?.address)
   const issuedAt = String(body?.issuedAt ?? "")
@@ -270,12 +284,12 @@ export async function verifyWalletSignature(
   }
 
   // Recompute rather than look up. A challenge we never issued cannot match.
-  const expected = nonceFor(address, issuedAt)
+  const expected = nonceFor(address, issuedAt, opts.account)
   if (!constantTimeEquals(expected, nonce)) {
     return { ok: false, code: "mismatch", error: "That sign-in request did not match. Ask for a new one." }
   }
 
-  const messageHex = toHex(signInMessage({ address, issuedAt, nonce }))
+  const messageHex = toHex(signInMessage({ address, issuedAt, nonce, account: opts.account }))
   const valid = await verifyUserSignatures(address, messageHex, body?.signatures, opts)
   if (!valid) {
     return { ok: false, code: "unverified", error: "The wallet's signature did not verify on chain." }

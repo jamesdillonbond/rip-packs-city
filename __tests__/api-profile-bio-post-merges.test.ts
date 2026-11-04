@@ -44,14 +44,14 @@ beforeEach(() => {
 
 describe("POST /api/profile/bio — an existing row is merged, never reset", () => {
   it("an avatar-only save writes ONLY avatar_url (no nulled socials, no username rewrite, no accent reset)", async () => {
-    const res = await POST(req({ avatarUrl: "https://x/a.png" }))
+    const res = await POST(req({ avatarUrl: "https://assets.nbatopshot.com/a.png" }))
     expect(res.status).toBe(200)
     expect(state.writes).toHaveLength(1)
     const w = state.writes[0]
     expect(w.method).toBe("update")
     const { updated_at, ...rest } = w.row
     expect(typeof updated_at).toBe("string")
-    expect(rest).toEqual({ avatar_url: "https://x/a.png" })
+    expect(rest).toEqual({ avatar_url: "https://assets.nbatopshot.com/a.png" })
   })
 
   it("the /profile/edit payload leaves favorite_team untouched and does not clear the handle on a blank username", async () => {

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { refreshAllDayWalletLocks, AllDayLockDeadlineError } from "@/lib/allday-lock"
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
+import { bearerMatches } from "@/lib/auth/bearer-secret"
 
 // Scheduled All Day lock-refresh batch.
 //
@@ -43,12 +44,8 @@ const REVERIFY_AFTER_MS = 24 * 3600_000
 const SOFT_DEADLINE_MS = 200_000
 
 function authed(req: NextRequest): boolean {
-  const auth = req.headers.get("authorization") ?? ""
-  const bearer = auth.startsWith("Bearer ") ? auth.slice(7) : ""
-  return (
-    !!bearer &&
-    (bearer === process.env.INGEST_SECRET_TOKEN || bearer === process.env.CRON_SECRET)
-  )
+  // constant-time compares via the shared helper (CISO 2026-11-04); same accepted secrets as before
+  return bearerMatches(req.headers.get("authorization"), "INGEST_SECRET_TOKEN", "CRON_SECRET")
 }
 
 export async function POST(req: NextRequest) {

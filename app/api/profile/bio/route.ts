@@ -9,6 +9,7 @@ import { apiErrorResponse } from "@/lib/api-error";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { requireUser } from "@/lib/auth/supabase-server";
 import { awardPoints } from "@/lib/rewards";
+import { checkAccentColor, checkAvatarUrl, checkUsername } from "@/lib/profile/bio-input";
 
 function defaultUsernameFromEmail(email: string | null | undefined): string {
   if (!email) return "";
@@ -64,14 +65,28 @@ export async function POST(req: NextRequest) {
   const has = (k: string) => Object.prototype.hasOwnProperty.call(body ?? {}, k);
   const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
   // A null/empty username means "not choosing one", never "clear my handle".
-  if (typeof body.username === "string" && body.username) updates.username = body.username;
+  // CISO 2026-11-04: the handle, the accent and the avatar are VALIDATED (lib/profile/bio-input.ts)
+  // — the handle decides ownership of private rows and a public URL, the other two are rendered.
+  if (typeof body.username === "string" && body.username) {
+    const u = checkUsername(body.username);
+    if (!u.ok) return NextResponse.json({ error: u.error }, { status: 400 });
+    updates.username = u.value;
+  }
   if (has("displayName")) updates.display_name = body.displayName ?? null;
   if (has("bio") || has("tagline")) updates.tagline = body.bio ?? body.tagline ?? null;
   if (has("favoriteTeam")) updates.favorite_team = body.favoriteTeam ?? null;
   if (has("twitter")) updates.twitter = body.twitter ?? null;
   if (has("discord")) updates.discord = body.discord ?? null;
-  if (has("avatarUrl")) updates.avatar_url = body.avatarUrl ?? null;
-  if (has("accentColor")) updates.accent_color = body.accentColor ?? "#E03A2F";
+  if (has("avatarUrl")) {
+    const a = checkAvatarUrl(body.avatarUrl);
+    if (!a.ok) return NextResponse.json({ error: a.error }, { status: 400 });
+    updates.avatar_url = a.value;
+  }
+  if (has("accentColor")) {
+    const c = checkAccentColor(body.accentColor);
+    if (!c.ok) return NextResponse.json({ error: c.error }, { status: 400 });
+    updates.accent_color = c.value ?? "#E03A2F";
+  }
 
   const SELECT = "username, display_name, tagline, favorite_team, twitter, discord, avatar_url, accent_color";
   const updateExisting = () =>
@@ -141,9 +156,21 @@ export async function PATCH(req: NextRequest) {
   if (typeof body.favoriteTeam === "string") updates.favorite_team = body.favoriteTeam;
   if (typeof body.twitter === "string") updates.twitter = body.twitter;
   if (typeof body.discord === "string") updates.discord = body.discord;
-  if (typeof body.avatarUrl === "string") updates.avatar_url = body.avatarUrl;
-  if (typeof body.accentColor === "string") updates.accent_color = body.accentColor;
-  if (typeof body.username === "string") updates.username = body.username;
+  if (typeof body.avatarUrl === "string") {
+    const a = checkAvatarUrl(body.avatarUrl);
+    if (!a.ok) return NextResponse.json({ error: a.error }, { status: 400 });
+    updates.avatar_url = a.value;
+  }
+  if (typeof body.accentColor === "string") {
+    const c = checkAccentColor(body.accentColor);
+    if (!c.ok) return NextResponse.json({ error: c.error }, { status: 400 });
+    updates.accent_color = c.value;
+  }
+  if (typeof body.username === "string") {
+    const u = checkUsername(body.username);
+    if (!u.ok) return NextResponse.json({ error: u.error }, { status: 400 });
+    updates.username = u.value;
+  }
 
   if (Object.keys(updates).length === 1) {
     return NextResponse.json({ error: "No updatable fields supplied" }, { status: 400 });

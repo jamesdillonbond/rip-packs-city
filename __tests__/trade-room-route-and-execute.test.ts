@@ -4,6 +4,7 @@ import { memorySupabase, type MemoryDb } from "./helpers/memory-supabase"
 import { SWAP_CADENCE } from "@/lib/swap-test/swap-cadence"
 import { CAN_RECEIVE_SCRIPT, SWAP_COLLECTIONS } from "@/lib/trade-room/multi-swap-cadence"
 import { SwapTestError } from "@/lib/swap-test/plan"
+import { encodeMessageFromSignable } from "@onflow/sdk"
 
 // The two properties that matter most on the chain half of a trade room:
 //   1. ⛔ no user wallet is asked to sign (relay_post) until RPC_TRADE_ROOM_EXECUTE=1
@@ -272,7 +273,28 @@ describe("/api/trade-room — the routes", () => {
     // the simulation is a READ and runs regardless of the gate
     chain.planSwap.mockResolvedValueOnce({ a: { signer: WA.signer, source: WA.source, ids: ["1"], kind: "linked", ctl: "87" }, b: { signer: WB.signer, source: WB.source, ids: [], kind: "linked", ctl: "4" } })
     expect((await as(ALICE, () => room.POST(post(`/api/trade-room/${code}`, { action: "simulate" }), ctx(code)))).status).toBe(200)
-    const signable = { cadence: SWAP_CADENCE, message: "ab", addr: WB.signer }
+    // CISO 2026-11-04 (relay-guard): the signable must BE this room's trade — Alice gives Top Shot 1,
+    // Bob gives nothing — with Alice proposing/paying and Bob the second authorizer, and `message`
+    // must be FCL's encoding of that voucher for Bob.
+    const voucher = {
+      cadence: SWAP_CADENCE,
+      authorizers: [WA.signer, WB.signer],
+      payer: WA.signer,
+      proposalKey: { address: WA.signer, keyId: 0, sequenceNum: 1 },
+      refBlock: "ab",
+      computeLimit: 9999,
+      arguments: [
+        { type: "Address", value: WA.source },
+        { type: "UInt64", value: "0" },
+        { type: "Array", value: [{ type: "UInt64", value: "1" }] },
+        { type: "Address", value: WB.source },
+        { type: "UInt64", value: "0" },
+        { type: "Array", value: [] },
+      ],
+      payloadSigs: [],
+    }
+    const signable: Record<string, unknown> = { cadence: SWAP_CADENCE, addr: WB.signer, args: voucher.arguments, voucher, roles: { authorizer: true } }
+    signable.message = encodeMessageFromSignable(signable as never, WB.signer)
     const closed = await as(ALICE, () => room.POST(post(`/api/trade-room/${code}`, { action: "relay_post", cosigner: WB.signer, signable }), ctx(code)))
     expect(closed.status).toBe(503)
     expect(await closed.json()).toMatchObject({ code: "execute_closed" })
@@ -282,6 +304,18 @@ describe("/api/trade-room — the routes", () => {
     // the co-signer must be the other side's proven wallet
     const wrong = await as(ALICE, () => room.POST(post(`/api/trade-room/${code}`, { action: "relay_post", cosigner: "0x00000000000000ee", signable }), ctx(code)))
     expect(wrong.status).toBe(400)
+    // the pre-11-04 shape (cadence + hex message, no voucher) is refused: it could carry ANY ids
+    const bare = await as(ALICE, () => room.POST(post(`/api/trade-room/${code}`, { action: "relay_post", cosigner: WB.signer, signable: { cadence: SWAP_CADENCE, message: "ab", addr: WB.signer } }), ctx(code)))
+    expect(bare.status).toBe(400)
+    expect(await bare.json()).toMatchObject({ code: "bad_voucher" })
+    // and so is the real voucher with one extra Moment of Bob's slipped into his side (the H1 attack)
+    const tampered = { ...voucher, arguments: voucher.arguments.map((a, i) => (i === 5 ? { type: "Array", value: [{ type: "UInt64", value: "777" }] } : a)) }
+    const tamperedSignable: Record<string, unknown> = { ...signable, args: tampered.arguments, voucher: tampered }
+    tamperedSignable.message = encodeMessageFromSignable(tamperedSignable as never, WB.signer)
+    const stolen = await as(ALICE, () => room.POST(post(`/api/trade-room/${code}`, { action: "relay_post", cosigner: WB.signer, signable: tamperedSignable }), ctx(code)))
+    expect(stolen.status).toBe(400)
+    expect(await stolen.json()).toMatchObject({ code: "wrong_items" })
+    expect(mem.current.tables.trade_room_relay ?? []).toEqual([])
     const open = await as(ALICE, () => room.POST(post(`/api/trade-room/${code}`, { action: "relay_post", cosigner: WB.signer, signable }), ctx(code)))
     expect(open.status).toBe(200)
     expect(mem.current.tables.trade_rooms[0].status).toBe("signing")
@@ -296,6 +330,30 @@ describe("/api/trade-room — the routes", () => {
     const sig = { action: "relay_sign", id, signature: "a".repeat(128), key_id: 0 }
     expect((await as(ALICE, () => room.POST(post(`/api/trade-room/${code}`, sig), ctx(code)))).status).toBe(403)
     expect((await as(BOB, () => room.POST(post(`/api/trade-room/${code}`, sig), ctx(code)))).status).toBe(200)
+
+    // CISO 2026-11-04 (trade-room finding M1): "sealed" is a CHAIN fact, never a claim.
+    const txId = "f".repeat(64)
+    // (a) the chain can't be read → 503, nothing sealed
+    chain.verifySwap.mockRejectedValueOnce(new SwapTestError("access node 502", 502, "chain_unavailable"))
+    const unread = await as(ALICE, () => room.POST(post(`/api/trade-room/${code}`, { action: "sealed", tx_id: txId }), ctx(code)))
+    expect(unread.status).toBe(503)
+    expect(mem.current.tables.trade_rooms[0].status).toBe("signing")
+    // (b) the chain says the Moment is still where it was → 409, nothing sealed
+    chain.verifySwap.mockResolvedValueOnce([{ id: "1", to: WB.source, held: false }])
+    const notYet = await as(ALICE, () => room.POST(post(`/api/trade-room/${code}`, { action: "sealed", tx_id: txId }), ctx(code)))
+    expect(notYet.status).toBe(409)
+    expect(await notYet.json()).toMatchObject({ code: "not_landed" })
+    expect(mem.current.tables.trade_rooms[0].tx_id).toBeNull()
+    // (c) the chain confirms every Moment moved → sealed, with the tx id
+    chain.verifySwap.mockResolvedValueOnce([{ id: "1", to: WB.source, held: true }])
+    const sealed = await as(ALICE, () => room.POST(post(`/api/trade-room/${code}`, { action: "sealed", tx_id: txId }), ctx(code)))
+    expect(sealed.status).toBe(200)
+    expect(await sealed.json()).toMatchObject({ verified: true })
+    expect(mem.current.tables.trade_rooms[0]).toMatchObject({ status: "sealed", tx_id: txId })
+    // (d) a second claim with another tx id never overwrites the first
+    const again = await as(BOB, () => room.POST(post(`/api/trade-room/${code}`, { action: "sealed", tx_id: "e".repeat(64) }), ctx(code)))
+    expect(again.status).toBe(200)
+    expect(mem.current.tables.trade_rooms[0].tx_id).toBe(txId)
   })
 
   it("a stranger cannot read a finished room; a cancelled room reads as cancelled", async () => {

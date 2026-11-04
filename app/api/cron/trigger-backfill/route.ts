@@ -3,6 +3,7 @@
 // Requires INGEST_SECRET_TOKEN for auth
 
 import { NextRequest, NextResponse } from "next/server"
+import { bearerMatches, tokenMatches } from "@/lib/auth/bearer-secret"
 
 function siteUrl() {
   return (
@@ -13,12 +14,15 @@ function siteUrl() {
 
 async function handleTrigger(req: NextRequest) {
   // Check auth token from query param or header
-  const token =
-    req.nextUrl.searchParams.get("token") ??
-    req.headers.get("x-ingest-token") ??
-    req.headers.get("authorization")?.replace("Bearer ", "")
+  // constant-time compares via the shared helpers (CISO 2026-11-04); same three carriers as before
+  const ingestToken = process.env.INGEST_SECRET_TOKEN
+  const authorized =
+    !!ingestToken &&
+    (tokenMatches(req.nextUrl.searchParams.get("token"), "INGEST_SECRET_TOKEN") ||
+      tokenMatches(req.headers.get("x-ingest-token"), "INGEST_SECRET_TOKEN") ||
+      bearerMatches(req.headers.get("authorization"), "INGEST_SECRET_TOKEN"))
 
-  if (!process.env.INGEST_SECRET_TOKEN || token !== process.env.INGEST_SECRET_TOKEN) {
+  if (!authorized) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
@@ -29,7 +33,7 @@ async function handleTrigger(req: NextRequest) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-ingest-token": process.env.INGEST_SECRET_TOKEN,
+        "x-ingest-token": ingestToken as string,
       },
       body: JSON.stringify({ backfill: true }),
       signal: AbortSignal.timeout(120000),

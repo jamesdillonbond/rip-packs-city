@@ -367,6 +367,10 @@ async function fetchAsDataUri(
   try {
     const res = await fetch(target, {
       signal: ac.signal,
+      // CISO 2026-11-04: a redirect is never followed. Every target here is either our
+      // own optimizer or an allow-listed host, and a 3xx from one of those to somewhere
+      // else would otherwise be fetched blind. A redirect is a degradation (null).
+      redirect: "manual",
       // OG cards are re-rendered on every crawler hit; let the platform cache
       // the upstream bytes where it can.
       cache: "no-store",
@@ -378,6 +382,9 @@ async function fetchAsDataUri(
     })
     if (!res.ok) return null
     const ct = res.headers.get("content-type") || ""
+    // refuse before reading: a declared body past the cap is not downloaded at all
+    const declared = Number(res.headers.get("content-length") || "0")
+    if (Number.isFinite(declared) && declared > maxBytes) return null
     const buf = Buffer.from(await res.arrayBuffer())
     if (buf.byteLength === 0 || buf.byteLength > maxBytes) return null
     // Sniff when the content-type is missing/generic (some gateways serve

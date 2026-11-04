@@ -111,7 +111,7 @@ describe("POST /api/profile/bio", () => {
   it("500s on an upsert error", async () => {
     state.user = { id: "u1", email: "a@b.com" }
     state.bio = { data: null, error: { message: "conflict" } }
-    const res = await POST(jsonReq({ username: "x" }))
+    const res = await POST(jsonReq({ username: "xyz" }))
     expect(res.status).toBe(500)
     // a failed save must NOT award points
     expect(awardPoints).not.toHaveBeenCalled()

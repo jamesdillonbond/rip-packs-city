@@ -22,10 +22,15 @@
 //     unaccept                             -> withdraw an acceptance
 //     cancel   { reason? }                 -> either side, any time before the seal
 //     simulate                             -> the whole swap simulated on mainnet (a READ; always allowed)
-//     relay_post { cosigner, signable }    -> ⛔ gated by RPC_TRADE_ROOM_EXECUTE: asks the other wallet to sign
-//     relay_sign { id, signature, key_id } -> the co-signer's signature
+//     relay_post { cosigner, signable }    -> ⛔ gated by RPC_TRADE_ROOM_EXECUTE: asks the other wallet to sign.
+//                                          The signable is checked AGAINST THE ROOM on the server
+//                                          (lib/trade-room/relay-guard.ts, 2026-11-04): cadence, authorizers,
+//                                          payer, every Moment per side, and message == encode(voucher).
+//     relay_sign { id, signature, key_id } -> the co-signer's signature (room must still be `signing`
+//                                          and execution open — a relay never outlives its room)
 //     signing_ended                        -> the initiator reports a signing attempt that did not seal
-//     sealed   { tx_id }                   -> record the seal, read the chain for where each moment is
+//     sealed   { tx_id }                   -> record the seal ONLY after the chain confirms every Moment
+//                                          sits with the other side (a failed read is 503, never a seal)
 //     verify                               -> read the chain again (after a seal)
 //
 // Three outcomes, never two: a check that fails names what failed; a chain that
@@ -47,6 +52,7 @@ import {
   markSealed,
   markSigning,
   markSigningEnded,
+  otherSide,
   setItems,
   setWallet,
   sideOf,
@@ -57,6 +63,7 @@ import {
   type SideRow,
 } from "@/lib/trade-room/store"
 import { chainUnavailable, checkReceivable, checkRoomPicks, EXECUTE_CLOSED_MESSAGE, executionOpen, planRoom, verifyRoom } from "@/lib/trade-room/execute"
+import { assertSignableMatchesRoom } from "@/lib/trade-room/relay-guard"
 import { pickItems, readChainPicker, readPickedRows, readPicker, withLiveLocks, TOP_SHOT_COLLECTION_ID, type PickerResult } from "@/lib/trade-room/holdings"
 import { holdingsReader, idsReader, readCanReceive, type Pick } from "@/lib/trade-room/multi-plan"
 import { MULTI_SWAP_CADENCE, swapCollection, swapCollectionByDbSlug, SWAP_COLLECTIONS, type SwapSlug } from "@/lib/trade-room/multi-swap-cadence"
@@ -351,14 +358,27 @@ export async function POST(req: NextRequest, ctx: Ctx) {
         const cosigner = typeof body.cosigner === "string" ? body.cosigner.trim().toLowerCase() : ""
         const other = cosignerOf(loaded, me.side)
         if (!other?.signer || other.signer !== cosigner) throw new TradeRoomError("The co-signer must be the other side's proven wallet.", 400, "wrong_cosigner")
+        // the room must be accepted by both sides at THIS version before anything is signed
+        if (loaded.room.status !== "accepted" && loaded.room.status !== "signing") throw new TradeRoomError("Both sides must accept the trade before signing.", 409, "not_accepted")
+        // the signable must BE this room's trade: cadence, authorizers, payer, every Moment per side,
+        // and the signed bytes must be the encoding of the voucher shown — checked before the row exists
+        assertSignableMatchesRoom(loaded, me.side, cosigner, body.signable)
         await markSigning(supabaseAdmin, loaded)
         const id = await postSignable(supabaseAdmin, cosigner, body.signable, Date.now(), { table: RELAY_TABLE, extra: { room_id: loaded.room.id }, allowed: TRADE_ROOM_CADENCES })
         return json({ id })
       }
       case "relay_sign": {
+        // a relay never outlives its room: the kill switch and the status are re-checked here, and the stored
+        // signable is re-checked against the room AS IT IS NOW (an edit bumps the version and clears the
+        // acceptances, so the room leaves `signing`; a relay from before that is refused either way),
+        // not only when the relay was posted (a relay posted before a cancel or an edit must not be signable)
+        if (!executionOpen()) throw new TradeRoomError(EXECUTE_CLOSED_MESSAGE, 503, "execute_closed")
+        if (loaded.room.status !== "signing") throw new TradeRoomError("This trade is not being signed right now.", 409, "not_signing")
         const id = String(body.id ?? "")
         const relay = await getRelay(supabaseAdmin, id, Date.now(), RELAY_TABLE)
         if (relay.room_id !== loaded.room.id || relay.cosigner !== me.signer) throw new TradeRoomError("This signing request isn't addressed to your wallet.", 403, "wrong_cosigner")
+        // the stored signable is re-checked against the room as it is NOW, so an edit between post and sign is refused
+        assertSignableMatchesRoom(loaded, otherSide(me.side), me.signer as string, relay.signable)
         await postSignature(supabaseAdmin, id, body.signature, body.key_id, Date.now(), RELAY_TABLE)
         return json({ ok: true })
       }
@@ -367,17 +387,24 @@ export async function POST(req: NextRequest, ctx: Ctx) {
         return json({ room: await view(await loadRoom(supabaseAdmin, code), u.id) })
       case "sealed": {
         const txId = typeof body.tx_id === "string" ? body.tx_id.trim().toLowerCase().replace(/^0x/, "") : ""
-        let landed: unknown = null
-        try {
-          landed = await verifyRoom(loaded)
-        } catch {
-          // the seal is a fact the initiator saw; a failed read is reported as unverified, never as "not landed"
-          landed = null
-        }
         const wasSealed = loaded.room.status === "sealed"
+        // a seal already recorded keeps its tx_id: a second "sealed" never overwrites the first
+        if (wasSealed) return json({ room: await view(loaded, u.id), verified: loaded.room.landed != null })
+        if (loaded.room.status !== "signing" && loaded.room.status !== "accepted") throw new TradeRoomError("This trade is not in a state that can seal.", 409, "not_signing")
+        // the seal is a CHAIN fact, not a claim: read where every Moment sits before recording it.
+        // A read that fails is 503 + retryable (call `sealed` again), never a seal and never "not landed".
+        let landed: Array<{ held: boolean }>
+        try {
+          landed = (await verifyRoom(loaded)) as Array<{ held: boolean }>
+        } catch (e) {
+          throw chainUnavailable(e)
+        }
+        if (landed.length === 0 || !landed.every((m) => m.held === true)) {
+          throw new TradeRoomError("The chain doesn't show this trade completed yet. If the transaction just sealed, try again in a moment.", 409, "not_landed")
+        }
         loaded = await markSealed(supabaseAdmin, loaded, txId, landed)
-        if (!wasSealed) notifyLater(loaded, u.id, "sealed")
-        return json({ room: await view(loaded, u.id), verified: landed != null })
+        notifyLater(loaded, u.id, "sealed")
+        return json({ room: await view(loaded, u.id), verified: true })
       }
       case "verify": {
         const landed = await verifyRoom(loaded)

@@ -17,6 +17,7 @@
 import { NextRequest, NextResponse, after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat";
+import { bearerMatches, tokenMatches } from "@/lib/auth/bearer-secret";
 import {
   getLogs,
   getBlockByNumber,
@@ -536,14 +537,10 @@ function authorized(req: NextRequest): boolean {
     return true;
   }
 
-  const expected = process.env.INGEST_SECRET_TOKEN;
-  if (!expected) return false;
-  const bearer = req.headers.get("authorization");
-  if (bearer && bearer.startsWith("Bearer ") && bearer.slice(7) === expected) {
-    return true;
-  }
-  const qp = req.nextUrl.searchParams.get("token");
-  return qp === expected;
+  // constant-time compares via the shared helpers (CISO 2026-11-04); same accepted secret as before
+  if (!process.env.INGEST_SECRET_TOKEN) return false;
+  if (bearerMatches(req.headers.get("authorization"), "INGEST_SECRET_TOKEN")) return true;
+  return tokenMatches(req.nextUrl.searchParams.get("token"), "INGEST_SECRET_TOKEN");
 }
 
 export async function POST(req: NextRequest) {

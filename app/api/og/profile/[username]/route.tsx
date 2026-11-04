@@ -52,6 +52,7 @@ import { NextRequest } from "next/server";
 import { ogImageDataUri } from "@/lib/og/img-data";
 import { borderCosmetic, bannerCosmetic } from "@/lib/cosmetics";
 import { resolveAvatarUrl } from "@/lib/profile/default-avatar";
+import { canDisplayAvatarUrl } from "@/lib/media/avatar-proxy";
 import { tierAccent, hiResThumb } from "@/lib/trophy/slab-style";
 import { editionKey, trophyMarks, type TrophyMark } from "@/lib/og/trophy-marks";
 import { withOfficialArt } from "@/lib/og/official-mark-art";
@@ -807,9 +808,14 @@ export async function GET(
     const tileWidth = statTileWidth(statTiles.length);
 
     const avatarSrc = resolveAvatarUrl(bio?.avatar_url);
-    const avatarDataUri = avatarSrc.startsWith("https://")
-      ? await ogImageDataUri(avatarSrc)
-      : null;
+    // CISO 2026-11-04 (API finding 4): `avatar_url` is user-chosen. The server fetches it
+    // here on every crawler hit, so the host must be one the page could render anyway
+    // (canDisplayAvatarUrl = our CSP's img-src + the proxyable hosts) — never an
+    // arbitrary https host picked by the profile's owner (blind SSRF + bandwidth).
+    const avatarDataUri =
+      avatarSrc.startsWith("https://") && canDisplayAvatarUrl(avatarSrc)
+        ? await ogImageDataUri(avatarSrc)
+        : null;
     const hasAvatar = !!avatarDataUri;
 
     return new ImageResponse(

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { topshotGraphql } from "@/lib/chains/flow/topshot"
 import { supabaseAdmin } from "@/lib/supabase"
 import { apiErrorResponse } from "@/lib/api-error"
+import { bearerMatches } from "@/lib/auth/bearer-secret"
 
 // Server-side port of scripts/topshot-badge-sync.js.
 // POST: run the full sweep cycle (Rookie Year / TS Debut / ROTY / Champ Year
@@ -681,9 +682,7 @@ async function runCatalogSweep(): Promise<NextResponse> {
 }
 
 export async function POST(req: NextRequest) {
-  const auth = req.headers.get("authorization") ?? ""
-  const bearer = auth.replace(/^Bearer\s+/i, "")
-  if (!process.env.INGEST_SECRET_TOKEN || bearer !== process.env.INGEST_SECRET_TOKEN) {
+  if (!bearerMatches(req.headers.get("authorization"), "INGEST_SECRET_TOKEN")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 

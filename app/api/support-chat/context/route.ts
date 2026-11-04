@@ -16,6 +16,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getSupabaseServer } from "@/lib/auth/supabase-server";
 import { isWellFormedSessionId, isBotSessionId } from "@/lib/concierge/request-guards";
+import { anonTelemetryAllowed } from "@/lib/abuse/anon-rate";
 
 export const maxDuration = 10;
 // force-dynamic is REQUIRED, not decorative: GET reads req.nextUrl.searchParams,
@@ -125,7 +126,11 @@ export async function GET(req: NextRequest) {
         .from("chat_sessions")
         .update(update)
         .eq("session_id", sessionId);
-    } else {
+    } else if (await anonTelemetryAllowed(req.headers, "support-chat-context")) {
+      // CISO 2026-11-04 (API finding 6): an anonymous GET created a chat_sessions row for any
+      // well-formed session id with only the per-lambda limiter in front. A NEW row is now
+      // behind the durable per-IP / global beacon cap; a refusal skips the write (the chat
+      // still works, it just starts without memory). An EXISTING session's update is untouched.
       // write-discarded: conversation-memory telemetry; a failure only loses topic context for the next turn.
       await supabase.from("chat_sessions").upsert(
         {

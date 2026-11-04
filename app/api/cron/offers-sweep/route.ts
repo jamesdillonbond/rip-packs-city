@@ -6,6 +6,7 @@ import { fetchTopShotEditionAliases, canonicalTopShotExternalId, type TopShotEdi
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 import { apiErrorResponse } from "@/lib/api-error"
 import { checkUpstreamBreaker, UPSTREAM_OUTAGE_SKIP } from "@/lib/pipeline/upstream-breaker"
+import { bearerMatches, tokenMatches } from "@/lib/auth/bearer-secret"
 
 // Untagged Top Shot marketplace-edition sweep that caches each edition's top
 // standing offer + lowest ask into edition_offers, keyed on the canonical
@@ -212,12 +213,11 @@ async function fetchPage(
 }
 
 export async function POST(req: NextRequest) {
-  const auth = req.headers.get("authorization") ?? ""
-  const bearer = auth.replace(/^Bearer\s+/i, "")
-  const queryToken = req.nextUrl.searchParams.get("token") ?? ""
+  // constant-time compares via the shared helpers (CISO 2026-11-04); same accepted secret as before
   const ok =
     !!process.env.INGEST_SECRET_TOKEN &&
-    (bearer === process.env.INGEST_SECRET_TOKEN || queryToken === process.env.INGEST_SECRET_TOKEN)
+    (bearerMatches(req.headers.get("authorization"), "INGEST_SECRET_TOKEN") ||
+      tokenMatches(req.nextUrl.searchParams.get("token"), "INGEST_SECRET_TOKEN"))
   if (!ok) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }

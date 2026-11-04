@@ -93,7 +93,8 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ already_verified: true, wallet_addr: wallet, verified_at: saved.verified_at })
     }
 
-    const challenge = makeChallenge(wallet)
+    // the challenge is bound to THIS account (CISO 2026-11-04): a signature on it verifies for no other
+    const challenge = makeChallenge(wallet, new Date(), user.id)
     if (!challenge) {
       return NextResponse.json({ error: "A Flow address (0x + 16 hex) is required." }, { status: 400 })
     }
@@ -143,12 +144,15 @@ export async function POST(req: NextRequest) {
 
     let outcome
     try {
-      outcome = await verifyWalletSignature({
-        address: wallet,
-        issuedAt: body.issuedAt,
-        nonce: body.nonce,
-        signatures: body.signatures as never,
-      })
+      outcome = await verifyWalletSignature(
+        {
+          address: wallet,
+          issuedAt: body.issuedAt,
+          nonce: body.nonce,
+          signatures: body.signatures as never,
+        },
+        { account: user.id },
+      )
     } catch (err) {
       if (err instanceof FlowVerifyUnavailable) {
         // THREE STATES: this is "we could not ask", never "your wallet failed".

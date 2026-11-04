@@ -21,6 +21,13 @@ vi.mock("@/lib/chains/flow/topshot", () => ({ topshotGraphql: async () => ({}) }
 vi.mock("@/lib/supabase", () => ({ supabaseAdmin: { from: () => ({}), rpc: async () => ({ data: null, error: null }) } }))
 vi.mock("@/lib/auth/supabase-server", () => ({ getCurrentUser: async () => null }))
 vi.mock("@/lib/rewards", () => ({ awardPoints: async () => {} }))
+// The anon cap (CISO 2026-11-04) fails CLOSED when its counter is unreadable, and this
+// file's supabaseAdmin stub answers every rpc with null — so the counter is stubbed open
+// here; its own refusal/failure cases are pinned in api-wallet-search-anon-cap.test.ts.
+vi.mock("@/lib/abuse/anon-rate", () => ({
+  anonIpKey: () => "203.0.113.9",
+  bumpAnonRates: async () => ({ allowed: true, failed: false, count: 1, refusedBucket: null }),
+}))
 
 import { POST } from "@/app/api/wallet-search/route"
 

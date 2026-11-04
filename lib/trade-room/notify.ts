@@ -22,6 +22,7 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 import { sendViaResend, WELCOME_FROM_ADDRESS, type SendEmailArgs, type SendResult } from "@/lib/welcome/send-account-welcome"
 import { usernamesFor } from "@/lib/trade-room/view"
 import type { LoadedRoom } from "@/lib/trade-room/store"
+import { bumpAnonRate } from "@/lib/abuse/anon-rate"
 
 export type TradeNotice = "joined" | "accepted" | "ready" | "cancelled" | "sealed"
 
@@ -100,12 +101,25 @@ export interface NotifyDeps {
   /** Resolves a user id to its account email; default reads auth via the service role. */
   lookupEmail?: (db: SupabaseClient, userId: string) => Promise<string | null>
   log?: (line: string) => void
+  /** Per (room, notice, recipient) send budget; default counts durably via bump_anon_action_rate. */
+  cooldown?: (db: SupabaseClient, code: string, notice: TradeNotice, recipientUserId: string) => Promise<boolean>
 }
 
 export type NotifyOutcome =
   | { status: "sent"; notice: TradeNotice; to_user: string }
-  | { status: "skipped"; reason: "no_other_side" | "no_email" | "unsubscribed" | "optout_unknown" | "no_names" }
+  | { status: "skipped"; reason: "no_other_side" | "no_email" | "unsubscribed" | "optout_unknown" | "no_names" | "cooldown" }
   | { status: "failed"; error: string }
+
+/** Sends of one notice, to one recipient, about one room, per hour. "sealed" and "cancelled" happen once by construction. */
+export const NOTICE_COOLDOWN_PER_HOUR = 2
+
+async function defaultCooldown(db: SupabaseClient, code: string, notice: TradeNotice, recipientUserId: string): Promise<boolean> {
+  const v = await bumpAnonRate(
+    { bucket: `trade_notice:${notice}`, key: `${code}:${recipientUserId}`, limit: NOTICE_COOLDOWN_PER_HOUR, windowSecs: 3600 },
+    db as unknown as Parameters<typeof bumpAnonRate>[1],
+  )
+  return v.allowed
+}
 
 async function defaultLookupEmail(db: SupabaseClient, userId: string): Promise<string | null> {
   const { data, error } = await db.auth.admin.getUserById(userId)
@@ -144,6 +158,16 @@ export async function notifyOtherSide(
       return { status: "skipped", reason: "optout_unknown" }
     }
     if (sub && (sub as { unsubscribed_at: string | null }).unsubscribed_at) return { status: "skipped", reason: "unsubscribed" }
+    // CISO 2026-11-04 (trade-room finding M2): accept → unaccept → accept looped one email to the
+    // counterparty per cycle, bounded only by the per-lambda request limiter. Each (room, notice,
+    // recipient) now gets at most NOTICE_COOLDOWN_PER_HOUR sends per hour, counted durably
+    // (bump_anon_action_rate). A counter that cannot be read is a skip, never a send — the same
+    // fail-closed stance as the opt-out read above.
+    const cooldown = await (deps.cooldown ?? defaultCooldown)(db, code, notice, other.user_id)
+    if (!cooldown) {
+      log(`[trade-room/notify] room=${code} notice=${notice} skipped: cooldown`)
+      return { status: "skipped", reason: "cooldown" }
+    }
     let names: Map<string, string>
     try {
       names = await usernamesFor(db, [actorUserId])

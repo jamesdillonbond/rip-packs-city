@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
+import { tokenMatches } from "@/lib/auth/bearer-secret"
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -75,7 +76,7 @@ async function resolveFromUuids(
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
-  if (searchParams.get("secret") !== process.env.INGEST_SECRET_TOKEN) {
+  if (!tokenMatches(searchParams.get("secret"), "INGEST_SECRET_TOKEN")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 

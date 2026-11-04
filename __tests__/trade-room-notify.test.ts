@@ -49,7 +49,7 @@ describe("notifyOtherSide", () => {
   it("emails the side that is not the actor, by the actor's username", async () => {
     sends.length = 0
     const m = memorySupabase({ profile_bio: [{ user_id: BOB, username: "bobby" }], email_subscribers: [] })
-    const out = await notifyOtherSide(m.db as unknown as SupabaseClient, loaded([{ side: "a", user_id: ALICE }, { side: "b", user_id: BOB }]), BOB, "joined", { send, lookupEmail, log: () => {} })
+    const out = await notifyOtherSide(m.db as unknown as SupabaseClient, loaded([{ side: "a", user_id: ALICE }, { side: "b", user_id: BOB }]), BOB, "joined", { send, lookupEmail, log: () => {}, cooldown: async () => true })
     expect(out).toMatchObject({ status: "sent", to_user: ALICE })
     expect(sends).toEqual([{ to: "alice@example.com", subject: "bobby joined your trade room" }])
   })
@@ -59,11 +59,11 @@ describe("notifyOtherSide", () => {
     const two = [{ side: "a" as const, user_id: ALICE }, { side: "b" as const, user_id: BOB }]
     const m = memorySupabase({ profile_bio: [], email_subscribers: [{ email: "alice@example.com", unsubscribed_at: "2026-10-01T00:00:00Z" }] })
     const db = m.db as unknown as SupabaseClient
-    expect(await notifyOtherSide(db, loaded([{ side: "a", user_id: ALICE }]), ALICE, "accepted", { send, lookupEmail, log: () => {} })).toMatchObject({ status: "skipped", reason: "no_other_side" })
-    expect(await notifyOtherSide(db, loaded(two), ALICE, "accepted", { send, lookupEmail: async () => null, log: () => {} })).toMatchObject({ status: "skipped", reason: "no_email" })
-    expect(await notifyOtherSide(db, loaded(two), BOB, "accepted", { send, lookupEmail, log: () => {} })).toMatchObject({ status: "skipped", reason: "unsubscribed" })
+    expect(await notifyOtherSide(db, loaded([{ side: "a", user_id: ALICE }]), ALICE, "accepted", { send, lookupEmail, log: () => {}, cooldown: async () => true })).toMatchObject({ status: "skipped", reason: "no_other_side" })
+    expect(await notifyOtherSide(db, loaded(two), ALICE, "accepted", { send, lookupEmail: async () => null, log: () => {}, cooldown: async () => true })).toMatchObject({ status: "skipped", reason: "no_email" })
+    expect(await notifyOtherSide(db, loaded(two), BOB, "accepted", { send, lookupEmail, log: () => {}, cooldown: async () => true })).toMatchObject({ status: "skipped", reason: "unsubscribed" })
     m.failNext("select", "email_subscribers", "statement timeout")
-    expect(await notifyOtherSide(db, loaded(two), ALICE, "accepted", { send, lookupEmail, log: () => {} })).toMatchObject({ status: "skipped", reason: "optout_unknown" })
+    expect(await notifyOtherSide(db, loaded(two), ALICE, "accepted", { send, lookupEmail, log: () => {}, cooldown: async () => true })).toMatchObject({ status: "skipped", reason: "optout_unknown" })
     expect(sends).toEqual([])
   })
 
@@ -72,7 +72,38 @@ describe("notifyOtherSide", () => {
     const db = m.db as unknown as SupabaseClient
     const two = [{ side: "a" as const, user_id: ALICE }, { side: "b" as const, user_id: BOB }]
     const failing = async () => ({ ok: false as const, error: "Resend HTTP 500" })
-    expect(await notifyOtherSide(db, loaded(two), ALICE, "sealed", { send: failing, lookupEmail, log: () => {} })).toMatchObject({ status: "failed", error: "Resend HTTP 500" })
-    expect(await notifyOtherSide(db, loaded(two), ALICE, "sealed", { send, lookupEmail: async () => { throw new Error("auth read failed: boom") }, log: () => {} })).toMatchObject({ status: "failed", error: expect.stringContaining("auth read failed") })
+    expect(await notifyOtherSide(db, loaded(two), ALICE, "sealed", { send: failing, lookupEmail, log: () => {}, cooldown: async () => true })).toMatchObject({ status: "failed", error: "Resend HTTP 500" })
+    expect(await notifyOtherSide(db, loaded(two), ALICE, "sealed", { send, lookupEmail: async () => { throw new Error("auth read failed: boom") }, log: () => {}, cooldown: async () => true })).toMatchObject({ status: "failed", error: expect.stringContaining("auth read failed") })
+  })
+})
+
+
+// CISO 2026-11-04 (trade-room finding M2): accept → unaccept → accept looped one email per
+// cycle. The notifier now asks a per-(room, notice, recipient) budget first; a refusal is a
+// skip, a failed budget read is a skip (fail closed), and the budget is asked for the
+// RECIPIENT, not the actor.
+describe("per-room notice cooldown (2026-11-04)", () => {
+  const ALICE = "11111111-1111-4111-8111-111111111111"
+  const BOB = "22222222-2222-4222-8222-222222222222"
+  const two = [{ side: "a" as const, user_id: ALICE }, { side: "b" as const, user_id: BOB }]
+  const db = { from: () => ({ select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }) }) } as unknown as SupabaseClient
+  it("a refused budget skips the send and names the reason", async () => {
+    const sends: string[] = []
+    const asked: string[] = []
+    const out = await notifyOtherSide(db, loaded(two), ALICE, "accepted", {
+      send: async (a) => { sends.push(a.to); return { ok: true } },
+      lookupEmail: async () => "bob@example.com",
+      log: () => {},
+      cooldown: async (_db, code, notice, recipient) => { asked.push(`${code}:${notice}:${recipient}`); return false },
+    })
+    expect(out).toMatchObject({ status: "skipped", reason: "cooldown" })
+    expect(sends).toEqual([])
+    expect(asked).toEqual([`${loaded(two).room.code}:accepted:${BOB}`])
+  })
+  it("the default budget fails CLOSED when the counter cannot be read (no rpc on this db)", async () => {
+    const sends: string[] = []
+    const out = await notifyOtherSide(db, loaded(two), ALICE, "accepted", { send: async (a) => { sends.push(a.to); return { ok: true } }, lookupEmail: async () => "bob@example.com", log: () => {} })
+    expect(out).toMatchObject({ status: "skipped", reason: "cooldown" })
+    expect(sends).toEqual([])
   })
 })

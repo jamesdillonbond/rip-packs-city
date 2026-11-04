@@ -18,7 +18,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { bearerMatches } from "@/lib/auth/bearer-secret";
+import { bearerMatches, tokenMatches } from "@/lib/auth/bearer-secret";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -37,7 +37,7 @@ function authorized(request: NextRequest): boolean {
   if (bearerMatches(auth, "INGEST_SECRET_TOKEN")) return true;
   // Browser-fired cron fallback: ?token= query param.
   const qp = new URL(request.url).searchParams.get("token");
-  return qp === token;
+  return tokenMatches(qp, "INGEST_SECRET_TOKEN");
 }
 
 async function run(request: NextRequest) {

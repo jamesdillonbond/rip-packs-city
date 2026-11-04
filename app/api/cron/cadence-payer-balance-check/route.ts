@@ -15,6 +15,7 @@
 
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { bearerMatches, tokenMatches } from "@/lib/auth/bearer-secret"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 30
@@ -23,17 +24,10 @@ const PIPELINE_NAME = "cadence-payer-balance-check"
 const PAYER_ADDR = "0x73f55c4450b8d466"
 const ALERT_THRESHOLD_FLOW = 0.05
 function authorized(req: NextRequest): boolean {
-  const expected = process.env.INGEST_SECRET_TOKEN
-  const cronSecret = process.env.CRON_SECRET
-  if (!expected) return false
-  const bearer = req.headers.get("authorization") ?? ""
-  if (bearer.startsWith("Bearer ")) {
-    const tok = bearer.slice(7)
-    if (tok === expected) return true
-    if (cronSecret && tok === cronSecret) return true
-  }
-  const qp = req.nextUrl.searchParams.get("token")
-  return qp === expected
+  // constant-time compares via the shared helpers (CISO 2026-11-04); same accepted secrets as before
+  if (!process.env.INGEST_SECRET_TOKEN) return false
+  if (bearerMatches(req.headers.get("authorization"), "INGEST_SECRET_TOKEN", "CRON_SECRET")) return true
+  return tokenMatches(req.nextUrl.searchParams.get("token"), "INGEST_SECRET_TOKEN")
 }
 
 export async function POST(req: NextRequest) {

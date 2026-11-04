@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { bearerMatches, tokenMatches } from "@/lib/auth/bearer-secret"
 import { decodeV1SaleTx, decodeV1MultiSaleTx, isCustodialDepositTarget } from "@/lib/chains/flow/dapper-v1-tx-decode"
 
 // ── AllDay V1-Dapper price recovery (Phase 2 of the unmapped-residue drain) ────
@@ -23,8 +24,6 @@ import { decodeV1SaleTx, decodeV1MultiSaleTx, isCustodialDepositTarget } from "@
 // New budget-exhausted rows keep arriving while the historical backfill runs, so
 // this is a STANDING cron, not a one-shot — it no-ops cheaply once drained.
 
-const TOKEN = process.env.INGEST_SECRET_TOKEN ?? ""
-const CRON = process.env.CRON_SECRET ?? ""
 const ALLDAY_COLLECTION_ID = "dee28451-5d62-409e-a1ad-a83f763ac070"
 const COLLECTION_SLUG = "nfl_all_day"
 const PIPELINE_NAME = "allday-price-recover"
@@ -370,12 +369,10 @@ async function run(startedAt: string, startedMs: number) {
 }
 
 async function handle(req: NextRequest) {
-  const auth = req.headers.get("authorization") ?? ""
-  const bearer = auth.replace(/^Bearer\s+/i, "")
-  const urlToken = req.nextUrl.searchParams.get("token") ?? ""
+  // constant-time compares via the shared helpers (CISO 2026-11-04); same accepted secrets as before
   const authedOk =
-    (TOKEN.length > 0 && (bearer === TOKEN || urlToken === TOKEN)) ||
-    (CRON.length > 0 && (bearer === CRON || urlToken === CRON))
+    bearerMatches(req.headers.get("authorization"), "INGEST_SECRET_TOKEN", "CRON_SECRET") ||
+    tokenMatches(req.nextUrl.searchParams.get("token"), "INGEST_SECRET_TOKEN", "CRON_SECRET")
   if (!authedOk) return unauthorized()
 
   const startedAt = new Date().toISOString()

@@ -217,3 +217,36 @@ describe("a failed read is never rendered as a rejection", () => {
     })
   }
 })
+
+// CISO pass 2026-11-04 (API authorization finding 2): a challenge is bound to the RPC
+// ACCOUNT it was issued to. Planted defect: the same wallet, the same issue time, a
+// different account — the nonce must differ, the message must name the account, and a
+// signature over account X's challenge must not verify for account Y.
+describe("the challenge is bound to the account it was issued to (2026-11-04)", () => {
+  it("the nonce and the displayed message carry the account", async () => {
+    const { nonceFor, makeChallenge } = await load()
+    const t = "2026-11-04T17:00:00.000Z"
+    expect(nonceFor(ADDR, t, "user-x")).not.toBe(nonceFor(ADDR, t, "user-y"))
+    expect(nonceFor(ADDR, t, "user-x")).not.toBe(nonceFor(ADDR, t))
+    const c = makeChallenge(ADDR, new Date(t), "user-x")!
+    expect(c.message.split("\n")).toContain("account: user-x")
+    expect(c.nonce).toBe(nonceFor(ADDR, t, "user-x"))
+    // the pre-11-04 shape (no account) still has four lines, so older callers are unchanged
+    expect(makeChallenge(ADDR, new Date(t))!.message.split("\n")).toHaveLength(4)
+  })
+  it("a challenge issued to one account does not verify for another, even when the chain says yes", async () => {
+    const { makeChallenge, verifyWalletSignature } = await load()
+    const fetchImpl = vi.fn(async () => chainSays(true)) as unknown as typeof fetch
+    const c = makeChallenge(ADDR, new Date(), "user-x")!
+    const wrong = await verifyWalletSignature({ address: ADDR, issuedAt: c.issuedAt, nonce: c.nonce, signatures: SIG }, { fetchImpl, account: "user-y" })
+    expect(wrong).toMatchObject({ ok: false, code: "mismatch" })
+    expect(fetchImpl).not.toHaveBeenCalled() // refused before the chain is asked
+    // the unscoped nonce (pre-11-04 shape) is refused by an account-scoped verify
+    const legacy = makeChallenge(ADDR)!
+    const stale = await verifyWalletSignature({ address: ADDR, issuedAt: legacy.issuedAt, nonce: legacy.nonce, signatures: SIG }, { fetchImpl, account: "user-x" })
+    expect(stale).toMatchObject({ ok: false, code: "mismatch" })
+    // and the right account verifies
+    const right = await verifyWalletSignature({ address: ADDR, issuedAt: c.issuedAt, nonce: c.nonce, signatures: SIG }, { fetchImpl, account: "user-x" })
+    expect(right).toEqual({ ok: true, address: ADDR })
+  })
+})

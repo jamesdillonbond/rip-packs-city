@@ -18,7 +18,7 @@ import { serverMomentToRow, type ServerMoment } from "@/lib/collection/server-mo
 import { bucketAcquisitionCounts, acquisitionMethodLabel } from "@/lib/analytics/shape"
 import { ownLookup } from "@/lib/safe-lookup"
 import { isSalesCappedAlgo } from "@/lib/fmv-basis"
-import { bumpAnonRates } from "@/lib/abuse/anon-rate"
+import { anonIpKey, bumpAnonRates } from "@/lib/abuse/anon-rate"
 
 type WalletRow = {
   momentId: string
@@ -1222,7 +1222,9 @@ async function upsertWalletMomentsCache(wallet: string, rows: WalletRow[]) {
 }
 
 const walletSearchSchema = z.object({
-  input: z.string().min(1, "Please enter a wallet address or username.").transform(s => s.trim()),
+  // 200 is far past any Flow address (18), Solana key (44) or Dapper username; the cap
+  // bounds what a Cadence script and a resolver lookup are asked to chew (CISO 2026-11-04).
+  input: z.string().min(1, "Please enter a wallet address or username.").max(200, "That doesn't look like a wallet address or username.").transform(s => s.trim()),
   offset: z.coerce.number().int().min(0).default(0),
   limit: z.coerce.number().int().min(1).max(60).default(24),
   collection: z.string().optional(),
@@ -1373,6 +1375,38 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       )
     }
+
+    // CISO 2026-11-04 (API finding 5): this route is anon-public and each call runs Cadence
+    // against the access node and service-role upserts for ANY wallet. The proxy limiter is
+    // per-lambda (a 70-request burst saw zero 429s), so an anonymous caller gets a DURABLE
+    // cap too: 120/h per IP and 3,000/h globally. A signed-in user is not capped here (the
+    // dashboard polls this route). A counter that cannot be read fails CLOSED (429) like
+    // every other anon cap — a read failure is the moment the DB least needs this load.
+    const anonCapVerdict = await (async () => {
+      let signedIn = false
+      try {
+        signedIn = !!(await getCurrentUser())
+      } catch {
+        signedIn = false
+      }
+      if (signedIn) return null
+      const ip = req.headers && typeof req.headers.get === "function" ? anonIpKey(req.headers) : null
+      return bumpAnonRates([
+        { bucket: "wallet_search:global", key: "*", limit: 3000, windowSecs: 3600 },
+        ...(ip ? [{ bucket: "wallet_search:ip", key: ip, limit: 120, windowSecs: 3600 }] : []),
+      ])
+    })()
+    if (anonCapVerdict && !anonCapVerdict.allowed) {
+      return NextResponse.json(
+        {
+          error: "Too many lookups right now. Sign in for more, or try again in a few minutes.",
+          rows: [],
+          summary: { totalMoments: 0, returnedMoments: 0, remainingMoments: 0 },
+        } satisfies WalletSearchResponse,
+        { status: 429, headers: { "Retry-After": "600" } }
+      )
+    }
+
 
     const { input, offset, limit, league } = parsed.data
     resolvedInput = input

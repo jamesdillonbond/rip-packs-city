@@ -92,7 +92,7 @@ export const TELEMETRY_GLOBAL_LIMIT_PER_HOUR = 20_000
 
 export async function anonTelemetryAllowed(
   headers: { get(name: string): string | null },
-  route: "telemetry" | "track-funnel" | "track-click",
+  route: "telemetry" | "track-funnel" | "track-click" | "support-chat-context",
   db?: RpcClient,
 ): Promise<boolean> {
   const ip = anonIpKey(headers)

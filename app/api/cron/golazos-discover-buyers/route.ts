@@ -60,6 +60,7 @@
 
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { bearerMatches } from "@/lib/auth/bearer-secret"
 import {
   EXCLUDED_ADDRESSES,
   normalizeAddress,
@@ -100,13 +101,8 @@ function sleep(ms: number): Promise<void> {
 }
 
 function authed(req: NextRequest): boolean {
-  const auth = req.headers.get("authorization") ?? ""
-  const bearer = auth.startsWith("Bearer ") ? auth.slice(7) : ""
-  return (
-    !!bearer &&
-    (bearer === process.env.INGEST_SECRET_TOKEN ||
-      bearer === process.env.CRON_SECRET)
-  )
+  // constant-time compares via the shared helper (CISO 2026-11-04); same accepted secrets as before
+  return bearerMatches(req.headers.get("authorization"), "INGEST_SECRET_TOKEN", "CRON_SECRET")
 }
 
 export async function GET(req: NextRequest) {
