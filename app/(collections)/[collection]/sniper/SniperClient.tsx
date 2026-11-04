@@ -2158,7 +2158,7 @@ function SniperMomentsBody() {
                   borderRadius: 8, padding: 12,
                 }}>
                   <div className="rpc-mono" style={{ fontSize: "var(--text-sm)", color: "var(--rpc-text-primary)" }}>
-                    Consider listing: <strong>{s.player}</strong> serial #{s.serial}
+                    Consider listing: {s.player ? <strong>{s.player}</strong> : "this Moment"}{s.serial != null ? ` serial #${s.serial}` : ""}
                   </div>
                   <div className="rpc-mono" style={{ fontSize: "var(--text-xs)", color: "var(--rpc-success-text)", marginTop: 4 }}>
                     Current asks are {s.pctAbove}% above your FMV

@@ -30,8 +30,10 @@ export interface OwnedMoment {
 }
 
 export interface ListingSuggestion {
-  player: string
-  serial: number
+  /** null = the snapshot carried no name — never an invented "Unknown" (2026-11-03). */
+  player: string | null
+  /** null = no serial read — never serial #0, which is not a serial anyone holds. */
+  serial: number | null
   /** How far above the owner's FMV the live ask sits, in whole percent. */
   pctAbove: number
 }
@@ -74,8 +76,8 @@ export function buildListingSuggestions(
     if (fmv == null || !(fmv > 0)) continue
     if (!(deal.askPrice > fmv)) continue
     out.push({
-      player: m.playerName ?? "Unknown",
-      serial: m.serialNumber ?? 0,
+      player: m.playerName?.trim() || null,
+      serial: m.serialNumber != null && m.serialNumber > 0 ? m.serialNumber : null,
       pctAbove: Math.round(((deal.askPrice - fmv) / fmv) * 100),
     })
   }

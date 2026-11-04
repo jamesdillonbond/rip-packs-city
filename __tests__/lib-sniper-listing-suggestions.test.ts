@@ -95,12 +95,21 @@ describe("buildListingSuggestions", () => {
     expect(out.map((r) => r.player)).not.toContain("P0")
   })
 
-  it("falls back to readable placeholders rather than rendering undefined", () => {
+  // INVERTED 2026-11-03: this pinned `"Unknown"` / serial `0` — an invented name and a serial
+  // nobody holds, rendered as "Consider listing: Unknown serial #0". What we did not read is null.
+  it("a Moment with no name or serial carries null for both — never \"Unknown\" or serial 0", () => {
     const out = buildListingSuggestions(
-      [{ editionKey: "1:1", playerName: null, serialNumber: null, fmv: 100 }],
-      [deal({ editionKey: "1:1", askPrice: 200 })],
+      [
+        { editionKey: "1:1", playerName: null, serialNumber: null, fmv: 100 },
+        { editionKey: "2:2", playerName: "  ", serialNumber: 0, fmv: 100 },
+      ],
+      [deal({ editionKey: "1:1", askPrice: 200 }), deal({ editionKey: "2:2", askPrice: 150 })],
     )
-    expect(out).toEqual([{ player: "Unknown", serial: 0, pctAbove: 100 }])
+    expect(out).toEqual([
+      { player: null, serial: null, pctAbove: 100 },
+      { player: null, serial: null, pctAbove: 50 },
+    ])
+    expect(JSON.stringify(out)).not.toContain("Unknown")
   })
 
   it("an owner with nothing, or a market with nothing, yields nothing", () => {

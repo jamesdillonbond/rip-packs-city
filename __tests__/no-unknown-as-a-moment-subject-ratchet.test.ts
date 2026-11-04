@@ -45,6 +45,8 @@ describe("no rendered Moment subject falls back to the word 'Unknown'", () => {
     walk(path.join(process.cwd(), "app"), files)
     walk(path.join(process.cwd(), "components"), files)
     files.push(path.join(process.cwd(), "lib/collection/server-moment.ts"))
+    // 2026-11-03: the sniper's Listing Suggestions builder — its `player` string is rendered verbatim.
+    files.push(path.join(process.cwd(), "lib/sniper/listing-suggestions.ts"))
     expect(files.length).toBeGreaterThan(200)
     const hits: string[] = []
     for (const f of files) {
