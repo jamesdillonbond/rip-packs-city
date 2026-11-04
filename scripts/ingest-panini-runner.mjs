@@ -51,6 +51,8 @@
 
 import { chromium } from "playwright";
 import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import readline from "node:readline";
 // Pure enumeration-progress helpers, extracted so the stop decision is unit-testable without a
 // browser (this file calls main() at import). See panini-enum-progress.mjs for the full why.
@@ -250,13 +252,48 @@ async function main() {
   } else {
     ctx = await chromium.launchPersistentContext(USER_DATA_DIR, { headless: process.env.PANINI_HEADLESS !== "false" });
   }
-  let page = ctx.pages().find((pg) => !pg.isClosed()) || await ctx.newPage();
+  // A FRESH TAB PER RUN (2026-11-03, measured): the runner used to drive whichever tab was already
+  // open in the CDP Chrome — the SAME long-lived tab, run after run. A/B on one card, same code,
+  // alternated twice: on that old tab serial paging took 27 s and the SALES HISTORY tab never fired
+  // in time (no TOP, no RECENT); on a fresh tab in the same Chrome, 3.5 s and both lists captured in
+  // 0.7 s. That degradation is what three same-day fixes (bfe6467, 9dcf8ae, c02ce193e) read as "TOP
+  // is slow". The run now opens its own tab, records its CDP target id, and closes it at the end; a
+  // tab a crashed run left behind is closed BY TARGET ID at the next start — never by evaluating in
+  // other tabs (a second client's evaluate in a busy tab hung a run on 11-03).
+  const RUNNER_TAB_FILE = path.join(os.homedir(), ".panini-runner-tab.json");
+  async function targetIdOf(pg) {
+    try { const s = await ctx.newCDPSession(pg); const { targetInfo } = await s.send("Target.getTargetInfo"); await s.detach().catch(() => {}); return targetInfo?.targetId ?? null; } catch { return null; }
+  }
+  async function closeLeftoverRunnerTab() {
+    let prev = null; try { prev = JSON.parse(fs.readFileSync(RUNNER_TAB_FILE, "utf8"))?.targetId ?? null; } catch {}
+    if (!prev) return;
+    try {
+      const bs = await browser.newBrowserCDPSession();
+      const { targetInfos } = await bs.send("Target.getTargets");
+      if (targetInfos.some((t) => t.targetId === prev)) { await bs.send("Target.closeTarget", { targetId: prev }); console.log("[panini-runner] closed the tab a previous run left open"); }
+      await bs.detach().catch(() => {});
+    } catch {}
+  }
+  async function openRunnerPage() {
+    if (!CDP) return ctx.pages().find((pg) => !pg.isClosed()) || await ctx.newPage();
+    const pg = await ctx.newPage();
+    const targetId = await targetIdOf(pg);
+    try { fs.writeFileSync(RUNNER_TAB_FILE, JSON.stringify({ targetId, at: new Date().toISOString() })); } catch {}
+    return pg;
+  }
+  if (CDP) await closeLeftoverRunnerTab();
+  let page = await openRunnerPage();
+  async function closeRunnerPage() {
+    if (!CDP || !page || page.isClosed()) return;
+    await Promise.race([page.close().catch(() => {}), new Promise((r) => setTimeout(r, 3000))]);
+  }
 
   // PREFLIGHT: empty POST returns 202 on good auth, 401 on bad token — fail fast before the walk.
   {
     const pf = await fetch(INGEST_URL, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${INGEST_TOKEN}` }, body: "{}" });
     if (pf.status !== 202) {
       console.error(`[panini-runner] AUTH PREFLIGHT FAILED: POST ${INGEST_URL} -> ${pf.status}. Your INGEST_SECRET_TOKEN does not match the deployed route (it accepts INGEST_SECRET_TOKEN or CRON_SECRET). Fix the token and rerun; not walking cards.`);
+      await closeRunnerPage();
       if (CDP) { await browser.close().catch(() => {}); } else { await ctx.close().catch(() => {}); }
       process.exit(3);
     }
@@ -534,7 +571,7 @@ async function main() {
       browser = await chromium.connectOverCDP(CDP);
       ctx = browser.contexts()[0] || await browser.newContext();
     }
-    page = ctx.pages().find((pg) => !pg.isClosed()) || await ctx.newPage();
+    page = await openRunnerPage();
     listen(page);
     console.log(`[panini-runner] page was closed (${where}) - recovered #${pageRecoveries}`);
     return page;
@@ -654,7 +691,10 @@ async function main() {
     if (!(SERIAL_PAGES_MAX > 0)) return;
     let r = null;
     try {
-      r = await page.evaluate(async ({ max, wait }) => {
+      // BOUNDED (2026-11-03): this in-page loop was the one untimed call left in the walk; on 11-03
+      // it never returned and the walk sat 16 min until the watchdog ended the run (rc=4). Its own
+      // worst case is max × wait plus scrolling, so a hang past that costs one card, not the run.
+      const serialEval = page.evaluate(async ({ max, wait }) => {
         const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
         const tbl = [...document.querySelectorAll("table")].find((t) => /SERIAL\s*NO/i.test((t.innerText || "").slice(0, 80)));
         if (!tbl) return { pages: 0, stop: "no-table" };
@@ -676,6 +716,9 @@ async function main() {
         window.scrollTo(0, 0);
         return { pages, stop };
       }, { max: SERIAL_PAGES_MAX, wait: SERIAL_PAGE_WAIT_MS });
+      const SERIAL_EVAL_CAP_MS = SERIAL_PAGES_MAX * (SERIAL_PAGE_WAIT_MS + 200) + 10000;
+      r = await Promise.race([serialEval, new Promise((res) => setTimeout(() => res({ pages: 0, stop: "eval-timeout" }), SERIAL_EVAL_CAP_MS))]);
+      serialEval.catch(() => {}); // a late rejection of the abandoned evaluate must not surface as unhandled
     } catch { r = { pages: 0, stop: "error" }; }
     if (r.pages > 0) { serialExtraPages += r.pages; serialPagedCards++; await wait(400); } // let the last response land in the listener
     serialStops[r.stop] = (serialStops[r.stop] || 0) + 1;
@@ -713,6 +756,7 @@ async function main() {
     }
     if (process.env.PANINI_DISCOVERY_ONLY === "1") {
       console.log(`[panini-runner] discovery-only run complete — ${opCount} /onepanini exchanges in ${OPS_FILE}; skipping the grid walk.`);
+      await closeRunnerPage();
       if (CDP) { await browser.close().catch(() => {}); } else { await ctx.close().catch(() => {}); }
       return;
     }
@@ -732,7 +776,7 @@ async function main() {
     if (!v) return;
     console.log(`[panini-runner] WATCHDOG ${v.kind}: phase=${v.phase} detail=${v.detail ?? "-"} ${v.kind === "slept" ? `clock jumped ${v.gap_min}m` : `no progress for ${v.idle_min}m`}`);
     await post({ stall: v });
-    if (v.kind === "stall") process.exit(4);
+    if (v.kind === "stall") { await closeRunnerPage(); process.exit(4); }
   }, 60000);
   watchTimer.unref();
 
@@ -1024,6 +1068,7 @@ async function main() {
   console.log(`[panini-runner] sales capture: tab_opened=${salesPages} tab_empty=${salesTabEmpty} tab_missed=${salesTabMissed} top_answered=${topAnswered} top_unanswered=${topUnanswered} responses=${salesResponses} late_responses=${lateSalesResponses} records=${salesRecords} top=${salesByList.top} recent=${salesByList.recent} untagged=${salesByList.untagged}${SALES_HISTORY ? "" : " (DISABLED via PANINI_SALES_HISTORY=0)"}`);
   await post({ cards, packs, serials, sales });
   clearInterval(watchTimer);
+  await closeRunnerPage(); // this run's own tab (a fresh one per run — see openRunnerPage)
   if (CDP) { await browser.close().catch(() => {}); } // disconnects; leaves your Chrome open
   else { await ctx.close(); }
 }
