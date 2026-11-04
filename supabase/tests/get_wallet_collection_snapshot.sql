@@ -19,9 +19,11 @@
 --   * (2026-10-02) the body runs through EXECUTE … USING so each wallet is planned on its own
 --     row estimate; series labels resolve once per distinct series and the stale confidence
 --     once per distinct edition — the SAME answers as the per-moment forms they replaced.
+--   * (2026-11-03, #228) aggregates read only index-covered columns; the top-5 and rarest DISPLAY rows
+--     are fetched per edition key — including a NULL edition_key (its own arm; section 9 pins it).
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20261027032833_audit_20261026_collection_card_counts_candy_designations.sql);
+-- (supabase/migrations/20261104013841_audit_20261103_collection_snapshot_aggregates_from_the_index.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -101,24 +103,52 @@ BEGIN
   -- 2026-10-02: dynamic SQL on purpose. EXECUTE … USING plans the statement with the
   -- wallet's REAL row estimate, so an 18k-moment wallet gets hash joins where the
   -- SQL-language body's generic plan gave it per-row nested loops (744k buffers).
+  -- 2026-11-03 (#228): `w` reads ONLY columns carried by the wallet covering index
+  -- (wallet_address, collection_id, edition_key) INCLUDE (fmv_usd, tier, series_number,
+  -- mint_count), so every aggregate is an index-only scan. The wide display columns
+  -- (names, image, serial) are read from the heap for the top-5 / rarest EDITIONS only.
+  -- The largest wallet's rows sit on ~47k heap pages: 11.3 s cold, 8 s route timeout.
   EXECUTE $q$
   WITH w AS (
-    SELECT player_name, set_name, tier, serial_number, edition_key,
-           image_url, series_number, fmv_usd, mint_count, collection_id
+    SELECT collection_id, edition_key, fmv_usd, series_number, mint_count
     FROM wallet_moments_cache
     WHERE wallet_address = $1
   ),
+  -- The top 5 moments by FMV all belong to the top 5 editions by max FMV (an edition
+  -- outside them has a max no higher than the 5th moment), so only those editions'
+  -- rows are fetched for display.
+  top_keys AS (
+    SELECT collection_id, edition_key
+    FROM w
+    WHERE fmv_usd IS NOT NULL AND fmv_usd > 0
+    GROUP BY collection_id, edition_key
+    ORDER BY max(fmv_usd) DESC
+    LIMIT 5
+  ),
   top5 AS (
     SELECT jsonb_agg(t) AS arr FROM (
-      SELECT player_name AS "playerName",
-             set_name    AS "setName",
-             tier,
-             serial_number AS serial,
-             round(COALESCE(fmv_usd, 0)::numeric, 2) AS fmv,
-             image_url   AS "thumbnailUrl"
-      FROM w
-      WHERE fmv_usd IS NOT NULL AND fmv_usd > 0
-      ORDER BY fmv_usd DESC
+      SELECT m.player_name AS "playerName",
+             m.set_name    AS "setName",
+             m.tier,
+             m.serial_number AS serial,
+             round(COALESCE(m.fmv_usd, 0)::numeric, 2) AS fmv,
+             m.image_url   AS "thumbnailUrl"
+      FROM (
+        -- Two arms, not one OR: an OR on edition_key drops collection_id from the
+        -- index condition and probes the whole wallet's index range per key.
+        SELECT m.player_name, m.set_name, m.tier, m.serial_number, m.fmv_usd, m.image_url
+        FROM top_keys k
+        JOIN wallet_moments_cache m
+          ON m.wallet_address = $1 AND m.collection_id = k.collection_id AND m.edition_key = k.edition_key
+        UNION ALL
+        SELECT m.player_name, m.set_name, m.tier, m.serial_number, m.fmv_usd, m.image_url
+        FROM top_keys k
+        JOIN wallet_moments_cache m
+          ON m.wallet_address = $1 AND m.collection_id = k.collection_id AND m.edition_key IS NULL
+        WHERE k.edition_key IS NULL
+      ) m
+      WHERE m.fmv_usd IS NOT NULL AND m.fmv_usd > 0
+      ORDER BY m.fmv_usd DESC
       LIMIT 5
     ) t
   ),
@@ -223,18 +253,38 @@ BEGIN
     JOIN conf l ON l.edition_key = w.edition_key AND l.collection_id = w.collection_id
     WHERE l.confidence = 'STALE'
   ),
+  -- The rarest moment's sort key (smallest positive mint, FMV-desc tiebreak) is read
+  -- from `w`; its display row is then fetched from that one edition.
+  rare_key AS (
+    SELECT collection_id, edition_key, mint_count, fmv_usd
+    FROM w
+    WHERE mint_count IS NOT NULL AND mint_count > 0
+    ORDER BY mint_count ASC, fmv_usd DESC NULLS LAST
+    LIMIT 1
+  ),
   rarest AS (
     SELECT to_jsonb(r) AS obj FROM (
-      SELECT player_name AS "playerName",
-             set_name    AS "setName",
-             tier,
-             serial_number AS serial,
-             mint_count  AS "mintCount",
-             round(COALESCE(fmv_usd, 0)::numeric, 2) AS fmv,
-             image_url   AS "thumbnailUrl"
-      FROM w
-      WHERE mint_count IS NOT NULL AND mint_count > 0
-      ORDER BY mint_count ASC, fmv_usd DESC NULLS LAST
+      SELECT m.player_name AS "playerName",
+             m.set_name    AS "setName",
+             m.tier,
+             m.serial_number AS serial,
+             m.mint_count  AS "mintCount",
+             round(COALESCE(m.fmv_usd, 0)::numeric, 2) AS fmv,
+             m.image_url   AS "thumbnailUrl"
+      FROM (
+        SELECT m.player_name, m.set_name, m.tier, m.serial_number, m.mint_count, m.fmv_usd, m.image_url
+        FROM rare_key k
+        JOIN wallet_moments_cache m
+          ON m.wallet_address = $1 AND m.collection_id = k.collection_id AND m.edition_key = k.edition_key
+        WHERE m.mint_count = k.mint_count AND m.fmv_usd IS NOT DISTINCT FROM k.fmv_usd
+        UNION ALL
+        SELECT m.player_name, m.set_name, m.tier, m.serial_number, m.mint_count, m.fmv_usd, m.image_url
+        FROM rare_key k
+        JOIN wallet_moments_cache m
+          ON m.wallet_address = $1 AND m.collection_id = k.collection_id AND m.edition_key IS NULL
+        WHERE k.edition_key IS NULL
+          AND m.mint_count = k.mint_count AND m.fmv_usd IS NOT DISTINCT FROM k.fmv_usd
+      ) m
       LIMIT 1
     ) r
   )
@@ -370,6 +420,19 @@ SELECT _assert((SELECT (pc ->> 'market_closed_at') IS NOT NULL FROM jsonb_array_
 -- (the card had read "$6,419 across 227" with 191 of the 227 in closed UFC).
 SELECT _assert_eq((public.get_wallet_collection_snapshot('W') ->> 'staleFmv'), '0.00', 'closed-market STALE dollars leave staleFmv');
 SELECT _assert_eq((public.get_wallet_collection_snapshot('W') ->> 'staleCount'), '0', 'closed-market STALE holdings leave staleCount too (count pairs with amount)');
+
+-- ── 9. (2026-11-03, #228) display rows fetched by edition key — a NULL edition_key still places.
+--      The body fetches the top-5 / rarest rows through two arms (edition_key = k, and both NULL);
+--      dropping the NULL arm would silently lose this wallet's most valuable / rarest moment.
+INSERT INTO public.wallet_moments_cache (wallet_address, player_name, set_name, tier, serial_number, edition_key, image_url, series_number, fmv_usd, mint_count, collection_id) VALUES
+  ('N','Nokey','Base','LEGENDARY',7, NULL,'n1', 4, 900,   3, :PIN::uuid),
+  ('N','Keyed','Base','COMMON',   8, 'n2','n2', 4,  20, 100, :PIN::uuid),
+  ('N','Keyed2','Base','COMMON',  9, 'n2','n3', 4,  30, 100, :PIN::uuid);
+SELECT _assert_eq((public.get_wallet_collection_snapshot('N') -> 'topMoments' -> 0 ->> 'playerName'), 'Nokey', 'a NULL-edition_key moment can be the top moment');
+SELECT _assert_eq(jsonb_array_length(public.get_wallet_collection_snapshot('N') -> 'topMoments')::text, '3', 'all three priced moments are listed (two copies of one edition both fetched)');
+SELECT _assert_eq((public.get_wallet_collection_snapshot('N') -> 'topMoments' -> 1 ->> 'playerName'), 'Keyed2', 'copies of one edition ordered by their own FMV');
+SELECT _assert_eq((public.get_wallet_collection_snapshot('N') -> 'rarest' ->> 'playerName'), 'Nokey', 'a NULL-edition_key moment can be the rarest');
+SELECT _assert_eq((public.get_wallet_collection_snapshot('N') -> 'rarest' ->> 'thumbnailUrl'), 'n1', 'the rarest row carries its own display columns');
 
 SELECT '✓ get_wallet_collection_snapshot: all assertions passed' AS result;
 
