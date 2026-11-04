@@ -304,3 +304,55 @@ describe("weekly-digest — dry-run legs", () => {
     expect(body.headers["List-Unsubscribe-Post"]).toBe("List-Unsubscribe=One-Click")
   })
 })
+
+describe("weekly digest — never mails an invented figure (2026-11-03)", () => {
+  // The formatters used to default a missing value: "$0.00", "0%" (in the SUBJECT) and
+  // "0 moments tracked". A mover missing a printed figure is now skipped and counted.
+  beforeEach(() => {
+    h.cfg.emailSubQueue = [withToken]
+    h.cfg.alertSentQueue = [null]
+  })
+
+  for (const field of ["latest_fmv", "delta_usd", "delta_pct"] as const) {
+    it(`skips (does not mail) a mover whose ${field} is null, and counts it`, async () => {
+      h.cfg.movers = [mover({ [field]: null })]
+      await call(await load())
+      await h.afterFns[0]()
+      expect(fetchMock).not.toHaveBeenCalled()
+      const log = digestLog()
+      expect(log.p_extra.skipped_incomplete).toBe(1)
+      expect(log.p_rows_written).toBe(0)
+    })
+  }
+
+  it("the dry run reports the same skip — it does not list an incomplete mover as would_send", async () => {
+    h.cfg.movers = [mover({ delta_pct: null })]
+    h.cfg.emailSubQueue = [{ unsubscribed_at: null, digest_weekly: true }]
+    const res = await call(await load(), "?dry=1")
+    const body = await res.json()
+    expect(body.would_send).toBe(0)
+    expect(body.skipped_incomplete).toBe(1)
+  })
+
+  it("a complete mover is mailed with real figures, the holdings note, and no '0 moments' when the count is unread", async () => {
+    h.cfg.movers = [mover({ moment_count: null })]
+    await call(await load())
+    await h.afterFns[0]()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const body = JSON.parse(String((fetchMock.mock.calls[0] as any[])[1].body))
+    expect(body.subject).toContain("+11.11%")
+    expect(body.text).toContain("$100.00")
+    expect(body.text).toContain("Includes any moments you added or sold this week.")
+    expect(body.text).not.toMatch(/\b0 moments tracked/)
+    expect(body.html).not.toMatch(/\b0 moments tracked/)
+    expect(digestLog().p_extra.skipped_incomplete).toBe(0)
+  })
+
+  it("prints the moment count when it was read", async () => {
+    h.cfg.movers = [mover({ moment_count: 1860 })]
+    await call(await load())
+    await h.afterFns[0]()
+    const body = JSON.parse(String((fetchMock.mock.calls[0] as any[])[1].body))
+    expect(body.text).toContain("1,860 moments tracked")
+  })
+})

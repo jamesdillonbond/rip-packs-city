@@ -55,6 +55,16 @@ type Mover = {
   latest_date: string | null;
 };
 
+// 2026-11-03: a mover is mailed only when every figure the email prints was READ. The formatters
+// below used to default a missing value ("$0.00", "0%" — in the SUBJECT — "0 moments tracked"):
+// on an outbound email to a collector that is an account-level false claim, so an incomplete row
+// is skipped and counted (`skipped_incomplete`), never mailed with an invented figure.
+type CompleteMover = Mover & { latest_fmv: number; delta_usd: number; delta_pct: number };
+const finite = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+function isCompleteMover(m: Mover): m is CompleteMover {
+  return finite(m.latest_fmv) && finite(m.delta_usd) && finite(m.delta_pct);
+}
+
 function authed(req: NextRequest): boolean {
   const auth = req.headers.get("authorization");
   return (
@@ -71,16 +81,19 @@ function weekBucket(d: Date): string {
   return monday.toISOString().slice(0, 10);
 }
 
-const usd = (n: number | null): string =>
-  n == null
-    ? "$0.00"
-    : n.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const usd = (n: number): string =>
+  n.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-function pctLabel(p: number | null): string {
-  if (p == null) return "0%";
+function pctLabel(p: number): string {
   const sign = p > 0 ? "+" : "";
   return `${sign}${p}%`;
 }
+
+// #227's known limit, stated rather than hidden: the movers function compares TOTAL estimated value
+// week over week, so moments bought or sold that week move the figure too. The function does not
+// return the prior moment count, so the email cannot split price change from holdings change — it
+// says so instead.
+const HOLDINGS_NOTE = "Includes any moments you added or sold this week.";
 
 // ensureUnsubToken / alreadySentEmail live in lib/email/recipient-guards.ts and
 // FAIL CLOSED: a read or write they cannot confirm skips the recipient.
@@ -88,8 +101,9 @@ async function alreadySent(ownerKey: string, bucket: string): Promise<boolean | 
   return alreadySentEmail({ ownerKey, alertKind: "weekly_digest", subjectKey: SUBJECT_KEY, bucket })
 }
 
-function buildEmail(m: Mover, unsubscribeUrl: string): { subject: string; html: string; text: string } {
-  const up = (m.delta_usd ?? 0) >= 0;
+function buildEmail(m: CompleteMover, unsubscribeUrl: string): { subject: string; html: string; text: string } {
+  const up = m.delta_usd >= 0;
+  const momentsLine = finite(m.moment_count) ? `${m.moment_count.toLocaleString("en-US")} moments tracked` : null;
   const arrow = up ? "▲" : "▼";
   const color = up ? "#16A34A" : "#DC2626";
   const subject = `Your Rip Packs City portfolio: ${pctLabel(m.delta_pct)} this week`;
@@ -105,9 +119,10 @@ function buildEmail(m: Mover, unsubscribeUrl: string): { subject: string; html: 
       <div style="font-size:11px;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:.12em;margin-bottom:6px">Estimated value</div>
       <div style="font-family:'Barlow Condensed',Arial,sans-serif;font-weight:800;font-size:34px;line-height:1">${usd(m.latest_fmv)}</div>
       <div style="font-size:15px;color:${color};margin-top:8px;font-weight:700">
-        ${arrow} ${usd(Math.abs(m.delta_usd ?? 0))} (${pctLabel(m.delta_pct)}) this week
+        ${arrow} ${usd(Math.abs(m.delta_usd))} (${pctLabel(m.delta_pct)}) this week
       </div>
-      <div style="font-size:12px;color:rgba(255,255,255,0.5);margin-top:10px">${m.moment_count ?? 0} moments tracked</div>
+      <div style="font-size:11px;color:rgba(255,255,255,0.5);margin-top:6px">${HOLDINGS_NOTE}</div>
+      ${momentsLine ? `<div style="font-size:12px;color:rgba(255,255,255,0.5);margin-top:10px">${momentsLine}</div>` : ""}
     </div>
 
     <a href="${dashUrl}" style="display:inline-block;background:linear-gradient(135deg,#E03A2F,#B91C1C);color:#fff;text-decoration:none;font-family:'Barlow Condensed',Arial,sans-serif;font-weight:800;letter-spacing:.08em;text-transform:uppercase;font-size:13px;padding:12px 22px;border-radius:6px">
@@ -126,8 +141,9 @@ function buildEmail(m: Mover, unsubscribeUrl: string): { subject: string; html: 
     "Rip Packs City — your weekly portfolio",
     "",
     `Estimated value: ${usd(m.latest_fmv)}`,
-    `${up ? "Up" : "Down"} ${usd(Math.abs(m.delta_usd ?? 0))} (${pctLabel(m.delta_pct)}) this week`,
-    `${m.moment_count ?? 0} moments tracked`,
+    `${up ? "Up" : "Down"} ${usd(Math.abs(m.delta_usd))} (${pctLabel(m.delta_pct)}) this week`,
+    HOLDINGS_NOTE,
+    ...(momentsLine ? [momentsLine] : []),
     "",
     `Open your dashboard: ${dashUrl}`,
     "",
@@ -219,10 +235,12 @@ async function run(req: NextRequest) {
       let unsub = 0;
       let dedup = 0;
       let unverified = 0; // dedup read failed: the live run would skip these too
+      let incomplete = 0; // a figure the email prints was not read: the live run skips these
       for (const m of movers) {
         const email = (m.email as string).toLowerCase();
         if (seen.has(email)) continue;
         seen.add(email);
+        if (!isCompleteMover(m)) { incomplete++; continue; }
         const tok = await ensureUnsubTokenPreview(email);
         if (tok === "unsubscribed") { unsub++; continue; }
         if (tok === "unverified") { unverified++; continue; }
@@ -243,6 +261,7 @@ async function run(req: NextRequest) {
         skipped_unsubscribed: unsub,
         skipped_already_sent: dedup,
         skipped_unverified: unverified,
+        skipped_incomplete: incomplete,
         recipients: would,
       });
     } catch (e) {
@@ -284,6 +303,7 @@ async function run(req: NextRequest) {
     let sent = 0;
     let skipped = 0;
     let guardErrors = 0;
+    let incomplete = 0;
 
     try {
       const movers = await loadMovers(minAbsPct, days);
@@ -295,6 +315,7 @@ async function run(req: NextRequest) {
         const email = (m.email as string).toLowerCase();
         if (seen.has(email)) { skipped++; continue; }
         seen.add(email);
+        if (!isCompleteMover(m)) { skipped++; incomplete++; continue; }
 
         const tok = await ensureUnsubToken(email, { respectDigestOff: true });
         if ("skip" in tok) {
@@ -361,7 +382,7 @@ async function run(req: NextRequest) {
         p_rows_skipped: skipped,
         p_ok: ok,
         p_error: errMsg,
-        p_extra: { sent, skipped, guard_errors: guardErrors, bucket, min_abs_pct: minAbsPct, days, duration_ms: Date.now() - startedMs },
+        p_extra: { sent, skipped, skipped_incomplete: incomplete, guard_errors: guardErrors, bucket, min_abs_pct: minAbsPct, days, duration_ms: Date.now() - startedMs },
       });
     } catch (logErr) {
       console.log(`[${PIPELINE_NAME}] log err: ${logErr instanceof Error ? logErr.message : String(logErr)}`);
