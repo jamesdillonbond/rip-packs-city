@@ -15,6 +15,18 @@ const supabase: any = createClient(
 // wallet_moments_cache SELECT is capped at 1000 rows by db-max-rows, which
 // would undercount any wallet > 1000 moments — i.e. exactly the serious-
 // collector cohort this card is meant to convert.
+// #228 lever (b′), 2026-11-04: a 20 s read budget for THIS route, not the 8 s default.
+// The largest wallets (24 hold ≥ 20k Moments, max 70k) read cache-cold in 8–12 s under IO pressure.
+// pg_stat_statements held calls of 8.4 s and 11.3 s that COMPLETED in the database after this route
+// had already answered 503 — boundedRead abandons the wait, not the query — so the 8 s bound was
+// turning a slow success into an error, and the first visitor paid for it while the page warmed
+// for the next one. 20 s sits under the service_role statement_timeout (30 s) and this route's
+// maxDuration, so a genuinely stuck read is still reported by us, honestly, as a retryable 503.
+// The share page's server fetch carries no deadline of its own; the OG card's ogFetch (10 s) does
+// and is unaffected. A lever that needs no new schedule and covers every wallet, not a top-N list.
+const SNAPSHOT_READ_BUDGET_MS = 20_000
+export const maxDuration = 30
+
 export async function GET(req: NextRequest) {
   const walletRaw = req.nextUrl.searchParams.get("wallet")
   if (!walletRaw || !walletRaw.trim()) {
@@ -25,7 +37,7 @@ export async function GET(req: NextRequest) {
   try {
     const { data, error } = await boundedRead(supabase.rpc("get_wallet_collection_snapshot", {
       p_wallet: wallet,
-    }), "api/collection-snapshot/get_wallet_collection_snapshot")
+    }), "api/collection-snapshot/get_wallet_collection_snapshot", SNAPSHOT_READ_BUDGET_MS)
 
     if (error) {
       // apiErrorResponse rather than a hand-rolled 500: it classifies a

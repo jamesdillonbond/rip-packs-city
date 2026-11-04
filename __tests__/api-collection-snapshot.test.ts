@@ -5,7 +5,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // controllable. Pins the required-param guard, the RPC field mapping, and the
 // error fallback shape.
 
-const rpcState: { data: any; error: any; throws: unknown } = { data: null, error: null, throws: null }
+const rpcState: { data: any; error: any; throws: unknown; delayMs: number } = { data: null, error: null, throws: null, delayMs: 0 }
 
 vi.mock("@supabase/supabase-js", () => ({
   createClient: () => ({
@@ -14,6 +14,7 @@ vi.mock("@supabase/supabase-js", () => ({
       // THROW (a fetch failure, an abort). That throw is what the route catch
       // handles, and until 2026-08-25 it answered 200 -- so the suite needs a
       // way to produce it.
+      if (rpcState.delayMs) await new Promise((r) => setTimeout(r, rpcState.delayMs))
       if (rpcState.throws) throw rpcState.throws
       return { data: rpcState.data, error: rpcState.error }
     },
@@ -30,6 +31,8 @@ beforeEach(() => {
   rpcState.data = null
   rpcState.error = null
   rpcState.throws = null
+  rpcState.delayMs = 0
+  vi.useRealTimers()
 })
 
 describe("GET /api/collection-snapshot", () => {
@@ -146,6 +149,26 @@ describe("a THROWN read must not be published as a zeroed collection", () => {
     // caller retrying is reasonable.
     rpcState.throws = { code: "57014", message: "canceling statement due to statement timeout" }
     const res = await GET(req("https://t/api/collection-snapshot?wallet=0xABC"))
+    expect(res.status).toBe(503)
+    expect((await res.json()).retryable).toBe(true)
+  })
+
+  // #228, 2026-11-04: an 11 s cold whale read used to be abandoned at the 8 s default and answered
+  // 503 while the query finished in the database anyway. It now answers; a stuck read still 503s.
+  it("a cold whale read slower than 8 s answers 200; one past the route budget is still an honest 503", async () => {
+    vi.useFakeTimers()
+    rpcState.data = { totalMoments: 70280, totalFmv: 1 }
+    rpcState.delayMs = 11_300
+    const slow = GET(req("https://t/api/collection-snapshot?wallet=0xABC"))
+    await vi.advanceTimersByTimeAsync(11_300)
+    const ok = await slow
+    expect(ok.status).toBe(200)
+    expect((await ok.json()).totalMoments).toBe(70280)
+
+    rpcState.delayMs = 25_000
+    const stuck = GET(req("https://t/api/collection-snapshot?wallet=0xABC"))
+    await vi.advanceTimersByTimeAsync(25_000)
+    const res = await stuck
     expect(res.status).toBe(503)
     expect((await res.json()).retryable).toBe(true)
   })
