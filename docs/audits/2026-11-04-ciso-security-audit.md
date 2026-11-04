@@ -1,0 +1,83 @@
+# Rip Packs City — CISO security audit, 2026-11-04
+
+**Scope.** Trevor, 8:15 AM PT: "put your CISO hat on … best practices and regulations … recent breaches and incidents, including Candy … audit our full site, do vulnerability and penetration testing, then start working on remediation." Cowork cloud session, 8:15 AM → ~10:00 AM PT. Register rows **R143–R150**; known-issues **#229** (umbrella) and **#230** (ratchet). Everything stated as fact below was verified this session (a query run, a file read, a live request); anything else is labelled.
+
+**Bottom line.** The 10-25 audit left the platform in good shape — the auth wall, CSP, HSTS-preload, SHA-pinned CI, RLS on every exposed table and the admin-session design all held under live probing. This pass found and fixed one P1 (a trade-room signable was never checked against the trade it claimed to be — the only place a user's wallet signs anything), five P2s (unbound wallet-verification challenge, unvalidated username/avatar/accent, OG-card SSRF, two anonymous side-effect routes with no durable cap, a fake-able "sealed" state), moved nine secrets to Vercel's write-only type, and left six two-click items for Trevor. Nothing found was exploited (evidence per row in the register).
+
+---
+
+## 1. What the industry says we should be doing (research, cited in §7)
+
+| Framework | Verdict for a one-developer, pre-revenue, non-custodial site | Where RPC stands today |
+|---|---|---|
+| **OWASP Top 10 (2025)** | Use as the review lens | A01 access control, A02 misconfiguration, A03 supply chain are where this pass found things. A05 injection, A07 auth, A08 integrity: clean. |
+| **OWASP ASVS 5.0 L1** (+ L2 auth/session/access) | Adopt | Covered by the 10-25 + 11-04 passes; no formal mapping kept. |
+| **NIST CSF 2.0 small-business profile** | Adopt as the one-page governance skeleton | Not written down anywhere. §6 is the first cut. |
+| **CIS Controls IG1** (56 safeguards) | Adopt as the operational checklist | ~⅔ met (MFA on provider accounts is the biggest unknown — see §5). |
+| **SOC 2** | Defer until a buyer asks in writing | n/a |
+
+**Regulation that applies regardless of size:** Oregon's breach-notification law (45 days to consumers, AG notice > 250 residents, 30 days in California from 2026-01-01); CAN-SPAM for any marketing email (unsubscribe honoured ≤ 10 business days, postal address — the Stage B launch already waits on Trevor's address); FTC Act §5 (don't claim security you don't have). **Probably below threshold:** Oregon Consumer Privacy Act (100k consumers/yr), CCPA (100k consumers or $26.6M). **Not applicable while non-custodial:** FinCEN/MSB — the trade room's shape A (two signers, no escrow, no custody, no fee) keeps it that way; **re-check if that changes.** COPPA: add a 13+ line to the terms (there is no age gate; nothing child-directed).
+
+**Stack-specific:** Next.js is at **16.4.3** — past the 2026-10-14 out-of-band fixes (`use cache` RCE, `next/og` SVG RCE, Server Actions DoS, fixed in 16.4.1) and the May-2026 middleware-bypass set (16.2.5). Note the `use cache` and Server Actions advisories carry **no CVE**, so `npm audit` cannot see them: watch GitHub advisories for `next` directly. `npm audit --omit=dev`: 0 high/critical (10 low/moderate); dev-only highs are `undici` (via jsdom) and `vite` (launch-editor on Windows), neither reaches production.
+
+## 2. Recent incidents and what each means for RPC
+
+| Incident | What happened | Lesson applied / to apply |
+|---|---|---|
+| **Candy Digital, Oct 11–12 2026** | SOL drained from Candy's **custodial** Solana wallets (third-party on-chain analysis: ~426 SOL from ~1,543 victims in two waves; Candy's own posts confirm the drain, the lock on all minted NFTs, a reimbursement, and a migration to MoonPay-powered per-user wallets from Oct 19; claiming opened Oct 30). Root cause **not published** by Candy; the community analysis infers a bulk leak of Candy-held keys. Candy says it never stored passwords and found no evidence its collector email table was accessed, with that review still open as of Oct 15. | (1) **Custodial key concentration is the failure class; RPC's identifier-only, never-custody posture is the right one and the trade room must stay shape A.** (2) **Candy wallet addresses saved on RPC are now stale by design** — users are being migrated to new wallets and transfers are locked; expect Candy holdings to lag or vanish from saved wallets until the new addresses are saved. (3) Candy users are an active phishing target; RPC must never look like it is asking a Candy user for wallet links, codes or seed phrases (it doesn't — and the new `account:` line in our own wallet-verification message is there so a user can see a challenge that is *not* theirs). |
+| **Flow execution-layer exploit, Dec 26–27 2025** | Cadence type-confusion (v1.8.8) let an attacker counterfeit FLOW + 12 tokens (~$3.9M realised); ~30 h halt; "Isolated Recovery Plan", no rollback. | Indexers must resume cleanly after a halt and silent-staleness alarms must fire during one; Dec 26–29 2025 data is anomalous. The sentinel's cadence arms cover this; no action. |
+| **Vercel, April 2026** | A Context.ai OAuth compromise → an employee's Google Workspace → Vercel internal systems; attackers **decrypted non-sensitive env vars** for a subset of customers. Closed Oct 16. | **Done today:** the nine secret-shaped vars that were `encrypted` are now `sensitive` (write-only). Rotation of those nine remains the belt to this suspender (Trevor's call; Vercel notified affected customers directly and no notice is recorded here). MFA on the Vercel account: Trevor to confirm. |
+| **Next.js CVE-2025-29927 / React2Shell (Dec 2025) / Oct-2026 OOB** | Middleware bypass; RSC RCE; `use cache` + `next/og` RCEs. | Patched (16.4.3). Standing rule confirmed by live probe: authorization is re-checked in every handler, never only in `proxy.ts` (forged `x-middleware-subrequest` → still 307). |
+| **npm: Shai-Hulud (Sep 2025), 2.0 (Nov–Dec 2025), May + Aug 2026 waves** | Self-propagating credential stealers via `preinstall`. | CI already `npm ci` with a committed lockfile; sessions use `--ignore-scripts`. **To do:** `.npmrc` with `ignore-scripts=true` + an allow-list, and `minimumReleaseAge` once on npm ≥ 11.10 (see §5). |
+| **GitHub Actions: tj-actions (Mar 2025), trivy-action (Mar 2026)** | Mutable tags re-pointed to a credential stealer. | Already clean: every `uses:` in all 40 workflows is a full SHA; all 40 carry `permissions:`; no `pull_request_target`. |
+| **Supabase: Moltbook (Jan 2026), UpGuard study (Sep 2026, 16k readable DBs)** | Anon key + no RLS = everything readable/writable. | Live-probed with the anon publishable key: `user_profiles` → permission denied; `email_subscribers`, `saved_wallets`, `support_conversations` → `[]`; `auth.users` unreachable; storage buckets `[]`; the one anon-readable view over user data (`beta_feedback_stats`) runs `security_invoker`. `profile_bio` public columns are public by design (socials a user chose to show). |
+| **Dapper Labs settlements ($5M, $7.05M)** | Meta pixel / video-privacy — a tracker liability, not a breach. | RPC runs no third-party trackers (CSP `connect-src` lists none). Keep it that way. |
+| **Cloudflare outage, Nov 18 2025** | Not an attack; Turnstile/Workers KV down ~6 h. | Never put a CAPTCHA on the only sign-in path without a fallback. (Supabase CAPTCHA on the magic-link form: Trevor to decide — §5.) |
+
+## 3. Live probe of production (10:30–10:50 AM PT, from the cloud sandbox)
+
+All headers present and strong: HSTS `max-age=63072000; includeSubDomains; preload`, `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy`, CSP with `frame-ancestors 'none'`, `base-uri`, `form-action` and no `unsafe-eval` (the `unsafe-inline` residual is R135's documented ISR trade-off). HTTP→HTTPS and apex→www both 308. `/.well-known/security.txt` live. `/.env`, `/.git/HEAD`, `/package.json`, source maps → 404.
+
+Auth wall, with negative controls: `/dashboard`, `/trades`, `/api/trades`, `/api/ingest`, `/api/mcp/keys/x` **and** `/api/mcp/keys/x.png` → 307 to `/login`; `?token=bogus` and `Bearer bogus` do not bypass; `x-middleware-subrequest` does not bypass; `/api/admin/session` with a bogus token → 401; `/totally-bogus-slug/overview` → 404 (not an indexable duplicate). CORS preflight from an evil origin on `/api/public/*` gets no `Access-Control-Allow-Origin`.
+
+**Where the probe found weakness:** **70 concurrent anonymous hits** on `/api/public/profile/<name>` and **30** on `/nba-top-shot/overview` returned **0 × 429** — the in-process limiter is per-lambda and Vercel scaled it away (the 08-06 pool-saturation incident had the same shape). The Vercel WAF had **no configuration at all** (0 custom rules, bot protection off). Remediation in §4/§5.
+
+## 4. Findings and what shipped (code: one commit, this morning)
+
+| # | Sev | Finding | Status |
+|---|---|---|---|
+| R144 | **P1** | Trade room: the relayed signable (the thing a user's wallet signs) was never checked against the trade the room agreed. | ✅ `lib/trade-room/relay-guard.ts` on `relay_post` and `relay_sign`: cadence, voucher, authorizers `[initiator, co-signer]`, payer/proposer, every (collection, Moment) per side, and `message == encodeMessageFromSignable(voucher)`. 19 planted-defect pins + a real-FCL round trip. |
+| R145 | P2 | `sealed` trusted a client tx_id; `relay_sign` ignored the kill switch/status; accept/unaccept email loop. | ✅ Seal only when the chain shows every Moment with the other side; never overwrite; relay_sign re-checks flag + status + signable; durable 2/h per-(room, notice, recipient) email budget. |
+| R147 | P2 | Wallet-verification challenge not bound to the RPC account (phish-and-replay to become the "verified" saver). | ✅ `nonceFor(address, issuedAt, account)` + an `account:` line the wallet displays. |
+| R146 | P2 | Username/accent/avatar accepted any string; a case-variant handle locks the real owner out (fail-closed `ilike`). | ✅ code (`lib/profile/bio-input.ts`); ⏳ DB backstop `20261104174500` (CHECK + `UNIQUE(lower(username))`) — **Trevor applies** (MCP refused DDL). Measured safe: 33/33 handles conform. |
+| R148 | P2 | OG profile card fetched any https avatar host from the server, following redirects. | ✅ gated on the CSP host list; `redirect:"manual"`; refuses oversize before reading. |
+| R149 | P2 | Anon `POST /api/wallet-search` and `GET /api/support-chat/context` behind only the per-lambda limiter. | ✅ durable caps (120/h IP, 3,000/h global; fail-closed) and `input ≤ 200`; new chat rows behind the beacon cap. |
+| R143 | P2 | 9 secrets were Vercel type `encrypted` (the Apr-2026 class). | ✅ flipped to `sensitive`. |
+| R150 | P3 | 37 files compare the ingest/cron secret with `===`. | 🔁 13 converted; ratchet test pins 37, lowers only (#230). |
+| — | Info | `anon`-executable SECURITY DEFINER functions flagged by the advisor: `get_trophy_slab_data_by_username` (public profile data, by design), `serial_fmv_estimate` (pure pricing math), `panini_newest_recorded_sale_at` / `panini_readiness_row` (allow-listed 10-19 for `/api/ready`). | Accepted; each returns no private row. `function_search_path_mutable` ×4: two are R142's procedures (accepted), `topshot_league_for` and `recent_low_usd` are non-SECDEF pure SQL → no exposure. |
+
+**Verified clean (don't re-derive):** no open redirects (`safeRedirectPath` everywhere a `next` is read); no PostgREST `.or()` injection on the three routes that build one; `dangerouslySetInnerHTML` only through `jsonLdScript()` / static CSS; no server actions in the tree; every `/api/admin/**` and `/api/cron/**` route checks a bearer or admin token; signed-in IDOR targets (alerts, watchlist, MCP keys, portfolio, follows, trade rooms) all bind to `auth.uid` or `requireOwnedKey`; 0 secret-shaped literals in tracked files; `.env*` ignored and untracked; secret scanning + push protection ON at GitHub.
+
+## 5. Trevor's list (each ≤ 2 clicks; in priority order)
+
+1. **Vercel → Firewall → Rules → Review Changes → Publish.** A "Block sensitive paths" deny rule (`/.env`, `/.git`, `/wp-admin`, `/wp-login.php`, `/xmlrpc.php`, `/phpmyadmin`, `/cgi-bin`, `/.aws`) is drafted and unpublished; free. Then, if you accept **$0.50 per 1M allowed requests**: add two rate-limit rules — `/api/*` without an `Authorization` header, excluding `/api/cron` and `/api/ingest`: **300 / 60 s per IP**; non-API, non-asset page paths: **240 / 60 s per IP**. These are what the in-process limiter cannot do. (The config API returned 404 until a first publish exists, and the dashboard renderer froze the Chrome tab three times, so I could not finish it from here.)
+2. **GitHub → Settings → Code security:** turn on **Dependabot alerts** (a `dependabot.yml` exists but alerts are off; the session proxy refuses repo-settings writes). **Branches:** protect `main` with "require status checks" at minimum — today anyone with push can land without CI.
+3. **Apply `supabase/migrations/20261104174500_audit_20261104_profile_bio_username_shape_and_ci_unique.sql`** (dashboard SQL editor; 0 rows would fail it).
+4. **Supabase → Authentication:** confirm **leaked-password protection** is on (Pro feature) and decide on **CAPTCHA** for the magic-link form (the form already has durable per-IP caps, so this is optional). Confirm **MFA on the Supabase, Vercel, GitHub, Cloudflare and Resend accounts** — CIS IG1's single biggest control for a one-person company, and the exact path of the Vercel incident.
+5. **R133:** one Vercel Logs search, `query-token presented ok=true`, last 7 d. Zero lines → the `?token=` arms in `proxy.ts` / `lib/admin-auth.ts` can go (a 2-line change + test pin).
+6. **Optional belt:** rotate the nine env secrets now marked sensitive (Resend, Telegram, Anthropic, service-role, cron, market-feed, TS proxy, keying, RPC API key).
+
+## 6. How RPC should operate (the standing posture, written down once)
+
+- **Identity & access:** MFA on every provider account; no shared logins; the admin master token lives in scripts and cron only, browsers hold 12 h sessions (R134); every secret in Vercel is `sensitive`; secrets are never read in a transcript (hash or length only — the 08-18 nine-key leak).
+- **Authorization:** the proxy wall is defence-in-depth, never the only check; every handler re-checks; "saved" ≠ "owned"; a username decides ownership only when it passes the handle rule and is unique case-insensitively.
+- **Signing:** RPC never holds a user key; the trade room is shape A; a signable is verified against DB state on both relay legs; a seal is a chain fact.
+- **Supply chain:** SHA-pinned actions with explicit `permissions`; committed lockfile + `npm ci`; `--ignore-scripts` in sessions; watch `next` advisories directly (no CVE for the Oct-2026 ones).
+- **Data:** RLS on every exposed table; views over user data `security_invoker`; the anon-executable SECDEF set is an allow-list with reasons (`secdef_anon_exec_allowlist`); re-probe each audit.
+- **Abuse:** every anonymous side-effect route has a *durable* cap that fails closed; the per-lambda limiter is a courtesy, the WAF rate limit is the control.
+- **Detection & response:** sentinel + smoke suite + E2E DOM badge as today; breach plan = Oregon 45-day / California 30-day consumer notice, AG notice over 250 OR residents; covered PI here is email + login — keep the incident runbook (`engineering:incident-response` skill) and this list current.
+- **Cadence:** full audit quarterly (next **2027-02-04**); Supabase advisors + `npm audit --omit=dev` + the register's VERIFIED-CLEAN probes monthly in the nightly pass.
+
+## 7. Sources
+
+Standards/regs: OWASP Top 10:2025 (top10.owasp.org/2025), NIST SP 1300 CSF 2.0 Small Business Quick-Start, CIS Controls IG1, Oregon DOJ OCPA FAQ, DWT Oregon breach-law summary, FTC CAN-SPAM guide, Federal Register COPPA rule 2025-04-22, FinCEN 2019 CVC guidance, Next.js CSP guide, Vercel WAF usage & pricing + iad1 regional pricing, Supabase RLS / functions-auth / password-security docs. Incidents: Candy blog posts Oct 12/15/19/22/30 2026 + solana-security-wiki PR #13 (unverified on-chain figures), Flow Dec-27 post-mortem, Vercel April-2026 bulletin (closed Oct 16), Vercel React2Shell bulletin, The Hacker News on the Oct-14 Next.js release, Microsoft on Shai-Hulud 2.0, CSA Singapore AD-2026-009, Wiz on tj-actions and Moltbook, Cloudflare Nov-18-2025 post-mortem, ClassAction.org on the Dapper settlements. Full URLs are in the two research transcripts attached to the session; the Project doc `claude/handoff-2026-11-04-ciso-security-audit.md` carries the handoff.
