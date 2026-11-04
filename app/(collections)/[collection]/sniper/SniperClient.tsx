@@ -373,6 +373,9 @@ function SniperMomentsBody() {
   const [benchmarks, setBenchmarks] = useState<Record<string, TierBenchmark> | null>(null);
   const [relativeLoading, setRelativeLoading] = useState(false);
   const [relativeFailed, setRelativeFailed] = useState(false);
+  // 2026-11-03: the benchmarks leg has its OWN failure state. A non-2xx / wrong-shape / thrown read
+  // used to land as `{}` and print "No benchmarks available." — a failed read published as a fact.
+  const [benchFailed, setBenchFailed] = useState(false);
 
   // Highlight detection on page load — supports two URL shapes:
   //   ?highlight={flowId}  (legacy share-link copy from this page)
@@ -654,6 +657,7 @@ function SniperMomentsBody() {
     let cancelled = false;
     setRelativeLoading(true);
     setRelativeFailed(false);
+    setBenchFailed(false);
     (async () => {
       try {
         const [rel, bench] = await Promise.all([
@@ -668,11 +672,14 @@ function SniperMomentsBody() {
         // shape as the "try a longer time range" copy fixed 2026-08-12).
         if (!Array.isArray(rel?.deals)) { setRelativeFailed(true); setRelativeDeals([]); }
         else setRelativeDeals(rel.deals);
-        setBenchmarks(bench?.benchmarks && typeof bench.benchmarks === "object" ? bench.benchmarks : {});
+        const benchOk = !!bench?.benchmarks && typeof bench.benchmarks === "object";
+        setBenchFailed(!benchOk);
+        setBenchmarks(benchOk ? bench.benchmarks : {});
       } catch {
         if (cancelled) return;
         setRelativeFailed(true);
         setRelativeDeals([]);
+        setBenchFailed(true);
         setBenchmarks({});
       } finally {
         if (!cancelled) setRelativeLoading(false);
@@ -1295,7 +1302,9 @@ function SniperMomentsBody() {
 
               <div className="rpc-card" style={{ padding: 12 }}>
                 <div className="rpc-label" style={{ marginBottom: 8 }}>TIER BENCHMARKS</div>
-                {benchmarks && Object.keys(benchmarks).length > 0 ? (
+                {benchFailed ? (
+                  <p className="rpc-mono" style={{ color: "var(--rpc-text-muted)", fontSize: "var(--text-xs)" }}>Couldn&apos;t load tier benchmarks right now.</p>
+                ) : benchmarks && Object.keys(benchmarks).length > 0 ? (
                   <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)" }}>
                     <thead>
                       <tr style={{ color: "var(--rpc-text-muted)" }}>
@@ -1310,8 +1319,8 @@ function SniperMomentsBody() {
                         <tr key={tier} style={{ borderTop: "1px solid var(--rpc-border)" }}>
                           <td style={{ padding: "4px 6px", color: accentText(accent), textTransform: "uppercase" }}>{tier}</td>
                           <td style={{ padding: "4px 6px", textAlign: "right" }}>{s.count}</td>
-                          <td style={{ padding: "4px 6px", textAlign: "right" }}>${Number(s.floor ?? 0).toFixed(2)}</td>
-                          <td style={{ padding: "4px 6px", textAlign: "right" }}>${Number(s.median ?? 0).toFixed(2)}</td>
+                          <td style={{ padding: "4px 6px", textAlign: "right" }}>{benchUsd(s.floor)}</td>
+                          <td style={{ padding: "4px 6px", textAlign: "right" }}>{benchUsd(s.median)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -2195,6 +2204,13 @@ function SniperMomentsBody() {
 // mounts <PackSniperClient/> locked to this collection (it self-fetches its own
 // deals on mount, so no server pre-fetch is needed here). Other collections
 // render Moments-only with no sub-nav.
+/** A tier benchmark dollar figure, or an em dash when the benchmark has none — never "$0.00". */
+function benchUsd(v: number | string | null | undefined): string {
+  if (v === null || v === undefined || v === "") return "—";
+  const n = Number(v);
+  return Number.isFinite(n) ? `$${n.toFixed(2)}` : "—";
+}
+
 export default function SniperClient() {
   const routeParams = useParams();
   const collectionSlug = routeParams.collection as string;

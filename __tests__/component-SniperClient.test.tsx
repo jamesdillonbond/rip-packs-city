@@ -958,6 +958,50 @@ describe("SniperClient — the populated relative-deals table", () => {
   })
 })
 
+describe("SniperClient — the tier-benchmarks leg reports a failure as a failure (2026-11-03)", () => {
+  // A failed benchmarks read used to land as `{}` and print "No benchmarks available." — a failed
+  // read published as a fact; and a benchmark with a NULL floor printed "$0.00".
+  const emptyCopy = /No benchmarks available/i
+  const failCopy = /Couldn't load tier benchmarks/i
+
+  function mount(benchImpl: () => Promise<unknown>) {
+    routeCollection = "laliga-golazos"
+    warm = { data: feed({ deals: [], tsCount: 0 }), loading: false, error: null, refresh: vi.fn() }
+    fetchMock.mockImplementation(async (input: unknown) => {
+      const u = String(input)
+      if (u.startsWith("/api/relative-deals")) return { ok: true, status: 200, json: async () => ({ deals: [] }) }
+      if (u.startsWith("/api/tier-pricing-benchmarks")) return benchImpl()
+      return { ok: true, status: 200, json: async () => ({ ids: [] }) }
+    })
+    render(<SniperClient />)
+  }
+
+  it("a non-2xx benchmarks read says it failed, and does NOT say there are none", async () => {
+    mount(async () => ({ ok: false, status: 503, json: async () => ({}) }))
+    expect(await screen.findByText(failCopy)).toBeTruthy()
+    expect(screen.queryByText(emptyCopy)).toBeNull()
+  })
+
+  it("a 200 with no benchmarks object is a failure too", async () => {
+    mount(async () => ({ ok: true, status: 200, json: async () => ({ error: "boom" }) }))
+    expect(await screen.findByText(failCopy)).toBeTruthy()
+    expect(screen.queryByText(emptyCopy)).toBeNull()
+  })
+
+  it("a genuine empty benchmarks object still says none — the mirror direction", async () => {
+    mount(async () => ({ ok: true, status: 200, json: async () => ({ benchmarks: {} }) }))
+    expect(await screen.findByText(emptyCopy)).toBeTruthy()
+    expect(screen.queryByText(failCopy)).toBeNull()
+  })
+
+  it("a NULL floor renders an em dash, never $0.00", async () => {
+    mount(async () => ({ ok: true, status: 200, json: async () => ({ benchmarks: { RARE: { count: 3, floor: null, median: 30 } } }) }))
+    expect(await screen.findByText("$30.00")).toBeTruthy()
+    expect(screen.queryByText("$0.00")).toBeNull()
+    expect(screen.getAllByText("—").length).toBeGreaterThan(0)
+  })
+})
+
 describe("SniperClient — the Fast Break deep link", () => {
   // A collector arrives here from a Fast Break card having clicked ONE specific
   // moment. ⚠ Between that click and this render the listing may have SOLD, and
