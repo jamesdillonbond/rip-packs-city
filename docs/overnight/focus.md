@@ -4,6 +4,12 @@
 
 **Rewrite rule for whoever edits this next: a focus file STEERS the next night, it is not an archive.** If a section is describing something that shipped more than ~a week ago and is not still a live trap, move it to the ledger and delete it here. A stale steer is worse than no steer.
 
+## STEER — added 2026-11-04 2:27 PM PT (Claude Code cloud) — refresh-conflated-editions missed its 7:17 AM PT tick; read the 11-05 tick
+
+- **What fired:** `cron_silent` (medium) on `refresh-conflated-editions` — last run AND heartbeat 11-03 7:17 AM PT, nothing for the 11-04 7:17 AM PT slot (classification `not_invoked`: no heartbeat, so the request never reached the work, or was refused before it). Every other cron-job.org lane fired through the morning (sentinel, sales indexers), so cron-job.org itself was up; the miss is this one entry or this one request. Not today's auth changes: R133 (`79a329cdf`, 9:48 AM) and R150 (10:45 AM) shipped after the slot.
+- **No data was lost:** both tables it writes have their own DB writer and are fresh — `topshot_thin_fmv_editions` 20 rows from pg_cron job 63 at 12:30 AM PT today; `topshot_conflated_editions` 66 rows from job 62's detector every 6 h (last 10:23 AM PT). So the deal-board guards were current all day.
+- **Read on 11-05 after ~7:20 AM PT:** a `refresh-conflated-editions` row at ~7:17 AM PT ⇒ a one-off miss, close this steer. **No row again ⇒ the cron-job.org entry is disabled or failing** — open it in the console (Cowork, Trevor's Chrome): history tab shows the HTTP status of the 11-04 attempt; re-enable / fix the header (Bearer INGEST_SECRET_TOKEN).
+
 ## STEER — added 2026-11-04 11:30 AM PT (Claude Code local, Trevor's laptop) — Panini old-catalogue backlog: the 3-day check Trevor's cadence decision depends on
 
 - **Trevor decided 11-04 ~10:40 AM PT to keep 6 full runs/day**, on the condition that the backlog keeps clearing. Each night 11-05, 11-06, 11-07, read `panini_editions`: `count(*) filter (where last_seen_at < now() - interval '7 days')` and `min(last_seen_at)`. Baseline 11-04 10:29 AM PT: **18,431** older than 7 d, oldest 2026-10-24 18:47Z. Expected: about −2.5k/day (post-fix rate ~8.3k editions/day vs a 5,750/day break-even).
