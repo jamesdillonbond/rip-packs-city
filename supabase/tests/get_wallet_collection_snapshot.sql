@@ -21,9 +21,11 @@
 --     once per distinct edition — the SAME answers as the per-moment forms they replaced.
 --   * (2026-11-03, #228) aggregates read only index-covered columns; the top-5 and rarest DISPLAY rows
 --     are fetched per edition key — including a NULL edition_key (its own arm; section 9 pins it).
+--   * (2026-11-03, #228 follow-up) `conf` holds only STALE rows; the stale split must still count a STALE
+--     holding and must not count a HIGH one (section 7b/8 pin both directions).
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20261104013841_audit_20261103_collection_snapshot_aggregates_from_the_index.sql);
+-- (supabase/migrations/20261104042335_audit_20261103_collection_snapshot_reads_only_stale_confidence.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -208,13 +210,19 @@ BEGIN
   -- (edition_key, collection) instead of a LATERAL probe per moment (58k buffers
   -- on one wallet). editions(external_id, collection_id) is unique, so this is the
   -- same row the LIMIT 1 probe returned.
+  -- 2026-11-03 (#228 follow-up): only the STALE rows. Every reader below uses `conf` solely
+  -- through `confidence = 'STALE'` (per_coll's FILTERs, stale's WHERE), and the key is unique,
+  -- so the LEFT JOIN cannot multiply rows — dropping the non-STALE rows changes no output. It
+  -- replaces a full `editions` scan plus one edition_fmv_current probe per held edition
+  -- (11.5k probes, ~52k buffers on a 63k-moment wallet) with the ~3k STALE rows (~14k).
   conf AS (
     SELECT e.external_id AS edition_key, e.collection_id, l.confidence
-    FROM editions e
-    JOIN edition_fmv_current l ON l.edition_id = e.id
-    WHERE (e.external_id, e.collection_id) IN (
-      SELECT DISTINCT w.edition_key, w.collection_id FROM w WHERE w.edition_key IS NOT NULL
-    )
+    FROM edition_fmv_current l
+    JOIN editions e ON e.id = l.edition_id
+    WHERE l.confidence = 'STALE'
+      AND (e.external_id, e.collection_id) IN (
+        SELECT DISTINCT w.edition_key, w.collection_id FROM w WHERE w.edition_key IS NOT NULL
+      )
   ),
   per_coll AS (
     SELECT jsonb_agg(pc ORDER BY (pc->>'moments')::int DESC) AS arr FROM (
