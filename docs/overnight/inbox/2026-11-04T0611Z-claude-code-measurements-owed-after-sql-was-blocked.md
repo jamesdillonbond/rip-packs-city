@@ -13,6 +13,11 @@
 ## 3. #228 watch (restarted)
 - Falsifier: a `RPC_READ_TIMEOUT` on `/api/collection-snapshot` from a NON-session caller after 8:30 PM PT 11-03 (`20261104042335` applied 8:23 PM PT). If it trips: the next lever is a CDN warm of the top wallets, not more SQL (the warm path is 428 ms / 54k buffers on a 63k-moment wallet).
 
+## 4. Writer-side `?? 0` in the sales indexers — a FINDING, deliberately not changed
+- ~12 writers persist `serial_number: x ?? 0` and `price_usd: parseFloat(...) || 0` (`sales-indexer`, `golazos-sales-indexer`, the `*-sales-history-backfill` crons, `ingest`, `lib/studio-sales-history.ts`, `pinnacle-sales-indexer`).
+- DB readers widely filter `serial_number > 0` (promote / verification / serial-FMV functions), so 0 behaves as an "unknown serial" sentinel today. A price of 0 is the riskier half: any reader that does not filter `price_usd > 0` would average it in.
+- **Read before changing anything:** `serial_number` nullability + unique/dedup keys on `sales` / `pinnacle_sales`; `count(*) where serial_number = 0` and `where price_usd = 0` per collection over 90 d; then grep readers of `price_usd` that lack a `> 0` filter. Only then decide NULL-vs-sentinel (a NULL could break a dedup key).
+
 ## Not owed (closed tonight, for the record)
 - Pinnacle `set_name='Unknown'`: 111 of 148 recovered (`20261104043706`); 37 have no source.
 - "Unknown (error loading)" player retired (`20261104045324`) and the minter refuses placeholders (`20261104050155`).
