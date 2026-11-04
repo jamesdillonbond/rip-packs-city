@@ -39,7 +39,7 @@ Nothing was both low-risk and completable to ship this pass. The one notable fin
 ## Shipped
 None. Quiet healthy night.
 
-## Needs your decision (QUEUE)
+## Needs your decision (QUEUED)
 
 1. **#228 — `/api/collection-snapshot` cold-whale timeout now recurring from REAL users on consecutive days (11-03 5:53 PM PT and 11-04 12:32 AM PT) after the two SQL reductions.** The behavior is an honest 503 on the largest cache-cold wallets (~1 hit/day, ~63k+-moment wallets), not a crash or fabrication. The SQL lever is exhausted (the 11-03 disposition: "the lever is CDN warm, not more SQL"). **Ready next step: CDN warm of the top N wallets (#228 lever b)** — route/edge work, OFF-LIMITS for the autonomous pass. Alternatively accept ~1 honest-503/day as within tolerance. Your call.
 2. **Staged destructive index swap — `docs/proposals/wmc-snapshot-cover-index-swap-STAGED.sql`** (drop the 342 MB subset `idx_wmc_wallet_coll_ek_fmv_tier`, rename the 259 MB cover `idx_wmc_wallet_coll_ek_snap_cover` onto its name). Both valid; the planner always picks the cover now, so this is pure hygiene (frees ~342 MB + one index-maintenance per wmc write). It raised the Supabase MCP destructive prompt twice (unanswered). Run each statement ALONE (dashboard SQL editor or `execute_sql`). Still your click.
