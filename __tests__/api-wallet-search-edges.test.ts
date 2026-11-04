@@ -196,6 +196,41 @@ describe("wallet-search — a wallet we CANNOT read must not be told to retry", 
     expect(String(body.error)).toMatch(/please try again/i)
     expect(String(body.error)).not.toMatch(/retrying will not help/i)
   })
+
+  it("logs the known computation-limit case as ONE warn line, not the multi-KB trace as an error (#138)", async () => {
+    // 2026-11-03: #138 closed by decision (no mega-wallet id source); the full Flow trace logged as
+    // an ERROR kept a permanent, already-triaged group at the top of every runtime-error read.
+    const err = vi.spyOn(console, "error").mockImplementation(() => {})
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+    try {
+      install(baseFixtures())
+      state.ownedIdsError = computationLimit()
+      const res = await POST(post({ input: WALLET }))
+      expect(res.status).toBe(500)
+      const errLines = err.mock.calls.map((c) => c.join(" "))
+      expect(errLines.some((l) => /fetch owned IDs|computation limit/i.test(l))).toBe(false)
+      const warnLines = warn.mock.calls.map((c) => c.join(" "))
+      expect(warnLines.some((l) => /computation limit/i.test(l) && /#138/.test(l))).toBe(true)
+      // the warn carries no trace payload
+      expect(warnLines.join(" ")).not.toMatch(/used: 100134/)
+    } finally {
+      err.mockRestore()
+      warn.mockRestore()
+    }
+  })
+
+  it("every OTHER owned-id failure still logs its full detail as an error — the control", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => {})
+    try {
+      install(baseFixtures())
+      state.ownedIdsError = new Error("socket hang up")
+      await POST(post({ input: WALLET }))
+      const errLines = err.mock.calls.map((c) => c.join(" "))
+      expect(errLines.some((l) => /fetch owned IDs/.test(l) && /socket hang up/.test(l))).toBe(true)
+    } finally {
+      err.mockRestore()
+    }
+  })
 })
 
 describe("wallet-search — request dispatch", () => {

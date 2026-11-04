@@ -1537,7 +1537,16 @@ export async function POST(req: NextRequest) {
     } catch (err) {
       if (err instanceof UsernameLookupError) return usernameLookupResponse(err)
       const detail = err instanceof Error ? err.message : String(err)
-      console.error("[wallet-search] Failed to resolve wallet or fetch owned IDs:", detail)
+      const computationLimit = /computation limit exceeded|Error Code: 1110/i.test(detail)
+      // 2026-11-03: the computation-limit case is a KNOWN, decided limitation (#138, closed by
+      // decision 09-25: no mega-wallet id source is built), so it logs one WARN line — not the
+      // multi-KB Flow trace as an ERROR, which kept a permanent, already-triaged group at the top
+      // of every Vercel runtime-error read. Every other failure still logs the full detail.
+      if (computationLimit) {
+        console.warn("[wallet-search] owned-id read hit the Flow script computation limit (known, #138)")
+      } else {
+        console.error("[wallet-search] Failed to resolve wallet or fetch owned IDs:", detail)
+      }
       // ⛔ "Please try again" IS A FALSE CLAIM FOR A COMPUTATION-LIMIT FAILURE.
       // The unpaginated getIDs() below can blow Flow's per-script computation limit
       // (production 2026-09-14: 100,134 and 217,993 against a limit of 100,000).
@@ -1556,7 +1565,7 @@ export async function POST(req: NextRequest) {
       //
       // Fixing the plumbing (page getIDs() the way lib/chains/flow/allday-cadence.ts
       // and cadence/pinnacle-wallet.ts already do) is filed separately.
-      const tooLarge = /computation limit exceeded|Error Code: 1110/i.test(detail)
+      const tooLarge = computationLimit
       return NextResponse.json(
         {
           error: tooLarge
