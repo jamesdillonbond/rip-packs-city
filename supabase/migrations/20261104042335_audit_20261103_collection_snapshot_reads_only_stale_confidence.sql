@@ -1,6 +1,6 @@
 -- audit_20261103_collection_snapshot_reads_only_stale_confidence (known-issues #228, follow-up)
 --
--- 2026-11-03 ~8:15–8:45 PM PT (Claude Code cloud; Trevor: "Keep going, proceed with all that make sense").
+-- 2026-11-03 8:17–8:24 PM PT, clock-derived (Claude Code cloud; Trevor: "Keep going, proceed with all that make sense").
 --
 -- WHY. The daytime monitor (inbox 2026-11-04T0410Z) recorded #228's falsifier tripped: one
 -- RPC_READ_TIMEOUT at 5:53 PM PT, 15 min after 20261104013841. Attribution: Vercel logs show ONE request,

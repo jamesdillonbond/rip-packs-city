@@ -1,6 +1,6 @@
 -- audit_20261103_pinnacle_editions_unknown_set_names_recovered_from_sales
 --
--- 2026-11-03 ~8:55–9:10 PM PT (Claude Code cloud; Trevor: "Keep going, proceed with all that make sense").
+-- 2026-11-03 8:31–8:38 PM PT, clock-derived (Claude Code cloud; Trevor: "Keep going, proceed with all that make sense").
 -- The open item left by 20261103190350 (studio "Unknown" NULLed): 148 `pinnacle_editions` rows created
 -- 2026-04-16 carry an INVENTED `set_name = 'Unknown'`. They are live keys — 1,346 pinnacle_sales rows point
 -- at them (163 in the last 90 days) — and readers print the key's set: get_edition_detail's legacy-key arm
