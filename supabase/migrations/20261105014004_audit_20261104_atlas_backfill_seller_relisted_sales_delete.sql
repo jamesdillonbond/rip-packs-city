@@ -1,3 +1,8 @@
+-- APPLIED 2026-11-04 ~5:45 PM PT (Cowork cloud, Trevor's Chrome, on his "You do it") via the dashboard SQL editor as ONE
+-- batch; the MCP auto-cancels DELETE. Pre-check: backup 754, live 754. Post-check: live 0, editor "Success".
+-- Top-100 Top Shot sales by price (90 d) after: max $11,000, 1 atlas_backfill row left (was 8).
+-- This version is the record-only apply (SELECT 1); the body that ran follows, verbatim from the staged file.
+--
 -- STAGED 2026-11-04 (Claude Code cloud) — #232 class 3. Run this whole file as ONE batch (apply_migration, or the
 -- dashboard SQL editor, then record the version by hand, as 20261105010616 was). It RAISEs and rolls back unless
 -- exactly 754 rows are deleted. After: name the migration file for its version, delete this staged file, ledger
