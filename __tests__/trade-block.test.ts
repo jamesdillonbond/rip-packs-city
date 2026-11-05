@@ -4,6 +4,7 @@ import { lineView, listingView, proposalView, valueLine } from "@/lib/trade-bloc
 import { buildBlockNoticeEmail } from "@/lib/trade-block/notify"
 import { SWAP_COLLECTIONS } from "@/lib/trade-room/multi-swap-cadence"
 import type { ItemRow, LoadedListing, LoadedProposal } from "@/lib/trade-block/store"
+import { toHolding } from "@/lib/trade-block/store"
 
 // The Trade Block (Trevor, 2026-11-02; docs/strategy/features/trading.md §3). These pin the
 // three decisions he made — public browse that never leaks a wallet, multi-collection
@@ -143,6 +144,11 @@ describe("the public view never carries a wallet address", () => {
 })
 
 describe("prices: confident FMV only, never $0 for unknown", () => {
+  it("an ask-derived FMV still shows, flagged from_asks; a stored line carries no marker", () => {
+    expect(lineView({ ...item({ fmv_usd: 40 }), fmv_from_asks: true }, undefined)).toMatchObject({ priced: true, fmv_usd: 40, from_asks: true })
+    expect(lineView(item({ fmv_usd: 40 }), undefined).from_asks).toBe(false)
+  })
+
   it("a null FMV is `not priced`, not zero", () => {
     const l = lineView(item({ fmv_usd: null }), undefined)
     expect(l.priced).toBe(false)
@@ -179,5 +185,40 @@ describe("notices carry no asset, price or wallet", () => {
   it("an accepted all-Top-Shot proposal links the room; otherwise it says nothing moves", () => {
     expect(buildBlockNoticeEmail("accepted", { other: "x", roomCode: "abcde12345" }).text).toMatch(/\/trades\/abcde12345/)
     expect(buildBlockNoticeEmail("accepted", { other: "x", roomCode: null }).text).toMatch(/nothing moves/)
+  })
+})
+
+describe("toHolding (the picker row)", () => {
+  const w = {
+    wallet_address: ADDR,
+    collection_id: TS,
+    moment_id: "1",
+    edition_key: "1:2",
+    player_name: "LeBron James",
+    character_name: null,
+    set_name: "The Anthology",
+    tier: "LEGENDARY",
+    series_number: 7,
+    serial_number: 56,
+    image_url: null,
+    fmv_usd: "2880",
+    fmv_confidence: "ASK_ONLY",
+    is_locked: true,
+  }
+  it("shows RPC's FMV at any confidence — LOW / STALE / ASK_ONLY are not 'not priced'", () => {
+    for (const c of ["HIGH", "MEDIUM", "LOW", "STALE", "ASK_ONLY", null]) {
+      expect(toHolding({ ...w, fmv_confidence: c }).fmv_usd).toBe(2880)
+    }
+    expect(toHolding({ ...w, fmv_usd: null }).fmv_usd).toBeNull()
+  })
+  it("flags only ask-derived FMV, and never carries the tier", () => {
+    expect(toHolding(w).fmv_from_asks).toBe(true)
+    expect(toHolding({ ...w, fmv_confidence: "LOW" }).fmv_from_asks).toBe(false)
+    expect(JSON.stringify(toHolding(w))).not.toMatch(/ASK_ONLY|HIGH|MEDIUM|LOW|STALE/)
+  })
+  it("carries the lock, and a locked line renders unselectable", () => {
+    expect(toHolding(w).locked).toBe(true)
+    expect(toHolding({ ...w, is_locked: null }).locked).toBe(false)
+    expect(lineView({ ...toHolding(w), kind: "moment" }, undefined).locked).toBe(true)
   })
 })

@@ -120,7 +120,7 @@ function fail(error: { message: string } | null, what: string): never {
 }
 
 const HOLDING_COLS =
-  "wallet_address, collection_id, moment_id, edition_key, player_name, character_name, set_name, tier, series_number, serial_number, image_url, fmv_usd, fmv_confidence"
+  "wallet_address, collection_id, moment_id, edition_key, player_name, character_name, set_name, tier, series_number, serial_number, image_url, fmv_usd, fmv_confidence, is_locked"
 /** Distinct player / character wants looked up per call (each is one bounded read). */
 export const MAX_PLAYER_LOOKUPS = 30
 const PER_LOOKUP = 20
@@ -136,6 +136,8 @@ export async function holdingsForWants(db: SupabaseClient, sources: readonly str
   const add = (rows: unknown[]) => {
     for (const r of rows as Parameters<typeof toHolding>[0][]) {
       const h = toHolding(r)
+      // a locked asset can't be traded, so it doesn't make a match (2026-11-04)
+      if (h.locked) continue
       out.set(`${h.collection_id}:${h.moment_id}`, h)
     }
   }

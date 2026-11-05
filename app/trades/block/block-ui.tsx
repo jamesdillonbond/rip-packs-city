@@ -1,13 +1,15 @@
 // app/trades/block/block-ui.tsx
 //
 // Pieces the Trade Block pages share: one listing line (an offered asset, or a want), a
-// line list, and the "what's it worth" line. FMV shows only where RPC priced it with
-// confidence; otherwise "not priced" — never $0, never a confidence tier. Offered lines
+// line list, and the "what's it worth" line. FMV shows wherever RPC has one (an ask-derived one
+// reads "from asks"); otherwise "not priced" — never $0, never a confidence tier. Locked assets
+// show in the picker but can't be selected. Offered lines
 // that have left RPC's index of their account read "may have moved", never "gone".
 
 import Link from "next/link"
 import type { LineView, ListingView } from "@/lib/trade-block/view"
 import { valueLine } from "@/lib/trade-block/view"
+import { fmvBasis } from "@/lib/fmv-basis"
 import { card, DISPLAY, fmtUsd, MONO, muted } from "../trade-ui"
 
 export const BLOCK_COLLECTION_FILTERS: ReadonlyArray<{ slug: string; label: string }> = [
@@ -20,6 +22,8 @@ export const BLOCK_COLLECTION_FILTERS: ReadonlyArray<{ slug: string; label: stri
   { slug: "panini-blockchain", label: "Panini" },
   { slug: "candy-mlb", label: "MLB ICONs" },
 ]
+
+const ASKS = fmvBasis("ASK_ONLY")!
 
 export function lineTitle(l: LineView): string {
   if (l.kind === "player") return `Any ${l.player_name ?? l.person_noun}`
@@ -55,17 +59,26 @@ export function Line({ line, selected, onToggle }: { line: LineView; selected?: 
       {line.kind === "moment" ? (
         <div style={{ fontFamily: MONO, fontSize: 12, textAlign: "right", flex: "0 0 auto", color: line.priced ? "var(--rpc-text-primary)" : "var(--rpc-text-muted)" }}>
           {line.priced && line.fmv_usd != null ? fmtUsd(line.fmv_usd) : "not priced"}
+          {line.priced && line.from_asks ? (
+            <div style={{ ...muted, fontSize: 11 }} title={ASKS.title}>
+              {ASKS.label}
+            </div>
+          ) : null}
+          {line.locked ? <div style={{ ...muted, fontSize: 11 }}>locked</div> : null}
         </div>
       ) : null}
     </>
   )
   const row: React.CSSProperties = { display: "flex", gap: 10, alignItems: "center", padding: "6px 0", width: "100%" }
   if (!onToggle) return <div style={row}>{body}</div>
+  const blocked = line.locked && !selected
   return (
     <button
       type="button"
       aria-pressed={selected}
       onClick={onToggle}
+      disabled={blocked}
+      title={blocked ? "Locked — it can't be traded until it's unlocked" : undefined}
       style={{
         ...row,
         padding: "6px 8px",
@@ -74,7 +87,8 @@ export function Line({ line, selected, onToggle }: { line: LineView; selected?: 
         border: `1px solid ${selected ? "var(--rpc-red-fill)" : "var(--rpc-border)"}`,
         background: selected ? "var(--rpc-surface-raised)" : "transparent",
         color: "inherit",
-        cursor: "pointer",
+        cursor: blocked ? "not-allowed" : "pointer",
+        opacity: blocked ? 0.5 : 1,
       }}
     >
       {body}

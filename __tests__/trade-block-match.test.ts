@@ -138,7 +138,7 @@ describe("matching rules (pure)", () => {
   it("two-way matches rank first", () => {
     const listing = (code: string, items: Partial<ItemRow>[]): LoadedListing =>
       ({ listing: { id: code, code, user_id: "x", created_at: "2026-11-02T00:00:00Z" }, items: items.map((i) => want(i)) }) as unknown as LoadedListing
-    const holding = { collection_id: TS, moment_id: "1", source: "s", edition_key: "73:1", player_name: "Victor Wembanyama", set_name: null, tier: null, series_number: null, serial_number: null, image_url: null, fmv_usd: null }
+    const holding = { collection_id: TS, moment_id: "1", source: "s", edition_key: "73:1", player_name: "Victor Wembanyama", set_name: null, tier: null, series_number: null, serial_number: null, image_url: null, fmv_usd: null, fmv_from_asks: false, locked: false }
     const one = listing("one", [{ player_name: "Victor Wembanyama" }])
     const two = listing("two", [{ player_name: "Victor Wembanyama" }, { role: "offer", kind: "moment", moment_id: "5", player_name: "Josh Allen", collection_id: AD, edition_key: "4790" }])
     const out = assembleMatches([one, two], [{ collection_id: AD, kind: "edition", key: "4790" }], [holding])

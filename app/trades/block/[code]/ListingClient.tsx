@@ -118,6 +118,7 @@ function ProposePanel({ listing }: { listing: ListingView }) {
     const next = new Map(give)
     const k = key(h)
     if (next.has(k)) next.delete(k)
+    else if (h.locked) return setErr("That one is locked, so it can't be traded.")
     else if (next.size < MAX_LINES_PER_SIDE) next.set(k, h)
     else return setErr(`At most ${MAX_LINES_PER_SIDE} assets per side.`)
     setGive(next)
@@ -232,7 +233,7 @@ function ProposePanel({ listing }: { listing: ListingView }) {
                 ))}
               </div>
             )}
-            {holdings.truncated ? <p style={{ ...muted, fontSize: 12 }}>Showing your 500 highest-valued assets — filter to find others.</p> : null}
+            {holdings.truncated ? <p style={{ ...muted, fontSize: 12 }}>Showing 500 of your assets — unlocked first, then by value. Filter to find others.</p> : null}
           </>
         )}
       </div>

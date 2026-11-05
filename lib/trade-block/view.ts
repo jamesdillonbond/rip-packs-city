@@ -1,8 +1,8 @@
 // lib/trade-block/view.ts
 //
 // What anyone may see of the Trade Block. Shapes stored rows into the public form:
-// usernames instead of user ids, each line's collection label, RPC FMV only where it
-// was confident (`priced`), and — the one thing NEVER copied — no wallet address
+// usernames instead of user ids, each line's collection label, RPC FMV wherever RPC has one
+// (`priced`; ask-derived ones flagged `from_asks`), and — the one thing NEVER copied — no wallet address
 // (`source` is dropped on every line). Pure and client-safe (type-only store import);
 // the routes and pages do the reads.
 
@@ -30,6 +30,10 @@ export interface LineView {
   image_url: string | null
   fmv_usd: number | null
   priced: boolean
+  /** The FMV is ask-derived — rendered "from asks" (lib/fmv-basis.ts), never a confidence tier. */
+  from_asks: boolean
+  /** Picker only: RPC's last read says it's locked, so it can't be offered. */
+  locked: boolean
   /**
    * Offered moments only: true = still in RPC's index of the account it was posted from;
    * false = it has left that index (it may have moved); null = not re-checked.
@@ -56,7 +60,7 @@ export interface ListingView {
 type AnyLine = Pick<
   ItemRow,
   "collection_id" | "moment_id" | "edition_key" | "player_name" | "set_name" | "tier" | "series_number" | "serial_number" | "image_url" | "fmv_usd"
-> & { kind?: ItemRow["kind"] }
+> & { kind?: ItemRow["kind"]; fmv_from_asks?: boolean | null; locked?: boolean }
 
 export function lineView(i: AnyLine, inIndex: Set<string> | null | undefined): LineView {
   const c = collectionById(i.collection_id)
@@ -78,6 +82,8 @@ export function lineView(i: AnyLine, inIndex: Set<string> | null | undefined): L
     image_url: i.image_url,
     fmv_usd: priced ? (i.fmv_usd as number) : null,
     priced,
+    from_asks: priced && i.fmv_from_asks === true,
+    locked: i.locked === true,
     in_index: kind !== "moment" || inIndex === undefined ? null : inIndex === null ? null : inIndex.has(`${i.collection_id}:${i.moment_id}`),
   }
 }

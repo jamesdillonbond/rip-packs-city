@@ -32,6 +32,7 @@ import {
   unsignableCollections,
 } from "@/lib/trade-block/rules"
 import { swapCollectionById } from "@/lib/trade-room/multi-swap-cadence"
+import { isAskDerivedFmv } from "@/lib/fmv-basis"
 
 /** A refusal with copy written for the user (routes publish `.copy`, never a driver message). */
 export class TradeBlockError extends Error {
@@ -51,7 +52,6 @@ function fail(error: { message: string } | null, what: string): never {
   throw new Error(`${what}: ${error?.message ?? "no rows returned"}`)
 }
 
-const CONFIDENT = new Set(["HIGH", "MEDIUM"])
 export const HOLDINGS_LIMIT = 500
 
 // ── proven accounts ──────────────────────────────────────────────────────────
@@ -100,8 +100,12 @@ export interface Holding {
   series_number: number | null
   serial_number: number | null
   image_url: string | null
-  /** RPC FMV when HIGH/MEDIUM confidence, else null (not priced). The tier never leaves the server. */
+  /** RPC FMV whenever RPC has one (as on the collection pages), else null (not priced). The tier never leaves the server. */
   fmv_usd: number | null
+  /** The FMV is ask-derived (no corroborating sales) — shown as "from asks" (lib/fmv-basis.ts). Picker-only for now. */
+  fmv_from_asks: boolean
+  /** RPC's last read says the asset is locked, so it can't be traded. Picker-only; never stored on a line. */
+  locked: boolean
 }
 
 type WmcRow = {
@@ -118,15 +122,18 @@ type WmcRow = {
   image_url: string | null
   fmv_usd: number | string | null
   fmv_confidence: string | null
+  is_locked: boolean | null
 }
 
 const WMC_COLS =
-  "wallet_address, collection_id, moment_id, edition_key, player_name, character_name, set_name, tier, series_number, serial_number, image_url, fmv_usd, fmv_confidence"
+  "wallet_address, collection_id, moment_id, edition_key, player_name, character_name, set_name, tier, series_number, serial_number, image_url, fmv_usd, fmv_confidence, is_locked"
 
 export function toHolding(w: WmcRow): Holding {
-  const conf = String(w.fmv_confidence ?? "").toUpperCase()
+  // 2026-11-04 (Trevor): the picker showed "not priced" on 344 of his top 500 — every LOW / STALE /
+  // ASK_ONLY row — while the collection page shows those same FMVs. A line shows RPC's FMV whenever it
+  // has one; an ask-derived one says so ("from asks"), per the platform basis rule. The tier stays here.
   const fmv = w.fmv_usd == null ? null : Number(w.fmv_usd)
-  const priced = CONFIDENT.has(conf) && fmv != null && Number.isFinite(fmv) && fmv >= 0
+  const priced = fmv != null && Number.isFinite(fmv) && fmv >= 0
   const pinnacle = collectionById(w.collection_id)?.person === "character"
   return {
     collection_id: w.collection_id,
@@ -141,7 +148,20 @@ export function toHolding(w: WmcRow): Holding {
     serial_number: w.serial_number ?? null,
     image_url: w.image_url ?? null,
     fmv_usd: priced ? fmv : null,
+    fmv_from_asks: priced && isAskDerivedFmv(w.fmv_confidence),
+    locked: w.is_locked === true,
   }
+}
+
+/**
+ * A Holding as stored on a listing / proposal line. `locked` and `fmv_from_asks` are picker hints,
+ * not columns. Until the item tables carry a basis bit (an `fmv_from_asks` column — not added yet),
+ * an ask-derived FMV is NOT published on a line — a public listing must never show
+ * a seller's ask as an unmarked FMV — so that line reads "not priced", as it did before.
+ */
+function storedLine(h: Holding): Omit<Holding, "locked" | "fmv_from_asks"> {
+  const { locked: _locked, fmv_from_asks, ...line } = h
+  return fmv_from_asks ? { ...line, fmv_usd: null } : line
 }
 
 export interface HoldingsResult {
@@ -167,7 +187,10 @@ export async function readHoldings(
     .in("wallet_address", [...sources])
     .in("collection_id", collections)
   if (needle) query = query.or(`player_name.ilike.%${needle}%,character_name.ilike.%${needle}%,set_name.ilike.%${needle}%`)
+  // unlocked first — a wallet can be mostly locked (Trevor's top 500 was 478 locked), and locked
+  // assets can't be offered, so they must not crowd the tradeable ones out of the 500
   const { data, error, count } = await query
+    .order("is_locked", { ascending: true, nullsFirst: true })
     .order("fmv_usd", { ascending: false, nullsFirst: false })
     .order("moment_id")
     .limit(HOLDINGS_LIMIT)
@@ -236,6 +259,13 @@ export async function requireHeld(db: SupabaseClient, userId: string, refs: read
         `${collectionById(r.collection_id)?.label ?? ""} #${r.moment_id} isn't in an account you've proved (as of RPC's last read of it).`.trim(),
         409,
         "not_held",
+      )
+    }
+    if (h.locked) {
+      throw new TradeBlockError(
+        `${h.player_name ?? `#${r.moment_id}`}${h.serial_number != null ? ` #${h.serial_number}` : ""} is locked, so it can't be traded. Unlock it first (as of RPC's last read).`,
+        409,
+        "locked",
       )
     }
     return h
@@ -411,7 +441,7 @@ export async function createListing(db: SupabaseClient, userId: string, input: C
   if (error || !listing) fail(error, "trade_block_listings insert")
   const l = listing as ListingRow
   const rows = [
-    ...held.map((h, pos) => ({ listing_id: l.id, role: "offer", pos, kind: "moment", ...h })),
+    ...held.map((h, pos) => ({ listing_id: l.id, role: "offer", pos, kind: "moment", ...storedLine(h) })),
     ...wants.map((w, pos) => ({
       listing_id: l.id,
       role: "want",
@@ -705,7 +735,7 @@ export async function propose(db: SupabaseClient, userId: string, listingCode: s
     fmv_usd: i.fmv_usd,
   })
   const rows = [
-    ...held.map((h, pos) => ({ proposal_id: prop.id, role: "give", pos, ...h })),
+    ...held.map((h, pos) => ({ proposal_id: prop.id, role: "give", pos, ...storedLine(h) })),
     ...getLines.map((i, pos) => ({ proposal_id: prop.id, role: "get", pos, ...strip(i) })),
   ]
   const { error: itemError } = await db.from("trade_block_proposal_items").insert(rows)
