@@ -1,4 +1,6 @@
 # Handoff → Cowork — the thin-sale haircut stops at the live bid (2026-11-04, ~8:40 PM PT)
+> **Status: ✅ APPLIED by Cowork 8:20 PM PT 11-04 (apply_migration). Live prosrc = committed file; anon EXECUTE false; the 8:28 PM PT tick wrote 0 cuts under a bid. 3 pre-fix rows heal on re-price. Ledger `084f8d5`.**
+
 
 ## Context
 

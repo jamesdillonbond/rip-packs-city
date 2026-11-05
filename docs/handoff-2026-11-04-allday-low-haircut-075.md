@@ -1,4 +1,6 @@
 # Handoff → Cowork — All Day LOW haircut 0.55 → 0.75 (2026-11-04, ~9:00 PM PT)
+> **Status: ✅ APPLIED by Cowork ~10:27 PM PT 11-04 (apply_migration). Live prosrc = committed file; anon EXECUTE false. Post-check 2 pending: the 10:28 PM PT tick wrote no All Day LOW zero-sale cut rows. Ledger `34151ff`.**
+
 
 ## Context
 
