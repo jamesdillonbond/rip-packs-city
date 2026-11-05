@@ -34,16 +34,16 @@ failure it documents.
 
 ## 2026-11-05 — 1 filing
 
-- [refresh-conflated-editions cron-job.org route silent since 2026-11-03 15:17Z — missed its 11-04 daily tick (conflated guard fresh, thin-FMV 16.6h stale, MEDIUM)](2026-11-05T0105Z-daytime-monitor-refresh-conflated-editions-route-silent-missed-1104-tick.md)
+- [✅ refresh-conflated-editions cron-job.org route silent since 2026-11-03 15:17Z — missed its 11-04 daily tick (conflated guard fresh, thin-FMV 16.6h stale, MEDIUM)](2026-11-05T0105Z-daytime-monitor-refresh-conflated-editions-route-silent-missed-1104-tick.md)
 
 ## 2026-11-04 — 2 filings
 
-- [Measurements owed after SQL was blocked mid-turn: ts_listings NULL-series incidence (sniper fixes), the staged index swap, the restarted #228 watch](2026-11-04T0611Z-claude-code-measurements-owed-after-sql-was-blocked.md)
-- [#228 /api/collection-snapshot RPC_READ_TIMEOUT recurred ~15 min after the covering-index fix landed — the APPLIED watch falsifier tripped; re-measure the cold whale read](2026-11-04T0410Z-daytime-monitor-228-collection-snapshot-timeout-recurred-post-fix.md)
+- [✅ Measurements owed after SQL was blocked mid-turn: ts_listings NULL-series incidence (sniper fixes), the staged index swap, the restarted #228 watch](2026-11-04T0611Z-claude-code-measurements-owed-after-sql-was-blocked.md)
+- [✅ #228 /api/collection-snapshot RPC_READ_TIMEOUT recurred ~15 min after the covering-index fix landed — the APPLIED watch falsifier tripped; re-measure the cold whale read](2026-11-04T0410Z-daytime-monitor-228-collection-snapshot-timeout-recurred-post-fix.md)
 
 ## 2026-11-03 — 1 filing
 
-- [net._http_response at 2,591 MB exceeds its documented ~1,910 MB sawtooth peak — re-measure prune cadence (SYMPTOM, not a leak claim)](2026-11-03T0705Z-daytime-monitor-net-http-response-above-documented-sawtooth-peak.md)
+- [🟢 net._http_response at 2,591 MB exceeds its documented ~1,910 MB sawtooth peak — re-measure prune cadence (SYMPTOM, not a leak claim)](2026-11-03T0705Z-daytime-monitor-net-http-response-above-documented-sawtooth-peak.md)
 
 ## 2026-11-02 — 3 filings
 

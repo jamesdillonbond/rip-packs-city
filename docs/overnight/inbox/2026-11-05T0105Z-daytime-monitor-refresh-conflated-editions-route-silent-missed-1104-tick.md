@@ -23,3 +23,8 @@ LOW-to-MEDIUM. Not a saturation symptom (all probes returned fast this run; snap
 2. If the entry is healthy, re-fire once and confirm a fresh `pipeline_runs` terminal row + `topshot_thin_fmv_editions.computed_at` advancing.
 3. Confirm the 2026-11-05 ~16:17Z (08:17 PT) tick lands on its own; if it also misses, the route/cron entry itself is the fault, not a one-off wall-kill.
 - Operator-owned carried item (ledger: "refresh-conflated-editions cron (operator wire daily cron; safe-DELETE fix live)"). Revert of the watch itself: `DELETE FROM public.pipeline_cadence_watchlist WHERE pipeline = 'refresh-conflated-editions';`.
+
+
+## ✅ RESOLVED — 2026-11-04 6:02 PM PT (recorded ~8:00 PM PT, Cowork cloud)
+
+Drained by the ledger entry "🔁 RE-FIRED (cron-job.org Test run) — `refresh-conflated-editions` missed its 11-04 7:17 AM PT tick": the provider skipped one tick; re-fired ok in 77 s, thin-FMV guard 20 → 31. Watch: the 11-05 7:17 AM PT tick lands on its own.

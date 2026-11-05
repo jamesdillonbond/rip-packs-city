@@ -20,3 +20,8 @@
 - **Shipped:** `conf` reads only STALE rows — exact equivalence (unique key; only `confidence = 'STALE'` is read); 34 wallets / 322,823 moments / 889 STALE byte-identical. Whale call 86.7k → 54.0k buffers, 474 → 428 ms warm.
 - **Watch, restated:** a cold read can still exceed 8 s under IO pressure (the wallet-local scan is now ~30k buffers with 13–17k heap fetches on FMV-churned pages). Falsifier for THIS change: a `RPC_READ_TIMEOUT` on the route from a NON-session caller after 8:30 PM PT 11-03. If it recurs, the next lever is the CDN warm of the top wallets (#228 lever (b)), not more SQL.
 
+
+
+## ✅ RESOLVED — 2026-11-04 (recorded by the Cowork cloud pass ~8:00 PM PT)
+
+Closed by the route-side changes the same day: `/api/collection-snapshot` waits up to 20 s on a cold whale (ledger 11-04 6:55–7:03 AM PT) and the concierge tool's budget was raised to match (ledger 11-04 7:15–7:30 AM PT); the wmc index swap landed 11-04 ~8:00 AM PT (`20261104161510`). Vercel 24 h runtime errors at ~7:58 PM PT: the last `RPC_READ_TIMEOUT` on this route is **11-04 12:32 AM PT** — none since the fixes deployed.

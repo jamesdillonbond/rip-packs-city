@@ -1,11 +1,11 @@
 {
-  "generated_at_pt": "2026-11-04 ~1:05 AM PT (scheduled overnight pass, genuine overnight; Cowork cloud, laptop-VM clone + .rpc-git-cred)",
-  "generated_at_utc": "2026-11-04T09:05Z",
-  "pass": "GENUINE OVERNIGHT. Fired 09:03Z = 1:03 AM PT, inside 00:00-06:00 -> normal shipping allowed. Clock no-skew (shell date -u 09:02:53Z ~= DB now() 09:05:15Z ~= newest sales.ingested_at 09:03:09Z). Push AVAILABLE (dry-run authenticated). Not frozen. 0 production shipped, 0 reverted. One docs commit (handoff/ledger/metrics/session). Handoff: docs/handoff-2026-11-04-overnight-pass.md",
+  "generated_at_pt": "2026-11-04 ~8:05 PM PT (on-demand evening pass, Cowork cloud, repo attached via add_repo)",
+  "generated_at_utc": "2026-11-05T04:05Z",
+  "pass": "ON-DEMAND EVENING (Trevor: 'Do it'). Push AVAILABLE (dry-run authenticated). Not frozen. 0 production shipped, 0 reverted. Docs only. Handoff: docs/handoff-2026-11-04-evening-pass.md",
   "shipped": 0,
   "reverted": 0,
-  "idle": "Nothing both low-risk and completable this pass. Two new inbox filings since last pass (#228 timeout recurrence 2026-11-04T0410Z + measurements-owed 2026-11-04T0611Z), BOTH already fully dispositioned by the 11-03 evening Claude Code session. The one notable finding (#228 cold-whale timeout recurring from real users) has no SQL lever left; its documented next step is a CDN warm of top wallets = route/edge work (OFF-LIMITS) -> QUEUED, do not revert. No dashboard flagged broken.",
-  "verdict": "GREEN. 0 shipped. Security clean (invariants/anon_write_holes/rls_off_base/secdef_anon all []). Trust 0 breaches / 40 legs ok. 0 stalled pipelines. pipeline_alerts 4 info (Atlas upstream-403 Cloudflare, every last-200 fresh 09:05Z). gha-schedule-watchdog delivering (last 8 ok, cadence_breach 0). Vercel READY on tip 16dce1389 (= current runtime; ~10 newer docs-only commits CANCELED), only chronic graceful-degradation error groups + the #228 cold-whale timeout. #228 RPC_READ_TIMEOUT recurred from a real www caller 2026-11-04T08:32:27Z (12:32 AM PT) -- honest 503, do NOT revert, next lever CDN warm. db +548 MB (within band, net._http_response sawtooth). FMV HIGH+MED up across TS/panini/nfl/pinnacle.",
+  "idle": "no-work — all four carried items closed (index swap, #228, saved_wallets) or on a dated watch (Panini backlog, falling ~3.2k/day). Another session shipped pricing migrations this hour; no DB change from this pass.",
+  "verdict": "GREEN. 0 shipped · idle: no-work · oldest routed: none. Security 0; trust 40/40 ok; stalled []; alerts 6 info; Vercel 7:47-7:48 PM PT timeout cluster attributed to the 3 Top Shot pricing migration applies, cleared by 7:57.",
   "health": {
     "security_invariants": "clean (invariants [], anon_write_holes [], rls_off_base_tables [], secdef_anon_violations []) via rpc_ops_snapshot.security.",
     "structural": "stalled_pipelines []. wmc_null_edition_key [], backward_cursor_rewinds [], function_search_path_drift [], procedure pins/txn-control [], cross_collection_mat_staleness [], suppression_*_drift []. sentinel_ts_uuid_editions_48h 0, ts_uuid_dupes_created_24h 0.",
@@ -52,5 +52,26 @@
     "inbox 2026-11-04T0410Z (#228 timeout recurred) -> already dispositioned by the 11-03 evening session (re-measured, attributed, STALE-only reduction shipped); confirmed + carried the fresh real-user recurrence to the queue.",
     "inbox 2026-11-04T0611Z (measurements owed) -> all four reads already taken 11-03 ~10:55 PM PT; only residual actionable (destructive index swap) stays Trevor's click."
   ],
-  "housekeeping": "Genuine overnight, normal shipping allowed, 0 production shipped. origin/main = 16dce1389 at start and unchanged through the pass. Inbox NOT edited (append-only honored; dispositions in handoff). Ledger: green entry spliced at first ^### (heading count 1482->1483; swallowed/future-dated guards both 0). Session entry prepended to docs/sessions/2026-11.md. Lock release pending. Push via laptop-VM clone + .rpc-git-cred."
+  "housekeeping": "Genuine overnight, normal shipping allowed, 0 production shipped. origin/main = 16dce1389 at start and unchanged through the pass. Inbox NOT edited (append-only honored; dispositions in handoff). Ledger: green entry spliced at first ^### (heading count 1482->1483; swallowed/future-dated guards both 0). Session entry prepended to docs/sessions/2026-11.md. Lock release pending. Push via laptop-VM clone + .rpc-git-cred.",
+  "accuracy_7d": {
+    "topshot_published_within25": 70.8,
+    "topshot_published_ratio": 1.0,
+    "topshot_ask_only_within25": 48.4,
+    "topshot_ask_only_ratio": 1.22,
+    "allday_published_within25": 59.3,
+    "allday_published_ratio": 0.907,
+    "note": "window ends before the 11-04 evening Top Shot re-prices = BEFORE baseline"
+  },
+  "panini_older_7d": {
+    "value": 17179,
+    "at_pt": "2026-11-04 7:58 PM",
+    "baseline": 18431,
+    "baseline_at_pt": "2026-11-04 10:29 AM"
+  },
+  "net_http_response_mb": {
+    "total": 3033,
+    "toast": 3021,
+    "live_bodies": 855,
+    "atlas_market_feed_live": 659
+  }
 }

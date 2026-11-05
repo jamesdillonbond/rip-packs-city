@@ -31,3 +31,8 @@
 4. **Writer-side `?? 0` — no measured incidence.** `sales` has `trg_sales_coerce_zero_serial_to_null`, so a written serial 0 lands as NULL: 90 d serial = 0 → **0** in every collection (NULL: TS 174, AD 1, GZ 6). `price_usd = 0`: **0** in 90 d, **3** all-time in `sales`; `pinnacle_sales.sale_price_usd = 0`: **0** all-time (column NOT NULL; `serial_number` nullable, 20,899 of 24,272 NULL in 90 d). So 0 is already not persisted as a serial, and a 0 price has not been written in 90 days. Changing the writers is hygiene, not a live defect; leave them unless a reader that lacks `> 0` is found averaging the 3 historical rows.
 
 - **11-04 ~8:00 AM PT (Cowork) — index swap DONE.** Pre-check both valid; `DROP INDEX CONCURRENTLY` via the dashboard SQL editor (the MCP auto-cancels it); `ALTER INDEX … RENAME` via `execute_sql`; post-check `pg_get_indexdef` = INCLUDE (fmv_usd, tier, series_number, mint_count), 286 MB, old cover name gone. Record-only migration `20261104161510_audit_20261104_wmc_snapshot_cover_takes_the_tier_index_name` (file carries the runbook + revert); staged file deleted.
+
+
+## ✅ RESOLVED — recorded 2026-11-04 ~8:00 PM PT (Cowork cloud)
+
+All four reads were taken 11-03 ~10:55 PM PT (section above); the index swap it carried ran 11-04 ~8:00 AM PT (`20261104161510`). Nothing owed.
