@@ -72,6 +72,7 @@ import type { NewItem } from "@/lib/trade-room/store"
 import { buildRoomView, cosignerOf, usernamesFor, type PendingRelay } from "@/lib/trade-room/view"
 import { notifyOtherSide, type TradeNotice } from "@/lib/trade-room/notify"
 import { proposalForRoom } from "@/lib/trade-block/store"
+import { readTopShotListed } from "@/lib/trade-room/topshot-listed"
 
 export const dynamic = "force-dynamic"
 // a simulation makes several Flow script calls (20 s bound each)
@@ -242,7 +243,7 @@ export async function GET(req: NextRequest, ctx: Ctx) {
           return json({ picker: { ...(await readPicker(supabaseAdmin, side.source, sp.get("q"), other)), lock_state: "cached" } })
         }
       }
-      const picker = await withLiveLocks(await readPicker(supabaseAdmin, side.source, sp.get("q"), "nba-top-shot"), side.source, holdingsReader("nba-top-shot"))
+      const picker = await withLiveLocks(await readPicker(supabaseAdmin, side.source, sp.get("q"), "nba-top-shot"), side.source, holdingsReader("nba-top-shot"), undefined, readTopShotListed)
       if (picker.lock_state === "live") after(() => healLockCache(side.source as string, picker))
       return json({ picker })
     }

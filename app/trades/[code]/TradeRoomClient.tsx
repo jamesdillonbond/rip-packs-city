@@ -480,7 +480,8 @@ function MySide({
                           // hint is shown as such and stays pickable (the save re-reads the chain).
                           const live = picker.result.lock_state === "live"
                           const gone = live && r.held_live === false
-                          const blocked = live && (gone || r.locked_hint === true)
+                          const listed = live && r.listed_live === true
+                          const blocked = live && (gone || r.locked_hint === true || listed)
                           const k = keyOf(r)
                           return (
                           <li key={k}>
@@ -492,6 +493,8 @@ function MySide({
                                   <span style={{ color: "var(--rpc-warning-text)" }}> · no longer in this account</span>
                                 ) : r.locked_hint ? (
                                   <span style={{ color: "var(--rpc-warning-text)" }}>{live ? ` · locked on ${SHORT_LABEL[r.collection] ?? "chain"}` : " · locked (last check)"}</span>
+                                ) : listed ? (
+                                  <span style={{ color: "var(--rpc-warning-text)" }}> · listed for sale on Top Shot (cancel the listing to trade it)</span>
                                 ) : null}
                               </span>
                               <span style={{ fontFamily: MONO, fontSize: 12, color: "var(--rpc-text-muted)" }}>{r.priced && r.fmv_usd != null ? fmtUsd(r.fmv_usd) : "not priced"}</span>

@@ -18,6 +18,7 @@ import { TradeRoomError, otherSide, type LoadedRoom, type Side, type SideRow } f
 import { planMultiSwap, readCanReceive, readCollectionHoldings, verifyMultiSwap, type LandedPick, type MultiDeps, type MultiPlan, type MultiSideInput, type Pick } from "@/lib/trade-room/multi-plan"
 import { SWAP_COLLECTIONS, swapCollection, swapCollectionByDbSlug } from "@/lib/trade-room/multi-swap-cadence"
 import { runFlowScript } from "@/lib/giveaways/flow-script"
+import { listedAmong, listedMessage, readTopShotListed } from "@/lib/trade-room/topshot-listed"
 
 export const EXECUTE_FLAG = "RPC_TRADE_ROOM_EXECUTE"
 
@@ -56,7 +57,12 @@ export async function checkPicks(source: string, ids: readonly string[], read: (
  * Multi-collection picks (2026-11-02): every pick must be held by `source` (and, for Top Shot,
  * unlocked), read from the chain now, per collection. A failed read throws the 503 above.
  */
-export async function checkRoomPicks(source: string, picks: readonly Pick[], deps: MultiDeps = {}): Promise<void> {
+export async function checkRoomPicks(
+  source: string,
+  picks: readonly Pick[],
+  deps: MultiDeps = {},
+  readListed: (address: string) => Promise<Set<string>> = readTopShotListed,
+): Promise<void> {
   if (picks.length === 0) return
   const d: Required<MultiDeps> = {
     run: deps.run ?? runFlowScript,
@@ -78,6 +84,24 @@ export async function checkRoomPicks(source: string, picks: readonly Pick[], dep
     const locked = ids.filter((id) => holdings[id]?.locked !== false)
     if (locked.length) throw new TradeRoomError(`Locked on ${label} (unlock first): ${locked.join(", ")}.`, 409, "locked")
   }
+  await refuseListed(source, picks.filter((p) => p.collection === "nba-top-shot").map((p) => p.id), readListed)
+}
+
+/**
+ * A Top Shot Moment LISTED on Top Shot's marketplace stays in the collection (held, unlocked), so
+ * the swap could withdraw it and leave a dead listing behind. Refuse it by name (2026-11-04; the
+ * 10-31 live-test lesson). A failed read is the room's 503, never "not listed".
+ */
+async function refuseListed(source: string, topShotIds: readonly string[], readListed: (address: string) => Promise<Set<string>>): Promise<void> {
+  if (topShotIds.length === 0) return
+  let listed: Set<string>
+  try {
+    listed = await readListed(source)
+  } catch (e) {
+    throw chainUnavailable(e)
+  }
+  const hits = listedAmong(listed, topShotIds)
+  if (hits.length) throw new TradeRoomError(listedMessage(hits), 409, "listed")
 }
 
 /**
@@ -138,13 +162,24 @@ function sideInput(loaded: LoadedRoom, side: SideRow) {
  * co-signs). Simulated on mainnet by planSwap — a plan comes back only when every
  * moment lands. Requires both sides proven and the room accepted or signing.
  */
-export async function planRoom(loaded: LoadedRoom, initiator: Side, deps: PlanDeps = {}, multiDeps: MultiDeps = {}): Promise<SwapPlan | MultiPlan> {
+export async function planRoom(
+  loaded: LoadedRoom,
+  initiator: Side,
+  deps: PlanDeps = {},
+  multiDeps: MultiDeps = {},
+  readListed: (address: string) => Promise<Set<string>> = readTopShotListed,
+): Promise<SwapPlan | MultiPlan> {
   if (loaded.room.status !== "accepted" && loaded.room.status !== "signing") {
     throw new TradeRoomError("Both sides must accept the trade before it can be simulated.", 409, "not_accepted")
   }
   const a = loaded.sides.find((s) => s.side === initiator)
   const b = loaded.sides.find((s) => s.side === otherSide(initiator))
   if (!a?.signer || !a.source || !b?.signer || !b.source) throw new TradeRoomError("Both sides need a proven Flow Wallet.", 409, "no_wallet")
+  // a Moment listed since it was picked must not reach a signature (see refuseListed)
+  for (const s of [a, b]) {
+    const ids = loaded.items.filter((i) => i.side === s.side && (i.collection ?? "nba_top_shot") === "nba_top_shot").map((i) => i.moment_id)
+    await refuseListed(s.source as string, ids, readListed)
+  }
   try {
     // an all-Top-Shot room signs the original swap (sealed twice on mainnet 2026-10-31);
     // anything with All Day / Golazos / UFC signs the multi-collection swap

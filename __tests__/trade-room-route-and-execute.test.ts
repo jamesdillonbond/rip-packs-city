@@ -23,6 +23,8 @@ const chain = vi.hoisted(() => ({
   verifySwap: vi.fn(),
   // every non-Top-Shot chain read (All Day / Golazos held scripts) goes through runFlowScript
   run: vi.fn(),
+  // Top Shot marketplace listings of an account (2026-11-04)
+  listed: vi.fn(),
 }))
 
 vi.mock("@/lib/supabase", () => ({
@@ -37,6 +39,7 @@ vi.mock("@/lib/auth/supabase-server", () => ({
   },
 }))
 vi.mock("@/lib/giveaways/topshot-holdings", async (orig) => ({ ...(await orig<typeof import("@/lib/giveaways/topshot-holdings")>()), readTopShotHoldings: chain.holdings }))
+vi.mock("@/lib/trade-room/topshot-listed", async (orig) => ({ ...(await orig<typeof import("@/lib/trade-room/topshot-listed")>()), readTopShotListed: chain.listed }))
 vi.mock("@/lib/giveaways/flow-script", async (orig) => ({ ...(await orig<typeof import("@/lib/giveaways/flow-script")>()), runFlowScript: chain.run }))
 vi.mock("@/lib/giveaways/linked-accounts", () => ({ discoverAccounts: chain.accounts }))
 vi.mock("@/lib/giveaways/claim-proof", async (orig) => ({ ...(await orig<typeof import("@/lib/giveaways/claim-proof")>()), verifyClaimProof: chain.proof }))
@@ -52,7 +55,7 @@ vi.mock("@/lib/trade-room/notify", () => ({
 
 import * as room from "@/app/api/trade-room/[code]/route"
 import * as rooms from "@/app/api/trade-room/route"
-import { checkPicks, executionOpen, EXECUTE_CLOSED_MESSAGE, planRoom } from "@/lib/trade-room/execute"
+import { checkPicks, checkRoomPicks, executionOpen, EXECUTE_CLOSED_MESSAGE, planRoom } from "@/lib/trade-room/execute"
 import { TradeRoomError, type LoadedRoom } from "@/lib/trade-room/store"
 import { TOP_SHOT_COLLECTION_ID, pickItems, readPicker, toPickerRow, withLiveLocks } from "@/lib/trade-room/holdings"
 
@@ -137,6 +140,7 @@ beforeEach(() => {
   mem.current = memorySupabase({ wallet_moments_cache: [wmc(WA.source, "1", 10, "HIGH"), wmc(WA.source, "2", 3, "LOW"), wmc(WB.source, "9", 5, "MEDIUM")], profile_bio: [] }, UNIQUES, DEFAULTS)
   chain.holdings.mockImplementation(async (_a: string, ids: string[]) => Object.fromEntries(ids.map((id) => [id, { held: true, locked: false }])))
   chain.run.mockImplementation(defaultRun)
+  chain.listed.mockImplementation(async () => new Set<string>())
   room.__resetProofRateLimit()
   notices.sent.length = 0
 })
@@ -180,6 +184,35 @@ describe("trade-room/execute — the gate and the chain reads", () => {
     chain.planSwap.mockRejectedValueOnce(new SwapTestError("locked", 409, "locked"))
     await expect(planRoom(loaded, "a")).rejects.toMatchObject({ status: 409, code: "locked" })
   })
+
+  it("a Top Shot Moment listed for sale never reaches a plan, by name; a failed listed read is a 503 (2026-11-04)", async () => {
+    const loaded = {
+      room: { status: "accepted", version: 3 },
+      sides: [
+        { side: "a", signer: WA.signer, source: WA.source },
+        { side: "b", signer: WB.signer, source: WB.source },
+      ],
+      items: [{ side: "a", moment_id: "1" }, { side: "b", moment_id: "9" }],
+    } as unknown as LoadedRoom
+    chain.planSwap.mockImplementation(async (a: unknown, b: unknown) => ({ a, b }))
+    chain.listed.mockImplementation(async (addr: string) => new Set(addr === WB.source ? ["9"] : []))
+    await expect(planRoom(loaded, "a")).rejects.toMatchObject({ status: 409, code: "listed", message: expect.stringContaining("9") })
+    expect(chain.planSwap).not.toHaveBeenCalled()
+    chain.listed.mockImplementation(async () => { throw new Error("listed read HTTP 503") })
+    await expect(planRoom(loaded, "a")).rejects.toMatchObject({ status: 503, code: "upstream_unavailable" })
+    chain.listed.mockImplementation(async () => new Set<string>())
+    await expect(planRoom(loaded, "a")).resolves.toBeTruthy()
+  })
+
+  it("saving picks refuses a listed Top Shot Moment; other collections are not read for listings", async () => {
+    chain.listed.mockImplementation(async () => new Set(["2"]))
+    await expect(checkRoomPicks(WA.source, [{ collection: "nba-top-shot", id: "1" }, { collection: "nba-top-shot", id: "2" }])).rejects.toMatchObject({ status: 409, code: "listed", message: expect.stringContaining("2") })
+    await expect(checkRoomPicks(WA.source, [{ collection: "nba-top-shot", id: "1" }])).resolves.toBeUndefined()
+    chain.listed.mockClear()
+    onChain.ids[WA.source] = ["7"]
+    await checkRoomPicks(WA.source, [{ collection: "nfl-all-day", id: "7" }]).catch(() => undefined)
+    expect(chain.listed).not.toHaveBeenCalled()
+  })
 })
 
 describe("trade-room/holdings — the picker", () => {
@@ -222,10 +255,20 @@ describe("trade-room/holdings — live lock overlay", () => {
     const slow = await withLiveLocks(base, "0x00000000000000aa", () => new Promise(() => {}), 5)
     expect(slow.lock_state).toBe("cached")
   })
+  it("marks a Moment listed on Top Shot; a failed listed read leaves rows unmarked, still live", async () => {
+    const read = vi.fn(async () => ({ "1": { held: true, locked: false }, "2": { held: true, locked: false }, "3": { held: false, locked: null } }))
+    const r = await withLiveLocks(base, "0x00000000000000aa", read, 12_000, async () => new Set(["2"]))
+    expect(r.lock_state).toBe("live")
+    expect(r.rows.map((x) => [x.moment_id, x.listed_live])).toEqual([["1", false], ["2", true], ["3", undefined]])
+    const down = await withLiveLocks(base, "0x00000000000000aa", read, 12_000, async () => { throw new Error("listed read HTTP 503") })
+    expect(down.lock_state).toBe("live")
+    expect(down.rows.every((x) => x.listed_live === undefined)).toBe(true)
+  })
   it("pickItems never stores the live-read fields", () => {
-    const picked = pickItems([{ ...base.rows[0], held_live: true }], ["1"])
+    const picked = pickItems([{ ...base.rows[0], held_live: true, listed_live: true }], ["1"])
     expect(Object.keys(picked.items[0])).not.toContain("held_live")
     expect(Object.keys(picked.items[0])).not.toContain("locked_hint")
+    expect(Object.keys(picked.items[0])).not.toContain("listed_live")
   })
 })
 

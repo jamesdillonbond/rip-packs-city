@@ -28,6 +28,9 @@ export interface PickerRow extends NewItem {
   locked_hint: boolean | null
   /** "live" results only: false when the chain says this account no longer holds the moment. */
   held_live?: boolean
+  /** Top Shot "live" results only: listed for sale on Top Shot right now (can't be traded until
+   *  the listing is cancelled). Absent when the listed read was not made or failed. */
+  listed_live?: boolean
   /** True when fmv_usd is a confident price (the only case it is non-null). */
   priced: boolean
 }
@@ -218,10 +221,11 @@ export function pickItems(rows: readonly PickerRow[], ids: readonly string[]): {
       unknown.push(id)
       continue
     }
-    const { locked_hint: _l, priced: _p, held_live: _h, ...item } = r
+    const { locked_hint: _l, priced: _p, held_live: _h, listed_live: _s, ...item } = r
     void _l
     void _p
     void _h
+    void _s
     items.push(item)
   }
   return { items, unknown }
@@ -241,12 +245,16 @@ export async function withLiveLocks(
   source: string,
   read: (a: string, ids: string[]) => Promise<Record<string, Holding>>,
   budgetMs = 12_000,
+  readListed?: (a: string) => Promise<Set<string>>,
 ): Promise<PickerResult> {
   if (result.rows.length === 0) return { ...result, lock_state: "live" }
   let timer: ReturnType<typeof setTimeout> | undefined
   try {
-    const holdings = await Promise.race([
-      read(source, result.rows.map((r) => r.moment_id)),
+    // the listed read (2026-11-04) is best-effort here: a failure leaves rows unmarked — the save
+    // and the plan re-read it and refuse a listed Moment either way
+    const listedP = readListed ? readListed(source).catch(() => null) : Promise.resolve(null)
+    const [holdings, listed] = await Promise.race([
+      Promise.all([read(source, result.rows.map((r) => r.moment_id)), listedP]),
       new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("lock read budget")), budgetMs) }),
     ])
     return {
@@ -254,7 +262,10 @@ export async function withLiveLocks(
       lock_state: "live",
       rows: result.rows.map((r) => {
         const h = holdings[r.moment_id]
-        return h?.held ? { ...r, locked_hint: h.locked === true, held_live: true } : { ...r, held_live: false }
+        if (!h?.held) return { ...r, held_live: false }
+        const row: PickerRow = { ...r, locked_hint: h.locked === true, held_live: true }
+        if (listed) row.listed_live = listed.has(r.moment_id)
+        return row
       }),
     }
   } catch {
