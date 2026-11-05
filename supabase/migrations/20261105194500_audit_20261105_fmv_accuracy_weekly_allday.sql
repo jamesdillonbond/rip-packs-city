@@ -21,9 +21,8 @@
 -- No CREATE FUNCTION in this file, so no anon-exec marker is owed. refresh_fmv_accuracy_weekly stays revoked from
 -- PUBLIC/anon/authenticated (20261105040000); the job runs as postgres, like 828.
 --
--- ⚠ NOT APPLIED when committed: this session could not apply production DDL. Apply with apply_migration (or the
--- dashboard SQL editor, then record the version row by hand). If the recorded version differs from this file's,
--- rename the file to the recorded version.
+-- APPLIED 2026-11-05 ~1:26 PM PT via apply_migration (Trevor approved in chat), recorded version 20261105212641;
+-- pg_cron jobid 829. Baseline 10-26: 26 segments, 1,841 sales.
 --
 -- REVERT: SELECT cron.unschedule('rpc-fmv-accuracy-weekly-allday');
 --         DELETE FROM public.fmv_accuracy_weekly WHERE collection_id = 'dee28451-5d62-409e-a1ad-a83f763ac070';

@@ -6,6 +6,13 @@
 
 > ⚠ The `apply_migration` refusal is specific to **this cloud session** (its auto-mode classifier treats a production DDL apply as a production deploy). Trevor's machine, Cowork and Claude Code sessions with approval apply migrations normally. **Apply the two committed migrations below as usual.**
 
+## Update ~1:27 PM PT — items 1 and 2 APPLIED (Trevor approved in chat)
+
+- `20261105063000` applied (recorded `20261105212546`): live body hash = the committed file's; `/nba-top-shot/edition/169:6317` now reads "capped at sales".
+- `20261105194500` applied (recorded `20261105212641`): pg_cron **829**, All Day 10-26 baseline 1,841 sales, 62.1 % within ±25 %.
+- The mint walk's 11-05 scheduled run fired at 12:14 PM PT (success).
+- #208 part (a): no ask multiplier is a lever on post-reopen data (register).
+
 ## Queued for Trevor / Claude Code
 
 1. **[P1, apply-capable session, 1 night] Apply `20261105063000_audit_20261104_edition_detail_capped_survives_bid_floor`.** Edition pages still say "from asks — no corroborating sales" on Top Shot prices that a sales cap set and a live bid then lifted (71 rows on 11-04). Re-read 11-05 ~11:40 AM PT: live `get_edition_detail` body md5 = `377eb913…` (the file's guard), anon EXECUTE false; the file differs from its base `20261029164512` by the one regex. Post-checks are in `docs/handoff-2026-11-04-edition-detail-capped-bidfloor.md`.

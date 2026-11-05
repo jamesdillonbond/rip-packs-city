@@ -2,10 +2,10 @@
   "generated_at_pt": "2026-11-05 ~11:56 AM PT (daytime autonomous pass, Claude Code cloud, repo attached with push)",
   "generated_at_utc": "2026-11-05T19:56Z",
   "pass": "DAYTIME (Trevor: work autonomously ~2 h). Push AVAILABLE (dry-run exit 0). apply_migration REFUSED by this session's classifier (production deploy) — read-only + docs + one committed-unapplied migration. Not frozen. Handoff: docs/handoff-2026-11-05-daytime-pass.md",
-  "shipped": 0,
+  "shipped": 2,
   "reverted": 0,
-  "idle": "blocked — production DDL refused in this session; two migrations committed and waiting (20261105063000, 20261105194500).",
-  "verdict": "GREEN. 0 shipped · idle: blocked (prod DDL refused) · oldest routed: 20261105063000 edition-detail basis_capped, 1 day. Security 0; trust 40/40 ok, 0 breaches; stalled []; 6 info alerts (designed Atlas 403s); 10 chronic Vercel groups; client beacon 0 real errors in 7 d. #226 closed on its exit.",
+  "idle": "none — both waiting migrations applied ~1:26 PM PT after Trevor approved in chat.",
+  "verdict": "GREEN. 2 shipped (20261105063000, 20261105194500 — applied with Trevor's approval) · oldest routed: #213 decision, 0 days. Security 0; trust 40/40 ok, 0 breaches; stalled []; 6 info alerts (designed Atlas 403s); 10 chronic Vercel groups; client beacon 0 real errors in 7 d. #226 closed on its exit.",
   "health": {
     "security_invariants": "clean (invariants [], anon_write_holes [], rls_off_base_tables [], secdef_anon_violations []) via rpc_ops_snapshot 19:37Z.",
     "structural": "stalled_pipelines []. wmc_null_edition_key [], backward_cursor_rewinds [], function_search_path_drift [], procedure pins/txn-control [], cross_collection_mat_staleness [], suppression_*_drift []. sentinel_ts_uuid_editions_48h 0, ts_uuid_dupes_created_24h 0.",
@@ -38,8 +38,6 @@
   "editions_note": "nba 14,688 (+6); others flat vs the overnight pass.",
   "deltas_vs_prev": "db 46,351 -> 44,740 MB (-1,611; net._http_response 6 h TTL sawtooth on its way down). FMV HIGH+MED: nba 6,662->6,698 (+36); panini 17,991->17,972 (-19); nfl 1,646->1,644 (-2); pinnacle 935->932 (-3); candy/golazos/ufc flat. editions nba +6. trust breaches 0->0.",
   "carried_queue": [
-    "[P1, Trevor/apply-capable session, 1 day] 20261105063000 edition-detail basis_capped survives _bidfloor — committed 11-04, guard md5 re-read 11-05 = 377eb913, applies as written (71 edition pages read 'from asks' wrongly until then).",
-    "[P2, Trevor/apply-capable session, 0 days] 20261105194500 rpc-fmv-accuracy-weekly-allday (#234 exit 2) — committed 11-05, not applied.",
     "[P2, Trevor decision, 0 days] #213 premium-serial STALE cap: ship (WAPE better in all 4 cells, -1 hit of 92 in one) or close as accepted.",
     "#228 cold-whale collection-snapshot timeout — watch; next lever CDN warm (route/edge).",
     "Panini old-catalogue backlog — focus.md watch, reads 11-06/11-07 owed; on track.",
@@ -50,7 +48,8 @@
   "resolved_this_pass": [
     "#226 CLOSED on its exit (200/200 chain-verified; 6 sweeps, 0 disagreements).",
     "focus.md refresh-conflated-editions steer closed (11-05 7:17 AM PT tick landed).",
-    "#208 weekly exit MET (part (a) still open); Pinnacle #193 exit holds; #210 split attributes the LOW dip to untouched rows."
+    "#208 weekly exit MET (part (a) still open); Pinnacle #193 exit holds; #210 split attributes the LOW dip to untouched rows.",
+    "Applied 20261105063000 (recorded 20261105212546) and 20261105194500 (recorded 20261105212641, pg_cron 829) ~1:26 PM PT with Trevor's approval; mint walk 11-05 run fired 12:14 PM PT."
   ],
   "housekeeping": "origin/main = eca9d2b at start and at write-up (no concurrent commits). Ledger entry spliced at first ^### (1556 -> 1557; swallowed 0, future-dated 0). known-issues index regenerated (#226 open -> closed, diffed: 2 lines). Session entry prepended to docs/sessions/2026-11.md. No .lock present; none taken."
 }
