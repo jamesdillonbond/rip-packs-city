@@ -12,7 +12,8 @@
 -- the same counts but writes NOTHING — the operator preview).
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20261023235545_audit_20261023_fmv_haircut_topshot_low_unknown_depth_is_075_not_055.sql;
+-- (supabase/migrations/20261105044500_audit_20261104_fmv_haircut_stops_at_the_live_bid.sql — both writers, the Top
+-- Shot cut stops at the best open edition offer; before that 20261023235545_audit_20261023_fmv_haircut_topshot_low_unknown_depth_is_075_not_055.sql;
 -- previously 20260801230600_audit_20260801_snapshot_fmv_apply_thin_sale_haircut.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts, and the
 -- md5 of pg_get_functiondef was confirmed byte-identical to LIVE prod on 2026-08-01
@@ -34,6 +35,9 @@ CREATE TABLE fmv_snapshots (
   computed_at    timestamptz,
   algo_version   text
 );
+-- The haircut's Top Shot bid read (2026-11-04): only the columns it uses.
+CREATE TABLE offers (
+  collection_id uuid, edition_id uuid, offer_amount_usd numeric, status text, offer_type text, expires_at timestamptz);
 
 -- >>> BEGIN verbatim fmv_apply_thin_sale_haircut (keep byte-identical to the migration) >>>
 CREATE OR REPLACE FUNCTION public.fmv_apply_thin_sale_haircut(p_collection_id uuid DEFAULT NULL::uuid, p_dry_run boolean DEFAULT false)
@@ -48,7 +52,6 @@ DECLARE
   v_haircut  bigint := 0;
   v_dollars  numeric := 0;
 BEGIN
-  -- Build a CTE of latest-per-edition snapshots that need haircut, with computed adjusted FMV
   WITH latest AS (
     SELECT DISTINCT ON (edition_id) *
     FROM fmv_snapshots
@@ -58,74 +61,254 @@ BEGIN
   candidates AS (
     SELECT
       l.id AS snapshot_id,
-      l.computed_at,
       l.edition_id,
       l.fmv_usd AS old_fmv,
-      l.floor_price_usd,
-      l.sales_count_30d,
-      l.listing_count,
-      -- Haircut multiplier based on sales + listing depth
       CASE
-        WHEN COALESCE(l.sales_count_30d, 0) >= 3 THEN 1.00  -- no haircut
-        WHEN COALESCE(l.sales_count_30d, 0) >= 1 THEN 0.85  -- mild
-        WHEN COALESCE(l.listing_count, 0)  >= 5 THEN 0.75  -- multi-seller, no sales
-        WHEN COALESCE(l.listing_count, 0)  >= 2 THEN 0.65  -- few sellers, no sales
+        WHEN COALESCE(l.sales_count_30d, 0) >= 3 THEN 1.00
+        WHEN COALESCE(l.sales_count_30d, 0) >= 1 THEN 0.85
+        WHEN COALESCE(l.listing_count, 0)  >= 5 THEN 0.75
+        WHEN COALESCE(l.listing_count, 0)  >= 2 THEN 0.65
         WHEN l.collection_id = '95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid
-         AND l.confidence = 'LOW'                      THEN 0.75  -- Top Shot LOW, depth unknown: 0.75 (measured 2026-10-23, see migration header)
-        ELSE 0.55                                            -- single seller / unknown
-      END AS haircut
+         AND l.confidence = 'LOW'                      THEN 0.75  -- Top Shot LOW, depth unknown: 0.75 (measured 2026-10-23)
+        ELSE 0.55
+      END AS haircut,
+      -- 2026-11-04: Top Shot only — the best OPEN, unexpired edition-level offer; the cut never goes under it
+      -- (bounded at 3x the cut price, the same bound as fmv_snapshots_floor_topshot_at_best_offer).
+      CASE WHEN l.collection_id = '95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid THEN (
+        SELECT max(o.offer_amount_usd) FROM public.offers o
+         WHERE o.collection_id = '95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid
+           AND o.edition_id = l.edition_id
+           AND o.status = 'open'
+           AND o.offer_type = 'edition'
+           AND (o.expires_at IS NULL OR o.expires_at > now())) END AS bid
     FROM latest l
     WHERE l.fmv_usd IS NOT NULL
       AND l.floor_price_usd IS NOT NULL
       AND COALESCE(l.sales_count_30d, 0) <= 2
-      AND ABS(l.fmv_usd - l.floor_price_usd) < 0.01  -- fmv ≈ floor (within $0.01)
+      AND ABS(l.fmv_usd - l.floor_price_usd) < 0.01
       AND l.confidence IN ('LOW','ASK_ONLY')
   ),
+  cut AS (
+    SELECT c.*, ROUND(c.old_fmv * c.haircut, 2) AS cut_fmv FROM candidates c WHERE c.haircut < 1.0
+  ),
   to_apply AS (
-    SELECT *,
-      ROUND(old_fmv * haircut, 2) AS new_fmv
-    FROM candidates
-    WHERE haircut < 1.0
-  )
-  SELECT 
+    SELECT x.*,
+      (x.bid IS NOT NULL AND x.bid > x.cut_fmv AND x.bid <= 3 * x.cut_fmv) AS floored,
+      CASE WHEN x.bid IS NOT NULL AND x.bid > x.cut_fmv AND x.bid <= 3 * x.cut_fmv
+           THEN ROUND(LEAST(x.bid, x.old_fmv), 2) ELSE x.cut_fmv END AS new_fmv
+    FROM cut x
+  ),
+  changed AS (SELECT * FROM to_apply WHERE new_fmv < old_fmv)
+  SELECT
     (SELECT COUNT(*) FROM candidates),
-    (SELECT COUNT(*) FROM to_apply),
-    (SELECT COALESCE(SUM(old_fmv - new_fmv), 0) FROM to_apply)
+    (SELECT COUNT(*) FROM changed),
+    (SELECT COALESCE(SUM(old_fmv - new_fmv), 0) FROM changed)
   INTO v_examined, v_haircut, v_dollars;
 
   IF NOT p_dry_run THEN
-    -- Apply: in-place UPDATE of fmv_usd (preserves history; floor_price stays as-is for transparency)
-    WITH latest AS (
-      SELECT DISTINCT ON (edition_id) id, edition_id, fmv_usd, floor_price_usd,
-        sales_count_30d, listing_count, confidence
-      FROM fmv_snapshots
-      WHERE (p_collection_id IS NULL OR collection_id = p_collection_id)
-      ORDER BY edition_id, computed_at DESC
-    )
-    UPDATE fmv_snapshots fs
-    SET fmv_usd = ROUND(fs.fmv_usd *
+    -- in-place UPDATE of the latest snapshot (floor_price stays as-is for transparency); the rows and the
+    -- prices are the ones counted above, recomputed in the same shape.
+  WITH latest AS (
+    SELECT DISTINCT ON (edition_id) *
+    FROM fmv_snapshots
+    WHERE (p_collection_id IS NULL OR collection_id = p_collection_id)
+    ORDER BY edition_id, computed_at DESC
+  ),
+  candidates AS (
+    SELECT
+      l.id AS snapshot_id,
+      l.edition_id,
+      l.fmv_usd AS old_fmv,
       CASE
-        WHEN COALESCE(fs.sales_count_30d, 0) >= 1 THEN 0.85
-        WHEN COALESCE(fs.listing_count, 0)  >= 5 THEN 0.75
-        WHEN COALESCE(fs.listing_count, 0)  >= 2 THEN 0.65
-        WHEN fs.collection_id = '95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid
-         AND fs.confidence = 'LOW'                      THEN 0.75  -- Top Shot LOW, depth unknown: 0.75 (measured 2026-10-23, see migration header)
+        WHEN COALESCE(l.sales_count_30d, 0) >= 3 THEN 1.00
+        WHEN COALESCE(l.sales_count_30d, 0) >= 1 THEN 0.85
+        WHEN COALESCE(l.listing_count, 0)  >= 5 THEN 0.75
+        WHEN COALESCE(l.listing_count, 0)  >= 2 THEN 0.65
+        WHEN l.collection_id = '95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid
+         AND l.confidence = 'LOW'                      THEN 0.75  -- Top Shot LOW, depth unknown: 0.75 (measured 2026-10-23)
         ELSE 0.55
-      END, 2),
-      algo_version = fs.algo_version || '_haircut'
+      END AS haircut,
+      -- 2026-11-04: Top Shot only — the best OPEN, unexpired edition-level offer; the cut never goes under it
+      -- (bounded at 3x the cut price, the same bound as fmv_snapshots_floor_topshot_at_best_offer).
+      CASE WHEN l.collection_id = '95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid THEN (
+        SELECT max(o.offer_amount_usd) FROM public.offers o
+         WHERE o.collection_id = '95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid
+           AND o.edition_id = l.edition_id
+           AND o.status = 'open'
+           AND o.offer_type = 'edition'
+           AND (o.expires_at IS NULL OR o.expires_at > now())) END AS bid
     FROM latest l
-    WHERE fs.id = l.id
-      AND fs.fmv_usd IS NOT NULL
-      AND fs.floor_price_usd IS NOT NULL
-      AND COALESCE(fs.sales_count_30d, 0) <= 2
-      AND ABS(fs.fmv_usd - fs.floor_price_usd) < 0.01
-      AND fs.confidence IN ('LOW','ASK_ONLY');
+    WHERE l.fmv_usd IS NOT NULL
+      AND l.floor_price_usd IS NOT NULL
+      AND COALESCE(l.sales_count_30d, 0) <= 2
+      AND ABS(l.fmv_usd - l.floor_price_usd) < 0.01
+      AND l.confidence IN ('LOW','ASK_ONLY')
+  ),
+  cut AS (
+    SELECT c.*, ROUND(c.old_fmv * c.haircut, 2) AS cut_fmv FROM candidates c WHERE c.haircut < 1.0
+  ),
+  to_apply AS (
+    SELECT x.*,
+      (x.bid IS NOT NULL AND x.bid > x.cut_fmv AND x.bid <= 3 * x.cut_fmv) AS floored,
+      CASE WHEN x.bid IS NOT NULL AND x.bid > x.cut_fmv AND x.bid <= 3 * x.cut_fmv
+           THEN ROUND(LEAST(x.bid, x.old_fmv), 2) ELSE x.cut_fmv END AS new_fmv
+    FROM cut x
+  ),
+  changed AS (SELECT * FROM to_apply WHERE new_fmv < old_fmv)
+    UPDATE fmv_snapshots fs
+    SET fmv_usd = ch.new_fmv,
+        algo_version = fs.algo_version || '_haircut' || CASE WHEN ch.floored THEN '_bidfloor' ELSE '' END
+    FROM changed ch
+    WHERE fs.id = ch.snapshot_id;
   END IF;
 
   RETURN QUERY SELECT v_examined, v_haircut, v_dollars;
 END;
 $function$;
 -- <<< END verbatim fmv_apply_thin_sale_haircut <<<
+
+-- >>> BEGIN verbatim fmv_apply_thin_sale_haircut_for_editions (keep byte-identical to the migration) >>>
+CREATE OR REPLACE FUNCTION public.fmv_apply_thin_sale_haircut_for_editions(p_edition_ids uuid[], p_dry_run boolean DEFAULT false)
+ RETURNS TABLE(rows_examined bigint, rows_haircut bigint, dollars_removed numeric)
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+ SET statement_timeout TO '110s'
+AS $function$
+DECLARE
+  v_examined bigint := 0;
+  v_haircut  bigint := 0;
+  v_dollars  numeric := 0;
+BEGIN
+  IF p_edition_ids IS NULL OR cardinality(p_edition_ids) = 0 THEN
+    RETURN QUERY SELECT 0::bigint, 0::bigint, 0::numeric;
+    RETURN;
+  END IF;
+
+  WITH ids AS (SELECT DISTINCT u.id FROM unnest(p_edition_ids) AS u(id)),
+  latest AS (
+    SELECT lf.*
+    FROM ids
+    JOIN LATERAL (
+      SELECT fs.* FROM fmv_snapshots fs
+      WHERE fs.edition_id = ids.id
+      ORDER BY fs.computed_at DESC
+      LIMIT 1
+    ) lf ON true
+  ),
+  candidates AS (
+    SELECT
+      l.id AS snapshot_id,
+      l.edition_id,
+      l.fmv_usd AS old_fmv,
+      CASE
+        WHEN COALESCE(l.sales_count_30d, 0) >= 3 THEN 1.00
+        WHEN COALESCE(l.sales_count_30d, 0) >= 1 THEN 0.85
+        WHEN COALESCE(l.listing_count, 0)  >= 5 THEN 0.75
+        WHEN COALESCE(l.listing_count, 0)  >= 2 THEN 0.65
+        WHEN l.collection_id = '95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid
+         AND l.confidence = 'LOW'                      THEN 0.75  -- Top Shot LOW, depth unknown: 0.75 (measured 2026-10-23)
+        ELSE 0.55
+      END AS haircut,
+      -- 2026-11-04: Top Shot only — the best OPEN, unexpired edition-level offer; the cut never goes under it
+      -- (bounded at 3x the cut price, the same bound as fmv_snapshots_floor_topshot_at_best_offer).
+      CASE WHEN l.collection_id = '95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid THEN (
+        SELECT max(o.offer_amount_usd) FROM public.offers o
+         WHERE o.collection_id = '95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid
+           AND o.edition_id = l.edition_id
+           AND o.status = 'open'
+           AND o.offer_type = 'edition'
+           AND (o.expires_at IS NULL OR o.expires_at > now())) END AS bid
+    FROM latest l
+    WHERE l.fmv_usd IS NOT NULL
+      AND l.floor_price_usd IS NOT NULL
+      AND COALESCE(l.sales_count_30d, 0) <= 2
+      AND ABS(l.fmv_usd - l.floor_price_usd) < 0.01
+      AND l.confidence IN ('LOW','ASK_ONLY')
+  ),
+  cut AS (
+    SELECT c.*, ROUND(c.old_fmv * c.haircut, 2) AS cut_fmv FROM candidates c WHERE c.haircut < 1.0
+  ),
+  to_apply AS (
+    SELECT x.*,
+      (x.bid IS NOT NULL AND x.bid > x.cut_fmv AND x.bid <= 3 * x.cut_fmv) AS floored,
+      CASE WHEN x.bid IS NOT NULL AND x.bid > x.cut_fmv AND x.bid <= 3 * x.cut_fmv
+           THEN ROUND(LEAST(x.bid, x.old_fmv), 2) ELSE x.cut_fmv END AS new_fmv
+    FROM cut x
+  ),
+  changed AS (SELECT * FROM to_apply WHERE new_fmv < old_fmv)
+  SELECT
+    (SELECT COUNT(*) FROM candidates),
+    (SELECT COUNT(*) FROM changed),
+    (SELECT COALESCE(SUM(old_fmv - new_fmv), 0) FROM changed)
+  INTO v_examined, v_haircut, v_dollars;
+
+  IF NOT p_dry_run THEN
+    -- in-place UPDATE of the latest snapshot (floor_price stays as-is for transparency); the rows and the
+    -- prices are the ones counted above, recomputed in the same shape.
+  WITH ids AS (SELECT DISTINCT u.id FROM unnest(p_edition_ids) AS u(id)),
+  latest AS (
+    SELECT lf.*
+    FROM ids
+    JOIN LATERAL (
+      SELECT fs.* FROM fmv_snapshots fs
+      WHERE fs.edition_id = ids.id
+      ORDER BY fs.computed_at DESC
+      LIMIT 1
+    ) lf ON true
+  ),
+  candidates AS (
+    SELECT
+      l.id AS snapshot_id,
+      l.edition_id,
+      l.fmv_usd AS old_fmv,
+      CASE
+        WHEN COALESCE(l.sales_count_30d, 0) >= 3 THEN 1.00
+        WHEN COALESCE(l.sales_count_30d, 0) >= 1 THEN 0.85
+        WHEN COALESCE(l.listing_count, 0)  >= 5 THEN 0.75
+        WHEN COALESCE(l.listing_count, 0)  >= 2 THEN 0.65
+        WHEN l.collection_id = '95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid
+         AND l.confidence = 'LOW'                      THEN 0.75  -- Top Shot LOW, depth unknown: 0.75 (measured 2026-10-23)
+        ELSE 0.55
+      END AS haircut,
+      -- 2026-11-04: Top Shot only — the best OPEN, unexpired edition-level offer; the cut never goes under it
+      -- (bounded at 3x the cut price, the same bound as fmv_snapshots_floor_topshot_at_best_offer).
+      CASE WHEN l.collection_id = '95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid THEN (
+        SELECT max(o.offer_amount_usd) FROM public.offers o
+         WHERE o.collection_id = '95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid
+           AND o.edition_id = l.edition_id
+           AND o.status = 'open'
+           AND o.offer_type = 'edition'
+           AND (o.expires_at IS NULL OR o.expires_at > now())) END AS bid
+    FROM latest l
+    WHERE l.fmv_usd IS NOT NULL
+      AND l.floor_price_usd IS NOT NULL
+      AND COALESCE(l.sales_count_30d, 0) <= 2
+      AND ABS(l.fmv_usd - l.floor_price_usd) < 0.01
+      AND l.confidence IN ('LOW','ASK_ONLY')
+  ),
+  cut AS (
+    SELECT c.*, ROUND(c.old_fmv * c.haircut, 2) AS cut_fmv FROM candidates c WHERE c.haircut < 1.0
+  ),
+  to_apply AS (
+    SELECT x.*,
+      (x.bid IS NOT NULL AND x.bid > x.cut_fmv AND x.bid <= 3 * x.cut_fmv) AS floored,
+      CASE WHEN x.bid IS NOT NULL AND x.bid > x.cut_fmv AND x.bid <= 3 * x.cut_fmv
+           THEN ROUND(LEAST(x.bid, x.old_fmv), 2) ELSE x.cut_fmv END AS new_fmv
+    FROM cut x
+  ),
+  changed AS (SELECT * FROM to_apply WHERE new_fmv < old_fmv)
+    UPDATE fmv_snapshots fs
+    SET fmv_usd = ch.new_fmv,
+        algo_version = fs.algo_version || '_haircut' || CASE WHEN ch.floored THEN '_bidfloor' ELSE '' END
+    FROM changed ch
+    WHERE fs.id = ch.snapshot_id;
+  END IF;
+
+  RETURN QUERY SELECT v_examined, v_haircut, v_dollars;
+END;
+$function$;
+-- <<< END verbatim fmv_apply_thin_sale_haircut_for_editions <<<
 
 -- Collections: C = target, D = bystander. Editions e1..e9.
 INSERT INTO fmv_snapshots (edition_id, collection_id, fmv_usd, floor_price_usd, sales_count_30d, listing_count, confidence, computed_at, algo_version) VALUES
@@ -180,6 +363,66 @@ SELECT _assert((SELECT fmv_usd FROM fmv_snapshots WHERE edition_id='00000000-000
 SELECT _assert((SELECT fmv_usd FROM fmv_snapshots WHERE edition_id='00000000-0000-0000-0000-0000000000f3') = 85, 'f3 Top Shot LOW with a sale keeps 0.85');
 SELECT _assert((SELECT total_dollars_removed FROM live_ts) = 85, 'TS live run reports $85 removed');
 SELECT _assert((SELECT fmv_usd FROM fmv_snapshots WHERE edition_id='00000000-0000-0000-0000-0000000000e1') = 55, 'e1 (another collection, LOW, unknown depth) still 0.55 — the 0.75 arm is Top Shot only');
+
+-- 2026-11-04: a Top Shot cut STOPS at the best open edition offer (<= 3x the cut), never raising the price.
+--   a1 LOW 10.00 -> cut 7.50, open offer 9.00              -> 9.00, …_haircut_bidfloor
+--   a2 LOW 10.00 -> cut 7.50, offer 12.00 (above the price) -> LEAST(bid, price) = 10.00 = unchanged -> NOT counted / stamped
+--   a3 LOW 10.00 -> cut 7.50, offer 30.00 (> 3x the cut)    -> ignored, 7.50 …_haircut
+--   a4 LOW 10.00 -> cut 7.50, offer 9.00 but CANCELLED      -> ignored, 7.50
+--   a5 LOW 10.00 -> cut 7.50, offer 9.00 but EXPIRED        -> ignored, 7.50
+--   a6 LOW 10.00 -> cut 7.50, a SERIAL offer 9.00           -> ignored, 7.50
+--   a7 OTHER collection, 0.55 cut 5.50, open offer 9.00     -> the floor is Top Shot only: 5.50
+--   a8 LOW 10.00 -> cut 7.50, offer 7.00 (under the cut)    -> 7.50
+-- The twin (_for_editions) runs first on fresh editions b1..b3 mirroring a1 / a2 / a3 (the a* rows are a1..a8).
+DELETE FROM fmv_snapshots;
+INSERT INTO fmv_snapshots (edition_id, collection_id, fmv_usd, floor_price_usd, sales_count_30d, listing_count, confidence, computed_at, algo_version) VALUES
+  ('00000000-0000-0000-0000-0000000000a1','95f28a17-224a-4025-96ad-adf8a4c63bfd', 10,10, 0,NULL,'LOW', now(), 'v2'),
+  ('00000000-0000-0000-0000-0000000000a2','95f28a17-224a-4025-96ad-adf8a4c63bfd', 10,10, 0,NULL,'LOW', now(), 'v2'),
+  ('00000000-0000-0000-0000-0000000000a3','95f28a17-224a-4025-96ad-adf8a4c63bfd', 10,10, 0,NULL,'LOW', now(), 'v2'),
+  ('00000000-0000-0000-0000-0000000000a4','95f28a17-224a-4025-96ad-adf8a4c63bfd', 10,10, 0,NULL,'LOW', now(), 'v2'),
+  ('00000000-0000-0000-0000-0000000000a5','95f28a17-224a-4025-96ad-adf8a4c63bfd', 10,10, 0,NULL,'LOW', now(), 'v2'),
+  ('00000000-0000-0000-0000-0000000000a6','95f28a17-224a-4025-96ad-adf8a4c63bfd', 10,10, 0,NULL,'LOW', now(), 'v2'),
+  ('00000000-0000-0000-0000-0000000000a7','00000000-0000-0000-0000-00000000cccc', 10,10, 0,NULL,'LOW', now(), 'v2'),
+  ('00000000-0000-0000-0000-0000000000a8','95f28a17-224a-4025-96ad-adf8a4c63bfd', 10,10, 0,NULL,'LOW', now(), 'v2'),
+  ('00000000-0000-0000-0000-0000000000b1','95f28a17-224a-4025-96ad-adf8a4c63bfd', 10,10, 0,NULL,'LOW', now(), 'v2'),
+  ('00000000-0000-0000-0000-0000000000b2','95f28a17-224a-4025-96ad-adf8a4c63bfd', 10,10, 0,NULL,'LOW', now(), 'v2'),
+  ('00000000-0000-0000-0000-0000000000b3','95f28a17-224a-4025-96ad-adf8a4c63bfd', 10,10, 0,NULL,'LOW', now(), 'v2');
+INSERT INTO offers VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd','00000000-0000-0000-0000-0000000000a1', 9,'open','edition',NULL),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd','00000000-0000-0000-0000-0000000000a1', 6,'open','edition',NULL),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd','00000000-0000-0000-0000-0000000000a2',12,'open','edition',NULL),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd','00000000-0000-0000-0000-0000000000a3',30,'open','edition',NULL),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd','00000000-0000-0000-0000-0000000000a4', 9,'cancelled','edition',NULL),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd','00000000-0000-0000-0000-0000000000a5', 9,'open','edition', now() - interval '1 hour'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd','00000000-0000-0000-0000-0000000000a6', 9,'open','serial',NULL),
+  ('00000000-0000-0000-0000-00000000cccc','00000000-0000-0000-0000-0000000000a7', 9,'open','edition',NULL),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd','00000000-0000-0000-0000-0000000000a8', 7,'open','edition',NULL),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd','00000000-0000-0000-0000-0000000000b1', 9,'open','edition', now() + interval '1 day'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd','00000000-0000-0000-0000-0000000000b2',12,'open','edition',NULL),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd','00000000-0000-0000-0000-0000000000b3',30,'open','edition',NULL);
+
+-- dry run over Top Shot (a1..a6, a8 — b* belong to the twin below and are Top Shot too, so they count here):
+-- a-candidates 7 + b 3 = 10 examined; changed = all but a2/b2 (held at price) = 8; removed = 6 rows x 2.50 + a1 1.00 + b1 1.00 = 17.00
+SELECT _assert_eq((SELECT rows_examined::text||'|'||rows_haircut||'|'||total_dollars_removed FROM fmv_apply_thin_sale_haircut('95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid, true)),
+  '10|8|17.00', 'bid-aware dry run: examined, changed (held-at-price rows not counted), dollars');
+SELECT _assert_eq((SELECT sum(fmv_usd)::text FROM fmv_snapshots), '110', 'dry run wrote nothing');
+
+-- the twin over b1..b3 only
+SELECT _assert_eq((SELECT rows_examined::text||'|'||rows_haircut||'|'||dollars_removed FROM fmv_apply_thin_sale_haircut_for_editions(
+    ARRAY['00000000-0000-0000-0000-0000000000b1','00000000-0000-0000-0000-0000000000b2','00000000-0000-0000-0000-0000000000b3']::uuid[], false)),
+  '3|2|3.50', 'twin: 3 examined, b2 held at price, removed 1.00 + 2.50');
+SELECT _assert_eq((SELECT string_agg(right(edition_id::text,2)||'='||fmv_usd||'|'||algo_version, ' ' ORDER BY edition_id) FROM fmv_snapshots WHERE edition_id::text LIKE '%0000b_'),
+  'b1=9.00|v2_haircut_bidfloor b2=10|v2 b3=7.50|v2_haircut', 'twin: stops at a live unexpired bid, never raises, ignores > 3x');
+
+-- the daily writer over Top Shot (b* already handled; b2 still held, so it is examined but not changed)
+SELECT _assert_eq((SELECT rows_haircut::text FROM fmv_apply_thin_sale_haircut('95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid, false)), '6',
+  'daily writer changes a1, a3, a4, a5, a6, a8');
+SELECT _assert_eq((SELECT string_agg(right(edition_id::text,2)||'='||fmv_usd||'|'||algo_version, ' ' ORDER BY edition_id) FROM fmv_snapshots WHERE edition_id::text LIKE '%0000a_'),
+  'a1=9.00|v2_haircut_bidfloor a2=10|v2 a3=7.50|v2_haircut a4=7.50|v2_haircut a5=7.50|v2_haircut a6=7.50|v2_haircut a7=10|v2 a8=7.50|v2_haircut',
+  'best open edition bid; above-price, >3x, cancelled, expired, serial and under-cut offers ignored; other collection untouched by a Top Shot run');
+SELECT fmv_apply_thin_sale_haircut('00000000-0000-0000-0000-00000000cccc'::uuid, false);
+SELECT _assert_eq((SELECT fmv_usd::text||'|'||algo_version FROM fmv_snapshots WHERE edition_id='00000000-0000-0000-0000-0000000000a7'),
+  '5.50|v2_haircut', 'the bid stop is Top Shot only (a7: 0.55 cut under a 9.00 offer)');
 
 SELECT '✓ fmv_apply_thin_sale_haircut invariants pass' AS result;
 ROLLBACK;
