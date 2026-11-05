@@ -32,6 +32,7 @@ function item(p: Partial<ItemRow>): ItemRow {
     serial_number: 42,
     image_url: null,
     fmv_usd: 12.5,
+    fmv_from_asks: false,
     ...p,
   }
 }
@@ -135,7 +136,7 @@ describe("the public view never carries a wallet address", () => {
   it("the proposal view drops it too", () => {
     const p: LoadedProposal = {
       proposal: { id: "P", code: "zzzzz00000", listing_id: "L", user_id: "u2", status: "pending", note: null, room_code: null, created_at: "", updated_at: "", decided_at: null },
-      items: [{ proposal_id: "P", role: "give", pos: 0, collection_id: PIN, moment_id: "9", source: ADDR, edition_key: "4790", player_name: "A", set_name: null, tier: null, series_number: null, serial_number: null, image_url: null, fmv_usd: null }],
+      items: [{ proposal_id: "P", role: "give", pos: 0, collection_id: PIN, moment_id: "9", source: ADDR, edition_key: "4790", player_name: "A", set_name: null, tier: null, series_number: null, serial_number: null, image_url: null, fmv_usd: null, fmv_from_asks: null }],
     }
     const v = proposalView(p, { direction: "received", counterparty: "ThunderHour", listingCode: "abcde12345" })
     expect(JSON.stringify(v)).not.toMatch(/0x[0-9a-f]{16}|"source"/i)
@@ -144,9 +145,9 @@ describe("the public view never carries a wallet address", () => {
 })
 
 describe("prices: confident FMV only, never $0 for unknown", () => {
-  it("an ask-derived FMV still shows, flagged from_asks; a stored line carries no marker", () => {
-    expect(lineView({ ...item({ fmv_usd: 40 }), fmv_from_asks: true }, undefined)).toMatchObject({ priced: true, fmv_usd: 40, from_asks: true })
-    expect(lineView(item({ fmv_usd: 40 }), undefined).from_asks).toBe(false)
+  it("a stored ask-derived line shows its FMV marked from_asks; a pre-column line (null) gets no marker", () => {
+    expect(lineView(item({ fmv_usd: 40, fmv_from_asks: true }), undefined)).toMatchObject({ priced: true, fmv_usd: 40, from_asks: true })
+    expect(lineView(item({ fmv_usd: 40, fmv_from_asks: null }), undefined).from_asks).toBe(false)
   })
 
   it("a null FMV is `not priced`, not zero", () => {

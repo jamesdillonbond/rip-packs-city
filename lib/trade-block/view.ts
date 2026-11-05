@@ -60,7 +60,7 @@ export interface ListingView {
 type AnyLine = Pick<
   ItemRow,
   "collection_id" | "moment_id" | "edition_key" | "player_name" | "set_name" | "tier" | "series_number" | "serial_number" | "image_url" | "fmv_usd"
-> & { kind?: ItemRow["kind"]; fmv_from_asks?: boolean | null; locked?: boolean }
+> & { kind?: ItemRow["kind"]; fmv_from_asks?: ItemRow["fmv_from_asks"]; locked?: boolean }
 
 export function lineView(i: AnyLine, inIndex: IndexRead | null | undefined): LineView {
   const c = collectionById(i.collection_id)
