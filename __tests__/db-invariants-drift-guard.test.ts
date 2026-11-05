@@ -444,8 +444,9 @@ const PINS = [
     // Re-pointed 2026-10-20: the editions arm names the linked player row (player_page_name).
     // Re-pointed 2026-10-21: the editions arm carries play_category/play_type/game_date/subedition_name (SEO titles).
     // Re-pointed 2026-10-29 (#215): the editions arm's fmv carries basis_capped.
+    // Re-pointed 2026-11-04: basis_capped survives the Top Shot offer floor's _bidfloor suffix.
     migration:
-      "supabase/migrations/20261029164512_audit_20261029_edition_detail_says_when_an_ask_price_was_capped.sql",
+      "supabase/migrations/20261105063000_audit_20261104_edition_detail_capped_survives_bid_floor.sql",
   },
   {
     fn: "get_platform_stats",

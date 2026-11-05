@@ -71,11 +71,12 @@ export function fmvBasis(confidence: string | null | undefined, capped?: boolean
 
 /**
  * True when an FMV row's `algo_version` marks it CAPPED at the edition's own sales (#208's
- * `_salescap`, the 10-29 `_histcap`). The SQL twin is `get_edition_detail`'s `basis_capped`
- * (`algo_version ~ '_(salescap|histcap)$'`); null/unknown reads false (no claim).
+ * `_salescap`, the 10-29 `_histcap`) — including a capped price the 2026-11-04 Top Shot offer floor
+ * then lifted to a live bid (`…_salescap_bidfloor`). The SQL twin is `get_edition_detail`'s
+ * `basis_capped` (`algo_version ~ '_(salescap|histcap)(_bidfloor)?$'`); null/unknown reads false.
  */
 export function isSalesCappedAlgo(algoVersion: string | null | undefined): boolean {
-  return typeof algoVersion === "string" && /_(salescap|histcap)$/.test(algoVersion)
+  return typeof algoVersion === "string" && /_(salescap|histcap)(_bidfloor)?$/.test(algoVersion)
 }
 
 /** True when this FMV is ASK_ONLY (its floor field is an ask, not a sale) — capped or not. */

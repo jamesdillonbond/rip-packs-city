@@ -422,7 +422,7 @@ BEGIN
           'sales_count_30d', fmv.sales_count_30d,
           'days_since_sale', fmv.days_since_sale,
           'cross_market_ask',fmv.cross_market_ask,
-          'basis_capped',    COALESCE(fmv.algo_version ~ '_(salescap|histcap)$', false)
+          'basis_capped',    COALESCE(fmv.algo_version ~ '_(salescap|histcap)(_bidfloor)?$', false)
         )
       END
     ) INTO result
@@ -807,6 +807,12 @@ UPDATE public.fmv_snapshots SET algo_version = 'cold-tail-1.0_histcap' WHERE edi
 SELECT _assert_eq((public.get_edition_detail(:ts::uuid, '5:146') -> 'fmv' ->> 'basis_capped'), 'true', 'editions arm: a _histcap row is basis_capped');
 UPDATE public.fmv_snapshots SET algo_version = NULL WHERE edition_id = '22222222-2222-2222-2222-222222222222';
 SELECT _assert_eq((public.get_edition_detail(:ts::uuid, '5:146') -> 'fmv' ->> 'basis_capped'), 'false', 'editions arm: a NULL algo_version is not capped (never NULL)');
+-- 2026-11-04: the Top Shot offer floor appends _bidfloor; a capped price a live bid then lifted is still capped,
+-- an uncapped ask the bid lifted is not.
+UPDATE public.fmv_snapshots SET algo_version = '1.8.3_histcap_salescap_bidfloor' WHERE edition_id = '22222222-2222-2222-2222-222222222222';
+SELECT _assert_eq((public.get_edition_detail(:ts::uuid, '5:146') -> 'fmv' ->> 'basis_capped'), 'true', 'editions arm: _salescap_bidfloor is still basis_capped');
+UPDATE public.fmv_snapshots SET algo_version = 'cold-tail-1.0_bidfloor' WHERE edition_id = '22222222-2222-2222-2222-222222222222';
+SELECT _assert_eq((public.get_edition_detail(:ts::uuid, '5:146') -> 'fmv' ->> 'basis_capped'), 'false', 'editions arm: a bid-floored UNCAPPED ask is not capped');
 
 SELECT '✓ pinnacle readers on the pin catalog: all assertions passed' AS result;
 

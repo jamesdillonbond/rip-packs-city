@@ -69,6 +69,11 @@ describe("fmvBasis", () => {
     expect(isSalesCappedAlgo("cold-tail-1.0_histcap")).toBe(true)
     expect(isSalesCappedAlgo("1.8.3")).toBe(false)
     expect(isSalesCappedAlgo("salescap_v2")).toBe(false)
+    // 2026-11-04: the Top Shot offer floor appends _bidfloor after the cap — still capped; an uncapped bid-floored ask is not.
+    expect(isSalesCappedAlgo("1.8.3_salescap_bidfloor")).toBe(true)
+    expect(isSalesCappedAlgo("cold-tail-1.0_histcap_salescap_bidfloor")).toBe(true)
+    expect(isSalesCappedAlgo("cold-tail-1.0_bidfloor")).toBe(false)
+    expect(isSalesCappedAlgo("1.8.3_salescap_haircut")).toBe(false)
     expect(isSalesCappedAlgo(null)).toBe(false)
     expect(isSalesCappedAlgo(undefined)).toBe(false)
   })

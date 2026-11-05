@@ -108,6 +108,15 @@ WAU); its *measurements* were superseded five times over. **For any number, scro
 
 ---
 
+## ⭐ PRICE ACCURACY — the second number, measured 2026-11-04 evening (Claude Code cloud; Trevor: "pricing is the anchor of everything we do")
+
+The M1/M2 metric below is a confidence SHARE: a count of labels, not a measured accuracy. Since 11-04 there is an instrument for accuracy itself: **`fmv_accuracy_weekly`**. It stores each market sale against the price published ≥ 1 day before it, with one row per collection × PT week × confidence × last-sale age × depth × price band. It is filled every Monday at 3:37 AM PT (Top Shot only for now). Full record: known-issues **#234**.
+
+- **Baseline, week of 10-26 (pre-11-04 prices), Top Shot, n 11,041, within ±25 %:** ALL 68.2 · HIGH 74.3 · MEDIUM 69.1 · LOW 54.9 · ASK_ONLY 48.6.
+- **Ceiling:** on liquid editions (HIGH/MEDIUM, 5+ sales in 30 d), the best sale-history estimator tried reaches ~72 % (the published price, 70.6 %). The rest of the miss is market dispersion, not model error.
+- **The 11-04 changes target the thin tail:** ask-only capped at the last sale; a floor at the best open edition offer; the haircut stops at that bid; All Day LOW haircut 0.75. Read their effect in the **11-09 week**, which first fills Mon 11-16.
+- **Next:** relabel by measured segment accuracy from that week, and add All Day to the weekly job.
+
 ## ⭐ HEADLINE METRIC — re-read live 2026-10-29 ~8:58 AM PT from `rpc_trust_health_history`, BY PT WEEK (supersedes the 10-22 block below)
 
 Same instrument (six-hourly legs `<coll>_fmv_high_med_share_pct`, `value <> 999`, weekly mean, weeks start Monday PT). Wk 10-19 is now complete (28 legs); **wk 10-26 is partial: 13–14 legs, Monday → Thursday 10-29 morning.** Claude Code cloud, read-only.
