@@ -174,6 +174,15 @@ export type SiblingRow = {
  * not the whole population (a count above the rows returned), never a number
  * computed from a partial list.
  */
+/**
+ * The FMV chart reads the NEWEST rows (`computed_at` DESC, limit 400) and plots them oldest-first.
+ * Re-sorts ascending by `computed_at`; does not mutate the input. (2026-11-04: an ascending + limit
+ * read kept the OLDEST 400 and dropped the recent points on 139 pins.)
+ */
+export function newestHistoryAscending<T extends { computed_at: string }>(rows: T[]): T[] {
+  return [...rows].sort((a, b) => Date.parse(a.computed_at) - Date.parse(b.computed_at))
+}
+
 export function distinctHolders(res: { data?: unknown; count?: number | null }): number | null {
   const rows = Array.isArray(res.data) ? (res.data as { wallet_address?: string | null }[]) : []
   const total = Number(res.count ?? rows.length)
@@ -479,11 +488,14 @@ export async function load(
     // Other printings of THIS pin (same shape_render_id) — the parallel ladder.
     supa.rpc("get_pinnacle_variant_siblings", { p_render_id: renderId }),
     // Per-render FMV history (engine pinnacle-2.0.0-render) — powers the chart.
+    // ⚠ The NEWEST 400, re-sorted ascending below (2026-11-04). This read was ascending + limit 400, so
+    // a pin past 400 rows (139 of 2,822 on 11-04, max 426, growing daily) charted its OLDEST 400 and
+    // silently dropped every recent point — the chart froze at a past date.
     supa
       .from("pinnacle_fmv_history")
       .select("computed_at, fmv_usd, fmv_confidence, fmv_sales_count_30d")
       .eq("render_id", renderId)
-      .order("computed_at", { ascending: true })
+      .order("computed_at", { ascending: false })
       .limit(400),
     // P4: global Pinnacle serial-premium bands (first/perfect/normal → multiplier; #1 + perfect only since 09-27).
       supa.from("pinnacle_serial_fmv_multipliers").select("band, multiplier, is_reliable"),
@@ -647,7 +659,7 @@ export async function load(
       variant_avg_mint: boardRes.data?.variant_avg_mint != null ? Number(boardRes.data.variant_avg_mint) : null,
       scarcity_pct: boardRes.data?.scarcity_vs_variant_pct != null ? Number(boardRes.data.scarcity_vs_variant_pct) : null,
       siblings,
-      fmvHistory: ((fmvHistRes.data ?? []) as PinnacleFmvPoint[]),
+      fmvHistory: newestHistoryAscending((fmvHistRes.data ?? []) as PinnacleFmvPoint[]),
       nameByAddr,
       serialLadder,
       listings,
