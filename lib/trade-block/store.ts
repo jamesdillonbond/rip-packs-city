@@ -102,7 +102,7 @@ export interface Holding {
   image_url: string | null
   /** RPC FMV whenever RPC has one (as on the collection pages), else null (not priced). The tier never leaves the server. */
   fmv_usd: number | null
-  /** The FMV is ask-derived (no corroborating sales) — shown as "from asks" (lib/fmv-basis.ts). Picker-only for now. */
+  /** The FMV is ask-derived (no corroborating sales) — shown as "from asks" (lib/fmv-basis.ts). Stored on the line. */
   fmv_from_asks: boolean
   /** RPC's last read says the asset is locked, so it can't be traded. Picker-only; never stored on a line. */
   locked: boolean
@@ -153,15 +153,10 @@ export function toHolding(w: WmcRow): Holding {
   }
 }
 
-/**
- * A Holding as stored on a listing / proposal line. `locked` and `fmv_from_asks` are picker hints,
- * not columns. Until the item tables carry a basis bit (an `fmv_from_asks` column — not added yet),
- * an ask-derived FMV is NOT published on a line — a public listing must never show
- * a seller's ask as an unmarked FMV — so that line reads "not priced", as it did before.
- */
-function storedLine(h: Holding): Omit<Holding, "locked" | "fmv_from_asks"> {
-  const { locked: _locked, fmv_from_asks, ...line } = h
-  return fmv_from_asks ? { ...line, fmv_usd: null } : line
+/** A Holding as stored on a listing / proposal line: `locked` is a picker hint, not a column. */
+function storedLine(h: Holding): Omit<Holding, "locked"> {
+  const { locked: _locked, ...line } = h
+  return line
 }
 
 export interface HoldingsResult {
@@ -304,6 +299,8 @@ export interface ItemRow {
   serial_number: number | null
   image_url: string | null
   fmv_usd: number | null
+  /** null on lines stored before 2026-11-04 (basis unknown → no marker). */
+  fmv_from_asks: boolean | null
 }
 
 export interface LoadedListing {
@@ -313,7 +310,7 @@ export interface LoadedListing {
 
 const LISTING_COLS = "id, code, user_id, note, open_to_offers, status, closed_reason, expires_at, created_at, updated_at, closed_at"
 const ITEM_COLS =
-  "listing_id, role, pos, collection_id, kind, moment_id, source, edition_key, player_name, set_name, tier, series_number, serial_number, image_url, fmv_usd"
+  "listing_id, role, pos, collection_id, kind, moment_id, source, edition_key, player_name, set_name, tier, series_number, serial_number, image_url, fmv_usd, fmv_from_asks"
 
 function numify<T extends { fmv_usd: number | string | null }>(r: T): T {
   return { ...r, fmv_usd: r.fmv_usd == null ? null : Number(r.fmv_usd) }
@@ -678,6 +675,8 @@ export interface ProposalItemRow {
   serial_number: number | null
   image_url: string | null
   fmv_usd: number | null
+  /** null on lines stored before 2026-11-04 (basis unknown → no marker). */
+  fmv_from_asks: boolean | null
 }
 
 export interface LoadedProposal {
@@ -687,7 +686,7 @@ export interface LoadedProposal {
 
 const PROPOSAL_COLS = "id, code, listing_id, user_id, status, note, room_code, created_at, updated_at, decided_at"
 const PITEM_COLS =
-  "proposal_id, role, pos, collection_id, moment_id, source, edition_key, player_name, set_name, tier, series_number, serial_number, image_url, fmv_usd"
+  "proposal_id, role, pos, collection_id, moment_id, source, edition_key, player_name, set_name, tier, series_number, serial_number, image_url, fmv_usd, fmv_from_asks"
 
 export interface ProposeInput {
   give?: unknown
@@ -759,6 +758,7 @@ export async function propose(db: SupabaseClient, userId: string, listingCode: s
     serial_number: i.serial_number,
     image_url: i.image_url,
     fmv_usd: i.fmv_usd,
+    fmv_from_asks: i.fmv_from_asks,
   })
   const rows = [
     ...held.map((h, pos) => ({ proposal_id: prop.id, role: "give", pos, ...storedLine(h) })),
