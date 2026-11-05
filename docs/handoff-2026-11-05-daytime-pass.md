@@ -13,6 +13,10 @@
 - The mint walk's 11-05 scheduled run fired at 12:14 PM PT (success).
 - #208 part (a): no ask multiplier is a lever on post-reopen data (register).
 
+## Update ~1:40 PM PT — #213 SHIPPED (decided under Trevor's delegation, applied with his approval)
+
+- `20261105213600` (recorded `20261105213950`): All Day editions of circulation ≤ 50 cap a STALE price at the last non-premium sale. 176 prices re-priced ($42,159 → $24,946), backed up and logged in `fmv_restatements`. Edition 1919 now reads $69. Item 3 below is done.
+
 ## Queued for Trevor / Claude Code
 
 1. **[P1, apply-capable session, 1 night] Apply `20261105063000_audit_20261104_edition_detail_capped_survives_bid_floor`.** Edition pages still say "from asks — no corroborating sales" on Top Shot prices that a sales cap set and a live bid then lifted (71 rows on 11-04). Re-read 11-05 ~11:40 AM PT: live `get_edition_detail` body md5 = `377eb913…` (the file's guard), anon EXECUTE false; the file differs from its base `20261029164512` by the one regex. Post-checks are in `docs/handoff-2026-11-04-edition-detail-capped-bidfloor.md`.
