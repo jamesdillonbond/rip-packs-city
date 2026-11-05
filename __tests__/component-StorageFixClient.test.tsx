@@ -179,7 +179,7 @@ describe("StorageFixClient", () => {
   it("a seal it could not read says so and links the transaction — never 'failed'", async () => {
     const { SealUnconfirmedError } = await import("@/lib/storage-fix/wallet")
     stub((url) => json({ check: url.includes("simulate_from") ? check({ simulation: SIM_OK }) : check() }))
-    wallet.send.mockRejectedValue(new SealUnconfirmedError("tx9"))
+    wallet.send.mockRejectedValue(new SealUnconfirmedError("tx9", "status stream closed"))
     render(<StorageFixClient />)
     await checkAddress()
     await screen.findByText(/^Stuck:/)
