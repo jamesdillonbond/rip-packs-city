@@ -737,6 +737,23 @@ describe("DashboardClient — whole-dashboard failure", () => {
       vi.useRealTimers()
     }
   })
+
+  it("an unmount clears the toast's dismiss timer (2026-11-04: it fired after jsdom teardown and reddened CI)", async () => {
+    vi.useFakeTimers()
+    try {
+      fetchMock.mockImplementation(async () => { throw new Error("Load failed") })
+      const { unmount } = render(<DashboardClient />)
+      await vi.advanceTimersByTimeAsync(100)
+      await vi.advanceTimersByTimeAsync(2000)
+      await vi.advanceTimersByTimeAsync(100)
+      expect(document.body.textContent).toMatch(/couldn.t load your dashboard/i)
+      expect(vi.getTimerCount()).toBeGreaterThan(0) // the 6 s dismiss timer is pending
+      unmount()
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })
 
 // ─── URL-driven modals ───────────────────────────────────────────────────────

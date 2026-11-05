@@ -287,12 +287,26 @@ function ProfilePageInner() {
   // went unhandled (Sentry NEXTJS-1M/1K). This guards a single retry.
   const refreshRetried = useRef(false);
 
+  // 2026-11-04: each toast's 6 s dismiss timer is tracked and cleared on unmount. An untracked
+  // timer outlived the component (and, in CI, the jsdom environment: "window is not defined" in
+  // dispatchSetState reddened the component-coverage shard on an unrelated commit).
+  const toastTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
+  useEffect(() => {
+    const timers = toastTimersRef.current;
+    return () => {
+      timers.forEach((t) => clearTimeout(t));
+      timers.clear();
+    };
+  }, []);
+
   const pushToast = useCallback((text: string, tone: "success" | "info" = "success") => {
     const id = Date.now() + Math.floor(Math.random() * 1000);
     setToasts((prev) => [...prev, { id, text, tone }]);
-    setTimeout(() => {
+    const timer = setTimeout(() => {
+      toastTimersRef.current.delete(timer);
       setToasts((prev) => prev.filter((t) => t.id !== id));
     }, 6000);
+    toastTimersRef.current.add(timer);
   }, []);
 
   // Open the verify-by-listing modal when arriving via /dashboard?verify=...
