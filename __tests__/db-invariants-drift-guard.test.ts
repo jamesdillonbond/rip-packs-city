@@ -2158,6 +2158,13 @@ const PINS = [
     migration: "supabase/migrations/20261027030854_audit_20261026_panini_fmv_low_cap_to_live_ask.sql",
   },
   {
+    // 2026-11-04: panini_fmv_snapshots (the twin the public Panini boards read) withholds FMV > $10,000, as
+    // fmv_snapshots_block_phantoms does on the published FMV. Was: a $500k ask-only FMV and a "30 % off" $44k deal.
+    fn: "panini_fmv_snapshots_withhold_over_cap",
+    test: "supabase/tests/panini_fmv_snapshots_withhold_over_cap.sql",
+    migration: "supabase/migrations/20261105000529_audit_20261104_panini_fmv_snapshots_withhold_over_cap.sql",
+  },
+  {
     // 2026-10-23: the sitemap's readers for the cross-collection hubs — the bulk form
     // of the predicate each hub page applies (and get_player_hub's canonical slug).
     fn: "list_indexable_player_hubs",
