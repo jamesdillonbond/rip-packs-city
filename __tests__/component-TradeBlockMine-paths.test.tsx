@@ -164,6 +164,38 @@ describe("My Trade Block — the other paths", () => {
     await waitFor(() => expect(screen.getByText(/didn't send the sign-in/)).toBeTruthy())
   })
 
+  it("composer: FMV shows at any basis ('from asks' marked), and a locked asset can't be picked", async () => {
+    answers["GET /api/trade-block"] = { status: 200, body: mine({ listings: [], proposals: { sent: [], received: [] } }) }
+    const row = { collection_id: TS, source: W[0].source, edition_key: "1:2", set_name: "Base", tier: "LEGENDARY", series_number: 7, serial_number: 56, image_url: null }
+    answers["GET /api/trade-block*"] = {
+      status: 200,
+      body: {
+        holdings: {
+          indexed: true,
+          truncated: false,
+          rows: [
+            { ...row, moment_id: "1", player_name: "Free Agent", fmv_usd: 46, fmv_from_asks: false, locked: false },
+            { ...row, moment_id: "2", player_name: "Locked Legend", fmv_usd: 2880, fmv_from_asks: true, locked: true },
+          ],
+        },
+      },
+    }
+    render(<BlockMineClient />)
+    await waitFor(() => expect(screen.getByText("Post a listing")).toBeTruthy())
+    fireEvent.click(screen.getByText("Post a listing"))
+    await waitFor(() => expect(screen.getByText("Locked Legend")).toBeTruthy())
+    expect(screen.getByText("$2,880.00")).toBeTruthy()
+    expect(screen.getByText("from asks")).toBeTruthy()
+    expect(screen.queryByText("not priced")).toBeNull()
+    const locked = screen.getByText("Locked Legend").closest("button") as HTMLButtonElement
+    expect(locked.disabled).toBe(true)
+    expect(screen.getByText("locked")).toBeTruthy()
+    fireEvent.click(locked)
+    expect(screen.getByText("You'd trade (0)")).toBeTruthy()
+    fireEvent.click(screen.getByText("Free Agent").closest("button") as HTMLElement)
+    expect(screen.getByText("You'd trade (1)")).toBeTruthy()
+  })
+
   it("composer: an edition want from the catalog, a failed holdings read, an unindexed account, and a refused post", async () => {
     answers["GET /api/trade-block"] = { status: 200, body: mine({ listings: [], proposals: { sent: [], received: [] } }) }
     let h = 0
@@ -182,7 +214,7 @@ describe("My Trade Block — the other paths", () => {
     fireEvent.click(screen.getByText("Filter"))
     await waitFor(() => expect(screen.getByText(/hasn't indexed the accounts/)).toBeTruthy())
     fireEvent.click(screen.getByText("Filter"))
-    await waitFor(() => expect(screen.getByText(/Showing your 500 highest-valued/)).toBeTruthy())
+    await waitFor(() => expect(screen.getByText(/Showing 500 of your assets — unlocked first/)).toBeTruthy())
     fireEvent.click(screen.getByText("Victor Wembanyama").closest("button") as HTMLElement)
 
     fireEvent.change(screen.getByPlaceholderText("Search editions by player"), { target: { value: "lebron" } })
@@ -251,7 +283,7 @@ describe("Listing page — the other paths", () => {
     fireEvent.click(screen.getByText("Cancel"))
     fireEvent.click(screen.getByText("Propose a trade"))
     await waitFor(() => expect(screen.getByText("Jalen Brunson")).toBeTruthy())
-    expect(screen.getByText(/Showing your 500 highest-valued/)).toBeTruthy()
+    expect(screen.getByText(/Showing 500 of your assets — unlocked first/)).toBeTruthy()
     fireEvent.click(screen.getByText("Jalen Brunson").closest("button") as HTMLElement)
     fireEvent.change(screen.getByPlaceholderText(/Anything they should know/), { target: { value: "hi" } })
     fireEvent.change(screen.getByPlaceholderText("Filter by player, character or set"), { target: { value: "brun" } })
