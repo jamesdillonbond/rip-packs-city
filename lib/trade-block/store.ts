@@ -106,6 +106,9 @@ export interface Holding {
   fmv_from_asks: boolean
   /** RPC's last read says the asset is locked, so it can't be traded. Picker-only; never stored on a line. */
   locked: boolean
+  /** Top Shot only, picker-only: listed for sale on Top Shot right now (read from the chain). Postable —
+   *  it is discovery — but the trade room refuses it until the listing is cancelled. Absent = not read. */
+  listed?: boolean
 }
 
 type WmcRow = {
@@ -154,9 +157,43 @@ export function toHolding(w: WmcRow): Holding {
 }
 
 /** A Holding as stored on a listing / proposal line: `locked` is a picker hint, not a column. */
-function storedLine(h: Holding): Omit<Holding, "locked"> {
-  const { locked: _locked, ...line } = h
+function storedLine(h: Holding): Omit<Holding, "locked" | "listed"> {
+  const { locked: _locked, listed: _listed, ...line } = h
   return line
+}
+
+const TOP_SHOT_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
+
+/**
+ * Tag the Top Shot rows that are listed for sale on Top Shot (2026-11-04). One chain read per
+ * account that has Top Shot rows, bounded; best-effort — a failed or slow read leaves rows untagged
+ * (the trade room re-reads it and refuses a listed Moment before anything signs).
+ */
+export async function markListed(
+  rows: Holding[],
+  read: (address: string) => Promise<Set<string>>,
+  budgetMs = 4_000,
+): Promise<Holding[]> {
+  const accounts = [...new Set(rows.filter((r) => r.collection_id === TOP_SHOT_ID).map((r) => r.source))]
+  if (accounts.length === 0) return rows
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const bySource = new Map<string, Set<string>>()
+  try {
+    const reads = await Promise.race([
+      Promise.all(accounts.map(async (a) => [a, await read(a).catch(() => null)] as const)),
+      new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("listed read budget")), budgetMs) }),
+    ])
+    for (const [a, set] of reads) if (set) bySource.set(a, set)
+  } catch {
+    return rows
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+  return rows.map((r) => {
+    if (r.collection_id !== TOP_SHOT_ID) return r
+    const set = bySource.get(r.source)
+    return set ? { ...r, listed: set.has(r.moment_id) } : r
+  })
 }
 
 export interface HoldingsResult {

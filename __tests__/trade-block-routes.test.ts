@@ -13,7 +13,7 @@ import { memorySupabase, type MemoryDb } from "./helpers/memory-supabase"
 
 const mem = vi.hoisted(() => ({ current: null as unknown as MemoryDb }))
 const session = vi.hoisted(() => ({ user: null as { id: string } | null }))
-const chain = vi.hoisted(() => ({ accounts: vi.fn(), proof: vi.fn() }))
+const chain = vi.hoisted(() => ({ accounts: vi.fn(), proof: vi.fn(), listed: vi.fn(async (_addr: string) => new Set<string>()) }))
 const notices = vi.hoisted(() => ({ sent: [] as Array<{ to: string; actor: string; notice: string; room: string | null | undefined }> }))
 
 vi.mock("@/lib/supabase", () => ({
@@ -29,6 +29,7 @@ vi.mock("@/lib/auth/supabase-server", () => ({
   getCurrentUser: async () => session.user,
 }))
 vi.mock("@/lib/giveaways/linked-accounts", () => ({ discoverAccounts: chain.accounts }))
+vi.mock("@/lib/trade-room/topshot-listed", async (orig) => ({ ...(await orig<typeof import("@/lib/trade-room/topshot-listed")>()), readTopShotListed: chain.listed }))
 vi.mock("@/lib/giveaways/claim-proof", async (orig) => ({ ...(await orig<typeof import("@/lib/giveaways/claim-proof")>()), verifyClaimProof: chain.proof }))
 vi.mock("@/lib/trade-block/notify", () => ({
   notifyBlock: async (_db: unknown, to: string, actor: string, notice: string, opts: { roomCode?: string | null }) => {
@@ -151,6 +152,29 @@ describe("posting a listing", () => {
     expect(listing.offers.map((o) => o.player_name)).toEqual(["Victor Wembanyama", "Brock Purdy"])
     // the edition want takes its labels from the catalog, not the client
     expect(listing.wants[0]).toMatchObject({ player_name: "LeBron James", set_name: "Base" })
+  })
+
+  it("the composer tags a Top Shot asset listed for sale on Top Shot; it stays postable and the tag is never stored (2026-11-04)", async () => {
+    await prove(ALICE, WA)
+    chain.listed.mockImplementation(async (addr: string) => new Set(addr === WA.source ? ["1"] : []))
+    const h = (await (await as(ALICE, () => signedIn.GET(get("/api/trade-block?holdings=1")))).json()) as {
+      holdings: { rows: Array<{ collection_id: string; moment_id: string; listed?: boolean }> }
+    }
+    const byKey = new Map(h.holdings.rows.map((r) => [`${r.collection_id}:${r.moment_id}`, r]))
+    expect(byKey.get(`${TS}:1`)?.listed).toBe(true)
+    expect(byKey.get(`${TS}:2`)?.listed).toBe(false)
+    // another collection's same id is never read for Top Shot listings
+    expect(byKey.get(`${AD}:1`)?.listed).toBeUndefined()
+    const posted = await postListing({ offers: [{ collection_id: TS, moment_id: "1" }] })
+    expect(posted.status).toBe(201)
+    expect(JSON.stringify(mem.current.tables.trade_block_items)).not.toMatch(/"listed"/)
+
+    // a failed listed read leaves rows untagged, never fails the picker
+    chain.listed.mockImplementation(async () => { throw new Error("listed read HTTP 503") })
+    const down = await as(ALICE, () => signedIn.GET(get("/api/trade-block?holdings=1")))
+    expect(down.status).toBe(200)
+    const rows = ((await down.json()) as { holdings: { rows: Array<{ listed?: boolean }> } }).holdings.rows
+    expect(rows.every((r) => r.listed === undefined)).toBe(true)
   })
 
   it("refuses a note that carries cash or contact, with the reason", async () => {

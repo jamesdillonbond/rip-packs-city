@@ -34,6 +34,8 @@ export interface LineView {
   from_asks: boolean
   /** Picker only: RPC's last read says it's locked, so it can't be offered. */
   locked: boolean
+  /** Picker only (Top Shot): listed for sale on Top Shot — postable, but must be delisted before the trade signs. */
+  listed: boolean
   /**
    * Offered moments only: true = still in RPC's index of the account it was posted from;
    * false = it has left that index (it may have moved); null = not re-checked.
@@ -60,7 +62,7 @@ export interface ListingView {
 type AnyLine = Pick<
   ItemRow,
   "collection_id" | "moment_id" | "edition_key" | "player_name" | "set_name" | "tier" | "series_number" | "serial_number" | "image_url" | "fmv_usd"
-> & { kind?: ItemRow["kind"]; fmv_from_asks?: ItemRow["fmv_from_asks"]; locked?: boolean }
+> & { kind?: ItemRow["kind"]; fmv_from_asks?: ItemRow["fmv_from_asks"]; locked?: boolean; listed?: boolean }
 
 export function lineView(i: AnyLine, inIndex: IndexRead | null | undefined): LineView {
   const c = collectionById(i.collection_id)
@@ -85,6 +87,7 @@ export function lineView(i: AnyLine, inIndex: IndexRead | null | undefined): Lin
     from_asks: priced && i.fmv_from_asks === true,
     // picker rows carry their own lock; a posted offer is locked if RPC's re-read says so now
     locked: i.locked === true || (kind === "moment" && inIndex != null && inIndex.locked.has(`${i.collection_id}:${i.moment_id}`)),
+    listed: i.listed === true,
     in_index: kind !== "moment" || inIndex === undefined ? null : inIndex === null ? null : inIndex.held.has(`${i.collection_id}:${i.moment_id}`),
   }
 }

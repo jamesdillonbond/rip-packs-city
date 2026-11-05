@@ -27,6 +27,7 @@ import { FlowScriptError } from "@/lib/giveaways/flow-script"
 import { discoverAccounts } from "@/lib/giveaways/linked-accounts"
 import { issueClaimNonce, verifyClaimProof, type ClaimProofInput } from "@/lib/giveaways/claim-proof"
 import { usernamesFor } from "@/lib/trade-room/view"
+import { readTopShotListed } from "@/lib/trade-room/topshot-listed"
 import { collectionBySlug, FLOW_ADDRESS_RE } from "@/lib/trade-block/rules"
 import {
   closeListing,
@@ -34,6 +35,7 @@ import {
   decide,
   listingsByIds,
   listingsOf,
+  markListed,
   loadListing,
   propose,
   proposalsFor,
@@ -162,7 +164,9 @@ export async function GET(req: NextRequest) {
       const slug = sp.get("collection")
       const c = slug ? collectionBySlug(slug) : null
       if (slug && !c) throw new TradeBlockError("Unknown collection.", 400, "bad_collection")
-      const h = await readHoldings(supabaseAdmin, accounts.map((a) => a.source), { collectionId: c?.id ?? null, q: sp.get("q") })
+      const read = await readHoldings(supabaseAdmin, accounts.map((a) => a.source), { collectionId: c?.id ?? null, q: sp.get("q") })
+      // Top Shot rows listed for sale on Top Shot are tagged (best-effort chain read, 2026-11-04)
+      const h = { ...read, rows: await markListed(read.rows, readTopShotListed) }
       // the caller's own accounts: `source` stays so the picker can show which account
       return json({ holdings: { ...h, proven: true } })
     }

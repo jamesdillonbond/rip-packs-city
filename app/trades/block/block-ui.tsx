@@ -65,6 +65,11 @@ export function Line({ line, selected, onToggle }: { line: LineView; selected?: 
             </div>
           ) : null}
           {line.locked ? <div style={{ ...muted, fontSize: 11 }}>locked</div> : null}
+          {!line.locked && line.listed ? (
+            <div style={{ ...muted, fontSize: 11 }} title="Listed for sale on Top Shot. You can post it, but cancel the listing before the trade is signed.">
+              listed on Top Shot
+            </div>
+          ) : null}
         </div>
       ) : null}
     </>
