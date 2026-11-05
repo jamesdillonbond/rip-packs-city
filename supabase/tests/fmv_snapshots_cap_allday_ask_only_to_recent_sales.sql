@@ -8,8 +8,10 @@
 -- allday-listing-ask-v1), which is why it lives in the DB and not in each caller.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (20261105014011_audit_20261104_topshot_ask_only_recent_sales_histcap: a Top Shot ASK_ONLY price WITH a 180-day sale is
--- bounded at 3x its last-3 median, marked _histcap — backtested 90 d, 137 moved, WAPE 10.19 -> 2.12 / 3.59 -> 1.81.
+-- (20261105024000_audit_20261104_topshot_ask_only_last_sale_cap: a Top Shot ASK_ONLY price WITH a 180-day sale is
+-- capped at its LAST market sale, marked _salescap — clean post-10-23 sales n 479 / 312 moved, within +/-25
+-- 48.4 -> 56.6, ratio 1.21 -> 1.00, WAPE 0.62 -> 0.45, never worse in any price band. Before it, the same day:
+-- 20261105014011, a 3x bound on that last-3 median (superseded — a last-sale cap is always at or under it).
 -- Before it: 20261029163623_audit_20261029_topshot_ask_only_histcap: the _histcap arm covers Top Shot too, backtested
 -- the same way and never worse — older WAPE 62.2 -> 59.0, recent within +/-25 18.1 -> 19.4. Before it:
 -- 20261029163041_audit_20261029_allday_ask_only_histcap, the 2026-10-29 _histcap arm: with no sale in
@@ -42,10 +44,12 @@ DECLARE
   -- NFL All Day and LaLiga Golazos (collections.id). Scoped by measurement: the same cap is not a win on Top Shot.
   c_allday  constant uuid := 'dee28451-5d62-409e-a1ad-a83f763ac070';
   c_golazos constant uuid := '06248cc4-b85f-47cd-af67-1855d14acd75';
-  -- NBA Top Shot: in the _histcap arm only (2026-10-29; with a recent sale too since 2026-11-04); its _salescap arm stays off by measurement.
+  -- NBA Top Shot: with a 180-day sale, capped at its LAST market sale (_salescap, 2026-11-04 evening, measured on
+  -- clean post-10-23 sales); with only older sales, the _histcap 3x bound (2026-10-29).
   c_topshot constant uuid := '95f28a17-224a-4025-96ad-adf8a4c63bfd';
   v_med numeric;
   v_hist numeric;
+  v_last numeric;
 BEGIN
   IF NEW.collection_id IN (c_allday, c_golazos, c_topshot)
      AND NEW.confidence = 'ASK_ONLY'
@@ -67,11 +71,25 @@ BEGIN
     IF NEW.collection_id IN (c_allday, c_golazos) AND v_med IS NOT NULL AND v_med > 0 AND NEW.fmv_usd > v_med THEN
       NEW.fmv_usd := round(v_med, 2);
       NEW.algo_version := COALESCE(NEW.algo_version, '') || '_salescap';
-    ELSIF NEW.collection_id = c_topshot AND v_med IS NOT NULL AND v_med > 0 AND NEW.fmv_usd > 3 * v_med THEN
-      -- 2026-11-04: Top Shot WITH a 180-day sale -- not capped AT the median (#208: not a win), but bounded
-      -- at 3x it, the same multiple the no-recent-sale arm uses. Backtested 90 d: n 137 moved, both halves better.
-      NEW.fmv_usd := round(3 * v_med, 2);
-      NEW.algo_version := COALESCE(NEW.algo_version, '') || '_histcap';
+    ELSIF NEW.collection_id = c_topshot AND v_med IS NOT NULL THEN
+      -- 2026-11-04 evening: Top Shot WITH a 180-day sale is capped at the edition's LAST market sale. The
+      -- earlier "not a win" (#208, 10-22) read Top Shot through the frozen-parallel-ask defect fixed 10-21/22;
+      -- on clean sales since 10-23 (n 479, 312 moved) min(ask price, last sale) beats the published ask price
+      -- on every axis and in every price band: within +/-25 48.4 -> 56.6 %, median ratio 1.21 -> 1.00, WAPE
+      -- 0.62 -> 0.45. Supersedes the 3x bound of 20261105014011 (a last-sale cap is always at or under it).
+      SELECT y.price_usd
+        INTO v_last
+        FROM public.sales_market y
+       WHERE y.edition_id = NEW.edition_id
+         AND y.sold_at > now() - interval '180 days'
+         AND y.price_usd > 0
+         AND COALESCE(y.serial_number, 999999) > 25
+       ORDER BY y.sold_at DESC
+       LIMIT 1;
+      IF v_last IS NOT NULL AND v_last > 0 AND NEW.fmv_usd > v_last THEN
+        NEW.fmv_usd := round(v_last, 2);
+        NEW.algo_version := COALESCE(NEW.algo_version, '') || '_salescap';
+      END IF;
     ELSIF v_med IS NULL AND NEW.collection_id IN (c_allday, c_topshot) THEN
       -- 2026-10-29: no sale in 180 days, but an older history bounds the ask at 3x its last-3 median.
       SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY q.price_usd)
@@ -114,8 +132,10 @@ CREATE TRIGGER trg_cap_allday_ask_only BEFORE INSERT ON fmv_snapshots
 --   e9  All Day, sales only OLDER than 180 days, at 5.00 — 3x that (15.00) is above the 8.10 ask
 --   e10 Golazos, sales only OLDER than 180 days, at 1.00 — the _histcap arm is All Day + Top Shot only
 --   e11 Top Shot, sales only OLDER than 180 days, at 1.00 — in the _histcap arm since 2026-10-29
---   e12 Top Shot (its REAL id — e7's is a placeholder), recent sales 2 / 3 / 4: _salescap stays off
---   e13 Top Shot (real id), recent sales 1 / 1 / 2 → median 1; the 8.10 ask is above 3x → capped at 3.00 (2026-11-04)
+--   e12 Top Shot (its REAL id — e7's is a placeholder), recent sales 2 (newest) / 3 / 4 → capped at the LAST sale, 2.00
+--   e13 Top Shot (real id), recent sales 1 (newest) / 1 / 2 → capped at the last sale, 1.00 (was the 3x bound, 3.00)
+--   e14 Top Shot, newest sale 20.00 — above the 8.10 ask: never raised
+--   e15 Top Shot, newest sale is serial #5 at 0.50 (a special serial), the newest ordinary sale 4.00 → capped at 4.00
 INSERT INTO sales_market VALUES
   ('e1000000-0000-0000-0000-000000000001', now() - interval '10 days',  2.00, 500),
   ('e1000000-0000-0000-0000-000000000001', now() - interval '20 days',  3.00, 501),
@@ -150,7 +170,12 @@ INSERT INTO sales_market VALUES
   ('e1000000-0000-0000-0000-000000000012', now() - interval '30 days',  4.00, 502),
   ('e1000000-0000-0000-0000-000000000013', now() - interval '10 days',  1.00, 500),
   ('e1000000-0000-0000-0000-000000000013', now() - interval '20 days',  1.00, 501),
-  ('e1000000-0000-0000-0000-000000000013', now() - interval '30 days',  2.00, 502);
+  ('e1000000-0000-0000-0000-000000000013', now() - interval '30 days',  2.00, 502),
+  ('e1000000-0000-0000-0000-000000000014', now() - interval '10 days', 20.00, 500),
+  ('e1000000-0000-0000-0000-000000000014', now() - interval '20 days',  2.00, 501),
+  ('e1000000-0000-0000-0000-000000000015', now() - interval '2 days',   0.50, 5),
+  ('e1000000-0000-0000-0000-000000000015', now() - interval '10 days',  4.00, 500),
+  ('e1000000-0000-0000-0000-000000000015', now() - interval '20 days',  1.00, 501);
 
 -- Every row is written the way the writers write it: ask × 0.90, ask kept beside it.
 INSERT INTO fmv_snapshots VALUES
@@ -167,6 +192,10 @@ INSERT INTO fmv_snapshots VALUES
   ('e1000000-0000-0000-0000-000000000011', '95f28a17-224a-4025-96ad-adf8a4c63bfd',  8.10, 'ASK_ONLY', '1.8.3', 8.10, 9.00),
   ('e1000000-0000-0000-0000-000000000012', '95f28a17-224a-4025-96ad-adf8a4c63bfd',  8.10, 'ASK_ONLY', '1.8.3', 8.10, 9.00),
   ('e1000000-0000-0000-0000-000000000013', '95f28a17-224a-4025-96ad-adf8a4c63bfd',  8.10, 'ASK_ONLY', 'cold-tail-1.0', 8.10, 9.00),
+  ('e1000000-0000-0000-0000-000000000014', '95f28a17-224a-4025-96ad-adf8a4c63bfd',  8.10, 'ASK_ONLY', '1.8.3', 8.10, 9.00),
+  ('e1000000-0000-0000-0000-000000000015', '95f28a17-224a-4025-96ad-adf8a4c63bfd',  8.10, 'ASK_ONLY', '1.8.3', 8.10, 9.00),
+  -- Top Shot, same edition as e12 but a SALES label: the cap is for ASK_ONLY only
+  ('e1000000-0000-0000-0000-000000000012', '95f28a17-224a-4025-96ad-adf8a4c63bfd',  8.10, 'LOW',      '1.8.3', 8.10, 9.00),
   -- Golazos with a sales label: out of scope like All Day's
   ('e1000000-0000-0000-0000-000000000008', '06248cc4-b85f-47cd-af67-1855d14acd75',  8.10, 'LOW',      '1.8.3', 8.10, 9.00),
   -- All Day, same edition as e1 but a SALES label: the guard is for ASK_ONLY only
@@ -212,15 +241,31 @@ SELECT _assert_eq(
   (SELECT fmv_usd::text || '|' || algo_version FROM fmv_snapshots
     WHERE edition_id = 'e1000000-0000-0000-0000-000000000011'),
   '3.00|1.8.3_histcap', 'a Top Shot ASK_ONLY price with only old sales is capped at 3x them (its 180-day _salescap arm stays off)');
+-- Re-pinned 2026-11-04 evening, INVERTED on purpose: e12 asserted "left alone (no _salescap: measured not a win
+-- there)". That measurement read Top Shot through the frozen-parallel-ask defect; on clean post-10-23 sales the
+-- last-sale cap wins in every price band (20261105024000). The property now held: a Top Shot ask above its LAST
+-- 180-day market sale is capped at it.
+SELECT _assert_eq(
+  (SELECT fmv_usd::text || '|' || algo_version || '|' || ask_proxy_fmv::text FROM fmv_snapshots
+    WHERE edition_id = 'e1000000-0000-0000-0000-000000000012' AND confidence = 'ASK_ONLY'),
+  '2.00|1.8.3_salescap|8.10', 'a Top Shot ASK_ONLY price above its LAST 180-day sale is capped at that sale (not the median 3.00), marked _salescap, the ask kept beside it');
 SELECT _assert_eq(
   (SELECT fmv_usd::text || '|' || algo_version FROM fmv_snapshots
-    WHERE edition_id = 'e1000000-0000-0000-0000-000000000012'),
-  '8.10|1.8.3', 'a real Top Shot ASK_ONLY row with RECENT sales under 3x their median is left alone (no _salescap: measured not a win there)');
--- 2026-11-04: but ABOVE 3x a recent last-3 median, a Top Shot ask is bounded there (Jrue Holiday 41:1463 read $2,700 after sales of $419-$725).
+    WHERE edition_id = 'e1000000-0000-0000-0000-000000000012' AND confidence = 'LOW'),
+  '8.10|1.8.3', 'a Top Shot row with a SALES label is never capped by the ask-only guard');
+-- 2026-11-04 5:39 PM PT this read 3.00 (_histcap, 3x the last-3 median); the last-sale cap is always at or under that bound.
 SELECT _assert_eq(
   (SELECT fmv_usd::text || '|' || algo_version || '|' || ask_proxy_fmv::text FROM fmv_snapshots
     WHERE edition_id = 'e1000000-0000-0000-0000-000000000013'),
-  '3.00|cold-tail-1.0_histcap|8.10', 'a Top Shot ASK_ONLY price above 3x its recent last-3 median is capped at 3x and marked _histcap, the ask kept beside it');
+  '1.00|cold-tail-1.0_salescap|8.10', 'a Top Shot ASK_ONLY price far above its sales is capped at the last sale, under the old 3x bound');
+SELECT _assert_eq(
+  (SELECT fmv_usd::text || '|' || algo_version FROM fmv_snapshots
+    WHERE edition_id = 'e1000000-0000-0000-0000-000000000014'),
+  '8.10|1.8.3', 'a Top Shot ask BELOW its last sale is never raised to it');
+SELECT _assert_eq(
+  (SELECT fmv_usd::text || '|' || algo_version FROM fmv_snapshots
+    WHERE edition_id = 'e1000000-0000-0000-0000-000000000015'),
+  '4.00|1.8.3_salescap', 'a special serial (#1-#25) is not the edition''s last sale: the newest ORDINARY sale sets the cap');
 SELECT _assert_eq(
   (SELECT fmv_usd::text || '|' || algo_version FROM fmv_snapshots
     WHERE edition_id = 'e1000000-0000-0000-0000-000000000004'),
@@ -267,7 +312,7 @@ SELECT _assert_eq(
   '1', 'a NULL fmv_usd is passed through unchanged');
 
 -- Nothing in the guard writes anywhere else: the sales table is read-only to it.
-SELECT _assert_eq((SELECT count(*)::text FROM sales_market), '34', 'the guard reads sales_market and never writes it');
+SELECT _assert_eq((SELECT count(*)::text FROM sales_market), '39', 'the guard reads sales_market and never writes it (39 = the 39 fixture rows inserted above)');
 
 SELECT '✓ fmv_snapshots_cap_allday_ask_only_to_recent_sales invariants pass' AS result;
 ROLLBACK;
