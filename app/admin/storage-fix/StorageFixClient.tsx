@@ -14,6 +14,7 @@
 import { useCallback, useState } from "react"
 import Link from "next/link"
 import { useAdminResource } from "@/lib/admin/use-admin-resource"
+import { clearAdminToken } from "@/lib/admin-token"
 import { errorText } from "@/lib/giveaways/view-format"
 import type { StorageCheck } from "@/lib/storage-fix/check"
 import { bytes, flow, flowscanAccount, flowscanTx, historyLine, verdict } from "@/lib/storage-fix/view"
@@ -64,6 +65,10 @@ export default function StorageFixClient() {
   const [slowHint, setSlowHint] = useState<string | null>(null)
   const [sent, setSent] = useState<Sent | null>(null)
   const [simulated, setSimulated] = useState<string | null>(null)
+  // A stored session that has EXPIRED (12 h) still reads as a token here, because this page
+  // fetches nothing on load; the first 401 from the check route sends the operator back to
+  // the token form instead of showing "Unauthorized" under a console that cannot work.
+  const [expired, setExpired] = useState(false)
 
   const runCheck = useCallback(
     async (addr: string, simulate?: { from: string; amount: string }): Promise<StorageCheck | null> => {
@@ -80,6 +85,11 @@ export default function StorageFixClient() {
           body = (await r.json()) as { check?: StorageCheck; error?: string }
         } catch {
           setCheckError(`HTTP ${r.status}: unreadable response`)
+          return null
+        }
+        if (r.status === 401) {
+          clearAdminToken()
+          setExpired(true)
           return null
         }
         if (!r.ok || !body?.check) {
@@ -165,13 +175,20 @@ export default function StorageFixClient() {
     }
   }
 
-  if (!token) {
+  if (!token || expired) {
     return (
       <main style={{ maxWidth: 520, margin: "40px auto", padding: 16 }}>
         <h1 style={{ fontFamily: DISPLAY, textTransform: "uppercase" }}>Storage fix</h1>
-        <p style={{ color: "var(--rpc-text-muted)" }}>Admin token required.</p>
-        <input type="password" value={res.tokenInput} onChange={(e) => res.setTokenInput(e.target.value)} style={input} />
-        <button type="button" onClick={res.submitToken} style={{ ...btn, marginTop: 8 }}>
+        <p style={{ color: "var(--rpc-text-muted)" }}>{expired ? "Your admin session expired. Enter the token again." : "Admin token required."}</p>
+        <input type="password" value={res.tokenInput} onChange={(e) => res.setTokenInput(e.target.value)} style={input} aria-label="Admin token" />
+        <button
+          type="button"
+          onClick={() => {
+            setExpired(false)
+            res.submitToken()
+          }}
+          style={{ ...btn, marginTop: 8 }}
+        >
           Continue
         </button>
         {res.error ? <p style={{ color: "var(--rpc-danger-text)" }}>{res.error}</p> : null}

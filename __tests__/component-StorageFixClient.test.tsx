@@ -168,6 +168,15 @@ describe("StorageFixClient", () => {
     expect((screen.getByRole("link", { name: "View transaction" }) as HTMLAnchorElement).href).toBe("https://www.flowscan.io/tx/6d23cc22")
   })
 
+  it("an expired admin session returns the operator to the token form and clears the stored credential", async () => {
+    stub(() => json({ error: "Unauthorized" }, 401))
+    render(<StorageFixClient />)
+    await checkAddress()
+    expect(await screen.findByText("Your admin session expired. Enter the token again.")).toBeTruthy()
+    expect(localStorage.getItem(ADMIN_TOKEN_KEY)).toBeNull()
+    expect(screen.queryByLabelText("Flow address")).toBeNull()
+  })
+
   it("a failed check is an error on screen, never an empty result", async () => {
     stub(() => json({ error: "Flow REST /blocks returned HTTP 503.", code: "flow_http" }, 502))
     render(<StorageFixClient />)
