@@ -12,7 +12,8 @@
 -- the same counts but writes NOTHING — the operator preview).
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20261105044500_audit_20261104_fmv_haircut_stops_at_the_live_bid.sql — both writers, the Top
+-- (supabase/migrations/20261105050000_audit_20261104_allday_low_haircut_075.sql — All Day LOW unknown depth 0.75 too; before that
+-- 20261105044500_audit_20261104_fmv_haircut_stops_at_the_live_bid.sql — both writers, the Top
 -- Shot cut stops at the best open edition offer; before that 20261023235545_audit_20261023_fmv_haircut_topshot_low_unknown_depth_is_075_not_055.sql;
 -- previously 20260801230600_audit_20260801_snapshot_fmv_apply_thin_sale_haircut.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts, and the
@@ -68,8 +69,8 @@ BEGIN
         WHEN COALESCE(l.sales_count_30d, 0) >= 1 THEN 0.85
         WHEN COALESCE(l.listing_count, 0)  >= 5 THEN 0.75
         WHEN COALESCE(l.listing_count, 0)  >= 2 THEN 0.65
-        WHEN l.collection_id = '95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid
-         AND l.confidence = 'LOW'                      THEN 0.75  -- Top Shot LOW, depth unknown: 0.75 (measured 2026-10-23)
+        WHEN l.collection_id IN ('95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid, 'dee28451-5d62-409e-a1ad-a83f763ac070'::uuid)
+         AND l.confidence = 'LOW'                      THEN 0.75  -- Top Shot (2026-10-23) and All Day (2026-11-04) LOW, depth unknown: 0.75
         ELSE 0.55
       END AS haircut,
       -- 2026-11-04: Top Shot only — the best OPEN, unexpired edition-level offer; the cut never goes under it
@@ -124,8 +125,8 @@ BEGIN
         WHEN COALESCE(l.sales_count_30d, 0) >= 1 THEN 0.85
         WHEN COALESCE(l.listing_count, 0)  >= 5 THEN 0.75
         WHEN COALESCE(l.listing_count, 0)  >= 2 THEN 0.65
-        WHEN l.collection_id = '95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid
-         AND l.confidence = 'LOW'                      THEN 0.75  -- Top Shot LOW, depth unknown: 0.75 (measured 2026-10-23)
+        WHEN l.collection_id IN ('95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid, 'dee28451-5d62-409e-a1ad-a83f763ac070'::uuid)
+         AND l.confidence = 'LOW'                      THEN 0.75  -- Top Shot (2026-10-23) and All Day (2026-11-04) LOW, depth unknown: 0.75
         ELSE 0.55
       END AS haircut,
       -- 2026-11-04: Top Shot only — the best OPEN, unexpired edition-level offer; the cut never goes under it
@@ -206,8 +207,8 @@ BEGIN
         WHEN COALESCE(l.sales_count_30d, 0) >= 1 THEN 0.85
         WHEN COALESCE(l.listing_count, 0)  >= 5 THEN 0.75
         WHEN COALESCE(l.listing_count, 0)  >= 2 THEN 0.65
-        WHEN l.collection_id = '95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid
-         AND l.confidence = 'LOW'                      THEN 0.75  -- Top Shot LOW, depth unknown: 0.75 (measured 2026-10-23)
+        WHEN l.collection_id IN ('95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid, 'dee28451-5d62-409e-a1ad-a83f763ac070'::uuid)
+         AND l.confidence = 'LOW'                      THEN 0.75  -- Top Shot (2026-10-23) and All Day (2026-11-04) LOW, depth unknown: 0.75
         ELSE 0.55
       END AS haircut,
       -- 2026-11-04: Top Shot only — the best OPEN, unexpired edition-level offer; the cut never goes under it
@@ -267,8 +268,8 @@ BEGIN
         WHEN COALESCE(l.sales_count_30d, 0) >= 1 THEN 0.85
         WHEN COALESCE(l.listing_count, 0)  >= 5 THEN 0.75
         WHEN COALESCE(l.listing_count, 0)  >= 2 THEN 0.65
-        WHEN l.collection_id = '95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid
-         AND l.confidence = 'LOW'                      THEN 0.75  -- Top Shot LOW, depth unknown: 0.75 (measured 2026-10-23)
+        WHEN l.collection_id IN ('95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid, 'dee28451-5d62-409e-a1ad-a83f763ac070'::uuid)
+         AND l.confidence = 'LOW'                      THEN 0.75  -- Top Shot (2026-10-23) and All Day (2026-11-04) LOW, depth unknown: 0.75
         ELSE 0.55
       END AS haircut,
       -- 2026-11-04: Top Shot only — the best OPEN, unexpired edition-level offer; the cut never goes under it
@@ -423,6 +424,18 @@ SELECT _assert_eq((SELECT string_agg(right(edition_id::text,2)||'='||fmv_usd||'|
 SELECT fmv_apply_thin_sale_haircut('00000000-0000-0000-0000-00000000cccc'::uuid, false);
 SELECT _assert_eq((SELECT fmv_usd::text||'|'||algo_version FROM fmv_snapshots WHERE edition_id='00000000-0000-0000-0000-0000000000a7'),
   '5.50|v2_haircut', 'the bid stop is Top Shot only (a7: 0.55 cut under a 9.00 offer)');
+
+-- 2026-11-04: an All Day LOW row with unknown depth takes 0.75 (as Top Shot); All Day ASK_ONLY keeps 0.55; no bid stop
+-- for All Day (no edition offers there).
+DELETE FROM fmv_snapshots; DELETE FROM offers;
+INSERT INTO fmv_snapshots (edition_id, collection_id, fmv_usd, floor_price_usd, sales_count_30d, listing_count, confidence, computed_at, algo_version) VALUES
+  ('00000000-0000-0000-0000-0000000000d1','dee28451-5d62-409e-a1ad-a83f763ac070', 100,100, 0,NULL,'LOW',      now(), 'ad'),
+  ('00000000-0000-0000-0000-0000000000d2','dee28451-5d62-409e-a1ad-a83f763ac070', 100,100, 0,NULL,'ASK_ONLY', now(), 'ad'),
+  ('00000000-0000-0000-0000-0000000000d3','dee28451-5d62-409e-a1ad-a83f763ac070', 100,100, 1,NULL,'LOW',      now(), 'ad');
+INSERT INTO offers VALUES ('dee28451-5d62-409e-a1ad-a83f763ac070','00000000-0000-0000-0000-0000000000d1', 90,'open','edition',NULL);
+SELECT fmv_apply_thin_sale_haircut('dee28451-5d62-409e-a1ad-a83f763ac070'::uuid, false);
+SELECT _assert_eq((SELECT string_agg(right(edition_id::text,2)||'='||fmv_usd||'|'||algo_version, ' ' ORDER BY edition_id) FROM fmv_snapshots),
+  'd1=75.00|ad_haircut d2=55.00|ad_haircut d3=85.00|ad_haircut', 'All Day LOW unknown depth 0.75 (no bid stop off Top Shot); ASK_ONLY 0.55; a sale 0.85');
 
 SELECT '✓ fmv_apply_thin_sale_haircut invariants pass' AS result;
 ROLLBACK;
