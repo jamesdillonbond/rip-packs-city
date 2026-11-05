@@ -1,3 +1,9 @@
+-- APPLIED 2026-11-04 ~5:05 PM PT (Cowork cloud, Trevor's Chrome) via the Supabase dashboard SQL editor as ONE batch;
+-- the MCP apply_migration was auto-cancelled (DELETE). Pre-check 4:40 PM PT: backups 4,361 / 1,036, overlap 0,
+-- live matches 4,361 / 1,036, no FKs reference sales. Post-check: live matches 0 / 0, function gone; editor "Success".
+-- Top-100 Top Shot sales by price (90 d) after: max $11,000, 8 atlas_backfill rows left (not in either class).
+-- This version is the record-only apply (SELECT 1); the body that ran follows, verbatim from the staged file.
+--
 -- STAGED 2026-11-04 (Claude Code cloud) — NOT APPLIED. The claude.ai Supabase connector's destructive-statement
 -- confirmation timed out unanswered twice (~2:50 and ~3:27 PM PT). Run this whole file as ONE apply_migration
 -- (or the dashboard SQL editor, then record the version by hand). It RAISEs and rolls back unless exactly
