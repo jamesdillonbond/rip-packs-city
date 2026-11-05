@@ -8,7 +8,7 @@
 
 import { valueSide, type SideValuation } from "@/lib/trade-room/valuation"
 import { collectionById, listingState, unsignableCollections, type ListingState } from "@/lib/trade-block/rules"
-import type { ItemRow, LoadedListing, LoadedProposal, ProposalItemRow, ProposalStatus } from "@/lib/trade-block/store"
+import type { IndexRead, ItemRow, LoadedListing, LoadedProposal, ProposalItemRow, ProposalStatus } from "@/lib/trade-block/store"
 
 /** Matches lib/trade-room/view.ts ANONYMOUS_USERNAME (not imported: that module is server-side). */
 export const ANONYMOUS_USERNAME = "A collector"
@@ -62,7 +62,7 @@ type AnyLine = Pick<
   "collection_id" | "moment_id" | "edition_key" | "player_name" | "set_name" | "tier" | "series_number" | "serial_number" | "image_url" | "fmv_usd"
 > & { kind?: ItemRow["kind"]; fmv_from_asks?: boolean | null; locked?: boolean }
 
-export function lineView(i: AnyLine, inIndex: Set<string> | null | undefined): LineView {
+export function lineView(i: AnyLine, inIndex: IndexRead | null | undefined): LineView {
   const c = collectionById(i.collection_id)
   const priced = typeof i.fmv_usd === "number" && Number.isFinite(i.fmv_usd) && i.fmv_usd >= 0
   const kind = i.kind ?? "moment"
@@ -83,8 +83,9 @@ export function lineView(i: AnyLine, inIndex: Set<string> | null | undefined): L
     fmv_usd: priced ? (i.fmv_usd as number) : null,
     priced,
     from_asks: priced && i.fmv_from_asks === true,
-    locked: i.locked === true,
-    in_index: kind !== "moment" || inIndex === undefined ? null : inIndex === null ? null : inIndex.has(`${i.collection_id}:${i.moment_id}`),
+    // picker rows carry their own lock; a posted offer is locked if RPC's re-read says so now
+    locked: i.locked === true || (kind === "moment" && inIndex != null && inIndex.locked.has(`${i.collection_id}:${i.moment_id}`)),
+    in_index: kind !== "moment" || inIndex === undefined ? null : inIndex === null ? null : inIndex.held.has(`${i.collection_id}:${i.moment_id}`),
   }
 }
 
@@ -93,7 +94,7 @@ export function listingView(
   names: Map<string, string>,
   viewerId: string | null,
   now: number,
-  inIndex?: Set<string> | null,
+  inIndex?: IndexRead | null,
 ): ListingView {
   const offers = loaded.items.filter((i) => i.role === "offer").map((i) => lineView(i, inIndex))
   const wants = loaded.items.filter((i) => i.role === "want").map((i) => lineView(i, undefined))

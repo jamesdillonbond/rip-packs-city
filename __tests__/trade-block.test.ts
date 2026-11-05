@@ -124,7 +124,7 @@ describe("listing state", () => {
 describe("the public view never carries a wallet address", () => {
   it("drops `source` from every line and no 0x address survives anywhere", () => {
     const loaded = listing([item({}), item({ role: "want", kind: "player", moment_id: null, source: null, pos: 0, collection_id: PIN, player_name: "Stitch", fmv_usd: null })])
-    const v = listingView(loaded, new Map([["u1", "webz_80"]]), null, Date.now(), new Set([`${TS}:123`]))
+    const v = listingView(loaded, new Map([["u1", "webz_80"]]), null, Date.now(), { held: new Set([`${TS}:123`]), locked: new Set() })
     const json = JSON.stringify(v)
     expect(json).not.toMatch(/0x[0-9a-f]{16}/i)
     expect(json).not.toMatch(/"source"/)
@@ -167,10 +167,19 @@ describe("prices: confident FMV only, never $0 for unknown", () => {
 describe("re-check of offered lines: three states", () => {
   it("in index · left the index · not re-checked", () => {
     const row = item({})
-    expect(lineView(row, new Set([`${TS}:123`])).in_index).toBe(true)
-    expect(lineView(row, new Set()).in_index).toBe(false)
+    expect(lineView(row, { held: new Set([`${TS}:123`]), locked: new Set() }).in_index).toBe(true)
+    expect(lineView(row, { held: new Set(), locked: new Set() }).in_index).toBe(false)
     expect(lineView(row, null).in_index).toBeNull()
-    expect(lineView(item({ kind: "player", role: "want", moment_id: null, source: null }), new Set()).in_index).toBeNull()
+    expect(lineView(item({ kind: "player", role: "want", moment_id: null, source: null }), { held: new Set(), locked: new Set() }).in_index).toBeNull()
+  })
+
+  it("an offer locked since it was posted reads locked (and still in the index); a want never does", () => {
+    const row = item({})
+    const read = { held: new Set([`${TS}:123`]), locked: new Set([`${TS}:123`]) }
+    expect(lineView(row, read)).toMatchObject({ in_index: true, locked: true })
+    expect(lineView(row, { held: new Set([`${TS}:123`]), locked: new Set() }).locked).toBe(false)
+    expect(lineView(row, null).locked).toBe(false)
+    expect(lineView(item({ kind: "player", role: "want", moment_id: null, source: null }), read).locked).toBe(false)
   })
 })
 

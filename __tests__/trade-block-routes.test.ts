@@ -313,6 +313,36 @@ describe("proposals and the seam with the trade room", () => {
     expect(((await notOffered.json()) as { code: string }).code).toBe("not_offered")
   })
 
+  it("a locked asset can't be listed, and one locked after posting reads locked and can't be asked for (2026-11-04)", async () => {
+    await prove(ALICE, WA)
+    const lock = (id: string, on: boolean) => {
+      const row = mem.current.tables.wallet_moments_cache.find((r) => r.wallet_address === WA.source && r.collection_id === TS && r.moment_id === id)
+      if (!row) throw new Error(`fixture row ${id} missing`)
+      row.is_locked = on
+    }
+    lock("2", true)
+    const refused = await postListing({ offers: [{ collection_id: TS, moment_id: "2" }] })
+    expect(refused.status).toBe(409)
+    expect(((await refused.json()) as { code: string }).code).toBe("locked")
+
+    const ok = await postListing({ offers: [{ collection_id: TS, moment_id: "1" }] })
+    expect(ok.status).toBe(201)
+    const code = ((await ok.json()) as { listing: { code: string } }).listing.code
+    lock("1", true)
+    const view = (await (await as(null, () => publicOne.GET(get(`/api/public/trade-block/${code}`), { params: Promise.resolve({ code }) }))).json()) as {
+      listing: { offers: Array<{ in_index: boolean | null; locked: boolean }> }
+    }
+    expect(view.listing.offers[0]).toMatchObject({ in_index: true, locked: true })
+
+    await prove(BOB, WB)
+    const ask = await as(BOB, () => signedIn.POST(post({ action: "propose", code, give: [{ collection_id: TS, moment_id: "9" }], get: [{ collection_id: TS, moment_id: "1" }] })))
+    expect(ask.status).toBe(409)
+    expect(((await ask.json()) as { code: string }).code).toBe("locked")
+    lock("1", false)
+    const after = await as(BOB, () => signedIn.POST(post({ action: "propose", code, give: [{ collection_id: TS, moment_id: "9" }], get: [{ collection_id: TS, moment_id: "1" }] })))
+    expect(after.status).toBe(201)
+  })
+
   it("closing a listing declines its pending proposals; only the owner may close it", async () => {
     const code = await listingByAlice([{ collection_id: TS, moment_id: "1" }])
     await prove(BOB, WB)

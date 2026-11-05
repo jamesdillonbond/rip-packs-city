@@ -616,19 +616,33 @@ export async function listingsOf(db: SupabaseClient, userId: string): Promise<Lo
  * Keyed `${collection_id}:${moment_id}`. Returns null when the check itself failed, so
  * the caller shows "not re-checked" — never "gone".
  */
-export async function stillIndexed(db: SupabaseClient, lines: ReadonlyArray<{ collection_id: string; moment_id: string | null; source: string | null }>): Promise<Set<string> | null> {
+/** What RPC's index says NOW about a set of offered lines (keys `collection_id:moment_id`). */
+export interface IndexRead {
+  /** Still in RPC's index of the account each was posted from. */
+  held: Set<string>
+  /** Held, but RPC's last read says locked — can't be traded until unlocked (2026-11-04). */
+  locked: Set<string>
+}
+
+export async function stillIndexed(db: SupabaseClient, lines: ReadonlyArray<{ collection_id: string; moment_id: string | null; source: string | null }>): Promise<IndexRead | null> {
   const real = lines.filter((l) => l.moment_id && l.source)
-  if (real.length === 0) return new Set()
+  if (real.length === 0) return { held: new Set(), locked: new Set() }
   const { data, error } = await db
     .from("wallet_moments_cache")
-    .select("wallet_address, collection_id, moment_id")
+    .select("wallet_address, collection_id, moment_id, is_locked")
     .in("wallet_address", [...new Set(real.map((l) => l.source as string))])
     .in("collection_id", [...new Set(real.map((l) => l.collection_id))])
     .in("moment_id", [...new Set(real.map((l) => l.moment_id as string))])
   if (error) return null
-  const have = new Set(((data ?? []) as Array<{ wallet_address: string; collection_id: string; moment_id: string }>).map((r) => `${r.wallet_address}|${r.collection_id}:${r.moment_id}`))
-  const out = new Set<string>()
-  for (const l of real) if (have.has(`${l.source}|${l.collection_id}:${l.moment_id}`)) out.add(`${l.collection_id}:${l.moment_id}`)
+  const rows = (data ?? []) as Array<{ wallet_address: string; collection_id: string; moment_id: string; is_locked: boolean | null }>
+  const have = new Map(rows.map((r) => [`${r.wallet_address}|${r.collection_id}:${r.moment_id}`, r.is_locked === true]))
+  const out: IndexRead = { held: new Set(), locked: new Set() }
+  for (const l of real) {
+    const k = `${l.source}|${l.collection_id}:${l.moment_id}`
+    if (!have.has(k)) continue
+    out.held.add(`${l.collection_id}:${l.moment_id}`)
+    if (have.get(k)) out.locked.add(`${l.collection_id}:${l.moment_id}`)
+  }
   return out
 }
 
@@ -709,6 +723,18 @@ export async function propose(db: SupabaseClient, userId: string, listingCode: s
     .eq("status", "pending")
   if (countError) fail(countError, "trade_block_proposals count")
   if ((count ?? 0) >= MAX_PENDING_PROPOSALS) throw new TradeBlockError(`You have ${count} pending proposals. Withdraw one first.`, 429, "too_many_proposals")
+
+  // an offered asset locked since it was posted can't be traded — refuse it by name (2026-11-04).
+  // A failed read does not block: the room re-reads the chain before anything signs.
+  const now_ = await stillIndexed(db, getLines)
+  const lockedGet = now_ ? getLines.find((i) => now_.locked.has(`${i.collection_id}:${i.moment_id}`)) : undefined
+  if (lockedGet) {
+    throw new TradeBlockError(
+      `${lockedGet.player_name ?? `#${lockedGet.moment_id}`}${lockedGet.serial_number != null ? ` #${lockedGet.serial_number}` : ""} is locked now, so it can't be traded until it's unlocked.`,
+      409,
+      "locked",
+    )
+  }
 
   const held = await requireHeld(db, userId, give)
   const { data: p, error } = await db
