@@ -15,7 +15,10 @@
 --     across series), aliases never count toward a rank, a second identical run
 --     changes nothing, and an EMPTY stage refuses to wipe the table;
 --   · the 7-day figure comes from market_cap_daily and is NULL without history, or when that
---     day knew supply on a different set of editions (> 2 % apart; 2026-11-04).
+--     day knew supply on a different set of editions (> 2 % apart; 2026-11-04);
+--   · #233 (2026-11-04): an FMV RESTATEMENT (a rule re-price recorded in fmv_restatements) dated after
+--     the baseline day is added to the 7-day baseline, so a re-price is not a market move; one dated on
+--     or before the baseline day is not.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
 -- (supabase/migrations/20261003213500_audit_20261003_market_cap_current_daily_history_and_four_more_supply_sources.sql);
@@ -85,7 +88,13 @@ CREATE TABLE public.market_cap_current (
   mcap_rank              integer,
   groups_ranked          integer     NOT NULL,
   computed_at            timestamptz NOT NULL,
+  mcap_restated_7d_usd   numeric,
   PRIMARY KEY (collection_slug, grain, match_key)
+);
+CREATE TABLE public.fmv_restatements (
+  source text NOT NULL, collection_slug text NOT NULL, ext_id text NOT NULL,
+  old_fmv_usd numeric NOT NULL, new_fmv_usd numeric NOT NULL, restated_at timestamptz NOT NULL,
+  PRIMARY KEY (source, collection_slug, ext_id)
 );
 CREATE TABLE public.market_cap_daily (
   snapshot_date          date        NOT NULL,
@@ -356,11 +365,14 @@ BEGIN
          -- within 2 % of today's count). Candy MLB's 10-28 row knew 9 of 125 and printed "+550.4 %".
          CASE WHEN a.n_known > 0
                AND abs(d.editions_supply_known - a.n_known) <= 0.02 * a.n_known
-              THEN d.mcap_usd END
+              THEN d.mcap_usd + coalesce(mc.mcap_restated_7d_usd, 0) END
   FROM agg a
   LEFT JOIN market_cap_daily d
     ON p_group = 'collection' AND d.snapshot_date = v_day7 AND d.collection_slug = a.coll
    AND d.grain = 'collection' AND d.group_key = a.coll
+  -- 2026-11-04 (#233): the baseline restated to today's pricing rules (see refresh_market_cap_current).
+  LEFT JOIN market_cap_current mc
+    ON p_group = 'collection' AND mc.collection_slug = a.coll AND mc.grain = 'collection' AND mc.match_key = a.coll
   ORDER BY a.s_mcap DESC NULLS LAST, a.s_mcap_minted DESC NULLS LAST, a.coll, a.gkey
   LIMIT v_limit;
 END;
@@ -384,10 +396,21 @@ DECLARE
 BEGIN
   DROP TABLE IF EXISTS pg_temp._mc_stage;
   CREATE TEMP TABLE _mc_stage ON COMMIT DROP AS
-  WITH ed AS MATERIALIZED (
-    SELECT r.*, c.id AS cid
+  WITH rs AS MATERIALIZED (
+    -- 2026-11-04 (#233): FMV RESTATEMENTS (a re-price by a rule change, not by the market) dated after the
+    -- 7-day baseline day. Each re-price migration records old/new per edition in fmv_restatements; the
+    -- 7-day change adds sum(new - old) x collector_held to its baseline so a rule change does not read as a
+    -- market move. Days v_day-6 .. v_day are after the v_day-7 baseline the readers compare against.
+    SELECT x.collection_slug, x.ext_id, sum(x.new_fmv_usd - x.old_fmv_usd) AS d
+    FROM public.fmv_restatements x
+    WHERE x.restated_at >= ((v_day - 6)::timestamp AT TIME ZONE 'America/Los_Angeles')
+    GROUP BY x.collection_slug, x.ext_id
+  ),
+  ed AS MATERIALIZED (
+    SELECT r.*, c.id AS cid, coalesce(rs.d, 0) AS restate_per_unit
     FROM public.market_cap_edition_rows(NULL, false) r
     JOIN public.collections c ON c.slug = r.coll
+    LEFT JOIN rs ON rs.collection_slug = r.coll AND rs.ext_id = r.ext_id
   ),
   sl AS MATERIALIZED (
     SELECT ed.*,
@@ -413,28 +436,28 @@ BEGIN
     FROM (SELECT DISTINCT s.coll, s.cid, s.t_plain FROM sl s WHERE s.t_plain <> '') d
   ),
   units AS (
-    SELECT s.coll, 'collection'::text AS grain, s.coll AS gkey, s.coll AS lbl, s.minted, s.burned, s.issuer_held, s.collector_held, s.fmv_usd, s.confidence FROM sl s
+    SELECT s.coll, 'collection'::text AS grain, s.coll AS gkey, s.coll AS lbl, s.minted, s.burned, s.issuer_held, s.collector_held, s.fmv_usd, s.confidence, s.collector_held * s.restate_per_unit AS restate_usd FROM sl s
     UNION ALL
-    SELECT s.coll, 'edition', s.ext_id, coalesce(nullif(s.player_name, ''), nullif(s.team_name, ''), s.set_name), s.minted, s.burned, s.issuer_held, s.collector_held, s.fmv_usd, s.confidence FROM sl s
+    SELECT s.coll, 'edition', s.ext_id, coalesce(nullif(s.player_name, ''), nullif(s.team_name, ''), s.set_name), s.minted, s.burned, s.issuer_held, s.collector_held, s.fmv_usd, s.confidence, s.collector_held * s.restate_per_unit AS restate_usd FROM sl s
     UNION ALL
-    SELECT s.coll, 'player', s.p_ascii, s.person_name, s.minted, s.burned, s.issuer_held, s.collector_held, s.fmv_usd, s.confidence FROM sl s WHERE s.is_player
+    SELECT s.coll, 'player', s.p_ascii, s.person_name, s.minted, s.burned, s.issuer_held, s.collector_held, s.fmv_usd, s.confidence, s.collector_held * s.restate_per_unit AS restate_usd FROM sl s WHERE s.is_player
     UNION ALL
-    SELECT s.coll, 'team', coalesce(t.fkey, s.t_plain), s.team_name, s.minted, s.burned, s.issuer_held, s.collector_held, s.fmv_usd, s.confidence FROM sl s
+    SELECT s.coll, 'team', coalesce(t.fkey, s.t_plain), s.team_name, s.minted, s.burned, s.issuer_held, s.collector_held, s.fmv_usd, s.confidence, s.collector_held * s.restate_per_unit AS restate_usd FROM sl s
       LEFT JOIN tk t ON t.coll = s.coll AND t.t_plain = s.t_plain
      WHERE s.t_plain <> ''
     UNION ALL
-    SELECT s.coll, 'set', s.set_slug, s.set_name, s.minted, s.burned, s.issuer_held, s.collector_held, s.fmv_usd, s.confidence FROM sl s WHERE s.set_slug <> ''
+    SELECT s.coll, 'set', s.set_slug, s.set_name, s.minted, s.burned, s.issuer_held, s.collector_held, s.fmv_usd, s.confidence, s.collector_held * s.restate_per_unit AS restate_usd FROM sl s WHERE s.set_slug <> ''
     UNION ALL
     SELECT s.coll, 'series', coalesce(s.series_num::text, nullif(s.series_name, '')),
-           coalesce(nullif(s.series_name, ''), s.series_num::text), s.minted, s.burned, s.issuer_held, s.collector_held, s.fmv_usd, s.confidence
+           coalesce(nullif(s.series_name, ''), s.series_num::text), s.minted, s.burned, s.issuer_held, s.collector_held, s.fmv_usd, s.confidence, s.collector_held * s.restate_per_unit AS restate_usd
       FROM sl s WHERE coalesce(s.series_num::text, nullif(s.series_name, '')) IS NOT NULL
     UNION ALL
-    SELECT s.coll, 'player', regexp_replace(lower(btrim(ch)), '[^a-z0-9]+', '-', 'g'), btrim(ch), s.minted, s.burned, s.issuer_held, s.collector_held, s.fmv_usd, s.confidence
+    SELECT s.coll, 'player', regexp_replace(lower(btrim(ch)), '[^a-z0-9]+', '-', 'g'), btrim(ch), s.minted, s.burned, s.issuer_held, s.collector_held, s.fmv_usd, s.confidence, s.collector_held * s.restate_per_unit AS restate_usd
       FROM sl s CROSS JOIN LATERAL unnest(s.pin_chars) ch
      WHERE s.coll = 'disney_pinnacle' AND btrim(coalesce(ch, '')) <> ''
     UNION ALL
     SELECT s.coll, 'team', regexp_replace(lower(btrim(regexp_replace(fr, '[™®©]', '', 'g'))), '[^a-z0-9]+', '-', 'g'),
-           btrim(regexp_replace(fr, '[™®©]', '', 'g')), s.minted, s.burned, s.issuer_held, s.collector_held, s.fmv_usd, s.confidence
+           btrim(regexp_replace(fr, '[™®©]', '', 'g')), s.minted, s.burned, s.issuer_held, s.collector_held, s.fmv_usd, s.confidence, s.collector_held * s.restate_per_unit AS restate_usd
       FROM sl s CROSS JOIN LATERAL unnest(s.pin_fr) fr
      WHERE s.coll = 'disney_pinnacle' AND btrim(coalesce(regexp_replace(fr, '[™®©]', '', 'g'), '')) <> ''
   ),
@@ -451,7 +474,8 @@ BEGIN
            count(u.fmv_usd * u.collector_held) AS n_capped,
            round(sum(u.fmv_usd * u.collector_held), 2) AS s_mcap,
            sum(u.fmv_usd * u.collector_held) FILTER (WHERE u.confidence IN ('HIGH','MEDIUM')) AS s_mcap_hm,
-           round(sum(u.fmv_usd * u.minted), 2) AS s_mcap_minted
+           round(sum(u.fmv_usd * u.minted), 2) AS s_mcap_minted,
+           round(sum(u.restate_usd), 2) AS s_restate
     FROM units u
     WHERE u.gkey IS NOT NULL AND u.gkey <> ''
     GROUP BY u.coll, u.grain, u.gkey
@@ -478,7 +502,7 @@ BEGIN
     SELECT DISTINCT ON (k.coll, k.grain, k.match_key)
            k.coll, k.grain, k.match_key, k.gkey, k.is_primary,
            r.lbl, r.n, r.n_known, r.n_priced, r.s_minted, r.s_burned, r.s_issuer, r.s_collector,
-           r.n_capped, r.s_mcap, r.s_mcap_hm, r.s_mcap_minted, r.rnk, r.n_ranked
+           r.n_capped, r.s_mcap, r.s_mcap_hm, r.s_mcap_minted, r.rnk, r.n_ranked, r.s_restate
     FROM keys k
     JOIN ranked r ON r.coll = k.coll AND r.grain = k.grain AND r.gkey = k.gkey
     ORDER BY k.coll, k.grain, k.match_key, k.is_primary DESC, r.s_mcap DESC NULLS LAST, k.gkey
@@ -489,7 +513,8 @@ BEGIN
          kd.s_mcap AS mcap_usd,
          CASE WHEN kd.n_capped > 0 THEN round(coalesce(kd.s_mcap_hm, 0), 2) END AS mcap_high_conf_usd,
          kd.s_mcap_minted AS mcap_minted_usd,
-         kd.rnk AS mcap_rank, kd.n_ranked AS groups_ranked
+         kd.rnk AS mcap_rank, kd.n_ranked AS groups_ranked,
+         kd.s_restate AS mcap_restated_7d_usd
   FROM keyed kd;
 
   SELECT count(*)::integer INTO v_staged FROM _mc_stage;
@@ -501,10 +526,10 @@ BEGIN
     INSERT INTO public.market_cap_current AS m
       (collection_slug, grain, match_key, group_key, is_primary, group_label, editions, editions_supply_known,
        editions_priced, minted, burned, issuer_held, collector_held, mcap_usd, mcap_high_conf_usd,
-       mcap_minted_usd, mcap_rank, groups_ranked, computed_at)
+       mcap_minted_usd, mcap_rank, groups_ranked, mcap_restated_7d_usd, computed_at)
     SELECT st.collection_slug, st.grain, st.match_key, st.group_key, st.is_primary, st.group_label, st.editions,
            st.editions_supply_known, st.editions_priced, st.minted, st.burned, st.issuer_held, st.collector_held,
-           st.mcap_usd, st.mcap_high_conf_usd, st.mcap_minted_usd, st.mcap_rank, st.groups_ranked, v_run
+           st.mcap_usd, st.mcap_high_conf_usd, st.mcap_minted_usd, st.mcap_rank, st.groups_ranked, st.mcap_restated_7d_usd, v_run
     FROM _mc_stage st
     ON CONFLICT (collection_slug, grain, match_key) DO UPDATE
       SET group_key = EXCLUDED.group_key, is_primary = EXCLUDED.is_primary, group_label = EXCLUDED.group_label,
@@ -513,15 +538,16 @@ BEGIN
           issuer_held = EXCLUDED.issuer_held, collector_held = EXCLUDED.collector_held,
           mcap_usd = EXCLUDED.mcap_usd, mcap_high_conf_usd = EXCLUDED.mcap_high_conf_usd,
           mcap_minted_usd = EXCLUDED.mcap_minted_usd, mcap_rank = EXCLUDED.mcap_rank,
-          groups_ranked = EXCLUDED.groups_ranked, computed_at = EXCLUDED.computed_at
+          groups_ranked = EXCLUDED.groups_ranked, mcap_restated_7d_usd = EXCLUDED.mcap_restated_7d_usd,
+          computed_at = EXCLUDED.computed_at
       WHERE (m.group_key, m.is_primary, m.group_label, m.editions, m.editions_supply_known, m.editions_priced,
              m.minted, m.burned, m.issuer_held, m.collector_held, m.mcap_usd, m.mcap_high_conf_usd,
-             m.mcap_minted_usd, m.mcap_rank, m.groups_ranked)
+             m.mcap_minted_usd, m.mcap_rank, m.groups_ranked, m.mcap_restated_7d_usd)
         IS DISTINCT FROM
             (EXCLUDED.group_key, EXCLUDED.is_primary, EXCLUDED.group_label, EXCLUDED.editions,
              EXCLUDED.editions_supply_known, EXCLUDED.editions_priced, EXCLUDED.minted, EXCLUDED.burned,
              EXCLUDED.issuer_held, EXCLUDED.collector_held, EXCLUDED.mcap_usd, EXCLUDED.mcap_high_conf_usd,
-             EXCLUDED.mcap_minted_usd, EXCLUDED.mcap_rank, EXCLUDED.groups_ranked)
+             EXCLUDED.mcap_minted_usd, EXCLUDED.mcap_rank, EXCLUDED.groups_ranked, EXCLUDED.mcap_restated_7d_usd)
     RETURNING 1
   )
   SELECT count(*)::integer INTO v_changed FROM up;
@@ -598,7 +624,7 @@ BEGIN
          -- 2026-11-04: comparable baseline only (supply known on within 2 % of today's editions).
          CASE WHEN m.editions_supply_known > 0
                AND abs(d.editions_supply_known - m.editions_supply_known) <= 0.02 * m.editions_supply_known
-              THEN d.mcap_usd END,
+              THEN d.mcap_usd + coalesce(m.mcap_restated_7d_usd, 0) END,  -- #233: restated to today's rules
          st.refreshed_at
   FROM market_cap_current m
   LEFT JOIN market_cap_daily d
@@ -794,6 +820,28 @@ UPDATE public.market_cap_daily SET editions_supply_known = editions_supply_known
  WHERE grain = 'player' AND group_key = 'alice' AND snapshot_date = (now() AT TIME ZONE 'America/Los_Angeles')::date - 7;
 SELECT _assert_eq((SELECT mcap_usd_7d_ago::text FROM get_market_cap_entity('player', 'nba_top_shot', 'alice')), '100.00',
   'entity tile: restoring the same coverage restores the 7-day figure');
+
+-- ── #233 (2026-11-04): a rule re-price is netted out of the 7-day baseline ──
+-- 1:1 (Alice, 60 collector-held) was re-priced by a rule from $3.00 to today's $2.00: -$60 of today's cap is the
+-- rule, not the market. A restatement 9 days old is outside the window and must not count.
+INSERT INTO public.fmv_restatements VALUES
+  ('test_rule_today', 'nba_top_shot', '1:1', 3.00, 2.00, now()),
+  ('test_rule_old',   'nba_top_shot', '1:2', 5.00, 1.00, now() - interval '9 days');
+SELECT _assert((SELECT (refresh_market_cap_current() ->> 'staged')::int > 0), 'the refresh stages rows with restatements present');
+SELECT _assert_eq((SELECT mcap_restated_7d_usd::text FROM market_cap_current WHERE grain = 'player' AND match_key = 'alice'), '-60.00',
+  'refresh carries sum((new - old) x collector_held) per group for restatements after the baseline day');
+SELECT _assert_eq((SELECT mcap_restated_7d_usd::text FROM market_cap_current WHERE grain = 'player' AND match_key = 'bob'), '0.00',
+  'a restatement older than the 7-day window adds nothing');
+SELECT _assert_eq((SELECT mcap_usd_7d_ago::text FROM get_market_cap_entity('player', 'nba_top_shot', 'alice')), '40.00',
+  'entity tile: the baseline is restated to today''s rules (100 - 60), so the re-price is not a 7-day move');
+SELECT _assert_eq((SELECT mcap_usd_7d_ago::text FROM get_market_cap_board('collection', 'nba_top_shot')), '90.00',
+  'board collection grain: the baseline is restated too (150 - 60)');
+SELECT _assert((SELECT mcap_usd_7d_ago IS NULL FROM get_market_cap_board('collection', 'laliga_golazos')),
+  'no history stays NULL — a restatement never invents a baseline');
+DELETE FROM public.fmv_restatements;
+SELECT _assert((SELECT (refresh_market_cap_current() ->> 'staged')::int > 0), 'refresh after the restatements are gone');
+SELECT _assert_eq((SELECT mcap_usd_7d_ago::text FROM get_market_cap_entity('player', 'nba_top_shot', 'alice')), '100.00',
+  'with no restatements the baseline is the stored figure, unchanged');
 
 -- An EMPTY stage (every source read failed) must refuse, leaving the table intact.
 DELETE FROM public.editions; DELETE FROM public.pinnacle_catalog;

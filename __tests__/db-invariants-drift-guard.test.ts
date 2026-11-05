@@ -147,8 +147,8 @@ const PINS = [
     // an unknown collection → zero rows, and known caps ranking ahead of unknown.
     fn: "get_market_cap_board",
     test: "supabase/tests/get_market_cap_board.sql",
-    // Re-pointed 2026-11-04: the 7-day baseline must cover the same editions (within 2 %).
-    migration: "supabase/migrations/20261104235053_audit_20261104_market_cap_7d_change_needs_a_comparable_baseline.sql",
+    // Re-pointed 2026-11-04 (#233): the 7-day baseline is restated to today's pricing rules.
+    migration: "supabase/migrations/20261105043000_audit_20261104_market_cap_7d_change_nets_out_fmv_restatements.sql",
   },
   {
     // Added 2026-10-03. The ONE per-edition supply x FMV row set the board, the
@@ -162,8 +162,8 @@ const PINS = [
     // tile: matched by each page's own slug rule; no match → zero rows, never $0.
     fn: "get_market_cap_entity",
     test: "supabase/tests/get_market_cap_board.sql",
-    // Re-pointed 2026-11-04: the 7-day baseline must cover the same editions (within 2 %).
-    migration: "supabase/migrations/20261104235053_audit_20261104_market_cap_7d_change_needs_a_comparable_baseline.sql",
+    // Re-pointed 2026-11-04 (#233): the 7-day baseline is restated to today's pricing rules.
+    migration: "supabase/migrations/20261105043000_audit_20261104_market_cap_7d_change_nets_out_fmv_restatements.sql",
   },
   {
     // Added 2026-10-03. Recomputes market_cap_current (entity tiles) + the PT-dated
@@ -171,8 +171,8 @@ const PINS = [
     // empty stage refuses to wipe the table.
     fn: "refresh_market_cap_current",
     test: "supabase/tests/get_market_cap_board.sql",
-    // Re-pointed 2026-10-20: the player grain groups by the linked person, not the label.
-    migration: "supabase/migrations/20261021041717_audit_20261020_market_cap_player_grain_groups_by_person.sql",
+    // Re-pointed 2026-11-04 (#233): carries mcap_restated_7d_usd (rule re-prices netted out of the 7-day baseline).
+    migration: "supabase/migrations/20261105043000_audit_20261104_market_cap_7d_change_nets_out_fmv_restatements.sql",
   },
   {
     // Added 2026-10-31 (#222). Last event per moment wins; never over a newer poll; Top Shot rows only.
