@@ -537,6 +537,10 @@ used to carry — `edition_offers.updated_at` going confirmed→changed on 2026-
 
 ### The shape
 
+⚠ **An in-place `UPDATE fmv_snapshots` (a re-price migration) is invisible to the incremental refresh for the same reason** — it does not move `computed_at`, so the cache keeps the old price until the daily full reconcile. Write `edition_fmv_current` in the same migration, guarded on the value replaced (`20261105014011`, 2026-11-04).
+
+⚠ **A data-quality class keyed on ONE identifier is blind to rows where that identifier is NULL.** #232's "seller kept the moment" class keyed on `moment_id`; 754 more fake sales had NULL `moment_id` and surfaced only as 7 of the top 8 survivors, then matched on `nft_id`. Read the join key's NULL rate before calling a class complete.
+
 `edition_fmv_current` is a latest-FMV-per-edition cache. `refresh_edition_fmv_current()` is its
 ONLY writer and its `DISTINCT ON (edition_id) ORDER BY computed_at DESC` is **correct**. The defect
 is the incremental window:
