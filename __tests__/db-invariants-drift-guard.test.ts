@@ -2146,6 +2146,18 @@ const PINS = [
     migration: "supabase/migrations/20261105024000_audit_20261104_topshot_ask_only_last_sale_cap.sql",
   },
   {
+    // 2026-11-04 evening: a Top Shot FMV is floored at the best OPEN edition-level offer (<= 3x), _bidfloor.
+    fn: "fmv_snapshots_floor_topshot_at_best_offer",
+    test: "supabase/tests/fmv_snapshots_floor_topshot_at_best_offer.sql",
+    migration: "supabase/migrations/20261105033000_audit_20261104_topshot_fmv_floor_at_best_offer.sql",
+  },
+  {
+    // 2026-11-04 evening: the weekly FMV accuracy instrument (published price vs the sales that followed it).
+    fn: "refresh_fmv_accuracy_weekly",
+    test: "supabase/tests/refresh_fmv_accuracy_weekly.sql",
+    migration: "supabase/migrations/20261105040000_audit_20261104_fmv_accuracy_weekly.sql",
+  },
+  {
   // 2026-10-23 (#209): a Top Shot / All Day STALE price is capped at the edition's LAST market sale.
   // Backtested 60 d on sales under a CURRENT STALE snapshot: published 2.0× (TS) / 5.0× (AD) realised,
   // min(published, last sale) 1.25× / 1.40×, best on every axis, never worse by last-sale age.
