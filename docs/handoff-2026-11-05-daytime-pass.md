@@ -36,7 +36,9 @@
 - **#209:** too thin (Top Shot STALE n 0, All Day n 4).
 - **#210:** Top Shot LOW reads 0.897 this week, but the haircut rows the item changed keep improving (ratio 0.630 → 0.729 → 0.750; within ±25 % 39.9 → 45.2 → 50.7). The dip is the untouched rows (1.000 → 0.945). New lead, not shipped: a 0.90 haircut instead of 0.75 wins or ties every cell on clean post-10-23 snapshots, by small margins; re-read with the 11-09 week.
 - **Pinnacle #193 exit (owed since ~10-30):** holds. HIGH n 561, published 75.6 % vs naive last-5 75.4 %, WAPE 22.9 vs 23.3.
-- **Golazos:** ASK_ONLY 14 d 84.6 % within ±25 %, ratio 0.900 (was 20.0 % / 1.80 on 10-23).
+- **Golazos:** ASK_ONLY 84.6 % within ±25 %, ratio 0.900 — ⚠ the same 52 sales as the 10-29 read: Golazos has had **no market sale since 10-25**. Verified dead, not blind (the indexer sees every other Dapper type; the storefront reconcile closed 0 of 4,491 listings in 48 h). See `docs/strategy/collections/laliga-golazos.md`.
+- **Top Shot premium-serial read:** circulation > 50 qualifies (wins or ties every cell, 60 moved sales) but would re-price only 2 current prices — deliberately not shipped; ≤ 50 loses. Recorded in #213.
+- **All Day weekly read:** published beats or matches naive in every tier; LOW's 0.773 is the sub-$1 market step in the non-haircut rows, not the haircut.
 - **Panini backlog:** 14,755 editions older than 7 d (18,431 on 11-04), on track.
 - **Mint walk:** the 11-05 scheduled run of `mint-event-walk-forward.yml` had not fired yet at write-up; the previous two fired at 11:45 and 11:59 AM PT (GitHub schedule lag). Check `gh run list --workflow mint-event-walk-forward.yml` for an `event=schedule` run dated 11-05.
 
