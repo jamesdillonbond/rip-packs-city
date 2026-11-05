@@ -2165,6 +2165,13 @@ const PINS = [
     migration: "supabase/migrations/20261105000529_audit_20261104_panini_fmv_snapshots_withhold_over_cap.sql",
   },
   {
+    // 2026-11-04 (Trevor: "Ship it now"): a Pinnacle ASK_ONLY price above 3x the median of the pin's last 3 sales
+    // is capped there (_histcap), the All Day / Top Shot rule. Was: Pedro /54 at $1,620 off one $1,800 ask after ~$100 sales.
+    fn: "pinnacle_catalog_cap_ask_only_to_sales_history",
+    test: "supabase/tests/pinnacle_catalog_cap_ask_only_to_sales_history.sql",
+    migration: "supabase/migrations/20261105010815_audit_20261104_pinnacle_ask_only_histcap.sql",
+  },
+  {
     // 2026-10-23: the sitemap's readers for the cross-collection hubs — the bulk form
     // of the predicate each hub page applies (and get_player_hub's canonical slug).
     fn: "list_indexable_player_hubs",
