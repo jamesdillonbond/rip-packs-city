@@ -108,3 +108,8 @@ rendered, so check visible headings, not the raw innerHTML for that phrase.
   matching the QA session's own dashboard loads). Do not re-open unless the row counts flatline.
 
 **Known-deferred artifact prose** (see the checklist Part 1) — report, don't rebuild.
+
+
+**2026-11-05 — two stale checklist expectations, both verified NON-defects (surface-QA pass).** Don't re-file these:
+- **Anonymous telemetry is now classified by `user_id IS NULL`, NOT `wallet_address IS NULL`.** Anon page-views store a sentinel `wallet_address` beginning `anon…` while `user_id` stays NULL, so the old `wallet_address IS NULL` positive-control reads a FALSE zero (it showed 0 anon for 10 straight days while authed landed — a phantom). By the correct classifier anon page-views land ~1.4K–6.8K/day (10-day history 2026-10-26→11-05); the anon `/api/telemetry` beacon acks **204** on every page and rows land — healthy. Re-confirmed by a controlled probe: 19 anonymous Playwright loads produced exactly 19 `page-view` rows, all `user_id` NULL. The beacon is fine; only the classifier field changed.
+- **Pack `/dist/` Sales-History buyer links now point at `/share/0x<addr>` (the public "Collection Card"), NOT `/analytics/wallets/<addr>`.** Verified anon-reachable (200, title "Collection Card — @handle", no login bounce) from `/nba-top-shot/pack/dist/4184`, whose caption reads "Buyer links open the wallet's full intelligence." The traced TOP/RECENT purchases render with @handles, prices and dates. Not a broken link — the checklist's `/analytics/wallets/` path is stale.
