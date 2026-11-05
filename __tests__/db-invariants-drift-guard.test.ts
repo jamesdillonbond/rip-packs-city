@@ -650,8 +650,9 @@ const PINS = [
     test: "supabase/tests/populate_pinnacle_wmc_fmv.sql",
     // 2026-09-28: a pin the catalog de-prices (NO_DATA) goes back to NULL in
     // every wallet — it used to keep its last price forever.
+    // Re-pinned 2026-11-04: a price changed IN PLACE (no fmv_computed_at bump) is caught by a catalog fingerprint.
     migration:
-      "supabase/migrations/20260929021346_audit_20260928_pinnacle_wmc_fmv_follows_the_catalog_to_null.sql",
+      "supabase/migrations/20261105030303_audit_20261104_pinnacle_wmc_fmv_sees_in_place_reprices.sql",
   },
   {
     fn: "analytics_fmv_tier_pulse",

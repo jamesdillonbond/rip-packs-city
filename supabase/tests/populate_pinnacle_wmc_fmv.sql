@@ -10,9 +10,11 @@
 --   3. After a draining run, a pin going to NULL alone (the priced-row
 --      watermark does not move) still triggers a scan and clears the row.
 --   4. A row in another collection with the same moment_id is untouched.
+--   5. (2026-11-04) After a draining run, a price changed IN PLACE -- fmv_computed_at not
+--      bumped, so the watermark does not move -- still triggers a scan and re-prices the row.
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20260929021346_audit_20260928_pinnacle_wmc_fmv_follows_the_catalog_to_null.sql).
+-- (supabase/migrations/20261105030303_audit_20261104_pinnacle_wmc_fmv_sees_in_place_reprices.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -21,7 +23,7 @@ BEGIN;
 
 CREATE TABLE public.collections (id uuid PRIMARY KEY, slug text);
 CREATE TABLE public.pinnacle_catalog (render_id text PRIMARY KEY, fmv_usd numeric, fmv_computed_at timestamptz);
-CREATE TABLE public.populate_pinnacle_wmc_fmv_state (id int PRIMARY KEY, synced_catalog_fmv_at timestamptz, synced_at timestamptz);
+CREATE TABLE public.populate_pinnacle_wmc_fmv_state (id int PRIMARY KEY, synced_catalog_fmv_at timestamptz, synced_at timestamptz, synced_catalog_fp text);
 CREATE TABLE public.wallet_moments_cache (
   wallet_address text, moment_id text, collection_id uuid,
   render_id text, edition_key text, fmv_usd numeric,
@@ -38,6 +40,7 @@ AS $function$
 DECLARE
   v_collection_id uuid; v_updated int := 0; v_examined int := 0; v_cleared int := 0;
   v_catalog_max timestamptz; v_synced timestamptz; v_has_work boolean;
+  v_fp text; v_synced_fp text;
 BEGIN
   SELECT id INTO v_collection_id FROM collections WHERE slug = 'disney_pinnacle';
 
@@ -47,9 +50,16 @@ BEGIN
   -- catalog no longer prices (NO_DATA) — the probe below looks for both.
   SELECT max(fmv_computed_at) INTO v_catalog_max
   FROM pinnacle_catalog WHERE fmv_usd IS NOT NULL;
-  SELECT synced_catalog_fmv_at INTO v_synced
+  -- 2026-11-04: the watermark alone misses a price changed IN PLACE (a re-price migration that
+  -- does not bump fmv_computed_at: 20261105010815 capped 59 pins and reached wallets only because
+  -- the next recalc re-stamped every pin). A fingerprint of every pin's price (2,893 rows, ~8 ms)
+  -- must also match the one the last draining run synced, or the run scans.
+  SELECT md5(string_agg(render_id || ':' || coalesce(fmv_usd::text, ''), ',' ORDER BY render_id))
+    INTO v_fp FROM pinnacle_catalog;
+  SELECT synced_catalog_fmv_at, synced_catalog_fp INTO v_synced, v_synced_fp
   FROM populate_pinnacle_wmc_fmv_state WHERE id = 1;
-  IF v_synced IS NOT NULL AND v_catalog_max IS NOT NULL AND v_catalog_max <= v_synced THEN
+  IF v_synced IS NOT NULL AND v_catalog_max IS NOT NULL AND v_catalog_max <= v_synced
+     AND v_synced_fp IS NOT NULL AND v_synced_fp = v_fp THEN
     SELECT EXISTS (
       SELECT 1
       FROM wallet_moments_cache w
@@ -94,10 +104,11 @@ BEGIN
   -- Drained: everything the catalog max at the start of this run implied is
   -- now synced. A run that hit its limit leaves the watermark for the next.
   IF v_examined < COALESCE(p_limit, 5000) AND v_catalog_max IS NOT NULL THEN
-    INSERT INTO populate_pinnacle_wmc_fmv_state (id, synced_catalog_fmv_at, synced_at)
-    VALUES (1, v_catalog_max, now())
+    INSERT INTO populate_pinnacle_wmc_fmv_state (id, synced_catalog_fmv_at, synced_at, synced_catalog_fp)
+    VALUES (1, v_catalog_max, now(), v_fp)
     ON CONFLICT (id) DO UPDATE SET synced_catalog_fmv_at = EXCLUDED.synced_catalog_fmv_at,
-                                   synced_at = EXCLUDED.synced_at;
+                                   synced_at = EXCLUDED.synced_at,
+                                   synced_catalog_fp = EXCLUDED.synced_catalog_fp;
   END IF;
 
   RETURN json_build_object('examined', v_examined, 'updated', v_updated, 'cleared', v_cleared,
@@ -141,6 +152,15 @@ UPDATE public.wallet_moments_cache SET fmv_usd = 5 WHERE moment_id = 'm4';
 SELECT public.populate_pinnacle_wmc_fmv(100)->>'cleared' AS run4_cleared \gset
 SELECT _assert((SELECT fmv_usd IS NULL FROM public.wallet_moments_cache WHERE moment_id = 'm4'), 'the early-exit probe sees a priced row over an unpriced pin');
 SELECT _assert_eq(:'run4_cleared', '1', 'the probe-triggered run reports it cleared');
+
+-- Claim 5: drained again; then a pin is re-priced IN PLACE with its fmv_computed_at untouched
+-- (the shape of a cap migration). The watermark does not move; the fingerprint does.
+SELECT _assert_eq((public.populate_pinnacle_wmc_fmv(100)->>'reason'), 'catalog_unchanged', 'drained again before the in-place re-price');
+UPDATE public.pinnacle_catalog SET fmv_usd = 3.00 WHERE render_id = 'r-priced';
+SELECT public.populate_pinnacle_wmc_fmv(100)->>'reason' AS run6_reason \gset
+SELECT _assert_eq(:'run6_reason', 'scanned', 'an in-place re-price (no fmv_computed_at bump) is not skipped as catalog_unchanged');
+SELECT _assert_eq((SELECT string_agg(fmv_usd::text, ',' ORDER BY moment_id) FROM public.wallet_moments_cache WHERE render_id = 'r-priced' AND collection_id = :PIN::uuid), '3.00,3.00', 'every wallet row of the re-priced pin carries the new price');
+SELECT _assert_eq((public.populate_pinnacle_wmc_fmv(100)->>'reason'), 'catalog_unchanged', 'and once synced, the early exit resumes');
 
 SELECT '✓ populate_pinnacle_wmc_fmv: all assertions passed' AS result;
 
