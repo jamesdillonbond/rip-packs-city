@@ -92,6 +92,12 @@ const TOOLS: Tool[] = [
     blurb: "Admin-only: one swap transaction signed by two of your own Flow Wallets. Simulated on mainnet before you sign.",
     fullLoad: true,
   },
+  {
+    href: "/admin/storage-fix",
+    title: "Flow Storage Fix",
+    blurb: "A collector stuck on error 1103? Check the account, see if Dapper already refilled it, and send the fix from your Flow Wallet.",
+    fullLoad: true,
+  },
 ];
 
 export default function AdminIndexPage() {

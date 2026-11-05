@@ -57,7 +57,13 @@ const clientFiles = FILES.filter((f) => /^\s*["']use client["']/m.test(f.src))
 // The wallet picker itself lives in exactly one module; each caller is imported
 // by exactly one page. Everywhere else, still no wallet sign-in.
 const CONNECT_MODULE = "lib/giveaways/flow-wallet-connect.ts"
-const CONNECT_IMPORTERS = ["lib/giveaways/admin-wallet.ts", "lib/giveaways/claim-wallet.ts", "lib/swap-test/swap-wallet.ts", "lib/trade-room/trade-wallet.ts"]
+const CONNECT_IMPORTERS = [
+  "lib/giveaways/admin-wallet.ts",
+  "lib/giveaways/claim-wallet.ts",
+  "lib/storage-fix/wallet.ts",
+  "lib/swap-test/swap-wallet.ts",
+  "lib/trade-room/trade-wallet.ts",
+]
 const ADMIN_WALLET_IMPORTER = "app/admin/giveaways/AdminGiveawaysClient.tsx"
 const CLAIM_WALLET_IMPORTER = "app/giveaways/[slug]/GiveawayClient.tsx"
 const SWAP_WALLET_IMPORTER = "app/admin/swap-test/SwapTestClient.tsx"
@@ -67,6 +73,11 @@ const TRADE_WALLET_IMPORTER = "app/trades/[code]/TradeRoomClient.tsx"
 // the account a collector's assets sit in with the SAME account-proof connect — CONNECT
 // ONLY, it never signs (pinned below).
 const BLOCK_WALLET_IMPORTER = "app/trades/block/mine/BlockMineClient.tsx"
+// Trevor, 2026-11-05 ("have this all be internal, with this actual tool and sign in being behind
+// admin page"): the ADMIN's own Flow Wallet signs one pinned FLOW refill on /admin/storage-fix
+// for a collector stuck on storage error 1103. No public page, no user connect.
+const STORAGE_FIX_WALLET_MODULE = "lib/storage-fix/wallet.ts"
+const STORAGE_FIX_WALLET_IMPORTER = "app/admin/storage-fix/StorageFixClient.tsx"
 const notTheException = (f: { path: string }) => f.path !== CONNECT_MODULE
 /** Static `from "x"` or dynamic `import("x")` of a module specifier. */
 const imports = (src: string, spec: string) => new RegExp(`(from\\s+|import\\(\\s*)["']${spec.replace(/[/.]/g, (c) => "\\" + c)}["']`).test(src)
@@ -113,7 +124,8 @@ describe("no wallet sign-in anywhere (Trevor, 2026-08-08)", () => {
   it("the admin wallet module is imported only by the admin giveaway console", () => {
     const importers = FILES.filter((f) => imports(f.src, "@/lib/giveaways/admin-wallet")).map((f) => f.path).sort()
     // + the admin-only swap test, which reuses its stall hint and seal-read helpers (2026-10-04)
-    expect(importers).toEqual([ADMIN_WALLET_IMPORTER, "lib/swap-test/swap-wallet.ts"].sort())
+    // + the admin-only storage fix, which reuses the same single-signer helpers (2026-11-05)
+    expect(importers).toEqual([ADMIN_WALLET_IMPORTER, STORAGE_FIX_WALLET_MODULE, "lib/swap-test/swap-wallet.ts"].sort())
     // and the importer is an admin page (token-gated), never a user surface
     expect(ADMIN_WALLET_IMPORTER.startsWith("app/admin/")).toBe(true)
   })
@@ -141,6 +153,18 @@ describe("no wallet sign-in anywhere (Trevor, 2026-08-08)", () => {
     const route = FILES.find((f) => f.path === "app/api/trade-room/[code]/route.ts")
     expect(route, "the trade-room route is missing").toBeTruthy()
     expect(route!.src).toMatch(/case "relay_post": \{\s*if \(!executionOpen\(\)\) throw/)
+  })
+
+  it("the storage-fix wallet module is imported only by the admin storage-fix console, and signs only its pinned texts", () => {
+    const importers = FILES.filter((f) => imports(f.src, "@/lib/storage-fix/wallet")).map((f) => f.path)
+    expect(importers).toEqual([STORAGE_FIX_WALLET_IMPORTER])
+    expect(STORAGE_FIX_WALLET_IMPORTER.startsWith("app/admin/")).toBe(true)
+    const mod = FILES.find((f) => f.path === STORAGE_FIX_WALLET_MODULE)
+    expect(mod, "the storage-fix wallet module is missing").toBeTruthy()
+    // one mutate, whose Cadence comes only from the two pinned constants — never from input
+    expect(mod!.src.match(/\bfcl\.mutate\(/g)).toHaveLength(1)
+    expect(mod!.src).toMatch(/cadence: tx\.cadence,/)
+    expect(mod!.src).toMatch(/req\.kind === "dapper_refill" \? DAPPER_REFILL_CADENCE : req\.kind === "plain_send" \? PLAIN_SEND_CADENCE : null/)
   })
 
   it("the claim wallet module is imported only by the giveaway claim page, and never signs", () => {

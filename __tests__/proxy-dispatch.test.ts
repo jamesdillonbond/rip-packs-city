@@ -174,12 +174,17 @@ describe("proxy() — security headers", () => {
     const swap = (await proxy(req("/admin/swap-test"))).headers.get("Content-Security-Policy")!
     expect(swap).toContain("frame-src 'self' https://fcl-discovery.onflow.org")
     expect(swap).toMatch(/connect-src [^;]*wss:\/\/relay\.walletconnect\.org/)
+    // the admin-only storage fix (2026-11-05): the admin's Flow Wallet signs one FLOW refill
+    const storageFix = (await proxy(req("/admin/storage-fix"))).headers.get("Content-Security-Policy")!
+    expect(storageFix).toContain("frame-src 'self' https://fcl-discovery.onflow.org")
+    expect(storageFix).toMatch(/connect-src [^;]*wss:\/\/rest-mainnet\.onflow\.org/)
+    expect(storageFix).toMatch(/connect-src [^;]*https:\/\/\*\.wallet\.flow\.com/)
     // the user trade room (2026-10-31): connect with proof, and sign once execution opens
     const trades = (await proxy(req("/trades/abcdefghij"))).headers.get("Content-Security-Policy")!
     expect(trades).toContain("frame-src 'self' https://fcl-discovery.onflow.org")
     expect(trades).toMatch(/connect-src [^;]*wss:\/\/relay\.walletconnect\.org/)
     expect(trades).toMatch(/connect-src [^;]*wss:\/\/rest-mainnet\.onflow\.org/)
-    for (const path of ["/", "/admin", "/admin/rewards", "/giveaways-evil", "/admin/giveaways-evil", "/admin/swap-test-evil", "/trades-evil", "/api/giveaways/fall-drop", "/api/admin/swap-test", "/api/trade-room/abcdefghij"]) {
+    for (const path of ["/", "/admin", "/admin/rewards", "/giveaways-evil", "/admin/giveaways-evil", "/admin/swap-test-evil", "/admin/storage-fix-evil", "/api/admin/storage-fix", "/trades-evil", "/api/giveaways/fall-drop", "/api/admin/swap-test", "/api/trade-room/abcdefghij"]) {
       const csp = (await proxy(req(path))).headers.get("Content-Security-Policy")!
       expect(csp, path).not.toContain("fcl-discovery")
       expect(csp, path).not.toContain("walletconnect")

@@ -1312,7 +1312,9 @@ export function isPublicPath(pathname: string, method: string): boolean {
 // + /trades (2026-10-31): the user trade room connects Flow Wallet (with the account
 // proof) and, once the live swap test has sealed and RPC_TRADE_ROOM_EXECUTE is set,
 // signs the two-authorizer swap. Same wallet hosts, same signing pages rule.
-const WALLET_DISCOVERY_PAGES = ["/admin/giveaways", "/giveaways", "/admin/swap-test", "/trades"]
+// + /admin/storage-fix (2026-11-05): the admin's own Flow Wallet signs one pinned FLOW refill
+// for a collector stuck on storage (lib/storage-fix/wallet.ts). Admin-only, like the swap test.
+const WALLET_DISCOVERY_PAGES = ["/admin/giveaways", "/giveaways", "/admin/swap-test", "/admin/storage-fix", "/trades"]
 const WALLET_DISCOVERY_HOST = "https://fcl-discovery.onflow.org"
 // WalletConnect (lists the Flow Wallet mobile app): relay + RPC, the verify
 // iframe, and the QR modal's API/images. Same one page only.
