@@ -14,7 +14,7 @@ Claude Code's / your own direct file and DB inspection wins over this doc on any
 
 ## Item 1 — apply the migration, then land the code on `main`
 
-**Files (verified to exist on branch `trade-block-fmv-from-asks`, head `2d61b2d`, rebased onto `40d615c` and re-tested: tsc clean, `__tests__/trade-block*` 62/62):**
+**Files (verified to exist on branch `trade-block-fmv-from-asks`, head `b9be4d9`, rebased onto `46e6325` and re-tested: tsc clean, `__tests__/trade-block*` 64/64, components 28/28):**
 
 - `supabase/migrations/20261105011000_audit_20261104_trade_block_fmv_from_asks.sql`
 - `lib/trade-block/store.ts`, `lib/trade-block/view.ts`, `__tests__/trade-block.test.ts`
@@ -49,7 +49,7 @@ The branch's selects name the new column, so landing the code before the column 
    ```bash
    git fetch origin main trade-block-fmv-from-asks
    git checkout main && git pull --rebase origin main
-   git cherry-pick 2d61b2d543b29abf725934d9fff90b7445857a80
+   git cherry-pick b9be4d93b5e34b5fb2637aa41efa2a102d7bafaf
    npx tsc --noEmit && npx vitest run __tests__/trade-block
    git push origin main
    git rev-list --count origin/main..HEAD   # expect 0
