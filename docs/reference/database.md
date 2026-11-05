@@ -539,6 +539,8 @@ used to carry — `edition_offers.updated_at` going confirmed→changed on 2026-
 
 ⚠ **An in-place `UPDATE fmv_snapshots` (a re-price migration) is invisible to the incremental refresh for the same reason** — it does not move `computed_at`, so the cache keeps the old price until the daily full reconcile. Write `edition_fmv_current` in the same migration, guarded on the value replaced (`20261105014011`, 2026-11-04).
 
+⛔ **A RE-PRICE MIGRATION MUST ALSO INSERT ITS ROWS INTO `fmv_restatements` (#233, 2026-11-04)** — `(source = the migration name, collection_slug, ext_id, old_fmv_usd, new_fmv_usd, restated_at)`; `ext_id` is `editions.external_id` (`pinnacle_catalog.render_id` for Pinnacle). The market-cap 7-day change adds `sum(new − old) × collector_held` over restatements dated after its baseline day, so a rule change does not publish as a market move for a week. Skip it and the cap/floor/algorithm change prints as a 7-day crash or rally (Drake Maye read −69 % from one 10-29 cap; Top Shot −8.1 % from 11-04's caps, −0.2 % once netted). Seed pattern: `20261105043000_audit_20261104_market_cap_7d_change_nets_out_fmv_restatements`.
+
 ⚠ **A data-quality class keyed on ONE identifier is blind to rows where that identifier is NULL.** #232's "seller kept the moment" class keyed on `moment_id`; 754 more fake sales had NULL `moment_id` and surfaced only as 7 of the top 8 survivors, then matched on `nft_id`. Read the join key's NULL rate before calling a class complete.
 
 `edition_fmv_current` is a latest-FMV-per-edition cache. `refresh_edition_fmv_current()` is its
