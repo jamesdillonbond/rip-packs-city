@@ -231,9 +231,15 @@ test.describe("mobile layout", () => {
     // inline style is the one declaration a media query cannot override.
     // Measured 350px before, 102px after. The threshold is deliberately loose:
     // this is a "did it become a hero again" check, not a pixel pin.
-    // /collection, not /overview — see the note on ROUTES above. The band mounts
-    // from the (collections) LAYOUT, so every tab under it carries one.
-    await page.goto("/nba-top-shot/collection", { waitUntil: "domcontentloaded" })
+    // /market, not /overview — see the note on ROUTES above. The band mounts
+    // from the (collections) LAYOUT, so every tab under it carries one — EXCEPT
+    // the Binder tab since 2026-11-06: /<c>/collection has its own lookup input,
+    // so the band suppresses itself there (two wallet boxes on one screen was
+    // the defect; __tests__/component-WalletSearchBand.test.tsx pins both sides).
+    // This test ran against /collection until that day and read the suppression
+    // as "the band stopped rendering" — the absence assertion below was doing
+    // its job; the route moved, the assertion did not soften.
+    await page.goto("/nba-top-shot/market", { waitUntil: "domcontentloaded" })
     await page.waitForTimeout(1500)
 
     const band = await page.evaluate(() => {
@@ -261,7 +267,7 @@ test.describe("mobile layout", () => {
     // the band rather than softening it back to a skip.
     expect(
       band,
-      "wallet band absent on /nba-top-shot/collection for a fresh anonymous context — " +
+      "wallet band absent on /nba-top-shot/market for a fresh anonymous context — " +
         "either it stopped rendering, or NEXT_PUBLIC_WALLET_BAND=off was set",
     ).not.toBeNull()
 
