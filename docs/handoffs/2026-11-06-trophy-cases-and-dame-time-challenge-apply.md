@@ -2,7 +2,7 @@
 
 **Filed:** 2026-11-06, ~12:30 PM PT, by a Claude Code cloud session, at Trevor's request ("do option 2 and hand it off to cowork").
 **Why Cowork:** the Supabase MCP `apply_migration` in that session asks a confirmation question that never reached Trevor (it timed out twice at 60 s, so nothing was applied). Trevor chose to have the SQL run another way.
-**Status at filing:** production is UNCHANGED. Everything below is written, tested and pushed to the branch **`claude/adoring-mayer-y2mr9z`** (tip `190a3179b` at filing). `main` has only this document.
+**Status at filing:** production is UNCHANGED. Everything below is written, tested and pushed to the branch **`claude/adoring-mayer-y2mr9z`** (tip `e2cc24b2f`). `main` has only this document.
 
 ## What it is
 
@@ -141,4 +141,4 @@ Verify: `select conname from pg_constraint where conrelid='public.trophy_moments
   - the case cap and one entry per challenge
   - a failed cases read returns a 503, never an empty list
   - every main-case write is scoped to `case_id IS NULL`.
-- Full `npm run preflight` was running at filing; its result is in the ledger entry or the session reply.
+- **Full `npm run preflight` is GREEN at `e2cc24b2f`:** tsc, ci:guards, lint:ratchet, related and tree-walking tests (4,649), the component coverage gate, migration parse and the DB-invariant SQL tests. Re-run it after the rebase in Step 3.
