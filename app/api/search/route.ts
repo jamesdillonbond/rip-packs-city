@@ -52,6 +52,7 @@ import { mergePlayerHubHits, type SearchResultWithSlug } from "@/lib/search/play
 import { mergeTeamHubHits, type FranchiseHubKey } from "@/lib/search/team-hub-hits"
 import { boundedRead } from "@/lib/api/bounded-read"
 import { accentOnlyLabelMatches, loadAccentedLabels } from "@/lib/search/accented-labels"
+import { fuzzyPlayerHits, type FuzzyMeta } from "@/lib/search/fuzzy-players"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -233,7 +234,17 @@ export async function GET(req: NextRequest) {
   }
 
   const rows = await withAccentedLabelHits(supa, q, collectionId, limit, Array.isArray(data) ? (data as SearchHit[]) : [])
-  const mapped = rows
+  // 2026-11-06: a typo must not be a dead end. ONLY when the exact search found
+  // nothing, name the nearest player names and search those instead — labelled
+  // as such in meta.fuzzy (lib/search/fuzzy-players.ts).
+  let fuzzy: FuzzyMeta | null = null
+  let searched: SearchHit[] = rows
+  if (rows.length === 0) {
+    const f = await fuzzyPlayerHits<SearchHit>(supa, q, collectionId, limit)
+    searched = f.rows
+    fuzzy = f.fuzzy
+  }
+  const mapped = searched
     .map((r): SearchResultWithSlug | null => {
       const coll = getCollectionByUuid(r.collection_id)
       if (!coll) return null // unpublished/unknown collection → no route to link to
@@ -270,6 +281,9 @@ export async function GET(req: NextRequest) {
         searches: ["player", "set", "team", "edition key", "play type", "moment description"],
         coverage,
         note: coverageNote(coverage),
+        // Set only when the list is a "closest matches" answer to a query that
+        // found nothing exactly; absent otherwise.
+        ...(fuzzy ? { fuzzy } : {}),
       },
     },
     // Short public cache: the catalog changes on a catalog-backfill cadence,

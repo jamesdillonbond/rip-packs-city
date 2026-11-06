@@ -12,7 +12,6 @@ import { type Collection } from "@/lib/collections"
 import { CollectionTabBar } from "@/components/collection-tab-bar"
 import CollectionSwitcher from "@/components/CollectionSwitcher"
 import CollectionHeading from "@/components/CollectionHeading"
-import AnonSignInPill from "@/components/AnonSignInPill"
 import { tickerItems, tickerStatusLabel } from "@/lib/collection/closed-market-chrome"
 import { ownLookup } from "@/lib/safe-lookup"
 import { accentText } from "@/lib/accent-text"
@@ -168,8 +167,11 @@ export function CollectionBanner({ collection }: { collection: Collection }) {
               {collection.partner} · {collection.sport}
             </div>
           </div>
+          {/* The anon "Sign in" pill that sat here (07-17 un-gate) duplicated the
+              global header's SIGN IN one row above it on every collection page;
+              that button now carries the ?next= return path the pill existed for
+              (components/auth/SignOutButton.tsx, 2026-11-06). */}
           <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
-            <AnonSignInPill />
             <div style={{ background: `${collection.accent}18`, border: `1px solid ${collection.accent}44`, borderRadius: 4, padding: "2px 8px", fontSize: 9, fontFamily: "var(--font-mono)", color: accentText(collection.accent), letterSpacing: "0.12em", textTransform: "uppercase" }}>
               {(collection.dbChain && chainLabel[collection.dbChain]) ?? chainLabel[collection.chain] ?? collection.chain}
             </div>

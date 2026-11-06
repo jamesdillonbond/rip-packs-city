@@ -153,9 +153,10 @@ export default function WalletSearchBand({
   const [hasWallet, setHasWallet] = useState(false)
   const [signedIn, setSignedIn] = useState(false)
 
-  // Signed-in visitors never see the band. Mirrors AnonSignInPill's contract
-  // (components/AnonSignInPill.tsx) so the two affordances agree on what
-  // "signed in" means. Only a resolved session flips this — a rejected
+  // Signed-in visitors never see the band. Same contract the collection
+  // banner's anon Sign-in pill carried until it was retired 2026-11-06 (the
+  // header's SIGN IN now carries the ?next= return path), so the affordances
+  // agree on what "signed in" means. Only a resolved session flips this — a rejected
   // getUser(), a missing browser client, or a still-pending check all leave
   // `signedIn` false and the band rendered, which is the anon default.
   useEffect(() => {
@@ -214,6 +215,11 @@ export default function WalletSearchBand({
 
   if (DISABLED || hasWallet || signedIn) return null
   if (pathname && SUPPRESSED.has(pathname)) return null
+  // 2026-11-06 (390 px QA): /<collection>/collection — the Binder tab — IS the
+  // wallet tool: its page renders its own "Enter <collection> username or wallet"
+  // input, so the anonymous visitor saw two lookup boxes on one screen. Same
+  // rule as SUPPRESSED above, keyed on the tab rather than one collection's path.
+  if (pathname && /^\/[^/]+\/collection$/.test(pathname)) return null
   // 2026-09-06: the band submits to /share/<addr>, a FLOW wallet card. On a
   // non-Flow collection (Candy MLB, Solana, published thin) it would invite a
   // base58 address into a Cadence lookup and answer with an empty card — a

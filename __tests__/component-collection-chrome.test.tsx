@@ -14,8 +14,8 @@ import { render, cleanup, within } from "@testing-library/react"
 //   3. CollectionBanner maps collection.chain through chainLabel, falling back to
 //      the raw chain string for an unmapped value.
 //
-// The banner composes four client children (CollectionSwitcher, CollectionTabBar,
-// CollectionHeading, AnonSignInPill) that each call usePathname / the supabase
+// The banner composes three client children (CollectionSwitcher, CollectionTabBar,
+// CollectionHeading) that each call usePathname / the supabase
 // browser client on mount. We stub them to inert markers so these tests exercise
 // the banner's OWN logic in isolation rather than the children's data seams.
 
@@ -29,9 +29,6 @@ vi.mock("@/components/CollectionHeading", () => ({
   default: ({ collection }: { collection: { label: string } }) => (
     <div data-testid="heading">{collection.label}</div>
   ),
-}))
-vi.mock("@/components/AnonSignInPill", () => ({
-  default: () => <div data-testid="anon-pill" />,
 }))
 
 import { CollectionTicker, CollectionBanner } from "@/components/collection-chrome"
@@ -145,14 +142,14 @@ describe("CollectionBanner — chain label mapping", () => {
 })
 
 describe("CollectionBanner — composition", () => {
-  it("mounts the breadcrumb, heading, switcher, tab bar, and anon pill", () => {
+  it("mounts the breadcrumb, heading, switcher and tab bar — and NO second sign-in (the header owns it since 2026-11-06)", () => {
     const { container, getByTestId } = render(<CollectionBanner collection={TOPSHOT} />)
     // Breadcrumb: the RPC home link + the collection label.
     expect(container.querySelector('a[href="/"]')?.textContent).toBe("RPC")
     expect(getByTestId("heading").textContent).toBe(TOPSHOT.label)
     expect(getByTestId("switcher")).toBeTruthy()
     expect(getByTestId("tab-bar")).toBeTruthy()
-    expect(getByTestId("anon-pill")).toBeTruthy()
+    expect(Array.from(container.querySelectorAll("a")).some((a) => a.getAttribute("href")?.startsWith("/login"))).toBe(false)
   })
 })
 

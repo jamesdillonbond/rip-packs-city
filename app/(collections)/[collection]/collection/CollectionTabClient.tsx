@@ -1304,6 +1304,12 @@ function WalletMomentsBody() {
               padding: "8px 12px",
               color: "var(--rpc-text-primary)",
               outline: "none",
+              // 2026-11-06: inputs do not inherit the page font, so this one
+              // rendered in the browser's system sans beside every other lookup
+              // box on the site (WalletSearch, the global search, rpc-filter-input),
+              // which are all the brand mono.
+              fontFamily: "var(--font-mono)",
+              fontSize: 14,
             }}
             onFocus={function(e) { e.currentTarget.style.borderColor = "var(--rpc-red)" }}
             onBlur={function(e) { e.currentTarget.style.borderColor = "var(--rpc-border)" }}

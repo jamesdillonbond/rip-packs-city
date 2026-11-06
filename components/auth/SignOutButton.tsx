@@ -12,6 +12,7 @@
 
 import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
+import { usePathname } from "next/navigation"
 import { signOut } from "@/lib/auth/supabase-client"
 
 function initialsFromEmail(email: string): string {
@@ -26,6 +27,7 @@ export default function SignOutButton() {
   const [loaded, setLoaded] = useState(false)
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
+  const pathname = usePathname()
 
   useEffect(() => {
     let cancelled = false
@@ -56,9 +58,16 @@ export default function SignOutButton() {
   }
 
   if (!email) {
+    // 2026-11-06: carry ?next=<current path> so login returns the visitor to the
+    // page they were reading. This was the ONE thing the collection banner's
+    // AnonSignInPill (07-17) had that this button lacked; with it here, that
+    // second "Sign in" (two on one mobile viewport) is retired. Auth pages never
+    // name themselves as the return target.
+    const onAuthPage = !pathname || pathname === "/login" || pathname.startsWith("/auth/")
+    const next = onAuthPage ? "" : `?next=${encodeURIComponent(pathname)}`
     return (
       <Link
-        href="/login"
+        href={`/login${next}`}
         className="rpc-tap44"
         style={{
           background: "rgba(224,58,47,0.15)",

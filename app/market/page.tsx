@@ -44,6 +44,9 @@ export function generateMetadata(): Metadata {
       ...OG_INHERITED,
       title: "Market — Rip Packs City",
       description: "Sales and volume by collection, and the week's biggest sales.",
+      // og:image — an openGraph object replaces the root's, images included (same
+      // gap /about and /help closed 2026-10-14; found again on these four 2026-11-06).
+      images: [{ url: "https://www.rippackscity.com/api/og/default", width: 1200, height: 630, alt: "Rip Packs City" }],
     },
   }
 }

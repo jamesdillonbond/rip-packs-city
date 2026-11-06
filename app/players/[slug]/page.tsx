@@ -22,7 +22,8 @@ import type { Metadata } from "next"
 import { cache, type ReactNode } from "react"
 import Link from "next/link"
 import { notFound, redirect } from "next/navigation"
-import { NOT_FOUND_METADATA, playerHubMetadata } from "@/lib/seo"
+import { NOT_FOUND_METADATA, playerHubMetadata, playerHubJsonLd } from "@/lib/seo"
+import { jsonLdScript } from "@/lib/seo/json-ld-script"
 import {
   PLAYER_HUB_TOP_EDITIONS,
   fetchPlayerHub,
@@ -126,8 +127,16 @@ export default async function PlayerHubPage(props: { params: Promise<{ slug: str
   const firstArt = [...editions.values()].flatMap((e) => e.rows as EditionTile[]).find((t) => t?.thumbnail_url)?.thumbnail_url
   const portrait = routable.find((r) => r.entry.headshot_url)?.entry.headshot_url ?? proxyIpfsImageUrl(firstArt, 640) ?? null
 
+  const hubPath = playerHubPath(hub.canonical_slug || hub.slug)
+
   return (
     <div>
+      {/* Person + BreadcrumbList (2026-11-06); breadcrumb only when the name
+          spans sports — see playerHubJsonLd. */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: jsonLdScript(playerHubJsonLd({ name: hub.name, path: hubPath, image: portrait, manyPeople })) }}
+      />
       <Breadcrumbs items={[{ name: "Home", href: "/" }, { name: hub.name }]} />
 
       <section className="rpc-card" style={{ padding: 18 }}>

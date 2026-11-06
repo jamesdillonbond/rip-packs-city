@@ -49,6 +49,9 @@ type Status = "idle" | "loading" | "ok" | "error";
 
 interface Meta {
   note?: string;
+  // 2026-11-06: present when the list is a "closest matches" answer to a query
+  // that matched nothing exactly (a typo); the panel says so above the rows.
+  fuzzy?: { from: string; matched: string[] };
 }
 
 const monoFont = "var(--font-mono)";
@@ -149,6 +152,11 @@ export default function GlobalSearch() {
     }
     return (
       <ul role="listbox" style={{ listStyle: "none", margin: 0, padding: 4, maxHeight: 420, overflowY: "auto" }}>
+        {meta?.fuzzy && (
+          <li aria-hidden="true" data-testid="search-fuzzy-note" style={{ padding: "6px 10px 4px", fontFamily: monoFont, fontSize: 10, letterSpacing: "0.06em", color: "var(--rpc-text-muted)" }}>
+            No exact match for &ldquo;{meta.fuzzy.from}&rdquo; — closest players:
+          </li>
+        )}
         {hits.map((h, i) => (
           <li key={h.kind + h.href}>
             <button

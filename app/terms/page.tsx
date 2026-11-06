@@ -15,6 +15,9 @@ export function generateMetadata(): Metadata {
       title: "Terms of Service — Rip Packs City",
       description:
         "By using Rip Packs City you agree to these terms. Service description, disclaimers, acceptable use, and governing law for the platform.",
+      // og:image — an openGraph object replaces the root's, images included (same
+      // gap /about and /help closed 2026-10-14; found again on these four 2026-11-06).
+      images: [{ url: "https://www.rippackscity.com/api/og/default", width: 1200, height: 630, alt: "Rip Packs City" }],
     },
   };
 }

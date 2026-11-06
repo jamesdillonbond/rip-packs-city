@@ -216,6 +216,21 @@ describe("WalletSearchBand", () => {
     expect(container.querySelector("input")).toBeNull()
   })
 
+  it.each(["/nba-top-shot/collection", "/candy-mlb/collection", "/panini-blockchain/collection"])(
+    "suppresses itself on the Binder tab %s, whose page renders its own wallet input (2026-11-06)",
+    (p) => {
+      mockPath = p
+      const { container } = render(<WalletSearchBand scope="collection" collectionId={p.split("/")[1]} />)
+      expect(container.querySelector("input")).toBeNull()
+    },
+  )
+
+  it("still renders on the other tabs of the same collection", () => {
+    mockPath = "/nba-top-shot/market"
+    const { container } = render(<WalletSearchBand scope="collection" collectionId="nba-top-shot" />)
+    expect(container.querySelector("input")).toBeTruthy()
+  })
+
   it("hides itself after hydration once a wallet is already known", async () => {
     vi.useFakeTimers()
     localStorage.setItem("rpc_collection_last_wallet", "0xbd94cade097e50ac")

@@ -26,6 +26,8 @@ export const metadata: Metadata = {
     title: "Early Access — Rip Packs City",
     description: "Join the early-access list for free digital collectibles intelligence.",
     url: "https://www.rippackscity.com/early-access",
+    // og:image — an openGraph object replaces the root's, images included (2026-11-06).
+    images: [{ url: "https://www.rippackscity.com/api/og/default", width: 1200, height: 630, alt: "Rip Packs City" }],
   },
   twitter: {
     ...TWITTER_INHERITED,

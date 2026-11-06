@@ -69,6 +69,19 @@ describe("GlobalSearch", () => {
     await waitFor(() => expect(push).toHaveBeenCalledWith("/nba-top-shot/player/damian-lillard"))
   })
 
+  it("labels a closest-matches answer (meta.fuzzy) so a typo is never presented as an exact hit", async () => {
+    response = { ok: true, body: { results: [hit()], meta: { fuzzy: { from: "lilard", matched: ["Damian Lillard"] } } } }
+    const { container, findByText, queryByTestId } = render(<GlobalSearch />)
+    type(container.querySelector("input")!, "lilard")
+    expect(await findByText("Damian Lillard")).toBeTruthy()
+    expect(queryByTestId("search-fuzzy-note")?.textContent).toContain("No exact match for “lilard”")
+    // and an ordinary answer carries no such note
+    response = { ok: true, body: { results: [hit()], meta: {} } }
+    type(container.querySelector("input")!, "lillard")
+    await findByText("Damian Lillard")
+    await waitFor(() => expect(queryByTestId("search-fuzzy-note")).toBeNull())
+  })
+
   it("shows an UNAVAILABLE message on failure — never 'no matches'", async () => {
     // The whole point: a 503 must not be indistinguishable from an empty result.
     response = { ok: false, body: {} }

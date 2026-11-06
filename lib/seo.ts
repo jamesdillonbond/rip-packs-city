@@ -1498,6 +1498,46 @@ export function playerJsonLd(detail: Payload, collectionUrlSlug: string, slug: s
   }
 }
 
+// Cross-collection PLAYER hub (/players/<slug>, indexable since 2026-10-22) —
+// Person (+ BreadcrumbList). Added 2026-11-06: the ~2,000 hubs carried no
+// structured data at all while every per-collection player page carries
+// Person + BreadcrumbList. ⚠ A NAME IS NOT A PERSON (rule 2): when the hub
+// gathers more than one athlete (`manyPeople`) it emits ONLY the breadcrumb —
+// a Person node would present two people as one. `image` is the hub's own
+// portrait choice (headshot, else first edition art), already a proxied URL.
+export function playerHubJsonLd(opts: { name: string; path: string; image?: string | null; manyPeople: boolean }): LdValue {
+  const url = `${BASE_URL}${opts.path}`
+  const crumbs = breadcrumbJsonLd([
+    { name: "Home", url: BASE_URL },
+    { name: opts.name, url },
+  ])
+  if (opts.manyPeople) return { "@context": "https://schema.org", "@graph": [crumbs] }
+  const person: LdValue = { "@type": "Person", "@id": url, url, name: opts.name }
+  // The hub proxies IPFS art through a site-relative URL; structured data wants an absolute one.
+  if (opts.image) person.image = opts.image.startsWith("/") ? `${BASE_URL}${opts.image}` : opts.image
+  return { "@context": "https://schema.org", "@graph": [person, crumbs] }
+}
+
+// Cross-collection FRANCHISE hub (/teams/<league>/<slug>) — SportsTeam (+
+// BreadcrumbList), same reason and date as playerHubJsonLd. A franchise hub is
+// one organisation by construction (every label it minted under resolves to it,
+// 09-25), so the SportsTeam node is always emitted.
+export function franchiseHubJsonLd(opts: { name: string; path: string; league: string; logo?: string | null }): LdValue {
+  const url = `${BASE_URL}${opts.path}`
+  const team: LdValue = { "@type": "SportsTeam", "@id": url, url, name: opts.name, sport: opts.league.toUpperCase() }
+  if (opts.logo) team.logo = opts.logo
+  return {
+    "@context": "https://schema.org",
+    "@graph": [
+      team,
+      breadcrumbJsonLd([
+        { name: "Home", url: BASE_URL },
+        { name: opts.name, url },
+      ]),
+    ],
+  }
+}
+
 // Team → SportsTeam / Organization (+ BreadcrumbList).
 export function teamJsonLd(detail: Payload, collectionUrlSlug: string, slug: string): LdValue {
   const label = ownMeta(COLLECTION_DISPLAY_NAMES, collectionUrlSlug) ?? "Flow"

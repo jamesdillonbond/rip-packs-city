@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
-import { render, cleanup, waitFor } from "@testing-library/react"
+import { render, cleanup } from "@testing-library/react"
 
-// AnonSignInPill (renders a Sign-in CTA ONLY for anonymous visitors, carrying
-// ?next=<path>) and CollectionSwitcher (derives the current page type from the
+// The header's anon "Sign In" (components/auth/SignOutButton.tsx — it carries
+// ?next=<path> so login returns the visitor where they were; until 2026-11-06
+// that lived on a SECOND pill in the collection banner, AnonSignInPill, which
+// is retired) and CollectionSwitcher (derives the current page type from the
 // URL and gates each collection chip on whether it supports that page).
 
 let pathname = "/nba-top-shot/sniper"
@@ -20,7 +22,7 @@ vi.mock("@/lib/auth/supabase-client", () => ({
   }),
 }))
 
-import AnonSignInPill from "@/components/AnonSignInPill"
+import SignOutButton from "@/components/auth/SignOutButton"
 import CollectionSwitcher from "@/components/CollectionSwitcher"
 
 beforeEach(() => {
@@ -31,19 +33,32 @@ afterEach(() => {
   cleanup()
 })
 
-describe("AnonSignInPill", () => {
-  it("renders a Sign in link with ?next for an anonymous visitor", async () => {
-    authState.user = null
-    const { findByText } = render(<AnonSignInPill />)
-    const link = await findByText("Sign in")
+describe("header Sign In (SignOutButton, anonymous)", () => {
+  const profileMe = vi.hoisted(() => ({ user: null as null | { email: string } }))
+  beforeEach(() => {
+    profileMe.user = null
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => ({ user: profileMe.user }) })))
+  })
+  afterEach(() => vi.unstubAllGlobals())
+
+  it("renders a Sign In link carrying ?next=<current path> for an anonymous visitor", async () => {
+    const { findByText } = render(<SignOutButton />)
+    const link = await findByText("Sign In")
     expect(link.getAttribute("href")).toBe("/login?next=%2Fnba-top-shot%2Fsniper")
   })
 
-  it("renders nothing for a signed-in user", async () => {
-    authState.user = { id: "u1" }
-    const { container } = render(<AnonSignInPill />)
-    await waitFor(() => {}) // let the getUser promise resolve
-    expect(container.querySelector("a")).toBeNull()
+  it("never names an auth page as the return target", async () => {
+    pathname = "/login"
+    const { findByText } = render(<SignOutButton />)
+    const link = await findByText("Sign In")
+    expect(link.getAttribute("href")).toBe("/login")
+  })
+
+  it("renders no Sign In link for a signed-in user", async () => {
+    profileMe.user = { email: "collector@example.com" }
+    const { container, findByText } = render(<SignOutButton />)
+    await findByText("CO")
+    expect(Array.from(container.querySelectorAll("a")).some((a) => a.getAttribute("href")?.startsWith("/login"))).toBe(false)
   })
 })
 

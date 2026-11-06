@@ -46,6 +46,9 @@ export function generateMetadata(): Metadata {
       ...OG_INHERITED,
       title: "Sniper — Rip Packs City",
       description: "Live deals below FMV across every collection RPC prices.",
+      // og:image — an openGraph object replaces the root's, images included (same
+      // gap /about and /help closed 2026-10-14; found again on these four 2026-11-06).
+      images: [{ url: "https://www.rippackscity.com/api/og/default", width: 1200, height: 630, alt: "Rip Packs City" }],
     },
   }
 }

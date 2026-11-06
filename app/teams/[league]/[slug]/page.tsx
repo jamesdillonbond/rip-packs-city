@@ -23,7 +23,8 @@ import { cache, type ReactNode } from "react"
 import Link from "next/link"
 import { notFound, permanentRedirect } from "next/navigation"
 import { isExhibitionTeamSlug } from "@/lib/team-denylist"
-import { NOT_FOUND_METADATA, franchiseHubMetadata } from "@/lib/seo"
+import { NOT_FOUND_METADATA, franchiseHubMetadata, franchiseHubJsonLd } from "@/lib/seo"
+import { jsonLdScript } from "@/lib/seo/json-ld-script"
 import { LEAGUES, type League } from "@/lib/teams"
 import {
   HUB_TOP_EDITIONS,
@@ -129,6 +130,12 @@ export default async function FranchiseHubPage(props: { params: Promise<{ league
 
   return (
     <div>
+      {/* SportsTeam + BreadcrumbList (2026-11-06) — the per-collection team
+          pages carry this; the hub did not. */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: jsonLdScript(franchiseHubJsonLd({ name: hub.team_name, path: hubPath, league: hub.league })) }}
+      />
       <Breadcrumbs items={[{ name: "Home", href: "/" }, { name: hub.team_name }]} />
       <TeamHero
         teamName={hub.team_name}
