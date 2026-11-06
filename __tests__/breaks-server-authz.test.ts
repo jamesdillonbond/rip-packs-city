@@ -12,22 +12,48 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 // the signature was 128 hex chars, which a wrong-curve signature also satisfies,
 // so the mismatch was invisible. The signing tests below now VERIFY the
 // signature cryptographically instead of measuring its length.
+//
+// 2026-11-06: the signer moved from `elliptic` (CVE-2025-14505, no patched
+// release) to @noble/curves. Verification here uses OpenSSL via node:crypto —
+// an implementation independent of the signer, which also hashes the message
+// itself, so the SHA2-256 choice is checked too. The known-answer vectors below
+// were produced by the ELLIPTIC signer that ran on mainnet, immediately before
+// the swap: they pin the new signer to byte-identical output (incl. a high-S
+// vector — elliptic never canonicalised S, hence `lowS: false`).
 
 const configSpy = vi.fn()
 vi.mock("@onflow/fcl", () => ({ config: (...a: any[]) => configSpy(...a) }))
 
-import { ec as EC } from "elliptic"
+import { createECDH, createPublicKey, verify as cryptoVerify, randomBytes } from "crypto"
 import {
   getFlowAccessNode,
   configureFcl,
   buildHotWalletAuthz,
-  hashMessageHex,
   HOT_WALLET_CURVE,
   HOT_WALLET_HASH,
+  signWithKey,
 } from "@/lib/breaks/server-authz"
 
 // A valid 32-byte private key (hex). Any nonzero <n scalar works for signing.
 const PK = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+// Independent verifier: OpenSSL. Derives the public key from PK on `curve`, then
+// checks r||s over SHA2-256(message) — node hashes the raw message itself.
+function opensslVerifies(curve: "secp256k1" | "prime256v1", msgHex: string, sigHex: string): boolean {
+  const ecdh = createECDH(curve)
+  ecdh.setPrivateKey(Buffer.from(PK, "hex"))
+  const pub = ecdh.getPublicKey() // 0x04 || x || y
+  const key = createPublicKey({
+    key: {
+      kty: "EC",
+      crv: curve === "secp256k1" ? "secp256k1" : "P-256",
+      x: pub.subarray(1, 33).toString("base64url"),
+      y: pub.subarray(33).toString("base64url"),
+    },
+    format: "jwk",
+  })
+  return cryptoVerify("sha256", Buffer.from(msgHex, "hex"), { key, dsaEncoding: "ieee-p1363" }, Buffer.from(sigHex, "hex"))
+}
 
 const ENV_KEYS = ["FLOW_ACCESS_NODE", "HOT_WALLET_ADDR", "HOT_WALLET_PRIVATE_KEY", "HOT_WALLET_KEY_INDEX"]
 const saved: Record<string, string | undefined> = {}
@@ -126,17 +152,11 @@ describe("buildHotWalletAuthz — authorization object & signing", () => {
     expect(HOT_WALLET_HASH).toBe("sha256")
   })
 
-  it("emits a signature that VERIFIES under secp256k1 + SHA2-256", async () => {
+  it("emits a signature that VERIFIES under secp256k1 + SHA2-256 (OpenSSL)", async () => {
     const account = await buildHotWalletAuthz()({})
     const msgHex = "deadbeef".repeat(8)
     const { signature } = await account.signingFunction({ message: msgHex })
-
-    const key = new EC(HOT_WALLET_CURVE).keyFromPrivate(Buffer.from(PK, "hex"))
-    const ok = key.verify(hashMessageHex(msgHex), {
-      r: signature.slice(0, 64),
-      s: signature.slice(64),
-    })
-    expect(ok).toBe(true)
+    expect(opensslVerifies("secp256k1", msgHex, signature)).toBe(true)
   })
 
   it("regression: that signature does NOT verify under the old secp256r1 config", async () => {
@@ -145,18 +165,15 @@ describe("buildHotWalletAuthz — authorization object & signing", () => {
     const account = await buildHotWalletAuthz()({})
     const msgHex = "deadbeef".repeat(8)
     const { signature } = await account.signingFunction({ message: msgHex })
+    expect(opensslVerifies("prime256v1", msgHex, signature)).toBe(false)
+  })
 
-    const wrongKey = new EC("p256").keyFromPrivate(Buffer.from(PK, "hex"))
-    let verified: boolean
-    try {
-      verified = wrongKey.verify(hashMessageHex(msgHex), {
-        r: signature.slice(0, 64),
-        s: signature.slice(64),
-      })
-    } catch {
-      verified = false // elliptic may throw on a point outside the p256 curve
-    }
-    expect(verified).toBe(false)
+  it("regression: that signature does NOT verify over a different message", async () => {
+    // Guards the verifier itself: a helper that always returned true would pass
+    // the positive test above.
+    const account = await buildHotWalletAuthz()({})
+    const { signature } = await account.signingFunction({ message: "deadbeef".repeat(8) })
+    expect(opensslVerifies("secp256k1", "deadbeef".repeat(7) + "deadbeee", signature)).toBe(false)
   })
 
   it("honors a nonzero key index in tempId and keyId", async () => {
@@ -164,5 +181,51 @@ describe("buildHotWalletAuthz — authorization object & signing", () => {
     const account = await buildHotWalletAuthz()({})
     expect(account.keyId).toBe(2)
     expect(account.tempId).toBe("3aa11c84d776838f-2")
+  })
+})
+
+describe("signWithKey — byte-identical to the elliptic signer it replaced", () => {
+  // Produced by elliptic 6.6.1 (`ec("secp256k1").keyFromPrivate(PK).sign(sha256(msg))`,
+  // r||s, 32 bytes each) on 2026-11-06, the last day it signed for the hot wallet.
+  // RFC 6979 is deterministic, so a correct replacement reproduces these exactly.
+  const VECTORS: Array<{ name: string; msgHex: string; sig: string }> = [
+    {
+      name: "32-byte message",
+      msgHex: "deadbeef".repeat(8),
+      sig: "7ac1fdcd78aac86ab0491f60542c27f95dee53716bf97a601eb1d7f2e9dbd1c669a0ffbc55e29e0e830a4ffb141f515eaa751a3a2a30588f9633eb7bf079fa43",
+    },
+    {
+      name: "1-byte message (HIGH-S signature — pins lowS:false)",
+      msgHex: "00",
+      sig: "32dac848c69e0092026e75c6017434bc2e9aa48f7ef57f694cc0522de38d3d00c5002a3ff939e0e8c8eaa0ab5f5938126d77cc41b0ff665e73c876ad4c5c66ca",
+    },
+    {
+      name: "200-byte message",
+      msgHex: "ff".repeat(200),
+      sig: "af61a27bb6261b9b04c5d5636c8390a81a6a99f6c42d1eba934901888596a9615c46e7d5052ad6e2ec0a3c3ae4ebad3a73324954a684fe49e05939b842c9a2df",
+    },
+    {
+      name: "Flow transaction domain tag",
+      msgHex: "464c4f572d56302e302d7472616e73616374696f6e0000000000000000000000",
+      sig: "62311b42a4c0ed0e942a4a482a41efded1f82639c50ae71f3d7e0628b3b317f12430bc84ec05869be71727e851780f61e963a3aa2817a21fb6695a9011bfaeb5",
+    },
+  ]
+
+  for (const v of VECTORS) {
+    it(`reproduces the mainnet signer's bytes: ${v.name}`, () => {
+      expect(signWithKey(PK, v.msgHex)).toBe(v.sig)
+      expect(opensslVerifies("secp256k1", v.msgHex, v.sig)).toBe(true)
+    })
+  }
+
+  it("every signature over 300 random messages verifies under OpenSSL and is 64 bytes", () => {
+    let verified = 0
+    for (let i = 0; i < 300; i++) {
+      const msgHex = randomBytes(1 + (i % 120)).toString("hex")
+      const sig = signWithKey(PK, msgHex)
+      expect(sig).toMatch(/^[0-9a-f]{128}$/)
+      if (opensslVerifies("secp256k1", msgHex, sig)) verified++
+    }
+    expect(verified).toBe(300) // count stated, so a loop that ran zero times cannot pass
   })
 })

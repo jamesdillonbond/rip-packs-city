@@ -1,7 +1,7 @@
 # Dependabot — security-only auto-PRs.
 #
 # Rationale: CLAUDE.md enforces direct-to-main / no PRs for human work, but
-# CVEs are the exception worth carving out. This keeps elliptic, next, react,
+# CVEs are the exception worth carving out. This keeps next, react, @noble/*,
 # and the rest patched without manual tracking.
 #
 # 2026-05-30: tightened to genuinely be security-only. The previous

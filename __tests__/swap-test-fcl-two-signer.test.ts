@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { ec as EC } from "elliptic"
+import { secp256k1 } from "@noble/curves/secp256k1"
 import * as sdk from "@onflow/sdk"
 import * as t from "@onflow/types"
 import { hashMessageHex, signWithKey } from "@/lib/breaks/server-authz"
@@ -17,17 +17,19 @@ import { SWAP_CADENCE, SWAP_GAS_LIMIT } from "@/lib/swap-test/swap-cadence"
 // What this cannot prove: how a real Flow Wallet behaves when asked to sign as a
 // non-paying authorizer, or its gas sponsorship. That is the live test's job.
 
-const ec = new EC("secp256k1")
-const keyA = ec.genKeyPair()
-const keyB = ec.genKeyPair()
-const privA = keyA.getPrivate("hex").padStart(64, "0")
-const privB = keyB.getPrivate("hex").padStart(64, "0")
+const hex = (b: Uint8Array) => Buffer.from(b).toString("hex")
+const privA = hex(secp256k1.utils.randomPrivateKey())
+const privB = hex(secp256k1.utils.randomPrivateKey())
+const keyA = secp256k1.getPublicKey(privA, false)
+const keyB = secp256k1.getPublicKey(privB, false)
 const A = "3d0b274c80263484"
 const B = "f00df00df00df00d"
 const B_KEY = 2
 
-function verify(key: EC.KeyPair, msgHex: string, sigHex: string): boolean {
-  return key.verify(hashMessageHex(msgHex), { r: sigHex.slice(0, 64), s: sigHex.slice(64, 128) })
+// lowS:false — the signer does not canonicalise S (byte-identical to the elliptic
+// signer it replaced), so the verifier must accept either half.
+function verify(pub: Uint8Array, msgHex: string, sigHex: string): boolean {
+  return secp256k1.verify(Buffer.from(sigHex.slice(0, 128), "hex"), hashMessageHex(msgHex), pub, { lowS: false })
 }
 
 const authzA = async (account: Record<string, unknown>) => ({
