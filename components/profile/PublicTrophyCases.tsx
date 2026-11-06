@@ -24,7 +24,6 @@ export default function PublicTrophyCases({ username }: { username: string }) {
 
   useEffect(() => {
     let cancelled = false;
-    setState({ kind: "loading" });
     fetch("/api/public/trophy-cases?username=" + encodeURIComponent(username))
       .then((r) => {
         if (!r.ok) throw new Error(String(r.status));
