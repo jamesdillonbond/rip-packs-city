@@ -22,12 +22,15 @@
 --     and a NULL stored thumbnail falls back to the edition's render. The
 --     fallback half is new on 2026-09-12; until then there was no live side at
 --     all and a junk stored URL rendered as a blank slab with no recourse.
+--   * ⭐ ONE CASE PER READ (2026-11-06): p_case_id DEFAULT NULL reads the MAIN case
+--     only; a trophy_cases id reads that case only. A challenge entry's pins
+--     never render inside the main case, and vice versa.
 --   * jersey_number (2026-09-29) is the live edition's number, NULL when the
 --     edition does not resolve AND NULL when it is 0 (0 = no number on file,
 --     never jersey #0 — specialCats() would otherwise need to know).
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260930060000_audit_20260929_trophy_slab_exposes_jersey_number_for_special_serial_marks.sql);
+-- (supabase/migrations/20261106194000_audit_20261106_multiple_trophy_cases_and_challenges.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -44,7 +47,7 @@ CREATE TABLE public.trophy_moments (
   id uuid, slot int, moment_id text, edition_id text, player_name text,
   set_name text, serial_number int, circulation_count int, tier text,
   thumbnail_url text, video_url text, fmv numeric, badges text[], note text,
-  collection_id uuid, user_id uuid, pinned_at timestamptz);
+  collection_id uuid, user_id uuid, pinned_at timestamptz, case_id uuid);
 CREATE TABLE public.editions (
   id uuid PRIMARY KEY, collection_id uuid, external_id text, player_name text,
   set_name text, tier text, circulation_count int, video_url text,
@@ -72,7 +75,7 @@ CREATE FUNCTION public.get_edition_badges_unified(p_edition_id uuid)
  RETURNS jsonb LANGUAGE sql STABLE AS $$ SELECT '[{"title":"RealBadge"}]'::jsonb $$;
 
 -- >>> BEGIN verbatim get_trophy_slab_data (keep byte-identical to the migration) >>>
-CREATE OR REPLACE FUNCTION public.get_trophy_slab_data(p_user_id uuid)
+CREATE OR REPLACE FUNCTION public.get_trophy_slab_data(p_user_id uuid, p_case_id uuid DEFAULT NULL)
  RETURNS jsonb
  LANGUAGE plpgsql
  STABLE SECURITY DEFINER
@@ -87,7 +90,7 @@ BEGIN
 
   WITH slabs AS (
     SELECT
-      tm.id, tm.slot, tm.moment_id, tm.edition_id,
+      tm.id, tm.slot, tm.case_id, tm.moment_id, tm.edition_id,
       COALESCE(e.player_name, tm.player_name) AS player_name,
       COALESCE(e.set_name,    tm.set_name)    AS set_name,
       tm.serial_number,
@@ -279,6 +282,10 @@ BEGIN
         END AS held_checked_at
     ) hs ON true
     WHERE tm.user_id = p_user_id
+      -- ⭐ ONE CASE PER READ (2026-11-06, multiple trophy cases). NULL = the
+      -- collector's main case; a trophy_cases.id = that named/challenge case.
+      -- Without this a challenge entry's slot 1 rendered INSIDE the main case.
+      AND tm.case_id IS NOT DISTINCT FROM p_case_id
     ORDER BY tm.slot ASC
   )
   SELECT COALESCE(jsonb_agg(to_jsonb(slabs.*) ORDER BY slot), '[]'::jsonb)
@@ -391,6 +398,17 @@ SELECT _assert_eq((public.get_trophy_slab_data(:U1::uuid) -> 0 ->> 'thumbnail_ur
 
 -- ── 8. empty user -> '[]' ────────────────────────────────────────────────────
 SELECT _assert_eq(public.get_trophy_slab_data(:U2::uuid)::text, '[]', 'no slabs -> empty array, not NULL');
+
+-- ⭐ Case scoping (2026-11-06). A pin in a named/challenge case shares slot 1
+-- with the main case's slot 1 — the exact collision an unscoped read would merge.
+INSERT INTO public.trophy_moments (id, slot, moment_id, collection_id, user_id, case_id, pinned_at) VALUES
+  (gen_random_uuid(), 1, 'caseOnly', :TS::uuid, :U1::uuid, 'cccccccc-cccc-cccc-cccc-cccccccccccc'::uuid, now());
+SELECT _assert_eq(jsonb_array_length(public.get_trophy_slab_data(:U1::uuid))::text, '3', 'main read is unchanged by a case pin (still 3)');
+SELECT _assert(NOT (public.get_trophy_slab_data(:U1::uuid)::text LIKE '%caseOnly%'), 'a case pin NEVER appears in the main case');
+SELECT _assert_eq(jsonb_array_length(public.get_trophy_slab_data(:U1::uuid, 'cccccccc-cccc-cccc-cccc-cccccccccccc'::uuid))::text, '1', 'case read returns only that case');
+SELECT _assert_eq((public.get_trophy_slab_data(:U1::uuid, 'cccccccc-cccc-cccc-cccc-cccccccccccc'::uuid) -> 0 ->> 'moment_id'), 'caseOnly', 'case read returns the case pin');
+SELECT _assert_eq((public.get_trophy_slab_data(:U1::uuid, 'cccccccc-cccc-cccc-cccc-cccccccccccc'::uuid) -> 0 ->> 'case_id'), 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'case_id is projected');
+SELECT _assert_eq(public.get_trophy_slab_data(:U2::uuid, 'cccccccc-cccc-cccc-cccc-cccccccccccc'::uuid)::text, '[]', 'another user cannot read a case that is not theirs by id');
 
 \set U3 '''30000000-0000-0000-0000-000000000003'''
 
