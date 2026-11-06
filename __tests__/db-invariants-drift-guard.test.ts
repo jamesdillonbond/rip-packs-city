@@ -1518,8 +1518,10 @@ const PINS = [
     // clean walk (wmc_clean_walks, or a complete public Panini walk) after the pin.
     // ⚠ REPOINTED 2026-09-29: jersey_number (NULL unless > 0) for the trophy
     // slab's special-serial marks — the one input specialCats() lacked.
+    // ⚠ REPOINTED 2026-11-06: p_case_id DEFAULT NULL (multiple trophy cases) —
+    // the read is scoped to ONE case (NULL = main), and case_id is projected.
     migration:
-      "supabase/migrations/20260930060000_audit_20260929_trophy_slab_exposes_jersey_number_for_special_serial_marks.sql",
+      "supabase/migrations/20261106194000_audit_20261106_multiple_trophy_cases_and_challenges.sql",
   },
   {
     fn: "get_moment_detail",
