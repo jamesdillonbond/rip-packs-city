@@ -1,4 +1,4 @@
-# Daytime pass — 2026-11-05 (~11:36 – ~11:58 AM PT)
+# Daytime pass — 2026-11-05 (~11:36 AM – ~7:05 PM PT)
 
 **Session:** Claude Code cloud, repo attached with push (`git push --dry-run` exit 0), `npm ci` ok. Trevor: "work autonomously for the next two hours, working through any known issues, roadmap items, handoffs … Fix any issues you encounter."
 
@@ -23,6 +23,13 @@
 - **Vercel's chronic error groups** for edition / player / set detail and the fmv-recalc `55P03` lock timeout all last fired 11-04 7:47:57–7:48:22 PM PT — between that evening's bulk Top Shot re-price (`20261105034410`) and the next apply's schema reload (`20261105034852`). The known apply-burst cost, not four defects; do not chase them unless they recur outside an apply window.
 - **#213 survival read:** all 176 re-priced prices held; 24 already rewritten by the sweep, all at the intended value.
 - **#66 owed CTR measurement done:** price stays out of edition titles (table in `docs/strategy/seo-2026-09-06-search-console-read.md`).
+
+## Update ~7:05 PM PT — thread close
+
+- **Panini >9 d priced tail (routed by the evening Cowork handoff) — FIXED in runner code (`a1124dff`).** The 10-18 walk weighting gave World Cup half of every walk because it was the only priced product; every product is priced now. Read 7:00 PM PT: WC 5,288 editions p50 33 h, 0 older than 9 d; others 35,013 (17,064 HIGH/MEDIUM) p50 103 h, 8,274 older than 9 d. `PANINI_PRICED_PER_OTHER` now defaults to 0 (stalest-first). Live after the laptop's 5:37 AM PT pull; read 11-07 (focus.md Panini steer).
+- **Evening apply recorded:** `supabase/migrations/20261106024733_ts_sold_floor_clear_reads_unmapped_sales.sql` (Cowork applied `close_sold_topshot_listings_and_floors` at ~6:47 PM PT; the file body equals live `prosrc`; anon/authenticated EXECUTE false).
+- **Items 1–3 below are DONE** (applied / shipped earlier today). What is still Trevor's: two Vercel rate-limit firewall rules, branch protection on `main`, and the one-line `cadence_exempt_lanes` DELETE (`DELETE FROM public.cadence_exempt_lanes WHERE pipeline_pattern = 'chain-arrivals';`), plus item 4.
+- **Owed reads:** Panini backlog + walk 11-06 / 11-07; #210 0.90-haircut lead with the 11-09 week; first All Day accuracy row from job 829 on Mon 11-09 3:45 AM PT.
 
 ## Queued for Trevor / Claude Code
 
