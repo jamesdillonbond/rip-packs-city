@@ -1,5 +1,7 @@
 # Handoff → Cowork: apply the multiple-trophy-cases migration, then land the code
 
+> ✅ **DONE 2026-11-06 ~12:55 PM PT — DO NOT RE-RUN ANY STEP.** Cowork applied migration 1 (+ the anon-allowlist follow-up `20261106200716`) and migration 2 (12:45 PM PT). The Claude Code session verified every function md5 against the file, recovered the allowlist migration file byte-exact, rebased, re-ran preflight (9/9 green) and landed the code on `main` (`d6ae2f8d1`, ledger first); deploy `dpl_DTJC9u8JpmeQfhis9t5b5kJfEVnF` READY 12:36 PM PT and verified live. Only Step 5 item 4 (a signed-in pin into the Dame case, incl. the non-Dame refusal) is left — it needs a browser session.
+
 **Filed:** 2026-11-06, ~12:30 PM PT, by a Claude Code cloud session, at Trevor's request ("do option 2 and hand it off to cowork").
 **Why Cowork:** the Supabase MCP `apply_migration` in that session asks a confirmation question that never reached Trevor (it timed out twice at 60 s, so nothing was applied). Trevor chose to have the SQL run another way.
 **Status at filing:** production is UNCHANGED. Everything below is written, tested and pushed to the branch **`claude/adoring-mayer-y2mr9z`** (tip `e2cc24b2f`). `main` has only this document.
