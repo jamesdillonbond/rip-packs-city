@@ -33,6 +33,7 @@ import TrackedOutboundLink from "@/components/TrackedOutboundLink"
 import EditionsGridPaginated, { type EditionTile } from "@/components/entity/EditionsGridPaginated"
 import Breadcrumbs from "@/components/entity/Breadcrumbs"
 import { OG_INHERITED, TWITTER_INHERITED, packJsonLd } from "@/lib/seo"
+import { SITEMAP_PACK_NON_PRODUCT_TITLE } from "@/lib/sitemap-data"
 import { chanceHitExplainerHref } from "@/lib/blog/posts"
 import { humanizeLabel, joinMetaParts, metaField } from "@/lib/format"
 import {
@@ -250,6 +251,10 @@ export async function generateMetadata(
     title: { absolute: metaTitle },
     description: descParts.join(" "),
     alternates: { canonical },
+    // 2026-11-06: a distribution the ISSUER labels as not a product ("[OLD]
+    // Summer Splash", "Internal Test", "Distribution Mock Test") stays live but
+    // asks not to be indexed — the same test the sitemap applies (lib/sitemap-data).
+    ...(SITEMAP_PACK_NON_PRODUCT_TITLE.test(title) ? { robots: { index: false, follow: true } } : {}),
     openGraph: {
       ...OG_INHERITED,
       title: metaTitle,

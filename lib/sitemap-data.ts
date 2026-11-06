@@ -805,8 +805,14 @@ interface PackRow {
 // `total_minted` 0/NULL is "unknown" (every Golazos row is 0) and is KEPT —
 // an unread field is not a small pack. Measured 09-07: 2,065 of 5,529 pruned.
 export const SITEMAP_PACK_MIN_MINTED = 50
+// 2026-11-06: a distribution the ISSUER labels as not a product — "[OLD] Summer
+// Splash", "Internal Test", "Distribution Mock Test" (3 rows live, all 0
+// minted) — is not a page to advertise either. The label is the test, never
+// the mint count (0 is "unknown", see above).
+export const SITEMAP_PACK_NON_PRODUCT_TITLE = /^\s*\[old\]|\b(?:internal|mock)\s+test\b|\btest\s+distribution\b/i
 export function packDistributionIsSitemapWorthy(r: { title?: string | null; total_minted?: number | null }): boolean {
   if (typeof r.title !== 'string' || r.title.trim().length === 0) return false
+  if (SITEMAP_PACK_NON_PRODUCT_TITLE.test(r.title)) return false
   const minted = r.total_minted
   if (typeof minted === 'number' && minted > 0 && minted < SITEMAP_PACK_MIN_MINTED) return false
   return true
