@@ -311,7 +311,6 @@ function CaseBlock({
                 onChange={(e) => setDraft(e.target.value)}
                 maxLength={MAX_CASE_NAME_LEN}
                 aria-label="Trophy case name"
-                autoFocus
                 style={{
                   fontFamily: monoFont,
                   fontSize: 12,

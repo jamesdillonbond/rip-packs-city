@@ -58,6 +58,8 @@ export const STATIC_TOP_LEVEL_SEGMENTS: ReadonlySet<string> = new Set([
   "terms",
   // user-to-user trade rooms (2026-10-31): signed in only, never public
   "trades",
+  // trophy-case challenge boards (2026-11-06): public, like /profile
+  "trophy-challenges",
 ])
 
 /** The first segment of a pathname ("" for "/"). */

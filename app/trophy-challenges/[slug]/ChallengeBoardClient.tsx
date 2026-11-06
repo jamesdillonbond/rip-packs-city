@@ -26,6 +26,8 @@ interface Board {
   challenge: { slug: string; title: string; tagline: string | null; description: string | null; is_active: boolean; ends_at: string | null }
   entry_count: number
   entries: Entry[]
+  /** Decided SERVER-side by the route (no wall-clock read on the client). */
+  is_open?: boolean
 }
 
 type State = { kind: "loading" } | { kind: "failed" } | { kind: "missing" } | { kind: "ok"; board: Board }
@@ -67,7 +69,7 @@ export default function ChallengeBoardClient({ slug }: { slug: string }) {
   }
 
   const { challenge, entries, entry_count } = state.board
-  const open = challenge.is_active && (!challenge.ends_at || Date.parse(challenge.ends_at) > Date.now())
+  const open = state.board.is_open === true
 
   return (
     <div>
