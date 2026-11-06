@@ -65,6 +65,7 @@ import {
   urlSlugForCollection,
   slugifyTeam,
 } from "@/lib/moment-detail-format"
+import { parseGameDate } from "@/lib/game-date"
 import { resolveUsernames, nameKey } from "@/lib/flowty-username"
 import SpecialSerialGlyph from "@/components/SpecialSerialGlyph"
 import { marketplaceMomentUrl, dapperMarketMomentUrl, dapperMarketEditionUrl, fromDbSlug } from "@/lib/collections"
@@ -829,7 +830,7 @@ export default async function MomentPage(
         {[
           e.series != null ? seriesDisplay(e.series, e.collection_slug) : null,
           e.play_type ?? null,
-          fmtAbsDate(e.game_date),
+          fmtAbsDate(parseGameDate(e.game_date)),
         ]
           .filter(Boolean)
           .join(" · ")}
@@ -1366,7 +1367,7 @@ export default async function MomentPage(
           }
         />
         <StatCell label="Play type" value={e.play_type && e.play_type !== "Unknown" ? e.play_type : "—"} />
-        <StatCell label="Game date" value={fmtAbsDate(e.game_date) || "—"} />
+        <StatCell label="Game date" value={fmtAbsDate(parseGameDate(e.game_date)) || "—"} />
       </section>
 
       {/* Serial-specific block (when kind='moment') */}

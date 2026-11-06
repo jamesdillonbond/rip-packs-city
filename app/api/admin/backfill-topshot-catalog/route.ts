@@ -25,6 +25,7 @@
 // resumes from a specific set.
 
 import { NextRequest, NextResponse } from "next/server";
+import { parseGameDate } from "@/lib/game-date";
 import { supabaseAdmin } from "@/lib/supabase";
 import { verifyAdminRequest, adminUnauthorizedResponse } from "@/lib/admin-auth";
 import { normalizePlayDescription, isSentinel } from "@/lib/topshot/play-description";
@@ -351,9 +352,9 @@ function buildEditionRow(
   const thumbnailUrl = buildThumbnailUrl(prefix);
   const videoUrl = buildVideoUrl(prefix);
 
-  const dateOfMoment = e.play?.stats?.dateOfMoment ?? null;
-  const dateSlice = dateOfMoment ? String(dateOfMoment).slice(0, 10) : null;
-  const gameDate = dateSlice && /^\d{4}-\d{2}-\d{2}$/.test(dateSlice) ? dateSlice : null;
+  // 2026-11-06: the epoch sentinel ("1970-01-01", off-court content) is "no
+  // date", never a game date — lib/game-date.ts.
+  const gameDate = parseGameDate(e.play?.stats?.dateOfMoment ?? null);
 
   return {
     external_id: externalId,

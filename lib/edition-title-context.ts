@@ -27,6 +27,7 @@
 // renders exactly the old "<set>" context.
 
 import { parallelLabelFromBadges } from "@/lib/edition-parallel"
+import { parseGameDate } from "@/lib/game-date"
 
 type Payload = Record<string, unknown>
 
@@ -42,8 +43,12 @@ function str(p: Payload, k: string): string | null {
 /** "2026-02-20" → "Feb 20, 2026". Date-only, parsed by parts — never through a
  *  Date object, which would shift it a day in any zone west of UTC. */
 export function formatGameDate(v: unknown): string | null {
-  if (typeof v !== "string") return null
-  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(v)
+  // 2026-11-06: the epoch sentinel ("1970-01-01", Top Shot's off-court
+  // content) is "unknown", never a date — 14 Fit Check titles read
+  // "Jan 1, 1970" live. lib/game-date.ts (parseGameDate).
+  const d = parseGameDate(v)
+  if (!d) return null
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d)
   if (!m) return null
   const month = MONTHS[Number(m[2]) - 1]
   if (!month) return null

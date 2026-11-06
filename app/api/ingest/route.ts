@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse, after } from "next/server"
+import { parseGameDate } from "@/lib/game-date"
 import { omitUnread } from "@/lib/db/omit-unread"
 import { topshotGraphql } from "@/lib/chains/flow/topshot"
 import { supabaseAdmin } from "@/lib/supabase"
@@ -452,9 +453,9 @@ async function upsertEdition(
         // current number — matches Top Shot's own jersey-match. Drives the
         // 'jersey' special-serial tag + the require_jersey_serial alert filter.
         jersey_number: toNum(moment.play.stats?.jerseyNumber),
-        game_date: moment.play.stats?.dateOfMoment
-          ? moment.play.stats.dateOfMoment.split("T")[0]
-          : null,
+        // 2026-11-06: upstream's epoch ("1970-01-01T00:00:00Z", off-court
+        // content) is "no date", never a game date — lib/game-date.ts.
+        game_date: parseGameDate(moment.play.stats?.dateOfMoment),
       },
       [
         "player_id",

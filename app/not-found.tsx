@@ -1,9 +1,28 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 
+// 2026-11-06 (Search Console: 61 "Duplicate without user-selected canonical"
+// + 17 "Google chose different canonical" rows): Next places the not-found
+// metadata LAST in the layout chain, so whatever this object leaves unset is
+// inherited from the layouts above the 404 — and the collection layout sets a
+// canonical, og:url and og:title naming the COLLECTION ROOT, while the root
+// layout says `index, follow`. Live, every 404 under /<collection>/* (a purged
+// UUID edition key, an unknown set) answered with
+//   <link rel="canonical" href="/nba-top-shot"> · og:url /nba-top-shot ·
+//   og:title "NBA Top Shot Analytics" · <meta robots "index, follow">
+// beside Next's own noindex — a 404 claiming to be a duplicate of the hub.
+// Setting these keys to null here clears them for every 404 site-wide
+// (resolveAlternates / resolveOpenGraph / resolveTwitter all return null for a
+// null source); `robots` overrides the root's index,follow. The page's own
+// generateMetadata is NOT applied on notFound(), so NOT_FOUND_METADATA in
+// lib/seo.ts cannot do this job — this file is the only place that can.
 export const metadata: Metadata = {
   title: "404",
   description: "The page you're looking for isn't here.",
+  robots: { index: false, follow: false },
+  alternates: null,
+  openGraph: null,
+  twitter: null,
 };
 
 export default function NotFound() {
