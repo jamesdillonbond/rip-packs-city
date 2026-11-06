@@ -24,10 +24,15 @@
 4. **JSON-LD on the cross-collection hubs.** `/players/<slug>` (~2,000 indexable) and `/teams/<league>/<slug>` (31) carried none: `playerHubJsonLd` (Person + BreadcrumbList; breadcrumb ONLY when the name spans sports — rule 2) and `franchiseHubJsonLd` (SportsTeam + BreadcrumbList). Guard `cross-collection-hubs-emit-json-ld.test.ts`.
 5. **Binder tab, one wallet box.** `/<c>/collection` for an anonymous visitor showed the layout's "What's your collection worth?" band AND the page's own lookup input; the band now suppresses itself on the Binder tab (its own SUPPRESSED rule, keyed on the tab), and the page input takes the brand mono font.
 
-**Batch 2 — ledger + code commits (see the ledger entry for shas), CI result below.**
+**Batch 2 — `17ee177` (ledger) + `76709f8b1` (code), CI run 42269123963 all success; verified live (the four mixed-case URLs 308 to lowercase; the UFC edition key untouched 200).**
 
 6. **Mixed-case URLs → 308.** `/NBA-Top-Shot/overview`, `/nba-top-shot/player/Jamal-Murray`, `/nba-top-shot/set/2025-NBA-Playoffs-Common`, `/nba-top-shot/team/Denver-Nuggets` all 404'd. `proxy.ts caseFoldedPath`: first segment a published collection or hub root → 308 to the lowercase path (tab + player/team/set/character/series/product/pack slug), NEVER an edition key (UFC keys are uppercase), never `/share` / `/moment` / queries. Guard `proxy-case-folds-mixed-case-urls.test.ts`.
 7. **Binder pre-search empty state.** The table showed fifteen column headers over nothing; it now says "Enter a username or wallet above to load its moments here — free, no sign-in." (desktop + mobile), distinct from the post-search "No moments found" claim; both pinned.
+
+**Batch 3 — ledger + code commits (shas in the ledger entry).**
+
+8. **Panini product pages carry JSON-LD.** The 68 `/panini-blockchain/product/<slug>` pages (indexable, sitemap-listed since 10-25) were the one entity route with no structured data; they now publish CollectionPage + BreadcrumbList + an ItemList of the top editions via the series pages' `collectionEntityJsonLd`.
+9. **The homepage WebSite JSON-LD drops its SearchAction** — its target was `/share/{search_term_string}`, a wallet-card route robots.txt disallows, not a search; Google retired the sitelinks search box in Nov 2024.
 
 ## Post-ship watch (what to read tomorrow)
 
@@ -56,5 +61,5 @@
 
 ## Revert paths
 
-- Code: `git revert 9ddc5f12f` (batch 1) / `git revert <batch-2 code sha>`.
+- Code: `git revert 9ddc5f12f` (batch 1) / `git revert 76709f8b1` (batch 2) / `git revert <batch-3 code sha>`.
 - DB: `DROP FUNCTION public.rpc_search_players_fuzzy(text, uuid, integer);` — the route degrades to the plain empty answer when the function is missing (tested).

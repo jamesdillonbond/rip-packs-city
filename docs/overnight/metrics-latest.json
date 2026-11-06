@@ -1,32 +1,32 @@
 {
-  "generated_at_pt": "2026-11-06 ~1:15 AM PT (overnight autonomous pass, Cowork cloud, laptop-VM clone + .rpc-git-cred)",
-  "generated_at_utc": "2026-11-06T09:15Z",
-  "pass": "OVERNIGHT (genuine — clock verified vs DB, no skew). Push AVAILABLE (dry-run up-to-date). apply/UPDATE on shared DB REFUSED by this session's auto-mode classifier (Modify Shared Resources) — read-only + docs only; one config-row fix queued. Not frozen. Handoff: docs/handoff-2026-11-06-overnight-pass.md",
-  "shipped": 0,
+  "generated_at_pt": "2026-11-06 ~10:30 AM PT (daytime audit pass, Cowork cloud, add_repo direct push)",
+  "generated_at_utc": "2026-11-06T18:30Z",
+  "pass": "DAYTIME AUDIT (Trevor: 5-hour deep-dive QA across pages/tools/SEO/UX/CX/concierge/security/onboarding). Push AVAILABLE (two pushes, CI green). apply_migration AVAILABLE (two migrations applied). Not frozen. Handoff: docs/handoff-2026-11-06-daytime-audit-pass.md",
+  "shipped": 2,
   "reverted": 0,
-  "idle": "none — one actionable item (trophies max_ms re-baseline) verified-benign and QUEUED because the classifier refused the shared-resource write.",
-  "verdict": "GREEN. 0 production shipped, 0 reverted. 1 trust BREACH (public_board_slow_count=1) verified BENIGN (v_insights_trophies cold-probe flicker: warm 1,104ms, 2,687 real rows; 3000ms floor stale for the grown view) — one-row re-baseline queued. Security 0; trust 39/40 ok; stalled []; 2 info alerts (designed Atlas); 5 chronic Vercel groups; client beacon 0 real in 7 d. Post-ship watch clean; Panini backlog on track (12,368, -2.7k/day).",
+  "idle": "n/a — 2 code commits + 2 migrations shipped (search typo fallback; one Sign In with ?next; og:image on 5 pages + guard; hub JSON-LD; Binder band + font; mixed-case URL 308s; Binder pre-search state).",
+  "verdict": "GREEN. Security 0; trust 40/40 ok (overnight's trophies max_ms breach applied 7:05 AM PT); stalled []; 3 info alerts (designed Atlas 403s); 6 chronic Vercel groups, no new crash; client beacon 0 real in 7 d. 373-page curl sweep + 187-page 390px + 34-page light + 34-page desktop sweeps: 0 non-200, 0 overflow, 0 broken images. Shipped batches 1+2 (9ddc5f12f, 76709f8b1), both verified live.",
   "health": {
-    "security_invariants": "clean (invariants [], anon_write_holes [], rls_off_base_tables [], secdef_anon_violations []) via rpc_ops_snapshot 09:06:46Z.",
-    "structural": "stalled_pipelines []. wmc_null_edition_key [], backward_cursor_rewinds [], function_search_path_drift [], procedure pins/txn-control [], cross_collection_mat_staleness [], suppression_*_drift []. sentinel_ts_uuid_editions_48h 0, ts_uuid_dupes_created_24h 0.",
-    "trust_health_breaches": 1,
-    "trust_health_note": "1 breach: public_board_slow_count=1 (BENIGN — v_insights_trophies 6-hourly cold probe 4,703ms > max_ms 3,000; warm EXPLAIN ANALYZE 1,104ms, err NULL, 2,687 rows; 3000 floor stale for a view grown 827->2,687 rows since 08-01; re-baseline to 7000 queued). 39 others ok: candy_sales_stale_hours 605.8 (<1114.9), edition_integrity_flags 22 (<250), fmv_sanity_flags 0, topshot_fmv_stale_hours 0.3, topshot_sold_floor_asks_found 26 (<50), public_board_empty_count 0 (<1), panini_coverage_pct_drop 5.9 (<15), trust_precompute_max_age 5.31 (<13).",
+    "security_invariants": "clean (check_public_security_invariants [], secdef_anon_exec_drift 0, when_others_timeout_blind 0) ~8:45 AM PT.",
+    "structural": "stalled_pipelines []. check_zero_yield_lanes: pack-pulls-chain-history (caught up — 0 unresolved TS pulls in 14 d, 4,658 rips/7 d; not a fault) + 3 retired Flowty listing-cache rows aging out of the 7-d window.",
+    "trust_health_breaches": 0,
+    "trust_health_note": "40/40 ok. The overnight pass's queued v_insights_trophies max_ms 3000->7000 was applied by Claude Code ~7:05 AM PT (ledger).",
     "stalled_pipelines": "[]",
-    "pipeline_fails_24h": "all upstream 0: topshot-pack-supply-atlas 13, atlas-pack-market 12, gha-schedule-watchdog 7, rest <=3. pipeline_alerts 2 info (moved-Moment hydration 400s 4.5% last ok 09:03Z; Atlas pack-supply 404 1/240 last 200 09:06Z).",
-    "sentry": "dark (SDK removed #34). client_error beacon: 0 real errors in 7 d (positive-control probe only).",
-    "vercel": "prod serves last code READY; last 5 prod deploys all CANCELED = docs/migration-only commits (ignoreCommand) incl. tip cd7873c3e. 24h runtime: 5 groups, all chronic (first-seen Jul-Sep; pack_realized_ev/get_pack_contents/pack_lifecycle >5000ms, set-activity + player-top-sales statement-timeout->degrade), honest degrade-to-empty, no new crash group. #228 absent.",
-    "post_ship_watch": "CLEAN. 20261106051049 serial-backfill newest-first resolved the 115-row seller wave (2 TS NULL-serial in 3 d); 20261106024733 sold-floor clear holds (arm 26); perfect-mint floor 44->10 holds (empty_count 0); 11-04/11-05 FMV ships no regression (fmv_sanity 0, edition_integrity 22)."
+    "pipeline_fails_24h": "get_pipeline_alerts: 3 info (Atlas editions 2/480 403, market-feed 3/410 403, pack-supply 4/172 403 — all designed, fresh 200s). 41,266 pipeline_runs / 24 h.",
+    "sentry": "dark (SDK removed #34). client_error beacon: 0 real errors in 7 d (positive-control probe 11-04 only).",
+    "vercel": "24h runtime: 6 groups, all chronic — pack-detail 5 s bounds (pack_realized_ev x4, get_pack_contents x1, pack_lifecycle x1) + entity-section timeouts (set activity, player top sales, team squeeze x1 each), every one degrading per design. Deploys 9ddc5f12f + 76709f8b1 READY.",
+    "post_ship_watch": "CLEAN. Batch 1 verified live (og:image /market+/sniper; Person JSON-LD /players/jamal-murray; SportsTeam /teams/nba/nuggets; ?q=murry -> 3 Murrays with meta.fuzzy; ?q=murray no fuzzy key). Batch 2 verified live (4 mixed-case URLs 308 to lowercase; UFC edition key untouched 200)."
   },
   "fmv_high_med": {
-    "nba_top_shot": 6798,
-    "panini_blockchain": 17998,
-    "nfl_all_day": 1646,
+    "nba_top_shot": 6786,
+    "panini_blockchain": 18001,
+    "nfl_all_day": 1655,
     "disney_pinnacle": 937,
-    "candy_mlb": 55,
+    "candy_mlb": 51,
     "laliga_golazos": 1,
     "ufc_strike": 0
   },
-  "fmv_high_med_note": "HIGH+MEDIUM from rpc_ops_snapshot fmv_by_collection (computed 05:35Z). nba HIGH 1234 + MED 5564. panini HIGH 17141 + MED 857. nfl HIGH 191 + MED 1455. pinnacle HIGH 245 + MED 692. candy HIGH 8 + MED 47. golazos MED 1. ufc 0 (STALE 573 / NO_DATA 44).",
+  "fmv_high_med_note": "HIGH+MEDIUM from rpc_ops_snapshot fmv_by_collection ~10:30 AM PT. nba HIGH 1231 + MED 5555. panini HIGH 17166 + MED 835. nfl HIGH 192 + MED 1463. pinnacle HIGH 242 + MED 695. candy HIGH 8 + MED 43. golazos MED 1. ufc 0 (STALE 573 / NO_DATA 44, market closed).",
   "editions_by_collection": {
     "nba_top_shot": 14696,
     "panini_blockchain": 40302,
@@ -35,20 +35,24 @@
     "ufc_strike": 617,
     "candy_mlb": 125
   },
-  "editions_note": "nba 14,696 (+8); panini 40,302 (+53); others flat vs the 11-05 daytime pass.",
-  "deltas_vs_prev": "db 46,351 -> 46,572 MB (+221; net._http_response 6h-TTL sawtooth). FMV HIGH+MED: nba 6,698->6,798 (+100); panini 17,972->17,998 (+26); nfl 1,644->1,646 (+2); pinnacle 932->937 (+5); candy 65->55 (-10, tiny collection churn); golazos/ufc flat. editions nba +8, panini +53. trust breaches 0->1 (benign).",
-  "panini_backlog": "older-than-7d 12,368 (was 14,755 on 11-05 ~11:45 AM PT; -2.7k/day, ahead of expected -2.5k/day). oldest last_seen 2026-10-26 07:17Z. total editions 40,302. On track; 11-07 read owed (backlog + walk-weighting-off regression watch).",
+  "editions_note": "all flat vs the 11-06 overnight pass.",
+  "deltas_vs_prev": "db 46,572 -> 44,511 MB (-2,061; the net._http_response sawtooth trough — 44,312 at 8:45 AM PT). FMV HIGH+MED: nba 6,798->6,786 (-12); panini 17,998 flat; nfl 1,646->1,655 (+9); pinnacle 937 flat; candy 55->51 (-4); golazos/ufc flat. Trust breaches 1 -> 0.",
+  "panini_backlog": "older-than-7d 10,190 at ~10:27 AM PT (was 12,368 at ~1:15 AM PT; -2.2k in ~9 h, on track). Sentinel 'Panini Ingest' reads WARN 'stalest edition 262h vs rotation 138h' — the known throughput/starvation thread (areas/panini-ingest-throughput-2026-11.md), unchanged by this pass.",
   "carried_queue": [
-    "v_insights_trophies max_ms 3000->7000 re-baseline — NEW, verified-benign, ready-to-run SQL + revert in handoff (classifier refused the write this session).",
-    "#228 cold-whale collection-snapshot timeout — next lever CDN warm (route/edge, OFF-LIMITS); not recurring.",
-    "#58 OPENSEA_API_KEY (Trevor; candy re-verify ~11-27).",
+    "NEW — per-dist EV precompute for get_pack_realized_ev_row (Claude Code): the pack page's last user-facing error class (~4/day 5 s bounds); mv_pack_ev_latest is NOT a drop-in (374/1,392 dists absent, 412 gross_ev differ).",
+    "#228 cold-whale collection-snapshot timeout — next lever CDN warm (route/edge); not recurring since 11-04. 3 nights.",
     "net._http_response growth lever (P4, Trevor; weekly read ~11-11).",
-    "cron-job.org account has no MFA (P3, Trevor)."
+    "cron-job.org account has no MFA (P3, Trevor).",
+    "#58 OPENSEA_API_KEY (Trevor; candy re-verify ~11-27)."
   ],
   "resolved_this_pass": [
-    "Inbox 2026-11-06T0109Z + 0414Z confirmed dispositioned by earlier sessions and holding (sold-floor arm 26 ok; perfect-mint empty_count 0 ok).",
-    "Panini backlog 11-06 read done (12,368, on track).",
-    "Post-ship watch on all 11-04/11-05/11-06 ships: no regression, no revert."
+    "Search typo dead end (murry/dontcic/wemby/jalen bruson -> 0) — closest-players fallback shipped (rpc_search_players_fuzzy 20261106172939 + 20261106173036).",
+    "Duplicate Sign In on every collection page at 390 px — header carries ?next, banner pill retired.",
+    "og:image missing on /market, /sniper, /privacy, /terms, /early-access — fixed + tree-walk guard.",
+    "No JSON-LD on /players/* and /teams/*/* hubs — Person/SportsTeam + BreadcrumbList shipped.",
+    "Two wallet boxes on /<c>/collection — band suppressed on the Binder tab; page input in brand mono; pre-search empty state added.",
+    "Mixed-case collection/hub URLs 404 — proxy 308 to lowercase (edition keys excluded).",
+    "Overnight's queued trophies max_ms re-baseline — confirmed applied (Claude Code 7:05 AM PT)."
   ],
-  "housekeeping": "origin/main = cd7873c3e at start and at write-up (no concurrent commits). Ledger entry spliced at first ^### (1564 -> 1565; swallowed 0, future-dated 0). Session entry prepended to docs/sessions/2026-11.md. Lock cowork-20261106T0904Z-24876 taken on the mount; released at exit."
+  "housekeeping": "origin/main = e5dadf4 at start; two pushes (9ddc5f12f, 76709f8b1) each after fetch; no concurrent commits landed between. Ledger entries spliced at first ^### (1567 -> 1569 across the two; swallowed 0, future-dated 0). Session entry prepended to docs/sessions/2026-11.md. tooling-gotchas: stash/pop un-stages a staged deletion (preflight ENOENT). Memory: delegated-decisions + cowork-cloud-qa-and-twin-sessions updated."
 }
