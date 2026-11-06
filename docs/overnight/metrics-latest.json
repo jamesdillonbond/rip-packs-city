@@ -2,10 +2,10 @@
   "generated_at_pt": "2026-11-06 ~10:30 AM PT (daytime audit pass, Cowork cloud, add_repo direct push)",
   "generated_at_utc": "2026-11-06T18:30Z",
   "pass": "DAYTIME AUDIT (Trevor: 5-hour deep-dive QA across pages/tools/SEO/UX/CX/concierge/security/onboarding). Push AVAILABLE (two pushes, CI green). apply_migration AVAILABLE (two migrations applied). Not frozen. Handoff: docs/handoff-2026-11-06-daytime-audit-pass.md",
-  "shipped": 2,
+  "shipped": 4,
   "reverted": 0,
-  "idle": "n/a — 2 code commits + 2 migrations shipped (search typo fallback; one Sign In with ?next; og:image on 5 pages + guard; hub JSON-LD; Binder band + font; mixed-case URL 308s; Binder pre-search state).",
-  "verdict": "GREEN. Security 0; trust 40/40 ok (overnight's trophies max_ms breach applied 7:05 AM PT); stalled []; 3 info alerts (designed Atlas 403s); 6 chronic Vercel groups, no new crash; client beacon 0 real in 7 d. 373-page curl sweep + 187-page 390px + 34-page light + 34-page desktop sweeps: 0 non-200, 0 overflow, 0 broken images. Shipped batches 1+2 (9ddc5f12f, 76709f8b1), both verified live.",
+  "idle": "n/a — 4 code commits + 3 migrations shipped across four batches (search typo fallback incl. teams/sets; one Sign In with ?next; og:image on 5 pages + guard; hub + Panini product JSON-LD; Binder band/font/pre-search state; mixed-case URL 308s; homepage SearchAction dropped). All four CI runs green, all verified live.",
+  "verdict": "GREEN. Security 0; trust 40/40 ok (overnight's trophies max_ms breach applied 7:05 AM PT); stalled []; 3 info alerts (designed Atlas 403s); 6 chronic Vercel groups, no new crash; client beacon 0 real in 7 d. 373-page curl sweep + 187-page 390px + 34-page light + 34-page desktop sweeps: 0 non-200, 0 overflow, 0 broken images. Shipped batches 1–4 (9ddc5f12f, 76709f8b1, e3a1c6a95, c59fd8497), each CI-green and verified live.",
   "health": {
     "security_invariants": "clean (check_public_security_invariants [], secdef_anon_exec_drift 0, when_others_timeout_blind 0) ~8:45 AM PT.",
     "structural": "stalled_pipelines []. check_zero_yield_lanes: pack-pulls-chain-history (caught up — 0 unresolved TS pulls in 14 d, 4,658 rips/7 d; not a fault) + 3 retired Flowty listing-cache rows aging out of the 7-d window.",
@@ -52,7 +52,9 @@
     "No JSON-LD on /players/* and /teams/*/* hubs — Person/SportsTeam + BreadcrumbList shipped.",
     "Two wallet boxes on /<c>/collection — band suppressed on the Binder tab; page input in brand mono; pre-search empty state added.",
     "Mixed-case collection/hub URLs 404 — proxy 308 to lowercase (edition keys excluded).",
-    "Overnight's queued trophies max_ms re-baseline — confirmed applied (Claude Code 7:05 AM PT)."
+    "Overnight's queued trophies max_ms re-baseline — confirmed applied (Claude Code 7:05 AM PT).",
+    "Search typos on team/set names (nugets/lakerz/playofs -> 0) — fallback widened (rpc_search_names_fuzzy 20261106191250).",
+    "Panini product pages had no JSON-LD — CollectionPage shipped; homepage SearchAction (target /share/{term}) dropped."
   ],
   "housekeeping": "origin/main = e5dadf4 at start; two pushes (9ddc5f12f, 76709f8b1) each after fetch; no concurrent commits landed between. Ledger entries spliced at first ^### (1567 -> 1569 across the two; swallowed 0, future-dated 0). Session entry prepended to docs/sessions/2026-11.md. tooling-gotchas: stash/pop un-stages a staged deletion (preflight ENOENT). Memory: delegated-decisions + cowork-cloud-qa-and-twin-sessions updated."
 }

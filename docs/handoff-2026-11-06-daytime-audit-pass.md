@@ -1,4 +1,4 @@
-# Daytime audit pass — 2026-11-06 (~8:43 AM → ~12:30 PM PT)
+# Daytime audit pass — 2026-11-06 (~8:43 AM → ~11:50 AM PT)
 
 **Session:** Cowork cloud, repo attached via `add_repo` → shallow clone → direct push (two pushes, CI green on both); Supabase MCP reads and `apply_migration` both passed first try (two migrations applied); laptop linked, no folders (not needed). Trevor: *"work autonomously for the next 5 hours … deep dive audit and QA across all pages, across the project and all our tools … SEO, UI, UX, CX, Concierge, security, new user onboarding, user flow, retention, growth, and workflows."*
 
@@ -34,7 +34,7 @@
 8. **Panini product pages carry JSON-LD.** The 68 `/panini-blockchain/product/<slug>` pages (indexable, sitemap-listed since 10-25) were the one entity route with no structured data; they now publish CollectionPage + BreadcrumbList + an ItemList of the top editions via the series pages' `collectionEntityJsonLd`.
 9. **The homepage WebSite JSON-LD drops its SearchAction** — its target was `/share/{search_term_string}`, a wallet-card route robots.txt disallows, not a search; Google retired the sitelinks search box in Nov 2024.
 
-**Batch 4 — ledger + code commits (shas in the ledger), migration `20261106191250` applied.**
+**Batch 4 — `6b95821` (ledger) + `c59fd8497` (code), CI run 42277712661 all success; migration `20261106191250` applied; verified live (nugets → Denver Nuggets, playofs → the Playoffs sets, lakerz → Los Angeles Lakers).**
 
 10. **Closest-match search covers teams and sets too.** "nugets" → Denver Nuggets, "lakerz" → Los Angeles Lakers, "playofs" → the Playoffs sets. `rpc_search_names_fuzzy` (kind, name, similarity over players + distinct `editions.team_name` + `sets` / Panini `sets_summary`) replaces and drops `rpc_search_players_fuzzy`; the route keeps each candidate's rows of its own kind. Empty-path cost ~145 ms / ~6.6k buffers (team leg); exact path untouched.
 
@@ -65,5 +65,5 @@
 
 ## Revert paths
 
-- Code: `git revert 9ddc5f12f` (batch 1) / `git revert 76709f8b1` (batch 2) / `git revert e3a1c6a95`.
+- Code: `git revert 9ddc5f12f` (batch 1) / `git revert 76709f8b1` (batch 2) / `git revert e3a1c6a95` (batch 3) / `git revert c59fd8497` (batch 4).
 - DB: `DROP FUNCTION public.rpc_search_names_fuzzy(text, uuid, integer);` — the route degrades to the plain empty answer when the function is missing (tested).
