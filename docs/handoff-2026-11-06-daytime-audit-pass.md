@@ -1,8 +1,8 @@
-# Daytime audit pass — 2026-11-06 (~8:43 AM → ~11:50 AM PT)
+# Daytime audit pass — 2026-11-06 (~8:43 AM → ~1:00 PM PT)
 
 **Session:** Cowork cloud, repo attached via `add_repo` → shallow clone → direct push (two pushes, CI green on both); Supabase MCP reads and `apply_migration` both passed first try (two migrations applied); laptop linked, no folders (not needed). Trevor: *"work autonomously for the next 5 hours … deep dive audit and QA across all pages, across the project and all our tools … SEO, UI, UX, CX, Concierge, security, new user onboarding, user flow, retention, growth, and workflows."*
 
-**Verdict: GREEN · 4 code commits + 3 DB migrations shipped · 0 reverted · oldest routed: #228 cold-whale snapshot (carried, 3 nights; not recurring).**
+**Verdict: GREEN · 7 code commits + 6 DB migrations shipped (3 of the migrations are the trophy-cases handoff, applied here) · 0 reverted · one e2e monitor re-pinned after my own batch 1 reddened it · oldest routed: #228 cold-whale snapshot (carried, 3 nights; not recurring).**
 
 ⚠ Nothing in this pass was blocked by the environment. Trevor's machine, Cowork and Claude Code push and apply normally. **Commit and apply as usual.**
 
@@ -38,7 +38,26 @@
 
 10. **Closest-match search covers teams and sets too.** "nugets" → Denver Nuggets, "lakerz" → Los Angeles Lakers, "playofs" → the Playoffs sets. `rpc_search_names_fuzzy` (kind, name, similarity over players + distinct `editions.team_name` + `sets` / Panini `sets_summary`) replaces and drops `rpc_search_players_fuzzy`; the route keeps each candidate's rows of its own kind. Empty-path cost ~145 ms / ~6.6k buffers (team leg); exact path untouched.
 
+**Batch 5 — `4a3758f` (ledger) + `0a5fb06` (code), CI run 42282865965 all success, deploy `dpl_DV4Y44vrjiMp7XRPRDNqR5NTJ42A` READY; verified live.** Source: Google Search Console read in Trevor's Chrome (28 d to 11-04: 72 clicks / 2.25K impressions / CTR 3.2 % / position 12.1; 49,436 indexed vs 47,640 not; **top clicked pages are Panini edition pages — 8 of the top 13, CTR 10–60 %, positions 2–10; `/` 10.3 % CTR at position 20.4**).
+
+11. **404s stop claiming the collection hub.** Every 404 under `/<collection>/*` carried `<link rel=canonical href="/nba-top-shot">`, `og:url` /nba-top-shot, og:title "NBA Top Shot Analytics" and `index, follow` beside Next's own noindex — GSC's 61 "Duplicate without user-selected canonical" + 17 "chose different canonical" rows (UUID-form fossil edition keys). Next merges the not-found metadata LAST, so `app/not-found.tsx` now nulls `alternates`/`openGraph`/`twitter` and sets `noindex, nofollow` — one file, every 404. Guard `not-found-page-clears-inherited-canonical-and-og.test.ts`. Live after deploy: no canonical, no og:url, consistent noindex.
+12. **"Jan 1, 1970" game dates.** 14 Top Shot "Fit Check" editions carry upstream's epoch sentinel as `game_date`; titles, tiles and the moment page rendered it as a fact. `parseGameDate` (the 10-21 All Day 1899 fix) now also nulls the exact epoch day; both Top Shot writers and both readers route through it. Live title now "Fit Check · Reel · /250". The 14 stored rows self-heal on the next ingest (optional one-shot `UPDATE editions SET game_date = NULL WHERE game_date = '1970-01-01'`).
+    - GSC rows that needed NO change: 394 "Not found" = `/profile/0x…` (already 308 → `/share/<addr>` → 200) + stale `_next/static` chunks; 18 "5xx" all Aug 20–22, every sample 200 today.
+
+**Batch 6 — `6a3e364` (ledger) + `4eedcb7` (code), CI run 42285811779 all success, deploy READY.**
+
+13. **Issuer-labelled non-product dists.** "[OLD] Summer Splash" (Pinnacle 0), "Internal Test" (Pinnacle 8906), "Distribution Mock Test" (All Day 210) — exactly 3 rows — leave the sitemap and the pack page sets `noindex, follow`. The label is the test, never `total_minted = 0` (every Golazos row is 0; 1,100 Top Shot reward packs are 0).
+
+**Trophy-cases handoff (Claude Code → Cowork), worked in parallel by both sessions.** Migration 1 (`20261106200549`) and the missing allowlist rows (`20261106200716`, found when `check_secdef_anon_execute_violations()` read the two new public SECDEF reads — the handoff expected `[]`) applied here with every md5 verified; Claude Code landed the code (`d6ae2f8`, CI success) while my duplicate landing branch — which had fixed the same four preflight misses: `trophy-challenges` in the sign-in gate's segment list, two untested public routes, a render-time `Date.now()`, two ratchet growths — was discarded unpushed. Migration 2 (`20261106204542`, drop `(user_id, slot)`) applied at 12:45 PM PT after the deploy read READY and the live route's arbiter read `user_id,case_id,slot`. Step-5 smoke green (API, board DOM, public profile unchanged, signed-in dashboard shows "Challenge · Dame Time · Enter", main case 6/6). **Trevor: entering Dame Time and pinning the first entry is yours** (the handoff's step 4 — not done on your account by me).
+
+**E2E monitor — `cfa4711`.** `E2E DOM Smoke` had been red since batch 1 deployed (~10:47 AM PT): the wallet-band test read the Binder tab's designed band suppression as "the band stopped rendering". Re-pinned to `/nba-top-shot/market`; presence assertion unchanged. One other failure in the latest run only (pack-chase "Alert me" form not found in 20 s) — single run; the next scheduled run decides.
+
 ## Post-ship watch (what to read tomorrow)
+
+- `E2E DOM Smoke` next scheduled run: green, or the pack-chase "Alert me" test fails again (then it is a pattern — read the Chase-left cards' button rendering, not the test).
+- GSC "Duplicate without user-selected canonical" (61) and "chose different canonical" (17) should drain over the next crawls; "Not indexed" total may drop by ~80.
+- `trophy_moments` writes: a pin into a challenge case must land (the old `(user_id, slot)` arbiter is gone); any 42P10 on `/api/profile/trophy` means a stale client — none expected.
+- Dependabot flags 5 on main (minimatch, @babel/core via eslint toolchain — dev only; uuid 9/11 + deepmerge via `@onflow/fcl` — transitive; `elliptic` 6.6.1 DIRECT, "risky implementation", NO patched version — it is the signing dependency, so a swap is a Claude Code decision, not a bump).
 
 - `/api/search` p95 — the fuzzy arm adds ≤ 1 + 3 RPCs only on the empty path; pgss `rpc_search_names_fuzzy` mean should sit ~150 ms (the team leg). If `meta.fuzzy` answers look wrong for a real query, the threshold (0.45) and the ranking are in `20261106191250`.
 - Vercel runtime errors: no new group on `/api/search`, `/players/*`, `/teams/*`, `/<c>/collection`.
@@ -47,7 +66,7 @@
 ## Read, not shipped (measured; levers named)
 
 - **`get_pack_realized_ev_row` 5 s bounds (~4/day on `/[collection]/pack/dist/*`).** Body 3,476 buffers / 23 ms warm; the cost is the `pack_ev_latest` view's EV leg (a `pack_ask_state` hash of 2,027 rows = 2,041 buffer touches + 1,415 on `pack_ev_history`), so the overruns are contention, not plan. `mv_pack_ev_latest` is NOT a drop-in (374 of 1,392 TS dists absent, 412 `gross_ev` differ). Lever: a per-dist precompute of the EV leg, same freshness gate the 10-25 rip-leg MV uses. Trevor's standing "we want no errors" (11-04) makes this the next pack-page item.
-- `/disney-pinnacle/pack/dist/0` ("[OLD] Summer Splash", 0 minted) and the "Internal Test" / "Redemption Test" dists are sitemap-listed and indexable (the 09-07 prune keeps 0-minted as "unknown"). Five URLs; left.
+- ~~`/disney-pinnacle/pack/dist/0` "[OLD]" / "Internal Test" dists sitemap-listed~~ — **shipped as batch 6.**
 - `/share/*` is `Disallow`ed in robots.txt while the page says `index, follow` — consistent with the 10-03 decision (personal cards stay out of the index); noted only because a reader could mistake it for a contradiction.
 - Entity pages at 390 px put the subject ~440 CSS px below the top (header + ticker + collection banner + tab bar + wallet band + breadcrumb) — each layer is a recorded 07-25 / 08-22 decision; not re-litigated here. If Trevor wants the hero compact on entity routes, `CollectionBanner` + `WalletSearchBand` are the two places.
 
@@ -61,9 +80,13 @@
 
 ## Closed / RESOLVED this pass
 
+- Trophy-cases handoff `docs/handoffs/2026-11-06-trophy-cases-and-dame-time-challenge-apply.md`: steps 0–5 done (Trevor's own pin excepted).
+- `/disney-pinnacle/pack/dist/0` etc. (batch 6).
+
 - The overnight pass's queued `v_insights_trophies` max_ms re-baseline — already applied by Claude Code at 7:05 AM PT (ledger); trust 40/40 confirmed here.
 
 ## Revert paths
 
-- Code: `git revert 9ddc5f12f` (batch 1) / `git revert 76709f8b1` (batch 2) / `git revert e3a1c6a95` (batch 3) / `git revert c59fd8497` (batch 4).
+- Code: `git revert 9ddc5f12f` (batch 1) / `git revert 76709f8b1` (batch 2) / `git revert e3a1c6a95` (batch 3) / `git revert c59fd8497` (batch 4) / `git revert 0a5fb06` (batch 5) / `git revert 4eedcb7` (batch 6) / `git revert cfa4711` (e2e re-pin — only together with re-showing the band on the Binder tab).
+- Trophy cases: revert paths in the ledger entry + the two migrations' headers (re-add `trophy_moments_user_slot_key` FIRST, then the first migration's revert block; allowlist rows by identity).
 - DB: `DROP FUNCTION public.rpc_search_names_fuzzy(text, uuid, integer);` — the route degrades to the plain empty answer when the function is missing (tested).

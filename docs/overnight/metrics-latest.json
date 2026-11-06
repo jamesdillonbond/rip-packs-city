@@ -1,11 +1,11 @@
 {
-  "generated_at_pt": "2026-11-06 ~10:30 AM PT (daytime audit pass, Cowork cloud, add_repo direct push)",
-  "generated_at_utc": "2026-11-06T18:30Z",
+  "generated_at_pt": "2026-11-06 ~12:55 PM PT (daytime audit pass close-out, Cowork cloud, add_repo direct push)",
+  "generated_at_utc": "2026-11-06T20:55Z",
   "pass": "DAYTIME AUDIT (Trevor: 5-hour deep-dive QA across pages/tools/SEO/UX/CX/concierge/security/onboarding). Push AVAILABLE (two pushes, CI green). apply_migration AVAILABLE (two migrations applied). Not frozen. Handoff: docs/handoff-2026-11-06-daytime-audit-pass.md",
-  "shipped": 4,
+  "shipped": 7,
   "reverted": 0,
-  "idle": "n/a — 4 code commits + 3 migrations shipped across four batches (search typo fallback incl. teams/sets; one Sign In with ?next; og:image on 5 pages + guard; hub + Panini product JSON-LD; Binder band/font/pre-search state; mixed-case URL 308s; homepage SearchAction dropped). All four CI runs green, all verified live.",
-  "verdict": "GREEN. Security 0; trust 40/40 ok (overnight's trophies max_ms breach applied 7:05 AM PT); stalled []; 3 info alerts (designed Atlas 403s); 6 chronic Vercel groups, no new crash; client beacon 0 real in 7 d. 373-page curl sweep + 187-page 390px + 34-page light + 34-page desktop sweeps: 0 non-200, 0 overflow, 0 broken images. Shipped batches 1–4 (9ddc5f12f, 76709f8b1, e3a1c6a95, c59fd8497), each CI-green and verified live.",
+  "idle": "n/a — 7 code commits + 6 migrations across six batches + the trophy-cases handoff (search typo fallback incl. teams/sets; one Sign In with ?next; og:image on 5 pages + guard; hub + Panini product JSON-LD; Binder band/font/pre-search state; mixed-case URL 308s; homepage SearchAction dropped; 404s stop inheriting the collection canonical/og; 1970 game-date sentinel; issuer-labelled test dists out of the sitemap; e2e band monitor re-pinned). Trophy cases: migrations 1+allowlist+2 applied here, code landed by Claude Code (d6ae2f8). All CI runs green, all verified live.",
+  "verdict": "GREEN (close-out 12:55 PM PT: E2E DOM Smoke was red since ~10:47 AM on my batch-1 band suppression — re-pinned cfa4711; next scheduled run decides). Security 0; trust 40/40 ok (overnight's trophies max_ms breach applied 7:05 AM PT); stalled []; 3 info alerts (designed Atlas 403s); 6 chronic Vercel groups, no new crash; client beacon 0 real in 7 d. 373-page curl sweep + 187-page 390px + 34-page light + 34-page desktop sweeps: 0 non-200, 0 overflow, 0 broken images. Shipped batches 1–4 (9ddc5f12f, 76709f8b1, e3a1c6a95, c59fd8497), each CI-green and verified live.",
   "health": {
     "security_invariants": "clean (check_public_security_invariants [], secdef_anon_exec_drift 0, when_others_timeout_blind 0) ~8:45 AM PT.",
     "structural": "stalled_pipelines []. check_zero_yield_lanes: pack-pulls-chain-history (caught up — 0 unresolved TS pulls in 14 d, 4,658 rips/7 d; not a fault) + 3 retired Flowty listing-cache rows aging out of the 7-d window.",
@@ -56,5 +56,26 @@
     "Search typos on team/set names (nugets/lakerz/playofs -> 0) — fallback widened (rpc_search_names_fuzzy 20261106191250).",
     "Panini product pages had no JSON-LD — CollectionPage shipped; homepage SearchAction (target /share/{term}) dropped."
   ],
-  "housekeeping": "origin/main = e5dadf4 at start; two pushes (9ddc5f12f, 76709f8b1) each after fetch; no concurrent commits landed between. Ledger entries spliced at first ^### (1567 -> 1569 across the two; swallowed 0, future-dated 0). Session entry prepended to docs/sessions/2026-11.md. tooling-gotchas: stash/pop un-stages a staged deletion (preflight ENOENT). Memory: delegated-decisions + cowork-cloud-qa-and-twin-sessions updated."
+  "housekeeping": "origin/main = e5dadf4 at start; two pushes (9ddc5f12f, 76709f8b1) each after fetch; no concurrent commits landed between. Ledger entries spliced at first ^### (1567 -> 1569 across the two; swallowed 0, future-dated 0). Session entry prepended to docs/sessions/2026-11.md. tooling-gotchas: stash/pop un-stages a staged deletion (preflight ENOENT). Memory: delegated-decisions + cowork-cloud-qa-and-twin-sessions updated.",
+  "search_console_28d_to_11_04": {
+    "clicks": 72,
+    "impressions": 2250,
+    "ctr_pct": 3.2,
+    "avg_position": 12.1,
+    "indexed": 49436,
+    "not_indexed": 47640,
+    "top_pages_note": "8 of the top 13 clicked pages are Panini edition pages (CTR 10–60 %, pos 2–10); / has 10.3 % CTR at pos 20.4",
+    "not_indexed_buckets": {
+      "discovered_not_crawled": 19436,
+      "crawled_not_indexed": 15961,
+      "alternate_with_canonical": 6397,
+      "robots_blocked": 4333,
+      "noindex": 864,
+      "not_found_404": 394,
+      "page_with_redirect": 159,
+      "duplicate_no_user_canonical": 61,
+      "server_5xx": 18,
+      "google_chose_different_canonical": 17
+    }
+  }
 }
