@@ -404,6 +404,40 @@ function hasValidBypassToken(request: NextRequest): boolean {
 // unreachable to anonymous visitors AND still listed for crawlers; a tab removed
 // there and not added here serves a soft-404. Both directions are pinned in
 // __tests__/proxy-is-public-path.test.ts.
+// ── Mixed-case URLs fold to the lowercase canonical (2026-11-06) ──────────────
+// /NBA-Top-Shot/overview, /nba-top-shot/player/Jamal-Murray and
+// /nba-top-shot/set/2025-NBA-Playoffs-Common all 404'd (measured live) while the
+// lowercase forms are the pages — every collection, tab, player, team, set,
+// character, series and product slug this site mints is lowercase, and so are
+// /players and /teams hub slugs. A capitalised link someone typed or pasted is
+// the same page; answer 308 to it. Scoped on purpose: the first segment must be
+// a published collection or a hub root, and an EDITION slug is never folded —
+// UFC edition keys are uppercase by construction (…/edition/DIEGO-FERREIRA-…).
+// Wallet-bearing paths (/share/<addr>, /moment/<id>) do not start with these
+// segments, so a case-sensitive Solana address is never touched.
+// Loop-safe: the target has no uppercase letter, so it cannot match again.
+const CASE_FOLD_ROOTS = new Set(["nba-top-shot", "nfl-all-day", "laliga-golazos", "disney-pinnacle", "ufc", "candy-mlb", "panini-blockchain", "players", "teams"])
+const CASE_FOLD_ENTITY_TABS = new Set(["player", "team", "set", "character", "series", "product", "pack"])
+export function caseFoldedPath(pathname: string): string | null {
+  if (!/[A-Z]/.test(pathname)) return null
+  const seg = pathname.split("/")
+  const root = (seg[1] ?? "").toLowerCase()
+  if (!CASE_FOLD_ROOTS.has(root)) return null
+  const out = [...seg]
+  out[1] = root
+  if (root === "players" || root === "teams") {
+    for (let i = 2; i < out.length; i++) out[i] = out[i].toLowerCase()
+  } else {
+    if (out[2] !== undefined) out[2] = out[2].toLowerCase()
+    // /pack/dist/<id> and /pack/<id>: ids are numeric or lowercase; fold too.
+    if (out[3] !== undefined && CASE_FOLD_ENTITY_TABS.has(out[2])) {
+      for (let i = 3; i < out.length; i++) out[i] = out[i].toLowerCase()
+    }
+  }
+  const folded = out.join("/")
+  return folded === pathname ? null : folded
+}
+
 export const THIN_COLLECTION_MISSING_TABS =
   /^\/(candy-mlb)\/(sniper|badges|challenges|hot-floors|pack-sniper|fast-break|road-to-the-ring|play|series|profile)(?:\/|$)/
 
@@ -1518,6 +1552,16 @@ export async function proxy(request: NextRequest) {
   // URL as well as the decoded pathname so neither encoding slips through.
   if (pathname.includes("\\") || /%5c/i.test(request.url)) {
     return new NextResponse(null, { status: 404 })
+  }
+
+  // ── Mixed-case collection / hub URL → its lowercase page (308) ──────────
+  if (request.method === "GET" || request.method === "HEAD") {
+    const folded = caseFoldedPath(pathname)
+    if (folded) {
+      const url = request.nextUrl.clone()
+      url.pathname = folded
+      return NextResponse.redirect(url, 308)
+    }
   }
 
   // ── Thin collections: a tab that does not exist redirects to the overview ──

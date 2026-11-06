@@ -244,6 +244,12 @@ export default function CollectionMomentTable(props: {
   const subjectHref = (row: MomentRow): string =>
     isPinnacle ? momentRowHref(collectionSlug, row) : (momentSubjectHref(collectionSlug, row.playerName, row.team) ?? "#")
   const unitNoun = isPinnacle ? "pins" : "moments"
+  // 2026-11-06 (390 px + desktop QA): before any wallet is loaded the table was
+  // a header row over NOTHING — fifteen column labels and a blank. A first-time
+  // visitor (the Binder tab is anonymous-public) got no sentence saying what to
+  // do. Not an error state and not the post-search "nothing here" claim above;
+  // a third, honest state: nothing has been asked for yet.
+  const notSearchedCopy = "Enter a username or wallet above to load its " + unitNoun + " here \u2014 free, no sign-in."
 
   // Task 2: FMV Alert UI state
   const [alertOpenMomentId, setAlertOpenMomentId] = useState<string | null>(null)
@@ -281,7 +287,9 @@ export default function CollectionMomentTable(props: {
         {/* Main table / mobile cards */}
         {isMobile ? (
           <div className="flex flex-col gap-2">
-            {filteredRows.length === 0 && hasSearched && !loading ? (
+            {!hasSearched && !loading && rows.length === 0 ? (
+              <div className="rpc-table-empty" data-testid="binder-not-searched">{notSearchedCopy}</div>
+            ) : filteredRows.length === 0 && hasSearched && !loading ? (
               // The desktop table carries these two messages; the mobile branch
               // was a bare .map(), so an empty result rendered a BLANK area with
               // no explanation — on the primary phone surface. The two strings
@@ -567,7 +575,11 @@ export default function CollectionMomentTable(props: {
               </tr>
             </thead>
             <tbody>
-              {filteredRows.length === 0 && hasSearched && !loading ? (
+              {!hasSearched && !loading && rows.length === 0 ? (
+                <tr>
+                  <td colSpan={15} className="rpc-table-empty" data-testid="binder-not-searched">{notSearchedCopy}</td>
+                </tr>
+              ) : filteredRows.length === 0 && hasSearched && !loading ? (
                 <tr>
                   <td colSpan={15} className="rpc-table-empty">
                     {rows.length === 0

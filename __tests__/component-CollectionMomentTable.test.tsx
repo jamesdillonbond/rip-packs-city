@@ -222,6 +222,23 @@ describe("CollectionMomentTable", () => {
     expect(container.textContent).not.toContain("Damian Lillard")
   })
 
+  it.each([false, true])("before any search (isMobile=%s) says what to do instead of a header over nothing (2026-11-06)", (isMobile) => {
+    const { container, queryByTestId } = render(
+      <CollectionMomentTable {...baseProps({ isMobile, filteredRows: [], rowsCount: 0, hasSearched: false, input: "" })} />
+    )
+    expect(queryByTestId("binder-not-searched")?.textContent).toContain("Enter a username or wallet above to load its moments here")
+    // and it is NOT the post-search "nothing here" claim
+    expect(container.textContent).not.toContain("No moments found for this wallet")
+  })
+
+  it("after a search that found nothing, the post-search claim shows and the pre-search prompt does not", () => {
+    const { container, queryByTestId } = render(
+      <CollectionMomentTable {...baseProps({ filteredRows: [], rowsCount: 0, hasSearched: true })} />
+    )
+    expect(queryByTestId("binder-not-searched")).toBeNull()
+    expect(container.textContent).toContain("No moments found for this wallet on this collection.")
+  })
+
   it("renders a row with no player/set name without crashing (null-name fallbacks)", () => {
     const { container } = render(
       <CollectionMomentTable
