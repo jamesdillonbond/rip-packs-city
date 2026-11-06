@@ -944,7 +944,12 @@ async function main() {
     // read (WC 5,256 cards p50 75 h; others 30,549 p50 53 h; ~300 cards/h): 1:1 → WC p50 ~18 h,
     // others ~4 d; 3:1 would push the others to ~8 d. PANINI_PRICED_PER_OTHER=N sets N:1; 0 restores
     // the plain stalest-first order.
-    const pricedPerOther = Number.parseInt(process.env.PANINI_PRICED_PER_OTHER ?? "1", 10);
+    // 2026-11-05 (~7:00 PM PT): default now 0 — the PREMISE above expired. The FMV engine prices
+    // EVERY product now (30 d read: 35,013 non-WC editions priced, 17,064 HIGH/MEDIUM), and the 1:1
+    // weighting gave WC's 5,288 cards half the walk: WC p50 33 h with 0 older than 9 d, the other
+    // 35k p50 103 h with 8,274 older than 9 d — the priced tail the 11-05 evening handoff routed.
+    // Plain stalest-first spreads the walk evenly. Set PANINI_PRICED_PER_OTHER=1 to bring back 1:1.
+    const pricedPerOther = Number.parseInt(process.env.PANINI_PRICED_PER_OTHER ?? "0", 10);
     ({ pskus, orderMode } = buildWalkOrder({
       priority: priorityPskus, known, knownComplete, discovered,
       isPriced: (p) => setIdOf(p) === PRICED_SET_ID, pricedPerOther: Number.isFinite(pricedPerOther) ? pricedPerOther : 0,

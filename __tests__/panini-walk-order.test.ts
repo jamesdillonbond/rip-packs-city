@@ -59,8 +59,9 @@ describe("buildWalkOrder", () => {
     expect(src).toMatch(/buildWalkOrder\(\{\s*priority: priorityPskus, known, knownComplete, discovered,/)
     expect(src).toMatch(/isPriced: \(p\) => setIdOf\(p\) === PRICED_SET_ID/)
     expect(src).toMatch(/const PRICED_SET_ID = 2332;/)
-    // 1:1 by default (sized 10-18: WC p50 ~18 h, others ~4 d); 3:1 would push the others to ~8 d.
-    expect(src).toMatch(/PANINI_PRICED_PER_OTHER \?\? "1"/)
+    // Re-pinned 2026-11-05: OFF by default (plain stalest-first) — every product is priced now, and
+    // 1:1 left 8,274 non-WC editions older than 9 d while WC had none. The knob stays (env N → N:1).
+    expect(src).toMatch(/PANINI_PRICED_PER_OTHER \?\? "0"/)
     expect(src).toMatch(/j\?\.priority_pskus/)
   })
 })
