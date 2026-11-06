@@ -192,6 +192,43 @@ describe("the liveness decision", () => {
     expect(r.dead.map((d) => d.file)).toEqual(["x.yml"])
   })
 
+  // 2026-11-06: cadence-swap-lint.yml (weekly, `41 17 * * 1`) was added Mon 11-02
+  // AFTER that day's slot, so its first possible fire was 11-09 — but the fixed 48 h
+  // grace expired 11-04 and red `main` daily. The grace now spans one full period
+  // plus the silence allowance (192 h for a weekly schedule).
+  const weekly = [{ path: ".github/workflows/w.yml", file: "w.yml", crons: ["41 17 * * 1"] }]
+
+  it("a never-fired WEEKLY workflow 3 days old is PENDING (its first slot may not have come)", () => {
+    const r = classifyLiveness({
+      workflows: weekly,
+      observed: { "w.yml": { lastScheduledRunAt: null, scheduledRuns: 0, createdAt: hoursAgo(72) } },
+      now: NOW,
+    })
+    expect(r.dead).toHaveLength(0)
+    expect(r.rows[0].pending).toBe(true)
+    expect(livenessExitCode(r)).toBe(0)
+  })
+
+  it("a never-fired WEEKLY workflow 9 days old is DEAD (a full period passed with no fire)", () => {
+    const r = classifyLiveness({
+      workflows: weekly,
+      observed: { "w.yml": { lastScheduledRunAt: null, scheduledRuns: 0, createdAt: hoursAgo(9 * 24) } },
+      now: NOW,
+    })
+    expect(r.dead.map((d) => d.file)).toEqual(["w.yml"])
+    expect(r.rows[0].pending).toBe(false)
+    expect(livenessExitCode(r)).toBe(1)
+  })
+
+  it("the widened grace does not loosen a SUB-DAILY never-fired workflow past 48 h", () => {
+    const r = classifyLiveness({
+      workflows: wf,
+      observed: { "x.yml": { lastScheduledRunAt: null, scheduledRuns: 0, createdAt: hoursAgo(49) } },
+      now: NOW,
+    })
+    expect(r.dead.map((d) => d.file)).toEqual(["x.yml"])
+  })
+
   it("clears the worst gap ever measured, so it is green on today's shedding", () => {
     // The bound is DERIVED: 24h against a measured maximum of 12.7h (Pipeline
     // Sentinel, 2026-08-29, contiguous pages). A guard that is red on day one

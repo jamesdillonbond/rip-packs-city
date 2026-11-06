@@ -236,8 +236,16 @@ export function classifyLiveness({
     // that and still unfired is the "cron that never matches" shape below, which
     // stays red. `createdAt` comes from the workflows API; without it (older
     // callers, tests) the grace does not apply and never-fired is dead as before.
+    //
+    // ⚠ The grace is the LARGER of that fixed window and the schedule's own silence
+    // bound (2026-11-06). A WEEKLY workflow added just after its slot cannot fire for
+    // up to 7 days, so a fixed 48 h graced it for two days and then red `main` daily
+    // until the first slot: cadence-swap-lint.yml (cron 41 17 * * 1, added Mon 11-02
+    // 23:13Z, after that day's 17:41Z slot) read "never fired" from 11-04 to 11-09.
+    // A schedule cannot be expected to have fired before one full period has passed.
     const ageHours = seen.createdAt ? (now - Date.parse(seen.createdAt)) / 3600000 : Infinity
-    const pending = seen.lastScheduledRunAt === null && ageHours < newWorkflowGraceHours
+    const graceHours = Math.max(newWorkflowGraceHours, silenceThresholdHours(perDay, maxSilentHours))
+    const pending = seen.lastScheduledRunAt === null && ageHours < graceHours
 
     rows.push({
       file: wf.file,
