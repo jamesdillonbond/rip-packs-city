@@ -17,6 +17,13 @@
 
 - `20261105213600` (recorded `20261105213950`): All Day editions of circulation ≤ 50 cap a STALE price at the last non-premium sale. 176 prices re-priced ($42,159 → $24,946), backed up and logged in `fmv_restatements`. Edition 1919 now reads $69. Item 3 below is done.
 
+## Update ~5:07 PM PT
+
+- **Scheduled tasks:** the 11-09 weekly-digest verify and the 11-11 Rookie Debut readiness check were reminders bound to old conversations (the shape that failed eight times before). Recreated as standalone tasks at the same times; originals paused (Trevor approved). Ledger has the IDs.
+- **Vercel's chronic error groups** for edition / player / set detail and the fmv-recalc `55P03` lock timeout all last fired 11-04 7:47:57–7:48:22 PM PT — between that evening's bulk Top Shot re-price (`20261105034410`) and the next apply's schema reload (`20261105034852`). The known apply-burst cost, not four defects; do not chase them unless they recur outside an apply window.
+- **#213 survival read:** all 176 re-priced prices held; 24 already rewritten by the sweep, all at the intended value.
+- **#66 owed CTR measurement done:** price stays out of edition titles (table in `docs/strategy/seo-2026-09-06-search-console-read.md`).
+
 ## Queued for Trevor / Claude Code
 
 1. **[P1, apply-capable session, 1 night] Apply `20261105063000_audit_20261104_edition_detail_capped_survives_bid_floor`.** Edition pages still say "from asks — no corroborating sales" on Top Shot prices that a sales cap set and a live bid then lifted (71 rows on 11-04). Re-read 11-05 ~11:40 AM PT: live `get_edition_detail` body md5 = `377eb913…` (the file's guard), anon EXECUTE false; the file differs from its base `20261029164512` by the one regex. Post-checks are in `docs/handoff-2026-11-04-edition-detail-capped-bidfloor.md`.

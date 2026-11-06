@@ -12,6 +12,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🧷 Test anchor (kept here on purpose when the 10-08 entry that quoted it was rolled 2026-10-24): git conflict markers such as `<<<<<<<` quoted in prose — `__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts the live ledger still quotes one; never at column 0, so the anchored resolver check does not match.
 
+### 2026-11-05 · ⚙ SCHEDULED TASKS (2 recreated, 2 paused; Trevor approved) — **the 11-09 weekly-digest verify and the 11-11 Rookie Debut readiness check now run as standalone fresh-session tasks; their session-bound originals are paused** (Claude Code cloud, ~5:07 PM PT)
+
+- **Why:** both originals were one-shot reminders that wake a specific earlier conversation (`persistent_session_id`). Eight past reminders of that shape all ended `FAILED` / `auto_disabled_session_gone` (Dapper recovery, R133, autograph sweep, #185, Panini freshness, #173, chain-arrival, #169) — a check that silently never runs.
+- **New:** `trig_014SPH5bgmRHLJ1mqn9oPmS6` "Verify first RPC weekly digest send (standalone)", Mon 11-09 8:45 AM PT; `trig_01K38Vu34tFVEPwqsN58hdco` "Rookie Debut 2026 readiness check (standalone)", Wed 11-11 6:17 PM PT. Same checks as the originals, rewritten as complete standalone prompts (project IDs, add_repo + push route). Both automatic approval, push notification on.
+- **Paused (not deleted):** `trig_01FxwnSABs34wtgwgcdG8wVz`, `trig_01WuMAMBr5B68sAUVuB9cBNx`. The 11-13 Rookie Debut pack-value check (`trig_01MMwtJzcBKU8W16fDoDhffm`) was already fresh-session — untouched.
+- **Revert:** disable the two new tasks and re-enable the originals with `update_trigger`.
+
 ### 2026-11-05 · 🗄 APPLIED (`20261105213600`, Trevor approved) — **#213 closed: an All Day STALE price on an edition of circulation ≤ 50 is capped at the last NON-PREMIUM sale (not #1 / jersey / last mint); 176 prices re-priced $42,159 → $24,946** (Claude Code cloud, ~1:35–1:40 PM PT; Trevor: "Do what makes sense" → "Apply it")
 
 - **Decision:** the blanket rule loses one hit-rate sale in the circulation > 50 cell, so only the scope that wins or ties every backtest cell in both halves shipped (All Day ≤ 50; numbers in #213). Top Shot and All Day > 50 keep `serial > 25`.
