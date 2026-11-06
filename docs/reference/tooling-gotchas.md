@@ -2462,3 +2462,7 @@ A one-shot script that found the last `^import ` and then walked forward to the 
 
 ### ⚠ Two `vitest run` launches on the same tree halve each other, and the 30-min background cap then kills BOTH (2026-11-04, PT)
 A first launch whose wrapper "completed" was still running (its inner `&`), a second was started on top, 10 workers each; neither finished inside the cap. `ps -eo pid,etime,args | grep "[v]itest run"` before launching a suite; one at a time. When the full suite cannot be run locally, the gate is tsc + `lint:ratchet` + `ci:guards` + every test file that names a touched route (`grep -rl <route-dir> __tests__`), with CI as the full-suite gate on the push — and say so in the ledger.
+
+### `git stash` / `stash pop` un-stages a STAGED deletion — and every tree-walk guard then ENOENTs (2026-11-06)
+
+A plain `git stash` saves index + worktree and `git stash pop` (without `--index`) restores the worktree only, so a file you had `git rm`'d comes back as "deleted in the worktree, still in the index". `git ls-files` — which `json-ld-is-script-safe`, `deploy-and-ci-agree-on-what-docs-means` and the component-coverage walker enumerate with — then lists a file that is not on disk, and `preflight` reds with `ENOENT … open 'components/<file>.tsx'` on tests that have nothing to do with your change. CI is unaffected (a fresh checkout has no such index), so the red is local only. Fix: `git rm --cached <file>` again (or `git add -A`) before re-running preflight. Measured 2026-11-06 after a stash used to compare lint counts.
