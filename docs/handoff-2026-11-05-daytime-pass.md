@@ -28,7 +28,7 @@
 
 - **Panini >9 d priced tail (routed by the evening Cowork handoff) — FIXED in runner code (`a1124dff`).** The 10-18 walk weighting gave World Cup half of every walk because it was the only priced product; every product is priced now. Read 7:00 PM PT: WC 5,288 editions p50 33 h, 0 older than 9 d; others 35,013 (17,064 HIGH/MEDIUM) p50 103 h, 8,274 older than 9 d. `PANINI_PRICED_PER_OTHER` now defaults to 0 (stalest-first). Live after the laptop's 5:37 AM PT pull; read 11-07 (focus.md Panini steer).
 - **Evening apply recorded:** `supabase/migrations/20261106024733_ts_sold_floor_clear_reads_unmapped_sales.sql` (Cowork applied `close_sold_topshot_listings_and_floors` at ~6:47 PM PT; the file body equals live `prosrc`; anon/authenticated EXECUTE false).
-- **Items 1–3 below are DONE** (applied / shipped earlier today). What is still Trevor's: two Vercel rate-limit firewall rules, branch protection on `main`, and the one-line `cadence_exempt_lanes` DELETE (`DELETE FROM public.cadence_exempt_lanes WHERE pipeline_pattern = 'chain-arrivals';`), plus item 4.
+- **Items 1–3 below are DONE** (applied / shipped earlier today). The `cadence_exempt_lanes` chain-arrivals DELETE is also done: the Cowork evening session ran it ~8:08 PM PT with a backup (`audit_20261105_chain_arrivals_cadence_exempt_backup`, RLS on, anon no access); the table read empty at 8:20 PM PT. Still Trevor's: two Vercel rate-limit firewall rules, branch protection on `main`, plus item 4.
 - **Owed reads:** Panini backlog + walk 11-06 / 11-07; #210 0.90-haircut lead with the 11-09 week; first All Day accuracy row from job 829 on Mon 11-09 3:45 AM PT.
 
 ## Queued for Trevor / Claude Code
