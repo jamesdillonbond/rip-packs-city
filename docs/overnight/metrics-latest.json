@@ -1,55 +1,54 @@
 {
-  "generated_at_pt": "2026-11-05 ~11:56 AM PT (daytime autonomous pass, Claude Code cloud, repo attached with push)",
-  "generated_at_utc": "2026-11-05T19:56Z",
-  "pass": "DAYTIME (Trevor: work autonomously ~2 h). Push AVAILABLE (dry-run exit 0). apply_migration REFUSED by this session's classifier (production deploy) — read-only + docs + one committed-unapplied migration. Not frozen. Handoff: docs/handoff-2026-11-05-daytime-pass.md",
-  "shipped": 3,
+  "generated_at_pt": "2026-11-06 ~1:15 AM PT (overnight autonomous pass, Cowork cloud, laptop-VM clone + .rpc-git-cred)",
+  "generated_at_utc": "2026-11-06T09:15Z",
+  "pass": "OVERNIGHT (genuine — clock verified vs DB, no skew). Push AVAILABLE (dry-run up-to-date). apply/UPDATE on shared DB REFUSED by this session's auto-mode classifier (Modify Shared Resources) — read-only + docs only; one config-row fix queued. Not frozen. Handoff: docs/handoff-2026-11-06-overnight-pass.md",
+  "shipped": 0,
   "reverted": 0,
-  "idle": "none — both waiting migrations applied ~1:26 PM PT after Trevor approved in chat.",
-  "verdict": "GREEN. 3 shipped (20261105063000, 20261105194500, 20261105213600 #213 — applied with Trevor's approval) · oldest routed: none. Security 0; trust 40/40 ok, 0 breaches; stalled []; 6 info alerts (designed Atlas 403s); 10 chronic Vercel groups; client beacon 0 real errors in 7 d. #226 closed on its exit.",
+  "idle": "none — one actionable item (trophies max_ms re-baseline) verified-benign and QUEUED because the classifier refused the shared-resource write.",
+  "verdict": "GREEN. 0 production shipped, 0 reverted. 1 trust BREACH (public_board_slow_count=1) verified BENIGN (v_insights_trophies cold-probe flicker: warm 1,104ms, 2,687 real rows; 3000ms floor stale for the grown view) — one-row re-baseline queued. Security 0; trust 39/40 ok; stalled []; 2 info alerts (designed Atlas); 5 chronic Vercel groups; client beacon 0 real in 7 d. Post-ship watch clean; Panini backlog on track (12,368, -2.7k/day).",
   "health": {
-    "security_invariants": "clean (invariants [], anon_write_holes [], rls_off_base_tables [], secdef_anon_violations []) via rpc_ops_snapshot 19:37Z.",
+    "security_invariants": "clean (invariants [], anon_write_holes [], rls_off_base_tables [], secdef_anon_violations []) via rpc_ops_snapshot 09:06:46Z.",
     "structural": "stalled_pipelines []. wmc_null_edition_key [], backward_cursor_rewinds [], function_search_path_drift [], procedure pins/txn-control [], cross_collection_mat_staleness [], suppression_*_drift []. sentinel_ts_uuid_editions_48h 0, ts_uuid_dupes_created_24h 0.",
-    "trust_health_breaches": 0,
-    "trust_health_note": "0 breaches, 40/40 ok. candy_sales_stale_hours 592.3 (<1114.9). edition_integrity_flags 28 (<250). fmv_sanity_flags 0. topshot_fmv_stale_hours 0.2. topshot_sold_floor_asks_found 0 (<50). trust_precompute_max_age 5.83 (<13). panini_coverage_pct_drop 5.9 (<15).",
+    "trust_health_breaches": 1,
+    "trust_health_note": "1 breach: public_board_slow_count=1 (BENIGN — v_insights_trophies 6-hourly cold probe 4,703ms > max_ms 3,000; warm EXPLAIN ANALYZE 1,104ms, err NULL, 2,687 rows; 3000 floor stale for a view grown 827->2,687 rows since 08-01; re-baseline to 7000 queued). 39 others ok: candy_sales_stale_hours 605.8 (<1114.9), edition_integrity_flags 22 (<250), fmv_sanity_flags 0, topshot_fmv_stale_hours 0.3, topshot_sold_floor_asks_found 26 (<50), public_board_empty_count 0 (<1), panini_coverage_pct_drop 5.9 (<15), trust_precompute_max_age 5.31 (<13).",
     "stalled_pipelines": "[]",
-    "pipeline_fails_24h": "all upstream 0: atlas-pack-market 14, topshot-pack-supply-atlas 8, gha-schedule-watchdog 5, and 12 lanes at 1. pipeline_alerts 6 info (Atlas Cloudflare 403s editions 8.3% / market-feed 7.9% / pack-supply / pack-book, 1 pack-supply 404, 3 moved-Moment hydration panics); every lane's last 200 at 19:35-19:37Z.",
-    "sentry": "dark (SDK removed #34). client_error beacon: 0 real errors in 7 d (only the 11-04 positive-control probe).",
-    "vercel": "prod: recent docs-only commits CANCELED by ignoreCommand as designed. 24h runtime: 10 groups, all chronic (first seen Jul-Oct); newest a get_player_top_sales statement timeout 11:22 AM PT, degraded per design.",
-    "accuracy_7d": "fmv_sales_backtest published within±25 / median ratio: Top Shot 70.8 / 1.000 (n 16,525; HIGH 76.1, MEDIUM 72.2, LOW 55.8 / 0.897, ASK_ONLY 48.9 / 1.200). All Day 57.6 / 0.900 (n 3,574; HIGH 70.6, MEDIUM 61.7, LOW 39.9 / 0.773, ASK_ONLY 44.2 / 1.008). Golazos 14 d 80.4 / 0.900 (n 56). Pinnacle since 10-24: ALL 73.6 vs naive5 71.2 (n 2,502)."
+    "pipeline_fails_24h": "all upstream 0: topshot-pack-supply-atlas 13, atlas-pack-market 12, gha-schedule-watchdog 7, rest <=3. pipeline_alerts 2 info (moved-Moment hydration 400s 4.5% last ok 09:03Z; Atlas pack-supply 404 1/240 last 200 09:06Z).",
+    "sentry": "dark (SDK removed #34). client_error beacon: 0 real errors in 7 d (positive-control probe only).",
+    "vercel": "prod serves last code READY; last 5 prod deploys all CANCELED = docs/migration-only commits (ignoreCommand) incl. tip cd7873c3e. 24h runtime: 5 groups, all chronic (first-seen Jul-Sep; pack_realized_ev/get_pack_contents/pack_lifecycle >5000ms, set-activity + player-top-sales statement-timeout->degrade), honest degrade-to-empty, no new crash group. #228 absent.",
+    "post_ship_watch": "CLEAN. 20261106051049 serial-backfill newest-first resolved the 115-row seller wave (2 TS NULL-serial in 3 d); 20261106024733 sold-floor clear holds (arm 26); perfect-mint floor 44->10 holds (empty_count 0); 11-04/11-05 FMV ships no regression (fmv_sanity 0, edition_integrity 22)."
   },
   "fmv_high_med": {
-    "nba_top_shot": 6698,
-    "panini_blockchain": 17972,
-    "nfl_all_day": 1644,
-    "disney_pinnacle": 932,
-    "candy_mlb": 65,
+    "nba_top_shot": 6798,
+    "panini_blockchain": 17998,
+    "nfl_all_day": 1646,
+    "disney_pinnacle": 937,
+    "candy_mlb": 55,
     "laliga_golazos": 1,
     "ufc_strike": 0
   },
-  "fmv_high_med_note": "HIGH+MEDIUM from rpc_ops_snapshot fmv_by_collection (computed 13:35Z). nba HIGH 1194 + MED 5504. panini HIGH 17114 + MED 858. nfl HIGH 201 + MED 1443. pinnacle HIGH 242 + MED 690. candy HIGH 10 + MED 55. golazos MED 1. ufc 0 (STALE 573 / NO_DATA 44).",
+  "fmv_high_med_note": "HIGH+MEDIUM from rpc_ops_snapshot fmv_by_collection (computed 05:35Z). nba HIGH 1234 + MED 5564. panini HIGH 17141 + MED 857. nfl HIGH 191 + MED 1455. pinnacle HIGH 245 + MED 692. candy HIGH 8 + MED 47. golazos MED 1. ufc 0 (STALE 573 / NO_DATA 44).",
   "editions_by_collection": {
-    "nba_top_shot": 14688,
-    "panini_blockchain": 40249,
+    "nba_top_shot": 14696,
+    "panini_blockchain": 40302,
     "nfl_all_day": 6190,
     "laliga_golazos": 575,
     "ufc_strike": 617,
     "candy_mlb": 125
   },
-  "editions_note": "nba 14,688 (+6); others flat vs the overnight pass.",
-  "deltas_vs_prev": "db 46,351 -> 44,740 MB (-1,611; net._http_response 6 h TTL sawtooth on its way down). FMV HIGH+MED: nba 6,662->6,698 (+36); panini 17,991->17,972 (-19); nfl 1,646->1,644 (-2); pinnacle 935->932 (-3); candy/golazos/ufc flat. editions nba +6. trust breaches 0->0.",
+  "editions_note": "nba 14,696 (+8); panini 40,302 (+53); others flat vs the 11-05 daytime pass.",
+  "deltas_vs_prev": "db 46,351 -> 46,572 MB (+221; net._http_response 6h-TTL sawtooth). FMV HIGH+MED: nba 6,698->6,798 (+100); panini 17,972->17,998 (+26); nfl 1,644->1,646 (+2); pinnacle 932->937 (+5); candy 65->55 (-10, tiny collection churn); golazos/ufc flat. editions nba +8, panini +53. trust breaches 0->1 (benign).",
+  "panini_backlog": "older-than-7d 12,368 (was 14,755 on 11-05 ~11:45 AM PT; -2.7k/day, ahead of expected -2.5k/day). oldest last_seen 2026-10-26 07:17Z. total editions 40,302. On track; 11-07 read owed (backlog + walk-weighting-off regression watch).",
   "carried_queue": [
-    "#228 cold-whale collection-snapshot timeout — watch; next lever CDN warm (route/edge).",
-    "Panini old-catalogue backlog — focus.md watch, reads 11-06/11-07 owed; on track.",
+    "v_insights_trophies max_ms 3000->7000 re-baseline — NEW, verified-benign, ready-to-run SQL + revert in handoff (classifier refused the write this session).",
+    "#228 cold-whale collection-snapshot timeout — next lever CDN warm (route/edge, OFF-LIMITS); not recurring.",
     "#58 OPENSEA_API_KEY (Trevor; candy re-verify ~11-27).",
     "net._http_response growth lever (P4, Trevor; weekly read ~11-11).",
     "cron-job.org account has no MFA (P3, Trevor)."
   ],
   "resolved_this_pass": [
-    "#226 CLOSED on its exit (200/200 chain-verified; 6 sweeps, 0 disagreements).",
-    "focus.md refresh-conflated-editions steer closed (11-05 7:17 AM PT tick landed).",
-    "#208 weekly exit MET (part (a) still open); Pinnacle #193 exit holds; #210 split attributes the LOW dip to untouched rows.",
-    "Applied 20261105063000 (recorded 20261105212546) and 20261105194500 (recorded 20261105212641, pg_cron 829) ~1:26 PM PT with Trevor's approval; mint walk 11-05 run fired 12:14 PM PT.",
-    "#213 SHIPPED + closed: 20261105213600 (recorded 20261105213950), All Day circ <= 50 premium-serial stale cap, 176 prices re-priced $42,159 -> $24,946; 1919 now $69."
+    "Inbox 2026-11-06T0109Z + 0414Z confirmed dispositioned by earlier sessions and holding (sold-floor arm 26 ok; perfect-mint empty_count 0 ok).",
+    "Panini backlog 11-06 read done (12,368, on track).",
+    "Post-ship watch on all 11-04/11-05/11-06 ships: no regression, no revert."
   ],
-  "housekeeping": "origin/main = eca9d2b at start and at write-up (no concurrent commits). Ledger entry spliced at first ^### (1556 -> 1557; swallowed 0, future-dated 0). known-issues index regenerated (#226 open -> closed, diffed: 2 lines). Session entry prepended to docs/sessions/2026-11.md. No .lock present; none taken."
+  "housekeeping": "origin/main = cd7873c3e at start and at write-up (no concurrent commits). Ledger entry spliced at first ^### (1564 -> 1565; swallowed 0, future-dated 0). Session entry prepended to docs/sessions/2026-11.md. Lock cowork-20261106T0904Z-24876 taken on the mount; released at exit."
 }
