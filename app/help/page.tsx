@@ -113,6 +113,19 @@ const FAQS: Faq[] = [
     ),
   },
   {
+    q: "What are trophy cases and challenges?",
+    a: (
+      <>
+        Signed in, your <strong>Trophy Case</strong> on the dashboard holds the six Moments or cards you most want to show
+        off; it is public at <code>/profile/&lt;username&gt;/trophy-case</code>. Below it, <strong>More Trophy Cases</strong>{" "}
+        lets you build extra themed cases (up to 10) and enter <strong>challenges</strong> — the first is{" "}
+        <Link href="/trophy-challenges/dame-time" style={LINK}>Dame Time</Link>: up to six Damian Lillard pieces, NBA Top
+        Shot Moments and Panini cards both count. Only pieces you hold (under your saved wallets or linked Panini username)
+        can go in, and RPC checks each pin. Every extra case and challenge entry shows on your public profile.
+      </>
+    ),
+  },
+  {
     q: "How do I delete my account or my data?",
     a: (
       <>
