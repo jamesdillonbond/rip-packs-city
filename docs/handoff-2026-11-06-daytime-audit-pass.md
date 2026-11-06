@@ -29,7 +29,7 @@
 6. **Mixed-case URLs → 308.** `/NBA-Top-Shot/overview`, `/nba-top-shot/player/Jamal-Murray`, `/nba-top-shot/set/2025-NBA-Playoffs-Common`, `/nba-top-shot/team/Denver-Nuggets` all 404'd. `proxy.ts caseFoldedPath`: first segment a published collection or hub root → 308 to the lowercase path (tab + player/team/set/character/series/product/pack slug), NEVER an edition key (UFC keys are uppercase), never `/share` / `/moment` / queries. Guard `proxy-case-folds-mixed-case-urls.test.ts`.
 7. **Binder pre-search empty state.** The table showed fifteen column headers over nothing; it now says "Enter a username or wallet above to load its moments here — free, no sign-in." (desktop + mobile), distinct from the post-search "No moments found" claim; both pinned.
 
-**Batch 3 — ledger + code commits (shas in the ledger entry).**
+**Batch 3 — `b579599` (ledger) + `e3a1c6a95` (code); CI result in the digest.**
 
 8. **Panini product pages carry JSON-LD.** The 68 `/panini-blockchain/product/<slug>` pages (indexable, sitemap-listed since 10-25) were the one entity route with no structured data; they now publish CollectionPage + BreadcrumbList + an ItemList of the top editions via the series pages' `collectionEntityJsonLd`.
 9. **The homepage WebSite JSON-LD drops its SearchAction** — its target was `/share/{search_term_string}`, a wallet-card route robots.txt disallows, not a search; Google retired the sitelinks search box in Nov 2024.
@@ -61,5 +61,5 @@
 
 ## Revert paths
 
-- Code: `git revert 9ddc5f12f` (batch 1) / `git revert 76709f8b1` (batch 2) / `git revert <batch-3 code sha>`.
+- Code: `git revert 9ddc5f12f` (batch 1) / `git revert 76709f8b1` (batch 2) / `git revert e3a1c6a95`.
 - DB: `DROP FUNCTION public.rpc_search_players_fuzzy(text, uuid, integer);` — the route degrades to the plain empty answer when the function is missing (tested).
