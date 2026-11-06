@@ -49,6 +49,10 @@ vi.mock("@/lib/supabase", () => {
         state.lastFilters.push([col, val])
         return b
       },
+      is: (col: string, val: any) => {
+        state.lastFilters.push([col, val])
+        return b
+      },
       order: () => b,
       single: async () => state.result,
       maybeSingle: async () => state.result,
@@ -145,6 +149,19 @@ describe("PATCH /api/profile/trophy — what it writes", () => {
     // caption any other collector's trophy by slot number.
     expect(state.lastFilters).toContainEqual(["user_id", "u-1"])
     expect(state.lastFilters).toContainEqual(["slot", 2])
+  })
+
+  it("scopes a main-case caption to case_id IS NULL (multiple cases, 2026-11-06)", async () => {
+    await PATCH(req({ slot: 2, note: "hi" }))
+    // Without it, captioning main-case slot 2 would also caption slot 2 of every
+    // other trophy case the collector has.
+    expect(state.lastFilters).toContainEqual(["case_id", null])
+  })
+
+  it("rejects a malformed caseId rather than falling back to the main case", async () => {
+    const res = await PATCH(req({ slot: 2, note: "hi", caseId: "not-a-uuid" }))
+    expect(res.status).toBe(400)
+    expect(state.lastUpdate).toBeNull()
   })
 
   it("stores NULL, not an empty string, when the caption is cleared", async () => {

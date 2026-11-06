@@ -14,6 +14,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { requireUser } from "@/lib/auth/supabase-server";
 import { apiErrorResponse } from "@/lib/api-error";
+import { loadOwnCase, parseCaseId } from "@/lib/trophy/cases";
 
 export async function POST(req: NextRequest) {
   let user;
@@ -56,9 +57,23 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "duplicate ids" }, { status: 400 });
   }
 
+  // Optional case scope (2026-11-06): absent = the main case. The RPC scopes
+  // its delete/re-insert to this one case, so reordering a challenge entry can
+  // never touch the main case's rows (or the reverse).
+  const caseId = parseCaseId((body as { caseId?: unknown })?.caseId);
+  if (caseId === false) {
+    return NextResponse.json({ error: "caseId must be a trophy case id" }, { status: 400 });
+  }
+  if (caseId != null) {
+    const own = await loadOwnCase(supabase, user.id, caseId);
+    if (!own.ok) return apiErrorResponse(own.error, "api/profile/trophy/reorder", "Couldn't save your arrangement.");
+    if (!own.case) return NextResponse.json({ error: "That trophy case doesn't exist." }, { status: 404 });
+  }
+
   const { error } = await supabase.rpc("reorder_trophy_slots", {
     p_user_id: user.id,
     p_ordered_ids: orderedIds,
+    p_case_id: caseId,
   });
 
   if (error) {

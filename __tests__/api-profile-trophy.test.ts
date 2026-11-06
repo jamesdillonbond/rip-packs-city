@@ -7,22 +7,33 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // branch, the POST upsert success incl. the NBA-Top-Shot collection_id default
 // + pinned_at stamp, and the DELETE success.
 
-const state: { user: any; result: any; lastUpsert: any } = {
+const state: { user: any; result: any; lastUpsert: any; lastUpsertOpts: any; isFilters: any[]; deleted: boolean } = {
   user: null,
   result: { data: [], error: null },
   lastUpsert: null,
+  lastUpsertOpts: null,
+  isFilters: [],
+  deleted: false,
 }
 
 vi.mock("@/lib/supabase", () => {
   const build = () => {
     const b: any = {
       select: () => b,
-      upsert: (payload: any) => {
+      upsert: (payload: any, opts: any) => {
         state.lastUpsert = payload
+        state.lastUpsertOpts = opts
         return b
       },
-      delete: () => b,
+      delete: () => {
+        state.deleted = true
+        return b
+      },
       eq: () => b,
+      is: (col: string, val: any) => {
+        state.isFilters.push([col, val])
+        return b
+      },
       order: () => b,
       single: async () => state.result,
       then: (resolve: any) => resolve(state.result),
@@ -53,6 +64,9 @@ beforeEach(() => {
   state.user = null
   state.result = { data: [], error: null }
   state.lastUpsert = null
+  state.lastUpsertOpts = null
+  state.isFilters = []
+  state.deleted = false
 })
 
 describe("/api/profile/trophy", () => {
@@ -112,6 +126,33 @@ describe("/api/profile/trophy", () => {
     // optional fields default to null, not undefined
     expect(state.lastUpsert.edition_id).toBeNull()
     expect(state.lastUpsert.note).toBeNull()
+  })
+
+  it("POST with no caseId pins into the MAIN case and conflicts per case (2026-11-06)", async () => {
+    state.user = { id: "u1" }
+    state.result = { data: { slot: 2 }, error: null }
+    await POST(req({ slot: 2, momentId: "m2" }))
+    // case_id is sent explicitly as null: the conflict target includes it, and
+    // (user_id, case_id, slot) is NULLS NOT DISTINCT so the main case keeps one
+    // row per slot. A conflict on (user_id, slot) alone would collide across cases.
+    expect(state.lastUpsert.case_id).toBeNull()
+    expect(state.lastUpsertOpts).toEqual({ onConflict: "user_id,case_id,slot" })
+  })
+
+  it("POST rejects a malformed caseId instead of pinning into the main case", async () => {
+    state.user = { id: "u1" }
+    const res = await POST(req({ slot: 2, momentId: "m2", caseId: "nope" }))
+    expect(res.status).toBe(400)
+    expect(state.lastUpsert).toBeNull()
+  })
+
+  it("DELETE with no caseId is scoped to the main case (case_id IS NULL)", async () => {
+    state.user = { id: "u1" }
+    state.result = { data: [{ id: 1 }], error: null }
+    await DELETE(req({ slot: 4 }))
+    // Without this an unpin of main slot 4 would delete slot 4 of EVERY case.
+    expect(state.deleted).toBe(true)
+    expect(state.isFilters).toContainEqual(["case_id", null])
   })
 
   it("POST honors an explicit collectionId", async () => {

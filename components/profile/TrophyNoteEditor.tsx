@@ -29,8 +29,11 @@ export default function TrophyNoteEditor({
   slot,
   note,
   onSaved,
+  caseId = null,
 }: {
   slot: number;
+  /** Which trophy case the slot is in; null = the main case. */
+  caseId?: string | null;
   note: string | null;
   /** Lets the parent update its slab state so the caption renders immediately. */
   onSaved?: (slot: number, note: string | null) => void;
@@ -59,7 +62,7 @@ export default function TrophyNoteEditor({
       const res = await fetch("/api/profile/trophy", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ slot, note: next || null }),
+        body: JSON.stringify({ slot, note: next || null, ...(caseId ? { caseId } : {}) }),
       });
       if (!res.ok) {
         // ⚠ Report what actually happened. A blanket "couldn't save" on a 404
@@ -84,7 +87,7 @@ export default function TrophyNoteEditor({
     } finally {
       setSaving(false);
     }
-  }, [draft, slot, onSaved]);
+  }, [draft, slot, onSaved, caseId]);
 
   const cancel = useCallback(() => {
     setDraft(note ?? "");

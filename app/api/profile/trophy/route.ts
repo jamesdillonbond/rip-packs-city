@@ -4,6 +4,14 @@
 // across all published collections. The collection_id defaults to NBA Top
 // Shot when not supplied, so older clients still work.
 //
+// ⭐ MULTIPLE CASES (2026-11-06). Every verb takes an optional `caseId`
+// (body, or `?caseId=` on GET). Absent = the MAIN case (case_id IS NULL), so
+// every existing client keeps working. ⚠ Every read/write below is scoped by
+// case through `scopeToCase` — an unscoped `.eq("slot", n)` now spans every
+// case the user has, and an unpin would delete one trophy per case.
+// A pin into a CHALLENGE case is checked against that challenge's rules
+// server-side (lib/trophy/challenge-rules.ts) before it is written.
+//
 // Public /profile/[username] lookups go through /api/public/profile/[username]
 // (service-role read). This handler is strictly authenticated.
 
@@ -15,10 +23,32 @@ import { sanitizeTrophyThumbnail } from "@/lib/profile/trophy-thumbnail";
 import { logTrophyFunnelEvent } from "@/lib/trophy/funnel-event";
 import { resolvePaniniTrophyCard, type PaniniTrophyCard } from "@/lib/trophy/panini-card";
 import { PANINI_COLLECTION_ID } from "@/lib/trophy/slab-href";
+import { challengeIsOpen, loadOwnCase, parseCaseId, scopeToCase, type OwnCase } from "@/lib/trophy/cases";
+import { checkChallengePin, parseChallengeRules } from "@/lib/trophy/challenge-rules";
+
+const BAD_CASE = { error: "caseId must be a trophy case id" };
+const NO_CASE = { error: "That trophy case doesn't exist." };
+
+/**
+ * Resolve the request's case scope. `null` case = main. Returns a Response to
+ * short-circuit on a malformed id, a case the user doesn't own, or a failed read.
+ */
+async function resolveCase(
+  userId: string,
+  raw: unknown
+): Promise<{ caseId: string | null; own: OwnCase | null } | Response> {
+  const caseId = parseCaseId(raw);
+  if (caseId === false) return NextResponse.json(BAD_CASE, { status: 400 });
+  if (caseId == null) return { caseId: null, own: null };
+  const res = await loadOwnCase(supabase, userId, caseId);
+  if (!res.ok) return apiErrorResponse(res.error, "api/profile/trophy");
+  if (!res.case) return NextResponse.json(NO_CASE, { status: 404 });
+  return { caseId, own: res.case };
+}
 
 const NBA_TOP_SHOT_UUID = "95f28a17-224a-4025-96ad-adf8a4c63bfd";
 
-export async function GET() {
+export async function GET(req?: NextRequest) {
   let user;
   try {
     user = await requireUser();
@@ -26,11 +56,17 @@ export async function GET() {
     return res as Response;
   }
 
-  const { data, error } = await supabase
-    .from("trophy_moments")
-    .select("*")
-    .eq("user_id", user.id)
-    .order("slot", { ascending: true });
+  const rawCase = req?.nextUrl?.searchParams?.get?.("caseId") ?? null;
+  const scope = await resolveCase(user.id, rawCase);
+  if (scope instanceof Response) return scope;
+
+  const { data, error } = await scopeToCase(
+    supabase
+      .from("trophy_moments")
+      .select("*")
+      .eq("user_id", user.id),
+    scope.caseId
+  ).order("slot", { ascending: true });
 
   if (error) {
     console.error("[trophy GET]", error);
@@ -64,6 +100,7 @@ export async function POST(req: NextRequest) {
     badges,
     note,
     funnel,
+    caseId: rawCaseId,
   } = body;
 
   if (!slot || !momentId) {
@@ -77,6 +114,13 @@ export async function POST(req: NextRequest) {
   }
 
   const resolvedCollectionId = collectionId ?? NBA_TOP_SHOT_UUID;
+
+  const scope = await resolveCase(user.id, rawCaseId);
+  if (scope instanceof Response) return scope;
+  const challenge = scope.own?.challenge ?? null;
+  if (challenge && !challengeIsOpen(challenge)) {
+    return NextResponse.json({ error: `${challenge.title} has ended — this case is now read-only.` }, { status: 409 });
+  }
 
   // ── What the CLIENT may assert, and what it may not ───────────────────────
   //
@@ -115,6 +159,24 @@ export async function POST(req: NextRequest) {
     panini = res.card;
   }
 
+  // CHALLENGE RULES — only for a challenge case, after the Panini card (if any)
+  // has been verified, so the player label checked is the server's, never the body's.
+  if (challenge) {
+    const check = await checkChallengePin(supabase, parseChallengeRules(challenge.rules), challenge.title, {
+      userId: user.id,
+      momentId: String(momentId),
+      collectionId: resolvedCollectionId,
+      paniniPlayerName: panini ? panini.playerName : null,
+    });
+    if (check.kind === "unchecked") {
+      console.error("[trophy POST] challenge check failed");
+      return apiErrorResponse(check.error, "api/profile/trophy", "Couldn't check that against the challenge right now — try again in a moment.");
+    }
+    if (check.kind === "ineligible") {
+      return NextResponse.json({ error: check.error, code: "challenge_ineligible" }, { status: check.status });
+    }
+  }
+
   let verifiedSerial: number | null = null;
   try {
     const { data: wmcRow } = await supabase
@@ -139,6 +201,8 @@ export async function POST(req: NextRequest) {
     .upsert(
       {
         user_id: user.id,
+        // Explicit even when null: the conflict target below includes it.
+        case_id: scope.caseId,
         slot,
         moment_id: momentId,
         collection_id: resolvedCollectionId,
@@ -161,7 +225,9 @@ export async function POST(req: NextRequest) {
         note: note ?? null,
         pinned_at: new Date().toISOString(),
       },
-      { onConflict: "user_id,slot" }
+      // (user_id, case_id, slot) is UNIQUE NULLS NOT DISTINCT, so the main case
+      // (case_id NULL) still holds one row per slot.
+      { onConflict: "user_id,case_id,slot" }
     )
     .select()
     .single();
@@ -174,13 +240,17 @@ export async function POST(req: NextRequest) {
   // Campaign attribution (2026-09-27). Only after the pin LANDED. A failed log
   // does not fail the pin — started/completed milestones come from a DB trigger
   // on trophy_moments, so what a lost row costs is attribution, not the count.
-  await logTrophyFunnelEvent(supabase as any, {
-    eventType: "trophy_pinned",
-    userId: user.id,
-    slot,
-    funnel,
-    userAgent: req.headers?.get?.("user-agent") ?? null,
-  });
+  // MAIN case only: the trophy-case campaign measures the main case, and its
+  // milestones trigger counts case_id IS NULL rows only.
+  if (scope.caseId == null) {
+    await logTrophyFunnelEvent(supabase as any, {
+      eventType: "trophy_pinned",
+      userId: user.id,
+      slot,
+      funnel,
+      userAgent: req.headers?.get?.("user-agent") ?? null,
+    });
+  }
 
   return NextResponse.json({ trophy: data });
 }
@@ -238,11 +308,17 @@ export async function PATCH(req: NextRequest) {
   }
   const note = trimmed.length > 0 ? trimmed : null;
 
-  const { data, error } = await supabase
-    .from("trophy_moments")
-    .update({ note })
-    .eq("user_id", user.id)
-    .eq("slot", slot)
+  const scope = await resolveCase(user.id, body?.caseId);
+  if (scope instanceof Response) return scope;
+
+  const { data, error } = await scopeToCase(
+    supabase
+      .from("trophy_moments")
+      .update({ note })
+      .eq("user_id", user.id)
+      .eq("slot", slot),
+    scope.caseId
+  )
     .select()
     .maybeSingle();
 
@@ -270,14 +346,19 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ error: "slot required" }, { status: 400 });
   }
 
+  const scope = await resolveCase(user.id, body?.caseId);
+  if (scope instanceof Response) return scope;
+
   // `.select("id")` so the event below is logged only when a row was actually
   // removed — a DELETE of an already-empty slot succeeds with nothing to count.
-  const { data: removed, error } = await supabase
-    .from("trophy_moments")
-    .delete()
-    .eq("user_id", user.id)
-    .eq("slot", slot)
-    .select("id");
+  const { data: removed, error } = await scopeToCase(
+    supabase
+      .from("trophy_moments")
+      .delete()
+      .eq("user_id", user.id)
+      .eq("slot", slot),
+    scope.caseId
+  ).select("id");
 
   if (error) {
     console.error("[trophy DELETE]", error);
@@ -285,7 +366,7 @@ export async function DELETE(req: NextRequest) {
   }
 
   // See POST: logged only after the delete landed, never fails the unpin.
-  if (Array.isArray(removed) && removed.length > 0) {
+  if (scope.caseId == null && Array.isArray(removed) && removed.length > 0) {
     await logTrophyFunnelEvent(supabase as any, {
       eventType: "trophy_removed",
       userId: user.id,

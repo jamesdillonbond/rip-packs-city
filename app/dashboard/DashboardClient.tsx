@@ -28,6 +28,7 @@ import {
 import { tierColorAlpha } from "@/lib/tier-color";
 import TrophyPickerModal from "@/components/profile/TrophyPickerModal";
 import TrophyNoteEditor from "@/components/profile/TrophyNoteEditor";
+import TrophyCasesPanel from "@/components/profile/TrophyCasesPanel";
 import { occupantOfSlot, reorderByDelta, reorderByTarget } from "@/lib/trophy/reorder";
 import { savedWalletChains } from "@/lib/trophy-picker-format";
 import ShareProfileButtons from "@/components/profile/ShareProfileButtons";
@@ -1308,6 +1309,16 @@ function ProfilePageInner() {
             users still get the 6-grid pin UI without scrolling past it. */}
         {wallets.length > 0 && showHero && (
           <TrophyCaseSection slabs={slabs} onPickSlot={setPinSlot} onRemove={handleRemoveTrophy} onReorder={handleReorderTrophies} onNoteSaved={handleNoteSaved} />
+        )}
+
+        {/* Extra trophy cases + challenge entries (2026-11-06). Signed-in only:
+            every route behind it is requireUser. */}
+        {userId && (
+          <TrophyCasesPanel
+            ownerKey={null}
+            savedChains={loading || walletsFailed ? null : savedWalletChains(wallets.map((w) => w.wallet_addr), detectAddressChain)}
+            onToast={pushToast}
+          />
         )}
 
         {/* ── Saved Wallets ── */}
