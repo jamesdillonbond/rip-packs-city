@@ -64,6 +64,19 @@ Sitemap: one index, 5 segments, 34,125 discovered URLs, last read 2026-09-06, st
 **5. ✅ SHIPPED 2026-09-06 (see item 4 above).** Edition titles were `<Player> — <Set> · Value $1.11 | NBA Top Shot | Rip Packs City`. A dollar figure in the title re-writes the title on every crawl and buries the searchable part; Google often replaces it. The value is now in the description, not the title.
 
 > ⚠ **Owed measurement (09-07):** the other side of this call is that a price in a SERP title is the click magnet on price-comparison results. Compare edition-page CTR for the 30 days before vs after `9909fb8`; if it fell, the figure goes back in a stable form (rounded, e.g. "~$250").
+>
+> ✅ **MEASURED 2026-11-05 ~4:33 PM PT (Claude Code cloud, Trevor's Chrome, `sc-domain:rippackscity.com`, Web search) — the price STAYS OUT of the title; the decision rule's "if it fell" is not met on evidence that can carry it.**
+>
+> | window (PT) | pages | clicks | impressions | CTR | avg position |
+> |---|---|---|---|---|---|
+> | 08-07 – 09-05 (price in title) | all `/edition/` | 13 | 1.1K | 1.2 % | 10.5 |
+> | 09-07 – 10-06 (no price) | all `/edition/` | 2 | 1.17K | 0.2 % | 7 |
+> | 10-07 – 11-04 (no price) | all `/edition/` | 54 | 1.8K | 3.0 % | 8.9 |
+> | 08-07 – 09-05 | `/nba-top-shot/edition/` | 8 | 825 | 1.0 % | 9.8 |
+> | 10-07 – 11-04 | `/nba-top-shot/edition/` | 1 | 415 | 0.2 % | 7.6 |
+> | 08-07 – 09-05 / 09-07 – 10-06 | whole site | 29 / 13 | 2.16K / 1.46K | 1.3 % / 0.9 % | 21.6 / 14.2 |
+>
+> The first month after the change did fall (13 → 2 clicks) while the rest of the site rose (≈ 16 / 1.06K → 11 / 0.29K, i.e. ~1.5 % → ~3.8 %), which read as the price-magnet effect. **The next month refutes it as a sitewide cause:** edition pages reached 3.0 %, above the pre-change 1.2 %, and those clicks are mostly Panini edition pages, which carry the SAME price-free title template. Top Shot edition pages alone did fall (8/825 → 1/415), but 8 versus 1 clicks cannot separate a title effect from chance, and Top Shot queries face the official marketplace and established trackers that Panini queries do not. **Re-open only if** Top Shot edition pages reach ≥ 30 clicks in a 28-day window at a CTR still under half the Panini edition pages' — then test a rounded figure ("~$250") on Top Shot titles alone, not sitewide.
 
 **6. Nothing here is a Core Web Vitals problem** — there is not enough traffic to measure one. Do not spend time on it before the links exist.
 
