@@ -23,6 +23,7 @@ vi.mock("@/lib/supabase", () => {
       upsert: () => b,
       delete: () => b,
       eq: () => b,
+      is: () => b,
       not: () => b,
       limit: () => b,
       order: () => b,

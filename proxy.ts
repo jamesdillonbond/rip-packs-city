@@ -570,6 +570,11 @@ export function isPublicPath(pathname: string, method: string): boolean {
   // NOT need allow-list approval: a giveaway is how someone new arrives.
   // Drafts are 404 in the route; the admin surface is /api/admin/giveaways.
   if (pathname.startsWith("/giveaways/")) return true
+  // Trophy-case challenge boards (2026-11-06, /trophy-challenges/dame-time) —
+  // public like /profile/<u>: they show only what profiles already show. The
+  // data route is /api/public/trophy-challenges/<slug> (public above). Entering
+  // a challenge happens on /dashboard via /api/profile/trophy-cases (signed in).
+  if (pathname.startsWith("/trophy-challenges/")) return true
   if (pathname.startsWith("/api/giveaways/")) return true
   // /trades/block + /trades/block/<code> — the Trade Block's browse and listing pages
   // (Trevor, 2026-11-02: "Browsing can be public"). EXACT shapes: /trades itself, the trade

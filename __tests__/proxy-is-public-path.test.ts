@@ -95,6 +95,10 @@ const TABLE: Row[] = [
   // Community pack giveaways (2026-09-29): readable by anyone; the claim POST
   // checks sign-in in the route (401), never allow-list approval.
   ["/giveaways/blazers-fall-drop", "GET", true, "giveaway page is public"],
+  ["/trophy-challenges/dame-time", "GET", true, "trophy challenge board is public"],
+  ["/api/public/trophy-challenges/dame-time", "GET", true, "trophy challenge data is public"],
+  ["/api/public/trophy-cases", "GET", true, "a profile's extra trophy cases are public"],
+  ["/api/profile/trophy-cases", "POST", false, "creating a trophy case needs sign-in"],
   ["/api/giveaways/blazers-fall-drop", "GET", true, "giveaway read is public"],
   ["/api/giveaways/blazers-fall-drop", "POST", true, "claim: the route requires sign-in itself"],
   ["/giveaways", "GET", false, "no index page — only /giveaways/<slug> is public"],

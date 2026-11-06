@@ -138,6 +138,16 @@ interface Props {
    * shown on a guess.
    */
   savedChains?: readonly string[] | null;
+  /**
+   * Which trophy case this pin goes into (2026-11-06). Absent/null = the main
+   * case. For a challenge case the server checks the challenge's rules and
+   * answers 4xx with a reason when the pick doesn't qualify — shown inline.
+   */
+  caseId?: string | null;
+  /** Pre-fill the search box (e.g. "Damian Lillard" for the Dame Time case). */
+  initialQuery?: string;
+  /** Heading override, e.g. "Pin to Dame Time". */
+  title?: string;
 }
 
 export default function TrophyPickerModal({
@@ -148,6 +158,9 @@ export default function TrophyPickerModal({
   pinnedMomentIds,
   replacingName,
   savedChains,
+  caseId = null,
+  initialQuery = "",
+  title,
 }: Props) {
   const [tab, setTab] = useState<"grid" | "manual">("grid");
   const [moments, setMoments] = useState<PickerMoment[] | null>(null);
@@ -170,7 +183,7 @@ export default function TrophyPickerModal({
   const [pending, setPending] = useState<PickerMoment | null>(null);
 
   const [sort, setSort] = useState<SortKey>("fmv_desc");
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(initialQuery);
   const [tierFilter, setTierFilter] = useState<TierFilter>("ALL");
   const [leagueFilter, setLeagueFilter] = useState<LeagueValue>("all");
   const [collectionFilter, setCollectionFilter] = useState<CollectionFilter>("all");
@@ -274,6 +287,7 @@ export default function TrophyPickerModal({
             fmv: m.fmv_usd,
             // Session + campaign attribution for the server-logged trophy_pinned event.
             funnel: getFunnelContext(),
+            ...(caseId ? { caseId } : {}),
           }),
         });
         if (!res.ok) {
@@ -288,7 +302,7 @@ export default function TrophyPickerModal({
         setSaving(false);
       }
     },
-    [slot, onPinned]
+    [slot, onPinned, caseId]
   );
 
   // Resolve the pasted id against the real moment resolver (get_moment_detail
@@ -398,7 +412,7 @@ export default function TrophyPickerModal({
               textTransform: "uppercase",
             }}
           >
-            Pin to slot {slot}
+            {title ? `${title} · slot ${slot}` : `Pin to slot ${slot}`}
           </div>
           <button
             onClick={onClose}

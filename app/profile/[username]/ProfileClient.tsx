@@ -9,6 +9,7 @@ import CollectionBreakdownCard from "@/components/profile/CollectionBreakdownCar
 import ShareProfileButtons from "@/components/profile/ShareProfileButtons";
 import FollowButton from "@/components/profile/FollowButton";
 import TrophySlab, { type TrophySlabData } from "@/components/TrophySlab";
+import PublicTrophyCases from "@/components/profile/PublicTrophyCases";
 import { LEAGUES, type UserFavoriteTeam } from "@/lib/teams";
 import { borderCosmetic, bannerCosmetic } from "@/lib/cosmetics";
 import { resolveAvatarUrl } from "@/lib/profile/default-avatar";
@@ -760,6 +761,9 @@ export default function ProfileClient(props: {
             }
           `}</style>
         </section>
+
+        {/* ── More trophy cases + challenge entries (2026-11-06) ── */}
+        <PublicTrophyCases username={username} />
 
         {/* ── Cost Basis · P/L: REMOVED FROM THIS PAGE 2026-08-16 ──
             Spend and profit/loss do not belong on the shareable profile at all,
