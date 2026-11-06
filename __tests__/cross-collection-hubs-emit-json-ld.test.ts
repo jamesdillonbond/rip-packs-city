@@ -56,3 +56,12 @@ describe("both hub pages mount the script", () => {
     expect(src).toContain('type="application/ld+json"')
   })
 })
+
+describe("the Panini product page mounts CollectionPage JSON-LD (2026-11-06 — the one indexable entity route that had none)", () => {
+  it("product page", () => {
+    const src = readFileSync("app/(collections)/[collection]/product/[slug]/page.tsx", "utf8")
+    expect(src).toMatch(/collectionEntityJsonLd\(\{/)
+    expect(src).toMatch(/jsonLdScript\(jsonLd\)/)
+    expect(src).toContain('type="application/ld+json"')
+  })
+})

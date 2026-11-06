@@ -9,7 +9,8 @@ import { notFound } from "next/navigation"
 import { getCollectionByUrlSlug } from "@/lib/collection-slug"
 import { getCollection } from "@/lib/collections"
 import { decodeSlugOrNull } from "@/lib/entity-detail-gate"
-import { collectionDisplayName, entityUrl, NOT_FOUND_METADATA, OG_INHERITED, TWITTER_INHERITED, paniniProductOgUrl } from "@/lib/seo"
+import { collectionDisplayName, collectionEntityJsonLd, entityUrl, NOT_FOUND_METADATA, OG_INHERITED, TWITTER_INHERITED, paniniProductOgUrl } from "@/lib/seo"
+import { jsonLdScript } from "@/lib/seo/json-ld-script"
 import { fetchPaniniProduct } from "@/lib/panini/product"
 import { fetchPaniniProductPacks } from "@/lib/panini/edition-extras"
 import PaniniProductBody, { PaniniProductUnavailable } from "@/components/entity/PaniniProductBody"
@@ -53,8 +54,20 @@ export default async function PaniniProductPage(props: Props) {
   if (!res.product) notFound()
   const ids = res.product.product_set_ids.length ? res.product.product_set_ids : [res.product.product_set_id]
   const packs = await fetchPaniniProductPacks(ids).catch(() => ({ packs: null, productName: null }))
+  // CollectionPage + BreadcrumbList (+ ItemList of the top editions), the shape the
+  // series pages publish (2026-11-06: the 68 product pages were the one indexable
+  // entity route with no structured data). route_slug = external_id, as the body's
+  // own tiles link (editionHref).
+  const jsonLd = collectionEntityJsonLd({
+    name: res.product.name,
+    url: entityUrl(collection, "product", res.product.slug),
+    collectionUrlSlug: collection,
+    eds: res.product.top_editions.map((e) => ({ route_slug: e.external_id, player_name: e.player_name, thumbnail_url: e.thumbnail_url })),
+    crumbName: res.product.name,
+  })
   return (
     <div style={{ maxWidth: 1100, margin: "0 auto", padding: "16px 16px 48px" }}>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdScript(jsonLd) }} />
       <PaniniProductBody collection={collection} collectionLabel={collectionDisplayName(collection)} product={res.product} packs={packs} />
     </div>
   )

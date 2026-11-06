@@ -40,6 +40,10 @@ describe("HomePageMarketing", () => {
     const ld = container.querySelector('script[type="application/ld+json"]')
     expect(ld).toBeTruthy()
     expect(ld!.textContent).toContain("rippackscity.com")
+    // 2026-11-06: no SearchAction — its /share/{term} target was a wallet-card route
+    // robots disallows, not a search; the feature is retired upstream too.
+    expect(ld!.textContent).not.toContain("SearchAction")
+    expect(ld!.textContent).not.toContain("/share/")
 
     // The h1 is the SEARCHED QUESTION, not the brand name (changed 2026-08-01).
     // This assertion previously pinned "Rip Packs", which is why it caught the

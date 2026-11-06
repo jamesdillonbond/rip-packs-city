@@ -213,19 +213,17 @@ export default function HomePageMarketing() {
   // distinct WebSite type (where schema.org expects potentialAction) rather
   // than a second near-identical WebApplication — fixes the duplicate-JSON-LD
   // finding from the 2026-06-12 audit. (2026-06-13)
+  //
+  // 2026-11-06: the SearchAction (sitelinks search box) is GONE. Its target was
+  // /share/{search_term_string} — a WALLET card route that robots.txt disallows
+  // and that renders a card, not a search, for a typed term — so the markup
+  // advertised a search endpoint the site does not have. Google retired the
+  // sitelinks-search-box feature in Nov 2024 anyway; the WebSite entity stays.
   const webSiteJsonLd = {
     "@context": "https://schema.org",
     "@type": "WebSite",
     name: organizationJsonLd.name,
     url: organizationJsonLd.url,
-    potentialAction: {
-      "@type": "SearchAction",
-      target: {
-        "@type": "EntryPoint",
-        urlTemplate: `${process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"}/share/{search_term_string}`,
-      },
-      "query-input": "required name=search_term_string",
-    },
   };
 
   return (
