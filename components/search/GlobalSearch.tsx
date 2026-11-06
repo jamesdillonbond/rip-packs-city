@@ -154,7 +154,7 @@ export default function GlobalSearch() {
       <ul role="listbox" style={{ listStyle: "none", margin: 0, padding: 4, maxHeight: 420, overflowY: "auto" }}>
         {meta?.fuzzy && (
           <li aria-hidden="true" data-testid="search-fuzzy-note" style={{ padding: "6px 10px 4px", fontFamily: monoFont, fontSize: 10, letterSpacing: "0.06em", color: "var(--rpc-text-muted)" }}>
-            No exact match for &ldquo;{meta.fuzzy.from}&rdquo; — closest players:
+            No exact match for &ldquo;{meta.fuzzy.from}&rdquo; — closest matches:
           </li>
         )}
         {hits.map((h, i) => (

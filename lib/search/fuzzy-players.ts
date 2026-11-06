@@ -5,11 +5,13 @@
 // rpc_search_catalog's player arm is an exact (accent-folded) substring match —
 // so a new collector's first typo was a dead end.
 //
-// Runs ONLY on the empty-result path. It asks rpc_search_players_fuzzy for the
-// ≤ 3 player names nearest the query (pg_trgm word_similarity ≥ 0.45), then
-// re-runs the ordinary rpc_search_catalog with each name and keeps that name's
-// PLAYER rows — the same mechanics as lib/search/accented-labels.ts, so a fuzzy
-// hit is byte-identical to the hit a correctly typed query would get (counts,
+// Runs ONLY on the empty-result path. It asks rpc_search_names_fuzzy for the
+// ≤ 3 names nearest the query — players, team labels and set names (pg_trgm
+// word_similarity ≥ 0.45; widened from players-only the same day, after
+// "nugets" / "lakerz" / "playofs" still answered nothing) — then re-runs the
+// ordinary rpc_search_catalog with each name and keeps that name's rows OF THAT
+// KIND — the same mechanics as lib/search/accented-labels.ts, so a fuzzy hit is
+// byte-identical to the hit a correctly typed query would get (counts,
 // thumbnails, hub links). Nothing here invents a row.
 //
 // Honesty: the response says so. `meta.fuzzy = { from, matched }` names the
@@ -25,25 +27,26 @@ export type FuzzyRpc = {
 }
 
 export type FuzzyMeta = { from: string; matched: string[] }
+export type FuzzyCandidate = { kind: "player" | "team" | "set"; name: string }
 
 /** Minimum typed length before a fuzzy pass is attempted; shorter strings match everything. */
 export const FUZZY_MIN_Q = 4
 export const FUZZY_MAX_NAMES = 3
 
-export async function fuzzyPlayerNames(db: FuzzyRpc, q: string, collectionId: string | null): Promise<string[]> {
+export async function fuzzyPlayerNames(db: FuzzyRpc, q: string, collectionId: string | null): Promise<FuzzyCandidate[]> {
   if (q.trim().length < FUZZY_MIN_Q) return []
   try {
     const { data, error } = await boundedRead(
-      db.rpc("rpc_search_players_fuzzy", { p_q: q, p_collection_id: collectionId, p_limit: FUZZY_MAX_NAMES }),
-      "api/search/rpc_search_players_fuzzy",
+      db.rpc("rpc_search_names_fuzzy", { p_q: q, p_collection_id: collectionId, p_limit: FUZZY_MAX_NAMES }),
+      "api/search/rpc_search_names_fuzzy",
     )
     if (error || !Array.isArray(data)) {
       if (error) console.error("[search] fuzzy player names unavailable", error.message)
       return []
     }
     return (data as Array<Record<string, unknown>>)
-      .map((r) => r.name)
-      .filter((n): n is string => typeof n === "string" && n.trim() !== "")
+      .filter((r) => typeof r.name === "string" && (r.name as string).trim() !== "" && (r.kind === "player" || r.kind === "team" || r.kind === "set"))
+      .map((r) => ({ kind: r.kind as FuzzyCandidate["kind"], name: r.name as string }))
       .slice(0, FUZZY_MAX_NAMES)
   } catch (e) {
     console.error("[search] fuzzy player names threw", e instanceof Error ? e.message : e)
@@ -52,7 +55,8 @@ export async function fuzzyPlayerNames(db: FuzzyRpc, q: string, collectionId: st
 }
 
 /**
- * For an EMPTY exact result, the player rows a fuzzy re-search finds, plus the
+ * For an EMPTY exact result, the rows a fuzzy re-search finds (each candidate's
+ * own kind only), plus the
  * meta that labels them. Returns `null` meta when nothing fuzzy matched, so the
  * caller's empty answer stands unlabelled.
  */
@@ -68,7 +72,7 @@ export async function fuzzyPlayerHits<T extends { kind: string; label: string; c
   const seen = new Set<string>()
   const rows: T[] = []
   const matched: string[] = []
-  for (const name of names) {
+  for (const { kind, name } of names) {
     try {
       const { data, error } = await boundedRead(
         db.rpc("rpc_search_catalog", { p_q: name, p_collection_id: collectionId, p_limit: limit }),
@@ -77,7 +81,7 @@ export async function fuzzyPlayerHits<T extends { kind: string; label: string; c
       if (error || !Array.isArray(data)) continue
       let hit = false
       for (const r of data as T[]) {
-        if (r.kind !== "player" || r.label !== name || seen.has(key(r))) continue
+        if (r.kind !== kind || r.label !== name || seen.has(key(r))) continue
         seen.add(key(r))
         rows.push(r)
         hit = true
