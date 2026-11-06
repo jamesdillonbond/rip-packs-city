@@ -1,4 +1,4 @@
-# Daytime audit pass — 2026-11-06 (~8:43 AM → ~1:00 PM PT)
+# Daytime audit pass — 2026-11-06 (~8:43 AM → ~1:55 PM PT)
 
 **Session:** Cowork cloud, repo attached via `add_repo` → shallow clone → direct push (two pushes, CI green on both); Supabase MCP reads and `apply_migration` both passed first try (two migrations applied); laptop linked, no folders (not needed). Trevor: *"work autonomously for the next 5 hours … deep dive audit and QA across all pages, across the project and all our tools … SEO, UI, UX, CX, Concierge, security, new user onboarding, user flow, retention, growth, and workflows."*
 
@@ -52,12 +52,14 @@
 
 **E2E monitor — `cfa4711`.** `E2E DOM Smoke` had been red since batch 1 deployed (~10:47 AM PT): the wallet-band test read the Binder tab's designed band suppression as "the band stopped rendering". Re-pinned to `/nba-top-shot/market`; presence assertion unchanged. One other failure in the latest run only (pack-chase "Alert me" form not found in 20 s) — single run; the next scheduled run decides.
 
+**Batch 7 — `a287718` (Trevor 1:27 PM: "Keep going and do all you can").** The concierge prompt and `/help` now describe extra trophy cases and the Dame Time challenge — the feature was live with neither support surface aware of it. Also checked: the twin moved the hot-wallet signer off `elliptic` (`d8eae13`) — the Dependabot item below is closed by it; 320 px sweep of `/trophy-challenges/dame-time`, `/profile/jamesdillonbond`, `/help` — 0 overflow / 0 console errors / 0 broken images; the challenge board's "Enter from your dashboard" for an anonymous visitor goes `/dashboard` → `/login?next=/dashboard` (fine). Noted, not changed: `/trophy-challenges/<unknown>` answers HTTP 200 with the client's "no challenge here" copy (noindex, so harmless; a server-side existence read would make it a true 404).
+
 ## Post-ship watch (what to read tomorrow)
 
 - `E2E DOM Smoke` next scheduled run: green, or the pack-chase "Alert me" test fails again (then it is a pattern — read the Chase-left cards' button rendering, not the test).
 - GSC "Duplicate without user-selected canonical" (61) and "chose different canonical" (17) should drain over the next crawls; "Not indexed" total may drop by ~80.
 - `trophy_moments` writes: a pin into a challenge case must land (the old `(user_id, slot)` arbiter is gone); any 42P10 on `/api/profile/trophy` means a stale client — none expected.
-- Dependabot flags 5 on main (minimatch, @babel/core via eslint toolchain — dev only; uuid 9/11 + deepmerge via `@onflow/fcl` — transitive; `elliptic` 6.6.1 DIRECT, "risky implementation", NO patched version — it is the signing dependency, so a swap is a Claude Code decision, not a bump).
+- Dependabot: `elliptic` is gone from the signer (`d8eae13`, Claude Code); the residual transitive/dev alerts are in that commit's ledger line.
 
 - `/api/search` p95 — the fuzzy arm adds ≤ 1 + 3 RPCs only on the empty path; pgss `rpc_search_names_fuzzy` mean should sit ~150 ms (the team leg). If `meta.fuzzy` answers look wrong for a real query, the threshold (0.45) and the ranking are in `20261106191250`.
 - Vercel runtime errors: no new group on `/api/search`, `/players/*`, `/teams/*`, `/<c>/collection`.
