@@ -2,7 +2,7 @@
 
 **Session:** Cowork cloud, repo attached via `add_repo` → shallow clone → direct push (two pushes, CI green on both); Supabase MCP reads and `apply_migration` both passed first try (two migrations applied); laptop linked, no folders (not needed). Trevor: *"work autonomously for the next 5 hours … deep dive audit and QA across all pages, across the project and all our tools … SEO, UI, UX, CX, Concierge, security, new user onboarding, user flow, retention, growth, and workflows."*
 
-**Verdict: GREEN · 2 code commits + 2 DB migrations shipped · 0 reverted · oldest routed: #228 cold-whale snapshot (carried, 3 nights; not recurring).**
+**Verdict: GREEN · 4 code commits + 3 DB migrations shipped · 0 reverted · oldest routed: #228 cold-whale snapshot (carried, 3 nights; not recurring).**
 
 ⚠ Nothing in this pass was blocked by the environment. Trevor's machine, Cowork and Claude Code push and apply normally. **Commit and apply as usual.**
 
@@ -34,9 +34,13 @@
 8. **Panini product pages carry JSON-LD.** The 68 `/panini-blockchain/product/<slug>` pages (indexable, sitemap-listed since 10-25) were the one entity route with no structured data; they now publish CollectionPage + BreadcrumbList + an ItemList of the top editions via the series pages' `collectionEntityJsonLd`.
 9. **The homepage WebSite JSON-LD drops its SearchAction** — its target was `/share/{search_term_string}`, a wallet-card route robots.txt disallows, not a search; Google retired the sitelinks search box in Nov 2024.
 
+**Batch 4 — ledger + code commits (shas in the ledger), migration `20261106191250` applied.**
+
+10. **Closest-match search covers teams and sets too.** "nugets" → Denver Nuggets, "lakerz" → Los Angeles Lakers, "playofs" → the Playoffs sets. `rpc_search_names_fuzzy` (kind, name, similarity over players + distinct `editions.team_name` + `sets` / Panini `sets_summary`) replaces and drops `rpc_search_players_fuzzy`; the route keeps each candidate's rows of its own kind. Empty-path cost ~145 ms / ~6.6k buffers (team leg); exact path untouched.
+
 ## Post-ship watch (what to read tomorrow)
 
-- `/api/search` p95 — the fuzzy arm adds ≤ 1 + 3 RPCs only on the empty path; pgss `rpc_search_players_fuzzy` mean should sit ~40 ms. If `meta.fuzzy` answers look wrong for a real query, the threshold (0.45) and the ranking are in `20261106173036`.
+- `/api/search` p95 — the fuzzy arm adds ≤ 1 + 3 RPCs only on the empty path; pgss `rpc_search_names_fuzzy` mean should sit ~150 ms (the team leg). If `meta.fuzzy` answers look wrong for a real query, the threshold (0.45) and the ranking are in `20261106191250`.
 - Vercel runtime errors: no new group on `/api/search`, `/players/*`, `/teams/*`, `/<c>/collection`.
 - GSC: Person/SportsTeam rich-result counts should rise for /players and /teams over ~2 weeks; "Page with redirect" may tick up from the case-fold 308s (that is the fix working).
 
@@ -62,4 +66,4 @@
 ## Revert paths
 
 - Code: `git revert 9ddc5f12f` (batch 1) / `git revert 76709f8b1` (batch 2) / `git revert e3a1c6a95`.
-- DB: `DROP FUNCTION public.rpc_search_players_fuzzy(text, uuid, integer);` — the route degrades to the plain empty answer when the function is missing (tested).
+- DB: `DROP FUNCTION public.rpc_search_names_fuzzy(text, uuid, integer);` — the route degrades to the plain empty answer when the function is missing (tested).
