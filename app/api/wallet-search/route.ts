@@ -513,6 +513,17 @@ async function fillFromWalletCache(
   }
 
   for (const row of needy) {
+    // ⚠ Top Shot art is NEVER taken from the cache (2026-11-06): the per-Moment
+    // media URL serves for every Moment, while the cached edition HERO assets
+    // (assets.nbatopshot.com/editions/1_*/…Hero_2880_2880_Transparent.png) are
+    // dead for all of Series 1 — 76,047 rows in 194 wallets rendered blank, and
+    // the cache copy below wrote the dead URL BACK on every chain-only walk.
+    // Derive it from the id, cache row or not; the cache stays the art source
+    // only for collections with no derivable URL.
+    if (row.thumbnailUrl == null && collectionId === TOPSHOT_COLLECTION_ID) {
+      row.thumbnailUrl = buildThumbnailUrl(String(row.momentId));
+    }
+
     const c = byMoment.get(String(row.momentId));
     if (!c) continue;
 

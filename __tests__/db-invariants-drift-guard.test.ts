@@ -1496,7 +1496,10 @@ const PINS = [
     // Repointed 2026-09-28: a second branch offers the cards under the Panini
     // usernames the user linked (saved_collector_identities), so Panini can be
     // pinned to the trophy case.
-    migration: "supabase/migrations/20260929021709_audit_20260928_trophy_picker_offers_linked_panini_cards.sql",
+    // Repointed 2026-11-06: p_query (5th arg) searches the whole wallet
+    // server-side; a Top Shot row's image is always the per-Moment media URL
+    // (the cached Series-1 edition hero assets are dead).
+    migration: "supabase/migrations/20261107024511_audit_20261106_trophy_picker_searches_the_whole_wallet_and_topshot_art_is_the_media_url.sql",
   },
   {
     fn: "get_trophy_slab_data",

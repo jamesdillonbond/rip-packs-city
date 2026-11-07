@@ -131,24 +131,77 @@ describe("TrophyPickerModal — the page cap is disclosed, not silent", () => {
   const many = (n: number) =>
     Array.from({ length: n }, (_, i) => moment(`m-${i}`, `Player ${i}`))
 
+  // The fake route honours `q` the way the real one does (2026-11-06): a typed
+  // name filters the WHOLE pool server-side, before the cap. `seen` records
+  // every q the picker sent.
+  const seen: string[] = []
   function withMoments(rows: unknown[]) {
+    seen.length = 0
     vi.stubGlobal(
       "fetch",
       vi.fn(async (u: unknown) => {
-        if (String(u).includes("/api/profile/top-moments"))
-          return { ok: true, json: async () => ({ moments: rows }) } as never
+        if (String(u).includes("/api/profile/top-moments")) {
+          const q = new URL(String(u), "https://t").searchParams.get("q") ?? ""
+          seen.push(q)
+          const out = q
+            ? (rows as { player_name?: string | null }[]).filter((m) =>
+                String(m.player_name ?? "").toLowerCase().includes(q.toLowerCase()),
+              )
+            : rows
+          return { ok: true, json: async () => ({ moments: out }) } as never
+        }
         return { ok: true, json: async () => ({}) } as never
       }),
     )
   }
 
-  it("says the grid is a slice when a full page comes back", async () => {
+  it("says the grid is a slice when a full page comes back — and that typing searches everything", async () => {
+    // ⚠ INVERTED 2026-11-06: the line used to say "Search looks inside this
+    // list only", which was true and useless — a typed name now reaches the
+    // route as `q`, so the cap line must say the opposite.
     const { PICKER_LIMIT } = await import("@/components/profile/TrophyPickerModal")
     withMoments(many(PICKER_LIMIT))
     const { container } = open()
     await waitFor(() => expect(screen.getByText("Player 0")).toBeTruthy())
     expect(container.textContent).toMatch(/highest-value Moments/i)
-    expect(container.textContent).toMatch(/inside this list only/i)
+    expect(container.textContent).toMatch(/search everything you hold/i)
+    expect(container.textContent).not.toMatch(/inside this list only/i)
+  })
+
+  it("sends a typed name to the route as q, and a row BEHIND the cap comes back (the Dame Time defect)", async () => {
+    // 96 rows fill the page; "Damian Lillard" is the 97th by value, so he was
+    // invisible to a client-side search. The fake route finds him by q.
+    const { PICKER_LIMIT } = await import("@/components/profile/TrophyPickerModal")
+    const pool = [...many(PICKER_LIMIT), moment("dame-97", "Damian Lillard")]
+    withMoments(pool.slice(0, PICKER_LIMIT).concat()) // first page: no Dame
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (u: unknown) => {
+        const q = new URL(String(u), "https://t").searchParams.get("q") ?? ""
+        seen.push(q)
+        const out = q
+          ? pool.filter((m) => String(m.player_name ?? "").toLowerCase().includes(q.toLowerCase()))
+          : pool.slice(0, PICKER_LIMIT)
+        return { ok: true, json: async () => ({ moments: out }) } as never
+      }),
+    )
+    const { container } = open()
+    await waitFor(() => expect(screen.getByText("Player 0")).toBeTruthy())
+    expect(screen.queryByText("Damian Lillard")).toBeNull()
+    fireEvent.change(screen.getByLabelText(/Search your moments/i), { target: { value: "Damian Lillard" } })
+    await waitFor(() => expect(screen.getByText("Damian Lillard")).toBeTruthy(), { timeout: 2000 })
+    expect(seen).toContain("Damian Lillard")
+    expect(container.textContent).toMatch(/Searching everything you hold for “Damian Lillard”/i)
+    expect(screen.queryByText("Player 0")).toBeNull()
+  })
+
+  it("a one-character query stays client-side (no q sent)", async () => {
+    withMoments(many(5))
+    open()
+    await waitFor(() => expect(screen.getByText("Player 0")).toBeTruthy())
+    fireEvent.change(screen.getByLabelText(/Search your moments/i), { target: { value: "P" } })
+    await new Promise((r) => setTimeout(r, 400))
+    expect(seen.filter(Boolean)).toEqual([])
   })
 
   it("stays quiet when the whole collection fits", async () => {
@@ -160,29 +213,35 @@ describe("TrophyPickerModal — the page cap is disclosed, not silent", () => {
     expect(container.textContent).not.toMatch(/highest-value Moments/i)
   })
 
-  it("does not blame the collection when a capped search finds nothing", async () => {
+  it("a server search that finds nothing says so about THIS name, never about the top 96", async () => {
     const { PICKER_LIMIT } = await import("@/components/profile/TrophyPickerModal")
     withMoments(many(PICKER_LIMIT))
-    open()
+    const { container } = open()
     await waitFor(() => expect(screen.getByText("Player 0")).toBeTruthy())
     fireEvent.change(screen.getByLabelText(/Search your moments/i), {
       target: { value: "zzzzz-no-such-player" },
     })
+    await waitFor(() => expect(seen).toContain("zzzzz-no-such-player"), { timeout: 2000 })
     await waitFor(() =>
-      expect(screen.getByText(/won't be listed here/i)).toBeTruthy(),
+      expect(screen.getByText(/Nothing you hold matches “zzzzz-no-such-player”/i)).toBeTruthy(),
     )
+    expect(container.textContent).not.toMatch(/top 96/i)
+    expect(container.textContent).not.toMatch(/won't be listed here/i)
   })
 
-  it("keeps the plain no-match copy when the list is NOT capped", async () => {
+  it("between keystrokes the previous list is narrowed client-side (no non-matching row is ever shown)", async () => {
     withMoments(many(3))
     const { container } = open()
     await waitFor(() => expect(screen.getByText("Player 0")).toBeTruthy())
     fireEvent.change(screen.getByLabelText(/Search your moments/i), {
       target: { value: "zzzzz-no-such-player" },
     })
+    // Synchronously after the keystroke — before the 300 ms debounce fires —
+    // the stale list must already be filtered down.
+    expect(screen.queryByText("Player 0")).toBeNull()
     await waitFor(() =>
-      expect(container.textContent).toMatch(/No moments match the current filter/i),
-    )
+      expect(container.textContent).toMatch(/Nothing you hold matches/i),
+    { timeout: 2000 })
     expect(container.textContent).not.toMatch(/won't be listed here/i)
   })
 

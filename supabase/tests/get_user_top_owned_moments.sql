@@ -11,8 +11,15 @@
 --     league / collection filters;
 --   * ROW_NUMBER dedupe per (moment_id, collection_id) keeps the HIGHER-fmv copy
 --     (then freshest last_seen) — a moment seen under two wallets appears once;
---   * image_url COALESCE ladder: wmc.image_url -> edition thumbnail -> pinnacle
---     thumbnail (minus the placeholder) -> the Top Shot media URL;
+--   * image_url: a Top Shot row ALWAYS gets the per-Moment media URL
+--     (assets.nbatopshot.com/media/<id>/image?width=512) — its cached edition
+--     HERO asset is dead for all of Series 1 (2026-11-06) — and every other
+--     collection keeps the COALESCE ladder: wmc.image_url -> edition thumbnail
+--     -> pinnacle thumbnail (minus the placeholder);
+--   * p_query (2026-11-06): a typed name filters the WHOLE wallet server-side
+--     (player / set / team / character / edition name, case-insensitive
+--     substring, % and _ literal) in BOTH branches, before the fmv cap — the
+--     picker's "search inside the top 96" defect; NULL / blank = no filter;
 --   * ordered by fmv DESC, capped at p_limit.
 --   * PANINI (2026-09-28): cards under the Panini usernames the user LINKED
 --     (saved_collector_identities) are offered — the walked profile, plus serials
@@ -23,7 +30,7 @@
 --     or another collection's filter excludes the branch.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260929021709_audit_20260928_trophy_picker_offers_linked_panini_cards.sql);
+-- (supabase/migrations/20261107024511_audit_20261106_trophy_picker_searches_the_whole_wallet_and_topshot_art_is_the_media_url.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -76,7 +83,7 @@ CREATE FUNCTION public.serial_fmv_estimate(p_cid uuid, p_serial int, p_circ int,
  RETURNS jsonb LANGUAGE sql IMMUTABLE AS $$ SELECT jsonb_build_object('est', p_fmv) $$;
 
 -- >>> BEGIN verbatim get_user_top_owned_moments (keep byte-identical to the migration) >>>
-CREATE OR REPLACE FUNCTION public.get_user_top_owned_moments(p_user_id uuid, p_limit integer DEFAULT 24, p_league text DEFAULT NULL::text, p_collection_id uuid DEFAULT NULL::uuid)
+CREATE OR REPLACE FUNCTION public.get_user_top_owned_moments(p_user_id uuid, p_limit integer DEFAULT 24, p_league text DEFAULT NULL::text, p_collection_id uuid DEFAULT NULL::uuid, p_query text DEFAULT NULL::text)
  RETURNS TABLE(moment_id text, collection_id uuid, collection_slug text, wallet_address text, player_name text, set_name text, tier text, serial_number integer, mint_count integer, fmv_usd numeric, image_url text, is_locked boolean, series_number integer, edition_key text, character_name text, edition_name text, league text, serial_fmv jsonb, team_name text, jersey_number integer)
  LANGUAGE plpgsql
  STABLE SECURITY DEFINER
@@ -85,6 +92,12 @@ CREATE OR REPLACE FUNCTION public.get_user_top_owned_moments(p_user_id uuid, p_l
 AS $function$
 DECLARE
   v_panini constant uuid := 'd1a0a7f5-609a-49f4-a1a7-4eaac55b020b';
+  -- A typed name is a SUBSTRING match, case-insensitive; % and _ in the input
+  -- are literal characters, never wildcards. NULL / blank = no name filter.
+  v_q text := CASE
+    WHEN p_query IS NULL OR btrim(p_query) = '' THEN NULL
+    ELSE '%' || replace(replace(replace(btrim(p_query), '\', '\\'), '%', '\%'), '_', '\_') || '%'
+  END;
 BEGIN
   IF auth.uid() IS NOT NULL AND auth.uid() <> p_user_id THEN
     RAISE EXCEPTION 'forbidden_cross_user' USING ERRCODE = '42501';
@@ -118,16 +131,17 @@ BEGIN
       r.player_name AS o_player_name, r.set_name AS o_set_name, r.tier AS o_tier,
       r.serial_number AS o_serial_number, r.mint_count AS o_mint_count,
       r.fmv_usd AS o_fmv_usd,
-      COALESCE(
-        r.image_url,
-        e.thumbnail_url,
-        NULLIF(pe.thumbnail_url, 'https://assets.disneypinnacle.com/on-chain/pinnacle.jpg'),
-        CASE
-          WHEN c.slug = 'nba_top_shot' THEN
-            'https://assets.nbatopshot.com/media/' || r.moment_id || '/image?width=512'
-          ELSE NULL
-        END
-      ) AS o_image_url,
+      CASE
+        -- Top Shot: the per-Moment media URL serves for every Moment; the cached
+        -- edition HERO asset is dead for all of Series 1 (2026-11-06).
+        WHEN c.slug = 'nba_top_shot' THEN
+          'https://assets.nbatopshot.com/media/' || r.moment_id || '/image?width=512'
+        ELSE COALESCE(
+          r.image_url,
+          e.thumbnail_url,
+          NULLIF(pe.thumbnail_url, 'https://assets.disneypinnacle.com/on-chain/pinnacle.jpg')
+        )
+      END AS o_image_url,
       r.is_locked AS o_is_locked, r.series_number AS o_series_number, r.edition_key AS o_edition_key,
       r.character_name AS o_character_name, r.edition_name AS o_edition_name, r.league AS o_league,
       public.serial_fmv_estimate(r.collection_id, r.serial_number, r.mint_count, r.tier, sf.fmv_usd, sf.confidence::text, e.id) AS o_serial_fmv,
@@ -149,6 +163,9 @@ BEGIN
       LIMIT 1
     ) sf ON true
     WHERE r.rn = 1
+      AND (v_q IS NULL
+           OR r.player_name ILIKE v_q OR r.set_name ILIKE v_q OR e.team_name ILIKE v_q
+           OR r.character_name ILIKE v_q OR r.edition_name ILIKE v_q)
   ),
   panini_names AS (
     SELECT DISTINCT sci.identity_value AS username
@@ -216,6 +233,10 @@ BEGIN
       ORDER BY fs.computed_at DESC
       LIMIT 1
     ) sf ON true
+    WHERE (v_q IS NULL
+           OR COALESCE(e.player_name, pe.player_name, d.athlete) ILIKE v_q
+           OR COALESCE(e.set_name, pe.set_name, d.cardset) ILIKE v_q
+           OR e.team_name ILIKE v_q)
   ),
   all_rows AS (
     SELECT * FROM wallet_rows
@@ -240,9 +261,10 @@ $function$;
 \set TS '''95f28a17-224a-4025-96ad-adf8a4c63bfd'''
 \set PIN '''7dd9dd11-e8b6-45c4-ac99-71331f959714'''
 \set PAN '''d1a0a7f5-609a-49f4-a1a7-4eaac55b020b'''
+\set AD '''b7a9c2e1-5d3f-4a8b-9c6e-2f1d8e7a6b5c'''
 \set eK1 '''aaaaaaaa-0000-0000-0000-0000000000k1'''
 
-INSERT INTO public.collections (id, slug) VALUES (:TS::uuid, 'nba_top_shot'), (:PIN::uuid, 'disney_pinnacle'), (:PAN::uuid, 'panini_blockchain');
+INSERT INTO public.collections (id, slug) VALUES (:TS::uuid, 'nba_top_shot'), (:PIN::uuid, 'disney_pinnacle'), (:PAN::uuid, 'panini_blockchain'), (:AD::uuid, 'nfl_all_day');
 INSERT INTO public.saved_wallets (user_id, wallet_addr) VALUES (:U1::uuid,'wA'), (:U1::uuid,'wB'), (:U2::uuid,'wZ');
 
 INSERT INTO public.editions (id, collection_id, external_id, thumbnail_url, team_name, jersey_number) VALUES
@@ -259,7 +281,11 @@ INSERT INTO public.wallet_moments_cache
   ('wA','m2',:TS::uuid,  50,'NBA', now()-interval '2 h', 3,  50, 'COMMON','https://custom/img',false, 4, 'k2', NULL, 'E2', 'Ant',  'Base'),
   ('wA','m3',:TS::uuid,   0,'NBA', now()-interval '2 h', 1,  10, 'COMMON',NULL,               false, 4, 'k3', NULL, 'E3', 'X',    'Base'),
   ('wA','m4',:TS::uuid,  30,'NFL', now()-interval '2 h', 2,  20, 'COMMON',NULL,               false, 4, 'k4', NULL, 'E4', 'Y',    'Base'),
-  ('wA','m5',:PIN::uuid, 40,NULL,  now()-interval '2 h', 9,  99, 'CHASER',NULL,               false, 1, 'pk1','Mickey','E5', NULL, 'Pin');
+  ('wA','m5',:PIN::uuid, 40,NULL,  now()-interval '2 h', 9,  99, 'CHASER',NULL,               false, 1, 'pk1','Mickey','E5', NULL, 'Pin'),
+  -- m6: NOT Top Shot, with a cached image -> the ladder still lets wmc.image_url win.
+  ('wA','m6',:AD::uuid,  20,'NFL', now()-interval '2 h', 8,  80, 'RARE',  'https://custom/ad', false, 1, 'k6', NULL, 'E6', 'Amon-Ra St. Brown', 'Rookie Revelation'),
+  -- m7: Top Shot whose cached image is a DEAD Series-1 edition hero asset (2026-11-06).
+  ('wA','m7',:TS::uuid,  10,'NBA', now()-interval '2 h', 12, 49, 'LEGENDARY','https://assets.nbatopshot.com/editions/1_cosmic_legendary/f2a3c763/play_f2a3c763_1_cosmic_legendary_capture_Hero_2880_2880_Transparent.png', false, 0, 'k7', NULL, 'E7', 'Damian Lillard', 'Cosmic');
 
 INSERT INTO public.fmv_snapshots (edition_id, fmv_usd, confidence, computed_at) VALUES
   ('11111111-1111-1111-1111-111111111111'::uuid, 100, 'HIGH', now());
@@ -295,20 +321,27 @@ BEGIN
   PERFORM set_config('test.auth_uid', '', true);  -- back to anonymous for the rest
 END $$;
 
--- ── 2. dedupe + fmv>0 + no-filter set = m1,m2,m4,m5 (m3 fmv=0 dropped) ────────
-SELECT _assert_eq((SELECT count(*)::text FROM public.get_user_top_owned_moments(:U1::uuid, 24, NULL, NULL) WHERE collection_id <> :PAN::uuid), '4', 'no-filter wallet set = 4 (m3 fmv=0 dropped, m1 deduped)');
+-- ── 2. dedupe + fmv>0 + no-filter set = m1,m2,m4,m5,m6,m7 (m3 fmv=0 dropped) ──
+SELECT _assert_eq((SELECT count(*)::text FROM public.get_user_top_owned_moments(:U1::uuid, 24, NULL, NULL) WHERE collection_id <> :PAN::uuid), '6', 'no-filter wallet set = 6 (m3 fmv=0 dropped, m1 deduped)');
 -- top row is m1, and it is the HIGHER-fmv (wA) copy
 SELECT _assert_eq((SELECT wallet_address FROM public.get_user_top_owned_moments(:U1::uuid, 24, NULL, NULL) ORDER BY fmv_usd DESC NULLS LAST LIMIT 1), 'wA', 'dedupe keeps the higher-fmv (wA) copy of m1');
 
--- ── 3. image_url ladder ──────────────────────────────────────────────────────
-SELECT _assert_eq((SELECT image_url FROM public.get_user_top_owned_moments(:U1::uuid,24,NULL,NULL) WHERE moment_id='m1'), 'https://edimg/k1', 'm1 image -> edition thumbnail (wmc image null)');
-SELECT _assert_eq((SELECT image_url FROM public.get_user_top_owned_moments(:U1::uuid,24,NULL,NULL) WHERE moment_id='m2'), 'https://custom/img', 'm2 image -> wmc.image_url wins');
-SELECT _assert_eq((SELECT image_url FROM public.get_user_top_owned_moments(:U1::uuid,24,NULL,NULL) WHERE moment_id='m4'), 'https://assets.nbatopshot.com/media/m4/image?width=512', 'm4 image -> Top Shot media fallback (no edition row)');
+-- ── 3. image_url: Top Shot = media URL always; other collections = the ladder ─
+-- ⚠ 2026-11-06 INVERSION (not a re-pin): m1 and m2 are Top Shot, and the ladder
+-- used to hand them the edition thumbnail / the cached wmc image. The cached
+-- Series-1 hero assets 404 (Trevor's Dame Cosmic #12/49), so a Top Shot row now
+-- gets the per-Moment media URL whatever the cache holds; m6 (All Day) keeps the
+-- "wmc.image_url wins" promise alive for every collection that is not Top Shot.
+SELECT _assert_eq((SELECT image_url FROM public.get_user_top_owned_moments(:U1::uuid,24,NULL,NULL) WHERE moment_id='m1'), 'https://assets.nbatopshot.com/media/m1/image?width=512', 'm1 (Top Shot, wmc image null) -> media URL, NOT the edition thumbnail');
+SELECT _assert_eq((SELECT image_url FROM public.get_user_top_owned_moments(:U1::uuid,24,NULL,NULL) WHERE moment_id='m2'), 'https://assets.nbatopshot.com/media/m2/image?width=512', 'm2 (Top Shot, cached image) -> media URL, the cache is not consulted');
+SELECT _assert_eq((SELECT image_url FROM public.get_user_top_owned_moments(:U1::uuid,24,NULL,NULL) WHERE moment_id='m7'), 'https://assets.nbatopshot.com/media/m7/image?width=512', 'm7 (Top Shot, DEAD Series-1 hero cached) -> media URL');
+SELECT _assert_eq((SELECT image_url FROM public.get_user_top_owned_moments(:U1::uuid,24,NULL,NULL) WHERE moment_id='m4'), 'https://assets.nbatopshot.com/media/m4/image?width=512', 'm4 image -> Top Shot media URL (no edition row)');
+SELECT _assert_eq((SELECT image_url FROM public.get_user_top_owned_moments(:U1::uuid,24,NULL,NULL) WHERE moment_id='m6'), 'https://custom/ad', 'm6 (All Day) image -> wmc.image_url wins (the ladder is unchanged off Top Shot)');
 SELECT _assert_eq((SELECT image_url FROM public.get_user_top_owned_moments(:U1::uuid,24,NULL,NULL) WHERE moment_id='m5'), 'https://pin/pk1', 'm5 image -> pinnacle thumbnail');
 
 -- ── 4. league filter excludes m4 (NFL) ───────────────────────────────────────
--- NBA set = m1, m2 (m4 is NFL; m5 has a NULL league so an explicit =NBA filter drops it too)
-SELECT _assert_eq((SELECT count(*)::text FROM public.get_user_top_owned_moments(:U1::uuid, 24, 'NBA', NULL)), '2', 'league=NBA keeps only the NBA-tagged m1,m2 (NFL m4 + null-league m5 dropped)');
+-- NBA set = m1, m2, m7 (m4/m6 are NFL; m5 has a NULL league so an explicit =NBA filter drops it too)
+SELECT _assert_eq((SELECT count(*)::text FROM public.get_user_top_owned_moments(:U1::uuid, 24, 'NBA', NULL)), '3', 'league=NBA keeps only the NBA-tagged m1,m2,m7 (NFL m4,m6 + null-league m5 dropped)');
 
 -- ── 5. collection filter -> only pinnacle m5 ─────────────────────────────────
 SELECT _assert_eq((SELECT count(*)::text FROM public.get_user_top_owned_moments(:U1::uuid, 24, NULL, :PIN::uuid)), '1', 'collection filter -> only m5');
@@ -319,7 +352,7 @@ SELECT _assert_eq((SELECT moment_id FROM public.get_user_top_owned_moments(:U1::
 -- ── 7. Panini: linked usernames only ─────────────────────────────────────────
 SELECT _assert_eq((SELECT string_agg(moment_id, ',' ORDER BY moment_id) FROM public.get_user_top_owned_moments(:U1::uuid, 24, NULL, :PAN::uuid)),
   'pc-1,pc-2,pc-4', 'Panini set = walked pc-1,pc-2 + post-walk pc-4 (burnt pc-3, sold pc-5, other user pc-9 excluded; pc-1 once)');
-SELECT _assert_eq((SELECT count(*)::text FROM public.get_user_top_owned_moments(:U1::uuid, 24, NULL, NULL)), '7', 'no-filter set = 4 wallet + 3 Panini');
+SELECT _assert_eq((SELECT count(*)::text FROM public.get_user_top_owned_moments(:U1::uuid, 24, NULL, NULL)), '9', 'no-filter set = 6 wallet + 3 Panini');
 SELECT _assert_eq((SELECT count(*)::text FROM public.get_user_top_owned_moments(:U1::uuid, 24, NULL, NULL) WHERE wallet_address IS NULL), '3', 'Panini rows carry NO wallet_address (a username is not an address)');
 SELECT _assert_eq((SELECT player_name || '|' || set_name || '|' || fmv_usd::int || '|' || mint_count FROM public.get_user_top_owned_moments(:U1::uuid, 24, NULL, :PAN::uuid) WHERE moment_id='pc-1'),
   'Catalogued Player|Cat Set|60|25', 'catalogued card: edition name/set + the edition''s latest fmv_snapshots FMV');
@@ -331,6 +364,23 @@ SELECT _assert_eq((SELECT count(*)::text FROM public.get_user_top_owned_moments(
 SELECT _assert_eq((SELECT count(*)::text FROM public.get_user_top_owned_moments(:U1::uuid, 24, NULL, :PIN::uuid) WHERE collection_id = :PAN::uuid), '0', 'another collection filter excludes Panini');
 SELECT _assert_eq((SELECT string_agg(moment_id, ',' ORDER BY ord) FROM (SELECT moment_id, row_number() OVER () ord FROM public.get_user_top_owned_moments(:U1::uuid, 3, NULL, NULL)) x),
   'm1,pc-1,m2', 'one fmv-ordered list across both branches (m1 100, pc-1 60, m2 50)');
+
+-- ── 8. p_query searches the WHOLE wallet, server-side (2026-11-06) ───────────
+-- The cap is the trap: with p_limit=1 the name must still be found BEHIND the
+-- fmv cap. m7 (Dame, fmv 10) is the cheapest wallet row; a client that searched
+-- "inside the top 1" would never see it.
+SELECT _assert_eq((SELECT string_agg(moment_id, ',' ORDER BY moment_id) FROM public.get_user_top_owned_moments(:U1::uuid, 1, NULL, NULL, 'lillard')), 'm7', 'p_query finds a row BEHIND the fmv cap (limit 1, Dame is the cheapest row)');
+SELECT _assert_eq((SELECT string_agg(moment_id, ',' ORDER BY moment_id) FROM public.get_user_top_owned_moments(:U1::uuid, 24, NULL, NULL, 'DAME')), 'm1', 'case-insensitive player match (Dame)');
+SELECT _assert_eq((SELECT string_agg(moment_id, ',' ORDER BY moment_id) FROM public.get_user_top_owned_moments(:U1::uuid, 24, NULL, NULL, 'blazers')), 'm1,m2', 'team name (editions.team_name) matches');
+SELECT _assert_eq((SELECT string_agg(moment_id, ',' ORDER BY moment_id) FROM public.get_user_top_owned_moments(:U1::uuid, 24, NULL, NULL, 'rookie revelation')), 'm6', 'set name matches across collections (All Day m6)');
+SELECT _assert_eq((SELECT string_agg(moment_id, ',' ORDER BY moment_id) FROM public.get_user_top_owned_moments(:U1::uuid, 24, NULL, NULL, 'mickey')), 'm5', 'character name matches (Pinnacle)');
+SELECT _assert_eq((SELECT string_agg(moment_id, ',' ORDER BY moment_id) FROM public.get_user_top_owned_moments(:U1::uuid, 24, NULL, :PAN::uuid, 'uncat')), 'pc-2', 'Panini branch: walked athlete name matches');
+SELECT _assert_eq((SELECT string_agg(moment_id, ',' ORDER BY moment_id) FROM public.get_user_top_owned_moments(:U1::uuid, 24, NULL, NULL, 'catalogued')), 'pc-1', 'Panini branch: catalogued edition player matches');
+SELECT _assert_eq((SELECT count(*)::text FROM public.get_user_top_owned_moments(:U1::uuid, 24, NULL, NULL, '   ')), '9', 'blank query = no filter');
+SELECT _assert_eq((SELECT count(*)::text FROM public.get_user_top_owned_moments(:U1::uuid, 24, NULL, NULL, '%')), '0', 'a literal % is a character, never a wildcard');
+SELECT _assert_eq((SELECT count(*)::text FROM public.get_user_top_owned_moments(:U1::uuid, 24, NULL, NULL, 'D_me')), '0', 'a literal _ is a character, never a wildcard');
+SELECT _assert_eq((SELECT count(*)::text FROM public.get_user_top_owned_moments(:U1::uuid, 24, NULL, NULL, 'nobody by this name')), '0', 'no match -> empty, never the unfiltered list');
+SELECT _assert_eq((SELECT string_agg(moment_id, ',' ORDER BY moment_id) FROM public.get_user_top_owned_moments(:U1::uuid, 24, 'NBA', NULL, 'lillard')), 'm7', 'p_query composes with the league filter');
 
 SELECT '✓ get_user_top_owned_moments: all assertions passed' AS result;
 

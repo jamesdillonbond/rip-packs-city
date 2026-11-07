@@ -155,6 +155,29 @@ describe("GET /api/profile/top-moments", () => {
     expect(state.rpcArgs.p_collection_id).toBeNull()
   })
 
+  // ── q: a typed name searches the WHOLE wallet server-side (2026-11-06) ────
+  // The picker used to search inside the 96 rows it had loaded; the name must
+  // reach the RPC so the filter runs BEFORE the fmv cap.
+  it("passes a typed name to the RPC as p_query (trimmed)", async () => {
+    state.user = { id: "u1" }
+    await GET(req("https://t/api/profile/top-moments?q=%20Damian%20Lillard%20"))
+    expect(state.rpcArgs.p_query).toBe("Damian Lillard")
+  })
+
+  it("a blank or absent q is NULL, never an empty string (the RPC treats both as no filter; the control pins the shape)", async () => {
+    state.user = { id: "u1" }
+    await GET(req("https://t/api/profile/top-moments?q=%20%20"))
+    expect(state.rpcArgs.p_query).toBeNull()
+    await GET(req("https://t/api/profile/top-moments"))
+    expect(state.rpcArgs.p_query).toBeNull()
+  })
+
+  it("caps q at 80 characters", async () => {
+    state.user = { id: "u1" }
+    await GET(req("https://t/api/profile/top-moments?q=" + "x".repeat(200)))
+    expect(state.rpcArgs.p_query).toHaveLength(80)
+  })
+
   // ── PANINI (2026-09-28) ──────────────────────────────────────────────────
   // The RPC also returns cards under the user's LINKED Panini usernames. Only the
   // trophy picker can pin one, so they are opt-in; and a Panini-filtered answer

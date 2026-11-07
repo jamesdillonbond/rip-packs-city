@@ -10,12 +10,20 @@
 //   ?strict=1 (#148): a supplied ownerKey that resolves to nobody answers 404
 //   owner_not_found, never the session. Any page about someone else sends it.
 //
-// Optional ?collection=<slug> filters to one collection (e.g. "nba-top-shot")
-// and routes to the 4-arg overload of get_user_top_owned_moments which adds a
-// COALESCE thumbnail fallback chain (wmc.image_url → editions.thumbnail_url →
-// pinnacle_editions.thumbnail_url → topshot CDN derive). The 3-arg overload
-// returned wmc.image_url verbatim, which is NULL for ~all rows and was the
-// reason every pinned trophy ended up with thumbnail_url IS NULL.
+// Optional ?collection=<slug> filters to one collection (e.g. "nba-top-shot").
+// get_user_top_owned_moments carries a thumbnail fallback chain (wmc.image_url
+// → editions.thumbnail_url → pinnacle_editions.thumbnail_url); for Top Shot it
+// always derives the per-Moment media URL (2026-11-06: the cached Series-1
+// edition hero assets are dead upstream). The old 3-arg overload returned
+// wmc.image_url verbatim, which is NULL for ~all rows and was the reason every
+// pinned trophy ended up with thumbnail_url IS NULL.
+//
+// Optional ?q=<name> (2026-11-06): a typed name is searched across the WHOLE
+// wallet server-side (player / set / team / character / edition name,
+// case-insensitive substring) BEFORE the fmv cap. Without it the trophy picker
+// searched inside the 96 highest-value rows it had loaded, and a collector with
+// 15,706 Moments found six of his Damian Lillards. Trimmed, capped at 80 chars;
+// blank = no filter.
 
 import { NextRequest, NextResponse } from "next/server";
 import { apiErrorResponse } from "@/lib/api-error";
@@ -109,6 +117,8 @@ export async function GET(req: NextRequest) {
   }
 
   const strict = req.nextUrl.searchParams.get("strict") === "1";
+  const qRaw = (req.nextUrl.searchParams.get("q") ?? "").trim().slice(0, 80);
+  const query = qRaw.length > 0 ? qRaw : null;
   const owner = await resolveUserId(ownerKey, strict);
   if (!owner.ok) {
     console.error("[profile/top-moments] owner resolve failed", (owner.error as { message?: string })?.message);
@@ -127,6 +137,7 @@ export async function GET(req: NextRequest) {
     p_limit: limit,
     p_league: league,
     p_collection_id: collectionUuid,
+    p_query: query,
   }), "api/profile/top-moments/get_user_top_owned_moments");
 
   if (error) {

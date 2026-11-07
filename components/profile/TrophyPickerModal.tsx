@@ -96,6 +96,12 @@ export interface PickerMoment {
  */
 export const PICKER_LIMIT = 96;
 
+/** The server-side search term a typed query produces: trimmed, ≥ 2 chars, else "". */
+export function serverQueryFor(query: string): string {
+  const q = query.trim();
+  return q.length >= 2 ? q : "";
+}
+
 // Local aliases keep the in-file usages terse while the definitions live in
 // lib/trophy-picker-format.ts (measured by the coverage ratchet).
 type SortKey = TrophySortKey;
@@ -184,6 +190,21 @@ export default function TrophyPickerModal({
 
   const [sort, setSort] = useState<SortKey>("fmv_desc");
   const [query, setQuery] = useState(initialQuery);
+  // The SERVER-side search term (2026-11-06). The grid is the 96 highest-value
+  // rows, and the free-text box used to search inside THAT slice only — Trevor,
+  // holding 15,706 Moments, typed "Damian Lillard" and got the six Dames inside
+  // his top 96 with a 10 px line admitting it. A typed name now goes to the
+  // route as `q` (debounced 300 ms, ≥ 2 chars) so the RPC filters the WHOLE
+  // wallet before its fmv cap. `serverQuery` is what the CURRENT list was
+  // fetched with; while the debounce is pending the client filter below keeps
+  // narrowing the previous list, so the grid never shows rows that do not match.
+  const [serverQuery, setServerQuery] = useState(serverQueryFor(initialQuery));
+  useEffect(() => {
+    const next = serverQueryFor(query);
+    if (next === serverQuery) return;
+    const t = setTimeout(() => setServerQuery(next), 300);
+    return () => clearTimeout(t);
+  }, [query, serverQuery]);
   const [tierFilter, setTierFilter] = useState<TierFilter>("ALL");
   const [leagueFilter, setLeagueFilter] = useState<LeagueValue>("all");
   const [collectionFilter, setCollectionFilter] = useState<CollectionFilter>("all");
@@ -212,6 +233,7 @@ export default function TrophyPickerModal({
     if (ownerKey) params.set("ownerKey", ownerKey);
     if (leagueFilter !== "all") params.set("league", leagueFilter);
     if (collectionFilter !== "all") params.set("collection", collectionFilter);
+    if (serverQuery) params.set("q", serverQuery);
     fetch(`/api/profile/top-moments?${params.toString()}`, { cache: "no-store" })
       // ⚠ `null` means WE COULD NOT READ, and it must not reach `setMoments`
       // as `[]`. An empty grid renders "No owned moments found yet" — a claim
@@ -239,7 +261,7 @@ export default function TrophyPickerModal({
     return () => {
       cancelled = true;
     };
-  }, [ownerKey, leagueFilter, collectionFilter]);
+  }, [ownerKey, leagueFilter, collectionFilter, serverQuery]);
 
   // Keyed on moment_id alone, matching the uniqueness a collector actually
   // perceives ("that Moment is already up"), not the composite the grid uses
@@ -260,9 +282,14 @@ export default function TrophyPickerModal({
 
   const tiersPresent = useMemo<TierFilter[]>(() => presentTiers(moments), [moments]);
 
+  // When the list was fetched FOR this query, the server already matched it
+  // (on more fields than the client filter knows — edition name, say), so the
+  // client filter must not re-narrow it. Between keystrokes the previous list
+  // is narrowed client-side until the debounced refetch lands.
+  const clientQuery = serverQueryFor(query) === serverQuery ? "" : query;
   const filteredSorted = useMemo<PickerMoment[]>(
-    () => filterSortMoments(moments, sort, tierFilter, query),
-    [moments, sort, tierFilter, query]
+    () => filterSortMoments(moments, sort, tierFilter, clientQuery),
+    [moments, sort, tierFilter, clientQuery]
   );
 
   const pin = useCallback(
@@ -560,7 +587,22 @@ export default function TrophyPickerModal({
                 96" from "owns 500 and we loaded 96", so the copy states what IS
                 true either way — these are the highest-value ones — rather than
                 asserting a truncation we have not measured. */}
-            {atCap && (
+            {serverQuery ? (
+              <div
+                role="status"
+                style={{
+                  fontFamily: monoFont,
+                  fontSize: 10,
+                  color: "var(--rpc-text-muted)",
+                  marginTop: 6,
+                  letterSpacing: "0.04em",
+                }}
+              >
+                {atCap
+                  ? `Searching everything you hold for “${serverQuery}” — showing the ${PICKER_LIMIT} highest-value matches. Add a set or team name to narrow it.`
+                  : `Searching everything you hold for “${serverQuery}”.`}
+              </div>
+            ) : atCap ? (
               <div
                 style={{
                   fontFamily: monoFont,
@@ -570,10 +612,10 @@ export default function TrophyPickerModal({
                   letterSpacing: "0.04em",
                 }}
               >
-                Showing your {PICKER_LIMIT} highest-value Moments. Search looks
-                inside this list only.
+                Showing your {PICKER_LIMIT} highest-value Moments. Type a player,
+                set or team to search everything you hold.
               </div>
-            )}
+            ) : null}
 
             {moments == null ? (
               <div style={{ textAlign: "center", padding: 24 }}>
@@ -607,15 +649,21 @@ export default function TrophyPickerModal({
                   textAlign: "center",
                 }}
               >
-                {moments.length === 0
-                  ? /* "None" is either "owns nothing here" or "no wallet saved on
-                       this chain" — the helper says which only when it KNOWS. */
-                    collectionFilter === "panini-blockchain"
-                    ? paniniEmptyPoolCopy(paniniLinked)
-                    : emptyPoolCopy(selectedChain, selectedLabel, savedChains ?? null)
-                  : atCap
-                    ? `Nothing in your top ${PICKER_LIMIT} by value matches. A lower-value Moment won't be listed here — use the manual tab if you know its ID.`
-                    : "No moments match the current filter."}
+                {/* ⚠ ORDER MATTERS. A list fetched FOR a name is empty because
+                    nothing MATCHED, not because the collector owns nothing —
+                    "No owned moments found yet" there is a false claim about
+                    their holdings. The name check comes before the pool check. */}
+                {serverQuery
+                  ? `Nothing you hold matches “${serverQuery}”. Only priced Moments are listed — use the manual tab if you know its ID.`
+                  : moments.length === 0
+                    ? /* "None" is either "owns nothing here" or "no wallet saved on
+                         this chain" — the helper says which only when it KNOWS. */
+                      collectionFilter === "panini-blockchain"
+                      ? paniniEmptyPoolCopy(paniniLinked)
+                      : emptyPoolCopy(selectedChain, selectedLabel, savedChains ?? null)
+                    : atCap
+                      ? `Nothing in your top ${PICKER_LIMIT} by value matches. Type at least two characters to search everything you hold.`
+                      : "No moments match the current filter."}
               </div>
             ) : (
               <div

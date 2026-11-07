@@ -139,11 +139,17 @@ beforeEach(() => {
 })
 
 describe("the dead-host row is refilled from wallet_moments_cache", () => {
-  it("⭐ recovers the thumbnail, tier, league and circulation the dead host used to supply", async () => {
+  it("⭐ recovers the tier, league and circulation the dead host used to supply — and DERIVES the art, never copying a cached edition hero", async () => {
+    // ⚠ INVERTED 2026-11-06 for the thumbnail half. This test used to pin
+    // "thumbnailUrl === the cached editions/…hero.png". Dapper retired the
+    // Series-1 hero bucket (12/12 random `/editions/1_*` URLs 404; Trevor's
+    // Dame Cosmic #12/49 rendered blank), and this fill was the writer that put
+    // the dead URL BACK on every chain-only walk (76,047 rows, 194 wallets). A
+    // Top Shot row's art is the per-Moment media URL, derivable from the id.
     state.wmcRows = [
       {
         moment_id: "101",
-        image_url: "https://assets.nbatopshot.com/editions/x/hero.png",
+        image_url: "https://assets.nbatopshot.com/editions/1_cosmic_legendary/x/play_x_1_cosmic_legendary_capture_Hero_2880_2880_Transparent.png",
         tier: "RARE",
         mint_count: 499,
         league: "NBA",
@@ -153,17 +159,18 @@ describe("the dead-host row is refilled from wallet_moments_cache", () => {
     ]
     const rows = await rowsOf()
     const row = rows.find((r) => r.momentId === "101")!
-    expect(row.thumbnailUrl).toBe("https://assets.nbatopshot.com/editions/x/hero.png")
+    expect(row.thumbnailUrl).toBe("https://assets.nbatopshot.com/media/101/image?width=180")
+    expect(row.thumbnailUrl).not.toMatch(/\/editions\//)
     expect(row.tier).toBe("RARE")
     expect(row.league).toBe("NBA")
     expect(row.circulationCount).toBe(499)
   })
 
-  it("a moment with no cache row is left exactly as it was — absent, not invented", async () => {
+  it("a moment with no cache row is left exactly as it was — absent, not invented (art excepted: a Top Shot id always derives its media URL)", async () => {
     state.wmcRows = [] // walked nothing for this wallet
     const rows = await rowsOf()
     const row = rows.find((r) => r.momentId === "101")!
-    expect(row.thumbnailUrl).toBeNull()
+    expect(row.thumbnailUrl).toBe("https://assets.nbatopshot.com/media/101/image?width=180")
     expect(row.isLocked).toBeUndefined()
     expect(row.lockKnown).toBeUndefined()
   })
@@ -218,7 +225,8 @@ describe("⛔ lock state is only recovered WITH its provenance", () => {
       },
     ]
     const row = (await rowsOf()).find((r) => r.momentId === "101")!
-    expect(row.thumbnailUrl).toBe("https://assets.nbatopshot.com/editions/y/hero.png")
+    // (art is derived for Top Shot, 2026-11-06 — the per-field point is tier vs lock)
+    expect(row.thumbnailUrl).toBe("https://assets.nbatopshot.com/media/101/image?width=180")
     expect(row.tier).toBe("COMMON")
     expect(row.isLocked).toBeUndefined()
   })
