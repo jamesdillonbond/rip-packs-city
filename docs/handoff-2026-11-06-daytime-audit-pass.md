@@ -70,6 +70,8 @@
 
 21. **Public-profile 404 head (~12:55–1:10 AM PT).** `/profile/<unknown>` served an honest 404 BODY but a profile HEAD — "<unknown>'s Collection", self-canonical, and an OG collector card named after the handle (the OG route read "bio OK, 0 rows" as an empty collector). Both layouts (profile, trophy-case) return 404 metadata; OG route returns the generic card on a successful empty lookup, and still the handle's withheld-figures card on a FAILED lookup (mirror pinned, planted-defect proven). Verified live `aba786d`: no canonical, no og:image, OG endpoint = generic card (46 KB vs 71 KB); the rendered `<title>` is the not-found page's own "404" — `notFound()` metadata wins over the layout's "Collector not found", which is fine.
 
+22. **`/share/<wallet>` indexability (~1:20–1:40 AM PT).** The unknown-slug probe over nine share surfaces: eight 404 honestly; `/share/0x…bad` rendered "Analyzing your wallet…" at 200 with `index, follow` + canonical + OG — an unbounded indexable URL space. Now `noindex` when the snapshot read succeeds with zero indexed moments; a failed read leaves a real card indexable. `fetchSnapshot` is React-`cache`d so metadata and body share one read. Queueing cost was already rate-limited (300/h · 20/h/IP · 1/wallet/6h).
+
 ## Post-ship watch (what to read tomorrow)
 
 - **Series-1 Top Shot art** on `/dashboard/*`, `/profile/*`, binder, trade room: present (any blank tile with a `data-rpc-dead-art` attribute whose `data-rpc-dead-src` starts `…/editions/<N>_` means ANOTHER series was retired — same fix, derive not copy).
