@@ -708,7 +708,7 @@ export default function PackPageClient({ collection, tiers, title, accent = 'var
       </div>
 
       {error && (
-        <div className="mb-3 rounded-xl border border-red-900 bg-red-950/30 p-3 text-sm text-red-300">{error}</div>
+        <div role="alert" className="mb-3 rounded-xl border border-red-900 bg-red-950/30 p-3 text-sm text-red-300">{error}</div>
       )}
 
       <PackTable

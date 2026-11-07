@@ -115,6 +115,8 @@
 
 43. **Inert mobile tab says why (~1:20–1:30 PM PT).** The bar's disabled tab explained itself only via `title` (hover-only, on a phone-only bar). sr-only reason added ("PACKS — not available for Strike"). Live keyboard check of item 42: strip arrows move focus without navigating; pill filters move and select.
 
+44. **Forms lens (~1:30–1:55 PM PT).** (a) Three error boxes (binder lookup, pack page, Analytics) had no live region — now `role="status"`/`"alert"`; guard added. (b) Five wallet/username inputs auto-capitalised on mobile Safari (binder, home hero, dashboard add-wallet, share retry, team checklist) — a case-sensitive Candy address or Panini username corrupted into "holds nothing"; the dashboard's main input had the fix since 10-18, its siblings didn't. All five fixed; guard found the last three. Read, fine: the login email field (label, `autocomplete=email`, `inputmode=email`); the 12 px search box at 390 in my probe is a fine-pointer artefact — the iOS floor is a `(pointer: coarse)` rule the e2e monitor already pins.
+
 ## Post-ship watch (what to read tomorrow)
 
 - **Series-1 Top Shot art** on `/dashboard/*`, `/profile/*`, binder, trade room: present (any blank tile with a `data-rpc-dead-art` attribute whose `data-rpc-dead-src` starts `…/editions/<N>_` means ANOTHER series was retired — same fix, derive not copy).

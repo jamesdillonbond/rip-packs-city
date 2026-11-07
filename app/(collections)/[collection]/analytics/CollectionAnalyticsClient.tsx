@@ -1772,7 +1772,7 @@ function AnalyticsInner() {
             </button>
           </form>
 
-          {error && <div className="mb-4 rounded-lg border border-red-900/40 bg-red-950/20 p-3 text-sm text-red-300">{error}</div>}
+          {error && <div role="alert" className="mb-4 rounded-lg border border-red-900/40 bg-red-950/20 p-3 text-sm text-red-300">{error}</div>}
 
           {!data && !loading && !error && (
             <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-8 text-center text-[color:var(--rpc-text-muted)]">
