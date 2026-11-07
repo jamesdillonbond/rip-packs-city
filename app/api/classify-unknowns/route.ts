@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { tokenMatches } from "@/lib/auth/bearer-secret"
 
 // GET /api/classify-unknowns
 //
@@ -11,7 +12,6 @@ import { supabaseAdmin } from "@/lib/supabase"
 //
 // Designed to be called repeatedly (cron or manual) until the backlog clears.
 
-const INGEST_TOKEN = process.env.INGEST_SECRET_TOKEN ?? ""
 // Default to deployed Supabase edge function — Vercel IPs are Cloudflare-blocked
 // against public-api.nbatopshot.com, so direct GQL fails 100% from this runtime.
 const TS_GQL =
@@ -75,7 +75,8 @@ export async function GET(req: NextRequest) {
   const auth = req.headers.get("authorization") ?? ""
   const bearer = auth.replace(/^Bearer\s+/i, "")
   const urlToken = req.nextUrl.searchParams.get("token") ?? ""
-  if (!INGEST_TOKEN || (bearer !== INGEST_TOKEN && urlToken !== INGEST_TOKEN)) {
+  // constant-time via the shared helper (2026-11-07: a local compare the R150 ratchet could not see)
+  if (!tokenMatches(bearer, "INGEST_SECRET_TOKEN") && !tokenMatches(urlToken, "INGEST_SECRET_TOKEN")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 

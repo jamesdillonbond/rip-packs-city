@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { tokenMatches } from "@/lib/auth/bearer-secret"
 
 // This route classifies Top Shot moments (Top Shot GQL); the cache is shared
 // across collections and a moment id is unique only WITHIN one (#142).
@@ -12,7 +13,6 @@ const TOPSHOT_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
 // Processes up to ~55 seconds worth of work per call (Hobby plan = 60s limit).
 // Caller loops with nextOffset until done.
 
-const INGEST_TOKEN = process.env.INGEST_SECRET_TOKEN
 const TS_GQL =
   process.env.TS_PROXY_URL || "https://public-api.nbatopshot.com/graphql"
 const TS_PROXY_SECRET = process.env.TS_PROXY_SECRET || ""
@@ -105,7 +105,10 @@ export async function GET(req: NextRequest) {
   // console line, and Vitest's console interception spends a Date.now() call
   // that the wall-budget test counts.
   const authVia = bearer != null ? "header" : "query"
-  if (!INGEST_TOKEN || token !== INGEST_TOKEN) {
+  // Constant-time via the shared helper (2026-11-07 — `token !== INGEST_TOKEN` was a
+  // compare the R150 ratchet's pattern could not see: `\bTOKEN` never matches inside
+  // INGEST_TOKEN). Fail-closed when the env var is unset, as before.
+  if (!tokenMatches(token, "INGEST_SECRET_TOKEN")) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
       headers: { "Content-Type": "application/json" },

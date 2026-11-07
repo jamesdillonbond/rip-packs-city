@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { computeConfidence, escalateConfidence } from "@/lib/fmv-confidence"
 import { logTerminalRun } from "@/lib/pipeline/terminal-run"
+import { bearerMatches } from "@/lib/auth/bearer-secret"
 
 // ── FMV Backfill Route ───────────────────────────────────────────────────────
 //
@@ -71,13 +72,9 @@ export async function POST(req: NextRequest) {
   const startTime = Date.now()
   const now = new Date()
 
-  const authHeader = req.headers.get("authorization")
-  const receivedToken = authHeader?.replace("Bearer ", "") ?? ""
-  const cronSecret = process.env.CRON_SECRET
-
-  const isAuthed =
-    receivedToken === ingestToken ||
-    (cronSecret && receivedToken === cronSecret)
+  // Constant-time via the shared helper (2026-11-07 — a `receivedToken ===
+  // ingestToken` compare the R150 ratchet's identifier pattern did not see).
+  const isAuthed = bearerMatches(req.headers.get("authorization"), "INGEST_SECRET_TOKEN", "CRON_SECRET")
 
   if (!isAuthed) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })

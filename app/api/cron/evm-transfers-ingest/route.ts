@@ -526,16 +526,10 @@ function authorized(req: NextRequest): boolean {
   // ⚠ Both arms are guarded on the secret being non-empty. An unset secret would
   // otherwise make the literal `Bearer ` authenticate every caller — the
   // fail-soft `?? ""` class swept earlier today.
-  const cronSecret = process.env.CRON_SECRET;
-  const authHeader = req.headers.get("authorization");
-  if (
-    cronSecret &&
-    authHeader &&
-    authHeader.startsWith("Bearer ") &&
-    authHeader.slice(7) === cronSecret
-  ) {
-    return true;
-  }
+  // 2026-11-07: this arm was the last local equality compare of CRON_SECRET (a
+  // sliced header against the secret) — the R150 ratchet's pattern could not see it.
+  // bearerMatches is constant-time and fail-closed when the secret is unset.
+  if (bearerMatches(req.headers.get("authorization"), "CRON_SECRET")) return true;
 
   // constant-time compares via the shared helpers (CISO 2026-11-04); same accepted secret as before
   if (!process.env.INGEST_SECRET_TOKEN) return false;

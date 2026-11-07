@@ -10,7 +10,7 @@
 
 import { NextRequest, NextResponse, after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
-import { bearerMatches } from "@/lib/auth/bearer-secret";
+import { bearerMatches, tokenMatches } from "@/lib/auth/bearer-secret";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
   const isValid =
     (ingestSecret && bearerMatches(authHeader, "INGEST_SECRET_TOKEN")) ||
     (cronSecret && bearerMatches(authHeader, "CRON_SECRET")) ||
-    (ingestSecret && queryToken === ingestSecret);
+    tokenMatches(queryToken, "INGEST_SECRET_TOKEN"); // constant-time (2026-11-07)
 
   if (!isValid) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { newRowInsertFailureTally, recordRowInsertFailure, rowInsertFailureExtra } from "@/lib/pipeline/row-insert-failures"
 import { supabaseAdmin } from "@/lib/supabase"
 import { classifyPinnacleTradeTxs, type PinnacleMoveEvent } from "@/lib/pinnacle/trade-classifier"
+import { tokenMatches } from "@/lib/auth/bearer-secret"
 
 // ── Disney Pinnacle TRADE indexer ────────────────────────────────────────────
 //
@@ -37,8 +38,6 @@ import { classifyPinnacleTradeTxs, type PinnacleMoveEvent } from "@/lib/pinnacle
 export const dynamic = "force-dynamic"
 export const maxDuration = 300
 
-const INGEST_TOKEN = process.env.INGEST_SECRET_TOKEN ?? ""
-const CRON_TOKEN = process.env.CRON_SECRET ?? ""
 const WITHDRAW_EVENT = "A.edf9df96c92f4595.Pinnacle.Withdraw"
 const DEPOSIT_EVENT = "A.edf9df96c92f4595.Pinnacle.Deposit"
 const FLOW_REST = "https://rest-mainnet.onflow.org"
@@ -207,8 +206,8 @@ async function runIndexer(req: NextRequest) {
   const bearer = auth.replace(/^Bearer\s+/i, "")
   const urlToken = req.nextUrl.searchParams.get("token") ?? ""
   const presented = bearer || urlToken
-  const accepted =
-    (INGEST_TOKEN !== "" && presented === INGEST_TOKEN) || (CRON_TOKEN !== "" && presented === CRON_TOKEN)
+  // constant-time via the shared helper (2026-11-07: a local compare the R150 ratchet could not see)
+  const accepted = tokenMatches(presented, "INGEST_SECRET_TOKEN", "CRON_SECRET")
   // Fails CLOSED when both secrets are unset: `presented` can be "" but neither
   // branch can match an empty configured token.
   if (!accepted) return unauthorized()

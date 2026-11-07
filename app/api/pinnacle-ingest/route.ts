@@ -12,11 +12,11 @@ import {
   extractEditionKeyFromNft,
 } from "@/lib/pinnacle/pinnacleFlowty"
 import { flowtyTraitsToPinnacleEdition } from "@/lib/pinnacle/pinnacleTypes"
+import { tokenMatches } from "@/lib/auth/bearer-secret"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 60
 
-const INGEST_SECRET = process.env.INGEST_SECRET_TOKEN ?? ""
 
 export async function GET() {
   const { data, error } = await (supabaseAdmin as any).rpc("pinnacle_health_check")
@@ -29,7 +29,8 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   const url = new URL(req.url)
   const token = url.searchParams.get("token") ?? req.headers.get("x-ingest-token") ?? ""
-  if (!INGEST_SECRET || token !== INGEST_SECRET) {
+  // constant-time via the shared helper (2026-11-07: a local compare the R150 ratchet could not see)
+  if (!tokenMatches(token, "INGEST_SECRET_TOKEN")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
