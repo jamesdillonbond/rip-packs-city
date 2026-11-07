@@ -80,11 +80,23 @@ function walk(dir: string, out: string[] = []): string[] {
 const RAW_RED_BG = /background(-color)?\s*:[^;\n]*var\(--rpc-red(-hover)?(\s*,\s*#[0-9a-fA-F]{6})?\)/
 const WHITE_TEXT = /color\s*:[^;\n]*?(['"`(: ]|^)?(#fff\b|#ffffff\b|white\b)/i
 
+// 2026-11-07: an IDENTIFIER alias evaded the walk for two weeks — five files
+// wrote `const RED = "var(--rpc-red)"` and painted `background: RED` under
+// white (7 live buttons: /rewards ×5, admin rewards, the profile share button
+// axe flagged on /profile/<u>/trophy-case). Resolve the file's own aliases of
+// the raw red and treat `background: <alias>` as the raw red.
+const RAW_RED_ALIAS = /\bconst\s+([A-Za-z_$][\w$]*)\s*=\s*["'`]var\(--rpc-red(-hover)?(\s*,[^)]*)?\)["'`]/g
+
 export function findWhiteOnRawRed(src: string): number[] {
-  const lines = stripComments(src).split("\n")
+  const stripped = stripComments(src)
+  const lines = stripped.split("\n")
+  const aliases = [...stripped.matchAll(RAW_RED_ALIAS)].map((m) => m[1])
+  const aliasBg = aliases.length
+    ? new RegExp(`background(-color)?\\s*:\\s*(${aliases.join("|")})\\s*[,;}]`)
+    : null
   const hits: number[] = []
   lines.forEach((ln: string, i: number) => {
-    if (!RAW_RED_BG.test(ln)) return
+    if (!RAW_RED_BG.test(ln) && !(aliasBg && aliasBg.test(ln))) return
     // Same line, or (2026-10-24) the same multi-line style object: a white
     // \`color\` within two lines either side, with no brace between them. The
     // same-line form alone missed two blog CTAs written one property per line.
@@ -106,6 +118,12 @@ describe("tree walk: white label text on the raw brand red", () => {
     expect(findWhiteOnRawRed(`<a style={{ background: "var(--rpc-red-fill)", color: "#fff" }} />`)).toEqual([])
     // one property per line (the 10-24 blog CTA shape)
     expect(findWhiteOnRawRed(`const CTA = {\n  padding: 8,\n  background: "var(--rpc-red, #E03A2F)",\n  color: "#fff",\n}`)).toEqual([3])
+    // an identifier alias of the raw red (the 11-07 shape — 7 live sites missed)
+    expect(findWhiteOnRawRed(`const RED = "var(--rpc-red)";\nconst s = {\n  background: RED,\n  color: "#fff",\n}`)).toEqual([3])
+    expect(findWhiteOnRawRed(`const RED = "var(--rpc-red, #E03A2F)";\nconst s = { background: RED, color: "#fff" }`)).toEqual([2])
+    // the fill token behind an alias is fine; so is the raw red under dark text
+    expect(findWhiteOnRawRed(`const RED_FILL = "var(--rpc-red-fill)";\nconst s = { background: RED_FILL, color: "#fff" }`)).toEqual([])
+    expect(findWhiteOnRawRed(`const RED = "var(--rpc-red)";\nconst s = { background: RED, color: "#0a0a0a" }`)).toEqual([])
     // a white colour in a DIFFERENT object two lines away is not this object's label
     expect(findWhiteOnRawRed(`const A = { background: "var(--rpc-red)" }\nconst B = { color: "#fff" }`)).toEqual([])
   })

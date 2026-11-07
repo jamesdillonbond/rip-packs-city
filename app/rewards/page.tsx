@@ -21,6 +21,7 @@ import { accentText } from "@/lib/accent-text";
 const DISPLAY = "var(--font-display)";
 const MONO = "var(--font-mono)";
 const RED = "var(--rpc-red)";
+const RED_FILL = "var(--rpc-red-fill)"; // under white label text (AA, 2026-11-07)
 // TEXT painted red uses the text-safe red (#FF4D40 dark / #B52A21 light); RED stays the fill.
 const RED_TEXT = "var(--rpc-red-text)";
 
@@ -418,7 +419,7 @@ export default function RewardsPage() {
                 display: "inline-block",
                 marginTop: 8,
                 padding: "10px 18px",
-                background: RED,
+                background: RED_FILL,
                 color: "#fff",
                 borderRadius: 8,
                 fontFamily: DISPLAY,
@@ -448,7 +449,7 @@ export default function RewardsPage() {
               style={{
                 marginTop: 8,
                 padding: "10px 18px",
-                background: RED,
+                background: RED_FILL,
                 color: "#fff",
                 border: "none",
                 borderRadius: 8,
@@ -815,7 +816,7 @@ export default function RewardsPage() {
                           border: "none",
                           cursor: disabled ? "not-allowed" : "pointer",
                           opacity: disabled ? 0.5 : 1,
-                          background: RED,
+                          background: RED_FILL,
                           color: "#fff",
                           fontFamily: DISPLAY,
                           textTransform: "uppercase",
@@ -1063,7 +1064,7 @@ function InviteBlock({
             borderRadius: 8,
             border: "none",
             cursor: "pointer",
-            background: RED,
+            background: RED_FILL,
             color: "#fff",
             fontFamily: DISPLAY,
             textTransform: "uppercase",
@@ -1265,7 +1266,7 @@ function ShippingModal({
               padding: "9px 18px",
               borderRadius: 8,
               border: "none",
-              background: RED,
+              background: RED_FILL,
               color: "#fff",
               cursor: canSubmit && !saving ? "pointer" : "not-allowed",
               opacity: canSubmit && !saving ? 1 : 0.5,

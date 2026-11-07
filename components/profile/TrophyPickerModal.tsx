@@ -39,7 +39,7 @@ import { proxyIpfsImageUrl } from "@/lib/ipfs-media";
 
 const condensedFont = "var(--font-display)";
 const monoFont = "var(--font-mono)";
-const ACCENT_RED = "var(--rpc-red)";
+const RED_FILL = "var(--rpc-red-fill)"; // under white label text (AA, 2026-11-07)
 
 // Chains whose holdings are in wallet_moments_cache, the trophy pool.
 const TROPHY_INDEXED_CHAINS = new Set<string>(["flow", "solana"]);
@@ -1317,9 +1317,9 @@ function SortBar({ sort, onChange }: { sort: SortKey; onChange: (s: SortKey) => 
 }
 
 const primaryBtnStyle: React.CSSProperties = {
-  background: ACCENT_RED,
+  background: RED_FILL,
   border: "none",
-  color: "#fff", // brand-exception: white text on the red (ACCENT_RED) primary-button fill
+  color: "#fff", // brand-exception: white label on the --rpc-red-fill button (4.68:1; the raw red read 4.36:1)
   padding: "8px 18px",
   borderRadius: 6,
   fontFamily: condensedFont,

@@ -18,6 +18,7 @@ const TOKEN_KEY = "rpc_admin_token";
 const DISPLAY = "var(--font-display)";
 const MONO = "var(--font-mono)";
 const RED = "var(--rpc-red, #E03A2F)";
+const RED_FILL = "var(--rpc-red-fill, #D93529)"; // under white label text (AA)
 
 interface Economy {
   total_issued_credits: number;
@@ -663,7 +664,7 @@ const btn: React.CSSProperties = {
   borderRadius: 8,
   border: "none",
   cursor: "pointer",
-  background: RED,
+  background: RED_FILL,
   color: "#fff",
   fontFamily: DISPLAY,
   textTransform: "uppercase",

@@ -30,6 +30,7 @@ import { ownLookup } from "@/lib/safe-lookup"
 const condensedFont = "var(--font-display)"
 const monoFont = "var(--font-mono)"
 const ACCENT_RED = "var(--rpc-red, #E03A2F)"
+const RED_FILL = "var(--rpc-red-fill, #D93529)" // under white label text (AA, 2026-11-07)
 
 type Kind = "pack_buy" | "pack_open" | "pack_sell" | "moment_buy" | "moment_pull" | "moment_sell"
 
@@ -240,7 +241,7 @@ export default function TransactionHistoryClient() {
             <div style={{ fontFamily: monoFont, fontSize: 11, color: "rgba(255,255,255,0.55)", marginBottom: 12 }}>
               Transaction history reads from your saved wallets. Save a wallet from your dashboard, then come back here.
             </div>
-            <Link href="/dashboard" style={{ display: "inline-block", padding: "8px 16px", background: ACCENT_RED, color: "#fff", borderRadius: 6, fontFamily: condensedFont, fontWeight: 700, fontSize: 12, letterSpacing: "0.08em", textTransform: "uppercase", textDecoration: "none" }}>
+            <Link href="/dashboard" style={{ display: "inline-block", padding: "8px 16px", background: RED_FILL, color: "#fff", borderRadius: 6, fontFamily: condensedFont, fontWeight: 700, fontSize: 12, letterSpacing: "0.08em", textTransform: "uppercase", textDecoration: "none" }}>
               Open dashboard
             </Link>
           </div>

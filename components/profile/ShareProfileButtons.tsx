@@ -32,7 +32,9 @@
 import { useCallback, useMemo, useState } from "react";
 
 const DISPLAY = "var(--font-display)";
-const RED = "var(--rpc-red)";
+// White label text goes on the FILL token, not the raw brand red (4.36:1 <
+// AA; axe on /profile/<u>/trophy-case, 2026-11-07). See __tests__/red-fill-contrast.
+const RED_FILL = "var(--rpc-red-fill)";
 
 export type ShareSurface = "profile" | "trophy-case";
 
@@ -170,7 +172,7 @@ export default function ShareProfileButtons({
     borderRadius: 8,
     border: "none",
     cursor: "pointer",
-    background: RED,
+    background: RED_FILL,
     color: "#fff",
     fontFamily: DISPLAY,
     textTransform: "uppercase",

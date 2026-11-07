@@ -18,7 +18,7 @@ import Link from "next/link";
 import RpcLogo from "@/components/RpcLogo";
 import TrophySlab, { type TrophySlabData } from "@/components/TrophySlab";
 import ShareProfileButtons from "@/components/profile/ShareProfileButtons";
-import { accentText } from "@/lib/accent-text"
+import { accentFill, accentText, labelOn } from "@/lib/accent-text"
 
 const MONO = "var(--font-mono)";
 const DISPLAY = "var(--font-display)";
@@ -246,8 +246,11 @@ export default function TrophyCaseShareClient({
               textDecoration: "none",
               fontSize: 12,
               padding: "9px 20px",
-              background: accent,
-              borderColor: accent,
+              // Same pairing as ProfileClient's CTA: a raw accent under white read
+              // 4.36:1 (brand red) or worse (any light team colour) — axe 2026-11-07.
+              background: accentFill(accent),
+              borderColor: accentFill(accent),
+              color: labelOn(accent),
             }}
           >
             {isOwner ? "EDIT YOUR TROPHY CASE →" : "BUILD YOUR OWN TROPHY CASE →"}
