@@ -190,6 +190,11 @@ export function groupForPath(pathname: string): IaGroupId | null {
   const p = pathname.split("?")[0]
   const seg = p.split("/").filter(Boolean)
   if (seg.length === 2 && getCollection(seg[0]) && COLLECTION_PAGE_GROUP[seg[1]]) return COLLECTION_PAGE_GROUP[seg[1]]
+  // An EXACT item match in any group wins over a hub-prefix match in an earlier
+  // one — /insights/trade-in is Trade's board, not merely "under /insights".
+  for (const g of IA_GROUPS) {
+    if (g.items.some((i) => i.href.split("?")[0] === p && !i.href.includes("{collection}"))) return g.id
+  }
   for (const g of IA_GROUPS) {
     const hrefs = [g.href, ...g.items.map((i) => i.href)].map((h) => h.split("?")[0])
     for (const h of hrefs) {

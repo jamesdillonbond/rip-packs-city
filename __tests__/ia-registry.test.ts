@@ -92,7 +92,9 @@ describe("IA registry", () => {
     expect(groupForPath("/nfl-all-day/packs")).toBe("packs")
     expect(groupForPath("/trades/block")).toBe("trade")
     expect(groupForPath("/insights/rookies")).toBe("insights")
-    expect(groupForPath("/insights/offer-spread")).toBe("market") // listed under Market first, by design
+    expect(groupForPath("/insights/offer-spread")).toBe("market") // an exact item match beats the /insights hub prefix
+    expect(groupForPath("/insights/trade-in")).toBe("trade")
+    expect(groupForPath("/trophy-challenges/dame-time")).toBe("collectors")
     expect(groupForPath("/dashboard")).toBe("me")
     expect(groupForPath("/")).toBeNull()
     expect(groupForPath("/marketing")).toBeNull() // prefix lookalike
