@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { render, cleanup, fireEvent } from "@testing-library/react"
 import HomePageMarketing from "@/components/HomePageMarketing"
+import { visibleGroups } from "@/lib/ia"
 import { publishedCollections } from "@/lib/collections"
 
 // Light render test for the anonymous marketing landing (largely presentational):
@@ -53,6 +54,19 @@ describe("HomePageMarketing", () => {
     const h1 = getByRole("heading", { level: 1 }).textContent ?? ""
     expect(h1.toLowerCase()).toContain("worth")
     expect(h1.toLowerCase()).not.toContain("rip packs")
+  })
+
+  // 2026-11-07: the landing header was a FOURTH nav vocabulary (Insights ·
+  // Collections · How it works · Free account). IA rule 4: every nav shows the
+  // same groups in the same order — so it renders the registry's public groups,
+  // in registry order, and nothing hand-written beside them but Sign In.
+  it("the header nav is the registry's public groups, in order, plus Sign In", () => {
+    const { container } = render(<HomePageMarketing />)
+    const nav = container.querySelector("nav.rpc-home-nav") as HTMLElement
+    const labels = Array.from(nav.querySelectorAll("a")).map((a) => a.textContent?.trim())
+    const expected = visibleGroups(false).map((g) => g.label)
+    expect(labels).toEqual([...expected, "Sign In"])
+    expect(nav.querySelector('a[href^="#"]')).toBeNull()
   })
 
   it("renders a card for each published collection", () => {

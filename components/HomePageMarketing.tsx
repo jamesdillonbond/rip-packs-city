@@ -69,18 +69,18 @@ function HomeHeader() {
           className="rpc-home-nav"
           style={{ display: "flex", alignItems: "center", gap: 14 }}
         >
-          <Link href="/insights" style={navLinkStyle}>
-            Insights
-          </Link>
-          <a href="#collections" style={navLinkStyle}>
-            Collections
-          </a>
-          <a href="#how-it-works" style={navLinkStyle}>
-            How it works
-          </a>
-          <a href="#pricing" style={navLinkStyle}>
-            Free account
-          </a>
+          {/* 2026-11-07: the SAME five public groups, in the SAME order, as the
+              header on every other page (IA rule 4 — this landing header was a
+              fourth nav vocabulary: Insights · Collections · How it works · Free
+              account). Rendered from the registry, plain links: the pillar doors
+              below are the homepage's map, the header only has to agree with the
+              rest of the site. The in-page anchors it carried are one scroll away
+              and the hero + closing CTA still carry the signup. */}
+          {visibleGroups(false).map((g) => (
+            <Link key={g.id} href={resolveHref(g.href, DEFAULT_COLLECTION, g.page)} style={navLinkStyle} prefetch={false}>
+              {g.label}
+            </Link>
+          ))}
           {/* /login, NOT /dashboard. /dashboard is gated, so an anonymous visitor
               clicking "Sign In" was bounced through proxy.ts to /login anyway —
               an extra redirect on the single most important funnel click, and one
