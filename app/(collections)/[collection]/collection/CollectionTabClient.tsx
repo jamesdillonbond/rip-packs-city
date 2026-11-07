@@ -1340,6 +1340,14 @@ function WalletMomentsBody() {
         ) : (
         <div className="mb-5 flex flex-col gap-2 sm:flex-row">
           <input aria-label="Wallet address or username"
+            // Mobile Safari auto-capitalises and autocorrects the first word,
+            // which corrupts a case-sensitive base58 Candy address or a mixed-case
+            // Panini username (the dashboard's input had this since 10-18; the
+            // public binder — the phone's second tab — did not, 2026-11-07).
+            spellCheck={false}
+            autoCapitalize="none"
+            autoCorrect="off"
+            enterKeyHint="search"
             value={input}
             onChange={function(e) { setInput(e.target.value) }}
             onKeyDown={function(e) { if (e.key === "Enter" && !loading && input.trim()) handleSearch() }}
@@ -1485,7 +1493,9 @@ function WalletMomentsBody() {
         />
         </>) : null}
 
-        {error ? <div className="mb-4 rounded-lg border border-red-800 bg-red-950 p-3 text-red-300 text-sm">{error}</div> : null}
+        {/* role=status: a failed lookup (or the UFC scan progress this box also
+            carries) is announced, not only painted (2026-11-07). */}
+        {error ? <div role="status" aria-live="polite" className="mb-4 rounded-lg border border-red-800 bg-red-950 p-3 text-red-300 text-sm">{error}</div> : null}
 
         {/* Debug table */}
         {showDebug ? (

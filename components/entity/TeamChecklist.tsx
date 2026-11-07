@@ -697,6 +697,8 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
               inputMode="text"
               autoComplete="off"
               spellCheck={false}
+              autoCapitalize="none"
+              autoCorrect="off"
               placeholder={isSolana ? "Solana wallet…" : "0x…"}
               value={walletInput}
               onChange={e => setWalletInput(e.target.value)}

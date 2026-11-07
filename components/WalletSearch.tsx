@@ -276,6 +276,12 @@ export default function WalletSearch({
       >
         <input
           aria-label={ariaLabel}
+          // Case-sensitive Candy (base58) addresses and Panini usernames: no
+          // auto-capitalise / autocorrect (2026-11-07; mirrors the dashboard).
+          spellCheck={false}
+          autoCapitalize="none"
+          autoCorrect="off"
+          enterKeyHint="search"
           value={value}
           onChange={(e) => setValue(e.target.value)}
           placeholder={placeholder}

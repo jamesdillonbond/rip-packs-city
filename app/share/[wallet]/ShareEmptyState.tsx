@@ -297,6 +297,10 @@ export default function ShareEmptyState({ wallet }: { wallet: string }) {
         >
           <input
             aria-label="Try another Top Shot username or Flow wallet"
+            spellCheck={false}
+            autoCapitalize="none"
+            autoCorrect="off"
+            enterKeyHint="search"
             value={value}
             onChange={(e) => setValue(e.target.value)}
             placeholder="Try another username or wallet (0x…)"

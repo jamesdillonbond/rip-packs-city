@@ -1155,6 +1155,9 @@ function ProfilePageInner() {
 
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
             <input aria-label="Username or wallet address to add"
+              spellCheck={false}
+              autoCapitalize="none"
+              autoCorrect="off"
               value={usernameInput}
               onChange={(e) => setUsernameInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") resolveAndAssociate(); }}
