@@ -96,6 +96,30 @@ select optgroup {
   }
 }
 
+/* ── Forced colours (Windows High Contrast), 2026-11-07 ──────────────────────
+   Under forced-colors the browser replaces every background and border colour
+   with system colours, so the cues that mark the CURRENT tab — a tinted
+   background, a 2px accent underline against a transparent one, a bolder
+   inner span — all collapse: measured on /nba-top-shot/market at 390 px, the
+   selected collection tab and the selected bottom-bar tab computed IDENTICAL
+   to their neighbours. An underline and a system-colour outline survive
+   forced colours; aria-selected / aria-current are the hooks the markup
+   already carries, so this follows the semantics rather than the paint. */
+@media (forced-colors: active) {
+  [role="tab"][aria-selected="true"],
+  nav[aria-label="Primary"] a[aria-current="page"],
+  a[data-ia-group][aria-current="page"] {
+    text-decoration: underline !important;
+    text-decoration-thickness: 2px;
+    text-underline-offset: 4px;
+    outline: 2px solid CanvasText;
+    outline-offset: -2px;
+  }
+  [role="tab"][aria-selected="false"] {
+    border-bottom-color: transparent !important;
+  }
+}
+
 /* Links inside running text must be distinguishable by more than colour (WCAG
    1.4.1 / axe link-in-text-block, 8 sites on 2026-10-24 — several set
    text-decoration:none inline, hence !important). Scoped to unclassed links in
