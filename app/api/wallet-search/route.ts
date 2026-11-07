@@ -567,6 +567,21 @@ async function fillFromWalletCache(
   }
 }
 
+// Background writes started during the request are handed to after() so Vercel
+// keeps the function alive until they settle (2026-11-07 review: a bare
+// `.catch(() => {})` promise can be frozen with the lambda once the response is
+// sent, and the cache / seed / classify write silently never lands). The work
+// still STARTS where it did; after() only waits for it. Guarded: after() throws
+// outside a request scope, and a background write must never fail the search.
+function keepAlive(p: Promise<unknown>): void {
+  const settled = p.catch(() => {})
+  try {
+    after(settled)
+  } catch {
+    // outside a request scope (tests, scripts): the promise still runs
+  }
+}
+
 async function seedEditionsToSupabase(rows: WalletRow[], collectionId: string) {
   for (const row of rows) {
     try {
@@ -1952,7 +1967,7 @@ export async function POST(req: NextRequest) {
     const rows = isAllDay ? fmvEnriched : await enrichWithAcquisitionData(fmvEnriched, wallet)
 
     // Fire-and-forget — progressively reclassify unknown acquisitions
-    if (!isAllDay) progressivelyClassify(rows, wallet)
+    if (!isAllDay) keepAlive(progressivelyClassify(rows, wallet))
 
     // ⚠ null, not 0, when no row carries a measured figure (2026-11-07 review):
     // every degraded row has tssPoints null, and `?? 0` summed them into a
@@ -1963,12 +1978,14 @@ export async function POST(req: NextRequest) {
       : measuredTss.reduce((sum, r) => sum + (r.tssPoints as number), 0)
 
     // Fire-and-forget — seeds all editions regardless of price
-    getCollectionId().then((collectionId) => {
-      if (collectionId && !isAllDay) seedEditionsToSupabase(rows, collectionId).catch(() => {})
-    })
+    keepAlive(
+      getCollectionId().then((collectionId) =>
+        collectionId && !isAllDay ? seedEditionsToSupabase(rows, collectionId) : undefined,
+      ),
+    )
 
     // Fire-and-forget — upsert wallet moments into cache for fallback
-    if (!isAllDay) upsertWalletMomentsCache(wallet, rows).catch(() => {})
+    if (!isAllDay) keepAlive(upsertWalletMomentsCache(wallet, rows))
 
     // Fire-and-forget — persist cost basis from wallet-search purchase data
     const acquisitionRows = baseRows
@@ -1984,14 +2001,14 @@ export async function POST(req: NextRequest) {
         source: "wallet_search",
       }))
     if (acquisitionRows.length > 0) {
-      ;(supabaseAdmin as any)
+      keepAlive((supabaseAdmin as any)
         .from("moment_acquisitions")
         .upsert(acquisitionRows, { onConflict: "nft_id,wallet,transaction_hash", ignoreDuplicates: true })
         .then(({ error }: { error: any }) => {
           if (error && !String(error.message ?? "").includes("duplicate")) {
             console.warn("[wallet-search] Cost basis write error:", error.message)
           }
-        })
+        }))
     }
 
     // Second pass — fill in cost basis from the sales table for moments that
@@ -2004,7 +2021,7 @@ export async function POST(req: NextRequest) {
       .filter(Boolean)
 
     if (missingCostBasis.length > 0) {
-      ;(async () => {
+      keepAlive((async () => {
         try {
           const { data: salesRows } = await (supabaseAdmin as any)
             .from("sales")
@@ -2047,7 +2064,7 @@ export async function POST(req: NextRequest) {
         } catch (e) {
           console.warn("[wallet-search] Sales backfill exception:", e instanceof Error ? e.message : String(e))
         }
-      })()
+      })())
     }
 
     // Acquisition stats (non-blocking — fail silently if missing)
