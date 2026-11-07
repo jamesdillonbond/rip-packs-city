@@ -84,6 +84,14 @@ interface Lifecycle {
   error?: string | null
 }
 
+/**
+ * Three states, never two (2026-11-07, handoff 11-06 item 23 residue):
+ *   - a Lifecycle            → the read succeeded (resolved OR "unknown" status)
+ *   - null                   → the read FAILED (error, throw, no env, foreign pack)
+ * The caller tells "we have no record of this pack" (a successful read whose
+ * status is "unknown") from "we could not read" (null) — the first draws the
+ * generic card with no id and no figures, the second keeps the id the link named.
+ */
 async function fetchLifecycle(packNftId: string, collectionUuid: string | null): Promise<Lifecycle | null> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -124,9 +132,15 @@ export async function GET(req: NextRequest) {
   if (id) lc = await fetchLifecycle(id, collectionUuid)
 
   const resolved = lc && lc.status !== "unknown" && !lc.error
-  const distTitle = lc?.distribution?.title ?? null
-  const title = distTitle ?? lc?.pack_name ?? (id ? `Pack #${id}` : "Pack")
-  const tier = lc?.distribution?.tier ?? null
+  // ABSENT: the read succeeded and the RPC has no record of this id (the pack
+  // page renders its not-found body + NOT_FOUND_METADATA for the same answer).
+  // Naming "Pack #<id>" over a RETAIL row would card a pack that does not exist.
+  const absent = !!lc && !resolved
+  const distTitle = resolved ? (lc?.distribution?.title ?? null) : null
+  const title = absent
+    ? "Pack lifecycle"
+    : distTitle ?? (resolved ? lc?.pack_name : null) ?? (id ? `Pack #${id}` : "Pack")
+  const tier = resolved ? (lc?.distribution?.tier ?? null) : null
   const accent = tierColor(tier)
   const tierLabel = tier ? tier.charAt(0).toUpperCase() + tier.slice(1).toLowerCase() : "Pack"
 
@@ -155,7 +169,7 @@ export async function GET(req: NextRequest) {
     .slice(0, 3)
 
   const eyebrow = isRipped ? "PACK RIP" : resolved && lc!.status === "sealed" ? "SEALED PACK" : "PACK"
-  const depletion = lc?.distribution?.depletion_pct ?? null
+  const depletion = resolved ? (lc?.distribution?.depletion_pct ?? null) : null
 
   const verdictLabel = !isRipped ? (resolved ? "SEALED" : "PACK") : !hasDelta ? "RIPPED" : isPositive ? "+ROI" : "−ROI"
   const verdictColor = !hasDelta ? "#9CA3AF" : isPositive ? "#10B981" : "#EF4444"
@@ -274,9 +288,9 @@ export async function GET(req: NextRequest) {
               <Stat label={pv.partial ? "PULLED (AT LEAST)" : "PULLED"} value={fmtUsd(grossUsd)} color={hasDelta && isPositive ? "#10B981" : "#FFFFFF"} />
               <Stat label="PAID" value={fmtUsd(paidAnchor)} color="#FFFFFF" />
             </>
-          ) : (
+          ) : resolved ? (
             <Stat label={basis !== null ? "LAST BOUGHT" : "RETAIL"} value={fmtUsd(paidAnchor)} color="#FFFFFF" />
-          )}
+          ) : null}
           {isRipped && hasDelta ? (
             <Stat
               label="VS COST"

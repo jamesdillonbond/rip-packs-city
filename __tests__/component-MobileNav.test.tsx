@@ -48,6 +48,34 @@ describe("MobileNav", () => {
     expect(labels).toEqual(["HOME", "MY BINDER", ...MOBILE_GROUP_IDS.map((id) => id.toUpperCase())])
   })
 
+  // 2026-11-07 (handoff 11-06 item 27 residue): the group tabs are MAPPED from
+  // the registry, not hand-built beside it. A different registry must give a
+  // different bar — the literal-equality pin above cannot tell a mapping from a
+  // hand-built copy that happens to agree today.
+  it("the group tabs are built FROM the registry — a different MOBILE_GROUP_IDS gives a different bar", async () => {
+    vi.resetModules()
+    vi.doMock("@/lib/ia", async () => {
+      const real = await vi.importActual<typeof import("@/lib/ia")>("@/lib/ia")
+      return {
+        ...real,
+        MOBILE_GROUP_IDS: ["insights", "market"],
+        IA_GROUPS: real.IA_GROUPS.map((g) => (g.id === "insights" ? { ...g, label: "Boards", href: "/insights/deals" } : g)),
+      }
+    })
+    try {
+      const { default: Mapped } = await import("@/components/MobileNav")
+      const { container } = render(<Mapped />)
+      const labels = Array.from(bar(container).children)
+        .filter((c) => c.tagName === "A" || c.tagName === "SPAN")
+        .map((c) => (c.textContent ?? "").trim())
+      expect(labels).toEqual(["HOME", "MY BINDER", "BOARDS", "MARKET"])
+      expect(tab(container, "BOARDS").getAttribute("href")).toBe("/insights/deals")
+    } finally {
+      vi.doUnmock("@/lib/ia")
+      vi.resetModules()
+    }
+  })
+
   it("renders no sheet or dialog — every tab is a destination", () => {
     const { container } = render(<MobileNav />)
     expect(container.querySelector('[role="dialog"]')).toBeNull()

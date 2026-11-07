@@ -271,6 +271,44 @@ describe("/api/og/pack/lifecycle — the ROI verdict", () => {
     expect(text).not.toContain("null%")
   })
 
+  // ── 2026-11-07: ABSENT vs FAILED (handoff 11-06 item 23 residue) ─────────
+  // The live RPC answers an id it has no record of with a SUCCESSFUL payload:
+  // { status: "unknown", error: "no purchase or rip events recorded…" }. The
+  // pack page 404s on that answer; the card drew "Pack #<id>" over "RETAIL —",
+  // carding a pack that does not exist.
+
+  const ABSENT = { error: "no purchase or rip events recorded for this pack id", status: "unknown", pack_nft_id: "12345" }
+
+  it("an id the RPC has NO RECORD of draws the generic card — no id, no RETAIL row", async () => {
+    mockDb({ lifecycle: ABSENT })
+    const text = ogText(await render(ID))
+    expect(text).not.toContain("12345")
+    expect(text).not.toContain("RETAIL")
+    expect(text).not.toContain("LAST BOUGHT")
+    expect(text).not.toContain("ROI")
+    expect(text).toContain("Pack lifecycle")
+  })
+
+  it("an unknown-status payload's distribution fields never reach the card", async () => {
+    mockDb({ lifecycle: { ...RIPPED, status: "unknown" } })
+    const text = ogText(await render(ID))
+    expect(text).not.toContain("Series 5 Rare Pack")
+    expect(text).not.toContain("Fallback Name")
+    expect(text).not.toContain("72%")
+    expect(usesColor(await render(ID), "#A855F7")).toBe(false)
+  })
+
+  it.each([
+    ["a failed query", { error: true }],
+    ["a thrown client", { throws: true }],
+  ])("%s keeps the id the link named (absence not established) but states no figure", async (_l, opts) => {
+    mockDb(opts as never)
+    const text = ogText(await render(ID))
+    expect(text).toContain("Pack #12345")
+    expect(text).not.toContain("RETAIL")
+    expect(text).not.toContain("$")
+  })
+
   it("always renders at 1200x630", async () => {
     mockDb({ lifecycle: RIPPED })
     await render(ID)

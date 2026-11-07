@@ -4,8 +4,9 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, useEffect, useMemo } from "react";
 import { getLastCollection } from "@/lib/active-collection";
-import { getCollection } from "@/lib/collections";
+import { getCollection, type CollectionPage } from "@/lib/collections";
 import { accentText } from "@/lib/accent-text";
+import { IA_GROUPS, MOBILE_GROUP_IDS, type IaGroupId } from "@/lib/ia";
 
 const NAV_HEIGHT = 60;
 const ICON_SIZE = 22;
@@ -57,6 +58,9 @@ const MARKET_PAGES = new Set(["market", "sniper", "hot-floors"]);
 const PACKS_PAGES = new Set(["packs", "pack-sniper"]);
 
 export type MobileTab = "home" | "market" | "packs" | "insights" | "binder";
+
+/** A registry group the bar renders as a tab (MOBILE_GROUP_IDS; Trade is not one). */
+type MobileGroupTab = Extract<MobileTab, IaGroupId>;
 
 export function activeTabFor(pathname: string, pageSegment: string, isCollectionRoute: boolean): MobileTab | null {
   if (pathname === "/") return "home";
@@ -139,19 +143,29 @@ export default function MobileNav() {
   // (AutoSearchReader), and shows the lookup box only to a visitor with neither. It is PUBLIC —
   // never point a tab at auth-gated /dashboard (a login wall from the first
   // tap, R36).
-  const tabs: { key: MobileTab; label: string; href: string; page?: "collection" | "packs" }[] = [
+  const tabs: { key: MobileTab; label: string; href: string; page?: CollectionPage }[] = [
     { key: "home", label: "HOME", href: "/" },
     // ⭐ 2026-11-07 (Trevor, 8:01 AM PT): MY BINDER sits second, between HOME and
     // MARKET — the personal page first, then the header's groups in header order.
     { key: "binder", label: "MY BINDER", href: `/${collection}/collection`, page: "collection" },
-    // The cross-collection HUB (app/market/page.tsx): never inert.
-    { key: "market", label: "MARKET", href: "/market" },
-    // Pack EV is collection-scoped (no cross-collection hub exists), so this is
-    // the one tab beside MY BINDER that can be INERT — a collection with no packs
-    // page (UFC) gets a disabled tab, never another collection's packs.
-    { key: "packs", label: "PACKS", href: `/${collection}/packs`, page: "packs" },
-    // The /insights hub — the largest anonymous surface in the product.
-    { key: "insights", label: "INSIGHTS", href: "/insights" },
+    // 2026-11-07 (handoff 11-06 item 27 residue): the group tabs come FROM the
+    // registry (lib/ia.ts MOBILE_GROUP_IDS → IA_GROUPS), in its order, with the
+    // group's own label and hub — MARKET → /market, PACKS → /{collection}/packs,
+    // INSIGHTS → /insights. ⚠ `{collection}` is substituted LITERALLY, never via
+    // resolveHref(): resolveHref falls back to Top Shot for a collection that
+    // lacks the page (right for a global menu), and the bar's rule is the
+    // opposite — a collection with no packs page (UFC) gets an INERT tab below,
+    // never another collection's packs (substitution answers the wrong subject).
+    ...MOBILE_GROUP_IDS.map((id) => {
+      const g = IA_GROUPS.find((x) => x.id === id);
+      if (!g) throw new Error(`MobileNav: MOBILE_GROUP_IDS names unknown group ${id}`);
+      return {
+        key: id as MobileGroupTab,
+        label: g.label.toUpperCase(),
+        href: g.href.replace("{collection}", collection),
+        ...(g.href.includes("{collection}") && g.page ? { page: g.page } : {}),
+      };
+    }),
   ];
 
   return (
