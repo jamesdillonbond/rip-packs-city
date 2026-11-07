@@ -103,6 +103,8 @@
 
 37. **Light-mode header slab on the trophy case (~11:10–11:40 AM PT).** Adding `/profile/jamesdillonbond` + `/trophy-case` to the a11y gate (34 routes now) surfaced what my `colorScheme` probe had missed: the gate uses `?theme=light`, and there the trophy-case sticky header stayed black (`rgba(8,8,8,0.97)` hardcoded) under light-shade red text — FULL PROFILE → 3.02:1. Same slab on the parked `/nba/fast-break`. Both on `var(--rpc-header-bg)`; new tree walk `sticky-headers-use-the-theme-background` (sticky + near-black literal, banned at zero, proven by stashing the fix). Also axe'd 10 un-gated public pages at 390 both themes: 0 serious/critical (`/giveaways`, `/trades`, `/rewards` redirect to login anon — by design). Concierge "dame"/"wemby" probes resolve to Lillard/Wembanyama end-to-end; one reply began with a stray "R" before "Victor Wembanyama" — not reproduced on two re-asks (model noise, no route lever found).
 
+38. **Invisible glyphs in light mode (~11:40–11:55 AM PT).** The remove-trophy ✕ (`TrophySlab`, owner dashboard) and the pack page's ▶ badge coloured their glyph with `--rpc-text-primary` on a fixed 55–60 % black disc → near-black on black in light mode; the ✕ is the only phone unpin path. Both fixed white (brand-exception). Pin red on old code. The whole-canvas dark pages (admin, transaction history) are consistent dark-on-dark in both themes — Phase-2 brand debt, not a defect.
+
 ## Post-ship watch (what to read tomorrow)
 
 - **Series-1 Top Shot art** on `/dashboard/*`, `/profile/*`, binder, trade room: present (any blank tile with a `data-rpc-dead-art` attribute whose `data-rpc-dead-src` starts `…/editions/<N>_` means ANOTHER series was retired — same fix, derive not copy).
