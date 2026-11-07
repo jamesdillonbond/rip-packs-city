@@ -723,7 +723,8 @@ export function isPublicPath(pathname: string, method: string): boolean {
   // caller is a bot platform, not a signed-in RPC user. (2026-06-16)
   if (pathname === "/api/bots/telegram" || pathname === "/api/bots/discord") return true
   // /api/alerts/channels/verify-email — GET target of the alert-email
-  // confirmation link, clicked from a mail client with no RPC session cookie.
+  // confirmation link (renders a Confirm button) and the POST that button
+  // submits (the claim; 2026-11-07), from a mail client with no RPC session cookie.
   // Security rests on the one-time, 15-min-TTL code bound to (owner,email) at
   // creation. EXACT path only — /api/alerts/channels and /api/alerts/subscriptions
   // stay session-gated. (2026-06-16)
