@@ -38,7 +38,7 @@ failure it documents.
 
 ## 2026-11-06 — 4 filings
 
-- [E2E DOM Smoke red on batch-1 band suppression — verify the cfa4711 re-pin cleared it (benign; GHA unreadable here)](2026-11-06T2205Z-daytime-monitor-e2e-dom-smoke-band-repin-verify.md)
+- [🟢 **VERIFIED 11-07 ~10:55 AM PT — green from the first run after `cfa4711` (00:15Z, `e8ca0d6`) and every run since; closed.** E2E DOM Smoke red on batch-1 band suppression — verify the cfa4711 re-pin cleared it (benign; GHA unreadable here)](2026-11-06T2205Z-daytime-monitor-e2e-dom-smoke-band-repin-verify.md)
 - [Scheduler-liveness check reds `main` daily — new weekly `cadence-swap-lint.yml` has no scheduled run yet (benign; first slot Mon 11-09)](2026-11-06T1610Z-daytime-monitor-scheduler-liveness-red-on-new-weekly-cadence-swap-lint.md)
 - [public_board_empty_count BREACH — topshot_perfect_mint_premiums_board liveness floor too tight for a market-driven board (benign, no dark surface)](2026-11-06T0414Z-daytime-monitor-perfect-mint-premiums-board-liveness-floor-too-tight-benign-breach.md)
 - [`topshot_sold_floor_asks_found` trust arm false-positive BREACH — breach_at 50 at the pre-clear sawtooth peak (value 54 -> 30 self-cleared; LOW tuning)](2026-11-06T0109Z-daytime-monitor-topshot-sold-floor-asks-found-threshold-near-sawtooth-peak.md)

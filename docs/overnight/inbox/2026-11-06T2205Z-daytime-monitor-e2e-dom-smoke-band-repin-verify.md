@@ -16,3 +16,6 @@ Read the latest `E2E DOM Smoke` run on `main`:
 - Still red → the band monitor is asserting on a surface where the band is now suppressed, or `/nba-top-shot/market` dropped the band too; inspect the failing assertion and adjust the monitored route (code/workflow — night pass or Trevor).
 
 No revert needed — `cfa4711` only changes which route the monitor reads.
+
+## Drained 2026-11-07 — verified green; closed
+Read from GHA (Cowork cloud, ~10:55 AM PT, `gh run list --workflow=e2e-smoke.yml`): the first `E2E DOM Smoke` run after `cfa4711` was **green at 00:15Z 11-07 on `e8ca0d6`**, and every completed run since is green (e8ca0d6 · 3a4251f · 5d2e6be · f7bf39e · a0727f9 · f9755d2 · ec7a1eb · 34946dc · 70f143a · … · 93d5af4 · 523e590 · 2bb0024 · 25d434e · 80569ca · e4cafbd); the handful of `cancelled` rows are concurrency supersedes by a push a minute later, not failures. The re-pin worked; no residual red. One UNRELATED red on 11-07 (`5708946`, ~08:40 AM PT) was the iOS zoom-floor positive control (≥ 5 form controls on the pre-search binder) after the binder's filter bars were made to wait for a wallet — re-pointed to a loaded wallet in `347ba08`, green on the next run (ledger, 11-07). No action.
