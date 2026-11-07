@@ -672,6 +672,32 @@ describe("DashboardClient — favourites and activity", () => {
     expect(document.querySelector('[data-testid="favorites-unavailable"]')).toBeNull()
   })
 
+  // 2026-11-06 walk: the ★/☆ glyph was the ONLY state — a screen reader heard
+  // seven identical buttons. The state must be in the accessibility tree too,
+  // and a failed read must assert NEITHER state (no false "not favorited").
+  it("favourite chips expose their state as aria-pressed, and a failed read asserts neither", async () => {
+    searchParams = new URLSearchParams("tab=settings")
+    const ts = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
+    routes["/api/profile/favorites"] = () => json(200, { favorites: [{ collection_id: ts, favorited: true }] })
+    render(<DashboardClient />)
+    const on = await waitFor(() => {
+      const el = document.querySelector('button[aria-pressed="true"]') as HTMLButtonElement | null
+      expect(el).toBeTruthy()
+      return el as HTMLButtonElement
+    })
+    expect(on.getAttribute("aria-label")).toMatch(/favorited$/)
+    expect(on.getAttribute("aria-label")).not.toMatch(/not favorited/)
+    const off = document.querySelectorAll('button[aria-pressed="false"]')
+    expect(off.length).toBeGreaterThan(0)
+    expect((off[0] as HTMLElement).getAttribute("aria-label")).toMatch(/not favorited$/)
+
+    cleanup()
+    routes["/api/profile/favorites"] = () => json(503, {})
+    render(<DashboardClient />)
+    await waitFor(() => expect(document.querySelector('[data-testid="favorites-unavailable"]')).toBeTruthy())
+    expect(document.querySelectorAll("button[aria-pressed]").length).toBe(0)
+  })
+
   it("survives a failed activity read", async () => {
     routes["/api/profile/activity"] = () => json(503, {})
     render(<DashboardClient />)

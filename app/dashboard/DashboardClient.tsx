@@ -1415,6 +1415,10 @@ function ProfilePageInner() {
                   onClick={() => uuid && !favoritesFailed && toggleFavorite(uuid, isFav)}
                   disabled={favoritesFailed}
                   aria-disabled={favoritesFailed}
+                  // The ★/☆ glyph is the only visual state; without this a screen
+                  // reader hears seven identical buttons (walked 2026-11-06).
+                  aria-pressed={favoritesFailed ? undefined : isFav}
+                  aria-label={`${c.shortLabel}${favoritesFailed ? "" : isFav ? " — favorited" : " — not favorited"}`}
                   style={{
                     background: isFav ? `${c.accent}22` : "var(--rpc-surface)",
                     border: `1px solid ${isFav ? c.accent : "var(--rpc-border)"}`,
