@@ -113,7 +113,7 @@
 
 42. **Forty tablists, no arrow keys (~12:35–1:15 PM PT).** Same class as item 41, wider: 40 `role="tablist"` groups in 23 files (collection strip, dashboard tabs, every insights board's pill filters, trade room, Buyback, Panini analytics, pack sub-nav) claimed the tabs role with no keyboard contract. One shared handler (`lib/a11y/tablist-keys.ts`): arrows/Home/End move focus; button tabs activate on focus, link tabs wait for Enter. Guard: every `"tablist"` must carry it (40 → 0); 4 behavioural cases. Visual: unchanged.
 
-43. **Inert mobile tab says why (~1:20–1:40 PM PT).** The bar's disabled tab explained itself only via `title` (hover-only, on a phone-only bar). sr-only reason added ("PACKS — not available for Strike"). Live keyboard check of item 42: strip arrows move focus without navigating; pill filters move and select.
+43. **Inert mobile tab says why (~1:20–1:30 PM PT).** The bar's disabled tab explained itself only via `title` (hover-only, on a phone-only bar). sr-only reason added ("PACKS — not available for Strike"). Live keyboard check of item 42: strip arrows move focus without navigating; pill filters move and select.
 
 ## Post-ship watch (what to read tomorrow)
 
