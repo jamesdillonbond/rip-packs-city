@@ -19,6 +19,7 @@ import { bucketAcquisitionCounts, acquisitionMethodLabel } from "@/lib/analytics
 import { ownLookup } from "@/lib/safe-lookup"
 import { isSalesCappedAlgo } from "@/lib/fmv-basis"
 import { anonIpKey, bumpAnonRates } from "@/lib/abuse/anon-rate"
+import { isSeedableRow, seedTier } from "@/lib/wallet-search/seed-edition"
 
 type WalletRow = {
   momentId: string
@@ -569,18 +570,13 @@ async function fillFromWalletCache(
 async function seedEditionsToSupabase(rows: WalletRow[], collectionId: string) {
   for (const row of rows) {
     try {
-      if (!row.editionKey) continue
-
-      const tier = row.tier?.toUpperCase() ?? "COMMON"
-      const normalizedTier =
-        tier.includes("LEGENDARY") ? "LEGENDARY" :
-        tier.includes("RARE") ? "RARE" :
-        tier.includes("ULTIMATE") ? "ULTIMATE" :
-        tier.includes("UNCOMMON") ? "UNCOMMON" :
-        tier.includes("FANDOM") ? "FANDOM" : "COMMON"
+      // A degraded row (its metadata read failed) seeds nothing, and an unknown
+      // tier is NULL, never COMMON — lib/wallet-search/seed-edition.ts.
+      if (!isSeedableRow(row)) continue
+      const normalizedTier = seedTier(row.tier)
 
       let playerId: string | null = null
-      if (row.playerName && row.playerName !== "Unknown Player") {
+      {
         // Canonical resolve-or-create keyed on (collection_id, name-slug).
         //
         // This previously upserted `external_id: flow:${playID}` — the SECOND
