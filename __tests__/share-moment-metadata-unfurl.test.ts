@@ -42,6 +42,49 @@ describe("/share/[wallet] unfurl", () => {
     expect(m.twitter.creator).toMatch(/^@/)
   })
 
+  // 2026-11-07: an address RPC has not indexed (or that holds nothing) renders
+  // "Analyzing your wallet…" on an UNBOUNDED URL space (any 16-hex string is a
+  // Flow address) and was `index, follow`. Only a card with indexed moments
+  // is indexable; a FAILED snapshot read must NOT de-index a real card.
+  describe("indexability follows the snapshot", () => {
+    const realFetch = globalThis.fetch
+    const snapshot = (res: Response | Error) => {
+      globalThis.fetch = vi.fn(async (url: string | URL | Request) => {
+        if (String(url).includes("/api/collection-snapshot")) {
+          if (res instanceof Error) throw res
+          return res
+        }
+        return new Response("[]", { status: 200, headers: { "content-type": "application/json" } })
+      }) as unknown as typeof globalThis.fetch
+    }
+    const json = (body: unknown, status = 200) =>
+      new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
+    const meta = async () => {
+      const { generateMetadata } = await import("@/app/share/[wallet]/page")
+      return (await generateMetadata({ params: Promise.resolve({ wallet: "0x1234567812345678" }) } as never)) as { robots?: unknown }
+    }
+    beforeEach(() => {
+      globalThis.fetch = realFetch
+    })
+
+    it("noindexes an un-indexed wallet (snapshot ok, zero moments)", async () => {
+      snapshot(json({ totalMoments: 0 }))
+      expect((await meta()).robots).toMatchObject({ index: false })
+    })
+
+    it("leaves an indexed wallet indexable", async () => {
+      snapshot(json({ totalMoments: 12 }))
+      expect((await meta()).robots).toBeUndefined()
+    })
+
+    it("does NOT de-index on a failed snapshot read", async () => {
+      snapshot(json({ error: "down" }, 503))
+      expect((await meta()).robots).toBeUndefined()
+      snapshot(new Error("network"))
+      expect((await meta()).robots).toBeUndefined()
+    })
+  })
+
   it("gives the X card a line of copy under the picture", async () => {
     // `twitter.description` was simply absent, so the card had a title and an
     // image and nothing else — and the root default does not survive, because

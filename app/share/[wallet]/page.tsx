@@ -1,6 +1,7 @@
 import Link from "next/link"
 import { countOrNull, formatCount } from "@/lib/format"
 import type { Metadata } from "next"
+import { cache } from "react"
 import ShareButton from "./ShareButton"
 import SaveToCollectionCTA from "./SaveToCollectionCTA"
 import ShareSignUpLink from "./ShareSignUpLink"
@@ -81,7 +82,9 @@ function siteUrl() {
 // indexing and polls, so an outage spent real ingest work re-indexing wallets
 // that were already fine. `ok` answers "did the READ succeed", never "were
 // there moments" — see the honesty table in CLAUDE.md.
-async function fetchSnapshot(wallet: string): Promise<{ data: SnapshotData | null; ok: boolean }> {
+// `cache` so generateMetadata and the page body share ONE read per request
+// (2026-11-07: metadata now needs the indexed state too).
+const fetchSnapshot = cache(async function fetchSnapshot(wallet: string): Promise<{ data: SnapshotData | null; ok: boolean }> {
   try {
     // no-store (not ISR): collection-snapshot returns 200 with totalMoments=0
     // for an un-indexed wallet, and the empty-state queues + polls for indexing
@@ -96,7 +99,7 @@ async function fetchSnapshot(wallet: string): Promise<{ data: SnapshotData | nul
   } catch {
     return { data: null, ok: false }
   }
-}
+})
 
 // RPC's Top Shot intelligence lens for the wallet — the differentiator Top
 // Shot's own profile doesn't show. TS-scoped (do not imply it covers all 5
@@ -187,10 +190,18 @@ export async function generateMetadata(
   // 2026-10-25: name the collector, not the wallet, wherever a handle is known
   // (standing rule: usernames, never wallets, in user-facing text). Bounded and
   // never throws — no handle falls back to the address, as before.
-  const who = await shareOwnerLabel(params.wallet)
+  const [who, snapshot] = await Promise.all([shareOwnerLabel(params.wallet), fetchSnapshot(params.wallet)])
+  // 2026-11-07: an address we have NOT indexed (or that holds nothing) renders
+  // "Analyzing your wallet…" — a page about nothing on an UNBOUNDED URL space
+  // (any 16-hex string is a Flow address), and it was `index, follow`. Only a
+  // card with indexed moments is indexable. A FAILED read keeps a real card
+  // indexable (deindexing over a transient is worse than the missing figures) —
+  // the same rule the profile layout follows.
+  const unindexed = snapshot.ok && (!snapshot.data || (Number(snapshot.data.totalMoments) || 0) === 0)
   return {
     title: `Collection Card — ${who}`,
     alternates: { canonical },
+    ...(unindexed ? { robots: { index: false, follow: true } } : {}),
     // ⛔ Named "NBA Top Shot" until 2026-09-19 while the card itself is
     // cross-collection (see the per-collection rollup below) — so a Candy MLB
     // wallet's card described itself, in its own <meta> and in every social
