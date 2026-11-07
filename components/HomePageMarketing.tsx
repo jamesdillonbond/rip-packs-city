@@ -264,8 +264,11 @@ export default function HomePageMarketing() {
         .rpc-home-door-title:hover{color:var(--rpc-red-text);}
         .rpc-home-door-job{font-family:var(--font-mono);font-size:11px;letter-spacing:0.06em;color:var(--rpc-text-muted);line-height:1.5;}
         .rpc-home-door-list{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-direction:column;gap:6px;font-family:var(--font-body);font-size:14px;line-height:1.4;}
-        .rpc-home-door-list a{color:var(--rpc-text-secondary);text-decoration:none;}
-        .rpc-home-door-list a:hover{color:var(--rpc-text-primary);text-decoration:underline;text-underline-offset:3px;}
+        /* Underlined at rest, not only on hover: the link shares a text block with its
+           " — hint" span, and colour alone is not a distinguisher (axe link-in-text-block,
+           WCAG 1.4.1 — found on the 2026-11-07 pass). */
+        .rpc-home-door-list a{color:var(--rpc-text-secondary);text-decoration:underline;text-decoration-color:var(--rpc-border);text-underline-offset:3px;}
+        .rpc-home-door-list a:hover{color:var(--rpc-text-primary);text-decoration-color:currentColor;}
         .rpc-home-door-hint{color:var(--rpc-text-muted);font-size:12px;}
         .rpc-home-trophy-grid{display:grid;grid-template-columns:1fr 1.2fr;gap:48px;align-items:center;}
         .rpc-home-trust-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:24px;}
