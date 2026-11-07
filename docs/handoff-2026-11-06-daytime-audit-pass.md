@@ -85,7 +85,7 @@
 
 28. **Mobile bar re-slot (Trevor 8:01 AM PT; shipped `93d5af4` ~8:20 AM).** HOME · MY BINDER · MARKET · PACKS · INSIGHTS — verified live at 390 by screenshot; pin, concierge line and strategy doc follow the same order.
 
-29. **Binder first tap (~8:15–8:35 AM PT).** With MY BINDER now second in the bar, its anon empty state is a first impression — and it led with a filter/sort panel for zero rows. The bars now wait for a search; the wallet box and empty-state line come first. Pinned both states.
+29. **Binder first tap (~8:15–8:35 AM PT).** With MY BINDER now second in the bar, its anon empty state is a first impression — and it led with a filter/sort panel for zero rows. The bars now wait for a search; the wallet box and empty-state line come first. Pinned both states. `E2E DOM Smoke` reddened on the deploy exactly as designed — the iOS zoom-floor monitor used the pre-search binder as its ≥5-controls positive control — re-pinned to load a wallet (`347ba08`), floor unchanged. Note for anyone running `e2e/mobile-layout.spec.ts` from the cloud sandbox: the two Chase-left tests time out there (20 s live read) and pass on the CI runner.
 
 ## Post-ship watch (what to read tomorrow)
 
