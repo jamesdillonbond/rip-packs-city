@@ -117,6 +117,8 @@
 
 44. **Forms lens (~1:30–1:55 PM PT).** (a) Three error boxes (binder lookup, pack page, Analytics) had no live region — now `role="status"`/`"alert"`; guard added. (b) Five wallet/username inputs auto-capitalised on mobile Safari (binder, home hero, dashboard add-wallet, share retry, team checklist) — a case-sensitive Candy address or Panini username corrupted into "holds nothing"; the dashboard's main input had the fix since 10-18, its siblings didn't. All five fixed; guard found the last three. Read, fine: the login email field (label, `autocomplete=email`, `inputmode=email`); the 12 px search box at 390 in my probe is a fine-pointer artefact — the iOS floor is a `(pointer: coarse)` rule the e2e monitor already pins.
 
+45. **Reduced motion (~1:45–2:05 PM PT).** The moment/edition hero autoplayed a looping clip with no motion guard (CSS animations are neutralised globally; a `<video autoPlay>` is not CSS). New store-backed `usePrefersReducedMotion` (no set-state-in-effect); the hero shows the poster under `reduce`; EditionsGrid's private hook copy migrated. Read, not changed: the collection ticker pauses on hover/focus-within and stops under reduced motion but has no explicit pause control on touch (WCAG 2.2.2 wants a mechanism) — queue 12, a visual change on every collection header, Trevor's call.
+
 ## Post-ship watch (what to read tomorrow)
 
 - **Series-1 Top Shot art** on `/dashboard/*`, `/profile/*`, binder, trade room: present (any blank tile with a `data-rpc-dead-art` attribute whose `data-rpc-dead-src` starts `…/editions/<N>_` means ANOTHER series was retired — same fix, derive not copy).
@@ -153,6 +155,7 @@
 10. **[P3, Trevor — a product trade-off, not a fix]** On a phone, an entity page (e.g. `/nba-top-shot/player/damian-lillard`) puts the SUBJECT below the fold: ticker → banner → switcher pills → tab strip → wallet band → breadcrumb → hero; "DAMIAN LILLARD" lands ~750 px down at 390. The wallet band is the piece that could move, but it is a MEASURED retention lever (10-14: Google landings on entity pages carried no next step without it) — so this is yours: keep the band above the hero (next-step first), move it below the hero on entity routes at < 768 (subject first), or shrink it to one line there. Both themes read clean otherwise (no dead art, no confidence words; "RECENT-LOW" is a price label).
 9. **[watch, 11-13 9 AM PT, scheduled]** #235 WAF rule `Entity page sweep` in Log mode → the one-shot task reads it and recommends Log → Rate Limit or another week.
 11. **[P4, Claude Code, if a keyboard user asks] Header group menus: arrow-key navigation** — today a focus-within disclosure (40 Tab stops to the fourth group; skip link covers it). Roving tabindex + ArrowDown/Up/Escape on `.rpc-topnav-group` would earn back `role="menu"`; the new `aria-menu-role-keeps-its-keyboard-contract` walk is the gate.
+12. **[P4, Trevor — visual] Collection ticker pause control** — it pauses on hover/focus and stops under reduced motion, but a touch user has no way to stop it (WCAG 2.2.2). A small ⏸ at the strip's end is the usual answer; it changes every collection header, so yours.
 5. **[P4, Trevor, carried] #58 `OPENSEA_API_KEY`** — only if Candy still has 0 indexed sales on 11-27.
 
 ## Closed / RESOLVED this pass
