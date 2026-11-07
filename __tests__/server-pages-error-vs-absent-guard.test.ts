@@ -89,10 +89,24 @@ describe("server pages distinguish a failed read from an absent record", () => {
       "<UnavailableCard"
     )
     // The failure branch must come before the not-found branch, or the fix is inert.
+    // 2026-11-07: generateMetadata gained the SAME two branches (an unknown pack
+    // used to publish an indexable card), so the ordering is asserted PER
+    // FUNCTION — a whole-file indexOf found metadata's absent branch first and
+    // read the body as inverted. Each function: its failed-read branch, then
+    // its absent branch, both present.
+    const body = src.slice(src.indexOf("export default async function"))
     expect(
-      src.indexOf("if (!ok) {"),
-      "the !ok branch must precede the not-found/redirect branch"
-    ).toBeLessThan(src.indexOf("lifecycle.status === \"unknown\""))
+      body.indexOf("if (!ok) {"),
+      "the body's !ok branch must exist and precede its not-found/redirect branch"
+    ).toBeGreaterThanOrEqual(0)
+    expect(body.indexOf("if (!ok) {")).toBeLessThan(body.indexOf("lifecycle.status === \"unknown\""))
+    const metaFn = src.slice(src.indexOf("export async function generateMetadata"), src.indexOf("export default async function"))
+    expect(
+      metaFn.indexOf("!readOk"),
+      "metadata's failed-read branch must exist and precede its absent branch"
+    ).toBeGreaterThanOrEqual(0)
+    expect(metaFn.indexOf("!readOk")).toBeLessThan(metaFn.indexOf("lifecycle.status === \"unknown\""))
+    expect(metaFn, "metadata's absent branch returns the ABSENT vocabulary").toContain("return NOT_FOUND_METADATA")
     // The copy must not assert non-existence.
     expect(src, "UnavailableCard must not claim the pack is absent").toContain(
       "does <strong>not</strong> mean the pack doesn&rsquo;t exist"

@@ -45,7 +45,7 @@ import {
   StatsFooter,
 } from "./PackLifecycleClient"
 import type { PackLifecycle, PackPull } from "./types"
-import { OG_INHERITED, TWITTER_INHERITED } from "@/lib/seo"
+import { NOT_FOUND_METADATA, OG_INHERITED, TWITTER_INHERITED } from "@/lib/seo"
 import { isUsdPegged, usdSignFirst } from "@/lib/usd-format"
 
 export const dynamic = "force-dynamic"
@@ -115,6 +115,17 @@ export async function generateMetadata(props: PageProps): Promise<Metadata> {
       description: "We couldn't load this pack right now. Try again in a moment.",
       robots: { index: false, follow: true },
     }
+  }
+  // 2026-11-07: an UNKNOWN pack (the read succeeded and found nothing) renders
+  // the NotFoundCard at HTTP 200 — and published "Pack #<id> — Pack #<id>" with
+  // `index, follow`, a self-canonical URL and a share card, on an unbounded id
+  // space (the seo-unresolvable-slug class, 99f245d0's sibling). A known
+  // distribution id never reaches this metadata: the body 308s it to the dist
+  // page first. Only a pack we have a record of is indexable. NOT_FOUND_METADATA
+  // is the ABSENT vocabulary (index:false, follow:false); the unavailable branch
+  // above keeps follow:true because that one is COULD-NOT-READ.
+  if (coll && readOk && (!lifecycle || lifecycle.status === "unknown" || lifecycle.error)) {
+    return NOT_FOUND_METADATA
   }
 
   // metaField (2026-07-25): both are raw catalog text, and all four description
