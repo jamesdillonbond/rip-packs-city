@@ -95,6 +95,8 @@
 
 33. **Search nicknames (~10:00–10:30 AM PT).** `/api/search` probed with what collectors type: "dame" → Dameon Pierce / Falcao as players, Lillard only as editions; "wemby" → no player. 29 nicknames added to `player_name_aliases` (each resolved to one person at apply time; ambiguous ones left out) and `rpc_search_catalog` ranks an exact alias as exact / an anchor-prefixed alias as prefix (in-place splice; controls unchanged; anon exec false; 0.36–0.73 s uncached). Note `/api/search` is CDN-cached without max-age — bust the cache when verifying. "mickey" returns Mickey Mouse with the internal kind `player`, but the dropdown already labels Pinnacle hits CHARACTER / FRANCHISE (`lib/search/href.ts` `searchKindLabel`) — nothing to change.
 
+34. **Team nicknames (~10:45–10:55 AM PT) — filed #238, not shipped.** "rip city" / "niners" / "dubs" / "pats" miss in search; teams have no alias table and the search team arm has no franchise key. One design across table + search arm + `resolve_team_name`, to decide with Trevor (09-25 identity rules).
+
 ## Post-ship watch (what to read tomorrow)
 
 - **Series-1 Top Shot art** on `/dashboard/*`, `/profile/*`, binder, trade room: present (any blank tile with a `data-rpc-dead-art` attribute whose `data-rpc-dead-src` starts `…/editions/<N>_` means ANOTHER series was retired — same fix, derive not copy).
