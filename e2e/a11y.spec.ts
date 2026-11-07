@@ -77,7 +77,11 @@ const ROUTES = [
 ]
 const THEMES = ["dark", "light"] as const
 const SERIOUS = new Set(["serious", "critical"])
-const GATED = new Set(["color-contrast", "select-name", "nested-interactive", "aria-conditional-attr", "scrollable-region-focusable"])
+// 2026-11-07: `link-in-text-block` GATED. It read 4 nodes on `/` (the homepage pillar
+// doors' hint lines, shipped 11-06) and 0 everywhere else; fixed by underlining the
+// links at rest, then re-read 0 over all 32 ROUTES × both themes from the cloud
+// (64/64) before it was moved here.
+const GATED = new Set(["color-contrast", "select-name", "nested-interactive", "aria-conditional-attr", "scrollable-region-focusable", "link-in-text-block"])
 // ⚠ PHONE-WIDTH PASS (2026-10-25). `scrollable-region-focusable` only fires where a
 // table is wider than its box — at 390 px, not at this file's 1280 px default. It
 // read 16 + 4 + 1 unreachable scrollers on production at phone width while every
