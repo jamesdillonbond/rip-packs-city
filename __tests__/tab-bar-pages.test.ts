@@ -7,16 +7,25 @@ import {
   type CollectionPage,
 } from "@/lib/collections"
 
-// tabBarPages() (2026-07-18 IA reorg): the folded pages (packs / pack-sniper /
+// tabBarPages() (2026-07-18 IA reorg): the folded pages (pack-sniper /
 // hot-floors / challenges) stay in pages[] as a superset so every gate +
 // capability check keeps working, but are hidden from the top tab bar — reached
-// via the Market/Sniper Packs sub-toggle + the Play hub instead.
+// via the Sniper Packs sub-toggle + the Play hub instead.
+// 2026-11-07: `packs` is a top-level tab again — Packs is one of the IA's five
+// pillars with its own bottom-bar tab landing on /<c>/packs, and that page's
+// strip showed no active tab while packs was folded.
 
 describe("tabBarPages", () => {
   it("hides exactly the folded pages from the top bar", () => {
     expect([...TAB_BAR_HIDDEN_PAGES].sort()).toEqual(
-      ["challenges", "hot-floors", "pack-sniper", "packs"],
+      ["challenges", "hot-floors", "pack-sniper"],
     )
+  })
+
+  it("the Packs page is a top-level tab, so the bottom bar's PACKS lands on a lit tab (2026-11-07)", () => {
+    const ts = getCollection("nba-top-shot")!
+    expect(tabBarPages(ts)).toContain("packs")
+    expect(TAB_BAR_HIDDEN_PAGES.has("packs")).toBe(false)
   })
 
   it("collapses Top Shot to the launch tab set (folded pages dropped, play kept, order preserved)", () => {
@@ -25,6 +34,7 @@ describe("tabBarPages", () => {
       "overview",
       "collection",
       "market",
+      "packs",
       "sniper",
       "play",
       "sets",

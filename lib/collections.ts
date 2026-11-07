@@ -636,8 +636,13 @@ export function collectionHasWalletTab(c: Pick<Collection, "pages" | "dbChain"> 
 // into the Play hub / a Sniper filter. Keeping them in `pages[]` (a superset)
 // means every gate, capability check, and collection-switch keeps working —
 // only the tab bar hides them.
+//
+// ⭐ 2026-11-07: `packs` is a TOP-LEVEL TAB again. The 11-06 IA made Packs one of
+// the five job pillars with its own bottom-bar tab landing on /<c>/packs — and
+// that page's own collection strip then showed NO active tab (a phone visitor
+// tapped PACKS and the collection said they were nowhere). Pack Sniper, Hot
+// Floors and Challenges stay folded (sub-toggle / Sniper filter / Play hub).
 export const TAB_BAR_HIDDEN_PAGES: ReadonlySet<CollectionPage> = new Set<CollectionPage>([
-  "packs",
   "pack-sniper",
   "hot-floors",
   "challenges",
