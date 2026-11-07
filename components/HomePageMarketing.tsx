@@ -12,6 +12,7 @@ import HomeFmvPreview from "@/components/HomeFmvPreview";
 import { publishedCollections } from "@/lib/collections";
 import { organizationJsonLd } from "@/lib/seo";
 import { accentText } from "@/lib/accent-text"
+import { visibleGroups, visibleItems, resolveHref, DEFAULT_COLLECTION } from "@/lib/ia"
 import { jsonLdScript } from "@/lib/seo/json-ld-script"
 
 function HomeHeader() {
@@ -257,10 +258,20 @@ export default function HomePageMarketing() {
         .rpc-home-collection-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px;}
         .rpc-home-how-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;}
         .rpc-home-depth-grid{display:grid;grid-template-columns:1.1fr 1fr;gap:48px;align-items:start;}
+        .rpc-home-doors{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:14px;}
+        .rpc-home-door{background:var(--rpc-surface);border:1px solid var(--rpc-border);border-radius:12px;padding:18px 16px;display:flex;flex-direction:column;gap:8px;min-width:0;}
+        .rpc-home-door-title{font-family:var(--font-display);font-weight:900;font-size:22px;letter-spacing:0.04em;text-transform:uppercase;color:var(--rpc-text-primary);text-decoration:none;}
+        .rpc-home-door-title:hover{color:var(--rpc-red-text);}
+        .rpc-home-door-job{font-family:var(--font-mono);font-size:11px;letter-spacing:0.06em;color:var(--rpc-text-muted);line-height:1.5;}
+        .rpc-home-door-list{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-direction:column;gap:6px;font-family:var(--font-body);font-size:14px;line-height:1.4;}
+        .rpc-home-door-list a{color:var(--rpc-text-secondary);text-decoration:none;}
+        .rpc-home-door-list a:hover{color:var(--rpc-text-primary);text-decoration:underline;text-underline-offset:3px;}
+        .rpc-home-door-hint{color:var(--rpc-text-muted);font-size:12px;}
         .rpc-home-trophy-grid{display:grid;grid-template-columns:1fr 1.2fr;gap:48px;align-items:center;}
         .rpc-home-trust-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:24px;}
         .rpc-home-collection-tile{transition:transform var(--transition-fast),border-color var(--transition-fast),box-shadow var(--transition-fast);}
         .rpc-home-collection-tile:hover{transform:translateY(-4px);}
+        @media (max-width:1024px){ .rpc-home-doors{grid-template-columns:repeat(2,minmax(0,1fr));} }
         @media (max-width:768px){
           .rpc-home-section{padding:64px 16px;}
           .rpc-home-h1{font-size:36px;}
@@ -270,6 +281,7 @@ export default function HomePageMarketing() {
           .rpc-home-collection-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;}
           .rpc-home-how-grid{grid-template-columns:1fr;}
           .rpc-home-depth-grid{grid-template-columns:1fr;gap:24px;}
+          .rpc-home-doors{grid-template-columns:1fr;}
           .rpc-home-trophy-grid{grid-template-columns:1fr;gap:24px;}
           .rpc-home-trust-grid{grid-template-columns:1fr;gap:14px;}
           .rpc-home-nav a{display:none;}
@@ -374,6 +386,41 @@ export default function HomePageMarketing() {
         </div>
       </section>
 
+      {/* THE FIVE DOORS (IA Phase 3, 2026-11-06). The homepage pitches pillars,
+          not features: one card per job group from lib/ia.ts (the same groups
+          the header, mobile bar and footer use), each naming its hub and a few
+          of its pages. The sections these replaced ("Things Top Shot won't tell
+          you", the Fast Break promo, "Find your edge") each pitched ONE feature;
+          those features are items inside a door now.
+          docs/strategy/features/information-architecture-2026-11-06.md */}
+      <section className="rpc-home-section" aria-labelledby="home-doors-h2">
+        <div style={{ maxWidth: 1100, margin: "0 auto" }}>
+          <div style={{ textAlign: "center", marginBottom: 28 }}>
+            <div className="rpc-home-eyebrow">◈ WHERE TO START ◈</div>
+            <h2 id="home-doors-h2" className="rpc-home-h2" style={{ marginTop: 12 }}>FIVE JOBS. ONE PLACE EACH.</h2>
+          </div>
+          <div className="rpc-home-doors">
+            {visibleGroups(false).map((g) => (
+              <article key={g.id} className="rpc-home-door" data-home-door={g.id}>
+                <Link href={resolveHref(g.href, DEFAULT_COLLECTION, g.page)} className="rpc-home-door-title">
+                  {g.label} →
+                </Link>
+                <div className="rpc-home-door-job">{g.job}</div>
+                <ul className="rpc-home-door-list">
+                  {visibleItems(g, false).slice(0, 4).map((i) => (
+                    <li key={i.href}>
+                      <Link href={resolveHref(i.href, DEFAULT_COLLECTION, i.page)} prefetch={false}>{i.label}</Link>
+                      {i.hint ? <span className="rpc-home-door-hint"> — {i.hint}</span> : null}
+                    </li>
+                  ))}
+                </ul>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+
+
       {/* COLLECTIONS */}
       <section id="collections" className="rpc-home-section">
         <div style={{ maxWidth: 1200, margin: "0 auto" }}>
@@ -467,90 +514,6 @@ export default function HomePageMarketing() {
 
       <PinwheelDivider />
 
-      {/* PUBLIC INSIGHTS PROMO */}
-      <section
-        className="rpc-home-section"
-        style={{
-          background: "var(--rpc-surface)",
-          borderTop: "1px solid var(--rpc-red-border)",
-          borderBottom: "1px solid var(--rpc-border)",
-        }}
-      >
-        <div style={{ maxWidth: 980, margin: "0 auto", display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", gap: 18 }}>
-          <div className="rpc-home-eyebrow">◈ FREE INTELLIGENCE · NO SIGNUP ◈</div>
-          <h2 className="rpc-home-h2">THINGS TOP SHOT WON&rsquo;T TELL YOU</h2>
-          <p className="rpc-home-sub">
-            The Lock-Rate Squeeze Board, Pack Reality, the Rookie Index (2025 and 2026 classes), First-Mint Trophy Tracker, and the Cross-Collection Whale Map — the math the marketplace structurally won&rsquo;t ship. Free, no account needed.
-          </p>
-          <Link
-            href="/insights"
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 8,
-              padding: "12px 22px",
-              background: "var(--rpc-red-fill)",
-              border: "none",
-              borderRadius: 6,
-              // brand-exception: white text on the --rpc-red button
-              color: "#fff",
-              fontFamily: "var(--font-display)",
-              fontWeight: 800,
-              fontSize: 13,
-              letterSpacing: "0.14em",
-              textTransform: "uppercase",
-              textDecoration: "none",
-            }}
-          >
-            EXPLORE PUBLIC INSIGHTS →
-          </Link>
-        </div>
-      </section>
-
-      {/* FAST BREAK OPTIMIZER PROMO - HIDDEN for launch; set NEXT_PUBLIC_SHOW_FAST_BREAK=1 to restore.
-          ⚠ 2026-10-18: keep it off until the projections feed has a source (known-issues #8) — the
-          optimizer cannot build a lineup without it. */}
-      {process.env.NEXT_PUBLIC_SHOW_FAST_BREAK === "1" && (
-      <section
-        className="rpc-home-section"
-        style={{
-          background: "var(--rpc-surface)",
-          borderTop: "1px solid var(--rpc-red-border)",
-          borderBottom: "1px solid var(--rpc-border)",
-        }}
-      >
-        <div style={{ maxWidth: 980, margin: "0 auto", display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", gap: 18 }}>
-          <div className="rpc-home-eyebrow">◈ FREE TOOL · NO SIGNUP ◈</div>
-          <h2 className="rpc-home-h2">FAST BREAK LINEUP OPTIMIZER</h2>
-          <p className="rpc-home-sub">
-            Optimal NBA Top Shot Fast Break lineups built from player projections: top projected fantasy scorers, captain picks and matchups.
-          </p>
-          <Link
-            href="/nba/fast-break"
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 8,
-              padding: "12px 22px",
-              background: "var(--rpc-red-fill)",
-              border: "none",
-              borderRadius: 6,
-              // brand-exception: white text on the --rpc-red button
-              color: "#fff",
-              fontFamily: "var(--font-display)",
-              fontWeight: 800,
-              fontSize: 13,
-              letterSpacing: "0.14em",
-              textTransform: "uppercase",
-              textDecoration: "none",
-            }}
-          >
-            VIEW TODAY&rsquo;S OPTIMAL LINEUP →
-          </Link>
-        </div>
-      </section>
-      )}
-
       {/* HOW IT WORKS */}
       <section
         id="how-it-works"
@@ -608,9 +571,9 @@ export default function HomePageMarketing() {
       <section className="rpc-home-section">
         <div style={{ maxWidth: 1100, margin: "0 auto" }}>
           <div style={{ marginBottom: 40 }}>
-            <div className="rpc-home-eyebrow">◈ FOR THE WAY YOU TRADE ◈</div>
+            <div className="rpc-home-eyebrow">◈ HOW WE PRICE ◈</div>
             <h2 className="rpc-home-h2" style={{ marginTop: 12 }}>
-              BUILT FOR THE WAY COLLECTORS ACTUALLY TRADE
+              A PRICE YOU CAN CHECK
             </h2>
           </div>
 
@@ -819,25 +782,6 @@ export default function HomePageMarketing() {
         </div>
       </section>
 
-      {/* FINAL CTA */}
-      <section
-        className="rpc-home-section"
-        style={{
-          background: "var(--rpc-surface)",
-          borderTop: "1px solid var(--rpc-border)",
-          textAlign: "center",
-        }}
-      >
-        <div style={{ maxWidth: 720, margin: "0 auto", display: "flex", flexDirection: "column", gap: 18 }}>
-          <h2 className="rpc-home-h2">FIND YOUR EDGE.</h2>
-          <p className="rpc-home-sub">Type any wallet to start.</p>
-          <WalletSearch
-            surface="home"
-            variant="hero"
-            hint="No signup required. Try a wallet address, username, or moment ID."
-          />
-        </div>
-      </section>
       </main>
 
       <SiteFooter />

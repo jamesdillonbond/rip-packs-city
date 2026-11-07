@@ -106,3 +106,37 @@ describe("landmarks (axe landmark-one-main / region, 2026-10-12)", () => {
     expect(mains[0].contains(header!)).toBe(false)
   })
 })
+
+// IA Phase 3 (2026-11-06): the homepage pitches pillars, not features — one
+// door per public job group from lib/ia.ts, and the single-feature pitch
+// sections it replaced are gone.
+describe("HomePageMarketing — the five doors", () => {
+  it("renders one door per anonymous group, each linking its hub and up to four public items", async () => {
+    const { visibleGroups, visibleItems, resolveHref, DEFAULT_COLLECTION } = await import("@/lib/ia")
+    const { container } = render(<HomePageMarketing />)
+    const groups = visibleGroups(false)
+    expect(groups.map((g) => g.id)).toEqual(["market", "packs", "insights", "collectors", "trade"])
+    for (const g of groups) {
+      const door = container.querySelector(`[data-home-door="${g.id}"]`)!
+      expect(door, g.id).toBeTruthy()
+      const links = Array.from(door.querySelectorAll("a")).map((a) => a.getAttribute("href"))
+      expect(links[0], g.id).toBe(resolveHref(g.href, DEFAULT_COLLECTION, g.page))
+      expect(links.slice(1), g.id).toEqual(visibleItems(g, false).slice(0, 4).map((i) => resolveHref(i.href, DEFAULT_COLLECTION, i.page)))
+    }
+    // No signed-in-only destination on the anonymous homepage.
+    const all = Array.from(container.querySelectorAll("a")).map((a) => a.getAttribute("href"))
+    for (const gated of ["/trades", "/dashboard/packs", "/my-teams", "/alerts"]) expect(all).not.toContain(gated)
+  })
+
+  it("the single-feature pitch sections are gone (their features live inside a door)", () => {
+    const { container } = render(<HomePageMarketing />)
+    const text = container.textContent ?? ""
+    expect(text).not.toMatch(/THINGS TOP SHOT WON.T TELL YOU/i)
+    expect(text).not.toMatch(/FAST BREAK LINEUP OPTIMIZER/i)
+    expect(text).not.toMatch(/FIND YOUR EDGE\./i)
+    // What stays: the proof — stats band, collections, pricing you can check, a real trophy case, how it works, signup.
+    expect(text).toMatch(/A PRICE YOU CAN CHECK/i)
+    expect(container.querySelector("[data-home-trophy-case]")).toBeTruthy()
+    expect(text).toMatch(/FREE\. NO INVITE NEEDED\./i)
+  })
+})
