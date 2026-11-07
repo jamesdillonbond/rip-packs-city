@@ -5,6 +5,7 @@
 // but the concierge before this pin.
 import { describe, it, expect } from "vitest"
 import { readFileSync } from "node:fs"
+import { stripComments } from "../scripts/lib/strip-comments.mjs"
 
 const read = (p: string) => readFileSync(p, "utf8")
 
@@ -37,7 +38,7 @@ describe("the API keys page shows no plan tier", () => {
   // ("Plan FOUNDING") — a paid tier shown before 100 WAU, and an enum leak.
   it("ApiKeysClient never renders `plan` and the page carries its own title", () => {
     const src = read("app/dashboard/api-keys/ApiKeysClient.tsx")
-    const code = src.replace(/\{\/\*[\s\S]*?\*\/\}/g, "").replace(/\/\/.*$/gm, "")
+    const code = stripComments(src)
     expect(code).not.toMatch(/\{k\.plan\}/)
     expect(code).not.toMatch(/>\s*Plan(&nbsp;|\s)/)
     expect(read("app/dashboard/api-keys/page.tsx")).toMatch(/title:\s*"API keys"/)
