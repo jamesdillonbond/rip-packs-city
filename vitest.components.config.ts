@@ -96,6 +96,9 @@ export default defineConfig({
         "components/play/**/*.tsx",
         "components/ui/**/*.tsx",
         "components/visual/**/*.tsx",
+        // Added 2026-11-06 with its first component: `components/dashboard/DashboardTabs`
+        // (the five-tab row shared by /dashboard, /dashboard/packs, /dashboard/history).
+        "components/dashboard/**/*.tsx",
         // app/insights/**/*Client.tsx — the public /insights board CLIENT bodies
         // ⤵ 23 lines of history displaced VERBATIM (2026-09-02) to docs/reference/vitest-config-notes.md §11 — read them before changing the next key.
         "app/**/*Client.tsx",

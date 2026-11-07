@@ -14,6 +14,7 @@
 // "Pulls" tab surfaces those, so a pack open is never double-counted.
 
 import { useCallback, useEffect, useMemo, useState } from "react"
+import DashboardTabs from "@/components/dashboard/DashboardTabs"
 import { fmtUsd, relativeTime, truncAddr } from "@/lib/dashboard/format"
 import { currencySuffix } from "@/lib/usd-format"
 import Link from "next/link"
@@ -210,10 +211,11 @@ export default function TransactionHistoryClient() {
               Every pack and moment that moved through your saved wallets.
             </div>
           </div>
-          <Link href="/dashboard" style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "rgba(255,255,255,0.7)", textDecoration: "none", padding: "7px 12px", border: `1px solid ${ACCENT_RED}66`, borderRadius: 5 }}>
-            ← Dashboard
-          </Link>
+          
         </div>
+
+        {/* IA Phase 1 (2026-11-06): the same five-tab row the dashboard shows, with this page current. */}
+        <DashboardTabs active="history" />
 
         {/* Wallet selector */}
         {walletsLoading ? (

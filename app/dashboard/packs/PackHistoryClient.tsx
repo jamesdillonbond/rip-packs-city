@@ -10,6 +10,7 @@
 // pack-lifecycle.
 
 import { useCallback, useEffect, useMemo, useState } from "react"
+import DashboardTabs from "@/components/dashboard/DashboardTabs"
 import { collectionHasDropPool } from "@/lib/packs/drop-pool"
 import { fmtUsd, relativeTime } from "@/lib/dashboard/format"
 import { currencySuffix, displayCurrency, isUsdPegged } from "@/lib/usd-format"
@@ -407,10 +408,11 @@ export default function PackHistoryClient() {
               Pack rip lifecycle, P&amp;L, and pulls for your saved wallets.
             </div>
           </div>
-          <Link href="/dashboard" style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--rpc-text-secondary)", textDecoration: "none", padding: "7px 12px", border: "1px solid rgba(224,58,47,0.4)", borderRadius: 5 }}>
-            ← Dashboard
-          </Link>
+          
         </div>
+
+        {/* IA Phase 1 (2026-11-06): the same five-tab row the dashboard shows, with this page current. */}
+        <DashboardTabs active="packs" />
 
         {/* Wallet selector */}
         {walletsLoading ? (

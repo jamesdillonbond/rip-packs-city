@@ -498,7 +498,8 @@ export default async function InsightsIndexPage() {
         <section key={gid} aria-labelledby={`ins-group-${gid}`} style={{ maxWidth: 1180, margin: "0 auto 28px" }}>
           <h2 id={`ins-group-${gid}`} className="rpc-ins-group-title">
             {IA_GROUPS.find((g) => g.id === gid)?.label ?? "Insights"}
-            <span className="rpc-ins-group-job">{IA_GROUPS.find((g) => g.id === gid)?.job}</span>
+            {/* the separator is real text, so a screen reader does not read "InsightsWhat the…" */}
+            <span className="rpc-ins-group-job">{" · "}{IA_GROUPS.find((g) => g.id === gid)?.job}</span>
           </h2>
       <section className="rpc-ins-grid">
         {cards.map((c) => {

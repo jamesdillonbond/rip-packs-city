@@ -41,29 +41,12 @@ import { accentText } from "@/lib/accent-text"
 const condensedFont = "var(--font-display)";
 const monoFont = "var(--font-mono)";
 // ── Dashboard tabs (IA Phase 1, 2026-11-06) ─────────────────────────────────
-// Three homes, one job each: the dashboard is "my collection", in five tabs.
-// Packs and History are their own pages, so those tabs are links; the other
-// three switch panels here. `?tab=` deep-links (replaceState, no history spam).
-// docs/strategy/features/information-architecture-2026-11-06.md
-export type DashTab = "overview" | "trophy" | "settings";
-export const DASH_TABS: ReadonlyArray<{ id: DashTab; label: string } | { id: string; label: string; href: string }> = [
-  { id: "overview", label: "Overview" },
-  { id: "trophy", label: "Trophy Cases" },
-  { id: "packs", label: "Packs", href: "/dashboard/packs" },
-  { id: "history", label: "History", href: "/dashboard/history" },
-  { id: "settings", label: "Settings" },
-];
-export function parseDashTab(raw: string | null | undefined): DashTab {
-  return raw === "trophy" || raw === "settings" ? raw : "overview";
-}
-/** Which panel holds a first-run-tour anchor, so the tour can open it. */
-export const DASH_TAB_FOR_ANCHOR: Record<string, DashTab> = {
-  "portfolio-stats": "overview",
-  "saved-wallets-card": "overview",
-  "sniper-nav-link": "overview",
-  "trophy-case": "trophy",
-};
-export const RPC_TOUR_STEP_EVENT = "rpc:tour-step";
+// The registry lives in lib/dashboard-tabs.ts (shared with /dashboard/packs
+// and /dashboard/history); the row is components/dashboard/DashboardTabs.tsx.
+import DashboardTabs from "@/components/dashboard/DashboardTabs";
+import { DASH_TAB_FOR_ANCHOR, RPC_TOUR_STEP_EVENT, parseDashTab, type DashPanel as DashTab } from "@/lib/dashboard-tabs";
+export { DASH_TABS, DASH_TAB_FOR_ANCHOR, RPC_TOUR_STEP_EVENT, parseDashTab } from "@/lib/dashboard-tabs";
+export type { DashPanel as DashTab } from "@/lib/dashboard-tabs";
 
 const ACCENT_RED = "#E03A2F"; // brand-exception: concatenated with alpha suffixes (`${ACCENT_RED}66`/`88`) in CSS borders — must stay a literal hex
 
@@ -993,19 +976,7 @@ function ProfilePageInner() {
         </section>
 
         {/* ── Tabs (IA Phase 1, 2026-11-06): one job per tab, personal data only. ── */}
-        <div aria-label="Dashboard sections" role="tablist" className="rpc-dash-tabs" style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 2 }}>
-          {DASH_TABS.map((t) =>
-            "href" in t ? (
-              <Link key={t.id} href={t.href} className="rpc-dash-tab" style={tabStyle(false)}>
-                {t.label}
-              </Link>
-            ) : (
-              <button key={t.id} type="button" role="tab" aria-selected={tab === t.id} aria-controls={`dash-panel-${t.id}`} className="rpc-dash-tab" style={tabStyle(tab === t.id)} onClick={() => selectTab(t.id)}>
-                {t.label}
-              </button>
-            ),
-          )}
-        </div>
+        <DashboardTabs active={tab} onSelect={selectTab} />
 
         {tab === "overview" && (
           <div id="dash-panel-overview" role="tabpanel" style={{ display: "flex", flexDirection: "column", gap: 18 }}>
@@ -2983,25 +2954,6 @@ const quickLinkStyle: React.CSSProperties = {
   padding: "6px 0",
 };
 
-function tabStyle(active: boolean): React.CSSProperties {
-  return {
-    fontFamily: condensedFont,
-    fontWeight: 800,
-    fontSize: 12,
-    letterSpacing: "0.1em",
-    textTransform: "uppercase",
-    padding: "10px 14px",
-    minHeight: 44,
-    borderRadius: 8,
-    border: `1px solid ${active ? "var(--rpc-red-border)" : "var(--rpc-border)"}`,
-    background: active ? "var(--rpc-surface-raised)" : "transparent",
-    color: active ? "var(--rpc-text-primary)" : "var(--rpc-text-secondary)",
-    textDecoration: "none",
-    whiteSpace: "nowrap",
-    cursor: "pointer",
-    flexShrink: 0,
-  };
-}
 
 const secondaryBtnStyle: React.CSSProperties = {
   background: "transparent",
