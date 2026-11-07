@@ -80,12 +80,17 @@ const ROUTES = [
   // 0 serious/critical on production in both themes after that fix.
   "/profile/jamesdillonbond",
   "/profile/jamesdillonbond/trophy-case",
+  // 2026-11-07 (sixth batch): the player and team hubs — the only pages that stack
+  // THREE .rpc-card layers under a tier chip; every light-mode chip read
+  // 4.12–4.49:1 there until the tier text tokens were re-tuned the same day.
+  "/players/damian-lillard",
+  "/teams/nba/blazers",
 ]
 const THEMES = ["dark", "light"] as const
 const SERIOUS = new Set(["serious", "critical"])
 // 2026-11-07: `link-in-text-block` GATED. It read 4 nodes on `/` (the homepage pillar
 // doors' hint lines, shipped 11-06) and 0 everywhere else; fixed by underlining the
-// links at rest, then re-read 0 over all 32 (now 34) ROUTES × both themes from the cloud
+// links at rest, then re-read 0 over all 32 (now 36) ROUTES × both themes from the cloud
 // (64/64) before it was moved here.
 const GATED = new Set(["color-contrast", "select-name", "nested-interactive", "aria-conditional-attr", "scrollable-region-focusable", "link-in-text-block"])
 // ⚠ PHONE-WIDTH PASS (2026-10-25). `scrollable-region-focusable` only fires where a

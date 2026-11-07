@@ -97,3 +97,43 @@ describe("the red handle is painted with the text-safe red, not the fill red", (
     })
   }
 })
+
+// 2026-11-07 — TIER CHIP TEXT ON ITS OWN TINT, OVER NESTED CARDS. axe in light
+// mode on /players/<slug> and /teams/<league>/<slug> read every tier chip at
+// 4.12–4.49:1: the chip's --tier-*-text sat on --tier-*-bg (a 10 % tint) over
+// THREE nested .rpc-card layers (each --rpc-surface-raised, rgba(0,0,0,0.04) in
+// light), a darker canvas than the one-card tint the 10-18 values were tuned
+// on. The property: a tier text token clears 4.5:1 on its own tint over the
+// canvas, over one, two and three stacked cards, AND over three cards with the
+// hover surface on top — in both themes. Resolves `var(--x)` one level.
+const TIERS = ["legendary", "ultimate", "rare", "fandom", "uncommon", "common", "champion", "challenger", "contender", "epic"]
+// A theme block inherits what it does not redeclare (the tints live only in :root).
+function inherited(block: string, name: string): string {
+  const m = block.match(new RegExp(`--${name}:\\s*([^;]+);`))
+  return m ? m[1].trim() : token(THEMES[0].block, name)
+}
+function resolve(block: string, v: string): string {
+  const m = v.match(/^var\(--([a-z-]+)\)$/)
+  return m ? inherited(block, m[1]) : v
+}
+describe("tier chip text clears AA on its own tint over nested cards", () => {
+  for (const theme of THEMES) {
+    const canvas = parse(token(theme.block, "rpc-black")).rgb
+    const raised = parse(token(theme.block, "rpc-surface-raised"))
+    const hover = parse(token(theme.block, "rpc-surface-hover"))
+    const one = over(raised, canvas), two = over(raised, one), three = over(raised, two)
+    const stacks: Array<[string, RGB]> = [["canvas", canvas], ["1 card", one], ["2 cards", two], ["3 cards", three], ["3 cards + hover", over(hover, three)]]
+    for (const tier of TIERS) {
+      it(`${theme.name}: --tier-${tier}-text on --tier-${tier}-bg`, () => {
+        const fg = parse(resolve(theme.block, inherited(theme.block, `tier-${tier}-text`)))
+        const tint = parse(resolve(theme.block, inherited(theme.block, `tier-${tier}-bg`)))
+        expect(fg.a).toBe(1)
+        for (const [name, under] of stacks) {
+          const bg = over(tint, under)
+          const ratio = contrast(fg.rgb, bg)
+          expect(ratio, `${ratio.toFixed(2)}:1 over ${name}`).toBeGreaterThanOrEqual(4.5)
+        }
+      })
+    }
+  }
+})
