@@ -2,13 +2,32 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
+import { useEffect, useRef } from "react"
 import { type Collection, type CollectionPage, PAGE_LABELS, tabBarPages } from "@/lib/collections"
 
 export function CollectionTabBar({ collection }: { collection: Collection }) {
   const pathname = usePathname()
+  const navRef = useRef<HTMLElement>(null)
+
+  // 2026-11-07: at 390 px the strip scrolls, and a tab past the fold (Packs is
+  // 6th of 9) landed with NO visible active tab — tap PACKS in the bottom bar,
+  // see OVERVIEW · BINDER · MARKET · SNIPER · PLAY, none lit. Scroll the active
+  // tab into view on arrival; the strip itself scrolls, never the page
+  // (`block: "nearest"` keeps the vertical position).
+  useEffect(() => {
+    const nav = navRef.current
+    if (!nav || nav.scrollWidth <= nav.clientWidth) return
+    const active = nav.querySelector<HTMLElement>('[aria-selected="true"]')
+    if (!active) return
+    const a = active.getBoundingClientRect()
+    const n = nav.getBoundingClientRect()
+    if (a.left >= n.left && a.right <= n.right) return
+    active.scrollIntoView({ block: "nearest", inline: "center" })
+  }, [pathname])
 
   return (
     <nav
+      ref={navRef}
       className="rpc-coll-tabs"
       style={{ display: "flex", gap: 2, marginTop: 8, overflowX: "auto" }}
       aria-label="Collection sections"
