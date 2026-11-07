@@ -112,7 +112,11 @@
 1. ✅ **DONE 11-06 ~4:05 PM PT (Claude Code, `20261107000456`) — no precompute needed: the `ev` leg now walks the dist index newest-first, 3,354 → 17 buffers cold on 8783, equivalence proved over every Top Shot dist (ledger).** ~~[P2, Claude Code, 0 nights] per-dist EV precompute for `get_pack_realized_ev_row`~~ — the only user-facing error class left on the pack page (above).
 2. **[P3, Claude Code, 3 nights] #228 cold-whale `/api/collection-snapshot` timeout** — SQL lever exhausted; next is the CDN warm (route/edge). Not recurring since 11-04.
 3. **[P4, Trevor, 2 nights] `net._http_response` growth lever** — weekly read ~11-11.
-4. **[P3, Trevor, 2 nights] cron-job.org account has no MFA** — from the 11-04 incident.
+4. ✅ **DONE 11-06 (Trevor; `65585fb16`) — cron-job.org MFA on (TOTP, verified).**
+6. **[P3, Trevor, morning — 5 min in a real desktop window]** Hover the header's five group menus and the collection chip on a non-collection page (`/insights`, `/teams`); open the first-run tour on a fresh account if you have one. Measured from the cloud at 768–1280 and clean, but a real pointer is the only test of a :hover menu.
+7. **[P4, Claude Code, daylight]** `MobileNav` still hand-builds its five tabs; map them from `MOBILE_GROUP_IDS` (item 27 — the pin already fails on drift). And `/api/og/pack/lifecycle?id=<unknown>` hit directly still draws "Pack #<id> · RETAIL —" (item 23 residue; no page advertises it).
+8. **[P3, Claude Code, when a consumer appears] #237** — shared INDEXED discriminator for `wallet-intel` / `trophy-cases` / `collection-snapshot` (three states, not two).
+9. **[watch, 11-13 9 AM PT, scheduled]** #235 WAF rule `Entity page sweep` in Log mode → the one-shot task reads it and recommends Log → Rate Limit or another week.
 5. **[P4, Trevor, carried] #58 `OPENSEA_API_KEY`** — only if Candy still has 0 indexed sales on 11-27.
 
 ## Closed / RESOLVED this pass
