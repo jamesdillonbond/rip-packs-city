@@ -2,8 +2,7 @@ import { describe, it, expect } from "vitest"
 import {
   buildTelegramMessage,
   buildDiscordEmbeds,
-  buildEmailMessage,
-} from "@/lib/alerts/format"
+  buildEmailMessage, messageBatches, DISCORD_EMBEDS_PER_MESSAGE } from "@/lib/alerts/format"
 import type { Delivery, DealPayload, FmvPayload } from "@/lib/alerts"
 
 // Pins the per-channel alert digest formatters (Telegram HTML / Discord embeds /
@@ -307,3 +306,32 @@ describe("deal alerts state how old the ask is", () => {
     expect(JSON.stringify(without)).not.toContain("ask seen")
   })
 })
+
+// 2026-11-07 review: every claimed row was marked sent although Discord renders ≤ 10
+// embeds and the Telegram builder ≤ 20 rows per section, cut at 4,096 chars.
+describe("messageBatches — every row a batch carries is RENDERED in its message", () => {
+  const many = (n: number) => Array.from({ length: n }, (_, i) => ({ ...dealDelivery({ player_name: `Player ${i} With A Long Name` } as never), id: `d${i}` }))
+
+  it("telegram: 45 deals become messages that each fit, show every row, and never say '…and N more'", () => {
+    const group = many(45)
+    const batches = messageBatches("telegram", group)
+    expect(batches.flat().map((d) => d.id)).toEqual(group.map((d) => d.id))
+    for (const b of batches) {
+      const text = buildTelegramMessage(b)
+      expect(text.length).toBeLessThanOrEqual(4096)
+      expect(text).not.toMatch(/…and \d+ more/)
+      for (const d of b) expect(text).toContain((d.payload as DealPayload).deal.player_name as string)
+    }
+  })
+
+  it("discord: 25 deliveries are three messages of at most the embed cap", () => {
+    const batches = messageBatches("discord", many(25))
+    expect(batches.map((b) => b.length)).toEqual([DISCORD_EMBEDS_PER_MESSAGE, DISCORD_EMBEDS_PER_MESSAGE, 5])
+  })
+
+  it("email renders the whole group in one message; an empty group sends nothing", () => {
+    expect(messageBatches("email", many(30))).toHaveLength(1)
+    expect(messageBatches("telegram", [])).toEqual([])
+  })
+})
+

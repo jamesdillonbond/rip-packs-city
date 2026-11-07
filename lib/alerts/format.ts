@@ -12,6 +12,7 @@ import { askAgeHours, askStampKind, fmtAskAge, isAskStale } from "@/lib/market/a
 import { usdSignFirst } from "@/lib/usd-format"
 import { fmtPer100, fmtVsLaunch } from "@/lib/packs/chase-odds"
 import type { PackChasePayload } from "@/lib/packs/chase-alerts"
+import { TELEGRAM_TEXT_LIMIT } from "@/lib/telegram-message"
 
 const SITE = "https://www.rippackscity.com";
 
@@ -461,3 +462,38 @@ export function buildEmailMessage(deliveries: Delivery[], now: Date = new Date()
 
   return { subject, html, text: textLines.join("\n") };
 }
+
+// ── Batching (2026-11-07 review) ─────────────────────────────────────────────
+// Discord renders at most 10 embeds per message and the Telegram builder at most
+// 20 rows per section, then fitTelegramText cuts at 4,096 chars — but the sender
+// marked EVERY claimed delivery in the group as sent, so a user owed 30 alerts
+// saw 10 and the other 20 were recorded delivered. Split a group into messages
+// that render every row they carry; the sender marks a row sent only with ITS
+// message.
+export const DISCORD_EMBEDS_PER_MESSAGE = 10
+const TELEGRAM_ROWS_PER_MESSAGE = 20
+
+export function messageBatches(channel: "email" | "telegram" | "discord", group: Delivery[], now: Date = new Date()): Delivery[][] {
+  if (group.length === 0) return []
+  if (channel === "email") return [group]
+  if (channel === "discord") {
+    const out: Delivery[][] = []
+    for (let i = 0; i < group.length; i += DISCORD_EMBEDS_PER_MESSAGE) out.push(group.slice(i, i + DISCORD_EMBEDS_PER_MESSAGE))
+    return out
+  }
+  // telegram: greedy — add rows while the rendered text still fits, one row minimum
+  const out: Delivery[][] = []
+  let cur: Delivery[] = []
+  for (const d of group) {
+    const next = [...cur, d]
+    if (cur.length > 0 && (next.length > TELEGRAM_ROWS_PER_MESSAGE || buildTelegramMessage(next, now).length > TELEGRAM_TEXT_LIMIT)) {
+      out.push(cur)
+      cur = [d]
+    } else {
+      cur = next
+    }
+  }
+  if (cur.length) out.push(cur)
+  return out
+}
+

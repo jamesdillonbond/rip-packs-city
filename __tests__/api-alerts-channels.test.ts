@@ -8,12 +8,12 @@ import { NextRequest } from "next/server"
 // deep links, DELETE unlink + guard + 500, and the maskTarget shapes.
 
 const h = vi.hoisted(() => {
-  const state: { dbResult: { data: any; error: any } } = { dbResult: { data: [], error: null } }
+  const state: { dbResult: { data: any; error: any }; deletes: string[]; table: string } = { dbResult: { data: [], error: null }, deletes: [], table: "" }
   const sb: any = {
-    from: () => sb,
+    from: (t: string) => ((state.table = t), sb),
     select: () => sb,
     eq: () => sb,
-    delete: () => sb,
+    delete: () => (state.deletes.push(state.table), sb),
     then: (resolve: any) => resolve(state.dbResult),
   }
   return { sb, state }
@@ -119,13 +119,24 @@ describe("/api/alerts/channels — POST", () => {
     expect(body.message).toMatch(/a@b\.co/) // lowercased
     expect(fetchMock).toHaveBeenCalledOnce()
   })
-  it("email link: skips the send when RESEND_API_KEY is missing (still 200)", async () => {
+  // INVERTED 2026-11-07 (review): "still 200" pinned telling the collector "We sent
+  // a confirmation link" when nothing was sent. An unsent link is a retryable 503.
+  it("email link: with RESEND_API_KEY missing nothing is sent — and the reply never says it was", async () => {
     auth.user = { id: "u1", email: "a@b.co" }
     const fetchMock = vi.fn()
     vi.stubGlobal("fetch", fetchMock)
     const res = await POST(post({ channel: "email" }))
-    expect(res.status).toBe(200)
+    expect(res.status).toBe(503)
+    expect(JSON.stringify(await res.json())).not.toMatch(/We sent/)
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+  it("email link: a send Resend REFUSES is a retryable 503, never 'we sent a link'", async () => {
+    auth.user = { id: "u1", email: "a@b.co" }
+    process.env.RESEND_API_KEY = "re_123"
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 429, json: async () => ({}) })))
+    const res = await POST(post({ channel: "email" }))
+    expect(res.status).toBe(503)
+    expect(await res.json()).toMatchObject({ retryable: true })
   })
   it("telegram link: deep link uses TELEGRAM_USER_BOT_USERNAME when set", async () => {
     auth.user = { id: "u1", email: "a@b.co" }
@@ -159,6 +170,15 @@ describe("/api/alerts/channels — DELETE", () => {
     h.state.dbResult = { data: null, error: null }
     const body = await (await DELETE(del("?channel=telegram"))).json()
     expect(body).toEqual({ ok: true })
+  })
+  // 2026-11-07 review: queued deliveries carry their own target, so an unlink that
+  // left them went on sending to the old chat / address.
+  it("unlinking clears the channel's QUEUED deliveries first, then the channel", async () => {
+    auth.user = { id: "u1", email: "a@b.co" }
+    h.state.dbResult = { data: null, error: null }
+    h.state.deletes = []
+    expect((await DELETE(del("?channel=telegram"))).status).toBe(200)
+    expect(h.state.deletes).toEqual(["alert_deliveries", "notification_channels"])
   })
   it("500s on a delete error", async () => {
     auth.user = { id: "u1", email: "a@b.co" }

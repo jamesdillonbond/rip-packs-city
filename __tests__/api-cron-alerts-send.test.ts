@@ -35,6 +35,7 @@ vi.mock("@/lib/alerts/format", () => ({
   buildEmailMessage: () => ({ subject: "", html: "", text: "" }),
   buildTelegramMessage: () => "",
   buildDiscordEmbeds: () => [],
+  messageBatches: (_c: string, g: unknown[]) => [g],
 }))
 
 const req = (auth?: string) =>

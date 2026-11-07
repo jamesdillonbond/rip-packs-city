@@ -15,6 +15,7 @@ const h = vi.hoisted(() => {
       eq: (...a: any[]) => { s.calls.push([table, "eq", ...a]); return b },
       in: () => b,
       order: () => b,
+      limit: () => b,
       delete: () => { s.calls.push([table, "delete"]); return b },
       upsert: (row: any) => { s.upserted = row; return b },
       maybeSingle: async () => s.tables[`${table}:single`] ?? { data: null, error: null },
@@ -69,6 +70,18 @@ describe("/api/alerts/pack-chase", () => {
     const res = await POST(post({ dist_id: "8903", tier: "legendary", min_vs_launch: 3, owner_key: "attacker" }))
     expect(res.status).toBe(200)
     expect(h.s.upserted).toMatchObject({ owner_key: "user-1", dist_id: "8903", tier: "legendary", min_vs_launch: 3, armed: true })
+  })
+
+  // 2026-11-07 review: the cap counted every watch before an UPSERT that may only
+  // update one, so a collector at 50 could not edit a watch they already had.
+  it("at the cap, an EXISTING watch can still be edited; a NEW one is refused", async () => {
+    h.s.tables["topshot_atlas_dists:single"] = { data: { dist_id: "8903", title: "Rookie Year Royalty Pack" }, error: null }
+    h.s.tables["pack_chase_watches"] = { data: [{ id: "w1" }], error: null, count: 50 }
+    expect((await POST(post({ dist_id: "8903", tier: "legendary", min_vs_launch: 5 }))).status).toBe(200)
+    h.s.upserted = null
+    h.s.tables["pack_chase_watches"] = { data: [], error: null, count: 50 }
+    expect((await POST(post({ dist_id: "8904", tier: "legendary", min_vs_launch: 5 }))).status).toBe(409)
+    expect(h.s.upserted).toBeNull()
   })
 
   it("a failed reading read lists watches with reading null and readings_ok false", async () => {

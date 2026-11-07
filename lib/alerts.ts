@@ -200,17 +200,24 @@ export async function claimPendingDeliveries(channel: Channel, max = 50) {
   return data as { channel: Channel; count: number; deliveries: Delivery[] };
 }
 
-export async function markDeliverySent(id: string) {
+/**
+ * Returns whether the mark LANDED (2026-11-07 review). It still never throws, but
+ * the sender counts a delivery as sent only when this is true — a swallowed error
+ * plus an unconditional `sent++` published a failed write as a sent alert (R120).
+ */
+export async function markDeliverySent(id: string): Promise<boolean> {
   const { error } = await (supabase as any).rpc("mark_delivery_sent", { p_id: id });
   if (error) console.log("[alerts] mark_delivery_sent err", error.message);
+  return !error;
 }
 
-export async function markDeliveryFailed(id: string, errMsg: string) {
+export async function markDeliveryFailed(id: string, errMsg: string): Promise<boolean> {
   const { error } = await (supabase as any).rpc("mark_delivery_failed", {
     p_id: id,
     p_error: errMsg.slice(0, 500),
   });
   if (error) console.log("[alerts] mark_delivery_failed err", error.message);
+  return !error;
 }
 
 // ── Shapes ───────────────────────────────────────────────────────────────────

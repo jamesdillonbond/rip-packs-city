@@ -27,7 +27,7 @@ import {
   type Channel,
   type Delivery,
 } from "@/lib/alerts";
-import { buildEmailMessage, buildTelegramMessage, buildDiscordEmbeds } from "@/lib/alerts/format";
+import { buildEmailMessage, buildTelegramMessage, buildDiscordEmbeds, messageBatches } from "@/lib/alerts/format";
 import { alertEmailPauseUrl } from "@/lib/alerts/email-pause";
 
 const SITE_URL = "https://www.rippackscity.com";
@@ -170,34 +170,41 @@ async function sendDiscordGroup(userId: string, group: Delivery[]): Promise<void
   if (!msgRes.ok) throw new Error(`discord msg ${msgRes.status}: ${(await msgRes.text()).slice(0, 200)}`);
 }
 
-async function drainChannel(channel: Channel): Promise<{ sent: number; failed: number }> {
+async function drainChannel(channel: Channel): Promise<{ sent: number; failed: number; mark_errors: number }> {
   const claim = await claimPendingDeliveries(channel, 50);
   const deliveries = claim.deliveries ?? [];
-  if (!deliveries.length) return { sent: 0, failed: 0 };
+  if (!deliveries.length) return { sent: 0, failed: 0, mark_errors: 0 };
 
   let sent = 0;
   let failed = 0;
+  // A mark that did not land leaves the row in `sending` — counted, so the run
+  // can say so instead of reporting it as sent / re-queued (2026-11-07 review).
+  let markErrors = 0;
   const groups = groupByTarget(deliveries);
 
   for (const [target, group] of groups) {
-    try {
-      if (channel === "email") await sendEmailGroup(target, group);
-      else if (channel === "telegram") await sendTelegramGroup(target, group);
-      else await sendDiscordGroup(target, group);
-      for (const d of group) {
-        await markDeliverySent(d.id);
-        sent++;
-      }
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      console.log(`[${PIPELINE_NAME}] ${channel} send err for ${target.slice(-6)}: ${msg}`);
-      for (const d of group) {
-        await markDeliveryFailed(d.id, msg);
-        failed++;
+    // One message per batch, each rendering EVERY row it carries (lib/alerts/format.ts
+    // messageBatches): a row is marked sent only with the message that showed it.
+    for (const batch of messageBatches(channel, group)) {
+      try {
+        if (channel === "email") await sendEmailGroup(target, batch);
+        else if (channel === "telegram") await sendTelegramGroup(target, batch);
+        else await sendDiscordGroup(target, batch);
+        for (const d of batch) {
+          if (await markDeliverySent(d.id)) sent++;
+          else markErrors++;
+        }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.log(`[${PIPELINE_NAME}] ${channel} send err for ${target.slice(-6)}: ${msg}`);
+        for (const d of batch) {
+          if (await markDeliveryFailed(d.id, msg)) failed++;
+          else markErrors++;
+        }
       }
     }
   }
-  return { sent, failed };
+  return { sent, failed, mark_errors: markErrors };
 }
 
 async function run(req: NextRequest) {
@@ -237,12 +244,14 @@ async function run(req: NextRequest) {
     let errMsg: string | null = null;
     let sent = 0;
     let failed = 0;
+    let markErrors = 0;
 
     for (const channel of channels) {
       try {
         const r = await drainChannel(channel);
         sent += r.sent;
         failed += r.failed;
+        markErrors += r.mark_errors;
       } catch (e) {
         ok = false;
         errMsg = `${errMsg ? errMsg + "; " : ""}${channel}: ${e instanceof Error ? e.message : String(e)}`;
@@ -257,9 +266,11 @@ async function run(req: NextRequest) {
         p_rows_found: sent + failed,
         p_rows_written: sent,
         p_rows_skipped: failed,
-        p_ok: ok,
-        p_error: errMsg,
-        p_extra: { sent, failed, channels, duration_ms: Date.now() - startedMs },
+        // ⚠ A mark that did not land is a FAILED write (the row is stuck in
+        // `sending`), so it fails the run rather than reading as a quiet queue.
+        p_ok: ok && markErrors === 0,
+        p_error: errMsg ?? (markErrors > 0 ? `${markErrors} delivery mark(s) did not land — rows left in 'sending'` : null),
+        p_extra: { sent, failed, mark_errors: markErrors, channels, duration_ms: Date.now() - startedMs },
       });
     } catch (logErr) {
       console.log(`[${PIPELINE_NAME}] log err: ${logErr instanceof Error ? logErr.message : String(logErr)}`);

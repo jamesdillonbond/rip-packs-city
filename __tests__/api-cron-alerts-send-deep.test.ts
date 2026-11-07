@@ -26,6 +26,8 @@ const state = vi.hoisted(() => ({
   claimThrow: null as string | null,
   sent: [] as string[],
   failed: [] as Array<{ id: string; msg: string }>,
+  markLands: true,
+  batchSize: 1000,
 }))
 
 vi.mock("next/server", async (importOriginal) => {
@@ -47,8 +49,9 @@ vi.mock("@/lib/alerts", () => ({
     const deliveries = state.claim[channel] ?? []
     return { channel, count: deliveries.length, deliveries }
   },
-  markDeliverySent: async (id: string) => void state.sent.push(id),
-  markDeliveryFailed: async (id: string, msg: string) => void state.failed.push({ id, msg }),
+  // 2026-11-07: the marks REPORT whether they landed (they used to return nothing).
+  markDeliverySent: async (id: string) => (state.sent.push(id), state.markLands),
+  markDeliveryFailed: async (id: string, msg: string) => (state.failed.push({ id, msg }), state.markLands),
 }))
 
 // Real formatters are pure; stub them so a body shape never trips the test.
@@ -56,6 +59,11 @@ vi.mock("@/lib/alerts/format", () => ({
   buildEmailMessage: () => ({ subject: "s", html: "<b>h</b>", text: "t" }),
   buildTelegramMessage: () => "tg text",
   buildDiscordEmbeds: () => [{ title: "e" }],
+  messageBatches: (_c: string, g: unknown[]) => {
+    const out: unknown[][] = []
+    for (let i = 0; i < g.length; i += state.batchSize) out.push(g.slice(i, i + state.batchSize))
+    return out
+  },
 }))
 
 process.env.NEXT_PUBLIC_SUPABASE_URL = "https://x.supabase.co"
@@ -183,6 +191,34 @@ describe("alerts-send — healthy drain", () => {
     const log = terminalLog(spy.rpcCalls)
     expect(log).toMatchObject({ p_pipeline: "alerts-send", p_ok: true, p_rows_found: 1, p_rows_written: 1, p_rows_skipped: 0 })
     expect(log.p_extra).toMatchObject({ sent: 1, failed: 0, channels: ["email"] })
+  })
+
+  // 2026-11-07 review: a group bigger than one message renders was marked sent in
+  // full; the sender now sends one message per batch and marks a row with ITS message.
+  it("sends one message per batch, and every row it marks sent was in a message that went out", async () => {
+    state.batchSize = 10
+    state.claim = { discord: Array.from({ length: 25 }, (_, i) => delivery(`d${i}`, "discord", "user-1")) }
+    install()
+    process.env.DISCORD_BOT_TOKEN = "t"
+    const f = stubFetch([jsonRoute("users/@me/channels", { id: "dm1" }), jsonRoute("/messages", { id: "m" })])
+    await GET(req("discord"))
+    await runDeferred()
+    expect(f.calls.filter((c) => c.url.includes("/messages"))).toHaveLength(3)
+    expect(state.sent).toHaveLength(25)
+    state.batchSize = 1000
+  })
+
+  it("⛔ a mark that does NOT land fails the run and is never counted as sent", async () => {
+    state.markLands = false
+    state.claim = { email: [delivery("d1", "email", "user@example.com")] }
+    const spy = install()
+    stubFetch([jsonRoute("api.resend.com", { id: "e1" })])
+    await GET(req("email"))
+    await runDeferred()
+    const log = terminalLog(spy.rpcCalls)
+    expect(log).toMatchObject({ p_ok: false, p_rows_written: 0 })
+    expect(log.p_extra).toMatchObject({ sent: 0, mark_errors: 1 })
+    state.markLands = true
   })
 
   it("collapses two deliveries to the same target into ONE digest send", async () => {

@@ -305,7 +305,7 @@ export async function POST(req: NextRequest) {
           // and is still waiting for the condition to stop (2026-10-14).
           armed: true,
         },
-        { onConflict: "owner_key,edition_key,alert_type" }
+        { onConflict: "owner_key,collection_id,edition_key,alert_type" }
       )
       .select()
       .single();

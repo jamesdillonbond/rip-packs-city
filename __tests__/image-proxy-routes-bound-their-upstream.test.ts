@@ -87,9 +87,12 @@ const UNBOUNDED = ROWS.filter((r) => !r.bound)
  * on three tips (3919afa9a, 0c9fa9236, 6fa0f9e9c) until the ratchet caught up.
  * 24 → 23 on 2026-10-24: `send-digest` bounded its Resend call
  * (AbortSignal.timeout(10_000), the alerts-send / weekly-digest bound).
+ * 23 → 22 on 2026-11-07: `/api/alerts/channels` bounded its verify-email Resend
+ * call (AbortSignal.timeout(10_000)) — the alerts review that made it report a
+ * refused send instead of telling the collector a link went out.
  * Lower this when you convert one. NEVER raise it.
  */
-const BUDGET = 23
+const BUDGET = 22
 
 describe("image proxies bound their upstream, and the wider class only shrinks", () => {
   it("is not vacuous — the walk found API routes, and found some that ARE bound", () => {

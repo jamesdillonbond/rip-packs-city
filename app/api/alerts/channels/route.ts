@@ -113,9 +113,19 @@ export async function POST(req: NextRequest) {
     const verifyUrl =
       `https://www.rippackscity.com/api/alerts/channels/verify-email` +
       `?code=${encodeURIComponent(result.code)}&email=${encodeURIComponent(email!)}`;
-    await sendVerifyEmail(email!, verifyUrl).catch((e) =>
-      console.log("[alerts/channels] verify email send err", e?.message)
-    );
+    // ⚠ "We sent a confirmation link" only when Resend ACCEPTED it (2026-11-07
+    // review): a missing key, a 4xx/5xx or a hung call used to read exactly like a
+    // send, and the collector waited for a link that never came.
+    const sent = await sendVerifyEmail(email!, verifyUrl).catch((e) => {
+      console.log("[alerts/channels] verify email send err", e?.message);
+      return false;
+    });
+    if (!sent) {
+      return NextResponse.json(
+        { error: "We couldn't send the confirmation email right now. Try again in a moment.", retryable: true },
+        { status: 503 },
+      );
+    }
     return NextResponse.json({
       ok: true,
       channel,
@@ -146,6 +156,17 @@ export async function DELETE(req: NextRequest) {
   if (!isChannel(channel)) {
     return NextResponse.json({ error: "channel must be email | telegram | discord" }, { status: 400 });
   }
+  // Queued deliveries carry their OWN target (channel_user_id), so unlinking the
+  // channel alone left them going out to the old chat / address on the next tick
+  // (2026-11-07 review). Clear them FIRST: if that fails the channel stays linked
+  // and the collector is told, rather than a half-unlink that keeps sending.
+  const { error: queueError } = await supabase
+    .from("alert_deliveries")
+    .delete()
+    .eq("owner_key", user.id)
+    .eq("channel", channel)
+    .eq("status", "pending");
+  if (queueError) return apiErrorResponse(queueError, "api/alerts/channels");
   const { error } = await supabase
     .from("notification_channels")
     .delete()
@@ -155,13 +176,15 @@ export async function DELETE(req: NextRequest) {
   return NextResponse.json({ ok: true });
 }
 
-async function sendVerifyEmail(to: string, verifyUrl: string) {
+/** true only when Resend accepted the message. */
+async function sendVerifyEmail(to: string, verifyUrl: string): Promise<boolean> {
   const key = process.env.RESEND_API_KEY;
   if (!key) {
     console.log("[alerts/channels] RESEND_API_KEY missing — skipping verify email");
-    return;
+    return false;
   }
-  await fetch("https://api.resend.com/emails", {
+  const res = await fetch("https://api.resend.com/emails", {
+    signal: AbortSignal.timeout(10_000),
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -179,4 +202,6 @@ async function sendVerifyEmail(to: string, verifyUrl: string) {
       text: `Confirm your Rip Packs City alert emails: ${verifyUrl}\n\nThis link expires in 15 minutes. If you didn't request it, ignore this email.`,
     }),
   });
+  if (!res.ok) console.log(`[alerts/channels] verify email refused: ${res.status}`);
+  return res.ok;
 }

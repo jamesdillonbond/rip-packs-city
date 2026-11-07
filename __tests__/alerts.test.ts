@@ -265,9 +265,13 @@ describe("markDeliverySent / markDeliveryFailed", () => {
     expect(lastCall()).toEqual({ name: "mark_delivery_sent", args: { p_id: "del-1" } })
   })
 
-  it("markDeliverySent swallows an RPC error", async () => {
+  // INVERTED 2026-11-07 (review): "swallows" pinned a swallowed failed WRITE — the
+  // sender then counted the row as sent. It still never throws, but it REPORTS.
+  it("markDeliverySent never throws on an RPC error — and reports that the mark did NOT land", async () => {
     state.rpcResults["mark_delivery_sent"] = { error: { message: "x" } }
-    await expect(markDeliverySent("del-1")).resolves.toBeUndefined()
+    await expect(markDeliverySent("del-1")).resolves.toBe(false)
+    state.rpcResults["mark_delivery_sent"] = { error: null }
+    await expect(markDeliverySent("del-1")).resolves.toBe(true)
   })
 
   it("markDeliveryFailed truncates the error message to 500 chars", async () => {
@@ -278,8 +282,8 @@ describe("markDeliverySent / markDeliveryFailed", () => {
     expect(lastCall().args.p_error).toHaveLength(500)
   })
 
-  it("markDeliveryFailed swallows an RPC error", async () => {
+  it("markDeliveryFailed never throws on an RPC error — and reports that the mark did NOT land", async () => {
     state.rpcResults["mark_delivery_failed"] = { error: { message: "x" } }
-    await expect(markDeliveryFailed("del-2", "short")).resolves.toBeUndefined()
+    await expect(markDeliveryFailed("del-2", "short")).resolves.toBe(false)
   })
 })

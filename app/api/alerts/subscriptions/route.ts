@@ -164,9 +164,15 @@ export async function POST(req: NextRequest) {
   try {
     if (body.id) {
       // Update — scoped to owner_key so a user can't edit another's sub.
+      // ⚠ `active` only when the body SAYS it (2026-11-07 review): sanitize()
+      // defaults a missing `active` to true for a NEW row, and the edit form
+      // never sends it, so saving a paused alert's label or threshold switched
+      // it back on. Pausing is PATCH's job.
+      const { active: _defaulted, ...edit } = row as Record<string, unknown>;
+      const patch = body.active === undefined ? edit : row;
       const { data, error } = await supabase
         .from("alert_subscriptions")
-        .update({ ...row, updated_at: new Date().toISOString() })
+        .update({ ...patch, updated_at: new Date().toISOString() })
         .eq("id", body.id)
         .eq("owner_key", user.id)
         .select()

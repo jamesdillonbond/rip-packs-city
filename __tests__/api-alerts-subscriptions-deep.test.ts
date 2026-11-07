@@ -13,6 +13,7 @@ const st = vi.hoisted(() => ({
   updated: { data: null as any, error: null as any },
   inserted: { data: null as any, error: null as any },
   insertedRow: null as any,
+  updatedRow: null as any,
   deleted: { data: [] as any[] | null, error: null as any },
   preview: { deals_count: 3, deals: [{ a: 1 }, { b: 2 }] } as any,
 }))
@@ -28,7 +29,7 @@ vi.mock("@/lib/supabase", () => ({
     from() {
       let op: "select" | "update" | "insert" | "delete" = "select"
       const b: any = {
-        select: () => b, update: () => { op = "update"; return b }, insert: (row: any) => { op = "insert"; st.insertedRow = row; return b }, delete: () => { op = "delete"; return b },
+        select: () => b, update: (row: any) => { op = "update"; st.updatedRow = row; return b }, insert: (row: any) => { op = "insert"; st.insertedRow = row; return b }, delete: () => { op = "delete"; return b },
         eq: () => b, order: () => b,
         maybeSingle: async () => st.updated,
         single: async () => st.inserted,
@@ -101,6 +102,16 @@ describe("POST /api/alerts/subscriptions", () => {
     st.updated = { data: { id: "s1" }, error: null }
     const body = await (await POST(jreq({ id: "s1" }))).json()
     expect(body.subscription.id).toBe("s1")
+  })
+  // 2026-11-07 review: the edit form never sends `active`, and sanitize() defaults
+  // it to true for a NEW row — so saving a paused alert switched it back on.
+  it("an edit that does not mention `active` never re-activates a paused subscription", async () => {
+    st.updated = { data: { id: "s1" }, error: null }
+    await POST(jreq({ id: "s1", label: "Renamed" }))
+    expect(st.updatedRow).not.toHaveProperty("active")
+    // an edit that DOES say it still sets it
+    await POST(jreq({ id: "s1", active: false }))
+    expect(st.updatedRow).toMatchObject({ active: false })
   })
   it("404 when updating a non-owned/missing subscription", async () => {
     st.updated = { data: null, error: null }

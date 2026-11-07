@@ -92,7 +92,19 @@ export async function POST(req: NextRequest) {
   const { count, error: cErr } = await boundedRead(sb.from("pack_chase_watches").select("id", { count: "exact", head: true }).eq("owner_key", user.id), "api/alerts/pack-chase/count")
   if (cErr) return apiErrorResponse(cErr, "api/alerts/pack-chase")
   if (count == null) return NextResponse.json({ error: "Couldn't check your watch count; try again." }, { status: 503 })
-  if (count >= MAX_WATCHES) return NextResponse.json({ error: `You can watch up to ${MAX_WATCHES} packs.` }, { status: 409 })
+  if (count >= MAX_WATCHES) {
+    // The upsert below UPDATES an existing (owner, dist, tier) watch rather than
+    // adding one, so a collector at the cap may still edit what they have
+    // (2026-11-07 review: changing min_vs_launch at 50 watches was refused).
+    const { data: existing, error: eErr } = await boundedRead(
+      sb.from("pack_chase_watches").select("id").eq("owner_key", user.id).eq("dist_id", distId).eq("tier", tier).limit(1),
+      "api/alerts/pack-chase/existing",
+    )
+    if (eErr) return apiErrorResponse(eErr, "api/alerts/pack-chase")
+    if (!Array.isArray(existing) || existing.length === 0) {
+      return NextResponse.json({ error: `You can watch up to ${MAX_WATCHES} packs.` }, { status: 409 })
+    }
+  }
 
   const { data, error } = await sb
     .from("pack_chase_watches")
