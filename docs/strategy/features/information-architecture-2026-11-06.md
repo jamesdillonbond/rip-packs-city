@@ -27,7 +27,7 @@ The cause is not any one decision. Each feature shipped with its own entry point
 One promise, the wallet/username search, then **the four pillars as four doors** (below), then proof (live numbers, a real trophy case), then the signup. Not a feature catalogue; the pillars are the catalogue. Everything currently pitched on the homepage (Fast Break, "Things Top Shot won't tell you", trophy case) lives *inside* a pillar, not beside it.
 
 ### Home 2 — **Global navigation** (header + mobile bar + footer): *"Take me to the feature."*
-Features grouped by the collector's **job**, not by collection and not by when we built them. The same five groups, in the same order, in all three places — the mobile bar shows the first four plus "Me".
+Features grouped by the collector's **job**, not by collection and not by when we built them. The same groups, in the same order, in all three places — the mobile bar shows HOME · MARKET · PACKS · INSIGHTS · MY BINDER (Trade has no public hub a phone visitor needs in the bar; the binder is the one personal page that earns a tab, auth-free).
 
 | group | job | what lives there (every existing URL, nothing new) |
 |---|---|---|
@@ -70,10 +70,10 @@ The dashboard header's six links collapse to the five tabs; Sniper and Alerts st
 | phase | what | risk | needs Trevor |
 |---|---|---|---|
 | **P1 — Dashboard tabs** ✅ shipped 2026-11-06 ~9:30 PM PT | Five tabs on `/dashboard` (Overview · Trophy Cases · Packs · History · Settings; Packs/History are the existing pages); sections re-homed per §2; promo cards removed; `?tab=` deep links; the first-run tour announces each step (`rpc:tour-step`) and the dashboard opens the tab that holds the anchor | low — one client file, no URL change | Trevor said yes to all three forks 8:20 PM PT |
-| **P2 — `lib/ia.ts` + header/mobile/footer** | The registry; the five groups rendered in all three navs; collection switcher replaces the seven links; `/insights` index grouped from the same registry | medium — the header is on every page; nav links feed SEO internal linking (keep every current destination reachable within one click; run the sitemap/links guard) | yes — sign off on group names and order |
-| **P3 — Homepage** | Four pillar doors replace the eight pitches; proof + signup stay | medium — the h1/SEO copy and the OG card stay; it is the section order and the doors that change | yes — copy |
+| **P2 — `lib/ia.ts` + header/mobile/footer** ✅ shipped 2026-11-06 ~11 PM PT | The registry; the five groups rendered in all three navs; collection switcher replaces the seven links; `/insights` index grouped from the same registry | medium — the header is on every page; nav links feed SEO internal linking (keep every current destination reachable within one click; run the sitemap/links guard) | yes — sign off on group names and order |
+| **P3 — Homepage** ✅ shipped 2026-11-06 ~11 PM PT | Four pillar doors replace the eight pitches; proof + signup stay | medium — the h1/SEO copy and the OG card stay; it is the section order and the doors that change | yes — copy |
 
-P1 can start tonight. P2 and P3 are a daytime job each, verified in Trevor's Chrome.
+All three shipped the same evening (Trevor 8:14 PM: "No do all of it now"); the header widths and the 390 px bar are the two things to re-measure in Trevor's Chrome the next morning.
 
 ---
 
