@@ -39,3 +39,26 @@ describe("the concierge's per-collection tabs line", () => {
     expect(tabBarPages(ts)).not.toContain(folded[0])
   })
 })
+
+// 2026-11-07 (afternoon): asked "where did the trade link go on mobile", the
+// concierge answered correctly AND logged a bug — Trade's absence from the bar
+// is a registry decision (lib/ia.ts MOBILE_GROUP_IDS), not a defect. The
+// prompt now says so, and says the keyboard facts the same day's a11y work
+// made true. Both are claims about the code, so they are pinned to it.
+import { MOBILE_GROUP_IDS } from "@/lib/ia"
+describe("the concierge's navigation facts match the registry and the shipped keyboard contract", () => {
+  it("Trade is off the phone bar in the registry, and the prompt says that is by design", () => {
+    expect(MOBILE_GROUP_IDS).not.toContain("trade")
+    expect(ROUTE).toMatch(/Trade is NOT on the phone bar BY DESIGN/)
+    expect(ROUTE).toMatch(/never logged as a bug/)
+  })
+  it("the keyboard facts it states are the ones the code implements", () => {
+    expect(ROUTE).toMatch(/Left\/Right\/Home\/End move between the tabs/)
+    const keys = readFileSync(join(__dirname, "..", "lib", "a11y", "tablist-keys.ts"), "utf8")
+    for (const k of ["ArrowLeft", "ArrowRight", "Home", "End"]) expect(keys).toContain(k)
+    expect(ROUTE).toMatch(/header search is a combobox/)
+    expect(readFileSync(join(__dirname, "..", "components", "search", "GlobalSearch.tsx"), "utf8")).toMatch(/role="combobox"/)
+    expect(ROUTE).toMatch(/header groups are hover\/focus-revealed lists of plain links/)
+    expect(stripComments(readFileSync(join(__dirname, "..", "components", "TopNav.tsx"), "utf8"))).not.toMatch(/role="menu"/)
+  })
+})
