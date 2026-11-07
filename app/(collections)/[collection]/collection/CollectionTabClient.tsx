@@ -1496,6 +1496,17 @@ function WalletMomentsBody() {
         {/* role=status: a failed lookup (or the UFC scan progress this box also
             carries) is announced, not only painted (2026-11-07). */}
         {error ? <div role="status" aria-live="polite" className="mb-4 rounded-lg border border-red-800 bg-red-950 p-3 text-red-300 text-sm">{error}</div> : null}
+        {/* The RESULT is announced too (2026-11-07): after Enter, focus stays in
+            the wallet box and nothing told a screen reader the binder had
+            loaded. sr-only, polite, and silent on a failed read — the error box
+            above speaks then, and a failed read is never "0 moments". */}
+        {hasSearched && !loading && !error ? (
+          <div role="status" aria-live="polite" className="sr-only" data-testid="binder-result-status">
+            {rows.length > 0
+              ? `Loaded ${rows.length.toLocaleString()}${paginatedTotal > rows.length ? ` of ${paginatedTotal.toLocaleString()}` : ""} moment${(paginatedTotal > rows.length ? paginatedTotal : rows.length) === 1 ? "" : "s"}`
+              : "Search finished — no moments to show for this wallet"}
+          </div>
+        ) : null}
 
         {/* Debug table */}
         {showDebug ? (

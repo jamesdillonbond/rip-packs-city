@@ -319,6 +319,22 @@ describe("CollectionTabClient — a failed wallet read must not read as an empty
     )
   })
 
+  it("announces the result politely — a count on success, no count on a failed read (2026-11-07)", async () => {
+    searchParams = new URLSearchParams("wallet=0xmine")
+    momentsResponse = () =>
+      json(200, { moments: [MOMENT()], wallet: "0xmine", page: 1, total_count: 1, total_pages: 1 })
+    const { unmount } = render(<CollectionTabClient />)
+    const status = await screen.findByTestId("binder-result-status")
+    expect(status.getAttribute("role")).toBe("status")
+    expect(status.textContent).toBe("Loaded 1 moment")
+    unmount()
+    // MIRROR: a failed read must not be announced as a result
+    momentsResponse = () => json(500, { error: "wallet cache unavailable" })
+    render(<CollectionTabClient />)
+    await screen.findByText("wallet cache unavailable")
+    expect(screen.queryByTestId("binder-result-status")).toBeNull()
+  })
+
   it("clears a previous error when a later search succeeds", async () => {
     searchParams = new URLSearchParams("wallet=0xmine")
     momentsResponse = () => json(500, { error: "wallet cache unavailable" })
