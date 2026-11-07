@@ -20,7 +20,7 @@ import { headers } from "next/headers";
 import { fitTelegramText } from "@/lib/telegram-message";
 import { createClient } from "@supabase/supabase-js";
 import Anthropic from "@anthropic-ai/sdk";
-import { getCollection, publishedCollections, COLLECTION_UUID_BY_SLUG, marketplaceMomentUrl, fromDbSlug, toDbSlug, getCollectionUuid } from "@/lib/collections";
+import { getCollection, publishedCollections, COLLECTION_UUID_BY_SLUG, marketplaceMomentUrl, fromDbSlug, toDbSlug, getCollectionUuid, PAGE_LABELS, tabBarPages, type Collection, type CollectionPage } from "@/lib/collections";
 import { IA_GROUPS, MOBILE_GROUP_IDS, resolveHref, DEFAULT_COLLECTION } from "@/lib/ia";
 import { bumpAnonRate } from "@/lib/abuse/anon-rate";
 import { getSupabaseServer } from "@/lib/auth/supabase-server";
@@ -1053,8 +1053,17 @@ function buildSystemPromptParts(ctx: {
   // A collection's tabs, from the registry. The Candy sentence below used to be a
   // hand-kept list that named /candy-mlb/sniper — a tab Candy does not have (the
   // URL redirects) — so the model sent collectors to a dead page (2026-09-25).
-  const tabsFor = (c: { id: string; pages: readonly string[] } | null | undefined) =>
-    c ? c.pages.map((p) => `/${c.id}/${p}`).join(", ") : "";
+  // 2026-11-07: each tab carries the LABEL the strip shows (`Binder /x/collection`,
+  // not a bare path the model re-reads as "Collection"), and a registry page the
+  // strip FOLDS (TAB_BAR_HIDDEN_PAGES — reached from Market's sub-toggle, not a
+  // tab of its own) says so, so "list the tabs" matches what the page shows.
+  const tabsFor = (c: Collection | null | undefined) => {
+    if (!c) return "";
+    const strip = new Set<CollectionPage>(tabBarPages(c));
+    return c.pages
+      .map((p) => `${PAGE_LABELS[p]} /${c.id}/${p}${strip.has(p) ? "" : " (not a tab in the strip; linked from Market)"}`)
+      .join(", ");
+  };
   // Every published collection's tabs, from the registry (2026-10-24): the prompt
   // said all collections share "Overview … Sniper … Pack EV … Analytics", which
   // over-claimed tabs UFC, Candy, Golazos and Pinnacle do not have. Deploy-constant.
