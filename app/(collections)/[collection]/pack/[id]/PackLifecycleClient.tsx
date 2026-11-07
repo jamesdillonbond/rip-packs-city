@@ -497,7 +497,9 @@ function PullCard({ pull, collection }: { pull: PackPull; collection: string }) 
               height: 22,
               borderRadius: "var(--radius-full)",
               background: "rgba(0,0,0,0.55)",
-              color: "var(--rpc-text-primary)",
+              // brand-exception: fixed dark overlay on the art in both themes →
+              // fixed white glyph (--rpc-text-primary is near-black in light).
+              color: "#fff",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",

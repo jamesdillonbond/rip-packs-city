@@ -308,7 +308,10 @@ function FilledSlab({
                 borderRadius: "50%",
                 background: "rgba(0,0,0,0.6)",
                 border: "1px solid rgba(255,255,255,0.18)",
-                color: "var(--rpc-text-primary)",
+                // brand-exception: the disc is a fixed dark overlay on the art in
+                // BOTH themes, so the glyph is fixed white. --rpc-text-primary
+                // flips to #141414 in light mode and the ✕ vanished (2026-11-07).
+                color: "#fff",
                 fontSize: 12,
                 lineHeight: 1,
                 display: "flex",

@@ -154,6 +154,16 @@ describe("TrophySlab", () => {
     expect(btn.style.display).not.toBe("none")
   })
 
+  it("the ✕ glyph is fixed white on its fixed dark disc, not a theme token (light mode hid it, 2026-11-07)", () => {
+    const { getByLabelText } = render(
+      <TrophySlab slab={base} slot={2} mode="owner" onRemove={vi.fn()} />,
+    )
+    const disc = getByLabelText("Remove slab 2").querySelector("span") as HTMLElement
+    expect(disc.style.background).toContain("rgba(0, 0, 0")
+    expect(disc.style.color).not.toContain("var(")
+    expect(disc.style.color).toMatch(/^(#fff|rgb\(255, 255, 255\)|white)$/)
+  })
+
   it("public mode has no remove control", () => {
     const onRemove = vi.fn()
     const { queryByLabelText } = render(
