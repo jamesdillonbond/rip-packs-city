@@ -1,4 +1,4 @@
-# Daytime audit pass — 2026-11-06 (~8:43 AM → ~1:55 PM PT)
+# Daytime audit pass — 2026-11-06 (~8:43 AM → ~1:55 PM PT, resumed 4:48 → ~6:15 PM PT)
 
 **Session:** Cowork cloud, repo attached via `add_repo` → shallow clone → direct push (two pushes, CI green on both); Supabase MCP reads and `apply_migration` both passed first try (two migrations applied); laptop linked, no folders (not needed). Trevor: *"work autonomously for the next 5 hours … deep dive audit and QA across all pages, across the project and all our tools … SEO, UI, UX, CX, Concierge, security, new user onboarding, user flow, retention, growth, and workflows."*
 
@@ -54,7 +54,15 @@
 
 **Batch 7 — `a287718` (Trevor 1:27 PM: "Keep going and do all you can").** The concierge prompt and `/help` now describe extra trophy cases and the Dame Time challenge — the feature was live with neither support surface aware of it. Also checked: the twin moved the hot-wallet signer off `elliptic` (`d8eae13`) — the Dependabot item below is closed by it; 320 px sweep of `/trophy-challenges/dame-time`, `/profile/jamesdillonbond`, `/help` — 0 overflow / 0 console errors / 0 broken images; the challenge board's "Enter from your dashboard" for an anonymous visitor goes `/dashboard` → `/login?next=/dashboard` (fine). Noted, not changed: `/trophy-challenges/<unknown>` answers HTTP 200 with the client's "no challenge here" copy (noindex, so harmless; a server-side existence read would make it a true 404).
 
+**Evening (Trevor 4:48 PM: "Keep going. Don't stop until you've exhausted all you can do") — a signed-in walk of the dashboard surfaces in Trevor's Chrome.**
+
+14. **Batch 8 — `3a4251f`, CI success, live.** `/dashboard/notifications` offered Deal / Badge / Portfolio toggles that NO sender reads (`build_deal_alerts_for_subscriber` has 0 callers in prosrc, cron.job and the repo) — the page now carries the one switch the digest senders honour (Weekly digest, with the truth that it is not sending yet), points listing alerts at `/alerts` (which does send), uses theme tokens (its muted copy was invisible in light mode) and posts the dead columns back as hydrated. `/dashboard/history`: a pack with no dist renders "Pack — not yet identified" instead of a pack NAMED "Pack". `/alerts`: "any price $0.15" → "price ≤$0.15".
+15. **Pack history DB fix — `20261107011537`, applied, verified live.** 13 of Trevor's reward packs (194 packs on 12 saved wallets) read "TRANSFERRED · now held by 0x0b2a…" because #218's frozen Dapper index returns the DISTRIBUTOR as owner for every pack delivered since 10-30. The chain (PackNFT `getIDs()` via rest-mainnet) held 13 of 13. `get_wallet_pack_history` now treats the index naming the pack's own primary distributor as unknown → held; Trevor's "Sealed packs held" 438 → 451 live. Register #218 updated.
+16. **Batch 9 — `5d2e6be`.** `/trades/block` (public, indexable) rendered `<title>Trade Block</title>` with no brand — R31's string-title trap on `app/trades/layout.tsx` (and `dashboard/layout.tsx`); the R31 guard only named `insights/layout.tsx`, so it is now a tree walk over every layout (planted-defect proven). A cancelled trade room no longer says "waiting for the other side". The pack-history pin is re-pinned to the 11-06 body with DX1 (distributor-owner → held) + DX2 (secondary-seller-owner → still transferred); **`main` was red ~6:30–7:00 PM PT on that stale pin from my own `2150b65` push** (migration file pushed without the pin guard) — batch 9 heals it.
+
 ## Post-ship watch (what to read tomorrow)
+
+- `/dashboard/packs` on any saved wallet with packs delivered since 10-30: no "TRANSFERRED · now held by 0x0b2a…" rows; when Dapper's index thaws (#218), DX1's rule simply stops firing.
 
 - `E2E DOM Smoke` next scheduled run: green, or the pack-chase "Alert me" test fails again (then it is a pattern — read the Chase-left cards' button rendering, not the test).
 - GSC "Duplicate without user-selected canonical" (61) and "chose different canonical" (17) should drain over the next crawls; "Not indexed" total may drop by ~80.
@@ -89,6 +97,6 @@
 
 ## Revert paths
 
-- Code: `git revert 9ddc5f12f` (batch 1) / `git revert 76709f8b1` (batch 2) / `git revert e3a1c6a95` (batch 3) / `git revert c59fd8497` (batch 4) / `git revert 0a5fb06` (batch 5) / `git revert 4eedcb7` (batch 6) / `git revert cfa4711` (e2e re-pin — only together with re-showing the band on the Binder tab).
+- Code: `git revert 3a4251f` (batch 8) / `git revert 5d2e6be` (batch 9) / `git revert 9ddc5f12f` (batch 1) / `git revert 76709f8b1` (batch 2) / `git revert e3a1c6a95` (batch 3) / `git revert c59fd8497` (batch 4) / `git revert 0a5fb06` (batch 5) / `git revert 4eedcb7` (batch 6) / `git revert cfa4711` (e2e re-pin — only together with re-showing the band on the Binder tab).
 - Trophy cases: revert paths in the ledger entry + the two migrations' headers (re-add `trophy_moments_user_slot_key` FIRST, then the first migration's revert block; allowlist rows by identity).
 - DB: `DROP FUNCTION public.rpc_search_names_fuzzy(text, uuid, integer);` — the route degrades to the plain empty answer when the function is missing (tested).
