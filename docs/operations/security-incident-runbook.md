@@ -6,13 +6,13 @@ Written 2026-11-04 from the CISO pass (`docs/audits/2026-11-04-ciso-security-aud
 
 - **Personal data:** login e-mail (Supabase `auth.users`), chosen username / bio / avatar URL (`profile_bio`), saved wallet identifiers and usernames (`saved_wallets`, `wallet_usernames` — public on-chain identifiers, but tied to an e-mail here), `email_subscribers`, support-chat transcripts (`support_conversations`, `chat_sessions`), feedback rows, `usage_events` (page views keyed by user id / visit id). No passwords (magic link only), no payment data (no Stripe customers while dormant), no government IDs, no private keys of any user.
 - **Not held, by design:** custody of any asset. The trade room is shape A (two authorizers, no escrow) — RPC relays a signable, it never signs for a user. That is what keeps the Candy Digital failure class (custodial keys drained, Oct 2026) off the table; **re-read §3 before changing that shape.**
-- **Secrets that would matter if leaked:** the nine Vercel `sensitive` vars (service-role key, Resend, Telegram, Anthropic, `RPC_API_KEY`, `CRON_SECRET`, `MARKET_FEED_TOKEN`, `TS_PROXY_SECRET`, `TOPSHOT_SUBEDITION_KEYING`), `RPC_ADMIN_TOKEN`, `INGEST_SECRET_TOKEN`, the edge-function gate keys, the Flow hot wallet `0x3aa11c84d776838f` (giveaway delivery only), the GitHub push credential.
+- **Secrets that would matter if leaked:** the Vercel `sensitive` vars (service-role key, Resend, Telegram, Anthropic, `CRON_SECRET`, `TS_PROXY_SECRET`; `TOPSHOT_SUBEDITION_KEYING` is a flag — `RPC_API_KEY` and `MARKET_FEED_TOKEN` were dead and DELETED 2026-11-06; rotation map: `docs/operations/secret-rotation-plan-2026-11.md`), `RPC_ADMIN_TOKEN`, `INGEST_SECRET_TOKEN`, the edge-function gate keys, the Flow hot wallet `0x3aa11c84d776838f` (giveaway delivery only), the GitHub push credential.
 
 ## 1. Detect — what fires, and what does not
 
 - The sentinel (Telegram + `/admin/alerts`), the smoke suite, the scheduled `E2E DOM Smoke` badge, Vercel runtime errors, Supabase advisors. A **client-only** failure reaches nothing but the `usage_events.client_error` beacon.
 - GitHub: secret scanning + push protection are ON; Dependabot alerts are ON (11-04).
-- Nothing watches: a provider-account takeover (Vercel/Supabase/GitHub/Cloudflare/Resend logins) — MFA on each account is the control, and the April-2026 Vercel incident is the reason.
+- Nothing watches: a provider-account takeover (Vercel/Supabase/GitHub/Cloudflare/Resend/cron-job.org logins) — MFA on each account is the control, and the April-2026 Vercel incident is the reason. **Read 2026-11-06 in Trevor's Chrome:** Supabase ✅ (2 authenticators) · Vercel ✅ (TOTP) · GitHub ✅ (authenticator app, required) · **cron-job.org ❌ no MFA device** (it holds the bearer/gate tokens of ~67 jobs) · Cloudflare and Resend not signed in on that browser — unverified.
 - **A failed read rendering as a fact is not an incident; a write landing from an unexpected caller is.** Read `pipeline_runs` / `cron.job_run_details` for the caller, not the dashboard badge (CLAUDE.md, Honesty).
 
 ## 2. Contain — in this order, each reversible

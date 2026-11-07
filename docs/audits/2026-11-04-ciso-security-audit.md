@@ -60,6 +60,8 @@ Auth wall, with negative controls: `/dashboard`, `/trades`, `/api/trades`, `/api
 
 ## 5. Trevor's list (each ≤ 2 clicks; in priority order)
 
+> **Status as of 2026-11-06 ~9:45 PM PT** (verified in Trevor's Chrome; known-issues #229): MFA ✅ Supabase, ✅ Vercel, ✅ GitHub · ❌ **cron-job.org has no MFA device** (new — it holds ~67 jobs' bearer/gate tokens) · Cloudflare / Resend unverified (not signed in on that browser). `main` ruleset `protect-main` ✅ Active (block force-push + deletion only). WAF: deny rule ✅ + `Entity page sweep` rate rule ✅ in LOG mode (JA4-keyed, for #235; review 11-13). Rotation: mapped in `docs/operations/secret-rotation-plan-2026-11.md`; `RPC_API_KEY` + `MARKET_FEED_TOKEN` deleted (dead). CAPTCHA stays off by decision.
+>
 > **Status as of 11:30 AM PT, same day** (details in known-issues #229): 1 — deny rule ✅ published; the two rate-limit rules still yours (dashboard refused them from a session; spend). 2 — Dependabot ✅ on (#231 resolved after the vitest/vite bump); branch protection drafted, needs your passkey at Create (block force-push + deletion only; the repo-settings API is proxy-refused for sessions, re-tested 11:30 AM). 3 — ✅ applied (`20261104173011`). 4 — leaked-password protection ✅ on, CAPTCHA left off on purpose; **MFA per provider still yours to confirm**. 5 — ✅ arms deleted (`79a329c`). 6 — rotation still yours. The original list follows unchanged.
 
 

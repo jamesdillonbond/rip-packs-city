@@ -2476,3 +2476,11 @@ Runtime logs only exist for requests that LOG, so they count errors, not load. `
 ### Hot-wallet signer library (2026-11-06, PT)
 `lib/breaks/server-authz.ts signWithKey` signs with `@noble/curves/secp256k1` (exact 1.9.7, pairs with `@noble/hashes` 1.8.0), `{ lowS: false }` — byte-identical to the `elliptic` signer that ran on mainnet (elliptic never canonicalised S). `elliptic` is OUT of the tree (CVE-2025-14505, no patched release; secp256k1 was measured unaffected — 0/20,000 vs a P-521 control 11/3,000). The test verifies through OpenSSL (`node:crypto`) and pins 4 known-answer vectors from the old signer (one high-S). Never re-add `elliptic`; changing `lowS` is a behaviour change the KAT vector reds.
 
+
+## Added 2026-11-06 evening (Cowork cloud, guiding Trevor through the security clicks)
+
+- **The Vercel firewall config API answers `404 "Seawall Config not found"` to the MCP token even AFTER rules are published** (re-tested right after a publish). It is not "no firewall" — read the rules in the dashboard (Firewall → Rules; give the page ~6 s, it streams "Loading firewall data…" first).
+- **A regex pasted into a dashboard field can carry an invisible leading character** — the `Entity page sweep` path expression showed a stray block before `^` in Trevor's screenshot, which would have made the rule match nothing. Retype, then read the SAVED value back (the rule page's `input` values), not the screenshot.
+- **Deleting a Vercel env var from the dashboard** is row `⋯` → Delete → tick "I understand…" → Delete; the toast offers Redeploy. For a var nothing reads, skip the redeploy — a redeploy only rebuilds the current tip, and redeploying an OLDER deployment rolls prod back (10-31).
+- **A provider "MFA: confirm" line in an audit is not a reading.** The 11-04 pass listed MFA as Trevor's to confirm; two days later the pages themselves showed Supabase with no authenticator and cron-job.org with "No devices found". Read each provider's security page (Supabase `account/security`, Vercel `account/settings/authentication`, GitHub `settings/security`, cron-job.org `settings`) — that is a 1-minute instrument.
+- **A disabled cron-job.org entry is a revert path, not clutter** — it keeps the URL, headers and gate key; the UFC lanes' documented revert is "re-enable". Delete only an entry whose lane has a live replacement.
