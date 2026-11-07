@@ -29,6 +29,8 @@
 --   CTEs and without `claimed_at = now()`, then
 --   ALTER TABLE public.alert_deliveries DROP COLUMN claimed_at;
 
+-- anon-exec: not granted — claim_pending_deliveries stays EXECUTE for service_role and postgres only (CREATE OR REPLACE keeps the ACL; read back 11-07: has_function_privilege anon = false, authenticated = false). Only the alerts-send cron calls it.
+
 ALTER TABLE public.alert_deliveries ADD COLUMN IF NOT EXISTS claimed_at timestamptz;
 
 CREATE OR REPLACE FUNCTION public.claim_pending_deliveries(p_channel text, p_max integer DEFAULT 50)
