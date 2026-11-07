@@ -129,7 +129,7 @@ export async function GET(req: NextRequest) {
                 </div>
               )}
               <div style={{ fontSize: 22, color: "#888", display: "flex" }}>
-                {totalMoments} moments
+                {Number(totalMoments).toLocaleString("en-US")} moment{totalMoments === 1 ? "" : "s"}
               </div>
             </div>
           ) : (

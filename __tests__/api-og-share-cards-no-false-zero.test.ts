@@ -65,7 +65,7 @@ function mockSnapshot(mode: "rows" | "empty" | "notok" | "throws") {
       mode === "rows"
         ? {
             totalFmv: 12345.67,
-            totalMoments: 42,
+            totalMoments: 19981,
             topMoments: [{ playerName: "Damian Lillard" }, { playerName: "Anfernee Simons" }],
           }
         : { totalFmv: 0, totalMoments: 0, topMoments: [] }
@@ -88,7 +88,10 @@ describe("/api/og/share — a failed read must not publish a $0 portfolio", () =
     const text = await renderShare()
     expect(text).toContain("COLLECTION FMV")
     expect(compact(text)).toContain("$12,345.67")
-    expect(text).toContain("42")
+    // 2026-11-07: the count carries a thousands separator like every figure
+    // beside it (the live card read "19981 moments" under "$55,777.59").
+    expect(compact(text)).toContain("19,981moments")
+    expect(compact(text)).not.toContain("19981moments")
     expect(text).toContain("Damian Lillard")
   })
 

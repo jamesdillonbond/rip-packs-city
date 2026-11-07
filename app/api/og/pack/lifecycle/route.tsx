@@ -348,7 +348,12 @@ export async function GET(req: NextRequest) {
 
 function Stat({ label, value, color }: { label: string; value: string; color: string }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column" }}>
+    // 2026-11-07: Satori sizes a letter-spaced label WITHOUT its tracking, so
+    // when the value was a bare "—" (no priced pull, id=1) the column shrank to
+    // the dash and the two labels overflowed into each other: "PULLEDPAID".
+    // A floor on the column width and trailing padding on the label keep the
+    // 40 px gap visible whatever the value's width.
+    <div style={{ display: "flex", flexDirection: "column", minWidth: 120 }}>
       <div
         style={{
           color: "#6B7280",
@@ -357,6 +362,7 @@ function Stat({ label, value, color }: { label: string; value: string; color: st
           textTransform: "uppercase",
           letterSpacing: "2px",
           marginBottom: 4,
+          paddingRight: 24,
           display: "flex",
         }}
       >
