@@ -398,13 +398,16 @@ describe("wallet-search — league filter", () => {
 })
 
 describe("wallet-search — FMV fallback + ceiling", () => {
+  // RE-PINNED 2026-11-07: the fallback matches (set, play), never play alone — the
+  // fixture now carries the edition's set id, as every Top Shot edition with a
+  // play id does (0 without one, read 11-07).
   it("resolves FMV through play_id_onchain when the numeric edition key does not match", async () => {
     install(
       baseFixtures({
         editions: [
           { data: null, error: null }, // batch upsert
           { data: [], error: null }, // key resolve finds nothing
-          { data: [{ id: "uuid-fb", play_id_onchain: 45 }], error: null }, // fallback
+          { data: [{ id: "uuid-fb", set_id_onchain: 3, play_id_onchain: 45 }], error: null }, // fallback
         ],
         "rpc:get_editions_latest_fmv_wide": {
           data: [{ edition_id: "uuid-fb", fmv_usd: 33.25, confidence: "MEDIUM", sales_count_30d: 2, computed_at: "2026-07-20T00:00:00Z" }],
@@ -417,13 +420,63 @@ describe("wallet-search — FMV fallback + ceiling", () => {
     expect(body.rows[0].marketConfidence).toBe("medium")
   })
 
+  // 2026-11-07 review: the play-only fallback kept whichever row came LAST for a
+  // play id — another SET's (306 Top Shot plays span sets) or another
+  // collection's edition — and wrote its FMV into the cache.
+  it("⛔ the fallback never prices a moment from ANOTHER set's edition that shares its play id", async () => {
+    install(
+      baseFixtures({
+        editions: [
+          { data: null, error: null },
+          { data: [], error: null },
+          { data: [{ id: "uuid-other-set", set_id_onchain: 99, play_id_onchain: 45 }], error: null },
+        ],
+        "rpc:get_editions_latest_fmv_wide": {
+          data: [{ edition_id: "uuid-other-set", fmv_usd: 77, confidence: "HIGH", sales_count_30d: 9, computed_at: "2026-07-20T00:00:00Z" }],
+          error: null,
+        },
+      }),
+    )
+    const body = await (await POST(post({ input: WALLET }))).json()
+    expect(body.rows[0].fmv).not.toBe(77)
+  })
+
+  it("a FAILED edition-resolve read marks the rows fmvReadFailed (never a silent null that nulls the cache)", async () => {
+    install(
+      baseFixtures({
+        editions: [
+          { data: null, error: null },
+          { data: null, error: { message: "canceling statement due to statement timeout" } },
+          { data: [], error: null },
+        ],
+      }),
+    )
+    const body = await (await POST(post({ input: WALLET }))).json()
+    expect(body.rows[0].fmvReadFailed).toBe(true)
+  })
+
+  it("an UPPERCASE address is case-folded — one wallet, one set of cache rows (2026-11-07 review)", async () => {
+    install(baseFixtures())
+    const body = await (await POST(post({ input: WALLET.toUpperCase().replace("0X", "0x") }))).json()
+    expect(body.walletAddress).toBe(WALLET)
+  })
+
+  it("totalTssPoints is null, not a measured 0, when no row carries a TSS figure (2026-11-07 review)", async () => {
+    install(baseFixtures())
+    state.gqlById = {} // every row degraded → no measured TSS
+    const body = await (await POST(post({ input: WALLET }))).json()
+    const measured = (body.rows as Array<{ tssPoints?: number | null }>).filter((r) => typeof r.tssPoints === "number")
+    expect(measured).toHaveLength(0) // the case under test: nothing measured
+    expect(body.summary.totalTssPoints).toBeNull()
+  })
+
   it("re-applies the >$10K ceiling on the fallback path, so it is not a hole through the guard", async () => {
     install(
       baseFixtures({
         editions: [
           { data: null, error: null },
           { data: [], error: null },
-          { data: [{ id: "uuid-fb", play_id_onchain: 45 }], error: null },
+          { data: [{ id: "uuid-fb", set_id_onchain: 3, play_id_onchain: 45 }], error: null },
         ],
         "rpc:get_editions_latest_fmv_wide": {
           // Over the ceiling on two sales -> discarded, exactly as the primary

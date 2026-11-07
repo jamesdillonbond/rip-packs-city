@@ -33,6 +33,7 @@ import { isLockKnown, getLocked } from "../lib/collection/helpers"
 
 const state = vi.hoisted(() => ({
   sb: null as unknown,
+  gqlNullData: false,
   ownedIds: [] as number[],
   metadataById: {} as Record<string, Record<string, string>>,
   wmcRows: [] as Array<Record<string, unknown>>,
@@ -61,6 +62,8 @@ vi.mock("@/lib/chains/flow/flow", () => ({
 // The dead host, behaving exactly as production does.
 vi.mock("@/lib/chains/flow/topshot", () => ({
   topshotGraphql: async () => {
+    // 2026-11-07: an ANSWER that carries no moment, the other way the host fails
+    if (state.gqlNullData) return { getMintedMoment: { data: null } }
     throw new Error("Top Shot GraphQL failed with 530. Response body: error code: 530")
   },
 }))
@@ -130,6 +133,7 @@ const rowsOf = async (body: Record<string, unknown> = { input: WALLET }) =>
   (await (await POST(post(body))).json()).rows as Array<Record<string, unknown>>
 
 beforeEach(() => {
+  state.gqlNullData = false
   state.ownedIds = [101, 102]
   state.metadataById = { "101": meta("5"), "102": meta("77") }
   state.wmcRows = []
@@ -202,6 +206,16 @@ describe("⛔ lock state is only recovered WITH its provenance", () => {
     // ...and the render gate now treats it as known despite the failed live read.
     expect(isLockKnown(row as never)).toBe(true)
     expect(getLocked(row as never)).toBe(true)
+  })
+
+  // 2026-11-07 review: a GraphQL answer with a null `getMintedMoment.data` was
+  // assembled as a measured `isLocked: false`, which ALSO blocked the cache from
+  // supplying the checked reading (it fills only an unknown lock).
+  it("a GraphQL answer with NO moment never becomes 'not locked' — the checked cache reading wins", async () => {
+    state.gqlNullData = true
+    state.wmcRows = [{ moment_id: "101", is_locked: true, lock_checked_at: "2026-09-13T00:00:00Z" }]
+    const row = (await rowsOf()).find((r) => r.momentId === "101")!
+    expect(row.isLocked).toBe(true)
   })
 
   it("🚨 a NEVER-CHECKED lock is NOT recovered, however convenient the boolean looks", async () => {

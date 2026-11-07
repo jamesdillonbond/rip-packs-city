@@ -11,7 +11,7 @@ import {
   buildEditionScopeKey,
 } from "@/lib/wallet-normalize"
 import { resolveTopShotUsernameCacheAware } from "@/lib/chains/flow/topshot-username-resolve"
-import { detectAddressChain } from "@/lib/address"
+import { detectAddressChain, normalizeFlowAddressStrict } from "@/lib/address"
 import { getCurrentUser } from "@/lib/auth/supabase-server"
 import { awardPoints } from "@/lib/rewards"
 import { serverMomentToRow, type ServerMoment } from "@/lib/collection/server-moment"
@@ -104,7 +104,8 @@ type WalletSearchResponse = {
     totalMoments: number
     returnedMoments: number
     remainingMoments: number
-    totalTssPoints?: number
+    /** null = no row on this page carried a measured TSS figure (never a fabricated 0). */
+    totalTssPoints?: number | null
   }
   acquisitionStats?: AcquisitionStats | null
   error?: string
@@ -267,7 +268,12 @@ function usernameLookupResponse(err: UsernameLookupError) {
 
 async function resolveWalletFromInput(input: string): Promise<string> {
   const trimmed = input.trim()
-  if (isWalletAddress(trimmed)) return ensureFlowPrefix(trimmed)
+  // ⚠ Case-FOLDED (2026-11-07 review): `0xE1F2…` passed isWalletAddress and kept
+  // its case, so every wmc read keyed on the lowercase wallet missed (fill, league
+  // filter, backfill count → a needless walk) and the cache write then started a
+  // SECOND set of rows under the uppercase key. Flow hex is case-insensitive;
+  // lib/address.ts is the one normaliser (CLAUDE.md: never a fresh helper).
+  if (isWalletAddress(trimmed)) return normalizeFlowAddressStrict(trimmed) ?? ensureFlowPrefix(trimmed)
 
   // Username path. Layered resolver: wallet_usernames → seeded_wallets →
   // saved_wallets → user_profiles → live Top Shot GQL via topshot-proxy.
@@ -409,7 +415,11 @@ async function fetchMomentGraphQL(id: string) {
       lowAsk: m?.forSale ? toNum(m?.price) : null,
       bestOffer: null,
       lastPurchasePrice: toNum(m?.lastPurchasePrice),
-      isLocked: !!m?.isLocked,
+      // ⚠ undefined, not false, when the answer carried no moment (2026-11-07
+      // review): `!!m?.isLocked` made a null `getMintedMoment.data` a measured
+      // "not locked", which also stopped fillFromWalletCache (it fills only an
+      // UNKNOWN lock) from supplying the checked reading — LOCKED: No on nothing.
+      isLocked: typeof m?.isLocked === "boolean" ? m.isLocked : undefined,
       acquiredAt: m?.createdAt ?? null,
       jerseyNumber: m?.play?.stats?.jerseyNumber ? parseInt(m.play.stats.jerseyNumber, 10) : null,
       league: m?.set?.leagues?.find(Boolean) ?? null,
@@ -690,14 +700,17 @@ async function batchEnrichFmvAndAsks(rows: WalletRow[]): Promise<WalletRow[]> {
 
     const CHUNK = 50
 
+    // The Top Shot collection id (this enrichment is Top Shot-only: an All Day
+    // row rejects both legs and carries no editionKey). Hoisted so the edition
+    // reads below are scoped by collection — a key is unique only WITHIN one.
+    let collectionId: string | null = null
+    try {
+      collectionId = await getCollectionId()
+    } catch { /* proceed without collection_id */ }
+
     // 2. Batch upsert any missing editions so integer-format keys exist
     //    (ignoreDuplicates: true means existing rows are untouched)
     if (editionKeys.length) {
-      let collectionId: string | null = null
-      try {
-        collectionId = await getCollectionId()
-      } catch { /* proceed without collection_id */ }
-
       const upsertChunks: Promise<any>[] = []
       for (let i = 0; i < editionKeys.length; i += CHUNK) {
         upsertChunks.push(
@@ -718,12 +731,16 @@ async function batchEnrichFmvAndAsks(rows: WalletRow[]): Promise<WalletRow[]> {
     // 3. Parallel: resolve editions + fetch cached_listings
     const editionChunks: Promise<any>[] = []
     for (let i = 0; i < editionKeys.length; i += CHUNK) {
-      editionChunks.push(
-        (supabaseAdmin as any)
-          .from("editions")
-          .select("id, external_id")
-          .in("external_id", editionKeys.slice(i, i + CHUNK))
-      )
+      let q = (supabaseAdmin as any)
+        .from("editions")
+        .select("id, external_id")
+        .in("external_id", editionKeys.slice(i, i + CHUNK))
+      // 2026-11-07 review: external_id is unique per (external_id, collection_id).
+      // Every `set:play` key in editions is Top Shot's today, so this is a no-op
+      // for Top Shot — and it stops a colliding key in another collection from
+      // ever resolving here.
+      if (collectionId) q = q.eq("collection_id", collectionId)
+      editionChunks.push(q)
     }
 
     const listingChunks: Promise<any>[] = []
@@ -743,7 +760,13 @@ async function batchEnrichFmvAndAsks(rows: WalletRow[]): Promise<WalletRow[]> {
 
     // 4. Build edition external_id → internal UUID map
     const extToId = new Map<string, string>()
-    for (const { data } of editionResults) {
+    // ⚠ A failed resolve chunk is NOT "no FMV" (2026-11-07 review): `{ data }`
+    // dropped its error, every row read fmv null with no fmvReadFailed, and the
+    // cache write nulled their cached FMVs — the defect step 6 below fixed for its
+    // own chunks only.
+    let editionResolveFailed = false
+    for (const { data, error } of editionResults) {
+      if (error) editionResolveFailed = true
       for (const row of (data ?? [])) {
         extToId.set(row.external_id, row.id)
       }
@@ -762,7 +785,7 @@ async function batchEnrichFmvAndAsks(rows: WalletRow[]): Promise<WalletRow[]> {
     const fmvMap = new Map<string, { fmv_usd: number; confidence: string; computed_at: string; algo_version?: string | null }>()
     // A chunk that errors used to be dropped by `{ data }` destructuring, so its
     // editions read as "no FMV" and the cache write nulled their cached value.
-    let fmvReadError = false
+    let fmvReadError = editionResolveFailed
 
     if (internalIds.length) {
       const fmvChunks: Promise<any>[] = []
@@ -831,22 +854,29 @@ async function batchEnrichFmvAndAsks(rows: WalletRow[]): Promise<WalletRow[]> {
 
         const fallbackChunks: Promise<any>[] = []
         for (let i = 0; i < playIds.length; i += CHUNK) {
-          fallbackChunks.push(
-            (supabaseAdmin as any)
-              .from("editions")
-              .select("id, play_id_onchain")
-              .in("play_id_onchain", playIds.slice(i, i + CHUNK))
-          )
+          let fq = (supabaseAdmin as any)
+            .from("editions")
+            .select("id, set_id_onchain, play_id_onchain")
+            .in("play_id_onchain", playIds.slice(i, i + CHUNK))
+          if (collectionId) fq = fq.eq("collection_id", collectionId)
+          fallbackChunks.push(fq)
         }
 
         if (fallbackChunks.length > 0) {
           const fallbackResults = await Promise.all(fallbackChunks)
-          // Build playID → edition UUID map from fallback results
+          // ⛔ Keyed on (set, play), never play alone (2026-11-07 review): a play id
+          // repeats across Top Shot sets (306 plays sit in more than one set) and
+          // across collections (6,765 non-Top-Shot editions carry one), and the old
+          // map kept whichever row came LAST — another set's or another
+          // collection's FMV, written into wallet_moments_cache. Every Top Shot
+          // edition with a play id also has its set id (0 missing, read 11-07), so
+          // requiring the set loses no legitimate match.
           const playIdToEdition = new Map<string, string>()
-          for (const { data } of fallbackResults) {
+          for (const { data, error } of fallbackResults) {
+            if (error) fmvReadError = true
             for (const row of (data ?? [])) {
-              if (row.play_id_onchain != null && row.id) {
-                playIdToEdition.set(String(row.play_id_onchain), row.id)
+              if (row.play_id_onchain != null && row.set_id_onchain != null && row.id) {
+                playIdToEdition.set(`${row.set_id_onchain}:${row.play_id_onchain}`, row.id)
               }
             }
           }
@@ -879,7 +909,7 @@ async function batchEnrichFmvAndAsks(rows: WalletRow[]): Promise<WalletRow[]> {
           for (const key of unmatchedKeys) {
             const parts = key.split(":")
             if (parts.length !== 2) continue
-            const editionUuid = playIdToEdition.get(parts[1])
+            const editionUuid = playIdToEdition.get(`${parts[0]}:${parts[1]}`)
             if (!editionUuid) continue
             const snap = fmvMap.get(editionUuid)
             if (!snap) continue
@@ -897,6 +927,7 @@ async function batchEnrichFmvAndAsks(rows: WalletRow[]): Promise<WalletRow[]> {
           }
         }
       } catch (fallbackErr) {
+        fmvReadError = true
         console.warn("[wallet-search] FMV fallback lookup failed:", fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr))
       }
     }
@@ -1927,9 +1958,13 @@ export async function POST(req: NextRequest) {
     // Fire-and-forget — progressively reclassify unknown acquisitions
     if (!isAllDay) progressivelyClassify(rows, wallet)
 
-    const totalTssPoints = rows.reduce(function(sum, r) {
-      return sum + (r.tssPoints ?? 0)
-    }, 0)
+    // ⚠ null, not 0, when no row carries a measured figure (2026-11-07 review):
+    // every degraded row has tssPoints null, and `?? 0` summed them into a
+    // measured-looking "0 TSS points" (CLAUDE.md: `?? 0` is a fabricated value).
+    const measuredTss = rows.filter((r) => typeof r.tssPoints === "number")
+    const totalTssPoints = measuredTss.length === 0
+      ? null
+      : measuredTss.reduce((sum, r) => sum + (r.tssPoints as number), 0)
 
     // Fire-and-forget — seeds all editions regardless of price
     getCollectionId().then((collectionId) => {
