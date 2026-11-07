@@ -27,7 +27,7 @@ The cause is not any one decision. Each feature shipped with its own entry point
 One promise, the wallet/username search, then **the four pillars as four doors** (below), then proof (live numbers, a real trophy case), then the signup. Not a feature catalogue; the pillars are the catalogue. Everything currently pitched on the homepage (Fast Break, "Things Top Shot won't tell you", trophy case) lives *inside* a pillar, not beside it.
 
 ### Home 2 — **Global navigation** (header + mobile bar + footer): *"Take me to the feature."*
-Features grouped by the collector's **job**, not by collection and not by when we built them. The same groups, in the same order, in all three places — the mobile bar shows HOME · MARKET · PACKS · INSIGHTS · MY BINDER (Trade has no public hub a phone visitor needs in the bar; the binder is the one personal page that earns a tab, auth-free).
+Features grouped by the collector's **job**, not by collection and not by when we built them. The same groups, in the same order, in all three places — the mobile bar shows HOME · MY BINDER · MARKET · PACKS · INSIGHTS (Trevor 11-07: the binder second, between Home and Market — the one personal page that earns a tab, auth-free; Trade has no public hub a phone visitor needs in the bar).
 
 | group | job | what lives there (every existing URL, nothing new) |
 |---|---|---|
