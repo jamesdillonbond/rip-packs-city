@@ -129,6 +129,8 @@
 
 50. **Forced colours (~3:15–3:35 PM PT).** Windows High Contrast erased every "current" cue (tinted bg, accent underline, weight) — selected strip tab, bar item and header group computed identical to neighbours. A `forced-colors` block keyed on `aria-selected` / `aria-current` adds underline + CanvasText outline; verified by injection under `forcedColors: active`. Pinned.
 
+51. **Print (~3:25–3:45 PM PT).** A printed page was blank — dark theme, backgrounds dropped. `@media print` borrows the light tokens and hides the sticky header / ticker / phone bar / concierge; verified by injection with backgrounds off. Pin: the borrowed values must equal the light block's. Not chased: video-only trophy slabs print as empty frames (no poster `<img>`). Also: the dispatched `E2E DOM Smoke` run (42425344540) passed `a11y-audit` on the 36-route gate from CI's own runner.
+
 ## Post-ship watch (what to read tomorrow)
 
 - **Series-1 Top Shot art** on `/dashboard/*`, `/profile/*`, binder, trade room: present (any blank tile with a `data-rpc-dead-art` attribute whose `data-rpc-dead-src` starts `…/editions/<N>_` means ANOTHER series was retired — same fix, derive not copy).
