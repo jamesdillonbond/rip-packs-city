@@ -14,11 +14,26 @@ export function getLastCollection(): string {
   }
 }
 
+// Same-tab subscribers (useSyncExternalStore in TopNav): a `storage` event only
+// fires in OTHER tabs, so setLastCollection notifies this one itself.
+const listeners = new Set<() => void>();
+
 export function setLastCollection(id: string): void {
   if (typeof window === "undefined") return;
   try {
     localStorage.setItem(STORAGE_KEY, id);
   } catch {}
+  for (const l of listeners) l();
+}
+
+export function subscribeLastCollection(cb: () => void): () => void {
+  listeners.add(cb);
+  const onStorage = (e: StorageEvent) => { if (e.key === STORAGE_KEY) cb(); };
+  if (typeof window !== "undefined") window.addEventListener("storage", onStorage);
+  return () => {
+    listeners.delete(cb);
+    if (typeof window !== "undefined") window.removeEventListener("storage", onStorage);
+  };
 }
 
 // The last-visited collection ONLY when one was actually recorded — null

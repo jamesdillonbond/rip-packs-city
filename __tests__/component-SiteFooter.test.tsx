@@ -127,3 +127,21 @@ describe("SiteFooter — collection links come from the registry", () => {
     )
   })
 })
+
+// IA Phase 2 (2026-11-06): the footer renders the job groups from lib/ia.ts.
+describe("SiteFooter — IA group columns", () => {
+  it("carries a Market, Packs, Collectors and Trade column whose links are the registry's public items", async () => {
+    const { IA_GROUPS, visibleItems, resolveHref, DEFAULT_COLLECTION } = await import("@/lib/ia")
+    const { container } = render(<SiteFooter />)
+    for (const id of ["market", "packs", "collectors", "trade"] as const) {
+      const col = container.querySelector(`[data-ia-footer-group="${id}"]`)!
+      expect(col, id).toBeTruthy()
+      const g = IA_GROUPS.find((x) => x.id === id)!
+      const hrefs = Array.from(col.querySelectorAll("a")).map((a) => a.getAttribute("href"))
+      expect(hrefs, id).toEqual(visibleItems(g, false).map((i) => resolveHref(i.href, DEFAULT_COLLECTION, i.page)))
+    }
+    // No signed-in-only link leaks into the anonymous footer.
+    const all = Array.from(container.querySelectorAll("a")).map((a) => a.getAttribute("href"))
+    for (const gated of ["/trades", "/dashboard/packs", "/my-teams", "/alerts"]) expect(all).not.toContain(gated)
+  })
+})

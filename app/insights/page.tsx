@@ -7,6 +7,7 @@
 // every 30 minutes so the numbers stay current without hitting the DB per hit.
 
 import Link from "next/link"
+import { IA_GROUPS, groupForPath, type IaGroupId } from "@/lib/ia"
 import { withBoardBudget } from "@/lib/insights/board-page-fetch"
 import { createClient } from "@supabase/supabase-js"
 import InsightsWalletSearch from "@/components/insights/InsightsWalletSearch"
@@ -489,8 +490,18 @@ export default async function InsightsIndexPage() {
         </section>
       ) : null}
 
+      {/* IA Phase 2 (2026-11-06): the hub is grouped by the same job groups the
+          header uses (lib/ia.ts) — a board sits under the group whose menu lists
+          it; boards no menu names (the long tail) fall under Insights. Card order
+          inside a group is CARDS order, so the account-value tool stays first. */}
+      {groupedCards().map(([gid, cards]) => (
+        <section key={gid} aria-labelledby={`ins-group-${gid}`} style={{ maxWidth: 1180, margin: "0 auto 28px" }}>
+          <h2 id={`ins-group-${gid}`} className="rpc-ins-group-title">
+            {IA_GROUPS.find((g) => g.id === gid)?.label ?? "Insights"}
+            <span className="rpc-ins-group-job">{IA_GROUPS.find((g) => g.id === gid)?.job}</span>
+          </h2>
       <section className="rpc-ins-grid">
-        {CARDS.map((c) => {
+        {cards.map((c) => {
           const stat = stats ? liveStat(c.slug, stats.insights) : null
           const Inner = (
             <article className={`rpc-ins-card ${c.available ? "" : "rpc-ins-card-soon"}`}>
@@ -515,6 +526,8 @@ export default async function InsightsIndexPage() {
           )
         })}
       </section>
+        </section>
+      ))}
 
       <section className="rpc-ins-footer">
         <div className="rpc-ins-footer-text">
@@ -528,7 +541,28 @@ export default async function InsightsIndexPage() {
   )
 }
 
+/** CARDS bucketed by IA group, in header order; a card no group names is Insights. */
+function groupedCards(): Array<[IaGroupId, Card[]]> {
+  // Insights first on ITS OWN hub (it holds the account-value tool that must
+  // stay the first card), then the rest in header order.
+  const order: IaGroupId[] = ["insights", ...IA_GROUPS.map((g) => g.id).filter((id) => id !== "insights")]
+  const buckets = new Map<IaGroupId, Card[]>()
+  for (const c of CARDS) {
+    const gid = (c.slug ? groupForPath(c.slug) : null) ?? "insights"
+    const list = buckets.get(gid) ?? []
+    list.push(c)
+    buckets.set(gid, list)
+  }
+  return order.filter((id) => buckets.has(id)).map((id) => [id, buckets.get(id)!])
+}
+
 const CSS = `
+.rpc-ins-group-title {
+  max-width: 1180px; margin: 0 auto 12px; padding: 0 2px;
+  font-family: var(--font-display); font-weight: 800; font-size: 13px; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--rpc-text-secondary); display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
+}
+.rpc-ins-group-job { font-family: var(--font-mono); font-weight: 400; font-size: 11px; letter-spacing: 0.06em; text-transform: none; color: var(--rpc-text-muted); }
 .rpc-ins-page {
   min-height: 100vh;
   background: var(--rpc-black);

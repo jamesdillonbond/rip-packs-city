@@ -3,6 +3,14 @@ import RpcLogo from "@/components/RpcLogo";
 import ThemeToggle from "@/components/ThemeToggle";
 import { publishedCollections, publishedChainsBadge } from "@/lib/collections";
 import { CANDY_MLB_PUBLIC, PANINI_PUBLIC } from "@/lib/launch-flags";
+import { IA_GROUPS, resolveHref, visibleItems, DEFAULT_COLLECTION } from "@/lib/ia";
+
+// IA Phase 2 (2026-11-06): the footer renders the same job groups the header
+// does, from lib/ia.ts — public items only (the footer is anon-facing and a
+// server component), collection-scoped hrefs resolved to the default
+// collection. Insights keeps its curated, flag-gated SEO column below (those
+// boards are the crawl-equity targets); the other four groups get a column each.
+const FOOTER_GROUP_IDS = ["market", "packs", "collectors", "trade"] as const;
 
 // Public Insights surfaces worth crawling — the highest-depth boards. Linked
 // here so every page that mounts the footer (all ~18K entity pages, overview,
@@ -134,6 +142,32 @@ export default function SiteFooter() {
           gap: 20,
         }}
       >
+        {FOOTER_GROUP_IDS.map((id) => {
+          const g = IA_GROUPS.find((x) => x.id === id)!;
+          return (
+            <div key={g.id} data-ia-footer-group={g.id}>
+              <div
+                style={{
+                  fontSize: "var(--text-xs)",
+                  letterSpacing: "0.15em",
+                  textTransform: "uppercase",
+                  color: "var(--rpc-text-muted)",
+                  marginBottom: 8,
+                }}
+              >
+                {g.label}
+              </div>
+              <div style={{ display: "flex", flexDirection: "column" }}>
+                {visibleItems(g, false).map((l) => (
+                  <Link key={l.href} href={resolveHref(l.href, DEFAULT_COLLECTION, l.page)} style={FOOTER_LINK_STYLE}>
+                    {l.label}
+                  </Link>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+
         <div>
           <div
             style={{

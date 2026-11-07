@@ -30,16 +30,17 @@ const tab = (c: HTMLElement, label: string) =>
   ) as HTMLElement
 
 describe("MobileNav", () => {
-  // ⭐ RE-SLOTTED 2026-09-28 (Trevor): HOME · MY BINDER · MARKET · SNIPER.
-  // Was HOME · SEARCH · SNIPER · MY STUFF · COLLECTIONS — two of the five were
-  // sheets duplicating chrome the page already carries (the header's search box,
-  // the collection switcher + tab bar).
-  it("renders the four tabs, in order", () => {
+  // ⭐ RE-SLOTTED 2026-11-06 (IA Phase 2, Trevor): HOME · MARKET · PACKS ·
+  // INSIGHTS · MY BINDER — the header's groups in the header's order (lib/ia.ts
+  // MOBILE_GROUP_IDS minus Trade, which has no public hub a phone visitor needs
+  // in the bar), plus the one personal page. Was HOME · MY BINDER · MARKET ·
+  // SNIPER (2026-09-28); Sniper is the Market group's second item.
+  it("renders the five tabs, in order", () => {
     const { container } = render(<MobileNav />)
     const labels = Array.from(bar(container).children)
       .filter((c) => c.tagName === "A" || c.tagName === "SPAN")
       .map((c) => (c.textContent ?? "").trim())
-    expect(labels).toEqual(["HOME", "MY BINDER", "MARKET", "SNIPER"])
+    expect(labels).toEqual(["HOME", "MARKET", "PACKS", "INSIGHTS", "MY BINDER"])
   })
 
   it("renders no sheet or dialog — every tab is a destination", () => {
@@ -65,16 +66,22 @@ describe("MobileNav", () => {
     expect(tab(container, "MY BINDER").getAttribute("href")).toBe("/nfl-all-day/collection")
   })
 
-  // ⭐ 2026-09-28: SNIPER and MARKET open the cross-collection HUBS, the same
-  // place from every page — not a collection the visitor never chose.
-  it("SNIPER and MARKET open their hubs from every page", () => {
+  // ⭐ 2026-09-28 / 11-06: MARKET and INSIGHTS open the cross-collection HUBS,
+  // the same place from every page — not a collection the visitor never chose.
+  it("MARKET and INSIGHTS open their hubs from every page", () => {
     for (const p of ["/", "/nfl-all-day/overview", "/ufc/overview", "/insights/deals"]) {
       nav.pathname = p
       const { container } = render(<MobileNav />)
-      expect(tab(container, "SNIPER").getAttribute("href"), p).toBe("/sniper")
       expect(tab(container, "MARKET").getAttribute("href"), p).toBe("/market")
+      expect(tab(container, "INSIGHTS").getAttribute("href"), p).toBe("/insights")
       cleanup()
     }
+  })
+
+  it("PACKS is scoped to the collection in the URL (pack EV has no cross-collection hub)", () => {
+    nav.pathname = "/nfl-all-day/overview"
+    const { container } = render(<MobileNav />)
+    expect(tab(container, "PACKS").getAttribute("href")).toBe("/nfl-all-day/packs")
   })
 
   it("on a Disney Pinnacle pin page (/pinnacle/moment/<id>) My Binder goes to Pinnacle's binder", () => {
@@ -94,7 +101,7 @@ describe("MobileNav", () => {
   it("draws every icon as a currentColor SVG, never an emoji", () => {
     const { container } = render(<MobileNav />)
     const tabs = Array.from(bar(container).children).filter((c) => c.tagName !== "STYLE")
-    expect(tabs.length).toBe(4)
+    expect(tabs.length).toBe(5)
     for (const t of tabs) {
       const svg = t.querySelector("svg")
       expect(svg, t.textContent ?? "").not.toBeNull()
@@ -110,7 +117,7 @@ describe("MobileNav", () => {
     const { container } = render(<MobileNav />)
     expect(parseInt(bar(container).style.height, 10)).toBeGreaterThanOrEqual(44)
     const tabs = Array.from(bar(container).children).filter((c) => c.tagName !== "STYLE") as HTMLElement[]
-    expect(tabs.length).toBe(4)
+    expect(tabs.length).toBe(5)
     for (const t of tabs) {
       const label = (t.textContent ?? "").trim()
       expect(`${label}:${t.style.alignSelf}`).toBe(`${label}:stretch`)
@@ -121,14 +128,19 @@ describe("MobileNav", () => {
 })
 
 describe("MobileNav — thin collections", () => {
-  it("a collection with no market or sniper of its own (UFC) has NO inert tab — both hubs exist", () => {
-    // Before the 2026-09-28 hubs, UFC's MARKET and SNIPER were inert.
+  it("a collection with no market of its own (UFC) gets the hubs, and its missing PACKS page is INERT, never Top Shot's", () => {
+    // Before the 2026-09-28 hubs, UFC's MARKET and SNIPER were inert. PACKS is
+    // collection-scoped and UFC has no packs page: the tab is disabled (the
+    // header's menu, which has no inert state, falls back to the default
+    // collection instead — lib/ia.ts resolveHref).
     nav.pathname = "/ufc/overview"
     const { container } = render(<MobileNav />)
     expect(hrefs(container)).not.toContain("/ufc/market")
-    expect(hrefs(container)).not.toContain("/ufc/sniper")
-    expect(hrefs(container)).toEqual(expect.arrayContaining(["/", "/ufc/collection", "/market", "/sniper"]))
-    expect(bar(container).querySelectorAll("[aria-disabled='true']").length).toBe(0)
+    expect(hrefs(container)).not.toContain("/ufc/packs")
+    expect(hrefs(container)).not.toContain("/nba-top-shot/packs")
+    expect(hrefs(container)).toEqual(expect.arrayContaining(["/", "/ufc/collection", "/market", "/insights"]))
+    const inert = Array.from(bar(container).querySelectorAll("[aria-disabled='true']"))
+    expect(inert.map((e) => (e.textContent ?? "").trim())).toEqual(["PACKS"])
   })
 
   it("renders a collection-scoped tab INERT when the collection lacks the page, never a substitute", () => {
@@ -161,20 +173,22 @@ describe("MobileNav — which tab owns the route", () => {
     expect(activeTabFor("/", "", false)).toBe("home")
   })
 
-  it("lights Sniper and Market on their hubs", () => {
-    expect(activeTabFor("/sniper", "", false)).toBe("sniper")
+  it("lights Market on both hubs (Sniper is the Market group's page) and Insights on its hub", () => {
+    expect(activeTabFor("/sniper", "", false)).toBe("market")
     expect(activeTabFor("/market", "", false)).toBe("market")
+    expect(activeTabFor("/insights", "", false)).toBe("insights")
+    expect(activeTabFor("/insights/deals", "deals", false)).toBe("insights")
   })
 
-  it("lights Sniper on the sniper pages, including Pack Sniper behind its sub-toggle", () => {
-    expect(activeTabFor("/nba-top-shot/sniper", "sniper", true)).toBe("sniper")
-    expect(activeTabFor("/nba-top-shot/pack-sniper", "pack-sniper", true)).toBe("sniper")
-  })
-
-  it("lights Market on the market and the pages folded into it", () => {
-    for (const p of ["market", "packs", "hot-floors"]) {
+  it("lights Market on the pages the Market group owns (market, sniper, hot floors)", () => {
+    for (const p of ["market", "sniper", "hot-floors"]) {
       expect(activeTabFor(`/nba-top-shot/${p}`, p, true), p).toBe("market")
     }
+  })
+
+  it("lights Packs on pack EV and Pack Sniper — the Packs group's pages", () => {
+    expect(activeTabFor("/nba-top-shot/packs", "packs", true)).toBe("packs")
+    expect(activeTabFor("/nba-top-shot/pack-sniper", "pack-sniper", true)).toBe("packs")
   })
 
   it("lights My Binder on a collection's binder page", () => {
@@ -204,12 +218,13 @@ describe("MobileNav — which tab owns the route", () => {
   })
 
   it("does not claim a tab for a route none of them own", () => {
-    expect(activeTabFor("/insights/candy-mlb", "candy-mlb", false)).toBeNull()
     expect(activeTabFor("/blog", "", false)).toBeNull()
+    expect(activeTabFor("/trades/block", "block", false)).toBeNull()
   })
 
   it("⚠ a prefix match must not swallow an unrelated route", () => {
     expect(activeTabFor("/profiles-of-note", "", false)).toBeNull()
+    expect(activeTabFor("/insightsville", "", false)).toBeNull()
   })
 
   it("renders the active tab in the brand red and the rest at the readable token", () => {
@@ -239,7 +254,7 @@ describe("MobileNav — the active tab is announced, not just coloured", () => {
     const { container } = render(<MobileNav />)
     expect(tab(container, "MY BINDER").getAttribute("aria-current")).toBe("page")
     expect(tab(container, "HOME").getAttribute("aria-current")).toBeNull()
-    expect(tab(container, "SNIPER").getAttribute("aria-current")).toBeNull()
+    expect(tab(container, "PACKS").getAttribute("aria-current")).toBeNull()
   })
 
   it("marks HOME on the homepage and nothing else", () => {

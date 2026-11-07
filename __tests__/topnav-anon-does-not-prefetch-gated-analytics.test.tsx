@@ -34,20 +34,28 @@ const prefetchOf = (c: HTMLElement, label: string) =>
 
 afterEach(() => cleanup())
 
-describe("TopNav — a signed-out visitor does not preload sign-in-only pages", () => {
-  // 2026-10-25: /analytics is public now and the link is shown to everyone; an
-  // anonymous visitor still does not need it preloaded on every page view.
-  it("anon: the Analytics link is shown but not prefetched; public links keep the default", async () => {
+describe("TopNav — menu links are not preloaded on every page view", () => {
+  // 2026-10-25: /analytics became public and was shown to everyone but not
+  // prefetched for anon. IA Phase 2 (2026-11-06) generalises the rule: the
+  // header now carries ~40 menu links on every page, so NO menu item is
+  // prefetched for anyone; the six group hubs (a handful) keep Next's default.
+  it("anon: no menu item is prefetched; group hubs keep the default", async () => {
     authState.user = null
     const { container } = render(<TopNav />)
     await waitFor(() => {})
     expect(prefetchOf(container, "Analytics")).toBe("false")
-    expect(prefetchOf(container, "Blog")).toBe("default")
+    expect(prefetchOf(container, "Blog")).toBe("false")
+    const menuItems = Array.from(container.querySelectorAll('[role="menuitem"]'))
+    expect(menuItems.length).toBeGreaterThan(20)
+    expect(menuItems.filter((a) => a.getAttribute("data-prefetch") !== "false")).toEqual([])
+    const hub = container.querySelector('a[data-ia-group="market"]')!
+    expect(hub.getAttribute("data-prefetch")).toBe("default")
   })
 
-  it("signed in: Analytics keeps the default prefetch", async () => {
+  it("signed in: still no menu-item prefetch (the gated ones included)", async () => {
     authState.user = { id: "u1" }
     const { container } = render(<TopNav />)
-    await waitFor(() => expect(prefetchOf(container, "Analytics")).toBe("default"))
+    await waitFor(() => expect(prefetchOf(container, "Alerts")).toBe("false"))
+    expect(prefetchOf(container, "Analytics")).toBe("false")
   })
 })

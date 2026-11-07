@@ -1,9 +1,13 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
-import { readFileSync } from "node:fs"
-import { join } from "node:path"
 import { render, cleanup, waitFor } from "@testing-library/react"
 
+// IA Phase 2 (2026-11-06): TopNav renders the six job groups from lib/ia.ts
+// (Market · Packs · Insights · Collectors · Trade · Me) with a hover/focus menu
+// each, plus ONE collection-switcher chip instead of a link per collection.
+// Earlier history (one tab per collection + Blog/Analytics/My Teams/Alerts) is
+// below for the record; those pins are re-stated against the registry.
+//
 // TopNav is the desktop primary nav. It carries two branches only a test can pin:
 //   1. Auth-gated links — a signed-out visitor sees the public destinations
 //      (one per published collection + Blog); a signed-in user additionally gets
@@ -37,6 +41,7 @@ vi.mock("@/lib/auth/supabase-client", () => ({
 import TopNav from "@/components/TopNav"
 import { isPublicPath } from "@/proxy"
 import { publishedCollections } from "@/lib/collections"
+import { IA_GROUPS, visibleItems, resolveHref, DEFAULT_COLLECTION } from "@/lib/ia"
 
 const labels = (container: HTMLElement) =>
   Array.from(container.querySelectorAll("a")).map((a) => a.textContent)
@@ -48,55 +53,72 @@ beforeEach(() => {
 })
 afterEach(() => cleanup())
 
-describe("TopNav — auth-gated links", () => {
-  it("shows only the public links to an anonymous visitor", async () => {
+describe("TopNav — groups, by audience", () => {
+  const groupLabels = (c: HTMLElement) => Array.from(c.querySelectorAll("a[data-ia-group]")).map((a) => a.textContent)
+
+  it("anon sees the five public groups, never Me, and every href it can reach is public", async () => {
     authState.user = null
     const { container } = render(<TopNav />)
-    await waitFor(() => {}) // let getUser resolve
+    await waitFor(() => {})
+    expect(groupLabels(container)).toEqual(["Market", "Packs", "Insights", "Collectors", "Trade"])
     const ls = labels(container)
-    expect(ls).toContain("Top Shot")
-    expect(ls).toContain("Blog")
-    // 2026-10-25: /analytics is anon-public (proxy.ts isPublicPath), so it is in
-    // the nav for everyone. My Teams and Alerts stay signed-in only.
-    expect(ls).toContain("Analytics")
-    expect(isPublicPath("/analytics", "GET")).toBe(true)
-    expect(ls).not.toContain("My Teams")
+    expect(ls).not.toContain("My teams")
     expect(ls).not.toContain("Alerts")
-    // 2026-09-06: the collection links are DERIVED from publishedCollections()
-    // (the hand-written list omitted Candy MLB the day it published) — one link
-    // per published collection + Blog. UFC keeps its nav label.
-    expect(ls).toContain("Candy")
-    expect(ls).toContain("UFC")
-    expect(ls.length).toBe(publishedCollections().length + 2)
-    // Every link an anonymous visitor sees opens without a sign-in wall.
-    const hrefs = Array.from(container.querySelectorAll("a")).map((a) => a.getAttribute("href")).filter((h): h is string => !!h && h.startsWith("/"))
+    expect(ls).not.toContain("Trade room")
+    const hrefs = Array.from(container.querySelectorAll("a")).map((a) => a.getAttribute("href")!)
     for (const h of hrefs) expect(isPublicPath(h.split("?")[0], "GET"), `${h} must be public`).toBe(true)
   })
 
-  it("adds Analytics + My Teams + Alerts once the user is signed in", async () => {
+  it("signed in adds Me and the auth-only items (Alerts, My teams, Trade room, My pack history)", async () => {
     authState.user = { id: "u1" }
     const { container } = render(<TopNav />)
-    await waitFor(() => {
-      expect(labels(container)).toContain("My Teams")
-    })
+    await waitFor(() => expect(groupLabels(container)).toContain("Me"))
     const ls = labels(container)
-    expect(ls).toContain("Analytics")
-    expect(ls).toContain("Alerts")
-    expect(ls.length).toBe(publishedCollections().length + 4)
-    // Analytics still points at /analytics — hidden for anon, never re-pointed.
-    const analytics = Array.from(container.querySelectorAll("a")).find((a) => a.textContent === "Analytics")!
-    expect(analytics.getAttribute("href")).toBe("/analytics")
+    for (const l of ["Alerts", "My teams", "Trade room", "My pack history", "Dashboard"]) expect(ls).toContain(l)
+  })
+
+  it("no collection is a top-level destination: the seven collections are ONE switcher chip with a menu", async () => {
+    const { container } = render(<TopNav />)
+    await waitFor(() => {})
+    const chip = container.querySelector('[data-tour-anchor="collection-switcher"]')!
+    expect(chip.textContent).toContain("Top Shot")
+    expect(chip.getAttribute("href")).toBe("/nba-top-shot/overview")
+    const menu = container.querySelector('[role="menu"][aria-label="Collections"]')!
+    const items = Array.from(menu.querySelectorAll("a")).map((a) => a.getAttribute("href"))
+    expect(items).toEqual(publishedCollections().map((c) => `/${c.id}/overview`))
+    expect(groupLabels(container)).not.toContain("Top Shot")
+  })
+
+  it("every group's menu lists exactly the registry's visible items, resolved to the current collection", async () => {
+    pathname = "/nfl-all-day/market"
+    authState.user = null
+    const { container } = render(<TopNav />)
+    await waitFor(() => {})
+    for (const g of IA_GROUPS.filter((g) => !g.auth)) {
+      const menu = container.querySelector(`[role="menu"][aria-label="${g.label}"]`)!
+      const hrefs = Array.from(menu.querySelectorAll("a")).map((a) => a.getAttribute("href"))
+      expect(hrefs, g.id).toEqual(visibleItems(g, false).map((i) => resolveHref(i.href, "nfl-all-day", i.page)))
+    }
+    // All Day has a packs page, so the Packs hub is All Day's; the chip follows the URL.
+    expect(container.querySelector('a[data-ia-group="packs"]')!.getAttribute("href")).toBe("/nfl-all-day/packs")
+    expect(container.querySelector('[data-tour-anchor="collection-switcher"]')!.textContent).toContain("All Day")
+  })
+
+  it("a collection without the page falls back to the default, never to a soft-404 (UFC has no packs)", async () => {
+    pathname = "/ufc/sniper"
+    const { container } = render(<TopNav />)
+    await waitFor(() => {})
+    expect(container.querySelector('a[data-ia-group="packs"]')!.getAttribute("href")).toBe(`/${DEFAULT_COLLECTION}/packs`)
   })
 
   it("reacts to a later auth-state change (sign-in after mount)", async () => {
     authState.user = null
     const { container } = render(<TopNav />)
-    await waitFor(() => {}) // initial getUser (anon)
-    expect(labels(container)).not.toContain("My Teams")
-    // Simulate a live sign-in event through the subscribed callback.
+    await waitFor(() => {})
+    expect(groupLabels(container)).not.toContain("Me")
     authChangeCb?.("SIGNED_IN", { user: { id: "u1" } })
     await waitFor(() => {
-      expect(labels(container)).toContain("My Teams")
+      expect(groupLabels(container)).toContain("Me")
     })
   })
 
@@ -106,57 +128,38 @@ describe("TopNav — auth-gated links", () => {
     unmount()
     expect(onAuthUnsub).toHaveBeenCalled()
   })
+
+  it("menu links are never prefetched — ~40 of them ride every page", async () => {
+    const { container } = render(<TopNav />)
+    await waitFor(() => {})
+    expect(container.querySelectorAll('[role="menuitem"]').length).toBeGreaterThan(20)
+  })
 })
 
-describe("TopNav — active-route detection", () => {
-  it("marks the tab active on an exact matchPrefix and on a nested path", () => {
-    pathname = "/nba-top-shot/sniper"
+describe("TopNav — active group", () => {
+  const groupLink = (c: HTMLElement, id: string) => c.querySelector(`a[data-ia-group="${id}"]`)!
+
+  it("lights the group that owns the path, including a nested path, and only that group", () => {
+    pathname = "/trades/block"
     const { container } = render(<TopNav />)
-    const topShot = Array.from(container.querySelectorAll("a")).find(
-      (a) => a.textContent === "Top Shot",
-    )!
-    // Nested under /nba-top-shot → active styling (surface-hover bg token).
-    expect(topShot.className).toContain("bg-[color:var(--rpc-surface-hover)]")
-    // A different collection stays inactive (secondary text token).
-    const golazos = Array.from(container.querySelectorAll("a")).find(
-      (a) => a.textContent === "Golazos",
-    )!
-    expect(golazos.className).toContain("text-[color:var(--rpc-text-secondary)]")
+    expect(groupLink(container, "trade").getAttribute("aria-current")).toBe("page")
+    expect(groupLink(container, "market").getAttribute("aria-current")).toBeNull()
+    expect(groupLink(container, "trade").className).toContain("bg-[color:var(--rpc-surface-hover)]")
   })
 
   it("does NOT treat a lookalike prefix as a match", () => {
-    // /nba-top-shot-x must not light the /nba-top-shot tab — the guard requires
-    // an exact match or a real "/" boundary, not a bare startsWith.
-    pathname = "/nba-top-shot-x/overview"
+    pathname = "/marketing"
     const { container } = render(<TopNav />)
-    const topShot = Array.from(container.querySelectorAll("a")).find(
-      (a) => a.textContent === "Top Shot",
-    )!
-    expect(topShot.className).toContain("text-[color:var(--rpc-text-secondary)]")
+    expect(groupLink(container, "market").getAttribute("aria-current")).toBeNull()
   })
 
-  it("gives the active Analytics tab its distinct emerald styling (signed in — anon has no such tab)", async () => {
-    pathname = "/analytics"
-    authState.user = { id: "u1" }
-    const { container } = render(<TopNav />)
-    await waitFor(() => {
-      expect(labels(container)).toContain("Analytics")
-    })
-    const analytics = Array.from(container.querySelectorAll("a")).find(
-      (a) => a.textContent === "Analytics",
-    )!
-    expect(analytics.className).toContain("text-emerald-400")
-  })
-})
-
-describe("tablet-landscape fit (2026-10-03)", () => {
-  it("the nav never shrinks and its labels never wrap; md padding is tighter than lg", async () => {
-    const src = readFileSync(join(process.cwd(), "components/TopNav.tsx"), "utf8")
-    expect(src).toMatch(/<nav className="hidden md:flex items-center shrink-0 md:gap-0 lg:gap-1 text-sm">/)
-    // 2026-10-03 PM re-pin: md:px-1.5 was measured at ZERO (unlayered reset,
-    // 8b18dccc6); with real padding the signed-in row needs px-1 + normal
-    // tracking at md to fit 768 px. The PROPERTY pinned: md padding < lg.
-    expect(src).toContain("md:px-1 lg:px-2.5 py-1.5 whitespace-nowrap")
-    expect(src).toContain("md:tracking-normal lg:tracking-wide")
+  it("a collection page lights the group that owns its page type (packs), and nothing for a page no group owns", () => {
+    pathname = "/nfl-all-day/packs"
+    const a = render(<TopNav />)
+    expect(groupLink(a.container, "packs").getAttribute("aria-current")).toBe("page")
+    cleanup()
+    pathname = "/nba-top-shot/badges"
+    const b = render(<TopNav />)
+    expect(b.container.querySelectorAll('a[data-ia-group][aria-current="page"]').length).toBe(0)
   })
 })

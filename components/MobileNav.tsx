@@ -40,22 +40,28 @@ const ICON_SIZE = 22;
 // dashboard (Trevor, 2026-09-28): the binder is a wallet's holdings. Account
 // surfaces (/dashboard, /profile, /alerts) are reached through the header's
 // sign-in pill and light no tab — no tab leads there any more.
+// ⭐ RE-SLOTTED 2026-11-06 (IA Phase 2, Trevor's call): HOME · MARKET · PACKS ·
+// INSIGHTS · MY BINDER — the header's first groups, in the header's order, plus
+// the one personal page a phone visitor goes to most. Was HOME · MY BINDER ·
+// MARKET · SNIPER (2026-09-28). SNIPER is the Market group's second item (the
+// /market hub carries the Market/Sniper toggle); PACKS and INSIGHTS, two of the
+// site's five pillars, had no bottom-bar entry at all.
+// docs/strategy/features/information-architecture-2026-11-06.md
 const BINDER_PAGES = new Set(["collection"]);
-// Packs and Hot Floors were folded into Market by the 2026-07-18 IA reorg (the
-// Market/Sniper sub-toggle), and Pack Sniper into Sniper — so those pages are
-// reached through, and belong to, the tab that hosts the toggle.
-const MARKET_PAGES = new Set(["market", "packs", "hot-floors"]);
-const SNIPER_PAGES = new Set(["sniper", "pack-sniper"]);
+// Which collection pages each group OWNS — the same memberships lib/ia.ts gives
+// the header (Sniper and Hot Floors are Market; Pack Sniper is Packs).
+const MARKET_PAGES = new Set(["market", "sniper", "hot-floors"]);
+const PACKS_PAGES = new Set(["packs", "pack-sniper"]);
 
-export type MobileTab = "home" | "binder" | "market" | "sniper";
+export type MobileTab = "home" | "market" | "packs" | "insights" | "binder";
 
 export function activeTabFor(pathname: string, pageSegment: string, isCollectionRoute: boolean): MobileTab | null {
   if (pathname === "/") return "home";
-  if (pathname === "/sniper") return "sniper";
-  if (pathname === "/market") return "market";
+  if (pathname === "/sniper" || pathname === "/market") return "market";
+  if (pathname === "/insights" || pathname.startsWith("/insights/")) return "insights";
   if (!isCollectionRoute) return null;
   if (BINDER_PAGES.has(pageSegment)) return "binder";
-  if (SNIPER_PAGES.has(pageSegment)) return "sniper";
+  if (PACKS_PAGES.has(pageSegment)) return "packs";
   if (MARKET_PAGES.has(pageSegment)) return "market";
   return null;
 }
@@ -79,11 +85,16 @@ function TabIcon({ tab }: { tab: MobileTab }) {
         </>
       )}
       {tab === "market" && <path d="M3 3v18h18M7 15l4-4 3 3 6-6M16 8h4v4" />}
-      {tab === "sniper" && (
+      {tab === "packs" && (
         <>
-          <circle cx="12" cy="12" r="7.5" />
-          <circle cx="12" cy="12" r="1.5" />
-          <path d="M12 2v4M12 18v4M2 12h4M18 12h4" />
+          <path d="M3 8.5 12 4l9 4.5-9 4.5-9-4.5z" />
+          <path d="M3 8.5V16l9 4.5 9-4.5V8.5M12 13v7.5" />
+        </>
+      )}
+      {tab === "insights" && (
+        <>
+          <path d="M9 18h6M10 21h4" />
+          <path d="M12 3a6.5 6.5 0 0 0-4 11.6c.7.6 1 1.4 1 2.4h6c0-1 .3-1.8 1-2.4A6.5 6.5 0 0 0 12 3z" />
         </>
       )}
     </svg>
@@ -125,14 +136,17 @@ export default function MobileNav() {
   // (AutoSearchReader), and shows the lookup box only to a visitor with neither. It is PUBLIC —
   // never point a tab at auth-gated /dashboard (a login wall from the first
   // tap, R36).
-  const tabs: { key: MobileTab; label: string; href: string; page?: "collection" }[] = [
+  const tabs: { key: MobileTab; label: string; href: string; page?: "collection" | "packs" }[] = [
     { key: "home", label: "HOME", href: "/" },
-    { key: "binder", label: "MY BINDER", href: `/${collection}/collection`, page: "collection" },
-    // The cross-collection HUB (app/market/page.tsx), like SNIPER: never inert.
+    // The cross-collection HUB (app/market/page.tsx): never inert.
     { key: "market", label: "MARKET", href: "/market" },
-    // The cross-collection HUB (app/sniper/page.tsx), not a guessed collection's
-    // sniper: it exists for every visitor, so this tab is never inert.
-    { key: "sniper", label: "SNIPER", href: "/sniper" },
+    // Pack EV is collection-scoped (no cross-collection hub exists), so this is
+    // the one tab beside MY BINDER that can be INERT — a collection with no packs
+    // page (UFC) gets a disabled tab, never another collection's packs.
+    { key: "packs", label: "PACKS", href: `/${collection}/packs`, page: "packs" },
+    // The /insights hub — the largest anonymous surface in the product.
+    { key: "insights", label: "INSIGHTS", href: "/insights" },
+    { key: "binder", label: "MY BINDER", href: `/${collection}/collection`, page: "collection" },
   ];
 
   return (
@@ -196,7 +210,7 @@ export default function MobileNav() {
           padding: "0 6px",
         };
 
-        // A collection-scoped tab (only MY BINDER since the 2026-09-28 hubs) whose
+        // A collection-scoped tab (MY BINDER, PACKS) whose
         // collection lacks that page renders inert rather than linking to a page that does not
         // exist — a tap that silently redirects reads as a broken app. It never
         // substitutes another collection's page: that would answer with the
