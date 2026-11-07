@@ -14,6 +14,7 @@ import SiteFooter from "@/components/SiteFooter"
 import SupportChatConnected from "@/components/SupportChatConnected"
 import { OG_INHERITED } from "@/lib/seo"
 import { publishedCollections } from "@/lib/collections"
+import { IA_GROUPS, resolveHref, visibleItems, DEFAULT_COLLECTION } from "@/lib/ia"
 
 const CONTACT_EMAIL = "rippackscity@gmail.com"
 
@@ -49,6 +50,27 @@ const FAQS: Faq[] = [
         set and team checklists, squeeze and scarcity boards, and wallet breakdowns. It is <strong>read-only</strong> —
         RPC never holds your moments, never asks for a wallet connection, and you cannot buy or sell here. When you want
         to buy, our links take you to the marketplace that lists the moment.
+      </>
+    ),
+  },
+  {
+    q: "Where is everything?",
+    a: (
+      <>
+        The header (and the footer, and the phone bottom bar) is organised by what you are trying to do, not by
+        collection — pick the collection once from the chip at the left of the header. Hover any group for its pages:
+        <ul style={{ margin: "8px 0 0", paddingLeft: 18, display: "flex", flexDirection: "column", gap: 4 }}>
+          {IA_GROUPS.filter((g) => !g.auth).map((g) => (
+            <li key={g.id}>
+              <Link href={resolveHref(g.href, DEFAULT_COLLECTION, g.page)} style={LINK}><strong>{g.label}</strong></Link> — {g.job.toLowerCase()}:{" "}
+              {visibleItems(g, false).map((i) => i.label).join(", ")}.
+            </li>
+          ))}
+          <li>
+            <strong>Me</strong> — your <Link href="/dashboard" style={LINK}>dashboard</Link> (Overview · Trophy Cases · Packs
+            · History · Settings), alerts and email settings, once you are signed in.
+          </li>
+        </ul>
       </>
     ),
   },
@@ -94,8 +116,9 @@ const FAQS: Faq[] = [
     a: (
       <>
         Set them on <Link href="/alerts" style={LINK}>Alerts</Link> (or the watch button on an edition page) for a price, a
-        discount below FMV, or an FMV move. They arrive by email, Telegram or Discord. Email preferences live on{" "}
-        <Link href="/dashboard/notifications" style={LINK}>Notifications</Link>. Alert emails also carry a one-tap pause link.
+        discount below FMV, or an FMV move. They arrive by email, Telegram or Discord. Email preferences live under the
+        dashboard&apos;s <Link href="/dashboard?tab=settings" style={LINK}>Settings</Link> tab (
+        <Link href="/dashboard/notifications" style={LINK}>Email settings</Link>). Alert emails also carry a one-tap pause link.
       </>
     ),
   },
@@ -116,9 +139,11 @@ const FAQS: Faq[] = [
     q: "What are trophy cases and challenges?",
     a: (
       <>
-        Signed in, your <strong>Trophy Case</strong> on the dashboard holds the six Moments or cards you most want to show
-        off; it is public at <code>/profile/&lt;username&gt;/trophy-case</code>. Below it, <strong>More Trophy Cases</strong>{" "}
-        lets you build extra themed cases (up to 10) and enter <strong>challenges</strong> — the first is{" "}
+        Signed in, the dashboard&apos;s <Link href="/dashboard?tab=trophy" style={LINK}>Trophy Cases</Link> tab holds your
+        main case — the six Moments or cards you most want to show off, public at{" "}
+        <code>/profile/&lt;username&gt;/trophy-case</code> — and below it <strong>More Trophy Cases</strong> lets you build
+        extra themed cases (up to 10) and enter <strong>challenges</strong>. Every pick saves itself the moment you confirm
+        it; a challenge entry needs no name. The first challenge is{" "}
         <Link href="/trophy-challenges/dame-time" style={LINK}>Dame Time</Link>: up to six Damian Lillard pieces, NBA Top
         Shot Moments and Panini cards both count. Only pieces you hold (under your saved wallets or linked Panini username)
         can go in, and RPC checks each pin. Every extra case and challenge entry shows on your public profile.

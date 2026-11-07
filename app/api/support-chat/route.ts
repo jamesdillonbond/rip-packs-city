@@ -21,6 +21,7 @@ import { fitTelegramText } from "@/lib/telegram-message";
 import { createClient } from "@supabase/supabase-js";
 import Anthropic from "@anthropic-ai/sdk";
 import { getCollection, publishedCollections, COLLECTION_UUID_BY_SLUG, marketplaceMomentUrl, fromDbSlug, toDbSlug, getCollectionUuid } from "@/lib/collections";
+import { IA_GROUPS, MOBILE_GROUP_IDS, resolveHref, DEFAULT_COLLECTION } from "@/lib/ia";
 import { bumpAnonRate } from "@/lib/abuse/anon-rate";
 import { getSupabaseServer } from "@/lib/auth/supabase-server";
 import {
@@ -1058,6 +1059,14 @@ function buildSystemPromptParts(ctx: {
   // said all collections share "Overview … Sniper … Pack EV … Analytics", which
   // over-claimed tabs UFC, Candy, Golazos and Pinnacle do not have. Deploy-constant.
   const publishedTabsLine = published.map((c) => `${c.label}: ${tabsFor(c)}`).join("; ");
+  // IA (2026-11-06): the navigation facts come from lib/ia.ts — the same
+  // registry the header, mobile bar, footer and /insights hub render from — so
+  // "where do I find X" answers cannot drift from what the site shows.
+  const iaNavLines = IA_GROUPS.map((g) => {
+    const items = g.items.map((i) => `${i.label}${i.auth ? " (signed in)" : ""} ${resolveHref(i.href, DEFAULT_COLLECTION, i.page)}`).join(", ");
+    return `- **${g.label}**${g.auth ? " (signed in)" : ""} — ${g.job}. Hub ${resolveHref(g.href, DEFAULT_COLLECTION, g.page)}. Menu: ${items}.`;
+  }).join("\n");
+  const iaMobileLine = ["HOME", ...MOBILE_GROUP_IDS.filter((id) => id !== "trade").map((id) => id.toUpperCase()), "MY BINDER"].join(" · ");
   const candyTabs = tabsFor(getCollection("candy-mlb"));
 
   const collectionBlurb = activeCollection
@@ -1312,6 +1321,11 @@ Relay each finding's \`why\` — "you have a palindrome" is unverifiable on its 
 - "My All Day moments disappeared / are missing" → likely locked for set-completion rewards. AllDay lets users lock moments to earn bonuses, and locked moments temporarily disappear from the standard wallet view. Ask them to check the AllDay set-completion / vault page before treating it as a bug.`;
 
   const dynamic = `${collectionBlurb}${marketSection}${userSection}${pageSection}${fmvCoverage ?? ""}${requestTimeBlock()}
+
+## Site navigation (2026-11-06 — one taxonomy, every nav)
+The site header is six groups, each a link to its hub with a dropdown of its pages; the mobile bottom bar is ${iaMobileLine}; the footer repeats the groups. Collections are a SCOPE, not a menu: the header carries ONE collection chip (the current or last-visited collection, Top Shot by default) with a menu of all published collections, and every collection page keeps its own tab bar (listed above). When a user asks where something is, name the GROUP, then the page and URL:
+${iaNavLines}
+The signed-in **dashboard** (/dashboard) is five tabs: **Overview** (portfolio totals, a Tools line — Sniper, Alerts, Trades, Top Shot This trade-in value — saved wallets, Panini username, friend activity), **Trophy Cases** (?tab=trophy: the share card, the main six-slot case, challenge entries such as Dame Time and extra named cases), **Packs** (/dashboard/packs, pack history), **History** (/dashboard/history), **Settings** (?tab=settings: favorite collections, Email settings at /dashboard/notifications, Edit profile). There are no "Set up alerts" / "Trade Moments" cards on the dashboard any more — those live in the header's Me and Trade groups.
 
 ## Product surfaces you must know (current)
 - **Public /insights boards** (shareable, anon-public URLs — hand these out freely; they're the most shareable thing RPC has). /insights is the index. Highlights: /insights/top-sales (biggest recent sales + who bought/sold), /insights/deals (below-FMV asks), /insights/market-pulse (collection-level volume, sales and buyers by window), /insights/rookies and /insights/rookie-board, /insights/squeeze and /insights/set-squeeze (supply locked/burned), /insights/first-mint, /insights/serial-premiums and /insights/parallel-premiums, /insights/autographs (every signed Top Shot / All Day edition: lowest live ask, recent sales, the unsigned printing's price), /insights/underpriced-serials, /insights/offer-spread, /insights/new-collectors, /insights/cross-collection, /insights/pack-reality + /insights/topshot-pack-market + /insights/allday-pack-market, /insights/pinnacle-scarcity, /insights/set-completers, /insights/trophies, /insights/candy-mlb (Candy / Solana MLB), /insights/panini-squeeze and /insights/panini-premiums (Panini). NFL All Day has its own pages — link these for an All Day question, never the Top Shot page: /insights/allday-squeeze, /insights/allday-set-squeeze, /insights/allday-market, /insights/allday-serial-premiums, /insights/allday-scarcity. If a question maps to one, link it.
