@@ -117,7 +117,26 @@ The M1/M2 metric below is a confidence SHARE: a count of labels, not a measured 
 - **The 11-04 changes target the thin tail:** ask-only capped at the last sale; a floor at the best open edition offer; the haircut stops at that bid; All Day LOW haircut 0.75. Read their effect in the **11-09 week**, which first fills Mon 11-16.
 - **Next:** relabel by measured segment accuracy from that week, and add All Day to the weekly job.
 
-## ⭐ HEADLINE METRIC — re-read live 2026-10-29 ~8:58 AM PT from `rpc_trust_health_history`, BY PT WEEK (supersedes the 10-22 block below)
+## ⭐ HEADLINE METRIC — re-read live 2026-11-07 ~10:45 AM PT from `rpc_trust_health_history`, BY PT WEEK (supersedes the 10-29 block below)
+
+Same instrument (six-hourly legs `<coll>_fmv_high_med_share_pct`, `value <> 999`, weekly mean, weeks start Monday PT). Wk 10-19 re-derives exactly as the 10-29 block (44.7 / 27.4 / 33.4 / 55.5 / 43.8). Wk 10-26 is now complete (28–29 legs); **wk 11-02 is partial: 21–22 legs, Monday → Saturday 11-07 morning.** Claude Code cloud, read-only.
+
+| collection | bar | wk 10-19 | wk 10-26 | wk 11-02 (partial) | spread wk 11-02 |
+|---|---|---:|---:|---:|---|
+| Top Shot (M1) | ≥ 50 % | 44.7 | **44.9** | **45.6** 🔴 by decision | 45.0–46.5 |
+| All Day (M2) | ≥ 30 % | 27.4 | **27.1** | **26.8** 🔴 | 26.3–27.8 |
+| Pinnacle (own leg, never average it) | — | 33.4 | 33.5 | 32.7 | 31.9–33.2 |
+| Candy MLB | — | 55.5 | 57.7 | **48.1 ⬇ window draining** | **30.4**–56.0 |
+| Panini | — | 43.8 | 45.9 | 45.7 | 45.5–45.8 |
+| Golazos | — | 0.2 | 0.2 | 0.2 | — |
+| UFC | — | 0.0 | 0.0 | 0.0 (closed: honest) | — |
+
+- **Top Shot edges up (+0.7)** in the first week under the 11-04 evening price changes (ask-only capped at the last sale, bid floor, haircut-stops-at-bid). Those change PRICES, not the label rule, so a share move here is composition (more editions with 5+ sales in 30 d as Series 2026-27 trades), not the fixes. The fixes' own read is accuracy, in `fmv_accuracy_weekly` from the 11-09 week (first fills Mon 11-16) — #234.
+- **All Day drifts DOWN 0.3 a week** (27.4 → 27.1 → 26.8), 3.2 under its bar. The 10-29 block's "edges up 0.4 a week" did not hold. The 11-04 LOW haircut 0.55 → 0.75 changes prices, not labels, so it cannot move this number either; M2 moves only through LOW → MEDIUM (nfl-all-day.md, 10-18 read).
+- **Candy's fall has started, on schedule:** its newest indexed sale is 10-11 8:21 PM PT, so the 30-day window drains as the early-October sales age out — 56.0 on 11-02, 49.6 on 11-03, 39.2 on 11-06, **30.4 at 5:50 AM PT 11-07**. Expect ~0 by ~11-11, when 10-11's sales leave the window. Not a defect: the label is honest about a market with no sales (#58 re-verify ~11-27).
+- Panini flat (45.5–45.8, 22 legs). Pinnacle −0.8, inside its usual spread.
+
+## ⭐ HEADLINE METRIC — re-read live 2026-10-29 ~8:58 AM PT from `rpc_trust_health_history`, BY PT WEEK (supersedes the 10-22 block below) [SUPERSEDED by the 11-07 block above]
 
 Same instrument (six-hourly legs `<coll>_fmv_high_med_share_pct`, `value <> 999`, weekly mean, weeks start Monday PT). Wk 10-19 is now complete (28 legs); **wk 10-26 is partial: 13–14 legs, Monday → Thursday 10-29 morning.** Claude Code cloud, read-only.
 
@@ -188,6 +207,29 @@ Done 10-15 → 10-17 (Claude Code cloud, session_014vWuubmVKLyyyMQAwWzT2W; Trevo
 - ✅ **RE-READ 2026-11-02 ~7:30 AM PT (Claude Code cloud): already built — `topshot_2026_rookie_players` is a VIEW over Series 9 set `Rookie Debut` (4 players today: the Tip-Off pack rookies), and `topshot_2026_rookie_index` / `_cohort_stats`, `topshot_rookie_edition_board` and `topshot_rookie_collector_leaderboard_mv` all read it; `/api/public/insights/rookies?class=2026` serves it since 10-22. It fills itself when Rookie Debut mints. Owed now is only a VERIFY on 11-11 (scheduled task 6:17 PM PT 11-11): the count reaches ~60, and the set is really named `Rookie Debut` (else the view needs the real name).** Original line, kept: ~~Owed on/after 2026-11-11: build the 2026 rookie class from Series 9 rookie sets~~ (the 2025 list is a VIEW over Series 8 set names) and point the rookie boards at it. Do not seed it from the draft or the four announced partners: 4 of ~60 would silently drop the rest.
 - ❓ **Needs Trevor:** how the 2026-27 Yearbook / Blue Chip / Squad Goals leaderboards are scored. RPC will not publish its own rank as Top Shot's. The board worth building is "cost to climb into the top N", and it needs the official scoring.
 - **Tracked since 2026-10-19:** `editions.autographed_at` (from Atlas `autographedAt`, swept daily by pg_cron `rpc-autograph-sweep`; 236 Top Shot + 226 All Day signed editions at the census). Partner-athlete status itself is still not stored: Atlas's `activePartnerAthlete` flag marks only 4 players and is not the signer list. Research: [autographs-topshot-allday-2026-10-19.md](../research/autographs-topshot-allday-2026-10-19.md). **Not tracked yet:** Constellations trade-ins burn older-season Rares that the index does not walk (Dune-era sets), so holder counts there lag.
+
+## ⭐ NEW 2026-11-07 — DEMAND RE-READ, WEEK OF 10-29..11-04 PT (by `scripts/demand-read.sql`, params 10-29 07:00 UTC → 11-05 08:00 UTC — 169 h, PDT ended 11-01; Claude Code cloud, ~10:40 AM PT)
+
+Baseline re-run with the SAME file (script against script, never the prose block): 10-22..10-28 reproduces the 10-29 block on every row.
+
+| PT week (Thu 07:00 UTC →) | 10-22..10-28 | **10-29..11-04** |
+|---|---:|---:|
+| human browsers / visits | 63 / 98 | **69 / 149** |
+| external signed-in users | 2 | **5** |
+| signups (minus internal) | 0 | **1** |
+| visits by source (one-page) | direct 59 (37) · Google 25 (22) · ChatGPT 11 (5) · Bing 2 (0) · X 1 (1) | **direct 105 (72) · Google 20 (15) · ChatGPT 15 (4) · X 5 (3) · Bing 3 (2) · other 1** |
+| Google one-page share | 22 / 25 (88 %) | **15 / 20 (75 %)** |
+| wallet pastes (browsers) | 38 (4) | **37 (6)** |
+| share views, browser × page | 9 | **13** (22 raw page-view events) |
+| sign-in clicks (`funnel_events`, human) | home_pricing 3 · home_header 1 | **home_header 1 · share_cta 1** |
+| email prompt shown (browsers) | 15 (9) | **29 (17)** |
+| `magic-link-requested` | 1 | **2** |
+
+**Read:**
+- ⚠ **The visit jump is mostly OUR OWN browsers, not demand.** The +46 visits sit almost entirely in `direct` (59 → 105), and the heaviest direct browsers are internal by what they load: three browsers hit `/admin/*` (feedback, swap-test) for 24 visits, and the single heaviest browser (21 visits, 17 direct one-page) lives on `/trades/<room>` and `/dashboard` — the trade room went live 10-31 and was being tested all week. Excluding only the three `/admin` browsers (a heuristic, NOT a script change): 125 visits / 66 browsers, direct 81 (56 one-page). The script has no internal-browser exclusion (`internal_accounts` is keyed by user, and most of these visits are anonymous), so **a QA-heavy week inflates `direct` by construction** — read direct as an upper bound.
+- **Search did not grow.** Google 25 → 20 landings (one-page share 88 % → 75 %), ChatGPT 11 → 15, X 1 → 5 (small n). Nothing moves the acquisition read.
+- **Small activation signal, n tiny:** signed-in 2 → 5, one external signup, email prompt seen by 17 browsers (from 9), one share-CTA sign-in click (0 the week before). The Dapper outage confound of the prior week (10-27 → 10-28) is gone from this one, so part of the rebound is the market reopening.
+- 🔜 **Next re-read: on/after 2026-11-12** (params 11-05 08:00 UTC → 11-12 08:00 UTC). ⚠ That week holds the IA re-launch (11-06 evening) and the 11-07 mobile-bar re-slot, and also heavy cloud QA sweeps (#235's second control: our own Playwright walks) — split by `metadata.automated` AND check the heaviest-browser list before reading any rise as the IA working.
 
 ## ⭐ NEW 2026-10-29 — DEMAND RE-READ, WEEK OF 10-22..10-28 PT (by `scripts/demand-read.sql`, params 10-22 07:00 UTC → 10-29 07:00 UTC; Claude Code cloud, ~8:32 AM PT)
 
