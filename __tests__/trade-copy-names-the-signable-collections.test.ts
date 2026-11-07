@@ -30,7 +30,9 @@ const SURFACES: Array<[string, string, string, string | null, (c: (typeof SWAP_C
   ["/trades metadata", "app/trades/layout.tsx", "Trade NBA Top Shot", null, (c) => c.label],
   ["the help page", "app/help/page.tsx", "Can I trade Moments", "q:", (c) => c.label],
   ["the Trade Block browse page", "app/trades/block/BlockBrowseClient.tsx", "What collectors would trade", "</p>", (c) => c.label],
-  ["the dashboard Trades card", "app/dashboard/DashboardClient.tsx", "Trade Moments", "</Link>", (c) => c.short],
+  // The dashboard "Trade Moments" card was removed 2026-11-06 (IA Phase 1): the
+  // dashboard now carries a one-word "Trades" link with no trading passage to
+  // check, so there is no copy there that could name the collections wrongly.
 ]
 
 describe("trade copy names exactly the collections the swap can move", () => {

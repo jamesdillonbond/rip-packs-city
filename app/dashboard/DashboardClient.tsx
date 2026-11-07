@@ -40,6 +40,31 @@ import { accentText } from "@/lib/accent-text"
 
 const condensedFont = "var(--font-display)";
 const monoFont = "var(--font-mono)";
+// ── Dashboard tabs (IA Phase 1, 2026-11-06) ─────────────────────────────────
+// Three homes, one job each: the dashboard is "my collection", in five tabs.
+// Packs and History are their own pages, so those tabs are links; the other
+// three switch panels here. `?tab=` deep-links (replaceState, no history spam).
+// docs/strategy/features/information-architecture-2026-11-06.md
+export type DashTab = "overview" | "trophy" | "settings";
+export const DASH_TABS: ReadonlyArray<{ id: DashTab; label: string } | { id: string; label: string; href: string }> = [
+  { id: "overview", label: "Overview" },
+  { id: "trophy", label: "Trophy Cases" },
+  { id: "packs", label: "Packs", href: "/dashboard/packs" },
+  { id: "history", label: "History", href: "/dashboard/history" },
+  { id: "settings", label: "Settings" },
+];
+export function parseDashTab(raw: string | null | undefined): DashTab {
+  return raw === "trophy" || raw === "settings" ? raw : "overview";
+}
+/** Which panel holds a first-run-tour anchor, so the tour can open it. */
+export const DASH_TAB_FOR_ANCHOR: Record<string, DashTab> = {
+  "portfolio-stats": "overview",
+  "saved-wallets-card": "overview",
+  "sniper-nav-link": "overview",
+  "trophy-case": "trophy",
+};
+export const RPC_TOUR_STEP_EVENT = "rpc:tour-step";
+
 const ACCENT_RED = "#E03A2F"; // brand-exception: concatenated with alpha suffixes (`${ACCENT_RED}66`/`88`) in CSS borders — must stay a literal hex
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -176,6 +201,28 @@ export default function DashboardClient() {
 
 function ProfilePageInner() {
   const search = useSearchParams();
+  // `?pin=N` (the picker deep link) lands on the tab that shows the result.
+  const [tab, setTab] = useState<DashTab>(() => parseDashTab(search?.get("tab") ?? (search?.get("pin") ? "trophy" : null)));
+  const selectTab = useCallback((next: DashTab) => {
+    setTab(next);
+    try {
+      const url = new URL(window.location.href);
+      if (next === "overview") url.searchParams.delete("tab");
+      else url.searchParams.set("tab", next);
+      window.history.replaceState(window.history.state, "", url.toString());
+    } catch { /* no window / opaque URL */ }
+  }, []);
+  // The first-run tour spotlights anchors on more than one tab; it announces
+  // each step and we open the tab that holds it before it measures.
+  useEffect(() => {
+    const onStep = (e: Event) => {
+      const anchor = (e as CustomEvent<{ anchor?: string }>).detail?.anchor;
+      const target = anchor ? DASH_TAB_FOR_ANCHOR[anchor] : undefined;
+      if (target) setTab(target);
+    };
+    window.addEventListener(RPC_TOUR_STEP_EVENT, onStep);
+    return () => window.removeEventListener(RPC_TOUR_STEP_EVENT, onStep);
+  }, []);
   const [email, setEmail] = useState<string | null>(null);
   // ⚠ /dashboard is auth-gated by proxy.ts, so a reader who sees this page IS
   // signed in. `email` going null therefore has two very different causes, and
@@ -933,136 +980,38 @@ function ProfilePageInner() {
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-            {/* The first-run tour's last step points at "sniper-nav-link", which
-                only existed on collection pages — on the dashboard, where the
-                tour runs, the step was centred over nothing (2026-09-02 QA). */}
-            <Link
-              href="/nba-top-shot/sniper"
-              data-tour-anchor="sniper-nav-link"
-              style={{
-                fontFamily: condensedFont,
-                fontWeight: 700,
-                fontSize: 11,
-                letterSpacing: "0.08em",
-                textTransform: "uppercase",
-                color: "var(--rpc-text-secondary)",
-                textDecoration: "none",
-                padding: "7px 12px",
-                border: `1px solid ${ACCENT_RED}66`,
-                borderRadius: 5,
-              }}
-            >
-              Sniper
-            </Link>
-            <Link
-              href="/dashboard/packs"
-              style={{
-                fontFamily: condensedFont,
-                fontWeight: 700,
-                fontSize: 11,
-                letterSpacing: "0.08em",
-                textTransform: "uppercase",
-                color: "var(--rpc-text-secondary)",
-                textDecoration: "none",
-                padding: "7px 12px",
-                border: `1px solid ${ACCENT_RED}66`,
-                borderRadius: 5,
-              }}
-            >
-              Pack History
-            </Link>
-            <Link
-              href="/dashboard/history"
-              style={{
-                fontFamily: condensedFont,
-                fontWeight: 700,
-                fontSize: 11,
-                letterSpacing: "0.08em",
-                textTransform: "uppercase",
-                color: "var(--rpc-text-secondary)",
-                textDecoration: "none",
-                padding: "7px 12px",
-                border: `1px solid ${ACCENT_RED}66`,
-                borderRadius: 5,
-              }}
-            >
-              History
-            </Link>
-            <Link
-              href="/alerts"
-              style={{
-                fontFamily: condensedFont,
-                fontWeight: 700,
-                fontSize: 11,
-                letterSpacing: "0.08em",
-                textTransform: "uppercase",
-                color: "var(--rpc-text-secondary)",
-                textDecoration: "none",
-                padding: "7px 12px",
-                border: `1px solid ${ACCENT_RED}66`,
-                borderRadius: 5,
-              }}
-            >
-              Alerts
-            </Link>
-            {/* 2026-10-24: email preferences had NO link anywhere on the site —
-                only the email-confirm redirect reached this page. */}
-            <Link
-              href="/dashboard/notifications"
-              style={{
-                fontFamily: condensedFont,
-                fontWeight: 700,
-                fontSize: 11,
-                letterSpacing: "0.08em",
-                textTransform: "uppercase",
-                color: "var(--rpc-text-secondary)",
-                textDecoration: "none",
-                padding: "7px 12px",
-                border: `1px solid ${ACCENT_RED}66`,
-                borderRadius: 5,
-              }}
-            >
-              Email settings
-            </Link>
-            <Link
-              href="/profile/edit"
-              style={{
-                fontFamily: condensedFont,
-                fontWeight: 700,
-                fontSize: 11,
-                letterSpacing: "0.08em",
-                textTransform: "uppercase",
-                color: "var(--rpc-text-secondary)",
-                textDecoration: "none",
-                padding: "7px 12px",
-                border: `1px solid ${ACCENT_RED}66`,
-                borderRadius: 5,
-              }}
-            >
+            {/* 2026-11-06 IA Phase 1: the six feature links that lived here
+                (Sniper · Pack History · History · Alerts · Email settings · Edit
+                profile) were a THIRD navigation. Packs / History / Settings are
+                tabs below; Sniper and Alerts are site features the header owns.
+                docs/strategy/features/information-architecture-2026-11-06.md */}
+            <Link href="/profile/edit" style={headerLinkStyle}>
               Edit profile
             </Link>
             <SignOutButton />
           </div>
         </section>
 
-        {/* ── Your public profile ──
-            A collector who arrived by Top Shot username has one (the handle
-            defaults from that name); one who pasted a 0x address does NOT, and
-            gets the claim card instead. Until this card none of them could tell: the only
-            mention was a toast that fires once, on the call that created it.
-            A profile nobody knows the URL of is a profile nobody shares — which
-            made every improvement to the page and its social card unreachable
-            for the people they were built for. */}
-        {bio?.username ? (
-          <PublicProfileCard username={bio.username} userId={userId} />
-        ) : bioLoaded && wallets.length > 0 ? (
-          <ClaimHandleCard />
-        ) : null}
+        {/* ── Tabs (IA Phase 1, 2026-11-06): one job per tab, personal data only. ── */}
+        <div aria-label="Dashboard sections" role="tablist" className="rpc-dash-tabs" style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 2 }}>
+          {DASH_TABS.map((t) =>
+            "href" in t ? (
+              <Link key={t.id} href={t.href} className="rpc-dash-tab" style={tabStyle(false)}>
+                {t.label}
+              </Link>
+            ) : (
+              <button key={t.id} type="button" role="tab" aria-selected={tab === t.id} aria-controls={`dash-panel-${t.id}`} className="rpc-dash-tab" style={tabStyle(tab === t.id)} onClick={() => selectTab(t.id)}>
+                {t.label}
+              </button>
+            ),
+          )}
+        </div>
 
+        {tab === "overview" && (
+          <div id="dash-panel-overview" role="tabpanel" style={{ display: "flex", flexDirection: "column", gap: 18 }}>
         {/* First alert (2026-10-14): renders only when both alert reads are
             ok AND empty — see components/alerts/FirstAlertPrompt.tsx. */}
         <FirstAlertPrompt />
-
         {/* ── Hero: onboarding CTA / HeroMoment / Trophy Case ── */}
         {/* ⚠ `walletsFailed` FIRST. An empty `wallets` is ambiguous — it means
             either "has added none" or "we could not read the list" — and only
@@ -1099,36 +1048,13 @@ function ProfilePageInner() {
             hero={hero!}
             onEdit={() => setHeroEditOpen(true)}
           />
-        ) : filledSlabs.length > 0 ? (
-          <TrophyCaseSection slabs={slabs} onPickSlot={setPinSlot} onRemove={handleRemoveTrophy} onReorder={handleReorderTrophies} onNoteSaved={handleNoteSaved} />
-        ) : slabsFailed ? (
-          /* ⚠ THIRD STATE. `filledSlabs.length === 0` is reached BOTH by "has
-             pinned nothing" and by "the read failed", and only the first may
-             show onboarding. The refresh() comment above already gates the HERO
-             fetch on `slabsRes.ok` for this exact reason — but the fallback
-             still landed here, so the panel was only half fixed. On first load
-             (slabs still [null x6]) a failed read showed a collector with six
-             pinned trophies the "pick a hero Moment" prompt. */
-          <div
-            role="status"
-            style={{
-              display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
-              background: "var(--rpc-surface)", border: "1px solid var(--rpc-warning)",
-              borderRadius: 10, padding: "14px 16px",
-            }}
-          >
-            <span style={{ fontSize: 12, fontFamily: monoFont, color: "var(--rpc-text-secondary)", lineHeight: 1.5 }}>
-              Couldn&apos;t load your trophy case. This is a loading problem, not an
-              empty case — nothing has been unpinned.
-            </span>
-            <button type="button" onClick={() => { refresh().catch(() => {}); }} style={{ ...secondaryBtnStyle, flexShrink: 0 }}>
-              Retry
-            </button>
-          </div>
-        ) : (
+        ) : filledSlabs.length === 0 && !slabsFailed && !loading ? (
+          /* Onboarding stays on the first tab: a collector who has pinned
+             nothing is told so HERE, where they land — the Trophy Cases tab
+             repeats it beside the empty grid. (A failed slab read shows nothing
+             here; the trophy tab carries the honest retry.) */
           <EmptyHeroState wallets={wallets} indexing={indexing} onPickSlot={setPinSlot} />
-        )}
-
+        ) : null}
         {/* ── Stats Tiles ── */}
         {/* ⚠ THREE states, not two: a wallet that was just saved has NO stats yet
             for up to ~30 s while the indexer warms it (measured 2026-09-04 on a
@@ -1207,119 +1133,28 @@ function ProfilePageInner() {
             </button>
           </div>
         ) : null}
-
-        {/* ── Alerts front door ── the omni-channel alerts hub (/alerts) has no
-            other prominent entry point, so surface it here for signed-in users. */}
-        <Link
-          href="/alerts"
-          className="rpc-section"
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: 12,
-            flexWrap: "wrap",
-            textDecoration: "none",
-            border: `1px solid ${ACCENT_RED}66`,
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
-            <span style={{ fontSize: 22, lineHeight: 1 }} aria-hidden>🔔</span>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 14, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--rpc-text-primary)" }}>
-                Set up alerts
-              </div>
-              <div style={{ fontFamily: monoFont, fontSize: 11, color: "var(--rpc-text-muted)", marginTop: 2, lineHeight: 1.5 }}>
-                Get pinged on email, Telegram, or Discord when a moment drops below FMV.
-              </div>
-            </div>
-          </div>
-          <span
-            style={{
-              fontFamily: condensedFont,
-              fontWeight: 700,
-              fontSize: 11,
-              letterSpacing: "0.08em",
-              textTransform: "uppercase",
-              color: accentText(ACCENT_RED),
-              whiteSpace: "nowrap",
-            }}
-          >
-            Create alert →
-          </span>
-        </Link>
-
-        {/* ── Trades front door ── user-to-user trades (/trades, 2026-10-31; All Day, Golazos, UFC 2026-11-02).
-            Like Alerts it has no nav entry (the top nav is at its width limit), so
-            this card is how a signed-in collector finds it. */}
-        <Link
-          href="/trades"
-          className="rpc-section"
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: 12,
-            flexWrap: "wrap",
-            textDecoration: "none",
-            border: `1px solid var(--rpc-border)`,
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
-            <span style={{ fontSize: 22, lineHeight: 1 }} aria-hidden>🔁</span>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 14, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--rpc-text-primary)" }}>
-                Trade Moments
-              </div>
-              <div style={{ fontFamily: monoFont, fontSize: 11, color: "var(--rpc-text-muted)", marginTop: 2, lineHeight: 1.5 }}>
-                Swap Top Shot, All Day, Golazos and UFC Moments with another collector. Both wallets sign one transaction; no custody, no fee.
-              </div>
-            </div>
-          </div>
-          <span
-            style={{
-              fontFamily: condensedFont,
-              fontWeight: 700,
-              fontSize: 11,
-              letterSpacing: "0.08em",
-              textTransform: "uppercase",
-              color: "var(--rpc-text-secondary)",
-              whiteSpace: "nowrap",
-            }}
-          >
-            Open trades →
-          </span>
-        </Link>
-        {/* 2026-10-31: the public Top Shot This trade-in finder, pre-filled with the first saved
-            Flow wallet (the finder reads 0x addresses only; a Candy/base58 wallet gets no link). */}
+        {/* ── Quick links (IA Phase 1): one text row, not promo cards. The two
+            cards that lived here ("Set up alerts", "Trade Moments") were feature
+            discovery aimed at someone already signed in; the header owns that
+            now. Sniper keeps `data-tour-anchor="sniper-nav-link"` because the
+            first-run tour's last step points at it on THIS page. */}
+        <div className="rpc-dash-quick" style={{ display: "flex", flexWrap: "wrap", gap: "6px 16px", alignItems: "center", fontFamily: monoFont, fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase" }}>
+          <span style={{ color: "var(--rpc-text-muted)" }}>Tools</span>
+          <Link href="/nba-top-shot/sniper" data-tour-anchor="sniper-nav-link" style={quickLinkStyle}>Sniper</Link>
+          <Link href="/alerts" style={quickLinkStyle}>Alerts</Link>
+          <Link href="/trades" style={quickLinkStyle}>Trades</Link>
         {(() => {
           const flow = wallets.find((w) => /^0x[0-9a-fA-F]{16}$/.test(String(w.wallet_addr ?? "")))?.wallet_addr ?? null
           return flow ? (
             <Link
               href={`/insights/trade-in?wallet=${encodeURIComponent(flow)}`}
-              style={{ display: "inline-block", marginTop: -6, fontFamily: monoFont, fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--rpc-red-text)", textDecoration: "none" }}
+              style={{ ...quickLinkStyle, color: "var(--rpc-red-text)", textDecoration: "none" }}
             >
-              What do my Moments count for in Top Shot This trade-ins? →
+              Top Shot This trade-in value
             </Link>
           ) : null
         })()}
-
-        {/* Trophy Case is the hero slot when trophies exist; render it again
-            below the stats only when the hero card occupied the top slot, so
-            users still get the 6-grid pin UI without scrolling past it. */}
-        {wallets.length > 0 && showHero && (
-          <TrophyCaseSection slabs={slabs} onPickSlot={setPinSlot} onRemove={handleRemoveTrophy} onReorder={handleReorderTrophies} onNoteSaved={handleNoteSaved} />
-        )}
-
-        {/* Extra trophy cases + challenge entries (2026-11-06). Signed-in only:
-            every route behind it is requireUser. */}
-        {userId && (
-          <TrophyCasesPanel
-            ownerKey={null}
-            savedChains={loading || walletsFailed ? null : savedWalletChains(wallets.map((w) => w.wallet_addr), detectAddressChain)}
-            onToast={pushToast}
-          />
-        )}
+        </div>
 
         {/* ── Saved Wallets ── */}
         <section className="rpc-section" data-tour-anchor="saved-wallets-card">
@@ -1485,12 +1320,112 @@ function ProfilePageInner() {
             </div>
           )}
         </section>
-
         {/* ── Panini username (2026-09-25) ── A Panini owner is a USERNAME, so
             it has its own field: the one-field add above sends non-address
             input to the Top Shot resolver. */}
         <PaniniUsernamesPanel />
+        {/* ── Friend Activity ── */}
+        <section className="rpc-section">
+          <div className="rpc-section-title">Friend Activity</div>
+          {activityFailed ? (
+            <div role="status" style={{ fontFamily: monoFont, fontSize: 12, color: "var(--rpc-text-secondary)", lineHeight: 1.6 }}>
+              Couldn&apos;t load friend activity. This is a loading problem, not an
+              empty feed — nobody has been unfollowed.
+            </div>
+          ) : activity.length === 0 ? (
+            <div style={{ fontFamily: monoFont, fontSize: 12, color: "var(--rpc-text-muted)", lineHeight: 1.6 }}>
+              Follow other collectors to see their sales here.
+              <br />
+              Open a collector&rsquo;s profile at <span style={{ color: "var(--rpc-text-secondary)" }}>/profile/&lt;username&gt;</span> and hit{" "}
+              <span style={{ color: "var(--rpc-text-secondary)" }}>+ FOLLOW</span>.
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {activity.map((a, i) => {
+                const cMeta = collectionMetaByUuid(a.collection_id);
+                return (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: "var(--rpc-surface)", border: "1px solid var(--rpc-border)", borderRadius: 6 }}>
+                    {a.thumbnail_url && <img src={proxyIpfsImageUrl(a.thumbnail_url, 160) ?? undefined} alt="" style={{ width: 36, height: 36, objectFit: "cover", borderRadius: 4, flexShrink: 0 }} />}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {a.followee_username ?? "someone"} {a.role === "seller" ? "sold" : "bought"} {a.player_name ?? "a moment"}{a.serial_number ? ` #${a.serial_number}` : ""}
+                      </div>
+                      <div style={{ fontFamily: monoFont, fontSize: 10, color: "var(--rpc-text-muted)", display: "flex", gap: 8, marginTop: 2 }}>
+                        {cMeta && <span style={{ color: accentText(cMeta.accent) }}>{cMeta.shortLabel}</span>}
+                        <span>{timeAgo(a.sold_at)}</span>
+                      </div>
+                    </div>
+                    <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 14, color: "var(--rpc-success-text)" }}>
+                      {a.price_usd != null ? fmtUsd(Number(a.price_usd)) : "—"}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+          </div>
+        )}
 
+        {tab === "trophy" && (
+          <div id="dash-panel-trophy" role="tabpanel" style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+        {/* ── Your public profile ──
+            A collector who arrived by Top Shot username has one (the handle
+            defaults from that name); one who pasted a 0x address does NOT, and
+            gets the claim card instead. Until this card none of them could tell: the only
+            mention was a toast that fires once, on the call that created it.
+            A profile nobody knows the URL of is a profile nobody shares — which
+            made every improvement to the page and its social card unreachable
+            for the people they were built for. */}
+        {bio?.username ? (
+          <PublicProfileCard username={bio.username} userId={userId} />
+        ) : bioLoaded && wallets.length > 0 ? (
+          <ClaimHandleCard />
+        ) : null}
+        {/* ── Main trophy case (sort / arrange / captions) · THREE states ── */}
+        {filledSlabs.length > 0 ? (
+          <TrophyCaseSection slabs={slabs} onPickSlot={setPinSlot} onRemove={handleRemoveTrophy} onReorder={handleReorderTrophies} onNoteSaved={handleNoteSaved} />
+        ) : slabsFailed ? (
+          /* ⚠ THIRD STATE. `filledSlabs.length === 0` is reached BOTH by "has
+             pinned nothing" and by "the read failed", and only the first may
+             show onboarding. The refresh() comment above already gates the HERO
+             fetch on `slabsRes.ok` for this exact reason — but the fallback
+             still landed here, so the panel was only half fixed. On first load
+             (slabs still [null x6]) a failed read showed a collector with six
+             pinned trophies the "pick a hero Moment" prompt. */
+          <div
+            role="status"
+            style={{
+              display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
+              background: "var(--rpc-surface)", border: "1px solid var(--rpc-warning)",
+              borderRadius: 10, padding: "14px 16px",
+            }}
+          >
+            <span style={{ fontSize: 12, fontFamily: monoFont, color: "var(--rpc-text-secondary)", lineHeight: 1.5 }}>
+              Couldn&apos;t load your trophy case. This is a loading problem, not an
+              empty case — nothing has been unpinned.
+            </span>
+            <button type="button" onClick={() => { refresh().catch(() => {}); }} style={{ ...secondaryBtnStyle, flexShrink: 0 }}>
+              Retry
+            </button>
+          </div>
+        ) : (
+          <EmptyHeroState wallets={wallets} indexing={indexing} onPickSlot={setPinSlot} />
+        )}
+        {/* Extra trophy cases + challenge entries (2026-11-06). Signed-in only:
+            every route behind it is requireUser. */}
+        {userId && (
+          <TrophyCasesPanel
+            ownerKey={null}
+            savedChains={loading || walletsFailed ? null : savedWalletChains(wallets.map((w) => w.wallet_addr), detectAddressChain)}
+            onToast={pushToast}
+          />
+        )}
+          </div>
+        )}
+
+        {tab === "settings" && (
+          <div id="dash-panel-settings" role="tabpanel" style={{ display: "flex", flexDirection: "column", gap: 18 }}>
         {/* ── Favorite Collections + News Feed ── */}
         <section className="rpc-section">
           <div className="rpc-section-title">Favorite Collections</div>
@@ -1533,47 +1468,20 @@ function ProfilePageInner() {
           </div>
 
         </section>
-
-        {/* ── Friend Activity ── */}
         <section className="rpc-section">
-          <div className="rpc-section-title">Friend Activity</div>
-          {activityFailed ? (
-            <div role="status" style={{ fontFamily: monoFont, fontSize: 12, color: "var(--rpc-text-secondary)", lineHeight: 1.6 }}>
-              Couldn&apos;t load friend activity. This is a loading problem, not an
-              empty feed — nobody has been unfollowed.
-            </div>
-          ) : activity.length === 0 ? (
-            <div style={{ fontFamily: monoFont, fontSize: 12, color: "var(--rpc-text-muted)", lineHeight: 1.6 }}>
-              Follow other collectors to see their sales here.
-              <br />
-              Open a collector&rsquo;s profile at <span style={{ color: "var(--rpc-text-secondary)" }}>/profile/&lt;username&gt;</span> and hit{" "}
-              <span style={{ color: "var(--rpc-text-secondary)" }}>+ FOLLOW</span>.
-            </div>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {activity.map((a, i) => {
-                const cMeta = collectionMetaByUuid(a.collection_id);
-                return (
-                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: "var(--rpc-surface)", border: "1px solid var(--rpc-border)", borderRadius: 6 }}>
-                    {a.thumbnail_url && <img src={proxyIpfsImageUrl(a.thumbnail_url, 160) ?? undefined} alt="" style={{ width: 36, height: 36, objectFit: "cover", borderRadius: 4, flexShrink: 0 }} />}
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {a.followee_username ?? "someone"} {a.role === "seller" ? "sold" : "bought"} {a.player_name ?? "a moment"}{a.serial_number ? ` #${a.serial_number}` : ""}
-                      </div>
-                      <div style={{ fontFamily: monoFont, fontSize: 10, color: "var(--rpc-text-muted)", display: "flex", gap: 8, marginTop: 2 }}>
-                        {cMeta && <span style={{ color: accentText(cMeta.accent) }}>{cMeta.shortLabel}</span>}
-                        <span>{timeAgo(a.sold_at)}</span>
-                      </div>
-                    </div>
-                    <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 14, color: "var(--rpc-success-text)" }}>
-                      {a.price_usd != null ? fmtUsd(Number(a.price_usd)) : "—"}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+          <div className="rpc-section-title">Settings</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+            <Link href="/dashboard/notifications" style={headerLinkStyle}>Email settings</Link>
+            <Link href="/profile/edit" style={headerLinkStyle}>Edit profile</Link>
+            <Link href="/alerts" style={headerLinkStyle}>Listing alerts</Link>
+          </div>
+          <div style={{ fontFamily: monoFont, fontSize: 11, color: "var(--rpc-text-muted)", marginTop: 10, lineHeight: 1.5 }}>
+            Saved wallets and your Panini username are managed on the Overview tab.
+          </div>
         </section>
+
+          </div>
+        )}
 
       </main>
 
@@ -3055,6 +2963,45 @@ const primaryBtnStyle: React.CSSProperties = {
   textTransform: "uppercase",
   cursor: "pointer",
 };
+
+const headerLinkStyle: React.CSSProperties = {
+  fontFamily: condensedFont,
+  fontWeight: 700,
+  fontSize: 11,
+  letterSpacing: "0.08em",
+  textTransform: "uppercase",
+  color: "var(--rpc-text-secondary)",
+  textDecoration: "none",
+  padding: "7px 12px",
+  border: `1px solid ${ACCENT_RED}66`,
+  borderRadius: 5,
+};
+
+const quickLinkStyle: React.CSSProperties = {
+  color: "var(--rpc-text-secondary)",
+  textDecoration: "none",
+  padding: "6px 0",
+};
+
+function tabStyle(active: boolean): React.CSSProperties {
+  return {
+    fontFamily: condensedFont,
+    fontWeight: 800,
+    fontSize: 12,
+    letterSpacing: "0.1em",
+    textTransform: "uppercase",
+    padding: "10px 14px",
+    minHeight: 44,
+    borderRadius: 8,
+    border: `1px solid ${active ? "var(--rpc-red-border)" : "var(--rpc-border)"}`,
+    background: active ? "var(--rpc-surface-raised)" : "transparent",
+    color: active ? "var(--rpc-text-primary)" : "var(--rpc-text-secondary)",
+    textDecoration: "none",
+    whiteSpace: "nowrap",
+    cursor: "pointer",
+    flexShrink: 0,
+  };
+}
 
 const secondaryBtnStyle: React.CSSProperties = {
   background: "transparent",

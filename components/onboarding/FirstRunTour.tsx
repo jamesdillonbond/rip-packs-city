@@ -23,7 +23,7 @@
 // backdrop-blur-md pattern used by PaywallModal so the layered modal
 // state reads consistently across surfaces.
 
-import { useCallback, useLayoutEffect, useState } from "react"
+import { useCallback, useEffect, useLayoutEffect, useState } from "react"
 import type { CSSProperties } from "react"
 import { useModalA11y } from "@/lib/hooks/useModalA11y"
 
@@ -275,6 +275,22 @@ export default function FirstRunTour({ enabled, onDismiss }: FirstRunTourProps) 
   // ref used by the positioning effect below.
   const popoverRef = useModalA11y<HTMLDivElement>(enabled, dismiss)
 
+  // 2026-11-06 (dashboard tabs): an anchored step's element may sit on a tab
+  // that is not showing. Announce the step BEFORE measuring; the dashboard
+  // listens and opens the tab that holds the anchor (DASH_TAB_FOR_ANCHOR), so
+  // the layout effect below finds it on the next paint instead of centring the
+  // popover over nothing. A page with no listener is unaffected.
+  const [nudge, setNudge] = useState(0)
+  useEffect(() => {
+    if (!enabled || !step.anchor) return
+    try {
+      window.dispatchEvent(new CustomEvent("rpc:tour-step", { detail: { anchor: step.anchor } }))
+    } catch { /* older engines */ }
+    // The listener's tab switch renders on the next frame; re-measure after it.
+    const id = typeof requestAnimationFrame === "function" ? requestAnimationFrame(() => setNudge((n) => n + 1)) : null
+    return () => { if (id != null) cancelAnimationFrame(id) }
+  }, [stepIndex, step.anchor, enabled])
+
   // Position the popover after layout — re-runs on step change + resize.
   useLayoutEffect(() => {
     if (!enabled) return
@@ -321,7 +337,7 @@ export default function FirstRunTour({ enabled, onDismiss }: FirstRunTourProps) 
       window.removeEventListener("resize", reposition)
       window.removeEventListener("scroll", reposition, true)
     }
-  }, [stepIndex, step.anchor, enabled])
+  }, [stepIndex, step.anchor, enabled, nudge])
 
   if (!enabled) return null
 

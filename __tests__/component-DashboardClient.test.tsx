@@ -225,6 +225,8 @@ describe("DashboardClient — a failed /me must not say 'Not signed in'", () => 
 // ─── The trophy case ─────────────────────────────────────────────────────────
 
 describe("DashboardClient — the trophy case", () => {
+  // IA Phase 1 (2026-11-06): this UI lives on the "trophy" tab.
+  beforeEach(() => { searchParams = new URLSearchParams("tab=trophy") })
   it("renders a pinned trophy", async () => {
     render(<DashboardClient />)
     await waitFor(() => expect(screen.getAllByTestId("trophy-slab").length).toBeGreaterThan(0))
@@ -643,6 +645,7 @@ describe("DashboardClient — favourites and activity", () => {
   // 2026-09-26: a failed favourites read rendered every chip as un-favourited (☆)
   // — "you have no favourites" — and a click sent a POST built from that false state.
   it("a failed favourites read says so, shows no ☆/★ claim, and a click writes nothing", async () => {
+    searchParams = new URLSearchParams("tab=settings")
     routes["/api/profile/favorites"] = () => json(503, {})
     render(<DashboardClient />)
     const note = await waitFor(() => {
@@ -662,6 +665,7 @@ describe("DashboardClient — favourites and activity", () => {
   })
 
   it("CONTROL: a successful favourites read renders the ☆/★ chips and no unavailable note", async () => {
+    searchParams = new URLSearchParams("tab=settings")
     routes["/api/profile/favorites"] = () => json(200, { favorites: [] })
     render(<DashboardClient />)
     await waitFor(() => expect(document.body.textContent).toMatch(/☆/))
@@ -1261,6 +1265,8 @@ describe("DashboardClient — the hero picker", () => {
 // ─── Reorder, undo and removal ───────────────────────────────────────────────
 
 describe("DashboardClient — reorder, undo and removal", () => {
+  // IA Phase 1 (2026-11-06): this UI lives on the "trophy" tab.
+  beforeEach(() => { searchParams = new URLSearchParams("tab=trophy") })
   function slabRoutes(n: number) {
     routes["/api/profile/trophy-slabs"] = () =>
       json(200, {
@@ -1549,6 +1555,8 @@ describe("DashboardClient — stats retry and the indexing poll", () => {
 // ─── Edit-layout mode and drag reorder ───────────────────────────────────────
 
 describe("DashboardClient — edit-layout mode", () => {
+  // IA Phase 1 (2026-11-06): this UI lives on the "trophy" tab.
+  beforeEach(() => { searchParams = new URLSearchParams("tab=trophy") })
   function slabRoutes(n: number) {
     routes["/api/profile/trophy-slabs"] = () =>
       json(200, {
@@ -1734,6 +1742,7 @@ describe("DashboardClient — wallet card actions and favourites", () => {
   })
 
   it("favourites a collection", async () => {
+    searchParams = new URLSearchParams("tab=settings")
     render(<DashboardClient />)
     await screen.findByText("Favorite Collections")
     const chips = Array.from(document.querySelectorAll("button")).filter((b) => /Top Shot|All Day|Golazos/i.test(b.textContent ?? ""))
@@ -1748,6 +1757,7 @@ describe("DashboardClient — wallet card actions and favourites", () => {
   })
 
   it("un-favourites an already-favourited collection with a DELETE", async () => {
+    searchParams = new URLSearchParams("tab=settings")
     // ⚠ The method is derived from current state, so a wrong read of `isFav`
     // silently makes the chip a one-way toggle.
     routes["/api/profile/favorites"] = () =>
@@ -1905,6 +1915,7 @@ describe("DashboardClient — form affordances and keyboard paths", () => {
   })
 
   it("changes the auto-arrange sort key", async () => {
+    searchParams = new URLSearchParams("tab=trophy")
     routes["/api/profile/trophy-slabs"] = () =>
       json(200, {
         slabs: [
@@ -1994,6 +2005,7 @@ describe("DashboardClient — recovery affordances", () => {
   })
 
   it("moves a trophy left and right with the keyboard-reachable buttons", async () => {
+    searchParams = new URLSearchParams("tab=trophy")
     // ⚠ Drag-and-drop alone is unreachable for a keyboard or touch user, so the
     // arrow buttons are the accessible path to the same reorder.
     routes["/api/profile/trophy-slabs"] = () =>
@@ -2019,6 +2031,7 @@ describe("DashboardClient — recovery affordances", () => {
   })
 
   it("disables the left arrow on the first trophy", async () => {
+    searchParams = new URLSearchParams("tab=trophy")
     routes["/api/profile/trophy-slabs"] = () =>
       json(200, { slabs: [SLAB({ id: 1, slot: 1, player_name: "A" }), SLAB({ id: 2, slot: 2, player_name: "B" })] })
     render(<DashboardClient />)
@@ -2028,6 +2041,7 @@ describe("DashboardClient — recovery affordances", () => {
   })
 
   it("dismisses the undo bar", async () => {
+    searchParams = new URLSearchParams("tab=trophy")
     routes["/api/profile/trophy-slabs"] = () =>
       json(200, {
         slabs: [
@@ -2044,6 +2058,7 @@ describe("DashboardClient — recovery affordances", () => {
   })
 
   it("the undo bar times itself out", async () => {
+    searchParams = new URLSearchParams("tab=trophy")
     vi.useFakeTimers()
     try {
       routes["/api/profile/trophy-slabs"] = () =>
@@ -2159,6 +2174,7 @@ describe("DashboardClient — modal callbacks", () => {
   })
 
   it("reflects a saved caption onto the right slab", async () => {
+    searchParams = new URLSearchParams("tab=trophy")
     // ⚠ Matched on the slab's OWN `slot`, never on array position — after a
     // reorder the two diverge and the caption lands on the wrong Moment.
     routes["/api/profile/trophy-slabs"] = () =>
@@ -2335,6 +2351,8 @@ describe("DashboardClient — shapes the API really produces", () => {
 // ─── Slot-vs-position: a SOURCE assertion, and why ───────────────────────────
 
 describe("DashboardClient — slot is read from the slab, never from array position", () => {
+  // IA Phase 1 (2026-11-06): this UI lives on the "trophy" tab.
+  beforeEach(() => { searchParams = new URLSearchParams("tab=trophy") })
   /**
    * ⚠ TWO MUTATIONS SURVIVED HERE AND THAT IS THE CORRECT OUTCOME, not a gap.
    *
@@ -2398,6 +2416,8 @@ describe("DashboardClient — slot is read from the slab, never from array posit
 // pointed at /profile/edit. The claim card fills that hole — but only once the
 // bio read has ANSWERED; a failed read shows neither card.
 describe("DashboardClient — claim-your-handle card", () => {
+  // IA Phase 1 (2026-11-06): this UI lives on the "trophy" tab.
+  beforeEach(() => { searchParams = new URLSearchParams("tab=trophy") })
   it("renders the claim card when a wallet exists but the bio has no username", async () => {
     routes["/api/profile/bio"] = () => json(200, { bio: { display_name: "Collector", username: null } })
     render(<DashboardClient />)
@@ -2416,7 +2436,7 @@ describe("DashboardClient — claim-your-handle card", () => {
   it("renders NEITHER card when the bio read failed — unknown is not 'no handle'", async () => {
     routes["/api/profile/bio"] = () => json(503, {})
     render(<DashboardClient />)
-    await screen.findByText(/trophy case/i)
+    await screen.findAllByText(/trophy case/i)
     await new Promise((r) => setTimeout(r, 30))
     expect(screen.queryByText(/claim your handle/i)).toBeNull()
     expect(screen.queryByText(/rippackscity\.com\/profile\//)).toBeNull()
@@ -2481,5 +2501,72 @@ describe("DashboardClient — one add-wallet form on the first visit", () => {
     render(<DashboardClient />)
     expect(await screen.findByPlaceholderText(ADD_WALLET_FIELD)).toBeTruthy()
     expect(screen.queryByRole("button", { name: /add one here/i })).toBeNull()
+  })
+})
+
+// IA Phase 1 (2026-11-06): the dashboard is five tabs with one job each —
+// docs/strategy/features/information-architecture-2026-11-06.md. The pins
+// below hold the shape: what each tab shows, that the promo cards are gone,
+// that a deep link and the first-run tour both land on the right tab.
+describe("DashboardClient — tabs (IA Phase 1)", () => {
+  it("renders the five tabs, Overview selected by default, Packs and History as links", async () => {
+    render(<DashboardClient />)
+    const tablist = await screen.findByRole("tablist", { name: /dashboard sections/i })
+    expect(tablist.textContent).toMatch(/Overview.*Trophy Cases.*Packs.*History.*Settings/)
+    expect(screen.getByRole("tab", { name: "Overview" }).getAttribute("aria-selected")).toBe("true")
+    expect(screen.getByRole("link", { name: "Packs" }).getAttribute("href")).toBe("/dashboard/packs")
+    expect(screen.getByRole("link", { name: "History" }).getAttribute("href")).toBe("/dashboard/history")
+  })
+
+  it("Overview shows the stats, wallets and friend activity — and NOT the trophy grid, the favourites chips or the old promo cards", async () => {
+    render(<DashboardClient />)
+    await screen.findByText("Saved Wallets", { selector: ".rpc-section-title" })
+    expect(document.querySelector('[data-tour-anchor="portfolio-stats"]')).toBeTruthy()
+    expect(screen.getByText(/Friend Activity/i)).toBeTruthy()
+    expect(screen.queryAllByTestId("trophy-slab")).toHaveLength(0)
+    expect(screen.queryByText(/Favorite Collections/i)).toBeNull()
+    // The two promo cards that used to sit between the stats and the wallets.
+    expect(screen.queryByText(/Set up alerts/i)).toBeNull()
+    expect(screen.queryByText(/Trade Moments/i)).toBeNull()
+    // Replaced by a one-line tools strip the tour can still anchor to.
+    expect(screen.getByRole("link", { name: /^sniper$/i }).getAttribute("data-tour-anchor")).toBe("sniper-nav-link")
+    expect(screen.getByRole("link", { name: /^alerts$/i }).getAttribute("href")).toBe("/alerts")
+    expect(screen.getByRole("link", { name: /^trades$/i }).getAttribute("href")).toBe("/trades")
+  })
+
+  it("the Trophy Cases tab shows the grid and the public-profile card; Settings shows the favourites", async () => {
+    render(<DashboardClient />)
+    await screen.findByText("Saved Wallets", { selector: ".rpc-section-title" })
+    fireEvent.click(screen.getByRole("tab", { name: "Trophy Cases" }))
+    await waitFor(() => expect(screen.getAllByTestId("trophy-slab").length).toBeGreaterThan(0))
+    expect(screen.queryByText("Saved Wallets", { selector: ".rpc-section-title" })).toBeNull()
+    fireEvent.click(screen.getByRole("tab", { name: "Settings" }))
+    expect(await screen.findByText(/Favorite Collections/i)).toBeTruthy()
+    expect(screen.getByRole("link", { name: /email settings/i }).getAttribute("href")).toBe("/dashboard/notifications")
+    expect(screen.queryAllByTestId("trophy-slab")).toHaveLength(0)
+  })
+
+  it("?tab=trophy deep-links to the Trophy Cases tab", async () => {
+    searchParams = new URLSearchParams("tab=trophy")
+    render(<DashboardClient />)
+    await waitFor(() => expect(screen.getAllByTestId("trophy-slab").length).toBeGreaterThan(0))
+    expect(screen.getByRole("tab", { name: "Trophy Cases" }).getAttribute("aria-selected")).toBe("true")
+  })
+
+  it("the first-run tour's step event opens the tab that holds the anchor", async () => {
+    render(<DashboardClient />)
+    await screen.findByText("Saved Wallets", { selector: ".rpc-section-title" })
+    expect(document.querySelector('[data-tour-anchor="trophy-case"]')).toBeNull()
+    window.dispatchEvent(new CustomEvent("rpc:tour-step", { detail: { anchor: "trophy-case" } }))
+    await waitFor(() => expect(document.querySelector('[data-tour-anchor="trophy-case"]')).toBeTruthy())
+    window.dispatchEvent(new CustomEvent("rpc:tour-step", { detail: { anchor: "saved-wallets-card" } }))
+    await waitFor(() => expect(document.querySelector('[data-tour-anchor="saved-wallets-card"]')).toBeTruthy())
+  })
+
+  it("a collector with nothing pinned is still told so on Overview (onboarding does not hide behind a tab)", async () => {
+    routes["/api/profile/trophy-slabs"] = () => json(200, { slabs: [] })
+    routes["/api/profile/hero-moment"] = () => json(200, { hero: null })
+    render(<DashboardClient />)
+    await screen.findByText(/Pin a moment to your trophy case/)
   })
 })
