@@ -468,8 +468,8 @@ export default function PackPageClient({ collection, tiers, title, accent = 'var
           <h1 className="text-sm font-semibold text-[color:var(--rpc-text-primary)]">{title}</h1>
           <div className="text-xs text-[color:var(--rpc-text-muted)]">
             {loading ? 'Loading…' : packRows.length === total
-              ? `${total.toLocaleString()} distributions`
-              : `${packRows.length.toLocaleString()} of ${total.toLocaleString()} distributions`}
+              ? `${total.toLocaleString("en-US")} distributions`
+              : `${packRows.length.toLocaleString("en-US")} of ${total.toLocaleString("en-US")} distributions`}
             {/* Live overlay counter — only renders when at least one row in the
                 currently-filtered view got a live secondary ask from
                 /api/pack-listings. Helps the user trust the "best return"

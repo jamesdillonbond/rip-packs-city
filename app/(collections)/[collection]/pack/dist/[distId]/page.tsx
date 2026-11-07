@@ -1857,7 +1857,7 @@ function TierOddsPanel({
                     </span>
                   </Td>
                   <Td align="right" color="var(--rpc-text-primary)">
-                    {remaining.toLocaleString()} <span style={{ color: "var(--rpc-text-muted)" }}>/ {original.toLocaleString()}</span>
+                    {remaining.toLocaleString("en-US")} <span style={{ color: "var(--rpc-text-muted)" }}>/ {original.toLocaleString("en-US")}</span>
                   </Td>
                   <Td align="right" color="var(--rpc-text-secondary)">
                     {pctOfPoolLabel(remaining, poolRemaining)}
@@ -2012,7 +2012,7 @@ function PacksContentRemaining({
                       {t.charAt(0).toUpperCase() + t.slice(1)}
                     </span>
                     <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-secondary)" }}>
-                      {remaining.toLocaleString()} <span style={{ color: "var(--rpc-text-muted)" }}>/ {original.toLocaleString()} ({pct.toFixed(pct >= 10 ? 0 : 1)}%)</span>
+                      {remaining.toLocaleString("en-US")} <span style={{ color: "var(--rpc-text-muted)" }}>/ {original.toLocaleString("en-US")} ({pct.toFixed(pct >= 10 ? 0 : 1)}%)</span>
                     </span>
                   </div>
                   <div style={{ height: 8, borderRadius: 4, background: "var(--rpc-surface-hover)", overflow: "hidden" }}>
@@ -2092,7 +2092,7 @@ function PackSalesTable({ title, rows, names }: { title: string; rows: PackSaleR
                 <Td><ShortWallet address={s.buyer_address} name={s.buyer_address ? names.get(s.buyer_address.toLowerCase()) ?? null : null} /></Td>
                 <Td align="right">{fmtSalePrice(s.sale_price)}</Td>
                 <Td align="right" color="var(--rpc-text-secondary)">
-                  <span title={s.sealed_at ? new Date(s.sealed_at).toLocaleString() : undefined}>{relTimeShort(s.sealed_at)}</span>
+                  <span title={s.sealed_at ? new Date(s.sealed_at).toLocaleString("en-US") : undefined}>{relTimeShort(s.sealed_at)}</span>
                 </Td>
               </tr>
             ))}

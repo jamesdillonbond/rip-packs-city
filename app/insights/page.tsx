@@ -475,7 +475,7 @@ export default async function InsightsIndexPage() {
               <div className="rpc-ins-market-cap">GMV · 24h</div>
             </div>
             <div className="rpc-ins-market-kpi">
-              <div className="rpc-ins-market-val">{stats.market.sales24h.toLocaleString()}</div>
+              <div className="rpc-ins-market-val">{stats.market.sales24h.toLocaleString("en-US")}</div>
               <div className="rpc-ins-market-cap">Sales · 24h</div>
             </div>
             <div className="rpc-ins-market-kpi">
@@ -483,7 +483,7 @@ export default async function InsightsIndexPage() {
               <div className="rpc-ins-market-cap">GMV · 7d</div>
             </div>
             <div className="rpc-ins-market-kpi">
-              <div className="rpc-ins-market-val">{stats.market.sales7d.toLocaleString()}</div>
+              <div className="rpc-ins-market-val">{stats.market.sales7d.toLocaleString("en-US")}</div>
               <div className="rpc-ins-market-cap">Sales · 7d</div>
             </div>
           </div>

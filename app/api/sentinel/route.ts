@@ -2366,7 +2366,7 @@ async function runSentinelWithin(clock: WallBudgetClock) {
       const lanes: any[] = Array.isArray(d.by_pipeline) ? d.by_pipeline : [];
       const spent = lanes
         .filter((l) => Number(l.datapoints_cycle) > 0)
-        .map((l) => `${l.pipeline}=${Number(l.datapoints_cycle).toLocaleString()}dp`)
+        .map((l) => `${l.pipeline}=${Number(l.datapoints_cycle).toLocaleString("en-US")}dp`)
         .join(", ");
       checks.push({
         name: "Dune Spend (cycle)",
@@ -2634,7 +2634,7 @@ async function runSentinelWithin(clock: WallBudgetClock) {
       status: estErr || !n ? "warn" : "ok",
       detail: estErr
         ? `estimate error: ${estErr.message}`
-        : `~${n.toLocaleString()} total sales in database (planner estimate)`,
+        : `~${n.toLocaleString("en-US")} total sales in database (planner estimate)`,
       value: n,
     });
   } catch (e: any) {

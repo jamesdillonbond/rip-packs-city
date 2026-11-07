@@ -174,15 +174,15 @@ export default function PortfolioSummary(props: PortfolioSummaryProps) {
               <div className="grid grid-cols-3 gap-3 rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-3 font-mono">
                 <div className="flex flex-col">
                   <span className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">From Packs</span>
-                  <span className="text-lg font-black" style={{ color: accentText("rgb(20,184,166)") }}>{acquisitionStats.pack_pull_count.toLocaleString()}</span>
+                  <span className="text-lg font-black" style={{ color: accentText("rgb(20,184,166)") }}>{acquisitionStats.pack_pull_count.toLocaleString("en-US")}</span>
                 </div>
                 <div className="flex flex-col border-l border-[color:var(--rpc-border)] pl-3">
                   <span className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">From Market</span>
-                  <span className="text-lg font-black text-[color:var(--rpc-text-secondary)]">{acquisitionStats.marketplace_count.toLocaleString()}</span>
+                  <span className="text-lg font-black text-[color:var(--rpc-text-secondary)]">{acquisitionStats.marketplace_count.toLocaleString("en-US")}</span>
                 </div>
                 <div className="flex flex-col border-l border-[color:var(--rpc-border)] pl-3">
                   <span className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Rewards</span>
-                  <span className="text-lg font-black" style={{ color: accentText("rgb(245,158,11)") }}>{acquisitionStats.challenge_reward_count.toLocaleString()}</span>
+                  <span className="text-lg font-black" style={{ color: accentText("rgb(245,158,11)") }}>{acquisitionStats.challenge_reward_count.toLocaleString("en-US")}</span>
                 </div>
               </div>
             )}
@@ -201,7 +201,7 @@ export default function PortfolioSummary(props: PortfolioSummaryProps) {
                     <path d="M14 11l7-7M9 7l7 7M3 21l4-4M9 11l4 4M14 4l6 6M3 13l8 8" />
                   </svg>
                   <span>
-                    {loanCount.toLocaleString()} acquired via loan default ({"$" + total.toFixed(2)} principal)
+                    {loanCount.toLocaleString("en-US")} acquired via loan default ({"$" + total.toFixed(2)} principal)
                   </span>
                 </div>
               )

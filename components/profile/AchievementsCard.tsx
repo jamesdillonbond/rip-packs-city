@@ -20,9 +20,9 @@ function progressHint(key: string, progress: Record<string, unknown>): string {
   };
   switch (key) {
     case "pack_hunter":
-      return num(progress.count).toLocaleString() + " packs";
+      return num(progress.count).toLocaleString("en-US") + " packs";
     case "big_spender":
-      return "$" + num(progress.amount).toLocaleString() + " spent";
+      return "$" + num(progress.amount).toLocaleString("en-US") + " spent";
     case "serial_sniper":
       return num(progress.serial10) + " × #≤10";
     case "series_collector":

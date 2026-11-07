@@ -10,11 +10,11 @@ export function summarizeWalletLoans(data: { as_borrower?: LoanLeg; as_lender?: 
   const lender = l + ll > 0, borrower = b + lb > 0
   const role = lender && borrower ? "Lender + borrower" : lender ? "Lender" : borrower ? "Borrower" : null
   const inWindow = b + l, preWindow = lb + ll
-  const plural = (n: number, w: string) => `${n.toLocaleString()} ${w}${n === 1 ? "" : "s"}`
+  const plural = (n: number, w: string) => `${n.toLocaleString("en-US")} ${w}${n === 1 ? "" : "s"}`
   let sentence: string
   if (inWindow > 0) {
     const vol = (data.as_borrower?.total_principal_usd ?? 0) + (data.as_lender?.total_principal_usd ?? 0)
-    sentence = `$${Math.round(vol).toLocaleString()} funded across ${plural(inWindow, "loan")}` +
+    sentence = `$${Math.round(vol).toLocaleString("en-US")} funded across ${plural(inWindow, "loan")}` +
       (preWindow > 0 ? `, plus ${plural(preWindow, "pre-window loan")} (principal not captured)` : "")
   } else if (preWindow > 0) {
     sentence = `${plural(preWindow, "pre-window loan")} (principal not captured)`

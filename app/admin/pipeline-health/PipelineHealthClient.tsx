@@ -254,7 +254,7 @@ export default function PipelineHealthClient() {
           </div>
 
           <div style={{ marginTop: 12, fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--rpc-text-muted)" }}>
-            Generated {new Date(data.generated_at).toLocaleString()} · Drift thresholds: green &lt; 2× cadence, yellow 2-5×, red &gt; 5× or 24h+ stale
+            Generated {new Date(data.generated_at).toLocaleString("en-US")} · Drift thresholds: green &lt; 2× cadence, yellow 2-5×, red &gt; 5× or 24h+ stale
           </div>
         </>
       )}

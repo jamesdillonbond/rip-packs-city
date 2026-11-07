@@ -174,7 +174,7 @@ export async function GET(req: NextRequest) {
   <table style="width:100%;border-collapse:collapse;">${topCategories.map((c: any) => `<tr><td style="padding:6px 0;color:#ccc;font-size:14px;">${c.category}</td><td style="padding:6px 0;color:#fff;font-size:14px;text-align:right;font-weight:600;">${c.count}</td></tr>`).join("")}</table>` : ""}
   ${escalatedDetails.length > 0 ? `<h2 style="color:#E03A2F;font-size:16px;margin-top:24px;">Escalated (${escalated.length})</h2>
   ${escalatedDetails.slice(0, 20).map((e: any) => `<div style="background:#1a1a1a;border-left:3px solid #E03A2F;padding:12px;margin:8px 0;border-radius:0 8px 8px 0;">
-    <div style="font-size:12px;color:#888;">${new Date(e.createdAt).toLocaleString()} · ${e.category}${e.userWallet ? ` · ${e.userWallet.slice(0, 10)}...` : ""}</div>
+    <div style="font-size:12px;color:#888;">${new Date(e.createdAt).toLocaleString("en-US")} · ${e.category}${e.userWallet ? ` · ${e.userWallet.slice(0, 10)}...` : ""}</div>
     <div style="font-size:14px;color:#fff;margin:6px 0;"><strong>User:</strong> ${e.userMessage}</div>
     <div style="font-size:13px;color:#aaa;"><strong>Reason:</strong> ${e.escalationReason}</div>
   </div>`).join("")}` : "<p style='color:#4ade80;'>No escalations this period</p>"}

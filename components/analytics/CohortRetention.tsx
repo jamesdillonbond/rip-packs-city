@@ -122,7 +122,7 @@ export default function CohortRetention({ rows }: CohortRetentionProps) {
                   {monthLabel(c.cohort_month)}
                 </td>
                 <td className="py-2 pr-3 text-right text-[color:var(--rpc-text-secondary)] tabular-nums">
-                  {c.size.toLocaleString()}
+                  {c.size.toLocaleString("en-US")}
                 </td>
                 {offsets.map((o) => {
                   const cell = c.cells.get(o)

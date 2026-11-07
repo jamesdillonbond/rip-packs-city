@@ -1022,7 +1022,7 @@ function ProfilePageInner() {
         <section data-tour-anchor="portfolio-stats" style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 10 }}>
           <StatTile
             label="Total Moments"
-            value={totalMoments.toLocaleString()}
+            value={totalMoments.toLocaleString("en-US")}
             color="var(--rpc-text-primary)"
             unavailable={statsIncomplete}
             loading={statsLoading}
@@ -1034,7 +1034,7 @@ function ProfilePageInner() {
             value={fmtUsd(totalFmv)}
             color="var(--rpc-success)"
             caption={[
-              staleCount > 0 ? `+ ${fmtUsd(staleFmv)} across ${staleCount.toLocaleString()} stale-priced moments` : null,
+              staleCount > 0 ? `+ ${fmtUsd(staleFmv)} across ${staleCount.toLocaleString("en-US")} stale-priced moments` : null,
               cacheAgeHours != null ? `as of ${Math.round(cacheAgeHours)}h ago` : null,
             ].filter(Boolean).join(" · ") || undefined}
             unavailable={statsIncomplete}
@@ -2390,7 +2390,7 @@ function WalletGroupCard({
               <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 6, marginTop: 6 }}>
                 <div>
                   <div style={{ fontFamily: monoFont, fontSize: 9, color: "var(--rpc-text-muted)", letterSpacing: "0.1em", textTransform: "uppercase" }}>Moments</div>
-                  <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 14, color: unknown ? "var(--rpc-text-muted)" : "var(--rpc-text-primary)" }}>{unknown ? "—" : moments.toLocaleString()}</div>
+                  <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 14, color: unknown ? "var(--rpc-text-muted)" : "var(--rpc-text-primary)" }}>{unknown ? "—" : moments.toLocaleString("en-US")}</div>
                 </div>
                 <div>
                   <div style={{ fontFamily: monoFont, fontSize: 9, color: "var(--rpc-text-muted)", letterSpacing: "0.1em", textTransform: "uppercase" }}>FMV</div>
@@ -2401,7 +2401,7 @@ function WalletGroupCard({
               {!unknown && (fmvMax > 0 || locked > 0) && (
                 <div style={{ display: "flex", gap: 8, marginTop: 4, fontFamily: monoFont, fontSize: 9, color: "var(--rpc-text-muted)" }}>
                   {fmvMax > 0 && <span>Top {fmtUsd(fmvMax)}</span>}
-                  {locked > 0 && <span>🔒 {locked.toLocaleString()}</span>}
+                  {locked > 0 && <span>🔒 {locked.toLocaleString("en-US")}</span>}
                 </div>
               )}
             </Link>

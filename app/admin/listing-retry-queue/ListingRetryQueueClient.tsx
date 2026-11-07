@@ -195,7 +195,7 @@ export default function ListingRetryQueueClient() {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(280px, 100%), 1fr))", gap: 16 }}>
           {/* Total + oldest */}
           <Panel title="Queue">
-            <Stat label="Total unresolved" value={data.total_unresolved.toLocaleString()} />
+            <Stat label="Total unresolved" value={data.total_unresolved.toLocaleString("en-US")} />
             <Stat
               label="Oldest unresolved"
               value={fmtHours(data.oldest_unresolved_age_hours)}
@@ -215,7 +215,7 @@ export default function ListingRetryQueueClient() {
                   .map(([slug, n]) => (
                     <li key={slug} style={listRow}>
                       <span>{slug ?? "(unknown)"}</span>
-                      <span style={mono}>{n.toLocaleString()}</span>
+                      <span style={mono}>{n.toLocaleString("en-US")}</span>
                     </li>
                   ))}
               </ul>
@@ -233,7 +233,7 @@ export default function ListingRetryQueueClient() {
                   .map(([bucket, n]) => (
                     <li key={bucket} style={listRow}>
                       <span>retry_count = {bucket}</span>
-                      <span style={{ ...mono, color: bucket === "10+" ? accentText("#EF4444") : "var(--rpc-text-secondary)" }}>{n.toLocaleString()}</span>
+                      <span style={{ ...mono, color: bucket === "10+" ? accentText("#EF4444") : "var(--rpc-text-secondary)" }}>{n.toLocaleString("en-US")}</span>
                     </li>
                   ))}
               </ul>

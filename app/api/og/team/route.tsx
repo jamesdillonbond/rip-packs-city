@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic"
 function fmtUsd(n: number | null | undefined): string {
   const neg = usdSignFirst(n, fmtUsd); if (neg !== null) return neg
   if (n == null || !Number.isFinite(n)) return ""
-  if (Math.abs(n) >= 1000) return "$" + Math.round(n).toLocaleString()
+  if (Math.abs(n) >= 1000) return "$" + Math.round(n).toLocaleString("en-US")
   return "$" + n.toFixed(2)
 }
 function thumbs(rows: unknown): string[] {
@@ -57,7 +57,7 @@ export async function GET(req: NextRequest) {
     eyebrow: `${label.toUpperCase()} · ${isFranchise ? "FRANCHISE" : "TEAM"}`,
     title: detail.team_name ?? "Team",
     // A Pinnacle franchise counts PINS (the render catalog, 2026-09-26).
-    subtitle: edCount ? `${edCount.toLocaleString()} ${isFranchise ? (edCount === 1 ? "pin" : "pins") : (edCount === 1 ? "edition" : "editions")}` : null,
+    subtitle: edCount ? `${edCount.toLocaleString("en-US")} ${isFranchise ? (edCount === 1 ? "pin" : "pins") : (edCount === 1 ? "edition" : "editions")}` : null,
     accent,
     images,
     statLabel: fmvTotal && fmvTotal > 0 ? "Aggregate FMV" : null,

@@ -1350,8 +1350,8 @@ export default async function MomentPage(
           label="Mint count"
           value={
             serial != null && mint
-              ? `#${serial} / ${mint.toLocaleString()}`
-              : mint ? mint.toLocaleString() : "—"
+              ? `#${serial} / ${mint.toLocaleString("en-US")}`
+              : mint ? mint.toLocaleString("en-US") : "—"
           }
         />
         <StatCell label="Tier" value={tier || "—"} />
@@ -1640,7 +1640,7 @@ export default async function MomentPage(
                     }}
                   >
                     {(p.tier ?? "").toUpperCase()}
-                    {p.circulation_count != null ? ` · ${p.circulation_count.toLocaleString()} mint` : ""}
+                    {p.circulation_count != null ? ` · ${p.circulation_count.toLocaleString("en-US")} mint` : ""}
                   </div>
                 </div>
               </Link>
@@ -1860,7 +1860,7 @@ function PinnacleDisambiguation({ renders }: { renders: PinnacleRender[] }) {
                   }}
                 >
                   {r.variant ?? "—"}
-                  {r.total_minted != null ? ` · ${r.total_minted.toLocaleString()} mint` : ""}
+                  {r.total_minted != null ? ` · ${r.total_minted.toLocaleString("en-US")} mint` : ""}
                 </div>
                 <div
                   style={{

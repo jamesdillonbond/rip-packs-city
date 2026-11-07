@@ -33,24 +33,24 @@ export function fmtUsd(n: number): string {
 export function liveStat(slug: string | null, s: HubInsightStats): string | null {
   switch (slug) {
     case "/insights/squeeze":
-      return `${s.squeezeEditions.toLocaleString()} editions ≥50% squeezed`
+      return `${s.squeezeEditions.toLocaleString("en-US")} editions ≥50% squeezed`
     case "/insights/pack-reality":
       // 2026-10-14: "11% of rips pull $0" was 7,012 UNPRICED rips counted as
       // zeros (0 real $0 pulls). The share is now real, and a 0 says nothing
       // worth a card, so the card names the audit size instead.
       return s.packZeroPct > 0
-        ? `${s.packZeroPct}% of rips pull $0 · ${s.packRips60d.toLocaleString()} rips/60d`
-        : `${s.packRips60d.toLocaleString()} rips audited/60d`
+        ? `${s.packZeroPct}% of rips pull $0 · ${s.packRips60d.toLocaleString("en-US")} rips/60d`
+        : `${s.packRips60d.toLocaleString("en-US")} rips audited/60d`
     case "/insights/rookies":
-      return `${fmtUsd(s.rookieGmv30d)} GMV/30d · ${s.rookieCount.toLocaleString()} rookies`
+      return `${fmtUsd(s.rookieGmv30d)} GMV/30d · ${s.rookieCount.toLocaleString("en-US")} rookies`
     case "/insights/first-mint":
       return `avg ${s.firstMintAvg}× · max ${s.firstMintMax}×`
     case "/insights/cross-collection":
-      return `${s.crossCohort.toLocaleString()} wallets hold 3+ collections`
+      return `${s.crossCohort.toLocaleString("en-US")} wallets hold 3+ collections`
     case "/insights/set-squeeze":
-      return `${s.setSqueezeSets.toLocaleString()} sets ranked`
+      return `${s.setSqueezeSets.toLocaleString("en-US")} sets ranked`
     case "/insights/pinnacle-scarcity":
-      return `${s.pinnacleEditions.toLocaleString()} editions ranked`
+      return `${s.pinnacleEditions.toLocaleString("en-US")} editions ranked`
     default:
       return null
   }

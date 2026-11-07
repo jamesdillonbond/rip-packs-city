@@ -19,7 +19,7 @@ const FROM = "rpc-digest@rippackscity.com"
 function fmtUsd(n: number | null | undefined): string {
   const neg = usdSignFirst(n, fmtUsd); if (neg !== null) return neg
   if (n == null) return "—"
-  if (Math.abs(n) >= 1000) return "$" + Math.round(n).toLocaleString()
+  if (Math.abs(n) >= 1000) return "$" + Math.round(n).toLocaleString("en-US")
   return "$" + Number(n).toFixed(2)
 }
 
@@ -120,7 +120,7 @@ async function buildEmail(origin: string, sub: Subscriber, market: MarketBlocks)
   const pulseBlock = pulse24h.length
     ? `<h3 style="margin-top:24px">Market Pulse — last 24 hours</h3>
        <table role="presentation" style="border-collapse:collapse;font-size:13px">${pulse24h.map((r) =>
-         `<tr><td style="padding:3px 12px 3px 0">${esc(r.collection_name)}</td><td style="padding:3px 12px 3px 0">${Number(r.sales_24h).toLocaleString()} sales</td><td style="padding:3px 0">${fmtUsd(r.volume_24h)} volume</td></tr>`
+         `<tr><td style="padding:3px 12px 3px 0">${esc(r.collection_name)}</td><td style="padding:3px 12px 3px 0">${Number(r.sales_24h).toLocaleString("en-US")} sales</td><td style="padding:3px 0">${fmtUsd(r.volume_24h)} volume</td></tr>`
        ).join("")}</table>`
     : ""
 
@@ -150,7 +150,7 @@ async function buildEmail(origin: string, sub: Subscriber, market: MarketBlocks)
     lines.push("TOP DEALS THIS WEEK", ...dealRows.slice(0, 5).map((d: any) => `- ${d.player_name ?? d.set_name ?? "Listing"} — ${fmtUsd(d.ask_price)}${d.discount != null ? ` (${d.discount}% below FMV)` : ""}`), "")
   }
   if (pulse24h.length) {
-    lines.push("MARKET PULSE — LAST 24 HOURS", ...pulse24h.map((r) => `- ${r.collection_name}: ${Number(r.sales_24h).toLocaleString()} sales, ${fmtUsd(r.volume_24h)} volume`), "")
+    lines.push("MARKET PULSE — LAST 24 HOURS", ...pulse24h.map((r) => `- ${r.collection_name}: ${Number(r.sales_24h).toLocaleString("en-US")} sales, ${fmtUsd(r.volume_24h)} volume`), "")
   }
   lines.push("--", `Manage preferences: ${origin}/profile`, `Unsubscribe: ${unsubUrl}`, commercialSenderLine())
 

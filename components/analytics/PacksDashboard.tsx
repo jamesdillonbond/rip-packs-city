@@ -562,7 +562,7 @@ export default function PacksDashboard() {
       <footer className="flex flex-wrap items-center gap-3 text-xs text-[color:var(--rpc-text-muted)] pt-4 border-t border-[color:var(--rpc-border)]">
         <span className="inline-flex items-center gap-1.5">
           <TimerReset size={12} />
-          {summary?.as_of ? `As of ${new Date(summary.as_of).toLocaleString()}` : "Refreshing…"}
+          {summary?.as_of ? `As of ${new Date(summary.as_of).toLocaleString("en-US")}` : "Refreshing…"}
         </span>
         <span className="text-[color:var(--rpc-text-muted)]">·</span>
         <Link

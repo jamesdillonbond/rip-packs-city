@@ -951,12 +951,12 @@ function n(p: Payload, k: string): number | null {
 
 function fmtUsd(value: number | null): string | null {
   if (value === null) return null
-  if (value >= 100) return `$${Math.round(value).toLocaleString()}`
+  if (value >= 100) return `$${Math.round(value).toLocaleString("en-US")}`
   return `$${value.toFixed(2)}`
 }
 
 function fmtCount(value: number | null): string | null {
-  return value === null ? null : value.toLocaleString()
+  return value === null ? null : value.toLocaleString("en-US")
 }
 
 // "1 edition", never "1 editions" — a Candy player with one edition published

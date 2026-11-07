@@ -57,7 +57,7 @@ export default function CrossCollectionHoldingsCard({ usernameInput }: { usernam
               <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: row.accent }} />
               <span className="text-[color:var(--rpc-text-primary)]">{row.label}</span>
               <span className="text-[color:var(--rpc-text-muted)]">·</span>
-              <span className="text-[color:var(--rpc-text-secondary)]">{row.count.toLocaleString()} moments</span>
+              <span className="text-[color:var(--rpc-text-secondary)]">{row.count.toLocaleString("en-US")} moments</span>
             </>
           )
           const baseClass = "inline-flex items-center gap-2 rounded-full px-3 py-1 text-[11px]"

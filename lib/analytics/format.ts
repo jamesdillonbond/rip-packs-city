@@ -21,7 +21,7 @@ export function relativeDate(iso: string): string {
 
 export function fmtUsd(n: number): string {
   const neg = usdSignFirst(n, fmtUsd); if (neg !== null) return neg
-  return `$${(Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  return `$${(Number(n) || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
 export function fmt(n: number): string {

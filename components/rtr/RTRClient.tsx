@@ -357,8 +357,8 @@ function TierProgressSection({ walletAddr: _walletAddr }: { walletAddr: string }
               {currentTier.name}
             </div>
             <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-secondary)", letterSpacing: "0.06em" }}>
-              {pointsForBar.toLocaleString()} pts
-              {nextTier ? ` · ${(nextTier.min - pointsForBar).toLocaleString()} to ${nextTier.name}` : " · max tier"}
+              {pointsForBar.toLocaleString("en-US")} pts
+              {nextTier ? ` · ${(nextTier.min - pointsForBar).toLocaleString("en-US")} to ${nextTier.name}` : " · max tier"}
             </div>
           </div>
 
@@ -391,8 +391,8 @@ function TierProgressSection({ walletAddr: _walletAddr }: { walletAddr: string }
           </div>
 
           <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6, fontFamily: "var(--font-mono)", fontSize: 9, letterSpacing: "0.12em", color: "var(--rpc-text-muted)", textTransform: "uppercase" }}>
-            <span>{lower.toLocaleString()}</span>
-            <span>{nextTier ? upper.toLocaleString() : "∞"}</span>
+            <span>{lower.toLocaleString("en-US")}</span>
+            <span>{nextTier ? upper.toLocaleString("en-US") : "∞"}</span>
           </div>
 
           <div style={{ marginTop: 18, padding: 14, background: "rgba(255,255,255,0.03)", border: "1px solid var(--rpc-border)", borderRadius: "var(--radius-md)" }}>
@@ -619,7 +619,7 @@ function LockRoiSection({ walletAddr }: { walletAddr: string }) {
                         )}
                       </td>
                       <td style={{ padding: "8px 10px", color: "var(--rpc-text-secondary)" }}>{m.setName ?? "—"}</td>
-                      <td style={{ padding: "8px 10px", textAlign: "right", color: "var(--rpc-text-primary)" }}>${m.currentFmvUsd.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
+                      <td style={{ padding: "8px 10px", textAlign: "right", color: "var(--rpc-text-primary)" }}>${m.currentFmvUsd.toLocaleString("en-US", { maximumFractionDigits: 0 })}</td>
                       <td style={{ padding: "8px 10px" }}>
                         <span
                           style={{
@@ -637,7 +637,7 @@ function LockRoiSection({ walletAddr }: { walletAddr: string }) {
                           {m.isLocked ? "Locked" : "Unlocked"}
                         </span>
                       </td>
-                      <td style={{ padding: "8px 10px", textAlign: "right" }}>{m.estimatedPlayoffPoints.toLocaleString()}</td>
+                      <td style={{ padding: "8px 10px", textAlign: "right" }}>{m.estimatedPlayoffPoints.toLocaleString("en-US")}</td>
                       <td style={{ padding: "8px 10px", textAlign: "right", color: "var(--rpc-red-text)", fontWeight: 700 }}>
                         {m.pointsPerDollar.toFixed(3)}
                       </td>
@@ -676,8 +676,8 @@ function LockRoiSection({ walletAddr }: { walletAddr: string }) {
                   </div>
                   <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--rpc-text-muted)", marginTop: 2 }}>{m.setName ?? "—"}</div>
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 8, fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-secondary)" }}>
-                    <span>FMV ${m.currentFmvUsd.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
-                    <span>· {m.estimatedPlayoffPoints.toLocaleString()} est pts</span>
+                    <span>FMV ${m.currentFmvUsd.toLocaleString("en-US", { maximumFractionDigits: 0 })}</span>
+                    <span>· {m.estimatedPlayoffPoints.toLocaleString("en-US")} est pts</span>
                     <span>· {m.isLocked ? "Locked" : "Unlocked"}</span>
                   </div>
                 </div>

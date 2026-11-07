@@ -1503,7 +1503,7 @@ function WalletMomentsBody() {
         {hasSearched && !loading && !error ? (
           <div role="status" aria-live="polite" className="sr-only" data-testid="binder-result-status">
             {rows.length > 0
-              ? `Loaded ${rows.length.toLocaleString()}${paginatedTotal > rows.length ? ` of ${paginatedTotal.toLocaleString()}` : ""} moment${(paginatedTotal > rows.length ? paginatedTotal : rows.length) === 1 ? "" : "s"}`
+              ? `Loaded ${rows.length.toLocaleString("en-US")}${paginatedTotal > rows.length ? ` of ${paginatedTotal.toLocaleString("en-US")}` : ""} moment${(paginatedTotal > rows.length ? paginatedTotal : rows.length) === 1 ? "" : "s"}`
               : "Search finished — no moments to show for this wallet"}
           </div>
         ) : null}

@@ -77,7 +77,7 @@ export default function CostBasisCard({ wallet, urlSlug }: { wallet: string; url
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4" style={{ fontFamily: "var(--font-mono)" }}>
         <div className="rounded-lg border border-[color:var(--rpc-border)] bg-[var(--rpc-black)] p-3">
           <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Tracked</div>
-          <div className="text-2xl font-black text-[color:var(--rpc-text-primary)]">{s.tracked_count.toLocaleString()}</div>
+          <div className="text-2xl font-black text-[color:var(--rpc-text-primary)]">{s.tracked_count.toLocaleString("en-US")}</div>
         </div>
         <div className="rounded-lg border border-[color:var(--rpc-border)] bg-[var(--rpc-black)] p-3">
           <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Cost Basis</div>
@@ -99,7 +99,7 @@ export default function CostBasisCard({ wallet, urlSlug }: { wallet: string; url
       </div>
       {winDenom > 0 && (
         <div className="mt-2 text-[11px]" style={{ color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)" }}>
-          Win rate: {s.win_count.toLocaleString()} of {winDenom.toLocaleString()}
+          Win rate: {s.win_count.toLocaleString("en-US")} of {winDenom.toLocaleString("en-US")}
         </div>
       )}
       {(gainers.length > 0 || losers.length > 0) && (

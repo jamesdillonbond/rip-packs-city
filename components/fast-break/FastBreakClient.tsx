@@ -522,7 +522,7 @@ export default function FastBreakClient({
                     className="rpc-btn-primary"
                     style={{ textDecoration: "none" }}
                   >
-                    Buy on Sniper · ${m.cheapestListing.askUsd.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                    Buy on Sniper · ${m.cheapestListing.askUsd.toLocaleString("en-US", { maximumFractionDigits: 0 })}
                   </a>
                 ) : m.listingUnknown ? (
                   <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-muted)" }}>

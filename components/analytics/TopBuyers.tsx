@@ -171,10 +171,10 @@ export default function TopBuyers({ collection = "nba_top_shot" }: { collection?
                       </Link>
                     </td>
                     <td className="py-1.5 pr-2 text-right text-[color:var(--rpc-text-secondary)]">
-                      {r.buy_count.toLocaleString()}
+                      {r.buy_count.toLocaleString("en-US")}
                     </td>
                     <td className="py-1.5 pr-2 text-right text-[color:var(--rpc-text-secondary)]">
-                      {r.distinct_editions.toLocaleString()}
+                      {r.distinct_editions.toLocaleString("en-US")}
                     </td>
                     <td className="py-1.5 pr-2 text-right text-[color:var(--rpc-text-primary)]">{fmt(r.spend_usd)}</td>
                     <td className="py-1.5 pr-2 text-right text-[color:var(--rpc-text-secondary)]">{fmt(r.avg_price_usd)}</td>

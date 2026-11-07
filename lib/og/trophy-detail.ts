@@ -133,11 +133,11 @@ export function serialLine(
   circulation: number | null | undefined,
 ): string {
   if (serial == null || !Number.isFinite(Number(serial)) || Number(serial) <= 0) return ""
-  const s = `#${Number(serial).toLocaleString()}`
+  const s = `#${Number(serial).toLocaleString("en-US")}`
   if (circulation == null || !Number.isFinite(Number(circulation)) || Number(circulation) <= 0) {
     return s
   }
-  return `${s} / ${Number(circulation).toLocaleString()}`
+  return `${s} / ${Number(circulation).toLocaleString("en-US")}`
 }
 
 /**

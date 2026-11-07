@@ -749,7 +749,7 @@ export default function CollectionMomentTable(props: {
                         <div>{heldValue(editionCounts)}</div>
                         {row.badgeInfo && row.badgeInfo.circulation_count != null && row.badgeInfo.circulation_count > 0 && !(row.badgeInfo.circulation_count === 1 || row.tier?.toUpperCase() === "ULTIMATE") && (
                           <div className="mt-1 text-[10px] text-[color:var(--rpc-text-muted)] font-mono leading-tight" title={"Minted: " + row.badgeInfo.circulation_count + " · Owned: " + row.badgeInfo.owned + " · For Sale: " + (row.badgeInfo.for_sale_by_collectors ?? "?") + " · In Packs: " + row.badgeInfo.hidden_in_packs + " · Burned: " + row.badgeInfo.burned}>
-                            <span>{row.badgeInfo.circulation_count.toLocaleString()} minted</span>
+                            <span>{row.badgeInfo.circulation_count.toLocaleString("en-US")} minted</span>
                             {row.badgeInfo.burned > 0 && <span className="text-red-400"> · {row.badgeInfo.burned} burned</span>}
                             {row.badgeInfo.hidden_in_packs > 0 && <span> · {row.badgeInfo.hidden_in_packs} in packs</span>}
                           </div>
@@ -1113,7 +1113,7 @@ export default function CollectionMomentTable(props: {
                                   <div className="text-[11px] font-mono space-y-0.5" style={{ color: "var(--rpc-text-muted)" }}>
                                     {/* burn_rate_pct/lock_rate_pct/circulation_count are nullable in badge_editions
                                         (e.g. ~16 rendered editions incl. Wembanyama S6), so guard before formatting —
-                                        an unguarded .toFixed()/.toLocaleString() on null white-screens the whole table. */}
+                                        an unguarded .toFixed()/.toLocaleString("en-US") on null white-screens the whole table. */}
                                     <div>Burn rate: {row.badgeInfo.burn_rate_pct != null ? `${row.badgeInfo.burn_rate_pct.toFixed(1)}%` : "—"}</div>
                                     <div>Lock rate: {row.badgeInfo.lock_rate_pct != null ? `${row.badgeInfo.lock_rate_pct.toFixed(1)}%` : "—"}</div>
                                     {(row.badgeInfo.circulation_count === 1 || row.tier?.toUpperCase() === "ULTIMATE") ? (
@@ -1133,12 +1133,12 @@ export default function CollectionMomentTable(props: {
                                             not, which is why a per-PANEL fix is the rule and a per-page one
                                             is not. An edition that genuinely has zero circulation renders
                                             nothing here, which is the honest output: we have no supply. */}
-                                        {row.badgeInfo.circulation_count != null && row.badgeInfo.circulation_count > 0 && <div>Circ: {row.badgeInfo.circulation_count.toLocaleString()}</div>}
-                                        {row.badgeInfo.effective_supply != null && row.badgeInfo.effective_supply > 0 && <div>Effective supply: {row.badgeInfo.effective_supply.toLocaleString()}</div>}
-                                        {row.badgeInfo.owned > 0 && <div>Owned: {row.badgeInfo.owned.toLocaleString()}</div>}
-                                        {row.badgeInfo.for_sale_by_collectors != null && <div>For sale: {row.badgeInfo.for_sale_by_collectors.toLocaleString()}</div>}
-                                        {row.badgeInfo.hidden_in_packs > 0 && <div>In packs: {row.badgeInfo.hidden_in_packs.toLocaleString()}</div>}
-                                        {row.badgeInfo.burned > 0 && <div>Burned: {row.badgeInfo.burned.toLocaleString()}</div>}
+                                        {row.badgeInfo.circulation_count != null && row.badgeInfo.circulation_count > 0 && <div>Circ: {row.badgeInfo.circulation_count.toLocaleString("en-US")}</div>}
+                                        {row.badgeInfo.effective_supply != null && row.badgeInfo.effective_supply > 0 && <div>Effective supply: {row.badgeInfo.effective_supply.toLocaleString("en-US")}</div>}
+                                        {row.badgeInfo.owned > 0 && <div>Owned: {row.badgeInfo.owned.toLocaleString("en-US")}</div>}
+                                        {row.badgeInfo.for_sale_by_collectors != null && <div>For sale: {row.badgeInfo.for_sale_by_collectors.toLocaleString("en-US")}</div>}
+                                        {row.badgeInfo.hidden_in_packs > 0 && <div>In packs: {row.badgeInfo.hidden_in_packs.toLocaleString("en-US")}</div>}
+                                        {row.badgeInfo.burned > 0 && <div>Burned: {row.badgeInfo.burned.toLocaleString("en-US")}</div>}
                                       </>
                                     )}
                                     {row.badgeInfo.low_ask != null && <div>Edition ask: {formatCurrency(row.badgeInfo.low_ask)}</div>}

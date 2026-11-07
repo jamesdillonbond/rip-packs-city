@@ -427,7 +427,7 @@ export default function PackSimulatorClient({ collectionSlug, distId }: Props) {
       <div style={{ marginTop: 32, padding: "12px 14px", borderTop: "1px solid var(--rpc-border)", color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 11, lineHeight: 1.7 }}>
         Simulation uses stored drop weights from when the pack was indexed; real pack odds shift slightly as packs are opened. EV per slot here uses weighted sampling (metrics.ev_per_slot); the canonical trimmed-mean pack EV shown on the pack listing page may differ.
         {payload.note && <div style={{ marginTop: 6, opacity: 0.8 }}>{payload.note}</div>}
-        {payload.computed_at && <div style={{ marginTop: 4, opacity: 0.7 }}>Pool computed: {new Date(payload.computed_at).toLocaleString()}</div>}
+        {payload.computed_at && <div style={{ marginTop: 4, opacity: 0.7 }}>Pool computed: {new Date(payload.computed_at).toLocaleString("en-US")}</div>}
       </div>
     </div>
   )

@@ -861,7 +861,7 @@ function StatTile({
           color,
         }}
       >
-        {value.toLocaleString()}
+        {value.toLocaleString("en-US")}
       </div>
     </div>
   );

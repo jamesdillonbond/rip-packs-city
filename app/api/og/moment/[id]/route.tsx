@@ -84,7 +84,7 @@ interface MomentDetail {
 function fmtUsd(n: number | null | undefined): string {
   const neg = usdSignFirst(n, fmtUsd); if (neg !== null) return neg
   if (n == null || !Number.isFinite(n)) return ""
-  if (Math.abs(n) >= 1000) return "$" + Math.round(n).toLocaleString()
+  if (Math.abs(n) >= 1000) return "$" + Math.round(n).toLocaleString("en-US")
   return "$" + n.toFixed(2)
 }
 

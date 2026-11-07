@@ -720,7 +720,7 @@ function PipelineInstances({ rows }: { rows: PipelineInstance[] }) {
                 </Td>
                 <Td align="right">
                   <span style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}>
-                    {r.duration_ms == null ? "—" : `${r.duration_ms.toLocaleString()} ms`}
+                    {r.duration_ms == null ? "—" : `${r.duration_ms.toLocaleString("en-US")} ms`}
                   </span>
                 </Td>
                 <Td>

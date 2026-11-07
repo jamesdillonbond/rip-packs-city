@@ -87,6 +87,6 @@ export async function GET(req: NextRequest) {
     artFailed: candidates.length > 0 && !portrait,
     // A Pinnacle character counts PINS (the render catalog, 2026-09-26).
     statLabel: editions ? (isCharacter ? "Pins" : "Editions") : null,
-    statValue: editions ? editions.toLocaleString() : null,
+    statValue: editions ? editions.toLocaleString("en-US") : null,
   })
 }

@@ -40,13 +40,13 @@ async function fetchBuckets(): Promise<Buckets> {
 function fmtUsd(v: number | null): string {
   const neg = usdSignFirst(v, fmtUsd); if (neg !== null) return neg
   if (v == null) return "—"
-  if (Math.abs(v) >= 100) return `$${Math.round(v).toLocaleString()}`
+  if (Math.abs(v) >= 100) return `$${Math.round(v).toLocaleString("en-US")}`
   return `$${v.toFixed(2)}`
 }
 
 function fmtCount(v: number | null): string {
   if (v == null) return "—"
-  return Math.round(v).toLocaleString()
+  return Math.round(v).toLocaleString("en-US")
 }
 
 function fmtRatio(v: number | null): string {

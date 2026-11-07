@@ -624,7 +624,7 @@ export default function ProfileClient(props: {
             </div>
             {staleFmv > 0 && (
               <div style={{ fontSize: 8, fontFamily: monoFont, color: "var(--rpc-text-muted)", letterSpacing: "0.08em", marginBottom: 4 }}>
-                + {fmtDollars(staleFmv)} across {staleCount.toLocaleString()} stale-priced
+                + {fmtDollars(staleFmv)} across {staleCount.toLocaleString("en-US")} stale-priced
               </div>
             )}
             {sparkData.length >= 2 && (
@@ -642,7 +642,7 @@ export default function ProfileClient(props: {
           <div style={{ ...cardStyle, textAlign: "center" }}>
             <div style={labelStyle}>MOMENTS</div>
             <div style={{ fontFamily: condensedFont, fontWeight: 900, fontSize: 24, color: "var(--rpc-text-primary)", lineHeight: 1, margin: "8px 0 4px" }}>
-              {totalMoments > 0 ? totalMoments.toLocaleString() : "—"}
+              {totalMoments > 0 ? totalMoments.toLocaleString("en-US") : "—"}
             </div>
             {/* ⚠ `walletCount` is DISTINCT ADDRESSES from the server, NOT
                 `wallets.length`. saved_wallets is keyed per (wallet_addr,

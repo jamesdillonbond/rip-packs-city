@@ -793,18 +793,18 @@ export async function GET(
         : []),
       {
         label: "MOMENTS / PINS / CARDS",
-        value: walletsOk && totalMoments > 0 ? totalMoments.toLocaleString() : "—",
+        value: walletsOk && totalMoments > 0 ? totalMoments.toLocaleString("en-US") : "—",
       },
       {
         label: "PACKS RIPPED",
         // `ripsRes.count` is null when the read failed AND when there was no
         // address to ask about — both are "we do not know", never "zero".
-        value: ripsRes.ok && ripsRes.count != null ? ripsRes.count.toLocaleString() : "—",
+        value: ripsRes.ok && ripsRes.count != null ? ripsRes.count.toLocaleString("en-US") : "—",
       },
       // Only for a profile with a wallet to ask about — like TEAMS, an
       // always-present tile would be an empty box for everyone else.
       ...(walletsOk && walletAddrs.length > 0
-        ? [{ label: "PACKS UNOPENED", value: heldPacks != null ? heldPacks.toLocaleString() : "—" }]
+        ? [{ label: "PACKS UNOPENED", value: heldPacks != null ? heldPacks.toLocaleString("en-US") : "—" }]
         : []),
       {
         label: "TROPHY CASE",

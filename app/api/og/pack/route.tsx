@@ -43,7 +43,7 @@ function tierColor(tier: string | null | undefined): string {
 function fmtUsd(v: number | null | undefined): string {
   const neg = usdSignFirst(v, fmtUsd); if (neg !== null) return neg
   if (v === null || v === undefined || !Number.isFinite(v)) return "—"
-  if (Math.abs(v) >= 100) return `$${Math.round(v).toLocaleString()}`
+  if (Math.abs(v) >= 100) return `$${Math.round(v).toLocaleString("en-US")}`
   return `$${v.toFixed(2)}`
 }
 

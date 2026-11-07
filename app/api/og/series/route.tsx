@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic"
 function fmtUsd(n: number | null | undefined): string {
   const neg = usdSignFirst(n, fmtUsd); if (neg !== null) return neg
   if (n == null || !Number.isFinite(n)) return ""
-  if (Math.abs(n) >= 1000) return "$" + Math.round(n).toLocaleString()
+  if (Math.abs(n) >= 1000) return "$" + Math.round(n).toLocaleString("en-US")
   return "$" + n.toFixed(2)
 }
 function thumbs(rows: unknown): string[] {
@@ -55,7 +55,7 @@ export async function GET(req: NextRequest) {
   return renderEntityOg({
     eyebrow: `${label.toUpperCase()} · SERIES`,
     title: detail.display_label ?? "Series",
-    subtitle: detail.season ? String(detail.season) : (edCount ? `${edCount.toLocaleString()} ${edCount === 1 ? "edition" : "editions"}` : null),
+    subtitle: detail.season ? String(detail.season) : (edCount ? `${edCount.toLocaleString("en-US")} ${edCount === 1 ? "edition" : "editions"}` : null),
     accent,
     images,
     statLabel: fmvTotal && fmvTotal > 0 ? "Aggregate FMV" : null,

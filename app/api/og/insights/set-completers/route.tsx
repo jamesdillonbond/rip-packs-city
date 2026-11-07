@@ -23,7 +23,7 @@ type Row = {
 function fmtInt(n: number | null): string {
   const v = Number(n)
   if (!Number.isFinite(v)) return "0"
-  return Math.round(v).toLocaleString()
+  return Math.round(v).toLocaleString("en-US")
 }
 
 export async function GET(req: NextRequest) {

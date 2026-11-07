@@ -50,7 +50,7 @@ export default function HeldTimeDistributionCard({ wallet, urlSlug }: { wallet: 
         Held Time Distribution
       </h2>
       <div className="mb-2 text-[11px]" style={{ color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)" }}>
-        {total.toLocaleString()} moments tracked
+        {total.toLocaleString("en-US")} moments tracked
       </div>
       <div className="h-56" style={{ fontFamily: "var(--font-mono)" }}>
         <ResponsiveContainer>

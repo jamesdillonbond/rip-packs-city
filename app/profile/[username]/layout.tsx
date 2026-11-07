@@ -80,7 +80,7 @@ export function profileDescription(input: {
   const parts: string[] = []
 
   if (momentCount > 0)
-    parts.push(momentCount.toLocaleString() + " Moment" + (momentCount === 1 ? "" : "s"))
+    parts.push(momentCount.toLocaleString("en-US") + " Moment" + (momentCount === 1 ? "" : "s"))
   if (trophyCount > 0)
     parts.push(trophyCount + " trophy Moment" + (trophyCount === 1 ? "" : "s") + " on display")
 

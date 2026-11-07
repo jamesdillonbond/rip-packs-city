@@ -699,7 +699,7 @@ export default function FmvDashboard() {
           <>
             <span className="text-[color:var(--rpc-text-muted)]">·</span>
             <span>
-              Pipeline as of {new Date(health.as_of).toLocaleString()}
+              Pipeline as of {new Date(health.as_of).toLocaleString("en-US")}
             </span>
           </>
         ) : null}

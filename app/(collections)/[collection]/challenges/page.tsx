@@ -25,7 +25,7 @@ const TYPE_LABEL: Record<string, string> = {
 function usd(n: number | null | undefined): string {
   if (n == null || !Number.isFinite(Number(n))) return "—"
   const v = Number(n)
-  const s = Math.abs(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const s = Math.abs(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   return v < 0 ? `-$${s}` : `$${s}`
 }
 
@@ -132,8 +132,8 @@ export default async function ChallengesPage(props: { params: Promise<{ collecti
                         <span style={{ fontWeight: 700, color: "var(--rpc-text-primary)" }}>{c.name}</span>
                         <span style={{ fontSize: 11, color: "var(--rpc-text-muted)", letterSpacing: "0.04em" }}>
                           {TYPE_LABEL[c.challengeType] ?? c.challengeType}
-                          {c.completedCount != null && ` · ${c.completedCount.toLocaleString()} completed`}
-                          {c.totalRewardAllocation != null && ` / ${c.totalRewardAllocation.toLocaleString()} packs`}
+                          {c.completedCount != null && ` · ${c.completedCount.toLocaleString("en-US")} completed`}
+                          {c.totalRewardAllocation != null && ` / ${c.totalRewardAllocation.toLocaleString("en-US")} packs`}
                         </span>
                       </span>
                     </td>

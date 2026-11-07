@@ -1815,7 +1815,7 @@ function SniperMomentsBody() {
                     <td style={{ padding: "8px 12px 8px 4px", textAlign: "right" }}>
                       <div style={{ fontFamily: "var(--font-mono)", color: "var(--rpc-text-secondary)" }}>{serialCellText(deal.serial, collectionSlug)}</div>
                       {deal.circulationCount > 0 && (
-                        <div style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-muted)" }}>/ {deal.circulationCount.toLocaleString()}</div>
+                        <div style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-muted)" }}>/ {deal.circulationCount.toLocaleString("en-US")}</div>
                       )}
                       <div className="flex gap-1 mt-0.5 flex-wrap justify-end">
                         {/* isLowestAsk is computed over the feed's listing window (the newest ~200),

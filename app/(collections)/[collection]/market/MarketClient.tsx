@@ -812,9 +812,9 @@ function MarketInner() {
         {/* Row 4: result summary */}
         <div className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.08em" }}>
           {loading ? "LOADING…" : error ? `ERROR — ${error}` :
-            `${filteredListings.length.toLocaleString()} OF ${total.toLocaleString()}${totalPlus} ${rowNoun}${total === 1 && !totalPlus ? "" : "S"}` +
+            `${filteredListings.length.toLocaleString("en-US")} OF ${total.toLocaleString("en-US")}${totalPlus} ${rowNoun}${total === 1 && !totalPlus ? "" : "S"}` +
             (data?.diagnostics && data.diagnostics.rawCount > data.diagnostics.postClampCount
-              ? ` · ${(data.diagnostics.rawCount - data.diagnostics.postClampCount).toLocaleString()} OUTLIERS CLAMPED`
+              ? ` · ${(data.diagnostics.rawCount - data.diagnostics.postClampCount).toLocaleString("en-US")} OUTLIERS CLAMPED`
               : "")
           }
         </div>
@@ -839,7 +839,7 @@ function MarketInner() {
         // not fall through to the collection's "nothing is listed" empty state.
         <div className="rpc-card" style={{ padding: 24, textAlign: "center" }} data-testid="owned-filter-page-empty">
           <span className="rpc-mono" style={{ fontSize: 12, color: "var(--rpc-text-muted)", lineHeight: 1.7 }}>
-            None of the {baseListings.length.toLocaleString()} listings on this page {ownedFilter === "owned" ? "are editions you own" : "are editions you don't own"}.
+            None of the {baseListings.length.toLocaleString("en-US")} listings on this page {ownedFilter === "owned" ? "are editions you own" : "are editions you don't own"}.
             The Owned filter applies to the current page only — try the next page, or clear the filter.
           </span>
         </div>
@@ -1015,13 +1015,13 @@ function ListingCard({ listing, accent, momentUrl, editionStats, showOwned, coll
           {listing.listedCount != null && (
             <>
               <span>·</span>
-              <span>{listing.listedCount.toLocaleString()} listed</span>
+              <span>{listing.listedCount.toLocaleString("en-US")} listed</span>
             </>
           )}
           {listing.circulationCount != null && (
             <>
               <span>·</span>
-              <span>{listing.circulationCount.toLocaleString()} mint</span>
+              <span>{listing.circulationCount.toLocaleString("en-US")} mint</span>
             </>
           )}
           {showOwned && (
@@ -1193,10 +1193,10 @@ function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColu
                   </td>
                 )}
                 <td style={{ ...td, textAlign: "right", color: "var(--rpc-text-muted)" }}>
-                  {l.listedCount != null ? l.listedCount.toLocaleString() : "—"}
+                  {l.listedCount != null ? l.listedCount.toLocaleString("en-US") : "—"}
                 </td>
                 <td style={{ ...td, textAlign: "right", color: "var(--rpc-text-muted)" }}>
-                  {l.circulationCount != null ? l.circulationCount.toLocaleString() : "—"}
+                  {l.circulationCount != null ? l.circulationCount.toLocaleString("en-US") : "—"}
                 </td>
                 {showOwnedColumn && (
                   <td style={{ ...td, textAlign: "right", color: stats && stats.owned > 0 ? "var(--rpc-success-text)" : "var(--rpc-text-muted)" }}

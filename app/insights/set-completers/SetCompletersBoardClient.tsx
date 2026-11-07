@@ -15,7 +15,7 @@ import { scrollRegion } from "@/lib/a11y/scroll-region"
 type SortKey = "completers" | "rate" | "size"
 
 function fmtInt(n: number): string {
-  return Number.isFinite(n) ? Math.round(n).toLocaleString() : "0"
+  return Number.isFinite(n) ? Math.round(n).toLocaleString("en-US") : "0"
 }
 function fmtPct(n: number): string {
   if (!Number.isFinite(n) || n <= 0) return "0%"

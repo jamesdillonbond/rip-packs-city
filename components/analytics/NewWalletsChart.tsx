@@ -50,7 +50,7 @@ function CustomTooltip({
             />
             <span className="text-[color:var(--rpc-text-secondary)]">{p.name}</span>
             <span className="ml-auto tabular-nums text-[color:var(--rpc-text-primary)]">
-              {Number(p.value).toLocaleString()}
+              {Number(p.value).toLocaleString("en-US")}
             </span>
           </div>
         ))}

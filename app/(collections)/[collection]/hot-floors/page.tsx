@@ -36,7 +36,7 @@ function usd(n: number | null | undefined): string {
   const neg = usdSignFirst(n, usd); if (neg !== null) return neg
   if (n == null || !Number.isFinite(Number(n))) return "—"
   const v = Number(n)
-  return v < 1 ? `$${v.toFixed(2)}` : `$${v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  return v < 1 ? `$${v.toFixed(2)}` : `$${v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
 function relTime(iso: string | null): string {

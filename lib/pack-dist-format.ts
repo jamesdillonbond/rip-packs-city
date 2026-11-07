@@ -27,7 +27,7 @@ export function num(v: string | number | null | undefined): number | null {
 export function fmtUsd(v: number | null | undefined): string {
   const neg = usdSignFirst(v, fmtUsd); if (neg !== null) return neg
   if (v === null || v === undefined || !Number.isFinite(v)) return "—"
-  if (Math.abs(v) >= 100) return `$${Math.round(v).toLocaleString()}`
+  if (Math.abs(v) >= 100) return `$${Math.round(v).toLocaleString("en-US")}`
   return `$${v.toFixed(2)}`
 }
 
@@ -55,7 +55,7 @@ export function packOddsLabel(remaining: number, poolRemaining: number | null, s
   if (atLeastOne <= 0) return "—"
   if (atLeastOne >= 0.999) return "~every pack"
   const oneIn = Math.round(1 / atLeastOne)
-  return `~1 in ${oneIn.toLocaleString()}`
+  return `~1 in ${oneIn.toLocaleString("en-US")}`
 }
 
 /** Short relative time ("just now" / "Nm ago" / "Nh ago" / "Nd ago"); `now` injected for tests. */
@@ -89,7 +89,7 @@ export function fmtSalePrice(v: string | number | null): string {
   const neg = usdSignFirst(v, fmtSalePrice); if (neg !== null) return neg
   const n = v == null ? null : Number(v)
   if (n == null || !Number.isFinite(n)) return "—"
-  if (n >= 1000) return `$${Math.round(n).toLocaleString()}`
+  if (n >= 1000) return `$${Math.round(n).toLocaleString("en-US")}`
   if (n >= 1) return `$${n.toFixed(2)}`
   return `$${n.toFixed(2)}`
 }
@@ -103,7 +103,7 @@ export function fmtPct(v: number | null | undefined): string {
 /** Whole-number count with locale separators; null / non-finite → em dash. */
 export function fmtCount(v: number | null | undefined): string {
   if (v === null || v === undefined || !Number.isFinite(v)) return "—"
-  return v.toLocaleString()
+  return v.toLocaleString("en-US")
 }
 
 /**

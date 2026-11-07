@@ -765,7 +765,7 @@ export default function SetsDashboard() {
         {summary?.as_of ? (
           <>
             <span className="text-[color:var(--rpc-text-muted)]">·</span>
-            <span>As of {new Date(summary.as_of).toLocaleString()}</span>
+            <span>As of {new Date(summary.as_of).toLocaleString("en-US")}</span>
           </>
         ) : null}
       </footer>
