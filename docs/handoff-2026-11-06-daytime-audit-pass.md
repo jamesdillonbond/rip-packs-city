@@ -111,6 +111,8 @@
 
 41. **Header menus were false ARIA menus (~12:20–12:50 PM PT).** A keyboard walk at 1280: every stop had a visible ring (good), but the five group panels and the Me panel claimed `role="menu"`/`menuitem`/`aria-haspopup="menu"` with no arrow-key/Escape behaviour (the Me panel had no menuitems at all). Both are now labelled `role="group"` disclosures; Me button gets `aria-expanded`/`aria-controls`. New tree walk pins the contract (a `role="menu"` claim needs ArrowDown + Escape). Rendered UI unchanged. Not changed: ~40 Tab stops to reach the fourth group — the skip link covers it; arrow-key nav is the next step if a keyboard user asks (queue 11).
 
+42. **Forty tablists, no arrow keys (~12:35–1:15 PM PT).** Same class as item 41, wider: 40 `role="tablist"` groups in 23 files (collection strip, dashboard tabs, every insights board's pill filters, trade room, Buyback, Panini analytics, pack sub-nav) claimed the tabs role with no keyboard contract. One shared handler (`lib/a11y/tablist-keys.ts`): arrows/Home/End move focus; button tabs activate on focus, link tabs wait for Enter. Guard: every `"tablist"` must carry it (40 → 0); 4 behavioural cases. Visual: unchanged.
+
 ## Post-ship watch (what to read tomorrow)
 
 - **Series-1 Top Shot art** on `/dashboard/*`, `/profile/*`, binder, trade room: present (any blank tile with a `data-rpc-dead-art` attribute whose `data-rpc-dead-src` starts `…/editions/<N>_` means ANOTHER series was retired — same fix, derive not copy).
