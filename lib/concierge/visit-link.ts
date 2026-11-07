@@ -41,7 +41,9 @@ export function sanitizeVisitReferrer(raw: unknown): string | null {
 // own `anon-<uuid>` default) and the bot bridge `tg:` / `dc:`, so a session id
 // carrying one of these prefixes is by construction not a collector. A
 // client choosing one only hides its OWN row from the traction reads.
-const INTERNAL_SESSION_RE = /^(cowork|smoke|qa|test|internal)[-_:]/i
+// `probe` added 2026-11-07: nine `probe-<n>` sessions from a Cowork QA pass
+// landed as human traffic (and one logged a bug) before being flagged by hand.
+const INTERNAL_SESSION_RE = /^(cowork|smoke|qa|test|internal|probe)[-_:]/i
 
 export function isInternalCheckSessionId(sessionId: unknown): boolean {
   return typeof sessionId === "string" && INTERNAL_SESSION_RE.test(sessionId)

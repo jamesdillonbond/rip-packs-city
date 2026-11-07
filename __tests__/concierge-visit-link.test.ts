@@ -35,6 +35,7 @@ describe("isInternalCheckSessionId", () => {
     expect(isInternalCheckSessionId("cowork-billing-check-20261002")).toBe(true)
     expect(isInternalCheckSessionId("smoke-degradation-1791037771847")).toBe(true)
     expect(isInternalCheckSessionId("QA_mobile")).toBe(true)
+    expect(isInternalCheckSessionId("probe-241211975")).toBe(true) // the 11-07 Cowork probes
   })
   it("never flags a real widget, default, or bot-bridge session", () => {
     expect(isInternalCheckSessionId("rpc_1b4e28ba-2fa1-11d2-883f-0016d3cca427")).toBe(false)
