@@ -100,6 +100,10 @@ function HomeHeader() {
               letterSpacing: "0.1em",
               textTransform: "uppercase",
               textDecoration: "none",
+              // 2026-11-07: with five group links beside it the pill was squeezed
+              // to two lines ("SIGN / IN") at 820–1024 px. Never wrap, never shrink.
+              whiteSpace: "nowrap",
+              flexShrink: 0,
             }}
           >
             Sign In
@@ -117,6 +121,7 @@ const navLinkStyle: React.CSSProperties = {
   textTransform: "uppercase",
   color: "var(--rpc-text-secondary)",
   textDecoration: "none",
+  whiteSpace: "nowrap",
 };
 
 // 2026-09-24: the collection count is READ FROM THE REGISTRY, never typed. The
