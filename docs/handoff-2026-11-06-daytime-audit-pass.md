@@ -77,7 +77,7 @@
 
 24. **Public JSON routes, unknown subject (~2:40 AM PT) — filed, not shipped: register #237.** `wallet-intel` returns a complete object of zeros for a never-indexed wallet; `trophy-cases` returns `{"cases": []}` for a collector who does not exist. No user surface shows either (the one consumer gates on `> 0` behind the snapshot gate); the honest fix is a shared INDEXED discriminator (three states), not a per-route patch — lever and exit in the register. `first-mint` and `trade-block` already 400 an unknown collection by name.
 
-25. **a11y (~2:35–3:10 AM PT).** Axe A/AA over the six IA-touched pages: one violation, mine — homepage door links told apart from their hint text by colour alone (`link-in-text-block`, 4 nodes). Underlined at rest (`7d7ef8d`, declaration verified in the served HTML); then the rule read 0/64 over the e2e gate's 32 routes × 2 themes and was moved into `GATED` in `e2e/a11y.spec.ts`. **Watch:** the next scheduled `a11y-audit` run (6 h cadence) must be green with the rule gated.
+25. **a11y (~2:35–3:10 AM PT).** Axe A/AA over the six IA-touched pages: one violation, mine — homepage door links told apart from their hint text by colour alone (`link-in-text-block`, 4 nodes). Underlined at rest (`7d7ef8d`, declaration verified in the served HTML); then the rule read 0/64 over the e2e gate's 32 routes × 2 themes and was moved into `GATED` in `e2e/a11y.spec.ts`. Proven: dispatched run 42367358759 — `a11y-audit` and `dom-smoke` both green with the rule gated. Concierge re-asked anon after the deploys: Settings-tab contents (incl. API keys) and the share card's "Analyzing your wallet" state both answered correctly.
 
 ## Post-ship watch (what to read tomorrow)
 
