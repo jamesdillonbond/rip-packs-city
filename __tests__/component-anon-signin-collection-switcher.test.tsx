@@ -41,17 +41,22 @@ describe("header Sign In (SignOutButton, anonymous)", () => {
   })
   afterEach(() => vi.unstubAllGlobals())
 
-  it("renders a Sign In link carrying ?next=<current path> for an anonymous visitor", async () => {
+  // 2026-11-07: the anonymous header is "Sign in" + CREATE FREE ACCOUNT (AccountCta);
+  // both carry the return path, the signup one as /login?intent=signup&next=.
+  it("renders Sign in + Create free account, both carrying ?next=<current path>, for an anonymous visitor", async () => {
     const { findByText } = render(<SignOutButton />)
-    const link = await findByText("Sign In")
+    const link = await findByText("Sign in")
     expect(link.getAttribute("href")).toBe("/login?next=%2Fnba-top-shot%2Fsniper")
+    const create = await findByText("Create free account")
+    expect(create.getAttribute("href")).toBe("/login?intent=signup&next=%2Fnba-top-shot%2Fsniper")
   })
 
   it("never names an auth page as the return target", async () => {
     pathname = "/login"
     const { findByText } = render(<SignOutButton />)
-    const link = await findByText("Sign In")
+    const link = await findByText("Sign in")
     expect(link.getAttribute("href")).toBe("/login")
+    expect((await findByText("Create free account")).getAttribute("href")).toBe("/login?intent=signup")
   })
 
   it("renders no Sign In link for a signed-in user", async () => {

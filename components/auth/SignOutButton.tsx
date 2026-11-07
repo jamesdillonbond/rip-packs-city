@@ -12,7 +12,7 @@
 
 import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import AccountCta from "@/components/auth/AccountCta"
 import { signOut } from "@/lib/auth/supabase-client"
 
 function initialsFromEmail(email: string): string {
@@ -27,7 +27,6 @@ export default function SignOutButton() {
   const [loaded, setLoaded] = useState(false)
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
-  const pathname = usePathname()
 
   useEffect(() => {
     let cancelled = false
@@ -63,30 +62,9 @@ export default function SignOutButton() {
     // AnonSignInPill (07-17) had that this button lacked; with it here, that
     // second "Sign in" (two on one mobile viewport) is retired. Auth pages never
     // name themselves as the return target.
-    const onAuthPage = !pathname || pathname === "/login" || pathname.startsWith("/auth/")
-    const next = onAuthPage ? "" : `?next=${encodeURIComponent(pathname)}`
-    return (
-      <Link
-        href={`/login${next}`}
-        className="rpc-tap44"
-        style={{
-          background: "rgba(224,58,47,0.15)",
-          border: "1px solid rgba(224,58,47,0.4)",
-          color: "var(--rpc-red-text)",
-          padding: "4px 10px",
-          borderRadius: 4,
-          fontSize: 10,
-          fontFamily: "var(--font-display)",
-          fontWeight: 700,
-          letterSpacing: "0.08em",
-          textTransform: "uppercase",
-          textDecoration: "none",
-          whiteSpace: "nowrap",
-        }}
-      >
-        Sign In
-      </Link>
-    )
+    // 2026-11-07: CREATE FREE ACCOUNT + "Sign in" (components/auth/AccountCta.tsx),
+    // the same pair the landing header shows; `next` is built there.
+    return <AccountCta surface="site_header" />
   }
 
   const initials = initialsFromEmail(email)

@@ -1940,6 +1940,64 @@ describe("CollectionTabClient — the owner key follows the collection's chain",
   })
 })
 
+// 2026-11-07 (Trevor, screenshots of his own binder): a signed-in collector whose SAVED
+// wallet auto-loaded saw "This device's wallet 0xbd94…50ac · the wallet you load here
+// becomes this device's profile" above an address box with Search / Share / "✓ Saved to
+// profile" — a page that is already their binder asking them who they are. Both collapse
+// for that reader; a signed-out visitor, a signed-in reader with no saved wallet, and a
+// ?wallet= the reader typed all keep the search row.
+describe("CollectionTabClient — a signed-in collector's own binder shows no address box", () => {
+  const withProfile = (body: unknown) => {
+    const base = fetchMock.getMockImplementation() as (input: unknown) => Promise<Response>
+    fetchMock.mockImplementation(async (input: unknown) =>
+      String(input).startsWith("/api/profile/me") ? json(200, body) : base(input),
+    )
+  }
+
+  it("signed in + saved wallet loaded: no address box, no device-wallet chip, Share stays", async () => {
+    withProfile({ user: { id: "u1" } })
+    savedWallet = "0xsaved"
+    ownerKey = "0xsaved"
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(fetchMock.mock.calls.some((c) => String(c[0]).includes("wallet=0xsaved"))).toBe(true))
+    await waitFor(() => expect(screen.getByRole("button", { name: /share my collection/i })).toBeTruthy())
+    expect(screen.queryByPlaceholderText(/wallet address/)).toBeNull()
+    expect(screen.queryByText(/This device/)).toBeNull()
+    expect(screen.queryByRole("button", { name: /^Search$/ })).toBeNull()
+  })
+
+  it("signed OUT with the same device key: the address box and the chip stay", async () => {
+    withProfile({ user: null })
+    searchParams = new URLSearchParams("wallet=0xsaved")
+    ownerKey = "0xsaved"
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(fetchMock.mock.calls.some((c) => String(c[0]).includes("wallet=0xsaved"))).toBe(true))
+    expect(await screen.findByPlaceholderText(/wallet address/)).toBeTruthy()
+    await waitFor(() => expect(screen.queryByText(/This device/)).toBeTruthy())
+  })
+
+  it("signed in but a ?wallet= the reader typed (not their saved one): the box stays", async () => {
+    withProfile({ user: { id: "u1" } })
+    savedWallet = "0xsaved"
+    searchParams = new URLSearchParams("wallet=0xsomeoneelse")
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(fetchMock.mock.calls.some((c) => String(c[0]).includes("wallet=0xsomeoneelse"))).toBe(true))
+    expect(await screen.findByPlaceholderText(/wallet address/)).toBeTruthy()
+  })
+
+  it("a FAILED identity read is unknown, not signed-in: the box stays", async () => {
+    withProfile({})
+    savedWallet = "0xsaved"
+    const base = fetchMock.getMockImplementation() as (input: unknown) => Promise<Response>
+    fetchMock.mockImplementation(async (input: unknown) =>
+      String(input).startsWith("/api/profile/me") ? json(500, {}) : base(input),
+    )
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(fetchMock.mock.calls.some((c) => String(c[0]).includes("wallet=0xsaved"))).toBe(true))
+    expect(await screen.findByPlaceholderText(/wallet address/)).toBeTruthy()
+  })
+})
+
 // 2026-09-29 — the binder's ONE account-level fallback is AutoSearchReader's
 // saved wallet. A profile-wallet seed (added 09-28) served 0 extra accounts and
 // raced it to a DIFFERENT wallet for 1, so it was removed. This pins the removal:

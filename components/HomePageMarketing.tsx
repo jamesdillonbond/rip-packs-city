@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import Link from "next/link";
 import { trackFunnelEvent } from "@/lib/track-funnel";
 import WalletSearch from "@/components/WalletSearch";
+import AccountCta from "@/components/auth/AccountCta";
 import RpcLogo from "@/components/RpcLogo";
 import GlobalSearch from "@/components/search/GlobalSearch";
 import SiteFooter from "@/components/SiteFooter";
@@ -81,33 +82,11 @@ function HomeHeader() {
               {g.label}
             </Link>
           ))}
-          {/* /login, NOT /dashboard. /dashboard is gated, so an anonymous visitor
-              clicking "Sign In" was bounced through proxy.ts to /login anyway —
-              an extra redirect on the single most important funnel click, and one
-              that loses the click if the proxy round-trip hiccups. (2026-08-01) */}
-          <Link
-            href="/login"
-            onClick={() => trackFunnelEvent({ eventType: "signin_click", surface: "home_header" })}
-            style={{
-              background: "rgba(224,58,47,0.15)",
-              border: "1px solid rgba(224,58,47,0.4)",
-              color: "var(--rpc-red-text)",
-              padding: "6px 14px",
-              borderRadius: 4,
-              fontSize: 11,
-              fontFamily: "var(--font-display)",
-              fontWeight: 700,
-              letterSpacing: "0.1em",
-              textTransform: "uppercase",
-              textDecoration: "none",
-              // 2026-11-07: with five group links beside it the pill was squeezed
-              // to two lines ("SIGN / IN") at 820–1024 px. Never wrap, never shrink.
-              whiteSpace: "nowrap",
-              flexShrink: 0,
-            }}
-          >
-            Sign In
-          </Link>
+          {/* 2026-11-07: CREATE FREE ACCOUNT is the primary pill, "Sign in" beside it
+              (components/auth/AccountCta.tsx) — the landing header said only SIGN IN,
+              which is the returning user's word; a new visitor had no door. /login,
+              not /dashboard: /dashboard is gated and bounced through proxy.ts. */}
+          <AccountCta surface="home_header" size="md" />
         </nav>
       </div>
     </header>
@@ -343,6 +322,34 @@ export default function HomePageMarketing() {
             variant="hero"
             hint="No signup required. Try a wallet address, username, or moment ID."
           />
+        {/* 2026-11-07: the second door, above the fold. A collector who already
+            knows what their binder is worth wants the ACCOUNT — saved wallet,
+            trophy case, FMV alerts — and the hero only offered the search. */}
+        <div className="rpc-home-hero-cta" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, marginTop: 4 }}>
+          <Link
+            href="/login?intent=signup"
+            onClick={() => trackFunnelEvent({ eventType: "signin_click", surface: "home_hero_signup" })}
+            style={{
+              background: "var(--rpc-red-fill)",
+              // brand-exception: white text on the --rpc-red button
+              color: "#fff",
+              padding: "14px 28px",
+              borderRadius: 6,
+              fontFamily: "var(--font-mono)",
+              fontWeight: 700,
+              fontSize: 13,
+              letterSpacing: "0.16em",
+              textTransform: "uppercase",
+              textDecoration: "none",
+              whiteSpace: "nowrap",
+            }}
+          >
+            Create free account →
+          </Link>
+          <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-muted)", letterSpacing: "0.04em", lineHeight: 1.6, maxWidth: 520 }}>
+            Email in, link back — no password, no invite. Then add your Dapper username and your binder, trophy case and FMV alerts are yours.
+          </div>
+        </div>
       </section>
 
       {/* LIVE STATS BAND */}

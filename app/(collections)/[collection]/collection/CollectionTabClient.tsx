@@ -25,7 +25,8 @@ import { acquisitionMethodLabel } from "@/lib/analytics/shape"
 import { track } from "@/lib/telemetry/track"
 import { pickLoading } from "@/lib/schonely"
 import { MarketplaceStatusBanner } from "@/components/marketplace-status"
-import AutoSearchReader from "@/components/collection/AutoSearchReader"
+import AutoSearchReader, { type AutoSearchSource } from "@/components/collection/AutoSearchReader"
+import { useSessionOwner } from "@/lib/hooks/useSessionOwner"
 import PortfolioSummary from "@/components/collection/PortfolioSummary"
 import SaveWalletToProfileButton from "@/components/collection/SaveWalletToProfileButton"
 import CollectionRecentSales from "@/components/collection/CollectionRecentSales"
@@ -117,6 +118,12 @@ function WalletMomentsBody() {
   }, [])
   const [hasSearched, setHasSearched] = useState(false)
   const [ownerKey, setOwnerKey] = useState("")
+  // 2026-11-07: a signed-in collector whose SAVED wallet auto-loaded (AutoSearchReader
+  // source "saved") does not see the address box or the per-device wallet chip — the page
+  // IS their binder. Anyone else (signed out, no saved wallet, or a ?wallet= they typed)
+  // keeps the search row. Display state only; the server stays the trust boundary.
+  const sessionOwner = useSessionOwner()
+  const [savedWalletLoaded, setSavedWalletLoaded] = useState<string | null>(null)
 
   // ⛔ THE SEARCH PLACEHOLDER SAID "Enter Top Shot username or wallet address"
   // ON EVERY COLLECTION'S TAB — All Day, Golazos, UFC, and from 2026-09-19 Candy
@@ -1249,12 +1256,24 @@ function WalletMomentsBody() {
   }, [])
 
 
+  // Signed in AND the wallet on screen is the saved one AutoSearchReader loaded.
+  // A failed identity read (degraded) is UNKNOWN, not signed-in: keep the row.
+  const signedInOwnBinder =
+    !!sessionOwner.userId && !sessionOwner.degraded && !!savedWalletLoaded &&
+    !!activeWallet && activeWallet.toLowerCase() === savedWalletLoaded.toLowerCase()
+
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <div className="min-h-screen bg-[var(--rpc-black)] text-[color:var(--rpc-text-primary)] overflow-x-hidden">
       <Suspense fallback={null}>
-        <AutoSearchReader onSearch={runSearch} collectionSlug={collectionSlug} />
+        <AutoSearchReader
+          onSearch={function(q: string, source: AutoSearchSource) {
+            setSavedWalletLoaded(source === "saved" ? q : null)
+            runSearch(q)
+          }}
+          collectionSlug={collectionSlug}
+        />
       </Suspense>
 
       <div className="mx-auto max-w-[1600px] px-3 py-4 md:px-6">
@@ -1266,8 +1285,9 @@ function WalletMomentsBody() {
           <MarketplaceStatusBanner collectionSlug={collectionSlug} />
         </div>
 
-        {/* Profile key indicator */}
-        {ownerKey && (
+        {/* Profile key indicator — hidden for a signed-in collector: their saved
+            wallet (not a device key) is what this page shows. */}
+        {ownerKey && !signedInOwnBinder && (
           <div
             className="mb-4 flex items-center gap-2 px-3 py-2"
             style={{
@@ -1289,7 +1309,35 @@ function WalletMomentsBody() {
           </div>
         )}
 
-        {/* Search bar */}
+        {/* Search bar — for a signed-in collector viewing their own saved wallet the
+            row collapses to Share: the address box, Search and "Saved to profile" added
+            nothing there (2026-11-07). */}
+        {signedInOwnBinder ? (
+          rows.length > 0 && input.trim() ? (
+            <div className="mb-5 flex justify-end">
+              <button
+                onClick={async function() {
+                  const r = await shareWalletCard(input.trim())
+                  if (r !== "copied" && r !== "shared") return
+                  setCopied(true)
+                  setTimeout(function() { setCopied(false) }, 2000)
+                }}
+                title="Copy shareable collection card link"
+                style={{
+                  background: "transparent",
+                  border: "1px solid var(--rpc-border)",
+                  borderRadius: "var(--radius-md)",
+                  padding: "8px 12px",
+                  fontSize: "var(--text-sm)",
+                  color: "var(--rpc-text-secondary)",
+                  cursor: "pointer",
+                }}
+              >
+                {copied ? "Link copied!" : "Share my collection"}
+              </button>
+            </div>
+          ) : null
+        ) : (
         <div className="mb-5 flex flex-col gap-2 sm:flex-row">
           <input aria-label="Wallet address or username"
             value={input}
@@ -1381,6 +1429,7 @@ function WalletMomentsBody() {
               )}
           </div>
         </div>
+        )}
 
         <PortfolioSummary
           hasSearched={hasSearched}

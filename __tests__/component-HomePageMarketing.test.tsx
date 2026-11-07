@@ -60,13 +60,27 @@ describe("HomePageMarketing", () => {
   // Collections · How it works · Free account). IA rule 4: every nav shows the
   // same groups in the same order — so it renders the registry's public groups,
   // in registry order, and nothing hand-written beside them but Sign In.
-  it("the header nav is the registry's public groups, in order, plus Sign In", () => {
+  // 2026-11-07 (Trevor): a new visitor had no door — the header said only SIGN IN.
+  // Now the registry's groups, then "Sign in", then the primary CREATE FREE ACCOUNT
+  // pill, which lands on /login?intent=signup (same magic-link form, headed as
+  // account creation).
+  it("the header nav is the registry's public groups, in order, then Sign in + Create free account", () => {
     const { container } = render(<HomePageMarketing />)
     const nav = container.querySelector("nav.rpc-home-nav") as HTMLElement
-    const labels = Array.from(nav.querySelectorAll("a")).map((a) => a.textContent?.trim())
+    const links = Array.from(nav.querySelectorAll("a"))
+    const labels = links.map((a) => a.textContent?.trim())
     const expected = visibleGroups(false).map((g) => g.label)
-    expect(labels).toEqual([...expected, "Sign In"])
+    expect(labels).toEqual([...expected, "Sign in", "Create free account"])
+    expect(links[links.length - 1].getAttribute("href")).toBe("/login?intent=signup")
+    expect(links[links.length - 2].getAttribute("href")).toBe("/login")
     expect(nav.querySelector('a[href^="#"]')).toBeNull()
+  })
+
+  it("the hero carries a Create free account door under the search box", () => {
+    const { container } = render(<HomePageMarketing />)
+    const hero = container.querySelector("section.rpc-home-hero") as HTMLElement
+    const cta = Array.from(hero.querySelectorAll("a")).find((a) => /create free account/i.test(a.textContent ?? ""))
+    expect(cta?.getAttribute("href")).toBe("/login?intent=signup")
   })
 
   it("renders a card for each published collection", () => {

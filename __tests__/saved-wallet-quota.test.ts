@@ -16,6 +16,9 @@ import {
   countDistinctWallets,
   walletAlreadySaved,
   evaluateSavedWalletCap,
+  otherDapperWalletSaved,
+  dapperWalletLimitMessage,
+  DAPPER_WALLET_LIMIT,
 } from "@/lib/profile/saved-wallet-quota";
 
 /** What resolve-and-associate writes for ONE wallet: 5 collection rows. */
@@ -163,5 +166,37 @@ describe("evaluateSavedWalletCap — the 5-wallet free cap", () => {
   it("a re-save still passes when usernames fill the cap", () => {
     const four = ["0xa", "0xb", "0xc", "0xd"].map((wallet_addr) => ({ wallet_addr }))
     expect(evaluateSavedWalletCap(four, "0xa", 5, 3).allowed).toBe(true)
+  })
+})
+
+// 2026-11-07 (Trevor): ONE Dapper wallet per account. A second Flow address is
+// refused by both write routes; a re-save of the saved one, a Candy wallet, and an
+// account with no Flow wallet are all untouched by the rule.
+describe("otherDapperWalletSaved — one Dapper (Flow) wallet per account", () => {
+  const CANDY = "12J1uhKQcBYauomKvXDP2MA6msT3k8wx8oHHhV8gENAK"
+  const MINE = "0xbd94cade097e50ac"
+  const OTHER = "0xc5ababe825dc3122"
+
+  it("names the saved Dapper wallet when a DIFFERENT Flow address is offered", () => {
+    expect(otherDapperWalletSaved([{ wallet_addr: MINE }, { wallet_addr: MINE }], OTHER)).toBe(MINE)
+  })
+  it("a re-save of the same Dapper wallet (any hex case) is not 'another'", () => {
+    expect(otherDapperWalletSaved([{ wallet_addr: MINE }], MINE.toUpperCase().replace("0X", "0x"))).toBeNull()
+  })
+  it("no Flow wallet saved → null, even beside a Candy wallet", () => {
+    expect(otherDapperWalletSaved([{ wallet_addr: CANDY }], MINE)).toBeNull()
+    expect(otherDapperWalletSaved([], MINE)).toBeNull()
+    expect(otherDapperWalletSaved(null, MINE)).toBeNull()
+  })
+  it("a Candy (Solana) candidate is never governed by the Dapper rule", () => {
+    expect(otherDapperWalletSaved([{ wallet_addr: MINE }], CANDY)).toBeNull()
+  })
+  it("a non-Cadence hex row (a malformed legacy address) does not count as the saved Dapper wallet", () => {
+    expect(otherDapperWalletSaved([{ wallet_addr: "0xmine" }], MINE)).toBeNull()
+  })
+  it("the refusal copy says one per account and how to switch", () => {
+    expect(dapperWalletLimitMessage()).toMatch(/One Dapper wallet per account/)
+    expect(dapperWalletLimitMessage()).toMatch(/[Rr]emove/)
+    expect(DAPPER_WALLET_LIMIT).toBe(1)
   })
 })

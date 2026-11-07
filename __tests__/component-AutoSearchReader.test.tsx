@@ -36,7 +36,7 @@ describe("AutoSearchReader — URL param path", () => {
     const onSearch = vi.fn()
     render(<AutoSearchReader onSearch={onSearch} collectionSlug="nba-top-shot" />)
     await flush()
-    expect(onSearch).toHaveBeenCalledWith("0xABC")
+    expect(onSearch).toHaveBeenCalledWith("0xABC", "url")
     expect(savedWallet.fn).not.toHaveBeenCalled()
   })
 
@@ -45,7 +45,7 @@ describe("AutoSearchReader — URL param path", () => {
     const onSearch = vi.fn()
     render(<AutoSearchReader onSearch={onSearch} collectionSlug="ufc" />)
     await flush()
-    expect(onSearch).toHaveBeenCalledWith("0xWALLET")
+    expect(onSearch).toHaveBeenCalledWith("0xWALLET", "url")
   })
 
   it("falls to ?address= then ?q= when earlier params are absent", async () => {
@@ -53,14 +53,14 @@ describe("AutoSearchReader — URL param path", () => {
     const a = vi.fn()
     render(<AutoSearchReader onSearch={a} collectionSlug="ufc" />)
     await flush()
-    expect(a).toHaveBeenCalledWith("0xADDR")
+    expect(a).toHaveBeenCalledWith("0xADDR", "url")
     cleanup()
 
     nav.params = new URLSearchParams("q=0xQ")
     const b = vi.fn()
     render(<AutoSearchReader onSearch={b} collectionSlug="ufc" />)
     await flush()
-    expect(b).toHaveBeenCalledWith("0xQ")
+    expect(b).toHaveBeenCalledWith("0xQ", "url")
   })
 
   it("trims surrounding whitespace on the URL value", async () => {
@@ -68,7 +68,7 @@ describe("AutoSearchReader — URL param path", () => {
     const onSearch = vi.fn()
     render(<AutoSearchReader onSearch={onSearch} collectionSlug="ufc" />)
     await flush()
-    expect(onSearch).toHaveBeenCalledWith("0xTRIM")
+    expect(onSearch).toHaveBeenCalledWith("0xTRIM", "url")
   })
 })
 
@@ -79,7 +79,7 @@ describe("AutoSearchReader — saved-wallet fallback", () => {
     render(<AutoSearchReader onSearch={onSearch} collectionSlug="nfl-all-day" />)
     await flush()
     expect(savedWallet.fn).toHaveBeenCalledWith("nfl-all-day")
-    expect(onSearch).toHaveBeenCalledWith("0xSAVED")
+    expect(onSearch).toHaveBeenCalledWith("0xSAVED", "saved")
   })
 
   it("does nothing when there is neither a URL param nor a saved wallet", async () => {
@@ -97,6 +97,6 @@ describe("AutoSearchReader — saved-wallet fallback", () => {
     const onSearch = vi.fn()
     render(<AutoSearchReader onSearch={onSearch} collectionSlug="ufc" />)
     await flush()
-    expect(onSearch).toHaveBeenCalledWith("0xSAVED")
+    expect(onSearch).toHaveBeenCalledWith("0xSAVED", "saved")
   })
 })

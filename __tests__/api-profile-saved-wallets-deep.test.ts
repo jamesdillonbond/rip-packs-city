@@ -193,12 +193,22 @@ describe("POST /api/profile/saved-wallets — cap + write shape", () => {
   // and no plan is consulted. The quota mock below says UNLIMITED on purpose:
   // if the route ever reads a plan again, the sixth wallet gets in and this
   // test fails.
+  // 2026-11-07: an account holds ONE Dapper wallet, so the only way to fill
+  // five slots is Candy (Solana) wallets beside it — the fixture says so.
+  const CANDY = "209ade70-32c5-4470-bc7c-4793d660f713"
+  const SOL = [
+    "7Yc5dVqAPB5p7bYa5s2z3h9MvdqkGyX6hFtJ8Wq2nZ4r",
+    "9xQeWvG816bUx9EPjHmaT23yvVM2ZWbrrpZb9PusVFin",
+    "4Nd1mBQtrMJVYVfKf2PJy9NZUZdTAsp7D4xWLs4gDB4T",
+    "6VzqTcjgYaxg8kNTpMPbNfHqUbBeHcTBi6Fv1gHhLvfA",
+    "3fTR8GGL7Bk2vP4JkXoY5r9b8hMnKVEBeSGv7bTtqG2V",
+  ]
   const fiveWallets = [
     ...oneWalletFiveRows,
-    { wallet_addr: "0x2222222222222222" },
-    { wallet_addr: "0x3333333333333333" },
-    { wallet_addr: "0x4444444444444444" },
-    { wallet_addr: "0x5555555555555555" },
+    { wallet_addr: SOL[0] },
+    { wallet_addr: SOL[1] },
+    { wallet_addr: SOL[2] },
+    { wallet_addr: SOL[3] },
   ]
 
   it("refuses a 6th distinct wallet at the flat cap of 5, whatever plan the wallet has", async () => {
@@ -210,7 +220,7 @@ describe("POST /api/profile/saved-wallets — cap + write shape", () => {
       ],
     })
 
-    const res = await POST(req("https://t/api/profile/saved-wallets", { walletAddr: "0x6666666666666666" }))
+    const res = await POST(req("https://t/api/profile/saved-wallets", { walletAddr: SOL[4], collectionId: CANDY }))
     expect(res.status).toBe(409)
     const body = await res.json()
     expect(body).toMatchObject({
@@ -229,11 +239,42 @@ describe("POST /api/profile/saved-wallets — cap + write shape", () => {
       saved_wallets: [
         { data: fiveWallets.slice(0, 8), error: null }, // 4 distinct wallets
         { count: 0, error: null }, // new-wallet probe
-        { data: { id: "w5", wallet_addr: "0x5555555555555555" }, error: null },
+        { data: { id: "w5", wallet_addr: SOL[3] }, error: null },
       ],
     })
 
-    const res = await POST(req("https://t/api/profile/saved-wallets", { walletAddr: "0x5555555555555555" }))
+    const res = await POST(req("https://t/api/profile/saved-wallets", { walletAddr: SOL[3], collectionId: CANDY }))
+    expect(res.status).toBe(200)
+  })
+
+  // 2026-11-07 (Trevor): ONE Dapper wallet per account. A second Flow address
+  // is refused before the cap is even consulted; the saved one is named so the
+  // client can say which wallet to remove.
+  it("refuses a SECOND Dapper (Flow) wallet with the saved one named, under the cap", async () => {
+    state.user = { id: "u1" }
+    install({
+      saved_wallets: [
+        { data: oneWalletFiveRows, error: null }, // one Dapper wallet, 5 collection rows
+      ],
+    })
+    const res = await POST(req("https://t/api/profile/saved-wallets", { walletAddr: "0x2222222222222222" }))
+    expect(res.status).toBe(409)
+    const body = await res.json()
+    expect(body).toMatchObject({ error: "dapper_wallet_already_saved", saved_dapper_wallet: "0x1111111111111111", dapper_wallet_limit: 1 })
+    expect(body.message).toMatch(/One Dapper wallet per account/)
+    expect(state.writes["saved_wallets"] ?? []).toEqual([])
+  })
+
+  it("a Candy (Solana) wallet beside the saved Dapper wallet is NOT 'another Dapper wallet'", async () => {
+    state.user = { id: "u1" }
+    install({
+      saved_wallets: [
+        { data: oneWalletFiveRows, error: null },
+        { count: 0, error: null },
+        { data: { id: "w2", wallet_addr: SOL[0] }, error: null },
+      ],
+    })
+    const res = await POST(req("https://t/api/profile/saved-wallets", { walletAddr: SOL[0], collectionId: CANDY }))
     expect(res.status).toBe(200)
   })
 

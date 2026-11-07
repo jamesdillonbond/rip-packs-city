@@ -64,7 +64,9 @@ describe("apiErrorMessage", () => {
     const used = src.split("apiErrorMessage(data, res.status)").length - 1
     // 5 → 8 on 2026-10-11: the hero Clear, remove-wallet and favorite writes
     // gained a result check (they ignored the response before) — same helper.
-    expect(used).toBe(8)
+    // 8 → 7 on 2026-11-07: the "Advanced: wallet address" form (and its
+    // `addWallet` throw) was deleted — Trevor: "useless. Get rid of that entirely."
+    expect(used).toBe(7)
     // No throw builds its own "HTTP <status>" string around the helper.
     expect(src).not.toMatch(/throw new Error\(`[^`]*\$\{res\.status\}/)
     expect(src).not.toMatch(/data\.error \|\| `HTTP/)

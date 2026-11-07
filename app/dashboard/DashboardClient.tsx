@@ -14,8 +14,8 @@ import SignOutButton from "@/components/auth/SignOutButton";
 import { trophyComparator, TROPHY_SORTS, type TrophySortKey } from "@/lib/trophy-comparator";
 import PaniniUsernamesPanel from "@/components/profile/PaniniUsernamesPanel";
 import { sumMoments, sumFmv, sumStaleFmv, sumStaleCount, countActiveCollections, groupWalletsByAddress } from "@/lib/dashboard/aggregate";
-import { publishedCollections, getCollection, getPublishedCollection } from "@/lib/collections";
-import { detectAddressChain, normalizeAddress } from "@/lib/address";
+import { publishedCollections, getPublishedCollection } from "@/lib/collections";
+import { detectAddressChain, isCadenceAddress, isSolanaAddress, normalizeAddress } from "@/lib/address";
 import {
   fmtUsd,
   truncateAddress,
@@ -313,15 +313,11 @@ function ProfilePageInner() {
   const [indexing, setIndexing] = useState(false);
   const indexingPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const indexingStopRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [showAdvanced, setShowAdvanced] = useState(false);
   // Re-opens the "add a wallet" form for a user who ALREADY has one. Once a
   // wallet is saved the onboarding prompt collapses to a link — repeatedly
   // asking a collector for the Dapper username they already gave reads as the
   // product having forgotten them (Trevor, 2026-08-05).
   const [showAddWallet, setShowAddWallet] = useState(false);
-  const [walletForm, setWalletForm] = useState({ addr: "", nickname: "", collectionId: "nba-top-shot" });
-  const [walletSaving, setWalletSaving] = useState(false);
-  const [walletError, setWalletError] = useState<string | null>(null);
   const [toasts, setToasts] = useState<Array<{ id: number; text: string; tone: "success" | "info" }>>([]);
 
   // Pin flow: which slot is being filled, and whether the modal is open.
@@ -747,7 +743,6 @@ function ProfilePageInner() {
         pushToast("Indexing your Candy collection — this usually takes 30-60 seconds", "info");
         setUsernameInput("");
         setShowAddWallet(false);
-        setShowAdvanced(false);
         await refresh();
         startIndexingPoll();
         return;
@@ -783,7 +778,6 @@ function ProfilePageInner() {
       // Collapse the add-wallet form — the user has now given us their wallet;
       // leaving the prompt open re-asks for something they just supplied.
       setShowAddWallet(false);
-      setShowAdvanced(false);
       await refresh();
       startIndexingPoll();
     } catch (err: any) {
@@ -792,45 +786,6 @@ function ProfilePageInner() {
       setUsernameSaving(false);
     }
   }, [usernameInput, refresh, pushToast, startIndexingPoll]);
-
-  const addWallet = useCallback(async () => {
-    // normalizeAddress, NOT toLowerCase — base58 (Candy/Solana) is
-    // case-sensitive and lowercasing it stores a mangled address that matches
-    // no wallet_moments_cache row.
-    const addr = normalizeAddress(walletForm.addr);
-    if (!addr) {
-      setWalletError("Address required");
-      return;
-    }
-    setWalletSaving(true);
-    setWalletError(null);
-    try {
-      const collection = getCollection(walletForm.collectionId);
-      const res = await fetch("/api/profile/saved-wallets", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          walletAddr: addr,
-          collectionId: collection?.supabaseCollectionId,
-          nickname: walletForm.nickname.trim() || null,
-        }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(apiErrorMessage(data, res.status));
-      }
-      setWalletForm({ addr: "", nickname: "", collectionId: "nba-top-shot" });
-      pushToast(`Added ${truncateAddress(addr)}`, "success");
-      // Same as resolveAndAssociate — collapse once the wallet is saved.
-      setShowAddWallet(false);
-      setShowAdvanced(false);
-      await refresh();
-    } catch (err: any) {
-      setWalletError(err.message || "Failed to save");
-    } finally {
-      setWalletSaving(false);
-    }
-  }, [walletForm, refresh, pushToast]);
 
   // 2026-10-11: both writes read their result. A failed DELETE used to do
   // nothing visible, and a network throw skipped the refresh entirely.
@@ -927,6 +882,15 @@ function ProfilePageInner() {
   // Group saved_wallets by physical wallet address — one card per unique
   // wallet, with sub-cards from collection-stats inside.
   const groupedWallets = useMemo(() => groupWalletsByAddress(wallets), [wallets]);
+  // 2026-11-07 (Trevor): ONE Dapper wallet per account — once a Flow wallet is saved the
+  // "+ Add another wallet" link goes away (the server refuses a second one too:
+  // `dapper_wallet_already_saved`). The only add left is a Candy (Solana) wallet, offered
+  // while none is saved. Switching Dapper wallets = remove, then add.
+  const hasDapperWallet = groupedWallets.some((g) => isCadenceAddress(g.addr));
+  const hasSolanaWallet = groupedWallets.some((g) => isSolanaAddress(g.addr));
+  const candyPublished = publishedCollections().some((c) => c.dbChain === "solana");
+  const canAddWallet = !hasDapperWallet || (candyPublished && !hasSolanaWallet);
+  const addWalletLabel = hasDapperWallet ? "+ Add a Candy MLB (Solana) wallet" : "+ Add another wallet";
   // The hero's own add-wallet form (SignInBanner) renders exactly when the
   // wallets read succeeded and returned nothing — the same condition the hero
   // branch below uses, so the two cannot drift.
@@ -1157,10 +1121,10 @@ function ProfilePageInner() {
               single link. Gate on groupedWallets (one entry per PHYSICAL wallet),
               NOT wallets — saved_wallets holds one row per (wallet, collection),
               so one Dapper wallet is 5 rows in `wallets` but 1 here. */}
-          {groupedWallets.length > 0 && !showAddWallet ? (
+          {groupedWallets.length > 0 && !showAddWallet && canAddWallet ? (
             <div style={{ marginBottom: 14 }}>
               <button onClick={() => setShowAddWallet(true)} style={linkBtnStyle}>
-                + Add another wallet
+                {addWalletLabel}
               </button>
             </div>
           ) : null}
@@ -1184,7 +1148,9 @@ function ProfilePageInner() {
           {(groupedWallets.length === 0 && !heroFormShown) || showAddWallet ? (
           <>
           <div style={{ fontFamily: monoFont, fontSize: 11, color: "var(--rpc-text-muted)", marginBottom: 8, lineHeight: 1.5 }}>
-            Add a wallet by entering your Dapper username or a wallet address — we&apos;ll associate a Dapper username or Flow address with NBA Top Shot, NFL All Day, LaLiga Golazos, Disney Pinnacle and UFC Strike automatically, and a Solana address with Candy MLB.
+            {hasDapperWallet
+              ? "Your Dapper wallet is saved (one per account). Enter a Solana address to add your Candy MLB collection."
+              : "Add a wallet by entering your Dapper username or a wallet address — we\u2019ll associate a Dapper username or Flow address with NBA Top Shot, NFL All Day, LaLiga Golazos, Disney Pinnacle and UFC Strike automatically, and a Solana address with Candy MLB."}
           </div>
 
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
@@ -1201,7 +1167,7 @@ function ProfilePageInner() {
               // page: this field said "Dapper username" and the copy above it
               // named five Flow collections. The capability shipped; the way in
               // did not.
-              placeholder="Dapper username or wallet address"
+              placeholder={hasDapperWallet ? "Solana wallet address" : "Dapper username or wallet address"}
               style={{ flex: 1, minWidth: 220, padding: "10px 12px", background: "var(--rpc-surface)", border: `1px solid ${ACCENT_RED}66`, borderRadius: 6, color: "var(--rpc-text-primary)", fontFamily: monoFont, fontSize: 13 }}
             />
             <button onClick={resolveAndAssociate} disabled={usernameSaving} style={primaryBtnStyle}>
@@ -1210,72 +1176,15 @@ function ProfilePageInner() {
           </div>
           {usernameError && (
             <div style={{ color: "var(--rpc-danger-text)", fontFamily: monoFont, fontSize: 11, marginBottom: 10 }}>
-              {usernameError}{" "}
-              <button onClick={() => setShowAdvanced(true)} style={linkBtnStyle}>
-                Advanced: enter wallet address directly
-              </button>
+              {usernameError}
             </div>
           )}
 
-          {!showAdvanced && !usernameError && (
-            <div style={{ marginBottom: 14 }}>
-              <button onClick={() => setShowAdvanced(true)} style={linkBtnStyle}>
-                Advanced: enter wallet address directly
-              </button>
-            </div>
-          )}
-
-          {showAdvanced && (
-            <div style={{ marginBottom: 14, padding: 12, background: "var(--rpc-surface)", border: "1px solid var(--rpc-border)", borderRadius: 8 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 12, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--rpc-text-secondary)" }}>
-                  Advanced: wallet address
-                </div>
-                <button onClick={() => { setShowAdvanced(false); setWalletError(null); }} style={linkBtnStyle}>
-                  Hide
-                </button>
-              </div>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <select
-                  value={walletForm.collectionId}
-                  onChange={(e) => setWalletForm({ ...walletForm, collectionId: e.target.value })}
-                  style={{ padding: "8px 10px", background: "var(--rpc-black)", border: "1px solid var(--rpc-border)", borderRadius: 6, color: "var(--rpc-text-primary)", fontFamily: monoFont, fontSize: 12 }}
-                >
-                  {/* Flow collections only, and that is correct: the input
-                      beside this is a 0x… Flow address, and a Candy row keyed by
-                      one would be a "0 moments" tile we manufactured. A Solana
-                      wallet goes through the one-field add above, which
-                      chain-detects base58 and saves it to Candy — verified in
-                      `resolveAndAssociate`, not assumed. The note under that
-                      field now says so, which it did not until 2026-09-12. */}
-                  {publishedCollections().filter((c) => c.dbChain === "flow").map((c) => (
-                    <option key={c.id} value={c.id}>{c.icon} {c.shortLabel}</option>
-                  ))}
-                </select>
-                <input
-                  value={walletForm.addr}
-                  onChange={(e) => setWalletForm({ ...walletForm, addr: e.target.value })}
-                  placeholder="0x… wallet address"
-                  style={{ flex: 1, minWidth: 220, padding: "8px 10px", background: "var(--rpc-black)", border: "1px solid var(--rpc-border)", borderRadius: 6, color: "var(--rpc-text-primary)", fontFamily: monoFont, fontSize: 12 }}
-                />
-                <input
-                  value={walletForm.nickname}
-                  onChange={(e) => setWalletForm({ ...walletForm, nickname: e.target.value })}
-                  placeholder="Nickname (optional)"
-                  style={{ width: 180, padding: "8px 10px", background: "var(--rpc-black)", border: "1px solid var(--rpc-border)", borderRadius: 6, color: "var(--rpc-text-primary)", fontFamily: condensedFont, fontSize: 12 }}
-                />
-                <button onClick={addWallet} disabled={walletSaving} style={primaryBtnStyle}>
-                  {walletSaving ? "Saving…" : "+ Add"}
-                </button>
-              </div>
-              {walletError && <div style={{ color: "var(--rpc-danger-text)", fontFamily: monoFont, fontSize: 11, marginTop: 8 }}>{walletError}</div>}
-            </div>
-          )}
 
           {groupedWallets.length > 0 ? (
             <div style={{ marginBottom: 14 }}>
               <button
-                onClick={() => { setShowAddWallet(false); setShowAdvanced(false); setUsernameError(null); }}
+                onClick={() => { setShowAddWallet(false); setUsernameError(null); }}
                 style={linkBtnStyle}
               >
                 Cancel

@@ -34,7 +34,7 @@ import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth/supabase-server";
 import { resolveTopShotUsernameCacheAware } from "@/lib/chains/flow/topshot-username-resolve";
 import { publishedCollections } from "@/lib/collections";
-import { evaluateSavedWalletCap, SAVED_WALLET_LIMIT, savedWalletLimitMessage } from "@/lib/profile/saved-wallet-quota";
+import { evaluateSavedWalletCap, SAVED_WALLET_LIMIT, savedWalletLimitMessage, dapperWalletLimitMessage, otherDapperWalletSaved } from "@/lib/profile/saved-wallet-quota";
 import { countLinkedIdentities } from "@/lib/profile/collector-identities";
 import { warmWalletDeep } from "@/lib/profile/warm-wallet";
 import { claimUsernameFromTopShot, type ClaimOutcome } from "@/lib/profile/claim-username";
@@ -239,6 +239,21 @@ export async function POST(req: NextRequest) {
     // logged inside and treated as 0 — this check is fail-open by decision
     // (2026-09-03).
     const linkedIdentities = (await countLinkedIdentities(supabase, user.id)) ?? 0;
+    // 2026-11-07 (Trevor): ONE Dapper wallet per account. A Flow address that is not
+    // the one already saved is refused; a re-save of the same one passes. Candy
+    // (Solana) and linked usernames are untouched. Same fail-open posture as the cap.
+    const otherDapper = otherDapperWalletSaved(addrRows, walletAddress);
+    if (otherDapper) {
+      return NextResponse.json(
+        {
+          error: "dapper_wallet_already_saved",
+          message: dapperWalletLimitMessage(),
+          saved_dapper_wallet: otherDapper,
+          dapper_wallet_limit: 1,
+        },
+        { status: 409 }
+      );
+    }
     const { allowed, distinctCount } = evaluateSavedWalletCap(addrRows, walletAddress, SAVED_WALLET_LIMIT, linkedIdentities);
     if (!allowed) {
       return NextResponse.json(

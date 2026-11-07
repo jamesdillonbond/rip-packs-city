@@ -17,7 +17,7 @@
 // latter being the primary "Load my collection" path that had no cap check at
 // all and so bypassed the limit entirely.
 
-import { normalizeAddress } from "@/lib/address";
+import { isCadenceAddress, normalizeAddress } from "@/lib/address";
 
 /**
  * Saved wallets + linked usernames per account. ONE number for every account —
@@ -100,4 +100,39 @@ export function evaluateSavedWalletCap(
     return { allowed: true, distinctCount, isReSave };
   }
   return { allowed: distinctCount < maxAllowed, distinctCount, isReSave };
+}
+
+// ── One Dapper wallet per account (Trevor, 2026-11-07) ───────────────────────
+//
+// A Dapper (Flow / Cadence) wallet is the collector: it spans Top Shot, All Day,
+// Golazos, Pinnacle and UFC at once. Letting an account save a second one made the
+// dashboard a wallet-management tool ("+ Add another wallet", an "Advanced: wallet
+// address" form) for a product that asks for one identifier. The 5-slot cap above
+// still bounds Candy (Solana) wallets and linked Panini usernames; THIS rule says
+// the Flow slot is single. Switching = remove the saved one, then add.
+
+export const DAPPER_WALLET_LIMIT = 1;
+
+export function dapperWalletLimitMessage(): string {
+  return "One Dapper wallet per account. Remove the saved one to switch to another.";
+}
+
+/**
+ * The Dapper wallet this account already has, when `candidate` is a Cadence
+ * address that is NOT it. `null` when the candidate is not a Cadence address, when
+ * no Flow wallet is saved, or when the candidate IS the saved one (a re-save).
+ * Rows carry mixed chains; only hex `0x` + 16 hex (Cadence) rows count here.
+ */
+export function otherDapperWalletSaved(
+  rows: readonly SavedWalletAddrRow[] | null | undefined,
+  candidate: string
+): string | null {
+  const want = normalizeAddress(candidate);
+  if (!isCadenceAddress(want)) return null;
+  for (const r of rows ?? []) {
+    const addr = typeof r?.wallet_addr === "string" ? normalizeAddress(r.wallet_addr) : "";
+    if (addr === "" || !isCadenceAddress(addr)) continue;
+    if (addr !== want) return addr;
+  }
+  return null;
 }

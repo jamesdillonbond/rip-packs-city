@@ -50,19 +50,21 @@ describe("SignOutButton", () => {
       const link = container.querySelector("a")
       expect(link?.getAttribute("href")).toBe("/login")
     })
-    expect(container.textContent).toContain("Sign In")
+    expect(container.textContent).toContain("Sign in")
+    // 2026-11-07: the primary door for a new visitor sits beside it
+    expect(container.querySelector('a[href^="/login?intent=signup"]')?.textContent).toMatch(/Create free account/)
   })
 
   it("soft-fails to the Sign In link when the fetch is not ok", async () => {
     fetchMock.mockReturnValue(meResp(null, false))
     const { container } = render(<SignOutButton />)
-    await waitFor(() => expect(container.textContent).toContain("Sign In"))
+    await waitFor(() => expect(container.textContent).toContain("Sign in"))
   })
 
   it("soft-fails to the Sign In link when the fetch rejects", async () => {
     fetchMock.mockReturnValue(Promise.reject(new Error("boom")))
     const { container } = render(<SignOutButton />)
-    await waitFor(() => expect(container.textContent).toContain("Sign In"))
+    await waitFor(() => expect(container.textContent).toContain("Sign in"))
   })
 
   it("renders a Me pill with two-letter initials from a dotted local part", async () => {

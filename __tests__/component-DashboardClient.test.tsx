@@ -1376,81 +1376,53 @@ describe("DashboardClient — reorder, undo and removal", () => {
   })
 })
 
-// ─── The advanced add-wallet form ────────────────────────────────────────────
+// ─── One Dapper wallet per account (2026-11-07) ──────────────────────────────
+//
+// Trevor: "we should only allow users to save one dapper wallet. Once added, we
+// shouldn't have the option to add another" and "the 'advanced: wallet address'
+// section is useless. Get rid of that entirely." The advanced form (a per-collection
+// 0x… add with a nickname) is GONE; the "+ Add another wallet" link goes away once
+// a Flow wallet is saved, leaving only a Candy (Solana) add while none is saved.
 
-describe("DashboardClient — the advanced add-wallet form", () => {
-  /**
-   * ⚠ Real labels, no `if (btn)` guard. Every guarded click in the first draft
-   * of this file passed while asserting NOTHING — `addWallet` and
-   * `handleRemoveTrophy` were both measured as uncovered until the guesses were
-   * replaced with the labels the page really renders.
-   */
-  async function openAdvanced() {
+describe("DashboardClient — one Dapper wallet per account", () => {
+  const DAPPER = "0xbd94cade097e50ac"
+  const SOL = "7Yc5dVqAPB5p7bYa5s2z3h9MvdqkGyX6hFtJ8Wq2nZ4r"
+
+  it("the advanced wallet-address form no longer exists anywhere on the page", async () => {
     routes["/api/profile/saved-wallets"] = () => json(200, { wallets: [] })
     routes["/api/profile/trophy-slabs"] = () => json(200, { slabs: [] })
     render(<DashboardClient />)
     await revealSectionForm()
     await screen.findByPlaceholderText(ADD_WALLET_FIELD)
-    fireEvent.click(screen.getAllByRole("button", { name: "Advanced: enter wallet address directly" })[0])
-    const addr = (await screen.findAllByPlaceholderText("0x… wallet address"))[0]
-    const save = addr.closest("div")!.querySelector("button")!
-    return { addr, save }
-  }
-
-  it("refuses an empty address", async () => {
-    const { save } = await openAdvanced()
-    const before = fetchMock.mock.calls.length
-    fireEvent.click(save)
-    await screen.findAllByText("Address required")
-    expect(fetchMock.mock.calls.length).toBe(before)
+    expect(screen.queryByText(/Advanced: enter wallet address directly/)).toBeNull()
+    expect(screen.queryByText(/Advanced: wallet address/)).toBeNull()
+    expect(screen.queryByPlaceholderText("0x… wallet address")).toBeNull()
+    expect(screen.queryByPlaceholderText("Nickname (optional)")).toBeNull()
   })
 
-  it("posts the address with its nickname and collection", async () => {
-    const { addr, save } = await openAdvanced()
-    fireEvent.change(addr, { target: { value: "0xbd94cade097e50ac" } })
-    fireEvent.change(screen.getAllByPlaceholderText("Nickname (optional)")[0], { target: { value: "main" } })
-    fireEvent.click(save)
-    await waitFor(() => {
-      const post = fetchMock.mock.calls.find(
-        (c) => String(c[0]).includes("saved-wallets") && (c[1] as RequestInit)?.method === "POST",
-      )
-      expect(post).toBeTruthy()
-      const body = String((post![1] as RequestInit).body)
-      expect(body).toContain("0xbd94cade097e50ac")
-      expect(body).toContain("main")
-      expect(body).toContain("collectionId")
-    })
+  it("with a Dapper wallet saved and no Candy wallet: no '+ Add another wallet', only a Candy add", async () => {
+    routes["/api/profile/saved-wallets"] = () => json(200, { wallets: [WALLET({ wallet_addr: DAPPER })] })
+    render(<DashboardClient />)
+    const candy = await screen.findByRole("button", { name: /Add a Candy MLB \(Solana\) wallet/ })
+    expect(screen.queryByRole("button", { name: "+ Add another wallet" })).toBeNull()
+    fireEvent.click(candy)
+    const box = await screen.findByPlaceholderText("Solana wallet address")
+    expect(box).toBeTruthy()
+    expect(document.body.textContent).toMatch(/one per account/)
   })
 
-  it("surfaces the API's own message on a failed save", async () => {
-    // ⚠ Override AFTER openAdvanced — it sets this route itself to produce the
-    // empty-wallets state the form needs, so overriding first is undone.
-    const { addr, save } = await openAdvanced()
-    routes["/api/profile/saved-wallets"] = () => json(409, { error: "That wallet is already saved" })
-    fireEvent.change(addr, { target: { value: "0xbd94cade097e50ac" } })
-    fireEvent.click(save)
-    await screen.findAllByText("That wallet is already saved")
+  it("with a Dapper wallet AND a Candy wallet saved: no add link at all", async () => {
+    routes["/api/profile/saved-wallets"] = () =>
+      json(200, { wallets: [WALLET({ id: "w-1", wallet_addr: DAPPER }), WALLET({ id: "w-2", wallet_addr: SOL, collection_id: "candy" })] })
+    render(<DashboardClient />)
+    await waitFor(() => expect(document.body.textContent).toMatch(/0xbd94/))
+    expect(screen.queryByRole("button", { name: /Add another wallet|Add a Candy/ })).toBeNull()
   })
 
-  it("falls back to the status when a failed save carries no message", async () => {
-    const { addr, save } = await openAdvanced()
-    routes["/api/profile/saved-wallets"] = () => json(503, {})
-    fireEvent.change(addr, { target: { value: "0xbd94cade097e50ac" } })
-    fireEvent.click(save)
-    await screen.findAllByText("HTTP 503")
-  })
-
-  it("sends no nickname rather than an empty string when none was typed", async () => {
-    // An empty string and "no nickname" are different states in the DB.
-    const { addr, save } = await openAdvanced()
-    fireEvent.change(addr, { target: { value: "0xbd94cade097e50ac" } })
-    fireEvent.click(save)
-    await waitFor(() => {
-      const post = fetchMock.mock.calls.find(
-        (c) => String(c[0]).includes("saved-wallets") && (c[1] as RequestInit)?.method === "POST",
-      )
-      expect(String((post![1] as RequestInit).body)).toContain('"nickname":null')
-    })
+  it("with no Dapper wallet saved the add link and its Dapper copy are unchanged", async () => {
+    render(<DashboardClient />) // default fixture: "0xmine" is not a Cadence address
+    fireEvent.click(await screen.findByRole("button", { name: "+ Add another wallet" }))
+    await screen.findByPlaceholderText(ADD_WALLET_FIELD)
   })
 })
 
@@ -1884,42 +1856,6 @@ describe("DashboardClient — form affordances and keyboard paths", () => {
     fireEvent.change(box, { target: { value: "collector" } })
     fireEvent.keyDown(box, { key: "a" })
     expect(fetchMock.mock.calls.some((c) => String(c[0]).includes("resolve-and-associate"))).toBe(false)
-  })
-
-  it("hides the advanced form again and clears its error", async () => {
-    routes["/api/profile/saved-wallets"] = () => json(200, { wallets: [] })
-    routes["/api/profile/trophy-slabs"] = () => json(200, { slabs: [] })
-    render(<DashboardClient />)
-    await revealSectionForm()
-    await screen.findByPlaceholderText(ADD_WALLET_FIELD)
-    fireEvent.click(screen.getAllByRole("button", { name: "Advanced: enter wallet address directly" })[0])
-    const save = (await screen.findAllByPlaceholderText("0x… wallet address"))[0].closest("div")!.querySelector("button")!
-    fireEvent.click(save)
-    await screen.findAllByText("Address required")
-    fireEvent.click(screen.getAllByRole("button", { name: "Hide" })[0])
-    await waitFor(() => expect(screen.queryByText("Address required")).toBeNull())
-  })
-
-  it("lets the advanced form target a specific collection", async () => {
-    routes["/api/profile/saved-wallets"] = () => json(200, { wallets: [] })
-    routes["/api/profile/trophy-slabs"] = () => json(200, { slabs: [] })
-    render(<DashboardClient />)
-    await revealSectionForm()
-    await screen.findByPlaceholderText(ADD_WALLET_FIELD)
-    fireEvent.click(screen.getAllByRole("button", { name: "Advanced: enter wallet address directly" })[0])
-    const addr = (await screen.findAllByPlaceholderText("0x… wallet address"))[0]
-    const select = addr.closest("div")!.querySelector("select")!
-    fireEvent.change(select, { target: { value: "nfl-all-day" } })
-    fireEvent.change(addr, { target: { value: "0xbd94cade097e50ac" } })
-    fireEvent.click(addr.closest("div")!.querySelector("button")!)
-    await waitFor(() => {
-      const post = fetchMock.mock.calls.find(
-        (c) => String(c[0]).includes("saved-wallets") && (c[1] as RequestInit)?.method === "POST",
-      )
-      // ⚠ The All Day UUID, not Top Shot's — sending the default would file the
-      // wallet under a collection the collector did not choose.
-      expect(String((post![1] as RequestInit).body)).toContain("dee28451-5d62-409e-a1ad-a83f763ac070")
-    })
   })
 
   it("cancels out of the add-wallet form", async () => {

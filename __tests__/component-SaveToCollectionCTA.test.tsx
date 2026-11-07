@@ -29,6 +29,7 @@ let calls: Call[]
 let savedWallets: Array<{ wallet_addr: string }>
 let savedListStatus: number
 let postStatus: number
+let postBody: Record<string, unknown> | null = null
 
 beforeEach(() => {
   auth.user = null
@@ -36,12 +37,13 @@ beforeEach(() => {
   savedWallets = []
   savedListStatus = 200
   postStatus = 200
+  postBody = null
   vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
     calls.push({ url, init })
     if (url === "/api/profile/saved-wallets" && (!init?.method || init.method === "GET")) {
       return new Response(JSON.stringify({ wallets: savedWallets }), { status: savedListStatus })
     }
-    return new Response(JSON.stringify({ walletAddress: "0xba14e24d976f8484", associatedCollections: [] }), { status: postStatus })
+    return new Response(JSON.stringify(postBody ?? { walletAddress: "0xba14e24d976f8484", associatedCollections: [] }), { status: postStatus })
   }))
 })
 afterEach(() => {
@@ -92,6 +94,20 @@ describe("SaveToCollectionCTA", () => {
     expect(alert.textContent).toMatch(/Couldn.t save just now/)
     expect(alert.textContent).toMatch(/says nothing about the wallet/)
     expect(alert.textContent).not.toMatch(/no moments|empty|not found|invalid/i)
+  })
+
+  // 2026-11-07: one Dapper wallet per account — the server's 409 carries its own
+  // sentence, and "try again in a moment" would be a lie for a refusal.
+  it("a REFUSED save (409) shows the server's reason and the dashboard, not 'try again'", async () => {
+    auth.user = { id: "u1" }
+    postStatus = 409
+    postBody = { error: "dapper_wallet_already_saved", message: "One Dapper wallet per account. Remove the saved one to switch to another." }
+    const { findByRole, findByText } = render(<SaveToCollectionCTA wallet={FLOW} />)
+    fireEvent.click(await findByRole("button", { name: "Save to my collection" }))
+    const alert = await findByRole("alert")
+    expect(alert.textContent).toMatch(/One Dapper wallet per account/)
+    expect(alert.textContent).not.toMatch(/try again/i)
+    expect((await findByText(/Manage saved wallets/)).getAttribute("href")).toBe("/dashboard")
   })
 
   it("a lapsed session (401) asks to sign in again instead of reporting a failure", async () => {

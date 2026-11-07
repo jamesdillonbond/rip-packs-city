@@ -30,6 +30,9 @@ type State =
   | { kind: "saving" }
   | { kind: "saved" }
   | { kind: "signed-out" } // session lapsed between load and click (401)
+  // 2026-11-07: the server REFUSED (409 — one Dapper wallet per account, or the
+  // 5-slot cap) with its own sentence; that is not "try again in a moment".
+  | { kind: "refused"; message: string }
   | { kind: "failed" }
 
 export default function SaveToCollectionCTA({ wallet }: { wallet: string }) {
@@ -87,6 +90,11 @@ export default function SaveToCollectionCTA({ wallet }: { wallet: string }) {
               body: JSON.stringify({ address }),
             })
       if (res.status === 401) return setState({ kind: "signed-out" })
+      if (res.status === 409) {
+        const data = await res.json().catch(() => null)
+        const message = typeof data?.message === "string" && data.message.trim() ? data.message : "This wallet can't be added to your account."
+        return setState({ kind: "refused", message })
+      }
       setState(res.ok ? { kind: "saved" } : { kind: "failed" })
     } catch {
       setState({ kind: "failed" })
@@ -143,6 +151,12 @@ export default function SaveToCollectionCTA({ wallet }: { wallet: string }) {
       >
         {state.kind === "saving" ? "Saving…" : "Save to my collection"}
       </button>
+      {state.kind === "refused" && (
+        <span role="alert" style={{ fontSize: 12, color: "var(--rpc-text-muted)" }}>
+          {state.message}{" "}
+          <Link href="/dashboard" style={linkStyle}>Manage saved wallets →</Link>
+        </span>
+      )}
       {state.kind === "failed" && (
         // Says what failed (our save), never anything about the wallet.
         <span role="alert" style={{ fontSize: 12, color: "var(--rpc-text-muted)" }}>

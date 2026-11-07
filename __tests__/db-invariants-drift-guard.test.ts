@@ -756,6 +756,17 @@ const PINS = [
     migration: "supabase/migrations/20261003045659_audit_20261002_pack_mint_probes_node_faults_retry_12_times.sql",
   },
   {
+    // Added 2026-11-07. The forward TAIL that keeps pack_nft_mints current from the chain: one
+    // probe every 3 minutes from a per-collection cursor to now − 5 min, the cursor advancing past
+    // every instant offered (a conflict is coverage), nothing past the horizon. Trevor's 15 fresh
+    // packs read "distribution not recorded" for a day while Studio's index was frozen and the
+    // bracket resolver had no neighbours for a brand-new drop.
+    fn: "enqueue_pack_mint_tail_probes",
+    test: "supabase/tests/enqueue_pack_mint_tail_probes.sql",
+    migration:
+      "supabase/migrations/20261107211500_audit_20261107_pack_mint_tail_follows_the_chain_and_fresh_not_found_rechecks.sql",
+  },
+  {
     // Added 2026-09-26. The height estimate the mint-probe lane aims with.
     fn: "flow_height_estimate",
     test: "supabase/tests/run_pack_mint_probe_lane.sql",

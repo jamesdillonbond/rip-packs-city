@@ -141,7 +141,12 @@ export function packIdentityNote(
     }
   }
   if (row.dist_id) return null
-  if (row.status === "held") return "Sealed · distribution not recorded until opened or resold"
+  // 2026-11-07: a sealed pack's drop IS resolvable (Dapper's pack index, else the chain's
+  // PackNFT.Minted event via the mint-tail lane) — it just has not landed yet. The old line
+  // ("not recorded until opened or resold") told a collector who had just bought 15 packs that
+  // nothing would ever show, which was both wrong and the thing he reported. Say what is
+  // happening and roughly when it resolves; never a fake name.
+  if (row.status === "held") return "Sealed · still identifying this pack's drop — name and price land once Dapper's index or the chain confirms it (usually within a day)"
   return "Distribution unknown"
 }
 

@@ -31,7 +31,7 @@ describe("AutoSearchReader", () => {
     params = new URLSearchParams({ wallet: " 0xWALLET ", address: "0xADDR", q: "0xQ" })
     const onSearch = vi.fn()
     render(<AutoSearchReader onSearch={onSearch} collectionSlug="nba-top-shot" />)
-    await waitFor(() => expect(onSearch).toHaveBeenCalledWith("0xWALLET")) // trimmed
+    await waitFor(() => expect(onSearch).toHaveBeenCalledWith("0xWALLET", "url")) // trimmed
     expect(savedWalletMock).not.toHaveBeenCalled()
   })
 
@@ -39,20 +39,20 @@ describe("AutoSearchReader", () => {
     params = new URLSearchParams({ address: "0xADDR" })
     const onSearch1 = vi.fn()
     const { unmount } = render(<AutoSearchReader onSearch={onSearch1} collectionSlug="ufc" />)
-    await waitFor(() => expect(onSearch1).toHaveBeenCalledWith("0xADDR"))
+    await waitFor(() => expect(onSearch1).toHaveBeenCalledWith("0xADDR", "url"))
     unmount()
 
     params = new URLSearchParams({ q: "0xLEGACY" })
     const onSearch2 = vi.fn()
     render(<AutoSearchReader onSearch={onSearch2} collectionSlug="ufc" />)
-    await waitFor(() => expect(onSearch2).toHaveBeenCalledWith("0xLEGACY"))
+    await waitFor(() => expect(onSearch2).toHaveBeenCalledWith("0xLEGACY", "url"))
   })
 
   it("falls back to the saved wallet when there is no URL param", async () => {
     savedWalletMock.mockResolvedValue("0xSAVED")
     const onSearch = vi.fn()
     render(<AutoSearchReader onSearch={onSearch} collectionSlug="laliga-golazos" />)
-    await waitFor(() => expect(onSearch).toHaveBeenCalledWith("0xSAVED"))
+    await waitFor(() => expect(onSearch).toHaveBeenCalledWith("0xSAVED", "saved"))
     expect(savedWalletMock).toHaveBeenCalledWith("laliga-golazos")
   })
 

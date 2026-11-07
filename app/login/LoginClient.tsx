@@ -44,6 +44,10 @@ export default function LoginClient() {
   // page. A crafted link was a phishing message wearing our UI. See
   // lib/auth/login-error-copy.ts.
   const urlError = loginErrorCopy(urlErrorRaw)
+  // 2026-11-07: `?intent=signup` (the CREATE FREE ACCOUNT pills) heads the page as
+  // account creation. Same form, same magic link — a first link creates the
+  // account — so the toggle below changes WORDS, never the request.
+  const [signup, setSignup] = useState(params.get("intent") === "signup")
   const [email, setEmail] = useState("")
   const [status, setStatus] = useState<Status>("idle")
   const [error, setError] = useState(urlError ?? "")
@@ -96,7 +100,7 @@ export default function LoginClient() {
         input::placeholder{color:var(--rpc-text-muted);}
       `}</style>
 
-      <div className="rpc-live-pill" style={{ marginBottom: 24 }}>RIP PACKS CITY · SIGN IN</div>
+      <div className="rpc-live-pill" style={{ marginBottom: 24 }}>{signup ? "RIP PACKS CITY · CREATE ACCOUNT" : "RIP PACKS CITY · SIGN IN"}</div>
 
       <div className="rpc-card-neon rpc-scan-crt" style={{
         maxWidth: 440, width: "100%",
@@ -121,6 +125,40 @@ export default function LoginClient() {
           </div>
         </div>
 
+        {status === "idle" || status === "error" || status === "sending" ? (
+          <div style={{ marginBottom: 18, textAlign: "left" }}>
+            <h1 style={{
+              fontFamily: "var(--font-display)", fontWeight: 900,
+              fontSize: 20, letterSpacing: "0.04em", textTransform: "uppercase",
+              lineHeight: 1.1, marginBottom: 10, textAlign: "center",
+            }}>
+              {signup ? "Create your free account" : "Sign in to your account"}
+            </h1>
+            <ol aria-label="How it works" style={{
+              listStyle: "none", display: "flex", flexDirection: "column", gap: 6,
+              fontFamily: "var(--font-mono)", fontSize: 11, lineHeight: 1.55,
+              color: "var(--rpc-text-secondary)",
+            }}>
+              {[
+                "Enter your email — no password, no invite.",
+                signup ? "Click the link we send. That first click creates your account." : "Click the link we send and you're in.",
+                "Add your Dapper username: your binder, trophy case and FMV alerts load from it.",
+              ].map((line, i) => (
+                <li key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                  <span aria-hidden style={{
+                    flexShrink: 0, width: 18, height: 18, borderRadius: 9,
+                    // brand-exception: white numeral on the --rpc-red disc, both themes
+                    background: "var(--rpc-red-fill)", color: "#fff",
+                    fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 11,
+                    display: "inline-flex", alignItems: "center", justifyContent: "center",
+                  }}>{i + 1}</span>
+                  <span>{line}</span>
+                </li>
+              ))}
+            </ol>
+          </div>
+        ) : null}
+
         {status === "sent" ? (
           <div style={{ padding: "24px 8px" }}>
             <div style={{ fontSize: 36, marginBottom: 14 }}>{"✉️"}</div>
@@ -135,7 +173,7 @@ export default function LoginClient() {
             }}>
               We sent a magic link to <span style={{ color: "var(--rpc-text-primary)" }}>{email}</span>.
               <br />
-              Click it to sign in.
+              {signup ? "Click it and your account is ready — you'll land on your dashboard to add your Dapper username." : "Click it to sign in."}
               <br />
               {/* 2026-10-24: the commonest dead end after "check your email" is a
                   link sitting in spam / promotions. (The old "expires in 1 hour"
@@ -292,7 +330,7 @@ export default function LoginClient() {
               onMouseEnter={(e) => (e.currentTarget.style.boxShadow = "var(--scan-glow-strong)")}
               onMouseLeave={(e) => (e.currentTarget.style.boxShadow = "var(--scan-glow)")}
             >
-              {status === "sending" ? "Sending link…" : "Send magic link"}
+              {status === "sending" ? "Sending link…" : signup ? "Create account — email me a link" : "Send magic link"}
             </button>
 
             {error && (
@@ -317,7 +355,22 @@ export default function LoginClient() {
               letterSpacing: "0.08em",
               textTransform: "uppercase",
             }}>
-              New here? A free account is instant, no invite needed — track your wallets across every published collection, then pin your 6 best Moments to a trophy case you can share.{" "}
+              {signup ? (
+                <>
+                  Already have an account?{" "}
+                  <button type="button" onClick={() => setSignup(false)} style={{ background: "none", border: "none", padding: 0, font: "inherit", color: "var(--rpc-red-text)", textDecoration: "underline", cursor: "pointer", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                    Sign in instead →
+                  </button>
+                </>
+              ) : (
+                <>
+                  New here?{" "}
+                  <button type="button" onClick={() => setSignup(true)} style={{ background: "none", border: "none", padding: 0, font: "inherit", color: "var(--rpc-red-text)", textDecoration: "underline", cursor: "pointer", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                    Create a free account →
+                  </button>{" "}
+                  Instant, no invite needed.
+                </>
+              )}{" "}
               <Link href="/insights" style={{ color: "var(--rpc-text-muted)" }}>
                 Or browse without an account →
               </Link>

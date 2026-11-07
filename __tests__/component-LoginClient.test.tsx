@@ -377,3 +377,41 @@ describe("LoginClient — magic-link request beacon", () => {
     expect(JSON.stringify(trackMock.mock.calls)).not.toContain("someone@example.com")
   })
 })
+
+// 2026-11-07 (Trevor): "there's no easy way to identify how to create an account".
+// The CREATE FREE ACCOUNT pills land here with ?intent=signup, which heads the SAME
+// magic-link form as account creation; the request is identical (a first link
+// creates the account), only the words change — and the reader can flip either way.
+describe("LoginClient — ?intent=signup heads the page as account creation", () => {
+  it("signup intent: headline, three steps, button label and 'sign in instead' toggle", async () => {
+    renderAt("intent=signup")
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toMatch(/Create your free account/i)
+    const steps = within(screen.getByRole("list", { name: /how it works/i })).getAllByRole("listitem")
+    expect(steps).toHaveLength(3)
+    expect(steps[1].textContent).toMatch(/creates your account/i)
+    expect(steps[2].textContent).toMatch(/Dapper username/i)
+    const btn = screen.getByRole("button", { name: /create account/i })
+    fireEvent.change(emailBox(), { target: { value: "new@b.com" } })
+    fireEvent.click(btn)
+    // same request as sign-in: the magic link, default /dashboard
+    await waitFor(() => expect(sendMagicLink).toHaveBeenCalledWith("new@b.com", "/dashboard"))
+    expect(screen.getByRole("status").textContent).toMatch(/account is ready/i)
+  })
+
+  it("signup intent carries `next` back to the page the visitor was reading", async () => {
+    renderAt("intent=signup&next=/nba-top-shot/collection")
+    fireEvent.change(emailBox(), { target: { value: "new@b.com" } })
+    fireEvent.click(screen.getByRole("button", { name: /create account/i }))
+    await waitFor(() => expect(sendMagicLink).toHaveBeenCalledWith("new@b.com", "/nba-top-shot/collection"))
+  })
+
+  it("default (sign in) still offers a one-tap switch to account creation, and back", () => {
+    renderAt("")
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toMatch(/Sign in/i)
+    fireEvent.click(screen.getByRole("button", { name: /create a free account/i }))
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toMatch(/Create your free account/i)
+    fireEvent.click(screen.getByRole("button", { name: /sign in instead/i }))
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toMatch(/Sign in/i)
+    expect(submit()).toBeTruthy()
+  })
+})

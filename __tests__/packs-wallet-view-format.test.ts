@@ -171,8 +171,13 @@ describe("relativePackTime", () => {
 })
 
 describe("packIdentityNote (2026-09-18)", () => {
-  it("says a sealed pack's distribution is not recorded, instead of faking a name", () => {
-    expect(packIdentityNote({ dist_id: null, status: "held" })).toMatch(/not recorded/)
+  it("says a sealed pack is still being identified (never that it cannot be), instead of faking a name", () => {
+    const note = packIdentityNote({ dist_id: null, status: "held" }) ?? ""
+    expect(note).toMatch(/^Sealed · still identifying/)
+    // 2026-11-07: the old line claimed the drop is "not recorded until opened or resold" — false
+    // since the searchPackNft lane (09-18) and the chain mint tail (11-07) name sealed packs.
+    expect(note).not.toMatch(/not recorded|until opened/)
+    expect(note).not.toMatch(/Pack #/)
   })
   it("says 'Distribution unknown' for a non-sealed row with no dist", () => {
     expect(packIdentityNote({ dist_id: null, status: "ripped" })).toBe("Distribution unknown")

@@ -16,8 +16,8 @@ vi.mock("next/server", async (importOriginal) => {
   return { ...actual, after: (fn: any) => { captured.fn = fn } }
 })
 
-const state: { user: any; resolved: any; resolveThrows: boolean; upsertErr: any; rpc: any; userRetry: boolean; swUpserts: any[]; swUpdates: any[] } = {
-  user: null, resolved: null, resolveThrows: false, upsertErr: null, rpc: { data: 3, error: null }, userRetry: false, swUpserts: [], swUpdates: [],
+const state: { user: any; resolved: any; resolveThrows: boolean; upsertErr: any; rpc: any; userRetry: boolean; swUpserts: any[]; swUpdates: any[]; swRows: null | Array<{ wallet_addr: string }> } = {
+  user: null, resolved: null, resolveThrows: false, upsertErr: null, rpc: { data: 3, error: null }, userRetry: false, swUpserts: [], swUpdates: [], swRows: null as null | Array<{ wallet_addr: string }>,
 }
 
 vi.mock("@/lib/supabase", () => {
@@ -27,8 +27,9 @@ vi.mock("@/lib/supabase", () => {
       upsert: (rows: any, opts: any) => { state.swUpserts.push({ rows, opts }); return b },
       update: (row: any) => { state.swUpdates.push(row); return b },
       eq: () => b,
+      limit: () => b,
       in: () => b,
-      then: (resolve: any) => resolve({ data: null, error: state.upsertErr }),
+      then: (resolve: any) => resolve({ data: state.swRows, error: state.upsertErr }),
     }
     return b
   }
@@ -71,7 +72,7 @@ const req = (body?: any, throws = false) => ({ url: "https://t/api/profile/resol
 
 let fetchMock: any
 beforeEach(() => {
-  state.user = null; state.resolved = null; state.resolveThrows = false; state.upsertErr = null; state.rpc = { data: 3, error: null }; state.userRetry = false; state.swUpserts = []; state.swUpdates = []
+  state.user = null; state.resolved = null; state.resolveThrows = false; state.upsertErr = null; state.rpc = { data: 3, error: null }; state.userRetry = false; state.swUpserts = []; state.swUpdates = []; state.swRows = null
   userCalls = 0; captured.fn = null
   delete process.env.INGEST_SECRET_TOKEN
   fetchMock = vi.fn(async (_url: string) => ({ ok: true, status: 200 }))
@@ -167,6 +168,22 @@ describe("POST /api/profile/resolve-and-associate — guards", () => {
     // …and the live-only one is gone. `wallet-search` kept the good pattern for
     // months while this route did not; the regression is a one-word edit.
     expect(src).not.toMatch(/\bresolveTopShotUsername\(/)
+  })
+
+  // 2026-11-07 (Trevor): ONE Dapper wallet per account — "Load my collection" with a
+  // username that resolves to a DIFFERENT Flow wallet than the saved one is refused,
+  // naming the saved wallet, and writes nothing.
+  it("409s a second Dapper wallet and names the saved one; a re-association of the same wallet passes", async () => {
+    state.user = { id: "u1" }
+    state.swRows = Array(5).fill({ wallet_addr: "0xbd94cade097e50ac" })
+    state.resolved = { walletAddress: "0xc5ababe825dc3122", username: "someoneelse" }
+    const res = await POST(req({ username: "someoneelse" }))
+    expect(res.status).toBe(409)
+    expect(await res.json()).toMatchObject({ error: "dapper_wallet_already_saved", saved_dapper_wallet: "0xbd94cade097e50ac" })
+    expect(state.swUpserts).toHaveLength(0)
+
+    state.resolved = { walletAddress: "0xbd94cade097e50ac", username: "trevor" }
+    expect((await POST(req({ username: "trevor" }))).status).toBe(200)
   })
 
   it("500s when the saved_wallets upsert fails", async () => {
