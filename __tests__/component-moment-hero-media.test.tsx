@@ -51,6 +51,21 @@ describe("MomentHeroMedia", () => {
     expect(getByText("RPC / No preview")).toBeTruthy()
   })
 
+  it("under prefers-reduced-motion the poster stands in: no auto-playing <video> is mounted (2026-11-07)", () => {
+    const original = window.matchMedia
+    const stub = (q: string) => ({ matches: /reduce/.test(q), media: q, onchange: null, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, dispatchEvent: () => false }) as unknown as MediaQueryList
+    Object.defineProperty(window, "matchMedia", { configurable: true, writable: true, value: stub })
+    try {
+      const { container } = render(
+        <MomentHeroMedia imageCandidates={["a.png"]} videoUrl="v.mp4" alt="hero" />,
+      )
+      expect(container.querySelector("video")).toBeNull()
+      expect(container.querySelector("img")?.getAttribute("src")).toBe("a.png")
+    } finally {
+      Object.defineProperty(window, "matchMedia", { configurable: true, writable: true, value: original })
+    }
+  })
+
   it("overlays a video on the image and hides it on video error (revealing the image)", () => {
     const { container } = render(
       <MomentHeroMedia imageCandidates={["a.png"]} videoUrl="clip.mp4" alt="hero" />,

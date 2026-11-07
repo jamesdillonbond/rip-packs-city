@@ -2,6 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 import { heroSrcSet } from "@/lib/hero-srcset";
+import { usePrefersReducedMotion } from "@/lib/a11y/prefers-reduced-motion";
 
 // MomentHeroMedia — resilient hero media for the /moment/[id] page.
 //
@@ -58,7 +59,10 @@ export default function MomentHeroMedia({
     if (!el || !srcSet || !currentImg || loadedSrc?.for === currentImg) return;
     if (el.complete && el.naturalWidth > 0) setLoadedSrc({ for: currentImg, src: el.currentSrc || currentImg });
   };
-  const showVideo = !!videoUrl && !videoFailed;
+  // Reduced motion: the poster stands in for the looping clip (2026-11-07) —
+  // the hero was the one auto-starting video with no motion guard.
+  const reducedMotion = usePrefersReducedMotion();
+  const showVideo = !!videoUrl && !videoFailed && !reducedMotion;
 
   if (!currentImg && !showVideo) {
     if (placeholder !== undefined) return <>{placeholder}</>;

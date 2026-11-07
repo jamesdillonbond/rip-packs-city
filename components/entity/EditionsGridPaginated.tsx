@@ -12,6 +12,7 @@ import { sectionEmptyCopy } from "@/lib/entity/section-empty-copy"
 import { recentLowUsd } from "@/lib/entity/recent-low"
 import { tileSeriesLabel } from "@/lib/series-label"
 import { proxyIpfsUrl } from "@/lib/ipfs-media"
+import { usePrefersReducedMotion } from "@/lib/a11y/prefers-reduced-motion"
 import {
   type EditionSortKey,
   compareEditions,
@@ -711,19 +712,7 @@ function EditionFilterBar({
   )
 }
 
-// prefers-reduced-motion guard — SSR-safe (defaults to false until mounted).
-function usePrefersReducedMotion(): boolean {
-  const [reduced, setReduced] = useState(false)
-  useEffect(() => {
-    if (typeof window === "undefined" || !window.matchMedia) return
-    const mq = window.matchMedia("(prefers-reduced-motion: reduce)")
-    setReduced(mq.matches)
-    const onChange = () => setReduced(mq.matches)
-    mq.addEventListener?.("change", onChange)
-    return () => mq.removeEventListener?.("change", onChange)
-  }, [])
-  return reduced
-}
+// prefers-reduced-motion: the shared store-backed hook (lib/a11y/prefers-reduced-motion, 2026-11-07).
 
 // Tile media: static thumbnail at rest; on hover, mount a muted/looping clip
 // over it (poster = thumbnail) like nbatopshot.com. The <video> is mounted
