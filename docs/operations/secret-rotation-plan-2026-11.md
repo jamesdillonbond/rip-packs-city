@@ -34,8 +34,7 @@ deployment — on 2026-10-31 that silently rolled prod back four commits (sessio
 
 ## Order and steps
 
-**Tier 0 (2 min, no risk):** delete `RPC_API_KEY` and `MARKET_FEED_TOKEN` from Vercel → Settings →
-Environment Variables. A deleted var cannot leak.
+**Tier 0 — ✅ DONE 2026-11-06 ~9:20 PM PT** (Cowork via Trevor's Chrome, on his "Do what you think is best"): `RPC_API_KEY` and `MARKET_FEED_TOKEN` DELETED from Vercel (all environments), after re-grepping latest `main` for readers (0). No redeploy needed — nothing reads them. Seven vars remain on this list, one of which (`TOPSHOT_SUBEDITION_KEYING`) is a flag.
 
 **Tier 1 (≈10 min each; do at a quiet hour; verify before moving on):**
 1. **Anthropic** — console.anthropic.com → API Keys → create key → Vercel `ANTHROPIC_API_KEY` → redeploy
