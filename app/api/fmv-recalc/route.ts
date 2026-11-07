@@ -1585,7 +1585,7 @@ export async function POST(req: NextRequest) {
             .delete()
             .in("edition_id", slice)
             .gte("computed_at", todayStart.toISOString())
-          if (bfDelErr) console.warn("[FMV-RECALC] Backfill delete error:", bfDelErr.message)
+          if (bfDelErr) { backfillError = backfillError ?? `delete: ${bfDelErr.message}`; console.warn("[FMV-RECALC] Backfill delete error:", bfDelErr.message) }
         }
 
         for (let i = 0; i < backfillRows.length; i += CHUNK_SIZE) {
@@ -1595,7 +1595,7 @@ export async function POST(req: NextRequest) {
             .insert(chunk)
 
           if (!bfError) backfillCount += chunk.length
-          else console.warn("[FMV-RECALC] Backfill insert error:", bfError.message)
+          else { backfillError = backfillError ?? `insert: ${bfError.message}`; console.warn("[FMV-RECALC] Backfill insert error:", bfError.message) }
         }
 
         console.log(`[FMV-RECALC] Backfill complete: ${backfillCount} editions covered`)
@@ -1895,7 +1895,7 @@ export async function POST(req: NextRequest) {
               .delete()
               .in("edition_id", slice)
               .gte("computed_at", todayStart.toISOString())
-            if (histDelErr) console.warn("[FMV-RECALC] Historical fallback delete error:", histDelErr.message)
+            if (histDelErr) { historicalFallbackError = historicalFallbackError ?? `delete: ${histDelErr.message}`; console.warn("[FMV-RECALC] Historical fallback delete error:", histDelErr.message) }
           }
 
           for (let i = 0; i < histInsert.length; i += CHUNK_SIZE) {
@@ -1905,7 +1905,7 @@ export async function POST(req: NextRequest) {
               .insert(chunk)
 
             if (!histInsertErr) historicalBackfillCount += chunk.length
-            else console.warn("[FMV-RECALC] Historical fallback insert error:", histInsertErr.message)
+            else { historicalFallbackError = historicalFallbackError ?? `insert: ${histInsertErr.message}`; console.warn("[FMV-RECALC] Historical fallback insert error:", histInsertErr.message) }
           }
 
           console.log(`[FMV-RECALC] Historical fallback complete: ${historicalBackfillCount} editions covered`)
@@ -2036,7 +2036,7 @@ export async function POST(req: NextRequest) {
               .delete()
               .in("edition_id", slice)
               .gte("computed_at", todayStart.toISOString())
-            if (askDelErr) console.warn("[FMV-RECALC] ASK fallback delete error:", askDelErr.message)
+            if (askDelErr) { askOffersError = askOffersError ?? `delete: ${askDelErr.message}`; console.warn("[FMV-RECALC] ASK fallback delete error:", askDelErr.message) }
           }
 
           for (let i = 0; i < askRows.length; i += CHUNK_SIZE) {
@@ -2045,7 +2045,7 @@ export async function POST(req: NextRequest) {
               .from("fmv_snapshots")
               .insert(chunk)
             if (!askInsErr) askOffersBackfillCount += chunk.length
-            else console.warn("[FMV-RECALC] ASK fallback insert error:", askInsErr.message)
+            else { askOffersError = askOffersError ?? `insert: ${askInsErr.message}`; console.warn("[FMV-RECALC] ASK fallback insert error:", askInsErr.message) }
           }
 
           console.log(`[FMV-RECALC] edition_offers ASK fallback complete: ${askOffersBackfillCount} editions covered`)
@@ -2148,7 +2148,7 @@ export async function POST(req: NextRequest) {
               .delete()
               .in("edition_id", slice)
               .gte("computed_at", todayStart.toISOString())
-            if (parDelErr) console.warn("[FMV-RECALC] parallel ASK floor delete error:", parDelErr.message)
+            if (parDelErr) { parallelAskError = parallelAskError ?? `delete: ${parDelErr.message}`; console.warn("[FMV-RECALC] parallel ASK floor delete error:", parDelErr.message) }
           }
 
           for (let i = 0; i < parRows.length; i += CHUNK_SIZE) {
@@ -2157,7 +2157,7 @@ export async function POST(req: NextRequest) {
               .from("fmv_snapshots")
               .insert(chunk)
             if (!parInsErr) parallelAskBackfillCount += chunk.length
-            else console.warn("[FMV-RECALC] parallel ASK floor insert error:", parInsErr.message)
+            else { parallelAskError = parallelAskError ?? `insert: ${parInsErr.message}`; console.warn("[FMV-RECALC] parallel ASK floor insert error:", parInsErr.message) }
           }
 
           console.log(`[FMV-RECALC] parallel ASK floor complete: ${parallelAskBackfillCount} :: editions floored`)
@@ -2252,7 +2252,7 @@ export async function POST(req: NextRequest) {
               .delete()
               .in("edition_id", slice)
               .gte("computed_at", todayStart.toISOString())
-            if (adDelErr) console.warn("[FMV-RECALC] All Day ASK fallback delete error:", adDelErr.message)
+            if (adDelErr) { allDayAskError = allDayAskError ?? `delete: ${adDelErr.message}`; console.warn("[FMV-RECALC] All Day ASK fallback delete error:", adDelErr.message) }
           }
 
           for (let i = 0; i < adRows.length; i += CHUNK_SIZE) {
@@ -2261,7 +2261,7 @@ export async function POST(req: NextRequest) {
               .from("fmv_snapshots")
               .insert(chunk)
             if (!adInsErr) allDayAskBackfillCount += chunk.length
-            else console.warn("[FMV-RECALC] All Day ASK fallback insert error:", adInsErr.message)
+            else { allDayAskError = allDayAskError ?? `insert: ${adInsErr.message}`; console.warn("[FMV-RECALC] All Day ASK fallback insert error:", adInsErr.message) }
           }
 
           console.log(`[FMV-RECALC] All Day ASK fallback complete: ${allDayAskBackfillCount} editions covered`)
@@ -2531,7 +2531,7 @@ export async function POST(req: NextRequest) {
                 .delete()
                 .in("edition_id", slice)
                 .gte("computed_at", todayStart.toISOString())
-              if (touchDelErr) console.warn("[FMV-RECALC] Stale touch delete error:", touchDelErr.message)
+              if (touchDelErr) { staleTouchError = staleTouchError ?? `delete: ${touchDelErr.message}`; console.warn("[FMV-RECALC] Stale touch delete error:", touchDelErr.message) }
             }
 
             for (let i = 0; i < touchRows.length; i += CHUNK_SIZE) {
@@ -2540,7 +2540,7 @@ export async function POST(req: NextRequest) {
                 .from("fmv_snapshots")
                 .insert(chunk)
               if (!touchInsertErr) staleTouchCount += chunk.length
-              else console.warn("[FMV-RECALC] Stale touch insert error:", touchInsertErr.message)
+              else { staleTouchError = staleTouchError ?? `insert: ${touchInsertErr.message}`; console.warn("[FMV-RECALC] Stale touch insert error:", touchInsertErr.message) }
             }
             console.log(`[FMV-RECALC] Stale touch complete: ${staleTouchCount} editions refreshed`)
           }

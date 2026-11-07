@@ -347,6 +347,38 @@ describe("fmv-recalc — Step 7 stale touch (?force_stale=true)", () => {
     expect(extra.stale_touch_error).toBe("query_sql timeout")
   })
 
+  // 2026-11-07 review: Steps 5–6 insert / delete failures went to console only, so
+  // the step's `_error` read null beside a lower count — "less work to do".
+  it("a FAILED re-stamp insert is recorded in stale_touch_error, never read as a quiet pass", async () => {
+    state.querySqlByMarker = { recent_traded: { data: [staleRow("cold-ts", 50)], error: null } }
+    const { rpcCalls } = instrument(baseFixtures())
+    const sb = state.sb as { from: (t: string) => Record<string, unknown> }
+    const baseFrom = sb.from.bind(sb)
+    let inserts = 0
+    sb.from = (t: string) => {
+      const b = baseFrom(t)
+      if (t === "fmv_snapshots") {
+        const orig = b.insert as (rows: unknown) => unknown
+        b.insert = (rows: unknown) => {
+          inserts++
+          // the main Step 4 write still succeeds; the stale-touch write (2nd) fails
+          if (inserts === 1) return orig(rows)
+          return Promise.resolve({ data: null, error: { code: "57014", message: "statement timeout" } })
+        }
+      }
+      return b
+    }
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+    try {
+      await POST(req("?force_stale=true"))
+      await runDeferred()
+    } finally {
+      warn.mockRestore()
+    }
+    const extra = terminalLog(rpcCalls)?.p_extra as Record<string, unknown>
+    expect(String(extra.stale_touch_error)).toMatch(/insert: statement timeout/)
+  })
+
   it("is a clean no-op when no edition is cold enough to need a touch", async () => {
     state.querySqlByMarker = { recent_traded: { data: [], error: null } }
     const { rpcCalls, inserted } = instrument(baseFixtures())
