@@ -105,6 +105,8 @@
 
 38. **Invisible glyphs in light mode (~11:40–11:55 AM PT).** The remove-trophy ✕ (`TrophySlab`, owner dashboard) and the pack page's ▶ badge coloured their glyph with `--rpc-text-primary` on a fixed 55–60 % black disc → near-black on black in light mode; the ✕ is the only phone unpin path. Both fixed white (brand-exception). Pin red on old code. The whole-canvas dark pages (admin, transaction history) are consistent dark-on-dark in both themes — Phase-2 brand debt, not a defect.
 
+39. **Tier chips on the hubs failed AA in light (~12:00–12:30 PM PT).** `/players/<slug>` and `/teams/<league>/<slug>` read 12 color-contrast nodes each in light: every tier chip, 4.12–4.49:1, because those pages stack three `.rpc-card` layers under the chip tint and the 10-18 light tier text values assumed one. Tokens re-tuned (~12 % darker light, a shade lighter for four dark ones); the token test now checks each tier text on its tint over 0–3 stacked cards + hover in both themes (13 red on old tokens); both hubs join the a11y gate (36 routes). The other 12 pages in that sweep (All Day sets, LaLiga/UFC/Candy/Panini overviews, both pack boards, privacy, sniper live, play, analytics, a moment→edition redirect) read 0 in both themes.
+
 ## Post-ship watch (what to read tomorrow)
 
 - **Series-1 Top Shot art** on `/dashboard/*`, `/profile/*`, binder, trade room: present (any blank tile with a `data-rpc-dead-art` attribute whose `data-rpc-dead-src` starts `…/editions/<N>_` means ANOTHER series was retired — same fix, derive not copy).
