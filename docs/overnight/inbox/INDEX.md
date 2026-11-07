@@ -34,7 +34,7 @@ failure it documents.
 
 ## 2026-11-07 — 1 filing
 
-- [All Day 7-d published FMV/sale ratio 0.882–0.899 — marginally under the 0.90 action line the 11-04 steer set (LOW tier the driver; 30-d still 1.000; benign, re-derive/decide)](2026-11-07T0409Z-daytime-monitor-allday-7d-fmv-sale-ratio-marginally-under-090-action-line.md)
+- [🟢 **ACCEPT 11-07 (nightly pass): 0.889 — LOW tier is the by-design 0.75× haircut, 30-d 1.000; steer closed.** All Day 7-d published FMV/sale ratio 0.882–0.899 — marginally under the 0.90 action line the 11-04 steer set (LOW tier the driver; 30-d still 1.000; benign, re-derive/decide)](2026-11-07T0409Z-daytime-monitor-allday-7d-fmv-sale-ratio-marginally-under-090-action-line.md)
 
 ## 2026-11-06 — 4 filings
 
