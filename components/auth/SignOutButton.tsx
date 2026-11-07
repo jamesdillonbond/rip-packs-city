@@ -96,6 +96,8 @@ export default function SignOutButton() {
       <button
         onClick={() => setOpen((v) => !v)}
         title={email}
+        aria-expanded={open}
+        aria-controls="rpc-account-panel"
         style={{
           display: "flex",
           alignItems: "center",
@@ -135,8 +137,15 @@ export default function SignOutButton() {
       </button>
 
       {open && (
+        // 2026-11-07: a labelled group, not role="menu" — that role promises
+        // arrow-key / Escape menu behaviour and menuitem children, neither of
+        // which this panel has (axe aria-required-children would flag the
+        // empty menu; it is signed-in-only, so no gate saw it).
         <div
-          role="menu"
+          id="rpc-account-panel"
+          role="group"
+          aria-label="Account"
+          data-account-panel
           style={{
             position: "absolute",
             top: "calc(100% + 6px)",

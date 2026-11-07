@@ -45,7 +45,7 @@ describe("TopNav — menu links are not preloaded on every page view", () => {
     await waitFor(() => {})
     expect(prefetchOf(container, "Analytics")).toBe("false")
     expect(prefetchOf(container, "Blog")).toBe("false")
-    const menuItems = Array.from(container.querySelectorAll('[role="menuitem"]'))
+    const menuItems = Array.from(container.querySelectorAll('[data-ia-item]'))
     expect(menuItems.length).toBeGreaterThan(20)
     expect(menuItems.filter((a) => a.getAttribute("data-prefetch") !== "false")).toEqual([])
     const hub = container.querySelector('a[data-ia-group="market"]')!

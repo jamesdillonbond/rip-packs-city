@@ -20,6 +20,15 @@ import { readRecordedLastCollection, setLastCollection, subscribeLastCollection 
 // Why no JS menu state: a CSS :hover / :focus-within menu is keyboard-reachable
 // (Tab into the group link, then Tab through its items), needs no portal, and
 // cannot be left open by a lost pointer. Every item is a real <a>.
+//
+// 2026-11-07: NOT an ARIA menu. The panels carried role="menu" / "menuitem" and
+// the trigger aria-haspopup="menu" — a promise of the menu-widget keyboard
+// contract (arrow keys move, Escape closes, Tab leaves the whole menu) that this
+// component does not keep: Tab walks the items one by one and arrows do
+// nothing, so a screen reader announced "menu, 10 items" and then behaved like
+// a list of links. It IS a list of links (a disclosure), so it is marked up as
+// one: a labelled group of plain anchors. axe never flagged the old markup —
+// the structure was valid; the behaviour contract was the thing missing.
 
 // The remembered collection is the SAME record MobileNav reads
 // (lib/active-collection, `rpc_last_collection`) — one memory, two renderers.
@@ -88,10 +97,10 @@ export default function TopNav() {
         >
           {current.icon} {current.shortLabel} ▾
         </Link>
-        <div className="rpc-topnav-menu" role="menu" aria-label="Collections">
+        <div className="rpc-topnav-menu" role="group" aria-label="Collections" data-ia-menu="collections">
           <span className="rpc-topnav-job">Collections</span>
           {publishedCollections().map((c) => (
-            <Link key={c.id} href={`/${c.id}/overview`} role="menuitem" prefetch={false} aria-current={c.id === current.id ? "true" : undefined}
+            <Link key={c.id} href={`/${c.id}/overview`} data-ia-item prefetch={false} aria-current={c.id === current.id ? "true" : undefined}
               style={c.id === current.id ? { color: accentText(c.accent) } : undefined}>
               {c.icon} {c.shortLabel}
             </Link>
@@ -106,7 +115,6 @@ export default function TopNav() {
           <div key={g.id} className="rpc-topnav-group">
             <Link
               href={resolveHref(g.href, collectionId, g.page)}
-              aria-haspopup="menu"
               aria-current={active ? "page" : undefined}
               data-ia-group={g.id}
               className={
@@ -118,10 +126,10 @@ export default function TopNav() {
             >
               {g.label}
             </Link>
-            <div className="rpc-topnav-menu" role="menu" aria-label={g.label}>
+            <div className="rpc-topnav-menu" role="group" aria-label={g.label} data-ia-menu={g.id}>
               <span className="rpc-topnav-job">{g.job}</span>
               {items.map((i) => (
-                <Link key={i.href} href={resolveHref(i.href, collectionId, i.page)} role="menuitem"
+                <Link key={i.href} href={resolveHref(i.href, collectionId, i.page)} data-ia-item
                   // ~40 menu links on every page: none is prefetched (2026-10-04 /analytics lesson, generalised).
                   prefetch={false}>
                   {i.label}

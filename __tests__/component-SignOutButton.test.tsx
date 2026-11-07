@@ -86,9 +86,9 @@ describe("SignOutButton", () => {
     const { container, getByRole, getByText } = render(<SignOutButton />)
     await waitFor(() => expect(container.textContent).toContain("Me"))
     // Dropdown not present yet.
-    expect(container.querySelector('[role="menu"]')).toBeNull()
+    expect(container.querySelector('[data-account-panel]')).toBeNull()
     fireEvent.click(getByRole("button"))
-    const menu = container.querySelector('[role="menu"]')
+    const menu = container.querySelector('[data-account-panel]')
     expect(menu).not.toBeNull()
     expect(menu!.textContent).toContain("owner@example.com")
     expect(getByText("Profile").getAttribute("href")).toBe("/dashboard")
@@ -109,10 +109,10 @@ describe("SignOutButton", () => {
     const { container, getByRole } = render(<SignOutButton />)
     await waitFor(() => expect(container.textContent).toContain("Me"))
     fireEvent.click(getByRole("button"))
-    expect(container.querySelector('[role="menu"]')).not.toBeNull()
+    expect(container.querySelector('[data-account-panel]')).not.toBeNull()
     // mousedown on the document body (outside rootRef) closes it.
     fireEvent.mouseDown(document.body)
-    await waitFor(() => expect(container.querySelector('[role="menu"]')).toBeNull())
+    await waitFor(() => expect(container.querySelector('[data-account-panel]')).toBeNull())
   })
 
   it("clicking the Profile link closes the dropdown", async () => {
@@ -121,6 +121,6 @@ describe("SignOutButton", () => {
     await waitFor(() => expect(container.textContent).toContain("Me"))
     fireEvent.click(getByRole("button"))
     fireEvent.click(getByText("Profile"))
-    await waitFor(() => expect(container.querySelector('[role="menu"]')).toBeNull())
+    await waitFor(() => expect(container.querySelector('[data-account-panel]')).toBeNull())
   })
 })

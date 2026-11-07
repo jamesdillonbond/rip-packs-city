@@ -83,7 +83,7 @@ describe("TopNav — groups, by audience", () => {
     const chip = container.querySelector('[data-tour-anchor="collection-switcher"]')!
     expect(chip.textContent).toContain("Top Shot")
     expect(chip.getAttribute("href")).toBe("/nba-top-shot/overview")
-    const menu = container.querySelector('[role="menu"][aria-label="Collections"]')!
+    const menu = container.querySelector('[data-ia-menu="collections"]')!
     const items = Array.from(menu.querySelectorAll("a")).map((a) => a.getAttribute("href"))
     expect(items).toEqual(publishedCollections().map((c) => `/${c.id}/overview`))
     expect(groupLabels(container)).not.toContain("Top Shot")
@@ -95,7 +95,7 @@ describe("TopNav — groups, by audience", () => {
     const { container } = render(<TopNav />)
     await waitFor(() => {})
     for (const g of IA_GROUPS.filter((g) => !g.auth)) {
-      const menu = container.querySelector(`[role="menu"][aria-label="${g.label}"]`)!
+      const menu = container.querySelector(`[data-ia-menu="${g.id}"]`)!
       const hrefs = Array.from(menu.querySelectorAll("a")).map((a) => a.getAttribute("href"))
       expect(hrefs, g.id).toEqual(visibleItems(g, false).map((i) => resolveHref(i.href, "nfl-all-day", i.page)))
     }
@@ -132,7 +132,7 @@ describe("TopNav — groups, by audience", () => {
   it("menu links are never prefetched — ~40 of them ride every page", async () => {
     const { container } = render(<TopNav />)
     await waitFor(() => {})
-    expect(container.querySelectorAll('[role="menuitem"]').length).toBeGreaterThan(20)
+    expect(container.querySelectorAll('[data-ia-item]').length).toBeGreaterThan(20)
   })
 })
 
