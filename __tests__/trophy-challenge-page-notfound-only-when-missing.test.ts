@@ -57,4 +57,20 @@ describe("/trophy-challenges/[slug] page", () => {
     const md = await generateMetadata({ params: Promise.resolve({ slug: "dame-time-4" }) })
     expect(md.title).toBe("Trophy case challenge")
   })
+
+  it("an unknown slug's metadata names no canonical / og (it streams into the 404's head)", async () => {
+    probeMock.mockResolvedValue({ kind: "missing" })
+    const { generateMetadata } = await import("@/app/trophy-challenges/[slug]/page")
+    const md = await generateMetadata({ params: Promise.resolve({ slug: "no-such-5" }) })
+    expect(md.alternates ?? null).toBeNull()
+    expect(md.openGraph ?? null).toBeNull()
+    expect(md.robots).toEqual({ index: false, follow: false })
+  })
+
+  it("a failed probe keeps the canonical (the page renders; absence is not known)", async () => {
+    probeMock.mockResolvedValue({ kind: "unknown" })
+    const { generateMetadata } = await import("@/app/trophy-challenges/[slug]/page")
+    const md = await generateMetadata({ params: Promise.resolve({ slug: "dame-time-6" }) })
+    expect(md.alternates).toEqual({ canonical: "https://www.rippackscity.com/trophy-challenges/dame-time-6" })
+  })
 })

@@ -26,6 +26,18 @@ const probeOnce = cache((slug: string) => probeTrophyChallengeLive(slug))
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params
   const probe = await probeOnce(slug)
+  if (probe.kind === "missing") {
+    // The page will notFound(); this object still streams into the 404's <head>.
+    // Mirror app/not-found.tsx — no canonical/og naming a URL that does not exist.
+    return {
+      title: "404",
+      description: "The page you're looking for isn't here.",
+      robots: { index: false, follow: false },
+      alternates: null,
+      openGraph: null,
+      twitter: null,
+    }
+  }
   const named = probe.kind === "found"
   return {
     title: named ? `${probe.title} · Trophy case challenge` : "Trophy case challenge",
