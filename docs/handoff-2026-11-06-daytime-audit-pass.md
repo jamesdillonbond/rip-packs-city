@@ -83,6 +83,8 @@
 
 27. **`MOBILE_GROUP_IDS` (~5:20–5:35 AM PT).** Listed Trade; every consumer filtered it out. Constant now matches the bar; bar pinned to the constant. Residue: `MobileNav` still hand-builds its tabs — map them from the registry in daylight. Light-theme screenshots of `/trades/block` 1280, `/help` 390, `/teams` 390: clean.
 
+28. **Mobile bar re-slot (Trevor 8:01 AM PT; shipped `93d5af4` ~8:20 AM).** HOME · MY BINDER · MARKET · PACKS · INSIGHTS — verified live at 390 by screenshot; pin, concierge line and strategy doc follow the same order.
+
 ## Post-ship watch (what to read tomorrow)
 
 - **Series-1 Top Shot art** on `/dashboard/*`, `/profile/*`, binder, trade room: present (any blank tile with a `data-rpc-dead-art` attribute whose `data-rpc-dead-src` starts `…/editions/<N>_` means ANOTHER series was retired — same fix, derive not copy).
