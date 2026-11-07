@@ -66,6 +66,8 @@
 
 19. **IA follow-through (~10:00–10:30 PM PT; Trevor 9:59 PM "It's only 9:59pm PT").** `/dashboard/packs` and `/dashboard/history` were still orphans after P1 — a "← Dashboard" pill and a generic "Dashboard" title. One shared `DashboardTabs` component (registry `lib/dashboard-tabs.ts`) now renders the five-tab row on all five surfaces: tablist buttons on `/dashboard`, links with `aria-current` on the two page tabs; titles "Pack history" / "Transaction history"; the `/insights` group heading got a real " · " separator (read as one word by a screen reader). Signed-in walk of `/dashboard/history`: the "Pack — not yet identified" rows render, sub-dollar `$0.xx` prices are real All Day buys, zero dead-art tiles. Cloud sweep after deploy: `/` and `/insights` at 1280/390 — no overflow, 5 doors, 4 groups, no JS errors.
 
+20. **Settings-tab walk (~10:35–11:05 PM PT).** (a) Favorite-collection chips had the ★/☆ glyph as their ONLY state — `aria-pressed` + label now, none asserted on a failed read (`d7f1192`). (b) `/dashboard/api-keys` had no entry point but the concierge → linked from Settings; its key card printed the raw plan enum ("PLAN · FOUNDING") → removed (field stays in the API); title "API keys". (c) Email settings · Edit profile · API keys returned to the Overview → now `/dashboard?tab=settings`. Guard file `settings-pages-return-to-the-settings-tab.test.ts`.
+
 ## Post-ship watch (what to read tomorrow)
 
 - **Series-1 Top Shot art** on `/dashboard/*`, `/profile/*`, binder, trade room: present (any blank tile with a `data-rpc-dead-art` attribute whose `data-rpc-dead-src` starts `…/editions/<N>_` means ANOTHER series was retired — same fix, derive not copy).
