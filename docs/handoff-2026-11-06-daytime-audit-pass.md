@@ -109,6 +109,8 @@
 
 40. **Concierge tab names (~12:00–12:15 PM PT).** "List the tabs on the Top Shot page" → "Collection … Pack Sniper … Hot Floors … Challenges": the prompt's tabs line was bare paths. It now carries `PAGE_LABELS` (Binder) and marks folded pages from `TAB_BAR_HIDDEN_PAGES`, both from the strip's own registry. Pin red on old route.
 
+41. **Header menus were false ARIA menus (~12:20–12:50 PM PT).** A keyboard walk at 1280: every stop had a visible ring (good), but the five group panels and the Me panel claimed `role="menu"`/`menuitem`/`aria-haspopup="menu"` with no arrow-key/Escape behaviour (the Me panel had no menuitems at all). Both are now labelled `role="group"` disclosures; Me button gets `aria-expanded`/`aria-controls`. New tree walk pins the contract (a `role="menu"` claim needs ArrowDown + Escape). Rendered UI unchanged. Not changed: ~40 Tab stops to reach the fourth group — the skip link covers it; arrow-key nav is the next step if a keyboard user asks (queue 11).
+
 ## Post-ship watch (what to read tomorrow)
 
 - **Series-1 Top Shot art** on `/dashboard/*`, `/profile/*`, binder, trade room: present (any blank tile with a `data-rpc-dead-art` attribute whose `data-rpc-dead-src` starts `…/editions/<N>_` means ANOTHER series was retired — same fix, derive not copy).
@@ -144,6 +146,7 @@
 8. **[P3, Claude Code, when a consumer appears] #237** — shared INDEXED discriminator for `wallet-intel` / `trophy-cases` / `collection-snapshot` (three states, not two).
 10. **[P3, Trevor — a product trade-off, not a fix]** On a phone, an entity page (e.g. `/nba-top-shot/player/damian-lillard`) puts the SUBJECT below the fold: ticker → banner → switcher pills → tab strip → wallet band → breadcrumb → hero; "DAMIAN LILLARD" lands ~750 px down at 390. The wallet band is the piece that could move, but it is a MEASURED retention lever (10-14: Google landings on entity pages carried no next step without it) — so this is yours: keep the band above the hero (next-step first), move it below the hero on entity routes at < 768 (subject first), or shrink it to one line there. Both themes read clean otherwise (no dead art, no confidence words; "RECENT-LOW" is a price label).
 9. **[watch, 11-13 9 AM PT, scheduled]** #235 WAF rule `Entity page sweep` in Log mode → the one-shot task reads it and recommends Log → Rate Limit or another week.
+11. **[P4, Claude Code, if a keyboard user asks] Header group menus: arrow-key navigation** — today a focus-within disclosure (40 Tab stops to the fourth group; skip link covers it). Roving tabindex + ArrowDown/Up/Escape on `.rpc-topnav-group` would earn back `role="menu"`; the new `aria-menu-role-keeps-its-keyboard-contract` walk is the gate.
 5. **[P4, Trevor, carried] #58 `OPENSEA_API_KEY`** — only if Candy still has 0 indexed sales on 11-27.
 
 ## Closed / RESOLVED this pass
