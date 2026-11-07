@@ -330,7 +330,7 @@ export default function LoginClient() {
               onMouseEnter={(e) => (e.currentTarget.style.boxShadow = "var(--scan-glow-strong)")}
               onMouseLeave={(e) => (e.currentTarget.style.boxShadow = "var(--scan-glow)")}
             >
-              {status === "sending" ? "Sending link…" : signup ? "Create account — email me a link" : "Send magic link"}
+              {status === "sending" ? "Sending link…" : signup ? "Create my account →" : "Send magic link"}
             </button>
 
             {error && (

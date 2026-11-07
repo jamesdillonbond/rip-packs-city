@@ -91,8 +91,16 @@ export default function SaveToCollectionCTA({ wallet }: { wallet: string }) {
             })
       if (res.status === 401) return setState({ kind: "signed-out" })
       if (res.status === 409) {
-        const data = await res.json().catch(() => null)
-        const message = typeof data?.message === "string" && data.message.trim() ? data.message : "This wallet can't be added to your account."
+        // The refusal's own sentence; an unparseable 409 body still says REFUSED
+        // (never "nothing happened") — the status is the fact, the body the detail.
+        let message = "This wallet can't be added to your account."
+        try {
+          const data: unknown = await res.json()
+          const m = (data as { message?: unknown } | null)?.message
+          if (typeof m === "string" && m.trim()) message = m
+        } catch {
+          // body unreadable: keep the generic refusal sentence
+        }
         return setState({ kind: "refused", message })
       }
       setState(res.ok ? { kind: "saved" } : { kind: "failed" })

@@ -770,8 +770,10 @@ const PINS = [
     // Added 2026-09-26. The height estimate the mint-probe lane aims with.
     fn: "flow_height_estimate",
     test: "supabase/tests/run_pack_mint_probe_lane.sql",
+    // 2026-11-07: pack_purchases (chain-indexed) joins Studio's frozen index as an anchor source;
+    // the nearest row on each side wins. Every post-10-29 probe had aimed ~8 h early.
     migration:
-      "supabase/migrations/20260926200000_audit_20260926_pack_nft_mints_name_packs_dapper_minted_straight_into_a_wallet.sql",
+      "supabase/migrations/20261107212800_audit_20261107_flow_height_estimate_anchors_on_the_chain_feed_too.sql",
   },
   {
     // Added 2026-10-10 (#188). A Top Shot box / case is valued as the sum of what it yields:

@@ -27,6 +27,9 @@
 --   8. a 429 returns the probe to pending without counting an attempt.
 -- 2026-10-02 (#166): 9. a node fault (timeout, 5xx, no response) gets 12 attempts;
 --   every other failure keeps 4.
+-- 2026-11-07: 10. flow_height_estimate reads pack_purchases (chain-indexed, always current)
+--   beside Studio's frozen index; the nearest anchor on each side wins (an 8 h aim miss
+--   on every probe after the 10-29 freeze).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -41,6 +44,8 @@ INSERT INTO public.collections VALUES
 CREATE TABLE public.saved_wallets (wallet_addr text);
 CREATE TABLE public.pack_nft_identity (collection_id uuid, pack_nft_id text, owner_address text, acquired_at timestamptz);
 CREATE TABLE public.topshot_pack_sales_history (block_height bigint, block_time timestamptz);
+-- 2026-11-07: the chain-indexed anchor source (nearest row on each side wins)
+CREATE TABLE public.pack_purchases (collection_id uuid, block_height bigint, sealed_at timestamptz);
 CREATE TABLE public.pipeline_runs_stub (pipeline text, ok boolean, extra jsonb);
 CREATE FUNCTION public.log_pipeline_run(p_pipeline text, p_started_at timestamptz, p_rows_found int, p_rows_written int,
   p_rows_skipped int, p_ok boolean, p_error text, p_collection_slug text, p_cursor_before text, p_cursor_after text, p_extra jsonb)
@@ -76,17 +81,34 @@ LANGUAGE sql
 STABLE
 SET search_path TO 'public'
 AS $function$
-  -- Interpolate between the nearest marketplace sales on either side of p_at
-  -- (each carries its block height and time); extrapolate at ~1.19 blocks/s
-  -- from one side when only one exists. NULL when there is no anchor at all.
+  -- Interpolate between the nearest anchors on either side of p_at (each carries
+  -- its block height and time); extrapolate at ~1.19 blocks/s from one side when
+  -- only one exists. NULL when there is no anchor at all.
+  -- 2026-11-07: TWO anchor sources — Studio's marketplace index (frozen since
+  -- 10-29, #218) and the chain-indexed pack_purchases (always current); the
+  -- nearest row on each side wins, whichever table it came from.
   WITH a AS (
-    SELECT block_height AS h, block_time AS t FROM public.topshot_pack_sales_history
-     WHERE block_time <= p_at AND block_height IS NOT NULL
-     ORDER BY block_time DESC LIMIT 1
+    SELECT h, t FROM (
+      (SELECT block_height AS h, block_time AS t FROM public.topshot_pack_sales_history
+        WHERE block_time <= p_at AND block_height IS NOT NULL
+        ORDER BY block_time DESC LIMIT 1)
+      UNION ALL
+      (SELECT block_height AS h, sealed_at AS t FROM public.pack_purchases
+        WHERE collection_id = '95f28a17-224a-4025-96ad-adf8a4c63bfd'
+          AND sealed_at <= p_at AND block_height IS NOT NULL
+        ORDER BY sealed_at DESC LIMIT 1)
+    ) x ORDER BY t DESC LIMIT 1
   ), b AS (
-    SELECT block_height AS h, block_time AS t FROM public.topshot_pack_sales_history
-     WHERE block_time >= p_at AND block_height IS NOT NULL
-     ORDER BY block_time LIMIT 1
+    SELECT h, t FROM (
+      (SELECT block_height AS h, block_time AS t FROM public.topshot_pack_sales_history
+        WHERE block_time >= p_at AND block_height IS NOT NULL
+        ORDER BY block_time LIMIT 1)
+      UNION ALL
+      (SELECT block_height AS h, sealed_at AS t FROM public.pack_purchases
+        WHERE collection_id = '95f28a17-224a-4025-96ad-adf8a4c63bfd'
+          AND sealed_at >= p_at AND block_height IS NOT NULL
+        ORDER BY sealed_at LIMIT 1)
+    ) x ORDER BY t LIMIT 1
   )
   SELECT CASE
            WHEN a.h IS NOT NULL AND b.h IS NOT NULL AND b.t > a.t
@@ -484,6 +506,20 @@ BEGIN
   PERFORM public.run_pack_mint_probe_lane();
   PERFORM _assert((SELECT count(*) = 25 FROM net.calls WHERE url LIKE 'http://access-001.mainnet26.%'),
                   'at most 25 dispatches to one node per tick');
+END $$;
+
+-- claim 10 (2026-11-07): a chain anchor nearer than Studio's last row wins; Studio's
+-- stale row alone would have extrapolated ~8 h off (1.19/s against a 1.25/s chain).
+INSERT INTO public.pack_purchases VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 150000000, '2026-11-05 18:00:00+00'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 150009000, '2026-11-05 20:00:00+00'),
+  ('dee28451-5d62-409e-a1ad-a83f763ac070', 1, '2026-11-05 19:00:00+00'); -- All Day row: never an anchor
+DO $$
+BEGIN
+  PERFORM _assert_eq(public.flow_height_estimate('2026-11-05 19:00:00+00')::text, '150004500',
+                     'claim 10: interpolates between the two chain anchors (Studio last row is months older)');
+  PERFORM _assert_eq(public.flow_height_estimate('2026-11-05 21:00:00+00')::text, (150009000 + 3600 * 1.19)::bigint::text,
+                     'claim 10: extrapolates from the NEAREST anchor, the chain row, past the last one');
 END $$;
 
 ROLLBACK;

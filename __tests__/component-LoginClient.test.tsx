@@ -390,7 +390,7 @@ describe("LoginClient — ?intent=signup heads the page as account creation", ()
     expect(steps).toHaveLength(3)
     expect(steps[1].textContent).toMatch(/creates your account/i)
     expect(steps[2].textContent).toMatch(/Dapper username/i)
-    const btn = screen.getByRole("button", { name: /create account/i })
+    const btn = screen.getByRole("button", { name: /create my account/i })
     fireEvent.change(emailBox(), { target: { value: "new@b.com" } })
     fireEvent.click(btn)
     // same request as sign-in: the magic link, default /dashboard
@@ -401,7 +401,7 @@ describe("LoginClient — ?intent=signup heads the page as account creation", ()
   it("signup intent carries `next` back to the page the visitor was reading", async () => {
     renderAt("intent=signup&next=/nba-top-shot/collection")
     fireEvent.change(emailBox(), { target: { value: "new@b.com" } })
-    fireEvent.click(screen.getByRole("button", { name: /create account/i }))
+    fireEvent.click(screen.getByRole("button", { name: /create my account/i }))
     await waitFor(() => expect(sendMagicLink).toHaveBeenCalledWith("new@b.com", "/nba-top-shot/collection"))
   })
 
