@@ -245,6 +245,9 @@ export default function MobileNav() {
               style={{ ...baseStyle, opacity: 0.35, cursor: "default" }}
             >
               {inner}
+              {/* `title` never reaches a touch screen or a screen reader; the
+                  reason rides along as sr-only text (2026-11-07). */}
+              <span className="sr-only"> — not available for {activeCollection.shortLabel}</span>
             </span>
           );
         }

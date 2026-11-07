@@ -187,7 +187,9 @@ describe("MobileNav — thin collections", () => {
     expect(hrefs(container)).not.toContain("/nba-top-shot/packs")
     expect(hrefs(container)).toEqual(expect.arrayContaining(["/", "/ufc/collection", "/market", "/insights"]))
     const inert = Array.from(bar(container).querySelectorAll("[aria-disabled='true']"))
-    expect(inert.map((e) => (e.textContent ?? "").trim())).toEqual(["PACKS"])
+    expect(inert.map((e) => (e.textContent ?? "").trim())).toEqual(["PACKS — not available for Strike"])
+    // the reason is spoken, not only hovered: sr-only text, not just `title`
+    expect(inert[0].querySelector(".sr-only")?.textContent).toContain("not available for Strike")
   })
 
   it("renders a collection-scoped tab INERT when the collection lacks the page, never a substitute", () => {
@@ -201,7 +203,7 @@ describe("MobileNav — thin collections", () => {
       const { container } = render(<MobileNav />)
       expect(hrefs(container).filter((h) => h?.endsWith("/collection"))).toEqual([])
       const inert = Array.from(bar(container).querySelectorAll("[aria-disabled='true']"))
-      expect(inert.map((e) => (e.textContent ?? "").trim())).toEqual(["MY BINDER"])
+      expect(inert.map((e) => (e.textContent ?? "").trim())).toEqual(["MY BINDER — not available for Candy"])
     } finally {
       col.pages = saved
     }
