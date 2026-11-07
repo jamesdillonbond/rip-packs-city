@@ -144,8 +144,13 @@ export const IA_GROUPS: readonly IaGroup[] = [
   },
 ]
 
-/** The four groups the mobile bar shows beside HOME, in header order. */
-export const MOBILE_GROUP_IDS: readonly IaGroupId[] = ["market", "packs", "insights", "trade"]
+/**
+ * The groups the mobile bar shows beside HOME (and before MY BINDER), in header
+ * order. Trade is NOT here on purpose: it has no public hub a phone visitor needs
+ * in the bar. (11-07: it used to be listed and every consumer filtered it back
+ * out — a registry value nothing rendered.)
+ */
+export const MOBILE_GROUP_IDS: readonly IaGroupId[] = ["market", "packs", "insights"]
 
 /**
  * Resolve a registry href for a collection. A `{collection}` href lands on the

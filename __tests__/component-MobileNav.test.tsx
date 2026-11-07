@@ -14,6 +14,7 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), prefetch: vi.fn() }),
 }))
 
+import { MOBILE_GROUP_IDS } from "@/lib/ia"
 import MobileNav, { activeTabFor } from "@/components/MobileNav"
 import { getCollection } from "@/lib/collections"
 
@@ -32,7 +33,7 @@ const tab = (c: HTMLElement, label: string) =>
 describe("MobileNav", () => {
   // ⭐ RE-SLOTTED 2026-11-06 (IA Phase 2, Trevor): HOME · MARKET · PACKS ·
   // INSIGHTS · MY BINDER — the header's groups in the header's order (lib/ia.ts
-  // MOBILE_GROUP_IDS minus Trade, which has no public hub a phone visitor needs
+  // MOBILE_GROUP_IDS — Trade is not in it: no public hub a phone visitor needs
   // in the bar), plus the one personal page. Was HOME · MY BINDER · MARKET ·
   // SNIPER (2026-09-28); Sniper is the Market group's second item.
   it("renders the five tabs, in order", () => {
@@ -41,6 +42,8 @@ describe("MobileNav", () => {
       .filter((c) => c.tagName === "A" || c.tagName === "SPAN")
       .map((c) => (c.textContent ?? "").trim())
     expect(labels).toEqual(["HOME", "MARKET", "PACKS", "INSIGHTS", "MY BINDER"])
+    // and that literal is exactly the registry: the bar must never drift from MOBILE_GROUP_IDS
+    expect(labels).toEqual(["HOME", ...MOBILE_GROUP_IDS.map((id) => id.toUpperCase()), "MY BINDER"])
   })
 
   it("renders no sheet or dialog — every tab is a destination", () => {
