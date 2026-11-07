@@ -357,8 +357,13 @@ test.describe("mobile layout (touch context)", () => {
       //      the comment and unquoting the attribute values landed it.
       // So this test is pinned against the DEPLOYED build, and its real job is to
       // catch the rule silently vanishing from the bundle again.
-      await page.goto("/nba-top-shot/collection", { waitUntil: "domcontentloaded" })
-      await page.waitForTimeout(1500)
+      // 2026-11-07: the binder's filter/sort bars wait for a wallet now (pre-search
+      // the route has TWO controls, and this positive control reddened — as it
+      // should). Load a public wallet so the native selects this test exists for
+      // are on the page, and wait for them rather than for a clock.
+      await page.goto("/nba-top-shot/collection?wallet=0xbd94cade097e50ac", { waitUntil: "domcontentloaded" })
+      await page.waitForSelector("select", { timeout: 30_000 })
+      await page.waitForTimeout(500)
 
       const result = await page.evaluate(() => {
         const els = Array.from(document.querySelectorAll("input, select, textarea")).filter((e) => {
