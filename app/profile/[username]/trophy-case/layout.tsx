@@ -49,6 +49,16 @@ export async function generateMetadata({
   const resolved = result?.ok === true ? result.data : null
   const notFound = result?.ok === false && result.status === 404
 
+  // 2026-11-07: a 404 gets 404 metadata (same repair as the profile layout) —
+  // no "<handle>'s Trophy Case", no canonical, no share card for nobody.
+  if (notFound) {
+    return {
+      title: { absolute: "Collector not found | Rip Packs City" },
+      description: "There is no Rip Packs City collector with that handle.",
+      robots: { index: false, follow: true },
+    }
+  }
+
   const displayName = resolved?.bio?.display_name?.trim() || key || "Collector"
   const trophyCount = resolved?.trophies?.length ?? 0
 
@@ -62,7 +72,6 @@ export async function generateMetadata({
     title: { absolute: title },
     description,
     alternates: { canonical },
-    ...(notFound ? { robots: { index: false, follow: true } } : {}),
     openGraph: {
       type: "profile",
       locale: "en_US",

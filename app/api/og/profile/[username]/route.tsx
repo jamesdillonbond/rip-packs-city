@@ -456,6 +456,12 @@ export async function GET(
       `${SUPABASE_URL}/rest/v1/profile_bio?username=ilike.${enc}&select=user_id,display_name,tagline,accent_color,avatar_url,favorite_team,equipped_border,equipped_banner&limit=1`,
     );
     const bio: BioRow | null = bios.rows[0] ?? null;
+    // 2026-11-07: a lookup that SUCCEEDED and found no row is a 404 — there is
+    // no such collector — so the card is the generic site card, never a
+    // collector card named after a handle nobody owns (a shared typo previewed
+    // as "<typo>'s Collection · 0 moments"). A lookup that FAILED still falls
+    // through: the handle is real for all we know and the figures are withheld.
+    if (bios.ok && !bio) return renderFallback(fonts);
     const userId = bio?.user_id ?? null;
     const uidEnc = userId ? encodeURIComponent(userId) : null;
 

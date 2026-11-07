@@ -117,7 +117,13 @@ describe("trophy-case unfurl", () => {
 
   it("noindexes a handle that resolves to nothing, but not a transient failure", async () => {
     getPublicProfile.mockResolvedValue({ ok: false, status: 404, error: "Not found" })
-    expect((await meta()).robots).toMatchObject({ index: false })
+    const nf = await meta()
+    expect(nf.robots).toMatchObject({ index: false })
+    // 2026-11-07: and it is 404 metadata — no "<handle>'s Trophy Case", no
+    // canonical, no share card for a collector who does not exist.
+    expect(nf.title.absolute).not.toMatch(/'s Trophy Case/)
+    expect(nf.alternates).toBeUndefined()
+    expect(nf.openGraph).toBeUndefined()
 
     getPublicProfile.mockResolvedValue({ ok: false, status: 500, error: "boom" })
     expect((await meta()).robots).toBeUndefined()

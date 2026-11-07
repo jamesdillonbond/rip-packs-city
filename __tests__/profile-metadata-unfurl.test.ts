@@ -157,6 +157,13 @@ describe("generateMetadata — the card contract", () => {
     getPublicProfile.mockResolvedValue({ ok: false, status: 404, error: "Not found" })
     const m = await meta()
     expect(m.robots).toMatchObject({ index: false })
+    // 2026-11-07: and it is 404 METADATA — not "<handle>'s Collection" with a
+    // self-canonical URL and a collector OG card for someone who does not exist.
+    const title = typeof m.title === "string" ? m.title : (m.title as { absolute?: string } | null)?.absolute
+    expect(title).not.toMatch(/'s Collection/)
+    expect(m.alternates?.canonical).toBeUndefined()
+    expect(m.openGraph).toBeUndefined()
+    expect(m.twitter).toBeUndefined()
   })
 
   it("leaves a REAL profile indexable", async () => {

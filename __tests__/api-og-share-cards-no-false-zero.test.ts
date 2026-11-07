@@ -282,6 +282,31 @@ describe("/api/og/profile — a failed read must not publish a zero about a name
     expect(text).toContain("503")
   })
 
+  // 2026-11-07: an unknown handle is a 404, not an empty collector. The bio
+  // lookup SUCCEEDING with no row drew a collector card named after the handle
+  // ("nobody-here · 0 moments"); it is the generic site card now. The mirror:
+  // a bio lookup that FAILS still draws the handle's card with figures withheld.
+  it("draws the generic card, not a collector card, for a handle nobody owns", async () => {
+    mockPostgrest({ rips: 0 })
+    const real = globalThis.fetch
+    globalThis.fetch = (async (url: string, init?: RequestInit) =>
+      String(url).includes("profile_bio")
+        ? new Response("[]", { status: 200, headers: { "content-type": "application/json" } })
+        : (real as (u: string, i?: RequestInit) => Promise<Response>)(url, init)) as unknown as typeof globalThis.fetch
+    const text = await renderProfile("nobody-here")
+    expect(text).not.toContain("nobody-here")
+    expect(text).not.toContain("MOMENTS / PINS / CARDS")
+    expect(text).toContain("RIP PACKS")
+  })
+
+  it("MIRROR: a FAILED bio lookup still draws the handle's card with figures withheld", async () => {
+    mockPostgrest({ fail: "profile_bio", rips: 503 })
+    const text = await renderProfile("jamesdillonbond")
+    expect(text).toContain("JAMESDILLONBOND")
+    expect(text).toContain("MOMENTS / PINS / CARDS")
+    expect(text).toContain("—")
+  })
+
   it("WITHHOLDS the Moments count when the wallets read fails", async () => {
     mockPostgrest({ fail: "saved_wallets", rips: 503 })
     const text = await renderProfile()

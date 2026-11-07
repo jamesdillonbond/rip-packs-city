@@ -110,6 +110,18 @@ export async function generateMetadata({
   const resolved = result?.ok === true ? result.data : null
   const notFound = result?.ok === false && result.status === 404
 
+  // 2026-11-07: a 404 gets 404 metadata. Until now the shell still published
+  // "<handle>'s Collection", a self-canonical URL and an OG card for a collector
+  // who does not exist — the title and card a share of a typo'd handle previewed
+  // with. No canonical, no social card: the page is `notFound()`.
+  if (notFound) {
+    return {
+      title: { absolute: "Collector not found | Rip Packs City" },
+      description: "There is no Rip Packs City collector with that handle.",
+      robots: { index: false, follow: true },
+    }
+  }
+
   const displayName = resolved?.bio?.display_name?.trim() || key || "Collector"
 
   // `cached_fmv*` is deliberately NOT read here — see profileDescription.
@@ -136,9 +148,6 @@ export async function generateMetadata({
     title: { absolute: title },
     description,
     alternates: { canonical },
-    // A username that resolves to nothing still renders a page shell; it must
-    // not enter the index as if it were a real collector.
-    ...(notFound ? { robots: { index: false, follow: true } } : {}),
     openGraph: {
       type: "profile",
       locale: "en_US",
