@@ -1066,7 +1066,7 @@ function buildSystemPromptParts(ctx: {
     const items = g.items.map((i) => `${i.label}${i.auth ? " (signed in)" : ""} ${resolveHref(i.href, DEFAULT_COLLECTION, i.page)}`).join(", ");
     return `- **${g.label}**${g.auth ? " (signed in)" : ""} — ${g.job}. Hub ${resolveHref(g.href, DEFAULT_COLLECTION, g.page)}. Menu: ${items}.`;
   }).join("\n");
-  const iaMobileLine = ["HOME", ...MOBILE_GROUP_IDS.map((id) => id.toUpperCase()), "MY BINDER"].join(" · ");
+  const iaMobileLine = ["HOME", "MY BINDER", ...MOBILE_GROUP_IDS.map((id) => id.toUpperCase())].join(" · ");
   const candyTabs = tabsFor(getCollection("candy-mlb"));
 
   const collectionBlurb = activeCollection

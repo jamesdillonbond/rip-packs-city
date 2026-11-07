@@ -31,7 +31,8 @@ const tab = (c: HTMLElement, label: string) =>
   ) as HTMLElement
 
 describe("MobileNav", () => {
-  // ⭐ RE-SLOTTED 2026-11-06 (IA Phase 2, Trevor): HOME · MARKET · PACKS ·
+  // ⭐ RE-SLOTTED 2026-11-07 (Trevor): HOME · MY BINDER · MARKET · PACKS · INSIGHTS.
+  // Before that, 2026-11-06 (IA Phase 2, Trevor): HOME · MARKET · PACKS ·
   // INSIGHTS · MY BINDER — the header's groups in the header's order (lib/ia.ts
   // MOBILE_GROUP_IDS — Trade is not in it: no public hub a phone visitor needs
   // in the bar), plus the one personal page. Was HOME · MY BINDER · MARKET ·
@@ -41,9 +42,10 @@ describe("MobileNav", () => {
     const labels = Array.from(bar(container).children)
       .filter((c) => c.tagName === "A" || c.tagName === "SPAN")
       .map((c) => (c.textContent ?? "").trim())
-    expect(labels).toEqual(["HOME", "MARKET", "PACKS", "INSIGHTS", "MY BINDER"])
+    // 2026-11-07 (Trevor, 8:01 AM PT): MY BINDER second, between HOME and MARKET.
+    expect(labels).toEqual(["HOME", "MY BINDER", "MARKET", "PACKS", "INSIGHTS"])
     // and that literal is exactly the registry: the bar must never drift from MOBILE_GROUP_IDS
-    expect(labels).toEqual(["HOME", ...MOBILE_GROUP_IDS.map((id) => id.toUpperCase()), "MY BINDER"])
+    expect(labels).toEqual(["HOME", "MY BINDER", ...MOBILE_GROUP_IDS.map((id) => id.toUpperCase())])
   })
 
   it("renders no sheet or dialog — every tab is a destination", () => {

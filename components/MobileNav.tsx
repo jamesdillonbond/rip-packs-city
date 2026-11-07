@@ -40,6 +40,9 @@ const ICON_SIZE = 22;
 // dashboard (Trevor, 2026-09-28): the binder is a wallet's holdings. Account
 // surfaces (/dashboard, /profile, /alerts) are reached through the header's
 // sign-in pill and light no tab — no tab leads there any more.
+// ⭐ RE-SLOTTED 2026-11-07 (Trevor): HOME · MY BINDER · MARKET · PACKS · INSIGHTS
+// — the one personal page a phone visitor goes to most, second, then the
+// header's first groups in the header's order.
 // ⭐ RE-SLOTTED 2026-11-06 (IA Phase 2, Trevor's call): HOME · MARKET · PACKS ·
 // INSIGHTS · MY BINDER — the header's first groups, in the header's order, plus
 // the one personal page a phone visitor goes to most. Was HOME · MY BINDER ·
@@ -138,6 +141,9 @@ export default function MobileNav() {
   // tap, R36).
   const tabs: { key: MobileTab; label: string; href: string; page?: "collection" | "packs" }[] = [
     { key: "home", label: "HOME", href: "/" },
+    // ⭐ 2026-11-07 (Trevor, 8:01 AM PT): MY BINDER sits second, between HOME and
+    // MARKET — the personal page first, then the header's groups in header order.
+    { key: "binder", label: "MY BINDER", href: `/${collection}/collection`, page: "collection" },
     // The cross-collection HUB (app/market/page.tsx): never inert.
     { key: "market", label: "MARKET", href: "/market" },
     // Pack EV is collection-scoped (no cross-collection hub exists), so this is
@@ -146,7 +152,6 @@ export default function MobileNav() {
     { key: "packs", label: "PACKS", href: `/${collection}/packs`, page: "packs" },
     // The /insights hub — the largest anonymous surface in the product.
     { key: "insights", label: "INSIGHTS", href: "/insights" },
-    { key: "binder", label: "MY BINDER", href: `/${collection}/collection`, page: "collection" },
   ];
 
   return (
