@@ -89,7 +89,8 @@ export default function FilterBar({
           <button
             type="button"
             onClick={() => setOpen((o) => !o)}
-            aria-haspopup="listbox"
+            // A disclosure of buttons, not a listbox (2026-11-07): the old
+            // aria-haspopup="listbox" promised a listbox that never rendered.
             aria-expanded={open}
             className="flex items-center gap-2 rounded-md border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] px-3 py-2 text-sm text-[color:var(--rpc-text-secondary)] hover:border-emerald-500/50 transition-colors"
           >

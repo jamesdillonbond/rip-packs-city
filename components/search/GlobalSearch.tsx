@@ -161,13 +161,15 @@ export default function GlobalSearch() {
           No exact match for &ldquo;{meta.fuzzy.from}&rdquo; — closest matches:
         </div>
       )}
-      <ul role="listbox" style={{ listStyle: "none", margin: 0, padding: 4, maxHeight: 420, overflowY: "auto" }}>
+      <ul id="rpc-gs-listbox" role="listbox" aria-label="Search results" style={{ listStyle: "none", margin: 0, padding: 4, maxHeight: 420, overflowY: "auto" }}>
         {hits.map((h, i) => (
           <li key={h.kind + h.href}>
             <button
               type="button"
+              id={`rpc-gs-opt-${i}`}
               role="option"
               aria-selected={i === active}
+              tabIndex={-1}
               onMouseEnter={() => setActive(i)}
               onClick={() => go(h)}
               style={{
@@ -216,6 +218,16 @@ export default function GlobalSearch() {
         value={q}
         placeholder="Search players, sets, teams…"
         aria-label="Search the catalog"
+        // Combobox wiring (2026-11-07): the listbox and arrow keys existed, but
+        // the input never said so — a screen reader heard a plain search box
+        // and the highlighted option was visual only. aria-activedescendant
+        // names the active option; focus stays in the input.
+        role="combobox"
+        aria-autocomplete="list"
+        aria-haspopup="listbox"
+        aria-expanded={!!showPanel}
+        aria-controls="rpc-gs-listbox"
+        aria-activedescendant={showPanel && active >= 0 && active < hits.length ? `rpc-gs-opt-${active}` : undefined}
         className="rpc-gs-input"
         onChange={(e) => { setQ(e.target.value); setOpen(true); }}
         onFocus={() => setOpen(true)}

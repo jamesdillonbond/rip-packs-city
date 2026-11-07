@@ -29,6 +29,29 @@ export function menuClaimWithoutContract(src: string): boolean {
   return !(/ArrowDown/.test(s) && /Escape/.test(s))
 }
 
+// 2026-11-07 (same pass): `aria-haspopup="listbox"` on a button whose popup is a
+// plain div of buttons (analytics FilterBar window picker, ListingsDashboard
+// sort) — a listbox that never rendered. The claim needs a role="listbox" in
+// the same file.
+export function listboxClaimWithoutListbox(src: string): boolean {
+  const s = stripComments(src)
+  if (!/aria-haspopup\s*=\s*["'{]\s*["']?listbox["']?/.test(s)) return false
+  return !/role\s*=\s*["']listbox["']/.test(s)
+}
+
+describe("aria-haspopup=\"listbox\" is only claimed where a listbox renders", () => {
+  it("catches a planted defect", () => {
+    expect(listboxClaimWithoutListbox(`<button aria-haspopup="listbox" aria-expanded={o} /><div>{opts.map(o => <button>{o}</button>)}</div>`)).toBe(true)
+    expect(listboxClaimWithoutListbox(`<input role="combobox" aria-haspopup="listbox" /><ul role="listbox" />`)).toBe(false)
+    expect(listboxClaimWithoutListbox(`<button aria-expanded={o} />`)).toBe(false)
+  })
+  it("finds none in app/ or components/", () => {
+    const files = [...walk(join(ROOT, "app")), ...walk(join(ROOT, "components"))]
+    const bad = files.filter((f) => listboxClaimWithoutListbox(readFileSync(f, "utf8"))).map((f) => relative(ROOT, f))
+    expect(bad, "render a role=\"listbox\" or drop aria-haspopup (keep aria-expanded)").toEqual([])
+  })
+})
+
 describe("role=\"menu\" is only claimed where arrow keys and Escape are handled", () => {
   it("catches a planted defect", () => {
     expect(menuClaimWithoutContract(`<div role="menu"><a role="menuitem" href="/x">x</a></div>`)).toBe(true)

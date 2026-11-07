@@ -263,7 +263,6 @@ export default function ListingsDashboard() {
             <button
               type="button"
               onClick={() => setSortOpen((o) => !o)}
-              aria-haspopup="listbox"
               aria-expanded={sortOpen}
               className="flex items-center gap-2 rounded-md border border-[color:var(--rpc-border)] bg-[var(--rpc-surface-raised)] px-3 py-2 text-sm text-[color:var(--rpc-text-primary)] hover:border-emerald-500/50 transition-colors"
             >

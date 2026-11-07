@@ -138,6 +138,29 @@ describe("GlobalSearch", () => {
     await waitFor(() => expect(push).toHaveBeenCalledWith("/nba-top-shot/set/lillard-set"))
   })
 
+  it("is a combobox: expanded with results, aria-activedescendant follows the arrow keys (2026-11-07)", async () => {
+    response = {
+      ok: true,
+      body: { results: [hit(), hit({ label: "Lillard Set", href: "/nba-top-shot/set/lillard-set", kind: "set" })], meta: {} },
+    }
+    const { container, findByText } = render(<GlobalSearch />)
+    const input = container.querySelector("input")!
+    expect(input.getAttribute("role")).toBe("combobox")
+    expect(input.getAttribute("aria-expanded")).toBe("false")
+    type(input, "lillard")
+    await findByText("Damian Lillard")
+    expect(input.getAttribute("aria-expanded")).toBe("true")
+    const listbox = container.querySelector('[role="listbox"]')!
+    expect(input.getAttribute("aria-controls")).toBe(listbox.id)
+    const first = input.getAttribute("aria-activedescendant")!
+    expect(document.getElementById(first)?.textContent).toContain("Damian Lillard")
+    fireEvent.keyDown(input, { key: "ArrowDown" })
+    const second = input.getAttribute("aria-activedescendant")!
+    expect(second).not.toBe(first)
+    expect(document.getElementById(second)?.textContent).toContain("Lillard Set")
+    expect(document.getElementById(second)?.getAttribute("aria-selected")).toBe("true")
+  })
+
   it("clamps arrow navigation at both ends of the list", async () => {
     response = { ok: true, body: { results: [hit()], meta: {} } }
     const { container, findByText } = render(<GlobalSearch />)
