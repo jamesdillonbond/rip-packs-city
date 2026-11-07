@@ -106,4 +106,18 @@ describe("IA registry", () => {
     expect(idx.every((n) => n >= 0)).toBe(true)
     expect([...idx].sort((a, b) => a - b)).toEqual(idx)
   })
+
+  // 2026-11-07 review: the "{collection}" template matched ANY first segment.
+  it("a {collection} template lights its group only under a real collection", () => {
+    expect(groupForPath("/nba-top-shot/packs")).toBe("packs")
+    expect(groupForPath("/analytics/packs")).toBe("insights")
+    expect(groupForPath("/blog/packs")).toBe("insights")
+    expect(groupForPath("/teams/packs")).toBe("collectors")
+  })
+
+  it("hub-only pack boards are filed under Packs by name, both collections alike", () => {
+    expect(groupForPath("/insights/pack-reality")).toBe("packs")
+    expect(groupForPath("/insights/allday-pack-reality")).toBe("packs")
+    expect(groupForPath("/insights/pack-sniper")).toBe("packs")
+  })
 })

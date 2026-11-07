@@ -34,6 +34,18 @@ describe("DashboardTabs", () => {
     expect(links).toEqual([["Packs", "/dashboard/packs"], ["History", "/dashboard/history"]])
   })
 
+  // 2026-11-07 review: axe aria-required-children — a tablist owns ONLY tabs —
+  // and aria-controls must name a panel that exists (only the active one does).
+  it("on /dashboard every child of the tablist is a tab, and only the selected tab names its panel", () => {
+    const { container } = render(<DashboardTabs active="trophy" onSelect={() => {}} />)
+    const list = container.querySelector('[role="tablist"]')!
+    const kids = Array.from(list.children)
+    expect(kids).toHaveLength(5)
+    expect(kids.every((k) => k.getAttribute("role") === "tab")).toBe(true)
+    const controls = kids.map((k) => k.getAttribute("aria-controls")).filter(Boolean)
+    expect(controls).toEqual(["dash-panel-trophy"])
+  })
+
   it("on a page tab (Packs): every tab is a link, the page's own tab is aria-current, panels deep-link back", () => {
     const { container } = render(<DashboardTabs active="packs" />)
     expect(container.querySelector('[role="tablist"]')).toBeNull()

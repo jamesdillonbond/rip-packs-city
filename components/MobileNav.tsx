@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState, useEffect, useMemo } from "react";
-import { getLastCollection } from "@/lib/active-collection";
+import { useMemo, useSyncExternalStore } from "react";
+import { readRecordedLastCollection, subscribeLastCollection } from "@/lib/active-collection";
 import { getCollection, type CollectionPage } from "@/lib/collections";
 import { accentText } from "@/lib/accent-text";
 import { IA_GROUPS, MOBILE_GROUP_IDS, type IaGroupId } from "@/lib/ia";
@@ -110,11 +110,13 @@ function TabIcon({ tab }: { tab: MobileTab }) {
 
 export default function MobileNav() {
   const pathname = usePathname() ?? "/";
-  const [fallbackCollection, setFallbackCollection] = useState("nba-top-shot");
-
-  useEffect(() => {
-    setFallbackCollection(getLastCollection());
-  }, []);
+  // 2026-11-07 review: the SAME memory TopNav reads, through the same store
+  // (lib/active-collection — "one memory, two renderers"). The bar read it once
+  // at mount, so / → /ufc/overview → /insights left PACKS and MY BINDER on the
+  // mount-time collection while the header's chip said UFC. TopNav records the
+  // URL collection; this re-renders on that notification.
+  const recorded = useSyncExternalStore(subscribeLastCollection, readRecordedLastCollection, () => null);
+  const fallbackCollection = recorded ?? "nba-top-shot";
 
   const segments = useMemo(() => pathname.split("/").filter(Boolean), [pathname]);
 

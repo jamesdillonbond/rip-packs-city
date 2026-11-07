@@ -9,10 +9,10 @@
 //                     not de-index a real pack as absent)
 import { describe, it, expect, vi, beforeEach } from "vitest"
 
-const state: { lifecycle: unknown; ok: boolean } = { lifecycle: null, ok: true }
+const state: { lifecycle: unknown; ok: boolean; probeOk: boolean } = { lifecycle: null, ok: true, probeOk: true }
 vi.mock("@/lib/pack-detail/lifecycle", () => ({
   fetchLifecycle: async () => ({ lifecycle: state.lifecycle, ok: state.ok }),
-  isKnownDistId: async () => ({ known: false, ok: true }),
+  isKnownDistId: async () => ({ known: false, ok: state.probeOk }),
 }))
 
 type Robots = { index?: boolean; follow?: boolean }
@@ -27,6 +27,16 @@ describe("/<collection>/pack/<id> metadata keeps absent, unavailable and known a
   beforeEach(() => {
     state.lifecycle = null
     state.ok = true
+    state.probeOk = true
+  })
+
+  // 2026-11-07 review: the BODY treats a failed distribution-id probe as
+  // could-not-read (UnavailableCard); the head said "absent, nofollow" over it.
+  it("an unknown lifecycle whose dist-id probe FAILED is unavailable in the head too, never absent", async () => {
+    state.probeOk = false
+    const m = await meta()
+    expect(m.robots).toMatchObject({ index: false, follow: true })
+    expect(JSON.stringify(m.title)).toMatch(/Unavailable/)
   })
 
   it("an unknown pack is ABSENT: not indexable, no canonical, no share card, no doubled title", async () => {

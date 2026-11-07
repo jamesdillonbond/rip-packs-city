@@ -2589,6 +2589,55 @@ describe("DashboardClient — tabs (IA Phase 1)", () => {
     await waitFor(() => expect(document.querySelector('[data-tour-anchor="saved-wallets-card"]')).toBeTruthy())
   })
 
+  // ── 2026-11-07 review (fresh-eyes pass over the IA batch) ─────────────────
+  // Next routes history.replaceState through the router, so useSearchParams
+  // CHANGES on a tab switch and on a client navigation to /dashboard?tab=…. The
+  // test mock returns a fixed object, so each case below swaps `searchParams`
+  // and re-renders — exactly the new search value Next hands the page.
+
+  it("a client navigation that changes only ?tab= switches the panel (the page stays mounted)", async () => {
+    const { rerender } = render(<DashboardClient />)
+    await screen.findByText("Saved Wallets", { selector: ".rpc-section-title" })
+    searchParams = new URLSearchParams("tab=trophy")
+    rerender(<DashboardClient />)
+    await waitFor(() => expect(screen.getByRole("tab", { name: "Trophy Cases" }).getAttribute("aria-selected")).toBe("true"))
+    expect(screen.queryByText("Saved Wallets", { selector: ".rpc-section-title" })).toBeNull()
+    searchParams = new URLSearchParams()
+    rerender(<DashboardClient />)
+    await waitFor(() => expect(screen.getByRole("tab", { name: "Overview" }).getAttribute("aria-selected")).toBe("true"))
+  })
+
+  it("a CLOSED ?pin picker does not re-open when the query string changes for another reason", async () => {
+    searchParams = new URLSearchParams("pin=3")
+    const { rerender } = render(<DashboardClient />)
+    fireEvent.click(await screen.findByTestId("picker-close"))
+    await waitFor(() => expect(screen.queryByTestId("trophy-picker")).toBeNull())
+    // What a tab switch hands the page when ?pin is still in the URL.
+    searchParams = new URLSearchParams("pin=3&tab=settings")
+    rerender(<DashboardClient />)
+    await screen.findByText(/Favorite Collections/i)
+    expect(screen.queryByTestId("trophy-picker")).toBeNull()
+  })
+
+  it("selecting a tab drops the one-shot ?pin from the URL", async () => {
+    window.history.replaceState(null, "", "/dashboard?pin=2")
+    render(<DashboardClient />)
+    await screen.findByText("Saved Wallets", { selector: ".rpc-section-title" })
+    fireEvent.click(screen.getByRole("tab", { name: "Settings" }))
+    expect(window.location.search).toBe("?tab=settings")
+    window.history.replaceState(null, "", "/")
+  })
+
+  it("with NO saved wallet the Trophy Cases tab points to Overview's add-wallet form, not a picker with nothing in it", async () => {
+    routes["/api/profile/saved-wallets"] = () => json(200, { wallets: [] })
+    routes["/api/profile/trophy-slabs"] = () => json(200, { slabs: [] })
+    searchParams = new URLSearchParams("tab=trophy")
+    render(<DashboardClient />)
+    fireEvent.click(await screen.findByRole("button", { name: /add a wallet on overview/i }))
+    expect(screen.queryByRole("button", { name: /pick a moment/i })).toBeNull()
+    await waitFor(() => expect(screen.getByRole("tab", { name: "Overview" }).getAttribute("aria-selected")).toBe("true"))
+  })
+
   it("a collector with nothing pinned is still told so on Overview (onboarding does not hide behind a tab)", async () => {
     routes["/api/profile/trophy-slabs"] = () => json(200, { slabs: [] })
     routes["/api/profile/hero-moment"] = () => json(200, { hero: null })

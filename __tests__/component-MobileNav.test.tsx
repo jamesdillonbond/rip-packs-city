@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach, vi } from "vitest"
-import { render, cleanup } from "@testing-library/react"
+import { render, cleanup, act } from "@testing-library/react"
 import { readFileSync, readdirSync, statSync } from "node:fs"
 import { join } from "node:path"
 
@@ -17,6 +17,7 @@ vi.mock("next/navigation", () => ({
 import { MOBILE_GROUP_IDS } from "@/lib/ia"
 import MobileNav, { activeTabFor } from "@/components/MobileNav"
 import { getCollection } from "@/lib/collections"
+import { setLastCollection } from "@/lib/active-collection"
 
 afterEach(() => {
   cleanup()
@@ -74,6 +75,19 @@ describe("MobileNav", () => {
       vi.doUnmock("@/lib/ia")
       vi.resetModules()
     }
+  })
+
+  // 2026-11-07 review: one memory, two renderers — the bar follows the store
+  // TopNav writes, not a copy read once at mount.
+  it("off a collection route, MY BINDER and PACKS follow a collection recorded AFTER mount", () => {
+    try { localStorage.removeItem("rpc_last_collection") } catch {}
+    nav.pathname = "/insights"
+    const { container } = render(<MobileNav />)
+    expect(tab(container, "MY BINDER").getAttribute("href")).toBe("/nba-top-shot/collection")
+    act(() => setLastCollection("nfl-all-day"))
+    expect(tab(container, "MY BINDER").getAttribute("href")).toBe("/nfl-all-day/collection")
+    expect(tab(container, "PACKS").getAttribute("href")).toBe("/nfl-all-day/packs")
+    try { localStorage.removeItem("rpc_last_collection") } catch {}
   })
 
   it("renders no sheet or dialog — every tab is a destination", () => {

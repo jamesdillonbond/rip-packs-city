@@ -185,13 +185,31 @@ export default function DashboardClient() {
 function ProfilePageInner() {
   const search = useSearchParams();
   // `?pin=N` (the picker deep link) lands on the tab that shows the result.
-  const [tab, setTab] = useState<DashTab>(() => parseDashTab(search?.get("tab") ?? (search?.get("pin") ? "trophy" : null)));
+  const tabParam = search?.get("tab") ?? null;
+  const pinParam = search?.get("pin") ?? null;
+  const [tab, setTab] = useState<DashTab>(() => parseDashTab(tabParam ?? (pinParam ? "trophy" : null)));
+  // 2026-11-07: FOLLOW a client navigation that changes only `?tab=`. The page
+  // stays mounted across /dashboard → /dashboard?tab=trophy (the header's Me
+  // menu "Trophy cases" link, Settings links), so reading the param only in the
+  // initializer left the old panel showing under the new URL. Adjusted during
+  // render (React's "storing information from previous renders"), not in an
+  // effect, so there is no extra commit and no set-state-in-effect.
+  const [seenTabParam, setSeenTabParam] = useState(tabParam);
+  if (tabParam !== seenTabParam) {
+    setSeenTabParam(tabParam);
+    setTab(parseDashTab(tabParam ?? (pinParam ? "trophy" : null)));
+  }
   const selectTab = useCallback((next: DashTab) => {
     setTab(next);
     try {
       const url = new URL(window.location.href);
       if (next === "overview") url.searchParams.delete("tab");
       else url.searchParams.set("tab", next);
+      // ⚠ `pin` goes too: it is a ONE-SHOT deep link (open the picker on
+      // arrival). Left in the URL it re-opened the picker on every tab switch,
+      // because Next routes replaceState through the router and the ?pin effect
+      // below re-ran on the new search params (2026-11-07 review).
+      url.searchParams.delete("pin");
       window.history.replaceState(window.history.state, "", url.toString());
     } catch { /* no window / opaque URL */ }
   }, []);
@@ -201,11 +219,13 @@ function ProfilePageInner() {
     const onStep = (e: Event) => {
       const anchor = (e as CustomEvent<{ anchor?: string }>).detail?.anchor;
       const target = anchor ? DASH_TAB_FOR_ANCHOR[anchor] : undefined;
-      if (target) setTab(target);
+      // selectTab, not setTab: the URL follows the tour, so a refresh mid-tour
+      // lands on the tab the visitor is looking at.
+      if (target) selectTab(target);
     };
     window.addEventListener(RPC_TOUR_STEP_EVENT, onStep);
     return () => window.removeEventListener(RPC_TOUR_STEP_EVENT, onStep);
-  }, []);
+  }, [selectTab]);
   const [email, setEmail] = useState<string | null>(null);
   // ⚠ /dashboard is auth-gated by proxy.ts, so a reader who sees this page IS
   // signed in. `email` going null therefore has two very different causes, and
@@ -619,16 +639,18 @@ function ProfilePageInner() {
 
   // Open the pin modal when ?pin=<slot> is present in the URL. Kept around
   // so any old links that still hit /profile?pin= land somewhere useful.
+  // ⚠ Keyed on the `pin` VALUE, not the whole search object: a tab switch
+  // rewrites the query string, and keying on `search` re-opened a picker the
+  // visitor had already closed (2026-11-07).
   useEffect(() => {
-    const slotParam = search?.get("pin");
-    if (!slotParam) return;
-    const slot = Number(slotParam);
+    if (!pinParam) return;
+    const slot = Number(pinParam);
     if (Number.isFinite(slot) && slot >= 1 && slot <= 6) {
       setPinSlot(slot);
     } else {
       setPinSlot(1);
     }
-  }, [search]);
+  }, [pinParam]);
 
   useEffect(() => {
     return () => {
@@ -1380,6 +1402,18 @@ function ProfilePageInner() {
               Retry
             </button>
           </div>
+        ) : heroFormShown ? (
+          /* 2026-11-07 review: with NO saved wallet the picker has nothing to
+             offer, so "+ Pick a moment" was a dead end. Overview carries the
+             add-wallet form (SignInBanner) for exactly this condition. */
+          <section className="rpc-section rpc-binder-slot" style={{ padding: "28px 20px", textAlign: "center" }}>
+            <div style={{ fontFamily: monoFont, fontSize: 12, color: "var(--rpc-text-secondary)", lineHeight: 1.5 }}>
+              Add a wallet first — your trophy case is picked from the Moments it holds.
+            </div>
+            <button type="button" onClick={() => selectTab("overview")} style={{ ...secondaryBtnStyle, marginTop: 12 }}>
+              Add a wallet on Overview
+            </button>
+          </section>
         ) : (
           <EmptyHeroState wallets={wallets} indexing={indexing} onPickSlot={setPinSlot} />
         )}

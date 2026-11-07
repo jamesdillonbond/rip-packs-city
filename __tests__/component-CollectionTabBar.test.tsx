@@ -94,33 +94,46 @@ describe("CollectionTabBar — active tab comes into view", () => {
     if (origCW) Object.defineProperty(proto, "clientWidth", origCW); else Reflect.deleteProperty(proto, "clientWidth")
   }
 
-  it("scrolls an off-screen active tab into view when the strip overflows", () => {
+  // RE-PINNED 2026-11-07 (premise changed, review): the strip scrolls ITSELF
+  // (nav.scrollTo) — scrollIntoView also scrolled the window. Nav 0..390, tab
+  // 500..580: centring offset = 500 − (390 − 80) / 2 = 345.
+  it("scrolls an off-screen active tab into view when the strip overflows — the strip, never the page", () => {
     pathnameMock.mockReturnValue("/nba-top-shot/market")
     fakeGeometry(true)
     const spy = vi.fn(); proto.scrollIntoView = spy
+    const stripScroll = vi.fn()
+    const origScrollTo = (proto as unknown as { scrollTo?: unknown }).scrollTo
+    ;(proto as unknown as { scrollTo: unknown }).scrollTo = stripScroll
     try {
-      render(<CollectionTabBar collection={collection} />)
-      expect(spy).toHaveBeenCalledTimes(1)
-      expect(spy.mock.calls[0][0]).toMatchObject({ block: "nearest" })
-    } finally { restore() }
+      const { container } = render(<CollectionTabBar collection={collection} />)
+      expect(spy).not.toHaveBeenCalled()
+      expect(stripScroll).toHaveBeenCalledTimes(1)
+      expect(stripScroll.mock.instances[0]).toBe(container.querySelector("nav"))
+      expect(stripScroll.mock.calls[0][0]).toEqual({ left: 345 })
+    } finally {
+      restore()
+      ;(proto as unknown as { scrollTo: unknown }).scrollTo = origScrollTo
+    }
   })
 
   it("does NOT scroll when the active tab is already visible", () => {
     pathnameMock.mockReturnValue("/nba-top-shot/market")
     fakeGeometry(false)
     const spy = vi.fn(); proto.scrollIntoView = spy
+    const P = proto as unknown as { scrollTo?: unknown }; const origST = P.scrollTo; P.scrollTo = spy
     try {
       render(<CollectionTabBar collection={collection} />)
       expect(spy).not.toHaveBeenCalled()
-    } finally { restore() }
+    } finally { restore(); P.scrollTo = origST }
   })
 
   it("does NOT scroll when the strip fits (no overflow — desktop)", () => {
     pathnameMock.mockReturnValue("/nba-top-shot/market")
     const spy = vi.fn(); const orig = proto.scrollIntoView; proto.scrollIntoView = spy
+    const P = proto as unknown as { scrollTo?: unknown }; const origST = P.scrollTo; P.scrollTo = spy
     try {
       render(<CollectionTabBar collection={collection} />) // jsdom: scrollWidth === clientWidth === 0
       expect(spy).not.toHaveBeenCalled()
-    } finally { proto.scrollIntoView = orig }
+    } finally { proto.scrollIntoView = orig; P.scrollTo = origST }
   })
 })

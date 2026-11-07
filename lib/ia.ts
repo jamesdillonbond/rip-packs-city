@@ -190,6 +190,19 @@ const COLLECTION_PAGE_GROUP: Record<string, IaGroupId> = {
   "pack-sniper": "packs",
 }
 
+/**
+ * Public boards that belong to a group but are not one of its menu items — the
+ * insights hub files their cards by `groupForPath`. Until 2026-11-07
+ * `/insights/pack-sniper` reached Packs only through the template bug below
+ * (any first segment matched `{collection}`), while its sibling
+ * `/insights/allday-pack-reality` fell to Insights although the Top Shot
+ * `/insights/pack-reality` IS a Packs item. Named here, on purpose.
+ */
+const BOARD_PATH_GROUP: Record<string, IaGroupId> = {
+  "/insights/pack-sniper": "packs",
+  "/insights/allday-pack-reality": "packs",
+}
+
 /** The group whose hub or items own this path (first match in header order). */
 export function groupForPath(pathname: string): IaGroupId | null {
   const p = pathname.split("?")[0]
@@ -200,13 +213,17 @@ export function groupForPath(pathname: string): IaGroupId | null {
   for (const g of IA_GROUPS) {
     if (g.items.some((i) => i.href.split("?")[0] === p && !i.href.includes("{collection}"))) return g.id
   }
+  if (BOARD_PATH_GROUP[p]) return BOARD_PATH_GROUP[p]
   for (const g of IA_GROUPS) {
     const hrefs = [g.href, ...g.items.map((i) => i.href)].map((h) => h.split("?")[0])
     for (const h of hrefs) {
       if (h.includes("{collection}")) {
         const tail = h.slice(h.indexOf("{collection}") + "{collection}".length) // e.g. /packs
-        const m = p.match(/^\/[^/]+(\/.*)?$/)
-        if (m && (m[1] ?? "") === tail) return g.id
+        // ⚠ Only when the first segment IS a collection: /analytics/packs,
+        // /blog/packs and /teams/packs all matched "/{collection}/packs" and lit
+        // Packs (2026-11-07 review).
+        const m = p.match(/^\/([^/]+)(\/.*)?$/)
+        if (m && getCollection(m[1]) && (m[2] ?? "") === tail) return g.id
       } else if (p === h || p.startsWith(h + "/")) {
         return g.id
       }

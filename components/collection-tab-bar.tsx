@@ -12,8 +12,7 @@ export function CollectionTabBar({ collection }: { collection: Collection }) {
   // 2026-11-07: at 390 px the strip scrolls, and a tab past the fold (Packs is
   // 6th of 9) landed with NO visible active tab — tap PACKS in the bottom bar,
   // see OVERVIEW · BINDER · MARKET · SNIPER · PLAY, none lit. Scroll the active
-  // tab into view on arrival; the strip itself scrolls, never the page
-  // (`block: "nearest"` keeps the vertical position).
+  // tab into view on arrival; the strip itself scrolls, never the page.
   useEffect(() => {
     const nav = navRef.current
     if (!nav || nav.scrollWidth <= nav.clientWidth) return
@@ -22,7 +21,13 @@ export function CollectionTabBar({ collection }: { collection: Collection }) {
     const a = active.getBoundingClientRect()
     const n = nav.getBoundingClientRect()
     if (a.left >= n.left && a.right <= n.right) return
-    active.scrollIntoView({ block: "nearest", inline: "center" })
+    // ⚠ The STRIP's own scroll, never scrollIntoView: that one scrolls every
+    // scrollable ancestor, the window included, whenever the strip is off-screen
+    // vertically — a back/forward arrival with a restored scroll position jumped
+    // the page up to the tabs (2026-11-07 review). Centre the tab in the strip.
+    const left = nav.scrollLeft + (a.left - n.left) - (n.width - a.width) / 2
+    if (typeof nav.scrollTo === "function") nav.scrollTo({ left })
+    else nav.scrollLeft = left
   }, [pathname])
 
   return (

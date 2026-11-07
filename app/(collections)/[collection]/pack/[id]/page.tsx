@@ -125,6 +125,20 @@ export async function generateMetadata(props: PageProps): Promise<Metadata> {
   // is the ABSENT vocabulary (index:false, follow:false); the unavailable branch
   // above keeps follow:true because that one is COULD-NOT-READ.
   if (coll && readOk && (!lifecycle || lifecycle.status === "unknown" || lifecycle.error)) {
+    // ⚠ The body runs a SECOND read before it calls this pack absent: the
+    // distribution-id probe (a known dist 308s; a FAILED probe renders
+    // UnavailableCard). The head must not say "absent, nofollow" over a body
+    // that says "could not read" (2026-11-07 review) — mirror the probe. A known
+    // dist never reaches a rendered head (the body redirects), so `known` needs
+    // no branch of its own.
+    const probe = await isKnownDistId(coll.id, id)
+    if (!probe.ok) {
+      return {
+        title: { absolute: `Pack #${id} — Unavailable | Rip Packs City` },
+        description: "We couldn't load this pack right now. Try again in a moment.",
+        robots: { index: false, follow: true },
+      }
+    }
     return NOT_FOUND_METADATA
   }
 

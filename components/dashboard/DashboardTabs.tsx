@@ -59,7 +59,9 @@ export default function DashboardTabs({
               type="button"
               role="tab"
               aria-selected={isActive}
-              aria-controls={`dash-panel-${t.id}`}
+              // Only the selected panel is in the DOM — aria-controls on the
+              // others pointed at an id that did not exist (2026-11-07 review).
+              aria-controls={isActive ? `dash-panel-${t.id}` : undefined}
               className="rpc-dash-tab"
               style={tabStyle(isActive)}
               onClick={() => onSelect(t.id)}
@@ -73,6 +75,10 @@ export default function DashboardTabs({
           <Link
             key={t.id}
             href={href}
+            // Inside the /dashboard tablist every child must be a tab
+            // (axe aria-required-children); the page tabs are tabs that navigate.
+            // On the two page surfaces the row is a plain navigation.
+            {...(onSelect ? { role: "tab", "aria-selected": false } : {})}
             aria-current={isActive ? "page" : undefined}
             className="rpc-dash-tab"
             style={tabStyle(isActive)}

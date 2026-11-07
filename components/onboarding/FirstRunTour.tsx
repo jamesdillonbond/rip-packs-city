@@ -27,6 +27,7 @@ import { useCallback, useEffect, useLayoutEffect, useState } from "react"
 import type { CSSProperties } from "react"
 import { useModalA11y } from "@/lib/hooks/useModalA11y"
 import { publishedCollections } from "@/lib/collections"
+import { RPC_TOUR_STEP_EVENT } from "@/lib/dashboard-tabs"
 
 interface TourStep {
   id: string
@@ -293,7 +294,7 @@ export default function FirstRunTour({ enabled, onDismiss }: FirstRunTourProps) 
   useEffect(() => {
     if (!enabled || !step.anchor) return
     try {
-      window.dispatchEvent(new CustomEvent("rpc:tour-step", { detail: { anchor: step.anchor } }))
+      window.dispatchEvent(new CustomEvent(RPC_TOUR_STEP_EVENT, { detail: { anchor: step.anchor } }))
     } catch { /* older engines */ }
     // The listener's tab switch renders on the next frame; re-measure after it.
     const id = typeof requestAnimationFrame === "function" ? requestAnimationFrame(() => setNudge((n) => n + 1)) : null
