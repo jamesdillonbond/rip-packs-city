@@ -15,7 +15,7 @@ import { notFound, permanentRedirect } from "next/navigation"
 import SpecialSerialGlyph from "@/components/SpecialSerialGlyph"
 import LoadingState from "@/components/ui/LoadingState"
 import { getCollectionByUrlSlug, isPinnacleUrlSlug } from "@/lib/collection-slug"
-import { fetchEntityDetailRaw } from "@/lib/entity-detail-gate"
+import { fetchEntityDetailRaw, decodeSlugOrNull } from "@/lib/entity-detail-gate"
 import { sectionRows, sectionRowsResult } from "@/lib/entity-section-rpc"
 import { sectionEmptyCopy } from "@/lib/entity/section-empty-copy"
 import {
@@ -456,7 +456,12 @@ export async function generateMetadata(
   props: { params: Promise<{ collection: string; slug: string }> }
 ): Promise<Metadata> {
   const { collection, slug: rawSlug } = await props.params
-  const slug = decodeURIComponent(rawSlug)
+  // ⚠ decodeSlugOrNull, never a bare decodeURIComponent (2026-11-07 review): a
+  // malformed escape (`%E0%A4`, a trailing `%`) threw URIError here — and no error
+  // boundary wraps metadata, so the response was Next's unbranded 500. The layout
+  // already lets that case through; a slug that cannot be decoded names nothing.
+  const slug = decodeSlugOrNull(rawSlug)
+  if (slug === null) return NOT_FOUND_METADATA
   const coll = getCollectionByUrlSlug(collection)
   if (!coll) return NOT_FOUND_METADATA
   // Pinnacle edition pages are retired in favor of the render-keyed per-pin
@@ -494,7 +499,13 @@ export async function generateMetadata(
   try {
     detail = await fetchDetail(coll.id, slug)
   } catch {
-    return { title: { absolute: `${slug} | ${coll.displayName} | Rip Packs City` } }
+    // COULD-NOT-READ (2026-11-07 review): never indexed as content — the body is the
+    // "unavailable" card — but `follow` stays on, so a transient does not read as
+    // absent (the pack page's unavailable branch, same vocabulary).
+    return {
+      title: { absolute: `${slug} | ${coll.displayName} | Rip Packs City` },
+      robots: { index: false, follow: true },
+    }
   }
   if (!detail) return NOT_FOUND_METADATA
   const payload = detail as unknown as Record<string, unknown>
@@ -508,7 +519,9 @@ export default async function EditionPage(
   props: { params: Promise<{ collection: string; slug: string }> }
 ) {
   const { collection, slug: rawSlug } = await props.params
-  const slug = decodeURIComponent(rawSlug)
+  const decodedSlug = decodeSlugOrNull(rawSlug)
+  if (decodedSlug === null) notFound()
+  const slug = decodedSlug
   const coll = getCollectionByUrlSlug(collection)
   if (!coll) notFound()
   // Pinnacle edition pages → the render-keyed per-pin page (Item 2, 2026-06-26).
@@ -910,7 +923,7 @@ export default async function EditionPage(
           <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
             <h1 style={{ margin: 0, fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 36, letterSpacing: "0.04em", color: "var(--rpc-text-primary)", lineHeight: 1.05, textTransform: "uppercase" }}>
               {playerHref ? (
-                <Link href={playerHref} style={{ color: "inherit", textDecoration: "none" }}>{detail.player_name ?? detail.name ?? "Edition"}</Link>
+                <Link href={playerHref} style={{ color: "inherit", textDecoration: "none" }}>{editionTitle}</Link>
               ) : editionTitle}
             </h1>
 
@@ -1236,7 +1249,7 @@ export default async function EditionPage(
           {!salesCountKnown || isPanini
             ? "No price available for this edition"
             : fmv!.sales_count_30d! > 0
-              ? `${fmtCount(fmv!.sales_count_30d)} recent sales — not enough to price this edition`
+              ? `${fmtCount(fmv!.sales_count_30d)} recent sale${fmv!.sales_count_30d === 1 ? "" : "s"} — not enough to price this edition`
               : sectionEmptyCopy(salesCountKnown, "Recent sales", "No sales in the last 30 days")}
         </div>
       )}
@@ -2136,14 +2149,14 @@ function EditionUnavailable({ collection }: { collection: string; slug: string }
   return (
     <section style={{ minHeight: "60vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "48px 24px", gap: 16 }}>
       <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, letterSpacing: "0.3em", textTransform: "uppercase", color: "var(--rpc-text-muted)" }}>
-        Moment unavailable
+        Edition unavailable
       </div>
       <h1 style={{ fontFamily: "var(--font-display)", fontWeight: 900, fontSize: "clamp(26px, 5vw, 42px)", letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--rpc-text-primary)", margin: 0, textAlign: "center" }}>
-        Couldn&rsquo;t load this moment
+        Couldn&rsquo;t load this edition
       </h1>
       <p style={{ color: "var(--rpc-text-secondary)", maxWidth: 520, textAlign: "center", margin: 0, lineHeight: 1.5 }}>
         The data didn&rsquo;t come back in time, so nothing is shown rather than a partial view.
-        This is a problem on our side &mdash; it does not mean the moment is gone or unpriced. Reloading often works.
+        This is a problem on our side &mdash; it does not mean the edition is gone or unpriced. Reloading often works.
       </p>
       <a
         href={`/${collection}/collection`}
