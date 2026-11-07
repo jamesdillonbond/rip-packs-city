@@ -96,6 +96,41 @@ select optgroup {
   }
 }
 
+/* ── Print, 2026-11-07 ────────────────────────────────────────────────────────
+   Browsers print WITHOUT backgrounds by default, so the dark theme's near-white
+   text landed on white paper: a printed trophy case or share page was blank
+   (measured: body bg #000 / text lab(96) under `media: print`). Print borrows
+   the light theme's structural tokens (the same values as [data-theme="light"]
+   in rpc-tokens.css — keep them in step) and drops the chrome that repeats on
+   every page: the sticky header, the ticker, the phone bar, the concierge. */
+@media print {
+  :root, [data-theme="dark"] {
+    --rpc-black: #FFFFFF;
+    --rpc-surface: #F7F7F5;
+    --rpc-surface-raised: rgba(0, 0, 0, 0.04);
+    --rpc-surface-hover: rgba(0, 0, 0, 0.07);
+    --rpc-border: rgba(0, 0, 0, 0.12);
+    --rpc-border-hover: rgba(0, 0, 0, 0.20);
+    --rpc-border-subtle: rgba(0, 0, 0, 0.06);
+    --rpc-bg: #FFFFFF;
+    --rpc-bg-elev: rgba(0, 0, 0, 0.02);
+    --rpc-header-bg: #FFFFFF;
+    --rpc-text-primary: #141414;
+    --rpc-text-secondary: rgba(0, 0, 0, 0.62);
+    --rpc-text-muted: rgba(0, 0, 0, 0.58);
+    --rpc-text-ghost: rgba(0, 0, 0, 0.28);
+    --rpc-red-text: #B52A21;
+    color-scheme: light;
+  }
+  body { background: #fff !important; color: #141414 !important; }
+  header[style*="position:sticky"], header[style*="position: sticky"],
+  .rpc-ticker-track, nav[aria-label="Primary"], [aria-label="RPC Concierge chat"],
+  [data-tour-anchor="chatbot-launcher"] {
+    display: none !important;
+  }
+  a[href]::after { content: none !important; }
+}
+
 /* ── Forced colours (Windows High Contrast), 2026-11-07 ──────────────────────
    Under forced-colors the browser replaces every background and border colour
    with system colours, so the cues that mark the CURRENT tab — a tinted
