@@ -299,6 +299,25 @@ describe("proposals and the seam with the trade room", () => {
     expect(notices.sent.at(-1)).toMatchObject({ to: BOB.id, notice: "accepted", room: out.room_code })
   })
 
+  it("two Accepts in flight at once (a double-click) open exactly ONE room — the loser makes none (2026-11-07 review)", async () => {
+    const code = await listingByAlice([{ collection_id: TS, moment_id: "1" }])
+    await prove(BOB, WB)
+    const p = await as(BOB, () => signedIn.POST(post({ action: "propose", code, give: [{ collection_id: TS, moment_id: "9" }], get: [{ collection_id: TS, moment_id: "1" }] })))
+    const proposal = ((await p.json()) as { proposal: { code: string } }).proposal
+    const roomsBefore = (mem.current.tables.trade_rooms ?? []).length
+    const [a, b] = await as(ALICE, () =>
+      Promise.all([
+        signedIn.POST(post({ action: "decide", proposal: proposal.code, accept: true })),
+        signedIn.POST(post({ action: "decide", proposal: proposal.code, accept: true })),
+      ]),
+    )
+    expect([a.status, b.status].sort()).toEqual([200, 409])
+    expect((mem.current.tables.trade_rooms ?? []).length - roomsBefore).toBe(1)
+    const row = mem.current.tables.trade_block_proposals.find((r) => r.code === proposal.code)!
+    expect(row.status).toBe("accepted")
+    expect(row.room_code).toMatch(/^[a-z0-9]{10}$/)
+  })
+
   it("a proposal with a collection the room cannot sign (Pinnacle), accepted, opens no room and says which", async () => {
     const code = await listingByAlice([{ collection_id: TS, moment_id: "1" }])
     await prove(BOB, WB)

@@ -13,6 +13,7 @@
 import { randomBytes } from "node:crypto"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { MAX_ITEMS_PER_SIDE } from "@/lib/trade-room/valuation"
+import { RELAY_TTL_MS } from "@/lib/swap-test/relay"
 
 /**
  * A refusal with copy written for the user. `copy` is what a route publishes —
@@ -196,22 +197,62 @@ function requireEditable(loaded: LoadedRoom, now: number): void {
 }
 
 /**
- * Any change to a side: bump the version, clear BOTH acceptances, and drop an
- * "accepted" room back to "building". The version bump is conditional on the
- * version the caller loaded, so two concurrent edits cannot both believe they won.
+ * Any change to a side happens in THREE steps (2026-11-07 review):
+ *
+ *   1. `claimEdit` — bump the version, conditional on the version the caller
+ *      loaded AND on the room still being editable, BEFORE any row is written.
+ *      A stale edit is refused here and writes nothing. (The old single `touch`
+ *      ran AFTER the writes, so a losing edit's rows had already landed under
+ *      the winner's version — a counterparty could accept v6 showing X while
+ *      the room held Y.)
+ *   2. the edit's own writes.
+ *   3. `finishEdit` — bump again and clear acceptances again, so an Accept that
+ *      read the room MID-write (between 1 and 2) is for a version that no
+ *      longer exists.
+ *
+ * ⛔ Neither step writes `status` from the caller's SNAPSHOT. The old touch did
+ * (`status: room.status`), and joins / cancels do not bump the version, so an
+ * edit that loaded an "open" room wrote "open" back over B's join (accept's
+ * lock then never matched — a stuck room), and an edit that loaded before a
+ * cancel wrote the cancelled room back to "building". Only the one transition
+ * an edit owns — accepted → building — is written, conditional on itself.
  */
-async function touch(db: SupabaseClient, loaded: LoadedRoom): Promise<void> {
+async function claimEdit(db: SupabaseClient, loaded: LoadedRoom): Promise<number> {
   const { room } = loaded
+  const claimed = room.version + 1
   const { data, error } = await db
     .from("trade_rooms")
-    .update({ version: room.version + 1, status: room.status === "accepted" ? "building" : room.status, updated_at: new Date().toISOString() })
+    .update({ version: claimed, updated_at: new Date().toISOString() })
     .eq("id", room.id)
     .eq("version", room.version)
+    .in("status", [...EDITABLE])
     .select("id")
-  if (error) fail(error, "trade_rooms touch")
+  if (error) fail(error, "trade_rooms claim edit")
   if (!Array.isArray(data) || data.length !== 1) throw new TradeRoomError("The trade changed while you were editing it. Reload and try again.", 409, "stale")
-  const { error: sideError } = await db.from("trade_room_sides").update({ accepted_version: null }).eq("room_id", room.id)
+  await resetAcceptances(db, room.id)
+  return claimed
+}
+
+async function finishEdit(db: SupabaseClient, roomId: string, claimed: number): Promise<void> {
+  // 0 rows = another edit bumped it already (and reset acceptances itself) — fine.
+  const { error } = await db
+    .from("trade_rooms")
+    .update({ version: claimed + 1, updated_at: new Date().toISOString() })
+    .eq("id", roomId)
+    .eq("version", claimed)
+  if (error) fail(error, "trade_rooms finish edit")
+  await resetAcceptances(db, roomId)
+}
+
+async function resetAcceptances(db: SupabaseClient, roomId: string): Promise<void> {
+  const { error: sideError } = await db.from("trade_room_sides").update({ accepted_version: null }).eq("room_id", roomId)
   if (sideError) fail(sideError, "trade_room_sides reset acceptances")
+  const { error: unlockError } = await db
+    .from("trade_rooms")
+    .update({ status: "building", updated_at: new Date().toISOString() })
+    .eq("id", roomId)
+    .eq("status", "accepted")
+  if (unlockError) fail(unlockError, "trade_rooms unlock on edit")
 }
 
 export async function joinRoom(db: SupabaseClient, loaded: LoadedRoom, userId: string, now: number = Date.now()): Promise<LoadedRoom> {
@@ -253,6 +294,7 @@ export async function setWallet(
   if (other?.signer === signer) throw new TradeRoomError("The two sides need two different wallets.", 409, "same_signer")
   if (other?.source === source) throw new TradeRoomError("Both sides can't draw from the same account.", 409, "same_source")
   const sourceChanged = side.source !== null && side.source !== source
+  const claimed = await claimEdit(db, loaded)
   const { error } = await db
     .from("trade_room_sides")
     .update({ signer, source, proven_at: new Date(now).toISOString(), updated_at: new Date(now).toISOString() })
@@ -263,7 +305,7 @@ export async function setWallet(
     const { error: itemError } = await db.from("trade_room_items").delete().eq("room_id", loaded.room.id).eq("side", side.side)
     if (itemError) fail(itemError, "trade_room_items clear")
   }
-  await touch(db, loaded)
+  await finishEdit(db, loaded.room.id, claimed)
   return loadRoom(db, loaded.room.code)
 }
 
@@ -289,6 +331,7 @@ export async function setItems(db: SupabaseClient, loaded: LoadedRoom, side: Sid
   if (new Set(keys).size !== keys.length) throw new TradeRoomError("A Moment is listed twice.", 400, "duplicate_id")
   const theirs = new Set(loaded.items.filter((i) => i.side !== side.side).map(itemKey))
   if (keys.some((k) => theirs.has(k))) throw new TradeRoomError("That Moment is already on the other side.", 409, "on_other_side")
+  const claimed = await claimEdit(db, loaded)
   // order matters: write the new set first, then remove what is not in it, so a failure
   // between the two never leaves the side empty by accident
   if (items.length) {
@@ -305,7 +348,7 @@ export async function setItems(db: SupabaseClient, loaded: LoadedRoom, side: Sid
     const { error: delError } = await del
     if (delError) fail(delError, "trade_room_items prune")
   }
-  await touch(db, loaded)
+  await finishEdit(db, loaded.room.id, claimed)
   const next = await loadRoom(db, loaded.room.code)
   // keep trade_rooms.collection in step with what the room now holds
   const collection = roomCollection(next.items)
@@ -338,8 +381,17 @@ export async function accept(db: SupabaseClient, loaded: LoadedRoom, side: SideR
     .eq("room_id", loaded.room.id)
     .eq("side", side.side)
   if (error) fail(error, "trade_room_sides accept")
-  const other = sides.find((s) => s.side !== side.side)
-  if (other?.accepted_version === version) {
+  // ⚠ Decide the lock from the sides AS THEY ARE NOW, not the pre-write snapshot
+  // (2026-11-07 review): two Accepts in the same second each saw the other as
+  // null, neither locked, and the room sat "building" with both sides accepted.
+  // After its own write, each request re-reads; the later one sees both.
+  const { data: nowSides, error: readError } = await db
+    .from("trade_room_sides")
+    .select("side, accepted_version")
+    .eq("room_id", loaded.room.id)
+  if (readError) fail(readError, "trade_room_sides accept re-read")
+  const rows = (nowSides ?? []) as Array<{ side: Side; accepted_version: number | null }>
+  if (rows.length === 2 && rows.every((r) => r.accepted_version === version)) {
     // both accepted this exact version: lock the room. Conditional on the version so a
     // concurrent edit (which resets acceptances) cannot be overtaken.
     const { error: lockError } = await db
@@ -371,6 +423,21 @@ export async function unaccept(db: SupabaseClient, loaded: LoadedRoom, side: Sid
 export async function cancelRoom(db: SupabaseClient, loaded: LoadedRoom, userId: string, reason: string | null, now: number = Date.now()): Promise<LoadedRoom> {
   if (loaded.room.status === "sealed") throw new TradeRoomError("This trade already sealed on chain; it can't be cancelled.", 409, "sealed")
   if (loaded.room.status === "cancelled") return loaded
+  // ⛔ 2026-11-07 review: once the co-signer has SIGNED, the transaction can seal
+  // on chain at any moment — a cancel then recorded a trade that executed as
+  // "cancelled" and emailed "Nothing moved". Refuse while a signature from the
+  // relay window exists; after the window (or when signing ended) cancel works.
+  // A failed read refuses too: we cannot say nothing was signed.
+  if (loaded.room.status === "signing") {
+    const { count, error: relayError } = await db
+      .from("trade_room_relay")
+      .select("id", { count: "exact", head: true })
+      .eq("room_id", loaded.room.id)
+      .not("signed_at", "is", null)
+      .gt("created_at", new Date(now - RELAY_TTL_MS).toISOString())
+    if (relayError || count == null) throw new TradeRoomError("Couldn't check whether the trade was already signed. Try again in a moment.", 503, "unavailable")
+    if (count > 0) throw new TradeRoomError("The other wallet already signed — this trade may be sealing on chain now, so it can't be cancelled. Check it in a moment.", 409, "cosigned")
+  }
   const r = reason ? reason.replace(/\s+/g, " ").trim().slice(0, 200) : null
   const { error } = await db
     .from("trade_rooms")
@@ -411,7 +478,9 @@ export async function markSealed(db: SupabaseClient, loaded: LoadedRoom, txId: s
     .from("trade_rooms")
     .update({ status: "sealed", tx_id: txId, landed: landed ?? null, sealed_at: stamp, updated_at: stamp })
     .eq("id", loaded.room.id)
-    .in("status", ["accepted", "signing", "sealed"])
+    // "cancelled" too: the caller records a seal only after the CHAIN shows every
+    // Moment landed, and the chain outranks a cancel row (2026-11-07 review).
+    .in("status", ["accepted", "signing", "sealed", "cancelled"])
   if (error) fail(error, "trade_rooms sealed")
   return loadRoom(db, loaded.room.code)
 }
@@ -435,14 +504,38 @@ export async function listRooms(db: SupabaseClient, userId: string, now: number 
   if (error) fail(error, "trade_room_sides list")
   const ids = (mine ?? []).map((m) => (m as { room_id: string }).room_id)
   if (ids.length === 0) return []
-  const [rooms, sides, items] = await Promise.all([
-    db.from("trade_rooms").select(ROOM_COLS).in("id", ids).order("updated_at", { ascending: false }),
-    db.from("trade_room_sides").select("room_id, side").in("room_id", ids),
-    db.from("trade_room_items").select("room_id, side").in("room_id", ids),
-  ])
-  if (rooms.error) fail(rooms.error, "trade_rooms list")
-  if (sides.error) fail(sides.error, "trade_room_sides list all")
-  if (items.error) fail(items.error, "trade_room_items list")
+  // CHUNKED (2026-11-07 review): one unpaged `.in()` over every historical room
+  // clamped the item read at 1,000 rows (gives/gets counts silently wrong, 0
+  // included) and, with a few hundred rooms, overflowed the request URL — which
+  // also broke room CREATION, since the live-room cap calls this first. 40 rooms
+  // × ≤ 2 × MAX_ITEMS_PER_SIDE items stays under the clamp.
+  const CHUNK = 40
+  const chunks: string[][] = []
+  for (let i = 0; i < ids.length; i += CHUNK) chunks.push(ids.slice(i, i + CHUNK))
+  const reads = await Promise.all(
+    chunks.map((c) =>
+      Promise.all([
+        db.from("trade_rooms").select(ROOM_COLS).in("id", c),
+        db.from("trade_room_sides").select("room_id, side").in("room_id", c),
+        db.from("trade_room_items").select("room_id, side").in("room_id", c),
+      ]),
+    ),
+  )
+  const roomRows: RoomRow[] = []
+  const sideRows: Array<{ room_id: string }> = []
+  const itemRows: Array<{ room_id: string; side: Side }> = []
+  for (const [r, sd, it] of reads) {
+    if (r.error) fail(r.error, "trade_rooms list")
+    if (sd.error) fail(sd.error, "trade_room_sides list all")
+    if (it.error) fail(it.error, "trade_room_items list")
+    roomRows.push(...((r.data ?? []) as RoomRow[]))
+    sideRows.push(...((sd.data ?? []) as Array<{ room_id: string }>))
+    itemRows.push(...((it.data ?? []) as Array<{ room_id: string; side: Side }>))
+  }
+  roomRows.sort((x, y) => String(y.updated_at).localeCompare(String(x.updated_at)))
+  const rooms = { data: roomRows }
+  const sides = { data: sideRows }
+  const items = { data: itemRows }
   const mySide = new Map((mine ?? []).map((m) => [(m as { room_id: string }).room_id, (m as { side: Side }).side]))
   const sideCount = new Map<string, number>()
   for (const s of (sides.data ?? []) as Array<{ room_id: string }>) sideCount.set(s.room_id, (sideCount.get(s.room_id) ?? 0) + 1)

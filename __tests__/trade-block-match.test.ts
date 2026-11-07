@@ -40,7 +40,7 @@ vi.mock("@/lib/trade-room/notify", () => ({ notifyOtherSide: async () => ({ stat
 
 import * as block from "@/app/api/trade-block/route"
 import * as room from "@/app/api/trade-room/[code]/route"
-import { assembleMatches, foldName, satisfies, wantKeys } from "@/lib/trade-block/match"
+import { assembleMatches, foldName, holdingsForWants, MAX_PLAYER_LOOKUPS, satisfies, wantKeys } from "@/lib/trade-block/match"
 import { notifyMatchesForListing, pacificDay } from "@/lib/trade-block/match-notify"
 import type { ItemRow, LoadedListing } from "@/lib/trade-block/store"
 
@@ -178,6 +178,19 @@ describe("GET /api/trade-block?matches=1", () => {
     const r = await as(BOB, () => block.GET(get("/api/trade-block?matches=1")))
     expect(r.status).toBeGreaterThanOrEqual(500)
     expect(await r.text()).not.toMatch(/"matches"/)
+  })
+})
+
+describe("holdingsForWants reports its own truncation (2026-11-07 review)", () => {
+  it("player wants beyond the lookup cap mark the read truncated — never a silent 'complete'", async () => {
+    const wants = Array.from({ length: MAX_PLAYER_LOOKUPS + 1 }, (_, i) => ({ kind: "player" as const, collection_id: TS, key: `player number${i}` }))
+    const meta = { truncated: false }
+    await holdingsForWants(mem.current.db, [WA.source], wants as never, meta)
+    expect(meta.truncated).toBe(true)
+    // control: at the cap, nothing is dropped
+    const ok = { truncated: false }
+    await holdingsForWants(mem.current.db, [WA.source], wants.slice(0, MAX_PLAYER_LOOKUPS) as never, ok)
+    expect(ok.truncated).toBe(false)
   })
 })
 

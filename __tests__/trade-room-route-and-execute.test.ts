@@ -298,6 +298,18 @@ describe("/api/trade-room — the routes", () => {
     expect(stranger.status).toBe(403)
   })
 
+  it("more picks than a side may hold are refused BEFORE any wallet-cache or chain read (2026-11-07 review)", async () => {
+    const code = await twoSided()
+    chain.holdings.mockClear()
+    chain.run.mockClear()
+    const ids = Array.from({ length: 11 }, (_, i) => String(i + 1))
+    const r = await as(ALICE, () => room.POST(post(`/api/trade-room/${code}`, { action: "items", ids }), ctx(code)))
+    expect(r.status).toBe(400)
+    expect(await r.json()).toMatchObject({ code: "too_many" })
+    expect(chain.holdings).not.toHaveBeenCalled()
+    expect(chain.run).not.toHaveBeenCalled()
+  })
+
   it("⛔ relay_post is refused while the flag is unset, after both accepted and the simulation passed; opens with the flag", async () => {
     const code = await twoSided()
     await as(ALICE, () => room.POST(post(`/api/trade-room/${code}`, { action: "items", ids: ["1"] }), ctx(code)))

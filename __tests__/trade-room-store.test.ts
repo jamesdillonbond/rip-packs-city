@@ -155,7 +155,9 @@ describe("trade-room/store — the proposal contract", () => {
     expect(room.room.status).toBe("accepted")
     // Bob changes his side: version bumps, both acceptances clear, back to building
     room = await setItems(m.db, room, sideOf(room, BOB)!, [item("9", 5)])
-    expect(room.room.version).toBe(v + 1)
+    // RE-PINNED 2026-11-07: an edit claims a version BEFORE writing and bumps again
+    // after (so a mid-write Accept is void) — the property is "moved past v".
+    expect(room.room.version).toBeGreaterThan(v)
     expect(room.room.status).toBe("building")
     expect(room.sides.every((s) => s.accepted_version === null)).toBe(true)
     // Alice's old acceptance (version v) can no longer lock the room
@@ -309,3 +311,86 @@ describe("trade-room/valuation — the fair-trade hint", () => {
     expect(valueTrade([], b)).toMatchObject({ difference_usd: -5, summary: "Side B gives $5.00 more by RPC's FMV." })
   })
 })
+
+// 2026-11-07 review — races on the proposal contract. Each case replays a
+// concurrent request by acting on a SNAPSHOT loaded before the other request ran.
+describe("trade-room/store — concurrent requests never break the proposal contract", () => {
+  it("an edit loaded BEFORE B joined never writes the room back to 'open'", async () => {
+    const m = memorySupabase({}, UNIQUES, DEFAULTS)
+    let room = await createRoom(m.db, ALICE)
+    const beforeJoin = room
+    room = await joinRoom(m.db, room, BOB) // building, version unchanged
+    await setWallet(m.db, beforeJoin, sideOf(beforeJoin, ALICE)!, WA.signer, WA.source)
+    const now = await loadRoom(m.db, room.room.code)
+    expect(now.room.status).toBe("building")
+  })
+
+  it("an edit loaded BEFORE a cancel is refused and never revives the room", async () => {
+    const { m, room } = await twoSided()
+    const beforeCancel = room
+    await cancelRoom(m.db, room, ALICE, null)
+    expect(await codeOf(setItems(m.db, beforeCancel, sideOf(beforeCancel, ALICE)!, [item("1")]))).toBe("409:stale")
+    const now = await loadRoom(m.db, room.room.code)
+    expect(now.room.status).toBe("cancelled")
+    expect(now.items).toHaveLength(0)
+  })
+
+  it("a STALE edit that loses the version race writes NOTHING", async () => {
+    const { m, room } = await twoSided()
+    const stale = room
+    await setItems(m.db, room, sideOf(room, ALICE)!, [item("1")])
+    expect(await codeOf(setItems(m.db, stale, sideOf(stale, ALICE)!, [item("2")]))).toBe("409:stale")
+    const now = await loadRoom(m.db, room.room.code)
+    expect(now.items.map((i) => i.moment_id)).toEqual(["1"])
+  })
+
+  it("two Accepts in the same instant (each loaded before the other wrote) still lock the room", async () => {
+    const two = await twoSided()
+    const { m } = two
+    const room = await setItems(m.db, two.room, sideOf(two.room, ALICE)!, [item("1", 10)])
+    const v = room.room.version
+    // both requests loaded `room` (neither side accepted yet)
+    await accept(m.db, room, sideOf(room, ALICE)!, v, true)
+    const after = await accept(m.db, room, sideOf(room, BOB)!, v, true)
+    expect(after.room.status).toBe("accepted")
+  })
+
+  it("⛔ a room whose co-signer has SIGNED can't be cancelled while signing (it may be sealing on chain)", async () => {
+    const two = await twoSided()
+    const { m } = two
+    let room = await setItems(m.db, two.room, sideOf(two.room, ALICE)!, [item("1", 10)])
+    const v = room.room.version
+    room = await accept(m.db, room, sideOf(room, ALICE)!, v, true)
+    room = await accept(m.db, room, sideOf(room, BOB)!, v, true)
+    await markSigning(m.db, room)
+    room = await loadRoom(m.db, room.room.code)
+    m.tables.trade_room_relay = [{ id: "r1", room_id: room.room.id, signed_at: new Date().toISOString(), created_at: new Date().toISOString() }]
+    expect(await codeOf(cancelRoom(m.db, room, BOB, null))).toBe("409:cosigned")
+    expect((await loadRoom(m.db, room.room.code)).room.status).toBe("signing")
+    // control: an UNSIGNED relay leaves cancel available
+    m.tables.trade_room_relay = [{ id: "r1", room_id: room.room.id, signed_at: null, created_at: new Date().toISOString() }]
+    expect((await cancelRoom(m.db, room, BOB, null)).room.status).toBe("cancelled")
+  })
+
+  it("a seal the chain proved is recorded even over a 'cancelled' row (the chain outranks the cancel)", async () => {
+    const { m, room } = await twoSided()
+    await cancelRoom(m.db, room, ALICE, null)
+    const cancelled = await loadRoom(m.db, room.room.code)
+    const sealed = await markSealed(m.db, cancelled, "a".repeat(64), [{ held: true }])
+    expect(sealed.room.status).toBe("sealed")
+  })
+})
+
+describe("trade-room/store — listRooms reads in chunks (2026-11-07 review)", () => {
+  it("returns every room, newest first, across a chunk boundary", async () => {
+    const m = memorySupabase({}, UNIQUES, DEFAULTS)
+    for (let i = 0; i < 85; i++) await createRoom(m.db, ALICE)
+    // distinct, known update times so the merge order is checkable
+    m.tables.trade_rooms.forEach((r, i) => { r.updated_at = new Date(Date.UTC(2026, 10, 1, 0, i)).toISOString() })
+    const list = await listRooms(m.db, ALICE)
+    expect(list).toHaveLength(85)
+    const times = list.map((r) => r.updated_at as string)
+    expect([...times].sort().reverse()).toEqual(times)
+  })
+})
+

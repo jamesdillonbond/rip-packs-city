@@ -834,12 +834,23 @@ export async function proposalsFor(db: SupabaseClient, userId: string, myListing
   const all = [...((sent.data ?? []) as ProposalRow[]), ...((received.data ?? []) as ProposalRow[])]
   const items = new Map<string, ProposalItemRow[]>()
   if (all.length) {
-    const { data, error } = await db.from("trade_block_proposal_items").select(PITEM_COLS).in("proposal_id", [...new Set(all.map((p) => p.id))]).order("role").order("pos")
-    if (error) fail(error, "trade_block_proposal_items list")
-    for (const r of (data ?? []) as ProposalItemRow[]) {
-      const list = items.get(r.proposal_id) ?? []
-      list.push(numify(r))
-      items.set(r.proposal_id, list)
+    // Chunked like itemsFor (2026-11-07 review): up to 150 proposals × 20 lines is
+    // 3,000 rows, and PostgREST clamps one read at 1,000 — silently, so proposals
+    // rendered with missing lines and give/get values summed from a partial list.
+    const ids = [...new Set(all.map((p) => p.id))]
+    const CHUNK = Math.floor(1000 / (2 * MAX_LINES_PER_SIDE)) - 10
+    const chunks: string[][] = []
+    for (let i = 0; i < ids.length; i += CHUNK) chunks.push(ids.slice(i, i + CHUNK))
+    const reads = await Promise.all(
+      chunks.map((c) => db.from("trade_block_proposal_items").select(PITEM_COLS).in("proposal_id", c).order("proposal_id").order("role").order("pos")),
+    )
+    for (const { data, error } of reads) {
+      if (error) fail(error, "trade_block_proposal_items list")
+      for (const r of (data ?? []) as ProposalItemRow[]) {
+        const list = items.get(r.proposal_id) ?? []
+        list.push(numify(r))
+        items.set(r.proposal_id, list)
+      }
     }
   }
   const wrap = (p: ProposalRow): LoadedProposal => ({ proposal: p, items: items.get(p.id) ?? [] })
@@ -865,25 +876,47 @@ export async function decide(db: SupabaseClient, userId: string, proposalCode: s
   if (proposal.status !== "pending") throw new TradeBlockError(`This proposal was already ${proposal.status}.`, 409, proposal.status)
   const stamp = new Date(now).toISOString()
   const unsignable = accept ? unsignableCollections(loaded.items.map((i) => i.collection_id)) : []
-  let roomCode: string | null = null
-  if (accept && unsignable.length === 0) {
-    // the lister becomes side A, the proposer side B; both still prove wallets and pick
-    // in the room, whose chain checks gate everything that signs
-    const room = await createRoom(db, userId, now)
-    const { error: sideError } = await db.from("trade_room_sides").insert({ room_id: room.room.id, side: "b", user_id: proposal.user_id })
-    if (sideError) fail(sideError, "trade_room_sides insert (from block)")
-    const { error: statusError } = await db.from("trade_rooms").update({ status: "building", updated_at: stamp }).eq("id", room.room.id).eq("status", "open")
-    if (statusError) fail(statusError, "trade_rooms building (from block)")
-    roomCode = (await loadRoom(db, room.room.code)).room.code
-  }
+  // ⛔ CLAIM THE PROPOSAL FIRST (2026-11-07 review). The room used to be created
+  // BEFORE this conditional update, so a double-click (or two tabs) made two
+  // live rooms with both users seated — the loser threw "stale" and left an
+  // orphan room in both /trades lists, counting toward MAX_LIVE_ROOMS.
   const { data, error } = await db
     .from("trade_block_proposals")
-    .update({ status: accept ? "accepted" : "declined", decided_at: stamp, updated_at: stamp, room_code: roomCode })
+    .update({ status: accept ? "accepted" : "declined", decided_at: stamp, updated_at: stamp })
     .eq("id", proposal.id)
     .eq("status", "pending")
     .select("id")
   if (error) fail(error, "trade_block_proposals decide")
   if (!Array.isArray(data) || data.length !== 1) throw new TradeBlockError("This proposal changed while you were answering it. Reload.", 409, "stale")
+  let roomCode: string | null = null
+  if (accept && unsignable.length === 0) {
+    // the lister becomes side A, the proposer side B; both still prove wallets and pick
+    // in the room, whose chain checks gate everything that signs
+    let roomId: string | null = null
+    try {
+      const room = await createRoom(db, userId, now)
+      roomId = room.room.id
+      const { error: sideError } = await db.from("trade_room_sides").insert({ room_id: room.room.id, side: "b", user_id: proposal.user_id })
+      if (sideError) fail(sideError, "trade_room_sides insert (from block)")
+      const { error: statusError } = await db.from("trade_rooms").update({ status: "building", updated_at: stamp }).eq("id", room.room.id).eq("status", "open")
+      if (statusError) fail(statusError, "trade_rooms building (from block)")
+      roomCode = (await loadRoom(db, room.room.code)).room.code
+      const { error: linkError } = await db.from("trade_block_proposals").update({ room_code: roomCode, updated_at: stamp }).eq("id", proposal.id)
+      if (linkError) fail(linkError, "trade_block_proposals room link")
+    } catch (e) {
+      // No room for an accepted proposal is a dead end for both collectors: hand the
+      // proposal back (pending, no room) and cancel any half-made room, then report.
+      // Both rollback writes are BOUND: a rollback that silently failed would leave an
+      // accepted proposal with no room (or a live orphan room) and say nothing.
+      const { error: undoError } = await db.from("trade_block_proposals").update({ status: "pending", decided_at: null, updated_at: stamp }).eq("id", proposal.id).is("room_code", null)
+      if (undoError) console.error(`[trade-block/decide] rollback to pending failed for proposal ${proposal.id}: ${undoError.message}`)
+      if (roomId) {
+        const { error: roomUndoError } = await db.from("trade_rooms").update({ status: "cancelled", cancelled_by: userId, cancel_reason: "room setup failed", updated_at: stamp }).eq("id", roomId)
+        if (roomUndoError) console.error(`[trade-block/decide] cancelling half-made room ${roomId} failed: ${roomUndoError.message}`)
+      }
+      throw e
+    }
+  }
   return { proposal: await loadProposal(db, proposalCode), room_code: roomCode, unsignable }
 }
 

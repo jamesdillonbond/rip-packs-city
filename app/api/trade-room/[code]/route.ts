@@ -69,6 +69,7 @@ import { holdingsReader, idsReader, readCanReceive, type Pick } from "@/lib/trad
 import { MULTI_SWAP_CADENCE, swapCollection, swapCollectionByDbSlug, SWAP_COLLECTIONS, type SwapSlug } from "@/lib/trade-room/multi-swap-cadence"
 import { SWAP_CADENCE } from "@/lib/swap-test/swap-cadence"
 import type { NewItem } from "@/lib/trade-room/store"
+import { MAX_ITEMS_PER_SIDE } from "@/lib/trade-room/valuation"
 import { buildRoomView, cosignerOf, usernamesFor, type PendingRelay } from "@/lib/trade-room/view"
 import { notifyOtherSide, type TradeNotice } from "@/lib/trade-room/notify"
 import { proposalForRoom } from "@/lib/trade-block/store"
@@ -320,6 +321,9 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       case "items": {
         if (!me.source) throw new TradeRoomError("Connect and prove your Flow Wallet before picking Moments.", 409, "no_wallet")
         const picks = readPicks(body)
+        // The cap BEFORE any read (2026-11-07 review): setItems enforces it too, but only after
+        // the wmc reads and the per-collection chain scripts had run over every submitted id.
+        if (picks.length > MAX_ITEMS_PER_SIDE) throw new TradeRoomError(`At most ${MAX_ITEMS_PER_SIDE} Moments per side.`, 400, "too_many")
         const items: NewItem[] = []
         for (const c of SWAP_COLLECTIONS) {
           const ids = picks.filter((p) => p.collection === c.slug).map((p) => p.id)
@@ -391,7 +395,9 @@ export async function POST(req: NextRequest, ctx: Ctx) {
         const wasSealed = loaded.room.status === "sealed"
         // a seal already recorded keeps its tx_id: a second "sealed" never overwrites the first
         if (wasSealed) return json({ room: await view(loaded, u.id), verified: loaded.room.landed != null })
-        if (loaded.room.status !== "signing" && loaded.room.status !== "accepted") throw new TradeRoomError("This trade is not in a state that can seal.", 409, "not_signing")
+        // "cancelled" is allowed (2026-11-07 review): a cancel that raced the seal must not
+        // leave an executed trade recorded as cancelled. The chain read below decides.
+        if (loaded.room.status !== "signing" && loaded.room.status !== "accepted" && loaded.room.status !== "cancelled") throw new TradeRoomError("This trade is not in a state that can seal.", 409, "not_signing")
         // the seal is a CHAIN fact, not a claim: read where every Moment sits before recording it.
         // A read that fails is 503 + retryable (call `sealed` again), never a seal and never "not landed".
         let landed: Array<{ held: boolean }>

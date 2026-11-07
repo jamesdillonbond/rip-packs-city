@@ -15,6 +15,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { sendViaResend, WELCOME_FROM_ADDRESS, type SendEmailArgs, type SendResult } from "@/lib/welcome/send-account-welcome"
 import { usernamesFor } from "@/lib/trade-room/view"
+import { bumpAnonRate } from "@/lib/abuse/anon-rate"
 
 export type BlockNotice = "proposal" | "accepted" | "declined" | "match"
 
@@ -92,11 +93,29 @@ export interface BlockNotifyDeps {
   send?: (args: SendEmailArgs) => Promise<SendResult>
   lookupEmail?: (db: SupabaseClient, userId: string) => Promise<string | null>
   log?: (line: string) => void
+  /** Per (notice, actor, recipient) send budget; default counts durably via bump_anon_action_rate. */
+  cooldown?: (db: SupabaseClient, notice: BlockNotice, actorUserId: string, toUserId: string) => Promise<boolean>
+}
+
+/**
+ * Sends of one notice, from one actor, to one recipient, per hour (2026-11-07
+ * review). The trade room fixed this class on 11-04 (CISO M2); the Trade Block
+ * had no budget, so propose → withdraw → propose on one listing emailed the
+ * lister once per cycle, bounded only by the per-lambda request limiter.
+ */
+export const BLOCK_NOTICE_COOLDOWN_PER_HOUR = 3
+
+async function defaultCooldown(db: SupabaseClient, notice: BlockNotice, actorUserId: string, toUserId: string): Promise<boolean> {
+  const v = await bumpAnonRate(
+    { bucket: `trade_block_notice:${notice}`, key: `${actorUserId}:${toUserId}`, limit: BLOCK_NOTICE_COOLDOWN_PER_HOUR, windowSecs: 3600 },
+    db as unknown as Parameters<typeof bumpAnonRate>[1],
+  )
+  return v.allowed
 }
 
 export type BlockNotifyOutcome =
   | { status: "sent"; notice: BlockNotice }
-  | { status: "skipped"; reason: "no_email" | "unsubscribed" | "optout_unknown" | "no_names" | "self" }
+  | { status: "skipped"; reason: "no_email" | "unsubscribed" | "optout_unknown" | "no_names" | "self" | "cooldown" }
   | { status: "failed"; error: string }
 
 async function defaultLookupEmail(db: SupabaseClient, userId: string): Promise<string | null> {
@@ -128,6 +147,17 @@ export async function notifyBlock(
       return { status: "skipped", reason: "optout_unknown" }
     }
     if (sub && (sub as { unsubscribed_at: string | null }).unsubscribed_at) return { status: "skipped", reason: "unsubscribed" }
+    // A counter that cannot be read is a skip, never a send (same stance as the opt-out read).
+    let allowed = false
+    try {
+      allowed = await (deps.cooldown ?? defaultCooldown)(db, notice, actorUserId, toUserId)
+    } catch (e) {
+      log(`[trade-block/notify] notice=${notice} skipped: cooldown read failed (${e instanceof Error ? e.message : String(e)})`)
+    }
+    if (!allowed) {
+      log(`[trade-block/notify] notice=${notice} skipped: cooldown`)
+      return { status: "skipped", reason: "cooldown" }
+    }
     let names: Map<string, string>
     try {
       names = await usernamesFor(db, [actorUserId])

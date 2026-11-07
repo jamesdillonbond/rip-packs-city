@@ -130,7 +130,13 @@ const PER_LOOKUP = 20
  * and by name per player want (accent-blind compare after the read). Bounded; throws on
  * any failed read.
  */
-export async function holdingsForWants(db: SupabaseClient, sources: readonly string[], wants: readonly WantKey[]): Promise<Holding[]> {
+export async function holdingsForWants(
+  db: SupabaseClient,
+  sources: readonly string[],
+  wants: readonly WantKey[],
+  /** Set to `truncated: true` when a bounded read hit its cap or player wants were dropped (2026-11-07 review). */
+  meta: { truncated: boolean } = { truncated: false },
+): Promise<Holding[]> {
   if (sources.length === 0 || wants.length === 0) return []
   const out = new Map<string, Holding>()
   const add = (rows: unknown[]) => {
@@ -165,6 +171,7 @@ export async function holdingsForWants(db: SupabaseClient, sources: readonly str
   const players = new Map<string, WantKey>()
   for (const w of wants) if (w.kind === "player") players.set(`${w.collection_id}|${w.key}`, w)
   const playerWants = [...players.values()].slice(0, MAX_PLAYER_LOOKUPS)
+  if (players.size > MAX_PLAYER_LOOKUPS) meta.truncated = true
   for (const w of playerWants) {
     const term = w.key.split(" ").filter((t) => t.length >= 3).sort((a, b) => b.length - a.length)[0] ?? w.key
     const safe = term.replace(/[%_\\,()"]/g, "")
@@ -179,6 +186,8 @@ export async function holdingsForWants(db: SupabaseClient, sources: readonly str
   const results = await Promise.all(reads)
   for (const { data, error } of results) {
     if (error) fail(error, "wallet_moments_cache match read")
+    // a read that came back AT its cap may have more rows behind it
+    if ((data?.length ?? 0) >= PER_LOOKUP * 10) meta.truncated = true
     add(data ?? [])
   }
   return [...out.values()].filter((h) => wants.some((w) => satisfies(w, h)))
@@ -190,11 +199,15 @@ export async function findMatches(db: SupabaseClient, userId: string, now: numbe
   const others = population.listings.filter((l) => l.listing.user_id !== userId)
   const myWants = mine.flatMap((l) => wantKeys(l.items))
   const theirWants = others.flatMap((l) => wantKeys(l.items))
-  const holdings = accounts.length ? await holdingsForWants(db, accounts.map((a) => a.source), theirWants) : []
+  const meta = { truncated: false }
+  const holdings = accounts.length ? await holdingsForWants(db, accounts.map((a) => a.source), theirWants, meta) : []
   return {
     proven: accounts.length > 0,
     my_wants: myWants.length,
     matches: assembleMatches(others, myWants, holdings),
-    complete: population.complete,
+    // ⚠ complete only when BOTH the listing population AND the holdings reads were
+    // whole — a 31st player want, or a capped read, left matches unchecked while
+    // the answer said complete:true, so a missing match read as "no match".
+    complete: population.complete && !meta.truncated,
   }
 }

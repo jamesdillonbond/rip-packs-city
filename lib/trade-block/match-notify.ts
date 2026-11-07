@@ -55,7 +55,11 @@ export async function notifyMatchesForListing(
     for (const r of (data ?? []) as Array<{ user_id: string; source: string }>) owner.set(r.source, r.user_id)
     summary.members = new Set(owner.values()).size
     if (owner.size === 0) return summary
-    const holdings = await holdingsForWants(db, [...owner.keys()], wants)
+    const readMeta = { truncated: false }
+    const holdings = await holdingsForWants(db, [...owner.keys()], wants, readMeta)
+    // A capped read means some holders may not be mailed: a best-effort notice, so
+    // say so in the log rather than fail the post (2026-11-07 review).
+    if (readMeta.truncated) log("[trade-block/match-notify] a holdings read hit its cap — some holders may not be notified")
     const recipients = [...new Set(holdings.map((h) => owner.get(h.source)).filter((u): u is string => !!u && u !== poster))].slice(0, MAX_MATCH_RECIPIENTS)
     summary.recipients = recipients.length
     const day = pacificDay(now)
