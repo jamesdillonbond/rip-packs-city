@@ -17,6 +17,7 @@
 // RLS-enabled with no policies, the estate's deny-all shape), bounded by a
 // short race so a stuck pool cannot hold the page.
 
+import { cache } from "react"
 import { supabaseAdmin } from "@/lib/supabase"
 import { withBoardBudget } from "@/lib/insights/board-page-fetch"
 
@@ -31,7 +32,7 @@ export function isTopShotFossilKeyShape(decodedSlug: string): boolean {
 }
 
 /** The canonical `setID:playID` for a purged UUID-form Top Shot key, or null. */
-export async function lookupTopShotFossilRedirect(decodedSlug: string): Promise<string | null> {
+async function lookupTopShotFossilRedirectUncached(decodedSlug: string): Promise<string | null> {
   if (!isTopShotFossilKeyShape(decodedSlug)) return null
   const key = decodedSlug.toLowerCase()
   try {
@@ -58,3 +59,8 @@ export async function lookupTopShotFossilRedirect(decodedSlug: string): Promise<
     return null
   }
 }
+
+// React cache(): the layout, generateMetadata and the page each ask for the same
+// slug in one request (2026-11-07 review) — one probe per request, not three.
+// A failure is already null, so the memoised answer is the honest one.
+export const lookupTopShotFossilRedirect = cache(lookupTopShotFossilRedirectUncached)

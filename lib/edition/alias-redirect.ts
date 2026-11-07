@@ -17,6 +17,7 @@
 // table is RLS-enabled with no policies), bounded by the estate's shared
 // board budget so a stuck pool cannot hold the page.
 
+import { cache } from "react"
 import { supabaseAdmin } from "@/lib/supabase"
 import { withBoardBudget } from "@/lib/insights/board-page-fetch"
 
@@ -31,7 +32,7 @@ export function isTopShotEditionKeyShape(decodedSlug: string): boolean {
 }
 
 /** The canonical key for a Top Shot alias edition key, or null (not an alias, or the read failed). */
-export async function lookupTopShotEditionAliasRedirect(decodedSlug: string): Promise<string | null> {
+async function lookupTopShotEditionAliasRedirectUncached(decodedSlug: string): Promise<string | null> {
   if (!isTopShotEditionKeyShape(decodedSlug)) return null
   try {
     const { data, error } = await withBoardBudget(
@@ -53,3 +54,8 @@ export async function lookupTopShotEditionAliasRedirect(decodedSlug: string): Pr
     return null
   }
 }
+
+// React cache(): the layout, generateMetadata and the page each ask for the same
+// slug in one request (2026-11-07 review) — one probe per request, not three.
+// A failure is already null, so the memoised answer is the honest one.
+export const lookupTopShotEditionAliasRedirect = cache(lookupTopShotEditionAliasRedirectUncached)
