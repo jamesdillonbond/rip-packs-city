@@ -151,12 +151,17 @@ export default function GlobalSearch() {
       );
     }
     return (
+      <>
+      {/* 2026-11-07 review: the ONLY disclosure that these are closest matches to
+          a typo sat aria-hidden INSIDE the listbox, so a screen reader announced
+          fuzzy rows as matches. A listbox may own only options, so the note is a
+          polite live region just above it. */}
+      {meta?.fuzzy && (
+        <div role="status" aria-live="polite" data-testid="search-fuzzy-note" style={{ padding: "10px 14px 0", fontFamily: monoFont, fontSize: 10, letterSpacing: "0.06em", color: "var(--rpc-text-muted)" }}>
+          No exact match for &ldquo;{meta.fuzzy.from}&rdquo; — closest matches:
+        </div>
+      )}
       <ul role="listbox" style={{ listStyle: "none", margin: 0, padding: 4, maxHeight: 420, overflowY: "auto" }}>
-        {meta?.fuzzy && (
-          <li aria-hidden="true" data-testid="search-fuzzy-note" style={{ padding: "6px 10px 4px", fontFamily: monoFont, fontSize: 10, letterSpacing: "0.06em", color: "var(--rpc-text-muted)" }}>
-            No exact match for &ldquo;{meta.fuzzy.from}&rdquo; — closest matches:
-          </li>
-        )}
         {hits.map((h, i) => (
           <li key={h.kind + h.href}>
             <button
@@ -200,6 +205,7 @@ export default function GlobalSearch() {
           </li>
         ))}
       </ul>
+      </>
     );
   }, [status, hits, active, trimmed, meta]);
 

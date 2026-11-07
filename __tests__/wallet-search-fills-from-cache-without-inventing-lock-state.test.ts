@@ -175,14 +175,18 @@ describe("the dead-host row is refilled from wallet_moments_cache", () => {
     expect(row.lockKnown).toBeUndefined()
   })
 
-  it("⚠ a FAILED cache read fills nothing and never throws the request away", async () => {
+  // ⚠ INVERTED 2026-11-07 (review): this test pinned `thumbnailUrl === null` on
+  // a failed cache read — the defect. The Top Shot media URL is derived from the
+  // Moment id and needs no read, so a failure in the CACHE (another source) must
+  // not blank it. Everything the cache supplies still stays unfilled.
+  it("⚠ a FAILED cache read fills nothing FROM THE CACHE — the id-derived Top Shot art still lands", async () => {
     // Three states, not two. supabase-js returns errors rather than throwing, so
     // without the explicit branch this is indistinguishable from "never walked".
     state.wmcError = { message: "canceling statement due to statement timeout" }
     const rows = await rowsOf()
     expect(rows).toHaveLength(2)
     const row = rows.find((r) => r.momentId === "101")!
-    expect(row.thumbnailUrl).toBeNull()
+    expect(row.thumbnailUrl).toBe("https://assets.nbatopshot.com/media/101/image?width=180")
     expect(row.lockKnown).toBeUndefined()
   })
 })

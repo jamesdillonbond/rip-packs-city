@@ -26,8 +26,8 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ slug: stri
   if (data == null) return NextResponse.json({ error: "No such challenge" }, { status: 404 });
   // `is_open` is decided here, server-side, so the client never reads the wall
   // clock during render (hydration guard). Same rule the entry route enforces.
-  const ch = (data as { challenge?: { is_active?: boolean; ends_at?: string | null } }).challenge
-  const is_open = ch ? challengeIsOpen({ is_active: ch.is_active === true, ends_at: ch.ends_at ?? null }) : false
+  const ch = (data as { challenge?: { is_active?: boolean; starts_at?: string | null; ends_at?: string | null } }).challenge
+  const is_open = ch ? challengeIsOpen({ is_active: ch.is_active === true, starts_at: ch.starts_at ?? null, ends_at: ch.ends_at ?? null }) : false
   return NextResponse.json({ ...(data as object), is_open }, {
     headers: { "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300" },
   });

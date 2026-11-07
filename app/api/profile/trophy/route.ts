@@ -23,7 +23,7 @@ import { sanitizeTrophyThumbnail } from "@/lib/profile/trophy-thumbnail";
 import { logTrophyFunnelEvent } from "@/lib/trophy/funnel-event";
 import { resolvePaniniTrophyCard, type PaniniTrophyCard } from "@/lib/trophy/panini-card";
 import { PANINI_COLLECTION_ID } from "@/lib/trophy/slab-href";
-import { challengeIsOpen, loadOwnCase, parseCaseId, scopeToCase, type OwnCase } from "@/lib/trophy/cases";
+import { loadOwnCase, parseCaseId, refuseClosedChallenge, scopeToCase, type OwnCase } from "@/lib/trophy/cases";
 import { checkChallengePin, parseChallengeRules } from "@/lib/trophy/challenge-rules";
 
 const BAD_CASE = { error: "caseId must be a trophy case id" };
@@ -118,9 +118,8 @@ export async function POST(req: NextRequest) {
   const scope = await resolveCase(user.id, rawCaseId);
   if (scope instanceof Response) return scope;
   const challenge = scope.own?.challenge ?? null;
-  if (challenge && !challengeIsOpen(challenge)) {
-    return NextResponse.json({ error: `${challenge.title} has ended — this case is now read-only.` }, { status: 409 });
-  }
+  const closed = refuseClosedChallenge(scope.own);
+  if (closed) return closed;
 
   // ── What the CLIENT may assert, and what it may not ───────────────────────
   //
@@ -310,6 +309,8 @@ export async function PATCH(req: NextRequest) {
 
   const scope = await resolveCase(user.id, body?.caseId);
   if (scope instanceof Response) return scope;
+  const closedP = refuseClosedChallenge(scope.own);
+  if (closedP) return closedP;
 
   const { data, error } = await scopeToCase(
     supabase
@@ -348,6 +349,8 @@ export async function DELETE(req: NextRequest) {
 
   const scope = await resolveCase(user.id, body?.caseId);
   if (scope instanceof Response) return scope;
+  const closedD = refuseClosedChallenge(scope.own);
+  if (closedD) return closedD;
 
   // `.select("id")` so the event below is logged only when a row was actually
   // removed — a DELETE of an already-empty slot succeeds with nothing to count.

@@ -286,7 +286,9 @@ export default function TrophyPickerModal({
   // (on more fields than the client filter knows — edition name, say), so the
   // client filter must not re-narrow it. Between keystrokes the previous list
   // is narrowed client-side until the debounced refetch lands.
-  const clientQuery = serverQueryFor(query) === serverQuery ? "" : query;
+  // ⚠ Only a NON-EMPTY server query covers the text: a 1-character query maps
+  // to "" just like an idle box, so "K" used to filter nothing (2026-11-07 review).
+  const clientQuery = serverQuery !== "" && serverQueryFor(query) === serverQuery ? "" : query;
   const filteredSorted = useMemo<PickerMoment[]>(
     () => filterSortMoments(moments, sort, tierFilter, clientQuery),
     [moments, sort, tierFilter, clientQuery]
@@ -653,8 +655,14 @@ export default function TrophyPickerModal({
                     nothing MATCHED, not because the collector owns nothing —
                     "No owned moments found yet" there is a false claim about
                     their holdings. The name check comes before the pool check. */}
-                {serverQuery
+                {/* 2026-11-07 review: the name copy only when the server answered
+                    the name with NOTHING. When it returned Moments and the tier
+                    filter (or a pending keystroke) hid them, "nothing you hold
+                    matches" was a false statement about the holdings. */}
+                {serverQuery && moments.length === 0
                   ? `Nothing you hold matches “${serverQuery}”. Only priced Moments are listed — use the manual tab if you know its ID.`
+                  : serverQuery
+                    ? "No moments match the current filter."
                   : moments.length === 0
                     ? /* "None" is either "owns nothing here" or "no wallet saved on
                          this chain" — the helper says which only when it KNOWS. */

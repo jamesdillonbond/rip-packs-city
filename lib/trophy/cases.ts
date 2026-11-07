@@ -44,7 +44,7 @@ export function scopeToCase<T extends { is: (c: string, v: null) => T; eq: (c: s
 export interface OwnCase {
   id: string;
   name: string;
-  challenge: { id: string; slug: string; title: string; rules: unknown; is_active: boolean; ends_at: string | null } | null;
+  challenge: { id: string; slug: string; title: string; rules: unknown; is_active: boolean; starts_at: string | null; ends_at: string | null } | null;
 }
 
 export type OwnCaseResult =
@@ -58,7 +58,7 @@ export type OwnCaseResult =
 export async function loadOwnCase(db: any, userId: string, caseId: string): Promise<OwnCaseResult> {
   const res = await db
     .from("trophy_cases")
-    .select("id, name, challenge_id, trophy_challenges(id, slug, title, rules, is_active, ends_at)")
+    .select("id, name, challenge_id, trophy_challenges(id, slug, title, rules, is_active, starts_at, ends_at)")
     .eq("id", caseId)
     .eq("user_id", userId)
     .limit(1);
@@ -78,6 +78,7 @@ export async function loadOwnCase(db: any, userId: string, caseId: string): Prom
             title: ch.title,
             rules: ch.rules,
             is_active: ch.is_active === true,
+            starts_at: ch.starts_at ?? null,
             ends_at: ch.ends_at ?? null,
           }
         : null,
@@ -85,9 +86,31 @@ export async function loadOwnCase(db: any, userId: string, caseId: string): Prom
   };
 }
 
-/** A challenge is open when active and not past its end. */
-export function challengeIsOpen(ch: { is_active: boolean; ends_at: string | null }, now = Date.now()): boolean {
+/**
+ * A challenge is open when active, started, and not past its end.
+ * `starts_at` is REQUIRED in the type (2026-11-07 review): the rule ignored it,
+ * so a challenge seeded for next week took entries today — and an optional
+ * field would let a caller drop it again without a type error.
+ */
+export function challengeIsOpen(
+  ch: { is_active: boolean; starts_at: string | null; ends_at: string | null },
+  now = Date.now()
+): boolean {
   if (!ch.is_active) return false;
+  if (ch.starts_at && Date.parse(ch.starts_at) > now) return false;
   if (ch.ends_at && Date.parse(ch.ends_at) <= now) return false;
   return true;
 }
+
+/**
+ * A case entered in a challenge that is no longer open is READ-ONLY — every write
+ * verb (pin, unpin, caption, reorder) answers 409, not only the pin (2026-11-07
+ * review: unpin / caption / reorder still changed an ended board). `null` = the
+ * write may proceed (main case, a plain extra case, or an open challenge).
+ */
+export function refuseClosedChallenge(own: OwnCase | null, now = Date.now()): Response | null {
+  const ch = own?.challenge ?? null;
+  if (!ch || challengeIsOpen(ch, now)) return null;
+  return Response.json({ error: `${ch.title} isn't open — this case is read-only.` }, { status: 409 });
+}
+

@@ -75,6 +75,12 @@ describe("GlobalSearch", () => {
     type(container.querySelector("input")!, "lilard")
     expect(await findByText("Damian Lillard")).toBeTruthy()
     expect(queryByTestId("search-fuzzy-note")?.textContent).toContain("No exact match for “lilard”")
+    // 2026-11-07 review: the disclosure must REACH a screen reader — announced,
+    // never aria-hidden, and outside the listbox (which may own only options).
+    const note = queryByTestId("search-fuzzy-note")!
+    expect(note.closest("[aria-hidden='true']")).toBeNull()
+    expect(note.closest("[role='listbox']")).toBeNull()
+    expect(note.getAttribute("role")).toBe("status")
     // and an ordinary answer carries no such note
     response = { ok: true, body: { results: [hit()], meta: {} } }
     type(container.querySelector("input")!, "lillard")

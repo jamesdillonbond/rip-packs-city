@@ -128,7 +128,10 @@ export default function ChallengeBoardClient({ slug }: { slug: string }) {
                 @{e.username}
               </Link>
               <span style={{ fontFamily: monoFont, fontSize: 10, letterSpacing: "0.15em", color: "var(--rpc-text-muted)" }}>
-                {e.slab_count} / 6{e.completed_at ? " · complete" : ""}
+                {/* `completed_at` is stamped once and never cleared, so "complete"
+                    beside a live 4 / 6 contradicted itself (2026-11-07 review):
+                    the live count decides. */}
+                {e.slab_count} / 6{e.slab_count >= 6 ? " · complete" : ""}
               </span>
             </div>
             <div className="rpc-chal-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 16 }}>

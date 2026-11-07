@@ -72,12 +72,24 @@ export async function fuzzyPlayerHits<T extends { kind: string; label: string; c
   const seen = new Set<string>()
   const rows: T[] = []
   const matched: string[] = []
-  for (const { kind, name } of names) {
+  // In PARALLEL (2026-11-07 review): ≤ 3 independent re-searches ran one after
+  // another on the zero-result path, ~4 round-trips of autocomplete latency.
+  // Merged below in CANDIDATE order, so the answer is the one the serial loop gave.
+  const results = await Promise.all(
+    names.map(async ({ name }) => {
+      try {
+        return await boundedRead(
+          db.rpc("rpc_search_catalog", { p_q: name, p_collection_id: collectionId, p_limit: limit }),
+          "api/search/rpc_search_catalog_fuzzy",
+        )
+      } catch {
+        return { data: null, error: { message: "threw" } }
+      }
+    }),
+  )
+  for (const [idx, { kind, name }] of names.entries()) {
     try {
-      const { data, error } = await boundedRead(
-        db.rpc("rpc_search_catalog", { p_q: name, p_collection_id: collectionId, p_limit: limit }),
-        "api/search/rpc_search_catalog_fuzzy",
-      )
+      const { data, error } = results[idx] as { data: unknown; error: unknown }
       if (error || !Array.isArray(data)) continue
       let hit = false
       for (const r of data as T[]) {

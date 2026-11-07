@@ -14,7 +14,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { requireUser } from "@/lib/auth/supabase-server";
 import { apiErrorResponse } from "@/lib/api-error";
-import { loadOwnCase, parseCaseId } from "@/lib/trophy/cases";
+import { loadOwnCase, parseCaseId, refuseClosedChallenge } from "@/lib/trophy/cases";
 
 export async function POST(req: NextRequest) {
   let user;
@@ -68,6 +68,8 @@ export async function POST(req: NextRequest) {
     const own = await loadOwnCase(supabase, user.id, caseId);
     if (!own.ok) return apiErrorResponse(own.error, "api/profile/trophy/reorder", "Couldn't save your arrangement.");
     if (!own.case) return NextResponse.json({ error: "That trophy case doesn't exist." }, { status: 404 });
+    const closed = refuseClosedChallenge(own.case);
+    if (closed) return closed;
   }
 
   const { error } = await supabase.rpc("reorder_trophy_slots", {

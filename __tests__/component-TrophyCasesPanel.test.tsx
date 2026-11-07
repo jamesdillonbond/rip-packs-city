@@ -157,13 +157,33 @@ describe("TrophyCasesPanel (owner dashboard)", () => {
 
   it("a challenge entry says it is SAVED (no name box, no save step) — Trevor 11-06: 'It should auto save as you create it'", async () => {
     routes["GET /api/profile/trophy-cases"] = () =>
-      ok({ cases: [{ id: CASE, name: "Dame Time", created_at: "", completed_at: null, challenge: DAME, slabs: [slab(1), slab(2)] }], challenges: [] })
+      // RE-PINNED 2026-11-07: "on the board" now needs a KNOWN username (the board lists only those).
+      ok({ cases: [{ id: CASE, name: "Dame Time", created_at: "", completed_at: null, challenge: DAME, slabs: [slab(1), slab(2)] }], challenges: [], board_username: "trev", board_username_known: true })
     render(<TrophyCasesPanel ownerKey={null} savedChains={null} onToast={() => {}} />)
     expect(await screen.findByText(/Entry saved · 2 of 6 on the board/)).toBeTruthy()
     // No bare name input under the case; no Rename for a challenge case.
     expect(screen.queryByPlaceholderText(/New case name/)).toBeNull()
     expect(screen.queryByText("Rename")).toBeNull()
     expect(screen.getByText(/Start another case/)).toBeTruthy()
+  })
+
+  // 2026-11-07 review: get_trophy_challenge_entries lists only collectors with
+  // a profile username, so "on the board" was a false claim for everyone else.
+  it("⛔ with NO username the entry never claims to be on the board — it says how to get there", async () => {
+    routes["GET /api/profile/trophy-cases"] = () =>
+      ok({ cases: [{ id: CASE, name: "Dame Time", created_at: "", completed_at: null, challenge: DAME, slabs: [slab(1)] }], challenges: [], board_username: null, board_username_known: true })
+    render(<TrophyCasesPanel ownerKey={null} savedChains={null} onToast={() => {}} />)
+    const line = await screen.findByText(/set a username to appear on the board/)
+    expect(line.textContent).not.toMatch(/of 6 on the board/)
+    expect(line.closest("a")!.getAttribute("href")).toBe("/profile/edit")
+  })
+
+  it("a FAILED username read claims neither listed nor unlisted", async () => {
+    routes["GET /api/profile/trophy-cases"] = () =>
+      ok({ cases: [{ id: CASE, name: "Dame Time", created_at: "", completed_at: null, challenge: DAME, slabs: [slab(1)] }], challenges: [], board_username: null, board_username_known: false })
+    render(<TrophyCasesPanel ownerKey={null} savedChains={null} onToast={() => {}} />)
+    const line = await screen.findByText(/Entry saved · 1 of 6/)
+    expect(line.textContent).not.toMatch(/on the board|set a username/)
   })
 
   it("an empty challenge entry says each pick saves itself", async () => {
@@ -239,6 +259,14 @@ describe("ChallengeBoardClient", () => {
     render(<ChallengeBoardClient slug="dame-time" />)
     expect(await screen.findByText("@trev")).toBeTruthy()
     expect(screen.getByText(/Enter from your dashboard/)).toBeTruthy()
+  })
+
+  it("'complete' follows the LIVE count — a case stamped complete and then unpinned to 4 is not complete", async () => {
+    routes["GET /api/public/trophy-challenges/dame-time"] = () =>
+      board([{ case_id: CASE, username: "trev", slab_count: 4, completed_at: "2026-11-06T00:00:00Z", slabs: [slab(1)] }])
+    render(<ChallengeBoardClient slug="dame-time" />)
+    expect(await screen.findByText(/4 \/ 6/)).toBeTruthy()
+    expect(screen.queryByText(/complete/)).toBeNull()
   })
 
   it("a genuinely empty board invites the first entry", async () => {

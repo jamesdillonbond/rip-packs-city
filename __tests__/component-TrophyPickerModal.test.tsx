@@ -277,6 +277,28 @@ describe("TrophyPickerModal — manual lookup + grid pin + row variants", () => 
     expect(getByText(/No moments match the current filter/)).toBeTruthy()
   })
 
+  // 2026-11-07 review: (a) a 1-character query maps to the same "" as an idle
+  // box, so it filtered nothing; (b) the "nothing you hold matches" copy fired
+  // whenever a server query was set, even when the server returned Moments and
+  // only a pending keystroke (or a filter) hid them.
+  it("a ONE-character query still narrows the grid client-side", async () => {
+    stubFetch({ moments: [moment, { ...moment, moment_id: "kd", player_name: "Kevin Durant", team_name: "Phoenix Suns", set_name: "Base Set" }] })
+    const { getByLabelText, findByText, container } = render(<TrophyPickerModal {...baseProps} />)
+    await findByText(/Kevin Durant/)
+    fireEvent.change(getByLabelText("Search your moments"), { target: { value: "K" } })
+    expect(container.textContent).toContain("Kevin Durant")
+    expect(container.textContent).not.toContain("Victor Wembanyama")
+  })
+
+  it("⛔ Moments the server DID return for a name are never called 'nothing you hold matches'", async () => {
+    const { getByLabelText, findByText, getByText, queryByText } = render(<TrophyPickerModal {...baseProps} initialQuery="Victor" />)
+    await findByText(/Victor Wembanyama/)
+    // Before the 300 ms debounce refetches, the stale list is narrowed client-side to nothing.
+    fireEvent.change(getByLabelText("Search your moments"), { target: { value: "Victorzz" } })
+    expect(queryByText(/Nothing you hold matches/)).toBeNull()
+    expect(getByText(/No moments match the current filter/)).toBeTruthy()
+  })
+
   it("drives the sort + tier-filter controls and the MomentRow variant branches", async () => {
     const gridMoments: PickerMoment[] = [
       // locked, no image (● fallback), NBA league badge, team, tier chip, series label

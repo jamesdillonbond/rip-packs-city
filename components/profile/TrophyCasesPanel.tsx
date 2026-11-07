@@ -47,7 +47,27 @@ export interface TrophyCaseData {
 type Load =
   | { state: "loading" }
   | { state: "failed" }
-  | { state: "ok"; cases: TrophyCaseData[]; challenges: TrophyChallengeInfo[] | null };
+  | { state: "ok"; cases: TrophyCaseData[]; challenges: TrophyChallengeInfo[] | null; board: BoardListing };
+
+/**
+ * Whether a challenge entry can appear on the public board, which lists only
+ * collectors with a profile username. "unknown" = that read failed; the copy
+ * then claims neither listed nor unlisted (2026-11-07 review).
+ */
+export type BoardListing = "listed" | "needs_username" | "unknown";
+
+export function boardListingOf(d: { board_username?: unknown; board_username_known?: unknown } | null | undefined): BoardListing {
+  if (d?.board_username_known !== true) return "unknown";
+  return typeof d.board_username === "string" && d.board_username.length > 0 ? "listed" : "needs_username";
+}
+
+/** The challenge-entry status line. Pure, so every state is pinned. */
+export function entryStatusCopy(filled: number, board: BoardListing): string {
+  if (filled === 0) return "Challenge entry · tap a slot to add — each pick saves itself →";
+  if (board === "listed") return `✓ Entry saved · ${filled} of 6 on the board →`;
+  if (board === "needs_username") return `✓ Entry saved · ${filled} of 6 — set a username to appear on the board →`;
+  return `✓ Entry saved · ${filled} of 6 →`;
+}
 
 /** Six fixed cells keyed by the slab's OWN slot (never array position). */
 export function slotsOf(slabs: TrophySlabData[]): (TrophySlabData | null)[] {
@@ -100,6 +120,7 @@ export default function TrophyCasesPanel({
         state: "ok",
         cases: Array.isArray(d?.cases) ? d.cases : [],
         challenges: Array.isArray(d?.challenges) ? d.challenges : null,
+        board: boardListingOf(d),
       });
     } catch {
       setLoad((prev) => (prev.state === "ok" ? prev : { state: "failed" }));
@@ -211,6 +232,7 @@ export default function TrophyCasesPanel({
         <CaseBlock
           key={c.id}
           c={c}
+          board={load.board}
           busy={busy}
           onPick={(slot) => setPick({ c, slot })}
           onRemove={(slot) =>
@@ -298,6 +320,7 @@ export default function TrophyCasesPanel({
 
 function CaseBlock({
   c,
+  board,
   busy,
   onPick,
   onRemove,
@@ -306,6 +329,7 @@ function CaseBlock({
   onNoteSaved,
 }: {
   c: TrophyCaseData;
+  board: BoardListing;
   busy: boolean;
   onPick: (slot: number) => void;
   onRemove: (slot: number) => void;
@@ -356,12 +380,12 @@ function CaseBlock({
           )}
           {ch && (
             <Link
-              href={`/trophy-challenges/${ch.slug}`}
+              href={filled > 0 && board === "needs_username" ? "/profile/edit" : `/trophy-challenges/${ch.slug}`}
               role="status"
               style={{ fontFamily: monoFont, fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: filled > 0 ? "var(--rpc-success-text)" : "var(--rpc-text-muted)" }}
             >
               {/* Each pick saves itself; there is no save step and no name to give. */}
-              {filled > 0 ? `✓ Entry saved · ${filled} of 6 on the board →` : "Challenge entry · tap a slot to add — each pick saves itself →"}
+              {entryStatusCopy(filled, board)}
             </Link>
           )}
         </div>

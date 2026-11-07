@@ -14,12 +14,15 @@ const state: {
   inserts: any[]
   upserts: any[]
   insertResult: R
-} = { user: null, tables: {}, rpc: { data: [], error: null }, inserts: [], upserts: [], insertResult: { data: null, error: null } }
+  writes: string[]
+  rpcCalls: string[]
+} = { user: null, tables: {}, rpc: { data: [], error: null }, inserts: [], upserts: [], insertResult: { data: null, error: null }, writes: [], rpcCalls: [] }
 
 vi.mock("@/lib/supabase", () => {
   const build = (table: string) => {
     const b: any = {}
-    for (const m of ["select", "eq", "in", "not", "limit", "is", "order", "update", "delete"]) b[m] = () => b
+    for (const m of ["select", "eq", "in", "not", "limit", "is", "order"]) b[m] = () => b
+    for (const m of ["update", "delete"]) b[m] = () => { state.writes.push(`${m}:${table}`); return b }
     b.insert = (row: any) => {
       state.inserts.push({ table, row })
       const r: any = { select: () => r, single: async () => state.insertResult, then: (res: any) => res(state.insertResult) }
@@ -34,7 +37,7 @@ vi.mock("@/lib/supabase", () => {
     b.then = (res: any) => res(state.tables[table] ?? { data: [], error: null })
     return b
   }
-  const client: any = { from: (t: string) => build(t), rpc: async () => state.rpc }
+  const client: any = { from: (t: string) => build(t), rpc: async (fn: string) => { state.rpcCalls.push(fn); return state.rpc } }
   return { supabase: client, supabaseAdmin: client }
 })
 
@@ -47,7 +50,9 @@ vi.mock("@/lib/auth/supabase-server", () => ({
 }))
 
 import { GET, POST, DELETE } from "@/app/api/profile/trophy-cases/route"
-import { POST as PIN } from "@/app/api/profile/trophy/route"
+import { POST as PIN, PATCH as CAPTION, DELETE as UNPIN } from "@/app/api/profile/trophy/route"
+import { POST as REORDER } from "@/app/api/profile/trophy/reorder/route"
+import { challengeIsOpen } from "@/lib/trophy/cases"
 
 const req = (body?: any) => ({ json: async () => body, headers: { get: () => null } }) as any
 const CASE = "11111111-1111-4111-8111-111111111111"
@@ -60,6 +65,8 @@ beforeEach(() => {
   state.inserts = []
   state.upserts = []
   state.insertResult = { data: { id: CASE }, error: null }
+  state.writes = []
+  state.rpcCalls = []
 })
 
 describe("GET /api/profile/trophy-cases", () => {
@@ -202,3 +209,56 @@ describe("POST /api/profile/trophy into a CHALLENGE case", () => {
     expect(state.upserts).toHaveLength(0)
   })
 })
+
+// 2026-11-07 review: only the PIN refused a closed challenge; unpin, caption and
+// reorder kept changing an ended board. And `starts_at` was ignored, so a
+// challenge seeded for next week took entries today.
+describe("a challenge case that is not open is READ-ONLY on every verb", () => {
+  const closedCase = (over: Record<string, unknown> = {}) => ({
+    data: [{
+      id: CASE, name: "Dame Time", challenge_id: "ch1",
+      trophy_challenges: { id: "ch1", slug: "dame-time", title: "Dame Time", is_active: false, starts_at: null, ends_at: null, rules: {}, ...over },
+    }],
+    error: null,
+  })
+
+  it.each([
+    ["ended (is_active false)", {}],
+    ["past its end", { is_active: true, ends_at: "2020-01-01T00:00:00Z" }],
+    ["not started yet", { is_active: true, starts_at: "2999-01-01T00:00:00Z" }],
+  ])("%s: pin, unpin, caption and reorder all 409 and write nothing", async (_l, over) => {
+    state.tables.trophy_cases = closedCase(over)
+    const pin = await PIN(req({ slot: 1, momentId: "m1", collectionId: TS, caseId: CASE }))
+    const unpin = await UNPIN(req({ slot: 1, caseId: CASE }))
+    const caption = await CAPTION(req({ slot: 1, note: "x", caseId: CASE }))
+    const reorder = await REORDER(req({ orderedIds: [1, 2], caseId: CASE }))
+    expect([pin.status, unpin.status, caption.status, reorder.status]).toEqual([409, 409, 409, 409])
+    expect(state.upserts).toHaveLength(0)
+    expect(state.writes).toEqual([])
+    expect(state.rpcCalls).not.toContain("reorder_trophy_slots")
+  })
+
+  it("an OPEN challenge case still takes an unpin (positive control)", async () => {
+    state.tables.trophy_cases = closedCase({ is_active: true })
+    state.tables.trophy_moments = { data: [{ id: 9 }], error: null }
+    const res = await UNPIN(req({ slot: 1, caseId: CASE }))
+    expect(res.status).toBe(200)
+    expect(state.writes).toContain("delete:trophy_moments")
+  })
+
+  it("a challenge seeded for the future takes no entry", async () => {
+    state.tables.trophy_cases = { data: null, error: null, count: 0 }
+    state.tables.trophy_challenges = { data: [{ id: "ch1", title: "Dame Time", is_active: true, starts_at: "2999-01-01T00:00:00Z", ends_at: null }], error: null }
+    expect((await POST(req({ challengeSlug: "dame-time" }))).status).toBe(409)
+    expect(state.inserts).toHaveLength(0)
+  })
+
+  it("challengeIsOpen: active + started + not ended", () => {
+    const now = Date.parse("2026-11-07T00:00:00Z")
+    expect(challengeIsOpen({ is_active: true, starts_at: "2026-11-01T00:00:00Z", ends_at: null }, now)).toBe(true)
+    expect(challengeIsOpen({ is_active: true, starts_at: "2026-11-08T00:00:00Z", ends_at: null }, now)).toBe(false)
+    expect(challengeIsOpen({ is_active: true, starts_at: null, ends_at: "2026-11-06T00:00:00Z" }, now)).toBe(false)
+    expect(challengeIsOpen({ is_active: false, starts_at: null, ends_at: null }, now)).toBe(false)
+  })
+})
+

@@ -41,7 +41,7 @@ export async function GET() {
   }
 
   const client: any = supabase;
-  const [cases, challenges] = await Promise.all([
+  const [cases, challenges, bio] = await Promise.all([
     boundedRead(client.rpc("get_trophy_cases_for_user", { p_user_id: user.id }), `${ROUTE}/get_trophy_cases_for_user`),
     client
       .from("trophy_challenges")
@@ -49,6 +49,10 @@ export async function GET() {
       .eq("is_active", true)
       .order("starts_at", { ascending: false })
       .limit(20),
+    // 2026-11-07 review: a challenge BOARD lists only collectors with a profile
+    // username (get_trophy_challenge_entries joins profile_bio.username IS NOT
+    // NULL), so the panel may say "on the board" only when we KNOW one exists.
+    client.from("profile_bio").select("username").eq("user_id", user.id).limit(1),
   ]);
 
   if (cases.error) {
@@ -60,11 +64,22 @@ export async function GET() {
   // still return their cases, and say the list is unknown (null) rather than [].
   const openChallenges = challenges.error
     ? null
-    : ((challenges.data ?? []) as { is_active: boolean; ends_at: string | null }[]).filter((c) => challengeIsOpen(c));
+    : ((challenges.data ?? []) as { is_active: boolean; starts_at: string | null; ends_at: string | null }[]).filter((c) => challengeIsOpen(c));
   if (challenges.error) console.error("[trophy-cases GET] challenges read failed");
 
+  // Three states: a username (listed) · null (read ok, none set → not listed) ·
+  // `board_username_known: false` (the read failed — claim neither).
+  const bioRow = bio.error ? null : ((bio.data ?? [])[0] as { username?: string | null } | undefined);
+  const boardUsername = bio.error ? null : (bioRow?.username ?? null);
+  if (bio.error) console.error("[trophy-cases GET] profile_bio read failed");
+
   return NextResponse.json(
-    { cases: Array.isArray(cases.data) ? cases.data : [], challenges: openChallenges },
+    {
+      cases: Array.isArray(cases.data) ? cases.data : [],
+      challenges: openChallenges,
+      board_username: boardUsername,
+      board_username_known: !bio.error,
+    },
     { headers: { "Cache-Control": "no-store" } }
   );
 }
@@ -102,11 +117,11 @@ export async function POST(req: NextRequest) {
   if (slug) {
     const ch = await supabase
       .from("trophy_challenges")
-      .select("id, title, is_active, ends_at")
+      .select("id, title, is_active, starts_at, ends_at")
       .eq("slug", slug)
       .limit(1);
     if (ch.error) return apiErrorResponse(ch.error, ROUTE);
-    const row = (ch.data ?? [])[0] as { id: string; title: string; is_active: boolean; ends_at: string | null } | undefined;
+    const row = (ch.data ?? [])[0] as { id: string; title: string; is_active: boolean; starts_at: string | null; ends_at: string | null } | undefined;
     if (!row) return NextResponse.json({ error: "That challenge doesn't exist." }, { status: 404 });
     if (!challengeIsOpen(row)) {
       return NextResponse.json({ error: `${row.title} isn't taking entries.` }, { status: 409 });
