@@ -51,3 +51,19 @@ describe("FirstRunTour anchors", () => {
     expect(anchors).toContain("sniper-nav-link")
   })
 })
+
+// 2026-11-06: the "every collection" step named five collections by hand while
+// seven were published. It is derived from the registry now; pin that no
+// collection name is hardcoded in the step bodies.
+describe("FirstRunTour copy follows the registry", () => {
+  it("names no collection by hand in STEPS", async () => {
+    const { stripComments } = await import("../scripts/lib/strip-comments.mjs")
+    const code = stripComments(TOUR) // comments may NAME the collections that were once hardcoded
+    const start = code.indexOf("const STEPS")
+    const body = code.slice(start, code.indexOf("\n]", start))
+    for (const name of ["NBA Top Shot, NFL All Day", "Candy MLB", "Panini", "LaLiga Golazos, Disney Pinnacle"]) {
+      expect(body, `${name} is hardcoded in a tour step`).not.toContain(name)
+    }
+    expect(body).toContain("publishedCollections()")
+  })
+})

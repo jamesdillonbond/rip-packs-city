@@ -26,6 +26,7 @@
 import { useCallback, useEffect, useLayoutEffect, useState } from "react"
 import type { CSSProperties } from "react"
 import { useModalA11y } from "@/lib/hooks/useModalA11y"
+import { publishedCollections } from "@/lib/collections"
 
 interface TourStep {
   id: string
@@ -33,6 +34,12 @@ interface TourStep {
   body: string
   anchor?: string // data-tour-anchor selector value; undefined = centered
   cta: string
+}
+
+/** "A, B, and C" — the published collections' names, in registry order. */
+function listNames(labels: string[]): string {
+  if (labels.length <= 1) return labels[0] ?? ""
+  return `${labels.slice(0, -1).join(", ")}, and ${labels[labels.length - 1]}`
 }
 
 const STEPS: TourStep[] = [
@@ -45,7 +52,9 @@ const STEPS: TourStep[] = [
   {
     id: "collection-switcher",
     title: "One wallet, every collection",
-    body: "We cover NBA Top Shot, NFL All Day, LaLiga Golazos, Disney Pinnacle, and UFC Strike. Add a wallet once and every collection you hold Moments in rolls up here — one portfolio, one count.",
+    // Derived from the registry (2026-11-06): this line named five collections
+    // by hand while seven were published (Candy MLB and Panini were missing).
+    body: `We cover ${listNames(publishedCollections().map((c) => c.label))}. Add a wallet once and every collection you hold Moments in rolls up here — one portfolio, one count.`,
     // ⚠ Anchored to the portfolio stat tiles (Total Moments · Portfolio FMV ·
     // Collections), not "collection-switcher": that element lives on
     // collection pages, and the tour runs on the dashboard, where the step was
