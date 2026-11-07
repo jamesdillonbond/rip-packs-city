@@ -60,7 +60,7 @@ The dashboard header's six links collapse to the five tabs; Sniper and Alerts st
 1. **A new feature ships with a home assigned** — one of the five groups, or one dashboard tab — in the same commit, or it does not ship. The registry below is the source: `lib/ia.ts` exports the five groups and every surface's membership; header, mobile bar, footer and `/insights` index all render from it (one registry, three renderers — no hand-curated link lists to drift, per the standing allowlist-vs-registry rule).
 2. **Promo cards do not live on the dashboard.** A collector who is signed in is not a prospect. Feature discovery is the header's job.
 3. **The homepage pitches pillars, not features.** New features earn a line inside a pillar's door, not a new homepage section.
-4. **Each nav shows the same groups in the same order.** Mobile shows fewer, never different ones.
+4. **Each nav shows the same groups in the same order.** Mobile shows fewer, never different ones. (11-07: the anon homepage's own landing header was a fourth vocabulary — Insights · Collections · How it works · Free account — and now renders the five public groups from the registry too; `component-HomePageMarketing` pins it.)
 5. **No collection in the global header.** Collection is a scope the switcher holds; it is never a destination of its own.
 
 ---

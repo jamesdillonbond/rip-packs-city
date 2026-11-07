@@ -79,6 +79,8 @@
 
 25. **a11y (~2:35–3:10 AM PT).** Axe A/AA over the six IA-touched pages: one violation, mine — homepage door links told apart from their hint text by colour alone (`link-in-text-block`, 4 nodes). Underlined at rest (`7d7ef8d`, declaration verified in the served HTML); then the rule read 0/64 over the e2e gate's 32 routes × 2 themes and was moved into `GATED` in `e2e/a11y.spec.ts`. Proven: dispatched run 42367358759 — `a11y-audit` and `dom-smoke` both green with the rule gated. Concierge re-asked anon after the deploys: Settings-tab contents (incl. API keys) and the share card's "Analyzing your wallet" state both answered correctly.
 
+26. **Homepage landing header (~4:55–5:10 AM PT).** A light-theme screenshot pass showed the anon homepage still had its own header (Insights · Collections · How it works · Free account) — a fourth vocabulary Phase 2 missed. Now the registry's five public groups in order + Sign In; pinned. Light theme at 1280/390 on home and `/insights` otherwise clean.
+
 ## Post-ship watch (what to read tomorrow)
 
 - **Series-1 Top Shot art** on `/dashboard/*`, `/profile/*`, binder, trade room: present (any blank tile with a `data-rpc-dead-art` attribute whose `data-rpc-dead-src` starts `…/editions/<N>_` means ANOTHER series was retired — same fix, derive not copy).
