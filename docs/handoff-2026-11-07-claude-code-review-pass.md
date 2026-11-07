@@ -15,7 +15,22 @@
 7. **Secret-compare ratchet blind spot** (`40abeb39e`). The R150 "37 → 0" ratchet could not see `receivedToken === ingestToken`, `slice(7) === cronSecret`, `token !== INGEST_TOKEN`; **eight routes** still compared a secret with `===`. Detector widened (planted shapes), all eight on `bearerMatches` / `tokenMatches`. Production callers confirmed on the busy lanes (`pinnacle-trades-indexer` ×4, `evm-transfers-ingest`, `resolve-topshot-stubs`, `fmv-recalc`: all `ok` after the deploy).
 8. **wallet-search review** (`e4eb59ab8`, 6 fixes). ⛔ The FMV fallback matched `play_id_onchain` alone and could price a moment from another set's or another collection's edition into the cache — now (set, play) within Top Shot (0 Top Shot editions lack a set id, so no match lost); failed resolve reads set `fmvReadFailed`; uppercase `0x…` folded; `totalTssPoints` null not 0; a null GraphQL answer never "not locked".
 9. **Edition page review** (this handoff's commit). Malformed slug escape → 404, not an unbranded 500 (`decodeSlugOrNull`); failed detail read → `noindex, follow`; "Moment unavailable" → "Edition unavailable" on the edition route; h1 link uses `editionTitle`; "1 recent sale".
+10. **Afternoon queue drain** (1:00–1:30 PM PT, each with a pin red on the old code): edition alias / fossil redirect lookups `cache()`d (`feb53fadd`; live: the alias URL lands on `152:5379`); verify-email GET renders a Confirm button and only the POST claims (`d55be98e8`; live GET verified, claims nothing); wallet-search seed refuses degraded rows and fabricates no COMMON tier (`246aab468`); wallet-search background writes kept alive through `after()` (`e6d785536`).
 - Also: demand re-read 10-29..11-04 and headline metric wk 11-02 in `roadmap-status.md` (`22780e5ce`) — the visit jump is mostly our own browsers; All Day M2 drifting down 0.3/wk; Candy's window draining on schedule (~0 by ~11-11).
+
+## ⛔ Needs Trevor (one data fix)
+
+The seed bug left two rows. The cleanup went through the Supabase MCP, which asked for confirmation and timed out unanswered, so **treat it as not applied**. Both statements are guarded:
+
+```sql
+update editions set name = 'Brooklyn Nets — Dynamic Duos'
+ where collection_id = '95f28a17-224a-4025-96ad-adf8a4c63bfd' and external_id = '85:2918'
+   and name = 'Unknown (error loading) — Dynamic Duos';   -- sibling convention; wmc names it Brooklyn Nets (28 rows)
+delete from players where id = '49325c43-c6ba-41bc-a22f-a3059d528fb3' and name = 'Unknown (error loading)'
+   and not exists (select 1 from editions where player_id = '49325c43-c6ba-41bc-a22f-a3059d528fb3');  -- 0 editions/aliases/relations/identities
+```
+
+Revert: rename back; re-insert the player row (team Brooklyn Nets, external_id `nba_top_shot-unknown-error-loading-`, TIER3, inactive).
 
 ## ⚠ My own red
 
@@ -46,6 +61,9 @@
 - `alerts-send` `extra.mark_errors` stays 0; any `last_error = 'stranded in sending'` row means the 60 s wall killed a tick.
 - `fmv-recalc` `extra.edition_meta_skipped` / `edition_meta_error` / `haircut_error` / `thin_sales_guard_error` / `disconnected_ask_clamp_error` — new keys; non-null means the step failed, which used to be invisible.
 - `/insights` hub: `/insights/allday-pack-reality` now sits under **Packs** (was Insights).
+- `fmv-backfill` (GHA `rpc-pipeline.yml`, throttled to ~5 h): its first run on the new auth comes after 10:40 AM PT; a non-200 in the summary step = a caller gap.
+- wallet-search: the next Top Shot search should land `wallet_moments_cache.last_seen_at` rows (none since 11 AM PT — no traffic, not a failure); `keepAlive` only adds a wait.
+- Email verify: an alert-email link now needs one click on the Confirm button; a 503 page means `claim_channel_link` errored (the link stays good).
 
 ## Lesson (promoted to `docs/reference/testing-and-ci.md`)
 
