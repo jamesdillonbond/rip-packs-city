@@ -131,6 +131,8 @@
 
 51. **Print (~3:25–3:45 PM PT).** A printed page was blank — dark theme, backgrounds dropped. `@media print` borrows the light tokens and hides the sticky header / ticker / phone bar / concierge; verified by injection with backgrounds off. Pin: the borrowed values must equal the light block's. Not chased: video-only trophy slabs print as empty frames (no poster `<img>`). Also: the dispatched `E2E DOM Smoke` run (42425344540) passed `a11y-audit` on the 36-route gate from CI's own runner.
 
+52. **Locale (~3:35–3:55 PM PT).** As a de-DE visitor: "4.000" for a 4,000 circulation (client-formatted) beside "$6,836" (server) — 126 bare `toLocaleString()` calls in 62 files followed the runtime. All pinned to en-US (figures are USD); dates/times left in the visitor's format on purpose. Guard at zero (125 red before). ⚠ CSS-shipped check: the served chunk after the print deploy carried the forced-colors block (previous commit) but NOT `@media print` — the one-deploy CSS lag documented 09-29 in `scripts/qa/README.md`; re-check after this (code) deploy.
+
 ## Post-ship watch (what to read tomorrow)
 
 - **Series-1 Top Shot art** on `/dashboard/*`, `/profile/*`, binder, trade room: present (any blank tile with a `data-rpc-dead-art` attribute whose `data-rpc-dead-src` starts `…/editions/<N>_` means ANOTHER series was retired — same fix, derive not copy).
