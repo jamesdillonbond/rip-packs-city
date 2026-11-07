@@ -164,8 +164,8 @@ export default function NotificationsClient() {
       <div style={{ maxWidth: 640, margin: "0 auto" }}>
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
           <h1 style={{ fontFamily: "var(--font-display)", fontSize: 30, letterSpacing: "0.04em", textTransform: "uppercase", margin: 0 }}>Email notifications</h1>
-          <Link href="/dashboard" style={{ color: "var(--rpc-text-secondary)", fontSize: 13, textDecoration: "none" }}>
-            ← Dashboard
+          <Link href="/dashboard?tab=settings" style={{ color: "var(--rpc-text-secondary)", fontSize: 13, textDecoration: "none" }}>
+            ← Settings
           </Link>
         </div>
         <p style={{ color: "var(--rpc-text-secondary)", fontSize: 14, margin: "4px 0 20px", lineHeight: 1.5 }}>

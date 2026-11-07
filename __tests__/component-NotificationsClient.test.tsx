@@ -269,7 +269,8 @@ describe("NotificationsClient — only switches a sender honours are offered (20
     const alertsLinks = screen.getAllByRole("link", { name: "Alerts" })
     expect(alertsLinks.length).toBeGreaterThanOrEqual(1)
     expect(alertsLinks[0].getAttribute("href")).toBe("/alerts")
-    expect(screen.getByRole("link", { name: /Dashboard/ }).getAttribute("href")).toBe("/dashboard")
+    // 2026-11-06: reached from the dashboard's Settings tab, so it returns THERE, not to the Overview.
+    expect(screen.getByRole("link", { name: /Settings/ }).getAttribute("href")).toBe("/dashboard?tab=settings")
   })
 
   it("a hydrated null max price posts null rather than 0", async () => {

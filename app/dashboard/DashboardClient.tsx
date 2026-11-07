@@ -1449,6 +1449,8 @@ function ProfilePageInner() {
             <Link href="/dashboard/notifications" style={headerLinkStyle}>Email settings</Link>
             <Link href="/profile/edit" style={headerLinkStyle}>Edit profile</Link>
             <Link href="/alerts" style={headerLinkStyle}>Listing alerts</Link>
+            {/* MCP keys had NO entry point but the concierge (IA rule 1, 2026-11-06). */}
+            <Link href="/dashboard/api-keys" style={headerLinkStyle}>API keys (MCP)</Link>
           </div>
           <div style={{ fontFamily: monoFont, fontSize: 11, color: "var(--rpc-text-muted)", marginTop: 10, lineHeight: 1.5 }}>
             Saved wallets and your Panini username are managed on the Overview tab.

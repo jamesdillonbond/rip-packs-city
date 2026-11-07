@@ -342,8 +342,8 @@ export default function ProfileEditClient() {
           <h1 style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 22, letterSpacing: "0.04em", textTransform: "uppercase" }}>
             Edit Profile
           </h1>
-          <Link href="/dashboard" style={{ fontFamily: monoFont, fontSize: 12, color: "var(--rpc-text-secondary)", textDecoration: "none" }}>
-            ← Back to dashboard
+          <Link href="/dashboard?tab=settings" style={{ fontFamily: monoFont, fontSize: 12, color: "var(--rpc-text-secondary)", textDecoration: "none" }}>
+            ← Settings
           </Link>
         </header>
 

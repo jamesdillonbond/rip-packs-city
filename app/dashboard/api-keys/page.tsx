@@ -7,7 +7,12 @@
 // `loadError` before its empty state), so this is coverage, not a fix. Recorded here
 // so nobody re-sweeps it.
 
+import type { Metadata } from "next";
 import ApiKeysClient from "./ApiKeysClient";
+
+// R31: the dashboard layout's template needs a STRING title here or the tab
+// reads the generic "Dashboard" (walked 2026-11-06).
+export const metadata: Metadata = { title: "API keys", robots: { index: false, follow: false } };
 
 export default function ApiKeysPage() {
   return <ApiKeysClient />;

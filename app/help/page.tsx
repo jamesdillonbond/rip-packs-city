@@ -68,7 +68,7 @@ const FAQS: Faq[] = [
           ))}
           <li>
             <strong>Me</strong> — your <Link href="/dashboard" style={LINK}>dashboard</Link> (Overview · Trophy Cases · Packs
-            · History · Settings), alerts and email settings, once you are signed in.
+            · History · Settings), alerts, email settings and API keys for the MCP server (Settings), once you are signed in.
           </li>
         </ul>
       </>

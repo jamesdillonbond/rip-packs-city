@@ -212,7 +212,7 @@ export default function ApiKeysClient() {
           }}
         >
           <Link
-            href="/dashboard"
+            href="/dashboard?tab=settings"
             className="rpc-label"
             style={{
               color: "var(--rpc-text-secondary)",
@@ -223,7 +223,7 @@ export default function ApiKeysClient() {
               alignItems: "center",
             }}
           >
-            ← Dashboard
+            ← Settings
           </Link>
         </div>
 
@@ -574,10 +574,9 @@ function KeyRow({ k, onRevoke }: { k: ApiKey; onRevoke: (id: string, prefix: str
           marginTop: 4,
         }}
       >
-        <div className="rpc-label" style={{ color: "var(--rpc-text-muted)" }}>
-          Plan&nbsp;
-          <span style={{ color: "var(--rpc-text-secondary)" }}>{k.plan}</span>
-        </div>
+        {/* `k.plan` stays in the API but is NOT rendered: it is the internal
+            plan enum (free / founding / pro_*), and no tier is shown to a user
+            until 100 WAU (CLAUDE.md, 09-25) — removed 2026-11-06. */}
         <div className="rpc-label" style={{ color: "var(--rpc-text-muted)" }}>
           Last used&nbsp;
           <span className="rpc-mono" style={{ color: "var(--rpc-text-secondary)" }}>
