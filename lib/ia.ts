@@ -176,9 +176,20 @@ export function visibleGroups(signedIn: boolean): IaGroup[] {
   return IA_GROUPS.filter((g) => signedIn || !g.auth)
 }
 
+/** Collection pages owned by a group even when no menu item names that page. */
+const COLLECTION_PAGE_GROUP: Record<string, IaGroupId> = {
+  market: "market",
+  sniper: "market",
+  "hot-floors": "market",
+  packs: "packs",
+  "pack-sniper": "packs",
+}
+
 /** The group whose hub or items own this path (first match in header order). */
 export function groupForPath(pathname: string): IaGroupId | null {
   const p = pathname.split("?")[0]
+  const seg = p.split("/").filter(Boolean)
+  if (seg.length === 2 && getCollection(seg[0]) && COLLECTION_PAGE_GROUP[seg[1]]) return COLLECTION_PAGE_GROUP[seg[1]]
   for (const g of IA_GROUPS) {
     const hrefs = [g.href, ...g.items.map((i) => i.href)].map((h) => h.split("?")[0])
     for (const h of hrefs) {

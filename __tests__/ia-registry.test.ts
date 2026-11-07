@@ -84,7 +84,10 @@ describe("IA registry", () => {
 
   it("groupForPath names the owning group, and nothing for routes no group owns", () => {
     expect(groupForPath("/market")).toBe("market")
-    expect(groupForPath("/nba-top-shot/sniper")).toBeNull() // collection sniper is reached via /sniper hub
+    expect(groupForPath("/nba-top-shot/sniper")).toBe("market") // a collection's sniper/market/hot-floors page is Market's
+    expect(groupForPath("/nba-top-shot/market")).toBe("market")
+    expect(groupForPath("/nba-top-shot/pack-sniper")).toBe("packs")
+    expect(groupForPath("/nba-top-shot/badges")).toBeNull()
     expect(groupForPath("/sniper")).toBe("market")
     expect(groupForPath("/nfl-all-day/packs")).toBe("packs")
     expect(groupForPath("/trades/block")).toBe("trade")
