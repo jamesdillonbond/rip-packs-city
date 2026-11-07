@@ -127,6 +127,8 @@
 
 49. **OG cards read by eye (~3:05–3:25 PM PT).** Share card: "19981 moments" → formatted (pinned). Pack card `?id=1` (ripped, no priced pull): "PULLEDPAID" — Satori sizes a tracked label without its letter-spacing, so dash-wide columns let the labels collide; column `minWidth` + label padding (geometry, verified by the live PNG below). Profile card clean. Read, not a defect: share card 19,981 vs profile card 19,980 for jamesdillonbond — the share card reads the live `wallet_moments_cache`, the profile sums `saved_wallets.cached_moment_count` (one stale by 1).
 
+50. **Forced colours (~3:15–3:35 PM PT).** Windows High Contrast erased every "current" cue (tinted bg, accent underline, weight) — selected strip tab, bar item and header group computed identical to neighbours. A `forced-colors` block keyed on `aria-selected` / `aria-current` adds underline + CanvasText outline; verified by injection under `forcedColors: active`. Pinned.
+
 ## Post-ship watch (what to read tomorrow)
 
 - **Series-1 Top Shot art** on `/dashboard/*`, `/profile/*`, binder, trade room: present (any blank tile with a `data-rpc-dead-art` attribute whose `data-rpc-dead-src` starts `…/editions/<N>_` means ANOTHER series was retired — same fix, derive not copy).
