@@ -95,3 +95,18 @@ describe("CollectionSwitcher", () => {
     }
   })
 })
+
+// IA Phase 2 (2026-11-06): the header carries the collection chip at md+, so
+// the page row is phone-only — otherwise every collection page shows the same
+// seven destinations twice, one row apart.
+describe("CollectionSwitcher — phone-only once the header has the chip", () => {
+  it("hides its row at md+ in its own stylesheet, and keeps it below", async () => {
+    const { readFileSync } = await import("node:fs")
+    const src = readFileSync("components/CollectionSwitcher.tsx", "utf8")
+    expect(src).toContain('className="rpc-collection-switcher-row"')
+    expect(src).toMatch(/@media \(min-width: 768px\) \{ \.rpc-collection-switcher-row \{ display: none !important; \} \}/)
+    // the header chip must exist for this to be safe
+    const nav = readFileSync("components/TopNav.tsx", "utf8")
+    expect(nav).toContain('data-tour-anchor="collection-switcher"')
+  })
+})

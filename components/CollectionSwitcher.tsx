@@ -41,6 +41,7 @@ export default function CollectionSwitcher({ activeCollectionId }: CollectionSwi
   return (
     <div
       data-tour-anchor="collection-switcher"
+      className="rpc-collection-switcher-row"
       style={{
         display: "flex",
         gap: 6,
@@ -52,6 +53,11 @@ export default function CollectionSwitcher({ activeCollectionId }: CollectionSwi
     >
       <style>{`
         .rpc-switcher-row::-webkit-scrollbar { display: none; }
+        /* IA Phase 2 (2026-11-06): at md+ the site header carries the collection
+           chip with the same seven destinations, so this row would be the second
+           collection switcher on every collection page. It stays on phones, where
+           the desktop header nav (and its chip) is hidden. */
+        @media (min-width: 768px) { .rpc-collection-switcher-row { display: none !important; } }
       `}</style>
       <div className="rpc-switcher-row" style={{ display: "flex", gap: 6, overflowX: "auto", scrollbarWidth: "none" }}>
         {collections.map((col) => {
