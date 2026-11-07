@@ -144,6 +144,46 @@ describe("intermediate layouts re-declare the brand template (R31)", () => {
     }
   })
 
+  // 2026-11-06: the curated check below (insights only) is now a TREE WALK —
+  // /trades/layout.tsx had a string title, so the PUBLIC, indexable
+  // /trades/block pages rendered "<title>Trade Block</title>" with no brand, and
+  // the guard could not see it. Rule: a layout that sets a title AND has any
+  // descendant page/layout that sets its own title must carry a template.
+  it("every non-leaf layout that sets a title re-declares the template (tree walk)", () => {
+    const walk = (dir: string, out: string[] = []): string[] => {
+      for (const ent of readdirSync(dir, { withFileTypes: true })) {
+        const p = join(dir, ent.name)
+        if (ent.isDirectory()) walk(p, out)
+        else if (/\.(tsx|ts)$/.test(ent.name) && !/Client\.tsx$/.test(ent.name)) out.push(p)
+      }
+      return out
+    }
+    const all = walk(APP)
+    const setsTitle = (src: string) => /(^|[\s{,])title:\s*["'`{]/m.test(src) || /title:\s*[A-Z_]+\b/.test(src)
+    const layouts = all.filter((p) => /[\\/]layout\.tsx$/.test(p))
+    const offenders: string[] = []
+    let nonLeaf = 0
+    for (const lay of layouts) {
+      const src = readFileSync(lay, "utf8")
+      if (!setsTitle(src)) continue
+      const dir = lay.slice(0, -"layout.tsx".length)
+      // A descendant whose every title is `{ absolute: … }` never reads the
+      // template, so it does not make this layout non-leaf (profile/[username]
+      // and its trophy-case layout are that shape).
+      const needsTemplate = (src: string) => {
+        const stripped = src.replace(/title:\s*\{\s*absolute:[^}]*\}/g, "")
+        return setsTitle(stripped)
+      }
+      const descendants = all.filter((p) => p !== lay && p.startsWith(dir) && needsTemplate(readFileSync(p, "utf8")))
+      if (descendants.length === 0) continue
+      nonLeaf++
+      const m = src.match(/title:\s*\{[^}]*\}/)
+      if (!m || !m[0].includes("template")) offenders.push(lay.slice(APP.length))
+    }
+    expect(nonLeaf, "the walk must find the known non-leaf layouts (insights, trades, dashboard)").toBeGreaterThanOrEqual(3)
+    expect(offenders).toEqual([])
+  })
+
   it("app/insights/layout.tsx re-declares the template", () => {
     const src = readFileSync(join(APP, "insights", "layout.tsx"), "utf8")
     // Pin the PROPERTY, not the spelling: the title must be an object carrying a

@@ -56,6 +56,19 @@ describe("TradesListClient", () => {
     expect(screen.getAllByText(/two sides/)).toHaveLength(2)
   })
 
+  // 2026-11-06 (Trevor's own /trades): a CANCELLED one-sided room read
+  // "CANCELLED · … · waiting for the other side" — a closed room is not waiting.
+  it("a cancelled or expired one-sided room says nobody joined, not 'waiting for the other side'", async () => {
+    answers["GET /api/trade-room"] = { status: 200, body: { rooms: [
+      room({ code: "cancelled01", status: "cancelled", gives: 0, gets: 0, counterparty_present: false }),
+      room({ code: "building001", status: "building", gives: 0, gets: 0, counterparty_present: false }),
+    ] } }
+    render(<TradesListClient />)
+    await waitFor(() => expect(screen.getByText(/cancelled01/)).toBeTruthy())
+    expect(screen.getByText(/cancelled01 · nobody joined/)).toBeTruthy()
+    expect(screen.getByText(/building001 · waiting for the other side/)).toBeTruthy()
+  })
+
   it("a failed read is a banner with Retry, never 'no trades yet'", async () => {
     answers["GET /api/trade-room"] = { status: 503, body: { error: "We couldn't load your trades. Try again in a moment." } }
     render(<TradesListClient />)

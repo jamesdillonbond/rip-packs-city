@@ -1,9 +1,12 @@
 import type { Metadata } from "next";
+import { BRAND_TITLE_TEMPLATE } from "@/lib/seo";
 import GlobalSiteHeader from "@/components/GlobalSiteHeader";
 import { PageContentAnchor } from "@/components/SkipToContent";
 
 export const metadata: Metadata = {
-  title: "Dashboard",
+  // R31: object + template, so a dashboard sub-page with its own title (Email
+  // notifications, 11-06) keeps the brand suffix.
+  title: { absolute: "Dashboard | Rip Packs City", template: BRAND_TITLE_TEMPLATE },
   description:
     "Your collector intelligence dashboard — saved wallets, trophy case, market pulse, and personalized deals.",
   robots: { index: false, follow: true },

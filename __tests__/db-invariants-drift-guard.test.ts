@@ -830,8 +830,8 @@ const PINS = [
     // v22 (same night): the box realizes what its packs became (P/L only when all are realized).
     // v23 (2026-10-11): status decided before enrichment; a filtered read enriches only its rows (perf only).
     // v24 (2026-10-19): a Top Shot pack the index left at Revealed is an open, never a hold.
-    migration:
-      "supabase/migrations/20261020030627_audit_20261019_a_top_shot_pack_dapper_left_revealed_was_opened.sql",
+    // v26 (2026-11-06): the index naming the pack's own primary distributor is unknown, never a transfer (#218 second face).
+    migration: "supabase/migrations/20261107011537_audit_20261106_pack_history_index_naming_the_distributor_is_not_a_transfer.sql",
   },
   {
     // Added 2026-09-18 with the sibling above: the hero totals (packs_sold,

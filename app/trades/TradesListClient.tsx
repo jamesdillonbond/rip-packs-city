@@ -114,7 +114,7 @@ export default function TradesListClient() {
                     {stateLabel(r.status)} · you give {r.gives}, get {r.gets}
                   </div>
                   <div style={{ ...muted, fontFamily: MONO, fontSize: 12 }}>
-                    {r.code} · {r.counterparty_present ? "two sides" : "waiting for the other side"} · updated {new Date(r.updated_at).toLocaleString("en-US", { timeZone: "America/Los_Angeles" })} PT
+                    {r.code} · {r.counterparty_present ? "two sides" : r.status === "cancelled" || r.status === "expired" ? "nobody joined" : "waiting for the other side"} · updated {new Date(r.updated_at).toLocaleString("en-US", { timeZone: "America/Los_Angeles" })} PT
                   </div>
                 </div>
                 <span style={{ fontFamily: MONO, fontSize: 12, color: "var(--rpc-text-muted)" }}>Open →</span>

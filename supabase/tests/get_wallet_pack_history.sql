@@ -426,6 +426,12 @@ BEGIN
       -- wrong, so this says unknown rather than repeating it back.
       CASE WHEN v_sync_floor IS NOT NULL AND pi.owner_address = v_wallet
                 AND pi.checked_at < v_sync_floor THEN NULL
+           -- 2026-11-06: the index naming the pack's OWN primary distributor
+           -- after that distributor delivered it here is a stale read (#218,
+           -- frozen sealed-pack index), not a holder: 13 of 13 such packs on
+           -- one wallet were on chain in the wallet. Unknown, never "left".
+           WHEN lb.bought_primary IS TRUE AND lb.bought_from IS NOT NULL
+                AND pi.owner_address = lb.bought_from THEN NULL
            ELSE pi.owner_address
       END AS current_owner,
       pi.status        AS identity_status,
@@ -1318,6 +1324,15 @@ VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P30', '0xwallet4', '0x0b2a3299c
 -- P41: All Day held, acquired 2024 (after marketplace coverage), price 99 -> inferred.
 -- P42: All Day held, acquired 2022-06 (before coverage) -> NULL.
 -- P43: All Day held, acquired 2024, supply price 0 (= unknown) -> NULL, never $0.
+-- DX1/DX2 (v26, 2026-11-06): THE INDEX NAMING THE DISTRIBUTOR IS NOT A TRANSFER.
+--   DX1: wallet 0xdistw received a primary drop FROM 0x0b2a…7e29 (Top Shot's
+--        distribution account) and Dapper's index, read AFTER the delivery, still
+--        names that distributor as owner (#218's frozen index did this for 194
+--        packs on 12 saved wallets; the chain held 13 of 13 checked) -> HELD,
+--        current_owner NULL, never "transferred".
+--   DX2: the CONTROL the fix must not move: 0xdistw bought a pack on the
+--        marketplace FROM 0xother, and the index names 0xother again -> that is a
+--        real holder, so TRANSFERRED stays, with current_owner = 0xother.
 INSERT INTO public.pack_nft_identity VALUES
   ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P31', 'D8', 'Sealed', '0xwallet4', now(), '2025-01-01'),
   ('dee28451-5d62-409e-a1ad-a83f763ac070', 'P41', 'A99', 'Sealed', '0xwallet4', now(), '2024-01-01'),
@@ -1685,6 +1700,34 @@ BEGIN
   SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'RV3';
   PERFORM _assert_eq(row_->>'status', 'ripped', 'RV3 index-only Top Shot Revealed is listed as an open');
   PERFORM _assert_eq((public.get_wallet_pack_history('0xrvw', NULL, 'held', 50, 0))->>'total_count', '1', 'held counts RV2 only');
+END $$;
+
+
+-- v26 (2026-11-06): THE INDEX NAMING THE PACK'S OWN DISTRIBUTOR IS NOT A TRANSFER.
+-- 0xdistw has a clean walk (floor 2026-11-06 00:00) so the departure guard is ARMED, which is the
+-- harder case: DX1 was delivered 11-05 by 0x0b2a…7e29 (primary_withdraw) and the index, read 11-06
+-- AFTER the walk, still names that distributor. DX2 is the control: bought on the marketplace from
+-- 0xother, and the index names 0xother again -- a real holder, so transferred stays.
+INSERT INTO public.pack_wallet_sync VALUES ('0xdistw', '2026-11-06 00:00', '2026-11-06 00:05', 1, 2, NULL, '2026-11-06 00:00');
+INSERT INTO public.pack_purchases (collection_id, pack_nft_id, buyer_address, seller_address, sale_price, sale_currency, sealed_at, is_primary_drop, event_kind, pack_dist_id)
+VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'DX1', '0xdistw', '0x0b2a3299cc857e29', NULL, NULL, '2026-11-05 17:33', true, 'primary_withdraw', 'D1'),
+       ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'DX2', '0xdistw', '0xother', 9, 'DUC', '2026-11-05 18:00', false, 'secondary_sale', 'D1');
+INSERT INTO public.pack_nft_identity VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'DX1', 'D1', 'Sealed', '0x0b2a3299cc857e29', '2026-11-06 01:00', NULL);
+INSERT INTO public.pack_nft_identity VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'DX2', 'D1', 'Sealed', '0xother', '2026-11-06 01:00', NULL);
+DO $$
+DECLARE r jsonb; row_ jsonb;
+BEGIN
+  r := public.get_wallet_pack_history('0xdistw', NULL, NULL, 50, 0);
+  PERFORM _assert_eq(r->>'total_count', '2', 'DX1 + DX2');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'DX1';
+  PERFORM _assert_eq(row_->>'status', 'held', 'DX1: the index naming the distributor that delivered it is NOT a transfer -> held');
+  PERFORM _assert(row_->>'current_owner' IS NULL, 'DX1: current_owner NULL -- the distributor is a stale read, not a holder we can name');
+  PERFORM _assert_eq(row_->>'identity_departed', 'false', 'DX1: the departure guard did not fire either (the index never named this wallet)');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'DX2';
+  PERFORM _assert_eq(row_->>'status', 'transferred', 'DX2 (control): the index naming the SECONDARY seller again is a real holder -> transferred');
+  PERFORM _assert_eq(row_->>'current_owner', '0xother', 'DX2 keeps the named holder');
+  PERFORM _assert_eq((public.get_wallet_pack_history('0xdistw', NULL, 'held', 50, 0))->>'total_count', '1', 'held = DX1 only');
+  PERFORM _assert_eq((public.get_wallet_pack_history('0xdistw', NULL, 'transferred', 50, 0))->>'total_count', '1', 'transferred = DX2 only');
 END $$;
 
 
