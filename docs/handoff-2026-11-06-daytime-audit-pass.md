@@ -87,6 +87,8 @@
 
 29. **Binder first tap (~8:15–8:35 AM PT).** With MY BINDER now second in the bar, its anon empty state is a first impression — and it led with a filter/sort panel for zero rows. The bars now wait for a search; the wallet box and empty-state line come first. Pinned both states. `E2E DOM Smoke` reddened on the deploy exactly as designed — the iOS zoom-floor monitor used the pre-search binder as its ≥5-controls positive control — re-pinned to load a wallet (`347ba08`), floor unchanged. Note for anyone running `e2e/mobile-layout.spec.ts` from the cloud sandbox: the two Chase-left tests time out there (20 s live read) and pass on the CI runner.
 
+30. **Collection tab strip (~9:00–9:20 AM PT).** Tap PACKS at 390 → the strip above showed no active tab (Packs past the fold). It scrolls the active tab into view now, only when overflowing and out of view. `/market` and `/nba-top-shot/packs` first-tap screenshots otherwise clean in both themes.
+
 ## Post-ship watch (what to read tomorrow)
 
 - **Series-1 Top Shot art** on `/dashboard/*`, `/profile/*`, binder, trade room: present (any blank tile with a `data-rpc-dead-art` attribute whose `data-rpc-dead-src` starts `…/editions/<N>_` means ANOTHER series was retired — same fix, derive not copy).
