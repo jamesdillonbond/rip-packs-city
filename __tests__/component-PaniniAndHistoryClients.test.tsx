@@ -114,6 +114,23 @@ describe("TransactionHistoryClient — the three-state ladder", () => {
     expect(hrefs).toContain("/moment/1")
   })
 
+  // 2026-11-06 — a pack whose dist Dapper's index has not returned yet (#218) came
+  // back from SQL titled the bare word "Pack", which read as a NAME beside
+  // "WNBA Hustle & Show Challenge Reward Pack" (5 rows on Trevor's wallet, 4 h old).
+  // The tell is dist_id NULL, never the title string; a named pack is untouched.
+  it("a pack with no dist renders as not yet identified, never as a pack NAMED 'Pack'", async () => {
+    const UNKNOWN = { ...EVENT, kind: "pack_buy" as const, title: "Pack", subtitle: null, method: "primary_withdraw", nft_id: null, pack_nft_id: "29686816747889", dist_id: null }
+    const NAMED = { ...EVENT, kind: "pack_buy" as const, title: "WNBA Hustle & Show Challenge Reward Pack", subtitle: null, method: "primary_withdraw", nft_id: null, pack_nft_id: "118747258577180", dist_id: "8779" }
+    vi.stubGlobal("fetch", routed({ ok: true, body: { wallet: "0xmine", kind_filter: "all", limit: 25, offset: 0, total_count: 2, events: [UNKNOWN, NAMED] } }))
+    render(<TransactionHistoryClient />)
+    await waitFor(() => expect(document.body.textContent).toMatch(/WNBA Hustle/))
+    expect(document.body.textContent).toMatch(/Pack — not yet identified/)
+    // the bare word never stands alone as a title
+    const titles = Array.from(document.querySelectorAll("span")).map((n) => n.textContent?.trim())
+    expect(titles).not.toContain("Pack")
+    expect(titles).toContain("WNBA Hustle & Show Challenge Reward Pack")
+  })
+
   // ⚠ The ladder is loading → ERROR → empty, in that order, and the order is the property:
   // an inverted ladder tells a collector "No activity for this filter" when the read failed,
   // which is a claim about their own trading history.
@@ -198,8 +215,10 @@ describe("TransactionHistoryClient — filters, wallets and paging", () => {
 
   it("renders each event kind without dropping a row", async () => {
     vi.stubGlobal("fetch", routed([
-      EV({ kind: "pack_buy", title: "Pack buy" }),
-      EV({ kind: "pack_open", title: "Pack open", moments_pulled: 5 }),
+      // dist_id set: a pack row with NO dist renders as "not yet identified" (11-06), which is the
+      // other test; this one pins that every KIND keeps its row.
+      EV({ kind: "pack_buy", title: "Pack buy", dist_id: "1" }),
+      EV({ kind: "pack_open", title: "Pack open", moments_pulled: 5, dist_id: "1" }),
       EV({ kind: "moment_buy", title: "Moment buy" }),
       EV({ kind: "moment_pull", title: "Moment pull" }),
       EV({ kind: "moment_sell", title: "Moment sell" }),

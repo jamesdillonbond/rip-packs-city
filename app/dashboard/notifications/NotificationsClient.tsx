@@ -21,6 +21,7 @@
 import { fetchJson } from "@/lib/analytics/fetch-json"
 import { useEffect, useState } from "react"
 import { useSearchParams } from "next/navigation"
+import Link from "next/link"
 import { accentText } from "@/lib/accent-text"
 
 interface Subscriber {
@@ -39,15 +40,6 @@ interface Subscriber {
   unsubscribed_at: string | null
 }
 
-const COLLECTIONS = [
-  { id: "95f28a17-224a-4025-96ad-adf8a4c63bfd", label: "NBA Top Shot" },
-  { id: "dee28451-5d62-409e-a1ad-a83f763ac070", label: "NFL All Day" },
-  { id: "06248cc4-b85f-47cd-af67-1855d14acd75", label: "LaLiga Golazos" },
-  { id: "7dd9dd11-e8b6-45c4-ac99-71331f959714", label: "Disney Pinnacle" },
-  { id: "9b4824a8-736d-4a96-b450-8dcc0c46b023", label: "UFC Strike" },
-]
-
-const TIERS = ["COMMON", "FANDOM", "RARE", "LEGENDARY", "ULTIMATE"]
 
 export default function NotificationsClient() {
   const search = useSearchParams()
@@ -110,10 +102,6 @@ export default function NotificationsClient() {
       .finally(() => setLoading(false))
   }, [])
 
-  function toggleArray(value: string, arr: string[], setter: (a: string[]) => void) {
-    setter(arr.includes(value) ? arr.filter(v => v !== value) : [...arr, value])
-  }
-
   async function onSave() {
     if (loadFailed) return
     setSaving(true)
@@ -168,81 +156,78 @@ export default function NotificationsClient() {
   }
 
   if (loading) {
-    return <main style={{ padding: "2rem", color: "var(--rpc-text-primary)", background: "var(--rpc-bg)", minHeight: "100vh" }}>Loading…</main>
+    return <main style={{ padding: "2rem", color: "var(--rpc-text-muted)", background: "var(--rpc-bg)", minHeight: "100vh", fontFamily: "var(--font-mono)" }}>Loading…</main>
   }
 
   return (
-    <main style={{ padding: "2rem", color: "var(--rpc-text-primary)", background: "var(--rpc-bg)", minHeight: "100vh", fontFamily: "system-ui, sans-serif" }}>
+    <main style={{ padding: "24px 16px 96px", color: "var(--rpc-text-primary)", background: "var(--rpc-bg)", minHeight: "100vh", fontFamily: "var(--font-body)" }}>
       <div style={{ maxWidth: 640, margin: "0 auto" }}>
-        <h1 style={{ fontFamily: "var(--font-display)", fontSize: "2rem", letterSpacing: "0.04em", margin: "0 0 1rem", color: "var(--rpc-red-text)" }}>Email notifications</h1>
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+          <h1 style={{ fontFamily: "var(--font-display)", fontSize: 30, letterSpacing: "0.04em", textTransform: "uppercase", margin: 0 }}>Email notifications</h1>
+          <Link href="/dashboard" style={{ color: "var(--rpc-text-secondary)", fontSize: 13, textDecoration: "none" }}>
+            ← Dashboard
+          </Link>
+        </div>
+        <p style={{ color: "var(--rpc-text-secondary)", fontSize: 14, margin: "4px 0 20px", lineHeight: 1.5 }}>
+          What RPC emails you, and how often. Listing alerts by player, set, team or price live on the{" "}
+          <Link href="/alerts" style={{ color: "var(--rpc-red-text)" }}>Alerts</Link> page.
+        </p>
 
         {confirmStatus === "ok" && (
-          <div style={{ background: "#064e3b", color: "#a7f3d0", padding: "12px 16px", borderRadius: 8, marginBottom: 16 }}>Email confirmed — you&apos;re all set.</div>
+          <div style={{ background: "var(--rpc-surface)", border: "1px solid var(--rpc-success)", color: "var(--rpc-success-text)", padding: "12px 16px", borderRadius: 8, marginBottom: 16 }}>Email confirmed — you&apos;re all set.</div>
         )}
         {confirmStatus === "missing" && (
-          <div style={{ background: "#7c2d12", color: "#fed7aa", padding: "12px 16px", borderRadius: 8, marginBottom: 16 }}>Missing confirmation token.</div>
+          <div style={{ background: "var(--rpc-surface)", border: "1px solid var(--rpc-danger)", color: "var(--rpc-danger-text)", padding: "12px 16px", borderRadius: 8, marginBottom: 16 }}>Missing confirmation token.</div>
         )}
         {confirmStatus === "unknown_token" && (
-          <div style={{ background: "#7c2d12", color: "#fed7aa", padding: "12px 16px", borderRadius: 8, marginBottom: 16 }}>That confirmation link is invalid or already used.</div>
+          <div style={{ background: "var(--rpc-surface)", border: "1px solid var(--rpc-danger)", color: "var(--rpc-danger-text)", padding: "12px 16px", borderRadius: 8, marginBottom: 16 }}>That confirmation link is invalid or already used.</div>
         )}
         {confirmStatus === "error" && (
-          <div style={{ background: "#7f1d1d", color: "#fecaca", padding: "12px 16px", borderRadius: 8, marginBottom: 16 }}>Confirmation failed: {confirmDetail ?? "unknown"}.</div>
+          <div style={{ background: "var(--rpc-surface)", border: "1px solid var(--rpc-danger)", color: "var(--rpc-danger-text)", padding: "12px 16px", borderRadius: 8, marginBottom: 16 }}>Confirmation failed: {confirmDetail ?? "unknown"}.</div>
         )}
 
         {sub && (
-          <p style={{ color: "rgba(255,255,255,0.65)", margin: "0 0 24px" }}>
+          <p style={{ color: "var(--rpc-text-secondary)", margin: "0 0 24px" }}>
             <strong>{sub.email}</strong> — {sub.verified ? "verified" : "pending confirmation"}
           </p>
         )}
 
         <section style={{ background: "var(--rpc-surface)", border: "1px solid var(--rpc-border)", borderRadius: 12, padding: 24, marginBottom: 24 }}>
           <h2 style={{ fontSize: "1.1rem", margin: "0 0 12px" }}>What to receive</h2>
-          <label style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 0" }}>
-            <input type="checkbox" checked={digestWeekly} onChange={e => setDigestWeekly(e.target.checked)} />
-            <span>Weekly digest</span>
-          </label>
-          <label style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 0" }}>
-            <input type="checkbox" checked={dealAlerts} onChange={e => setDealAlerts(e.target.checked)} />
-            <span>Deal alerts</span>
-          </label>
-          <label style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 0" }}>
-            <input type="checkbox" checked={badgeAlerts} onChange={e => setBadgeAlerts(e.target.checked)} />
-            <span>Badge alerts</span>
-          </label>
-          <label style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 0" }}>
-            <input type="checkbox" checked={portfolioAlerts} onChange={e => setPortfolioAlerts(e.target.checked)} />
-            <span>Portfolio alerts</span>
-          </label>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "10px 0" }}>
+            <input id="pref-digest-weekly" type="checkbox" checked={digestWeekly} onChange={e => setDigestWeekly(e.target.checked)} style={{ marginTop: 3 }} />
+            <div>
+              <label htmlFor="pref-digest-weekly" style={{ display: "block", fontWeight: 600, cursor: "pointer" }}>Weekly digest</label>
+              <div style={{ fontSize: 13, color: "var(--rpc-text-secondary)", lineHeight: 1.45 }}>
+                One email a week with how your saved wallets&apos; value moved. RPC isn&apos;t sending it yet — this switch
+                decides whether you&apos;re in from the first send.
+              </div>
+            </div>
+          </div>
+          {/*
+            2026-11-06: the "Deal alerts" / "Badge alerts" / "Portfolio alerts"
+            toggles and the deal-filter panel were REMOVED from this page. No
+            sender reads email_subscribers.deal_alerts / badge_alerts /
+            portfolio_alerts (the DB function that did, build_deal_alerts_for_subscriber,
+            has no caller; prosrc + cron.job + repo grep 11-06), so a collector who
+            switched them on was promised email that could never arrive. Listing
+            alerts that DO send — email, Telegram, Discord — are the /alerts
+            subscriptions. The columns stay and are posted back unchanged below, so
+            nothing a collector saved is lost if a sender is ever wired.
+          */}
         </section>
 
-        {dealAlerts && (
-          <section style={{ background: "var(--rpc-surface)", border: "1px solid var(--rpc-border)", borderRadius: 12, padding: 24, marginBottom: 24 }}>
-            <h2 style={{ fontSize: "1.1rem", margin: "0 0 12px" }}>Deal filters</h2>
-            <label style={{ display: "block", margin: "0 0 12px" }}>
-              <div style={{ fontSize: 13, color: "rgba(255,255,255,0.65)", marginBottom: 4 }}>Minimum discount % below FMV</div>
-              <input type="number" min={5} max={90} value={minDiscount} onChange={e => setMinDiscount(parseInt(e.target.value, 10) || 20)} style={{ background: "var(--rpc-surface-raised)", color: "var(--rpc-text-primary)", border: "1px solid var(--rpc-border-hover)", padding: 8, borderRadius: 6, width: 120 }} />
-            </label>
-            <label style={{ display: "block", margin: "0 0 12px" }}>
-              <div style={{ fontSize: 13, color: "rgba(255,255,255,0.65)", marginBottom: 4 }}>Max price (USD, blank = no cap)</div>
-              <input type="number" min={1} value={maxPrice} onChange={e => setMaxPrice(e.target.value)} style={{ background: "var(--rpc-surface-raised)", color: "var(--rpc-text-primary)", border: "1px solid var(--rpc-border-hover)", padding: 8, borderRadius: 6, width: 120 }} />
-            </label>
-            <div style={{ fontSize: 13, color: "rgba(255,255,255,0.65)", marginBottom: 8 }}>Tiers</div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
-              {TIERS.map(t => (
-                <button key={t} type="button" onClick={() => toggleArray(t, dealTiers, setDealTiers)} style={{ padding: "4px 12px", borderRadius: 999, border: "1px solid var(--rpc-border-hover)", background: dealTiers.includes(t) ? "var(--rpc-red)" : "var(--rpc-surface-raised)", color: dealTiers.includes(t) ? "#0a0a0a" : "var(--rpc-text-primary)", cursor: "pointer" }}>{t}</button>
-              ))}
-            </div>
-            <div style={{ fontSize: 13, color: "rgba(255,255,255,0.65)", marginBottom: 8 }}>Collections</div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-              {COLLECTIONS.map(c => (
-                <button key={c.id} type="button" onClick={() => toggleArray(c.id, collectionIds, setCollectionIds)} style={{ padding: "4px 12px", borderRadius: 999, border: "1px solid var(--rpc-border-hover)", background: collectionIds.includes(c.id) ? "var(--rpc-red)" : "var(--rpc-surface-raised)", color: collectionIds.includes(c.id) ? "#0a0a0a" : "var(--rpc-text-primary)", cursor: "pointer" }}>{c.label}</button>
-              ))}
-            </div>
-          </section>
-        )}
+        <section style={{ background: "var(--rpc-surface)", border: "1px solid var(--rpc-border)", borderRadius: 12, padding: 24, marginBottom: 24 }}>
+          <h2 style={{ fontSize: "1.1rem", margin: "0 0 8px" }}>Listing alerts</h2>
+          <p style={{ margin: 0, fontSize: 14, color: "var(--rpc-text-secondary)", lineHeight: 1.5 }}>
+            Deal, price, badge and serial alerts — by player, set, team, tier or discount, delivered to email, Telegram or
+            Discord — are set up on the <Link href="/alerts" style={{ color: "var(--rpc-red-text)" }}>Alerts</Link> page,
+            where you can also watch a single edition or a pack&apos;s chase odds.
+          </p>
+        </section>
 
-        {savedNote && <div style={{ background: "#064e3b", color: "#a7f3d0", padding: "12px 16px", borderRadius: 8, marginBottom: 16 }}>{savedNote}</div>}
-        {error && <div style={{ background: "#7f1d1d", color: "#fecaca", padding: "12px 16px", borderRadius: 8, marginBottom: 16 }}>{error}</div>}
+        {savedNote && <div style={{ background: "var(--rpc-surface)", border: "1px solid var(--rpc-success)", color: "var(--rpc-success-text)", padding: "12px 16px", borderRadius: 8, marginBottom: 16 }}>{savedNote}</div>}
+        {error && <div style={{ background: "var(--rpc-surface)", border: "1px solid var(--rpc-danger)", color: "var(--rpc-danger-text)", padding: "12px 16px", borderRadius: 8, marginBottom: 16 }}>{error}</div>}
 
         {loadFailed && (
           <div style={{ color: accentText("#fecaca"), fontSize: 14, marginBottom: 12 }}>

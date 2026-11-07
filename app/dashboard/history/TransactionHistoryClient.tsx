@@ -367,11 +367,21 @@ function TimelineRow({ e }: { e: TxEvent }) {
           ? "from " + truncAddr(e.counterparty)
           : null
 
+  // 2026-11-06: a pack event with NO dist is a pack whose identity Dapper's
+  // searchPackNft index has not returned yet (#218: the index froze 10-29; the
+  // retry lane re-asks 300/day). The SQL falls back to the bare word "Pack",
+  // which read as a NAME beside "WNBA Hustle & Show Challenge Reward Pack". Say
+  // what it is — unidentified — keyed on dist_id, never on the title string.
+  const unidentifiedPack = (e.kind === "pack_buy" || e.kind === "pack_open" || e.kind === "pack_sell") && !e.dist_id
+  const titleText = unidentifiedPack ? "Pack — not yet identified" : e.title
   const titleNode = (
     // display:block + minWidth 0 — an inline span ignores text-overflow, so a long
     // pack title ran under the amount column on a phone instead of truncating.
-    <span style={{ display: "block", minWidth: 0, fontFamily: condensedFont, fontWeight: 700, fontSize: 14, letterSpacing: "0.01em", color: href ? "#fff" : "rgba(255,255,255,0.85)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-      {e.title}
+    <span
+      title={unidentifiedPack ? "Dapper has not indexed this pack's distribution yet; the name fills in once it does." : undefined}
+      style={{ display: "block", minWidth: 0, fontFamily: condensedFont, fontWeight: 700, fontSize: 14, letterSpacing: "0.01em", color: href ? "#fff" : "rgba(255,255,255,0.85)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontStyle: unidentifiedPack ? "italic" : undefined }}
+    >
+      {titleText}
     </span>
   )
 

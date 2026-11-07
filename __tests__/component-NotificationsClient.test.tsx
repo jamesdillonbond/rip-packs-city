@@ -64,11 +64,16 @@ describe("NotificationsClient — hydrate", () => {
 
     await waitFor(() => expect(screen.getByText("collector@example.com")).toBeTruthy())
     expect(screen.getByText(/verified/)).toBeTruthy()
-    // Deal filters only mount when deal_alerts hydrated true — proving the
-    // saved value drove the form rather than the defaults.
-    expect(screen.getByText("Deal filters")).toBeTruthy()
-    expect((screen.getByDisplayValue("35") as HTMLInputElement).value).toBe("35")
-    expect((screen.getByDisplayValue("250") as HTMLInputElement).value).toBe("250")
+    // The digest switch reflects the saved value (SUB has it on); a hydrate of
+    // `false` must untick it — proving the saved value drove the form.
+    expect((screen.getByLabelText("Weekly digest") as HTMLInputElement).checked).toBe(true)
+  })
+
+  it("a saved digest_weekly=false hydrates as unticked", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ok({ subscriber: { ...SUB, digest_weekly: false } }) as any))
+    render(<NotificationsClient />)
+    await waitFor(() => expect(screen.getByText("collector@example.com")).toBeTruthy())
+    expect((screen.getByLabelText("Weekly digest") as HTMLInputElement).checked).toBe(false)
   })
 
   it("a failed hydrate says so — it does not render an empty preference set", async () => {
@@ -165,15 +170,21 @@ describe("NotificationsClient — save", () => {
     const f = hydrateThen(ok({ id: "s1", email: SUB.email, verified: true }))
     vi.stubGlobal("fetch", f)
     render(<NotificationsClient />)
-    await waitFor(() => expect(screen.getByText("Deal filters")).toBeTruthy())
+    await waitFor(() => expect(screen.getByText("collector@example.com")).toBeTruthy())
 
-    fireEvent.click(screen.getByText("Badge alerts"))
+    fireEvent.click(screen.getByLabelText("Weekly digest"))
     fireEvent.click(screen.getByText("Save preferences"))
 
     await waitFor(() => expect(screen.getByText("Preferences saved.")).toBeTruthy())
     const body = JSON.parse((f.mock.calls[1][1] as RequestInit).body as string)
-    expect(body.badge_alerts).toBe(true)
+    expect(body.digest_weekly).toBe(false)
+    // The flags this page no longer shows are posted back AS HYDRATED, never
+    // reset — a sender wired later must find what the collector saved.
+    expect(body.deal_alerts).toBe(true)
+    expect(body.badge_alerts).toBe(false)
     expect(body.deal_min_discount).toBe(35)
+    expect(body.deal_max_price).toBe(250)
+    expect(body.deal_tiers).toEqual(["RARE"])
   })
 
   it("an unverified save that sent a confirmation says the alerts are NOT live yet", async () => {
@@ -232,114 +243,38 @@ describe("NotificationsClient — save", () => {
   })
 })
 
-describe("NotificationsClient — the toggle arrays add AND remove", () => {
-  it("a tier chip toggles off again, and the deal panel hides when deal alerts do", async () => {
-    // `toggleArray` is the one piece of real logic here; a test that only ever
-    // clicks once would pass against an implementation that can only ADD.
-    const f = vi.fn(async () => ok({ subscriber: SUB }) as any)
-    vi.stubGlobal("fetch", f)
-    render(<NotificationsClient />)
-    await waitFor(() => expect(screen.getByText("Deal filters")).toBeTruthy())
-
-    // RARE hydrated selected; click removes it, clicking again re-adds.
-    const rare = screen.getByRole("button", { name: "RARE" })
-    const selectedBg = rare.style.background
-    fireEvent.click(rare)
-    expect(rare.style.background).not.toBe(selectedBg)
-    fireEvent.click(rare)
-    expect(rare.style.background).toBe(selectedBg)
-
-    // Turning deal alerts off unmounts the whole filter panel.
-    fireEvent.click(screen.getByText("Deal alerts"))
-    expect(screen.queryByText("Deal filters")).toBeNull()
-  })
-
-  it("a collection chip toggles independently of the tier chips", async () => {
+describe("NotificationsClient — only switches a sender honours are offered (2026-11-06)", () => {
+  // No sender reads email_subscribers.deal_alerts / badge_alerts / portfolio_alerts
+  // (build_deal_alerts_for_subscriber has no caller — prosrc, cron.job and repo
+  // grep), so offering those toggles promised email that could never arrive.
+  // The page keeps the one switch the digest senders read and points listing
+  // alerts at /alerts, which does send.
+  it("offers Weekly digest only — no deal / badge / portfolio toggles, no deal-filter panel", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => ok({ subscriber: SUB }) as any))
     render(<NotificationsClient />)
-    await waitFor(() => expect(screen.getByText("Deal filters")).toBeTruthy())
-
-    const ts = screen.getByRole("button", { name: "NBA Top Shot" })
-    const rare = screen.getByRole("button", { name: "RARE" })
-    const rareBefore = rare.style.background
-    fireEvent.click(ts)
-    expect(rare.style.background).toBe(rareBefore)
+    await waitFor(() => expect(screen.getByText("collector@example.com")).toBeTruthy())
+    expect(screen.getAllByRole("checkbox")).toHaveLength(1)
+    expect(screen.queryByText("Deal alerts")).toBeNull()
+    expect(screen.queryByText("Badge alerts")).toBeNull()
+    expect(screen.queryByText("Portfolio alerts")).toBeNull()
+    expect(screen.queryByText("Deal filters")).toBeNull()
+    expect(screen.queryByRole("button", { name: "RARE" })).toBeNull()
   })
 
-  it("every 'what to receive' checkbox is independently wired", async () => {
-    // Four near-identical handlers is exactly where a copy-paste slip puts two
-    // labels on one setter, and the page would still look right — both boxes
-    // move together only when you happen to click both.
-    let call = 0
-    const f = vi.fn(async (_url: string, _init?: RequestInit) => {
-      call += 1
-      return (call === 1
-        ? ok({ subscriber: { ...SUB, digest_weekly: false, portfolio_alerts: false } })
-        : ok({ id: "s1", email: SUB.email, verified: true })) as any
-    })
-    vi.stubGlobal("fetch", f)
+  it("says the digest is not sending yet, and routes listing alerts to /alerts", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ok({ subscriber: SUB }) as any))
     render(<NotificationsClient />)
-    await waitFor(() => expect(screen.getByText("What to receive")).toBeTruthy())
-
-    fireEvent.click(screen.getByText("Weekly digest"))
-    fireEvent.click(screen.getByText("Portfolio alerts"))
-    fireEvent.click(screen.getByText("Save preferences"))
-
-    await waitFor(() => expect(screen.getByText("Preferences saved.")).toBeTruthy())
-    const body = JSON.parse((f.mock.calls[1][1] as RequestInit).body as string)
-    expect(body.digest_weekly).toBe(true)
-    expect(body.portfolio_alerts).toBe(true)
-    // ...and the ones never touched kept their hydrated values.
-    expect(body.deal_alerts).toBe(true)
-    expect(body.badge_alerts).toBe(false)
+    await waitFor(() => expect(screen.getByText("collector@example.com")).toBeTruthy())
+    expect(screen.getByText(/isn.t sending it yet/)).toBeTruthy()
+    const alertsLinks = screen.getAllByRole("link", { name: "Alerts" })
+    expect(alertsLinks.length).toBeGreaterThanOrEqual(1)
+    expect(alertsLinks[0].getAttribute("href")).toBe("/alerts")
+    expect(screen.getByRole("link", { name: /Dashboard/ }).getAttribute("href")).toBe("/dashboard")
   })
 
-  it("a minimum discount of 0 is silently rewritten to 20 — pinned as CURRENT behaviour", async () => {
-    // ⚠ `parseInt(e.target.value, 10) || 20`. Zero is falsy, so a collector who
-    // deliberately types 0 ("alert me on anything below FMV") gets 20 instead,
-    // with no indication. Recorded rather than endorsed: the input's own
-    // `min={5}` says 0 was never a supported value, so the fallback is doing a
-    // clamp's job badly rather than corrupting a legitimate setting — but the
-    // same expression also swallows a cleared field, which is how a user hits it.
-    let call = 0
-    const f = vi.fn(async (_url: string, _init?: RequestInit) => {
-      call += 1
-      return (call === 1 ? ok({ subscriber: SUB }) : ok({ id: "s1", email: SUB.email, verified: true })) as any
-    })
-    vi.stubGlobal("fetch", f)
-    render(<NotificationsClient />)
-    await waitFor(() => expect(screen.getByText("Deal filters")).toBeTruthy())
-
-    fireEvent.change(screen.getByDisplayValue("35"), { target: { value: "0" } })
-    fireEvent.click(screen.getByText("Save preferences"))
-    await waitFor(() => expect(screen.getByText("Preferences saved.")).toBeTruthy())
-    expect(JSON.parse((f.mock.calls[1][1] as RequestInit).body as string).deal_min_discount).toBe(20)
-  })
-
-  it("a real minimum discount survives the same expression", async () => {
-    // The other direction, so the case above cannot be "read" as the fallback
-    // firing for everything.
-    let call = 0
-    const f = vi.fn(async (_url: string, _init?: RequestInit) => {
-      call += 1
-      return (call === 1 ? ok({ subscriber: SUB }) : ok({ id: "s1", email: SUB.email, verified: true })) as any
-    })
-    vi.stubGlobal("fetch", f)
-    render(<NotificationsClient />)
-    await waitFor(() => expect(screen.getByText("Deal filters")).toBeTruthy())
-
-    fireEvent.change(screen.getByDisplayValue("35"), { target: { value: "45" } })
-    fireEvent.change(screen.getByDisplayValue("250"), { target: { value: "99" } })
-    fireEvent.click(screen.getByText("Save preferences"))
-    await waitFor(() => expect(screen.getByText("Preferences saved.")).toBeTruthy())
-    const body = JSON.parse((f.mock.calls[1][1] as RequestInit).body as string)
-    expect(body.deal_min_discount).toBe(45)
-    expect(body.deal_max_price).toBe(99)
-  })
-
-  it("a blank max price posts null rather than 0", async () => {
-    // `maxPrice ? Number(maxPrice) : null` — "" is falsy, and Number("") is 0.
-    // A 0 cap would mean "no deal may cost anything", silencing every alert.
+  it("a hydrated null max price posts null rather than 0", async () => {
+    // The pass-through must not coerce: `maxPrice ? Number(maxPrice) : null` on
+    // a hydrated "" stays null (a 0 cap would silence every alert if wired).
     let call = 0
     const f = vi.fn(async (_url: string, _init?: RequestInit) => {
       call += 1
@@ -349,7 +284,7 @@ describe("NotificationsClient — the toggle arrays add AND remove", () => {
     })
     vi.stubGlobal("fetch", f)
     render(<NotificationsClient />)
-    await waitFor(() => expect(screen.getByText("Deal filters")).toBeTruthy())
+    await waitFor(() => expect(screen.getByText("collector@example.com")).toBeTruthy())
     fireEvent.click(screen.getByText("Save preferences"))
 
     await waitFor(() => expect(screen.getByText("Preferences saved.")).toBeTruthy())

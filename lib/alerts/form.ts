@@ -94,9 +94,13 @@ export function subscriptionFilterSummary(s: {
     `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
   const priceOnly = s.max_price !== null && s.max_price !== undefined && (s.min_discount ?? 25) === 0
   if (priceOnly) {
-    const floor =
-      s.min_price !== null && s.min_price !== undefined ? `${money(s.min_price)}–` : ""
-    return `any price ${floor}${money(s.max_price as number)} · FMV ignored`
+    // 2026-11-06: "any price $0.60" read as a contradiction on the alerts page
+    // (an alert with a cap is not "any price"); say the bound.
+    const hasFloor = s.min_price !== null && s.min_price !== undefined
+    const range = hasFloor
+      ? `${money(s.min_price as number)}–${money(s.max_price as number)}`
+      : `≤${money(s.max_price as number)}`
+    return `price ${range} · FMV ignored`
   }
   const parts = [`≥${s.min_discount ?? 25}% off`]
   if (s.max_price !== null && s.max_price !== undefined) parts.push(`≤${money(s.max_price)}`)

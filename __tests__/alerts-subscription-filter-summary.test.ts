@@ -10,13 +10,13 @@ import { subscriptionFilterSummary } from "@/lib/alerts/form"
 describe("subscriptionFilterSummary", () => {
   it("describes a price-only alert by its price, and says FMV is ignored", () => {
     const s = subscriptionFilterSummary({ min_discount: 0, max_price: 0.6 })
-    expect(s).toBe("any price $0.60 · FMV ignored")
+    expect(s).toBe("price ≤$0.60 · FMV ignored")
     expect(s).not.toContain("%")
   })
 
   it("includes a floor when the price-only alert has one", () => {
     expect(subscriptionFilterSummary({ min_discount: 0, max_price: 5, min_price: 1 })).toBe(
-      "any price $1.00–$5.00 · FMV ignored"
+      "price $1.00–$5.00 · FMV ignored"
     )
   })
 

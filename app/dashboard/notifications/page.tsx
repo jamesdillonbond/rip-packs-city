@@ -1,5 +1,8 @@
 import { Suspense } from "react"
+import type { Metadata } from "next"
 import NotificationsClient from "./NotificationsClient"
+
+export const metadata: Metadata = { title: "Email notifications", robots: { index: false, follow: false } }
 
 // Thin server wrapper. The body lives in NotificationsClient.tsx so that
 // `app/**/*Client.tsx` — which IS in the component gate's coverage include —
@@ -13,7 +16,7 @@ export default function NotificationsPage() {
   return (
     <Suspense
       fallback={
-        <main style={{ padding: "2rem", color: "#fafafa", background: "#0a0a0a", minHeight: "100vh" }}>
+        <main style={{ padding: "2rem", color: "var(--rpc-text-muted)", background: "var(--rpc-bg)", minHeight: "100vh", fontFamily: "var(--font-mono)" }}>
           Loading…
         </main>
       }
