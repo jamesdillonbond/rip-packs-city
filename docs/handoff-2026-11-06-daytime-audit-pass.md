@@ -125,6 +125,8 @@
 
 48. **Concierge explains, not files (~2:45–3:00 PM PT).** "Where did the trade link go on mobile" → right answer + a logged bug for a by-design registry decision. The nav paragraph now states Trade is off the bar by design, and carries the keyboard/screen-reader facts the day made true (it had honestly said "I'd rather not guess" to a screen-reader user). Claims pinned to the code. Probe row 12171 → wontfix/smoke; nine `probe-%` sessions today flagged `is_smoke_test`.
 
+49. **OG cards read by eye (~3:05–3:25 PM PT).** Share card: "19981 moments" → formatted (pinned). Pack card `?id=1` (ripped, no priced pull): "PULLEDPAID" — Satori sizes a tracked label without its letter-spacing, so dash-wide columns let the labels collide; column `minWidth` + label padding (geometry, verified by the live PNG below). Profile card clean. Read, not a defect: share card 19,981 vs profile card 19,980 for jamesdillonbond — the share card reads the live `wallet_moments_cache`, the profile sums `saved_wallets.cached_moment_count` (one stale by 1).
+
 ## Post-ship watch (what to read tomorrow)
 
 - **Series-1 Top Shot art** on `/dashboard/*`, `/profile/*`, binder, trade room: present (any blank tile with a `data-rpc-dead-art` attribute whose `data-rpc-dead-src` starts `…/editions/<N>_` means ANOTHER series was retired — same fix, derive not copy).
