@@ -31,6 +31,7 @@ import type {
 } from "@/lib/new-collectors-board"
 import { usdSignFirst } from "@/lib/usd-format"
 import { shortSeriesLabel } from "@/lib/series-label"
+import { onTablistKeyDown } from "@/lib/a11y/tablist-keys"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -219,7 +220,7 @@ export default function NewCollectorsBoardClient({ initialBoard, initialFetchedA
       ) : (
         <>
           <section className="rpc-nc-controls" aria-label="Window">
-            <div className="rpc-nc-pill-group" role="tablist" aria-label="Window">
+            <div className="rpc-nc-pill-group" role="tablist" onKeyDown={onTablistKeyDown} tabIndex={-1} aria-label="Window">
               <span className="rpc-nc-pill-label">WINDOW</span>
               {WINDOWS.map((w) => (
                 <button

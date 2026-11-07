@@ -33,6 +33,7 @@ import { avatarDisplayUrl } from "@/lib/media/avatar-proxy"
 import { fromDbSlug } from "@/lib/collections"
 import { usdSignFirst } from "@/lib/usd-format"
 import { accentText } from "@/lib/accent-text"
+import { onTablistKeyDown } from "@/lib/a11y/tablist-keys"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -611,7 +612,7 @@ export default function TopSalesBoardClient({ initialRows, initialFetchedAt, ini
 
       {/* ── Filter row ────────────────────────────────────────────────── */}
       <section className="rpc-ts-controls" aria-label="Filters">
-        <div className="rpc-ts-pill-group" role="tablist" aria-label="Collection">
+        <div className="rpc-ts-pill-group" role="tablist" onKeyDown={onTablistKeyDown} tabIndex={-1} aria-label="Collection">
           <span className="rpc-ts-pill-label">COLLECTION</span>
           {COLLECTIONS.map((c) => (
             <button
@@ -626,7 +627,7 @@ export default function TopSalesBoardClient({ initialRows, initialFetchedAt, ini
           ))}
         </div>
 
-        <div className="rpc-ts-pill-group" role="tablist" aria-label="Window">
+        <div className="rpc-ts-pill-group" role="tablist" onKeyDown={onTablistKeyDown} tabIndex={-1} aria-label="Window">
           <span className="rpc-ts-pill-label">WINDOW</span>
           {WINDOWS.map((w) => (
             <button

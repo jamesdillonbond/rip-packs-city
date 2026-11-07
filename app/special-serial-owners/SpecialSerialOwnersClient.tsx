@@ -21,6 +21,7 @@ import type { OwnerRow, SpecialSerialTag, OwnersSortKey } from "@/lib/special-se
 import { accentText } from "@/lib/accent-text"
 
 import type { BoardCollection } from "./board-seed";
+import { onTablistKeyDown } from "@/lib/a11y/tablist-keys"
 type TagFilter = "all" | SpecialSerialTag;
 type TierFilter = "all" | string;
 
@@ -209,7 +210,7 @@ export default function SpecialSerialOwnersClient({ initialPlayer = "", initialC
         </section>
 
         <section className="rpc-sso-controls" aria-label="Filters">
-          <div className="rpc-sso-pill-group" role="tablist" aria-label="Collection">
+          <div className="rpc-sso-pill-group" role="tablist" onKeyDown={onTablistKeyDown} tabIndex={-1} aria-label="Collection">
             <span className="rpc-sso-pill-label">COLLECTION</span>
             {COLLECTIONS.map((c) => (
               <button
@@ -223,7 +224,7 @@ export default function SpecialSerialOwnersClient({ initialPlayer = "", initialC
               </button>
             ))}
           </div>
-          <div className="rpc-sso-pill-group" role="tablist" aria-label="Serial type">
+          <div className="rpc-sso-pill-group" role="tablist" onKeyDown={onTablistKeyDown} tabIndex={-1} aria-label="Serial type">
             <span className="rpc-sso-pill-label">SERIAL</span>
             {TAGS.map((t) => (
               <button
@@ -237,7 +238,7 @@ export default function SpecialSerialOwnersClient({ initialPlayer = "", initialC
               </button>
             ))}
           </div>
-          <div className="rpc-sso-pill-group" role="tablist" aria-label="Tier">
+          <div className="rpc-sso-pill-group" role="tablist" onKeyDown={onTablistKeyDown} tabIndex={-1} aria-label="Tier">
             <span className="rpc-sso-pill-label">TIER</span>
             {TIERS.map((t) => (
               <button

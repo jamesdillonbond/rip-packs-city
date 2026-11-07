@@ -22,6 +22,7 @@ import { slugifyPlayerName } from "@/lib/entity-labels"
 import { paniniEditionUrl } from "@/lib/panini/edition-url"
 
 import type { PaniniProductVolumeRow } from "@/lib/panini/product-volume"
+import { onTablistKeyDown } from "@/lib/a11y/tablist-keys"
 
 type Num = number | null
 
@@ -270,7 +271,7 @@ export default function PaniniAnalytics({
       </details>
 
       <H2>Top sales</H2>
-      <div role="tablist" style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+      <div role="tablist" onKeyDown={onTablistKeyDown} tabIndex={-1} style={{ display: "flex", gap: 6, marginBottom: 8 }}>
         {[false, true].map((at) => (
           <button
             key={String(at)}

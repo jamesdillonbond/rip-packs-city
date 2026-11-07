@@ -31,6 +31,7 @@ import { usdSignFirst } from "@/lib/usd-format"
 import { accentText } from "@/lib/accent-text"
 import PlayerResolvedNote from "@/components/filters/PlayerResolvedNote"
 import { SQUEEZE_COLLECTIONS, SQUEEZE_LABEL, SQUEEZE_LEAGUES, SQUEEZE_TIERS, isSqueezeCollection, squeezeBoardPath, type SqueezeCollection } from "@/lib/insights/squeeze-collections"
+import { onTablistKeyDown } from "@/lib/a11y/tablist-keys"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -541,7 +542,7 @@ export default function SqueezeBoardClient({
 
       {/* ── Filter row ────────────────────────────────────────────────── */}
       <section className="rpc-sq-controls" aria-label="Filters">
-        <div className="rpc-sq-pill-group" role="tablist" aria-label="Collection">
+        <div className="rpc-sq-pill-group" role="tablist" onKeyDown={onTablistKeyDown} tabIndex={-1} aria-label="Collection">
           {SQUEEZE_COLLECTIONS.map((c) => (
             <button
               key={c}
@@ -556,7 +557,7 @@ export default function SqueezeBoardClient({
           ))}
         </div>
 
-        <div className="rpc-sq-pill-group" role="tablist" aria-label="Tier">
+        <div className="rpc-sq-pill-group" role="tablist" onKeyDown={onTablistKeyDown} tabIndex={-1} aria-label="Tier">
           {["ALL", ...SQUEEZE_TIERS[collection]].map((t) => (
             <button
               key={t}
@@ -571,7 +572,7 @@ export default function SqueezeBoardClient({
         </div>
 
         {SQUEEZE_LEAGUES[collection].length > 0 ? (
-          <div className="rpc-sq-pill-group" role="tablist" aria-label="League">
+          <div className="rpc-sq-pill-group" role="tablist" onKeyDown={onTablistKeyDown} tabIndex={-1} aria-label="League">
             <span className="rpc-sq-pill-label">LEAGUE</span>
             {["ALL", ...SQUEEZE_LEAGUES[collection]].map((lg) => (
               <button

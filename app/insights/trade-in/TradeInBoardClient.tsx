@@ -26,6 +26,7 @@ import {
 } from "@/lib/insights/trade-in-board"
 import { fetchJson } from "@/lib/analytics/fetch-json"
 import { shortSeriesLabel } from "@/lib/series-label"
+import { onTablistKeyDown } from "@/lib/a11y/tablist-keys"
 
 function fmtUsd(n: number | null): string {
   if (n == null) return "—"
@@ -214,7 +215,7 @@ export default function TradeInBoardClient({
           </button>
         ) : null}
       </form>
-      <div role="tablist" aria-label="Sort" style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
+      <div role="tablist" onKeyDown={onTablistKeyDown} tabIndex={-1} aria-label="Sort" style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
         {SORTS.map((s) => (
           <Chip key={s.key} active={sort === s.key} onClick={() => pickSort(s.key)} label={s.label} />
         ))}

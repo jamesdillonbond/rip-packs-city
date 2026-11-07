@@ -21,6 +21,7 @@ import { useMemo, useState } from "react";
 import DegradedDataNotice from "@/components/insights/DegradedDataNotice";
 import type { DegradedSummary } from "@/lib/insights/board-status";
 import { scrollRegion } from "@/lib/a11y/scroll-region"
+import { onTablistKeyDown } from "@/lib/a11y/tablist-keys"
 
 type Num = number | null;
 
@@ -315,7 +316,7 @@ export default function PaniniBoardsTabs({
       </div>
       <DegradedDataNotice summary={degraded} />
 
-      <div role="tablist" style={{ display: "flex", gap: 6, flexWrap: "wrap", margin: "8px 0 12px" }}>
+      <div role="tablist" onKeyDown={onTablistKeyDown} tabIndex={-1} style={{ display: "flex", gap: 6, flexWrap: "wrap", margin: "8px 0 12px" }}>
         {TABS.map((t) => (
           <button
             key={t.k}

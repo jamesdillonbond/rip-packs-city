@@ -31,6 +31,7 @@ import type { SerialBoardRow as Row, HeadlineMode, SerialPremiumCollection } fro
 import { sectionEmptyCopy } from "@/lib/entity/section-empty-copy"
 import { usdSignFirst } from "@/lib/usd-format"
 import { accentText } from "@/lib/accent-text"
+import { onTablistKeyDown } from "@/lib/a11y/tablist-keys"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -501,7 +502,7 @@ export default function SerialPremiumsBoardClient({ initialRows, initialFetchedA
       ) : null}
 
       <section className="rpc-sp-controls" aria-label="Filters">
-        <div className="rpc-sp-pill-group" role="tablist" aria-label="Mint">
+        <div className="rpc-sp-pill-group" role="tablist" onKeyDown={onTablistKeyDown} tabIndex={-1} aria-label="Mint">
           <span className="rpc-sp-pill-label">MINT</span>
           {HEADLINES.map((h) => (
             <button
@@ -516,7 +517,7 @@ export default function SerialPremiumsBoardClient({ initialRows, initialFetchedA
           ))}
         </div>
 
-        <div className="rpc-sp-pill-group" role="tablist" aria-label="Tier">
+        <div className="rpc-sp-pill-group" role="tablist" onKeyDown={onTablistKeyDown} tabIndex={-1} aria-label="Tier">
           <span className="rpc-sp-pill-label">TIER</span>
           {TIERS.map((t) => (
             <button
@@ -531,7 +532,7 @@ export default function SerialPremiumsBoardClient({ initialRows, initialFetchedA
           ))}
         </div>
 
-        <div className="rpc-sp-pill-group" role="tablist" aria-label="Window">
+        <div className="rpc-sp-pill-group" role="tablist" onKeyDown={onTablistKeyDown} tabIndex={-1} aria-label="Window">
           <span className="rpc-sp-pill-label">{isPerfect ? "PERFECT SOLD WITHIN" : "#1 SOLD WITHIN"}</span>
           {WINDOWS.map((w) => (
             <button

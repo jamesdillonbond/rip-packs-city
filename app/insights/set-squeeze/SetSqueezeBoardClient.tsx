@@ -25,6 +25,7 @@ import { sectionEmptyCopy } from "@/lib/entity/section-empty-copy"
 import { slugifyName } from "@/lib/entity-labels"
 import { accentText } from "@/lib/accent-text"
 import { SQUEEZE_COLLECTIONS, SQUEEZE_LABEL, SQUEEZE_TIERS, isSqueezeCollection, type SqueezeCollection, setSqueezeBoardPath, squeezeBoardPath } from "@/lib/insights/squeeze-collections"
+import { onTablistKeyDown } from "@/lib/a11y/tablist-keys"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -237,7 +238,7 @@ export default function SetSqueezeBoardClient({
       <DegradedDataNotice summary={degraded} />
 
       <section className="rpc-ss-controls">
-        <div className="rpc-ss-pill-group" role="tablist" aria-label="Collection">
+        <div className="rpc-ss-pill-group" role="tablist" onKeyDown={onTablistKeyDown} tabIndex={-1} aria-label="Collection">
           {SQUEEZE_COLLECTIONS.map((c) => (
             <button
               key={c}

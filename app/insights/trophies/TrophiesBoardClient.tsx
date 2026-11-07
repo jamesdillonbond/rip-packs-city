@@ -31,6 +31,7 @@ import { accentText } from "@/lib/accent-text"
 import { isMarketClosed } from "@/lib/market-closed"
 import { pinnacleRenderHref } from "@/lib/entity-href"
 import { TROPHY_COLLECTION_TABS, PINNACLE_TROPHY_COLLECTION } from "@/lib/insights/trophy-collections"
+import { onTablistKeyDown } from "@/lib/a11y/tablist-keys"
 
 // Both the page (SSR seed) and the refetch read at most this many rows.
 const BOARD_LIMIT = 200
@@ -360,7 +361,7 @@ export default function TrophiesBoardClient({
 
       {/* ── Filter row ────────────────────────────────────────────────── */}
       <section className="rpc-tr-controls" aria-label="Filters">
-        <div className="rpc-tr-pill-group" role="tablist" aria-label="Collection">
+        <div className="rpc-tr-pill-group" role="tablist" onKeyDown={onTablistKeyDown} tabIndex={-1} aria-label="Collection">
           <span className="rpc-tr-pill-label">COLLECTION</span>
           {COLLECTIONS.map((c) => (
             <button
@@ -375,7 +376,7 @@ export default function TrophiesBoardClient({
           ))}
         </div>
 
-        <div className="rpc-tr-pill-group" role="tablist" aria-label="Trophy class">
+        <div className="rpc-tr-pill-group" role="tablist" onKeyDown={onTablistKeyDown} tabIndex={-1} aria-label="Trophy class">
           <span className="rpc-tr-pill-label">CLASS</span>
           {TYPES.map((t) => (
             <button

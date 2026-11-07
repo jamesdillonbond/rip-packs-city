@@ -26,6 +26,7 @@ import {
   isFirstMintCollection,
   type FirstMintCollection,
 } from "@/lib/insights/first-mint-collections"
+import { onTablistKeyDown } from "@/lib/a11y/tablist-keys"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -332,7 +333,7 @@ export default function FirstMintBoardClient({ initial, initialDegraded = null }
       </section>
 
       <section className="rpc-fm-controls" aria-label="Filters">
-        <div className="rpc-fm-pill-group" role="tablist" aria-label="Collection">
+        <div className="rpc-fm-pill-group" role="tablist" onKeyDown={onTablistKeyDown} tabIndex={-1} aria-label="Collection">
           {FIRST_MINT_COLLECTIONS.map((c) => (
             <button
               key={c}

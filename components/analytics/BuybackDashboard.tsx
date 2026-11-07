@@ -42,6 +42,7 @@ import {
   type BuybackPeriod,
 } from "@/lib/analytics/buyback"
 import { momentSubjectName } from "@/lib/entity-href"
+import { onTablistKeyDown } from "@/lib/a11y/tablist-keys"
 
 const PERIODS: BuybackPeriod[] = ["week", "month", "year", "all"]
 
@@ -162,7 +163,7 @@ export default function BuybackDashboard() {
         </p>
       </header>
 
-      <div className="flex flex-wrap gap-2" role="tablist" aria-label="Collection">
+      <div className="flex flex-wrap gap-2" role="tablist" onKeyDown={onTablistKeyDown} tabIndex={-1} aria-label="Collection">
         {BUYBACK_COLLECTIONS.map((c) => {
           const active = c === collection
           return (
@@ -186,7 +187,7 @@ export default function BuybackDashboard() {
         })}
       </div>
 
-      <div className="flex flex-wrap gap-2" role="tablist" aria-label="Time period">
+      <div className="flex flex-wrap gap-2" role="tablist" onKeyDown={onTablistKeyDown} tabIndex={-1} aria-label="Time period">
         {PERIODS.map((p) => {
           const active = p === period
           return (

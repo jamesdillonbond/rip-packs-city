@@ -20,6 +20,7 @@ import { useMemo, useState, type CSSProperties } from "react"
 import Link from "next/link"
 import type { PaniniPremiumsPayload, PaniniParallelPremium, PaniniSerialPremium } from "@/lib/insights/panini-premiums"
 import { textIncludes } from "@/lib/filter-match"
+import { onTablistKeyDown } from "@/lib/a11y/tablist-keys"
 
 type Tab = "parallels" | "serials"
 
@@ -118,7 +119,7 @@ export default function PaniniPremiumsClient({
         {fetchedAt ? ` Read ${ptWhen(fetchedAt, true)}.` : ""}
       </Note>
 
-      <div role="tablist" aria-label="Board" style={{ display: "flex", gap: 6, flexWrap: "wrap", margin: "14px 0 8px" }}>
+      <div role="tablist" onKeyDown={onTablistKeyDown} tabIndex={-1} aria-label="Board" style={{ display: "flex", gap: 6, flexWrap: "wrap", margin: "14px 0 8px" }}>
         <button type="button" role="tab" aria-selected={tab === "parallels"} onClick={() => { setTab("parallels"); setSport("") }} style={chip(tab === "parallels")}>
           Parallels
         </button>

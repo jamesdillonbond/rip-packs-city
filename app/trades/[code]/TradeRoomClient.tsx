@@ -27,6 +27,7 @@ import { SWAP_COLLECTIONS, swapCollectionByDbSlug, type SwapSlug } from "@/lib/t
 import type { ItemView, RoomView, SideView } from "@/lib/trade-room/view"
 import { MAX_ITEMS_PER_SIDE } from "@/lib/trade-room/valuation"
 import { btn, btnPrimary, call, card, DISPLAY, errorOf, fmtUsd, label, MONO, muted, shortAddr, stateLabel, type Called } from "../trade-ui"
+import { onTablistKeyDown } from "@/lib/a11y/tablist-keys"
 
 type Account = { address: string; role: "flow_wallet" | "linked"; name: string | null; dapper: boolean; topshot_count: number | null }
 type Proof = { address: string; nonce: string; signatures: unknown[]; issuedAt: string }
@@ -414,7 +415,7 @@ function MySide({
               </button>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                <div role="tablist" aria-label="Collection" style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                <div role="tablist" onKeyDown={onTablistKeyDown} tabIndex={-1} aria-label="Collection" style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                   {SWAP_COLLECTIONS.map((c) => (
                     <button
                       key={c.slug}

@@ -26,6 +26,7 @@ import { usdSignFirst } from "@/lib/usd-format"
 import { accentText } from "@/lib/accent-text"
 import PlayerResolvedNote from "@/components/filters/PlayerResolvedNote"
 import { OFFER_SPREAD_TIERS, isOfferSpreadCollection, type OfferSpreadCollection } from "@/lib/insights/offer-spread-collections"
+import { onTablistKeyDown } from "@/lib/a11y/tablist-keys"
 
 // The page seed and every refetch read at most this many rows.
 const OFFER_SPREAD_LIMIT = 200
@@ -367,7 +368,7 @@ export default function OfferSpreadBoardClient({
 
       {/* ── Filter row ────────────────────────────────────────────────── */}
       <section className="rpc-os-controls" aria-label="Filters">
-        <div className="rpc-os-pill-group" role="tablist" aria-label="Collection">
+        <div className="rpc-os-pill-group" role="tablist" onKeyDown={onTablistKeyDown} tabIndex={-1} aria-label="Collection">
           {(["nba-top-shot", "nfl-all-day"] as const).map((c) => (
             <button
               key={c}
@@ -381,7 +382,7 @@ export default function OfferSpreadBoardClient({
             </button>
           ))}
         </div>
-        <div className="rpc-os-pill-group" role="tablist" aria-label="Tier">
+        <div className="rpc-os-pill-group" role="tablist" onKeyDown={onTablistKeyDown} tabIndex={-1} aria-label="Tier">
           {tiersFor(collection).map((t) => (
             <button
               key={t}

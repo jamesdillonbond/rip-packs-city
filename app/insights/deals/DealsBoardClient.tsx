@@ -24,6 +24,7 @@ import { askAgeTitle, askStampKind } from "@/lib/market/ask-freshness"
 import { usdSignFirst } from "@/lib/usd-format"
 import { accentText } from "@/lib/accent-text"
 import PlayerResolvedNote from "@/components/filters/PlayerResolvedNote"
+import { onTablistKeyDown } from "@/lib/a11y/tablist-keys"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -475,7 +476,7 @@ export default function DealsBoardClient({
 
       {/* ── Filter row ────────────────────────────────────────────────── */}
       <section className="rpc-dl-controls" aria-label="Filters">
-        <div className="rpc-dl-pill-group" role="tablist" aria-label="Collection">
+        <div className="rpc-dl-pill-group" role="tablist" onKeyDown={onTablistKeyDown} tabIndex={-1} aria-label="Collection">
           <span className="rpc-dl-pill-label">COLLECTION</span>
           {COLLECTIONS.map((c) => (
             <button
@@ -490,7 +491,7 @@ export default function DealsBoardClient({
           ))}
         </div>
 
-        <div className="rpc-dl-pill-group" role="tablist" aria-label="Tier">
+        <div className="rpc-dl-pill-group" role="tablist" onKeyDown={onTablistKeyDown} tabIndex={-1} aria-label="Tier">
           {TIERS.map((t) => (
             <button
               key={t}

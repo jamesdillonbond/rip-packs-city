@@ -24,6 +24,7 @@ import TrackedOutboundLink from "@/components/TrackedOutboundLink"
 import { usdSignFirst } from "@/lib/usd-format"
 import { accentText } from "@/lib/accent-text"
 import { textIncludes } from "@/lib/filter-match"
+import { onTablistKeyDown } from "@/lib/a11y/tablist-keys"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 const REFRESH_INTERVAL = 30
@@ -500,7 +501,7 @@ export default function PackSniperClient({ initialDeals, initialFetchedAt, initi
       {/* ── Controls ──────────────────────────────────────────────────── */}
       <section className="rpc-ps-controls" aria-label="Controls">
         {!lockedCollection && (
-          <div className="rpc-ps-pill-group" role="tablist" aria-label="Collection">
+          <div className="rpc-ps-pill-group" role="tablist" onKeyDown={onTablistKeyDown} tabIndex={-1} aria-label="Collection">
             {(Object.keys(COLLECTION_LABEL) as Collection[]).map((c) => (
               <button
                 key={c}
@@ -543,7 +544,7 @@ export default function PackSniperClient({ initialDeals, initialFetchedAt, initi
         </label>
 
         {availableTiers.length > 0 && (
-          <div className="rpc-ps-pill-group" role="tablist" aria-label="Tier">
+          <div className="rpc-ps-pill-group" role="tablist" onKeyDown={onTablistKeyDown} tabIndex={-1} aria-label="Tier">
             <button
               role="tab"
               aria-selected={tierTab === "all"}

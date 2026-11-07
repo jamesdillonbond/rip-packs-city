@@ -16,6 +16,7 @@
 import { labelOn, accentFill } from "@/lib/accent-text"
 import { useCallback } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
+import { onTablistKeyDown } from "@/lib/a11y/tablist-keys"
 
 export type PackSubSection = "moments" | "packs"
 
@@ -70,7 +71,7 @@ export function PackSubNav({
       }}
     >
       {/* tablist on a wrapper, not the <nav> landmark (jsx-a11y); display:contents keeps the layout. */}
-      <div role="tablist" style={{ display: "contents" }}>
+      <div role="tablist" onKeyDown={onTablistKeyDown} tabIndex={-1} style={{ display: "contents" }}>
       {items.map(({ key, label }) => {
         const on = active === key
         return (

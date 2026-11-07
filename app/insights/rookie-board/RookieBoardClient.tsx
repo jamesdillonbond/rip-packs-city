@@ -30,6 +30,7 @@ import { usdSignFirst } from "@/lib/usd-format"
 import { accentText } from "@/lib/accent-text"
 // Top Shot only — the raw on-chain series read "Series 8" beside every other surface's "Series 2025-26" (2026-10-25).
 import { seriesDisplay } from "@/lib/series-label"
+import { onTablistKeyDown } from "@/lib/a11y/tablist-keys"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -441,7 +442,7 @@ export default function RookieBoardClient({ initialRows, initialFetchedAt, initi
       ) : null}
 
       <section className="rpc-rb-controls" aria-label="Filters">
-        <div className="rpc-rb-pill-group" role="tablist" aria-label="Rookie class">
+        <div className="rpc-rb-pill-group" role="tablist" onKeyDown={onTablistKeyDown} tabIndex={-1} aria-label="Rookie class">
           <span className="rpc-rb-pill-label">CLASS</span>
           {ROOKIE_CLASSES.map((c) => (
             <button
@@ -456,7 +457,7 @@ export default function RookieBoardClient({ initialRows, initialFetchedAt, initi
           ))}
         </div>
 
-        <div className="rpc-rb-pill-group" role="tablist" aria-label="View">
+        <div className="rpc-rb-pill-group" role="tablist" onKeyDown={onTablistKeyDown} tabIndex={-1} aria-label="View">
           <span className="rpc-rb-pill-label">VIEW</span>
           <button
             role="tab"
@@ -476,7 +477,7 @@ export default function RookieBoardClient({ initialRows, initialFetchedAt, initi
           </button>
         </div>
 
-        <div className="rpc-rb-pill-group" role="tablist" aria-label="Tier">
+        <div className="rpc-rb-pill-group" role="tablist" onKeyDown={onTablistKeyDown} tabIndex={-1} aria-label="Tier">
           <span className="rpc-rb-pill-label">TIER</span>
           {TIERS.map((t) => (
             <button
@@ -492,7 +493,7 @@ export default function RookieBoardClient({ initialRows, initialFetchedAt, initi
         </div>
 
         {view === "board" ? (
-          <div className="rpc-rb-pill-group" role="tablist" aria-label="Printing">
+          <div className="rpc-rb-pill-group" role="tablist" onKeyDown={onTablistKeyDown} tabIndex={-1} aria-label="Printing">
             <span className="rpc-rb-pill-label">PRINTING</span>
             {PARALLELS.map((p) => (
               <button

@@ -10,6 +10,7 @@
 import Link from "next/link";
 import type { CSSProperties } from "react";
 import { DASH_TABS, panelHref, type DashPanel, type DashTab } from "@/lib/dashboard-tabs";
+import { onTablistKeyDown } from "@/lib/a11y/tablist-keys"
 
 const condensedFont = "var(--font-display)";
 
@@ -46,7 +47,7 @@ export default function DashboardTabs({
   return (
     <div
       aria-label="Dashboard sections"
-      role={onSelect ? "tablist" : "navigation"}
+      role={onSelect ? "tablist" : "navigation"} onKeyDown={onTablistKeyDown} tabIndex={-1}
       className="rpc-dash-tabs"
       style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 2 }}
     >

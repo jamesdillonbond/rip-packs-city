@@ -4,6 +4,7 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useEffect, useRef } from "react"
 import { type Collection, type CollectionPage, PAGE_LABELS, tabBarPages } from "@/lib/collections"
+import { onTablistKeyDown } from "@/lib/a11y/tablist-keys"
 
 export function CollectionTabBar({ collection }: { collection: Collection }) {
   const pathname = usePathname()
@@ -41,7 +42,7 @@ export function CollectionTabBar({ collection }: { collection: Collection }) {
           jsx-a11y (no-noninteractive-element-to-interactive-role) rejects the
           pair. The wrapper carries the role; display:contents keeps the links
           as the nav's flex items, so layout is unchanged. */}
-      <div role="tablist" style={{ display: "contents" }}>
+      <div role="tablist" onKeyDown={onTablistKeyDown} tabIndex={-1} style={{ display: "contents" }}>
       {tabBarPages(collection).map((page: CollectionPage) => {
         const href = `/${collection.id}/${page}`
         const isActive =

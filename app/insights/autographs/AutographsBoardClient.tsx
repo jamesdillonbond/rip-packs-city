@@ -22,6 +22,7 @@ import {
 } from "@/lib/insights/autographs-board"
 import { fetchJson } from "@/lib/analytics/fetch-json"
 import { usdSignFirst } from "@/lib/usd-format"
+import { onTablistKeyDown } from "@/lib/a11y/tablist-keys"
 
 function fmtUsd(n: number | null): string {
   const neg = usdSignFirst(n, fmtUsd); if (neg !== null) return neg
@@ -134,12 +135,12 @@ export default function AutographsBoardClient({
         </p>
       </header>
 
-      <div role="tablist" aria-label="Collection" style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
+      <div role="tablist" onKeyDown={onTablistKeyDown} tabIndex={-1} aria-label="Collection" style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
         {COLLECTIONS.map((c) => (
           <Chip key={c.key} active={collection === c.key} onClick={() => pickCollection(c.key)} label={c.label} />
         ))}
       </div>
-      <div role="tablist" aria-label="Sort" style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
+      <div role="tablist" onKeyDown={onTablistKeyDown} tabIndex={-1} aria-label="Sort" style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
         {SORTS.map((s) => (
           <Chip key={s.key} active={sort === s.key} onClick={() => pickSort(s.key)} label={s.label} />
         ))}
