@@ -216,3 +216,14 @@ END;
 $function$;
 
 REVOKE EXECUTE ON FUNCTION public.get_user_top_owned_moments(uuid, integer, text, uuid, text) FROM PUBLIC, anon, authenticated;
+
+-- Data repair record (run via execute_sql in the same pass, not part of the
+-- function change): the dead Series-1 hero URLs were repointed to the media URL
+-- in trophy_moments (42 rows) and wallet_moments_cache (76,047 rows); the old
+-- values are in public.audit_20261106_topshot_dead_hero_thumbnails_backup
+-- (src, row_key, old_url, backed_up_at). RLS is ON and anon/authenticated hold
+-- no grant — the smoke suite's check_public_security_invariants read it as
+-- rls_off_base_table for one run (03:21Z) before this was set. Re-running this
+-- block is a no-op.
+ALTER TABLE IF EXISTS public.audit_20261106_topshot_dead_hero_thumbnails_backup ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.audit_20261106_topshot_dead_hero_thumbnails_backup FROM anon, authenticated;
