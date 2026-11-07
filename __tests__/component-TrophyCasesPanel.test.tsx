@@ -155,6 +155,24 @@ describe("TrophyCasesPanel (owner dashboard)", () => {
     expect(JSON.parse(del.init.body)).toEqual({ caseId: CASE })
   })
 
+  it("a challenge entry says it is SAVED (no name box, no save step) — Trevor 11-06: 'It should auto save as you create it'", async () => {
+    routes["GET /api/profile/trophy-cases"] = () =>
+      ok({ cases: [{ id: CASE, name: "Dame Time", created_at: "", completed_at: null, challenge: DAME, slabs: [slab(1), slab(2)] }], challenges: [] })
+    render(<TrophyCasesPanel ownerKey={null} savedChains={null} onToast={() => {}} />)
+    expect(await screen.findByText(/Entry saved · 2 of 6 on the board/)).toBeTruthy()
+    // No bare name input under the case; no Rename for a challenge case.
+    expect(screen.queryByPlaceholderText(/New case name/)).toBeNull()
+    expect(screen.queryByText("Rename")).toBeNull()
+    expect(screen.getByText(/Start another case/)).toBeTruthy()
+  })
+
+  it("an empty challenge entry says each pick saves itself", async () => {
+    routes["GET /api/profile/trophy-cases"] = () =>
+      ok({ cases: [{ id: CASE, name: "Dame Time", created_at: "", completed_at: null, challenge: DAME, slabs: [] }], challenges: [] })
+    render(<TrophyCasesPanel ownerKey={null} savedChains={null} onToast={() => {}} />)
+    expect(await screen.findByText(/each pick saves itself/)).toBeTruthy()
+  })
+
   it("creates and renames a named case; a server refusal is toasted, not swallowed", async () => {
     routes["GET /api/profile/trophy-cases"] = () =>
       ok({ cases: [{ id: CASE, name: "Rookies", created_at: "", completed_at: null, challenge: null, slabs: [] }], challenges: [] })
@@ -162,6 +180,9 @@ describe("TrophyCasesPanel (owner dashboard)", () => {
     routes["PATCH /api/profile/trophy-cases"] = () => ok({ case: { id: CASE, name: "Rooks" } })
     const toast = vi.fn()
     render(<TrophyCasesPanel ownerKey={null} savedChains={null} onToast={toast} />)
+    // 2026-11-06: the name box is behind a "Start another case" button, so it
+    // never reads as the save step for the case above it.
+    fireEvent.click(await screen.findByText(/Start another case/))
     fireEvent.change(await screen.findByPlaceholderText(/New case name/), { target: { value: "Bigs" } })
     fireEvent.click(screen.getByText("New case"))
     await waitFor(() => expect(toast).toHaveBeenCalledWith(expect.stringContaining("up to 10"), "info"))

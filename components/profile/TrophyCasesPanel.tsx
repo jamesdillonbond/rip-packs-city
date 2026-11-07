@@ -83,6 +83,12 @@ export default function TrophyCasesPanel({
   const [load, setLoad] = useState<Load>({ state: "loading" });
   const [pick, setPick] = useState<{ c: TrophyCaseData; slot: number } | null>(null);
   const [newName, setNewName] = useState("");
+  // 2026-11-06: the name box used to sit bare under the LAST case, where it read as
+  // "name this case and save it" — Trevor, right after filling his Dame Time
+  // entry: "It should auto save as you create it. We don't need to put a name".
+  // Every pick already saves itself; the box only STARTS a new named case, so
+  // it now opens from a button that says exactly that.
+  const [startingCase, setStartingCase] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const refresh = useCallback(async () => {
@@ -216,12 +222,27 @@ export default function TrophyCasesPanel({
         />
       ))}
 
-      {/* New named case */}
+      {/* Start another NAMED case — behind a button, so it never reads as the save
+          step for the case above it (every pick saves on its own). */}
+      {!startingCase ? (
+        <button
+          type="button"
+          disabled={busy || atCap}
+          onClick={() => setStartingCase(true)}
+          style={{ ...btn, marginTop: 6 }}
+          aria-expanded={false}
+        >
+          {atCap ? `Limit of ${MAX_EXTRA_CASES} extra cases reached` : "+ Start another case (named, your own theme)"}
+        </button>
+      ) : (
       <form
         onSubmit={async (e) => {
           e.preventDefault();
           if (!newName.trim()) return;
-          if (await send("/api/profile/trophy-cases", "POST", { name: newName }, "Case created")) setNewName("");
+          if (await send("/api/profile/trophy-cases", "POST", { name: newName }, "Case created")) {
+            setNewName("");
+            setStartingCase(false);
+          }
         }}
         style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 6 }}
       >
@@ -247,7 +268,11 @@ export default function TrophyCasesPanel({
         <button type="submit" disabled={busy || atCap || !newName.trim()} style={btn}>
           New case
         </button>
+        <button type="button" onClick={() => { setStartingCase(false); setNewName(""); }} style={{ ...btn, color: "var(--rpc-text-muted)" }}>
+          Cancel
+        </button>
       </form>
+      )}
 
       {pick && (
         <TrophyPickerModal
@@ -332,9 +357,11 @@ function CaseBlock({
           {ch && (
             <Link
               href={`/trophy-challenges/${ch.slug}`}
-              style={{ fontFamily: monoFont, fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--rpc-text-muted)" }}
+              role="status"
+              style={{ fontFamily: monoFont, fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: filled > 0 ? "var(--rpc-success-text)" : "var(--rpc-text-muted)" }}
             >
-              Challenge entry · see the board →
+              {/* Each pick saves itself; there is no save step and no name to give. */}
+              {filled > 0 ? `✓ Entry saved · ${filled} of 6 on the board →` : "Challenge entry · tap a slot to add — each pick saves itself →"}
             </Link>
           )}
         </div>
