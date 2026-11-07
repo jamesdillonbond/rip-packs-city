@@ -123,6 +123,8 @@
 
 47. **Post-churn health (~2:40–2:46 PM PT).** ~25 production deploys today (mine + the twin's). Vercel runtime errors last 3 h: none. `pipeline_runs` last 4 h: seven lanes with ≥1 failure, all inside their known base rates — Atlas single-page flakes (6/232, 6/158), one `refresh_wmc_fmv_changed` statement timeout, one `ingest-topshot-challenges` Cloudflare "Just a moment" (1 of 15 today; 5–15 % is the measured pg_net base rate, #65), one `egress_blocked` backstop at 11:29 (designed skip). Nothing attributable to the deploys. Full a11y gate from the cloud against production: 72/72.
 
+48. **Concierge explains, not files (~2:45–3:00 PM PT).** "Where did the trade link go on mobile" → right answer + a logged bug for a by-design registry decision. The nav paragraph now states Trade is off the bar by design, and carries the keyboard/screen-reader facts the day made true (it had honestly said "I'd rather not guess" to a screen-reader user). Claims pinned to the code. Probe row 12171 → wontfix/smoke; nine `probe-%` sessions today flagged `is_smoke_test`.
+
 ## Post-ship watch (what to read tomorrow)
 
 - **Series-1 Top Shot art** on `/dashboard/*`, `/profile/*`, binder, trade room: present (any blank tile with a `data-rpc-dead-art` attribute whose `data-rpc-dead-src` starts `…/editions/<N>_` means ANOTHER series was retired — same fix, derive not copy).
