@@ -12,7 +12,7 @@ Written 2026-11-04 from the CISO pass (`docs/audits/2026-11-04-ciso-security-aud
 
 - The sentinel (Telegram + `/admin/alerts`), the smoke suite, the scheduled `E2E DOM Smoke` badge, Vercel runtime errors, Supabase advisors. A **client-only** failure reaches nothing but the `usage_events.client_error` beacon.
 - GitHub: secret scanning + push protection are ON; Dependabot alerts are ON (11-04).
-- Nothing watches: a provider-account takeover (Vercel/Supabase/GitHub/Cloudflare/Resend/cron-job.org logins) — MFA on each account is the control, and the April-2026 Vercel incident is the reason. **Read 2026-11-06 in Trevor's Chrome:** Supabase ✅ (2 authenticators) · Vercel ✅ (TOTP) · GitHub ✅ (authenticator app, required) · **cron-job.org ❌ no MFA device** (it holds the bearer/gate tokens of ~67 jobs) · Cloudflare and Resend not signed in on that browser — unverified.
+- Nothing watches: a provider-account takeover (Vercel/Supabase/GitHub/Cloudflare/Resend/cron-job.org logins) — MFA on each account is the control, and the April-2026 Vercel incident is the reason. **Read 2026-11-06 in Trevor's Chrome:** Supabase ✅ (2 authenticators) · Vercel ✅ (TOTP) · GitHub ✅ (authenticator app, required) · **cron-job.org ✅ TOTP device added by Trevor ~9:55 PM PT** (was none at 9:45 — it holds the bearer/gate tokens of ~67 jobs) · Cloudflare and Resend not signed in on that browser — unverified.
 - **A failed read rendering as a fact is not an incident; a write landing from an unexpected caller is.** Read `pipeline_runs` / `cron.job_run_details` for the caller, not the dashboard badge (CLAUDE.md, Honesty).
 
 ## 2. Contain — in this order, each reversible
