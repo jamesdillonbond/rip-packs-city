@@ -72,6 +72,8 @@
 
 22. **`/share/<wallet>` indexability (~1:20–1:40 AM PT).** The unknown-slug probe over nine share surfaces: eight 404 honestly; `/share/0x…bad` rendered "Analyzing your wallet…" at 200 with `index, follow` + canonical + OG — an unbounded indexable URL space. Now `noindex` when the snapshot read succeeds with zero indexed moments; a failed read leaves a real card indexable. `fetchSnapshot` is React-`cache`d so metadata and body share one read. Queueing cost was already rate-limited (300/h · 20/h/IP · 1/wallet/6h).
 
+23. **Unknown pack id (~1:55–2:10 AM PT).** `/<collection>/pack/<nonsense>` on every collection: NotFoundCard body at 200 + "Pack #x — Pack #x" metadata, `index, follow`, canonical, OG. Metadata now `NOT_FOUND_METADATA` (absent vocabulary) when the read succeeded with nothing; failed read keeps `follow:true`. Pin keeps known / absent / unavailable apart.
+
 ## Post-ship watch (what to read tomorrow)
 
 - **Series-1 Top Shot art** on `/dashboard/*`, `/profile/*`, binder, trade room: present (any blank tile with a `data-rpc-dead-art` attribute whose `data-rpc-dead-src` starts `…/editions/<N>_` means ANOTHER series was retired — same fix, derive not copy).
