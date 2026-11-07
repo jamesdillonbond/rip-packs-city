@@ -107,6 +107,8 @@
 
 39. **Tier chips on the hubs failed AA in light (~12:00–12:30 PM PT).** `/players/<slug>` and `/teams/<league>/<slug>` read 12 color-contrast nodes each in light: every tier chip, 4.12–4.49:1, because those pages stack three `.rpc-card` layers under the chip tint and the 10-18 light tier text values assumed one. Tokens re-tuned (~12 % darker light, a shade lighter for four dark ones); the token test now checks each tier text on its tint over 0–3 stacked cards + hover in both themes (13 red on old tokens); both hubs join the a11y gate (36 routes). The other 12 pages in that sweep (All Day sets, LaLiga/UFC/Candy/Panini overviews, both pack boards, privacy, sniper live, play, analytics, a moment→edition redirect) read 0 in both themes.
 
+40. **Concierge tab names (~12:30–12:50 PM PT).** "List the tabs on the Top Shot page" → "Collection … Pack Sniper … Hot Floors … Challenges": the prompt's tabs line was bare paths. It now carries `PAGE_LABELS` (Binder) and marks folded pages from `TAB_BAR_HIDDEN_PAGES`, both from the strip's own registry. Pin red on old route.
+
 ## Post-ship watch (what to read tomorrow)
 
 - **Series-1 Top Shot art** on `/dashboard/*`, `/profile/*`, binder, trade room: present (any blank tile with a `data-rpc-dead-art` attribute whose `data-rpc-dead-src` starts `…/editions/<N>_` means ANOTHER series was retired — same fix, derive not copy).
