@@ -81,6 +81,8 @@
 
 26. **Homepage landing header (~4:55–5:10 AM PT).** A light-theme screenshot pass showed the anon homepage still had its own header (Insights · Collections · How it works · Free account) — a fourth vocabulary Phase 2 missed. Now the registry's five public groups in order + Sign In; pinned. Light theme at 1280/390 on home and `/insights` otherwise clean.
 
+27. **`MOBILE_GROUP_IDS` (~5:20–5:35 AM PT).** Listed Trade; every consumer filtered it out. Constant now matches the bar; bar pinned to the constant. Residue: `MobileNav` still hand-builds its tabs — map them from the registry in daylight. Light-theme screenshots of `/trades/block` 1280, `/help` 390, `/teams` 390: clean.
+
 ## Post-ship watch (what to read tomorrow)
 
 - **Series-1 Top Shot art** on `/dashboard/*`, `/profile/*`, binder, trade room: present (any blank tile with a `data-rpc-dead-art` attribute whose `data-rpc-dead-src` starts `…/editions/<N>_` means ANOTHER series was retired — same fix, derive not copy).
