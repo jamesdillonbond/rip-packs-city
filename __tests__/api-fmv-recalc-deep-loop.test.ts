@@ -443,6 +443,40 @@ describe("fmv-recalc Step 4 — a failed snapshot insert holds the cursor (2026-
   })
 })
 
+// 2026-11-07 review: a failed edition-meta chunk `continue`d, so its editions were
+// priced with NO tier / circulation and every guard reading them failed OPEN
+// (ULTIMATE not skipped, `isCommonish = !tier`, serial > circulation passed).
+describe("fmv-recalc — a failed edition-meta read FAILS CLOSED", () => {
+  it("prices nothing from the unread chunk, holds the cursor, and says so", async () => {
+    const { rpcCalls, inserted } = instrument({
+      pipeline_runs: { data: { cursor_after: "3000" }, error: null },
+      "rpc:fmv_recalc_edition_page": { data: [{ edition_id: "ed-1" }], error: null },
+      sales_market: {
+        data: [sale(10, 300, 1), sale(10, 400, 3), sale(10, 500, 6), sale(10, 600, 10), sale(10, 700, 15), sale(10, 800, 20)],
+        error: null,
+      },
+      editions: { data: null, error: { code: "57014", message: "canceling statement due to statement timeout" } },
+      edition_offers: { data: [], error: null },
+      fmv_snapshots: { data: [], error: null },
+      ...QUIET_TAIL,
+    })
+    echoSnapshotInsertIds()
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+    try {
+      await POST(req())
+      await runDeferred()
+    } finally {
+      warn.mockRestore()
+    }
+    // no Step-4 snapshot priced from sales for the edition whose tier was unread
+    expect((inserted.fmv_snapshots ?? []).filter((r) => r.edition_id === "ed-1" && r.algo_version === FMV_ALGO_VERSION)).toHaveLength(0)
+    const log = terminalLog(rpcCalls)
+    expect(log).toMatchObject({ p_ok: false, p_cursor_before: "3000", p_cursor_after: "3000" })
+    expect(String(log?.p_error)).toContain("edition_meta_read_failed")
+    expect((log?.p_extra as Record<string, unknown>).edition_meta_skipped).toBe(1)
+  })
+})
+
 describe("fmv-recalc deferred sweep — every exit path logs (the 2026-05-25 incident class)", () => {
   it("Step 1a edition-page failure logs ok=false with the stage marker and writes no snapshots", async () => {
     const { rpcCalls, inserted } = instrument({

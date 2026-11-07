@@ -88,3 +88,39 @@ describe("POST /api/fmv-recalc — success path (immediate ack, sweep deferred)"
     expect(res.status).toBe(200)
   })
 })
+
+// 2026-11-07 review: an "auth debug" line logged 8 characters of the ingest secret
+// (and of the caller's bearer) on every request; and a failed cursor read silently
+// restarted the sweep at page 0.
+describe("POST /api/fmv-recalc — no token in the logs; a failed cursor read does not guess", () => {
+  it("logs no part of the expected secret or of the presented bearer", async () => {
+    const lines: string[] = []
+    const spies = (["log", "warn", "error", "info"] as const).map((m) =>
+      vi.spyOn(console, m).mockImplementation((...a: unknown[]) => { lines.push(a.map(String).join(" ")) }),
+    )
+    try {
+      await POST(makeReq({ url, auth: "Bearer attacker-chosen-string" }))
+      await POST(makeReq({ url, auth: "Bearer test-ingest-secret" }))
+    } finally {
+      spies.forEach((s) => s.mockRestore())
+    }
+    const all = lines.join("\n")
+    expect(all).not.toContain("test-ing")
+    expect(all).not.toContain("attacker")
+  })
+
+  it("a FAILED cursor read is a retryable 503 — never a silent restart at offset 0", async () => {
+    const orig = sbChain.maybeSingle
+    sbChain.maybeSingle = async () => ({ data: null, error: { message: "canceling statement due to statement timeout" } })
+    const err = vi.spyOn(console, "error").mockImplementation(() => {})
+    try {
+      const res = await POST(makeReq({ url, auth: "Bearer test-ingest-secret" }))
+      expect(res.status).toBe(503)
+      expect(await res.json()).toMatchObject({ retryable: true })
+    } finally {
+      sbChain.maybeSingle = orig
+      err.mockRestore()
+    }
+  })
+})
+

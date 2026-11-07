@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { bearerMatches } from "@/lib/auth/bearer-secret"
 import { applyAllFmvGuards, capFmvAtCheapestAsk } from "@/lib/fmv-phantom-guard"
 import { fetchCandyConfirmedFloors, mergeCeilingAsks } from "@/lib/fmv-candy-ceiling"
 import { computeConfidence, escalateConfidence, gateHighToRecentVolume, gateMediumToRecentSale, MIN_SALES_30D_MEDIUM } from "@/lib/fmv-confidence"
@@ -26,15 +27,24 @@ import { topShotAskObservedAt } from "@/lib/market/ask-freshness"
 //   weights over 0–7 / 7–14 / 14–30 days), raw and outlier-filtered — kept as
 //   diagnostics, no longer the published price.
 // Window: 30 days
-// Confidence: HIGH = >=7 sales/30d AND price dispersion <40%; MEDIUM >=5 sales/30d; else LOW
-// algo_version: "1.8.1"
+// Confidence: lib/fmv-confidence.ts is the ONLY description — computeConfidence
+//   (HIGH ≥ 7 sales/30d with a 0.20 serial-residual dispersion gate; MEDIUM ≥ 5
+//   with a 0.35 ceiling that demotes to LOW) plus escalateConfidence and the
+//   1.8.2/1.8.3 recent-sale gates. ⚠ Read it there; this line used to restate an
+//   older model ("dispersion < 40 %", version 1.8.1) for weeks after the code
+//   moved on (2026-11-07 review — a header that DESCRIBES a model is an untested
+//   claim). Do not copy thresholds back into this header.
+// algo_version: FMV_ALGO_VERSION (lib/fmv-recalc-math.ts)
 //
 // Populates: fmv_usd, floor_price_usd, asp_usd, confidence,
 //            sales_count_7d (30d window), sales_count_30d, days_since_sale
 //
 // NOTE: fmv_snapshots is a partitioned table (partition key: computed_at).
 // Upsert with onConflict does not work without a unique constraint covering
-// all partition columns. We use delete-then-insert instead.
+// all partition columns. Step 4 INSERTS FIRST and then deletes today's other
+// rows for the editions it wrote, keeping the ids just inserted (2026-10-23).
+// ⚠ Steps 5–6 (fallback / cold-tail / ask-only / stale-touch writers) are still
+// delete-then-insert — the open window CLAUDE.md says to close by order; queued.
 //
 // Pagination: by distinct edition_id ordered by MAX(sold_at) DESC, so the
 // most-recently-traded editions price first. `limit` counts distinct editions,
@@ -158,19 +168,11 @@ export async function POST(req: NextRequest) {
   // ?chain=true once chained this route to /api/listing-cache (Flowty), retired 2026-10-30 with the Flowty API.
   const forceStale = req.nextUrl.searchParams.get("force_stale") === "true"
 
-  const authHeader = req.headers.get("authorization")
-  const receivedToken = authHeader?.replace("Bearer ", "") ?? ""
-  const cronSecret = process.env.CRON_SECRET
-
-  console.log(
-    `[FMV-RECALC] Auth debug — received: "${receivedToken.slice(0, 8)}…" ` +
-    `expected INGEST: "${ingestToken.slice(0, 8)}…" ` +
-    `CRON_SECRET set: ${!!cronSecret}`
-  )
-
-  const isAuthed =
-    receivedToken === ingestToken ||
-    (cronSecret && receivedToken === cronSecret)
+  // ⛔ 2026-11-07 review: an "auth debug" line logged the first 8 characters of
+  // INGEST_SECRET_TOKEN — and of whatever bearer the caller sent — on EVERY
+  // request, and the compare was a plain `===`. Constant-time via the shared
+  // helper; nothing about either token is logged.
+  const isAuthed = bearerMatches(req.headers.get("authorization"), "INGEST_SECRET_TOKEN", "CRON_SECRET")
 
   if (!isAuthed) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
@@ -198,18 +200,29 @@ export async function POST(req: NextRequest) {
   if (body.offset != null && Number.isFinite(Number(body.offset))) {
     offset = Number(body.offset)
   } else {
+    // ⚠ A FAILED cursor read is not "start from 0" (2026-11-07 review): the
+    // `error` was discarded, so under DB pressure every tick silently restarted
+    // at page 0 — re-running the heavy offset-0 90-day catch-up scans and never
+    // getting past page 0, with cursor_before '0' reading like a real wrap. The
+    // run cannot know where it is, so it does not run; the next tick retries.
+    let cursorReadError: string | null = null
     try {
-      const { data: cursorRow } = await (supabaseAdmin as any)
+      const { data: cursorRow, error: cursorErr } = await (supabaseAdmin as any)
         .from("pipeline_runs")
         .select("cursor_after")
         .eq("pipeline", "fmv-recalc")
         .order("started_at", { ascending: false })
         .limit(1)
         .maybeSingle()
+      if (cursorErr) cursorReadError = cursorErr.message ?? String(cursorErr)
       const prev = Number(cursorRow?.cursor_after)
-      if (Number.isFinite(prev) && prev > 0) offset = prev
+      if (!cursorReadError && Number.isFinite(prev) && prev > 0) offset = prev
     } catch (err) {
-      console.warn("[FMV-RECALC] cursor read failed, starting at offset 0:", err)
+      cursorReadError = err instanceof Error ? err.message : String(err)
+    }
+    if (cursorReadError) {
+      console.error(`[FMV-RECALC] cursor read failed — not running from a guessed offset: ${cursorReadError}`)
+      return NextResponse.json({ error: "Sweep cursor unavailable; the next run retries.", retryable: true }, { status: 503 })
     }
   }
 
@@ -687,9 +700,21 @@ export async function POST(req: NextRequest) {
     // Chunked .in() to stay under PostgREST URL limits — at limit=2500 a single
     // .in() of UUIDs blows the request size and supabase-js returns an error.
     const editionMetaById = new Map<string, { tier: string | null; circulationCount: number | null; externalId: string | null; jersey: number | null }>()
+    // ⛔ FAIL CLOSED (2026-11-07 review). A failed chunk used to `continue`, so its
+    // editions were priced with NO tier and NO circulation — and every guard that
+    // reads them fails OPEN on a missing value: ULTIMATE editions were not skipped
+    // (so today's ultimate-v1 row got purged by the sales path), `isCommonish =
+    // !tierUpper` called them common, and the serial > circulation mis-key guard
+    // passed mis-keyed sales. An edition whose metadata read failed is now LEFT
+    // OUT of this run and the cursor HOLDS (the page re-runs next tick), counted in
+    // `edition_meta_skipped` with its `edition_meta_error`.
+    let editionMetaError: string | null = null
+    const metaFailedIds = new Set<string>()
+    let metaCursor = 0
     try {
       const META_CHUNK = 500
       for (let i = 0; i < editionIds.length; i += META_CHUNK) {
+        metaCursor = i
         const slice = editionIds.slice(i, i + META_CHUNK)
         const { data: edMetaRows, error: edMetaErr } = await supabaseAdmin
           .from("editions")
@@ -700,6 +725,8 @@ export async function POST(req: NextRequest) {
             `[FMV-RECALC] Edition meta chunk ${i}-${i + slice.length} error:`,
             edMetaErr.message,
           )
+          editionMetaError = editionMetaError ?? edMetaErr.message
+          for (const id of slice) metaFailedIds.add(id)
           continue
         }
         for (const row of edMetaRows ?? []) {
@@ -713,6 +740,13 @@ export async function POST(req: NextRequest) {
       }
     } catch (err) {
       console.warn("[FMV-RECALC] Edition meta fetch failed (non-fatal):", err instanceof Error ? err.message : err)
+      editionMetaError = editionMetaError ?? (err instanceof Error ? err.message : String(err))
+      // every id from the chunk that threw onward is unread
+      for (const id of editionIds.slice(metaCursor)) if (!editionMetaById.has(id)) metaFailedIds.add(id)
+    }
+    for (const id of metaFailedIds) editionSalesMap.delete(id)
+    if (metaFailedIds.size > 0) {
+      console.warn(`[FMV-RECALC] ${metaFailedIds.size} editions left out of this run: their tier/circulation read failed`)
     }
 
     // ── Step 2a-ter: live ask per edition for ask-corroboration (A2) ─────────
@@ -2644,6 +2678,11 @@ export async function POST(req: NextRequest) {
     // an empty page now does nothing here instead of a NULL = all-collections pass.
     let haircutRowsTotal = 0
     let haircutCollectionsRun = 0
+    // `_error` siblings for Steps 8–10 (2026-11-07 review): their failures went
+    // to console only, so a 100%-failing clamp read as "nothing to clamp".
+    let haircutError: string | null = null
+    let thinSalesGuardError: string | null = null
+    let clampError: string | null = null
     try {
       const haircutEditionIds = [...editionSalesMap.keys()]
       if (haircutEditionIds.length > 0) {
@@ -2652,6 +2691,7 @@ export async function POST(req: NextRequest) {
           { p_edition_ids: haircutEditionIds, p_dry_run: false }
         )
         if (hcErr) {
+          haircutError = hcErr.message
           console.warn(
             `[FMV-RECALC] Haircut RPC error (editions=${haircutEditionIds.length}): ${hcErr.message}`
           )
@@ -2666,6 +2706,7 @@ export async function POST(req: NextRequest) {
         }
       }
     } catch (err) {
+      haircutError = haircutError ?? (err instanceof Error ? err.message : String(err))
       console.warn(
         "[FMV-RECALC] Haircut pass error:",
         err instanceof Error ? err.message : err
@@ -2691,6 +2732,7 @@ export async function POST(req: NextRequest) {
         { p_mode: "live" }
       )
       if (guardErr) {
+        thinSalesGuardError = guardErr.message
         console.warn(
           "[FMV-RECALC] thin-sales guard error (non-fatal):",
           guardErr.message
@@ -2713,6 +2755,7 @@ export async function POST(req: NextRequest) {
         }
       }
     } catch (err) {
+      thinSalesGuardError = thinSalesGuardError ?? (err instanceof Error ? err.message : String(err))
       console.warn(
         "[FMV-RECALC] thin-sales guard threw (non-fatal):",
         err instanceof Error ? err.message : err
@@ -2775,6 +2818,7 @@ export async function POST(req: NextRequest) {
           { p_edition_ids: clampEditionIds, p_dry_run: false },
         )
         if (clampErr) {
+          clampError = clampErr.message
           console.warn(
             `[FMV-RECALC] disconnected-ask clamp error (editions=${clampEditionIds.length}, non-fatal): ${clampErr.message}`,
           )
@@ -2790,6 +2834,7 @@ export async function POST(req: NextRequest) {
         }
       }
     } catch (err) {
+      clampError = clampError ?? (err instanceof Error ? err.message : String(err))
       console.warn(
         "[FMV-RECALC] disconnected-ask clamp threw (non-fatal):",
         err instanceof Error ? err.message : err,
@@ -2822,13 +2867,16 @@ export async function POST(req: NextRequest) {
         p_rows_skipped: step4RowsFailed,
         // A failed Step 4 insert or Step 3 replace-delete holds the cursor on this
         // page; the next tick re-prices it (and re-cleans any duplicate today rows).
-        p_ok: step4RowsFailed === 0 && !step3ReplaceDeleteError,
+        // A failed edition-meta read (2026-11-07) also holds the cursor: those
+        // editions were left out unpriced, so the page re-runs next tick.
+        p_ok: step4RowsFailed === 0 && !step3ReplaceDeleteError && metaFailedIds.size === 0,
         p_error: step4RowsFailed > 0
           ? `step4_insert_failed: ${step4InsertError ?? "unknown"}`
-          : step3ReplaceDeleteError ? `step3_replace_delete_failed: ${step3ReplaceDeleteError}` : null,
+          : step3ReplaceDeleteError ? `step3_replace_delete_failed: ${step3ReplaceDeleteError}`
+          : metaFailedIds.size > 0 ? `edition_meta_read_failed: ${metaFailedIds.size} editions left out (${editionMetaError ?? "unknown"})` : null,
         p_collection_slug: null,
         p_cursor_before: String(offset),
-        p_cursor_after: step4RowsFailed > 0 || step3ReplaceDeleteError ? String(offset) : (hasMore ? String(offset + limit) : null),
+        p_cursor_after: step4RowsFailed > 0 || step3ReplaceDeleteError || metaFailedIds.size > 0 ? String(offset) : (hasMore ? String(offset + limit) : null),
         p_extra: {
           algo_version: ALGO_VERSION,
           duration_ms: duration,
@@ -2872,6 +2920,11 @@ export async function POST(req: NextRequest) {
           stale_touch_candidates: staleTouchCandidates,
           stale_touch_error: staleTouchError,
           haircut_rows: haircutRowsTotal,
+          haircut_error: haircutError,
+          thin_sales_guard_error: thinSalesGuardError,
+          disconnected_ask_clamp_error: clampError,
+          edition_meta_skipped: metaFailedIds.size,
+          edition_meta_error: editionMetaError,
           haircut_collections_run: haircutCollectionsRun,
           thin_sales_caps: thinSalesCaps,
           disconnected_ask_clamp_rows: clampRows,
