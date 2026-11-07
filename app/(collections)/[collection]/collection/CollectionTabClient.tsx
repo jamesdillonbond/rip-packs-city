@@ -1399,7 +1399,14 @@ function WalletMomentsBody() {
           input={input}
         />
 
-        {/* Filters */}
+        {/* Filters + sort — only once there is something to filter. Before a
+            wallet is loaded the first thing a phone visitor saw on MY BINDER
+            (second tab since 2026-11-07) was five selects, a text filter, league
+            toggles and sort chips that filtered NOTHING, with the wallet box
+            and the honest "enter a username or wallet" line a screen below.
+            `rows.length > 0` covers any load path that fills rows without
+            flipping hasSearched. */}
+        {hasSearched || rows.length > 0 ? (<>
         <CollectionFilterBar
           view={view}
           dispatchView={dispatchView}
@@ -1427,6 +1434,7 @@ function WalletMomentsBody() {
           onToggleShowDebug={function() { setShowDebug(function(prev) { return !prev }) }}
           onCopySeeds={copySeedCandidates}
         />
+        </>) : null}
 
         {error ? <div className="mb-4 rounded-lg border border-red-800 bg-red-950 p-3 text-red-300 text-sm">{error}</div> : null}
 

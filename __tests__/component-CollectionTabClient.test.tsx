@@ -406,6 +406,25 @@ describe("CollectionTabClient — search entry", () => {
     expect(urls.some((u) => u.startsWith("/api/collection-moments"))).toBe(false)
   })
 
+  // 2026-11-07: before a wallet is loaded there is nothing to filter or sort —
+  // the bars wait, so the wallet box and the "enter a username" line are the
+  // first thing a phone visitor sees on MY BINDER. They appear once a search
+  // has run (even one that found an empty wallet).
+  it("hides the filter and sort bars until a wallet has been searched", async () => {
+    render(<CollectionTabClient />)
+    await new Promise((r) => setTimeout(r, 30))
+    expect(screen.queryByTestId("filter-bar")).toBeNull()
+    expect(screen.queryByTestId("sort-bar")).toBeNull()
+    expect(screen.getByTestId("moment-table")).toBeTruthy()
+  })
+
+  it("shows the filter and sort bars once a wallet has been searched", async () => {
+    searchParams = new URLSearchParams("wallet=0xmine")
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(screen.getByTestId("filter-bar")).toBeTruthy())
+    expect(screen.getByTestId("sort-bar")).toBeTruthy()
+  })
+
   it("ignores a blank submission rather than searching for nothing", async () => {
     // ⚠ `runSearch`'s own `if (!query.trim()) return` is REDUNDANT behind the
     // keydown handler's `input.trim()` and unobservable from any live call
@@ -734,6 +753,8 @@ describe("CollectionTabClient — collection-specific behaviour", () => {
 
 describe("CollectionTabClient — debug mode", () => {
   it("stays off without ?debug=1", async () => {
+    // The sort bar waits for a search since 2026-11-07, so load a wallet first.
+    searchParams = new URLSearchParams("wallet=0xmine")
     render(<CollectionTabClient />)
     await screen.findByTestId("sort-bar")
     expect(screen.queryByText("Scope Key")).toBeNull()
