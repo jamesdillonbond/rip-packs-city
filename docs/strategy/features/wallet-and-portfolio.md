@@ -18,7 +18,7 @@ There is no wallet verification. It was removed by decision (#0, 08-08).
 - **528,568 rows**, of which **510,262 are live**;
 - the unplaced-id queue is **207,728**: 111,327 added in 24 h by the Series 8 backfill, and only 1,704 still lack a predicted set.
 
-**Profiles and trophy case.** `/profile/[username]` and the pinned case at `/profile/[username]/trophy-case`, which is distinct from the public #1-serial room `/insights/trophies`. Achievements are computed for **2 owners (14 rows)**, and their UI is unmounted.
+**Profiles and trophy case.** `/profile/[username]` and the pinned case at `/profile/[username]/trophy-case`, which is distinct from the public #1-serial room `/insights/trophies`. **Since 2026-11-06 a collector can also keep up to 10 extra cases and enter challenge cases** — the first is Dame Time (`/trophy-challenges/dame-time`, Damian Lillard Top Shot + Panini, held pieces only, checked server-side); Trevor's own entry was the first, 6/6 on 11-06. Model and routes: schema-truth.md / routes-and-surfaces.md "trophy cases". Achievements are computed for **2 owners (14 rows)**, and their UI is unmounted.
 
 ## Shipped recently (since mid-September)
 

@@ -191,6 +191,13 @@ curl -X POST 'https://www.rippackscity.com/api/wallet-backfill?force=true' \
 - **Offers Made** card (`components/analytics/OffersHistoryCard.tsx`) on the collection analytics page's wallet section, under Sales History: open / accepted / cancelled totals + the wallet's last 25 on-chain offers, from `GET /api/wallet-offers?wallet=&collection=` (Top Shot only; any other collection answers `supported:false` and the card renders nothing; three states, a failed count is a 5xx, never 0). Sign-in-gated like the page (not in `PUBLIC_READ_APIS`).
 - Offer-capture admin walks (Bearer `INGEST_SECRET_TOKEN`, driven by `topshot-offers-history-backfill.yml`, `target` input): `/api/admin/backfill-topshot-offers` (same-tick history + `sales.offer_id` stamp, cursor `topshot_offers_history_backfill`) and `/api/admin/backfill-topshot-missing-fill-offers` (cursor `topshot_missing_fill_offers_walk`). Both insert-only, both end at block 167.4M. database.md "The Top Shot `offers` table".
 
+## Trophy cases + challenges (2026-11-06)
+
+- **Main case:** unchanged — dashboard "Trophy Cases" tab, `/profile/<u>`, `/profile/<u>/trophy-case`, the OG/PDF exports. `/api/profile/trophy` (GET/POST/PATCH/DELETE) and `/api/profile/trophy/reorder` take an optional `caseId`; absent = the main case.
+- **Extra cases (signed in):** `/api/profile/trophy-cases` — GET `{cases, challenges}` (challenges `null` when that read failed), POST `{name}` or `{challengeSlug}` (409 `already_entered`, 409 at 10 cases), PATCH `{caseId, name}`, DELETE `{caseId}` (cascades its pins). UI `components/profile/TrophyCasesPanel.tsx` on the dashboard's Trophy Cases tab.
+- **Public:** `/api/public/trophy-cases?username=` (a profile's extra cases; `components/profile/PublicTrophyCases.tsx`, shows only cases with pins) and `/api/public/trophy-challenges/<slug>` (the board, `is_open` decided server-side). Page `/trophy-challenges/<slug>` — public (`proxy.ts`), `noindex, follow`, server probe `lib/trophy/challenge-probe.ts`: unknown slug → real 404, failed read → renders with a retry notice.
+- **Challenge pins** are checked server-side by `lib/trophy/challenge-rules.ts` (schema-truth.md "Multiple trophy cases + challenges"): ineligible → 4xx with the reason ("Dame Time is Damian Lillard only — that Moment is …"), a failed check → 503, never "not eligible". The picker opens pre-searched for the challenge's player.
+
 ## Sitemap layout + adding a blog post (2026-10-14)
 
 **Sitemap** = `/sitemap.xml` (index, `app/sitemap.xml/route.ts`, lists `SITEMAP_SEGMENT_IDS` imported from `lib/sitemap-data.ts` — never a second list) → `/sitemap/<id>.xml` (`app/sitemap/[id]/route.ts`):

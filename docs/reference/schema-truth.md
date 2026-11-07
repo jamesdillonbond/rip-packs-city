@@ -398,6 +398,25 @@ Migration `20260929061743_audit_20260928_trophy_still_held_state`. Pin: `supabas
 - ⚠ `trophy_moments.pinned_at` is overwritten by every re-pin, so "after the pin" means after the LATEST pin of that slot.
 - UI: `TrophySlab` shows "Not in your saved wallets · checked <date>" (public: "this collector's") on `not_held` only — worded as what RPC can see, never "sold" (it may be transferred, or in a wallet never saved). The share page payload (`lib/profile/public-profile.ts`) carries both fields.
 
+## Multiple trophy cases + challenges (2026-11-06)
+
+Migrations `20261106194000_audit_20261106_multiple_trophy_cases_and_challenges` (prod version `20261106200549`), `20261106200716_audit_20261106_allowlist_trophy_cases_public_reads`, `20261106194500_audit_20261106_trophy_moments_drop_user_slot_key` (prod `20261106204542`). Pin: `supabase/tests/get_trophy_slab_data.sql` (case-scoping assertions).
+
+| Object | What it is |
+|---|---|
+| `trophy_moments.case_id` | **NULL = the collector's MAIN case** (every pre-11-06 row). Non-null → `trophy_cases.id` (ON DELETE CASCADE). Uniqueness is `trophy_moments_user_case_slot_key` UNIQUE **NULLS NOT DISTINCT** `(user_id, case_id, slot)` — one row per slot per case, the main case included. The old `(user_id, slot)` key is gone. |
+| `trophy_cases` | `id, user_id, name (1–40), challenge_id (NULL = a named case), created_at, first_pinned_at, completed_at` — the last two SET-ONCE by `trophy_case_milestones_track` (first pin; first time 6/6). UNIQUE `(user_id, challenge_id)` = one entry per challenge. RLS on, no anon/authenticated grant: written ONLY by service-role routes. Cap 10 per user (route-enforced, `MAX_EXTRA_CASES`). |
+| `trophy_challenges` | `slug` (unique, kebab), `title`, `tagline`, `description`, `rules jsonb`, `starts_at`, `ends_at`, `is_active`. `rules` keys read by `lib/trophy/challenge-rules.ts`: `player_names` (exact, case/whitespace-insensitive; a Panini "A \| B" label matches either part), `collection_slugs` (long-form `collections.slug`), `require_owned` (Top Shot: the moment in `wallet_moments_cache` under one of the user's `saved_wallets`; Panini: the card verified by `resolvePaniniTrophyCard`). Seeded: `dame-time` (Damian Lillard; `nba_top_shot` + `panini_blockchain`; held only). Open = `is_active` and not past `ends_at` (`challengeIsOpen`). |
+| `get_trophy_slab_data(p_user_id, p_case_id DEFAULT NULL)` | ONE case per read (`tm.case_id IS NOT DISTINCT FROM p_case_id`); projects `case_id`. Service-role only. `get_trophy_slab_data_by_username(text)` still calls it 1-arg = the main case, so the OG cards, PDF and share page read the main case unchanged. |
+| `reorder_trophy_slots(p_user_id, p_ordered_ids, p_case_id DEFAULT NULL)` | delete + re-insert scoped to ONE case. Service-role only. |
+| `get_trophy_cases_for_user(uuid)` (service) / `get_trophy_cases_by_username(text)` (anon) | every extra case of a user, challenge entries first, each with `slabs` = the slab RPC for that case. |
+| `get_trophy_challenge_entries(slug, p_limit 48)` (anon) | `{challenge, entry_count, entries[{case_id, username, slab_count, completed_at, slabs}]}`; only cases with ≥1 pin whose owner has a `profile_bio.username`; NULL for an unknown slug. Both anon reads are in `secdef_anon_exec_allowlist`. |
+| `trophy_moments_case_owner_check` (BEFORE INSERT/UPDATE OF case_id, user_id, SECDEF) | refuses a `case_id` owned by another user (23514). |
+
+- ⛔ **EVERY `(user_id, slot)` read or write must be scoped by `case_id`** — unscoped, it spans every case (an unpin of main slot 1 deletes slot 1 of each case). Routes use `scopeToCase()` in `lib/trophy/cases.ts`; the `compute-achievements` `trophy_curator` count is `.is('case_id', null)` (its gold tier says "Full trophy case — all 6 slots").
+- RLS: the authenticated INSERT/UPDATE policies on `trophy_moments` require `case_id IS NULL` — a browser client can write only its main case; case pins go through the service-role route, which checks ownership and the challenge rules.
+- The trophy-case CAMPAIGN (`trophy_case_milestones`, `trophy_case_campaign_users`, `trophy_pinned`/`trophy_removed` funnel events) counts the MAIN case only.
+
 ## Thin-parallel value estimates — a SEPARATE number, never an FMV (2026-09-30)
 
 - `public.topshot_parallel_ratio_cells` — PK `(subedition_name, tier)`: time-matched ratio of a Top Shot `::` parallel's monthly median sale to its full edition's median in the SAME month (full edition needs ≥ 3 sales that month), 365 d; per-edition median, then the cell's median / p25 / p75; `loo_median_abs_log_err` is LEAVE-ONE-EDITION-OUT; `eligible = n_editions >= 30 AND err <= ln 1.5` (every FANDOM cell fails). Written only by `compute_topshot_parallel_ratio_cells()`.
