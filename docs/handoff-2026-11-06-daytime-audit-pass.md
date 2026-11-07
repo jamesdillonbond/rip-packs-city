@@ -97,6 +97,8 @@
 
 34. **Team nicknames (~10:45–10:55 AM PT) — filed #238, not shipped.** "rip city" / "niners" / "dubs" / "pats" miss in search; teams have no alias table and the search team arm has no franchise key. One design across table + search arm + `resolve_team_name`, to decide with Trevor (09-25 identity rules).
 
+35. **Inbox agreement (~10:55–11:05 AM PT).** Both of this morning's filings now carry their `## Drained` marker in place (append-only inbox): the E2E DOM Smoke re-pin VERIFIED green from the first run after `cfa4711` (00:15Z, `e8ca0d6`) onward; the All Day ratio filing carries the nightly pass's ACCEPT (0.889; LOW = the by-design 0.75× haircut). INDEX rows updated; inbox guards green. The twin (Claude Code, 10:44) reviewed the IA batch and shipped eight fixes — two were real state bugs in my dashboard work (`?pin` picker re-opening on tab switch; `?tab=` read once) — CI green on its commit.
+
 ## Post-ship watch (what to read tomorrow)
 
 - **Series-1 Top Shot art** on `/dashboard/*`, `/profile/*`, binder, trade room: present (any blank tile with a `data-rpc-dead-art` attribute whose `data-rpc-dead-src` starts `…/editions/<N>_` means ANOTHER series was retired — same fix, derive not copy).
