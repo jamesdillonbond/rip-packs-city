@@ -76,4 +76,11 @@ describe("the edge function routes every write through decide()", () => {
     // profile_achievements writes happen only inside applyAchievement.
     expect(src.match(/from\('profile_achievements'\)\.(delete|upsert)/g)?.length ?? 0).toBe(2)
   })
+  it("trophy_curator counts the MAIN case only (multiple trophy cases, 2026-11-06)", () => {
+    // Gold reads "Full trophy case — all 6 slots". An unscoped count would award
+    // it to 3 main-case pins + 3 Dame Time pins.
+    const read = src.match(/from\('trophy_moments'\)[^\n]*/g) ?? []
+    expect(read).toHaveLength(1)
+    expect(read[0]).toMatch(/\.is\('case_id',\s*null\)/)
+  })
 })

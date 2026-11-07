@@ -227,12 +227,15 @@ async function computeForUser(ownerKey: string): Promise<{ computed: number; err
       : { ok: false, error: (!c10.ok ? c10.error : '') || (!c100.ok ? c100.error : '') }, errors)) computed++;
   }
 
-  // 4. trophy_curator — trophy_moments is keyed by user_id
+  // 4. trophy_curator — trophy_moments is keyed by user_id. MAIN case only
+  // (case_id IS NULL, 2026-11-06): the tiers describe ONE case ("Full trophy
+  // case — all 6 slots"); counting every case would award gold to 3 main pins +
+  // 3 Dame Time pins — a claim about the main case the data does not make.
   if (!owner.userId) {
     await applyAchievement(ownerKey, 'trophy_curator', { ok: false, error: 'owner_key has no single user_id' }, errors);
   } else {
     const c = await countOf(
-      supabase.from('trophy_moments').select('*', { count: 'exact', head: true }).eq('user_id', owner.userId),
+      supabase.from('trophy_moments').select('*', { count: 'exact', head: true }).eq('user_id', owner.userId).is('case_id', null),
     );
     if (await applyAchievement(ownerKey, 'trophy_curator', c.ok
       ? { ok: true, tier: highestTier(TROPHY_CURATOR, c.value), progress: { count: c.value } }
