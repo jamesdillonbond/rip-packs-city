@@ -93,7 +93,10 @@ export default function TrophyCaseShareClient({
           position: "sticky",
           top: 0,
           zIndex: 50,
-          background: "rgba(8,8,8,0.97)",
+          // Theme-aware: the hardcoded dark rgba stayed black in light mode, where
+          // --rpc-red-text flips to its light shade — FULL PROFILE → read 3.02:1
+          // (axe, 2026-11-07). Same token GlobalSiteHeader uses.
+          background: "var(--rpc-header-bg)",
           backdropFilter: "blur(20px)",
         }}
       >

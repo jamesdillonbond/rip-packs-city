@@ -635,7 +635,7 @@ function FastBreakHeader() {
         position: "sticky",
         top: 0,
         zIndex: 50,
-        background: "rgba(8,8,8,0.85)",
+        background: "var(--rpc-header-bg)", // theme-aware (a dark rgba was a black slab in light mode)
         backdropFilter: "blur(20px)",
         WebkitBackdropFilter: "blur(20px)",
         borderBottom: "1px solid var(--rpc-border)",
