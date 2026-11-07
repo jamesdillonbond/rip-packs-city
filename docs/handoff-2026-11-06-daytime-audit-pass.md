@@ -74,7 +74,7 @@
 
 ## Queued for Trevor / Claude Code
 
-1. **[P2, Claude Code, 0 nights] per-dist EV precompute for `get_pack_realized_ev_row`** — the only user-facing error class left on the pack page (above).
+1. ✅ **DONE 11-06 ~4:05 PM PT (Claude Code, `20261107000456`) — no precompute needed: the `ev` leg now walks the dist index newest-first, 3,354 → 17 buffers cold on 8783, equivalence proved over every Top Shot dist (ledger).** ~~[P2, Claude Code, 0 nights] per-dist EV precompute for `get_pack_realized_ev_row`~~ — the only user-facing error class left on the pack page (above).
 2. **[P3, Claude Code, 3 nights] #228 cold-whale `/api/collection-snapshot` timeout** — SQL lever exhausted; next is the CDN warm (route/edge). Not recurring since 11-04.
 3. **[P4, Trevor, 2 nights] `net._http_response` growth lever** — weekly read ~11-11.
 4. **[P3, Trevor, 2 nights] cron-job.org account has no MFA** — from the 11-04 incident.
