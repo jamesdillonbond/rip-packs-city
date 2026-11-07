@@ -68,6 +68,8 @@
 
 20. **Settings-tab walk (~10:35–11:05 PM PT).** (a) Favorite-collection chips had the ★/☆ glyph as their ONLY state — `aria-pressed` + label now, none asserted on a failed read (`d7f1192`). (b) `/dashboard/api-keys` had no entry point but the concierge → linked from Settings; its key card printed the raw plan enum ("PLAN · FOUNDING") → removed (field stays in the API); title "API keys". (c) Email settings · Edit profile · API keys returned to the Overview → now `/dashboard?tab=settings`. Guard file `settings-pages-return-to-the-settings-tab.test.ts`.
 
+21. **Public-profile 404 head (~12:55–1:10 AM PT).** `/profile/<unknown>` served an honest 404 BODY but a profile HEAD — "<unknown>'s Collection", self-canonical, and an OG collector card named after the handle (the OG route read "bio OK, 0 rows" as an empty collector). Both layouts (profile, trophy-case) return 404 metadata; OG route returns the generic card on a successful empty lookup, and still the handle's withheld-figures card on a FAILED lookup (mirror pinned, planted-defect proven).
+
 ## Post-ship watch (what to read tomorrow)
 
 - **Series-1 Top Shot art** on `/dashboard/*`, `/profile/*`, binder, trade room: present (any blank tile with a `data-rpc-dead-art` attribute whose `data-rpc-dead-src` starts `…/editions/<N>_` means ANOTHER series was retired — same fix, derive not copy).
