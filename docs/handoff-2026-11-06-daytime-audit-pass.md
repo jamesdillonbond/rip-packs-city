@@ -85,6 +85,8 @@
 
 28. **Mobile bar re-slot (Trevor 8:01 AM PT; shipped `93d5af4` ~8:20 AM).** HOME · MY BINDER · MARKET · PACKS · INSIGHTS — verified live at 390 by screenshot; pin, concierge line and strategy doc follow the same order.
 
+29. **Binder first tap (~8:15–8:35 AM PT).** With MY BINDER now second in the bar, its anon empty state is a first impression — and it led with a filter/sort panel for zero rows. The bars now wait for a search; the wallet box and empty-state line come first. Pinned both states.
+
 ## Post-ship watch (what to read tomorrow)
 
 - **Series-1 Top Shot art** on `/dashboard/*`, `/profile/*`, binder, trade room: present (any blank tile with a `data-rpc-dead-art` attribute whose `data-rpc-dead-src` starts `…/editions/<N>_` means ANOTHER series was retired — same fix, derive not copy).
