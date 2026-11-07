@@ -69,9 +69,9 @@ The dashboard header's six links collapse to the five tabs; Sniper and Alerts st
 
 | phase | what | risk | needs Trevor |
 |---|---|---|---|
-| **P1 — Dashboard tabs** ✅ shipped 2026-11-06 ~9:30 PM PT | Five tabs on `/dashboard` (Overview · Trophy Cases · Packs · History · Settings; Packs/History are the existing pages); sections re-homed per §2; promo cards removed; `?tab=` deep links; the first-run tour announces each step (`rpc:tour-step`) and the dashboard opens the tab that holds the anchor | low — one client file, no URL change | Trevor said yes to all three forks 8:20 PM PT |
-| **P2 — `lib/ia.ts` + header/mobile/footer** ✅ shipped 2026-11-06 ~11 PM PT | The registry; the five groups rendered in all three navs; collection switcher replaces the seven links; `/insights` index grouped from the same registry | medium — the header is on every page; nav links feed SEO internal linking (keep every current destination reachable within one click; run the sitemap/links guard) | yes — sign off on group names and order |
-| **P3 — Homepage** ✅ shipped 2026-11-06 ~11 PM PT | Four pillar doors replace the eight pitches; proof + signup stay | medium — the h1/SEO copy and the OG card stay; it is the section order and the doors that change | yes — copy |
+| **P1 — Dashboard tabs** ✅ shipped 2026-11-06 8:25 PM PT | Five tabs on `/dashboard` (Overview · Trophy Cases · Packs · History · Settings; Packs/History are the existing pages); sections re-homed per §2; promo cards removed; `?tab=` deep links; the first-run tour announces each step (`rpc:tour-step`) and the dashboard opens the tab that holds the anchor | low — one client file, no URL change | Trevor said yes to all three forks ~8:05 PM PT |
+| **P2 — `lib/ia.ts` + header/mobile/footer** ✅ shipped 2026-11-06 8:49 PM PT | The registry; the five groups rendered in all three navs; collection switcher replaces the seven links; `/insights` index grouped from the same registry | medium — the header is on every page; nav links feed SEO internal linking (keep every current destination reachable within one click; run the sitemap/links guard) | yes — sign off on group names and order |
+| **P3 — Homepage** ✅ shipped 2026-11-06 8:49 PM PT | Four pillar doors replace the eight pitches; proof + signup stay | medium — the h1/SEO copy and the OG card stay; it is the section order and the doors that change | yes — copy |
 
 All three shipped the same evening (Trevor 8:14 PM: "No do all of it now"); the header widths and the 390 px bar are the two things to re-measure in Trevor's Chrome the next morning.
 
