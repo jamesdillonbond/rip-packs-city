@@ -119,6 +119,8 @@
 
 45. **Reduced motion (~1:45–2:05 PM PT).** The moment/edition hero autoplayed a looping clip with no motion guard (CSS animations are neutralised globally; a `<video autoPlay>` is not CSS). New store-backed `usePrefersReducedMotion` (no set-state-in-effect); the hero shows the poster under `reduce`; EditionsGrid's private hook copy migrated. Read, not changed: the collection ticker pauses on hover/focus-within and stops under reduced motion but has no explicit pause control on touch (WCAG 2.2.2 wants a mechanism) — queue 12, a visual change on every collection header, Trevor's call.
 
+46. **Focus lens (~2:00–2:35 PM PT).** (a) After a binder search nothing was announced (no live region on the page at all) — an sr-only `role="status"` now says "Loaded N moments" / "Search finished — no moments to show", never on a failed read (mirror pinned). (b) The header search had a listbox + arrow keys but no combobox semantics — `role="combobox"`, `aria-expanded`, `aria-controls`, `aria-activedescendant` added; options out of the Tab order. (c) Two buttons claimed `aria-haspopup="listbox"` over plain button lists (analytics FilterBar, ListingsDashboard sort) — claim dropped; guard extended. Read, fine: the filter widgets (SearchableSelect, MultiSelect, Autocomplete) already carry full combobox wiring; the sniper countdown lives in a button label, not a live region.
+
 ## Post-ship watch (what to read tomorrow)
 
 - **Series-1 Top Shot art** on `/dashboard/*`, `/profile/*`, binder, trade room: present (any blank tile with a `data-rpc-dead-art` attribute whose `data-rpc-dead-src` starts `…/editions/<N>_` means ANOTHER series was retired — same fix, derive not copy).
