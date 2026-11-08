@@ -13,6 +13,9 @@
 
 BEGIN;
 
+-- CI's Postgres has no `extensions` schema (Supabase installs unaccent there); create it
+-- first, as supabase/tests/norm_player.sql does.
+CREATE SCHEMA IF NOT EXISTS extensions;
 CREATE EXTENSION IF NOT EXISTS unaccent WITH SCHEMA extensions;
 
 CREATE TABLE public.editions (collection_id uuid, external_id text, player_name text);
