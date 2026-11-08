@@ -12,8 +12,9 @@
 #   object and the Opta ids in its squad-photo paths. LALIGA's API is NOT used.
 # Step 2 (decide): laliga-id when the photo path carries the chain's Opta id; otherwise every page whose
 #   name matches and whose country does not contradict the chain is a 'laliga-name-dob-espn' candidate —
-#   the database publishes one only when its DOB equals the linked ESPN DOB
-#   (refresh_laliga_official_bio). Output: laliga_out.json, committed as
+#   the database publishes one only when its DOB equals the linked ESPN DOB; a stricter
+#   'laliga-name-country-era' label (given name/nickname + surname token + nationality + age 20-41 on
+#   the match dates) may publish where ESPN states no DOB (refresh_laliga_official_bio). Output: laliga_out.json, committed as
 #   docs/research/laliga-player-pages-2026-11-08.json and loaded into laliga_player_candidates.
 
 # ---- step 1: fetch ----
@@ -126,7 +127,33 @@ for pid,pages in cands.items():
             and (not p.get('img_ids') or pid in p['img_ids'])]
         recs=[dict(verified_by='laliga-name-dob-espn',**p) for p in nm]
         stats['name candidates: %d' % min(len(nm),3)]+=1
-    for rec in recs:
+        # Strict name + nationality + era (for legends whose ESPN record states no DOB): the chain's
+        # nickname or given name matches AND a real surname token matches, the page's country is the
+        # chain's (not merely absent), and the page's DOB puts the player at 15-41 on every match date.
+        PART={'de','da','dos','del','la','las','los','do','van','der','den','di','y','e','el'}
+        sur={t for t in (sl(last).split('-') if last else []) if len(t)>=3 and t not in PART}
+        def strict(p):
+            toks=set(sl(p.get('name')).split('-'))|set(sl(p.get('lastname')).split('-'))
+            given=(ftok and ftok==(sl(p.get('firstname')).split('-')[0] if p.get('firstname') else '')) or \
+                  (known and sl(known) in {sl(p.get('nickname')), sl(p.get('name'))})
+            return bool(given) and bool(sur & toks)
+        dates=sorted(r2[7][:10] for r2 in plays if r2[1]==pid and r2[7])
+        def era(p):
+            d=(p.get('dob') or '')[:10]
+            if not d or not dates: return False
+            age=lambda on: int(on[:4])-int(d[:4])-((on[5:10])<(d[5:10]))
+            # 20, not 15: this rule has no second source, and its failure mode is a YOUNGER namesake
+            # (Lucas Pérez b. 1988 vs LALIGA's Lucas Pérez Calvo b. 2003 — 19 on a 2022 match date).
+            return 20<=age(dates[0])<=41 and age(dates[-1])<=43
+        st=[p for p in nm if p.get('country') in isos and strict(p) and era(p)]
+        people={(sl(p.get('name')),(p.get('dob') or '')[:10]) for p in st}
+        if len(people)==1:
+            recs += [dict(verified_by='laliga-name-country-era',**p) for p in st]
+            stats['strict+era']+=1
+    by_slug={}
+    for rec in recs:  # one row per page: the stricter era label wins over the plain name label
+        if rec['slug'] not in by_slug or rec['verified_by']=='laliga-name-country-era': by_slug[rec['slug']]=rec
+    for rec in by_slug.values():
         if rec.get('dob') or rec.get('pob'):
             out.append(dict(pid=pid, play_ids=byp[pid], slug=rec['slug'], laliga_id=rec.get('id'), name=rec.get('name'),
                             dob=(rec.get('dob') or '')[:10] or None, pob=(rec.get('pob') or '').strip() or None, verified_by=rec['verified_by']))
