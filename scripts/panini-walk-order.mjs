@@ -29,7 +29,38 @@
 // every other product still advances every run (no starvation: a strict "priced first" would park
 // the other 30k forever, since the order is rebuilt from scratch each run). Off unless both are given.
 //
+// ⚠ 2026-11-08: FRESH IS ROUND-ROBINED ACROSS PRODUCTS. Discovery order is GRID order (Soccer first,
+// Entertainment last of seven), and a full run walks only ~250 fresh cards after the held-priority
+// list — so the last grid's products sat at the tail of 8,769 fresh pskus, about a week of full runs
+// (walk runs never add fresh). Measured that day: The Rolling Stones (2130), Moonbirds (850178) and
+// Sunnyside Silvershells (850179) admitted at noon, seen in the 2:00 PM grid, 0 cards walked. Now the
+// fresh list takes one psku per product in turn (products in first-seen order, each product's own
+// order kept), so a newly admitted product gets a fresh slot every cycle. Ids that name no product
+// (`packcard-<set>_…` absent) share one bucket, so their order is exactly what it was.
+//
 // Each psku appears once, at its earliest position.
+
+/** `packcard-2130_415500_32` → "2130"; anything else → "" (one shared bucket). */
+function productKeyOf(psku) {
+  const m = /^packcard-([0-9]+)_/.exec(String(psku));
+  return m ? m[1] : "";
+}
+
+/** One psku per product in turn; products in first-seen order, each product's own order kept. */
+export function roundRobinByProduct(list) {
+  const buckets = new Map();
+  for (const p of list) {
+    const k = productKeyOf(p);
+    if (!buckets.has(k)) buckets.set(k, []);
+    buckets.get(k).push(p);
+  }
+  const queues = [...buckets.values()];
+  const out = [];
+  for (let i = 0; out.length < list.length; i++) {
+    for (const q of queues) if (i < q.length) out.push(q[i]);
+  }
+  return out;
+}
 
 /** Weighted merge preserving each list's own order: `n` from `a`, then 1 from `b`, repeat. */
 export function weightedMerge(a, b, n) {
@@ -53,7 +84,7 @@ export function buildWalkOrder({ priority = [], known: knownIn = [], knownComple
     ? weightedMerge(knownIn.filter((p) => isPriced(p)), knownIn.filter((p) => !isPriced(p)), pricedPerOther)
     : knownIn;
   const knownSet = new Set(known);
-  const fresh = knownComplete ? discovered.filter((p) => !knownSet.has(p)) : [];
+  const fresh = knownComplete ? roundRobinByProduct(discovered.filter((p) => !knownSet.has(p))) : [];
   const seen = new Set();
   const pskus = [];
   let priorityCount = 0;

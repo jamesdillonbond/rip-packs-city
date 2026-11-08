@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
-import { buildWalkOrder, weightedMerge } from "../scripts/panini-walk-order.mjs"
+import { buildWalkOrder, weightedMerge, roundRobinByProduct } from "../scripts/panini-walk-order.mjs"
 
 // The residential Panini runner's walk order (scripts/panini-walk-order.mjs), 2026-09-29.
 // WHY: held-but-uncatalogued editions were prepended to the route's `pskus` (the KNOWN list), but
@@ -63,6 +63,42 @@ describe("buildWalkOrder", () => {
     // 1:1 left 8,274 non-WC editions older than 9 d while WC had none. The knob stays (env N → N:1).
     expect(src).toMatch(/PANINI_PRICED_PER_OTHER \?\? "0"/)
     expect(src).toMatch(/j\?\.priority_pskus/)
+  })
+})
+
+// 2026-11-08 — fresh discoveries arrive in GRID order (Entertainment last of seven sports), and a full
+// run walks ~250 fresh cards: the last grid's newly admitted products (Rolling Stones 2130, Moonbirds
+// 850178, Silvershells 850179) sat at the tail of 8,769 fresh pskus with 0 cards walked. Fresh is now
+// round-robined across products.
+describe("buildWalkOrder — fresh round-robin across products", () => {
+  const soccer = (i: number) => `packcard-2332_1_${i}_1`
+  const stones = (i: number) => `packcard-2130_1_${i}`
+  const moon = (i: number) => `packcard-850178_1_${i}`
+
+  it("a product found in the LAST grid gets a fresh slot in the first cycle, not after every earlier one", () => {
+    const discovered = [...Array.from({ length: 1000 }, (_, i) => soccer(i)), stones(1), stones(2), moon(1)]
+    const r = buildWalkOrder({ known: ["known-0", "known-1", "known-2"], knownComplete: true, discovered })
+    const pos = (p: string) => r.pskus.indexOf(p)
+    // fresh/known still alternate 1:1, so the first three fresh slots are positions 0, 2, 4
+    expect(r.pskus.slice(0, 6)).toEqual([soccer(0), "known-0", stones(1), "known-1", moon(1), "known-2"])
+    expect(pos(stones(2))).toBeLessThan(pos(soccer(3)))
+    expect(r.freshCount).toBe(1003)
+    expect(new Set(r.pskus).size).toBe(r.pskus.length)
+  })
+  it("keeps each product's own order and drops nothing", () => {
+    const list = [soccer(1), soccer(2), soccer(3), stones(1), stones(2), moon(1)]
+    const out = roundRobinByProduct(list)
+    expect(out).toEqual([soccer(1), stones(1), moon(1), soccer(2), stones(2), soccer(3)])
+    expect(out.filter((p) => p.startsWith("packcard-2332_"))).toEqual([soccer(1), soccer(2), soccer(3)])
+    expect([...out].sort()).toEqual([...list].sort())
+  })
+  it("ids that name no product keep their original order (one shared bucket)", () => {
+    expect(roundRobinByProduct(["new-2", "new-1", "x"])).toEqual(["new-2", "new-1", "x"])
+    expect(roundRobinByProduct([])).toEqual([])
+  })
+  it("the held-priority list still goes first, untouched by the round-robin", () => {
+    const r = buildWalkOrder({ priority: [soccer(9), soccer(8)], known: [], knownComplete: true, discovered: [soccer(1), stones(1)] })
+    expect(r.pskus).toEqual([soccer(9), soccer(8), soccer(1), stones(1)])
   })
 })
 
