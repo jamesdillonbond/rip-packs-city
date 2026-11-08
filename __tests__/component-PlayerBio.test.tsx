@@ -69,6 +69,35 @@ describe("buildPlayerBio", () => {
     expect(formatBirthplace("Rosario", null, "Argentina")).toBe("Rosario, Argentina")
   })
 
+  it("the league's own page fills the birthplace ESPN lacks (UFC.com), named as the source", () => {
+    const v = buildPlayerBio({
+      linked: 1,
+      espn: { ...TATUM.espn!, date_of_birth: "1993-11-29", birth_city: null, birth_state: null, birth_country: null, citizenship: "USA", college: null },
+      onchain: null, nflverse_date_of_birth: null,
+      official: { source: "ufc.com", url: "https://www.ufc.com/athlete/adrian-yanez", date_of_birth: "1993-11-29",
+                  birth_place: "Galveston, TX, United States", verified_by: "ufc-dob-agrees", fetched_at: null },
+    })!
+    expect(v.birthplace).toBe("Galveston, TX, USA")
+    expect(v.dateOfBirth).toBe("November 29, 1993")
+    expect(v.dateOfBirthConflict).toBeNull()
+    expect([...v.sources].sort()).toEqual(["ESPN", "UFC.com"].sort())
+  })
+
+  it("LALIGA's city-only place is shown as stated — nationality is never appended as a birth country", () => {
+    const v = buildPlayerBio({ linked: 0, espn: null, onchain: null, nflverse_date_of_birth: null,
+      official: { source: "laliga.com", url: "https://www.laliga.com/en-ES/player/valverde-1", date_of_birth: "1998-07-22",
+                  birth_place: "Montevideo", verified_by: "laliga-id", fetched_at: null } })!
+    expect(v.birthplace).toBe("Montevideo")
+    expect(v.dateOfBirth).toBe("July 22, 1998")
+    expect(v.sources).toEqual(["LALIGA"])
+  })
+
+  it("an ESPN birthplace still wins over the league page; a disagreeing league DOB is named", () => {
+    const v = buildPlayerBio({ ...TATUM, official: { source: "ufc.com", url: null, date_of_birth: "1998-03-04", birth_place: "Elsewhere", verified_by: "ufc-event-confirmed", fetched_at: null } })!
+    expect(v.birthplace).toBe("Saint Louis, MO, USA")
+    expect(v.dateOfBirthConflict).toBe("UFC.com says March 4, 1998")
+  })
+
   it("dates are calendar dates, never shifted by zone; junk is not a date", () => {
     expect(formatBirthDate("1984-12-30")).toBe("December 30, 1984")
     expect(formatBirthDate("not-a-date")).toBeNull()

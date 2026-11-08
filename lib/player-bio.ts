@@ -1,10 +1,12 @@
 // lib/player-bio.ts
 //
-// Shape + pure helpers for get_player_bio (migrations 20261108210431 / 20261108211235): one
-// person's date of birth, birthplace, citizenship and college. ESPN's athlete record is the
-// primary source (only when exactly one ESPN id is linked to the person); two first-party
-// fallbacks already in the database fill gaps — Top Shot's on-chain moment metadata
-// (player_birthdate / player_birthplace, "City, State, CTRY") and nflverse's birth_date.
+// Shape + pure helpers for get_player_bio (migrations 20261108210431 / 20261108211235 /
+// 20261108224157): one person's date of birth, birthplace, citizenship and college. ESPN's athlete
+// record is the primary source (only when exactly one ESPN id is linked to the person); first-party
+// and league sources fill gaps — Top Shot's on-chain moment metadata (player_birthdate /
+// player_birthplace, "City, State, CTRY"), nflverse's birth_date, and the league's own athlete page
+// (UFC.com, LALIGA — `official`, each row identity-verified by a second source before it is stored).
+// No crowdsourced source (Wikidata, Wikipedia, fan databases) is read.
 //
 // Honesty: every field is shown only when a source states it. A missing college means "ESPN
 // names none", never "did not attend"; citizenship is never shown as a country of birth.
@@ -24,6 +26,15 @@ export interface PlayerBioResult {
   } | null
   onchain: { date_of_birth: string | null; birthplace: string | null } | null
   nflverse_date_of_birth: string | null
+  /** The league's own athlete page (20261108224157). */
+  official?: {
+    source: "ufc.com" | "laliga.com" | string
+    url: string | null
+    date_of_birth: string | null
+    birth_place: string | null
+    verified_by: string | null
+    fetched_at: string | null
+  } | null
 }
 
 export interface PlayerBioView {
@@ -39,6 +50,8 @@ export interface PlayerBioView {
 /** Collections whose players can carry a bio (Pinnacle characters cannot). UFC fighters link through ESPN search (20261108213822). */
 export const PLAYER_BIO_COLLECTIONS = new Set(["nba_top_shot", "nfl_all_day", "candy_mlb", "laliga_golazos", "panini_blockchain", "ufc_strike"])
 
+const OFFICIAL_LABEL: Record<string, string> = { "ufc.com": "UFC.com", "laliga.com": "LALIGA" }
+
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}/
 
 function clean(v: string | null | undefined): string | null {
@@ -52,13 +65,25 @@ export function formatOnchainBirthplace(raw: string | null | undefined): string 
   return parts.length > 0 ? parts.join(", ") : null
 }
 
-// ESPN spells one country several ways across sports (NBA/NFL "USA", MLB "United States").
+// ESPN spells one country several ways across sports (NBA/NFL "USA", MLB "United States"); UFC.com
+// says "United States" too.
 const COUNTRY_ALIASES: Record<string, string> = { "united states": "USA", "united states of america": "USA", "us": "USA" }
 
-export function formatBirthplace(city: string | null, state: string | null, country: string | null): string | null {
-  const c = clean(country)
-  const parts = [clean(city), clean(state), c ? COUNTRY_ALIASES[c.toLowerCase()] ?? c : null].filter((p): p is string => p != null)
+function country(c: string | null): string | null {
+  return c ? COUNTRY_ALIASES[c.toLowerCase()] ?? c : null
+}
+
+export function formatBirthplace(city: string | null, state: string | null, countryName: string | null): string | null {
+  const parts = [clean(city), clean(state), country(clean(countryName))].filter((p): p is string => p != null)
   return parts.length > 0 ? parts.join(", ") : null
+}
+
+/** A league page's free-text place ("Galveston, TX, United States", "Montevideo") — the last part's country spelling normalised. */
+export function formatOfficialBirthplace(raw: string | null | undefined): string | null {
+  const parts = (raw ?? "").split(",").map((p) => p.trim()).filter((p) => p.length > 0)
+  if (parts.length === 0) return null
+  if (parts.length > 1) parts[parts.length - 1] = country(parts[parts.length - 1])!
+  return parts.join(", ")
 }
 
 /** "1998-03-03" → "March 3, 1998" (UTC — a calendar date, never shifted by a viewer's zone). */
@@ -73,6 +98,8 @@ export function formatBirthDate(iso: string | null | undefined): string | null {
 export function buildPlayerBio(r: PlayerBioResult | null): PlayerBioView | null {
   if (!r) return null
   const espn = r.linked === 1 ? r.espn : null
+  const official = r.official ?? null
+  const officialLabel = official ? OFFICIAL_LABEL[official.source] ?? official.source : null
   const sources = new Set<string>()
 
   // Measured 2026-11-08: ESPN and nflverse disagree on 34 of 1,382 All Day birth dates (same
@@ -80,6 +107,7 @@ export function buildPlayerBio(r: PlayerBioResult | null): PlayerBioView | null 
   // headline; a disagreeing source is named beside it rather than hidden.
   const dobs: Array<[string, string]> = []
   if (espn?.date_of_birth && ISO_DATE.test(espn.date_of_birth)) dobs.push(["ESPN", espn.date_of_birth.slice(0, 10)])
+  if (official?.date_of_birth && officialLabel && ISO_DATE.test(official.date_of_birth)) dobs.push([officialLabel, official.date_of_birth.slice(0, 10)])
   if (r.onchain?.date_of_birth && ISO_DATE.test(r.onchain.date_of_birth)) dobs.push(["Top Shot on-chain", r.onchain.date_of_birth.slice(0, 10)])
   if (r.nflverse_date_of_birth && ISO_DATE.test(r.nflverse_date_of_birth)) dobs.push(["nflverse", r.nflverse_date_of_birth.slice(0, 10)])
   const dob = dobs[0]?.[1] ?? null
@@ -89,11 +117,11 @@ export function buildPlayerBio(r: PlayerBioResult | null): PlayerBioView | null 
 
   let birthplace: string | null = null
   const espnPlace = espn ? formatBirthplace(espn.birth_city, espn.birth_state, espn.birth_country) : null
+  const officialPlace = official ? formatOfficialBirthplace(official.birth_place) : null
+  const chainPlace = formatOnchainBirthplace(r.onchain?.birthplace)
   if (espnPlace) { birthplace = espnPlace; sources.add("ESPN") }
-  else {
-    const chain = formatOnchainBirthplace(r.onchain?.birthplace)
-    if (chain) { birthplace = chain; sources.add("Top Shot on-chain") }
-  }
+  else if (officialPlace && officialLabel) { birthplace = officialPlace; sources.add(officialLabel) }
+  else if (chainPlace) { birthplace = chainPlace; sources.add("Top Shot on-chain") }
 
   const citizenship = clean(espn?.citizenship)
   const college = clean(espn?.college)
