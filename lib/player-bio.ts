@@ -52,8 +52,12 @@ export function formatOnchainBirthplace(raw: string | null | undefined): string 
   return parts.length > 0 ? parts.join(", ") : null
 }
 
+// ESPN spells one country several ways across sports (NBA/NFL "USA", MLB "United States").
+const COUNTRY_ALIASES: Record<string, string> = { "united states": "USA", "united states of america": "USA", "us": "USA" }
+
 export function formatBirthplace(city: string | null, state: string | null, country: string | null): string | null {
-  const parts = [clean(city), clean(state), clean(country)].filter((p): p is string => p != null)
+  const c = clean(country)
+  const parts = [clean(city), clean(state), c ? COUNTRY_ALIASES[c.toLowerCase()] ?? c : null].filter((p): p is string => p != null)
   return parts.length > 0 ? parts.join(", ") : null
 }
 

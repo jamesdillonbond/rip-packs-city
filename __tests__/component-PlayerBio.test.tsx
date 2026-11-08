@@ -63,6 +63,12 @@ describe("buildPlayerBio", () => {
     expect(buildPlayerBio(null)).toBeNull()
   })
 
+  it("one country, one spelling (ESPN MLB says United States, NBA/NFL say USA)", async () => {
+    const { formatBirthplace } = await import("@/lib/player-bio")
+    expect(formatBirthplace("Manakin Sabot", "VA", "United States")).toBe("Manakin Sabot, VA, USA")
+    expect(formatBirthplace("Rosario", null, "Argentina")).toBe("Rosario, Argentina")
+  })
+
   it("dates are calendar dates, never shifted by zone; junk is not a date", () => {
     expect(formatBirthDate("1984-12-30")).toBe("December 30, 1984")
     expect(formatBirthDate("not-a-date")).toBeNull()
