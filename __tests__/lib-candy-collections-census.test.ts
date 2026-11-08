@@ -1,0 +1,127 @@
+import { describe, it, expect, vi, beforeEach } from "vitest"
+
+// lib/candy/collections-census.ts — the rotating census of the non-registry Candy
+// collections. The properties that matter: the page cursor advances ONLY after a page's
+// writes land; a failed page fails the run and is re-read next time; holdings are written
+// insert-only; a completed walk resets the cursor and stamps last_census_at.
+
+const state: {
+  queue: any[]
+  pages: Record<string, any[][]>
+  dasThrows: Set<string>
+  wmcError: any
+  updates: Array<{ address: string; patch: any }>
+  wmcUpserts: Array<{ rows: any[]; opts: any }>
+  edUpserts: Array<{ rows: any[]; opts: any }>
+  rpcs: string[]
+} = { queue: [], pages: {}, dasThrows: new Set(), wmcError: null, updates: [], wmcUpserts: [], edUpserts: [], rpcs: [] }
+
+vi.mock("@/lib/chains/solana/das", () => ({
+  getAssetsByGroup: async (addr: string, page: number) => {
+    if (state.dasThrows.has(`${addr}:${page}`)) throw new Error("DAS getAssetsByGroup HTTP 502")
+    return { items: state.pages[addr]?.[page - 1] ?? [], total: 0, limit: 1000, page }
+  },
+}))
+vi.mock("@/lib/chains/solana/escrow", () => ({
+  attributeEscrowHeldToSellers: async (_db: any, rows: any[]) => ({ rows, remapped: 0, unmatched: 0, error: null }),
+}))
+vi.mock("@/lib/chains/solana/normalize", () => ({
+  isBurnt: (a: any) => a.kind === "burnt",
+  isPack: (a: any) => a.kind === "pack",
+  normalizeEdition: (a: any) => ({ external_id: "ed-" + a.ed, collection_id: "c1" }),
+  normalizeSerial: (a: any) => ({ moment_id: a.id, wallet_address: a.owner, collection_id: "c1", edition_key: "ed-" + a.ed, serial_number: 1, image_url: null }),
+}))
+vi.mock("@/lib/chains/solana/candy-sets", () => ({ candySetForAsset: () => ({ key: "c:x" }) }))
+vi.mock("@/lib/candy/collections", () => ({ loadCandyCollections: async () => ({ sets: [], error: null }) }))
+
+import { runCollectionsCensus } from "@/lib/candy/collections-census"
+
+const full = (n: number, prefix: string) => Array.from({ length: n }, (_, i) => ({ id: `${prefix}${i}`, owner: "W", ed: "a" }))
+
+function db() {
+  return {
+    rpc: async (name: string) => { state.rpcs.push(name); return { data: 4, error: null } },
+    from: (table: string) => {
+      if (table === "candy_collections") {
+        const b: any = {
+          _patch: null,
+          select: () => b, neq: () => b, eq: (_c: string, v: string) => {
+            if (b._patch) { state.updates.push({ address: v, patch: b._patch }); return Promise.resolve({ error: null }) }
+            return b
+          },
+          not: () => b, order: () => b,
+          limit: async () => ({ data: state.queue, error: null }),
+          update: (patch: any) => { b._patch = patch; return b },
+        }
+        return b
+      }
+      const t = table
+      return {
+        upsert: (rows: any[], opts: any) => {
+          if (t === "wallet_moments_cache") state.wmcUpserts.push({ rows, opts })
+          else state.edUpserts.push({ rows, opts })
+          return { select: async () => (t === "wallet_moments_cache" && state.wmcError ? { data: null, error: state.wmcError } : { data: rows.map((r) => ({ moment_id: r.moment_id, external_id: r.external_id })), error: null }) }
+        },
+      }
+    },
+  }
+}
+
+beforeEach(() => {
+  state.queue = []; state.pages = {}; state.dasThrows = new Set(); state.wmcError = null
+  state.updates = []; state.wmcUpserts = []; state.edUpserts = []; state.rpcs = []
+})
+
+describe("runCollectionsCensus", () => {
+  it("walks a collection to its short page, insert-only, then resets the cursor and stamps the walk", async () => {
+    state.queue = [{ address: "A", name: "2022 Leadoff ICONs", census_page: 1, census_walk_started_at: null }]
+    state.pages.A = [full(1000, "p1-"), [...full(3, "p2-"), { id: "pk", owner: "W", ed: "a", kind: "pack" }, { id: "bt", owner: "W", ed: "a", kind: "burnt" }]]
+    const r = await runCollectionsCensus(db(), { budgetMs: 60_000 })
+    expect(r.ok).toBe(true)
+    expect(r.cards).toBe(1003)
+    expect(r.completed).toBe(1)
+    expect(state.wmcUpserts.every((u) => u.opts.ignoreDuplicates === true)).toBe(true)
+    expect(state.edUpserts.every((u) => u.opts.ignoreDuplicates === true)).toBe(true)
+    const last = state.updates.filter((u) => u.address === "A").at(-1)!.patch
+    expect(last).toMatchObject({ census_page: 1, census_walk_started_at: null, last_census_items: 1003, last_census_error: null })
+    expect(typeof last.last_census_at).toBe("string")
+    expect(state.rpcs).toContain("purge_candy_wmc_ghost_rows")
+  })
+
+  it("a failed DAS page does not advance the cursor and fails the run", async () => {
+    state.queue = [{ address: "A", name: "A", census_page: 3, census_walk_started_at: "2026-11-08T00:00:00Z" }]
+    state.dasThrows.add("A:3")
+    const r = await runCollectionsCensus(db(), { budgetMs: 60_000 })
+    expect(r.ok).toBe(false)
+    expect(r.error).toMatch(/page 3: .*502/)
+    expect(state.updates.some((u) => u.patch.census_page !== undefined)).toBe(false)
+  })
+
+  it("a rejected holdings write does not advance the cursor (the page is re-read next run)", async () => {
+    state.queue = [{ address: "A", name: "A", census_page: 2, census_walk_started_at: "2026-11-08T00:00:00Z" }]
+    state.pages.A = [full(1000, "x"), full(1000, "y")]
+    state.wmcError = { message: "deadlock detected" }
+    const r = await runCollectionsCensus(db(), { budgetMs: 60_000 })
+    expect(r.ok).toBe(false)
+    expect(state.updates.some((u) => u.patch.census_page !== undefined)).toBe(false)
+  })
+
+  it("a resumed walk keeps going from its saved page and reports its item count as unknown", async () => {
+    state.queue = [{ address: "A", name: "A", census_page: 2, census_walk_started_at: "2026-11-08T00:00:00Z" }]
+    state.pages.A = [full(1000, "x"), full(5, "y")]
+    const r = await runCollectionsCensus(db(), { budgetMs: 60_000 })
+    expect(r.cards).toBe(5)
+    const last = state.updates.at(-1)!.patch
+    expect(last.census_page).toBe(1)
+    expect(last.last_census_items).toBeNull()
+  })
+
+  it("a spent budget walks nothing and claims nothing", async () => {
+    state.queue = [{ address: "A", name: "A", census_page: 1, census_walk_started_at: null }]
+    state.pages.A = [full(5, "x")]
+    let t = 0
+    const r = await runCollectionsCensus(db(), { budgetMs: 10, now: () => (t += 100) })
+    expect(r.cards).toBe(0)
+    expect(r.completed).toBe(0)
+  })
+})

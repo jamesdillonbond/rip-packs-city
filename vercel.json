@@ -135,6 +135,10 @@
       "schedule": "10 1 * * *"
     },
     {
+      "path": "/api/ingest/candy-collections-census",
+      "schedule": "43 * * * *"
+    },
+    {
       "path": "/api/candy-sales-indexer",
       "schedule": "20 */3 * * *"
     },
