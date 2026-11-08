@@ -15,3 +15,9 @@
 - Old task `trig_014mdFHh2m4AYTkYLTF7XxSV` is **still enabled** (list_triggers ~7:50 AM PT).
 - ⚠ The new task's `list_triggers` row shows NO `bound_device` field, although its create result said it was bound to LAPTOP-E3BDP9VS. If it is not bound, its run will start with no folder mounted and (by its prompt) reply "FAILED: repo folder not mounted" with a push — not stall. Check its 11-09 run; if it failed that way, Trevor turns on "Require this computer" for it in the desktop app (cannot be set via update_trigger).
 - Laptop tree last confirmed at `1d0e2be0b` (7:14 AM PT 11-08); origin/main moved on after that. A ~7:45 AM PT re-pull failed: the bridge was up but `device_bash` itself failed 3× (VM shell down). The 5:15 AM Windows task + the 5:37 AM task should catch it up on 11-09; the nightly/morning pass should confirm 0 behind.
+
+## ✅ RESOLVED — 2026-11-08 ~8:05 AM PT (Claude Code, Trevor's Windows box, `RemoteTrigger` API)
+
+- Before: `get trig_015m2ZbNHoNmtT7ExQAQeVJD` → `enabled:true`, **`bound_device` LAPTOP-E3BDP9VS (`4c0a0b41-…`) present in the GET row** (the list row omits it — the 7:50 AM worry is answered), folders `C:\Users\TDill\rip-packs-city`, `FOLDERS_STATE_PRESENT`, next run 11-09 5:37 AM PT.
+- Done: `update trig_014mdFHh2m4AYTkYLTF7XxSV {enabled:false}` → read back `enabled:false`. **Disabled, not deleted** (reversible: re-enable it). No two-merge race at 5:37 AM PT 11-09.
+- Still owed: verify the new task's 11-09 run (`last_run`, laptop tree 0 behind by ~5:45 AM PT); autonomous-tasks.md now names the new id.
