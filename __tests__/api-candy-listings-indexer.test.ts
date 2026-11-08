@@ -27,12 +27,15 @@ const state = vi.hoisted(() => ({
   sb: null as unknown,
   ready: true,
   rate: 150 as number | null,
+  sets: [{ key: "base26", meSymbol: "candy-mlb-icons", editionKeyPrefix: null }] as any[],
 }))
 
 vi.mock("next/server", async (importOriginal) => {
   const actual = await importOriginal<typeof import("next/server")>()
   return { ...actual, after: (cb: () => unknown) => void state.afterCbs.push(cb) }
 })
+// Base set only by default (later sets: 2026-11-08 tests below).
+vi.mock("@/lib/chains/solana/candy-sets", () => ({ get CANDY_SETS() { return state.sets } }))
 vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: new Proxy(
     {},
@@ -104,6 +107,7 @@ afterEach(() => {
   fetchMock = null
 })
 beforeEach(() => {
+  state.sets = [{ key: "base26", meSymbol: "candy-mlb-icons", editionKeyPrefix: null }]
   process.env.INGEST_SECRET_TOKEN = "candy-token"
   state.afterCbs.length = 0
   state.ready = true
@@ -889,5 +893,26 @@ describe("candy-listings-indexer — owner-moved asks (audit_20261108)", () => {
     const extra = log?.p_extra as Record<string, unknown>
     expect(extra.owner_moved_cards).toBeNull()
     expect(extra.owner_moved_cleared).toBeNull()
+  })
+})
+
+// 2026-11-08 — every Candy set's book is swept; the sweep is complete only when
+// EVERY set's book was read to its end (a truncated later set must not unlock
+// absence-style conclusions about the whole collection).
+describe("candy-listings-indexer — every Candy set (2026-11-08)", () => {
+  it("reads the listings AND activities of each set's own symbol", async () => {
+    state.sets = [
+      { key: "base26", meSymbol: "candy-mlb-icons", editionKeyPrefix: null },
+      { key: "gold26", meSymbol: "gold-symbol", editionKeyPrefix: "gold26" },
+    ]
+    fetchMock = installFetchMock([jsonRoute("/listings", []), jsonRoute("/activities", [])])
+    const spy = install({ candy_listings: { data: [] }, candy_pack_listings: { data: [] } })
+    await POST(req())
+    await runDeferred()
+    const urls = fetchMock.calls.map((c) => c.url)
+    expect(urls.some((u) => u.includes("/collections/gold-symbol/listings"))).toBe(true)
+    expect(urls.some((u) => u.includes("/collections/gold-symbol/activities"))).toBe(true)
+    expect(urls.some((u) => u.includes("/collections/candy-mlb-icons/listings"))).toBe(true)
+    expect((logRun(spy.rpcCalls)?.p_extra as Record<string, unknown>).sweep_complete).toBe(true)
   })
 })

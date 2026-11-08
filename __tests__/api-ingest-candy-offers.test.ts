@@ -13,6 +13,8 @@ vi.mock("next/server", async (importOriginal) => {
   const actual = await importOriginal<typeof import("next/server")>()
   return { ...actual, after: (cb: () => unknown) => void state.afterCbs.push(cb) }
 })
+// Base set only: the bidder walk reads every set since 2026-11-08; one set keeps these fixtures single-feed.
+vi.mock("@/lib/chains/solana/candy-sets", () => ({ CANDY_SETS: [] }))
 vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: { rpc: async () => ({ data: null, error: null }) },
 }))

@@ -39,6 +39,10 @@ vi.mock("next/server", async (importOriginal) => {
   const actual = await importOriginal<typeof import("next/server")>()
   return { ...actual, after: (cb: () => unknown) => void state.afterCbs.push(cb) }
 })
+// Base set only by default: the later-set walks (2026-11-08) have their own tests.
+vi.mock("@/lib/chains/solana/candy-sets", () => ({
+  CANDY_SETS: [{ key: "base26", setId: "base-set", meSymbol: "candy-mlb-icons", editionKeyPrefix: null }],
+}))
 vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: new Proxy(
     {},

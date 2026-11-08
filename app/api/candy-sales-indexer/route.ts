@@ -38,6 +38,7 @@ import {
   normalizeSerial,
 } from "@/lib/chains/solana/normalize"
 import { bearerMatches } from "@/lib/auth/bearer-secret"
+import { CANDY_SETS } from "@/lib/chains/solana/candy-sets"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 300
@@ -110,11 +111,11 @@ interface ParkedSale {
   reason: string
 }
 
-async function fetchActivities(offset: number): Promise<MeActivity[]> {
+async function fetchActivities(offset: number, symbol: string = CANDY_MLB_ME_SYMBOL): Promise<MeActivity[]> {
   const headers: Record<string, string> = { Accept: "application/json" }
   const key = process.env.MAGIC_EDEN_API_KEY
   if (key) headers["Authorization"] = `Bearer ${key}`
-  const url = `${ME_BASE}/collections/${encodeURIComponent(CANDY_MLB_ME_SYMBOL)}/activities?offset=${offset}&limit=${ME_LIMIT}`
+  const url = `${ME_BASE}/collections/${encodeURIComponent(symbol)}/activities?offset=${offset}&limit=${ME_LIMIT}`
   // 15s cap. `fetch()` has no default timeout, and this route runs inside
   // `after()` with maxDuration 300 — so an upstream that accepts the connection
   // and holds it open consumes the whole budget, and a maxDuration kill writes
@@ -249,6 +250,9 @@ async function handleIndex(req: NextRequest) {
       const rate = await solUsd()
       // edition_key → editions.id cache (so repeat keys cost one query).
       const edIdByKey = new Map<string, string | null>()
+      // mint → census edition_key/serial (null = not in the census; use DAS).
+      const wmcByMint = new Map<string, { key: string; serial: number } | null>()
+      let censusResolved = 0
 
       // A sale we SEE but cannot write used to be counted `skipped` and then
       // dropped. ME only re-offers it while it is still newer than
@@ -326,6 +330,30 @@ async function handleIndex(req: NextRequest) {
         // sub-half-cent dust by construction, with no invented threshold.
         const priceUsd = Number((price * saleRate).toFixed(2))
         if (!(priceUsd > 0)) return { skip: DUST_SKIP }
+        // ⭐ CENSUS FIRST (2026-11-08). Every Candy card mint is already in
+        // wallet_moments_cache with its edition_key and serial (the daily DAS walk
+        // over every set), so a DAS round trip per sale is only needed for a mint
+        // the census has not seen — a pack, or a card minted since the last walk.
+        // Without this a new set's backlog (~2,000 All-Star sales) would spend the
+        // 400-call DAS budget per tick and drain at 60/tick for days.
+        let known = wmcByMint.get(tokenMint)
+        if (known === undefined) {
+          const { data: wr, error: we } = await (supabaseAdmin as any)
+            .from("wallet_moments_cache")
+            .select("edition_key, serial_number")
+            .eq("collection_id", CANDY_MLB_UUID)
+            .eq("moment_id", tokenMint)
+            .limit(1)
+          if (we) throw new Error(`wmc read failed for ${tokenMint}: ${we.message}`)
+          const r0 = wr?.[0]
+          known = r0?.edition_key && r0.serial_number != null ? { key: r0.edition_key as string, serial: Number(r0.serial_number) } : null
+          wmcByMint.set(tokenMint, known)
+        }
+        if (known) {
+          censusResolved++
+          return await rowFromKey(signature, tokenMint, tMs, price, priceUsd, buyer, seller, known.key, known.serial)
+        }
+
         if (assetFetches >= ASSET_FETCH_BUDGET) return { skip: "asset_budget_exhausted" }
 
         // Resolve mint → edition via DAS.
@@ -377,6 +405,22 @@ async function handleIndex(req: NextRequest) {
         const key = editionKeyFromAsset(asset)
         const serial = normalizeSerial(asset).serial_number
         if (!key || serial == null) return { skip: "unresolvable_serial" }
+        return await rowFromKey(signature, tokenMint, tMs, price, priceUsd, buyer, seller, key, serial)
+      }
+
+      // The edition lookup + `sales` row, shared by the census-first path and the
+      // DAS path so both write identical rows.
+      async function rowFromKey(
+        signature: string,
+        tokenMint: string,
+        tMs: number,
+        price: number,
+        priceUsd: number,
+        buyer: string | null | undefined,
+        seller: string | null | undefined,
+        key: string,
+        serial: number,
+      ): Promise<{ row: Record<string, unknown> } | { skip: string }> {
 
         let editionId = edIdByKey.get(key)
         if (editionId === undefined) {
@@ -541,6 +585,90 @@ async function handleIndex(req: NextRequest) {
         if (acts.length < ME_LIMIT) break
       }
 
+      // ── Candy's LATER SETS (2026-11-08) ─────────────────────────────────────
+      // All-Star, Gold Series and Quest-reward ICONs trade under their own Magic
+      // Eden symbols (lib/chains/solana/candy-sets.ts) and none was read before
+      // today. Each set walks its own feed against its OWN high-water mark
+      // (candy_sales_high_water(set_id)): a shared cursor would let the Base
+      // Series' newest sale end a younger set's walk before its history landed.
+      // The walk above (Base) keeps the pipeline's cursor fields; these report
+      // per set in `extra.sets`. A set whose walk throws fails the run, named.
+      const setReports: Record<string, {
+        activities_seen: number
+        sales_found: number
+        cursor_before: string | null
+        reached_known: boolean
+        budget_exhausted: boolean
+        error: string | null
+      }> = {}
+      const setErrors: string[] = []
+      for (const candySet of CANDY_SETS) {
+        if (candySet.editionKeyPrefix === null) continue // the Base walk above
+        const rep = {
+          activities_seen: 0,
+          sales_found: 0,
+          cursor_before: null as string | null,
+          reached_known: false,
+          budget_exhausted: false,
+          error: null as string | null,
+        }
+        setReports[candySet.key] = rep
+        try {
+          // Wait for the set's catalog: until the daily census has written its
+          // editions, every sale would park as edition_not_ingested and re-walk the
+          // whole feed each tick. A set with no editions yet is SKIPPED, said so.
+          const { count: edCount, error: edCountErr } = await (supabaseAdmin as any)
+            .from("editions")
+            .select("id", { count: "exact", head: true })
+            .eq("collection_id", CANDY_MLB_UUID)
+            .eq("set_id", candySet.setId)
+          if (edCountErr) throw new Error(`catalog check failed: ${edCountErr.message}`)
+          if (!edCount) {
+            rep.error = null
+            ;(rep as Record<string, unknown>).skipped = "catalog_not_ingested"
+            continue
+          }
+          const { data: hw, error: hwErr } = await (supabaseAdmin as any).rpc("candy_sales_high_water", {
+            p_set_id: candySet.setId,
+          })
+          if (hwErr) throw new Error(`high-water read failed: ${hwErr.message}`)
+          const setCursorMs = hw ? new Date(hw as string).getTime() : 0
+          rep.cursor_before = setCursorMs ? new Date(setCursorMs).toISOString() : null
+          for (let page = 0; page < MAX_PAGES && !rep.reached_known; page++) {
+            if (Date.now() - startedMs > SWEEP_BUDGET_MS) {
+              rep.budget_exhausted = true
+              break
+            }
+            const acts = await fetchActivities(page * ME_LIMIT, candySet.meSymbol)
+            rep.activities_seen += acts.length
+            if (acts.length === 0) break
+            const salesRows: Record<string, unknown>[] = []
+            for (const a of acts) {
+              const tMs = (a.blockTime ?? 0) * 1000
+              if (setCursorMs && tMs <= setCursorMs) {
+                rep.reached_known = true
+                continue
+              }
+              if (!SALE_TYPES.has(a.type) || !a.tokenMint || !a.signature) continue
+              found++
+              rep.sales_found++
+              const built = await buildSaleRow(a.signature, a.tokenMint, tMs, a.price, a.buyer, a.seller)
+              if ("skip" in built) {
+                park(a.signature, a.tokenMint, tMs, a.price, a.buyer, a.seller, built.skip)
+                if (built.skip === PACK_SKIP) packSales++
+                continue
+              }
+              salesRows.push(built.row)
+            }
+            await insertSales(salesRows)
+            if (acts.length < ME_LIMIT) break
+          }
+        } catch (e) {
+          rep.error = (e instanceof Error ? e.message : String(e)).slice(0, 200)
+          setErrors.push(`${candySet.key}: ${rep.error}`)
+        }
+      }
+
       // Park (or re-park, incrementing attempts) everything this tick saw and
       // could not write.
       // A pack sale is closed out in the same pass — recorded, never retried.
@@ -645,7 +773,9 @@ async function handleIndex(req: NextRequest) {
           ? "ME activities feed returned 0 rows — upstream fault, not a quiet market"
           : packWriteErrors > 0
             ? `${packWriteErrors} Candy pack sale write(s) failed — parked for retry, see logs`
-            : null
+            : setErrors.length
+              ? `later-set walk failed: ${setErrors.join(" | ")}`.slice(0, 500)
+              : null
 
       await logRun(startedAtIso, found, written, skipped, feedErr === null, feedErr, cursorBefore, cursorAfter, {
         sales_found: found,
@@ -670,6 +800,10 @@ async function handleIndex(req: NextRequest) {
         newest_activity_at: newestActivityMs === null ? null : new Date(newestActivityMs).toISOString(),
         oldest_activity_at: oldestActivityMs === null ? null : new Date(oldestActivityMs).toISOString(),
         asset_fetches: assetFetches,
+        // Sales resolved from the census without a DAS call (2026-11-08).
+        census_resolved: censusResolved,
+        // One entry per later Candy set (All-Star, Gold, Quest rewards).
+        sets: setReports,
         me_key_present: Boolean(process.env.MAGIC_EDEN_API_KEY),
         sol_usd: rate,
         duration_ms: Date.now() - startedMs,

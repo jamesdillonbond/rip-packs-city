@@ -38,6 +38,7 @@ import {
   candyMeSymbolReady,
 } from "@/lib/chains/solana/normalize"
 import { bearerMatches } from "@/lib/auth/bearer-secret"
+import { CANDY_SETS } from "@/lib/chains/solana/candy-sets"
 
 export const dynamic = "force-dynamic"
 // RAISED 300 -> 800 on 2026-08-07 (Pro lambda hard cap; >800 sends the deploy to
@@ -368,8 +369,8 @@ async function handleSweep(req: NextRequest) {
       let activityDiscoveryError: string | null = null
       let activityRetries = 0
       let activityPagesRead = 0
-      const fetchActivitiesPage = async (page: number): Promise<MeActivity[]> => {
-        const path = `/collections/${encodeURIComponent(CANDY_MLB_ME_SYMBOL)}/activities?offset=${page * ME_LIMIT}&limit=${ME_LIMIT}`
+      const fetchActivitiesPage = async (page: number, symbol: string): Promise<MeActivity[]> => {
+        const path = `/collections/${encodeURIComponent(symbol)}/activities?offset=${page * ME_LIMIT}&limit=${ME_LIMIT}`
         try {
           return await meGetArray<MeActivity>(path)
         } catch (first) {
@@ -382,6 +383,10 @@ async function handleSweep(req: NextRequest) {
           return await meGetArray<MeActivity>(path)
         }
       }
+      // 2026-11-08: bidders on every Candy set (lib/chains/solana/candy-sets.ts),
+      // not the Base Series feed alone. Each set's feed is read; a failure names it.
+      for (const candySet of [{ meSymbol: CANDY_MLB_ME_SYMBOL, key: "base26" }, ...CANDY_SETS.filter((s) => s.meSymbol !== CANDY_MLB_ME_SYMBOL)]) {
+      if (deadlineHit) break
       for (let page = 0; page < MAX_ACTIVITY_PAGES; page++) {
         if (outOfTime()) {
           deadlineHit = true
@@ -389,9 +394,9 @@ async function handleSweep(req: NextRequest) {
         }
         let acts: MeActivity[]
         try {
-          acts = await fetchActivitiesPage(page)
+          acts = await fetchActivitiesPage(page, candySet.meSymbol)
         } catch (e) {
-          activityDiscoveryError = e instanceof Error ? e.message : String(e)
+          activityDiscoveryError = `${candySet.key}: ${e instanceof Error ? e.message : String(e)}`
           console.log(
             `[${PIPELINE_NAME}] activities discovery failed after ${activityPagesRead} page(s); continuing with stored bidders: ${activityDiscoveryError}`
           )
@@ -408,6 +413,7 @@ async function handleSweep(req: NextRequest) {
           if (a.type === "bid" && a.buyer) bidders.add(a.buyer)
         }
         if (pastFloor || acts.length < ME_LIMIT) break
+      }
       }
 
       // 2. Union with buyers of active stored offers, so standing offers older

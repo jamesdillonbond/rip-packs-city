@@ -10,7 +10,8 @@ import { makeReq } from "./cron-req-helper"
 // hoisted flag so both 202 shapes are covered. Mocks supabaseAdmin + the Solana
 // DAS/normalize libs.
 
-const COLL = "TODO_1_CANDY_CORE_COLLECTION_ADDRESS"
+// The real Base Series address: membership is decided by lib/chains/solana/candy-sets.ts (2026-11-08).
+const COLL = "JkJA4yUBweFQdKAWNDhoFj8zHMZrQ1uZEYfjbkc3p8n"
 const state = vi.hoisted(() => ({
   ready: false,
   captured: null as null | (() => Promise<void>),
@@ -166,6 +167,18 @@ describe("POST /api/wallet-backfill-candy — deferred DAS walk", () => {
     expect(run.p_ok).toBe(true)
     expect(run.p_rows_found).toBe(1) // only the live in-collection asset with a moment id
     expect(run.p_extra.wallet).toBe(VALID_SOL)
+  })
+
+  it("keeps a wallet's All-Star and Gold Series ICONs too — every Candy set, not the Base collection alone (2026-11-08)", async () => {
+    state.pages = [[
+      asset({ m: "base1" }),
+      asset({ m: "asg1", grouping: [{ group_key: "collection", group_value: "YTAPbbkLY6cqskMCtBfQXtN1x1a8smiKiM99svzQAvX" }] }),
+      asset({ m: "gold1", grouping: [{ group_key: "collection", group_value: "8BvHMsQZ2vihNBWFw3NcLYdpJzKsuz3kSrJUUwC5Lx4K" }] }),
+      asset({ m: "x1", grouping: [{ group_key: "collection", group_value: "SOME_OTHER" }] }),
+    ]]
+    await accept()
+    await state.captured!()
+    expect(state.runs.at(-1).p_rows_found).toBe(3)
   })
 
   it("stamps the QUERIED wallet so a stale DAS owner can't misattribute the row", async () => {

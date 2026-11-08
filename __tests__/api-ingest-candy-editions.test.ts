@@ -27,6 +27,16 @@ const st = vi.hoisted(() => ({
   captured: null as null | (() => Promise<void>),
   wmcRows: [] as any[],
   listings: { data: [] as any[] | null, error: null as any },
+  linkCalls: 0,
+  linkResult: { data: { players_created: 0, editions_linked: 0 }, error: null } as { data: unknown; error: any },
+  sets: [{ key: "base26", collectionAddress: "col-addr", writesPacks: true, editionKeyPrefix: null }] as any[],
+  walkedAddrs: [] as string[],
+}))
+
+// The census walks every Candy set (lib/chains/solana/candy-sets.ts, 2026-11-08).
+// Default: one Base-like set, so every pre-existing assertion reads one walk.
+vi.mock("@/lib/chains/solana/candy-sets", () => ({
+  get CANDY_SETS() { return st.sets },
 }))
 
 vi.mock("next/server", async (importOriginal) => {
@@ -35,7 +45,12 @@ vi.mock("next/server", async (importOriginal) => {
 })
 vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: {
-    rpc: async (_name: string, args: any) => {
+    rpc: async (name: string, args: any) => {
+      // candy_link_catalog takes no args (2026-11-08): record its call by name.
+      if (name === "candy_link_catalog") {
+        st.linkCalls++
+        return st.linkResult
+      }
       st.runs.push(args)
       return { data: null, error: null }
     },
@@ -72,7 +87,8 @@ vi.mock("@/lib/supabase", () => ({
   },
 }))
 vi.mock("@/lib/chains/solana/das", () => ({
-  paginateGroup: async (_addr: string, cb: (items: any[]) => Promise<void>) => {
+  paginateGroup: async (addr: string, cb: (items: any[]) => Promise<void>) => {
+    st.walkedAddrs.push(addr)
     if (st.paginateThrows) throw new Error("DAS down")
     let seen = 0
     for (const page of st.pages) { seen += page.length; await cb(page) }
@@ -103,6 +119,10 @@ const terminal = () => st.runs.find((r) => r.p_pipeline === "candy-editions-inge
 const heartbeat = () => st.hbRows.find((r) => r.pipeline === "candy-editions-ingest-heartbeat")
 
 beforeEach(() => {
+  st.linkCalls = 0
+  st.linkResult = { data: { players_created: 0, editions_linked: 0 }, error: null }
+  st.sets = [{ key: "base26", collectionAddress: "col-addr", writesPacks: true, editionKeyPrefix: null }]
+  st.walkedAddrs = []
   vi.unstubAllEnvs()
   vi.stubEnv("CRON_SECRET", "")
   st.ready = true
@@ -430,5 +450,49 @@ describe("candy-editions — escrow-held (listed) cards are attributed to their 
     await run()
     expect(st.wmcRows[0].wallet_address).toBe(ESCROW)
     expect(terminal()?.p_extra?.escrow_remap_error).toContain("timeout")
+  })
+})
+
+// 2026-11-08 — Candy ships each product line as its own Core collection. The census
+// walks every set; only the Base Series feeds candy_packs; every edition is linked to
+// a player afterwards; per-set counts are reported so a set walking 0 is visible.
+describe("candy-editions — every Candy set", () => {
+  async function walk() {
+    vi.stubEnv("INGEST_SECRET_TOKEN", "secret")
+    await POST(makeReq({ url: "https://t/api/ingest/candy-editions", auth: "Bearer secret" }))
+    await st.captured!()
+    return terminal()
+  }
+
+  it("walks each set's collection address and reports per-set counts", async () => {
+    st.sets = [
+      { key: "base26", collectionAddress: "addr-base", writesPacks: true, editionKeyPrefix: null },
+      { key: "asg26", collectionAddress: "addr-asg", writesPacks: false, editionKeyPrefix: "asg26" },
+    ]
+    const run = await walk()
+    expect(st.walkedAddrs).toEqual(["addr-base", "addr-asg"])
+    expect(run.p_extra.sets).toMatchObject({ base26: { assets: 3 }, asg26: { assets: 3 } })
+    expect(run.p_ok).toBe(true)
+  })
+
+  it("a later set's sealed packs are skipped, never written to candy_packs (that table models the Base pack)", async () => {
+    st.sets = [{ key: "asg26", collectionAddress: "addr-asg", writesPacks: false, editionKeyPrefix: "asg26" }]
+    const run = await walk()
+    expect(run.p_extra.other_set_packs_skipped).toBe(1)
+    expect(run.p_extra.packs_distinct).toBe(0)
+  })
+
+  it("links the catalog to players after the walk and reports it", async () => {
+    st.linkResult = { data: { players_created: 3, editions_linked: 9 }, error: null }
+    const run = await walk()
+    expect(st.linkCalls).toBe(1)
+    expect(run.p_extra.catalog_link).toEqual({ players_created: 3, editions_linked: 9 })
+  })
+
+  it("a FAILED catalog link fails the run (and says so) — never ok=true", async () => {
+    st.linkResult = { data: null, error: { message: "link boom" } }
+    const run = await walk()
+    expect(run.p_ok).toBe(false)
+    expect(run.p_extra.catalog_link_error).toContain("link boom")
   })
 })

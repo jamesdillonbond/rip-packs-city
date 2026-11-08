@@ -33,6 +33,7 @@ import {
   candyMeSymbolReady,
 } from "@/lib/chains/solana/normalize"
 import { bearerMatches } from "@/lib/auth/bearer-secret"
+import { CANDY_SETS } from "@/lib/chains/solana/candy-sets"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 300
@@ -157,8 +158,8 @@ const ME_FETCH_TIMEOUT_MS = 15_000
 // `sweepComplete` gates nothing but reporting.
 const SWEEP_BUDGET_MS = 600_000
 
-async function fetchActivities(offset: number): Promise<MeActivity[]> {
-  const url = `${ME_BASE}/collections/${encodeURIComponent(CANDY_MLB_ME_SYMBOL)}/activities?offset=${offset}&limit=500`
+async function fetchActivities(offset: number, symbol: string = CANDY_MLB_ME_SYMBOL): Promise<MeActivity[]> {
+  const url = `${ME_BASE}/collections/${encodeURIComponent(symbol)}/activities?offset=${offset}&limit=500`
   const resp = await fetch(url, { headers: meHeaders(), signal: AbortSignal.timeout(ME_FETCH_TIMEOUT_MS) })
   if (!resp.ok) {
     throw new Error(`ME activities HTTP ${resp.status}: ${(await resp.text().catch(() => "")).slice(0, 200)}`)
@@ -170,8 +171,8 @@ async function fetchActivities(offset: number): Promise<MeActivity[]> {
 // Activity types that END a listing: an explicit delist, or a fill.
 const LISTING_ENDING_TYPES = new Set(["delist", "buyNow", "buyNowFill", "acceptBid"])
 
-async function fetchListingsOnce(offset: number): Promise<MeListing[]> {
-  const url = `${ME_BASE}/collections/${encodeURIComponent(CANDY_MLB_ME_SYMBOL)}/listings?offset=${offset}&limit=${ME_LIMIT}`
+async function fetchListingsOnce(offset: number, symbol: string = CANDY_MLB_ME_SYMBOL): Promise<MeListing[]> {
+  const url = `${ME_BASE}/collections/${encodeURIComponent(symbol)}/listings?offset=${offset}&limit=${ME_LIMIT}`
   const resp = await fetch(url, { headers: meHeaders(), signal: AbortSignal.timeout(ME_FETCH_TIMEOUT_MS) })
   if (!resp.ok) {
     throw Object.assign(new Error(`ME listings HTTP ${resp.status}: ${(await resp.text().catch(() => "")).slice(0, 200)}`), { status: resp.status })
@@ -190,16 +191,16 @@ async function fetchListingsOnce(offset: number): Promise<MeListing[]> {
 // failure throws as before (ok=false, nothing deactivated — deactivation is
 // evidence-based, see below).
 const ME_LISTINGS_RETRY_DELAY_MS = 1_500
-async function fetchListings(offset: number): Promise<MeListing[]> {
+async function fetchListings(offset: number, symbol: string = CANDY_MLB_ME_SYMBOL): Promise<MeListing[]> {
   try {
-    return await fetchListingsOnce(offset)
+    return await fetchListingsOnce(offset, symbol)
   } catch (e) {
     const status = (e as { status?: number }).status
     const retryable = status == null || status === 429 || status >= 500
     if (!retryable) throw e
     console.log(`[${PIPELINE_NAME}] listings page offset=${offset} failed (${e instanceof Error ? e.message.slice(0, 120) : String(e)}); retrying once`)
     await new Promise((r) => setTimeout(r, ME_LISTINGS_RETRY_DELAY_MS))
-    return await fetchListingsOnce(offset)
+    return await fetchListingsOnce(offset, symbol)
   }
 }
 
@@ -358,8 +359,16 @@ async function handleSweep(req: NextRequest) {
       // active asks is an upstream fault, not a market event.
       let rawSeen = 0
 
-      let page = 0
       let budgetExhausted = false
+      // 2026-11-08: every Candy set's book (lib/chains/solana/candy-sets.ts) —
+      // All-Star, Gold Series and Quest-reward asks were never read before. The
+      // mint gate below already admits any card the census knows, whatever its set.
+      // The sweep is complete only if EVERY set's book was read to its end.
+      let pagesWalked = 0
+      let allSetsComplete = true
+      for (const candySet of CANDY_SETS) {
+      let page = 0
+      sweepComplete = false
       for (; page < MAX_PAGES; page++) {
         // Stop before the lambda is killed, so logRun below always runs.
         if (Date.now() - startedMs > SWEEP_BUDGET_MS) {
@@ -367,7 +376,7 @@ async function handleSweep(req: NextRequest) {
           sweepComplete = false
           break
         }
-        const listings = await fetchListings(page * ME_LIMIT)
+        const listings = await fetchListings(page * ME_LIMIT, candySet.meSymbol)
         rawSeen += listings.length
         if (listings.length === 0) {
           sweepComplete = true
@@ -582,6 +591,11 @@ async function handleSweep(req: NextRequest) {
       // the sweep as incomplete so deactivation is skipped (never deactivate on a
       // partial view of the book).
       if (page >= MAX_PAGES) sweepComplete = false
+      pagesWalked += page
+      if (!sweepComplete) allSetsComplete = false
+      if (budgetExhausted) break
+      }
+      sweepComplete = allSetsComplete && !budgetExhausted
 
       // Upsert pack asks (same all-or-nothing batching rules as the cards).
       for (let i = 0; i < packRows.length; i += 100) {
@@ -635,11 +649,12 @@ async function handleSweep(req: NextRequest) {
       const endedMints = new Set<string>()
       let activitiesSeen = 0
       try {
+        for (const candySet of CANDY_SETS)
         for (let ap = 0; ap < ACTIVITY_PAGES; ap++) {
           // Same deadline. No evidence is safer than a killed tick: an empty
           // endedMints set simply deactivates nothing this pass.
           if (Date.now() - startedMs > SWEEP_BUDGET_MS) break
-          const acts = await fetchActivities(ap * 500)
+          const acts = await fetchActivities(ap * 500, candySet.meSymbol)
           activitiesSeen += acts.length
           for (const a of acts) {
             if (a.tokenMint && LISTING_ENDING_TYPES.has(a.type)) endedMints.add(a.tokenMint)
@@ -840,7 +855,7 @@ async function handleSweep(req: NextRequest) {
         // sweep_complete:false, which is the same empty-vs-unavailable
         // conflation this repo fixes everywhere else.
         budget_exhausted: budgetExhausted,
-        pages_walked: page,
+        pages_walked: pagesWalked,
         me_key_present: Boolean(process.env.MAGIC_EDEN_API_KEY),
         sol_usd: rate,
         duration_ms: Date.now() - startedMs,

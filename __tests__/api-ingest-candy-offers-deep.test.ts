@@ -40,6 +40,9 @@ vi.mock("next/server", async (importOriginal) => {
   const actual = await importOriginal<typeof import("next/server")>()
   return { ...actual, after: (cb: () => unknown) => void state.afterCbs.push(cb) }
 })
+// Base set only: the bidder walk reads every set since 2026-11-08; one set keeps these fixtures single-feed.
+const setsMock = vi.hoisted(() => ({ v: [] as any[] }))
+vi.mock("@/lib/chains/solana/candy-sets", () => ({ get CANDY_SETS() { return setsMock.v } }))
 vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: new Proxy(
     {},
@@ -193,6 +196,25 @@ describe("candy-offers — sweep ladder", () => {
     expect(extra.activity_discovery_error).toBeNull()
     expect(extra.activity_retries).toBe(0)
     expect(extra.activity_pages_read).toBe(1)
+  })
+
+  it("discovers bidders on a later Candy set's own feed too (2026-11-08)", async () => {
+    setsMock.v = [{ key: "gold26", meSymbol: "gold-symbol" }]
+    try {
+      const now = Math.floor(Date.now() / 1000)
+      fetchMock = installFetchMock([
+        jsonRoute("/collections/gold-symbol/activities", [{ type: "bid", buyer: "goldBidder", blockTime: now }]),
+        jsonRoute("/activities", []),
+        jsonRoute("/offers_made", []),
+      ])
+      install({ candy_offers: [{ data: [], error: null }, { data: [], error: null }, { data: [], error: null }] })
+      await POST(req())
+      await runDeferred()
+      const offerCalls = fetchMock.calls.filter((c) => c.url.includes("/offers_made"))
+      expect(offerCalls.map((c) => c.url).join(" ")).toContain("/wallets/goldBidder/offers_made")
+    } finally {
+      setsMock.v = []
+    }
   })
 
   it("re-sweeps a buyer known only from an ACTIVE stored offer (aged out of the activities window)", async () => {

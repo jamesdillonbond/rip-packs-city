@@ -15,8 +15,8 @@ import { supabaseAdmin } from "@/lib/supabase"
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 import { paginateGroup, type DasAsset } from "@/lib/chains/solana/das"
 import { attributeEscrowHeldToSellers } from "@/lib/chains/solana/escrow"
+import { CANDY_SETS } from "@/lib/chains/solana/candy-sets"
 import {
-  CANDY_MLB_COLLECTION_ADDRESS,
   CANDY_MLB_SLUG,
   candyDiscoveryReady,
   isBurnt,
@@ -214,8 +214,21 @@ async function handleIngest(req: NextRequest) {
     const distinctMints = new Set<string>()
     const distinctPackMints = new Set<string>()
     const distinctJerseys = new Set<string>()
+    // 2026-11-08: Candy ships each product line as its own Core collection
+    // (lib/chains/solana/candy-sets.ts). Every set is walked; per-set counts land in
+    // `extra.sets` so a set that walks 0 assets is visible, not averaged away.
+    const perSet: Record<string, { assets: number; editions: number; serials: number; packs_skipped: number }> = {}
+    // Packs of a set that does not feed candy_packs (only the Base Series does —
+    // the pack EV model, pack market and treasury label all model THAT pack).
+    let otherSetPacksSkipped = 0
+    let linkResult: unknown = null
+    let linkError: string | null = null
     try {
-      assetsSeen = await paginateGroup(CANDY_MLB_COLLECTION_ADDRESS, async (items) => {
+      for (const candySet of CANDY_SETS) {
+      const setEditionKeys = new Set<string>()
+      const setMints = new Set<string>()
+      let setPacks = 0
+      const setAssets = await paginateGroup(candySet.collectionAddress, async (items) => {
         // Editions: dedup by external_id within the page (many serials share one
         // edition key) — upserting the same conflict target twice in one batch
         // is a Postgres error.
@@ -233,8 +246,13 @@ async function handleIngest(req: NextRequest) {
         const packAssets: DasAsset[] = []
         const live = (items as DasAsset[]).filter((a) => {
           if (isPack(a)) {
-            packsSkipped++
-            packAssets.push(a)
+            if (candySet.writesPacks) {
+              packsSkipped++
+              packAssets.push(a)
+            } else {
+              otherSetPacksSkipped++
+              setPacks++
+            }
             return false
           }
           if (isBurnt(a)) {
@@ -273,6 +291,7 @@ async function handleIngest(req: NextRequest) {
           if (e.external_id) {
             edByKey.set(e.external_id, e)
             distinctEditionKeys.add(e.external_id)
+            setEditionKeys.add(e.external_id)
             // Jersey numbers ride the SAME attribute map normalizeEdition already
             // reads, and land on editions.jersey_number — the platform-wide column
             // Top Shot and All Day fill, not a Candy-only side table. Counted here
@@ -304,6 +323,7 @@ async function handleIngest(req: NextRequest) {
             const s = normalizeSerial(a)
             if (!s.wallet_address || !s.moment_id) return null
             distinctMints.add(s.moment_id)
+            setMints.add(s.moment_id)
             return { ...s, last_seen_at: now }
           })
           .filter((r): r is NonNullable<typeof r> => r !== null)
@@ -363,6 +383,19 @@ async function handleIngest(req: NextRequest) {
           console.log(`[${PIPELINE_NAME}] wmc metadata denorm threw: ${e instanceof Error ? e.message : String(e)}`)
         }
       })
+      assetsSeen += setAssets
+      perSet[candySet.key] = { assets: setAssets, editions: setEditionKeys.size, serials: setMints.size, packs_skipped: setPacks }
+      }
+
+      // Give every edition a player_id (new sets bring new players). A failure is
+      // recorded and fails the run; it never blocks the census rows already written.
+      {
+        const { data, error } = await (supabaseAdmin as any).rpc("candy_link_catalog")
+        if (error) {
+          linkError = String(error.message ?? error).slice(0, 200)
+          writeErrors.push(`candy_link_catalog: ${linkError}`)
+        } else linkResult = data
+      }
 
       await logRun(
         startedAtIso,
@@ -385,6 +418,10 @@ async function handleIngest(req: NextRequest) {
         escrow_remapped: escrowRemapped,
         escrow_unmatched: escrowUnmatched,
         escrow_remap_error: escrowRemapError,
+        sets: perSet,
+        other_set_packs_skipped: otherSetPacksSkipped,
+        catalog_link: linkResult,
+        catalog_link_error: linkError,
         duration_ms: Date.now() - startedMs,
         },
       )

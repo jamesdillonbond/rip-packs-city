@@ -17,13 +17,13 @@ import { paginateOwner, getAsset, type DasAsset } from "@/lib/chains/solana/das"
 import { MAGIC_EDEN_SOLANA_ESCROW, listedMintsInEscrowForSeller } from "@/lib/chains/solana/escrow"
 import { isBurnt,
   isPack,
-  CANDY_MLB_COLLECTION_ADDRESS,
   CANDY_MLB_SLUG,
   candyDiscoveryReady,
   normalizeSerial,
   CANDY_MLB_UUID,
 } from "@/lib/chains/solana/normalize"
 import { bearerMatches } from "@/lib/auth/bearer-secret"
+import { isCandySetAsset } from "@/lib/chains/solana/candy-sets"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 300
@@ -40,10 +40,11 @@ const ESCROW_READ_BUDGET_MS = 200_000
 // at launch, GAP 1).
 const BASE58_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/
 
+// Any Candy set we track (Base, All-Star, Gold, Quest rewards — lib/chains/solana/
+// candy-sets.ts, 2026-11-08). It was the Base collection only, so a wallet's
+// All-Star and Gold ICONs never reached its portfolio.
 function inCandyCollection(asset: DasAsset): boolean {
-  return (asset.grouping ?? []).some(
-    (g) => g.group_key === "collection" && g.group_value === CANDY_MLB_COLLECTION_ADDRESS
-  )
+  return isCandySetAsset(asset)
 }
 
 async function logRun(

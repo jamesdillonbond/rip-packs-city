@@ -264,3 +264,57 @@ describe("Candy normalize QA fixes (2026-07-17)", () => {
     expect(serialFromAsset(named("x", [{ trait_type: "Serial Number", value: "248/250" }]))).toBe(248)
   })
 })
+
+// 2026-11-08 — Candy's later sets (lib/chains/solana/candy-sets.ts). The Base Series
+// keeps its legacy keys and writes no set/tier; later sets get a prefixed,
+// rarity-suffixed key plus set_id / set_name / tier from the registry.
+describe("multi-set Candy assets", () => {
+  const grouped = (addr: string, name: string, attrs: Record<string, string>) =>
+    asset({
+      id: "mint-x",
+      grouping: [{ group_key: "collection", group_value: addr }],
+      content: { metadata: { name, attributes: Object.entries(attrs).map(([trait_type, value]) => ({ trait_type, value })) } },
+      ownership: { owner: "W" },
+    })
+  const BASE = "JkJA4yUBweFQdKAWNDhoFj8zHMZrQ1uZEYfjbkc3p8n"
+  const ASG = "YTAPbbkLY6cqskMCtBfQXtN1x1a8smiKiM99svzQAvX"
+  const GOLD = "8BvHMsQZ2vihNBWFw3NcLYdpJzKsuz3kSrJUUwC5Lx4K"
+
+  it("a Base ICON keeps its legacy key and its payload carries NO set_id / set_name / tier keys", () => {
+    const a = grouped(BASE, "Shohei Ohtani (12/250)", { "Player Name": "Shohei Ohtani", Rarity: "CORE", "Serial Number": "12/250" })
+    expect(editionKeyFromAsset(a)).toBe("shohei-ohtani")
+    const e = normalizeEdition(a)
+    expect("set_id" in e).toBe(false)
+    expect("set_name" in e).toBe(false)
+    expect("tier" in e).toBe(false)
+  })
+
+  it("the same player in another set — and another rarity — is a different edition", () => {
+    const core = grouped(ASG, "Shohei Ohtani (100/225)", { Rarity: "CORE", "Serial Number": "100/225" })
+    const rare = grouped(ASG, "Shohei Ohtani (17/50)", { Rarity: "RARE", "Serial Number": "17/50" })
+    expect(editionKeyFromAsset(core)).toBe("asg26:shohei-ohtani-core")
+    expect(editionKeyFromAsset(rare)).toBe("asg26:shohei-ohtani-rare")
+    expect(normalizeSerial(rare).edition_key).toBe("asg26:shohei-ohtani-rare")
+  })
+
+  it("later sets carry set_id, set_name and a Rarity-derived tier; a Rainbow is LEGENDARY, an insert has no tier", () => {
+    const rare = normalizeEdition(grouped(ASG, "Aaron Judge (3/50)", { Rarity: "RARE", "Serial Number": "3/50" }))
+    expect(rare).toMatchObject({ set_id: "8608ae96-10c5-4bf6-aedf-b0d4dc0bfe66", set_name: "2026 MLB All-Star Game ICONs", tier: "RARE" })
+    const rainbow = normalizeEdition(grouped(ASG, "Aaron Judge - PINK (3/15)", { Rarity: "CORE", "Serial Number": "3/15" }))
+    expect(rainbow.tier).toBe("LEGENDARY")
+    expect(rainbow.badges).toContain("Rainbow (Pink)")
+    const insert = normalizeEdition(grouped(GOLD, "Shohei Ohtani - Momenticons (2/5)", { Rarity: "INSERT", "Insert Type": "Momenticon", "Serial Number": "2/5" }))
+    expect(insert.tier).toBeNull()
+    expect(insert.badges).toContain("Insert (Momenticons)")
+    const legend = normalizeEdition(grouped(GOLD, "Shohei Ohtani (1/1)", { Rarity: "LEGENDARY", "Serial Number": "1/1" }))
+    expect(legend.tier).toBe("LEGENDARY")
+    expect(legend.badges ?? []).not.toContain(expect.stringMatching(/^Rainbow/))
+  })
+
+  it("Base checklist designations (Rookie / First Mint) are not copied onto a later set's ICONs", () => {
+    const e = normalizeEdition(grouped(ASG, "Jac Caglianone - Home Run Derby (1/15)", { "Player Name": "Jac Caglianone", Rarity: "INSERT", "Insert Type": "Home Run Derby" }))
+    expect(e.badges ?? []).not.toContain("Rookie")
+    expect(e.badges ?? []).not.toContain("First Mint")
+    expect(e.badges).toContain("Insert (Home Run Derby)")
+  })
+})

@@ -25,6 +25,7 @@
 // derive both from editionKeyFromAsset so they can never diverge.
 
 import { candyChecklistBadges } from "./candy-checklist"
+import { candySetForAsset, type CandySet } from "./candy-sets"
 import type { DasAsset } from "./das"
 
 // Collection UUID in public.collections (seeded inert 2026-06-08).
@@ -160,7 +161,52 @@ export function editionKeyFromAsset(asset: DasAsset): string {
     .replace(/[^a-z0-9:_-]/g, "")
     .replace(/-+/g, "-")
     .replace(/^-+|-+$/g, "")
+  // 2026-11-08 — Candy's later sets (lib/chains/solana/candy-sets.ts). The Base
+  // Series has NO prefix: its keys predate multi-set support and are referenced
+  // by wmc, sales, listings, offers and page URLs. Every later set prefixes its key
+  // and appends the rarity, because one player name recurs across sets (an
+  // All-Star "Shohei Ohtani (17/50)" is not the Base ICON) and across rarities
+  // inside a set (All-Star Core /225, Uncommon /125, Rare /50 share a name).
+  const set = candySetForAsset(asset)
+  if (set?.editionKeyPrefix) {
+    const rarity = (attr(asset, "Rarity") ?? "").toLowerCase().replace(/[^a-z0-9]/g, "")
+    return `${set.editionKeyPrefix}:${slug || asset.id}${rarity ? `-${rarity}` : ""}`
+  }
   return slug || asset.id
+}
+
+/** The Candy set this asset belongs to (null = unknown grouping, treated as Base). */
+export function candySetOf(asset: DasAsset): CandySet | null {
+  return candySetForAsset(asset)
+}
+
+// Tier for a NON-Base set, from the Rarity trait. The Base Series' tiers (COMMON /250,
+// LEGENDARY = Rainbow /15) were assigned once in the DB and are never written by the
+// ingest, so this is only called for later sets. A Rainbow colour in the name is
+// LEGENDARY, as on the Base Series; an INSERT (Home Run Derby, Momenticons,
+// Pixicons) or a quest REWARD has no tier of its own — NULL, never a guess; its
+// badge says what it is.
+const RARITY_TIER: Record<string, string> = {
+  core: "COMMON",
+  common: "COMMON",
+  uncommon: "UNCOMMON",
+  rare: "RARE",
+  epic: "EPIC",
+  legendary: "LEGENDARY",
+}
+export function candyTierFromAsset(asset: DasAsset): string | null {
+  if (rainbowColorFromAsset(asset)) return "LEGENDARY"
+  const r = (attr(asset, "Rarity") ?? "").trim().toLowerCase()
+  return RARITY_TIER[r] ?? null
+}
+
+// "Momenticon" / "Momenticons" and "Pixicon" / "Pixicons" both appear on chain.
+function insertLabel(asset: DasAsset): string | null {
+  const raw = (attr(asset, "Insert Type") ?? "").trim()
+  if (!raw) return null
+  if (/^momenticons?$/i.test(raw)) return "Momenticons"
+  if (/^pixicons?$/i.test(raw)) return "Pixicons"
+  return raw
 }
 
 // Edition size = denominator of the "Serial Number" display trait ("248/250").
@@ -221,6 +267,12 @@ export interface NormalizedEdition {
   // special-serial row — so Candy jerseys belong here, not in a Candy-only side
   // table. Null when the trait is absent or unparseable.
   jersey_number: number | null
+  // ⛔ Present ONLY for a non-Base set (see normalizeEdition). For the Base Series
+  // these keys are ABSENT so the daily upsert can never clobber the DB-owned
+  // set_id / set_name / tier of the 125 Base editions.
+  set_id?: string
+  set_name?: string
+  tier?: string | null
 }
 
 // editions.badges (text[]) — best-effort from name (Rainbow) + trait probes
@@ -230,7 +282,16 @@ function editionBadges(asset: DasAsset): string[] | null {
   // Candy's published-checklist designations (2026-09-25). Drop 1 carries no
   // on-chain trait for either, so without this the ingest would rewrite every
   // edition's badges without them. Player-level: Core and Rainbow printings alike.
-  for (const b of candyChecklistBadges(attr(asset, "Player Name"))) out.push(b)
+  const set = candySetForAsset(asset)
+  const isBase = !set || set.editionKeyPrefix === null
+  // The published checklist designations (Rookie, First Mint) belong to the Base
+  // Series checklist; they are not carried onto a player's All-Star or Gold ICONs.
+  if (isBase) for (const b of candyChecklistBadges(attr(asset, "Player Name"))) out.push(b)
+  if (!isBase) {
+    const ins = insertLabel(asset)
+    if (ins) out.push(`Insert (${ins})`)
+    if ((attr(asset, "Rarity") ?? "").trim().toLowerCase() === "reward") out.push("Quest Reward")
+  }
   if (isFirstMint(asset) && !out.includes("First Mint")) out.push("First Mint")
   const color = rainbowColorFromAsset(asset)
   if (color) out.push(`Rainbow (${color.charAt(0).toUpperCase() + color.slice(1)})`)
@@ -275,7 +336,14 @@ export function normalizeEdition(asset: DasAsset): NormalizedEdition {
     team_name: attr(asset, "Team") ?? null,
     badges: editionBadges(asset),
     jersey_number: jerseyFromAsset(asset),
+    ...nonBaseSetFields(asset),
   }
+}
+
+function nonBaseSetFields(asset: DasAsset): Pick<NormalizedEdition, "set_id" | "set_name" | "tier"> {
+  const set = candySetForAsset(asset)
+  if (!set || set.editionKeyPrefix === null) return {}
+  return { set_id: set.setId, set_name: set.name, tier: candyTierFromAsset(asset) }
 }
 
 // One wallet_moments_cache row (dedup on wallet_address,collection_id,moment_id).

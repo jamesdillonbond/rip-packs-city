@@ -33,7 +33,7 @@ export interface CandyPrinting {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = any
-type SelfRows = Array<{ player_id: string | null }>
+type SelfRows = Array<{ player_id: string | null; set_id?: string | null }>
 type SibRows = Array<Record<string, unknown>>
 type FmvRows = Array<{ edition_id: string; fmv_usd: unknown }>
 
@@ -50,18 +50,23 @@ export async function fetchCandyPrintings(
   const db: Db = injected ?? supabaseAdmin
   try {
     const self = await withQueryDeadline<SelfRows>(
-      db.from("editions").select("player_id").eq("id", editionId).eq("collection_id", CANDY_COLLECTION_ID).limit(1),
+      db.from("editions").select("player_id,set_id").eq("id", editionId).eq("collection_id", CANDY_COLLECTION_ID).limit(1),
       "edition/candy-printings-self",
       apiReadTimeoutMs(),
     )
     if (self.error) return { ok: false, printings: [] }
     const playerId = (self.data ?? [])[0]?.player_id ?? null
+    // Printings are siblings INSIDE one set (2026-11-08): a player's All-Star or Gold
+    // Series ICON is a different card, not a parallel of their Base ICON.
+    const setId = (self.data ?? [])[0]?.set_id ?? null
     if (!playerId) return { ok: true, printings: [] }
+    let sibQuery = db.from("editions")
+      .select("id,external_id,badges,circulation_count,thumbnail_url")
+      .eq("collection_id", CANDY_COLLECTION_ID)
+      .eq("player_id", playerId)
+    if (setId) sibQuery = sibQuery.eq("set_id", setId)
     const sibs = await withQueryDeadline<SibRows>(
-      db.from("editions")
-        .select("id,external_id,badges,circulation_count,thumbnail_url")
-        .eq("collection_id", CANDY_COLLECTION_ID)
-        .eq("player_id", playerId)
+      sibQuery
         .order("circulation_count", { ascending: false })
         .order("external_id", { ascending: true })
         .limit(20),
