@@ -145,6 +145,15 @@ export async function POST(req: NextRequest) {
     .single();
 
   if (error) {
+    // 23514 trophy_case_cap_reached: the DB trigger (migration
+    // audit_20261107_trophy_cases_extra_cap_enforced_in_db) caught a concurrent
+    // insert that passed the count above — the same answer as the count gives.
+    if ((error as { code?: string }).code === "23514" && String((error as { message?: string }).message ?? "").includes("trophy_case_cap_reached")) {
+      return NextResponse.json(
+        { error: `You can have up to ${MAX_EXTRA_CASES} extra trophy cases. Delete one to make room.` },
+        { status: 409 }
+      );
+    }
     // 23505 on (user_id, challenge_id): already entered. Actionable, not a failure.
     if ((error as { code?: string }).code === "23505") {
       return NextResponse.json({ error: "You've already entered this challenge.", code: "already_entered" }, { status: 409 });

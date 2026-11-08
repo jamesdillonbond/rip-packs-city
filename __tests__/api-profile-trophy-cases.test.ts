@@ -100,6 +100,16 @@ describe("POST /api/profile/trophy-cases", () => {
     expect(state.inserts).toHaveLength(0)
   })
 
+  it("a concurrent insert the DB cap trigger refuses (23514) is the same 409, not a 500", async () => {
+    // 2026-11-07: two POSTs could both read 9 and both insert; the trigger
+    // (audit_20261107_trophy_cases_extra_cap_enforced_in_db) now refuses the 11th.
+    state.tables.trophy_cases = { data: null, error: null, count: 9 }
+    state.insertResult = { data: null, error: { code: "23514", message: "trophy_case_cap_reached" } }
+    const res = await POST(req({ name: "Rookies" }))
+    expect(res.status).toBe(409)
+    expect((await res.json()).error).toMatch(/up to 10 extra trophy cases/)
+  })
+
   it("a failed count is not read as zero", async () => {
     state.tables.trophy_cases = { data: null, error: null, count: null }
     const res = await POST(req({ name: "Rookies" }))
