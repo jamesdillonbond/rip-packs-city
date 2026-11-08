@@ -1,0 +1,355 @@
+#!/usr/bin/env node
+// scripts/social/x-draft.mjs — the facts and a first-pass draft for the day's @RipPacksCity post.
+//
+// Reads ONLY RPC's public insight APIs (https://www.rippackscity.com/api/public/insights/*), so it
+// needs no keys and runs anywhere Node 18+ runs — including a scheduled cloud session that fetches
+// this file from raw.githubusercontent.com. The calendar it implements is docs/social/x-calendar.md;
+// change the calendar there and here together.
+//
+//   node scripts/social/x-draft.mjs                 # today's slot (Pacific Time)
+//   node scripts/social/x-draft.mjs --slot mon      # force a slot: mon tue wed thu fri sat sun
+//   node scripts/social/x-draft.mjs --date 2026-11-09
+//
+// Prints one JSON object: { date_pt, slot, title, link, facts, draft, draft_len, intent_url,
+// breaking[], warnings[], skip_reason }. A slot with nothing honest to say sets skip_reason and,
+// where the calendar has one, falls back to its alternate. The draft is a STARTING POINT — the
+// human (or the scheduled session) edits wording; the numbers come from here.
+//
+// House rules enforced here (docs/social/x-calendar.md § House rules):
+//   - FMV/pricing confidence is never shown; it is used only as an internal filter.
+//   - "DUC" never appears; every amount is plain US dollars.
+//   - Pinnacle assets are characters; UFC Strike is excluded (its market is closed).
+//   - Collectors are never named or tagged.
+//   - A collection with no sales in the window is left out, never posted as "$0".
+
+const SITE = "https://www.rippackscity.com"
+const API = `${SITE}/api/public/insights`
+const TZ = "America/Los_Angeles"
+const SLOTS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"]
+const EXCLUDED = new Set(["ufc_strike"])
+const NAMES = {
+  nba_top_shot: "Top Shot",
+  nfl_all_day: "All Day",
+  laliga_golazos: "Golazos",
+  disney_pinnacle: "Pinnacle",
+  panini_blockchain: "Panini",
+  candy_mlb: "Candy MLB",
+  ufc_strike: "UFC Strike",
+}
+// Friday rotates one board a week (ISO week number mod length). Every entry has a public API,
+// a page with a summary_large_image card, and a live market behind it.
+const FRIDAY_BOARDS = [
+  "squeeze",
+  "serial-premiums",
+  "market-cap",
+  "offer-spread",
+  "underpriced-serials",
+  "autographs",
+  "first-mint",
+  "set-completers",
+]
+const BIG_SALE_USD = 1000
+
+// ---------- small helpers ----------
+const args = process.argv.slice(2)
+const arg = (k) => {
+  const i = args.indexOf(`--${k}`)
+  return i >= 0 ? args[i + 1] : null
+}
+
+function ptParts(d) {
+  const f = new Intl.DateTimeFormat("en-US", {
+    timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit", weekday: "short",
+    hour: "2-digit", minute: "2-digit", hour12: false,
+  })
+  const p = Object.fromEntries(f.formatToParts(d).map((x) => [x.type, x.value]))
+  return { date: `${p.year}-${p.month}-${p.day}`, weekday: p.weekday.toLowerCase().slice(0, 3), hm: `${p.hour}:${p.minute}` }
+}
+
+// Midnight PT of a PT calendar date, as a UTC Date (handles PST/PDT by probing the offset).
+function ptMidnight(dateStr) {
+  const guess = new Date(`${dateStr}T08:00:00Z`) // 00:00 PST
+  const { hm } = ptParts(guess)
+  return hm === "00:00" ? guess : new Date(`${dateStr}T07:00:00Z`) // 00:00 PDT
+}
+function addDays(dateStr, n) {
+  const d = new Date(`${dateStr}T12:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + n)
+  return d.toISOString().slice(0, 10)
+}
+function isoWeek(dateStr) {
+  const d = new Date(`${dateStr}T12:00:00Z`)
+  const day = (d.getUTCDay() + 6) % 7
+  d.setUTCDate(d.getUTCDate() - day + 3)
+  const firstThu = new Date(Date.UTC(d.getUTCFullYear(), 0, 4))
+  return 1 + Math.round(((d - firstThu) / 86400000 - 3 + ((firstThu.getUTCDay() + 6) % 7)) / 7)
+}
+
+const usd = (n) =>
+  n == null ? "—" : "$" + Number(n).toLocaleString("en-US", { maximumFractionDigits: n < 100 ? 2 : 0, minimumFractionDigits: n < 100 && n % 1 ? 2 : 0 })
+const int = (n) => Number(n).toLocaleString("en-US")
+const coll = (slug) => NAMES[slug] ?? slug
+const decode = (s) =>
+  String(s ?? "").replace(/&#x27;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+
+// X counts every URL as 23 characters and most wide/emoji characters as 2.
+function xLength(text) {
+  const noUrls = text.replace(/https?:\/\/\S+/g, () => "x".repeat(23))
+  let n = 0
+  for (const ch of noUrls) n += ch.codePointAt(0) >= 0x1100 ? 2 : 1
+  return n
+}
+const intent = (text) => `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`
+
+async function getJson(path) {
+  const r = await fetch(`${API}/${path}`, { headers: { "user-agent": "rpc-x-calendar/1.0" } })
+  if (!r.ok) throw new Error(`${path}: HTTP ${r.status}`)
+  return r.json()
+}
+async function pageDescription(slug) {
+  try {
+    const r = await fetch(`${SITE}/insights/${slug}`, { headers: { "user-agent": "rpc-x-calendar/1.0" } })
+    const html = await r.text()
+    const m = html.match(/<meta property="og:description" content="([^"]*)"/)
+    const t = html.match(/<meta property="og:title" content="([^"]*)"/)
+    return { description: decode(m?.[1]), title: decode(t?.[1]) }
+  } catch {
+    return { description: null, title: null }
+  }
+}
+
+function saleSubject(r) {
+  const who = r.player_name || r.set_name || "Unnamed"
+  const serial = r.serial_number && r.serial_number !== 0
+    ? ` #${r.serial_number}${r.circulation_count ? `/${int(r.circulation_count)}` : ""}`
+    : ""
+  const set = r.set_name && r.set_name !== who ? ` ${r.set_name}` : ""
+  return `${who}${set}${serial}`
+}
+function fit(lines, head, tail, max = 280) {
+  // Drop list lines from the bottom until the post fits.
+  let body = [...lines]
+  while (body.length > 1 && xLength([head, ...body, tail].join("\n")) > max) body.pop()
+  return [head, ...body, tail].join("\n")
+}
+
+// ---------- slots ----------
+async function topSales7d() {
+  const d = await getJson("top-sales?window=7d&sort=price&limit=200")
+  return (d.rows ?? []).filter((r) => !EXCLUDED.has(r.collection) && r.price_usd > 0)
+}
+
+async function mon(ctx) {
+  // Weekend = Friday 00:00 PT up to Monday 00:00 PT (or now, if run before Monday).
+  const fri = addDays(ctx.date, -((ctx.dow + 2) % 7)) // the most recent Friday on/before today
+  const start = ptMidnight(fri)
+  const end = ptMidnight(addDays(fri, 3))
+  const rows = (await topSales7d()).filter((r) => {
+    const t = new Date(r.sold_at)
+    return t >= start && t < end
+  })
+  const link = `${SITE}/insights/top-sales`
+  if (rows.length < 3) return { skip_reason: `only ${rows.length} weekend sales on the top-sales board`, link }
+  const top = rows.slice(0, 5)
+  const lines = top.map((r, i) => `${i + 1}. ${saleSubject(r)} — ${usd(r.price_usd)} (${coll(r.collection)})`)
+  // The API returns the week's top 200 by price. If even the 200th cleared the threshold, the
+  // count is a floor, not a total — say nothing rather than under-count.
+  const raw = await getJson("top-sales?window=7d&sort=price&limit=200")
+  const truncatedAbove = (raw.rows ?? []).length >= 200 && Math.min(...raw.rows.map((r) => r.price_usd)) >= BIG_SALE_USD
+  const over = truncatedAbove ? 0 : rows.filter((r) => r.price_usd >= BIG_SALE_USD).length
+  const head = "The weekend's biggest sales:\n"
+  const tail = `\n${over > 3 ? `${over} sales cleared ${usd(BIG_SALE_USD)}. ` : ""}Full board 👇\n${link}`
+  return {
+    title: "Weekend market recap",
+    link,
+    facts: { window_pt: `${fri} 00:00 → ${addDays(fri, 3)} 00:00`, weekend_sales_on_board: rows.length, over_1k: over, top },
+    draft: fit(lines, head, tail),
+  }
+}
+
+async function tue() {
+  const d = await getJson("pack-sniper?limit=50")
+  const link = `${SITE}/insights/pack-sniper`
+  const deals = (d.deals ?? [])
+    // Conservative: the expected value must still clear the ask after Top Shot's 5% selling fee,
+    // the EV must cover the whole pool, and high-variance (chase/depleted) packs are left out.
+    .filter((x) => !x.highVariance && x.fmvCoveragePct >= 90 && x.grossEV * 0.95 > x.lowestAsk)
+    .sort((a, b) => b.grossEV / b.lowestAsk - a.grossEV / a.lowestAsk)
+  const s = d.meta?.stats ?? {}
+  const facts = { live_listings: s.liveListings, priced_packs: s.matched, qualifying: deals.length, deals: deals.slice(0, 3) }
+  if (!deals.length) {
+    return {
+      title: "Top Shot pack check",
+      link,
+      facts,
+      draft: `Pack check: we priced ${int(s.matched ?? 0)} Top Shot packs on the marketplace against what's left inside them.\n\nNone are listed below their expected value after fees this morning.\n\n${link}`,
+    }
+  }
+  const lines = deals.slice(0, 3).map((x) => `• ${x.title}: ask ${usd(x.lowestAsk)}, expected contents ~${usd(x.grossEV)}`)
+  return {
+    title: "Top Shot pack check",
+    link,
+    facts,
+    draft: fit(lines, `Top Shot packs listed below the expected value of what's still inside them:\n`, `\nPriced against unopened supply, not the original drop.\n${link}`),
+  }
+}
+
+async function wed() {
+  const d = await getJson("rookies?class=2025&sort=gmv&limit=5")
+  const link = `${SITE}/insights/rookies`
+  const c = d.cohort_stats ?? {}
+  const rows = d.rows ?? []
+  if (!rows.length) return { skip_reason: "rookie board empty", link }
+  const [a, b, cc] = rows
+  const lines = [
+    `1. ${a.player_name} — ${usd(a.gmv_30d)} over ${int(a.sales_30d)} sales`,
+    b && `2. ${b.player_name} — ${usd(b.gmv_30d)}`,
+    cc && `3. ${cc.player_name} — ${usd(cc.gmv_30d)}`,
+  ].filter(Boolean)
+  return {
+    title: "Rookie spotlight",
+    link,
+    facts: { cohort: c, top: rows.slice(0, 3) },
+    draft: fit(lines, `2025 rookie class on Top Shot, last 30 days: ${usd(c.total_gmv_30d)} across ${int(c.total_sales_30d)} sales.\n\nLeading the class:`, `\n${link}`),
+  }
+}
+
+// Some Panini names repeat the player across a dual card ("Travis Hunter | Travis Hunter — Downtown Duos").
+function dealName(r) {
+  const [who, set] = String(r.name || r.player_name || "").split(" — ")
+  const people = [...new Set(who.split(" | ").map((x) => x.trim()).filter(Boolean))].join(" & ")
+  return set ? `${people} ${set}` : people
+}
+
+async function thu() {
+  const d = await getJson("deals?limit=50&sort=discount")
+  const link = `${SITE}/insights/deals`
+  const rows = (d.rows ?? [])
+    // confidence is an INTERNAL filter only — it never appears in the post.
+    .filter((r) => r.confidence === "HIGH" && !r.low_confidence_fmv && !EXCLUDED.has(r.collection_slug))
+    .filter((r) => r.discount_usd >= 10 && r.discount_pct >= 15)
+    .sort((a, b) => b.discount_usd - a.discount_usd)
+  if (!rows.length) {
+    const alt = await sat()
+    return { ...alt, title: "Deal of the week (fallback: trade-in)", skip_reason: "no listing $10+ and 15%+ under a well-supported value; used the trade-in board" }
+  }
+  const lines = rows.slice(0, 3).map((r) => `• ${dealName(r)} (${coll(r.collection_slug)}) — ask ${usd(r.low_ask)} vs value ${usd(r.fmv_usd)}`)
+  return {
+    title: "Deal of the week",
+    link,
+    facts: { data_as_of: d.meta?.data_as_of, qualifying: rows.length, top: rows.slice(0, 3) },
+    draft: fit(lines, `Listed under value right now:\n`, `\nAsks move fast — live board:\n${link}`),
+  }
+}
+
+async function fri(ctx) {
+  const slug = FRIDAY_BOARDS[isoWeek(ctx.date) % FRIDAY_BOARDS.length]
+  const link = `${SITE}/insights/${slug}`
+  const meta = await pageDescription(slug)
+  let sample = []
+  let stats = null
+  try {
+    const d = await getJson(`${slug}?limit=5`)
+    // Boards name their list differently (rows, deals, trophies…): take the first array that isn't meta.
+    const list = Object.entries(d).find(([k, v]) => k !== "meta" && Array.isArray(v))?.[1] ?? []
+    if (d.stats || d.cohort_stats) stats = d.stats ?? d.cohort_stats
+    // Strip confidence fields so they cannot leak into a hand-written post.
+    sample = list.slice(0, 5).map((r) => Object.fromEntries(Object.entries(r).filter(([k]) => !/confidence/i.test(k))))
+  } catch (e) {
+    return { skip_reason: `board ${slug} API failed: ${e.message}`, link }
+  }
+  if (!sample.length) return { skip_reason: `board ${slug} returned no rows`, link }
+  return {
+    title: `Board drop: ${meta.title ?? slug}`,
+    link,
+    facts: { board: slug, page_title: meta.title, page_description: meta.description, stats, top_rows: sample },
+    // A placeholder ONLY: write the hook from facts.stats / facts.top_rows (live numbers).
+    // Never copy a figure out of page_description — static metadata is not live (first-mint
+    // carried a stale "Average: 15.8×" until 2026-11-08).
+    draft: `${meta.title ?? slug}\n\n${link}`,
+    needs_rewrite: true,
+  }
+}
+
+async function sat() {
+  const d = await getJson("trade-in?sort=cost&limit=10")
+  const link = `${SITE}/insights/trade-in`
+  const rows = (d.rows ?? []).filter((r) => r.cost_per_pack > 0 && r.moments_per_pack > 0)
+  if (!rows.length) return { skip_reason: "trade-in board empty", link }
+  const lines = rows.slice(0, 3).map(
+    (r) => `• ${r.player_name} (${r.set_name}): ${r.moments_per_pack} Moment${r.moments_per_pack > 1 ? "s" : ""} for ${usd(r.cost_per_pack)} = 1 pack`,
+  )
+  return {
+    title: "Top Shot This trade-in finder",
+    link,
+    facts: { asp_per_pack_usd: d.meta?.asp_per_pack_usd, top: rows.slice(0, 3) },
+    draft: fit(
+      lines,
+      `Top Shot This trade-in: every ${usd(d.meta?.asp_per_pack_usd ?? 10)} of a player's Moments, at Top Shot's average sale price, counts as one pack.\n\nCheapest ways in right now:`,
+      `\n${link}`,
+    ),
+  }
+}
+
+async function sun() {
+  const d = await getJson("market-pulse")
+  const link = `${SITE}/insights/market-pulse`
+  const rows = (d.rows ?? [])
+    .filter((r) => !EXCLUDED.has(r.slug) && r.sales_7d > 0 && r.volume_7d > 0)
+    .sort((a, b) => b.volume_7d - a.volume_7d)
+  if (!rows.length) return { skip_reason: "no collection had sales in 7d", link }
+  const total = rows.reduce((s, r) => s + Number(r.volume_7d), 0)
+  const lines = rows.map((r) => `${coll(r.slug)}: ${usd(r.volume_7d)} · ${int(r.sales_7d)} sales`)
+  return {
+    title: "Week in numbers",
+    link,
+    facts: { total_volume_7d: total, rows },
+    draft: fit(lines, `The week in numbers (last 7 days): ${usd(total)} in sales.\n`, `\n${link}`),
+  }
+}
+
+// Any sale in the last 24 h that cleared $1,000 AND ranks in the week's top 5 is worth its own post.
+async function breaking(now) {
+  try {
+    const rows = await topSales7d()
+    return rows
+      .slice(0, 5)
+      .filter((r) => r.price_usd >= BIG_SALE_USD && now - new Date(r.sold_at) < 86400000)
+      .map((r) => {
+        const draft = `Big sale: ${saleSubject(r)} just went for ${usd(r.price_usd)} on ${coll(r.collection)} — one of the week's top sales.\n\n${SITE}/insights/top-sales`
+        return { sale: r, draft, draft_len: xLength(draft), intent_url: intent(draft) }
+      })
+      .slice(0, 2)
+  } catch (e) {
+    return [{ error: e.message }]
+  }
+}
+
+// ---------- main ----------
+const now = new Date()
+const today = arg("date") ?? ptParts(now).date
+const dow = new Date(`${today}T12:00:00Z`).getUTCDay()
+const slot = arg("slot") ?? SLOTS[dow]
+const ctx = { date: today, dow: SLOTS.indexOf(slot) }
+const run = { sun, mon, tue, wed, thu, fri, sat }[slot]
+if (!run) {
+  console.error(`unknown slot ${slot}; use one of ${SLOTS.join(" ")}`)
+  process.exit(2)
+}
+
+const out = { date_pt: today, slot, generated_at: now.toISOString(), warnings: [] }
+try {
+  Object.assign(out, await run(ctx))
+} catch (e) {
+  out.skip_reason = `slot failed: ${e.message}`
+}
+if (out.draft) {
+  if (/\bDUC\b/.test(out.draft)) out.warnings.push("draft contains 'DUC' — rewrite as dollars")
+  if (/confidence|HIGH|MEDIUM|LOW\b/.test(out.draft)) out.warnings.push("draft mentions confidence — remove it")
+  if (/ufc/i.test(out.draft)) out.warnings.push("draft mentions UFC — its market is closed")
+  out.draft_len = xLength(out.draft)
+  if (out.draft_len > 280) out.warnings.push(`draft is ${out.draft_len} characters; X allows 280`)
+  out.intent_url = intent(out.draft)
+}
+out.breaking = await breaking(now)
+console.log(JSON.stringify(out, null, 2))

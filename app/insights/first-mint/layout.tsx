@@ -27,8 +27,11 @@ export const metadata: Metadata = {
   },
   openGraph: {
     title: "Top Shot First-Mint Trophy Tracker",
+    // ⚠ No live figures in static metadata (2026-11-08): "Average: 15.8×. Max: 248×." read
+    // 10.4× / 200.7× on the live stats the day the X calendar began linking this page.
+    // The page and OG card carry the live numbers.
     description:
-      "Every TS serial #1 sale of the last 90 days, with the multiplier vs avg serial. Average: 15.8×. Max: 248×.",
+      "Every TS serial #1 sale of the last 90 days, with the multiplier vs the average serial of the same edition.",
     url: `${SITE_URL}/insights/first-mint`,
     siteName: "Rip Packs City",
     images: [
