@@ -11,7 +11,8 @@
 //   node scripts/social/x-draft.mjs --date 2026-11-09
 //
 // Prints one JSON object: { date_pt, slot, title, link, facts, draft, draft_len, intent_url,
-// breaking[], warnings[], skip_reason }. A slot with nothing honest to say sets skip_reason and,
+// thread[], breaking[], warnings[], skip_reason }. thread[] appears when a list is too long for
+// one post: every item is named across numbered posts (draft = post 1), never cut to "+N more". A slot with nothing honest to say sets skip_reason and,
 // where the calendar has one, falls back to its alternate. The draft is a STARTING POINT — the
 // human (or the scheduled session) edits wording; the numbers come from here.
 //
@@ -134,13 +135,36 @@ function fit(lines, head, tail, max = 280) {
   return [head, ...body, tail].join("\n")
 }
 
-// Like fit(), but says how many list lines were dropped ("+2 more") instead of hiding them.
-function fitWithMore(lines, head, tailFor, max = 280) {
-  for (let keep = lines.length; keep >= 1; keep--) {
-    const text = [head, ...lines.slice(0, keep), tailFor(lines.length - keep)].join("\n")
-    if (xLength(text) <= max) return text
+// Every line, never "+N more": split the list across a numbered thread of posts that each fit.
+// The first post opens with `head`, the last carries `tail` (the link); with more than one post each
+// ends "i/n". A single line too long for any post still gets a post of its own (and a length warning).
+function thread(lines, head, tail, max = 280) {
+  const pack = (reserve) => {
+    const posts = []
+    let cur = [head]
+    const fits = (arr) => xLength(arr.join("\n")) + reserve <= max
+    for (const line of lines) {
+      const empty = cur.length === 0 || (posts.length === 0 && cur.length === 1)
+      if (!empty && !fits([...cur, line])) {
+        posts.push(cur)
+        cur = []
+      }
+      cur.push(line)
+    }
+    if (cur.length && !fits([...cur, tail])) {
+      posts.push(cur)
+      cur = []
+    }
+    posts.push([...cur, tail])
+    return posts
   }
-  return [head, lines[0], tailFor(lines.length - 1)].join("\n")
+  let posts = pack(0)
+  if (posts.length > 1) posts = pack("\n99/99".length)
+  const n = posts.length
+  return posts.map((p, i) => {
+    const text = p.join("\n").trim()
+    return n > 1 ? `${text}\n${i + 1}/${n}` : text
+  })
 }
 
 // ---------- slots ----------
@@ -384,7 +408,7 @@ async function drops() {
   const byPrice = [...ahead].sort((a, b) => (b.retail_usd ?? 0) - (a.retail_usd ?? 0) || a.start_time.localeCompare(b.start_time))
   const lines = byPrice.map((x) => dropLine(x, multi || calendarAnnouncements.length > 0))
   // Candy MLB has no store listing (its store is offline); a drop it ANNOUNCED this week rides as a line.
-  for (const a of calendarAnnouncements.slice(0, 1)) lines.push(`• Candy MLB: ${a.title}`)
+  for (const a of calendarAnnouncements) lines.push(`• Candy MLB: ${a.title}`)
   const covered = Object.keys(calendarMeta?.complete_at ?? {}).map((p) => ATLAS_NAMES[p] ?? p).filter((n) => !calendarMeta.unread.includes(n))
   return {
     title: "Drops this week",
@@ -400,7 +424,8 @@ async function drops() {
       collections_not_covered: ["UFC Strike (closed)"],
     },
     warnings_extra: calendarMeta?.unread?.length ? [`pack book unread for ${calendarMeta.unread.join(", ")} — their drops are missing from this list`] : [],
-    draft: fitWithMore(lines, "Drops this week:\n", (n) => `${n ? `+${n} more\n` : ""}\n${link}`),
+    // Every drop is named: when the list outgrows one post it becomes a numbered thread (thread[]).
+    ...threadOut(thread(lines, "Drops this week:\n", `\n${link}`)),
   }
 }
 
@@ -442,6 +467,15 @@ async function breaking(now) {
   }
 }
 
+// draft = the first post; thread = every post (only when there is more than one), each with its own
+// length and post link. Post 1, then reply to it with 2, and so on — X's post link cannot thread.
+function threadOut(posts) {
+  return {
+    draft: posts[0],
+    thread: posts.length > 1 ? posts.map((text, i) => ({ n: i + 1, of: posts.length, text, len: xLength(text), intent_url: intent(text) })) : undefined,
+  }
+}
+
 // ---------- main ----------
 const now = new Date()
 const today = arg("date") ?? ptParts(now).date
@@ -471,6 +505,10 @@ if (out.draft) {
   out.draft_len = xLength(out.draft)
   if (out.draft_len > 280) out.warnings.push(`draft is ${out.draft_len} characters; X allows 280`)
   out.intent_url = intent(out.draft)
+}
+for (const p of out.thread ?? []) {
+  if (p.len > 280) out.warnings.push(`thread post ${p.n}/${p.of} is ${p.len} characters; X allows 280`)
+  if (/\bDUC\b|confidence|ufc/i.test(p.text)) out.warnings.push(`thread post ${p.n}/${p.of} breaks a house rule (DUC / confidence / UFC)`)
 }
 out.breaking = await breaking(now)
 // Sunday's post already lists every drop, so the reminders ride the other six days.
