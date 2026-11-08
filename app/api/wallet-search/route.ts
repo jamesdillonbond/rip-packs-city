@@ -5,6 +5,7 @@ import * as t from "@onflow/types"
 import { topshotGraphql } from "@/lib/chains/flow/topshot"
 import { getOrSetCache } from "@/lib/cache"
 import { supabaseAdmin } from "@/lib/supabase"
+import { wholeWalletEditionCounts } from "@/lib/wallet/whole-wallet-edition-counts"
 import {
   normalizeParallel,
   normalizeSetName,
@@ -1958,9 +1959,39 @@ export async function POST(req: NextRequest) {
       return { ...row, editionsOwned: counts.owned, editionsLocked: counts.locked }
     })
 
+    // "You hold N" over the WHOLE wallet, not this page (2026-11-08): copies of
+    // one edition split across pages under-counted. Top Shot only (an All Day id
+    // would read another collection's row, #142); a failed read keeps the page
+    // counts, and the result is max(page, whole) so it can never be lower.
+    let rowsCounted = rowsWithCounts
+    if (!isAllDay) {
+      try {
+        const cid = await getCollectionId()
+        if (cid) {
+          const whole = await wholeWalletEditionCounts(
+            supabaseAdmin,
+            wallet,
+            cid,
+            rowsWithCounts.filter((r) => !uncountable(r)).map((r) => String(r.momentId)),
+            ids,
+          )
+          if (whole) {
+            rowsCounted = rowsWithCounts.map((r) => {
+              const w = whole.get(String(r.momentId))
+              return w !== undefined && w > (r.editionsOwned ?? 0) ? { ...r, editionsOwned: w } : r
+            })
+          } else {
+            console.warn("[wallet-search] whole-wallet edition counts unavailable; page counts kept")
+          }
+        }
+      } catch (e) {
+        console.warn("[wallet-search] whole-wallet edition counts threw:", e instanceof Error ? e.message : String(e))
+      }
+    }
+
     // Batch-enrich FMV from fmv_snapshots + low ask from cached_listings
     topLevelStage = "fmv_enrich"
-    const fmvEnriched = await batchEnrichFmvAndAsks(rowsWithCounts)
+    const fmvEnriched = await batchEnrichFmvAndAsks(rowsCounted)
 
     // Enrich with acquisition method data
     topLevelStage = "acquisition_enrich"
