@@ -106,7 +106,7 @@ describe("readCandySpecialSerialsForConcierge", () => {
   it("maps Top Shot's tags to Candy's kinds ('perfect' = last_mint)", async () => {
     const r = JSON.parse(await readCandySpecialSerialsForConcierge(db(ROWS).client, BASE, { tag: "perfect" }))
     expect(r.rows.map((x: { kind: string }) => x.kind)).toEqual(["last_mint"])
-    expect(r.rows[0]).toMatchObject({ holder: null, still_with_candy_unsold: true })
+    expect(r.rows[0]).toMatchObject({ holder: null, still_with_candy: true })
   })
   it("filters a holder VERBATIM", async () => {
     const d = db(ROWS)

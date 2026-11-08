@@ -234,7 +234,8 @@ export async function readCandySpecialSerialsForConcierge(
       circulation: num(r.circulation_count),
       kind: r.kind,
       holder: r.is_treasury ? null : (r.owner ?? null),
-      still_with_candy_unsold: r.is_treasury === true,
+      // Held by a Candy-owned wallet (unsold stock or a bought-back ICON) — candy_house_wallets.
+      still_with_candy: r.is_treasury === true,
       edition_fmv_usd: num(r.fmv_usd),
       last_sale_usd: num(r.last_sale_usd),
       last_sale_at: r.last_sale_at ?? null,
@@ -248,7 +249,7 @@ export async function readCandySpecialSerialsForConcierge(
       collection: CANDY_URL_SLUG,
       total: rows.length,
       rows,
-      note: "Candy MLB (Solana). kind: first_mint = serial #1, last_mint = the final serial (Top Shot calls it 'perfect'), jersey_match = serial equals the player's jersey number, low_serial = another low serial. holder is the wallet holding it in RPC's daily on-chain census; still_with_candy_unsold = it sits in Candy's own unsold stock.",
+      note: "Candy MLB (Solana). kind: first_mint = serial #1, last_mint = the final serial (Top Shot calls it 'perfect'), jersey_match = serial equals the player's jersey number, low_serial = another low serial. holder is the wallet holding it in RPC's daily on-chain census; still_with_candy = it sits in a Candy-owned wallet (unsold stock, or an ICON a collector sold back to Candy), not with a collector.",
     })
   } catch {
     return failed

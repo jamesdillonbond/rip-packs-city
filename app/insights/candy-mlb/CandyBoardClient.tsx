@@ -900,7 +900,7 @@ export default function CandyBoardClient({
           <div className="cdy-blurb">
             <b>Special serials</b> — every #1 (first mint), last mint, low serial (≤ #3) and{" "}
             <b>jersey match</b> (the serial equal to the number the player wears), with its current owner.{" "}
-            <b>SEALED</b> = still held in Candy&apos;s treasury reserve (unsold). A serial that is both a low serial
+            <b>SEALED</b> = still held by Candy, not a collector (unsold stock or an ICON Candy bought back). A serial that is both a low serial
             and the jersey number keeps its low-serial label, so each serial appears once.
           </div>
           {/* cap 550 -> 800: DataTable slices silently (r.slice(0, cap)) with no
@@ -913,13 +913,15 @@ export default function CandyBoardClient({
       {tab === "scarcity" && (
         <>
           <div className="cdy-blurb">
-            <b>Scarcity — sealed vs circulating.</b> Candy&apos;s treasury holds most supply sealed; only{" "}
+            <b>Scarcity — sealed vs circulating.</b> <b>Sealed</b> serials are still held by Candy; only{" "}
             <b>circulating</b> serials are in collector hands. Lowest <b>% Out</b> = most squeezed. Sorted most-squeezed
             first.
           </div>
           <DataTable rows={scarcity} cols={scarcityCols} defaultSort="circulating_pct" empty={sectionEmptyCopy("Scarcity", degraded, "No scarcity data.")} cap={130} />
           <div className="cdy-note">
-            <b>Sealed</b> is the treasury/max-holder reserve; <b>circulating</b> excludes it. Drop 3 (Jul 29) added
+            <b>Sealed</b> counts every Candy-owned wallet: unsold stock and the ICONs collectors sold back in
+            Candy&apos;s October buyback. Cards listed on Magic Eden still count as circulating — they belong to
+            their sellers. <b>Circulating</b> excludes Candy&apos;s wallets. Drop 3 (Jul 29) added
             forward supply, so circulating % has moved since.
           </div>
         </>
@@ -928,10 +930,10 @@ export default function CandyBoardClient({
       {tab === "holders" && (
         <>
           <div className="cdy-blurb">
-            <b>Holder concentration.</b> Collector wallets only — Candy&apos;s treasury (the wallet holding the sealed
-            packs) is excluded, and so is one further wallet we have identified that holds inventory at scale with no
-            market activity at all (it has never bought, sold, listed or bid). That wallet returns to the ranking the
-            moment it trades.{" "}
+            <b>Holder concentration.</b> Collector wallets only — Candy&apos;s own wallets are excluded (the one
+            holding the sealed packs, its unsold ICON stock, and the ICONs bought back in its October buyback), and
+            so is Magic Eden&apos;s listing escrow, whose cards are credited to their sellers. A wallet stays excluded
+            only while it has no market activity — it returns to the ranking the moment it trades.{" "}
             <b>Est. value</b> sums each held serial&apos;s edition FMV, which is as thin as every Candy price today.
           </div>
           {/* cap 250 -> 800: DataTable slices silently (r.slice(0, cap)) with no
