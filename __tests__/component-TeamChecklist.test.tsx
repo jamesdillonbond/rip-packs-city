@@ -84,6 +84,19 @@ describe("TeamChecklist", () => {
   // the cost-to-complete are (support_conversations 10227/10229/10234). The
   // header carries ONE "?" that opens the concierge pre-asked — one, not per
   // card, because each card is a link and a button inside a link is invalid.
+  // 2026-11-07: /api/entity/team-checklist sends series_label as the on-chain NUMBER
+  // ("8", measured live on the Trail Blazers checklist); the tile printed a bare "8".
+  it("a tile decodes an on-chain series number (Top Shot 8 → 2025-26), never prints the digit", async () => {
+    const raw = { ...tile, series_num: 8, series_label: "8" }
+    fetchMock = routeFetch({ checklist: () => res(true, [raw]), progress: () => res(true, anonProgress) })
+    vi.stubGlobal("fetch", fetchMock)
+    const { getByText, container } = render(<TeamChecklist collectionUrlSlug="nba-top-shot" teamSlug="portland-trail-blazers" />)
+    await waitFor(() => expect(getByText("Damian Lillard")).toBeTruthy())
+    const monos = Array.from(container.querySelectorAll("span.rpc-mono")).map((n) => n.textContent?.trim())
+    expect(monos).not.toContain("8")
+    expect(monos).toContain("Series 2025-26")
+  })
+
   it("the cost-to-complete header opens the concierge pre-asked about the badges", async () => {
     fetchMock = routeFetch({ checklist: () => res(true, [tile]), progress: () => res(true, anonProgress) })
     vi.stubGlobal("fetch", fetchMock)

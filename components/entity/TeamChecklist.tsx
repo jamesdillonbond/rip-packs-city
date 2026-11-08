@@ -53,6 +53,7 @@ import Link from "next/link"
 import { EM_DASH, TierBadge, fmtCount, fmtUsd, tileSubject } from "./_shared"
 import type { EditionTile } from "./EditionsGridPaginated"
 import { topshotSeriesLabel, TOPSHOT_SERIES_ORDER } from "@/lib/analytics/series-labels"
+import { tileSeriesLabel } from "@/lib/series-label"
 import { proxyIpfsImageUrl } from "@/lib/ipfs-media"
 import { getCollection, collectionHasLocking } from "@/lib/collections"
 import { checklistWalletStorageKey, isSolanaChecklist, parseChecklistWallet } from "@/lib/entity/checklist-wallet"
@@ -907,7 +908,8 @@ function ChecklistCard({ collectionUrlSlug, e, hasWallet, eager }: { collectionU
       )}
       <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginBottom: 6 }}>
         <TierBadge tier={e.tier} />
-        {e.series_label && <span className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)" }}>{e.series_label}</span>}
+        {/* The API sends the on-chain series NUMBER ("8"); decode it per collection (2026-11-07). */}
+        {e.series_label && <span className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)" }}>{tileSeriesLabel(e.series_label, collectionUrlSlug)}</span>}
       </div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div>

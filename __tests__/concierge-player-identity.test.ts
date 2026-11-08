@@ -13,6 +13,7 @@ import { NextRequest } from "next/server"
 import { resolvePlayerName, identityContextFor, type PlayerResolution } from "@/lib/concierge/player-identity"
 import { makeInstrumentedSupabaseFixture } from "./helpers/route-harness"
 import type { ScriptTurn } from "./helpers/anthropic-fixture"
+import { readFileSync as __readSeriesSrc } from "node:fs"
 
 const ROOT = join(__dirname, "..")
 const AD_UUID = "dee28451-5d62-409e-a1ad-a83f763ac070"
@@ -489,5 +490,16 @@ describe("the prompt teaches the model that names are not people", () => {
     expect(ROUTE).toMatch(/'unavailable' the identity check FAILED/)
     expect(ROUTE).toMatch(/name: "resolve_player_name"/)
     expect(ROUTE).toMatch(/resolve_player_name: 10000/)
+  })
+})
+
+// 2026-11-07: get_player_editions returns series_label as the on-chain NUMBER ("5"),
+// and the row's label won over the decoded one — the model printed
+// "Throwdowns (Series 2024-25... see note)" for a Series 4 edition.
+describe("get_player_editions rows decode the series number", () => {
+  it("the series field goes through tileSeriesLabel before any fallback", () => {
+    const src = __readSeriesSrc("app/api/support-chat/route.ts", "utf8")
+    expect(src).toMatch(/series: tileSeriesLabel\(r\.series_label, slug\) \?\?/)
+    expect(src).not.toMatch(/series: r\.series_label \?\?/)
   })
 })

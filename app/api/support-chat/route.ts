@@ -65,7 +65,7 @@ import {
 import { resolveLiveAsks } from "@/lib/asks/edition-live-ask";
 import { scrubConfidence } from "@/lib/concierge/scrub-confidence";
 import { DEDUPE_WINDOW_MS, isSameReport } from "@/lib/concierge/feedback-dedupe";
-import { CURRENT_TOP_SHOT_SERIES, CURRENT_TOP_SHOT_SERIES_LABEL, SERIES_DISPLAY, seriesDisplay } from "@/lib/series-label";
+import { CURRENT_TOP_SHOT_SERIES, CURRENT_TOP_SHOT_SERIES_LABEL, SERIES_DISPLAY, seriesDisplay, tileSeriesLabel } from "@/lib/series-label";
 import { closedMarket } from "@/lib/market-closed";
 import { searchEditionFloorsByName, candyFloorReader, paniniFloorReader } from "@/lib/concierge/search-edition-floors";
 import { readsCatalogDealsFromIndex, fetchIndexCatalogDeals } from "@/lib/concierge/catalog-deals-index";
@@ -6198,7 +6198,9 @@ async function executeToolInner(
           floor_indexed_usd: r.floor_usd != null ? Number(r.floor_usd) : null,
           ...metadataFieldsFor(meta, r.route_slug, uuid),
           // After the spread: this row's own label wins over the metadata's.
-          series: r.series_label ?? (r.series_num != null ? seriesDisplay(Number(r.series_num), slug) : null),
+          // series_label arrives as the on-chain NUMBER ("5"): decode it (5 → "Series 4" on Top Shot).
+          // The raw digit made the model guess — "Series 2024-25... see note" (2026-11-07).
+          series: tileSeriesLabel(r.series_label, slug) ?? (r.series_num != null ? seriesDisplay(Number(r.series_num), slug) : null),
           edition_url: r.route_slug ? editionUrlFor(slug, String(r.route_slug)) : null,
         })),
         badges_note: BADGES_NOTE,
