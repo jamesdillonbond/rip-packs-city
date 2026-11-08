@@ -76,6 +76,19 @@ function fakeSb(tables: Record<string, { data?: unknown; error?: { message: stri
   }
 }
 
+const RSS = `<rss><channel>
+<item><title><![CDATA[Meet the Award Winners: The Players Behind Today's Final Gold Series Drop]]></title><link>https://blog.candy.io/final-gold-drop/</link><pubDate>Fri, 06 Nov 2026 20:10:49 GMT</pubDate></item>
+<item><title><![CDATA[How to Connect Your Candy Wallet to OpenSea and Magic Eden]]></title><link>https://blog.candy.io/wallet/</link><pubDate>Fri, 06 Nov 2026 21:31:47 GMT</pubDate></item>
+<item><title><![CDATA[2026 MLB Base Series ICONs Return for Drop 2]]></title><link>https://blog.candy.io/old/</link><pubDate>Mon, 05 Oct 2026 20:00:00 GMT</pubDate></item>
+</channel></rss>`
+const candyOk = (async () => new Response(RSS, { status: 200 })) as unknown as typeof fetch
+const candyDown = (async () => { throw new Error("ENOTFOUND") }) as unknown as typeof fetch
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const cal = (sb: any, now: Date, f: typeof fetch = candyOk) => fetchPackCalendar(sb, now, f)
+const freshPanini = [
+  { pack_id: "1060", name: "2026 Panini NFT Prizm The Rolling Stones Packs", price_usd: 25, cards_per_pack: 5, start_at: "2026-11-06T16:00:00Z", end_at: null, in_stock: true, is_available: true, last_seen_at: "2026-11-08T19:00:00Z" },
+]
+
 describe("fetchPackCalendar", () => {
   const state = [
     { product: "nba", last_complete_pass_started_at: "2026-11-08T19:45:00Z", last_complete_at: "2026-11-08T19:50:00Z" },
@@ -83,25 +96,25 @@ describe("fetchPackCalendar", () => {
   ]
 
   it("returns the week from the complete pass", async () => {
-    const r = await fetchPackCalendar(fakeSb({ atlas_pack_market_state: { data: state }, atlas_pack_market: { data: [row({})] } }), NOW)
+    const r = await cal(fakeSb({ atlas_pack_market_state: { data: state }, atlas_pack_market: { data: [row({})] }, panini_pack_drops: { data: freshPanini } }), NOW)
     expect(r.complete).toBe(true)
     expect(r.complete_at.nba).toBe("2026-11-08T19:50:00Z")
     expect(r.drops.length).toBeGreaterThan(0)
   })
 
   it("with no complete pass says so and publishes nothing — never an empty week", async () => {
-    const r = await fetchPackCalendar(
+    const r = await cal(
       fakeSb({ atlas_pack_market_state: { data: [{ product: "nba", last_complete_pass_started_at: null }] }, atlas_pack_market: { data: [row({})] } }),
       NOW,
     )
     expect(r.complete).toBe(false)
     expect(r.drops).toEqual([])
     // All Day has no state row at all: it is still named, as unread
-    expect(r.complete_at).toEqual({ nba: null, nfl: null })
+    expect(r.complete_at).toMatchObject({ nba: null, nfl: null })
   })
 
   it("walks every product the book has a state row for, and names a half-walked one as unread", async () => {
-    const r = await fetchPackCalendar(
+    const r = await cal(
       fakeSb({
         atlas_pack_market_state: {
           data: [...state, { product: "disney", last_complete_pass_started_at: "2026-11-08T19:45:00Z", last_complete_at: "2026-11-08T19:46:00Z" }, { product: "laliga", last_complete_pass_started_at: null }],
@@ -117,25 +130,74 @@ describe("fetchPackCalendar", () => {
   })
 
   it("ignores a state row for a product it cannot place", async () => {
-    const r = await fetchPackCalendar(
-      fakeSb({ atlas_pack_market_state: { data: [...state, { product: "ufc", last_complete_pass_started_at: null }] }, atlas_pack_market: { data: [] } }),
+    const r = await cal(
+      fakeSb({ atlas_pack_market_state: { data: [...state, { product: "ufc", last_complete_pass_started_at: null }] }, atlas_pack_market: { data: [] }, panini_pack_drops: { data: freshPanini } }),
       NOW,
     )
     expect(r.complete).toBe(true)
-    expect(Object.keys(r.complete_at).sort()).toEqual(["nba", "nfl"])
+    expect(Object.keys(r.complete_at).sort()).toEqual(["candy", "nba", "nfl", "panini"])
   })
 
   it("a failed read throws (the route turns it into a 503), never an empty list", async () => {
     await expect(
-      fetchPackCalendar(fakeSb({ atlas_pack_market_state: { data: state }, atlas_pack_market: { error: { message: "timeout" } } }), NOW),
+      cal(fakeSb({ atlas_pack_market_state: { data: state }, atlas_pack_market: { error: { message: "timeout" } } }), NOW),
     ).rejects.toThrow(/timeout/)
-    await expect(fetchPackCalendar(fakeSb({ atlas_pack_market_state: { error: { message: "denied" } } }), NOW)).rejects.toThrow(/denied/)
+    await expect(cal(fakeSb({ atlas_pack_market_state: { error: { message: "denied" } } }), NOW)).rejects.toThrow(/denied/)
   })
 
   it("a full 1000-row page is a cut list, not the week", async () => {
     const many = Array.from({ length: 1000 }, (_, i) => row({ dist_id: String(i + 1) }))
     await expect(
-      fetchPackCalendar(fakeSb({ atlas_pack_market_state: { data: state }, atlas_pack_market: { data: many } }), NOW),
+      cal(fakeSb({ atlas_pack_market_state: { data: state }, atlas_pack_market: { data: many } }), NOW),
     ).rejects.toThrow(/page full/)
+  })
+})
+
+describe("fetchPackCalendar — Panini and Candy MLB", () => {
+  const state = [
+    { product: "nba", last_complete_pass_started_at: "2026-11-08T19:45:00Z", last_complete_at: "2026-11-08T19:50:00Z" },
+    { product: "nfl", last_complete_pass_started_at: "2026-11-08T19:45:00Z", last_complete_at: "2026-11-08T19:49:00Z" },
+  ]
+  const base = { atlas_pack_market_state: { data: state }, atlas_pack_market: { data: [] } }
+
+  it("lists a fresh Panini drop with Panini's own date and links RPC's Panini packs page", async () => {
+    const r = await cal(fakeSb({ ...base, panini_pack_drops: { data: freshPanini } }), NOW)
+    expect(r.complete_at.panini).toBe("2026-11-08T19:00:00Z")
+    expect(r.drops).toEqual([expect.objectContaining({ collection: "panini_blockchain", dist_id: "1060", title: "Prizm The Rolling Stones Packs", retail_usd: 25, status: "open", detail_href: "/panini-blockchain/packs" })])
+  })
+
+  it("a Panini table the runner has not refreshed is UNREAD — its drops are left out, never posted stale", async () => {
+    const stale = freshPanini.map((p) => ({ ...p, last_seen_at: "2026-11-06T00:00:00Z" }))
+    const r = await cal(fakeSb({ ...base, panini_pack_drops: { data: stale } }), NOW)
+    expect(r.complete).toBe(false)
+    expect(r.complete_at.panini).toBeNull()
+    expect(r.drops).toEqual([])
+  })
+
+  it("a sold-out Panini pack has ENDED; one older than the week and still on sale is not this week's drop", async () => {
+    const rows = [
+      { ...freshPanini[0], pack_id: "1058", name: "2026 Panini NFT Prizm FIFA World Cup Sticker Packs", start_at: "2026-11-03T15:00:00Z", in_stock: false },
+      { ...freshPanini[0], pack_id: "1056", name: "2026 Panini NFT Prizm WNBA Packs", start_at: "2026-09-30T15:00:00Z", in_stock: true },
+    ]
+    const r = await cal(fakeSb({ ...base, panini_pack_drops: { data: rows } }), NOW)
+    expect(r.drops.map((d) => [d.dist_id, d.status])).toEqual([["1058", "ended"]])
+  })
+
+  it("Candy: only drop-titled posts from the last 7 days, linked — wallet notices and older posts left out", async () => {
+    const r = await cal(fakeSb({ ...base, panini_pack_drops: { data: freshPanini } }), NOW)
+    expect(r.announcements).toEqual([
+      { collection: "candy_mlb", title: "Meet the Award Winners: The Players Behind Today's Final Gold Series Drop", url: "https://blog.candy.io/final-gold-drop/", published_at: "2026-11-06T20:10:49.000Z" },
+    ])
+  })
+
+  it("Candy's feed unreachable is UNREAD, not 'no Candy drops'", async () => {
+    const r = await cal(fakeSb({ ...base, panini_pack_drops: { data: freshPanini } }), NOW, candyDown)
+    expect(r.complete).toBe(false)
+    expect(r.complete_at.candy).toBeNull()
+    expect(r.announcements).toEqual([])
+  })
+
+  it("a failed Panini read throws (the route turns it into a 503), never an empty list", async () => {
+    await expect(cal(fakeSb({ ...base, panini_pack_drops: { error: { message: "denied" } } }), NOW)).rejects.toThrow(/panini_pack_drops: denied/)
   })
 })

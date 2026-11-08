@@ -327,7 +327,8 @@ function whenPT(iso) {
   const mins = p.minute === "00" ? "" : `:${p.minute}`
   return `${DAY_NAMES.includes(p.weekday) ? p.weekday : p.weekday.slice(0, 3)} ${p.hour}${mins} ${p.dayPeriod} PT`
 }
-const packsIndex = (x) => `${SITE}/${x.collection === "nfl_all_day" ? "nfl-all-day" : "nba-top-shot"}/packs`
+const PACKS_PAGE = { nba_top_shot: "nba-top-shot", nfl_all_day: "nfl-all-day", laliga_golazos: "laliga-golazos", disney_pinnacle: "disney-pinnacle", panini_blockchain: "panini-blockchain" }
+const packsIndex = (x) => `${SITE}/${PACKS_PAGE[x.collection] ?? "nba-top-shot"}/packs`
 function dropLine(x, multiColl) {
   const price = x.retail_usd ? ` (${usd(x.retail_usd)})` : ""
   const tag = multiColl ? `${coll(x.collection)}: ` : ""
@@ -344,31 +345,44 @@ async function pageLive(href) {
     return false
   }
 }
-// Drops come from every product the Atlas pack book walks (Top Shot, All Day, and Golazos /
-// Pinnacle once their walk is live). A product without a complete pass is UNREAD: its drops are
-// missing, so the post must not read as the whole week.
-const ATLAS_NAMES = { nba: "Top Shot", nfl: "All Day", laliga: "Golazos", disney: "Pinnacle" }
+// Drops come from every source the calendar reads: the Atlas pack book (Top Shot, All Day, Golazos,
+// Pinnacle), Panini's own store (panini_pack_drops) and Candy MLB's blog announcements. A source with
+// no as-of is UNREAD: its drops are missing, so the post must not read as the whole week.
+const ATLAS_NAMES = { nba: "Top Shot", nfl: "All Day", laliga: "Golazos", disney: "Pinnacle", panini: "Panini", candy: "Candy MLB" }
 let calendarMeta = null
+let calendarAnnouncements = []
 async function calendar() {
   const d = await getJson("pack-calendar")
   calendarMeta = d.meta ?? {}
   const unread = Object.entries(calendarMeta.complete_at ?? {}).filter(([, at]) => !at).map(([p]) => ATLAS_NAMES[p] ?? p)
   if (unread.includes("Top Shot") || unread.includes("All Day")) throw new Error(`the Atlas pack book is unread for ${unread.join(", ")}`)
   calendarMeta.unread = unread
+  calendarAnnouncements = Array.isArray(d.announcements) ? d.announcements : []
   return d.drops ?? []
 }
 
 async function drops() {
   const all = await calendar()
   const ahead = all.filter((x) => x.status !== "ended")
-  if (!ahead.length) return { skip_reason: "no Top Shot or All Day drop is open or scheduled in the next 7 days", link: `${SITE}/nba-top-shot/packs` }
+  if (!ahead.length && !calendarAnnouncements.length) return { skip_reason: "no drop is open or scheduled in the next 7 days on any collection the calendar reads", link: `${SITE}/nba-top-shot/packs` }
+  if (!ahead.length) {
+    const a = calendarAnnouncements[0]
+    return {
+      title: "Drops this week",
+      link: a.url,
+      facts: { drops: [], announcements: calendarAnnouncements },
+      draft: `Drops this week:\n\nCandy MLB: ${a.title}\n\n${a.url}`,
+    }
+  }
   // Lead with the priciest open/upcoming drop: that's the one collectors are deciding on.
   const lead = [...ahead].sort((a, b) => (b.retail_usd ?? 0) - (a.retail_usd ?? 0))[0]
   const fallbackLink = packsIndex(lead)
   // Our pack page 404s until the dist has a pack_distributions row; never link a 404.
   const link = (await pageLive(lead.detail_href)) ? `${SITE}${lead.detail_href}` : fallbackLink
   const multi = new Set(ahead.map((x) => x.collection)).size > 1
-  const lines = ahead.map((x) => dropLine(x, multi))
+  const lines = ahead.map((x) => dropLine(x, multi || calendarAnnouncements.length > 0))
+  // Candy MLB has no store listing (its store is offline); a drop it ANNOUNCED this week rides as a line.
+  for (const a of calendarAnnouncements.slice(0, 1)) lines.push(`• Candy MLB: ${a.title}`)
   const covered = Object.keys(calendarMeta?.complete_at ?? {}).map((p) => ATLAS_NAMES[p] ?? p).filter((n) => !calendarMeta.unread.includes(n))
   return {
     title: "Drops this week",
@@ -379,8 +393,9 @@ async function drops() {
       lead_page_live: link !== fallbackLink,
       collections_covered: covered,
       collections_unread: calendarMeta?.unread ?? [],
-      // No drop source for these (docs/social/x-calendar.md): never say they had no drops.
-      collections_not_covered: ["Panini", "Candy MLB", "UFC Strike (closed)"].concat(covered.includes("Golazos") ? [] : ["Golazos"]).concat(covered.includes("Pinnacle") ? [] : ["Pinnacle"]),
+      announcements: calendarAnnouncements,
+      // UFC Strike's market is closed (docs/social/x-calendar.md): never say it had no drops.
+      collections_not_covered: ["UFC Strike (closed)"],
     },
     warnings_extra: calendarMeta?.unread?.length ? [`pack book unread for ${calendarMeta.unread.join(", ")} — their drops are missing from this list`] : [],
     draft: fitWithMore(lines, "Drops this week:\n", (n) => `${n ? `+${n} more\n` : ""}\n${link}`),

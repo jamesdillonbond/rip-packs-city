@@ -19,7 +19,7 @@ import { GET } from "@/app/api/public/insights/pack-calendar/route"
 
 beforeEach(() => {
   state.err = null
-  state.result = { complete: true, complete_at: { nba: "2026-11-08T19:50:00Z", nfl: "2026-11-08T19:49:00Z" }, drops: [] }
+  state.result = { complete: true, complete_at: { nba: "2026-11-08T19:50:00Z", nfl: "2026-11-08T19:49:00Z" }, drops: [], announcements: [] }
 })
 
 describe("GET /api/public/insights/pack-calendar", () => {
@@ -29,13 +29,13 @@ describe("GET /api/public/insights/pack-calendar", () => {
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.drops).toHaveLength(2)
-    expect(body.meta).toMatchObject({ complete: true, total_drops: 2 })
+    expect(body.meta).toMatchObject({ complete: true, total_drops: 2, total_announcements: 0, not_covered: ["ufc_strike"] })
     expect(body.meta.complete_at.nba).toBe("2026-11-08T19:50:00Z")
     expect(res.headers.get("Cache-Control")).toContain("s-maxage=900")
   })
 
   it("an unread book says complete:false — the caller must not post 'no drops'", async () => {
-    state.result = { complete: false, complete_at: { nba: null, nfl: null }, drops: [] }
+    state.result = { complete: false, complete_at: { nba: null, nfl: null }, drops: [], announcements: [] }
     const body = await (await GET()).json()
     expect(body.meta.complete).toBe(false)
     expect(body.drops).toEqual([])

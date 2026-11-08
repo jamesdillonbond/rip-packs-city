@@ -151,7 +151,7 @@ async function post(payload) {
   // of the grid this walk actually enumerated, and that number previously existed nowhere except
   // a console line nobody reads and a size-capped local JSONL that rotates. A walk that enumerates
   // far less than usual is otherwise indistinguishable from a walk that ran normally.
-  if (!n && !payload.enum && !payload.stall) return;
+  if (!n && !payload.enum && !payload.stall && !payload.pack_drops) return;
   // ALWAYS append the batch to a local backup first — a captured walk is never lost to a bad token;
   // scripts/panini-replay.mjs can POST the file once auth is fixed (no re-walk).
   appendBackup(JSON.stringify(payload) + "\n");
@@ -384,6 +384,10 @@ async function main() {
   // nothing, so record WHAT each pack-page visit fired, and the first response object that looks
   // like pack data from ANY operation. Read back as panini_pack_pages.last_ops / last_pack_like.
   let packVisitOps = null, packVisitPackLike = null, packVisitSetIds = null;
+  // PACK DROPS (2026-11-08): Panini's store lists — `packs` (on sale now) and `packsTimeline`
+  // (every release, by year) — carry the real release date of each pack. Kept as the SPA received
+  // them; the route normalizes (lib/panini/pack-drops.ts) into panini_pack_drops.
+  const storeDrops = { store: [], timeline: [] };
   function opNameOf(resp) {
     try {
       const pj = JSON.parse(resp.request().postData() || "null");
@@ -508,6 +512,8 @@ async function main() {
     if (resp.status() !== 200 || !j) return;
     const d = j?.data; if (!d) return;
     opCount++; for (const k in d) dataKeys.add(k);
+    if (Array.isArray(d?.packs?.data)) storeDrops.store = d.packs.data;
+    if (Array.isArray(d?.packsTimeline?.data)) storeDrops.timeline = d.packsTimeline.data.flatMap((y) => (Array.isArray(y?.packs) ? y.packs : []));
     if (packVisitOps) {
       const op = opNameOf(resp);
       packVisitOps[op] = (packVisitOps[op] || 0) + 1;
@@ -979,6 +985,17 @@ async function main() {
   // Registry upkeep: every product the grids served + every pack link found. Never admits a
   // product or disables a page — the route only records sightings and new pages.
   await post({ products: productSightings, pack_pages: [...harvestedPackUrls].map((url) => ({ url, discovered: true })) });
+
+  // --- 1b. PACK DROPS --- Panini's NFT store: what is on sale now and every pack's release date.
+  //     Two page loads; the SPA's own signed queries fire on load and onResponse keeps their data.
+  for (const url of [`${BASE}/nft-store/nft-pack.html?sport=All`, `${BASE}/nft-store/pack-timeline.html`]) {
+    watchdog.mark("pack-drops", url.slice(-60));
+    await ensurePage("pack drops");
+    await page.goto(url, { waitUntil: "networkidle", timeout: 45000 }).catch(() => {});
+    await wait(2500);
+  }
+  console.log(`[panini-runner] pack drops: store=${storeDrops.store.length} timeline=${storeDrops.timeline.length}`);
+  if (storeDrops.store.length || storeDrops.timeline.length) await post({ pack_drops: storeDrops });
 
   // --- 2. PACKS --- (post IMMEDIATELY after this walk so pack data lands even if the long
   //     per-card walk below stalls; 2.5s wait gives getPackMarketStats time to fire on load)

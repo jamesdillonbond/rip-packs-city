@@ -49,6 +49,8 @@ const st = vi.hoisted(() => ({
   // 2026-09-28: panini_sales_ingest — every sale record into panini_sales.
   salesHist: { data: { valid: 0, stored_new: 0, refreshed: 0, recent_reads: 0, gaps_now: 0 } as unknown, error: null as null | { message: string } },
   salesHistCalls: [] as unknown[],
+  // 2026-11-08: panini_pack_drops (Panini's own release dates).
+  dropsUpsert: { data: [{ pack_id: "1060" }] as unknown[] | null, error: null as null | { message: string } },
 }))
 
 vi.mock("next/server", async (importOriginal) => {
@@ -75,7 +77,7 @@ vi.mock("@/lib/supabase", () => ({
       let isUpsert = false
       let rec: (typeof st.updates)[number] | null = null
       const b: any = {
-        upsert: (rows: any, opts: any) => { isUpsert = true; if (table === "panini_products" || table === "panini_pack_pages" || table === "panini_pack_state") st.registryUpserts.push({ table, rows, opts }); return b },
+        upsert: (rows: any, opts: any) => { isUpsert = true; if (table === "panini_products" || table === "panini_pack_pages" || table === "panini_pack_state" || table === "panini_pack_drops") st.registryUpserts.push({ table, rows, opts }); return b },
         insert: (rows: any) => { isInsert = true; if (table === "panini_fmv_snapshots") { st.fmvOps.push("insert"); st.fmvInserted.push(rows) } return b },
         delete: () => { if (table === "panini_fmv_snapshots") { st.fmvOps.push("delete"); isDelete = true } return b },
         in: () => b, gte: () => b,
@@ -85,6 +87,7 @@ vi.mock("@/lib/supabase", () => ({
         or: (expr: string) => { if (rec) rec.or = expr; return b },
         is: (c: string, v: unknown) => { if (rec) st.isFilters.push({ table, col: c, val: v }); return b },
         select: async () => {
+          if (table === "panini_pack_drops") return st.dropsUpsert
           if (table === "panini_products" && !isUpsert) return st.products
           if (table === "panini_products" || table === "panini_pack_pages") return { data: [{ id: "r" }], error: null }
           if (isUpdate) return (rec?.sku != null && st.saleUpdate[rec.sku]) || st.saleUpdateDefault
@@ -146,6 +149,7 @@ beforeEach(() => {
   st.products = { data: [{ set_id: 2332, name: "2026 Panini NFT Prizm World Cup Soccer", walk_cards: true }], error: null }
   st.registryUpserts = []; st.packRowsArgs = []
   st.salesHist = { data: { valid: 0, stored_new: 0, refreshed: 0, recent_reads: 0, gaps_now: 0 }, error: null }; st.salesHistCalls = []
+  st.dropsUpsert = { data: [{ pack_id: "1060" }], error: null }
   delete process.env.PANINI_FMV_ENGINE
 })
 afterEach(() => { delete process.env.CRON_SECRET })
@@ -318,6 +322,34 @@ describe("panini-ingest — product names from collections", () => {
     const res = await POST(makeReq({ url, auth: "Bearer ingest", body: { product_names: [{ set_id: "x", name: "", n: -1 }] } }))
     expect((await res.json()).accepted).toBe(false)
     expect(st.updates.filter((u: any) => u.table === "panini_products")).toEqual([])
+  })
+})
+
+/**
+ * PACK DROPS (2026-11-08): the runner forwards Panini's store `packs` / `packsTimeline` lists; the
+ * route normalizes them (lib/panini/pack-drops.ts, unit-tested there) into panini_pack_drops.
+ */
+describe("panini-ingest — pack drops", () => {
+  const rolling = { pack_id: 1060, pack_name: "2026 Panini NFT Prizm The Rolling Stones Packs", sport: "ENTERTAINMENT", subpack_price: 25, cards_per_subpack: 5, start_date: "2026-11-06 16:00:00", in_stock: true, is_available: true, status: 1, subpack_qty: 18586 }
+
+  it("upserts the drops by pack id and logs them under the enum pipeline, not the watched one", async () => {
+    const res = await POST(makeReq({ url, auth: "Bearer ingest", body: { pack_drops: { store: [rolling], timeline: [] } } }))
+    expect(res.status).toBe(202)
+    const up = st.registryUpserts.find((u) => u.table === "panini_pack_drops")
+    expect(up?.opts).toEqual({ onConflict: "pack_id" })
+    expect(up?.rows[0]).toMatchObject({ pack_id: "1060", start_at: "2026-11-06T16:00:00.000Z", price_usd: 25, seen_in: ["store"] })
+    const run = st.runs.find((r: any) => r.p_extra?.pack_drops)
+    expect(run.p_pipeline).toBe("panini-ingest-enum")
+    expect(run.p_ok).toBe(true)
+    expect(st.runs.map((r: any) => r.p_pipeline)).not.toContain("panini-ingest")
+  })
+
+  it("a rejected upsert is a FAILED run that writes zero, never a quiet success", async () => {
+    st.dropsUpsert = { data: null, error: { message: "permission denied" } }
+    await POST(makeReq({ url, auth: "Bearer ingest", body: { pack_drops: { store: [rolling] } } }))
+    const run = st.runs.find((r: any) => r.p_extra?.pack_drops)
+    expect(run.p_ok).toBe(false)
+    expect(run.p_extra.pack_drops).toMatchObject({ offered: 1, written: 0 })
   })
 })
 

@@ -1,7 +1,9 @@
 // app/api/public/insights/pack-calendar/route.ts
 //
-// PUBLIC INSIGHTS — this week's Dapper pack drops (Top Shot + All Day): what opened in the
-// last 7 days, what is open now, and what starts in the next 7, from the Atlas pack book.
+// PUBLIC INSIGHTS — this week's pack drops across every collection RPC can date: Top Shot, All Day,
+// Golazos and Pinnacle (the Atlas pack book), Panini (Panini's own store, via the residential runner)
+// and Candy MLB drop announcements (its blog — Candy's store is offline). UFC Strike: market closed.
+// What opened in the last 7 days, what is open now, and what starts in the next 7.
 // Feeds the @RipPacksCity "drops this week" post (docs/social/x-calendar.md).
 //
 // Read-only. The book is published only from its last COMPLETE pass (lib/insights/pack-calendar.ts);
@@ -37,13 +39,16 @@ export async function GET() {
   const res = NextResponse.json({
     meta: {
       fetched_at: new Date().toISOString(),
-      source: "atlas_pack_market (last complete pass)",
+      source: "atlas_pack_market (last complete pass) + panini_pack_drops + blog.candy.io/rss",
       complete: result.complete,
       complete_at: result.complete_at,
       total_drops: result.drops.length,
+      total_announcements: result.announcements.length,
+      not_covered: ["ufc_strike"],
       elapsed_ms: elapsedMs,
     },
     drops: result.drops,
+    announcements: result.announcements,
   })
 
   res.headers.set("Cache-Control", "public, s-maxage=900, stale-while-revalidate=300")

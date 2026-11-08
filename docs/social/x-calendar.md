@@ -25,7 +25,7 @@ Every post links one insights page. Each page carries a `summary_large_image` ca
 | Thu | Deal of the week | `deals?sort=discount` | `/insights/deals` | Up to three listings $10+ **and** 15%+ under value. Falls back to Saturday's trade-in post when none qualify |
 | Fri | Board drop | one board a week, rotating by ISO week | `/insights/<board>` | A hook written from the board's live stats/rows. The script's draft is a placeholder (`needs_rewrite`) |
 | Sat | Week in numbers | `market-pulse` | `/insights/market-pulse` | 7-day sales volume per collection and in total |
-| Sun | Drops this week | `pack-calendar` | the lead drop's RPC pack page, or `/<collection>/packs` while that page 404s | Every Top Shot / All Day drop open now or starting in the next 7 days: price, and when it drops or its RSVP closes, in PT. Leads with the priciest |
+| Sun | Drops this week | `pack-calendar` | the lead drop's RPC pack page, or `/<collection>/packs` while that page 404s | Every drop open now or starting in the next 7 days on Top Shot, All Day, Pinnacle, Golazos and Panini, plus a Candy MLB drop announcement: price, and when it drops or its RSVP closes, in PT. Leads with the priciest |
 
 Friday rotation: squeeze → serial-premiums → market-cap → offer-spread → underpriced-serials → autographs → first-mint → set-completers → trade-in.
 
@@ -35,7 +35,18 @@ The trade-in finder (Top Shot This pack credits) moved into the rotation on 11-0
 
 **Drop reminder (Mon–Sat):** a drop starting, or an RSVP closing, in the next 24 h gets an optional short reminder (≤ 2). Sunday's post already lists them.
 
-**Where drops come from:** `/api/public/insights/pack-calendar` reads the Atlas pack book (`atlas_pack_market`, refreshed every 15 min) from its last complete pass only. If the book has no complete pass the API says `complete: false` and the slot skips — it never posts "no drops". For an RSVP drop, Dapper's window is the RSVP, so the copy says "RSVP closes", never "sale ends". The calendar reads every product the book walks (one `atlas_pack_market_state` row each): Top Shot (`nba`) and All Day (`nfl`) today; Golazos (`laliga`) and Pinnacle (`disney`) answer the same Atlas endpoint and join as soon as their state rows exist (migration `audit_20261108_atlas_pack_book_adds_golazos_and_pinnacle`). A walked product with no complete pass is reported as unread in `warnings`, never as a week without drops. **Not covered, and never described as "no drops":** Panini (`panini_products.first_seen_at` is when our runner discovered a product, not a release date), Candy MLB (no drop schedule is ingested) and UFC Strike (market closed). The script lists all three in `facts.collections_not_covered`.
+**Where drops come from** (`/api/public/insights/pack-calendar`, `lib/insights/pack-calendar.ts`):
+
+| Collection | Source | What it gives | Notes |
+|---|---|---|---|
+| Top Shot, All Day | Atlas pack book (`atlas_pack_market`, products `nba` / `nfl`, refreshed every 15 min) | Every Dapper drop with its start/end time, price and RSVP flag | Read only from the last complete pass |
+| Pinnacle | Same book, product `disney` (added 11-08) | Same | Pinnacle's pack-opens feed has been frozen since 10-23, so the book is the only way new Pinnacle drops reach RPC |
+| Golazos | Same book, product `laliga` (added 11-08) | Same | Dapper parks every Golazos window ~100 years out (2122–2123), so no Golazos pack is datable today; a real dated drop would show |
+| Panini | `panini_pack_drops`, from Panini's own NFT store lists (`packs` on sale now, `packsTimeline` every release), captured by the residential runner each pass | Panini's release date (8 AM PT, stored UTC), price, cards per pack, in stock | "Unread" if the runner has not refreshed it in 36 h; `panini_products.first_seen_at` is discovery time and is never used as a release date |
+| Candy MLB | blog.candy.io RSS | Drop-titled posts from the last 7 days, linked (`announcements`) | Candy's store has been offline since its October wallet migration, so no store lists Candy drops; no date or price is ever invented |
+| UFC Strike | — | — | Market closed; listed as not covered |
+
+A source that could not be read is named in `warnings` and `facts.collections_unread`; the post must never read as "no drops" for it. For an RSVP drop, Dapper's window is the RSVP, so the copy says "RSVP closes", never "sale ends".
 
 **Event-driven posts** (new Top Shot drops, rookie debuts, milestone games) are not automated. The daily task mentions them when it sees one in the data; Trevor decides.
 

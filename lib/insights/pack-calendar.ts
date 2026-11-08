@@ -20,10 +20,17 @@
 // products that do, and `complete_at` names the one that does not, so a half-walked product is
 // reported as unread, never as a week without drops.
 //
-// NOT COVERED (2026-11-08): Panini (its `panini_products.first_seen_at` is DISCOVERY time — six
-// Entertainment products were all "first seen" 11-08 when the runner learned the filter — not a
-// release date), Candy MLB (no drop schedule is ingested; packs are secondary-market only) and UFC
-// Strike (market closed). Say so; never imply they had no drops.
+// PANINI (2026-11-08): `panini_pack_drops` — Panini's own release date per pack, from the store
+// `packs` / `packsTimeline` lists the residential runner captures (lib/panini/pack-drops.ts). Its
+// `panini_products.first_seen_at` is NOT used: that is when our runner discovered a product. The
+// table is "read" only while the runner has refreshed it in the last PANINI_FRESH_HOURS.
+//
+// CANDY MLB (2026-11-08): Candy's own store has been offline since its October wallet migration
+// (candy.io: "The new candy.io is on its way"), so no store lists a drop. Candy announces drops on
+// its blog, so the calendar carries `announcements` — drop-titled posts from blog.candy.io's RSS in
+// the window, linked — never a fabricated date or price.
+//
+// UFC STRIKE: market closed; not read. Say so; never imply it had no drops.
 
 export type PackCalendarProduct = "nba" | "nfl" | "laliga" | "disney"
 
@@ -44,7 +51,7 @@ export interface PackCalendarSourceRow {
 export type DropStatus = "upcoming" | "open" | "ended"
 
 export interface PackCalendarDrop {
-  collection: "nba_top_shot" | "nfl_all_day" | "laliga_golazos" | "disney_pinnacle"
+  collection: "nba_top_shot" | "nfl_all_day" | "laliga_golazos" | "disney_pinnacle" | "panini_blockchain"
   dist_id: string
   title: string
   tier: string | null
@@ -121,20 +128,116 @@ export function buildPackCalendar(
   return out.sort((a, b) => a.start_time.localeCompare(b.start_time) || a.dist_id.localeCompare(b.dist_id))
 }
 
+export interface PackCalendarAnnouncement {
+  collection: "candy_mlb"
+  title: string
+  url: string
+  published_at: string
+}
+
+export type PackCalendarSource = PackCalendarProduct | "panini" | "candy"
+
 export interface PackCalendarResult {
-  /** Every walked product (and Top Shot + All Day always) has a complete pass. */
+  /** Every source read (Top Shot + All Day always expected). */
   complete: boolean
-  /** When each walked product's newest complete pass finished; null = never (that product is unread). */
-  complete_at: Partial<Record<PackCalendarProduct, string | null>>
-  /** Drops from the products that DO have a complete pass. */
+  /** As-of per source; null = that source is UNREAD (its drops are missing, not absent). */
+  complete_at: Partial<Record<PackCalendarSource, string | null>>
+  /** Drops from the sources that were read. */
   drops: PackCalendarDrop[]
+  /** Candy MLB: drop announcements from its blog (no store lists Candy drops). */
+  announcements: PackCalendarAnnouncement[]
+}
+
+// ── Panini ────────────────────────────────────────────────────────────────────────────
+export const PANINI_FRESH_HOURS = 36
+
+export interface PaniniDropSourceRow {
+  pack_id: string
+  name: string
+  price_usd: number | string | null
+  cards_per_pack: number | null
+  start_at: string | null
+  end_at: string | null
+  in_stock: boolean | null
+  is_available: boolean | null
+  last_seen_at: string
+}
+
+/** Same window rule as buildPackCalendar; a pack Panini no longer has in stock has ENDED (sold out). */
+export function buildPaniniDrops(rows: PaniniDropSourceRow[], now: Date, opts: { daysBack?: number; daysAhead?: number } = {}): PackCalendarDrop[] {
+  const back = now.getTime() - (opts.daysBack ?? 7) * DAY_MS
+  const ahead = now.getTime() + (opts.daysAhead ?? 7) * DAY_MS
+  const out: PackCalendarDrop[] = []
+  for (const r of rows) {
+    if (!r.start_at || !/^[0-9]+$/.test(r.pack_id)) continue
+    const start = Date.parse(r.start_at)
+    if (!Number.isFinite(start)) continue
+    const end = r.end_at ? Date.parse(r.end_at) : NaN
+    const stillOpen = start <= now.getTime() && Number.isFinite(end) && end > now.getTime() && r.in_stock !== false
+    if (!(start >= back && start <= ahead) && !stillOpen) continue
+    const status: DropStatus =
+      start > now.getTime() ? "upcoming" : r.in_stock === false || (Number.isFinite(end) && end <= now.getTime()) ? "ended" : "open"
+    const price = r.price_usd == null ? null : Number(r.price_usd)
+    out.push({
+      collection: "panini_blockchain",
+      dist_id: r.pack_id,
+      title: r.name.replace(/^\d{4}(?:-\d{2})? Panini NFT /, "").trim() || r.name,
+      tier: null,
+      pack_type: null,
+      kind: "sale",
+      slots: r.cards_per_pack,
+      retail_usd: price != null && Number.isFinite(price) && price > 0 ? price : null,
+      start_time: new Date(start).toISOString(),
+      end_time: Number.isFinite(end) ? new Date(end).toISOString() : null,
+      status,
+      detail_href: "/panini-blockchain/packs",
+    })
+  }
+  return out
+}
+
+// ── Candy MLB ─────────────────────────────────────────────────────────────────────────
+export const CANDY_FEED_URL = "https://blog.candy.io/rss/"
+const CANDY_DROP_TITLE = /\b(drops?|packs?|icons?|series)\b/i
+const CANDY_NOT_A_DROP = /\b(wallet|community update|questions|connect|buyback)\b/i
+
+/** Drop-titled posts from Candy's RSS published in the last `daysBack` days. */
+export function parseCandyAnnouncements(xml: string, now: Date, daysBack = 7): PackCalendarAnnouncement[] {
+  const out: PackCalendarAnnouncement[] = []
+  for (const m of xml.matchAll(/<item>([\s\S]*?)<\/item>/g)) {
+    const it = m[1]
+    const title = (it.match(/<title>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/title>/)?.[1] ?? "").trim()
+    const link = (it.match(/<link>([\s\S]*?)<\/link>/)?.[1] ?? "").trim()
+    const pub = Date.parse(it.match(/<pubDate>([\s\S]*?)<\/pubDate>/)?.[1] ?? "")
+    if (!title || !/^https:\/\/blog\.candy\.io\//.test(link) || !Number.isFinite(pub)) continue
+    if (pub < now.getTime() - daysBack * DAY_MS || pub > now.getTime() + DAY_MS) continue
+    if (!CANDY_DROP_TITLE.test(title) || CANDY_NOT_A_DROP.test(title)) continue
+    out.push({ collection: "candy_mlb", title, url: link, published_at: new Date(pub).toISOString() })
+  }
+  return out.sort((a, b) => b.published_at.localeCompare(a.published_at))
+}
+
+async function readCandy(fetchImpl: typeof fetch, now: Date): Promise<{ ok: boolean; announcements: PackCalendarAnnouncement[] }> {
+  try {
+    const ctl = new AbortController()
+    const t = setTimeout(() => ctl.abort(), 6000)
+    const r = await fetchImpl(CANDY_FEED_URL, { signal: ctl.signal, headers: { "user-agent": "RipPacksCity/1.0 (www.rippackscity.com)" } })
+    clearTimeout(t)
+    if (!r.ok) return { ok: false, announcements: [] }
+    const xml = await r.text()
+    // A feed with no <item> at all is not Candy's blog answering — treat it as unread.
+    if (!/<item>/.test(xml)) return { ok: false, announcements: [] }
+    return { ok: true, announcements: parseCandyAnnouncements(xml, now) }
+  } catch {
+    return { ok: false, announcements: [] }
+  }
 }
 
 // Top Shot and All Day are always expected; a missing state row for them is an unread book.
 const REQUIRED: PackCalendarProduct[] = ["nba", "nfl"]
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function fetchPackCalendar(sb: any, now = new Date()): Promise<PackCalendarResult> {
+export async function fetchPackCalendar(sb: any, now = new Date(), fetchImpl: typeof fetch = fetch): Promise<PackCalendarResult> {
   const { data: state, error: stateErr } = await sb
     .from("atlas_pack_market_state")
     .select("product, last_complete_pass_started_at, last_complete_at")
@@ -143,7 +246,7 @@ export async function fetchPackCalendar(sb: any, now = new Date()): Promise<Pack
   const walked = new Set<PackCalendarProduct>(REQUIRED)
   for (const s of (state ?? []) as { product: string }[]) if (isProduct(s.product)) walked.add(s.product)
 
-  const complete_at: Partial<Record<PackCalendarProduct, string | null>> = {}
+  const complete_at: Partial<Record<PackCalendarSource, string | null>> = {}
   const rows: PackCalendarSourceRow[] = []
   let complete = true
   for (const product of [...walked].sort()) {
@@ -169,5 +272,31 @@ export async function fetchPackCalendar(sb: any, now = new Date()): Promise<Pack
     if ((data ?? []).length >= 1000) throw new Error(`atlas_pack_market(${product}): 1000-row page full`)
     rows.push(...((data ?? []) as PackCalendarSourceRow[]))
   }
-  return { complete, complete_at, drops: buildPackCalendar(rows, now) }
+  const drops = buildPackCalendar(rows, now)
+
+  // Panini: read only while the runner keeps the table fresh; a stale table is UNREAD.
+  const since = new Date(now.getTime() - 60 * DAY_MS).toISOString()
+  const { data: pRows, error: pErr } = await sb
+    .from("panini_pack_drops")
+    .select("pack_id, name, price_usd, cards_per_pack, start_at, end_at, in_stock, is_available, last_seen_at")
+    .gte("start_at", since)
+    .order("start_at", { ascending: true })
+    .limit(1000)
+  if (pErr) throw new Error(`panini_pack_drops: ${pErr.message}`)
+  const paniniRows = (pRows ?? []) as PaniniDropSourceRow[]
+  const newestSeen = paniniRows.reduce((m, r) => (r.last_seen_at > m ? r.last_seen_at : m), "")
+  if (newestSeen && now.getTime() - Date.parse(newestSeen) <= PANINI_FRESH_HOURS * 3_600_000) {
+    complete_at.panini = newestSeen
+    drops.push(...buildPaniniDrops(paniniRows, now))
+  } else {
+    complete_at.panini = null
+    complete = false
+  }
+
+  const candy = await readCandy(fetchImpl, now)
+  complete_at.candy = candy.ok ? now.toISOString() : null
+  if (!candy.ok) complete = false
+
+  drops.sort((a, b) => a.start_time.localeCompare(b.start_time) || a.dist_id.localeCompare(b.dist_id))
+  return { complete, complete_at, drops, announcements: candy.announcements }
 }

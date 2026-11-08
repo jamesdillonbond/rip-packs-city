@@ -44,6 +44,7 @@ import { parseStall } from "@/lib/chains/panini/stall-report";
 import { paniniRunMode } from "@/lib/chains/panini/run-mode";
 import { parseProductNameObservations, decideProductNames } from "@/lib/chains/panini/product-names";
 import { bearerMatches } from "@/lib/auth/bearer-secret";
+import { normalizePaniniPackDrops } from "@/lib/panini/pack-drops";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -303,6 +304,19 @@ async function upsertRegistry(products: any[], packPages: any[], nowIso: string)
   return { written, errors, extra };
 }
 
+// PACK DROPS (2026-11-08, migration 20261108221500): Panini's own release dates, from the store `packs`
+// and `packsTimeline` queries the runner captured (lib/panini/pack-drops.ts). Upsert by pack id;
+// last_seen_at stamps each read so a pack Panini stops listing ages visibly instead of vanishing.
+async function upsertPackDrops(payload: unknown, nowIso: string): Promise<{ offered: number; written: number; error: string | null }> {
+  const rows = normalizePaniniPackDrops(payload);
+  if (!rows.length) return { offered: 0, written: 0, error: null };
+  const { data, error } = await (supabaseAdmin as any)
+    .from("panini_pack_drops")
+    .upsert(rows.map((r) => ({ ...r, last_seen_at: nowIso })), { onConflict: "pack_id" })
+    .select("pack_id");
+  return { offered: rows.length, written: error ? 0 : (data?.length ?? 0), error: error ? error.message : null };
+}
+
 async function logRun(startedAtIso: string, found: number, written: number, ok: boolean, error: string | null, extra: any, pipeline: string = PIPELINE) {
   try {
     await (supabaseAdmin as any).rpc("log_pipeline_run", {
@@ -365,6 +379,12 @@ export async function POST(req: NextRequest) {
   // PRODUCT NAMES from collectors' collections (2026-10-04, lib/chains/panini/product-names.ts). The
   // collector walk tallies (set id, collection name) over the cards it read inside each collection.
   // Only an unambiguous name is taken, and only into a NULL name — never over one already set.
+  const packDropsBody = body.pack_drops && typeof body.pack_drops === "object" && !Array.isArray(body.pack_drops) ? body.pack_drops : null;
+  if (packDropsBody) {
+    const pd = await upsertPackDrops(packDropsBody, startedAtIso);
+    await logRun(startedAtIso, pd.offered, pd.written, pd.error === null && pd.written === pd.offered, pd.error,
+      { pack_drops: { offered: pd.offered, written: pd.written, store: Array.isArray(packDropsBody.store) ? packDropsBody.store.length : 0, timeline: Array.isArray(packDropsBody.timeline) ? packDropsBody.timeline.length : 0 } }, PIPELINE_ENUM);
+  }
   const nameObs = parseProductNameObservations(body.product_names);
   if (nameObs.length) {
     const { named, ambiguous } = decideProductNames(nameObs);
@@ -373,7 +393,7 @@ export async function POST(req: NextRequest) {
       { product_names: { offered: nameObs.length, decided: named.length, ambiguous: ambiguous.length, named: res.written, not_updated: res.notUpdated } }, PIPELINE_ENUM);
   }
   if (!found) {
-    if (enumStats || stall || nameObs.length || products.length || packPages.length) return NextResponse.json({ accepted: true, logged: "discovery" }, { status: 202 });
+    if (enumStats || stall || nameObs.length || products.length || packPages.length || packDropsBody) return NextResponse.json({ accepted: true, logged: "discovery" }, { status: 202 });
     await logRun(startedAtIso, 0, 0, true, null, { skip: "empty" });
     return NextResponse.json({ accepted: false, skipped: "empty" }, { status: 202 });
   }
