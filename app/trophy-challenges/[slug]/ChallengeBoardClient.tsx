@@ -11,7 +11,7 @@ import Link from "next/link"
 import { useEffect, useState } from "react"
 import TrophySlab, { type TrophySlabData } from "@/components/TrophySlab"
 import { slotsOf } from "@/components/profile/TrophyCasesPanel"
-import { challengeCaseSharePath, challengeEntryHref } from "@/lib/trophy/challenge-link"
+import { challengeCaseSharePath, challengeEntryHref, challengeShopHref } from "@/lib/trophy/challenge-link"
 import { trackFunnelEvent } from "@/lib/track-funnel"
 
 const condensedFont = "var(--font-display)"
@@ -25,7 +25,7 @@ interface Entry {
   slabs: TrophySlabData[]
 }
 interface Board {
-  challenge: { slug: string; title: string; tagline: string | null; description: string | null; is_active: boolean; ends_at: string | null }
+  challenge: { slug: string; title: string; tagline: string | null; description: string | null; is_active: boolean; ends_at: string | null; rules?: unknown }
   entry_count: number
   entries: Entry[]
   /** Decided SERVER-side by the route (no wall-clock read on the client). */
@@ -203,6 +203,15 @@ export default function ChallengeBoardClient({ slug }: { slug: string }) {
             >
               {ownEntry.slab_count >= 6 ? "Share your case" : "Finish your case"}
             </Link>
+            {ownEntry.slab_count < 6 && challengeShopHref(challenge.rules) && (
+              <Link
+                href={challengeShopHref(challenge.rules)!}
+                data-rpc-challenge-shop
+                style={{ fontFamily: monoFont, fontSize: 11, letterSpacing: "0.08em", color: "var(--rpc-text-secondary)" }}
+              >
+                Find more pieces →
+              </Link>
+            )}
           </span>
         ) : open ? (
           <Link

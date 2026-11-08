@@ -11,6 +11,9 @@
 // the TOP of the Trophy tab. `?challenge=` rides `next` through login and the
 // magic link. The hash form is still honoured for links already shared.
 
+import { slugifyPlayerName } from "@/lib/entity-labels"
+import { playerHubPath } from "@/lib/player-hub-path"
+
 /** DOM id of a challenge's row/case in the dashboard trophy panel. */
 export function challengeAnchorId(slug: string): string {
   return `challenge-${slug}`
@@ -49,4 +52,18 @@ export function challengeCaseOgPath(username: string, slug: string, token?: stri
 /** A challenge slug as the DB constrains it (`^[a-z0-9]+(-[a-z0-9]+)*$`, ≤ 60). */
 export function isChallengeSlug(s: string): boolean {
   return s.length <= 60 && /^[a-z0-9]+(-[a-z0-9]+)*$/.test(s)
+}
+
+/**
+ * Where to find more pieces for a one-player challenge (2026-11-08): that
+ * player's cross-collection hub (/players/<slug> — Top Shot and Panini on one
+ * page, the two collections Dame Time takes). An entry completes only at 6
+ * (Trevor, 11-08), so an entrant below 6 needs a place to go. Null when the
+ * rules name no single player — a multi-player challenge has no one hub.
+ */
+export function challengeShopHref(rules: unknown): string | null {
+  const names = (rules as { player_names?: unknown } | null)?.player_names
+  if (!Array.isArray(names) || names.length !== 1 || typeof names[0] !== "string" || !names[0].trim()) return null
+  const slug = slugifyPlayerName(names[0].trim())
+  return slug ? playerHubPath(slug) : null
 }

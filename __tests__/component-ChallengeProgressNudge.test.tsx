@@ -12,7 +12,7 @@ vi.mock("@/lib/telemetry/track", () => ({ track: (...a: unknown[]) => trackMock(
 
 import ChallengeProgressNudge, { unfinishedEntries } from "@/components/profile/ChallengeProgressNudge"
 
-const dame = { slug: "dame-time", title: "Dame Time" }
+const dame = { slug: "dame-time", title: "Dame Time", rules: { player_names: ["Damian Lillard"] } }
 const body = (pinned: number, challenges: unknown = [dame]) => ({
   cases: [
     { id: "a", challenge: null, slabs: [1, 2] },
@@ -36,7 +36,7 @@ afterEach(() => {
 
 describe("unfinishedEntries", () => {
   it("lists an open-challenge entry below 6, never the main case", () => {
-    expect(unfinishedEntries(body(4))).toEqual([{ slug: "dame-time", title: "Dame Time", pinned: 4 }])
+    expect(unfinishedEntries(body(4))).toEqual([{ slug: "dame-time", title: "Dame Time", pinned: 4, shopHref: "/players/damian-lillard" }])
   })
   it("a complete entry (6) is not unfinished", () => {
     expect(unfinishedEntries(body(6))).toEqual([])
@@ -58,7 +58,10 @@ describe("ChallengeProgressNudge", () => {
     await waitFor(() => expect(container.querySelector("[data-rpc-challenge-nudge]")).not.toBeNull())
     expect(container.textContent).toMatch(/Dame Time: 4 \/ 6/)
     expect(container.textContent).toMatch(/Pin 2 more/)
-    const a = container.querySelector("a")!
+    expect(container.querySelector("[data-rpc-challenge-shop]")?.getAttribute("href")).toBe("/players/damian-lillard")
+    fireEvent.click(container.querySelector("[data-rpc-challenge-shop]")!)
+    expect(trackMock).toHaveBeenCalledWith("challenge-nudge-shop-click", { challenge: "dame-time" })
+    const a = container.querySelector('a[href^="/dashboard"]')!
     expect(a.getAttribute("href")).toBe("/dashboard?tab=trophy&challenge=dame-time")
     fireEvent.click(a)
     expect(trackMock).toHaveBeenCalledWith("challenge-nudge-click", { challenge: "dame-time" })

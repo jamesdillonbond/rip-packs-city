@@ -14,7 +14,7 @@
 // "pin 2 more" is a claim about the collector's own case.
 
 import { useEffect, useState } from "react"
-import { challengeEntryHref } from "@/lib/trophy/challenge-link"
+import { challengeEntryHref, challengeShopHref } from "@/lib/trophy/challenge-link"
 import { track } from "@/lib/telemetry/track"
 
 export const CHALLENGE_SLOTS = 6
@@ -23,6 +23,8 @@ export interface UnfinishedEntry {
   slug: string
   title: string
   pinned: number
+  /** The one-player challenge's hub, where more pieces are found; null otherwise. */
+  shopHref: string | null
 }
 
 /** The open-challenge entries below 6 pinned, from one /api/profile/trophy-cases answer. */
@@ -34,12 +36,12 @@ export function unfinishedEntries(body: unknown): UnfinishedEntry[] {
     (b.challenges as { slug?: unknown }[]).map((c) => (typeof c?.slug === "string" ? c.slug : null)).filter((s): s is string => s != null),
   )
   const out: UnfinishedEntry[] = []
-  for (const c of b.cases as { slabs?: unknown; challenge?: { slug?: unknown; title?: unknown } | null }[]) {
+  for (const c of b.cases as { slabs?: unknown; challenge?: { slug?: unknown; title?: unknown; rules?: unknown } | null }[]) {
     const slug = typeof c?.challenge?.slug === "string" ? c.challenge.slug : null
     if (!slug || !open.has(slug)) continue
     const pinned = Array.isArray(c.slabs) ? c.slabs.length : null
     if (pinned == null || pinned >= CHALLENGE_SLOTS) continue
-    out.push({ slug, title: typeof c.challenge?.title === "string" ? c.challenge.title : slug, pinned })
+    out.push({ slug, title: typeof c.challenge?.title === "string" ? c.challenge.title : slug, pinned, shopHref: challengeShopHref(c.challenge?.rules) })
   }
   return out
 }
@@ -79,6 +81,19 @@ export default function ChallengeProgressNudge() {
             </span>
             <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-sm)", color: "var(--rpc-text-secondary)", lineHeight: 1.5 }}>
               Pin {CHALLENGE_SLOTS - e.pinned} more to complete your entry.
+              {e.shopHref && (
+                <>
+                  {" "}
+                  <a
+                    href={e.shopHref}
+                    data-rpc-challenge-shop
+                    onClick={() => track("challenge-nudge-shop-click", { challenge: e.slug })}
+                    style={{ color: "var(--rpc-red-text)", textDecoration: "none" }}
+                  >
+                    Find more pieces →
+                  </a>
+                </>
+              )}
             </span>
           </div>
           {/* A full navigation, not <Link>: the dashboard captures `?challenge=` ONCE at

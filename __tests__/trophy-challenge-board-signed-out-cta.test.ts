@@ -76,3 +76,17 @@ describe("the signed-in viewer's own entry", () => {
     expect(viewerHandleFromMe({ ok: false, json: null })).toBeNull()
   })
 })
+
+import { challengeShopHref } from "@/lib/trophy/challenge-link"
+
+describe("challengeShopHref", () => {
+  it("a one-player challenge points at that player's cross-collection hub", () => {
+    expect(challengeShopHref({ player_names: ["Damian Lillard"] })).toBe("/players/damian-lillard")
+    expect(challengeShopHref({ player_names: ["Luka Dončić"] })).toBe("/players/luka-doncic")
+  })
+  it("no single player, no link", () => {
+    expect(challengeShopHref({ player_names: ["A", "B"] })).toBeNull()
+    expect(challengeShopHref({})).toBeNull()
+    expect(challengeShopHref(null)).toBeNull()
+  })
+})
