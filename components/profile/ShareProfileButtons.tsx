@@ -29,7 +29,7 @@
 // We NEVER auto-post on the user's behalf — the intent link opens a pre-filled
 // composer the user submits themselves.
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { challengeCaseOgPath, challengeCaseSharePath } from "@/lib/trophy/challenge-link";
 
 const DISPLAY = "var(--font-display)";
@@ -59,8 +59,17 @@ function profileUrl(
     typeof window !== "undefined"
       ? window.location.origin
       : "https://www.rippackscity.com";
-  const ref = referrerId ? `&ref=${encodeURIComponent(referrerId)}` : "";
-  return `${origin}${sharePath(username, surface, challenge)}?utm_source=share&utm_medium=${medium}${ref}`;
+  // ⚠ A PLAIN URL (Trevor, 2026-11-07, on a shared link that read
+  // "/profile/peanpean?utm_source=share&utm_medium=copy&ref=609b2c6e-…": "Clean
+  // this up as the link provided to users"). The link IS the thing people
+  // paste and read in Discord/X, so it carries no tracking tail. What that
+  // costs: utm_source=share attribution on the landing (the funnel still sees
+  // the referrer host) and the silent `ref` referral credit — whose rewards
+  // program is pulled from every surface anyway. `medium`/`referrerId` stay in
+  // the signature for the callers; they no longer reach the URL.
+  void medium;
+  void referrerId;
+  return `${origin}${sharePath(username, surface, challenge)}`;
 }
 
 // The social card behind a shared URL is rendered on first request and takes
@@ -111,6 +120,14 @@ export default function ShareProfileButtons({
 }) {
   const shareSurface: ShareSurface = surface ?? "profile";
   const [copied, setCopied] = useState(false);
+  // Warm the card as soon as the share controls exist, not only on click: the
+  // card is served from a store (lib/og/card-store) that a cold render fills
+  // in ~8–11 s, and the link is usually pasted seconds after "Copy link".
+  const challengeSlug = challenge?.slug ?? null;
+  const challengeTitle = challenge?.title ?? "";
+  useEffect(() => {
+    prewarmCard(username, shareSurface, challengeSlug ? { slug: challengeSlug, title: challengeTitle } : null);
+  }, [username, shareSurface, challengeSlug, challengeTitle]);
 
   const tweetText = useMemo(() => {
     let stat = "";

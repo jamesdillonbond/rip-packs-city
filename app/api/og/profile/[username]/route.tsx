@@ -48,7 +48,8 @@
  */
 
 import { ImageResponse } from "next/og";
-import { NextRequest } from "next/server";
+import { NextRequest, after } from "next/server";
+import { fullCardHeaders, ogCardKey, serveStoredCard } from "@/lib/og/card-store";
 import { ogImageDataUri } from "@/lib/og/img-data";
 import { borderCosmetic, bannerCosmetic } from "@/lib/cosmetics";
 import { resolveAvatarUrl } from "@/lib/profile/default-avatar";
@@ -428,7 +429,27 @@ function renderFallback(fonts?: OgFont[]) {
   );
 }
 
+/**
+ * Served from the stored-card bucket (lib/og/card-store): a cold render of this
+ * card takes ~10.8 s (p50, up to 26 s p95), and Discord gave up on it — a
+ * pasted profile link showed no preview (2026-11-07). The render itself is
+ * `renderProfileCard` below.
+ */
 export async function GET(
+  req: NextRequest,
+  ctx: { params: Promise<{ username: string }> },
+) {
+  const username = decodeURIComponent((await ctx.params).username ?? "").trim();
+  if (!username) return renderProfileCard(req, ctx);
+  return serveStoredCard({
+    key: ogCardKey("profile", username),
+    render: () => renderProfileCard(req, ctx),
+    fallback: async () => renderFallback(await brandFonts()),
+    waitUntil: (p) => after(p),
+  });
+}
+
+export async function renderProfileCard(
   _req: NextRequest,
   { params }: { params: Promise<{ username: string }> },
 ) {
@@ -1337,7 +1358,16 @@ export async function GET(
         // policy turns on. One transient gateway 429 would otherwise publish
         // an ART UNAVAILABLE tile for 25 hours on the most-shared surface in
         // the product. See lib/og/brand-fonts.ts → ogCacheHeaders.
-        headers: ogCacheHeaders(artless.length > 0),
+        // `x-og-card: full` only with every picture present — the store keeps
+        // nothing else (lib/og/card-store).
+        // ⚠ And only when every READ answered: a card with withheld ("—")
+        // figures from a failed read is served, never kept.
+        headers: {
+          ...ogCacheHeaders(artless.length > 0),
+          ...fullCardHeaders(
+            artless.length === 0 && bios.ok && walletsOk && trophiesOk && achievementsRes.ok && ripsRes.ok,
+          ),
+        },
       },
     );
   } catch {

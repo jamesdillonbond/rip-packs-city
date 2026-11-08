@@ -24,7 +24,8 @@
  */
 
 import { ImageResponse } from "next/og"
-import { NextRequest } from "next/server"
+import { NextRequest, after } from "next/server"
+import { fullCardHeaders, ogCardKey, serveStoredCard } from "@/lib/og/card-store"
 import { ogImageDataUriSlots } from "@/lib/og/img-data"
 import { supabaseAdmin } from "@/lib/supabase"
 import { boundedRead } from "@/lib/api/bounded-read"
@@ -130,7 +131,31 @@ function renderFallback(fonts?: OgFont[], display = "sans-serif") {
   )
 }
 
+/**
+ * Served from the stored-card bucket (lib/og/card-store): a cold render takes
+ * ~7.5 s (p50), longer than a link-preview crawler waits, so Discord showed no
+ * preview at all. The render itself is `renderTrophyCaseCard` below.
+ */
 export async function GET(
+  req: NextRequest,
+  ctx: { params: Promise<{ username: string }> },
+) {
+  const username = decodeURIComponent((await ctx.params).username ?? "").trim()
+  const slug = req.nextUrl?.searchParams.get("case")?.trim().toLowerCase() ?? ""
+  // Nothing worth a store key: render directly (both land on the fallback).
+  if (!username || (slug && !isChallengeSlug(slug))) return renderTrophyCaseCard(req, ctx)
+  return serveStoredCard({
+    key: ogCardKey("trophy-case", username, slug || null),
+    render: () => renderTrophyCaseCard(req, ctx),
+    fallback: async () => {
+      const fonts = await brandFonts()
+      return renderFallback(fonts, brandFamilies(fonts).display)
+    },
+    waitUntil: (p) => after(p),
+  })
+}
+
+export async function renderTrophyCaseCard(
   req: NextRequest,
   { params }: { params: Promise<{ username: string }> },
 ) {
@@ -638,7 +663,9 @@ export async function GET(
         // Moment never had art. One transient 429 on a gateway would otherwise
         // publish a placeholder tile for 25 hours on the card built to be
         // shared. See lib/og/brand-fonts.ts → ogCacheHeaders.
-        headers: ogCacheHeaders(artless.length > 0),
+        // `x-og-card: full` only with every picture present — the store keeps
+        // nothing else (lib/og/card-store).
+        headers: { ...ogCacheHeaders(artless.length > 0), ...fullCardHeaders(artless.length === 0) },
       },
     )
   } catch {

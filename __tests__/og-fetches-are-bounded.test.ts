@@ -42,6 +42,10 @@ const SELF_BOUNDED: Record<string, RegExp> = {
   "lib/og/img-data.ts": /new AbortController\(/,
   // The helper itself.
   "lib/og/og-fetch.ts": /AbortSignal\.timeout\(/,
+  // The stored-card bucket (2026-11-07): one manual controller over the whole
+  // read/write — it buffers the body before anything is sent, so the bound must
+  // cover the transfer too (1.5 s read, 8 s write).
+  "lib/og/card-store.ts": /new AbortController\(/,
 }
 
 function sourceFiles(dir: string, out: string[] = []): string[] {

@@ -41,31 +41,34 @@ describe("ShareProfileButtons", () => {
     expect(screen.getByRole("button", { name: "Copy link" })).toBeTruthy()
   })
 
-  it("Share on X opens a twitter intent carrying the utm=x profile URL + tweet text, and tracks the reward", async () => {
+  it("Share on X opens a twitter intent carrying the PLAIN profile URL + tweet text, and tracks the reward", async () => {
     render(<ShareProfileButtons username="trevor" fmv={2500} moments={120} />)
     fireEvent.click(screen.getByRole("button", { name: "Share on X" }))
     expect(openMock).toHaveBeenCalledTimes(1)
     const intent = decodeURIComponent(String(openMock.mock.calls[0][0]))
     expect(intent).toContain("twitter.com/intent/tweet")
-    expect(intent).toContain("/profile/trevor?utm_source=share&utm_medium=x")
+    expect(intent).toMatch(/&url=http:\/\/[^ ]+\/profile\/trevor$/)
+    // ⚠ 2026-11-07 (Trevor: "Clean this up as the link provided to users"): no tracking tail.
+    expect(intent).not.toMatch(/utm_|ref=/)
     expect(intent).toContain("RipPacksCity") // tweet text
     expect(intent).toContain("$2.5K") // fmv stat formatted
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/rewards/track", expect.anything()))
   })
 
-  it("Copy link writes the utm=copy URL to the clipboard and flips to 'Copied!'", async () => {
+  it("Copy link writes the PLAIN URL to the clipboard and flips to 'Copied!'", async () => {
     render(<ShareProfileButtons username="trevor" />)
     fireEvent.click(screen.getByRole("button", { name: "Copy link" }))
     await waitFor(() => expect(writeTextMock).toHaveBeenCalledTimes(1))
-    expect(String(writeTextMock.mock.calls[0][0])).toContain("utm_medium=copy")
+    expect(String(writeTextMock.mock.calls[0][0])).toMatch(/\/profile\/trevor$/)
     await waitFor(() => expect(screen.getByRole("button", { name: "Copied!" })).toBeTruthy())
   })
 
-  it("carries the &ref= referral param when referrerId is supplied", () => {
+  it("⚠ INVERTED 2026-11-07: a referrerId no longer leaks into the shared link (it read as noise in Discord)", () => {
     render(<ShareProfileButtons username="trevor" referrerId="user-99" />)
     fireEvent.click(screen.getByRole("button", { name: "Share on X" }))
     const intent = decodeURIComponent(String(openMock.mock.calls[0][0]))
-    expect(intent).toContain("ref=user-99")
+    expect(intent).not.toContain("ref=")
+    expect(intent).not.toContain("user-99")
   })
 
   it("never promises points, whatever the reward track answers", async () => {
@@ -96,8 +99,8 @@ describe("ShareProfileButtons", () => {
     render(<ShareProfileButtons username="trevor" surface="trophy-case" trophyCount={3} referrerId="user-7" />)
     fireEvent.click(screen.getByRole("button", { name: "Share on X" }))
     const intent = decodeURIComponent(String(openMock.mock.calls[0][0]))
-    expect(intent).toContain("/profile/trevor/trophy-case?utm_source=share&utm_medium=x")
-    expect(intent).toContain("ref=user-7")
+    expect(intent).toMatch(/\/profile\/trevor\/trophy-case$/)
+    expect(intent).not.toMatch(/utm_|ref=/)
     expect(intent).toMatch(/trophy case/i)
     expect(intent).toContain("3 Moments")
     await waitFor(() =>
@@ -109,14 +112,14 @@ describe("ShareProfileButtons", () => {
     render(<ShareProfileButtons username="trevor" surface="trophy-case" />)
     fireEvent.click(screen.getByRole("button", { name: "Copy link" }))
     await waitFor(() => expect(writeTextMock).toHaveBeenCalledTimes(1))
-    expect(String(writeTextMock.mock.calls[0][0])).toContain("/profile/trevor/trophy-case?utm_source=share&utm_medium=copy")
+    expect(String(writeTextMock.mock.calls[0][0])).toMatch(/\/profile\/trevor\/trophy-case$/)
   })
 
   it("the default surface is still the profile (a revert of the trophy page stays visible)", () => {
     render(<ShareProfileButtons username="trevor" />)
     fireEvent.click(screen.getByRole("button", { name: "Share on X" }))
     const intent = decodeURIComponent(String(openMock.mock.calls[0][0]))
-    expect(intent).toContain("/profile/trevor?utm_source=share")
+    expect(intent).toMatch(/\/profile\/trevor$/)
     expect(intent).not.toContain("/trophy-case")
   })
 

@@ -30,19 +30,19 @@ beforeEach(() => {
 afterEach(() => cleanup())
 
 describe("walletShareUrl", () => {
-  it("tags the link with the same utm vocabulary as the profile share", () => {
+  it("⚠ INVERTED 2026-11-07: the link is PLAIN — no utm tail (Trevor: shared links must read clean)", () => {
     expect(walletShareUrl("0xabc", "copy")).toBe(
-      "https://www.rippackscity.com/share/0xabc?utm_source=share&utm_medium=copy",
+      "https://www.rippackscity.com/share/0xabc",
     )
   })
 
   it("never case-folds the wallet (a Solana key is case-sensitive)", () => {
     const sol = "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU"
-    expect(walletShareUrl(sol, "native")).toContain(`/share/${sol}?`)
+    expect(walletShareUrl(sol, "native")).toMatch(new RegExp(`/share/${sol}$`))
   })
 
   it("encodes a username-shaped input instead of breaking the path", () => {
-    expect(walletShareUrl(" a b/c ", "copy")).toContain("/share/a%20b%2Fc?")
+    expect(walletShareUrl(" a b/c ", "copy")).toMatch(/\/share\/a%20b%2Fc$/)
   })
 })
 
@@ -50,14 +50,14 @@ describe("shareWalletCard", () => {
   it("desktop (fine pointer) copies even though navigator.share exists", async () => {
     await expect(shareWalletCard("0xabc")).resolves.toBe("copied")
     expect(share).not.toHaveBeenCalled()
-    expect(writeText).toHaveBeenCalledWith(expect.stringContaining("utm_medium=copy"))
+    expect(writeText).toHaveBeenCalledWith(expect.stringMatching(/\/share\/[^?]+$/))
   })
 
   it("touch uses the native sheet with the native medium", async () => {
     setPointer(true)
     await expect(shareWalletCard("0xabc")).resolves.toBe("shared")
     expect(share).toHaveBeenCalledWith(
-      expect.objectContaining({ url: expect.stringContaining("utm_medium=native") }),
+      expect.objectContaining({ url: expect.stringMatching(/\/share\/[^?]+$/) }),
     )
     expect(writeText).not.toHaveBeenCalled()
   })
@@ -83,7 +83,7 @@ describe("ShareButton", () => {
     fireEvent.click(getByRole("button"))
     await waitFor(() => expect(getByRole("button").textContent).toBe("Link Copied!"))
     expect(writeText).toHaveBeenCalledWith(
-      "https://www.rippackscity.com/share/0xabc?utm_source=share&utm_medium=copy",
+      "https://www.rippackscity.com/share/0xabc",
     )
   })
 

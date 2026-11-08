@@ -30,7 +30,11 @@ export function walletShareUrl(
   medium: ShareMedium,
   origin: string = CANONICAL_ORIGIN,
 ): string {
-  return `${origin}/share/${encodeURIComponent(wallet.trim())}?utm_source=share&utm_medium=${medium}`
+  // ⚠ PLAIN since 2026-11-07 (Trevor: shared links must read clean) — the
+  // utm tail below this file's header described is gone; `medium` is kept in
+  // the signature for callers.
+  void medium
+  return `${origin}/share/${encodeURIComponent(wallet.trim())}`
 }
 
 // The OS share sheet only where it is the natural gesture. Desktop Chrome and

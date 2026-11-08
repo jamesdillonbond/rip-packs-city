@@ -84,7 +84,8 @@ describe("ShareProfileButtons — tweet copy", () => {
     fireEvent.click(screen.getByRole("button", { name: /share on x/i }))
     const url = new URL(opened as string).searchParams.get("url") ?? ""
     expect(url).toContain("/profile/trevor")
-    expect(url).toContain("utm_source=share")
-    expect(url).toContain("ref=me")
+    // ⚠ INVERTED 2026-11-07: the shared link is PLAIN — no utm, no ref.
+    expect(url).toMatch(/\/profile\/trevor$/)
+    expect(url).not.toMatch(/utm_|ref=/)
   })
 })
