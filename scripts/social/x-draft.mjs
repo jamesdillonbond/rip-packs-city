@@ -356,6 +356,8 @@ const packsIndex = (x) => `${SITE}/${PACKS_PAGE[x.collection] ?? "nba-top-shot"}
 function dropLine(x, multiColl) {
   const price = x.retail_usd ? ` (${usd(x.retail_usd)})` : ""
   const tag = multiColl ? `${coll(x.collection)}: ` : ""
+  // A Pinnacle Open Edition is seen only while it mints: no price, no announced end.
+  if (x.kind === "open_edition") return `• ${tag}${x.title} — minting now`
   if (x.status === "upcoming") return `• ${tag}${x.title}${price} — ${x.kind === "rsvp" ? "RSVP opens" : "drops"} ${whenPT(x.start_time)}`
   // open now: an RSVP window closes; a sale has an end time only sometimes
   if (x.kind === "rsvp" && x.end_time) return `• ${tag}${x.title}${price} — RSVP closes ${whenPT(x.end_time)}`
@@ -370,9 +372,10 @@ async function pageLive(href) {
   }
 }
 // Drops come from every source the calendar reads: the Atlas pack book (Top Shot, All Day, Golazos,
-// Pinnacle), Panini's own store (panini_pack_drops) and Candy MLB's blog announcements. A source with
+// Pinnacle), Pinnacle Open Editions minting now (pinnacle_mint_events), Panini's own store
+// (panini_pack_drops) and Candy MLB's blog announcements. A source with
 // no as-of is UNREAD: its drops are missing, so the post must not read as the whole week.
-const ATLAS_NAMES = { nba: "Top Shot", nfl: "All Day", laliga: "Golazos", disney: "Pinnacle", panini: "Panini", candy: "Candy MLB" }
+const ATLAS_NAMES = { nba: "Top Shot", nfl: "All Day", laliga: "Golazos", disney: "Pinnacle", panini: "Panini", candy: "Candy MLB", pinnacle_oe: "Pinnacle Open Editions" }
 let calendarMeta = null
 let calendarAnnouncements = []
 async function calendar() {

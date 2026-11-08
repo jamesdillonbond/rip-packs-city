@@ -2,7 +2,8 @@
 //
 // PUBLIC INSIGHTS — this week's pack drops across every collection RPC can date: Top Shot, All Day,
 // Golazos and Pinnacle (the Atlas pack book), Panini (Panini's own store, via the residential runner)
-// and Candy MLB drop announcements (its blog — Candy's store is offline). UFC Strike: market closed.
+// Pinnacle Open Editions minting now (pinnacle_mint_events — they are not packs) and Candy MLB drop
+// announcements (its blog — Candy's store is offline). UFC Strike: market closed.
 // What opened in the last 7 days, what is open now, and what starts in the next 7.
 // Feeds the @RipPacksCity "drops this week" post (docs/social/x-calendar.md).
 //
@@ -39,7 +40,7 @@ export async function GET() {
   const res = NextResponse.json({
     meta: {
       fetched_at: new Date().toISOString(),
-      source: "atlas_pack_market (last complete pass) + panini_pack_drops + blog.candy.io/rss",
+      source: "atlas_pack_market (last complete pass) + get_pinnacle_open_edition_drops + panini_pack_drops + blog.candy.io/rss",
       complete: result.complete,
       complete_at: result.complete_at,
       total_drops: result.drops.length,

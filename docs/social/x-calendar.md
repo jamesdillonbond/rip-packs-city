@@ -40,7 +40,8 @@ The trade-in finder (Top Shot This pack credits) moved into the rotation on 11-0
 | Collection | Source | What it gives | Notes |
 |---|---|---|---|
 | Top Shot, All Day | Atlas pack book (`atlas_pack_market`, products `nba` / `nfl`, refreshed every 15 min) | Every Dapper drop with its start/end time, price and RSVP flag | Read only from the last complete pass |
-| Pinnacle | Same book, product `disney` (added 11-08) | Same | Pinnacle's pack-opens feed has been frozen since 10-23, so the book is the only way new Pinnacle drops reach RPC |
+| Pinnacle | Same book, product `disney` (added 11-08) | Same | Pack drops only (Limited Edition packs) |
+| Pinnacle Open Editions | `get_pinnacle_open_edition_drops()` over `pinnacle_mint_events` (added 11-08) | Each Open Edition set minting now ("minting now"), or that started and stopped this week | Not packs: the pins are minted straight into buyers' wallets while the drop is on sale, so a drop is seen only once it mints. No price and no announced end are ever stated. "Unread" unless the mint lane is at the chain head |
 | Golazos | Same book, product `laliga` (added 11-08) | Same | Dapper parks every Golazos window ~100 years out (2122–2123), so no Golazos pack is datable today; a real dated drop would show |
 | Panini | `panini_pack_drops`, from Panini's own NFT store lists (`packs` on sale now, `packsTimeline` every release), captured by the residential runner each pass | Panini's release date (8 AM PT, stored UTC), price, cards per pack, in stock | "Unread" if the runner has not refreshed it in 36 h; `panini_products.first_seen_at` is discovery time and is never used as a release date |
 | Candy MLB | blog.candy.io RSS | Drop-titled posts from the last 7 days, linked (`announcements`) | Candy's store has been offline since its October wallet migration, so no store lists Candy drops; no date or price is ever invented |

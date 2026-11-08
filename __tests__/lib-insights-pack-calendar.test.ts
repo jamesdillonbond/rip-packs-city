@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { buildPackCalendar, fetchPackCalendar, type PackCalendarSourceRow } from "@/lib/insights/pack-calendar"
+import { buildPackCalendar, buildPinnacleOpenEditionDrops, fetchPackCalendar, openEditionTitle, type PackCalendarSourceRow } from "@/lib/insights/pack-calendar"
 
 // 2026-11-08 12:00 PT
 const NOW = new Date("2026-11-08T20:00:00Z")
@@ -68,9 +68,17 @@ describe("buildPackCalendar", () => {
   })
 })
 
-// A minimal supabase double: from(table) → chainable builder resolving to the table's result.
+// The Open Edition read: mint lane at the head, nothing minting this window.
+const OE_EMPTY = { data: { lane_as_of: "2026-11-08T19:56:00Z", sets: [] } }
+
+// A minimal supabase double: from(table) → chainable builder resolving to the table's result;
+// rpc(name) → tables["rpc:<name>"] (the Open Edition read defaults to OE_EMPTY).
 function fakeSb(tables: Record<string, { data?: unknown; error?: { message: string } | null }>) {
   return {
+    async rpc(name: string) {
+      const res = tables[`rpc:${name}`] ?? (name === "get_pinnacle_open_edition_drops" ? OE_EMPTY : { data: null, error: null })
+      return { data: res.data ?? null, error: res.error ?? null }
+    },
     from(table: string) {
       const res = tables[table] ?? { data: [], error: null }
       const b: Record<string, unknown> = {}
@@ -140,7 +148,7 @@ describe("fetchPackCalendar", () => {
       NOW,
     )
     expect(r.complete).toBe(true)
-    expect(Object.keys(r.complete_at).sort()).toEqual(["candy", "nba", "nfl", "panini"])
+    expect(Object.keys(r.complete_at).sort()).toEqual(["candy", "nba", "nfl", "panini", "pinnacle_oe"])
   })
 
   it("a failed read throws (the route turns it into a 503), never an empty list", async () => {
@@ -204,5 +212,52 @@ describe("fetchPackCalendar — Panini and Candy MLB", () => {
 
   it("a failed Panini read throws (the route turns it into a 503), never an empty list", async () => {
     await expect(cal(fakeSb({ ...base, panini_pack_drops: { error: { message: "denied" } } }), NOW)).rejects.toThrow(/panini_pack_drops: denied/)
+  })
+})
+
+describe("Pinnacle Open Editions", () => {
+  const sets = [
+    // minting now (last pin 2 h ago) — started 10 days ago, still listed
+    { set_key: "OEV1-GARG", set_name: "Disney • Gargoyles Vol.1", edition_type: "Open Edition", pins: 7197, first_mint_at: "2026-10-29T00:54:18Z", last_mint_at: "2026-11-08T18:00:00Z" },
+    // started this week, stopped minting 2 days ago: ended
+    { set_key: "OEEV1-MNFL", set_name: "Walt Disney Animation Studios • Mickey & Friends Vol.1", edition_type: "Open Event Edition", pins: "5667", first_mint_at: "2026-11-03T09:36:01Z", last_mint_at: "2026-11-06T17:00:01Z" },
+    // stopped before the week and started before it: not this week's drop
+    { set_key: "OEV2-RATA", set_name: "Pixar Animation Studios • Ratatouille Vol.2", edition_type: "Open Edition", pins: 813, first_mint_at: "2026-10-26T00:52:23Z", last_mint_at: "2026-10-27T15:59:34Z" },
+  ]
+
+  it("lists what is minting now and what started and stopped this week — no price, no invented end", () => {
+    const d = buildPinnacleOpenEditionDrops(sets, NOW)
+    expect(d.map((x) => [x.dist_id, x.status, x.kind])).toEqual([
+      ["OEV1-GARG", "open", "open_edition"],
+      ["OEEV1-MNFL", "ended", "open_edition"],
+    ])
+    expect(d[0]).toMatchObject({ title: "Gargoyles Vol.1 (Open Edition)", retail_usd: null, end_time: null, collection: "disney_pinnacle" })
+    // an ended set's end is its last mint, stated only once it has stopped
+    expect(d[1].end_time).toBe("2026-11-06T17:00:01.000Z")
+  })
+
+  it("titles fall back to the set key and the edition type", () => {
+    expect(openEditionTitle(null, null, "OEV9-XXXX")).toBe("OEV9-XXXX (Open Edition)")
+    expect(openEditionTitle("Disney • Trading Event Vol.2", "Open Event Edition", "k")).toBe("Trading Event Vol.2 (Open Event Edition)")
+  })
+
+  const state = [
+    { product: "nba", last_complete_pass_started_at: "2026-11-08T19:45:00Z", last_complete_at: "2026-11-08T19:50:00Z" },
+    { product: "nfl", last_complete_pass_started_at: "2026-11-08T19:45:00Z", last_complete_at: "2026-11-08T19:49:00Z" },
+  ]
+  const base = { atlas_pack_market_state: { data: state }, atlas_pack_market: { data: [] }, panini_pack_drops: { data: freshPanini } }
+
+  it("a mint lane behind the chain head is UNREAD — never 'no Open Editions on sale'", async () => {
+    const r = await cal(fakeSb({ ...base, "rpc:get_pinnacle_open_edition_drops": { data: { lane_as_of: null, sets } } }), NOW)
+    expect(r.complete).toBe(false)
+    expect(r.complete_at.pinnacle_oe).toBeNull()
+    expect(r.drops.some((d) => d.kind === "open_edition")).toBe(false)
+  })
+
+  it("a fresh read adds the minting sets; a failed read throws", async () => {
+    const r = await cal(fakeSb({ ...base, "rpc:get_pinnacle_open_edition_drops": { data: { lane_as_of: "2026-11-08T19:56:00Z", sets } } }), NOW)
+    expect(r.complete).toBe(true)
+    expect(r.drops.filter((d) => d.kind === "open_edition").map((d) => d.dist_id)).toEqual(["OEV1-GARG", "OEEV1-MNFL"])
+    await expect(cal(fakeSb({ ...base, "rpc:get_pinnacle_open_edition_drops": { error: { message: "denied" } } }), NOW)).rejects.toThrow(/get_pinnacle_open_edition_drops: denied/)
   })
 })

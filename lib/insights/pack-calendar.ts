@@ -30,6 +30,14 @@
 // its blog, so the calendar carries `announcements` — drop-titled posts from blog.candy.io's RSS in
 // the window, linked — never a fabricated date or price.
 //
+// PINNACLE OPEN EDITIONS (2026-11-08): not packs — no PackNFT, no Atlas book row. While an Open
+// Edition is on sale its pins are minted straight into buyers' wallets, so the only record is
+// `pinnacle_mint_events` (get_pinnacle_open_edition_drops). It is seen only once it is MINTING:
+// no announced start, no price, no end. "open" = a pin minted in the last OE_MINTING_HOURS; a set
+// that stopped minting has "ended" (Gargoyles Vol.1 stopped on the minute its drop closed). The
+// source is unread unless the mint lane is at the chain head (`lane_as_of`), because only then does
+// "nothing minting" mean nothing is on sale.
+//
 // UFC STRIKE: market closed; not read. Say so; never imply it had no drops.
 
 export type PackCalendarProduct = "nba" | "nfl" | "laliga" | "disney"
@@ -56,8 +64,11 @@ export interface PackCalendarDrop {
   title: string
   tier: string | null
   pack_type: string | null
-  /** "rsvp" when Dapper sells it by reservation (the window is the RSVP), else "sale". */
-  kind: "rsvp" | "sale"
+  /**
+   * "rsvp" when Dapper sells it by reservation (the window is the RSVP), "open_edition" for a Pinnacle
+   * Open Edition seen minting (no price, no announced end), else "sale".
+   */
+  kind: "rsvp" | "sale" | "open_edition"
   slots: number | null
   retail_usd: number | null
   start_time: string
@@ -138,7 +149,7 @@ export interface PackCalendarAnnouncement {
   published_at: string
 }
 
-export type PackCalendarSource = PackCalendarProduct | "panini" | "candy"
+export type PackCalendarSource = PackCalendarProduct | "panini" | "candy" | "pinnacle_oe"
 
 export interface PackCalendarResult {
   /** Every source read (Top Shot + All Day always expected). */
@@ -194,6 +205,54 @@ export function buildPaniniDrops(rows: PaniniDropSourceRow[], now: Date, opts: {
       end_time: Number.isFinite(end) ? new Date(end).toISOString() : null,
       status,
       detail_href: "/panini-blockchain/packs",
+    })
+  }
+  return out
+}
+
+// ── Pinnacle Open Editions ──────────────────────────────────────────────────────────
+/** A set with a pin minted this recently is "minting now". */
+export const OE_MINTING_HOURS = 24
+
+export interface PinnacleOpenEditionSet {
+  set_key: string
+  set_name: string | null
+  edition_type: string | null
+  pins: number | string
+  first_mint_at: string
+  last_mint_at: string
+}
+
+/** "Disney • Gargoyles Vol.1" + "Open Edition" → "Gargoyles Vol.1 (Open Edition)". */
+export function openEditionTitle(setName: string | null, editionType: string | null, setKey: string): string {
+  const name = (setName ?? "").split("•").pop()?.trim() || setKey
+  return `${name} (${(editionType ?? "").trim() || "Open Edition"})`
+}
+
+/** Open Edition sets minting now, or that started minting this week and have stopped (ended). */
+export function buildPinnacleOpenEditionDrops(sets: PinnacleOpenEditionSet[], now: Date, opts: { daysBack?: number } = {}): PackCalendarDrop[] {
+  const back = now.getTime() - (opts.daysBack ?? 7) * DAY_MS
+  const out: PackCalendarDrop[] = []
+  for (const s of sets) {
+    const first = Date.parse(s.first_mint_at)
+    const last = Date.parse(s.last_mint_at)
+    if (!s.set_key || !Number.isFinite(first) || !Number.isFinite(last)) continue
+    const minting = last >= now.getTime() - OE_MINTING_HOURS * 3_600_000
+    if (!minting && first < back) continue
+    out.push({
+      collection: "disney_pinnacle",
+      dist_id: s.set_key,
+      title: openEditionTitle(s.set_name, s.edition_type, s.set_key),
+      tier: "open_edition",
+      pack_type: null,
+      kind: "open_edition",
+      slots: null,
+      retail_usd: null,
+      start_time: new Date(first).toISOString(),
+      // the last mint is when it stopped — only once it has stopped
+      end_time: minting ? null : new Date(last).toISOString(),
+      status: minting ? "open" : "ended",
+      detail_href: "/disney-pinnacle/sets",
     })
   }
   return out
@@ -293,6 +352,18 @@ export async function fetchPackCalendar(sb: any, now = new Date(), fetchImpl: ty
     drops.push(...buildPaniniDrops(paniniRows, now))
   } else {
     complete_at.panini = null
+    complete = false
+  }
+
+  // Pinnacle Open Editions: unread unless the mint lane is at the chain head.
+  const { data: oe, error: oeErr } = await sb.rpc("get_pinnacle_open_edition_drops", { p_days: 14 })
+  if (oeErr) throw new Error(`get_pinnacle_open_edition_drops: ${oeErr.message}`)
+  const oeAsOf = oe && typeof oe === "object" && typeof oe.lane_as_of === "string" ? oe.lane_as_of : null
+  if (oeAsOf && Array.isArray(oe.sets)) {
+    complete_at.pinnacle_oe = oeAsOf
+    drops.push(...buildPinnacleOpenEditionDrops(oe.sets as PinnacleOpenEditionSet[], now))
+  } else {
+    complete_at.pinnacle_oe = null
     complete = false
   }
 
