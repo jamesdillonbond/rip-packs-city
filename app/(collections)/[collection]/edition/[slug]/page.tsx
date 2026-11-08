@@ -670,7 +670,12 @@ export default async function EditionPage(
         "edition-sibling-capped",
         3000,
         "edition/",
-      ).catch(() => new Map<string, boolean>())
+      ).catch((e) => {
+        // Logged so the "holds the hero for ≤ 3 s" cost is MEASURABLE (2026-11-08):
+        // a bare catch made a budget trip and a fast read look the same in logs.
+        console.warn("[edition] sibling-capped read degraded", e instanceof Error ? e.message : String(e))
+        return new Map<string, boolean>()
+      })
     : new Map<string, boolean>()
 
   // Feature 1 — "% Listed" = open listings ÷ supply. Supply is per-printing
