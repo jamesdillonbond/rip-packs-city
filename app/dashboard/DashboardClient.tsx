@@ -37,6 +37,7 @@ import TrophySlab, { type TrophySlabData } from "@/components/TrophySlab";
 import { proxyIpfsImageUrl } from "@/lib/ipfs-media";
 import { momentSubjectName } from "@/lib/entity-href"
 import FirstAlertPrompt from "@/components/alerts/FirstAlertPrompt";
+import ChallengeProgressNudge from "@/components/profile/ChallengeProgressNudge";
 import { accentText } from "@/lib/accent-text"
 
 const condensedFont = "var(--font-display)";
@@ -977,6 +978,9 @@ function ProfilePageInner() {
           <div id="dash-panel-overview" role="tabpanel" style={{ display: "flex", flexDirection: "column", gap: 18 }}>
         {/* First alert (2026-10-14): renders only when both alert reads are
             ok AND empty — see components/alerts/FirstAlertPrompt.tsx. */}
+        {/* 2026-11-08: an unfinished trophy-challenge entry (below 6) — see
+            components/profile/ChallengeProgressNudge.tsx. Renders nothing otherwise. */}
+        <ChallengeProgressNudge />
         <FirstAlertPrompt />
         {/* ── Hero: onboarding CTA / HeroMoment / Trophy Case ── */}
         {/* ⚠ `walletsFailed` FIRST. An empty `wallets` is ambiguous — it means
