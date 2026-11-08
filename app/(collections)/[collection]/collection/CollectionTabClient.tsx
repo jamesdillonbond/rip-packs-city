@@ -108,6 +108,9 @@ function WalletMomentsBody() {
   // Candy MLB: set when the live Solana read of the searched wallet did not finish, so the
   // binder is the last daily read — said, never implied (2026-11-08).
   const [candyLiveNote, setCandyLiveNote] = useState("")
+  // Candy MLB: the searched wallet's OTHER Candy collectibles (2021–2025 ICONs, pins…),
+  // which RPC does not catalogue — named so an empty binder never reads as "holds nothing".
+  const [candyOtherNote, setCandyOtherNote] = useState("")
   const [summary, setSummary] = useState<WalletSearchResponse["summary"]>()
   // VIEW state (filter/sort/expand/modal controls) lives in one reducer so the
   // filter bar + moment table can extract with a single {view, dispatchView}
@@ -868,9 +871,10 @@ function WalletMomentsBody() {
       // last census showed nothing. A refresh that fails or does not finish still shows
       // the cached holdings — with a note that says they are the last daily read.
       setCandyLiveNote("")
+      setCandyOtherNote("")
       if (collectionSlug === "candy-mlb" && isValidAddressForChain(trimmed, "solana")) {
         setError("Reading this wallet on Solana…")
-        let live: { ok?: boolean; complete?: boolean; skipped?: string } | null = null
+        let live: { ok?: boolean; complete?: boolean; skipped?: string; other_candy?: { items?: number; collections?: Array<{ name?: string | null }> } | null } | null = null
         try {
           const ctl = new AbortController()
           const timer = setTimeout(function() { ctl.abort() }, 45000)
@@ -886,6 +890,15 @@ function WalletMomentsBody() {
           live = null
         }
         setError("")
+        const otherItems = Number(live?.other_candy?.items ?? 0)
+        if (otherItems > 0) {
+          const names = (live?.other_candy?.collections ?? []).map(function(c) { return c?.name }).filter(function(n): n is string { return !!n }).slice(0, 3)
+          setCandyOtherNote(
+            "This wallet also holds " + otherItems.toLocaleString("en-US") + " older Candy collectible" + (otherItems === 1 ? "" : "s") +
+            (names.length ? " (" + names.join(", ") + (live?.other_candy?.collections && live.other_candy.collections.length > names.length ? ", …" : "") + ")" : "") +
+            ". RPC tracks Candy's 2026 MLB sets and the 2024 Team Balls, so those aren't shown here yet."
+          )
+        }
         if (!live || (live.skipped !== "fresh" && live.complete !== true)) {
           setCandyLiveNote("Couldn't finish reading this wallet live from Solana — showing its holdings as of our last daily read (5:10 PM PT). Search again in a minute to retry.")
         }
@@ -1555,6 +1568,7 @@ function WalletMomentsBody() {
             carries) is announced, not only painted (2026-11-07). */}
         {error ? <div role="status" aria-live="polite" className="mb-4 rounded-lg border border-red-800 bg-red-950 p-3 text-red-300 text-sm">{error}</div> : null}
         {candyLiveNote && !error ? <div role="status" aria-live="polite" className="mb-4 rounded-lg border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-3 text-sm text-[color:var(--rpc-text-secondary)]" data-testid="candy-live-note">{candyLiveNote}</div> : null}
+        {candyOtherNote && !error ? <div role="status" aria-live="polite" className="mb-4 rounded-lg border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-3 text-sm text-[color:var(--rpc-text-secondary)]" data-testid="candy-other-note">{candyOtherNote}</div> : null}
         {/* The RESULT is announced too (2026-11-07): after Enter, focus stays in
             the wallet box and nothing told a screen reader the binder had
             loaded. sr-only, polite, and silent on a failed read — the error box

@@ -130,5 +130,10 @@ export async function POST(req: NextRequest) {
     complete: result.complete,
     found: result.found,
     retired: result.retired,
+    // Older Candy collectibles RPC does not catalogue, so "0 moments" is never read as
+    // "holds nothing" (null when the check could not run).
+    other_candy: result.other_candy
+      ? { items: result.other_candy.items, collections: result.other_candy.collections.slice(0, 5) }
+      : null,
   })
 }

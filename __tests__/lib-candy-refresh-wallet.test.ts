@@ -15,19 +15,21 @@ const state: {
   upserted: any[][]
   knownEditions: string[]
   editionInserts: any[][]
-} = { pages: [], ownerThrows: false, listings: { data: [], error: null }, assets: {}, upsertError: null, rpcs: [], upserted: [], knownEditions: [], editionInserts: [] }
+  collections: Record<string, any>
+} = { pages: [], ownerThrows: false, listings: { data: [], error: null }, assets: {}, upsertError: null, rpcs: [], upserted: [], knownEditions: [], editionInserts: [], collections: {} }
 
 vi.mock("@/lib/chains/solana/das", () => ({
   getAssetsByOwner: async (_w: string, page: number) => {
     if (state.ownerThrows) throw new Error("DAS getAssetsByOwner HTTP 502")
     return { items: state.pages[page - 1] ?? [], total: 0, limit: 1000, page }
   },
+  getAssetBatch: async (ids: string[]) => ids.map((id) => state.collections[id] ?? null),
   getAsset: async (id: string) => {
     if (!(id in state.assets)) throw new Error("no asset " + id)
     return state.assets[id]
   },
 }))
-vi.mock("@/lib/chains/solana/candy-sets", () => ({ isCandySetAsset: (a: any) => a.candy === true }))
+vi.mock("@/lib/chains/solana/candy-sets", () => ({ isCandySetAsset: (a: any) => a.candy === true, CANDY_COLLECTION_AUTHORITIES: ["CANDYAUTH"] }))
 vi.mock("@/lib/chains/solana/normalize", () => ({
   CANDY_MLB_UUID: "c1",
   isBurnt: (a: any) => a.kind === "burnt",
@@ -83,6 +85,7 @@ beforeEach(() => {
   state.upserted = []
   state.knownEditions = []
   state.editionInserts = []
+  state.collections = {}
 })
 
 describe("refreshCandyWallet", () => {
@@ -165,6 +168,25 @@ describe("refreshCandyWallet", () => {
     const ins = state.editionInserts.flat()
     expect(ins.map((x) => x.external_id)).toEqual(["asg26:shohei-ohtani-core"])
     expect(ins[0]._ignoreDuplicates).toBe(true)
+  })
+
+  it("counts the wallet's OTHER Candy collectibles (collection authority = Candy) and ignores everything else it holds", async () => {
+    const g = (c: string) => [{ group_key: "collection", group_value: c }]
+    state.pages = [[
+      { id: "a", candy: true },
+      { id: "l1", grouping: g("LEADOFF22") }, { id: "l2", grouping: g("LEADOFF22") }, { id: "l3", grouping: g("LEADOFF22"), kind: "burnt" },
+      { id: "p1", grouping: g("PIN23") },
+      { id: "x1", grouping: g("SOMEONE_ELSES_NFTS") },
+    ]]
+    state.collections = {
+      LEADOFF22: { id: "LEADOFF22", authorities: [{ address: "CANDYAUTH" }], content: { metadata: { name: "2022 Leadoff ICONs" } } },
+      PIN23: { id: "PIN23", authorities: [{ address: "CANDYAUTH" }], content: { metadata: { name: "2023 Opening Day Pin" } } },
+      SOMEONE_ELSES_NFTS: { id: "SOMEONE_ELSES_NFTS", authorities: [{ address: "OTHER" }], content: { metadata: { name: "Degens" } } },
+    }
+    const r = await refreshCandyWallet(db(), W, { retire: true })
+    expect(r.other_candy).toEqual({ items: 3, collections: [{ name: "2022 Leadoff ICONs", items: 2 }, { name: "2023 Opening Day Pin", items: 1 }] })
+    // Untracked Candy collectibles are never written to the cache.
+    expect(state.upserted.flat().map((x) => x.moment_id)).toEqual(["a"])
   })
 
   it("a spent time budget stops the walk as incomplete", async () => {

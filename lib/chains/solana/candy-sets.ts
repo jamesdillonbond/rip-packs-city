@@ -106,6 +106,18 @@ export const CANDY_SETS: readonly CandySet[] = [
 /** The 2024 Team Ball set: a club, not a player — see the note above CANDY_SETS. */
 export const CANDY_TEAM_BALL_SET_KEY = "ball24"
 
+// Candy's update authority on every one of its Metaplex Core collections — measured
+// 2026-11-08 by reading the collection accounts (2026 Base / All-Star / Team Ball, and the
+// migrated 2021–2023 legacy collections all read 7wixES…). The October security response
+// rotated it from Candy's earlier mint wallet BhA2Bf…, kept here so an asset under a
+// not-yet-rotated collection is still recognised. Used ONLY to tell a wallet's OTHER
+// Candy collectibles (316+ collections: 2021–2025 MLB ICONs, pins, Digi-Casts, tests,
+// non-MLB lines) apart from everything else it holds — RPC does not catalogue those.
+export const CANDY_COLLECTION_AUTHORITIES: readonly string[] = [
+  "7wixESeixiY4f2A6JaDKNewNoiip9Tk9s5u1dze7nRwL",
+  "BhA2Bfd8t2F2jDiUNdioGRJQt7MiaWo3Ro5H2Yt7APe2",
+]
+
 const BY_ADDRESS = new Map(CANDY_SETS.map((s) => [s.collectionAddress, s]))
 
 /** The set a DAS asset belongs to, from its Core collection grouping; null if none of ours. */

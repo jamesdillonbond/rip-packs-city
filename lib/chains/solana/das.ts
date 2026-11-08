@@ -130,6 +130,11 @@ export function getAsset(id: string): Promise<DasAsset> {
   return dasCall<DasAsset>("getAsset", { id })
 }
 
+/** Several assets (or Core collection accounts) by id, one call — up to 1,000 ids. */
+export function getAssetBatch(ids: string[]): Promise<Array<DasAsset | null>> {
+  return dasCall<Array<DasAsset | null>>("getAssetBatch", { ids })
+}
+
 // Walk every page of a paged DAS method, invoking onPage per page. Stops on the
 // first short page (items.length < limit) or when MAX_PAGES is hit (a runaway
 // guard so a bad collection address can't loop forever). Returns the total

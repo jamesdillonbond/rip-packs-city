@@ -29,10 +29,10 @@
 //      retires NOTHING: it fails open (CLAUDE.md, "an ADD-ONLY refresh never
 //      retires what its source stopped returning … fail OPEN with no clean walk").
 
-import { getAssetsByOwner, getAsset, type DasAsset } from "@/lib/chains/solana/das"
+import { getAssetsByOwner, getAsset, getAssetBatch, type DasAsset } from "@/lib/chains/solana/das"
 import { MAGIC_EDEN_SOLANA_ESCROW, listedMintsInEscrowForSeller } from "@/lib/chains/solana/escrow"
 import { isBurnt, isPack, normalizeSerial, normalizeEdition, CANDY_MLB_UUID } from "@/lib/chains/solana/normalize"
-import { isCandySetAsset } from "@/lib/chains/solana/candy-sets"
+import { isCandySetAsset, CANDY_COLLECTION_AUTHORITIES } from "@/lib/chains/solana/candy-sets"
 
 const UPSERT_CHUNK = 500
 const PAGE_LIMIT = 1000
@@ -61,6 +61,14 @@ export interface CandyWalletRefreshResult {
   /** Catalog rows inserted for editions not seen before (insert-only). */
   editions_inserted: number
   editions_error: string | null
+  /**
+   * Candy collectibles in this wallet that RPC does not catalogue (2021–2025 ICONs, pins,
+   * Digi-Casts… — any Core collection whose update authority is Candy's). Counted so the
+   * tab can say they exist instead of letting "0 moments" read as "holds nothing".
+   * null when the check could not run.
+   */
+  other_candy: { items: number; collections: Array<{ name: string | null; items: number }> } | null
+  other_candy_error: string | null
   /** Rows retired / ghost rows purged; null when retirement did not run. */
   retired: number | null
   ghosts_purged: number | null
@@ -88,12 +96,16 @@ export async function refreshCandyWallet(
     walk_error: null,
     editions_inserted: 0,
     editions_error: null,
+    other_candy: null,
+    other_candy_error: null,
     retired: null,
     ghosts_purged: null,
     retire_error: null,
   }
   const seen = new Set<string>()
   const editionsByKey = new Map<string, Record<string, unknown>>()
+  // Untracked Core collections in this wallet → live (non-burnt) asset count.
+  const otherCollections = new Map<string, number>()
 
   const write = async (rows: Array<Record<string, unknown>>, label: string): Promise<number> => {
     let n = 0
@@ -122,6 +134,11 @@ export async function refreshCandyWallet(
         .filter(isCandySetAsset)
         .filter((a) => !isBurnt(a))
         .filter((a) => !isPack(a))
+      for (const a of items) {
+        if (isCandySetAsset(a) || isBurnt(a)) continue
+        const coll = a.grouping?.find((g) => g.group_key === "collection")?.group_value
+        if (coll) otherCollections.set(coll, (otherCollections.get(coll) ?? 0) + 1)
+      }
       for (const a of cards) {
         const ed = normalizeEdition(a) as unknown as Record<string, unknown>
         const key = String(ed.external_id ?? "")
@@ -217,6 +234,30 @@ export async function refreshCandyWallet(
       }
     } catch (e) {
       r.editions_error = (e instanceof Error ? e.message : String(e)).slice(0, 200)
+    }
+  }
+
+  // 3b. Which of the wallet's other Core collections are Candy's (non-fatal, informational).
+  if (r.walk_error === null) {
+    try {
+      const ids = [...otherCollections.keys()].slice(0, 1000)
+      const found: Array<{ name: string | null; items: number }> = []
+      let items = 0
+      if (ids.length > 0 && Date.now() < deadlineAt) {
+        const colls = await getAssetBatch(ids)
+        for (const c of colls ?? []) {
+          if (!c?.id) continue
+          const auths = (c as { authorities?: Array<{ address?: string }> }).authorities ?? []
+          if (!auths.some((x) => x?.address && CANDY_COLLECTION_AUTHORITIES.includes(x.address))) continue
+          const n = otherCollections.get(c.id) ?? 0
+          items += n
+          found.push({ name: c.content?.metadata?.name ?? null, items: n })
+        }
+      }
+      found.sort((a, b) => b.items - a.items)
+      r.other_candy = { items, collections: found }
+    } catch (e) {
+      r.other_candy_error = (e instanceof Error ? e.message : String(e)).slice(0, 200)
     }
   }
 
