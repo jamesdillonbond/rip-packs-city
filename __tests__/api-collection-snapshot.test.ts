@@ -6,6 +6,8 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // error fallback shape.
 
 const rpcState: { data: any; error: any; throws: unknown; delayMs: number } = { data: null, error: null, throws: null, delayMs: 0 }
+// #237: lib/wallet-indexed.ts existence reads (.from(t).select().eq().limit()); absent = no rows.
+const idxState: { tables: Record<string, { data: any; error: any }>; reads: string[] } = { tables: {}, reads: [] }
 
 vi.mock("@supabase/supabase-js", () => ({
   createClient: () => ({
@@ -18,6 +20,16 @@ vi.mock("@supabase/supabase-js", () => ({
       if (rpcState.throws) throw rpcState.throws
       return { data: rpcState.data, error: rpcState.error }
     },
+    from: (t: string) => ({
+      select: () => ({
+        eq: () => ({
+          limit: async () => {
+            idxState.reads.push(t)
+            return idxState.tables[t] ?? { data: [], error: null }
+          },
+        }),
+      }),
+    }),
   }),
 }))
 
@@ -32,7 +44,47 @@ beforeEach(() => {
   rpcState.error = null
   rpcState.throws = null
   rpcState.delayMs = 0
+  idxState.tables = {}
+  idxState.reads = []
   vi.useRealTimers()
+})
+
+describe("GET /api/collection-snapshot — indexed (#237)", () => {
+  const EMPTY = { totalMoments: 0, totalFmv: 0, topMoments: [] }
+  const W = "https://t/api/collection-snapshot?wallet=0xbd94cade097e50ac"
+
+  it("⚠ an empty snapshot of a wallet RPC never walked says indexed:false", async () => {
+    rpcState.data = EMPTY
+    const body = await (await GET(req(W))).json()
+    expect(body.totalMoments).toBe(0)
+    expect(body.indexed).toBe(false)
+  })
+
+  it("an empty snapshot of a wallet walked clean says indexed:true (it really holds nothing)", async () => {
+    rpcState.data = EMPTY
+    idxState.tables = { wmc_clean_walks: { data: [{ wallet_address: "0xbd94cade097e50ac" }], error: null } }
+    expect((await (await GET(req(W))).json()).indexed).toBe(true)
+  })
+
+  it("a failed index read is indexed:null — unknown, never false — and the answer still comes", async () => {
+    rpcState.data = EMPTY
+    idxState.tables = { wallet_moments_cache: { data: null, error: { message: "timeout" } } }
+    const res = await GET(req(W))
+    expect(res.status).toBe(200)
+    expect((await res.json()).indexed).toBeNull()
+  })
+
+  it("a non-Flow address is indexed:null (the helper cannot judge it)", async () => {
+    rpcState.data = EMPTY
+    const body = await (await GET(req("https://t/api/collection-snapshot?wallet=7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU"))).json()
+    expect(body.indexed).toBeNull()
+  })
+
+  it("a populated snapshot is indexed:true and pays no index read", async () => {
+    rpcState.data = { ...EMPTY, totalMoments: 3 }
+    expect((await (await GET(req(W))).json()).indexed).toBe(true)
+    expect(idxState.reads).toEqual([])
+  })
 })
 
 describe("GET /api/collection-snapshot", () => {

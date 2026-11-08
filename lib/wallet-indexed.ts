@@ -16,6 +16,7 @@
 // even on skipped / timed-out runs — see lib/chains/flow/wallet-backfill-helpers.ts).
 //
 // A failed read is `ok:false` — never "not indexed", which is itself a claim.
+// So is an address this helper cannot judge (not a Flow address).
 
 import { normalizeFlowAddress } from "@/lib/address"
 
@@ -26,7 +27,9 @@ type RowsResult = { data: unknown; error: unknown }
 /** Flow wallets only; `client` must be able to read both tables (service role). */
 export async function walletIndexState(client: any, wallet: string): Promise<WalletIndexState> {
   const addr = normalizeFlowAddress(wallet)
-  if (!addr) return { ok: true, indexed: false }
+  // Not a Flow address (a Candy Solana key, a username): this helper cannot
+  // tell, so it says it does not know — never "not indexed".
+  if (!addr) return { ok: false, error: new Error("not a Flow address") }
 
   // An EXISTENCE read (one row), not a count: a whale's cache holds 100k+ rows.
   const any = async (table: string): Promise<{ ok: true; found: boolean } | { ok: false; error: unknown }> => {
@@ -36,11 +39,15 @@ export async function walletIndexState(client: any, wallet: string): Promise<Wal
     return { ok: true, found: r.data.length > 0 }
   }
 
-  const cache = await any("wallet_moments_cache")
-  if (!cache.ok) return cache
-  if (cache.found) return { ok: true, indexed: true }
+  try {
+    const cache = await any("wallet_moments_cache")
+    if (!cache.ok) return cache
+    if (cache.found) return { ok: true, indexed: true }
 
-  const walks = await any("wmc_clean_walks")
-  if (!walks.ok) return walks
-  return { ok: true, indexed: walks.found }
+    const walks = await any("wmc_clean_walks")
+    if (!walks.ok) return walks
+    return { ok: true, indexed: walks.found }
+  } catch (e) {
+    return { ok: false, error: e }
+  }
 }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { apiErrorResponse } from "@/lib/api-error"
 import { boundedRead } from "@/lib/api/bounded-read"
 import { createClient } from "@supabase/supabase-js"
+import { walletIndexState } from "@/lib/wallet-indexed"
 
 const supabase: any = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -55,6 +56,18 @@ export async function GET(req: NextRequest) {
     // page reloaded every ~9 s. Measured live 10-21: a Google visitor's own share card reloaded 36
     // times in 6 minutes (72 "share views" that week came from 6 browsers).
     const isEmpty = (Number(snap.totalMoments) || 0) === 0
+    // #237 (2026-11-08): an empty snapshot is either a wallet that holds nothing or one
+    // RPC has never walked — say which. `indexed`: true (walked, or holds moments),
+    // false (never walked), null (could not tell). Never blocks the answer.
+    let indexed: boolean | null = true
+    if (isEmpty) {
+      try {
+        const st = await walletIndexState(supabase, wallet)
+        indexed = st.ok ? st.indexed : null
+      } catch {
+        indexed = null
+      }
+    }
     // #228 lever (b), 2026-11-08: a long STALE window, so the CDN answers a whale's card at once and
     // recomputes in the background. Fresh stays 5 min. Measured: the 11-07 timeout was 0xf5d1b36f…
     // (53.6k Moments), whose four slow reads that day (17 s, 11 s, 23.9 s → the 20 s timeout, 12 s)
@@ -68,6 +81,7 @@ export async function GET(req: NextRequest) {
       {
         wallet,
         totalMoments: snap.totalMoments ?? 0,
+        indexed,
         totalFmv: snap.totalFmv ?? 0,
         topMoments: Array.isArray(snap.topMoments) ? snap.topMoments : [],
         badgeCount: snap.badgeCount ?? 0,
