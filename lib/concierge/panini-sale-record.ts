@@ -52,6 +52,24 @@ export function paniniSaleRecordFromRows(
   }
 }
 
+/**
+ * Do the last <= 3 recorded sales agree closely (max/min <= 1.5)? Panini's own
+ * HIGH rule (panini-1.3.0, lib/chains/panini/ingest-normalize.ts).
+ *
+ * Measured 2026-11-08 over every Panini sale in the 45 days to 11-08 (the
+ * prior <= 3 sales of the same edition as the prediction, the sale as truth):
+ * within ±25 % — tight 77.6 % when the last prior sale was <= 30 days old and
+ * 74.8 % when older; 1.5–3x 50.5 / 41.9; > 3x 39.1 / 32.1. AGREEMENT predicts
+ * the next sale; AGE barely moves it. So an old, tight record is not called
+ * "out of date", and a recent, scattered one is not called solid (#240).
+ */
+export function paniniSalesAgree(r: PaniniSaleRecord): boolean | null {
+  const last3 = r.recent_sale_prices_usd.slice(0, 3)
+  if (last3.length < 2) return null
+  const lo = Math.min(...last3), hi = Math.max(...last3)
+  return lo > 0 ? hi / lo <= 1.5 : null
+}
+
 /** Plain-language basis the concierge may say. Never a confidence tier. */
 export function paniniPricingBasis(read: PaniniSaleRecordRead): string {
   if (!read.ok) return "RPC couldn't check this card's recorded sales just now, so don't describe how many sales back this price"
@@ -60,9 +78,15 @@ export function paniniPricingBasis(read: PaniniSaleRecordRead): string {
   const n = r.sales_on_record
   const sales = `${n} recorded sale${n === 1 ? "" : "s"}`
   const when = r.days_since_last_sale == null ? "" : `, the most recent ${r.days_since_last_sale} day${r.days_since_last_sale === 1 ? "" : "s"} ago`
-  if (r.days_since_last_sale != null && r.days_since_last_sale > PANINI_SALE_STALE_DAYS) {
-    return `based on ${sales}${when} — may be out of date`
+  const agree = paniniSalesAgree(r)
+  const old = r.days_since_last_sale != null && r.days_since_last_sale > PANINI_SALE_STALE_DAYS
+  if (agree === true) {
+    return old
+      ? `based on ${sales}${when}; the latest sales agree closely, which on Panini has held up about as well as recent sales — but a player whose market just moved may have outrun it`
+      : `based on ${sales}${when}; the latest sales agree closely`
   }
+  if (agree === false) return `based on ${sales}${when}; the latest sales disagree widely, so treat the price as rough`
+  if (old) return `based on ${sales}${when} — may be out of date`
   if (n < PANINI_THIN_SALES) return `based on only ${sales}${when} — treat as rough`
   return `based on ${sales}${when}`
 }
