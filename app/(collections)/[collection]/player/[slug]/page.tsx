@@ -28,6 +28,8 @@ import EditionsGridPaginated, { type EditionTile } from "@/components/entity/Edi
 import { buildPlayerSetCards } from "@/lib/player-page-view"
 import PlayerSeasonStats from "@/components/entity/PlayerSeasonStats"
 import type { SeasonStatsResult } from "@/lib/player-page-season-stats"
+import PlayerRecentGames from "@/components/entity/PlayerRecentGames"
+import { RECENT_GAMES_COLLECTIONS, RECENT_GAMES_PERSON_COLLECTIONS, marketCapKey, type RecentGamesResult } from "@/lib/player-recent-games"
 import { proxyIpfsImageUrl } from "@/lib/ipfs-media"
 import { editionRouteHref } from "@/lib/entity-href"
 import { fetchPaniniPlayerSales, type PaniniPlayerSale } from "@/lib/panini/player-sales"
@@ -426,6 +428,24 @@ async function SeasonStatsSection({ playerId, playerName, collectionSlug }: { pl
   return <PlayerSeasonStats result={row} ok={ok} playerName={playerName} />
 }
 
+// Recent games (2026-11-08): ESPN box scores from the espn-game-logs lane, each beside
+// this collection's player market cap the day before and after. Top Shot / All Day /
+// Candy read by the PERSON (players.id) — the All Day slug "josh-allen" carries two ESPN
+// ids and only the person key separates them; Golazos / Panini by the market-cap slug
+// through their one-person crosswalks. A failed read renders SectionUnavailable; no feed
+// or two athletes behind one key renders nothing; linked-but-empty says so.
+async function RecentGamesSection({ playerId, playerName, slug, collectionSlug }: { playerId: string; playerName: string; slug: string; collectionSlug: string }) {
+  if (!RECENT_GAMES_COLLECTIONS.has(collectionSlug)) return null
+  const slugs = Array.from(new Set([slug, marketCapKey(playerName)].filter((s) => s.length > 0)))
+  const { row, ok } = await sectionRowResult<RecentGamesResult>("player recent games", "get_player_recent_games", {
+    p_collection_slug: collectionSlug,
+    p_slugs: slugs,
+    p_player_id: RECENT_GAMES_PERSON_COLLECTIONS.has(collectionSlug) ? playerId : null,
+    p_limit: 5,
+  })
+  return <PlayerRecentGames result={row} ok={ok} playerName={playerName} />
+}
+
 // Link to the player hub when 2+ collections carry the name. Reads the same
 // get_player_hub the hub page does, so the link exists exactly when the hub
 // would gather something (a one-collection hub redirects back here).
@@ -736,6 +756,11 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
       {/* ── Season stats (ESPN, through the league-id crosswalk) ─────────── */}
       <Suspense fallback={null}>
         <SeasonStatsSection playerId={detail.id} playerName={detail.name} collectionSlug={coll.dbSlug} />
+      </Suspense>
+
+      {/* ── Recent games (ESPN box scores beside the market-cap move) ────── */}
+      <Suspense fallback={null}>
+        <RecentGamesSection playerId={detail.id} playerName={detail.name} slug={slug} collectionSlug={coll.dbSlug} />
       </Suspense>
 
       {/* ── Sets ─────────────────────────────────────────────────────────── */}
