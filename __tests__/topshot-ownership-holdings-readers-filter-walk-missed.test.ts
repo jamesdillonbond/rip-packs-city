@@ -85,9 +85,12 @@ function offenders(defs: Map<string, Def>, suppressed: Record<string, string>): 
   return out.sort()
 }
 
+// Read once per file run: four tests walk every migration, and the planted test re-parses the
+// whole set twice — under preflight's parallel load that crossed the 30 s default (2026-11-08).
+let MIGRATIONS_CACHE: { name: string; src: string }[] | null = null
 function migrationFiles() {
-  return readdirSync(MIG_DIR).filter((f) => f.endsWith(".sql")).sort()
-    .map((f) => ({ name: f, src: readFileSync(join(MIG_DIR, f), "utf8") }))
+  return (MIGRATIONS_CACHE ??= readdirSync(MIG_DIR).filter((f) => f.endsWith(".sql")).sort()
+    .map((f) => ({ name: f, src: readFileSync(join(MIG_DIR, f), "utf8") })))
 }
 
 function walk(dir: string, out: string[] = []): string[] {
@@ -161,7 +164,8 @@ describe("topshot_ownership holdings readers count only walk-confirmed rows", ()
         "CREATE VIEW public.zz_v AS SELECT * FROM public.topshot_ownership -- walk_missed_at IS NULL\n;\n" },
     ])
     expect(offenders(commented, {})).toEqual(["zz_v"])
-  })
+    // re-parses ~1,800 migrations twice: a runtime ceiling, not a property — the assertions are unchanged
+  }, 120_000)
 
   it("TS: every .from(\"topshot_ownership\") file filters walk_missed_at or is a suppressed maintenance path", () => {
     const files = ["app", "lib", "components", "scripts", "supabase/functions"].flatMap((r) => walk(r))

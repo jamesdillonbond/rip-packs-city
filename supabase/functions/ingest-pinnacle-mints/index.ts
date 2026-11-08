@@ -36,6 +36,13 @@ const CHUNK_SIZE = 250
 const MAX_BLOCKS_PER_RUN = 5000
 const SAFETY_LAG_BLOCKS = 100
 const SPORK_FLOOR = 137390146 // below this, public Flow REST 404s (spork-pruned)
+// 2026-11-08: below SPORK_FLOOR the mainnet27 access node still serves its spork
+// (130290659 .. 137390145) — the node the pull-chain / mint-probe lanes read. 31,644 of
+// 46,025 held pins had no mint record because the backfill stopped at SPORK_FLOOR; it now
+// continues there down to the mainnet27 root. Below THAT, Flow retired the mainnet24-26
+// nodes (#181): those mints are not readable by any node.
+const MAINNET27_REST = "http://access-001.mainnet27.nodes.onflow.org:8070"
+const MAINNET27_ROOT = 130290659
 const INTER_CHUNK_DELAY_MS = 80
 const PIN_COLLECTION_ID = "7dd9dd11-e8b6-45c4-ac99-71331f959714"
 
@@ -89,8 +96,8 @@ interface FlowEventBlock {
   events?: Array<{ type: string; transaction_id: string; payload: string; event_index: number }>
 }
 
-async function fetchEvents(eventType: string, start: number, end: number): Promise<FlowEventBlock[]> {
-  const url = `${FLOW_REST}/v1/events?type=${encodeURIComponent(eventType)}&start_height=${start}&end_height=${end}`
+async function fetchEvents(eventType: string, start: number, end: number, base: string = FLOW_REST): Promise<FlowEventBlock[]> {
+  const url = `${base}/v1/events?type=${encodeURIComponent(eventType)}&start_height=${start}&end_height=${end}`
   const res = await fetch(url, { signal: AbortSignal.timeout(15000) })
   if (!res.ok) {
     // THROW (don't return []) on a transient Flow REST error. Returning [] is
@@ -173,7 +180,7 @@ async function logPipelineRun(args: {
 
 // Scan [windowStart, windowEnd] in CHUNK_SIZE sub-ranges; correlate PinNFTMinted → Deposit.to
 // and upsert mint rows. Returns counts.
-async function scanWindow(windowStart: number, windowEnd: number): Promise<{ found: number; written: number; skipped: number }> {
+async function scanWindow(windowStart: number, windowEnd: number, base: string = FLOW_REST): Promise<{ found: number; written: number; skipped: number }> {
   let eventsFound = 0
   let inserted = 0
   let skipped = 0
@@ -182,8 +189,8 @@ async function scanWindow(windowStart: number, windowEnd: number): Promise<{ fou
     const chunkEnd = Math.min(chunkStart + CHUNK_SIZE - 1, windowEnd)
 
     const [mintBlocks, depositBlocks] = await Promise.all([
-      fetchEvents(MINTED_EVENT, chunkStart, chunkEnd),
-      fetchEvents(DEPOSIT_EVENT, chunkStart, chunkEnd),
+      fetchEvents(MINTED_EVENT, chunkStart, chunkEnd, base),
+      fetchEvents(DEPOSIT_EVENT, chunkStart, chunkEnd, base),
     ])
 
     // Build mint map keyed by `${tx}_${nftId}`.
@@ -317,24 +324,29 @@ async function runBackfill(startedAtIso: string, started: number) {
   let cursor = cur.h
   if (cursor <= 0) cursor = sealed - SAFETY_LAG_BLOCKS
 
-  if (cursor <= SPORK_FLOOR) {
+  if (cursor <= MAINNET27_ROOT) {
     await logPipelineRun({
       pipeline, startedAt: startedAtIso, rowsFound: 0, rowsWritten: 0, rowsSkipped: 0, ok: true,
       cursorBefore: String(cursor), cursorAfter: String(cursor),
-      extra: { message: "reached spork floor — pre-spork mints need the spork worker", spork_floor: SPORK_FLOOR, elapsed_ms: Date.now() - started },
+      extra: { message: "reached the mainnet27 root — older mints are not readable by any node (#181)", mainnet27_root: MAINNET27_ROOT, elapsed_ms: Date.now() - started },
     })
     return
   }
 
+  // Above SPORK_FLOOR: public REST. At or below it: the mainnet27 node, never crossing
+  // either boundary inside one window.
+  const onMainnet27 = cursor <= SPORK_FLOOR
+  const floor = onMainnet27 ? MAINNET27_ROOT : SPORK_FLOOR
+  const base = onMainnet27 ? MAINNET27_REST : FLOW_REST
   const windowEnd = cursor - 1
-  const windowStart = Math.max(SPORK_FLOOR, windowEnd - MAX_BLOCKS_PER_RUN + 1)
-  console.log(`[ingest-pinnacle-mints] backfill ${windowStart} → ${windowEnd}`)
-  const r = await scanWindow(windowStart, windowEnd)
+  const windowStart = Math.max(floor, windowEnd - MAX_BLOCKS_PER_RUN + 1)
+  console.log(`[ingest-pinnacle-mints] backfill ${windowStart} → ${windowEnd}${onMainnet27 ? " (mainnet27 node)" : ""}`)
+  const r = await scanWindow(windowStart, windowEnd, base)
   await saveCursor(CURSOR_BACKFILL, windowStart, r.found, r.written, r.skipped, cur)
   await logPipelineRun({
     pipeline, startedAt: startedAtIso, rowsFound: r.found, rowsWritten: r.written, rowsSkipped: r.skipped, ok: true,
     cursorBefore: String(cursor), cursorAfter: String(windowStart),
-    extra: { mode: "backfill", window_start: windowStart, window_end: windowEnd, spork_floor: SPORK_FLOOR, elapsed_ms: Date.now() - started },
+    extra: { mode: "backfill", window_start: windowStart, window_end: windowEnd, spork_floor: SPORK_FLOOR, node: onMainnet27 ? "mainnet27" : "rest-mainnet", elapsed_ms: Date.now() - started },
   })
 }
 
