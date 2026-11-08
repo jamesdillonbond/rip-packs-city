@@ -7,6 +7,7 @@ import {
   rankByValue,
   sealPoolDealt,
   simulatePackSpread,
+  valueBands,
   verifyCommitment,
   type PoolMoment,
 } from "@/lib/giveaways/seal"
@@ -188,5 +189,20 @@ describe("giveaways — previewPack (admin Preview opening)", () => {
     expect(pick.packNo).toBeNull()
     expect(pick.moments.map((m) => m.moment_id)).toEqual(["1", "2", "3"])
     expect(previewPack([], 3).moments).toEqual([])
+  })
+})
+
+describe("giveaways — valueBands (public page, balanced drops)", () => {
+  it("cuts the ranked pool into perPack bands of packCount — the same bands the database checks", () => {
+    const bands = valueBands(POOL, 4, 3)!
+    expect(bands.map((b) => b.map((m) => m.moment_id))).toEqual([
+      ["1", "2", "3", "4"],
+      ["5", "6", "7", "8"],
+      ["9", "10", "11", "12"],
+    ])
+    // and every sealed balanced deal puts slot k in band k
+    const a = dealBalanced(POOL, 4, 3)
+    for (const x of a) expect(bands[x.slot - 1].some((m) => m.moment_id === x.moment_id)).toBe(true)
+    expect(valueBands(POOL.slice(0, 11), 4, 3)).toBeNull()
   })
 })

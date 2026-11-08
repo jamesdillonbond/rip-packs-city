@@ -143,7 +143,10 @@ describe("GiveawayClient — claiming", () => {
     fireEvent.change(await screen.findByPlaceholderText("username"), { target: { value: "alice" } })
     fireEvent.click(screen.getByRole("checkbox"))
     fireEvent.click(screen.getByRole("button", { name: /claim my pack/i }))
-    expect(await screen.findByText(/Your pack · #2/)).toBeTruthy()
+    // the wall shuffles to the pack the database drew, says so, then the page reloads into it (2026-11-08)
+    expect(await screen.findByText("Drawing your pack…")).toBeTruthy()
+    expect(await screen.findByText(/Pack #2 is yours — drawn at random from the 2 that were left/, {}, { timeout: 4000 })).toBeTruthy()
+    expect(await screen.findByText(/Your pack · #2/, {}, { timeout: 4000 })).toBeTruthy()
     const post = fetchMock.mock.calls.find((c) => (c[1] as RequestInit | undefined)?.method === "POST")!
     expect(JSON.parse((post[1] as RequestInit).body as string)).toEqual({ username: "alice", agree: true })
     // the pack arrives SEALED; "Show all" skips straight to the delivery grid
@@ -153,6 +156,28 @@ describe("GiveawayClient — claiming", () => {
     expect(screen.getByText("Awaiting the sponsor's gift")).toBeTruthy()
     // ...and stays opened for this browser
     expect(localStorage.getItem("rpc_giveaway_opened:fall-drop:2")).toBe("1")
+  })
+
+  it("a balanced drop lists its pool in value bands, one per pack (2026-11-08)", async () => {
+    const pm = (id: string, fmv: number) => ({ moment_id: id, player_name: `P${id}`, set_name: "Base Set", team_name: null, tier: "rare", serial_number: 1, fmv_usd: fmv, image_url: null })
+    const view = {
+      ...BASE,
+      drop: { ...BASE.drop, deal_mode: "balanced", pack_count: 2, moments_per_pack: 2 },
+      pool: [pm("1", 40), pm("2", 30), pm("3", 2), pm("4", 1)],
+    }
+    vi.stubGlobal("fetch", vi.fn(async () => json(view)))
+    render(<GiveawayClient slug="fall-drop" />)
+    const bands = await screen.findByTestId("value-bands")
+    expect(bands.textContent).toContain("every pack holds exactly one Moment from each band")
+    expect(bands.textContent).toMatch(/Band 1 of 2 · the top Moments · one per pack.*P1.*P2.*Band 2 of 2.*P3.*P4/)
+    expect(screen.getByText(/Balanced packs\./)).toBeTruthy()
+  })
+
+  it("a random drop keeps the flat list", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => json(BASE)))
+    render(<GiveawayClient slug="fall-drop" />)
+    await screen.findByText(/What.s in the packs/)
+    expect(screen.queryByTestId("value-bands")).toBeNull()
   })
 
   it("a refused claim shows the route's own copy", async () => {

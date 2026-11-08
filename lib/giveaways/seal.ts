@@ -205,6 +205,19 @@ export function sealPoolDealt(
   return { assignments, manifest, salt, hash: commitmentHash(salt, manifest) }
 }
 
+/**
+ * The value bands of a BALANCED drop, for the public page (2026-11-08): band k is
+ * the k-th group of `packCount` Moments by the same ranking the database checks
+ * (rankByValue), so "every pack holds exactly one Moment from each band" is the
+ * sealed fact, shown without revealing which pack holds which. Null when the pool
+ * does not fit the pack shape.
+ */
+export function valueBands<T extends PoolMoment>(moments: readonly T[], packCount: number, perPack: number): T[][] | null {
+  if (!(packCount >= 1 && perPack >= 1) || moments.length !== packCount * perPack) return null
+  const ranked = rankByValue(moments)
+  return Array.from({ length: perPack }, (_, b) => ranked.slice(b * packCount, (b + 1) * packCount))
+}
+
 export interface PackSpread {
   /** Over the simulated deals: the typical (median) value of the WORST and the BEST pack. */
   typical_low_usd: number

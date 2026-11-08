@@ -10,6 +10,8 @@ import Link from "next/link"
 import type { PublicDropView } from "@/lib/giveaways/store"
 import { accountKind, deliveryLabel, errorText, ptTime, statusLabel, usd, verifyCommand } from "@/lib/giveaways/view-format"
 import PackRevealClient from "./PackRevealClient"
+import PackWall from "./PackWall"
+import { valueBands } from "@/lib/giveaways/seal"
 import { momentSubjectName } from "@/lib/entity-href"
 
 type View = PublicDropView & { signed_in: boolean }
@@ -77,6 +79,8 @@ export default function GiveawayClient({ slug }: { slug: string }) {
   const [agree, setAgree] = useState(false)
   const [claiming, setClaiming] = useState(false)
   const [claimError, setClaimError] = useState<string | null>(null)
+  // the pack number the database just drew for this claimer; the wall shuffles to it, then the page reloads
+  const [drawn, setDrawn] = useState<number | null>(null)
   // claim with Flow Wallet (Trevor, 2026-10-03): the connected wallet + where the pack goes
   const [flowWallet, setFlowWallet] = useState<string | null>(null)
   const [accounts, setAccounts] = useState<ClaimAccount[] | null>(null)
@@ -179,7 +183,15 @@ export default function GiveawayClient({ slug }: { slug: string }) {
         body: JSON.stringify(flowWallet ? { proof, destination, agree } : { username, agree }),
       })
       if (res.ok) {
-        refresh()
+        let packNo: number | null = null
+        try {
+          const body = (await res.json()) as { outcome?: unknown; pack_no?: unknown }
+          if (body?.outcome === "claimed" && typeof body.pack_no === "number") packNo = body.pack_no
+        } catch {
+          // an unreadable success body: skip the shuffle and just reload the page
+        }
+        if (packNo != null) setDrawn(packNo)
+        else refresh()
       } else {
         let message = "We couldn't record your claim. Try again in a moment."
         try {
@@ -267,6 +279,9 @@ export default function GiveawayClient({ slug }: { slug: string }) {
       ) : drop.status === "open" && left > 0 ? (
         <section style={card}>
           <h2 style={h2}>Claim a pack</h2>
+          <div style={{ marginBottom: 12 }}>
+            <PackWall total={drop.pack_count} claimed={drop.claimed_count} drawn={drawn} onLanded={() => setTimeout(refresh, 900)} />
+          </div>
           {signed_in ? (
             <div style={{ display: "flex", flexDirection: "column", gap: 10, maxWidth: 440 }}>
               {flowWallet && accounts ? (
@@ -335,7 +350,7 @@ export default function GiveawayClient({ slug }: { slug: string }) {
               </label>
               {(() => {
                 const ready = flowWallet ? destination != null : username.trim().length >= 2
-                const off = claiming || !agree || !ready
+                const off = claiming || drawn != null || !agree || !ready
                 return (
                   <button type="button" disabled={off} onClick={claim} style={buttonStyle(off)}>
                     {claiming ? "Claiming…" : "Claim my pack"}
@@ -368,13 +383,42 @@ export default function GiveawayClient({ slug }: { slug: string }) {
           Every Moment in the giveaway is listed below, in order of value, not by pack. The typical pack is the median: half the packs are worth more, half less.
           FMV is Rip Packs City&apos;s fair-market estimate when the giveaway was sealed.
         </p>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 10 }}>
-          {pool.map((m) => (
-            <div key={m.moment_id} style={{ ...card, padding: 12 }}>
-              <MomentLine m={m} />
+        {(() => {
+          const bands = drop.deal_mode === "balanced" ? valueBands(pool, drop.pack_count, drop.moments_per_pack) : null
+          if (!bands) {
+            return (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 10 }}>
+                {pool.map((m) => (
+                  <div key={m.moment_id} style={{ ...card, padding: 12 }}>
+                    <MomentLine m={m} />
+                  </div>
+                ))}
+              </div>
+            )
+          }
+          return (
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }} data-testid="value-bands">
+              <p style={{ ...muted, margin: 0 }}>
+                Balanced packs: every pack holds exactly <strong>one</strong> Moment from each band below.
+              </p>
+              {bands.map((band, i) => (
+                <div key={i}>
+                  <div style={{ fontFamily: MONO, fontSize: 12, textTransform: "uppercase", color: "var(--rpc-text-secondary)", marginBottom: 6 }}>
+                    Band {i + 1} of {bands.length}
+                    {i === 0 ? " · the top Moments" : ""} · one per pack
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 10 }}>
+                    {band.map((m) => (
+                      <div key={m.moment_id} style={{ ...card, padding: 12 }}>
+                        <MomentLine m={m} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
+          )
+        })()}
       </section>
 
       <section style={card}>
