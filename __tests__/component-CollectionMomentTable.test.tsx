@@ -239,6 +239,31 @@ describe("CollectionMomentTable", () => {
     expect(container.textContent).toContain("No moments found for this wallet on this collection.")
   })
 
+  // 2026-11-08: Candy moved every collectible to new MoonPay wallets in October, so a
+  // pre-October address now finds nothing. The empty state explains that and asks for
+  // the NEW address — on Candy only, and never on a non-empty result.
+  it.each([false, true])("Candy (isMobile=%s): an empty search explains the October wallet move", (isMobile) => {
+    const { queryByTestId } = render(
+      <CollectionMomentTable {...baseProps({ isMobile, collectionSlug: "candy-mlb", filteredRows: [], rowsCount: 0, hasSearched: true })} />
+    )
+    const note = queryByTestId("candy-wallet-moved-note")?.textContent ?? ""
+    expect(note).toContain("new Candy Wallet")
+    expect(note).toContain("never share")
+    expect(note).not.toMatch(/seed phrase|connect your wallet/i)
+  })
+
+  it("the Candy wallet-move note never shows on another collection, a filtered-out result, or before a search", () => {
+    for (const props of [
+      { collectionSlug: "nba-top-shot", filteredRows: [], rowsCount: 0, hasSearched: true },
+      { collectionSlug: "candy-mlb", filteredRows: [], rowsCount: 3, hasSearched: true },
+      { collectionSlug: "candy-mlb", filteredRows: [], rowsCount: 0, hasSearched: false, input: "" },
+    ]) {
+      const { queryByTestId, unmount } = render(<CollectionMomentTable {...baseProps(props)} />)
+      expect(queryByTestId("candy-wallet-moved-note")).toBeNull()
+      unmount()
+    }
+  })
+
   it("renders a row with no player/set name without crashing (null-name fallbacks)", () => {
     const { container } = render(
       <CollectionMomentTable

@@ -9,6 +9,7 @@
 // app/(collections)/[collection]/collection/page.tsx; the page keeps all
 // data-fetch/filter/sort state and passes it down. The FMV-alert form state
 // (five useState pairs, used nowhere else) moved INTO this component.
+import CandyWalletMovedNote from "@/components/collection/CandyWalletMovedNote"
 import { Fragment, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
@@ -300,6 +301,7 @@ export default function CollectionMomentTable(props: {
                 {rows.length === 0
                   ? "No " + unitNoun + " found for this wallet on this collection."
                   : "No " + unitNoun + " match your current filters. Try adjusting the filters above."}
+                {rows.length === 0 && collectionSlug === "candy-mlb" ? <CandyWalletMovedNote /> : null}
               </div>
             ) : shownRows.map(function(row) {
               const expanded = !!view.expandedRows[row.momentId]
@@ -585,6 +587,7 @@ export default function CollectionMomentTable(props: {
                     {rows.length === 0
                       ? "No " + unitNoun + " found for this wallet on this collection."
                       : "No " + unitNoun + " match your current filters. Try adjusting the filters above."}
+                    {rows.length === 0 && collectionSlug === "candy-mlb" ? <CandyWalletMovedNote /> : null}
                   </td>
                 </tr>
               ) : shownRows.map(function(row) {
