@@ -227,6 +227,24 @@ describe("DashboardClient — a failed /me must not say 'Not signed in'", () => 
 describe("DashboardClient — the trophy case", () => {
   // IA Phase 1 (2026-11-06): this UI lives on the "trophy" tab.
   beforeEach(() => { searchParams = new URLSearchParams("tab=trophy") })
+  it("⚠ a challenge link (?challenge=dame-time) puts the challenge panel FIRST on the Trophy tab — and opens that tab on its own", async () => {
+    searchParams = new URLSearchParams("challenge=dame-time")
+    window.history.replaceState(null, "", "/dashboard?challenge=dame-time")
+    try {
+      render(<DashboardClient />)
+      const slot = await screen.findByTestId("trophy-cases-panel-slot")
+      expect(slot.style.order).toBe("-1")
+    } finally {
+      window.history.replaceState(null, "", "/")
+    }
+  })
+
+  it("without a challenge link the panel keeps its place below the main case", async () => {
+    render(<DashboardClient />)
+    const slot = await screen.findByTestId("trophy-cases-panel-slot")
+    expect(slot.style.order).toBe("")
+  })
+
   it("renders a pinned trophy", async () => {
     render(<DashboardClient />)
     await waitFor(() => expect(screen.getAllByTestId("trophy-slab").length).toBeGreaterThan(0))

@@ -98,7 +98,10 @@ export default function TrophyCasesPanel({
   ownerKey,
   savedChains,
   onToast,
+  focusChallenge,
 }: {
+  /** Challenge slug to land on (the dashboard captures it at mount); falls back to the URL. */
+  focusChallenge?: string | null;
   ownerKey: string | null;
   savedChains: readonly string[] | null;
   onToast: (text: string, tone?: "success" | "info") => void;
@@ -134,40 +137,46 @@ export default function TrophyCasesPanel({
     void refresh();
   }, [refresh]);
 
-  // Deep link (challengeEntryHref): `?challenge=<slug>` (or the older
-  // `#challenge-<slug>`). The browser's own scroll can't do it — this panel
-  // renders after its own fetch, BELOW a main case that is still loading its
-  // slabs, so a one-shot scroll lands and then gets pushed off-screen. Scroll,
-  // then keep the target pinned to the top while the layout above settles
-  // (≤ 6 s), and stop the moment the visitor scrolls on their own. Once per
-  // mount: a refresh after each pick must not yank the page back.
+  // Deep link (challengeEntryHref). The dashboard renders this panel FIRST on
+  // such a visit, so the challenge is already near the top; this pins its row
+  // (which may sit below other cases) to the top and HOLDS it for up to 8 s —
+  // checked on a timer, not only on resize, because a reset of the scroll
+  // position changes no size — and lets go the moment the visitor scrolls,
+  // taps or types. Once per mount: a refresh after each pick must not yank.
   const loaded = load.state === "ok";
   const focusDone = useRef(false);
   const [focusSlug, setFocusSlug] = useState<string | null>(null);
   useEffect(() => {
     if (!loaded || focusDone.current) return;
     focusDone.current = true;
-    const slug = challengeFocusFromUrl(window.location.search, window.location.hash);
+    const slug = focusChallenge ?? challengeFocusFromUrl(window.location.search, window.location.hash);
     if (!slug) return;
+    setFocusSlug(slug);
     const target = () =>
       document.getElementById(challengeAnchorId(slug)) ?? document.getElementById("trophy-cases-more");
     const align = () => target()?.scrollIntoView?.({ block: "start" });
     align();
-    setFocusSlug(slug);
+    const drifted = () => {
+      const el = target();
+      if (!el) return false;
+      const want = parseFloat(getComputedStyle(el).scrollMarginTop) || 0;
+      return Math.abs(el.getBoundingClientRect().top - want) > 8;
+    };
     let stopped = false;
     const stop = () => {
       if (stopped) return;
       stopped = true;
-      ro?.disconnect();
+      clearInterval(tick);
       clearTimeout(timer);
       for (const ev of USER_SCROLL_EVENTS) window.removeEventListener(ev, stop);
     };
-    const ro = typeof ResizeObserver === "function" ? new ResizeObserver(() => align()) : null;
-    ro?.observe(document.body);
+    const tick = setInterval(() => {
+      if (drifted()) align();
+    }, 200);
     for (const ev of USER_SCROLL_EVENTS) window.addEventListener(ev, stop, { passive: true });
-    const timer = setTimeout(stop, 6000);
+    const timer = setTimeout(stop, 8000);
     return stop;
-  }, [loaded]);
+  }, [loaded, focusChallenge]);
 
   const send = useCallback(
     async (url: string, method: string, body: unknown, okText: string): Promise<boolean> => {
@@ -196,7 +205,19 @@ export default function TrophyCasesPanel({
     [onToast, refresh]
   );
 
-  if (load.state === "loading") return null;
+  if (load.state === "loading") {
+    // On a challenge visit this slot is first on the page — hold it, so the
+    // main case below doesn't paint in its place and then jump down.
+    if (!focusChallenge) return null;
+    return (
+      <section className="rpc-section" id="trophy-cases-more" style={{ scrollMarginTop: 80 }}>
+        <div className="rpc-section-title">More Trophy Cases</div>
+        <div role="status" style={{ fontFamily: monoFont, fontSize: 12, color: "var(--rpc-text-muted)" }}>
+          Loading your challenge…
+        </div>
+      </section>
+    );
+  }
   if (load.state === "failed") {
     return (
       <section className="rpc-section">

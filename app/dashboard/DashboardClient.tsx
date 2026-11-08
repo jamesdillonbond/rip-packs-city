@@ -31,6 +31,7 @@ import TrophyNoteEditor from "@/components/profile/TrophyNoteEditor";
 import TrophyCasesPanel from "@/components/profile/TrophyCasesPanel";
 import { occupantOfSlot, reorderByDelta, reorderByTarget } from "@/lib/trophy/reorder";
 import { savedWalletChains } from "@/lib/trophy-picker-format";
+import { challengeFocusFromUrl } from "@/lib/trophy/challenge-link";
 import ShareProfileButtons from "@/components/profile/ShareProfileButtons";
 import TrophySlab, { type TrophySlabData } from "@/components/TrophySlab";
 import { proxyIpfsImageUrl } from "@/lib/ipfs-media";
@@ -189,6 +190,11 @@ function ProfilePageInner() {
   const pinParam = search?.get("pin") ?? null;
   // `?challenge=<slug>` (challengeEntryHref) lands on the Trophy tab too.
   const challengeParam = search?.get("challenge") ?? null;
+  // Captured ONCE at mount: a tab switch / tour step rewrites the URL and drops
+  // `challenge`, and the panel that consumes it renders only after two fetches.
+  const [focusChallenge] = useState<string | null>(() =>
+    typeof window === "undefined" ? challengeParam : challengeFocusFromUrl(window.location.search, window.location.hash)
+  );
   const [tab, setTab] = useState<DashTab>(() => parseDashTab(tabParam ?? (pinParam || challengeParam ? "trophy" : null)));
   // 2026-11-07: FOLLOW a client navigation that changes only `?tab=`. The page
   // stays mounted across /dashboard → /dashboard?tab=trophy (the header's Me
@@ -1334,12 +1340,19 @@ function ProfilePageInner() {
         )}
         {/* Extra trophy cases + challenge entries (2026-11-06). Signed-in only:
             every route behind it is requireUser. */}
+        {/* ⚠ Arriving by a challenge link (challengeEntryHref), the panel renders
+            FIRST (flex `order`), so the challenge is what the page opens on — not
+            a scroll that has to beat a main case still loading above it (Trevor,
+            11-07: the scroll-only version "still seems to load at the top"). */}
         {userId && (
+          <div style={focusChallenge ? { order: -1 } : undefined} data-testid="trophy-cases-panel-slot">
           <TrophyCasesPanel
+            focusChallenge={focusChallenge}
             ownerKey={null}
             savedChains={loading || walletsFailed ? null : savedWalletChains(wallets.map((w) => w.wallet_addr), detectAddressChain)}
             onToast={pushToast}
           />
+          </div>
         )}
           </div>
         )}
