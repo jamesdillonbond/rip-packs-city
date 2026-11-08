@@ -35,9 +35,9 @@ failure it documents.
 ## 2026-11-08 — 4 filings
 
 - [🟠 **FOR CLAUDE CODE / COWORK** — delete the OLD laptop-pull scheduled task `trig_014mdFHh2m4AYTkYLTF7XxSV` before 11-09 5:37 AM PT; its device-bound replacement `trig_015m2ZbNHoNmtT7ExQAQeVJD` exists (the old one stalled 11-08 waiting for folder access)](2026-11-08T1524Z-cowork-for-claude-code-or-cowork-delete-old-laptop-pull-task.md)
-- [🟢 **FOR COWORK** — drop the scratch table `public.zz_pgss_probe_20261108` (Claude Code's pg_stat_statements delta probe; RLS on, no grants, no dependents; guarded SQL inside; Claude Code's DROP was held)](2026-11-08T1509Z-claude-code-drop-for-cowork-zz-pgss-probe-scratch-table.md)
-- [🟠 **FOR COWORK** — apply the committed trophy-case cap trigger migration (`20261108002000_audit_20261107_trophy_cases_extra_cap_enforced_in_db.sql`); Claude Code's apply was held; route half shipped and dormant](2026-11-08T0025Z-claude-code-apply-for-cowork-trophy-cases-extra-cap-trigger.md)
-- [🟠 **FOR COWORK** — two placeholder rows from the wallet-search seed bug: rename edition `85:2918` → "Brooklyn Nets — Dynamic Duos", delete the unreferenced player "Unknown (error loading)" (guarded SQL inside; Claude Code's MCP could not apply it)](2026-11-08T0002Z-claude-code-data-fix-for-cowork-unknown-error-loading-edition-and-player.md)
+- [✅ 🟢 **FOR COWORK** — drop the scratch table `public.zz_pgss_probe_20261108` (Claude Code's pg_stat_statements delta probe; RLS on, no grants, no dependents; guarded SQL inside; Claude Code's DROP was held)](2026-11-08T1509Z-claude-code-drop-for-cowork-zz-pgss-probe-scratch-table.md)
+- [✅ 🟠 **FOR COWORK** — apply the committed trophy-case cap trigger migration (`20261108002000_audit_20261107_trophy_cases_extra_cap_enforced_in_db.sql`); Claude Code's apply was held; route half shipped and dormant](2026-11-08T0025Z-claude-code-apply-for-cowork-trophy-cases-extra-cap-trigger.md)
+- [✅ 🟠 **FOR COWORK** — two placeholder rows from the wallet-search seed bug: rename edition `85:2918` → "Brooklyn Nets — Dynamic Duos", delete the unreferenced player "Unknown (error loading)" (guarded SQL inside; Claude Code's MCP could not apply it)](2026-11-08T0002Z-claude-code-data-fix-for-cowork-unknown-error-loading-edition-and-player.md)
 
 ## 2026-11-07 — 1 filing
 

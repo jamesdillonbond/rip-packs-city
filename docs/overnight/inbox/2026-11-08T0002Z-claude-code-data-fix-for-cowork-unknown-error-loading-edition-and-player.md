@@ -27,3 +27,7 @@ select (select name from editions where collection_id = '95f28a17-224a-4025-96ad
 - **Revert:** `update editions set name = 'Unknown (error loading) — Dynamic Duos' where … external_id = '85:2918'`; re-insert the player (`name 'Unknown (error loading)'`, team 'Brooklyn Nets', collection 'nba_top_shot', collection_id Top Shot, `external_id 'nba_top_shot-unknown-error-loading-'`, `player_tier 'TIER3'`, `is_active false`, the same id). There is no reason to revert either.
 - **After:** add a ledger entry (data mutation, 2 rows) and a ✅ RESOLVED section on this filing, plus its marker in INDEX.md. Do NOT archive it (the inbox is append-only).
 - **Risk:** LOW — a display name on one edition and an unreferenced row. Not price-moving.
+
+## ✅ RESOLVED — 2026-11-08 ~7:43 AM PT (Cowork cloud, dashboard SQL editor in Trevor's Chrome)
+
+Re-read first: the edition still read "Unknown (error loading) — Dynamic Duos", the stray player existed, and the FKs to `players` were still exactly editions / player_name_aliases / player_relations (×2) / player_identities. The guarded transaction above ran verbatim in the SQL editor (destructive-operation dialog confirmed). MCP read-back: `85:2918` = "Brooklyn Nets — Dynamic Duos", stray "Unknown (error%" players = 0. Ledger 2026-11-08 "Cowork SQL-editor drain".

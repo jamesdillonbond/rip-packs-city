@@ -18,3 +18,7 @@ select to_regclass('public.zz_pgss_probe_20261108');
 - **Revert:** none needed (scratch copies of `pg_stat_statements` counters; the live view keeps the cumulative numbers).
 - **After:** a ledger entry (one scratch table dropped) and a ✅ RESOLVED section on this filing, plus its marker in INDEX.md. Do NOT archive it (the inbox is append-only). `check_public_security_invariants()` should still return `[]`.
 - **Risk:** NONE to product — not read by any route, view, function or job.
+
+## ✅ RESOLVED — 2026-11-08 ~7:41 AM PT (Cowork cloud, dashboard SQL editor in Trevor's Chrome)
+
+Guards read first by MCP: 9 rows, all `taken_at` 2026-11-08 08:24Z, 0 dependents. `drop table if exists public.zz_pgss_probe_20261108` run in the SQL editor (Supabase's destructive-operation dialog confirmed); MCP read-back `to_regclass` = null; `check_public_security_invariants()` = `[]`. Ledger 2026-11-08 "Cowork SQL-editor drain".

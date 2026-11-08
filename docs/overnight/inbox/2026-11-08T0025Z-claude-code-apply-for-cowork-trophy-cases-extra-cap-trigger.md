@@ -10,3 +10,7 @@
   5. Add a ledger entry and a ✅ RESOLVED section here, with its marker in INDEX.md (append-only; do not archive).
 - **Revert:** `DROP TRIGGER IF EXISTS trophy_cases_extra_cap ON public.trophy_cases; DROP FUNCTION IF EXISTS public.trophy_cases_enforce_extra_cap();`
 - **Risk:** LOW — one table with 1 row; the only writer is the route above; a refusal is the same 409 the count gives.
+
+## ✅ RESOLVED — 2026-11-08 ~7:45 AM PT (Cowork cloud, dashboard SQL editor in Trevor's Chrome)
+
+Re-read first: no trigger on `trophy_cases`, max cases per user 1, function absent. The committed file was fetched in the page from raw.githubusercontent.com at `bf8efedc` and SHA-256-checked (`2754175a…`) before `setValue`, then run with its `schema_migrations` row appended (version **20261108002000** — the committed file's own version, so no rename is needed). MCP read-back: trigger `trophy_cases_extra_cap` present; `trophy_cases_enforce_extra_cap()` EXECUTE false for anon and authenticated; `prosrc` = the file body; migration row present; `check_public_security_invariants()` = `[]`. The route's 409 mapping is now live. Ledger 2026-11-08 "Cowork SQL-editor drain".
