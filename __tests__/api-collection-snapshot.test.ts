@@ -48,6 +48,21 @@ describe("GET /api/collection-snapshot", () => {
     expect(full.headers.get("Cache-Control")).toContain("s-maxage=300")
   })
 
+  // #228 lever (b), 2026-11-08: a whale's snapshot reads 11–24 s cold, and its visits come hours
+  // apart, so the CDN must keep answering from the last good copy while it recomputes.
+  it("a populated snapshot is served stale for 6 h while it revalidates; a failed read is never stored", async () => {
+    rpcState.data = { totalMoments: 53604 }
+    const full = await GET(req("https://t/api/collection-snapshot?wallet=0xf5d1b36f376ee7f3"))
+    const cc = full.headers.get("Cache-Control") ?? ""
+    expect(cc).toContain("s-maxage=300")
+    expect(Number(cc.match(/stale-while-revalidate=(\d+)/)?.[1])).toBeGreaterThanOrEqual(21600)
+    rpcState.data = null
+    rpcState.error = { message: "canceling statement due to statement timeout", code: "57014" }
+    const failed = await GET(req("https://t/api/collection-snapshot?wallet=0xf5d1b36f376ee7f3"))
+    expect(failed.ok).toBe(false)
+    expect(failed.headers.get("cache-control") ?? "").not.toMatch(/s-maxage|stale-while-revalidate/)
+  })
+
   it("400s when wallet is missing/blank", async () => {
     expect((await GET(req("https://t/api/collection-snapshot"))).status).toBe(400)
     expect((await GET(req("https://t/api/collection-snapshot?wallet=%20%20"))).status).toBe(400)

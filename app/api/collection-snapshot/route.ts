@@ -55,6 +55,14 @@ export async function GET(req: NextRequest) {
     // page reloaded every ~9 s. Measured live 10-21: a Google visitor's own share card reloaded 36
     // times in 6 minutes (72 "share views" that week came from 6 browsers).
     const isEmpty = (Number(snap.totalMoments) || 0) === 0
+    // #228 lever (b), 2026-11-08: a long STALE window, so the CDN answers a whale's card at once and
+    // recomputes in the background. Fresh stays 5 min. Measured: the 11-07 timeout was 0xf5d1b36f…
+    // (53.6k Moments), whose four slow reads that day (17 s, 11 s, 23.9 s → the 20 s timeout, 12 s)
+    // came 19 min, 5 h and 53 min apart — every one past the old 10-min stale window, so every one
+    // ran cold in front of the visitor. 6 h is the wallet cache's own staleness bound (the Sentinel's
+    // Portfolio Cache Drain warns at 12 h), and the payload's generatedAt is stamped at compute time,
+    // so a copy served stale still says when it was true. A failed or empty read is never stored here
+    // (apiErrorResponse → no-store; isEmpty → no-store), so the window can only hold a success.
 
     return NextResponse.json(
       {
@@ -81,7 +89,7 @@ export async function GET(req: NextRequest) {
       },
       {
         headers: {
-          "Cache-Control": isEmpty ? "no-store" : "public, s-maxage=300, stale-while-revalidate=600",
+          "Cache-Control": isEmpty ? "no-store" : "public, s-maxage=300, stale-while-revalidate=21600",
         },
       }
     )
