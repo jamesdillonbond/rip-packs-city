@@ -18,7 +18,9 @@
 10. **Afternoon queue drain** (1:00–1:30 PM PT, each with a pin red on the old code): edition alias / fossil redirect lookups `cache()`d (`feb53fadd`; live: the alias URL lands on `152:5379`); verify-email GET renders a Confirm button and only the POST claims (`d55be98e8`; live GET verified, claims nothing); wallet-search seed refuses degraded rows and fabricates no COMMON tier (`246aab468`); wallet-search background writes kept alive through `after()` (`e6d785536`).
 - Also: demand re-read 10-29..11-04 and headline metric wk 11-02 in `roadmap-status.md` (`22780e5ce`) — the visit jump is mostly our own browsers; All Day M2 drifting down 0.3/wk; Candy's window draining on schedule (~0 by ~11-11).
 
-## ⛔ Needs Trevor (one data fix)
+## ⛔ One data fix — handed to Cowork (4:00 PM PT)
+
+The MCP held this for a confirmation twice, and the prompt never reached Trevor. Filed for Cowork: `docs/overnight/inbox/2026-11-08T0002Z-claude-code-data-fix-for-cowork-unknown-error-loading-edition-and-player.md` (the guarded SQL plus FK re-check, read-back and revert). Kept below for reference.
 
 The seed bug left two rows. The cleanup went through the Supabase MCP, which asked for confirmation and timed out unanswered, so **treat it as not applied**. Both statements are guarded:
 
