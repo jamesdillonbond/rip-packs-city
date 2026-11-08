@@ -186,14 +186,16 @@ describe("TrophyPickerModal — the page cap is disclosed, not silent", () => {
       }),
     )
     const { container } = open()
-    await waitFor(() => expect(screen.getByText("Player 0")).toBeTruthy())
+    // 2026-11-08: ceilings, not properties — 96 rows + the search debounce missed the
+    // 1 s / 2 s waits under the full-suite coverage load (passed alone and on CI).
+    await waitFor(() => expect(screen.getByText("Player 0")).toBeTruthy(), { timeout: 8000 })
     expect(screen.queryByText("Damian Lillard")).toBeNull()
     fireEvent.change(screen.getByLabelText(/Search your moments/i), { target: { value: "Damian Lillard" } })
-    await waitFor(() => expect(screen.getByText("Damian Lillard")).toBeTruthy(), { timeout: 2000 })
+    await waitFor(() => expect(screen.getByText("Damian Lillard")).toBeTruthy(), { timeout: 8000 })
     expect(seen).toContain("Damian Lillard")
     expect(container.textContent).toMatch(/Searching everything you hold for “Damian Lillard”/i)
     expect(screen.queryByText("Player 0")).toBeNull()
-  })
+  }, 20_000)
 
   it("a one-character query stays client-side (no q sent)", async () => {
     withMoments(many(5))

@@ -302,6 +302,12 @@ async function main() {
 
   let cards = [], packs = [], serials = [], sales = [];
   const enumPskus = new Set();
+  // Products whose pskus Panini's OWN API answers in THREE fields (2026-11-08): newer lines —
+  // 850180 2026 Prizm WC Stickers, 2130 / 850178 / 850179 — are packcard-<setId>_<a>_<b>, where
+  // older ones are packcard-<setId>_<parallelSetId>_<cardId>_<playerId>. Learned from the network
+  // path (a) so the DOM fallback (b) can accept a 3-field psku for THOSE products only: a 3-field
+  // match on a 4-field product is the truncated base key (b) must never add to the walk.
+  const threeFieldSets = new Set();
   let currentPackId = null; // set before each pack-page goto so packs get their real id
   let currentPackUrl = null; // ...and the page they came from (panini_pack_state.page_url)
   const nationByPsku = {}; // psku -> country (only the grid list carries team; per-card API does not)
@@ -550,6 +556,7 @@ async function main() {
       if (!it?.psku) continue;
       if (Array.isArray(gridItems) && gridItems.includes(it)) { sight(String(it.psku)); sampleOf(it); }
       if (isWalked(String(it.psku))) { enumPskus.add(it.psku); if (it.team) nationByPsku[it.psku] = it.team; }
+      if (/^packcard-[0-9]+_[0-9]+_[0-9]+$/.test(String(it.psku))) { const sid3 = setIdOf(String(it.psku)); if (sid3 !== null) threeFieldSets.add(sid3); }
     }
     if (DEBUG && items.length) console.log(`[panini-runner][debug] onepanini keys=${Object.keys(d).join(",")} items=${items.length} walked=${[...enumPskus].length}`);
   }
@@ -594,14 +601,16 @@ async function main() {
     } catch { return 0; }
     let added = 0;
     for (const src of srcs) {
-      // Require the FULL 4-field psku (setId_parallelSetId_cardId_playerId), matching the
-      // exact shape the network path adds at getMarketPlaceList and the shape the detail-page
-      // walk navigates to. A stricter match than "any packcard-<digits>" so a thumbnail that
-      // embeds only a truncated base key never pollutes the walk with a non-resolving psku —
-      // worst case (b) simply adds nothing, same as before it existed.
-      const m = src.match(/packcard-[0-9]+_[0-9]+_[0-9]+_[0-9]+/);
+      // Require the FULL psku, matching the exact shape the network path adds at
+      // getMarketPlaceList and the shape the detail-page walk navigates to: 4 fields
+      // (setId_parallelSetId_cardId_playerId), or 3 fields ONLY for a product the network path
+      // has seen answer in 3 (threeFieldSets, 2026-11-08 — the Stickers / newer lines). A
+      // stricter match than "any packcard-<digits>" so a thumbnail that embeds only a truncated
+      // base key never pollutes the walk with a non-resolving psku — worst case (b) adds nothing.
+      const m = src.match(/packcard-[0-9]+(?:_[0-9]+){2,3}/);
       if (!m) continue;
       const psku = m[0];
+      if (psku.split("_").length === 3 && !threeFieldSets.has(setIdOf(psku))) continue;
       if (isWalked(psku) && !enumPskus.has(psku)) { enumPskus.add(psku); added++; }
     }
     return added;

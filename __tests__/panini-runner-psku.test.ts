@@ -24,10 +24,15 @@ const WC_PREFIX = "packcard-2332_"
 
 // Byte-equivalent mirror of scripts/ingest-panini-runner.mjs::harvestDomPskus's
 // per-src extraction (regex + prefix gate). Returns the psku or null.
-function extractWcPsku(src: string, prefix = WC_PREFIX): string | null {
-  const m = src.match(/packcard-[0-9]+_[0-9]+_[0-9]+_[0-9]+/)
+// 2026-11-08: newer products (850180 2026 Prizm WC Stickers, 2130, 850178, 850179) answer THREE-field
+// pskus from Panini's own API (packcard-850180_100_266); the runner learns those set ids from the
+// network path and accepts a 3-field DOM match for them only.
+function extractWcPsku(src: string, prefix = WC_PREFIX, threeFieldSets: Set<number> = new Set()): string | null {
+  const m = src.match(/packcard-[0-9]+(?:_[0-9]+){2,3}/)
   if (!m) return null
   const psku = m[0]
+  const sid = Number(/^packcard-([0-9]+)_/.exec(psku)?.[1])
+  if (psku.split("_").length === 3 && !threeFieldSets.has(sid)) return null
   return psku.startsWith(prefix) ? psku : null
 }
 
@@ -60,6 +65,17 @@ describe("panini-runner DOM psku extraction (method b)", () => {
     expect(extractWcPsku("https://cdn.x/packcard-9999_1_2_3.png")).toBeNull()
   })
 
+  it("a 3-field psku is a FULL psku for a product the network path saw answer in 3 fields (Stickers)", () => {
+    const three = new Set([850180])
+    expect(extractWcPsku("https://cdn.x/img/packcard-850180_100_266.png", "packcard-850180_", three)).toBe("packcard-850180_100_266")
+    expect(extractWcPsku("https://cdn.x/packcard-850180_100_266_thumb.webp?v=3", "packcard-850180_", three)).toBe("packcard-850180_100_266")
+  })
+
+  it("⚠ the same 3-field shape on a 4-field product is a TRUNCATED base key — still rejected", () => {
+    expect(extractWcPsku("https://cdn.x/packcard-2332_486964_12579093.png")).toBeNull()
+    expect(extractWcPsku("https://cdn.x/packcard-2332_486964_12579093.png", WC_PREFIX, new Set([850180]))).toBeNull()
+  })
+
   it("REJECTS a non-card image", () => {
     expect(extractWcPsku("https://cdn.x/logo.png")).toBeNull()
     expect(extractWcPsku("")).toBeNull()
@@ -73,10 +89,16 @@ describe("panini-runner source-drift guard", () => {
     expect(src).toContain('querySelectorAll(\'img[src*="packcard-"]\')')
   })
 
-  it("still requires the FULL 4-field psku regex (not a loose packcard-<digits> match)", () => {
+  it("still requires a FULL psku (3 or 4 fields, never a loose packcard-<digits> match)", () => {
     // If this fails, harvestDomPskus was edited. Re-verify the extraction
-    // contract above and update the mirror + this literal together.
-    expect(src).toContain("/packcard-[0-9]+_[0-9]+_[0-9]+_[0-9]+/")
+    // contract above and update the mirror + these literals together.
+    // Re-pinned 2026-11-08: 4 fields, or 3 for a product learned as 3-field (Stickers).
+    expect(src).toContain("/packcard-[0-9]+(?:_[0-9]+){2,3}/")
+    expect(src).toContain('if (psku.split("_").length === 3 && !threeFieldSets.has(setIdOf(psku))) continue;')
+  })
+
+  it("learns 3-field products ONLY from Panini's own API answer (the network path)", () => {
+    expect(src).toContain("if (/^packcard-[0-9]+_[0-9]+_[0-9]+$/.test(String(it.psku))) { const sid3 = setIdOf(String(it.psku)); if (sid3 !== null) threeFieldSets.add(sid3); }")
   })
 
   // Re-pinned 2026-09-28 (multi-product): the gate was psku.startsWith(WC_PREFIX); it is now the
