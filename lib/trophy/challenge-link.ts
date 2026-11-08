@@ -40,8 +40,10 @@ export function challengeCaseSharePath(username: string, slug: string): string {
 }
 
 /** The social card for that page. */
-export function challengeCaseOgPath(username: string, slug: string): string {
-  return `/api/og/trophy-case/${encodeURIComponent(username)}?case=${encodeURIComponent(slug)}`
+export function challengeCaseOgPath(username: string, slug: string, token?: string | null): string {
+  // `&s=` = the entry's contents (lib/og/card-url.ts pinsToken): a new pin is a new URL.
+  const s = token ? `&s=${encodeURIComponent(token)}` : ""
+  return `/api/og/trophy-case/${encodeURIComponent(username)}?case=${encodeURIComponent(slug)}${s}`
 }
 
 /** A challenge slug as the DB constrains it (`^[a-z0-9]+(-[a-z0-9]+)*$`, ≤ 60). */

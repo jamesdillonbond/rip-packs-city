@@ -26,6 +26,7 @@
 import { ImageResponse } from "next/og"
 import { NextRequest, after } from "next/server"
 import { fullCardHeaders, ogCardKey, serveStoredCard } from "@/lib/og/card-store"
+import { cleanCardToken } from "@/lib/og/card-url"
 import { ogImageDataUriSlots } from "@/lib/og/img-data"
 import { supabaseAdmin } from "@/lib/supabase"
 import { boundedRead } from "@/lib/api/bounded-read"
@@ -145,7 +146,7 @@ export async function GET(
   // Nothing worth a store key: render directly (both land on the fallback).
   if (!username || (slug && !isChallengeSlug(slug))) return renderTrophyCaseCard(req, ctx)
   return serveStoredCard({
-    key: ogCardKey("trophy-case", username, slug || null),
+    key: ogCardKey("trophy-case", username, slug || null, cleanCardToken(req.nextUrl?.searchParams.get("s"))),
     render: () => renderTrophyCaseCard(req, ctx),
     fallback: async () => {
       const fonts = await brandFonts()

@@ -37,6 +37,7 @@ vi.mock("next/link", () => ({ default: ({ children, ...p }: any) => <a {...p}>{c
 
 import { pickChallengeEntry } from "@/lib/trophy/public-challenge-case"
 import { challengeCaseOgPath, challengeCaseSharePath, isChallengeSlug } from "@/lib/trophy/challenge-link"
+import { pinsToken } from "@/lib/og/card-url"
 import ChallengeCasePage from "@/app/profile/[username]/trophy-case/[challenge]/page"
 import { generateMetadata } from "@/app/profile/[username]/trophy-case/[challenge]/layout"
 import { challengeCaseDescription, titleFromSlug } from "@/app/profile/[username]/trophy-case/[challenge]/shared"
@@ -136,7 +137,9 @@ describe("its link preview", () => {
     const m: any = await generateMetadata(params())
     expect(m.alternates.canonical).toMatch(/\/profile\/trev\/trophy-case\/dame-time$/)
     expect(m.openGraph.url).toBe(m.alternates.canonical)
-    expect(m.openGraph.images[0].url).toMatch(/\/api\/og\/trophy-case\/trev\?case=dame-time$/)
+    // The entry's CONTENT token rides the URL (lib/og/card-url pinsToken): a pin
+    // change is a new image URL for every cache (tetrislblock's 1-of-6 card).
+    expect(m.openGraph.images[0].url).toMatch(new RegExp(`/api/og/trophy-case/trev\\?case=dame-time&s=${pinsToken(entry.slabs)}$`))
     expect(m.twitter.images[0].url).toBe(m.openGraph.images[0].url)
     expect(m.title.absolute).toBe("Trev's Dame Time Trophy Case | Rip Packs City")
     expect(m.description).toMatch(/^2 of 6 Dame Time pieces/)

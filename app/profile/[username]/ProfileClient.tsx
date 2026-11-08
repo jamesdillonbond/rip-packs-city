@@ -7,6 +7,7 @@ import RpcLogo from "@/components/RpcLogo";
 import TopMoversCard from "@/components/profile/TopMoversCard";
 import CollectionBreakdownCard from "@/components/profile/CollectionBreakdownCard";
 import ShareProfileButtons from "@/components/profile/ShareProfileButtons";
+import { pinsToken } from "@/lib/og/card-url";
 import FollowButton from "@/components/profile/FollowButton";
 import TrophySlab, { type TrophySlabData } from "@/components/TrophySlab";
 import PublicTrophyCases from "@/components/profile/PublicTrophyCases";
@@ -595,7 +596,7 @@ export default function ProfileClient(props: {
                 ? "Post your trophy case on X or Discord."
                 : "Post your portfolio on X or Discord — or pin a trophy first from your dashboard."}
             </div>
-            <ShareProfileButtons username={username} fmv={totalFmv} moments={totalMoments} trophyCount={filledCount} referrerId={myUserId} />
+            <ShareProfileButtons username={username} fmv={totalFmv} moments={totalMoments} trophyCount={filledCount} referrerId={myUserId} cardToken={pinsToken(slabs.filter(Boolean) as { slot?: unknown; moment_id?: unknown }[])} />
           </section>
         )}
 

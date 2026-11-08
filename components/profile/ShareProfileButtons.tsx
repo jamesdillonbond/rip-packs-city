@@ -78,18 +78,22 @@ function profileUrl(
 // fetcher does not wait that long, so the first person to post a fresh case
 // could get a link with no picture. Warm it the moment the user reaches for
 // the share button — the intent composer opens on top while this runs.
-function prewarmCard(username: string, surface: ShareSurface, challenge?: ShareChallenge): void {
+function prewarmCard(username: string, surface: ShareSurface, challenge?: ShareChallenge, token?: string | null): void {
+  // ⚠ Only with the case's content TOKEN (lib/og/card-url pinsToken): the page
+  // advertises the tokened URL, so warming any other one renders a card nobody
+  // will ask for. Pin writes warm server-side too (lib/og/card-warm).
+  if (!token) return;
   if (typeof window === "undefined" || typeof fetch !== "function") return;
   const og =
     surface === "trophy-case" && challenge
-      ? challengeCaseOgPath(username, challenge.slug)
+      ? challengeCaseOgPath(username, challenge.slug, token)
       : surface === "trophy-case"
-      ? ogTrophyCaseCardPath(username)
-      : ogProfileCardPath(username);
+        ? ogTrophyCaseCardPath(username, token)
+        : ogProfileCardPath(username, token);
   try {
     void fetch(og, { method: "GET", cache: "force-cache" }).catch(() => {});
   } catch {
-    // best-effort only
+    // best-effort
   }
 }
 
@@ -102,7 +106,10 @@ export default function ShareProfileButtons({
   referrerId,
   surface,
   challenge,
+  cardToken,
 }: {
+  /** The case's content token (lib/og/card-url pinsToken) — enables the card prewarm. */
+  cardToken?: string | null;
   /** Share one challenge entry's page (surface "trophy-case" only). */
   challenge?: ShareChallenge;
   username: string;
@@ -127,8 +134,8 @@ export default function ShareProfileButtons({
   const challengeSlug = challenge?.slug ?? null;
   const challengeTitle = challenge?.title ?? "";
   useEffect(() => {
-    prewarmCard(username, shareSurface, challengeSlug ? { slug: challengeSlug, title: challengeTitle } : null);
-  }, [username, shareSurface, challengeSlug, challengeTitle]);
+    prewarmCard(username, shareSurface, challengeSlug ? { slug: challengeSlug, title: challengeTitle } : null, cardToken);
+  }, [username, shareSurface, challengeSlug, challengeTitle, cardToken]);
 
   const tweetText = useMemo(() => {
     let stat = "";
@@ -182,14 +189,14 @@ export default function ShareProfileButtons({
     const intent = `https://twitter.com/intent/tweet?text=${encodeURIComponent(
       tweetText,
     )}&url=${encodeURIComponent(url)}`;
-    prewarmCard(username, shareSurface, challenge);
+    prewarmCard(username, shareSurface, challenge, cardToken);
     track();
     window.open(intent, "_blank", "noopener,noreferrer");
-  }, [username, tweetText, track, referrerId, shareSurface, challenge]);
+  }, [username, tweetText, track, referrerId, shareSurface, challenge, cardToken]);
 
   const copy = useCallback(async () => {
     const url = profileUrl(username, "copy", referrerId, shareSurface, challenge);
-    prewarmCard(username, shareSurface, challenge);
+    prewarmCard(username, shareSurface, challenge, cardToken);
     try {
       await navigator.clipboard.writeText(url);
       setCopied(true);
@@ -198,7 +205,7 @@ export default function ShareProfileButtons({
       // clipboard can be blocked — non-fatal.
     }
     track();
-  }, [username, track, referrerId, shareSurface, challenge]);
+  }, [username, track, referrerId, shareSurface, challenge, cardToken]);
 
   const btn: React.CSSProperties = {
     padding: compact ? "8px 14px" : "10px 18px",

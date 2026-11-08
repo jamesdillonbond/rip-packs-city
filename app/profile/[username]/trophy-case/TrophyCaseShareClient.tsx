@@ -20,6 +20,7 @@ import TrophySlab, { type TrophySlabData } from "@/components/TrophySlab";
 import ShareProfileButtons from "@/components/profile/ShareProfileButtons";
 import { accentFill, accentText, labelOn } from "@/lib/accent-text"
 import { challengeEntryHref } from "@/lib/trophy/challenge-link"
+import { pinsToken } from "@/lib/og/card-url"
 
 const MONO = "var(--font-mono)";
 const DISPLAY = "var(--font-display)";
@@ -244,6 +245,7 @@ export default function TrophyCaseShareClient({
               trophyCount={slabs.length}
               surface="trophy-case"
               challenge={challenge}
+              cardToken={pinsToken(slabs)}
               referrerId={viewerId}
               compact
             />

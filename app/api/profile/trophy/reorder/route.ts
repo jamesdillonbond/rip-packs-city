@@ -15,6 +15,7 @@ import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { requireUser } from "@/lib/auth/supabase-server";
 import { apiErrorResponse } from "@/lib/api-error";
 import { loadOwnCase, parseCaseId, refuseClosedChallenge } from "@/lib/trophy/cases";
+import { warmCardsLater } from "@/lib/og/card-warm";
 
 export async function POST(req: NextRequest) {
   let user;
@@ -97,5 +98,7 @@ export async function POST(req: NextRequest) {
     return apiErrorResponse(error, "api/profile/trophy/reorder", "Couldn't save your arrangement.");
   }
 
+  // A reorder changes the card (slots are in its content token) — lib/og/card-warm.
+  warmCardsLater(supabase, user.id, caseId);
   return NextResponse.json({ ok: true });
 }

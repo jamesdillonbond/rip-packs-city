@@ -22,6 +22,7 @@ import { apiErrorResponse } from "@/lib/api-error";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { requireUser } from "@/lib/auth/supabase-server";
 import { boundedRead } from "@/lib/api/bounded-read";
+import { warmCardsLater } from "@/lib/og/card-warm";
 import { loadOwnCase, parseCaseId, refuseClosedChallenge } from "@/lib/trophy/cases";
 import { checkChallengePin, parseChallengeRules } from "@/lib/trophy/challenge-rules";
 import { resolvePaniniTrophyCard } from "@/lib/trophy/panini-card";
@@ -142,5 +143,6 @@ export async function POST(req: NextRequest) {
     console.error("[trophy-cases copy-main] insert failed");
     return apiErrorResponse(error, ROUTE, "Couldn't copy your pieces into that case.");
   }
+  warmCardsLater(supabase, user.id, caseId);
   return NextResponse.json({ copied: Array.isArray(data) ? data.length : 0, skipped });
 }

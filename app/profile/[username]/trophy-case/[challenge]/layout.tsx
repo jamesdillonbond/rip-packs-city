@@ -11,6 +11,7 @@ import { getPublicProfile } from "@/lib/profile/public-profile"
 import { getPublicChallengeCase } from "@/lib/trophy/public-challenge-case"
 import { challengeCaseOgPath, challengeCaseSharePath, isChallengeSlug } from "@/lib/trophy/challenge-link"
 import { challengeCaseDescription, titleFromSlug } from "./shared"
+import { pinsToken } from "@/lib/og/card-url"
 
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -43,7 +44,7 @@ export async function generateMetadata({
   const filled = entry ? entry.slabs.length : null
 
   const canonical = `${BASE_URL}${challengeCaseSharePath(key, slug)}`
-  const ogUrl = `${BASE_URL}${challengeCaseOgPath(key, slug)}`
+  const ogUrl = `${BASE_URL}${challengeCaseOgPath(key, slug, entry ? pinsToken(entry.slabs) : null)}`
   const pageTitle = `${displayName}'s ${title} Trophy Case | Rip Packs City`
   const description = challengeCaseDescription({ displayName, title, filled })
   const imageAlt = `${displayName}'s ${title} trophy case on Rip Packs City`

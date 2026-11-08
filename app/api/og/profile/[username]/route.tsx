@@ -50,6 +50,7 @@
 import { ImageResponse } from "next/og";
 import { NextRequest, after } from "next/server";
 import { fullCardHeaders, ogCardKey, serveStoredCard } from "@/lib/og/card-store";
+import { cleanCardToken } from "@/lib/og/card-url";
 import { ogImageDataUri } from "@/lib/og/img-data";
 import { borderCosmetic, bannerCosmetic } from "@/lib/cosmetics";
 import { resolveAvatarUrl } from "@/lib/profile/default-avatar";
@@ -442,7 +443,7 @@ export async function GET(
   const username = decodeURIComponent((await ctx.params).username ?? "").trim();
   if (!username) return renderProfileCard(req, ctx);
   return serveStoredCard({
-    key: ogCardKey("profile", username),
+    key: ogCardKey("profile", username, null, cleanCardToken(req.nextUrl?.searchParams.get("s"))),
     render: () => renderProfileCard(req, ctx),
     fallback: async () => renderFallback(await brandFonts()),
     waitUntil: (p) => after(p),

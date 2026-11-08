@@ -15,7 +15,7 @@
 
 import type { Metadata } from "next"
 import { getPublicProfile } from "@/lib/profile/public-profile"
-import { ogTrophyCaseCardPath } from "@/lib/og/card-url"
+import { ogTrophyCaseCardPath, pinsToken } from "@/lib/og/card-url"
 
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -64,7 +64,7 @@ export async function generateMetadata({
   const trophyCount = resolved?.trophies?.length ?? 0
 
   const canonical = `${BASE_URL}/profile/${encodeURIComponent(key)}/trophy-case`
-  const ogUrl = `${BASE_URL}${ogTrophyCaseCardPath(key)}`
+  const ogUrl = `${BASE_URL}${ogTrophyCaseCardPath(key, resolved ? pinsToken(resolved.trophies as { slot?: unknown; moment_id?: unknown }[]) : null)}`
   const title = `${displayName}'s Trophy Case | Rip Packs City`
   const description = trophyCaseDescription({ displayName, trophyCount })
   const imageAlt = `${displayName}'s trophy case on Rip Packs City`

@@ -22,6 +22,7 @@ import { MAX_CASE_NAME_LEN, MAX_EXTRA_CASES } from "@/lib/trophy/cases";
 import { mainCaseCandidates, parseChallengeRules } from "@/lib/trophy/challenge-rules";
 import { challengeAnchorId, challengeCaseSharePath, challengeFocusFromUrl } from "@/lib/trophy/challenge-link";
 import ShareProfileButtons from "@/components/profile/ShareProfileButtons";
+import { pinsToken } from "@/lib/og/card-url";
 
 const condensedFont = "var(--font-display)";
 // A visitor taking the wheel ends the deep-link re-alignment.
@@ -628,6 +629,7 @@ function CaseBlock({
             trophyCount={filled}
             surface="trophy-case"
             challenge={{ slug: ch.slug, title: ch.title }}
+            cardToken={pinsToken(c.slabs)}
             compact
           />
           <Link

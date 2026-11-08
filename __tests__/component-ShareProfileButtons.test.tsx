@@ -97,7 +97,7 @@ describe("ShareProfileButtons", () => {
   // PROFILE url, so X unfurled the profile card rather than the trophy case the
   // sharer was looking at, and the link carried no &ref=. Pin the surface.
   it("surface=trophy-case shares the trophy-case URL, leads the tweet with the case, and warms its card", async () => {
-    render(<ShareProfileButtons username="trevor" surface="trophy-case" trophyCount={3} referrerId="user-7" />)
+    render(<ShareProfileButtons username="trevor" surface="trophy-case" trophyCount={3} referrerId="user-7" cardToken="abc123" />)
     fireEvent.click(screen.getByRole("button", { name: "Share on X" }))
     const intent = decodeURIComponent(String(openMock.mock.calls[0][0]))
     expect(intent).toMatch(/\/profile\/trevor\/trophy-case$/)
@@ -105,9 +105,16 @@ describe("ShareProfileButtons", () => {
     expect(intent).toMatch(/trophy case/i)
     expect(intent).toContain("3 Moments")
     await waitFor(() =>
-      // The SAME (versioned) URL the page advertises as og:image — lib/og/card-url.
-      expect(fetchMock).toHaveBeenCalledWith(ogTrophyCaseCardPath("trevor"), expect.anything()),
+      // The SAME (versioned, content-tokened) URL the page advertises as og:image — lib/og/card-url.
+      expect(fetchMock).toHaveBeenCalledWith(ogTrophyCaseCardPath("trevor", "abc123"), expect.anything()),
     )
+  })
+
+  it("⚠ without the case's content token it warms NOTHING — any other URL is a card nobody asks for", async () => {
+    render(<ShareProfileButtons username="trevor" surface="trophy-case" />)
+    fireEvent.click(screen.getByRole("button", { name: "Copy link" }))
+    await waitFor(() => expect(writeTextMock).toHaveBeenCalled())
+    expect(fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.includes("/api/og/"))).toEqual([])
   })
 
   it("surface=trophy-case copies the trophy-case URL", async () => {

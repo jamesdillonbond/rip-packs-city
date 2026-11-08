@@ -122,3 +122,25 @@ describe("card URLs carry a version (Discord's media proxy remembers a FAILED im
     expect(ogTrophyCaseCardPath("trev")).toBe(`/api/og/trophy-case/trev?v=${OG_CARD_URL_VERSION}`)
   })
 })
+
+// ⚠ tetrislblock (2026-11-07): the Dame Time card was stored after pin 1 and a
+// link pasted a minute later (6 pinned) unfurled with ONE Moment. The URL — and
+// the store key — now carry the case's contents.
+import { pinsToken as tokenOf, cleanCardToken } from "@/lib/og/card-url"
+describe("card content token", () => {
+  const one = [{ slot: 1, moment_id: "a" }]
+  const six = [1, 2, 3, 4, 5, 6].map((s) => ({ slot: s, moment_id: "m" + s }))
+  it("changes when a pin is added, removed or moved — and only then", () => {
+    expect(tokenOf(one)).not.toBe(tokenOf(six))
+    expect(tokenOf(six)).toBe(tokenOf([...six].reverse())) // order of the ARRAY is not content
+    const moved = six.map((p) => (p.slot === 1 ? { ...p, slot: 2 } : p.slot === 2 ? { ...p, slot: 1 } : p))
+    expect(tokenOf(moved)).not.toBe(tokenOf(six)) // a reorder IS content
+    expect(tokenOf([])).toBe("0")
+  })
+  it("tokens are what the routes accept, and the store key carries them", () => {
+    expect(cleanCardToken(tokenOf(six))).toBe(tokenOf(six))
+    expect(cleanCardToken("../x")).toBeNull()
+    expect(ogCardKey("trophy-case", "Trev", "dame-time", "abc")).toBe("trophy-case/trev/dame-time~abc.png")
+    expect(ogCardKey("profile", "Trev", null, "abc")).toBe("profile/trev~abc.png")
+  })
+})

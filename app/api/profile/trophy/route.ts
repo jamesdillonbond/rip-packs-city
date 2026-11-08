@@ -25,6 +25,7 @@ import { resolvePaniniTrophyCard, type PaniniTrophyCard } from "@/lib/trophy/pan
 import { PANINI_COLLECTION_ID } from "@/lib/trophy/slab-href";
 import { loadOwnCase, parseCaseId, refuseClosedChallenge, scopeToCase, type OwnCase } from "@/lib/trophy/cases";
 import { checkChallengePin, parseChallengeRules } from "@/lib/trophy/challenge-rules";
+import { warmCardsLater } from "@/lib/og/card-warm";
 
 const BAD_CASE = { error: "caseId must be a trophy case id" };
 const NO_CASE = { error: "That trophy case doesn't exist." };
@@ -251,6 +252,8 @@ export async function POST(req: NextRequest) {
     });
   }
 
+  // The card URLs carry the case's contents; render the new one now (lib/og/card-warm).
+  warmCardsLater(supabase, user.id, scope.caseId);
   return NextResponse.json({ trophy: data });
 }
 
@@ -379,5 +382,6 @@ export async function DELETE(req: NextRequest) {
     });
   }
 
+  warmCardsLater(supabase, user.id, scope.caseId);
   return NextResponse.json({ ok: true });
 }

@@ -31,9 +31,17 @@ const READ_TIMEOUT_MS = 1_500
 const WRITE_TIMEOUT_MS = 8_000
 
 /** Storage key: `<kind>/<lower-cased handle>[/<slug>].png` (handles resolve case-insensitively). */
-export function ogCardKey(kind: "profile" | "trophy-case" | "challenge", username: string, slug?: string | null): string {
+export function ogCardKey(
+  kind: "profile" | "trophy-case" | "challenge",
+  username: string,
+  slug?: string | null,
+  state?: string | null,
+): string {
   const u = encodeURIComponent(username.trim().toLowerCase())
-  return slug ? `${kind}/${u}/${encodeURIComponent(slug)}.png` : `${kind}/${u}.png`
+  // `~<state>`: the case's contents token (lib/og/card-url pinsToken) — a pin
+  // change is a different object, so a stored card can never be a stale one.
+  const st = state ? `~${state}` : ""
+  return slug ? `${kind}/${u}/${encodeURIComponent(slug)}${st}.png` : `${kind}/${u}${st}.png`
 }
 
 /** Headers that mark a render as FULL — the only kind the store keeps. */
