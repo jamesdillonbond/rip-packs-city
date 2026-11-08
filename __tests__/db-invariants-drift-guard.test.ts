@@ -1663,6 +1663,13 @@ const PINS = [
     migration: "supabase/migrations/20261108162400_audit_20261108_team_nicknames_in_search_and_resolver.sql",
   },
   {
+    // Added 2026-11-08 (#221). wmc player names follow the catalog where the cached spelling is a
+    // registered alias or a case/space variant; accent-only variants are never rewritten.
+    fn: "heal_wmc_player_names_from_catalog",
+    test: "supabase/tests/heal_wmc_player_names_from_catalog.sql",
+    migration: "supabase/migrations/20261108171307_audit_20261108_wmc_player_names_follow_the_catalog.sql",
+  },
+  {
     fn: "upsert_player_canonical",
     test: "supabase/tests/upsert_player_canonical.sql",
     migration: "supabase/migrations/20261108020159_audit_20261107_upsert_player_canonical_honours_aliases.sql",
