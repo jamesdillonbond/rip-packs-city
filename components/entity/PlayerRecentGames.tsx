@@ -20,6 +20,7 @@ import { scrollRegion } from "@/lib/a11y/scroll-region"
 const LEAGUE_LABEL: Record<string, string> = {
   nba: "NBA", wnba: "WNBA", nfl: "NFL", mlb: "MLB", laliga: "LaLiga", epl: "Premier League", seriea: "Serie A",
   bundesliga: "Bundesliga", ligue1: "Ligue 1", mls: "MLS", ligaportugal: "Liga Portugal", eredivisie: "Eredivisie",
+  saudi: "Saudi Pro League", brasileirao: "Brasileirão", argentina: "Liga Profesional", ligamx: "Liga MX", superlig: "Süper Lig", rpl: "Russian Premier League",
 }
 
 const FP_LABEL: Record<string, string> = {
