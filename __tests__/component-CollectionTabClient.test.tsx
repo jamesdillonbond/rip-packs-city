@@ -1700,6 +1700,21 @@ describe("CollectionTabClient — offers, sets, packs and sharing", () => {
     await screen.findByText("Link copied!")
   })
 
+  it("unmounting during the 2 s 'copied' flash leaves no timer behind (CI flake 2026-11-07)", async () => {
+    const writeText = vi.fn(async (_text: string) => {})
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } })
+    searchParams = new URLSearchParams("wallet=0xmine")
+    const clearSpy = vi.spyOn(globalThis, "clearTimeout")
+    const { unmount } = render(<CollectionTabClient />)
+    fireEvent.click(await screen.findByTitle(/Copy shareable collection card link/))
+    await screen.findByText("Link copied!")
+    const before = clearSpy.mock.calls.length
+    unmount()
+    // the flash's own timer is cleared on unmount, not left to fire into a torn-down tree
+    expect(clearSpy.mock.calls.length).toBeGreaterThan(before)
+    clearSpy.mockRestore()
+  })
+
   it("offers no share link before a wallet has loaded", async () => {
     render(<CollectionTabClient />)
     await screen.findByTestId("moment-table")

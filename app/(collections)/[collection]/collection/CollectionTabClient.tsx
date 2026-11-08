@@ -169,6 +169,17 @@ function WalletMomentsBody() {
   // Bumped once per runSearch; CollectionRecentSales owns the fetch + its own state.
   const [salesSearchNonce, setSalesSearchNonce] = useState(0)
   const [copied, setCopied] = useState(false);
+  // The "copied" flash resets after 2 s. The timer is held and cleared on
+  // unmount (2026-11-07): an uncleared one fired after a test environment tore
+  // down and failed CI with "window is not defined" — the same leak would set
+  // state on an unmounted binder in the browser.
+  const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => () => { if (copiedTimer.current) clearTimeout(copiedTimer.current) }, [])
+  function flashCopied() {
+    setCopied(true)
+    if (copiedTimer.current) clearTimeout(copiedTimer.current)
+    copiedTimer.current = setTimeout(function() { copiedTimer.current = null; setCopied(false) }, 2000)
+  }
   const [connectedWallet, setConnectedWallet] = useState<string | null>(null);
   const [isSeededPreloaded, setIsSeededPreloaded] = useState(false);
 
@@ -1336,8 +1347,7 @@ function WalletMomentsBody() {
                 onClick={async function() {
                   const r = await shareWalletCard(input.trim())
                   if (r !== "copied" && r !== "shared") return
-                  setCopied(true)
-                  setTimeout(function() { setCopied(false) }, 2000)
+                  flashCopied()
                 }}
                 title="Copy shareable collection card link"
                 style={{
@@ -1414,8 +1424,7 @@ function WalletMomentsBody() {
                   // "copied" only when the copy or share actually happened.
                   const r = await shareWalletCard(input.trim())
                   if (r !== "copied" && r !== "shared") return
-                  setCopied(true)
-                  setTimeout(function() { setCopied(false) }, 2000)
+                  flashCopied()
                 }}
                 title="Copy shareable collection card link"
                 style={{
