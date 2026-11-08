@@ -8,6 +8,7 @@
 // HONESTY: best_offer_usd is an OFFER-derived signal, a SEPARATE column, NEVER FMV; the pack-EV block
 // leads with typical_pull_ev; meta.coverage states the board is thin (46/125 priced) so a consumer can't
 // render it as a census.
+import { CANDY_BASE_SET_ID } from "@/lib/chains/solana/candy-sets"
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { boardUnavailable } from "@/lib/insights/board-error";
@@ -49,7 +50,8 @@ export async function GET(req: NextRequest) {
   // complete. Do NOT filter out null-FMV rows here — the cold tail (no-sale editions) is part of the
   // honest picture and renders as "—" FMV, optionally with a best-offer floor.
   const build = (p: string | null) => {
-    let q = (supabase as any).from("candy_secondary_board").select(COLS);
+    // The Base Series board (2026-11-08): the view carries every Candy set now.
+    let q = (supabase as any).from("candy_secondary_board").select(COLS).eq("set_id", CANDY_BASE_SET_ID);
     if (tier) q = q.eq("tier", tier);
     if (p) q = q.ilike("player_name", `%${p}%`);
     if (rainbow) q = q.eq("is_rainbow", true);

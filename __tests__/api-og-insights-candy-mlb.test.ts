@@ -27,7 +27,7 @@ function mockBoard(rows: Array<{ fmv_usd: number | null }>) {
   vi.doMock("@/lib/supabase", () => ({
     supabaseAdmin: {
       from: () => ({
-        select: () => ({ limit: async () => ({ data: rows, error: null }) }),
+        select: () => ({ eq: () => ({ limit: async () => ({ data: rows, error: null }) }) }),
       }),
     },
   }))
@@ -83,9 +83,11 @@ describe("/api/og/insights/candy-mlb", () => {
       supabaseAdmin: {
         from: () => ({
           select: () => ({
-            limit: async () => ({
-              data: null,
-              error: { message: "canceling statement due to statement timeout" },
+            eq: () => ({
+              limit: async () => ({
+                data: null,
+                error: { message: "canceling statement due to statement timeout" },
+              }),
             }),
           }),
         }),
@@ -102,9 +104,11 @@ describe("/api/og/insights/candy-mlb", () => {
       supabaseAdmin: {
         from: () => ({
           select: () => ({
-            limit: async () => {
-              throw new Error("view unavailable")
-            },
+            eq: () => ({
+              limit: async () => {
+                throw new Error("view unavailable")
+              },
+            }),
           }),
         }),
       },

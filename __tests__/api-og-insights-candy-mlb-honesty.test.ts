@@ -44,7 +44,7 @@ const capture: { c: OgCapture | null } = { c: null }
 function mockBoard(result: { data: Array<{ fmv_usd: number | null }> | null; error: unknown }) {
   vi.doMock("@/lib/supabase", () => ({
     supabaseAdmin: {
-      from: () => ({ select: () => ({ limit: async () => result }) }),
+      from: () => ({ select: () => ({ eq: () => ({ limit: async () => result }) }) }), // .eq: Base set (2026-11-08)
     },
   }))
 }

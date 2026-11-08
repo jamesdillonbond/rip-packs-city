@@ -25,6 +25,7 @@
 // throws on multi-child divs without it (see memory: rpc-competitor-recon
 // OG Satori gotcha).
 
+import { CANDY_BASE_SET_ID } from "@/lib/chains/solana/candy-sets"
 import { ImageResponse } from "next/og"
 import { supabaseAdmin } from "@/lib/supabase"
 import { brandFonts, brandFamilies, ogCacheHeaders } from "@/lib/og/brand-fonts"
@@ -63,6 +64,8 @@ export async function GET() {
       sb
         .from("candy_secondary_board")
         .select("fmv_usd")
+        // The Base Series card (2026-11-08): the view carries every Candy set now.
+        .eq("set_id", CANDY_BASE_SET_ID)
         .limit(500),
       "og/insights/candy-mlb/candy_secondary_board",
       OG_FETCH_TIMEOUT_MS,

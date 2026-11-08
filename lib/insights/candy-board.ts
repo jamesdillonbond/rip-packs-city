@@ -11,6 +11,7 @@
 // snapshot instead of timing out. Shared by the page (readBoardOrLive) and the cron
 // (warmBoard). `db` defaults to supabaseAdmin but is injectable for tests.
 
+import { CANDY_BASE_SET_ID } from "@/lib/chains/solana/candy-sets"
 import { supabaseAdmin } from "@/lib/supabase"
 import { summarizeDegraded, type BoardStatus } from "@/lib/insights/board-status"
 import type { BoardLiveResult } from "@/lib/insights/board-cache"
@@ -30,11 +31,16 @@ async function fetchView(
   cols: string,
   orderCol: string,
   asc = false,
-  limit = 600
+  limit = 600,
+  baseSeriesOnly = false
 ): Promise<{ rows: any[]; ok: boolean; truncated: boolean }> {
-  const { data, error } = await db
-    .from(view)
-    .select(cols)
+  // This board is the 2026 MLB BASE SERIES board (Rainbow filter, pack EV, sealed
+  // scarcity). Since 2026-11-08 the edition-grain Candy views carry every Candy set
+  // (All-Star, Gold Series, Quest rewards) with a `set_id` column; the board reads
+  // the Base set only, so its copy ("2026 MLB Base Series ICONs") stays true.
+  let q = db.from(view).select(cols)
+  if (baseSeriesOnly) q = q.eq("set_id", CANDY_BASE_SET_ID)
+  const { data, error } = await q
     .order(orderCol, { ascending: asc, nullsFirst: false })
     .limit(limit)
   if (error) {
@@ -99,7 +105,7 @@ export async function fetchCandyMlbDefault(
 ): Promise<BoardLiveResult<Record<string, unknown>>> {
   const [rows, packEv, packMarket, deals, spreads, serials, scarcity, holders, players, parallel] =
     await Promise.all([
-      fetchView(db, "candy_secondary_board", MARKET_COLS, "fmv_usd"),
+      fetchView(db, "candy_secondary_board", MARKET_COLS, "fmv_usd", false, 600, true),
       fetchOne(
         db,
         "candy_pack_ev_model",
@@ -117,7 +123,10 @@ export async function fetchCandyMlbDefault(
         db,
         "candy_deals_board",
         "pda_address,external_id,player_name,edition_name,tier,is_rainbow,circulation_count,serial_number,ask_usd,fmv_usd,discount_pct,discount_vs_median_pct,median_sale_usd,sales_count,seller",
-        "discount_pct"
+        "discount_pct",
+        false,
+        600,
+        true
       ),
       fetchView(
         db,
@@ -130,7 +139,10 @@ export async function fetchCandyMlbDefault(
         "external_id,player_name,edition_name,tier,is_rainbow,circulation_count,floor_usd,listing_count," +
           "best_offer_usd,distinct_bidders,fmv_usd,floor_mint,best_offer_mint,same_copy," +
           "floor_copy_bid_usd,exec_spread_usd,exec_spread_pct",
-        "best_offer_usd"
+        "best_offer_usd",
+        false,
+        600,
+        true
       ),
       fetchView(
         db,
@@ -138,7 +150,8 @@ export async function fetchCandyMlbDefault(
         "external_id,player_name,edition_name,tier,is_rainbow,circulation_count,serial_number,kind,owner,is_treasury,fmv_usd,last_sale_usd,last_sale_at",
         "fmv_usd",
         false,
-        800
+        800,
+        true
       ),
       fetchView(
         db,

@@ -6,11 +6,15 @@ import { fetchCandyMlbDefault } from "@/lib/insights/candy-board"
 // Query-builder fake: from(table) → chainable; terminal .limit() resolves to the
 // per-table result. Covers both candy-board chains: .select().order().limit() and
 // .select().limit(1).
+// `.eq()` is recorded: since 2026-11-08 the edition-grain views carry every Candy set
+// and this Base Series board filters set_id.
+const eqByTable: Record<string, Array<[string, unknown]>> = {}
 function fakeDb(byTable: Record<string, { data: any; error: any }>) {
   const make = (table: string) => {
     const res = byTable[table] ?? { data: [], error: null }
     const qb: any = {
       select: () => qb,
+      eq: (c: string, v: unknown) => { (eqByTable[table] ??= []).push([c, v]); return qb },
       order: () => qb,
       limit: () => Promise.resolve(res),
     }
@@ -129,5 +133,20 @@ describe("fetchCandyMlbDefault — row-cap truncation", () => {
     // The cache gate stays on Market alone — a capped Holders tab must not stop the
     // whole board being warmed.
     expect(res.ok).toBe(true)
+  })
+})
+
+describe("fetchCandyMlbDefault — Base Series only (2026-11-08)", () => {
+  it("filters every edition-grain section to the Base set; collection-wide models are left alone", async () => {
+    for (const k of Object.keys(eqByTable)) delete eqByTable[k]
+    await fetchCandyMlbDefault(fakeDb(allOk()))
+    const BASE = "381ae129-7dc7-47f4-9022-dd9e0fc21e39"
+    for (const t of ["candy_secondary_board", "candy_deals_board", "candy_offer_spread_board", "candy_special_serials_board"]) {
+      expect(eqByTable[t], t).toContainEqual(["set_id", BASE])
+    }
+    // Already Base-scoped in their views (or wallet-grain): no extra filter.
+    for (const t of ["candy_scarcity_board", "candy_player_board", "candy_holder_board"]) {
+      expect(eqByTable[t] ?? []).toEqual([])
+    }
   })
 })
