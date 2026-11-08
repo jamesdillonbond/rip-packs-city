@@ -24,6 +24,8 @@
 import { OG_CACHE_HEADERS, OG_DEGRADED_CACHE_HEADERS } from "@/lib/og/brand-fonts"
 
 export const OG_CARD_BUCKET = "og-cards"
+/** Supabase Storage's accepted object-key characters (storage-api `isValidKey`). */
+export const SUPABASE_STORAGE_KEY_RE = /^(\w|\/|!|-|\.|\*|'|\(|\)| |&|\$|@|=|;|:|\+|,|\?)*$/
 export const OG_CARD_FULL_HEADER = "x-og-card"
 export const OG_CARD_FRESH_MS = 10 * 60 * 1000
 export const OG_CARD_DEADLINE_MS = 5_000
@@ -38,9 +40,13 @@ export function ogCardKey(
   state?: string | null,
 ): string {
   const u = encodeURIComponent(username.trim().toLowerCase())
-  // `~<state>`: the case's contents token (lib/og/card-url pinsToken) — a pin
+  // `.<state>`: the case's contents token (lib/og/card-url pinsToken) — a pin
   // change is a different object, so a stored card can never be a stale one.
-  const st = state ? `~${state}` : ""
+  // ⚠ NOT `~`: Supabase Storage refuses it (400 "Invalid key"), and the first
+  // cut used it — every tokened card rendered, failed to store, and was served
+  // anyway, so the miss was invisible except in the write warnings (2026-11-07).
+  // Keys must match SUPABASE_STORAGE_KEY_RE below; a test pins every shape.
+  const st = state ? `.${state}` : ""
   return slug ? `${kind}/${u}/${encodeURIComponent(slug)}${st}.png` : `${kind}/${u}${st}.png`
 }
 
@@ -150,8 +156,10 @@ export async function serveStoredCard(opts: {
     const res = await render()
     if (!res.ok || res.headers.get(OG_CARD_FULL_HEADER) !== "full") return res
     const bytes = new Uint8Array(await res.arrayBuffer()) // the satori render happens here
-    await writeStoredCard(key, bytes)
-    return png(bytes, { ...OG_CACHE_HEADERS }, "rendered")
+    // The tag says whether it LANDED: "rendered" claimed a store that a 400 had
+    // refused, and a warm check read it as success (2026-11-07, `~` keys).
+    const stored = await writeStoredCard(key, bytes)
+    return png(bytes, { ...OG_CACHE_HEADERS }, stored ? "rendered" : "rendered-not-stored")
   }
 
   const stored = await readStoredCard(key)

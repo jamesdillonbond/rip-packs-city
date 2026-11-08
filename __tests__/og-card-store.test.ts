@@ -5,7 +5,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 // ~10.8 s (p50) to render cold, longer than the crawler waits. The store serves
 // the rendered PNG instantly and keeps it fresh in the background.
 
-import { serveStoredCard, ogCardKey, OG_CARD_FRESH_MS, OG_CARD_FULL_HEADER } from "@/lib/og/card-store"
+import { serveStoredCard, ogCardKey, OG_CARD_FRESH_MS, OG_CARD_FULL_HEADER, SUPABASE_STORAGE_KEY_RE } from "@/lib/og/card-store"
 import { ogProfileCardPath, ogTrophyCaseCardPath, OG_CARD_URL_VERSION } from "@/lib/og/card-url"
 
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1, 2, 3])
@@ -100,6 +100,18 @@ describe("serveStoredCard", () => {
     expect(writes).toHaveLength(0)
   })
 
+  it("⚠ a store write that FAILS is tagged rendered-not-stored — never 'rendered'", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_u: string, init?: RequestInit) =>
+        init?.method === "POST" ? new Response("{}", { status: 400 }) : new Response("nf", { status: 400 }),
+      ),
+    )
+    const res = await serveStoredCard({ key: "k.png", render: async () => card(NEW), fallback, waitUntil: () => {} })
+    expect(res.headers.get("X-Og-Card-Source")).toBe("rendered-not-stored")
+    expect(await bytesOf(res)).toEqual(Array.from(NEW))
+  })
+
   it("a storage outage degrades to rendering, never to an error", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("down") }))
     const res = await serveStoredCard({ key: "k.png", render: async () => card(NEW), fallback, waitUntil: () => {} })
@@ -140,7 +152,26 @@ describe("card content token", () => {
   it("tokens are what the routes accept, and the store key carries them", () => {
     expect(cleanCardToken(tokenOf(six))).toBe(tokenOf(six))
     expect(cleanCardToken("../x")).toBeNull()
-    expect(ogCardKey("trophy-case", "Trev", "dame-time", "abc")).toBe("trophy-case/trev/dame-time~abc.png")
-    expect(ogCardKey("profile", "Trev", null, "abc")).toBe("profile/trev~abc.png")
+    expect(ogCardKey("trophy-case", "Trev", "dame-time", "abc")).toBe("trophy-case/trev/dame-time.abc.png")
+    expect(ogCardKey("profile", "Trev", null, "abc")).toBe("profile/trev.abc.png")
+  })
+})
+
+// ⚠ 2026-11-07: the first tokened keys used `~`, which Supabase Storage refuses
+// (400). Every tokened card rendered, failed to store, and was served anyway —
+// so nothing looked wrong. Every key SHAPE must be one Storage accepts.
+describe("every store key is one Supabase Storage accepts", () => {
+  it("all kinds, with and without slug and token", () => {
+    const keys = [
+      ogCardKey("profile", "peanpean"),
+      ogCardKey("profile", "PeanPean", null, tokenOf([{ slot: 1, moment_id: "a" }])),
+      ogCardKey("trophy-case", "trev"),
+      ogCardKey("trophy-case", "trev", null, "1fock6c"),
+      ogCardKey("trophy-case", "trev", "dame-time"),
+      ogCardKey("trophy-case", "trev", "dame-time", "hdfilf"),
+      ogCardKey("challenge", "dame-time"),
+    ]
+    for (const k of keys) expect(k, k).toMatch(SUPABASE_STORAGE_KEY_RE)
+    expect("trophy-case/trev/dame-time~abc.png").not.toMatch(SUPABASE_STORAGE_KEY_RE) // the shape that shipped
   })
 })
