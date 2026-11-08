@@ -754,7 +754,8 @@ const PINS = [
     // 2026-09-29: floor = mainnet24 root; per-spork node routing, 25/node, 429 free.
     // 2026-10-02: 90 s on historical nodes (20261003023303) 503ed whole batches; reverted.
     // 2026-10-02 (#166): node faults (timeout, 5xx, no response) retry 12 times, others 4.
-    migration: "supabase/migrations/20261003045659_audit_20261002_pack_mint_probes_node_faults_retry_12_times.sql",
+    // 2026-11-08: floor raised to the mainnet27 root; Flow retired the mainnet24-26 nodes (DNS gone).
+    migration: "supabase/migrations/20261108164041_audit_20261108_pack_mint_probe_lane_floor_at_mainnet27.sql",
   },
   {
     // Added 2026-11-07. The forward TAIL that keeps pack_nft_mints current from the chain: one

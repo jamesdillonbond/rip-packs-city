@@ -18,7 +18,7 @@
 --
 -- The function DDL below is VERBATIM from the committed migration
 -- (supabase/migrations/20260926200000_audit_20260926_pack_nft_mints_name_packs_dapper_minted_straight_into_a_wallet.sql;
--- run_pack_mint_probe_lane from 20261003045659_audit_20261002_pack_mint_probes_node_faults_retry_12_times.sql).
+-- run_pack_mint_probe_lane from 20261108164041_audit_20261108_pack_mint_probe_lane_floor_at_mainnet27.sql).
 --
 -- 2026-09-29 additions: the floor is mainnet24's root (2023-11-08 / 65,264,619);
 --   6. each window goes to the node serving its spork and never crosses that
@@ -130,10 +130,16 @@ SET statement_timeout TO '110s'
 AS $function$
 DECLARE
   v_started   timestamptz := clock_timestamp();
-  -- 2026-09-29: the mainnet24 root. mainnet24-27 still serve events from
-  -- access-001.mainnet2N.nodes.onflow.org:8070; mainnet23 and older are gone.
-  v_floor     constant bigint := 65264619;
-  v_floor_at  constant timestamptz := '2023-11-08 00:00:00+00';
+  -- 2026-11-08: the mainnet27 root. Flow retired the mainnet24-26 access nodes
+  -- (#181: no DNS record; 2026-11-08 from ~3 AM PT every window routed there
+  -- failed "Couldn't resolve host name", ~37 of 40 per tick), so an instant
+  -- before this height has no node that can read it. mainnet27 still serves
+  -- events from access-001.mainnet27.nodes.onflow.org:8070; later heights
+  -- read rest-mainnet. (Was the mainnet24 root, 65264619 / 2023-11-08.)
+  v_floor     constant bigint := 130290659;
+  -- the date pre-filter only: a little before the root (the estimator puts it
+  -- between 12:00 and 24:00 UTC that day); the HEIGHT floor decides.
+  v_floor_at  constant timestamptz := '2025-10-22 12:00:00+00';
   v_per_node  constant int := 25;
   -- 2026-10-02: a node fault (timeout, 5xx, no response) is the node's, not the
   -- probe's: it may retry up to 12 times (~1 h at one try per tick); any other
@@ -280,10 +286,7 @@ BEGIN
        LIMIT 400
     ), n AS (
       SELECT p.*, row_number() OVER (
-               PARTITION BY CASE WHEN p.est_start <= 85981134  THEN 24
-                                 WHEN p.est_start <= 88226266  THEN 25
-                                 WHEN p.est_start <= 130290658 THEN 26
-                                 WHEN p.est_start <= 137390145 THEN 27 ELSE 28 END
+               PARTITION BY CASE WHEN p.est_start <= 137390145 THEN 27 ELSE 28 END
                ORDER BY p.priority DESC, p.probe_at DESC) AS rn
         FROM p
     )
@@ -301,15 +304,9 @@ BEGIN
       CONTINUE;
     END IF;
     -- the node serving the window's spork; a window never crosses a spork end
-    v_node := CASE WHEN v_start <= 85981134  THEN 'http://access-001.mainnet24.nodes.onflow.org:8070'
-                   WHEN v_start <= 88226266  THEN 'http://access-001.mainnet25.nodes.onflow.org:8070'
-                   WHEN v_start <= 130290658 THEN 'http://access-001.mainnet26.nodes.onflow.org:8070'
-                   WHEN v_start <= 137390145 THEN 'http://access-001.mainnet27.nodes.onflow.org:8070'
+    v_node := CASE WHEN v_start <= 137390145 THEN 'http://access-001.mainnet27.nodes.onflow.org:8070'
                    ELSE 'https://rest-mainnet.onflow.org' END;
-    v_end := CASE WHEN v_start <= 85981134  THEN least(v_start + 249, 85981134)
-                  WHEN v_start <= 88226266  THEN least(v_start + 249, 88226266)
-                  WHEN v_start <= 130290658 THEN least(v_start + 249, 130290658)
-                  WHEN v_start <= 137390145 THEN least(v_start + 249, 137390145)
+    v_end := CASE WHEN v_start <= 137390145 THEN least(v_start + 249, 137390145)
                   ELSE v_start + 249 END;
     SELECT net.http_get(
       url := v_node || '/v1/events?type='
@@ -345,9 +342,11 @@ $function$;
 -- Anchors: 1,190 blocks over 1,000 s from 2026-04-24 11:00 UTC.
 INSERT INTO public.topshot_pack_sales_history VALUES
   (140000000, '2026-04-24 11:00:00+00'), (140001190, '2026-04-24 11:16:40+00'),
-  -- mainnet26 anchors: 2025-01-01, and the spork's last minutes (ends 130,290,658)
-  (100000000, '2025-01-01 00:00:00+00'), (100001190, '2025-01-01 00:16:40+00'),
-  (130290500, '2025-09-01 00:00:00+00'), (130291690, '2025-09-01 00:16:40+00');
+  -- 2026-11-08 re-base: mainnet26's last minutes (below the mainnet27-root floor),
+  -- a mainnet27 instant, and mainnet27's last minutes (ends 137,390,145)
+  (130290000, '2025-10-22 12:00:00+00'), (130291190, '2025-10-22 12:16:40+00'),
+  (131000000, '2025-11-01 00:00:00+00'), (131001190, '2025-11-01 00:16:40+00'),
+  (137389987, '2026-01-15 00:00:00+00'), (137391177, '2026-01-15 00:16:40+00');
 INSERT INTO public.saved_wallets VALUES ('0xBD94CADE097E50AC');
 INSERT INTO public.pack_nft_identity VALUES
   ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P1', '0xbd94cade097e50ac', '2026-04-24 11:08:20.118+00'),  -- saved wallet, T+500 s
@@ -356,29 +355,32 @@ INSERT INTO public.pack_nft_identity VALUES
   ('dee28451-5d62-409e-a1ad-a83f763ac070', 'A4', '0x1111111111111111', '2026-04-24 11:08:20.118+00'),  -- All Day, same instant
   ('06248cc4-b85f-47cd-af67-1855d14acd75', 'G1', '0x1111111111111111', '2026-04-24 11:08:20.118+00'),  -- Golazos: not probed
   ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P5', '0x1111111111111111', '2023-06-01 00:00:00+00'),      -- before the floor date
-  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P6', '0x1111111111111111', '2023-11-08 12:00:00+00'),      -- estimate below the floor height
-  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P7', '0x1111111111111111', '2025-01-01 00:08:20+00'),      -- mainnet26, est 100000595
-  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P8', '0x1111111111111111', '2025-09-01 00:01:40+00');      -- est 130290619: window hits mainnet26's end
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P6', '0x1111111111111111', '2025-10-22 12:05:00+00'),      -- after the floor date, est 130290357: below the floor height
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P7', '0x1111111111111111', '2025-01-01 00:08:20+00'),      -- mainnet26 (retired): before the floor date, never probed
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P10', '0x1111111111111111', '2025-11-01 00:08:20+00'),     -- mainnet27, est 131000595
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P8', '0x1111111111111111', '2026-01-15 00:01:40+00');      -- est 137390106: window hits mainnet27's end
 
 -- claims 1 + 2
 DO $$
 DECLARE v jsonb;
 BEGIN
   v := public.run_pack_mint_probe_lane();
-  PERFORM _assert_eq(v->>'enqueued', '6', 'TS x5 instants + AD x1; Golazos and pre-floor-date rows are not probes');
+  PERFORM _assert_eq(v->>'enqueued', '6', 'TS x5 instants + AD x1; Golazos and pre-floor-date rows (P5, P7) are not probes');
   PERFORM _assert_eq(v->>'dispatched', '5', 'five probes dispatched');
-  PERFORM _assert_eq(v->>'below_floor', '1', 'the 2023-11-08 12:00 instant estimates below the spork floor');
+  PERFORM _assert_eq(v->>'below_floor', '1', 'an instant in mainnet26''s last minutes estimates below the mainnet27-root floor');
   PERFORM _assert((SELECT count(*) = 1 FROM net.calls WHERE url =
-                    'http://access-001.mainnet26.nodes.onflow.org:8070/v1/events?type=A.0b2a3299cc857e29.PackNFT.Minted&start_height=100000470&end_height=100000719'),
-                  'a 2025 instant reads the mainnet26 node (claim 6)');
+                    'http://access-001.mainnet27.nodes.onflow.org:8070/v1/events?type=A.0b2a3299cc857e29.PackNFT.Minted&start_height=131000470&end_height=131000719'),
+                  'a mainnet27 instant reads the mainnet27 node (claim 6)');
   PERFORM _assert((SELECT count(*) = 1 FROM net.calls WHERE url =
-                    'http://access-001.mainnet26.nodes.onflow.org:8070/v1/events?type=A.0b2a3299cc857e29.PackNFT.Minted&start_height=130290494&end_height=130290658'),
-                  'a window reaching past mainnet26''s last height is cut at it (claim 6)');
+                    'http://access-001.mainnet27.nodes.onflow.org:8070/v1/events?type=A.0b2a3299cc857e29.PackNFT.Minted&start_height=137389981&end_height=137390145'),
+                  'a window reaching past mainnet27''s last height is cut at it (claim 6)');
+  PERFORM _assert((SELECT count(*) = 0 FROM net.calls WHERE url ~ 'mainnet2[456]'),
+                  'no request ever goes to a retired mainnet24-26 node (2026-11-08)');
   PERFORM _assert((SELECT priority = 1 FROM public.pack_mint_probes
                     WHERE collection_id = '95f28a17-224a-4025-96ad-adf8a4c63bfd' AND probe_at = '2026-04-24 11:08:20.118+00'),
                   'a saved wallet''s instant is priority 1 (case-folded address)');
   PERFORM _assert((SELECT status = 'failed' AND last_error = 'below the Flow spork floor' AND request_id IS NULL
-                     FROM public.pack_mint_probes WHERE probe_at = '2023-11-08 12:00:00+00'),
+                     FROM public.pack_mint_probes WHERE probe_at = '2025-10-22 12:05:00+00'),
                   'below the floor: failed with its reason, never dispatched');
   PERFORM _assert((SELECT url FROM net.calls ORDER BY id LIMIT 1)
                    = 'https://rest-mainnet.onflow.org/v1/events?type=A.0b2a3299cc857e29.PackNFT.Minted&start_height=140000470&end_height=140000719',
@@ -417,7 +419,7 @@ SELECT p.request_id, 503, 'upstream unavailable', NULL
 FROM public.pack_mint_probes p WHERE p.collection_id = 'dee28451-5d62-409e-a1ad-a83f763ac070';
 INSERT INTO net._http_response
 SELECT p.request_id, 429, 'Too Many Requests', NULL
-FROM public.pack_mint_probes p WHERE p.probe_at = '2025-01-01 00:08:20+00';
+FROM public.pack_mint_probes p WHERE p.probe_at = '2025-11-01 00:08:20+00';
 
 -- claims 3, 4, 5
 DO $$
@@ -442,7 +444,7 @@ BEGIN
                      FROM public.pack_mint_probes WHERE collection_id = 'dee28451-5d62-409e-a1ad-a83f763ac070'),
                   'an HTTP failure retries with its error');
   PERFORM _assert((SELECT attempts = 0 AND last_error = 'http 429' AND status IN ('pending', 'in_flight')
-                     FROM public.pack_mint_probes WHERE probe_at = '2025-01-01 00:08:20+00'),
+                     FROM public.pack_mint_probes WHERE probe_at = '2025-11-01 00:08:20+00'),
                   'a 429 is retried without counting an attempt (claim 8)');
   PERFORM _assert_eq(v->>'throttled', '1', 'the 429 is reported as throttled');
 END $$;
@@ -466,11 +468,11 @@ END $$;
 -- claim 9 (2026-10-02, #166): a node fault (timeout, 5xx, no response) retries
 -- up to 12 attempts; any other failure keeps the cap of 4.
 INSERT INTO public.pack_mint_probes (collection_id, probe_at, status, start_height, request_id, attempts, dispatched_at) VALUES
-  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', '2025-06-01 00:00:01+00', 'in_flight', 100000000, 990001, 3,  now()),
-  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', '2025-06-01 00:00:02+00', 'in_flight', 100000000, 990002, 11, now()),
-  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', '2025-06-01 00:00:03+00', 'in_flight', 100000000, 990003, 3,  now()),
-  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', '2025-06-01 00:00:04+00', 'in_flight', 100000000, 990004, 3,  now() - interval '31 minutes'),
-  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', '2025-06-01 00:00:05+00', 'in_flight', 100000000, 990005, 3,  now());
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', '2025-06-01 00:00:01+00', 'in_flight', 131000000, 990001, 3,  now()),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', '2025-06-01 00:00:02+00', 'in_flight', 131000000, 990002, 11, now()),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', '2025-06-01 00:00:03+00', 'in_flight', 131000000, 990003, 3,  now()),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', '2025-06-01 00:00:04+00', 'in_flight', 131000000, 990004, 3,  now() - interval '31 minutes'),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', '2025-06-01 00:00:05+00', 'in_flight', 131000000, 990005, 3,  now());
 INSERT INTO net._http_response VALUES
   (990001, NULL, NULL, 'Timeout of 20000 ms reached. Total time: 20000.1 ms'),
   (990002, 503, 'upstream connect error or disconnect/reset before headers', NULL),
@@ -496,16 +498,33 @@ BEGIN
                   'a 4th empty-body answer still fails at the cap of 4 (claim 9)');
 END $$;
 
--- claim 7: 30 pending mainnet26 instants -> at most 25 dispatched in one tick
+-- claim 7: 30 pending mainnet27 instants -> at most 25 dispatched in one tick
 INSERT INTO public.pack_mint_probes (collection_id, probe_at)
-SELECT '95f28a17-224a-4025-96ad-adf8a4c63bfd', '2025-01-01 00:10:00+00'::timestamptz + g * interval '1 second'
+SELECT '95f28a17-224a-4025-96ad-adf8a4c63bfd', '2025-11-01 00:10:00+00'::timestamptz + g * interval '1 second'
 FROM generate_series(1, 30) g;
 DELETE FROM net.calls;
 DO $$
 BEGIN
   PERFORM public.run_pack_mint_probe_lane();
-  PERFORM _assert((SELECT count(*) = 25 FROM net.calls WHERE url LIKE 'http://access-001.mainnet26.%'),
+  PERFORM _assert((SELECT count(*) = 25 FROM net.calls WHERE url LIKE 'http://access-001.mainnet27.%'),
                   'at most 25 dispatches to one node per tick');
+END $$;
+
+-- claim 11 (2026-11-08): a probe whose STORED start height is below the floor - a
+-- window aimed at a retired mainnet24-26 node before the floor moved, back to
+-- pending after its DNS failure - is closed with the reason and never re-sent.
+INSERT INTO public.pack_mint_probes (collection_id, probe_at, status, start_height, attempts, last_error)
+VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', '2025-02-02 00:00:00+00', 'pending', 100000000, 1, 'Couldn''t resolve host name');
+UPDATE public.pack_mint_probes SET priority = 9 WHERE probe_at = '2025-02-02 00:00:00+00';
+DELETE FROM net.calls;
+DO $$
+BEGIN
+  PERFORM public.run_pack_mint_probe_lane();
+  PERFORM _assert((SELECT status = 'failed' AND last_error = 'below the Flow spork floor' AND finished_at IS NOT NULL
+                     FROM public.pack_mint_probes WHERE probe_at = '2025-02-02 00:00:00+00'),
+                  'claim 11: a stored below-floor start height is closed with its reason');
+  PERFORM _assert((SELECT count(*) = 0 FROM net.calls WHERE url LIKE '%start_height=100000000%'),
+                  'claim 11: and never dispatched');
 END $$;
 
 -- claim 10 (2026-11-07): a chain anchor nearer than Studio's last row wins; Studio's
