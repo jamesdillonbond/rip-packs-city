@@ -19,6 +19,7 @@ import RpcLogo from "@/components/RpcLogo";
 import TrophySlab, { type TrophySlabData } from "@/components/TrophySlab";
 import ShareProfileButtons from "@/components/profile/ShareProfileButtons";
 import { accentFill, accentText, labelOn } from "@/lib/accent-text"
+import { challengeEntryHref } from "@/lib/trophy/challenge-link"
 
 const MONO = "var(--font-mono)";
 const DISPLAY = "var(--font-display)";
@@ -29,7 +30,11 @@ export default function TrophyCaseShareClient({
   accentColor,
   trophies,
   readFailed,
+  challenge = null,
 }: {
+  /** Set on /profile/<u>/trophy-case/<slug>: this page is ONE challenge entry
+   *  (e.g. Dame Time), not the main case — its title, its share link, its CTA. */
+  challenge?: { slug: string; title: string } | null;
   username: string;
   displayName: string;
   accentColor: string | null;
@@ -136,7 +141,7 @@ export default function TrophyCaseShareClient({
               textTransform: "uppercase",
             }}
           >
-            🏆 Trophy Case
+            🏆 {challenge ? challenge.title : "Trophy Case"}
           </div>
           <h1
             style={{
@@ -177,7 +182,7 @@ export default function TrophyCaseShareClient({
               padding: "48px 0",
             }}
           >
-            Couldn&rsquo;t load this trophy case. Refresh to try again.
+            Couldn&rsquo;t load this {challenge ? `${challenge.title} case` : "trophy case"}. Refresh to try again.
           </div>
         ) : slabs.length === 0 ? (
           <div
@@ -189,11 +194,11 @@ export default function TrophyCaseShareClient({
               padding: "48px 0",
             }}
           >
-            No trophies pinned yet.
+            {challenge ? `No ${challenge.title} pieces pinned yet.` : "No trophies pinned yet."}
             {isOwner && (
               <div style={{ marginTop: 14 }}>
                 <Link
-                  href="/dashboard"
+                  href={challenge ? challengeEntryHref(challenge.slug) : "/dashboard"}
                   data-owner-empty-cta
                   style={{ color: accentText(accent), textDecoration: "underline", textUnderlineOffset: 4, fontSize: 12 }}
                 >
@@ -238,12 +243,21 @@ export default function TrophyCaseShareClient({
               username={username}
               trophyCount={slabs.length}
               surface="trophy-case"
+              challenge={challenge}
               referrerId={viewerId}
               compact
             />
           )}
+          {challenge && (
+            <Link
+              href={`/trophy-challenges/${challenge.slug}`}
+              style={{ fontFamily: MONO, fontSize: 11, letterSpacing: "0.1em", color: "var(--rpc-text-muted)" }}
+            >
+              See every {challenge.title} entry →
+            </Link>
+          )}
           <Link
-            href="/dashboard"
+            href={challenge ? challengeEntryHref(challenge.slug) : "/dashboard"}
             className="rpc-btn-primary"
             style={{
               textDecoration: "none",
@@ -256,7 +270,13 @@ export default function TrophyCaseShareClient({
               color: labelOn(accent),
             }}
           >
-            {isOwner ? "EDIT YOUR TROPHY CASE →" : "BUILD YOUR OWN TROPHY CASE →"}
+            {challenge
+              ? isOwner
+                ? `EDIT YOUR ${challenge.title.toUpperCase()} CASE →`
+                : `ENTER ${challenge.title.toUpperCase()} →`
+              : isOwner
+                ? "EDIT YOUR TROPHY CASE →"
+                : "BUILD YOUR OWN TROPHY CASE →"}
           </Link>
         </div>
       </main>

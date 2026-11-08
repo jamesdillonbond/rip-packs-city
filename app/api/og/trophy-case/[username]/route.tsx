@@ -32,6 +32,8 @@ import { editionKey, trophyMarks, type TrophyMark } from "@/lib/og/trophy-marks"
 import { withOfficialArt } from "@/lib/og/official-mark-art"
 import { trophyDetail } from "@/lib/og/trophy-detail"
 import { getPublicProfile } from "@/lib/profile/public-profile"
+import { getPublicChallengeCase } from "@/lib/trophy/public-challenge-case"
+import { isChallengeSlug } from "@/lib/trophy/challenge-link"
 import { borderCosmetic } from "@/lib/cosmetics"
 import { tierAccent, hiResThumb } from "@/lib/trophy/slab-style"
 import { brandFonts, brandFamilies, OG_CACHE_HEADERS, ogCacheHeaders, type OgFont } from "@/lib/og/brand-fonts"
@@ -129,7 +131,7 @@ function renderFallback(fonts?: OgFont[], display = "sans-serif") {
 }
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ username: string }> },
 ) {
   const fonts = await brandFonts()
@@ -143,7 +145,22 @@ export async function GET(
     const result = await getPublicProfile(username, "og-trophy-case")
     if (!result.ok) return renderFallback(fonts, fam.display)
 
-    const { bio, trophies } = result.data
+    const { bio } = result.data
+    let { trophies } = result.data
+
+    // ── `?case=<challenge slug>`: ONE challenge entry's card (2026-11-07) ──
+    // The share page /profile/<u>/trophy-case/<slug> points here. ⚠ NEVER
+    // SUBSTITUTE: an unread entry, a bad slug or no entry draws the neutral
+    // fallback — never the MAIN case wearing the challenge's name.
+    let pillLabel = "TROPHY CASE"
+    const caseSlug = req.nextUrl?.searchParams.get("case")?.trim().toLowerCase() ?? ""
+    if (caseSlug) {
+      if (!isChallengeSlug(caseSlug)) return renderFallback(fonts, fam.display)
+      const entryRead = await getPublicChallengeCase(username, caseSlug)
+      if (!entryRead.ok || !entryRead.entry) return renderFallback(fonts, fam.display)
+      trophies = entryRead.entry.slabs
+      pillLabel = entryRead.entry.challenge.title.toUpperCase()
+    }
     const accent = (bio.accent_color || FALLBACK_ACCENT).trim() || FALLBACK_ACCENT
     const border = borderCosmetic(bio.equipped_border)
     const displayName = (bio.display_name || username).toUpperCase()
@@ -357,7 +374,7 @@ export async function GET(
                 letterSpacing: 4,
               }}
             >
-              TROPHY CASE
+              {pillLabel}
             </div>
           </div>
 

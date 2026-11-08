@@ -29,3 +29,22 @@ export function challengeFocusFromUrl(search: string, hash: string): string | nu
   const m = /^challenge-([a-z0-9-]{1,80})$/.exec(h)
   return m ? m[1] : null
 }
+
+/**
+ * The SHAREABLE page of one collector's challenge entry (2026-11-07):
+ * `/profile/<username>/trophy-case/<slug>` — its own page and its own social
+ * card, so a pasted link unfurls as THEIR Dame Time case, not their profile.
+ */
+export function challengeCaseSharePath(username: string, slug: string): string {
+  return `/profile/${encodeURIComponent(username)}/trophy-case/${encodeURIComponent(slug)}`
+}
+
+/** The social card for that page. */
+export function challengeCaseOgPath(username: string, slug: string): string {
+  return `/api/og/trophy-case/${encodeURIComponent(username)}?case=${encodeURIComponent(slug)}`
+}
+
+/** A challenge slug as the DB constrains it (`^[a-z0-9]+(-[a-z0-9]+)*$`, ≤ 60). */
+export function isChallengeSlug(s: string): boolean {
+  return s.length <= 60 && /^[a-z0-9]+(-[a-z0-9]+)*$/.test(s)
+}

@@ -158,6 +158,26 @@ describe("TrophyCasesPanel (owner dashboard)", () => {
     }
   })
 
+  it("an entry with pieces + a public handle offers Share — pointing at THAT entry's page; no handle or nothing pinned, no share", async () => {
+    routes["GET /api/profile/trophy-cases"] = () =>
+      ok({ cases: [{ id: CASE, name: "Dame Time", created_at: "", completed_at: null, challenge: DAME, slabs: [slab(1)] }], challenges: [], board_username: "trev", board_username_known: true })
+    render(<TrophyCasesPanel ownerKey={null} savedChains={null} onToast={() => {}} />)
+    const share = await screen.findByTestId("challenge-share")
+    expect(share.querySelector("a")!.getAttribute("href")).toBe("/profile/trev/trophy-case/dame-time")
+    cleanup()
+    routes["GET /api/profile/trophy-cases"] = () =>
+      ok({ cases: [{ id: CASE, name: "Dame Time", created_at: "", completed_at: null, challenge: DAME, slabs: [slab(1)] }], challenges: [], board_username: null, board_username_known: true })
+    render(<TrophyCasesPanel ownerKey={null} savedChains={null} onToast={() => {}} />)
+    await screen.findByText("Dame Time")
+    expect(screen.queryByTestId("challenge-share")).toBeNull()
+    cleanup()
+    routes["GET /api/profile/trophy-cases"] = () =>
+      ok({ cases: [{ id: CASE, name: "Dame Time", created_at: "", completed_at: null, challenge: DAME, slabs: [] }], challenges: [], board_username: "trev", board_username_known: true })
+    render(<TrophyCasesPanel ownerKey={null} savedChains={null} onToast={() => {}} />)
+    await screen.findByText("Dame Time")
+    expect(screen.queryByTestId("challenge-share")).toBeNull()
+  })
+
   it("does not offer a challenge already entered; a null challenge list offers nothing", async () => {
     routes["GET /api/profile/trophy-cases"] = () =>
       ok({ cases: [{ id: CASE, name: "Dame Time", created_at: "", completed_at: null, challenge: DAME, slabs: [] }], challenges: [DAME] })

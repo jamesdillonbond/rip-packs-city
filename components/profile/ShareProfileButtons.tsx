@@ -30,6 +30,7 @@
 // composer the user submits themselves.
 
 import { useCallback, useMemo, useState } from "react";
+import { challengeCaseOgPath, challengeCaseSharePath } from "@/lib/trophy/challenge-link";
 
 const DISPLAY = "var(--font-display)";
 // White label text goes on the FILL token, not the raw brand red (4.36:1 <
@@ -38,7 +39,11 @@ const RED_FILL = "var(--rpc-red-fill)";
 
 export type ShareSurface = "profile" | "trophy-case";
 
-function sharePath(username: string, surface: ShareSurface): string {
+/** A challenge entry (e.g. Dame Time) shares ITS page and card, not the main case's (2026-11-07). */
+export type ShareChallenge = { slug: string; title: string } | null | undefined;
+
+function sharePath(username: string, surface: ShareSurface, challenge?: ShareChallenge): string {
+  if (surface === "trophy-case" && challenge) return challengeCaseSharePath(username, challenge.slug);
   const base = `/profile/${encodeURIComponent(username)}`;
   return surface === "trophy-case" ? `${base}/trophy-case` : base;
 }
@@ -48,13 +53,14 @@ function profileUrl(
   medium: string,
   referrerId?: string | null,
   surface: ShareSurface = "profile",
+  challenge?: ShareChallenge,
 ): string {
   const origin =
     typeof window !== "undefined"
       ? window.location.origin
       : "https://www.rippackscity.com";
   const ref = referrerId ? `&ref=${encodeURIComponent(referrerId)}` : "";
-  return `${origin}${sharePath(username, surface)}?utm_source=share&utm_medium=${medium}${ref}`;
+  return `${origin}${sharePath(username, surface, challenge)}?utm_source=share&utm_medium=${medium}${ref}`;
 }
 
 // The social card behind a shared URL is rendered on first request and takes
@@ -62,10 +68,12 @@ function profileUrl(
 // fetcher does not wait that long, so the first person to post a fresh case
 // could get a link with no picture. Warm it the moment the user reaches for
 // the share button — the intent composer opens on top while this runs.
-function prewarmCard(username: string, surface: ShareSurface): void {
+function prewarmCard(username: string, surface: ShareSurface, challenge?: ShareChallenge): void {
   if (typeof window === "undefined" || typeof fetch !== "function") return;
   const og =
-    surface === "trophy-case"
+    surface === "trophy-case" && challenge
+      ? challengeCaseOgPath(username, challenge.slug)
+      : surface === "trophy-case"
       ? `/api/og/trophy-case/${encodeURIComponent(username)}`
       : `/api/og/profile/${encodeURIComponent(username)}`;
   try {
@@ -83,7 +91,10 @@ export default function ShareProfileButtons({
   compact,
   referrerId,
   surface,
+  challenge,
 }: {
+  /** Share one challenge entry's page (surface "trophy-case" only). */
+  challenge?: ShareChallenge;
   username: string;
   fmv?: number | null;
   moments?: number | null;
@@ -122,6 +133,10 @@ export default function ShareProfileButtons({
         ? ` My trophy case${trophyCount < 6 ? "" : " (all 6 slots)"} is up:`
         : "";
     const cta = referrerId ? " See how yours stacks up 👇" : "";
+    if (shareSurface === "trophy-case" && challenge) {
+      const n = trophyCount && trophyCount > 0 ? trophyCount : null;
+      return `My ${challenge.title} trophy case on @RipPacksCity${n ? ` — ${n} of 6 filled` : ""}.${cta || " 👇"}`;
+    }
     if (shareSurface === "trophy-case") {
       // The card the link unfurls into IS the trophy case, so lead with it.
       const n = trophyCount && trophyCount > 0 ? trophyCount : null;
@@ -129,7 +144,7 @@ export default function ShareProfileButtons({
       return `My trophy case on @RipPacksCity — ${what} I chose to show off${stat}.${cta || " 👇"}`;
     }
     return `My collection on @RipPacksCity${stat}.${trophies}${cta}`;
-  }, [fmv, moments, referrerId, trophyCount, shareSurface]);
+  }, [fmv, moments, referrerId, trophyCount, shareSurface, challenge]);
 
   // Fire-and-forget reward. The endpoint is session-resolved + DB-capped, so a
   // repeat same-day click is a harmless no-op ({ awarded:false }). 401 (anon)
@@ -145,18 +160,18 @@ export default function ShareProfileButtons({
   }, []);
 
   const shareX = useCallback(() => {
-    const url = profileUrl(username, "x", referrerId, shareSurface);
+    const url = profileUrl(username, "x", referrerId, shareSurface, challenge);
     const intent = `https://twitter.com/intent/tweet?text=${encodeURIComponent(
       tweetText,
     )}&url=${encodeURIComponent(url)}`;
-    prewarmCard(username, shareSurface);
+    prewarmCard(username, shareSurface, challenge);
     track();
     window.open(intent, "_blank", "noopener,noreferrer");
-  }, [username, tweetText, track, referrerId, shareSurface]);
+  }, [username, tweetText, track, referrerId, shareSurface, challenge]);
 
   const copy = useCallback(async () => {
-    const url = profileUrl(username, "copy", referrerId, shareSurface);
-    prewarmCard(username, shareSurface);
+    const url = profileUrl(username, "copy", referrerId, shareSurface, challenge);
+    prewarmCard(username, shareSurface, challenge);
     try {
       await navigator.clipboard.writeText(url);
       setCopied(true);
@@ -165,7 +180,7 @@ export default function ShareProfileButtons({
       // clipboard can be blocked — non-fatal.
     }
     track();
-  }, [username, track, referrerId, shareSurface]);
+  }, [username, track, referrerId, shareSurface, challenge]);
 
   const btn: React.CSSProperties = {
     padding: compact ? "8px 14px" : "10px 18px",

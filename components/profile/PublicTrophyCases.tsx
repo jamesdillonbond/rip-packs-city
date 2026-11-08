@@ -13,6 +13,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import TrophySlab from "@/components/TrophySlab";
 import { slotsOf, type TrophyCaseData } from "@/components/profile/TrophyCasesPanel";
+import { challengeCaseSharePath } from "@/lib/trophy/challenge-link";
 
 const condensedFont = "var(--font-display)";
 const monoFont = "var(--font-mono)";
@@ -76,6 +77,14 @@ export default function PublicTrophyCases({ username }: { username: string }) {
             <span style={{ fontFamily: monoFont, fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.15em" }}>
               {c.slabs.length} / 6
             </span>
+            {c.challenge && (
+              <Link
+                href={challengeCaseSharePath(username, c.challenge.slug)}
+                style={{ fontFamily: monoFont, fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--rpc-text-muted)" }}
+              >
+                Open · share →
+              </Link>
+            )}
           </div>
           <div className="rpc-pubcase-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 16 }}>
             {slotsOf(c.slabs).map((s, i) => (

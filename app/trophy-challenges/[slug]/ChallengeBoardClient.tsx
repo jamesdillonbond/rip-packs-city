@@ -11,7 +11,7 @@ import Link from "next/link"
 import { useEffect, useState } from "react"
 import TrophySlab, { type TrophySlabData } from "@/components/TrophySlab"
 import { slotsOf } from "@/components/profile/TrophyCasesPanel"
-import { challengeEntryHref } from "@/lib/trophy/challenge-link"
+import { challengeCaseSharePath, challengeEntryHref } from "@/lib/trophy/challenge-link"
 
 const condensedFont = "var(--font-display)"
 const monoFont = "var(--font-mono)"
@@ -134,6 +134,14 @@ export default function ChallengeBoardClient({ slug }: { slug: string }) {
                     the live count decides. */}
                 {e.slab_count} / 6{e.slab_count >= 6 ? " · complete" : ""}
               </span>
+              {/* This entry's own share page (and card) — the handle above still
+                  goes to the whole profile. */}
+              <Link
+                href={challengeCaseSharePath(e.username, slug)}
+                style={{ fontFamily: monoFont, fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--rpc-text-muted)" }}
+              >
+                Open · share →
+              </Link>
             </div>
             <div className="rpc-chal-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 16 }}>
               {slotsOf(e.slabs ?? []).map((s, i) => (

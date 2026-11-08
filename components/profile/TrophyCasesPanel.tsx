@@ -20,7 +20,8 @@ import TrophyNoteEditor from "@/components/profile/TrophyNoteEditor";
 import { apiErrorMessage } from "@/lib/api-error-message";
 import { MAX_CASE_NAME_LEN, MAX_EXTRA_CASES } from "@/lib/trophy/cases";
 import { parseChallengeRules } from "@/lib/trophy/challenge-rules";
-import { challengeAnchorId, challengeFocusFromUrl } from "@/lib/trophy/challenge-link";
+import { challengeAnchorId, challengeCaseSharePath, challengeFocusFromUrl } from "@/lib/trophy/challenge-link";
+import ShareProfileButtons from "@/components/profile/ShareProfileButtons";
 
 const condensedFont = "var(--font-display)";
 // A visitor taking the wheel ends the deep-link re-alignment.
@@ -50,7 +51,7 @@ export interface TrophyCaseData {
 type Load =
   | { state: "loading" }
   | { state: "failed" }
-  | { state: "ok"; cases: TrophyCaseData[]; challenges: TrophyChallengeInfo[] | null; board: BoardListing };
+  | { state: "ok"; cases: TrophyCaseData[]; challenges: TrophyChallengeInfo[] | null; board: BoardListing; username: string | null };
 
 /**
  * Whether a challenge entry can appear on the public board, which lists only
@@ -127,6 +128,9 @@ export default function TrophyCasesPanel({
         cases: Array.isArray(d?.cases) ? d.cases : [],
         challenges: Array.isArray(d?.challenges) ? d.challenges : null,
         board: boardListingOf(d),
+        // The owner's public handle — the share link is /profile/<it>/… — or
+        // null (none set, or unknown): then no share link is offered.
+        username: typeof d?.board_username === "string" && d.board_username ? d.board_username : null,
       });
     } catch {
       setLoad((prev) => (prev.state === "ok" ? prev : { state: "failed" }));
@@ -297,6 +301,7 @@ export default function TrophyCasesPanel({
           c={c}
           focused={!!c.challenge && c.challenge.slug === focusSlug}
           board={load.board}
+          username={load.username}
           busy={busy}
           onPick={(slot) => setPick({ c, slot })}
           onRemove={(slot) =>
@@ -386,6 +391,7 @@ function CaseBlock({
   c,
   focused,
   board,
+  username,
   busy,
   onPick,
   onRemove,
@@ -395,6 +401,7 @@ function CaseBlock({
 }: {
   c: TrophyCaseData;
   board: BoardListing;
+  username: string | null;
   busy: boolean;
   onPick: (slot: number) => void;
   onRemove: (slot: number) => void;
@@ -486,6 +493,29 @@ function CaseBlock({
       {ch?.description && (
         <div style={{ fontFamily: monoFont, fontSize: 11, color: "var(--rpc-text-muted)", marginBottom: 10, lineHeight: 1.5 }}>
           {ch.description}
+        </div>
+      )}
+      {/* Share THIS entry: its own page + card (/profile/<u>/trophy-case/<slug>).
+          Only with something pinned and a public handle to build the URL on —
+          a share of an empty case, or of a page that cannot exist, is no share. */}
+      {ch && filled > 0 && username && (
+        <div
+          data-testid="challenge-share"
+          style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 12 }}
+        >
+          <ShareProfileButtons
+            username={username}
+            trophyCount={filled}
+            surface="trophy-case"
+            challenge={{ slug: ch.slug, title: ch.title }}
+            compact
+          />
+          <Link
+            href={challengeCaseSharePath(username, ch.slug)}
+            style={{ fontFamily: monoFont, fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--rpc-text-muted)" }}
+          >
+            View share page →
+          </Link>
         </div>
       )}
       <div className="rpc-xcase-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 16 }}>
