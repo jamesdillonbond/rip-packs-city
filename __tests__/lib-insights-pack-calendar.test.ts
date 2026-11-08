@@ -261,3 +261,34 @@ describe("Pinnacle Open Editions", () => {
     await expect(cal(fakeSb({ ...base, "rpc:get_pinnacle_open_edition_drops": { error: { message: "denied" } } }), NOW)).rejects.toThrow(/get_pinnacle_open_edition_drops: denied/)
   })
 })
+
+describe("a delivered pre-order or draw is over", () => {
+  const state = [
+    { product: "nba", last_complete_pass_started_at: "2026-11-08T19:45:00Z", last_complete_at: "2026-11-08T19:50:00Z" },
+    { product: "nfl", last_complete_pass_started_at: "2026-11-08T19:45:00Z", last_complete_at: "2026-11-08T19:49:00Z" },
+    { product: "disney", last_complete_pass_started_at: "2026-11-08T19:45:00Z", last_complete_at: "2026-11-08T19:46:00Z" },
+  ]
+  // Pinnacle "Stitch in Costume Vol.1": draw requests closed 11-06 9 AM PT and it sold out, yet Atlas's
+  // end_time is the leftover waiting room's (11-13). Its packs were minted to winners on 11-06.
+  const stitch = row({ product: "disney", dist_id: "8912", title: "Stitch in Costume Vol.1", start_time: "2026-10-30T18:00:00Z", end_time: "2026-11-13T17:00:00Z" })
+
+  it("packs already minted to collectors → ended, with the first mint as its end; none minted → still open", async () => {
+    const sb = fakeSb({
+      atlas_pack_market_state: { data: state },
+      atlas_pack_market: { data: [stitch] },
+      panini_pack_drops: { data: freshPanini },
+      pack_nft_mints: { data: [{ minted_at: "2026-11-06T17:20:00Z" }] },
+    })
+    const r = await cal(sb, NOW)
+    expect(r.drops.find((d) => d.dist_id === "8912")).toMatchObject({ status: "ended", end_time: "2026-11-06T17:20:00.000Z" })
+
+    const r2 = await cal(fakeSb({ atlas_pack_market_state: { data: state }, atlas_pack_market: { data: [stitch] }, panini_pack_drops: { data: freshPanini } }), NOW)
+    expect(r2.drops.find((d) => d.dist_id === "8912")?.status).toBe("open")
+  })
+
+  it("a failed mint read throws — never posts a possibly-over draw as open", async () => {
+    await expect(
+      cal(fakeSb({ atlas_pack_market_state: { data: state }, atlas_pack_market: { data: [stitch] }, panini_pack_drops: { data: freshPanini }, pack_nft_mints: { error: { message: "timeout" } } }), NOW),
+    ).rejects.toThrow(/pack_nft_mints\(8912\): timeout/)
+  })
+})

@@ -295,6 +295,37 @@ async function readCandy(fetchImpl: typeof fetch, now: Date): Promise<{ ok: bool
   }
 }
 
+// ── Delivered pre-orders / draws ──────────────────────────────────────────────────────
+// A pre-order (Top Shot) or timed draw (Pinnacle) is OVER once Dapper has minted its packs into
+// collectors' wallets — PackNFT.Minted, in pack_nft_mints. Atlas's end_time does not say so: for
+// Pinnacle it is the leftover WAITING ROOM's end (Stitch in Costume Vol.1: requests closed 11-06
+// 9 AM PT, sold out, yet end_time read 11-13 — verified on disneypinnacle.com/releases 2026-11-08).
+const PACK_MINT_COLLECTION: Partial<Record<PackCalendarDrop["collection"], string>> = {
+  nba_top_shot: "95f28a17-224a-4025-96ad-adf8a4c63bfd",
+  disney_pinnacle: "7dd9dd11-e8b6-45c4-ac99-71331f959714",
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function markDeliveredDraws(sb: any, drops: PackCalendarDrop[]): Promise<void> {
+  for (const d of drops) {
+    const coll = PACK_MINT_COLLECTION[d.collection]
+    if (d.kind !== "rsvp" || d.status !== "open" || !coll) continue
+    const { data, error } = await sb
+      .from("pack_nft_mints")
+      .select("minted_at")
+      .eq("collection_id", coll)
+      .eq("dist_id", d.dist_id)
+      .order("minted_at", { ascending: true })
+      .limit(1)
+    if (error) throw new Error(`pack_nft_mints(${d.dist_id}): ${error.message}`)
+    const first = (data ?? [])[0]?.minted_at
+    if (first) {
+      d.status = "ended"
+      d.end_time = new Date(first).toISOString()
+    }
+  }
+}
+
 // Top Shot and All Day are always expected; a missing state row for them is an unread book.
 const REQUIRED: PackCalendarProduct[] = ["nba", "nfl"]
 
@@ -370,6 +401,8 @@ export async function fetchPackCalendar(sb: any, now = new Date(), fetchImpl: ty
   const candy = await readCandy(fetchImpl, now)
   complete_at.candy = candy.ok ? now.toISOString() : null
   if (!candy.ok) complete = false
+
+  await markDeliveredDraws(sb, drops)
 
   drops.sort((a, b) => a.start_time.localeCompare(b.start_time) || a.dist_id.localeCompare(b.dist_id))
   return { complete, complete_at, drops, announcements: candy.announcements }

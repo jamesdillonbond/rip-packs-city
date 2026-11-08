@@ -7,6 +7,7 @@
 // task) — no server route, no secrets.
 //
 //   node scripts/social/x-image.mjs --slot sun --out /tmp/xdraft      # drops this week
+//   ... --exclude 8912,8913   # leave out drops the pre-post check found already over (listed in output)
 //
 // Prints JSON: { slot, images: [paths], items, warnings }. Every item in the post is on an image —
 // a list longer than one image fits is split across images (X allows 4 per post), never cut.
@@ -72,8 +73,9 @@ function dayPT(d) {
 // The same wording as x-draft.mjs's dropLine, split into a status line.
 function statusLine(x) {
   if (x.kind === "open_edition") return "Minting now"
-  if (x.status === "upcoming") return `${x.kind === "rsvp" ? "RSVP opens" : "Drops"} ${whenPT(x.start_time)}`
-  if (x.kind === "rsvp" && x.end_time) return `RSVP closes ${whenPT(x.end_time)}`
+  const word = x.collection === "disney_pinnacle" ? "Draw requests" : "Pre-orders"
+  if (x.status === "upcoming") return `${x.kind === "rsvp" ? `${word} open` : "Drops"} ${whenPT(x.start_time)}`
+  if (x.kind === "rsvp" && x.end_time) return `${word} close ${whenPT(x.end_time)}`
   return x.end_time ? `On sale until ${whenPT(x.end_time)}` : "On sale now"
 }
 
@@ -82,7 +84,8 @@ async function dropsItems() {
   if (!r.ok) throw new Error(`pack-calendar: HTTP ${r.status}`)
   const d = await r.json()
   const unread = Object.entries(d.meta?.complete_at ?? {}).filter(([, at]) => !at).map(([k]) => k)
-  const ahead = (d.drops ?? []).filter((x) => x.status !== "ended")
+  const excluded = new Set((arg("exclude") ?? "").split(",").map((s) => s.trim()).filter(Boolean))
+  const ahead = (d.drops ?? []).filter((x) => x.status !== "ended" && !excluded.has(x.dist_id))
   // Same order as the thread: priciest first.
   ahead.sort((a, b) => (b.retail_usd ?? 0) - (a.retail_usd ?? 0) || a.start_time.localeCompare(b.start_time))
   const items = ahead.map((x) => ({

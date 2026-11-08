@@ -353,14 +353,17 @@ function whenPT(iso) {
 }
 const PACKS_PAGE = { nba_top_shot: "nba-top-shot", nfl_all_day: "nfl-all-day", laliga_golazos: "laliga-golazos", disney_pinnacle: "disney-pinnacle", panini_blockchain: "panini-blockchain" }
 const packsIndex = (x) => `${SITE}/${PACKS_PAGE[x.collection] ?? "nba-top-shot"}/packs`
+// Dapper's "RSVP" dists are what each app calls pre-orders (Top Shot, All Day) or a timed draw
+// (Pinnacle: "requests close"). Use the app's word, never "RSVP".
+const orderWord = (x) => (x.collection === "disney_pinnacle" ? "draw requests" : "pre-orders")
 function dropLine(x, multiColl) {
   const price = x.retail_usd ? ` (${usd(x.retail_usd)})` : ""
   const tag = multiColl ? `${coll(x.collection)}: ` : ""
   // A Pinnacle Open Edition is seen only while it mints: no price, no announced end.
   if (x.kind === "open_edition") return `• ${tag}${x.title} — minting now`
-  if (x.status === "upcoming") return `• ${tag}${x.title}${price} — ${x.kind === "rsvp" ? "RSVP opens" : "drops"} ${whenPT(x.start_time)}`
-  // open now: an RSVP window closes; a sale has an end time only sometimes
-  if (x.kind === "rsvp" && x.end_time) return `• ${tag}${x.title}${price} — RSVP closes ${whenPT(x.end_time)}`
+  if (x.status === "upcoming") return `• ${tag}${x.title}${price} — ${x.kind === "rsvp" ? `${orderWord(x)} open` : "drops"} ${whenPT(x.start_time)}`
+  // open now: a pre-order / draw window closes; a sale has an end time only sometimes
+  if (x.kind === "rsvp" && x.end_time) return `• ${tag}${x.title}${price} — ${orderWord(x)} close ${whenPT(x.end_time)}`
   return `• ${tag}${x.title}${price} — on sale now${x.end_time ? ` until ${whenPT(x.end_time)}` : ""}`
 }
 async function pageLive(href) {
@@ -444,7 +447,7 @@ async function dropAlerts(now) {
     for (const x of due) out.push({ x, live: await pageLive(x.detail_href) })
     return out
       .map(({ x, live }) => {
-        const what = x.status === "upcoming" ? `${x.kind === "rsvp" ? "RSVP opens" : "drops"} ${whenPT(x.start_time)}` : `RSVP closes ${whenPT(x.end_time)}`
+        const what = x.status === "upcoming" ? `${x.kind === "rsvp" ? `${orderWord(x)} open` : "drops"} ${whenPT(x.start_time)}` : `${orderWord(x)} close ${whenPT(x.end_time)}`
         const draft = `Reminder: ${x.title}${x.retail_usd ? ` (${usd(x.retail_usd)})` : ""} — ${what}.\n\n${live ? `${SITE}${x.detail_href}` : packsIndex(x)}`
         return { drop: x, draft, draft_len: xLength(draft), intent_url: intent(draft) }
       })

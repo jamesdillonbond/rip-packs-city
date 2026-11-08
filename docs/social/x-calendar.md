@@ -25,7 +25,7 @@ Every post links one insights page. Each page carries a `summary_large_image` ca
 | Thu | Deal of the week | `deals?sort=discount` | `/insights/deals` | Up to three listings $10+ **and** 15%+ under value. Falls back to Saturday's trade-in post when none qualify |
 | Fri | Board drop | one board a week, rotating by ISO week | `/insights/<board>` | A hook written from the board's live stats/rows. The script's draft is a placeholder (`needs_rewrite`) |
 | Sat | Week in numbers | `market-pulse` | `/insights/market-pulse` | 7-day sales volume per collection and in total |
-| Sun | Drops this week | `pack-calendar` | the lead drop's RPC pack page, or `/<collection>/packs` while that page 404s | Every drop open now or starting in the next 7 days on Top Shot, All Day, Pinnacle, Golazos and Panini, plus every Candy MLB drop announcement: price, and when it drops or its RSVP closes, in PT. Priciest first. **Every drop is named** — a long week becomes a numbered thread |
+| Sun | Drops this week | `pack-calendar` | the lead drop's RPC pack page, or `/<collection>/packs` while that page 404s | Every drop open now or starting in the next 7 days on Top Shot, All Day, Pinnacle, Golazos and Panini, plus every Candy MLB drop announcement: price, and when it drops or its pre-orders / draw requests close, in PT. Priciest first. **Every drop is named** — a long week becomes a numbered thread |
 
 Friday rotation: squeeze → serial-premiums → market-cap → offer-spread → underpriced-serials → autographs → first-mint → set-completers → trade-in.
 
@@ -47,7 +47,9 @@ The trade-in finder (Top Shot This pack credits) moved into the rotation on 11-0
 | Candy MLB | blog.candy.io RSS | Drop-titled posts from the last 7 days, linked (`announcements`) | Candy's store has been offline since its October wallet migration, so no store lists Candy drops; no date or price is ever invented |
 | UFC Strike | — | — | Market closed; listed as not covered |
 
-A source that could not be read is named in `warnings` and `facts.collections_unread`; the post must never read as "no drops" for it. For an RSVP drop, Dapper's window is the RSVP, so the copy says "RSVP closes", never "sale ends".
+A source that could not be read is named in `warnings` and `facts.collections_unread`; the post must never read as "no drops" for it. For a Dapper "RSVP" dist the copy uses each app's own word: Top Shot / All Day "pre-orders close", Pinnacle "draw requests close", never "RSVP" and never "sale ends". A pre-order or draw whose packs Dapper has already minted to collectors (`pack_nft_mints`) is over and is not posted. Atlas's end time can be a leftover waiting room (Pinnacle Stitch in Costume Vol.1 read "closes Fri 11-13" while its requests had closed 11-06 and it had sold out).
+
+**Verify before posting.** Before a drops post goes out, check every drop against its official page: nbatopshot.com pack details (`?packDetail=<dist>`), disneypinnacle.com/releases, and the Panini NFT store. The 11-08 trial caught two Pinnacle drops that were already over.
 
 **Event-driven posts** (new Top Shot drops, rookie debuts, milestone games) are not automated. The daily task mentions them when it sees one in the data; Trevor decides.
 
