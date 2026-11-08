@@ -47,6 +47,7 @@ const FRIDAY_BOARDS = [
   "autographs",
   "first-mint",
   "set-completers",
+  "trade-in",
 ]
 const BIG_SALE_USD = 1000
 
@@ -230,7 +231,7 @@ async function thu() {
     .filter((r) => r.discount_usd >= 10 && r.discount_pct >= 15)
     .sort((a, b) => b.discount_usd - a.discount_usd)
   if (!rows.length) {
-    const alt = await sat()
+    const alt = await tradeIn()
     return { ...alt, title: "Deal of the week (fallback: trade-in)", skip_reason: "no listing $10+ and 15%+ under a well-supported value; used the trade-in board" }
   }
   const lines = rows.slice(0, 3).map((r) => `• ${dealName(r)} (${coll(r.collection_slug)}) — ask ${usd(r.low_ask)} vs value ${usd(r.fmv_usd)}`)
@@ -271,7 +272,7 @@ async function fri(ctx) {
   }
 }
 
-async function sat() {
+async function tradeIn() {
   const d = await getJson("trade-in?sort=cost&limit=10")
   const link = `${SITE}/insights/trade-in`
   const rows = (d.rows ?? []).filter((r) => r.cost_per_pack > 0 && r.moments_per_pack > 0)
@@ -291,7 +292,7 @@ async function sat() {
   }
 }
 
-async function sun() {
+async function weekNumbers() {
   const d = await getJson("market-pulse")
   const link = `${SITE}/insights/market-pulse`
   const rows = (d.rows ?? [])
@@ -305,6 +306,75 @@ async function sun() {
     link,
     facts: { total_volume_7d: total, rows },
     draft: fit(lines, `The week in numbers (last 7 days): ${usd(total)} in sales.\n`, `\n${link}`),
+  }
+}
+
+// ---------- drops (Sunday: the week ahead; any day: a drop opening or an RSVP closing soon) ----------
+const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+function whenPT(iso) {
+  const d = new Date(iso)
+  const f = new Intl.DateTimeFormat("en-US", { timeZone: TZ, weekday: "short", hour: "numeric", minute: "2-digit" })
+  const p = Object.fromEntries(f.formatToParts(d).map((x) => [x.type, x.value]))
+  const mins = p.minute === "00" ? "" : `:${p.minute}`
+  return `${DAY_NAMES.includes(p.weekday) ? p.weekday : p.weekday.slice(0, 3)} ${p.hour}${mins} ${p.dayPeriod} PT`
+}
+const packsIndex = (x) => `${SITE}/${x.collection === "nfl_all_day" ? "nfl-all-day" : "nba-top-shot"}/packs`
+function dropLine(x, multiColl) {
+  const price = x.retail_usd ? ` (${usd(x.retail_usd)})` : ""
+  const tag = multiColl ? `${coll(x.collection)}: ` : ""
+  if (x.status === "upcoming") return `• ${tag}${x.title}${price} — ${x.kind === "rsvp" ? "RSVP opens" : "drops"} ${whenPT(x.start_time)}`
+  // open now: an RSVP window closes; a sale has an end time only sometimes
+  if (x.kind === "rsvp" && x.end_time) return `• ${tag}${x.title}${price} — RSVP closes ${whenPT(x.end_time)}`
+  return `• ${tag}${x.title}${price} — on sale now${x.end_time ? ` until ${whenPT(x.end_time)}` : ""}`
+}
+async function pageLive(href) {
+  try {
+    const r = await fetch(`${SITE}${href}`, { headers: { "user-agent": "rpc-x-calendar/1.0" } })
+    return r.status === 200
+  } catch {
+    return false
+  }
+}
+async function calendar() {
+  const d = await getJson("pack-calendar")
+  if (!d.meta?.complete) throw new Error("the Atlas pack book has no complete pass to read")
+  return d.drops ?? []
+}
+
+async function drops() {
+  const all = await calendar()
+  const ahead = all.filter((x) => x.status !== "ended")
+  if (!ahead.length) return { skip_reason: "no Top Shot or All Day drop is open or scheduled in the next 7 days", link: `${SITE}/nba-top-shot/packs` }
+  // Lead with the priciest open/upcoming drop: that's the one collectors are deciding on.
+  const lead = [...ahead].sort((a, b) => (b.retail_usd ?? 0) - (a.retail_usd ?? 0))[0]
+  const fallbackLink = packsIndex(lead)
+  // Our pack page 404s until the dist has a pack_distributions row; never link a 404.
+  const link = (await pageLive(lead.detail_href)) ? `${SITE}${lead.detail_href}` : fallbackLink
+  const multi = new Set(ahead.map((x) => x.collection)).size > 1
+  const lines = ahead.map((x) => dropLine(x, multi))
+  return {
+    title: "Drops this week",
+    link,
+    facts: { drops: ahead, ended_this_week: all.filter((x) => x.status === "ended").length, lead_page_live: link !== fallbackLink },
+    draft: fit(lines, "Drops this week:\n", `\n${link}`),
+  }
+}
+
+// A drop starting, or an RSVP closing, within the next 24 h gets its own optional reminder.
+async function dropAlerts(now) {
+  try {
+    const all = await calendar()
+    const soon = (iso) => iso && new Date(iso) - now > 0 && new Date(iso) - now < 86400000
+    return all
+      .filter((x) => (x.status === "upcoming" && soon(x.start_time)) || (x.kind === "rsvp" && x.status === "open" && soon(x.end_time)))
+      .slice(0, 2)
+      .map((x) => {
+        const what = x.status === "upcoming" ? `${x.kind === "rsvp" ? "RSVP opens" : "drops"} ${whenPT(x.start_time)}` : `RSVP closes ${whenPT(x.end_time)}`
+        const draft = `Reminder: ${x.title}${x.retail_usd ? ` (${usd(x.retail_usd)})` : ""} — ${what}.\n\n${packsIndex(x)}`
+        return { drop: x, draft, draft_len: xLength(draft), intent_url: intent(draft) }
+      })
+  } catch (e) {
+    return [{ error: e.message }]
   }
 }
 
@@ -331,7 +401,7 @@ const today = arg("date") ?? ptParts(now).date
 const dow = new Date(`${today}T12:00:00Z`).getUTCDay()
 const slot = arg("slot") ?? SLOTS[dow]
 const ctx = { date: today, dow: SLOTS.indexOf(slot) }
-const run = { sun, mon, tue, wed, thu, fri, sat }[slot]
+const run = { sun: drops, mon, tue, wed, thu, fri, sat: weekNumbers }[slot]
 if (!run) {
   console.error(`unknown slot ${slot}; use one of ${SLOTS.join(" ")}`)
   process.exit(2)
@@ -352,4 +422,6 @@ if (out.draft) {
   out.intent_url = intent(out.draft)
 }
 out.breaking = await breaking(now)
+// Sunday's post already lists every drop, so the reminders ride the other six days.
+out.drop_alerts = slot === "sun" ? [] : await dropAlerts(now)
 console.log(JSON.stringify(out, null, 2))

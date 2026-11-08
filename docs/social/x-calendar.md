@@ -24,12 +24,18 @@ Every post links one insights page. Each page carries a `summary_large_image` ca
 | Wed | Rookie spotlight | `rookies?class=2025&sort=gmv` | `/insights/rookies` | 30-day sales for the 2025 class and its top three |
 | Thu | Deal of the week | `deals?sort=discount` | `/insights/deals` | Up to three listings $10+ **and** 15%+ under value. Falls back to Saturday's trade-in post when none qualify |
 | Fri | Board drop | one board a week, rotating by ISO week | `/insights/<board>` | A hook written from the board's live stats/rows. The script's draft is a placeholder (`needs_rewrite`) |
-| Sat | Trade-in finder | `trade-in?sort=cost` | `/insights/trade-in` | Cheapest Top Shot This pack credits right now |
-| Sun | Week in numbers | `market-pulse` | `/insights/market-pulse` | 7-day sales volume per collection and in total |
+| Sat | Week in numbers | `market-pulse` | `/insights/market-pulse` | 7-day sales volume per collection and in total |
+| Sun | Drops this week | `pack-calendar` | the lead drop's RPC pack page, or `/<collection>/packs` while that page 404s | Every Top Shot / All Day drop open now or starting in the next 7 days: price, and when it drops or its RSVP closes, in PT. Leads with the priciest |
 
-Friday rotation: squeeze → serial-premiums → market-cap → offer-spread → underpriced-serials → autographs → first-mint → set-completers.
+Friday rotation: squeeze → serial-premiums → market-cap → offer-spread → underpriced-serials → autographs → first-mint → set-completers → trade-in.
+
+The trade-in finder (Top Shot This pack credits) moved into the rotation on 11-08 to make room for the drops post. Thursday still falls back to it when no deal qualifies.
 
 **Big-sale extra (any day):** a sale in the last 24 h that cleared $1,000 and ranks in the week's top 5 gets its own short draft. It is offered alongside the slot post, never instead of it. Two big-sale posts a day at most.
+
+**Drop reminder (Mon–Sat):** a drop starting, or an RSVP closing, in the next 24 h gets an optional short reminder (≤ 2). Sunday's post already lists them.
+
+**Where drops come from:** `/api/public/insights/pack-calendar` reads the Atlas pack book (`atlas_pack_market`, refreshed every 15 min) from its last complete pass only. If the book has no complete pass the API says `complete: false` and the slot skips — it never posts "no drops". For an RSVP drop, Dapper's window is the RSVP, so the copy says "RSVP closes", never "sale ends". Golazos, Pinnacle, Panini and Candy drops are not in the book; they are not covered.
 
 **Event-driven posts** (new Top Shot drops, rookie debuts, milestone games) are not automated. The daily task mentions them when it sees one in the data; Trevor decides.
 
@@ -49,7 +55,7 @@ Friday rotation: squeeze → serial-premiums → market-cap → offer-spread →
 
 ## When the data isn't there
 
-If the script sets `skip_reason`, the task says so and offers the Sunday "week in numbers" post as a fallback. If an API fails, nothing is drafted from a guess.
+If the script sets `skip_reason`, the task says so and offers the "week in numbers" post (`--slot sat`) as a fallback. If an API fails, nothing is drafted from a guess.
 
 ## Revert
 
