@@ -186,8 +186,13 @@ const ROOTS = ["app", "components"]
  * confidence split) was REMOVED — no user-facing pricing confidence (Trevor) —
  * taking its fetch site with it. Not a conversion; re-derived from the failing
  * no-slack assertion (62).
+ *
+ * 62 -> 61 on 2026-11-08: the trophy picker's two top-moments reads (first
+ * page + the new "Load more" page) CONVERTED to `fetchJson` — the Load more
+ * commit (eb8dd20c1) had added a second `r.ok ? r.json() : null` site (63,
+ * main red), and both now discriminate on `ok`.
  */
-const BUDGET = 62
+const BUDGET = 61
 
 /**
  * A failure funnelled into the success-with-nothing value.

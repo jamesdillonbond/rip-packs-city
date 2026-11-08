@@ -36,6 +36,14 @@ import {
 } from "@/lib/trophy-picker-format";
 import { NEUTRAL_TIER_COLOR, tierColorAlpha } from "@/lib/tier-color";
 import { proxyIpfsImageUrl } from "@/lib/ipfs-media";
+import { fetchJson } from "@/lib/analytics/fetch-json";
+
+/** Body of `/api/profile/top-moments` as the picker reads it. */
+type TopMomentsPage = {
+  moments?: unknown[];
+  hasMore?: boolean;
+  paniniUsernamesLinked?: number;
+};
 
 const condensedFont = "var(--font-display)";
 const monoFont = "var(--font-mono)";
@@ -259,17 +267,18 @@ export default function TrophyPickerModal({
     setLoadingMore(false);
     setLoadMoreFailed(false);
     const params = pageParams(0);
-    fetch(`/api/profile/top-moments?${params.toString()}`, { cache: "no-store" })
-      // ⚠ `null` means WE COULD NOT READ, and it must not reach `setMoments`
-      // as `[]`. An empty grid renders "No owned moments found yet" — a claim
-      // about the collector's OWN collection manufactured from our outage, and
-      // it sends them to the manual tab to type an id for a Moment we simply
-      // failed to fetch. Same class this file's header already documents for
-      // the search-scope cap; that one was found and this one was not.
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
+    // `fetchJson` never rejects: a non-2xx, a network throw and an unparsable
+    // body all arrive as `ok: false`.
+    fetchJson<TopMomentsPage>(`/api/profile/top-moments?${params.toString()}`, { cache: "no-store" })
+      .then(({ ok, json: d }) => {
         if (cancelled || gen !== loadGen.current) return;
-        if (d == null) {
+        // ⚠ `ok: false` means WE COULD NOT READ, and it must not reach
+        // `setMoments` as a plain `[]`. An empty grid renders "No owned moments
+        // found yet" — a claim about the collector's OWN collection manufactured
+        // from our outage, and it sends them to the manual tab to type an id for
+        // a Moment we simply failed to fetch. Same class this file's header
+        // already documents for the search-scope cap.
+        if (!ok || d == null) {
           setMomentsLoadFailed(true);
           setMoments([]);
           return;
@@ -280,12 +289,6 @@ export default function TrophyPickerModal({
         setHasMore(typeof d.hasMore === "boolean" ? d.hasMore : page.length >= PICKER_LIMIT);
         setNextOffset(PICKER_LIMIT);
         setPaniniLinked(typeof d.paniniUsernamesLinked === "number" ? d.paniniUsernamesLinked : null);
-      })
-      .catch(() => {
-        // `fetch` THROWS on a network failure rather than resolving non-ok.
-        if (cancelled) return;
-        setMomentsLoadFailed(true);
-        setMoments([]);
       });
     return () => {
       cancelled = true;
@@ -298,14 +301,13 @@ export default function TrophyPickerModal({
     const offset = nextOffset;
     setLoadingMore(true);
     setLoadMoreFailed(false);
-    fetch(`/api/profile/top-moments?${pageParams(offset).toString()}`, { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
+    fetchJson<TopMomentsPage>(`/api/profile/top-moments?${pageParams(offset).toString()}`, { cache: "no-store" })
+      .then(({ ok, json: d }) => {
         if (gen !== loadGen.current) return;
         setLoadingMore(false);
         // ⚠ A failed page is NOT the end of the list: keep the button, say it
         // failed, and leave what is already loaded alone.
-        if (d == null) {
+        if (!ok || d == null) {
           setLoadMoreFailed(true);
           return;
         }
@@ -317,11 +319,6 @@ export default function TrophyPickerModal({
         });
         setHasMore(typeof d.hasMore === "boolean" ? d.hasMore : page.length >= PICKER_LIMIT);
         setNextOffset(offset + PICKER_LIMIT);
-      })
-      .catch(() => {
-        if (gen !== loadGen.current) return;
-        setLoadingMore(false);
-        setLoadMoreFailed(true);
       });
   }, [loadingMore, nextOffset, pageParams]);
 
