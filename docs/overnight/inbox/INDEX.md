@@ -1,4 +1,4 @@
-# Inbox index — 626 live filings
+# Inbox index — 627 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -32,8 +32,9 @@ failure it documents.
 
 ---
 
-## 2026-11-08 — 2 filings
+## 2026-11-08 — 3 filings
 
+- [🟢 **FOR COWORK** — drop the scratch table `public.zz_pgss_probe_20261108` (Claude Code's pg_stat_statements delta probe; RLS on, no grants, no dependents; guarded SQL inside; Claude Code's DROP was held)](2026-11-08T1509Z-claude-code-drop-for-cowork-zz-pgss-probe-scratch-table.md)
 - [🟠 **FOR COWORK** — apply the committed trophy-case cap trigger migration (`20261108002000_audit_20261107_trophy_cases_extra_cap_enforced_in_db.sql`); Claude Code's apply was held; route half shipped and dormant](2026-11-08T0025Z-claude-code-apply-for-cowork-trophy-cases-extra-cap-trigger.md)
 - [🟠 **FOR COWORK** — two placeholder rows from the wallet-search seed bug: rename edition `85:2918` → "Brooklyn Nets — Dynamic Duos", delete the unreferenced player "Unknown (error loading)" (guarded SQL inside; Claude Code's MCP could not apply it)](2026-11-08T0002Z-claude-code-data-fix-for-cowork-unknown-error-loading-edition-and-player.md)
 
