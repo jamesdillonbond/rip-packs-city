@@ -55,3 +55,24 @@ describe("challengeFromNext (magic-link telemetry)", () => {
     expect(challengeFromNext("/dashboard?challenge=<script>")).toBeNull()
   })
 })
+
+import { ownEntryOf, viewerHandleFromMe } from "@/app/trophy-challenges/[slug]/ChallengeBoardClient"
+
+describe("the signed-in viewer's own entry", () => {
+  const entries = [{ username: "Samwise222", slab_count: 4 }, { username: "webz_80", slab_count: 6 }]
+  it("finds it case-insensitively by public handle", () => {
+    expect(ownEntryOf("samwise222", entries, 2)).toEqual(entries[0])
+  })
+  it("says 'none' only when the board lists every entry", () => {
+    expect(ownEntryOf("someone", entries, 2)).toBe("none")
+  })
+  it("says nothing when the board is truncated or the handle is unknown", () => {
+    expect(ownEntryOf("someone", entries, 60)).toBeNull()
+    expect(ownEntryOf(null, entries, 2)).toBeNull()
+  })
+  it("reads the handle only from a signed-in answer", () => {
+    expect(viewerHandleFromMe({ ok: true, json: { user: { username: " Samwise222 " } } })).toBe("Samwise222")
+    expect(viewerHandleFromMe({ ok: true, json: { user: null } })).toBeNull()
+    expect(viewerHandleFromMe({ ok: false, json: null })).toBeNull()
+  })
+})

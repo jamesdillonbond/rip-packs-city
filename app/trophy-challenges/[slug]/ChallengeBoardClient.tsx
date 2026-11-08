@@ -48,6 +48,29 @@ export function viewerFromMe(res: { ok: boolean; json: unknown }): Viewer {
   return (res.json as { user: unknown }).user ? "signed-in" : "signed-out"
 }
 
+/** The viewer's public handle (profile_bio.username — the same key the board's entries carry), or null. */
+export function viewerHandleFromMe(res: { ok: boolean; json: unknown }): string | null {
+  if (viewerFromMe(res) !== "signed-in") return null
+  const u = (res.json as { user?: { username?: unknown } }).user?.username
+  return typeof u === "string" && u.trim() ? u.trim() : null
+}
+
+/**
+ * The viewer's own entry on this board (2026-11-08). THREE answers: their entry ·
+ * "none" (the board is complete — every entry is listed — and theirs is not on it) ·
+ * null (no handle, or the board lists only the top N, so absence proves nothing).
+ */
+export function ownEntryOf<E extends { username: string }>(
+  handle: string | null,
+  entries: E[],
+  entryCount: number,
+): E | "none" | null {
+  if (!handle) return null
+  const mine = entries.find((e) => e.username.toLowerCase() === handle.toLowerCase())
+  if (mine) return mine
+  return entries.length >= entryCount ? "none" : null
+}
+
 /** Signed-out entry: create the account, then land on the challenge's spot on the dashboard. */
 export function challengeSignupHref(slug: string): string {
   return `/login?intent=signup&next=${encodeURIComponent(challengeEntryHref(slug))}`
@@ -60,6 +83,7 @@ export function challengeSigninHref(slug: string): string {
 export default function ChallengeBoardClient({ slug }: { slug: string }) {
   const [state, setState] = useState<State>({ kind: "loading" })
   const [viewer, setViewer] = useState<Viewer>("unknown")
+  const [viewerHandle, setViewerHandle] = useState<string | null>(null)
 
   // 2026-11-08 activity review: 8 of 15 outside visitors to /dame-time saw only
   // this page and left; 2 reached /login. Signed out, the one button said
@@ -70,7 +94,11 @@ export default function ChallengeBoardClient({ slug }: { slug: string }) {
     fetch("/api/profile/me", { cache: "no-store" })
       .then(async (r) => ({ ok: r.ok, json: r.ok ? await r.json() : null }))
       .catch(() => ({ ok: false, json: null }))
-      .then((res) => { if (!cancelled) setViewer(viewerFromMe(res)) })
+      .then((res) => {
+        if (cancelled) return
+        setViewer(viewerFromMe(res))
+        setViewerHandle(viewerHandleFromMe(res))
+      })
     return () => { cancelled = true }
   }, [])
 
@@ -109,6 +137,11 @@ export default function ChallengeBoardClient({ slug }: { slug: string }) {
 
   const { challenge, entries, entry_count } = state.board
   const open = state.board.is_open === true
+  // A signed-in collector who has ENTERED sees their own progress, not "Enter".
+  // 11-08: two entrants sat at 2 / 6 and 4 / 6 with nothing on the board telling
+  // them what finishing takes. A challenge is complete at all 6 (Trevor, 11-08).
+  const own = viewer === "signed-in" ? ownEntryOf(viewerHandle, entries, entry_count) : null
+  const ownEntry = own && own !== "none" ? own : null
 
   return (
     <div>
@@ -154,6 +187,23 @@ export default function ChallengeBoardClient({ slug }: { slug: string }) {
               Have an account? Sign in
             </Link>
           </>
+        ) : open && ownEntry ? (
+          <span data-rpc-own-entry style={{ display: "inline-flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+            <span style={{ fontFamily: monoFont, fontSize: 11, letterSpacing: "0.08em", color: "var(--rpc-text-primary)" }}>
+              Your entry: {ownEntry.slab_count} / 6{ownEntry.slab_count >= 6 ? " · complete" : ` · pin ${6 - ownEntry.slab_count} more to complete`}
+            </span>
+            <Link
+              href={ownEntry.slab_count >= 6 ? challengeCaseSharePath(ownEntry.username, slug) : challengeEntryHref(slug)}
+              style={{
+                fontFamily: condensedFont, fontWeight: 800, fontSize: 13, letterSpacing: "0.08em", textTransform: "uppercase",
+                padding: "10px 16px", borderRadius: 8, textDecoration: "none",
+                // brand-exception: white label on the red CTA button
+                background: "var(--rpc-red-fill)", color: "#fff",
+              }}
+            >
+              {ownEntry.slab_count >= 6 ? "Share your case" : "Finish your case"}
+            </Link>
+          </span>
         ) : open ? (
           <Link
             href={challengeEntryHref(slug)}
