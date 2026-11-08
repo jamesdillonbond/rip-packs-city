@@ -380,7 +380,9 @@ async function drops() {
   // Our pack page 404s until the dist has a pack_distributions row; never link a 404.
   const link = (await pageLive(lead.detail_href)) ? `${SITE}${lead.detail_href}` : fallbackLink
   const multi = new Set(ahead.map((x) => x.collection)).size > 1
-  const lines = ahead.map((x) => dropLine(x, multi || calendarAnnouncements.length > 0))
+  // Biggest first: with 280 characters the lines that survive should be the drops collectors are deciding on.
+  const byPrice = [...ahead].sort((a, b) => (b.retail_usd ?? 0) - (a.retail_usd ?? 0) || a.start_time.localeCompare(b.start_time))
+  const lines = byPrice.map((x) => dropLine(x, multi || calendarAnnouncements.length > 0))
   // Candy MLB has no store listing (its store is offline); a drop it ANNOUNCED this week rides as a line.
   for (const a of calendarAnnouncements.slice(0, 1)) lines.push(`• Candy MLB: ${a.title}`)
   const covered = Object.keys(calendarMeta?.complete_at ?? {}).map((p) => ATLAS_NAMES[p] ?? p).filter((n) => !calendarMeta.unread.includes(n))
@@ -407,12 +409,15 @@ async function dropAlerts(now) {
   try {
     const all = await calendar()
     const soon = (iso) => iso && new Date(iso) - now > 0 && new Date(iso) - now < 86400000
-    return all
+    const due = all
       .filter((x) => (x.status === "upcoming" && soon(x.start_time)) || (x.kind === "rsvp" && x.status === "open" && soon(x.end_time)))
       .slice(0, 2)
-      .map((x) => {
+    const out = []
+    for (const x of due) out.push({ x, live: await pageLive(x.detail_href) })
+    return out
+      .map(({ x, live }) => {
         const what = x.status === "upcoming" ? `${x.kind === "rsvp" ? "RSVP opens" : "drops"} ${whenPT(x.start_time)}` : `RSVP closes ${whenPT(x.end_time)}`
-        const draft = `Reminder: ${x.title}${x.retail_usd ? ` (${usd(x.retail_usd)})` : ""} — ${what}.\n\n${packsIndex(x)}`
+        const draft = `Reminder: ${x.title}${x.retail_usd ? ` (${usd(x.retail_usd)})` : ""} — ${what}.\n\n${live ? `${SITE}${x.detail_href}` : packsIndex(x)}`
         return { drop: x, draft, draft_len: xLength(draft), intent_url: intent(draft) }
       })
   } catch (e) {
