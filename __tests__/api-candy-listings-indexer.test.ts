@@ -66,11 +66,15 @@ interface MeListing {
 
 type Fixtures = Parameters<typeof makeInstrumentedSupabaseFixture>[0]
 const SOLD_RPC = "rpc:candy_retire_listings_sold_since_seen"
+const MOVED_RPC = "rpc:candy_retire_listings_owner_moved"
+const MOVED_PDAS_RPC = "rpc:candy_listing_owner_moved_pdas"
 function install(fixtures: Fixtures) {
   // Default: the sold-since-seen pass ran and retired nothing. Tests that
   // exercise it pass their own `rpc:candy_retire_listings_sold_since_seen`.
   const spy = makeInstrumentedSupabaseFixture({
     [SOLD_RPC]: { data: { cards_retired: 0, packs_retired: 0 }, error: null },
+    [MOVED_RPC]: { data: { cards_retired: 0, packs_retired: 0, cards_cleared: 0, packs_cleared: 0 }, error: null },
+    [MOVED_PDAS_RPC]: { data: [], error: null },
     ...fixtures,
   })
   state.sb = spy.fixture
@@ -807,3 +811,83 @@ describe("candy-listings-indexer — sold-since-seen retirement", () => {
   })
 })
 
+
+// audit_20261108 — OWNER-MOVED asks. After Candy's October wallet migration Magic
+// Eden kept returning ~1,480 listings whose seller no longer owns the token (ME
+// still reports token.owner = seller; the on-chain census shows the new wallet).
+// candy_retire_listings_owner_moved() retires them and stamps owner_moved_at; the
+// indexer must then SKIP them, or every sweep re-activates the phantom book.
+describe("candy-listings-indexer — owner-moved asks (audit_20261108)", () => {
+  const ask: MeListing = { pdaAddress: "pdaX", tokenMint: "mintX", price: 0.5, seller: "OldOwner111", tokenSize: 1, expiry: 0 }
+  const resolve = {
+    wallet_moments_cache: { data: [{ moment_id: "mintX", edition_key: "candy-mlb:x" }], error: null },
+    editions: { data: [{ id: "ed-x", external_id: "candy-mlb:x" }], error: null },
+    candy_listings: [{ error: null }, { data: [] }, { data: [] }],
+  }
+
+  it("does NOT re-activate a listing already retired for a moved owner (same account, same seller)", async () => {
+    fetchMock = installFetchMock([jsonRoute("/listings", [ask]), jsonRoute("/activities", [])])
+    const spy = install({ ...resolve, [MOVED_PDAS_RPC]: { data: [{ pda_address: "pdaX", seller: "OldOwner111" }], error: null } })
+    await POST(req())
+    await runDeferred()
+    const upserts = (spy.writes.candy_listings ?? []).filter((w) => w.method === "upsert")
+    expect(upserts.flatMap((u) => u.rows)).toHaveLength(0)
+    const extra = logRun(spy.rpcCalls)?.p_extra as Record<string, unknown>
+    expect(extra.owner_moved_skipped).toBe(1)
+    expect(extra.listings_found).toBe(0)
+  })
+
+  it("lets the same listing account through when ME now names a DIFFERENT seller (new evidence)", async () => {
+    fetchMock = installFetchMock([jsonRoute("/listings", [{ ...ask, seller: "NewOwner222" }]), jsonRoute("/activities", [])])
+    const spy = install({ ...resolve, [MOVED_PDAS_RPC]: { data: [{ pda_address: "pdaX", seller: "OldOwner111" }], error: null } })
+    await POST(req())
+    await runDeferred()
+    const rows = (spy.writes.candy_listings ?? []).filter((w) => w.method === "upsert").flatMap((u) => u.rows)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ pda_address: "pdaX", seller: "NewOwner222", is_active: true })
+  })
+
+  it("a FAILED owner-moved lookup fails the sweep — it never guesses the ask is live", async () => {
+    fetchMock = installFetchMock([jsonRoute("/listings", [ask]), jsonRoute("/activities", [])])
+    const spy = install({ ...resolve, [MOVED_PDAS_RPC]: { data: null, error: { message: "lookup boom" } } })
+    await POST(req())
+    await runDeferred()
+    const log = logRun(spy.rpcCalls)
+    expect(log?.p_ok).toBe(false)
+    expect(String(log?.p_error)).toContain("owner_moved lookup failed")
+    expect((spy.writes.candy_listings ?? []).filter((w) => w.method === "upsert")).toHaveLength(0)
+  })
+
+  it("runs the owner-moved retire every sweep and counts it into deactivated", async () => {
+    fetchMock = installFetchMock([jsonRoute("/listings", []), jsonRoute("/activities", [])])
+    const spy = install({
+      candy_listings: { data: [] },
+      candy_pack_listings: { data: [] },
+      [MOVED_RPC]: { data: { cards_retired: 5, packs_retired: 1, cards_cleared: 2, packs_cleared: 0 }, error: null },
+    })
+    await POST(req())
+    await runDeferred()
+    expect(spy.rpcCalls.some((c) => c.name === "candy_retire_listings_owner_moved")).toBe(true)
+    const extra = logRun(spy.rpcCalls)?.p_extra as Record<string, unknown>
+    expect(extra.owner_moved_cards).toBe(5)
+    expect(extra.owner_moved_packs).toBe(1)
+    expect(extra.owner_moved_cleared).toBe(2)
+    expect(extra.deactivated as number).toBeGreaterThanOrEqual(5)
+  })
+
+  it("a FAILED owner-moved retire fails the run and reports null, never 0", async () => {
+    fetchMock = installFetchMock([jsonRoute("/listings", []), jsonRoute("/activities", [])])
+    const spy = install({
+      candy_listings: { data: [] },
+      candy_pack_listings: { data: [] },
+      [MOVED_RPC]: { data: null, error: { message: "retire boom" } },
+    })
+    await POST(req())
+    await runDeferred()
+    const log = logRun(spy.rpcCalls)
+    expect(log?.p_ok).toBe(false)
+    const extra = log?.p_extra as Record<string, unknown>
+    expect(extra.owner_moved_cards).toBeNull()
+    expect(extra.owner_moved_cleared).toBeNull()
+  })
+})

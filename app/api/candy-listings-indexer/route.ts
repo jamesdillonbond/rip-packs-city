@@ -332,6 +332,12 @@ async function handleSweep(req: NextRequest) {
     // Asks whose token has a recorded SALE after we last saw them (cards + packs).
     // null = the pass failed; the counts are rows actually retired.
     let soldSinceSeen: { cards_retired: number; packs_retired: number } | null = null
+    // Asks whose seller no longer owns the token per the on-chain census
+    // (audit_20261108). null = the pass failed.
+    let ownerMoved: { cards_retired: number; packs_retired: number; cards_cleared: number; packs_cleared: number } | null = null
+    // Listings ME returned this sweep that are already retired for a moved owner —
+    // skipped, so the upsert does not re-activate them.
+    let ownerMovedSkipped = 0
     let sweepComplete = false
     try {
       const rate = await solUsd()
@@ -455,8 +461,38 @@ async function handleSweep(req: NextRequest) {
           }
         }
 
+        // ── OWNER-MOVED listings (audit_20261108) ──────────────────────────────
+        // Magic Eden kept returning ~1,480 asks after Candy's October wallet
+        // migration moved every card to a new owner: ME still reports
+        // `token.owner = seller`, while our on-chain census shows the new wallet.
+        // `candy_retire_listings_owner_moved()` (called below) retires such a row
+        // and stamps `owner_moved_at`; skipping it here keeps the upsert from
+        // re-activating it on every sweep. A failed read throws — never guess.
+        const ownerMovedPdas = new Set<string>()
+        {
+          const pagePdas = [...new Set(listings.map((l) => l.pdaAddress).filter((p): p is string => Boolean(p)))]
+          if (pagePdas.length) {
+            const { data, error } = await (supabaseAdmin as any).rpc("candy_listing_owner_moved_pdas", {
+              p_pdas: pagePdas,
+            })
+            if (error) throw new Error(`owner_moved lookup failed: ${error.message}`)
+            const sellerByPda = new Map(listings.map((l) => [l.pdaAddress, l.seller ?? null]))
+            for (const r of (Array.isArray(data) ? data : []) as Array<{ pda_address: string; seller: string | null }>) {
+              // Same listing account AND same seller: still the stale ask. A
+              // different seller on the same account is new evidence — let it through.
+              if (sellerByPda.has(r.pda_address) && sellerByPda.get(r.pda_address) === r.seller) {
+                ownerMovedPdas.add(r.pda_address)
+              }
+            }
+          }
+        }
+
         for (const l of listings) {
           if (!l.pdaAddress || !l.tokenMint || l.price == null || l.price <= 0) continue
+          if (ownerMovedPdas.has(l.pdaAddress)) {
+            ownerMovedSkipped++
+            continue
+          }
 
           // Candy-mint gate + edition resolution via wmc.
           let edition = editionByMint.get(l.tokenMint)
@@ -739,6 +775,29 @@ async function handleSweep(req: NextRequest) {
         }
       }
 
+      // OWNER MOVED (audit_20261108): the census, walked after we first saw the
+      // ask, shows a different owner than the seller — the ask cannot fill.
+      const { data: movedData, error: movedErr } = await (supabaseAdmin as any).rpc(
+        "candy_retire_listings_owner_moved",
+      )
+      if (movedErr) {
+        writeErrors.push(`owner-moved retire: ${movedErr.message}`)
+      } else {
+        const v = {
+          cards_retired: Number(movedData?.cards_retired),
+          packs_retired: Number(movedData?.packs_retired),
+          cards_cleared: Number(movedData?.cards_cleared),
+          packs_cleared: Number(movedData?.packs_cleared),
+        }
+        if (Object.values(v).every(Number.isFinite)) {
+          ownerMoved = v
+          deactivated += v.cards_retired
+          packDeactivated += v.packs_retired
+        } else {
+          writeErrors.push("owner-moved retire: unreadable result")
+        }
+      }
+
       // A short listings answer is no longer dangerous — it just refreshes
       // fewer prices — so it is reported as a metric, not a failure.
       // null = UNKNOWN (the baseline count failed), never false: "not truncated"
@@ -771,6 +830,10 @@ async function handleSweep(req: NextRequest) {
         superseded,
         sold_since_seen_cards: soldSinceSeen?.cards_retired ?? null,
         sold_since_seen_packs: soldSinceSeen?.packs_retired ?? null,
+        owner_moved_cards: ownerMoved?.cards_retired ?? null,
+        owner_moved_packs: ownerMoved?.packs_retired ?? null,
+        owner_moved_cleared: ownerMoved ? ownerMoved.cards_cleared + ownerMoved.packs_cleared : null,
+        owner_moved_skipped: ownerMovedSkipped,
         sweep_complete: sweepComplete,
         // Distinguishes "the book ended" from "we ran out of time". Without it a
         // budget-truncated sweep and a genuinely short book both read as

@@ -17,7 +17,8 @@ export const CANDY_MARKET_HISTORY_SINCE = "2026-10-26"
 export interface CandyMarketDay {
   day: string
   floorAskUsd: number | null
-  listedCount: number
+  /** null = not known for that day (the listings record was withdrawn — audit_20261108). */
+  listedCount: number | null
   bestOfferUsd: number | null
   offerCount: number
 }
@@ -50,7 +51,7 @@ export async function fetchCandyMarketHistory(
       .map((r) => ({
         day: r.day as string,
         floorAskUsd: num(r.floor_ask_usd),
-        listedCount: num(r.listed_count) ?? 0,
+        listedCount: num(r.listed_count),
         bestOfferUsd: num(r.best_offer_usd),
         offerCount: num(r.offer_count) ?? 0,
       }))
