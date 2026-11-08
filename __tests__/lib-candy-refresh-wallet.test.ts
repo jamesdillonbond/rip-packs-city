@@ -13,7 +13,9 @@ const state: {
   upsertError: any
   rpcs: Array<{ name: string; args: any }>
   upserted: any[][]
-} = { pages: [], ownerThrows: false, listings: { data: [], error: null }, assets: {}, upsertError: null, rpcs: [], upserted: [] }
+  knownEditions: string[]
+  editionInserts: any[][]
+} = { pages: [], ownerThrows: false, listings: { data: [], error: null }, assets: {}, upsertError: null, rpcs: [], upserted: [], knownEditions: [], editionInserts: [] }
 
 vi.mock("@/lib/chains/solana/das", () => ({
   getAssetsByOwner: async (_w: string, page: number) => {
@@ -30,6 +32,7 @@ vi.mock("@/lib/chains/solana/normalize", () => ({
   CANDY_MLB_UUID: "c1",
   isBurnt: (a: any) => a.kind === "burnt",
   isPack: (a: any) => a.kind === "pack",
+  normalizeEdition: (a: any) => ({ external_id: a.ed ?? "k", collection_id: "c1", name: a.ed ?? "k" }),
   normalizeSerial: (a: any) => ({ moment_id: a.id, wallet_address: "DAS-OWNER", collection_id: "c1", edition_key: "k", serial_number: 1, image_url: null }),
 }))
 
@@ -45,6 +48,17 @@ function db() {
       return { data: name === "candy_retire_wallet_unseen" ? 3 : name === "purge_candy_wmc_ghost_rows" ? 2 : null, error: null }
     },
     from: (table: string) => {
+      if (table === "editions") {
+        const b: any = {
+          select: () => b, eq: () => b,
+          in: async (_c: string, keys: string[]) => ({ data: keys.filter((k) => state.knownEditions.includes(k)).map((k) => ({ external_id: k })), error: null }),
+          upsert: (rows: any[], opts: any) => {
+            state.editionInserts.push(rows.map((r) => ({ ...r, _ignoreDuplicates: opts?.ignoreDuplicates })))
+            return { select: async () => ({ data: rows.map((r) => ({ external_id: r.external_id })), error: null }) }
+          },
+        }
+        return b
+      }
       if (table === "candy_listings") {
         const b: any = { select: () => b, eq: () => b, order: () => b, limit: async () => state.listings }
         return b
@@ -67,6 +81,8 @@ beforeEach(() => {
   state.upsertError = null
   state.rpcs = []
   state.upserted = []
+  state.knownEditions = []
+  state.editionInserts = []
 })
 
 describe("refreshCandyWallet", () => {
@@ -139,6 +155,16 @@ describe("refreshCandyWallet", () => {
     const r = await refreshCandyWallet(db(), W)
     expect(r.complete).toBe(true)
     expect(state.rpcs.map((x) => x.name)).not.toContain("candy_retire_wallet_unseen")
+  })
+
+  it("inserts ONLY editions the catalog has not seen, insert-only (an existing edition is never rewritten)", async () => {
+    state.pages = [[{ id: "a", candy: true, ed: "asg26:shohei-ohtani-core" }, { id: "b", candy: true, ed: "shohei-ohtani" }, { id: "c", candy: true, ed: "asg26:shohei-ohtani-core" }]]
+    state.knownEditions = ["shohei-ohtani"]
+    const r = await refreshCandyWallet(db(), W, { retire: true })
+    expect(r.editions_inserted).toBe(1)
+    const ins = state.editionInserts.flat()
+    expect(ins.map((x) => x.external_id)).toEqual(["asg26:shohei-ohtani-core"])
+    expect(ins[0]._ignoreDuplicates).toBe(true)
   })
 
   it("a spent time budget stops the walk as incomplete", async () => {

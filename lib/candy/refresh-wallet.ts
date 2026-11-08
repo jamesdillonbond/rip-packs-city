@@ -16,7 +16,11 @@
 //   2. Cards this wallet has LISTED on Magic Eden sit in the escrow, so step 1
 //      cannot see them (#145): each is re-read from DAS and written under the
 //      wallet only if the escrow still holds it.
-//   3. Upsert every row with last_seen_at = now, then the metadata denorm.
+//   3. Upsert every row with last_seen_at = now. Editions this wallet holds that the
+//      catalog has not seen yet (a new drop, or a set before its first census) are
+//      INSERTED — never updated, so an existing edition (above all the 125 Base
+//      editions, whose set/tier the DB owns) is untouched — so the binder can name the
+//      card today instead of after tonight's census. Then the metadata denorm.
 //   4. Only when the walk is COMPLETE (every page read, every escrow card read,
 //      every write landed) and `retire` is set: the wallet's Candy rows this walk
 //      did not touch are cards it no longer holds — retired by
@@ -27,7 +31,7 @@
 
 import { getAssetsByOwner, getAsset, type DasAsset } from "@/lib/chains/solana/das"
 import { MAGIC_EDEN_SOLANA_ESCROW, listedMintsInEscrowForSeller } from "@/lib/chains/solana/escrow"
-import { isBurnt, isPack, normalizeSerial, CANDY_MLB_UUID } from "@/lib/chains/solana/normalize"
+import { isBurnt, isPack, normalizeSerial, normalizeEdition, CANDY_MLB_UUID } from "@/lib/chains/solana/normalize"
 import { isCandySetAsset } from "@/lib/chains/solana/candy-sets"
 
 const UPSERT_CHUNK = 500
@@ -54,6 +58,9 @@ export interface CandyWalletRefreshResult {
   write_errors: string[]
   /** Set when the owner walk itself failed (DAS error, page cap, deadline). */
   walk_error: string | null
+  /** Catalog rows inserted for editions not seen before (insert-only). */
+  editions_inserted: number
+  editions_error: string | null
   /** Rows retired / ghost rows purged; null when retirement did not run. */
   retired: number | null
   ghosts_purged: number | null
@@ -79,11 +86,14 @@ export async function refreshCandyWallet(
     pages: 0,
     write_errors: [],
     walk_error: null,
+    editions_inserted: 0,
+    editions_error: null,
     retired: null,
     ghosts_purged: null,
     retire_error: null,
   }
   const seen = new Set<string>()
+  const editionsByKey = new Map<string, Record<string, unknown>>()
 
   const write = async (rows: Array<Record<string, unknown>>, label: string): Promise<number> => {
     let n = 0
@@ -108,10 +118,16 @@ export async function refreshCandyWallet(
       const items = (res?.items ?? []) as DasAsset[]
       r.pages = page
       const now = new Date().toISOString()
-      const rows = items
+      const cards = items
         .filter(isCandySetAsset)
         .filter((a) => !isBurnt(a))
         .filter((a) => !isPack(a))
+      for (const a of cards) {
+        const ed = normalizeEdition(a) as unknown as Record<string, unknown>
+        const key = String(ed.external_id ?? "")
+        if (key && !editionsByKey.has(key)) editionsByKey.set(key, ed)
+      }
+      const rows = cards
         .map((a) => {
           const s = normalizeSerial(a)
           if (!s.moment_id) return null
@@ -174,7 +190,37 @@ export async function refreshCandyWallet(
     r.written += r.escrow_listed_written
   }
 
-  // 3. Metadata denorm (COALESCE-guarded; non-fatal).
+  // 3. Insert-only catalog rows for editions not seen before (non-fatal: the cards are
+  // still the wallet's; they would just render unnamed until the census).
+  if (editionsByKey.size > 0) {
+    try {
+      const keys = [...editionsByKey.keys()]
+      const known = new Set<string>()
+      for (let i = 0; i < keys.length; i += UPSERT_CHUNK) {
+        const { data, error } = await db
+          .from("editions")
+          .select("external_id")
+          .eq("collection_id", CANDY_MLB_UUID)
+          .in("external_id", keys.slice(i, i + UPSERT_CHUNK))
+        if (error) throw new Error(error.message)
+        for (const row of (data ?? []) as Array<{ external_id: string }>) known.add(row.external_id)
+      }
+      const missing = keys.filter((k) => !known.has(k)).map((k) => editionsByKey.get(k)!)
+      for (let i = 0; i < missing.length; i += UPSERT_CHUNK) {
+        const chunk = missing.slice(i, i + UPSERT_CHUNK)
+        const { data, error } = await db
+          .from("editions")
+          .upsert(chunk, { onConflict: "external_id,collection_id", ignoreDuplicates: true })
+          .select("external_id")
+        if (error) throw new Error(error.message)
+        r.editions_inserted += data?.length ?? 0
+      }
+    } catch (e) {
+      r.editions_error = (e instanceof Error ? e.message : String(e)).slice(0, 200)
+    }
+  }
+
+  // 4. Metadata denorm (COALESCE-guarded; non-fatal).
   if (r.written > 0) {
     try {
       const { error } = await db.rpc("backfill_wmc_metadata_from_editions", {
@@ -189,7 +235,7 @@ export async function refreshCandyWallet(
 
   r.complete = r.walk_error === null && r.escrow_listed_error === null && r.write_errors.length === 0
 
-  // 4. Retire — only behind a complete walk.
+  // 5. Retire — only behind a complete walk.
   if (opts.retire && r.complete) {
     try {
       const { data, error } = await db.rpc("candy_retire_wallet_unseen", {
