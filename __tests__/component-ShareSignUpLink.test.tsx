@@ -18,7 +18,10 @@ describe("ShareSignUpLink", () => {
   it("returns to the same share card after login", () => {
     const { container } = render(<ShareSignUpLink wallet="0xb4ce555fbc2ad619" />)
     const href = container.querySelector("a")?.getAttribute("href") ?? ""
-    expect(href.startsWith("/login?next=")).toBe(true)
+    // 2026-11-08: the button says "Create a free account", so /login heads itself as
+    // account creation (intent=signup, the 11-07 CREATE FREE ACCOUNT pills' param).
+    expect(href.startsWith("/login?")).toBe(true)
+    expect(new URLSearchParams(href.split("?")[1]).get("intent")).toBe("signup")
     expect(new URLSearchParams(href.split("?")[1]).get("next")).toBe("/share/0xb4ce555fbc2ad619")
   })
 

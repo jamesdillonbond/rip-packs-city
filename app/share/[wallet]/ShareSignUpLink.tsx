@@ -12,7 +12,10 @@
 import { trackFunnelEvent } from "@/lib/track-funnel"
 
 export default function ShareSignUpLink({ wallet }: { wallet: string }) {
-  const href = `/login?next=${encodeURIComponent(`/share/${wallet}`)}`
+  // 2026-11-08: `intent=signup` heads /login as account creation, matching the
+  // button's words (the 11-07 header pills do the same). ChatGPT referrals land
+  // here via /insights/account-value — 6 visitors pasted a wallet in two weeks.
+  const href = `/login?intent=signup&next=${encodeURIComponent(`/share/${wallet}`)}`
   return (
     <a
       href={href}

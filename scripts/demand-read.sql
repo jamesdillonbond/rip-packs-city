@@ -28,6 +28,12 @@
 --                  the 10-15 block and the 10-22 night pass both read usage_events and reported 0. Counted
 --                  where bot_ua is false, by surface.
 --   email prompt = deal-watch-shown (10-14 and before) + first-alert-prompt-shown (dashboard card, 10-14+).
+--   challenge    = (2026-11-08) magic links whose return path named a challenge (metadata.challenge, logged
+--                  from 11-08 on — earlier links logged a query-stripped `next` and cannot be told apart),
+--                  and trophy_cases with a challenge_id created in the window (internal excluded).
+--   concierge    = (2026-11-08) support_conversations not flagged smoke, WITH a visit_session_id (the site
+--                  widget always sends one; direct-API probes do not — 11-07's unflagged probes had none),
+--                  minus the log_* rows (feedback_type set) that the bot writes beside an answer.
 WITH params AS (
   SELECT timestamptz '2026-10-15 07:00+00' AS s, timestamptz '2026-10-22 07:00+00' AS e
 ), ev AS (
@@ -72,5 +78,14 @@ UNION ALL SELECT 'signups (auth.users created, minus internal)', count(*)::text
   FROM auth.users au, params p
   WHERE au.created_at >= p.s AND au.created_at < p.e
     AND NOT EXISTS (SELECT 1 FROM internal_accounts ia WHERE ia.user_id = au.id)
+UNION ALL SELECT 'challenge: magic links carrying a challenge', count(*)::text FROM ev WHERE feature_name = 'magic-link-requested' AND metadata ? 'challenge'
+UNION ALL SELECT 'challenge: cases created / completed (minus internal)', count(*)::text || ' / ' || count(*) FILTER (WHERE tc.completed_at IS NOT NULL)
+  FROM trophy_cases tc, params p
+  WHERE tc.challenge_id IS NOT NULL AND tc.created_at >= p.s AND tc.created_at < p.e
+    AND NOT EXISTS (SELECT 1 FROM internal_accounts ia WHERE ia.user_id = tc.user_id)
+UNION ALL SELECT 'concierge: human messages (sessions)', count(*)::text || ' (' || count(DISTINCT sc.session_id) || ')'
+  FROM support_conversations sc, params p
+  WHERE sc.created_at >= p.s AND sc.created_at < p.e AND sc.is_smoke_test IS NOT TRUE
+    AND sc.visit_session_id IS NOT NULL AND sc.feedback_type IS NULL
 UNION ALL SELECT 'event: ' || feature_name, count(*)::text FROM ev GROUP BY feature_name
 ORDER BY 1;

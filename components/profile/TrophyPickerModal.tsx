@@ -245,8 +245,11 @@ export default function TrophyPickerModal({
   const [manualError, setManualError] = useState<string | null>(null);
 
   useEffect(() => {
-    track("trophy-modal-open", { slot });
-  }, [slot]);
+    // 2026-11-08: which CASE. Juiceshack opened the picker 19 times on 11-07 —
+    // the main case, then the Dame Time case, slot by slot — and the events could
+    // not say which was which. `case` is "main" or "extra" (an id never leaves).
+    track("trophy-modal-open", { slot, case: caseId ? "extra" : "main", challenge: initialQuery ? true : false });
+  }, [slot, caseId, initialQuery]);
 
   // Escape-to-close + focus trap + focus restore. The modal is always "open"
   // while mounted (parent controls mount), so isOpen is a constant true.
