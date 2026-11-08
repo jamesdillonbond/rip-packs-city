@@ -92,6 +92,17 @@ describe("buildPlayerBio", () => {
     expect(v.sources).toEqual(["LALIGA"])
   })
 
+  it("a club's own legend page is named as the club (Real Madrid / FC Barcelona)", () => {
+    const v = buildPlayerBio({ linked: 0, espn: null, onchain: null, nflverse_date_of_birth: null,
+      official: { source: "realmadrid.com", url: "https://www.realmadrid.com/en-US/the-club/history/football-legends/zinedine-zidane",
+                  date_of_birth: "1972-06-23", birth_place: "Marseille (France)", verified_by: "club-page-team-name-era", fetched_at: null } })!
+    expect(v.sources).toEqual(["Real Madrid"])
+    expect(v.birthplace).toBe("Marseille (France)")
+    const b = buildPlayerBio({ linked: 0, espn: null, onchain: null, nflverse_date_of_birth: null,
+      official: { source: "fcbarcelona.com", url: null, date_of_birth: "1980-03-21", birth_place: "Porto Alegre (Brazil)", verified_by: "club-page-team-name-era", fetched_at: null } })!
+    expect(b.sources).toEqual(["FC Barcelona"])
+  })
+
   it("an ESPN birthplace still wins over the league page; a disagreeing league DOB is named", () => {
     const v = buildPlayerBio({ ...TATUM, official: { source: "ufc.com", url: null, date_of_birth: "1998-03-04", birth_place: "Elsewhere", verified_by: "ufc-event-confirmed", fetched_at: null } })!
     expect(v.birthplace).toBe("Saint Louis, MO, USA")

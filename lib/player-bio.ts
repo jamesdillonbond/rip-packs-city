@@ -50,7 +50,9 @@ export interface PlayerBioView {
 /** Collections whose players can carry a bio (Pinnacle characters cannot). UFC fighters link through ESPN search (20261108213822). */
 export const PLAYER_BIO_COLLECTIONS = new Set(["nba_top_shot", "nfl_all_day", "candy_mlb", "laliga_golazos", "panini_blockchain", "ufc_strike"])
 
-const OFFICIAL_LABEL: Record<string, string> = { "ufc.com": "UFC.com", "laliga.com": "LALIGA" }
+const OFFICIAL_LABEL: Record<string, string> = {
+  "ufc.com": "UFC.com", "laliga.com": "LALIGA", "realmadrid.com": "Real Madrid", "fcbarcelona.com": "FC Barcelona",
+}
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}/
 
