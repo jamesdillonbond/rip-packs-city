@@ -187,7 +187,9 @@ function ProfilePageInner() {
   // `?pin=N` (the picker deep link) lands on the tab that shows the result.
   const tabParam = search?.get("tab") ?? null;
   const pinParam = search?.get("pin") ?? null;
-  const [tab, setTab] = useState<DashTab>(() => parseDashTab(tabParam ?? (pinParam ? "trophy" : null)));
+  // `?challenge=<slug>` (challengeEntryHref) lands on the Trophy tab too.
+  const challengeParam = search?.get("challenge") ?? null;
+  const [tab, setTab] = useState<DashTab>(() => parseDashTab(tabParam ?? (pinParam || challengeParam ? "trophy" : null)));
   // 2026-11-07: FOLLOW a client navigation that changes only `?tab=`. The page
   // stays mounted across /dashboard → /dashboard?tab=trophy (the header's Me
   // menu "Trophy cases" link, Settings links), so reading the param only in the
@@ -197,7 +199,7 @@ function ProfilePageInner() {
   const [seenTabParam, setSeenTabParam] = useState(tabParam);
   if (tabParam !== seenTabParam) {
     setSeenTabParam(tabParam);
-    setTab(parseDashTab(tabParam ?? (pinParam ? "trophy" : null)));
+    setTab(parseDashTab(tabParam ?? (pinParam || challengeParam ? "trophy" : null)));
   }
   const selectTab = useCallback((next: DashTab) => {
     setTab(next);
@@ -210,6 +212,7 @@ function ProfilePageInner() {
       // because Next routes replaceState through the router and the ?pin effect
       // below re-ran on the new search params (2026-11-07 review).
       url.searchParams.delete("pin");
+      url.searchParams.delete("challenge");
       window.history.replaceState(window.history.state, "", url.toString());
     } catch { /* no window / opaque URL */ }
   }, []);

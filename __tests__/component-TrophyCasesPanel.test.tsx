@@ -119,6 +119,23 @@ describe("TrophyCasesPanel (owner dashboard)", () => {
     expect(JSON.parse(post.init.body)).toEqual({ challengeSlug: "dame-time" })
   })
 
+  it("⚠ deep link: ?challenge=<slug> (survives the login bounce, unlike a hash) scrolls to the row, highlights it, and the challenge row is the target — not the panel top", async () => {
+    const scrolled: string[] = []
+    const orig = (Element.prototype as any).scrollIntoView
+    ;(Element.prototype as any).scrollIntoView = function (this: Element) { scrolled.push(this.id) }
+    window.history.replaceState(null, "", "/dashboard?tab=trophy&challenge=dame-time")
+    try {
+      routes["GET /api/profile/trophy-cases"] = () => ok({ cases: [], challenges: [DAME] })
+      const { container } = render(<TrophyCasesPanel ownerKey={null} savedChains={null} onToast={() => {}} />)
+      await screen.findByText("Enter")
+      await waitFor(() => expect(scrolled[0]).toBe("challenge-dame-time"))
+      expect(container.querySelector("#challenge-dame-time")!.getAttribute("data-focused")).toBe("true")
+    } finally {
+      ;(Element.prototype as any).scrollIntoView = orig
+      window.history.replaceState(null, "", "/")
+    }
+  })
+
   it("deep link: #challenge-<slug> scrolls to the challenge row once the panel loads — before AND after entering", async () => {
     const scrolled: string[] = []
     const orig = (Element.prototype as any).scrollIntoView
@@ -128,13 +145,13 @@ describe("TrophyCasesPanel (owner dashboard)", () => {
       routes["GET /api/profile/trophy-cases"] = () => ok({ cases: [], challenges: [DAME] })
       render(<TrophyCasesPanel ownerKey={null} savedChains={null} onToast={() => {}} />)
       await screen.findByText("Enter")
-      await waitFor(() => expect(scrolled).toEqual(["challenge-dame-time"]))
+      await waitFor(() => expect(scrolled[0]).toBe("challenge-dame-time"))
       cleanup()
       scrolled.length = 0
       routes["GET /api/profile/trophy-cases"] = () =>
         ok({ cases: [{ id: CASE, name: "Dame Time", created_at: "", completed_at: null, challenge: DAME, slabs: [] }], challenges: [DAME] })
       render(<TrophyCasesPanel ownerKey={null} savedChains={null} onToast={() => {}} />)
-      await waitFor(() => expect(scrolled).toEqual(["challenge-dame-time"]))
+      await waitFor(() => expect(scrolled[0]).toBe("challenge-dame-time"))
     } finally {
       ;(Element.prototype as any).scrollIntoView = orig
       window.history.replaceState(null, "", "/")
@@ -283,7 +300,7 @@ describe("ChallengeBoardClient", () => {
     // The CTA lands ON the challenge (Trophy tab, scrolled to its row) — a bare
     // /dashboard opened Overview and left the collector hunting for it.
     expect(screen.getByText(/Enter from your dashboard/).closest("a")!.getAttribute("href")).toBe(
-      "/dashboard?tab=trophy#challenge-dame-time"
+      "/dashboard?tab=trophy&challenge=dame-time"
     )
   })
 

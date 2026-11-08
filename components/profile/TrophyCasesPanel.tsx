@@ -20,9 +20,11 @@ import TrophyNoteEditor from "@/components/profile/TrophyNoteEditor";
 import { apiErrorMessage } from "@/lib/api-error-message";
 import { MAX_CASE_NAME_LEN, MAX_EXTRA_CASES } from "@/lib/trophy/cases";
 import { parseChallengeRules } from "@/lib/trophy/challenge-rules";
-import { challengeAnchorId } from "@/lib/trophy/challenge-link";
+import { challengeAnchorId, challengeFocusFromUrl } from "@/lib/trophy/challenge-link";
 
 const condensedFont = "var(--font-display)";
+// A visitor taking the wheel ends the deep-link re-alignment.
+const USER_SCROLL_EVENTS = ["wheel", "touchstart", "keydown", "pointerdown"] as const;
 const monoFont = "var(--font-mono)";
 
 export interface TrophyChallengeInfo {
@@ -132,17 +134,39 @@ export default function TrophyCasesPanel({
     void refresh();
   }, [refresh]);
 
-  // Deep link (challengeEntryHref): the browser's own hash scroll fires before
-  // this panel exists, so scroll once the rows have rendered. Once per mount —
-  // a later refresh (every pick) must not yank the page back.
+  // Deep link (challengeEntryHref): `?challenge=<slug>` (or the older
+  // `#challenge-<slug>`). The browser's own scroll can't do it — this panel
+  // renders after its own fetch, BELOW a main case that is still loading its
+  // slabs, so a one-shot scroll lands and then gets pushed off-screen. Scroll,
+  // then keep the target pinned to the top while the layout above settles
+  // (≤ 6 s), and stop the moment the visitor scrolls on their own. Once per
+  // mount: a refresh after each pick must not yank the page back.
   const loaded = load.state === "ok";
-  const scrolledToHash = useRef(false);
+  const focusDone = useRef(false);
+  const [focusSlug, setFocusSlug] = useState<string | null>(null);
   useEffect(() => {
-    if (!loaded || scrolledToHash.current) return;
-    scrolledToHash.current = true;
-    const id = decodeURIComponent(window.location.hash.slice(1));
-    if (!id.startsWith("challenge-")) return;
-    document.getElementById(id)?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+    if (!loaded || focusDone.current) return;
+    focusDone.current = true;
+    const slug = challengeFocusFromUrl(window.location.search, window.location.hash);
+    if (!slug) return;
+    const target = () =>
+      document.getElementById(challengeAnchorId(slug)) ?? document.getElementById("trophy-cases-more");
+    const align = () => target()?.scrollIntoView?.({ block: "start" });
+    align();
+    setFocusSlug(slug);
+    let stopped = false;
+    const stop = () => {
+      if (stopped) return;
+      stopped = true;
+      ro?.disconnect();
+      clearTimeout(timer);
+      for (const ev of USER_SCROLL_EVENTS) window.removeEventListener(ev, stop);
+    };
+    const ro = typeof ResizeObserver === "function" ? new ResizeObserver(() => align()) : null;
+    ro?.observe(document.body);
+    for (const ev of USER_SCROLL_EVENTS) window.addEventListener(ev, stop, { passive: true });
+    const timer = setTimeout(stop, 6000);
+    return stop;
   }, [loaded]);
 
   const send = useCallback(
@@ -190,7 +214,7 @@ export default function TrophyCasesPanel({
   const atCap = cases.length >= MAX_EXTRA_CASES;
 
   return (
-    <section className="rpc-section" data-tour-anchor="trophy-cases">
+    <section className="rpc-section" id="trophy-cases-more" data-tour-anchor="trophy-cases" style={{ scrollMarginTop: 80 }}>
       <style>{`
         @media (max-width: 768px) {
           .rpc-xcase-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
@@ -206,8 +230,10 @@ export default function TrophyCasesPanel({
         <div
           key={ch.id}
           id={challengeAnchorId(ch.slug)}
+          data-focused={focusSlug === ch.slug ? "true" : undefined}
           style={{
             scrollMarginTop: 80,
+            boxShadow: focusSlug === ch.slug ? "0 0 0 2px var(--rpc-red-border)" : undefined,
             display: "flex",
             gap: 12,
             alignItems: "center",
@@ -248,6 +274,7 @@ export default function TrophyCasesPanel({
         <CaseBlock
           key={c.id}
           c={c}
+          focused={!!c.challenge && c.challenge.slug === focusSlug}
           board={load.board}
           busy={busy}
           onPick={(slot) => setPick({ c, slot })}
@@ -336,6 +363,7 @@ export default function TrophyCasesPanel({
 
 function CaseBlock({
   c,
+  focused,
   board,
   busy,
   onPick,
@@ -352,6 +380,7 @@ function CaseBlock({
   onRename: (name: string) => Promise<boolean>;
   onDelete: () => void;
   onNoteSaved: () => void;
+  focused?: boolean;
 }) {
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState(c.name);
@@ -360,7 +389,15 @@ function CaseBlock({
   const ch = c.challenge;
 
   return (
-    <div id={ch ? challengeAnchorId(ch.slug) : undefined} style={{ marginBottom: 22, scrollMarginTop: 80 }}>
+    <div
+      id={ch ? challengeAnchorId(ch.slug) : undefined}
+      data-focused={focused ? "true" : undefined}
+      style={{
+        marginBottom: 22,
+        scrollMarginTop: 80,
+        ...(focused ? { boxShadow: "0 0 0 2px var(--rpc-red-border)", borderRadius: 10, padding: 8 } : null),
+      }}
+    >
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0, flexWrap: "wrap" }}>
           {renaming && !ch ? (
