@@ -162,18 +162,22 @@ export function filterSortMoments<T extends TrophyMomentLike>(
   query: string,
 ): T[] {
   if (!moments) return []
-  const q = query.trim().toLowerCase()
+  // EVERY word must appear in SOME field (2026-11-08): the Dame Time challenge
+  // pre-fills "Damian Lillard", a collector appended "extra spice", and the old
+  // whole-phrase-in-one-field test hid the Moment — the name is the player, the
+  // words "extra spice" are the SET. Mirrors get_user_top_owned_moments' p_query.
+  const words = query.trim().split(/\s+/).filter(Boolean)
   const filtered = (
     tierFilter === 'ALL'
       ? moments.slice()
       : moments.filter((m) => normalizeTier(m.tier) === tierFilter)
-  ).filter(
-    (m) =>
-      !q ||
-      [displayName(m), m.set_name, m.team_name, m.character_name].some((s) =>
-        textIncludes(s, q),
-      ),
-  )
+  ).filter((m) => {
+    if (words.length === 0) return true
+    const hay = [displayName(m), m.set_name, m.team_name, m.character_name]
+      .filter(Boolean)
+      .join(' ')
+    return words.every((w) => textIncludes(hay, w))
+  })
   filtered.sort((a, b) => {
     switch (sort) {
       case 'serial_asc': {

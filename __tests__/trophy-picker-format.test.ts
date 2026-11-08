@@ -176,6 +176,14 @@ describe("filterSortMoments", () => {
     expect(filterSortMoments(moments, "fmv_desc", "ALL", "   ")).toHaveLength(4)
   })
 
+  it("every word must match, each in ANY field (player + set, the Dame Time case)", () => {
+    // "Curry Base" spans player + set — no single field holds the phrase.
+    expect(filterSortMoments(moments, "fmv_desc", "ALL", "Curry Base").map((x) => x.moment_id)).toEqual(["1"])
+    expect(filterSortMoments(moments, "fmv_desc", "ALL", "  jokic   nuggets ").map((x) => x.moment_id)).toEqual(["3"])
+    // AND, not OR: Curry is Base but not Metallic, Durant is Metallic but not Curry.
+    expect(filterSortMoments(moments, "fmv_desc", "ALL", "curry metallic")).toHaveLength(0)
+  })
+
   it("combines tier filter and query", () => {
     const res = filterSortMoments(moments, "fmv_desc", "RARE", "warriors")
     expect(res.map((x) => x.moment_id)).toEqual(["1"])

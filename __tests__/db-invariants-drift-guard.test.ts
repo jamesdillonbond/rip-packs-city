@@ -1513,7 +1513,9 @@ const PINS = [
     // Repointed 2026-11-06: p_query (5th arg) searches the whole wallet
     // server-side; a Top Shot row's image is always the per-Moment media URL
     // (the cached Series-1 edition hero assets are dead).
-    migration: "supabase/migrations/20261107024511_audit_20261106_trophy_picker_searches_the_whole_wallet_and_topshot_art_is_the_media_url.sql",
+    // Repointed 2026-11-08: every typed word must match some field (player +
+    // set across fields), so "Damian Lillard Extra Spice" finds the Moment.
+    migration: "supabase/migrations/20261108153540_audit_20261108_trophy_picker_search_matches_every_word_across_fields.sql",
   },
   {
     fn: "get_trophy_slab_data",

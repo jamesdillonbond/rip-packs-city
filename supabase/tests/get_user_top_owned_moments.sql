@@ -20,6 +20,8 @@
 --     (player / set / team / character / edition name, case-insensitive
 --     substring, % and _ literal) in BOTH branches, before the fmv cap — the
 --     picker's "search inside the top 96" defect; NULL / blank = no filter;
+--     (2026-11-08) the query is split into words and EVERY word must appear in
+--     SOME field — "Damian Lillard Extra Spice" spans player + set;
 --   * ordered by fmv DESC, capped at p_limit.
 --   * PANINI (2026-09-28): cards under the Panini usernames the user LINKED
 --     (saved_collector_identities) are offered — the walked profile, plus serials
@@ -30,7 +32,7 @@
 --     or another collection's filter excludes the branch.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20261107024511_audit_20261106_trophy_picker_searches_the_whole_wallet_and_topshot_art_is_the_media_url.sql);
+-- (supabase/migrations/20261108153540_audit_20261108_trophy_picker_search_matches_every_word_across_fields.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -92,11 +94,17 @@ CREATE OR REPLACE FUNCTION public.get_user_top_owned_moments(p_user_id uuid, p_l
 AS $function$
 DECLARE
   v_panini constant uuid := 'd1a0a7f5-609a-49f4-a1a7-4eaac55b020b';
-  -- A typed name is a SUBSTRING match, case-insensitive; % and _ in the input
-  -- are literal characters, never wildcards. NULL / blank = no name filter.
-  v_q text := CASE
+  -- A typed query is split into WORDS; EVERY word must appear (case-insensitive
+  -- substring) somewhere in the row's searchable fields, in any field — so
+  -- "Damian Lillard Extra Spice" finds the Lillard whose SET is Extra Spice
+  -- (2026-11-08). % and _ in the input are literal characters, never wildcards.
+  -- NULL / blank = no name filter.
+  v_words text[] := CASE
     WHEN p_query IS NULL OR btrim(p_query) = '' THEN NULL
-    ELSE '%' || replace(replace(replace(btrim(p_query), '\', '\\'), '%', '\%'), '_', '\_') || '%'
+    ELSE ARRAY(
+      SELECT '%' || replace(replace(replace(w, '\', '\\'), '%', '\%'), '_', '\_') || '%'
+      FROM regexp_split_to_table(btrim(p_query), '\s+') AS w
+    )
   END;
 BEGIN
   IF auth.uid() IS NOT NULL AND auth.uid() <> p_user_id THEN
@@ -163,9 +171,8 @@ BEGIN
       LIMIT 1
     ) sf ON true
     WHERE r.rn = 1
-      AND (v_q IS NULL
-           OR r.player_name ILIKE v_q OR r.set_name ILIKE v_q OR e.team_name ILIKE v_q
-           OR r.character_name ILIKE v_q OR r.edition_name ILIKE v_q)
+      AND (v_words IS NULL
+           OR concat_ws(' ', r.player_name, r.set_name, e.team_name, r.character_name, r.edition_name) ILIKE ALL (v_words))
   ),
   panini_names AS (
     SELECT DISTINCT sci.identity_value AS username
@@ -233,10 +240,10 @@ BEGIN
       ORDER BY fs.computed_at DESC
       LIMIT 1
     ) sf ON true
-    WHERE (v_q IS NULL
-           OR COALESCE(e.player_name, pe.player_name, d.athlete) ILIKE v_q
-           OR COALESCE(e.set_name, pe.set_name, d.cardset) ILIKE v_q
-           OR e.team_name ILIKE v_q)
+    WHERE (v_words IS NULL
+           OR concat_ws(' ', COALESCE(e.player_name, pe.player_name, d.athlete),
+                             COALESCE(e.set_name, pe.set_name, d.cardset),
+                             e.team_name) ILIKE ALL (v_words))
   ),
   all_rows AS (
     SELECT * FROM wallet_rows
@@ -381,6 +388,14 @@ SELECT _assert_eq((SELECT count(*)::text FROM public.get_user_top_owned_moments(
 SELECT _assert_eq((SELECT count(*)::text FROM public.get_user_top_owned_moments(:U1::uuid, 24, NULL, NULL, 'D_me')), '0', 'a literal _ is a character, never a wildcard');
 SELECT _assert_eq((SELECT count(*)::text FROM public.get_user_top_owned_moments(:U1::uuid, 24, NULL, NULL, 'nobody by this name')), '0', 'no match -> empty, never the unfiltered list');
 SELECT _assert_eq((SELECT string_agg(moment_id, ',' ORDER BY moment_id) FROM public.get_user_top_owned_moments(:U1::uuid, 24, 'NBA', NULL, 'lillard')), 'm7', 'p_query composes with the league filter');
+
+-- ── 9. every word must match, in ANY field (2026-11-08) ──────────────────────
+-- "Damian Lillard Extra Spice" (the challenge pre-fills the name, the collector
+-- appends the set) found nothing: no single field held the whole phrase.
+SELECT _assert_eq((SELECT string_agg(moment_id, ',' ORDER BY moment_id) FROM public.get_user_top_owned_moments(:U1::uuid, 24, NULL, NULL, 'Damian Lillard Cosmic')), 'm7', 'player + set words across two fields find the row');
+SELECT _assert_eq((SELECT string_agg(moment_id, ',' ORDER BY moment_id) FROM public.get_user_top_owned_moments(:U1::uuid, 24, NULL, NULL, '  dame   blazers ')), 'm1', 'player + team words, extra whitespace ignored');
+SELECT _assert_eq((SELECT count(*)::text FROM public.get_user_top_owned_moments(:U1::uuid, 24, NULL, NULL, 'lillard base')), '0', 'AND, not OR: Lillard is Cosmic and Dame is Base, so neither matches both words');
+SELECT _assert_eq((SELECT string_agg(moment_id, ',' ORDER BY moment_id) FROM public.get_user_top_owned_moments(:U1::uuid, 24, NULL, :PAN::uuid, 'catalogued cat set')), 'pc-1', 'Panini branch: player + set words across fields');
 
 SELECT '✓ get_user_top_owned_moments: all assertions passed' AS result;
 
