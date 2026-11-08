@@ -119,6 +119,28 @@ describe("TrophyCasesPanel (owner dashboard)", () => {
     expect(JSON.parse(post.init.body)).toEqual({ challengeSlug: "dame-time" })
   })
 
+  it("deep link: #challenge-<slug> scrolls to the challenge row once the panel loads — before AND after entering", async () => {
+    const scrolled: string[] = []
+    const orig = (Element.prototype as any).scrollIntoView
+    ;(Element.prototype as any).scrollIntoView = function (this: Element) { scrolled.push(this.id) }
+    window.history.replaceState(null, "", "/dashboard?tab=trophy#challenge-dame-time")
+    try {
+      routes["GET /api/profile/trophy-cases"] = () => ok({ cases: [], challenges: [DAME] })
+      render(<TrophyCasesPanel ownerKey={null} savedChains={null} onToast={() => {}} />)
+      await screen.findByText("Enter")
+      await waitFor(() => expect(scrolled).toEqual(["challenge-dame-time"]))
+      cleanup()
+      scrolled.length = 0
+      routes["GET /api/profile/trophy-cases"] = () =>
+        ok({ cases: [{ id: CASE, name: "Dame Time", created_at: "", completed_at: null, challenge: DAME, slabs: [] }], challenges: [DAME] })
+      render(<TrophyCasesPanel ownerKey={null} savedChains={null} onToast={() => {}} />)
+      await waitFor(() => expect(scrolled).toEqual(["challenge-dame-time"]))
+    } finally {
+      ;(Element.prototype as any).scrollIntoView = orig
+      window.history.replaceState(null, "", "/")
+    }
+  })
+
   it("does not offer a challenge already entered; a null challenge list offers nothing", async () => {
     routes["GET /api/profile/trophy-cases"] = () =>
       ok({ cases: [{ id: CASE, name: "Dame Time", created_at: "", completed_at: null, challenge: DAME, slabs: [] }], challenges: [DAME] })
@@ -258,7 +280,11 @@ describe("ChallengeBoardClient", () => {
       board([{ case_id: CASE, username: "trev", slab_count: 1, completed_at: null, slabs: [slab(1)] }])
     render(<ChallengeBoardClient slug="dame-time" />)
     expect(await screen.findByText("@trev")).toBeTruthy()
-    expect(screen.getByText(/Enter from your dashboard/)).toBeTruthy()
+    // The CTA lands ON the challenge (Trophy tab, scrolled to its row) — a bare
+    // /dashboard opened Overview and left the collector hunting for it.
+    expect(screen.getByText(/Enter from your dashboard/).closest("a")!.getAttribute("href")).toBe(
+      "/dashboard?tab=trophy#challenge-dame-time"
+    )
   })
 
   it("'complete' follows the LIVE count — a case stamped complete and then unpinned to 4 is not complete", async () => {

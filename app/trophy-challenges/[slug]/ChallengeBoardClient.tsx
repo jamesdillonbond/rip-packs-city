@@ -11,6 +11,7 @@ import Link from "next/link"
 import { useEffect, useState } from "react"
 import TrophySlab, { type TrophySlabData } from "@/components/TrophySlab"
 import { slotsOf } from "@/components/profile/TrophyCasesPanel"
+import { challengeEntryHref } from "@/lib/trophy/challenge-link"
 
 const condensedFont = "var(--font-display)"
 const monoFont = "var(--font-mono)"
@@ -95,7 +96,7 @@ export default function ChallengeBoardClient({ slug }: { slug: string }) {
       <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", marginBottom: 28 }}>
         {open ? (
           <Link
-            href="/dashboard"
+            href={challengeEntryHref(slug)}
             style={{
               fontFamily: condensedFont, fontWeight: 800, fontSize: 13, letterSpacing: "0.08em", textTransform: "uppercase",
               padding: "10px 16px", borderRadius: 8, textDecoration: "none",

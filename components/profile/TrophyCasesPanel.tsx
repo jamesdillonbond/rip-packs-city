@@ -13,13 +13,14 @@
 // prompt simply isn't offered rather than claiming there are no challenges.
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import TrophySlab, { type TrophySlabData } from "@/components/TrophySlab";
 import TrophyPickerModal from "@/components/profile/TrophyPickerModal";
 import TrophyNoteEditor from "@/components/profile/TrophyNoteEditor";
 import { apiErrorMessage } from "@/lib/api-error-message";
 import { MAX_CASE_NAME_LEN, MAX_EXTRA_CASES } from "@/lib/trophy/cases";
 import { parseChallengeRules } from "@/lib/trophy/challenge-rules";
+import { challengeAnchorId } from "@/lib/trophy/challenge-link";
 
 const condensedFont = "var(--font-display)";
 const monoFont = "var(--font-mono)";
@@ -131,6 +132,19 @@ export default function TrophyCasesPanel({
     void refresh();
   }, [refresh]);
 
+  // Deep link (challengeEntryHref): the browser's own hash scroll fires before
+  // this panel exists, so scroll once the rows have rendered. Once per mount —
+  // a later refresh (every pick) must not yank the page back.
+  const loaded = load.state === "ok";
+  const scrolledToHash = useRef(false);
+  useEffect(() => {
+    if (!loaded || scrolledToHash.current) return;
+    scrolledToHash.current = true;
+    const id = decodeURIComponent(window.location.hash.slice(1));
+    if (!id.startsWith("challenge-")) return;
+    document.getElementById(id)?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+  }, [loaded]);
+
   const send = useCallback(
     async (url: string, method: string, body: unknown, okText: string): Promise<boolean> => {
       setBusy(true);
@@ -191,7 +205,9 @@ export default function TrophyCasesPanel({
       {joinable.map((ch) => (
         <div
           key={ch.id}
+          id={challengeAnchorId(ch.slug)}
           style={{
+            scrollMarginTop: 80,
             display: "flex",
             gap: 12,
             alignItems: "center",
@@ -344,7 +360,7 @@ function CaseBlock({
   const ch = c.challenge;
 
   return (
-    <div style={{ marginBottom: 22 }}>
+    <div id={ch ? challengeAnchorId(ch.slug) : undefined} style={{ marginBottom: 22, scrollMarginTop: 80 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0, flexWrap: "wrap" }}>
           {renaming && !ch ? (
