@@ -82,3 +82,15 @@ export function sortNotableSerials<T extends { tag: string; serial: number }>(
     return d !== 0 ? d : a.serial - b.serial
   })
 }
+
+/**
+ * The floor cell's sub-line on a Top Shot PARALLEL printing that shows no ask
+ * (2026-11-07 review). It used to read "per-printing floor not yet indexed" in
+ * every case — stale since #206 (a parallel's ask is its own `edition_offers`
+ * row) and a conclusion drawn from a failed read. Two states, two lines:
+ * the market read failed → we could not load it; it answered → no ask is on
+ * file for this printing (a FACT about our data, not a claim nobody listed it).
+ */
+export function parallelFloorSubline(marketReadOk: boolean): string {
+  return marketReadOk ? "no ask on file for this printing" : "floor couldn't load"
+}

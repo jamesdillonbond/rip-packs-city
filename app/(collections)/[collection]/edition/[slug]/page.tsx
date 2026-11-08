@@ -45,7 +45,7 @@ import { isExhibitionTeamSlug } from "@/lib/team-denylist"
 import { editionHref, momentSubjectHref, momentSubjectName } from "@/lib/entity-href"
 import IpfsThumb from "@/components/entity/IpfsThumb"
 import MarketCapTile from "@/components/entity/MarketCapTile"
-import { isTopShotFossilSlug, ASK_LABEL, notableTagLabel, fmvDayDelta, sortNotableSerials } from "@/lib/edition-detail-format"
+import { parallelFloorSubline, isTopShotFossilSlug, ASK_LABEL, notableTagLabel, fmvDayDelta, sortNotableSerials } from "@/lib/edition-detail-format"
 import { normalizeBadgeKey } from "@/lib/badges/normalize"
 import { AUTOGRAPH_BADGE_TITLE } from "@/lib/autographs"
 import { parallelLabelFromBadges } from "@/lib/edition-parallel"
@@ -1116,12 +1116,12 @@ export default async function EditionPage(
         <StatCell
           label={askLabel}
           value={fmtUsd(askValue)}
-          // On a parallel printing the floor ask is suppressed (the edition
-          // floor is a different printing's listing) — say so rather than leave
-          // a bare em-dash. Per-printing listing keying is a follow-up.
+          // On a parallel printing the ask is the printing's OWN row (#206), never
+          // the edition floor — say why it is empty rather than leave a bare
+          // em-dash, and never call a failed read "not indexed" (2026-11-07).
           sub={
             currentSibling?.subedition_name && askValue == null
-              ? "per-printing floor not yet indexed"
+              ? parallelFloorSubline(bundleRes.ok)
               : askAge === null
                 // Age UNKNOWN (no timestamp, or the cross-market fallback). No
                 // marker — an unknown age must never render as a fresh one.
