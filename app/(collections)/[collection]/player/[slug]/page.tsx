@@ -30,6 +30,8 @@ import { buildPlayerSetCards } from "@/lib/player-page-view"
 import PlayerSeasonStats from "@/components/entity/PlayerSeasonStats"
 import type { SeasonStatsResult } from "@/lib/player-page-season-stats"
 import PlayerRecentGames from "@/components/entity/PlayerRecentGames"
+import PlayerBio from "@/components/entity/PlayerBio"
+import { PLAYER_BIO_COLLECTIONS, type PlayerBioResult } from "@/lib/player-bio"
 import { RECENT_GAMES_COLLECTIONS, RECENT_GAMES_PERSON_COLLECTIONS, marketCapKey, type RecentGamesResult } from "@/lib/player-recent-games"
 import { proxyIpfsImageUrl } from "@/lib/ipfs-media"
 import { editionRouteHref } from "@/lib/entity-href"
@@ -429,6 +431,20 @@ async function SeasonStatsSection({ playerId, playerName, collectionSlug }: { pl
   return <PlayerSeasonStats result={row} ok={ok} playerName={playerName} />
 }
 
+// Bio (2026-11-08): date of birth, birthplace, citizenship, college — ESPN's athlete record for
+// the ONE linked person (same keys as Recent Games), with Top Shot on-chain metadata and nflverse
+// as fallbacks. A failed read renders SectionUnavailable; nothing stated renders nothing.
+async function BioSection({ playerId, playerName, slug, collectionSlug }: { playerId: string; playerName: string; slug: string; collectionSlug: string }) {
+  if (!PLAYER_BIO_COLLECTIONS.has(collectionSlug)) return null
+  const slugs = Array.from(new Set([slug, marketCapKey(playerName)].filter((s) => s.length > 0)))
+  const { row, ok } = await sectionRowResult<PlayerBioResult>("player bio", "get_player_bio", {
+    p_collection_slug: collectionSlug,
+    p_slugs: slugs,
+    p_player_id: RECENT_GAMES_PERSON_COLLECTIONS.has(collectionSlug) ? playerId : null,
+  })
+  return <PlayerBio result={row} ok={ok} playerName={playerName} />
+}
+
 // Recent games (2026-11-08): ESPN box scores from the espn-game-logs lane, each beside
 // this collection's player market cap the day before and after. Top Shot / All Day /
 // Candy read by the PERSON (players.id) — the All Day slug "josh-allen" carries two ESPN
@@ -761,6 +777,11 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
       {/* ── Season stats (ESPN, through the league-id crosswalk) ─────────── */}
       <Suspense fallback={null}>
         <SeasonStatsSection playerId={detail.id} playerName={detail.name} collectionSlug={coll.dbSlug} />
+      </Suspense>
+
+      {/* ── Bio (ESPN athlete record; on-chain / nflverse fallbacks) ─────── */}
+      <Suspense fallback={null}>
+        <BioSection playerId={detail.id} playerName={detail.name} slug={slug} collectionSlug={coll.dbSlug} />
       </Suspense>
 
       {/* ── Recent games (ESPN box scores beside the market-cap move) ────── */}
