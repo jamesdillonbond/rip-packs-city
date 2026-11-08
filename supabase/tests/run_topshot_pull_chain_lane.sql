@@ -4,11 +4,16 @@
 -- ids read back, 216 of 216 set:play agreeing with what we knew). Claims:
 --
 --   E1. Packs with an unnamed or id-neighbour pull, rip block on/after the
---       mainnet24 root, are enqueued (priority = unnamed pulls); a pack whose
+--       mainnet27 root, are enqueued (priority = unnamed pulls); a pack whose
 --       every pull a record names, or below the floor, is not.
---   D1. mainnet24 packs get the pre-Cadence-1.0 script on the mainnet24 node;
---       later ones the Cadence 1.0 script on their own spork's node; the read
---       asks for EVERY pull of the pack; <= 20 per node per tick.
+--   R1. (2026-11-07) Below the mainnet27 root no node serves the block (#181):
+--       a pending request there is closed failed with the #181 reason and never
+--       dispatched, a failed one still carrying the dead node's DNS error is
+--       relabelled, any other failure is left alone; no read ever goes to a
+--       mainnet24-26 node.
+--   D1. mainnet27 packs get the Cadence 1.0 script on the mainnet27 node,
+--       later ones on rest-mainnet; the read asks for EVERY pull of the pack;
+--       <= 20 per node per tick.
 --   C1. A landed read names an unnamed pull (resolved_via chain_history),
 --       replaces an inference, corrects a record naming another edition (a
 --       parallel filed under its base), leaves an agreeing record alone, and
@@ -20,7 +25,8 @@
 --
 -- The function DDL below is VERBATIM from the committed migration
 -- (supabase/migrations/20260929160000_audit_20260929_topshot_pulls_named_by_reading_the_chain_at_the_open_block.sql;
--- the 20-per-node cap from 20260929161000_audit_20260929_chain_pull_lane_20_reads_per_node.sql).
+-- the 20-per-node cap from 20260929161000_audit_20260929_chain_pull_lane_20_reads_per_node.sql;
+-- the mainnet27 floor from 20261108071848_audit_20261107_topshot_pull_chain_lane_floor_at_mainnet27.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -75,19 +81,15 @@ AS $function$
 DECLARE
   v_started   timestamptz := clock_timestamp();
   v_ts        constant uuid := '95f28a17-224a-4025-96ad-adf8a4c63bfd';
-  v_floor     constant bigint := 65264619;   -- mainnet24 root: older sporks no longer resolve
+  -- mainnet27 root. Flow retired the mainnet24-26 access nodes (#181: no TCP
+  -- handshake from 10-09, no DNS record from <= 10-23), so an older rip block
+  -- has no node to read it at; 2026-11-07 300 such packs burned 1,800 DNS
+  -- failures in 4 h and went terminal. They are now closed without a read.
+  v_floor     constant bigint := 130290659;
+  v_retired_msg constant text := 'rip block before 130290659 (mainnet27 root): Flow retired the mainnet24-26 access nodes, so the open block is not readable (#181)';
   v_per_node  constant int := 20;
   v_max_att   constant int := 6;
-  -- mainnet24 still executes pre-Cadence-1.0 scripts
-  v_src_pre   constant text := 'import TopShot from 0x0b2a3299cc857e29
-pub fun main(owner: Address, ids: [UInt64]): {UInt64: [UInt32]} {
-  let out: {UInt64: [UInt32]} = {}
-  let col = getAccount(owner).getCapability(/public/MomentCollection).borrow<&{TopShot.MomentCollectionPublic}>()
-  if col == nil { return out }
-  for id in ids { if let m = col!.borrowMoment(id: id) { out[id] = [m.data.setID, m.data.playID, m.data.serialNumber, TopShot.getMomentsSubedition(nftID: id) ?? 0] } }
-  return out
-}';
-  v_src_c1    constant text := 'import TopShot from 0x0b2a3299cc857e29
+  v_src_c1   constant text := 'import TopShot from 0x0b2a3299cc857e29
 access(all) fun main(owner: Address, ids: [UInt64]): {UInt64: [UInt32]} {
   let out: {UInt64: [UInt32]} = {}
   let col = getAccount(owner).capabilities.borrow<&{TopShot.MomentCollectionPublic}>(/public/MomentCollection)
@@ -100,12 +102,25 @@ access(all) fun main(owner: Address, ids: [UInt64]): {UInt64: [UInt32]} {
   v_collected int := 0; v_done int := 0; v_failed int := 0; v_throttled int := 0; v_expired int := 0;
   v_reads_new int := 0; v_short int := 0;
   v_named_new int := 0; v_named_over_inferred int := 0; v_corrected int := 0; v_edition_missing int := 0;
-  v_packs int := 0; v_enqueued int := 0; v_dispatched int := 0;
+  v_packs int := 0; v_enqueued int := 0; v_dispatched int := 0; v_retired int := 0;
   v_last_error text := NULL;
 BEGIN
   IF NOT pg_try_advisory_xact_lock(hashtext('run_topshot_pull_chain_lane')) THEN
     RETURN jsonb_build_object('ok', true, 'skipped', 'another run holds the lock');
   END IF;
+
+  -- (0) A request below the floor has no node to read it: close it as failed,
+  -- saying why, and never dispatch it. A failed one still carrying the dead
+  -- node's DNS error is relabelled with the same reason (the 11-07 300).
+  WITH ret AS (
+    UPDATE public.topshot_pull_chain_requests
+       SET status = 'failed', request_id = NULL, last_error = v_retired_msg,
+           finished_at = coalesce(finished_at, now())
+     WHERE block_height < v_floor
+       AND (status = 'pending' OR (status = 'failed' AND last_error = 'Couldn''t resolve host name'))
+    RETURNING 1
+  )
+  SELECT count(*) INTO v_retired FROM ret;
 
   -- (1) Collect every landed read.
   FOR r IN
@@ -262,13 +277,10 @@ BEGIN
   FOR r IN
     WITH p AS (
       SELECT q.*,
-             CASE WHEN q.block_height <= 85981134  THEN 'http://access-001.mainnet24.nodes.onflow.org:8070'
-                  WHEN q.block_height <= 88226266  THEN 'http://access-001.mainnet25.nodes.onflow.org:8070'
-                  WHEN q.block_height <= 130290658 THEN 'http://access-001.mainnet26.nodes.onflow.org:8070'
-                  WHEN q.block_height <= 137390145 THEN 'http://access-001.mainnet27.nodes.onflow.org:8070'
+             CASE WHEN q.block_height <= 137390145 THEN 'http://access-001.mainnet27.nodes.onflow.org:8070'
                   ELSE 'https://rest-mainnet.onflow.org' END AS node
         FROM public.topshot_pull_chain_requests q
-       WHERE q.status = 'pending'
+       WHERE q.status = 'pending' AND q.block_height >= v_floor
     ), ranked AS (
       SELECT p.*, row_number() OVER (PARTITION BY p.node ORDER BY p.priority DESC, p.block_height DESC) AS rn
         FROM p
@@ -287,7 +299,7 @@ BEGIN
     SELECT net.http_post(
       url := r.node || '/v1/scripts?block_height=' || r.block_height,
       body := jsonb_build_object(
-        'script', translate(encode(convert_to(CASE WHEN r.block_height <= 85981134 THEN v_src_pre ELSE v_src_c1 END, 'UTF8'), 'base64'), E'\n', ''),
+        'script', translate(encode(convert_to(v_src_c1, 'UTF8'), 'base64'), E'\n', ''),
         'arguments', jsonb_build_array(
           translate(encode(convert_to(jsonb_build_object('type', 'Address', 'value', r.opener_address)::text, 'UTF8'), 'base64'), E'\n', ''),
           translate(encode(convert_to(jsonb_build_object('type', 'Array', 'value',
@@ -303,14 +315,17 @@ BEGIN
 
   PERFORM public.log_pipeline_run(
     'pack-pulls-chain-history', v_started,
-    v_collected, v_named_new + v_named_over_inferred + v_corrected, v_edition_missing,
+    -- rows_found = reads that RETURNED a result, not every landed response: a
+    -- DNS failure is not yield (2026-11-07: 1,800 of them read as "found").
+    v_done, v_named_new + v_named_over_inferred + v_corrected, v_edition_missing,
     (v_failed = 0), v_last_error,
     'nba_top_shot', NULL, NULL,
     jsonb_build_object('reads_done', v_done, 'reads_failed', v_failed, 'reads_throttled', v_throttled,
                        'reads_expired', v_expired, 'reads_short', v_short, 'moments_read_new', v_reads_new,
                        'named_new', v_named_new, 'named_over_inferred', v_named_over_inferred,
                        'records_corrected', v_corrected, 'edition_missing', v_edition_missing,
-                       'packs_requeued', v_packs, 'enqueued', v_enqueued, 'dispatched', v_dispatched)
+                       'packs_requeued', v_packs, 'enqueued', v_enqueued, 'dispatched', v_dispatched,
+                       'retired_pre_mainnet27', v_retired)
   );
 
   RETURN jsonb_build_object('ok', v_failed = 0, 'collected', v_collected, 'done', v_done, 'failed', v_failed,
@@ -318,7 +333,8 @@ BEGIN
                             'moments_read_new', v_reads_new, 'named_new', v_named_new,
                             'named_over_inferred', v_named_over_inferred, 'records_corrected', v_corrected,
                             'edition_missing', v_edition_missing, 'packs_requeued', v_packs,
-                            'enqueued', v_enqueued, 'dispatched', v_dispatched, 'last_error', v_last_error);
+                            'enqueued', v_enqueued, 'dispatched', v_dispatched, 'retired_pre_mainnet27', v_retired,
+                            'last_error', v_last_error);
 END;
 $function$;
 -- <<< END verbatim <<<
@@ -352,19 +368,19 @@ INSERT INTO public.editions VALUES
   -- another collection's edition with the same external id: never used
   ('00000000-0000-0000-0000-00000000b300', 'dee28451-5d62-409e-a1ad-a83f763ac070', '11:300');
 
--- P24: mainnet24 pack (pre-Cadence-1.0), 4 pulls:
+-- P24: mainnet27 pack, 4 pulls:
 --   1001 unnamed -> chain 11:300
 --   1002 inferred as 10:200 -> chain 10:100 (replaced)
 --   1003 record 10:100 -> chain 10:100::1 (parallel filed under base: corrected)
 --   1004 record 11:300 -> chain 11:300 (agrees: untouched)
--- P26: mainnet26 pack: 2001 unnamed -> chain 10:200::2 (not carried: stays unnamed)
+-- P26: rest-mainnet pack: 2001 unnamed -> chain 10:200::2 (not carried: stays unnamed)
 --                      2002 unnamed -> never returned by the chain
--- PLOW: below the floor.  PDONE: every pull a record names.
+-- PLOW: below the floor (a mainnet24-26 block).  PDONE: every pull a record names.
 INSERT INTO public.pack_rips VALUES
-  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P24',   '0x00000000000000aa', 70000000),
-  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P26',   '0x00000000000000bb', 100000000),
-  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'PLOW',  '0x00000000000000aa', 60000000),
-  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'PDONE', '0x00000000000000aa', 100000001);
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P24',   '0x00000000000000aa', 131000000),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P26',   '0x00000000000000bb', 140000000),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'PLOW',  '0x00000000000000aa', 100000000),
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'PDONE', '0x00000000000000aa', 140000001);
 INSERT INTO public.pack_open_pulls (collection_id, pack_nft_id, nft_id, opener_address, edition_id, resolved_via) VALUES
   ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P24', '1001', '0x00000000000000aa', NULL, NULL),
   ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P24', '1002', '0x00000000000000aa', '00000000-0000-0000-0000-00000000a200', 'id_neighbours'),
@@ -378,9 +394,14 @@ INSERT INTO public.pack_open_pull_values (collection_id, pack_nft_id, priced_at,
   ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P24', now(), 1),
   ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P26', now(), 0),
   ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'PDONE', now(), 0);
--- 22 more mainnet26 packs to exercise the per-node cap (P26 has the highest priority)
+-- 22 more rest-mainnet packs to exercise the per-node cap (P26 has the highest priority)
 INSERT INTO public.pack_rips
-SELECT '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'Q' || g, '0x00000000000000cc', 100000100 + g FROM generate_series(1, 22) g;
+SELECT '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'Q' || g, '0x00000000000000cc', 140000100 + g FROM generate_series(1, 22) g;
+-- R1: requests below the floor, as the 11-07 enqueue left them
+INSERT INTO public.topshot_pull_chain_requests (pack_nft_id, opener_address, block_height, priority, status, attempts, last_error, finished_at) VALUES
+  ('RPEND', '0x00000000000000dd', 80000000,  3, 'pending', 2, 'Couldn''t resolve host name', NULL),
+  ('RDNS',  '0x00000000000000dd', 120000000, 3, 'failed',  6, 'Couldn''t resolve host name', now() - interval '1 hour'),
+  ('ROTHER','0x00000000000000dd', 120000001, 3, 'failed',  6, 'http 400: failed to execute script', now() - interval '1 hour');
 INSERT INTO public.pack_open_pulls (collection_id, pack_nft_id, nft_id, opener_address)
 SELECT '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'Q' || g, (5000 + g)::text, '0x00000000000000cc' FROM generate_series(1, 22) g;
 
@@ -399,20 +420,36 @@ BEGIN
     RAISE EXCEPTION 'E1: a pack below the floor or fully record-named was enqueued'; END IF;
   IF (v->>'enqueued')::int <> 24 THEN RAISE EXCEPTION 'E1: enqueued % (want 24)', v->>'enqueued'; END IF;
 
+  -- R1
+  IF (SELECT status FROM public.topshot_pull_chain_requests WHERE pack_nft_id = 'RPEND') <> 'failed'
+     OR (SELECT last_error FROM public.topshot_pull_chain_requests WHERE pack_nft_id = 'RPEND') NOT LIKE '%mainnet27 root%(#181)'
+     OR (SELECT finished_at FROM public.topshot_pull_chain_requests WHERE pack_nft_id = 'RPEND') IS NULL THEN
+    RAISE EXCEPTION 'R1: a pending request below the floor was not closed with the #181 reason'; END IF;
+  IF (SELECT last_error FROM public.topshot_pull_chain_requests WHERE pack_nft_id = 'RDNS') NOT LIKE '%(#181)' THEN
+    RAISE EXCEPTION 'R1: a dead-node DNS failure below the floor was not relabelled'; END IF;
+  IF (SELECT last_error FROM public.topshot_pull_chain_requests WHERE pack_nft_id = 'ROTHER') <> 'http 400: failed to execute script' THEN
+    RAISE EXCEPTION 'R1: a failure with another cause was rewritten'; END IF;
+  IF (v->>'retired_pre_mainnet27')::int <> 2 THEN
+    RAISE EXCEPTION 'R1: retired_pre_mainnet27 % (want 2)', v->>'retired_pre_mainnet27'; END IF;
+  IF EXISTS (SELECT 1 FROM net.calls WHERE url ~ 'mainnet2[456]') THEN
+    RAISE EXCEPTION 'R1: a read went to a retired mainnet24-26 node'; END IF;
+
   -- D1: the per-node cap
-  IF (SELECT count(*) FROM net.calls WHERE url LIKE 'http://access-001.mainnet26.%') <> 20 THEN
-    RAISE EXCEPTION 'D1: mainnet26 got % reads in one tick (cap 20)', (SELECT count(*) FROM net.calls WHERE url LIKE '%mainnet26%'); END IF;
+  IF (SELECT count(*) FROM net.calls WHERE url LIKE 'https://rest-mainnet.onflow.org/%') <> 20 THEN
+    RAISE EXCEPTION 'D1: rest-mainnet got % reads in one tick (cap 20)', (SELECT count(*) FROM net.calls WHERE url LIKE 'https://rest-mainnet.%'); END IF;
   IF (SELECT status FROM public.topshot_pull_chain_requests WHERE pack_nft_id = 'P26') <> 'in_flight' THEN
-    RAISE EXCEPTION 'D1: the highest-priority mainnet26 pack was not dispatched'; END IF;
+    RAISE EXCEPTION 'D1: the highest-priority rest-mainnet pack was not dispatched'; END IF;
 
   SELECT request_id INTO v_c24 FROM public.topshot_pull_chain_requests WHERE pack_nft_id = 'P24';
   SELECT request_id INTO v_c26 FROM public.topshot_pull_chain_requests WHERE pack_nft_id = 'P26';
-  IF (SELECT url FROM net.calls WHERE id = v_c24) <> 'http://access-001.mainnet24.nodes.onflow.org:8070/v1/scripts?block_height=70000000' THEN
+  IF (SELECT url FROM net.calls WHERE id = v_c24) <> 'http://access-001.mainnet27.nodes.onflow.org:8070/v1/scripts?block_height=131000000' THEN
     RAISE EXCEPTION 'D1: P24 read went to %', (SELECT url FROM net.calls WHERE id = v_c24); END IF;
-  IF pg_temp.call_script(v_c24) NOT LIKE '%pub fun main%' OR pg_temp.call_script(v_c24) NOT LIKE '%getCapability(%' THEN
-    RAISE EXCEPTION 'D1: mainnet24 read is not the pre-Cadence-1.0 script'; END IF;
+  IF (SELECT url FROM net.calls WHERE id = v_c26) <> 'https://rest-mainnet.onflow.org/v1/scripts?block_height=140000000' THEN
+    RAISE EXCEPTION 'D1: P26 read went to %', (SELECT url FROM net.calls WHERE id = v_c26); END IF;
+  IF pg_temp.call_script(v_c24) NOT LIKE '%access(all) fun main%' OR pg_temp.call_script(v_c24) LIKE '%pub fun%' THEN
+    RAISE EXCEPTION 'D1: mainnet27 read is not the Cadence 1.0 script'; END IF;
   IF pg_temp.call_script(v_c26) NOT LIKE '%access(all) fun main%' OR pg_temp.call_script(v_c26) LIKE '%pub fun%' THEN
-    RAISE EXCEPTION 'D1: mainnet26 read is not the Cadence 1.0 script'; END IF;
+    RAISE EXCEPTION 'D1: rest-mainnet read is not the Cadence 1.0 script'; END IF;
   IF pg_temp.call_ids(v_c24) <> ARRAY['1001', '1002', '1003', '1004'] THEN
     RAISE EXCEPTION 'D1: P24 read asked for % (want every pull)', pg_temp.call_ids(v_c24); END IF;
   IF convert_from(decode((SELECT body->'arguments'->>0 FROM net.calls WHERE id = v_c24), 'base64'), 'UTF8')::jsonb
@@ -455,7 +492,7 @@ BEGIN
     RAISE EXCEPTION 'C1: counts wrong: %', v; END IF;
   IF (SELECT serial_number FROM public.topshot_chain_moment_reads WHERE nft_id = 1003) <> 9
      OR (SELECT owner_address FROM public.topshot_chain_moment_reads WHERE nft_id = 1003) <> '0x00000000000000aa'
-     OR (SELECT block_height FROM public.topshot_chain_moment_reads WHERE nft_id = 1003) <> 70000000 THEN
+     OR (SELECT block_height FROM public.topshot_chain_moment_reads WHERE nft_id = 1003) <> 131000000 THEN
     RAISE EXCEPTION 'C1: the read was not recorded with serial, owner and height'; END IF;
   IF (SELECT n_read FROM public.topshot_pull_chain_requests WHERE pack_nft_id = 'P26') <> 1
      OR (SELECT status FROM public.topshot_pull_chain_requests WHERE pack_nft_id = 'P26') <> 'done'
