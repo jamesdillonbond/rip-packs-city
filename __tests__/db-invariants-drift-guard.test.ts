@@ -1666,6 +1666,13 @@ const PINS = [
     migration: "supabase/migrations/20261108162400_audit_20261108_team_nicknames_in_search_and_resolver.sql",
   },
   {
+    // Added 2026-11-08 (pinnacle-wmc-render-gap fix 3). Minted renders with no catalog row,
+    // recent ones counted apart; read by the daily catalog backfill.
+    fn: "pinnacle_minted_renders_missing_from_catalog",
+    test: "supabase/tests/pinnacle_minted_renders_missing_from_catalog.sql",
+    migration: "supabase/migrations/20261108181134_audit_20261108_pinnacle_minted_renders_missing_from_catalog.sql",
+  },
+  {
     // Added 2026-11-08 (#221). wmc player names follow the catalog where the cached spelling is a
     // registered alias or a case/space variant; accent-only variants are never rewritten.
     fn: "heal_wmc_player_names_from_catalog",
