@@ -124,7 +124,7 @@ import { isAllDaySlug, allDayNotApplicable, readAllDayHotFloorsForConcierge, rea
 import { resolveCandyWallet, CANDY_NEEDS_SOLANA_WALLET, CANDY_COLLECTION_UUID, readCandySetCompletionForConcierge, readCandyPackMarketForConcierge, readCandySpecialSerialsForConcierge, readCandyDealsForConcierge, candyNotApplicable } from "@/lib/concierge/candy-boards";
 import { readPaniniBreakdownForConcierge, readPaniniQuirkySerialsForConcierge, readPaniniSetCompletionForConcierge, readPaniniCollectionForConcierge, readPaniniDealsForConcierge, readPaniniPackMarketForConcierge, readPaniniPremiumsForConcierge, readPaniniTeamForConcierge } from "@/lib/concierge/panini-boards";
 import { fetchPaniniEditionAsk, fetchPaniniEditionSerials } from "@/lib/panini/edition-market";
-import { readPaniniSaleRecord, paniniPricingBasis } from "@/lib/concierge/panini-sale-record";
+import { readPaniniSaleRecord, paniniPricingBasis, withPaniniSaleBasis, stripPaniniTiers } from "@/lib/concierge/panini-sale-record";
 import { paniniEditionUrl } from "@/lib/panini/edition-url";
 import { isSqueezeCollection, SQUEEZE_LABEL, type SqueezeCollection } from "@/lib/insights/squeeze-collections";
 import { readSqueezeCheck, readWalletScanState } from "@/lib/insights/squeeze-check";
@@ -1528,6 +1528,12 @@ async function formatDistributionWithMetadata(
   if (result.mode === "single") {
     const meta = await fetchEditionMetadata(supabase, collectionUuid, [result.edition.external_id]);
     const out = formatDistributionForModel(result, collectionId, meta);
+    // 2026-11-08: same rule as explain_fmv — a Panini tier never reaches the model
+    // (the scrubber said "plenty of recent sales" over 2 sales 48 days old); the
+    // basis is RPC's recorded sales of this edition (lib/concierge/panini-sale-record.ts).
+    if (collectionId === "panini-blockchain" && typeof result.edition.external_id === "string") {
+      return withPaniniSaleBasis(out, await readPaniniSaleRecord(supabase, result.edition.external_id));
+    }
     // Thin Top Shot parallel: attach the separate value ESTIMATE (2026-09-30,
     // lib/fmv/edition-estimate.ts) — never merged into the FMV. A failed or
     // absent read attaches nothing.
@@ -1548,6 +1554,7 @@ async function formatDistributionWithMetadata(
   // answer twice. Up to 3 of the highest-FMV badged editions join the sample.
   const pool = result.priced_editions ?? result.sample_editions;
   const meta = await fetchEditionMetadata(supabase, collectionUuid, pool.map((e) => e.external_id));
+  if (collectionId === "panini-blockchain") return stripPaniniTiers(formatDistributionForModel(result, collectionId, meta));
   const tracked = meta.status === "ok" && collectionUuid === COLLECTION_UUID_BY_SLUG["nba-top-shot"];
   let badgedCount: number | null = null;
   let withBadged = result;

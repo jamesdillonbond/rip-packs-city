@@ -10,7 +10,10 @@ import {
   paniniPricingBasis,
   paniniSaleRecordFromRows,
   readPaniniSaleRecord,
+  stripPaniniTiers,
+  withPaniniSaleBasis,
 } from "@/lib/concierge/panini-sale-record"
+import { scrubConfidence } from "@/lib/concierge/scrub-confidence"
 
 const NOW = Date.parse("2026-11-07T21:45:00Z")
 
@@ -82,5 +85,21 @@ describe("explain_fmv wiring", () => {
     const body = src.slice(i, src.indexOf("if (toolName ===", i + 10))
     expect(body).toMatch(/salesCountUnknown \? await readPaniniSaleRecord\(supabase, editionKey\)/)
     expect(body).toMatch(/: \{ confidence: snapshot\.confidence \}\)/)
+  })
+})
+
+describe("get_fmv answers on Panini (11-08 live probe still saw the tier via get_fmv)", () => {
+  it("single: the tier is replaced by the recorded-sale basis, so the scrubber has nothing to call 'plenty'", () => {
+    const out = JSON.stringify({ status: "ok", mode: "single", edition: { fmv: 159, confidence: "HIGH" } })
+    const rec = paniniSaleRecordFromRows([{ sold_at: "2026-09-21T10:00:00Z", amount_usd: 168 }], 2, NOW)
+    const scrubbed = scrubConfidence(withPaniniSaleBasis(out, { ok: true, record: rec }))
+    expect(scrubbed).not.toMatch(/plenty/i)
+    expect(JSON.parse(scrubbed).edition.pricing_basis).toMatch(/2 recorded sales.*out of date/)
+  })
+  it("distribution: per-edition tiers are dropped", () => {
+    const out = JSON.stringify({ status: "ok", mode: "distribution", sample_editions: [{ fmv: 1, confidence: "HIGH" }] })
+    const scrubbed = scrubConfidence(stripPaniniTiers(out))
+    expect(scrubbed).not.toMatch(/plenty of recent sales"/)
+    expect(JSON.parse(scrubbed).sample_editions[0].pricing_basis).toBeUndefined()
   })
 })

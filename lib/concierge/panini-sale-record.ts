@@ -88,3 +88,32 @@ export async function readPaniniSaleRecord(db: any, editionExternalId: string, n
     return { ok: false }
   }
 }
+
+/** Panini single-edition FMV answer: the tier is replaced by the recorded-sale basis. */
+export function withPaniniSaleBasis(out: string, sales: PaniniSaleRecordRead): string {
+  try {
+    const o = JSON.parse(out);
+    if (o && o.edition && typeof o.edition === "object") {
+      delete o.edition.confidence;
+      o.edition.pricing_basis = paniniPricingBasis(sales);
+      o.edition.sale_record = sales.ok ? sales.record : { status: "unavailable" };
+    }
+    return JSON.stringify(o);
+  } catch {
+    return out;
+  }
+}
+
+/** Panini distribution answer: per-edition tiers are dropped (no per-row sale read here). */
+export function stripPaniniTiers(out: string): string {
+  try {
+    const o = JSON.parse(out);
+    for (const k of ["sample_editions", "editions", "samples"]) {
+      if (Array.isArray(o?.[k])) for (const e of o[k]) if (e && typeof e === "object") delete e.confidence;
+    }
+    o.pricing_basis_note = "Panini prices: for what one edition's price rests on (recorded sales, last-sale age), call explain_fmv with its external_id — never describe a Panini price as backed by plenty of sales.";
+    return JSON.stringify(o);
+  } catch {
+    return out;
+  }
+}
