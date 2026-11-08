@@ -22,7 +22,7 @@ import {
 } from "@/lib/giveaways/deliver-cadence"
 import { addr, arrayOf, runFlowScript, u64, type CdcValue } from "@/lib/giveaways/flow-script"
 import { readTopShotHoldings, type Holding } from "@/lib/giveaways/topshot-holdings"
-import { bySource, getClaims, getPool, GiveawayError, readHoldingsBySource, type DropRow } from "@/lib/giveaways/store"
+import { bySource, getClaims, getPool, GiveawayError, readHoldingsBySource, type DropRow, type PoolRow } from "@/lib/giveaways/store"
 
 export interface DeliveryBatch {
   /** The account the moments leave from. */
@@ -95,6 +95,41 @@ export async function planDelivery(db: SupabaseClient, drop: DropRow, parent: st
     .sort((a, b) => (a.pack_no ?? 0) - (b.pack_no ?? 0) || (a.slot ?? 0) - (b.slot ?? 0))
   if (pending.length === 0) throw new GiveawayError("Every claimed moment is already delivered.", 409, "nothing_to_deliver")
 
+  return buildSimulatedPlan(pending, (m) => recipientByPack.get(m.pack_no as number) as string, drop, parent, read, run)
+}
+
+/**
+ * The sponsor's one-signature move of a sealed pool INTO the giveaway vault
+ * (2026-11-08, instant delivery). Same batches, same simulate-before-sign, every
+ * recipient the vault. Moments already in the vault or already delivered are left out.
+ */
+export async function planFunding(db: SupabaseClient, drop: DropRow, parent: string, vault: string, deps: DeliverDeps = {}): Promise<DeliveryPlan> {
+  const read = deps.read ?? readTopShotHoldings
+  const run = deps.run ?? runFlowScript
+  if (!/^0x[0-9a-f]{16}$/.test(parent)) throw new GiveawayError("The connected wallet address is not a Flow address.", 400, "bad_parent")
+  if (!/^0x[0-9a-f]{16}$/.test(vault)) throw new GiveawayError("The giveaway vault is not configured.", 409, "vault_unconfigured")
+  if (drop.status !== "sealed" && drop.status !== "open") {
+    throw new GiveawayError(`Only a sealed or open drop can be funded (this one is ${drop.status}).`, 409, "wrong_status")
+  }
+  if (drop.vault_address && drop.vault_address !== vault) {
+    throw new GiveawayError(`This drop is already funded in ${drop.vault_address}.`, 409, "already_funded")
+  }
+  const pool = await getPool(db, drop.id)
+  const pending = pool
+    .filter((m) => m.delivered_at == null && m.source_wallet !== vault)
+    .sort((a, b) => a.moment_id.localeCompare(b.moment_id, "en", { numeric: true }))
+  if (pending.length === 0) throw new GiveawayError("The whole pool is already in the vault. Click Confirm funding.", 409, "nothing_to_fund")
+  return buildSimulatedPlan(pending, () => vault, drop, parent, read, run)
+}
+
+async function buildSimulatedPlan(
+  pending: PoolRow[],
+  recipientOf: (m: PoolRow) => string,
+  drop: DropRow,
+  parent: string,
+  read: (address: string, ids: string[]) => Promise<Record<string, Holding>>,
+  run: typeof runFlowScript,
+): Promise<DeliveryPlan> {
   const { holdings, failed } = await readHoldingsBySource(pending, drop.admin_wallet, read)
   if (failed.length) {
     throw new GiveawayError(`Couldn't read the chain for ${failed.join(", ")}; nothing was planned. Try again.`, 502, "chain_read_failed")
@@ -127,7 +162,7 @@ export async function planDelivery(db: SupabaseClient, drop: DropRow, parent: st
         kind,
         providerControllerID,
         momentIDs: part.map((m) => m.moment_id),
-        recipients: part.map((m) => recipientByPack.get(m.pack_no as number) as string),
+        recipients: part.map(recipientOf),
       })
     }
   }

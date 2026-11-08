@@ -45,8 +45,10 @@ export function verifyCommand(salt: string, manifest: string): string {
 
 export type DeliveryState = "delivered" | "awaiting"
 
-export function deliveryLabel(delivered: boolean, lastChecked: string | null): string {
+export function deliveryLabel(delivered: boolean, lastChecked: string | null, instant = false): string {
   if (delivered) return "Delivered: in your Top Shot account"
+  // a funded drop sends from the giveaway vault seconds after the claim (2026-11-08)
+  if (instant) return "On its way from the giveaway vault (usually under a minute)"
   return lastChecked ? `Awaiting the sponsor's gift (last checked ${ptTime(lastChecked)})` : "Awaiting the sponsor's gift"
 }
 

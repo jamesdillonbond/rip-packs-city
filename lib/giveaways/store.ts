@@ -43,6 +43,8 @@ export interface DropRow {
   created_at: string
   /** How the pool was dealt into packs ('random' until sealed; see lib/giveaways/seal.ts DealMode). */
   deal_mode: DealMode
+  /** The giveaway vault the pool was moved into for instant delivery; null = not funded (2026-11-08). */
+  vault_address: string | null
 }
 
 export interface PoolRow {
@@ -61,8 +63,13 @@ export interface PoolRow {
   last_checked_at: string | null
   last_check_recipient_holds: boolean | null
   last_check_admin_holds: boolean | null
-  /** The account this moment sits in until delivery: the sponsor's Flow Wallet or a linked account. */
+  /** The account this moment sits in until delivery: the sponsor's Flow Wallet, a linked account, or the giveaway vault. */
   source_wallet: string
+  /** Where a vault-funded moment came from (it goes back there if unclaimed). */
+  funded_from?: string | null
+  delivery_tx_id?: string | null
+  delivery_attempted_at?: string | null
+  delivery_error?: string | null
 }
 
 export interface ClaimRow {
@@ -86,9 +93,9 @@ export class GiveawayError extends Error {
 }
 
 const DROP_COLUMNS =
-  "id, slug, title, description, sponsor_name, collection_id, admin_wallet, status, pack_count, moments_per_pack, seal_hash, seal_salt, sealed_at, opened_at, closed_at, created_at, deal_mode"
+  "id, slug, title, description, sponsor_name, collection_id, admin_wallet, status, pack_count, moments_per_pack, seal_hash, seal_salt, sealed_at, opened_at, closed_at, created_at, deal_mode, vault_address"
 const POOL_COLUMNS =
-  "moment_id, pack_no, slot, edition_key, player_name, set_name, team_name, tier, serial_number, fmv_usd, image_url, delivered_at, last_checked_at, last_check_recipient_holds, last_check_admin_holds, source_wallet"
+  "moment_id, pack_no, slot, edition_key, player_name, set_name, team_name, tier, serial_number, fmv_usd, image_url, delivered_at, last_checked_at, last_check_recipient_holds, last_check_admin_holds, source_wallet, funded_from, delivery_tx_id, delivery_attempted_at, delivery_error"
 
 function num(v: unknown): number | null {
   if (v == null) return null
@@ -538,6 +545,8 @@ export interface PublicDropView {
     opened_at: string | null
     closed_at: string | null
     deal_mode: DealMode
+    /** The pool is in the giveaway vault: a claim's Moments are sent within seconds. */
+    instant_delivery: boolean
   }
   /** The whole pool, in a fixed order that reveals nothing about pack assignment. */
   pool: PublicPoolMoment[]
@@ -599,6 +608,7 @@ export function buildPublicView(
       opened_at: drop.opened_at,
       closed_at: drop.closed_at,
       deal_mode: drop.deal_mode === "balanced" ? "balanced" : "random",
+      instant_delivery: drop.vault_address != null,
     },
     pool: sorted.map(publicMoment),
     values: summarizePackValues(pool),

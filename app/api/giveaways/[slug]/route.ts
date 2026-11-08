@@ -22,7 +22,7 @@
 // target the admin gifts to in the Top Shot app) and draws a uniformly random
 // unclaimed pack in the database (claim_giveaway_pack).
 
-import { NextRequest, NextResponse } from "next/server"
+import { after, NextRequest, NextResponse } from "next/server"
 import { apiErrorResponse } from "@/lib/api-error"
 import { getCurrentUser } from "@/lib/auth/supabase-server"
 import { supabaseAdmin } from "@/lib/supabase"
@@ -31,6 +31,29 @@ import { buildPublicView, claimPack, getClaims, getDrop, getPool, usernameForWal
 import { claimOutcomeResponse } from "@/lib/giveaways/claim-copy"
 import { discoverAccounts } from "@/lib/giveaways/linked-accounts"
 import { issueClaimNonce, verifyClaimProof, type ClaimProofInput } from "@/lib/giveaways/claim-proof"
+import { instantDeliveryEnabled, sendFromVault } from "@/lib/giveaways/vault"
+import type { DropRow } from "@/lib/giveaways/store"
+
+// The vault send runs after the response (a claim answers in ~1 s; the send waits for a seal).
+export const maxDuration = 120
+
+/**
+ * Instant delivery (2026-11-08): when the drop's pool is in the giveaway vault and the
+ * switch is on, send this pack's Moments from the vault after responding. The send lock
+ * (reserve_giveaway_vault_send) makes a repeat trigger a no-op, so the claim AND every
+ * later page view of an undelivered pack may call this; the chain decides what landed.
+ */
+function sendPackSoon(drop: DropRow, packNo: number | null): void {
+  if (packNo == null || !drop.vault_address || !instantDeliveryEnabled()) return
+  after(async () => {
+    try {
+      const r = await sendFromVault(supabaseAdmin, drop, { packNo })
+      if (r.failed.length) console.log(`[giveaway-vault] drop=${drop.slug} pack=${packNo} failed: ${r.failed.map((f) => f.error).join(" | ")}`)
+    } catch (e) {
+      console.log(`[giveaway-vault] drop=${drop.slug} pack=${packNo}: ${e instanceof Error ? e.message : String(e)}`)
+    }
+  })
+}
 
 export const dynamic = "force-dynamic"
 
@@ -121,6 +144,8 @@ export async function GET(req: NextRequest, ctx: Ctx) {
     const [pool, claims] = await Promise.all([getPool(supabaseAdmin, drop.id), getClaims(supabaseAdmin, drop.id)])
     const view = buildPublicView(drop, pool, claims, user?.id ?? null)
     if (!view) return NextResponse.json({ error: "No such giveaway.", code: "not_found" }, { status: 404, headers: NO_STORE })
+    // a claimer looking at an undelivered pack from a funded drop: (re)try the vault send
+    if (view.me && view.me.moments.some((m) => !m.delivered)) sendPackSoon(drop, view.me.pack_no)
     return NextResponse.json({ ...view, signed_in: user != null }, { headers: NO_STORE })
   } catch (err) {
     return apiErrorResponse(err, "api/giveaways/[slug] GET", "We couldn't load this giveaway. Try again in a moment.")
@@ -175,6 +200,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       return NextResponse.json({ error: "That username doesn't map to a Top Shot wallet we can deliver to.", code: "bad_request" }, { status: 400, headers: NO_STORE })
     }
     const { outcome, pack_no } = await claimPack(supabaseAdmin, drop.id, user.id, resolved.username, recipient)
+    if (outcome === "claimed") sendPackSoon(drop, pack_no)
     return claimOutcomeResponse(outcome, pack_no)
   } catch (err) {
     return apiErrorResponse(err, "api/giveaways/[slug] POST", "We couldn't record your claim. Try again in a moment.")
@@ -232,6 +258,7 @@ async function claimWithWallet(req: NextRequest, slug: string, userId: string, b
     // the label shown on the pack and to the sponsor: the account's Top Shot username when RPC knows it
     const label = (await usernameForWallet(supabaseAdmin, destination)) ?? destination
     const { outcome, pack_no } = await claimPack(supabaseAdmin, drop.id, userId, label, destination)
+    if (outcome === "claimed") sendPackSoon(drop, pack_no)
     return claimOutcomeResponse(outcome, pack_no)
   } catch (err) {
     return apiErrorResponse(err, "api/giveaways/[slug] POST", "We couldn't record your claim. Try again in a moment.")

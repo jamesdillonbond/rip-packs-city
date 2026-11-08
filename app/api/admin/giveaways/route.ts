@@ -6,7 +6,9 @@
 //                                                     <wallet> may be a Top Shot USERNAME (resolved; `username` echoed)
 //   GET ?accounts_for=<0x>   -> { parent, accounts, candidates }  the connected Flow Wallet AND every account it has
 //                                                     linked (Hybrid Custody, read on chain), giftable moments from each
+//   GET ?vault=1             -> VaultStatus          the giveaway vault for instant delivery (address, switch, holdings, FLOW)
 //   POST {draft fields}      -> { id }               create a draft (create_giveaway_draft)
+//   POST {action:"vault_setup"} -> { tx_id, already } one time: the vault gets a Top Shot collection (vault-signed, simulated first)
 // Background: docs/strategy/free-packs-reassessment-2026-09-29.md §8.
 
 import { NextRequest, NextResponse } from "next/server"
@@ -18,6 +20,7 @@ import { discoverAccounts } from "@/lib/giveaways/linked-accounts"
 import { FlowScriptError } from "@/lib/giveaways/flow-script"
 import { FLOW_WALLET, parseDraftBody } from "@/lib/giveaways/draft-input"
 import { resolveTopShotUsernameCacheAware } from "@/lib/chains/flow/topshot-username-resolve"
+import { setUpVault, vaultStatus } from "@/lib/giveaways/vault"
 
 // A Top Shot username, optionally @-prefixed (Trevor typed "jamesdillonbond", 2026-10-03).
 const TOPSHOT_USERNAME = /^@?[A-Za-z0-9_.-]{2,40}$/
@@ -31,6 +34,9 @@ export async function GET(req: NextRequest) {
   const wallet = req.nextUrl.searchParams.get("candidates")
   const parent = req.nextUrl.searchParams.get("accounts_for")
   try {
+    if (req.nextUrl.searchParams.get("vault") === "1") {
+      return NextResponse.json(await vaultStatus(), { headers: { "Cache-Control": "no-store" } })
+    }
     if (parent != null) {
       const p = parent.trim().toLowerCase()
       if (!FLOW_WALLET.test(p)) return NextResponse.json({ error: "accounts_for must be a Flow 0x address" }, { status: 400 })
@@ -78,6 +84,16 @@ export async function POST(req: NextRequest) {
     body = await req.json()
   } catch {
     return NextResponse.json({ error: "body must be JSON" }, { status: 400 })
+  }
+  if ((body as { action?: unknown } | null)?.action === "vault_setup") {
+    try {
+      const txId = await setUpVault()
+      return NextResponse.json({ ok: true, tx_id: txId, already: txId == null })
+    } catch (err) {
+      if (err instanceof GiveawayError) return NextResponse.json({ error: err.message, code: err.code }, { status: err.status })
+      if (err instanceof FlowScriptError) return NextResponse.json({ error: err.message, code: "flow_script" }, { status: 502 })
+      return apiErrorResponse(err, "api/admin/giveaways POST vault_setup")
+    }
   }
   const input = parseDraftBody(body)
   if (typeof input === "string") return NextResponse.json({ error: input }, { status: 400 })

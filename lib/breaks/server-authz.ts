@@ -99,7 +99,14 @@ export function signWithKey(privateKeyHex: string, msgHex: string): string {
 // hot wallet. Pass the same instance to proposer, payer, and authorizations
 // for single-signer transactions like BREAK_MULTI_TRANSFER_TS.
 export function buildHotWalletAuthz() {
-  const { addr, pk, keyIndex } = readEnv()
+  return buildKeyAuthz(readEnv())
+}
+
+// The same single-signer authorization for ANY plain Flow account whose key is
+// ECDSA_secp256k1 + SHA2_256 (2026-11-08: the giveaway vault, lib/giveaways/vault.ts).
+// The caller reads its own env and must have checked the account's on-chain key
+// config matches; a mismatch is a well-formed signature Flow silently rejects.
+export function buildKeyAuthz({ addr, pk, keyIndex }: { addr: string; pk: string; keyIndex: number }) {
   const addrSans = sansPrefix(addr)
   const addrWith = withPrefix(addr)
 

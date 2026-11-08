@@ -13,6 +13,11 @@
 //               connected Flow Wallet (a Hybrid Custody parent of admin_wallet);
 //               every batch is SIMULATED on mainnet first (lib/giveaways/deliver.ts).
 //               RPC signs nothing: the admin's wallet signs in the browser.
+//        Instant delivery (2026-11-08, lib/giveaways/vault.ts):
+//        fund_plan { parent }   — the sponsor's one-signature move of the pool INTO the vault (sponsor-signed)
+//        confirm_funding        — read the chain; record the drop funded only if the vault holds the whole pool
+//        vault_send             — send every claimed, undelivered Moment from the vault (vault-signed)
+//        vault_return           — closed drop: send unclaimed Moments back where they came from (vault-signed)
 // RPC never moves a moment or holds a key.
 
 import { NextRequest, NextResponse } from "next/server"
@@ -29,7 +34,8 @@ import {
   setStatus,
   verifyDeliveries,
 } from "@/lib/giveaways/store"
-import { planDelivery } from "@/lib/giveaways/deliver"
+import { planDelivery, planFunding } from "@/lib/giveaways/deliver"
+import { confirmFunding, sendFromVault, vaultAddress } from "@/lib/giveaways/vault"
 import { FlowScriptError } from "@/lib/giveaways/flow-script"
 import { isDealMode } from "@/lib/giveaways/seal"
 
@@ -70,7 +76,9 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   } catch {
     return NextResponse.json({ error: "body must be JSON" }, { status: 400 })
   }
+  const VAULT_ACTIONS = ["fund_plan", "confirm_funding", "vault_send", "vault_return"]
   if (
+    !VAULT_ACTIONS.includes(String(action)) &&
     action !== "seal" &&
     action !== "open" &&
     action !== "close" &&
@@ -78,7 +86,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     action !== "delete" &&
     action !== "deliver_plan"
   ) {
-    return NextResponse.json({ error: "action must be seal, open, close, verify, delete or deliver_plan" }, { status: 400 })
+    return NextResponse.json({ error: `action must be seal, open, close, verify, delete, deliver_plan or ${VAULT_ACTIONS.join(", ")}` }, { status: 400 })
   }
   try {
     const drop = await getDrop(supabaseAdmin, { id })
@@ -103,12 +111,29 @@ export async function POST(req: NextRequest, ctx: Ctx) {
         const p = typeof parent === "string" ? parent.trim().toLowerCase() : ""
         return NextResponse.json({ ok: true, plan: await planDelivery(supabaseAdmin, drop, p) })
       }
+      case "fund_plan": {
+        const p = typeof parent === "string" ? parent.trim().toLowerCase() : ""
+        const vault = vaultAddress()
+        if (!vault) return NextResponse.json({ error: "The giveaway vault is not configured.", code: "vault_unconfigured" }, { status: 409 })
+        return NextResponse.json({ ok: true, vault, plan: await planFunding(supabaseAdmin, drop, p, vault) })
+      }
+      case "confirm_funding": {
+        return NextResponse.json({ ok: true, ...(await confirmFunding(supabaseAdmin, drop)) })
+      }
+      case "vault_send":
+      case "vault_return": {
+        const report = await sendFromVault(supabaseAdmin, drop, { returnUnclaimed: action === "vault_return" })
+        const ok = report.failed.length === 0 && report.unknown.length === 0
+        return NextResponse.json({ ok, report }, { status: ok ? 200 : 207 })
+      }
       case "verify": {
         const report = await verifyDeliveries(supabaseAdmin, drop)
         // ok only when every claimed moment was read AND every result was written.
         const ok = report.failed_recipients.length === 0 && report.write_error == null && report.written === report.checked
         return NextResponse.json({ ok, report }, { status: ok ? 200 : 207 })
       }
+      default:
+        return NextResponse.json({ error: "unknown action" }, { status: 400 })
     }
   } catch (err) {
     if (err instanceof GiveawayError) return NextResponse.json({ error: err.message, code: err.code }, { status: err.status })

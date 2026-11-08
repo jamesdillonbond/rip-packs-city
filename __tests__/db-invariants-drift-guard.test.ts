@@ -268,7 +268,8 @@ const PINS = [
     // account and per recipient, never to the admin, never a pack twice.
     fn: "claim_giveaway_pack",
     test: "supabase/tests/giveaways.sql",
-    migration: "supabase/migrations/20261003230716_audit_20261003_giveaway_pool_spans_linked_wallets.sql",
+    // 2026-11-08: also refuses a pool Moment's funded_from (the giveaway vault).
+    migration: "supabase/migrations/20261108231643_audit_20261108_giveaway_vault_instant_delivery.sql",
   },
   {
     fn: "create_giveaway_draft",
@@ -287,6 +288,18 @@ const PINS = [
   },
   {
     // Added 2026-11-08. The balanced deal: refused unless every slot is its FMV value band.
+    // Added 2026-11-08. The giveaway vault: funding remembers each Moment's origin; the send lock
+    // hands out a claim's Moments once, to the claim's own recipient, or unclaimed ones back home.
+    fn: "mark_giveaway_vault_funded",
+    test: "supabase/tests/giveaways.sql",
+    migration: "supabase/migrations/20261108231643_audit_20261108_giveaway_vault_instant_delivery.sql",
+  },
+  {
+    fn: "reserve_giveaway_vault_send",
+    test: "supabase/tests/giveaways.sql",
+    migration: "supabase/migrations/20261108231643_audit_20261108_giveaway_vault_instant_delivery.sql",
+  },
+  {
     fn: "seal_giveaway_drop_dealt",
     test: "supabase/tests/giveaways.sql",
     migration: "supabase/migrations/20261108205511_audit_20261108_giveaway_balanced_deal.sql",

@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS public.giveaway_drops (
   created_at        timestamptz NOT NULL DEFAULT now(),
   updated_at        timestamptz NOT NULL DEFAULT now(),
   deal_mode         text NOT NULL DEFAULT 'random' CONSTRAINT giveaway_drops_deal_mode_check CHECK (deal_mode IN ('random', 'balanced')),
+  vault_address     text,
   -- a sealed drop always carries both halves of its commitment
   CONSTRAINT giveaway_drops_sealed_has_commitment
     CHECK (status = 'draft' OR (seal_hash IS NOT NULL AND seal_salt IS NOT NULL AND sealed_at IS NOT NULL))
@@ -70,6 +71,10 @@ CREATE TABLE IF NOT EXISTS public.giveaway_pack_moments (
   last_check_recipient_holds boolean,
   last_check_admin_holds     boolean,
   source_wallet             text NOT NULL CHECK (source_wallet ~ '^0x[0-9a-f]{16}$'),
+  funded_from               text,
+  delivery_tx_id            text,
+  delivery_attempted_at     timestamptz,
+  delivery_error            text,
   PRIMARY KEY (drop_id, moment_id),
   CONSTRAINT giveaway_pack_moments_pack_and_slot_together CHECK ((pack_no IS NULL) = (slot IS NULL))
 );
@@ -120,10 +125,12 @@ BEGIN
     RETURN QUERY SELECT NULL::int, 'not_open'::text; RETURN;
   END IF;
 
-  -- the sponsor's own wallet, or any account the pool is drawn from
+  -- the sponsor's own wallet, or any account the pool is drawn from — including,
+  -- once the pool is in the giveaway vault, the accounts it was funded from (2026-11-08)
   IF v_recipient = v_drop.admin_wallet
      OR EXISTS (SELECT 1 FROM public.giveaway_pack_moments m
-                 WHERE m.drop_id = p_drop_id AND m.source_wallet = v_recipient) THEN
+                 WHERE m.drop_id = p_drop_id
+                   AND (m.source_wallet = v_recipient OR m.funded_from = v_recipient)) THEN
     RETURN QUERY SELECT NULL::int, 'admin_recipient'::text; RETURN;
   END IF;
 
@@ -377,6 +384,96 @@ END;
 $function$;
 -- <<< END verbatim seal_giveaway_drop_dealt <<<
 
+-- >>> BEGIN verbatim mark_giveaway_vault_funded (keep byte-identical to the migration) >>>
+CREATE OR REPLACE FUNCTION public.mark_giveaway_vault_funded(p_drop_id uuid, p_vault text)
+RETURNS int
+LANGUAGE plpgsql
+SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_drop public.giveaway_drops;
+  v_vault text := lower(trim(p_vault));
+  v_n int;
+BEGIN
+  IF v_vault !~ '^0x[0-9a-f]{16}$' THEN
+    RAISE EXCEPTION 'giveaway: the vault is not a Flow address' USING ERRCODE = '22023';
+  END IF;
+  SELECT * INTO v_drop FROM public.giveaway_drops d WHERE d.id = p_drop_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'giveaway: no such drop' USING ERRCODE = '22023';
+  END IF;
+  IF v_drop.status NOT IN ('sealed', 'open') THEN
+    RAISE EXCEPTION 'giveaway: only a sealed or open drop can be funded (status is %)', v_drop.status USING ERRCODE = '22023';
+  END IF;
+  IF v_drop.vault_address IS NOT NULL AND v_drop.vault_address <> v_vault THEN
+    RAISE EXCEPTION 'giveaway: this drop is already funded in %', v_drop.vault_address USING ERRCODE = '22023';
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.giveaway_claims c WHERE c.drop_id = p_drop_id AND c.recipient_address = v_vault) THEN
+    RAISE EXCEPTION 'giveaway: the vault is a claimer of this drop' USING ERRCODE = '22023';
+  END IF;
+
+  UPDATE public.giveaway_pack_moments m
+     SET funded_from = COALESCE(m.funded_from, m.source_wallet),
+         source_wallet = v_vault
+   WHERE m.drop_id = p_drop_id
+     AND m.delivered_at IS NULL
+     AND m.source_wallet <> v_vault;
+  GET DIAGNOSTICS v_n = ROW_COUNT;
+
+  UPDATE public.giveaway_drops SET vault_address = v_vault, updated_at = now() WHERE id = p_drop_id;
+  RETURN v_n;
+END;
+$function$;
+-- <<< END verbatim mark_giveaway_vault_funded <<<
+
+-- >>> BEGIN verbatim reserve_giveaway_vault_send (keep byte-identical to the migration) >>>
+CREATE OR REPLACE FUNCTION public.reserve_giveaway_vault_send(p_drop_id uuid, p_pack_no int, p_return boolean DEFAULT false)
+RETURNS TABLE (moment_id text, recipient text)
+LANGUAGE plpgsql
+SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_drop public.giveaway_drops;
+BEGIN
+  -- serialises every send on this drop with every claim on it
+  SELECT * INTO v_drop FROM public.giveaway_drops d WHERE d.id = p_drop_id FOR UPDATE;
+  IF NOT FOUND OR v_drop.vault_address IS NULL THEN
+    RETURN;
+  END IF;
+
+  IF p_return THEN
+    IF v_drop.status <> 'closed' THEN
+      RAISE EXCEPTION 'giveaway: unclaimed Moments go back only after the drop closes' USING ERRCODE = '22023';
+    END IF;
+    RETURN QUERY
+    UPDATE public.giveaway_pack_moments m
+       SET delivery_attempted_at = now(), delivery_error = NULL
+     WHERE m.drop_id = p_drop_id
+       AND m.source_wallet = v_drop.vault_address
+       AND m.funded_from IS NOT NULL
+       AND m.delivered_at IS NULL
+       AND NOT EXISTS (SELECT 1 FROM public.giveaway_claims c WHERE c.drop_id = p_drop_id AND c.pack_no = m.pack_no)
+       AND (m.delivery_attempted_at IS NULL OR m.delivery_attempted_at < now() - interval '3 minutes')
+    RETURNING m.moment_id, m.funded_from;
+    RETURN;
+  END IF;
+
+  RETURN QUERY
+  UPDATE public.giveaway_pack_moments m
+     SET delivery_attempted_at = now(), delivery_error = NULL
+    FROM public.giveaway_claims c
+   WHERE m.drop_id = p_drop_id
+     AND c.drop_id = p_drop_id
+     AND c.pack_no = m.pack_no
+     AND (p_pack_no IS NULL OR m.pack_no = p_pack_no)
+     AND m.source_wallet = v_drop.vault_address
+     AND m.delivered_at IS NULL
+     AND (m.delivery_attempted_at IS NULL OR m.delivery_attempted_at < now() - interval '3 minutes')
+  RETURNING m.moment_id, c.recipient_address;
+END;
+$function$;
+-- <<< END verbatim reserve_giveaway_vault_send <<<
+
 -- Admin 0x00000000000000aa holds Top Shot moments 1..5 (5 is LOCKED, 6 lock unknown).
 -- Moment 7 exists under the admin only in ANOTHER collection.
 INSERT INTO wallet_moments_cache (wallet_address, moment_id, collection_id, player_name, fmv_usd, is_locked, last_seen_at) VALUES
@@ -559,6 +656,82 @@ SELECT pg_temp._try_dealt('r-ok', 'bal-two', 'random', '[{"moment_id":"21","pack
 SELECT _assert_eq((SELECT msg FROM _gw_raised WHERE label = 'r-ok'), NULL, 'B4 a random seal accepts any exactly-once deal');
 SELECT _assert_eq((SELECT status || '/' || deal_mode FROM giveaway_drops WHERE slug = 'bal-two'), 'sealed/random', 'B4 and records the random mode');
 
-SELECT '✓ giveaways: draft refusals (size, duplicate, locked, unknown lock, other collection, other wallet), seal coverage, claim outcomes, multi-account pools, balanced deal' AS result;
+-- V1..V5: instant delivery from the giveaway vault (2026-11-08, 20261108231643).
+-- Drop vault-one: 2 packs of 1, moments 41 (from 0x…aa) and 42 (from 0x…bb), sealed, not yet open.
+INSERT INTO giveaway_drops (slug, title, sponsor_name, collection_id, admin_wallet, pack_count, moments_per_pack, status, seal_hash, seal_salt, sealed_at)
+VALUES ('vault-one', 'Vault one', 'Trevor', '95f28a17-224a-4025-96ad-adf8a4c63bfd', '0x00000000000000ff', 2, 1, 'sealed', repeat('a', 64), repeat('b', 64), now()),
+       ('vault-draft', 'Vault draft', 'Trevor', '95f28a17-224a-4025-96ad-adf8a4c63bfd', '0x00000000000000ff', 1, 1, 'draft', NULL, NULL, NULL);
+INSERT INTO giveaway_pack_moments (drop_id, moment_id, pack_no, slot, fmv_usd, source_wallet)
+SELECT d.id, v.id, v.pack, 1, 5, v.src FROM giveaway_drops d CROSS JOIN (VALUES ('41', 1, '0x00000000000000aa'), ('42', 2, '0x00000000000000bb')) v(id, pack, src)
+ WHERE d.slug = 'vault-one';
+CREATE OR REPLACE FUNCTION pg_temp._try_fund(p_label text, p_slug text, p_vault text) RETURNS void LANGUAGE plpgsql AS $$
+BEGIN
+  PERFORM mark_giveaway_vault_funded((SELECT id FROM giveaway_drops WHERE slug = p_slug), p_vault);
+  INSERT INTO _gw_raised VALUES (p_label, NULL);
+EXCEPTION WHEN OTHERS THEN
+  INSERT INTO _gw_raised VALUES (p_label, SQLERRM);
+END $$;
+SELECT pg_temp._try_fund('v-draft', 'vault-draft', '0x00000000000000cc');
+SELECT _assert((SELECT msg LIKE '%only a sealed or open drop%' FROM _gw_raised WHERE label = 'v-draft'), 'V1 a draft cannot be funded');
+SELECT _assert_eq((SELECT mark_giveaway_vault_funded((SELECT id FROM giveaway_drops WHERE slug = 'vault-one'), '0x00000000000000CC'))::text, '2', 'V1 funding moves every undelivered moment to the vault');
+SELECT _assert_eq((SELECT string_agg(moment_id || ':' || source_wallet || '<' || funded_from, ',' ORDER BY moment_id) FROM giveaway_pack_moments m
+                    JOIN giveaway_drops d ON d.id = m.drop_id WHERE d.slug = 'vault-one'),
+                  '41:0x00000000000000cc<0x00000000000000aa,42:0x00000000000000cc<0x00000000000000bb', 'V1 each moment remembers where it came from');
+SELECT _assert_eq((SELECT mark_giveaway_vault_funded((SELECT id FROM giveaway_drops WHERE slug = 'vault-one'), '0x00000000000000cc'))::text, '0', 'V1 re-funding the same vault is a no-op');
+SELECT pg_temp._try_fund('v-other', 'vault-one', '0x00000000000000dd');
+SELECT _assert((SELECT msg LIKE '%already funded%' FROM _gw_raised WHERE label = 'v-other'), 'V1 a funded drop cannot be moved to another vault');
+SELECT _assert_eq((SELECT funded_from FROM giveaway_pack_moments WHERE moment_id = '41' AND drop_id = (SELECT id FROM giveaway_drops WHERE slug = 'vault-one')),
+                  '0x00000000000000aa', 'V1 a refused re-fund keeps the original origin');
+
+-- V2: once funded, the accounts the pool came from still cannot win it
+UPDATE giveaway_drops SET status = 'open', opened_at = now() WHERE slug = 'vault-one';
+CREATE OR REPLACE FUNCTION pg_temp._claim_slug(p_who text, p_slug text, p_user uuid, p_recipient text) RETURNS void LANGUAGE plpgsql AS $$
+BEGIN
+  INSERT INTO _gw_claims SELECT p_who, c.pack_no, c.outcome FROM claim_giveaway_pack((SELECT id FROM giveaway_drops WHERE slug = p_slug), p_user, p_who, p_recipient) c;
+END $$;
+SELECT pg_temp._claim_slug('v-origin', 'vault-one', '00000000-0000-0000-0000-000000000021', '0x00000000000000BB');
+SELECT pg_temp._claim_slug('v-vault', 'vault-one', '00000000-0000-0000-0000-000000000022', '0x00000000000000cc');
+SELECT _assert_eq((SELECT outcome FROM _gw_claims WHERE who = 'v-origin'), 'admin_recipient', 'V2 a funded-from account cannot claim the pool it funded');
+SELECT _assert_eq((SELECT outcome FROM _gw_claims WHERE who = 'v-vault'), 'admin_recipient', 'V2 nor can the vault itself');
+SELECT pg_temp._claim_slug('v-fan', 'vault-one', '00000000-0000-0000-0000-000000000023', '0x0000000000000023');
+SELECT _assert_eq((SELECT outcome FROM _gw_claims WHERE who = 'v-fan'), 'claimed', 'V2 anyone else claims');
+
+-- V3: the send lock hands out the claimed pack's moments with the CLAIM's recipient, once
+CREATE TEMP TABLE _gw_sends (label text, moment_id text, recipient text);
+INSERT INTO _gw_sends SELECT 's1', r.moment_id, r.recipient FROM reserve_giveaway_vault_send((SELECT id FROM giveaway_drops WHERE slug = 'vault-one'), NULL, false) r;
+INSERT INTO _gw_sends SELECT 's2', r.moment_id, r.recipient FROM reserve_giveaway_vault_send((SELECT id FROM giveaway_drops WHERE slug = 'vault-one'), NULL, false) r;
+SELECT _assert_eq((SELECT string_agg(moment_id || '>' || recipient, ',') FROM _gw_sends WHERE label = 's1'),
+                  (SELECT m.moment_id || '>0x0000000000000023' FROM giveaway_pack_moments m JOIN giveaway_claims c ON c.drop_id = m.drop_id AND c.pack_no = m.pack_no
+                    WHERE c.recipient_address = '0x0000000000000023'), 'V3 only the claimed pack, to the claim''s recipient');
+SELECT _assert_eq((SELECT count(*)::text FROM _gw_sends WHERE label = 's2'), '0', 'V3 a second trigger within the lock window sends nothing');
+UPDATE giveaway_pack_moments SET delivery_attempted_at = now() - interval '4 minutes' WHERE delivery_attempted_at IS NOT NULL;
+INSERT INTO _gw_sends SELECT 's3', r.moment_id, r.recipient FROM reserve_giveaway_vault_send((SELECT id FROM giveaway_drops WHERE slug = 'vault-one'), NULL, false) r;
+SELECT _assert_eq((SELECT count(*)::text FROM _gw_sends WHERE label = 's3'), '1', 'V3 an attempt older than 3 minutes is retried');
+UPDATE giveaway_pack_moments SET delivered_at = now() WHERE delivery_attempted_at IS NOT NULL;
+UPDATE giveaway_pack_moments SET delivery_attempted_at = now() - interval '4 minutes' WHERE delivered_at IS NOT NULL;
+INSERT INTO _gw_sends SELECT 's4', r.moment_id, r.recipient FROM reserve_giveaway_vault_send((SELECT id FROM giveaway_drops WHERE slug = 'vault-one'), NULL, false) r;
+SELECT _assert_eq((SELECT count(*)::text FROM _gw_sends WHERE label = 's4'), '0', 'V3 a delivered moment is never handed out again');
+
+-- V4: unclaimed moments go back to where they came from, only after close
+CREATE OR REPLACE FUNCTION pg_temp._try_return(p_label text) RETURNS void LANGUAGE plpgsql AS $$
+BEGIN
+  INSERT INTO _gw_sends SELECT p_label, r.moment_id, r.recipient FROM reserve_giveaway_vault_send((SELECT id FROM giveaway_drops WHERE slug = 'vault-one'), NULL, true) r;
+  INSERT INTO _gw_raised VALUES (p_label, NULL);
+EXCEPTION WHEN OTHERS THEN
+  INSERT INTO _gw_raised VALUES (p_label, SQLERRM);
+END $$;
+SELECT pg_temp._try_return('r-open');
+SELECT _assert((SELECT msg LIKE '%only after the drop closes%' FROM _gw_raised WHERE label = 'r-open'), 'V4 nothing goes back while the drop is open');
+UPDATE giveaway_drops SET status = 'closed', closed_at = now() WHERE slug = 'vault-one';
+SELECT pg_temp._try_return('r-closed');
+SELECT _assert_eq((SELECT string_agg(s.moment_id || '>' || s.recipient, ',') FROM _gw_sends s WHERE s.label = 'r-closed'),
+                  (SELECT m.moment_id || '>' || m.funded_from FROM giveaway_pack_moments m JOIN giveaway_drops d ON d.id = m.drop_id
+                    WHERE d.slug = 'vault-one' AND m.delivered_at IS NULL), 'V4 the unclaimed moment goes back to the account it was funded from');
+
+-- V5: an unfunded drop hands out nothing
+INSERT INTO _gw_sends SELECT 'unfunded', r.moment_id, r.recipient FROM reserve_giveaway_vault_send((SELECT id FROM giveaway_drops WHERE slug = 'bal-one'), NULL, false) r;
+SELECT _assert_eq((SELECT count(*)::text FROM _gw_sends WHERE label = 'unfunded'), '0', 'V5 an unfunded drop has nothing to send from a vault');
+
+SELECT '✓ giveaways: draft refusals (size, duplicate, locked, unknown lock, other collection, other wallet), seal coverage, claim outcomes, multi-account pools, balanced deal, vault funding + send lock + returns' AS result;
 
 ROLLBACK;

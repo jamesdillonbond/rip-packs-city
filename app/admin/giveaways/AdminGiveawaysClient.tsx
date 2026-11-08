@@ -18,6 +18,7 @@ import { SealUnconfirmedError, connectAdminWallet, disconnectAdminWallet, sendDe
 import PackRevealClient from "@/app/giveaways/[slug]/PackRevealClient"
 import { DEFAULT_FILTER, filterCandidates, previewPack, randomFill, shapesFor, tierLabel, tierMix, tiersOf, type BuilderFilter, type BuilderSort } from "@/lib/giveaways/pool-builder"
 import { simulatePackSpread, type DealMode, type PackSpread } from "@/lib/giveaways/seal"
+import type { VaultStatus } from "@/lib/giveaways/vault"
 
 const DISPLAY = "var(--font-display)"
 const MONO = "var(--font-mono)"
@@ -113,6 +114,7 @@ export default function AdminGiveawaysClient() {
           {res.stale ? " (showing the last list that loaded)" : ""}
         </p>
       ) : null}
+      <VaultPanel call={call} />
       <CreateDraft call={call} onCreated={res.refresh} />
       <section style={box}>
         <h2 style={{ fontFamily: DISPLAY, textTransform: "uppercase", margin: "0 0 8px" }}>Drops</h2>
@@ -657,7 +659,12 @@ function DropPanel({ drop, call, onChanged }: { drop: DropRow; call: Call; onCha
           </div>
         </div>
       ) : null}
-      {drop.status === "open" || drop.status === "closed" ? <DeliverAll drop={drop} call={call} onDone={() => { onChanged(); if (open) void load() }} /> : null}
+      {drop.status === "sealed" || drop.status === "open" || drop.status === "closed" ? (
+        <InstantDelivery drop={drop} call={call} onDone={() => { onChanged(); if (open) void load() }} />
+      ) : null}
+      {(drop.status === "open" || drop.status === "closed") && !drop.vault_address ? (
+        <DeliverAll drop={drop} call={call} onDone={() => { onChanged(); if (open) void load() }} />
+      ) : null}
       {open && detail ? (
         <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 10 }}>
           <thead>
@@ -792,3 +799,190 @@ function DeliverAll({ drop, call, onDone }: { drop: DropRow; call: Call; onDone:
     </div>
   )
 }
+
+// ── Instant delivery (2026-11-08) ─────────────────────────────────────────────
+// The giveaway vault: a plain Flow account whose key only the server holds. A
+// funded drop's pool sits there and each claim's Moments go out seconds after the
+// claim. Configured by env (GIVEAWAY_VAULT_*) and switched by
+// RPC_GIVEAWAY_INSTANT_DELIVERY; until then this panel says what's missing.
+function VaultPanel({ call }: { call: Call }) {
+  const [status, setStatus] = useState<VaultStatus | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+  const [msg, setMsg] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  const apply = useCallback((r: Awaited<ReturnType<Call>>) => {
+    if (!r.ok || !r.body || typeof r.body.configured !== "boolean") {
+      setErr(String(r.body?.error ?? `HTTP ${r.status}`))
+      return
+    }
+    setErr(null)
+    setStatus(r.body as unknown as VaultStatus)
+  }, [])
+  const load = useCallback(() => call("/api/admin/giveaways?vault=1").then(apply), [call, apply])
+
+  useEffect(() => {
+    let live = true
+    void call("/api/admin/giveaways?vault=1").then((r) => {
+      if (live) apply(r)
+    })
+    return () => {
+      live = false
+    }
+  }, [call, apply])
+
+  const setUp = async () => {
+    setBusy(true)
+    setMsg(null)
+    const r = await call("/api/admin/giveaways", { method: "POST", body: JSON.stringify({ action: "vault_setup" }) })
+    setBusy(false)
+    setMsg(r.ok ? (r.body?.already ? "The vault already has a Top Shot collection." : `Vault set up · tx ${String(r.body?.tx_id)}`) : String(r.body?.error ?? `HTTP ${r.status}`))
+    void load()
+  }
+
+  return (
+    <section style={box} data-testid="vault-panel">
+      <h2 style={{ fontFamily: DISPLAY, textTransform: "uppercase", margin: "0 0 8px" }}>Instant delivery vault</h2>
+      {err ? <p style={{ color: "var(--rpc-danger-text)", fontSize: 13 }}>Couldn&apos;t read the vault: {err}</p> : null}
+      {!status && !err ? <p style={{ color: "var(--rpc-text-muted)", fontSize: 13 }}>Loading…</p> : null}
+      {status && !status.configured ? (
+        <p style={{ fontSize: 13, color: "var(--rpc-text-secondary)", margin: 0 }}>
+          Not configured. Instant delivery needs a dedicated Flow account and three Vercel env vars: <code>GIVEAWAY_VAULT_ADDR</code>,{" "}
+          <code>GIVEAWAY_VAULT_PRIVATE_KEY</code> (sensitive) and <code>GIVEAWAY_VAULT_KEY_INDEX</code>, plus <code>RPC_GIVEAWAY_INSTANT_DELIVERY=1</code>. Until then
+          every drop is delivered with Deliver all, as before.
+        </p>
+      ) : null}
+      {status && status.configured ? (
+        <div style={{ fontFamily: MONO, fontSize: 13, display: "flex", flexDirection: "column", gap: 4 }}>
+          <span>
+            Vault {status.address} · {status.enabled ? "ON" : "OFF (RPC_GIVEAWAY_INSTANT_DELIVERY is not 1)"}
+          </span>
+          <span>
+            {status.topshot_held == null ? "No Top Shot collection yet" : `${status.topshot_held} Top Shot Moment(s) held`} · {status.flow_balance ?? "?"} FLOW
+          </span>
+          {status.topshot_held == null && status.enabled ? (
+            <button type="button" style={{ ...btn, alignSelf: "flex-start" }} disabled={busy} onClick={setUp}>
+              {busy ? "Setting up…" : "Set up the vault's Top Shot collection"}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+      {msg ? <p style={{ fontSize: 13, fontFamily: MONO, color: "var(--rpc-text-secondary)" }}>{msg}</p> : null}
+    </section>
+  )
+}
+
+function InstantDelivery({ drop, call, onDone }: { drop: DropRow; call: Call; onDone: () => void }) {
+  const [busy, setBusy] = useState(false)
+  const [log, setLog] = useState<string[]>([])
+  const note = (line: string) => setLog((l) => [...l, line])
+  const post = (body: Record<string, unknown>) => call(`/api/admin/giveaways/${drop.id}`, { method: "POST", body: JSON.stringify(body) })
+
+  const confirm = async () => {
+    const c = await post({ action: "confirm_funding" })
+    note(c.ok ? `Funded: ${String(c.body?.moved ?? 0)} Moment(s) now delivered from the vault on claim.` : `Not funded yet: ${String(c.body?.error ?? `HTTP ${c.status}`)}`)
+  }
+
+  const fund = async () => {
+    setBusy(true)
+    setLog([])
+    try {
+      let wallet: string
+      try {
+        wallet = await connectAdminWallet()
+      } catch (e) {
+        note(`Wallet: ${errorText(e)}`)
+        return
+      }
+      const r = await post({ action: "fund_plan", parent: wallet })
+      if (!r.ok) {
+        // the whole pool already in the vault: just record it
+        if (r.body?.code === "nothing_to_fund") await confirm()
+        else note(String(r.body?.error ?? `HTTP ${r.status}`))
+        return
+      }
+      const plan = r.body?.plan as DeliveryPlan | undefined
+      if (!plan || !Array.isArray(plan.batches)) {
+        note("The funding plan came back malformed.")
+        return
+      }
+      for (const sk of plan.skipped) note(`Can't move ${sk.moment_id}: ${sk.reason === "locked" ? "locked on chain" : "no longer in your account"}`)
+      if (plan.skipped.length) {
+        note("Funding needs the WHOLE pool; nothing was sent.")
+        return
+      }
+      const n = plan.batches.reduce((s, b) => s + b.momentIDs.length, 0)
+      if (!window.confirm(`Move ${n} Moment(s) into the giveaway vault ${String(r.body?.vault)}? From then on each claim is delivered from the vault within seconds, and unclaimed Moments come back when the drop closes.`)) {
+        note("Cancelled; nothing was sent.")
+        return
+      }
+      for (const [i, b] of plan.batches.entries()) {
+        note(`Batch ${i + 1}/${plan.batches.length}: waiting for your wallet…`)
+        try {
+          const sent = await sendDeliveryBatch(b, { onSlow: (hint) => note(`Batch ${i + 1}: ${hint}`) })
+          note(`Batch ${i + 1}: sealed · tx ${sent.txId}`)
+        } catch (e) {
+          note(e instanceof SealUnconfirmedError ? `Batch ${i + 1} UNCONFIRMED: ${e.message}` : `Batch ${i + 1} NOT sent: ${errorText(e)}`)
+          return
+        }
+      }
+      await confirm()
+    } finally {
+      setBusy(false)
+      onDone()
+    }
+  }
+
+  const vaultAction = async (action: "vault_send" | "vault_return") => {
+    if (action === "vault_return" && !window.confirm("Send every unclaimed Moment back to the account it came from?")) return
+    setBusy(true)
+    setLog([])
+    const r = await post({ action })
+    const rep = r.body?.report as { reserved: number; sent: number; tx_ids: string[]; unknown: string[]; failed: { moment_ids: string[]; error: string }[] } | undefined
+    if (!rep) note(String(r.body?.error ?? `HTTP ${r.status}`))
+    else {
+      note(rep.reserved === 0 ? "Nothing to send right now (already delivered, or sent in the last 3 minutes)." : `Sent ${rep.sent} of ${rep.reserved}${rep.tx_ids.length ? ` · tx ${rep.tx_ids.join(", ")}` : ""}`)
+      for (const u of rep.unknown) note(`UNCONFIRMED tx ${u}: it may still land; Verify reads the chain.`)
+      for (const f of rep.failed) note(`NOT sent ${f.moment_ids.join(", ")}: ${f.error}`)
+    }
+    setBusy(false)
+    onDone()
+  }
+
+  return (
+    <div style={{ marginTop: 10, padding: 10, border: "1px dashed var(--rpc-border)", borderRadius: 6 }} data-testid="instant-delivery">
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <strong style={{ fontFamily: MONO, fontSize: 12, textTransform: "uppercase" }}>Instant delivery</strong>
+        {drop.vault_address ? (
+          <>
+            <span style={{ fontFamily: MONO, fontSize: 12, color: "var(--rpc-success-text)" }}>Funded · vault {drop.vault_address}</span>
+            {drop.status !== "sealed" ? (
+              <button type="button" style={btn} disabled={busy} onClick={() => vaultAction("vault_send")}>
+                Send claimed packs now
+              </button>
+            ) : null}
+            {drop.status === "closed" ? (
+              <button type="button" style={btn} disabled={busy} onClick={() => vaultAction("vault_return")}>
+                Return unclaimed to sponsor
+              </button>
+            ) : null}
+          </>
+        ) : drop.status === "closed" ? (
+          <span style={{ fontFamily: MONO, fontSize: 12, color: "var(--rpc-text-muted)" }}>Not funded (closed drops can&apos;t be funded)</span>
+        ) : (
+          <button type="button" style={btn} disabled={busy} onClick={fund}>
+            {busy ? "Funding…" : "Fund for instant delivery (moves the pool into the vault)"}
+          </button>
+        )}
+      </div>
+      {log.length ? (
+        <ul style={{ margin: "8px 0 0", paddingLeft: 18, fontFamily: MONO, fontSize: 12, color: "var(--rpc-text-secondary)" }}>
+          {log.map((l, i) => (
+            <li key={i}>{l}</li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  )
+}
+

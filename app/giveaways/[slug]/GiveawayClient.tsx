@@ -104,6 +104,21 @@ export default function GiveawayClient({ slug }: { slug: string }) {
     }
   }, [slug])
 
+  // Instant delivery (2026-11-08): while a funded pack's Moments are on their way, re-read every
+  // 6 s for up to 2 minutes so "Delivered" appears without a reload. Each read also re-triggers the
+  // vault send server-side (its lock makes a repeat a no-op), so a dropped send heals itself.
+  const awaitingVault =
+    load.kind === "ok" && load.view.drop.instant_delivery && load.view.me != null && load.view.me.moments.some((m) => !m.delivered)
+  const pollsRef = useRef(0)
+  useEffect(() => {
+    if (!awaitingVault || pollsRef.current >= 20) return
+    const id = setTimeout(() => {
+      pollsRef.current += 1
+      refresh()
+    }, 6000)
+    return () => clearTimeout(id)
+  }, [awaitingVault, load, refresh])
+
   const claimFormShown = load.kind === "ok" && load.view.signed_in && !load.view.me && load.view.drop.status === "open"
   useEffect(() => {
     if (!claimFormShown) return
@@ -261,7 +276,10 @@ export default function GiveawayClient({ slug }: { slug: string }) {
                 Top Shot user <strong>@{me.topshot_username}</strong>
               </>
             )}
-            . The sponsor sends each Moment to that account; this page marks it delivered once it shows up there on chain.
+            .{" "}
+            {drop.instant_delivery
+              ? "This giveaway's Moments are held in Rip Packs City's giveaway vault and sent to that account seconds after you claim; this page marks each one delivered once it shows up there on chain."
+              : "The sponsor sends each Moment to that account; this page marks it delivered once it shows up there on chain."}
           </p>
           <PackRevealClient slug={slug} packNo={me.pack_no} moments={me.moments}>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 10 }}>
@@ -269,7 +287,7 @@ export default function GiveawayClient({ slug }: { slug: string }) {
                 <div key={m.moment_id} style={{ ...card, background: "var(--rpc-surface-raised)" }}>
                   <MomentLine m={m} />
                   <div style={{ ...muted, marginTop: 6, color: m.delivered ? "var(--rpc-success-text)" : "var(--rpc-text-muted)" }}>
-                    {deliveryLabel(m.delivered, m.last_checked_at)}
+                    {deliveryLabel(m.delivered, m.last_checked_at, drop.instant_delivery)}
                   </div>
                 </div>
               ))}
@@ -358,7 +376,10 @@ export default function GiveawayClient({ slug }: { slug: string }) {
                 )
               })()}
               {claimError ? <p style={{ color: "var(--rpc-danger-text)", margin: 0 }}>{claimError}</p> : null}
-              <p style={muted}>Your pack is drawn at random from the packs still unclaimed. One pack per person and per Top Shot account.</p>
+              <p style={muted}>
+                Your pack is drawn at random from the packs still unclaimed. One pack per person and per Top Shot account.
+                {drop.instant_delivery ? " Instant delivery: your Moments are sent to your account seconds after you claim." : ""}
+              </p>
             </div>
           ) : (
             <p style={{ margin: 0 }}>

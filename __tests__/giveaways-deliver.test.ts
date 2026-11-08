@@ -19,6 +19,7 @@ const DROP: DropRow = {
   moments_per_pack: 2,
   seal_hash: "a".repeat(64),
   deal_mode: "random",
+  vault_address: null,
   seal_salt: "b".repeat(64),
   sealed_at: "t",
   opened_at: "t",

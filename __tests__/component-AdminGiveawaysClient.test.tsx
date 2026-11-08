@@ -48,6 +48,7 @@ const DROP = (over: Record<string, unknown> = {}) => ({
   moments_per_pack: 2,
   seal_hash: null,
   deal_mode: "random",
+  vault_address: null,
   seal_salt: null,
   sealed_at: null,
   opened_at: null,
@@ -618,5 +619,169 @@ describe("AdminGiveawaysClient — deliver all (one signature per batch)", () =>
     wallet.disconnect.mockResolvedValueOnce(undefined)
     fireEvent.click(screen.getByRole("button", { name: /disconnect/i }))
     expect(await screen.findByRole("button", { name: "Connect Flow Wallet" })).toBeTruthy()
+  })
+})
+
+describe("AdminGiveawaysClient — instant delivery vault (2026-11-08)", () => {
+  const VAULT = "0x00000000000000cc"
+  const FUND_PLAN = {
+    parent: "0x00000000000000bb",
+    batches: [
+      { source: "0x00000000000000aa", kind: "linked", providerControllerID: "70", momentIDs: ["1", "2"], recipients: [VAULT, VAULT] },
+      { source: "0x00000000000000aa", kind: "linked", providerControllerID: "70", momentIDs: ["3"], recipients: [VAULT] },
+    ],
+    skipped: [],
+  }
+  const STATUS_ON = { configured: true, enabled: true, address: VAULT, topshot_held: 0, flow_balance: "0.5", storage_used: 1, storage_capacity: 2 }
+
+  beforeEach(() => {
+    wallet.connect.mockReset()
+    wallet.send.mockReset()
+  })
+
+  function server(opts: { drop?: ReturnType<typeof DROP>; status?: unknown; posts?: Record<string, Response | (() => Response)> } = {}) {
+    const posts: Record<string, unknown>[] = []
+    const drop = opts.drop ?? DROP({ id: "d4", status: "open", title: "Open one" })
+    stub((url, init) => {
+      if (init?.method === "POST") {
+        const body = JSON.parse(init.body as string)
+        posts.push(body)
+        const r = opts.posts?.[body.action]
+        if (r) return typeof r === "function" ? r() : r
+        return json({ error: "unexpected" }, 500)
+      }
+      if (url.includes("?vault=1")) return json(opts.status ?? { configured: false, enabled: false })
+      if (url.endsWith(`/${drop.id}`)) return json({ drop, pool: [], claims: [] })
+      return json({ drops: [drop] })
+    })
+    return posts
+  }
+  const panel = () => screen.findByTestId("vault-panel")
+
+  it("an unconfigured vault names exactly what is missing, and offers no setup", async () => {
+    server()
+    render(<AdminGiveawaysClient />)
+    const p = await panel()
+    expect(await within(p).findByText(/Not configured/)).toBeTruthy()
+    expect(p.textContent).toContain("GIVEAWAY_VAULT_PRIVATE_KEY")
+    expect(within(p).queryByRole("button")).toBeNull()
+  })
+
+  it("a failed vault read is an error, never 'not configured'", async () => {
+    stub((url) => (url.includes("?vault=1") ? json({ error: "Service temporarily unavailable." }, 503) : json({ drops: [] })))
+    render(<AdminGiveawaysClient />)
+    const p = await panel()
+    expect(await within(p).findByText(/Couldn't read the vault: Service temporarily unavailable/)).toBeTruthy()
+    expect(p.textContent).not.toContain("Not configured")
+  })
+
+  it("a configured vault with no collection offers setup, and reports the tx", async () => {
+    const posts = server({ status: { ...STATUS_ON, topshot_held: null }, posts: { vault_setup: json({ ok: true, tx_id: "abc", already: false }) } })
+    render(<AdminGiveawaysClient />)
+    const p = await panel()
+    expect(await within(p).findByText(/Vault 0x00000000000000cc · ON/)).toBeTruthy()
+    expect(p.textContent).toContain("No Top Shot collection yet · 0.5 FLOW")
+    fireEvent.click(within(p).getByRole("button", { name: /Set up the vault's Top Shot collection/ }))
+    expect(await within(p).findByText("Vault set up · tx abc")).toBeTruthy()
+    expect(posts).toEqual([{ action: "vault_setup" }])
+  })
+
+  it("the switch off is said plainly, and setup is not offered", async () => {
+    server({ status: { ...STATUS_ON, enabled: false, topshot_held: null } })
+    render(<AdminGiveawaysClient />)
+    const p = await panel()
+    expect(await within(p).findByText(/OFF \(RPC_GIVEAWAY_INSTANT_DELIVERY is not 1\)/)).toBeTruthy()
+    expect(within(p).queryByRole("button")).toBeNull()
+  })
+
+  it("funding: plans into the vault with the connected wallet, signs each batch, then confirms on chain", async () => {
+    wallet.connect.mockResolvedValue("0x00000000000000bb")
+    wallet.send.mockResolvedValueOnce({ txId: "tx1" }).mockResolvedValueOnce({ txId: "tx2" })
+    const posts = server({
+      status: STATUS_ON,
+      posts: { fund_plan: json({ ok: true, vault: VAULT, plan: FUND_PLAN }), confirm_funding: json({ ok: true, moved: 3 }) },
+    })
+    render(<AdminGiveawaysClient />)
+    fireEvent.click(await screen.findByRole("button", { name: /Fund for instant delivery/ }))
+    expect(await screen.findByText(/Funded: 3 Moment\(s\) now delivered from the vault on claim/)).toBeTruthy()
+    expect(posts).toEqual([{ action: "fund_plan", parent: "0x00000000000000bb" }, { action: "confirm_funding" }])
+    expect(wallet.send.mock.calls.map((c) => (c[0] as { recipients: string[] }).recipients)).toEqual([[VAULT, VAULT], [VAULT]])
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining(`Move 3 Moment(s) into the giveaway vault ${VAULT}`))
+  })
+
+  it("funding needs the WHOLE pool: any skipped Moment sends nothing", async () => {
+    wallet.connect.mockResolvedValue("0x00000000000000bb")
+    const posts = server({ posts: { fund_plan: json({ ok: true, vault: VAULT, plan: { ...FUND_PLAN, skipped: [{ moment_id: "9", reason: "locked" }] } }) } })
+    render(<AdminGiveawaysClient />)
+    fireEvent.click(await screen.findByRole("button", { name: /Fund for instant delivery/ }))
+    expect(await screen.findByText(/Funding needs the WHOLE pool; nothing was sent/)).toBeTruthy()
+    expect(screen.getByText(/Can't move 9: locked on chain/)).toBeTruthy()
+    expect(wallet.send).not.toHaveBeenCalled()
+    expect(posts.map((p) => p.action)).toEqual(["fund_plan"])
+  })
+
+  it("a failed batch stops the run and does NOT record the drop funded", async () => {
+    wallet.connect.mockResolvedValue("0x00000000000000bb")
+    wallet.send.mockRejectedValueOnce(new Error("User rejected"))
+    const posts = server({ posts: { fund_plan: json({ ok: true, vault: VAULT, plan: FUND_PLAN }) } })
+    render(<AdminGiveawaysClient />)
+    fireEvent.click(await screen.findByRole("button", { name: /Fund for instant delivery/ }))
+    expect(await screen.findByText(/Batch 1 NOT sent: User rejected/)).toBeTruthy()
+    expect(wallet.send).toHaveBeenCalledTimes(1)
+    expect(posts.map((p) => p.action)).toEqual(["fund_plan"])
+  })
+
+  it("an unconfigured vault refusal is shown, and a pool already in the vault is just confirmed", async () => {
+    wallet.connect.mockResolvedValue("0x00000000000000bb")
+    let n = 0
+    const posts = server({
+      posts: {
+        fund_plan: () =>
+          ++n === 1
+            ? json({ error: "The giveaway vault is not configured.", code: "vault_unconfigured" }, 409)
+            : json({ error: "Every Moment is already in the vault.", code: "nothing_to_fund" }, 409),
+        confirm_funding: json({ error: "The vault does not hold 1 of the pool's Moments.", code: "vault_incomplete" }, 409),
+      },
+    })
+    render(<AdminGiveawaysClient />)
+    fireEvent.click(await screen.findByRole("button", { name: /Fund for instant delivery/ }))
+    expect(await screen.findByText("The giveaway vault is not configured.")).toBeTruthy()
+    fireEvent.click(await screen.findByRole("button", { name: /Fund for instant delivery/ }))
+    expect(await screen.findByText(/Not funded yet: The vault does not hold 1/)).toBeTruthy()
+    expect(posts.map((p) => p.action)).toEqual(["fund_plan", "fund_plan", "confirm_funding"])
+    expect(wallet.send).not.toHaveBeenCalled()
+  })
+
+  it("a funded drop hides Deliver all and offers the vault send; a closed one also offers the return", async () => {
+    const posts = server({
+      drop: DROP({ id: "d5", status: "closed", title: "Closed funded", vault_address: VAULT }),
+      posts: {
+        vault_send: json({ ok: false, report: { reserved: 2, sent: 1, tx_ids: ["t1"], unknown: ["t2"], failed: [] } }, 207),
+        vault_return: json({ ok: false, report: { reserved: 1, sent: 0, tx_ids: [], unknown: [], failed: [{ moment_ids: ["7"], error: "simulation refused" }] } }, 207),
+      },
+    })
+    render(<AdminGiveawaysClient />)
+    expect(await screen.findByText(`Funded · vault ${VAULT}`)).toBeTruthy()
+    expect(screen.queryByRole("button", { name: /deliver claimed moments/i })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Connect Flow Wallet" })).toBeNull()
+    fireEvent.click(screen.getByRole("button", { name: "Send claimed packs now" }))
+    expect(await screen.findByText("Sent 1 of 2 · tx t1")).toBeTruthy()
+    expect(screen.getByText(/UNCONFIRMED tx t2: it may still land/)).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Return unclaimed to sponsor" }))
+    expect(await screen.findByText("NOT sent 7: simulation refused")).toBeTruthy()
+    expect(posts.map((p) => p.action)).toEqual(["vault_send", "vault_return"])
+  })
+
+  it("a sealed funded drop offers neither send nor return; a declined return sends nothing", async () => {
+    server({ drop: DROP({ id: "d6", status: "sealed", title: "Sealed funded", vault_address: VAULT }) })
+    render(<AdminGiveawaysClient />)
+    expect(await screen.findByText(`Funded · vault ${VAULT}`)).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Send claimed packs now" })).toBeNull()
+    cleanup()
+    vi.mocked(window.confirm).mockReturnValue(false)
+    const posts = server({ drop: DROP({ id: "d7", status: "closed", title: "Closed funded", vault_address: VAULT }) })
+    render(<AdminGiveawaysClient />)
+    fireEvent.click(await screen.findByRole("button", { name: "Return unclaimed to sponsor" }))
+    expect(posts).toEqual([])
   })
 })

@@ -21,7 +21,25 @@ const { store, getCurrentUser, resolve } = vi.hoisted(() => ({
   usernameForWallet: vi.fn(),
   },
 }))
-const { planDelivery } = vi.hoisted(() => ({ planDelivery: vi.fn() }))
+const { planDelivery, planFunding } = vi.hoisted(() => ({ planDelivery: vi.fn(), planFunding: vi.fn() }))
+// instant delivery (2026-11-08): the vault module, and next/server's after() captured so a
+// test can see WHETHER a send was scheduled and run it.
+const { vault, afterFns } = vi.hoisted(() => ({
+  vault: {
+    vaultAddress: vi.fn(),
+    vaultStatus: vi.fn(),
+    setUpVault: vi.fn(),
+    confirmFunding: vi.fn(),
+    sendFromVault: vi.fn(),
+    instantDeliveryEnabled: vi.fn(),
+  },
+  afterFns: [] as (() => Promise<void>)[],
+}))
+vi.mock("@/lib/giveaways/vault", () => vault)
+vi.mock("next/server", async (orig) => {
+  const real = await orig<typeof import("next/server")>()
+  return { ...real, after: (fn: () => Promise<void>) => void afterFns.push(fn) }
+})
 const { discover } = vi.hoisted(() => ({ discover: vi.fn() }))
 const { verifyProof } = vi.hoisted(() => ({ verifyProof: vi.fn() }))
 vi.mock("@/lib/giveaways/claim-proof", async (orig) => {
@@ -29,7 +47,7 @@ vi.mock("@/lib/giveaways/claim-proof", async (orig) => {
   return { ...real, verifyClaimProof: (...a: unknown[]) => verifyProof(...a) }
 })
 vi.mock("@/lib/giveaways/linked-accounts", () => ({ discoverAccounts: (...a: unknown[]) => discover(...a) }))
-vi.mock("@/lib/giveaways/deliver", () => ({ planDelivery: (...a: unknown[]) => planDelivery(...a) }))
+vi.mock("@/lib/giveaways/deliver", () => ({ planDelivery: (...a: unknown[]) => planDelivery(...a), planFunding: (...a: unknown[]) => planFunding(...a) }))
 vi.mock("@/lib/supabase", () => ({ supabaseAdmin: {} }))
 vi.mock("@/lib/giveaways/store", async (orig) => {
   const real = await orig<typeof import("@/lib/giveaways/store")>()
@@ -59,6 +77,7 @@ const DROP = {
   moments_per_pack: 1,
   seal_hash: commitmentHash("aa", "1:1;2:2"),
   deal_mode: "random",
+  vault_address: null,
   seal_salt: "aa",
   sealed_at: "2026-09-29T19:00:00Z",
   opened_at: null,
@@ -76,6 +95,9 @@ beforeEach(() => {
   resolve.mockReset()
   discover.mockReset()
   verifyProof.mockReset()
+  planFunding.mockReset()
+  for (const f of Object.values(vault)) f.mockReset()
+  afterFns.length = 0
   process.env.RPC_ADMIN_TOKEN = "tok"
   vi.spyOn(console, "error").mockImplementation(() => {})
 })
@@ -534,5 +556,151 @@ describe("/api/admin/giveaways", () => {
     const res = await adminOne.POST(post(`http://x/api/admin/giveaways/${ID}`, { action: "deliver_plan", parent: "0x00000000000000bb" }, auth), idCtx(ID))
     expect(res.status).toBe(409)
     expect(await res.json()).toEqual({ error: "Cadence: Cannot withdraw: Moment is locked", code: "flow" })
+  })
+})
+
+describe("instant delivery from the giveaway vault (2026-11-08)", () => {
+  const auth = { authorization: "Bearer tok" }
+  const VAULT = "0x00000000000000cc"
+  const FUNDED = { ...DROP, vault_address: VAULT }
+  const REPORT = { reserved: 1, sent: 1, tx_ids: ["t".repeat(64)], unknown: [], failed: [] }
+  const act = (body: Record<string, unknown>) => adminOne.POST(post(`http://x/api/admin/giveaways/${ID}`, body, auth), idCtx(ID))
+
+  it("the vault actions are admin-only", async () => {
+    for (const action of ["fund_plan", "confirm_funding", "vault_send", "vault_return"]) {
+      expect((await adminOne.POST(post(`http://x/api/admin/giveaways/${ID}`, { action }), idCtx(ID))).status).toBe(401)
+    }
+    expect((await adminList.GET(new NextRequest("http://x/api/admin/giveaways?vault=1"))).status).toBe(401)
+    expect((await adminList.POST(post("http://x/api/admin/giveaways", { action: "vault_setup" }))).status).toBe(401)
+    expect(vault.vaultStatus).not.toHaveBeenCalled()
+    expect(vault.setUpVault).not.toHaveBeenCalled()
+  })
+
+  it("GET ?vault=1 is the vault status, uncached; vault_setup reports the tx or 'already'", async () => {
+    vault.vaultStatus.mockResolvedValueOnce({ configured: false, enabled: false })
+    const st = await adminList.GET(new NextRequest("http://x/api/admin/giveaways?vault=1", { headers: auth }))
+    expect(await st.json()).toEqual({ configured: false, enabled: false })
+    expect(st.headers.get("cache-control")).toBe("no-store")
+
+    vault.setUpVault.mockResolvedValueOnce("a".repeat(64))
+    expect(await (await adminList.POST(post("http://x/api/admin/giveaways", { action: "vault_setup" }, auth))).json()).toEqual({ ok: true, tx_id: "a".repeat(64), already: false })
+    vault.setUpVault.mockResolvedValueOnce(null)
+    expect(await (await adminList.POST(post("http://x/api/admin/giveaways", { action: "vault_setup" }, auth))).json()).toEqual({ ok: true, tx_id: null, already: true })
+    vault.setUpVault.mockRejectedValueOnce(new GiveawayError("The giveaway vault is not configured.", 409, "vault_unconfigured"))
+    const un = await adminList.POST(post("http://x/api/admin/giveaways", { action: "vault_setup" }, auth))
+    expect(un.status).toBe(409)
+    expect((await un.json()).code).toBe("vault_unconfigured")
+    vault.setUpVault.mockRejectedValueOnce(new FlowScriptError("Flow script HTTP 503", 503))
+    expect((await adminList.POST(post("http://x/api/admin/giveaways", { action: "vault_setup" }, auth))).status).toBe(502)
+  })
+
+  it("fund_plan: refuses with no vault configured, before any plan is built; else plans INTO the vault", async () => {
+    store.getDrop.mockResolvedValue(DROP)
+    vault.vaultAddress.mockReturnValueOnce(null)
+    const un = await act({ action: "fund_plan", parent: "0x00000000000000bb" })
+    expect(un.status).toBe(409)
+    expect((await un.json()).code).toBe("vault_unconfigured")
+    expect(planFunding).not.toHaveBeenCalled()
+
+    vault.vaultAddress.mockReturnValueOnce(VAULT)
+    const plan = { parent: "0x00000000000000bb", child: DROP.admin_wallet, providerControllerID: "70", batches: [], skipped: [] }
+    planFunding.mockResolvedValueOnce(plan)
+    const res = await act({ action: "fund_plan", parent: " 0x00000000000000BB " })
+    expect(await res.json()).toEqual({ ok: true, vault: VAULT, plan })
+    expect(planFunding).toHaveBeenCalledWith({}, DROP, "0x00000000000000bb", VAULT)
+  })
+
+  it("confirm_funding passes the chain-checked result through; a refusal keeps its code", async () => {
+    store.getDrop.mockResolvedValue(DROP)
+    vault.confirmFunding.mockResolvedValueOnce({ moved: 4 })
+    expect(await (await act({ action: "confirm_funding" })).json()).toEqual({ ok: true, moved: 4 })
+    vault.confirmFunding.mockRejectedValueOnce(new GiveawayError("The vault does not hold 2 of the pool's Moments.", 409, "vault_incomplete"))
+    const bad = await act({ action: "confirm_funding" })
+    expect(bad.status).toBe(409)
+    expect((await bad.json()).code).toBe("vault_incomplete")
+  })
+
+  it("vault_send / vault_return: 200 only when nothing failed and nothing is unconfirmed", async () => {
+    store.getDrop.mockResolvedValue(FUNDED)
+    vault.sendFromVault.mockResolvedValueOnce(REPORT)
+    const ok = await act({ action: "vault_send" })
+    expect(ok.status).toBe(200)
+    expect(vault.sendFromVault).toHaveBeenLastCalledWith({}, FUNDED, { returnUnclaimed: false })
+
+    vault.sendFromVault.mockResolvedValueOnce({ ...REPORT, unknown: ["t".repeat(64)] })
+    const unk = await act({ action: "vault_send" })
+    expect(unk.status).toBe(207)
+    expect((await unk.json()).ok).toBe(false)
+
+    vault.sendFromVault.mockResolvedValueOnce({ ...REPORT, sent: 0, failed: [{ moment_ids: ["1"], error: "simulation refused" }] })
+    expect((await act({ action: "vault_return" })).status).toBe(207)
+    expect(vault.sendFromVault).toHaveBeenLastCalledWith({}, FUNDED, { returnUnclaimed: true })
+  })
+
+  it("a claim on a FUNDED drop with the switch on schedules this pack's send — after the response", async () => {
+    store.getDrop.mockResolvedValue(FUNDED)
+    getCurrentUser.mockResolvedValue({ id: "u1" })
+    resolve.mockResolvedValue({ found: true, walletAddress: "0x00000000000000BB", username: "Alice" })
+    store.claimPack.mockResolvedValue({ outcome: "claimed", pack_no: 2 })
+    vault.instantDeliveryEnabled.mockReturnValue(true)
+    vault.sendFromVault.mockResolvedValue(REPORT)
+    const res = await publicRoute.POST(post("http://x/api/giveaways/test-drop", { username: "alice", agree: true }), slugCtx("test-drop"))
+    expect(res.status).toBe(200)
+    expect(vault.sendFromVault).not.toHaveBeenCalled() // not before the response
+    expect(afterFns).toHaveLength(1)
+    await afterFns[0]()
+    expect(vault.sendFromVault).toHaveBeenCalledWith({}, FUNDED, { packNo: 2 })
+  })
+
+  it("no send is scheduled for an unfunded drop, with the switch off, or for a repeat claim", async () => {
+    getCurrentUser.mockResolvedValue({ id: "u1" })
+    resolve.mockResolvedValue({ found: true, walletAddress: "0x00000000000000BB", username: "Alice" })
+    const claim = () => publicRoute.POST(post("http://x/api/giveaways/test-drop", { username: "alice", agree: true }), slugCtx("test-drop"))
+
+    vault.instantDeliveryEnabled.mockReturnValue(true)
+    store.getDrop.mockResolvedValue(DROP)
+    store.claimPack.mockResolvedValue({ outcome: "claimed", pack_no: 2 })
+    await claim()
+    expect(afterFns).toHaveLength(0)
+
+    vault.instantDeliveryEnabled.mockReturnValue(false)
+    store.getDrop.mockResolvedValue(FUNDED)
+    await claim()
+    expect(afterFns).toHaveLength(0)
+
+    vault.instantDeliveryEnabled.mockReturnValue(true)
+    store.claimPack.mockResolvedValue({ outcome: "already_claimed", pack_no: 2 })
+    await claim()
+    expect(afterFns).toHaveLength(0)
+  })
+
+  it("a send that throws after the response is logged, never unhandled", async () => {
+    store.getDrop.mockResolvedValue(FUNDED)
+    getCurrentUser.mockResolvedValue({ id: "u1" })
+    resolve.mockResolvedValue({ found: true, walletAddress: "0x00000000000000BB", username: "Alice" })
+    store.claimPack.mockResolvedValue({ outcome: "claimed", pack_no: 2 })
+    vault.instantDeliveryEnabled.mockReturnValue(true)
+    vault.sendFromVault.mockRejectedValueOnce(new Error("vault key rejected"))
+    const log = vi.spyOn(console, "log").mockImplementation(() => {})
+    await publicRoute.POST(post("http://x/api/giveaways/test-drop", { username: "alice", agree: true }), slugCtx("test-drop"))
+    await expect(afterFns[0]()).resolves.toBeUndefined()
+    expect(log.mock.calls.flat().join(" ")).toContain("vault key rejected")
+    log.mockRestore()
+  })
+
+  it("a claimer viewing an UNDELIVERED pack of a funded drop retries the send; a delivered one does not", async () => {
+    store.getDrop.mockResolvedValue(FUNDED)
+    store.getClaims.mockResolvedValue([{ pack_no: 2, user_id: "me", topshot_username: "alice", recipient_address: "0x01", claimed_at: "t" }])
+    getCurrentUser.mockResolvedValue({ id: "me" })
+    vault.instantDeliveryEnabled.mockReturnValue(true)
+    store.getPool.mockResolvedValue([{ moment_id: "2", pack_no: 2, slot: 1, fmv_usd: 3, delivered_at: null, last_checked_at: null }])
+    const res = await publicRoute.GET(new NextRequest("http://x/api/giveaways/test-drop"), slugCtx("test-drop"))
+    expect((await res.json()).drop.instant_delivery).toBe(true)
+    expect(afterFns).toHaveLength(1)
+
+    afterFns.length = 0
+    store.getPool.mockResolvedValue([{ moment_id: "2", pack_no: 2, slot: 1, fmv_usd: 3, delivered_at: "t", last_checked_at: "t" }])
+    await publicRoute.GET(new NextRequest("http://x/api/giveaways/test-drop"), slugCtx("test-drop"))
+    expect(afterFns).toHaveLength(0)
   })
 })

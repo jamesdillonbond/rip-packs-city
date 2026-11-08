@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from "vitest"
-import { render, screen, cleanup, fireEvent } from "@testing-library/react"
+import { render, screen, cleanup, fireEvent, act } from "@testing-library/react"
 import GiveawayClient, { defaultDestination } from "@/app/giveaways/[slug]/GiveawayClient"
 
 const { connectClaimWallet, disconnectClaimWallet } = vi.hoisted(() => ({
@@ -40,6 +40,7 @@ const BASE = {
     opened_at: "2026-09-29T19:05:00Z",
     closed_at: null,
     deal_mode: "random",
+    instant_delivery: false,
   },
   pool: [
     { moment_id: "1", player_name: "Damian Lillard", set_name: "Base Set", team_name: null, tier: "rare", serial_number: 7, fmv_usd: 9.5, image_url: null },
@@ -436,5 +437,77 @@ describe("GiveawayClient — claim with Flow Wallet, proven by account proof (20
     expect(defaultDestination([{ ...fw, can_receive: false }, dap])).toBe(DAPPER)
     expect(defaultDestination([{ ...fw, can_receive: false }])).toBeNull()
     expect(defaultDestination([])).toBeNull()
+  })
+})
+
+describe("GiveawayClient — instant delivery (2026-11-08)", () => {
+  const ME = (delivered: boolean) => ({
+    pack_no: 1,
+    topshot_username: "alice",
+    claimed_at: "2026-11-08T22:00:00Z",
+    moments: [{ moment_id: "1", player_name: "Damian Lillard", set_name: "Base Set", team_name: null, tier: "rare", serial_number: 7, fmv_usd: 9.5, image_url: null, delivered, last_checked_at: null }],
+  })
+  const VIEW = (instant: boolean, delivered: boolean) => ({ ...BASE, drop: { ...BASE.drop, instant_delivery: instant }, me: ME(delivered) })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+  // advance the clock and let React commit the re-read before the next poll is armed
+  const tick = async (ms: number) => {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(ms)
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+  }
+
+  it("a funded drop says the vault sends the pack, and re-reads until it lands", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const views = [VIEW(true, false), VIEW(true, false), VIEW(true, true)]
+    const f = vi.fn(async () => json(views[Math.min(f.mock.calls.length - 1, views.length - 1)]))
+    vi.stubGlobal("fetch", f)
+    render(<GiveawayClient slug="fall-drop" />)
+    expect(await screen.findByText(/held in Rip Packs City's giveaway vault and sent to that account seconds after you claim/)).toBeTruthy()
+    expect(f).toHaveBeenCalledTimes(1)
+    await tick(6000)
+    expect(f).toHaveBeenCalledTimes(2)
+    await tick(6000)
+    expect(f).toHaveBeenCalledTimes(3)
+    // delivered now: polling stops
+    await tick(30000)
+    expect(f).toHaveBeenCalledTimes(3)
+  })
+
+  it("polling gives up after 20 re-reads (2 minutes)", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const f = vi.fn(async () => json(VIEW(true, false)))
+    vi.stubGlobal("fetch", f)
+    render(<GiveawayClient slug="fall-drop" />)
+    await screen.findByText(/giveaway vault/)
+    for (let i = 0; i < 30; i++) await tick(6000)
+    expect(f).toHaveBeenCalledTimes(21)
+  })
+
+  it("an unfunded drop keeps the sponsor copy and never polls", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const f = vi.fn(async () => json(VIEW(false, false)))
+    vi.stubGlobal("fetch", f)
+    render(<GiveawayClient slug="fall-drop" />)
+    expect(await screen.findByText(/The sponsor sends each Moment to that account/)).toBeTruthy()
+    expect(screen.queryByText(/giveaway vault/)).toBeNull()
+    await tick(60000)
+    expect(f).toHaveBeenCalledTimes(1)
+  })
+
+  it("the claim form says claims are delivered instantly only on a funded drop", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => json({ ...BASE, drop: { ...BASE.drop, instant_delivery: true } })))
+    render(<GiveawayClient slug="fall-drop" />)
+    expect(await screen.findByText(/Instant delivery: your Moments are sent to your account seconds after you claim/)).toBeTruthy()
+    cleanup()
+    vi.stubGlobal("fetch", vi.fn(async () => json(BASE)))
+    render(<GiveawayClient slug="fall-drop" />)
+    await screen.findByText("Fall drop")
+    expect(screen.queryByText(/Instant delivery:/)).toBeNull()
   })
 })
