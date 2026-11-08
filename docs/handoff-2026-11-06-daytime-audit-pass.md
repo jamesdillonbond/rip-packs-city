@@ -141,7 +141,7 @@
 
 56. **Old and new spellings both work in search and the concierge (~5:35 PM PT on, Trevor 5:33 PM).** Search's alias match ignores punctuation (`20261108013704`); Panini twins Skylar Diggins-Smith / Enes Kanter merged + old-name aliases (`20261108013621`); the concierge's cross-collection search no longer stops at partial hits ("Stephen Curry" returned 7 combo cards, none of his 199 solo cards); Panini deals match any spelling of the resolved person; `panini_holdings_breakdown` matches either spelling (`20261108014421`; a holder's 51 cards read 0 before).
 
-57. **Renames hold long-term (~6:00 PM PT, Trevor 5:58 PM).** `upsert_player_canonical` reads aliases (`20261108020159`, queue item closed); `check_player_alias_integrity` watch on pg_cron 4×/day (`20261108020250`); rename runbook in `docs/reference/player-identity.md`. Open: the WC writer `sync_panini_editions_to_shared` still ignores aliases.
+57. **Renames hold long-term (~6:00 PM PT, Trevor 5:58 PM).** `upsert_player_canonical` reads aliases (`20261108020159`, queue item closed); `check_player_alias_integrity` watch on pg_cron 4×/day (`20261108020250`); rename runbook in `docs/reference/player-identity.md`. WC writer `sync_panini_editions_to_shared`: ✅ 7:45 PM PT, a player with an alias keeps its name (`20261108034222`, rolled-back live control).
 
 ## Post-ship watch (what to read tomorrow)
 
