@@ -12,6 +12,7 @@ import { useEffect, useState } from "react"
 import TrophySlab, { type TrophySlabData } from "@/components/TrophySlab"
 import { slotsOf } from "@/components/profile/TrophyCasesPanel"
 import { challengeCaseSharePath, challengeEntryHref } from "@/lib/trophy/challenge-link"
+import { trackFunnelEvent } from "@/lib/track-funnel"
 
 const condensedFont = "var(--font-display)"
 const monoFont = "var(--font-mono)"
@@ -33,8 +34,45 @@ interface Board {
 
 type State = { kind: "loading" } | { kind: "failed" } | { kind: "missing" } | { kind: "ok"; board: Board }
 
+/**
+ * Who is looking (2026-11-08). THREE states: a signed-out visitor gets the
+ * account-creation CTA; a signed-in one, or one whose session read FAILED,
+ * keeps the dashboard link (which the auth gate bounces to /login with the
+ * deep link intact, so "unknown" still works — it just reads less clearly).
+ * /api/profile/me answers `{ user: null }` with a 200 when signed out.
+ */
+export type Viewer = "unknown" | "signed-in" | "signed-out"
+
+export function viewerFromMe(res: { ok: boolean; json: unknown }): Viewer {
+  if (!res.ok || !res.json || typeof res.json !== "object" || !("user" in res.json)) return "unknown"
+  return (res.json as { user: unknown }).user ? "signed-in" : "signed-out"
+}
+
+/** Signed-out entry: create the account, then land on the challenge's spot on the dashboard. */
+export function challengeSignupHref(slug: string): string {
+  return `/login?intent=signup&next=${encodeURIComponent(challengeEntryHref(slug))}`
+}
+
+export function challengeSigninHref(slug: string): string {
+  return `/login?next=${encodeURIComponent(challengeEntryHref(slug))}`
+}
+
 export default function ChallengeBoardClient({ slug }: { slug: string }) {
   const [state, setState] = useState<State>({ kind: "loading" })
+  const [viewer, setViewer] = useState<Viewer>("unknown")
+
+  // 2026-11-08 activity review: 8 of 15 outside visitors to /dame-time saw only
+  // this page and left; 2 reached /login. Signed out, the one button said
+  // "Enter from your dashboard" — a step that reads as "you need an account
+  // already". A signed-out visitor now sees what entering takes.
+  useEffect(() => {
+    let cancelled = false
+    fetch("/api/profile/me", { cache: "no-store" })
+      .then(async (r) => ({ ok: r.ok, json: r.ok ? await r.json() : null }))
+      .catch(() => ({ ok: false, json: null }))
+      .then((res) => { if (!cancelled) setViewer(viewerFromMe(res)) })
+    return () => { cancelled = true }
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -94,7 +132,29 @@ export default function ChallengeBoardClient({ slug }: { slug: string }) {
         </p>
       )}
       <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", marginBottom: 28 }}>
-        {open ? (
+        {open && viewer === "signed-out" ? (
+          <>
+            <Link
+              href={challengeSignupHref(slug)}
+              onClick={() => trackFunnelEvent({ eventType: "signin_click", surface: "challenge_board_signup" })}
+              style={{
+                fontFamily: condensedFont, fontWeight: 800, fontSize: 13, letterSpacing: "0.08em", textTransform: "uppercase",
+                padding: "10px 16px", borderRadius: 8, textDecoration: "none",
+                // brand-exception: white label on the red CTA button
+                background: "var(--rpc-red-fill)", color: "#fff",
+              }}
+            >
+              Create a free account to enter
+            </Link>
+            <Link
+              href={challengeSigninHref(slug)}
+              onClick={() => trackFunnelEvent({ eventType: "signin_click", surface: "challenge_board" })}
+              style={{ fontFamily: monoFont, fontSize: 11, letterSpacing: "0.08em", color: "var(--rpc-text-secondary)" }}
+            >
+              Have an account? Sign in
+            </Link>
+          </>
+        ) : open ? (
           <Link
             href={challengeEntryHref(slug)}
             style={{
@@ -113,6 +173,11 @@ export default function ChallengeBoardClient({ slug }: { slug: string }) {
           {entries.length < entry_count ? ` · showing the top ${entries.length}` : ""}
         </span>
       </div>
+      {open && viewer === "signed-out" && (
+        <p data-rpc-challenge-howto style={{ margin: "-16px 0 28px", fontFamily: monoFont, fontSize: 11, lineHeight: 1.6, color: "var(--rpc-text-muted)", maxWidth: 720 }}>
+          Free: sign in with your email (no password), add your Top Shot username or Dapper wallet (and Panini username, if you have one), then pin up to six pieces to your entry.
+        </p>
+      )}
 
       {entries.length === 0 ? (
         <div style={{ fontFamily: monoFont, fontSize: 12, color: "var(--rpc-text-muted)", padding: "24px 0" }}>

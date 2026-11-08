@@ -68,6 +68,7 @@ import FmvHistoryChart from "@/components/entity/FmvHistoryChart"
 import ExplainButton from "@/components/ExplainButton"
 import EditionActivity from "@/components/entity/EditionActivity"
 import PaniniSalesChart from "@/components/entity/PaniniSalesChart"
+import AnonCollectionValueCta from "@/components/auth/AnonCollectionValueCta"
 import { franchiseHubPath } from "@/lib/franchise-hub-path"
 import { PaniniOffersSection, PaniniHoldersSection, PaniniProductPacksSection, PaniniAskHistorySection, PaniniSpecialSerialsSection } from "@/components/entity/PaniniEditionExtras"
 import { fetchPaniniEditionOffers, fetchPaniniEditionHolders, fetchPaniniEditionPacks, fetchPaniniEditionAskHistory, fetchPaniniEditionTeams, fetchPaniniSpecialSerials, type PaniniEditionTeam } from "@/lib/panini/edition-extras"
@@ -943,6 +944,10 @@ export default async function EditionPage(
             {/* 2026-11-02: the Trade Block — listings offering a copy of this edition or wanting
                 it. Decorative, client-side; renders only on a successful read with ≥ 1 listing. */}
             <OnTheBlockLink collection={collection} name={detail.player_name ?? detail.name ?? ""} edition={detail.external_id ?? detail.id} />
+
+            {/* 2026-11-08: Panini edition pages are the largest signed-out landing
+                surface (32 visitors in two weeks, 0 sign-ups). Signed-out only. */}
+            {isPanini && <AnonCollectionValueCta identityNoun="Panini username" surface="panini_edition" />}
 
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
               <TierBadge tier={detail.tier} />

@@ -23,6 +23,14 @@ import { sendMagicLink } from "@/lib/auth/supabase-client"
 import { publishedCollections } from "@/lib/collections"
 import { track } from "@/lib/telemetry/track"
 
+/** The challenge slug a login return path carries, or null. */
+export function challengeFromNext(next: string): string | null {
+  const q = next.indexOf("?")
+  if (q < 0) return null
+  const slug = new URLSearchParams(next.slice(q + 1)).get("challenge")
+  return slug && /^[a-z0-9]+(-[a-z0-9]+)*$/.test(slug) && slug.length <= 60 ? slug : null
+}
+
 type Status = "idle" | "sending" | "sent" | "error" | "waitlist"
 
 export default function LoginClient() {
@@ -66,6 +74,11 @@ export default function LoginClient() {
     track("magic-link-requested", {
       outcome: result.ok ? "sent" : result.notOnAllowList ? "blocked" : "error",
       next: redirect.split("?")[0],
+      // 2026-11-08: the query is stripped above, so a challenge deep link
+      // (/dashboard?tab=trophy&challenge=dame-time) read as a bare /dashboard
+      // and the activity review could not tell a challenge entrant from anyone
+      // else. The slug alone is safe to record (DB-constrained shape).
+      ...(challengeFromNext(redirect) ? { challenge: challengeFromNext(redirect) } : {}),
     })
     if (result.ok) {
       setStatus("sent")

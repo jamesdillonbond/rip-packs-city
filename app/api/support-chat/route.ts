@@ -124,6 +124,7 @@ import { isAllDaySlug, allDayNotApplicable, readAllDayHotFloorsForConcierge, rea
 import { resolveCandyWallet, CANDY_NEEDS_SOLANA_WALLET, CANDY_COLLECTION_UUID, readCandySetCompletionForConcierge, readCandyPackMarketForConcierge, readCandySpecialSerialsForConcierge, readCandyDealsForConcierge, candyNotApplicable } from "@/lib/concierge/candy-boards";
 import { readPaniniBreakdownForConcierge, readPaniniQuirkySerialsForConcierge, readPaniniSetCompletionForConcierge, readPaniniCollectionForConcierge, readPaniniDealsForConcierge, readPaniniPackMarketForConcierge, readPaniniPremiumsForConcierge, readPaniniTeamForConcierge } from "@/lib/concierge/panini-boards";
 import { fetchPaniniEditionAsk, fetchPaniniEditionSerials } from "@/lib/panini/edition-market";
+import { readPaniniSaleRecord, paniniPricingBasis } from "@/lib/concierge/panini-sale-record";
 import { paniniEditionUrl } from "@/lib/panini/edition-url";
 import { isSqueezeCollection, SQUEEZE_LABEL, type SqueezeCollection } from "@/lib/insights/squeeze-collections";
 import { readSqueezeCheck, readWalletScanState } from "@/lib/insights/squeeze-check";
@@ -3529,13 +3530,23 @@ async function executeToolInner(
       // it is" is answered partly by what the moment is (a rookie, a debut) and
       // by how much of it still exists and is liquid.
       const meta = await fetchEditionMetadata(supabase, effectiveCollectionUuid, [editionKey]);
+      // 2026-11-08: on Panini the tier is NOT what the model gets — the scrubber
+      // would say "plenty of recent sales" over an edition with two sales seven
+      // weeks old (Yan Diomande Elephant, 11-07). The basis is derived from RPC's
+      // recorded sales of THIS edition instead (lib/concierge/panini-sale-record.ts).
+      const paniniSales = salesCountUnknown ? await readPaniniSaleRecord(supabase, editionKey) : null;
       return JSON.stringify({
         status: "ok",
         player_name: edition.player_name ?? null,
         set_name: edition.set_name ?? null,
         tier: edition.tier ?? null,
         fmv_usd: snapshot.fmv_usd,
-        confidence: snapshot.confidence,
+        ...(paniniSales
+          ? {
+              pricing_basis: paniniPricingBasis(paniniSales),
+              sale_record: paniniSales.ok ? paniniSales.record : { status: "unavailable" },
+            }
+          : { confidence: snapshot.confidence }),
         sales_count_30d: salesCountUnknown ? null : (snapshot.sales_count_30d ?? null),
         days_since_sale: snapshot.days_since_sale ?? null,
         algo_version: snapshot.algo_version ?? null,
