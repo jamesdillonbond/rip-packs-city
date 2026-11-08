@@ -894,9 +894,9 @@ function WalletMomentsBody() {
         if (otherItems > 0) {
           const names = (live?.other_candy?.collections ?? []).map(function(c) { return c?.name }).filter(function(n): n is string { return !!n }).slice(0, 3)
           setCandyOtherNote(
-            "This wallet also holds " + otherItems.toLocaleString("en-US") + " older Candy collectible" + (otherItems === 1 ? "" : "s") +
+            "This wallet also holds " + otherItems.toLocaleString("en-US") + " Candy collectible" + (otherItems === 1 ? "" : "s") +
             (names.length ? " (" + names.join(", ") + (live?.other_candy?.collections && live.other_candy.collections.length > names.length ? ", …" : "") + ")" : "") +
-            ". RPC tracks Candy's 2026 MLB sets and the 2024 Team Balls, so those aren't shown here yet."
+            " that RPC doesn't catalogue, so they aren't shown here."
           )
         }
         if (!live || (live.skipped !== "fresh" && live.complete !== true)) {

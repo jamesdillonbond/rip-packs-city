@@ -344,3 +344,29 @@ describe("multi-set Candy assets", () => {
     expect(normalizeEdition(grouped(ASG, "2024 Los Angeles Dodgers Baseball (1/1)", { Rarity: "CORE" })).team_name).toBeNull()
   })
 })
+
+// 2026-11-08 — the full Candy inventory (candy_collections) registers every non-test
+// collection with the normalizer at run time; a registered legacy set keys and tags its
+// editions like any later set, and can never displace a registry set.
+describe("registered Candy collections (candy_collections)", () => {
+  it("a registered legacy collection gets its prefix, set id and Rarity tier; a registry set cannot be overwritten", async () => {
+    const { registerCandySets } = await import("@/lib/chains/solana/candy-sets")
+    const LEADOFF = "46kCejJ7euGEmLAFqvV1j5yUzEumtwEvS9d65f6PbZ7g"
+    const BASE = "JkJA4yUBweFQdKAWNDhoFj8zHMZrQ1uZEYfjbkc3p8n"
+    registerCandySets([
+      { key: "c:2022-leadoff-icons", name: "2022 Leadoff ICONs", setId: "11111111-1111-5111-8111-111111111111", collectionAddress: LEADOFF, meSymbol: "", editionKeyPrefix: "c:2022-leadoff-icons", writesPacks: false },
+      { key: "c:hijack", name: "Hijack", setId: "22222222-2222-5222-8222-222222222222", collectionAddress: BASE, meSymbol: "", editionKeyPrefix: "c:hijack", writesPacks: false },
+    ])
+    const leg = asset({
+      id: "mint-l", grouping: [{ group_key: "collection", group_value: LEADOFF }], ownership: { owner: "W" },
+      content: { metadata: { name: "Seth Brown (361/850)", attributes: [{ trait_type: "Player Name", value: "Seth Brown" }, { trait_type: "Rarity", value: "COMMON" }, { trait_type: "Serial Number", value: "361/850" }] } },
+    })
+    expect(editionKeyFromAsset(leg)).toBe("c:2022-leadoff-icons:seth-brown-common")
+    expect(normalizeEdition(leg)).toMatchObject({ set_id: "11111111-1111-5111-8111-111111111111", set_name: "2022 Leadoff ICONs", tier: "COMMON", circulation_count: 850, player_name: "Seth Brown" })
+    const base = asset({
+      id: "mint-b", grouping: [{ group_key: "collection", group_value: BASE }], ownership: { owner: "W" },
+      content: { metadata: { name: "Shohei Ohtani (12/250)", attributes: [{ trait_type: "Player Name", value: "Shohei Ohtani" }, { trait_type: "Rarity", value: "CORE" }, { trait_type: "Serial Number", value: "12/250" }] } },
+    })
+    expect(editionKeyFromAsset(base)).toBe("shohei-ohtani")
+  })
+})

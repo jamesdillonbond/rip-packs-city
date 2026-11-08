@@ -120,6 +120,21 @@ export const CANDY_COLLECTION_AUTHORITIES: readonly string[] = [
 
 const BY_ADDRESS = new Map(CANDY_SETS.map((s) => [s.collectionAddress, s]))
 
+/**
+ * Register Candy collections read from `candy_collections` (2026-11-08: the full on-chain
+ * inventory, 401 collections) so the NORMALIZER recognises their assets — set id, set name,
+ * edition-key prefix — without adding them to CANDY_SETS, which the census, sales,
+ * listings and offers lanes iterate. A registry set is never overwritten.
+ */
+export function registerCandySets(sets: readonly CandySet[]): void {
+  for (const s of sets) {
+    if (!s.collectionAddress || !s.setId || !s.editionKeyPrefix) continue
+    const existing = BY_ADDRESS.get(s.collectionAddress)
+    if (existing && CANDY_SETS.includes(existing)) continue
+    BY_ADDRESS.set(s.collectionAddress, s)
+  }
+}
+
 /** The set a DAS asset belongs to, from its Core collection grouping; null if none of ours. */
 export function candySetForAsset(asset: {
   grouping?: Array<{ group_key: string; group_value: string }>

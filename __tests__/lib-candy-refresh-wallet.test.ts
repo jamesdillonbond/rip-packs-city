@@ -38,6 +38,8 @@ vi.mock("@/lib/chains/solana/normalize", () => ({
   normalizeSerial: (a: any) => ({ moment_id: a.id, wallet_address: "DAS-OWNER", collection_id: "c1", edition_key: "k", serial_number: 1, image_url: null }),
 }))
 
+vi.mock("@/lib/candy/collections", () => ({ loadCandyCollections: async () => ({ sets: [{ key: "c:x" }], error: null }) }))
+
 import { refreshCandyWallet } from "@/lib/candy/refresh-wallet"
 
 const ESCROW = "1BWutmTvYPwDtmw9abTkS4Ssr8no61spGAvW1X6NDix"
@@ -98,6 +100,7 @@ describe("refreshCandyWallet", () => {
     ]]
     const r = await refreshCandyWallet(db(), W, { retire: true })
     expect(r.complete).toBe(true)
+    expect(r.catalog_collections).toBe(1)
     expect(r.found).toBe(1)
     expect(state.upserted.flat().map((x) => x.moment_id)).toEqual(["a"])
     expect(state.upserted.flat()[0].wallet_address).toBe(W)

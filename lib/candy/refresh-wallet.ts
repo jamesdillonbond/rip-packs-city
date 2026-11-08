@@ -33,6 +33,7 @@ import { getAssetsByOwner, getAsset, getAssetBatch, type DasAsset } from "@/lib/
 import { MAGIC_EDEN_SOLANA_ESCROW, listedMintsInEscrowForSeller } from "@/lib/chains/solana/escrow"
 import { isBurnt, isPack, normalizeSerial, normalizeEdition, CANDY_MLB_UUID } from "@/lib/chains/solana/normalize"
 import { isCandySetAsset, CANDY_COLLECTION_AUTHORITIES } from "@/lib/chains/solana/candy-sets"
+import { loadCandyCollections } from "@/lib/candy/collections"
 
 const UPSERT_CHUNK = 500
 const PAGE_LIMIT = 1000
@@ -58,6 +59,9 @@ export interface CandyWalletRefreshResult {
   write_errors: string[]
   /** Set when the owner walk itself failed (DAS error, page cap, deadline). */
   walk_error: string | null
+  /** candy_collections rows registered for this walk; catalog_error when that read failed. */
+  catalog_collections: number
+  catalog_error: string | null
   /** Catalog rows inserted for editions not seen before (insert-only). */
   editions_inserted: number
   editions_error: string | null
@@ -96,12 +100,19 @@ export async function refreshCandyWallet(
     walk_error: null,
     editions_inserted: 0,
     editions_error: null,
+    catalog_collections: 0,
+    catalog_error: null,
     other_candy: null,
     other_candy_error: null,
     retired: null,
     ghosts_purged: null,
     retire_error: null,
   }
+  // Every catalogued Candy collection (candy_collections), registered with the normalizer
+  // before the walk so a wallet's 2021–2025 ICONs, DC, pins… are written, not just counted.
+  const catalog = await loadCandyCollections(db)
+  r.catalog_collections = catalog.sets.length
+  r.catalog_error = catalog.error
   const seen = new Set<string>()
   const editionsByKey = new Map<string, Record<string, unknown>>()
   // Untracked Core collections in this wallet → live (non-burnt) asset count.
