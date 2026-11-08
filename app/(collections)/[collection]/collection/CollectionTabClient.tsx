@@ -105,6 +105,9 @@ function WalletMomentsBody() {
   const [loading, setLoading] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState("")
+  // Candy MLB: set when the live Solana read of the searched wallet did not finish, so the
+  // binder is the last daily read — said, never implied (2026-11-08).
+  const [candyLiveNote, setCandyLiveNote] = useState("")
   const [summary, setSummary] = useState<WalletSearchResponse["summary"]>()
   // VIEW state (filter/sort/expand/modal controls) lives in one reducer so the
   // filter bar + moment table can extract with a single {view, dispatchView}
@@ -859,6 +862,35 @@ function WalletMomentsBody() {
         }
       }
 
+      // Candy MLB (2026-11-08): read the pasted wallet LIVE from Solana first. The cache
+      // below is otherwise only as fresh as the daily census, so a card bought or pulled
+      // today was missing, a card sold today still showed, and a wallet created since the
+      // last census showed nothing. A refresh that fails or does not finish still shows
+      // the cached holdings — with a note that says they are the last daily read.
+      setCandyLiveNote("")
+      if (collectionSlug === "candy-mlb" && isValidAddressForChain(trimmed, "solana")) {
+        setError("Reading this wallet on Solana…")
+        let live: { ok?: boolean; complete?: boolean; skipped?: string } | null = null
+        try {
+          const ctl = new AbortController()
+          const timer = setTimeout(function() { ctl.abort() }, 45000)
+          const res = await fetch("/api/candy/wallet-refresh", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ wallet: trimmed }),
+            signal: ctl.signal,
+          })
+          clearTimeout(timer)
+          live = res.ok ? await res.json() : null
+        } catch {
+          live = null
+        }
+        setError("")
+        if (!live || (live.skipped !== "fresh" && live.complete !== true)) {
+          setCandyLiveNote("Couldn't finish reading this wallet live from Solana — showing its holdings as of our last daily read (5:10 PM PT). Search again in a minute to retry.")
+        }
+      }
+
       // Primary: fetch paginated moments from Supabase cache (fast ~200ms)
       const { totalCount } = await fetchPaginatedMoments(trimmed, 1, sort, false)
 
@@ -1522,6 +1554,7 @@ function WalletMomentsBody() {
         {/* role=status: a failed lookup (or the UFC scan progress this box also
             carries) is announced, not only painted (2026-11-07). */}
         {error ? <div role="status" aria-live="polite" className="mb-4 rounded-lg border border-red-800 bg-red-950 p-3 text-red-300 text-sm">{error}</div> : null}
+        {candyLiveNote && !error ? <div role="status" aria-live="polite" className="mb-4 rounded-lg border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-3 text-sm text-[color:var(--rpc-text-secondary)]" data-testid="candy-live-note">{candyLiveNote}</div> : null}
         {/* The RESULT is announced too (2026-11-07): after Enter, focus stays in
             the wallet box and nothing told a screen reader the binder had
             loaded. sr-only, polite, and silent on a failed read — the error box

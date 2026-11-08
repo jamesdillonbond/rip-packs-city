@@ -624,6 +624,12 @@ export function isPublicPath(pathname: string, method: string): boolean {
   if (pathname === "/api/public" || pathname.startsWith("/api/public/")) return true
   // /api/wallet-search — exact path only; the marketing search box hits it
   if (pathname === "/api/wallet-search") return true
+  // /api/candy/wallet-refresh (2026-11-08) — the Candy MLB Collection tab's live read of
+  // a pasted Candy Wallet address. POST-only by its handler; it writes ONLY what the
+  // chain says that wallet holds (wallet_moments_cache rows, via a complete DAS walk),
+  // takes no session, and is bounded by a per-client limit, a per-wallet cooldown and a
+  // walk time budget in the route.
+  if (pathname === "/api/candy/wallet-refresh") return true
   // /api/teams/follow — per-league favorite toggle on the team hub. Public at
   // the proxy so the anon mount-check (GET -> {authed:false}) resolves without a
   // login bounce; the route ITSELF enforces auth (getUser -> 401) on POST/DELETE

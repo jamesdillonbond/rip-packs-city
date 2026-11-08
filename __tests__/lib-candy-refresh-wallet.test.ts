@@ -1,0 +1,150 @@
+import { describe, it, expect, vi, beforeEach } from "vitest"
+
+// lib/candy/refresh-wallet.ts — the live read behind a pasted Candy address (2026-11-08).
+// The property that matters most: a wallet's rows are RETIRED only behind a complete walk.
+// An incomplete walk (DAS error, a failed write, a failed escrow read) must retire nothing,
+// or a transient failure deletes a collector's holdings.
+
+const state: {
+  pages: any[][]
+  ownerThrows: boolean
+  listings: { data: any[]; error: any }
+  assets: Record<string, any>
+  upsertError: any
+  rpcs: Array<{ name: string; args: any }>
+  upserted: any[][]
+} = { pages: [], ownerThrows: false, listings: { data: [], error: null }, assets: {}, upsertError: null, rpcs: [], upserted: [] }
+
+vi.mock("@/lib/chains/solana/das", () => ({
+  getAssetsByOwner: async (_w: string, page: number) => {
+    if (state.ownerThrows) throw new Error("DAS getAssetsByOwner HTTP 502")
+    return { items: state.pages[page - 1] ?? [], total: 0, limit: 1000, page }
+  },
+  getAsset: async (id: string) => {
+    if (!(id in state.assets)) throw new Error("no asset " + id)
+    return state.assets[id]
+  },
+}))
+vi.mock("@/lib/chains/solana/candy-sets", () => ({ isCandySetAsset: (a: any) => a.candy === true }))
+vi.mock("@/lib/chains/solana/normalize", () => ({
+  CANDY_MLB_UUID: "c1",
+  isBurnt: (a: any) => a.kind === "burnt",
+  isPack: (a: any) => a.kind === "pack",
+  normalizeSerial: (a: any) => ({ moment_id: a.id, wallet_address: "DAS-OWNER", collection_id: "c1", edition_key: "k", serial_number: 1, image_url: null }),
+}))
+
+import { refreshCandyWallet } from "@/lib/candy/refresh-wallet"
+
+const ESCROW = "1BWutmTvYPwDtmw9abTkS4Ssr8no61spGAvW1X6NDix"
+const W = "99UgF7Tt4HPDpJ7mK63kvucts21mhymgWkzu1EjsLjAy"
+
+function db() {
+  return {
+    rpc: async (name: string, args: any) => {
+      state.rpcs.push({ name, args })
+      return { data: name === "candy_retire_wallet_unseen" ? 3 : name === "purge_candy_wmc_ghost_rows" ? 2 : null, error: null }
+    },
+    from: (table: string) => {
+      if (table === "candy_listings") {
+        const b: any = { select: () => b, eq: () => b, order: () => b, limit: async () => state.listings }
+        return b
+      }
+      return {
+        upsert: (rows: any[]) => {
+          state.upserted.push(rows)
+          return { select: async () => (state.upsertError ? { data: null, error: state.upsertError } : { data: rows.map((r) => ({ moment_id: r.moment_id })), error: null }) }
+        },
+      }
+    },
+  }
+}
+
+beforeEach(() => {
+  state.pages = []
+  state.ownerThrows = false
+  state.listings = { data: [], error: null }
+  state.assets = {}
+  state.upsertError = null
+  state.rpcs = []
+  state.upserted = []
+})
+
+describe("refreshCandyWallet", () => {
+  it("writes only Candy cards (no burnt, no packs) under the QUERIED wallet, and retires behind a complete walk", async () => {
+    state.pages = [[
+      { id: "a", candy: true },
+      { id: "b", candy: true, kind: "burnt" },
+      { id: "c", candy: true, kind: "pack" },
+      { id: "d", candy: false },
+    ]]
+    const r = await refreshCandyWallet(db(), W, { retire: true })
+    expect(r.complete).toBe(true)
+    expect(r.found).toBe(1)
+    expect(state.upserted.flat().map((x) => x.moment_id)).toEqual(["a"])
+    expect(state.upserted.flat()[0].wallet_address).toBe(W)
+    const names = state.rpcs.map((x) => x.name)
+    expect(names).toContain("candy_retire_wallet_unseen")
+    expect(names).toContain("purge_candy_wmc_ghost_rows")
+    expect(r.retired).toBe(3)
+    expect(r.ghosts_purged).toBe(2)
+  })
+
+  it("a wallet that holds no Candy cards is a COMPLETE walk that retires its old rows (it sold everything)", async () => {
+    state.pages = [[{ id: "x", candy: false }]]
+    const r = await refreshCandyWallet(db(), W, { retire: true })
+    expect(r.complete).toBe(true)
+    expect(r.found).toBe(0)
+    expect(state.rpcs.map((x) => x.name)).toContain("candy_retire_wallet_unseen")
+  })
+
+  it("a failed DAS walk retires NOTHING and reports itself incomplete", async () => {
+    state.ownerThrows = true
+    const r = await refreshCandyWallet(db(), W, { retire: true })
+    expect(r.complete).toBe(false)
+    expect(r.walk_error).toMatch(/502/)
+    expect(state.rpcs.map((x) => x.name)).not.toContain("candy_retire_wallet_unseen")
+  })
+
+  it("a rejected write retires NOTHING", async () => {
+    state.pages = [[{ id: "a", candy: true }]]
+    state.upsertError = { message: "deadlock detected" }
+    const r = await refreshCandyWallet(db(), W, { retire: true })
+    expect(r.complete).toBe(false)
+    expect(r.write_errors.length).toBe(1)
+    expect(state.rpcs.map((x) => x.name)).not.toContain("candy_retire_wallet_unseen")
+  })
+
+  it("a failed listings read retires NOTHING — the wallet's listed cards would otherwise be deleted", async () => {
+    state.pages = [[{ id: "a", candy: true }]]
+    state.listings = { data: null as any, error: { message: "timeout" } }
+    const r = await refreshCandyWallet(db(), W, { retire: true })
+    expect(r.complete).toBe(false)
+    expect(state.rpcs.map((x) => x.name)).not.toContain("candy_retire_wallet_unseen")
+  })
+
+  it("a card the wallet has listed on Magic Eden is written under the wallet while the escrow holds it", async () => {
+    state.pages = [[]]
+    state.listings = { data: [{ token_mint: "L1" }, { token_mint: "L2" }], error: null }
+    state.assets = { L1: { id: "L1", candy: true, ownership: { owner: ESCROW } }, L2: { id: "L2", candy: true, ownership: { owner: "SOMEONE-ELSE" } } }
+    const r = await refreshCandyWallet(db(), W, { retire: true })
+    expect(r.complete).toBe(true)
+    expect(r.escrow_listed).toBe(1)
+    expect(r.escrow_listed_stale).toBe(1)
+    expect(state.upserted.flat().map((x) => x.moment_id)).toEqual(["L1"])
+    expect(state.upserted.flat()[0].wallet_address).toBe(W)
+  })
+
+  it("without retire it never deletes, even after a complete walk", async () => {
+    state.pages = [[{ id: "a", candy: true }]]
+    const r = await refreshCandyWallet(db(), W)
+    expect(r.complete).toBe(true)
+    expect(state.rpcs.map((x) => x.name)).not.toContain("candy_retire_wallet_unseen")
+  })
+
+  it("a spent time budget stops the walk as incomplete", async () => {
+    state.pages = [[{ id: "a", candy: true }]]
+    const r = await refreshCandyWallet(db(), W, { retire: true, deadlineAt: Date.now() - 1 })
+    expect(r.complete).toBe(false)
+    expect(state.rpcs.map((x) => x.name)).not.toContain("candy_retire_wallet_unseen")
+  })
+})

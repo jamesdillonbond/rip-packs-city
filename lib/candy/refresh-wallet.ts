@@ -1,0 +1,212 @@
+// lib/candy/refresh-wallet.ts
+//
+// One Candy (Solana) wallet, read live from chain and written to
+// wallet_moments_cache — the walk behind a pasted Candy address (2026-11-08).
+//
+// Why: the Collection tab answers a Candy search from wallet_moments_cache, which
+// only the DAILY census (5:10 PM PT) refreshes. A collector who bought, opened a
+// pack or moved cards since then searched their own address and saw the
+// yesterday-shaped answer — or nothing at all for a wallet created since. The
+// only per-wallet walk (app/api/wallet-backfill-candy) is bearer-gated and fired
+// only when a signed-in user SAVES a wallet.
+//
+// What it does, in order:
+//   1. getAssetsByOwner, every page, filtered to the Candy sets we track
+//      (lib/chains/solana/candy-sets.ts), burnt cards and pack assets dropped.
+//   2. Cards this wallet has LISTED on Magic Eden sit in the escrow, so step 1
+//      cannot see them (#145): each is re-read from DAS and written under the
+//      wallet only if the escrow still holds it.
+//   3. Upsert every row with last_seen_at = now, then the metadata denorm.
+//   4. Only when the walk is COMPLETE (every page read, every escrow card read,
+//      every write landed) and `retire` is set: the wallet's Candy rows this walk
+//      did not touch are cards it no longer holds — retired by
+//      candy_retire_wallet_unseen(); then purge_candy_wmc_ghost_rows() drops the
+//      previous owner's row of any card this wallet now holds. An incomplete walk
+//      retires NOTHING: it fails open (CLAUDE.md, "an ADD-ONLY refresh never
+//      retires what its source stopped returning … fail OPEN with no clean walk").
+
+import { getAssetsByOwner, getAsset, type DasAsset } from "@/lib/chains/solana/das"
+import { MAGIC_EDEN_SOLANA_ESCROW, listedMintsInEscrowForSeller } from "@/lib/chains/solana/escrow"
+import { isBurnt, isPack, normalizeSerial, CANDY_MLB_UUID } from "@/lib/chains/solana/normalize"
+import { isCandySetAsset } from "@/lib/chains/solana/candy-sets"
+
+const UPSERT_CHUNK = 500
+const PAGE_LIMIT = 1000
+// A wallet holding more than 20,000 assets of ANY collection is not a collector
+// we can read in one request; the walk stops and reports itself incomplete.
+const MAX_PAGES = 20
+const ESCROW_READ_CONCURRENCY = 2
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Db = any
+
+export interface CandyWalletRefreshResult {
+  /** Every page read, every escrow card read, every write landed. */
+  complete: boolean
+  found: number
+  written: number
+  escrow_listed: number
+  escrow_listed_written: number
+  escrow_listed_stale: number
+  escrow_listed_capped: boolean
+  escrow_listed_error: string | null
+  pages: number
+  write_errors: string[]
+  /** Set when the owner walk itself failed (DAS error, page cap, deadline). */
+  walk_error: string | null
+  /** Rows retired / ghost rows purged; null when retirement did not run. */
+  retired: number | null
+  ghosts_purged: number | null
+  retire_error: string | null
+}
+
+export async function refreshCandyWallet(
+  db: Db,
+  wallet: string,
+  opts: { retire?: boolean; deadlineAt?: number } = {},
+): Promise<CandyWalletRefreshResult> {
+  const deadlineAt = opts.deadlineAt ?? Number.POSITIVE_INFINITY
+  const startedAt = new Date().toISOString()
+  const r: CandyWalletRefreshResult = {
+    complete: false,
+    found: 0,
+    written: 0,
+    escrow_listed: 0,
+    escrow_listed_written: 0,
+    escrow_listed_stale: 0,
+    escrow_listed_capped: false,
+    escrow_listed_error: null,
+    pages: 0,
+    write_errors: [],
+    walk_error: null,
+    retired: null,
+    ghosts_purged: null,
+    retire_error: null,
+  }
+  const seen = new Set<string>()
+
+  const write = async (rows: Array<Record<string, unknown>>, label: string): Promise<number> => {
+    let n = 0
+    for (let i = 0; i < rows.length; i += UPSERT_CHUNK) {
+      const chunk = rows.slice(i, i + UPSERT_CHUNK)
+      const { data, error } = await db
+        .from("wallet_moments_cache")
+        .upsert(chunk, { onConflict: "wallet_address,collection_id,moment_id" })
+        .select("moment_id")
+      if (error) r.write_errors.push(`${label}: ${error.message}`)
+      else n += data?.length ?? chunk.length
+    }
+    return n
+  }
+
+  // 1. Owner walk.
+  try {
+    let page = 1
+    for (; page <= MAX_PAGES; page++) {
+      if (Date.now() > deadlineAt) throw new Error("time budget reached before the last page")
+      const res = await getAssetsByOwner(wallet, page, PAGE_LIMIT)
+      const items = (res?.items ?? []) as DasAsset[]
+      r.pages = page
+      const now = new Date().toISOString()
+      const rows = items
+        .filter(isCandySetAsset)
+        .filter((a) => !isBurnt(a))
+        .filter((a) => !isPack(a))
+        .map((a) => {
+          const s = normalizeSerial(a)
+          if (!s.moment_id) return null
+          // Stamp the QUERIED wallet so a stale DAS owner field cannot misattribute a row.
+          return { ...s, wallet_address: wallet, last_seen_at: now }
+        })
+        .filter((x): x is NonNullable<typeof x> => x !== null)
+      for (const row of rows) seen.add(String(row.moment_id))
+      r.found += rows.length
+      r.written += await write(rows, "wallet_moments_cache")
+      if (items.length < PAGE_LIMIT) break
+    }
+    if (page > MAX_PAGES) throw new Error(`more than ${MAX_PAGES * PAGE_LIMIT} assets — walk stopped`)
+  } catch (e) {
+    r.walk_error = (e instanceof Error ? e.message : String(e)).slice(0, 300)
+  }
+
+  // 2. Escrow-held listed cards (#145).
+  const listed = await listedMintsInEscrowForSeller(db, wallet)
+  r.escrow_listed_capped = listed.capped
+  if (listed.error) {
+    r.escrow_listed_error = listed.error
+  } else {
+    const now = new Date().toISOString()
+    const escrowRows: Array<Record<string, unknown>> = []
+    const todo = listed.mints.filter((m) => !seen.has(m))
+    let next = 0
+    let budgetHit = false
+    const worker = async () => {
+      while (next < todo.length) {
+        if (Date.now() > deadlineAt) { budgetHit = true; return }
+        const mint = todo[next++]
+        let a: DasAsset
+        try {
+          try {
+            a = await getAsset(mint)
+          } catch (e) {
+            if (!/HTTP 429/.test(e instanceof Error ? e.message : String(e))) throw e
+            await new Promise((res) => setTimeout(res, 1500))
+            a = await getAsset(mint)
+          }
+        } catch (e) {
+          r.escrow_listed_error = `getAsset ${mint}: ${e instanceof Error ? e.message : String(e)}`.slice(0, 200)
+          continue
+        }
+        if (a?.ownership?.owner !== MAGIC_EDEN_SOLANA_ESCROW) { r.escrow_listed_stale++; continue }
+        if (!isCandySetAsset(a) || isBurnt(a) || isPack(a)) continue
+        const s = normalizeSerial(a)
+        if (!s.moment_id) continue
+        escrowRows.push({ ...s, wallet_address: wallet, last_seen_at: now })
+      }
+    }
+    await Promise.all(Array.from({ length: ESCROW_READ_CONCURRENCY }, worker))
+    if (budgetHit || r.escrow_listed_capped) {
+      r.escrow_listed_error = r.escrow_listed_error ?? `incomplete: ${budgetHit ? "time budget reached" : `more than ${todo.length} active listings`}`
+    }
+    r.escrow_listed = escrowRows.length
+    r.found += escrowRows.length
+    r.escrow_listed_written = await write(escrowRows, "wallet_moments_cache (escrow-listed)")
+    r.written += r.escrow_listed_written
+  }
+
+  // 3. Metadata denorm (COALESCE-guarded; non-fatal).
+  if (r.written > 0) {
+    try {
+      const { error } = await db.rpc("backfill_wmc_metadata_from_editions", {
+        p_wallet_address: wallet,
+        p_collection_id: CANDY_MLB_UUID,
+      })
+      if (error) console.log(`[candy-refresh-wallet] metadata denorm err: ${error.message}`)
+    } catch (e) {
+      console.log(`[candy-refresh-wallet] metadata denorm threw: ${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
+
+  r.complete = r.walk_error === null && r.escrow_listed_error === null && r.write_errors.length === 0
+
+  // 4. Retire — only behind a complete walk.
+  if (opts.retire && r.complete) {
+    try {
+      const { data, error } = await db.rpc("candy_retire_wallet_unseen", {
+        p_wallet: wallet,
+        p_walk_started_at: startedAt,
+      })
+      if (error) r.retire_error = error.message
+      else r.retired = typeof data === "number" ? data : Number(data ?? 0)
+      if (!error) {
+        const g = await db.rpc("purge_candy_wmc_ghost_rows")
+        if (g.error) r.retire_error = g.error.message
+        else r.ghosts_purged = typeof g.data === "number" ? g.data : Number(g.data ?? 0)
+      }
+    } catch (e) {
+      r.retire_error = e instanceof Error ? e.message : String(e)
+    }
+  }
+
+  return r
+}
