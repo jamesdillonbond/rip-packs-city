@@ -79,6 +79,13 @@ Trevor's rule (4:59 PM PT): show the name the league's own player page uses; the
 
 All Day's team-level Moments carry the TEAM as the player (`players.name = players.team`, 33 rows). That made the Lions outrank the Pistons when webz_80 searched "detroit" (fixed: `teamShadows()` in `lib/search/player-hub-hits.ts` drops a player row that matches a team row) and would have offered "Follow player" for a franchise (fixed: `isTeamSubject()`, `lib/player-route.ts`). ⛔ The same predicate matches **15 Disney Pinnacle characters** whose franchise shares their name (Aladdin, Bambi, Dumbo…), so both helpers exempt Pinnacle. Count the predicate's population across EVERY collection before shipping a name-based test — that query is what caught it.
 
+## Panini Entertainment — a character is not a person (2026-11-08)
+
+Panini's Entertainment filter serves non-sport lines (The Rolling Stones 2130, Bad Egg Co.'s Bad Eggs 850130 / Zombie Mob 850147 / Sunnyside Silvershells 850179, Moonbirds 850178) with Panini's SPORTS field names: `team` = the IP / brand / band, `athlete` = the figure on the card. `panini_products.label_set` (`sports` | `entertainment` | `music`; NULL = `entertainment` when `last_grid_sport = 'Entertainment'`, else sports) and `.franchise` decide both halves (`20261108200913`):
+- **The bridge** (`sync_panini_products_bridge`): an entertainment/music edition never mints or links a `players` row — `player_id` NULL, the figure stays `editions.player_name` (the label) — and `team_name` = the product's franchise. So no character reaches player search, the hubs (`/players/<slug>`) or `resolve_player_name`.
+- **The site** (`lib/entity-labels.ts` + `lib/panini/label-set.ts`): entertainment → Character / Franchise / Cast; music → Artist / Band / Lineup; every Panini card is a **Card** (sports too). A team / player page resolves its product from its editions' ids (`packcard-<set_id>_…`); collection-wide surfaces keep the general nouns.
+- A new Entertainment product needs NO row edit to be named right; a music line needs `label_set = 'music'`. Event passes (987654321, NFT Party tickets) are not a collectible line — never admitted.
+
 ## Spelling variants vs aliases — fold the first, crosswalk the second (2026-11-01)
 
 `wallet_moments_cache.player_name` (and other denormalised name copies) spell one player several ways (#221: 9,842 Top Shot / 2,286 All Day rows disagree with `editions`). Two different problems:
