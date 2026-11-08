@@ -292,7 +292,8 @@ const PINS = [
     // late-ingested opens, 429-not-a-failure.
     fn: "run_pinnacle_opener_lane",
     test: "supabase/tests/run_pinnacle_opener_lane.sql",
-    migration: "supabase/migrations/20260929183000_audit_20260929_pinnacle_pack_openers_read_from_the_open_tx.sql",
+    // 2026-11-08: floor at the mainnet27 root; Flow retired the mainnet24-26 nodes (#181).
+    migration: "supabase/migrations/20261108171810_audit_20261108_run_pinnacle_opener_lane_floor_at_mainnet27.sql",
   },
   {
     // The ingest re-upserts opener NULL; a known opener must survive it.
@@ -331,7 +332,8 @@ const PINS = [
     // then ALIGNED bisection + holdings calls grouped by (wallet, height);
     // 2026-10-10: no HTTP answer at all (a connect that never completed) is a free retry too;
     // then that failure parks the NODE for an hour (one canary after), known-issues #181.
-    migration: "supabase/migrations/20261010142634_audit_20261010_chain_arrival_lane_parks_a_dark_node.sql",
+    // 2026-11-08: floor at the mainnet27 root; Flow retired the mainnet24-26 nodes (#181).
+    migration: "supabase/migrations/20261108171928_audit_20261108_run_chain_arrival_lane_floor_at_mainnet27.sql",
   },
   {
     // Seeds every saved wallet's unexplained held Top Shot moment at the floor;
@@ -1446,7 +1448,8 @@ const PINS = [
     // 2026-09-29: Pinnacle pack pulls named by reading each pin's editionID on chain at the open block.
     fn: "run_pinnacle_pull_chain_lane",
     test: "supabase/tests/run_pinnacle_pull_chain_lane.sql",
-    migration: "supabase/migrations/20260930010000_audit_20260929_pinnacle_pulls_named_by_reading_the_chain_at_the_open_block.sql",
+    // 2026-11-08: floor at the mainnet27 root; the pre-Cadence-1.0 mainnet24 script removed (#181).
+    migration: "supabase/migrations/20261108171820_audit_20261108_run_pinnacle_pull_chain_lane_floor_at_mainnet27.sql",
   },
   {
     fn: "get_team_detail",
@@ -3361,14 +3364,16 @@ const PINS = [
     // read (it aborted every tick for ~6 h on 10-06 and 10-08).
     fn: "run_topshot_sellback_walk",
     test: "supabase/tests/run_topshot_sellback_walk.sql",
-    migration: "supabase/migrations/20261009162520_audit_20261009_sellback_walk_retries_a_page_with_idless_events.sql",
+    // 2026-11-08: floor at the mainnet27 root; Flow retired the mainnet24-26 nodes (#181).
+    migration: "supabase/migrations/20261108171930_audit_20261108_run_topshot_sellback_walk_floor_at_mainnet27.sql",
   },
   {
     // Added 2026-10-03 (#167). Names the walk's staged sell-backs from a chain read of the
     // buy-back wallet: window reads, a per-block fallback, a parallel never folded into its base.
     fn: "run_topshot_sellback_edition_reads",
     test: "supabase/tests/run_topshot_sellback_edition_reads.sql",
-    migration: "supabase/migrations/20261003211651_topshot_sellback_edition_reads_name_staged_sellbacks_from_the_chain.sql",
+    // 2026-11-08: floor at the mainnet27 root; Flow retired the mainnet24-26 nodes (#181).
+    migration: "supabase/migrations/20261108171920_audit_20261108_run_topshot_sellback_edition_reads_floor_at_mainnet27.sql",
   },
   {
     // Added 2026-10-04 (#167, the second 2025 gap). Recovers the collector sales the sell-back
@@ -3377,7 +3382,8 @@ const PINS = [
     fn: "run_topshot_collector_sale_backfill",
     test: "supabase/tests/run_topshot_collector_sale_backfill.sql",
     // 2026-10-10 (#167): the walk margin applies only while the walk is scheduled.
-    migration: "supabase/migrations/20261010161620_audit_20261010_collector_sale_backfill_drops_the_walk_margin_once_the_walk_is_gone.sql",
+    // 2026-11-08: floor at the mainnet27 root; Flow retired the mainnet24-26 nodes (#181).
+    migration: "supabase/migrations/20261108171910_audit_20261108_run_topshot_collector_sale_backfill_floor_at_mainnet27.sql",
   },
   {
     // Added 2026-10-03 (#169). The buyer board excludes registry buy-back wallets (unless contracts

@@ -2,8 +2,8 @@
 -- (known-issues #167) by reading the buy-back wallet's collection on chain at a historical height,
 -- then promotes them into `sales`. Claims:
 --   1. staged 'unresolved_edition' sell-backs are enqueued as ONE read per 2,000-block window that
---      never straddles the mainnet26/27 boundary, at the window's highest sale block, routed to the
---      spork's node; never more than p_max_inflight reads are outstanding;
+--      never straddles the mainnet26/27 boundary, at the window's highest sale block, sent to the
+--      mainnet27 node; never more than p_max_inflight reads are outstanding;
 --   2. a landed read is stored in topshot_chain_moment_reads; a sell-back whose read maps to an
 --      edition we carry enters `sales` with that edition and the CHAIN's serial
 --      ('inserted_chain_read'); a read naming an edition we do not carry (e.g. a parallel) is
@@ -11,10 +11,15 @@
 --   3. an id a WINDOW read did not return is retried alone at its own sale block; an id a BLOCK
 --      read did not return is 'chain_not_held';
 --   4. a 429 is retried without spending an attempt; any other failure spends one, and the 6th
---      closes the request as failed.
+--      closes the request as failed;
+--   5. (2026-11-08, #181) a read at or below block 130,290,658 (before the mainnet27 root; Flow
+--      retired the mainnet24-26 access nodes) is closed 'failed' with the reason and NEVER sent -
+--      a newly enqueued window, a pending block read, and an in-flight read whose DNS failure
+--      landed - and its sell-backs stay staged; a read AT the root is still sent to mainnet27; no
+--      request ever goes to a mainnet24/25/26 node.
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20261003211651_topshot_sellback_edition_reads_name_staged_sellbacks_from_the_chain.sql).
+-- (supabase/migrations/20261108171920_audit_20261108_run_topshot_sellback_edition_reads_floor_at_mainnet27.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 
 BEGIN;
@@ -60,7 +65,11 @@ AS $function$
 DECLARE
   c_buyback  CONSTANT text := '0xe1f2a091f7bb5245';
   c_ts       CONSTANT uuid := '95f28a17-224a-4025-96ad-adf8a4c63bfd';
+  -- 2026-11-08 (#181): the last block before the mainnet27 root (130,290,659). Flow retired the
+  -- mainnet24-26 access nodes (no DNS record), so no node can read at or below this height:
+  -- such work is closed with c_floor_reason, never dispatched.
   c_m26_end  CONSTANT bigint := 130290658;
+  c_floor_reason CONSTANT text := 'block before 130290659 (mainnet27 root): Flow retired the mainnet24-26 access nodes (#181)';
   c_base     CONSTANT bigint := 118100000;
   c_window   CONSTANT int := 2000;
   c_chunk    CONSTANT int := 500;
@@ -88,6 +97,7 @@ access(all) fun main(owner: Address, ids: [UInt64]): {UInt64: [UInt32]} {
   v_inflight   int := 0;
   v_promoted   int := 0;
   v_missing    int := 0;
+  v_below_floor int := 0;
   v_n          int;
   v_err        text;
 BEGIN
@@ -226,7 +236,17 @@ BEGIN
     -- (`mark` runs regardless: a data-modifying CTE executes whether or not it is read)
     SELECT count(*) INTO v_enqueued FROM ins;
 
-    -- 3. DISPATCH: never more than p_max_inflight reads outstanding, oldest first.
+    -- 2b. CLOSE (2026-11-08, #181): a pending read at or below c_m26_end has no node left to
+    --     answer it (an in-flight one's DNS failure returns it to pending first). It is closed
+    --     'failed' with c_floor_reason and never dispatched; its sell-backs stay staged as
+    --     'unresolved_edition' (as after a 6th failure), never guessed.
+    UPDATE public.topshot_sellback_edition_requests
+       SET status = 'failed', request_id = NULL, finished_at = now(), last_error = c_floor_reason
+     WHERE status = 'pending' AND read_height <= c_m26_end;
+    GET DIAGNOSTICS v_below_floor = ROW_COUNT;
+
+    -- 3. DISPATCH: never more than p_max_inflight reads outstanding, oldest first, to the mainnet27
+    --    node (every read still pending is above the floor).
     SELECT count(*) INTO v_inflight FROM public.topshot_sellback_edition_requests WHERE status = 'in_flight';
     WITH nxt AS (
       SELECT id FROM public.topshot_sellback_edition_requests
@@ -236,8 +256,7 @@ BEGIN
     ), sent AS (
       UPDATE public.topshot_sellback_edition_requests q
          SET request_id = net.http_post(
-               url := CASE WHEN q.read_height <= c_m26_end THEN 'http://access-001.mainnet26.nodes.onflow.org:8070'
-                           ELSE 'http://access-001.mainnet27.nodes.onflow.org:8070' END
+               url := 'http://access-001.mainnet27.nodes.onflow.org:8070'
                       || '/v1/scripts?block_height=' || q.read_height,
                body := jsonb_build_object(
                  'script', translate(encode(convert_to(c_src, 'UTF8'), 'base64'), E'\n', ''),
@@ -317,12 +336,12 @@ BEGIN
     jsonb_build_object('collected', v_collected, 'reads_new', v_reads_new, 'throttled', v_throttled,
                        'failed', v_failed, 'fallback_enqueued', v_fallback, 'chain_not_held', v_not_held,
                        'enqueued', v_enqueued, 'dispatched', v_dispatched, 'inflight_before', v_inflight,
-                       'promoted', v_promoted, 'edition_missing', v_missing, 'via', 'pg_cron',
+                       'promoted', v_promoted, 'edition_missing', v_missing, 'below_floor', v_below_floor, 'via', 'pg_cron',
                        'duration_ms', (extract(epoch FROM clock_timestamp() - v_started) * 1000)::int));
   RETURN jsonb_build_object('collected', v_collected, 'reads_new', v_reads_new, 'throttled', v_throttled,
                             'failed', v_failed, 'fallback_enqueued', v_fallback, 'chain_not_held', v_not_held,
                             'enqueued', v_enqueued, 'dispatched', v_dispatched, 'promoted', v_promoted,
-                            'edition_missing', v_missing, 'error', v_err);
+                            'edition_missing', v_missing, 'below_floor', v_below_floor, 'error', v_err);
 END
 $function$;
 -- <<< END verbatim <<<
@@ -334,34 +353,34 @@ INSERT INTO public.editions VALUES
 INSERT INTO cron.job VALUES ('rpc-topshot-sellback-walk'), ('rpc-topshot-sellback-edition-reads');
 
 INSERT INTO public.topshot_sellback_walk_purchases (tx, nft_id, price_usd, seller, block_height, sold_at, promoted_at, promote_outcome) VALUES
-  ('t101', '101', 1, '0xs1', 118100010, '2025-06-30 11:00:00+00', now(), 'unresolved_edition'),
-  ('t102', '102', 1, '0xs1', 118100020, '2025-06-30 11:00:10+00', now(), 'unresolved_edition'),
-  ('t103', '103', 1, '0xs2', 118100030, '2025-06-30 11:00:20+00', now(), 'unresolved_edition'),
+  ('t101', '101', 1, '0xs1', 130300010, '2025-06-30 11:00:00+00', now(), 'unresolved_edition'),
+  ('t102', '102', 1, '0xs1', 130300020, '2025-06-30 11:00:10+00', now(), 'unresolved_edition'),
+  ('t103', '103', 1, '0xs2', 130300030, '2025-06-30 11:00:20+00', now(), 'unresolved_edition'),
   ('t104', '104', 2, '0xs3', 130290700, '2025-10-22 12:00:00+00', now(), 'unresolved_edition'),   -- mainnet27
-  ('t105', '105', 9, '0xs4', 118100040, '2025-06-30 11:00:30+00', now(), 'inserted'),             -- not staged: untouched
-  ('t107', '107', 1, '0xs5', 118102500, '2025-06-30 11:50:00+00', now(), 'unresolved_edition');   -- next window
+  ('t105', '105', 9, '0xs4', 130300040, '2025-06-30 11:00:30+00', now(), 'inserted'),             -- not staged: untouched
+  ('t107', '107', 1, '0xs5', 130302500, '2025-06-30 11:50:00+00', now(), 'unresolved_edition');   -- next window
 
 DO $do$
-DECLARE r jsonb; q1 bigint; q2 bigint; q3 bigint; rid bigint;
+DECLARE r jsonb; q1 bigint; q2 bigint; q3 bigint; rid bigint; v_sent bigint;
 BEGIN
   -- ── claim 1: one read per window, routed by spork, read at the window's max sale block
   r := public.run_topshot_sellback_edition_reads(3);
   PERFORM _assert_eq(r->>'error', NULL, 'tick 1 ran clean');
-  PERFORM _assert_eq(r->>'enqueued', '3', 'three windows: m26 w0, m26 w1, m27');
+  PERFORM _assert_eq(r->>'enqueued', '3', 'three windows: two 2,000-block windows, and the mainnet27 window at 130,290,700');
   PERFORM _assert_eq((SELECT string_agg(read_height || ':' || array_to_string(ids, '|'), ',' ORDER BY read_height)
                         FROM public.topshot_sellback_edition_requests),
-    '118100030:101|102|103,118102500:107,130290700:104', 'window grouping and read heights (claim 1)');
+    '130290700:104,130300030:101|102|103,130302500:107', 'window grouping and read heights (claim 1)');
   PERFORM _assert_eq(r->>'dispatched', '3', 'all three dispatched under p_max_inflight = 3');
   PERFORM _assert_eq((SELECT count(*)::text FROM public.topshot_sellback_walk_purchases WHERE edition_read_requested_at IS NOT NULL), '5',
     'every staged row marked requested; the already-inserted row is not');
-  INSERT INTO public.topshot_sellback_edition_requests (kind, read_height, ids) VALUES ('block', 118100001, '{999}');
+  INSERT INTO public.topshot_sellback_edition_requests (kind, read_height, ids) VALUES ('block', 130300001, '{999}');
   r := public.run_topshot_sellback_edition_reads(3);
   PERFORM _assert_eq(r->>'dispatched', '0', 'nothing more while p_max_inflight are in flight (claim 1)');
-  DELETE FROM public.topshot_sellback_edition_requests WHERE read_height = 118100001;
-  PERFORM _assert_eq((SELECT url FROM net._sent s JOIN public.topshot_sellback_edition_requests q ON q.request_id = s.id WHERE q.read_height = 118100030),
-    'http://access-001.mainnet26.nodes.onflow.org:8070/v1/scripts?block_height=118100030', 'mainnet26 window routed to mainnet26 at its max block');
-  SELECT request_id INTO q1 FROM public.topshot_sellback_edition_requests WHERE read_height = 118100030;
-  SELECT request_id INTO q2 FROM public.topshot_sellback_edition_requests WHERE read_height = 118102500;
+  DELETE FROM public.topshot_sellback_edition_requests WHERE read_height = 130300001;
+  PERFORM _assert_eq((SELECT url FROM net._sent s JOIN public.topshot_sellback_edition_requests q ON q.request_id = s.id WHERE q.read_height = 130300030),
+    'http://access-001.mainnet27.nodes.onflow.org:8070/v1/scripts?block_height=130300030', 'window sent to mainnet27 at its max block');
+  SELECT request_id INTO q1 FROM public.topshot_sellback_edition_requests WHERE read_height = 130300030;
+  SELECT request_id INTO q2 FROM public.topshot_sellback_edition_requests WHERE read_height = 130302500;
   PERFORM _assert((SELECT body->'arguments'->>1 FROM net._sent WHERE id = q1) IS NOT NULL, 'ids argument sent');
   PERFORM _assert_eq((SELECT convert_from(decode(body->'arguments'->>0, 'base64'), 'UTF8')::jsonb->>'value' FROM net._sent WHERE id = q1),
     '0xe1f2a091f7bb5245', 'reads the buy-back wallet');
@@ -374,7 +393,7 @@ BEGIN
   PERFORM _assert_eq(r->>'error', NULL, 'tick 3 ran clean');
   PERFORM _assert_eq(r->>'reads_new', '2', 'two chain reads stored (claim 2)');
   PERFORM _assert_eq((SELECT owner_address || ':' || block_height FROM public.topshot_chain_moment_reads WHERE nft_id = 101),
-    '0xe1f2a091f7bb5245:118100030', 'read provenance = buy-back wallet at the read height');
+    '0xe1f2a091f7bb5245:130300030', 'read provenance = buy-back wallet at the read height');
   PERFORM _assert_eq((SELECT edition_id::text || ':' || serial_number || ':' || buyer_address || ':' || source || ':' || price_usd FROM public.sales WHERE nft_id = '101'),
     '00000000-0000-0000-0000-0000000000e1:7:0xe1f2a091f7bb5245:onchain_sellback_backfill_2025:1', 'carried edition promoted with the chain serial (claim 2)');
   PERFORM _assert_eq((SELECT string_agg(nft_id || ':' || promote_outcome, ',' ORDER BY nft_id) FROM public.topshot_sellback_walk_purchases),
@@ -382,8 +401,8 @@ BEGIN
     'parallel never folded into its base; unanswered rows still staged (claim 2)');
   PERFORM _assert_eq((SELECT count(*)::text FROM public.sales WHERE nft_id IN ('102', '105')), '0', 'nothing guessed, nothing re-written (claim 2)');
   PERFORM _assert_eq((SELECT kind || ':' || read_height || ':' || array_to_string(ids, '|') FROM public.topshot_sellback_edition_requests WHERE kind = 'block'),
-    'block:118100030:103', 'a window miss is retried alone at its own sale block (claim 3)');
-  PERFORM _assert_eq((SELECT attempts || ':' || last_error FROM public.topshot_sellback_edition_requests WHERE read_height = 118102500),
+    'block:130300030:103', 'a window miss is retried alone at its own sale block (claim 3)');
+  PERFORM _assert_eq((SELECT attempts || ':' || last_error FROM public.topshot_sellback_edition_requests WHERE read_height = 130302500),
     '0:http 429', 'a 429 spends no attempt (claim 4)');
   PERFORM _assert_eq(r->>'throttled', '1', 'throttle counted');
 
@@ -408,7 +427,7 @@ BEGIN
   PERFORM _assert_eq((SELECT count(*)::text FROM public.sales WHERE nft_id = '104'), '1', 'no duplicate (claim 2)');
 
   -- ── claim 4: any other failure spends an attempt; the 6th closes the request as failed
-  SELECT id INTO rid FROM public.topshot_sellback_edition_requests WHERE read_height = 118102500;
+  SELECT id INTO rid FROM public.topshot_sellback_edition_requests WHERE read_height = 130302500;
   UPDATE public.topshot_sellback_edition_requests SET attempts = 5, status = 'in_flight', request_id = 9002, dispatched_at = now() WHERE id = rid;
   INSERT INTO net._http_response (id, status_code, content) VALUES (9002, 500, 'boom');
   r := public.run_topshot_sellback_edition_reads(1);
@@ -416,6 +435,34 @@ BEGIN
     'the 6th failure closes the request (claim 4)');
   PERFORM _assert_eq((SELECT promote_outcome FROM public.topshot_sellback_walk_purchases WHERE nft_id = '107'), 'unresolved_edition',
     'a failed read leaves the row staged, never resolved');
+
+  -- ── claim 5 (2026-11-08, #181): a read at or below 130,290,658 is closed with the reason and never sent
+  SELECT count(*) INTO v_sent FROM net._sent;
+  -- t108: a staged sell-back below the floor, not yet asked for: its window is enqueued, then must close
+  INSERT INTO public.topshot_sellback_walk_purchases (tx, nft_id, price_usd, seller, block_height, sold_at, promoted_at, promote_outcome)
+  VALUES ('t108', '108', 1, '0xs6', 118100050, '2025-06-30 11:01:00+00', now(), 'unresolved_edition');
+  -- a block read pending at 130,290,658, the last mainnet26 block
+  INSERT INTO public.topshot_sellback_edition_requests (kind, read_height, ids) VALUES ('block', 130290658, '{109}');
+  -- a below-floor window read in flight whose DNS failure has landed
+  INSERT INTO public.topshot_sellback_edition_requests (kind, read_height, ids, status, request_id, dispatched_at)
+  VALUES ('window', 118100060, '{110}', 'in_flight', 9003, now());
+  INSERT INTO net._http_response (id, status_code, content, error_msg) VALUES (9003, NULL, NULL, 'Couldn''t resolve host name');
+  -- control: a block read AT the mainnet27 root is still sent
+  INSERT INTO public.topshot_sellback_edition_requests (kind, read_height, ids) VALUES ('block', 130290659, '{111}');
+  r := public.run_topshot_sellback_edition_reads(4);
+  PERFORM _assert_eq(r->>'error', NULL, 'claim 5: the tick ran clean');
+  PERFORM _assert_eq(r->>'enqueued', '1', 'claim 5: the below-floor sell-back is still enqueued (it must not strand the lane)');
+  PERFORM _assert_eq(((SELECT count(*) FROM net._sent) - v_sent)::text, '1', 'claim 5: exactly one request went out - the at-root read');
+  PERFORM _assert_eq((SELECT count(*)::text FROM net._sent WHERE url ~ 'mainnet2[456]'), '0', 'claim 5: no request ever goes to a retired mainnet24/25/26 node');
+  PERFORM _assert_eq((SELECT string_agg(read_height || ':' || kind || ':' || status || ':' || (request_id IS NULL) || ':' || (finished_at IS NOT NULL) || ':' || last_error, ' | ' ORDER BY read_height)
+                        FROM public.topshot_sellback_edition_requests WHERE read_height <= 130290658),
+    '118100050:window:failed:true:true:block before 130290659 (mainnet27 root): Flow retired the mainnet24-26 access nodes (#181) | 118100060:window:failed:true:true:block before 130290659 (mainnet27 root): Flow retired the mainnet24-26 access nodes (#181) | 130290658:block:failed:true:true:block before 130290659 (mainnet27 root): Flow retired the mainnet24-26 access nodes (#181)',
+    'claim 5: each below-floor read is closed failed with the #181 reason and no request');
+  PERFORM _assert_eq((SELECT promote_outcome || ':' || (edition_read_requested_at IS NOT NULL) FROM public.topshot_sellback_walk_purchases WHERE nft_id = '108'),
+    'unresolved_edition:true', 'claim 5: its sell-back stays staged, never guessed');
+  PERFORM _assert_eq((SELECT s.url FROM net._sent s JOIN public.topshot_sellback_edition_requests q ON q.request_id = s.id WHERE q.read_height = 130290659),
+    'http://access-001.mainnet27.nodes.onflow.org:8070/v1/scripts?block_height=130290659', 'claim 5: a read AT the root goes to mainnet27');
+  PERFORM _assert_eq(r->>'below_floor', '3', 'claim 5: three below-floor reads closed, and counted');
 END
 $do$;
 

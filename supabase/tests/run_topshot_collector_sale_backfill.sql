@@ -4,8 +4,8 @@
 -- Claims:
 --   1. an unclassified purchase the walk has fully passed (block below the open-page frontier −
 --      250) with NO deposit row is classified: in `sales` (same tx, or the moment within ±1 h) →
---      'collector_in_sales'; otherwise 'collector_absent' with ONE transaction-result read routed
---      to the spork's node; a sell-back (deposit row) and a purchase at/above the frontier are
+--      'collector_in_sales'; otherwise 'collector_absent' with ONE transaction-result read sent
+--      to the mainnet27 node; a sell-back (deposit row) and a purchase at/above the frontier are
 --      untouched; never more than p_max_inflight reads are outstanding;
 --   2. a landed tx result names the buyer from the TopShot.Deposit of THAT moment (never another
 --      moment's deposit in the same tx); no such deposit → 'buyer_unknown'; a script against the
@@ -18,10 +18,15 @@
 --   4. a 429 is retried without spending an attempt; any other failure spends one, and the 6th
 --      closes the request and the row ('buyer_fetch_failed' / 'edition_read_failed');
 --   5. with the walk's job gone and nothing left to classify, read or promote, the lane
---      unschedules itself.
+--      unschedules itself;
+--   6. (2026-11-08, #181) a read at or below block 130,290,658 (before the mainnet27 root; Flow
+--      retired the mainnet24-26 access nodes) is closed 'failed' with the reason and NEVER sent -
+--      a newly claimed tx read, a pending script read, and an in-flight read whose DNS failure
+--      landed - and its row is closed ('buyer_fetch_failed' / 'edition_read_failed'); a read AT
+--      the root is still sent to mainnet27; no request ever goes to a mainnet24/25/26 node.
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20261010161620_audit_20261010_collector_sale_backfill_drops_the_walk_margin_once_the_walk_is_gone.sql).
+-- (supabase/migrations/20261108171910_audit_20261108_run_topshot_collector_sale_backfill_floor_at_mainnet27.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 
 BEGIN;
@@ -92,7 +97,11 @@ SET search_path TO 'public', 'pg_temp'
 AS $function$
 DECLARE
   c_ts       CONSTANT uuid := '95f28a17-224a-4025-96ad-adf8a4c63bfd';
+  -- 2026-11-08 (#181): the last block before the mainnet27 root (130,290,659). Flow retired the
+  -- mainnet24-26 access nodes (no DNS record), so no node can read at or below this height:
+  -- such work is closed with c_floor_reason, never dispatched.
   c_m26_end  CONSTANT bigint := 130290658;
+  c_floor_reason CONSTANT text := 'block before 130290659 (mainnet27 root): Flow retired the mainnet24-26 access nodes (#181)';
   c_dep_type CONSTANT text := 'A.0b2a3299cc857e29.TopShot.Deposit';
   c_max_att  CONSTANT int := 6;
   c_src      CONSTANT text := 'import TopShot from 0x0b2a3299cc857e29
@@ -123,6 +132,7 @@ access(all) fun main(owner: Address, ids: [UInt64]): {UInt64: [UInt32]} {
   v_inflight    int := 0;
   v_promoted    int := 0;
   v_missing     int := 0;
+  v_below_floor int := 0;
   v_n           int;
   v_err         text;
 BEGIN
@@ -311,8 +321,22 @@ BEGIN
       INTO v_claimed, v_present, v_absent
       FROM upd;
 
-    -- 3. DISPATCH: never more than p_max_inflight reads outstanding, oldest first, routed to the
-    --    spork that holds the block.
+    -- 2b. CLOSE (2026-11-08, #181): a pending read at or below c_m26_end has no node left to
+    --     answer it (an in-flight one's DNS failure returns it to pending first). It is closed
+    --     'failed' with c_floor_reason and never dispatched; its purchase is closed the way a 6th
+    --     failure closes it ('buyer_fetch_failed' / 'edition_read_failed'), never guessed.
+    UPDATE public.topshot_sellback_walk_purchases p
+       SET promote_outcome = CASE WHEN q.kind = 'tx' THEN 'buyer_fetch_failed' ELSE 'edition_read_failed' END, promoted_at = now()
+      FROM public.topshot_collector_sale_requests q
+     WHERE q.status = 'pending' AND q.block_height <= c_m26_end
+       AND p.tx = q.tx AND p.nft_id = q.nft_id AND p.promote_outcome = 'collector_absent';
+    UPDATE public.topshot_collector_sale_requests
+       SET status = 'failed', request_id = NULL, finished_at = now(), last_error = c_floor_reason
+     WHERE status = 'pending' AND block_height <= c_m26_end;
+    GET DIAGNOSTICS v_below_floor = ROW_COUNT;
+
+    -- 3. DISPATCH: never more than p_max_inflight reads outstanding, oldest first, to the mainnet27
+    --    node (every read still pending is above the floor).
     SELECT count(*) INTO v_inflight FROM public.topshot_collector_sale_requests WHERE status = 'in_flight';
     WITH nxt AS (
       SELECT id FROM public.topshot_collector_sale_requests
@@ -323,14 +347,12 @@ BEGIN
       UPDATE public.topshot_collector_sale_requests q
          SET request_id = CASE WHEN q.kind = 'tx' THEN
                net.http_get(
-                 url := CASE WHEN q.block_height <= c_m26_end THEN 'http://access-001.mainnet26.nodes.onflow.org:8070'
-                             ELSE 'http://access-001.mainnet27.nodes.onflow.org:8070' END
+                 url := 'http://access-001.mainnet27.nodes.onflow.org:8070'
                         || '/v1/transaction_results/' || q.tx,
                  params := '{}'::jsonb, headers := '{}'::jsonb, timeout_milliseconds := 20000)
              ELSE
                net.http_post(
-                 url := CASE WHEN q.block_height <= c_m26_end THEN 'http://access-001.mainnet26.nodes.onflow.org:8070'
-                             ELSE 'http://access-001.mainnet27.nodes.onflow.org:8070' END
+                 url := 'http://access-001.mainnet27.nodes.onflow.org:8070'
                         || '/v1/scripts?block_height=' || q.block_height,
                  body := jsonb_build_object(
                    'script', translate(encode(convert_to(c_src, 'UTF8'), 'base64'), E'\n', ''),
@@ -424,13 +446,13 @@ BEGIN
                        'reads_new', v_reads_new, 'chain_not_held', v_not_held, 'throttled', v_throttled,
                        'failed', v_failed, 'claimed', v_claimed, 'present', v_present, 'absent', v_absent,
                        'scripts_enqueued', v_scripts, 'dispatched', v_dispatched, 'inflight_before', v_inflight,
-                       'frontier', v_frontier, 'promoted', v_promoted, 'edition_missing', v_missing, 'via', 'pg_cron',
+                       'frontier', v_frontier, 'promoted', v_promoted, 'edition_missing', v_missing, 'below_floor', v_below_floor, 'via', 'pg_cron',
                        'duration_ms', (extract(epoch FROM clock_timestamp() - v_started) * 1000)::int));
   RETURN jsonb_build_object('collected', v_collected, 'buyers', v_buyers, 'buyer_unknown', v_buyer_unknown,
                             'reads_new', v_reads_new, 'chain_not_held', v_not_held, 'throttled', v_throttled,
                             'failed', v_failed, 'claimed', v_claimed, 'present', v_present, 'absent', v_absent,
                             'scripts_enqueued', v_scripts, 'dispatched', v_dispatched, 'promoted', v_promoted,
-                            'edition_missing', v_missing, 'error', v_err);
+                            'edition_missing', v_missing, 'below_floor', v_below_floor, 'error', v_err);
 END
 $function$;
 -- <<< END verbatim <<<
@@ -443,25 +465,25 @@ INSERT INTO cron.job VALUES ('rpc-topshot-sellback-walk'), ('rpc-topshot-collect
 INSERT INTO public.topshot_sellback_walk_state VALUES (1, 130302000, 131330000);
 -- the walk still has an open page at 130,300,000 (mainnet27): everything below 130,299,750 is fully passed
 INSERT INTO public.topshot_sellback_walk_pages (kind, start_height, done_at) VALUES
-  ('purchase', 118100000, now()), ('deposit', 118100000, now()), ('purchase', 130300000, NULL), ('deposit', 130300000, now());
+  ('purchase', 130291000, now()), ('deposit', 130291000, now()), ('purchase', 130300000, NULL), ('deposit', 130300000, now());
 INSERT INTO public.moments VALUES ('204', '95f28a17-224a-4025-96ad-adf8a4c63bfd', '00000000-0000-0000-0000-0000000000e5', 3);
 
 INSERT INTO public.topshot_sellback_walk_purchases (tx, nft_id, price_usd, seller, block_height, sold_at) VALUES
-  ('c201', '201', 2,  '0xs1', 118100100, '2025-06-30 11:00:00+00'),   -- absent; buyer from the tx; edition from the chain
-  ('c202', '202', 5,  '0xs2', 118100200, '2025-06-30 11:01:00+00'),   -- already in `sales` (same tx)
-  ('c203', '203', 1,  '0xs3', 118100300, '2025-06-30 11:02:00+00'),   -- absent; the tx deposits no 203
+  ('c201', '201', 2,  '0xs1', 130291100, '2025-06-30 11:00:00+00'),   -- absent; buyer from the tx; edition from the chain
+  ('c202', '202', 5,  '0xs2', 130291200, '2025-06-30 11:01:00+00'),   -- already in `sales` (same tx)
+  ('c203', '203', 1,  '0xs3', 130291300, '2025-06-30 11:02:00+00'),   -- absent; the tx deposits no 203
   ('c204', '204', 9,  '0xs4', 130290700, '2025-10-22 12:00:00+00'),   -- mainnet27; edition already in `moments`
-  ('c205', '205', 1,  '0xs5', 118100400, '2025-06-30 11:04:00+00'),   -- a sell-back (deposit row): not this lane's
+  ('c205', '205', 1,  '0xs5', 130291400, '2025-06-30 11:04:00+00'),   -- a sell-back (deposit row): not this lane's
   ('c206', '206', 1,  '0xs6', 130299900, '2025-10-22 13:00:00+00'),   -- at the frontier: not yet passed
-  ('c207', '207', 3,  '0xs7', 118100500, '2025-06-30 11:05:00+00'),   -- absent; chain names a parallel we do not carry
-  ('c208', '208', 4,  '0xs8', 118100600, '2025-06-30 11:06:00+00'),   -- absent; the buyer does not hold it at the block
-  ('c209', '209', 6,  '0xs9', 118100700, '2025-06-30 11:07:00+00');   -- absent; the node throttles, then fails
-INSERT INTO public.topshot_sellback_walk_deposits VALUES ('c205', '205', 118100400, '2025-06-30 11:04:00+00');
+  ('c207', '207', 3,  '0xs7', 130291500, '2025-06-30 11:05:00+00'),   -- absent; chain names a parallel we do not carry
+  ('c208', '208', 4,  '0xs8', 130291600, '2025-06-30 11:06:00+00'),   -- absent; the buyer does not hold it at the block
+  ('c209', '209', 6,  '0xs9', 130291700, '2025-06-30 11:07:00+00');   -- absent; the node throttles, then fails
+INSERT INTO public.topshot_sellback_walk_deposits VALUES ('c205', '205', 130291400, '2025-06-30 11:04:00+00');
 INSERT INTO public.sales (edition_id, collection_id, collection, price_usd, transaction_hash, sold_at, nft_id, source)
 VALUES ('00000000-0000-0000-0000-0000000000e1', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'nba_top_shot', 5, 'c202', '2025-06-30 11:01:00+00', '202', 'onchain');
 
 DO $do$
-DECLARE r jsonb; q bigint; q2 bigint; q3 bigint; rid bigint;
+DECLARE r jsonb; q bigint; q2 bigint; q3 bigint; rid bigint; v_sent bigint;
 BEGIN
   -- ── claim 1: classification below the frontier, one tx read each, spork routing, inflight cap
   r := public.run_topshot_collector_sale_backfill(6, 200);
@@ -473,7 +495,7 @@ BEGIN
   PERFORM _assert_eq((SELECT count(*)::text FROM public.topshot_collector_sale_requests WHERE kind = 'tx'), '6', 'one tx read per absent row');
   PERFORM _assert_eq(r->>'dispatched', '6', 'all six tx reads out under p_max_inflight = 6');
   PERFORM _assert_eq((SELECT s.url FROM net._sent s JOIN public.topshot_collector_sale_requests q ON q.request_id = s.id WHERE q.nft_id = '201'),
-    'http://access-001.mainnet26.nodes.onflow.org:8070/v1/transaction_results/c201', 'mainnet26 tx routed to mainnet26');
+    'http://access-001.mainnet27.nodes.onflow.org:8070/v1/transaction_results/c201', 'mainnet27 tx sent to mainnet27');
   PERFORM _assert_eq((SELECT s.url FROM net._sent s JOIN public.topshot_collector_sale_requests q ON q.request_id = s.id WHERE q.nft_id = '204'),
     'http://access-001.mainnet27.nodes.onflow.org:8070/v1/transaction_results/c204', 'mainnet27 tx routed to mainnet27');
   r := public.run_topshot_collector_sale_backfill(3, 200);
@@ -495,7 +517,7 @@ BEGIN
   PERFORM _assert_eq((SELECT promote_outcome FROM public.topshot_sellback_walk_purchases WHERE nft_id = '203'), 'buyer_unknown', 'no deposit for the moment → buyer_unknown (claim 2)');
   PERFORM _assert_eq(r->>'scripts_enqueued', '1', 'one script: 201 only — 204 is named by moments (claim 2)');
   PERFORM _assert_eq((SELECT owner || '@' || block_height FROM public.topshot_collector_sale_requests WHERE kind = 'script' AND nft_id = '201'),
-    '0x00000000000000b1@118100100', 'the script reads the BUYER at the PURCHASE block (claim 2)');
+    '0x00000000000000b1@130291100', 'the script reads the BUYER at the PURCHASE block (claim 2)');
   -- 204 promoted straight from the DB edition, with the buyer
   PERFORM _assert_eq((SELECT edition_id::text || ':' || serial_number || ':' || buyer_address || ':' || seller_address || ':' || source || ':' || price_usd FROM public.sales WHERE nft_id = '204'),
     '00000000-0000-0000-0000-0000000000e5:3:0x00000000000000b4:0xs4:onchain_collector_backfill_2025:9', 'DB-named edition promoted with the buyer (claim 3)');
@@ -518,7 +540,7 @@ BEGIN
   PERFORM _assert_eq(r->>'scripts_enqueued', '2', 'scripts for 207 and 208');
   PERFORM _assert_eq(r->>'dispatched', '3', 'oldest pending first: 209 again, then the 207 and 208 scripts');
   PERFORM _assert_eq((SELECT s.url FROM net._sent s JOIN public.topshot_collector_sale_requests q ON q.request_id = s.id WHERE q.kind = 'script' AND q.nft_id = '201'),
-    'http://access-001.mainnet26.nodes.onflow.org:8070/v1/scripts?block_height=118100100', 'script routed by spork at the purchase block');
+    'http://access-001.mainnet27.nodes.onflow.org:8070/v1/scripts?block_height=130291100', 'script sent to mainnet27 at the purchase block');
   PERFORM _assert_eq((SELECT convert_from(decode(s.body->'arguments'->>0, 'base64'), 'UTF8')::jsonb->>'value'
                         FROM net._sent s JOIN public.topshot_collector_sale_requests q ON q.request_id = s.id WHERE q.kind = 'script' AND q.nft_id = '201'),
     '0x00000000000000b1', 'the script argument is the buyer');
@@ -535,7 +557,7 @@ BEGIN
   PERFORM _assert_eq(r->>'error', NULL, 'tick 5 ran clean');
   PERFORM _assert_eq(r->>'reads_new', '2', 'two chain reads stored (claim 3)');
   PERFORM _assert_eq((SELECT owner_address || ':' || block_height FROM public.topshot_chain_moment_reads WHERE nft_id = 201),
-    '0x00000000000000b1:118100100', 'read provenance = the buyer at the purchase block');
+    '0x00000000000000b1:130291100', 'read provenance = the buyer at the purchase block');
   PERFORM _assert_eq((SELECT edition_id::text || ':' || serial_number || ':' || buyer_address || ':' || source || ':' || price_usd FROM public.sales WHERE nft_id = '201'),
     '00000000-0000-0000-0000-0000000000e1:7:0x00000000000000b1:onchain_collector_backfill_2025:2', 'carried edition promoted with the chain serial and the buyer (claim 3)');
   PERFORM _assert_eq((SELECT promote_outcome FROM public.topshot_sellback_walk_purchases WHERE nft_id = '201'), 'inserted_collector', '201 inserted');
@@ -567,6 +589,46 @@ BEGIN
   PERFORM _assert_eq((SELECT status || ':' || attempts FROM public.topshot_collector_sale_requests WHERE id = rid), 'failed:6', 'the 6th failure closes the request (claim 4)');
   PERFORM _assert_eq((SELECT promote_outcome FROM public.topshot_sellback_walk_purchases WHERE nft_id = '209'), 'buyer_fetch_failed', 'the row is closed, visibly, never guessed (claim 4)');
 
+  -- ── claim 6 (2026-11-08, #181): a read at or below 130,290,658 is closed with the reason and never sent
+  SELECT count(*) INTO v_sent FROM net._sent;
+  -- c211: a new below-floor purchase (claimed this tick; its tx read must close before dispatch)
+  INSERT INTO public.topshot_sellback_walk_purchases (tx, nft_id, price_usd, seller, block_height, sold_at)
+  VALUES ('c211', '211', 2, '0xs11', 118100800, '2025-06-30 11:08:00+00');
+  -- c212: a script read already pending at 130,290,658, the last mainnet26 block
+  INSERT INTO public.topshot_sellback_walk_purchases (tx, nft_id, price_usd, seller, block_height, sold_at, promote_outcome, buyer)
+  VALUES ('c212', '212', 2, '0xs12', 130290658, '2025-10-22 11:59:00+00', 'collector_absent', '0x00000000000000c2');
+  INSERT INTO public.topshot_collector_sale_requests (kind, tx, nft_id, block_height, owner)
+  VALUES ('script', 'c212', '212', 130290658, '0x00000000000000c2');
+  -- c213: a below-floor tx read in flight whose DNS failure has landed
+  INSERT INTO public.topshot_sellback_walk_purchases (tx, nft_id, price_usd, seller, block_height, sold_at, promote_outcome)
+  VALUES ('c213', '213', 2, '0xs13', 118100900, '2025-06-30 11:09:00+00', 'collector_absent');
+  INSERT INTO public.topshot_collector_sale_requests (kind, tx, nft_id, block_height, status, request_id, dispatched_at)
+  VALUES ('tx', 'c213', '213', 118100900, 'in_flight', 9003, now());
+  INSERT INTO net._http_response (id, status_code, content, error_msg) VALUES (9003, NULL, NULL, 'Couldn''t resolve host name');
+  -- c214: control - a pending tx read AT the mainnet27 root is still sent
+  INSERT INTO public.topshot_sellback_walk_purchases (tx, nft_id, price_usd, seller, block_height, sold_at, promote_outcome)
+  VALUES ('c214', '214', 2, '0xs14', 130290659, '2025-10-22 12:00:00+00', 'collector_absent');
+  INSERT INTO public.topshot_collector_sale_requests (kind, tx, nft_id, block_height) VALUES ('tx', 'c214', '214', 130290659);
+  r := public.run_topshot_collector_sale_backfill(6, 200);
+  PERFORM _assert_eq(r->>'error', NULL, 'claim 6: the tick ran clean');
+  PERFORM _assert_eq(r->>'claimed' || ':' || (r->>'absent'), '1:1', 'claim 6: the below-floor purchase is still classified');
+  PERFORM _assert_eq(((SELECT count(*) FROM net._sent) - v_sent)::text, '1', 'claim 6: exactly one request went out - the at-root read');
+  PERFORM _assert_eq((SELECT count(*)::text FROM net._sent WHERE url ~ 'mainnet2[456]'), '0', 'claim 6: no request ever goes to a retired mainnet24/25/26 node');
+  PERFORM _assert_eq((SELECT string_agg(nft_id || ':' || kind || ':' || status || ':' || (request_id IS NULL) || ':' || (finished_at IS NOT NULL) || ':' || last_error, ' | ' ORDER BY nft_id)
+                        FROM public.topshot_collector_sale_requests WHERE nft_id IN ('211', '212', '213')),
+    '211:tx:failed:true:true:block before 130290659 (mainnet27 root): Flow retired the mainnet24-26 access nodes (#181) | 212:script:failed:true:true:block before 130290659 (mainnet27 root): Flow retired the mainnet24-26 access nodes (#181) | 213:tx:failed:true:true:block before 130290659 (mainnet27 root): Flow retired the mainnet24-26 access nodes (#181)',
+    'claim 6: each below-floor read is closed failed with the #181 reason and no request');
+  PERFORM _assert_eq((SELECT string_agg(nft_id || ':' || promote_outcome || ':' || (promoted_at IS NOT NULL), ',' ORDER BY nft_id)
+                        FROM public.topshot_sellback_walk_purchases WHERE nft_id IN ('211', '212', '213', '214')),
+    '211:buyer_fetch_failed:true,212:edition_read_failed:true,213:buyer_fetch_failed:true,214:collector_absent:false',
+    'claim 6: their rows are closed, visibly, never guessed; the at-root row waits for its read');
+  PERFORM _assert_eq((SELECT s.url FROM net._sent s JOIN public.topshot_collector_sale_requests q ON q.request_id = s.id WHERE q.nft_id = '214'),
+    'http://access-001.mainnet27.nodes.onflow.org:8070/v1/transaction_results/c214', 'claim 6: a read AT the root goes to mainnet27');
+  PERFORM _assert_eq(r->>'below_floor', '3', 'claim 6: three below-floor reads closed, and counted');
+  -- the at-root read is answered elsewhere; settle it so claim 5 sees nothing open
+  UPDATE public.topshot_collector_sale_requests SET status = 'done', finished_at = now() WHERE nft_id = '214';
+  UPDATE public.topshot_sellback_walk_purchases SET promote_outcome = 'collector_in_sales', promoted_at = now() WHERE nft_id = '214';
+
   -- ── claim 5: not done while rows are unclassified; done once the walk is gone and nothing is open
   PERFORM _assert_eq((SELECT count(*)::text FROM cron.job WHERE jobname = 'rpc-topshot-collector-sale-backfill'), '1', 'still scheduled while 205/206 are unclassified');
   DELETE FROM cron.job WHERE jobname = 'rpc-topshot-sellback-walk';
@@ -584,6 +646,7 @@ BEGIN
   PERFORM _assert_eq((SELECT promote_outcome FROM public.topshot_sellback_walk_purchases WHERE nft_id = '206'), 'collector_in_sales', 'the frontier row is classified once the walk has passed it');
   PERFORM _assert_eq((SELECT promote_outcome FROM public.topshot_sellback_walk_purchases WHERE nft_id = '210'), 'collector_in_sales', 'with the walk gone, a row inside the old 250-block margin is classified too (#167)');
   PERFORM _assert_eq((SELECT count(*)::text FROM cron.job WHERE jobname = 'rpc-topshot-collector-sale-backfill'), '0', 'lane unschedules itself when nothing is left (claim 5)');
+  PERFORM _assert_eq((SELECT count(*)::text FROM net._sent WHERE url ~ 'mainnet2[456]'), '0', 'no request in the whole run went to a retired node (claim 6)');
 END
 $do$;
 

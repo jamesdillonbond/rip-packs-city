@@ -7,7 +7,7 @@
 --       mid": ids sharing an interval share ONE call on the node serving mid;
 --       held -> hi = mid, not held -> lo = mid.
 --   B2. An interval straddling a spork end splits AT that end, on the ending
---       spork's node (mainnet24 with the pre-Cadence-1.0 script).
+--       spork's node (since 2026-11-08 pinned at mainnet27's end, 137,390,145).
 --   W1. At <= 250 blocks inside one spork, ONE TopShot.Withdraw events read of
 --       (lo, hi] names the delivery: the last withdraw of the id whose sender
 --       is not the wallet itself -- sender, tx, block height and time.
@@ -27,11 +27,16 @@
 --   U3. That handshake failure also parks the NODE for an hour
 --       (chain_arrival_dark_nodes): dispatch sends it nothing while dark, ONE
 --       canary call once the hour is up, and any HTTP answer clears it.
---   G1. An interval straddling 86,031,700 (the first height mainnet25 runs a
---       script at) splits AT it, never reading a script below it.
---   G2. An interval wholly inside that gap, wider than 250 blocks, is WALKED:
---       events of its top 250 blocks; no withdraw -> hi drops to the window's
---       bottom; a withdraw -> done with that delivery; the bottom -> done.
+--   G1. (retired 2026-11-08: mainnet25's script gap lies below the mainnet27
+--       root, so L1 closes such work; the split arm is no longer reachable.)
+--   G2. A walk reads events of its interval's top 250 blocks; no withdraw ->
+--       hi drops to the window's bottom; a withdraw -> done with that
+--       delivery; the bottom -> done. (Pinned on mainnet27 heights.)
+--   L1. (2026-11-08, #181) Nothing below the mainnet27 root (130,290,659) is
+--       dispatched: an interval wholly below it is closed 'failed' with the
+--       retire reason; one straddling it goes back to the floor check
+--       (run_chain_arrival_refloor's); a floor check below it is never sent;
+--       no request URL names the retired mainnet24/25/26 nodes.
 --   A1. A bisect's mid is the ALIGNED point of (lo, hi) (most trailing zero
 --       bits), and holdings calls group by (wallet, mid): one wallet's probes
 --       with different intervals share a call; each moves by its own interval.
@@ -45,7 +50,7 @@
 -- (supabase/migrations/20260929170000_audit_20260929_chain_arrivals_find_when_and_from_whom_a_wallet_got_a_moment.sql;
 -- seed_saved_wallet_chain_arrivals from
 -- 20260930190000_audit_20260930_chain_arrivals_seed_sold_moments.sql;
--- run_chain_arrival_lane from 20261010142634_audit_20261010_chain_arrival_lane_parks_a_dark_node.sql).
+-- run_chain_arrival_lane from 20261108171928_audit_20261108_run_chain_arrival_lane_floor_at_mainnet27.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -122,6 +127,12 @@ DECLARE
   -- its events there read fine. An interval splits here too, and one wholly
   -- inside that gap is WALKED by events from the top down, 250 blocks a call.
   v_dark_end constant bigint := 86031700;
+  -- 2026-11-08 (#181): the mainnet27 root. Flow retired the mainnet24/25/26
+  -- access nodes (no DNS record): no node reads a height below this, so the
+  -- lane never sends work there -- it closes it, or hands it to the floor check.
+  v_floor    constant bigint := 130290659;
+  -- the reason run_chain_arrival_refloor already gives a retired probe
+  v_retired_why constant text := 'arrived before 2025-10-22 (mainnet27 root): Flow retired the mainnet24-26 access nodes, so the arrival is not traceable (#181)';
   v_src_pre  constant text := 'import TopShot from 0x0b2a3299cc857e29
 pub fun main(owner: Address, ids: [UInt64]): [UInt64] {
   let out: [UInt64] = []
@@ -143,6 +154,7 @@ access(all) fun main(owner: Address, ids: [UInt64]): [UInt64] {
   v_collected int := 0; v_bisected int := 0; v_windows_done int := 0; v_found int := 0; v_not_found int := 0;
   v_failed int := 0; v_throttled int := 0; v_expired int := 0; v_dispatched int := 0;
   v_floor_held int := 0; v_floor_passed int := 0; v_unavailable int := 0; v_walked int := 0;
+  v_below_floor int := 0; v_refloored int := 0;
   v_last_error text := NULL;
 BEGIN
   IF NOT pg_try_advisory_xact_lock(hashtext('run_chain_arrival_lane')) THEN
@@ -331,6 +343,21 @@ BEGIN
    WHERE p.status = 'bisect' AND p.request_id IS NULL AND p.hi - p.lo > 250
      AND p.lo >= 85981134 AND p.hi <= v_dark_end;
 
+  -- 2026-11-08 (#181): below the mainnet27 root nothing is sent. An interval
+  -- wholly below it (the arrival lies in (lo, hi], hi < the root) is closed
+  -- 'failed' with the retire reason; one straddling it goes back to 'floor',
+  -- where run_chain_arrival_refloor reads it at the live root (not held ->
+  -- bisect above it; held -> retired). A call in flight lands first: its DNS
+  -- failure is a free retry, and the next run closes it here.
+  UPDATE public.chain_arrival_probes p
+     SET status = 'failed', last_error = v_retired_why, finished_at = now()
+   WHERE p.status IN ('bisect', 'window', 'walk') AND p.request_id IS NULL AND p.hi < v_floor;
+  GET DIAGNOSTICS v_below_floor = ROW_COUNT;
+  UPDATE public.chain_arrival_probes p
+     SET status = 'floor'
+   WHERE p.status IN ('bisect', 'window', 'walk') AND p.request_id IS NULL AND p.lo < v_floor - 1;
+  GET DIAGNOSTICS v_refloored = ROW_COUNT;
+
   -- (2) Dispatch. Pending probes group by (kind, wallet, lo, hi): one call per
   -- group of <= 1,000 ids (an events window is wallet-agnostic but is read per
   -- wallet to keep the bookkeeping simple). <= v_per_node calls per node.
@@ -356,6 +383,9 @@ BEGIN
                            ELSE (p.lo + p.hi) / 2 END) END AS mid
         FROM public.chain_arrival_probes p
        WHERE p.request_id IS NULL AND p.status IN ('floor', 'bisect', 'window', 'walk')
+         -- 2026-11-08 (#181): a floor check reads AT lo; below the mainnet27
+         -- root it is left to run_chain_arrival_refloor, never sent
+         AND (p.status <> 'floor' OR p.lo >= v_floor)
     ), keyed AS (
       -- 2026-09-30: a holdings script asks "held at mid?", which does not
       -- depend on the interval, so bisect and floor calls group by (wallet,
@@ -377,10 +407,8 @@ BEGIN
        GROUP BY status, wallet, gk_lo, gk_hi, mid, batch, chunk
     ), routed AS (
       SELECT c.*,
-             CASE WHEN c.at_h <= 85981134  THEN 'http://access-001.mainnet24.nodes.onflow.org:8070'
-                  WHEN c.at_h <= 88226266  THEN 'http://access-001.mainnet25.nodes.onflow.org:8070'
-                  WHEN c.at_h <= 130290658 THEN 'http://access-001.mainnet26.nodes.onflow.org:8070'
-                  WHEN c.at_h <= 137390145 THEN 'http://access-001.mainnet27.nodes.onflow.org:8070'
+             -- 2026-11-08 (#181): the mainnet24-26 arms are gone with their nodes
+             CASE WHEN c.at_h <= 137390145 THEN 'http://access-001.mainnet27.nodes.onflow.org:8070'
                   ELSE 'https://rest-mainnet.onflow.org' END AS node
         FROM calls c
     ), per_wallet AS (
@@ -449,6 +477,7 @@ BEGIN
                        'expired', v_expired, 'dispatched', v_dispatched,
                        'floor_held', v_floor_held, 'floor_passed', v_floor_passed,
                        'unavailable', v_unavailable, 'walked', v_walked,
+                       'below_floor', v_below_floor, 'refloored', v_refloored,
                        'dark_nodes', (SELECT count(*) FROM public.chain_arrival_dark_nodes WHERE cleared_at IS NULL))
   );
 
@@ -457,7 +486,8 @@ BEGIN
                             'failed', v_failed, 'throttled', v_throttled, 'expired', v_expired,
                             'dispatched', v_dispatched, 'floor_held', v_floor_held,
                             'floor_passed', v_floor_passed, 'unavailable', v_unavailable,
-                            'walked', v_walked, 'last_error', v_last_error);
+                            'walked', v_walked, 'below_floor', v_below_floor, 'refloored', v_refloored,
+                            'last_error', v_last_error);
 END;
 $function$;
 -- <<< END verbatim <<<
@@ -586,13 +616,15 @@ CREATE FUNCTION pg_temp.wd(p_id bigint, p_from text, p_tx text, p_idx int) RETUR
           'value', jsonb_build_object('type', 'Address', 'value', p_from)))))) ::text, 'UTF8'), 'base64'), E'\n', '')) $$;
 
 -- E1
+-- 2026-11-08: re-based onto mainnet27 / rest-mainnet heights (the mainnet24-26
+-- nodes are retired, #181; below the mainnet27 root nothing is dispatched, L1).
 DO $$
 BEGIN
-  PERFORM _assert_eq(public.enqueue_chain_arrivals('0x00000000000000AA', ARRAY[1, 2]::bigint[], 100000000, 100001000)::text, '2', 'two probes seeded, wallet folded');
-  PERFORM _assert_eq(public.enqueue_chain_arrivals('0x00000000000000aa', ARRAY[3]::bigint[], 85981000, 85990000)::text, '1', 'a straddling probe');
-  PERFORM _assert_eq(public.enqueue_chain_arrivals('0x00000000000000aa', ARRAY[4, 5, 6]::bigint[], 100000000, 100000200)::text, '3', 'a window probe');
+  PERFORM _assert_eq(public.enqueue_chain_arrivals('0x00000000000000AA', ARRAY[1, 2]::bigint[], 131000000, 131001000)::text, '2', 'two probes seeded, wallet folded');
+  PERFORM _assert_eq(public.enqueue_chain_arrivals('0x00000000000000aa', ARRAY[3]::bigint[], 137390000, 137400000)::text, '1', 'a straddling probe');
+  PERFORM _assert_eq(public.enqueue_chain_arrivals('0x00000000000000aa', ARRAY[4, 5, 6]::bigint[], 131000000, 131000200)::text, '3', 'a window probe');
   PERFORM _assert_eq(public.enqueue_chain_arrivals('0x00000000000000aa', ARRAY[7]::bigint[], 60000000, 100000000)::text, '0', 'E1: below the mainnet24 root refused');
-  PERFORM _assert_eq(public.enqueue_chain_arrivals('0x00000000000000aa', ARRAY[8]::bigint[], 100000500, 100000000)::text, '0', 'E1: inverted interval refused');
+  PERFORM _assert_eq(public.enqueue_chain_arrivals('0x00000000000000aa', ARRAY[8]::bigint[], 131000500, 131000000)::text, '0', 'E1: inverted interval refused');
 END $$;
 
 -- run 1: dispatch
@@ -604,20 +636,21 @@ BEGIN
   -- B1
   PERFORM _assert(pg_temp.req_of(1) = pg_temp.req_of(2), 'B1: ids sharing an interval share one call');
   PERFORM _assert((SELECT url FROM net.calls WHERE id = pg_temp.req_of(1))
-                  = 'http://access-001.mainnet26.nodes.onflow.org:8070/v1/scripts?block_height=100000768', 'B1: the ALIGNED point of (100000000, 100001000) on the mainnet26 node');
+                  = 'http://access-001.mainnet27.nodes.onflow.org:8070/v1/scripts?block_height=131000320', 'B1: the ALIGNED point of (131000000, 131001000) on the mainnet27 node');
   PERFORM _assert(pg_temp.call_ids(pg_temp.req_of(1)) = ARRAY[1, 2]::bigint[], 'B1: the call asks for both ids');
   PERFORM _assert(convert_from(decode((SELECT body->>'script' FROM net.calls WHERE id = pg_temp.req_of(1)), 'base64'), 'UTF8') LIKE '%access(all) fun main%',
-                  'B1: Cadence 1.0 on mainnet26');
+                  'B1: Cadence 1.0 on mainnet27');
   -- B2
   PERFORM _assert((SELECT url FROM net.calls WHERE id = pg_temp.req_of(3))
-                  = 'http://access-001.mainnet24.nodes.onflow.org:8070/v1/scripts?block_height=85981134', 'B2: split at mainnet24''s last height, on its node');
-  PERFORM _assert(convert_from(decode((SELECT body->>'script' FROM net.calls WHERE id = pg_temp.req_of(3)), 'base64'), 'UTF8') LIKE '%pub fun main%',
-                  'B2: the pre-Cadence-1.0 script on mainnet24');
+                  = 'http://access-001.mainnet27.nodes.onflow.org:8070/v1/scripts?block_height=137390145', 'B2: split at mainnet27''s last height, on its node');
+  PERFORM _assert(convert_from(decode((SELECT body->>'script' FROM net.calls WHERE id = pg_temp.req_of(3)), 'base64'), 'UTF8') LIKE '%access(all) fun main%',
+                  'B2: the Cadence 1.0 script on mainnet27');
   -- W1 dispatch
   PERFORM _assert((SELECT status FROM public.chain_arrival_probes WHERE nft_id = 4) = 'window', 'W1: 200 blocks inside one spork is a window');
   PERFORM _assert((SELECT url FROM net.calls WHERE id = pg_temp.req_of(4))
-                  = 'http://access-001.mainnet26.nodes.onflow.org:8070/v1/events?type=A.0b2a3299cc857e29.TopShot.Withdraw&start_height=100000001&end_height=100000200',
+                  = 'http://access-001.mainnet27.nodes.onflow.org:8070/v1/events?type=A.0b2a3299cc857e29.TopShot.Withdraw&start_height=131000001&end_height=131000200',
                   'W1: one events read of (lo, hi]');
+  PERFORM _assert((SELECT count(*) = 0 FROM net.calls WHERE url ~ 'mainnet2[456]'), 'L1: no call names a retired node');
 END $$;
 
 -- responses: the wallet held 1 (not 2) at the midpoint; 3 not held at the
@@ -628,11 +661,11 @@ SELECT pg_temp.plant_owned(pg_temp.req_of(3), ARRAY[]::bigint[]);
 INSERT INTO net._http_response (id, status_code, content)
 SELECT pg_temp.req_of(4), 200, jsonb_build_array(
   -- 5 changed hands between two others first: the LAST withdraw delivers it
-  jsonb_build_object('block_height', '100000020', 'block_timestamp', '2025-01-01T00:00:30Z',
+  jsonb_build_object('block_height', '131000020', 'block_timestamp', '2025-11-01T00:00:30Z',
     'events', jsonb_build_array(pg_temp.wd(5, '0x2222222222222222', 'TXEARLY', 0))),
-  jsonb_build_object('block_height', '100000050', 'block_timestamp', '2025-01-01T00:01:00Z',
+  jsonb_build_object('block_height', '131000050', 'block_timestamp', '2025-11-01T00:01:00Z',
     'events', jsonb_build_array(pg_temp.wd(4, '0xb5b717909b9c5ea5', 'TXC', 0), pg_temp.wd(5, '0x1111111111111111', 'TXS', 1))),
-  jsonb_build_object('block_height', '100000150', 'block_timestamp', '2025-01-01T00:02:30Z',
+  jsonb_build_object('block_height', '131000150', 'block_timestamp', '2025-11-01T00:02:30Z',
     'events', jsonb_build_array(pg_temp.wd(4, '0x00000000000000aa', 'TXOUT', 0)))
 )::text;
 
@@ -640,11 +673,13 @@ DO $$
 DECLARE v jsonb;
 BEGIN
   v := public.run_chain_arrival_lane();
-  PERFORM _assert((SELECT lo = 100000000 AND hi = 100000768 FROM public.chain_arrival_probes WHERE nft_id = 1), 'B1: held at mid -> hi = mid');
-  PERFORM _assert((SELECT lo = 100000768 AND hi = 100001000 FROM public.chain_arrival_probes WHERE nft_id = 2), 'B1: not held -> lo = mid');
-  PERFORM _assert((SELECT lo = 85981134 AND hi = 85990000 FROM public.chain_arrival_probes WHERE nft_id = 3), 'B2: after the split the interval lies in mainnet25');
-  PERFORM _assert((SELECT status = 'done' AND from_address = '0xb5b717909b9c5ea5' AND tx_id = 'TXC' AND arrived_height = 100000050
-                          AND arrived_at = '2025-01-01 00:01:00+00'
+  PERFORM _assert((SELECT lo = 131000000 AND hi = 131000320 FROM public.chain_arrival_probes WHERE nft_id = 1), 'B1: held at mid -> hi = mid');
+  PERFORM _assert((SELECT lo = 131000320 AND hi = 131001000 FROM public.chain_arrival_probes WHERE nft_id = 2), 'B1: not held -> lo = mid');
+  PERFORM _assert((SELECT lo = 137390145 AND hi = 137400000 FROM public.chain_arrival_probes WHERE nft_id = 3), 'B2: after the split the interval lies past mainnet27');
+  PERFORM _assert((SELECT url FROM net.calls WHERE id = pg_temp.req_of(3)) LIKE 'https://rest-mainnet.onflow.org/v1/scripts?block_height=%',
+                  'B2: and is read on rest-mainnet');
+  PERFORM _assert((SELECT status = 'done' AND from_address = '0xb5b717909b9c5ea5' AND tx_id = 'TXC' AND arrived_height = 131000050
+                          AND arrived_at = '2025-11-01 00:01:00+00'
                      FROM public.chain_arrival_probes WHERE nft_id = 4),
                   'W1: the delivery is the custodial withdraw, never the wallet''s own later withdraw');
   PERFORM _assert((SELECT status = 'done' AND from_address = '0x1111111111111111' AND tx_id = 'TXS' FROM public.chain_arrival_probes WHERE nft_id = 5),
@@ -654,6 +689,7 @@ BEGIN
   PERFORM _assert_eq(v->>'found', '2', 'two deliveries found');
   PERFORM _assert_eq(v->>'not_found', '1', 'one without a withdraw');
   PERFORM _assert((v->>'ok')::boolean, 'a clean run is ok');
+  PERFORM _assert_eq(v->>'below_floor', '0', 'L1: nothing above the root is closed');
   PERFORM _assert((SELECT count(*) = 0 FROM public.chain_arrival_requests WHERE request_id IN (SELECT id FROM net._http_response)),
                   'collected calls are cleared');
 END $$;
@@ -716,18 +752,18 @@ BEGIN
                   'U3: a cleared node gets its full dispatch again');
 END $$;
 
--- F1 / F2: a floor probe on mainnet26's node beside a pending bisection there
+-- F1 / F2: a floor probe on mainnet27's node beside a pending bisection there
 DELETE FROM net.calls;
 UPDATE public.chain_arrival_probes SET request_id = NULL WHERE request_id IS NOT NULL;
 DELETE FROM public.chain_arrival_requests;
 DELETE FROM public.chain_arrival_probes WHERE status IN ('bisect', 'window');
 INSERT INTO public.chain_arrival_probes (wallet, nft_id, lo, hi, status) VALUES
-  ('0x00000000000000bb', 20, 100000000, 166000000, 'floor'),
-  ('0x00000000000000bb', 21, 100000000, 166000000, 'floor');
+  ('0x00000000000000bb', 20, 131000000, 166000000, 'floor'),
+  ('0x00000000000000bb', 21, 131000000, 166000000, 'floor');
 -- 24 narrower bisections on the same node: without floor priority they fill
--- mainnet26's cap of 24 and the floor check waits
+-- mainnet27's cap of 24 and the floor check waits
 INSERT INTO public.chain_arrival_probes (wallet, nft_id, lo, hi, status)
-SELECT '0x00000000000000bb', 900 + g, 100000000 + g * 10000, 100000000 + g * 10000 + 5000, 'bisect' FROM generate_series(1, 24) g;
+SELECT '0x00000000000000bb', 900 + g, 131000000 + g * 10000, 131000000 + g * 10000 + 5000, 'bisect' FROM generate_series(1, 24) g;
 DO $$
 DECLARE v jsonb; v_req bigint;
 BEGIN
@@ -735,11 +771,11 @@ BEGIN
   SELECT request_id INTO v_req FROM public.chain_arrival_probes WHERE wallet = '0x00000000000000bb' AND nft_id = 20;
   PERFORM _assert(v_req IS NOT NULL AND v_req = (SELECT request_id FROM public.chain_arrival_probes WHERE wallet = '0x00000000000000bb' AND nft_id = 21),
                   'F1: the floor probes share one call');
-  PERFORM _assert((SELECT kind = 'floor' AND height = 100000000 FROM public.chain_arrival_requests WHERE request_id = v_req),
+  PERFORM _assert((SELECT kind = 'floor' AND height = 131000000 FROM public.chain_arrival_requests WHERE request_id = v_req),
                   'F1: a floor call reads AT lo');
-  PERFORM _assert((SELECT url FROM net.calls WHERE id = v_req) = 'http://access-001.mainnet26.nodes.onflow.org:8070/v1/scripts?block_height=100000000',
+  PERFORM _assert((SELECT url FROM net.calls WHERE id = v_req) = 'http://access-001.mainnet27.nodes.onflow.org:8070/v1/scripts?block_height=131000000',
                   'F1: on the node serving lo');
-  PERFORM _assert((SELECT count(*) = 24 FROM net.calls WHERE url LIKE 'http://access-001.mainnet26.%'), 'F2: the node''s cap of 24 binds');
+  PERFORM _assert((SELECT count(*) = 24 FROM net.calls WHERE url LIKE 'http://access-001.mainnet27.%'), 'F2: the node''s cap of 24 binds');
   PERFORM _assert(v_req IS NOT NULL, 'F2: the floor check is inside the cap, ahead of narrower bisections');
   INSERT INTO net._http_response (id, status_code, content)
   VALUES (v_req, 200, to_jsonb(translate(encode(convert_to('{"type":"Array","value":[{"type":"UInt64","value":"20"}]}', 'UTF8'), 'base64'), E'\n', ''))::text);
@@ -747,7 +783,7 @@ BEGIN
   PERFORM _assert((SELECT status = 'done' AND last_error LIKE 'held at the floor%' AND from_address IS NULL
                      FROM public.chain_arrival_probes WHERE wallet = '0x00000000000000bb' AND nft_id = 20),
                   'F1: held at the floor -> done, saying so');
-  PERFORM _assert((SELECT status = 'bisect' AND lo = 100000000 AND hi = 166000000
+  PERFORM _assert((SELECT status = 'bisect' AND lo = 131000000 AND hi = 166000000
                      FROM public.chain_arrival_probes WHERE wallet = '0x00000000000000bb' AND nft_id = 21),
                   'F1: not held at the floor -> bisected over the same interval');
   PERFORM _assert_eq(v->>'floor_held', '1', 'F1: counted');
@@ -759,7 +795,7 @@ DELETE FROM net.calls;
 DELETE FROM public.chain_arrival_probes;
 DELETE FROM public.chain_arrival_requests;
 INSERT INTO public.chain_arrival_probes (wallet, nft_id, lo, hi, status)
-SELECT '0x00000000000000ee', g, 100000000, 166000000, 'floor' FROM generate_series(1, 1200) g;
+SELECT '0x00000000000000ee', g, 131000000, 166000000, 'floor' FROM generate_series(1, 1200) g;
 DO $$
 BEGIN
   PERFORM public.run_chain_arrival_lane();
@@ -771,18 +807,18 @@ BEGIN
   PERFORM _assert((SELECT max(cardinality(pg_temp.call_ids(id))) = 500 FROM net.calls), 'R1: no call carries more than 500 ids');
 END $$;
 
--- F3: wallet A holds 30 narrow mainnet26 intervals, wallet B one wide one
+-- F3: wallet A holds 30 narrow mainnet27 intervals, wallet B one wide one
 DELETE FROM net.calls;
 DELETE FROM public.chain_arrival_probes;
 DELETE FROM public.chain_arrival_requests;
 INSERT INTO public.chain_arrival_probes (wallet, nft_id, lo, hi, status)
-SELECT '0x000000000000000a', g, 100000000 + g * 10000, 100000000 + g * 10000 + 5000, 'bisect' FROM generate_series(1, 30) g;
+SELECT '0x000000000000000a', g, 131000000 + g * 10000, 131000000 + g * 10000 + 5000, 'bisect' FROM generate_series(1, 30) g;
 INSERT INTO public.chain_arrival_probes (wallet, nft_id, lo, hi, status)
-VALUES ('0x000000000000000b', 99, 100000000, 129000000, 'bisect');
+VALUES ('0x000000000000000b', 99, 131000000, 137000000, 'bisect');
 DO $$
 BEGIN
   PERFORM public.run_chain_arrival_lane();
-  PERFORM _assert((SELECT count(*) = 24 FROM net.calls WHERE url LIKE 'http://access-001.mainnet26.%'), 'F3: the cap binds');
+  PERFORM _assert((SELECT count(*) = 24 FROM net.calls WHERE url LIKE 'http://access-001.mainnet27.%'), 'F3: the cap binds');
   PERFORM _assert((SELECT request_id IS NOT NULL FROM public.chain_arrival_probes WHERE wallet = '0x000000000000000b'),
                   'F3: the wide interval of the other wallet is dispatched despite 30 narrower ones');
 END $$;
@@ -791,16 +827,16 @@ END $$;
 -- (sold moments: each hi is just before its own sale) meet at one aligned
 -- height and share ONE call; each then moves by its OWN interval. The same
 -- interval in another wallet is its own call. (lo + hi) / 2 would have made
--- three calls here: 100,350,000 / 100,450,000 / 100,450,000 on differing (lo, hi).
+-- three calls here: 134,350,000 / 134,450,000 / 134,450,000 on differing (lo, hi).
 DELETE FROM net.calls;
 DELETE FROM net._http_response;
 DELETE FROM public.chain_arrival_probes;
 DELETE FROM public.chain_arrival_requests;
 INSERT INTO public.chain_arrival_probes (wallet, nft_id, lo, hi, status) VALUES
-  ('0x00000000000000aa', 201, 100000000, 100700000, 'bisect'),
-  ('0x00000000000000aa', 202, 100000000, 100900000, 'bisect'),
-  ('0x00000000000000aa', 203, 100100000, 100800000, 'bisect'),
-  ('0x00000000000000cc', 204, 100000000, 100700000, 'bisect');
+  ('0x00000000000000aa', 201, 134000000, 134700000, 'bisect'),
+  ('0x00000000000000aa', 202, 134000000, 134900000, 'bisect'),
+  ('0x00000000000000aa', 203, 134100000, 134800000, 'bisect'),
+  ('0x00000000000000cc', 204, 134000000, 134700000, 'bisect');
 DO $$
 BEGIN
   PERFORM public.run_chain_arrival_lane();
@@ -808,8 +844,8 @@ BEGIN
                   'A1: three different intervals of one wallet share one call');
   PERFORM _assert(pg_temp.call_ids(pg_temp.req_of(201)) = ARRAY[201, 202, 203]::bigint[], 'A1: the call asks for all three ids');
   PERFORM _assert((SELECT url FROM net.calls WHERE id = pg_temp.req_of(201))
-                  = 'http://access-001.mainnet26.nodes.onflow.org:8070/v1/scripts?block_height=100663296',
-                  'A1: at the aligned height 100,663,296 (= 2^26 * 1.5), inside every interval');
+                  = 'http://access-001.mainnet27.nodes.onflow.org:8070/v1/scripts?block_height=134217728',
+                  'A1: at the aligned height 134,217,728 (= 2^27), inside every interval');
   PERFORM _assert((SELECT request_id FROM public.chain_arrival_probes WHERE wallet = '0x00000000000000cc') IS DISTINCT FROM pg_temp.req_of(201),
                   'A1: another wallet never rides the call');
   PERFORM _assert((SELECT count(*) = 2 FROM net.calls), 'A1: two calls in all, not four');
@@ -818,12 +854,14 @@ SELECT pg_temp.plant_owned(pg_temp.req_of(201), ARRAY[201]::bigint[]);
 DO $$
 BEGIN
   PERFORM public.run_chain_arrival_lane();
-  PERFORM _assert((SELECT lo = 100000000 AND hi = 100663296 FROM public.chain_arrival_probes WHERE nft_id = 201), 'A1: held -> hi = the aligned height');
-  PERFORM _assert((SELECT lo = 100663296 AND hi = 100900000 FROM public.chain_arrival_probes WHERE nft_id = 202), 'A1: not held -> lo = it, own hi kept');
-  PERFORM _assert((SELECT lo = 100663296 AND hi = 100800000 FROM public.chain_arrival_probes WHERE nft_id = 203), 'A1: not held -> lo = it, own hi kept (different lo before)');
+  PERFORM _assert((SELECT lo = 134000000 AND hi = 134217728 FROM public.chain_arrival_probes WHERE nft_id = 201), 'A1: held -> hi = the aligned height');
+  PERFORM _assert((SELECT lo = 134217728 AND hi = 134900000 FROM public.chain_arrival_probes WHERE nft_id = 202), 'A1: not held -> lo = it, own hi kept');
+  PERFORM _assert((SELECT lo = 134217728 AND hi = 134800000 FROM public.chain_arrival_probes WHERE nft_id = 203), 'A1: not held -> lo = it, own hi kept (different lo before)');
 END $$;
 
--- U1 / G1 / G2: mainnet25's script gap (85,981,135..86,031,699)
+-- U1 / G2: walks. Walks are created only inside mainnet25's script gap, now
+-- below the mainnet27 root (L1 closes them); the walk mechanics are pinned on
+-- walk probes planted on mainnet27 heights.
 DELETE FROM net.calls;
 DELETE FROM public.chain_arrival_probes;
 DELETE FROM public.chain_arrival_requests;
@@ -832,65 +870,58 @@ CREATE FUNCTION pg_temp.req_dd(p_id bigint) RETURNS bigint LANGUAGE sql AS $$
 CREATE FUNCTION pg_temp.plant_events(p_req bigint, p_blocks jsonb) RETURNS void LANGUAGE sql AS $$
   INSERT INTO net._http_response (id, status_code, content) VALUES (p_req, 200, p_blocks::text) $$;
 INSERT INTO public.chain_arrival_probes (wallet, nft_id, lo, hi, status) VALUES
-  ('0x00000000000000dd', 1, 85981134, 86051294, 'bisect'),   -- the 0x28be… interval
-  ('0x00000000000000dd', 2, 85981134, 85982000, 'bisect'),   -- inside the gap, 866 wide
-  ('0x00000000000000dd', 3, 85981134, 85981500, 'bisect');   -- inside the gap, 366 wide
+  ('0x00000000000000dd', 1, 131000000, 131050000, 'walk'),
+  ('0x00000000000000dd', 2, 131000000, 131000866, 'walk'),   -- 866 wide
+  ('0x00000000000000dd', 3, 131000000, 131000366, 'walk');   -- 366 wide
 DO $$
 DECLARE v jsonb;
 BEGIN
   v := public.run_chain_arrival_lane();
-  PERFORM _assert((SELECT url FROM net.calls WHERE id = pg_temp.req_dd(1))
-                  = 'http://access-001.mainnet25.nodes.onflow.org:8070/v1/scripts?block_height=86031700',
-                  'G1: an interval straddling the gap''s end splits AT 86,031,700, never at its midpoint 86,016,214');
-  PERFORM _assert((SELECT status = 'walk' FROM public.chain_arrival_probes WHERE wallet = '0x00000000000000dd' AND nft_id = 2),
-                  'G2: wholly inside the gap and wider than 250 -> walk');
   PERFORM _assert((SELECT url FROM net.calls WHERE id = pg_temp.req_dd(2))
-                  = 'http://access-001.mainnet25.nodes.onflow.org:8070/v1/events?type=A.0b2a3299cc857e29.TopShot.Withdraw&start_height=85981751&end_height=85982000',
-                  'G2: a walk reads the TOP 250 blocks by events, on mainnet25');
-  PERFORM _assert((SELECT kind = 'walk' AND lo = 85981750 AND hi = 85982000 FROM public.chain_arrival_requests WHERE request_id = pg_temp.req_dd(2)),
+                  = 'http://access-001.mainnet27.nodes.onflow.org:8070/v1/events?type=A.0b2a3299cc857e29.TopShot.Withdraw&start_height=131000617&end_height=131000866',
+                  'G2: a walk reads the TOP 250 blocks by events, on mainnet27');
+  PERFORM _assert((SELECT kind = 'walk' AND lo = 131000616 AND hi = 131000866 FROM public.chain_arrival_requests WHERE request_id = pg_temp.req_dd(2)),
                   'G2: the call records the window it read');
-  PERFORM _assert((SELECT count(*) = 0 FROM net.calls WHERE url LIKE '%scripts?block_height=8598%' OR url ~ 'scripts\?block_height=8601'
-                                                         OR url ~ 'scripts\?block_height=86031[0-6]'),
-                  'G1: no script is sent into the gap');
+  PERFORM _assert_eq(v->>'dispatched', '3', 'G2: one read per walk');
 END $$;
 
--- 1 held at 86,031,700 -> (85981134, 86031700], all gap; 2 and 3: no withdraw on top
-SELECT pg_temp.plant_owned(pg_temp.req_dd(1), ARRAY[1]::bigint[]);
+-- 1, 2: no withdraw on top; 3: the wallet's own withdraw on top
+SELECT pg_temp.plant_events(pg_temp.req_dd(1), '[]'::jsonb);
 SELECT pg_temp.plant_events(pg_temp.req_dd(2), '[]'::jsonb);
-SELECT pg_temp.plant_events(pg_temp.req_dd(3), jsonb_build_array(jsonb_build_object('block_height', '85981400',
-  'block_timestamp', '2024-09-01T00:00:00Z', 'events', jsonb_build_array(pg_temp.wd(3, '0x00000000000000dd', 'TXSELF', 0)))));
+SELECT pg_temp.plant_events(pg_temp.req_dd(3), jsonb_build_array(jsonb_build_object('block_height', '131000300',
+  'block_timestamp', '2025-11-01T00:00:00Z', 'events', jsonb_build_array(pg_temp.wd(3, '0x00000000000000dd', 'TXSELF', 0)))));
 DO $$
 DECLARE v jsonb;
 BEGIN
   v := public.run_chain_arrival_lane();
-  PERFORM _assert((SELECT status = 'walk' AND lo = 85981134 AND hi = 86031700 FROM public.chain_arrival_probes WHERE wallet = '0x00000000000000dd' AND nft_id = 1),
-                  'G1: held at the split -> the gap remains, and is walked');
+  PERFORM _assert((SELECT status = 'walk' AND lo = 131000000 AND hi = 131049750 FROM public.chain_arrival_probes WHERE wallet = '0x00000000000000dd' AND nft_id = 1),
+                  'G2: no withdraw on top -> the walk continues below');
   PERFORM _assert((SELECT url FROM net.calls WHERE id = pg_temp.req_dd(1))
-                  = 'http://access-001.mainnet25.nodes.onflow.org:8070/v1/events?type=A.0b2a3299cc857e29.TopShot.Withdraw&start_height=86031451&end_height=86031700',
-                  'G1: the walk starts at the split');
-  PERFORM _assert((SELECT status = 'walk' AND hi = 85981750 AND finished_at IS NULL AND from_address IS NULL
+                  = 'http://access-001.mainnet27.nodes.onflow.org:8070/v1/events?type=A.0b2a3299cc857e29.TopShot.Withdraw&start_height=131049501&end_height=131049750',
+                  'G2: the next step reads the 250 blocks below');
+  PERFORM _assert((SELECT status = 'walk' AND hi = 131000616 AND finished_at IS NULL AND from_address IS NULL
                      FROM public.chain_arrival_probes WHERE wallet = '0x00000000000000dd' AND nft_id = 2),
                   'G2: no withdraw on top -> hi drops to the window''s bottom, not done');
-  PERFORM _assert((SELECT status = 'walk' AND hi = 85981250 AND from_address IS NULL
+  PERFORM _assert((SELECT status = 'walk' AND hi = 131000116 AND from_address IS NULL
                      FROM public.chain_arrival_probes WHERE wallet = '0x00000000000000dd' AND nft_id = 3),
                   'G2: the wallet''s OWN withdraw is not a delivery');
-  PERFORM _assert_eq(v->>'walked', '2', 'G2: two walk reads collected');
+  PERFORM _assert_eq(v->>'walked', '3', 'G2: three walk reads collected');
   PERFORM _assert_eq(v->>'not_found', '0', 'G2: a walk step concludes nothing');
 END $$;
 
 -- 2: a seller's withdraw one step down; 3: nothing at the bottom; 1: a 503
-SELECT pg_temp.plant_events(pg_temp.req_dd(2), jsonb_build_array(jsonb_build_object('block_height', '85981700',
-  'block_timestamp', '2024-09-01T01:00:00Z', 'events', jsonb_build_array(pg_temp.wd(2, '0x3333333333333333', 'TXW', 2)))));
+SELECT pg_temp.plant_events(pg_temp.req_dd(2), jsonb_build_array(jsonb_build_object('block_height', '131000500',
+  'block_timestamp', '2025-11-01T01:00:00Z', 'events', jsonb_build_array(pg_temp.wd(2, '0x3333333333333333', 'TXW', 2)))));
 SELECT pg_temp.plant_events(pg_temp.req_dd(3), '[]'::jsonb);
 INSERT INTO net._http_response (id, status_code, content)
 VALUES (pg_temp.req_dd(1), 503, 'upstream connect error or disconnect/reset before headers. reset reason: connection failure');
 DO $$
 DECLARE v jsonb;
 BEGIN
-  PERFORM _assert((SELECT lo = 85981134 AND hi = 85981250 FROM public.chain_arrival_requests WHERE request_id = pg_temp.req_dd(3)),
+  PERFORM _assert((SELECT lo = 131000000 AND hi = 131000116 FROM public.chain_arrival_requests WHERE request_id = pg_temp.req_dd(3)),
                   'G2: the last step is clamped at lo');
   v := public.run_chain_arrival_lane();
-  PERFORM _assert((SELECT status = 'done' AND from_address = '0x3333333333333333' AND tx_id = 'TXW' AND arrived_height = 85981700
+  PERFORM _assert((SELECT status = 'done' AND from_address = '0x3333333333333333' AND tx_id = 'TXW' AND arrived_height = 131000500
                      FROM public.chain_arrival_probes WHERE wallet = '0x00000000000000dd' AND nft_id = 2),
                   'G2: a withdraw found walking down is the delivery');
   PERFORM _assert((SELECT status = 'done' AND from_address IS NULL AND last_error LIKE 'no TopShot.Withdraw%'
@@ -901,6 +932,64 @@ BEGIN
                   'U1: a 503 costs no attempt and is re-dispatched');
   PERFORM _assert((v->>'ok')::boolean AND (v->>'unavailable')::int = 1 AND (v->>'failed')::int = 0,
                   'U1: an outage is not a failed read');
+END $$;
+
+-- L1 (2026-11-08, #181): below the mainnet27 root (130,290,659) no node
+-- answers. Work there is never dispatched: an interval wholly below it is
+-- closed 'failed' with the retire reason; one straddling it goes back to the
+-- floor check (run_chain_arrival_refloor's); a floor check below it stays put;
+-- a call already in flight lands (DNS failure: a free retry) and is closed in
+-- the same run. Work AT the root (lo = 130,290,658) is the control: dispatched,
+-- on mainnet27.
+DELETE FROM net.calls;
+DELETE FROM net._http_response;
+DELETE FROM public.chain_arrival_probes;
+DELETE FROM public.chain_arrival_requests;
+DELETE FROM public.chain_arrival_dark_nodes;
+INSERT INTO public.chain_arrival_probes (wallet, nft_id, lo, hi, status, request_id) VALUES
+  ('0x00000000000000ff', 11, 100000000, 100001000, 'bisect', NULL),   -- wholly below (was mainnet26)
+  ('0x00000000000000ff', 12, 100000000, 100000200, 'window', NULL),   -- wholly below
+  ('0x00000000000000ff', 13, 85981134, 85982000, 'walk', NULL),       -- wholly below (mainnet25's gap)
+  ('0x00000000000000ff', 14, 130000000, 131000000, 'bisect', NULL),   -- straddles the root
+  ('0x00000000000000ff', 15, 65300000, 166000000, 'floor', NULL),     -- a seeded floor check (mainnet24 root)
+  ('0x00000000000000ff', 16, 130290658, 130300000, 'bisect', NULL),   -- control: at the root
+  ('0x00000000000000ff', 17, 130290658, 130290800, 'window', NULL),   -- control: at the root
+  ('0x00000000000000ff', 18, 100000000, 100001000, 'bisect', 7777);   -- in flight to mainnet26
+INSERT INTO public.chain_arrival_requests (request_id, kind, wallet, lo, hi, height, node)
+VALUES (7777, 'owned', '0x00000000000000ff', 100000000, 100001000, 100000768, 'http://access-001.mainnet26.nodes.onflow.org:8070');
+INSERT INTO net._http_response (id, status_code, content, error_msg)
+VALUES (7777, NULL, NULL, 'Couldn''t resolve host name');
+DO $$
+DECLARE v jsonb; v_why constant text := 'arrived before 2025-10-22 (mainnet27 root): Flow retired the mainnet24-26 access nodes, so the arrival is not traceable (#181)';
+BEGIN
+  v := public.run_chain_arrival_lane();
+  PERFORM _assert((SELECT count(*) = 4 FROM public.chain_arrival_probes
+                    WHERE wallet = '0x00000000000000ff' AND nft_id IN (11, 12, 13, 18)
+                      AND status = 'failed' AND last_error = v_why AND finished_at IS NOT NULL AND request_id IS NULL),
+                  'L1: below the root -> failed with the retire reason, never dispatched (in-flight one after its DNS failure lands)');
+  PERFORM _assert((SELECT status = 'floor' AND lo = 130000000 AND hi = 131000000 AND request_id IS NULL
+                     FROM public.chain_arrival_probes WHERE wallet = '0x00000000000000ff' AND nft_id = 14),
+                  'L1: straddling the root -> back to the floor check, not dispatched');
+  PERFORM _assert((SELECT status = 'floor' AND request_id IS NULL
+                     FROM public.chain_arrival_probes WHERE wallet = '0x00000000000000ff' AND nft_id = 15),
+                  'L1: a floor check below the root is never sent');
+  PERFORM _assert((SELECT count(*) = 2 FROM public.chain_arrival_probes p JOIN net.calls c ON c.id = p.request_id
+                    WHERE p.wallet = '0x00000000000000ff' AND p.nft_id IN (16, 17)
+                      AND c.url LIKE 'http://access-001.mainnet27.nodes.onflow.org:8070/%'),
+                  'L1 control: work at the root is dispatched, on mainnet27');
+  PERFORM _assert((SELECT url FROM net.calls c JOIN public.chain_arrival_probes p ON p.request_id = c.id
+                    WHERE p.wallet = '0x00000000000000ff' AND p.nft_id = 17)
+                  = 'http://access-001.mainnet27.nodes.onflow.org:8070/v1/events?type=A.0b2a3299cc857e29.TopShot.Withdraw&start_height=130290659&end_height=130290800',
+                  'L1 control: a window from the root reads from the root');
+  PERFORM _assert_eq(v->>'dispatched', '2', 'L1: only the two control calls');
+  PERFORM _assert((SELECT count(*) = 0 FROM net.calls WHERE url ~ 'mainnet2[456]'), 'L1: no call names a retired node');
+  PERFORM _assert_eq(v->>'below_floor', '4', 'L1: four closed, counted');
+  PERFORM _assert_eq(v->>'refloored', '1', 'L1: one handed back to the floor check, counted');
+  PERFORM _assert((v->>'ok')::boolean, 'L1: retiring unreadable work is not a failed run');
+  -- and again: nothing below the root is ever sent
+  v := public.run_chain_arrival_lane();
+  PERFORM _assert_eq(v->>'dispatched', '0', 'L1: a second run sends nothing (controls in flight, the rest closed or parked)');
+  PERFORM _assert((SELECT count(*) = 0 FROM net.calls WHERE url ~ 'mainnet2[456]'), 'L1: still no call names a retired node');
 END $$;
 DELETE FROM public.chain_arrival_probes;
 

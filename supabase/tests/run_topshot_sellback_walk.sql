@@ -9,10 +9,15 @@
 --   4. never more than p_max_inflight requests are outstanding;
 --   5. (2026-10-09) a 200 page carrying an event with no id is NOT read as complete: nothing from it
 --      is kept, it is re-queued with attempts+1 and the reason, the run does not abort, and a clean
---      re-fetch then lands the page.
+--      re-fetch then lands the page;
+--   6. (2026-11-08, #181) a page lying entirely at or below block 130,290,658 (before the mainnet27
+--      root; Flow retired the mainnet24-26 access nodes) is closed as failed with the reason and
+--      NEVER issued - a queued one and an in-flight one whose DNS failure landed; a page straddling
+--      the root is read from the root only, on mainnet27, and the closed page carries the reason;
+--      no request ever goes to a mainnet24/25/26 node.
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20261009162520_audit_20261009_sellback_walk_retries_a_page_with_idless_events.sql).
+-- (supabase/migrations/20261108171930_audit_20261108_run_topshot_sellback_walk_floor_at_mainnet27.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 
 BEGIN;
@@ -20,8 +25,10 @@ BEGIN;
 CREATE SCHEMA IF NOT EXISTS net;
 CREATE TABLE net._http_response (id bigint PRIMARY KEY, status_code int, content text, timed_out boolean, error_msg text);
 CREATE SEQUENCE net._req_seq START 1000;
+-- 2026-11-08: the stub records each URL (claim 6 asserts where requests go).
+CREATE TABLE net._sent (id bigint, url text);
 CREATE FUNCTION net.http_get(url text, params jsonb, headers jsonb, timeout_milliseconds int) RETURNS bigint
-  LANGUAGE sql AS $$ SELECT nextval('net._req_seq') $$;
+  LANGUAGE sql AS $$ INSERT INTO net._sent VALUES (nextval('net._req_seq'), url) RETURNING id $$;
 CREATE SCHEMA IF NOT EXISTS cron;
 CREATE TABLE cron.job (jobname text);
 CREATE FUNCTION cron.unschedule(text) RETURNS boolean LANGUAGE sql AS $$ DELETE FROM cron.job WHERE jobname = $1 RETURNING true $$;
@@ -50,7 +57,11 @@ AS $function$
 DECLARE
   c_buyback   CONSTANT text := '0xe1f2a091f7bb5245';
   c_ts        CONSTANT uuid := '95f28a17-224a-4025-96ad-adf8a4c63bfd';
+  -- 2026-11-08 (#181): the last block before the mainnet27 root (130,290,659). Flow retired the
+  -- mainnet24-26 access nodes (no DNS record), so no node can read at or below this height:
+  -- such work is closed with c_floor_reason, never dispatched.
   c_m26_end   CONSTANT bigint := 130290658;
+  c_floor_reason CONSTANT text := 'block before 130290659 (mainnet27 root): Flow retired the mainnet24-26 access nodes (#181)';
   v_started   timestamptz := clock_timestamp();
   v_state     public.topshot_sellback_walk_state%ROWTYPE;
   v_harvested int := 0;
@@ -66,6 +77,7 @@ DECLARE
   v_err       text;
   v_noid      int := 0;
   v_noid_pages int := 0;
+  v_below_floor int := 0;
 BEGIN
   BEGIN
     SELECT * INTO v_state FROM public.topshot_sellback_walk_state WHERE id = 1 FOR UPDATE;
@@ -121,8 +133,11 @@ BEGIN
            WHERE d.to_addr = c_buyback
           ON CONFLICT (tx, nft_id) DO NOTHING;
         END IF;
+        -- 2026-11-08 (#181): a page straddling the mainnet27 root was read from the root only;
+        -- its blocks before the root are unreadable, and the closed page says so.
         UPDATE public.topshot_sellback_walk_pages
-           SET done_at = now(), last_status = 200
+           SET done_at = now(), last_status = 200,
+               last_error = CASE WHEN start_height <= c_m26_end THEN c_floor_reason ELSE last_error END
          WHERE kind = v_page.kind AND start_height = v_page.start_height;
         v_harvested := v_harvested + 1;
       ELSE
@@ -164,6 +179,16 @@ BEGIN
        WHERE id = 1;
     END IF;
 
+    -- 2026-11-08 (#181): a queued page lying entirely at or below c_m26_end has no node left to
+    -- read it (an in-flight one's DNS failure re-queues it first). It is closed as failed with
+    -- c_floor_reason (counted in failed_pages), never issued. A page straddling the root is
+    -- issued from the root (below).
+    UPDATE public.topshot_sellback_walk_pages
+       SET done_at = now(), failed = true, last_error = c_floor_reason
+     WHERE done_at IS NULL AND req_id IS NULL AND start_height + 249 <= c_m26_end;
+    GET DIAGNOSTICS v_below_floor = ROW_COUNT;
+    v_failed := v_failed + v_below_floor;
+
     SELECT count(*) INTO v_inflight FROM public.topshot_sellback_walk_pages WHERE done_at IS NULL AND req_id IS NOT NULL;
     v_room := GREATEST(p_max_inflight - v_inflight, 0);
 
@@ -177,14 +202,13 @@ BEGIN
       UPDATE public.topshot_sellback_walk_pages p
          SET req_id = net.http_get(
                format('%s/v1/events?type=%s&start_height=%s&end_height=%s',
-                      CASE WHEN p.start_height <= c_m26_end THEN 'http://access-001.mainnet26.nodes.onflow.org:8070'
-                           ELSE 'http://access-001.mainnet27.nodes.onflow.org:8070' END,
+                      'http://access-001.mainnet27.nodes.onflow.org:8070',
                       CASE p.kind WHEN 'purchase' THEN 'A.c1e4f4f4c4257510.TopShotMarketV3.MomentPurchased'
                                   ELSE 'A.0b2a3299cc857e29.TopShot.Deposit' END,
-                      p.start_height,
-                      -- a page never straddles the spork boundary: each node only knows its own blocks
-                      CASE WHEN p.start_height <= c_m26_end THEN LEAST(p.start_height + 249, c_m26_end)
-                           ELSE p.start_height + 249 END),
+                      -- 2026-11-08 (#181): a page straddling the mainnet27 root is read from the
+                      -- root (each node only knows its own blocks; none is left before the root)
+                      GREATEST(p.start_height, c_m26_end + 1),
+                      p.start_height + 249),
                '{}'::jsonb, '{}'::jsonb, 20000),
              issued_at = now()
         FROM next_pages n
@@ -267,23 +291,23 @@ BEGIN
     (SELECT next_height::text FROM public.topshot_sellback_walk_state WHERE id = 1),
     jsonb_build_object('harvested', v_harvested, 'retried', v_retried, 'issued', v_issued, 'inflight_before', v_inflight,
                        'failed_pages', v_failed, 'purchases', v_purch, 'buyback_deposits', v_dep,
-                       'promoted', v_promoted, 'pages_with_idless_events', v_noid_pages, 'via', 'pg_cron',
+                       'promoted', v_promoted, 'pages_with_idless_events', v_noid_pages, 'below_floor', v_below_floor, 'via', 'pg_cron',
                        'duration_ms', (extract(epoch FROM clock_timestamp() - v_started) * 1000)::int));
   RETURN jsonb_build_object('harvested', v_harvested, 'retried', v_retried, 'issued', v_issued,
-                            'failed_pages', v_failed, 'promoted', v_promoted, 'error', v_err);
+                            'failed_pages', v_failed, 'promoted', v_promoted, 'below_floor', v_below_floor, 'error', v_err);
 END
 $function$;
 
 -- <<< END verbatim <<<
 
-INSERT INTO public.topshot_sellback_walk_state VALUES (1, 118100000, 118100499);
+INSERT INTO public.topshot_sellback_walk_state VALUES (1, 130300000, 130300499);
 INSERT INTO cron.job VALUES ('rpc-topshot-sellback-walk');
 INSERT INTO public.moments VALUES ('111', '95f28a17-224a-4025-96ad-adf8a4c63bfd', '00000000-0000-0000-0000-00000000e111', 77);
 INSERT INTO public.sales (edition_id, collection_id, nft_id, transaction_hash, sold_at, price_usd, source)
 VALUES ('00000000-0000-0000-0000-00000000e444', '95f28a17-224a-4025-96ad-adf8a4c63bfd', '444', 'tx4', '2025-07-01T00:00:00Z', 2, 'ts_history_backfill_v1');
 
 DO $do$
-DECLARE r jsonb;
+DECLARE r jsonb; v_sent bigint; v_req bigint;
 BEGIN
   -- tick 1: enqueue the 2 pages x 2 kinds and issue at most 3 (the cap)
   r := public.run_topshot_sellback_walk(3);
@@ -291,12 +315,14 @@ BEGIN
   PERFORM _assert_eq((SELECT count(*)::text FROM public.topshot_sellback_walk_pages), '4', 'two 250-block pages x two event kinds enqueued');
   r := public.run_topshot_sellback_walk(3);
   PERFORM _assert_eq(r->>'issued', '0', 'nothing more issued while 3 are in flight (claim 4)');
+  PERFORM _assert_eq((SELECT s.url FROM net._sent s JOIN public.topshot_sellback_walk_pages p ON p.req_id = s.id WHERE p.kind = 'purchase' AND p.start_height = 130300000),
+    'http://access-001.mainnet27.nodes.onflow.org:8070/v1/events?type=A.c1e4f4f4c4257510.TopShotMarketV3.MomentPurchased&start_height=130300000&end_height=130300249', 'a page above the root is read whole on mainnet27');
 
-  -- responses: page 118100000 purchase + deposit OK; page 118100250's in-flight one 429s
+  -- responses: page 130300000 purchase + deposit OK; page 130300250's in-flight one 429s
   INSERT INTO net._http_response (id, status_code, content)
-  SELECT req_id, CASE WHEN start_height = 118100000 THEN 200 ELSE 429 END,
-         CASE WHEN start_height <> 118100000 THEN 'rate limited'
-              WHEN kind = 'purchase' THEN '[{"block_height": "118100010", "block_timestamp": "2025-07-01T00:00:00Z", "events": [{"type": "A.c1e4f4f4c4257510.TopShotMarketV3.MomentPurchased", "transaction_id": "tx1", "payload": "eyJ0eXBlIjogIkV2ZW50IiwgInZhbHVlIjogeyJpZCI6ICJBLmMxZTRmNGY0YzQyNTc1MTAuVG9wU2hvdE1hcmtldFYzLk1vbWVudFB1cmNoYXNlZCIsICJmaWVsZHMiOiBbeyJuYW1lIjogImlkIiwgInZhbHVlIjogeyJ0eXBlIjogIlVJbnQ2NCIsICJ2YWx1ZSI6ICIxMTEifX0sIHsibmFtZSI6ICJwcmljZSIsICJ2YWx1ZSI6IHsidHlwZSI6ICJVRml4NjQiLCAidmFsdWUiOiAiMS4wMDAwMDAwMCJ9fSwgeyJuYW1lIjogInNlbGxlciIsICJ2YWx1ZSI6IHsidHlwZSI6ICJPcHRpb25hbCIsICJ2YWx1ZSI6IHsidHlwZSI6ICJBZGRyZXNzIiwgInZhbHVlIjogIjB4czEifX19XX19"}, {"type": "A.c1e4f4f4c4257510.TopShotMarketV3.MomentPurchased", "transaction_id": "tx2", "payload": "eyJ0eXBlIjogIkV2ZW50IiwgInZhbHVlIjogeyJpZCI6ICJBLmMxZTRmNGY0YzQyNTc1MTAuVG9wU2hvdE1hcmtldFYzLk1vbWVudFB1cmNoYXNlZCIsICJmaWVsZHMiOiBbeyJuYW1lIjogImlkIiwgInZhbHVlIjogeyJ0eXBlIjogIlVJbnQ2NCIsICJ2YWx1ZSI6ICIyMjIifX0sIHsibmFtZSI6ICJwcmljZSIsICJ2YWx1ZSI6IHsidHlwZSI6ICJVRml4NjQiLCAidmFsdWUiOiAiOS4wMDAwMDAwMCJ9fSwgeyJuYW1lIjogInNlbGxlciIsICJ2YWx1ZSI6IHsidHlwZSI6ICJPcHRpb25hbCIsICJ2YWx1ZSI6IHsidHlwZSI6ICJBZGRyZXNzIiwgInZhbHVlIjogIjB4czIifX19XX19"}, {"type": "A.c1e4f4f4c4257510.TopShotMarketV3.MomentPurchased", "transaction_id": "tx3", "payload": "eyJ0eXBlIjogIkV2ZW50IiwgInZhbHVlIjogeyJpZCI6ICJBLmMxZTRmNGY0YzQyNTc1MTAuVG9wU2hvdE1hcmtldFYzLk1vbWVudFB1cmNoYXNlZCIsICJmaWVsZHMiOiBbeyJuYW1lIjogImlkIiwgInZhbHVlIjogeyJ0eXBlIjogIlVJbnQ2NCIsICJ2YWx1ZSI6ICIzMzMifX0sIHsibmFtZSI6ICJwcmljZSIsICJ2YWx1ZSI6IHsidHlwZSI6ICJVRml4NjQiLCAidmFsdWUiOiAiNS4wMDAwMDAwMCJ9fSwgeyJuYW1lIjogInNlbGxlciIsICJ2YWx1ZSI6IHsidHlwZSI6ICJPcHRpb25hbCIsICJ2YWx1ZSI6IHsidHlwZSI6ICJBZGRyZXNzIiwgInZhbHVlIjogIjB4czMifX19XX19"}, {"type": "A.c1e4f4f4c4257510.TopShotMarketV3.MomentPurchased", "transaction_id": "tx4", "payload": "eyJ0eXBlIjogIkV2ZW50IiwgInZhbHVlIjogeyJpZCI6ICJBLmMxZTRmNGY0YzQyNTc1MTAuVG9wU2hvdE1hcmtldFYzLk1vbWVudFB1cmNoYXNlZCIsICJmaWVsZHMiOiBbeyJuYW1lIjogImlkIiwgInZhbHVlIjogeyJ0eXBlIjogIlVJbnQ2NCIsICJ2YWx1ZSI6ICI0NDQifX0sIHsibmFtZSI6ICJwcmljZSIsICJ2YWx1ZSI6IHsidHlwZSI6ICJVRml4NjQiLCAidmFsdWUiOiAiMi4wMDAwMDAwMCJ9fSwgeyJuYW1lIjogInNlbGxlciIsICJ2YWx1ZSI6IHsidHlwZSI6ICJPcHRpb25hbCIsICJ2YWx1ZSI6IHsidHlwZSI6ICJBZGRyZXNzIiwgInZhbHVlIjogIjB4czQifX19XX19"}]}]' ELSE '[{"block_height": "118100010", "block_timestamp": "2025-07-01T00:00:00Z", "events": [{"type": "A.0b2a3299cc857e29.TopShot.Deposit", "transaction_id": "tx1", "payload": "eyJ0eXBlIjogIkV2ZW50IiwgInZhbHVlIjogeyJpZCI6ICJBLjBiMmEzMjk5Y2M4NTdlMjkuVG9wU2hvdC5EZXBvc2l0IiwgImZpZWxkcyI6IFt7Im5hbWUiOiAiaWQiLCAidmFsdWUiOiB7InR5cGUiOiAiVUludDY0IiwgInZhbHVlIjogIjExMSJ9fSwgeyJuYW1lIjogInRvIiwgInZhbHVlIjogeyJ0eXBlIjogIk9wdGlvbmFsIiwgInZhbHVlIjogeyJ0eXBlIjogIkFkZHJlc3MiLCAidmFsdWUiOiAiMHhlMWYyYTA5MWY3YmI1MjQ1In19fV19fQ=="}, {"type": "A.0b2a3299cc857e29.TopShot.Deposit", "transaction_id": "tx2", "payload": "eyJ0eXBlIjogIkV2ZW50IiwgInZhbHVlIjogeyJpZCI6ICJBLjBiMmEzMjk5Y2M4NTdlMjkuVG9wU2hvdC5EZXBvc2l0IiwgImZpZWxkcyI6IFt7Im5hbWUiOiAiaWQiLCAidmFsdWUiOiB7InR5cGUiOiAiVUludDY0IiwgInZhbHVlIjogIjIyMiJ9fSwgeyJuYW1lIjogInRvIiwgInZhbHVlIjogeyJ0eXBlIjogIk9wdGlvbmFsIiwgInZhbHVlIjogeyJ0eXBlIjogIkFkZHJlc3MiLCAidmFsdWUiOiAiMHhlMWYyYTA5MWY3YmI1MjQ1In19fV19fQ=="}, {"type": "A.0b2a3299cc857e29.TopShot.Deposit", "transaction_id": "tx3", "payload": "eyJ0eXBlIjogIkV2ZW50IiwgInZhbHVlIjogeyJpZCI6ICJBLjBiMmEzMjk5Y2M4NTdlMjkuVG9wU2hvdC5EZXBvc2l0IiwgImZpZWxkcyI6IFt7Im5hbWUiOiAiaWQiLCAidmFsdWUiOiB7InR5cGUiOiAiVUludDY0IiwgInZhbHVlIjogIjMzMyJ9fSwgeyJuYW1lIjogInRvIiwgInZhbHVlIjogeyJ0eXBlIjogIk9wdGlvbmFsIiwgInZhbHVlIjogeyJ0eXBlIjogIkFkZHJlc3MiLCAidmFsdWUiOiAiMHhjb2xsZWN0b3IifX19XX19"}, {"type": "A.0b2a3299cc857e29.TopShot.Deposit", "transaction_id": "tx4", "payload": "eyJ0eXBlIjogIkV2ZW50IiwgInZhbHVlIjogeyJpZCI6ICJBLjBiMmEzMjk5Y2M4NTdlMjkuVG9wU2hvdC5EZXBvc2l0IiwgImZpZWxkcyI6IFt7Im5hbWUiOiAiaWQiLCAidmFsdWUiOiB7InR5cGUiOiAiVUludDY0IiwgInZhbHVlIjogIjQ0NCJ9fSwgeyJuYW1lIjogInRvIiwgInZhbHVlIjogeyJ0eXBlIjogIk9wdGlvbmFsIiwgInZhbHVlIjogeyJ0eXBlIjogIkFkZHJlc3MiLCAidmFsdWUiOiAiMHhlMWYyYTA5MWY3YmI1MjQ1In19fV19fQ=="}]}]' END
+  SELECT req_id, CASE WHEN start_height = 130300000 THEN 200 ELSE 429 END,
+         CASE WHEN start_height <> 130300000 THEN 'rate limited'
+              WHEN kind = 'purchase' THEN '[{"block_height": "130300010", "block_timestamp": "2025-07-01T00:00:00Z", "events": [{"type": "A.c1e4f4f4c4257510.TopShotMarketV3.MomentPurchased", "transaction_id": "tx1", "payload": "eyJ0eXBlIjogIkV2ZW50IiwgInZhbHVlIjogeyJpZCI6ICJBLmMxZTRmNGY0YzQyNTc1MTAuVG9wU2hvdE1hcmtldFYzLk1vbWVudFB1cmNoYXNlZCIsICJmaWVsZHMiOiBbeyJuYW1lIjogImlkIiwgInZhbHVlIjogeyJ0eXBlIjogIlVJbnQ2NCIsICJ2YWx1ZSI6ICIxMTEifX0sIHsibmFtZSI6ICJwcmljZSIsICJ2YWx1ZSI6IHsidHlwZSI6ICJVRml4NjQiLCAidmFsdWUiOiAiMS4wMDAwMDAwMCJ9fSwgeyJuYW1lIjogInNlbGxlciIsICJ2YWx1ZSI6IHsidHlwZSI6ICJPcHRpb25hbCIsICJ2YWx1ZSI6IHsidHlwZSI6ICJBZGRyZXNzIiwgInZhbHVlIjogIjB4czEifX19XX19"}, {"type": "A.c1e4f4f4c4257510.TopShotMarketV3.MomentPurchased", "transaction_id": "tx2", "payload": "eyJ0eXBlIjogIkV2ZW50IiwgInZhbHVlIjogeyJpZCI6ICJBLmMxZTRmNGY0YzQyNTc1MTAuVG9wU2hvdE1hcmtldFYzLk1vbWVudFB1cmNoYXNlZCIsICJmaWVsZHMiOiBbeyJuYW1lIjogImlkIiwgInZhbHVlIjogeyJ0eXBlIjogIlVJbnQ2NCIsICJ2YWx1ZSI6ICIyMjIifX0sIHsibmFtZSI6ICJwcmljZSIsICJ2YWx1ZSI6IHsidHlwZSI6ICJVRml4NjQiLCAidmFsdWUiOiAiOS4wMDAwMDAwMCJ9fSwgeyJuYW1lIjogInNlbGxlciIsICJ2YWx1ZSI6IHsidHlwZSI6ICJPcHRpb25hbCIsICJ2YWx1ZSI6IHsidHlwZSI6ICJBZGRyZXNzIiwgInZhbHVlIjogIjB4czIifX19XX19"}, {"type": "A.c1e4f4f4c4257510.TopShotMarketV3.MomentPurchased", "transaction_id": "tx3", "payload": "eyJ0eXBlIjogIkV2ZW50IiwgInZhbHVlIjogeyJpZCI6ICJBLmMxZTRmNGY0YzQyNTc1MTAuVG9wU2hvdE1hcmtldFYzLk1vbWVudFB1cmNoYXNlZCIsICJmaWVsZHMiOiBbeyJuYW1lIjogImlkIiwgInZhbHVlIjogeyJ0eXBlIjogIlVJbnQ2NCIsICJ2YWx1ZSI6ICIzMzMifX0sIHsibmFtZSI6ICJwcmljZSIsICJ2YWx1ZSI6IHsidHlwZSI6ICJVRml4NjQiLCAidmFsdWUiOiAiNS4wMDAwMDAwMCJ9fSwgeyJuYW1lIjogInNlbGxlciIsICJ2YWx1ZSI6IHsidHlwZSI6ICJPcHRpb25hbCIsICJ2YWx1ZSI6IHsidHlwZSI6ICJBZGRyZXNzIiwgInZhbHVlIjogIjB4czMifX19XX19"}, {"type": "A.c1e4f4f4c4257510.TopShotMarketV3.MomentPurchased", "transaction_id": "tx4", "payload": "eyJ0eXBlIjogIkV2ZW50IiwgInZhbHVlIjogeyJpZCI6ICJBLmMxZTRmNGY0YzQyNTc1MTAuVG9wU2hvdE1hcmtldFYzLk1vbWVudFB1cmNoYXNlZCIsICJmaWVsZHMiOiBbeyJuYW1lIjogImlkIiwgInZhbHVlIjogeyJ0eXBlIjogIlVJbnQ2NCIsICJ2YWx1ZSI6ICI0NDQifX0sIHsibmFtZSI6ICJwcmljZSIsICJ2YWx1ZSI6IHsidHlwZSI6ICJVRml4NjQiLCAidmFsdWUiOiAiMi4wMDAwMDAwMCJ9fSwgeyJuYW1lIjogInNlbGxlciIsICJ2YWx1ZSI6IHsidHlwZSI6ICJPcHRpb25hbCIsICJ2YWx1ZSI6IHsidHlwZSI6ICJBZGRyZXNzIiwgInZhbHVlIjogIjB4czQifX19XX19"}]}]' ELSE '[{"block_height": "130300010", "block_timestamp": "2025-07-01T00:00:00Z", "events": [{"type": "A.0b2a3299cc857e29.TopShot.Deposit", "transaction_id": "tx1", "payload": "eyJ0eXBlIjogIkV2ZW50IiwgInZhbHVlIjogeyJpZCI6ICJBLjBiMmEzMjk5Y2M4NTdlMjkuVG9wU2hvdC5EZXBvc2l0IiwgImZpZWxkcyI6IFt7Im5hbWUiOiAiaWQiLCAidmFsdWUiOiB7InR5cGUiOiAiVUludDY0IiwgInZhbHVlIjogIjExMSJ9fSwgeyJuYW1lIjogInRvIiwgInZhbHVlIjogeyJ0eXBlIjogIk9wdGlvbmFsIiwgInZhbHVlIjogeyJ0eXBlIjogIkFkZHJlc3MiLCAidmFsdWUiOiAiMHhlMWYyYTA5MWY3YmI1MjQ1In19fV19fQ=="}, {"type": "A.0b2a3299cc857e29.TopShot.Deposit", "transaction_id": "tx2", "payload": "eyJ0eXBlIjogIkV2ZW50IiwgInZhbHVlIjogeyJpZCI6ICJBLjBiMmEzMjk5Y2M4NTdlMjkuVG9wU2hvdC5EZXBvc2l0IiwgImZpZWxkcyI6IFt7Im5hbWUiOiAiaWQiLCAidmFsdWUiOiB7InR5cGUiOiAiVUludDY0IiwgInZhbHVlIjogIjIyMiJ9fSwgeyJuYW1lIjogInRvIiwgInZhbHVlIjogeyJ0eXBlIjogIk9wdGlvbmFsIiwgInZhbHVlIjogeyJ0eXBlIjogIkFkZHJlc3MiLCAidmFsdWUiOiAiMHhlMWYyYTA5MWY3YmI1MjQ1In19fV19fQ=="}, {"type": "A.0b2a3299cc857e29.TopShot.Deposit", "transaction_id": "tx3", "payload": "eyJ0eXBlIjogIkV2ZW50IiwgInZhbHVlIjogeyJpZCI6ICJBLjBiMmEzMjk5Y2M4NTdlMjkuVG9wU2hvdC5EZXBvc2l0IiwgImZpZWxkcyI6IFt7Im5hbWUiOiAiaWQiLCAidmFsdWUiOiB7InR5cGUiOiAiVUludDY0IiwgInZhbHVlIjogIjMzMyJ9fSwgeyJuYW1lIjogInRvIiwgInZhbHVlIjogeyJ0eXBlIjogIk9wdGlvbmFsIiwgInZhbHVlIjogeyJ0eXBlIjogIkFkZHJlc3MiLCAidmFsdWUiOiAiMHhjb2xsZWN0b3IifX19XX19"}, {"type": "A.0b2a3299cc857e29.TopShot.Deposit", "transaction_id": "tx4", "payload": "eyJ0eXBlIjogIkV2ZW50IiwgInZhbHVlIjogeyJpZCI6ICJBLjBiMmEzMjk5Y2M4NTdlMjkuVG9wU2hvdC5EZXBvc2l0IiwgImZpZWxkcyI6IFt7Im5hbWUiOiAiaWQiLCAidmFsdWUiOiB7InR5cGUiOiAiVUludDY0IiwgInZhbHVlIjogIjQ0NCJ9fSwgeyJuYW1lIjogInRvIiwgInZhbHVlIjogeyJ0eXBlIjogIk9wdGlvbmFsIiwgInZhbHVlIjogeyJ0eXBlIjogIkFkZHJlc3MiLCAidmFsdWUiOiAiMHhlMWYyYTA5MWY3YmI1MjQ1In19fV19fQ=="}]}]' END
     FROM public.topshot_sellback_walk_pages WHERE req_id IS NOT NULL;
 
   r := public.run_topshot_sellback_walk(3);
@@ -312,34 +338,63 @@ BEGIN
   PERFORM _assert_eq((SELECT count(*)::text FROM public.sales WHERE nft_id = '444'), '1', 'no duplicate of a sale already present (claim 2)');
   PERFORM _assert_eq((SELECT count(*)::text FROM public.sales WHERE nft_id IN ('222', '333')), '0', 'no guessed edition, no collector purchase written (claims 1-2)');
   PERFORM _assert_eq((SELECT attempts::text || ':' || coalesce(last_status::text, '') FROM public.topshot_sellback_walk_pages
-                       WHERE start_height = 118100250 AND attempts > 0 LIMIT 1), '1:429', 'a 429 page is re-queued with attempts+1 (claim 3)');
+                       WHERE start_height = 130300250 AND attempts > 0 LIMIT 1), '1:429', 'a 429 page is re-queued with attempts+1 (claim 3)');
 
   -- a page that keeps failing is closed as failed at the 8th attempt
-  UPDATE public.topshot_sellback_walk_pages SET attempts = 7 WHERE start_height = 118100250 AND attempts = 1;
+  UPDATE public.topshot_sellback_walk_pages SET attempts = 7 WHERE start_height = 130300250 AND attempts = 1;
   INSERT INTO net._http_response (id, status_code, content)
   SELECT req_id, 503, 'x' FROM public.topshot_sellback_walk_pages p
    WHERE req_id IS NOT NULL AND done_at IS NULL AND NOT EXISTS (SELECT 1 FROM net._http_response r WHERE r.id = p.req_id);
   r := public.run_topshot_sellback_walk(3);
-  PERFORM _assert((SELECT bool_or(failed) FROM public.topshot_sellback_walk_pages WHERE start_height = 118100250), 'an 8th failure closes the page as failed (claim 3)');
+  PERFORM _assert((SELECT bool_or(failed) FROM public.topshot_sellback_walk_pages WHERE start_height = 130300250), 'an 8th failure closes the page as failed (claim 3)');
 
   -- claim 5: a 200 purchase page with one good event (555) and one with no id
-  INSERT INTO public.topshot_sellback_walk_pages (kind, start_height, req_id, issued_at) VALUES ('purchase', 118200000, 5000, now());
-  INSERT INTO net._http_response (id, status_code, content) VALUES (5000, 200, '[{"block_height": "118200010", "block_timestamp": "2025-07-02T00:00:00Z", "events": [{"type": "A.c1e4f4f4c4257510.TopShotMarketV3.MomentPurchased", "transaction_id": "tx5", "payload": "eyJ0eXBlIjogIkV2ZW50IiwgInZhbHVlIjogeyJpZCI6ICJBLmMxZTRmNGY0YzQyNTc1MTAuVG9wU2hvdE1hcmtldFYzLk1vbWVudFB1cmNoYXNlZCIsICJmaWVsZHMiOiBbeyJuYW1lIjogImlkIiwgInZhbHVlIjogeyJ0eXBlIjogIlVJbnQ2NCIsICJ2YWx1ZSI6ICI1NTUifX0sIHsibmFtZSI6ICJwcmljZSIsICJ2YWx1ZSI6IHsidHlwZSI6ICJVRml4NjQiLCAidmFsdWUiOiAiMy4wMDAwMDAwMCJ9fSwgeyJuYW1lIjogInNlbGxlciIsICJ2YWx1ZSI6IHsidHlwZSI6ICJPcHRpb25hbCIsICJ2YWx1ZSI6IHsidHlwZSI6ICJBZGRyZXNzIiwgInZhbHVlIjogIjB4czUifX19XX19"}, {"type": "A.c1e4f4f4c4257510.TopShotMarketV3.MomentPurchased", "transaction_id": "tx6", "payload": "eyJ0eXBlIjogIkV2ZW50IiwgInZhbHVlIjogeyJpZCI6ICJBLmMxZTRmNGY0YzQyNTc1MTAuVG9wU2hvdE1hcmtldFYzLk1vbWVudFB1cmNoYXNlZCIsICJmaWVsZHMiOiBbeyJuYW1lIjogInByaWNlIiwgInZhbHVlIjogeyJ0eXBlIjogIlVGaXg2NCIsICJ2YWx1ZSI6ICI0LjAwMDAwMDAwIn19LCB7Im5hbWUiOiAic2VsbGVyIiwgInZhbHVlIjogeyJ0eXBlIjogIk9wdGlvbmFsIiwgInZhbHVlIjogeyJ0eXBlIjogIkFkZHJlc3MiLCAidmFsdWUiOiAiMHhzNiJ9fX1dfX0="}]}]');
+  INSERT INTO public.topshot_sellback_walk_pages (kind, start_height, req_id, issued_at) VALUES ('purchase', 130400000, 5000, now());
+  INSERT INTO net._http_response (id, status_code, content) VALUES (5000, 200, '[{"block_height": "130400010", "block_timestamp": "2025-07-02T00:00:00Z", "events": [{"type": "A.c1e4f4f4c4257510.TopShotMarketV3.MomentPurchased", "transaction_id": "tx5", "payload": "eyJ0eXBlIjogIkV2ZW50IiwgInZhbHVlIjogeyJpZCI6ICJBLmMxZTRmNGY0YzQyNTc1MTAuVG9wU2hvdE1hcmtldFYzLk1vbWVudFB1cmNoYXNlZCIsICJmaWVsZHMiOiBbeyJuYW1lIjogImlkIiwgInZhbHVlIjogeyJ0eXBlIjogIlVJbnQ2NCIsICJ2YWx1ZSI6ICI1NTUifX0sIHsibmFtZSI6ICJwcmljZSIsICJ2YWx1ZSI6IHsidHlwZSI6ICJVRml4NjQiLCAidmFsdWUiOiAiMy4wMDAwMDAwMCJ9fSwgeyJuYW1lIjogInNlbGxlciIsICJ2YWx1ZSI6IHsidHlwZSI6ICJPcHRpb25hbCIsICJ2YWx1ZSI6IHsidHlwZSI6ICJBZGRyZXNzIiwgInZhbHVlIjogIjB4czUifX19XX19"}, {"type": "A.c1e4f4f4c4257510.TopShotMarketV3.MomentPurchased", "transaction_id": "tx6", "payload": "eyJ0eXBlIjogIkV2ZW50IiwgInZhbHVlIjogeyJpZCI6ICJBLmMxZTRmNGY0YzQyNTc1MTAuVG9wU2hvdE1hcmtldFYzLk1vbWVudFB1cmNoYXNlZCIsICJmaWVsZHMiOiBbeyJuYW1lIjogInByaWNlIiwgInZhbHVlIjogeyJ0eXBlIjogIlVGaXg2NCIsICJ2YWx1ZSI6ICI0LjAwMDAwMDAwIn19LCB7Im5hbWUiOiAic2VsbGVyIiwgInZhbHVlIjogeyJ0eXBlIjogIk9wdGlvbmFsIiwgInZhbHVlIjogeyJ0eXBlIjogIkFkZHJlc3MiLCAidmFsdWUiOiAiMHhzNiJ9fX1dfX0="}]}]');
   r := public.run_topshot_sellback_walk(3);
   PERFORM _assert(r->>'error' IS NULL, 'claim 5: an id-less event does not abort the run');
   PERFORM _assert_eq((SELECT (done_at IS NULL)::text || ':' || attempts || ':' || last_status || ':' || last_error
-                        FROM public.topshot_sellback_walk_pages WHERE start_height = 118200000),
+                        FROM public.topshot_sellback_walk_pages WHERE start_height = 130400000),
     'true:1:200:1 event(s) without an id in a 200 page', 'claim 5: the page is re-queued with the reason, not closed');
   PERFORM _assert_eq((SELECT count(*)::text FROM public.topshot_sellback_walk_purchases WHERE tx IN ('tx5', 'tx6')), '0',
     'claim 5: nothing from a page that cannot be read whole is kept');
   -- the re-fetch is clean: the page lands
-  UPDATE public.topshot_sellback_walk_pages SET req_id = 5001, issued_at = now() WHERE start_height = 118200000;
-  INSERT INTO net._http_response (id, status_code, content) VALUES (5001, 200, '[{"block_height": "118200010", "block_timestamp": "2025-07-02T00:00:00Z", "events": [{"type": "A.c1e4f4f4c4257510.TopShotMarketV3.MomentPurchased", "transaction_id": "tx5", "payload": "eyJ0eXBlIjogIkV2ZW50IiwgInZhbHVlIjogeyJpZCI6ICJBLmMxZTRmNGY0YzQyNTc1MTAuVG9wU2hvdE1hcmtldFYzLk1vbWVudFB1cmNoYXNlZCIsICJmaWVsZHMiOiBbeyJuYW1lIjogImlkIiwgInZhbHVlIjogeyJ0eXBlIjogIlVJbnQ2NCIsICJ2YWx1ZSI6ICI1NTUifX0sIHsibmFtZSI6ICJwcmljZSIsICJ2YWx1ZSI6IHsidHlwZSI6ICJVRml4NjQiLCAidmFsdWUiOiAiMy4wMDAwMDAwMCJ9fSwgeyJuYW1lIjogInNlbGxlciIsICJ2YWx1ZSI6IHsidHlwZSI6ICJPcHRpb25hbCIsICJ2YWx1ZSI6IHsidHlwZSI6ICJBZGRyZXNzIiwgInZhbHVlIjogIjB4czUifX19XX19"}]}]');
+  UPDATE public.topshot_sellback_walk_pages SET req_id = 5001, issued_at = now() WHERE start_height = 130400000;
+  INSERT INTO net._http_response (id, status_code, content) VALUES (5001, 200, '[{"block_height": "130400010", "block_timestamp": "2025-07-02T00:00:00Z", "events": [{"type": "A.c1e4f4f4c4257510.TopShotMarketV3.MomentPurchased", "transaction_id": "tx5", "payload": "eyJ0eXBlIjogIkV2ZW50IiwgInZhbHVlIjogeyJpZCI6ICJBLmMxZTRmNGY0YzQyNTc1MTAuVG9wU2hvdE1hcmtldFYzLk1vbWVudFB1cmNoYXNlZCIsICJmaWVsZHMiOiBbeyJuYW1lIjogImlkIiwgInZhbHVlIjogeyJ0eXBlIjogIlVJbnQ2NCIsICJ2YWx1ZSI6ICI1NTUifX0sIHsibmFtZSI6ICJwcmljZSIsICJ2YWx1ZSI6IHsidHlwZSI6ICJVRml4NjQiLCAidmFsdWUiOiAiMy4wMDAwMDAwMCJ9fSwgeyJuYW1lIjogInNlbGxlciIsICJ2YWx1ZSI6IHsidHlwZSI6ICJPcHRpb25hbCIsICJ2YWx1ZSI6IHsidHlwZSI6ICJBZGRyZXNzIiwgInZhbHVlIjogIjB4czUifX19XX19"}]}]');
   r := public.run_topshot_sellback_walk(3);
-  PERFORM _assert_eq((SELECT (done_at IS NOT NULL)::text FROM public.topshot_sellback_walk_pages WHERE start_height = 118200000), 'true',
+  PERFORM _assert_eq((SELECT (done_at IS NOT NULL)::text FROM public.topshot_sellback_walk_pages WHERE start_height = 130400000), 'true',
     'claim 5: a clean re-fetch closes the page');
   PERFORM _assert_eq((SELECT string_agg(nft_id, ',') FROM public.topshot_sellback_walk_purchases WHERE tx = 'tx5'), '555',
     'claim 5: and its purchase lands');
+
+  -- claim 6 (2026-11-08, #181): pages before the mainnet27 root are closed with the reason, never issued
+  SELECT coalesce(max(id), 0) INTO v_sent FROM net._sent;
+  INSERT INTO public.topshot_sellback_walk_pages (kind, start_height) VALUES
+    ('purchase', 130290000),   -- 130,290,000-130,290,249: entirely below the root
+    ('deposit',  130290409),   -- 130,290,409-130,290,658: the last page entirely below
+    ('purchase', 130290410);   -- 130,290,410-130,290,659: straddles the root by one block
+  -- a below-root page in flight whose DNS failure has landed
+  INSERT INTO public.topshot_sellback_walk_pages (kind, start_height, req_id, issued_at) VALUES ('deposit', 130289750, 6000, now());
+  INSERT INTO net._http_response (id, status_code, content, timed_out, error_msg) VALUES (6000, NULL, NULL, false, 'Couldn''t resolve host name');
+  r := public.run_topshot_sellback_walk(3);
+  PERFORM _assert(r->>'error' IS NULL, 'claim 6: the tick ran clean');
+  PERFORM _assert_eq((SELECT string_agg(s.url, ' | ' ORDER BY s.id) FROM net._sent s WHERE s.id > v_sent),
+    'http://access-001.mainnet27.nodes.onflow.org:8070/v1/events?type=A.c1e4f4f4c4257510.TopShotMarketV3.MomentPurchased&start_height=130290659&end_height=130290659',
+    'claim 6: the only request is the straddling page, read from the root on mainnet27');
+  PERFORM _assert_eq((SELECT count(*)::text FROM net._sent WHERE url ~ 'mainnet2[456]'), '0', 'claim 6: no request ever goes to a retired mainnet24/25/26 node');
+  PERFORM _assert_eq((SELECT string_agg(kind || ':' || start_height || ':' || (done_at IS NOT NULL) || ':' || failed || ':' || (req_id IS NULL) || ':' || last_error, ' | ' ORDER BY start_height)
+                        FROM public.topshot_sellback_walk_pages WHERE start_height < 130290410),
+    'deposit:130289750:true:true:true:block before 130290659 (mainnet27 root): Flow retired the mainnet24-26 access nodes (#181) | purchase:130290000:true:true:true:block before 130290659 (mainnet27 root): Flow retired the mainnet24-26 access nodes (#181) | deposit:130290409:true:true:true:block before 130290659 (mainnet27 root): Flow retired the mainnet24-26 access nodes (#181)',
+    'claim 6: each page before the root is closed as failed with the #181 reason, never issued');
+  PERFORM _assert_eq(r->>'below_floor', '3', 'claim 6: three pages closed below the root, and counted');
+  -- the straddling page lands: closed, not failed, and it says its blocks before the root were not read
+  SELECT req_id INTO v_req FROM public.topshot_sellback_walk_pages WHERE start_height = 130290410;
+  INSERT INTO net._http_response (id, status_code, content) VALUES (v_req, 200, '[]');
+  r := public.run_topshot_sellback_walk(3);
+  PERFORM _assert_eq((SELECT (done_at IS NOT NULL) || ':' || failed || ':' || last_status || ':' || last_error FROM public.topshot_sellback_walk_pages WHERE start_height = 130290410),
+    'true:false:200:block before 130290659 (mainnet27 root): Flow retired the mainnet24-26 access nodes (#181)', 'claim 6: a straddling page closes with the reason for its unread blocks');
+  PERFORM _assert_eq((SELECT coalesce(last_error, '<none>') FROM public.topshot_sellback_walk_pages WHERE kind = 'purchase' AND start_height = 130300000),
+    '<none>', 'claim 6: a page above the root carries no such reason');
 END
 $do$;
 
