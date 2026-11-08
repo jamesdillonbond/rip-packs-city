@@ -57,6 +57,11 @@ describe("buildPackCalendar", () => {
     expect(drops).toEqual([])
   })
 
+  it("leaves out a long-running sale that started before the week (it is not this week's drop)", () => {
+    const drops = buildPackCalendar([row({ dist_id: "8891", dist_type: null, start_time: "2026-10-08T16:00:00Z", end_time: "2027-10-16T16:00:00Z" })], NOW)
+    expect(drops).toEqual([])
+  })
+
   it("keeps an earlier drop whose window is still open", () => {
     const drops = buildPackCalendar([row({ dist_id: "7", start_time: "2026-10-25T00:00:00Z", end_time: "2026-11-12T00:00:00Z" })], NOW)
     expect(drops.map((d) => d.status)).toEqual(["open"])

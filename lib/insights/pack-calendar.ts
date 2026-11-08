@@ -82,10 +82,12 @@ const URL_SLUG: Record<PackCalendarProduct, string> = {
 const isProduct = (p: string): p is PackCalendarProduct => Object.prototype.hasOwnProperty.call(COLLECTION, p)
 
 const DAY_MS = 86_400_000
+/** A drop that started before the week is listed only if it CLOSES within this many days. */
+export const OPEN_CLOSE_DAYS = 14
 
 /**
  * Which drops belong on "this week": anything starting within `daysBack` before now and
- * `daysAhead` after it, plus anything that started earlier and has a closing time still ahead. A row with no
+ * `daysAhead` after it, plus anything that started earlier and closes within OPEN_CLOSE_DAYS. A row with no
  * start time, or Atlas's year-2000 placeholder, is not a drop we can date and is left out.
  */
 export function buildPackCalendar(
@@ -102,9 +104,10 @@ export function buildPackCalendar(
     const start = Date.parse(r.start_time)
     if (!Number.isFinite(start) || new Date(start).getUTCFullYear() < 2015) continue
     const end = r.end_time ? Date.parse(r.end_time) : NaN
-    // An earlier start counts only with a real closing time still ahead: a dist with no end
-    // (reward packs, standing offers) would otherwise read as "open this week" forever.
-    const stillOpen = start <= now.getTime() && Number.isFinite(end) && end > now.getTime()
+    // An earlier start counts only with a real closing time still ahead and within OPEN_CLOSE_DAYS:
+    // a dist with no end (reward packs, standing offers) or a year-long sale (Pinnacle's
+    // "Star Wars Halloween Vol.1" closes 2027-10) would otherwise read as "open this week" every week.
+    const stillOpen = start <= now.getTime() && Number.isFinite(end) && end > now.getTime() && end <= now.getTime() + OPEN_CLOSE_DAYS * DAY_MS
     const inWindow = start >= back && start <= ahead
     if (!inWindow && !(stillOpen && start >= now.getTime() - 60 * DAY_MS)) continue
     const status: DropStatus =
@@ -173,7 +176,7 @@ export function buildPaniniDrops(rows: PaniniDropSourceRow[], now: Date, opts: {
     const start = Date.parse(r.start_at)
     if (!Number.isFinite(start)) continue
     const end = r.end_at ? Date.parse(r.end_at) : NaN
-    const stillOpen = start <= now.getTime() && Number.isFinite(end) && end > now.getTime() && r.in_stock !== false
+    const stillOpen = start <= now.getTime() && Number.isFinite(end) && end > now.getTime() && end <= now.getTime() + OPEN_CLOSE_DAYS * DAY_MS && r.in_stock !== false
     if (!(start >= back && start <= ahead) && !stillOpen) continue
     const status: DropStatus =
       start > now.getTime() ? "upcoming" : r.in_stock === false || (Number.isFinite(end) && end <= now.getTime()) ? "ended" : "open"
