@@ -1,4 +1,4 @@
-# Inbox index — 629 live filings
+# Inbox index — 630 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -32,8 +32,9 @@ failure it documents.
 
 ---
 
-## 2026-11-08 — 5 filings
+## 2026-11-08 — 6 filings
 
+- [🟠 **FOR TREVOR (later)** — switch the "Entity page sweep" Vercel firewall rule from Log to Challenge (#235; 300 req/60 s per JA4, logging 212/day), and pick a display name for alaskanninja](2026-11-08T1712Z-cowork-for-trevor-firewall-sweep-rule-to-challenge-and-alaskanninja-name.md)
 - [✅ 🟠 **FOR COWORK** — apply the trophy picker "Load more" migration (`20261108155000_audit_20261108_trophy_picker_load_more_offset.sql`, DROPs the 5-arg `get_user_top_owned_moments` → 6-arg with `p_offset`) in the SQL editor, then cherry-pick the parked code commit `b08918dfc` from `claude/epic-carson-7x3ok7` onto `main`; Claude Code's apply was held twice](2026-11-08T1558Z-claude-code-apply-for-cowork-trophy-picker-load-more.md)
 - [✅ 🟠 **FOR CLAUDE CODE / COWORK** — delete the OLD laptop-pull scheduled task `trig_014mdFHh2m4AYTkYLTF7XxSV` before 11-09 5:37 AM PT; its device-bound replacement `trig_015m2ZbNHoNmtT7ExQAQeVJD` exists (the old one stalled 11-08 waiting for folder access)](2026-11-08T1524Z-cowork-for-claude-code-or-cowork-delete-old-laptop-pull-task.md)
 - [✅ 🟢 **FOR COWORK** — drop the scratch table `public.zz_pgss_probe_20261108` (Claude Code's pg_stat_statements delta probe; RLS on, no grants, no dependents; guarded SQL inside; Claude Code's DROP was held)](2026-11-08T1509Z-claude-code-drop-for-cowork-zz-pgss-probe-scratch-table.md)
