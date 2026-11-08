@@ -774,3 +774,20 @@ describe("seriesPageMetadata — a genuinely empty series is noindex (2026-10-17
     expect((m.robots as { index?: boolean } | undefined)?.index).not.toBe(false)
   })
 })
+
+// 2026-11-07: an empty player row (Panini "Bolvia", UFC rows named after a moment
+// title) rendered `index, follow` with "0 editions". Only a GENUINE zero is noindexed.
+describe("playerPageMetadata — a player with zero editions is not indexable", () => {
+  it("edition_count 0 → noindex, follow (the canonical stays)", () => {
+    const m = playerPageMetadata({ name: "Bolvia", edition_count: 0 }, "panini-blockchain", "bolvia")
+    expect(m.robots).toEqual({ index: false, follow: true })
+    expect(String(m.alternates?.canonical)).toContain("/panini-blockchain/player/bolvia")
+  })
+  it("an UNKNOWN count (absent / null) stays indexable", () => {
+    expect(playerPageMetadata({ name: "Damian Lillard" }, "nba-top-shot", "damian-lillard").robots).toBeUndefined()
+    expect(playerPageMetadata({ name: "Damian Lillard", edition_count: null }, "nba-top-shot", "damian-lillard").robots).toBeUndefined()
+  })
+  it("a populated player stays indexable", () => {
+    expect(playerPageMetadata({ name: "Damian Lillard", edition_count: 68 }, "nba-top-shot", "damian-lillard").robots).toBeUndefined()
+  })
+})

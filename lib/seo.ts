@@ -1213,6 +1213,14 @@ export function playerPageMetadata(
   const og = playerSlug
     ? `${BASE_URL}/api/og/player?collection=${collectionUrlSlug}&slug=${encodeURIComponent(playerSlug)}`
     : headshot
+  // 2026-11-07: a player row that GENUINELY holds 0 editions is a contentless page —
+  // Panini "Bolvia" (a misspelt country card), 14 UFC rows named after a moment
+  // title ("My Balls Was Hot"), measured live as `index, follow`. noindex,follow,
+  // like an empty series (above). `=== 0` only: a NULL count is UNKNOWN and stays
+  // indexable; Pinnacle characters count pins and read > 0.
+  if (editionCount === 0) {
+    return { ...buildMeta({ title, description, canonical, image: og }), robots: { index: false, follow: true } }
+  }
   return buildMeta({ title, description, canonical, image: og })
 }
 
