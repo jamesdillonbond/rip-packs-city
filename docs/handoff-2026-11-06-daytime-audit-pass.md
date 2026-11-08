@@ -133,6 +133,8 @@
 
 52. **Locale (~3:35–3:55 PM PT).** As a de-DE visitor: "4.000" for a 4,000 circulation (client-formatted) beside "$6,836" (server) — 126 bare `toLocaleString()` calls in 62 files followed the runtime. All pinned to en-US (figures are USD); dates/times left in the visitor's format on purpose. Guard at zero (125 red before). ⚠ CSS-shipped check: the served chunk after the print deploy carried the forced-colors block (previous commit) but NOT `@media print` — the one-deploy CSS lag documented 09-29 in `scripts/qa/README.md`; re-check after this (code) deploy.
 
+53. **Search popularity among prefix hits (~4:00–4:15 PM PT).** "luka" ranked three bit-part Lukas above Dončić — popularity was worth 0.035 against a 0.05 similarity edge for shorter names. Prefix-only `ln(1+n)/20` term (≤0.31, never lifts non-prefix, never beats exact). Eight-query before/after: luka fixed, six unchanged, steph's third slot moved to the more-held name. Read, not changed: "steph" shows Steph Curry (Top Shot) and Stephen Curry (Panini) as two players — a cross-collection identity question for `resolve_player_name` (rule 2), not a ranking one.
+
 ## Post-ship watch (what to read tomorrow)
 
 - **Series-1 Top Shot art** on `/dashboard/*`, `/profile/*`, binder, trade room: present (any blank tile with a `data-rpc-dead-art` attribute whose `data-rpc-dead-src` starts `…/editions/<N>_` means ANOTHER series was retired — same fix, derive not copy).
