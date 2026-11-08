@@ -243,3 +243,10 @@ Panini was published 09-25. By 10-19 the concierge still said it had no Collecti
 ## 2026-11-02 — a binary collection ternary is a substitution waiting for a third collection
 
 - **`ssoAllDay ? "nfl-all-day" : "nba-top-shot"` answered every OTHER named collection (Golazos, UFC, Panini, a bogus slug) with Top Shot's data** — in `get_special_serial_owners` (Top Shot owners + Top Shot edition links) and `check_wallet_squeeze` (the Top Shot bag when the tool input named no collection but the conversation did). Fixed `8410594b8`: a PRESENT, uncovered collection returns `unsupported_collection`; an ABSENT one still defaults. ⛔ **When a tool covers N collections, write the refusal for the N+1th before the ternary** — every new collection published makes an old binary fallback a substitution. A sweep of ~40 collection-resolving sites (11-02) found the rest already refuse.
+
+## 2026-11-08 — a Panini price's basis is DERIVED from recorded sales, never the tier
+
+- **The scrubber turned a Panini HIGH into "priced from plenty of recent sales"** — said on 11-07 of Yan Diomande's Elephant /20, which `panini_sales` holds TWO sales of, the last 47 days earlier. Panini HIGH means "≥ 2 sales that agree closely, at any age" (panini-1.3.0), not "many recent sales".
+- **Now:** `explain_fmv` and `get_fmv` (single edition) on Panini carry `pricing_basis` + `sale_record` from `lib/concierge/panini-sale-record.ts` and NO `confidence` key; `get_fmv` distribution answers drop per-edition tiers and point to `explain_fmv`. A failed sales read says "couldn't check", never a basis.
+- **Wording follows AGREEMENT, not age (#240, measured 11-08):** tight prior sales predicted the next sale within ±25 % 77.6 % (recent) vs 74.8 % (older); scattered 39–50 %. So: tight → "the latest sales agree closely" (+ a moved-market caveat past 30 days); scattered → "disagree widely, so treat the price as rough"; one sale or none → age / thin wording.
+- **Probe the concierge with a `probe-…` session id** (an internal prefix): a bare UUID lands as human traffic, and a "basis looks wrong" probe files a real-looking bug row (11-08: rows 12248, 12114 closed `wontfix` by hand).
