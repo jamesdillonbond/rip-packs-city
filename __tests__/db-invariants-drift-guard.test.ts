@@ -1658,7 +1658,8 @@ const PINS = [
     // Re-pinned 2026-09-25 (batch 62): the note says the reads cover every era.
     fn: "resolve_team_name",
     test: "supabase/tests/resolve_team_name.sql",
-    migration: "supabase/migrations/20260926033639_audit_20260925_a_franchises_historic_era_belongs_to_the_franchise.sql",
+    // Re-pinned 2026-11-08 (#238): a team NICKNAME (team_name_aliases) matches its label.
+    migration: "supabase/migrations/20261108162400_audit_20261108_team_nicknames_in_search_and_resolver.sql",
   },
   {
     fn: "upsert_player_canonical",

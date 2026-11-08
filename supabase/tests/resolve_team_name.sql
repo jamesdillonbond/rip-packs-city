@@ -9,7 +9,7 @@
 -- is 'none'.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260926033639_audit_20260925_a_franchises_historic_era_belongs_to_the_franchise.sql);
+-- (supabase/migrations/20261108162400_audit_20261108_team_nicknames_in_search_and_resolver.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -26,6 +26,11 @@ INSERT INTO teams_master VALUES
   ('NBA', 'Washington Wizards', 'WAS'), ('NBA', 'Charlotte Hornets', 'CHA'), ('NBA', 'New Orleans Pelicans', 'NOP'),
   ('WNBA', 'Washington Mystics', 'WAS');
 CREATE TABLE editions (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), collection_id uuid, team_name text);
+-- #238 (2026-11-08): a nickname points at a LABEL; the franchise expands from it
+CREATE TABLE team_name_aliases (collection_id uuid, alias_slug text, team_name text);
+INSERT INTO team_name_aliases VALUES
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'pels', 'New Orleans Pelicans'),
+  ('dee28451-5d62-409e-a1ad-a83f763ac070', 'silver-and-black', 'Las Vegas Raiders');
 
 -- the shared team map (its own migration; a fixture copy here)
 CREATE OR REPLACE FUNCTION public.league_team_abbr(p_league text)
@@ -109,7 +114,13 @@ BEGIN
              'label:' || l.team_name) AS fkey,
            EXISTS (SELECT 1 FROM public.teams_master t
                     WHERE t.team_name = l.team_name AND t.league::text = ANY (ARRAY[v_tm, 'WNBA'])) AS is_current,
-           (l.team_name ILIKE v_q) AS matched
+           (l.team_name ILIKE v_q
+            -- 2026-11-08 (#238): or the name typed IS a registered nickname of
+            -- this label ("dubs", "niners"); the franchise then expands as usual
+            OR EXISTS (SELECT 1 FROM public.team_name_aliases ta
+                        WHERE ta.collection_id = p_collection_id
+                          AND ta.team_name = l.team_name
+                          AND ta.alias_slug = btrim(regexp_replace(lower(trim(p_name)), '[^a-z0-9]+', '-', 'g'), '-'))) AS matched
       FROM labels l
   ),
   fr AS (
@@ -227,6 +238,25 @@ BEGIN
   -- 7. nothing invented
   r := resolve_team_name(ts, 'Zzyzx');
   PERFORM _assert_eq(r->>'status', 'none', 'unknown: none');
+
+  -- 8. #238 (2026-11-08): a NICKNAME resolves to the franchise of the label it
+  -- names — and the franchise still expands over every era.
+  r := resolve_team_name(ts, 'pels');
+  PERFORM _assert_eq(r->>'status', 'one', 'pels: one franchise');
+  PERFORM _assert_eq(r->>'primary_name', 'New Orleans Pelicans', 'pels -> the Pelicans');
+  PERFORM _assert_eq(r->'historic_names'->0->>'team_name', 'New Orleans Hornets', 'and its historic label comes with it');
+  -- punctuation/case/spacing in what was typed does not matter: slugged like the alias
+  r := resolve_team_name(ad, '  Silver-and  BLACK! ');
+  PERFORM _assert_eq(r->>'primary_name', 'Las Vegas Raiders', 'a multi-word nickname, typed loosely');
+  PERFORM _assert_eq(r->>'total_editions', '140', 'every Raiders era');
+  -- a nickname is per COLLECTION: the Top Shot alias does not leak into All Day
+  r := resolve_team_name(ad, 'pels');
+  PERFORM _assert_eq(r->>'status', 'none', 'pels in All Day: none, not a substituted team');
+  -- an alias must EQUAL the slug, never substring it ("pel" is not "pels")
+  r := resolve_team_name(ts, 'pel');
+  PERFORM _assert_eq(r->>'primary_name', 'New Orleans Pelicans', 'pel still finds the Pelicans by LABEL text');
+  r := resolve_team_name(ts, 'pelsx');
+  PERFORM _assert_eq(r->>'status', 'none', 'pelsx: none (no prefix match on aliases)');
 END $$;
 
 ROLLBACK;
