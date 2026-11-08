@@ -6,7 +6,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 // pointing at its own card.
 
 import { challengePreviewTarget, isLinkPreviewBot } from "@/lib/routing/link-preview-bot"
-import { challengeDescription } from "@/lib/trophy/challenge-copy"
+import { challengeBoardToken, challengeDescription } from "@/lib/trophy/challenge-copy"
 
 const rpc = vi.fn()
 vi.mock("@/lib/supabase", () => ({ supabase: { rpc: (...a: unknown[]) => rpc(...a) }, supabaseAdmin: {} }))
@@ -89,7 +89,8 @@ describe("the board's preview metadata", () => {
   it("points at the challenge's OWN card, canonical and twitter alike", async () => {
     rpc.mockResolvedValue({ data: payload(4), error: null })
     const m: any = await generateMetadata({ params: Promise.resolve({ slug: "dame-time" }) })
-    expect(m.openGraph.images[0].url).toBe("https://www.rippackscity.com/api/og/trophy-challenge/dame-time")
+    // `?s=` = what the card draws (#239): a new entry is a new image URL.
+    expect(m.openGraph.images[0].url).toBe(`https://www.rippackscity.com/api/og/trophy-challenge/dame-time?s=${challengeBoardToken(payload(4))}`)
     expect(m.twitter.images[0].url).toBe(m.openGraph.images[0].url)
     expect(m.twitter.card).toBe("summary_large_image")
     expect(m.openGraph.url).toBe(m.alternates.canonical)
@@ -98,5 +99,21 @@ describe("the board's preview metadata", () => {
   it("the description never publishes a zero it did not read", () => {
     expect(challengeDescription({ tagline: "Six Dame pieces.", entryCount: null })).not.toMatch(/\b0\b/)
     expect(challengeDescription({ tagline: null, entryCount: 0 })).toContain("be the first")
+  })
+})
+
+describe("board card token (#239)", () => {
+  it("changes with a new entry, a new pin, or a moved pin — and is null for an unreadable payload", () => {
+    const base = payload(3)
+    const t = challengeBoardToken(base)
+    expect(t).toBeTruthy()
+    expect(challengeBoardToken(payload(4))).not.toBe(t)
+    const repinned = JSON.parse(JSON.stringify(base))
+    repinned.entries[0].slabs[0].thumbnail_url = "x" // art URL is not content
+    expect(challengeBoardToken(repinned)).toBe(t)
+    repinned.entries[0].slabs[0].slot = 5
+    expect(challengeBoardToken(repinned)).not.toBe(t)
+    expect(challengeBoardToken(null)).toBeNull()
+    expect(challengeBoardToken({ challenge: {} })).toBeNull()
   })
 })

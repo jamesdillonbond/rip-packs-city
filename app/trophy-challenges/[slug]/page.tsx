@@ -46,7 +46,9 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   // Its OWN card (2026-11-07, Trevor: challenges "should have their own special
   // link preview"). ⚠ Every og/twitter field restated — Next REPLACES these
   // objects per route, so the root defaults would not survive.
-  const image = `https://www.rippackscity.com/api/og/trophy-challenge/${encodeURIComponent(slug)}`
+  // `?s=` = what the card draws (#239): a new entry is a new image URL for every cache.
+  const token = named ? probe.cardToken : null
+  const image = `https://www.rippackscity.com/api/og/trophy-challenge/${encodeURIComponent(slug)}${token ? `?s=${token}` : ""}`
   const alt = named ? `${probe.title} — a Rip Packs City trophy case challenge` : "A Rip Packs City trophy case challenge"
   return {
     title,

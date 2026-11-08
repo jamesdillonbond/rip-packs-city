@@ -93,6 +93,69 @@ async function readStoredCard(key: string): Promise<Stored | null> {
   }
 }
 
+/**
+ * The card's FAMILY in the bucket: its folder and file stem, without a token —
+ * `trophy-case/trev/dame-time.k3x9.png` → { folder: "trophy-case/trev", stem: "dame-time" }.
+ */
+export function cardFamily(key: string): { folder: string; stem: string; tokened: boolean } {
+  const slash = key.lastIndexOf("/")
+  const folder = key.slice(0, slash)
+  const file = key.slice(slash + 1).replace(/\.png$/, "")
+  const dot = file.indexOf(".")
+  return dot === -1 ? { folder, stem: file, tokened: false } : { folder, stem: file.slice(0, dot), tokened: true }
+}
+
+/** Is `name` (a file in the same folder) an OLDER version of the card `current` is? */
+export function isSupersededVersion(name: string, stem: string, current: string): boolean {
+  if (name === current) return false
+  const esc = stem.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+  return new RegExp(`^${esc}(\\.[0-9a-z]{1,13})?\\.png$`).test(name)
+}
+
+/**
+ * Delete the older versions of a card that was just stored under a new content
+ * token (known-issues #239: one PNG per case state, never deleted). Through the
+ * Storage API — a `storage.objects` row delete would orphan the file (Supabase
+ * docs). Best-effort, bounded, never throws; the new card is already stored.
+ */
+async function pruneSupersededVersions(key: string): Promise<void> {
+  const { folder, stem, tokened } = cardFamily(key)
+  if (!tokened) return // only a TOKENED card supersedes anything
+  const base = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const svc = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!base || !svc) return
+  const auth = { Authorization: `Bearer ${svc}`, apikey: svc, "Content-Type": "application/json" }
+  const current = key.slice(key.lastIndexOf("/") + 1)
+  try {
+    const names = await bounded(READ_TIMEOUT_MS * 2, async (signal) => {
+      const res = await fetch(`${base}/storage/v1/object/list/${OG_CARD_BUCKET}`, {
+        method: "POST",
+        headers: auth,
+        body: JSON.stringify({ prefix: folder, search: stem, limit: 100, offset: 0 }),
+        signal,
+      })
+      if (!res.ok) return []
+      const rows = (await res.json()) as { name?: unknown }[]
+      return (Array.isArray(rows) ? rows : [])
+        .map((r) => (typeof r?.name === "string" ? r.name : ""))
+        .filter((n) => isSupersededVersion(n, stem, current))
+    })
+    if (names.length === 0) return
+    await bounded(WRITE_TIMEOUT_MS, async (signal) => {
+      const res = await fetch(`${base}/storage/v1/object/${OG_CARD_BUCKET}`, {
+        method: "DELETE",
+        headers: auth,
+        body: JSON.stringify({ prefixes: names.map((n) => `${folder}/${n}`) }),
+        signal,
+      })
+      res.body?.cancel().catch(() => {})
+      if (!res.ok) console.warn(`[og-card-store] prune ${folder}/${stem} status=${res.status}`)
+    })
+  } catch (err) {
+    console.warn(`[og-card-store] prune ${key} failed: ${err instanceof Error ? err.message.slice(0, 120) : String(err)}`)
+  }
+}
+
 /** Keep a full card. Returns whether it LANDED; never throws. */
 async function writeStoredCard(key: string, bytes: Uint8Array): Promise<boolean> {
   const base = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -159,6 +222,7 @@ export async function serveStoredCard(opts: {
     // The tag says whether it LANDED: "rendered" claimed a store that a 400 had
     // refused, and a warm check read it as success (2026-11-07, `~` keys).
     const stored = await writeStoredCard(key, bytes)
+    if (stored) await pruneSupersededVersions(key)
     return png(bytes, { ...OG_CACHE_HEADERS }, stored ? "rendered" : "rendered-not-stored")
   }
 

@@ -17,21 +17,24 @@
 
 import { withBoardBudget } from "@/lib/insights/board-page-fetch"
 import { supabase } from "@/lib/supabase"
+import { challengeBoardToken } from "@/lib/trophy/challenge-copy"
 
 export type ChallengeProbe =
-  | { kind: "found"; title: string; tagline: string | null; entryCount?: number | null }
+  | { kind: "found"; title: string; tagline: string | null; entryCount?: number | null; cardToken?: string | null }
   | { kind: "missing" }
   | { kind: "unknown" }
 
 export const CHALLENGE_PROBE_TIMEOUT_MS = 3000
+/** Six, not one (2026-11-07, #239): the board card's token needs the entries it draws. */
+export const CHALLENGE_PROBE_ENTRIES = 6
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function probeTrophyChallenge(db: any, slug: string): Promise<ChallengeProbe> {
   try {
     const { data, error } = await withBoardBudget(
-      // p_limit 1 is the RPC's floor (it clamps to GREATEST(1, …)): the cheapest
-      // read that still answers "does this slug exist".
-      db.rpc("get_trophy_challenge_entries", { p_slug: slug, p_limit: 1 }) as Promise<{ data: unknown; error: unknown }>,
+      // Six entries (not the floor of 1) so the same read yields the board
+      // card's content token (#239); still one RPC, bounded below.
+      db.rpc("get_trophy_challenge_entries", { p_slug: slug, p_limit: CHALLENGE_PROBE_ENTRIES }) as Promise<{ data: unknown; error: unknown }>,
       "probe",
       CHALLENGE_PROBE_TIMEOUT_MS,
       "trophy-challenges/",
@@ -53,6 +56,8 @@ export async function probeTrophyChallenge(db: any, slug: string): Promise<Chall
       tagline: typeof ch.tagline === "string" ? ch.tagline : null,
       // For the link preview's line; null (not 0) when the payload lacked it.
       entryCount: typeof count === "number" ? count : null,
+      // The board card's content token (#239) — from the same six entries the card draws.
+      cardToken: challengeBoardToken(data),
     }
   } catch (e) {
     console.error("[trophy-challenges/probe]", e instanceof Error ? e.message : e)

@@ -16,6 +16,7 @@ import { ogFetch, OG_FETCH_TIMEOUT_MS } from "@/lib/og/og-fetch"
 import { boundedRead } from "@/lib/api/bounded-read"
 import { ogProfileCardPath, ogTrophyCaseCardPath, pinsToken } from "@/lib/og/card-url"
 import { challengeCaseOgPath } from "@/lib/trophy/challenge-link"
+import { challengeBoardToken } from "@/lib/trophy/challenge-copy"
 
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -44,7 +45,12 @@ export async function cardPathsAfterPinChange(db: any, userId: string, caseId: s
   if (c.error || !slug) return [] // a named case has no card of its own
   const pins = await read(db.from("trophy_moments").select("slot, moment_id").eq("user_id", userId).eq("case_id", caseId), "entry")
   if (pins.error) return []
-  return [challengeCaseOgPath(username, slug, pinsToken(pins.data as any))]
+  const paths = [challengeCaseOgPath(username, slug, pinsToken(pins.data as any))]
+  // The challenge BOARD card changed too (#239): warm it at its new token.
+  const board = await read(db.rpc("get_trophy_challenge_entries", { p_slug: slug, p_limit: 6 }), "board")
+  const bt = board.error ? null : challengeBoardToken(board.data)
+  if (bt) paths.push(`/api/og/trophy-challenge/${encodeURIComponent(slug)}?s=${bt}`)
+  return paths
 }
 
 export async function warmCardsAfterPinChange(db: any, userId: string, caseId: string | null): Promise<void> {

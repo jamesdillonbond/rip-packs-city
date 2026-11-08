@@ -23,6 +23,7 @@ import { boundedRead } from "@/lib/api/bounded-read"
 import { ogImageDataUriSlots } from "@/lib/og/img-data"
 import { brandFonts, brandFamilies, OG_CACHE_HEADERS, ogCacheHeaders, type OgFont } from "@/lib/og/brand-fonts"
 import { fullCardHeaders, ogCardKey, serveStoredCard } from "@/lib/og/card-store"
+import { cleanCardToken } from "@/lib/og/card-url"
 import { hiResThumb, tierAccent } from "@/lib/trophy/slab-style"
 import { isChallengeSlug } from "@/lib/trophy/challenge-link"
 
@@ -205,14 +206,14 @@ export async function renderChallengeCard(slug: string): Promise<Response> {
   }
 }
 
-export async function GET(_req: NextRequest, ctx: { params: Promise<{ slug: string }> }) {
+export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: string }> }) {
   const slug = decodeURIComponent((await ctx.params).slug ?? "").trim().toLowerCase()
   if (!isChallengeSlug(slug)) {
     const fonts = await brandFonts()
     return renderFallback(fonts, brandFamilies(fonts).display)
   }
   return serveStoredCard({
-    key: ogCardKey("challenge", slug),
+    key: ogCardKey("challenge", slug, null, cleanCardToken(req.nextUrl?.searchParams.get("s"))),
     render: () => renderChallengeCard(slug),
     fallback: async () => {
       const fonts = await brandFonts()

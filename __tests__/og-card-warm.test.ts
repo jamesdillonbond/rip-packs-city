@@ -5,9 +5,11 @@ import { describe, it, expect } from "vitest"
 
 import { cardPathsAfterPinChange } from "@/lib/og/card-warm"
 import { pinsToken } from "@/lib/og/card-url"
+import { challengeBoardToken } from "@/lib/trophy/challenge-copy"
 
-function db(tables: Record<string, { data: any; error: any }>) {
+function db(tables: Record<string, { data: any; error: any }>, board: { data: any; error: any } = { data: null, error: { message: "n/a" } }) {
   return {
+    rpc: () => Promise.resolve(board),
     from: (t: string) => {
       const q: any = {}
       for (const m of ["select", "eq", "is", "limit"]) q[m] = () => q
@@ -35,6 +37,22 @@ describe("cardPathsAfterPinChange", () => {
       "c",
     )
     expect(p).toEqual([`/api/og/trophy-case/trev?case=dame-time&s=${pinsToken(pins)}`])
+  })
+  it("a challenge entry also warms the BOARD card at its new token (#239)", async () => {
+    const boardData = { entry_count: 2, entries: [{ username: "trev", slabs: pins }] }
+    const p = await cardPathsAfterPinChange(
+      db(
+        {
+          profile_bio: { data: [{ username: "trev" }], error: null },
+          trophy_cases: { data: [{ id: "c", trophy_challenges: { slug: "dame-time" } }], error: null },
+          trophy_moments: { data: pins, error: null },
+        },
+        { data: boardData, error: null },
+      ),
+      "u",
+      "c",
+    )
+    expect(p[1]).toBe(`/api/og/trophy-challenge/dame-time?s=${challengeBoardToken(boardData)}`)
   })
   it("no public handle, a named case, or a failed read → nothing (never a wrong card)", async () => {
     expect(await cardPathsAfterPinChange(db({ profile_bio: { data: [], error: null } }), "u", null)).toEqual([])

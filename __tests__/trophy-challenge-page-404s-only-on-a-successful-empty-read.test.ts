@@ -23,7 +23,8 @@ describe("probeTrophyChallenge", () => {
   it("a successful read returning NULL is 'missing' (the only 404 case)", async () => {
     const d = db(Promise.resolve({ data: null, error: null }))
     expect(await probeTrophyChallenge(d, "no-such")).toEqual({ kind: "missing" })
-    expect(d.rpc).toHaveBeenCalledWith("get_trophy_challenge_entries", { p_slug: "no-such", p_limit: 1 })
+    // p_limit 6 since 2026-11-07 (#239): the board card token needs the six entries it draws.
+    expect(d.rpc).toHaveBeenCalledWith("get_trophy_challenge_entries", { p_slug: "no-such", p_limit: 6 })
   })
 
   it("an errored read is 'unknown', NOT 'missing'", async () => {
@@ -60,7 +61,7 @@ describe("probeTrophyChallenge", () => {
     )
     // entryCount added 2026-11-07 (the link preview's line); this payload has
     // no entry_count, so it is null — unknown, NOT 0.
-    expect(r).toEqual({ kind: "found", title: "Dame Time", tagline: "Lillard only", entryCount: null })
+    expect(r).toMatchObject({ kind: "found", title: "Dame Time", tagline: "Lillard only", entryCount: null })
   })
 
   it("carries the entry count when the payload has it", async () => {

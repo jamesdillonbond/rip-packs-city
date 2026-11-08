@@ -5,7 +5,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 // ~10.8 s (p50) to render cold, longer than the crawler waits. The store serves
 // the rendered PNG instantly and keeps it fresh in the background.
 
-import { serveStoredCard, ogCardKey, OG_CARD_FRESH_MS, OG_CARD_FULL_HEADER, SUPABASE_STORAGE_KEY_RE } from "@/lib/og/card-store"
+import { serveStoredCard, ogCardKey, OG_CARD_FRESH_MS, OG_CARD_FULL_HEADER, SUPABASE_STORAGE_KEY_RE, cardFamily, isSupersededVersion } from "@/lib/og/card-store"
 import { ogProfileCardPath, ogTrophyCaseCardPath, OG_CARD_URL_VERSION } from "@/lib/og/card-url"
 
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1, 2, 3])
@@ -173,5 +173,59 @@ describe("every store key is one Supabase Storage accepts", () => {
     ]
     for (const k of keys) expect(k, k).toMatch(SUPABASE_STORAGE_KEY_RE)
     expect("trophy-case/trev/dame-time~abc.png").not.toMatch(SUPABASE_STORAGE_KEY_RE) // the shape that shipped
+  })
+})
+
+// known-issues #239 (1): one stored PNG per case state, never deleted. Storing a
+// new TOKENED version now deletes the family's older versions — through the
+// Storage API (a storage.objects row delete would orphan the file).
+describe("pruning superseded card versions", () => {
+  it("the family is folder + stem, token stripped", () => {
+    expect(cardFamily("trophy-case/trev/dame-time.k3x9.png")).toEqual({ folder: "trophy-case/trev", stem: "dame-time", tokened: true })
+    expect(cardFamily("profile/trev.png")).toEqual({ folder: "profile", stem: "trev", tokened: false })
+  })
+  it("an older version is the same stem with another (or no) token — never a different handle, never itself", () => {
+    expect(isSupersededVersion("trev.png", "trev", "trev.new1.png")).toBe(true)
+    expect(isSupersededVersion("trev.old9.png", "trev", "trev.new1.png")).toBe(true)
+    expect(isSupersededVersion("trev.new1.png", "trev", "trev.new1.png")).toBe(false)
+    expect(isSupersededVersion("trevor.png", "trev", "trev.new1.png")).toBe(false)
+    expect(isSupersededVersion("trevor.abc.png", "trev", "trev.new1.png")).toBe(false)
+    expect(isSupersededVersion("trev", "trev", "trev.new1.png")).toBe(false) // a folder entry
+  })
+  it("⚠ storing a tokened card lists its folder and deletes ONLY its older versions", async () => {
+    const calls: { url: string; method: string; body: any }[] = []
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const method = init?.method ?? "GET"
+        const body = typeof init?.body === "string" ? JSON.parse(init.body) : null
+        calls.push({ url, method, body })
+        if (url.includes("/object/public/")) return new Response("nf", { status: 400 })
+        if (url.includes("/object/list/")) {
+          return Response.json([{ name: "trev.png" }, { name: "trev.old9.png" }, { name: "trevor.png" }, { name: "trev.new1.png" }])
+        }
+        return new Response("{}", { status: 200 })
+      }),
+    )
+    await serveStoredCard({ key: "profile/trev.new1.png", render: async () => card(NEW), fallback, waitUntil: () => {} })
+    const list = calls.find((c) => c.url.includes("/object/list/og-cards"))!
+    expect(list.body).toMatchObject({ prefix: "profile", search: "trev" })
+    const del = calls.find((c) => c.method === "DELETE")!
+    expect(del.url).toBe("https://db.example/storage/v1/object/og-cards")
+    expect(del.body).toEqual({ prefixes: ["profile/trev.png", "profile/trev.old9.png"] })
+  })
+  it("an UNtokened store, or a failed store, prunes nothing", async () => {
+    const methods: string[] = []
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        methods.push(`${init?.method ?? "GET"} ${url}`)
+        if (url.includes("/object/public/")) return new Response("nf", { status: 400 })
+        return new Response("{}", { status: url.includes("bad") ? 400 : 200 })
+      }),
+    )
+    await serveStoredCard({ key: "profile/trev.png", render: async () => card(NEW), fallback, waitUntil: () => {} })
+    await serveStoredCard({ key: "profile/bad.tok1.png", render: async () => card(NEW), fallback, waitUntil: () => {} })
+    expect(methods.filter((m) => m.includes("/object/list/") || m.startsWith("DELETE"))).toEqual([])
   })
 })
