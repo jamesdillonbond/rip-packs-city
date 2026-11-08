@@ -137,7 +137,7 @@
 
 54. **Steph Curry consolidated (~4:20–4:35 PM PT, Trevor's call).** Panini row renamed "Stephen Curry" → "Steph Curry", alias `stephen-curry` registered, 199 edition labels normalised (guarded migration `20261108002428`). The bridge resolves Panini's source label through the alias and the editions trigger keeps the canonical name, so nothing reverts or churns. Live: one name in search, hub and Panini page; old Panini URL 308s; hub's two slugs share one canonical. **Watched:** the 4:54 PM bridge tick (first after the apply) — `editions_written: 0`, `players_inserted: 0`, collisions 1 (unchanged, pre-existing), no "Stephen Curry" row re-minted, 199/199 editions still "Steph Curry".
 
-55. **Ten players take the league's name (~5:00–5:20 PM PT, Trevor's call).** Names read from each player's nba.com / wnba.com heading. Panini renamed: Jimmy Butler III, KJ Martin, GG Jackson, Ronald Holland II, Nic Claxton. Top Shot renamed: Skylar Diggins, Megan DiLeo, Maya Caldwell, Betnijah Laney-Hamilton, Enes Freedom. Old spellings kept as aliases (old URLs 308). Steph Curry left as Trevor decided, though nba.com says "Stephen Curry" — flagged.
+55. **Ten players take the league's name (~4:59–5:05 PM PT, Trevor's call).** Names read from each player's nba.com / wnba.com heading. Panini renamed: Jimmy Butler III, KJ Martin, GG Jackson, Ronald Holland II, Nic Claxton. Top Shot renamed: Skylar Diggins, Megan DiLeo, Maya Caldwell, Betnijah Laney-Hamilton, Enes Freedom. Old spellings kept as aliases (old URLs 308). Steph Curry left as Trevor decided, though nba.com says "Stephen Curry" — flagged.
 
 ## Post-ship watch (what to read tomorrow)
 
@@ -176,7 +176,7 @@
 9. **[watch, 11-13 9 AM PT, scheduled]** #235 WAF rule `Entity page sweep` in Log mode → the one-shot task reads it and recommends Log → Rate Limit or another week.
 11. **[P4, Claude Code, if a keyboard user asks] Header group menus: arrow-key navigation** — today a focus-within disclosure (40 Tab stops to the fourth group; skip link covers it). Roving tabindex + ArrowDown/Up/Escape on `.rpc-topnav-group` would earn back `role="menu"`; the new `aria-menu-role-keeps-its-keyboard-contract` walk is the gate.
 12. **[P4, Trevor — visual] Collection ticker pause control** — it pauses on hover/focus and stops under reduced motion, but a touch user has no way to stop it (WCAG 2.2.2). A small ⏸ at the strip's end is the usual answer; it changes every collection header, so yours.
-13. ✅ **DONE 5:20 PM PT — ten cross-collection name pairs** now show the league page's name (Trevor 4:59: "what is … mapped on websites like nba.com"); item 55. **Follow-up [P4, Claude Code]:** make `upsert_player_canonical` read `player_name_aliases` before overwriting `players.name` (pinned: `supabase/tests/upsert_player_canonical.sql`) — dormant today (0 `ingest` runs in retention), but it would revert the five Top Shot renames if `/api/ingest` revives.
+13. ✅ **DONE 5:04 PM PT — ten cross-collection name pairs** now show the league page's name (Trevor 4:59: "what is … mapped on websites like nba.com"); item 55. **Follow-up [P4, Claude Code]:** make `upsert_player_canonical` read `player_name_aliases` before overwriting `players.name` (pinned: `supabase/tests/upsert_player_canonical.sql`) — dormant today (0 `ingest` runs in retention), but it would revert the five Top Shot renames if `/api/ingest` revives.
 5. **[P4, Trevor, carried] #58 `OPENSEA_API_KEY`** — only if Candy still has 0 indexed sales on 11-27.
 
 ## Closed / RESOLVED this pass
