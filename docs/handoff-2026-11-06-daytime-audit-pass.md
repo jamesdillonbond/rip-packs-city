@@ -141,6 +141,8 @@
 
 56. **Old and new spellings both work in search and the concierge (~5:35 PM PT on, Trevor 5:33 PM).** Search's alias match ignores punctuation (`20261108013704`); Panini twins Skylar Diggins-Smith / Enes Kanter merged + old-name aliases (`20261108013621`); the concierge's cross-collection search no longer stops at partial hits ("Stephen Curry" returned 7 combo cards, none of his 199 solo cards); Panini deals match any spelling of the resolved person; `panini_holdings_breakdown` matches either spelling (`20261108014421`; a holder's 51 cards read 0 before).
 
+57. **Renames hold long-term (~6:00 PM PT, Trevor 5:58 PM).** `upsert_player_canonical` reads aliases (`20261108020159`, queue item closed); `check_player_alias_integrity` watch on pg_cron 4×/day (`20261108020250`); rename runbook in `docs/reference/player-identity.md`. Open: the WC writer `sync_panini_editions_to_shared` still ignores aliases.
+
 ## Post-ship watch (what to read tomorrow)
 
 - **Series-1 Top Shot art** on `/dashboard/*`, `/profile/*`, binder, trade room: present (any blank tile with a `data-rpc-dead-art` attribute whose `data-rpc-dead-src` starts `…/editions/<N>_` means ANOTHER series was retired — same fix, derive not copy).
@@ -178,7 +180,7 @@
 9. **[watch, 11-13 9 AM PT, scheduled]** #235 WAF rule `Entity page sweep` in Log mode → the one-shot task reads it and recommends Log → Rate Limit or another week.
 11. **[P4, Claude Code, if a keyboard user asks] Header group menus: arrow-key navigation** — today a focus-within disclosure (40 Tab stops to the fourth group; skip link covers it). Roving tabindex + ArrowDown/Up/Escape on `.rpc-topnav-group` would earn back `role="menu"`; the new `aria-menu-role-keeps-its-keyboard-contract` walk is the gate.
 12. **[P4, Trevor — visual] Collection ticker pause control** — it pauses on hover/focus and stops under reduced motion, but a touch user has no way to stop it (WCAG 2.2.2). A small ⏸ at the strip's end is the usual answer; it changes every collection header, so yours.
-13. ✅ **DONE 5:04 PM PT — ten cross-collection name pairs** now show the league page's name (Trevor 4:59: "what is … mapped on websites like nba.com"); item 55. **Follow-up [P4, Claude Code]:** make `upsert_player_canonical` read `player_name_aliases` before overwriting `players.name` (pinned: `supabase/tests/upsert_player_canonical.sql`) — dormant today (0 `ingest` runs in retention), but it would revert the five Top Shot renames if `/api/ingest` revives.
+13. ✅ **DONE 5:04 PM PT — ten cross-collection name pairs** now show the league page's name (Trevor 4:59: "what is … mapped on websites like nba.com"); item 55. **Follow-up ✅ DONE 6:00 PM PT (item 57):** make `upsert_player_canonical` read `player_name_aliases` before overwriting `players.name` (pinned: `supabase/tests/upsert_player_canonical.sql`) — dormant today (0 `ingest` runs in retention), but it would revert the five Top Shot renames if `/api/ingest` revives.
 5. **[P4, Trevor, carried] #58 `OPENSEA_API_KEY`** — only if Candy still has 0 indexed sales on 11-27.
 
 ## Closed / RESOLVED this pass
