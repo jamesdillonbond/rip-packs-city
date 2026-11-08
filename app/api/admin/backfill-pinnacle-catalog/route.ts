@@ -227,6 +227,32 @@ async function handle(req: NextRequest): Promise<NextResponse> {
     errors.push(e instanceof Error ? e.message : String(e));
   }
 
+  // ── Phase 1b (2026-11-08, handoff pinnacle-wmc-render-gap): is the SOURCE behind the chain? ──
+  // A pin the chain minted whose render_id this search never returned has no catalog row, so its
+  // name / set / image cannot be derived — and nothing said so. Compare against RPC's own mint
+  // records after every full sweep: all-time gaps are reported; a RECENT gap (first minted within
+  // 14 days) fails the run, because that is the source falling behind, not a standing orphan.
+  let mintGap: { missing_renders?: number; missing_pins?: number; missing_recent_renders?: number; sample?: unknown[] } | null = null;
+  let mintGapError: string | null = null;
+  if (!floorsOnly) {
+    try {
+      const { data: gap, error: gapErr } = await supabase.rpc("pinnacle_minted_renders_missing_from_catalog", { p_sample: 10, p_recent_days: 14 });
+      if (gapErr) mintGapError = gapErr.message;
+      else mintGap = gap && typeof gap === "object" ? gap : null;
+    } catch (e) {
+      mintGapError = e instanceof Error ? e.message : String(e);
+    }
+    if (mintGapError) errors.push(`mint gap check: ${mintGapError}`);
+    else if (mintGap && Number(mintGap.missing_recent_renders ?? 0) > 0) {
+      errors.push(
+        `catalog behind mints: ${mintGap.missing_recent_renders} render(s) minted in the last 14 days have no catalog row (${mintGap.missing_renders} all-time, ${mintGap.missing_pins} pins)`,
+      );
+    }
+    if (mintGap && Number(mintGap.missing_renders ?? 0) > 0) {
+      console.warn(`[${PIPELINE_NAME}] ${mintGap.missing_renders} minted render(s) not in the catalog (${mintGap.missing_recent_renders} recent)`);
+    }
+  }
+
   // ── Phase 2: floor-ask sweep (best-effort; failures don't fail the catalog) ──
   let floorListed = 0;     // distinct render_ids with a live floor
   let floorRows = 0;       // catalog rows updated (= editions with a floor)
@@ -312,7 +338,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
       p_collection_slug: "disney_pinnacle",
       p_cursor_before: null,
       p_cursor_after: null,
-      p_extra: { floors_only: floorsOnly, pages, total_count: total, upserted, floor_listed: floorListed, floor_rows: floorRows, floor_pages: floorPages, floor_total: floorTotal, floor_complete: floorComplete, live_listings_seen: liveListings.length, live_written: liveWritten, live_deleted: liveDeleted, duration_ms: durationMs, errors: errors.slice(0, 3) },
+      p_extra: { floors_only: floorsOnly, pages, total_count: total, upserted, floor_listed: floorListed, floor_rows: floorRows, floor_pages: floorPages, floor_total: floorTotal, floor_complete: floorComplete, live_listings_seen: liveListings.length, live_written: liveWritten, live_deleted: liveDeleted, minted_renders_missing: mintGap?.missing_renders ?? null, minted_pins_missing: mintGap?.missing_pins ?? null, minted_renders_missing_recent: mintGap?.missing_recent_renders ?? null, minted_missing_sample: mintGap?.sample ?? null, mint_gap_error: mintGapError, duration_ms: durationMs, errors: errors.slice(0, 3) },
     });
   } catch {
     // best-effort observability

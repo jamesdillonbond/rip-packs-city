@@ -3,6 +3,7 @@ import { newRowInsertFailureTally, recordRowInsertFailure, rowInsertFailureExtra
 import { supabaseAdmin } from "@/lib/supabase"
 import { fireNextPipelineStep } from "@/lib/pipeline-chain"
 import { tokenMatches } from "@/lib/auth/bearer-secret"
+import { renderIdsFromMintRecords } from "@/lib/pinnacle/render-lookup"
 
 // ── On-chain Disney Pinnacle sales indexer ───────────────────────────────────
 // Scans NFTStorefrontV2.ListingCompleted, filters to Pinnacle NFT purchases,
@@ -342,9 +343,25 @@ async function runIndexer(req: NextRequest) {
       `[pinnacle-sales-indexer] edition resolution: total=${uniqueNftIds.length} resolved=${nftToEditionId.size} unresolved=${unresolvedCount}`
     )
 
+    // The pin (render_id) from RPC's own mint records — the same lookup the
+    // wmc render-id lane uses (lib/pinnacle/render-lookup.ts, 2026-11-08). Rows
+    // were written render-less and waited for that lane's GQL search, which
+    // answers nothing for some pins. A failed read leaves render_id NULL for
+    // that lane's drain to fill and is reported in extra, never read as "no pin".
+    let renderByNft = new Map<string, string>()
+    let renderLookupError: string | null = null
+    try {
+      const rl = await renderIdsFromMintRecords(supabaseAdmin, uniqueNftIds)
+      renderByNft = rl.map
+      renderLookupError = rl.error
+    } catch (e) {
+      renderLookupError = e instanceof Error ? e.message : String(e)
+    }
+
     const rows = sales.map((s) => ({
       id: `${s.transactionId}_${s.nftID}`,
       edition_id: nftToEditionId.get(s.nftID) ?? null,
+      render_id: renderByNft.get(s.nftID) ?? null,
       nft_id: s.nftID,
       sale_price_usd: parseFloat(s.salePrice) || 0,
       serial_number: null,
@@ -434,6 +451,8 @@ async function runIndexer(req: NextRequest) {
         unique_nft_ids: uniqueNftIds.length,
         edition_resolved: nftToEditionId.size,
         sales_unresolved: finalUnresolved,
+        render_from_mint_records: renderByNft.size,
+        render_lookup_error: renderLookupError,
         elapsed_ms: Date.now() - started,
       },
     })

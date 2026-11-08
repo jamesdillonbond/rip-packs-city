@@ -174,6 +174,8 @@ describe("pinnacle-sales-indexer — scan + write", () => {
       event_cursor: cursorFixture,
       pinnacle_nft_map: { data: [{ nft_id: "111", edition_key: "RC1:Standard:1" }], error: null },
       wallet_moments_cache: { data: [{ moment_id: "222", edition_key: "RC2:Chaser:2" }], error: null },
+      // 2026-11-08: the pin comes from RPC's own mint records (lib/pinnacle/render-lookup.ts)
+      pinnacle_mint_events: { data: [{ nft_id: "111", render_id: "R-111" }], error: null },
     })
 
     const res = await POST(req())
@@ -184,6 +186,7 @@ describe("pinnacle-sales-indexer — scan + write", () => {
     expect(rows.find((r) => r.nft_id === "111")).toEqual({
       id: `${txA}_111`,
       edition_id: "RC1:Standard:1", // rung 1: pinnacle_nft_map
+      render_id: "R-111", // the pin, from pinnacle_mint_events
       nft_id: "111",
       sale_price_usd: 4,
       serial_number: null,
@@ -200,6 +203,7 @@ describe("pinnacle-sales-indexer — scan + write", () => {
     expect(rows.find((r) => r.nft_id === "333")).toMatchObject({
       id: `${txC}_333`,
       edition_id: null,
+      render_id: null, // no mint record: left for the render-id lane's drain
       sale_price_usd: 2,
       buyer_address: "0xbbbbbbbbbbbbbbbb",
     })

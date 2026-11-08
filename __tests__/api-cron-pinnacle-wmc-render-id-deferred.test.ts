@@ -32,27 +32,38 @@ vi.mock("next/server", async (importOriginal) => {
 const st = vi.hoisted(() => ({
   selectResult: { data: [] as any, error: null as any },
   updateResult: { data: null as any, error: null as any },
+  // pinnacle_mint_events (lib/pinnacle/render-lookup.ts, 2026-11-08): none unless a test plants them
+  mintResult: { data: [] as any, error: null as any },
   rpcImpl: {} as Record<string, (params?: any) => Promise<any>>,
 }))
 const rpc = vi.hoisted(() => vi.fn(async (name: string, params?: any) => {
   const impl = st.rpcImpl[name]
   return impl ? impl(params) : { data: null, error: null }
 }))
-function makeBuilder() {
+function makeBuilder(table?: string) {
   let op: "select" | "update" = "select"
+  let inIds: string[] | null = null
   const b: any = {
+    in: (_c: string, ids: string[]) => { inIds = ids; return b },
+    not: () => b,
     // .update(...).select("moment_id") is still the update (the route reads the landed rows).
     select: () => { if (op !== "update") op = "select"; return b },
     update: () => { op = "update"; return b },
     eq: () => b,
     is: () => b,
     limit: () => b,
-    then: (resolve: any) => resolve(op === "update" ? st.updateResult : st.selectResult),
+    then: (resolve: any) => {
+      if (table === "pinnacle_mint_events") {
+        if (st.mintResult.error) return resolve(st.mintResult)
+        return resolve({ data: (st.mintResult.data ?? []).filter((r: any) => !inIds || inIds.includes(r.nft_id)), error: null })
+      }
+      return resolve(op === "update" ? st.updateResult : st.selectResult)
+    },
   }
   return b
 }
 vi.mock("@supabase/supabase-js", () => ({
-  createClient: () => ({ from: () => makeBuilder(), rpc: (...a: any[]) => rpc(...(a as [string, any?])) }),
+  createClient: () => ({ from: (t: string) => makeBuilder(t), rpc: (...a: any[]) => rpc(...(a as [string, any?])) }),
 }))
 
 import { GET } from "@/app/api/cron/pinnacle-wmc-render-id/route"
@@ -108,6 +119,7 @@ beforeEach(() => {
   st.selectResult = { data: [], error: null }
   // Each update lands on one row unless a test says otherwise.
   st.updateResult = { data: [{ moment_id: "x" }], error: null }
+  st.mintResult = { data: [], error: null }
   st.rpcImpl = {
     log_pipeline_run: async () => ({ data: null, error: null }),
     derive_pinnacle_wmc_from_catalog: async () => ({ data: 1, error: null }),
@@ -248,5 +260,72 @@ describe("/api/cron/pinnacle-wmc-render-id — deferred body", () => {
     expect(p.p_extra.derived).toBe(0)
     expect(p.p_extra.derive_error).toBe("boom")
     expect(p.p_ok).toBe(false)
+  })
+
+  // ── 2026-11-08 (handoff pinnacle-wmc-render-gap) ──────────────────────────
+  it("names pins from RPC's own mint records first — no GQL call for them", async () => {
+    st.selectResult = { data: [{ moment_id: "m1" }, { moment_id: "m2" }], error: null }
+    st.mintResult = { data: [{ nft_id: "m1", render_id: "R-1" }, { nft_id: "m2", render_id: "R-2" }], error: null }
+    await drive()
+    const p = logParams()
+    expect(p.p_ok).toBe(true)
+    expect(p.p_extra.from_mint_records).toBe(2)
+    expect(p.p_extra.from_gql).toBe(0)
+    expect(p.p_rows_written).toBe(2)
+    // the search was asked for nothing on the wmc pass (sales drain was empty too)
+    expect((globalThis.fetch as any).mock.calls.length).toBe(0)
+  })
+
+  it("falls back to GQL only for pins the mint records lack", async () => {
+    st.selectResult = { data: [{ moment_id: "m1" }, { moment_id: "g1" }], error: null }
+    st.mintResult = { data: [{ nft_id: "m1", render_id: "R-1" }], error: null }
+    gqlFixture["g1"] = { serial_number: "7", render_id: "R-G" }
+    await drive()
+    const p = logParams()
+    expect(p.p_extra.from_mint_records).toBe(1)
+    expect(p.p_extra.from_gql).toBe(1)
+    const asked: string[] = JSON.parse((globalThis.fetch as any).mock.calls[0][1].body).variables.ids
+    expect(asked).toEqual(["g1"])
+  })
+
+  it("⚠ a BACKLOG that resolves nothing fails the run — never ok:true with 0 of N (the 972/0 case)", async () => {
+    st.selectResult = { data: Array.from({ length: 60 }, (_, i) => ({ moment_id: "u" + i })), error: null }
+    await drive()
+    const p = logParams()
+    expect(p.p_ok).toBe(false)
+    expect(p.p_error).toMatch(/stuck: 60 unresolved pins, 0 named/)
+    expect(p.p_extra.unresolvable).toBe(60)
+    expect(p.p_extra.stuck).toBe(true)
+  })
+
+  it("a few unresolvable stragglers stay visible without failing the run", async () => {
+    st.selectResult = { data: [{ moment_id: "u1" }, { moment_id: "u2" }], error: null }
+    await drive()
+    const p = logParams()
+    expect(p.p_ok).toBe(true)
+    expect(p.p_extra.unresolvable).toBe(2)
+    expect(p.p_extra.unresolvable_sample).toEqual(["u1", "u2"])
+  })
+
+  it("⚠ a failed mint-records read is reported, and GQL still names what it can", async () => {
+    st.selectResult = { data: [{ moment_id: "g1" }], error: null }
+    st.mintResult = { data: null, error: { message: "statement timeout" } }
+    gqlFixture["g1"] = { serial_number: null, render_id: "R-G" }
+    await drive()
+    const p = logParams()
+    expect(p.p_ok).toBe(false)
+    expect(p.p_error).toMatch(/mint records read: statement timeout/)
+    expect(p.p_extra.from_gql).toBe(1)
+    expect(p.p_rows_written).toBe(1)
+  })
+
+  it("the sales drain uses the same lookup (mint records first)", async () => {
+    st.rpcImpl.pinnacle_sales_unresolved_render_nft_ids = async () => ({ data: ["s1"] })
+    let written: any = null
+    st.rpcImpl.pinnacle_sales_set_render_ids = async (params: any) => { written = params.p_map; return { data: 1 } }
+    st.mintResult = { data: [{ nft_id: "s1", render_id: "R-S" }], error: null }
+    await drive()
+    expect(written).toEqual({ s1: "R-S" })
+    expect(logParams().p_extra.sales_from_mint_records).toBe(1)
   })
 })

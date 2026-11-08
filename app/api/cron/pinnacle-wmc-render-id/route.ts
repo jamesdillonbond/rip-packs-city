@@ -3,9 +3,18 @@
 // Keeps wallet_moments_cache Pinnacle rows resolved to their true per-pin
 // render_id. New pins enter wmc via the wallet-backfill Cadence walk keyed on
 // the set-level edition_key (which collapses distinct characters); this route
-// fixes them by querying the Dapper studio-platform GraphQL by NFT id
-// (= wmc.moment_id) for edition.render_id + serial + shape.name, then derives
-// character/set/mint/image from pinnacle_catalog.
+// names them by NFT id (= wmc.moment_id), then derives character/set/mint/image
+// from pinnacle_catalog.
+//
+// ⭐ 2026-11-08 (handoff pinnacle-wmc-render-gap): the lookup is now
+// lib/pinnacle/render-lookup.ts — RPC's OWN mint records (pinnacle_mint_events,
+// nft_id → render_id from the chain's PinNFTMinted events) FIRST, Dapper's
+// studio-platform search only for pins our mint index lacks. Before, only the
+// search was asked, it answered nothing for a backlog of pins, and the lane
+// logged ok:true every hour while resolving 0 of 972 (rows_found 972 /
+// rows_written 0). It now reports per-source counts and the ids neither source
+// could name, and a BACKLOG that resolves nothing fails the run (see
+// STUCK_BACKLOG) instead of reading as a quiet success.
 //
 // Targets rows where render_id IS NULL (newly-acquired pins). The 2026-06-06
 // bulk re-key was done by scripts/remap-pinnacle-wmc.mjs.
@@ -27,6 +36,7 @@
 import { NextRequest, NextResponse, after } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { tokenMatches } from "@/lib/auth/bearer-secret"
+import { resolvePinnacleRenderIds } from "@/lib/pinnacle/render-lookup"
 
 export const maxDuration = 300;
 export const dynamic = "force-dynamic";
@@ -39,7 +49,7 @@ const supabaseAdmin = createClient(
 const TOKEN = process.env.INGEST_SECRET_TOKEN ?? "";
 const PIPELINE_NAME = "pinnacle-wmc-render-id";
 const PINNACLE_COLLECTION_ID = "7dd9dd11-e8b6-45c4-ac99-71331f959714";
-const GQL = "https://api.production.studio-platform.dapperlabs.com/graphql";
+const USER_AGENT = "rip-packs-city/pinnacle-wmc-render-id";
 // Candidate batch for the wmc render_id drain below.
 //
 // ⚠ WAS 2000, WHICH WAS NEVER A BOUND (corrected 2026-09-11). The read at the
@@ -64,39 +74,15 @@ const GQL = "https://api.production.studio-platform.dapperlabs.com/graphql";
 // ~2.4 days, where a paging rewrite would instead put 56k GQL lookups inside a
 // single tick's maxDuration.
 const CAP = 1000;
-const ID_CHUNK = 250;
 // Ongoing sales render_id drain (Q2): keep new pinnacle_sales rows from sitting
 // unresolved more than a tick. The one-time bulk drain is the admin route
 // /api/admin/backfill-pinnacle-sales-render-id; this just chases the trickle.
 const SALES_CAP = 1000;
-
-const QUERY = `
-query RemapByIds($ids: [UInt64!]!) {
-  searchPinnacleNft(searchInput: { first: 250, filters: [{ id: { in: $ids } }] }) {
-    edges { node { id serial_number edition { render_id } } }
-  }
-}`;
-
-async function fetchByIds(ids: string[]): Promise<Array<{ id: string; serial: number | null; render_id: string | null }>> {
-  const res = await fetch(GQL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Origin: "https://disneypinnacle.com",
-      "User-Agent": "rip-packs-city/pinnacle-wmc-render-id",
-    },
-    body: JSON.stringify({ query: QUERY, variables: { ids } }),
-    signal: AbortSignal.timeout(20_000),
-  });
-  if (!res.ok) throw new Error(`GQL ${res.status}`);
-  const json = (await res.json()) as { data?: { searchPinnacleNft?: { edges?: Array<{ node?: { id: string; serial_number: string | null; edition?: { render_id: string | null } } }> } }; errors?: unknown[] };
-  if (Array.isArray(json.errors) && json.errors.length > 0) throw new Error("GQL errors");
-  return (json.data?.searchPinnacleNft?.edges ?? []).map((e) => ({
-    id: e.node!.id,
-    serial: e.node?.serial_number != null && Number(e.node.serial_number) > 0 ? Number(e.node.serial_number) : null,
-    render_id: e.node?.edition?.render_id ?? null,
-  }));
-}
+// A run that finds at least this many unresolved pins and names NONE of them is
+// a stuck lane, not a quiet hour: it fails (2026-11-08, the 972/0 case). A few
+// stragglers neither source knows stay visible in extra.unresolvable without
+// turning the lane permanently red.
+const STUCK_BACKLOG = 50;
 
 export async function GET(req: NextRequest) {
   const auth = req.headers.get("authorization") ?? "";
@@ -160,41 +146,32 @@ export async function GET(req: NextRequest) {
     }
     const ids = [...new Set((rows ?? []).map((r: { moment_id: string }) => r.moment_id))] as string[];
 
+    const look = await resolvePinnacleRenderIds(supabaseAdmin, ids, { userAgent: USER_AGENT });
+    let gqlErrors = look.gqlErrors;
+
     let resolved = 0;
-    let gqlErrors = 0;
     // resolved counts rows the update LANDED on (.select), never rows attempted:
     // the update is fill-only (.is("render_id", null)), so a row a concurrent
     // writer already filled changes nothing and must not count (2026-09-26).
     let writeErrors = 0;
     let writeError: string | null = null;
-    for (let i = 0; i < ids.length; i += ID_CHUNK) {
-      const chunk = ids.slice(i, i + ID_CHUNK);
-      let nodes: Array<{ id: string; serial: number | null; render_id: string | null }> = [];
-      try {
-        nodes = await fetchByIds(chunk);
-      } catch {
-        gqlErrors++;
+    for (const [nftId, hit] of look.hits) {
+      const { data: landed, error: upErr } = await supabaseAdmin
+        .from("wallet_moments_cache")
+        .update({
+          render_id: hit.render_id,
+          ...(hit.serial != null ? { serial_number: hit.serial } : {}),
+        })
+        .eq("collection_id", PINNACLE_COLLECTION_ID)
+        .eq("moment_id", nftId)
+        .is("render_id", null)
+        .select("moment_id");
+      if (upErr) {
+        writeErrors++;
+        writeError = writeError ?? upErr.message;
         continue;
       }
-      for (const n of nodes) {
-        if (!n.render_id) continue;
-        const { data: landed, error: upErr } = await supabaseAdmin
-          .from("wallet_moments_cache")
-          .update({
-            render_id: n.render_id,
-            ...(n.serial != null ? { serial_number: n.serial } : {}),
-          })
-          .eq("collection_id", PINNACLE_COLLECTION_ID)
-          .eq("moment_id", n.id)
-          .is("render_id", null)
-          .select("moment_id");
-        if (upErr) {
-          writeErrors++;
-          writeError = writeError ?? upErr.message;
-          continue;
-        }
-        resolved += Array.isArray(landed) ? landed.length : 0;
-      }
+      resolved += Array.isArray(landed) ? landed.length : 0;
     }
 
     // Derive character/set/mint/image from the catalog for everything just resolved.
@@ -207,13 +184,15 @@ export async function GET(req: NextRequest) {
       else derived = typeof derCount === "number" ? derCount : 0;
     }
 
-    // Q2 — drain a small batch of unresolved pinnacle_sales render_ids (same GQL path).
+    // Q2 — drain a small batch of unresolved pinnacle_sales render_ids (same lookup).
     // It never STOPS the wmc work above, but a failed sales read or write is not
     // a success: it is recorded in sales_error and fails the run (2026-09-26 —
     // the RPC's error was never read, so a broken lane reported ok:true).
     let salesResolved = 0;
     let salesUpdated = 0;
+    let salesFromMintRecords = 0;
     let salesError: string | null = null;
+    let salesMintReadError: string | null = null;
     try {
       const { data: salesIdsData, error: salesReadErr } = await supabaseAdmin.rpc(
         "pinnacle_sales_unresolved_render_nft_ids",
@@ -221,38 +200,34 @@ export async function GET(req: NextRequest) {
       );
       if (salesReadErr) throw new Error(`read: ${salesReadErr.message}`);
       const salesIds = [...new Set(((salesIdsData ?? []) as string[]).filter(Boolean))];
-      for (let i = 0; i < salesIds.length; i += ID_CHUNK) {
-        const chunk = salesIds.slice(i, i + ID_CHUNK);
-        let nodes: Array<{ id: string; serial: number | null; render_id: string | null }> = [];
-        try {
-          nodes = await fetchByIds(chunk);
-        } catch {
-          gqlErrors++;
-          continue;
-        }
+      if (salesIds.length > 0) {
+        const s = await resolvePinnacleRenderIds(supabaseAdmin, salesIds, { userAgent: USER_AGENT });
+        gqlErrors += s.gqlErrors;
+        salesMintReadError = s.mintReadError;
+        salesFromMintRecords = s.fromMintRecords;
         const map: Record<string, string> = {};
-        for (const n of nodes) {
-          if (n.render_id) map[n.id] = n.render_id;
-        }
+        for (const [id, hit] of s.hits) map[id] = hit.render_id;
         const keys = Object.keys(map);
-        if (keys.length === 0) continue;
-        salesResolved += keys.length;
-        const { data: cnt, error: setErr } = await supabaseAdmin.rpc("pinnacle_sales_set_render_ids", { p_map: map });
-        if (setErr) {
-          salesError = salesError ?? `write: ${setErr.message}`;
-          continue;
+        salesResolved = keys.length;
+        if (keys.length > 0) {
+          const { data: cnt, error: setErr } = await supabaseAdmin.rpc("pinnacle_sales_set_render_ids", { p_map: map });
+          if (setErr) salesError = `write: ${setErr.message}`;
+          else salesUpdated = typeof cnt === "number" ? cnt : 0;
         }
-        salesUpdated += typeof cnt === "number" ? cnt : 0;
       }
     } catch (e) {
       salesError = salesError ?? (e instanceof Error ? e.message : String(e));
     }
 
+    const stuck = ids.length >= STUCK_BACKLOG && resolved === 0;
     const errors = [
+      look.mintReadError ? `mint records read: ${look.mintReadError}` : null,
+      salesMintReadError ? `sales mint records read: ${salesMintReadError}` : null,
       gqlErrors > 0 ? `${gqlErrors} gql chunk errors` : null,
       writeError ? `wmc write (${writeErrors}): ${writeError}` : null,
       deriveError ? `derive: ${deriveError}` : null,
       salesError ? `sales: ${salesError}` : null,
+      stuck ? `stuck: ${ids.length} unresolved pins, 0 named (mint records ${look.fromMintRecords}, gql ${look.fromGql}, unresolvable ${look.unresolvable.length})` : null,
     ].filter(Boolean) as string[];
 
     await logRun({
@@ -263,11 +238,18 @@ export async function GET(req: NextRequest) {
       extra: {
         unresolved_found: ids.length,
         resolved,
+        from_mint_records: look.fromMintRecords,
+        from_gql: look.fromGql,
+        unresolvable: look.unresolvable.length,
+        unresolvable_sample: look.unresolvable.slice(0, 10),
+        mint_read_error: look.mintReadError,
+        stuck,
         write_errors: writeErrors,
         write_error: writeError,
         derived,
         derive_error: deriveError,
         sales_resolved: salesResolved,
+        sales_from_mint_records: salesFromMintRecords,
         sales_updated: salesUpdated,
         sales_error: salesError,
         gql_errors: gqlErrors,

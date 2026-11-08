@@ -914,3 +914,57 @@ describe("/api/admin/backfill-pinnacle-catalog", () => {
     expect(spy.rpcCalls.some((c) => c.name === "pinnacle_catalog_set_floor_asks")).toBe(true)
   })
 })
+
+// 2026-11-08 (handoff pinnacle-wmc-render-gap, fix 3): after every FULL sweep the backfill
+// compares the catalog with RPC's own mint records. A render minted in the last 14 days with no
+// catalog row = the source fell behind → the run fails; an old orphan is reported, not alarmed.
+describe("/api/admin/backfill-pinnacle-catalog — catalog vs minted pins", () => {
+  async function fullRun(gap: { data: unknown; error: unknown } | undefined) {
+    const spy = install({
+      pinnacle_catalog: { data: null, error: null },
+      "rpc:pinnacle_catalog_set_floor_asks": { data: 1, error: null },
+      "rpc:log_pipeline_run": { data: null, error: null },
+      ...(gap ? { "rpc:pinnacle_minted_renders_missing_from_catalog": gap } : {}),
+    })
+    fetchMock = installFetchMock([
+      gqlRoute("CatalogBackfill", [pinPage([MICKEY_NODE], false, null)]),
+      gqlRoute("FloorAsks", floorPage([{ node: { edition: { render_id: "rid-1" }, listing: { price: "12.5" } } }])),
+    ])
+    await pinCatalog.POST(adminReq("https://t/api/admin/backfill-pinnacle-catalog", { authorization: "Bearer admin-token" }))
+    await runDeferred()
+    return { spy, log: spy.rpcCalls.find((c) => c.name === "log_pipeline_run")!.args! }
+  }
+
+  it("⚠ a RECENTLY minted render with no catalog row fails the run and says so", async () => {
+    const { log } = await fullRun({
+      data: { missing_renders: 3, missing_pins: 40, missing_recent_renders: 2, sample: [{ render_id: "NEW-1", pins: 30 }] },
+      error: null,
+    })
+    expect(log.p_ok).toBe(false)
+    expect(String(log.p_error)).toMatch(/catalog behind mints: 2 render\(s\) minted in the last 14 days/)
+    expect(log.p_extra).toMatchObject({ minted_renders_missing: 3, minted_pins_missing: 40, minted_renders_missing_recent: 2 })
+  })
+
+  it("an OLD orphan alone is reported in extra without failing the run", async () => {
+    const { log } = await fullRun({ data: { missing_renders: 1, missing_pins: 1, missing_recent_renders: 0, sample: [] }, error: null })
+    expect(log.p_ok).toBe(true)
+    expect(log.p_extra).toMatchObject({ minted_renders_missing: 1, minted_renders_missing_recent: 0, mint_gap_error: null })
+  })
+
+  it("⚠ a failed gap check is an error, never a silent 'no gap'", async () => {
+    const { log } = await fullRun({ data: null, error: { message: "statement timeout" } })
+    expect(log.p_ok).toBe(false)
+    expect(String((log.p_extra as Record<string, unknown>).mint_gap_error)).toBe("statement timeout")
+  })
+
+  it("a floors-only refresh does not run the check", async () => {
+    const spy = install({
+      "rpc:pinnacle_catalog_set_floor_asks": { data: 1, error: null },
+      "rpc:log_pipeline_run": { data: null, error: null },
+    })
+    fetchMock = installFetchMock([gqlRoute("FloorAsks", floorPage([]))])
+    await pinCatalog.GET(adminReq("https://t/api/admin/backfill-pinnacle-catalog?floors_only=1", { authorization: "Bearer cron-secret" }))
+    await runDeferred()
+    expect(spy.rpcCalls.some((c) => c.name === "pinnacle_minted_renders_missing_from_catalog")).toBe(false)
+  })
+})
