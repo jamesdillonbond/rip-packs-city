@@ -71,6 +71,7 @@ import { searchEditionFloorsByName, candyFloorReader, paniniFloorReader } from "
 import { readsCatalogDealsFromIndex, fetchIndexCatalogDeals } from "@/lib/concierge/catalog-deals-index";
 import { safeApiError } from "@/lib/api-error";
 import { runMarketCapTool } from "@/lib/concierge/market-cap-tool";
+import { runPlayerGamesTool } from "@/lib/concierge/player-games-tool";
 import { EV_SNAPSHOT_MAX_AGE_HOURS } from "@/lib/pack-dist-verdict";
 import { fetchAllPaged } from "@/lib/supabase-paginate";
 import { classifySerial } from "@/lib/serials/fun-patterns";
@@ -378,6 +379,19 @@ const TOOLS: Anthropic.Tool[] = [
         collectionId: { type: "string", description: "nba-top-shot, nfl-all-day, laliga-golazos, disney-pinnacle, ufc, candy-mlb or panini-blockchain. Defaults to the page's active collection, else nba-top-shot." },
         limit: { type: "number", description: "Leaderboard length (default 10, max 25)." },
       },
+    },
+  },
+  {
+    name: "get_player_games",
+    description: "A player's most recent games — ESPN box-score line, fantasy points, how that compares with their season average — beside that collection's player market cap the day before and the day after each game. Call it for 'how did X play last night', 'how has X been playing', 'did X's big game move his Moments / cards', 'is X's market cap reacting to his games'. Covers NBA, WNBA, NFL, MLB and eight soccer leagues (LaLiga, Premier League, Serie A, Bundesliga, Ligue 1, MLS, Liga Portugal, Eredivisie) from October 2026 (LaLiga from August). The name is resolved to the PERSON first; an ambiguous name returns candidates — ask which. status 'not_linked' means no feed is tied to that person (retired, an unread league, or a shared name) — say so, never that they did not play. When you mention a market-cap move, give its supply note when present, and never present one game as proof that performance moved the price. Not for Disney Pinnacle or UFC.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        name: { type: "string", description: "The player's name as the user typed it." },
+        collectionId: { type: "string", description: "nba-top-shot, nfl-all-day, laliga-golazos, candy-mlb or panini-blockchain. Defaults to the page's active collection, else nba-top-shot." },
+        limit: { type: "number", description: "How many recent games (default 5, max 15)." },
+      },
+      required: ["name"],
     },
   },
   {
@@ -1170,7 +1184,7 @@ RPC is in free, open beta — anyone can create a free account, no invite needed
 2. **Q&A**: answer how-things-work questions about FMV, badges, packs, sets, sniping, sign-in, wallets, collections.
 3. **Feedback intake**: capture bug reports, feature requests, confusion, and praise so the team can act on them. This is critical — the user is a beta tester whose feedback the team wants. Use log_bug / log_feature_request / log_feedback liberally (after clarifying — see below); that is how feedback reaches the team. Praise still counts — it signals what's working. Never name any individual behind RPC — refer to "the team" only.
 
-**Deal concierge & market intelligence are on-request only — never proactive.** You have search_live_deals / search_catalog_deals / search_serial_deals / get_edition_listings / get_fmv / get_special_serial_owners / check_wallet / check_wallet_squeeze / search_across_collections / get_collection_snapshot / explain_fmv / get_hot_floors / get_edition_sweep / get_set_completion_cost / get_top_sales / get_market_movers / get_rookies / get_premiums / get_ecosystem_stat / get_insight_board / get_trade_in / get_pack_chase / get_trade_block / search_catalog / get_price_history / find_quirky_serials. Use them ONLY when the user explicitly asks to shop, hunt deals, check FMV, look up a player's price, find/value a special serial, analyze a wallet, see their squeeze exposure (the "what's liquid in my bag" question), see what Top Shot editions are being swept / bulk-bought right now (get_hot_floors), check if a specific edition's floor is being swept (get_edition_sweep), price out completing a Top Shot set at floor (get_set_completion_cost) or rank which set is CHEAPEST to finish when they have not named one (get_cheapest_sets_to_complete), see which active Set/Crafting Challenges are worth completing (get_challenges — cost-to-complete vs reward value, netEv), see the biggest recent sales (get_top_sales), what's heating up or cooling (get_market_movers), how the rookie market looks (get_rookies), the premium parallels or low serials carry (get_premiums), ecosystem stats like new collectors and offer spreads (get_ecosystem_stat), pull the whole-collection Top Collector Report for a wallet (get_collector_report), look up what a badge means and how many editions carry it (get_badge_info), see every edition a player has with badges + FMV (get_player_editions), turn a typed name into the person — aliases, league spelling, name changes, namesakes and recorded parent/child relations (resolve_player_name), read a team's roster / squeeze / recent sales (get_team_intel), look up market cap — a collection, player, team, set, series or edition, or who is biggest by market cap (get_market_cap), or any other public insight board — squeeze / scarcity, set completion, the trophy room, pack market and pack-reality (get_insight_board), or Top Shot This trade-in math — what a wallet's Moments count for in packs, or the cheapest way to a player's pack (get_trade_in), or which Top Shot packs still hold sealed Legendaries / Ultimates / Rares and how that compares with launch (get_pack_chase), or who is offering or wanting what on the Trade Block (get_trade_block). The welcome message mentions once that deals and FMV checks are available; after that, do not bring them up again unless the user asks. Never offer deals as a consolation prize, side-quest, or follow-up to a support flow.
+**Deal concierge & market intelligence are on-request only — never proactive.** You have search_live_deals / search_catalog_deals / search_serial_deals / get_edition_listings / get_fmv / get_special_serial_owners / check_wallet / check_wallet_squeeze / search_across_collections / get_collection_snapshot / explain_fmv / get_hot_floors / get_edition_sweep / get_set_completion_cost / get_top_sales / get_market_movers / get_rookies / get_premiums / get_ecosystem_stat / get_insight_board / get_trade_in / get_pack_chase / get_trade_block / search_catalog / get_price_history / find_quirky_serials. Use them ONLY when the user explicitly asks to shop, hunt deals, check FMV, look up a player's price, find/value a special serial, analyze a wallet, see their squeeze exposure (the "what's liquid in my bag" question), see what Top Shot editions are being swept / bulk-bought right now (get_hot_floors), check if a specific edition's floor is being swept (get_edition_sweep), price out completing a Top Shot set at floor (get_set_completion_cost) or rank which set is CHEAPEST to finish when they have not named one (get_cheapest_sets_to_complete), see which active Set/Crafting Challenges are worth completing (get_challenges — cost-to-complete vs reward value, netEv), see the biggest recent sales (get_top_sales), what's heating up or cooling (get_market_movers), how the rookie market looks (get_rookies), the premium parallels or low serials carry (get_premiums), ecosystem stats like new collectors and offer spreads (get_ecosystem_stat), pull the whole-collection Top Collector Report for a wallet (get_collector_report), look up what a badge means and how many editions carry it (get_badge_info), see every edition a player has with badges + FMV (get_player_editions), turn a typed name into the person — aliases, league spelling, name changes, namesakes and recorded parent/child relations (resolve_player_name), read a team's roster / squeeze / recent sales (get_team_intel), look up market cap — a collection, player, team, set, series or edition, or who is biggest by market cap (get_market_cap), see how a player has been playing game by game and what their market cap did around each game (get_player_games), or any other public insight board — squeeze / scarcity, set completion, the trophy room, pack market and pack-reality (get_insight_board), or Top Shot This trade-in math — what a wallet's Moments count for in packs, or the cheapest way to a player's pack (get_trade_in), or which Top Shot packs still hold sealed Legendaries / Ultimates / Rares and how that compares with launch (get_pack_chase), or who is offering or wanting what on the Trade Block (get_trade_block). The welcome message mentions once that deals and FMV checks are available; after that, do not bring them up again unless the user asks. Never offer deals as a consolation prize, side-quest, or follow-up to a support flow.
 
 ## CRITICAL — Support flow integrity (hard rule, not a soft preference)
 Once a user enters a support, Q&A, confusion, bug-report, feature-request, or general-feedback flow, you MUST stay in that flow through resolution. You do NOT pivot to offering deals, FMV checks, movers, or "while we troubleshoot, want me to pull some deals?" mid-conversation. The pivot is acceptable ONLY if the user themselves explicitly asks to switch topics (e.g. "okay forget that, can you help me find a deal?" or "different question — what's a LeBron Rare worth?"). Until they do, your job is the current thread: ask clarifying questions, log feedback if appropriate, confirm capture, and ask if there's anything else they need. After logging a bug / feature request / feedback, your closing line is "Anything else?" — NOT "want me to pull some deals while we wait?" Violating this rule is the single most common failure mode of this bot; do not do it.
@@ -6311,6 +6325,26 @@ async function executeToolInner(
     }
   }
 
+  if (toolName === "get_player_games") {
+    try {
+      const out = await runPlayerGamesTool(toolInput ?? {}, effectiveCollectionId ?? "nba-top-shot", {
+        supabase,
+        resolvePerson: async (uuid, name) => {
+          const resolution = await resolvePlayerName(supabase, uuid, name);
+          if (resolution.status === "ambiguous") {
+            return { status: "stop", payload: { status: "ambiguous", player: name, player_identity: identityContextFor(resolution), message: "That name is more than one person in this collection — ask which one (team / era), then call again with the candidate's exact name. Never combine their games." } };
+          }
+          return resolution.status === "one"
+            ? { status: "ok", playerId: resolution.player.id, slug: resolution.player.slug, label: resolution.player.name }
+            : { status: "ok", playerId: null, slug: slugifyPlayerName(name), label: name };
+        },
+      });
+      return JSON.stringify(out);
+    } catch (err) {
+      return JSON.stringify({ status: "error", message: safeApiError(err, "game log read failed").error });
+    }
+  }
+
   if (toolName === "get_team_checklist") {
     try {
       const teamIn = String(toolInput.team ?? "").trim();
@@ -7323,6 +7357,7 @@ export async function POST(req: NextRequest) {
               get_team_intel: 10000,
               get_team_checklist: 10000,
               get_market_cap: 10000,
+              get_player_games: 10000, // person resolver (resolve_player_name) then one per-person RPC
               // Public insight boards (fetchPublicInsight, 9 s abort; each board route
               // bounds its own read at ~8 s and answers with its classified error).
               // Under the 6 s default a board answering in 6-9 s was thrown away as
