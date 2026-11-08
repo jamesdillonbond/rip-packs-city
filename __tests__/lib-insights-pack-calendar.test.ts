@@ -96,6 +96,33 @@ describe("fetchPackCalendar", () => {
     )
     expect(r.complete).toBe(false)
     expect(r.drops).toEqual([])
+    // All Day has no state row at all: it is still named, as unread
+    expect(r.complete_at).toEqual({ nba: null, nfl: null })
+  })
+
+  it("walks every product the book has a state row for, and names a half-walked one as unread", async () => {
+    const r = await fetchPackCalendar(
+      fakeSb({
+        atlas_pack_market_state: {
+          data: [...state, { product: "disney", last_complete_pass_started_at: "2026-11-08T19:45:00Z", last_complete_at: "2026-11-08T19:46:00Z" }, { product: "laliga", last_complete_pass_started_at: null }],
+        },
+        atlas_pack_market: { data: [row({ product: "disney", dist_id: "8913", title: "A Disney Villains Halloween Vol.2" })] },
+      }),
+      NOW,
+    )
+    expect(r.complete).toBe(false)
+    expect(r.complete_at).toMatchObject({ disney: "2026-11-08T19:46:00Z", laliga: null })
+    const pin = r.drops.find((d) => d.dist_id === "8913")
+    expect(pin).toMatchObject({ collection: "disney_pinnacle", detail_href: "/disney-pinnacle/pack/dist/8913" })
+  })
+
+  it("ignores a state row for a product it cannot place", async () => {
+    const r = await fetchPackCalendar(
+      fakeSb({ atlas_pack_market_state: { data: [...state, { product: "ufc", last_complete_pass_started_at: null }] }, atlas_pack_market: { data: [] } }),
+      NOW,
+    )
+    expect(r.complete).toBe(true)
+    expect(Object.keys(r.complete_at).sort()).toEqual(["nba", "nfl"])
   })
 
   it("a failed read throws (the route turns it into a 503), never an empty list", async () => {

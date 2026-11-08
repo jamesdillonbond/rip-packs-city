@@ -1,6 +1,8 @@
 // lib/insights/pack-calendar.ts
 //
-// The week's Dapper pack drops — Top Shot and All Day — from the Atlas pack book
+// The week's Dapper pack drops — Top Shot and All Day, plus Golazos and Pinnacle once the book
+// walks them (`laliga` / `disney`, migration audit_20261108_atlas_pack_book_adds_golazos_and_pinnacle) —
+// from the Atlas pack book
 // (`atlas_pack_market`, walked every 15 min by `atlas_pack_market_tick`, migration
 // 20261101022135). Built 2026-11-08 for the @RipPacksCity "drops this week" post
 // (docs/social/x-calendar.md): no other RPC table lists a drop before its first pack sells.
@@ -11,8 +13,19 @@
 // than posting an empty week. A drop's window is Dapper's own `start_time` / `end_time`; for an
 // RSVP drop that window is the RSVP, so `kind` carries the distinction and copy must not call
 // an RSVP close a sale.
+//
+// WHICH PRODUCTS. The book's own state rows decide: a product is read when it has a
+// `atlas_pack_market_state` row, so adding one in the DB widens the calendar with no code change.
+// `complete` is true only when EVERY walked product has a complete pass; drops come only from
+// products that do, and `complete_at` names the one that does not, so a half-walked product is
+// reported as unread, never as a week without drops.
+//
+// NOT COVERED (2026-11-08): Panini (its `panini_products.first_seen_at` is DISCOVERY time — six
+// Entertainment products were all "first seen" 11-08 when the runner learned the filter — not a
+// release date), Candy MLB (no drop schedule is ingested; packs are secondary-market only) and UFC
+// Strike (market closed). Say so; never imply they had no drops.
 
-export type PackCalendarProduct = "nba" | "nfl"
+export type PackCalendarProduct = "nba" | "nfl" | "laliga" | "disney"
 
 export interface PackCalendarSourceRow {
   product: string
@@ -31,7 +44,7 @@ export interface PackCalendarSourceRow {
 export type DropStatus = "upcoming" | "open" | "ended"
 
 export interface PackCalendarDrop {
-  collection: "nba_top_shot" | "nfl_all_day"
+  collection: "nba_top_shot" | "nfl_all_day" | "laliga_golazos" | "disney_pinnacle"
   dist_id: string
   title: string
   tier: string | null
@@ -50,11 +63,16 @@ export interface PackCalendarDrop {
 const COLLECTION: Record<PackCalendarProduct, PackCalendarDrop["collection"]> = {
   nba: "nba_top_shot",
   nfl: "nfl_all_day",
+  laliga: "laliga_golazos",
+  disney: "disney_pinnacle",
 }
 const URL_SLUG: Record<PackCalendarProduct, string> = {
   nba: "nba-top-shot",
   nfl: "nfl-all-day",
+  laliga: "laliga-golazos",
+  disney: "disney-pinnacle",
 }
+const isProduct = (p: string): p is PackCalendarProduct => Object.prototype.hasOwnProperty.call(COLLECTION, p)
 
 const DAY_MS = 86_400_000
 
@@ -72,7 +90,7 @@ export function buildPackCalendar(
   const ahead = now.getTime() + (opts.daysAhead ?? 7) * DAY_MS
   const out: PackCalendarDrop[] = []
   for (const r of rows) {
-    if (r.product !== "nba" && r.product !== "nfl") continue
+    if (!isProduct(r.product)) continue
     if (!r.start_time || !/^[0-9]+$/.test(r.dist_id)) continue
     const start = Date.parse(r.start_time)
     if (!Number.isFinite(start) || new Date(start).getUTCFullYear() < 2015) continue
@@ -104,11 +122,16 @@ export function buildPackCalendar(
 }
 
 export interface PackCalendarResult {
+  /** Every walked product (and Top Shot + All Day always) has a complete pass. */
   complete: boolean
-  /** When the newest complete pass of each product finished (null = never). */
-  complete_at: Record<PackCalendarProduct, string | null>
+  /** When each walked product's newest complete pass finished; null = never (that product is unread). */
+  complete_at: Partial<Record<PackCalendarProduct, string | null>>
+  /** Drops from the products that DO have a complete pass. */
   drops: PackCalendarDrop[]
 }
+
+// Top Shot and All Day are always expected; a missing state row for them is an unread book.
+const REQUIRED: PackCalendarProduct[] = ["nba", "nfl"]
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function fetchPackCalendar(sb: any, now = new Date()): Promise<PackCalendarResult> {
@@ -117,16 +140,19 @@ export async function fetchPackCalendar(sb: any, now = new Date()): Promise<Pack
     .select("product, last_complete_pass_started_at, last_complete_at")
   if (stateErr) throw new Error(`atlas_pack_market_state: ${stateErr.message}`)
 
-  const complete_at: Record<PackCalendarProduct, string | null> = { nba: null, nfl: null }
+  const walked = new Set<PackCalendarProduct>(REQUIRED)
+  for (const s of (state ?? []) as { product: string }[]) if (isProduct(s.product)) walked.add(s.product)
+
+  const complete_at: Partial<Record<PackCalendarProduct, string | null>> = {}
   const rows: PackCalendarSourceRow[] = []
   let complete = true
-  for (const product of ["nba", "nfl"] as PackCalendarProduct[]) {
+  for (const product of [...walked].sort()) {
     const st = (state ?? []).find((s: { product: string }) => s.product === product)
+    complete_at[product] = st?.last_complete_pass_started_at ? (st.last_complete_at ?? null) : null
     if (!st?.last_complete_pass_started_at) {
       complete = false
       continue
     }
-    complete_at[product] = st.last_complete_at ?? null
     // Only rows the last complete pass (or a newer one) saw — the atlas_pack_book() rule.
     const since = new Date(now.getTime() - 60 * DAY_MS).toISOString()
     const { data, error } = await sb
@@ -143,5 +169,5 @@ export async function fetchPackCalendar(sb: any, now = new Date()): Promise<Pack
     if ((data ?? []).length >= 1000) throw new Error(`atlas_pack_market(${product}): 1000-row page full`)
     rows.push(...((data ?? []) as PackCalendarSourceRow[]))
   }
-  return { complete, complete_at, drops: complete ? buildPackCalendar(rows, now) : [] }
+  return { complete, complete_at, drops: buildPackCalendar(rows, now) }
 }

@@ -344,9 +344,17 @@ async function pageLive(href) {
     return false
   }
 }
+// Drops come from every product the Atlas pack book walks (Top Shot, All Day, and Golazos /
+// Pinnacle once their walk is live). A product without a complete pass is UNREAD: its drops are
+// missing, so the post must not read as the whole week.
+const ATLAS_NAMES = { nba: "Top Shot", nfl: "All Day", laliga: "Golazos", disney: "Pinnacle" }
+let calendarMeta = null
 async function calendar() {
   const d = await getJson("pack-calendar")
-  if (!d.meta?.complete) throw new Error("the Atlas pack book has no complete pass to read")
+  calendarMeta = d.meta ?? {}
+  const unread = Object.entries(calendarMeta.complete_at ?? {}).filter(([, at]) => !at).map(([p]) => ATLAS_NAMES[p] ?? p)
+  if (unread.includes("Top Shot") || unread.includes("All Day")) throw new Error(`the Atlas pack book is unread for ${unread.join(", ")}`)
+  calendarMeta.unread = unread
   return d.drops ?? []
 }
 
@@ -361,10 +369,20 @@ async function drops() {
   const link = (await pageLive(lead.detail_href)) ? `${SITE}${lead.detail_href}` : fallbackLink
   const multi = new Set(ahead.map((x) => x.collection)).size > 1
   const lines = ahead.map((x) => dropLine(x, multi))
+  const covered = Object.keys(calendarMeta?.complete_at ?? {}).map((p) => ATLAS_NAMES[p] ?? p).filter((n) => !calendarMeta.unread.includes(n))
   return {
     title: "Drops this week",
     link,
-    facts: { drops: ahead, ended_this_week: all.filter((x) => x.status === "ended").length, lead_page_live: link !== fallbackLink },
+    facts: {
+      drops: ahead,
+      ended_this_week: all.filter((x) => x.status === "ended").length,
+      lead_page_live: link !== fallbackLink,
+      collections_covered: covered,
+      collections_unread: calendarMeta?.unread ?? [],
+      // No drop source for these (docs/social/x-calendar.md): never say they had no drops.
+      collections_not_covered: ["Panini", "Candy MLB", "UFC Strike (closed)"].concat(covered.includes("Golazos") ? [] : ["Golazos"]).concat(covered.includes("Pinnacle") ? [] : ["Pinnacle"]),
+    },
+    warnings_extra: calendarMeta?.unread?.length ? [`pack book unread for ${calendarMeta.unread.join(", ")} — their drops are missing from this list`] : [],
     draft: fitWithMore(lines, "Drops this week:\n", (n) => `${n ? `+${n} more\n` : ""}\n${link}`),
   }
 }
@@ -421,6 +439,10 @@ try {
   Object.assign(out, await run(ctx))
 } catch (e) {
   out.skip_reason = `slot failed: ${e.message}`
+}
+if (out.warnings_extra) {
+  out.warnings.push(...out.warnings_extra)
+  delete out.warnings_extra
 }
 if (out.draft) {
   if (/\bDUC\b/.test(out.draft)) out.warnings.push("draft contains 'DUC' — rewrite as dollars")
