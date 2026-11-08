@@ -23,6 +23,7 @@ import PlayerFollowButton from "@/components/entity/PlayerFollowButton"
 import { playerPagePath, isTeamSubject } from "@/lib/player-route"
 import { parsePlayerHubSlug } from "@/lib/player-hub"
 import { getEntityLabels } from "@/lib/entity-labels"
+import { paniniLabelSetFor } from "@/lib/panini/label-set"
 import { Section, SectionUnavailable, StatCell, RECENT_LOW_TOTAL_LABEL, fmvTotalSub, recentLowTotalSub, fmtCount, fmtUsd, relTime } from "@/components/entity/_shared"
 import EditionsGridPaginated, { type EditionTile } from "@/components/entity/EditionsGridPaginated"
 import { buildPlayerSetCards } from "@/lib/player-page-view"
@@ -510,8 +511,12 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
   if (detailFailed) return <PlayerUnavailable collection={collection} slug={slug} />
   if (!detail) notFound()
 
-  const labels = getEntityLabels(collection)
-  const isCharacter = detail.is_character === true
+  // Panini Entertainment (2026-11-08): a Bad Egg / Moonbird is a Character, a band
+  // member an Artist — the product decides (lib/panini/label-set.ts), and either one
+  // takes the character hero, not the sports one (no position, no jersey, no team).
+  const paniniLabelSet = collection === "panini-blockchain" ? await paniniLabelSetFor("player_name", detail.name) : null
+  const labels = getEntityLabels(collection, paniniLabelSet)
+  const isCharacter = detail.is_character === true || paniniLabelSet === "entertainment" || paniniLabelSet === "music"
   // Panini (entity pages opened 2026-09-27): no `sales` rows, and the bridge has
   // no floor source, so floor_total_usd is the FMV total restated (COALESCE in
   // get_player_detail) — a "Recent-Low Total" equal to FMV would be a fabricated
@@ -594,7 +599,7 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
 
             {isCharacter ? (
               <div className="rpc-mono" style={{ fontSize: 12, color: "var(--rpc-text-secondary)", letterSpacing: "0.06em" }}>
-                Character{detail.team ? <> · {labels.team}: {teamHref ? <Link href={teamHref} style={{ color: "var(--rpc-text-primary)", textDecoration: "none" }}>{detail.team}</Link> : detail.team}</> : null}
+                {labels.player}{detail.team ? <> · {labels.team}: {teamHref ? <Link href={teamHref} style={{ color: "var(--rpc-text-primary)", textDecoration: "none" }}>{detail.team}</Link> : detail.team}</> : null}
               </div>
             ) : (
               <div className="rpc-mono" style={{ fontSize: 12, color: "var(--rpc-text-secondary)", letterSpacing: "0.06em", display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}>

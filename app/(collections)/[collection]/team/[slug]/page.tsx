@@ -16,6 +16,7 @@ import { sectionRow, sectionRows, sectionRowsResult, structuralSection } from "@
 import { isExhibitionTeamSlug } from "@/lib/team-denylist"
 import { teamPageMetadata, teamJsonLd, collectionDisplayName, NOT_FOUND_METADATA } from "@/lib/seo"
 import { getEntityLabels } from "@/lib/entity-labels"
+import { paniniLabelSetFor } from "@/lib/panini/label-set"
 import { Section, SectionUnavailable, StatCell, RECENT_LOW_TOTAL_LABEL, fmvTotalSub, recentLowTotalSub, fmtCount, fmtUsd } from "@/components/entity/_shared"
 import PlayersGridPaginated, { type PlayerTile } from "@/components/entity/PlayersGridPaginated"
 import EditionsGridPaginated, { type EditionTile } from "@/components/entity/EditionsGridPaginated"
@@ -178,7 +179,12 @@ export default async function TeamPage(props: { params: Promise<{ collection: st
   if (detailFailed) return <TeamUnavailable collection={collection} slug={slug} />
   if (!detail) notFound()
 
-  const labels = getEntityLabels(collection)
+  // Panini Entertainment (2026-11-08): a Bad Egg Co. / Moonbirds line is a Franchise
+  // with a Cast, a band is a Band with a Lineup — the product decides, not the collection.
+  const labels = getEntityLabels(
+    collection,
+    collection === "panini-blockchain" ? await paniniLabelSetFor("team_name", detail.team_name) : null,
+  )
   const isFranchise = detail.is_franchise === true
   const noun = isFranchise ? labels.team /* Franchise */ : labels.team /* Team */
   const rosterLabel = labels.roster

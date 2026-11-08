@@ -55,8 +55,54 @@ const SPORTS: EntityLabels = {
   units: "Moments",
 }
 
-export function getEntityLabels(collectionUrlSlug: string): EntityLabels {
-  return isPinnacleUrlSlug(collectionUrlSlug) ? PINNACLE : SPORTS
+// ── Panini (2026-11-08) ──────────────────────────────────────────────────────
+// Panini sells CARDS, not Moments, in every product — sports included. Its
+// Entertainment filter adds non-sport lines whose Panini fields reuse sports
+// names (`team` = the IP / brand / band, `athlete` = the figure on the card),
+// so a product carries a label set (panini_products.label_set; NULL = by its grid
+// sport): Bad Egg Co. / Moonbirds are Characters of a Franchise (Pinnacle's
+// vocabulary); a band's members are Artists of a Band. The products bridge mints
+// no players rows for either (they are not people on a roster).
+export type PaniniLabelSet = "sports" | "entertainment" | "music"
+
+const PANINI_SPORTS: EntityLabels = { ...SPORTS, unit: "Card", units: "Cards" }
+
+const PANINI_ENTERTAINMENT: EntityLabels = {
+  player: "Character",
+  players: "Characters",
+  team: "Franchise",
+  roster: "Cast",
+  portrait: "Portrait",
+  tier: "Tier",
+  unit: "Card",
+  units: "Cards",
+}
+
+const PANINI_MUSIC: EntityLabels = {
+  player: "Artist",
+  players: "Artists",
+  team: "Band",
+  roster: "Lineup",
+  portrait: "Portrait",
+  tier: "Tier",
+  unit: "Card",
+  units: "Cards",
+}
+
+/**
+ * Labels for a collection's pages. `labelSet` matters only for Panini, whose one
+ * collection mixes sports and entertainment products: entity pages pass the set
+ * their product resolves to (lib/panini/label-set.ts); collection-wide surfaces
+ * omit it and get the sports nouns with Panini's unit.
+ */
+export function getEntityLabels(collectionUrlSlug: string, labelSet?: PaniniLabelSet | null): EntityLabels {
+  if (isPinnacleUrlSlug(collectionUrlSlug)) return PINNACLE
+  if (collectionUrlSlug === "panini-blockchain") {
+    if (labelSet === "music") return PANINI_MUSIC
+    if (labelSet === "entertainment") return PANINI_ENTERTAINMENT
+    return PANINI_SPORTS
+  }
+  return SPORTS
 }
 
 /**
