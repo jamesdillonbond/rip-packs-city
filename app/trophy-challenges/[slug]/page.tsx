@@ -17,6 +17,7 @@ import { PageContentAnchor } from "@/components/SkipToContent"
 import SiteFooter from "@/components/SiteFooter"
 import { probeTrophyChallengeLive } from "@/lib/trophy/challenge-probe"
 import ChallengeBoardClient from "./ChallengeBoardClient"
+import { challengeDescription } from "@/lib/trophy/challenge-copy"
 
 export const dynamic = "force-dynamic"
 
@@ -39,14 +40,36 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
     }
   }
   const named = probe.kind === "found"
+  const title = named ? `${probe.title} · Trophy case challenge` : "Trophy case challenge"
+  const description = challengeDescription(named ? probe : null)
+  const canonical = `https://www.rippackscity.com/trophy-challenges/${slug}`
+  // Its OWN card (2026-11-07, Trevor: challenges "should have their own special
+  // link preview"). ⚠ Every og/twitter field restated — Next REPLACES these
+  // objects per route, so the root defaults would not survive.
+  const image = `https://www.rippackscity.com/api/og/trophy-challenge/${encodeURIComponent(slug)}`
+  const alt = named ? `${probe.title} — a Rip Packs City trophy case challenge` : "A Rip Packs City trophy case challenge"
   return {
-    title: named ? `${probe.title} · Trophy case challenge` : "Trophy case challenge",
-    description:
-      named && probe.tagline
-        ? probe.tagline
-        : "Collectors show off their trophy cases for a Rip Packs City challenge.",
+    title,
+    description,
     robots: { index: false, follow: true },
-    alternates: { canonical: `https://www.rippackscity.com/trophy-challenges/${slug}` },
+    alternates: { canonical },
+    openGraph: {
+      type: "website",
+      locale: "en_US",
+      siteName: "Rip Packs City",
+      url: canonical,
+      title: `${title} | Rip Packs City`,
+      description,
+      images: [{ url: image, width: 1200, height: 630, alt }],
+    },
+    twitter: {
+      card: "summary_large_image",
+      site: "@RipPacksCity",
+      creator: "@RipPacksCity",
+      title: `${title} | Rip Packs City`,
+      description,
+      images: [{ url: image, alt }],
+    },
   }
 }
 

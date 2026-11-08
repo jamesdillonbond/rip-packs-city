@@ -67,6 +67,7 @@ const CARDS: Array<{ path: string; query?: string; params?: Record<string, strin
   { path: "app/api/og/fast-break/route", query: "?date=2026-08-11" },
   { path: "app/api/og/profile/[username]/route", params: { username: "jamesdillonbond" } },
   { path: "app/api/og/trophy-case/[username]/route", params: { username: "jamesdillonbond" } },
+  { path: "app/api/og/trophy-challenge/[slug]/route", params: { slug: "dame-time" } },
 
   // Insights board cards (self-fetch their public API)
   { path: "app/api/og/insights/route" },

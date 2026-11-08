@@ -31,7 +31,7 @@ const READ_TIMEOUT_MS = 1_500
 const WRITE_TIMEOUT_MS = 8_000
 
 /** Storage key: `<kind>/<lower-cased handle>[/<slug>].png` (handles resolve case-insensitively). */
-export function ogCardKey(kind: "profile" | "trophy-case", username: string, slug?: string | null): string {
+export function ogCardKey(kind: "profile" | "trophy-case" | "challenge", username: string, slug?: string | null): string {
   const u = encodeURIComponent(username.trim().toLowerCase())
   return slug ? `${kind}/${u}/${encodeURIComponent(slug)}.png` : `${kind}/${u}.png`
 }

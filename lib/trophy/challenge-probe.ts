@@ -19,7 +19,7 @@ import { withBoardBudget } from "@/lib/insights/board-page-fetch"
 import { supabase } from "@/lib/supabase"
 
 export type ChallengeProbe =
-  | { kind: "found"; title: string; tagline: string | null }
+  | { kind: "found"; title: string; tagline: string | null; entryCount?: number | null }
   | { kind: "missing" }
   | { kind: "unknown" }
 
@@ -42,11 +42,18 @@ export async function probeTrophyChallenge(db: any, slug: string): Promise<Chall
     }
     if (data == null) return { kind: "missing" }
     const ch = (data as { challenge?: { title?: unknown; tagline?: unknown } }).challenge
+    const count = (data as { entry_count?: unknown }).entry_count
     if (!ch || typeof ch.title !== "string" || ch.title.trim() === "") {
       // A body we cannot read is not evidence of absence.
       return { kind: "unknown" }
     }
-    return { kind: "found", title: ch.title, tagline: typeof ch.tagline === "string" ? ch.tagline : null }
+    return {
+      kind: "found",
+      title: ch.title,
+      tagline: typeof ch.tagline === "string" ? ch.tagline : null,
+      // For the link preview's line; null (not 0) when the payload lacked it.
+      entryCount: typeof count === "number" ? count : null,
+    }
   } catch (e) {
     console.error("[trophy-challenges/probe]", e instanceof Error ? e.message : e)
     return { kind: "unknown" }

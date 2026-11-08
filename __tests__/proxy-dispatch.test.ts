@@ -340,6 +340,36 @@ describe("proxy() — unauthenticated gate", () => {
   })
 })
 
+// 2026-11-07: the shared challenge link is /dashboard?tab=trophy&challenge=<slug>.
+// A link-preview crawler (never signed in) used to get /login and unfurl as the
+// sign-in page; it now goes to the public challenge board (the challenge's own
+// card). A PERSON signed out still gets /login?next=… (else the board's own
+// "Enter" link, which points back here, would loop).
+describe("proxy() — link-preview crawler on the challenge deep link", () => {
+  const DISCORD = "Mozilla/5.0 (compatible; Discordbot/2.0; +https://discordapp.com)"
+  const SAFARI = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1"
+  it("Discordbot → the public challenge board, not /login", async () => {
+    st.user = null
+    const res = await proxy(req("/dashboard?tab=trophy&challenge=dame-time", { headers: { "user-agent": DISCORD } }))
+    expect(res.status).toBe(307)
+    expect(new URL(res.headers.get("location")!).pathname).toBe("/trophy-challenges/dame-time")
+  })
+  it("⚠ a signed-out PERSON still gets /login?next=<the challenge link>", async () => {
+    st.user = null
+    const res = await proxy(req("/dashboard?tab=trophy&challenge=dame-time", { headers: { "user-agent": SAFARI } }))
+    const loc = decodeURIComponent(res.headers.get("location") ?? "")
+    expect(loc).toContain("/login")
+    expect(loc).toContain("/dashboard?tab=trophy&challenge=dame-time")
+  })
+  it("a crawler on the dashboard WITHOUT a valid challenge keeps the normal sign-in redirect", async () => {
+    st.user = null
+    for (const path of ["/dashboard", "/dashboard?challenge=..%2Fx"]) {
+      const res = await proxy(req(path, { headers: { "user-agent": DISCORD } }))
+      expect(res.headers.get("location") ?? "").toContain("/login")
+    }
+  })
+})
+
 // 2026-10-15: a path no route serves used to redirect to /login (a sign-in wall in
 // front of a 404, and a soft 404 to crawlers). It now passes through so Next renders
 // its 404; every routed path keeps the gate. Mutation-checked: removing the

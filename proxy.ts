@@ -27,6 +27,7 @@
 // guard still prevents using one user's cached cookie under another session.
 
 import { NextRequest, NextResponse } from "next/server"
+import { challengePreviewTarget } from "@/lib/routing/link-preview-bot"
 import { createServerClient } from "@supabase/ssr"
 import { createClient } from "@supabase/supabase-js"
 import { CANDY_MLB_PUBLIC, PANINI_PUBLIC } from "@/lib/launch-flags"
@@ -1747,6 +1748,19 @@ export async function proxy(request: NextRequest) {
       const pass = NextResponse.next()
       carryCookies(pass, response)
       return applySecurityHeaders(pass, pathname)
+    }
+    // ── A link-preview crawler on the challenge deep link (2026-11-07) ──────
+    // /dashboard?…&challenge=<slug> is what gets shared; a crawler is never
+    // signed in, so it unfurled as /login. Send IT (only it) to the public
+    // challenge board, whose card is the challenge's own. People still get
+    // /login?next=… below. lib/routing/link-preview-bot.ts
+    if (request.method === "GET" || request.method === "HEAD") {
+      const target = challengePreviewTarget(pathname, search, request.headers.get("user-agent"))
+      if (target) {
+        const toBoard = NextResponse.redirect(new URL(target, request.url))
+        carryCookies(toBoard, response)
+        return applySecurityHeaders(toBoard, pathname)
+      }
     }
     const loginUrl = new URL("/login", request.url)
     loginUrl.searchParams.set("next", pathname + search)

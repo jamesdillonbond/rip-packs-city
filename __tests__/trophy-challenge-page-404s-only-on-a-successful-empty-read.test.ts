@@ -58,6 +58,16 @@ describe("probeTrophyChallenge", () => {
       db(Promise.resolve({ data: { challenge: { title: "Dame Time", tagline: "Lillard only" }, entries: [] }, error: null })),
       "dame-time",
     )
-    expect(r).toEqual({ kind: "found", title: "Dame Time", tagline: "Lillard only" })
+    // entryCount added 2026-11-07 (the link preview's line); this payload has
+    // no entry_count, so it is null — unknown, NOT 0.
+    expect(r).toEqual({ kind: "found", title: "Dame Time", tagline: "Lillard only", entryCount: null })
+  })
+
+  it("carries the entry count when the payload has it", async () => {
+    const r = await probeTrophyChallenge(
+      db(Promise.resolve({ data: { challenge: { title: "Dame Time", tagline: null }, entries: [], entry_count: 5 }, error: null })),
+      "dame-time",
+    )
+    expect(r).toMatchObject({ kind: "found", entryCount: 5 })
   })
 })
