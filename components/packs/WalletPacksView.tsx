@@ -124,18 +124,23 @@ const display = "var(--font-display)"
 
 export type { PackFilter }
 
-export default function WalletPacksView({ collection }: { collection: string }) {
+export default function WalletPacksView({ collection, wallet: walletProp, walletPending = false }: { collection: string; wallet?: string | null; walletPending?: boolean }) {
   const searchParams = useSearchParams()
   const accent = getCollection(collection)?.accent ?? "var(--rpc-red)"
   const dbSlug = toDbSlug(collection)
 
   const [wallet, setWallet] = useState<string | null>(null)
   useEffect(() => {
+    // 2026-11-07: the BINDER's wallet first. This view used to re-derive its own from
+    // ?wallet= or the device key, so a signed-in collector whose saved wallet the
+    // Moments tab had just loaded saw the Packs tab ask for a DIFFERENT wallet (this
+    // device's old key) — and, 403'd on it, read "Sign in" while signed in.
     const fromUrl = searchParams.get("wallet") || searchParams.get("address")
     const owner = getOwnerKey()
-    const resolved = (fromUrl || owner || "").trim().toLowerCase()
+    if (walletPending) return // the binder is still resolving the account's saved wallet
+    const resolved = (walletProp || fromUrl || owner || "").trim().toLowerCase()
     setWallet(resolved && resolved.startsWith("0x") ? resolved : null)
-  }, [searchParams])
+  }, [searchParams, walletProp, walletPending])
 
   const [summaryRow, setSummaryRow] = useState<SummaryCollection | null>(null)
   // 2026-10-18: Net P&L is withheld on the SAME coverage rule as the dashboard's
@@ -147,6 +152,8 @@ export default function WalletPacksView({ collection }: { collection: string }) 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [authRequired, setAuthRequired] = useState(false)
+  // 401 = signed out; 403 = signed in, but this wallet is not saved on the account.
+  const [notYourWallet, setNotYourWallet] = useState(false)
   const [page, setPage] = useState(0)
 
   // ── Opened | Unopened sub-filter (Trevor 2026-07-18) ─────────────────────
@@ -178,6 +185,7 @@ export default function WalletPacksView({ collection }: { collection: string }) 
     setLoading(true)
     setError(null)
     setAuthRequired(false)
+    setNotYourWallet(false)
     try {
       const [sumRes, histRes] = await Promise.all([
         fetch("/api/wallet/pack-summary?wallet=" + encodeURIComponent(wallet), { cache: "no-store" }),
@@ -197,7 +205,9 @@ export default function WalletPacksView({ collection }: { collection: string }) 
       // Pack P&L (buy price / realized P&L) stays behind sign-in per the un-gate
       // policy — a 401/403 means "sign in", not a hard error.
       if (histRes.status === 401 || histRes.status === 403 || sumRes.status === 401 || sumRes.status === 403) {
-        setAuthRequired(true)
+        const signedOut = histRes.status === 401 || sumRes.status === 401
+        setAuthRequired(signedOut)
+        setNotYourWallet(!signedOut)
         setHistory(null)
         setSummaryRow(null)
         return
@@ -236,6 +246,14 @@ export default function WalletPacksView({ collection }: { collection: string }) 
   )
 
   // ── No wallet: honest CTA ──────────────────────────────────────────────
+  if (walletPending && !wallet) {
+    return (
+      <div className="rpc-card rpc-mono" role="status" style={{ padding: 24, fontSize: 12, color: "var(--rpc-text-muted)" }}>
+        Loading your wallet…
+      </div>
+    )
+  }
+
   if (!wallet) {
     return (
       <div className="rpc-card" style={{ padding: 32, textAlign: "center", display: "flex", flexDirection: "column", gap: 12, alignItems: "center" }}>
@@ -253,6 +271,21 @@ export default function WalletPacksView({ collection }: { collection: string }) 
   }
 
   // ── Auth required: pack P&L is a signed-in feature ─────────────────────
+  if (notYourWallet) {
+    return (
+      <div className="rpc-card" style={{ padding: 32, textAlign: "center", display: "flex", flexDirection: "column", gap: 12, alignItems: "center" }}>
+        <div style={{ fontSize: 30, color: "var(--rpc-text-muted)" }}>🔒</div>
+        <div className="rpc-heading" style={{ fontSize: 16 }}>Pack P&amp;L is for your own wallet</div>
+        <div className="rpc-mono" style={{ fontSize: 12, color: "var(--rpc-text-muted)", maxWidth: 460, lineHeight: 1.7 }}>
+          This wallet isn&apos;t the one saved on your account, so its buy prices and P&amp;L stay private.
+        </div>
+        <Link href="/dashboard" className="rpc-chip" style={{ marginTop: 4, color: accentText(accent), borderColor: accent }}>
+          Your saved wallet →
+        </Link>
+      </div>
+    )
+  }
+
   if (authRequired) {
     return (
       <div className="rpc-card" style={{ padding: 32, textAlign: "center", display: "flex", flexDirection: "column", gap: 12, alignItems: "center" }}>

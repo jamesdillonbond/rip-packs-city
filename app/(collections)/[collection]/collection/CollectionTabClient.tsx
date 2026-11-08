@@ -27,6 +27,7 @@ import { pickLoading } from "@/lib/schonely"
 import { MarketplaceStatusBanner } from "@/components/marketplace-status"
 import AutoSearchReader, { type AutoSearchSource } from "@/components/collection/AutoSearchReader"
 import { useSessionOwner } from "@/lib/hooks/useSessionOwner"
+import { fetchSavedWalletForCollection } from "@/lib/profile/saved-wallet-for-collection"
 import PortfolioSummary from "@/components/collection/PortfolioSummary"
 import SaveWalletToProfileButton from "@/components/collection/SaveWalletToProfileButton"
 import CollectionRecentSales from "@/components/collection/CollectionRecentSales"
@@ -124,6 +125,10 @@ function WalletMomentsBody() {
   // keeps the search row. Display state only; the server stays the trust boundary.
   const sessionOwner = useSessionOwner()
   const [savedWalletLoaded, setSavedWalletLoaded] = useState<string | null>(null)
+  // 2026-11-07: did AutoSearchReader find NO saved wallet? Until it answers, the
+  // device-key seed below must not fire for a signed-in reader — on Trevor's laptop it
+  // searched an old 0x3795… key in parallel with his saved wallet (last response wins).
+  const [noSavedWallet, setNoSavedWallet] = useState(false)
 
   // ⛔ THE SEARCH PLACEHOLDER SAID "Enter Top Shot username or wallet address"
   // ON EVERY COLLECTION'S TAB — All Day, Golazos, UFC, and from 2026-09-19 Candy
@@ -173,6 +178,7 @@ function WalletMomentsBody() {
   const [paginatedTotalPages, setPaginatedTotalPages] = useState(0)
   const [walletTotalFmv, setWalletTotalFmv] = useState<number | null>(null)
   const [walletSummary, setWalletSummary] = useState<{
+    total_moments?: number
     wallet_fmv: number
     unlocked_fmv: number
     unlocked_count: number
@@ -863,6 +869,8 @@ function WalletMomentsBody() {
         .then(function(json) {
           if (!json || json.error) return
           setWalletSummary({
+            // 2026-11-07: the wallet card's count (see computeWalletStatRow); absent → undefined, never 0
+            total_moments: typeof json.total_moments === "number" ? json.total_moments : undefined,
             wallet_fmv: Number(json.wallet_fmv) || 0,
             stale_fmv: Number(json.stale_fmv) || 0,
             stale_count: Number(json.stale_count) || 0,
@@ -1012,6 +1020,13 @@ function WalletMomentsBody() {
       urlNamesWallet = !!((sp.get("wallet") || sp.get("address") || sp.get("q") || "").trim())
     } catch {}
     if (urlNamesWallet) return
+    // 2026-11-07 — A SIGNED-IN READER'S SAVED WALLET OWNS THE PAGE TOO. The seed is a
+    // device memory; the account is the better witness. Wait for the session, and for
+    // a signed-in reader wait for AutoSearchReader's saved-wallet answer: only a
+    // reader with NO saved wallet here falls back to this device's last search. A
+    // failed identity read (degraded) is unknown, not signed in — the seed runs.
+    if (sessionOwner.loading) return
+    if (sessionOwner.userId && !sessionOwner.degraded && !noSavedWallet) return
     if (rows.length === 0 && !loading && !lastSearchedRef.current) {
       let saved = ""
       try { saved = localStorage.getItem("rpc_last_wallet") || "" } catch {}
@@ -1050,7 +1065,7 @@ function WalletMomentsBody() {
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ownerKey])
+  }, [ownerKey, sessionOwner.loading, sessionOwner.userId, sessionOwner.degraded, noSavedWallet])
 
   // Auto-paginate: after initial search, fetch remaining pages automatically
   useEffect(function() {
@@ -1272,6 +1287,8 @@ function WalletMomentsBody() {
             setSavedWalletLoaded(source === "saved" ? q : null)
             runSearch(q)
           }}
+          onOwnWallet={function(q: string) { setSavedWalletLoaded(q) }}
+          onNoSavedWallet={function() { setNoSavedWallet(true) }}
           collectionSlug={collectionSlug}
         />
       </Suspense>
@@ -1680,6 +1697,24 @@ function CollectionSection() {
   // convention PackSubNav established. Only meaningful on the Moments side.
   const momentsView = searchParams.get("moments") === "sold" ? "sold" : "owned"
 
+  // 2026-11-07: Packs and Sold are OWN-WALLET views (their routes 403 any wallet not
+  // saved on the account). They used to resolve their wallet from ?wallet= or the
+  // per-device key, which on Trevor's laptop is an old 0x3795… key — so his Packs tab
+  // asked for the wrong wallet and, 403'd, told a signed-in collector to "Sign in".
+  // Order now: an explicit ?wallet=/?address= > the signed-in account's saved wallet
+  // for this collection > the device key (signed out). `undefined` = still looking.
+  const urlWallet = searchParams.get("wallet") || searchParams.get("address")
+  const [savedWallet, setSavedWallet] = useState<string | null | undefined>(undefined)
+  useEffect(function() {
+    let cancelled = false
+    fetchSavedWalletForCollection(collectionSlug)
+      .then(function(addr) { if (!cancelled) setSavedWallet(addr ?? null) })
+      .catch(function() { if (!cancelled) setSavedWallet(null) })
+    return function() { cancelled = true }
+  }, [collectionSlug])
+  const ownWallet = urlWallet || savedWallet || null
+  const ownWalletPending = !urlWallet && savedWallet === undefined
+
   const setMomentsView = (next: "owned" | "sold") => {
     const sp = new URLSearchParams(searchParams.toString())
     if (next === "sold") sp.set("moments", "sold")
@@ -1732,9 +1767,9 @@ function CollectionSection() {
       )}
 
       {packsActive ? (
-        <WalletPacksView collection={collectionSlug} />
+        <WalletPacksView collection={collectionSlug} wallet={ownWallet} walletPending={ownWalletPending} />
       ) : momentsView === "sold" ? (
-        <WalletSoldMomentsView collection={collectionSlug} />
+        <WalletSoldMomentsView collection={collectionSlug} wallet={ownWallet} walletPending={ownWalletPending} />
       ) : (
         <WalletMomentsBody />
       )}

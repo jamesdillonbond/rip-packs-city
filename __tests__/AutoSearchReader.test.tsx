@@ -27,12 +27,28 @@ beforeEach(() => {
 afterEach(() => cleanup())
 
 describe("AutoSearchReader", () => {
-  it("uses ?wallet= first and does NOT hit the saved-wallet fallback", async () => {
+  // 2026-11-07: the saved wallet is now CONSULTED on a ?wallet= load — only to learn
+  // whether the typed wallet is the reader's own (onOwnWallet), never to search it.
+  it("uses ?wallet= first and never SEARCHES the saved wallet in its place", async () => {
     params = new URLSearchParams({ wallet: " 0xWALLET ", address: "0xADDR", q: "0xQ" })
+    savedWalletMock.mockResolvedValue("0xSAVED")
     const onSearch = vi.fn()
-    render(<AutoSearchReader onSearch={onSearch} collectionSlug="nba-top-shot" />)
+    const onOwnWallet = vi.fn()
+    render(<AutoSearchReader onSearch={onSearch} onOwnWallet={onOwnWallet} collectionSlug="nba-top-shot" />)
     await waitFor(() => expect(onSearch).toHaveBeenCalledWith("0xWALLET", "url")) // trimmed
-    expect(savedWalletMock).not.toHaveBeenCalled()
+    await waitFor(() => expect(savedWalletMock).toHaveBeenCalled())
+    expect(onSearch).toHaveBeenCalledTimes(1)
+    expect(onOwnWallet).not.toHaveBeenCalled()
+  })
+
+  it("a ?wallet= that IS the reader's saved wallet (any hex case) reports onOwnWallet, without a second search", async () => {
+    params = new URLSearchParams({ wallet: "0xbd94cade097e50ac" })
+    savedWalletMock.mockResolvedValue("0xBD94CADE097E50AC")
+    const onSearch = vi.fn()
+    const onOwnWallet = vi.fn()
+    render(<AutoSearchReader onSearch={onSearch} onOwnWallet={onOwnWallet} collectionSlug="nba-top-shot" />)
+    await waitFor(() => expect(onOwnWallet).toHaveBeenCalledWith("0xbd94cade097e50ac"))
+    expect(onSearch).toHaveBeenCalledTimes(1)
   })
 
   it("falls back to ?address= then legacy ?q=", async () => {

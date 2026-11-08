@@ -114,8 +114,14 @@ vi.mock("@/components/wallet-stat-row", () => ({ default: () => <div data-testid
 vi.mock("@/components/marketplace-status", () => ({ MarketplaceStatusBanner: () => <div data-testid="mp-banner" /> }))
 
 let savedWallet: string | null = null
+// 2026-11-07: the real saved-wallet lookup is two round trips (/api/profile/me, then
+// saved-wallets) — slower than the device-key seed. A test can model that.
+let savedWalletDelayMs = 0
 vi.mock("@/lib/profile/saved-wallet-for-collection", () => ({
-  fetchSavedWalletForCollection: async () => savedWallet,
+  fetchSavedWalletForCollection: async () => {
+    if (savedWalletDelayMs) await new Promise((r) => setTimeout(r, savedWalletDelayMs))
+    return savedWallet
+  },
 }))
 
 let ownerKey = ""
@@ -211,6 +217,7 @@ beforeEach(() => {
   _resetSignedInForTests()
   searchParams = new URLSearchParams()
   savedWallet = null
+  savedWalletDelayMs = 0
   ownerKey = ""
   replace.mockClear()
   track.mockClear()
@@ -1999,6 +2006,40 @@ describe("CollectionTabClient — a signed-in collector's own binder shows no ad
     render(<CollectionTabClient />)
     await waitFor(() => expect(fetchMock.mock.calls.some((c) => String(c[0]).includes("wallet=0xsomeoneelse"))).toBe(true))
     expect(await screen.findByPlaceholderText(/wallet address/)).toBeTruthy()
+  })
+
+  // 2026-11-07: the binder writes ?wallet= into the URL, so a RELOAD of your own binder
+  // arrives as a typed wallet — it is still yours, and the box stays hidden.
+  it("signed in + ?wallet= that IS the saved wallet (a reload): no address box", async () => {
+    withProfile({ user: { id: "u1" } })
+    savedWallet = "0xsaved"
+    searchParams = new URLSearchParams("wallet=0xsaved")
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(screen.getByRole("button", { name: /share my collection/i })).toBeTruthy())
+    expect(screen.queryByPlaceholderText(/wallet address/)).toBeNull()
+  })
+
+  // 2026-11-07 (Trevor's laptop): the device seed searched an OLD 0x3795… key in
+  // parallel with the saved wallet — last response wins. A signed-in reader with a
+  // saved wallet gets ONLY the saved wallet searched.
+  it("signed in + saved wallet + a different device key: only the saved wallet is ever searched", async () => {
+    withProfile({ user: { id: "u1" } })
+    savedWallet = "0xsaved"
+    savedWalletDelayMs = 40 // the account lookup lands AFTER the device seed would fire
+    ownerKey = "0xdeadbeefdeadbeef"
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(fetchMock.mock.calls.some((c) => String(c[0]).includes("wallet=0xsaved"))).toBe(true))
+    await new Promise((r) => setTimeout(r, 50))
+    const searched = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.includes("collection-moments"))
+    expect(searched.some((u) => u.includes("0xdeadbeefdeadbeef"))).toBe(false)
+  })
+
+  it("signed in with NO saved wallet: the device key is still the fallback", async () => {
+    withProfile({ user: { id: "u1" } })
+    savedWallet = null
+    ownerKey = "0xdeadbeefdeadbeef"
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(fetchMock.mock.calls.some((c) => String(c[0]).includes("0xdeadbeefdeadbeef"))).toBe(true))
   })
 
   it("a FAILED identity read is unknown, not signed-in: the box stays", async () => {

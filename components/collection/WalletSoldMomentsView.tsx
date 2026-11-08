@@ -59,7 +59,7 @@ interface TxHistory {
   total_count: number
 }
 
-export default function WalletSoldMomentsView({ collection }: { collection: string }) {
+export default function WalletSoldMomentsView({ collection, wallet: walletProp, walletPending = false }: { collection: string; wallet?: string | null; walletPending?: boolean }) {
   const searchParams = useSearchParams()
   const accent = getCollection(collection)?.accent ?? "var(--rpc-red)"
   // Resolve the canonical DB slug ("nba_top_shot") the RPC emits. `collection` is
@@ -73,19 +73,27 @@ export default function WalletSoldMomentsView({ collection }: { collection: stri
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [authRequired, setAuthRequired] = useState(false)
+  // 401 = signed out; 403 = signed in, but this wallet is not saved on the account.
+  const [notYourWallet, setNotYourWallet] = useState(false)
 
   useEffect(() => {
+    // 2026-11-07: the BINDER's wallet first. This view used to re-derive its own from
+    // ?wallet= or the device key, so a signed-in collector whose saved wallet the
+    // Moments tab had just loaded saw the Packs tab ask for a DIFFERENT wallet (this
+    // device's old key) — and, 403'd on it, read "Sign in" while signed in.
     const fromUrl = searchParams.get("wallet") || searchParams.get("address")
     const owner = getOwnerKey()
-    const resolved = (fromUrl || owner || "").trim().toLowerCase()
+    if (walletPending) return // the binder is still resolving the account's saved wallet
+    const resolved = (walletProp || fromUrl || owner || "").trim().toLowerCase()
     setWallet(resolved && resolved.startsWith("0x") ? resolved : null)
-  }, [searchParams])
+  }, [searchParams, walletProp, walletPending])
 
   const load = useCallback(async () => {
     if (!wallet) { setData(null); return }
     setLoading(true)
     setError(null)
     setAuthRequired(false)
+    setNotYourWallet(false)
     try {
       const res = await fetch(
         "/api/wallet/transaction-history?" +
@@ -93,7 +101,8 @@ export default function WalletSoldMomentsView({ collection }: { collection: stri
         { cache: "no-store" },
       )
       if (res.status === 401 || res.status === 403) {
-        setAuthRequired(true)
+        setAuthRequired(res.status === 401)
+        setNotYourWallet(res.status === 403)
         setData(null)
         return
       }
@@ -146,6 +155,14 @@ export default function WalletSoldMomentsView({ collection }: { collection: stri
   const truncated = isSoldListTruncated(data?.total_count, FETCH_LIMIT)
   const label = getCollection(collection)?.label ?? "this collection"
 
+  if (walletPending && !wallet) {
+    return (
+      <div className="rpc-card rpc-mono" role="status" style={{ padding: 24, fontSize: 12, color: "var(--rpc-text-muted)" }}>
+        Loading your wallet…
+      </div>
+    )
+  }
+
   if (!wallet) {
     return (
       <div className="rpc-card" style={{ padding: 32, textAlign: "center", display: "flex", flexDirection: "column", gap: 12, alignItems: "center" }}>
@@ -154,6 +171,19 @@ export default function WalletSoldMomentsView({ collection }: { collection: stri
         <div className="rpc-mono" style={{ fontSize: 12, color: "var(--rpc-text-muted)", maxWidth: 460, lineHeight: 1.7 }}>
           Search a wallet to see the moments it has sold in {label}.
         </div>
+      </div>
+    )
+  }
+
+  if (notYourWallet) {
+    return (
+      <div className="rpc-card" style={{ padding: 32, textAlign: "center", display: "flex", flexDirection: "column", gap: 12, alignItems: "center" }}>
+        <div style={{ fontSize: 30, color: "var(--rpc-text-muted)" }}>🔒</div>
+        <div className="rpc-heading" style={{ fontSize: 16 }}>Sale history is for your own wallet</div>
+        <div className="rpc-mono" style={{ fontSize: 12, color: "var(--rpc-text-muted)", maxWidth: 460, lineHeight: 1.7 }}>
+          This wallet isn&apos;t the one saved on your account, so its sale history stays private.
+        </div>
+        <Link href="/dashboard" className="rpc-chip" style={{ marginTop: 4, color: accentText(accent), borderColor: accent }}>Your saved wallet →</Link>
       </div>
     )
   }

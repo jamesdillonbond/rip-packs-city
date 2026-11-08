@@ -187,6 +187,24 @@ describe("computeWalletStatRow", () => {
     expect(r.spreadGap).toBeNull()
   })
 
+  // 2026-11-07: a remembered player filter made Trevor's WALLET card read
+  // "$52,573 · 593 moments" for a 15,708-moment wallet.
+  it("momentCount is the WALLET's total when the summary carries one, never the filtered list's", () => {
+    const r = computeWalletStatRow({
+      walletSummary: { ...fullSummary!, total_moments: 15708 },
+      walletTotalFmv: null,
+      totals: { ...zeroTotals, totalCount: 50 },
+      paginatedTotal: 593, // the Luka Dončić filter's count
+      collectionSlug: "nba-top-shot",
+    })
+    expect(r.momentCount).toBe(15708)
+  })
+
+  it("an older summary without total_moments keeps the list fallback", () => {
+    const r = computeWalletStatRow({ walletSummary: fullSummary, walletTotalFmv: null, totals: zeroTotals, paginatedTotal: 20, collectionSlug: "x" })
+    expect(r.momentCount).toBe(20)
+  })
+
   it("prefers paginatedTotal then totalCount then null for momentCount", () => {
     expect(
       computeWalletStatRow({ walletSummary: null, walletTotalFmv: null, totals: { ...zeroTotals, totalCount: 9 }, paginatedTotal: 4, collectionSlug: "x" }).momentCount,

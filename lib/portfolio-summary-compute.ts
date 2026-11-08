@@ -6,6 +6,8 @@
 
 // Authoritative wallet-wide summary from /api/wallet-summary (null until loaded).
 export type WalletSummary = {
+  /** The wallet's whole moment count in this collection (get_wallet_summary). */
+  total_moments?: number
   wallet_fmv: number
   /** 2026-09-06: the STALE share of wallet_fmv (get_wallet_summary.stale_fmv); the headline is wallet_fmv − stale_fmv. */
   stale_fmv?: number
@@ -160,7 +162,13 @@ export function computeWalletStatRow(input: {
   const bestOfferTotal: number | null = totals.totalBestOffer > 0 ? totals.totalBestOffer : null
   const spreadGap: number | null =
     walletFmv !== null && bestOfferTotal !== null ? walletFmv - bestOfferTotal : null
-  const momentCount: number | null = paginatedTotal || totals.totalCount || null
+  // 2026-11-07: the WALLET card's count is the WALLET's, like its FMV beside it.
+  // `paginatedTotal` is the count under the active list filter — with a remembered
+  // player filter (Luka Dončić) Trevor's card read "$52,573 · 593 moments" for a
+  // 15,708-moment wallet. The summary's total wins; the list count is the fallback
+  // only while the summary is missing (and unfiltered, it is the same number).
+  const summaryTotal = walletSummary && typeof walletSummary.total_moments === "number" ? walletSummary.total_moments : null
+  const momentCount: number | null = summaryTotal ?? (paginatedTotal || totals.totalCount || null)
   const staleUnknown = !walletSummary && walletFmv !== null
 
   return {

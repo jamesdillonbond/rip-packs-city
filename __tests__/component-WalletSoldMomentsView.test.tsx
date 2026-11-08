@@ -62,6 +62,14 @@ describe("WalletSoldMomentsView", () => {
     await waitFor(() => expect(getByText("Sign in to see sold moments")).toBeTruthy())
   })
 
+  it("a 403 (signed in, not your saved wallet) says so instead of 'Sign in' (2026-11-07)", async () => {
+    ownerKey = "0xowner"
+    fetchMock = vi.fn(() => res(403, {}))
+    vi.stubGlobal("fetch", fetchMock)
+    const { getByText } = render(<WalletSoldMomentsView collection="nba-top-shot" />)
+    await waitFor(() => expect(getByText("Sale history is for your own wallet")).toBeTruthy())
+  })
+
   it("renders the sold count, proceeds, and a filtered row", async () => {
     ownerKey = "0xowner"
     fetchMock = vi.fn(() => res(200, { events: [sell], total_count: 1 }))

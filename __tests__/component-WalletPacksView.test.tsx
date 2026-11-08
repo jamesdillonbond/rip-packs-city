@@ -86,12 +86,40 @@ describe("WalletPacksView", () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it("shows the sign-in branch when pack P&L returns 401/403", async () => {
+  it("shows the sign-in branch when pack P&L returns 401 (signed out)", async () => {
     ownerKey = "0xdead"
-    fetchMock = routeFetch({ summary: () => res(401, {}), history: () => res(403, {}) })
+    fetchMock = routeFetch({ summary: () => res(401, {}), history: () => res(401, {}) })
     vi.stubGlobal("fetch", fetchMock)
     const { getByText } = render(<WalletPacksView collection="nba-top-shot" />)
     await waitFor(() => expect(getByText("Sign in to see pack P&L")).toBeTruthy())
+  })
+
+  // 2026-11-07 (Trevor's own binder): a 403 is "signed in, but this wallet is not on
+  // your account" — telling a signed-in collector to "Sign in" was false.
+  it("a 403 (signed in, not your saved wallet) says so and never says 'Sign in'", async () => {
+    ownerKey = "0xdead"
+    fetchMock = routeFetch({ summary: () => res(403, {}), history: () => res(403, {}) })
+    vi.stubGlobal("fetch", fetchMock)
+    const { findByText, container } = render(<WalletPacksView collection="nba-top-shot" />)
+    expect(await findByText("Pack P&L is for your own wallet")).toBeTruthy()
+    expect(container.textContent).not.toMatch(/Sign in/)
+    expect(container.querySelector('a[href="/dashboard"]')).toBeTruthy()
+  })
+
+  // 2026-11-07: the binder passes the account's saved wallet; it beats this device's
+  // old key (Trevor's laptop held 0x3795…, so the tab asked for the wrong wallet).
+  it("the binder's wallet prop beats the device key; pending shows a loading line and fetches nothing", async () => {
+    ownerKey = "0xdevicekey"
+    fetchMock = routeFetch({ summary: () => res(200, summaryBody), history: () => res(200, { packs: [], total_count: 0 }) })
+    vi.stubGlobal("fetch", fetchMock)
+    const { rerender, getByRole } = render(<WalletPacksView collection="nba-top-shot" wallet={null} walletPending />)
+    expect(getByRole("status").textContent).toMatch(/Loading your wallet/)
+    expect(fetchMock).not.toHaveBeenCalled()
+    rerender(<WalletPacksView collection="nba-top-shot" wallet="0xSAVED" walletPending={false} />)
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    const urls = fetchMock.mock.calls.map((c: unknown[]) => String(c[0]))
+    expect(urls.every((u: string) => u.includes("wallet=0xsaved"))).toBe(true)
+    expect(urls.some((u: string) => u.includes("0xdevicekey"))).toBe(false)
   })
 
   // 2026-10-18: this tab published the per-collection Net P&L with no coverage gate,
