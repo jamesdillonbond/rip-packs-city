@@ -2,6 +2,7 @@ import { NextRequest, NextResponse, after } from "next/server"
 import fcl from "@/lib/chains/flow/flow"
 import * as t from "@onflow/types"
 import { supabaseAdmin } from "@/lib/supabase"
+import { refreshSavedCardsForWallet } from "@/lib/wallet/saved-card-refresh"
 import {
   isWalletAddress,
   resolveTopShotUsernameCacheAware,
@@ -194,6 +195,9 @@ const STATS_MAX_AGE_MS = 6 * 60 * 60 * 1000
 // is not a plain time debounce and not an orchestrator-level hook — is on the
 // helpers copy in lib/chains/flow/wallet-backfill-helpers.ts.
 async function stampLastRefreshed(wallet: string, changedRows?: number) {
+  // A collector's saved cards follow the walk that changed their cache (2026-11-07:
+  // a signup's NBA card sat at the 50-row first-paint count for ~6 h). No-op on 0.
+  await refreshSavedCardsForWallet(wallet, changedRows)
   let refreshStats = true
   if (changedRows === 0) {
     try {
