@@ -195,3 +195,65 @@ describe("PackRevealClient — carried-over properties", () => {
     expect(screen.getByTestId("pack-summary").textContent).toContain("—")
   })
 })
+
+describe("PackRevealClient — preview mode and the chase buzz (2026-11-08)", () => {
+  const playThrough = () => {
+    fireEvent.click(screen.getByRole("button", { name: "Open pack" }))
+    act(() => vi.advanceTimersByTime(TEAR_MS))
+    fireEvent.click(screen.getByRole("button", { name: "Flip the first card" }))
+    fireEvent.click(screen.getByRole("button", { name: /next card/i }))
+    const last = screen.getAllByRole("button", { name: "Reveal the last card" })
+    fireEvent.click(last[last.length - 1])
+    act(() => vi.advanceTimersByTime(CHARGE_MS))
+  }
+
+  it("a preview never reads or writes the claimer's opened flag, and Done calls onDone", () => {
+    localStorage.setItem("rpc_giveaway_opened:fall-drop:4", "1") // even an opened pack previews from sealed
+    const onDone = vi.fn()
+    render(
+      <PackRevealClient slug="fall-drop" packNo={4} moments={CARDS} preview onDone={onDone}>
+        <div>delivery grid</div>
+      </PackRevealClient>,
+    )
+    expect(screen.getByTestId("sealed-pack")).toBeTruthy()
+    localStorage.clear()
+    playThrough()
+    fireEvent.click(screen.getByRole("button", { name: "See the whole pack" }))
+    fireEvent.click(screen.getByRole("button", { name: "Done" }))
+    expect(onDone).toHaveBeenCalledTimes(1)
+    expect(localStorage.getItem("rpc_giveaway_opened:fall-drop:4")).toBeNull()
+    expect(screen.queryByText("delivery grid")).toBeNull()
+  })
+
+  it("the chase landing buzzes the phone once; ordinary cards do not", () => {
+    const vibrate = vi.fn(() => true)
+    Object.defineProperty(navigator, "vibrate", { value: vibrate, configurable: true })
+    renderPack()
+    fireEvent.click(screen.getByRole("button", { name: "Open pack" }))
+    act(() => vi.advanceTimersByTime(TEAR_MS))
+    fireEvent.click(screen.getByRole("button", { name: "Flip the first card" }))
+    expect(vibrate).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole("button", { name: /next card/i }))
+    const last = screen.getAllByRole("button", { name: "Reveal the last card" })
+    fireEvent.click(last[last.length - 1])
+    act(() => vi.advanceTimersByTime(CHARGE_MS))
+    expect(vibrate).toHaveBeenCalledTimes(1)
+  })
+
+  it("no buzz under reduced motion, and a vibrate that throws breaks nothing", () => {
+    const vibrate = vi.fn(() => {
+      throw new Error("not allowed")
+    })
+    Object.defineProperty(navigator, "vibrate", { value: vibrate, configurable: true })
+    reduceMotion(true)
+    renderPack()
+    playThrough()
+    expect(vibrate).not.toHaveBeenCalled()
+    cleanup()
+    reduceMotion(false)
+    renderPack()
+    playThrough()
+    expect(vibrate).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole("button", { name: "See the whole pack" })).toBeTruthy()
+  })
+})

@@ -369,3 +369,13 @@ Tests: `cadence/tests/RPCGiveawayPacks_test.cdc` has 11, and they gate CI. Plant
 - [Fan Communities, Team Captains and the NBA Top Shot Experience (Top Shot blog, 2022-11-18)](https://blog.nbatopshot.com/posts/fan-communities-team-captains-nba-top-shot-experience)
 - [Join Your NBA Top Shot Fan Community (Top Shot blog, 2023-01-30)](https://blog.nbatopshot.com/posts/join-your-nba-top-shot-fan-community)
 - [NBA Team Captains (about.nbatopshot.com)](https://about.nbatopshot.com/community-team-captains)
+
+## Addendum 2026-11-08 — fair dealing, the pool builder, the pack opening
+
+Trevor (11-08): "improve the pack opening visuals, along with how I can assign moments into the pack content pool, so that they can be randomized and shuffled as they're stuffed into packs for fairness of who receives what", then "Put the RPC logo on the packs themselves".
+
+- **Two deals, chosen at seal.** `random` is the v1 whole-pool Fisher–Yates shuffle: every arrangement equally likely, so one pack can hold every top Moment. `balanced` (the admin default) ranks the pool by FMV (ties by moment id, code-point order) into `moments_per_pack` value bands of `pack_count`; every pack gets one Moment from each band, CSPRNG-shuffled within the band, slot k = band k. `seal_giveaway_drop_dealt` (`20261108205511`) records `giveaway_drops.deal_mode` and REFUSES a balanced seal that breaks the band rule, so the public page's sentence is enforced, not claimed (pin: `supabase/tests/giveaways.sql` B1–B4). Who gets which pack is still `claim_giveaway_pack`'s uniform draw; the seal fingerprint is unchanged and verifies either deal.
+- **The pool builder** (`lib/giveaways/pool-builder.ts`): search, tier filter, sort, hide unpriced, select all shown, random fill to the target, tier mix, pack shapes that use exactly the picked count, and a 400-deal simulated worst–best pack spread for each mode (`simulatePackSpread`) — a preview, not a promise.
+- **The opening** (`app/giveaways/[slug]/PackRevealClient.tsx` + the `rpc-gw-*` block in `app/rpc-tokens.css`): foil pack with the RPC logo → tear → face-down stack with logo card backs → 3D flips in tier colours, lowest value first → the chase charges, flips with a burst, buzzes the phone once (`navigator.vibrate`, never under reduced motion) and stays centre stage → summary with the pack total (withheld when any card is unpriced). Reduced motion: no animation and 0 ms waits. "Show all" skips at any point.
+- **Preview opening** on `/admin/giveaways`: plays a real pack of a sealed drop (or random pool Moments for a draft) in a dialog; it never reads or writes the claimer's opened flag.
+

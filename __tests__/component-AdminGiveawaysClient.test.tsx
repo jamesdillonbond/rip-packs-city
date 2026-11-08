@@ -351,6 +351,35 @@ describe("AdminGiveawaysClient — drops", () => {
     expect(preview.textContent).toContain("$9.00")
   })
 
+  it("Preview opening plays a real pack from the drop in a dialog, without a claim (2026-11-08)", async () => {
+    stub((url) => (url.endsWith("/d3") ? json({ drop: DROP({ id: "d3", status: "open" }), pool: POOL, claims: CLAIMS }) : json({ drops: [DROP({ id: "d3", status: "open", title: "Open one" })] })))
+    render(<AdminGiveawaysClient />)
+    const panel = (await screen.findByText("Open one")).parentElement!
+    fireEvent.click(within(panel).getByRole("button", { name: "Preview opening" }))
+    const dialog = await screen.findByRole("dialog", { name: "Pack opening preview" })
+    expect(within(dialog).getByText(/a real pack from this drop/)).toBeTruthy()
+    expect(within(dialog).getByTestId("sealed-pack")).toBeTruthy()
+    fireEvent.click(within(dialog).getByRole("button", { name: "Close" }))
+    expect(screen.queryByRole("dialog")).toBeNull()
+  })
+
+  it("a draft previews Moments drawn from its pool, and a failed pool read says so", async () => {
+    let fail = true
+    stub((url) => {
+      if (url.endsWith("/d2")) return fail ? json({ error: "nope" }, 500) : json({ drop: DROP({ id: "d2" }), pool: POOL.map((m) => ({ ...m, pack_no: null, slot: null })), claims: [] })
+      return json({ drops: [DROP({ id: "d2", title: "Draft one" })] })
+    })
+    render(<AdminGiveawaysClient />)
+    const panel = (await screen.findByText("Draft one")).parentElement!
+    fireEvent.click(within(panel).getByRole("button", { name: "Preview opening" }))
+    expect(await screen.findByText("Couldn't load the pool to preview: nope")).toBeTruthy()
+    expect(screen.queryByRole("dialog")).toBeNull()
+    fail = false
+    fireEvent.click(within(panel).getByRole("button", { name: "Preview opening" }))
+    const dialog = await screen.findByRole("dialog", { name: "Pack opening preview" })
+    expect(within(dialog).getByText(/drawn at random from the draft pool/)).toBeTruthy()
+  })
+
   it("seal sends the chosen deal mode — balanced by default, random when picked (2026-11-08)", async () => {
     const bodies: Record<string, unknown>[] = []
     stub((url, init) => {

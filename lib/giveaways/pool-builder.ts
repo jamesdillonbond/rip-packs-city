@@ -110,3 +110,25 @@ export function shapesFor(n: number): { packs: number; perPack: number }[] {
   }
   return out
 }
+
+/**
+ * A pack to preview the opening with (admin "Preview opening", 2026-11-08). A sealed
+ * drop previews one of its REAL packs (picked at random, so repeated previews show
+ * different ones); a draft has no packs yet, so it previews `perPack` moments drawn at
+ * random from the pool. Preview only: nothing here is the deal.
+ */
+export function previewPack<T extends { moment_id: string; pack_no: number | null }>(
+  pool: readonly T[],
+  perPack: number,
+  rand: (maxExclusive: number) => number = (n) => Math.floor(Math.random() * n),
+): { packNo: number | null; moments: T[] } {
+  const packs = [...new Set(pool.map((m) => m.pack_no).filter((p): p is number => p != null))].sort((a, b) => a - b)
+  if (packs.length > 0) {
+    const packNo = packs[rand(packs.length)]
+    return { packNo, moments: pool.filter((m) => m.pack_no === packNo) }
+  }
+  const rest = pool.slice()
+  const out: T[] = []
+  while (out.length < perPack && rest.length > 0) out.push(rest.splice(rand(rest.length), 1)[0])
+  return { packNo: null, moments: out }
+}

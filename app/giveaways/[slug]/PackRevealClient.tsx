@@ -61,6 +61,16 @@ function saveOpened(key: string): void {
   }
 }
 
+/** A short double buzz on phones when the chase lands; nothing under reduced motion or where unsupported. */
+export function buzz(): void {
+  try {
+    if (reducedMotion()) return
+    if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") navigator.vibrate([60, 40, 120])
+  } catch {
+    // some browsers throw outside a user gesture; a missing buzz is fine
+  }
+}
+
 function reducedMotion(): boolean {
   try {
     return typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true
@@ -69,9 +79,28 @@ function reducedMotion(): boolean {
   }
 }
 
-export default function PackRevealClient({ slug, packNo, moments, children }: { slug: string; packNo: number; moments: RevealCard[]; children: ReactNode }) {
+/**
+ * `preview` (the admin's "Preview opening", 2026-11-08): the same opening, but it never
+ * reads or writes the claimer's "already opened" flag, and finishing calls `onDone`
+ * instead of handing over to `children`.
+ */
+export default function PackRevealClient({
+  slug,
+  packNo,
+  moments,
+  children,
+  preview = false,
+  onDone,
+}: {
+  slug: string
+  packNo: number
+  moments: RevealCard[]
+  children: ReactNode
+  preview?: boolean
+  onDone?: () => void
+}) {
   const key = openedKey(slug, packNo)
-  const [opened, setOpened] = useState(() => readOpened(key))
+  const [opened, setOpened] = useState(() => (preview ? false : readOpened(key)))
   const [phase, setPhase] = useState<Phase>("sealed")
   const [shown, setShown] = useState(0)
   const [charging, setCharging] = useState(false)
@@ -97,6 +126,10 @@ export default function PackRevealClient({ slug, packNo, moments, children }: { 
 
   const finish = () => {
     if (timer.current) clearTimeout(timer.current)
+    if (preview) {
+      onDone?.()
+      return
+    }
     saveOpened(key)
     setOpened(true)
   }
@@ -114,6 +147,7 @@ export default function PackRevealClient({ slug, packNo, moments, children }: { 
     const reveal = () => {
       setCharging(false)
       setShown((n) => n + 1)
+      if (nextIsChase) buzz()
     }
     if (nextIsChase) {
       setCharging(true)

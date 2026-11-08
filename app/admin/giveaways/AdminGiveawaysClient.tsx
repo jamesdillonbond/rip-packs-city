@@ -15,7 +15,8 @@ import { checklistRows, type ChecklistRow } from "@/lib/giveaways/checklist"
 import type { Candidate, ClaimRow, DropRow, PoolRow } from "@/lib/giveaways/store"
 import type { DeliveryPlan } from "@/lib/giveaways/deliver"
 import { SealUnconfirmedError, connectAdminWallet, disconnectAdminWallet, sendDeliveryBatch } from "@/lib/giveaways/admin-wallet"
-import { DEFAULT_FILTER, filterCandidates, randomFill, shapesFor, tierLabel, tierMix, tiersOf, type BuilderFilter, type BuilderSort } from "@/lib/giveaways/pool-builder"
+import PackRevealClient from "@/app/giveaways/[slug]/PackRevealClient"
+import { DEFAULT_FILTER, filterCandidates, previewPack, randomFill, shapesFor, tierLabel, tierMix, tiersOf, type BuilderFilter, type BuilderSort } from "@/lib/giveaways/pool-builder"
 import { simulatePackSpread, type DealMode, type PackSpread } from "@/lib/giveaways/seal"
 
 const DISPLAY = "var(--font-display)"
@@ -497,6 +498,27 @@ function DropPanel({ drop, call, onChanged }: { drop: DropRow; call: Call; onCha
   const [detailError, setDetailError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [dealMode, setDealMode] = useState<DealMode>("balanced")
+  const [preview, setPreview] = useState<{ packNo: number | null; moments: PoolRow[]; run: number } | null>(null)
+
+  // Watch the opening on a pack from this drop — no claim needed, nothing remembered (2026-11-08).
+  const openPreview = async () => {
+    let pool = detail?.pool
+    if (!pool) {
+      const r = await call(`/api/admin/giveaways/${drop.id}`)
+      if (!r.ok) {
+        setMsg(`Couldn't load the pool to preview: ${String(r.body?.error ?? `HTTP ${r.status}`)}`)
+        return
+      }
+      pool = (r.body?.pool as PoolRow[]) ?? []
+      setDetail({ pool, claims: (r.body?.claims as ClaimRow[]) ?? [] })
+    }
+    const pick = previewPack(pool, drop.moments_per_pack)
+    if (pick.moments.length === 0) {
+      setMsg("This drop has no Moments to preview.")
+      return
+    }
+    setPreview({ ...pick, run: (preview?.run ?? 0) + 1 })
+  }
 
   const load = useCallback(async () => {
     const r = await call(`/api/admin/giveaways/${drop.id}`)
@@ -593,6 +615,9 @@ function DropPanel({ drop, call, onChanged }: { drop: DropRow; call: Call; onCha
             {busy ? "Working…" : "Verify deliveries"}
           </button>
         ) : null}
+        <button type="button" style={btn} onClick={openPreview}>
+          Preview opening
+        </button>
         <button type="button" style={btn} onClick={() => setOpen((o) => !o)}>
           {open ? "Hide" : "Details"}
         </button>
@@ -600,6 +625,37 @@ function DropPanel({ drop, call, onChanged }: { drop: DropRow; call: Call; onCha
       {msg ? <p style={{ fontSize: 13, fontFamily: MONO, color: "var(--rpc-text-secondary)", margin: "8px 0 0" }}>{msg}</p> : null}
       {open && detailError ? (
         <p style={{ fontSize: 13, fontFamily: MONO, color: "var(--rpc-danger-text)", margin: "8px 0 0" }}>Couldn&apos;t load the checklist: {detailError}</p>
+      ) : null}
+      {preview ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Pack opening preview"
+          style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0, 0, 0, 0.82)", overflowY: "auto", padding: "24px 12px" }}
+        >
+          <div style={{ maxWidth: 720, margin: "0 auto", background: "var(--rpc-bg)", border: "1px solid var(--rpc-border)", borderRadius: 12, padding: 16 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, gap: 8 }}>
+              <span style={{ fontFamily: MONO, fontSize: 12, color: "var(--rpc-text-muted)" }}>
+                Preview ·{" "}
+                {preview.packNo != null ? `a real pack from this drop (#${preview.packNo})` : `${preview.moments.length} Moments drawn at random from the draft pool`} ·
+                nothing is saved
+              </span>
+              <button type="button" style={btn} onClick={() => setPreview(null)}>
+                Close
+              </button>
+            </div>
+            <PackRevealClient
+              key={preview.run}
+              slug={`admin-preview-${drop.id}`}
+              packNo={preview.packNo ?? 0}
+              moments={preview.moments}
+              preview
+              onDone={() => setPreview(null)}
+            >
+              {null}
+            </PackRevealClient>
+          </div>
+        </div>
       ) : null}
       {drop.status === "open" || drop.status === "closed" ? <DeliverAll drop={drop} call={call} onDone={() => { onChanged(); if (open) void load() }} /> : null}
       {open && detail ? (

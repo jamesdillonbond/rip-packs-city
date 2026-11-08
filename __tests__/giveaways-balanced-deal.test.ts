@@ -10,7 +10,7 @@ import {
   verifyCommitment,
   type PoolMoment,
 } from "@/lib/giveaways/seal"
-import { DEFAULT_FILTER, filterCandidates, randomFill, shapesFor, tierLabel, tierMix, tiersOf, type BuilderCandidate } from "@/lib/giveaways/pool-builder"
+import { DEFAULT_FILTER, filterCandidates, previewPack, randomFill, shapesFor, tierLabel, tierMix, tiersOf, type BuilderCandidate } from "@/lib/giveaways/pool-builder"
 import { packTotal, tierKey } from "@/lib/giveaways/reveal"
 
 // A skewed pool: 4 packs of 3, two big hits, a tail of commons.
@@ -170,5 +170,23 @@ describe("giveaways — reveal helpers", () => {
     expect(packTotal([{ moment_id: "1", fmv_usd: 1.1 }, { moment_id: "2", fmv_usd: 2.2 }])).toBe(3.3)
     expect(packTotal([{ moment_id: "1", fmv_usd: 1 }, { moment_id: "2", fmv_usd: null }])).toBeNull()
     expect(packTotal([])).toBeNull()
+  })
+})
+
+describe("giveaways — previewPack (admin Preview opening)", () => {
+  it("a sealed drop previews one of its real packs; a draft draws perPack at random from the pool", () => {
+    const sealed = [
+      { moment_id: "1", pack_no: 2 },
+      { moment_id: "2", pack_no: 1 },
+      { moment_id: "3", pack_no: 2 },
+      { moment_id: "4", pack_no: 1 },
+    ]
+    expect(previewPack(sealed, 2, () => 1)).toEqual({ packNo: 2, moments: [sealed[0], sealed[2]] })
+    expect(previewPack(sealed, 2, () => 0).packNo).toBe(1)
+    const draft = sealed.map((m) => ({ ...m, pack_no: null }))
+    const pick = previewPack(draft, 3, () => 0)
+    expect(pick.packNo).toBeNull()
+    expect(pick.moments.map((m) => m.moment_id)).toEqual(["1", "2", "3"])
+    expect(previewPack([], 3).moments).toEqual([])
   })
 })
