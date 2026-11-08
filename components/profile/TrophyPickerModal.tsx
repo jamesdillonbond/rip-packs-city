@@ -105,6 +105,17 @@ export interface PickerMoment {
  */
 export const PICKER_LIMIT = 96;
 
+/**
+ * A challenge case pre-fills its player ("Damian Lillard" for Dame Time) and the
+ * picker then loads EVERY page of that player, up to this many rows, without a
+ * click (2026-11-08). Highest-value-first paging hid the cheap set pieces a
+ * challenge is often about: 3 of 15 Dame Extra Spice holders had theirs behind
+ * their first 96 Dames. Measured 11-08: 37 collectors hold a Dame, the most is
+ * 390 (5 pages; the whole list reads in ~0.3 s warm). Past this the "Load more"
+ * button carries on by hand.
+ */
+export const CHALLENGE_AUTOLOAD_MAX = 480;
+
 /** The server-side search term a typed query produces: trimmed, ≥ 2 chars, else "". */
 export function serverQueryFor(query: string): string {
   const q = query.trim();
@@ -321,6 +332,23 @@ export default function TrophyPickerModal({
         setNextOffset(offset + PICKER_LIMIT);
       });
   }, [loadingMore, nextOffset, pageParams]);
+
+  // Challenge auto-load: while the box still holds the challenge's own player
+  // (the pre-fill), follow `hasMore` page by page up to CHALLENGE_AUTOLOAD_MAX.
+  // A typed edit stops it (the query no longer matches); a failed page stops it
+  // (the button and its error take over — no retry loop).
+  const challengeQuery = serverQueryFor(initialQuery);
+  const autoLoading =
+    challengeQuery !== "" &&
+    serverQuery === challengeQuery &&
+    moments != null &&
+    !momentsLoadFailed &&
+    hasMore &&
+    !loadMoreFailed &&
+    nextOffset < CHALLENGE_AUTOLOAD_MAX;
+  useEffect(() => {
+    if (autoLoading && !loadingMore) loadMore();
+  }, [autoLoading, loadingMore, loadMore]);
 
   // Keyed on moment_id alone, matching the uniqueness a collector actually
   // perceives ("that Moment is already up"), not the composite the grid uses
@@ -660,7 +688,9 @@ export default function TrophyPickerModal({
                   letterSpacing: "0.04em",
                 }}
               >
-                {atCap
+                {autoLoading
+                  ? `Loading every “${serverQuery}” Moment you hold… ${loadedCount} so far.`
+                  : atCap
                   ? `Searching everything you hold for “${serverQuery}” — showing the ${loadedCount} highest-value matches. Add a set or team name to narrow it, or load more below.`
                   : `Searching everything you hold for “${serverQuery}”.`}
               </div>
@@ -891,6 +921,8 @@ function PickPreview({ m, children }: { m: PickerMoment; children: React.ReactNo
         <img
           src={proxyIpfsImageUrl(m.image_url, 320) ?? undefined}
           alt=""
+          loading="lazy"
+          decoding="async"
           style={{ width: 80, height: 80, objectFit: "cover", borderRadius: 6 }}
         />
       ) : (

@@ -335,6 +335,58 @@ describe("TrophyPickerModal — manual lookup + grid pin + row variants", () => 
     expect(getAllByText(/Victor Wembanyama/)).toHaveLength(1)
   })
 
+  // ── Challenge auto-load (2026-11-08) ─────────────────────────────────────
+  // "Make sure the Extra Spice appears when the Dame Time case is just filtered
+  // to Damian Lillard": the challenge's pre-filled player loads EVERY page.
+  const offsetsFetched = () =>
+    (fetch as any).mock.calls
+      .map((c: any[]) => String(c[0]))
+      .filter((u: string) => u.includes("/api/profile/top-moments"))
+      .map((u: string) => Number(new URL(u, "https://t").searchParams.get("offset") ?? 0))
+
+  it("a challenge pre-fill loads every page with NO click — the cheap set piece on page 3 shows", async () => {
+    const spice = { ...moment, moment_id: "es", set_name: "Extra Spice", fmv_usd: 3 }
+    stubPages({
+      "0": { ok: true, body: { moments: [moment], hasMore: true } },
+      "96": { ok: true, body: { moments: [kd], hasMore: true } },
+      "192": { ok: true, body: { moments: [spice], hasMore: false } },
+    })
+    const { findByText, container, queryByText } = render(<TrophyPickerModal {...baseProps} initialQuery="Victor" />)
+    await findByText(/Extra Spice/)
+    expect(container.textContent).toContain("Kevin Durant")
+    expect(offsetsFetched()).toEqual([0, 96, 192])
+    expect(queryByText("Load 96 more")).toBeNull()
+  })
+
+  it("auto-load stops at CHALLENGE_AUTOLOAD_MAX and leaves the button for the rest", async () => {
+    const pages: Record<string, { ok: boolean; body: unknown }> = {}
+    for (let o = 0; o <= 960; o += 96) pages[String(o)] = { ok: true, body: { moments: [{ ...moment, moment_id: "m" + o }], hasMore: true } }
+    stubPages(pages)
+    const { findByText } = render(<TrophyPickerModal {...baseProps} initialQuery="Victor" />)
+    await findByText("Load 96 more")
+    await waitFor(() => expect(offsetsFetched()).toEqual([0, 96, 192, 288, 384]))
+    // waitFor passes the moment the list MATCHES; the cap is that it then STAYS.
+    await new Promise((r) => setTimeout(r, 150))
+    expect(offsetsFetched()).toEqual([0, 96, 192, 288, 384])
+    expect(await findByText("Load 96 more")).toBeTruthy()
+  })
+
+  it("a FAILED auto-load page stops the chain (no retry loop) and says so", async () => {
+    stubPages({ "0": { ok: true, body: { moments: [moment], hasMore: true } }, "96": "throw" })
+    const { findByText } = render(<TrophyPickerModal {...baseProps} initialQuery="Victor" />)
+    expect(await findByText(/Couldn.t load more/)).toBeTruthy()
+    await new Promise((r) => setTimeout(r, 50))
+    expect(offsetsFetched()).toEqual([0, 96])
+  })
+
+  it("no auto-load outside a challenge (no pre-fill): the next page waits for the click", async () => {
+    stubPages({ "0": { ok: true, body: { moments: [moment], hasMore: true } }, "96": { ok: true, body: { moments: [kd], hasMore: false } } })
+    const { findByText } = render(<TrophyPickerModal {...baseProps} />)
+    await findByText("Load 96 more")
+    await new Promise((r) => setTimeout(r, 50))
+    expect(offsetsFetched()).toEqual([0])
+  })
+
   it("filters the grid to empty via the search box (filter-miss copy)", async () => {
     const { getByLabelText, findByText, getByText } = render(<TrophyPickerModal {...baseProps} />)
     await findByText(/Victor Wembanyama/)
