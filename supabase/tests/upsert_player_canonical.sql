@@ -7,7 +7,7 @@
 -- columns are COALESCE FILL-ONLY and a teamAtMoment can never clobber a derived team.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260802181500_audit_20260802_snapshot_upsert_player_canonical.sql);
+-- (supabase/migrations/20261108020159_audit_20261107_upsert_player_canonical_honours_aliases.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -37,6 +37,14 @@ CREATE TABLE editions (
   player_id uuid
 );
 
+CREATE TABLE player_name_aliases (
+  collection_id uuid NOT NULL,
+  alias_slug    text NOT NULL,
+  player_id     uuid NOT NULL,
+  note          text,
+  PRIMARY KEY (collection_id, alias_slug)
+);
+
 -- >>> BEGIN verbatim upsert_player_canonical (keep byte-identical to the migration) >>>
 CREATE OR REPLACE FUNCTION public.upsert_player_canonical(p_collection_id uuid, p_external_id text, p_name text, p_first_name text DEFAULT NULL::text, p_last_name text DEFAULT NULL::text, p_team text DEFAULT NULL::text, p_jersey_number integer DEFAULT NULL::integer)
  RETURNS uuid
@@ -53,6 +61,7 @@ DECLARE
   v_blocked    boolean := false;
   v_team       text := nullif(trim(coalesce(p_team, '')), '');
   v_name       text := nullif(trim(coalesce(p_name, '')), '');
+  v_alias_of   uuid;
 BEGIN
   IF p_collection_id IS NULL
      OR p_external_id IS NULL OR trim(p_external_id) = '' THEN
@@ -60,6 +69,19 @@ BEGIN
   END IF;
 
   v_slug := regexp_replace(lower(trim(coalesce(v_name, ''))), '[^a-z0-9]+', '-', 'g');
+
+  -- 2026-11-07: a spelling registered in player_name_aliases is ANOTHER NAME for
+  -- that player (a former name, the source's spelling, a nickname). It resolves to
+  -- the player and NEVER overwrites players.name — the catalog name is a decision
+  -- (e.g. the league's own spelling), and the feed still sends the old one.
+  IF v_slug <> '' THEN
+    SELECT a.player_id INTO v_alias_of
+      FROM public.player_name_aliases a
+     WHERE a.collection_id = p_collection_id
+       AND btrim(a.alias_slug, '-') = btrim(v_slug, '-')
+     ORDER BY a.player_id
+     LIMIT 1;
+  END IF;
 
   -- 1. exact external_id hit (external_id is GLOBALLY unique, so at most one row)
   SELECT p.id, p.collection_id INTO v_id, v_row_coll
@@ -75,7 +97,7 @@ BEGIN
       v_id := NULL;
     ELSE
       UPDATE public.players p SET
-        name          = COALESCE(v_name, p.name),
+        name          = CASE WHEN v_alias_of = p.id THEN p.name ELSE COALESCE(v_name, p.name) END,
         first_name    = COALESCE(p.first_name,    p_first_name),
         last_name     = COALESCE(p.last_name,     p_last_name),
         team          = COALESCE(p.team,          v_team),
@@ -99,6 +121,13 @@ BEGIN
               p.id
      LIMIT 1;
 
+    -- no row carries this name: a registered alias names the player instead
+    IF v_id IS NULL AND v_alias_of IS NOT NULL THEN
+      SELECT p.id, p.external_id INTO v_id, v_row_ext
+        FROM public.players p
+       WHERE p.id = v_alias_of AND p.collection_id = p_collection_id;
+    END IF;
+
     IF v_id IS NOT NULL THEN
       -- adopt the canonical numeric stats id onto a slug-scheme row when free
       IF p_external_id ~ '^[0-9]+$'
@@ -109,7 +138,7 @@ BEGIN
       END IF;
 
       UPDATE public.players p SET
-        name          = COALESCE(v_name, p.name),
+        name          = CASE WHEN v_alias_of = p.id THEN p.name ELSE COALESCE(v_name, p.name) END,
         first_name    = COALESCE(p.first_name,    p_first_name),
         last_name     = COALESCE(p.last_name,     p_last_name),
         team          = COALESCE(p.team,          v_team),
@@ -209,6 +238,29 @@ SELECT _assert_eq((SELECT jersey_number::text FROM players WHERE external_id='br
 -- New player with a blank name → 'Unknown Player' placeholder.
 SELECT upsert_player_canonical('11111111-1111-1111-1111-111111111111', 'noname-1', NULL);
 SELECT _assert_eq((SELECT name FROM players WHERE external_id='noname-1'), 'Unknown Player', 'new player, blank name → Unknown Player');
+
+-- 2026-11-07: a registered ALIAS is another name for the player. The feed still
+-- sends the old spelling after a rename (Skylar Diggins-Smith → Skylar Diggins):
+-- it must neither overwrite the catalog name nor mint a twin.
+INSERT INTO players (id, external_id, collection_id, collection, name) VALUES
+  ('00000000-0000-0000-0000-000000000010', '4242', '11111111-1111-1111-1111-111111111111', 'nba_top_shot', 'Skylar Diggins');
+INSERT INTO player_name_aliases (collection_id, alias_slug, player_id) VALUES
+  ('11111111-1111-1111-1111-111111111111', 'skylar-diggins-smith', '00000000-0000-0000-0000-000000000010'),
+  ('11111111-1111-1111-1111-111111111111', 'kenyon-martin-jr-',    '00000000-0000-0000-0000-000000000011');
+INSERT INTO players (id, external_id, collection_id, collection, name) VALUES
+  ('00000000-0000-0000-0000-000000000011', 'flow:kj', '11111111-1111-1111-1111-111111111111', 'nba_top_shot', 'KJ Martin');
+SELECT _assert_eq(upsert_player_canonical('11111111-1111-1111-1111-111111111111', '4242', 'Skylar Diggins-Smith')::text,
+  '00000000-0000-0000-0000-000000000010', 'alias on an external_id hit: same player');
+SELECT _assert_eq((SELECT name FROM players WHERE id='00000000-0000-0000-0000-000000000010'), 'Skylar Diggins',
+  'alias on an external_id hit: catalog name NOT overwritten by the old spelling');
+SELECT _assert_eq(upsert_player_canonical('11111111-1111-1111-1111-111111111111', '9001', 'Kenyon Martin Jr', p_team => 'Utah Jazz')::text,
+  '00000000-0000-0000-0000-000000000011', 'alias by slug (suffix punctuation differs): resolves to the player, no twin');
+SELECT _assert_eq((SELECT name FROM players WHERE id='00000000-0000-0000-0000-000000000011'), 'KJ Martin', 'alias by slug: name kept');
+SELECT _assert_eq((SELECT external_id FROM players WHERE id='00000000-0000-0000-0000-000000000011'), '9001', 'alias by slug: free numeric stats id adopted');
+SELECT _assert_eq((SELECT count(*)::text FROM players WHERE collection_id='11111111-1111-1111-1111-111111111111' AND name ILIKE 'Kenyon%'), '0', 'alias by slug: no twin row minted');
+-- A non-alias new spelling on an id hit still follows the feed (authoritative-on-provide, unchanged).
+SELECT upsert_player_canonical('11111111-1111-1111-1111-111111111111', '4242', 'Skylar Diggins Jr');
+SELECT _assert_eq((SELECT name FROM players WHERE id='00000000-0000-0000-0000-000000000010'), 'Skylar Diggins Jr', 'non-alias spelling: name follows the feed as before');
 
 SELECT '✓ upsert_player_canonical invariants pass' AS result;
 ROLLBACK;

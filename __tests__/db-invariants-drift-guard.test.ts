@@ -1660,7 +1660,7 @@ const PINS = [
   {
     fn: "upsert_player_canonical",
     test: "supabase/tests/upsert_player_canonical.sql",
-    migration: "supabase/migrations/20260802181500_audit_20260802_snapshot_upsert_player_canonical.sql",
+    migration: "supabase/migrations/20261108020159_audit_20261107_upsert_player_canonical_honours_aliases.sql",
   },
   {
     fn: "update_sale_serial",
