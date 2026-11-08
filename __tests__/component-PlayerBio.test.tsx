@@ -96,6 +96,14 @@ describe("PlayerBio — states", () => {
   })
 })
 
+describe("PlayerBio — which collections", () => {
+  it("every athlete collection, UFC included; never Pinnacle characters", async () => {
+    const { PLAYER_BIO_COLLECTIONS } = await import("@/lib/player-bio")
+    for (const c of ["nba_top_shot", "nfl_all_day", "candy_mlb", "laliga_golazos", "panini_blockchain", "ufc_strike"]) expect(PLAYER_BIO_COLLECTIONS.has(c)).toBe(true)
+    expect(PLAYER_BIO_COLLECTIONS.has("disney_pinnacle")).toBe(false)
+  })
+})
+
 describe("PlayerBio — wired into the player page", () => {
   const SRC = readFileSync("app/(collections)/[collection]/player/[slug]/page.tsx", "utf8")
   it("reads get_player_bio by the PERSON for person collections, in its own Suspense", () => {
