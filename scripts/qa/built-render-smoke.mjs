@@ -119,6 +119,9 @@ const PARAM_VALUES = {
   // /trades/[code] (2026-10-31): ROOM_CODE is /^[a-z0-9]{10}$/ (lib/trade-room/store.ts);
   // a format-valid code reaches the room read and renders its not-found state.
   code: "cirender00",
+  // /profile/[username]/trophy-case/[challenge] (2026-11-07): isChallengeSlug() is
+  // kebab-case ≤ 60 chars; a format-valid slug reaches the profile + challenge reads.
+  challenge: "ci-render-probe",
 }
 
 // Per-ROUTE placeholders, where a route validates its param's FORMAT before it
