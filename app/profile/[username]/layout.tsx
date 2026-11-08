@@ -38,6 +38,7 @@
 
 import type { Metadata } from "next"
 import { getPublicProfile } from "@/lib/profile/public-profile"
+import { ogProfileCardPath } from "@/lib/og/card-url"
 import FunnelTracker from "@/components/FunnelTracker"
 
 const BASE_URL =
@@ -132,7 +133,7 @@ export async function generateMetadata({
   const trophyCount = resolved?.trophies?.length ?? 0
 
   const canonical = `${BASE_URL}/profile/${encodeURIComponent(key)}`
-  const ogUrl = `${BASE_URL}/api/og/profile/${encodeURIComponent(key)}`
+  const ogUrl = `${BASE_URL}${ogProfileCardPath(key)}`
   const title = `${displayName}'s Collection | Rip Packs City`
   const description = profileDescription({ momentCount, trophyCount })
 

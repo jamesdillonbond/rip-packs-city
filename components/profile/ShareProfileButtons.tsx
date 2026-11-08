@@ -31,6 +31,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { challengeCaseOgPath, challengeCaseSharePath } from "@/lib/trophy/challenge-link";
+import { ogProfileCardPath, ogTrophyCaseCardPath } from "@/lib/og/card-url";
 
 const DISPLAY = "var(--font-display)";
 // White label text goes on the FILL token, not the raw brand red (4.36:1 <
@@ -83,8 +84,8 @@ function prewarmCard(username: string, surface: ShareSurface, challenge?: ShareC
     surface === "trophy-case" && challenge
       ? challengeCaseOgPath(username, challenge.slug)
       : surface === "trophy-case"
-      ? `/api/og/trophy-case/${encodeURIComponent(username)}`
-      : `/api/og/profile/${encodeURIComponent(username)}`;
+      ? ogTrophyCaseCardPath(username)
+      : ogProfileCardPath(username);
   try {
     void fetch(og, { method: "GET", cache: "force-cache" }).catch(() => {});
   } catch {

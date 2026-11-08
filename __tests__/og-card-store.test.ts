@@ -6,6 +6,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 // the rendered PNG instantly and keeps it fresh in the background.
 
 import { serveStoredCard, ogCardKey, OG_CARD_FRESH_MS, OG_CARD_FULL_HEADER } from "@/lib/og/card-store"
+import { ogProfileCardPath, ogTrophyCaseCardPath, OG_CARD_URL_VERSION } from "@/lib/og/card-url"
 
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1, 2, 3])
 const NEW = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 9, 9])
@@ -111,5 +112,13 @@ describe("ogCardKey", () => {
   it("is case-insensitive on the handle and names the challenge", () => {
     expect(ogCardKey("profile", "PeanPean")).toBe("profile/peanpean.png")
     expect(ogCardKey("trophy-case", "Trev", "dame-time")).toBe("trophy-case/trev/dame-time.png")
+  })
+})
+
+describe("card URLs carry a version (Discord's media proxy remembers a FAILED image URL)", () => {
+  it("both card URLs are versioned — a failure cached under the bare URL is never asked for again", () => {
+    expect(OG_CARD_URL_VERSION).not.toBe("")
+    expect(ogProfileCardPath("peanpean")).toBe(`/api/og/profile/peanpean?v=${OG_CARD_URL_VERSION}`)
+    expect(ogTrophyCaseCardPath("trev")).toBe(`/api/og/trophy-case/trev?v=${OG_CARD_URL_VERSION}`)
   })
 })

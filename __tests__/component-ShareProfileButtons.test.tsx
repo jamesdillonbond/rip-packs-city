@@ -2,6 +2,7 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest"
 import { render, cleanup, screen, fireEvent, waitFor } from "@testing-library/react"
 import ShareProfileButtons from "@/components/profile/ShareProfileButtons"
+import { ogTrophyCaseCardPath } from "@/lib/og/card-url"
 
 // Pins the "share your collection" affordance: the UTM-tagged profile URL each
 // action builds (attribution + the &ref= referral loop), the X-intent open, the
@@ -104,7 +105,8 @@ describe("ShareProfileButtons", () => {
     expect(intent).toMatch(/trophy case/i)
     expect(intent).toContain("3 Moments")
     await waitFor(() =>
-      expect(fetchMock).toHaveBeenCalledWith("/api/og/trophy-case/trevor", expect.anything()),
+      // The SAME (versioned) URL the page advertises as og:image — lib/og/card-url.
+      expect(fetchMock).toHaveBeenCalledWith(ogTrophyCaseCardPath("trevor"), expect.anything()),
     )
   })
 
