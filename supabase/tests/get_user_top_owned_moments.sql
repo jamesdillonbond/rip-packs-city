@@ -22,6 +22,9 @@
 --     picker's "search inside the top 96" defect; NULL / blank = no filter;
 --     (2026-11-08) the query is split into words and EVERY word must appear in
 --     SOME field — "Damian Lillard Extra Spice" spans player + set;
+--   * p_offset (2026-11-08, "Load more"): pages the SAME total order (fmv,
+--     serial, moment_id, collection_id); pages never overlap and their union is
+--     the full list; NULL / negative = 0;
 --   * ordered by fmv DESC, capped at p_limit.
 --   * PANINI (2026-09-28): cards under the Panini usernames the user LINKED
 --     (saved_collector_identities) are offered — the walked profile, plus serials
@@ -32,7 +35,7 @@
 --     or another collection's filter excludes the branch.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20261108153540_audit_20261108_trophy_picker_search_matches_every_word_across_fields.sql);
+-- (supabase/migrations/20261108160555_audit_20261108_trophy_picker_load_more_offset.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -85,7 +88,7 @@ CREATE FUNCTION public.serial_fmv_estimate(p_cid uuid, p_serial int, p_circ int,
  RETURNS jsonb LANGUAGE sql IMMUTABLE AS $$ SELECT jsonb_build_object('est', p_fmv) $$;
 
 -- >>> BEGIN verbatim get_user_top_owned_moments (keep byte-identical to the migration) >>>
-CREATE OR REPLACE FUNCTION public.get_user_top_owned_moments(p_user_id uuid, p_limit integer DEFAULT 24, p_league text DEFAULT NULL::text, p_collection_id uuid DEFAULT NULL::uuid, p_query text DEFAULT NULL::text)
+CREATE OR REPLACE FUNCTION public.get_user_top_owned_moments(p_user_id uuid, p_limit integer DEFAULT 24, p_league text DEFAULT NULL::text, p_collection_id uuid DEFAULT NULL::uuid, p_query text DEFAULT NULL::text, p_offset integer DEFAULT 0)
  RETURNS TABLE(moment_id text, collection_id uuid, collection_slug text, wallet_address text, player_name text, set_name text, tier text, serial_number integer, mint_count integer, fmv_usd numeric, image_url text, is_locked boolean, series_number integer, edition_key text, character_name text, edition_name text, league text, serial_fmv jsonb, team_name text, jersey_number integer)
  LANGUAGE plpgsql
  STABLE SECURITY DEFINER
@@ -257,8 +260,12 @@ BEGIN
     a.o_character_name, a.o_edition_name, a.o_league, a.o_serial_fmv,
     a.o_team_name, a.o_jersey_number
   FROM all_rows a
-  ORDER BY a.o_fmv_usd DESC NULLS LAST, a.o_serial_number ASC NULLS LAST, a.o_moment_id
-  LIMIT p_limit;
+  -- collection_id breaks the last tie: a moment_id is unique only WITHIN a
+  -- collection, and "Load more" pages with OFFSET, so the order must be total
+  -- or a row can repeat on one page and vanish from the next (2026-11-08).
+  ORDER BY a.o_fmv_usd DESC NULLS LAST, a.o_serial_number ASC NULLS LAST, a.o_moment_id, a.o_collection_id
+  LIMIT p_limit
+  OFFSET GREATEST(COALESCE(p_offset, 0), 0);
 END;
 $function$;
 -- <<< END verbatim get_user_top_owned_moments <<<
@@ -396,6 +403,20 @@ SELECT _assert_eq((SELECT string_agg(moment_id, ',' ORDER BY moment_id) FROM pub
 SELECT _assert_eq((SELECT string_agg(moment_id, ',' ORDER BY moment_id) FROM public.get_user_top_owned_moments(:U1::uuid, 24, NULL, NULL, '  dame   blazers ')), 'm1', 'player + team words, extra whitespace ignored');
 SELECT _assert_eq((SELECT count(*)::text FROM public.get_user_top_owned_moments(:U1::uuid, 24, NULL, NULL, 'lillard base')), '0', 'AND, not OR: Lillard is Cosmic and Dame is Base, so neither matches both words');
 SELECT _assert_eq((SELECT string_agg(moment_id, ',' ORDER BY moment_id) FROM public.get_user_top_owned_moments(:U1::uuid, 24, NULL, :PAN::uuid, 'catalogued cat set')), 'pc-1', 'Panini branch: player + set words across fields');
+
+-- ── 10. p_offset pages the same total order (2026-11-08, "Load more") ────────
+SELECT _assert_eq((SELECT string_agg(moment_id, ',' ORDER BY ord) FROM (SELECT moment_id, row_number() OVER () ord FROM public.get_user_top_owned_moments(:U1::uuid, 3, NULL, NULL, NULL, 3)) x),
+  'm5,m4,m6', 'second page of 3 continues the fmv order (m5 40, m4 30, m6 20)');
+SELECT _assert_eq((SELECT string_agg(moment_id, ',' ORDER BY moment_id) FROM (
+    SELECT moment_id FROM public.get_user_top_owned_moments(:U1::uuid, 4, NULL, NULL, NULL, 0)
+    UNION ALL SELECT moment_id FROM public.get_user_top_owned_moments(:U1::uuid, 4, NULL, NULL, NULL, 4)
+    UNION ALL SELECT moment_id FROM public.get_user_top_owned_moments(:U1::uuid, 4, NULL, NULL, NULL, 8)) x),
+  (SELECT string_agg(moment_id, ',' ORDER BY moment_id) FROM public.get_user_top_owned_moments(:U1::uuid, 24, NULL, NULL)),
+  'pages of 4 at offsets 0/4/8: no row repeated, none lost — the union IS the full list');
+SELECT _assert_eq((SELECT count(*)::text FROM public.get_user_top_owned_moments(:U1::uuid, 24, NULL, NULL, NULL, 9)), '0', 'an offset past the end is empty');
+SELECT _assert_eq((SELECT string_agg(moment_id, ',' ORDER BY moment_id) FROM public.get_user_top_owned_moments(:U1::uuid, 1, NULL, NULL, 'lillard', 1)), NULL, 'offset composes with p_query (1 match, page 2 is empty)');
+SELECT _assert_eq((SELECT moment_id FROM public.get_user_top_owned_moments(:U1::uuid, 1, NULL, NULL, NULL, -5)), 'm1', 'a negative offset is page one, never an error');
+SELECT _assert_eq((SELECT moment_id FROM public.get_user_top_owned_moments(:U1::uuid, 1, NULL, NULL, NULL, NULL)), 'm1', 'a NULL offset is page one');
 
 SELECT '✓ get_user_top_owned_moments: all assertions passed' AS result;
 

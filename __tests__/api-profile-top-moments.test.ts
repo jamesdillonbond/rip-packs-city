@@ -36,6 +36,8 @@ vi.mock("@/lib/auth/supabase-server", () => ({
 
 import { GET } from "@/app/api/profile/top-moments/route"
 
+const PANINI_ID = "d1a0a7f5-609a-49f4-a1a7-4eaac55b020b"
+
 const req = (url: string) => ({ nextUrl: new URL(url) }) as any
 
 beforeEach(() => {
@@ -176,6 +178,42 @@ describe("GET /api/profile/top-moments", () => {
     state.user = { id: "u1" }
     await GET(req("https://t/api/profile/top-moments?q=" + "x".repeat(200)))
     expect(state.rpcArgs.p_query).toHaveLength(80)
+  })
+
+  // ── offset / hasMore: "Load more" in the trophy picker (2026-11-08) ──────
+  it("page one sends NO p_offset (every deployed RPC signature accepts the call)", async () => {
+    state.user = { id: "u1" }
+    await GET(req("https://t/api/profile/top-moments?limit=96"))
+    expect("p_offset" in state.rpcArgs).toBe(false)
+  })
+
+  it("a later page passes ?offset through as p_offset", async () => {
+    state.user = { id: "u1" }
+    await GET(req("https://t/api/profile/top-moments?limit=96&offset=192"))
+    expect(state.rpcArgs.p_offset).toBe(192)
+  })
+
+  it("a negative, fractional, junk or too-deep offset is page one", async () => {
+    state.user = { id: "u1" }
+    for (const o of ["-5", "1.5", "abc", "999999"]) {
+      await GET(req("https://t/api/profile/top-moments?offset=" + o))
+      expect("p_offset" in state.rpcArgs).toBe(false)
+    }
+  })
+
+  it("hasMore is true only for a FULL page from the RPC", async () => {
+    state.user = { id: "u1" }
+    state.rpc = { data: [{ moment_id: "a" }, { moment_id: "b" }], error: null }
+    expect((await (await GET(req("https://t/api/profile/top-moments?limit=2"))).json()).hasMore).toBe(true)
+    expect((await (await GET(req("https://t/api/profile/top-moments?limit=3"))).json()).hasMore).toBe(false)
+  })
+
+  it("hasMore counts the RPC page BEFORE the Panini opt-out shortens it", async () => {
+    state.user = { id: "u1" }
+    state.rpc = { data: [{ moment_id: "a" }, { moment_id: "p", collection_id: PANINI_ID }], error: null }
+    const body = await (await GET(req("https://t/api/profile/top-moments?limit=2"))).json()
+    expect(body.moments).toHaveLength(1)
+    expect(body.hasMore).toBe(true)
   })
 
   // ── PANINI (2026-09-28) ──────────────────────────────────────────────────
