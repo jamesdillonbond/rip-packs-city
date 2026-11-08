@@ -24,7 +24,7 @@ vi.mock("@/components/profile/TrophyPickerModal", () => ({
   },
 }))
 
-import TrophyCasesPanel, { slotsOf } from "@/components/profile/TrophyCasesPanel"
+import TrophyCasesPanel, { copyMainToast, slotsOf } from "@/components/profile/TrophyCasesPanel"
 import PublicTrophyCases from "@/components/profile/PublicTrophyCases"
 import ChallengeBoardClient from "@/app/trophy-challenges/[slug]/ChallengeBoardClient"
 
@@ -176,6 +176,68 @@ describe("TrophyCasesPanel (owner dashboard)", () => {
     render(<TrophyCasesPanel ownerKey={null} savedChains={null} onToast={() => {}} />)
     await screen.findByText("Dame Time")
     expect(screen.queryByTestId("challenge-share")).toBeNull()
+  })
+
+  // 2026-11-07: the first outside entrant (peanpean) pinned six Dame pieces in
+  // his MAIN case and never entered. The offer turns that into one tap.
+  it("⚠ main case holds Dame pieces + not entered → 'Enter with my N Dame Time pieces' creates the entry, then copies", async () => {
+    routes["GET /api/profile/trophy-cases"] = () => ok({ cases: [], challenges: [DAME] })
+    routes["POST /api/profile/trophy-cases"] = () => ({ ok: true, status: 201, json: async () => ({ case: { id: CASE } }) })
+    routes["POST /api/profile/trophy-cases/copy-main"] = () => ok({ copied: 2, skipped: [] })
+    const toast = vi.fn()
+    const mainPins = [
+      { player_name: "Damian Lillard", moment_id: "a" },
+      { player_name: "LeBron James", moment_id: "b" },
+      { player_name: "Damian Lillard", moment_id: "c" },
+    ]
+    render(<TrophyCasesPanel ownerKey={null} savedChains={null} onToast={toast} mainPins={mainPins} />)
+    fireEvent.click(await screen.findByText("Enter with my 2 Dame Time pieces"))
+    await waitFor(() => expect(toast).toHaveBeenCalledWith("Entered Dame Time with 2 pieces from your main case", "success"))
+    const posts = calls.filter((c) => c.init?.method === "POST").map((c) => [c.url, JSON.parse(c.init.body)])
+    expect(posts).toEqual([
+      ["/api/profile/trophy-cases", { challengeSlug: "dame-time" }],
+      ["/api/profile/trophy-cases/copy-main", { caseId: CASE }],
+    ])
+  })
+
+  it("no offer when the main case has no matching pieces, or its read failed (null)", async () => {
+    routes["GET /api/profile/trophy-cases"] = () => ok({ cases: [], challenges: [DAME] })
+    render(<TrophyCasesPanel ownerKey={null} savedChains={null} onToast={() => {}} mainPins={[{ player_name: "LeBron James", moment_id: "b" }]} />)
+    await screen.findByText("Enter")
+    expect(screen.queryByTestId("enter-with-main")).toBeNull()
+    cleanup()
+    render(<TrophyCasesPanel ownerKey={null} savedChains={null} onToast={() => {}} mainPins={null} />)
+    await screen.findByText("Enter")
+    expect(screen.queryByTestId("enter-with-main")).toBeNull()
+  })
+
+  it("an entry with empty slots offers 'Add N from my main case' — not counting pieces already in it", async () => {
+    routes["GET /api/profile/trophy-cases"] = () =>
+      ok({ cases: [{ id: CASE, name: "Dame Time", created_at: "", completed_at: null, challenge: DAME, slabs: [slab(1, { moment_id: "a" })] }], challenges: [] })
+    routes["POST /api/profile/trophy-cases/copy-main"] = () => ok({ copied: 1, skipped: [{ reason: "That card isn't under a Panini username linked to your profile." }] })
+    const toast = vi.fn()
+    render(
+      <TrophyCasesPanel
+        ownerKey={null}
+        savedChains={null}
+        onToast={toast}
+        mainPins={[{ player_name: "Damian Lillard", moment_id: "a" }, { player_name: "Damian Lillard", moment_id: "d" }, { player_name: "Damian Lillard", moment_id: "e" }]}
+      />,
+    )
+    fireEvent.click(await screen.findByText("Add 2 from my main case"))
+    await waitFor(() =>
+      expect(toast).toHaveBeenCalledWith(
+        "Dame Time with 1 piece from your main case (1 skipped: That card isn't under a Panini username linked to your profile.)",
+        "success",
+      ),
+    )
+  })
+
+  it("copyMainToast never hides a skip, and says so when nothing landed", () => {
+    expect(copyMainToast("Dame Time", { copied: 0, skipped: [{ reason: "nope" }] }, true)).toBe(
+      "Entered Dame Time — none of your main-case pieces could be added (1 skipped: nope)",
+    )
+    expect(copyMainToast("Dame Time", { copied: 6, skipped: [] }, true)).toBe("Entered Dame Time with 6 pieces from your main case")
   })
 
   it("does not offer a challenge already entered; a null challenge list offers nothing", async () => {

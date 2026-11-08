@@ -60,6 +60,23 @@ export function playerLabelMatches(label: string | null | undefined, playerNames
     .some((part) => part.length > 0 && wanted.has(part));
 }
 
+/**
+ * Main-case pins that LOOK eligible for a challenge — by player name only, the
+ * client-side hint behind "Enter with my N Dame pieces" (2026-11-07). The
+ * server re-checks every pin (ownership, collection) before copying; this only
+ * decides whether to offer. Pieces already in the entry are not counted.
+ */
+export function mainCaseCandidates<T extends { player_name: string | null; moment_id: string }>(
+  mainPins: T[] | null | undefined,
+  rules: unknown,
+  alreadyIn: ReadonlySet<string> = new Set(),
+): T[] {
+  if (!mainPins) return [];
+  const { playerNames } = parseChallengeRules(rules);
+  if (playerNames.length === 0) return [];
+  return mainPins.filter((p) => !alreadyIn.has(p.moment_id) && playerLabelMatches(p.player_name, playerNames));
+}
+
 /** Human list for an error message: "Damian Lillard" / "A or B". */
 export function describePlayers(names: string[]): string {
   if (names.length <= 1) return names[0] ?? "this challenge's players";

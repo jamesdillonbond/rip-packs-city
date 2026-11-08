@@ -1348,6 +1348,13 @@ function ProfilePageInner() {
           <div style={focusChallenge ? { order: -1 } : undefined} data-testid="trophy-cases-panel-slot">
           <TrophyCasesPanel
             focusChallenge={focusChallenge}
+            // The main case's pins, for the "Enter with my N Dame pieces" offer.
+            // A FAILED slab read is null (no offer), never [] (= "none qualify").
+            mainPins={
+              loading || slabsFailed
+                ? null
+                : slabs.filter((s): s is TrophySlabData => !!s).map((s) => ({ player_name: s.player_name ?? null, moment_id: String(s.moment_id) }))
+            }
             ownerKey={null}
             savedChains={loading || walletsFailed ? null : savedWalletChains(wallets.map((w) => w.wallet_addr), detectAddressChain)}
             onToast={pushToast}

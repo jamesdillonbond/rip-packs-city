@@ -19,7 +19,7 @@ import TrophyPickerModal from "@/components/profile/TrophyPickerModal";
 import TrophyNoteEditor from "@/components/profile/TrophyNoteEditor";
 import { apiErrorMessage } from "@/lib/api-error-message";
 import { MAX_CASE_NAME_LEN, MAX_EXTRA_CASES } from "@/lib/trophy/cases";
-import { parseChallengeRules } from "@/lib/trophy/challenge-rules";
+import { mainCaseCandidates, parseChallengeRules } from "@/lib/trophy/challenge-rules";
 import { challengeAnchorId, challengeCaseSharePath, challengeFocusFromUrl } from "@/lib/trophy/challenge-link";
 import ShareProfileButtons from "@/components/profile/ShareProfileButtons";
 
@@ -59,6 +59,23 @@ type Load =
  * then claims neither listed nor unlisted (2026-11-07 review).
  */
 export type BoardListing = "listed" | "needs_username" | "unknown";
+
+/** A main-case pin, as far as the "use my main case" offer needs to know it. */
+export type MainPin = { player_name: string | null; moment_id: string };
+
+/**
+ * The toast after copying main-case pins into an entry. Pure, so every outcome
+ * is pinned: it says how many landed and, when some did not, the first reason —
+ * a skipped piece is never silent.
+ */
+export function copyMainToast(title: string, res: { copied?: unknown; skipped?: unknown }, entered: boolean): string {
+  const n = typeof res.copied === "number" ? res.copied : 0;
+  const skipped = Array.isArray(res.skipped) ? (res.skipped as { reason?: string }[]) : [];
+  const why = skipped[0]?.reason ? ` (${skipped.length} skipped: ${skipped[0].reason})` : "";
+  const lead = entered ? `Entered ${title}` : `${title}`;
+  if (n === 0) return `${lead} — none of your main-case pieces could be added${why || "."}`;
+  return `${lead} with ${n} piece${n === 1 ? "" : "s"} from your main case${why}`;
+}
 
 export function boardListingOf(d: { board_username?: unknown; board_username_known?: unknown } | null | undefined): BoardListing {
   if (d?.board_username_known !== true) return "unknown";
@@ -100,7 +117,10 @@ export default function TrophyCasesPanel({
   savedChains,
   onToast,
   focusChallenge,
+  mainPins = null,
 }: {
+  /** The owner's MAIN-case pins (null = unknown/failed read: no offer is made). */
+  mainPins?: MainPin[] | null;
   /** Challenge slug to land on (the dashboard captures it at mount); falls back to the URL. */
   focusChallenge?: string | null;
   ownerKey: string | null;
@@ -181,6 +201,68 @@ export default function TrophyCasesPanel({
     const timer = setTimeout(stop, 8000);
     return stop;
   }, [loaded, focusChallenge]);
+
+  // "Enter with my N Dame pieces" / "Fill from my main case" (2026-11-07): the
+  // first outside entrant filled his MAIN case with Dame and never entered.
+  // Server-side copy re-checks every pin (copy-main route); this only reports.
+  const copyFromMain = useCallback(
+    async (caseId: string, title: string, entered: boolean): Promise<void> => {
+      const res = await fetch("/api/profile/trophy-cases/copy-main", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ caseId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        onToast(`${entered ? `Entered ${title}, but ` : ""}couldn't copy your pieces: ${apiErrorMessage(data, res.status)}`, "info");
+        return;
+      }
+      onToast(copyMainToast(title, data, entered), (data?.copied ?? 0) > 0 ? "success" : "info");
+    },
+    [onToast]
+  );
+
+  const enterWithMain = useCallback(
+    async (ch: TrophyChallengeInfo) => {
+      setBusy(true);
+      try {
+        const res = await fetch("/api/profile/trophy-cases", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ challengeSlug: ch.slug }),
+        });
+        const data = await res.json().catch(() => ({}));
+        const caseId = data?.case?.id;
+        if (!res.ok || typeof caseId !== "string") {
+          onToast(apiErrorMessage(data, res.status), "info");
+          return;
+        }
+        await copyFromMain(caseId, ch.title, true);
+      } catch {
+        onToast("Couldn't reach the server — try again.", "info");
+      } finally {
+        setBusy(false);
+        await refresh();
+      }
+    },
+    [copyFromMain, onToast, refresh]
+  );
+
+  const fillFromMain = useCallback(
+    async (c: TrophyCaseData) => {
+      if (!c.challenge) return;
+      setBusy(true);
+      try {
+        await copyFromMain(c.id, c.challenge.title, false);
+      } catch {
+        onToast("Couldn't reach the server — try again.", "info");
+      } finally {
+        setBusy(false);
+        await refresh();
+      }
+    },
+    [copyFromMain, onToast, refresh]
+  );
 
   const send = useCallback(
     async (url: string, method: string, body: unknown, okText: string): Promise<boolean> => {
@@ -279,7 +361,21 @@ export default function TrophyCasesPanel({
               <div style={{ fontFamily: monoFont, fontSize: 11, color: "var(--rpc-text-muted)", marginTop: 2 }}>{ch.tagline}</div>
             )}
           </div>
-          <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {(() => {
+              const n = mainCaseCandidates(mainPins, ch.rules).length;
+              return n > 0 ? (
+                <button
+                  type="button"
+                  data-testid="enter-with-main"
+                  disabled={busy || atCap}
+                  onClick={() => void enterWithMain(ch)}
+                  style={{ ...btn, background: "var(--rpc-red-fill)", borderColor: "var(--rpc-red-fill)", color: "#fff" }}
+                >
+                  Enter with my {n} {ch.title} piece{n === 1 ? "" : "s"}
+                </button>
+              ) : null;
+            })()}
             <Link href={`/trophy-challenges/${ch.slug}`} style={{ ...btn, textDecoration: "none" }}>
               See entries
             </Link>
@@ -310,6 +406,12 @@ export default function TrophyCasesPanel({
           onRename={(name) => send("/api/profile/trophy-cases", "PATCH", { caseId: c.id, name }, "Case renamed")}
           onDelete={() => send("/api/profile/trophy-cases", "DELETE", { caseId: c.id }, "Case deleted")}
           onNoteSaved={() => void refresh()}
+          mainCandidates={
+            c.challenge
+              ? mainCaseCandidates(mainPins, c.challenge.rules, new Set(c.slabs.map((sl) => String(sl.moment_id)))).length
+              : 0
+          }
+          onFillFromMain={() => void fillFromMain(c)}
         />
       ))}
 
@@ -390,6 +492,8 @@ export default function TrophyCasesPanel({
 function CaseBlock({
   c,
   focused,
+  mainCandidates = 0,
+  onFillFromMain,
   board,
   username,
   busy,
@@ -409,6 +513,9 @@ function CaseBlock({
   onDelete: () => void;
   onNoteSaved: () => void;
   focused?: boolean;
+  /** Main-case pieces that look eligible and are not yet in this entry. */
+  mainCandidates?: number;
+  onFillFromMain?: () => void;
 }) {
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState(c.name);
@@ -494,6 +601,19 @@ function CaseBlock({
         <div style={{ fontFamily: monoFont, fontSize: 11, color: "var(--rpc-text-muted)", marginBottom: 10, lineHeight: 1.5 }}>
           {ch.description}
         </div>
+      )}
+      {/* Empty slots + Dame pieces sitting in the MAIN case → offer to copy
+          them (the server re-checks each; see the copy-main route). */}
+      {ch && filled < 6 && mainCandidates > 0 && onFillFromMain && (
+        <button
+          type="button"
+          data-testid="fill-from-main"
+          disabled={busy}
+          onClick={onFillFromMain}
+          style={{ ...btn, marginBottom: 12, borderColor: "var(--rpc-red-border)", color: "var(--rpc-red-text)" }}
+        >
+          Add {Math.min(mainCandidates, 6 - filled)} from my main case
+        </button>
       )}
       {/* Share THIS entry: its own page + card (/profile/<u>/trophy-case/<slug>).
           Only with something pinned and a public handle to build the URL on —

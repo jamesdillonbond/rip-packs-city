@@ -45,7 +45,7 @@ export async function GET() {
     boundedRead(client.rpc("get_trophy_cases_for_user", { p_user_id: user.id }), `${ROUTE}/get_trophy_cases_for_user`),
     client
       .from("trophy_challenges")
-      .select("id, slug, title, tagline, description, starts_at, ends_at, is_active")
+      .select("id, slug, title, tagline, description, rules, starts_at, ends_at, is_active")
       .eq("is_active", true)
       .order("starts_at", { ascending: false })
       .limit(20),
