@@ -139,6 +139,8 @@
 
 55. **Ten players take the league's name (~4:59–5:05 PM PT, Trevor's call).** Names read from each player's nba.com / wnba.com heading. Panini renamed: Jimmy Butler III, KJ Martin, GG Jackson, Ronald Holland II, Nic Claxton. Top Shot renamed: Skylar Diggins, Megan DiLeo, Maya Caldwell, Betnijah Laney-Hamilton, Enes Freedom. Old spellings kept as aliases (old URLs 308). Steph Curry left as Trevor decided, though nba.com says "Stephen Curry" — flagged.
 
+56. **Old and new spellings both work in search and the concierge (~5:35 PM PT on, Trevor 5:33 PM).** Search's alias match ignores punctuation (`20261108013704`); Panini twins Skylar Diggins-Smith / Enes Kanter merged + old-name aliases (`20261108013621`); the concierge's cross-collection search no longer stops at partial hits ("Stephen Curry" returned 7 combo cards, none of his 199 solo cards); Panini deals match any spelling of the resolved person; `panini_holdings_breakdown` matches either spelling (`20261108014421`; a holder's 51 cards read 0 before).
+
 ## Post-ship watch (what to read tomorrow)
 
 - **Series-1 Top Shot art** on `/dashboard/*`, `/profile/*`, binder, trade room: present (any blank tile with a `data-rpc-dead-art` attribute whose `data-rpc-dead-src` starts `…/editions/<N>_` means ANOTHER series was retired — same fix, derive not copy).
