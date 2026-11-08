@@ -134,6 +134,15 @@ function fit(lines, head, tail, max = 280) {
   return [head, ...body, tail].join("\n")
 }
 
+// Like fit(), but says how many list lines were dropped ("+2 more") instead of hiding them.
+function fitWithMore(lines, head, tailFor, max = 280) {
+  for (let keep = lines.length; keep >= 1; keep--) {
+    const text = [head, ...lines.slice(0, keep), tailFor(lines.length - keep)].join("\n")
+    if (xLength(text) <= max) return text
+  }
+  return [head, lines[0], tailFor(lines.length - 1)].join("\n")
+}
+
 // ---------- slots ----------
 async function topSales7d() {
   const d = await getJson("top-sales?window=7d&sort=price&limit=200")
@@ -356,7 +365,7 @@ async function drops() {
     title: "Drops this week",
     link,
     facts: { drops: ahead, ended_this_week: all.filter((x) => x.status === "ended").length, lead_page_live: link !== fallbackLink },
-    draft: fit(lines, "Drops this week:\n", `\n${link}`),
+    draft: fitWithMore(lines, "Drops this week:\n", (n) => `${n ? `+${n} more\n` : ""}\n${link}`),
   }
 }
 
