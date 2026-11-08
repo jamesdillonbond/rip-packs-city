@@ -1677,7 +1677,8 @@ const PINS = [
     // registered alias or a case/space variant; accent-only variants are never rewritten.
     fn: "heal_wmc_player_names_from_catalog",
     test: "supabase/tests/heal_wmc_player_names_from_catalog.sql",
-    migration: "supabase/migrations/20261108171307_audit_20261108_wmc_player_names_follow_the_catalog.sql",
+    // Re-pinned 2026-11-08 (second pass): the target is the LINKED PERSON, not the edition label.
+    migration: "supabase/migrations/20261108191632_audit_20261108_wmc_player_names_follow_the_linked_person.sql",
   },
   {
     fn: "upsert_player_canonical",
