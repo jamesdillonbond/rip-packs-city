@@ -89,3 +89,43 @@ describe("retryEmptyPlayerSearch", () => {
     expect(out).toEqual({ data: [], error: null, playerResolved: null })
   })
 })
+
+// 2026-11-07: Panini's "Stephen Curry" editions now read "Steph Curry"; the typed
+// old name still ILIKE-matched seven multi-player cards, so the empty-only retry
+// never fired and the concierge answered with the combos and none of his solo cards.
+describe("retryEmptyPlayerSearch — a partial-only answer (labelOf)", () => {
+  const PANINI = "d1a0a7f5-609a-49f4-a1a7-4eaac55b020b"
+  const combo = { player_name: "Stephen Curry | Trae Young" }
+  it("when no hit is labelled the typed name, the resolver's person is searched too and LEADS", async () => {
+    const run = vi.fn(async (label: string) => ({ data: [{ player_name: label }], error: null }))
+    const out = await retryEmptyPlayerSearch({
+      supabase: sb(one("Steph Curry")), collectionUuid: PANINI, typed: "Stephen Curry",
+      first: { data: [combo], error: null }, run, labelOf: (r) => r.player_name,
+    })
+    expect(run).toHaveBeenCalledWith("Steph Curry")
+    expect(out.data).toEqual([{ player_name: "Steph Curry" }, combo])
+    expect(out.playerResolved).toEqual({ from: "Stephen Curry", to: "Steph Curry" })
+  })
+  it("a hit labelled exactly the typed name (any case / accent) is left alone — no resolver call", async () => {
+    const supabase = sb(one("Steph Curry"))
+    const out = await retryEmptyPlayerSearch({
+      supabase, collectionUuid: PANINI, typed: "steph curry",
+      first: { data: [{ player_name: "Steph Curry" }, combo], error: null }, run: vi.fn(), labelOf: (r) => r.player_name,
+    })
+    expect(out.playerResolved).toBeNull()
+    expect(supabase.rpc).not.toHaveBeenCalled()
+  })
+  it("without labelOf a non-empty answer stays untouched (the original contract)", async () => {
+    const supabase = sb(one("Steph Curry"))
+    const out = await retryEmptyPlayerSearch({ supabase, collectionUuid: PANINI, typed: "Stephen Curry", first: { data: [combo], error: null }, run: vi.fn() })
+    expect(out).toEqual({ data: [combo], error: null, playerResolved: null })
+    expect(supabase.rpc).not.toHaveBeenCalled()
+  })
+  it("a retry that finds nothing keeps the partial hits, unlabelled", async () => {
+    const out = await retryEmptyPlayerSearch({
+      supabase: sb(one("Steph Curry")), collectionUuid: PANINI, typed: "Stephen Curry",
+      first: { data: [combo], error: null }, run: async () => ({ data: [], error: null }), labelOf: (r) => r.player_name,
+    })
+    expect(out).toEqual({ data: [combo], error: null, playerResolved: null })
+  })
+})

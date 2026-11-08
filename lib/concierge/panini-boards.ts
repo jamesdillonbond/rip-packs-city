@@ -30,6 +30,7 @@ import { readBoardSnapshot } from "@/lib/insights/board-cache"
 import { editionKeyOfSku } from "@/lib/panini/overview-feeds"
 import { paniniEditionUrl } from "@/lib/panini/edition-url"
 import { textIncludes } from "@/lib/filter-match"
+import { slugifyPlayerName } from "@/lib/entity-labels"
 import { resolvePlayerName, singleRetryLabel } from "@/lib/concierge/player-identity"
 import { COLLECTION_UUID_BY_SLUG } from "@/lib/collections"
 import { classifySerial } from "@/lib/serials/fun-patterns"
@@ -203,11 +204,28 @@ export interface PaniniDealFilters {
   teamQuery?: unknown
   db?: Db
   player?: unknown
+  /**
+   * 2026-11-07: the resolved person's name slugs (their labels, catalog slug and
+   * aliases). The deal board carries Panini's RAW label ("Stephen Curry") while
+   * the catalog shows "Steph Curry", so a typed-text match missed one spelling
+   * or the other. A row matches when its slug contains one of these as whole words.
+   */
+  playerSlugs?: readonly string[] | null
   setName?: unknown
   sport?: unknown
   maxPrice?: unknown
   minDiscount?: unknown
   limit?: unknown
+}
+
+/** True when the label's slug holds one of `slugs` as whole hyphen-delimited words ("stephen-curry" in "stephen-curry-trae-young"). */
+export function nameSlugMatches(label: unknown, slugs: readonly string[] | null | undefined): boolean {
+  if (!slugs || slugs.length === 0 || typeof label !== "string" || !label.trim()) return false
+  const hay = `-${slugifyPlayerName(label)}-`
+  return slugs.some((s) => {
+    const n = String(s ?? "").replace(/^-+|-+$/g, "")
+    return n.length > 0 && hay.includes(`-${n}-`)
+  })
 }
 
 export async function readPaniniDealsForConcierge(
@@ -252,7 +270,7 @@ export async function readPaniniDealsForConcierge(
       const ek = editionKeyOfSku(r.sku)
       if (!ek || !f.editionKeys.has(ek)) return false
     }
-    if (player && !textIncludes(String(r.player_name ?? ""), player)) return false
+    if (player && !textIncludes(String(r.player_name ?? ""), player) && !nameSlugMatches(r.player_name, f.playerSlugs)) return false
     if (set && !textIncludes(`${r.product_name ?? ""} ${r.parallel ?? ""}`, set)) return false
     if (sport && String(r.sport ?? "").toLowerCase() !== sport) return false
     const ask = num(r.ask_usd)

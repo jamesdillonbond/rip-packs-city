@@ -225,6 +225,7 @@ export async function searchEditionFloorsByName(
   // #207: an accent-only miss ("doncic") is retried with the resolver's spelling.
   const { data: eds, error: edErr, playerResolved } = await retryEmptyPlayerSearch({
     supabase, collectionUuid, typed: name, first: await editionsFor(name), run: editionsFor,
+    labelOf: (r: Record<string, unknown>) => r.player_name,
   })
   if (playerResolved) head.player_resolved = playerResolved
   if (edErr) return { ...head, results: [], failed: true }

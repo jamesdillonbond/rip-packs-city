@@ -13,6 +13,7 @@ import {
   readPaniniPackMarketForConcierge,
   readPaniniPremiumsForConcierge,
   readPaniniDealsForConcierge,
+  nameSlugMatches,
 } from "@/lib/concierge/panini-boards"
 import { stripComments } from "../scripts/lib/strip-comments.mjs"
 
@@ -105,6 +106,32 @@ describe("readPaniniPremiumsForConcierge", () => {
     expect(raw).not.toMatch(/confidence/i)
     expect(raw).not.toMatch(/"HIGH"|"MEDIUM"/)
     expect(JSON.parse(raw).parallels[0].edition_url).toBe("https://x/panini-blockchain/edition/packcard-1")
+  })
+})
+
+describe("readPaniniDealsForConcierge — either spelling of a renamed player finds his deals (2026-11-07)", () => {
+  const deal = (player_name: string, sku: string) => ({ sku, player_name, product_name: "2025 NBA", sport: "Basketball", parallel: "Base", ask_usd: 5, fmv_usd: 10, discount_pct: 50, deal_basis: "fmv_only" })
+  const snap = async () => ({ payload: { deals_all: [
+    deal("Stephen Curry", "packcard-1_1_1_1__1_5"),
+    deal("Stephen Curry | Trae Young", "packcard-2_2_2_2__1_5"),
+    deal("Seth Curry", "packcard-3_3_3_3__1_5"),
+  ] }, ageMs: 60_000, stale: false, refreshedAt: "2026-11-07T00:00:00Z" })
+  const slugs = ["steph-curry", "stephen-curry"]
+  it("the catalog name 'Steph Curry' finds the board's raw 'Stephen Curry' rows, never his brother's", async () => {
+    const out = JSON.parse(await readPaniniDealsForConcierge("https://x", { player: "Steph Curry", playerSlugs: slugs }, snap))
+    expect(out.results.map((r: { player: string }) => r.player).sort()).toEqual(["Stephen Curry", "Stephen Curry | Trae Young"])
+  })
+  it("without the resolved slugs the typed text alone is the filter (and misses — the defect this pins)", async () => {
+    const out = JSON.parse(await readPaniniDealsForConcierge("https://x", { player: "Steph Curry" }, snap))
+    expect(out.results ?? []).toHaveLength(0)
+  })
+  it("whole words only: a slug never matches inside a longer name", () => {
+    expect(nameSlugMatches("Seth Curry", slugs)).toBe(false)
+    expect(nameSlugMatches("Stephen Curry Jr.", ["stephen-curry"])).toBe(true)
+    expect(nameSlugMatches("Stephen Currying", ["stephen-curry"])).toBe(false)
+  })
+  it("the concierge hands the resolved person's slugs to BOTH Panini deal calls", () => {
+    expect(ROUTE.match(/readPaniniDealsForConcierge\(base, \{[^}]*playerSlugs: playerScope\.slugs/g) ?? []).toHaveLength(2)
   })
 })
 

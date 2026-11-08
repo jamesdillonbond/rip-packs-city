@@ -7,7 +7,8 @@
 // names carry a diacritic (measured 10-22), and people rarely type one.
 //
 // The rule every such surface follows, through this one helper:
-//   - only an EMPTY answer is touched: a search that matched anything — or a read
+//   - only an EMPTY answer is touched (or, for a caller passing `labelOf`, one whose
+//     every hit is a PARTIAL — no row labelled the typed name): a search that matched it — or a read
 //     that FAILED — is returned exactly as it was (a failure must never be
 //     retried into an answer, nor an answer swapped for a guess);
 //   - the typed text goes to `resolve_player_name` (accent-, alias- and
@@ -37,11 +38,28 @@ export async function retryEmptyPlayerSearch<T>(opts: {
   typed: string | null | undefined
   first: Read<T>
   run: (label: string) => PromiseLike<Read<T>>
+  /**
+   * 2026-11-07: a caller that passes its rows' player label opts into ONE more
+   * retry case — a NON-empty answer in which NO row's label IS the typed name.
+   * After Panini's "Stephen Curry" editions were relabelled "Steph Curry",
+   * `ILIKE '%Stephen Curry%'` still matched seven multi-player cards ("Stephen
+   * Curry | Trae Young"), so the empty-only retry never fired and the concierge
+   * answered with the combos and none of his 199 solo cards. Here the resolver's
+   * person is searched too and LEADS; the partial hits follow, de-duplicated.
+   */
+  labelOf?: (row: T) => unknown
 }): Promise<Read<T> & { playerResolved: PlayerResolved | null }> {
   const { first } = opts
   const typed = (opts.typed ?? "").trim()
   const unchanged = { ...first, playerResolved: null }
-  if (!typed || first.error || !Array.isArray(first.data) || first.data.length > 0) return unchanged
+  if (!typed || first.error || !Array.isArray(first.data)) return unchanged
+  if (first.data.length > 0) {
+    if (!opts.labelOf) return unchanged
+    const fold = (v: unknown) => String(v ?? "").normalize("NFD").replace(/\p{M}/gu, "").trim().toLowerCase()
+    const labelOf = opts.labelOf
+    if (first.data.some((r) => fold(labelOf(r)) === fold(typed))) return unchanged
+  }
+  const partialOnly = first.data.length > 0
   const uuids = (Array.isArray(opts.collectionUuid) ? opts.collectionUuid : opts.collectionUuid ? [opts.collectionUuid] : []) as readonly string[]
   if (uuids.length === 0) return unchanged
   const labels = await Promise.all(uuids.map(async (u) => singleRetryLabel(await resolvePlayerName(opts.supabase, u, typed), typed)))
@@ -53,6 +71,11 @@ export async function retryEmptyPlayerSearch<T>(opts: {
   let again: Read<T>
   try { again = await opts.run(to) } catch { return unchanged }
   if (again.error || !Array.isArray(again.data) || again.data.length === 0) return unchanged
+  if (partialOnly) {
+    const seen = new Set(again.data.map((r) => JSON.stringify(r)))
+    const merged = [...again.data, ...(first.data as T[]).filter((r) => !seen.has(JSON.stringify(r)))]
+    return { data: merged, error: null, playerResolved: { from: typed, to } }
+  }
   return { data: again.data, error: null, playerResolved: { from: typed, to } }
 }
 

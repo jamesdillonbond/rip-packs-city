@@ -1913,7 +1913,9 @@ type ToolCtx = { sessionId: string; ownerKey?: string | null; userWallet?: strin
 // unresolved or FAILED lookup keeps the tool's own ILIKE and says so in
 // player_identity; Pinnacle (characters) and search_across_collections (every
 // collection at once) are not scoped. The block rides on the answer.
-type PlayerScope = { typed: string; labels: string[] | null; playerId: string | null; identity: Record<string, unknown> | null };
+// `slugs` (2026-11-07): the resolved person's name slugs — every label, the catalog slug and each alias — for
+// a reader whose rows carry a SOURCE's raw spelling (Panini's deal board says "Stephen Curry"; the catalog "Steph Curry").
+type PlayerScope = { typed: string; labels: string[] | null; playerId: string | null; identity: Record<string, unknown> | null; slugs: string[] | null };
 const PLAYER_SCOPED_TOOLS = new Set(["search_live_deals", "search_catalog_deals", "get_edition_listings", "search_serial_deals", "get_special_serial_owners", "get_badge_info"]);
 const TOP_SHOT_ONLY_TOOLS = new Set(["search_serial_deals", "get_special_serial_owners", "get_badge_info"]);
 
@@ -1977,8 +1979,18 @@ function selfApiFailure(what: string, status: number, wrote: boolean): string {
 // The tool's pre-2026-09-29 alert type names, still accepted from the model.
 const LEGACY_ALERT_TYPES: Record<string, string> = { below_price: "price_below", below_fmv_pct: "discount_above" };
 
+/** Every name slug of a resolved person (labels, catalog slug, aliases); null unless the resolver named ONE person. */
+function personSlugsFor(res: PlayerResolution | null): string[] | null {
+  if (!res || res.status !== "one") return null;
+  const out = new Set<string>();
+  for (const l of playerLabelsFor(res) ?? []) { const s = slugifyPlayerName(l); if (s) out.add(s); }
+  if (res.player.slug) out.add(res.player.slug.replace(/-+$/, ""));
+  for (const a of res.aliases ?? []) if (a?.slug) out.add(String(a.slug).replace(/-+$/, ""));
+  return out.size > 0 ? [...out] : null;
+}
+
 async function executeTool(toolName: string, toolInput: any, ctx: ToolCtx): Promise<string> {
-  const scope: PlayerScope = { typed: "", labels: null, playerId: null, identity: null };
+  const scope: PlayerScope = { typed: "", labels: null, playerId: null, identity: null, slugs: null };
   if (PLAYER_SCOPED_TOOLS.has(toolName) && toolInput && typeof toolInput === "object") {
     const typed = String(toolInput.playerName ?? toolInput.player ?? toolInput.character ?? toolInput.characterName ?? "").trim();
     const collectionId: string | undefined = toolInput.collectionId ?? ctx.collectionId ?? undefined;
@@ -1998,6 +2010,7 @@ async function executeTool(toolName: string, toolInput: any, ctx: ToolCtx): Prom
       scope.labels = playerLabelsFor(who.resolution);
       scope.playerId = who.playerId;
       scope.identity = who.identity;
+      scope.slugs = personSlugsFor(who.resolution);
     }
   }
   const out = await executeToolInner(toolName, toolInput, ctx, scope);
@@ -2276,7 +2289,7 @@ async function executeToolInner(
     // Panini rows, so this tool said "no deals" while the tab showed hundreds.
     if (effectiveCollectionId === "panini-blockchain") {
       // 2026-10-25: a `team` filter reads RPC's Panini team map inside the reader (the deal board has no team field).
-      return readPaniniDealsForConcierge(base, { ...toolInput, player: toolInput.player ?? toolInput.playerName, teamQuery: toolInput.team, db: supabase });
+      return readPaniniDealsForConcierge(base, { ...toolInput, player: toolInput.player ?? toolInput.playerName, playerSlugs: playerScope.slugs, teamQuery: toolInput.team, db: supabase });
     }
     // 2026-10-26: Candy's listings are its own board — the sniper feed has no Candy source and
     // cached_listings no Candy rows, so the path below answered "no deals" about a 1,400-ask book.
@@ -2604,7 +2617,7 @@ async function executeToolInner(
     // Same Panini read as search_live_deals: there is no separate Panini catalog
     // floor table this tool's fallbacks could reach (2026-10-19).
     if (effectiveCollectionId === "panini-blockchain") {
-      return readPaniniDealsForConcierge(base, { ...toolInput, player: toolInput.player ?? toolInput.playerName });
+      return readPaniniDealsForConcierge(base, { ...toolInput, player: toolInput.player ?? toolInput.playerName, playerSlugs: playerScope.slugs });
     }
     if (effectiveCollectionId === "candy-mlb") {
       return readCandyDealsForConcierge(supabase, base, { player: toolInput.player ?? toolInput.playerName ?? null, maxPrice: toolInput.maxPrice ?? null, tier: toolInput.tier ?? null, limit: toolInput.limit ?? null });
@@ -3236,6 +3249,7 @@ async function executeToolInner(
         // spelling for this collection, and the swap is reported to the model.
         const { data, error, playerResolved } = await retryEmptyPlayerSearch({
           supabase, collectionUuid: uuid, typed: name, first: await listingsFor(name), run: listingsFor,
+          labelOf: (r: any) => r.player_name,
         });
         // A failed read is UNKNOWN, not "no listings": flag it so the model is
         // never handed an empty group it would repeat as a fact.
