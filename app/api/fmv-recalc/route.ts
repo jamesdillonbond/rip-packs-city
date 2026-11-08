@@ -156,6 +156,56 @@ import {
 // lib/fmv-confidence.ts — the single source of truth shared with fmv-backfill
 // so the HIGH/MEDIUM/LOW thresholds can never drift again (audit 2026-05-20 F11).
 
+/**
+ * Write today's fmv_snapshots rows in the R123 order (2026-11-08): INSERT first,
+ * then delete today's OTHER rows only for the editions whose insert landed
+ * (purge_fmv_snapshots_today_except keeps the ids just written). Steps 5-6 used
+ * to delete-then-insert, so a failed insert chunk left those editions with NO
+ * row for today and readers fell back to an older snapshot. History (pre-today
+ * rows) is never touched. A purge failure leaves duplicates for today (readers
+ * take the newest computed_at) and is reported, like Step 3.
+ */
+async function writeTodaySnapshots(
+  rows: Array<Record<string, unknown>>,
+  todayStartIso: string,
+  chunkSize: number,
+): Promise<{ written: number; error: string | null }> {
+  let written = 0
+  let error: string | null = null
+  const keepIds: string[] = []
+  const writtenEditionIds = new Set<string>()
+  for (let i = 0; i < rows.length; i += chunkSize) {
+    const chunk = rows.slice(i, i + chunkSize)
+    const { data, error: insErr } = await supabaseAdmin
+      .from("fmv_snapshots")
+      .insert(chunk)
+      .select("id, edition_id")
+    if (insErr) {
+      error = error ?? `insert: ${insErr.message}`
+      continue
+    }
+    written += chunk.length
+    for (const r of (data ?? []) as Array<{ id: string; edition_id: string }>) {
+      keepIds.push(r.id)
+      writtenEditionIds.add(r.edition_id)
+    }
+  }
+  const editions = [...writtenEditionIds]
+  const DEL_CHUNK = 500
+  for (let i = 0; i < editions.length; i += DEL_CHUNK) {
+    const { error: purgeErr } = await supabaseAdmin.rpc("purge_fmv_snapshots_today_except", {
+      p_edition_ids: editions.slice(i, i + DEL_CHUNK),
+      p_today_start: todayStartIso,
+      p_keep_ids: keepIds,
+    })
+    if (purgeErr) {
+      error = error ?? `purge: ${purgeErr.message}`
+      break
+    }
+  }
+  return { written, error }
+}
+
 export async function POST(req: NextRequest) {
   const ingestToken = process.env.INGEST_SECRET_TOKEN
   if (!ingestToken) {
@@ -1574,29 +1624,13 @@ export async function POST(req: NextRequest) {
           algo_version: ALGO_VERSION,
         }))
 
-        // Delete-then-insert — never upsert fmv_snapshots (partitioned table).
-        // Scope delete to these edition_ids + today so we don't trash history.
-        const bfEditionIds = backfillRows.map((r) => r.edition_id)
-        const DEL_CHUNK = 500
-        for (let i = 0; i < bfEditionIds.length; i += DEL_CHUNK) {
-          const slice = bfEditionIds.slice(i, i + DEL_CHUNK)
-          const { error: bfDelErr } = await supabaseAdmin
-            .from("fmv_snapshots")
-            .delete()
-            .in("edition_id", slice)
-            .gte("computed_at", todayStart.toISOString())
-          if (bfDelErr) { backfillError = backfillError ?? `delete: ${bfDelErr.message}`; console.warn("[FMV-RECALC] Backfill delete error:", bfDelErr.message) }
-        }
-
-        for (let i = 0; i < backfillRows.length; i += CHUNK_SIZE) {
-          const chunk = backfillRows.slice(i, i + CHUNK_SIZE)
-          const { error: bfError } = await supabaseAdmin
-            .from("fmv_snapshots")
-            .insert(chunk)
-
-          if (!bfError) backfillCount += chunk.length
-          else { backfillError = backfillError ?? `insert: ${bfError.message}`; console.warn("[FMV-RECALC] Backfill insert error:", bfError.message) }
-        }
+        // Never upsert fmv_snapshots (partitioned table); history (pre-today rows) is never touched.
+        // Insert first, then purge today's OTHER rows for the editions written (the
+        // R123 order Step 4 uses since 2026-10-23): a failed insert leaves an edition
+        // on its previous row, never on none.
+        const w = await writeTodaySnapshots(backfillRows, todayStart.toISOString(), CHUNK_SIZE)
+        backfillCount += w.written
+        if (w.error) { backfillError = backfillError ?? w.error; console.warn("[FMV-RECALC] Backfill write error:", w.error) }
 
         console.log(`[FMV-RECALC] Backfill complete: ${backfillCount} editions covered`)
       }
@@ -1885,28 +1919,13 @@ export async function POST(req: NextRequest) {
             })
           })
 
-          // Delete-then-insert — never upsert fmv_snapshots (partitioned table).
-          const histEditionIds = histInsert.map((r) => r.edition_id)
-          const DEL_CHUNK = 500
-          for (let i = 0; i < histEditionIds.length; i += DEL_CHUNK) {
-            const slice = histEditionIds.slice(i, i + DEL_CHUNK)
-            const { error: histDelErr } = await supabaseAdmin
-              .from("fmv_snapshots")
-              .delete()
-              .in("edition_id", slice)
-              .gte("computed_at", todayStart.toISOString())
-            if (histDelErr) { historicalFallbackError = historicalFallbackError ?? `delete: ${histDelErr.message}`; console.warn("[FMV-RECALC] Historical fallback delete error:", histDelErr.message) }
-          }
-
-          for (let i = 0; i < histInsert.length; i += CHUNK_SIZE) {
-            const chunk = histInsert.slice(i, i + CHUNK_SIZE)
-            const { error: histInsertErr } = await supabaseAdmin
-              .from("fmv_snapshots")
-              .insert(chunk)
-
-            if (!histInsertErr) historicalBackfillCount += chunk.length
-            else { historicalFallbackError = historicalFallbackError ?? `insert: ${histInsertErr.message}`; console.warn("[FMV-RECALC] Historical fallback insert error:", histInsertErr.message) }
-          }
+          // Never upsert fmv_snapshots (partitioned table).
+          // Insert first, then purge today's OTHER rows for the editions written (the
+          // R123 order Step 4 uses since 2026-10-23): a failed insert leaves an edition
+          // on its previous row, never on none.
+          const w = await writeTodaySnapshots(histInsert, todayStart.toISOString(), CHUNK_SIZE)
+          historicalBackfillCount += w.written
+          if (w.error) { historicalFallbackError = historicalFallbackError ?? w.error; console.warn("[FMV-RECALC] Historical fallback write error:", w.error) }
 
           console.log(`[FMV-RECALC] Historical fallback complete: ${historicalBackfillCount} editions covered`)
         }
@@ -2026,27 +2045,13 @@ export async function POST(req: NextRequest) {
             })
           })
 
-          // Delete-then-insert — never upsert fmv_snapshots (partitioned table).
-          const askEditionIds = askRows.map((r) => r.edition_id)
-          const DEL_CHUNK = 500
-          for (let i = 0; i < askEditionIds.length; i += DEL_CHUNK) {
-            const slice = askEditionIds.slice(i, i + DEL_CHUNK)
-            const { error: askDelErr } = await supabaseAdmin
-              .from("fmv_snapshots")
-              .delete()
-              .in("edition_id", slice)
-              .gte("computed_at", todayStart.toISOString())
-            if (askDelErr) { askOffersError = askOffersError ?? `delete: ${askDelErr.message}`; console.warn("[FMV-RECALC] ASK fallback delete error:", askDelErr.message) }
-          }
-
-          for (let i = 0; i < askRows.length; i += CHUNK_SIZE) {
-            const chunk = askRows.slice(i, i + CHUNK_SIZE)
-            const { error: askInsErr } = await supabaseAdmin
-              .from("fmv_snapshots")
-              .insert(chunk)
-            if (!askInsErr) askOffersBackfillCount += chunk.length
-            else { askOffersError = askOffersError ?? `insert: ${askInsErr.message}`; console.warn("[FMV-RECALC] ASK fallback insert error:", askInsErr.message) }
-          }
+          // Never upsert fmv_snapshots (partitioned table).
+          // Insert first, then purge today's OTHER rows for the editions written (the
+          // R123 order Step 4 uses since 2026-10-23): a failed insert leaves an edition
+          // on its previous row, never on none.
+          const w = await writeTodaySnapshots(askRows, todayStart.toISOString(), CHUNK_SIZE)
+          askOffersBackfillCount += w.written
+          if (w.error) { askOffersError = askOffersError ?? w.error; console.warn("[FMV-RECALC] ASK fallback write error:", w.error) }
 
           console.log(`[FMV-RECALC] edition_offers ASK fallback complete: ${askOffersBackfillCount} editions covered`)
         }
@@ -2138,27 +2143,13 @@ export async function POST(req: NextRequest) {
             })
           })
 
-          // Delete-then-insert — never upsert fmv_snapshots (partitioned table).
-          const parEditionIds = parRows.map((r) => r.edition_id)
-          const DEL_CHUNK = 500
-          for (let i = 0; i < parEditionIds.length; i += DEL_CHUNK) {
-            const slice = parEditionIds.slice(i, i + DEL_CHUNK)
-            const { error: parDelErr } = await supabaseAdmin
-              .from("fmv_snapshots")
-              .delete()
-              .in("edition_id", slice)
-              .gte("computed_at", todayStart.toISOString())
-            if (parDelErr) { parallelAskError = parallelAskError ?? `delete: ${parDelErr.message}`; console.warn("[FMV-RECALC] parallel ASK floor delete error:", parDelErr.message) }
-          }
-
-          for (let i = 0; i < parRows.length; i += CHUNK_SIZE) {
-            const chunk = parRows.slice(i, i + CHUNK_SIZE)
-            const { error: parInsErr } = await supabaseAdmin
-              .from("fmv_snapshots")
-              .insert(chunk)
-            if (!parInsErr) parallelAskBackfillCount += chunk.length
-            else { parallelAskError = parallelAskError ?? `insert: ${parInsErr.message}`; console.warn("[FMV-RECALC] parallel ASK floor insert error:", parInsErr.message) }
-          }
+          // Never upsert fmv_snapshots (partitioned table).
+          // Insert first, then purge today's OTHER rows for the editions written (the
+          // R123 order Step 4 uses since 2026-10-23): a failed insert leaves an edition
+          // on its previous row, never on none.
+          const w = await writeTodaySnapshots(parRows, todayStart.toISOString(), CHUNK_SIZE)
+          parallelAskBackfillCount += w.written
+          if (w.error) { parallelAskError = parallelAskError ?? w.error; console.warn("[FMV-RECALC] parallel ASK floor write error:", w.error) }
 
           console.log(`[FMV-RECALC] parallel ASK floor complete: ${parallelAskBackfillCount} :: editions floored`)
         }
@@ -2242,27 +2233,13 @@ export async function POST(req: NextRequest) {
             })
           })
 
-          // Delete-then-insert — never upsert fmv_snapshots (partitioned table).
-          const adEditionIds = adRows.map((r) => r.edition_id)
-          const DEL_CHUNK = 500
-          for (let i = 0; i < adEditionIds.length; i += DEL_CHUNK) {
-            const slice = adEditionIds.slice(i, i + DEL_CHUNK)
-            const { error: adDelErr } = await supabaseAdmin
-              .from("fmv_snapshots")
-              .delete()
-              .in("edition_id", slice)
-              .gte("computed_at", todayStart.toISOString())
-            if (adDelErr) { allDayAskError = allDayAskError ?? `delete: ${adDelErr.message}`; console.warn("[FMV-RECALC] All Day ASK fallback delete error:", adDelErr.message) }
-          }
-
-          for (let i = 0; i < adRows.length; i += CHUNK_SIZE) {
-            const chunk = adRows.slice(i, i + CHUNK_SIZE)
-            const { error: adInsErr } = await supabaseAdmin
-              .from("fmv_snapshots")
-              .insert(chunk)
-            if (!adInsErr) allDayAskBackfillCount += chunk.length
-            else { allDayAskError = allDayAskError ?? `insert: ${adInsErr.message}`; console.warn("[FMV-RECALC] All Day ASK fallback insert error:", adInsErr.message) }
-          }
+          // Never upsert fmv_snapshots (partitioned table).
+          // Insert first, then purge today's OTHER rows for the editions written (the
+          // R123 order Step 4 uses since 2026-10-23): a failed insert leaves an edition
+          // on its previous row, never on none.
+          const w = await writeTodaySnapshots(adRows, todayStart.toISOString(), CHUNK_SIZE)
+          allDayAskBackfillCount += w.written
+          if (w.error) { allDayAskError = allDayAskError ?? w.error; console.warn("[FMV-RECALC] All Day ASK fallback write error:", w.error) }
 
           console.log(`[FMV-RECALC] All Day ASK fallback complete: ${allDayAskBackfillCount} editions covered`)
         }
@@ -2522,26 +2499,12 @@ export async function POST(req: NextRequest) {
             }))
 
           if (touchRows.length > 0) {
-            const touchEditionIds = touchRows.map((r) => r.edition_id as string)
-            const DEL_CHUNK = 500
-            for (let i = 0; i < touchEditionIds.length; i += DEL_CHUNK) {
-              const slice = touchEditionIds.slice(i, i + DEL_CHUNK)
-              const { error: touchDelErr } = await supabaseAdmin
-                .from("fmv_snapshots")
-                .delete()
-                .in("edition_id", slice)
-                .gte("computed_at", todayStart.toISOString())
-              if (touchDelErr) { staleTouchError = staleTouchError ?? `delete: ${touchDelErr.message}`; console.warn("[FMV-RECALC] Stale touch delete error:", touchDelErr.message) }
-            }
-
-            for (let i = 0; i < touchRows.length; i += CHUNK_SIZE) {
-              const chunk = touchRows.slice(i, i + CHUNK_SIZE)
-              const { error: touchInsertErr } = await supabaseAdmin
-                .from("fmv_snapshots")
-                .insert(chunk)
-              if (!touchInsertErr) staleTouchCount += chunk.length
-              else { staleTouchError = staleTouchError ?? `insert: ${touchInsertErr.message}`; console.warn("[FMV-RECALC] Stale touch insert error:", touchInsertErr.message) }
-            }
+            // Insert first, then purge today's OTHER rows for the editions written (the
+            // R123 order Step 4 uses since 2026-10-23): a failed insert leaves an edition
+            // on its previous row, never on none.
+            const w = await writeTodaySnapshots(touchRows, todayStart.toISOString(), CHUNK_SIZE)
+            staleTouchCount += w.written
+            if (w.error) { staleTouchError = staleTouchError ?? w.error; console.warn("[FMV-RECALC] Stale touch write error:", w.error) }
             console.log(`[FMV-RECALC] Stale touch complete: ${staleTouchCount} editions refreshed`)
           }
         }

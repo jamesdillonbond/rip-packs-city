@@ -154,7 +154,7 @@ describe("fmv-recalc — Step 7 stale touch (?force_stale=true)", () => {
     expect(rpcCalls.filter((c) => c.name === "query_sql" && String((c.args as { query?: unknown })?.query ?? "").includes("recent_traded"))).toHaveLength(0)
   })
 
-  it("re-stamps cold editions with their own last values, delete-then-insert", async () => {
+  it("re-stamps cold editions with their own last values, insert-then-purge", async () => {
     state.querySqlByMarker = { recent_traded: { data: [staleRow("cold-1", 5), staleRow("cold-2", 7.25)], error: null } }
     const { writes, inserted } = instrument(baseFixtures())
 
@@ -174,8 +174,43 @@ describe("fmv-recalc — Step 7 stale touch (?force_stale=true)", () => {
       sales_count_30d: 0,
       algo_version: FMV_ALGO_VERSION,
     })
-    // fmv_snapshots is delete-then-insert, never upsert (the write contract).
+    // fmv_snapshots is never upserted (the write contract).
     expect((writes.fmv_snapshots ?? []).some((w) => w.method === "upsert")).toBe(false)
+  })
+
+  // 2026-11-08: Steps 5-6 write INSERT-then-purge (the R123 order Step 4 uses): the
+  // purge names only editions whose insert landed and keeps the rows just written.
+  it("a re-stamp purges today's OTHER rows only for the editions it wrote, keeping the new ones", async () => {
+    state.querySqlByMarker = { recent_traded: { data: [staleRow("cold-p1", 5), staleRow("cold-p2", 6)], error: null } }
+    const { rpcCalls, deletes } = instrument(baseFixtures())
+    // PostgREST answers INSERT … .select("id, edition_id") with the rows it wrote:
+    // echo them, with ids, so the purge sees which editions landed.
+    const sb = state.sb as { from: (t: string) => Record<string, unknown> }
+    const baseFrom = sb.from.bind(sb)
+    let seq = 0
+    sb.from = (t: string) => {
+      const b = baseFrom(t)
+      if (t === "fmv_snapshots") {
+        const orig = b.insert as (rows: unknown) => unknown
+        b.insert = (rows: unknown) => {
+          orig(rows) // keep the harness's write record
+          const arr = (Array.isArray(rows) ? rows : [rows]) as Array<{ edition_id: string }>
+          const ok = { data: arr.map((r) => ({ id: `new-${++seq}`, edition_id: r.edition_id })), error: null }
+          return { select: () => Promise.resolve(ok), then: (f: (v: unknown) => unknown, r?: (e: unknown) => unknown) => Promise.resolve(ok).then(f, r) }
+        }
+      }
+      return b
+    }
+    await POST(req("?force_stale=true"))
+    await runDeferred()
+    const purges = rpcCalls.filter((c) => c.name === "purge_fmv_snapshots_today_except")
+    const purged = purges.flatMap((c) => ((c.args as { p_edition_ids?: string[] })?.p_edition_ids ?? []))
+    expect(purged).toEqual(expect.arrayContaining(["cold-p1", "cold-p2"]))
+    // the rows just written are KEPT by the purge
+    const touchPurge = purges.find((c) => ((c.args as { p_edition_ids?: string[] })?.p_edition_ids ?? []).includes("cold-p1"))
+    expect(((touchPurge?.args as { p_keep_ids?: string[] })?.p_keep_ids ?? []).length).toBeGreaterThan(0)
+    // no plain delete names a cold edition: the old delete-first path is gone
+    expect(JSON.stringify(deletes.fmv_snapshots ?? [])).not.toMatch(/cold-p[12]/)
   })
 
   // ⛔ 2026-09-25 — THE FOSSIL. Candy "Bobby Witt Jr. — BLUE" was priced off a
@@ -351,7 +386,7 @@ describe("fmv-recalc — Step 7 stale touch (?force_stale=true)", () => {
   // the step's `_error` read null beside a lower count — "less work to do".
   it("a FAILED re-stamp insert is recorded in stale_touch_error, never read as a quiet pass", async () => {
     state.querySqlByMarker = { recent_traded: { data: [staleRow("cold-ts", 50)], error: null } }
-    const { rpcCalls } = instrument(baseFixtures())
+    const { rpcCalls, deletes } = instrument(baseFixtures())
     const sb = state.sb as { from: (t: string) => Record<string, unknown> }
     const baseFrom = sb.from.bind(sb)
     let inserts = 0
@@ -363,7 +398,10 @@ describe("fmv-recalc — Step 7 stale touch (?force_stale=true)", () => {
           inserts++
           // the main Step 4 write still succeeds; the stale-touch write (2nd) fails
           if (inserts === 1) return orig(rows)
-          return Promise.resolve({ data: null, error: { code: "57014", message: "statement timeout" } })
+          // 2026-11-08: Steps 5-6 now INSERT … .select("id, edition_id") (insert-then-purge),
+          // so the failure must be reachable both awaited directly and through .select().
+          const fail = { data: null, error: { code: "57014", message: "statement timeout" } }
+          return { select: () => Promise.resolve(fail), then: (ok: (v: unknown) => unknown, no?: (e: unknown) => unknown) => Promise.resolve(fail).then(ok, no) }
         }
       }
       return b
@@ -377,6 +415,13 @@ describe("fmv-recalc — Step 7 stale touch (?force_stale=true)", () => {
     }
     const extra = terminalLog(rpcCalls)?.p_extra as Record<string, unknown>
     expect(String(extra.stale_touch_error)).toMatch(/insert: statement timeout/)
+    // ⚠ THE PROPERTY (2026-11-08): the failed insert removed NOTHING — the edition
+    // keeps today's previous row instead of being left with none.
+    const purged = rpcCalls
+      .filter((c) => c.name === "purge_fmv_snapshots_today_except")
+      .flatMap((c) => ((c.args as { p_edition_ids?: string[] })?.p_edition_ids ?? []))
+    expect(purged).not.toContain("cold-ts")
+    expect(JSON.stringify(deletes.fmv_snapshots ?? [])).not.toMatch(/cold-ts/)
   })
 
   it("is a clean no-op when no edition is cold enough to need a touch", async () => {
