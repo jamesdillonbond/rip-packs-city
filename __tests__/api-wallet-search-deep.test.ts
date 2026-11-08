@@ -171,6 +171,21 @@ beforeEach(() => {
 })
 
 describe("POST /api/wallet-search — enrichment body", () => {
+  it("degraded rows with no edition key are never counted as one shared edition (2026-11-07)", async () => {
+    // Both reads fail for both moments: each becomes an "Unknown (error loading)"
+    // row with no edition key. They used to share one scope key and read
+    // "You hold 2 of this edition".
+    state.metadataById = {}
+    state.gqlById = {}
+    install(baseFixtures())
+    const res = await POST(post({ input: WALLET }))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    const degraded = body.rows.filter((r: { editionKey?: string | null }) => !r.editionKey)
+    expect(degraded.length).toBe(2)
+    for (const r of degraded) expect(r.editionsOwned).toBe(1)
+  })
+
   it("assembles rows from Cadence metadata + GQL, enriches FMV/asks, and reports the summary", async () => {
     install(baseFixtures())
 

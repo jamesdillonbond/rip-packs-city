@@ -1924,8 +1924,15 @@ export async function POST(req: NextRequest) {
       )
     }
 
+    // ⚠ A degraded row with NO edition key has no identity to count by: its scope
+    // key falls back to set + player, and every degraded row shares the same
+    // placeholder pair, so N unrelated moments read "You hold N of this edition"
+    // (2026-11-07 review). Such a row counts as itself only (owned 1 renders no
+    // multiplier) — lib/wallet-search/seed-edition.ts names the placeholders.
+    const uncountable = (row: WalletRow) => !row.editionKey && !isSeedableRow({ ...row, editionKey: "x" })
     const editionCounts = new Map<string, { owned: number; locked: number }>()
     for (const row of baseRows) {
+      if (uncountable(row)) continue
       const key = buildEditionScopeKey({
         editionKey: row.editionKey,
         setName: row.setName,
@@ -1947,7 +1954,7 @@ export async function POST(req: NextRequest) {
         parallel: row.parallel,
         subedition: row.subedition,
       })
-      const counts = editionCounts.get(key) ?? { owned: 1, locked: row.isLocked ? 1 : 0 }
+      const counts = (uncountable(row) ? undefined : editionCounts.get(key)) ?? { owned: 1, locked: row.isLocked ? 1 : 0 }
       return { ...row, editionsOwned: counts.owned, editionsLocked: counts.locked }
     })
 
