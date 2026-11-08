@@ -6,7 +6,12 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // ⚠ A failed read is a retryable 503, never `{ cases: [] }` / an empty board —
 // both of those are claims about a collector or a challenge.
 
-const state: { rpc: { data: any; error: any }; lastRpc: any } = { rpc: { data: [], error: null }, lastRpc: null }
+const state: { rpc: { data: any; error: any }; lastRpc: any; who: { data: any; error: any }; lastIlike: any } = {
+  rpc: { data: [], error: null },
+  lastRpc: null,
+  who: { data: [{ user_id: "u1" }], error: null },
+  lastIlike: null,
+}
 
 vi.mock("@/lib/supabase", () => {
   const client: any = {
@@ -14,6 +19,15 @@ vi.mock("@/lib/supabase", () => {
       state.lastRpc = { fn, args }
       return state.rpc
     },
+    // profile_bio existence check (#237): .from().select().ilike().limit()
+    from: (_t: string) => ({
+      select: () => ({
+        ilike: (_col: string, v: string) => {
+          state.lastIlike = v
+          return { limit: async () => state.who }
+        },
+      }),
+    }),
   }
   return { supabase: client, supabaseAdmin: client }
 })
@@ -27,6 +41,8 @@ const TIMEOUT = { message: "canceling statement due to statement timeout", code:
 beforeEach(() => {
   state.rpc = { data: [], error: null }
   state.lastRpc = null
+  state.who = { data: [{ user_id: "u1" }], error: null }
+  state.lastIlike = null
 })
 
 describe("GET /api/public/trophy-cases", () => {
@@ -49,6 +65,39 @@ describe("GET /api/public/trophy-cases", () => {
     const body = await res.json()
     expect(body.cases).toBeUndefined()
     expect(JSON.stringify(body)).not.toContain("canceling statement")
+  })
+
+  // #237 (2026-11-08): the RPC answers [] for BOTH an unknown username and a
+  // collector with no extra cases — three states, never two.
+  it("an existing collector with no extra cases is 200 + []", async () => {
+    state.rpc = { data: [], error: null }
+    const res = await casesGET(req("https://x/api/public/trophy-cases?username=Trev"))
+    expect(res.status).toBe(200)
+    expect((await res.json()).cases).toEqual([])
+  })
+
+  it("⚠ a username nobody holds is a 404, not an empty list", async () => {
+    state.rpc = { data: [], error: null }
+    state.who = { data: [], error: null }
+    const res = await casesGET(req("https://x/api/public/trophy-cases?username=nobody_here"))
+    expect(res.status).toBe(404)
+    expect((await res.json()).cases).toBeUndefined()
+    // the lookup matches literally: _ and % are not wildcards
+    expect(state.lastIlike).toBe(String.raw`nobody\_here`)
+  })
+
+  it("⚠ a failed existence lookup is a 503, not a claim either way", async () => {
+    state.rpc = { data: [], error: null }
+    state.who = { data: null, error: TIMEOUT }
+    const res = await casesGET(req("https://x/api/public/trophy-cases?username=trev"))
+    expect(res.status).toBe(503)
+    expect((await res.json()).cases).toBeUndefined()
+  })
+
+  it("a collector WITH cases pays no lookup", async () => {
+    state.rpc = { data: [{ id: "c1", slabs: [] }], error: null }
+    await casesGET(req("https://x/api/public/trophy-cases?username=trev"))
+    expect(state.lastIlike).toBeNull()
   })
 })
 

@@ -26,9 +26,12 @@ import { GET } from "@/app/api/public/wallet-intel/route"
 const req = (url: string) => ({ nextUrl: new URL(url) }) as any
 const URL_OK = "https://t/api/public/wallet-intel?wallet=0xbd94cade097e50ac"
 
+// ts_moments > 0: a wallet with highlights holds moments, so the #237 index-state
+// read (lib/wallet-indexed.ts) is not consulted and this mock's shared from()
+// builder serves only the capped-ASK lookup.
 describe("GET /api/public/wallet-intel — fmv_capped (#215)", () => {
   it("flags a capped ASK_ONLY highlight; leaves a sales-backed one unchecked", async () => {
-    st.summary = { highlights: [
+    st.summary = { ts_moments: 5, highlights: [
       { external_id: "257:8869", fmv_usd: 40, confidence: "ASK_ONLY" },
       { external_id: "1:2", fmv_usd: 9, confidence: "HIGH" },
     ] }
@@ -38,7 +41,7 @@ describe("GET /api/public/wallet-intel — fmv_capped (#215)", () => {
   })
 
   it("a failed lookup still answers 200 with the highlight unchecked", async () => {
-    st.summary = { highlights: [{ external_id: "257:8869", fmv_usd: 40, confidence: "ASK_ONLY" }] }
+    st.summary = { ts_moments: 5, highlights: [{ external_id: "257:8869", fmv_usd: 40, confidence: "ASK_ONLY" }] }
     st.editions = { data: null, error: { message: "boom" } }
     const res = await GET(req(URL_OK))
     expect(res.status).toBe(200)

@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { boundedRead } from "@/lib/api/bounded-read"
 import { readCappedByExternalId } from "@/lib/fmv-capped"
+import { walletIndexState } from "@/lib/wallet-indexed"
+import { normalizeFlowAddress } from "@/lib/address"
+import { apiErrorResponse } from "@/lib/api-error"
 
 const TOP_SHOT_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
 
@@ -45,6 +48,37 @@ export async function GET(req: NextRequest) {
     }
 
     const intel = data && typeof data === "object" ? data : {}
+
+    // ⚠ #237 (2026-11-08): the RPC counts wallet_moments_cache, so a wallet RPC
+    // has NEVER walked answers a complete object of zeros — byte-identical to
+    // one that holds nothing. When the count is 0 (or absent), ask whether the
+    // wallet was ever indexed: never → `indexed:false` with NULL figures (a
+    // null is "we don't know", a 0 is a claim); a failed check is a 503.
+    const moments = typeof intel.ts_moments === "number" ? intel.ts_moments : null
+    if (moments === null || moments === 0) {
+      const idx = await walletIndexState(supabase, wallet)
+      if (!idx.ok) {
+        console.log("[wallet-intel] index-state read failed")
+        return apiErrorResponse(idx.error, "api/public/wallet-intel")
+      }
+      if (!idx.indexed) {
+        return NextResponse.json(
+          {
+            wallet: normalizeFlowAddress(wallet) ?? wallet,
+            indexed: false,
+            ts_moments: null,
+            ts_fmv: null,
+            rookie_count: null,
+            trophy_count: null,
+            squeezed_count: null,
+            highlights: [],
+          },
+          // short: a first walk can land within minutes of a share
+          { headers: { "Cache-Control": "public, s-maxage=60, stale-while-revalidate=120" } },
+        )
+      }
+    }
+    intel.indexed = true
     // #215: mark highlights whose ASK_ONLY price is capped at sales, for the share
     // card's "capped at sales" marker. Unchecked (no field) on any failure.
     if (Array.isArray(intel.highlights) && intel.highlights.length > 0) {
