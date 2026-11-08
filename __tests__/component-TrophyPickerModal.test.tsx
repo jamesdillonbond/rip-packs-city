@@ -270,6 +270,71 @@ describe("TrophyPickerModal — manual lookup + grid pin + row variants", () => 
     expect(await findByText("Pin trophy")).toBeTruthy()
   })
 
+  // ── "Load more" (2026-11-08) ────────────────────────────────────────────
+  // The grid shows 96 at a time; a collector with 300 Dames never reached a
+  // cheap one. The route says `hasMore`; the button fetches the next RAW offset.
+  function stubPages(pages: Record<string, { ok: boolean; body?: unknown } | "throw">) {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) => {
+        const u = String(url)
+        if (u.includes("/api/profile/top-moments")) {
+          const off = new URL(u, "https://t").searchParams.get("offset") ?? "0"
+          const p = pages[off]
+          if (p === "throw") return Promise.reject(new TypeError("network"))
+          if (!p) return Promise.resolve({ ok: false, json: async () => ({}) } as Response)
+          return Promise.resolve({ ok: p.ok, json: async () => p.body } as Response)
+        }
+        return Promise.resolve({ ok: true, json: async () => ({}) } as Response)
+      }),
+    )
+  }
+  const kd = { ...moment, moment_id: "kd", player_name: "Kevin Durant" }
+
+  it("Load more appends the next page at offset=96 and hides once the route says it is the end", async () => {
+    stubPages({
+      "0": { ok: true, body: { moments: [moment], hasMore: true } },
+      "96": { ok: true, body: { moments: [kd], hasMore: false } },
+    })
+    const { findByText, getByText, queryByText, container } = render(<TrophyPickerModal {...baseProps} />)
+    await findByText(/Victor Wembanyama/)
+    fireEvent.click(getByText("Load 96 more"))
+    await findByText(/Kevin Durant/)
+    expect(container.textContent).toContain("Victor Wembanyama")
+    expect((fetch as any).mock.calls.some((c: any[]) => String(c[0]).includes("offset=96"))).toBe(true)
+    expect(queryByText("Load 96 more")).toBeNull()
+  })
+
+  it("no Load more button when the route says there is nothing past this page", async () => {
+    stubPages({ "0": { ok: true, body: { moments: [moment], hasMore: false } } })
+    const { findByText, queryByText } = render(<TrophyPickerModal {...baseProps} />)
+    await findByText(/Victor Wembanyama/)
+    expect(queryByText("Load 96 more")).toBeNull()
+  })
+
+  it("⛔ a FAILED next page is not the end of the list: the button stays, the loaded rows stay, and it says so", async () => {
+    stubPages({ "0": { ok: true, body: { moments: [moment], hasMore: true } }, "96": "throw" })
+    const { findByText, getByText, container } = render(<TrophyPickerModal {...baseProps} />)
+    await findByText(/Victor Wembanyama/)
+    fireEvent.click(getByText("Load 96 more"))
+    expect(await findByText(/Couldn.t load more/)).toBeTruthy()
+    expect(getByText("Load 96 more")).toBeTruthy()
+    expect(container.textContent).toContain("Victor Wembanyama")
+    expect(container.textContent).not.toMatch(/No owned moments|Nothing you hold/)
+  })
+
+  it("a row repeated across pages is shown once", async () => {
+    stubPages({
+      "0": { ok: true, body: { moments: [moment], hasMore: true } },
+      "96": { ok: true, body: { moments: [moment, kd], hasMore: false } },
+    })
+    const { findByText, getByText, getAllByText } = render(<TrophyPickerModal {...baseProps} />)
+    await findByText(/Victor Wembanyama/)
+    fireEvent.click(getByText("Load 96 more"))
+    await findByText(/Kevin Durant/)
+    expect(getAllByText(/Victor Wembanyama/)).toHaveLength(1)
+  })
+
   it("filters the grid to empty via the search box (filter-miss copy)", async () => {
     const { getByLabelText, findByText, getByText } = render(<TrophyPickerModal {...baseProps} />)
     await findByText(/Victor Wembanyama/)

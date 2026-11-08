@@ -1515,7 +1515,7 @@ const PINS = [
     // (the cached Series-1 edition hero assets are dead).
     // Repointed 2026-11-08: every typed word must match some field (player +
     // set across fields), so "Damian Lillard Extra Spice" finds the Moment.
-    migration: "supabase/migrations/20261108153540_audit_20261108_trophy_picker_search_matches_every_word_across_fields.sql",
+    migration: "supabase/migrations/20261108155000_audit_20261108_trophy_picker_load_more_offset.sql",
   },
   {
     fn: "get_trophy_slab_data",

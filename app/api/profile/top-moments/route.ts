@@ -97,6 +97,9 @@ async function resolveUserId(ownerKey: string | null, strict = false): Promise<O
   return { ok: true, userId: user?.id ?? null };
 }
 
+/** Deepest page "Load more" may ask for (~100 pages of the picker's 96). */
+const MAX_OFFSET = 9600;
+
 export async function GET(req: NextRequest) {
   const ownerKey = req.nextUrl.searchParams.get("ownerKey");
   const limitRaw = Number(req.nextUrl.searchParams.get("limit") ?? 24);
@@ -119,6 +122,10 @@ export async function GET(req: NextRequest) {
   const strict = req.nextUrl.searchParams.get("strict") === "1";
   const qRaw = (req.nextUrl.searchParams.get("q") ?? "").trim().slice(0, 80);
   const query = qRaw.length > 0 ? qRaw : null;
+  // ?offset=<n> (2026-11-08): "Load more" in the trophy picker pages the same
+  // fmv-ordered list. Whole numbers 0..MAX_OFFSET; anything else is page one.
+  const offsetRaw = Number(req.nextUrl.searchParams.get("offset") ?? 0);
+  const offset = Number.isInteger(offsetRaw) && offsetRaw > 0 && offsetRaw <= MAX_OFFSET ? offsetRaw : 0;
   const owner = await resolveUserId(ownerKey, strict);
   if (!owner.ok) {
     console.error("[profile/top-moments] owner resolve failed", (owner.error as { message?: string })?.message);
@@ -138,6 +145,9 @@ export async function GET(req: NextRequest) {
     p_league: league,
     p_collection_id: collectionUuid,
     p_query: query,
+    // Sent only for a later page, so a first-page call names exactly the
+    // arguments every deployed signature of the RPC has had.
+    ...(offset > 0 ? { p_offset: offset } : {}),
   }), "api/profile/top-moments/get_user_top_owned_moments");
 
   if (error) {
@@ -153,6 +163,9 @@ export async function GET(req: NextRequest) {
   // `limit` when Panini cards rank inside it — it never adds a Panini row.
   const includePanini =
     collectionSlug === "panini-blockchain" || req.nextUrl.searchParams.get("panini") === "1";
+  // A FULL page from the RPC means there may be more; measured BEFORE the
+  // Panini opt-out below, which can shorten a page without ending the list.
+  const hasMore = (data ?? []).length >= limit;
   const rows = ((data ?? []) as { collection_id?: string }[]).filter(
     (r) => includePanini || r.collection_id !== COLLECTION_UUID_BY_SLUG["panini-blockchain"]
   );
@@ -164,10 +177,10 @@ export async function GET(req: NextRequest) {
   // the picker then says neither, rather than guessing.
   if (collectionSlug === "panini-blockchain") {
     const linked = await countLinkedPaniniUsernames(supabase, userId);
-    return NextResponse.json({ moments: rows, paniniUsernamesLinked: linked });
+    return NextResponse.json({ moments: rows, hasMore, paniniUsernamesLinked: linked });
   }
 
-  return NextResponse.json({ moments: rows });
+  return NextResponse.json({ moments: rows, hasMore });
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

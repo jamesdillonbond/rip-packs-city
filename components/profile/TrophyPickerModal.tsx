@@ -13,7 +13,7 @@
 // Tabs: "Pick from collection" (the list) and "Enter ID manually" (raw moment
 // ID lookup, used for gifted moments outside saved wallets).
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useModalA11y } from "@/lib/hooks/useModalA11y";
 import LeagueFilter, { type LeagueValue } from "@/components/filters/LeagueFilter";
 import SerialFmvBadge, { type SerialFmvData } from "@/components/SerialFmvBadge";
@@ -179,6 +179,16 @@ export default function TrophyPickerModal({
   const [momentsLoadFailed, setMomentsLoadFailed] = useState(false);
   /** Linked Panini usernames, read with a Panini-filtered list; null = unknown. */
   const [paniniLinked, setPaniniLinked] = useState<number | null>(null);
+  // "Load more" (2026-11-08). The grid shows PICKER_LIMIT rows at a time, highest
+  // value first; a collector with 300 Dames never saw a cheap one. `hasMore`
+  // comes from the route (a FULL page back); `nextOffset` is the RAW offset of
+  // the next page (the route's Panini opt-out can shorten a page, so it is not
+  // moments.length). `loadGen` drops a page that lands after the filters moved.
+  const [hasMore, setHasMore] = useState(false);
+  const [nextOffset, setNextOffset] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [loadMoreFailed, setLoadMoreFailed] = useState(false);
+  const loadGen = useRef(0);
   const [pickError, setPickError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -222,18 +232,32 @@ export default function TrophyPickerModal({
   // while mounted (parent controls mount), so isOpen is a constant true.
   const contentRef = useModalA11y<HTMLDivElement>(true, onClose);
 
+  // panini=1: the trophy case is the one picker that can pin a Panini card
+  // (the route leaves them out for the hero/avatar pickers).
+  const pageParams = useCallback(
+    (offset: number) => {
+      const params = new URLSearchParams({ limit: String(PICKER_LIMIT), panini: "1" });
+      if (ownerKey) params.set("ownerKey", ownerKey);
+      if (leagueFilter !== "all") params.set("league", leagueFilter);
+      if (collectionFilter !== "all") params.set("collection", collectionFilter);
+      if (serverQuery) params.set("q", serverQuery);
+      if (offset > 0) params.set("offset", String(offset));
+      return params;
+    },
+    [ownerKey, leagueFilter, collectionFilter, serverQuery]
+  );
+
   useEffect(() => {
     let cancelled = false;
+    const gen = ++loadGen.current;
     setMoments(null);
     setMomentsLoadFailed(false);
     setPaniniLinked(null);
-    // panini=1: the trophy case is the one picker that can pin a Panini card
-    // (the route leaves them out for the hero/avatar pickers).
-    const params = new URLSearchParams({ limit: String(PICKER_LIMIT), panini: "1" });
-    if (ownerKey) params.set("ownerKey", ownerKey);
-    if (leagueFilter !== "all") params.set("league", leagueFilter);
-    if (collectionFilter !== "all") params.set("collection", collectionFilter);
-    if (serverQuery) params.set("q", serverQuery);
+    setHasMore(false);
+    setNextOffset(0);
+    setLoadingMore(false);
+    setLoadMoreFailed(false);
+    const params = pageParams(0);
     fetch(`/api/profile/top-moments?${params.toString()}`, { cache: "no-store" })
       // ⚠ `null` means WE COULD NOT READ, and it must not reach `setMoments`
       // as `[]`. An empty grid renders "No owned moments found yet" — a claim
@@ -243,13 +267,17 @@ export default function TrophyPickerModal({
       // the search-scope cap; that one was found and this one was not.
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
-        if (cancelled) return;
+        if (cancelled || gen !== loadGen.current) return;
         if (d == null) {
           setMomentsLoadFailed(true);
           setMoments([]);
           return;
         }
-        setMoments((d.moments as PickerMoment[]) ?? []);
+        const page = (d.moments as PickerMoment[]) ?? [];
+        setMoments(page);
+        // A route without `hasMore` (deploy skew) falls back to "a full page".
+        setHasMore(typeof d.hasMore === "boolean" ? d.hasMore : page.length >= PICKER_LIMIT);
+        setNextOffset(PICKER_LIMIT);
         setPaniniLinked(typeof d.paniniUsernamesLinked === "number" ? d.paniniUsernamesLinked : null);
       })
       .catch(() => {
@@ -261,7 +289,40 @@ export default function TrophyPickerModal({
     return () => {
       cancelled = true;
     };
-  }, [ownerKey, leagueFilter, collectionFilter, serverQuery]);
+  }, [pageParams]);
+
+  const loadMore = useCallback(() => {
+    if (loadingMore) return;
+    const gen = loadGen.current;
+    const offset = nextOffset;
+    setLoadingMore(true);
+    setLoadMoreFailed(false);
+    fetch(`/api/profile/top-moments?${pageParams(offset).toString()}`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (gen !== loadGen.current) return;
+        setLoadingMore(false);
+        // ⚠ A failed page is NOT the end of the list: keep the button, say it
+        // failed, and leave what is already loaded alone.
+        if (d == null) {
+          setLoadMoreFailed(true);
+          return;
+        }
+        const page = (d.moments as PickerMoment[]) ?? [];
+        setMoments((prev) => {
+          const base = prev ?? [];
+          const seen = new Set(base.map((m) => `${m.collection_id}-${m.moment_id}`));
+          return base.concat(page.filter((m) => !seen.has(`${m.collection_id}-${m.moment_id}`)));
+        });
+        setHasMore(typeof d.hasMore === "boolean" ? d.hasMore : page.length >= PICKER_LIMIT);
+        setNextOffset(offset + PICKER_LIMIT);
+      })
+      .catch(() => {
+        if (gen !== loadGen.current) return;
+        setLoadingMore(false);
+        setLoadMoreFailed(true);
+      });
+  }, [loadingMore, nextOffset, pageParams]);
 
   // Keyed on moment_id alone, matching the uniqueness a collector actually
   // perceives ("that Moment is already up"), not the composite the grid uses
@@ -271,9 +332,10 @@ export default function TrophyPickerModal({
     [pinnedMomentIds]
   );
 
-  // A full page back means the collection is at least this big — the grid, and
-  // therefore the search, is a slice rather than the whole collection.
-  const atCap = (moments?.length ?? 0) >= PICKER_LIMIT;
+  // The route says more rows exist past what is loaded — the grid, and
+  // therefore the client-side filter, is a slice rather than the whole list.
+  const atCap = hasMore;
+  const loadedCount = moments?.length ?? 0;
 
   const selectedCollection =
     collectionFilter === "all" ? null : publishedCollections().find((c) => c.id === collectionFilter) ?? null;
@@ -601,7 +663,7 @@ export default function TrophyPickerModal({
                 }}
               >
                 {atCap
-                  ? `Searching everything you hold for “${serverQuery}” — showing the ${PICKER_LIMIT} highest-value matches. Add a set or team name to narrow it.`
+                  ? `Searching everything you hold for “${serverQuery}” — showing the ${loadedCount} highest-value matches. Add a set or team name to narrow it, or load more below.`
                   : `Searching everything you hold for “${serverQuery}”.`}
               </div>
             ) : atCap ? (
@@ -614,8 +676,8 @@ export default function TrophyPickerModal({
                   letterSpacing: "0.04em",
                 }}
               >
-                Showing your {PICKER_LIMIT} highest-value Moments. Type a player,
-                set or team to search everything you hold.
+                Showing your {loadedCount} highest-value Moments. Type a player,
+                set or team to search everything you hold, or load more below.
               </div>
             ) : null}
 
@@ -670,7 +732,7 @@ export default function TrophyPickerModal({
                       ? paniniEmptyPoolCopy(paniniLinked)
                       : emptyPoolCopy(selectedChain, selectedLabel, savedChains ?? null)
                     : atCap
-                      ? `Nothing in your top ${PICKER_LIMIT} by value matches. Type at least two characters to search everything you hold.`
+                      ? `Nothing in your top ${loadedCount} by value matches. Type at least two characters to search everything you hold, or load more below.`
                       : "No moments match the current filter."}
               </div>
             ) : (
@@ -697,6 +759,43 @@ export default function TrophyPickerModal({
                     }}
                   />
                 ))}
+              </div>
+            )}
+            {moments != null && !momentsLoadFailed && hasMore && (
+              <div style={{ textAlign: "center", marginTop: 10 }}>
+                <button
+                  type="button"
+                  onClick={loadMore}
+                  disabled={loadingMore}
+                  style={{
+                    fontFamily: monoFont,
+                    fontSize: 12,
+                    letterSpacing: "0.04em",
+                    padding: "10px 18px",
+                    minHeight: 44,
+                    borderRadius: 8,
+                    border: "1px solid var(--rpc-border)",
+                    background: "transparent",
+                    color: "var(--rpc-text-primary)",
+                    cursor: loadingMore ? "default" : "pointer",
+                    opacity: loadingMore ? 0.6 : 1,
+                  }}
+                >
+                  {loadingMore ? "Loading…" : `Load ${PICKER_LIMIT} more`}
+                </button>
+                {loadMoreFailed && (
+                  <div
+                    role="status"
+                    style={{
+                      color: "var(--rpc-danger-text)",
+                      fontFamily: monoFont,
+                      fontSize: 11,
+                      marginTop: 6,
+                    }}
+                  >
+                    Couldn&rsquo;t load more. This is a problem on our side — try again.
+                  </div>
+                )}
               </div>
             )}
             {pickError && (
